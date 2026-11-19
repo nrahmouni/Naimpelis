@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Columns2, Globe, Play, Shield } from 'lucide-react';
+import { Columns2, Globe, Play, Share2, Shield } from 'lucide-react';
 import type {
   AppLanguage,
   FootballMatchDetails,
@@ -8,6 +8,7 @@ import type {
 } from '../../types';
 import { triggerHaptic } from '../../utils/haptics';
 import { pickLang } from '../../utils/i18n';
+import { shareDedicatedLink } from '../../utils/shareDedicatedLink';
 import { BottomSheet, SegmentedControl } from '../ui/DesignSystem';
 
 const LiveMatchCenter = React.lazy(() =>
@@ -151,6 +152,7 @@ export const RegionFlagImg: React.FC<{
 
 interface FootballMatchDetailSheetProps {
   lang: AppLanguage;
+  shareRoomId?: string;
   showZhIndicator?: boolean;
   selectedMatchObj: FootballMatchboardItem | null;
   selectedSportsMatch: SportsMatch | null;
@@ -168,6 +170,7 @@ interface FootballMatchDetailSheetProps {
 
 export const FootballMatchDetailSheet: React.FC<FootballMatchDetailSheetProps> = ({
   lang,
+  shareRoomId,
   showZhIndicator = false,
   selectedMatchObj,
   selectedSportsMatch,
@@ -209,28 +212,60 @@ export const FootballMatchDetailSheet: React.FC<FootballMatchDetailSheetProps> =
     >
       {selectedMatchObj && selectedSportsMatch && (
         <div className="space-y-4">
-          <SegmentedControl<MatchSheetTab>
-            value={sheetTab}
-            onChange={(val) => {
-              setSheetTab(val);
-              if (val === 'stats') onLoadDetails(selectedMatchObj, false);
-            }}
-            layoutId="match-detail-sheet-tabs"
-            options={[
-              {
-                id: 'signals',
-                label: pickLang(lang, { es: 'Señales', ca: 'Senyals', en: 'Signals' }),
-              },
-              {
-                id: 'stats',
-                label: pickLang(lang, {
-                  es: 'Estadísticas y alineaciones',
-                  ca: 'Estadístiques i alineacions',
-                  en: 'Stats & lineups',
-                }),
-              },
-            ]}
-          />
+          <div className="flex items-center gap-2">
+            <div className="flex-1 min-w-0">
+              <SegmentedControl<MatchSheetTab>
+                value={sheetTab}
+                onChange={(val) => {
+                  setSheetTab(val);
+                  if (val === 'stats') onLoadDetails(selectedMatchObj, false);
+                }}
+                layoutId="match-detail-sheet-tabs"
+                options={[
+                  {
+                    id: 'signals',
+                    label: pickLang(lang, { es: 'Señales', ca: 'Senyals', en: 'Signals' }),
+                  },
+                  {
+                    id: 'stats',
+                    label: pickLang(lang, {
+                      es: 'Estadísticas y alineaciones',
+                      ca: 'Estadístiques i alineacions',
+                      en: 'Stats & lineups',
+                    }),
+                  },
+                ]}
+              />
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                void shareDedicatedLink({
+                  target: {
+                    kind: 'match',
+                    id: selectedMatchObj.id,
+                    eventId: selectedMatchObj.eventId,
+                    homeTeam: selectedMatchObj.homeTeam,
+                    awayTeam: selectedMatchObj.awayTeam,
+                  },
+                  roomId: shareRoomId,
+                  title: `${selectedMatchObj.homeTeam} vs ${selectedMatchObj.awayTeam}`,
+                });
+              }}
+              aria-label={pickLang(lang, {
+                es: 'Compartir partido',
+                ca: 'Compartir partit',
+                en: 'Share match',
+              })}
+              className="min-h-11 px-3 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-zinc-100 flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+            >
+              <Share2 className="w-3.5 h-3.5 text-[#BF94FF]" />
+              <span className="hidden sm:inline">
+                {pickLang(lang, { es: 'Compartir partido', ca: 'Compartir partit', en: 'Share match' })}
+              </span>
+            </button>
+          </div>
 
           {sheetTab === 'signals' ? (
             <div className="space-y-2.5">

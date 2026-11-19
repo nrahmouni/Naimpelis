@@ -1,5 +1,5 @@
 import React from 'react';
-import { Tv, Globe } from 'lucide-react';
+import { Tv, Globe, Share2, Users } from 'lucide-react';
 import {
   RiffanCastIcon,
   RiffanChatIcon,
@@ -27,6 +27,9 @@ interface PlayerBottomControlStripProps {
   batterySaverTvMode: boolean;
   isCastingToTv: boolean;
   voiceSlot?: React.ReactNode;
+  sessionMode?: 'solo' | 'party';
+  onUpgradeSoloToParty?: () => void;
+  onShareCurrentMedia?: () => void;
   onQuickLanguageSwitch: (code: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT') => void;
   onSelectTrack: (trackIndex: number, currentTimeSec: number) => void;
   onSelectExternalServer: (trackIndex: number) => void;
@@ -52,6 +55,9 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
   batterySaverTvMode,
   isCastingToTv,
   voiceSlot,
+  sessionMode = 'party',
+  onUpgradeSoloToParty,
+  onShareCurrentMedia,
   onQuickLanguageSwitch,
   onSelectTrack,
   onSelectExternalServer,
@@ -249,27 +255,75 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
         )}
       </div>
 
-      {/* Row 2 (Right on Desktop): Sala · X + Solo Mando + Cast TV + Voz + Ajustes */}
+      {/* Row 2 (Right on Desktop): Sala · X (or Ver con amigos in Solo) + Compartir + Solo Mando + Cast TV + Voz + Ajustes */}
       <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0 overflow-x-auto no-scrollbar">
-        {onToggleFloatingChat && (
+        {sessionMode === 'solo' && onUpgradeSoloToParty ? (
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('medium');
+              onUpgradeSoloToParty();
+            }}
+            className="min-h-[38px] px-3 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border bg-[#9146FF] hover:bg-[#7C2AE8] text-white border-[#BF94FF]/60 shadow-[0_4px_14px_rgba(145,70,255,0.4)]"
+          >
+            <Users className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              {pickLang(lang, {
+                es: 'Ver con amigos',
+                ca: 'Veure amb amics',
+                en: 'Watch party',
+                rif: 'S tmdukkalin',
+                zh: '创建房间',
+              })}
+            </span>
+          </button>
+        ) : (
+          onToggleFloatingChat && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                onToggleFloatingChat();
+              }}
+              aria-pressed={floatingChatOpen}
+              className={`relative min-h-[38px] px-3 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
+                floatingChatOpen
+                  ? 'bg-[#9146FF] text-white border-[#BF94FF]/60 shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
+                  : 'bg-[#121420] hover:bg-white/[0.1] text-zinc-100 border-white/[0.1]'
+              }`}
+            >
+              <RiffanChatIcon size={15} tone={floatingChatOpen ? 'current' : 'brand'} />
+              <span className="tabular-nums">Sala · {Math.max(1, participantCount)}</span>
+              {unreadChatCount > 0 && !floatingChatOpen && (
+                <span className="w-2 h-2 rounded-full bg-[#EB0400] shrink-0" aria-hidden="true" />
+              )}
+            </button>
+          )
+        )}
+
+        {onShareCurrentMedia && (
           <button
             type="button"
             onClick={() => {
               triggerHaptic('light');
-              onToggleFloatingChat();
+              onShareCurrentMedia();
             }}
-            aria-pressed={floatingChatOpen}
-            className={`relative min-h-[38px] px-3 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
-              floatingChatOpen
-                ? 'bg-[#9146FF] text-white border-[#BF94FF]/60 shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
-                : 'bg-[#121420] hover:bg-white/[0.1] text-zinc-100 border-white/[0.1]'
-            }`}
+            title={pickLang(lang, {
+              es: 'Compartir enlace directo',
+              ca: 'Compartir enllaç directe',
+              en: 'Share direct link',
+            })}
+            aria-label={pickLang(lang, {
+              es: 'Compartir enlace directo',
+              ca: 'Compartir enllaç directe',
+              en: 'Share direct link',
+            })}
+            className="min-h-[38px] px-3 rounded-2xl bg-[#121420] hover:bg-white/[0.1] border border-white/[0.1] text-xs font-bold text-zinc-100 flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
           >
-            <RiffanChatIcon size={15} tone={floatingChatOpen ? 'current' : 'brand'} />
-            <span className="tabular-nums">Sala · {Math.max(1, participantCount)}</span>
-            {unreadChatCount > 0 && !floatingChatOpen && (
-              <span className="w-2 h-2 rounded-full bg-[#EB0400] shrink-0" aria-hidden="true" />
-            )}
+            <Share2 className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+            <span className="hidden sm:inline">
+              {pickLang(lang, { es: 'Compartir', ca: 'Compartir', en: 'Share' })}
+            </span>
           </button>
         )}
 

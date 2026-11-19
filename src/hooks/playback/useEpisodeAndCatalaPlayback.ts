@@ -22,9 +22,11 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
     setExtractionLabel,
     setExtractionError,
     setLoadingItemId,
+    commitVideoStateSync,
   } = ctx;
 
   const {
+    sessionMode,
     lang,
     profileName,
     canChangeMedia,
@@ -172,7 +174,7 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
       clearExtractionSnapshot();
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
-      socketService.syncVideoState('change_url', nextState, profileName);
+      commitVideoStateSync('change_url', nextState);
       playCinemaSound('play');
     } catch (err: unknown) {
       if (isAbortError(err) || reqSeq !== extractionReqSeqRef.current) return;
@@ -227,7 +229,7 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
     };
     videoStateUrlRef.current = nextState.url;
     setVideoState(nextState);
-    socketService.syncVideoState('change_url', nextState, profileName);
+    commitVideoStateSync('change_url', nextState);
     playCinemaSound('play');
   };
 
@@ -266,6 +268,10 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
         }
         if (data.mode === 'cloud') {
           clearExtractionSnapshot();
+          if (sessionMode === 'solo') {
+            setExtractionError('Aquest capítol requereix sala en directe. Prem «Veure amb amics» per obrir-lo.');
+            return;
+          }
           socketService.startCloudBrowser(data.streamUrl, profileName);
           return;
         }
@@ -298,7 +304,7 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
           preferLang: 'CAT',
         });
         setVideoState(nextState);
-        socketService.syncVideoState('change_url', nextState, profileName);
+        commitVideoStateSync('change_url', nextState);
         playCinemaSound('play');
       } catch (err: unknown) {
         if (isAbortError(err) || reqSeq !== extractionReqSeqRef.current) return;
@@ -361,7 +367,7 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
         preferLang: 'CAT',
       });
       setVideoState(nextState);
-      socketService.syncVideoState('change_url', nextState, profileName);
+      commitVideoStateSync('change_url', nextState);
       playCinemaSound('play');
       return;
     }
@@ -421,7 +427,7 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
       preferLang: 'CAT',
     });
     setVideoState(nextState);
-    socketService.syncVideoState('change_url', nextState, profileName);
+    commitVideoStateSync('change_url', nextState);
     playCinemaSound('play');
   };
 

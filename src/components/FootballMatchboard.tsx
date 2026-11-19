@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type {
   AppLanguage,
@@ -7,6 +7,8 @@ import type {
   FootballMatchboardItem,
   SportsMatch,
 } from '../types';
+import { useAppStore } from '../store/useAppStore';
+import { slugify } from '../shared/dedicatedRoutes';
 import { triggerHaptic } from '../utils/haptics';
 import { pickLang } from '../utils/i18n';
 import {
@@ -28,6 +30,7 @@ import { FootballMatchRow } from './sports/FootballMatchRow';
 
 interface FootballMatchboardProps {
   lang: AppLanguage;
+  shareRoomId?: string;
   searchQuery: string;
   onSearchQueryChange: (val: string) => void;
   langFilter?: 'all' | 'ZH';
@@ -55,6 +58,7 @@ const QUICK_SHORTCUTS = [
 
 export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   lang,
+  shareRoomId,
   searchQuery,
   onSearchQueryChange,
   langFilter = 'all',
@@ -68,8 +72,32 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   isChannelFavorited,
   onToggleChannelFavorite,
 }) => {
-  const [dayOffset, setDayOffset] = useState<number>(0);
-  const [statusTab, setStatusTab] = useState<StatusTab>('all');
+  const dayOffset = useAppStore((s) => s.futbolDayOffset);
+  const setDayOffsetStore = useAppStore((s) => s.setFutbolDayOffset);
+  const setDayOffset = useCallback(
+    (valOrUpdater: number | ((prev: number) => number)) => {
+      const curr = useAppStore.getState().futbolDayOffset;
+      const next = typeof valOrUpdater === 'function' ? valOrUpdater(curr) : valOrUpdater;
+      setDayOffsetStore(next);
+    },
+    [setDayOffsetStore]
+  );
+
+  const statusTab = useAppStore((s) => s.futbolStatusTab);
+  const setStatusTabStore = useAppStore((s) => s.setFutbolStatusTab);
+  const setStatusTab = useCallback(
+    (valOrUpdater: StatusTab | ((prev: StatusTab) => StatusTab)) => {
+      const curr = useAppStore.getState().futbolStatusTab;
+      const next = typeof valOrUpdater === 'function' ? valOrUpdater(curr) : valOrUpdater;
+      setStatusTabStore(next);
+    },
+    [setStatusTabStore]
+  );
+
+  const requestedMatchSlug = useAppStore((s) => s.requestedMatchSlug);
+  const setRequestedMatchSlug = useAppStore((s) => s.setRequestedMatchSlug);
+  const handledMatchSlugRef = useRef<string | null>(null);
+
   const [matches, setMatches] = useState<FootballMatchboardItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [hasAutoSelectedTab, setHasAutoSelectedTab] = useState<boolean>(false);
@@ -121,7 +149,14 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
           }
           const incoming = Array.from(dedupMap.values());
           setMatches(incoming);
-          if (!hasAutoSelectedTab && dayOffset === 0 && !searchQuery.trim() && !leagueFilter) {
+          if (
+            !hasAutoSelectedTab &&
+            !requestedMatchSlug &&
+            statusTab === 'all' &&
+            dayOffset === 0 &&
+            !searchQuery.trim() &&
+            !leagueFilter
+          ) {
             const liveTotal = incoming.filter((m) => m.statusState === 'live').length;
             if (liveTotal > 0) {
               setStatusTab('live');
@@ -135,7 +170,17 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
         if (!silent) setLoading(false);
       }
     },
-    [activeDateInfo.dateKey, calendarScope, dayOffset, hasAutoSelectedTab, leagueFilter, searchQuery]
+    [
+      activeDateInfo.dateKey,
+      calendarScope,
+      dayOffset,
+      hasAutoSelectedTab,
+      leagueFilter,
+      requestedMatchSlug,
+      searchQuery,
+      setStatusTab,
+      statusTab,
+    ]
   );
 
   useEffect(() => {
@@ -189,6 +234,53 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
     }, 15000);
     return () => clearInterval(timer);
   }, [selectedMatchObj, loadMatchDetails]);
+
+  useEffect(() => {
+    if (!requestedMatchSlug) {
+      handledMatchSlugRef.current = null;
+      return;
+    }
+    if (handledMatchSlugRef.current === requestedMatchSlug || matches.length === 0) return;
+
+    const cleanParam = decodeURIComponent(requestedMatchSlug).trim();
+    const cleanSlug = slugify(cleanParam);
+    const leadingId = cleanParam.match(/^((?:fb-)?[a-z0-9]+)-/i)?.[1] || cleanParam;
+    const rawLow = cleanParam.toLowerCase();
+    const leadLow = leadingId.toLowerCase();
+
+    const matched = matches.find((m) => {
+      const mId = String(m.id || '').toLowerCase();
+      const mEvId = String(m.eventId || '').toLowerCase();
+      const mFmId = String(m.fotmobMatchId || '').toLowerCase();
+
+      if (
+        mId === rawLow ||
+        mEvId === rawLow ||
+        mFmId === rawLow ||
+        mId === `fb-${rawLow}` ||
+        mId === leadLow ||
+        mEvId === leadLow ||
+        mId === `fb-${leadLow}`
+      ) {
+        return true;
+      }
+
+      if (m.homeTeam && m.awayTeam) {
+        const vsSlug = slugify(`${m.homeTeam}-vs-${m.awayTeam}`);
+        if (vsSlug && (cleanSlug === vsSlug || cleanSlug.endsWith(vsSlug))) {
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (matched) {
+      handledMatchSlugRef.current = requestedMatchSlug;
+      setSheetTab('signals');
+      setSelectedMatchId(matched.id);
+      loadMatchDetails(matched, true);
+    }
+  }, [requestedMatchSlug, matches, loadMatchDetails]);
 
   const filteredMatches = useMemo(() => {
     const lf = normalizeFootballText(leagueFilter);
@@ -597,6 +689,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                       key={item.id}
                       item={item}
                       lang={lang}
+                      shareRoomId={shareRoomId}
                       showLeagueBadge={isTeamCalendarScope}
                       showZhIndicator={langFilter === 'ZH' || brandFilter === 'china_football'}
                       activeVideoRawUrl={activeVideoRawUrl}
@@ -616,6 +709,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
 
       <FootballMatchDetailSheet
         lang={lang}
+        shareRoomId={shareRoomId}
         showZhIndicator={langFilter === 'ZH' || brandFilter === 'china_football'}
         selectedMatchObj={selectedMatchObj}
         selectedSportsMatch={selectedSportsMatch}
@@ -625,7 +719,10 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
         activeVideoRawUrl={activeVideoRawUrl}
         loadingItemId={loadingItemId}
         loadingDetailId={loadingDetailId}
-        onClose={() => setSelectedMatchId(null)}
+        onClose={() => {
+          setSelectedMatchId(null);
+          setRequestedMatchSlug(null);
+        }}
         onLoadDetails={loadMatchDetails}
         onPlaySportsMatch={onPlaySportsMatch}
         onPlaySecondaryChannel={onPlaySecondaryChannel}

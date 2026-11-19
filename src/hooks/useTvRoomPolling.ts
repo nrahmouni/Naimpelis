@@ -98,12 +98,27 @@ export function useTvRoomPolling({
 
         if (data?.videoState) {
           setVideoState((prev) => {
-            const next = data.videoState as VideoState;
+            const rawNext = data.videoState as VideoState;
+            const offsetMs = socketService.serverClockOffsetMs || 0;
+            const next: VideoState =
+              Number.isFinite(rawNext.lastUpdated) && rawNext.lastUpdated > 0 && Math.abs(offsetMs) >= 150
+                ? { ...rawNext, lastUpdated: rawNext.lastUpdated - offsetMs }
+                : rawNext;
             const urlChanged = next.url !== prev.url || next.mode !== prev.mode;
             const playChanged = next.isPlaying !== prev.isPlaying;
             const trackChanged = next.activeTrackIndex !== prev.activeTrackIndex;
-            const timeDrift =
-              !next.isLive && Math.abs((next.currentTime || 0) - (prev.currentTime || 0)) > 3.2;
+            const now = Date.now();
+            const prevElapsed =
+              prev.isPlaying && !prev.isLive && prev.lastUpdated > 0
+                ? Math.max(0, (now - prev.lastUpdated) / 1000)
+                : 0;
+            const nextElapsed =
+              next.isPlaying && !next.isLive && next.lastUpdated > 0
+                ? Math.max(0, (now - next.lastUpdated) / 1000)
+                : 0;
+            const prevExpected = (prev.currentTime || 0) + prevElapsed;
+            const nextExpected = (next.currentTime || 0) + nextElapsed;
+            const timeDrift = !next.isLive && Math.abs(nextExpected - prevExpected) > 3.5;
 
             if (urlChanged || playChanged || trackChanged || timeDrift) {
               return next;

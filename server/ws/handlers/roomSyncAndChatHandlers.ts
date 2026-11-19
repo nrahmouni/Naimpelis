@@ -54,9 +54,21 @@ export const handleSyncAndChatMessage: WsMessageHandler = async (
     const { roomId: rawRoomId, action, videoState: incomingState, updatedBy } = payload || {};
     const roomId = String(rawRoomId || '').trim().toLowerCase();
     const room = rooms.get(roomId);
-    if (!room || !incomingState) return true;
+    if (!room) return true;
 
     const senderMeta = clients.get(ws);
+    if (action === 'sync_request') {
+      ws.send(
+        JSON.stringify({
+          type: 'ROOM_STATE',
+          payload: { ...serializeRoomForClient(room, senderMeta?.userId || ''), serverTime: Date.now() },
+        })
+      );
+      return true;
+    }
+
+    if (!incomingState) return true;
+
     const isMediaChange =
       action === 'change_url' ||
       (typeof incomingState.url === 'string' && incomingState.url !== room.videoState.url);
@@ -95,9 +107,20 @@ export const handleSyncAndChatMessage: WsMessageHandler = async (
       return true;
     }
 
+    const baseState = computeAuthoritativeVideoState(room);
+    const hasIncomingCurrentTime =
+      typeof incomingState.currentTime === 'number' && Number.isFinite(incomingState.currentTime);
+
     room.videoState = {
       ...room.videoState,
       ...incomingState,
+      currentTime: isMediaChange
+        ? hasIncomingCurrentTime
+          ? incomingState.currentTime
+          : 0
+        : hasIncomingCurrentTime
+        ? incomingState.currentTime
+        : baseState.currentTime,
       lastUpdated: Date.now(),
       updatedBy: String(updatedBy || senderMeta?.userName || 'Anfitrión'),
     };

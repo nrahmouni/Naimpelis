@@ -23,6 +23,7 @@ import type {
 import { triggerHaptic } from '../utils/haptics';
 import { usePullToRefresh } from '../lib/viewTransition';
 import { isSameCatalogItem } from '../utils/storage';
+import { useAppStore } from '../store/useAppStore';
 import { MediaDetailsModal } from './MediaDetailsModal';
 import {
   normalizeCatalogPillar,
@@ -109,6 +110,8 @@ interface MediaCatalogHubProps {
   onCineCastellanoChange?: (enabled: boolean) => void;
   futbolTab?: 'matches' | 'channels';
   onFutbolTabChange?: (tab: 'matches' | 'channels') => void;
+  sessionMode?: 'solo' | 'party';
+  roomId?: string;
 }
 
 export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
@@ -145,7 +148,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   onCineCastellanoChange,
   futbolTab: controlledFutbolTab,
   onFutbolTabChange,
+  sessionMode = 'party',
+  roomId,
 }) => {
+  const shareRoomId = sessionMode !== 'solo' && roomId ? roomId : undefined;
   const [internalWatchlistOnly, setInternalWatchlistOnly] = useState(false);
   const showWatchlistOnly =
     controlledWatchlistOnly !== undefined ? controlledWatchlistOnly : internalWatchlistOnly;
@@ -231,6 +237,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       <MediaDetailsModal
         item={vod.previewItem}
         lang={lang}
+        shareRoomId={shareRoomId}
         defaultAudioLang={
           effectiveCineCastellano
             ? 'ES'
@@ -241,7 +248,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             : 'VOSE'
         }
         isBookmarked={vod.previewItem ? isBookmarked(vod.previewItem) : false}
-        onClose={() => vod.setPreviewItem(null)}
+        onClose={() => {
+          vod.setPreviewItem(null);
+          useAppStore.getState().setRequestedMovieModal(null);
+        }}
         onPlayMovie={(m, pLang, opts) => {
           onExternalSearchChange?.('');
           onPlayMovie(m, pLang, opts);
@@ -249,6 +259,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
         onOpenSeriesEpisodes={(tmdbId, forceSpanish) => {
           const seed = vod.previewItem || undefined;
           vod.setPreviewItem(null);
+          useAppStore.getState().setRequestedMovieModal(null);
           onExternalSearchChange?.('');
           vod.openSeriesDetails(tmdbId, seed?.seasonNumber || 1, seed, Boolean(forceSpanish));
         }}
@@ -270,6 +281,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       <SeriesEpisodePickerModal
         lang={lang}
         selectedSeries={vod.selectedSeries}
+        highlightedEpisodeNumber={vod.highlightedEpisodeNumber}
+        shareRoomId={shareRoomId}
         seriesModalLang={vod.seriesModalLang}
         forceSpanishSeriesActive={vod.forceSpanishSeriesActive}
         loadingSeriesDetails={vod.loadingSeriesDetails}
@@ -277,7 +290,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
         loadingItemId={loadingItemId}
         watchHistory={watchHistory}
         isBookmarked={isBookmarked}
-        onClose={() => vod.setSelectedSeries(null)}
+        onClose={() => {
+          vod.setSelectedSeries(null);
+          vod.setHighlightedEpisodeNumber(null);
+          useAppStore.getState().setRequestedSeriesModal(null);
+        }}
         onSeriesModalLangChange={vod.setSeriesModalLang}
         onOpenSeriesDetails={vod.openSeriesDetails}
         onToggleBookmark={handleToggleBookmark}
@@ -357,6 +374,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {(worldMode === 'futbol' || (!worldMode && activeSection === 'sports')) && (
         <FootballWorldView
           lang={lang}
+          shareRoomId={shareRoomId}
           pull={futbolPull}
           effectiveFutbolTab={effectiveFutbolTab}
           setEffectiveFutbolTab={setEffectiveFutbolTab}
@@ -387,6 +405,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {(worldMode === 'tv' || (!worldMode && activeSection === 'tdt')) && (
         <LiveTvWorldView
           lang={lang}
+          shareRoomId={shareRoomId}
           pull={tvPull}
           tdtChannels={liveTv.tdtChannels}
           filteredChannels={liveTv.filteredTdtChannels}

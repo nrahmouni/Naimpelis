@@ -296,10 +296,18 @@ export function createInitialRoomRecord(roomId: string, roomName?: string): Room
 }
 
 export function computeAuthoritativeVideoState(room: RoomRecord) {
+  const now = Date.now();
   const vs = { ...room.videoState };
-  if (vs.isPlaying && !vs.isLive && (vs.mode === 'hls' || vs.mode === 'direct' || vs.mode === 'youtube')) {
-    const elapsedSec = Math.max(0, (Date.now() - vs.lastUpdated) / 1000);
-    vs.currentTime = vs.currentTime + elapsedSec;
+  if (
+    vs.isPlaying &&
+    !vs.isLive &&
+    (vs.mode === 'hls' || vs.mode === 'direct' || vs.mode === 'youtube') &&
+    Number.isFinite(vs.lastUpdated) &&
+    vs.lastUpdated > 0
+  ) {
+    const elapsedSec = Math.max(0, (now - vs.lastUpdated) / 1000);
+    vs.currentTime = (Number.isFinite(vs.currentTime) ? vs.currentTime : 0) + elapsedSec;
+    vs.lastUpdated = now;
   }
   return vs;
 }

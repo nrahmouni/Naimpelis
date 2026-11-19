@@ -1,12 +1,11 @@
-import { useEffect, type MutableRefObject } from 'react';
+import { useEffect, useRef, type MutableRefObject } from 'react';
 import Hls from 'hls.js';
-import { socketService } from '../../services/socket';
 import { pickLang } from '../../utils/i18n';
 import type { AppLanguage, VideoState } from '../../types';
 import { formatTimecode } from './playerTypes';
 import {
+  createLivePlaybackHealthMonitor,
   isAndroidChromeBrowser,
-  isRenderedFrameGreenOrCorrupt,
 } from './hlsHealthWatchdog';
 
 interface UseHlsPlaybackEngineOptions {
@@ -78,6 +77,11 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     onAutoSwitchBackupTrack,
   } = opts;
 
+  const lastSyncedEventKeyRef = useRef<string>('');
+  const prevSyncOffsetMsRef = useRef<number>(syncOffsetMs);
+  const playbackSpeedRef = useRef<number>(playbackSpeed);
+  playbackSpeedRef.current = playbackSpeed;
+
   // Pause local phone decoding when Battery Saver Remote Mode is enabled
   useEffect(() => {
     if (!hasConnectedSmartTv && !isCastingToTv) {
@@ -127,9 +131,10 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
 
     let cancelled = false;
     let videoWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
-    let frameHealthTimer: ReturnType<typeof setTimeout> | null = null;
+    let frameHealthInterval: ReturnType<typeof setInterval> | null = null;
     let didTriggerBackupSwitch = false;
     const isAndroidChrome = isAndroidChromeBrowser();
+    const liveHealthMonitor = createLivePlaybackHealthMonitor();
     const triggerBackupSwitch = (reason: string) => {
       if (
         cancelled ||
@@ -214,13 +219,13 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         backBufferLength: 20,
         maxBufferLength: 35,
         maxMaxBufferLength: 75,
-        maxBufferHole: 0.5,
+        maxBufferHole: videoState.isLive ? 0.3 : 0.5,
         maxFragLookUpTolerance: 0.25,
         highBufferWatchdogPeriod: 2,
-        nudgeOffset: 0.1,
-        nudgeMaxRetry: 10,
-        stretchShortVideoTrack: true,
-        maxAudioFramesDrift: 4,
+        nudgeOffset: videoState.isLive ? 0.05 : 0.1,
+        nudgeMaxRetry: videoState.isLive ? 5 : 10,
+        stretchShortVideoTrack: !videoState.isLive,
+        maxAudioFramesDrift: videoState.isLive ? 2 : 4,
         abrEwmaDefaultEstimate: 3_500_000,
         manifestLoadingTimeOut: 20000,
         manifestLoadingMaxRetry: 8,
@@ -230,7 +235,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         levelLoadingRetryDelay: 1000,
         fragLoadingTimeOut: 25000,
         fragLoadingMaxRetry: 8,
-        fragLoadingRetryDelay: 1000,
+        fragLoadingRetryDelay: 700,
       });
       hlsRef.current = hls;
 
@@ -310,21 +315,22 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
           }
         }, isAndroidChrome ? 2600 : 4000);
 
-        if (videoState.isLive && onAutoSwitchBackupTrack) {
-          if (frameHealthTimer) clearTimeout(frameHealthTimer);
-          frameHealthTimer = setTimeout(() => {
-            if (cancelled || !video || video.paused) return;
-            const firstCheck = isRenderedFrameGreenOrCorrupt(video);
-            if (firstCheck.corrupt) {
-              setTimeout(() => {
-                if (cancelled || !video || video.paused) return;
-                const secondCheck = isRenderedFrameGreenOrCorrupt(video);
-                if (secondCheck.corrupt) {
-                  triggerBackupSwitch(secondCheck.reason || 'green_frame');
-                }
-              }, 700);
+        if (videoState.isLive) {
+          if (frameHealthInterval) clearInterval(frameHealthInterval);
+          liveHealthMonitor.reset();
+          frameHealthInterval = setInterval(() => {
+            if (cancelled || !video || video.paused || hlsRef.current !== hls) return;
+            const res = liveHealthMonitor.check(video, Date.now());
+            if (res.action === 'recover_media') {
+              try {
+                hls.recoverMediaError();
+              } catch {
+                // ignore
+              }
+            } else if (res.action === 'switch_backup') {
+              triggerBackupSwitch(res.reason || 'live_corruption');
             }
-          }, 2800);
+          }, 2500);
         }
       });
 
@@ -357,6 +363,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
       let mediaRecoveries = 0;
       let networkRecoveries = 0;
       let parsingBurstErrors = 0;
+      let lastNonFatalRecoverAt = 0;
 
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
         networkRecoveries = 0;
@@ -373,7 +380,14 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
           ) {
             parsingBurstErrors += 1;
             const threshold = isAndroidChrome ? 3 : 5;
-            if (parsingBurstErrors >= threshold) {
+            if (parsingBurstErrors === 2 && Date.now() - lastNonFatalRecoverAt > 15_000) {
+              lastNonFatalRecoverAt = Date.now();
+              try {
+                hls.recoverMediaError();
+              } catch {
+                // ignore
+              }
+            } else if (parsingBurstErrors >= threshold) {
               triggerBackupSwitch(`hls_${data.details}`);
             }
           }
@@ -399,6 +413,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         } else if (triggerBackupSwitch(`fatal_${data.type}_${data.details || 'error'}`)) {
           setIsBuffering(true);
         } else if (isRealAppleHls) {
+          const preservedTimeSec = video.currentTime > 3 ? Math.floor(video.currentTime) : targetResumeSec;
           hls.destroy();
           hlsRef.current = null;
           video.src = videoState.url;
@@ -406,7 +421,21 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
             'loadedmetadata',
             () => {
               setIsBuffering(false);
-              startPlaybackSafely();
+              if (preservedTimeSec > 3) {
+                try {
+                  video.currentTime = preservedTimeSec;
+                } catch {
+                  // ignore
+                }
+              }
+              if (videoState.isPlaying) {
+                video.play().catch(() => {
+                  video.muted = true;
+                  setIsMuted(true);
+                  video.play().catch(() => {});
+                });
+                setLocalPlaying(true);
+              }
             },
             { once: true }
           );
@@ -482,7 +511,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     return () => {
       cancelled = true;
       if (videoWatchdogTimer) clearTimeout(videoWatchdogTimer);
-      if (frameHealthTimer) clearTimeout(frameHealthTimer);
+      if (frameHealthInterval) clearInterval(frameHealthInterval);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -499,11 +528,48 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     };
   }, [videoState.mode, videoState.url]);
 
+  // Apply local playback speed without re-running remote seek drift sync
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || (videoState.mode !== 'hls' && videoState.mode !== 'direct')) return;
+    const nextRate = playbackSpeed || 1;
+    if (Math.abs((video.playbackRate || 1) - nextRate) > 0.005) {
+      try {
+        video.playbackRate = nextRate;
+      } catch {
+        // ignore
+      }
+    }
+  }, [playbackSpeed, videoState.mode, videoRef]);
+
+  // Apply manual sync offset delta relative to current position instead of resetting to stale videoState.currentTime
+  useEffect(() => {
+    const deltaMs = syncOffsetMs - prevSyncOffsetMsRef.current;
+    prevSyncOffsetMsRef.current = syncOffsetMs;
+    if (deltaMs === 0) return;
+    const video = videoRef.current;
+    if (!video || videoState.isLive || (videoState.mode !== 'hls' && videoState.mode !== 'direct')) {
+      return;
+    }
+    if (video.readyState >= 1) {
+      try {
+        video.currentTime = Math.max(0, (video.currentTime || 0) + deltaMs / 1000);
+      } catch {
+        // ignore
+      }
+    }
+  }, [syncOffsetMs, videoState.isLive, videoState.mode, videoRef]);
+
   // Synchronize remote Play / Pause / Smooth Clock-Offset Drift Compensation
   useEffect(() => {
     if (videoState.mode !== 'hls' && videoState.mode !== 'direct') return;
     const video = videoRef.current;
     if (!video || !videoState.url) return;
+
+    const eventKey = `${videoState.url}|${videoState.isPlaying ? 1 : 0}|${videoState.currentTime}|${videoState.lastUpdated}`;
+    const isNewSyncEvent = lastSyncedEventKeyRef.current !== eventKey;
+    lastSyncedEventKeyRef.current = eventKey;
+    if (!isNewSyncEvent) return;
 
     isApplyingRemoteRef.current = true;
     if (smoothDriftTimerRef.current) {
@@ -511,41 +577,43 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
       smoothDriftTimerRef.current = null;
     }
 
+    const baseRate = playbackSpeedRef.current || 1;
+
     if (!videoState.isLive && Number.isFinite(videoState.currentTime) && video.readyState >= 1) {
-      const serverNow = Date.now() + socketService.serverClockOffsetMs;
-      const elapsedSec =
+      const now = Date.now();
+      const rawElapsedSec =
         videoState.isPlaying && Number.isFinite(videoState.lastUpdated) && videoState.lastUpdated > 0
-          ? Math.max(0, Math.min(12, (serverNow - videoState.lastUpdated) / 1000))
+          ? Math.max(0, (now - videoState.lastUpdated) / 1000)
           : 0;
-      const expectedTime = videoState.currentTime + elapsedSec + syncOffsetMs / 1000;
+      const elapsedSec = rawElapsedSec < 12 * 3600 ? rawElapsedSec * baseRate : 0;
+      const expectedTime = videoState.currentTime + elapsedSec + prevSyncOffsetMsRef.current / 1000;
       const signedDrift = expectedTime - (video.currentTime || 0); // >0 means local client is behind
       const absDrift = Math.abs(signedDrift);
 
       if (absDrift > 2.5) {
         try {
-          video.playbackRate = playbackSpeed || 1;
+          video.playbackRate = baseRate;
           video.currentTime = Math.max(0, expectedTime);
         } catch {
           // ignore
         }
       } else if (videoState.isPlaying && absDrift >= 0.35 && absDrift <= 2.0) {
         // Gentle catch-up without triggering MSE seeks or buffering stalls
-        const baseRate = playbackSpeed || 1;
         const nudgeRate =
           signedDrift > 0 ? Math.min(1.04, baseRate * 1.02) : Math.max(0.96, baseRate * 0.98);
         try {
           video.playbackRate = nudgeRate;
           smoothDriftTimerRef.current = setTimeout(() => {
             if (videoRef.current) {
-              videoRef.current.playbackRate = playbackSpeed || 1;
+              videoRef.current.playbackRate = playbackSpeedRef.current || 1;
             }
           }, 2600);
         } catch {
           // ignore
         }
-      } else if (Math.abs((video.playbackRate || 1) - (playbackSpeed || 1)) > 0.005) {
+      } else if (Math.abs((video.playbackRate || 1) - baseRate) > 0.005) {
         try {
-          video.playbackRate = playbackSpeed || 1;
+          video.playbackRate = baseRate;
         } catch {
           // ignore
         }
@@ -582,8 +650,6 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     videoState.mode,
     videoState.url,
     videoState.isLive,
-    playbackSpeed,
-    syncOffsetMs,
     isApplyingRemoteRef,
     setIsMuted,
     setLocalPlaying,

@@ -1,4 +1,5 @@
 import React from 'react';
+import { socketService } from '../services/socket';
 import { playCinemaSound } from '../utils/haptics';
 import { pickLang } from '../utils/i18n';
 import { addRecentRoom, getRecentRooms } from '../utils/storage';
@@ -47,6 +48,7 @@ export interface RoomSocketDispatchContext {
   catalogSectionRef: React.MutableRefObject<CatalogSection>;
   handlePlayQueueItemRef: React.MutableRefObject<(item: RoomQueueItem) => void>;
   tvClaimTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  pendingSoloUpgradeVideoStateRef?: React.MutableRefObject<VideoState | null>;
   recordStateInWatchHistory: (vState: VideoState) => void;
   rememberSessionPin: (targetCode: string, pinCode: string) => void;
   showHostLockNotice: (hostDisplayName?: string, reason?: string) => void;
@@ -96,6 +98,22 @@ export interface RoomSocketDispatchContext {
   >;
 }
 
+function normalizeServerVideoStateToLocalClock(
+  vs: VideoState,
+  serverTime?: unknown
+): VideoState {
+  if (!vs || !Number.isFinite(vs.lastUpdated) || vs.lastUpdated <= 0) return vs;
+  const offsetMs =
+    typeof serverTime === 'number' && Number.isFinite(serverTime)
+      ? serverTime - Date.now()
+      : socketService.serverClockOffsetMs;
+  if (!Number.isFinite(offsetMs) || Math.abs(offsetMs) < 150) return vs;
+  return {
+    ...vs,
+    lastUpdated: vs.lastUpdated - offsetMs,
+  };
+}
+
 export function dispatchRoomSocketEvent(event: SocketEvent, ctx: RoomSocketDispatchContext) {
   const { type, payload } = event;
   const {
@@ -113,6 +131,7 @@ export function dispatchRoomSocketEvent(event: SocketEvent, ctx: RoomSocketDispa
     catalogSectionRef,
     handlePlayQueueItemRef,
     tvClaimTimerRef,
+    pendingSoloUpgradeVideoStateRef,
     recordStateInWatchHistory,
     rememberSessionPin,
     showHostLockNotice,
@@ -196,8 +215,35 @@ export function dispatchRoomSocketEvent(event: SocketEvent, ctx: RoomSocketDispa
     setRoomQueue(payload.queue || []);
     addRecentRoom({ id: roomId, name: nextRoomTitle });
     setRecentRooms(getRecentRooms());
-    const roomVs = payload.videoState;
-    if (roomVs && !isExtractingRef.current) {
+    const pendingSoloVs = pendingSoloUpgradeVideoStateRef?.current || null;
+    if (pendingSoloUpgradeVideoStateRef) {
+      pendingSoloUpgradeVideoStateRef.current = null;
+    }
+
+    const rawRoomVs = payload.videoState;
+    if (pendingSoloVs && pendingSoloVs.mode !== 'idle' && pendingSoloVs.url) {
+      const upgradedVs: VideoState = {
+        ...pendingSoloVs,
+        lastUpdated: Date.now(),
+        updatedBy: profileName,
+      };
+      if (!rawRoomVs || rawRoomVs.mode === 'idle' || !rawRoomVs.url) {
+        videoStateUrlRef.current = upgradedVs.url;
+        socketService.syncVideoState('change_url', upgradedVs, profileName);
+        recordStateInWatchHistory(upgradedVs);
+      }
+    } else if (rawRoomVs && !isExtractingRef.current) {
+      const roomVs = normalizeServerVideoStateToLocalClock(rawRoomVs, payload.serverTime);
+      const effectiveCreatorId = payload.creatorId || payload.hostId || '';
+      const humanParticipants = (payload.participants || []).filter(
+        (p) => !p.name?.includes('(TV)') && p.avatar !== '📺'
+      );
+      const isSoleOrControllingHost =
+        !isTvMode &&
+        (humanParticipants.length <= 1 ||
+          (effectiveCreatorId === profileId &&
+            (!roomVs.updatedBy || roomVs.updatedBy === profileName)));
+
       setVideoState((prev) => {
         if (
           prev.url &&
@@ -210,7 +256,8 @@ export function dispatchRoomSocketEvent(event: SocketEvent, ctx: RoomSocketDispa
           prev.url &&
           prev.url === roomVs.url &&
           prev.mode === roomVs.mode &&
-          (roomVs.lastUpdated || 0) <= (prev.lastUpdated || 0)
+          prev.mode !== 'idle' &&
+          ((roomVs.lastUpdated || 0) <= (prev.lastUpdated || 0) || isSoleOrControllingHost)
         ) {
           return prev;
         }
@@ -285,11 +332,29 @@ export function dispatchRoomSocketEvent(event: SocketEvent, ctx: RoomSocketDispa
       playCinemaSound('join');
     }
   } else if (type === 'VIDEO_STATE_UPDATED') {
-    const nextVideoState = payload.videoState;
-    if (nextVideoState) {
+    if (payload.action === 'sync_request') return;
+    const rawNextVideoState = payload.videoState;
+    if (rawNextVideoState) {
+      const nextVideoState = normalizeServerVideoStateToLocalClock(
+        rawNextVideoState,
+        payload.serverTime
+      );
       const prevUrl = videoStateUrlRef.current;
       videoStateUrlRef.current = nextVideoState.url;
       setVideoState((prev) => {
+        if (
+          payload.action === 'change_url' &&
+          !isTvMode &&
+          prev.url &&
+          prev.mode !== 'idle' &&
+          prev.url === nextVideoState.url &&
+          prev.mode === nextVideoState.mode &&
+          prev.isPlaying === nextVideoState.isPlaying &&
+          nextVideoState.updatedBy === profileName &&
+          Math.abs((nextVideoState.currentTime || 0) - (prev.currentTime || 0)) < 3
+        ) {
+          return prev;
+        }
         if (nextVideoState.url && nextVideoState.url !== prev.url && nextVideoState.mode !== 'idle') {
           setIsPlayerClosedLocally(false);
         }

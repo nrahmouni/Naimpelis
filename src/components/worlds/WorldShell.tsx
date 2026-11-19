@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Mic } from 'lucide-react';
+import { Mic, Share2, Users } from 'lucide-react';
 import type { AppLanguage } from '../../types';
 import type { WorldId } from '../../store/useAppStore';
 import { pickLang } from '../../utils/i18n';
@@ -20,6 +20,9 @@ interface WorldShellProps {
   searchPlaceholder?: string;
   headerActions?: React.ReactNode;
   onOpenVoiceAssistant?: () => void;
+  sessionMode?: 'solo' | 'party';
+  onUpgradeSoloToParty?: () => void;
+  onShareWorld?: () => void;
   fullHeight?: boolean;
   className?: string;
   children: React.ReactNode;
@@ -36,6 +39,9 @@ export const WorldShell: React.FC<WorldShellProps> = ({
   searchPlaceholder,
   headerActions,
   onOpenVoiceAssistant,
+  sessionMode,
+  onUpgradeSoloToParty,
+  onShareWorld,
   fullHeight = false,
   className = '',
   children,
@@ -129,6 +135,46 @@ export const WorldShell: React.FC<WorldShellProps> = ({
 
               <div className="flex items-center gap-1.5 shrink-0">
                 {headerActions}
+                {sessionMode === 'solo' && onUpgradeSoloToParty && world !== 'sala' && (
+                  <button
+                    type="button"
+                    onClick={onUpgradeSoloToParty}
+                    title={pickLang(lang, {
+                      es: 'Crear sala con amigos',
+                      ca: 'Crear sala amb amics',
+                      en: 'Watch with friends',
+                    })}
+                    className="min-h-11 px-3 rounded-2xl bg-[#9146FF]/22 hover:bg-[#9146FF]/35 border border-[#BF94FF]/45 text-xs font-bold text-[#E9D5FF] hover:text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all whitespace-nowrap"
+                  >
+                    <Users className="w-4 h-4 shrink-0" />
+                    <span className="hidden sm:inline">
+                      {pickLang(lang, {
+                        es: 'Ver con amigos',
+                        ca: 'Veure amb amics',
+                        en: 'Watch party',
+                      })}
+                    </span>
+                  </button>
+                )}
+                {onShareWorld && (
+                  <button
+                    type="button"
+                    onClick={onShareWorld}
+                    aria-label={pickLang(lang, {
+                      es: 'Compartir enlace',
+                      ca: 'Compartir enllaç',
+                      en: 'Share link',
+                    })}
+                    title={pickLang(lang, {
+                      es: 'Compartir enlace',
+                      ca: 'Compartir enllaç',
+                      en: 'Share link',
+                    })}
+                    className="min-w-11 min-h-11 rounded-2xl bg-[#10121C] hover:bg-white/[0.09] border border-white/[0.09] flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer active:scale-95 transition-all"
+                  >
+                    <Share2 className="w-4 h-4" />
+                  </button>
+                )}
                 {onOpenVoiceAssistant && (
                   <button
                     type="button"

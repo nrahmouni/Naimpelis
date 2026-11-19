@@ -221,4 +221,7 @@ export interface NativeCinemaPlayerProps {
     friendCode?: string;
   }) => void;
   onVideoEnded?: () => void;
+  sessionMode?: 'solo' | 'party';
+  onUpgradeSoloToParty?: () => void;
+  onShareCurrentMedia?: () => void;
 }

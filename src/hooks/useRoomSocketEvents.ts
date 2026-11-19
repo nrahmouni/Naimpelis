@@ -5,6 +5,8 @@ import { addRecentRoom, getRecentRooms, type StoredProfile } from '../utils/stor
 import { dispatchRoomSocketEvent } from './roomSocketMessageDispatcher';
 import type { MobileNavTab } from '../utils/appSessionHelpers';
 import type { CatalogSection } from '../components/MediaCatalogHub';
+import type { SessionMode } from '../store/useAppStore';
+import { isDedicatedAppPath } from '../shared/dedicatedRoutes';
 import type {
   AppLanguage,
   BlackjackGameState,
@@ -34,6 +36,8 @@ import type {
 import type { RoomGameInvite, RoomGameInviteType, RoomMatchResponsesState } from '../shared/protocol';
 
 interface UseRoomSocketEventsOptions {
+  sessionMode: SessionMode;
+  hasAuthUser: boolean;
   inRoom: boolean;
   roomId: string;
   roomName: string;
@@ -57,6 +61,7 @@ interface UseRoomSocketEventsOptions {
   friendNoticeTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
   seenFriendNoticeBySenderRef: React.MutableRefObject<Map<string, number>>;
   tvClaimTimerRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
+  pendingSoloUpgradeVideoStateRef: React.MutableRefObject<VideoState | null>;
   recordStateInWatchHistory: (vState: VideoState) => void;
   rememberSessionPin: (targetCode: string, pinCode: string) => void;
   showHostLockNotice: (hostDisplayName?: string, reason?: string) => void;
@@ -119,6 +124,8 @@ interface UseRoomSocketEventsOptions {
 
 export function useRoomSocketEvents(opts: UseRoomSocketEventsOptions) {
   const {
+    sessionMode,
+    hasAuthUser,
     inRoom,
     roomId,
     roomName,
@@ -142,6 +149,7 @@ export function useRoomSocketEvents(opts: UseRoomSocketEventsOptions) {
     friendNoticeTimerRef,
     seenFriendNoticeBySenderRef,
     tvClaimTimerRef,
+    pendingSoloUpgradeVideoStateRef,
     recordStateInWatchHistory,
     rememberSessionPin,
     showHostLockNotice,
@@ -186,9 +194,11 @@ export function useRoomSocketEvents(opts: UseRoomSocketEventsOptions) {
     setForcedOpenGame,
   } = opts;
 
-  // Keep presence connected even on LobbyScreen (!inRoom) so friends can invite us in real time
+  // Keep presence connected on LobbyScreen or when authenticated in Solo mode so friends can still invite us
   useEffect(() => {
-    if (inRoom || isTvPairLobby) return;
+    if (isTvPairLobby) return;
+    if (inRoom && sessionMode !== 'solo') return;
+    if (sessionMode === 'solo' && !hasAuthUser) return;
     socketService.connectPresenceOnly({
       id: profile.id,
       name: profile.name,
@@ -197,7 +207,16 @@ export function useRoomSocketEvents(opts: UseRoomSocketEventsOptions) {
       isHost: false,
       joinedAt: Date.now(),
     });
-  }, [inRoom, isTvPairLobby, profile.id, profile.name, profile.avatar, profile.color]);
+  }, [
+    inRoom,
+    sessionMode,
+    hasAuthUser,
+    isTvPairLobby,
+    profile.id,
+    profile.name,
+    profile.avatar,
+    profile.color,
+  ]);
 
   // Global listener for online users, incoming room invitations, and friend-added notices
   useEffect(() => {
@@ -274,7 +293,7 @@ export function useRoomSocketEvents(opts: UseRoomSocketEventsOptions) {
 
   // Active Room Socket Synchronization & Multiplayer Game Protocol
   useEffect(() => {
-    if (!inRoom || !roomId) return;
+    if (!inRoom || !roomId || sessionMode === 'solo') return;
 
     const cleanCode = roomId.trim().toLowerCase();
     const matchedSaved = savedRoomsRef.current.find(
@@ -316,10 +335,21 @@ export function useRoomSocketEvents(opts: UseRoomSocketEventsOptions) {
     if (typeof window !== 'undefined') {
       const currentPath = window.location.pathname.toLowerCase();
       if (currentPath !== '/kids' && !isKidsRouteMode) {
-        const shortPath = isTvMode
-          ? `/${encodeURIComponent(roomId)}?tv=1`
-          : `/${encodeURIComponent(roomId)}`;
-        window.history.replaceState({}, '', shortPath);
+        if (isDedicatedAppPath(window.location.pathname)) {
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('room', roomId);
+            if (isTvMode) url.searchParams.set('tv', '1');
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+          } catch {
+            // ignore
+          }
+        } else {
+          const shortPath = isTvMode
+            ? `/${encodeURIComponent(roomId)}?tv=1`
+            : `/${encodeURIComponent(roomId)}`;
+          window.history.replaceState({}, '', shortPath);
+        }
       }
     }
 
@@ -339,6 +369,7 @@ export function useRoomSocketEvents(opts: UseRoomSocketEventsOptions) {
         catalogSectionRef,
         handlePlayQueueItemRef,
         tvClaimTimerRef,
+        pendingSoloUpgradeVideoStateRef,
         recordStateInWatchHistory,
         rememberSessionPin,
         showHostLockNotice,
@@ -384,6 +415,7 @@ export function useRoomSocketEvents(opts: UseRoomSocketEventsOptions) {
       socketService.disconnect();
     };
   }, [
+    sessionMode,
     inRoom,
     roomId,
     isTvMode,

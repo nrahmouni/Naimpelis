@@ -44,6 +44,72 @@ export function getCachedSportsMatches(): any[] {
   return cachedSportsSchedule?.matches || [];
 }
 
+export function getCachedFootballBoardSnapshot(): { dateKey: string; matches: any[]; ts: number } | null {
+  return cachedFootballBoard;
+}
+
+function orderBoardChannels(channels: any[], leagueSlug?: string) {
+  const healthChecked = channelHealthMonitor.prioritizeTracks(channels || []);
+  const alive = healthChecked.filter((c: any) => c.health?.status !== 'down');
+  const down = healthChecked.filter((c: any) => c.health?.status === 'down');
+  return [...sortTracksWithDaznPriority(alive, leagueSlug), ...down];
+}
+
+export async function getFootballBoardMatches(opts?: {
+  date?: string;
+  calendar?: string;
+  league?: string;
+  team?: string;
+}): Promise<{ dateKey: string; calendarScope?: string; matches: any[] }> {
+  const requestedDate = String(opts?.date || '').replace(/\D/g, '').slice(0, 8);
+  const madridToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' })
+    .format(new Date())
+    .replace(/-/g, '');
+  const dateKey = requestedDate.length === 8 ? requestedDate : madridToday;
+  const isToday = dateKey === madridToday;
+  const cacheTtlMs = isToday ? 18 * 1000 : 2 * 60 * 1000;
+
+  const calendarScope = resolveCalendarScopeMode({
+    calendar: typeof opts?.calendar === 'string' ? opts.calendar : '',
+    league: typeof opts?.league === 'string' ? opts.league : '',
+    team: typeof opts?.team === 'string' ? opts.team : '',
+  });
+
+  if (calendarScope) {
+    try {
+      const liveFeeds = await fetchLiveSportsAgendaFeeds().catch(() => ({
+        rojaMatches: [],
+        streamXhdFootball: [],
+      }));
+      const calendarItems = await fetchExtendedFootballCalendar(
+        calendarScope,
+        liveFeeds.rojaMatches
+      );
+      const prioritized = calendarItems.map((m) => ({
+        ...m,
+        channels: orderBoardChannels(m.channels || [], m.leagueSlug),
+      }));
+      return {
+        dateKey,
+        calendarScope: calendarScope.key,
+        matches: prioritized,
+      };
+    } catch (err) {
+      console.warn('Extended football calendar error:', err);
+    }
+  }
+
+  if (
+    cachedFootballBoard &&
+    cachedFootballBoard.dateKey === dateKey &&
+    Date.now() - cachedFootballBoard.ts < cacheTtlMs
+  ) {
+    return { dateKey, matches: cachedFootballBoard.matches };
+  }
+
+  return await fetchAndCacheFootballBoard({ dateKey, isToday, madridToday });
+}
+
 export async function getLiveVoiceMatches() {
   if (cachedSportsSchedule && cachedSportsSchedule.matches.length > 0) {
     return cachedSportsSchedule.matches;
@@ -57,141 +123,13 @@ export async function getLiveVoiceMatches() {
   }
 }
 
-export function registerSportsRoutes(app: Express): void {
-  app.get('/api/catalog/sports', async (_req, res) => {
-    if (cachedSportsSchedule && Date.now() - cachedSportsSchedule.ts < 90 * 1000) {
-      return res.json({
-        success: true,
-        events: channelHealthMonitor.prioritizeChannels(cachedSportsSchedule.matches),
-      });
-    }
+async function fetchAndCacheFootballBoard(opts: {
+  dateKey: string;
+  isToday: boolean;
+  madridToday: string;
+}): Promise<{ dateKey: string; matches: any[] }> {
+  const { dateKey, isToday, madridToday } = opts;
 
-    const permanentChannels = getPermanent247SportsMatches();
-    const { rojaMatches } = await fetchLiveSportsAgendaFeeds();
-    const combined = [...permanentChannels, ...rojaMatches.slice(0, 40)];
-    cachedSportsSchedule = { matches: combined, ts: Date.now() };
-
-    res.json({
-      success: true,
-      events: channelHealthMonitor.prioritizeChannels(combined),
-    });
-  });
-
-  app.get('/api/sports/scores', async (_req, res) => {
-    if (liveScoresCache && Date.now() - liveScoresCache.ts < 45 * 1000) {
-      return res.json({ success: true, scores: liveScoresCache.matches });
-    }
-
-    const feeds: { url: string; league: string; sport: 'soccer' | 'basketball' }[] = [
-      { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard', league: 'LaLiga', sport: 'soccer' },
-      { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard', league: 'Champions', sport: 'soccer' },
-      { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard', league: 'Premier', sport: 'soccer' },
-      { url: 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard', league: 'NBA', sport: 'basketball' },
-    ];
-
-    try {
-      const responses = await Promise.all(
-        feeds.map((f) =>
-          fetch(f.url, { signal: AbortSignal.timeout(4000) })
-            .then((r) => (r.ok ? r.json() : null))
-            .then((json) => ({ feed: f, json }))
-            .catch(() => ({ feed: f, json: null }))
-        )
-      );
-
-      const parsed: any[] = [];
-      for (const { feed, json } of responses) {
-        const events: any[] = Array.isArray(json?.events) ? json.events : [];
-        for (const ev of events.slice(0, 6)) {
-          const comp = ev?.competitions?.[0];
-          const competitors: any[] = Array.isArray(comp?.competitors) ? comp.competitors : [];
-          const home = competitors.find((c) => c.homeAway === 'home') || competitors[0];
-          const away = competitors.find((c) => c.homeAway === 'away') || competitors[1];
-          if (!home || !away) continue;
-
-          const stateStr = String(ev?.status?.type?.state || '');
-          const isLive = stateStr === 'in';
-          const shortDetail =
-            ev?.status?.type?.shortDetail || ev?.status?.displayClock || (isLive ? 'EN JUEGO' : '');
-
-          parsed.push({
-            id: `${feed.league}-${ev.id}`,
-            league: feed.league,
-            sport: feed.sport,
-            homeTeam: home.team?.shortDisplayName || home.team?.displayName || 'Local',
-            awayTeam: away.team?.shortDisplayName || away.team?.displayName || 'Visitante',
-            homeScore: stateStr === 'pre' ? '-' : String(home.score ?? '0'),
-            awayScore: stateStr === 'pre' ? '-' : String(away.score ?? '0'),
-            homeLogo: home.team?.logo || undefined,
-            awayLogo: away.team?.logo || undefined,
-            statusText: shortDetail,
-            isLive,
-          });
-        }
-      }
-
-      parsed.sort((a, b) => Number(b.isLive) - Number(a.isLive));
-      liveScoresCache = { matches: parsed.slice(0, 18), ts: Date.now() };
-      res.json({ success: true, scores: liveScoresCache.matches });
-    } catch {
-      res.json({ success: true, scores: [] });
-    }
-  });
-
-  app.get('/api/sports/football-board', async (req, res) => {
-    const orderBoardChannels = (channels: any[], leagueSlug?: string) => {
-      const healthChecked = channelHealthMonitor.prioritizeTracks(channels || []);
-      const alive = healthChecked.filter((c: any) => c.health?.status !== 'down');
-      const down = healthChecked.filter((c: any) => c.health?.status === 'down');
-      return [...sortTracksWithDaznPriority(alive, leagueSlug), ...down];
-    };
-
-    const requestedDate = String(req.query.date || '').replace(/\D/g, '').slice(0, 8);
-    const madridToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' })
-      .format(new Date())
-      .replace(/-/g, '');
-    const dateKey = requestedDate.length === 8 ? requestedDate : madridToday;
-    const isToday = dateKey === madridToday;
-    const cacheTtlMs = isToday ? 18 * 1000 : 2 * 60 * 1000;
-
-    const calendarScope = resolveCalendarScopeMode({
-      calendar: typeof req.query.calendar === 'string' ? req.query.calendar : '',
-      league: typeof req.query.league === 'string' ? req.query.league : '',
-      team: typeof req.query.team === 'string' ? req.query.team : '',
-    });
-
-    if (calendarScope) {
-      try {
-        const liveFeeds = await fetchLiveSportsAgendaFeeds().catch(() => ({
-          rojaMatches: [],
-          streamXhdFootball: [],
-        }));
-        const calendarItems = await fetchExtendedFootballCalendar(
-          calendarScope,
-          liveFeeds.rojaMatches
-        );
-        const prioritized = calendarItems.map((m) => ({
-          ...m,
-          channels: orderBoardChannels(m.channels || [], m.leagueSlug),
-        }));
-        return res.json({
-          success: true,
-          dateKey,
-          calendarScope: calendarScope.key,
-          matches: prioritized,
-        });
-      } catch (err) {
-        console.warn('Extended football calendar error:', err);
-      }
-    }
-
-    if (
-      cachedFootballBoard &&
-      cachedFootballBoard.dateKey === dateKey &&
-      Date.now() - cachedFootballBoard.ts < cacheTtlMs
-    ) {
-      return res.json({ success: true, dateKey, matches: cachedFootballBoard.matches });
-    }
 
     try {
       const madridTimeFmt = new Intl.DateTimeFormat('es-ES', {
@@ -509,15 +447,106 @@ export function registerSportsRoutes(app: Express): void {
         ...m,
         channels: orderBoardChannels(m.channels || [], m.leagueSlug),
       }));
-      res.json({ success: true, dateKey, matches: prioritizedItems });
+      return { dateKey, matches: prioritizedItems };
     } catch (err) {
       console.warn('Football matchboard fetch error:', err);
       const fallbackItems = (cachedFootballBoard?.matches || []).map((m: any) => ({
         ...m,
         channels: orderBoardChannels(m.channels || [], m.leagueSlug),
       }));
-      res.json({ success: true, dateKey, matches: fallbackItems });
+      return { dateKey, matches: fallbackItems };
     }
+}
+
+export function registerSportsRoutes(app: Express): void {
+  app.get('/api/catalog/sports', async (_req, res) => {
+    if (cachedSportsSchedule && Date.now() - cachedSportsSchedule.ts < 90 * 1000) {
+      return res.json({
+        success: true,
+        events: channelHealthMonitor.prioritizeChannels(cachedSportsSchedule.matches),
+      });
+    }
+
+    const permanentChannels = getPermanent247SportsMatches();
+    const { rojaMatches } = await fetchLiveSportsAgendaFeeds();
+    const combined = [...permanentChannels, ...rojaMatches.slice(0, 40)];
+    cachedSportsSchedule = { matches: combined, ts: Date.now() };
+
+    res.json({
+      success: true,
+      events: channelHealthMonitor.prioritizeChannels(combined),
+    });
+  });
+
+  app.get('/api/sports/scores', async (_req, res) => {
+    if (liveScoresCache && Date.now() - liveScoresCache.ts < 45 * 1000) {
+      return res.json({ success: true, scores: liveScoresCache.matches });
+    }
+
+    const feeds: { url: string; league: string; sport: 'soccer' | 'basketball' }[] = [
+      { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard', league: 'LaLiga', sport: 'soccer' },
+      { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard', league: 'Champions', sport: 'soccer' },
+      { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard', league: 'Premier', sport: 'soccer' },
+      { url: 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard', league: 'NBA', sport: 'basketball' },
+    ];
+
+    try {
+      const responses = await Promise.all(
+        feeds.map((f) =>
+          fetch(f.url, { signal: AbortSignal.timeout(4000) })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((json) => ({ feed: f, json }))
+            .catch(() => ({ feed: f, json: null }))
+        )
+      );
+
+      const parsed: any[] = [];
+      for (const { feed, json } of responses) {
+        const events: any[] = Array.isArray(json?.events) ? json.events : [];
+        for (const ev of events.slice(0, 6)) {
+          const comp = ev?.competitions?.[0];
+          const competitors: any[] = Array.isArray(comp?.competitors) ? comp.competitors : [];
+          const home = competitors.find((c) => c.homeAway === 'home') || competitors[0];
+          const away = competitors.find((c) => c.homeAway === 'away') || competitors[1];
+          if (!home || !away) continue;
+
+          const stateStr = String(ev?.status?.type?.state || '');
+          const isLive = stateStr === 'in';
+          const shortDetail =
+            ev?.status?.type?.shortDetail || ev?.status?.displayClock || (isLive ? 'EN JUEGO' : '');
+
+          parsed.push({
+            id: `${feed.league}-${ev.id}`,
+            league: feed.league,
+            sport: feed.sport,
+            homeTeam: home.team?.shortDisplayName || home.team?.displayName || 'Local',
+            awayTeam: away.team?.shortDisplayName || away.team?.displayName || 'Visitante',
+            homeScore: stateStr === 'pre' ? '-' : String(home.score ?? '0'),
+            awayScore: stateStr === 'pre' ? '-' : String(away.score ?? '0'),
+            homeLogo: home.team?.logo || undefined,
+            awayLogo: away.team?.logo || undefined,
+            statusText: shortDetail,
+            isLive,
+          });
+        }
+      }
+
+      parsed.sort((a, b) => Number(b.isLive) - Number(a.isLive));
+      liveScoresCache = { matches: parsed.slice(0, 18), ts: Date.now() };
+      res.json({ success: true, scores: liveScoresCache.matches });
+    } catch {
+      res.json({ success: true, scores: [] });
+    }
+  });
+
+  app.get('/api/sports/football-board', async (req, res) => {
+    const result = await getFootballBoardMatches({
+      date: typeof req.query.date === 'string' ? req.query.date : undefined,
+      calendar: typeof req.query.calendar === 'string' ? req.query.calendar : undefined,
+      league: typeof req.query.league === 'string' ? req.query.league : undefined,
+      team: typeof req.query.team === 'string' ? req.query.team : undefined,
+    });
+    return res.json({ success: true, ...result });
   });
 
   app.get('/api/sports/match-details', async (req, res) => {

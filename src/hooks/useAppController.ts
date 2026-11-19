@@ -34,7 +34,7 @@ import {
 import { useViewLayoutMode } from '../components/MobileViewportGuard';
 import type { ProfileHubTab } from '../components/UserProfileHubModal';
 import { useThemeStore } from '../store/useThemeStore';
-import { useAppStore } from '../store/useAppStore';
+import { useAppStore, type SessionMode, type WorldId } from '../store/useAppStore';
 import { useNotificationStore } from '../store/useNotificationStore';
 import { useCloudSyncSubscriptions } from './useCloudSyncSubscriptions';
 import { useTvRemoteBridge } from './useTvRemoteBridge';
@@ -51,6 +51,7 @@ import { useViewportAndShortcuts } from './useViewportAndShortcuts';
 import { useRoomAuthoritativeState } from './useRoomAuthoritativeState';
 import { useRoomLifecycleActions } from './useRoomLifecycleActions';
 import { useRoomGameActions } from './useRoomGameActions';
+import { useDeepLinkRouter } from './useDeepLinkRouter';
 import { isGoogleTvEnvironment } from '../utils/tvSpatialNav';
 import {
   checkIsNestedSandboxFrame,
@@ -130,6 +131,11 @@ export function useAppController() {
   const [quickPoolLoading, setQuickPoolLoading] = useState<boolean>(false);
   const [nativeApkUpdate, setNativeApkUpdate] = useState<NativeApkUpdateAvailable | null>(null);
 
+  const storeSessionMode = useAppStore((s) => s.sessionMode);
+  const setSessionMode = useAppStore((s) => s.setSessionMode);
+  const storeHasEnteredApp = useAppStore((s) => s.hasEnteredApp);
+  const setHasEnteredApp = useAppStore((s) => s.setHasEnteredApp);
+  const shareToast = useAppStore((s) => s.shareToast);
   const reducedMotion = useThemeStore((s) => s.reducedMotion);
   const activeWorld = useAppStore((s) => s.activeWorld);
   const setActiveWorld = useAppStore((s) => s.setActiveWorld);
@@ -174,6 +180,32 @@ export function useAppController() {
     isGoogleTvApp
   );
 
+  const [bootSyncPending, setBootSyncPending] = useState<boolean>(true);
+  const isDedicatedSoloBoot = !effectiveInitialRoom && initialRoute.isDedicatedEntry;
+  const sessionMode: SessionMode = bootSyncPending
+    ? effectiveInitialRoom
+      ? 'party'
+      : isDedicatedSoloBoot
+      ? 'solo'
+      : storeSessionMode
+    : storeSessionMode;
+  const hasEnteredApp: boolean = bootSyncPending
+    ? storeHasEnteredApp || Boolean(effectiveInitialRoom) || isDedicatedSoloBoot
+    : storeHasEnteredApp;
+
+  useEffect(() => {
+    if (effectiveInitialRoom) {
+      setSessionMode('party');
+      setHasEnteredApp(true);
+    } else if (isDedicatedSoloBoot) {
+      setSessionMode('solo');
+      setHasEnteredApp(true);
+    }
+    setBootSyncPending(false);
+    // Run once on mount for initial deep-link/room boot
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [roomId, setRoomId] = useState<string>(effectiveInitialRoom);
   const [roomName, setRoomName] = useState<string>(initialRoomName);
   const [inRoom, setInRoom] = useState<boolean>(Boolean(effectiveInitialRoom));
@@ -200,6 +232,13 @@ export function useAppController() {
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
   const inRoomRef = useRef<boolean>(inRoom);
   inRoomRef.current = inRoom;
+  const sessionModeRef = useRef<SessionMode>(sessionMode);
+  sessionModeRef.current = sessionMode;
+  const hasEnteredAppRef = useRef<boolean>(hasEnteredApp);
+  hasEnteredAppRef.current = hasEnteredApp;
+  const upgradeSoloToPartyRef = useRef<
+    (opts?: { keepDedicatedUrl?: boolean; targetWorld?: WorldId; customRoomName?: string }) => string
+  >(() => '');
   const isNestedSandboxFrame = checkIsNestedSandboxFrame();
 
   const setCinemaModePersist = useCallback((next: boolean) => {
@@ -258,32 +297,64 @@ export function useAppController() {
     profile, isTvMode,
   });
 
-  const canChangeMedia = true;
+  const canChangeMedia = sessionMode === 'solo' || true;
   const canControlRoom = true;
   const voiceChat = useGameVoiceChat({
-    roomId, currentUserId: currentUser.id, lang, enabled: inRoom && Boolean(roomId),
+    roomId,
+    currentUserId: currentUser.id,
+    lang,
+    enabled: sessionMode !== 'solo' && inRoom && Boolean(roomId),
   });
-  const { data: liveScores = [] } = useLiveScoresQuery(inRoom && !isTvMode);
+  const { data: liveScores = [] } = useLiveScoresQuery((inRoom || hasEnteredApp) && !isTvMode);
   const liveMatchesCount = liveScores.filter((m) => m.isLive).length;
   const { data: homeFootballMatches = [] } = useFootballBoardQuery(
-    inRoom && !isTvMode && activeWorld === 'entry'
+    (inRoom || hasEnteredApp) && !isTvMode && activeWorld === 'entry'
   );
 
   const { activePortalTransition, portalOriginRect, portalLandingActive, preloadWorld, enterWorld } =
     useWorldNavigation({
-      roomId, reducedMotion, effectiveInitialRoom, initialIsKidsMode: initialRoute.isKidsMode,
-      initialDeepLinkGame, inRoomRef, mainScrollRef, catalogScrollRef, setActiveWorld,
-      setCatalogSection: roomState.setCatalogSection, setMobileTab: roomState.setMobileTab,
-      setUnreadChatCount: roomState.setUnreadChatCount, setIsInActiveGame: roomState.setIsInActiveGame,
-      setWorldSearchQuery, setShowWatchlistOnly,
+      sessionMode,
+      roomId,
+      reducedMotion,
+      effectiveInitialRoom,
+      initialIsKidsMode: initialRoute.isKidsMode,
+      initialDeepLinkGame,
+      inRoomRef,
+      mainScrollRef,
+      catalogScrollRef,
+      setActiveWorld,
+      setCatalogSection: roomState.setCatalogSection,
+      setMobileTab: roomState.setMobileTab,
+      setUnreadChatCount: roomState.setUnreadChatCount,
+      setIsInActiveGame: roomState.setIsInActiveGame,
+      setWorldSearchQuery,
+      setShowWatchlistOnly,
+      onUpgradeSoloToParty: (opts) => upgradeSoloToPartyRef.current(opts),
     });
 
   useCloudSyncSubscriptions({
-    savedRoomsCacheKey: SAVED_ROOMS_CACHE_KEY, loadCachedSavedRooms, rememberSessionPin, inRoomRef,
-    manualLobbyStayRef: roomState.manualLobbyStayRef, isTvPairLobbyRef: roomState.isTvPairLobbyRef,
-    setAuthUser, setAuthLoading, setSavedRooms, setProfile, setShowGuestPopup, setShowIntro,
-    setCatalogSection: roomState.setCatalogSection, setMobileTab: roomState.setMobileTab,
-    setRoomId, setRoomName, setInRoom, setWatchHistory, setWatchlist, setFavoriteChannels,
+    savedRoomsCacheKey: SAVED_ROOMS_CACHE_KEY,
+    loadCachedSavedRooms,
+    rememberSessionPin,
+    inRoomRef,
+    sessionModeRef,
+    hasEnteredAppRef,
+    manualLobbyStayRef: roomState.manualLobbyStayRef,
+    isTvPairLobbyRef: roomState.isTvPairLobbyRef,
+    setAuthUser,
+    setAuthLoading,
+    setSavedRooms,
+    setProfile,
+    setShowGuestPopup,
+    setShowIntro,
+    setCatalogSection: roomState.setCatalogSection,
+    setMobileTab: roomState.setMobileTab,
+    setRoomId,
+    setRoomName,
+    setInRoom,
+    setWatchHistory,
+    setWatchlist,
+    setFavoriteChannels,
     setSavedFriends,
   });
 
@@ -385,6 +456,10 @@ export function useAppController() {
   }, [miniDrag]);
 
   const playback = usePlaybackOrchestrator({
+    sessionMode,
+    onUpgradeSoloToParty: () => {
+      upgradeSoloToPartyRef.current();
+    },
     lang,
     profileName: profile.name,
     canChangeMedia,
@@ -426,6 +501,8 @@ export function useAppController() {
   roomState.handlePlayQueueItemRef.current = playback.handlePlayQueueItem;
 
   useRoomSocketEvents({
+    sessionMode,
+    hasAuthUser: Boolean(authUser),
     inRoom,
     roomId,
     roomName,
@@ -449,6 +526,7 @@ export function useAppController() {
     friendNoticeTimerRef,
     seenFriendNoticeBySenderRef,
     tvClaimTimerRef: roomState.tvClaimTimerRef,
+    pendingSoloUpgradeVideoStateRef: roomState.pendingSoloUpgradeVideoStateRef,
     recordStateInWatchHistory: playback.recordStateInWatchHistory,
     rememberSessionPin,
     showHostLockNotice,
@@ -512,6 +590,12 @@ export function useAppController() {
   });
 
   const lifecycle = useRoomLifecycleActions({
+    sessionMode,
+    sessionModeRef,
+    setSessionMode,
+    setHasEnteredApp,
+    pendingSoloUpgradeVideoStateRef: roomState.pendingSoloUpgradeVideoStateRef,
+    getLivePlaybackSec: playback.getLivePlaybackSec,
     lang,
     profile,
     hostId: roomState.hostId,
@@ -567,6 +651,22 @@ export function useAppController() {
     showHostLockNotice,
     scrollDesktopToPlayer,
     handleSyncPlayerAction: playback.handleSyncPlayerAction,
+  });
+
+  upgradeSoloToPartyRef.current = lifecycle.upgradeSoloToPartyRoom;
+
+  const { deepLinkResolving } = useDeepLinkRouter({
+    sessionMode,
+    hasEnteredApp,
+    isTvMode,
+    isTvPairLobby,
+    isAdsPageOpen,
+    enterWorld,
+    setForcedOpenGame: roomState.setForcedOpenGame,
+    setIsInActiveGame: roomState.setIsInActiveGame,
+    handlePlayTdtChannel: playback.handlePlayTdtChannel,
+    handlePlaySportsMatch: playback.handlePlaySportsMatch,
+    quickPool,
   });
 
   useTvRemoteBridge({
@@ -629,6 +729,7 @@ export function useAppController() {
   });
 
   return {
+    sessionMode, setSessionMode, hasEnteredApp, setHasEnteredApp, shareToast, deepLinkResolving,
     lang, setLang, profile, recentRooms, watchHistory, watchlist, favoriteChannels, savedFriends,
     onlineUsers, friendsModalOpen, setFriendsModalOpen, incomingInvite, setIncomingInvite,
     friendAddedNotice, setFriendAddedNotice, inviteSentFeedback, friendNoticeTimerRef,

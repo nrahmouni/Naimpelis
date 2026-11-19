@@ -7,6 +7,7 @@ import type {
   TvSeriesDetails,
   YouTubeSearchItem,
 } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
 import { pickLang } from '../../utils/i18n';
 import type { CatalogSection } from './catalogConstants';
 
@@ -68,11 +69,14 @@ export function useVodCatalogState({
   const [loadingMoreSeries, setLoadingMoreSeries] = useState(false);
 
   const [selectedSeries, setSelectedSeries] = useState<TvSeriesDetails | null>(null);
+  const [highlightedEpisodeNumber, setHighlightedEpisodeNumber] = useState<number | null>(null);
   const [seriesModalLang, setSeriesModalLang] = useState<string>('ES');
   const [forceSpanishSeriesActive, setForceSpanishSeriesActive] = useState(false);
   const [loadingSeriesDetails, setLoadingSeriesDetails] = useState(false);
   const [probingSeriesLangs, setProbingSeriesLangs] = useState(false);
   const seriesFetchSeqRef = useRef(0);
+  const requestedMovieModal = useAppStore((s) => s.requestedMovieModal);
+  const requestedSeriesModal = useAppStore((s) => s.requestedSeriesModal);
 
   const [ytQuery, setYtQuery] = useState('');
   const [debouncedYtQuery, setDebouncedYtQuery] = useState(
@@ -94,8 +98,11 @@ export function useVodCatalogState({
   );
   const [loadingCatalaEpisodes, setLoadingCatalaEpisodes] = useState<boolean>(false);
 
+  const prevExternalSearchRef = useRef<string | undefined>(externalSearchQuery);
   useEffect(() => {
     if (externalSearchQuery === undefined) return;
+    if (prevExternalSearchRef.current === externalSearchQuery) return;
+    prevExternalSearchRef.current = externalSearchQuery;
     if (worldMode === 'cine') {
       setHomeQuery(externalSearchQuery);
       setMovieQuery(externalSearchQuery);
@@ -105,6 +112,41 @@ export function useVodCatalogState({
       setYtQuery(externalSearchQuery);
     }
   }, [externalSearchQuery, worldMode]);
+
+  useEffect(() => {
+    if (!requestedMovieModal) return;
+    setPreviewItem(requestedMovieModal);
+  }, [requestedMovieModal]);
+
+  useEffect(() => {
+    if (!requestedSeriesModal) return;
+    const rawSeries = requestedSeriesModal.series;
+    const reqSeason =
+      requestedSeriesModal.season ||
+      ('activeSeason' in rawSeries ? rawSeries.activeSeason : undefined) ||
+      1;
+    setHighlightedEpisodeNumber(requestedSeriesModal.episode || null);
+    if (
+      'episodes' in rawSeries &&
+      Array.isArray(rawSeries.episodes) &&
+      rawSeries.episodes.length > 0 &&
+      rawSeries.activeSeason === reqSeason
+    ) {
+      setSelectedSeries(rawSeries);
+      setLoadingSeriesDetails(false);
+      if (Array.isArray(rawSeries.availableLanguages) && rawSeries.availableLanguages.length > 0) {
+        const avail = rawSeries.availableLanguages;
+        setSeriesModalLang(avail.includes('ES') ? 'ES' : avail[0]);
+        setProbingSeriesLangs(false);
+      } else if (rawSeries.tmdbId) {
+        openSeriesDetails(Number(rawSeries.tmdbId), reqSeason, rawSeries, false);
+      }
+      return;
+    }
+    if (rawSeries.tmdbId) {
+      openSeriesDetails(Number(rawSeries.tmdbId), reqSeason, rawSeries, false);
+    }
+  }, [requestedSeriesModal]);
 
   useEffect(() => {
     const clean = homeQuery.trim();
@@ -622,6 +664,8 @@ export function useVodCatalogState({
     loadingMoreSeries,
     selectedSeries,
     setSelectedSeries,
+    highlightedEpisodeNumber,
+    setHighlightedEpisodeNumber,
     seriesModalLang,
     setSeriesModalLang,
     forceSpanishSeriesActive,

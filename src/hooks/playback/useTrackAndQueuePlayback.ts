@@ -47,9 +47,11 @@ export function createTrackAndQueuePlaybackHandlers(
     setExtractionLabel,
     setExtractionError,
     setLoadingItemId,
+    commitVideoStateSync,
   } = ctx;
 
   const {
+    sessionMode,
     profileName,
     canChangeMedia,
     hostId,
@@ -90,6 +92,10 @@ export function createTrackAndQueuePlaybackHandlers(
     if (!targetTrack) return;
 
     if (targetTrack.resolverType === 'cloud_browser' && targetTrack.sourceUrl) {
+      if (sessionMode === 'solo') {
+        setExtractionError('El navegador Cloud HD requiere modo sala. Pulsa «Ver con amigos».');
+        return;
+      }
       socketService.startCloudBrowser(targetTrack.sourceUrl, profileName);
       return;
     }
@@ -116,7 +122,7 @@ export function createTrackAndQueuePlaybackHandlers(
       };
       videoStateUrlRef.current = instantState.url;
       setVideoState(instantState);
-      socketService.syncVideoState('change_url', instantState, profileName);
+      commitVideoStateSync('change_url', instantState);
       showLanguageNotice({
         type: 'success',
         title: `✓ Fuente activa: ${targetTrack.label}`,
@@ -231,7 +237,7 @@ export function createTrackAndQueuePlaybackHandlers(
       clearExtractionSnapshot();
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
-      socketService.syncVideoState('change_url', nextState, profileName);
+      commitVideoStateSync('change_url', nextState);
       showLanguageNotice({
         type: 'success',
         title: `✓ Fuente activa: ${targetTrack.label}`,
@@ -327,6 +333,10 @@ export function createTrackAndQueuePlaybackHandlers(
       if (res.ok && data?.success && data?.streamUrl) {
         if (data.mode === 'cloud') {
           clearExtractionSnapshot();
+          if (sessionMode === 'solo') {
+            setExtractionError('Este enlace externo requiere modo sala. Pulsa «Ver con amigos».');
+            return;
+          }
           socketService.startCloudBrowser(data.streamUrl, profileName);
           return;
         }
@@ -361,15 +371,23 @@ export function createTrackAndQueuePlaybackHandlers(
         clearExtractionSnapshot();
         videoStateUrlRef.current = nextState.url;
         setVideoState(nextState);
-        socketService.syncVideoState('change_url', nextState, profileName);
+        commitVideoStateSync('change_url', nextState);
         playCinemaSound('play');
       } else {
         clearExtractionSnapshot();
+        if (sessionMode === 'solo') {
+          setExtractionError('No se pudo extraer stream directo en modo solitario. Pulsa «Ver con amigos» para usar Cloud HD.');
+          return;
+        }
         socketService.startCloudBrowser(rawUrl, profileName);
       }
     } catch (err: unknown) {
       if (isAbortError(err) || reqSeq !== extractionReqSeqRef.current) return;
       clearExtractionSnapshot();
+      if (sessionMode === 'solo') {
+        setExtractionError('No se pudo cargar este enlace directo.');
+        return;
+      }
       socketService.startCloudBrowser(rawUrl, profileName);
     } finally {
       if (reqSeq === extractionReqSeqRef.current) {
@@ -385,7 +403,9 @@ export function createTrackAndQueuePlaybackHandlers(
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
-    socketService.removeFromQueue(qItem.id);
+    if (sessionMode !== 'solo') {
+      socketService.removeFromQueue(qItem.id);
+    }
     if (qItem.kind === 'youtube' && qItem.youtubeId) {
       deps.handlePlayYouTubeVideo({
         id: qItem.youtubeId,
@@ -553,7 +573,7 @@ export function createTrackAndQueuePlaybackHandlers(
     }
 
     setVideoState(promotedMain);
-    socketService.syncVideoState('change_url', promotedMain, profileName);
+    commitVideoStateSync('change_url', promotedMain);
   };
 
   const handleToggleSecondaryLayout = () => {
@@ -579,7 +599,9 @@ export function createTrackAndQueuePlaybackHandlers(
       return;
     }
     triggerHaptic('success');
-    socketService.stopCloudBrowser();
+    if (sessionMode !== 'solo') {
+      socketService.stopCloudBrowser();
+    }
     const isMp4 = proxiedStreamUrl.includes('/api/ts-proxy');
     const nextState: VideoState = {
       mode: isMp4 ? 'direct' : 'hls',
@@ -597,7 +619,7 @@ export function createTrackAndQueuePlaybackHandlers(
       updatedBy: profileName,
     };
     setVideoState(nextState);
-    socketService.syncVideoState('change_url', nextState, profileName);
+    commitVideoStateSync('change_url', nextState);
   };
 
   return {

@@ -34,6 +34,7 @@ const SalaVoiceWaves: React.FC = () => (
 
 interface EntryHomeBentoGridProps {
   lang: AppLanguage;
+  sessionMode?: 'solo' | 'party';
   lastUsedWorld: PrimaryWorldId | null;
   heroPosters: CatalogMovie[];
   featuredChannels: Array<{ id: string; mark: string; tone: string }>;
@@ -48,6 +49,7 @@ interface EntryHomeBentoGridProps {
 
 export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
   lang,
+  sessionMode = 'party',
   lastUsedWorld,
   heroPosters,
   featuredChannels,
@@ -374,10 +376,22 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
           <RiffanUsersIcon size={17} animate="hover" />
         </div>
 
-        <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#00F593] tabular-nums">
-          <SalaVoiceWaves />
-          <span>{roomParticipantsCount > 0 ? roomParticipantsCount : 1}</span>
-        </div>
+        {sessionMode === 'solo' ? (
+          <span className="px-2 py-0.5 rounded-full bg-[#9146FF]/25 border border-[#BF94FF]/45 text-[10px] font-bold text-[#E9D5FF] whitespace-nowrap">
+            {pickLang(lang, {
+              es: 'Ver con amigos',
+              ca: 'Veure amb amics',
+              en: 'Watch party',
+              rif: 'S tmdukkalin',
+              zh: '创建房间',
+            })}
+          </span>
+        ) : (
+          <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#00F593] tabular-nums">
+            <SalaVoiceWaves />
+            <span>{roomParticipantsCount > 0 ? roomParticipantsCount : 1}</span>
+          </div>
+        )}
       </div>
 
       <div className="relative z-10 min-w-0 space-y-1 pt-4">
@@ -389,11 +403,17 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
           })}
         </h2>
         <p className="text-xs text-zinc-400 leading-snug line-clamp-2">
-          {pickLang(lang, {
-            es: 'Chat, voz y cola compartida',
-            ca: 'Xat, veu i cua compartida',
-            en: 'Live chat, voice & shared queue',
-          })}
+          {sessionMode === 'solo'
+            ? pickLang(lang, {
+                es: 'Crea una sala y comparte enlace',
+                ca: 'Crea una sala i comparteix enllaç',
+                en: 'Create a room and share link',
+              })
+            : pickLang(lang, {
+                es: 'Chat, voz y cola compartida',
+                ca: 'Xat, veu i cua compartida',
+                en: 'Live chat, voice & shared queue',
+              })}
         </p>
       </div>
     </motion.button>

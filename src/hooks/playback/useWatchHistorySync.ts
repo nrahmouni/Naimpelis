@@ -25,6 +25,7 @@ export function useWatchHistorySync({
   setWatchHistory,
 }: UseWatchHistorySyncOptions) {
   const [livePlaybackSec, setLivePlaybackSec] = useState<number>(0);
+  const livePlaybackSecRef = useRef<number>(0);
   const activeHistoryIdRef = useRef<string | null>(null);
   const lastCloudProgressSyncRef = useRef<number>(0);
   const nextEpPreloadRef = useRef<string>('');
@@ -110,7 +111,9 @@ export function useWatchHistorySync({
 
   const handlePlayerProgressUpdate = useCallback(
     (currentTimeSec: number, durationSec: number) => {
-      setLivePlaybackSec(Math.max(0, Math.floor(currentTimeSec)));
+      const floored = Math.max(0, Math.floor(currentTimeSec));
+      livePlaybackSecRef.current = floored;
+      setLivePlaybackSec(floored);
       const activeId = activeHistoryIdRef.current;
       if (!activeId || currentTimeSec <= 4) return;
 
@@ -167,8 +170,11 @@ export function useWatchHistorySync({
     [isNestedSandboxFrame, videoStateRef, setWatchHistory]
   );
 
+  const getLivePlaybackSec = useCallback(() => livePlaybackSecRef.current, []);
+
   return {
     livePlaybackSec,
+    getLivePlaybackSec,
     activeHistoryIdRef,
     findSavedResumeSec,
     recordStateInWatchHistory,

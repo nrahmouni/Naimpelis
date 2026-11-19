@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight, Loader2, Play, Sparkles, Star } from 'lucide-react';
+import { ChevronRight, Loader2, Play, Share2, Sparkles, Star } from 'lucide-react';
 import type {
   AppLanguage,
   FavoriteChannelItem,
@@ -8,6 +8,7 @@ import type {
 } from '../../types';
 import { triggerHaptic } from '../../utils/haptics';
 import { pickLang } from '../../utils/i18n';
+import { shareDedicatedLink } from '../../utils/shareDedicatedLink';
 import { buildChannelFavId } from '../../utils/storage';
 import { TeamCrestImg, hasValidScore } from './FootballMatchboardParts';
 import { isBarcaOrRealMadridMatch } from './FootballMatchboardHelpers';
@@ -15,6 +16,7 @@ import { isBarcaOrRealMadridMatch } from './FootballMatchboardHelpers';
 interface FootballMatchRowProps {
   item: FootballMatchboardItem;
   lang: AppLanguage;
+  shareRoomId?: string;
   showLeagueBadge?: boolean;
   showZhIndicator?: boolean;
   activeVideoRawUrl?: string;
@@ -50,6 +52,7 @@ function formatQuickChannelLabel(ch: StreamTrack, lang: AppLanguage): string {
 export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
   item,
   lang,
+  shareRoomId,
   showLeagueBadge = false,
   showZhIndicator = false,
   activeVideoRawUrl,
@@ -213,6 +216,32 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
         </div>
 
         <div className="relative z-10 pointer-events-auto shrink-0 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              void shareDedicatedLink({
+                target: {
+                  kind: 'match',
+                  id: item.id,
+                  eventId: item.eventId,
+                  homeTeam: item.homeTeam,
+                  awayTeam: item.awayTeam,
+                },
+                roomId: shareRoomId,
+                title: `${item.homeTeam} vs ${item.awayTeam}`,
+              });
+            }}
+            aria-label={pickLang(lang, {
+              es: 'Compartir partido',
+              ca: 'Compartir partit',
+              en: 'Share match',
+            })}
+            className="min-w-10 min-h-11 flex items-center justify-center rounded-xl text-zinc-400 hover:text-[#BF94FF] cursor-pointer"
+          >
+            <Share2 className="w-4 h-4" />
+          </button>
+
           {primaryCh ? (
             <>
               <button

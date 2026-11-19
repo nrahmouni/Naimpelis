@@ -203,7 +203,7 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
 
       let finalManifest = rewritten.join('\n');
       if (forceAac && discoveredTsUrls.length > 0 && req.method !== 'HEAD') {
-        for (const segUrl of discoveredTsUrls) {
+        for (const segUrl of discoveredTsUrls.slice(-2)) {
           remuxDvbTsToAac(segUrl, effectiveReferer, false).catch(() => {});
         }
 
@@ -280,12 +280,10 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
         }
       }
 
-      if (
-        !forceAac &&
-        (manifestText.includes('#EXT-X-ENDLIST') ||
-          manifestText.includes('#EXT-X-STREAM-INF') ||
-          targetUrl.includes('ibra.lat'))
-      ) {
+      const isStaticVodManifest =
+        manifestText.includes('#EXT-X-ENDLIST') ||
+        (!manifestText.includes('#EXT-X-MEDIA-SEQUENCE') && targetUrl.includes('ibra.lat'));
+      if (!forceAac && isStaticVodManifest) {
         vodHlsManifestCache.set(vodCacheKey, finalManifest);
       }
 

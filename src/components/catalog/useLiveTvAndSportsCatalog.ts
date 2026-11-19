@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   ChannelLiveEpg,
   EpgProgramItem,
@@ -6,6 +6,7 @@ import type {
   SpanishTdtChannel,
   TdtCategory,
 } from '../../types';
+import { useAppStore } from '../../store/useAppStore';
 import { buildChannelFavId, sanitizeItemKey } from '../../utils/storage';
 import { getChannelRegionMeta, type TvRegionId } from '../ui/ChannelLogoBadge';
 import type { CatalogSection } from './catalogConstants';
@@ -40,9 +41,14 @@ export function useLiveTvAndSportsCatalog({
 }: UseLiveTvAndSportsCatalogArgs) {
   const [tdtChannels, setTdtChannels] = useState<SpanishTdtChannel[]>([]);
   const [loadingTdt, setLoadingTdt] = useState(false);
-  const [tdtCategory, setTdtCategory] = useState<'all' | 'tdt_all' | TdtCategory>('all');
-  const [tvRegion, setTvRegion] = useState<TvRegionId>('all');
-  const [adrarCountryFilter, setAdrarCountryFilter] = useState<string>('all');
+  const tdtCategory = useAppStore((s) => s.tdtCategory) as 'all' | 'tdt_all' | TdtCategory;
+  const setTdtCategory = useAppStore((s) => s.setTdtCategory) as (
+    cat: 'all' | 'tdt_all' | TdtCategory
+  ) => void;
+  const tvRegion = useAppStore((s) => s.tvRegion) as TvRegionId;
+  const setTvRegion = useAppStore((s) => s.setTvRegion) as (reg: TvRegionId) => void;
+  const adrarCountryFilter = useAppStore((s) => s.adrarCountryFilter);
+  const setAdrarCountryFilter = useAppStore((s) => s.setAdrarCountryFilter);
   const [tvFavOnly, setTvFavOnly] = useState<boolean>(false);
   const [tdtSearch, setTdtSearch] = useState('');
   const [epgMap, setEpgMap] = useState<Record<string, ChannelLiveEpg>>({});
@@ -52,21 +58,30 @@ export function useLiveTvAndSportsCatalog({
   const [selectedEpgChannel, setSelectedEpgChannel] = useState<SpanishTdtChannel | null>(null);
   const [epgClockMs, setEpgClockMs] = useState<number>(() => Date.now());
 
-  const [footballLiveBrand, setFootballLiveBrand] = useState<FootballBrandFilter>('all');
-  const [sportsSearch, setSportsSearch] = useState('');
+  const footballLiveBrand = useAppStore((s) => s.footballLiveBrand) as FootballBrandFilter;
+  const setFootballLiveBrand = useAppStore((s) => s.setFootballLiveBrand) as (
+    b: FootballBrandFilter
+  ) => void;
+  const sportsSearch = useAppStore((s) => s.futbolSearchQuery);
+  const setSportsSearch = useAppStore((s) => s.setFutbolSearchQuery);
   const [futbolFiltersOpen, setFutbolFiltersOpen] = useState(false);
   const [futbolLangFilter, setFutbolLangFilter] = useState<'all' | 'ZH'>('all');
-  const [futbolLeagueFilter, setFutbolLeagueFilter] = useState<string>('');
+  const rawFutbolLeagueFilter = useAppStore((s) => s.futbolLeagueFilter);
+  const futbolLeagueFilter = rawFutbolLeagueFilter === 'all' ? '' : rawFutbolLeagueFilter;
+  const setFutbolLeagueFilter = useAppStore((s) => s.setFutbolLeagueFilter);
   const [tvFiltersOpen, setTvFiltersOpen] = useState(false);
+  const prevExternalSearchRef = useRef<string | undefined>(externalSearchQuery);
 
   useEffect(() => {
     if (externalSearchQuery === undefined) return;
+    if (prevExternalSearchRef.current === externalSearchQuery) return;
+    prevExternalSearchRef.current = externalSearchQuery;
     if (worldMode === 'futbol') {
       setSportsSearch(externalSearchQuery);
     } else if (worldMode === 'tv') {
       setTdtSearch(externalSearchQuery);
     }
-  }, [externalSearchQuery, worldMode]);
+  }, [externalSearchQuery, worldMode, setSportsSearch]);
 
   useEffect(() => {
     if (activeSection === 'home' && !worldMode) {
@@ -74,7 +89,7 @@ export function useLiveTvAndSportsCatalog({
       setEpgFilter('all');
       onResetWatchlistOnly();
     }
-  }, [activeSection, worldMode, onResetWatchlistOnly]);
+  }, [activeSection, worldMode, onResetWatchlistOnly, setTdtCategory]);
 
   const fetchTdtCatalog = useCallback(async () => {
     setLoadingTdt(true);

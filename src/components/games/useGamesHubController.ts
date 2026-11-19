@@ -23,7 +23,9 @@ import { type PartyGameState, type PartyGameType } from '../../shared/partyGames
 import type { UnifiedGameId } from './GameLogos';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
-import { buildGameInviteUrl } from '../../utils/shortLink';
+import { buildCanonicalShareUrl } from '../../shared/dedicatedRoutes';
+import { copyTextToClipboard, showAppShareToast } from '../../utils/shareDedicatedLink';
+import { useAppStore } from '../../store/useAppStore';
 import type { AppLanguage } from '../../types';
 
 export function isPartyGame(id: UnifiedGameId): id is PartyGameType {
@@ -113,28 +115,37 @@ export function useGamesHubController({
 
   const handleInviteGame = async (gt: UnifiedGameId) => {
     triggerHaptic('medium');
-    const url = roomId ? buildGameInviteUrl(roomId, gt) : typeof window !== 'undefined' ? window.location.href : '';
-    if (!url) return;
+    const sessionMode = useAppStore.getState().sessionMode;
+    const url = buildCanonicalShareUrl(
+      { kind: 'game', gameId: gt },
+      { roomId: sessionMode !== 'solo' && roomId ? roomId : undefined }
+    );
     const shareTitle = `RiffanTV · ${gt.toUpperCase()}`;
     const shareText = pickLang(lang, {
-      es: `¡Únete a mi partida de ${gt} en RiffanTV! Solo pon tu nombre y a jugar:`,
-      ca: `Uneix-te a la meva partida de ${gt} a RiffanTV! Només posa el teu nom i a jugar:`,
-      en: `Join my ${gt} match on RiffanTV! Just enter your name to play:`,
+      es: `¡Únete a jugar a ${gt} en RiffanTV!`,
+      ca: `Uneix-te a jugar a ${gt} a RiffanTV!`,
+      en: `Play ${gt} on RiffanTV!`,
     });
-    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    const isTouchMobile =
+      typeof navigator !== 'undefined' &&
+      typeof navigator.share === 'function' &&
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(pointer: coarse)').matches &&
+      window.matchMedia?.('(max-width: 768px)').matches;
+    if (isTouchMobile) {
       try {
         await navigator.share({ title: shareTitle, text: shareText, url });
+        showAppShareToast(`Enlace listo · ${url}`);
         return;
       } catch {
         // user canceled or unsupported -> fallback to clipboard
       }
     }
-    try {
-      await navigator.clipboard.writeText(url);
+    const copied = await copyTextToClipboard(url);
+    if (copied) {
       setInviteCopied(true);
+      showAppShareToast(`Enlace copiado · ${url}`);
       window.setTimeout(() => setInviteCopied(false), 2600);
-    } catch {
-      // ignore clipboard errors
     }
   };
 

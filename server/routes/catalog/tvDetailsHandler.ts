@@ -11,36 +11,37 @@ export const tvLangProbeCache = new LruTtlCache<
   { availableLanguages: ('ES' | 'LAT' | 'VOSE' | 'EN')[]; ts: number }
 >(400, 30 * 60 * 1000);
 
-export async function handleTvDetailsRequest(req: express.Request, res: express.Response) {
-  try {
-    const cleanId = String(req.params.tmdbId || '').replace(/\D/g, '');
-    if (!cleanId) return res.status(400).json({ success: false });
+export async function fetchTvSeriesDetailsPayload(opts: {
+  cleanId: string;
+  season?: number;
+  lang?: string;
+  force?: boolean;
+}): Promise<any | null> {
+  const cleanId = String(opts.cleanId || '').replace(/\D/g, '');
+  if (!cleanId) return null;
 
-    const requestedSeason = Math.max(1, parseInt(String(req.query.season || '1'), 10) || 1);
-    const isEn = String(req.query.lang || 'es').toLowerCase() === 'en';
-    const force = String(req.query.force || req.query.forceSpanish || '') === '1';
-    const langParam = isEn ? 'en-US' : 'es-ES';
-    const cacheKey = `${cleanId}:${requestedSeason}:${langParam}`;
+  const requestedSeason = Math.max(1, Number(opts.season) || 1);
+  const isEn = String(opts.lang || 'es').toLowerCase() === 'en';
+  const force = Boolean(opts.force);
+  const langParam = isEn ? 'en-US' : 'es-ES';
+  const cacheKey = `${cleanId}:${requestedSeason}:${langParam}`;
 
-    const cached = !force ? tvDetailsFastCache.get(cacheKey) : undefined;
-    if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
-      const cachedLangs = tvLangProbeCache.get(`v2|${cleanId}:${cached.details.activeSeason}:1`);
-      return res.json({
-        success: true,
-        details: {
-          ...cached.details,
-          ...(cachedLangs ? { availableLanguages: cachedLangs.availableLanguages } : {}),
-        },
-      });
-    }
+  const cached = !force ? tvDetailsFastCache.get(cacheKey) : undefined;
+  if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
+    const cachedLangs = tvLangProbeCache.get(`v2|${cleanId}:${cached.details.activeSeason}:1`);
+    return {
+      ...cached.details,
+      ...(cachedLangs ? { availableLanguages: cachedLangs.availableLanguages } : {}),
+    };
+  }
 
-    const showJson = await fetchTmdbJson<any>(
-      `/tv/${cleanId}`,
-      { language: langParam },
-      15 * 60 * 1000
-    ).catch(() => null);
+  const showJson = await fetchTmdbJson<any>(
+    `/tv/${cleanId}`,
+    { language: langParam },
+    15 * 60 * 1000
+  ).catch(() => null);
 
-    if (!showJson) return res.status(404).json({ success: false });
+  if (!showJson) return null;
 
     const baseSeasons = (Array.isArray(showJson?.seasons) ? showJson.seasons : [])
       .filter(
@@ -264,20 +265,37 @@ export async function handleTvDetailsRequest(req: express.Request, res: express.
       episodes,
     };
 
-    tvDetailsFastCache.set(cacheKey, { details: detailsPayload, ts: Date.now() });
+  tvDetailsFastCache.set(cacheKey, { details: detailsPayload, ts: Date.now() });
 
-    const cachedLangs = !force
-      ? tvLangProbeCache.get(`v2|${cleanId}:${effectiveSeason}:1`)
-      : undefined;
-    res.json({
-      success: true,
-      details: {
-        ...detailsPayload,
-        ...(cachedLangs ? { availableLanguages: cachedLangs.availableLanguages } : {}),
-      },
+  const cachedLangs = !force
+    ? tvLangProbeCache.get(`v2|${cleanId}:${effectiveSeason}:1`)
+    : undefined;
+  return {
+    ...detailsPayload,
+    ...(cachedLangs ? { availableLanguages: cachedLangs.availableLanguages } : {}),
+  };
+}
+
+export async function handleTvDetailsRequest(req: express.Request, res: express.Response) {
+  try {
+    const cleanId = String(req.params.tmdbId || '').replace(/\D/g, '');
+    if (!cleanId) return res.status(400).json({ success: false });
+
+    const requestedSeason = Math.max(1, parseInt(String(req.query.season || '1'), 10) || 1);
+    const lang = String(req.query.lang || 'es').toLowerCase() === 'en' ? 'en' : 'es';
+    const force = String(req.query.force || req.query.forceSpanish || '') === '1';
+
+    const details = await fetchTvSeriesDetailsPayload({
+      cleanId,
+      season: requestedSeason,
+      lang,
+      force,
     });
+    if (!details) return res.status(404).json({ success: false });
+
+    return res.json({ success: true, details });
   } catch (err) {
     console.error('TV details error:', err);
-    res.status(500).json({ success: false });
+    return res.status(500).json({ success: false });
   }
 }

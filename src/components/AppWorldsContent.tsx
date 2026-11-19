@@ -3,6 +3,14 @@ import { TvEpisodeItem, TvSeriesDetails } from '../types';
 import type { RoomGameInviteType } from '../shared/protocol';
 import { pickLang } from '../utils/i18n';
 import { socketService } from '../services/socket';
+import { shareDedicatedLink } from '../utils/shareDedicatedLink';
+import {
+  FOOTBALL_SCOPE_MAP,
+  resolveActiveTvPackSlug,
+  slugify,
+  type CanonicalLinkInput,
+} from '../shared/dedicatedRoutes';
+import { useAppStore } from '../store/useAppStore';
 import { EntryHomeScreen } from './EntryHomeScreen';
 import { WorldShell } from './worlds/WorldShell';
 import { MediaCatalogHub } from './MediaCatalogHub';
@@ -69,13 +77,73 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     playback,
     lifecycle,
     hasConnectedSmartTv,
+    sessionMode,
   } = c;
+
+  const shareRoomId = sessionMode !== 'solo' && roomId ? roomId : undefined;
+
+  const handleShareActiveWorld = () => {
+    const store = useAppStore.getState();
+    let target: CanonicalLinkInput = { kind: 'home' };
+    let title = 'RiffanTV';
+
+    if (activeWorld === 'cine') {
+      target = {
+        kind: 'world',
+        world: 'cine',
+        cineTab,
+        cineCategory: !cineCastellano && cineTab === 'movies' ? 'vose' : undefined,
+      };
+      title = cineTab === 'series' ? 'RiffanTV · Series' : 'RiffanTV · Cine';
+    } else if (activeWorld === 'tv') {
+      const packSlug = resolveActiveTvPackSlug({
+        tvRegion: store.tvRegion,
+        tdtCategory: store.tdtCategory,
+        adrarCountryFilter: store.adrarCountryFilter,
+      });
+      target = packSlug ? { kind: 'pack', packSlug } : { kind: 'world', world: 'tv' };
+      title = packSlug ? `RiffanTV · ${packSlug.toUpperCase()}` : 'RiffanTV · TV en Directo';
+    } else if (activeWorld === 'futbol') {
+      if (futbolTab === 'channels') {
+        target = { kind: 'world', world: 'futbol', futbolTab: 'channels' };
+      } else {
+        let matchedScope: string | undefined;
+        if (store.futbolDayOffset === 1) matchedScope = 'manana';
+        else if (store.futbolDayOffset === -1) matchedScope = 'ayer';
+        else if (store.futbolStatusTab === 'live') matchedScope = 'en-vivo';
+        else if (store.futbolLeagueFilter && store.futbolLeagueFilter !== 'all') {
+          const found = Object.values(FOOTBALL_SCOPE_MAP).find(
+            (cfg) => cfg.leagueFilter === store.futbolLeagueFilter
+          );
+          if (found) matchedScope = found.scope;
+        } else if (store.futbolSearchQuery.trim()) {
+          const cleanQ = slugify(store.futbolSearchQuery);
+          if (FOOTBALL_SCOPE_MAP[cleanQ]) matchedScope = FOOTBALL_SCOPE_MAP[cleanQ].scope;
+        }
+        target = matchedScope
+          ? { kind: 'footballScope', scope: matchedScope }
+          : { kind: 'world', world: 'futbol', futbolTab: 'matches' };
+      }
+      title = 'RiffanTV · Fútbol en Directo';
+    } else if (activeWorld === 'juegos') {
+      target = roomState.activeHubGameRef.current
+        ? { kind: 'game', gameId: roomState.activeHubGameRef.current }
+        : { kind: 'world', world: 'juegos' };
+      title = 'Riffan Play · Juegos';
+    } else if (activeWorld === 'youtube') {
+      target = { kind: 'world', world: 'youtube' };
+      title = 'RiffanTV · YouTube';
+    }
+
+    void shareDedicatedLink({ target, roomId: shareRoomId, title });
+  };
 
   if (activeWorld === 'entry') {
     return (
       <div ref={catalogScrollRef} className="w-full min-w-0 shrink-0">
         <EntryHomeScreen
           lang={lang}
+          sessionMode={sessionMode}
           displayName={profile.name}
           isGuestName={!profile.isCustomized}
           onUpdateDisplayName={(newName) =>
@@ -196,6 +264,11 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
         world="juegos"
         title={pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' })}
         lang={lang}
+        sessionMode={sessionMode}
+        onUpgradeSoloToParty={() =>
+          void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
+        }
+        onShareWorld={handleShareActiveWorld}
         onBack={() => {
           if (roomState.isInActiveGame) {
             roomState.setIsInActiveGame(false);
@@ -263,6 +336,11 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     <WorldShell
       world={activeWorld}
       className={portalLandingActive ? 'rtv-world-touchdown' : ''}
+      sessionMode={sessionMode}
+      onUpgradeSoloToParty={() =>
+        void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
+      }
+      onShareWorld={handleShareActiveWorld}
       title={
         activeWorld === 'cine'
           ? pickLang(lang, { es: 'Cine', ca: 'Cinema', en: 'Cinema' })
@@ -310,6 +388,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     >
       <MediaCatalogHub
         worldMode={activeWorld}
+        sessionMode={sessionMode}
+        roomId={roomId}
         externalSearchQuery={worldSearchQuery}
         onExternalSearchChange={setWorldSearchQuery}
         cineTab={cineTab}

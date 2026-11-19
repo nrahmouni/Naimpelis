@@ -100,21 +100,21 @@ export function remuxDvbTsToAac(
     if (!rawBuf || rawBuf.length === 0) {
       rawBuf = await curlGetBuffer(segmentUrl, segHeaders, 7);
     }
-    if (!rawBuf || rawBuf.length === 0) {
-      throw new Error('Empty DVB TS segment');
+    if (!rawBuf || rawBuf.length < 376) {
+      throw new Error('Empty or truncated DVB TS segment');
     }
 
     return await scheduleDvbTranscode(
       () =>
-        new Promise<Buffer>((resolve) => {
+        new Promise<Buffer>((resolve, reject) => {
           const ff = spawn(FFMPEG_BIN, [
             '-hide_banner',
             '-loglevel',
             'error',
+            '-err_detect',
+            'ignore_err',
             '-fflags',
             '+genpts+discardcorrupt',
-            '-flags2',
-            '+showall',
             '-threads',
             '2',
             '-f',
@@ -126,7 +126,7 @@ export function remuxDvbTsToAac(
             '-map',
             '0:a:0?',
             '-vf',
-            'field=top,scale=960:540:flags=fast_bilinear,setsar=1:1',
+            'yadif=mode=0:parity=-1:deint=1,scale=960:540:flags=bicubic,setsar=1:1',
             '-c:v',
             'libx264',
             '-preset',
@@ -139,16 +139,22 @@ export function remuxDvbTsToAac(
             '3.1',
             '-pix_fmt',
             'yuv420p',
+            '-flags',
+            '+cgop',
             '-bf',
             '0',
             '-g',
             '50',
+            '-keyint_min',
+            '25',
+            '-sc_threshold',
+            '0',
             '-crf',
-            '24',
+            '22',
             '-maxrate',
-            '1600k',
+            '2200k',
             '-bufsize',
-            '3200k',
+            '4400k',
             '-c:a',
             'aac',
             '-ac',
@@ -156,7 +162,7 @@ export function remuxDvbTsToAac(
             '-ar',
             '48000',
             '-b:a',
-            '112k',
+            '128k',
             '-copyts',
             '-muxdelay',
             '0',
@@ -174,20 +180,20 @@ export function remuxDvbTsToAac(
             } catch {
               // ignore
             }
-          }, 6000);
+          }, 9000);
 
           ff.stdout.on('data', (chunk: Buffer) => outChunks.push(chunk));
-          ff.on('error', () => {
+          ff.on('error', (err) => {
             clearTimeout(safetyTimer);
-            resolve(rawBuf!);
+            reject(err);
           });
           ff.on('close', (code) => {
             clearTimeout(safetyTimer);
             const remuxed = Buffer.concat(outChunks);
-            if (code === 0 && remuxed.length > 512) {
+            if (code === 0 && remuxed.length >= 564 && remuxed[0] === 0x47) {
               resolve(remuxed);
             } else {
-              resolve(rawBuf!);
+              reject(new Error(`DVB segment transcode failed (code=${code}, len=${remuxed.length})`));
             }
           });
 
@@ -248,7 +254,8 @@ setInterval(() => {
 
 export async function ensureLiveDvbCleanHlsSession(
   rawUpstreamUrl: string,
-  profile: 'hd' | 'fast' = 'hd'
+  profile: 'hd' | 'fast' = 'hd',
+  referer = ''
 ): Promise<string | null> {
   const cleanUpstream = rawUpstreamUrl.replace(/[?&]profile=(hd|fast)\b/gi, '');
   const hash = crypto
@@ -292,15 +299,20 @@ export async function ensureLiveDvbCleanHlsSession(
   const segmentPattern = path.join(sessionDir, 'seg_%05d.ts');
   const vfFilter =
     profile === 'fast'
-      ? 'field=top,scale=960:540:flags=fast_bilinear'
-      : 'field=top,scale=1280:720:flags=fast_bilinear';
+      ? 'yadif=mode=0:parity=-1:deint=1,scale=960:540:flags=bicubic,setsar=1:1'
+      : 'yadif=mode=0:parity=-1:deint=1,scale=1280:720:flags=bicubic,setsar=1:1';
 
-  const proc = spawn(FFMPEG_BIN, [
+  const ffArgs = [
     '-hide_banner',
     '-loglevel',
     'error',
     '-user_agent',
     TDT_DVB_UA,
+  ];
+  if (referer && /^https?:\/\//i.test(referer)) {
+    ffArgs.push('-headers', `Referer: ${referer}\r\n`);
+  }
+  ffArgs.push(
     '-reconnect',
     '1',
     '-reconnect_streamed',
@@ -308,11 +320,11 @@ export async function ensureLiveDvbCleanHlsSession(
     '-reconnect_delay_max',
     '2',
     '-live_start_index',
-    '-3',
+    '-2',
+    '-err_detect',
+    'ignore_err',
     '-fflags',
     '+genpts+discardcorrupt',
-    '-flags2',
-    '+showall',
     '-threads',
     '3',
     '-i',
@@ -335,6 +347,8 @@ export async function ensureLiveDvbCleanHlsSession(
     '3.1',
     '-pix_fmt',
     'yuv420p',
+    '-flags',
+    '+cgop',
     '-r',
     '25',
     '-g',
@@ -346,11 +360,11 @@ export async function ensureLiveDvbCleanHlsSession(
     '-bf',
     '0',
     '-crf',
-    profile === 'fast' ? '25' : '23',
+    profile === 'fast' ? '23' : '21',
     '-maxrate',
-    profile === 'fast' ? '1800k' : '3000k',
+    profile === 'fast' ? '2200k' : '3500k',
     '-bufsize',
-    profile === 'fast' ? '3600k' : '6000k',
+    profile === 'fast' ? '4400k' : '7000k',
     '-c:a',
     'aac',
     '-ac',
@@ -369,8 +383,10 @@ export async function ensureLiveDvbCleanHlsSession(
     'delete_segments+independent_segments+omit_endlist+temp_file',
     '-hls_segment_filename',
     segmentPattern,
-    playlistPath,
-  ]);
+    playlistPath
+  );
+
+  const proc = spawn(FFMPEG_BIN, ffArgs);
 
   const session: LiveDvbRelaySession = {
     key: sessionKey,
@@ -391,7 +407,7 @@ export async function ensureLiveDvbCleanHlsSession(
   });
 
   session.readyPromise = new Promise<boolean>((resolve) => {
-    const deadline = Date.now() + 9000;
+    const deadline = Date.now() + 7500;
     const poll = setInterval(() => {
       if (session.dead) {
         clearInterval(poll);
@@ -416,7 +432,7 @@ export async function ensureLiveDvbCleanHlsSession(
         destroyLiveDvbSession(sessionKey);
         resolve(false);
       }
-    }, 120);
+    }, 100);
   });
 
   liveDvbSessions.set(sessionKey, session);
@@ -429,7 +445,7 @@ export const handleDvbLive = (req: express.Request, res: express.Response): void
   const sessionKey = String(req.params.sessionKey || '').replace(/[^a-zA-Z0-9_-]/g, '');
   const filename = String(req.params.filename || '').replace(/[^a-zA-Z0-9_.-]/g, '');
   const sess = liveDvbSessions.get(sessionKey);
-  if (!sess || sess.dead || !filename) {
+  if (!sess || sess.dead || !filename || filename.includes('..')) {
     res.status(404).send('Live session expired');
     return;
   }

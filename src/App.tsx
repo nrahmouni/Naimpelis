@@ -1,9 +1,11 @@
 import React from 'react';
+import { Check } from 'lucide-react';
 import { MotionConfig } from 'motion/react';
 import { RiffanLoaderR } from './components/ui/RiffanIcons';
 import { pickLang } from './utils/i18n';
 import { socketService } from './services/socket';
 import { triggerHaptic } from './utils/haptics';
+import { showAppShareToast } from './utils/shareDedicatedLink';
 import { NaimBrandLogo } from './components/NaimBrandLogo';
 import { getMonogramInitials } from './components/MobileViewportGuard';
 import { OfflineIndicator } from './components/PWAInstallPrompt';
@@ -59,15 +61,17 @@ export function App() {
     lifecycle, isScrollCompressed, showCinemaOverlay, hasConnectedSmartTv,
     isMobileChatWithKeyboard, isAutoImmersiveLandscape, hideBrowseBelowPlayer,
     isMoviePlaybackDockVisible, isChannelGuideDockVisible, lockMainWorkspaceScroll,
+    sessionMode, hasEnteredApp, shareToast, deepLinkResolving,
   } = c;
 
-  if (showDesignSystem || isAdsPageOpen || isTvPairLobby || !inRoom || isTvMode) {
+  if (showDesignSystem || isAdsPageOpen || isTvPairLobby || (!inRoom && !hasEnteredApp) || isTvMode) {
     return (
       <AppEarlyRouteView
         showDesignSystem={showDesignSystem}
         isAdsPageOpen={isAdsPageOpen}
         isTvPairLobby={isTvPairLobby}
         inRoom={inRoom}
+        hasEnteredApp={hasEnteredApp}
         isTvMode={isTvMode}
         reducedMotion={reducedMotion}
         lang={lang}
@@ -119,6 +123,7 @@ export function App() {
         onGoogleSignOut={socialActions.handleGoogleSignOut}
         onChangeLang={setLang}
         onEnterRoom={lifecycle.handleEnterRoom}
+        onEnterSolo={lifecycle.handleEnterSolo}
         onAcceptIncomingRoomInvite={lifecycle.handleAcceptIncomingRoomInvite}
         onAddFriend={socialActions.handleAddFriend}
         onSubmitGuestPin={socialActions.handleSubmitGuestPin}
@@ -328,6 +333,10 @@ export function App() {
                 currentUserId={currentUser.id}
                 roomId={roomId}
                 roomDisplayName={roomName || `Sala ${roomId.toUpperCase()}`}
+                sessionMode={sessionMode}
+                onUpgradeSoloToParty={() =>
+                  void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
+                }
                 effectiveVideoState={effectiveVideoState}
                 isPlayerActive={isPlayerActive}
                 isDockedMini={isDockedMini}
@@ -408,6 +417,16 @@ export function App() {
                 onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
                 onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
                 onOpenInCloudBrowser={(targetUrl) => {
+                  if (sessionMode === 'solo') {
+                    showAppShareToast(
+                      pickLang(lang, {
+                        es: 'Activa «Ver con amigos» para usar Cloud HD',
+                        ca: 'Activa «Veure amb amics» per usar Cloud HD',
+                        en: 'Switch to "Watch with friends" to use Cloud HD',
+                      })
+                    );
+                    return;
+                  }
                   if (!canChangeMedia) {
                     showHostLockNotice(
                       roomState.participants.find((p) => p.id === roomState.hostId)?.name
@@ -469,7 +488,13 @@ export function App() {
 
           <FloatingRoomBubble
             lang={lang}
-            visible={inRoom && activeWorld !== 'sala' && activeWorld !== 'kids' && !isTvMode}
+            visible={
+              inRoom &&
+              sessionMode !== 'solo' &&
+              activeWorld !== 'sala' &&
+              activeWorld !== 'kids' &&
+              !isTvMode
+            }
             participantsCount={roomState.participants.length}
             voiceActive={voiceChat.isJoined}
             unreadCount={roomState.unreadChatCount}
@@ -489,6 +514,10 @@ export function App() {
             lang={lang}
             onChangeLang={setLang}
             inRoom={inRoom}
+            sessionMode={sessionMode}
+            onUpgradeSoloToParty={() =>
+              void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
+            }
             roomId={roomId}
             roomName={roomName}
             profile={profile}
@@ -621,6 +650,36 @@ export function App() {
             setCatalogSection={roomState.setCatalogSection}
             enterWorld={enterWorld}
           />
+
+          {deepLinkResolving && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="fixed top-16 left-1/2 -translate-x-1/2 z-[120] px-4 py-2 rounded-2xl bg-[#10121C]/95 backdrop-blur-xl border border-[#9146FF]/45 text-xs font-semibold text-white shadow-[0_14px_40px_rgba(0,0,0,0.75)] flex items-center gap-2.5 pointer-events-none animate-fade-in"
+            >
+              <RiffanLoaderR size={20} />
+              <span>
+                {pickLang(lang, {
+                  es: 'Abriendo enlace directo...',
+                  ca: 'Obrint enllaç directe...',
+                  en: 'Opening direct link...',
+                })}
+              </span>
+            </div>
+          )}
+
+          {shareToast && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="fixed bottom-24 sm:bottom-6 left-1/2 -translate-x-1/2 z-[130] w-auto max-w-[calc(100%-2rem)] px-4 py-2.5 rounded-2xl bg-[#121420]/96 backdrop-blur-xl border border-[#9146FF]/55 text-xs font-semibold text-white shadow-[0_20px_50px_rgba(0,0,0,0.85)] flex items-center gap-2 pointer-events-none animate-fade-in"
+            >
+              <span className="w-5 h-5 rounded-full bg-[#9146FF]/25 border border-[#BF94FF]/45 flex items-center justify-center text-[#D8B4FE] shrink-0">
+                <Check className="w-3 h-3" />
+              </span>
+              <span className="truncate">{shareToast}</span>
+            </div>
+          )}
         </div>
       </div>
     </MotionConfig>

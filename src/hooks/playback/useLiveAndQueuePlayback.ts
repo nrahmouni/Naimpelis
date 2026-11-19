@@ -37,9 +37,11 @@ export function useLiveAndQueuePlayback(
     setExtractionLabel,
     setExtractionError,
     setLoadingItemId,
+    commitVideoStateSync,
   } = ctx;
 
   const {
+    sessionMode,
     profileName,
     canChangeMedia,
     hostId,
@@ -165,6 +167,10 @@ export function useLiveAndQueuePlayback(
           return;
         }
         clearExtractionSnapshot();
+        if (sessionMode === 'solo') {
+          setExtractionError('Esta señal web requiere sala en vivo. Pulsa «Ver con amigos» o prueba otra señal.');
+          return;
+        }
         socketService.startCloudBrowser(data.streamUrl, profileName);
         return;
       }
@@ -196,7 +202,7 @@ export function useLiveAndQueuePlayback(
       clearExtractionSnapshot();
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
-      socketService.syncVideoState('change_url', nextState, profileName);
+      commitVideoStateSync('change_url', nextState);
       playCinemaSound('play');
     } catch (err: unknown) {
       if (isAbortError(err) || reqSeq !== extractionReqSeqRef.current) return;
@@ -352,7 +358,7 @@ export function useLiveAndQueuePlayback(
       clearExtractionSnapshot();
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
-      socketService.syncVideoState('change_url', nextState, profileName);
+      commitVideoStateSync('change_url', nextState);
       playCinemaSound('play');
     } catch {
       if (signal.aborted || reqSeq !== extractionReqSeqRef.current) return;
@@ -441,12 +447,20 @@ export function useLiveAndQueuePlayback(
           return;
         }
         clearExtractionSnapshot();
+        if (sessionMode === 'solo') {
+          setExtractionError('Este canal web requiere sala en directo. Pulsa «Ver con amigos».');
+          return;
+        }
         socketService.startCloudBrowser(favCh.channelUrl, profileName);
         return;
       }
 
       if (data.mode === 'cloud') {
         clearExtractionSnapshot();
+        if (sessionMode === 'solo') {
+          setExtractionError('Este canal web requiere sala en directo. Pulsa «Ver con amigos».');
+          return;
+        }
         socketService.startCloudBrowser(data.streamUrl, profileName);
         return;
       }
@@ -479,7 +493,7 @@ export function useLiveAndQueuePlayback(
       clearExtractionSnapshot();
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
-      socketService.syncVideoState('change_url', nextState, profileName);
+      commitVideoStateSync('change_url', nextState);
       playCinemaSound('play');
     } catch (err: unknown) {
       if (isAbortError(err) || reqSeq !== extractionReqSeqRef.current) return;

@@ -18,6 +18,7 @@ import {
   isElahmadUrl,
   resolveElahmadChannelToHls,
 } from '../../extractors/elahmadExtractor.ts';
+import { ensureLiveDvbCleanHlsSession } from '../proxies/dvbTranscoder.ts';
 
 export async function handleDirectExtractCases(params: {
   rawInput: string;
@@ -44,6 +45,7 @@ export async function handleDirectExtractCases(params: {
 
   // CASE 0: Live Spanish TDT Channel (`tdt_hls`)
   if (resolverType === 'tdt_hls' && rawInput) {
+    const dvbProfile: 'hd' | 'fast' = /[?&]profile=fast\b/i.test(rawInput) ? 'fast' : 'hd';
     const strippedCheckUrl = rawInput.replace(/[?&]profile=(hd|fast)\b/gi, '');
     const cleanCheckUrl = await maybeSignEasyBroadcastUrl(strippedCheckUrl);
     const knownReferer = resolveKnownUpstreamReferer(cleanCheckUrl);
@@ -99,9 +101,16 @@ export async function handleDirectExtractCases(params: {
       /^https:\/\/([^/]*\.)?(rtvelivestream\.rtve\.es|3catdirectes\.cat|eitb\.eus)\//i.test(
         cleanCheckUrl
       );
+    const isDvb = isDvbHeadendStream(cleanCheckUrl);
+    let dvbLiveUrl: string | null = null;
+    if (isDvb) {
+      dvbLiveUrl = await ensureLiveDvbCleanHlsSession(cleanCheckUrl, dvbProfile, originRef).catch(
+        () => null
+      );
+    }
     const finalStreamUrl = isDirectBrowserCorsPublicCdn
       ? cleanCheckUrl
-      : buildHlsProxyUrl(cleanCheckUrl, originRef, isDvbHeadendStream(cleanCheckUrl));
+      : dvbLiveUrl || buildHlsProxyUrl(cleanCheckUrl, originRef, isDvb);
 
     const resolvedChLang = isCnStream ? 'ZH' : 'ES';
     const result: ExtractedStreamResult = {
@@ -113,7 +122,7 @@ export async function handleDirectExtractCases(params: {
       title: titleHint || (isCnStream ? 'Fútbol China en Directo (中文)' : 'TV España en Directo'),
       requestedLang: resolvedChLang,
       resolvedLang: resolvedChLang,
-      expiresAt: Date.now() + 4 * 60 * 1000,
+      expiresAt: Date.now() + (dvbLiveUrl ? 30 * 1000 : 4 * 60 * 1000),
     };
     setCache(cacheKey, result);
     return sendOk(result);

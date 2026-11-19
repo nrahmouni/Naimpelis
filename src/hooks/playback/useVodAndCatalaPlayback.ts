@@ -32,9 +32,11 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
     setExtractionError,
     setLoadingItemId,
     findSavedResumeSec,
+    commitVideoStateSync,
   } = ctx;
 
   const {
+    sessionMode,
     profileName,
     canChangeMedia,
     hostId,
@@ -123,7 +125,7 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
           updatedBy: profileName,
         };
         setVideoState(nextState);
-        socketService.syncVideoState('change_url', nextState, profileName);
+        commitVideoStateSync('change_url', nextState);
         playCinemaSound('play');
         setIsExtracting(false);
         setLoadingItemId(null);
@@ -207,7 +209,7 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
           clearExtractionSnapshot();
           videoStateUrlRef.current = nextState.url;
           setVideoState(nextState);
-          socketService.syncVideoState('change_url', nextState, profileName);
+          commitVideoStateSync('change_url', nextState);
           playCinemaSound('play');
           setIsExtracting(false);
           setLoadingItemId(null);
@@ -225,6 +227,10 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
 
       if (data.mode === 'cloud') {
         clearExtractionSnapshot();
+        if (sessionMode === 'solo') {
+          setExtractionError('Esta fuente externa requiere sala en directo. Pulsa «Ver con amigos» o cambia de pista.');
+          return;
+        }
         socketService.startCloudBrowser(data.streamUrl, profileName);
         return;
       }
@@ -298,7 +304,7 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
       clearExtractionSnapshot();
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
-      socketService.syncVideoState('change_url', nextState, profileName);
+      commitVideoStateSync('change_url', nextState);
       playCinemaSound('play');
     } catch (err: unknown) {
       if (isAbortError(err) || reqSeq !== extractionReqSeqRef.current) return;
@@ -414,6 +420,11 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
       }
 
       if (data.mode === 'cloud') {
+        clearExtractionSnapshot();
+        if (sessionMode === 'solo') {
+          setExtractionError('Este episodio requiere sala en directo. Pulsa «Ver con amigos» o prueba otra fuente.');
+          return;
+        }
         socketService.startCloudBrowser(data.streamUrl, profileName);
         return;
       }
@@ -505,7 +516,7 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
 
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
-      socketService.syncVideoState('change_url', nextState, profileName);
+      commitVideoStateSync('change_url', nextState);
       playCinemaSound('play');
     } catch (err: unknown) {
       if (isAbortError(err) || reqSeq !== extractionReqSeqRef.current) return;
@@ -560,6 +571,10 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
         }
         if (data.mode === 'cloud') {
           clearExtractionSnapshot();
+          if (sessionMode === 'solo') {
+            setExtractionError('Este episodio requiere sala en directo. Pulsa «Ver con amigos» para verlo en Cloud HD.');
+            return;
+          }
           socketService.startCloudBrowser(data.streamUrl, profileName);
           return;
         }
@@ -610,7 +625,7 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
         clearExtractionSnapshot();
         videoStateUrlRef.current = nextState.url;
         setVideoState(nextState);
-        socketService.syncVideoState('change_url', nextState, profileName);
+        commitVideoStateSync('change_url', nextState);
         playCinemaSound('play');
       } catch (err: unknown) {
         if (isAbortError(err) || reqSeq !== extractionReqSeqRef.current) return;

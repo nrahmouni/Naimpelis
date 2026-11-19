@@ -122,8 +122,8 @@ export class SocketTransport {
           if (message.type === 'PONG' && message.payload?.clientTs) {
             const now = Date.now();
             const rtt = Math.max(4, now - Number(message.payload.clientTs));
-            this.latencyMs = rtt;
-            if (typeof message.payload.serverTs === 'number') {
+            this.latencyMs = Math.min(rtt, 9999);
+            if (rtt < 5000 && typeof message.payload.serverTs === 'number') {
               this.serverClockOffsetMs = message.payload.serverTs + Math.round(rtt / 2) - now;
             }
             this.notifyListeners({
@@ -252,11 +252,8 @@ export class SocketTransport {
 
   requestSync() {
     if (!this.roomId) return;
-    this.sendRaw('SYNC_VIDEO_STATE', {
+    this.sendRaw('SYNC_REQUEST', {
       roomId: this.roomId,
-      action: 'sync_request',
-      videoState: {},
-      updatedBy: this.user?.name || 'Espectador',
     });
   }
 

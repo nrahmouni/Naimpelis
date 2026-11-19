@@ -58,6 +58,7 @@ interface EntryHomeScreenProps {
   onOpenVoiceAssistant?: () => void;
   onOpenDesignSystem?: () => void;
   onChangeLang?: (lang: AppLanguage) => void;
+  sessionMode?: 'solo' | 'party';
 }
 
 export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
@@ -86,6 +87,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   onOpenVoiceAssistant,
   onOpenDesignSystem,
   onChangeLang,
+  sessionMode = 'party',
 }) => {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(displayName);
@@ -410,6 +412,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
         {/* 4. CURATED OBSIDIAN BENTO HUB (ZERO OVERLAP, CLEAN HIERARCHY) */}
         <EntryHomeBentoGrid
           lang={lang}
+          sessionMode={sessionMode}
           lastUsedWorld={lastUsedWorld}
           heroPosters={heroPosters}
           featuredChannels={featuredChannels}

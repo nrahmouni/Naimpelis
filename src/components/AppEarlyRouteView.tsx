@@ -45,6 +45,7 @@ interface AppEarlyRouteViewProps {
   isAdsPageOpen: boolean;
   isTvPairLobby: boolean;
   inRoom: boolean;
+  hasEnteredApp: boolean;
   isTvMode: boolean;
   reducedMotion: boolean;
   lang: AppLanguage;
@@ -91,6 +92,7 @@ interface AppEarlyRouteViewProps {
   onGoogleSignIn: () => Promise<void>;
   onGoogleSignOut: () => Promise<void>;
   onChangeLang: (l: AppLanguage) => void;
+  onEnterSolo: (nextProfile: StoredProfile) => void;
   onEnterRoom: (targetRoomId: string, nextProfile: StoredProfile, customName?: string) => void;
   onAcceptIncomingRoomInvite: (invite: IncomingRoomInvite) => void;
   onAddFriend: (
@@ -118,6 +120,7 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
   isAdsPageOpen,
   isTvPairLobby,
   inRoom,
+  hasEnteredApp,
   isTvMode,
   reducedMotion,
   lang,
@@ -164,6 +167,7 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
   onGoogleSignIn,
   onGoogleSignOut,
   onChangeLang,
+  onEnterSolo,
   onEnterRoom,
   onAcceptIncomingRoomInvite,
   onAddFriend,
@@ -238,7 +242,7 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
     );
   }
 
-  if (!inRoom) {
+  if (!inRoom && !hasEnteredApp) {
     return (
       <MotionConfig reducedMotion={reducedMotion ? 'always' : 'user'}>
         <PreviewAutoEscapeBanner variant="floating" />
@@ -297,6 +301,7 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
             setIntroWithSound(true);
             setShowIntro(true);
           }}
+          onEnterSolo={onEnterSolo}
           onEnterRoom={onEnterRoom}
           onOpenTvPairLobby={() => {
             if (typeof window !== 'undefined') window.location.href = '/tv';

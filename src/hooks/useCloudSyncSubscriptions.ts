@@ -9,6 +9,8 @@ import type {
   WatchHistoryItem,
 } from '../types';
 import type { CatalogSection } from '../components/MediaCatalogHub';
+import type { SessionMode } from '../store/useAppStore';
+import { isDedicatedAppPath } from '../shared/dedicatedRoutes';
 import {
   checkGoogleRedirectSignInResult,
   deleteCloudWatchHistoryItem,
@@ -47,6 +49,8 @@ export function useCloudSyncSubscriptions(params: {
   loadCachedSavedRooms: () => CloudSavedRoom[];
   rememberSessionPin: (targetCode: string, pinCode: string) => void;
   inRoomRef: React.MutableRefObject<boolean>;
+  sessionModeRef: React.MutableRefObject<SessionMode>;
+  hasEnteredAppRef: React.MutableRefObject<boolean>;
   manualLobbyStayRef: React.MutableRefObject<boolean>;
   isTvPairLobbyRef: React.MutableRefObject<boolean>;
   setAuthUser: (user: User | null) => void;
@@ -71,6 +75,8 @@ export function useCloudSyncSubscriptions(params: {
     loadCachedSavedRooms,
     rememberSessionPin,
     inRoomRef,
+    sessionModeRef,
+    hasEnteredAppRef,
     manualLobbyStayRef,
     isTvPairLobbyRef,
     setAuthUser,
@@ -224,11 +230,17 @@ export function useCloudSyncSubscriptions(params: {
 
       if (!active) return;
 
+      const isOnDedicatedPath =
+        typeof window !== 'undefined' && isDedicatedAppPath(window.location.pathname);
+
       if (
         effectiveUser.emailVerified &&
+        sessionModeRef.current !== 'solo' &&
+        !hasEnteredAppRef.current &&
         !inRoomRef.current &&
         !manualLobbyStayRef.current &&
-        !isTvPairLobbyRef.current
+        !isTvPairLobbyRef.current &&
+        !isOnDedicatedPath
       ) {
         const cachedCloudRooms = loadCachedSavedRooms();
         const recentLocalRooms = getRecentRooms();

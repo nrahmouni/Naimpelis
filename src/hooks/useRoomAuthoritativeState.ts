@@ -141,6 +141,7 @@ export function useRoomAuthoritativeState(params: {
   isPlayerClosedLocallyRef.current = params.isPlayerClosedLocally;
   const isPlayerMinimizedRef = useRef(params.isPlayerMinimized);
   isPlayerMinimizedRef.current = params.isPlayerMinimized;
+  const pendingSoloUpgradeVideoStateRef = useRef<VideoState | null>(null);
 
   return {
     hostId,
@@ -239,6 +240,7 @@ export function useRoomAuthoritativeState(params: {
     activeMovieContextRef,
     isPlayerClosedLocallyRef,
     isPlayerMinimizedRef,
+    pendingSoloUpgradeVideoStateRef,
   };
 }
 

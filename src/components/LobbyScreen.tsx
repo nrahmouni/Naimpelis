@@ -9,6 +9,8 @@ import {
   Settings,
   KeyRound,
   Check,
+  User as UserIcon,
+  Users,
 } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { pickLang, formatRoomTitle } from '../utils/i18n';
@@ -49,6 +51,7 @@ interface LobbyScreenProps {
   onSignOut: () => Promise<void>;
   onChangeLang: (lang: AppLanguage) => void;
   onReplayIntro: () => void;
+  onEnterSolo: (profile: StoredProfile) => void;
   onEnterRoom: (roomId: string, profile: StoredProfile, roomName?: string) => void;
   onOpenTvPairLobby?: () => void;
   onOpenAdsPage?: () => void;
@@ -68,6 +71,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   onSignOut,
   onChangeLang,
   onReplayIntro,
+  onEnterSolo,
   onEnterRoom,
   onOpenTvPairLobby,
   onOpenLinkDevice,
@@ -116,6 +120,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     const code = generateShortRoomCode(4);
     const defaultRoomTitle = formatRoomTitle(lang, profile.name);
     onEnterRoom(code, profile, defaultRoomTitle);
+  };
+
+  const handleEnterSoloApp = () => {
+    const profile = buildProfile();
+    triggerHaptic('medium');
+    onEnterSolo(profile);
   };
 
   const handleJoinByCode = (e: React.FormEvent) => {
@@ -206,11 +216,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             </h1>
             <p className="text-sm text-zinc-400">
               {pickLang(lang, {
-                es: 'Todo sincronizado en directo con tus amigos.',
-                ca: 'Tot sincronitzat en directe amb els teus amics.',
-                en: 'Watch live in sync together.',
-                zh: '与好友实时同步观看直播。',
-                rif: 'Xzarem direkt marra aked wayawya.',
+                es: 'Entra a tu aire en solitario o crea una sala sincronizada.',
+                ca: 'Entra al teu aire en solitari o crea una sala sincronitzada.',
+                en: 'Watch solo at your own pace or create a synced watch party.',
+                zh: '自由独享观看，或随时创建同步房间与好友一起看。',
+                rif: 'Xzar wehdek neɣ egg taxxamt aked imddukkal.',
               })}
             </p>
           </motion.div>
@@ -289,7 +299,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
-                        handleEnterApp();
+                        handleEnterSoloApp();
                       }
                     }}
                     placeholder={pickLang(lang, {
@@ -314,21 +324,44 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 </div>
               </div>
 
-              <PrimaryButton
-                type="button"
-                onClick={handleEnterApp}
-                fullWidth
-                size="lg"
-              >
-                <span>
-                  {pickLang(lang, {
-                    es: 'Entrar',
-                    ca: 'Entrar',
-                    en: 'Enter',
-                  })}
-                </span>
-                <ArrowRight className="w-4 h-4 shrink-0" />
-              </PrimaryButton>
+              <div className="space-y-2.5">
+                <PrimaryButton
+                  type="button"
+                  onClick={handleEnterSoloApp}
+                  fullWidth
+                  size="lg"
+                >
+                  <UserIcon className="w-4 h-4 shrink-0" />
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Entrar en solitario',
+                      ca: 'Entrar en solitari',
+                      en: 'Enter Solo',
+                      zh: '独自进入',
+                      rif: 'Adef wehdek',
+                    })}
+                  </span>
+                  <ArrowRight className="w-4 h-4 shrink-0" />
+                </PrimaryButton>
+
+                <button
+                  type="button"
+                  onClick={handleEnterApp}
+                  className="w-full min-h-12 px-4 rounded-2xl bg-gradient-to-r from-[#9146FF]/18 via-[#1B182D] to-[#9146FF]/14 hover:from-[#9146FF]/28 hover:to-[#9146FF]/24 border border-[#9146FF]/45 hover:border-[#BF94FF]/70 text-sm font-display font-bold text-white flex items-center justify-center gap-2 cursor-pointer active:scale-[0.985] transition-all shadow-[0_8px_24px_rgba(145,70,255,0.16)]"
+                >
+                  <Users className="w-4 h-4 text-[#D8B4FE] shrink-0" />
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Crear sala con amigos',
+                      ca: 'Crear sala amb amics',
+                      en: 'Create Watch Party',
+                      zh: '创建好友房间',
+                      rif: 'Egg taxxamt aked imddukkal',
+                    })}
+                  </span>
+                  <ArrowRight className="w-4 h-4 text-[#BF94FF] shrink-0" />
+                </button>
+              </div>
             </div>
 
             {/* Actions: Google & Join on same level, App Install below */}

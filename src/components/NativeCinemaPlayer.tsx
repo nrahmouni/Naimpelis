@@ -73,6 +73,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   onOpenInCloudBrowser,
   voiceChat,
   onVideoEnded,
+  sessionMode = 'party',
+  onUpgradeSoloToParty,
+  onShareCurrentMedia,
 }) => {
   const { subtitleStyle, setSubtitleStyle, syncOffsetMs, setSyncOffsetMs } = useAppStore();
   const t = UI_COPY[lang];
@@ -616,7 +619,10 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             hasConnectedSmartTv={hasConnectedSmartTv}
             batterySaverTvMode={batterySaverTvMode}
             isCastingToTv={isCastingToTv}
-            voiceSlot={stripVoiceSlot}
+            voiceSlot={sessionMode === 'solo' ? null : stripVoiceSlot}
+            sessionMode={sessionMode}
+            onUpgradeSoloToParty={onUpgradeSoloToParty}
+            onShareCurrentMedia={onShareCurrentMedia}
             onQuickLanguageSwitch={handleQuickLanguageSwitch}
             onSelectTrack={onSelectTrack}
             onSelectExternalServer={handleSelectExternalServer}

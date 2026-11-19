@@ -3,6 +3,7 @@ import type { ActiveMovieContext } from '../../components/MoviePlaybackDock';
 import type { ActiveSportsMatchMeta } from '../useLiveSportsMatchDetails';
 import type { CatalogSection } from '../../components/MediaCatalogHub';
 import type { MobileNavTab } from '../../utils/appSessionHelpers';
+import type { SessionMode } from '../../store/useAppStore';
 import type {
   AppLanguage,
   CloudBrowserState,
@@ -15,6 +16,8 @@ import type {
 } from '../../types';
 
 export interface UsePlaybackOrchestratorOptions {
+  sessionMode: SessionMode;
+  onUpgradeSoloToParty?: () => void;
   lang: AppLanguage;
   profileName: string;
   canChangeMedia: boolean;
@@ -74,4 +77,8 @@ export interface PlaybackCoreContext {
   setExtractionError: React.Dispatch<React.SetStateAction<string | null>>;
   setLoadingItemId: React.Dispatch<React.SetStateAction<string | null>>;
   findSavedResumeSec: (rawId: string) => number;
+  commitVideoStateSync: (
+    action: 'play' | 'pause' | 'seek' | 'change_url',
+    nextState: VideoState
+  ) => void;
 }

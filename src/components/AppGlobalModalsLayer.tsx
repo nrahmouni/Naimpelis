@@ -59,6 +59,7 @@ interface AppGlobalModalsLayerProps {
   lang: AppLanguage;
   onChangeLang: (lang: AppLanguage) => void;
   inRoom: boolean;
+  sessionMode?: 'solo' | 'party';
   roomId: string;
   roomName: string;
   profile: StoredProfile;
@@ -163,6 +164,7 @@ interface AppGlobalModalsLayerProps {
   onDismissFriendNotice: () => void;
   onSendDirectRoomInvite: (friend: { friendId: string; name: string; friendCode?: string }) => void;
   onSubmitGuestPin: (pin: string) => void;
+  onUpgradeSoloToParty?: () => void;
   onLeaveRoom: () => void;
   onClaimTvCode: (code: string) => void;
   onRemoteTogglePlay: () => void;
@@ -201,6 +203,7 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
     lang,
     onChangeLang,
     inRoom,
+    sessionMode = 'party',
     roomId,
     roomName,
     profile,
@@ -280,6 +283,7 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
     onDismissFriendNotice,
     onSendDirectRoomInvite,
     onSubmitGuestPin,
+    onUpgradeSoloToParty,
     onLeaveRoom,
     onClaimTvCode,
     onRemoteTogglePlay,
@@ -525,7 +529,9 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
           onOpenYouTube={() => enterWorld('youtube')}
           onOpenSettings={() => setSettingsSheetOpen(true)}
           inRoom={inRoom}
+          sessionMode={sessionMode}
           roomName={roomName}
+          onUpgradeSoloToParty={onUpgradeSoloToParty}
           onLeaveRoom={onLeaveRoom}
           onSignOut={onSignOut}
         />

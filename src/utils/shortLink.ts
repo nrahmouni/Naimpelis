@@ -1,34 +1,30 @@
-const RESERVED_PATH_SEGMENTS = new Set([
-  'api',
-  'assets',
-  'src',
-  'public',
-  'dist',
-  'ws',
-  'favicon',
-  'manifest',
-  'tv',
-  'kids',
-  'riffankids',
-  'riffan-kids',
-  'ads',
-  'naimcine-ads',
-  'auth-bridge',
-]);
+import {
+  ALL_RESERVED_SLUGS,
+  buildCanonicalShareUrl,
+  parseAppRoute,
+  PUBLIC_PRODUCTION_DOMAIN,
+  resolveConfiguredPublicOrigin,
+  type AppRouteTarget,
+} from '../shared/dedicatedRoutes';
 
 const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 
 /**
  * Generates a compact, readable 4-character room code (e.g. "k8x4")
- * so invite links on naimcine.ai.studio are ultra-short:
- * https://naimcine.ai.studio/k8x4
+ * so invite links on riffantv.ai.studio are ultra-short and never collide
+ * with reserved dedicated routes.
  */
 export function generateShortRoomCode(length = 4): string {
-  let out = '';
-  for (let i = 0; i < length; i++) {
-    out += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
+  for (let attempt = 0; attempt < 25; attempt++) {
+    let out = '';
+    for (let i = 0; i < length; i++) {
+      out += ALPHABET[Math.floor(Math.random() * ALPHABET.length)];
+    }
+    if (!ALL_RESERVED_SLUGS.has(out)) {
+      return out;
+    }
   }
-  return out;
+  return `r${ALPHABET[Math.floor(Math.random() * ALPHABET.length)]}7x`;
 }
 
 /**
@@ -46,15 +42,14 @@ export function normalizeCustomRoomSlug(raw: string): string {
     .replace(/-+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 24);
-  if (cleaned.length < 3 || RESERVED_PATH_SEGMENTS.has(cleaned)) {
+  if (cleaned.length < 3 || ALL_RESERVED_SLUGS.has(cleaned)) {
     return '';
   }
   return cleaned;
 }
 
 /**
- * Reads room code from either clean short URL path (`/k8x4` or `/s/k8x4`),
- * legacy query parameter (`?room=k8x4`), Smart TV route (`/tv`), or promo page (`/ads`).
+ * Reads room code and dedicated semantic link target from the browser URL.
  */
 export function parseRoomFromWindow(): {
   roomId: string;
@@ -65,6 +60,8 @@ export function parseRoomFromWindow(): {
   isAuthBridgePage?: boolean;
   authBridgeSessionId?: string;
   gameType?: string;
+  routeTarget: AppRouteTarget;
+  isDedicatedEntry: boolean;
 } {
   if (typeof window === 'undefined') {
     return {
@@ -74,6 +71,8 @@ export function parseRoomFromWindow(): {
       isKidsMode: false,
       isAdsPage: false,
       isAuthBridgePage: false,
+      routeTarget: { kind: 'home' },
+      isDedicatedEntry: false,
     };
   }
 
@@ -82,116 +81,93 @@ export function parseRoomFromWindow(): {
   const rawGame = params.get('game')?.trim().toLowerCase() || '';
   const gameType = /^[a-z0-9_-]{2,24}$/.test(rawGame) ? rawGame : undefined;
 
-  const segments = window.location.pathname
-    .split('/')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const firstSegment = segments.length === 1 ? decodeURIComponent(segments[0]).toLowerCase() : '';
+  const target = parseAppRoute(window.location.pathname, window.location.search);
 
-  if (
-    params.get('authbridge') === '1' ||
-    firstSegment === 'auth-bridge'
-  ) {
-    return {
-      roomId: '',
-      isTvMode: false,
-      isTvPairLobby: false,
-      isKidsMode: false,
-      isAdsPage: false,
-      isAuthBridgePage: true,
-      authBridgeSessionId: params.get('session')?.trim() || '',
-    };
-  }
-
-  if (
-    params.get('ads') === '1' ||
-    firstSegment === 'ads' ||
-    firstSegment === 'naimcine-ads'
-  ) {
-    return {
-      roomId: '',
-      isTvMode: false,
-      isTvPairLobby: false,
-      isKidsMode: false,
-      isAdsPage: true,
-      gameType,
-    };
-  }
-
-  if (
-    params.get('kids') === '1' ||
-    firstSegment === 'kids' ||
-    firstSegment === 'riffankids' ||
-    firstSegment === 'riffan-kids'
-  ) {
-    return {
-      roomId: '',
-      isTvMode: false,
-      isTvPairLobby: false,
-      isKidsMode: true,
-      isAdsPage: false,
-      gameType,
-    };
-  }
-
-  if (params.get('tvpair') === '1' || firstSegment === 'tv') {
-    return {
-      roomId: '',
-      isTvMode: false,
-      isTvPairLobby: true,
-      isKidsMode: false,
-      isAdsPage: false,
-    };
-  }
-
-  const queryRoom = params.get('room')?.trim().toLowerCase();
-  if (queryRoom && /^[a-z0-9-_]{2,32}$/.test(queryRoom)) {
-    return {
-      roomId: queryRoom,
-      isTvMode,
-      isTvPairLobby: false,
-      isKidsMode: false,
-      isAdsPage: false,
-      gameType,
-    };
-  }
-
-  if (segments.length === 1) {
-    if (
-      !firstSegment.includes('.') &&
-      !RESERVED_PATH_SEGMENTS.has(firstSegment) &&
-      /^[a-z0-9-_]{2,32}$/.test(firstSegment)
-    ) {
+  if (target.kind === 'system') {
+    if (target.systemType === 'auth-bridge') {
       return {
-        roomId: firstSegment,
-        isTvMode,
+        roomId: '',
+        isTvMode: false,
         isTvPairLobby: false,
         isKidsMode: false,
         isAdsPage: false,
-        gameType,
+        isAuthBridgePage: true,
+        authBridgeSessionId: params.get('session')?.trim() || '',
+        routeTarget: target,
+        isDedicatedEntry: false,
       };
     }
-  } else if (segments.length === 2 && (segments[0] === 's' || segments[0] === 'r')) {
-    const candidate = decodeURIComponent(segments[1]).toLowerCase();
-    if (!candidate.includes('.') && /^[a-z0-9-_]{2,32}$/.test(candidate)) {
+    if (target.systemType === 'ads') {
       return {
-        roomId: candidate,
-        isTvMode,
+        roomId: '',
+        isTvMode: false,
         isTvPairLobby: false,
         isKidsMode: false,
-        isAdsPage: false,
+        isAdsPage: true,
         gameType,
+        routeTarget: target,
+        isDedicatedEntry: false,
       };
     }
+    if (target.systemType === 'kids') {
+      return {
+        roomId: '',
+        isTvMode: false,
+        isTvPairLobby: false,
+        isKidsMode: true,
+        isAdsPage: false,
+        gameType,
+        routeTarget: target,
+        isDedicatedEntry: true,
+      };
+    }
+    if (target.systemType === 'tv') {
+      return {
+        roomId: '',
+        isTvMode: false,
+        isTvPairLobby: true,
+        isKidsMode: false,
+        isAdsPage: false,
+        routeTarget: target,
+        isDedicatedEntry: false,
+      };
+    }
+    return {
+      roomId: '',
+      isTvMode: false,
+      isTvPairLobby: false,
+      isKidsMode: false,
+      isAdsPage: false,
+      routeTarget: target,
+      isDedicatedEntry: false,
+    };
   }
+
+  if (target.kind === 'room') {
+    return {
+      roomId: target.roomId,
+      isTvMode: Boolean(target.isTvMode),
+      isTvPairLobby: false,
+      isKidsMode: false,
+      isAdsPage: false,
+      gameType: target.gameType,
+      routeTarget: target,
+      isDedicatedEntry: false,
+    };
+  }
+
+  const isDedicated = target.kind !== 'home';
+  const attachedRoom = 'roomId' in target && target.roomId ? target.roomId : '';
 
   return {
-    roomId: '',
-    isTvMode: false,
+    roomId: attachedRoom,
+    isTvMode: Boolean(attachedRoom && isTvMode),
     isTvPairLobby: false,
     isKidsMode: false,
     isAdsPage: false,
     gameType,
+    routeTarget: target,
+    isDedicatedEntry: isDedicated,
   };
 }
 
@@ -213,12 +189,11 @@ export function extractRoomCodeFromInput(raw: string): string {
       const url = new URL(normalized);
       const qRoom = url.searchParams.get('room');
       if (qRoom) {
-        return qRoom.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
+        const cleanQueryRoom = qRoom.trim().toLowerCase().replace(/[^a-z0-9-_]/g, '');
+        return ALL_RESERVED_SLUGS.has(cleanQueryRoom) ? '' : cleanQueryRoom;
       }
-      const parts = url.pathname.split('/').filter(Boolean);
-      const last = parts[parts.length - 1] || '';
-      const cleanLast = last.toLowerCase().replace(/[^a-z0-9-_]/g, '');
-      return RESERVED_PATH_SEGMENTS.has(cleanLast) ? '' : cleanLast;
+      const parsed = parseAppRoute(url.pathname, url.search);
+      return parsed.kind === 'room' ? parsed.roomId : '';
     }
   } catch {
     // fallback to plain code cleanup
@@ -228,33 +203,10 @@ export function extractRoomCodeFromInput(raw: string): string {
     .replace(/^#/, '')
     .toLowerCase()
     .replace(/[^a-z0-9-_]/g, '');
-  return RESERVED_PATH_SEGMENTS.has(cleaned) ? '' : cleaned;
+  return ALL_RESERVED_SLUGS.has(cleaned) ? '' : cleaned;
 }
 
-/**
- * Builds a clean, ultra-short invite URL (e.g. https://riffantv.ai.studio/k8x4)
- */
-export function buildShortInviteUrl(roomId: string, tvMode = false): string {
-  if (typeof window === 'undefined') return '';
-  const cleanId = encodeURIComponent(roomId.trim().toLowerCase());
-  const base = `${window.location.origin}/${cleanId}`;
-  return tvMode ? `${base}?tv=1` : base;
-}
-
-/**
- * Builds a direct invite link that opens the guest straight into the chosen game.
- */
-export function buildGameInviteUrl(roomId: string, gameType: string): string {
-  if (typeof window === 'undefined') return '';
-  const cleanId = encodeURIComponent(roomId.trim().toLowerCase());
-  const cleanGame = encodeURIComponent(gameType.trim().toLowerCase());
-  return `${window.location.origin}/${cleanId}?game=${cleanGame}`;
-}
-
-export const PUBLIC_PRODUCTION_DOMAIN =
-  (typeof import.meta !== 'undefined' &&
-    (import.meta.env?.VITE_PUBLIC_APP_HOST as string | undefined)) ||
-  'riffantv.ai.studio';
+export { PUBLIC_PRODUCTION_DOMAIN };
 
 /**
  * Returns true when running inside a private preview hostname that requires auth cookies.
@@ -264,11 +216,42 @@ export function isPrivateDevPreviewHost(): boolean {
   return /^ais-dev-/i.test(window.location.hostname || '');
 }
 
-function resolvePublicLinkOrigin(): string {
-  if (typeof window === 'undefined' || isPrivateDevPreviewHost()) {
-    return `https://${PUBLIC_PRODUCTION_DOMAIN}`;
+export function resolvePublicLinkOrigin(): string {
+  const envHost =
+    typeof import.meta !== 'undefined'
+      ? (import.meta.env?.VITE_PUBLIC_APP_HOST as string | undefined)
+      : undefined;
+  if (envHost && envHost.trim()) {
+    return `https://${envHost.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '')}`;
   }
-  return window.location.origin || `https://${PUBLIC_PRODUCTION_DOMAIN}`;
+  return resolveConfiguredPublicOrigin();
+}
+
+/**
+ * Builds a clean, ultra-short invite URL (e.g. https://riffantv.ai.studio/k8x4)
+ */
+export function buildShortInviteUrl(roomId: string, tvMode = false): string {
+  if (!roomId?.trim()) return resolvePublicLinkOrigin();
+  return buildCanonicalShareUrl(
+    { kind: 'room', roomId, tvMode },
+    { origin: resolvePublicLinkOrigin() }
+  );
+}
+
+/**
+ * Builds a direct invite link that opens the guest straight into the chosen game.
+ */
+export function buildGameInviteUrl(roomId: string, gameType: string): string {
+  if (!roomId?.trim()) {
+    return buildCanonicalShareUrl(
+      { kind: 'game', gameId: gameType },
+      { origin: resolvePublicLinkOrigin() }
+    );
+  }
+  return buildCanonicalShareUrl(
+    { kind: 'room', roomId, gameType },
+    { origin: resolvePublicLinkOrigin() }
+  );
 }
 
 /**

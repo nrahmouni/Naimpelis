@@ -57,8 +57,9 @@ function normName(val: string): string {
 
 function isPlayableHlsUrl(url: string): boolean {
   if (!/^https?:\/\//i.test(url)) return false;
+  if (/\.mpd(\?|$|#)/i.test(url)) return false;
   if (/youtube\.com|youtu\.be|twitch\.tv|dailymotion\.com|vimeo\.com/i.test(url)) return false;
-  return /\.m3u8(\?|$|#)|\.mpd(\?|$)|\/hls\/|\/manifest|live/i.test(url);
+  return /\.m3u8(\?|$|#)|\/hls\/|\/manifest/i.test(url);
 }
 
 const KNOWN_TDT_ALIASES: Record<string, string[]> = {

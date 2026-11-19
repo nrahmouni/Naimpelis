@@ -4,7 +4,7 @@
  * real-time EPG indicator bars, and region/EPG filter bottom sheet.
  */
 import React from 'react';
-import { Loader2, Play, SlidersHorizontal, Star, Info } from 'lucide-react';
+import { Loader2, Play, Share2, SlidersHorizontal, Star, Info } from 'lucide-react';
 import type {
   AppLanguage,
   ChannelLiveEpg,
@@ -14,6 +14,7 @@ import type {
 } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
+import { shareDedicatedLink } from '../../utils/shareDedicatedLink';
 import { buildChannelFavId } from '../../utils/storage';
 import {
   ChannelLogoBadge,
@@ -38,6 +39,7 @@ interface PullRefreshHandlers {
 
 interface LiveTvWorldViewProps {
   lang: AppLanguage;
+  shareRoomId?: string;
   pull: PullRefreshHandlers;
   tdtChannels: SpanishTdtChannel[];
   filteredChannels: SpanishTdtChannel[];
@@ -69,6 +71,7 @@ interface LiveTvWorldViewProps {
 
 export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
   lang,
+  shareRoomId,
   pull,
   tdtChannels,
   filteredChannels,
@@ -355,6 +358,26 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
                     }`}
                   >
                     <Star className={`w-4 h-4 ${faved ? 'fill-current' : ''}`} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void shareDedicatedLink({
+                        target: { kind: 'channel', id: ch.id, name: ch.name },
+                        roomId: shareRoomId,
+                        title: ch.name,
+                      });
+                    }}
+                    aria-label={pickLang(lang, {
+                      es: `Compartir ${ch.name}`,
+                      ca: `Compartir ${ch.name}`,
+                      en: `Share ${ch.name}`,
+                    })}
+                    className="min-w-11 min-h-11 rounded-xl bg-white/[0.04] border border-white/[0.08] text-zinc-400 hover:text-[#BF94FF] hover:bg-white/[0.09] flex items-center justify-center cursor-pointer transition-colors"
+                  >
+                    <Share2 className="w-4 h-4" />
                   </button>
 
                   <button

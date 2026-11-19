@@ -13,6 +13,7 @@ import {
   Play,
   Plus,
   Search,
+  Share2,
   Tv,
   X,
 } from 'lucide-react';
@@ -26,6 +27,7 @@ import type {
 } from '../../types';
 import { UI_COPY, pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
+import { shareDedicatedLink } from '../../utils/shareDedicatedLink';
 import { useFocusTrap } from '../../utils/useFocusTrap';
 import { sanitizeItemKey } from '../../utils/storage';
 import { PosterImage } from '../ui/PosterImage';
@@ -35,6 +37,8 @@ import { SeriesPickerHeader } from './SeriesPickerHeader';
 interface SeriesEpisodePickerModalProps {
   lang: AppLanguage;
   selectedSeries: TvSeriesDetails | null;
+  highlightedEpisodeNumber?: number | null;
+  shareRoomId?: string;
   seriesModalLang: string;
   forceSpanishSeriesActive: boolean;
   loadingSeriesDetails: boolean;
@@ -64,6 +68,8 @@ interface SeriesEpisodePickerModalProps {
 export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> = ({
   lang,
   selectedSeries,
+  highlightedEpisodeNumber = null,
+  shareRoomId,
   seriesModalLang,
   forceSpanishSeriesActive,
   loadingSeriesDetails,
@@ -100,6 +106,15 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
   useEffect(() => {
     if (!selectedSeries || loadingSeriesDetails) return;
     if (selectedSeries.episodes.length > 50) {
+      if (highlightedEpisodeNumber) {
+        const hlIdx = selectedSeries.episodes.findIndex(
+          (ep) => ep.episodeNumber === highlightedEpisodeNumber
+        );
+        if (hlIdx >= 0) {
+          setEpisodeRangeStart(Math.floor(hlIdx / 50) * 50);
+          return;
+        }
+      }
       const savedEpInSeason = watchHistory.find(
         (h) =>
           h.mediaType === 'tv' &&
@@ -119,7 +134,7 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
     setTimeout(() => {
       episodeListScrollRef.current?.scrollTo({ top: 0 });
     }, 0);
-  }, [seriesTmdbId, activeSeason, epsCount, loadingSeriesDetails]);
+  }, [seriesTmdbId, activeSeason, epsCount, loadingSeriesDetails, highlightedEpisodeNumber]);
 
   if (!selectedSeries) return null;
 
@@ -200,6 +215,7 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
 
         <SeriesPickerHeader
           lang={lang}
+          shareRoomId={shareRoomId}
           selectedSeries={selectedSeries}
           seriesModalLang={seriesModalLang}
           forceSpanishSeriesActive={forceSpanishSeriesActive}
@@ -404,10 +420,18 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                       })
                     : `${ep.episodeNumber}. ${rawTitle}`;
 
+                  const isHighlightedEp = Boolean(
+                    highlightedEpisodeNumber && ep.episodeNumber === highlightedEpisodeNumber
+                  );
+
                   return (
                     <div
                       key={ep.id}
-                      className="group relative min-w-0 text-left rounded-2xl bg-[#0F1119] hover:bg-[#161925] border border-white/[0.08] hover:border-white/25 p-2.5 sm:p-3 flex items-center gap-3 transition-colors"
+                      className={`group relative min-w-0 text-left rounded-2xl border p-2.5 sm:p-3 flex items-center gap-3 transition-colors ${
+                        isHighlightedEp
+                          ? 'ring-2 ring-[#9146FF] bg-[#9146FF]/10 border-[#9146FF]/60'
+                          : 'bg-[#0F1119] hover:bg-[#161925] border-white/[0.08] hover:border-white/25'
+                      }`}
                     >
                       <button
                         type="button"
@@ -509,30 +533,57 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                         </p>
                       </div>
 
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          triggerHaptic('success');
-                          onAddToQueue({
-                            kind: 'tv',
-                            title: `${selectedSeries.title} · ${ep.seasonNumber}x${String(
-                              ep.episodeNumber
-                            ).padStart(2, '0')}`,
-                            subtitle: `${rawTitle || `Capítulo ${ep.episodeNumber}`} (${seriesModalLang})`,
-                            poster: ep.still || selectedSeries.poster,
-                            tmdbId: selectedSeries.tmdbId,
-                            season: ep.seasonNumber,
-                            episode: ep.episodeNumber,
-                            preferLang: seriesModalLang as 'ES' | 'LAT' | 'VOSE' | 'EN',
-                          });
-                        }}
-                        title={t.addToQueue}
-                        aria-label={t.addToQueue}
-                        className="relative z-10 min-h-[44px] min-w-[44px] rounded-xl bg-white/[0.06] hover:bg-white/[0.15] border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
+                      <div className="relative z-10 flex flex-col sm:flex-row items-center gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void shareDedicatedLink({
+                              target: {
+                                kind: 'series',
+                                tmdbId: selectedSeries.tmdbId,
+                                title: selectedSeries.title,
+                                season: ep.seasonNumber,
+                                episode: ep.episodeNumber,
+                              },
+                              roomId: shareRoomId,
+                              title: `${selectedSeries.title} · ${ep.seasonNumber}x${String(
+                                ep.episodeNumber
+                              ).padStart(2, '0')}`,
+                            });
+                          }}
+                          title={pickLang(lang, { es: 'Compartir capítulo', ca: 'Compartir capítol', en: 'Share episode' })}
+                          aria-label={pickLang(lang, { es: 'Compartir capítulo', ca: 'Compartir capítol', en: 'Share episode' })}
+                          className="min-h-[40px] min-w-[40px] rounded-xl bg-white/[0.06] hover:bg-white/[0.15] border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                        >
+                          <Share2 className="w-4 h-4 text-[#BF94FF]" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            triggerHaptic('success');
+                            onAddToQueue({
+                              kind: 'tv',
+                              title: `${selectedSeries.title} · ${ep.seasonNumber}x${String(
+                                ep.episodeNumber
+                              ).padStart(2, '0')}`,
+                              subtitle: `${rawTitle || `Capítulo ${ep.episodeNumber}`} (${seriesModalLang})`,
+                              poster: ep.still || selectedSeries.poster,
+                              tmdbId: selectedSeries.tmdbId,
+                              season: ep.seasonNumber,
+                              episode: ep.episodeNumber,
+                              preferLang: seriesModalLang as 'ES' | 'LAT' | 'VOSE' | 'EN',
+                            });
+                          }}
+                          title={t.addToQueue}
+                          aria-label={t.addToQueue}
+                          className="min-h-[40px] min-w-[40px] rounded-xl bg-white/[0.06] hover:bg-white/[0.15] border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}

@@ -24,6 +24,8 @@ import type { CatalogSection } from './MediaCatalogHub';
 import type { WorldId } from '../store/useAppStore';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
+import { shareDedicatedLink } from '../utils/shareDedicatedLink';
+import type { CanonicalLinkInput } from '../shared/dedicatedRoutes';
 import { CinemaPlaybackDocks } from './player/CinemaPlaybackDocks';
 
 const NativeCinemaPlayer = React.lazy(() =>
@@ -36,6 +38,8 @@ interface PlayerStageContainerProps {
   currentUserId: string;
   roomId: string;
   roomDisplayName: string;
+  sessionMode?: 'solo' | 'party';
+  onUpgradeSoloToParty?: () => void;
   effectiveVideoState: VideoState;
   isPlayerActive: boolean;
   isDockedMini: boolean;
@@ -125,6 +129,8 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
   currentUserId,
   roomId,
   roomDisplayName,
+  sessionMode = 'party',
+  onUpgradeSoloToParty,
   effectiveVideoState,
   isPlayerActive,
   isDockedMini,
@@ -207,6 +213,53 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
   onStopRoomPlayback,
   onClearExtractionError,
 }) => {
+  const handleShareCurrentMedia = () => {
+    let target: CanonicalLinkInput = { kind: 'home' };
+    if (effectiveVideoState.seriesMeta?.tmdbId) {
+      target = {
+        kind: 'series',
+        tmdbId: effectiveVideoState.seriesMeta.tmdbId,
+        title: effectiveVideoState.seriesMeta.seriesTitle || effectiveVideoState.title,
+        season: effectiveVideoState.seriesMeta.season,
+        episode: effectiveVideoState.seriesMeta.episode,
+      };
+    } else if (activeMovieContext?.tmdbId) {
+      target = {
+        kind: 'movie',
+        tmdbId: activeMovieContext.tmdbId,
+        title: activeMovieContext.title || effectiveVideoState.title,
+      };
+    } else if (activeSportsMatch) {
+      target = {
+        kind: 'match',
+        eventId: activeSportsMatch.eventId || activeSportsMatch.fotmobMatchId,
+        homeTeam: activeSportsMatch.homeTeam,
+        awayTeam: activeSportsMatch.awayTeam,
+      };
+    } else if (effectiveVideoState.isLive) {
+      const matchedTdt = tdtChannels.find(
+        (ch) =>
+          (effectiveVideoState.rawSourceUrl &&
+            ch.channels.some((tr) => tr.sourceUrl === effectiveVideoState.rawSourceUrl)) ||
+          (effectiveVideoState.title &&
+            ch.name.toLowerCase() === effectiveVideoState.title.toLowerCase())
+      );
+      if (matchedTdt) {
+        target = { kind: 'channel', id: matchedTdt.id, name: matchedTdt.name };
+      } else if (effectiveVideoState.title) {
+        target = { kind: 'channel', id: effectiveVideoState.title, name: effectiveVideoState.title };
+      }
+    } else if (effectiveVideoState.title) {
+      target = { kind: 'movie', title: effectiveVideoState.title };
+    }
+
+    void shareDedicatedLink({
+      target,
+      roomId: sessionMode !== 'solo' && roomId ? roomId : undefined,
+      title: effectiveVideoState.title || 'RiffanTV',
+    });
+  };
+
   return (
     <>
       <div
@@ -320,6 +373,9 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
                 !isDesktopLayout && isMobileKeyboardOpen && activeWorld === 'sala'
               }
               onOpenCatalogSection={onOpenCatalogSection}
+              sessionMode={sessionMode}
+              onUpgradeSoloToParty={onUpgradeSoloToParty}
+              onShareCurrentMedia={handleShareCurrentMedia}
             />
           </React.Suspense>
 

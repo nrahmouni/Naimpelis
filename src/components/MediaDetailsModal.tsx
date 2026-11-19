@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Play, Heart, Plus } from 'lucide-react';
+import { Play, Heart, Plus, Share2 } from 'lucide-react';
 import { RiffanRetryIcon, RiffanSpinner } from './ui/RiffanIcons';
 import {
   AppLanguage,
@@ -10,6 +10,7 @@ import {
 import { triggerHaptic } from '../utils/haptics';
 import { pickLang } from '../utils/i18n';
 import { extractSafeAmbientColor } from '../utils/imageUrl';
+import { shareDedicatedLink } from '../utils/shareDedicatedLink';
 import { useFocusTrap } from '../utils/useFocusTrap';
 import { FlagBadgeSvg, MediaLanguageSelector } from './ui/LanguageBadge';
 import {
@@ -23,6 +24,7 @@ export type MovieAudioLangPreference = 'ES' | 'LAT' | 'VOSE' | 'EN';
 interface MediaDetailsModalProps {
   item: CatalogMovie | null;
   lang: AppLanguage;
+  shareRoomId?: string;
   defaultAudioLang?: MovieAudioLangPreference;
   isBookmarked: boolean;
   onClose: () => void;
@@ -40,6 +42,7 @@ interface MediaDetailsModalProps {
 export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   item,
   lang,
+  shareRoomId,
   defaultAudioLang = 'ES',
   isBookmarked,
   onClose,
@@ -554,6 +557,25 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   {isBookmarked
                     ? pickLang(lang, { es: 'En Mi Lista', ca: 'A La Meva Llista', en: 'Saved' })
                     : pickLang(lang, { es: 'Mi Lista', ca: 'La Meva Llista', en: 'My List' })}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  void shareDedicatedLink({
+                    target: isSeries
+                      ? { kind: 'series', tmdbId: item.tmdbId || details?.tmdbId, title }
+                      : { kind: 'movie', tmdbId: item.tmdbId || details?.tmdbId, title },
+                    roomId: shareRoomId,
+                    title,
+                  });
+                }}
+                className="min-h-[48px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-zinc-200 flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <Share2 className="w-4 h-4 text-[#BF94FF]" />
+                <span>
+                  {pickLang(lang, { es: 'Compartir', ca: 'Compartir', en: 'Share' })}
                 </span>
               </button>
             </div>

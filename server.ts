@@ -28,6 +28,12 @@ import {
   getCachedSportsMatches,
   getLiveVoiceMatches,
 } from './server/routes/sports.ts';
+import {
+  injectDynamicOgMeta,
+  registerDeepLinkRoutes,
+  resolveOpenGraphMetaForRequest,
+  shouldInjectDeepLinkOg,
+} from './server/routes/deepLinkResolver.ts';
 import { registerIptvAndTdtRoutes, getLiveVoiceChannels } from './server/routes/iptv.ts';
 import { registerWorldTvRoutes } from './server/routes/worldTvRoutes.ts';
 import { registerEpgRoutes } from './server/services/epgService.ts';
@@ -166,6 +172,7 @@ registerExpandedCatalogRoutes(app);
 registerKidsRoutes(app);
 registerProxyRoutes(app, { getPublicOrigin });
 registerSportsRoutes(app);
+registerDeepLinkRoutes(app, { getPublicOrigin });
 registerIptvAndTdtRoutes(app, { getPublicOrigin });
 registerWorldTvRoutes(app);
 registerEpgRoutes(app);
@@ -467,6 +474,7 @@ async function startServer() {
 
   if (!isProd) {
     let viteMiddleware: express.RequestHandler | null = null;
+    let viteInstance: { transformIndexHtml: (url: string, html: string) => Promise<string> } | null = null;
     let viteInitError: unknown = null;
     const viteReady = (async () => {
       const { createServer: createViteServer } = await import('vite');
@@ -479,6 +487,7 @@ async function startServer() {
         },
         appType: 'spa',
       });
+      viteInstance = vite;
       viteMiddleware = vite.middlewares;
     })().catch((err) => {
       viteInitError = err;
@@ -495,6 +504,22 @@ async function startServer() {
           error: 'Dev frontend compiler unavailable',
         });
         return;
+      }
+      if (req.method === 'GET' && viteInstance && shouldInjectDeepLinkOg(req.path)) {
+        try {
+          const indexHtmlPath = path.resolve(__dirname, 'index.html');
+          const [rawHtml, ogMeta] = await Promise.all([
+            fs.promises.readFile(indexHtmlPath, 'utf8'),
+            resolveOpenGraphMetaForRequest(req.originalUrl, getPublicOrigin(req)),
+          ]);
+          const transformed = await viteInstance.transformIndexHtml(req.originalUrl, rawHtml);
+          const finalHtml = ogMeta ? injectDynamicOgMeta(transformed, ogMeta) : transformed;
+          res.status(200).setHeader('Content-Type', 'text/html; charset=utf-8');
+          res.end(finalHtml);
+          return;
+        } catch {
+          // Fall back gracefully to standard Vite SPA middleware
+        }
       }
       return viteMiddleware(req, res, next);
     });
@@ -520,12 +545,25 @@ async function startServer() {
       logger.warn({ distDir }, 'production_dist_directory_missing');
     }
 
-    app.get('*', (req, res) => {
+    app.get('*', async (req, res) => {
       if (req.path === '/tv' || req.path === '/tv/') {
         return sendSmartTvReceiverHtml(res);
       }
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
       if (fs.existsSync(distIndex)) {
+        if (shouldInjectDeepLinkOg(req.path)) {
+          try {
+            const [rawHtml, ogMeta] = await Promise.all([
+              fs.promises.readFile(distIndex, 'utf8'),
+              resolveOpenGraphMetaForRequest(req.originalUrl, getPublicOrigin(req)),
+            ]);
+            if (ogMeta) {
+              return res.type('html').send(injectDynamicOgMeta(rawHtml, ogMeta));
+            }
+          } catch {
+            // Fall through cleanly to static dist/index.html
+          }
+        }
         return res.sendFile(distIndex);
       }
       return res

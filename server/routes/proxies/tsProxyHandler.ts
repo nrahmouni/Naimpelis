@@ -71,6 +71,10 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     try {
       const remuxedBuf = await remuxDvbTsToAac(targetUrl, referer, true);
       if (req.destroyed || res.writableEnded) return;
+      if (!remuxedBuf || remuxedBuf.length < 564 || remuxedBuf[0] !== 0x47) {
+        res.status(502).end();
+        return;
+      }
       res.status(200);
       applyProxyCorsHeaders(res, reqId);
       res.setHeader('Content-Type', 'video/mp2t');
@@ -304,6 +308,11 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
       const buf = await curlGetBuffer(targetUrl, headers, 18);
       if (req.destroyed || res.writableEnded) return;
       if (!buf || buf.length === 0) {
+        res.status(502).end();
+        return;
+      }
+      const headProbe = buf.subarray(0, Math.min(buf.length, 64)).toString('utf8').trimStart();
+      if (/^(<!doctype|<html\b|<head\b|<body\b)/i.test(headProbe)) {
         res.status(502).end();
         return;
       }

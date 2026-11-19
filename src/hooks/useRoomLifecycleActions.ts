@@ -13,15 +13,27 @@ import type {
 import type { StoredProfile } from '../utils/storage';
 import type { CatalogSection } from '../components/MediaCatalogHub';
 import type { MobileNavTab } from '../utils/appSessionHelpers';
-import type { WorldId } from '../store/useAppStore';
+import type { SessionMode, WorldId } from '../store/useAppStore';
 import type { RoomGameInviteType } from '../shared/protocol';
 import { pickLang } from '../utils/i18n';
 import { playCinemaSound, triggerHaptic } from '../utils/haptics';
-import { generateShortRoomCode, parseRoomFromWindow } from '../utils/shortLink';
+import {
+  buildShortInviteUrl,
+  generateShortRoomCode,
+  parseRoomFromWindow,
+} from '../utils/shortLink';
 import { INITIAL_VIDEO_STATE, normalizeDeepLinkGameType } from '../utils/appSessionHelpers';
 import { socketService } from '../services/socket';
+import { isDedicatedAppPath } from '../shared/dedicatedRoutes';
+import { copyTextToClipboard, showAppShareToast } from '../utils/shareDedicatedLink';
 
 interface UseRoomLifecycleActionsParams {
+  sessionMode: SessionMode;
+  sessionModeRef: MutableRefObject<SessionMode>;
+  setSessionMode: (mode: SessionMode) => void;
+  setHasEnteredApp: (entered: boolean) => void;
+  pendingSoloUpgradeVideoStateRef: MutableRefObject<VideoState | null>;
+  getLivePlaybackSec: () => number;
   lang: AppLanguage;
   profile: StoredProfile;
   hostId: string;
@@ -140,12 +152,119 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
     }
     p.setWorldSearchQuery('');
     p.setAvatarMenuOpen(false);
+    p.setSessionMode('party');
+    p.setHasEnteredApp(true);
     p.setRoomId(targetRoomId);
     p.setRoomName(customName || `Sala ${targetRoomId.toUpperCase()}`);
     p.setInRoom(true);
     p.setIntroWithSound(true);
     p.setShowIntro(true);
   };
+
+  const handleEnterSolo = useCallback(
+    (nextProfile?: StoredProfile) => {
+      triggerHaptic('medium');
+      p.manualLobbyStayRef.current = false;
+      p.pendingSoloUpgradeVideoStateRef.current = null;
+      if (nextProfile) {
+        const isCustom = nextProfile.isCustomized !== false;
+        const finalProfile: StoredProfile = { ...nextProfile, isCustomized: isCustom };
+        import('../utils/storage').then(({ saveStoredProfile }) =>
+          saveStoredProfile(finalProfile, isCustom)
+        );
+        p.setProfile(finalProfile);
+        import('../services/userCloudSync').then(({ updateCloudUserProfile }) =>
+          updateCloudUserProfile(finalProfile).catch(() => {})
+        );
+      }
+      socketService.disconnect();
+      p.setShowGuestPopup(false);
+      p.setIsPlayerMinimized(false);
+      p.setIsPlayerClosedLocally(false);
+      p.setSecondaryStream(null);
+      p.setAvatarMenuOpen(false);
+      p.setIsFloatingRoomOpen(false);
+      p.setRoomId('');
+      p.setRoomName('');
+      p.setInRoom(false);
+      p.setSessionMode('solo');
+      p.setHasEnteredApp(true);
+      p.setActiveWorld('entry');
+      p.setCatalogSection('home');
+      p.setMobileTab('home');
+      p.setIsInActiveGame(false);
+      p.setWorldSearchQuery('');
+      if (typeof window !== 'undefined' && isDedicatedAppPath(window.location.pathname) === false) {
+        window.history.replaceState({}, '', '/');
+      }
+      playCinemaSound('join');
+    },
+    [p]
+  );
+
+  const upgradeSoloToPartyRoom = useCallback(
+    (opts?: { keepDedicatedUrl?: boolean; targetWorld?: WorldId; customRoomName?: string }) => {
+      triggerHaptic('success');
+      playCinemaSound('join');
+      const freshCode = generateShortRoomCode(4);
+      const firstName = p.profile.name?.split(' ')[0] || 'Cine';
+      const customTitle = opts?.customRoomName?.trim() || `Sala de ${firstName}`;
+
+      if (p.videoState.mode !== 'idle' && p.videoState.url) {
+        const liveSec = p.videoState.isLive
+          ? 0
+          : Math.max(p.videoState.currentTime || 0, p.getLivePlaybackSec());
+        p.pendingSoloUpgradeVideoStateRef.current = {
+          ...p.videoState,
+          currentTime: liveSec,
+          lastUpdated: Date.now(),
+          updatedBy: p.profile.name,
+        };
+      } else {
+        p.pendingSoloUpgradeVideoStateRef.current = null;
+      }
+
+      p.manualLobbyStayRef.current = false;
+      p.setShowGuestPopup(false);
+      p.setSessionMode('party');
+      p.setHasEnteredApp(true);
+      p.setRoomId(freshCode);
+      p.setRoomName(customTitle);
+      p.setInRoom(true);
+
+      if (opts?.targetWorld) {
+        p.enterWorld(opts.targetWorld);
+      }
+
+      let inviteUrl = buildShortInviteUrl(freshCode);
+      if (typeof window !== 'undefined') {
+        const currentPathname = window.location.pathname;
+        if (opts?.keepDedicatedUrl || isDedicatedAppPath(currentPathname)) {
+          try {
+            const u = new URL(window.location.href);
+            u.searchParams.set('room', freshCode);
+            window.history.replaceState({}, '', `${u.pathname}${u.search}${u.hash}`);
+            const publicOrigin = buildShortInviteUrl(freshCode).replace(/\/[^/]+$/, '');
+            inviteUrl = `${publicOrigin}${u.pathname}${u.search}`;
+          } catch {
+            // fallback to short invite URL
+          }
+        }
+      }
+
+      void copyTextToClipboard(inviteUrl);
+      showAppShareToast(
+        pickLang(p.lang, {
+          es: `Sala ${freshCode.toUpperCase()} creada · Enlace de invitación copiado`,
+          ca: `Sala ${freshCode.toUpperCase()} creada · Enllaç d’invitació copiat`,
+          en: `Room ${freshCode.toUpperCase()} created · Invite link copied`,
+        })
+      );
+
+      return freshCode;
+    },
+    [p]
+  );
 
   const resetRoomUiState = useCallback(() => {
     p.setIsTvPairLobby(false);
@@ -172,6 +291,7 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
 
   const handleSwitchActiveRoom = (targetRoomId: string, customName?: string) => {
     p.manualLobbyStayRef.current = false;
+    p.pendingSoloUpgradeVideoStateRef.current = null;
     p.clearExtractionSnapshot();
     resetRoomUiState();
     p.setCatalogSection('home');
@@ -180,6 +300,8 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
     p.setIsInActiveGame(false);
     p.setWorldSearchQuery('');
     p.setAvatarMenuOpen(false);
+    p.setSessionMode('party');
+    p.setHasEnteredApp(true);
     p.setRoomId(targetRoomId);
     p.setRoomName(customName || `Sala ${targetRoomId.toUpperCase()}`);
     p.setInRoom(true);
@@ -196,9 +318,11 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
   const handleLeaveRoom = () => {
     triggerHaptic('light');
     p.clearExtractionSnapshot();
+    p.pendingSoloUpgradeVideoStateRef.current = null;
     p.manualLobbyStayRef.current = true;
     socketService.disconnect();
     p.setInRoom(false);
+    p.setHasEnteredApp(false);
     p.setActiveWorld('entry');
     p.setIsInActiveGame(false);
     p.setWorldSearchQuery('');
@@ -207,6 +331,7 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
     p.setShowGuestPopup(false);
     resetRoomUiState();
     p.setRoomId('');
+    p.setRoomName('');
     if (typeof window !== 'undefined') window.history.replaceState({}, '', '/');
   };
 
@@ -218,7 +343,12 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
         socketService.disconnect();
         p.setInRoom(false);
         p.setShowGuestPopup(false);
-        resetRoomUiState();
+        if (parsed.isDedicatedEntry) {
+          p.setSessionMode('solo');
+          p.setHasEnteredApp(true);
+        } else {
+          resetRoomUiState();
+        }
         p.setRoomId('');
       }
     };
@@ -301,6 +431,8 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
     p.setActiveWorld('entry');
     p.setIsInActiveGame(false);
     p.setWorldSearchQuery('');
+    p.setSessionMode('party');
+    p.setHasEnteredApp(true);
     p.setRoomId(invite.roomId);
     p.setRoomName(invite.roomName || `Sala ${invite.roomId.toUpperCase()}`);
     p.setInRoom(true);
@@ -320,6 +452,8 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
 
   return {
     handleEnterRoom,
+    handleEnterSolo,
+    upgradeSoloToPartyRoom,
     resetRoomUiState,
     handleSwitchActiveRoom,
     handleCreateFreshRoom,

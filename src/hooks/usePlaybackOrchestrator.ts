@@ -16,6 +16,7 @@ export type { UsePlaybackOrchestratorOptions } from './playback/playbackTypes';
 
 export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
   const {
+    sessionMode,
     profileName,
     canChangeMedia,
     canControlRoom,
@@ -154,6 +155,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
 
   const {
     livePlaybackSec,
+    getLivePlaybackSec,
     activeHistoryIdRef,
     findSavedResumeSec,
     recordStateInWatchHistory,
@@ -165,6 +167,14 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     setWatchHistory,
   });
 
+  const commitVideoStateSync = useCallback(
+    (action: 'play' | 'pause' | 'seek' | 'change_url', nextState: VideoState) => {
+      if (sessionMode === 'solo') return;
+      socketService.syncVideoState(action, nextState, profileName);
+    },
+    [sessionMode, profileName]
+  );
+
   const handleClosePlayer = () => {
     triggerHaptic('light');
     clearExtractionSnapshot();
@@ -174,10 +184,10 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     setActiveSportsMatch(null);
     setActiveMatchDetails(null);
     setActiveMovieContext(null);
-    if (videoState.mode === 'cloud') {
+    if (videoState.mode === 'cloud' && sessionMode !== 'solo') {
       socketService.stopCloudBrowser();
     }
-    if (participants.length <= 1 && canChangeMedia) {
+    if (sessionMode === 'solo' || (participants.length <= 1 && canChangeMedia)) {
       const idleNext: VideoState = {
         ...INITIAL_VIDEO_STATE,
         lastUpdated: Date.now(),
@@ -185,7 +195,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
       };
       setVideoState(idleNext);
       setIsPlayerClosedLocally(false);
-      socketService.syncVideoState('change_url', idleNext, profileName);
+      commitVideoStateSync('change_url', idleNext);
     } else {
       setIsPlayerClosedLocally(true);
     }
@@ -212,7 +222,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
       updatedBy: profileName,
     };
     setVideoState(idleNext);
-    socketService.syncVideoState('change_url', idleNext, profileName);
+    commitVideoStateSync('change_url', idleNext);
   };
 
   const handleSyncPlayerAction = useCallback(
@@ -230,11 +240,20 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
           lastUpdated: Date.now(),
           updatedBy: profileName,
         };
-        socketService.syncVideoState(action, updated, profileName);
+        commitVideoStateSync(action, updated);
         return updated;
       });
     },
-    [canChangeMedia, canControlRoom, participants, hostId, showHostLockNotice, profileName, setVideoState]
+    [
+      canChangeMedia,
+      canControlRoom,
+      participants,
+      hostId,
+      showHostLockNotice,
+      profileName,
+      setVideoState,
+      commitVideoStateSync,
+    ]
   );
 
   const coreCtx: PlaybackCoreContext = {
@@ -248,6 +267,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     setExtractionError,
     setLoadingItemId,
     findSavedResumeSec,
+    commitVideoStateSync,
   };
 
   const vodHandlers = useVodAndCatalaPlayback(coreCtx);
@@ -266,6 +286,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     languageNotice,
     setLanguageNotice,
     livePlaybackSec,
+    getLivePlaybackSec,
     clearExtractionSnapshot,
     beginMediaExtraction,
     handleCancelMediaExtraction,

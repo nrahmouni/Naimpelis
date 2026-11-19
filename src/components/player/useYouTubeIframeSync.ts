@@ -1,6 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import type { VideoState } from '../../types';
-import { socketService } from '../../services/socket';
 import type { YouTubePlayerEvent, YouTubePlayerInstance } from './playerTypes';
 
 interface UseYouTubeIframeSyncParams {
@@ -31,6 +30,9 @@ export function useYouTubeIframeSync({
   setLocalPlaying,
   onSyncAction,
 }: UseYouTubeIframeSyncParams) {
+  const lastYtSyncKeyRef = useRef<string>('');
+  const prevYtOffsetMsRef = useRef<number>(syncOffsetMs);
+
   useEffect(() => {
     if (videoState.mode !== 'youtube' || !videoState.url) {
       if (ytPlayerRef.current?.destroy) {
@@ -145,15 +147,28 @@ export function useYouTubeIframeSync({
   }, [videoState.mode, videoState.url]);
 
   useEffect(() => {
+    const deltaMs = syncOffsetMs - prevYtOffsetMsRef.current;
+    prevYtOffsetMsRef.current = syncOffsetMs;
+    if (deltaMs === 0) return;
+    if (videoState.mode !== 'youtube' || !ytPlayerRef.current?.getCurrentTime) return;
+    const cur = ytPlayerRef.current.getCurrentTime?.() || 0;
+    ytPlayerRef.current.seekTo?.(Math.max(0, cur + deltaMs / 1000), true);
+  }, [syncOffsetMs, videoState.mode, ytPlayerRef]);
+
+  useEffect(() => {
     if (videoState.mode !== 'youtube' || !ytPlayerRef.current?.getPlayerState) return;
+    const syncKey = `${videoState.url}|${videoState.isPlaying ? 1 : 0}|${videoState.currentTime}|${videoState.lastUpdated}`;
+    if (lastYtSyncKeyRef.current === syncKey) return;
+    lastYtSyncKeyRef.current = syncKey;
+
     isApplyingRemoteRef.current = true;
     const yt = ytPlayerRef.current;
-    const serverNow = Date.now() + socketService.serverClockOffsetMs;
-    const elapsedSec =
+    const rawElapsed =
       videoState.isPlaying && Number.isFinite(videoState.lastUpdated) && videoState.lastUpdated > 0
-        ? Math.max(0, Math.min(12, (serverNow - videoState.lastUpdated) / 1000))
+        ? Math.max(0, (Date.now() - videoState.lastUpdated) / 1000)
         : 0;
-    const expectedTime = videoState.currentTime + elapsedSec + syncOffsetMs / 1000;
+    const elapsedSec = rawElapsed < 12 * 3600 ? rawElapsed : 0;
+    const expectedTime = videoState.currentTime + elapsedSec + prevYtOffsetMsRef.current / 1000;
     const ytTime = yt.getCurrentTime?.() || 0;
     const signedDrift = expectedTime - ytTime;
     const absDrift = Math.abs(signedDrift);
@@ -187,6 +202,6 @@ export function useYouTubeIframeSync({
     videoState.currentTime,
     videoState.lastUpdated,
     videoState.mode,
-    syncOffsetMs,
+    videoState.url,
   ]);
 }

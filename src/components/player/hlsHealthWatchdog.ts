@@ -108,3 +108,86 @@ export function pickBestCleanSatelliteTrackIndex(
 
   return candidates.length > 0 ? candidates[0].idx : -1;
 }
+
+export type LiveHealthAction = 'healthy' | 'recover_media' | 'switch_backup';
+
+export interface LiveHealthEvaluation {
+  action: LiveHealthAction;
+  reason?: string;
+}
+
+export function createLivePlaybackHealthMonitor() {
+  let prevTotalFrames = 0;
+  let prevDroppedFrames = 0;
+  let consecutiveDropSpikes = 0;
+  let consecutiveCorruptFrames = 0;
+  let lastRecoveryAt = 0;
+
+  return {
+    reset() {
+      prevTotalFrames = 0;
+      prevDroppedFrames = 0;
+      consecutiveDropSpikes = 0;
+      consecutiveCorruptFrames = 0;
+      lastRecoveryAt = 0;
+    },
+    check(video: HTMLVideoElement, nowMs = Date.now()): LiveHealthEvaluation {
+      if (!video || video.paused || video.readyState < 2) {
+        return { action: 'healthy' };
+      }
+
+      const frameCheck = isRenderedFrameGreenOrCorrupt(video);
+      if (frameCheck.corrupt) {
+        consecutiveCorruptFrames += 1;
+      } else {
+        consecutiveCorruptFrames = 0;
+      }
+
+      const quality =
+        typeof video.getVideoPlaybackQuality === 'function'
+          ? video.getVideoPlaybackQuality()
+          : null;
+      if (quality) {
+        const total = Number(quality.totalVideoFrames || 0);
+        const dropped = Number(quality.droppedVideoFrames || 0);
+        if (total < prevTotalFrames || dropped < prevDroppedFrames) {
+          prevTotalFrames = total;
+          prevDroppedFrames = dropped;
+          consecutiveDropSpikes = 0;
+        } else {
+          const deltaTotal = total - prevTotalFrames;
+          const deltaDropped = dropped - prevDroppedFrames;
+          prevTotalFrames = total;
+          prevDroppedFrames = dropped;
+
+          if (deltaTotal >= 18 && deltaDropped / deltaTotal >= 0.45) {
+            consecutiveDropSpikes += 1;
+          } else {
+            consecutiveDropSpikes = 0;
+          }
+        }
+      }
+
+      const reason =
+        consecutiveCorruptFrames >= 2
+          ? frameCheck.reason || 'corrupt_frame'
+          : consecutiveDropSpikes >= 2
+            ? 'dropped_frame_burst'
+            : '';
+
+      if (!reason) {
+        return { action: 'healthy' };
+      }
+
+      consecutiveCorruptFrames = 0;
+      consecutiveDropSpikes = 0;
+
+      if (lastRecoveryAt === 0 || nowMs - lastRecoveryAt > 20_000) {
+        lastRecoveryAt = nowMs;
+        return { action: 'recover_media', reason };
+      }
+      return { action: 'switch_backup', reason };
+    },
+  };
+}
+

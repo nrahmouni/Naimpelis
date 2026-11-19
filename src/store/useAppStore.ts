@@ -1,11 +1,18 @@
 import { create } from 'zustand';
 import type { TypingUserPayload } from '../shared/protocol';
-import type { ScheduledRoomItem, SubtitleStyleSettings } from '../types';
+import type {
+  CatalogMovie,
+  ScheduledRoomItem,
+  SubtitleStyleSettings,
+  TvSeriesDetails,
+} from '../types';
 
 const SUBTITLE_STYLE_KEY = 'naimcine_subtitle_style_v1';
 const SCHEDULED_ROOMS_KEY = 'naimcine_scheduled_rooms_v1';
 const LAST_WORLD_KEY = 'riffantv_last_world_v1';
+const SESSION_MODE_KEY = 'riffantv_session_mode_v1';
 
+export type SessionMode = 'solo' | 'party';
 export type ShellNavSection = 'home' | 'search' | 'rooms' | 'my_list' | 'profile';
 export type PrimaryWorldId =
   | 'cine'
@@ -17,6 +24,12 @@ export type PrimaryWorldId =
 export type WorldId = 'entry' | PrimaryWorldId | 'youtube';
 export type CineSubTab = 'movies' | 'series';
 export type FutbolSubTab = 'matches' | 'channels';
+
+export interface RequestedSeriesModalPayload {
+  series: CatalogMovie | TvSeriesDetails;
+  season?: number;
+  episode?: number;
+}
 
 const PRIMARY_WORLDS: PrimaryWorldId[] = [
   'cine',
@@ -37,6 +50,16 @@ function loadLastUsedWorld(): PrimaryWorldId | null {
   }
 }
 
+function loadSessionMode(): SessionMode {
+  if (typeof localStorage === 'undefined') return 'party';
+  try {
+    const raw = localStorage.getItem(SESSION_MODE_KEY);
+    return raw === 'solo' ? 'solo' : 'party';
+  } catch {
+    return 'party';
+  }
+}
+
 const TYPING_EXPIRY_MS = 4500;
 const typingExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -45,6 +68,20 @@ interface SwUpdateRegistration {
 }
 
 interface AppShellState {
+  sessionMode: SessionMode;
+  hasEnteredApp: boolean;
+  shareToast: string | null;
+  tvRegion: string;
+  tdtCategory: string;
+  adrarCountryFilter: string;
+  futbolLeagueFilter: string;
+  footballLiveBrand: string;
+  futbolSearchQuery: string;
+  futbolDayOffset: number;
+  futbolStatusTab: 'live' | 'upcoming' | 'all';
+  requestedMovieModal: CatalogMovie | null;
+  requestedSeriesModal: RequestedSeriesModalPayload | null;
+  requestedMatchSlug: string | null;
   activeNavSection: ShellNavSection;
   activeWorld: WorldId;
   lastUsedWorld: PrimaryWorldId | null;
@@ -65,6 +102,20 @@ interface AppShellState {
   swUpdate: SwUpdateRegistration | null;
   deferredAppUpdateVersion: string | null;
   authNotice: string | null;
+  setSessionMode: (mode: SessionMode) => void;
+  setHasEnteredApp: (entered: boolean) => void;
+  setShareToast: (msg: string | null) => void;
+  setTvRegion: (region: string) => void;
+  setTdtCategory: (category: string) => void;
+  setAdrarCountryFilter: (filter: string) => void;
+  setFutbolLeagueFilter: (filter: string) => void;
+  setFootballLiveBrand: (brand: string) => void;
+  setFutbolSearchQuery: (q: string) => void;
+  setFutbolDayOffset: (offset: number) => void;
+  setFutbolStatusTab: (tab: 'live' | 'upcoming' | 'all') => void;
+  setRequestedMovieModal: (movie: CatalogMovie | null) => void;
+  setRequestedSeriesModal: (payload: RequestedSeriesModalPayload | null) => void;
+  setRequestedMatchSlug: (slug: string | null) => void;
   setActiveNavSection: (section: ShellNavSection) => void;
   setActiveWorld: (world: WorldId) => void;
   setCineTab: (tab: CineSubTab) => void;
@@ -126,6 +177,20 @@ function loadScheduledRooms(): ScheduledRoomItem[] {
 }
 
 export const useAppStore = create<AppShellState>((set, get) => ({
+  sessionMode: loadSessionMode(),
+  hasEnteredApp: false,
+  shareToast: null,
+  tvRegion: 'all',
+  tdtCategory: 'all',
+  adrarCountryFilter: 'all',
+  futbolLeagueFilter: '',
+  footballLiveBrand: 'all',
+  futbolSearchQuery: '',
+  futbolDayOffset: 0,
+  futbolStatusTab: 'all',
+  requestedMovieModal: null,
+  requestedSeriesModal: null,
+  requestedMatchSlug: null,
   activeNavSection: 'home',
   activeWorld: 'entry',
   lastUsedWorld: loadLastUsedWorld(),
@@ -148,6 +213,30 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   swUpdate: null,
   deferredAppUpdateVersion: null,
   authNotice: null,
+
+  setSessionMode: (sessionMode) => {
+    set({ sessionMode });
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(SESSION_MODE_KEY, sessionMode);
+      } catch {
+        // ignore
+      }
+    }
+  },
+  setHasEnteredApp: (hasEnteredApp) => set({ hasEnteredApp }),
+  setShareToast: (shareToast) => set({ shareToast }),
+  setTvRegion: (tvRegion) => set({ tvRegion }),
+  setTdtCategory: (tdtCategory) => set({ tdtCategory }),
+  setAdrarCountryFilter: (adrarCountryFilter) => set({ adrarCountryFilter }),
+  setFutbolLeagueFilter: (futbolLeagueFilter) => set({ futbolLeagueFilter }),
+  setFootballLiveBrand: (footballLiveBrand) => set({ footballLiveBrand }),
+  setFutbolSearchQuery: (futbolSearchQuery) => set({ futbolSearchQuery }),
+  setFutbolDayOffset: (futbolDayOffset) => set({ futbolDayOffset }),
+  setFutbolStatusTab: (futbolStatusTab) => set({ futbolStatusTab }),
+  setRequestedMovieModal: (requestedMovieModal) => set({ requestedMovieModal }),
+  setRequestedSeriesModal: (requestedSeriesModal) => set({ requestedSeriesModal }),
+  setRequestedMatchSlug: (requestedMatchSlug) => set({ requestedMatchSlug }),
 
   setActiveNavSection: (activeNavSection) => set({ activeNavSection }),
   setActiveWorld: (activeWorld) => {

@@ -36,7 +36,9 @@ interface AvatarMenuSheetProps {
   onOpenYouTube: () => void;
   onOpenSettings: () => void;
   inRoom?: boolean;
+  sessionMode?: 'solo' | 'party';
   roomName?: string;
+  onUpgradeSoloToParty?: () => void;
   onLeaveRoom?: () => void;
   onSignOut?: () => void | Promise<void>;
 }
@@ -60,7 +62,9 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
   onOpenYouTube,
   onOpenSettings,
   inRoom = false,
+  sessionMode = 'party',
   roomName,
+  onUpgradeSoloToParty,
   onLeaveRoom,
   onSignOut,
 }) => {
@@ -227,9 +231,29 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
           ))}
         </nav>
 
-        {((inRoom && onLeaveRoom) || (authUser && onSignOut)) && (
+        {((sessionMode === 'solo' && onUpgradeSoloToParty) || (inRoom && onLeaveRoom) || (onLeaveRoom && sessionMode === 'solo') || (authUser && onSignOut)) && (
           <div className="pt-2 border-t border-white/[0.07] space-y-1.5">
-            {inRoom && onLeaveRoom && (
+            {sessionMode === 'solo' && onUpgradeSoloToParty && (
+              <button
+                type="button"
+                onClick={() => runAction(onUpgradeSoloToParty)}
+                className="w-full min-h-11 px-3.5 rounded-xl bg-[#9146FF]/18 hover:bg-[#9146FF]/28 border border-[#9146FF]/45 flex items-center justify-between gap-3 text-left cursor-pointer active:scale-[0.99] transition-all duration-150"
+              >
+                <span className="flex items-center gap-3 min-w-0">
+                  <RiffanUsersIcon size={16} animate="hover" className="shrink-0" />
+                  <span className="text-sm font-semibold text-white truncate">
+                    {pickLang(lang, {
+                      es: 'Crear sala con amigos',
+                      ca: 'Crear sala amb amics',
+                      en: 'Create Watch Party',
+                      zh: '创建好友房间',
+                      rif: 'Egg taxxamt aked imddukkal',
+                    })}
+                  </span>
+                </span>
+              </button>
+            )}
+            {onLeaveRoom && (inRoom || sessionMode === 'solo') && (
               <button
                 type="button"
                 onClick={() => runAction(onLeaveRoom)}
@@ -238,11 +262,17 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
                 <span className="flex items-center gap-3 min-w-0">
                   <RiffanLogoutIcon size={16} animate="hover" className="shrink-0" />
                   <span className="text-sm font-semibold text-rose-200 truncate">
-                    {pickLang(lang, {
-                      es: `Salir de la sala${roomName ? ` (${roomName})` : ''}`,
-                      ca: `Sortir de la sala${roomName ? ` (${roomName})` : ''}`,
-                      en: `Leave room${roomName ? ` (${roomName})` : ''}`,
-                    })}
+                    {sessionMode === 'solo'
+                      ? pickLang(lang, {
+                          es: 'Volver a pantalla de inicio',
+                          ca: 'Tornar a la pantalla d’inici',
+                          en: 'Back to start screen',
+                        })
+                      : pickLang(lang, {
+                          es: `Salir de la sala${roomName ? ` (${roomName})` : ''}`,
+                          ca: `Sortir de la sala${roomName ? ` (${roomName})` : ''}`,
+                          en: `Leave room${roomName ? ` (${roomName})` : ''}`,
+                        })}
                   </span>
                 </span>
               </button>

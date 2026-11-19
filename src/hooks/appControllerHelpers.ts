@@ -19,7 +19,7 @@ export function resolveInitialRoomSetup(
   const initialUrlRoom = initialRoute.roomId;
   const initialAutoRoom =
     !initialUrlRoom &&
-    (isGoogleTvApp || initialRoute.isKidsMode) &&
+    isGoogleTvApp &&
     !initialRoute.isTvPairLobby &&
     !initialRoute.isAdsPage
       ? loadCachedSavedRooms()[0]?.roomCode || getRecentRooms()[0]?.id || generateShortRoomCode(4)

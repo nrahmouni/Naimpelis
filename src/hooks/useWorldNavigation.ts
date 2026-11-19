@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { CatalogSection } from '../components/MediaCatalogHub';
 import type { PortalOriginRect, WorldPortalKind } from '../components/home/WorldPortalTransition';
-import type { PrimaryWorldId, WorldId } from '../store/useAppStore';
+import type { PrimaryWorldId, SessionMode, WorldId } from '../store/useAppStore';
 import type { MobileNavTab } from '../utils/appSessionHelpers';
 import { playWorldPortalSound } from '../utils/haptics';
 import { runWithViewTransition } from '../lib/viewTransition';
 import type { RoomGameInviteType } from '../shared/protocol';
 
 interface UseWorldNavigationParams {
+  sessionMode: SessionMode;
   roomId: string;
   reducedMotion: boolean;
   effectiveInitialRoom: string;
@@ -24,9 +25,11 @@ interface UseWorldNavigationParams {
   setIsInActiveGame: Dispatch<SetStateAction<boolean>>;
   setWorldSearchQuery: Dispatch<SetStateAction<string>>;
   setShowWatchlistOnly: Dispatch<SetStateAction<boolean>>;
+  onUpgradeSoloToParty?: (opts?: { targetWorld?: WorldId }) => void;
 }
 
 export function useWorldNavigation({
+  sessionMode,
   roomId,
   reducedMotion,
   effectiveInitialRoom,
@@ -42,6 +45,7 @@ export function useWorldNavigation({
   setIsInActiveGame,
   setWorldSearchQuery,
   setShowWatchlistOnly,
+  onUpgradeSoloToParty,
 }: UseWorldNavigationParams) {
   const [activePortalTransition, setActivePortalTransition] =
     useState<WorldPortalKind | null>(null);
@@ -87,14 +91,14 @@ export function useWorldNavigation({
         setIsInActiveGame(false);
       }
 
-      if (typeof window !== 'undefined' && inRoomRef.current) {
+      if (typeof window !== 'undefined' && (inRoomRef.current || sessionMode === 'solo')) {
         try {
           const currentPath = window.location.pathname.toLowerCase();
           if (nextWorld === 'kids') {
             if (currentPath !== '/kids') {
               window.history.replaceState({}, '', '/kids');
             }
-          } else if (currentPath === '/kids' && roomId) {
+          } else if (currentPath === '/kids' && roomId && sessionMode === 'party') {
             window.history.replaceState({}, '', `/${encodeURIComponent(roomId)}`);
           }
         } catch {
@@ -106,6 +110,7 @@ export function useWorldNavigation({
       catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
     },
     [
+      sessionMode,
       setActiveWorld,
       setCatalogSection,
       setMobileTab,
@@ -119,7 +124,7 @@ export function useWorldNavigation({
   );
 
   useEffect(() => {
-    if (effectiveInitialRoom && initialIsKidsMode) {
+    if (initialIsKidsMode) {
       applyWorldChange('kids');
       return;
     }
@@ -153,6 +158,11 @@ export function useWorldNavigation({
 
   const enterWorld = useCallback(
     (nextWorld: WorldId, opts?: { withPortal?: boolean; originRect?: PortalOriginRect }) => {
+      if (nextWorld === 'sala' && sessionMode === 'solo' && onUpgradeSoloToParty) {
+        onUpgradeSoloToParty({ targetWorld: 'sala' });
+        return;
+      }
+
       setWorldSearchQuery('');
       setShowWatchlistOnly(false);
       clearPortalTimers();
@@ -195,6 +205,8 @@ export function useWorldNavigation({
       });
     },
     [
+      sessionMode,
+      onUpgradeSoloToParty,
       setWorldSearchQuery,
       setShowWatchlistOnly,
       clearPortalTimers,

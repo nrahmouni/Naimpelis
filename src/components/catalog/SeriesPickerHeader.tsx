@@ -1,5 +1,5 @@
 import React from 'react';
-import { Heart, Play, RefreshCw, X } from 'lucide-react';
+import { Heart, Play, RefreshCw, Share2, X } from 'lucide-react';
 import type {
   AppLanguage,
   CatalogMovie,
@@ -9,10 +9,12 @@ import type {
 } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
+import { shareDedicatedLink } from '../../utils/shareDedicatedLink';
 import { FlagBadgeSvg, MediaLanguageSelector } from '../ui/LanguageBadge';
 
 interface SeriesPickerHeaderProps {
   lang: AppLanguage;
+  shareRoomId?: string;
   selectedSeries: TvSeriesDetails;
   seriesModalLang: string;
   forceSpanishSeriesActive: boolean;
@@ -42,6 +44,7 @@ interface SeriesPickerHeaderProps {
 
 export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
   lang,
+  shareRoomId,
   selectedSeries,
   seriesModalLang,
   forceSpanishSeriesActive,
@@ -125,6 +128,28 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
               ca: 'Forçar Castellà',
               en: 'Force Spanish (ES)',
             })}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            void shareDedicatedLink({
+              target: {
+                kind: 'series',
+                tmdbId: selectedSeries.tmdbId,
+                title: selectedSeries.title,
+                season: selectedSeries.activeSeason,
+              },
+              roomId: shareRoomId,
+              title: selectedSeries.title,
+            });
+          }}
+          className="min-h-[40px] px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+        >
+          <Share2 className="w-3.5 h-3.5 shrink-0 text-[#BF94FF]" />
+          <span>
+            {pickLang(lang, { es: 'Compartir', ca: 'Compartir', en: 'Share' })}
           </span>
         </button>
       </div>

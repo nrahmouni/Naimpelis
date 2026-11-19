@@ -429,32 +429,32 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
                 />
               )}
               <GameMuteButton muted={muted} onToggle={toggleMute} lang={lang} />
-              {roomId && (
-                <button
-                  type="button"
-                  onClick={() => void handleInviteGame(selectedGame)}
-                  aria-label={pickLang(lang, { es: 'Invitar a la partida', ca: 'Convidar a la partida', en: 'Invite to match' })}
-                  className={`h-7 px-2.5 rounded-lg border text-[11px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0 ${
-                    inviteCopied
-                      ? 'bg-emerald-500/25 border-emerald-400/50 text-emerald-100'
-                      : 'bg-[#9146FF] hover:bg-[#7C2AE8] border-[#9146FF] text-white shadow-[0_2px_12px_rgba(145,70,255,0.4)]'
-                  }`}
-                >
-                  {inviteCopied ? (
-                    <>
-                      <Check className="w-3.5 h-3.5 shrink-0" />
-                      <span>{pickLang(lang, { es: 'Copiado', ca: 'Copiat', en: 'Copied' })}</span>
-                    </>
-                  ) : (
-                    <>
-                      <Share2 className="w-3.5 h-3.5 shrink-0" />
-                      <span className="hidden xs:inline sm:inline">
-                        {pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })}
-                      </span>
-                    </>
-                  )}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={() => void handleInviteGame(selectedGame)}
+                aria-label={pickLang(lang, { es: 'Compartir juego', ca: 'Compartir joc', en: 'Share game' })}
+                className={`h-7 px-2.5 rounded-lg border text-[11px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0 ${
+                  inviteCopied
+                    ? 'bg-emerald-500/25 border-emerald-400/50 text-emerald-100'
+                    : 'bg-[#9146FF] hover:bg-[#7C2AE8] border-[#9146FF] text-white shadow-[0_2px_12px_rgba(145,70,255,0.4)]'
+                }`}
+              >
+                {inviteCopied ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 shrink-0" />
+                    <span>{pickLang(lang, { es: 'Copiado', ca: 'Copiat', en: 'Copied' })}</span>
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden xs:inline sm:inline">
+                      {roomId
+                        ? pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })
+                        : pickLang(lang, { es: 'Compartir', ca: 'Compartir', en: 'Share' })}
+                    </span>
+                  </>
+                )}
+              </button>
               {renderVoiceCompact(true)}
             </div>
           </div>
