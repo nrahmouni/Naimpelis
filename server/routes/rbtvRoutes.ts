@@ -1,5 +1,6 @@
 import type { Express } from 'express';
 import { parseRbtvInventory } from '../services/rbtv/rbtvParser.ts';
+import { getCuratedRbtvChannels } from '../services/rbtv/rbtvLiveCurator.ts';
 import {
   decodeRbtvInput,
   getRbtvLiveOverview,
@@ -8,6 +9,12 @@ import {
 } from '../services/rbtvService.ts';
 
 export function registerRbtvRoutes(app: Express): void {
+  // Curated stable RBTV+ direct native sports channels
+  app.get('/api/rbtv/channels', (_req, res) => {
+    const channels = getCuratedRbtvChannels();
+    res.json({ success: true, total: channels.length, channels });
+  });
+
   // Full parsed inventory from public/assets/aistudio/rutas_RBTV_c34416da.txt
   app.get('/api/rbtv/inventory', (req, res) => {
     const category = String(req.query.category || '').trim();
@@ -43,7 +50,7 @@ export function registerRbtvRoutes(app: Express): void {
     });
   });
 
-  // Live RBTV+ core cluster status + RiffanTV direct sports & 24/7 channels
+  // Live RBTV+ core cluster status + RiffanTV curated direct sports & 24/7 channels
   app.get('/api/rbtv/live-overview', async (_req, res) => {
     try {
       const overview = await getRbtvLiveOverview();

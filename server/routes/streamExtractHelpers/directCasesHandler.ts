@@ -46,6 +46,23 @@ export async function handleDirectExtractCases(params: {
     sendErr,
   } = params;
 
+  // CASE -1: Internal proxy / Belix live stream URLs must never pass through external host resolvers
+  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play)\//i.test(rawInput)) {
+    const isDirectFile = /\.(mp4|mkv|webm)(\?|$)/i.test(rawInput);
+    const result: ExtractedStreamResult = {
+      success: true,
+      mode: isDirectFile ? 'direct' : 'hls',
+      streamUrl: rawInput,
+      rawStreamUrl: rawInput,
+      title: titleHint || 'Stream en Directo',
+      requestedLang: preferLang || 'ES',
+      resolvedLang: preferLang || 'ES',
+      expiresAt: Date.now() + 15 * 60 * 1000,
+    };
+    setCache(cacheKey, result);
+    return sendOk(result);
+  }
+
   // CASE 0: Live Spanish TDT Channel (`tdt_hls`)
   if (resolverType === 'tdt_hls' && rawInput) {
     const dvbProfile: 'hd' | 'fast' = /[?&]profile=fast\b/i.test(rawInput) ? 'fast' : 'hd';

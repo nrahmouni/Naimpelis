@@ -19,6 +19,9 @@ export interface AppEnvironmentConfig {
   androidTvPkg: string;
   legacyAndroidPkg: string;
   androidCertSha256: string;
+  belixXtreamServer: string;
+  belixXtreamUser: string;
+  belixXtreamPass: string;
 }
 
 const isProdEnv = process.env.NODE_ENV === 'production';
@@ -48,4 +51,7 @@ export const ENV: AppEnvironmentConfig = {
   androidCertSha256:
     process.env.ANDROID_SHA256_FINGERPRINT ||
     '70:B5:CB:FA:3D:E2:D3:D3:84:DD:04:93:15:5F:33:39:48:FC:47:B6:AB:E1:DD:13:B9:A8:75:58:29:23:96:30',
+  belixXtreamServer: process.env.BELIX_XTREAM_SERVER || '',
+  belixXtreamUser: process.env.BELIX_XTREAM_USER || '',
+  belixXtreamPass: process.env.BELIX_XTREAM_PASS || '',
 };

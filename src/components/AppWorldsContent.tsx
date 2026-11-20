@@ -380,6 +380,7 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           externalSearchQuery={worldSearchQuery}
           onPlayCustomUrl={playback.handlePlayCustomUrl}
           onPlayMovie={playback.handlePlayMovie}
+          onPlayClipboxMedia={playback.handlePlayClipboxMedia}
         />
       </WorldShell>
     );
@@ -414,7 +415,9 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           onPlaySportsMatch={(match, idx) => {
             void playback.handlePlaySportsMatch(match, idx);
           }}
-          onPlayCustomUrl={playback.handlePlayCustomUrl}
+          onPlayTdtChannel={(ch, idx) => {
+            void playback.handlePlayTdtChannel(ch, idx);
+          }}
         />
       </WorldShell>
     );

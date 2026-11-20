@@ -9,7 +9,7 @@ import type {
   TvSeriesDetails,
 } from '../types';
 
-const SUBTITLE_STYLE_KEY = 'naimcine_subtitle_style_v1';
+const SUBTITLE_STYLE_KEY = 'naimcine_subtitle_style_v2';
 const SCHEDULED_ROOMS_KEY = 'naimcine_scheduled_rooms_v1';
 const LAST_WORLD_KEY = 'riffantv_last_world_v1';
 const SESSION_MODE_KEY = 'riffantv_session_mode_v1';
@@ -202,9 +202,10 @@ interface AppShellState {
 }
 
 const DEFAULT_SUBTITLE_STYLE: SubtitleStyleSettings = {
-  fontScale: 1,
+  fontScale: 0.9,
   fontColor: '#FFFFFF',
-  bgOpacity: 0.72,
+  bgOpacity: 0.35,
+  textOpacity: 0.82,
   edgeShadow: 'shadow',
   fontFamily: 'sans',
 };

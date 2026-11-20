@@ -1,6 +1,16 @@
 import type { Express } from 'express';
 import { parseBelixInventory } from '../services/belix/belixParser.ts';
 import {
+  connectBelixSession,
+  disconnectBelixSession,
+  fetchBelixOpaqueSegment,
+  getBelixLiveChannels,
+  getBelixStatus,
+  refreshBelixChannels,
+  resolveBelixManifest,
+  resolveBelixSubPlaylist,
+} from '../services/belix/belixXtreamClient.ts';
+import {
   decodeBelixInput,
   getBelixLiveOverview,
   inspectXtreamServer,
@@ -8,6 +18,100 @@ import {
 } from '../services/belixService.ts';
 
 export function registerBelixRoutes(app: Express): void {
+  // Belix Xtream live session status (never exposes credentials)
+  app.get('/api/belix/status', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, status: getBelixStatus() });
+  });
+
+  // Connect runtime Xtream session in RAM only
+  app.post('/api/belix/connect', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const serverUrl = String(req.body?.serverUrl || '').trim();
+    const username = String(req.body?.username || '').trim();
+    const password = String(req.body?.password || '').trim();
+    const status = await connectBelixSession({ serverUrl, username, password });
+    const channels = status.connected ? getBelixLiveChannels() : [];
+    res.status(status.connected ? 200 : 400).json({
+      success: status.connected,
+      status,
+      channels,
+    });
+  });
+
+  app.post('/api/belix/disconnect', (_req, res) => {
+    disconnectBelixSession();
+    res.json({ success: true, status: getBelixStatus() });
+  });
+
+  app.post('/api/belix/refresh', async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const status = await refreshBelixChannels();
+    res.json({
+      success: status.connected,
+      status,
+      channels: status.connected ? getBelixLiveChannels() : [],
+    });
+  });
+
+  app.get('/api/belix/channels', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const categoryId = String(req.query.categoryId || '').trim();
+    const query = String(req.query.q || '').trim();
+    const status = getBelixStatus();
+    const channels = getBelixLiveChannels({ categoryId, query });
+    res.json({
+      success: true,
+      status,
+      channels,
+    });
+  });
+
+  // Credential-free Belix HLS master/media manifest proxy
+  app.all('/api/belix/stream/:streamId', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    if (req.method === 'OPTIONS') return res.status(204).end();
+    const streamId = String(req.params.streamId || '').replace(/\.m3u8$/i, '');
+    const manifest = await resolveBelixManifest(streamId);
+    if (!manifest) {
+      return res.status(503).send('Belix live stream unavailable');
+    }
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+    if (req.method === 'HEAD') return res.status(200).end();
+    return res.send(manifest);
+  });
+
+  app.all('/api/belix/sub/:token', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    if (req.method === 'OPTIONS') return res.status(204).end();
+    const manifest = await resolveBelixSubPlaylist(String(req.params.token || ''));
+    if (!manifest) return res.status(404).send('Playlist token expired');
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+    if (req.method === 'HEAD') return res.status(200).end();
+    return res.send(manifest);
+  });
+
+  app.all('/api/belix/seg/:token', async (req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.method === 'OPTIONS') return res.status(204).end();
+    const seg = await fetchBelixOpaqueSegment(
+      String(req.params.token || ''),
+      typeof req.headers.range === 'string' ? req.headers.range : undefined
+    );
+    if (!seg) return res.status(502).send('Segment unavailable');
+    res.status(seg.status);
+    res.setHeader('Content-Type', seg.contentType);
+    res.setHeader('Content-Length', String(seg.buffer.length));
+    if (req.method === 'HEAD') return res.end();
+    return res.end(seg.buffer);
+  });
+
   // Full parsed inventory from rutas_Belix_TV_6fb3f038.txt
   app.get('/api/belix/inventory', (req, res) => {
     const category = String(req.query.category || '').trim();
@@ -47,7 +151,7 @@ export function registerBelixRoutes(app: Express): void {
     });
   });
 
-  // Live RiffanTV sports, 24/7 channels & TDT + Xtream blueprint endpoints
+  // Live Belix Xtream channels + curated sports, 24/7 channels & TDT
   app.get('/api/belix/live-overview', (_req, res) => {
     const overview = getBelixLiveOverview();
     res.json({ success: true, ...overview });

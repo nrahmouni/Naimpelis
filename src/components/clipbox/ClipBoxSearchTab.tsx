@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Check,
+  Clapperboard,
   Copy,
   Film,
   Loader2,
@@ -12,7 +13,7 @@ import {
   Tv,
   X,
 } from 'lucide-react';
-import type { AppLanguage, CatalogMovie } from '../../types';
+import type { AppLanguage, CatalogMovie, TvSeriesDetails } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { useBackInterceptor } from '../../lib/backInterceptor';
@@ -23,11 +24,19 @@ import type {
   ClipboxTitleStreamsResult,
 } from './clipboxTypes';
 
+type ClipboxScope = 'all' | 'movies' | 'series' | 'anime';
+
 interface ClipBoxSearchTabProps {
   lang: AppLanguage;
   externalQuery?: string;
   onPlayCustomUrl: (url: string) => void;
   onPlayMovie: (movie: CatalogMovie, preferLang: string) => void;
+  onPlayClipboxMedia?: (
+    item: ClipboxSearchItem,
+    track: ClipboxPlayerTrack,
+    streamsData: ClipboxTitleStreamsResult,
+    epOpts?: { season?: number; episode?: number }
+  ) => void;
   onInspectHostInVault?: (host: string) => void;
 }
 
@@ -36,15 +45,17 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
   externalQuery = '',
   onPlayCustomUrl,
   onPlayMovie,
-  onInspectHostInVault,
+  onPlayClipboxMedia,
 }) => {
   const [query, setQuery] = useState(externalQuery);
-  const [scope, setScope] = useState<'all' | 'anime' | 'cinema'>('all');
+  const [scope, setScope] = useState<ClipboxScope>('all');
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<ClipboxSearchItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<ClipboxSearchItem | null>(null);
   const [season, setSeason] = useState(1);
   const [episode, setEpisode] = useState(1);
+  const [tvDetails, setTvDetails] = useState<TvSeriesDetails | null>(null);
+  const [loadingTvDetails, setLoadingTvDetails] = useState(false);
   const [loadingStreams, setLoadingStreams] = useState(false);
   const [streamsData, setStreamsData] = useState<ClipboxTitleStreamsResult | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -57,7 +68,7 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalQuery]);
 
-  const runSearch = useCallback(async (q: string, nextScope: 'all' | 'anime' | 'cinema') => {
+  const runSearch = useCallback(async (q: string, nextScope: ClipboxScope) => {
     setLoading(true);
     try {
       const qs = new URLSearchParams({
@@ -113,17 +124,43 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
     []
   );
 
+  const loadSeasonMetadata = useCallback(
+    async (tmdbId: number, targetSeason: number) => {
+      setLoadingTvDetails(true);
+      try {
+        const res = await fetch(
+          `/api/catalog/tv/${tmdbId}?season=${targetSeason}&lang=${lang}`
+        );
+        const json = (await res.json().catch(() => null)) as {
+          success?: boolean;
+          details?: TvSeriesDetails;
+        } | null;
+        if (json?.success && json.details) {
+          setTvDetails(json.details);
+        }
+      } finally {
+        setLoadingTvDetails(false);
+      }
+    },
+    [lang]
+  );
+
   const handleOpenItem = (item: ClipboxSearchItem) => {
     triggerHaptic('light');
     setSelectedItem(item);
     setSeason(1);
     setEpisode(1);
+    setTvDetails(null);
     setStreamsData(null);
+    if (item.mediaType === 'tv' && item.tmdbId) {
+      void loadSeasonMetadata(item.tmdbId, 1);
+    }
     void loadTitleStreams(item, 1, 1);
   };
 
   const handleCloseDrawer = useCallback(() => {
     setSelectedItem(null);
+    setTvDetails(null);
     setStreamsData(null);
   }, []);
 
@@ -133,6 +170,10 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
 
   const handlePlayTrack = (track: ClipboxPlayerTrack) => {
     triggerHaptic('medium');
+    if (selectedItem && streamsData && onPlayClipboxMedia) {
+      onPlayClipboxMedia(selectedItem, track, streamsData, { season, episode });
+      return;
+    }
     if (track.mode === 'extract' && selectedItem) {
       onPlayMovie(
         {
@@ -190,8 +231,8 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder={pickLang(lang, {
-              es: 'Buscar película, serie o anime en motores ClipBox (Kitsu + TMDB)...',
-              ca: 'Cercar pel·lícula, sèrie o anime als motors ClipBox...',
+              es: 'Buscar película, serie o anime en ClipBox (TMDB + Kitsu)...',
+              ca: 'Cercar pel·lícula, sèrie o anime a ClipBox...',
               en: 'Search movie, series or anime across ClipBox engines...',
             })}
             className="w-full min-h-11 pl-10 pr-4 rounded-xl bg-[#0D0D12] border border-white/[0.1] focus:border-[#06B6D4] text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-colors"
@@ -202,8 +243,9 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
           {(
             [
               { id: 'all', es: 'Todo', ca: 'Tot', en: 'All', icon: Sparkles },
-              { id: 'anime', es: 'Anime (Kitsu)', ca: 'Anime (Kitsu)', en: 'Anime (Kitsu)', icon: Tv },
-              { id: 'cinema', es: 'Cine y Series', ca: 'Cinema i Sèries', en: 'Movies & TV', icon: Film },
+              { id: 'movies', es: 'Películas', ca: 'Pel·lícules', en: 'Movies', icon: Film },
+              { id: 'series', es: 'Series', ca: 'Sèries', en: 'Series', icon: Clapperboard },
+              { id: 'anime', es: 'Anime', ca: 'Anime', en: 'Anime', icon: Tv },
             ] as const
           ).map((tab) => {
             const Icon = tab.icon;
@@ -216,7 +258,7 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
                   triggerHaptic('light');
                   setScope(tab.id);
                 }}
-                className={`min-h-10 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
+                className={`min-h-10 px-3 rounded-lg text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                   active
                     ? 'bg-[#7C3AED] text-white'
                     : 'text-zinc-400 hover:text-white hover:bg-white/[0.05]'
@@ -305,10 +347,9 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3.5 min-w-0">
-                <img
+                <PosterImage
                   src={selectedItem.poster}
                   alt={selectedItem.title}
-                  referrerPolicy="no-referrer"
                   className="w-16 h-24 rounded-xl object-cover border border-white/10 shrink-0"
                 />
                 <div className="min-w-0 space-y-1">
@@ -316,8 +357,8 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
                     {selectedItem.mediaType === 'anime'
                       ? 'ClipBox Anime · Kitsu + AniSkip'
                       : selectedItem.mediaType === 'tv'
-                      ? 'ClipBox Series · Multi-Player'
-                      : 'ClipBox Cine · Multi-Player'}
+                      ? 'ClipBox Series · Reproducción Directa'
+                      : 'ClipBox Cine · Reproducción Directa'}
                   </p>
                   <h3 className="font-display font-bold text-lg sm:text-xl text-white leading-tight">
                     {selectedItem.title}
@@ -356,33 +397,74 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
                 {selectedItem.mediaType === 'tv' && (
                   <label className="flex items-center gap-2 text-xs text-zinc-300">
                     <span>Temporada</span>
+                    {tvDetails && tvDetails.seasons.length > 0 ? (
+                      <select
+                        value={season}
+                        onChange={(e) => {
+                          const nextSeason = Math.max(1, Number(e.target.value) || 1);
+                          setSeason(nextSeason);
+                          setEpisode(1);
+                          if (selectedItem.tmdbId) void loadSeasonMetadata(selectedItem.tmdbId, nextSeason);
+                          void loadTitleStreams(selectedItem, nextSeason, 1);
+                        }}
+                        className="min-h-10 px-2.5 rounded-lg bg-[#0D0D12] border border-white/15 text-white tabular-nums"
+                      >
+                        {tvDetails.seasons.map((s) => (
+                          <option key={s.seasonNumber} value={s.seasonNumber}>
+                            {s.name || `Temp. ${s.seasonNumber}`}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={season}
+                        onChange={(e) => setSeason(Math.max(1, Number(e.target.value) || 1))}
+                        className="w-16 min-h-10 px-2.5 rounded-lg bg-[#0D0D12] border border-white/15 text-white text-center tabular-nums"
+                      />
+                    )}
+                  </label>
+                )}
+
+                <label className="flex items-center gap-2 text-xs text-zinc-300 flex-1 min-w-[160px]">
+                  <span>Episodio</span>
+                  {tvDetails && tvDetails.episodes.length > 0 ? (
+                    <select
+                      value={episode}
+                      onChange={(e) => {
+                        const nextEp = Math.max(1, Number(e.target.value) || 1);
+                        setEpisode(nextEp);
+                        void loadTitleStreams(selectedItem, season, nextEp);
+                      }}
+                      className="flex-1 min-w-0 min-h-10 px-2.5 rounded-lg bg-[#0D0D12] border border-white/15 text-white tabular-nums"
+                    >
+                      {tvDetails.episodes.map((ep) => (
+                        <option key={ep.episodeNumber} value={ep.episodeNumber}>
+                          {ep.episodeNumber}. {ep.title}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
                     <input
                       type="number"
                       min={1}
-                      max={50}
-                      value={season}
-                      onChange={(e) => setSeason(Math.max(1, Number(e.target.value) || 1))}
-                      className="w-16 min-h-10 px-2.5 rounded-lg bg-[#0D0D12] border border-white/15 text-white text-center tabular-nums"
+                      max={selectedItem.episodeCount || 2000}
+                      value={episode}
+                      onChange={(e) => setEpisode(Math.max(1, Number(e.target.value) || 1))}
+                      className="w-20 min-h-10 px-2.5 rounded-lg bg-[#0D0D12] border border-white/15 text-white text-center tabular-nums"
                     />
-                  </label>
-                )}
-                <label className="flex items-center gap-2 text-xs text-zinc-300">
-                  <span>Episodio</span>
-                  <input
-                    type="number"
-                    min={1}
-                    max={2000}
-                    value={episode}
-                    onChange={(e) => setEpisode(Math.max(1, Number(e.target.value) || 1))}
-                    className="w-20 min-h-10 px-2.5 rounded-lg bg-[#0D0D12] border border-white/15 text-white text-center tabular-nums"
-                  />
+                  )}
                 </label>
+
                 <button
                   type="button"
                   onClick={() => void loadTitleStreams(selectedItem, season, episode)}
-                  className="min-h-10 px-3.5 rounded-lg bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-semibold text-white cursor-pointer ml-auto"
+                  className="min-h-10 px-3.5 rounded-lg bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-semibold text-white cursor-pointer ml-auto inline-flex items-center gap-1.5"
                 >
-                  Actualizar enlaces
+                  {loadingTvDetails && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>Actualizar enlaces</span>
                 </button>
               </div>
             )}
@@ -395,7 +477,7 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
               {loadingStreams ? (
                 <div className="py-6 flex items-center justify-center gap-2 text-xs text-zinc-400">
                   <Loader2 className="w-4 h-4 animate-spin text-[#22D3EE]" />
-                  <span>Resolviendo servidores, subtítulos y tiempos AniSkip / TheIntroDB...</span>
+                  <span>Resolviendo servidores directos, subtítulos y tiempos AniSkip / IntroDB...</span>
                 </div>
               ) : streamsData && streamsData.tracks.length > 0 ? (
                 <div className="space-y-2">
@@ -415,23 +497,11 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button
                           type="button"
-                          onClick={() => void handleCopyUrl(tr.id, tr.rawUrl)}
-                          title="Copiar enlace"
-                          className="min-w-10 min-h-11 px-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 flex items-center justify-center cursor-pointer"
-                        >
-                          {copiedId === tr.id ? (
-                            <Check className="w-4 h-4 text-emerald-400" />
-                          ) : (
-                            <Copy className="w-4 h-4" />
-                          )}
-                        </button>
-                        <button
-                          type="button"
                           onClick={() => handlePlayTrack(tr)}
-                          className="min-h-11 px-3.5 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
+                          className="min-h-11 px-4 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
-                          <span>Ver</span>
+                          <span>Reproducir</span>
                         </button>
                       </div>
                     </div>
@@ -439,7 +509,7 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
                 </div>
               ) : (
                 <p className="text-xs text-zinc-400 py-2">
-                  No se encontró TMDB ID automático para embeds directos; usa los portales inferiores.
+                  No hay señales nativas directas disponibles para este episodio ahora mismo.
                 </p>
               )}
             </div>
@@ -467,12 +537,14 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
               </div>
             )}
 
-            {/* OpenSubtitles-v3 + ClipBox SRT Tracks */}
+            {/* OpenSubtitles-v3 + ClipBox SRT/VTT Tracks (automatically injected in player) */}
             {streamsData && streamsData.subtitles.length > 0 && (
               <div className="space-y-1.5">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                   <Subtitles className="w-3.5 h-3.5 text-[#A78BFA]" />
-                  <span>Subtítulos integrados disponibles ({streamsData.subtitles.length})</span>
+                  <span>
+                    Subtítulos disponibles ({streamsData.subtitles.length} · carga automática en reproductor)
+                  </span>
                 </h4>
                 <div className="flex flex-wrap gap-2">
                   {streamsData.subtitles.map((sub, idx) => (

@@ -2,8 +2,7 @@ import { LruTtlCache } from '../utils/lruCache.ts';
 import { assertSafeProxyUrl } from '../utils/ssrfGuard.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
 import { CHROME_UA } from '../extractors/httpHelpers.ts';
-import { getPermanent247SportsMatches } from '../routes/sportsHelpers/sportsChannels247.ts';
-import { getCachedFootballBoardSnapshot, getCachedSportsMatches } from '../routes/sports.ts';
+import { getCuratedRbtvOverviewData } from './rbtv/rbtvLiveCurator.ts';
 import { parseRbtvInventory, type RbtvHostEntry } from './rbtv/rbtvParser.ts';
 
 export interface RbtvProbeResult {
@@ -415,29 +414,17 @@ export async function getRbtvLiveOverview() {
   const inv = parseRbtvInventory();
   const coreHosts = inv.hosts.filter((h) => h.isCoreAppDomain);
 
-  // Probe the core 10 RBTV+ domains safely in parallel (cached 2 min)
+  // Probe the core RBTV+ domains safely in parallel (cached 2 min)
   const coreStatuses = await Promise.all(
     coreHosts.map((h) => probeRbtvUrl({ host: h.host }))
   );
 
-  // Combine cached live football board / sports schedule + permanent 24/7 sports channels
-  const board = getCachedFootballBoardSnapshot();
-  const cachedSports = getCachedSportsMatches();
-  const permanent247 = getPermanent247SportsMatches();
-
-  const liveMatches = [
-    ...(board?.matches || []),
-    ...cachedSports,
-  ]
-    .filter((m, idx, arr) => {
-      if (!m || !m.id) return false;
-      return arr.findIndex((x) => x.id === m.id) === idx;
-    })
-    .slice(0, 32);
+  const curated = getCuratedRbtvOverviewData();
 
   return {
     coreStatuses,
-    liveMatches,
-    sports247Channels: permanent247.slice(0, 24),
+    liveMatches: curated.liveMatches,
+    sports247Channels: curated.sports247Channels,
+    curatedChannels: curated.curatedChannels,
   };
 }

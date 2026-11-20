@@ -66,12 +66,45 @@ function mapVidlinkCaptionLang(rawLanguage: string): {
   return { code: 'MULTI', label: `${raw} · ClipBox SRT`, priority: 9 };
 }
 
+async function verifyDirectMp4Candidate(url: string): Promise<boolean> {
+  try {
+    const probe = await streamingFetch(url, {
+      headers: {
+        'User-Agent': CHROME_UA,
+        Referer: 'https://vidlink.pro/',
+        Origin: 'https://vidlink.pro',
+        Range: 'bytes=0-1023',
+      },
+      timeoutMs: 2200,
+    });
+    const okStatus = probe.ok || probe.status === 206;
+    const ct = String(probe.headers.get('content-type') || '').toLowerCase();
+    try {
+      await probe.body?.cancel?.();
+    } catch {
+      // ignore
+    }
+    if (!okStatus) return false;
+    if (
+      ct.includes('text/html') ||
+      ct.includes('application/json') ||
+      ct.includes('text/plain')
+    ) {
+      return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function extractClipboxDirectStreams(opts: {
   tmdbId?: string | number;
   mediaType?: 'movie' | 'tv';
   season?: number;
   episode?: number;
   originalLanguage?: string;
+  skipStreamProbe?: boolean;
 }): Promise<ClipboxDirectExtractResult> {
   const cleanId = String(opts.tmdbId || '').replace(/\D/g, '');
   if (!cleanId) return { tracks: [], subtitles: [] };
@@ -151,41 +184,53 @@ export async function extractClipboxDirectStreams(opts: {
       });
     }
 
-    // 2. Direct MP4 qualities: prefer browser-universal H.264 streams over HEVC-only variants
-    const qualityEntries = Object.entries(stream.qualities || {})
-      .filter(([, meta]) => Boolean(meta?.url && /^https?:\/\//i.test(meta.url)))
-      .map(([resKey, meta]) => {
-        const resNum = parseInt(resKey, 10) || 0;
-        const codec = String(meta?.codecName || '').toLowerCase();
-        const isH264 = codec.includes('h264') || codec.includes('avc') || !codec.includes('hevc');
-        return {
-          resKey,
-          resNum,
-          url: String(meta.url),
-          isH264,
-        };
-      })
-      .sort((a, b) => {
-        if (a.isH264 !== b.isH264) return a.isH264 ? -1 : 1;
-        return b.resNum - a.resNum;
-      });
+    // 2. Direct MP4 qualities: prefer browser-universal H.264 1080p/720p and verify reachability
+    if (!opts.skipStreamProbe) {
+      const qualityEntries = Object.entries(stream.qualities || {})
+        .filter(([, meta]) => Boolean(meta?.url && /^https?:\/\//i.test(meta.url)))
+        .map(([resKey, meta]) => {
+          const resNum = parseInt(resKey, 10) || 0;
+          const rawUrl = String(meta.url);
+          const codec = String(meta?.codecName || '').toLowerCase();
+          const isHevc =
+            codec.includes('hevc') || codec.includes('h265') || /\/h265\//i.test(rawUrl);
+          const isH264 = codec.includes('h264') || codec.includes('avc') || !isHevc;
+          return {
+            resKey,
+            resNum,
+            url: rawUrl,
+            isH264,
+          };
+        })
+        .sort((a, b) => {
+          if (a.isH264 !== b.isH264) return a.isH264 ? -1 : 1;
+          const rankRes = (r: number) => (r >= 720 && r <= 1080 ? r + 10000 : r);
+          return rankRes(b.resNum) - rankRes(a.resNum);
+        });
 
-    const chosenMp4 = qualityEntries.filter((q) => q.isH264).slice(0, 2);
-    const candidatesMp4 = chosenMp4.length > 0 ? chosenMp4 : qualityEntries.slice(0, 1);
+      const chosenMp4 = qualityEntries.filter((q) => q.isH264).slice(0, 2);
+      const candidatesMp4 = chosenMp4.length > 0 ? chosenMp4 : qualityEntries.slice(0, 2);
 
-    candidatesMp4.forEach((item, idx) => {
-      const proxiedMp4 = buildTsProxyUrl(item.url, 'https://vidlink.pro/');
-      tracks.push({
-        id: `clipbox-vl-mp4-${mediaType}-${cleanId}-${item.resKey}-${idx + 1}`,
-        label: `${langDisplay} ${item.resNum >= 2160 ? '4K' : `${item.resNum}p`} · ClipBox MP4`,
-        lang: defaultLang,
-        quality: item.resNum >= 2160 ? '4K MP4' : `${item.resNum}p MP4`,
-        sourceUrl: item.url,
-        referer: 'https://vidlink.pro/',
-        resolverType: 'direct_mp4',
-        resolvedStreamUrl: proxiedMp4,
-      });
-    });
+      if (candidatesMp4.length > 0) {
+        const probeResults = await Promise.all(
+          candidatesMp4.map((item) => verifyDirectMp4Candidate(item.url))
+        );
+        candidatesMp4.forEach((item, idx) => {
+          if (!probeResults[idx]) return;
+          const proxiedMp4 = buildTsProxyUrl(item.url, 'https://vidlink.pro/');
+          tracks.push({
+            id: `clipbox-vl-mp4-${mediaType}-${cleanId}-${item.resKey}-${idx + 1}`,
+            label: `${langDisplay} ${item.resNum >= 2160 ? '4K' : `${item.resNum}p`} · ClipBox MP4`,
+            lang: defaultLang,
+            quality: item.resNum >= 2160 ? '4K MP4' : `${item.resNum}p MP4`,
+            sourceUrl: item.url,
+            referer: 'https://vidlink.pro/',
+            resolverType: 'direct_mp4',
+            resolvedStreamUrl: proxiedMp4,
+          });
+        });
+      }
+    }
 
     // 3. Direct UTF-8 SRT captions from VidLink CDN
     const parsedSubs: Array<NormalizedSubtitleTrack & { _prio: number }> = [];
@@ -209,7 +254,7 @@ export async function extractClipboxDirectStreams(opts: {
 
     const subtitles: NormalizedSubtitleTrack[] = parsedSubs.map(({ _prio: _unused, ...rest }) => rest);
     const result: ClipboxDirectExtractResult = { tracks, subtitles };
-    if (tracks.length > 0 || subtitles.length > 0) {
+    if (!opts.skipStreamProbe && (tracks.length > 0 || subtitles.length > 0)) {
       vidlinkExtractCache.set(cacheKey, { data: result, ts: Date.now() });
     }
     return result;

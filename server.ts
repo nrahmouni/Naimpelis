@@ -55,6 +55,7 @@ import {
 import { registerClipboxRoutes } from './server/routes/clipboxRoutes.ts';
 import { registerRbtvRoutes } from './server/routes/rbtvRoutes.ts';
 import { registerBelixRoutes } from './server/routes/belixRoutes.ts';
+import { initBelixFromEnv } from './server/services/belix/belixXtreamClient.ts';
 import { SPANISH_TDT_CHANNELS } from './server/data/tdtChannels.ts';
 import { CATALA_LIVE_CHANNELS } from './server/data/catalaRegistry.ts';
 import {
@@ -151,7 +152,10 @@ app.use(
         p.startsWith('/api/iptv/') ||
         p.startsWith('/api/ts-proxy') ||
         p.startsWith('/api/hls-proxy') ||
-        p.startsWith('/api/dvb-live/')
+        p.startsWith('/api/dvb-live/') ||
+        p.startsWith('/api/belix/stream') ||
+        p.startsWith('/api/belix/sub') ||
+        p.startsWith('/api/belix/seg')
       ) {
         return false;
       }
@@ -360,16 +364,16 @@ function rankCandidateTracks({
     if (
       rt === 'vest_hls' ||
       rt === 'direct_hls' ||
-      rt === 'direct_mp4' ||
       rt === 'vidhide_hls' ||
       rt === 'movidy_embed' ||
       rt === 'bingetrix_en'
     ) {
       return 1;
     }
-    if (rt === 'embed_sniff') return 2;
-    if (rt === 'web_embed') return 3;
-    return 4;
+    if (rt === 'direct_mp4') return 2;
+    if (rt === 'embed_sniff') return 3;
+    if (rt === 'web_embed') return 4;
+    return 5;
   };
 
   const sourcePriority = (tr: TrackRecord): number => {
@@ -586,6 +590,7 @@ async function startServer() {
           void refreshLiveIptvRegistry(false).catch(() => undefined);
           void refreshFamelackAndWorldCatalog(false).catch(() => undefined);
           void prewarmTodayFootballBoard().catch(() => undefined);
+          void initBelixFromEnv().catch(() => undefined);
           channelHealthMonitor.startScheduler(
             () => [
               ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),

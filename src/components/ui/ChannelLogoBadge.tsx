@@ -16,7 +16,9 @@ export type TvRegionId =
   | 'cn'
   | 'world_cricket'
   | 'elahmad_mena'
-  | 'adrar_europa';
+  | 'adrar_europa'
+  | 'belix'
+  | 'rbtv';
 
 export interface ChannelRegionMeta {
   region: Exclude<TvRegionId, 'all'>;
@@ -30,6 +32,26 @@ export interface ChannelRegionMeta {
 export function getChannelRegionMeta(
   ch: Pick<SpanishTdtChannel, 'id' | 'category' | 'network' | 'countryCode'>
 ): ChannelRegionMeta {
+  if (ch.category === 'belix_live' || ch.id.startsWith('belix-')) {
+    return {
+      region: 'belix',
+      flagCode: 'es',
+      langTag: 'ES',
+      countryEs: 'Belix TV · Canales Estables HD',
+      countryCa: 'Belix TV · Canals Estables HD',
+      countryEn: 'Belix TV · Stable Live HD',
+    };
+  }
+  if (ch.category === 'rbtv_sports' || ch.id.startsWith('rbtv-')) {
+    return {
+      region: 'rbtv',
+      flagCode: 'all',
+      langTag: 'ES',
+      countryEs: 'RBTV+ · Deportes en Directo',
+      countryCa: 'RBTV+ · Esports en Directe',
+      countryEn: 'RBTV+ · Live Sports',
+    };
+  }
   if (ch.category === 'world_cricket' || ch.id.startsWith('sport-') || ch.id.startsWith('fl-sport-')) {
     const cCode = (ch.countryCode || '').toLowerCase();
     const flagMap: Record<string, FlagCode> = {
@@ -267,6 +289,8 @@ export function getChannelRegionMeta(
 }
 
 export function getCategoryRegion(category: 'all' | 'tdt_all' | TdtCategory): TvRegionId {
+  if (category === 'belix_live') return 'belix';
+  if (category === 'rbtv_sports') return 'rbtv';
   if (category === 'world_cricket') return 'world_cricket';
   if (category === 'elahmad_mena') return 'elahmad_mena';
   if (category === 'adrar_europa') return 'adrar_europa';

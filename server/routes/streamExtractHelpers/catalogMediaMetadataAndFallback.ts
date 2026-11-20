@@ -421,6 +421,7 @@ export async function buildFallbackCatalogResult(opts: {
   resolvedTmdbId: string | number | null;
   rawInput: string;
   isSandboxedFrame: boolean;
+  directOnly?: boolean;
 }): Promise<ExtractedStreamResult | null> {
   const {
     titleHint,
@@ -437,9 +438,10 @@ export async function buildFallbackCatalogResult(opts: {
     resolvedTmdbId,
     rawInput,
     isSandboxedFrame,
+    directOnly = false,
   } = opts;
 
-  if (isUnreleasedEpisode) {
+  if (isUnreleasedEpisode || directOnly) {
     return null;
   }
 

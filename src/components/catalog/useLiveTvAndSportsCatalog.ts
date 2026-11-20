@@ -23,7 +23,8 @@ export type FootballBrandFilter =
   | 'tnt_space'
   | 'movistar'
   | 'dazn'
-  | 'world_cricket';
+  | 'world_cricket'
+  | 'rbtv_sports';
 
 interface UseLiveTvAndSportsCatalogArgs {
   lang?: AppLanguage;
@@ -104,9 +105,11 @@ export function useLiveTvAndSportsCatalog({
   const fetchTdtCatalog = useCallback(async () => {
     setLoadingTdt(true);
     try {
-      const [tdtSettled, worldSettled] = await Promise.allSettled([
+      const [tdtSettled, worldSettled, rbtvSettled, belixSettled] = await Promise.allSettled([
         fetch('/api/catalog/tdt').then((r) => r.json()),
         fetch('/api/catalog/world-tv').then((r) => r.json()),
+        fetch('/api/rbtv/channels').then((r) => r.json()),
+        fetch('/api/belix/channels').then((r) => r.json()),
       ]);
       const baseList: SpanishTdtChannel[] =
         tdtSettled.status === 'fulfilled' && Array.isArray(tdtSettled.value?.channels)
@@ -116,10 +119,18 @@ export function useLiveTvAndSportsCatalog({
         worldSettled.status === 'fulfilled' && Array.isArray(worldSettled.value?.channels)
           ? worldSettled.value.channels
           : [];
-      if (baseList.length > 0 || worldList.length > 0) {
+      const rbtvList: SpanishTdtChannel[] =
+        rbtvSettled.status === 'fulfilled' && Array.isArray(rbtvSettled.value?.channels)
+          ? rbtvSettled.value.channels
+          : [];
+      const belixList: SpanishTdtChannel[] =
+        belixSettled.status === 'fulfilled' && Array.isArray(belixSettled.value?.channels)
+          ? belixSettled.value.channels
+          : [];
+      if (baseList.length > 0 || worldList.length > 0 || rbtvList.length > 0 || belixList.length > 0) {
         const seenIds = new Set<string>();
         const merged: SpanishTdtChannel[] = [];
-        for (const ch of [...baseList, ...worldList]) {
+        for (const ch of [...baseList, ...rbtvList, ...belixList, ...worldList]) {
           if (!ch?.id || seenIds.has(ch.id)) continue;
           seenIds.add(ch.id);
           merged.push(ch);
@@ -259,6 +270,7 @@ export function useLiveTvAndSportsCatalog({
       'dsports',
       'tnt_space',
       'world_cricket',
+      'rbtv_sports',
     ]);
     const filtered = tdtChannels.filter((ch) => {
       const isExtraSportCh = ch.id === 'ma-arryadia' || ch.id === 'us-fox-sports1';
@@ -345,7 +357,9 @@ export function useLiveTvAndSportsCatalog({
         ch.category === 'elahmad_mena' ||
         ch.category === 'adrar_europa' ||
         ch.category === 'famelack_movies' ||
-        ch.category === 'kids_world'
+        ch.category === 'kids_world' ||
+        ch.category === 'belix_live' ||
+        ch.category === 'rbtv_sports'
       ) {
         return false;
       }
@@ -367,6 +381,7 @@ export function useLiveTvAndSportsCatalog({
         ch.category === 'espn' ||
         ch.category === 'dsports' ||
         ch.category === 'world_cricket' ||
+        ch.category === 'rbtv_sports' ||
         ch.id === 'tnt-sports' ||
         ch.id.includes('laliga') ||
         ch.id.includes('champions') ||
@@ -449,6 +464,7 @@ export function useLiveTvAndSportsCatalog({
       'movistar',
       'dazn',
       'world_cricket',
+      'rbtv_sports',
     ]);
     const counts: Record<string, number> = { all: 0 };
     for (const ch of tdtChannels) {

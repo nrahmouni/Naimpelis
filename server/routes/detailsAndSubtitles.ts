@@ -58,6 +58,7 @@ export async function fetchAndCacheSubtitles(
           mediaType,
           season: season || 1,
           episode: episode || 1,
+          skipStreamProbe: true,
         })
           .then((r) => r.subtitles)
           .catch(() => [])

@@ -56,12 +56,13 @@ export function registerStreamExtractRoute(
     const episodeTitleHint = String(req.query.episodeTitle || '').trim();
     const isSandboxedFrame = String(req.query.sandboxed || '').trim() === '1';
     const forceExtract = String(req.query.force || req.query.forceSpanish || '') === '1';
+    const directOnly = String(req.query.directOnly || '').trim() === '1';
 
     if (!rawInput && !movidyUrlParam && !gnulaUrlParam && !vestUrlParam && !titleHint && !tmdbIdParam) {
       return res.status(400).json({ success: false, error: 'Falta el enlace o título del contenido.' });
     }
 
-    const cacheKey = `v3|${mediaTypeParam}|${tmdbIdParam}|${yearParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${isSandboxedFrame ? 'sb1' : 'sb0'}|${rawInput}|${movidyUrlParam}|${gnulaUrlParam}|${vestUrlParam}|${titleHint}`;
+    const cacheKey = `v3|${mediaTypeParam}|${tmdbIdParam}|${yearParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${isSandboxedFrame ? 'sb1' : 'sb0'}|${directOnly ? 'do1' : 'do0'}|${rawInput}|${movidyUrlParam}|${gnulaUrlParam}|${vestUrlParam}|${titleHint}`;
     const cached = !forceExtract ? extractionCache.get(cacheKey) : undefined;
     if (cached && cached.expiresAt > Date.now()) {
       return res.json(formatResp(req, cached));
@@ -102,6 +103,7 @@ export function registerStreamExtractRoute(
         episodeTitleHint,
         isSandboxedFrame,
         forceExtract,
+        directOnly,
         cacheKey,
         rankCandidateTracks: deps.rankCandidateTracks,
         setCache,

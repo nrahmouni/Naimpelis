@@ -1,4 +1,145 @@
+import { useCallback, useEffect, useRef, useState, type MutableRefObject } from 'react';
 import type React from 'react';
+import type Hls from 'hls.js';
+import type { YouTubePlayerInstance } from './playerTypes';
+
+export function usePlayerStageRefs() {
+  const stageWrapperRef = useRef<HTMLDivElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const castBridgeVideoRef = useRef<HTMLVideoElement | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
+  const ytPlayerRef = useRef<YouTubePlayerInstance | null>(null);
+  const ytContainerId = useRef(`yt-stage-${Math.random().toString(36).slice(2, 8)}`);
+  const isApplyingRemoteRef = useRef(false);
+  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bufferingDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const showControlsRef = useRef<boolean>(true);
+  const lastManualHideAtRef = useRef<number>(0);
+  const lastMousePosRef = useRef<{ x: number; y: number } | null>(null);
+  const lastProgressEmitRef = useRef<number>(0);
+  const streamLoadStartRef = useRef<number>(Date.now());
+  const qoeStartupSentForUrlRef = useRef<string>('');
+  const rebufferCountRef = useRef<number>(0);
+  const smoothDriftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const latestCurrentTimeRef = useRef<number>(0);
+  const autoNextTriggeredUrlRef = useRef<string>('');
+
+  const [playerToast, setPlayerToast] = useState<string | null>(null);
+  const showTransientToast = useCallback((msg: string) => {
+    setPlayerToast(msg);
+    setTimeout(() => {
+      setPlayerToast((cur) => (cur === msg ? null : cur));
+    }, 3400);
+  }, []);
+
+  return {
+    stageWrapperRef,
+    videoRef,
+    castBridgeVideoRef,
+    hlsRef,
+    ytPlayerRef,
+    ytContainerId,
+    isApplyingRemoteRef,
+    controlsTimeoutRef,
+    bufferingDelayTimerRef,
+    showControlsRef,
+    lastManualHideAtRef,
+    lastMousePosRef,
+    lastProgressEmitRef,
+    streamLoadStartRef,
+    qoeStartupSentForUrlRef,
+    rebufferCountRef,
+    smoothDriftTimerRef,
+    latestCurrentTimeRef,
+    autoNextTriggeredUrlRef,
+    playerToast,
+    showTransientToast,
+  };
+}
+
+function readBoolPref(key: string, fallback: boolean): boolean {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw !== null) return raw === 'true';
+  } catch {
+    // ignore storage errors
+  }
+  return fallback;
+}
+
+function readVolumePref(): number {
+  try {
+    const raw = Number(localStorage.getItem('riffantv_player_volume_v1'));
+    return Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 1;
+  } catch {
+    return 1;
+  }
+}
+
+export function usePlayerStagePrefs(opts: {
+  videoRef: MutableRefObject<HTMLVideoElement | null>;
+  videoUrl: string;
+  videoMode: string;
+  isStageFullscreen: boolean;
+  isMinimized: boolean;
+}) {
+  const [batterySaverTvMode, setBatterySaverTvMode] = useState<boolean>(false);
+  const [isMuted, setIsMuted] = useState<boolean>(() =>
+    readBoolPref('riffantv_player_muted_v1', false)
+  );
+  const [volume, setVolume] = useState<number>(() => readVolumePref());
+  const [isTouchLocked, setIsTouchLocked] = useState(false);
+  const [tvAspectMode, setTvAspectMode] = useState<'contain' | 'cover' | 'fill'>('contain');
+  const [ambilightEnabled, setAmbilightEnabled] = useState<boolean>(() => {
+    const fallback = typeof window !== 'undefined' ? window.innerWidth >= 1024 : false;
+    return readBoolPref('naim_ambilight_v1', fallback);
+  });
+  const [vocalBoostEnabled, setVocalBoostEnabled] = useState<boolean>(() =>
+    readBoolPref('naim_vocal_boost_v1', false)
+  );
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('riffantv_player_muted_v1', String(isMuted));
+      localStorage.setItem('riffantv_player_volume_v1', String(volume));
+    } catch {
+      // ignore storage errors
+    }
+  }, [isMuted, volume]);
+
+  useEffect(() => {
+    const vid = opts.videoRef.current;
+    if (!vid) return;
+    if (Math.abs(vid.volume - volume) > 0.01) vid.volume = volume;
+    if (vid.muted !== isMuted) vid.muted = isMuted;
+  }, [opts.videoRef, opts.videoUrl, opts.videoMode, volume, isMuted]);
+
+  useEffect(() => {
+    if (!opts.isStageFullscreen || opts.isMinimized || opts.videoMode === 'idle') {
+      setIsTouchLocked(false);
+    }
+  }, [opts.isStageFullscreen, opts.isMinimized, opts.videoMode]);
+
+  return {
+    batterySaverTvMode,
+    setBatterySaverTvMode,
+    isMuted,
+    setIsMuted,
+    volume,
+    setVolume,
+    isTouchLocked,
+    setIsTouchLocked,
+    tvAspectMode,
+    setTvAspectMode,
+    ambilightEnabled,
+    setAmbilightEnabled,
+    vocalBoostEnabled,
+    setVocalBoostEnabled,
+    playbackSpeed,
+    setPlaybackSpeed,
+  };
+}
 
 export function getPlayerSectionClass(opts: {
   isTvMode: boolean;

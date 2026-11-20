@@ -166,6 +166,7 @@ export interface VideoState {
   tracks: StreamTrack[];
   activeTrackIndex: number;
   subtitles?: SubtitleTrackItem[];
+  tmdbId?: number;
   seriesMeta?: ActiveSeriesContext;
   lastUpdated: number;
   updatedBy?: string;
@@ -394,6 +395,7 @@ export interface SubtitleStyleSettings {
   fontScale: number;
   fontColor: string;
   bgOpacity: number;
+  textOpacity?: number;
   edgeShadow: 'shadow' | 'outline' | 'none';
   fontFamily?: 'sans' | 'serif' | 'mono';
 }

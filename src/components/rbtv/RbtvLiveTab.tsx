@@ -10,7 +10,7 @@ import {
   Search,
   Tv,
 } from 'lucide-react';
-import type { AppLanguage, SportsMatch } from '../../types';
+import type { AppLanguage, SpanishTdtChannel, SportsMatch } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import type {
@@ -25,7 +25,7 @@ interface RbtvLiveTabProps {
   externalQuery?: string;
   coreHosts: RbtvHostEntry[];
   onPlaySportsMatch: (match: SportsMatch, channelIndex: number) => void;
-  onPlayCustomUrl: (url: string) => void;
+  onPlayTdtChannel: (channel: SpanishTdtChannel, signalIndex?: number) => void;
   onSendToDecoder: (input: string) => void;
 }
 
@@ -34,7 +34,7 @@ export const RbtvLiveTab: React.FC<RbtvLiveTabProps> = ({
   externalQuery = '',
   coreHosts,
   onPlaySportsMatch,
-  onPlayCustomUrl,
+  onPlayTdtChannel,
   onSendToDecoder,
 }) => {
   const [filterText, setFilterText] = useState(externalQuery);
@@ -114,6 +114,17 @@ export const RbtvLiveTab: React.FC<RbtvLiveTabProps> = ({
       (m) =>
         m.title.toLowerCase().includes(q) ||
         m.channels.some((c) => c.label.toLowerCase().includes(q))
+    );
+  }, [overview, q]);
+
+  const filteredCuratedChannels = useMemo(() => {
+    const list = overview?.curatedChannels || [];
+    if (!q) return list;
+    return list.filter(
+      (c) =>
+        c.name.toLowerCase().includes(q) ||
+        c.network.toLowerCase().includes(q) ||
+        c.description.toLowerCase().includes(q)
     );
   }, [overview, q]);
 
@@ -207,7 +218,7 @@ export const RbtvLiveTab: React.FC<RbtvLiveTabProps> = ({
                   <div className="flex items-center gap-2 text-[11px] font-semibold">
                     {match.isLive ? (
                       <span className="inline-flex items-center gap-1.5 text-red-400">
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                        <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
                         EN VIVO
                       </span>
                     ) : (
@@ -270,6 +281,59 @@ export const RbtvLiveTab: React.FC<RbtvLiveTabProps> = ({
           </div>
         )}
       </section>
+
+      {filteredCuratedChannels.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="font-display font-bold text-sm sm:text-base text-white flex items-center gap-2">
+              <Tv className="w-4 h-4 text-[#10B981]" />
+              <span>
+                {pickLang(lang, {
+                  es: 'Canales Estables RBTV+ (Reproducción Directa)',
+                  ca: 'Canals Estables RBTV+ (Reproducció Directa)',
+                  en: 'Stable RBTV+ Channels (Direct Playback)',
+                })}
+              </span>
+            </h2>
+            <span className="text-xs text-zinc-400 tabular-nums">
+              {filteredCuratedChannels.length}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {filteredCuratedChannels.map((ch) => (
+              <div
+                key={ch.id}
+                className="rounded-2xl bg-[#0D0D12] border border-white/[0.08] hover:border-[#F59E0B]/45 p-3.5 flex items-center justify-between gap-3 transition-colors"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-amber-200 bg-white/[0.06] shrink-0 border border-white/10">
+                    {ch.shortMark || ch.name.slice(0, 3).toUpperCase()}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs sm:text-sm font-bold text-white truncate">{ch.name}</p>
+                    <p className="text-[11px] text-zinc-400 truncate">
+                      {ch.network} · {ch.channels.length} {ch.channels.length === 1 ? 'señal' : 'señales'}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    onPlayTdtChannel(ch, 0);
+                  }}
+                  className="min-h-11 px-3.5 rounded-xl bg-[#F59E0B] hover:bg-[#D97706] text-black text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0 active:scale-95 transition-all"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>{pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })}</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* SECTION B: 10 RBTV+ CORE NODES & LIVE DOH HEALTH */}
       <section className="space-y-3">
@@ -369,25 +433,11 @@ export const RbtvLiveTab: React.FC<RbtvLiveTabProps> = ({
                       triggerHaptic('light');
                       onSendToDecoder(firstUrl);
                     }}
-                    className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] text-xs font-semibold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer"
+                    className="min-h-11 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] text-xs font-semibold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <Code2 className="w-3.5 h-3.5 text-[#A78BFA]" />
                     <span>Descifrar</span>
                   </button>
-
-                  {node.host === 'www.rbtv77.com' || node.host.includes('wv11.') ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        onPlayCustomUrl(firstUrl);
-                      }}
-                      className="min-h-10 px-3 rounded-xl bg-[#F59E0B]/15 hover:bg-[#F59E0B]/25 border border-[#F59E0B]/40 text-xs font-semibold text-[#FBBF24] inline-flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>Abrir portal</span>
-                    </button>
-                  ) : null}
                 </div>
               </div>
             );

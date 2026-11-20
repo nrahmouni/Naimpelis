@@ -26,6 +26,8 @@ import {
   getCachedFamelackWorldChannels,
   refreshFamelackAndWorldCatalog,
 } from '../services/famelackIptvService.ts';
+import { getBelixLiveChannels, resolveBelixManifest } from '../services/belix/belixXtreamClient.ts';
+import { getCuratedRbtvChannels } from '../services/rbtv/rbtvLiveCurator.ts';
 import {
   ensureLiveDvbCleanHlsSession,
   getActiveDvbSessionPath,
@@ -101,7 +103,11 @@ export function registerIptvAndTdtRoutes(
     } else {
       void refreshLiveIptvRegistry(false).catch(() => undefined);
     }
-    const merged = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS);
+    const merged = [
+      ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),
+      ...getBelixLiveChannels(),
+      ...getCuratedRbtvChannels(),
+    ];
     res.json({
       success: true,
       iptvMeta: getIptvSyncMeta(),
@@ -426,6 +432,16 @@ export function registerIptvAndTdtRoutes(
           track.resolverType === 'tdt_hls' ||
           track.resolverType === 'direct_hls' ||
           /\.m3u8(\?|$)/i.test(sourceUrl);
+
+        if (sourceUrl.startsWith('/api/belix/stream/')) {
+          const belixStreamId = sourceUrl.split('/').pop()?.replace(/\.m3u8.*$/i, '') || '';
+          const belixManifest = await resolveBelixManifest(belixStreamId, publicOrigin);
+          if (!belixManifest) {
+            markTrackDown(sourceUrl, 503);
+            continue;
+          }
+          return sendIptvM3u8Response(res, belixManifest);
+        }
 
         if (isDirectHls) {
           const cleanUrl = await maybeSignEasyBroadcastUrl(

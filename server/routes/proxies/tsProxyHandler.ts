@@ -36,7 +36,9 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
   const isUrlSubtitle = /\.(vtt|webvtt|srt)(\?|$)/i.test(targetUrl);
   const isUrlMp4 =
     /\.(m4s|mp4|cmfv|cmfa)(\?|$)/i.test(targetUrl) ||
-    /\/segs\/[^/]+\/init\./i.test(targetUrl);
+    /\/segs\/[^/]+\/init\./i.test(targetUrl) ||
+    /bcdn\.hakunaymatata\.com/i.test(targetUrl) ||
+    /[?&](?:mime|type)=video(?:%2F|\/)mp4/i.test(targetUrl);
   const effectiveForceAac = !isUrlSubtitle && !isUrlMp4 && forceAac;
 
   if (req.method === 'HEAD') {
@@ -187,10 +189,37 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     }
     clearTimeout(hdrTimer);
     if (!upstream.ok || !upstream.body) {
+      if (
+        isUrlMp4 &&
+        (upstream.status === 429 ||
+          upstream.status === 403 ||
+          upstream.status === 404 ||
+          upstream.status === 410)
+      ) {
+        try {
+          await upstream.body?.cancel?.();
+        } catch {
+          // ignore
+        }
+        res.status(upstream.status === 429 ? 429 : 502).end();
+        return;
+      }
       throw new Error(`TS upstream ${upstream.status}`);
     }
 
     const rawCt = (upstream.headers.get('content-type') || '').toLowerCase();
+    if (
+      isUrlMp4 &&
+      (rawCt.startsWith('text/html') || rawCt.includes('application/json'))
+    ) {
+      try {
+        await upstream.body?.cancel?.();
+      } catch {
+        // ignore
+      }
+      res.status(502).end();
+      return;
+    }
     const isSubtitleContent = isUrlSubtitle || rawCt.includes('vtt') || rawCt.includes('subrip');
     const isDisguisedSegment =
       !isSubtitleContent &&

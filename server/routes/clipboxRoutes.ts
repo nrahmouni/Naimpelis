@@ -75,14 +75,21 @@ export function registerClipboxRoutes(app: express.Express): void {
     const q = String(req.query.q || '').trim();
     const scopeRaw = String(req.query.scope || 'all').toLowerCase();
     const scope =
-      scopeRaw === 'anime' || scopeRaw === 'cinema' ? scopeRaw : 'all';
+      scopeRaw === 'anime' ||
+      scopeRaw === 'cinema' ||
+      scopeRaw === 'movies' ||
+      scopeRaw === 'series'
+        ? scopeRaw
+        : 'all';
+    const page = Math.max(1, Number(req.query.page || 1) || 1);
 
     try {
-      const items = await searchClipboxCatalog(q, scope);
+      const items = await searchClipboxCatalog(q, scope, page);
       res.json({
         success: true,
         query: q,
         scope,
+        page,
         items,
       });
     } catch {

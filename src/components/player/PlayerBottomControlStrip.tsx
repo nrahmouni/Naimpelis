@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Globe, MoreHorizontal, Share2, Tv, Users } from 'lucide-react';
+import { Check, Globe, MoreHorizontal, Share2, Subtitles, Tv, Upload, Users } from 'lucide-react';
 import {
   RiffanCastIcon,
   RiffanChatIcon,
@@ -11,7 +11,7 @@ import { MediaLanguageSelector } from '../ui/LanguageBadge';
 import { resolveTrackLang } from './trackLabelUtils';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
-import type { AppLanguage, VideoState } from '../../types';
+import type { AppLanguage, SubtitleTrackItem, VideoState } from '../../types';
 
 interface PlayerBottomControlStripProps {
   lang: AppLanguage;
@@ -39,6 +39,10 @@ interface PlayerBottomControlStripProps {
   onToggleBatterySaverTvMode: () => void;
   onDirectCastToTv: () => void;
   onOpenProMenu: () => void;
+  subtitleTracks?: SubtitleTrackItem[];
+  activeSubId?: string;
+  onSelectSubtitleTrack?: (trackId: string) => void;
+  subtitleFileInputRef?: React.RefObject<HTMLInputElement | null>;
 }
 
 export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> = ({
@@ -67,19 +71,31 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
   onToggleBatterySaverTvMode,
   onDirectCastToTv,
   onOpenProMenu,
+  subtitleTracks = [],
+  activeSubId = 'off',
+  onSelectSubtitleTrack,
+  subtitleFileInputRef,
 }) => {
   const [moreOpen, setMoreOpen] = useState(false);
+  const [ccOpen, setCcOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement>(null);
+  const ccRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!moreOpen) return;
+    if (!moreOpen && !ccOpen) return;
     const handlePointerDown = (e: PointerEvent) => {
-      if (moreRef.current && !moreRef.current.contains(e.target as Node)) {
+      if (moreOpen && moreRef.current && !moreRef.current.contains(e.target as Node)) {
         setMoreOpen(false);
+      }
+      if (ccOpen && ccRef.current && !ccRef.current.contains(e.target as Node)) {
+        setCcOpen(false);
       }
     };
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMoreOpen(false);
+      if (e.key === 'Escape') {
+        setMoreOpen(false);
+        setCcOpen(false);
+      }
     };
     window.addEventListener('pointerdown', handlePointerDown);
     window.addEventListener('keydown', handleKeyDown);
@@ -87,7 +103,12 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
       window.removeEventListener('pointerdown', handlePointerDown);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [moreOpen]);
+  }, [moreOpen, ccOpen]);
+
+  const activeSubTrack =
+    activeSubId && activeSubId !== 'off'
+      ? subtitleTracks.find((s) => s.id === activeSubId)
+      : undefined;
 
   const activeEmbedUrl =
     videoState.tracks[videoState.activeTrackIndex]?.sourceUrl || videoState.url;
@@ -259,6 +280,119 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
             </button>
           )
         )}
+
+        {!videoState.isLive &&
+          (videoState.mode === 'hls' || videoState.mode === 'direct') &&
+          onSelectSubtitleTrack && (
+            <div ref={ccRef} className="relative">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setMoreOpen(false);
+                  setCcOpen((v) => !v);
+                }}
+                aria-expanded={ccOpen}
+                aria-haspopup="menu"
+                aria-label={pickLang(lang, { es: 'Subtítulos', ca: 'Subtítols', en: 'Subtitles' })}
+                className={`min-h-[40px] px-3 rounded-2xl border text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
+                  activeSubTrack
+                    ? 'bg-[#7C3AED]/25 border-[#8B5CF6]/55 text-white'
+                    : 'bg-[#0D0D12] hover:bg-[#14141C] border-white/[0.08] text-zinc-200'
+                }`}
+              >
+                <Subtitles className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span>
+                  {activeSubTrack
+                    ? `CC · ${String(activeSubTrack.lang || 'SUB').toUpperCase()}`
+                    : subtitleTracks.length > 0
+                    ? `CC (${subtitleTracks.length})`
+                    : 'CC'}
+                </span>
+              </button>
+
+              {ccOpen && (
+                <div
+                  role="menu"
+                  className="absolute right-0 bottom-full mb-2 w-64 max-h-72 overflow-y-auto rounded-2xl bg-[#0D0D12]/96 backdrop-blur-2xl border border-white/[0.08] shadow-[0_18px_48px_rgba(0,0,0,0.82)] p-1.5 space-y-1 z-50 animate-fade-in"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setCcOpen(false);
+                      onSelectSubtitleTrack('off');
+                    }}
+                    className={`w-full min-h-10 px-3 rounded-xl text-left text-xs font-semibold flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                      activeSubId === 'off'
+                        ? 'bg-[#7C3AED]/25 text-white'
+                        : 'hover:bg-white/[0.08] text-zinc-300'
+                    }`}
+                  >
+                    <span>
+                      {pickLang(lang, {
+                        es: 'Desactivar subtítulos',
+                        ca: 'Desactivar subtítols',
+                        en: 'Subtitles off',
+                      })}
+                    </span>
+                    {activeSubId === 'off' && <Check className="w-3.5 h-3.5 text-[#A78BFA] shrink-0" />}
+                  </button>
+
+                  {subtitleTracks.map((st) => {
+                    const isSelected = activeSubId === st.id;
+                    return (
+                      <button
+                        key={st.id}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setCcOpen(false);
+                          onSelectSubtitleTrack(st.id);
+                        }}
+                        className={`w-full min-h-10 px-3 rounded-xl text-left text-xs font-semibold flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                          isSelected
+                            ? 'bg-[#7C3AED]/25 text-white'
+                            : 'hover:bg-white/[0.08] text-zinc-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="px-1.5 py-0.5 rounded bg-white/10 text-[10px] font-bold text-sky-300 shrink-0">
+                            {String(st.lang || 'SUB').toUpperCase()}
+                          </span>
+                          <span className="truncate">{st.label}</span>
+                        </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-[#A78BFA] shrink-0" />}
+                      </button>
+                    );
+                  })}
+
+                  {subtitleFileInputRef && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      onClick={() => {
+                        setCcOpen(false);
+                        subtitleFileInputRef.current?.click();
+                      }}
+                      className="w-full min-h-10 px-3 rounded-xl hover:bg-white/[0.08] border-t border-white/[0.06] mt-1 pt-1 text-left text-xs font-semibold text-sky-300 flex items-center gap-2 cursor-pointer transition-colors"
+                    >
+                      <Upload className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        {pickLang(lang, {
+                          es: 'Cargar .SRT / .VTT local',
+                          ca: 'Carregar .SRT / .VTT local',
+                          en: 'Load local .SRT / .VTT',
+                        })}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
         <div ref={moreRef} className="relative">
           <button

@@ -354,6 +354,11 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
       combinedHandlersRef.current.handlePlaySecondaryChannel(...args),
     []
   );
+  const stablePlayClipboxMedia = useCallback(
+    (...args: Parameters<typeof vodHandlers.handlePlayClipboxMedia>) =>
+      combinedHandlersRef.current.handlePlayClipboxMedia(...args),
+    []
+  );
 
   return {
     isExtracting,
@@ -388,5 +393,6 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     handlePlayQueueItem: stablePlayQueueItem,
     handlePlayCustomUrl: stablePlayCustomUrl,
     handlePlaySecondaryChannel: stablePlaySecondaryChannel,
+    handlePlayClipboxMedia: stablePlayClipboxMedia,
   };
 }

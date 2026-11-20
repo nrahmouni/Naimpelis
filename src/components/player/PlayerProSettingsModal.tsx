@@ -427,12 +427,23 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                       type="button"
                       onClick={() =>
                         setSubtitleStyle({
-                          bgOpacity: subtitleStyle.bgOpacity > 0.4 ? 0 : 0.72,
+                          bgOpacity: subtitleStyle.bgOpacity > 0.15 ? 0 : 0.35,
                         })
                       }
                       className="px-2 py-0.5 rounded-md bg-white/10 text-[10px] font-semibold text-white cursor-pointer"
                     >
-                      {pickLang(lang, { es: 'Caja', ca: 'Caixa', en: 'Box' })}: {subtitleStyle.bgOpacity > 0.4 ? 'ON' : 'OFF'}
+                      {pickLang(lang, { es: 'Caja', ca: 'Caixa', en: 'Box' })}: {subtitleStyle.bgOpacity > 0.15 ? 'ON' : 'OFF'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSubtitleStyle({
+                          textOpacity: (subtitleStyle.textOpacity ?? 0.82) < 0.95 ? 1 : 0.82,
+                        })
+                      }
+                      className="px-2 py-0.5 rounded-md bg-white/10 text-[10px] font-semibold text-white cursor-pointer"
+                    >
+                      {(subtitleStyle.textOpacity ?? 0.82) < 0.95 ? '82%' : '100%'}
                     </button>
                   </div>
                 </div>

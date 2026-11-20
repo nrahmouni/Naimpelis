@@ -80,6 +80,8 @@ export const ALL_LIVE_CATEGORIES: { id: 'all' | 'tdt_all' | TdtCategory; es: str
   { id: 'adrar_europa', es: 'ADRAR Europa (FR·DE·IT·TR·UK·NL·RU)', ca: 'ADRAR Europa (FR·DE·IT·TR·UK·NL·RU)', en: 'ADRAR Europe (FR·DE·IT·TR·UK·NL·RU)' },
   { id: 'famelack_movies', es: 'Cine 24/7 Mundial (Famelack)', ca: 'Cinema 24/7 Mundial (Famelack)', en: 'World Movies 24/7 (Famelack)' },
   { id: 'kids_world', es: 'Infantil Mundial (Kids)', ca: 'Infantil Mundial (Kids)', en: 'World Kids TV' },
+  { id: 'belix_live', es: 'Belix TV (IPTV Estables)', ca: 'Belix TV (IPTV Estables)', en: 'Belix TV (Stable IPTV)' },
+  { id: 'rbtv_sports', es: 'RBTV+ Deportes', ca: 'RBTV+ Esports', en: 'RBTV+ Sports' },
   { id: 'tdt_all', es: 'TDT España', ca: 'TDT Espanya', en: 'Spain TDT' },
   { id: 'generalistas', es: 'La 1 · A3 · T5 · laSexta', ca: 'La 1 · A3 · T5 · laSexta', en: 'Main Channels (1–6)' },
 ];
@@ -284,6 +286,32 @@ export const TV_FILTER_GROUPS: TvFilterGroup[] = [
     },
     categories: [
       { id: 'china_football', es: 'Fútbol China (CCTV5 · CCTV5+ · GD)', ca: 'Futbol Xina (CCTV5 · CCTV5+ · GD)', en: 'China Sports (CCTV5 & GD)' },
+    ],
+  },
+  {
+    region: 'belix',
+    flagCode: 'es',
+    name: { es: 'Belix TV (IPTV)', ca: 'Belix TV (IPTV)', en: 'Belix TV (IPTV)' },
+    sub: {
+      es: 'Canales estables verificados desde tu sesión Belix TV',
+      ca: 'Canals estables verificats des de la teva sessió Belix TV',
+      en: 'Verified stable live channels from your Belix TV session',
+    },
+    categories: [
+      { id: 'belix_live', es: 'Belix TV (Señales estables)', ca: 'Belix TV (Senyals estables)', en: 'Belix TV (Stable Streams)' },
+    ],
+  },
+  {
+    region: 'rbtv',
+    flagCode: 'all',
+    name: { es: 'RBTV+ Deportes', ca: 'RBTV+ Esports', en: 'RBTV+ Sports' },
+    sub: {
+      es: 'Señales deportivas curadas de reproducción directa',
+      ca: 'Senyals esportives curades de reproducció directa',
+      en: 'Curated direct-play sports feeds',
+    },
+    categories: [
+      { id: 'rbtv_sports', es: 'RBTV+ Deportes en Directo', ca: 'RBTV+ Esports en Directe', en: 'RBTV+ Live Sports' },
     ],
   },
 ];

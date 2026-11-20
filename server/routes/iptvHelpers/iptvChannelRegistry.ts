@@ -11,6 +11,8 @@ import { applySyncedStreamsToChannels } from '../../services/iptvPlaylistService
 import { getCachedFamelackWorldChannels } from '../../services/famelackIptvService.ts';
 import { channelHealthMonitor } from '../../services/channelHealthMonitor.ts';
 import { getPermanent247SportsMatches } from '../sports.ts';
+import { getBelixLiveChannels } from '../../services/belix/belixXtreamClient.ts';
+import { curateSportsTracks, getCuratedRbtvChannels } from '../../services/rbtv/rbtvLiveCurator.ts';
 
 export function getAllIptvChannels(): any[] {
   const seen = new Set<string>();
@@ -39,6 +41,8 @@ export function getAllIptvChannels(): any[] {
 
   const sportsMuxes = getPermanent247SportsMatches();
   sportsMuxes.forEach((m, idx) => {
+    const curatedTracks = curateSportsTracks(m.channels as any);
+    if (curatedTracks.length === 0) return;
     const muxId = `live-sports-${m.id}`;
     if (!seen.has(muxId)) {
       seen.add(muxId);
@@ -65,11 +69,11 @@ export function getAllIptvChannels(): any[] {
         category,
         quality: '1080p HD',
         description: `${m.title} · ${m.competition}`,
-        channels: m.channels,
+        channels: curatedTracks,
       });
     }
 
-    (m.channels || []).forEach((tr, trIdx) => {
+    curatedTracks.forEach((tr, trIdx) => {
       const trId = `ch-sport-${tr.id || `${m.id}-${trIdx}`}`;
       if (!seen.has(trId) && tr.label && !tr.label.includes('Satélite')) {
         seen.add(trId);
@@ -96,7 +100,7 @@ export function getAllIptvChannels(): any[] {
           category: cat,
           quality: tr.quality || '1080p HD',
           description: `${tr.label} - Señal oficial en directo`,
-          channels: [tr, ...m.channels.filter((other) => other.id !== tr.id)],
+          channels: [tr, ...curatedTracks.filter((other) => other.id !== tr.id)],
         });
       }
     });
@@ -154,6 +158,18 @@ export function getAllIptvChannels(): any[] {
       dial: w.dial || 600 + combined.filter((c) => c.dial >= 600).length,
       category: w.category || 'adrar_europa',
     });
+  }
+
+  for (const b of getBelixLiveChannels()) {
+    if (!b?.id || seen.has(b.id)) continue;
+    seen.add(b.id);
+    combined.push(b);
+  }
+
+  for (const r of getCuratedRbtvChannels()) {
+    if (!r?.id || seen.has(r.id)) continue;
+    seen.add(r.id);
+    combined.push(r);
   }
 
   return channelHealthMonitor.prioritizeChannels(combined);

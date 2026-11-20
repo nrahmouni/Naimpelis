@@ -76,10 +76,35 @@ export interface BelixInventoryResponse {
   limitations: string[];
 }
 
+export interface BelixXtreamCategory {
+  id: string;
+  name: string;
+  count: number;
+}
+
+export interface BelixConnectionStatus {
+  connected: boolean;
+  serverOrigin: string;
+  maskedUsername: string;
+  userStatus?: string;
+  activeConnections?: string;
+  maxConnections?: string;
+  expDate?: string;
+  serverTimezone?: string;
+  totalRawStreams: number;
+  stableCount: number;
+  probing: boolean;
+  lastSyncedAt?: number;
+  categories: BelixXtreamCategory[];
+  error?: string;
+}
+
 export interface BelixLiveOverviewResponse {
   success: boolean;
   checkedAt: number;
   packageName: string;
+  belixStatus?: BelixConnectionStatus;
+  belixChannels?: SpanishTdtChannel[];
   apiEndpoints: BelixApiEndpoint[];
   dynamicRoutes: BelixDynamicRoute[];
   liveMatches: SportsMatch[];

@@ -63,7 +63,7 @@ interface UseCinemaEnginesBundleArgs {
   scheduleHideControls: () => void;
   showTransientToast: (msg: string) => void;
   onSelectTrack: (trackIndex: number, currentTimeSec: number) => void;
-  onAutoSwitchBackupTrack?: (reason?: string) => void;
+  onAutoSwitchBackupTrack?: (reason?: string, atSec?: number) => void;
   onExitTvMode?: () => void;
   onNextEpisode?: () => void;
   onSyncAction: NativeCinemaPlayerProps['onSyncAction'];

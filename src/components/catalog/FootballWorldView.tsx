@@ -446,6 +446,7 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
                   { id: 'dsports', flagCode: 'lat', label: 'DSports' },
                   { id: 'tnt_space', flagCode: 'lat', label: 'TNT y Space' },
                   { id: 'world_cricket', flagCode: 'all', label: 'Cricket & Mundial' },
+                  { id: 'rbtv_sports', flagCode: 'all', label: 'RBTV+ Deportes' },
                 ] as const
               ).map((br) => {
                 const netCount = footballNetworkCounts[br.id] ?? 0;

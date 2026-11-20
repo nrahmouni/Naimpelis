@@ -263,10 +263,12 @@ export function createTrackAndQueuePlaybackHandlers(
     }
   };
 
-  const handleAutoSwitchBackupTrack = async (reason = 'h264_recovery') => {
-    if (!canChangeMedia || !videoState.isLive || videoState.tracks.length <= 1) return;
+  const handleAutoSwitchBackupTrack = async (reason = 'h264_recovery', atSec?: number) => {
+    if (!canChangeMedia || videoState.tracks.length <= 1) return;
 
-    const streamKey = videoState.title || 'live-stream';
+    const streamKey = videoState.isLive
+      ? videoState.title || 'live-stream'
+      : videoState.rawSourceUrl || videoState.title || 'vod-stream';
     let failedSet = failedRuntimeUrlsByStream.get(streamKey);
     if (!failedSet) {
       failedSet = new Set<string>();
@@ -288,21 +290,64 @@ export function createTrackAndQueuePlaybackHandlers(
       }).catch(() => {});
     }
 
-    const nextIdx = pickBestCleanSatelliteTrackIndex(
-      videoState.tracks,
-      videoState.activeTrackIndex,
-      failedSet
-    );
+    let nextIdx = -1;
+    if (videoState.isLive) {
+      nextIdx = pickBestCleanSatelliteTrackIndex(
+        videoState.tracks,
+        videoState.activeTrackIndex,
+        failedSet
+      );
+    } else {
+      const currentLang = String(currentTrack?.lang || '').toUpperCase();
+      const isNonNative = (tr: StreamTrack) =>
+        tr.resolverType === 'web_embed' ||
+        tr.resolverType === 'youtube' ||
+        tr.resolverType === 'cloud_browser';
+      const isUnfailed = (tr: StreamTrack, idx: number) =>
+        idx !== videoState.activeTrackIndex &&
+        !failedSet!.has(tr.sourceUrl) &&
+        !failedSet!.has(tr.resolvedStreamUrl || '');
+
+      const candidateIndices = videoState.tracks
+        .map((tr, idx) => ({ tr, idx }))
+        .filter(({ tr, idx }) => isUnfailed(tr, idx));
+
+      const preferred =
+        candidateIndices.find(
+          ({ tr }) =>
+            !isNonNative(tr) &&
+            tr.resolverType !== 'direct_mp4' &&
+            String(tr.lang || '').toUpperCase() === currentLang
+        ) ||
+        candidateIndices.find(
+          ({ tr }) => !isNonNative(tr) && tr.resolverType !== 'direct_mp4'
+        ) ||
+        candidateIndices.find(
+          ({ tr }) => !isNonNative(tr) && String(tr.lang || '').toUpperCase() === currentLang
+        ) ||
+        candidateIndices.find(({ tr }) => !isNonNative(tr));
+
+      nextIdx = preferred ? preferred.idx : -1;
+    }
+
     if (nextIdx === -1) return;
 
     const backupTrack = videoState.tracks[nextIdx];
+    const resumeSec = videoState.isLive
+      ? 0
+      : Math.max(0, Math.floor(atSec ?? (videoState.currentTime || 0)));
+
     showLanguageNotice({
       type: 'warning',
-      title: `⚡ Pista 1080p alternativa activada`,
-      subtitle: `Conmutando a ${backupTrack.label} para evitar cortes H.264.`,
+      title: videoState.isLive
+        ? '⚡ Pista 1080p alternativa activada'
+        : '⚡ Servidor alternativo activado',
+      subtitle: videoState.isLive
+        ? `Conmutando a ${backupTrack.label} para evitar cortes H.264.`
+        : `Reintentando automáticamente con ${backupTrack.label}.`,
     });
 
-    await handleSelectTrack(nextIdx, 0);
+    await handleSelectTrack(nextIdx, resumeSec);
   };
 
   const handlePlayCustomUrl = async (rawUrl: string) => {

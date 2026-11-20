@@ -20,8 +20,10 @@ export function usePlayerSubtitles({
   const [activeSubId, setActiveSubId] = useState<string>('off');
   const [parsedCues, setParsedCues] = useState<ParsedSubtitleCue[]>([]);
   const [subtitleOffsetSec, setSubtitleOffsetSec] = useState<number>(0);
-  const [subtitleSize, setSubtitleSize] = useState<'sm' | 'md' | 'lg'>('md');
+  const [subtitleSize, setSubtitleSize] = useState<'sm' | 'md' | 'lg'>('sm');
   const subtitleFileInputRef = useRef<HTMLInputElement | null>(null);
+  const autoLoadedKeyRef = useRef<string>('');
+  const manualSelectionRef = useRef<boolean>(false);
 
   const onResetMenusRef = useRef(onResetMenus);
   onResetMenusRef.current = onResetMenus;
@@ -30,6 +32,8 @@ export function usePlayerSubtitles({
     setActiveSubId('off');
     setParsedCues([]);
     setSubtitleOffsetSec(0);
+    autoLoadedKeyRef.current = '';
+    manualSelectionRef.current = false;
     onResetMenusRef.current();
 
     if (videoState.mode !== 'hls' && videoState.mode !== 'direct') {
@@ -41,7 +45,7 @@ export function usePlayerSubtitles({
       ? videoState.subtitles
       : [];
 
-    let detectedTmdbId = videoState.seriesMeta?.tmdbId;
+    let detectedTmdbId = videoState.tmdbId ?? videoState.seriesMeta?.tmdbId;
     if (!detectedTmdbId && videoState.rawSourceUrl) {
       const m = videoState.rawSourceUrl.match(/(?:watch|movie|tv|-|\/)(\d{2,9})(?:$|\/|\?)/i);
       if (m) detectedTmdbId = Number(m[1]);
@@ -66,38 +70,77 @@ export function usePlayerSubtitles({
       qs.set('episode', String(videoState.seriesMeta.episode));
     }
 
+    const normalizeSubCode = (rawLang?: string, rawLabel?: string): string => {
+      const code = String(rawLang || '').trim().toUpperCase();
+      const lbl = String(rawLabel || '').trim().toUpperCase();
+      if (/^(ES|SPA|ESP|CASTELLANO)$/.test(code) || /ESPAÑOL|CASTELLANO|SPANISH/.test(lbl)) return 'ES';
+      if (/^(LAT)$/.test(code) || /LATIN/.test(lbl)) return 'LAT';
+      if (/^(CAT|CA)$/.test(code) || /CATAL/.test(lbl)) return 'CAT';
+      if (/^(EN|ENG|US|UK)$/.test(code) || /ENGLISH|INGL/.test(lbl)) return 'EN';
+      return code || 'SUB';
+    };
+
+    const getOrderedCandidates = (tracks: SubtitleTrackItem[]): SubtitleTrackItem[] => {
+      const order =
+        lang === 'ca'
+          ? ['CAT', 'ES', 'LAT', 'EN']
+          : lang === 'en'
+          ? ['EN', 'ES', 'LAT', 'CAT']
+          : ['ES', 'LAT', 'CAT', 'EN'];
+      return [...tracks].sort((a, b) => {
+        const ai = order.indexOf(normalizeSubCode(a.lang, a.label));
+        const bi = order.indexOf(normalizeSubCode(b.lang, b.label));
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+      });
+    };
+
     const applyBestDefaultIfForeign = async (tracks: SubtitleTrackItem[]) => {
-      if (cancelled || tracks.length === 0) return;
-      const activeTrackLang = String(
-        videoState.tracks?.[videoState.activeTrackIndex]?.lang || ''
-      ).toUpperCase();
+      if (cancelled || tracks.length === 0 || manualSelectionRef.current) return;
+      const streamIdentity = `${videoState.url}|${videoState.activeTrackIndex}`;
+      if (autoLoadedKeyRef.current === streamIdentity) return;
+
+      const activeTrack = videoState.tracks?.[videoState.activeTrackIndex];
+      const activeTrackLang = String(activeTrack?.lang || '').toUpperCase();
+      const activeTrackLabel = String(activeTrack?.label || '').toUpperCase();
+      const isPureSpanishAudio =
+        activeTrackLang === 'ES' ||
+        activeTrackLang === 'LAT' ||
+        activeTrackLang === 'CAT' ||
+        /CASTELLANO|ESPAÑOL AUDIO|LATINO/.test(activeTrackLabel);
+      const isClipboxSource = String(videoState.rawSourceUrl || '').startsWith('clipbox:');
       const needsAutoSub =
-        activeTrackLang === 'VOSE' ||
-        activeTrackLang === 'EN' ||
-        activeTrackLang === 'JP' ||
-        activeTrackLang === 'FR' ||
-        activeTrackLang === 'IT';
+        !isPureSpanishAudio &&
+        (isClipboxSource ||
+          /^(VOSE|VOS|SUB|VO|MULTI|ORIGINAL|EN|JA|JP|KO|FR|IT|DE|PT|ZH)/.test(activeTrackLang) ||
+          /VOSE|SUBTITUL|ENGLISH|JAPON|ANIME/.test(activeTrackLabel));
       if (!needsAutoSub) return;
 
-      const preferredSub =
-        tracks.find((s) => /^(ES|LAT)$/i.test(String(s.lang || ''))) ||
-        tracks.find((s) => /^CAT$/i.test(String(s.lang || '')));
-      if (!preferredSub) return;
-
-      setActiveSubId((curr) => (curr === 'off' ? preferredSub.id : curr));
-      if (preferredSub.rawContent) {
-        if (!cancelled) setParsedCues(parseSubtitleText(preferredSub.rawContent));
-        return;
-      }
-      if (preferredSub.url) {
-        try {
-          const r = await fetch(preferredSub.url);
-          if (!r.ok) return;
-          const text = await r.text();
-          const cues = parseSubtitleText(text);
-          if (!cancelled && cues.length > 0) setParsedCues(cues);
-        } catch {
-          // ignore silent prefill failure
+      const candidates = getOrderedCandidates(tracks).slice(0, 5);
+      for (const candidate of candidates) {
+        if (cancelled || manualSelectionRef.current) return;
+        if (candidate.rawContent) {
+          const cues = parseSubtitleText(candidate.rawContent);
+          if (cues.length > 0 && !cancelled && !manualSelectionRef.current) {
+            autoLoadedKeyRef.current = streamIdentity;
+            setActiveSubId(candidate.id);
+            setParsedCues(cues);
+            return;
+          }
+        } else if (candidate.url) {
+          try {
+            const r = await fetch(candidate.url);
+            if (!r.ok) continue;
+            const text = await r.text();
+            const cues = parseSubtitleText(text);
+            if (cues.length > 0 && !cancelled && !manualSelectionRef.current) {
+              autoLoadedKeyRef.current = streamIdentity;
+              setActiveSubId(candidate.id);
+              setParsedCues(cues);
+              return;
+            }
+          } catch {
+            // try next candidate
+          }
         }
       }
     };
@@ -120,7 +163,7 @@ export function usePlayerSubtitles({
             }
           }
           setSubtitleTracks(merged);
-          if (builtInSubs.length === 0 && merged.length > 0) {
+          if (merged.length > 0) {
             void applyBestDefaultIfForeign(merged);
           }
         }
@@ -133,6 +176,7 @@ export function usePlayerSubtitles({
   }, [
     videoState.url,
     videoState.mode,
+    videoState.tmdbId,
     videoState.rawSourceUrl,
     videoState.title,
     videoState.isLive,
@@ -146,6 +190,7 @@ export function usePlayerSubtitles({
   ]);
 
   const handleSelectSubtitleTrack = async (trackId: string) => {
+    manualSelectionRef.current = true;
     setActiveSubId(trackId);
     if (trackId === 'off') {
       setParsedCues([]);

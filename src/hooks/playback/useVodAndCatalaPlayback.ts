@@ -19,6 +19,7 @@ import type {
 import type { PlaybackCoreContext } from './playbackTypes';
 
 import { useEpisodeAndCatalaPlayback } from './useEpisodeAndCatalaPlayback';
+import { useClipboxPlayback } from './useClipboxPlayback';
 
 export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
   const {
@@ -58,6 +59,7 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
   } = opts;
 
   const episodeAndCatala = useEpisodeAndCatalaPlayback(ctx);
+  const clipboxPlayback = useClipboxPlayback(ctx);
 
   const handlePlayMovie = async (
     movie: CatalogMovie,
@@ -198,6 +200,7 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
         tracks,
         activeTrackIndex: activeIdx,
         subtitles: Array.isArray(data.subtitles) ? data.subtitles : undefined,
+        tmdbId: movie.tmdbId,
         seriesMeta: undefined,
         lastUpdated: Date.now(),
         updatedBy: profileName,
@@ -408,6 +411,7 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
         tracks,
         activeTrackIndex: activeIdx,
         subtitles: Array.isArray(data.subtitles) ? data.subtitles : undefined,
+        tmdbId: series.tmdbId,
         seriesMeta: {
           tmdbId: series.tmdbId,
           seriesTitle: series.title,
@@ -531,6 +535,7 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
           tracks,
           activeTrackIndex: activeIdx,
           subtitles: Array.isArray(data.subtitles) ? data.subtitles : undefined,
+          tmdbId: item.tmdbId,
           seriesMeta: {
             tmdbId: item.tmdbId,
             seriesTitle: item.title,
@@ -634,5 +639,6 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
     handleReplayHistoryItem,
     handlePlayFromProfileCatalog,
     ...episodeAndCatala,
+    ...clipboxPlayback,
   };
 }

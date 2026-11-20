@@ -13,7 +13,12 @@ import { useBackInterceptor } from '../../lib/backInterceptor';
 import { ClipBoxSearchTab } from './ClipBoxSearchTab';
 import { ClipBoxHostsVaultTab } from './ClipBoxHostsVaultTab';
 import { ClipBoxDecoderTab } from './ClipBoxDecoderTab';
-import type { ClipboxInventoryResponse } from './clipboxTypes';
+import type {
+  ClipboxInventoryResponse,
+  ClipboxPlayerTrack,
+  ClipboxSearchItem,
+  ClipboxTitleStreamsResult,
+} from './clipboxTypes';
 
 export type ClipBoxSubTab = 'search' | 'vault' | 'decoder';
 
@@ -22,6 +27,12 @@ interface ClipBoxWorldViewProps {
   externalSearchQuery?: string;
   onPlayCustomUrl: (url: string) => void;
   onPlayMovie: (movie: CatalogMovie, preferLang: string) => void;
+  onPlayClipboxMedia?: (
+    item: ClipboxSearchItem,
+    track: ClipboxPlayerTrack,
+    streamsData: ClipboxTitleStreamsResult,
+    epOpts?: { season?: number; episode?: number }
+  ) => void;
 }
 
 export const ClipBoxWorldView: React.FC<ClipBoxWorldViewProps> = ({
@@ -29,6 +40,7 @@ export const ClipBoxWorldView: React.FC<ClipBoxWorldViewProps> = ({
   externalSearchQuery = '',
   onPlayCustomUrl,
   onPlayMovie,
+  onPlayClipboxMedia,
 }) => {
   const [activeTab, setActiveTab] = useState<ClipBoxSubTab>('search');
   const [inventory, setInventory] = useState<ClipboxInventoryResponse | null>(null);
@@ -233,6 +245,7 @@ export const ClipBoxWorldView: React.FC<ClipBoxWorldViewProps> = ({
           externalQuery={externalSearchQuery}
           onPlayCustomUrl={onPlayCustomUrl}
           onPlayMovie={onPlayMovie}
+          onPlayClipboxMedia={onPlayClipboxMedia}
           onInspectHostInVault={handleInspectHostInVault}
         />
       ) : loadingInventory && !inventory ? (

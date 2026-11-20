@@ -1,11 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import Hls from 'hls.js';
 import { useAppStore } from '../store/useAppStore';
 import { useFocusTrap } from '../utils/useFocusTrap';
-import {
-  type NativeCinemaPlayerProps,
-  type YouTubePlayerInstance,
-} from './player/playerTypes';
+import { type NativeCinemaPlayerProps } from './player/playerTypes';
 import { useDirectCast } from './player/useDirectCast';
 import { PlayerProSettingsModal } from './player/PlayerProSettingsModal';
 import { VoiceWaveBars } from './games/GameVoiceBar';
@@ -21,7 +17,14 @@ import { useNativePlayerStageState } from './player/useNativePlayerStageState';
 import { PlayerVoiceBanner } from './player/PlayerYoutubeAndVoiceAlert';
 import { PlayerStripVoiceControls } from './player/PlayerStripVoiceControls';
 import { PlayerViewportContent } from './player/PlayerViewportContent';
-import { createStagePointerHandlers, getPlayerSectionClass, getStageWrapperClass, getStageWrapperStyle } from './player/playerStageLayout';
+import {
+  createStagePointerHandlers,
+  getPlayerSectionClass,
+  getStageWrapperClass,
+  getStageWrapperStyle,
+  usePlayerStagePrefs,
+  usePlayerStageRefs,
+} from './player/playerStageLayout';
 import { UI_COPY } from '../utils/i18n';
 
 export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
@@ -82,41 +85,29 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const syncOffsetMs = useAppStore((s) => s.syncOffsetMs);
   const setSyncOffsetMs = useAppStore((s) => s.setSyncOffsetMs);
   const t = UI_COPY[lang];
-  const stageWrapperRef = useRef<HTMLDivElement | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const castBridgeVideoRef = useRef<HTMLVideoElement | null>(null);
-  const hlsRef = useRef<Hls | null>(null);
-  const ytPlayerRef = useRef<YouTubePlayerInstance | null>(null);
-  const ytContainerId = useRef(`yt-stage-${Math.random().toString(36).slice(2, 8)}`);
-  const isApplyingRemoteRef = useRef(false);
-  const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const bufferingDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const showControlsRef = useRef<boolean>(true);
-  const lastManualHideAtRef = useRef<number>(0);
-  const lastMousePosRef = useRef<{ x: number; y: number } | null>(null);
-  const lastProgressEmitRef = useRef<number>(0);
-  const streamLoadStartRef = useRef<number>(Date.now());
-  const qoeStartupSentForUrlRef = useRef<string>('');
-  const rebufferCountRef = useRef<number>(0);
-  const smoothDriftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [batterySaverTvMode, setBatterySaverTvMode] = useState<boolean>(false);
-
-  const [isMuted, setIsMuted] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('riffantv_player_muted_v1') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const [volume, setVolume] = useState<number>(() => {
-    try {
-      const raw = Number(localStorage.getItem('riffantv_player_volume_v1'));
-      return Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 1;
-    } catch {
-      return 1;
-    }
-  });
-  const [isTouchLocked, setIsTouchLocked] = useState(false);
+  const {
+    stageWrapperRef,
+    videoRef,
+    castBridgeVideoRef,
+    hlsRef,
+    ytPlayerRef,
+    ytContainerId,
+    isApplyingRemoteRef,
+    controlsTimeoutRef,
+    bufferingDelayTimerRef,
+    showControlsRef,
+    lastManualHideAtRef,
+    lastMousePosRef,
+    lastProgressEmitRef,
+    streamLoadStartRef,
+    qoeStartupSentForUrlRef,
+    rebufferCountRef,
+    smoothDriftTimerRef,
+    latestCurrentTimeRef,
+    autoNextTriggeredUrlRef,
+    playerToast,
+    showTransientToast,
+  } = usePlayerStageRefs();
   const [localPlaying, setLocalPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -131,7 +122,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   }, []);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [tvAspectMode, setTvAspectMode] = useState<'contain' | 'cover' | 'fill'>('contain');
   const [isInPiP, setIsInPiP] = useState(false);
   const [isHorizontalFullscreen, setIsHorizontalFullscreen] = useState(false);
   const [forceLandscapeRotation, setForceLandscapeRotation] = useState(true);
@@ -147,42 +137,38 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [activeHudMenu, setActiveHudMenu] = useState<'quality' | 'audio' | null>(null);
   const [cloudUrlInput, setCloudUrlInput] = useState('');
   const [seekRipple, setSeekRipple] = useState<'left' | 'right' | null>(null);
-
-  const [playerToast, setPlayerToast] = useState<string | null>(null);
   const [embedRescueDismissedUrl, setEmbedRescueDismissedUrl] = useState<string>('');
-  const latestCurrentTimeRef = useRef<number>(0);
-
   const [showProMenu, setShowProMenu] = useState<boolean>(false);
   const proMenuRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(showProMenu, () => setShowProMenu(false), proMenuRef);
-  const [ambilightEnabled, setAmbilightEnabled] = useState<boolean>(() => {
-    try {
-      const stored = localStorage.getItem('naim_ambilight_v1');
-      if (stored !== null) return stored === 'true';
-      return typeof window !== 'undefined' ? window.innerWidth >= 1024 : false;
-    } catch {
-      return false;
-    }
+  const isFullscreenLike = isFullscreen || isHorizontalFullscreen;
+  const {
+    batterySaverTvMode,
+    setBatterySaverTvMode,
+    isMuted,
+    setIsMuted,
+    volume,
+    setVolume,
+    isTouchLocked,
+    setIsTouchLocked,
+    tvAspectMode,
+    setTvAspectMode,
+    ambilightEnabled,
+    setAmbilightEnabled,
+    vocalBoostEnabled,
+    setVocalBoostEnabled,
+    playbackSpeed,
+    setPlaybackSpeed,
+  } = usePlayerStagePrefs({
+    videoRef,
+    videoUrl: videoState.url,
+    videoMode: videoState.mode,
+    isStageFullscreen: isTvMode || isFullscreenLike,
+    isMinimized,
   });
-  const [vocalBoostEnabled, setVocalBoostEnabled] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('naim_vocal_boost_v1') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
 
   const [autoNextCountdown, setAutoNextCountdown] = useState<number | null>(null);
   const [autoNextCancelledForUrl, setAutoNextCancelledForUrl] = useState<string>('');
-  const autoNextTriggeredUrlRef = useRef<string>('');
-
-  const showTransientToast = useCallback((msg: string) => {
-    setPlayerToast(msg);
-    setTimeout(() => {
-      setPlayerToast((cur) => (cur === msg ? null : cur));
-    }, 3400);
-  }, []);
 
   latestCurrentTimeRef.current = currentTime;
 
@@ -267,28 +253,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   useEffect(() => {
     showControlsRef.current = showControls;
   }, [showControls]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('riffantv_player_muted_v1', String(isMuted));
-      localStorage.setItem('riffantv_player_volume_v1', String(volume));
-    } catch {
-      // ignore storage errors
-    }
-  }, [isMuted, volume]);
-
-  useEffect(() => {
-    const vid = videoRef.current;
-    if (!vid) return;
-    if (Math.abs(vid.volume - volume) > 0.01) vid.volume = volume;
-    if (vid.muted !== isMuted) vid.muted = isMuted;
-  }, [videoState.url, videoState.mode, volume, isMuted]);
-
-  useEffect(() => {
-    if (!isStageFullscreen || isMinimized || videoState.mode === 'idle') {
-      setIsTouchLocked(false);
-    }
-  }, [isStageFullscreen, isMinimized, videoState.mode]);
 
   const {
     subtitleTracks,
@@ -676,6 +640,10 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             onToggleBatterySaverTvMode={() => setBatterySaverTvMode((v) => !v)}
             onDirectCastToTv={handleDirectCastToTv}
             onOpenProMenu={() => setShowProMenu(true)}
+            subtitleTracks={subtitleTracks}
+            activeSubId={activeSubId}
+            onSelectSubtitleTrack={handleSelectSubtitleTrack}
+            subtitleFileInputRef={subtitleFileInputRef}
           />
         )}
 

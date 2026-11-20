@@ -40,7 +40,7 @@ interface UseHlsPlaybackEngineOptions {
   setLocalPlaying: (playing: boolean) => void;
   scheduleHideControls: () => void;
   showTransientToast: (msg: string) => void;
-  onAutoSwitchBackupTrack?: (reason?: string) => void;
+  onAutoSwitchBackupTrack?: (reason?: string, atSec?: number) => void;
 }
 
 export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
@@ -139,29 +139,31 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     let didTriggerBackupSwitch = false;
     const isAndroidChrome = isAndroidChromeBrowser();
     const liveHealthMonitor = createLivePlaybackHealthMonitor();
+    const targetResumeSec =
+      !videoState.isLive && Number.isFinite(videoState.currentTime) && videoState.currentTime > 3
+        ? Math.floor(videoState.currentTime)
+        : 0;
+
     const triggerBackupSwitch = (reason: string) => {
       if (
         cancelled ||
         didTriggerBackupSwitch ||
-        !videoState.isLive ||
         !onAutoSwitchBackupTrack ||
         (videoState.tracks?.length || 0) <= 1
       ) {
         return false;
       }
       didTriggerBackupSwitch = true;
-      onAutoSwitchBackupTrack(reason);
+      const liveOrCurrentSec = videoState.isLive
+        ? 0
+        : Math.max(targetResumeSec, Math.floor(video.currentTime || 0));
+      onAutoSwitchBackupTrack(reason, liveOrCurrentSec);
       return true;
     };
     streamLoadStartRef.current = Date.now();
     rebufferCountRef.current = 0;
     qoeStartupSentForUrlRef.current = '';
     setIsBuffering(true);
-
-    const targetResumeSec =
-      !videoState.isLive && Number.isFinite(videoState.currentTime) && videoState.currentTime > 3
-        ? Math.floor(videoState.currentTime)
-        : 0;
 
     const startPlaybackSafely = async () => {
       if (!video || cancelled) return;
@@ -508,6 +510,10 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
       };
       const onDirectError = () => {
         if (cancelled) return;
+        if (triggerBackupSwitch('direct_mp4_error')) {
+          setIsBuffering(true);
+          return;
+        }
         setIsBuffering(false);
         setStreamError(
           pickLang(lang, {

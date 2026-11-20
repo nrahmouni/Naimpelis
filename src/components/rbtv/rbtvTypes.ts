@@ -1,4 +1,4 @@
-import type { SportsMatch } from '../../types';
+import type { SpanishTdtChannel, SportsMatch } from '../../types';
 
 export type RbtvCategoryId = 'core' | 'doh' | 'streaming_specs' | 'sdk';
 
@@ -105,4 +105,5 @@ export interface RbtvLiveOverviewResponse {
   coreStatuses: RbtvProbeResult[];
   liveMatches: SportsMatch[];
   sports247Channels: SportsMatch[];
+  curatedChannels?: SpanishTdtChannel[];
 }

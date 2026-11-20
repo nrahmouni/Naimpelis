@@ -9,6 +9,11 @@ import {
 } from '../routes/sports.ts';
 import { getPermanent247SportsMatches } from '../routes/sportsHelpers/sportsChannels247.ts';
 import { parseBelixInventory, type BelixHostEntry } from './belix/belixParser.ts';
+import {
+  getBelixLiveChannels,
+  getBelixStatus,
+} from './belix/belixXtreamClient.ts';
+import { curateSportsTracks } from './rbtv/rbtvLiveCurator.ts';
 
 export interface BelixProbeResult {
   host: string;
@@ -570,13 +575,27 @@ export async function inspectXtreamServer(params: {
 
 export function getBelixLiveOverview() {
   const inv = parseBelixInventory();
+  const status = getBelixStatus();
+  const belixChannels = getBelixLiveChannels();
   const boardSnapshot = getCachedFootballBoardSnapshot();
   const liveMatches = (
     boardSnapshot && boardSnapshot.matches.length > 0
       ? boardSnapshot.matches
       : getCachedSportsMatches()
-  ).slice(0, 12);
-  const sports247Channels = getPermanent247SportsMatches().slice(0, 12);
+  )
+    .map((m) => ({
+      ...m,
+      channels: curateSportsTracks(m.channels),
+    }))
+    .filter((m) => m.channels.length > 0)
+    .slice(0, 12);
+  const sports247Channels = getPermanent247SportsMatches()
+    .map((m) => ({
+      ...m,
+      channels: curateSportsTracks(m.channels as any),
+    }))
+    .filter((m) => m.channels.length > 0)
+    .slice(0, 12);
   const featuredTdt = SPANISH_TDT_CHANNELS.filter((c) => c.channels && c.channels.length > 0).slice(
     0,
     12
@@ -585,6 +604,8 @@ export function getBelixLiveOverview() {
   return {
     checkedAt: Date.now(),
     packageName: inv.packageName,
+    belixStatus: status,
+    belixChannels,
     apiEndpoints: inv.apiEndpoints,
     dynamicRoutes: inv.dynamicRoutes,
     liveMatches,

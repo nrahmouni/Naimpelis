@@ -6,7 +6,7 @@ import {
   Radio,
   RefreshCw,
 } from 'lucide-react';
-import type { AppLanguage, SportsMatch } from '../../types';
+import type { AppLanguage, SpanishTdtChannel, SportsMatch } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { useBackInterceptor } from '../../lib/backInterceptor';
@@ -21,14 +21,15 @@ interface RbtvWorldViewProps {
   lang: AppLanguage;
   externalSearchQuery?: string;
   onPlaySportsMatch: (match: SportsMatch, channelIndex: number) => void;
-  onPlayCustomUrl: (url: string) => void;
+  onPlayTdtChannel: (channel: SpanishTdtChannel, signalIndex?: number) => void;
+  onPlayCustomUrl?: (url: string) => void;
 }
 
 export const RbtvWorldView: React.FC<RbtvWorldViewProps> = ({
   lang,
   externalSearchQuery = '',
   onPlaySportsMatch,
-  onPlayCustomUrl,
+  onPlayTdtChannel,
 }) => {
   const [activeTab, setActiveTab] = useState<RbtvSubTab>('live');
   const [inventory, setInventory] = useState<RbtvInventoryResponse | null>(null);
@@ -258,7 +259,7 @@ export const RbtvWorldView: React.FC<RbtvWorldViewProps> = ({
           externalQuery={externalSearchQuery}
           coreHosts={coreHosts}
           onPlaySportsMatch={onPlaySportsMatch}
-          onPlayCustomUrl={onPlayCustomUrl}
+          onPlayTdtChannel={onPlayTdtChannel}
           onSendToDecoder={handleSendToDecoder}
         />
       ) : activeTab === 'vault' && inventory ? (

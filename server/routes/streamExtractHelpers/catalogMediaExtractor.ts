@@ -3,49 +3,38 @@ import { ENV } from '../../config/env.ts';
 import { fetchAndCacheSubtitles } from '../detailsAndSubtitles.ts';
 import {
   buildHlsProxyUrl,
-  buildTsProxyUrl,
   type ExtractedStreamResult,
   type TrackRecord,
 } from '../../extractors/httpHelpers.ts';
 import { extractClipboxDirectStreams } from '../../extractors/clipboxDirectExtractor.ts';
-import {
-  extractEmbed69SpanishTracks,
-  unpackVidhideToHls,
-} from '../../extractors/vidhideEmbed69.ts';
+import { extractEmbed69SpanishTracks } from '../../extractors/vidhideEmbed69.ts';
 import {
   extract2EmbedEnglishTracks,
   extractBingetrixEnglishTracks,
   extractGhostflixVidboltTracks,
-  extractMovidyPageTracks,
   extractVidRockHlsTracks,
   extractVidsrcBuzzHlsTracks,
-  findMovidyUrlByTitle,
   isMovidyVerUrl,
-  resolveMovidyEmbedTrack,
 } from '../../extractors/bingetrixMovidy.ts';
-import {
-  extractGnulaHdTracks,
-  findGnulaHdUrlByTitle,
-  isGnulaHdUrl,
-} from '../../extractors/gnulaHdExtractor.ts';
+import { isGnulaHdUrl } from '../../extractors/gnulaHdExtractor.ts';
 import { extractDailymotionSeriesTracks } from '../../extractors/dailymotionExtractor.ts';
 import { extractArchiveOrgTracks } from '../../extractors/archiveOrgExtractor.ts';
 import { extractSpanishSeriesTracks } from '../../extractors/spanishSeriesExtractor.ts';
-import { sniffStreamWithHeadless } from '../../extractors/sportsExtractor.ts';
 import {
   extractVestStreamsAndSubtitles,
-  findVestSeedForMedia,
   isVestMirrorUrl,
 } from '../../services/vestMirrorService.ts';
 import { channelHealthMonitor } from '../../services/channelHealthMonitor.ts';
 import {
-  toProxiedEmbedUrl,
-  verifyWebEmbedCandidateAlive,
-} from '../../services/streamExtractFallback.ts';
-import {
   buildFallbackCatalogResult,
   resolveCatalogMediaMetadata,
 } from './catalogMediaMetadataAndFallback.ts';
+import {
+  buildResolvedCatalogStreamResult,
+  resolveGnulaTracksForCatalog,
+  resolveMovidyTracksForCatalog,
+  resolveOrderedCandidateTracks,
+} from './catalogTrackResolver.ts';
 import type { RankCandidateTracksFn } from '../streamExtractRoutes.ts';
 
 const TMDB_API_KEY = ENV.tmdbApiKey;
@@ -67,6 +56,7 @@ export interface CatalogMediaExtractParams {
   episodeTitleHint: string;
   isSandboxedFrame: boolean;
   forceExtract: boolean;
+  directOnly?: boolean;
   cacheKey: string;
   rankCandidateTracks: RankCandidateTracksFn;
   setCache: (key: string, val: ExtractedStreamResult) => void;
@@ -94,6 +84,7 @@ export async function handleCatalogMediaExtract(
     episodeTitleHint,
     isSandboxedFrame,
     forceExtract,
+    directOnly = false,
     cacheKey,
     rankCandidateTracks,
     setCache,
@@ -195,60 +186,6 @@ export async function handleCatalogMediaExtract(
 
   const effectiveEpisodeTitleHint = resolvedEpisodeTitle || episodeTitleHint;
 
-  const resolveAndExtractMovidy = async (): Promise<TrackRecord[]> => {
-    try {
-      let mvUrl = effectiveMovidyUrl;
-      if (!mvUrl && combinedTitleHints.length > 0) {
-        mvUrl =
-          (await findMovidyUrlByTitle(combinedTitleHints[0], effectiveYearForExtract, {
-            expectedDirector: effectiveMediaType === 'movie' ? tmdbDirector || undefined : undefined,
-            expectedRuntimeMin: effectiveMediaType === 'movie' ? tmdbRuntimeMin || undefined : undefined,
-            titleHints: combinedTitleHints,
-            expectedMediaType: effectiveMediaType,
-          })) || '';
-      }
-      if (!mvUrl) return [];
-      return await extractMovidyPageTracks(mvUrl, {
-        expectedYear: effectiveYearForExtract,
-        requireMovieOnly: effectiveMediaType === 'movie',
-        expectedTitleHints:
-          resolvedTmdbId || combinedTitleHints.length > 0 ? combinedTitleHints : undefined,
-        expectedDirector: effectiveMediaType === 'movie' ? tmdbDirector || undefined : undefined,
-        expectedRuntimeMin: effectiveMediaType === 'movie' ? tmdbRuntimeMin || undefined : undefined,
-      });
-    } catch {
-      return [];
-    }
-  };
-
-  const resolveAndExtractGnula = async (): Promise<TrackRecord[]> => {
-    try {
-      let gnUrl = effectiveGnulaUrl;
-      if (!gnUrl && combinedTitleHints.length > 0) {
-        gnUrl =
-          (await findGnulaHdUrlByTitle(combinedTitleHints, effectiveYearForExtract, {
-            expectedDirector: effectiveMediaType === 'movie' ? tmdbDirector || undefined : undefined,
-            expectedRuntimeMin: effectiveMediaType === 'movie' ? tmdbRuntimeMin || undefined : undefined,
-            titleHints: combinedTitleHints,
-            expectedMediaType: effectiveMediaType,
-          })) || '';
-      }
-      if (!gnUrl) return [];
-      return await extractGnulaHdTracks(gnUrl, {
-        expectedYear: effectiveYearForExtract,
-        expectedTitleHints:
-          resolvedTmdbId || combinedTitleHints.length > 0 ? combinedTitleHints : undefined,
-        expectedDirector: effectiveMediaType === 'movie' ? tmdbDirector || undefined : undefined,
-        expectedRuntimeMin: effectiveMediaType === 'movie' ? tmdbRuntimeMin || undefined : undefined,
-        mediaType: effectiveMediaType,
-        season: effectiveSeason,
-        episode: effectiveEpisode,
-      });
-    } catch {
-      return [];
-    }
-  };
-
   const withExtractTimeout = <T>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
     Promise.race([
       p.catch(() => fallback),
@@ -316,18 +253,40 @@ export async function handleCatalogMediaExtract(
     }
   };
 
-  const movidyP = withExtractTimeout(resolveAndExtractMovidy(), 5800, [] as TrackRecord[]).then(
-    (res) => {
-      movidyTracks = res;
-      signalFastDirectEsIfReady(res);
-    }
-  );
-  const gnulaP = withExtractTimeout(resolveAndExtractGnula(), 6400, [] as TrackRecord[]).then(
-    (res) => {
-      gnulaTracks = res;
-      signalFastDirectEsIfReady(res);
-    }
-  );
+  const movidyP = withExtractTimeout(
+    resolveMovidyTracksForCatalog({
+      effectiveMovidyUrl,
+      combinedTitleHints,
+      effectiveYearForExtract,
+      effectiveMediaType,
+      resolvedTmdbId,
+      tmdbDirector,
+      tmdbRuntimeMin,
+    }),
+    5800,
+    [] as TrackRecord[]
+  ).then((res) => {
+    movidyTracks = res;
+    signalFastDirectEsIfReady(res);
+  });
+  const gnulaP = withExtractTimeout(
+    resolveGnulaTracksForCatalog({
+      effectiveGnulaUrl,
+      combinedTitleHints,
+      effectiveYearForExtract,
+      effectiveMediaType,
+      resolvedTmdbId,
+      tmdbDirector,
+      tmdbRuntimeMin,
+      effectiveSeason,
+      effectiveEpisode,
+    }),
+    6400,
+    [] as TrackRecord[]
+  ).then((res) => {
+    gnulaTracks = res;
+    signalFastDirectEsIfReady(res);
+  });
   const dmP =
     effectiveMediaType === 'tv' && combinedTitleHints.length > 0
       ? withExtractTimeout(
@@ -585,9 +544,9 @@ export async function handleCatalogMediaExtract(
   const clipboxTracks: TrackRecord[] = clipboxDirectExtracted?.tracks || [];
   const clipboxSubtitles = clipboxDirectExtracted?.subtitles || [];
   const enTracks: TrackRecord[] = [
-    ...clipboxTracks,
-    ...ghostflixTracks,
     ...vidRockTracks,
+    ...ghostflixTracks,
+    ...clipboxTracks,
     ...bingetrixEnTracks,
     ...twoEmbedEnTracks,
     ...vidBuzzHlsTracks,
@@ -638,199 +597,33 @@ export async function handleCatalogMediaExtract(
     healthMap: channelHealthMonitor.getAllTrackStatuses(),
   });
 
-  let primaryStreamUrl = '';
-  let primaryMode: 'hls' | 'direct' | 'embed' = 'hls';
-  let resolvedTrack: TrackRecord | null = null;
-  const deadTrackIndices = new Set<number>();
+  const resolvedSelection = await resolveOrderedCandidateTracks({
+    orderedTracks,
+    getLangScore,
+    sourcePriority,
+    getTrackHealthScore,
+    isSandboxedFrame,
+    directOnly,
+  });
 
-  const tierScores = Array.from(new Set(orderedTracks.map((t) => getLangScore(t.lang)))).sort(
-    (a, b) => a - b
-  );
-
-  for (const tierScore of tierScores) {
-    const tierWebEmbedCandidates: { idx: number; track: TrackRecord; url: string }[] = [];
-
-    for (let i = 0; i < orderedTracks.length; i++) {
-      if (getLangScore(orderedTracks[i].lang) !== tierScore) continue;
-      const candidate = orderedTracks[i];
-
-      if (candidate.resolverType === 'web_embed') {
-        if (candidate.sourceUrl) {
-          tierWebEmbedCandidates.push({ idx: i, track: candidate, url: candidate.sourceUrl });
-        }
-        continue;
-      }
-
-      if (candidate.resolvedStreamUrl) {
-        primaryStreamUrl = candidate.resolvedStreamUrl;
-        primaryMode = candidate.resolverType === 'direct_mp4' ? 'direct' : 'hls';
-        resolvedTrack = candidate;
-        break;
-      }
-
-      if (candidate.resolverType === 'movidy_embed') {
-        const resolvedMv = await withExtractTimeout(
-          resolveMovidyEmbedTrack(candidate.sourceUrl),
-          3800,
-          null
-        );
-        if (resolvedMv?.mode === 'hls') {
-          orderedTracks[i] = { ...candidate, resolvedStreamUrl: resolvedMv.proxyUrl };
-          primaryStreamUrl = resolvedMv.proxyUrl;
-          primaryMode = 'hls';
-          resolvedTrack = orderedTracks[i];
-          break;
-        } else if (resolvedMv?.mode === 'embed') {
-          orderedTracks[i] = {
-            ...candidate,
-            resolverType: 'web_embed',
-            sourceUrl: resolvedMv.embedUrl,
-          };
-          tierWebEmbedCandidates.push({
-            idx: i,
-            track: orderedTracks[i],
-            url: resolvedMv.embedUrl,
-          });
-        } else {
-          deadTrackIndices.add(i);
-        }
-      } else if (candidate.resolverType === 'vidhide_hls') {
-        const unpacked = await withExtractTimeout(unpackVidhideToHls(candidate.sourceUrl), 4200, null);
-        if (unpacked) {
-          orderedTracks[i] = { ...candidate, resolvedStreamUrl: unpacked.proxyUrl };
-          primaryStreamUrl = unpacked.proxyUrl;
-          primaryMode = 'hls';
-          resolvedTrack = orderedTracks[i];
-          break;
-        } else {
-          deadTrackIndices.add(i);
-        }
-      } else if (candidate.resolverType === 'embed_sniff') {
-        const sniffed = await withExtractTimeout(
-          sniffStreamWithHeadless(candidate.sourceUrl),
-          5500,
-          null
-        );
-        if (sniffed) {
-          const proxiedUrl = sniffed.isDirectMp4
-            ? buildTsProxyUrl(sniffed.streamUrl, sniffed.referer)
-            : buildHlsProxyUrl(sniffed.streamUrl, sniffed.referer);
-          orderedTracks[i] = { ...candidate, resolvedStreamUrl: proxiedUrl };
-          primaryStreamUrl = proxiedUrl;
-          primaryMode = sniffed.isDirectMp4 ? 'direct' : 'hls';
-          resolvedTrack = orderedTracks[i];
-          break;
-        } else {
-          deadTrackIndices.add(i);
-        }
-      }
-    }
-
-    if (primaryStreamUrl) break;
-
-    if (tierWebEmbedCandidates.length > 0) {
-      tierWebEmbedCandidates.sort(
-        (a, b) =>
-          sourcePriority(a.track) - sourcePriority(b.track) ||
-          getTrackHealthScore(a.track) - getTrackHealthScore(b.track)
-      );
-      for (const cand of tierWebEmbedCandidates) {
-        const alive = await verifyWebEmbedCandidateAlive(cand.track, cand.url);
-        if (!alive) {
-          deadTrackIndices.add(cand.idx);
-          continue;
-        }
-        const proxiedWeb = toProxiedEmbedUrl(cand.url, isSandboxedFrame);
-        orderedTracks[cand.idx] = { ...cand.track, resolvedStreamUrl: proxiedWeb };
-        primaryStreamUrl = proxiedWeb;
-        primaryMode = 'embed';
-        resolvedTrack = orderedTracks[cand.idx];
-        break;
-      }
-    }
-
-    if (primaryStreamUrl) break;
-  }
-
-  if (primaryStreamUrl) {
-    const langsWithNativeTracks = new Set(
-      orderedTracks
-        .filter((tr, idx) => !deadTrackIndices.has(idx) && tr.resolverType !== 'web_embed')
-        .map((tr) => String(tr.lang || '').toUpperCase())
-    );
-    const validTracks = orderedTracks.filter(
-      (tr, idx) =>
-        !deadTrackIndices.has(idx) &&
-        (primaryMode === 'embed' ||
-          tr.resolverType !== 'web_embed' ||
-          !langsWithNativeTracks.has(String(tr.lang || '').toUpperCase()))
-    );
-    const resolvedLang = String(resolvedTrack?.lang || preferLang).toUpperCase();
-    const resolvedLabel = resolvedTrack?.label || preferLang;
-    const availableLanguages = Array.from(
-      new Set(validTracks.map((t) => String(t.lang || '').toUpperCase()).filter(Boolean))
-    );
-    const languageFallbackUsed =
-      (preferLang === 'ES' && resolvedLang !== 'ES') ||
-      (preferLang === 'LAT' && resolvedLang !== 'LAT') ||
-      (preferLang === 'VOSE' && resolvedLang !== 'VOSE') ||
-      (preferLang === 'EN' && resolvedLang !== 'EN');
-
-    const baseCleanTitle = extractedMovidyCleanTitle || extractedGnulaCleanTitle || tmdbResolvedTitle;
-    const displayTitle =
-      titleHint ||
-      (baseCleanTitle
-        ? effectiveMediaType === 'tv'
-          ? `${baseCleanTitle} · ${
-              vestDetailMeta && vestDetailMeta.currentEpisodeNumber > 1 && effectiveSeason === 1
-                ? `Ep. ${vestDetailMeta.currentEpisodeNumber}`
-                : `${effectiveSeason}x${String(effectiveEpisode).padStart(2, '0')}`
-            }`
-          : baseCleanTitle
-        : 'RiffanTV HD');
-
-    const rawMergedSubs = [...vestSubtitles, ...clipboxSubtitles, ...ghostflixSubtitles];
-    if (rawMergedSubs.length === 0 && (resolvedTmdbId || baseCleanTitle || titleHint)) {
-      const searchedSubs = await withExtractTimeout(subtitlesPromise, 650, [] as any[]);
-      rawMergedSubs.push(...searchedSubs);
-    } else if (resolvedTmdbId) {
-      const searchedSubs = await withExtractTimeout(subtitlesPromise, 250, [] as any[]);
-      rawMergedSubs.push(...searchedSubs);
-    }
-    const seenSubUrls = new Set<string>();
-    const combinedSubtitles = rawMergedSubs.filter((s) => {
-      const u = String(s?.url || '').trim();
-      if (!u || seenSubUrls.has(u)) return false;
-      seenSubUrls.add(u);
-      return true;
+  if (resolvedSelection) {
+    const result = await buildResolvedCatalogStreamResult({
+      resolvedSelection,
+      preferLang,
+      titleHint,
+      extractedMovidyCleanTitle,
+      extractedGnulaCleanTitle,
+      tmdbResolvedTitle,
+      effectiveMediaType,
+      effectiveSeason,
+      effectiveEpisode,
+      vestDetailMeta,
+      vestSubtitles,
+      clipboxSubtitles,
+      ghostflixSubtitles,
+      resolvedTmdbId,
+      subtitlesPromise,
     });
-
-    const cacheTtlMs =
-      primaryMode === 'hls' && !languageFallbackUsed
-        ? 8 * 60 * 1000
-        : primaryMode === 'hls'
-        ? 90 * 1000
-        : 20 * 1000;
-    const result: ExtractedStreamResult = {
-      success: true,
-      mode: primaryMode,
-      streamUrl: primaryStreamUrl,
-      title: displayTitle,
-      poster: vestDetailMeta?.coverVerticalUrl
-        ? `/api/img-proxy?url=${encodeURIComponent(vestDetailMeta.coverVerticalUrl)}`
-        : undefined,
-      backdrop: vestDetailMeta?.coverHorizontalUrl
-        ? `/api/img-proxy?url=${encodeURIComponent(vestDetailMeta.coverHorizontalUrl)}`
-        : undefined,
-      tracks: validTracks,
-      subtitles: combinedSubtitles.length > 0 ? combinedSubtitles : undefined,
-      requestedLang: preferLang,
-      resolvedLang,
-      resolvedLabel,
-      languageFallbackUsed,
-      availableLanguages,
-      expiresAt: Date.now() + cacheTtlMs,
-    };
     setCache(cacheKey, result);
     return sendOk(result);
   }
@@ -850,6 +643,7 @@ export async function handleCatalogMediaExtract(
     resolvedTmdbId,
     rawInput,
     isSandboxedFrame,
+    directOnly,
   });
   if (fallbackResult) {
     setCache(cacheKey, fallbackResult);

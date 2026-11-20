@@ -325,9 +325,10 @@ export const PlayerStageOverlays: React.FC<PlayerStageOverlaysProps> = ({
               }`}
             >
               <div
-                className={`max-w-[88%] px-3 py-1.5 rounded-lg font-medium text-center whitespace-pre-line leading-snug ${sizeClass}`}
+                className={`max-w-[86%] px-2.5 py-1 rounded-md font-medium text-center whitespace-pre-line leading-snug ${sizeClass}`}
                 style={{
                   color: subtitleStyle.fontColor,
+                  opacity: subtitleStyle.textOpacity ?? 0.82,
                   fontSize: `${subtitleStyle.fontScale * 100}%`,
                   backgroundColor: `rgba(0, 0, 0, ${subtitleStyle.bgOpacity})`,
                   textShadow:
@@ -335,7 +336,7 @@ export const PlayerStageOverlays: React.FC<PlayerStageOverlaysProps> = ({
                       ? 'none'
                       : subtitleStyle.edgeShadow === 'outline'
                       ? '0 0 4px #000, 0 0 2px #000'
-                      : '0 2px 6px rgba(0,0,0,0.9)',
+                      : '0 1px 4px rgba(0,0,0,0.85)',
                 }}
               >
                 {cueText}

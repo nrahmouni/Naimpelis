@@ -12,6 +12,8 @@ import {
 } from '../services/famelackIptvService.ts';
 import { fetchElahmadCategoryDirectory } from '../extractors/elahmadExtractor.ts';
 import { channelHealthMonitor } from '../services/channelHealthMonitor.ts';
+import { getBelixLiveChannels } from '../services/belix/belixXtreamClient.ts';
+import { getCuratedRbtvChannels } from '../services/rbtv/rbtvLiveCurator.ts';
 
 export function registerWorldTvRoutes(app: Express): void {
   app.get('/api/catalog/world-tv', async (req, res) => {
@@ -27,7 +29,7 @@ export function registerWorldTvRoutes(app: Express): void {
       void refreshFamelackAndWorldCatalog(false).catch(() => undefined);
     }
 
-    let filtered = worldChannels;
+    let filtered = [...worldChannels, ...getBelixLiveChannels(), ...getCuratedRbtvChannels()];
     if (countryFilter) {
       filtered = filtered.filter((c) => (c.countryCode || '').toLowerCase() === countryFilter);
     }

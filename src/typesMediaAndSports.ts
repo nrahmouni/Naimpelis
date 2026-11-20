@@ -481,7 +481,9 @@ export type TdtCategory =
   | 'elahmad_mena'
   | 'adrar_europa'
   | 'famelack_movies'
-  | 'kids_world';
+  | 'kids_world'
+  | 'belix_live'
+  | 'rbtv_sports';
 
 export interface SpanishTdtChannel {
   id: string;
@@ -495,7 +497,7 @@ export interface SpanishTdtChannel {
   quality: string;
   description: string;
   countryCode?: string;
-  sourceHub?: 'tdt' | 'famelack' | 'elahmad' | 'freetv' | 'iptvorg' | 'sportzfy';
+  sourceHub?: 'tdt' | 'famelack' | 'elahmad' | 'freetv' | 'iptvorg' | 'sportzfy' | 'belix' | 'rbtv';
   channels: StreamTrack[];
   healthSummary?: ChannelHealthSummary;
 }
