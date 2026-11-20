@@ -27,6 +27,7 @@ import {
   getPermanent247SportsMatches,
   getCachedSportsMatches,
   getLiveVoiceMatches,
+  prewarmTodayFootballBoard,
 } from './server/routes/sports.ts';
 import {
   injectDynamicOgMeta,
@@ -352,6 +353,7 @@ function rankCandidateTracks({
     if (!hasExplicitMovidyUrl && hasExplicitGnulaUrl && tr.id.startsWith('gnula-')) return 0;
     if (tr.id.startsWith('movidy-') || tr.resolverType === 'movidy_embed') return 1;
     if (tr.id.startsWith('gnula-')) return 2;
+    if (tr.id.startsWith('ia-')) return 2;
     if (tr.id.startsWith('dm-') || tr.id.startsWith('seriesmetro-')) return 2;
     if (tr.id.startsWith('archive-')) return 3;
     if (
@@ -558,6 +560,7 @@ async function startServer() {
           void resolveActiveGnulaMirrors().catch(() => undefined);
           void refreshLiveIptvRegistry(false).catch(() => undefined);
           void refreshFamelackAndWorldCatalog(false).catch(() => undefined);
+          void prewarmTodayFootballBoard().catch(() => undefined);
           channelHealthMonitor.startScheduler(
             () => [
               ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),

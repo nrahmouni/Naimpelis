@@ -18,9 +18,9 @@ function getGnulaHostPriority(rawUrl: string): number {
   const low = rawUrl.toLowerCase();
   if (/byse|bysevepoin/i.test(low)) return 0;
   if (/vidaraa?\.[a-z]+/i.test(low)) return 1;
-  if (/vidhide|smoothpre|earnvids/i.test(low)) return 2;
-  if (/streamwish|hglink|hlswish|wishembed/i.test(low)) return 3;
-  if (/filelions|morencius/i.test(low)) return 4;
+  if (/vidhide|smoothpre|earnvids|morencius/i.test(low)) return 2;
+  if (/filelions/i.test(low)) return 3;
+  if (/streamwish|hglink|hlswish|wishembed/i.test(low)) return 4;
   if (/voe\.[a-z]+/i.test(low)) return 5;
   return 6;
 }
@@ -96,7 +96,7 @@ export async function extractGnulaHdTracks(
     const playerRes = await fetchGnulaPathWithMirrorFailover(playerPath, {
       referer: targetUrl,
       acceptJson: true,
-      timeoutMs: 5000,
+      timeoutMs: 4200,
     });
     if (!playerRes?.text) return [];
 
@@ -150,19 +150,25 @@ export async function extractGnulaHdTracks(
     const langDisplay = (lang: 'ES' | 'LAT' | 'VOSE') =>
       lang === 'ES' ? 'Castellano' : lang === 'LAT' ? 'Español Latino' : 'Subtitulado VOSE';
 
+    const langsWithPrimaryDirectHls = new Set(
+      jobs.filter((j) => j.hostPriority <= 2).map((j) => j.lang)
+    );
+
     const resolvedItems = await Promise.all(
       jobs.map(async (job): Promise<{ track: TrackRecord; hostPriority: number } | null> => {
         const { lang, srvTitle, srcUrl, sIdx, hostPriority } = job;
         const low = srcUrl.toLowerCase();
 
         if (/byse|bysevepoin|vidaraa?\.[a-z]+|morencius|vidhide|smoothpre|earnvids|streamwish|filelions|hglink|hlswish|wishembed/i.test(low)) {
-          const directHls =
-            !opts?.skipUnpack && hostPriority <= 3
-              ? await Promise.race([
-                  unpackVidhideToHls(srcUrl).catch(() => null),
-                  new Promise<null>((r) => setTimeout(() => r(null), 2800)),
-                ])
-              : null;
+          const shouldEagerUnpack =
+            !opts?.skipUnpack &&
+            (hostPriority <= 3 || !langsWithPrimaryDirectHls.has(lang));
+          const directHls = shouldEagerUnpack
+            ? await Promise.race([
+                unpackVidhideToHls(srcUrl).catch(() => null),
+                new Promise<null>((r) => setTimeout(() => r(null), 2600)),
+              ])
+            : null;
           if (directHls) {
             return {
               hostPriority,

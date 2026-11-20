@@ -263,46 +263,63 @@ export function registerCastellanoCatalogRoutes(app: Express): void {
         return `https://api.themoviedb.org/3/discover/${mType}?${params.toString()}`;
       };
 
-      const [tvRes, movRes, movidyData, gnulaMoviesData, gnulaSeriesData] = await Promise.all([
-        kind === 'all' || kind === 'series'
-          ? fetch(buildTmdbDiscoverUrl('tv'), { signal: AbortSignal.timeout(4500) })
-              .then((r) => (r.ok ? r.json() : null))
-              .catch(() => null)
-          : Promise.resolve(null),
-        kind === 'all' || kind === 'movies'
-          ? fetch(buildTmdbDiscoverUrl('movie'), { signal: AbortSignal.timeout(4500) })
-              .then((r) => (r.ok ? r.json() : null))
-              .catch(() => null)
-          : Promise.resolve(null),
-        (kind === 'all' || kind === 'movies') && provider === 'all' && category !== 'spanish_originals'
-          ? scrapeMovidyCatalog({ category: 'trending', page, query }).catch(() => ({
-              movies: [],
-              hasMore: false,
-            }))
-          : Promise.resolve({ movies: [], hasMore: false }),
-        (kind === 'all' || kind === 'movies') && provider === 'all' && category !== 'spanish_originals'
-          ? Promise.race([
-              scrapeGnulaCatalog({ category: 'trending', page, query, mediaType: 'movie' }).catch(() => ({
-                items: [],
-                hasMore: false,
-              })),
-              new Promise<{ items: any[]; hasMore: boolean }>((r) =>
-                setTimeout(() => r({ items: [], hasMore: false }), 2800)
-              ),
-            ])
-          : Promise.resolve({ items: [], hasMore: false }),
-        (kind === 'all' || kind === 'series') && provider === 'all' && category !== 'spanish_originals'
-          ? Promise.race([
-              scrapeGnulaCatalog({ category: 'trending', page, query, mediaType: 'tv' }).catch(() => ({
-                items: [],
-                hasMore: false,
-              })),
-              new Promise<{ items: any[]; hasMore: boolean }>((r) =>
-                setTimeout(() => r({ items: [], hasMore: false }), 2800)
-              ),
-            ])
-          : Promise.resolve({ items: [], hasMore: false }),
-      ]);
+      const wantFallbackType = kind === 'series' ? 'tv' : kind === 'movies' ? 'movie' : 'all';
+      const [tvRes, movRes, movidyData, gnulaMoviesData, gnulaSeriesData, fallbackEntries] =
+        await Promise.all([
+          kind === 'all' || kind === 'series'
+            ? fetch(buildTmdbDiscoverUrl('tv'), { signal: AbortSignal.timeout(4500) })
+                .then((r) => (r.ok ? r.json() : null))
+                .catch(() => null)
+            : Promise.resolve(null),
+          kind === 'all' || kind === 'movies'
+            ? fetch(buildTmdbDiscoverUrl('movie'), { signal: AbortSignal.timeout(4500) })
+                .then((r) => (r.ok ? r.json() : null))
+                .catch(() => null)
+            : Promise.resolve(null),
+          (kind === 'all' || kind === 'movies') && provider === 'all' && category !== 'spanish_originals'
+            ? Promise.race([
+                scrapeMovidyCatalog({ category: 'trending', page, query }).catch(() => ({
+                  movies: [],
+                  hasMore: false,
+                })),
+                new Promise<{ movies: any[]; hasMore: boolean }>((r) =>
+                  setTimeout(() => r({ movies: [], hasMore: false }), 2800)
+                ),
+              ])
+            : Promise.resolve({ movies: [], hasMore: false }),
+          (kind === 'all' || kind === 'movies') && provider === 'all' && category !== 'spanish_originals'
+            ? Promise.race([
+                scrapeGnulaCatalog({ category: 'trending', page, query, mediaType: 'movie' }).catch(
+                  () => ({
+                    items: [],
+                    hasMore: false,
+                  })
+                ),
+                new Promise<{ items: any[]; hasMore: boolean }>((r) =>
+                  setTimeout(() => r({ items: [], hasMore: false }), 2800)
+                ),
+              ])
+            : Promise.resolve({ items: [], hasMore: false }),
+          (kind === 'all' || kind === 'series') && provider === 'all' && category !== 'spanish_originals'
+            ? Promise.race([
+                scrapeGnulaCatalog({ category: 'trending', page, query, mediaType: 'tv' }).catch(
+                  () => ({
+                    items: [],
+                    hasMore: false,
+                  })
+                ),
+                new Promise<{ items: any[]; hasMore: boolean }>((r) =>
+                  setTimeout(() => r({ items: [], hasMore: false }), 2800)
+                ),
+              ])
+            : Promise.resolve({ items: [], hasMore: false }),
+          query
+            ? Promise.race([
+                liveOnDemandFallbackSearch(query, wantFallbackType).catch(() => [] as any[]),
+                new Promise<any[]>((r) => setTimeout(() => r([]), 3800)),
+              ])
+            : Promise.resolve([] as any[]),
+        ]);
 
       const mapTmdbEntry = (raw: any, mType: 'tv' | 'movie') => {
         if (!raw?.id || (!raw.poster_path && !raw.backdrop_path)) return null;
@@ -394,8 +411,6 @@ export function registerCastellanoCatalogRoutes(app: Express): void {
       }
 
       if (query) {
-        const wantType = kind === 'series' ? 'tv' : kind === 'movies' ? 'movie' : 'all';
-        const fallbackEntries = await liveOnDemandFallbackSearch(query, wantType);
         for (const fe of fallbackEntries) {
           if (
             !fe.tmdbId &&

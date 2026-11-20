@@ -13,6 +13,10 @@ import {
 import { unpackVidhideToHls } from '../vidhideHelpers/directHostUnpackers.ts';
 
 const movidyPageMetaCache = new LruTtlCache<string, MovidyPageMetadata>(350, 15 * 60 * 1000);
+const movidyUrlLookupCache = new LruTtlCache<string, { url: string | null; ts: number }>(
+  300,
+  10 * 60 * 1000
+);
 
 export interface MovidyPageMetadata {
   isTvShow: boolean;
@@ -68,7 +72,13 @@ async function fetchMovidyWithMirrorFailover(
       timeoutMs
     ).catch(() => '');
     if (html && html.length > 200 && !/Access denied|Just a moment\.\.\./i.test(html.slice(0, 300))) {
-      activeMovidyOrigin = origin;
+      const is404Page = /<title>\s*404|p[áa]gina no encontrada|not found<\/title>/i.test(
+        html.slice(0, 1500)
+      );
+      if (!is404Page) {
+        activeMovidyOrigin = origin;
+      }
+      // Return valid 404 responses immediately rather than waiting 4.5s on backup mirrors for the same missing slug
       return html;
     }
   }
@@ -510,24 +520,103 @@ export async function findMovidyUrlByTitle(
       }
     };
 
-    const firstHtmls = await Promise.all(
+    const lookupKey = `${opts?.expectedMediaType || 'any'}|${expectedYear || ''}|${allHints
+      .slice(0, 4)
+      .join('|')
+      .toLowerCase()}`;
+    const cachedLookup = movidyUrlLookupCache.get(lookupKey);
+    if (cachedLookup) {
+      const ttl = cachedLookup.url ? 10 * 60 * 1000 : 3 * 60 * 1000;
+      if (Date.now() - cachedLookup.ts < ttl) {
+        return cachedLookup.url;
+      }
+    }
+
+    const slugCandidates = buildMovidySlugCandidates(allHints, expectedYear)
+      .slice(0, 3)
+      .map((slug) => `${MOVIDY_ORIGIN}/ver/${slug}/`);
+
+    const verifyCandidateList = (urls: string[]): Promise<string | null> => {
+      if (urls.length === 0) return Promise.resolve(null);
+      return new Promise<string | null>((resolve) => {
+        let pending = urls.length;
+        let settled = false;
+        let adjFallback: string | null = null;
+
+        for (const candidateUrl of urls) {
+          fetchMovidyPageMetadata(candidateUrl)
+            .then((meta) => {
+              if (settled) return;
+              if (meta) {
+                const typeMismatch =
+                  (opts?.expectedMediaType === 'movie' && meta.isTvShow) ||
+                  (opts?.expectedMediaType === 'tv' && !meta.isTvShow);
+                if (!typeMismatch) {
+                  const verdict = verifyMovidyMetaMatch(meta, {
+                    titleHints: allHints,
+                    expectedYear,
+                    expectedDirector: opts?.expectedDirector,
+                    expectedRuntimeMin: opts?.expectedRuntimeMin,
+                    expectedMediaType: opts?.expectedMediaType || 'movie',
+                  });
+                  if (verdict.ok) {
+                    if (verdict.exactYear || !expectedYear) {
+                      settled = true;
+                      resolve(candidateUrl);
+                      return;
+                    }
+                    if (!adjFallback) adjFallback = candidateUrl;
+                  }
+                }
+              }
+              pending -= 1;
+              if (pending <= 0 && !settled) {
+                settled = true;
+                resolve(adjFallback);
+              }
+            })
+            .catch(() => {
+              pending -= 1;
+              if (pending <= 0 && !settled) {
+                settled = true;
+                resolve(adjFallback);
+              }
+            });
+        }
+      });
+    };
+
+    const fastSlugPromise = verifyCandidateList(slugCandidates);
+
+    const searchHtmlPromise = Promise.all(
       searchTerms
-        .slice(0, 4)
-        .map((term) => fetchMovidyWithMirrorFailover(`/?s=${encodeURIComponent(term)}&_=${Date.now()}`, '/', 4200))
+        .slice(0, 3)
+        .map((term) =>
+          fetchMovidyWithMirrorFailover(`/?s=${encodeURIComponent(term)}&_=${Date.now()}`, '/', 2800)
+        )
     );
+
+    const fastSlugHit = await fastSlugPromise;
+    if (fastSlugHit) {
+      movidyUrlLookupCache.set(lookupKey, { url: fastSlugHit, ts: Date.now() });
+      return fastSlugHit;
+    }
+
+    const firstHtmls = await searchHtmlPromise;
     for (const html of firstHtmls) {
       collectHits(html, true);
     }
 
-    if (exactMatches.length === 0 && searchTerms.length > 4) {
-      for (const term of searchTerms.slice(4, 8)) {
-        const html = await fetchMovidyWithMirrorFailover(
-          `/?s=${encodeURIComponent(term)}&_=${Date.now()}`,
-          '/',
-          3800
-        );
+    if (exactMatches.length === 0 && searchTerms.length > 3) {
+      const extraHtmls = await Promise.all(
+        searchTerms
+          .slice(3, 5)
+          .map((term) =>
+            fetchMovidyWithMirrorFailover(`/?s=${encodeURIComponent(term)}&_=${Date.now()}`, '/', 2500)
+          )
+      );
+      for (const html of extraHtmls) {
         collectHits(html, true);
-        if (exactMatches.length > 0) break;
       }
     }
 
@@ -537,55 +626,16 @@ export async function findMovidyUrlByTitle(
         const html = await fetchMovidyWithMirrorFailover(
           `/?s=${encodeURIComponent(prefix)}&_=${Date.now()}`,
           '/',
-          4200
+          2500
         );
         collectHits(html, !expectedYear);
       }
     }
 
-    if (exactMatches.length === 0) {
-      for (const slug of buildMovidySlugCandidates(allHints, expectedYear)) {
-        const directCand = `${MOVIDY_ORIGIN}/ver/${slug}/`;
-        if (!exactMatches.includes(directCand)) {
-          exactMatches.push(directCand);
-        }
-      }
-    }
-
-    if (exactMatches.length === 0) return null;
-
-    const candidateSlice = exactMatches.slice(0, 4);
-    const inspectedCandidates = await Promise.all(
-      candidateSlice.map(async (candidateUrl) => ({
-        candidateUrl,
-        meta: await fetchMovidyPageMetadata(candidateUrl).catch(() => null),
-      }))
-    );
-
-    let verifiedAdjacentFallback: string | null = null;
-    for (const { candidateUrl, meta } of inspectedCandidates) {
-      if (!meta) continue;
-      if (opts?.expectedMediaType === 'movie' && meta.isTvShow) continue;
-      if (opts?.expectedMediaType === 'tv' && !meta.isTvShow) continue;
-
-      const verdict = verifyMovidyMetaMatch(meta, {
-        titleHints: allHints,
-        expectedYear,
-        expectedDirector: opts?.expectedDirector,
-        expectedRuntimeMin: opts?.expectedRuntimeMin,
-        expectedMediaType: opts?.expectedMediaType || 'movie',
-      });
-      if (!verdict.ok) continue;
-
-      if (verdict.exactYear || !expectedYear) {
-        return candidateUrl;
-      }
-      if (!verifiedAdjacentFallback) {
-        verifiedAdjacentFallback = candidateUrl;
-      }
-    }
-
-    return verifiedAdjacentFallback;
+    const resolvedUrl =
+      exactMatches.length > 0 ? await verifyCandidateList(exactMatches.slice(0, 4)) : null;
+    movidyUrlLookupCache.set(lookupKey, { url: resolvedUrl, ts: Date.now() });
+    return resolvedUrl;
   } catch {
     return null;
   }

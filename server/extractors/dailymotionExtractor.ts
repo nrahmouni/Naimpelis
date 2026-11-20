@@ -2,100 +2,123 @@ import { LruTtlCache } from '../utils/lruCache.ts';
 import {
   CHROME_UA,
   buildHlsProxyUrl,
-  fetchTextWithCurlFallback,
+  curlGetText,
   normalizeTitleForMatch,
   type TrackRecord,
 } from './httpHelpers.ts';
 
 const dailymotionTrackCache = new LruTtlCache<string, TrackRecord[]>(150, 20 * 60 * 1000);
 
-// Seeded Dailymotion video IDs (always live-checked via player metadata before returning)
-const KNOWN_LQSA_DM_MAP: Record<string, string[]> = {
-  '17x1': ['xbx77vu', 'xbxpqdm', 'xbxo7xe'],
-  '17x2': ['xbx81xu'],
-  '17x3': ['xby1p9i'],
-  '16x7': ['xb6oa0e', 'xba9oaq', 'xb79s2q', 'xat0rdy', 'xbazmhi', 'xbfdp3q'],
-  '12x6': ['xbnqr0e'],
-  '10x3': ['x99tl0q'],
-  '4x7': ['xbjnx1y', 'xbmi5v2', 'xblz142', 'xbxjqlu'],
-  '3x7': ['xazn0ci', 'xbqrc3a'],
-  '3x3': ['x98htky'],
-  '1x11': ['x97sn2u'],
+// Seeded Dailymotion video IDs verified against live player metadata for La que se avecina T17
+const KNOWN_LQSA_T17_MAP: Record<string, string> = {
+  '17x1': 'xbx77vu',
+  '17x2': 'xbx81xu',
+  '17x3': 'xby1p9i',
 };
 
-// Cumulative episode counts before each season of La que se avecina (for global ep numbers 1..210)
-const LQSA_SEASON_EP_COUNTS = [13, 15, 14, 12, 13, 13, 13, 16, 19, 13, 13, 16, 8, 8, 8, 8, 8];
+const LQSA_SEASON_EPISODE_COUNTS: Record<number, number> = {
+  1: 13,
+  2: 15,
+  3: 14,
+  4: 12,
+  5: 13,
+  6: 13,
+  7: 13,
+  8: 16,
+  9: 19,
+  10: 13,
+  11: 13,
+  12: 16,
+  13: 8,
+  14: 8,
+  15: 8,
+  16: 8,
+  17: 8,
+};
 
-export function lqsaGlobalEpisodeToSeasonEp(globalEp: number): { season: number; episode: number } | null {
-  if (!Number.isFinite(globalEp) || globalEp < 1) return null;
-  let remaining = Math.floor(globalEp);
-  for (let idx = 0; idx < LQSA_SEASON_EP_COUNTS.length; idx++) {
-    const count = LQSA_SEASON_EP_COUNTS[idx];
+export function lqsaSeasonEpToGlobal(season: number, episode: number): number | null {
+  if (!season || season < 1 || !episode || episode < 1) return null;
+  let offset = 0;
+  for (let s = 1; s < season; s++) {
+    const count = LQSA_SEASON_EPISODE_COUNTS[s];
+    if (!count) return null;
+    offset += count;
+  }
+  return offset + episode;
+}
+
+export function lqsaGlobalEpisodeToSeasonEp(
+  globalEp: number
+): { season: number; episode: number } | null {
+  if (!globalEp || globalEp < 1) return null;
+  let remaining = globalEp;
+  for (let s = 1; s <= 17; s++) {
+    const count = LQSA_SEASON_EPISODE_COUNTS[s];
+    if (!count) break;
     if (remaining <= count) {
-      return { season: idx + 1, episode: remaining };
+      return { season: s, episode: remaining };
     }
     remaining -= count;
   }
   return null;
 }
 
-export function lqsaSeasonEpToGlobal(season: number, episode: number): number | null {
-  if (season < 1 || season > LQSA_SEASON_EP_COUNTS.length || episode < 1) return null;
-  if (episode > LQSA_SEASON_EP_COUNTS[season - 1]) return null;
-  let offset = 0;
-  for (let i = 0; i < season - 1; i++) offset += LQSA_SEASON_EP_COUNTS[i];
-  return offset + episode;
-}
-
 export function parseSeasonEpisodeFromTitle(
   rawTitle: string,
   opts?: { isLqsa?: boolean }
 ): { season?: number; episode?: number } {
-  const title = String(rawTitle || '').replace(/｜/g, '|');
+  const title = String(rawTitle || '');
 
-  // Guard against mislabeled re-uploads like "La que se avecina 10x1 (Temporada 1)"
-  const parenTempMatch = title.match(/\(\s*temporada\s*0*(\d{1,2})\s*\)/i);
-  const parenSeason = parenTempMatch ? parseInt(parenTempMatch[1], 10) : null;
+  // Detect uploader quirk like "La que se avecina 10x1 (Temporada 1)" -> actually S01E10
+  const parenTempMatch = title.match(/\(\s*(?:temporada|temp\.?)\s*0*(\d{1,2})\s*\)/i);
+  const slashTempEpMatch = title.match(/\b0*(\d{1,2})\s*[xX×]\s*0*(\d{1,3})\b/);
+  if (parenTempMatch && slashTempEpMatch) {
+    const parenSeason = parseInt(parenTempMatch[1], 10);
+    const left = parseInt(slashTempEpMatch[1], 10);
+    const right = parseInt(slashTempEpMatch[2], 10);
+    if (right === 1 && parenSeason > 0 && parenSeason !== left && left >= 1 && left <= 25) {
+      return { season: parenSeason, episode: left };
+    }
+  }
 
   const pairPatterns = [
-    /\b[TS]\s*0*(\d{1,2})\s*[-_.\s]*[EC]\s*0*(\d{1,3})\b/i,
+    /\b[TS]\s*0*(\d{1,2})\s*[_\-.\s]*(?:E|C)\s*0*(\d{1,3})\b/i,
     /\b0*(\d{1,2})\s*[xX×]\s*0*(\d{1,3})\b/,
-    /temporada\s*0*(\d{1,2})[^a-z0-9]{0,20}(?:cap[ií]tulo|cap\.?|episodio|ep\.?)\s*0*(\d{1,3})\b/i,
+    /temporada\s*0*(\d{1,2})[^a-z0-9]{0,20}(?:cap[ií]tulo|cap\.?|episodio|ep\.?|c)\s*0*(\d{1,3})\b/i,
     /season\s*0*(\d{1,2})[^a-z0-9]{0,20}(?:episode|ep\.?)\s*0*(\d{1,3})\b/i,
-    /(?:la\s+que\s+se\s+avecina|lqsa)\s*0*(\d{1,2})\s*[-–—|:\s]+(?:cap[ií]tulo|cap\.?|episodio|ep\.?)\s*0*(\d{1,3})\b/i,
+    /\b(?:lqsa|avecina)\s+0*(\d{1,2})\s*[-–—\s]+\s*(?:cap[ií]tulo|cap\.?|episodio|ep\.?|c)\s*0*(\d{1,3})\b/i,
   ];
   for (const re of pairPatterns) {
     const m = title.match(re);
     if (m) {
-      const parsedSeason = parseInt(m[1], 10);
-      const parsedEpisode = parseInt(m[2], 10);
-      if (parenSeason && parenSeason !== parsedSeason) {
-        return { season: parenSeason, episode: parsedSeason };
-      }
-      return { season: parsedSeason, episode: parsedEpisode };
+      return { season: parseInt(m[1], 10), episode: parseInt(m[2], 10) };
     }
   }
 
   const rev = title.match(
-    /(?:cap[ií]tulo|cap\.?|episodio|ep\.?)\s*0*(\d{1,3})\s*(?:de\s+)?(?:temporada\s*0*(\d{1,2})|(?:[|｜\-–—:\s]+)?(?:la\s+que\s+se\s+avecina|lqsa)\s*0*(\d{1,2}))\b/i
+    /(?:cap[ií]tulo|episodio)\s*0*(\d{1,3})[^a-z0-9]{0,20}temporada\s*0*(\d{1,2})\b/i
   );
   if (rev) {
-    const sNum = parseInt(rev[2] || rev[3] || '0', 10);
-    const eNum = parseInt(rev[1], 10);
-    if (sNum > 0 && eNum > 0) {
-      return { season: sNum, episode: eNum };
-    }
+    return { season: parseInt(rev[2], 10), episode: parseInt(rev[1], 10) };
   }
 
-  // Handle global episode number like "La Que Se Avecina - Capitulo 203" (only > 25 so it never collides with 1..20)
+  // Reversed format with separator like "Capitulo 7 ｜ La Que Se Avecina 16"
+  const revLqsa = title.match(
+    /(?:cap[ií]tulo|cap\.?|episodio|ep\.?)\s*0*(\d{1,3})[^a-z0-9]+(?:la\s+que\s+se\s+avecina|lqsa)\s*0*(\d{1,2})\b/i
+  );
+  if (revLqsa) {
+    return { season: parseInt(revLqsa[2], 10), episode: parseInt(revLqsa[1], 10) };
+  }
+
+  // Global episode fallback for LQSA uploads like "La Que Se Avecina - Capitulo 203"
   if (opts?.isLqsa) {
     const globalMatch = title.match(
-      /(?:la\s+que\s+se\s+avecina|lqsa)[^0-9a-z]{1,15}(?:cap[ií]tulo|cap\.?|episodio|ep\.?)\s*0*(\d{2,3})\b/i
+      /(?:cap[ií]tulo|cap\.?|episodio|ep\.?)\s*0*(\d{1,3})\b/i
     );
     if (globalMatch) {
-      const gNum = parseInt(globalMatch[1], 10);
-      if (gNum >= 25) {
-        const mapped = lqsaGlobalEpisodeToSeasonEp(gNum);
+      const globalEp = parseInt(globalMatch[1], 10);
+      if (globalEp > 20) {
+        const mapped = lqsaGlobalEpisodeToSeasonEp(globalEp);
         if (mapped) return mapped;
       }
     }
@@ -117,15 +140,14 @@ function titleMatchesHint(videoTitle: string, hints: string[]): boolean {
   return false;
 }
 
-function matchesEpisodeTitleHint(videoTitle: string, episodeTitleHint?: string): boolean {
-  if (!episodeTitleHint) return false;
-  const cleanEp = normalizeTitleForMatch(episodeTitleHint);
-  if (!cleanEp || /^(episodio|episode|capitulo|cap)\s*\d+$/.test(cleanEp)) return false;
-  const normVid = normalizeTitleForMatch(videoTitle);
-  const meaningfulWords = cleanEp.split(/\s+/).filter((w) => w.length >= 4);
-  if (meaningfulWords.length < 2) return false;
-  const hits = meaningfulWords.filter((w) => normVid.includes(w));
-  return hits.length >= Math.min(3, meaningfulWords.length);
+async function dmCurlJson<T>(url: string, headers: Record<string, string>, maxSec = 4): Promise<T | null> {
+  try {
+    const res = await curlGetText(url, headers, maxSec, true, true);
+    if (!res.text) return null;
+    return JSON.parse(res.text) as T;
+  } catch {
+    return null;
+  }
 }
 
 async function resolveDailymotionVideoToM3u8(videoId: string): Promise<string | null> {
@@ -135,37 +157,22 @@ async function resolveDailymotionVideoToM3u8(videoId: string): Promise<string | 
     Referer: 'https://www.dailymotion.com/',
     'Accept-Language': 'es-ES,es;q=0.9',
   };
-  const extractFromMeta = (meta: any): string | null => {
-    if (!meta || meta?.error) return null;
-    const m3uUrl =
-      meta?.qualities?.auto?.[0]?.url ||
-      meta?.qualities?.['1080']?.[0]?.url ||
-      meta?.qualities?.['720']?.[0]?.url ||
-      '';
-    return typeof m3uUrl === 'string' && m3uUrl.includes('.m3u8') ? m3uUrl : null;
-  };
-  try {
-    const res = await fetch(url, {
-      headers,
-      signal: AbortSignal.timeout(4200),
-    });
-    if (res.ok) {
-      const meta: any = await res.json();
-      const found = extractFromMeta(meta);
-      if (found) return found;
+  let meta: any = await dmCurlJson(url, headers, 2);
+  if (!meta) {
+    try {
+      const h2 = await curlGetText(url, headers, 3, false, false);
+      if (h2.text) meta = JSON.parse(h2.text);
+    } catch {
+      meta = null;
     }
-  } catch {
-    // fallback to curl below
   }
-  try {
-    const raw = await fetchTextWithCurlFallback(url, headers, 3800);
-    if (raw) {
-      return extractFromMeta(JSON.parse(raw));
-    }
-  } catch {
-    // ignore
-  }
-  return null;
+  if (!meta || meta?.error) return null;
+  const m3uUrl =
+    meta?.qualities?.auto?.[0]?.url ||
+    meta?.qualities?.['1080']?.[0]?.url ||
+    meta?.qualities?.['720']?.[0]?.url ||
+    '';
+  return typeof m3uUrl === 'string' && m3uUrl.includes('.m3u8') ? m3uUrl : null;
 }
 
 export async function extractDailymotionSeriesTracks(opts: {
@@ -176,12 +183,10 @@ export async function extractDailymotionSeriesTracks(opts: {
   titleHints: string[];
   episodeTitleHint?: string;
 }): Promise<TrackRecord[]> {
-  const { tmdbId, mediaType, season = 1, episode = 1, titleHints, episodeTitleHint } = opts;
+  const { tmdbId, mediaType, season = 1, episode = 1, titleHints, episodeTitleHint = '' } = opts;
   if (mediaType !== 'tv' || !titleHints || titleHints.length === 0) return [];
 
-  const rawMainTitle = String(titleHints[0] || '').trim();
-  const mainTitle =
-    rawMainTitle.replace(/\s*·\s*\d+\s*[xX×]\s*\d+.*$/i, '').trim() || rawMainTitle;
+  const mainTitle = String(titleHints[0] || '').trim();
   if (!mainTitle) return [];
 
   const cacheKey = `${String(tmdbId || mainTitle)}:${season}x${episode}`;
@@ -193,86 +198,68 @@ export async function extractDailymotionSeriesTracks(opts: {
     titleHints.some((h) => normalizeTitleForMatch(h).includes('la que se avecina'));
 
   const epPad = String(episode).padStart(2, '0');
-  const seededIds: string[] = isLqsa
-    ? [...(KNOWN_LQSA_DM_MAP[`${season}x${episode}`] || [])]
-    : [];
+  const seededId = isLqsa ? KNOWN_LQSA_T17_MAP[`${season}x${episode}`] : undefined;
 
-  // Resolve seeded IDs immediately at t=0 so slow Dailymotion searches never cause a timeout
-  const seededPromise = Promise.all(
-    seededIds.map(async (vid) => ({
-      vid,
-      m3uUrl: await resolveDailymotionVideoToM3u8(vid),
-    }))
-  );
+  // Fast-path: resolve seeded ID immediately via IPv4 curl (~220ms) instead of blocking on 6+ API searches!
+  if (seededId) {
+    const directM3u = await resolveDailymotionVideoToM3u8(seededId);
+    if (directM3u) {
+      const fastTracks: TrackRecord[] = [
+        {
+          id: `dm-${seededId}`,
+          label: `Dailymotion HD · T${season}x${epPad} (Español)`,
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: `https://www.dailymotion.com/video/${seededId}`,
+          referer: 'https://www.dailymotion.com/',
+          resolverType: 'direct_hls',
+          resolvedStreamUrl: buildHlsProxyUrl(directM3u, 'https://www.dailymotion.com/'),
+        },
+      ];
+      dailymotionTrackCache.set(cacheKey, fastTracks);
+      return fastTracks;
+    }
+  }
 
-  const globalEp = isLqsa ? lqsaSeasonEpToGlobal(season, episode) : null;
+  const candidateIds: string[] = seededId ? [seededId] : [];
   const queries = [
     `${mainTitle} T${season} E${episode}`,
     `${mainTitle} ${season}x${epPad}`,
-    `${mainTitle} ${season} capitulo ${episode}`,
     `${mainTitle} temporada ${season} capitulo ${episode}`,
-    ...(isLqsa
-      ? [
-          `LQSA ${season} Capitulo ${episode}`,
-          `${mainTitle} T${season} C${episode}`,
-          ...(globalEp ? [`${mainTitle} Capitulo ${globalEp}`] : []),
-        ]
-      : []),
+    ...(isLqsa ? [`LQSA ${season}x${epPad}`, `La que se avecina T${season}_E${episode}`] : []),
   ];
 
-  const searchRequests: Promise<any>[] = [];
-  for (const q of queries) {
-    searchRequests.push(
-      fetch(
-        `https://api.dailymotion.com/videos?search=${encodeURIComponent(
-          q
-        )}&fields=id,title,duration&longer_than=18&limit=30`,
-        {
-          headers: { 'User-Agent': CHROME_UA, 'Accept-Language': 'es-ES,es;q=0.9' },
-          signal: AbortSignal.timeout(3500),
-        }
-      )
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null)
-    );
+  const cleanEpHint = String(episodeTitleHint || '').trim();
+  const isGenericEp =
+    !cleanEpHint || /^(episodio|episode|cap[ií]tulo|cap\.?|ep\.?)\s*\d+$/i.test(cleanEpHint);
+  const firstClause = !isGenericEp ? cleanEpHint.split(',')[0].trim() : '';
+  if (isLqsa && firstClause.length >= 6) {
+    queries.push(`La que se avecina ${firstClause}`);
   }
-  searchRequests.push(
-    fetch(
-      `https://api.dailymotion.com/videos?search=${encodeURIComponent(
-        `${mainTitle} ${season} ${episode}`
-      )}&fields=id,title,duration&longer_than=18&sort=recent&limit=30`,
-      {
-        headers: { 'User-Agent': CHROME_UA, 'Accept-Language': 'es-ES,es;q=0.9' },
-        signal: AbortSignal.timeout(3500),
-      }
+
+  const dmHeaders = { 'User-Agent': CHROME_UA, 'Accept-Language': 'es-ES,es;q=0.9' };
+  const searchRequests: Promise<any>[] = queries.slice(0, 6).map((q) =>
+    dmCurlJson(
+      `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&fields=id,title,duration&limit=25`,
+      dmHeaders,
+      3
     )
-      .then((r) => (r.ok ? r.json() : null))
-      .catch(() => null)
   );
 
   if (isLqsa && season >= 17) {
     searchRequests.push(
-      fetch('https://api.dailymotion.com/user/x3qhrza/videos?fields=id,title,duration&limit=20', {
-        headers: { 'User-Agent': CHROME_UA, 'Accept-Language': 'es-ES,es;q=0.9' },
-        signal: AbortSignal.timeout(3500),
-      })
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null)
+      dmCurlJson(
+        'https://api.dailymotion.com/user/x3qhrza/videos?fields=id,title,duration&limit=25',
+        dmHeaders,
+        3
+      )
     );
   }
 
-  const seededPairs = await seededPromise;
-  const hasSeededLive = seededPairs.some((p) => Boolean(p.m3uUrl));
-  const searchWaitMs = hasSeededLive ? 1400 : 3800;
+  const searchResults = await Promise.all(searchRequests);
 
-  const searchResults = await Promise.race([
-    Promise.all(searchRequests),
-    new Promise<any[]>((resolve) => setTimeout(() => resolve([]), searchWaitMs)),
-  ]);
-
-  const extraIds: string[] = [];
-  const seededSet = new Set(seededIds);
   const lqsaHints = isLqsa ? [...titleHints, 'LQSA'] : titleHints;
+  const normFirstClause = firstClause.length >= 6 ? normalizeTitleForMatch(firstClause) : '';
   for (const data of searchResults) {
     const list: any[] = Array.isArray(data?.list) ? data.list : [];
     for (const item of list) {
@@ -280,37 +267,36 @@ export async function extractDailymotionSeriesTracks(opts: {
       const vTitle = String(item?.title || '');
       const duration = Number(item?.duration || 0);
       if (!id || duration < 900 || duration > 7200) continue;
-      if (
-        /\b(trailer|avance|promo|teaser|resumen|cabecera|tomas falsas|mejores momentos|portugal)\b/i.test(
-          vTitle
-        )
-      ) {
+      if (/\b(trailer|avance|promo|teaser|resumen|cabecera|tomas falsas|reacci[oó]n)\b/i.test(vTitle)) {
         continue;
       }
-      if (!titleMatchesHint(vTitle, lqsaHints)) continue;
 
       const parsed = parseSeasonEpisodeFromTitle(vTitle, { isLqsa });
-      const exactPair = parsed.season === season && parsed.episode === episode;
-      const epTitleOk =
-        !parsed.season && matchesEpisodeTitleHint(vTitle, episodeTitleHint);
-      if (!exactPair && !epTitleOk) continue;
-      if (!seededSet.has(id) && !extraIds.includes(id)) extraIds.push(id);
+      const normV = normalizeTitleForMatch(vTitle);
+      const matchesSeasonEp = parsed.season === season && parsed.episode === episode;
+      const matchesEpClause = Boolean(
+        normFirstClause &&
+          normFirstClause.length >= 8 &&
+          normV.includes(normFirstClause) &&
+          (!parsed.season || parsed.season === season)
+      );
+
+      if (!matchesSeasonEp && !matchesEpClause) continue;
+      if (!titleMatchesHint(vTitle, lqsaHints) && !matchesEpClause) continue;
+      if (!candidateIds.includes(id)) candidateIds.push(id);
     }
   }
 
-  const remainingCap = Math.max(0, 18 - seededPairs.length);
-  const extraPairs =
-    remainingCap > 0 && extraIds.length > 0
-      ? await Promise.all(
-          extraIds.slice(0, remainingCap).map(async (vid) => ({
-            vid,
-            m3uUrl: await resolveDailymotionVideoToM3u8(vid),
-          }))
-        )
-      : [];
+  // Probe up to 14 unique IDs (many older uploads have DM005 copyright placeholders)
+  const resolvedPairs = await Promise.all(
+    candidateIds.slice(0, 14).map(async (vid) => ({
+      vid,
+      m3uUrl: await resolveDailymotionVideoToM3u8(vid),
+    }))
+  );
 
   const tracks: TrackRecord[] = [];
-  for (const { vid, m3uUrl } of [...seededPairs, ...extraPairs]) {
+  for (const { vid, m3uUrl } of resolvedPairs) {
     if (!m3uUrl) continue;
     tracks.push({
       id: `dm-${vid}`,

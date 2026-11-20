@@ -458,6 +458,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
       return true;
     };
 
+    let cleanupDirectListeners: (() => void) | null = null;
     if (videoState.mode === 'hls') {
       // On iOS / iPadOS / macOS Safari, prefer Native Apple HLS first so AirPlay 2 always sends
       // full 1080p Video + Audio to the TV (Hls.js blob: MediaSource only sends audio over AirPlay!).
@@ -501,19 +502,33 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         }
       }
     } else if (videoState.mode === 'direct') {
+      const onDirectLoaded = () => {
+        setIsBuffering(false);
+        startPlaybackSafely();
+      };
+      const onDirectError = () => {
+        if (cancelled) return;
+        setIsBuffering(false);
+        setStreamError(
+          pickLang(lang, {
+            es: 'Esta señal MP4 directa no responde ahora mismo. Pulsa Reintentar o elige otro servidor debajo.',
+            ca: 'Aquest senyal MP4 directe no respon ara mateix. Prem Reintentar o tria un altre servidor a sota.',
+            en: 'This direct MP4 stream failed to load. Press Retry or choose another server below.',
+          })
+        );
+      };
+      cleanupDirectListeners = () => {
+        video.removeEventListener('loadedmetadata', onDirectLoaded);
+        video.removeEventListener('error', onDirectError);
+      };
+      video.addEventListener('loadedmetadata', onDirectLoaded, { once: true });
+      video.addEventListener('error', onDirectError, { once: true });
       video.src = videoState.url;
-      video.addEventListener(
-        'loadedmetadata',
-        () => {
-          setIsBuffering(false);
-          startPlaybackSafely();
-        },
-        { once: true }
-      );
     }
 
     return () => {
       cancelled = true;
+      cleanupDirectListeners?.();
       if (videoWatchdogTimer) clearTimeout(videoWatchdogTimer);
       if (frameHealthInterval) clearInterval(frameHealthInterval);
       if (hlsRef.current) {

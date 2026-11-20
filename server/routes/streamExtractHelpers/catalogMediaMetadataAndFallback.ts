@@ -57,6 +57,7 @@ export interface ResolvedCatalogMetadata {
   tmdbResolvedTitle: string;
   tmdbOriginalLanguage: string;
   episodeAirDate: string;
+  resolvedEpisodeTitle: string;
   isUnreleasedEpisode: boolean;
   combinedTitleHints: string[];
   effectiveYearForExtract: string | undefined;
@@ -179,6 +180,7 @@ export async function resolveCatalogMediaMetadata(opts: {
   let tmdbImdbId: string | null = null;
   let tmdbOriginalLanguage = '';
   let episodeAirDate = '';
+  let resolvedEpisodeTitle = '';
   let isUnreleasedEpisode = false;
   const tmdbAltTitles: string[] = [];
 
@@ -283,6 +285,7 @@ export async function resolveCatalogMediaMetadata(opts: {
             : [];
           const epMatch = seasonEps.find((ep: any) => Number(ep?.episode_number) === effectiveEpisode);
           episodeAirDate = String(epMatch?.air_date || '').trim();
+          resolvedEpisodeTitle = String(epMatch?.name || '').trim();
           if (
             !episodeAirDate &&
             tmJson?.next_episode_to_air &&
@@ -290,6 +293,9 @@ export async function resolveCatalogMediaMetadata(opts: {
             Number(tmJson.next_episode_to_air.episode_number) === effectiveEpisode
           ) {
             episodeAirDate = String(tmJson.next_episode_to_air.air_date || '').trim();
+            if (!resolvedEpisodeTitle) {
+              resolvedEpisodeTitle = String(tmJson.next_episode_to_air.name || '').trim();
+            }
           }
           if (/^\d{4}-\d{2}-\d{2}$/.test(episodeAirDate)) {
             const todayIso = new Date().toISOString().slice(0, 10);
@@ -392,6 +398,7 @@ export async function resolveCatalogMediaMetadata(opts: {
     tmdbResolvedTitle,
     tmdbOriginalLanguage,
     episodeAirDate,
+    resolvedEpisodeTitle,
     isUnreleasedEpisode,
     combinedTitleHints,
     effectiveYearForExtract,

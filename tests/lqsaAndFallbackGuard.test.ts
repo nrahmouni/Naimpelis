@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { describe, expect, it } from 'vitest';
 import { buildFallbackCatalogResult } from '../server/routes/streamExtractHelpers/catalogMediaMetadataAndFallback.ts';
 import {
@@ -9,6 +10,11 @@ import {
   matchArchiveFileForEpisode,
   parseSeriesMetroEpisodeOptions,
 } from '../server/extractors/spanishSeriesExtractor.ts';
+import {
+  matchArchiveEpisodeFile,
+  normalizeArchiveHomoglyphs,
+} from '../server/extractors/archiveOrgExtractor.ts';
+import { parseEmbed69OrMoeTracks } from '../server/extractors/vidhideHelpers/embed69AndSeriesKao.ts';
 import { unpackDeanEdwards } from '../server/extractors/httpHelpers.ts';
 import { filterTmdbValidSeasons } from '../server/routes/catalog/tvDetailsHandler.ts';
 
@@ -85,10 +91,18 @@ describe('La que se avecina title parsing & global episode mapping', () => {
     });
   });
 
-  it('guards against mislabeled "(Temporada X)" titles', () => {
+  it('guards against mislabeled "(Temporada X)" titles and handles underscore T17_E2 formats', () => {
     expect(parseSeasonEpisodeFromTitle('La que se avecina 10x1 (Temporada 1)')).toEqual({
       season: 1,
       episode: 10,
+    });
+    expect(parseSeasonEpisodeFromTitle('La que se avecina — T17_E2')).toEqual({
+      season: 17,
+      episode: 2,
+    });
+    expect(parseSeasonEpisodeFromTitle('LQSA 15 Capitulo 6')).toEqual({
+      season: 15,
+      episode: 6,
     });
   });
 
@@ -159,6 +173,74 @@ describe('Spanish series extractor (SeriesMetro, Archive.org & Fastream unpacker
       { lastAiredSeason: 17, nextAirSeason: 17, todayMs }
     );
     expect(filtered.map((s) => s.season_number)).toEqual([16, 17]);
+  });
+
+  it('normalizes Cyrillic homoglyphs and resolves Archive.org collection file layouts', () => {
+    // Cyrillic а, е, о, р, с, х inside "La que se avecina T11 Capítulo 4"
+    expect(normalizeArchiveHomoglyphs('Lа quе sе аvесinа T11')).toBe('La que se avecina T11');
+
+    const s1Remaster = [
+      { name: 'La que se avecina - S01E01.mkv', format: 'Matroska' },
+      { name: 'La que se avecina - S01E01.mp4', format: 'MPEG4' },
+      { name: 'La que se avecina - S01E01.ia.mp4', format: 'h.264 IA' },
+    ];
+    expect(matchArchiveEpisodeFile(s1Remaster, 1, 1, 'spanish-neighborhood-sitcom-s01-remaster')[0]?.name).toBe(
+      'La que se avecina - S01E01.ia.mp4'
+    );
+
+    expect(
+      matchArchiveEpisodeFile(
+        [{ name: 't1/03.ia.mp4' }, { name: 't1/03.mp4' }],
+        1,
+        3,
+        'lqsa_20260416'
+      )[0]?.name
+    ).toBe('t1/03.ia.mp4');
+
+    expect(
+      matchArchiveEpisodeFile(
+        [{ name: 'Temporada 11 Capitulo 4.mp4' }],
+        11,
+        4,
+        'temporada-11-LQSA'
+      )[0]?.name
+    ).toBe('Temporada 11 Capitulo 4.mp4');
+
+    expect(
+      matchArchiveEpisodeFile([{ name: '805.mp4' }], 8, 5, 'lqsa_hotmail_LQSA')[0]?.name
+    ).toBe('805.mp4');
+  });
+
+  it('ranks morencius vidhide_hls ahead of streamwish web_embed in Embed69 decryption', () => {
+    const challenge = 'chal123';
+    const salt = 'salt456';
+    const key = crypto.createHash('sha256').update(challenge + salt).digest();
+    const enc = (plain: string) => {
+      const iv = Buffer.alloc(16, 7);
+      const cipher = crypto.createCipheriv('aes-256-cbc', key, iv);
+      return Buffer.concat([iv, cipher.update(plain, 'utf8'), cipher.final()]).toString('base64');
+    };
+    const dataLink = [
+      {
+        video_language: 'LAT',
+        sortedEmbeds: [
+          { servername: 'streamwish', link: enc('https://hglink.to/e/abc123') },
+          { servername: 'vidhide', link: enc('https://morencius.com/embed/xyz789') },
+        ],
+      },
+    ];
+    const html = `
+      <script>
+        var LINK_CHALLENGE = "${challenge}";
+        var LINK_SALT = "${salt}";
+        let dataLink = ${JSON.stringify(dataLink)};
+      </script>
+    `;
+    const tracks = parseEmbed69OrMoeTracks(html, 'test-tag');
+    expect(tracks.length).toBe(2);
+    expect(tracks[0].sourceUrl).toBe('https://morencius.com/embed/xyz789');
+    expect(tracks[0].resolverType).toBe('vidhide_hls');
+    expect(tracks[1].resolverType).toBe('web_embed');
   });
 });
 

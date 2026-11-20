@@ -1,6 +1,7 @@
 import {
   CHROME_UA,
   curlGetText,
+  fetchTextWithCurlFallback,
   matchesYouTubeFallbackTitle,
   normalizeTitleForMatch,
   type TrackRecord,
@@ -127,6 +128,8 @@ export async function searchYouTubeFullFallback(opts: {
   }
 
   const normEpTitle = !isGenericEpTitle ? normalizeTitleForMatch(episodeTitleHint) : '';
+  const epFirstClause = !isGenericEpTitle ? episodeTitleHint.split(',')[0].trim() : '';
+  const normEpClause = epFirstClause ? normalizeTitleForMatch(epFirstClause) : '';
   const epNumRegex = new RegExp(`\\b0*${effectiveEpisode}\\b`);
   const explicitSeasonEpRegex = new RegExp(
     `(?:\\b[TS]0*${effectiveSeason}[_\\s.-]*E0*${effectiveEpisode}\\b|\\b0*${effectiveSeason}\\s*[xX×]\\s*0*${effectiveEpisode}\\b|temporada\\s*0*${effectiveSeason}[^a-z0-9]{0,20}(?:cap(?:[ií]tulo)?|ep(?:isodio)?)\\s*0*${effectiveEpisode}\\b|season\\s*0*${effectiveSeason}[^a-z0-9]{0,20}episode\\s*0*${effectiveEpisode}\\b)`,
@@ -137,18 +140,15 @@ export async function searchYouTubeFullFallback(opts: {
 
   for (const q of queries.slice(0, 2)) {
     try {
-      const ytRes = await fetch(
+      const html = await fetchTextWithCurlFallback(
         `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}&hl=es`,
         {
-          headers: {
-            'User-Agent': CHROME_UA,
-            'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-          },
-          signal: AbortSignal.timeout(3800),
-        }
+          'User-Agent': CHROME_UA,
+          'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+        },
+        4000
       );
-      if (!ytRes.ok) continue;
-      const html = await ytRes.text();
+      if (!html) continue;
       const initMatch = html.match(/var\s+ytInitialData\s*=\s*(\{[\s\S]+?\});<\/script>/);
       if (!initMatch) continue;
       const ytData = JSON.parse(initMatch[1]);
@@ -194,7 +194,8 @@ export async function searchYouTubeFullFallback(opts: {
           const normVTitle = normalizeTitleForMatch(vTitle);
           const hasExplicitSeEp = explicitSeasonEpRegex.test(vTitle);
           const hasDistinctTitleMatch = Boolean(
-            normEpTitle && normEpTitle.length >= 6 && normVTitle.includes(normEpTitle)
+            (normEpTitle && normEpTitle.length >= 6 && normVTitle.includes(normEpTitle)) ||
+              (normEpClause && normEpClause.length >= 14 && normVTitle.includes(normEpClause))
           );
           const hasSeason1ImplicitMatch =
             effectiveSeason === 1 && !seasonMatch && epNumRegex.test(vTitle);

@@ -348,7 +348,8 @@ export async function curlGetText(
   targetUrl: string,
   headers: Record<string, string> = {},
   maxTimeSec = 6,
-  preferCurlCli = false
+  preferCurlCli = false,
+  forceIpv4 = true
 ): Promise<{ text: string; effectiveUrl: string }> {
   if (!preferCurlCli) {
     try {
@@ -363,10 +364,13 @@ export async function curlGetText(
 
   return new Promise((resolve, reject) => {
     const args = [
+      ...(forceIpv4 ? ['-4'] : []),
       '-sS',
       '-L',
       '-k',
       '--compressed',
+      '--connect-timeout',
+      String(Math.min(3, Math.max(2, maxTimeSec))),
       '--max-time',
       String(maxTimeSec),
       '-w',
@@ -411,9 +415,12 @@ export async function curlGetBufferWithStatus(
     new Promise((resolve, reject) => {
       const marker = Buffer.from('\n__HTTP_STATUS__:');
       const args = [
+        '-4',
         '-sS',
         '-L',
         '-k',
+        '--connect-timeout',
+        String(Math.min(3, Math.max(2, maxTimeSec))),
         '--max-time',
         String(maxTimeSec),
         '-w',
@@ -503,10 +510,13 @@ export async function curlPostJsonText(
 ): Promise<string> {
   return new Promise((resolve) => {
     const args = [
+      '-4',
       '-sS',
       '-L',
       '-k',
       '--compressed',
+      '--connect-timeout',
+      String(Math.min(3, Math.max(2, maxTimeSec))),
       '--max-time',
       String(maxTimeSec),
       '-X',
@@ -546,9 +556,13 @@ export async function fetchTextWithCurlFallback(
       markHostNeedsCurlFallback(url);
     }
   }
-  const fb = await curlGetText(url, headers, Math.max(3, Math.ceil(timeoutMs / 1000)), true).catch(
-    () => ({ text: '' })
-  );
+  const fb = await curlGetText(
+    url,
+    headers,
+    Math.max(3, Math.ceil(timeoutMs / 1000)),
+    true,
+    true
+  ).catch(() => ({ text: '' }));
   return fb.text || '';
 }
 

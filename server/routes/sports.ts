@@ -46,6 +46,7 @@ import {
 let cachedSportsSchedule: { matches: any[]; ts: number } | null = null;
 let liveScoresCache: { matches: any[]; ts: number } | null = null;
 let cachedFootballBoard: { dateKey: string; matches: any[]; ts: number } | null = null;
+const inFlightFootballBoards = new Map<string, Promise<{ dateKey: string; matches: any[] }>>();
 
 export { getPermanent247SportsMatches, fetchLiveSportsAgendaFeeds };
 
@@ -114,19 +115,51 @@ export async function getFootballBoardMatches(opts?: {
     }
   }
 
-  if (
-    cachedFootballBoard &&
-    cachedFootballBoard.dateKey === dateKey &&
-    Date.now() - cachedFootballBoard.ts < cacheTtlMs
-  ) {
-    const prioritizedCached = cachedFootballBoard.matches.map((m) => ({
+  const staleWindowMs = isToday ? 10 * 60 * 1000 : 15 * 60 * 1000;
+  const prioritizeBoard = (matches: any[]) =>
+    matches.map((m) => ({
       ...m,
       channels: orderBoardChannels(m.channels || [], m.leagueSlug, preferredLang),
     }));
-    return { dateKey, matches: prioritizedCached };
+
+  const triggerSingleFlightFetch = () => {
+    const existing = inFlightFootballBoards.get(dateKey);
+    if (existing) return existing;
+    const job = fetchAndCacheFootballBoard({
+      dateKey,
+      isToday,
+      madridToday,
+      preferredLang,
+    }).finally(() => {
+      if (inFlightFootballBoards.get(dateKey) === job) {
+        inFlightFootballBoards.delete(dateKey);
+      }
+    });
+    inFlightFootballBoards.set(dateKey, job);
+    return job;
+  };
+
+  if (cachedFootballBoard && cachedFootballBoard.dateKey === dateKey) {
+    const ageMs = Date.now() - cachedFootballBoard.ts;
+    if (ageMs < cacheTtlMs) {
+      return { dateKey, matches: prioritizeBoard(cachedFootballBoard.matches) };
+    }
+    if (ageMs < staleWindowMs && cachedFootballBoard.matches.length > 0) {
+      void triggerSingleFlightFetch().catch(() => undefined);
+      return { dateKey, matches: prioritizeBoard(cachedFootballBoard.matches) };
+    }
   }
 
-  return await fetchAndCacheFootballBoard({ dateKey, isToday, madridToday, preferredLang });
+  const board = await triggerSingleFlightFetch();
+  return { dateKey: board.dateKey, matches: prioritizeBoard(board.matches) };
+}
+
+export async function prewarmTodayFootballBoard(): Promise<void> {
+  try {
+    await getFootballBoardMatches({ lang: 'ES' });
+  } catch {
+    // non-fatal background prewarm
+  }
 }
 
 export async function getLiveVoiceMatches() {
@@ -161,14 +194,22 @@ async function fetchAndCacheFootballBoard(opts: {
 
       const [liveFeeds, fotmobMatches, _epgReady, ...responses] = await Promise.all([
         isToday
-          ? fetchLiveSportsAgendaFeeds()
+          ? Promise.race([
+              fetchLiveSportsAgendaFeeds(),
+              new Promise<{ rojaMatches: any[]; streamXhdFootball: any[] }>((resolve) =>
+                setTimeout(() => resolve({ rojaMatches: [], streamXhdFootball: [] }), 3200)
+              ),
+            ])
           : Promise.resolve({ rojaMatches: [], streamXhdFootball: [] }),
-        fetchFotmobDayIndex(dateKey).catch(() => []),
-        ensureEpgScheduleReady(3500),
+        Promise.race([
+          fetchFotmobDayIndex(dateKey).catch(() => []),
+          new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 2800)),
+        ]),
+        ensureEpgScheduleReady(2200),
         ...SOCCER_BOARD_LEAGUES.map((league) =>
           fetch(
             `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.slug}/scoreboard?dates=${dateKey}&lang=es&region=es`,
-            { signal: AbortSignal.timeout(4500) }
+            { signal: AbortSignal.timeout(3200) }
           )
             .then((r) => (r.ok ? r.json() : null))
             .then((json) => ({ league, json }))
@@ -439,40 +480,68 @@ async function fetchAndCacheFootballBoard(opts: {
         });
       }
 
-      // Verify real TV programming for every non-finished match BEFORE recommending channels
+      // Verify real TV programming for every non-finished match BEFORE recommending channels (capped so cold loads stay fast)
       const verifyTargets = items.filter((it) => it.statusState !== 'finished' && it._leagueDef);
-      await runWithConcurrency(verifyTargets, 12, async (it) => {
-        const verifiedSchedule = await verifySingleFixtureTvSchedule({
-          homeTeam: it.homeTeam,
-          awayTeam: it.awayTeam,
-          kickoffMs: it.kickoffMs,
-          fotmobMatchId: it.fotmobMatchId,
-          espnBroadcasts: it._espnBroadcasts || [],
-          queryExternalListings: true,
-        });
-        it.spanishBroadcaster = resolveVerifiedSpanishBroadcasterBadge(verifiedSchedule);
-        it.verifiedTvGuide = buildVerifiedTvGuideSummary(verifiedSchedule);
-        const verifiedChannels = buildFootballMatchChannels({
-          matchId: it.id,
-          homeTeam: it.homeTeam,
-          awayTeam: it.awayTeam,
-          statusState: it.statusState,
-          league: it._leagueDef,
-          scrapedMatches,
-          kickoffMs: it.kickoffMs,
-          preferredLang,
-          verifiedSchedule,
-        });
-        // Preserve any extra StreamXHD direct signals already merged into `it.channels`
-        const existingUrls = new Set(verifiedChannels.map((c) => c.sourceUrl));
-        for (const extraCh of it.channels || []) {
-          if (extraCh?.sourceUrl && !existingUrls.has(extraCh.sourceUrl)) {
-            existingUrls.add(extraCh.sourceUrl);
-            verifiedChannels.push(extraCh);
+      await Promise.race([
+        runWithConcurrency(verifyTargets, 12, async (it) => {
+          const verifiedSchedule = await verifySingleFixtureTvSchedule({
+            homeTeam: it.homeTeam,
+            awayTeam: it.awayTeam,
+            kickoffMs: it.kickoffMs,
+            fotmobMatchId: it.fotmobMatchId,
+            espnBroadcasts: it._espnBroadcasts || [],
+            queryExternalListings: true,
+          });
+          it.spanishBroadcaster = resolveVerifiedSpanishBroadcasterBadge(verifiedSchedule);
+          it.verifiedTvGuide = buildVerifiedTvGuideSummary(verifiedSchedule);
+          const verifiedChannels = buildFootballMatchChannels({
+            matchId: it.id,
+            homeTeam: it.homeTeam,
+            awayTeam: it.awayTeam,
+            statusState: it.statusState,
+            league: it._leagueDef,
+            scrapedMatches,
+            kickoffMs: it.kickoffMs,
+            preferredLang,
+            verifiedSchedule,
+          });
+          const existingUrls = new Set(verifiedChannels.map((c) => c.sourceUrl));
+          for (const extraCh of it.channels || []) {
+            if (extraCh?.sourceUrl && !existingUrls.has(extraCh.sourceUrl)) {
+              existingUrls.add(extraCh.sourceUrl);
+              verifiedChannels.push(extraCh);
+            }
           }
+          it.channels = verifiedChannels;
+        }),
+        new Promise<void>((resolve) => setTimeout(resolve, 2600)),
+      ]);
+      // Ensure any unverified targets due to the soft cap still receive instant EPG/fallback channels
+      for (const it of verifyTargets) {
+        if (it.channels.length === 0 && it._leagueDef) {
+          const fastSchedule = await verifySingleFixtureTvSchedule({
+            homeTeam: it.homeTeam,
+            awayTeam: it.awayTeam,
+            kickoffMs: it.kickoffMs,
+            fotmobMatchId: it.fotmobMatchId,
+            espnBroadcasts: it._espnBroadcasts || [],
+            queryExternalListings: false,
+          });
+          it.spanishBroadcaster = resolveVerifiedSpanishBroadcasterBadge(fastSchedule);
+          it.verifiedTvGuide = buildVerifiedTvGuideSummary(fastSchedule);
+          it.channels = buildFootballMatchChannels({
+            matchId: it.id,
+            homeTeam: it.homeTeam,
+            awayTeam: it.awayTeam,
+            statusState: it.statusState,
+            league: it._leagueDef,
+            scrapedMatches,
+            kickoffMs: it.kickoffMs,
+            preferredLang,
+            verifiedSchedule: fastSchedule,
+          });
         }
-        it.channels = verifiedChannels;
-      });
+      }
 
       const cleanItems = items.map((it) => {
         const copy = { ...it };

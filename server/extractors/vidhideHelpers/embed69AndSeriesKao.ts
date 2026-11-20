@@ -249,9 +249,9 @@ export function parseEmbed69OrMoeTracks(html: string, tagId: string): TrackRecor
               } else if (/filelions|smoothpre|earnvids|vidhide/i.test(low) && !/morencius/i.test(low)) {
                 decodedCandList.push({ url: dec, srv: srv || 'vidhide', resolverType: 'vidhide_hls', priority: 2 });
               } else if (/morencius/i.test(low)) {
-                decodedCandList.push({ url: dec, srv: srv || 'vidhide', resolverType: 'vidhide_hls', priority: 5 });
+                decodedCandList.push({ url: dec, srv: srv || 'vidhide', resolverType: 'vidhide_hls', priority: 3 });
               } else if (/streamwish|hglink|hlswish|wishembed/i.test(low) || srv === 'streamwish') {
-                decodedCandList.push({ url: dec, srv: 'streamwish', resolverType: 'web_embed', priority: 3 });
+                decodedCandList.push({ url: dec, srv: 'streamwish', resolverType: 'web_embed', priority: 5 });
               } else if (/voe\./i.test(low) || srv === 'voe') {
                 decodedCandList.push({ url: dec, srv: 'voe', resolverType: 'embed_sniff', priority: 4 });
                 decodedCandList.push({ url: dec, srv: 'voe-web', resolverType: 'web_embed', priority: 6 });

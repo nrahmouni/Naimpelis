@@ -19,6 +19,10 @@ import {
 } from './gnulaMirrorsAndParser.ts';
 
 const gnulaSearchCache = new LruTtlCache<string, GnulaSearchResultItem[]>(300, 10 * 60 * 1000);
+const gnulaTitleLookupCache = new LruTtlCache<string, { url: string | null; ts: number }>(
+  250,
+  10 * 60 * 1000
+);
 const gnulaCatalogCache = new LruTtlCache<
   string,
   { items: GnulaCatalogCardItem[]; hasMore: boolean }
@@ -113,6 +117,18 @@ export async function findGnulaHdUrlByTitle(
     )
   );
   if (hints.length === 0) return null;
+
+  const lookupKey = `${opts?.expectedMediaType || 'any'}|${expectedYear || ''}|${hints
+    .slice(0, 4)
+    .join('|')
+    .toLowerCase()}`;
+  const cachedLookup = gnulaTitleLookupCache.get(lookupKey);
+  if (cachedLookup) {
+    const ttl = cachedLookup.url ? 10 * 60 * 1000 : 3 * 60 * 1000;
+    if (Date.now() - cachedLookup.ts < ttl) {
+      return cachedLookup.url;
+    }
+  }
 
   const wantType = opts?.expectedMediaType === 'tv' ? 'serie' : opts?.expectedMediaType === 'movie' ? 'pelicula' : '';
 
@@ -217,7 +233,10 @@ export async function findGnulaHdUrlByTitle(
     new Map(firstBatchResults.flat().map((r) => [r.url, r])).values()
   );
   const foundFirst = await pickFromHits(mergedFirst);
-  if (foundFirst) return foundFirst;
+  if (foundFirst) {
+    gnulaTitleLookupCache.set(lookupKey, { url: foundFirst, ts: Date.now() });
+    return foundFirst;
+  }
 
   // Query remaining localized hints + franchise prefix if needed
   const remainingTerms = [...hints.slice(3, 6)];
@@ -235,9 +254,13 @@ export async function findGnulaHdUrlByTitle(
       new Map(secondBatchResults.flat().map((r) => [r.url, r])).values()
     );
     const foundSecond = await pickFromHits(mergedSecond);
-    if (foundSecond) return foundSecond;
+    if (foundSecond) {
+      gnulaTitleLookupCache.set(lookupKey, { url: foundSecond, ts: Date.now() });
+      return foundSecond;
+    }
   }
 
+  gnulaTitleLookupCache.set(lookupKey, { url: null, ts: Date.now() });
   return null;
 }
 
