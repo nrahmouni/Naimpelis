@@ -1,5 +1,28 @@
-import type { TrackRecord } from '../extractors/httpHelpers.ts';
+import { curlGetText, type TrackRecord } from '../extractors/httpHelpers.ts';
 import { logger } from '../utils/logger.ts';
+
+async function fetchSyncTextSafe(url: string, timeoutMs = 7000): Promise<string> {
+  try {
+    const resp = await fetch(url, {
+      headers: { 'User-Agent': 'RiffanTV-IPTV/2.0' },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (resp.ok) {
+      const txt = await resp.text();
+      if (txt) return txt;
+    }
+  } catch {
+    // fallback to IPv4 curl on Happy Eyeballs IPv6 timeout
+  }
+  const fb = await curlGetText(
+    url,
+    { 'User-Agent': 'RiffanTV-IPTV/2.0' },
+    Math.max(4, Math.ceil(timeoutMs / 1000)),
+    true,
+    true
+  ).catch(() => ({ text: '' }));
+  return fb.text || '';
+}
 
 export interface LiveIptvChannelEntry {
   id: string;
@@ -68,7 +91,7 @@ const KNOWN_TDT_ALIASES: Record<string, string[]> = {
   'tdt-la1': ['la 1', 'tve la 1', 'la 1 uhd'],
   'tdt-la2': ['la 2', 'tve la 2'],
   'tdt-24h': ['24h', 'canal 24 horas', '24 horas'],
-  'tdt-tdp': ['teledeporte', 'tdp'],
+  'tdt-teledeporte': ['teledeporte', 'tdp'],
   'tdt-clan': ['clan', 'clan tv'],
   'tdt-antena3': ['antena 3', 'antena 3 internacional'],
   'tdt-cuatro': ['cuatro'],
@@ -84,6 +107,7 @@ const KNOWN_TDT_ALIASES: Record<string, string[]> = {
   'tdt-bemad': ['be mad', 'bemad'],
   'tdt-boing': ['boing'],
   'tdt-paramount': ['paramount network', 'paramount'],
+  'tdt-bomcine': ['bom cine', 'bom'],
   'tdt-dmax': ['dmax'],
   'tdt-dkiss': ['dkiss'],
   'tdt-ten': ['ten'],
@@ -91,6 +115,10 @@ const KNOWN_TDT_ALIASES: Record<string, string[]> = {
   'tdt-gol': ['gol play', 'gol'],
   'tdt-rmtv': ['real madrid tv', 'rmtv'],
   'tdt-3cat': ['tv3', '3cat', 'tv3cat'],
+  'cat-tv3-live': ['tv3', '3cat', 'tv3cat'],
+  'cat-324-live': ['324', '3 24', '324cat'],
+  'cat-esport3-live': ['esport3', 'esport 3'],
+  'cat-sx3-live': ['sx3', 'super3'],
   'tdt-324': ['324', '3 24'],
   'tdt-esport3': ['esport3', 'esport 3'],
   'tdt-sx3': ['sx3', 'super3'],
@@ -197,12 +225,9 @@ export async function refreshLiveIptvRegistry(force = false): Promise<{
     };
 
     try {
-      const tdtResp = await fetch('https://www.tdtchannels.com/lists/tv.json', {
-        headers: { 'User-Agent': 'RiffanTV-IPTV/2.0' },
-        signal: AbortSignal.timeout(7000),
-      });
-      if (tdtResp.ok) {
-        const json = (await tdtResp.json()) as TdtChannelsJsonRoot;
+      const tdtText = await fetchSyncTextSafe('https://www.tdtchannels.com/lists/tv.json', 8000);
+      if (tdtText) {
+        const json = JSON.parse(tdtText) as TdtChannelsJsonRoot;
         const spain = (json.countries || []).find((c) => /spain|espa/i.test(c.name || '')) || json.countries?.[0];
         let extraDial = 90;
         for (const ambit of spain?.ambits || []) {
@@ -267,12 +292,8 @@ export async function refreshLiveIptvRegistry(force = false): Promise<{
     }
 
     try {
-      const m3uResp = await fetch('https://iptv-org.github.io/iptv/countries/es.m3u', {
-        headers: { 'User-Agent': 'RiffanTV-IPTV/2.0' },
-        signal: AbortSignal.timeout(7000),
-      });
-      if (m3uResp.ok) {
-        const text = await m3uResp.text();
+      const text = await fetchSyncTextSafe('https://iptv-org.github.io/iptv/countries/es.m3u', 8000);
+      if (text) {
         for (const item of parseM3uText(text)) {
           registerUrl(item.name, item.url, item.logo);
         }

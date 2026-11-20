@@ -1,11 +1,13 @@
 import { LruTtlCache } from '../../utils/lruCache.ts';
 export { renderIptvChannelPng } from './iptvPngBadge.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
+import { curlPlainGetText } from '../../services/vestMirrorService.ts';
 import {
   CHROME_UA,
   TDT_DVB_UA,
   buildHlsProxyUrl,
   buildTsProxyUrl,
+  curlGetBufferWithStatus,
   curlGetText,
   getPreferredUpstreamUa,
   isDvbHeadendStream,
@@ -173,12 +175,18 @@ export async function fetchUpstreamManifestText(
     }
   }
 
-  const fb = await curlGetText(targetUrl, headers, 6).catch(() => ({
+  const fb = await curlGetText(targetUrl, headers, 5, true, true).catch(() => ({
     text: '',
     effectiveUrl: targetUrl,
   }));
   if (fb.text && fb.text.includes('#EXTM3U') && !/nosignal/i.test(fb.text)) {
     return { text: fb.text, finalUrl: fb.effectiveUrl || targetUrl };
+  }
+  if (referer || Object.keys(headers).length > 0) {
+    const plainText = await curlPlainGetText(targetUrl, 5).catch(() => '');
+    if (plainText && plainText.includes('#EXTM3U') && !/nosignal/i.test(plainText)) {
+      return { text: plainText, finalUrl: targetUrl };
+    }
   }
   return null;
 }
@@ -387,6 +395,22 @@ async function probeLiveEdgeSegmentOk(segUrl: string, referer: string): Promise<
     headers['Referer'] = referer;
   }
 
+  const tryCurlSegmentFallback = async (): Promise<boolean> => {
+    const res = await curlGetBufferWithStatus(segUrl, headers, 4).catch(() => ({
+      buf: Buffer.alloc(0),
+      status: 0,
+    }));
+    if (res.status < 200 || res.status >= 400 || res.buf.length < 64) {
+      return false;
+    }
+    const headText = res.buf.subarray(0, 64).toString('utf8').trimStart();
+    return !/^(<!doctype|<html\b|<head\b|<body\b|<error\b)/i.test(headText);
+  };
+
+  if (shouldBypassNodeFetch(segUrl)) {
+    return tryCurlSegmentFallback();
+  }
+
   try {
     const resp = await streamingFetch(segUrl, {
       method: 'GET',
@@ -402,7 +426,7 @@ async function probeLiveEdgeSegmentOk(segUrl: string, referer: string): Promise<
         headers: plainHeaders,
         timeoutMs: 4000,
       });
-      if (!fullResp.ok) return false;
+      if (!fullResp.ok) return tryCurlSegmentFallback();
       try {
         await fullResp.body?.cancel?.();
       } catch {
@@ -416,7 +440,7 @@ async function probeLiveEdgeSegmentOk(segUrl: string, referer: string): Promise<
       } catch {
         // ignore
       }
-      return false;
+      return tryCurlSegmentFallback();
     }
     const ct = (resp.headers.get('content-type') || '').toLowerCase();
     if (ct.includes('text/html')) {
@@ -444,7 +468,8 @@ async function probeLiveEdgeSegmentOk(segUrl: string, referer: string): Promise<
     }
     return true;
   } catch {
-    return false;
+    markHostNeedsCurlFallback(segUrl);
+    return tryCurlSegmentFallback();
   }
 }
 

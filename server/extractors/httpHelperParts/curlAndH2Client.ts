@@ -256,16 +256,29 @@ export function h2GetRaw(
 
     const client = http2.connect(u.origin, { rejectUnauthorized: false });
     let settled = false;
+    let overallTimer: ReturnType<typeof setTimeout> | null = null;
+    const clearOverallTimer = () => {
+      if (overallTimer) {
+        clearTimeout(overallTimer);
+        overallTimer = null;
+      }
+    };
     const finishErr = (err: Error) => {
       if (settled) return;
       settled = true;
+      clearOverallTimer();
       try {
-        client.close();
+        client.destroy();
       } catch {
         // ignore
       }
       reject(err);
     };
+
+    overallTimer = setTimeout(() => {
+      finishErr(new Error(`HTTP/2 connect/request timeout after ${maxTimeSec}s`));
+    }, maxTimeSec * 1000);
+    overallTimer.unref?.();
 
     client.on('error', finishErr);
 
@@ -300,6 +313,7 @@ export function h2GetRaw(
     const finalize = () => {
       if (settled) return;
       settled = true;
+      clearOverallTimer();
       try {
         client.close();
       } catch {
