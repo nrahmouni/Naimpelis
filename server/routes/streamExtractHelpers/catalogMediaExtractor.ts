@@ -21,6 +21,10 @@ import { extractDailymotionSeriesTracks } from '../../extractors/dailymotionExtr
 import { extractArchiveOrgTracks } from '../../extractors/archiveOrgExtractor.ts';
 import { extractSpanishSeriesTracks } from '../../extractors/spanishSeriesExtractor.ts';
 import {
+  extractComunidadMontepinarLqsaTracks,
+  type MontepinarSubtitleItem,
+} from '../../extractors/comunidadMontepinarExtractor.ts';
+import {
   extractVestStreamsAndSubtitles,
   isVestMirrorUrl,
 } from '../../services/vestMirrorService.ts';
@@ -215,6 +219,10 @@ export async function handleCatalogMediaExtract(
   let dailymotionTracks: TrackRecord[] = [];
   let archiveOrgTracks: TrackRecord[] = [];
   let spanishSeriesTracks: TrackRecord[] = [];
+  let montepinarExtracted: { tracks: TrackRecord[]; subtitles: MontepinarSubtitleItem[] } = {
+    tracks: [],
+    subtitles: [],
+  };
   let esTracks: TrackRecord[] = [];
   let vidRockTracks: TrackRecord[] = [];
   let bingetrixEnTracks: TrackRecord[] = [];
@@ -342,6 +350,26 @@ export async function handleCatalogMediaExtract(
         ).then((res) => {
           spanishSeriesTracks = res;
           signalFastDirectEsIfReady(res);
+        })
+      : Promise.resolve();
+  const montepinarP =
+    effectiveMediaType === 'tv' &&
+    combinedTitleHints.length > 0 &&
+    (String(resolvedTmdbId || '') === '35338' ||
+      combinedTitleHints.some((h) => h.toLowerCase().includes('la que se avecina')))
+      ? withExtractTimeout(
+          extractComunidadMontepinarLqsaTracks({
+            tmdbId: resolvedTmdbId,
+            mediaType: effectiveMediaType,
+            season: effectiveSeason,
+            episode: effectiveEpisode,
+            titleHints: combinedTitleHints,
+          }),
+          5200,
+          { tracks: [] as TrackRecord[], subtitles: [] as MontepinarSubtitleItem[] }
+        ).then((res) => {
+          montepinarExtracted = res;
+          signalFastDirectEsIfReady(res.tracks);
         })
       : Promise.resolve();
   const embed69P =
@@ -490,6 +518,7 @@ export async function handleCatalogMediaExtract(
     dmP,
     archiveP,
     spanishSeriesP,
+    montepinarP,
     embed69P,
     vestP,
   ]);
@@ -551,15 +580,18 @@ export async function handleCatalogMediaExtract(
     ...twoEmbedEnTracks,
     ...vidBuzzHlsTracks,
   ];
+  const montepinarTracks: TrackRecord[] = montepinarExtracted?.tracks || [];
+  const montepinarSubtitles = montepinarExtracted?.subtitles || [];
   const vestTracks: TrackRecord[] = vestExtractedHolder.value?.tracks || [];
   const vestSubtitles = vestExtractedHolder.value?.subtitles || [];
   const vestDetailMeta = vestExtractedHolder.value?.detail || extractedVestDetail;
 
-  const allDiscovered: TrackRecord[] = isVestLink
+  const rawDiscovered: TrackRecord[] = isVestLink
     ? [
         ...vestTracks,
         ...movidyTracks,
         ...gnulaTracks,
+        ...montepinarTracks,
         ...dailymotionTracks,
         ...archiveOrgTracks,
         ...spanishSeriesTracks,
@@ -569,6 +601,7 @@ export async function handleCatalogMediaExtract(
     : !hasExplicitMovidyUrl && hasExplicitGnulaUrl
     ? [
         ...gnulaTracks,
+        ...montepinarTracks,
         ...dailymotionTracks,
         ...archiveOrgTracks,
         ...spanishSeriesTracks,
@@ -580,6 +613,7 @@ export async function handleCatalogMediaExtract(
     : [
         ...movidyTracks,
         ...gnulaTracks,
+        ...montepinarTracks,
         ...dailymotionTracks,
         ...archiveOrgTracks,
         ...spanishSeriesTracks,
@@ -587,6 +621,17 @@ export async function handleCatalogMediaExtract(
         ...esTracks,
         ...vestTracks,
       ];
+
+  const seenTrackKeys = new Set<string>();
+  const allDiscovered: TrackRecord[] = rawDiscovered.filter((tr) => {
+    const rawU = String(tr.resolvedStreamUrl || tr.sourceUrl || '').trim();
+    const archiveNorm = rawU.match(/archive\.org\/(?:\d+\/items|download)\/([^?#]+)/i)?.[1];
+    const dedupeKey = archiveNorm ? `ia:${decodeURIComponent(archiveNorm).toLowerCase()}` : rawU;
+    if (!dedupeKey) return true;
+    if (seenTrackKeys.has(dedupeKey)) return false;
+    seenTrackKeys.add(dedupeKey);
+    return true;
+  });
 
   const { orderedTracks, getLangScore, sourcePriority, getTrackHealthScore } = rankCandidateTracks({
     allDiscovered,
@@ -621,6 +666,7 @@ export async function handleCatalogMediaExtract(
       vestSubtitles,
       clipboxSubtitles,
       ghostflixSubtitles,
+      extraSubtitles: montepinarSubtitles,
       resolvedTmdbId,
       subtitlesPromise,
     });

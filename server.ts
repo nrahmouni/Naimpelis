@@ -57,6 +57,7 @@ import { registerRbtvRoutes } from './server/routes/rbtvRoutes.ts';
 import { registerBelixRoutes } from './server/routes/belixRoutes.ts';
 import { registerAtresplayerRoutes } from './server/routes/atresplayerRoutes.ts';
 import { registerMovistarDaznRoutes } from './server/routes/movistarDaznRoutes.ts';
+import { getMovistarDaznHome } from './server/services/movistarDaznCatalogService.ts';
 import { initBelixFromEnv } from './server/services/belix/belixXtreamClient.ts';
 import { SPANISH_TDT_CHANNELS } from './server/data/tdtChannels.ts';
 import { CATALA_LIVE_CHANNELS } from './server/data/catalaRegistry.ts';
@@ -363,8 +364,28 @@ function rankCandidateTracks({
     return 5;
   };
 
-  const resolverPriority = (rt: string): number => {
+  const qualityRank = (q?: string): number => {
+    const s = String(q || '').toLowerCase();
+    if (s.includes('4k') || s.includes('2160')) return 0;
+    if (s.includes('1080')) return 1;
+    if (s.includes('720') || s === 'hd') return 2;
+    if (s.includes('480')) return 3;
+    if (s.includes('380') || s.includes('360') || s.includes('288')) return 4;
+    return 2;
+  };
+
+  const resolverPriority = (tr: TrackRecord): number => {
+    const rt = tr.resolverType;
     if (isVestLink && rt === 'vest_hls') return 0;
+    if (
+      rt === 'direct_mp4' &&
+      (tr.id.startsWith('cm-lqsa-') || tr.id.startsWith('ia-') || tr.id.startsWith('archive-'))
+    ) {
+      return 1;
+    }
+    if (rt === 'direct_hls' && qualityRank(tr.quality) >= 3) {
+      return 2;
+    }
     if (
       rt === 'vest_hls' ||
       rt === 'direct_hls' ||
@@ -383,11 +404,13 @@ function rankCandidateTracks({
   const sourcePriority = (tr: TrackRecord): number => {
     if (isVestLink && tr.resolverType === 'vest_hls') return 0;
     if (!hasExplicitMovidyUrl && hasExplicitGnulaUrl && tr.id.startsWith('gnula-')) return 0;
+    if (tr.id.startsWith('cm-lqsa-') && tr.resolverType === 'direct_mp4') return 0;
     if (tr.id.startsWith('movidy-') || tr.resolverType === 'movidy_embed') return 1;
     if (tr.id.startsWith('gnula-')) return 2;
     if (tr.id.startsWith('ia-')) return 2;
     if (tr.id.startsWith('dm-') || tr.id.startsWith('seriesmetro-')) return 2;
     if (tr.id.startsWith('archive-')) return 3;
+    if (tr.id.startsWith('cm-lqsa-')) return 3;
     if (
       tr.id.startsWith('clipbox-') ||
       tr.id.startsWith('vidbolt-') ||
@@ -436,10 +459,12 @@ function rankCandidateTracks({
     }
     const dDiff = getEffectiveDownPenalty(a) - getEffectiveDownPenalty(b);
     if (dDiff !== 0) return dDiff;
-    const rDiff = resolverPriority(a.resolverType) - resolverPriority(b.resolverType);
+    const rDiff = resolverPriority(a) - resolverPriority(b);
     if (rDiff !== 0) return rDiff;
     const sDiff = sourcePriority(a) - sourcePriority(b);
     if (sDiff !== 0) return sDiff;
+    const qDiff = qualityRank(a.quality) - qualityRank(b.quality);
+    if (qDiff !== 0) return qDiff;
     return getTrackHealthScore(a) - getTrackHealthScore(b);
   });
 
@@ -594,6 +619,7 @@ async function startServer() {
           void refreshLiveIptvRegistry(false).catch(() => undefined);
           void refreshFamelackAndWorldCatalog(false).catch(() => undefined);
           void prewarmTodayFootballBoard().catch(() => undefined);
+          void getMovistarDaznHome().catch(() => undefined);
           void initBelixFromEnv().catch(() => undefined);
           channelHealthMonitor.startScheduler(
             () => [

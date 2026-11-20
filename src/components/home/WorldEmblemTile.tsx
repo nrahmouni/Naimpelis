@@ -1,7 +1,7 @@
 import React, { useId } from 'react';
 import type { AppLanguage } from '../../types';
 
-export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer';
+export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn';
 
 export interface WorldSpec {
   accent: string;
@@ -200,6 +200,27 @@ export const WORLD_SPECS: Record<WorldPortalKind, WorldSpec> = {
       en: '1080p Live · Pasapalabra & HD Shows',
       rif: 'Directos 1080p · Pasapalabra d programas HD',
       zh: '1080p 直播 · Pasapalabra 与高清节目',
+    },
+  },
+  movistardazn: {
+    accent: '#D4FF00',
+    secondary: '#00A9E0',
+    glowRgb: '0,169,224',
+    ambient:
+      'radial-gradient(ellipse 68% 54% at 50% 47%, rgba(212,255,0,0.20) 0%, rgba(0,169,224,0.16) 44%, rgba(6,7,12,0) 76%)',
+    title: {
+      es: 'DAZN & Movistar+',
+      ca: 'DAZN & Movistar+',
+      en: 'DAZN & Movistar+',
+      rif: 'DAZN & Movistar+',
+      zh: 'DAZN & Movistar+',
+    },
+    subtitle: {
+      es: '17 directos HD · LaLiga, F1, MotoGP y Series M+',
+      ca: '17 directes HD · LaLiga, F1, MotoGP i Sèries M+',
+      en: '17 HD live feeds · LaLiga, F1, MotoGP & M+ Series',
+      rif: '17 directos HD · LaLiga, F1, MotoGP d Series M+',
+      zh: '17 路高清直播 · 西甲 F1 与 Movistar 原创剧集',
     },
   },
 };
@@ -739,6 +760,51 @@ export const WorldEmblemTile: React.FC<{
             strokeWidth="2.8"
             strokeLinecap="round"
             strokeLinejoin="round"
+          />
+        </g>
+      )}
+
+      {kind === 'movistardazn' && (
+        <g filter={`url(#${ids.drop})`}>
+          {/* Outer dual volt-azure stadium orbit */}
+          <circle
+            cx="60"
+            cy="60"
+            r="28.5"
+            stroke={`url(#${ids.accent})`}
+            strokeOpacity="0.55"
+            strokeWidth="1.6"
+            strokeDasharray="16 7 6 7"
+            className="rtv-we-center rtv-we-orbit"
+          />
+          {/* Left faceted DAZN prism */}
+          <path
+            d="M 28 38 H 48 L 57 60 L 48 82 H 28 Z"
+            fill={`url(#${ids.accentSoft})`}
+            stroke={spec.accent}
+            strokeWidth="2.1"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M 35 47 H 44.5 L 50 60 L 44.5 73 H 35 Z"
+            fill={spec.accent}
+          />
+          {/* Right Movistar+ azure '+' prism */}
+          <rect
+            x="61"
+            y="38"
+            width="31"
+            height="44"
+            rx="11"
+            fill="#07101C"
+            stroke={spec.secondary}
+            strokeWidth="2.1"
+          />
+          <path
+            d="M 76.5 49 V 71 M 65.5 60 H 87.5"
+            stroke={`url(#${ids.platinum})`}
+            strokeWidth="4.2"
+            strokeLinecap="round"
           />
         </g>
       )}

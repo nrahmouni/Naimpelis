@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Database, Radio, Server, Tv } from 'lucide-react';
+import { Database, Radio, Server, Trophy, Tv } from 'lucide-react';
 import type { AppLanguage, CatalogMovie } from '../../types';
 import type { PrimaryWorldId } from '../../store/useAppStore';
 import { pickLang } from '../../utils/i18n';
@@ -12,6 +12,9 @@ import {
   RiffanMoviesIcon,
   RiffanUsersIcon,
 } from '../ui/RiffanIcons';
+import heroStadiumImg from '../../assets/images/movistar_dazn_hero_stadium.webp';
+import f1NightImg from '../../assets/images/dazn_motor_f1_night.webp';
+import basketballArenaImg from '../../assets/images/movistar_arena_basketball.webp';
 
 interface EntryHomeBentoGridProps {
   lang: AppLanguage;
@@ -80,6 +83,9 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
                     src={m.poster}
                     alt=""
                     referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
                     className="w-full h-full object-cover"
                     loading="lazy"
                   />
@@ -122,12 +128,104 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       </div>
     </motion.button>
 
+    {/* HERO CARD 2 (JUST BELOW CINE Y SERIES, SAME SIZE): DAZN & MOVISTAR PLUS+ */}
+    <motion.button
+      type="button"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.16, delay: 0.03 }}
+      whileTap={{ scale: 0.96 }}
+      onPointerEnter={() => onPreloadWorld?.('movistardazn')}
+      onTouchStart={() => onPreloadWorld?.('movistardazn')}
+      onPointerMove={(e) => onCardPointerMove('movistardazn', e)}
+      onClick={(e) => onCardClick('movistardazn', e)}
+      className="group relative col-span-2 md:col-span-4 md:order-3 rounded-[24px] p-5 sm:p-6 min-h-[164px] sm:min-h-[188px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#00A9E0]/65 shadow-[0_18px_50px_rgba(0,0,0,0.65)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4FF00]"
+    >
+      {renderSpotlightOverlay('movistardazn')}
+
+      <div
+        aria-hidden="true"
+        className="absolute right-0 top-0 bottom-0 w-[44%] sm:w-[46%] pointer-events-none overflow-hidden select-none"
+      >
+        <div className="relative w-full h-full flex items-center justify-end pr-2 sm:pr-4 pt-1 opacity-90">
+          {[
+            {
+              src: f1NightImg,
+              cls: 'right-16 sm:right-24 bottom-3 sm:bottom-4 -rotate-6 opacity-75 scale-90 group-hover:-translate-x-2.5 group-hover:-rotate-12 group-hover:scale-95',
+            },
+            {
+              src: basketballArenaImg,
+              cls: 'right-8 sm:right-12 bottom-4 sm:bottom-5 rotate-2 opacity-90 scale-95 z-[1] group-hover:-translate-y-2 group-hover:scale-100',
+            },
+            {
+              src: heroStadiumImg,
+              cls: 'right-1 sm:right-2 bottom-3 sm:bottom-4 rotate-6 opacity-100 z-[2] group-hover:translate-x-2 group-hover:rotate-12 group-hover:scale-105',
+            },
+          ].map((art, idx) => (
+            <div
+              key={idx}
+              className={`absolute w-[68px] h-[98px] sm:w-[88px] sm:h-[126px] rounded-xl overflow-hidden border border-white/15 bg-[#0D0D12] shadow-[0_14px_30px_rgba(0,0,0,0.75)] transition-transform duration-300 ${art.cls}`}
+            >
+              <img
+                src={art.src}
+                alt=""
+                loading="lazy"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+                className="w-full h-full object-cover"
+              />
+            </div>
+          ))}
+        </div>
+        <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-[#0D0D12] via-[#0D0D12]/65 to-transparent" />
+      </div>
+
+      <div className="relative z-10 flex items-center gap-2 text-xs font-medium text-zinc-400">
+        <span className="w-8 h-8 rounded-xl bg-[#D4FF00]/12 border border-[#D4FF00]/25 flex items-center justify-center text-[#D4FF00] shrink-0">
+          <Trophy className="w-4 h-4" />
+        </span>
+        <span className="font-display font-black text-[11px] px-1.5 py-0.5 rounded bg-[#D4FF00] text-[#05060A]">
+          DAZN
+        </span>
+        <span className="font-display font-extrabold text-[11px] px-1.5 py-0.5 rounded bg-[#00A9E0] text-white">
+          M+
+        </span>
+        {lastUsedWorld === 'movistardazn' ? (
+          <span className="text-[#D4FF00] font-semibold">
+            {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
+          </span>
+        ) : (
+          <span className="tabular-nums hidden sm:inline">
+            {pickLang(lang, { es: '17 directos HD', ca: '17 directes HD', en: '17 HD feeds' })}
+          </span>
+        )}
+      </div>
+
+      <div className="relative z-10 max-w-[62%] sm:max-w-[56%] space-y-1 mt-4">
+        <h2 className="font-display font-bold text-lg sm:text-2xl text-white tracking-tight leading-tight">
+          DAZN &amp; Movistar+
+        </h2>
+        <p className="text-xs sm:text-[13px] text-zinc-400 leading-snug">
+          {pickLang(lang, {
+            es: 'LaLiga, Champions, F1, MotoGP y Series M+',
+            ca: 'LaLiga, Champions, F1, MotoGP i Sèries M+',
+            en: 'LaLiga, Champions, F1, MotoGP & M+ Series',
+          })}
+        </p>
+        <div className="pt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-[#38BDF8] group-hover:text-[#D4FF00] transition-colors">
+          <span>{pickLang(lang, { es: 'Explorar', ca: 'Explorar', en: 'Browse' })}</span>
+          <RiffanArrowRightIcon size={14} animate="hover" />
+        </div>
+      </div>
+    </motion.button>
+
     {/* CARD 2: SALA CON AMIGOS */}
     <motion.button
       type="button"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16, delay: 0.04 }}
+      transition={{ duration: 0.16, delay: 0.06 }}
       whileTap={{ scale: 0.95 }}
       onPointerEnter={() => onPreloadWorld?.('sala')}
       onTouchStart={() => onPreloadWorld?.('sala')}
@@ -182,13 +280,13 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       type="button"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16, delay: 0.08 }}
+      transition={{ duration: 0.16, delay: 0.09 }}
       whileTap={{ scale: 0.95 }}
       onPointerEnter={() => onPreloadWorld?.('futbol')}
       onTouchStart={() => onPreloadWorld?.('futbol')}
       onPointerMove={(e) => onCardPointerMove('futbol', e)}
       onClick={(e) => onCardClick('futbol', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-3 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[168px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-1 md:col-span-2 md:order-4 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[188px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('futbol')}
 
@@ -245,7 +343,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       onTouchStart={() => onPreloadWorld?.('tv')}
       onPointerMove={(e) => onCardPointerMove('tv', e)}
       onClick={(e) => onCardClick('tv', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-4 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[168px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-1 md:col-span-2 md:order-5 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[168px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('tv')}
 
@@ -294,7 +392,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       onTouchStart={() => onPreloadWorld?.('juegos')}
       onPointerMove={(e) => onCardPointerMove('juegos', e)}
       onClick={(e) => onCardClick('juegos', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-5 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[168px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-1 md:col-span-2 md:order-6 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[168px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('juegos')}
 
@@ -335,7 +433,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       onTouchStart={() => onPreloadWorld?.('clipbox')}
       onPointerMove={(e) => onCardPointerMove('clipbox', e)}
       onClick={(e) => onCardClick('clipbox', e)}
-      className="group relative col-span-1 md:col-span-3 md:order-6 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#06B6D4]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-1 md:col-span-2 md:order-7 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[168px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#06B6D4]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('clipbox')}
 
@@ -380,7 +478,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       onTouchStart={() => onPreloadWorld?.('rbtv')}
       onPointerMove={(e) => onCardPointerMove('rbtv', e)}
       onClick={(e) => onCardClick('rbtv', e)}
-      className="group relative col-span-1 md:col-span-3 md:order-7 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#F59E0B]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-1 md:col-span-2 md:order-8 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#F59E0B]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('rbtv')}
 
@@ -425,7 +523,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       onTouchStart={() => onPreloadWorld?.('belix')}
       onPointerMove={(e) => onCardPointerMove('belix', e)}
       onClick={(e) => onCardClick('belix', e)}
-      className="group relative col-span-1 md:col-span-3 md:order-8 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#F43F5E]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-1 md:col-span-2 md:order-9 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#F43F5E]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('belix')}
 
@@ -470,7 +568,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       onTouchStart={() => onPreloadWorld?.('atresplayer')}
       onPointerMove={(e) => onCardPointerMove('atresplayer', e)}
       onClick={(e) => onCardClick('atresplayer', e)}
-      className="group relative col-span-1 md:col-span-3 md:order-9 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#FF5E1A]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-1 md:col-span-2 md:order-10 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#FF5E1A]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('atresplayer')}
 

@@ -4,10 +4,10 @@ import type { AppLanguage, SpanishTdtChannel, YouTubeSearchItem } from '../../ty
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { useBackInterceptor } from '../../lib/backInterceptor';
-import heroStadiumImg from '../../assets/images/movistar_dazn_hero_stadium_1795215099890.jpg';
-import f1NightImg from '../../assets/images/dazn_motor_f1_night_1795215098633.jpg';
-import basketballArenaImg from '../../assets/images/movistar_arena_basketball_1795215098968.jpg';
-import originalsCinemaImg from '../../assets/images/movistar_originals_cinema_1795215099033.jpg';
+import heroStadiumImg from '../../assets/images/movistar_dazn_hero_stadium.webp';
+import f1NightImg from '../../assets/images/dazn_motor_f1_night.webp';
+import basketballArenaImg from '../../assets/images/movistar_arena_basketball.webp';
+import originalsCinemaImg from '../../assets/images/movistar_originals_cinema.webp';
 
 export interface MovistarDaznCatalogItemUi {
   id: string;
@@ -203,14 +203,23 @@ export const MovistarDaznProgramPanel: React.FC<MovistarDaznProgramPanelProps> =
   return (
     <div className="w-full space-y-6">
       {/* HERO HEADER */}
-      <div className="relative rounded-[24px] overflow-hidden bg-[#0D0D12] border border-white/[0.08]">
-        <img
-          src={failedImgs[program.id] ? fallbackArt : heroArt}
-          alt={program.title}
-          referrerPolicy="no-referrer"
-          onError={() => setFailedImgs((prev) => ({ ...prev, [program.id]: true }))}
-          className="absolute inset-0 w-full h-full object-cover opacity-40"
-        />
+      <div className="relative rounded-[24px] overflow-hidden bg-gradient-to-br from-[#0A1320] via-[#0D0D12] to-[#05060A] border border-white/[0.08]">
+        {!(failedImgs[program.id] && failedImgs[`fb-${program.id}`]) && (
+          <img
+            src={failedImgs[program.id] ? fallbackArt : heroArt}
+            alt=""
+            aria-hidden="true"
+            referrerPolicy="no-referrer"
+            onError={() =>
+              setFailedImgs((prev) =>
+                prev[program.id] || heroArt === fallbackArt
+                  ? { ...prev, [program.id]: true, [`fb-${program.id}`]: true }
+                  : { ...prev, [program.id]: true }
+              )
+            }
+            className="absolute inset-0 w-full h-full object-cover opacity-40"
+          />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#000000] via-[#000000]/80 to-black/30" />
 
         <div className="relative z-10 p-5 sm:p-7 flex flex-col gap-5">
@@ -319,7 +328,7 @@ export const MovistarDaznProgramPanel: React.FC<MovistarDaznProgramPanelProps> =
                 key={tab.id}
                 type="button"
                 onClick={() => setSourceFilter(tab.id)}
-                className={`min-h-9 px-3 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
+                className={`min-h-11 px-3.5 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#00A9E0] ${
                   sourceFilter === tab.id
                     ? 'bg-[#00A9E0] text-white'
                     : 'text-zinc-400 hover:text-white'
@@ -366,15 +375,24 @@ export const MovistarDaznProgramPanel: React.FC<MovistarDaznProgramPanelProps> =
                   onClick={() => void handlePlayPlayable(ep)}
                   className="group text-left rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#00A9E0]/60 overflow-hidden cursor-pointer transition-all flex flex-col disabled:opacity-60"
                 >
-                  <div className="relative aspect-video w-full bg-[#14141C] overflow-hidden">
-                    <img
-                      src={ep.thumbnail && !failedImgs[ep.id] ? ep.thumbnail : fallbackArt}
-                      alt={ep.title}
-                      loading="lazy"
-                      referrerPolicy="no-referrer"
-                      onError={() => setFailedImgs((p) => ({ ...p, [ep.id]: true }))}
-                      className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
-                    />
+                  <div className="relative aspect-video w-full bg-gradient-to-br from-[#141926] to-[#0D0D12] overflow-hidden">
+                    {!(failedImgs[ep.id] && failedImgs[`fb-${ep.id}`]) && (
+                      <img
+                        src={ep.thumbnail && !failedImgs[ep.id] ? ep.thumbnail : fallbackArt}
+                        alt=""
+                        aria-hidden="true"
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                        onError={() =>
+                          setFailedImgs((p) =>
+                            !ep.thumbnail || p[ep.id]
+                              ? { ...p, [ep.id]: true, [`fb-${ep.id}`]: true }
+                              : { ...p, [ep.id]: true }
+                          )
+                        }
+                        className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
+                      />
+                    )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/15 to-transparent" />
                     <div className="absolute bottom-2.5 left-3 right-3 flex items-center justify-between text-[11px] font-semibold text-white tabular-nums">
                       <span>{ep.quality}</span>
@@ -404,8 +422,55 @@ export const MovistarDaznProgramPanel: React.FC<MovistarDaznProgramPanelProps> =
             })}
           </div>
         ) : (
-          <div className="rounded-2xl bg-[#0D0D12] border border-white/[0.08] p-6 text-xs sm:text-sm text-zinc-400">
-            No hay emisiones coincidentes con tu filtro. Prueba otra búsqueda o abre el canal en directo arriba.
+          <div className="rounded-2xl bg-[#0D0D12] border border-white/[0.08] p-7 text-center space-y-3">
+            <p className="text-sm font-semibold text-white">
+              {playable.length > 0
+                ? 'No hay emisiones coincidentes con tu filtro.'
+                : 'No encontramos episodios bajo demanda ahora mismo para este formato.'}
+            </p>
+            <p className="text-xs text-zinc-400">
+              {playable.length > 0
+                ? 'Restablece los filtros para ver todas las emisiones disponibles.'
+                : 'Puedes abrir el canal en directo o volver al catálogo completo.'}
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3 pt-1">
+              {(chapterQuery || sourceFilter !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setChapterQuery('');
+                    setSourceFilter('all');
+                  }}
+                  className="min-h-11 px-4 rounded-xl bg-[#00A9E0] hover:bg-[#22B8EB] text-white text-xs font-bold cursor-pointer transition-colors"
+                >
+                  Restablecer filtros
+                </button>
+              )}
+              {relatedChannel && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onPlayTdtChannel(relatedChannel.tdtChannel, 0, relatedChannel.nowTitle);
+                  }}
+                  className="min-h-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/[0.12] text-white text-xs font-semibold inline-flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Radio className="w-4 h-4 text-[#00A9E0]" />
+                  <span>Directo {relatedChannel.name}</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onBack();
+                }}
+                className="min-h-11 px-4 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 text-xs font-semibold cursor-pointer transition-colors"
+              >
+                Volver al catálogo
+              </button>
+            </div>
           </div>
         )}
       </section>

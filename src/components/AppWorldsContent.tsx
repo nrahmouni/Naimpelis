@@ -33,6 +33,11 @@ const BelixWorldView = lazyWithRetry(() =>
 const AtresplayerWorldView = lazyWithRetry(() =>
   import('./atresplayer/AtresplayerWorldView').then((m) => ({ default: m.AtresplayerWorldView }))
 );
+const DaznMovistarWorldView = lazyWithRetry(() =>
+  import('./movistardazn/DaznMovistarWorldView').then((m) => ({
+    default: m.DaznMovistarWorldView,
+  }))
+);
 
 interface AppWorldsContentProps {
   controller: ReturnType<typeof useAppController>;
@@ -182,6 +187,9 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     } else if (activeWorld === 'atresplayer') {
       target = { kind: 'world', world: 'atresplayer' };
       title = 'RiffanTV · Atresmedia en Directo y Programas';
+    } else if (activeWorld === 'movistardazn') {
+      target = { kind: 'world', world: 'movistardazn' };
+      title = 'RiffanTV · DAZN & Movistar Plus+';
     }
 
     void shareDedicatedLink({ target, roomId: shareRoomId, title });
@@ -226,7 +234,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
                 world === 'clipbox' ||
                 world === 'rbtv' ||
                 world === 'belix' ||
-                world === 'atresplayer',
+                world === 'atresplayer' ||
+                world === 'movistardazn',
               originRect,
             })
           }
@@ -496,6 +505,61 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           externalSearchQuery={worldSearchQuery}
           onPlayTdtChannel={(ch, idx, liveHint) => {
             void playback.handlePlayTdtChannel(ch, idx, liveHint);
+          }}
+          onPlayYouTubeVideo={playback.handlePlayYouTubeVideo}
+          onPlayCustomUrl={playback.handlePlayCustomUrl}
+          onOpenSeriesPage={(seriesItem) => {
+            const store = useAppStore.getState();
+            const resolvedTmdbId = Number(
+              seriesItem.tmdbId || String(seriesItem.id || '').replace(/[^\d]/g, '') || 0
+            );
+            if (resolvedTmdbId > 0) {
+              store.setRequestedMovieModal(null);
+              store.setRequestedSeriesModal({
+                series: { ...seriesItem, tmdbId: resolvedTmdbId, mediaType: 'tv' },
+                season: seriesItem.seasonNumber || 1,
+              });
+              return;
+            }
+            store.setRequestedSeriesModal(null);
+            store.setRequestedMovieModal(seriesItem);
+          }}
+        />
+      </WorldShell>
+    );
+  }
+
+  if (activeWorld === 'movistardazn') {
+    return (
+      <WorldShell
+        world="movistardazn"
+        title="DAZN & Movistar+"
+        lang={lang}
+        sessionMode={sessionMode}
+        onUpgradeSoloToParty={() =>
+          void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
+        }
+        onShareWorld={handleShareActiveWorld}
+        onBack={() => enterWorld('entry')}
+        onGoHome={() => enterWorld('entry')}
+        onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+        searchValue={worldSearchQuery}
+        onSearchChange={setWorldSearchQuery}
+        searchPlaceholder={pickLang(lang, {
+          es: 'Buscar DAZN F1, Champions, El Día Después, Antidisturbios o canal...',
+          ca: 'Cercar DAZN F1, Champions, El Día Después, Antidisturbios o canal...',
+          en: 'Search DAZN F1, Champions, MotoGP, M+ series or live channel...',
+        })}
+        className={portalLandingActive ? 'rtv-world-touchdown' : ''}
+      >
+        <DaznMovistarWorldView
+          lang={lang}
+          externalSearchQuery={worldSearchQuery}
+          onPlayTdtChannel={(ch, idx, liveHint) => {
+            void playback.handlePlayTdtChannel(ch, idx, liveHint);
+          }}
+          onPlaySportsMatch={(match, idx) => {
+            void playback.handlePlaySportsMatch(match, idx);
           }}
           onPlayYouTubeVideo={playback.handlePlayYouTubeVideo}
           onPlayCustomUrl={playback.handlePlayCustomUrl}

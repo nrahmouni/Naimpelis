@@ -17,12 +17,16 @@ const LQSA_ARCHIVE_SEASON_MAP: Record<number, string[]> = {
   4: ['spanish-neighborhood-sitcom-s04-remaster'],
   5: ['spanish-neighborhood-sitcom-s05-remaster_202611'],
   11: ['temporada-11-LQSA'],
+  15: ['14x-02_202610'],
+  16: ['16x-01_202610'],
+  17: ['1701_20261115'],
 };
 
 const LQSA_ARCHIVE_EPISODE_MAP: Record<string, string[]> = {
   '8x5': ['lqsa_hotmail_LQSA'],
   '11x8': ['lqsat11x08'],
   '11x12': ['lqsa11x12'],
+  '14x2': ['14x-02_202610'],
 };
 
 export function normalizeArchiveHomoglyphs(input: string): string {

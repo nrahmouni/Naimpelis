@@ -33,6 +33,7 @@ export const OFFICIAL_CHANNEL_LOGO_URLS: Record<string, string> = {
   'dazn-2': `${TV_LOGOS_BASE}countries/spain/dazn-2-es.png`,
   'dazn-3': `${TV_LOGOS_BASE}countries/spain/dazn-3-es.png`,
   'dazn-4': `${TV_LOGOS_BASE}countries/spain/dazn-4-es.png`,
+  'dazn-combat': `${TV_LOGOS_BASE}countries/international/dazn-int.png`,
 
   // TDT Temáticos, Noticias, Deportes, Infantil & Autonómicas
   'tdt-neox': `${TV_LOGOS_BASE}countries/spain/neox-es.png`,

@@ -19,7 +19,7 @@ function parseYtDurationSeconds(durText: string): number {
 }
 
 export function toProxiedEmbedUrl(url: string, isSandboxedFrame: boolean): string {
-  const isCloudflareDirectEmbed = /(?:^|\.)(voe\.sx|voe\.bar|hglink\.to|streamwish\.[a-z]+|ok\.ru|byse\.[a-z]+|filelions\.[a-z]+)/i.test(
+  const isCloudflareDirectEmbed = /(?:^|\.)(voe\.sx|voe\.bar|hglink\.to|streamwish\.[a-z]+|ok\.ru|vk\.com|vkvideo\.ru|byse\.[a-z]+|filelions\.[a-z]+)/i.test(
     url
   );
   const shouldProxyHtml =

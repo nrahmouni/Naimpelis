@@ -151,7 +151,9 @@ async function dmCurlJson<T>(url: string, headers: Record<string, string>, maxSe
   }
 }
 
-export async function resolveDailymotionVideoToM3u8(videoId: string): Promise<string | null> {
+export async function resolveDailymotionVideoMeta(
+  videoId: string
+): Promise<{ m3uUrl: string; quality: string } | null> {
   const url = `https://www.dailymotion.com/player/metadata/video/${encodeURIComponent(videoId)}`;
   const headers = {
     'User-Agent': CHROME_UA,
@@ -168,12 +170,32 @@ export async function resolveDailymotionVideoToM3u8(videoId: string): Promise<st
     }
   }
   if (!meta || meta?.error) return null;
+  const qualities = meta?.qualities || {};
   const m3uUrl =
-    meta?.qualities?.auto?.[0]?.url ||
-    meta?.qualities?.['1080']?.[0]?.url ||
-    meta?.qualities?.['720']?.[0]?.url ||
+    qualities?.auto?.[0]?.url ||
+    qualities?.['1080']?.[0]?.url ||
+    qualities?.['720']?.[0]?.url ||
     '';
-  return typeof m3uUrl === 'string' && m3uUrl.includes('.m3u8') ? m3uUrl : null;
+  if (typeof m3uUrl !== 'string' || !m3uUrl.includes('.m3u8')) return null;
+
+  const numericHeights = Object.keys(qualities)
+    .map((k) => parseInt(k, 10))
+    .filter((n) => Number.isFinite(n) && n >= 240 && n <= 2160);
+  const maxHeight = numericHeights.length > 0 ? Math.max(...numericHeights) : 720;
+  const quality =
+    maxHeight >= 1080
+      ? '1080p'
+      : maxHeight >= 720
+      ? '720p'
+      : maxHeight >= 480
+      ? '480p'
+      : '380p';
+  return { m3uUrl, quality };
+}
+
+export async function resolveDailymotionVideoToM3u8(videoId: string): Promise<string | null> {
+  const resolved = await resolveDailymotionVideoMeta(videoId);
+  return resolved?.m3uUrl || null;
 }
 
 export async function extractDailymotionSeriesTracks(opts: {
@@ -204,18 +226,18 @@ export async function extractDailymotionSeriesTracks(opts: {
 
   // Fast-path: resolve seeded ID immediately via IPv4 curl (~220ms) instead of blocking on 6+ API searches!
   if (seededId) {
-    const directM3u = await resolveDailymotionVideoToM3u8(seededId);
-    if (directM3u) {
+    const directMeta = await resolveDailymotionVideoMeta(seededId);
+    if (directMeta) {
       const fastTracks: TrackRecord[] = [
         {
           id: `dm-${seededId}`,
-          label: `Dailymotion HD · T${season}x${epPad} (Español)`,
+          label: `Dailymotion ${directMeta.quality} · T${season}x${epPad} (Español)`,
           lang: 'ES',
-          quality: '1080p',
+          quality: directMeta.quality,
           sourceUrl: `https://www.dailymotion.com/video/${seededId}`,
           referer: 'https://www.dailymotion.com/',
           resolverType: 'direct_hls',
-          resolvedStreamUrl: buildHlsProxyUrl(directM3u, 'https://www.dailymotion.com/'),
+          resolvedStreamUrl: buildHlsProxyUrl(directMeta.m3uUrl, 'https://www.dailymotion.com/'),
         },
       ];
       dailymotionTrackCache.set(cacheKey, fastTracks);
@@ -303,22 +325,22 @@ export async function extractDailymotionSeriesTracks(opts: {
   const resolvedPairs = await Promise.all(
     candidateIds.slice(0, 36).map(async (vid) => ({
       vid,
-      m3uUrl: await resolveDailymotionVideoToM3u8(vid),
+      meta: await resolveDailymotionVideoMeta(vid),
     }))
   );
 
   const tracks: TrackRecord[] = [];
-  for (const { vid, m3uUrl } of resolvedPairs) {
-    if (!m3uUrl) continue;
+  for (const { vid, meta } of resolvedPairs) {
+    if (!meta) continue;
     tracks.push({
       id: `dm-${vid}`,
-      label: `Dailymotion HD · T${season}x${epPad} (Español)`,
+      label: `Dailymotion ${meta.quality} · T${season}x${epPad} (Español)`,
       lang: 'ES',
-      quality: '1080p',
+      quality: meta.quality,
       sourceUrl: `https://www.dailymotion.com/video/${vid}`,
       referer: 'https://www.dailymotion.com/',
       resolverType: 'direct_hls',
-      resolvedStreamUrl: buildHlsProxyUrl(m3uUrl, 'https://www.dailymotion.com/'),
+      resolvedStreamUrl: buildHlsProxyUrl(meta.m3uUrl, 'https://www.dailymotion.com/'),
     });
   }
 

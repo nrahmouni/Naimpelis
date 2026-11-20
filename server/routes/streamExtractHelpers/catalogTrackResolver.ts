@@ -293,6 +293,7 @@ export async function buildResolvedCatalogStreamResult(opts: {
   vestSubtitles: any[];
   clipboxSubtitles: any[];
   ghostflixSubtitles: any[];
+  extraSubtitles?: any[];
   resolvedTmdbId: string | number | null;
   subtitlesPromise: Promise<any[]>;
 }): Promise<ExtractedStreamResult> {
@@ -324,7 +325,12 @@ export async function buildResolvedCatalogStreamResult(opts: {
         : baseCleanTitle
       : 'RiffanTV HD');
 
-  const rawMergedSubs = [...opts.vestSubtitles, ...opts.clipboxSubtitles, ...opts.ghostflixSubtitles];
+  const rawMergedSubs = [
+    ...(opts.extraSubtitles || []),
+    ...opts.vestSubtitles,
+    ...opts.clipboxSubtitles,
+    ...opts.ghostflixSubtitles,
+  ];
   if (rawMergedSubs.length === 0 && (opts.resolvedTmdbId || baseCleanTitle || opts.titleHint)) {
     const searchedSubs = await withExtractTimeout(opts.subtitlesPromise, 650, [] as any[]);
     rawMergedSubs.push(...searchedSubs);

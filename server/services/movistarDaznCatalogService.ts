@@ -349,19 +349,88 @@ const CURATED_PROGRAMS: CuratedProgramSeed[] = [
   },
 ];
 
-// Verified TMDB TV IDs for flagship Movistar Plus+ Original Series (Castellano)
-const MOVISTAR_SERIES_TMDB_IDS: number[] = [
-  96005, // Antidisturbios
-  96687, // La Unidad
-  89586, // Hierro
-  195946, // Rapa
-  201420, // La Mesías
-  238480, // Querer
-  155548, // Apagón
-  197929, // El Inmortal
-  128327, // Bellas Artes
-  238106, // Los años nuevos
+// Verified TMDB TV IDs + curated fallbacks for flagship Movistar Plus+ Original Series (Castellano)
+interface MovistarSeriesSeed {
+  tmdbId: number;
+  title: string;
+  genre: string;
+  description: string;
+}
+
+const MOVISTAR_SERIES_SEEDS: MovistarSeriesSeed[] = [
+  {
+    tmdbId: 96005,
+    title: 'Antidisturbios',
+    genre: 'Thriller Policial · Original M+',
+    description:
+      'Seis agentes antidisturbios se enfrentan a una investigación de Asuntos Internos tras un desahucio trágico en el centro de Madrid.',
+  },
+  {
+    tmdbId: 96687,
+    title: 'La Unidad',
+    genre: 'Acción y Espionaje · Original M+',
+    description:
+      'La élite de la Policía Nacional española contra el terrorismo yihadista afronta una amenaza inminente en una operación internacional.',
+  },
+  {
+    tmdbId: 89586,
+    title: 'Hierro',
+    genre: 'Suspense · Original M+',
+    description:
+      'La jueza Candela Montes investiga un asesinato el mismo día de su traslado a la remota isla de El Hierro.',
+  },
+  {
+    tmdbId: 195946,
+    title: 'Rapa',
+    genre: 'Crimen y Misterio · Original M+',
+    description:
+      'El asesinato de la alcaldesa de Cedeira une a un profesor frustrado y a una sargento de la Guardia Civil en la sierra gallega.',
+  },
+  {
+    tmdbId: 201420,
+    title: 'La Mesías',
+    genre: 'Drama · Los Javis · Original M+',
+    description:
+      'Un vídeo viral de pop cristiano despierta los recuerdos ocultos de Enric, marcado por una infancia bajo el yugo del fanatismo.',
+  },
+  {
+    tmdbId: 238480,
+    title: 'Querer',
+    genre: 'Drama Judicial · Alauda Ruiz de Azúa',
+    description:
+      'Tras 30 años de matrimonio, Miren abandona el hogar y denuncia a su marido ante una familia que se fractura buscando la verdad.',
+  },
+  {
+    tmdbId: 155548,
+    title: 'Apagón',
+    genre: 'Ciencia Ficción · Antología M+',
+    description:
+      'Una tormenta solar deja sin electricidad ni comunicaciones a toda España; cinco historias de supervivencia y humanidad.',
+  },
+  {
+    tmdbId: 197929,
+    title: 'El Inmortal',
+    genre: 'Drama Criminal · Original M+',
+    description:
+      'Inspirada en la banda de Los Miami que dominó el Madrid nocturno de los años 90 entre ambición, poder y traición.',
+  },
+  {
+    tmdbId: 128327,
+    title: 'Bellas Artes',
+    genre: 'Comedia Negra · Original M+',
+    description:
+      'Un prestigioso historiador asume la dirección de un museo de arte contemporáneo en Madrid rodeado de crisis absurdas.',
+  },
+  {
+    tmdbId: 238106,
+    title: 'Los años nuevos',
+    genre: 'Drama Romántico · Rodrigo Sorogoyen',
+    description:
+      'Ana y Óscar cumplen 30 años en Nochevieja y Año Nuevo y recorren diez años de su relación cada cambio de año.',
+  },
 ];
+
+const MOVISTAR_SERIES_TMDB_IDS: number[] = MOVISTAR_SERIES_SEEDS.map((s) => s.tmdbId);
 
 const HOME_CACHE_TTL_MS = 3 * 60 * 1000;
 const homeCache = new LruTtlCache<
@@ -601,6 +670,22 @@ async function resolveQuickProgramThumb(seed: CuratedProgramSeed): Promise<strin
   }
 }
 
+async function withSoftTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((resolve) => {
+        timer = setTimeout(() => resolve(fallback), ms);
+      }),
+    ]);
+  } catch {
+    return fallback;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export async function getMovistarDaznHome(): Promise<{
   liveChannels: MovistarDaznLiveChannelItem[];
   liveMatches: MovistarDaznLiveMatchSummary[];
@@ -609,12 +694,12 @@ export async function getMovistarDaznHome(): Promise<{
 }> {
   const now = Date.now();
   const cached = homeCache.get('home');
-  if (cached && now - cached.ts < HOME_CACHE_TTL_MS) {
+  if (cached && now - cached.updatedAt < HOME_CACHE_TTL_MS) {
     return {
       liveChannels: cached.liveChannels,
       liveMatches: cached.liveMatches,
       catalog: cached.catalog,
-      updatedAt: cached.ts,
+      updatedAt: cached.updatedAt,
     };
   }
 
@@ -623,10 +708,26 @@ export async function getMovistarDaznHome(): Promise<{
   );
 
   const [epgStore, boardRes, tmdbSeries, programThumbs] = await Promise.all([
-    loadSpanishEpgSchedule().catch(() => new Map()),
-    getFootballBoardMatches({ lang: 'ES' }).catch(() => ({ matches: [] as any[] })),
-    fetchTmdbItemsByIds(MOVISTAR_SERIES_TMDB_IDS, 'tv', 'es-ES').catch(() => []),
-    Promise.all(CURATED_PROGRAMS.map((seed) => resolveQuickProgramThumb(seed))),
+    withSoftTimeout(
+      loadSpanishEpgSchedule().catch(() => new Map()),
+      2200,
+      new Map()
+    ),
+    withSoftTimeout(
+      getFootballBoardMatches({ lang: 'ES' }).catch(() => ({ matches: [] as any[] })),
+      2200,
+      { matches: [] as any[] }
+    ),
+    withSoftTimeout(
+      fetchTmdbItemsByIds(MOVISTAR_SERIES_TMDB_IDS, 'tv', 'es-ES').catch(() => []),
+      2400,
+      [] as any[]
+    ),
+    withSoftTimeout(
+      Promise.all(CURATED_PROGRAMS.map((seed) => resolveQuickProgramThumb(seed))),
+      2200,
+      CURATED_PROGRAMS.map(() => '')
+    ),
   ]);
 
   const liveChannels: MovistarDaznLiveChannelItem[] = targetDefs.map((tdt) => {
@@ -646,6 +747,8 @@ export async function getMovistarDaznHome(): Promise<{
       );
     }
 
+    const resolvedLogo = (tdt as { logoUrl?: string }).logoUrl || resolveOfficialChannelLogoUrl({ id: tdt.id }) || '';
+
     return {
       id: tdt.id,
       tdtId: tdt.id,
@@ -654,7 +757,7 @@ export async function getMovistarDaznHome(): Promise<{
       shortMark: tdt.shortMark,
       operator,
       brandTone: operator === 'dazn' ? '#D4FF00' : '#00A9E0',
-      logoUrl: resolveOfficialChannelLogoUrl({ id: tdt.id }) || '',
+      logoUrl: resolvedLogo,
       nowTitle: activeEv?.title || tdt.description,
       nextTitle: nextEv?.title || '',
       description: activeEv?.description || tdt.description,
@@ -664,7 +767,10 @@ export async function getMovistarDaznHome(): Promise<{
       isLiveSport: Boolean(activeEv?.isLiveSport || tdt.category === 'dazn'),
       programArtwork: String(activeEv?.icon || '').trim(),
       signalCount: tdt.channels.length,
-      tdtChannel: tdt,
+      tdtChannel: {
+        ...tdt,
+        logoUrl: resolvedLogo || undefined,
+      } as SpanishTdtChannelDef,
     };
   });
 
@@ -773,34 +879,41 @@ export async function getMovistarDaznHome(): Promise<{
     liveTdtId: seed.liveTdtId,
   }));
 
-  const seriesEntries: MovistarDaznCatalogEntry[] = tmdbSeries.map((tm: any) => {
-    const name = String(tm?.name || tm?.original_name || '').trim();
+  const tmdbById = new Map<number, any>();
+  for (const tm of tmdbSeries) {
+    const numId = Number(tm?.id || 0);
+    if (numId > 0) tmdbById.set(numId, tm);
+  }
+
+  const seriesEntries: MovistarDaznCatalogEntry[] = MOVISTAR_SERIES_SEEDS.map((seed) => {
+    const tm = tmdbById.get(seed.tmdbId);
+    const name = String(tm?.name || tm?.original_name || seed.title).trim();
     const img = tm?.backdrop_path
       ? `https://image.tmdb.org/t/p/w1280${tm.backdrop_path}`
       : tm?.poster_path
       ? `https://image.tmdb.org/t/p/w780${tm.poster_path}`
       : '';
     return {
-      id: `md-tmdb-${tm.id}`,
-      programId: `tmdb-${tm.id}`,
+      id: `md-tmdb-${seed.tmdbId}`,
+      programId: `tmdb-${seed.tmdbId}`,
       title: name,
       operator: 'movistar',
       channelId: 'mplus-canal',
       channelName: 'Movistar Plus+ Original',
       category: 'series',
       kind: 'series',
-      genre: tm?.genres?.[0]?.name || 'Serie Original M+',
-      description: String(tm?.overview || '').trim() || `${name} completa en Castellano HD.`,
+      genre: tm?.genres?.[0]?.name || seed.genre,
+      description: String(tm?.overview || '').trim() || seed.description,
       claim: 'Temporadas completas en Castellano',
       imageUrl: img,
       themeKey: 'cinema',
-      tmdbId: Number(tm.id),
+      tmdbId: seed.tmdbId,
       liveTdtId: 'mplus-canal',
     };
   });
 
   const catalog = [...programEntries, ...seriesEntries];
-  homeCache.set('home', { liveChannels, liveMatches, catalog, ts: now });
+  homeCache.set('home', { liveChannels, liveMatches, catalog, updatedAt: now });
 
   return {
     liveChannels,
