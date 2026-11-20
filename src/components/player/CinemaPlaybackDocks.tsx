@@ -4,17 +4,18 @@ import type { AppLanguage, VideoState } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { resolveTrackLang } from './trackLabelUtils';
 import { triggerHaptic } from '../../utils/haptics';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
-const LiveMatchCenter = React.lazy(() =>
+const LiveMatchCenter = lazyWithRetry(() =>
   import('../LiveMatchCenter').then((m) => ({ default: m.LiveMatchCenter }))
 );
-const SeriesEpisodesDock = React.lazy(() =>
+const SeriesEpisodesDock = lazyWithRetry(() =>
   import('../SeriesEpisodesDock').then((m) => ({ default: m.SeriesEpisodesDock }))
 );
-const MoviePlaybackDock = React.lazy(() =>
+const MoviePlaybackDock = lazyWithRetry(() =>
   import('../MoviePlaybackDock').then((m) => ({ default: m.MoviePlaybackDock }))
 );
-const ChannelGuideDock = React.lazy(() =>
+const ChannelGuideDock = lazyWithRetry(() =>
   import('../ChannelGuideDock').then((m) => ({ default: m.ChannelGuideDock }))
 );
 

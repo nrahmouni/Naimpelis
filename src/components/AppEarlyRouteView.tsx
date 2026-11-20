@@ -18,25 +18,24 @@ import { PreviewAutoEscapeBanner } from './player/PreviewAutoEscapeBanner';
 import { GlobalIncomingInviteBanner } from './FriendsInviteModal';
 import { NaimcineIntro } from './NaimcineIntro';
 import { LobbyScreen } from './LobbyScreen';
+import { RoomPinPromptModal } from './RoomPinPromptModal';
 import { socketService } from '../services/socket';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 
-const TvReceiverPairingScreen = React.lazy(() =>
+const TvReceiverPairingScreen = lazyWithRetry(() =>
   import('./TvReceiverPairingScreen').then((m) => ({
     default: m.TvReceiverPairingScreen,
   }))
 );
-const RoomPinPromptModal = React.lazy(() =>
-  import('./RoomPinPromptModal').then((m) => ({ default: m.RoomPinPromptModal }))
-);
-const NaimCineAdsPage = React.lazy(() =>
+const NaimCineAdsPage = lazyWithRetry(() =>
   import('./NaimCineAdsPage').then((m) => ({ default: m.NaimCineAdsPage }))
 );
-const DesignSystemShowcase = React.lazy(() =>
+const DesignSystemShowcase = lazyWithRetry(() =>
   import('./DesignSystemShowcase').then((m) => ({
     default: m.DesignSystemShowcase,
   }))
 );
-const NativeCinemaPlayer = React.lazy(() =>
+const NativeCinemaPlayer = lazyWithRetry(() =>
   import('./NativeCinemaPlayer').then((m) => ({ default: m.NativeCinemaPlayer }))
 );
 
@@ -319,15 +318,17 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
   if (isTvMode) {
     return (
       <div className="w-full h-[100dvh] bg-[#0B0B0F] overflow-hidden">
-        <RoomPinPromptModal
-          isOpen={pinPromptState.open}
-          roomName={pinPromptState.roomName}
-          roomCode={roomId}
-          invalidAttempt={pinPromptState.invalidAttempt}
-          lang={lang}
-          onSubmitPin={onSubmitGuestPin}
-          onLeaveProtectedRoom={onLeaveRoom}
-        />
+        {pinPromptState.open && (
+          <RoomPinPromptModal
+            isOpen={pinPromptState.open}
+            roomName={pinPromptState.roomName}
+            roomCode={roomId}
+            invalidAttempt={pinPromptState.invalidAttempt}
+            lang={lang}
+            onSubmitPin={onSubmitGuestPin}
+            onLeaveProtectedRoom={onLeaveRoom}
+          />
+        )}
         <React.Suspense fallback={null}>
           <NativeCinemaPlayer
             videoState={videoState}

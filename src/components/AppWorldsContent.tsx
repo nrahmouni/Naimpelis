@@ -14,11 +14,12 @@ import { EntryHomeScreen } from './EntryHomeScreen';
 import { WorldShell } from './worlds/WorldShell';
 import { MediaCatalogHub } from './MediaCatalogHub';
 import type { useAppController } from '../hooks/useAppController';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 
-const GamesHubSection = React.lazy(() =>
+const GamesHubSection = lazyWithRetry(() =>
   import('./GamesHubSection').then((m) => ({ default: m.GamesHubSection }))
 );
-const RiffanKidsHub = React.lazy(() =>
+const RiffanKidsHub = lazyWithRetry(() =>
   import('./kids/RiffanKidsHub').then((m) => ({ default: m.RiffanKidsHub }))
 );
 

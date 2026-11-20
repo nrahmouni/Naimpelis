@@ -94,20 +94,40 @@ export class AppErrorBoundary extends React.Component<
                   en: 'Reload the room to continue watching normally.',
                 })}
           </p>
-          <button
-            type="button"
-            onClick={() => void clearStaleCachesAndReload()}
-            className="min-h-[44px] px-5 rounded-2xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-xs sm:text-sm font-semibold text-white inline-flex items-center gap-2 cursor-pointer"
-          >
-            <RefreshCw className="w-4 h-4" />
-            <span>
-              {pickLang(lang, {
-                es: 'Recargar RiffanTV',
-                ca: 'Recarregar RiffanTV',
-                en: 'Reload RiffanTV',
-              })}
-            </span>
-          </button>
+          {this.state.message && (
+            <p className="text-[11px] font-mono text-zinc-400 bg-black/30 border border-white/8 rounded-xl px-3 py-2 break-words">
+              {this.state.message.slice(0, 180)}
+            </p>
+          )}
+          <div className="flex items-center justify-center gap-2.5 flex-wrap">
+            <button
+              type="button"
+              onClick={() => this.setState({ hasError: false, message: '' })}
+              className="min-h-[44px] px-4 rounded-2xl bg-white/8 hover:bg-white/14 border border-white/12 text-xs sm:text-sm font-semibold text-zinc-200 inline-flex items-center gap-2 cursor-pointer"
+            >
+              <span>
+                {pickLang(lang, {
+                  es: 'Reintentar',
+                  ca: 'Reintentar',
+                  en: 'Retry',
+                })}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void clearStaleCachesAndReload({ force: true })}
+              className="min-h-[44px] px-5 rounded-2xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-xs sm:text-sm font-semibold text-white inline-flex items-center gap-2 cursor-pointer"
+            >
+              <RefreshCw className="w-4 h-4" />
+              <span>
+                {pickLang(lang, {
+                  es: 'Recargar RiffanTV',
+                  ca: 'Recarregar RiffanTV',
+                  en: 'Reload RiffanTV',
+                })}
+              </span>
+            </button>
+          </div>
         </div>
       </div>
     );

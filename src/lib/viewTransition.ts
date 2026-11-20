@@ -5,11 +5,18 @@ import {
   tryConsumeBackInterceptor,
 } from './backInterceptor';
 
-type ViewTransitionDoc = Document & {
-  startViewTransition?: (cb: () => void | Promise<void>) => {
-    finished: Promise<void>;
-  };
+type ViewTransitionInstance = {
+  finished?: Promise<void>;
+  ready?: Promise<void>;
+  updateCallbackDone?: Promise<void>;
+  skipTransition?: () => void;
 };
+
+type ViewTransitionDoc = Document & {
+  startViewTransition?: (cb: () => void | Promise<void>) => ViewTransitionInstance;
+};
+
+let activeViewTransition: ViewTransitionInstance | null = null;
 
 export function prefersReducedMotion(): boolean {
   if (typeof window === 'undefined' || !window.matchMedia) return false;
@@ -21,19 +28,43 @@ export function prefersReducedMotion(): boolean {
 
 /**
  * Runs a state transition inside the browser View Transitions API when supported,
- * gracefully falling back on unsupported browsers or reduced-motion preference.
+ * gracefully falling back on unsupported browsers, hidden tabs, or reduced-motion preference.
  */
 export function runWithViewTransition(update: () => void): void {
-  if (typeof document === 'undefined' || prefersReducedMotion()) {
+  if (
+    typeof document === 'undefined' ||
+    document.hidden ||
+    document.visibilityState !== 'visible' ||
+    prefersReducedMotion()
+  ) {
     update();
     return;
   }
   const doc = document as ViewTransitionDoc;
   if (typeof doc.startViewTransition === 'function') {
     try {
-      doc.startViewTransition(() => {
+      if (activeViewTransition) {
+        try {
+          activeViewTransition.skipTransition?.();
+        } catch {
+          // ignore
+        }
+        activeViewTransition = null;
+      }
+      const transition = doc.startViewTransition(() => {
         update();
       });
+      activeViewTransition = transition;
+      const noop = () => {};
+      transition.ready?.catch(noop);
+      transition.updateCallbackDone?.catch(noop);
+      transition.finished
+        ?.catch(noop)
+        .finally(() => {
+          if (activeViewTransition === transition) {
+            activeViewTransition = null;
+          }
+        });
       return;
     } catch {
       // Fallback below

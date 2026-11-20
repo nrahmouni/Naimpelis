@@ -34,8 +34,9 @@ import {
   SERIES_GENRES,
   SERIES_SORT_OPTIONS,
 } from './catalogConstants';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
-const ExpandedDiscoverySection = React.lazy(() =>
+const ExpandedDiscoverySection = lazyWithRetry(() =>
   import('../ExpandedDiscoverySection').then((m) => ({ default: m.ExpandedDiscoverySection }))
 );
 
@@ -229,215 +230,143 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-8">
-      {/* 1. MOVIES / SERIES SEGMENTED CONTROL & COMPACT CINEMA TOOLBAR */}
-      <div className="space-y-3">
-        <SegmentedControl
-          layoutId="cine-main-tabs"
-          value={effectiveCineTab}
-          onChange={(nextTab) => {
-            triggerHaptic('light');
-            onChangeCineSpecialPortal('none');
-            onChangeCineTab(nextTab);
-          }}
-          options={[
-            {
-              id: 'movies',
-              label: pickLang(lang, { es: 'Películas', ca: 'Pel·lícules', en: 'Movies' }),
-              icon: (
-                <RiffanMoviesIcon
-                  size={17}
-                  tone={isMoviesTab ? 'current' : 'brand'}
-                  animate="hover"
-                />
-              ),
-            },
-            {
-              id: 'series',
-              label: pickLang(lang, { es: 'Series', ca: 'Sèries', en: 'Series' }),
-              icon: (
-                <RiffanSeriesIcon
-                  size={17}
-                  tone={isSeriesTab ? 'current' : 'brand'}
-                  animate="hover"
-                />
-              ),
-            },
-          ]}
-        />
-
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic('light');
-              if (cineSpecialPortal === 'catala') {
+      {/* 1. MOVIES / SERIES SEGMENTED CONTROL & CALM GLASS TOOLBAR */}
+      <div className="space-y-2.5">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+          <div className="flex-1 min-w-0">
+            <SegmentedControl
+              layoutId="cine-main-tabs"
+              value={effectiveCineTab}
+              onChange={(nextTab) => {
+                triggerHaptic('light');
                 onChangeCineSpecialPortal('none');
-                onChangeCineCastellano(false);
-                onChangeCineAudioOverride('VOSE');
-                onChangeSeriesLangMode('VOSE');
-                return;
-              }
-              const next = !effectiveCineCastellano;
-              onChangeCineCastellano(next);
-              if (next) {
-                onChangeCineAudioOverride('ES');
-                onChangeSeriesLangMode('ES');
-              } else {
-                onChangeCineAudioOverride('VOSE');
-                onChangeSeriesLangMode('VOSE');
-              }
-            }}
-            className={`min-h-[44px] px-3.5 rounded-2xl text-xs font-bold border inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
-              activeAudioCode === 'ES'
-                ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_6px_16px_rgba(145,70,255,0.3)]'
-                : 'bg-[#12131C] border-white/[0.1] text-zinc-200 hover:bg-white/[0.08]'
-            }`}
-          >
-            <FlagBadgeSvg code={activeAudioFlag} className="w-4 h-2.5 shrink-0" />
-            <span>{activeAudioCode}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic('medium');
-              if (isSeriesTab) {
-                const next = seriesSort === '4k' ? 'trending' : '4k';
-                onChangeSeriesSort(next);
-                onResetSeriesPage();
-                if (next === '4k') onChangeSeriesGenre('');
-              } else {
-                const next = movieSort === '4k' ? 'trending' : '4k';
-                onChangeMovieSort(next);
-                onResetMoviePage();
-                if (next === '4k') onChangeMovieGenre('');
-              }
-            }}
-            aria-label={pickLang(lang, {
-              es: isSeriesTab ? 'Ver series en 4K Ultra HD' : 'Ver películas en 4K Ultra HD',
-              ca: isSeriesTab ? 'Veure sèries en 4K Ultra HD' : 'Veure pel·lícules en 4K Ultra HD',
-              en: isSeriesTab ? 'View 4K Ultra HD series' : 'View 4K Ultra HD movies',
-            })}
-            className={`group relative min-h-[44px] px-3.5 sm:px-4 rounded-2xl text-xs font-bold border inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all overflow-hidden ${
-              (isSeriesTab ? seriesSort === '4k' : movieSort === '4k')
-                ? 'btn-4k-active bg-gradient-to-r from-amber-500/25 via-purple-600/35 to-cyan-500/25 border-amber-400 text-white shadow-[0_0_24px_rgba(251,191,36,0.42)]'
-                : 'btn-4k-animated text-zinc-100 hover:border-amber-400/80 hover:text-white'
-            }`}
-          >
-            <span className="relative z-10 px-1.5 py-0.5 rounded-md bg-gradient-to-r from-amber-400 to-amber-500 text-black text-[10px] font-black tracking-wider uppercase">
-              4K
-            </span>
-            <span className="relative z-10">
-              {isSeriesTab
-                ? pickLang(lang, { es: 'Series 4K UHD', ca: 'Sèries 4K UHD', en: '4K UHD Series' })
-                : pickLang(lang, { es: 'Cine 4K UHD', ca: 'Cinema 4K UHD', en: '4K UHD Cinema' })}
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic('light');
-              onChangeCineFiltersOpen(true);
-            }}
-            className={`group min-h-[44px] px-3.5 rounded-2xl text-xs font-bold border inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
-              activeFilterCount > 0
-                ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_6px_16px_rgba(145,70,255,0.3)]'
-                : 'bg-[#12131C] border-white/[0.1] text-zinc-200 hover:bg-white/[0.08]'
-            }`}
-          >
-            <RiffanSlidersIcon
-              size={16}
-              tone={activeFilterCount > 0 ? 'current' : 'brand'}
-              animate="hover"
+                onChangeCineTab(nextTab);
+              }}
+              options={[
+                {
+                  id: 'movies',
+                  label: pickLang(lang, { es: 'Películas', ca: 'Pel·lícules', en: 'Movies' }),
+                  icon: (
+                    <RiffanMoviesIcon
+                      size={17}
+                      tone={isMoviesTab ? 'current' : 'brand'}
+                      animate="hover"
+                    />
+                  ),
+                },
+                {
+                  id: 'series',
+                  label: pickLang(lang, { es: 'Series', ca: 'Sèries', en: 'Series' }),
+                  icon: (
+                    <RiffanSeriesIcon
+                      size={17}
+                      tone={isSeriesTab ? 'current' : 'brand'}
+                      animate="hover"
+                    />
+                  ),
+                },
+              ]}
             />
-            <span>{pickLang(lang, { es: 'Filtros', ca: 'Filtres', en: 'Filters' })}</span>
-            {activeFilterCount > 0 && (
-              <span className="text-[11px] font-mono tabular-nums opacity-90">
-                ({activeFilterCount})
-              </span>
-            )}
-          </button>
+          </div>
 
-          {onOpenSurpriseMe && (
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                if (isSeriesTab) {
+                  const next = seriesSort === '4k' ? 'trending' : '4k';
+                  onChangeSeriesSort(next);
+                  onResetSeriesPage();
+                  if (next === '4k') onChangeSeriesGenre('');
+                } else {
+                  const next = movieSort === '4k' ? 'trending' : '4k';
+                  onChangeMovieSort(next);
+                  onResetMoviePage();
+                  if (next === '4k') onChangeMovieGenre('');
+                }
+              }}
+              aria-pressed={isSeriesTab ? seriesSort === '4k' : movieSort === '4k'}
+              aria-label={pickLang(lang, {
+                es: isSeriesTab ? 'Ver series en 4K Ultra HD' : 'Ver películas en 4K Ultra HD',
+                ca: isSeriesTab ? 'Veure sèries en 4K Ultra HD' : 'Veure pel·lícules en 4K Ultra HD',
+                en: isSeriesTab ? 'View 4K Ultra HD series' : 'View 4K Ultra HD movies',
+              })}
+              className={`min-h-12 px-4 rounded-2xl text-xs font-bold border inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
+                (isSeriesTab ? seriesSort === '4k' : movieSort === '4k')
+                  ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_6px_18px_rgba(145,70,255,0.35)]'
+                  : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.09] text-zinc-200'
+              }`}
+            >
+              <span>4K UHD</span>
+            </button>
+
             <button
               type="button"
               onClick={() => {
                 triggerHaptic('light');
-                onOpenSurpriseMe();
+                onChangeCineFiltersOpen(true);
               }}
-              className="group min-h-[44px] px-3.5 rounded-2xl bg-[#12131C] hover:bg-[#9146FF]/20 border border-[#9146FF]/35 text-xs font-bold text-[#E9D5FF] inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
+              className={`min-h-12 px-4 rounded-2xl text-xs font-bold border inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
+                activeFilterCount > 0
+                  ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_6px_18px_rgba(145,70,255,0.3)]'
+                  : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.09] text-zinc-200'
+              }`}
             >
-              <RiffanSurpriseIcon size={16} animate="hover" />
+              <RiffanSlidersIcon
+                size={15}
+                tone={activeFilterCount > 0 ? 'current' : 'brand'}
+                animate="hover"
+              />
+              <FlagBadgeSvg code={activeAudioFlag} className="w-3.5 h-2.5 shrink-0" />
               <span>
-                {pickLang(lang, { es: 'Sorpréndeme', ca: 'Sorprèn-me', en: 'Surprise me' })}
+                {pickLang(lang, { es: 'Filtros', ca: 'Filtres', en: 'Filters' })}
+                {activeFilterCount > 0 ? ` · ${activeFilterCount}` : ''}
               </span>
             </button>
-          )}
+          </div>
         </div>
 
-        {/* Active Filter Dismissals */}
+        {/* Single calm active-filter summary & reset */}
         {activeFilterCount > 0 && (
-          <div className="flex items-center gap-2 flex-wrap pt-0.5">
-            {activeAudioCode !== 'ES' && (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  onChangeCineSpecialPortal('none');
-                  onChangeCineCastellano(true);
-                  onChangeCineAudioOverride('ES');
-                  onChangeSeriesLangMode('ES');
-                }}
-                className="min-h-9 px-3 rounded-xl bg-[#9146FF] text-xs font-semibold text-white inline-flex items-center gap-1.5 cursor-pointer hover:bg-[#7C2AE8] transition-colors"
-              >
-                <FlagBadgeSvg code={activeAudioFlag} className="w-3.5 h-2.5 shrink-0" />
-                <span>
-                  {activeAudioCode === 'CAT' ? 'Català' : activeAudioCode === 'VOSE' ? 'VOSE' : 'EN'}
-                </span>
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-
-            {currentSort !== 'trending' && activeSortMeta && (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  if (isSeriesTab) {
-                    onChangeSeriesSort('trending');
-                    onResetSeriesPage();
-                  } else {
-                    onChangeMovieSort('trending');
-                    onResetMoviePage();
-                  }
-                }}
-                className="min-h-9 px-3 rounded-xl bg-[#9146FF] text-xs font-semibold text-white inline-flex items-center gap-1.5 cursor-pointer hover:bg-[#7C2AE8] transition-colors"
-              >
-                <span>{currentSort === '4k' ? '4K UHD' : pickLang(lang, activeSortMeta)}</span>
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-
-            {currentGenre !== '' && activeGenreMeta && (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  if (isSeriesTab) {
-                    onChangeSeriesGenre('');
-                    onResetSeriesPage();
-                  } else {
-                    onChangeMovieGenre('');
-                    onResetMoviePage();
-                  }
-                }}
-                className="min-h-9 px-3 rounded-xl bg-[#9146FF] text-xs font-semibold text-white inline-flex items-center gap-1.5 cursor-pointer hover:bg-[#7C2AE8] transition-colors"
-              >
-                <span>{pickLang(lang, activeGenreMeta)}</span>
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
+          <div className="flex items-center justify-between gap-2 px-1 text-xs">
+            <span className="text-zinc-400 truncate">
+              {[
+                activeAudioCode !== 'ES'
+                  ? activeAudioCode === 'CAT'
+                    ? 'Català'
+                    : activeAudioCode
+                  : '',
+                currentSort !== 'trending' && activeSortMeta
+                  ? currentSort === '4k'
+                    ? '4K UHD'
+                    : pickLang(lang, activeSortMeta)
+                  : '',
+                currentGenre !== '' && activeGenreMeta ? pickLang(lang, activeGenreMeta) : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                onChangeCineSpecialPortal('none');
+                onChangeCineCastellano(true);
+                onChangeCineAudioOverride('ES');
+                onChangeSeriesLangMode('ES');
+                onChangeMovieSort('trending');
+                onChangeMovieGenre('');
+                onResetMoviePage();
+                onChangeSeriesSort('trending');
+                onChangeSeriesGenre('');
+                onResetSeriesPage();
+              }}
+              className="min-h-9 px-2.5 rounded-xl text-xs font-semibold text-[#C4A7FF] hover:text-white inline-flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+              <span>{pickLang(lang, { es: 'Limpiar', ca: 'Netejar', en: 'Reset' })}</span>
+            </button>
           </div>
         )}
       </div>

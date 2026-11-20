@@ -169,7 +169,20 @@ export default defineConfig(() => {
         },
       },
     },
+    optimizeDeps: {
+      include: [
+        'react',
+        'react-dom',
+        'react/jsx-runtime',
+        'react/jsx-dev-runtime',
+        '@tanstack/react-query',
+        'motion/react',
+        'lucide-react',
+        'zustand',
+      ],
+    },
     resolve: {
+      dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
       alias: {
         '@': import.meta.dirname,
       },

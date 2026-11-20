@@ -27,8 +27,9 @@ import { triggerHaptic } from '../utils/haptics';
 import { shareDedicatedLink } from '../utils/shareDedicatedLink';
 import type { CanonicalLinkInput } from '../shared/dedicatedRoutes';
 import { CinemaPlaybackDocks } from './player/CinemaPlaybackDocks';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 
-const NativeCinemaPlayer = React.lazy(() =>
+const NativeCinemaPlayer = lazyWithRetry(() =>
   import('./NativeCinemaPlayer').then((m) => ({ default: m.NativeCinemaPlayer }))
 );
 

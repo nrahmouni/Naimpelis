@@ -17,20 +17,21 @@ import type {
   VideoState,
   WatchHistoryItem,
 } from '../../types';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
-const NotificationCenterSheet = React.lazy(() =>
+const NotificationCenterSheet = lazyWithRetry(() =>
   import('../NotificationCenterSheet').then((m) => ({ default: m.NotificationCenterSheet }))
 );
-const CommandSearchModal = React.lazy(() =>
+const CommandSearchModal = lazyWithRetry(() =>
   import('../CommandSearchModal').then((m) => ({ default: m.CommandSearchModal }))
 );
-const SurpriseMeModal = React.lazy(() =>
+const SurpriseMeModal = lazyWithRetry(() =>
   import('../SurpriseMeModal').then((m) => ({ default: m.SurpriseMeModal }))
 );
-const VoiceAssistantModal = React.lazy(() =>
+const VoiceAssistantModal = lazyWithRetry(() =>
   import('../VoiceAssistantModal').then((m) => ({ default: m.VoiceAssistantModal }))
 );
-const LegalPrivacyModal = React.lazy(() =>
+const LegalPrivacyModal = lazyWithRetry(() =>
   import('../LegalPrivacyModal').then((m) => ({ default: m.LegalPrivacyModal }))
 );
 

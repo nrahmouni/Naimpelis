@@ -147,17 +147,18 @@ export function useWorldNavigation({
   }, []);
 
   const preloadWorld = useCallback((world: PrimaryWorldId) => {
+    const noop = () => {};
     if (world === 'futbol') {
-      void import('../components/catalog/FootballWorldView');
-      void import('../components/FootballMatchboard');
+      void import('../components/catalog/FootballWorldView').catch(noop);
+      void import('../components/FootballMatchboard').catch(noop);
     } else if (world === 'tv') {
-      void import('../components/catalog/LiveTvWorldView');
+      void import('../components/catalog/LiveTvWorldView').catch(noop);
     } else if (world === 'juegos') {
-      void import('../components/GamesHubSection');
+      void import('../components/GamesHubSection').catch(noop);
     } else if (world === 'kids') {
-      void import('../components/kids/RiffanKidsHub');
+      void import('../components/kids/RiffanKidsHub').catch(noop);
     } else if (world === 'cine') {
-      void import('../components/ExpandedDiscoverySection');
+      void import('../components/ExpandedDiscoverySection').catch(noop);
     }
   }, []);
 

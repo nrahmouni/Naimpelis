@@ -10,8 +10,9 @@ import { triggerHaptic } from '../../utils/haptics';
 import { pickLang } from '../../utils/i18n';
 import { shareDedicatedLink } from '../../utils/shareDedicatedLink';
 import { BottomSheet, SegmentedControl } from '../ui/DesignSystem';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
-const LiveMatchCenter = React.lazy(() =>
+const LiveMatchCenter = lazyWithRetry(() =>
   import('../LiveMatchCenter').then((m) => ({ default: m.LiveMatchCenter }))
 );
 

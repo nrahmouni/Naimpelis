@@ -2,8 +2,8 @@
  * @module server/services/epgService
  * @description Real-time Spanish XMLTV + TDTChannels EPG loader, channel ID mapping, and `/api/epg/live` route.
  */
+import https from 'https';
 import zlib from 'zlib';
-import { Readable } from 'stream';
 import type { Express } from 'express';
 import { CHROME_UA } from '../extractors/httpHelpers.ts';
 
@@ -357,11 +357,68 @@ function isSportsProgramText(title: string, category: string): boolean {
 }
 
 let cachedEpgStore: { byChannel: Map<string, RawEpgEvent[]>; fetchedAt: number } | null = null;
+let lastEpgFailureAt = 0;
 let inflightEpgPromise: Promise<Map<string, RawEpgEvent[]>> | null = null;
+
+const XMLTV_EPG_MIRRORS = [
+  'https://cdn.jsdelivr.net/gh/davidmuma/EPG_dobleM@master/guiatv_sincolor.xml.gz',
+  'https://raw.githubusercontent.com/davidmuma/EPG_dobleM/master/guiatv_sincolor.xml.gz',
+];
+
+function openIpv4HttpsStream(
+  targetUrl: string,
+  timeoutMs: number,
+  redirectsLeft = 3
+): Promise<import('http').IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      targetUrl,
+      {
+        family: 4,
+        timeout: timeoutMs,
+        headers: {
+          'User-Agent': CHROME_UA,
+          Accept: '*/*',
+        },
+      },
+      (res) => {
+        const status = res.statusCode || 0;
+        if (status >= 300 && status < 400 && res.headers.location && redirectsLeft > 0) {
+          res.resume();
+          const nextUrl = new URL(res.headers.location, targetUrl).toString();
+          openIpv4HttpsStream(nextUrl, timeoutMs, redirectsLeft - 1).then(resolve, reject);
+          return;
+        }
+        if (status < 200 || status >= 300) {
+          res.resume();
+          reject(new Error(`HTTP ${status}`));
+          return;
+        }
+        resolve(res);
+      }
+    );
+    req.on('timeout', () => {
+      req.destroy(new Error(`Request timeout (${timeoutMs}ms)`));
+    });
+    req.on('error', reject);
+  });
+}
+
+async function fetchIpv4Json(targetUrl: string, timeoutMs: number): Promise<any> {
+  const res = await openIpv4HttpsStream(targetUrl, timeoutMs);
+  const chunks: Buffer[] = [];
+  for await (const chunk of res) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+  return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+}
 
 export async function loadSpanishEpgSchedule(): Promise<Map<string, RawEpgEvent[]>> {
   if (cachedEpgStore && Date.now() - cachedEpgStore.fetchedAt < 20 * 60 * 1000) {
     return cachedEpgStore.byChannel;
+  }
+  if (Date.now() - lastEpgFailureAt < 2 * 60 * 1000) {
+    return cachedEpgStore?.byChannel || new Map();
   }
   if (inflightEpgPromise) return inflightEpgPromise;
 
@@ -387,18 +444,11 @@ export async function loadSpanishEpgSchedule(): Promise<Map<string, RawEpgEvent[
       });
     }
 
-    // 1. Stream-gunzip EPG_dobleM (Movistar+, DAZN, TDT & 3Cat complete XMLTV)
-    try {
-      const xmlByPriority = new Map<string, { priority: number; events: RawEpgEvent[] }>();
-      const resp = await fetch(
-        'https://raw.githubusercontent.com/davidmuma/EPG_dobleM/master/guiatv_sincolor.xml.gz',
-        {
-          headers: { 'User-Agent': CHROME_UA },
-          signal: AbortSignal.timeout(14_000),
-        }
-      );
-
-      if (resp.ok && resp.body) {
+    // 1. Stream-gunzip EPG_dobleM via IPv4 + CDN mirror fallback
+    for (const mirrorUrl of XMLTV_EPG_MIRRORS) {
+      try {
+        const xmlByPriority = new Map<string, { priority: number; events: RawEpgEvent[] }>();
+        const res = await openIpv4HttpsStream(mirrorUrl, 9_000);
         const gunzip = zlib.createGunzip();
         gunzip.setEncoding('utf8');
         let leftover = '';
@@ -470,9 +520,8 @@ export async function loadSpanishEpgSchedule(): Promise<Map<string, RawEpgEvent[
           });
           gunzip.on('end', () => resolve());
           gunzip.on('error', () => resolve());
-          Readable.fromWeb(resp.body as any)
-            .on('error', () => resolve())
-            .pipe(gunzip);
+          res.on('error', () => resolve());
+          res.pipe(gunzip);
         });
 
         for (const [ourId, data] of xmlByPriority.entries()) {
@@ -481,9 +530,10 @@ export async function loadSpanishEpgSchedule(): Promise<Map<string, RawEpgEvent[
             result.set(ourId, data.events);
           }
         }
+        if (result.size > 0) break;
+      } catch {
+        // Try next XMLTV mirror or fall back to TDTChannels JSON
       }
-    } catch (err) {
-      console.warn('EPG XMLTV stream warning:', err);
     }
 
     // 2. Fallback / complement from TDTChannels JSON EPG
@@ -492,13 +542,8 @@ export async function loadSpanishEpgSchedule(): Promise<Map<string, RawEpgEvent[
         ids.some((id) => !result.has(id))
       );
       if (missingJsonTargets) {
-        const jResp = await fetch('https://www.tdtchannels.com/epg/TV.json', {
-          headers: { 'User-Agent': CHROME_UA },
-          signal: AbortSignal.timeout(8000),
-        });
-        if (jResp.ok) {
-          const jList: any[] = await jResp.json();
-          if (Array.isArray(jList)) {
+        const jList: any[] = await fetchIpv4Json('https://www.tdtchannels.com/epg/TV.json', 8_000);
+        if (Array.isArray(jList)) {
             for (const entry of jList) {
               const nameKey = String(entry?.name || '').toLowerCase();
               const ourIds = jsonToOurIds.get(nameKey);
@@ -531,15 +576,17 @@ export async function loadSpanishEpgSchedule(): Promise<Map<string, RawEpgEvent[
             }
           }
         }
-      }
     } catch {
       // keep XMLTV results
     }
 
     if (result.size > 0) {
       cachedEpgStore = { byChannel: result, fetchedAt: Date.now() };
+      lastEpgFailureAt = 0;
+    } else {
+      lastEpgFailureAt = Date.now();
     }
-    return result;
+    return result.size > 0 ? result : cachedEpgStore?.byChannel || result;
   })().finally(() => {
     inflightEpgPromise = null;
   });

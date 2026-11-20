@@ -1,5 +1,5 @@
 import React from 'react';
-import { ChevronRight, Loader2, Play, Share2, Sparkles, Star } from 'lucide-react';
+import { ChevronRight, Loader2, Play, Star } from 'lucide-react';
 import type {
   AppLanguage,
   FavoriteChannelItem,
@@ -8,7 +8,6 @@ import type {
 } from '../../types';
 import { triggerHaptic } from '../../utils/haptics';
 import { pickLang } from '../../utils/i18n';
-import { shareDedicatedLink } from '../../utils/shareDedicatedLink';
 import { buildChannelFavId } from '../../utils/storage';
 import { TeamCrestImg, hasValidScore } from './FootballMatchboardParts';
 import { isBarcaOrRealMadridMatch } from './FootballMatchboardHelpers';
@@ -52,7 +51,6 @@ function formatQuickChannelLabel(ch: StreamTrack, lang: AppLanguage): string {
 export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
   item,
   lang,
-  shareRoomId,
   showLeagueBadge = false,
   showZhIndicator = false,
   activeVideoRawUrl,
@@ -116,13 +114,13 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
       <div className="relative z-[1] pointer-events-none flex items-center justify-between gap-2 min-w-0">
         <div className="flex items-center gap-1.5 flex-wrap min-w-0 text-[11px] leading-tight">
           {item.statusState === 'live' ? (
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#EB0400] text-white text-[10px] font-extrabold tracking-wide whitespace-nowrap">
-              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+            <span className="inline-flex items-center gap-1 text-[#FF6B6B] text-[11px] font-bold tracking-wide whitespace-nowrap">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#EB0400]" />
               {pickLang(lang, { es: 'EN VIVO', ca: 'EN DIRECTE', en: 'LIVE' })}
               {item.statusLabel && !/^en vivo$/i.test(item.statusLabel) ? ` · ${item.statusLabel}` : ''}
             </span>
           ) : (
-            <span className="font-bold tabular-nums text-[#BF94FF] whitespace-nowrap">
+            <span className="font-bold tabular-nums text-[#C4A7FF] whitespace-nowrap">
               {item.kickoffDateLabel && item.kickoffDateLabel !== 'Hoy'
                 ? `${item.kickoffDateLabel} · ${item.kickoffTime}`
                 : `${pickLang(lang, { es: 'Hoy', ca: 'Avui', en: 'Today' })} · ${item.kickoffTime}`}
@@ -132,14 +130,6 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
           {showNonDefaultStatus && (
             <span className="text-zinc-400 font-semibold whitespace-nowrap">
               · {item.statusLabel}
-            </span>
-          )}
-
-          {isFeaturedClub && (
-            <span className="inline-flex items-center gap-0.5 text-[#D8B4FE] font-bold whitespace-nowrap">
-              <span>·</span>
-              <Sparkles className="w-3 h-3 shrink-0" />
-              <span>{pickLang(lang, { es: 'Destacado', ca: 'Destacat', en: 'Featured' })}</span>
             </span>
           )}
 
@@ -216,32 +206,6 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
         </div>
 
         <div className="relative z-10 pointer-events-auto shrink-0 flex items-center gap-1">
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              void shareDedicatedLink({
-                target: {
-                  kind: 'match',
-                  id: item.id,
-                  eventId: item.eventId,
-                  homeTeam: item.homeTeam,
-                  awayTeam: item.awayTeam,
-                },
-                roomId: shareRoomId,
-                title: `${item.homeTeam} vs ${item.awayTeam}`,
-              });
-            }}
-            aria-label={pickLang(lang, {
-              es: 'Compartir partido',
-              ca: 'Compartir partit',
-              en: 'Share match',
-            })}
-            className="min-w-10 min-h-11 flex items-center justify-center rounded-xl text-zinc-400 hover:text-[#BF94FF] cursor-pointer"
-          >
-            <Share2 className="w-4 h-4" />
-          </button>
-
           {primaryCh ? (
             <>
               <button

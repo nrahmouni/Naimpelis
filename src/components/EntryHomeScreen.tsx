@@ -20,8 +20,6 @@ import { generateRandomGuestName } from '../utils/storage';
 import { PosterImage } from './ui/PosterImage';
 import { UniversalHomeSearch } from './home/UniversalHomeSearch';
 import { EntryHomeBentoGrid } from './home/EntryHomeBentoGrid';
-import { PWAInstallLandingCard } from './PWAInstallPrompt';
-import { FlagBadgeSvg, type FlagCode } from './ui/LanguageBadge';
 import {
   RiffanChevronRightIcon,
   RiffanClockIcon,
@@ -87,7 +85,6 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   onPlayMatch = () => {},
   onSelectGame = () => {},
   onOpenVoiceAssistant,
-  onChangeLang,
   sessionMode = 'party',
 }) => {
   const [editingName, setEditingName] = useState(false);
@@ -185,7 +182,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
         aria-hidden="true"
         className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300"
         style={{
-          background: `radial-gradient(240px circle at ${pos.x}% ${pos.y}%, rgba(255,255,255,0.06), transparent 72%)`,
+          background: `radial-gradient(240px circle at ${pos.x}% ${pos.y}%, rgba(255,255,255,0.05), transparent 72%)`,
         }}
       />
     );
@@ -193,10 +190,10 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
 
   return (
     <div className="relative w-full overflow-x-clip">
-      <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-3 sm:pt-5 pb-16 sm:pb-20 space-y-4 sm:space-y-5 @container">
+      <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 pb-16 space-y-5 @container">
         {/* 1. COMPACT EDITORIAL GREETING */}
         <section className="flex items-end justify-between gap-3">
-          <div className="min-w-0 space-y-0.5">
+          <div className="min-w-0 space-y-1">
             {editingName ? (
               <form onSubmit={handleSaveName} className="flex items-center gap-2 max-w-sm">
                 <input
@@ -240,7 +237,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                     <h1 className="font-display font-bold text-[1.45rem] sm:text-[1.85rem] leading-tight tracking-tight text-white truncate">
                       {greetingWord}, {displayName}
                     </h1>
-                    <span className="w-7 h-7 rounded-full bg-white/[0.06] group-hover:bg-[#9146FF]/25 border border-white/[0.08] flex items-center justify-center text-zinc-400 group-hover:text-white transition-colors shrink-0">
+                    <span className="w-7 h-7 rounded-full bg-white/[0.05] group-hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center text-zinc-400 group-hover:text-white transition-colors shrink-0">
                       <Pencil className="w-3 h-3" />
                     </span>
                   </button>
@@ -252,7 +249,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               </div>
             )}
 
-            <p className="text-xs sm:text-sm text-zinc-400 font-medium">
+            <p className="text-xs sm:text-sm text-zinc-400 font-normal">
               {pickLang(lang, {
                 es: '¿Qué quieres ver hoy?',
                 ca: 'Què vols veure avui?',
@@ -280,14 +277,14 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                 ca: 'Assistent de veu',
                 en: 'Voice assistant',
               })}
-              className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#9146FF] to-[#6D28D9] hover:from-[#A970FF] hover:to-[#7C2AE8] border border-white/20 text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all shadow-[0_8px_22px_rgba(145,70,255,0.38)]"
+              className="w-11 h-11 rounded-2xl bg-white/[0.045] hover:bg-white/[0.1] backdrop-blur-xl border border-white/[0.09] text-zinc-200 hover:text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
             >
-              <Mic className="w-5 h-5" />
+              <Mic className="w-4.5 h-4.5 text-[#C4A7FF]" />
             </button>
           )}
         </section>
 
-        {/* 2. UNIVERSAL SMART AI SEARCH */}
+        {/* 2. UNIVERSAL SMART SEARCH */}
         <section
           aria-label={pickLang(lang, {
             es: 'Buscador inteligente',
@@ -315,7 +312,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
           <section className="space-y-2.5">
             <div className="flex items-center justify-between gap-2">
               <h2 className="font-display font-semibold text-sm sm:text-base text-white flex items-center gap-2">
-                <RiffanClockIcon size={17} animate="hover" />
+                <RiffanClockIcon size={16} animate="hover" />
                 <span>
                   {pickLang(lang, {
                     es: 'Continuar viendo',
@@ -331,7 +328,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                     triggerHaptic('light');
                     onOpenContinueWatchingAll();
                   }}
-                  className="min-h-10 px-2.5 rounded-xl text-xs font-semibold text-[#BF94FF] hover:text-white inline-flex items-center gap-1 cursor-pointer transition-colors group"
+                  className="min-h-10 px-2.5 rounded-xl text-xs font-semibold text-[#C4A7FF] hover:text-white inline-flex items-center gap-1 cursor-pointer transition-colors group"
                 >
                   <span>{pickLang(lang, { es: 'Ver todo', ca: 'Veure-ho tot', en: 'See all' })}</span>
                   <RiffanChevronRightIcon size={14} animate="hover" />
@@ -371,7 +368,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                       triggerHaptic('light');
                       onResumeHistoryItem(item);
                     }}
-                    className="scroll-snap-item w-[164px] sm:w-[185px] shrink-0 rounded-2xl bg-[#10121B] border border-white/[0.08] hover:border-[#9146FF]/60 overflow-hidden text-left group active:scale-[0.97] transition-all cursor-pointer"
+                    className="scroll-snap-item w-[164px] sm:w-[185px] shrink-0 rounded-2xl bg-white/[0.035] border border-white/[0.08] hover:border-[#9146FF]/50 overflow-hidden text-left group active:scale-[0.97] transition-all cursor-pointer"
                   >
                     <div className="relative aspect-video w-full bg-[#090A0F]">
                       <PosterImage
@@ -397,8 +394,8 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                           ~{minsLeft}m
                         </span>
                       )}
-                      <div className="absolute inset-x-0 bottom-0 h-[3.5px] bg-white/20">
-                        <div className="h-full bg-[#9146FF] shadow-[0_0_8px_rgba(145,70,255,0.75)]" style={{ width: `${pct}%` }} />
+                      <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/20">
+                        <div className="h-full bg-[#9146FF]" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
                     <div className="p-2.5">
@@ -430,7 +427,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
           </section>
         )}
 
-        {/* 4. CURATED OBSIDIAN BENTO HUB (ZERO OVERLAP, CLEAN HIERARCHY) */}
+        {/* 4. CALM OBSIDIAN BENTO HUB */}
         <EntryHomeBentoGrid
           lang={lang}
           sessionMode={sessionMode}
@@ -446,32 +443,32 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
           renderSpotlightOverlay={renderSpotlightOverlay}
         />
 
-        {/* 5. COMPACT ACTION ROW: RIFFAN KIDS (SMALL BUTTON) + SORPRÉNDEME */}
+        {/* 5. QUIET SECONDARY ROW: RIFFAN KIDS & SORPRÉNDEME */}
         <section className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
           <motion.button
             type="button"
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.14 }}
             whileTap={{ scale: 0.985 }}
             onPointerEnter={() => onPreloadWorld?.('kids')}
             onTouchStart={() => onPreloadWorld?.('kids')}
             onClick={(e) => handleCardClick('kids', e)}
-            className="w-full min-h-11 px-3.5 py-2 rounded-2xl bg-[#10121B] hover:bg-[#16192B] border border-amber-400/25 hover:border-amber-400/60 flex items-center justify-between gap-2.5 text-left cursor-pointer transition-all duration-200 group"
+            className="w-full min-h-12 px-4 py-2.5 rounded-2xl bg-white/[0.035] hover:bg-white/[0.06] border border-white/[0.08] hover:border-white/20 flex items-center justify-between gap-2.5 text-left cursor-pointer transition-all duration-200 group"
           >
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-amber-400/18 text-amber-300 border border-amber-400/35 flex items-center justify-center shrink-0 group-hover:bg-amber-400 group-hover:text-black transition-colors">
+              <div className="w-7 h-7 rounded-lg bg-white/[0.06] text-amber-300 border border-white/[0.08] flex items-center justify-center shrink-0">
                 <Sparkles className="w-3.5 h-3.5" />
               </div>
               <span className="font-display font-semibold text-xs sm:text-sm text-white shrink-0">
                 Riffan Kids
               </span>
-              <span className="text-xs text-amber-200/80 truncate">
+              <span className="text-xs text-zinc-400 truncate">
                 ·{' '}
                 {pickLang(lang, {
-                  es: 'Cine, juegos y aprender',
-                  ca: 'Cinema, jocs i aprendre',
-                  en: 'Movies, games & learn',
+                  es: 'Cine y juegos infantiles',
+                  ca: 'Cinema i jocs infantils',
+                  en: 'Movies & games for kids',
                   rif: 'Lafilmat d iraren',
                 })}
               </span>
@@ -481,7 +478,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
 
           <motion.button
             type="button"
-            initial={{ opacity: 0, y: 8 }}
+            initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.14 }}
             whileTap={{ scale: 0.985 }}
@@ -489,10 +486,10 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               triggerHaptic('light');
               onOpenSurpriseMe();
             }}
-            className="w-full min-h-11 px-3.5 py-2 rounded-2xl bg-[#10121B] hover:bg-[#151826] border border-white/[0.08] hover:border-[#9146FF]/55 flex items-center justify-between gap-2.5 text-left cursor-pointer transition-all duration-200 group"
+            className="w-full min-h-12 px-4 py-2.5 rounded-2xl bg-white/[0.035] hover:bg-white/[0.06] border border-white/[0.08] hover:border-white/20 flex items-center justify-between gap-2.5 text-left cursor-pointer transition-all duration-200 group"
           >
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-[#9146FF]/18 text-[#D8B4FE] border border-[#9146FF]/35 flex items-center justify-center shrink-0 group-hover:bg-[#9146FF] group-hover:text-white transition-colors">
+              <div className="w-7 h-7 rounded-lg bg-white/[0.06] text-[#C4A7FF] border border-white/[0.08] flex items-center justify-center shrink-0">
                 <RiffanSurpriseIcon size={15} animate="always" />
               </div>
               <span className="font-display font-semibold text-xs sm:text-sm text-white shrink-0">
@@ -516,46 +513,8 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             <RiffanChevronRightIcon size={16} animate="hover" className="shrink-0" />
           </motion.button>
         </section>
-
-        {/* 6. INSTALAR RIFFANTV + IDIOMAS + QUIET FOOTER LINK */}
-        <section className="pt-1 space-y-3">
-          <PWAInstallLandingCard lang={lang} alwaysShow />
-
-          {onChangeLang && (
-            <div className="rounded-2xl bg-[#10121C]/85 border border-white/[0.08] p-1.5 grid grid-cols-5 gap-1.5">
-              {[
-                { code: 'en' as AppLanguage, flag: 'en' as FlagCode, label: 'EN', title: 'English' },
-                { code: 'es' as AppLanguage, flag: 'es' as FlagCode, label: 'ES', title: 'Español' },
-                { code: 'ca' as AppLanguage, flag: 'ca' as FlagCode, label: 'CA', title: 'Català' },
-                { code: 'rif' as AppLanguage, flag: 'rif' as FlagCode, label: 'RIF', title: 'Tarifit (Riffian)' },
-                { code: 'zh' as AppLanguage, flag: 'zh' as FlagCode, label: 'ZH', title: '中文' },
-              ].map((item) => {
-                const isSelected = lang === item.code;
-                return (
-                  <button
-                    key={item.code}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      onChangeLang(item.code);
-                    }}
-                    title={item.title}
-                    aria-label={item.title}
-                    className={`min-h-10 px-2 rounded-xl text-xs font-display font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] whitespace-nowrap border ${
-                      isSelected
-                        ? 'bg-[#9146FF] text-white border-[#A970FF]/70 shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
-                        : 'bg-transparent hover:bg-white/[0.06] text-zinc-400 hover:text-white border-transparent'
-                    }`}
-                  >
-                    <FlagBadgeSvg code={item.flag} className="w-5 h-3.5 shrink-0" />
-                    <span>{item.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </section>
       </div>
     </div>
   );
 };
+

@@ -15,6 +15,8 @@ import { SettingsBottomSheet } from './SettingsBottomSheet';
 import { GameMatchInviteModal } from './games/GameMatchInviteModal';
 import { AppDiscoveryModalsGroup } from './app/AppDiscoveryModalsGroup';
 import { GlobalVodModals } from './catalog/GlobalVodModals';
+import { RoomPinPromptModal } from './RoomPinPromptModal';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 import type { ProfileHubTab } from './UserProfileHubModal';
 import type { ActiveMovieContext } from './MoviePlaybackDock';
 import type { ActiveSportsMatchMeta } from '../hooks/useLiveSportsMatchDetails';
@@ -44,16 +46,13 @@ import type {
 } from '../types';
 import type { RoomGameInvite } from '../shared/protocol';
 
-const UserProfileHubModal = React.lazy(() =>
+const UserProfileHubModal = lazyWithRetry(() =>
   import('./UserProfileHubModal').then((m) => ({ default: m.UserProfileHubModal }))
 );
-const GuestWelcomePopup = React.lazy(() =>
+const GuestWelcomePopup = lazyWithRetry(() =>
   import('./GuestWelcomePopup').then((m) => ({ default: m.GuestWelcomePopup }))
 );
-const RoomPinPromptModal = React.lazy(() =>
-  import('./RoomPinPromptModal').then((m) => ({ default: m.RoomPinPromptModal }))
-);
-const SmartTvQuickModal = React.lazy(() =>
+const SmartTvQuickModal = lazyWithRetry(() =>
   import('./SmartTvQuickModal').then((m) => ({ default: m.SmartTvQuickModal }))
 );
 
@@ -431,7 +430,7 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
         />
       )}
 
-      <React.Suspense fallback={null}>
+      {pinPromptState.open && (
         <RoomPinPromptModal
           isOpen={pinPromptState.open}
           roomName={pinPromptState.roomName}
@@ -441,6 +440,9 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
           onSubmitPin={onSubmitGuestPin}
           onLeaveProtectedRoom={onLeaveRoom}
         />
+      )}
+
+      <React.Suspense fallback={null}>
 
         <SmartTvQuickModal
           isOpen={smartTvModalOpen}

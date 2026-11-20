@@ -48,15 +48,6 @@ interface FootballMatchboardProps {
 
 type StatusTab = 'live' | 'upcoming' | 'all';
 
-const QUICK_SHORTCUTS = [
-  { label: 'Barça · Madrid', query: 'barca madrid' },
-  { label: 'Barça', query: 'barcelona' },
-  { label: 'Real Madrid', query: 'real madrid' },
-  { label: 'Champions', query: 'champions' },
-  { label: 'Premier', query: 'premier' },
-  { label: 'LaLiga', query: 'laliga' },
-] as const;
-
 export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   lang,
   shareRoomId,
@@ -505,8 +496,8 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
 
   return (
     <>
-      <section className="rounded-3xl overflow-hidden bg-[#10121C] border border-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.45)]">
-        <div className="px-3 sm:px-4 py-2.5 bg-[#141724] border-b border-white/[0.07] flex flex-wrap items-center justify-between gap-2">
+      <section className="rounded-3xl overflow-hidden bg-white/[0.03] border border-white/[0.08] shadow-[0_14px_40px_rgba(0,0,0,0.45)]">
+        <div className="px-3 sm:px-4 py-2.5 bg-white/[0.025] border-b border-white/[0.07] flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5">
             {statusOptions.map((opt) => {
               const active = statusTab === opt.id;
@@ -521,7 +512,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                   className={`min-h-10 px-3 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                     active
                       ? 'bg-[#9146FF] text-white'
-                      : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300'
+                      : 'bg-white/[0.045] hover:bg-white/[0.09] text-zinc-300'
                   }`}
                 >
                   {opt.label}
@@ -547,7 +538,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
               {pickLang(lang, { es: 'Volver a Hoy', ca: 'Tornar a Avui', en: 'Back to Today' })}
             </button>
           ) : (
-            <div className="inline-flex items-center rounded-xl bg-white/[0.05] border border-white/[0.08] shrink-0 ml-auto">
+            <div className="inline-flex items-center rounded-xl bg-white/[0.045] border border-white/[0.08] shrink-0 ml-auto">
               <button
                 type="button"
                 onClick={() => {
@@ -592,40 +583,6 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
               </button>
             </div>
           )}
-        </div>
-
-        <div className="px-3 py-2 bg-[#121520] border-b border-white/[0.06] flex items-center flex-wrap gap-1.5">
-          <span className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider shrink-0 mr-0.5">
-            {pickLang(lang, { es: 'Atajos:', ca: 'Dreceres:', en: 'Shortcuts:' })}
-          </span>
-          {QUICK_SHORTCUTS.map((sc) => {
-            const normQuery = normalizeFootballText(searchQuery);
-            const isActive =
-              normQuery === sc.query ||
-              (sc.query === 'barcelona' && normQuery === 'barca');
-            return (
-              <button
-                key={sc.query}
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  if (isActive) {
-                    onSearchQueryChange('');
-                  } else {
-                    setStatusTab('all');
-                    onSearchQueryChange(sc.query);
-                  }
-                }}
-                className={`min-h-8 px-2.5 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
-                  isActive
-                    ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-sm'
-                    : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.08] text-zinc-300 hover:text-white'
-                }`}
-              >
-                {sc.label}
-              </button>
-            );
-          })}
         </div>
 
         {calendarScope && (

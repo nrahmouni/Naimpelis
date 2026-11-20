@@ -75,12 +75,14 @@ export function detectNativeApkContext(): {
   };
 }
 
-export async function clearStaleCachesAndReload(): Promise<void> {
+export async function clearStaleCachesAndReload(opts?: { force?: boolean }): Promise<void> {
   if (typeof window === 'undefined') return;
   try {
-    const lastReload = Number(sessionStorage.getItem(AUTO_RELOAD_GUARD_KEY) || '0');
-    if (Date.now() - lastReload < 60_000) {
-      return;
+    if (!opts?.force) {
+      const lastReload = Number(sessionStorage.getItem(AUTO_RELOAD_GUARD_KEY) || '0');
+      if (Date.now() - lastReload < 60_000) {
+        return;
+      }
     }
     sessionStorage.setItem(AUTO_RELOAD_GUARD_KEY, String(Date.now()));
   } catch {

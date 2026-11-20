@@ -1,3 +1,4 @@
+import { useCallback, useRef } from 'react';
 import { socketService } from '../../services/socket';
 import { playCinemaSound } from '../../utils/haptics';
 import { addWatchHistoryItem, sanitizeItemKey } from '../../utils/storage';
@@ -203,8 +204,11 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
     }
   };
 
-  const handleNextEpisode = () => handleStepEpisode(1);
-  const handlePrevEpisode = () => handleStepEpisode(-1);
+  const stepEpisodeRef = useRef(handleStepEpisode);
+  stepEpisodeRef.current = handleStepEpisode;
+
+  const handleNextEpisode = useCallback(() => stepEpisodeRef.current(1), []);
+  const handlePrevEpisode = useCallback(() => stepEpisodeRef.current(-1), []);
 
   const handlePlayYouTubeVideo = (item: YouTubeSearchItem) => {
     if (!canChangeMedia) {

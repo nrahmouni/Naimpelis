@@ -1,5 +1,5 @@
 import React from 'react';
-import { Loader2, Play, Share2, SlidersHorizontal, Star } from 'lucide-react';
+import { Loader2, SlidersHorizontal, Star } from 'lucide-react';
 import type {
   AppLanguage,
   FavoriteChannelItem,
@@ -8,14 +8,14 @@ import type {
 } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
-import { shareDedicatedLink } from '../../utils/shareDedicatedLink';
 import { buildChannelFavId } from '../../utils/storage';
 import { ChannelLogoBadge, getChannelRegionMeta } from '../ui/ChannelLogoBadge';
 import { FlagBadgeSvg } from '../ui/LanguageBadge';
 import { BottomSheet, SegmentedControl } from '../ui/DesignSystem';
 import type { FootballBrandFilter } from './useLiveTvAndSportsCatalog';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
-const FootballMatchboard = React.lazy(() =>
+const FootballMatchboard = lazyWithRetry(() =>
   import('../FootballMatchboard').then((m) => ({ default: m.FootballMatchboard }))
 );
 
@@ -132,17 +132,17 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
             triggerHaptic('light');
             setFutbolFiltersOpen(true);
           }}
-          className={`min-h-12 px-3.5 rounded-2xl border text-xs font-bold inline-flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all ${
+          className={`min-h-12 px-4 rounded-2xl border text-xs font-bold inline-flex items-center gap-2 shrink-0 cursor-pointer active:scale-95 transition-all ${
             activeFilterCount > 0
-              ? 'bg-[#9146FF]/22 border-[#9146FF] text-white'
-              : 'bg-white/[0.05] border-white/[0.1] text-zinc-100 hover:bg-white/[0.1]'
+              ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_6px_18px_rgba(145,70,255,0.3)]'
+              : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.09] text-zinc-200'
           }`}
         >
           <SlidersHorizontal className="w-4 h-4 text-[#BF94FF]" />
           <span>{pickLang(lang, { es: 'Filtros', ca: 'Filtres', en: 'Filters' })}</span>
           {activeFilterCount > 0 && (
-            <span className="min-w-5 h-5 px-1 rounded-full bg-[#9146FF] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
-              {activeFilterCount}
+            <span className="font-mono text-[11px] tabular-nums opacity-90">
+              · {activeFilterCount}
             </span>
           )}
         </button>
@@ -192,13 +192,13 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
           />
         </React.Suspense>
       ) : (
-        <div className="space-y-2.5">
+        <div className="space-y-2">
           {loadingTdt && footballSectionLiveChannels.length === 0 ? (
             <div className="py-10 flex justify-center">
               <Loader2 className="w-6 h-6 animate-spin text-[#9146FF]" />
             </div>
           ) : footballSectionLiveChannels.length === 0 ? (
-            <div className="py-10 rounded-3xl bg-[#11131B] border border-white/[0.08] text-center text-sm text-zinc-400">
+            <div className="py-10 rounded-3xl bg-white/[0.03] border border-white/[0.08] text-center text-sm text-zinc-400">
               {pickLang(lang, {
                 es: 'No hay canales con este filtro.',
                 ca: 'No hi ha canals amb aquest filtre.',
@@ -217,10 +217,10 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
               return (
                 <div
                   key={ch.id}
-                  className={`relative group min-h-[76px] p-3 rounded-2xl bg-[#11131B] border flex items-center justify-between gap-3 transition-colors ${
+                  className={`relative group min-h-[72px] p-3.5 rounded-2xl border flex items-center justify-between gap-3 transition-colors ${
                     isPlaying
-                      ? 'border-[#9146FF] bg-[#9146FF]/[0.07]'
-                      : 'border-white/[0.08] hover:border-[#9146FF]/50 hover:bg-white/[0.03]'
+                      ? 'border-[#9146FF] bg-[#9146FF]/[0.1]'
+                      : 'bg-white/[0.03] border-white/[0.08] hover:border-white/20 hover:bg-white/[0.055]'
                   }`}
                 >
                   <button
@@ -254,27 +254,7 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
                     </div>
                   </div>
 
-                  <div className="relative z-10 flex items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void shareDedicatedLink({
-                          target: { kind: 'channel', id: ch.id, name: ch.name },
-                          roomId: shareRoomId,
-                          title: ch.name,
-                        });
-                      }}
-                      aria-label={pickLang(lang, {
-                        es: `Compartir ${ch.name}`,
-                        ca: `Compartir ${ch.name}`,
-                        en: `Share ${ch.name}`,
-                      })}
-                      className="min-w-11 min-h-11 rounded-xl bg-white/[0.04] border border-white/[0.08] text-zinc-400 hover:text-[#BF94FF] hover:bg-white/[0.09] flex items-center justify-center cursor-pointer transition-colors"
-                    >
-                      <Share2 className="w-4 h-4" />
-                    </button>
-
+                  <div className="relative z-10 flex items-center shrink-0">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -289,30 +269,13 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
                         });
                       }}
                       aria-label={pickLang(lang, { es: 'Favorito', ca: 'Favorit', en: 'Favorite' })}
-                      className={`min-w-11 min-h-11 rounded-xl flex items-center justify-center border cursor-pointer transition-colors ${
+                      className={`min-w-11 min-h-11 rounded-xl flex items-center justify-center cursor-pointer transition-colors ${
                         faved
-                          ? 'bg-[#9146FF]/20 border-[#9146FF] text-[#D8B4FE]'
-                          : 'bg-white/[0.04] border-white/[0.08] text-zinc-400 hover:text-white'
+                          ? 'text-[#C4A7FF] bg-[#9146FF]/15'
+                          : 'text-zinc-400 hover:text-white hover:bg-white/[0.08]'
                       }`}
                     >
                       <Star className={`w-4 h-4 ${faved ? 'fill-current' : ''}`} />
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        triggerHaptic('success');
-                        onPlayTdtChannel(ch, 0);
-                      }}
-                      aria-label={`${pickLang(lang, { es: 'Reproducir', ca: 'Reproduir', en: 'Play' })} ${ch.name}`}
-                      className={`min-w-11 min-h-11 rounded-xl flex items-center justify-center border cursor-pointer active:scale-95 transition-all ${
-                        isPlaying
-                          ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
-                          : 'bg-white/[0.04] border-white/[0.08] text-zinc-200 hover:bg-[#9146FF]/20 hover:border-[#9146FF]/50 hover:text-white'
-                      }`}
-                    >
-                      <Play className="w-4 h-4 fill-current" />
                     </button>
                   </div>
                 </div>

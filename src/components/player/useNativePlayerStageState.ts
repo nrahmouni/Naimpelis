@@ -133,24 +133,37 @@ export function useNativePlayerStageState({
   }, [controlsTimeoutRef, lastManualHideAtRef, setShowControls, showControlsRef]);
 
   const revealControls = useCallback(() => {
-    showControlsRef.current = true;
-    setShowControls(true);
+    if (!showControlsRef.current) {
+      showControlsRef.current = true;
+      setShowControls(true);
+    }
     scheduleHideControls();
   }, [scheduleHideControls, setShowControls, showControlsRef]);
 
+  const revealControlsRef = useRef(revealControls);
+  revealControlsRef.current = revealControls;
+
+  const onNextEpisodeRef = useRef(onNextEpisode);
+  onNextEpisodeRef.current = onNextEpisode;
+  const hasNextEpisode = Boolean(onNextEpisode);
+
   useEffect(() => {
-    if (videoState.mode === 'hls' || videoState.mode === 'direct') revealControls();
-  }, [videoState.url, videoState.mode, revealControls]);
+    if (videoState.mode === 'hls' || videoState.mode === 'direct') {
+      revealControlsRef.current();
+    }
+  }, [videoState.url, videoState.mode]);
 
   useEffect(() => {
     const updateViewportOrientation = () => {
-      setViewportDims({ w: window.innerWidth, h: window.innerHeight });
+      const nextW = window.innerWidth;
+      const nextH = window.innerHeight;
+      setViewportDims((prev) => (prev.w === nextW && prev.h === nextH ? prev : { w: nextW, h: nextH }));
     };
     const onFsChange = () => {
       const activeFs = Boolean(document.fullscreenElement);
-      setIsFullscreen(activeFs);
+      setIsFullscreen((prev) => (prev === activeFs ? prev : activeFs));
       if (!activeFs) {
-        setIsHorizontalFullscreen(false);
+        setIsHorizontalFullscreen((prev) => (prev ? false : prev));
         try {
           (
             window.screen?.orientation as (ScreenOrientation & { unlock?: () => void }) | undefined
@@ -176,26 +189,27 @@ export function useNativePlayerStageState({
   useEffect(() => {
     if (
       !videoState.seriesMeta ||
-      !onNextEpisode ||
+      !hasNextEpisode ||
       videoState.isLive ||
       !canControlRoom ||
       !duration ||
       duration < 90 ||
       autoNextCancelledForUrl === videoState.url
     ) {
-      setAutoNextCountdown(null);
+      setAutoNextCountdown((prev) => (prev === null ? prev : null));
       return;
     }
 
     const remaining = duration - currentTime;
     if (remaining <= 10 && remaining > 0.4) {
-      setAutoNextCountdown(Math.max(1, Math.ceil(remaining)));
+      const nextSeconds = Math.max(1, Math.ceil(remaining));
+      setAutoNextCountdown((prev) => (prev === nextSeconds ? prev : nextSeconds));
     } else if (remaining <= 0.4 && autoNextTriggeredUrlRef.current !== videoState.url) {
       autoNextTriggeredUrlRef.current = videoState.url;
-      setAutoNextCountdown(null);
-      onNextEpisode();
+      setAutoNextCountdown((prev) => (prev === null ? prev : null));
+      onNextEpisodeRef.current?.();
     } else {
-      setAutoNextCountdown(null);
+      setAutoNextCountdown((prev) => (prev === null ? prev : null));
     }
   }, [
     currentTime,
@@ -205,14 +219,20 @@ export function useNativePlayerStageState({
     videoState.url,
     canControlRoom,
     autoNextCancelledForUrl,
-    onNextEpisode,
+    hasNextEpisode,
     autoNextTriggeredUrlRef,
     setAutoNextCountdown,
   ]);
 
   useEffect(() => {
-    if (cloudState?.url) setCloudUrlInput(cloudState.url);
-    else if (videoState.mode === 'cloud' && videoState.url) setCloudUrlInput(videoState.url);
+    const nextUrl = cloudState?.url
+      ? cloudState.url
+      : videoState.mode === 'cloud' && videoState.url
+      ? videoState.url
+      : null;
+    if (nextUrl) {
+      setCloudUrlInput((prev) => (prev === nextUrl ? prev : nextUrl));
+    }
   }, [cloudState?.url, setCloudUrlInput, videoState.mode, videoState.url]);
 
   const isStageFullscreen = !isMinimized && (isFullscreen || isHorizontalFullscreen);

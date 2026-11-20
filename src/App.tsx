@@ -16,8 +16,9 @@ import { AppEarlyRouteView } from './components/AppEarlyRouteView';
 import { AppWorldsContent } from './components/AppWorldsContent';
 import { PlayerStageContainer } from './components/PlayerStageContainer';
 import { useAppController } from './hooks/useAppController';
+import { lazyWithRetry } from './utils/lazyWithRetry';
 
-const PartySidebar = React.lazy(() =>
+const PartySidebar = lazyWithRetry(() =>
   import('./components/PartySidebar').then((m) => ({ default: m.PartySidebar }))
 );
 
@@ -271,7 +272,7 @@ export function App() {
           )}
 
           {activeWorld === 'entry' && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
-            <header className="shrink-0 z-30 h-14 px-4 bg-[#07080C]/92 backdrop-blur-2xl border-b border-white/[0.07] shadow-[0_8px_32px_rgba(0,0,0,0.45)] flex items-center justify-between gap-3">
+            <header className="shrink-0 z-30 h-14 px-4 sm:px-6 bg-[#07080C]/88 backdrop-blur-2xl border-b border-white/[0.06] flex items-center justify-between gap-3">
               <button
                 type="button"
                 onClick={() => {
@@ -282,7 +283,7 @@ export function App() {
                 aria-label="RiffanTV"
                 className="flex items-center min-h-11 py-1 cursor-pointer active:scale-95 transition-transform group"
               >
-                <NaimBrandLogo variant="full" size={32} />
+                <NaimBrandLogo variant="full" size={30} />
               </button>
 
               <button

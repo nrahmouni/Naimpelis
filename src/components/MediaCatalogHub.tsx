@@ -35,20 +35,21 @@ import { CineWorldView } from './catalog/CineWorldView';
 import { useVodCatalogState } from './catalog/useVodCatalogState';
 import { useLiveTvAndSportsCatalog } from './catalog/useLiveTvAndSportsCatalog';
 import { RiffanLoaderR } from './ui/RiffanIcons';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
 
-const CatalaEpisodePickerModal = React.lazy(() =>
+const CatalaEpisodePickerModal = lazyWithRetry(() =>
   import('./catalog/CatalaEpisodePickerModal').then((m) => ({ default: m.CatalaEpisodePickerModal }))
 );
-const LiveTvWorldView = React.lazy(() =>
+const LiveTvWorldView = lazyWithRetry(() =>
   import('./catalog/LiveTvWorldView').then((m) => ({ default: m.LiveTvWorldView }))
 );
-const EpgChannelModal = React.lazy(() =>
+const EpgChannelModal = lazyWithRetry(() =>
   import('./catalog/EpgChannelModal').then((m) => ({ default: m.EpgChannelModal }))
 );
-const YouTubeWorldView = React.lazy(() =>
+const YouTubeWorldView = lazyWithRetry(() =>
   import('./catalog/YouTubeWorldView').then((m) => ({ default: m.YouTubeWorldView }))
 );
-const FootballWorldView = React.lazy(() =>
+const FootballWorldView = lazyWithRetry(() =>
   import('./catalog/FootballWorldView').then((m) => ({ default: m.FootballWorldView }))
 );
 
