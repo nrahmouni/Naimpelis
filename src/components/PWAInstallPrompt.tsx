@@ -11,7 +11,7 @@ import {
   buildTvPairingUrl,
   isSmartTvBrowser,
 } from '../utils/shortLink';
-import { BottomSheet, SecondaryButton } from './ui/DesignSystem';
+import { BottomSheet } from './ui/DesignSystem';
 import {
   STATIC_CHANNELS_CATALOG,
   type SmartTvChannelInfo,
@@ -66,46 +66,6 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
       <PWAInstallOptionsSheet
         isOpen={showSheet}
         onClose={() => setShowSheet(false)}
-        lang={lang}
-        isIOS={isIOS}
-        isAndroid={isAndroid}
-      />
-    </>
-  );
-};
-
-interface PWAInstallLandingCardProps {
-  lang: AppLanguage;
-  isDesktop?: boolean;
-  alwaysShow?: boolean;
-}
-
-export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
-  lang,
-  alwaysShow = false,
-}) => {
-  const { isInstalled, isIOS, isAndroid } = usePWAInstall();
-  const [sheetOpen, setSheetOpen] = useState(false);
-
-  if (isInstalled && !alwaysShow) return null;
-
-  return (
-    <>
-      <SecondaryButton fullWidth onClick={() => setSheetOpen(true)}>
-        <RiffanDownloadIcon size={16} />
-        <span>
-          {pickLang(lang, {
-            es: 'Instalar RiffanTV · Smart TV & Móvil',
-            ca: 'Instal·lar RiffanTV · Smart TV & Mòbil',
-            en: 'Install RiffanTV · Smart TV & Mobile',
-            zh: '安装 RiffanTV',
-          })}
-        </span>
-      </SecondaryButton>
-
-      <PWAInstallOptionsSheet
-        isOpen={sheetOpen}
-        onClose={() => setSheetOpen(false)}
         lang={lang}
         isIOS={isIOS}
         isAndroid={isAndroid}

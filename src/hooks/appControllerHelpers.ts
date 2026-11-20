@@ -26,9 +26,7 @@ export function resolveInitialRoomSetup(
       : '';
   const effectiveInitialRoom = initialUrlRoom || initialAutoRoom;
   const initialRoomName = effectiveInitialRoom
-    ? initialRoute.isKidsMode
-      ? 'Riffan Kids'
-      : isGoogleTvApp && !initialUrlRoom
+    ? isGoogleTvApp && !initialUrlRoom
       ? 'RiffanTV · Google TV'
       : `Sala ${effectiveInitialRoom.toUpperCase()}`
     : '';
@@ -213,8 +211,7 @@ export function deriveAppControllerLayoutFlags(params: {
     !isDockedMini &&
     !isAutoImmersiveLandscape &&
     activeWorld !== 'sala' &&
-    activeWorld !== 'juegos' &&
-    activeWorld !== 'kids';
+    activeWorld !== 'juegos';
 
   const isMoviePlaybackDockVisible =
     !isFloatingRoomOpen &&
@@ -240,7 +237,7 @@ export function deriveAppControllerLayoutFlags(params: {
       Boolean(videoState.tracks?.some((tr) => tr.resolverType === 'tdt_hls' || tr.resolverType === 'sports_channel')));
 
   const lockMainWorkspaceScroll =
-    activeWorld === 'sala' || activeWorld === 'kids' || (activeWorld === 'juegos' && isInActiveGame);
+    activeWorld === 'sala' || (activeWorld === 'juegos' && isInActiveGame);
 
   return {
     isOnMobileSocialTab,

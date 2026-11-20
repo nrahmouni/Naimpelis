@@ -276,6 +276,7 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   authNotice: null,
 
   setSessionMode: (sessionMode) => {
+    if (get().sessionMode === sessionMode) return;
     set({ sessionMode });
     if (typeof localStorage !== 'undefined') {
       try {
@@ -285,30 +286,107 @@ export const useAppStore = create<AppShellState>((set, get) => ({
       }
     }
   },
-  setHasEnteredApp: (hasEnteredApp) => set({ hasEnteredApp }),
-  setShareToast: (shareToast) => set({ shareToast }),
-  setTvRegion: (tvRegion) => set({ tvRegion }),
-  setTdtCategory: (tdtCategory) => set({ tdtCategory }),
-  setAdrarCountryFilter: (adrarCountryFilter) => set({ adrarCountryFilter }),
-  setFutbolLeagueFilter: (futbolLeagueFilter) => set({ futbolLeagueFilter }),
-  setFootballLiveBrand: (footballLiveBrand) => set({ footballLiveBrand }),
-  setFutbolSearchQuery: (futbolSearchQuery) => set({ futbolSearchQuery }),
-  setFutbolDayOffset: (futbolDayOffset) => set({ futbolDayOffset }),
-  setFutbolStatusTab: (futbolStatusTab) => set({ futbolStatusTab }),
-  setRequestedMovieModal: (requestedMovieModal) => set({ requestedMovieModal }),
-  setRequestedSeriesModal: (requestedSeriesModal) => set({ requestedSeriesModal }),
-  setRequestedCatalaModal: (requestedCatalaModal) => set({ requestedCatalaModal }),
-  setRequestedEpgChannel: (requestedEpgChannel) => set({ requestedEpgChannel }),
-  setRequestedMatchSlug: (requestedMatchSlug) => set({ requestedMatchSlug }),
-  setPlaybackReturnContext: (playbackReturnContext) => set({ playbackReturnContext }),
-  setPendingScrollRestore: (pendingScrollRestore) => set({ pendingScrollRestore }),
-  setHomeSearchQuery: (homeSearchQuery) => set({ homeSearchQuery }),
-  setHomeSearchCategory: (homeSearchCategory) => set({ homeSearchCategory }),
+  setHasEnteredApp: (hasEnteredApp) => {
+    if (get().hasEnteredApp === hasEnteredApp) return;
+    set({ hasEnteredApp });
+  },
+  setShareToast: (shareToast) => {
+    if (get().shareToast === shareToast) return;
+    set({ shareToast });
+  },
+  setTvRegion: (tvRegion) => {
+    if (get().tvRegion === tvRegion) return;
+    set({ tvRegion });
+  },
+  setTdtCategory: (tdtCategory) => {
+    if (get().tdtCategory === tdtCategory) return;
+    set({ tdtCategory });
+  },
+  setAdrarCountryFilter: (adrarCountryFilter) => {
+    if (get().adrarCountryFilter === adrarCountryFilter) return;
+    set({ adrarCountryFilter });
+  },
+  setFutbolLeagueFilter: (futbolLeagueFilter) => {
+    if (get().futbolLeagueFilter === futbolLeagueFilter) return;
+    set({ futbolLeagueFilter });
+  },
+  setFootballLiveBrand: (footballLiveBrand) => {
+    if (get().footballLiveBrand === footballLiveBrand) return;
+    set({ footballLiveBrand });
+  },
+  setFutbolSearchQuery: (futbolSearchQuery) => {
+    if (get().futbolSearchQuery === futbolSearchQuery) return;
+    set({ futbolSearchQuery });
+  },
+  setFutbolDayOffset: (futbolDayOffset) => {
+    if (get().futbolDayOffset === futbolDayOffset) return;
+    set({ futbolDayOffset });
+  },
+  setFutbolStatusTab: (futbolStatusTab) => {
+    if (get().futbolStatusTab === futbolStatusTab) return;
+    set({ futbolStatusTab });
+  },
+  setRequestedMovieModal: (requestedMovieModal) => {
+    if (get().requestedMovieModal === requestedMovieModal) return;
+    set({ requestedMovieModal });
+  },
+  setRequestedSeriesModal: (requestedSeriesModal) => {
+    if (get().requestedSeriesModal === requestedSeriesModal) return;
+    set({ requestedSeriesModal });
+  },
+  setRequestedCatalaModal: (requestedCatalaModal) => {
+    if (get().requestedCatalaModal === requestedCatalaModal) return;
+    set({ requestedCatalaModal });
+  },
+  setRequestedEpgChannel: (requestedEpgChannel) => {
+    if (get().requestedEpgChannel === requestedEpgChannel) return;
+    set({ requestedEpgChannel });
+  },
+  setRequestedMatchSlug: (requestedMatchSlug) => {
+    if (get().requestedMatchSlug === requestedMatchSlug) return;
+    set({ requestedMatchSlug });
+  },
+  setPlaybackReturnContext: (playbackReturnContext) => {
+    if (get().playbackReturnContext === playbackReturnContext) return;
+    set({ playbackReturnContext });
+  },
+  setPendingScrollRestore: (pendingScrollRestore) => {
+    const prev = get().pendingScrollRestore;
+    if (
+      prev === pendingScrollRestore ||
+      (prev &&
+        pendingScrollRestore &&
+        prev.mainTop === pendingScrollRestore.mainTop &&
+        prev.catalogTop === pendingScrollRestore.catalogTop)
+    ) {
+      return;
+    }
+    set({ pendingScrollRestore });
+  },
+  setHomeSearchQuery: (homeSearchQuery) => {
+    if (get().homeSearchQuery === homeSearchQuery) return;
+    set({ homeSearchQuery });
+  },
+  setHomeSearchCategory: (homeSearchCategory) => {
+    if (get().homeSearchCategory === homeSearchCategory) return;
+    set({ homeSearchCategory });
+  },
 
-  setActiveNavSection: (activeNavSection) => set({ activeNavSection }),
+  setActiveNavSection: (activeNavSection) => {
+    if (get().activeNavSection === activeNavSection) return;
+    set({ activeNavSection });
+  },
   setActiveWorld: (activeWorld) => {
+    const cur = get();
     if (PRIMARY_WORLDS.includes(activeWorld as PrimaryWorldId)) {
       const primary = activeWorld as PrimaryWorldId;
+      if (
+        cur.activeWorld === activeWorld &&
+        cur.lastUsedWorld === primary &&
+        cur.isFloatingRoomOpen === false
+      ) {
+        return;
+      }
       set({ activeWorld, lastUsedWorld: primary, isFloatingRoomOpen: false });
       if (typeof localStorage !== 'undefined') {
         try {
@@ -319,25 +397,62 @@ export const useAppStore = create<AppShellState>((set, get) => ({
       }
       return;
     }
+    if (cur.activeWorld === activeWorld && cur.isFloatingRoomOpen === false) return;
     set({ activeWorld, isFloatingRoomOpen: false });
   },
-  setCineTab: (cineTab) => set({ cineTab }),
-  setCineCastellano: (cineCastellano) => set({ cineCastellano }),
-  setCineSpecialPortal: (cineSpecialPortal) => set({ cineSpecialPortal }),
-  setFutbolTab: (futbolTab) => set({ futbolTab }),
-  setIsFloatingRoomOpen: (isFloatingRoomOpen) => set({ isFloatingRoomOpen }),
+  setCineTab: (cineTab) => {
+    if (get().cineTab === cineTab) return;
+    set({ cineTab });
+  },
+  setCineCastellano: (cineCastellano) => {
+    if (get().cineCastellano === cineCastellano) return;
+    set({ cineCastellano });
+  },
+  setCineSpecialPortal: (cineSpecialPortal) => {
+    if (get().cineSpecialPortal === cineSpecialPortal) return;
+    set({ cineSpecialPortal });
+  },
+  setFutbolTab: (futbolTab) => {
+    if (get().futbolTab === futbolTab) return;
+    set({ futbolTab });
+  },
+  setIsFloatingRoomOpen: (isFloatingRoomOpen) => {
+    if (get().isFloatingRoomOpen === isFloatingRoomOpen) return;
+    set({ isFloatingRoomOpen });
+  },
   pushBubbleSuppression: () =>
     set((s) => ({ floatingBubbleSuppressCount: s.floatingBubbleSuppressCount + 1 })),
   popBubbleSuppression: () =>
-    set((s) => ({
-      floatingBubbleSuppressCount: Math.max(0, s.floatingBubbleSuppressCount - 1),
-    })),
-  setShowDesignSystem: (showDesignSystem) => set({ showDesignSystem }),
-  setShowLegalModal: (showLegalModal) => set({ showLegalModal }),
-  setShowNotificationCenter: (showNotificationCenter) => set({ showNotificationCenter }),
-  setShowCommandSearch: (showCommandSearch) => set({ showCommandSearch }),
-  setShowSurpriseModal: (showSurpriseModal) => set({ showSurpriseModal }),
-  setAuthNotice: (authNotice) => set({ authNotice }),
+    set((s) => {
+      const next = Math.max(0, s.floatingBubbleSuppressCount - 1);
+      return next === s.floatingBubbleSuppressCount
+        ? s
+        : { floatingBubbleSuppressCount: next };
+    }),
+  setShowDesignSystem: (showDesignSystem) => {
+    if (get().showDesignSystem === showDesignSystem) return;
+    set({ showDesignSystem });
+  },
+  setShowLegalModal: (showLegalModal) => {
+    if (get().showLegalModal === showLegalModal) return;
+    set({ showLegalModal });
+  },
+  setShowNotificationCenter: (showNotificationCenter) => {
+    if (get().showNotificationCenter === showNotificationCenter) return;
+    set({ showNotificationCenter });
+  },
+  setShowCommandSearch: (showCommandSearch) => {
+    if (get().showCommandSearch === showCommandSearch) return;
+    set({ showCommandSearch });
+  },
+  setShowSurpriseModal: (showSurpriseModal) => {
+    if (get().showSurpriseModal === showSurpriseModal) return;
+    set({ showSurpriseModal });
+  },
+  setAuthNotice: (authNotice) => {
+    if (get().authNotice === authNotice) return;
+    set({ authNotice });
+  },
 
   setTypingUser: (userId, userName, isTyping, roomId = '') => {
     const prevTimer = typingExpiryTimers.get(userId);
@@ -349,15 +464,21 @@ export const useAppStore = create<AppShellState>((set, get) => ({
     if (isTyping) {
       const expiryTimer = setTimeout(() => {
         typingExpiryTimers.delete(userId);
-        set((state) => ({
-          typingUsers: state.typingUsers.filter((u) => u.userId !== userId),
-        }));
+        set((state) => {
+          const next = state.typingUsers.filter((u) => u.userId !== userId);
+          return next.length === state.typingUsers.length ? state : { typingUsers: next };
+        });
       }, TYPING_EXPIRY_MS);
       typingExpiryTimers.set(userId, expiryTimer);
     }
 
     set((state) => {
+      const alreadyPresent = state.typingUsers.some(
+        (u) => u.userId === userId && u.userName === userName && u.roomId === roomId
+      );
+      if (isTyping && alreadyPresent) return state;
       const filtered = state.typingUsers.filter((u) => u.userId !== userId);
+      if (!isTyping && filtered.length === state.typingUsers.length) return state;
       return {
         typingUsers: isTyping
           ? [...filtered, { roomId, userId, userName, isTyping: true }].slice(-4)
@@ -382,10 +503,15 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   },
 
   setSyncOffsetMs: (offsetMs) => {
-    set({ syncOffsetMs: Math.max(-1000, Math.min(1000, offsetMs)) });
+    const clamped = Math.max(-1000, Math.min(1000, offsetMs));
+    if (get().syncOffsetMs === clamped) return;
+    set({ syncOffsetMs: clamped });
   },
 
-  setMiniPlayerDismissed: (miniPlayerDismissed) => set({ miniPlayerDismissed }),
+  setMiniPlayerDismissed: (miniPlayerDismissed) => {
+    if (get().miniPlayerDismissed === miniPlayerDismissed) return;
+    set({ miniPlayerDismissed });
+  },
 
   addScheduledRoom: (item) => {
     const entry: ScheduledRoomItem = {
@@ -404,7 +530,9 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   },
 
   removeScheduledRoom: (id) => {
-    const next = get().scheduledRooms.filter((s) => s.id !== id);
+    const prev = get().scheduledRooms;
+    const next = prev.filter((s) => s.id !== id);
+    if (next.length === prev.length) return;
     set({ scheduledRooms: next });
     if (typeof localStorage !== 'undefined') {
       try {
@@ -415,8 +543,14 @@ export const useAppStore = create<AppShellState>((set, get) => ({
     }
   },
 
-  setSwUpdate: (swUpdate) => set({ swUpdate }),
-  setDeferredAppUpdateVersion: (deferredAppUpdateVersion) => set({ deferredAppUpdateVersion }),
+  setSwUpdate: (swUpdate) => {
+    if (get().swUpdate === swUpdate) return;
+    set({ swUpdate });
+  },
+  setDeferredAppUpdateVersion: (deferredAppUpdateVersion) => {
+    if (get().deferredAppUpdateVersion === deferredAppUpdateVersion) return;
+    set({ deferredAppUpdateVersion });
+  },
 
   applySwUpdateNow: () => {
     const worker = get().swUpdate?.waitingWorker;

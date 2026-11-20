@@ -391,14 +391,6 @@ export const DesignComponentsTab: React.FC<DesignComponentsTabProps> = ({
             { label: 'YouTube', el: <RiffanIcons.RiffanYouTubeIcon size={22} animate={iconAnimMode} /> },
             { label: 'Devices', el: <RiffanIcons.RiffanDevicesIcon size={22} animate={iconAnimMode} /> },
             { label: 'Voice Mic', el: <RiffanIcons.RiffanVoiceMicIcon size={22} animate={iconAnimMode} /> },
-            { label: 'Kids Fox', el: <RiffanIcons.RiffanKidsFoxIcon size={22} animate={iconAnimMode} /> },
-            { label: 'Kids Learn', el: <RiffanIcons.RiffanKidsLearnIcon size={22} animate={iconAnimMode} /> },
-            { label: 'Kids Draw', el: <RiffanIcons.RiffanKidsDrawIcon size={22} animate={iconAnimMode} /> },
-            { label: 'Kids Piano', el: <RiffanIcons.RiffanKidsPianoIcon size={22} animate={iconAnimMode} /> },
-            { label: 'Kids Puzzle', el: <RiffanIcons.RiffanKidsPuzzleIcon size={22} animate={iconAnimMode} /> },
-            { label: 'Kids Simon', el: <RiffanIcons.RiffanKidsSimonIcon size={22} animate={iconAnimMode} /> },
-            { label: 'Kids Bubbles', el: <RiffanIcons.RiffanKidsBubblesIcon size={22} animate={iconAnimMode} /> },
-            { label: 'Kids Magic', el: <RiffanIcons.RiffanKidsMagicIcon size={22} animate={iconAnimMode} /> },
           ].map((item) => (
             <div
               key={item.label}

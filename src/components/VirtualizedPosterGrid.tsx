@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 
 export interface VirtualizedPosterGridProps<T> {
@@ -41,10 +41,93 @@ export function getColumnCount(width: number, variant: 'poster' | 'wide' | 'list
   return 2;
 }
 
+interface VirtualizedRowsLayerProps<T> {
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  scrollEl: HTMLElement;
+  rows: T[][];
+  columns: number;
+  variant: 'poster' | 'wide' | 'list';
+  gapPx: number;
+  defaultRowHeight: number;
+  overscan: number;
+  scrollMargin: number;
+  className: string;
+  renderItem: (item: T, index: number) => React.ReactNode;
+  getKey?: (item: T, index: number) => string | number;
+}
+
+function VirtualizedRowsLayer<T>({
+  containerRef,
+  scrollEl,
+  rows,
+  columns,
+  variant,
+  gapPx,
+  defaultRowHeight,
+  overscan,
+  scrollMargin,
+  className,
+  renderItem,
+  getKey,
+}: VirtualizedRowsLayerProps<T>) {
+  const getScrollElement = useCallback(() => scrollEl, [scrollEl]);
+  const estimateSize = useCallback(() => defaultRowHeight + gapPx, [defaultRowHeight, gapPx]);
+
+  // eslint-disable-next-line react-hooks/incompatible-library
+  const rowVirtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement,
+    estimateSize,
+    overscan,
+    scrollMargin,
+  });
+
+  const virtualRows = rowVirtualizer.getVirtualItems();
+  const totalHeight = rowVirtualizer.getTotalSize();
+
+  return (
+    <div ref={containerRef} className={`relative w-full ${className}`} style={{ height: `${totalHeight}px` }}>
+      {virtualRows.map((vRow) => {
+        const rowItems = rows[vRow.index] || [];
+        const baseIndex = vRow.index * columns;
+        return (
+          <div
+            key={vRow.key}
+            data-index={vRow.index}
+            ref={rowVirtualizer.measureElement}
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '100%',
+              transform: `translateY(${vRow.start - scrollMargin}px)`,
+              paddingBottom: `${gapPx}px`,
+              display: 'grid',
+              gridTemplateColumns:
+                variant === 'list' ? 'minmax(0, 1fr)' : `repeat(${columns}, minmax(0, 1fr))`,
+              gap: `${gapPx}px`,
+            }}
+          >
+            {rowItems.map((item, offset) => {
+              const absoluteIdx = baseIndex + offset;
+              return (
+                <div key={getKey ? getKey(item, absoluteIdx) : absoluteIdx} className="min-w-0">
+                  {renderItem(item, absoluteIdx)}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /**
  * 60fps virtualized grid/list backed by @tanstack/react-virtual.
- * Automatically binds to the nearest scrollable ancestor container (desktop main pane,
- * mobile catalog scroller, or modal body) and dynamically adapts column counts.
+ * Mounts the virtualizer ONLY when items exceed 400 and a scroll container exists,
+ * and filters ResizeObserver events strictly by width/scroll-margin tolerance (>= 2px)
+ * so virtual container height changes never create feedback loops on mobile WebViews.
  */
 export function VirtualizedPosterGrid<T>({
   items,
@@ -77,22 +160,39 @@ export function VirtualizedPosterGrid<T>({
     setScrollEl((prev) => (prev === parent ? prev : parent));
 
     let rafId: number | null = null;
-    const lastMeasuredWidth = { current: -1 };
+    const lastMeasuredWidthRef = { current: -1 };
+    const lastParentWidthRef = { current: -1 };
+    const lastScrollMarginRef = { current: -1 };
 
     const updateMetrics = () => {
       rafId = null;
       const node = containerRef.current;
       if (!node) return;
       const rect = node.getBoundingClientRect();
-      const nextWidth = Math.round(rect.width || node.clientWidth || 360);
-      lastMeasuredWidth.current = nextWidth;
-      setContainerWidth((prev) => (prev === nextWidth ? prev : nextWidth));
+      const rawWidth = Math.round(rect.width || node.clientWidth || 360);
+      if (lastMeasuredWidthRef.current < 0 || Math.abs(rawWidth - lastMeasuredWidthRef.current) >= 2) {
+        lastMeasuredWidthRef.current = rawWidth;
+        setContainerWidth((prev) => (Math.abs(prev - rawWidth) < 2 ? prev : rawWidth));
+      }
 
-      const nextMargin =
-        parent && parent !== document.documentElement
-          ? Math.max(0, Math.round(rect.top - parent.getBoundingClientRect().top + parent.scrollTop))
-          : Math.max(0, Math.round(rect.top + window.scrollY));
-      setScrollMargin((prev) => (prev === nextMargin ? prev : nextMargin));
+      if (parent && parent !== document.documentElement) {
+        const parentRect = parent.getBoundingClientRect();
+        lastParentWidthRef.current = Math.round(parentRect.width || parent.clientWidth || 0);
+        const nextMargin = Math.max(
+          0,
+          Math.round(rect.top - parentRect.top + parent.scrollTop)
+        );
+        if (lastScrollMarginRef.current < 0 || Math.abs(nextMargin - lastScrollMarginRef.current) >= 2) {
+          lastScrollMarginRef.current = nextMargin;
+          setScrollMargin((prev) => (Math.abs(prev - nextMargin) < 2 ? prev : nextMargin));
+        }
+      } else {
+        const nextMargin = Math.max(0, Math.round(rect.top + window.scrollY));
+        if (lastScrollMarginRef.current < 0 || Math.abs(nextMargin - lastScrollMarginRef.current) >= 2) {
+          lastScrollMarginRef.current = nextMargin;
+          setScrollMargin((prev) => (Math.abs(prev - nextMargin) < 2 ? prev : nextMargin));
+        }
+      }
     };
 
     const scheduleMetrics = () => {
@@ -107,13 +207,16 @@ export function VirtualizedPosterGrid<T>({
       for (const entry of entries) {
         if (entry.target === el) {
           const w = Math.round(entry.contentRect.width);
-          if (w !== lastMeasuredWidth.current) {
+          if (Math.abs(w - lastMeasuredWidthRef.current) >= 2) {
             shouldUpdate = true;
             break;
           }
-        } else {
-          shouldUpdate = true;
-          break;
+        } else if (entry.target === parent) {
+          const pw = Math.round(entry.contentRect.width);
+          if (Math.abs(pw - lastParentWidthRef.current) >= 2) {
+            shouldUpdate = true;
+            break;
+          }
         }
       }
       if (shouldUpdate) {
@@ -155,15 +258,6 @@ export function VirtualizedPosterGrid<T>({
     return Math.round(colWidth * 1.5 + 68);
   }, [estimateRowHeight, variant, containerWidth, gapPx, columns]);
 
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const rowVirtualizer = useVirtualizer({
-    count: rows.length,
-    getScrollElement: () => scrollEl,
-    estimateSize: () => defaultRowHeight + gapPx,
-    overscan,
-    scrollMargin,
-  });
-
   // Render cleanly in natural document flow CSS Grid up to 400 items so sticky desktop players never shift virtual hitboxes
   if (items.length <= 400 || !scrollEl) {
     return (
@@ -190,43 +284,20 @@ export function VirtualizedPosterGrid<T>({
     );
   }
 
-  const virtualRows = rowVirtualizer.getVirtualItems();
-  const totalHeight = rowVirtualizer.getTotalSize();
-
   return (
-    <div ref={containerRef} className={`relative w-full ${className}`} style={{ height: `${totalHeight}px` }}>
-      {virtualRows.map((vRow) => {
-        const rowItems = rows[vRow.index] || [];
-        const baseIndex = vRow.index * columns;
-        return (
-          <div
-            key={vRow.key}
-            data-index={vRow.index}
-            ref={rowVirtualizer.measureElement}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              transform: `translateY(${vRow.start - scrollMargin}px)`,
-              paddingBottom: `${gapPx}px`,
-              display: 'grid',
-              gridTemplateColumns:
-                variant === 'list' ? 'minmax(0, 1fr)' : `repeat(${columns}, minmax(0, 1fr))`,
-              gap: `${gapPx}px`,
-            }}
-          >
-            {rowItems.map((item, offset) => {
-              const absoluteIdx = baseIndex + offset;
-              return (
-                <div key={getKey ? getKey(item, absoluteIdx) : absoluteIdx} className="min-w-0">
-                  {renderItem(item, absoluteIdx)}
-                </div>
-              );
-            })}
-          </div>
-        );
-      })}
-    </div>
+    <VirtualizedRowsLayer
+      containerRef={containerRef}
+      scrollEl={scrollEl}
+      rows={rows}
+      columns={columns}
+      variant={variant}
+      gapPx={gapPx}
+      defaultRowHeight={defaultRowHeight}
+      overscan={overscan}
+      scrollMargin={scrollMargin}
+      className={className}
+      renderItem={renderItem}
+      getKey={getKey}
+    />
   );
 }

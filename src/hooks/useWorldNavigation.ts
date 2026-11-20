@@ -13,7 +13,6 @@ interface UseWorldNavigationParams {
   roomId: string;
   reducedMotion: boolean;
   effectiveInitialRoom: string;
-  initialIsKidsMode?: boolean;
   initialDeepLinkGame: RoomGameInviteType | null;
   inRoomRef: MutableRefObject<boolean>;
   mainScrollRef: MutableRefObject<HTMLDivElement | null>;
@@ -33,7 +32,6 @@ export function useWorldNavigation({
   roomId,
   reducedMotion,
   effectiveInitialRoom,
-  initialIsKidsMode,
   initialDeepLinkGame,
   inRoomRef,
   mainScrollRef,
@@ -53,6 +51,8 @@ export function useWorldNavigation({
     useState<PortalOriginRect | null>(null);
   const [portalLandingActive, setPortalLandingActive] = useState<boolean>(false);
   const portalTimersRef = useRef<number[]>([]);
+  const onUpgradeSoloToPartyRef = useRef(onUpgradeSoloToParty);
+  onUpgradeSoloToPartyRef.current = onUpgradeSoloToParty;
 
   const clearPortalTimers = useCallback(() => {
     portalTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
@@ -79,9 +79,6 @@ export function useWorldNavigation({
       } else if (nextWorld === 'juegos') {
         setCatalogSection('games');
         setMobileTab('games');
-      } else if (nextWorld === 'kids') {
-        setCatalogSection('home');
-        setMobileTab('home');
       } else if (nextWorld === 'sala') {
         setMobileTab('room');
         setUnreadChatCount(0);
@@ -91,45 +88,23 @@ export function useWorldNavigation({
         setIsInActiveGame(false);
       }
 
-      if (typeof window !== 'undefined' && (inRoomRef.current || sessionMode === 'solo')) {
-        try {
-          const currentPath = window.location.pathname.toLowerCase();
-          if (nextWorld === 'kids') {
-            if (currentPath !== '/kids') {
-              window.history.replaceState(window.history.state, '', '/kids');
-            }
-          } else if (currentPath === '/kids' && roomId && sessionMode === 'party') {
-            window.history.replaceState(window.history.state, '', `/${encodeURIComponent(roomId)}`);
-          }
-        } catch {
-          // ignore
-        }
-      }
-
       if (!opts?.skipScrollReset) {
         mainScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
         catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
       }
     },
     [
-      sessionMode,
       setActiveWorld,
       setCatalogSection,
       setMobileTab,
       setUnreadChatCount,
       setIsInActiveGame,
-      inRoomRef,
-      roomId,
       mainScrollRef,
       catalogScrollRef,
     ]
   );
 
   useEffect(() => {
-    if (initialIsKidsMode) {
-      applyWorldChange('kids');
-      return;
-    }
     if (!effectiveInitialRoom || !initialDeepLinkGame) return;
     applyWorldChange('juegos');
     if (typeof window !== 'undefined') {
@@ -155,8 +130,6 @@ export function useWorldNavigation({
       void import('../components/catalog/LiveTvWorldView').catch(noop);
     } else if (world === 'juegos') {
       void import('../components/GamesHubSection').catch(noop);
-    } else if (world === 'kids') {
-      void import('../components/kids/RiffanKidsHub').catch(noop);
     } else if (world === 'cine') {
       void import('../components/ExpandedDiscoverySection').catch(noop);
     }
@@ -164,8 +137,8 @@ export function useWorldNavigation({
 
   const enterWorld = useCallback(
     (nextWorld: WorldId, opts?: { withPortal?: boolean; originRect?: PortalOriginRect }) => {
-      if (nextWorld === 'sala' && sessionMode === 'solo' && onUpgradeSoloToParty) {
-        onUpgradeSoloToParty({ targetWorld: 'sala' });
+      if (nextWorld === 'sala' && sessionMode === 'solo' && onUpgradeSoloToPartyRef.current) {
+        onUpgradeSoloToPartyRef.current({ targetWorld: 'sala' });
         return;
       }
 
@@ -187,7 +160,6 @@ export function useWorldNavigation({
           nextWorld === 'futbol' ||
           nextWorld === 'tv' ||
           nextWorld === 'juegos' ||
-          nextWorld === 'kids' ||
           nextWorld === 'sala')
       ) {
         if (nextWorld !== 'sala') preloadWorld(nextWorld);
@@ -219,7 +191,6 @@ export function useWorldNavigation({
     },
     [
       sessionMode,
-      onUpgradeSoloToParty,
       setWorldSearchQuery,
       setShowWatchlistOnly,
       clearPortalTimers,

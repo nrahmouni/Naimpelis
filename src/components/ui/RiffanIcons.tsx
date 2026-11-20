@@ -83,18 +83,3 @@ export {
   RiffanDevicesIcon,
   RiffanVoiceMicIcon,
 } from './icons/sportsAndAccountIcons';
-export {
-  RiffanKidsFoxIcon,
-  RiffanKidsLearnIcon,
-  RiffanKidsDrawIcon,
-  RiffanKidsPianoIcon,
-  RiffanKidsPuzzleIcon,
-  RiffanKidsSimonIcon,
-  RiffanKidsBubblesIcon,
-  RiffanKidsMagicIcon,
-  RiffanKidsOwlIcon,
-  RiffanKidsPandaIcon,
-  RiffanKidsCatIcon,
-  RiffanKidsBearIcon,
-  RiffanKidsRabbitIcon,
-} from './icons/kidsIcons';

@@ -44,7 +44,6 @@ interface UseRoomSocketEventsOptions {
   isTvMode: boolean;
   isTvPairLobby: boolean;
   tvAuthToken: string;
-  isKidsRouteMode: boolean;
   lang: AppLanguage;
   profile: StoredProfile;
   mobileTabRef: React.MutableRefObject<MobileNavTab>;
@@ -132,7 +131,6 @@ export function useRoomSocketEvents(opts: UseRoomSocketEventsOptions) {
     isTvMode,
     isTvPairLobby,
     tvAuthToken,
-    isKidsRouteMode,
     lang,
     profile,
     mobileTabRef,
@@ -333,23 +331,20 @@ export function useRoomSocketEvents(opts: UseRoomSocketEventsOptions) {
     setRecentRooms(getRecentRooms());
 
     if (typeof window !== 'undefined') {
-      const currentPath = window.location.pathname.toLowerCase();
-      if (currentPath !== '/kids' && !isKidsRouteMode) {
-        if (isDedicatedAppPath(window.location.pathname)) {
-          try {
-            const url = new URL(window.location.href);
-            url.searchParams.set('room', roomId);
-            if (isTvMode) url.searchParams.set('tv', '1');
-            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
-          } catch {
-            // ignore
-          }
-        } else {
-          const shortPath = isTvMode
-            ? `/${encodeURIComponent(roomId)}?tv=1`
-            : `/${encodeURIComponent(roomId)}`;
-          window.history.replaceState({}, '', shortPath);
+      if (isDedicatedAppPath(window.location.pathname)) {
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.set('room', roomId);
+          if (isTvMode) url.searchParams.set('tv', '1');
+          window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+        } catch {
+          // ignore
         }
+      } else {
+        const shortPath = isTvMode
+          ? `/${encodeURIComponent(roomId)}?tv=1`
+          : `/${encodeURIComponent(roomId)}`;
+        window.history.replaceState({}, '', shortPath);
       }
     }
 
@@ -422,7 +417,6 @@ export function useRoomSocketEvents(opts: UseRoomSocketEventsOptions) {
     tvAuthToken,
     lang,
     profile.id,
-    isKidsRouteMode,
     recordStateInWatchHistory,
     rememberSessionPin,
     showHostLockNotice,

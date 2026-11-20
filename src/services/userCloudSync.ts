@@ -18,12 +18,6 @@ export {
 } from './cloudSync/cloudAuthAndProfile';
 
 export {
-  type SqlAccountState,
-  fetchSqlAccountState,
-  toCloudUserLike,
-} from './cloudSync/cloudSqlSync';
-
-export {
   upsertCloudWatchHistory,
   updateCloudWatchProgressOnly,
   flushPendingCloudWatchProgress,

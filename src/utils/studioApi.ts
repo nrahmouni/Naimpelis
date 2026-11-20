@@ -1,5 +1,4 @@
 import { auth } from '../firebase';
-import { getStoredCloudSession } from './cloudSession';
 import { getStoredProfile } from './storage';
 
 export async function getFirebaseBearerHeaders(): Promise<Record<string, string>> {
@@ -11,16 +10,8 @@ export async function getFirebaseBearerHeaders(): Promise<Record<string, string>
         return { Authorization: `Bearer ${token}` };
       }
     } catch {
-      // Fall through to signed cloud session or guest header
+      // Fall through to anonymous token or guest header
     }
-  }
-
-  const cloudSession = getStoredCloudSession();
-  if (cloudSession?.cloudToken) {
-    return {
-      Authorization: `Bearer ${cloudSession.cloudToken}`,
-      'x-riffan-user-id': cloudSession.uid,
-    };
   }
 
   if (user) {

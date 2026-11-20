@@ -8,6 +8,8 @@ import {
   buildFootballMatchChannels,
   isFeaturedSpanishClubMatch,
   resolveMatchSpanishBroadcaster,
+  resolvePreferredSportsTrackLang,
+  resolveVerifiedSpanishBroadcasterBadge,
   sortTracksWithDaznPriority,
 } from '../server/routes/sportsHelpers/footballTeamMatcher';
 import { getPermanent247SportsMatches } from '../server/routes/sportsHelpers/sportsChannels247';
@@ -23,9 +25,13 @@ import {
 import {
   getLeaguePriorityRank,
   isBarcaOrRealMadridMatch,
+  isSpainNationalTeamMatch,
   matchesFootballSearchFilter,
+  pickPreferredChannelIndex,
   resolveActiveCalendarScope,
+  resolveRecommendedSportsLang,
 } from '../src/components/sports/FootballMatchboardHelpers';
+import { computeDayOffsetFromIsoDate } from '../src/components/sports/FootballMatchboardParts';
 import type { SpanishTdtChannel, StreamTrack } from '../src/types';
 
 describe('H.264 frame & green-screen (#005200) validator', () => {
@@ -94,13 +100,22 @@ describe('H.264 frame & green-screen (#005200) validator', () => {
   });
 });
 
-describe('DAZN priority over Movistar & football matchboard rules', () => {
-  it('places DAZN strictly before Movistar in LaLiga EA Sports, Champions, and Premier League', () => {
-    const laLigaChannels = buildFootballMatchChannels({
-      matchId: 'm-barca',
+describe('Verified TV schedule per match & DAZN priority rules', () => {
+  const emptyVerifiedSchedule = {
+    checked: true,
+    esBroadcasterNames: [],
+    enBroadcasterNames: [],
+    zhBroadcasterNames: [],
+    epgMatches: [],
+  };
+
+  it('never invents fake channels when TV programming has not been announced yet', () => {
+    const unconfirmed = buildFootballMatchChannels({
+      matchId: 'm-future-tba',
       homeTeam: 'FC Barcelona',
       awayTeam: 'Real Madrid',
-      statusState: 'live',
+      statusState: 'upcoming',
+      kickoffMs: Date.UTC(2026, 11, 20, 20, 0, 0),
       league: {
         slug: 'esp.1',
         regionName: 'España',
@@ -110,51 +125,82 @@ describe('DAZN priority over Movistar & football matchboard rules', () => {
         broadcasterProfile: 'laliga',
       },
       scrapedMatches: [],
+      verifiedSchedule: emptyVerifiedSchedule,
     });
 
-    expect(laLigaChannels.length).toBeGreaterThanOrEqual(4);
-    expect(laLigaChannels[0].label).toMatch(/DAZN/i);
-    expect(laLigaChannels[0].lang).toBe('ES');
-    expect(laLigaChannels[0].quality).toBe('1080p');
-    const firstDazn = laLigaChannels.findIndex((c) => /dazn/i.test(c.label));
-    const firstMovistar = laLigaChannels.findIndex((c) => /movistar|m\+/i.test(c.label));
-    expect(firstDazn).toBe(0);
-    expect(firstMovistar).toBeGreaterThan(firstDazn);
+    expect(unconfirmed).toEqual([]);
+    expect(resolveMatchSpanishBroadcaster('esp.1', 'LaLiga EA Sports', emptyVerifiedSchedule)).toBeNull();
+  });
 
-    const championsChannels = buildFootballMatchChannels({
-      matchId: 'm-ucl',
-      homeTeam: 'Arsenal',
-      awayTeam: 'Bayern Munich',
+  it('assigns ONLY M+ LaLiga / Movistar Plus+ when TV guide confirms Movistar exclusively (no fake DAZN)', () => {
+    const schedule = {
+      checked: true,
+      esBroadcasterNames: ['M+ LALIGA', 'Movistar Plus+'],
+      enBroadcasterNames: ['Disney+ (UK)'],
+      zhBroadcasterNames: [],
+      epgMatches: [],
+    };
+    const madridChannels = buildFootballMatchChannels({
+      matchId: 'm-madrid-celta',
+      homeTeam: 'Real Madrid',
+      awayTeam: 'Celta Vigo',
       statusState: 'upcoming',
       league: {
-        slug: 'uefa.champions',
-        regionName: 'Europa',
-        leagueName: 'UEFA Champions League',
+        slug: 'esp.1',
+        regionName: 'España',
+        leagueName: 'LaLiga EA Sports',
         regionFlagUrl: '',
-        priority: 2,
-        broadcasterProfile: 'uefa',
+        priority: 1,
+        broadcasterProfile: 'laliga',
       },
       scrapedMatches: [],
+      verifiedSchedule: schedule,
     });
-    expect(championsChannels[0].label).toMatch(/DAZN/i);
 
-    const premierChannels = buildFootballMatchChannels({
-      matchId: 'm-epl',
-      homeTeam: 'Liverpool',
-      awayTeam: 'Chelsea',
-      statusState: 'live',
+    expect(madridChannels.length).toBeGreaterThanOrEqual(2);
+    expect(madridChannels.some((c) => /M\+ LaLiga/i.test(c.label))).toBe(true);
+    expect(madridChannels.some((c) => /Movistar Plus\+/i.test(c.label))).toBe(true);
+    expect(madridChannels.some((c) => /DAZN/i.test(c.label))).toBe(false);
+    expect(madridChannels.some((c) => c.lang === 'ZH')).toBe(false);
+    expect(madridChannels.some((c) => c.lang === 'EN')).toBe(false);
+
+    const badge = resolveVerifiedSpanishBroadcasterBadge(schedule);
+    expect(badge?.brand).toBe('movistar');
+    expect(badge?.name).toMatch(/M\+ LaLiga/);
+  });
+
+  it('assigns ONLY DAZN LaLiga when TV guide confirms DAZN exclusively (no fake Movistar)', () => {
+    const schedule = {
+      checked: true,
+      esBroadcasterNames: ['DAZN', 'DAZN LaLiga'],
+      enBroadcasterNames: [],
+      zhBroadcasterNames: [],
+      epgMatches: [],
+    };
+    const barcaChannels = buildFootballMatchChannels({
+      matchId: 'm-barca-villarreal',
+      homeTeam: 'Barcelona',
+      awayTeam: 'Villarreal',
+      statusState: 'upcoming',
       league: {
-        slug: 'eng.1',
-        regionName: 'Inglaterra',
-        leagueName: 'Premier League',
+        slug: 'esp.1',
+        regionName: 'España',
+        leagueName: 'LaLiga EA Sports',
         regionFlagUrl: '',
-        priority: 3,
-        broadcasterProfile: 'europe',
+        priority: 1,
+        broadcasterProfile: 'laliga',
       },
       scrapedMatches: [],
+      verifiedSchedule: schedule,
     });
-    expect(premierChannels[0].label).toMatch(/DAZN/i);
-    expect(resolveMatchSpanishBroadcaster('esp.1')?.brand).toBe('dazn');
+
+    expect(barcaChannels.length).toBeGreaterThanOrEqual(1);
+    expect(barcaChannels[0].label).toMatch(/DAZN LaLiga/i);
+    expect(barcaChannels.some((c) => /M\+ LaLiga|Movistar/i.test(c.label))).toBe(false);
+
+    const badge = resolveVerifiedSpanishBroadcasterBadge(schedule);
+    expect(badge?.brand).toBe('dazn');
+    expect(badge?.name).toBe('DAZN LaLiga');
   });
 
   it('orders DAZN first in 24/7 multiplexes and in sortTracksWithDaznPriority', () => {
@@ -342,5 +388,94 @@ describe('Android Chrome backup satellite selector & Similar Channels mini-guide
     expect(formatSpanishMatchdayLabel('Quarterfinals')).toBe('Cuartos');
     expect(translateFootballStatusLabel('Postponed', 'upcoming')).toBe('Aplazado');
     expect(translateFootballStatusLabel('HT', 'live')).toBe('Descanso');
+  });
+});
+
+describe('Language-based channel recommendations, Selección Española priority & full-season calendar', () => {
+  it('maps es/ca/rif to ES channels, en to EN channels, and zh to ZH channels', () => {
+    expect(resolveRecommendedSportsLang('es')).toBe('ES');
+    expect(resolveRecommendedSportsLang('ca')).toBe('ES');
+    expect(resolveRecommendedSportsLang('rif')).toBe('ES');
+    expect(resolveRecommendedSportsLang('en')).toBe('EN');
+    expect(resolveRecommendedSportsLang('zh')).toBe('ZH');
+
+    expect(resolvePreferredSportsTrackLang('es')).toBe('ES');
+    expect(resolvePreferredSportsTrackLang('ca')).toBe('ES');
+    expect(resolvePreferredSportsTrackLang('rif')).toBe('ES');
+    expect(resolvePreferredSportsTrackLang('en')).toBe('EN');
+    expect(resolvePreferredSportsTrackLang('zh')).toBe('ZH');
+  });
+
+  it('selects confirmed ES/EN/ZH channels by app language only when each language broadcast is verified in TV schedules', () => {
+    const tomorrowMs = Date.now() + 26 * 60 * 60 * 1000;
+    const multiLangVerifiedSchedule = {
+      checked: true,
+      esBroadcasterNames: ['DAZN 1', 'M+ Liga de Campeones'],
+      enBroadcasterNames: ['Sky Sports Premier League', 'Sky Sports Main Event'],
+      zhBroadcasterNames: ['CCTV-5'],
+      epgMatches: [],
+    };
+    const verifiedMultiLang = buildFootballMatchChannels({
+      matchId: 'm-liverpool-utd',
+      homeTeam: 'Liverpool',
+      awayTeam: 'Manchester United',
+      statusState: 'upcoming',
+      kickoffMs: tomorrowMs,
+      league: {
+        slug: 'eng.1',
+        regionName: 'Inglaterra',
+        leagueName: 'Premier League',
+        regionFlagUrl: '',
+        priority: 2,
+        broadcasterProfile: 'europe',
+      },
+      scrapedMatches: [],
+      verifiedSchedule: multiLangVerifiedSchedule,
+    });
+
+    const esIdx = pickPreferredChannelIndex(verifiedMultiLang, 'es');
+    const caIdx = pickPreferredChannelIndex(verifiedMultiLang, 'ca');
+    const rifIdx = pickPreferredChannelIndex(verifiedMultiLang, 'rif');
+    const enIdx = pickPreferredChannelIndex(verifiedMultiLang, 'en');
+    const zhIdx = pickPreferredChannelIndex(verifiedMultiLang, 'zh');
+
+    expect(verifiedMultiLang[esIdx].lang).toBe('ES');
+    expect(verifiedMultiLang[esIdx].label).toMatch(/DAZN 1/i);
+    expect(verifiedMultiLang[caIdx].lang).toBe('ES');
+    expect(verifiedMultiLang[rifIdx].lang).toBe('ES');
+    expect(verifiedMultiLang[enIdx].lang).toBe('EN');
+    expect(verifiedMultiLang[enIdx].label).toMatch(/Sky Sports Premier League/i);
+    expect(verifiedMultiLang[zhIdx].lang).toBe('ZH');
+    expect(verifiedMultiLang[zhIdx].label).toMatch(/CCTV-5/i);
+
+    const enSorted = sortTracksWithDaznPriority(verifiedMultiLang, 'eng.1', 'EN');
+    expect(enSorted[0].lang).toBe('EN');
+
+    const zhSorted = sortTracksWithDaznPriority(verifiedMultiLang, 'eng.1', 'ZH');
+    expect(zhSorted[0].lang).toBe('ZH');
+  });
+
+  it('prioritizes Selección Española alongside Barça & Real Madrid without false-matching Espanyol', () => {
+    expect(isSpainNationalTeamMatch('España', 'Francia')).toBe(true);
+    expect(isSpainNationalTeamMatch('Spain', 'Germany')).toBe(true);
+    expect(isSpainNationalTeamMatch('RCD Espanyol', 'Valencia')).toBe(false);
+
+    expect(isFeaturedSpanishClubMatch('España', 'Portugal')).toBe(true);
+    expect(isFeaturedSpanishClubMatch('RCD Espanyol', 'Getafe')).toBe(false);
+
+    const spainRank = getLeaguePriorityRank('uefa.nations', 'Europa: Liga de Naciones UEFA', 'España', 'Croacia');
+    const premierRank = getLeaguePriorityRank('eng.1', 'Inglaterra: Premier League', 'Everton', 'Wolves');
+    expect(spainRank).toBeGreaterThan(premierRank);
+
+    expect(resolveCalendarScopeMode({ calendar: 'espana' })).toEqual({
+      kind: 'team',
+      key: 'espana',
+      teamIds: ['164'],
+    });
+    expect(resolveActiveCalendarScope('espana', '')).toBe('espana');
+    expect(resolveActiveCalendarScope('barca_madrid', '')).toBe('barca_madrid');
+    expect(resolveActiveCalendarScope('', 'RCD Espanyol')).not.toBe('espana');
+
+    expect(computeDayOffsetFromIsoDate('2099-01-01')).toBeGreaterThan(365);
   });
 });

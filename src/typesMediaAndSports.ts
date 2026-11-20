@@ -313,6 +313,7 @@ export interface FootballMatchboardItem {
   statusLabel: string;
   matchdayLabel?: string;
   spanishBroadcaster?: { name: string; brand: 'movistar' | 'dazn' | 'dazn_mplus' | 'rtve'; badgeColor: string } | null;
+  verifiedTvGuide?: { checked: boolean; es?: string[]; en?: string[]; zh?: string[] };
   homeTeam: string;
   awayTeam: string;
   homeShort: string;

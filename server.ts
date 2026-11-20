@@ -19,6 +19,7 @@ import { registerOperationalRoutes } from './server/routes/health.ts';
 import { registerExpandedCatalogRoutes } from './server/routes/expandedCatalog.ts';
 import { registerProxyRoutes } from './server/routes/proxies.ts';
 import { registerVoiceAssistantRoutes } from './server/routes/voiceAssistant.ts';
+import { registerAiMediaRoutes } from './server/routes/aiStudio/aiMediaRoutes.ts';
 import { setupGeminiLiveWebSocket } from './server/routes/geminiLive.ts';
 import { registerYouTubeCatalogRoutes } from './server/routes/youtubeCatalog.ts';
 import {
@@ -182,6 +183,7 @@ registerVoiceAssistantRoutes(app, {
   resolveLogoUrl: resolveOfficialChannelLogoUrl,
   getSportsMatches: getLiveVoiceMatches,
 });
+registerAiMediaRoutes(app);
 geminiLiveBridge = setupGeminiLiveWebSocket(httpServer, {
   getChannels: getLiveVoiceChannels,
   getSportsMatches: getLiveVoiceMatches,

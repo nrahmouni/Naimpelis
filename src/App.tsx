@@ -35,7 +35,7 @@ export function App() {
     setTvAuthToken, savedRooms, pinPromptState, tvClaimStatus, smartTvModalOpen, setSmartTvModalOpen,
     showIntro, setShowIntro, introWithSound, setIntroWithSound,
     showWatchlistOnly, setShowWatchlistOnly, showVoiceAssistant, setShowVoiceAssistant,
-    kidsExitPromptSeq, quickPool, quickPoolLoading, nativeApkUpdate, setNativeApkUpdate,
+    quickPool, quickPoolLoading, nativeApkUpdate, setNativeApkUpdate,
     reducedMotion, activeWorld, lastUsedWorld, cineTab, setCineTab,
     cineCastellano, setCineCastellano, futbolTab, setFutbolTab,
     isFloatingRoomOpen, setIsFloatingRoomOpen, showDesignSystem, setShowDesignSystem,
@@ -543,7 +543,6 @@ export function App() {
               inRoom &&
               sessionMode !== 'solo' &&
               activeWorld !== 'sala' &&
-              activeWorld !== 'kids' &&
               !isTvMode &&
               !showCommandSearch &&
               !showSurpriseModal &&

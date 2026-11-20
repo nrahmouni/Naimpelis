@@ -53,6 +53,8 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
   const [loadingItemId, setLoadingItemId] = useState<string | null>(null);
   const [languageNotice, setLanguageNotice] = useState<LanguageNoticePopup | null>(null);
 
+  const optsRef = useRef(opts);
+  optsRef.current = opts;
   const langNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extractionReqSeqRef = useRef<number>(0);
   const extractionAbortRef = useRef<AbortController | null>(null);
@@ -140,7 +142,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
       setCinemaModePersist(snap.isCinemaMode);
     }
     if (!snap || snap.videoState.mode === 'idle') {
-      opts.onRestorePlaybackOrigin?.({ reason: 'cancel' });
+      optsRef.current.onRestorePlaybackOrigin?.({ reason: 'cancel' });
     }
     triggerHaptic('light');
   }, [
@@ -154,7 +156,6 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     setIsPlayerClosedLocally,
     setIsPlayerMinimized,
     setCinemaModePersist,
-    opts,
   ]);
 
   const {
@@ -179,57 +180,59 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     [sessionMode, profileName]
   );
 
-  const handleClosePlayer = () => {
+  const handleClosePlayer = useCallback(() => {
+    const o = optsRef.current;
     triggerHaptic('light');
     clearExtractionSnapshot();
-    setIsPlayerMinimized(false);
-    setCinemaModePersist(false);
-    setSecondaryStream(null);
-    setActiveSportsMatch(null);
-    setActiveMatchDetails(null);
-    setActiveMovieContext(null);
-    if (videoState.mode === 'cloud' && sessionMode !== 'solo') {
+    o.setIsPlayerMinimized(false);
+    o.setCinemaModePersist(false);
+    o.setSecondaryStream(null);
+    o.setActiveSportsMatch(null);
+    o.setActiveMatchDetails(null);
+    o.setActiveMovieContext(null);
+    if (o.videoStateRef.current.mode === 'cloud' && o.sessionMode !== 'solo') {
       socketService.stopCloudBrowser();
     }
-    if (sessionMode === 'solo' || (participants.length <= 1 && canChangeMedia)) {
+    if (o.sessionMode === 'solo' || (o.participants.length <= 1 && o.canChangeMedia)) {
       const idleNext: VideoState = {
         ...INITIAL_VIDEO_STATE,
         lastUpdated: Date.now(),
-        updatedBy: profileName,
+        updatedBy: o.profileName,
       };
-      setVideoState(idleNext);
-      setIsPlayerClosedLocally(false);
+      o.setVideoState(idleNext);
+      o.setIsPlayerClosedLocally(false);
       commitVideoStateSync('change_url', idleNext);
     } else {
-      setIsPlayerClosedLocally(true);
+      o.setIsPlayerClosedLocally(true);
     }
-    opts.onRestorePlaybackOrigin?.({ reason: 'close' });
-  };
+    o.onRestorePlaybackOrigin?.({ reason: 'close' });
+  }, [clearExtractionSnapshot, commitVideoStateSync]);
 
-  const handleStopRoomPlaybackForEveryone = () => {
-    if (!canChangeMedia) {
-      const hostName = participants.find((p) => p.id === hostId)?.name;
-      showHostLockNotice(hostName);
+  const handleStopRoomPlaybackForEveryone = useCallback(() => {
+    const o = optsRef.current;
+    if (!o.canChangeMedia) {
+      const hostName = o.participants.find((p) => p.id === o.hostId)?.name;
+      o.showHostLockNotice(hostName);
       return;
     }
     triggerHaptic('medium');
     clearExtractionSnapshot();
-    setIsPlayerMinimized(false);
-    setIsPlayerClosedLocally(false);
-    setCinemaModePersist(false);
-    setSecondaryStream(null);
-    setActiveSportsMatch(null);
-    setActiveMatchDetails(null);
-    setActiveMovieContext(null);
+    o.setIsPlayerMinimized(false);
+    o.setIsPlayerClosedLocally(false);
+    o.setCinemaModePersist(false);
+    o.setSecondaryStream(null);
+    o.setActiveSportsMatch(null);
+    o.setActiveMatchDetails(null);
+    o.setActiveMovieContext(null);
     const idleNext: VideoState = {
       ...INITIAL_VIDEO_STATE,
       lastUpdated: Date.now(),
-      updatedBy: profileName,
+      updatedBy: o.profileName,
     };
-    setVideoState(idleNext);
+    o.setVideoState(idleNext);
     commitVideoStateSync('change_url', idleNext);
-    opts.onRestorePlaybackOrigin?.({ reason: 'close' });
-  };
+    o.onRestorePlaybackOrigin?.({ reason: 'close' });
+  }, [clearExtractionSnapshot, commitVideoStateSync]);
 
   const handleSyncPlayerAction = useCallback(
     (action: 'play' | 'pause' | 'seek' | 'change_url', patch: Partial<VideoState>) => {
@@ -283,6 +286,75 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     handlePlayYouTubeVideo: vodHandlers.handlePlayYouTubeVideo,
   });
 
+  const combinedHandlersRef = useRef({ ...vodHandlers, ...liveHandlers });
+  combinedHandlersRef.current = { ...vodHandlers, ...liveHandlers };
+
+  const stablePlayMovie = useCallback(
+    (...args: Parameters<typeof vodHandlers.handlePlayMovie>) =>
+      combinedHandlersRef.current.handlePlayMovie(...args),
+    []
+  );
+  const stablePlaySeriesEpisode = useCallback(
+    (...args: Parameters<typeof vodHandlers.handlePlaySeriesEpisode>) =>
+      combinedHandlersRef.current.handlePlaySeriesEpisode(...args),
+    []
+  );
+  const stableReplayHistoryItem = useCallback(
+    (...args: Parameters<typeof vodHandlers.handleReplayHistoryItem>) =>
+      combinedHandlersRef.current.handleReplayHistoryItem(...args),
+    []
+  );
+  const stablePlayFromProfileCatalog = useCallback(
+    (...args: Parameters<typeof vodHandlers.handlePlayFromProfileCatalog>) =>
+      combinedHandlersRef.current.handlePlayFromProfileCatalog(...args),
+    []
+  );
+  const stablePlayCatalaEpisode = useCallback(
+    (...args: Parameters<typeof vodHandlers.handlePlayCatalaEpisode>) =>
+      combinedHandlersRef.current.handlePlayCatalaEpisode(...args),
+    []
+  );
+  const stablePlayYouTubeVideo = useCallback(
+    (...args: Parameters<typeof vodHandlers.handlePlayYouTubeVideo>) =>
+      combinedHandlersRef.current.handlePlayYouTubeVideo(...args),
+    []
+  );
+  const stablePlaySportsMatch = useCallback(
+    (...args: Parameters<typeof liveHandlers.handlePlaySportsMatch>) =>
+      combinedHandlersRef.current.handlePlaySportsMatch(...args),
+    []
+  );
+  const stablePlayTdtChannel = useCallback(
+    (...args: Parameters<typeof liveHandlers.handlePlayTdtChannel>) =>
+      combinedHandlersRef.current.handlePlayTdtChannel(...args),
+    []
+  );
+  const stablePlayFavoriteChannel = useCallback(
+    (...args: Parameters<typeof liveHandlers.handlePlayFavoriteChannel>) =>
+      combinedHandlersRef.current.handlePlayFavoriteChannel(...args),
+    []
+  );
+  const stableSelectTrack = useCallback(
+    (...args: Parameters<typeof liveHandlers.handleSelectTrack>) =>
+      combinedHandlersRef.current.handleSelectTrack(...args),
+    []
+  );
+  const stablePlayQueueItem = useCallback(
+    (...args: Parameters<typeof liveHandlers.handlePlayQueueItem>) =>
+      combinedHandlersRef.current.handlePlayQueueItem(...args),
+    []
+  );
+  const stablePlayCustomUrl = useCallback(
+    (...args: Parameters<typeof liveHandlers.handlePlayCustomUrl>) =>
+      combinedHandlersRef.current.handlePlayCustomUrl(...args),
+    []
+  );
+  const stablePlaySecondaryChannel = useCallback(
+    (...args: Parameters<typeof liveHandlers.handlePlaySecondaryChannel>) =>
+      combinedHandlersRef.current.handlePlaySecondaryChannel(...args),
+    []
+  );
+
   return {
     isExtracting,
     extractionLabel,
@@ -303,5 +375,18 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     handleSyncPlayerAction,
     ...vodHandlers,
     ...liveHandlers,
+    handlePlayMovie: stablePlayMovie,
+    handlePlaySeriesEpisode: stablePlaySeriesEpisode,
+    handleReplayHistoryItem: stableReplayHistoryItem,
+    handlePlayFromProfileCatalog: stablePlayFromProfileCatalog,
+    handlePlayCatalaEpisode: stablePlayCatalaEpisode,
+    handlePlayYouTubeVideo: stablePlayYouTubeVideo,
+    handlePlaySportsMatch: stablePlaySportsMatch,
+    handlePlayTdtChannel: stablePlayTdtChannel,
+    handlePlayFavoriteChannel: stablePlayFavoriteChannel,
+    handleSelectTrack: stableSelectTrack,
+    handlePlayQueueItem: stablePlayQueueItem,
+    handlePlayCustomUrl: stablePlayCustomUrl,
+    handlePlaySecondaryChannel: stablePlaySecondaryChannel,
   };
 }

@@ -4,7 +4,6 @@ import {
   Check,
   Pencil,
   Mic,
-  Sparkles,
 } from 'lucide-react';
 import type {
   AppLanguage,
@@ -443,39 +442,8 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
           renderSpotlightOverlay={renderSpotlightOverlay}
         />
 
-        {/* 5. QUIET SECONDARY ROW: RIFFAN KIDS & SORPRÉNDEME */}
-        <section className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-          <motion.button
-            type="button"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.14 }}
-            whileTap={{ scale: 0.985 }}
-            onPointerEnter={() => onPreloadWorld?.('kids')}
-            onTouchStart={() => onPreloadWorld?.('kids')}
-            onClick={(e) => handleCardClick('kids', e)}
-            className="w-full min-h-12 px-4 py-2.5 rounded-2xl bg-white/[0.035] hover:bg-white/[0.06] border border-white/[0.08] hover:border-white/20 flex items-center justify-between gap-2.5 text-left cursor-pointer transition-all duration-200 group"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-white/[0.06] text-amber-300 border border-white/[0.08] flex items-center justify-center shrink-0">
-                <Sparkles className="w-3.5 h-3.5" />
-              </div>
-              <span className="font-display font-semibold text-xs sm:text-sm text-white shrink-0">
-                Riffan Kids
-              </span>
-              <span className="text-xs text-zinc-400 truncate">
-                ·{' '}
-                {pickLang(lang, {
-                  es: 'Cine y juegos infantiles',
-                  ca: 'Cinema i jocs infantils',
-                  en: 'Movies & games for kids',
-                  rif: 'Lafilmat d iraren',
-                })}
-              </span>
-            </div>
-            <RiffanChevronRightIcon size={16} animate="hover" className="shrink-0" />
-          </motion.button>
-
+        {/* 5. QUIET SECONDARY CTA: SORPRÉNDEME */}
+        <section>
           <motion.button
             type="button"
             initial={{ opacity: 0, y: 6 }}

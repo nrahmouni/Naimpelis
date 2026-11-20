@@ -21,7 +21,7 @@ import type { ProfileHubTab } from './UserProfileHubModal';
 import type { ActiveMovieContext } from './MoviePlaybackDock';
 import type { ActiveSportsMatchMeta } from '../hooks/useLiveSportsMatchDetails';
 import type { CatalogSection } from './MediaCatalogHub';
-import { useAppStore, type WorldId } from '../store/useAppStore';
+import type { WorldId } from '../store/useAppStore';
 import type { RecentRoomEntry, StoredProfile } from '../utils/storage';
 import type { NativeApkUpdateAvailable } from '../utils/versionSync';
 import { pickLang } from '../utils/i18n';
@@ -325,7 +325,6 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
     enterWorld,
   } = p;
 
-  const activeWorld = useAppStore((s) => s.activeWorld);
   const shareRoomId = sessionMode !== 'solo' && roomId ? roomId : undefined;
 
   return (
@@ -638,28 +637,26 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
         onDismiss={onDismissGameInvite}
       />
 
-      {activeWorld !== 'kids' && (
-        <GlobalVodModals
-          lang={lang}
-          shareRoomId={shareRoomId}
-          loadingItemId={loadingItemId}
-          watchHistory={watchHistory}
-          watchlist={watchlist}
-          worldSearchQuery={worldSearchQuery}
-          effectiveCineCastellano={cineCastellano}
-          onToggleCatalogFavorite={onToggleCatalogFavorite}
-          onPlayMovie={(movie, preferLang, opts) => {
-            void onPlayMovie(movie, preferLang, opts);
-          }}
-          onPlaySeriesEpisode={(series, episode, preferLang, opts) => {
-            void onPlaySeriesEpisode(series, episode, preferLang, opts);
-          }}
-          onReplayHistoryItem={(item, forceRestart) => {
-            void onReplayHistoryItem(item, forceRestart);
-          }}
-          onAddToQueue={onAddToQueue}
-        />
-      )}
+      <GlobalVodModals
+        lang={lang}
+        shareRoomId={shareRoomId}
+        loadingItemId={loadingItemId}
+        watchHistory={watchHistory}
+        watchlist={watchlist}
+        worldSearchQuery={worldSearchQuery}
+        effectiveCineCastellano={cineCastellano}
+        onToggleCatalogFavorite={onToggleCatalogFavorite}
+        onPlayMovie={(movie, preferLang, opts) => {
+          void onPlayMovie(movie, preferLang, opts);
+        }}
+        onPlaySeriesEpisode={(series, episode, preferLang, opts) => {
+          void onPlaySeriesEpisode(series, episode, preferLang, opts);
+        }}
+        onReplayHistoryItem={(item, forceRestart) => {
+          void onReplayHistoryItem(item, forceRestart);
+        }}
+        onAddToQueue={onAddToQueue}
+      />
     </>
   );
 };

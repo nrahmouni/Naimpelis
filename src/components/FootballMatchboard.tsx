@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import type {
   AppLanguage,
   FavoriteChannelItem,
@@ -14,6 +14,7 @@ import { pickLang } from '../utils/i18n';
 import {
   FootballMatchDetailSheet,
   RegionFlagImg,
+  computeDayOffsetFromIsoDate,
   formatOffsetDateKey,
   toSportsMatch,
   type MatchSheetTab,
@@ -22,6 +23,8 @@ import {
   getClubHighlightTier,
   getLeaguePriorityRank,
   isBarcaOrRealMadridMatch,
+  isPrioritySpanishHighlightMatch,
+  isSpainNationalTeamMatch,
   matchesFootballSearchFilter,
   normalizeFootballText,
   resolveActiveCalendarScope,
@@ -35,6 +38,7 @@ interface FootballMatchboardProps {
   onSearchQueryChange: (val: string) => void;
   langFilter?: 'all' | 'ZH';
   leagueFilter?: string;
+  onSelectLeagueFilter?: (val: string) => void;
   brandFilter?: string;
   onClearCalendarScope?: () => void;
   onResetFilters?: () => void;
@@ -55,6 +59,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   onSearchQueryChange,
   langFilter = 'all',
   leagueFilter = '',
+  onSelectLeagueFilter,
   brandFilter = 'all',
   onClearCalendarScope,
   onResetFilters,
@@ -126,11 +131,12 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
     () => resolveActiveCalendarScope(leagueFilter, searchQuery),
     [leagueFilter, searchQuery]
   );
-  const currentBoardKey = `${activeDateInfo.dateKey}:${calendarScope || 'daily'}`;
+  const currentBoardKey = `${activeDateInfo.dateKey}:${calendarScope || 'daily'}:${lang}`;
   const isTeamCalendarScope =
     calendarScope === 'barcelona' ||
     calendarScope === 'real_madrid' ||
-    calendarScope === 'barca_madrid';
+    calendarScope === 'barca_madrid' ||
+    calendarScope === 'espana';
 
   useEffect(() => {
     if (leagueFilter || calendarScope) {
@@ -141,13 +147,16 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   const fetchBoard = useCallback(
     async (silent = false) => {
       const seq = ++boardSeqRef.current;
-      const reqKey = `${activeDateInfo.dateKey}:${calendarScope || 'daily'}`;
+      const reqKey = `${activeDateInfo.dateKey}:${calendarScope || 'daily'}:${lang}`;
       if (!silent) {
         setLoading(true);
         setFetchError(false);
       }
       try {
-        const params = new URLSearchParams({ date: activeDateInfo.dateKey });
+        const params = new URLSearchParams({
+          date: activeDateInfo.dateKey,
+          lang,
+        });
         if (calendarScope) {
           params.set('calendar', calendarScope);
         }
@@ -190,7 +199,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
         if (seq === boardSeqRef.current && !silent) setLoading(false);
       }
     },
-    [activeDateInfo.dateKey, calendarScope, setStatusTab]
+    [activeDateInfo.dateKey, calendarScope, lang, setStatusTab]
   );
 
   useEffect(() => {
@@ -323,7 +332,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
         const hayLeague = normalizeFootballText(
           `${m.groupTitle} ${m.leagueSlug} ${m.leagueName} ${m.regionName}`
         );
-        if (lf === 'champions') {
+        if (lf === 'barca_madrid') {
+          if (!isBarcaOrRealMadridMatch(m.homeTeam, m.awayTeam)) return false;
+        } else if (lf === 'espana') {
+          if (!isSpainNationalTeamMatch(m.homeTeam, m.awayTeam)) return false;
+        } else if (lf === 'champions') {
           if (!/champions|uefa\.champions|liga de campeones/i.test(hayLeague)) return false;
         } else if (lf === 'laliga' || lf === 'esp.1') {
           if (!/laliga|esp\.1|primera|ea sports/i.test(hayLeague)) return false;
@@ -353,11 +366,21 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
 
     if (isTeamCalendarScope && filteredMatches.length > 0) {
       const timelineTitle =
-        calendarScope === 'barca_madrid'
+        calendarScope === 'espana'
           ? pickLang(lang, {
-              es: 'Calendario FC Barcelona y Real Madrid · Próximos partidos',
-              ca: 'Calendari FC Barcelona i Real Madrid · Pròxims partits',
-              en: 'FC Barcelona & Real Madrid Schedule · Upcoming',
+              es: 'Selección Española · Calendario de toda la temporada',
+              ca: 'Selecció Espanyola · Calendari de tota la temporada',
+              en: 'Spain National Team · Full-Season Schedule',
+              zh: '西班牙国家队 · 全赛季赛程',
+              rif: 'Tarbaεt n Spanya · Lbaramij n ussegwas',
+            })
+          : calendarScope === 'barca_madrid'
+          ? pickLang(lang, {
+              es: 'Calendario FC Barcelona y Real Madrid · Toda la temporada',
+              ca: 'Calendari FC Barcelona i Real Madrid · Tota la temporada',
+              en: 'FC Barcelona & Real Madrid · Full-Season Schedule',
+              zh: '巴塞罗那与皇家马德里 · 全赛季赛程',
+              rif: 'Barça d Real Madrid · Lbaramij n ussegwas',
             })
           : calendarScope === 'barcelona'
           ? pickLang(lang, {
@@ -372,11 +395,17 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
             });
 
       const sortedTimeline = [...filteredMatches].sort((a, b) => {
-        if (a.statusState === 'live' && b.statusState !== 'live') return -1;
-        if (b.statusState === 'live' && a.statusState !== 'live') return 1;
+        const stateRank = (s: string) => (s === 'live' ? 0 : s === 'upcoming' ? 1 : 2);
+        if (stateRank(a.statusState) !== stateRank(b.statusState)) {
+          return stateRank(a.statusState) - stateRank(b.statusState);
+        }
         const aMs = getKickoffMs(a);
         const bMs = getKickoffMs(b);
-        if (aMs !== bMs) return aMs - bMs;
+        if (a.statusState === 'finished') {
+          if (aMs !== bMs) return bMs - aMs;
+        } else if (aMs !== bMs) {
+          return aMs - bMs;
+        }
         return a.kickoffTime.localeCompare(b.kickoffTime);
       });
 
@@ -444,8 +473,8 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
     groups.sort((a, b) => {
       const aLive = a.items.some((m) => m.statusState === 'live') ? 1000 : 0;
       const bLive = b.items.some((m) => m.statusState === 'live') ? 1000 : 0;
-      const aFeat = a.items.some((m) => isBarcaOrRealMadridMatch(m.homeTeam, m.awayTeam)) ? 260 : 0;
-      const bFeat = b.items.some((m) => isBarcaOrRealMadridMatch(m.homeTeam, m.awayTeam)) ? 260 : 0;
+      const aFeat = a.items.some((m) => isPrioritySpanishHighlightMatch(m.homeTeam, m.awayTeam)) ? 260 : 0;
+      const bFeat = b.items.some((m) => isPrioritySpanishHighlightMatch(m.homeTeam, m.awayTeam)) ? 260 : 0;
       const aBest = a.items.reduce(
         (max, m) => Math.max(max, getLeaguePriorityRank(m.leagueSlug, a.groupTitle, m.homeTeam, m.awayTeam)),
         0
@@ -537,7 +566,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
               }}
               className="min-h-10 px-3 rounded-xl bg-[#9146FF]/15 hover:bg-[#9146FF]/25 border border-[#9146FF]/40 text-xs font-bold text-[#E9D5FF] whitespace-nowrap cursor-pointer shrink-0 ml-auto transition-colors"
             >
-              {pickLang(lang, { es: 'Volver a Hoy', ca: 'Tornar a Avui', en: 'Back to Today' })}
+              {pickLang(lang, { es: 'Volver a Hoy', ca: 'Tornar a Avui', en: 'Back to Today', zh: '返回今天', rif: 'Uɣal ar Assa' })}
             </button>
           ) : (
             <div className="inline-flex items-center rounded-xl bg-white/[0.045] border border-white/[0.08] shrink-0 ml-auto">
@@ -545,39 +574,57 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                 type="button"
                 onClick={() => {
                   triggerHaptic('light');
-                  setDayOffset((d) => Math.max(-7, d - 1));
+                  setDayOffset((d) => Math.max(-30, d - 1));
                   setStatusTab('all');
                 }}
                 aria-label={pickLang(lang, {
                   es: 'Día anterior',
                   ca: 'Dia anterior',
                   en: 'Previous day',
+                  zh: '前一天',
+                  rif: 'Ass iɛeddan',
                 })}
                 className="min-w-10 min-h-10 flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
+              <label className="relative px-2.5 min-h-10 flex items-center gap-1.5 text-xs font-bold text-white whitespace-nowrap cursor-pointer hover:text-[#D8B4FE] transition-colors">
+                <Calendar className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+                <span>{activeDateLabel}</span>
+                <input
+                  type="date"
+                  value={activeDateInfo.isoDate}
+                  aria-label={pickLang(lang, {
+                    es: 'Elegir fecha del calendario',
+                    ca: 'Triar data del calendari',
+                    en: 'Pick calendar date',
+                    zh: '选择赛季日期',
+                    rif: 'Fren ass deg lbaramij',
+                  })}
+                  onChange={(e) => {
+                    const offset = computeDayOffsetFromIsoDate(e.target.value);
+                    if (offset !== null) {
+                      triggerHaptic('light');
+                      setDayOffset(Math.max(-30, Math.min(365, offset)));
+                      setStatusTab('all');
+                    }
+                  }}
+                  className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                />
+              </label>
               <button
                 type="button"
                 onClick={() => {
                   triggerHaptic('light');
-                  setDayOffset(0);
-                }}
-                className="px-2 min-h-10 text-xs font-bold text-white whitespace-nowrap cursor-pointer"
-              >
-                {activeDateLabel}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setDayOffset((d) => Math.min(30, d + 1));
+                  setDayOffset((d) => Math.min(365, d + 1));
                   setStatusTab('all');
                 }}
                 aria-label={pickLang(lang, {
                   es: 'Día siguiente',
                   ca: 'Dia següent',
                   en: 'Next day',
+                  zh: '下一天',
+                  rif: 'Ass i d-yegguren',
                 })}
                 className="min-w-10 min-h-10 flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
               >
@@ -587,13 +634,95 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
           )}
         </div>
 
+        {/* Full-Season Navigable Calendar Bar */}
+        <div className="px-3 sm:px-4 py-2 bg-[#121521] border-b border-white/[0.06] flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+          {(
+            [
+              {
+                id: '',
+                label: pickLang(lang, {
+                  es: 'Hoy / Fecha',
+                  ca: 'Avui / Data',
+                  en: 'Daily / Date',
+                  zh: '今日赛程',
+                  rif: 'Assa / Azemz',
+                }),
+              },
+              {
+                id: 'barca_madrid',
+                label: pickLang(lang, {
+                  es: 'Barça y Madrid',
+                  ca: 'Barça i Madrid',
+                  en: 'Barça & Madrid',
+                  zh: '巴萨与皇马',
+                  rif: 'Barça d Madrid',
+                }),
+              },
+              {
+                id: 'espana',
+                label: pickLang(lang, {
+                  es: 'Selección Española',
+                  ca: 'Selecció Espanyola',
+                  en: 'Spain NT',
+                  zh: '西班牙国家队',
+                  rif: 'Spanya',
+                }),
+              },
+              {
+                id: 'laliga',
+                label: 'LaLiga',
+              },
+              {
+                id: 'champions',
+                label: 'Champions',
+              },
+            ] as const
+          ).map((scopeBtn) => {
+            const isScopeActive =
+              scopeBtn.id === ''
+                ? !calendarScope
+                : calendarScope === scopeBtn.id;
+            return (
+              <button
+                key={scopeBtn.id || 'daily-scope'}
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  if (scopeBtn.id === '') {
+                    if (onClearCalendarScope) {
+                      onClearCalendarScope();
+                    } else {
+                      onSelectLeagueFilter?.('');
+                      onSearchQueryChange('');
+                    }
+                    setDayOffset(0);
+                  } else {
+                    onSearchQueryChange('');
+                    onSelectLeagueFilter?.(scopeBtn.id);
+                    setStatusTab('all');
+                  }
+                }}
+                className={`min-h-9 px-3 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+                  isScopeActive
+                    ? 'bg-[#9146FF] border-[#9146FF] text-white'
+                    : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300 hover:text-white'
+                }`}
+              >
+                {scopeBtn.label}
+              </button>
+            );
+          })}
+        </div>
+
         {calendarScope && (
           <div className="px-3.5 py-2 bg-[#9146FF]/[0.12] border-b border-[#9146FF]/25 text-[11px]">
             <span className="text-[#E9D5FF] font-semibold leading-snug">
               {pickLang(lang, {
-                es: 'Calendario completo · Incluye próximos partidos aunque sean dentro de varias semanas',
-                ca: 'Calendari complet · Inclou pròxims partits encara que siguin d’aquí a diverses setmanes',
-                en: 'Full upcoming schedule · Includes fixtures weeks ahead',
+                es: 'Calendario completo · Toda la temporada navegable de la competición',
+                ca: 'Calendari complet · Tota la temporada navegable de la competició',
+                en: 'Full-season schedule · All upcoming competition fixtures',
+                zh: '全赛季赛程 · 查看整季比赛日程',
+                rif: 'Lbaramij n ussegwas ikemlen · Akk lmatchat i d-yegguren',
               })}
             </span>
           </div>

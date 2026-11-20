@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   AppLanguage,
   CatalaCatalogItem,
@@ -123,25 +123,36 @@ export function useVodCatalogState({
   useEffect(() => {
     const clean = homeQuery.trim();
     if (!clean || /^https?:\/\//i.test(clean)) {
-      setDebouncedHomeQuery('');
+      setDebouncedHomeQuery((prev) => (prev === '' ? prev : ''));
       return;
     }
-    const timer = setTimeout(() => setDebouncedHomeQuery(clean), 260);
+    const timer = setTimeout(
+      () => setDebouncedHomeQuery((prev) => (prev === clean ? prev : clean)),
+      260
+    );
     return () => clearTimeout(timer);
   }, [homeQuery]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedMovieQuery(movieQuery.trim());
-      setMoviePage(1);
+      const clean = movieQuery.trim();
+      setDebouncedMovieQuery((prev) => {
+        if (prev === clean) return prev;
+        setMoviePage(1);
+        return clean;
+      });
     }, 280);
     return () => clearTimeout(timer);
   }, [movieQuery]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      setDebouncedSeriesQuery(seriesQuery.trim());
-      setSeriesPage(1);
+      const clean = seriesQuery.trim();
+      setDebouncedSeriesQuery((prev) => {
+        if (prev === clean) return prev;
+        setSeriesPage(1);
+        return clean;
+      });
     }, 280);
     return () => clearTimeout(timer);
   }, [seriesQuery]);
@@ -149,12 +160,19 @@ export function useVodCatalogState({
   useEffect(() => {
     const clean = ytQuery.trim();
     if (!clean) return;
-    const timer = setTimeout(() => setDebouncedYtQuery(clean), 340);
+    const timer = setTimeout(
+      () => setDebouncedYtQuery((prev) => (prev === clean ? prev : clean)),
+      340
+    );
     return () => clearTimeout(timer);
   }, [ytQuery]);
 
   useEffect(() => {
-    const timer = setTimeout(() => setDebouncedCatalaQuery(catalaQuery.trim()), 280);
+    const clean = catalaQuery.trim();
+    const timer = setTimeout(
+      () => setDebouncedCatalaQuery((prev) => (prev === clean ? prev : clean)),
+      280
+    );
     return () => clearTimeout(timer);
   }, [catalaQuery]);
 
@@ -471,7 +489,7 @@ export function useVodCatalogState({
     };
   }, [worldMode, cineSpecialPortal, activeSection, debouncedCatalaQuery]);
 
-  const openCatalaSeriesDetails = async (item: CatalaCatalogItem, seasonNum = 1) => {
+  const openCatalaSeriesDetails = useCallback(async (item: CatalaCatalogItem, seasonNum = 1) => {
     setLoadingCatalaEpisodes(true);
 
     setSelectedCatalaSeries((prev) =>
@@ -506,7 +524,7 @@ export function useVodCatalogState({
     } finally {
       setLoadingCatalaEpisodes(false);
     }
-  };
+  }, []);
 
   return {
     homeGenreId,

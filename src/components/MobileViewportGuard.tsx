@@ -71,10 +71,13 @@ export function useViewLayoutMode() {
 
   useEffect(() => {
     const syncDimensions = () => {
-      setViewportSize({
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
+      const nextWidth = window.innerWidth;
+      const nextHeight = window.innerHeight;
+      setViewportSize((prev) =>
+        prev.width === nextWidth && prev.height === nextHeight
+          ? prev
+          : { width: nextWidth, height: nextHeight }
+      );
     };
     syncDimensions();
     window.addEventListener('resize', syncDimensions);
@@ -118,21 +121,17 @@ export function useViewLayoutMode() {
   useEffect(() => {
     try {
       const root = document.documentElement;
-      root.style.removeProperty('zoom');
-      root.style.removeProperty('font-size');
+      if (root.style.getPropertyValue('zoom')) root.style.removeProperty('zoom');
+      if (root.style.getPropertyValue('font-size')) root.style.removeProperty('font-size');
       const vp = document.getElementById('naim-viewport');
+      if (!vp) return;
 
-      if (viewPreference === 'desktop' && (window.screen?.width || 1280) < 1024) {
-        // User on a small screen explicitly requested Desktop View
-        vp?.setAttribute(
-          'content',
-          'width=1280, initial-scale=0.32, minimum-scale=0.2, maximum-scale=5.0, viewport-fit=cover'
-        );
-      } else {
-        vp?.setAttribute(
-          'content',
-          'width=device-width, initial-scale=1.0, viewport-fit=cover'
-        );
+      const targetContent =
+        viewPreference === 'desktop' && (window.screen?.width || 1280) < 1024
+          ? 'width=1280, initial-scale=0.32, minimum-scale=0.2, maximum-scale=5.0, viewport-fit=cover'
+          : 'width=device-width, initial-scale=1.0, viewport-fit=cover';
+      if (vp.getAttribute('content') !== targetContent) {
+        vp.setAttribute('content', targetContent);
       }
     } catch {
       // ignore

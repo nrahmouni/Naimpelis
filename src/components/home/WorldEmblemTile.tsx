@@ -1,7 +1,7 @@
 import React, { useId } from 'react';
 import type { AppLanguage } from '../../types';
 
-export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'kids';
+export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala';
 
 export interface WorldSpec {
   accent: string;
@@ -116,27 +116,6 @@ export const WORLD_SPECS: Record<WorldPortalKind, WorldSpec> = {
       en: 'DTT, sports & 24/7 channels',
       rif: 'Talfaza d lkanalat 24/7',
       zh: '实时频道与全天候播出',
-    },
-  },
-  kids: {
-    accent: '#F59E0B',
-    secondary: '#38BDF8',
-    glowRgb: '245,158,11',
-    ambient:
-      'radial-gradient(ellipse 68% 54% at 50% 47%, rgba(245,158,11,0.22) 0%, rgba(56,189,248,0.12) 42%, rgba(6,7,12,0) 74%)',
-    title: {
-      es: 'Riffan Kids',
-      ca: 'Riffan Kids',
-      en: 'Riffan Kids',
-      rif: 'Riffan Kids',
-      zh: 'Riffan 儿童乐园',
-    },
-    subtitle: {
-      es: 'Cine infantil y juegos IA en 8 idiomas',
-      ca: 'Cinema infantil i jocs IA en 8 idiomes',
-      en: 'Kids cinema & AI learning in 8 languages',
-      rif: 'Lafilmat n iḥenjiren d iraren s IA di 8 n tutlayin',
-      zh: '8语种少儿影院与 AI 益智学园',
     },
   },
 };
@@ -519,31 +498,6 @@ export const WorldEmblemTile: React.FC<{
 
           <line x1="60" y1="83" x2="60" y2="88.5" stroke={`url(#${ids.platinum})`} strokeWidth="3.2" strokeLinecap="round" />
           <line x1="45" y1="89.5" x2="75" y2="89.5" stroke={`url(#${ids.accent})`} strokeWidth="3" strokeLinecap="round" />
-        </g>
-      )}
-
-      {kind === 'kids' && (
-        <g filter={`url(#${ids.drop})`}>
-          <circle
-            cx="60"
-            cy="60"
-            r="30"
-            stroke={spec.secondary}
-            strokeOpacity="0.32"
-            strokeWidth="1.5"
-            strokeDasharray="6 4"
-            className="rtv-we-center rtv-we-orbit"
-          />
-          <path
-            d="M 60 28 L 67.5 47.5 L 88 49 L 72 62 L 77 82.5 L 60 71 L 43 82.5 L 48 62 L 32 49 L 52.5 47.5 Z"
-            fill={`url(#${ids.accent})`}
-            stroke={`url(#${ids.platinum})`}
-            strokeWidth="1.8"
-            strokeLinejoin="round"
-          />
-          <circle cx="60" cy="56" r="7.5" fill={`url(#${ids.platinum})`} />
-          <circle cx="84" cy="36" r="4" fill={spec.secondary} />
-          <circle cx="35" cy="78" r="3" fill={spec.accent} />
         </g>
       )}
 

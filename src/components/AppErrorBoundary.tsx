@@ -15,18 +15,25 @@ const CHUNK_RELOAD_GUARD_KEY = 'naim_chunk_reload_at';
 function getBoundaryLang(): AppLanguage {
   try {
     const saved = localStorage.getItem('naim_lang');
-    if (saved === 'ca' || saved === 'en' || saved === 'es') return saved;
+    if (saved === 'ca' || saved === 'en' || saved === 'es' || saved === 'rif' || saved === 'zh') {
+      return saved;
+    }
   } catch {
     // ignore
   }
   return 'es';
 }
 
+interface AppErrorBoundaryProps {
+  children: React.ReactNode;
+  resetKey?: string;
+}
+
 export class AppErrorBoundary extends React.Component<
-  { children: React.ReactNode },
+  AppErrorBoundaryProps,
   State
 > {
-  constructor(props: { children: React.ReactNode }) {
+  constructor(props: AppErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, message: '' };
   }
@@ -34,6 +41,12 @@ export class AppErrorBoundary extends React.Component<
   static getDerivedStateFromError(error: unknown): State {
     const raw = error instanceof Error ? error.message : String(error);
     return { hasError: true, message: raw };
+  }
+
+  componentDidUpdate(prevProps: AppErrorBoundaryProps) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, message: '' });
+    }
   }
 
   componentDidCatch(error: unknown) {
@@ -68,17 +81,20 @@ export class AppErrorBoundary extends React.Component<
                   es: 'Límite diario de sincronización en la nube alcanzado',
                   ca: 'Límit diari de sincronització al núvol assolit',
                   en: 'Daily cloud sync quota reached',
+                  rif: 'Yewweḍ lḥedd n wass n usinkronizi di lklud',
                 })
               : isChunk
                 ? pickLang(lang, {
                     es: 'Actualizando módulos de RiffanTV',
                     ca: 'Actualitzant mòduls de RiffanTV',
                     en: 'Updating RiffanTV modules',
+                    rif: 'La yettbeddal RiffanTV',
                   })
                 : pickLang(lang, {
                     es: 'Se produjo una interrupción temporal',
                     ca: "S'ha produït una interrupció temporal",
                     en: 'A temporary interruption occurred',
+                    rif: 'Yella yiwen lmuṣkil d amecṭuḥ',
                   })}
           </h2>
           <p className="text-xs sm:text-sm text-[#A9AEBE] leading-relaxed">
@@ -87,11 +103,13 @@ export class AppErrorBoundary extends React.Component<
                   es: 'La cuota gratuita diaria de lectura/escritura en la nube se restablecerá mañana. Tus salas en vivo y reproducción siguen operativas.',
                   ca: 'La quota gratuïta diària de lectura/escriptura al núvol es restablirà demà. Les teves sales en directe i reproducció continuen operatives.',
                   en: 'The free daily cloud quota will reset tomorrow. Live rooms and playback continue working normally.',
+                  rif: 'Lḥedd n wass ad yekkes tiwecca. Tixxamin n direkt d lvidyu xeddmen mliḥ.',
                 })
               : pickLang(lang, {
                   es: 'Recarga la sala para continuar viendo contenido con normalidad.',
                   ca: 'Recarrega la sala per continuar veient contingut amb normalitat.',
                   en: 'Reload the room to continue watching normally.',
+                  rif: 'Ɛawed cɛel taxxamt bac ad tkemmleḍ ad texzreḍ.',
                 })}
           </p>
           {this.state.message && (
@@ -110,6 +128,7 @@ export class AppErrorBoundary extends React.Component<
                   es: 'Reintentar',
                   ca: 'Reintentar',
                   en: 'Retry',
+                  rif: 'Ɛawed jerrab',
                 })}
               </span>
             </button>
@@ -124,6 +143,7 @@ export class AppErrorBoundary extends React.Component<
                   es: 'Recargar RiffanTV',
                   ca: 'Recarregar RiffanTV',
                   en: 'Reload RiffanTV',
+                  rif: 'Ɛawed cɛel RiffanTV',
                 })}
               </span>
             </button>

@@ -41,14 +41,14 @@ export const PosterImage: React.FC<PosterImageProps> = ({
 
   useEffect(() => {
     if (!cleanSrc) {
-      setStatus('error');
+      setStatus((prev) => (prev === 'error' ? prev : 'error'));
       return;
     }
     const el = imgRef.current;
     if (el && el.complete && el.naturalWidth > 0) {
-      setStatus('loaded');
+      setStatus((prev) => (prev === 'loaded' ? prev : 'loaded'));
     } else {
-      setStatus('loading');
+      setStatus((prev) => (prev === 'loading' ? prev : 'loading'));
     }
   }, [cleanSrc]);
 
@@ -71,8 +71,8 @@ export const PosterImage: React.FC<PosterImageProps> = ({
           loading={priority ? 'eager' : 'lazy'}
           decoding="async"
           referrerPolicy="no-referrer"
-          onLoad={() => setStatus('loaded')}
-          onError={() => setStatus('error')}
+          onLoad={() => setStatus((prev) => (prev === 'loaded' ? prev : 'loaded'))}
+          onError={() => setStatus((prev) => (prev === 'error' ? prev : 'error'))}
           className={`w-full h-full transition-opacity duration-300 ease-out ${imgClassName} ${
             status === 'loaded' ? 'opacity-100' : 'opacity-0'
           }`}

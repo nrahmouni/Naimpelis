@@ -21,10 +21,13 @@ import {
   resolveTeamBadgeUrl,
   doesScrapedEventMatchFixture,
   buildFootballMatchChannels,
-  resolveMatchSpanishBroadcaster,
+  buildVerifiedTvGuideSummary,
+  resolveVerifiedSpanishBroadcasterBadge,
   isFeaturedSpanishClubMatch,
   sortTracksWithDaznPriority,
   sanitizeScrapedChannelLabel,
+  resolvePreferredSportsTrackLang,
+  type PreferredSportsTrackLang,
 } from './sportsHelpers/footballTeamMatcher.ts';
 import {
   fetchExtendedFootballCalendar,
@@ -33,6 +36,12 @@ import {
   resolveCalendarScopeMode,
   translateFootballStatusLabel,
 } from './sportsHelpers/upcomingCalendarHelper.ts';
+import {
+  ensureEpgScheduleReady,
+  extractEspnCompBroadcastNames,
+  runWithConcurrency,
+  verifySingleFixtureTvSchedule,
+} from '../services/tvScheduleVerifier.ts';
 
 let cachedSportsSchedule: { matches: any[]; ts: number } | null = null;
 let liveScoresCache: { matches: any[]; ts: number } | null = null;
@@ -48,11 +57,15 @@ export function getCachedFootballBoardSnapshot(): { dateKey: string; matches: an
   return cachedFootballBoard;
 }
 
-function orderBoardChannels(channels: any[], leagueSlug?: string) {
+function orderBoardChannels(
+  channels: any[],
+  leagueSlug?: string,
+  preferredLang: PreferredSportsTrackLang = 'ES'
+) {
   const healthChecked = channelHealthMonitor.prioritizeTracks(channels || []);
   const alive = healthChecked.filter((c: any) => c.health?.status !== 'down');
   const down = healthChecked.filter((c: any) => c.health?.status === 'down');
-  return [...sortTracksWithDaznPriority(alive, leagueSlug), ...down];
+  return [...sortTracksWithDaznPriority(alive, leagueSlug, preferredLang), ...down];
 }
 
 export async function getFootballBoardMatches(opts?: {
@@ -60,6 +73,7 @@ export async function getFootballBoardMatches(opts?: {
   calendar?: string;
   league?: string;
   team?: string;
+  lang?: string;
 }): Promise<{ dateKey: string; calendarScope?: string; matches: any[] }> {
   const requestedDate = String(opts?.date || '').replace(/\D/g, '').slice(0, 8);
   const madridToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' })
@@ -68,6 +82,7 @@ export async function getFootballBoardMatches(opts?: {
   const dateKey = requestedDate.length === 8 ? requestedDate : madridToday;
   const isToday = dateKey === madridToday;
   const cacheTtlMs = isToday ? 18 * 1000 : 2 * 60 * 1000;
+  const preferredLang = resolvePreferredSportsTrackLang(opts?.lang);
 
   const calendarScope = resolveCalendarScopeMode({
     calendar: typeof opts?.calendar === 'string' ? opts.calendar : '',
@@ -87,7 +102,7 @@ export async function getFootballBoardMatches(opts?: {
       );
       const prioritized = calendarItems.map((m) => ({
         ...m,
-        channels: orderBoardChannels(m.channels || [], m.leagueSlug),
+        channels: orderBoardChannels(m.channels || [], m.leagueSlug, preferredLang),
       }));
       return {
         dateKey,
@@ -104,10 +119,14 @@ export async function getFootballBoardMatches(opts?: {
     cachedFootballBoard.dateKey === dateKey &&
     Date.now() - cachedFootballBoard.ts < cacheTtlMs
   ) {
-    return { dateKey, matches: cachedFootballBoard.matches };
+    const prioritizedCached = cachedFootballBoard.matches.map((m) => ({
+      ...m,
+      channels: orderBoardChannels(m.channels || [], m.leagueSlug, preferredLang),
+    }));
+    return { dateKey, matches: prioritizedCached };
   }
 
-  return await fetchAndCacheFootballBoard({ dateKey, isToday, madridToday });
+  return await fetchAndCacheFootballBoard({ dateKey, isToday, madridToday, preferredLang });
 }
 
 export async function getLiveVoiceMatches() {
@@ -127,8 +146,9 @@ async function fetchAndCacheFootballBoard(opts: {
   dateKey: string;
   isToday: boolean;
   madridToday: string;
+  preferredLang: PreferredSportsTrackLang;
 }): Promise<{ dateKey: string; matches: any[] }> {
-  const { dateKey, isToday, madridToday } = opts;
+  const { dateKey, isToday, madridToday, preferredLang } = opts;
 
 
     try {
@@ -139,11 +159,12 @@ async function fetchAndCacheFootballBoard(opts: {
         hour12: false,
       });
 
-      const [liveFeeds, fotmobMatches, ...responses] = await Promise.all([
+      const [liveFeeds, fotmobMatches, _epgReady, ...responses] = await Promise.all([
         isToday
           ? fetchLiveSportsAgendaFeeds()
           : Promise.resolve({ rojaMatches: [], streamXhdFootball: [] }),
         fetchFotmobDayIndex(dateKey).catch(() => []),
+        ensureEpgScheduleReady(3500),
         ...SOCCER_BOARD_LEAGUES.map((league) =>
           fetch(
             `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.slug}/scoreboard?dates=${dateKey}&lang=es&region=es`,
@@ -242,15 +263,7 @@ async function fetchAndCacheFootballBoard(opts: {
               : String(away.score ?? '0');
 
           const kickoffMs = fm?.kickoffMs || kickoffDate.getTime() || 0;
-          const channels = buildFootballMatchChannels({
-            matchId: `fb-${eventId}`,
-            homeTeam,
-            awayTeam,
-            statusState,
-            league,
-            scrapedMatches,
-            kickoffMs,
-          });
+          const espnBroadcasts = extractEspnCompBroadcastNames(comp);
 
           const matchdayLabel = formatSpanishMatchdayLabel(
             comp?.round?.number ?? comp?.notes?.[0]?.text,
@@ -275,7 +288,8 @@ async function fetchAndCacheFootballBoard(opts: {
             statusState,
             statusLabel,
             matchdayLabel,
-            spanishBroadcaster: resolveMatchSpanishBroadcaster(league.slug, league.leagueName),
+            spanishBroadcaster: null as ReturnType<typeof resolveVerifiedSpanishBroadcasterBadge>,
+            verifiedTvGuide: { checked: false } as ReturnType<typeof buildVerifiedTvGuideSummary>,
             homeTeam,
             awayTeam,
             homeShort: String(home.team?.abbreviation || homeTeam.slice(0, 3)).toUpperCase(),
@@ -286,7 +300,9 @@ async function fetchAndCacheFootballBoard(opts: {
             awayScore: resolvedAwayScore,
             homeRedCards: fm?.homeRedCards || 0,
             awayRedCards: fm?.awayRedCards || 0,
-            channels,
+            channels: [] as ReturnType<typeof buildFootballMatchChannels>,
+            _leagueDef: league,
+            _espnBroadcasts: espnBroadcasts,
           });
         }
       }
@@ -389,16 +405,6 @@ async function fetchAndCacheFootballBoard(opts: {
           priority: fm.statusState === 'live' ? 11 : 28,
           broadcasterProfile: fm.ccode === 'ESP' ? 'laliga' : fm.ccode === 'INT' ? 'spain_nt' : 'europe',
         };
-        const channels = buildFootballMatchChannels({
-          matchId: `fb-fm-${fm.fotmobId}`,
-          homeTeam: fm.homeName,
-          awayTeam: fm.awayName,
-          statusState: fm.statusState,
-          league: pseudoLeague,
-          scrapedMatches,
-          kickoffMs: fm.kickoffMs,
-        });
-
         items.push({
           id: `fb-fm-${fm.fotmobId}`,
           eventId: fm.fotmobId,
@@ -415,7 +421,8 @@ async function fetchAndCacheFootballBoard(opts: {
           statusState: fm.statusState,
           statusLabel: fm.statusLabel,
           matchdayLabel: fm.leagueName || 'Fútbol en Directo',
-          spanishBroadcaster: resolveMatchSpanishBroadcaster(pseudoLeague.slug, pseudoLeague.leagueName),
+          spanishBroadcaster: null as ReturnType<typeof resolveVerifiedSpanishBroadcasterBadge>,
+          verifiedTvGuide: { checked: false } as ReturnType<typeof buildVerifiedTvGuideSummary>,
           homeTeam: fm.homeName,
           awayTeam: fm.awayName,
           homeShort: fm.homeName.slice(0, 3).toUpperCase(),
@@ -426,11 +433,55 @@ async function fetchAndCacheFootballBoard(opts: {
           awayScore: fm.awayScore,
           homeRedCards: fm.homeRedCards,
           awayRedCards: fm.awayRedCards,
-          channels,
+          channels: [] as ReturnType<typeof buildFootballMatchChannels>,
+          _leagueDef: pseudoLeague,
+          _espnBroadcasts: [] as string[],
         });
       }
 
-      items.sort((a, b) => {
+      // Verify real TV programming for every non-finished match BEFORE recommending channels
+      const verifyTargets = items.filter((it) => it.statusState !== 'finished' && it._leagueDef);
+      await runWithConcurrency(verifyTargets, 12, async (it) => {
+        const verifiedSchedule = await verifySingleFixtureTvSchedule({
+          homeTeam: it.homeTeam,
+          awayTeam: it.awayTeam,
+          kickoffMs: it.kickoffMs,
+          fotmobMatchId: it.fotmobMatchId,
+          espnBroadcasts: it._espnBroadcasts || [],
+          queryExternalListings: true,
+        });
+        it.spanishBroadcaster = resolveVerifiedSpanishBroadcasterBadge(verifiedSchedule);
+        it.verifiedTvGuide = buildVerifiedTvGuideSummary(verifiedSchedule);
+        const verifiedChannels = buildFootballMatchChannels({
+          matchId: it.id,
+          homeTeam: it.homeTeam,
+          awayTeam: it.awayTeam,
+          statusState: it.statusState,
+          league: it._leagueDef,
+          scrapedMatches,
+          kickoffMs: it.kickoffMs,
+          preferredLang,
+          verifiedSchedule,
+        });
+        // Preserve any extra StreamXHD direct signals already merged into `it.channels`
+        const existingUrls = new Set(verifiedChannels.map((c) => c.sourceUrl));
+        for (const extraCh of it.channels || []) {
+          if (extraCh?.sourceUrl && !existingUrls.has(extraCh.sourceUrl)) {
+            existingUrls.add(extraCh.sourceUrl);
+            verifiedChannels.push(extraCh);
+          }
+        }
+        it.channels = verifiedChannels;
+      });
+
+      const cleanItems = items.map((it) => {
+        const copy = { ...it };
+        delete copy._leagueDef;
+        delete copy._espnBroadcasts;
+        return copy;
+      });
+
+      cleanItems.sort((a, b) => {
         const rank = (s: string) => (s === 'live' ? 0 : s === 'upcoming' ? 1 : 2);
         if (rank(a.statusState) !== rank(b.statusState)) {
           return rank(a.statusState) - rank(b.statusState);
@@ -442,17 +493,17 @@ async function fetchAndCacheFootballBoard(opts: {
         return a.kickoffMs - b.kickoffMs;
       });
 
-      cachedFootballBoard = { dateKey, matches: items, ts: Date.now() };
-      const prioritizedItems = items.map((m) => ({
+      cachedFootballBoard = { dateKey, matches: cleanItems, ts: Date.now() };
+      const prioritizedItems = cleanItems.map((m) => ({
         ...m,
-        channels: orderBoardChannels(m.channels || [], m.leagueSlug),
+        channels: orderBoardChannels(m.channels || [], m.leagueSlug, preferredLang),
       }));
       return { dateKey, matches: prioritizedItems };
     } catch (err) {
       console.warn('Football matchboard fetch error:', err);
       const fallbackItems = (cachedFootballBoard?.matches || []).map((m: any) => ({
         ...m,
-        channels: orderBoardChannels(m.channels || [], m.leagueSlug),
+        channels: orderBoardChannels(m.channels || [], m.leagueSlug, preferredLang),
       }));
       return { dateKey, matches: fallbackItems };
     }
@@ -545,6 +596,7 @@ export function registerSportsRoutes(app: Express): void {
       calendar: typeof req.query.calendar === 'string' ? req.query.calendar : undefined,
       league: typeof req.query.league === 'string' ? req.query.league : undefined,
       team: typeof req.query.team === 'string' ? req.query.team : undefined,
+      lang: typeof req.query.lang === 'string' ? req.query.lang : undefined,
     });
     return res.json({ success: true, ...result });
   });

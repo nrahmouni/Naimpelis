@@ -34,12 +34,12 @@ export function useViewportAndShortcuts({
     if (typeof window === 'undefined') return;
     const updateOrientation = () => {
       if (isGoogleTvEnvironment()) {
-        setIsMobileLandscape(false);
+        setIsMobileLandscape((prev) => (prev ? false : prev));
         return;
       }
-      setIsMobileLandscape(
-        window.innerWidth > window.innerHeight && window.innerHeight < 520
-      );
+      const nextLandscape =
+        window.innerWidth > window.innerHeight && window.innerHeight < 520;
+      setIsMobileLandscape((prev) => (prev === nextLandscape ? prev : nextLandscape));
     };
     updateOrientation();
     window.addEventListener('resize', updateOrientation);
@@ -52,8 +52,9 @@ export function useViewportAndShortcuts({
       const fullH = window.innerHeight || document.documentElement.clientHeight || 800;
       const currentH = Math.round(vv.height);
       const keyboardLikelyOpen = fullH - currentH > 135 && fullH < 1024;
-      setIsMobileKeyboardOpen(keyboardLikelyOpen);
-      setVisualViewportHeight(keyboardLikelyOpen ? currentH : null);
+      setIsMobileKeyboardOpen((prev) => (prev === keyboardLikelyOpen ? prev : keyboardLikelyOpen));
+      const nextHeight = keyboardLikelyOpen ? currentH : null;
+      setVisualViewportHeight((prev) => (prev === nextHeight ? prev : nextHeight));
     };
     if (vv) {
       vv.addEventListener('resize', handleViewportChange);

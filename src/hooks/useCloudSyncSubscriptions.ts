@@ -15,16 +15,10 @@ import {
   checkGoogleRedirectSignInResult,
   deleteCloudWatchHistoryItem,
   ensureCloudUserProfile,
-  fetchSqlAccountState,
   migrateLocalStateToCloud,
   subscribeAuthState,
   subscribeUserCloudCollections,
-  toCloudUserLike,
 } from '../services/userCloudSync';
-import {
-  getStoredCloudSession,
-  subscribeCloudSession,
-} from '../utils/cloudSession';
 import {
   deduplicateWatchlist,
   getFavoriteChannels,
@@ -123,14 +117,9 @@ export function useCloudSyncSubscriptions(params: {
 
       if (!active) return;
 
-      const cloudSess = getStoredCloudSession();
       const verifiedFbUser =
         latestFirebaseUser && !latestFirebaseUser.isAnonymous ? latestFirebaseUser : null;
-      const effectiveUser: User | null = verifiedFbUser
-        ? verifiedFbUser
-        : cloudSess?.cloudToken
-        ? toCloudUserLike(cloudSess)
-        : null;
+      const effectiveUser: User | null = verifiedFbUser;
 
       setAuthUser(effectiveUser);
 
@@ -149,68 +138,6 @@ export function useCloudSyncSubscriptions(params: {
       const localWatchlistSnapshot = getWatchlist();
       const localChannelsSnapshot = getFavoriteChannels();
       const localFriendsSnapshot = getSavedFriends();
-
-      // 1. Hydrate from Cloud SQL PostgreSQL (works for Google Firebase, Chrome Bridge & 6-Char Link Code)
-      const sqlState = await fetchSqlAccountState();
-      if (!active) return;
-
-      if (sqlState) {
-        if (sqlState.profile && (!getStoredProfile().isCustomized || effectiveUser.emailVerified)) {
-          saveStoredProfile(sqlState.profile, true);
-          setProfile(sqlState.profile);
-        }
-        if (sqlState.watchlist.length > 0) {
-          setWatchlist((prev) => {
-            const combined = [...sqlState.watchlist, ...prev];
-            return saveWatchlist(deduplicateWatchlist(combined));
-          });
-        }
-        if (sqlState.favoriteChannels.length > 0) {
-          const seen = new Set<string>();
-          const mergedChannels = [...sqlState.favoriteChannels, ...localChannelsSnapshot].filter(
-            (ch) => {
-              if (seen.has(ch.favId)) return false;
-              seen.add(ch.favId);
-              return true;
-            }
-          );
-          setFavoriteChannels(mergedChannels);
-          saveFavoriteChannels(mergedChannels);
-        }
-        if (sqlState.watchHistory.length > 0) {
-          const seenHist = new Set<string>();
-          const mergedHist = [...sqlState.watchHistory, ...localHistorySnapshot].filter((h) => {
-            if (seenHist.has(h.id)) return false;
-            seenHist.add(h.id);
-            return true;
-          });
-          setWatchHistory(mergedHist);
-          saveWatchHistory(mergedHist);
-        }
-        if (sqlState.friends.length > 0) {
-          const seenFr = new Set<string>();
-          const mergedFr = [...sqlState.friends, ...localFriendsSnapshot].filter((f) => {
-            if (seenFr.has(f.friendId)) return false;
-            seenFr.add(f.friendId);
-            return true;
-          });
-          setSavedFriends(mergedFr);
-          saveFriendsList(mergedFr);
-        }
-        if (sqlState.savedRooms.length > 0) {
-          setSavedRooms(sqlState.savedRooms);
-          try {
-            localStorage.setItem(savedRoomsCacheKey, JSON.stringify(sqlState.savedRooms));
-          } catch {
-            // ignore
-          }
-          sqlState.savedRooms.forEach((cr) => {
-            if (cr.hasPin && cr.pinCode) {
-              rememberSessionPin(cr.roomCode, cr.pinCode);
-            }
-          });
-        }
-      }
 
       let resolvedProfile = getStoredProfile();
       try {
@@ -334,14 +261,9 @@ export function useCloudSyncSubscriptions(params: {
       void handleEffectiveSessionChange();
     });
 
-    const unsubCloudSess = subscribeCloudSession(() => {
-      void handleEffectiveSessionChange();
-    });
-
     return () => {
       active = false;
       unsubAuth();
-      unsubCloudSess();
       if (detachCloudListeners) detachCloudListeners();
       if (migrationTimer) clearTimeout(migrationTimer);
     };

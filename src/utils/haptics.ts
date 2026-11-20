@@ -95,7 +95,7 @@ export function playCinemaSound(type: 'popcorn' | 'reaction' | 'join' | 'sync' |
  * 2) Dual theatrical timpani & warm-saturated 36Hz sub-bass drop ("TA - DUMMMM")
  * 3) Lush Cinema D-Major9 orchestral pad + stereo hall delay + diamond prism overtones
  */
-export function playNaimcineIntroSound(): boolean {
+function playNaimcineIntroSound(): boolean {
   try {
     const nowMs = Date.now();
     if (nowMs - lastIntroSoundAt < 450) return true;

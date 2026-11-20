@@ -35,11 +35,11 @@ export const EPG_CHANNEL_MAPPING: Record<string, { xmltv: string[]; tdtJson: str
   'mplus-golf': { xmltv: ['M+ Golf HD', 'M+ Golf 2 HD'], tdtJson: [] },
   'mplus-eurosport1': { xmltv: ['Eurosport 1 HD'], tdtJson: [] },
   'mplus-eurosport2': { xmltv: ['Eurosport 2'], tdtJson: [] },
-  'dazn-laliga': { xmltv: ['DAZN LaLiga HD', 'DAZN LaLiga 2 HD'], tdtJson: [] },
+  'dazn-laliga': { xmltv: ['DAZN LALIGA EA SPORTS', 'DAZN LaLiga HD', 'DAZN LaLiga 2 HD'], tdtJson: [] },
   'dazn-f1': { xmltv: ['DAZN F1 HD'], tdtJson: [] },
-  'dazn-1': { xmltv: ['DAZN 1 HD', 'DAZN MotoGP'], tdtJson: [] },
-  'dazn-2': { xmltv: ['DAZN 2 HD', 'DAZN Baloncesto'], tdtJson: [] },
-  'dazn-3': { xmltv: ['DAZN 3 HD', 'DAZN Bundesliga'], tdtJson: [] },
+  'dazn-1': { xmltv: ['DAZN 1 HD', 'DAZN 1 BAR', 'DAZN MotoGP', 'DAZN Premier League'], tdtJson: [] },
+  'dazn-2': { xmltv: ['DAZN 2 HD', 'DAZN 2 BAR', 'DAZN Baloncesto', 'DAZN Premier League 2'], tdtJson: [] },
+  'dazn-3': { xmltv: ['DAZN 3 HD', 'DAZN Bundesliga', 'DAZN Premier League 3'], tdtJson: [] },
   'dazn-4': { xmltv: ['DAZN 4 HD', 'Unbeaten (DAZN)', 'Red Bull TV (DAZN)'], tdtJson: [] },
   'tdt-neox': { xmltv: ['Neox'], tdtJson: ['Neox.TV'] },
   'tdt-fdf': { xmltv: ['Factoría de Ficción'], tdtJson: ['FDF.TV'] },
@@ -110,78 +110,137 @@ export const EPG_CHANNEL_MAPPING: Record<string, { xmltv: string[]; tdtJson: str
   'uk-sky-racing': { xmltv: ['UK | Sky Sports Racing'], tdtJson: [] },
 };
 
+export interface EpgVerifiedBroadcast {
+  channelId: string;
+  channelLabel: string;
+  lang: 'ES' | 'EN';
+  sourceUrl: string;
+  resolverType: 'sports_channel' | 'tdt_hls';
+  programTitle: string;
+}
+
 export const EPG_CHANNEL_STREAM_INFO: Record<
   string,
-  { label: string; sourceUrl: string; resolverType: 'sports_channel' | 'tdt_hls' }
+  { label: string; lang: 'ES' | 'EN'; sourceUrl: string; resolverType: 'sports_channel' | 'tdt_hls' }
 > = {
   'mplus-laliga': {
     label: 'M+ LaLiga HD',
-    sourceUrl: 'https://pig.footunder.online/stream/84',
+    lang: 'ES',
+    sourceUrl: 'https://streamxhd.sbs/live1.php?stream=mlaliga',
+    resolverType: 'sports_channel',
+  },
+  'mplus-canal': {
+    label: 'Movistar Plus+ HD',
+    lang: 'ES',
+    sourceUrl: 'https://pig.footunder.online/stream/537',
     resolverType: 'sports_channel',
   },
   'dazn-laliga': {
     label: 'DAZN LaLiga HD',
+    lang: 'ES',
     sourceUrl: 'https://pig.footunder.online/stream/84',
     resolverType: 'sports_channel',
   },
   'mplus-champions': {
     label: 'M+ Liga de Campeones HD',
+    lang: 'ES',
     sourceUrl: 'https://streamxhd.sbs/live1.php?stream=mligacampeones',
     resolverType: 'sports_channel',
   },
   'dazn-1': {
     label: 'DAZN 1 HD',
+    lang: 'ES',
     sourceUrl: 'https://pig.footunder.online/stream/445',
     resolverType: 'sports_channel',
   },
   'dazn-2': {
     label: 'DAZN 2 HD',
+    lang: 'ES',
     sourceUrl: 'https://pig.footunder.online/stream/446',
     resolverType: 'sports_channel',
   },
   'dazn-3': {
     label: 'DAZN 3 HD',
+    lang: 'ES',
     sourceUrl: 'https://pig.footunder.online/stream/447',
     resolverType: 'sports_channel',
   },
   'dazn-4': {
     label: 'DAZN 4 HD',
+    lang: 'ES',
     sourceUrl: 'https://pig.footunder.online/stream/448',
     resolverType: 'sports_channel',
   },
   'dazn-f1': {
     label: 'DAZN F1 HD',
+    lang: 'ES',
     sourceUrl: 'https://pig.footunder.online/stream/436',
     resolverType: 'sports_channel',
   },
   'tdt-teledeporte': {
     label: 'Teledeporte RTVE HD',
+    lang: 'ES',
     sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
     resolverType: 'tdt_hls',
   },
   'tdt-la1': {
     label: 'La 1 RTVE 1080p',
+    lang: 'ES',
     sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/la1/la1_main.m3u8',
+    resolverType: 'tdt_hls',
+  },
+  'cat-esport3-live': {
+    label: 'Esport3 HD',
+    lang: 'ES',
+    sourceUrl: 'https://directes-tv-int.3catdirectes.cat/live-origin/esport3-hls/master.m3u8',
     resolverType: 'tdt_hls',
   },
   'mplus-vamos': {
     label: 'Movistar Vamos HD',
+    lang: 'ES',
     sourceUrl: 'https://pig.footunder.online/stream/526',
     resolverType: 'sports_channel',
   },
   'mplus-hypermotion': {
     label: 'LaLiga Hypermotion HD',
+    lang: 'ES',
     sourceUrl: 'https://footunder.online/tvtodo/laliga2.php',
     resolverType: 'sports_channel',
   },
   'mplus-deportes': {
     label: 'M+ Deportes HD',
+    lang: 'ES',
     sourceUrl: 'https://pig.footunder.online/stream/435',
     resolverType: 'sports_channel',
   },
   'tdt-rmtv': {
     label: 'Real Madrid TV HD',
-    sourceUrl: 'https://pig.footunder.online/stream/516',
+    lang: 'ES',
+    sourceUrl: 'https://rmtv.akamaized.net/hls/live/2043153/rmtv-es-web/master.m3u8',
+    resolverType: 'tdt_hls',
+  },
+  'uk-sky-premier': {
+    label: 'Sky Sports Premier League (UK)',
+    lang: 'EN',
+    sourceUrl: 'https://cdn.stmify.com/out/v1/SKY_SPORTS_PREMIER_LEAGUE/index.m3u8',
+    resolverType: 'tdt_hls',
+  },
+  'uk-sky-sports-1': {
+    label: 'Sky Sports 1 (UK 1080p)',
+    lang: 'EN',
+    sourceUrl: 'http://45.228.234.9:8000/play/a06b/index.m3u8',
+    resolverType: 'tdt_hls',
+  },
+  'uk-sky-sports-2': {
+    label: 'Sky Sports 2 (UK 1080p)',
+    lang: 'EN',
+    sourceUrl: 'http://200.115.120.1:8000/play/ca82266/index.m3u8',
+    resolverType: 'tdt_hls',
+  },
+  'tnt-sports': {
+    label: 'TNT Sports UK',
+    lang: 'EN',
+    sourceUrl: 'https://streamxhd.sbs/live2.php?stream=tntsports',
     resolverType: 'sports_channel',
   },
 };
@@ -201,17 +260,28 @@ const TEAM_EPG_KEYWORD_ALIASES: Record<string, string[]> = {
   madrid: ['real madrid'],
   barcelona: ['barcelona', 'barca', 'fc barcelona'],
   barca: ['barcelona', 'barca'],
-  atletico_madrid: ['atletico madrid', 'atletico de madrid', 'atletico'],
-  celta: ['celta', 'celta vigo', 'celta de vigo'],
-  celta_vigo: ['celta', 'celta vigo'],
+  atletico_madrid: ['atletico madrid', 'atletico de madrid', 'at. madrid', 'atleti'],
+  celta: ['celta', 'celta vigo', 'celta de vigo', 'rc celta'],
+  celta_vigo: ['celta', 'celta vigo', 'rc celta'],
+  alaves: ['alaves', 'deportivo alaves'],
+  deportivo_alaves: ['alaves', 'deportivo alaves'],
+  deportivo_la_coruna: ['deportivo la coruna', 'deportivo a coruna', 'coruna'],
+  deportivo_a_coruna: ['deportivo la coruna', 'deportivo a coruna', 'coruna'],
+  rayo_vallecano: ['rayo', 'rayo vallecano'],
   osasuna: ['osasuna', 'ca osasuna'],
   betis: ['betis', 'real betis'],
   sevilla: ['sevilla', 'sevilla fc'],
   valencia: ['valencia', 'valencia cf'],
   espanyol: ['espanyol', 'rcd espanyol'],
   mallorca: ['mallorca', 'rcd mallorca'],
-  athletic_club: ['athletic', 'athletic bilbao', 'bilbao'],
+  athletic_club: ['athletic', 'athletic bilbao', 'athletic club'],
   real_sociedad: ['real sociedad', 'la real'],
+  manchester_united: ['manchester united', 'manchester utd', 'man utd'],
+  manchester_city: ['manchester city', 'man city'],
+  eintracht_frankfurt: ['eintracht', 'frankfurt', 'eintracht frankfurt'],
+  psv_eindhoven: ['psv', 'psv eindhoven'],
+  espana: ['espana', 'spain'],
+  spain: ['espana', 'spain'],
 };
 
 function extractTokensForEpgMatch(name: string): string[] {
@@ -236,34 +306,32 @@ export function getCachedEpgStore(): Map<string, RawEpgEvent[]> | null {
   return cachedEpgStore?.byChannel || null;
 }
 
-export function findEpgVerifiedBroadcasterForFixture(
+const EPG_NON_LIVE_REPLAY_RE =
+  /\b(resumen|resumenes|highlights|historias|classic|classics|retro|legends|magazine|el dia despues|el tercer tiempo|previa\b|review|interview|xtra time|premier corner)\b/i;
+
+export function findEpgVerifiedBroadcastersForFixture(
   homeTeam: string,
   awayTeam: string,
   kickoffMs: number,
   epgStoreOverride?: Map<string, RawEpgEvent[]>
-): {
-  channelId: string;
-  channelLabel: string;
-  sourceUrl: string;
-  resolverType: 'sports_channel' | 'tdt_hls';
-  programTitle: string;
-} | null {
+): EpgVerifiedBroadcast[] {
   const store = epgStoreOverride || cachedEpgStore?.byChannel;
-  if (!store || store.size === 0) return null;
+  if (!store || store.size === 0) return [];
 
   const homeTokens = extractTokensForEpgMatch(homeTeam);
   const awayTokens = extractTokensForEpgMatch(awayTeam);
-  if (homeTokens.length === 0 || awayTokens.length === 0) return null;
+  if (homeTokens.length === 0 || awayTokens.length === 0) return [];
 
   const targetTime = kickoffMs > 0 ? kickoffMs : Date.now();
-  // Window: program starts within 2 hours before or 1 hour after kickoff
-  const windowStart = targetTime - 2 * 60 * 60 * 1000;
-  const windowEnd = targetTime + 2.5 * 60 * 60 * 1000;
+  // Live match program must actually overlap kickoff (+30m..+95m) and start within 60m before kickoff
+  const earliestStart = targetTime - 60 * 60 * 1000;
+  const latestStart = targetTime + 35 * 60 * 1000;
+  const minStopMs = targetTime + 35 * 60 * 1000;
 
-  // Check sports channels in priority order
   const channelsToCheck = [
     'dazn-laliga',
     'mplus-laliga',
+    'mplus-canal',
     'dazn-1',
     'dazn-2',
     'mplus-champions',
@@ -271,17 +339,26 @@ export function findEpgVerifiedBroadcasterForFixture(
     'dazn-4',
     'tdt-teledeporte',
     'tdt-la1',
+    'cat-esport3-live',
     'mplus-vamos',
     'mplus-hypermotion',
     'tdt-rmtv',
+    'uk-sky-premier',
+    'uk-sky-sports-1',
+    'uk-sky-sports-2',
+    'tnt-sports',
   ];
 
+  const found: EpgVerifiedBroadcast[] = [];
   for (const chId of channelsToCheck) {
     const streamDef = EPG_CHANNEL_STREAM_INFO[chId];
     if (!streamDef) continue;
     const events = store.get(chId) || [];
     for (const ev of events) {
-      if (ev.stopMs < windowStart || ev.startMs > windowEnd) continue;
+      if (ev.startMs < earliestStart || ev.startMs > latestStart || ev.stopMs < minStopMs) {
+        continue;
+      }
+      if (EPG_NON_LIVE_REPLAY_RE.test(ev.title)) continue;
       const hay = `${ev.title} ${ev.subtitle || ''} ${ev.description || ''}`
         .toLowerCase()
         .normalize('NFD')
@@ -291,18 +368,29 @@ export function findEpgVerifiedBroadcasterForFixture(
       const matchAway = awayTokens.some((tok) => hay.includes(tok));
 
       if (matchHome && matchAway) {
-        return {
+        found.push({
           channelId: chId,
           channelLabel: streamDef.label,
+          lang: streamDef.lang,
           sourceUrl: streamDef.sourceUrl,
           resolverType: streamDef.resolverType,
           programTitle: ev.title,
-        };
+        });
+        break;
       }
     }
   }
 
-  return null;
+  return found;
+}
+
+export function findEpgVerifiedBroadcasterForFixture(
+  homeTeam: string,
+  awayTeam: string,
+  kickoffMs: number,
+  epgStoreOverride?: Map<string, RawEpgEvent[]>
+): EpgVerifiedBroadcast | null {
+  return findEpgVerifiedBroadcastersForFixture(homeTeam, awayTeam, kickoffMs, epgStoreOverride)[0] || null;
 }
 
 const madridTimeFormatter = new Intl.DateTimeFormat('es-ES', {
@@ -425,8 +513,8 @@ export async function loadSpanishEpgSchedule(): Promise<Map<string, RawEpgEvent[
   inflightEpgPromise = (async () => {
     const result = new Map<string, RawEpgEvent[]>();
     const now = Date.now();
-    const minWindow = now - 3 * 60 * 60 * 1000;
-    const maxWindow = now + 18 * 60 * 60 * 1000;
+    const minWindow = now - 6 * 60 * 60 * 1000;
+    const maxWindow = now + 7 * 24 * 60 * 60 * 1000;
 
     const xmltvToOurIds = new Map<string, { ourId: string; priority: number }[]>();
     const jsonToOurIds = new Map<string, string[]>();

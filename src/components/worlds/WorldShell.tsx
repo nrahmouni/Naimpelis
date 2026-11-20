@@ -59,7 +59,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
 
   useEffect(() => {
     if (searchValue) {
-      setSearchOpen(true);
+      setSearchOpen((prev) => (prev ? prev : true));
     }
   }, [searchValue]);
 
@@ -298,7 +298,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
             : 'px-3 sm:px-5 pt-3 pb-4'
         }`}
       >
-        <AppErrorBoundary>
+        <AppErrorBoundary resetKey={world}>
           <React.Suspense
             fallback={
               <div className="py-4">

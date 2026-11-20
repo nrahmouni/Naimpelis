@@ -163,6 +163,7 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
             onSearchQueryChange={setSportsSearch}
             langFilter={futbolLangFilter}
             leagueFilter={futbolLeagueFilter}
+            onSelectLeagueFilter={setFutbolLeagueFilter}
             brandFilter={footballLiveBrand}
             onClearCalendarScope={() => {
               setSportsSearch('');
@@ -302,7 +303,9 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
             </p>
             <div className="flex flex-wrap gap-2">
               {[
-                { id: '', label: pickLang(lang, { es: 'Todas', ca: 'Totes', en: 'All' }) },
+                { id: '', label: pickLang(lang, { es: 'Todas', ca: 'Totes', en: 'All', zh: '全部', rif: 'Akk' }) },
+                { id: 'barca_madrid', label: pickLang(lang, { es: 'Barça y Madrid', ca: 'Barça i Madrid', en: 'Barça & Madrid', zh: '巴萨与皇马', rif: 'Barça d Madrid' }) },
+                { id: 'espana', label: pickLang(lang, { es: 'Selección Española', ca: 'Selecció Espanyola', en: 'Spain NT', zh: '西班牙国家队', rif: 'Spanya' }) },
                 { id: 'champions', label: 'Champions League' },
                 { id: 'laliga', label: 'LaLiga' },
                 { id: 'hypermotion', label: 'LaLiga Hypermotion' },
@@ -310,7 +313,7 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
                 { id: 'europa', label: 'Europa League' },
                 { id: 'serie a', label: 'Serie A' },
                 { id: 'bundesliga', label: 'Bundesliga' },
-                { id: 'world', label: pickLang(lang, { es: 'Selecciones', ca: 'Seleccions', en: 'Internationals' }) },
+                { id: 'world', label: pickLang(lang, { es: 'Selecciones', ca: 'Seleccions', en: 'Internationals', zh: '国家队赛事', rif: 'Tiraqimin n tmura' }) },
               ].map((lg) => (
                 <button
                   key={lg.id || 'all-lg'}

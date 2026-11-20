@@ -19,9 +19,6 @@ import { lazyWithRetry } from '../utils/lazyWithRetry';
 const GamesHubSection = lazyWithRetry(() =>
   import('./GamesHubSection').then((m) => ({ default: m.GamesHubSection }))
 );
-const RiffanKidsHub = lazyWithRetry(() =>
-  import('./kids/RiffanKidsHub').then((m) => ({ default: m.RiffanKidsHub }))
-);
 
 interface AppWorldsContentProps {
   controller: ReturnType<typeof useAppController>;
@@ -39,7 +36,6 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     watchHistory,
     watchlist,
     favoriteChannels,
-    kidsExitPromptSeq,
     quickPool,
     activeWorld,
     lastUsedWorld,
@@ -62,7 +58,6 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     showWatchlistOnly,
     setShowVoiceAssistant,
     showVoiceAssistant,
-    setSmartTvModalOpen,
     roomId,
     worldSearchQuery,
     setWorldSearchQuery,
@@ -199,7 +194,6 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
                 world === 'futbol' ||
                 world === 'tv' ||
                 world === 'juegos' ||
-                world === 'kids' ||
                 world === 'sala',
               originRect,
             })
@@ -330,19 +324,6 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           />
         </div>
       </WorldShell>
-    );
-  }
-
-  if (activeWorld === 'kids') {
-    return (
-      <div className="fixed inset-0 z-50 w-full h-[100dvh] overflow-hidden bg-[#0A0E23] flex flex-col">
-        <RiffanKidsHub
-          shellLang={lang}
-          exitPromptSeq={kidsExitPromptSeq}
-          onOpenSmartTv={() => setSmartTvModalOpen(true)}
-          onExitKids={() => enterWorld('entry')}
-        />
-      </div>
     );
   }
 

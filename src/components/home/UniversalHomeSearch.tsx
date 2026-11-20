@@ -629,11 +629,12 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98, y: 10 }}
             transition={{ duration: 0.16 }}
-            className="fixed inset-0 z-50 bg-[#0B0D14]/96 backdrop-blur-2xl flex flex-col p-3.5 sm:p-8 md:p-10 overflow-y-auto"
+            className="fixed inset-0 z-50 bg-[#0B0D14]/96 backdrop-blur-2xl flex flex-col px-3.5 sm:px-8 md:px-10 pb-8 overflow-y-auto"
           >
-            <div className="max-w-6xl mx-auto w-full space-y-4 sm:space-y-5 pt-safe">
+            <div className="max-w-6xl mx-auto w-full space-y-3 sm:space-y-4">
               {/* Header with explicit Back + Search Input + Clear/Close */}
-              <div className="flex items-center gap-2 sm:gap-3">
+              <div className="sticky top-0 z-20 -mx-3.5 sm:-mx-8 md:-mx-10 px-3.5 sm:px-8 md:px-10 pt-3.5 sm:pt-7 pb-2.5 bg-[#0B0D14]/95 backdrop-blur-2xl pt-safe">
+                <div className="flex items-center gap-2 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => {
@@ -692,6 +693,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                   >
                     <X className="w-4 h-4" />
                   </button>
+                </div>
                 </div>
               </div>
 

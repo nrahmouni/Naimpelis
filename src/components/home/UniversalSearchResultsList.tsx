@@ -52,7 +52,7 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
   onOpenMovieDetails,
   onOpenSeriesPage,
 }) => (
-  <div className="space-y-4 max-h-[58dvh] overflow-y-auto no-scrollbar pr-1">
+  <div className="space-y-4 pb-8 pb-safe">
     {/* SECTION: FÚTBOL & DEPORTES */}
     {(activeCategory === 'all' || activeCategory === 'sports') &&
       matchedSports.length > 0 && (

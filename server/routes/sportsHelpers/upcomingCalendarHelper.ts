@@ -2,9 +2,20 @@ import { LruTtlCache } from '../../utils/lruCache.ts';
 import { SOCCER_BOARD_LEAGUES, type SoccerLeagueFeedDef } from './sportsChannels247.ts';
 import {
   buildFootballMatchChannels,
-  resolveMatchSpanishBroadcaster,
+  buildVerifiedTvGuideSummary,
+  resolveVerifiedSpanishBroadcasterBadge,
   resolveTeamBadgeUrl,
 } from './footballTeamMatcher.ts';
+import {
+  doFootballTeamNamesMatch,
+  fetchFotmobDayIndex,
+} from '../../services/footballLiveService.ts';
+import {
+  ensureEpgScheduleReady,
+  extractEspnCompBroadcastNames,
+  runWithConcurrency,
+  verifySingleFixtureTvSchedule,
+} from '../../services/tvScheduleVerifier.ts';
 
 export type CalendarScopeMode =
   | { kind: 'league'; key: string; slug: string }
@@ -71,6 +82,12 @@ export function resolveCalendarScopeMode(params: {
   ) {
     return { kind: 'team', key: 'barca_madrid', teamIds: ['83', '86'] };
   }
+  if (
+    /\b(espana|spain|seleccion|seleccion espanola|la roja)\b/.test(combined) &&
+    !combined.includes('espanyol')
+  ) {
+    return { kind: 'team', key: 'espana', teamIds: ['164'] };
+  }
   if (combined.includes('barcelona') || combined === 'barca') {
     return { kind: 'team', key: 'barcelona', teamIds: ['83'] };
   }
@@ -102,6 +119,9 @@ export function resolveCalendarScopeMode(params: {
   if (combined.includes('nations') || combined === 'uefa.nations') {
     return { kind: 'league', key: 'nations', slug: 'uefa.nations' };
   }
+  if (combined === 'world' || combined.includes('mundial') || combined === 'fifa.world') {
+    return { kind: 'league', key: 'world', slug: 'fifa.world' };
+  }
 
   return null;
 }
@@ -118,15 +138,23 @@ function findLeagueMeta(slug: string, fallbackName?: string): SoccerLeagueFeedDe
         ? 'Europa'
         : lower.startsWith('eng.')
           ? 'Inglaterra'
-          : 'Fútbol',
+          : lower.startsWith('fifa.')
+            ? 'Internacional'
+            : 'Fútbol',
     leagueName: fallbackName || 'Competición',
     regionFlagUrl: lower.startsWith('esp.')
       ? 'https://flagcdn.com/w40/es.png'
       : lower.startsWith('eng.')
         ? 'https://flagcdn.com/w40/gb-eng.png'
-        : 'https://flagcdn.com/w40/eu.png',
-    priority: 12,
-    broadcasterProfile: lower.startsWith('esp.') ? 'laliga' : 'europe',
+        : lower.startsWith('fifa.')
+          ? 'https://flagcdn.com/w40/un.png'
+          : 'https://flagcdn.com/w40/eu.png',
+    priority: lower.startsWith('fifa.') || lower.startsWith('uefa.nations') ? 3 : 12,
+    broadcasterProfile: lower.startsWith('esp.')
+      ? 'laliga'
+      : lower.startsWith('fifa.') || lower.startsWith('uefa.nations')
+        ? 'spain_nt'
+        : 'europe',
   };
 }
 
@@ -199,16 +227,12 @@ function mapEspnEventToBoardItem(
   const homeTeam = String(home.team?.shortDisplayName || home.team?.displayName || 'Local').trim();
   const awayTeam = String(away.team?.shortDisplayName || away.team?.displayName || 'Visitante').trim();
   const isInternational =
-    leagueDef.slug.startsWith('uefa.nations') || leagueDef.slug.startsWith('fifa.');
+    leagueDef.slug.startsWith('uefa.nations') ||
+    leagueDef.slug.startsWith('uefa.euro') ||
+    leagueDef.slug.startsWith('fifa.');
 
-  const channels = buildFootballMatchChannels({
-    matchId: `fb-${eventId}`,
-    homeTeam,
-    awayTeam,
-    statusState,
-    league: leagueDef,
-    scrapedMatches,
-  });
+  const kickoffMs = kickoffDate.getTime() || 0;
+  const espnBroadcasts = extractEspnCompBroadcastNames(comp);
 
   const matchdayLabel = formatSpanishMatchdayLabel(
     comp?.round?.number ?? comp?.notes?.[0]?.text,
@@ -227,12 +251,13 @@ function mapEspnEventToBoardItem(
     priority: leagueDef.priority,
     kickoffIso: kickoffDate.toISOString(),
     kickoffTime,
-    kickoffMs: kickoffDate.getTime() || 0,
+    kickoffMs,
     kickoffDateLabel,
     statusState,
     statusLabel,
     matchdayLabel,
-    spanishBroadcaster: resolveMatchSpanishBroadcaster(leagueDef.slug, leagueDef.leagueName),
+    spanishBroadcaster: null as ReturnType<typeof resolveVerifiedSpanishBroadcasterBadge>,
+    verifiedTvGuide: { checked: false } as ReturnType<typeof buildVerifiedTvGuideSummary>,
     homeTeam,
     awayTeam,
     homeShort: String(home.team?.abbreviation || homeTeam.slice(0, 3)).toUpperCase(),
@@ -243,7 +268,9 @@ function mapEspnEventToBoardItem(
     awayScore: statusState === 'upcoming' ? '-' : String(away.score?.displayValue ?? away.score ?? '0'),
     homeRedCards: 0,
     awayRedCards: 0,
-    channels,
+    channels: [] as ReturnType<typeof buildFootballMatchChannels>,
+    _leagueDef: leagueDef,
+    _espnBroadcasts: espnBroadcasts,
   };
 }
 
@@ -265,14 +292,27 @@ export async function fetchExtendedFootballCalendar(
   const cached = extendedCalendarCache.get(cacheKey);
   if (cached) return cached;
 
+  await ensureEpgScheduleReady(3500);
+
   const itemsMap = new Map<string, any>();
   const yesterdayKey = getMadridDateKey(new Date(Date.now() - 86_400_000));
 
   if (scope.kind === 'team') {
-    const reqs = scope.teamIds.flatMap((teamId) => [
-      fetchJsonSafe(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams/${teamId}/schedule?fixture=true&lang=es&region=es`),
-      fetchJsonSafe(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams/${teamId}/schedule?lang=es&region=es`),
-    ]);
+    const reqs = scope.teamIds.flatMap((teamId) => {
+      const base = [
+        fetchJsonSafe(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams/${teamId}/schedule?fixture=true&lang=es&region=es`),
+        fetchJsonSafe(`https://site.api.espn.com/apis/site/v2/sports/soccer/all/teams/${teamId}/schedule?lang=es&region=es`),
+      ];
+      if (teamId === '164') {
+        base.push(
+          fetchJsonSafe(`https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.nations/teams/164/schedule?lang=es&region=es`),
+          fetchJsonSafe(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.worldq.uefa/teams/164/schedule?lang=es&region=es`),
+          fetchJsonSafe(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world/teams/164/schedule?lang=es&region=es`),
+          fetchJsonSafe(`https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.friendly/teams/164/schedule?lang=es&region=es`)
+        );
+      }
+      return base;
+    });
     const results = await Promise.all(reqs);
 
     for (const json of results) {
@@ -281,7 +321,8 @@ export async function fetchExtendedFootballCalendar(
         const eventId = String(ev?.id || '').trim();
         if (!eventId || itemsMap.has(eventId)) continue;
 
-        const leagueSlug = String(ev?.league?.slug || 'esp.1').toLowerCase();
+        const defaultSlug = scope.key === 'espana' ? 'uefa.nations' : 'esp.1';
+        const leagueSlug = String(ev?.league?.slug || defaultSlug).toLowerCase();
         const leagueMeta = findLeagueMeta(
           leagueSlug,
           ev?.league?.shortName || ev?.league?.name
@@ -289,9 +330,12 @@ export async function fetchExtendedFootballCalendar(
         const mapped = mapEspnEventToBoardItem(ev, leagueMeta, scrapedMatches, todayKey);
         if (!mapped) continue;
 
-        // Keep live, upcoming, or today's finished fixtures
+        // Keep live, upcoming, today's finished fixtures, or full-season Spain NT fixtures when between FIFA windows
         const evDateKey = mapped.kickoffMs ? getMadridDateKey(new Date(mapped.kickoffMs)) : todayKey;
-        if (mapped.statusState === 'finished' && evDateKey < todayKey) continue;
+        const allowSeasonHistory = scope.key === 'espana' && evDateKey >= '20260101';
+        if (mapped.statusState === 'finished' && evDateKey < todayKey && !allowSeasonHistory) {
+          continue;
+        }
         itemsMap.set(eventId, mapped);
       }
     }
@@ -330,20 +374,25 @@ export async function fetchExtendedFootballCalendar(
     }
 
     if (dateKeySet.size === 0) {
-      for (let dOffset = 0; dOffset <= 14; dOffset++) {
+      for (let dOffset = 0; dOffset <= 21; dOffset++) {
         dateKeySet.add(getMadridDateKey(new Date(Date.now() + dOffset * 86_400_000)));
       }
     }
 
-    const upcomingKeys = Array.from(dateKeySet).sort().slice(0, 14);
-    const scoreboards = await Promise.all([
-      Promise.resolve(defaultBoard),
-      ...upcomingKeys.map((dk) =>
-        fetchJsonSafe(
-          `https://site.api.espn.com/apis/site/v2/sports/soccer/${scope.slug}/scoreboard?dates=${dk}&lang=es&region=es`
+    // Fetch up to 45 upcoming/season matchdays in clean batches of 15 for full-season coverage
+    const upcomingKeys = Array.from(dateKeySet).sort().slice(0, 45);
+    const scoreboards: any[] = [defaultBoard];
+    for (let i = 0; i < upcomingKeys.length; i += 15) {
+      const chunk = upcomingKeys.slice(i, i + 15);
+      const batch = await Promise.all(
+        chunk.map((dk) =>
+          fetchJsonSafe(
+            `https://site.api.espn.com/apis/site/v2/sports/soccer/${scope.slug}/scoreboard?dates=${dk}&lang=es&region=es`
+          )
         )
-      ),
-    ]);
+      );
+      scoreboards.push(...batch);
+    }
 
     for (const board of scoreboards) {
       const espnLeagueLogo = String(board?.leagues?.[0]?.logos?.[0]?.href || '').trim() || undefined;
@@ -360,12 +409,79 @@ export async function fetchExtendedFootballCalendar(
     }
   }
 
-  const list = Array.from(itemsMap.values()).sort((a, b) => {
+  const rawList = Array.from(itemsMap.values()).sort((a, b) => {
     const rank = (s: string) => (s === 'live' ? 0 : s === 'upcoming' ? 1 : 2);
     if (rank(a.statusState) !== rank(b.statusState)) {
       return rank(a.statusState) - rank(b.statusState);
     }
+    if (a.statusState === 'finished') {
+      return (b.kickoffMs || 0) - (a.kickoffMs || 0);
+    }
     return (a.kickoffMs || 0) - (b.kickoffMs || 0);
+  });
+
+  // Verify real TV programming ONLY for active/near-term fixtures (next 10 days)
+  const nearTermItems = rawList.filter((it) => {
+    if (it.statusState === 'finished') return false;
+    const diffDays = it.kickoffMs ? (it.kickoffMs - Date.now()) / 86_400_000 : 0;
+    return diffDays >= -1 && diffDays <= 10;
+  });
+
+  if (nearTermItems.length > 0) {
+    const nearDates = Array.from(
+      new Set(nearTermItems.map((it) => getMadridDateKey(new Date(it.kickoffMs || Date.now()))))
+    ).slice(0, 8);
+    const fotmobByDate = new Map<string, Awaited<ReturnType<typeof fetchFotmobDayIndex>>>();
+    await Promise.all(
+      nearDates.map(async (dk) => {
+        const list = await fetchFotmobDayIndex(dk).catch(() => []);
+        fotmobByDate.set(dk, list);
+      })
+    );
+
+    await runWithConcurrency(nearTermItems, 8, async (it) => {
+      const dk = getMadridDateKey(new Date(it.kickoffMs || Date.now()));
+      const dayMatches = fotmobByDate.get(dk) || [];
+      const fm = dayMatches.find(
+        (m) =>
+          (doFootballTeamNamesMatch(it.homeTeam, m.homeName) &&
+            doFootballTeamNamesMatch(it.awayTeam, m.awayName)) ||
+          (doFootballTeamNamesMatch(it.homeTeam, m.awayName) &&
+            doFootballTeamNamesMatch(it.awayTeam, m.homeName))
+      );
+      if (fm?.fotmobId) {
+        it.fotmobMatchId = fm.fotmobId;
+        if (!it.homeLogo && fm.homeLogo) it.homeLogo = fm.homeLogo;
+        if (!it.awayLogo && fm.awayLogo) it.awayLogo = fm.awayLogo;
+      }
+      const verifiedSchedule = await verifySingleFixtureTvSchedule({
+        homeTeam: it.homeTeam,
+        awayTeam: it.awayTeam,
+        kickoffMs: it.kickoffMs,
+        fotmobMatchId: it.fotmobMatchId,
+        espnBroadcasts: it._espnBroadcasts,
+        queryExternalListings: true,
+      });
+      it.spanishBroadcaster = resolveVerifiedSpanishBroadcasterBadge(verifiedSchedule);
+      it.verifiedTvGuide = buildVerifiedTvGuideSummary(verifiedSchedule);
+      it.channels = buildFootballMatchChannels({
+        matchId: it.id,
+        homeTeam: it.homeTeam,
+        awayTeam: it.awayTeam,
+        statusState: it.statusState,
+        league: it._leagueDef,
+        scrapedMatches,
+        kickoffMs: it.kickoffMs,
+        verifiedSchedule,
+      });
+    });
+  }
+
+  const list = rawList.map((it) => {
+    const clean = { ...it };
+    delete clean._leagueDef;
+    delete clean._espnBroadcasts;
+    return clean;
   });
 
   if (list.length > 0) {

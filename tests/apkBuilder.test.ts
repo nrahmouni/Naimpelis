@@ -172,42 +172,4 @@ describe('Signed Android APK Builder Service', () => {
     expect(friendsSrc).toContain('window.setTimeout');
     expect(friendsSrc).toContain('onDismissFriendNotice()');
   });
-
-  it('builds valid signed Riffan Kids APKs for Mobile/Tablet and Google TV with assetlinks and /api/app/latest entries', () => {
-    const kidsMobileApk = buildSignedApkBuffer('kids_mobile', 'https://riffantv.ai.studio');
-    const mobileParsed = parseZipEntries(kidsMobileApk);
-    expect(mobileParsed.entries.get('classes.dex')!.data.toString('utf8')).toContain(
-      'https://riffantv.ai.studio/kids?platform=android'
-    );
-    const mobileManifest = mobileParsed.entries.get('AndroidManifest.xml')!.data.toString('utf16le');
-    expect(mobileManifest).toContain('com.riffantv.kids');
-    expect(mobileParsed.entries.get('resources.arsc')!.data.toString('utf16le')).toContain(
-      'Riffan Kids'
-    );
-
-    const kidsTvApk = buildSignedApkBuffer('kids_tv', 'https://riffantv.ai.studio');
-    const tvParsed = parseZipEntries(kidsTvApk);
-    expect(tvParsed.entries.get('classes.dex')!.data.toString('utf8')).toContain(
-      'https://riffantv.ai.studio/kids?platform=googletv&tv=1'
-    );
-    const tvManifest = tvParsed.entries.get('AndroidManifest.xml')!.data.toString('utf16le');
-    expect(tvManifest).toContain('com.riffantv.kids.tv');
-    expect(tvManifest).toContain('LEANBACK_LAUNCHER');
-    expect(tvParsed.entries.get('resources.arsc')!.data.toString('utf16le')).toContain(
-      'Riffan Kids TV'
-    );
-
-    const serverSrc = fs.readFileSync(path.resolve(process.cwd(), 'server.ts'), 'utf8');
-    expect(serverSrc).toContain("'/RIFFAN-KIDS.apk'");
-    expect(serverSrc).toContain("'/RIFFAN-KIDS-TV.apk'");
-
-    const healthSrc = fs.readFileSync(
-      path.resolve(process.cwd(), 'server/routes/health.ts'),
-      'utf8'
-    );
-    expect(healthSrc).toContain('com.riffantv.kids');
-    expect(healthSrc).toContain('com.riffantv.kids.tv');
-    expect(healthSrc).toContain('kidsMobile:');
-    expect(healthSrc).toContain('kidsTv:');
-  });
 });

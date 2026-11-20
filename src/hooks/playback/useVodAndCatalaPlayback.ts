@@ -91,48 +91,6 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
 
     const { reqSeq, signal } = beginMediaExtraction();
 
-    const isKidsLive =
-      movie.id.startsWith('kids-live-') ||
-      movie.platform === 'Riffan Kids Live' ||
-      (movie.bingetrixUrl && movie.bingetrixUrl.endsWith('.m3u8'));
-    if (isKidsLive) {
-      const liveStreamUrl = movie.bingetrixUrl || '';
-      if (liveStreamUrl) {
-        clearExtractionSnapshot();
-        const nextState: VideoState = {
-          mode: 'hls',
-          url: liveStreamUrl,
-          rawSourceUrl: liveStreamUrl,
-          title: movie.title,
-          subtitle: `${movie.year || '2025'} · En Directo HD Kids`,
-          poster: movie.poster,
-          backdrop: movie.backdrop,
-          currentTime: 0,
-          isPlaying: true,
-          isLive: true,
-          tracks: [
-            {
-              id: 'live-0',
-              label: movie.title,
-              lang: 'ES',
-              sourceUrl: liveStreamUrl,
-              resolverType: 'tdt_hls',
-              resolvedStreamUrl: liveStreamUrl,
-            },
-          ],
-          activeTrackIndex: 0,
-          lastUpdated: Date.now(),
-          updatedBy: profileName,
-        };
-        setVideoState(nextState);
-        commitVideoStateSync('change_url', nextState);
-        playCinemaSound('play');
-        setIsExtracting(false);
-        setLoadingItemId(null);
-        return;
-      }
-    }
-
     setActiveSportsMatch(null);
     setActiveMatchDetails(null);
     setVideoState((prev) => (prev.seriesMeta ? { ...prev, seriesMeta: undefined } : prev));
@@ -178,43 +136,6 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
       if (reqSeq !== extractionReqSeqRef.current) return;
 
       if (!res.ok || !data?.success || !data?.streamUrl) {
-        if (movie.platform === 'Riffan Kids' || movie.id.startsWith('kids-showcase-')) {
-          const fallbackUrl =
-            'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
-          const nextState: VideoState = {
-            mode: 'direct',
-            url: fallbackUrl,
-            rawSourceUrl: fallbackUrl,
-            title: movie.title,
-            subtitle: `${movie.year || '2025'} · Animación HD Kids`,
-            poster: movie.poster,
-            backdrop: movie.backdrop,
-            currentTime: resumeAtSec,
-            isPlaying: true,
-            isLive: false,
-            tracks: [
-              {
-                id: 'kids-fallback-0',
-                label: movie.title,
-                lang: 'ES',
-                sourceUrl: fallbackUrl,
-                resolverType: 'direct_mp4',
-                resolvedStreamUrl: fallbackUrl,
-              },
-            ],
-            activeTrackIndex: 0,
-            lastUpdated: Date.now(),
-            updatedBy: profileName,
-          };
-          clearExtractionSnapshot();
-          videoStateUrlRef.current = nextState.url;
-          setVideoState(nextState);
-          commitVideoStateSync('change_url', nextState);
-          playCinemaSound('play');
-          setIsExtracting(false);
-          setLoadingItemId(null);
-          return;
-        }
         const errMsg = data?.error || 'No se pudo cargar esta película en este momento.';
         setExtractionError(errMsg);
         showLanguageNotice({

@@ -4,7 +4,7 @@
  * and YouTube) plus movie/series/Català/EPG detail & episode-picker modals.
  * Individual views and hooks live under `src/components/catalog/`.
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import type {
   AppLanguage,
   CatalaEpisodeItem,
@@ -163,38 +163,50 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const [internalWatchlistOnly, setInternalWatchlistOnly] = useState(false);
   const showWatchlistOnly =
     controlledWatchlistOnly !== undefined ? controlledWatchlistOnly : internalWatchlistOnly;
+  const showWatchlistOnlyRef = useRef(showWatchlistOnly);
+  showWatchlistOnlyRef.current = showWatchlistOnly;
   const setShowWatchlistOnly = useCallback(
     (valOrUpdater: boolean | ((prev: boolean) => boolean)) => {
       const nextVal =
-        typeof valOrUpdater === 'function' ? valOrUpdater(showWatchlistOnly) : valOrUpdater;
+        typeof valOrUpdater === 'function' ? valOrUpdater(showWatchlistOnlyRef.current) : valOrUpdater;
+      if (nextVal === showWatchlistOnlyRef.current) return;
       if (controlledWatchlistOnly === undefined) {
         setInternalWatchlistOnly(nextVal);
       }
       onWatchlistOnlyChange?.(nextVal);
     },
-    [controlledWatchlistOnly, showWatchlistOnly, onWatchlistOnlyChange]
+    [controlledWatchlistOnly, onWatchlistOnlyChange]
   );
 
   const [internalCineTab, setInternalCineTab] = useState<'movies' | 'series'>('movies');
   const effectiveCineTab: 'movies' | 'series' = controlledCineTab ?? internalCineTab;
-  const setEffectiveCineTab = (tab: 'movies' | 'series') => {
-    setInternalCineTab(tab);
-    onCineTabChange?.(tab);
-  };
+  const setEffectiveCineTab = useCallback(
+    (tab: 'movies' | 'series') => {
+      setInternalCineTab((prev) => (prev === tab ? prev : tab));
+      onCineTabChange?.(tab);
+    },
+    [onCineTabChange]
+  );
 
   const [internalCineCastellano, setInternalCineCastellano] = useState(true);
   const effectiveCineCastellano = controlledCineCastellano ?? internalCineCastellano;
-  const setEffectiveCineCastellano = (enabled: boolean) => {
-    setInternalCineCastellano(enabled);
-    onCineCastellanoChange?.(enabled);
-  };
+  const setEffectiveCineCastellano = useCallback(
+    (enabled: boolean) => {
+      setInternalCineCastellano((prev) => (prev === enabled ? prev : enabled));
+      onCineCastellanoChange?.(enabled);
+    },
+    [onCineCastellanoChange]
+  );
 
   const [internalFutbolTab, setInternalFutbolTab] = useState<'matches' | 'channels'>('matches');
   const effectiveFutbolTab = controlledFutbolTab ?? internalFutbolTab;
-  const setEffectiveFutbolTab = (tab: 'matches' | 'channels') => {
-    setInternalFutbolTab(tab);
-    onFutbolTabChange?.(tab);
-  };
+  const setEffectiveFutbolTab = useCallback(
+    (tab: 'matches' | 'channels') => {
+      setInternalFutbolTab((prev) => (prev === tab ? prev : tab));
+      onFutbolTabChange?.(tab);
+    },
+    [onFutbolTabChange]
+  );
 
   const vod = useVodCatalogState({
     lang,
@@ -211,6 +223,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   }, [setShowWatchlistOnly]);
 
   const liveTv = useLiveTvAndSportsCatalog({
+    lang,
     worldMode,
     activeSection,
     externalSearchQuery,
@@ -254,6 +267,75 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   );
 
   const handleDiscoveryGenresLoaded = useCallback(() => {}, []);
+
+  const handleClearExternalSearch = useCallback(() => {
+    onExternalSearchChange?.('');
+  }, [onExternalSearchChange]);
+
+  const handleResetMoviePage = useCallback(() => {
+    vod.setMoviePage(1);
+  }, [vod.setMoviePage]);
+  const handleNextMoviePage = useCallback(() => {
+    vod.setMoviePage((p) => p + 1);
+  }, [vod.setMoviePage]);
+  const handleResetSeriesPage = useCallback(() => {
+    vod.setSeriesPage(1);
+  }, [vod.setSeriesPage]);
+  const handleNextSeriesPage = useCallback(() => {
+    vod.setSeriesPage((p) => p + 1);
+  }, [vod.setSeriesPage]);
+
+  const handleOpenPreviewItem = useCallback(
+    (item: CatalogMovie) => {
+      const store = useAppStore.getState();
+      const resolvedKind =
+        item.mediaType === 'tv' ||
+        (effectiveCineTab === 'series' && item.mediaType !== 'movie')
+          ? 'tv'
+          : 'movie';
+      if (resolvedKind === 'tv') {
+        const tmdbId = Number(
+          item.tmdbId || String(item.id || '').replace(/[^\d]/g, '') || 0
+        );
+        if (tmdbId > 0) {
+          store.setRequestedMovieModal(null);
+          store.setRequestedSeriesModal({
+            series: { ...item, tmdbId, mediaType: 'tv' },
+            season: item.seasonNumber || 1,
+          });
+          return;
+        }
+      }
+      store.setRequestedSeriesModal(null);
+      store.setRequestedMovieModal(item);
+    },
+    [effectiveCineTab]
+  );
+
+  const handleOpenSeriesDetails = useCallback(
+    (tmdbId: number, seasonNum: number, seed?: CatalogMovie) => {
+      const store = useAppStore.getState();
+      store.setRequestedMovieModal(null);
+      store.setRequestedSeriesModal({
+        series: seed
+          ? { ...seed, tmdbId, mediaType: 'tv' }
+          : {
+              id: `tv-${tmdbId}`,
+              tmdbId,
+              mediaType: 'tv',
+              title: '',
+              poster: '',
+              backdrop: '',
+              year: '',
+              rating: '',
+              overview: '',
+              languages: [],
+            },
+        season: seasonNum || 1,
+      });
+    },
+    []
+  );
 
   const activePillar = normalizeCatalogPillar(activeSection, showWatchlistOnly);
 
@@ -313,7 +395,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           onChangeCineFiltersOpen={vod.setCineFiltersOpen}
           externalSearchQuery={externalSearchQuery}
           homeQuery={vod.homeQuery}
-          onClearExternalSearch={onExternalSearchChange ? () => onExternalSearchChange('') : undefined}
+          onClearExternalSearch={onExternalSearchChange ? handleClearExternalSearch : undefined}
           homeShowcaseMovies={vod.homeShowcaseMovies}
           homeShowcaseSeries={vod.homeShowcaseSeries}
           movies={vod.movies}
@@ -322,8 +404,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           onChangeMovieSort={vod.setMovieSort}
           movieGenre={vod.movieGenre}
           onChangeMovieGenre={vod.setMovieGenre}
-          onResetMoviePage={() => vod.setMoviePage(1)}
-          onNextMoviePage={() => vod.setMoviePage((p) => p + 1)}
+          onResetMoviePage={handleResetMoviePage}
+          onNextMoviePage={handleNextMoviePage}
           hasMoreMovies={vod.hasMoreMovies}
           loadingMovies={vod.loadingMovies}
           loadingMoreMovies={vod.loadingMoreMovies}
@@ -331,8 +413,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           onChangeSeriesSort={vod.setSeriesSort}
           seriesGenre={vod.seriesGenre}
           onChangeSeriesGenre={vod.setSeriesGenre}
-          onResetSeriesPage={() => vod.setSeriesPage(1)}
-          onNextSeriesPage={() => vod.setSeriesPage((p) => p + 1)}
+          onResetSeriesPage={handleResetSeriesPage}
+          onNextSeriesPage={handleNextSeriesPage}
           hasMoreSeries={vod.hasMoreSeries}
           loadingSeries={vod.loadingSeries}
           loadingMoreSeries={vod.loadingMoreSeries}
@@ -350,50 +432,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           onDiscoveryGenresLoaded={handleDiscoveryGenresLoaded}
           isBookmarked={isBookmarked}
           onToggleBookmark={handleToggleBookmark}
-          onOpenPreviewItem={(item) => {
-            const store = useAppStore.getState();
-            const resolvedKind =
-              item.mediaType === 'tv' ||
-              (effectiveCineTab === 'series' && item.mediaType !== 'movie')
-                ? 'tv'
-                : 'movie';
-            if (resolvedKind === 'tv') {
-              const tmdbId = Number(
-                item.tmdbId || String(item.id || '').replace(/[^\d]/g, '') || 0
-              );
-              if (tmdbId > 0) {
-                store.setRequestedMovieModal(null);
-                store.setRequestedSeriesModal({
-                  series: { ...item, tmdbId, mediaType: 'tv' },
-                  season: item.seasonNumber || 1,
-                });
-                return;
-              }
-            }
-            store.setRequestedSeriesModal(null);
-            store.setRequestedMovieModal(item);
-          }}
-          onOpenSeriesDetails={(tmdbId, seasonNum, seed) => {
-            const store = useAppStore.getState();
-            store.setRequestedMovieModal(null);
-            store.setRequestedSeriesModal({
-              series: seed
-                ? { ...seed, tmdbId, mediaType: 'tv' }
-                : {
-                    id: `tv-${tmdbId}`,
-                    tmdbId,
-                    mediaType: 'tv',
-                    title: '',
-                    poster: '',
-                    backdrop: '',
-                    year: '',
-                    rating: '',
-                    overview: '',
-                    languages: [],
-                  },
-              season: seasonNum || 1,
-            });
-          }}
+          onOpenPreviewItem={handleOpenPreviewItem}
+          onOpenSeriesDetails={handleOpenSeriesDetails}
           onOpenCatalaSeriesDetails={vod.openCatalaSeriesDetails}
           onPlayMovie={onPlayMovie}
           onPlayCustomUrl={onPlayCustomUrl}

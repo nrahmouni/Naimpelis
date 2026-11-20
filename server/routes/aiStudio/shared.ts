@@ -30,12 +30,6 @@ export function getGenAiClient(): GoogleGenAI {
   });
 }
 
-export function getMapsServerApiKey(): string {
-  return String(
-    process.env.GOOGLE_MAPS_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || ''
-  ).trim();
-}
-
 export function extractErrorDetails(err: unknown): {
   status: number;
   code: string;
@@ -96,18 +90,4 @@ export function sendAiEndpointError(res: Response, routeTag: string, err: unknow
     logger.error({ err }, `${routeTag}_error`);
   }
   res.status(details.status).json({ ok: false, code: details.code, error: details.message });
-}
-
-export function sanitizeBase64Payload(raw: string): string {
-  const s = String(raw || '').trim();
-  const commaIdx = s.indexOf(',');
-  if (s.startsWith('data:') && commaIdx !== -1) {
-    return s.slice(commaIdx + 1).trim();
-  }
-  return s;
-}
-
-export function sanitizeMimeType(mime: string, fallback: string): string {
-  const clean = String(mime || '').split(';')[0].trim().toLowerCase();
-  return clean || fallback;
 }

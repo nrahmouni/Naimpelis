@@ -4,7 +4,16 @@
  * strictly without artificial standard Tamazight neologisms ("isura", "imazraren", "amiḍan", "iɣewwaren", "tiliẓriyin").
  */
 
+import { RIF_DICTIONARY_PART1 } from './rifTranslationsPart1';
+import { RIF_DICTIONARY_PART2 } from './rifTranslationsPart2';
+import { RIF_DICTIONARY_PART3 } from './rifTranslationsPart3';
+import { RIF_DICTIONARY_PART4 } from './rifTranslationsPart4';
+
 export const RIF_DICTIONARY: Record<string, string> = {
+  ...RIF_DICTIONARY_PART1,
+  ...RIF_DICTIONARY_PART2,
+  ...RIF_DICTIONARY_PART3,
+  ...RIF_DICTIONARY_PART4,
   "Your private theater for movies, series, TV and sports together.": "Ssinima-nnek i lafilmat, siriyat, talfaza d sspor aked imddukkal.",
   "Tu sala privada para ver cine, series, TV y deporte juntos.": "Ssinima-nnek i lafilmat, siriyat, talfaza d sspor aked imddukkal.",
   "La teva sala privada per veure cinema, sèries, TV i esport junts.": "Ssinima-nnek i lafilmat, siriyat, talfaza d sspor aked imddukkal.",
@@ -362,14 +371,6 @@ export const RIF_DICTIONARY: Record<string, string> = {
   "Voz": "Awal",
   "conectado": "Yeqqen",
   "connected": "Yeqqen",
-  "Riffan Kids": "Riffan Kids",
-  "Cine infantil y juegos IA en 8 idiomas": "Lafilmat n iḥenjiren d iraren s IA di 8 n tutlayin",
-  "Kids movies & AI learning in 8 languages": "Lafilmat n iḥenjiren d iraren s IA di 8 n tutlayin",
-  "Cinema infantil i jocs IA en 8 idiomes": "Lafilmat n iḥenjiren d iraren s IA di 8 n tutlayin",
-  "Cine y Series Kids": "Lafilmat d Siriyat n Iḥenjiren",
-  "Kids Movies & Series": "Lafilmat d Siriyat n Iḥenjiren",
-  "Academia de Juegos": "Takadimit n Iraren",
-  "Learning Games": "Iraren n Ulemmed",
   "Lista M3U y EPG XML": "Llista M3U d EPG XML",
   "M3U List & EPG XML": "Llista M3U d EPG XML",
   "Descargar .m3u": "Zdem .m3u",
@@ -378,9 +379,7 @@ export const RIF_DICTIONARY: Record<string, string> = {
   "Download .xml": "Zdem .xml",
   "Cómo configurar": "Mamec ad tsegmed",
   "Setup Guide": "Lgid n ussegmi",
-  "Rutas URL": "Ibridan URL",
-  "Pregúntale a Profe IA": "Seqsa Lmuɛellim IA",
-  "Ask AI Teacher": "Seqsa Lmuɛellim IA"
+  "Rutas URL": "Ibridan URL"
 };
 
 /**
@@ -388,16 +387,21 @@ export const RIF_DICTIONARY: Record<string, string> = {
  * and dynamic template patterns (e.g. "{name}'s Room", "Leave room ({roomName})", "{count} watched").
  */
 export function lookupRifTranslation(enText?: string, esText?: string): string | null {
-  const query = esText || enText;
-  if (!query) return null;
+  if (!enText && !esText) return null;
 
-  // 1. Direct dictionary match
-  if (esText && RIF_DICTIONARY[esText]) {
-    return RIF_DICTIONARY[esText];
+  // 1. Direct & trimmed dictionary match (prefer explicit EN/ES lookup)
+  if (enText) {
+    const directEn = RIF_DICTIONARY[enText] || RIF_DICTIONARY[enText.trim()];
+    if (directEn) return directEn;
   }
-  if (enText && RIF_DICTIONARY[enText]) {
-    return RIF_DICTIONARY[enText];
+  if (esText) {
+    const directEs = RIF_DICTIONARY[esText] || RIF_DICTIONARY[esText.trim()];
+    if (directEs) return directEs;
   }
+
+  const query = (esText || enText || '').trim();
+  const candidate = (enText || esText || '').trim();
+  if (!query) return null;
 
   // 2. Dynamic pattern: "Hola, {name}" / "Hi, {name}" -> "Azul, {name}"
   const hiMatch = query.match(/^(?:Hola|Hi|Azul),?\s*(.+)$/i);
@@ -417,32 +421,79 @@ export function lookupRifTranslation(enText?: string, esText?: string): string |
     return `Taxxamt n ${roomNameMatch[1]}`;
   }
 
-  // 5. Dynamic pattern: "{count} watched" / "{count} vistos" -> "{count} txzared"
+  // 5. Dynamic pattern: "Room #{code}" / "Sala #{code}" -> "Taxxamt #{code}"
+  const roomNumMatch = candidate.match(/^(?:Room|Sala)\s*#(.+)$/i) || query.match(/^(?:Room|Sala)\s*#(.+)$/i);
+  if (roomNumMatch) {
+    return `Taxxamt #${roomNumMatch[1]}`;
+  }
+
+  // 6. Dynamic pattern: "{count} watched" / "{count} vistos" -> "{count} txzared"
   const watchedMatch = query.match(/^(\d+)\s*(?:watched|vistos|vists)$/i);
   if (watchedMatch) {
     return `${watchedMatch[1]} txzared`;
   }
 
-  // 6. Dynamic pattern: "{count} saved" / "{count} guardados" -> "{count} iḥefḍen"
+  // 7. Dynamic pattern: "{count} saved" / "{count} guardados" -> "{count} iḥefḍen"
   const savedMatch = query.match(/^(\d+)\s*(?:saved|guardados|desats)$/i);
   if (savedMatch) {
     return `${savedMatch[1]} iḥefḍen`;
   }
 
-  // 7. Dynamic pattern: "{count} channels" / "{count} canales" -> "{count} lkanalat"
-  const channelsMatch = query.match(/^(\d+)\s*(?:channels|canales|canals)$/i);
+  // 8. Dynamic pattern: "{count} channels" / "{count} canales" -> "{count} lkanalat"
+  const channelsMatch = candidate.match(/^(\d+)\s*(?:channels?|canales?|canals?)$/i) || query.match(/^(\d+)\s*(?:channels?|canales?|canals?)$/i);
   if (channelsMatch) {
     return `${channelsMatch[1]} lkanalat`;
   }
 
-  // 8. Dynamic annual stats string:
-  // "🎬 X vistos · ♥ Y guardados · ⭐ Z canales" -> "🎬 X txzared · ♥ Y iḥefḍen · ⭐ Z lkanalat"
+  // 9. Dynamic pattern: "{count} episodes" / "{count} capítulos" -> "{count} lḥalqat"
+  const epMatch = candidate.match(/^(\d+)\s*(?:episodes?|cap[íi]tulos?)$/i) || query.match(/^(\d+)\s*(?:episodes?|cap[íi]tulos?)$/i);
+  if (epMatch) {
+    return `${epMatch[1]} lḥalqat`;
+  }
+
+  // 10. Dynamic pattern: "{count} matches" / "{count} partidos" -> "{count} lmatchat"
+  const matchCountMatch = candidate.match(/^(\d+)\s*(?:matches?|partidos?)$/i) || query.match(/^(\d+)\s*(?:matches?|partidos?)$/i);
+  if (matchCountMatch) {
+    return `${matchCountMatch[1]} lmatchat`;
+  }
+
+  // 11. Dynamic pattern: "{count} programs today" / "{count} programas hoy" -> "{count} lbaramij ass-a"
+  const progMatch = candidate.match(/^(\d+)\s*(?:programs? today|programas? hoy)$/i) || query.match(/^(\d+)\s*(?:programs? today|programas? hoy)$/i);
+  if (progMatch) {
+    return `${progMatch[1]} lbaramij ass-a`;
+  }
+
+  // 12. Dynamic pattern: "Season X" / "Temporada X" -> "Sizon X"
+  const sMatch = candidate.match(/^(?:Season|Temporada|Temp\.?)\s*(\d+)$/i) || query.match(/^(?:Season|Temporada|Temp\.?)\s*(\d+)$/i);
+  if (sMatch) {
+    return `Sizon ${sMatch[1]}`;
+  }
+
+  // 13. Dynamic pattern: "Episode X" / "Capítulo X" -> "Lḥalqa X"
+  const capMatch = candidate.match(/^(?:Episode|Cap[íi]tulo)\s*(\d+)$/i) || query.match(/^(?:Episode|Cap[íi]tulo)\s*(\d+)$/i);
+  if (capMatch) {
+    return `Lḥalqa ${capMatch[1]}`;
+  }
+
+  // 14. Dynamic pattern: "Dial X" -> "Nimru X"
+  const dialMatch = candidate.match(/^Dial\s*(\d+)$/i) || query.match(/^Dial\s*(\d+)$/i);
+  if (dialMatch) {
+    return `Nimru ${dialMatch[1]}`;
+  }
+
+  // 15. Dynamic pattern: "X min" -> "X dqiqa"
+  const minMatch = candidate.match(/^(\d+)\s*min$/i) || query.match(/^(\d+)\s*min$/i);
+  if (minMatch) {
+    return `${minMatch[1]} dqiqa`;
+  }
+
+  // 16. Dynamic annual stats string
   const statsMatch = query.match(/🎬\s*(\d+)\s*(?:vistos|watched|desats).*?♥\s*(\d+)\s*(?:guardados|saved|desats).*?⭐\s*(\d+)\s*(?:canales|channels|canals)/i);
   if (statsMatch) {
     return `🎬 ${statsMatch[1]} txzared · ♥ ${statsMatch[2]} iḥefḍen · ⭐ ${statsMatch[3]} lkanalat`;
   }
 
-  // 9. Lite mode toggles
+  // 17. Lite mode toggles
   if (/Lite:\s*ON/i.test(query)) return 'Afessas: Yexdem';
   if (/Lite:\s*OFF/i.test(query)) return 'Afessas: Yensa';
 

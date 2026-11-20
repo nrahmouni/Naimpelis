@@ -117,13 +117,15 @@ export const PinturilloStage: React.FC<PinturilloStageProps> = ({
   // Reset optimistic live strokes whenever authoritative state strokes reset/change round
   useEffect(() => {
     if (!activeState) {
-      setRemoteLiveStrokes([]);
+      setRemoteLiveStrokes((prev) => (prev.length === 0 ? prev : []));
       return;
     }
     setRemoteLiveStrokes((prev) => {
+      if (prev.length === 0) return prev;
       if (activeState.strokes.length === 0) return [];
       const existingIds = new Set(activeState.strokes.map((s) => s.id));
-      return prev.filter((s) => !existingIds.has(s.id));
+      const next = prev.filter((s) => !existingIds.has(s.id));
+      return next.length === prev.length ? prev : next;
     });
   }, [activeState?.round, activeState?.status, activeState?.strokes.length]);
 

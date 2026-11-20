@@ -10,7 +10,12 @@ import { triggerHaptic } from '../../utils/haptics';
 import { pickLang } from '../../utils/i18n';
 import { buildChannelFavId } from '../../utils/storage';
 import { TeamCrestImg, hasValidScore } from './FootballMatchboardParts';
-import { isBarcaOrRealMadridMatch } from './FootballMatchboardHelpers';
+import {
+  getTrackLanguageBucket,
+  isPrioritySpanishHighlightMatch,
+  pickPreferredChannelIndex,
+  resolveRecommendedSportsLang,
+} from './FootballMatchboardHelpers';
 
 interface FootballMatchRowProps {
   item: FootballMatchboardItem;
@@ -26,24 +31,39 @@ interface FootballMatchRowProps {
   onQuickWatch: (e: React.MouseEvent, item: FootballMatchboardItem, channelIndex: number) => void;
 }
 
-function isZhTrack(ch: StreamTrack): boolean {
-  return ch.lang === 'ZH' || /中文/.test(ch.label || '');
-}
-
 function formatQuickChannelLabel(ch: StreamTrack, lang: AppLanguage): string {
   const raw = String(ch.label || '').trim();
-  if (!raw) return pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' });
+  if (!raw) {
+    return pickLang(lang, {
+      es: 'Ver',
+      ca: 'Veure',
+      en: 'Watch',
+      zh: '观看',
+      rif: 'Wali',
+    });
+  }
   const cleaned = raw
     .replace(/\b(disney\s*\+|star\s*\+|vix\s*\+|paramount\s*\+|peacock)\b/gi, 'Directo')
     .replace(/\s*\(Español\)/gi, '')
-    .replace(/\s*·\s*(Champions|Premier League|Nations League)/gi, '')
+    .replace(/\s*\(English\)/gi, '')
+    .replace(/\s*\(UK\)/gi, '')
+    .replace(/\s*\(UK\s*1080p\)/gi, '')
+    .replace(/\s*\(Oficial\s*España\)/gi, '')
+    .replace(/\s*\(Oficial\)/gi, '')
+    .replace(/\s*·\s*(Champions|Premier League|Nations League|Selecciones)/gi, '')
     .replace(/\s*\(Oficial\s*·\s*Guía\s*TV\)/gi, '')
     .replace(/\s*Señal\s*\d*/gi, '')
     .replace(/\s*1080p|\s*720p|\s*HD/gi, '')
     .replace(/\s+/g, ' ')
     .trim();
   if (!cleaned || /^(disney|star|vix|paramount)\+?$/i.test(cleaned)) {
-    return pickLang(lang, { es: 'Directo HD', ca: 'Directe HD', en: 'Live HD' });
+    return pickLang(lang, {
+      es: 'Directo HD',
+      ca: 'Directe HD',
+      en: 'Live HD',
+      zh: '高清直播',
+      rif: 'Srid HD',
+    });
   }
   return cleaned;
 }
@@ -60,17 +80,14 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
   onOpenMatchSheet,
   onQuickWatch,
 }) => {
-  const preferredIdx = React.useMemo(() => {
-    if (item.channels.length === 0) return -1;
-    if (showZhIndicator) {
-      const zhIdx = item.channels.findIndex((c) => isZhTrack(c));
-      return zhIdx >= 0 ? zhIdx : 0;
-    }
-    const nonZhIdx = item.channels.findIndex((c) => !isZhTrack(c));
-    return nonZhIdx >= 0 ? nonZhIdx : 0;
-  }, [item.channels, showZhIndicator]);
+  const recommendedSportsLang = showZhIndicator ? 'ZH' : resolveRecommendedSportsLang(lang);
+  const preferredIdx = React.useMemo(
+    () => pickPreferredChannelIndex(item.channels, lang, showZhIndicator),
+    [item.channels, lang, showZhIndicator]
+  );
 
   const primaryCh = preferredIdx >= 0 ? item.channels[preferredIdx] : undefined;
+  const primaryLangBucket = primaryCh ? getTrackLanguageBucket(primaryCh) : recommendedSportsLang;
   const favId = primaryCh
     ? buildChannelFavId(primaryCh.sourceUrl, `${item.homeTeam} vs ${item.awayTeam}`)
     : '';
@@ -80,8 +97,10 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
   );
   const isExtracting = Boolean(loadingItemId?.startsWith(item.id));
   const showNumericScore = hasValidScore(item.homeScore, item.awayScore);
-  const isFeaturedClub = isBarcaOrRealMadridMatch(item.homeTeam, item.awayTeam);
-  const hasZhChannel = showZhIndicator && item.channels.some((c) => isZhTrack(c));
+  const isFeaturedClub = isPrioritySpanishHighlightMatch(item.homeTeam, item.awayTeam);
+  const hasZhChannel =
+    recommendedSportsLang === 'ZH' &&
+    item.channels.some((c) => getTrackLanguageBucket(c) === 'ZH');
 
   const showNonDefaultStatus =
     item.statusState === 'finished' ||
@@ -92,6 +111,46 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
   const showMatchday =
     Boolean(item.matchdayLabel) &&
     item.matchdayLabel!.toLowerCase() !== String(item.leagueName || '').toLowerCase();
+
+  const broadcasterHint = React.useMemo(() => {
+    if (recommendedSportsLang === 'EN') {
+      if (item.verifiedTvGuide?.en?.length) {
+        return { name: item.verifiedTvGuide.en.slice(0, 2).join(' · '), color: '#38BDF8' };
+      }
+      if (item.spanishBroadcaster) {
+        return { name: item.spanishBroadcaster.name, color: item.spanishBroadcaster.badgeColor };
+      }
+      if (primaryCh) {
+        return { name: formatQuickChannelLabel(primaryCh, lang), color: '#94A3B8' };
+      }
+      return null;
+    }
+    if (recommendedSportsLang === 'ZH') {
+      if (item.verifiedTvGuide?.zh?.length) {
+        return { name: item.verifiedTvGuide.zh.slice(0, 2).join(' · '), color: '#F87171' };
+      }
+      if (item.spanishBroadcaster) {
+        return { name: item.spanishBroadcaster.name, color: item.spanishBroadcaster.badgeColor };
+      }
+      if (primaryCh) {
+        return { name: formatQuickChannelLabel(primaryCh, lang), color: '#94A3B8' };
+      }
+      return null;
+    }
+    if (item.spanishBroadcaster) {
+      return { name: item.spanishBroadcaster.name, color: item.spanishBroadcaster.badgeColor };
+    }
+    if (item.verifiedTvGuide?.es?.length) {
+      return { name: item.verifiedTvGuide.es.slice(0, 2).join(' · '), color: '#F59E0B' };
+    }
+    if (item.verifiedTvGuide?.en?.length) {
+      return { name: item.verifiedTvGuide.en.slice(0, 2).join(' · '), color: '#38BDF8' };
+    }
+    if (primaryCh) {
+      return { name: formatQuickChannelLabel(primaryCh, lang), color: '#94A3B8' };
+    }
+    return null;
+  }, [recommendedSportsLang, item.verifiedTvGuide, item.spanishBroadcaster, primaryCh, lang]);
 
   return (
     <div
@@ -116,14 +175,14 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
           {item.statusState === 'live' ? (
             <span className="inline-flex items-center gap-1 text-[#FF6B6B] text-[11px] font-bold tracking-wide whitespace-nowrap">
               <span className="w-1.5 h-1.5 rounded-full bg-[#EB0400]" />
-              {pickLang(lang, { es: 'EN VIVO', ca: 'EN DIRECTE', en: 'LIVE' })}
+              {pickLang(lang, { es: 'EN VIVO', ca: 'EN DIRECTE', en: 'LIVE', zh: '直播中', rif: 'Srid' })}
               {item.statusLabel && !/^en vivo$/i.test(item.statusLabel) ? ` · ${item.statusLabel}` : ''}
             </span>
           ) : (
             <span className="font-bold tabular-nums text-[#C4A7FF] whitespace-nowrap">
               {item.kickoffDateLabel && item.kickoffDateLabel !== 'Hoy'
                 ? `${item.kickoffDateLabel} · ${item.kickoffTime}`
-                : `${pickLang(lang, { es: 'Hoy', ca: 'Avui', en: 'Today' })} · ${item.kickoffTime}`}
+                : `${pickLang(lang, { es: 'Hoy', ca: 'Avui', en: 'Today', zh: '今天', rif: 'Assa' })} · ${item.kickoffTime}`}
             </span>
           )}
 
@@ -146,18 +205,28 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
           )}
         </div>
 
-        {item.spanishBroadcaster && (
+        {broadcasterHint ? (
           <span
             className="inline-flex items-center gap-1 text-[11px] font-bold whitespace-nowrap shrink-0"
-            style={{ color: item.spanishBroadcaster.badgeColor }}
+            style={{ color: broadcasterHint.color }}
           >
             <span
               className="w-1.5 h-1.5 rounded-full shrink-0"
-              style={{ backgroundColor: item.spanishBroadcaster.badgeColor }}
+              style={{ backgroundColor: broadcasterHint.color }}
             />
-            <span>{item.spanishBroadcaster.name}</span>
+            <span>{broadcasterHint.name}</span>
           </span>
-        )}
+        ) : item.statusState !== 'finished' ? (
+          <span className="text-[11px] font-medium text-zinc-500 whitespace-nowrap shrink-0">
+            {pickLang(lang, {
+              es: 'TV por confirmar',
+              ca: 'TV per confirmar',
+              en: 'TV TBA',
+              zh: '频道待定',
+              rif: 'TV urɛad yettwaqqen',
+            })}
+          </span>
+        ) : null}
       </div>
 
       {/* Main Content Row: Spacious Team Rows + Star & Quick Watch CTA */}
@@ -218,7 +287,7 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
                     title: `${item.homeTeam} vs ${item.awayTeam}`,
                     channelLabel:
                       primaryCh.label ||
-                      pickLang(lang, { es: 'Señal 1', ca: 'Senyal 1', en: 'Feed 1' }),
+                      pickLang(lang, { es: 'Señal 1', ca: 'Senyal 1', en: 'Feed 1', zh: '信号 1', rif: 'Lqanat 1' }),
                     channelUrl: primaryCh.sourceUrl,
                     competition: item.groupTitle,
                     sport: 'soccer',
@@ -228,6 +297,8 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
                   es: 'Guardar partido',
                   ca: 'Desar partit',
                   en: 'Save match',
+                  zh: '收藏比赛',
+                  rif: 'Ḥrez lmatch',
                 })}
                 className="min-w-11 min-h-11 flex items-center justify-center rounded-xl text-zinc-400 hover:text-[#9146FF] cursor-pointer"
               >
@@ -243,7 +314,9 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
                 className={`min-h-11 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap shrink-0 border ${
                   isPlayingThisMatch
                     ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.4)]'
-                    : item.spanishBroadcaster
+                    : primaryLangBucket === 'EN'
+                    ? 'bg-sky-500/[0.12] hover:bg-sky-500/[0.22] border-sky-500/40 text-sky-200 hover:text-white'
+                    : primaryLangBucket === 'ES'
                     ? 'bg-amber-500/[0.12] hover:bg-amber-500/[0.22] border-amber-500/40 text-amber-200 hover:text-white'
                     : 'bg-white/[0.06] hover:bg-[#9146FF] border-white/[0.12] hover:border-[#9146FF] text-zinc-100 hover:text-white'
                 }`}
@@ -264,10 +337,12 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
                 es: 'Ver previa y detalles',
                 ca: 'Veure prèvia i detalls',
                 en: 'View preview and details',
+                zh: '查看赛前详情',
+                rif: 'Wali tfassil',
               })}
               className="min-h-11 px-3 rounded-xl text-xs font-semibold flex items-center gap-1 cursor-pointer bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-zinc-300 hover:text-white transition-all whitespace-nowrap active:scale-95"
             >
-              <span>{pickLang(lang, { es: 'Previa', ca: 'Prèvia', en: 'Preview' })}</span>
+              <span>{pickLang(lang, { es: 'Previa', ca: 'Prèvia', en: 'Preview', zh: '赛前', rif: 'Qbel' })}</span>
               <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
             </button>
           )}

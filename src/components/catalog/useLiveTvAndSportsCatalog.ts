@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  AppLanguage,
   ChannelLiveEpg,
   EpgProgramItem,
   FavoriteChannelItem,
@@ -25,6 +26,7 @@ export type FootballBrandFilter =
   | 'world_cricket';
 
 interface UseLiveTvAndSportsCatalogArgs {
+  lang?: AppLanguage;
   worldMode?: 'cine' | 'futbol' | 'tv' | 'youtube';
   activeSection: CatalogSection;
   externalSearchQuery?: string;
@@ -33,6 +35,7 @@ interface UseLiveTvAndSportsCatalogArgs {
 }
 
 export function useLiveTvAndSportsCatalog({
+  lang = 'es',
   worldMode,
   activeSection,
   externalSearchQuery,
@@ -61,7 +64,7 @@ export function useLiveTvAndSportsCatalog({
   const requestedEpgChannel = useAppStore((s) => s.requestedEpgChannel);
   useEffect(() => {
     if (!requestedEpgChannel) return;
-    setSelectedEpgChannel(requestedEpgChannel);
+    setSelectedEpgChannel((prev) => (prev === requestedEpgChannel ? prev : requestedEpgChannel));
   }, [requestedEpgChannel]);
   const [epgClockMs, setEpgClockMs] = useState<number>(() => Date.now());
 
@@ -93,7 +96,7 @@ export function useLiveTvAndSportsCatalog({
   useEffect(() => {
     if (activeSection === 'home' && !worldMode) {
       setTdtCategory('all');
-      setEpgFilter('all');
+      setEpgFilter((prev) => (prev === 'all' ? prev : 'all'));
       onResetWatchlistOnly();
     }
   }, [activeSection, worldMode, onResetWatchlistOnly, setTdtCategory]);
@@ -285,9 +288,23 @@ export function useLiveTvAndSportsCatalog({
       }
       return true;
     });
-    const catRank = (cat: string) => (cat === 'dazn' ? 0 : cat === 'movistar' ? 1 : 2);
-    return filtered.sort((a, b) => catRank(a.category) - catRank(b.category));
-  }, [tdtChannels, footballLiveBrand, sportsSearch]);
+    const catRank = (cat: string) => {
+      if (lang === 'en') {
+        if (cat === 'uk_sports') return 0;
+        if (cat === 'beinsports' || cat === 'espn' || cat === 'world_cricket') return 1;
+        if (cat === 'dazn' || cat === 'movistar') return 2;
+        return 3;
+      }
+      if (lang === 'zh') {
+        if (cat === 'china_football') return 0;
+        if (cat === 'dazn' || cat === 'uk_sports') return 1;
+        return 2;
+      }
+      // es, ca, rif -> Spanish broadcasters prioritized
+      return cat === 'dazn' ? 0 : cat === 'movistar' ? 1 : 2;
+    };
+    return [...filtered].sort((a, b) => catRank(a.category) - catRank(b.category));
+  }, [tdtChannels, footballLiveBrand, sportsSearch, lang]);
 
   const filteredTdtChannels = useMemo(
     () =>

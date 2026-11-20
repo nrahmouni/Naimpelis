@@ -21,7 +21,6 @@ import {
   isTransientFirestoreError,
   OperationType,
 } from '../../firebase';
-import { clearStoredCloudSession } from '../../utils/cloudSession';
 import { StoredProfile } from '../../utils/storage';
 import {
   clampString,
@@ -114,7 +113,6 @@ export async function signInWithGoogleAccount(): Promise<User | null> {
 
 export async function signOutGoogleAccount(): Promise<void> {
   clearCloudSyncCaches();
-  clearStoredCloudSession();
   await signOut(auth);
 }
 

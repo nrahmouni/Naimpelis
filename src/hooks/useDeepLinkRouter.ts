@@ -54,6 +54,16 @@ export function useDeepLinkRouter({
   );
   const quickPoolRef = useRef(quickPool);
   quickPoolRef.current = quickPool;
+  const enterWorldRef = useRef(enterWorld);
+  enterWorldRef.current = enterWorld;
+  const setForcedOpenGameRef = useRef(setForcedOpenGame);
+  setForcedOpenGameRef.current = setForcedOpenGame;
+  const setIsInActiveGameRef = useRef(setIsInActiveGame);
+  setIsInActiveGameRef.current = setIsInActiveGame;
+  const handlePlayTdtChannelRef = useRef(handlePlayTdtChannel);
+  handlePlayTdtChannelRef.current = handlePlayTdtChannel;
+  const handlePlaySportsMatchRef = useRef(handlePlaySportsMatch);
+  handlePlaySportsMatchRef.current = handlePlaySportsMatch;
 
   const activeWorld = useAppStore((s) => s.activeWorld);
   const cineTab = useAppStore((s) => s.cineTab);
@@ -73,17 +83,14 @@ export function useDeepLinkRouter({
   const resolveAndApplyRoute = useCallback(
     async (pathname: string, search: string) => {
       if (isTvMode || isTvPairLobby || isAdsPageOpen) return;
-      const target: AppRouteTarget = parseAppRoute(pathname, search);
-      if (target.kind === 'home' || target.kind === 'system' || target.kind === 'room') {
-        if (target.kind === 'system' && target.systemType === 'kids') {
-          enterWorld('kids');
-        }
-        return;
-      }
-
       const routeKey = `${pathname}${search}`;
       if (lastResolvedRouteKeyRef.current === routeKey) return;
       lastResolvedRouteKeyRef.current = routeKey;
+
+      const target: AppRouteTarget = parseAppRoute(pathname, search);
+      if (target.kind === 'home' || target.kind === 'system' || target.kind === 'room') {
+        return;
+      }
 
       const store = useAppStore.getState();
 
@@ -91,7 +98,7 @@ export function useDeepLinkRouter({
         if (target.cineTab) store.setCineTab(target.cineTab);
         if (typeof target.cineCastellano === 'boolean') store.setCineCastellano(target.cineCastellano);
         if (target.futbolTab) store.setFutbolTab(target.futbolTab);
-        enterWorld(target.world);
+        enterWorldRef.current(target.world);
         return;
       }
 
@@ -102,7 +109,7 @@ export function useDeepLinkRouter({
         if (target.pack.footballLiveBrand) {
           store.setFootballLiveBrand(target.pack.footballLiveBrand);
         }
-        enterWorld('tv');
+        enterWorldRef.current('tv');
         return;
       }
 
@@ -114,16 +121,16 @@ export function useDeepLinkRouter({
         store.setFutbolLeagueFilter(cfg.leagueFilter || 'all');
         store.setFutbolSearchQuery(cfg.searchQuery || '');
         if (cfg.brandFilter) store.setFootballLiveBrand(cfg.brandFilter);
-        enterWorld('futbol');
+        enterWorldRef.current('futbol');
         return;
       }
 
       if (target.kind === 'game') {
         const normalized = normalizeDeepLinkGameType(target.gameId);
-        enterWorld('juegos');
+        enterWorldRef.current('juegos');
         if (normalized) {
-          setForcedOpenGame({ gameType: normalized, seq: Date.now() });
-          setIsInActiveGame(true);
+          setForcedOpenGameRef.current({ gameType: normalized, seq: Date.now() });
+          setIsInActiveGameRef.current(true);
         }
         return;
       }
@@ -138,7 +145,7 @@ export function useDeepLinkRouter({
           );
           if (localMovie) {
             store.setCineTab('movies');
-            enterWorld('cine');
+            enterWorldRef.current('cine');
             store.setRequestedMovieModal(localMovie);
             setDeepLinkResolving(false);
             return;
@@ -155,9 +162,9 @@ export function useDeepLinkRouter({
               slugify(ch.id) === targetSlug
           );
           if (localTdt) {
-            enterWorld('tv');
+            enterWorldRef.current('tv');
             setDeepLinkResolving(false);
-            void handlePlayTdtChannel(localTdt, 0);
+            void handlePlayTdtChannelRef.current(localTdt, 0);
             return;
           }
         }
@@ -170,14 +177,14 @@ export function useDeepLinkRouter({
         if (!res.ok || !data?.found) {
           if (target.kind === 'movie') {
             store.setCineTab('movies');
-            enterWorld('cine');
+            enterWorldRef.current('cine');
           } else if (target.kind === 'series') {
             store.setCineTab('series');
-            enterWorld('cine');
+            enterWorldRef.current('cine');
           } else if (target.kind === 'channel') {
-            enterWorld('tv');
+            enterWorldRef.current('tv');
           } else if (target.kind === 'match') {
-            enterWorld('futbol');
+            enterWorldRef.current('futbol');
           }
           showAppShareToast('No encontramos ese enlace exacto; te mostramos el catálogo relacionado.');
           return;
@@ -185,14 +192,14 @@ export function useDeepLinkRouter({
 
         if (data.kind === 'movie' && data.movie) {
           store.setCineTab('movies');
-          enterWorld('cine');
+          enterWorldRef.current('cine');
           store.setRequestedMovieModal(data.movie as CatalogMovie);
           return;
         }
 
         if (data.kind === 'series' && data.series) {
           store.setCineTab('series');
-          enterWorld('cine');
+          enterWorldRef.current('cine');
           store.setRequestedSeriesModal({
             series: data.series as TvSeriesDetails,
             season: data.requestedSeason,
@@ -202,17 +209,17 @@ export function useDeepLinkRouter({
         }
 
         if (data.kind === 'channel' && data.channel) {
-          enterWorld('tv');
-          await handlePlayTdtChannel(data.channel as SpanishTdtChannel, 0);
+          enterWorldRef.current('tv');
+          await handlePlayTdtChannelRef.current(data.channel as SpanishTdtChannel, 0);
           return;
         }
 
         if (data.kind === 'match' && data.match) {
-          enterWorld('futbol');
+          enterWorldRef.current('futbol');
           const m = data.match as SportsMatch;
           store.setRequestedMatchSlug(target.kind === 'match' ? target.matchIdOrSlug : m.id);
           if (m.channels && m.channels.length > 0 && m.isLive) {
-            void handlePlaySportsMatch(m, 0);
+            void handlePlaySportsMatchRef.current(m, 0);
           }
         }
       } catch {
@@ -225,11 +232,6 @@ export function useDeepLinkRouter({
       isTvMode,
       isTvPairLobby,
       isAdsPageOpen,
-      enterWorld,
-      setForcedOpenGame,
-      setIsInActiveGame,
-      handlePlayTdtChannel,
-      handlePlaySportsMatch,
     ]
   );
 
@@ -304,8 +306,6 @@ export function useDeepLinkRouter({
       nextRoute = '/juegos';
     } else if (activeWorld === 'youtube') {
       nextRoute = '/youtube';
-    } else if (activeWorld === 'kids') {
-      nextRoute = '/kids';
     } else {
       // On entry home, preserve active deep-linked channel/series path only if navigating back explicitly from home?
       // When user explicitly returns to Entry Home in Solo mode, update URL cleanly to '/'

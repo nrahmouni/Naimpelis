@@ -103,14 +103,14 @@ describe('Global LIFO backInterceptor priority stack & pop coordination', () => 
       registerBackInterceptor('world-search-tv', () => {
         called.push('search');
       }, 6),
-      registerBackInterceptor('kids-hub-inner-nav', () => {
-        called.push('kids-noop');
+      registerBackInterceptor('vod-modal-inner-nav', () => {
+        called.push('vod-noop');
         return false;
       }, 14)
     );
 
     expect(tryConsumeBackInterceptor()).toBe(true);
-    expect(called).toEqual(['kids-noop', 'search']);
+    expect(called).toEqual(['vod-noop', 'search']);
   });
 
   it('updates lastBackPopHandledAt timestamp for deep-link & room popstate de-bouncing', () => {

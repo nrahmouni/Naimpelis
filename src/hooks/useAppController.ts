@@ -124,7 +124,6 @@ export function useAppController() {
   const [introWithSound, setIntroWithSound] = useState<boolean>(false);
   const [showWatchlistOnly, setShowWatchlistOnly] = useState<boolean>(false);
   const [showVoiceAssistant, setShowVoiceAssistant] = useState<boolean>(false);
-  const [kidsExitPromptSeq] = useState<number>(0);
   const [quickPool, setQuickPool] = useState<{
     movies: CatalogMovie[];
     series: CatalogMovie[];
@@ -238,7 +237,8 @@ export function useAppController() {
   useEffect(() => {
     if (typeof document === 'undefined') return undefined;
     const handleFsChange = () => {
-      setIsDocumentFullscreen(Boolean(document.fullscreenElement));
+      const next = Boolean(document.fullscreenElement);
+      setIsDocumentFullscreen((prev) => (prev === next ? prev : next));
     };
     document.addEventListener('fullscreenchange', handleFsChange);
     return () => document.removeEventListener('fullscreenchange', handleFsChange);
@@ -327,6 +327,11 @@ export function useAppController() {
     (inRoom || hasEnteredApp) && !isTvMode && activeWorld === 'entry'
   );
 
+  const handleNavUpgradeSoloToParty = useCallback(
+    (opts?: { targetWorld?: WorldId }) => upgradeSoloToPartyRef.current(opts),
+    []
+  );
+
   const {
     activePortalTransition,
     portalOriginRect,
@@ -339,7 +344,6 @@ export function useAppController() {
     roomId,
     reducedMotion,
     effectiveInitialRoom,
-    initialIsKidsMode: initialRoute.isKidsMode,
     initialDeepLinkGame,
     inRoomRef,
     mainScrollRef,
@@ -351,7 +355,7 @@ export function useAppController() {
     setIsInActiveGame: roomState.setIsInActiveGame,
     setWorldSearchQuery,
     setShowWatchlistOnly,
-    onUpgradeSoloToParty: (opts) => upgradeSoloToPartyRef.current(opts),
+    onUpgradeSoloToParty: handleNavUpgradeSoloToParty,
   });
 
   useCloudSyncSubscriptions({
@@ -563,11 +567,13 @@ export function useAppController() {
     });
   }, [setIsAutoMiniByScroll]);
 
+  const handlePlaybackUpgradeSoloToParty = useCallback(() => {
+    upgradeSoloToPartyRef.current();
+  }, []);
+
   const playback = usePlaybackOrchestrator({
     sessionMode,
-    onUpgradeSoloToParty: () => {
-      upgradeSoloToPartyRef.current();
-    },
+    onUpgradeSoloToParty: handlePlaybackUpgradeSoloToParty,
     lang,
     profileName: profile.name,
     canChangeMedia,
@@ -618,7 +624,6 @@ export function useAppController() {
     isTvMode,
     isTvPairLobby,
     tvAuthToken,
-    isKidsRouteMode: Boolean(initialRoute.isKidsMode),
     lang,
     profile,
     mobileTabRef: roomState.mobileTabRef,
@@ -778,6 +783,14 @@ export function useAppController() {
     quickPool,
   });
 
+  const handleTvRemoteSetCatalogSection = useCallback(
+    (sec: Parameters<typeof roomState.setCatalogSection>[0]) => {
+      if (sec === 'home') enterWorld('entry');
+      else roomState.setCatalogSection(sec);
+    },
+    [enterWorld, roomState.setCatalogSection]
+  );
+
   useTvRemoteBridge({
     isAdsPageOpen,
     setIsAdsPageOpen,
@@ -798,10 +811,7 @@ export function useAppController() {
     setIsExtracting: roomState.setIsExtracting,
     inRoom,
     catalogSection: roomState.catalogSection,
-    setCatalogSection: (sec) => {
-      if (sec === 'home') enterWorld('entry');
-      else roomState.setCatalogSection(sec);
-    },
+    setCatalogSection: handleTvRemoteSetCatalogSection,
     setMobileTab: roomState.setMobileTab,
     handleSelectTrack: playback.handleSelectTrack,
   });
@@ -863,32 +873,37 @@ export function useAppController() {
     { priority: 22 }
   );
 
+  const handleReturnToEntry = useCallback(() => enterWorld('entry'), [enterWorld]);
+  const handleExitFullscreen = useCallback(() => {
+    try {
+      void document.exitFullscreen?.();
+    } catch {
+      // ignore
+    }
+  }, []);
+  const handleMinimizePlayer = useCallback(() => {
+    setCinemaModePersist(false);
+    if (isOnMobileSocialTab) setPinFullPlayerOnChat(false);
+    else setIsPlayerMinimized(true);
+    restorePlaybackOrigin({ reason: 'minimize' });
+  }, [isOnMobileSocialTab, restorePlaybackOrigin, setCinemaModePersist]);
+  const handleExitRoomOrApp = useCallback(() => {
+    if (inRoom && sessionMode !== 'solo') {
+      lifecycle.handleLeaveRoom();
+    }
+  }, [inRoom, sessionMode, lifecycle]);
+
   const { exitToastVisible, triggerBackStep } = useAppNavigationHistory({
     enabled: !isTvMode && !isTvPairLobby && !isAdsPageOpen && (inRoom || hasEnteredApp),
     inRoom,
     activeWorld,
-    onReturnToEntry: () => enterWorld('entry'),
+    onReturnToEntry: handleReturnToEntry,
     hasActivePlayer: isPlayerActive,
     isPlayerMinimized: isPlayerMinimized || isDockedMini,
     isFullscreen: isDocumentFullscreen,
-    onExitFullscreen: () => {
-      try {
-        void document.exitFullscreen?.();
-      } catch {
-        // ignore
-      }
-    },
-    onMinimizePlayer: () => {
-      setCinemaModePersist(false);
-      if (isOnMobileSocialTab) setPinFullPlayerOnChat(false);
-      else setIsPlayerMinimized(true);
-      restorePlaybackOrigin({ reason: 'minimize' });
-    },
-    onExitRoomOrApp: () => {
-      if (inRoom && sessionMode !== 'solo') {
-        lifecycle.handleLeaveRoom();
-      }
-    },
+    onExitFullscreen: handleExitFullscreen,
+    onMinimizePlayer: handleMinimizePlayer,
+    onExitRoomOrApp: handleExitRoomOrApp,
   });
 
   return {
@@ -902,7 +917,7 @@ export function useAppController() {
     isTvPairLobby, setIsTvPairLobby, isAdsPageOpen, setIsAdsPageOpen, setTvAuthToken, savedRooms,
     pinPromptState, tvClaimStatus, smartTvModalOpen, setSmartTvModalOpen, showIntro, setShowIntro,
     introWithSound, setIntroWithSound, showWatchlistOnly, setShowWatchlistOnly, showVoiceAssistant,
-    setShowVoiceAssistant, kidsExitPromptSeq, quickPool, quickPoolLoading, nativeApkUpdate,
+    setShowVoiceAssistant, quickPool, quickPoolLoading, nativeApkUpdate,
     setNativeApkUpdate, reducedMotion, activeWorld, lastUsedWorld, cineTab, setCineTab,
     cineCastellano, setCineCastellano, futbolTab, setFutbolTab, isFloatingRoomOpen,
     setIsFloatingRoomOpen, showDesignSystem, setShowDesignSystem, showLegalModal, setShowLegalModal,

@@ -10,9 +10,7 @@ import { useSuppressFloatingBubble } from '../../utils/useSuppressFloatingBubble
 import { PosterImage } from './PosterImage';
 import {
   RiffanCloseIcon,
-  RiffanRetryIcon,
   RiffanSpinner,
-  RiffanWarningIcon,
 } from './RiffanIcons';
 
 // ============================================================================
@@ -529,37 +527,4 @@ export const Poster: React.FC<PosterProps> = ({
 
 export const Skeleton = SkeletonPosterGrid;
 export const EmptyState = EmptyStateCard;
-
-export const SkeletonList: React.FC<{ rows?: number; heightClass?: string }> = ({
-  rows = 5,
-  heightClass = 'h-20',
-}) => (
-  <div className="space-y-2.5">
-    {Array.from({ length: rows }).map((_, i) => (
-      <div
-        key={i}
-        className={`${heightClass} rounded-2xl bg-white/[0.04] border border-white/[0.06] skeleton-shimmer`}
-      />
-    ))}
-  </div>
-);
-
-export const ErrorRetryBanner: React.FC<{
-  message: string;
-  onRetry?: () => void;
-  lang?: AppLanguage;
-}> = ({ message, onRetry, lang = 'es' }) => (
-  <div className="p-4 rounded-2xl bg-[#141418] border border-white/[0.1] flex flex-wrap items-center justify-between gap-3">
-    <div className="flex items-center gap-2.5 min-w-0">
-      <RiffanWarningIcon size={20} animate="always" className="shrink-0" />
-      <p className="text-xs sm:text-sm text-zinc-200 line-clamp-2">{message}</p>
-    </div>
-    {onRetry && (
-      <SecondaryButton onClick={onRetry}>
-        <RiffanRetryIcon size={16} animate="hover" />
-        <span>{pickLang(lang, { es: 'Reintentar', ca: 'Reintentar', en: 'Retry' })}</span>
-      </SecondaryButton>
-    )}
-  </div>
-);
 

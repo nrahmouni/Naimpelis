@@ -10,13 +10,12 @@ export interface RiffanIconProps extends React.SVGProps<SVGSVGElement> {
   animate?: 'always' | 'hover' | 'none';
   /**
    * 'brand': signature RiffanTV #8B5CF6 -> #4CC9F0 gradient stroke/fill
-   * 'kids': Riffan Kids warm #FBBF24 -> #F472B6 gradient stroke/fill
    * 'current': inherits currentColor for crisp contrast inside solid #9146FF / colored buttons
    */
-  tone?: 'brand' | 'current' | 'kids';
+  tone?: 'brand' | 'current';
 }
 
-export function useRiffanIconDefs(tone: 'brand' | 'current' | 'kids' = 'brand') {
+export function useRiffanIconDefs(tone: 'brand' | 'current' = 'brand') {
   const rawId = useId().replace(/:/g, '');
   const gradId = `rtv-g-${rawId}`;
   const paint = tone === 'current' ? 'currentColor' : `url(#${gradId})`;
@@ -38,27 +37,11 @@ export const BrandGradientDef: React.FC<{ id: string; x1?: number; y1?: number; 
   </defs>
 );
 
-export const KidsGradientDef: React.FC<{ id: string; x1?: number; y1?: number; x2?: number; y2?: number }> = ({
-  id,
-  x1 = 6,
-  y1 = 6,
-  x2 = 42,
-  y2 = 42,
-}) => (
-  <defs>
-    <linearGradient id={id} x1={x1} y1={y1} x2={x2} y2={y2} gradientUnits="userSpaceOnUse">
-      <stop offset="0" stopColor="#FBBF24" />
-      <stop offset="1" stopColor="#F472B6" />
-    </linearGradient>
-  </defs>
-);
-
-export const ToneGradientDef: React.FC<{ tone: 'brand' | 'current' | 'kids'; id: string }> = ({
+export const ToneGradientDef: React.FC<{ tone: 'brand' | 'current'; id: string }> = ({
   tone,
   id,
 }) => {
   if (tone === 'current') return null;
-  if (tone === 'kids') return <KidsGradientDef id={id} />;
   return <BrandGradientDef id={id} />;
 };
 

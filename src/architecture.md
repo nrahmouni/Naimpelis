@@ -22,7 +22,6 @@ This document describes the modular architecture, design tokens, real-time proto
 │   │   ├── geminiLive.ts           # Bidirectional Gemini Live API (/ws/gemini-live)
 │   │   ├── health.ts               # Readiness & upstream diagnostics
 │   │   ├── iptv.ts                 # TDT & M3U playlist + XMLTV EPG routes
-│   │   ├── kids.ts                 # Riffan Kids catalog, audiobooks & APK routes
 │   │   ├── proxies.ts              # HLS/TS proxy, SSRF guard & image proxy
 │   │   ├── sports.ts               # Live football schedule, signals & stats
 │   │   ├── voiceAssistant.ts       # Natural-language voice intent + search engine
@@ -58,19 +57,17 @@ This document describes the modular architecture, design tokens, real-time proto
 │   │   ├── home/
 │   │   │   ├── UniversalHomeSearch.tsx
 │   │   │   └── WorldPortalTransition.tsx
-│   │   ├── kids/                   # Riffan Kids Hub (cinema, stories, languages, games, wizard)
 │   │   ├── party/                  # Watch-party polls, queue & moderation sheets
 │   │   ├── player/                 # Player transport bar, CinemaPlaybackDocks, tracks, PiP & MiniPlayer
 │   │   ├── ui/
 │   │   │   ├── DesignSystem.tsx    # WorldShell, SegmentedControl, BottomSheet, ActionToast
-│   │   │   ├── RiffanIcons.tsx     # Complete 59+ animated SVG icon kit (brand/current/kids)
+│   │   │   ├── RiffanIcons.tsx     # Complete animated SVG icon kit (brand/current)
 │   │   │   ├── LanguageBadge.tsx   # ES · LAT · VOSE · EN badges & multi-language flags
 │   │   │   └── PosterImage.tsx     # Resilient poster/backdrop loader with fallback
 │   │   └── worlds/WorldShell.tsx   # Shared sticky header & world container
 │   ├── hooks/                      # Extracted state/side-effect orchestration hooks
 │   │   ├── useCatalogQueries.ts
 │   │   ├── useCloudSyncSubscriptions.ts
-│   │   ├── useFavoritesAndHistory.ts
 │   │   ├── useGameVoiceChat.ts
 │   │   ├── useLiveSportsMatchDetails.ts
 │   │   ├── useMiniPlayerDrag.ts
@@ -81,12 +78,12 @@ This document describes the modular architecture, design tokens, real-time proto
 │   │   └── useTvRoomPolling.ts
 │   ├── services/                   # WebSocket room client & Firebase cloud sync
 │   ├── shared/                     # Shared protocol schemas & authoritative game engines
-│   ├── store/                      # Zustand / persisted app & Kids stores
+│   ├── store/                      # Zustand / persisted app stores
 │   ├── utils/                      # i18n, spatial TV nav, haptics, subtitles, short links
 │   ├── App.tsx                     # Root SPA orchestrator (delegates heavy logic to hooks/)
 │   ├── index.css                   # Tailwind v4 tokens, scroll utilities & icon keyframes
 │   └── types.ts                    # Shared domain types
-└── tests/                          # Vitest unit, contract & protocol suites (25 files)
+└── tests/                          # Vitest unit, contract & protocol suites
 ```
 
 ---
@@ -94,7 +91,7 @@ This document describes the modular architecture, design tokens, real-time proto
 ## 2. Core Architectural Principles
 
 1. **Hook-Driven Root Orchestration (`src/App.tsx`)**:
-   - `App.tsx` composes dedicated hooks (`usePlaybackOrchestrator`, `useRoomSocketEvents`, `useTvRoomPolling`, `useLiveSportsMatchDetails`, `useMiniPlayerDrag`, `useCatalogQueries`, `useFavoritesAndHistory`, `useCloudSyncSubscriptions`) and mounts `<AppGlobalModalsLayer />` rather than holding inline monolithic handlers.
+   - `App.tsx` composes dedicated hooks (`usePlaybackOrchestrator`, `useRoomSocketEvents`, `useTvRoomPolling`, `useLiveSportsMatchDetails`, `useMiniPlayerDrag`, `useCatalogQueries`, `useCloudSyncSubscriptions`) and mounts `<AppGlobalModalsLayer />` rather than holding inline monolithic handlers.
 
 2. **Strict Chromatic & Touch Standards**:
    - Canvas background: `#0B0B0F` (Obsidian dark); surface cards: `#12121A` / `#141622`.
@@ -104,7 +101,7 @@ This document describes the modular architecture, design tokens, real-time proto
 
 3. **Animated SVG Kit (`src/components/ui/RiffanIcons.tsx`)**:
    - Full vector kit with GPU-composited keyframes in `src/index.css` (`.rtv-ico` with `animate="hover" | "always" | "none"`).
-   - Supports three tones: `'brand'` (`#8B5CF6 -> #4CC9F0`), `'current'`, and `'kids'` (`#FBBF24 -> #F472B6`).
+   - Supports two tones: `'brand'` (`#8B5CF6 -> #4CC9F0`) and `'current'`.
 
 4. **Bespoke Games Lounge (`src/components/games/`)**:
    - `GamesHubLobby.tsx` renders mobile-first + desktop (`max-w-6xl`) responsive cards backed by bespoke SVG artwork (`GameLogos.tsx`) and delegates active matches to `GamesHubSection.tsx`.
