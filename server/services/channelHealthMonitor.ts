@@ -113,16 +113,15 @@ export async function probeChannelTrack(
     return { status: 'unknown', checkedAt: now, failCount: prevFails };
   }
 
-  const timeoutMs = options?.timeoutMs ?? PROBE_TIMEOUT_MS;
-  const fetchFn: FetchLike =
-    options?.fetchImpl ?? ((input, init) => streamingFetch(String(input), { ...init, timeoutMs }));
-
   const isHlsManifest =
     track.resolverType === 'tdt_hls' ||
     track.resolverType === 'direct_hls' ||
     /\.m3u8(\?|$)/i.test(cleanUrl);
 
   const isDvbHeadend = cleanUrl.includes('90.163.85.113:8093');
+  const timeoutMs = options?.timeoutMs ?? (isDvbHeadend ? 7500 : PROBE_TIMEOUT_MS);
+  const fetchFn: FetchLike =
+    options?.fetchImpl ?? ((input, init) => streamingFetch(String(input), { ...init, timeoutMs }));
   const isCnStream =
     cleanUrl.includes('38.75.136.137') ||
     cleanUrl.includes('63.141.230.178') ||
@@ -469,13 +468,21 @@ export class ChannelHealthMonitor {
         }
       }
 
-      const queue = Array.from(uniqueTracks.entries());
-      let cursor = 0;
+      const normalQueue: Array<[string, HealthProbeTrack]> = [];
+      const dvbQueue: Array<[string, HealthProbeTrack]> = [];
+      for (const entry of uniqueTracks.entries()) {
+        if (entry[0].includes('90.163.85.113:8093')) {
+          dvbQueue.push(entry);
+        } else {
+          normalQueue.push(entry);
+        }
+      }
 
+      let cursor = 0;
       const worker = async () => {
-        while (cursor < queue.length) {
+        while (cursor < normalQueue.length) {
           const currentIndex = cursor++;
-          const [key, track] = queue[currentIndex];
+          const [key, track] = normalQueue[currentIndex];
           const previous = this.trackHealth.get(key);
           const result = await probeChannelTrack(track, {
             timeoutMs: options?.timeoutMs,
@@ -486,9 +493,28 @@ export class ChannelHealthMonitor {
         }
       };
 
-      const workerCount = Math.min(concurrency, queue.length);
-      if (workerCount > 0) {
-        await Promise.all(Array.from({ length: workerCount }, () => worker()));
+      const dvbWorker = async () => {
+        for (const [key, track] of dvbQueue) {
+          const previous = this.trackHealth.get(key);
+          const result = await probeChannelTrack(track, {
+            timeoutMs: options?.timeoutMs,
+            fetchImpl: options?.fetchImpl,
+            previous,
+          });
+          this.trackHealth.set(key, result);
+        }
+      };
+
+      const tasks: Promise<void>[] = [];
+      const workerCount = Math.min(concurrency, normalQueue.length);
+      for (let i = 0; i < workerCount; i++) {
+        tasks.push(worker());
+      }
+      if (dvbQueue.length > 0) {
+        tasks.push(dvbWorker());
+      }
+      if (tasks.length > 0) {
+        await Promise.all(tasks);
       }
 
       this.lastSweepAt = Date.now();
@@ -497,7 +523,7 @@ export class ChannelHealthMonitor {
       const summary = this.getSummary();
       logger.info(
         {
-          probed: queue.length,
+          probed: normalQueue.length + dvbQueue.length,
           durationMs: this.lastSweepDurationMs,
           counts: summary.counts,
         },

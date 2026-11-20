@@ -308,11 +308,13 @@ export async function fetchUpstreamManifestText(
     }
   }
 
+  const manifestTimeoutMs = isDvbHeadendStream(targetUrl) ? 7500 : 3800;
+
   if (!shouldBypassNodeFetch(targetUrl)) {
     try {
       const resp = await streamingFetch(targetUrl, {
         headers,
-        timeoutMs: 3800,
+        timeoutMs: manifestTimeoutMs,
       });
       if (resp.ok) {
         const text = await resp.text();

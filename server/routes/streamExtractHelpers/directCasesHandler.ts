@@ -18,7 +18,10 @@ import {
   isElahmadUrl,
   resolveElahmadChannelToHls,
 } from '../../extractors/elahmadExtractor.ts';
-import { ensureLiveDvbCleanHlsSession } from '../proxies/dvbTranscoder.ts';
+import {
+  ensureLiveDvbCleanHlsSession,
+  getActiveDvbSessionPath,
+} from '../proxies/dvbTranscoder.ts';
 
 export async function handleDirectExtractCases(params: {
   rawInput: string;
@@ -49,7 +52,50 @@ export async function handleDirectExtractCases(params: {
     const strippedCheckUrl = rawInput.replace(/[?&]profile=(hd|fast)\b/gi, '');
     const cleanCheckUrl = await maybeSignEasyBroadcastUrl(strippedCheckUrl);
     const knownReferer = resolveKnownUpstreamReferer(cleanCheckUrl);
+    const originRef = knownReferer || new URL(cleanCheckUrl).origin + '/';
     const isCnStream = isChineseIptvStream(cleanCheckUrl);
+    const isDvb = isDvbHeadendStream(cleanCheckUrl);
+
+    if (isDvb) {
+      const existingDvbPath = getActiveDvbSessionPath(cleanCheckUrl);
+      if (existingDvbPath) {
+        const fastResult: ExtractedStreamResult = {
+          success: true,
+          mode: 'hls',
+          streamUrl: existingDvbPath,
+          rawStreamUrl: cleanCheckUrl,
+          referer: originRef,
+          title: titleHint || 'TV España en Directo',
+          requestedLang: 'ES',
+          resolvedLang: 'ES',
+          expiresAt: Date.now() + 30 * 1000,
+        };
+        setCache(cacheKey, fastResult);
+        return sendOk(fastResult);
+      }
+
+      const dvbLiveUrl = await ensureLiveDvbCleanHlsSession(
+        cleanCheckUrl,
+        dvbProfile,
+        originRef
+      ).catch(() => null);
+      if (dvbLiveUrl) {
+        const dvbResult: ExtractedStreamResult = {
+          success: true,
+          mode: 'hls',
+          streamUrl: dvbLiveUrl,
+          rawStreamUrl: cleanCheckUrl,
+          referer: originRef,
+          title: titleHint || 'TV España en Directo',
+          requestedLang: 'ES',
+          resolvedLang: 'ES',
+          expiresAt: Date.now() + 30 * 1000,
+        };
+        setCache(cacheKey, dvbResult);
+        return sendOk(dvbResult);
+      }
+    }
+
     const checkHeaders: Record<string, string> = {
       'User-Agent': getPreferredUpstreamUa(cleanCheckUrl),
       Accept: '*/*',
@@ -66,7 +112,7 @@ export async function handleDirectExtractCases(params: {
     try {
       const chk = await fetch(cleanCheckUrl, {
         headers: checkHeaders,
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(isDvb ? 7500 : 4000),
       });
       if (chk.ok) {
         const txt = await chk.text();
@@ -76,7 +122,7 @@ export async function handleDirectExtractCases(params: {
       // fallback to curl below
     }
     if (!isAlive) {
-      const fb = await curlGetText(cleanCheckUrl, checkHeaders, isCnStream ? 6 : 5, isCnStream).catch(() => ({
+      const fb = await curlGetText(cleanCheckUrl, checkHeaders, isCnStream || isDvb ? 6 : 5, isCnStream).catch(() => ({
         text: '',
       }));
       isAlive = Boolean(fb.text && fb.text.includes('#EXTM3U') && !/nosignal/i.test(fb.text));
@@ -96,21 +142,13 @@ export async function handleDirectExtractCases(params: {
       );
     }
 
-    const originRef = knownReferer || new URL(cleanCheckUrl).origin + '/';
     const isDirectBrowserCorsPublicCdn =
       /^https:\/\/([^/]*\.)?(rtvelivestream\.rtve\.es|3catdirectes\.cat|eitb\.eus)\//i.test(
         cleanCheckUrl
       );
-    const isDvb = isDvbHeadendStream(cleanCheckUrl);
-    let dvbLiveUrl: string | null = null;
-    if (isDvb) {
-      dvbLiveUrl = await ensureLiveDvbCleanHlsSession(cleanCheckUrl, dvbProfile, originRef).catch(
-        () => null
-      );
-    }
     const finalStreamUrl = isDirectBrowserCorsPublicCdn
       ? cleanCheckUrl
-      : dvbLiveUrl || buildHlsProxyUrl(cleanCheckUrl, originRef, isDvb);
+      : buildHlsProxyUrl(cleanCheckUrl, originRef, isDvb);
 
     const resolvedChLang = isCnStream ? 'ZH' : 'ES';
     const result: ExtractedStreamResult = {
@@ -122,7 +160,7 @@ export async function handleDirectExtractCases(params: {
       title: titleHint || (isCnStream ? 'Fútbol China en Directo (中文)' : 'TV España en Directo'),
       requestedLang: resolvedChLang,
       resolvedLang: resolvedChLang,
-      expiresAt: Date.now() + (dvbLiveUrl ? 30 * 1000 : 4 * 60 * 1000),
+      expiresAt: Date.now() + 4 * 60 * 1000,
     };
     setCache(cacheKey, result);
     return sendOk(result);

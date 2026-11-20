@@ -285,7 +285,7 @@ export function useLiveAndQueuePlayback(
       } else {
         signal.addEventListener('abort', onParentAbort, { once: true });
       }
-      const timeoutId = setTimeout(() => ctrl.abort(), 9500);
+      const timeoutId = setTimeout(() => ctrl.abort(), 16_000);
       let res: Response | null = null;
       let data: {
         success?: boolean;

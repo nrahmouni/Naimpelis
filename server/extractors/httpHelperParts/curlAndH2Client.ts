@@ -216,7 +216,9 @@ export function shouldBypassNodeFetch(urlStr: string): boolean {
 
 export function markHostNeedsCurlFallback(urlStr: string): void {
   try {
-    const host = new URL(urlStr).hostname.toLowerCase();
+    const u = new URL(urlStr);
+    if (u.protocol !== 'https:') return;
+    const host = u.hostname.toLowerCase();
     if (host) tlsFallbackHostsCache.set(host, true);
   } catch {
     // ignore

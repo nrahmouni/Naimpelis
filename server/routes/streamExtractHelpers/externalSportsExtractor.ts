@@ -34,7 +34,11 @@ export function formatExtractResponseForClient(
       const full = `${publicOrigin}${u}`;
       return full.includes('abs=1') ? full : `${full}${full.includes('?') ? '&' : '?'}abs=1`;
     }
-    if (u.startsWith('/api/ts-proxy/') || u.startsWith('/api/embed-proxy')) {
+    if (
+      u.startsWith('/api/ts-proxy/') ||
+      u.startsWith('/api/embed-proxy') ||
+      u.startsWith('/api/dvb-live/')
+    ) {
       return `${publicOrigin}${u}`;
     }
     return u;

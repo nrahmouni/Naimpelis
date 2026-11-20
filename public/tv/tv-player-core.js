@@ -393,7 +393,7 @@ function applyVideoState(vs, forceReload) {
     if (!videoEl.videoWidth || videoEl.videoWidth === 0 || videoEl.readyState < 2) {
       triggerPlaybackFailover('Tiempo de carga agotado');
     }
-  }, 9500);
+  }, 16000);
 
   if (nextMode === 'direct') {
     videoEl.src = nextUrl;
@@ -427,12 +427,14 @@ function applyVideoState(vs, forceReload) {
       lowLatencyMode: false,
       startPosition: isLive ? -1 : targetSec,
       liveSyncDurationCount: 3,
-      liveMaxLatencyDurationCount: 6,
+      liveMaxLatencyDurationCount: 8,
       backBufferLength: isLive ? 14 : 30,
       maxBufferLength: isLive ? 24 : 35,
-      manifestLoadingTimeOut: 9000,
-      fragLoadingTimeOut: 14000,
-      fragLoadingMaxRetry: 3
+      manifestLoadingTimeOut: 15000,
+      manifestLoadingMaxRetry: 4,
+      levelLoadingTimeOut: 15000,
+      fragLoadingTimeOut: 18000,
+      fragLoadingMaxRetry: 5
     });
     hlsInstance = hls;
     hls.loadSource(nextUrl);
@@ -458,8 +460,10 @@ function applyVideoState(vs, forceReload) {
           hls.loadSource(absProxied);
           return;
         }
-        if (netErrorCount <= 1) {
-          hls.startLoad();
+        if (netErrorCount <= 2) {
+          setTimeout(function () {
+            if (hlsInstance === hls) hls.startLoad();
+          }, 500);
         } else {
           triggerPlaybackFailover('Señal de red interrumpida');
         }

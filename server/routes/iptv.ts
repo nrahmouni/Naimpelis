@@ -28,6 +28,7 @@ import {
 } from '../services/famelackIptvService.ts';
 import {
   ensureLiveDvbCleanHlsSession,
+  getActiveDvbSessionPath,
   readLiveDvbPlaylistForIptv,
 } from './proxies/dvbTranscoder.ts';
 import {
@@ -324,14 +325,18 @@ export function registerIptvAndTdtRoutes(
     const publicOrigin = getPublicOrigin(req);
     const forceAacOverride = req.query.aac === '1';
     const cached = iptvChannelResolveCache.get(channel.id);
-    if (cached && Date.now() - cached.ts < 45_000) {
+    if (cached && Date.now() - cached.ts < (cached.isDvb ? 10 * 60 * 1000 : 45_000)) {
       if (cached.isDvb) {
-        const dvbText = await resolveDvbIptvPlaylistText(
-          cached.rawM3u8Url,
-          cached.referer,
-          publicOrigin
-        );
+        const activeDvbPath = getActiveDvbSessionPath(cached.rawM3u8Url);
+        const dvbText =
+          (activeDvbPath && readLiveDvbPlaylistForIptv(activeDvbPath, publicOrigin)) ||
+          (await resolveDvbIptvPlaylistText(
+            cached.rawM3u8Url,
+            cached.referer,
+            publicOrigin
+          ));
         if (dvbText) {
+          cached.ts = Date.now();
           return sendIptvM3u8Response(res, dvbText);
         }
         iptvChannelResolveCache.delete(channel.id);
@@ -435,12 +440,10 @@ export function registerIptvAndTdtRoutes(
               continue;
             }
             triedDvbUrls.add(cleanUrl);
-            const probeManifest = await fetchUpstreamManifestText(cleanUrl, referer, false);
-            if (!probeManifest) {
-              markTrackDown(sourceUrl, 502);
-              continue;
-            }
-            const dvbPlaylist = await resolveDvbIptvPlaylistText(cleanUrl, referer, publicOrigin);
+            const activeDvbPath = getActiveDvbSessionPath(cleanUrl);
+            const dvbPlaylist =
+              (activeDvbPath && readLiveDvbPlaylistForIptv(activeDvbPath, publicOrigin)) ||
+              (await resolveDvbIptvPlaylistText(cleanUrl, referer, publicOrigin));
             if (dvbPlaylist) {
               iptvChannelResolveCache.set(channel.id, {
                 rawM3u8Url: cleanUrl,
@@ -452,12 +455,17 @@ export function registerIptvAndTdtRoutes(
               });
               return sendIptvM3u8Response(res, dvbPlaylist);
             }
+            const probeManifest = await fetchUpstreamManifestText(cleanUrl, referer, true);
+            if (!probeManifest) {
+              markTrackDown(sourceUrl, 502);
+              continue;
+            }
             const trimmedFallback = trimLiveDvrManifestForIptv(probeManifest.text, 6);
             const rewrittenFallback = rewriteManifestForSamsungIptv(
               trimmedFallback,
               probeManifest.finalUrl,
               referer,
-              false,
+              true,
               false,
               publicOrigin
             );

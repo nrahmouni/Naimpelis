@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
+import type express from 'express';
 import {
   rewriteManifestForSamsungIptv,
   trimLiveDvrManifestForIptv,
 } from '../server/routes/iptvHelpers/iptvMediaHelpers.ts';
 import { ChannelHealthMonitor } from '../server/services/channelHealthMonitor.ts';
+import { buildDvbSessionKey } from '../server/routes/proxies/dvbTranscoder.ts';
+import {
+  markHostNeedsCurlFallback,
+  shouldBypassNodeFetch,
+} from '../server/extractors/httpHelpers.ts';
+import { formatExtractResponseForClient } from '../server/routes/streamExtractHelpers/externalSportsExtractor.ts';
 
 describe('IPTV Media Helpers & Smart TV Compatibility', () => {
   it('trims oversized live DVR playlists while updating media and discontinuity sequences', () => {
@@ -94,5 +101,103 @@ describe('IPTV Media Helpers & Smart TV Compatibility', () => {
     ]);
 
     expect(sorted.map((t) => t.id)).toEqual(['cdn', 'dvb']);
+  });
+
+  it('unifies DVB relay session keys across hd, fast, iptv and raw URLs', () => {
+    const base = 'http://90.163.85.113:8093/stream/20/index.m3u8';
+    const keyBase = buildDvbSessionKey(base);
+    expect(buildDvbSessionKey(`${base}?profile=fast`)).toBe(keyBase);
+    expect(buildDvbSessionKey(`${base}?profile=hd`)).toBe(keyBase);
+    expect(buildDvbSessionKey(`${base}?profile=iptv`)).toBe(keyBase);
+  });
+
+  it('never blacklists plain HTTP DVB headend hosts in tlsFallbackHostsCache', () => {
+    const dvbUrl = 'http://90.163.85.113:8093/stream/41/index.m3u8';
+    markHostNeedsCurlFallback(dvbUrl);
+    expect(shouldBypassNodeFetch(dvbUrl)).toBe(false);
+  });
+
+  it('serializes DVB headend probes in runSweep so residential tuner is never flooded', async () => {
+    const monitor = new ChannelHealthMonitor();
+    let inFlightDvb = 0;
+    let maxInFlightDvb = 0;
+
+    await monitor.runSweep(
+      [
+        {
+          id: 'ch-a3',
+          channels: [
+            {
+              id: 'a3',
+              label: 'A3',
+              lang: 'ES',
+              sourceUrl: 'http://90.163.85.113:8093/stream/20/index.m3u8',
+              resolverType: 'tdt_hls',
+            },
+          ],
+        },
+        {
+          id: 'ch-t5',
+          channels: [
+            {
+              id: 't5',
+              label: 'T5',
+              lang: 'ES',
+              sourceUrl: 'http://90.163.85.113:8093/stream/41/index.m3u8',
+              resolverType: 'tdt_hls',
+            },
+          ],
+        },
+        {
+          id: 'ch-cuatro',
+          channels: [
+            {
+              id: 'cuatro',
+              label: 'Cuatro',
+              lang: 'ES',
+              sourceUrl: 'http://90.163.85.113:8093/stream/42/index.m3u8',
+              resolverType: 'tdt_hls',
+            },
+          ],
+        },
+      ],
+      {
+        concurrency: 8,
+        fetchImpl: async () => {
+          inFlightDvb += 1;
+          maxInFlightDvb = Math.max(maxInFlightDvb, inFlightDvb);
+          await new Promise((r) => setTimeout(r, 15));
+          inFlightDvb -= 1;
+          return {
+            ok: true,
+            status: 200,
+            text: async () => '#EXTM3U\n#EXTINF:2.5,\nseg.ts\n',
+          };
+        },
+      }
+    );
+
+    expect(maxInFlightDvb).toBe(1);
+    expect(monitor.getTrackHealth('http://90.163.85.113:8093/stream/20/index.m3u8')?.status).toBe('up');
+    expect(monitor.getTrackHealth('http://90.163.85.113:8093/stream/41/index.m3u8')?.status).toBe('up');
+    expect(monitor.getTrackHealth('http://90.163.85.113:8093/stream/42/index.m3u8')?.status).toBe('up');
+  });
+
+  it('prefixes /api/dvb-live/ URLs when abs=1 is requested by Google TV or APK clients', () => {
+    const req = {
+      query: { abs: '1' },
+      headers: {},
+    } as unknown as express.Request;
+    const out = formatExtractResponseForClient(
+      req,
+      {
+        success: true,
+        mode: 'hls',
+        streamUrl: '/api/dvb-live/dvb_abc123/index.m3u8',
+        expiresAt: Date.now() + 30_000,
+      },
+      () => 'https://riffantv.ai.studio'
+    );
+    expect(out.streamUrl).toBe('https://riffantv.ai.studio/api/dvb-live/dvb_abc123/index.m3u8');
   });
 });
