@@ -1,6 +1,6 @@
 import { ENV } from '../../config/env.ts';
 
-export type ApkFlavor = 'mobile' | 'tv' | 'kids_tv' | 'kids_mobile';
+export type ApkFlavor = 'mobile' | 'tv';
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -125,15 +125,8 @@ interface AxmlNode {
 const ANDROID_NS = 'http://schemas.android.com/apk/res/android';
 
 export function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
-  const isTv = flavor === 'tv' || flavor === 'kids_tv';
-  const pkgName =
-    flavor === 'kids_tv'
-      ? 'com.riffantv.kids.tv'
-      : flavor === 'kids_mobile'
-        ? 'com.riffantv.kids'
-        : flavor === 'tv'
-          ? ENV.androidTvPkg
-          : ENV.androidMobilePkg;
+  const isTv = flavor === 'tv';
+  const pkgName = flavor === 'tv' ? ENV.androidTvPkg : ENV.androidMobilePkg;
   const versionCode = isTv ? ENV.appVersionCodeTv : ENV.appVersionCodeMobile;
   const versionName = ENV.appVersionName;
 
@@ -498,22 +491,8 @@ export function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
 // BINARY resources.arsc GENERATOR
 // ============================================================================
 export function buildResourcesArsc(flavor: ApkFlavor): Buffer {
-  const pkgName =
-    flavor === 'kids_tv'
-      ? 'com.riffantv.kids.tv'
-      : flavor === 'kids_mobile'
-        ? 'com.riffantv.kids'
-        : flavor === 'tv'
-          ? ENV.androidTvPkg
-          : ENV.androidMobilePkg;
-  const appLabel =
-    flavor === 'kids_tv'
-      ? 'Riffan Kids TV'
-      : flavor === 'kids_mobile'
-        ? 'Riffan Kids'
-        : flavor === 'tv'
-          ? 'RiffanTV TV'
-          : 'RiffanTV';
+  const pkgName = flavor === 'tv' ? ENV.androidTvPkg : ENV.androidMobilePkg;
+  const appLabel = flavor === 'tv' ? 'RiffanTV TV' : 'RiffanTV';
   const iconResPath = 'res/mipmap-xxxhdpi-v4/ic_launcher.png';
 
   const globalPool = buildResStringPoolUtf16([iconResPath, appLabel]);

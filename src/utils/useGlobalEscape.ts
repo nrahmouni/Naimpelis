@@ -1,12 +1,15 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 
 export function useGlobalEscape(onEscape: () => void, enabled = true) {
+  const onEscapeRef = useRef(onEscape);
+  onEscapeRef.current = onEscape;
+
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onEscape();
+        onEscapeRef.current();
       }
     };
 
@@ -14,5 +17,5 @@ export function useGlobalEscape(onEscape: () => void, enabled = true) {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [onEscape, enabled]);
+  }, [enabled]);
 }

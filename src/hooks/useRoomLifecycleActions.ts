@@ -1,4 +1,4 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type {
   AppLanguage,
@@ -97,6 +97,9 @@ interface UseRoomLifecycleActionsParams {
 }
 
 export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
+  const pRef = useRef(p);
+  pRef.current = p;
+
   const handleEnterRoom = (
     targetRoomId: string,
     nextProfile: StoredProfile,
@@ -162,79 +165,78 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
     p.setShowIntro(true);
   };
 
-  const handleEnterSolo = useCallback(
-    (nextProfile?: StoredProfile) => {
-      triggerHaptic('medium');
-      p.manualLobbyStayRef.current = false;
-      p.pendingSoloUpgradeVideoStateRef.current = null;
-      if (nextProfile) {
-        const isCustom = nextProfile.isCustomized !== false;
-        const finalProfile: StoredProfile = { ...nextProfile, isCustomized: isCustom };
-        import('../utils/storage').then(({ saveStoredProfile }) =>
-          saveStoredProfile(finalProfile, isCustom)
-        );
-        p.setProfile(finalProfile);
-        import('../services/userCloudSync').then(({ updateCloudUserProfile }) =>
-          updateCloudUserProfile(finalProfile).catch(() => {})
-        );
-      }
-      socketService.disconnect();
-      p.setShowGuestPopup(false);
-      p.setIsPlayerMinimized(false);
-      p.setIsPlayerClosedLocally(false);
-      p.setSecondaryStream(null);
-      p.setAvatarMenuOpen(false);
-      p.setIsFloatingRoomOpen(false);
-      p.setRoomId('');
-      p.setRoomName('');
-      p.setInRoom(false);
-      p.setSessionMode('solo');
-      p.setHasEnteredApp(true);
-      p.setActiveWorld('entry');
-      p.setCatalogSection('home');
-      p.setMobileTab('home');
-      p.setIsInActiveGame(false);
-      p.setWorldSearchQuery('');
-      if (typeof window !== 'undefined' && isDedicatedAppPath(window.location.pathname) === false) {
-        window.history.replaceState({}, '', '/');
-      }
-      playCinemaSound('join');
-    },
-    [p]
-  );
+  const handleEnterSolo = useCallback((nextProfile?: StoredProfile) => {
+    const cur = pRef.current;
+    triggerHaptic('medium');
+    cur.manualLobbyStayRef.current = false;
+    cur.pendingSoloUpgradeVideoStateRef.current = null;
+    if (nextProfile) {
+      const isCustom = nextProfile.isCustomized !== false;
+      const finalProfile: StoredProfile = { ...nextProfile, isCustomized: isCustom };
+      import('../utils/storage').then(({ saveStoredProfile }) =>
+        saveStoredProfile(finalProfile, isCustom)
+      );
+      cur.setProfile(finalProfile);
+      import('../services/userCloudSync').then(({ updateCloudUserProfile }) =>
+        updateCloudUserProfile(finalProfile).catch(() => {})
+      );
+    }
+    socketService.disconnect();
+    cur.setShowGuestPopup(false);
+    cur.setIsPlayerMinimized(false);
+    cur.setIsPlayerClosedLocally(false);
+    cur.setSecondaryStream(null);
+    cur.setAvatarMenuOpen(false);
+    cur.setIsFloatingRoomOpen(false);
+    cur.setRoomId('');
+    cur.setRoomName('');
+    cur.setInRoom(false);
+    cur.setSessionMode('solo');
+    cur.setHasEnteredApp(true);
+    cur.setActiveWorld('entry');
+    cur.setCatalogSection('home');
+    cur.setMobileTab('home');
+    cur.setIsInActiveGame(false);
+    cur.setWorldSearchQuery('');
+    if (typeof window !== 'undefined' && isDedicatedAppPath(window.location.pathname) === false) {
+      window.history.replaceState({}, '', '/');
+    }
+    playCinemaSound('join');
+  }, []);
 
   const upgradeSoloToPartyRoom = useCallback(
     (opts?: { keepDedicatedUrl?: boolean; targetWorld?: WorldId; customRoomName?: string }) => {
+      const cur = pRef.current;
       triggerHaptic('success');
       playCinemaSound('join');
       const freshCode = generateShortRoomCode(4);
-      const firstName = p.profile.name?.split(' ')[0] || 'Cine';
+      const firstName = cur.profile.name?.split(' ')[0] || 'Cine';
       const customTitle = opts?.customRoomName?.trim() || `Sala de ${firstName}`;
 
-      if (p.videoState.mode !== 'idle' && p.videoState.url) {
-        const liveSec = p.videoState.isLive
+      if (cur.videoState.mode !== 'idle' && cur.videoState.url) {
+        const liveSec = cur.videoState.isLive
           ? 0
-          : Math.max(p.videoState.currentTime || 0, p.getLivePlaybackSec());
-        p.pendingSoloUpgradeVideoStateRef.current = {
-          ...p.videoState,
+          : Math.max(cur.videoState.currentTime || 0, cur.getLivePlaybackSec());
+        cur.pendingSoloUpgradeVideoStateRef.current = {
+          ...cur.videoState,
           currentTime: liveSec,
           lastUpdated: Date.now(),
-          updatedBy: p.profile.name,
+          updatedBy: cur.profile.name,
         };
       } else {
-        p.pendingSoloUpgradeVideoStateRef.current = null;
+        cur.pendingSoloUpgradeVideoStateRef.current = null;
       }
 
-      p.manualLobbyStayRef.current = false;
-      p.setShowGuestPopup(false);
-      p.setSessionMode('party');
-      p.setHasEnteredApp(true);
-      p.setRoomId(freshCode);
-      p.setRoomName(customTitle);
-      p.setInRoom(true);
+      cur.manualLobbyStayRef.current = false;
+      cur.setShowGuestPopup(false);
+      cur.setSessionMode('party');
+      cur.setHasEnteredApp(true);
+      cur.setRoomId(freshCode);
+      cur.setRoomName(customTitle);
+      cur.setInRoom(true);
 
       if (opts?.targetWorld) {
-        p.enterWorld(opts.targetWorld);
+        cur.enterWorld(opts.targetWorld);
       }
 
       let inviteUrl = buildShortInviteUrl(freshCode);
@@ -255,7 +257,7 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
 
       void copyTextToClipboard(inviteUrl);
       showAppShareToast(
-        pickLang(p.lang, {
+        pickLang(cur.lang, {
           es: `Sala ${freshCode.toUpperCase()} creada · Enlace de invitación copiado`,
           ca: `Sala ${freshCode.toUpperCase()} creada · Enllaç d’invitació copiat`,
           en: `Room ${freshCode.toUpperCase()} created · Invite link copied`,
@@ -264,31 +266,32 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
 
       return freshCode;
     },
-    [p]
+    []
   );
 
   const resetRoomUiState = useCallback(() => {
-    p.setIsTvPairLobby(false);
-    p.setIsTvMode(false);
-    p.setTvAuthToken('');
-    p.setPinPromptState({ open: false, roomName: '', invalidAttempt: false });
-    p.setIsPlayerMinimized(false);
-    p.setIsPlayerClosedLocally(false);
-    p.setCinemaModePersist(false);
-    p.setSecondaryStream(null);
-    p.setActivePoll(null);
-    p.setRoomGameState(null);
-    p.setPartyGameState(null);
-    p.setPinnedMessage(null);
-    p.setGameMoveError(null);
-    p.setHostId('');
-    p.setCreatorId('');
-    p.setHostOnlyControl(true);
-    p.setRoomHasPin(false);
-    p.setVideoState(INITIAL_VIDEO_STATE);
-    p.setCloudFrame(null);
-    p.setCloudState(null);
-  }, [p]);
+    const cur = pRef.current;
+    cur.setIsTvPairLobby(false);
+    cur.setIsTvMode(false);
+    cur.setTvAuthToken('');
+    cur.setPinPromptState({ open: false, roomName: '', invalidAttempt: false });
+    cur.setIsPlayerMinimized(false);
+    cur.setIsPlayerClosedLocally(false);
+    cur.setCinemaModePersist(false);
+    cur.setSecondaryStream(null);
+    cur.setActivePoll(null);
+    cur.setRoomGameState(null);
+    cur.setPartyGameState(null);
+    cur.setPinnedMessage(null);
+    cur.setGameMoveError(null);
+    cur.setHostId('');
+    cur.setCreatorId('');
+    cur.setHostOnlyControl(true);
+    cur.setRoomHasPin(false);
+    cur.setVideoState(INITIAL_VIDEO_STATE);
+    cur.setCloudFrame(null);
+    cur.setCloudState(null);
+  }, []);
 
   const handleSwitchActiveRoom = (targetRoomId: string, customName?: string) => {
     p.manualLobbyStayRef.current = false;
@@ -339,24 +342,25 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
   useEffect(() => {
     const onPopState = () => {
       if (Date.now() - getLastBackPopHandledAt() < 120) return;
+      const cur = pRef.current;
       const parsed = parseRoomFromWindow();
-      if (!parsed.roomId && !parsed.isTvPairLobby && p.inRoomRef.current) {
-        p.manualLobbyStayRef.current = true;
+      if (!parsed.roomId && !parsed.isTvPairLobby && cur.inRoomRef.current) {
+        cur.manualLobbyStayRef.current = true;
         socketService.disconnect();
-        p.setInRoom(false);
-        p.setShowGuestPopup(false);
+        cur.setInRoom(false);
+        cur.setShowGuestPopup(false);
         if (parsed.isDedicatedEntry) {
-          p.setSessionMode('solo');
-          p.setHasEnteredApp(true);
+          cur.setSessionMode('solo');
+          cur.setHasEnteredApp(true);
         } else {
           resetRoomUiState();
         }
-        p.setRoomId('');
+        cur.setRoomId('');
       }
     };
     window.addEventListener('popstate', onPopState);
     return () => window.removeEventListener('popstate', onPopState);
-  }, [resetRoomUiState, p]);
+  }, [resetRoomUiState]);
 
   const handleAddToQueue = (item: Omit<RoomQueueItem, 'id' | 'addedBy'>) => {
     const newItem: RoomQueueItem = {

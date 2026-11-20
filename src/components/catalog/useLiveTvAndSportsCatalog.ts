@@ -289,7 +289,9 @@ export function useLiveTvAndSportsCatalog({
     return filtered.sort((a, b) => catRank(a.category) - catRank(b.category));
   }, [tdtChannels, footballLiveBrand, sportsSearch]);
 
-  const filteredTdtChannels = tdtChannels.filter((ch) => {
+  const filteredTdtChannels = useMemo(
+    () =>
+      tdtChannels.filter((ch) => {
     if (tvFavOnly) {
       const favId = buildChannelFavId(ch.channels[0]?.sourceUrl || ch.id, ch.name);
       if (!isChannelFavorited(favId)) return false;
@@ -393,7 +395,19 @@ export function useLiveTvAndSportsCatalog({
       );
     }
     return true;
-  });
+  }),
+    [
+      tdtChannels,
+      tvFavOnly,
+      isChannelFavorited,
+      tvRegion,
+      adrarCountryFilter,
+      tdtCategory,
+      getChannelLiveEpg,
+      epgFilter,
+      tdtSearch,
+    ]
+  );
 
   const tvCategoryCounts = useMemo(() => {
     const perCategory: Record<string, number> = {};

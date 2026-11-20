@@ -209,7 +209,7 @@ export function deriveAppControllerLayoutFlags(params: {
   const isAutoImmersiveLandscape =
     !isDesktopLayout && isMobileLandscape && isPlayerActive && !isDockedMini && !isMobileKeyboardOpen;
   const hideBrowseBelowPlayer =
-    isPlayingMediaReady &&
+    isPlayerActive &&
     !isDockedMini &&
     !isAutoImmersiveLandscape &&
     activeWorld !== 'sala' &&
@@ -257,4 +257,28 @@ export function deriveAppControllerLayoutFlags(params: {
     isChannelGuideDockVisible,
     lockMainWorkspaceScroll,
   };
+}
+
+export function shouldShowSeriesEpisodesDock(params: {
+  videoState: Pick<VideoState, 'mode' | 'seriesMeta' | 'isLive'>;
+  isExtracting: boolean;
+  isPlayerClosedLocally: boolean;
+  isPlayerMinimized: boolean;
+  isAutoImmersiveLandscape: boolean;
+}): boolean {
+  const {
+    videoState,
+    isExtracting,
+    isPlayerClosedLocally,
+    isPlayerMinimized,
+    isAutoImmersiveLandscape,
+  } = params;
+  return (
+    (videoState.mode !== 'idle' || isExtracting) &&
+    !isPlayerClosedLocally &&
+    !isPlayerMinimized &&
+    !isAutoImmersiveLandscape &&
+    Boolean(videoState.seriesMeta) &&
+    !videoState.isLive
+  );
 }

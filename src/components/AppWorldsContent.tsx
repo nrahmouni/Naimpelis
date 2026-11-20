@@ -98,6 +98,14 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
       profileHubOpen
   );
 
+  const handleSelectedGameChange = React.useCallback(
+    (game: Parameters<typeof roomState.activeHubGameRef.current extends infer T ? (g: T) => void : never>[0]) => {
+      roomState.activeHubGameRef.current = game;
+      roomState.setIsInActiveGame(game !== null);
+    },
+    [roomState.activeHubGameRef, roomState.setIsInActiveGame]
+  );
+
   const shareRoomId = sessionMode !== 'solo' && roomId ? roomId : undefined;
 
   const handleShareActiveWorld = () => {
@@ -317,10 +325,7 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
             isHost={isHostUser}
             voiceChat={voiceChat}
             requestedGameOpen={roomState.forcedOpenGame}
-            onSelectedGameChange={(game) => {
-              roomState.activeHubGameRef.current = game;
-              roomState.setIsInActiveGame(game !== null);
-            }}
+            onSelectedGameChange={handleSelectedGameChange}
             {...roomGameActions}
           />
         </div>

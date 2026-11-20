@@ -195,10 +195,10 @@ export function useVodCatalogState({
   useEffect(() => {
     const activeForHomeSearch = worldMode === 'cine' || activeSection === 'home';
     if (!activeForHomeSearch || debouncedHomeQuery.length < 2) {
-      setHomeMovieResults([]);
-      setHomeSeriesResults([]);
-      setLoadingHomeMovies(false);
-      setLoadingHomeSeries(false);
+      setHomeMovieResults((prev) => (prev.length === 0 ? prev : []));
+      setHomeSeriesResults((prev) => (prev.length === 0 ? prev : []));
+      setLoadingHomeMovies((prev) => (prev ? false : prev));
+      setLoadingHomeSeries((prev) => (prev ? false : prev));
       return;
     }
 

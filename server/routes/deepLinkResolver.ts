@@ -64,7 +64,7 @@ export interface ResolvedDeepLinkResult {
   match?: any;
   game?: { gameId: string; gameSlug: string; title: string };
   world?: {
-    world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'kids';
+    world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube';
     cineTab?: 'movies' | 'series';
     cineCategory?: string;
     futbolTab?: 'matches' | 'channels';
@@ -611,7 +611,6 @@ export async function resolveDeepLinkTarget(
         tv: 'Canales de TV y TDT en Directo',
         juegos: 'Riffan Play — Salón de Juegos Multijugador',
         youtube: 'YouTube en Sala Sincronizada',
-        kids: 'Riffan Kids — Cine y Aprendizaje Infantil',
       };
       const title = `${worldLabels[target.world] || 'RiffanTV'} — RiffanTV`;
       result = {

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Check,
@@ -46,6 +46,8 @@ export const AuthBridgeView: React.FC<AuthBridgeViewProps> = ({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [webviewBlocked, setWebviewBlocked] = useState<boolean>(isApkWebView);
   const [copiedLink, setCopiedLink] = useState(false);
+  const onExitBridgeRef = useRef(onExitBridge);
+  onExitBridgeRef.current = onExitBridge;
 
   const chromeBridgeUrl =
     typeof window !== 'undefined' && sessionId
@@ -154,7 +156,7 @@ export const AuthBridgeView: React.FC<AuthBridgeViewProps> = ({
           triggerHaptic('success');
           setStatus('done');
           window.setTimeout(() => {
-            onExitBridge();
+            onExitBridgeRef.current();
           }, 700);
         }
       } catch {
@@ -166,7 +168,7 @@ export const AuthBridgeView: React.FC<AuthBridgeViewProps> = ({
       active = false;
       window.clearInterval(timer);
     };
-  }, [webviewBlocked, sessionId, status, onExitBridge]);
+  }, [webviewBlocked, sessionId, status]);
 
   const handleGoogleLogin = async () => {
     triggerHaptic('medium');

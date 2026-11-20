@@ -104,12 +104,15 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
   autoActiveHeight,
   onChangeQuality,
 }) => {
+  const onCloseRef = React.useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!isOpen) return;
     const handlePointerDownOutside = (ev: PointerEvent) => {
       const target = ev.target as Node | null;
       if (proMenuRef.current && target && !proMenuRef.current.contains(target)) {
-        onClose();
+        onCloseRef.current();
       }
     };
     const id = window.setTimeout(() => {
@@ -119,7 +122,7 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
       window.clearTimeout(id);
       document.removeEventListener('pointerdown', handlePointerDownOutside);
     };
-  }, [isOpen, onClose, proMenuRef]);
+  }, [isOpen, proMenuRef]);
 
   if (!isOpen) return null;
   const t = UI_COPY[lang];

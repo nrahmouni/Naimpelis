@@ -45,17 +45,15 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
   lang = 'es',
   onActionNotification,
 }) => {
-  const {
-    notifications,
-    activeFilter,
-    preferences,
-    setActiveFilter,
-    markRead,
-    markAllRead,
-    dismissNotification,
-    clearAll,
-    updatePreferences,
-  } = useNotificationStore();
+  const notifications = useNotificationStore((s) => s.notifications);
+  const activeFilter = useNotificationStore((s) => s.activeFilter);
+  const preferences = useNotificationStore((s) => s.preferences);
+  const setActiveFilter = useNotificationStore((s) => s.setActiveFilter);
+  const markRead = useNotificationStore((s) => s.markRead);
+  const markAllRead = useNotificationStore((s) => s.markAllRead);
+  const dismissNotification = useNotificationStore((s) => s.dismissNotification);
+  const clearAll = useNotificationStore((s) => s.clearAll);
+  const updatePreferences = useNotificationStore((s) => s.updatePreferences);
 
   const [showSettings, setShowSettings] = useState(false);
 

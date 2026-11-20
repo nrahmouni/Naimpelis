@@ -50,7 +50,9 @@ export const ProfileAccountRoomCard: React.FC<ProfileAccountRoomCardProps> = ({
   onLeaveRoom,
   onClose,
 }) => {
-  const { scheduledRooms, addScheduledRoom, removeScheduledRoom } = useAppStore();
+  const scheduledRooms = useAppStore((s) => s.scheduledRooms);
+  const addScheduledRoom = useAppStore((s) => s.addScheduledRoom);
+  const removeScheduledRoom = useAppStore((s) => s.removeScheduledRoom);
   const [scheduleTitle, setScheduleTitle] = useState('');
   const [scheduleTime, setScheduleTime] = useState('22:00');
   const [joinCode, setJoinCode] = useState('');

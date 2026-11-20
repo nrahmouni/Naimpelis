@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { Check } from 'lucide-react';
 import { MotionConfig } from 'motion/react';
 import { RiffanLoaderR } from './components/ui/RiffanIcons';
@@ -65,6 +65,54 @@ export function App() {
     sessionMode, hasEnteredApp, shareToast, deepLinkResolving,
     exitToastVisible, restorePlaybackOrigin,
   } = c;
+
+  const handleDismissLanguageNotice = useCallback(() => {
+    playback.setLanguageNotice(null);
+  }, [playback.setLanguageNotice]);
+
+  const handleClearExtractionError = useCallback(() => {
+    playback.setExtractionError(null);
+  }, [playback.setExtractionError]);
+
+  const handleAcceptGameInvite = useCallback(
+    (invite: NonNullable<typeof roomState.incomingGameInvite>) => {
+      socketService.respondToGameInvite(invite.gameType, 'accepted', invite.id);
+      roomState.setIncomingGameInvite(null);
+      setCinemaModePersist(false);
+      roomState.setFloatingChatOpen(false);
+      if (roomState.videoStateRef.current.mode !== 'idle') setIsPlayerMinimized(true);
+      enterWorld('juegos');
+      roomState.setForcedOpenGame({ gameType: invite.gameType, seq: Date.now() });
+      roomState.setIsInActiveGame(true);
+    },
+    [
+      roomState.setIncomingGameInvite,
+      setCinemaModePersist,
+      roomState.setFloatingChatOpen,
+      roomState.videoStateRef,
+      setIsPlayerMinimized,
+      enterWorld,
+      roomState.setForcedOpenGame,
+      roomState.setIsInActiveGame,
+    ]
+  );
+
+  const handleDismissGameInvite = useCallback(() => {
+    const current = roomState.incomingGameInvite;
+    if (current) {
+      socketService.respondToGameInvite(current.gameType, 'declined', current.id);
+    }
+    roomState.setIncomingGameInvite(null);
+  }, [roomState.incomingGameInvite, roomState.setIncomingGameInvite]);
+
+  const handleDismissIncomingInvite = useCallback(() => {
+    setIncomingInvite(null);
+  }, [setIncomingInvite]);
+
+  const handleDismissFriendNotice = useCallback(() => {
+    if (friendNoticeTimerRef.current) clearTimeout(friendNoticeTimerRef.current);
+    setFriendAddedNotice(null);
+  }, [friendNoticeTimerRef, setFriendAddedNotice]);
 
   if (showDesignSystem || isAdsPageOpen || isTvPairLobby || (!inRoom && !hasEnteredApp) || isTvMode) {
     return (
@@ -357,7 +405,7 @@ export function App() {
                 extractionLabel={playback.extractionLabel}
                 extractionError={playback.extractionError}
                 languageNotice={playback.languageNotice}
-                onDismissLanguageNotice={() => playback.setLanguageNotice(null)}
+                onDismissLanguageNotice={handleDismissLanguageNotice}
                 cloudFrame={roomState.cloudFrame}
                 cloudState={roomState.cloudState}
                 floatingReactions={roomState.floatingReactions}
@@ -480,7 +528,7 @@ export function App() {
                   setIsPlayerMinimized(false);
                 }}
                 onStopRoomPlayback={playback.handleStopRoomPlaybackForEveryone}
-                onClearExtractionError={() => playback.setExtractionError(null)}
+                onClearExtractionError={handleClearExtractionError}
               />
 
               {hideBrowseBelowPlayer ? null : (
@@ -601,34 +649,13 @@ export function App() {
             activePortalTransition={activePortalTransition}
             portalOriginRect={portalOriginRect}
             incomingGameInvite={roomState.incomingGameInvite}
-            onAcceptGameInvite={(invite) => {
-              socketService.respondToGameInvite(invite.gameType, 'accepted', invite.id);
-              roomState.setIncomingGameInvite(null);
-              setCinemaModePersist(false);
-              roomState.setFloatingChatOpen(false);
-              if (roomState.videoStateRef.current.mode !== 'idle') setIsPlayerMinimized(true);
-              enterWorld('juegos');
-              roomState.setForcedOpenGame({ gameType: invite.gameType, seq: Date.now() });
-              roomState.setIsInActiveGame(true);
-            }}
-            onDismissGameInvite={() => {
-              if (roomState.incomingGameInvite) {
-                socketService.respondToGameInvite(
-                  roomState.incomingGameInvite.gameType,
-                  'declined',
-                  roomState.incomingGameInvite.id
-                );
-              }
-              roomState.setIncomingGameInvite(null);
-            }}
+            onAcceptGameInvite={handleAcceptGameInvite}
+            onDismissGameInvite={handleDismissGameInvite}
             onAcceptIncomingInvite={lifecycle.handleAcceptIncomingRoomInvite}
-            onDismissIncomingInvite={() => setIncomingInvite(null)}
+            onDismissIncomingInvite={handleDismissIncomingInvite}
             onAddFriend={socialActions.handleAddFriend}
             onRemoveFriend={socialActions.handleRemoveFriend}
-            onDismissFriendNotice={() => {
-              if (friendNoticeTimerRef.current) clearTimeout(friendNoticeTimerRef.current);
-              setFriendAddedNotice(null);
-            }}
+            onDismissFriendNotice={handleDismissFriendNotice}
             onSendDirectRoomInvite={socialActions.handleSendDirectRoomInvite}
             onSubmitGuestPin={socialActions.handleSubmitGuestPin}
             onLeaveRoom={lifecycle.handleLeaveRoom}

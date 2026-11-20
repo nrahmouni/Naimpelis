@@ -239,14 +239,21 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     [worldMode, effectiveCineTab, vod.cineSpecialPortal, effectiveFutbolTab, externalSearchQuery]
   );
 
-  const handleToggleBookmark = (item: CatalogMovie, e: React.MouseEvent) => {
-    e.stopPropagation();
-    triggerHaptic('light');
-    onToggleCatalogFavorite(item);
-  };
+  const handleToggleBookmark = useCallback(
+    (item: CatalogMovie, e: React.MouseEvent) => {
+      e.stopPropagation();
+      triggerHaptic('light');
+      onToggleCatalogFavorite(item);
+    },
+    [onToggleCatalogFavorite]
+  );
 
-  const isBookmarked = (item: CatalogMovie) =>
-    watchlist.some((x) => isSameCatalogItem(x, item));
+  const isBookmarked = useCallback(
+    (item: CatalogMovie) => watchlist.some((x) => isSameCatalogItem(x, item)),
+    [watchlist]
+  );
+
+  const handleDiscoveryGenresLoaded = useCallback(() => {}, []);
 
   const activePillar = normalizeCatalogPillar(activeSection, showWatchlistOnly);
 
@@ -340,7 +347,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           homeGenreId={vod.homeGenreId}
           homeProvider={vod.homeProvider}
           homeSortBy={vod.homeSortBy}
-          onDiscoveryGenresLoaded={() => {}}
+          onDiscoveryGenresLoaded={handleDiscoveryGenresLoaded}
           isBookmarked={isBookmarked}
           onToggleBookmark={handleToggleBookmark}
           onOpenPreviewItem={(item) => {

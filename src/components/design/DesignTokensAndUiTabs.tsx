@@ -15,8 +15,14 @@ const THEME_OPTIONS: Array<{ id: AppTheme; label: string; desc: string }> = [
 ];
 
 export const DesignTokensTab: React.FC = () => {
-  const { theme, density, liteMode, reducedMotion, setTheme, setDensity, setLiteMode, setReducedMotion } =
-    useThemeStore();
+  const theme = useThemeStore((s) => s.theme);
+  const density = useThemeStore((s) => s.density);
+  const liteMode = useThemeStore((s) => s.liteMode);
+  const reducedMotion = useThemeStore((s) => s.reducedMotion);
+  const setTheme = useThemeStore((s) => s.setTheme);
+  const setDensity = useThemeStore((s) => s.setDensity);
+  const setLiteMode = useThemeStore((s) => s.setLiteMode);
+  const setReducedMotion = useThemeStore((s) => s.setReducedMotion);
 
   return (
     <section className="space-y-6 animate-fade-in">

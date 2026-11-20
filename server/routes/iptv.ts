@@ -182,7 +182,6 @@ export function registerIptvAndTdtRoutes(
       riffantvM3uUrl: `${publicOrigin}/riffantv.m3u`,
       riffantvEpgUrl: `${publicOrigin}/epg.xml`,
       tvUrl: `${publicOrigin}/tv`,
-      kidsUrl: `${publicOrigin}/kids`,
       legacyM3uUrl: `${publicOrigin}/naim-cine.m3u`,
       categories: Object.entries(catMap).map(([id, info]) => ({
         id,

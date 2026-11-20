@@ -42,16 +42,12 @@ function loadAppIconPng(): Buffer {
 
 export function buildSignedApkBuffer(flavor: ApkFlavor, origin: string): Buffer {
   const cleanOrigin = origin.replace(/\/+$/, '');
-  const isTv = flavor === 'tv' || flavor === 'kids_tv';
+  const isTv = flavor === 'tv';
   const apkVersionCode = isTv ? ENV.appVersionCodeTv : ENV.appVersionCodeMobile;
   const launchUrl =
-    flavor === 'kids_tv'
-      ? `${cleanOrigin}/kids?platform=googletv&tv=1&apkv=${apkVersionCode}`
-      : flavor === 'kids_mobile'
-        ? `${cleanOrigin}/kids?platform=android&apkv=${apkVersionCode}`
-        : flavor === 'tv'
-          ? `${cleanOrigin}/tv?platform=googletv&apkv=${apkVersionCode}`
-          : `${cleanOrigin}/?platform=android&web=1&apkv=${apkVersionCode}`;
+    flavor === 'tv'
+      ? `${cleanOrigin}/tv?platform=googletv&apkv=${apkVersionCode}`
+      : `${cleanOrigin}/?platform=android&web=1&apkv=${apkVersionCode}`;
   const cacheKey = `${flavor}|${launchUrl}`;
 
   const cached = generatedApkCache.get(cacheKey);

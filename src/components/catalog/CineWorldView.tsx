@@ -4,7 +4,7 @@
  * SegmentedControl, ES/LAT/VOSE/EN/CAT language selector, 4K Ultra HD mode,
  * dual-scrim Cinema Hero Spotlight, unified search, and modular Filter sheet.
  */
-import React from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { Link2, Play, X } from 'lucide-react';
 import type { AppLanguage, CatalaCatalogItem, CatalogMovie } from '../../types';
@@ -214,10 +214,32 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
   const activeSortMeta = currentSortOptions.find((o) => o.id === currentSort);
   const activeGenreMeta = currentGenres.find((g) => g.id === currentGenre);
 
-  const openPosterItem = (item: CatalogMovie) => {
-    triggerHaptic('light');
-    onOpenPreviewItem(item);
-  };
+  const openPosterItem = useCallback(
+    (item: CatalogMovie) => {
+      triggerHaptic('light');
+      onOpenPreviewItem(item);
+    },
+    [onOpenPreviewItem]
+  );
+
+  const discoveryFilterState = useMemo(
+    () => ({
+      mediaType: (isSeriesTab ? 'tv' : 'movie') as 'tv' | 'movie',
+      genreId: homeGenreId,
+      provider: homeProvider,
+      sortBy: homeSortBy,
+    }),
+    [isSeriesTab, homeGenreId, homeProvider, homeSortBy]
+  );
+
+  const handleDiscoveryToggleBookmark = useCallback(
+    (item: CatalogMovie) =>
+      onToggleBookmark(
+        item,
+        { stopPropagation: () => {} } as unknown as React.MouseEvent
+      ),
+    [onToggleBookmark]
+  );
 
   const filteredBackLabel =
     currentSort === '4k'
@@ -541,21 +563,11 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
             <React.Suspense fallback={null}>
               <ExpandedDiscoverySection
                 lang={lang}
-                filterState={{
-                  mediaType: isSeriesTab ? 'tv' : 'movie',
-                  genreId: homeGenreId,
-                  provider: homeProvider,
-                  sortBy: homeSortBy,
-                }}
+                filterState={discoveryFilterState}
                 isBookmarked={isBookmarked}
-                onToggleBookmark={(item) =>
-                  onToggleBookmark(
-                    item,
-                    { stopPropagation: () => {} } as unknown as React.MouseEvent
-                  )
-                }
+                onToggleBookmark={handleDiscoveryToggleBookmark}
                 onGenresLoaded={onDiscoveryGenresLoaded}
-                onSelectItem={(item) => openPosterItem(item)}
+                onSelectItem={openPosterItem}
               />
             </React.Suspense>
           </motion.div>

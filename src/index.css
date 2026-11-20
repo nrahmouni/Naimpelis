@@ -203,7 +203,6 @@
   .world-tint-juegos { background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(168, 85, 247, 0.16), transparent 72%); }
   .world-tint-sala { background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(145, 70, 255, 0.14), transparent 72%); }
   .world-tint-youtube { background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(244, 63, 94, 0.12), rgba(145, 70, 255, 0.08) 55%, transparent 75%); }
-  .world-tint-kids { background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(245, 158, 11, 0.14), rgba(56, 189, 248, 0.09) 55%, transparent 75%); }
 
   .nc-specular-surface {
     background: color-mix(in srgb, var(--nc-bg-elevated) 92%, transparent);
@@ -667,32 +666,6 @@ html:is(.is-google-tv, .tv-dpad-active) :is(button, a, [role="button"]) { scroll
 }
 :root[data-reduced-motion="true"] :is(*, *::before, *::after) { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
 :root[data-reduced-motion="true"] :is(.rtv-ico *, .rtv-we *, .rtv-intro-r-play *) { animation: none !important; }
-
-/* Riffan Kids — Isolated Child Design System Scope */
-[data-world="kids"] {
-  --kids-font-display: 'Fredoka', 'Outfit', 'Plus Jakarta Sans', sans-serif;
-  --kids-font-body: 'Fredoka', 'Plus Jakarta Sans', sans-serif;
-  --kids-bg-canvas: #0f1636;
-  --kids-bg-surface: #18224f;
-  --kids-bg-elevated: #202d66;
-  --kids-border: rgba(148, 197, 255, 0.24);
-  --kids-text-primary: #ffffff;
-  --kids-text-secondary: #c7dcff;
-  --kids-accent-sun: #fbbf24;
-  --kids-accent-orange: #fb923c;
-  --kids-accent-mint: #34d399;
-  --kids-accent-sky: #38bdf8;
-  --kids-accent-rose: #fb7185;
-  --kids-touch-min: 64px;
-  font-family: var(--kids-font-body);
-  font-size: 18px;
-}
-[data-world="kids"][data-age-group="3-5"] { --kids-touch-min: 72px; font-size: 20px; }
-[data-world="kids"] :is(h1, h2, h3, .font-display) { font-family: var(--kids-font-display); }
-[data-world="kids"] .kids-touch-target { min-width: var(--kids-touch-min); min-height: var(--kids-touch-min); }
-[data-world="kids"][data-kids-calm="true"] { filter: saturate(0.84); }
-[data-world="kids"][data-kids-calm="true"], [data-world="kids"][data-kids-calm="true"] * { animation-duration: 0.01ms !important; transition-duration: 120ms !important; }
-[data-world="kids"][data-kids-bedtime="true"] { filter: sepia(0.18) brightness(0.9); }
 
 /* Touch Targets & Contrast */
 .rtv-touch-optimized :is(button, [role="button"], a) { min-height: 44px; min-width: 44px; }

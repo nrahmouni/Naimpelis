@@ -95,12 +95,24 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [loadedBoardKey, setLoadedBoardKey] = useState<string>('');
   const [fetchError, setFetchError] = useState<boolean>(false);
-  const [hasAutoSelectedTab, setHasAutoSelectedTab] = useState<boolean>(false);
+  const hasAutoSelectedTabRef = useRef<boolean>(false);
+  const statusTabRef = useRef<StatusTab>(statusTab);
+  statusTabRef.current = statusTab;
+  const dayOffsetRef = useRef<number>(dayOffset);
+  dayOffsetRef.current = dayOffset;
+  const searchQueryRef = useRef<string>(searchQuery);
+  searchQueryRef.current = searchQuery;
+  const leagueFilterRef = useRef<string>(leagueFilter);
+  leagueFilterRef.current = leagueFilter;
+  const requestedMatchSlugRef = useRef<string | null>(requestedMatchSlug);
+  requestedMatchSlugRef.current = requestedMatchSlug;
   const boardSeqRef = useRef<number>(0);
 
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [sheetTab, setSheetTab] = useState<MatchSheetTab>('signals');
   const [detailsMap, setDetailsMap] = useState<Record<string, FootballMatchDetails>>({});
+  const detailsMapRef = useRef<Record<string, FootballMatchDetails>>(detailsMap);
+  detailsMapRef.current = detailsMap;
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
 
   const activeDateInfo = useMemo(() => formatOffsetDateKey(dayOffset), [dayOffset]);
@@ -156,18 +168,18 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
           setLoadedBoardKey(reqKey);
           setFetchError(false);
           if (
-            !hasAutoSelectedTab &&
-            !requestedMatchSlug &&
-            statusTab === 'all' &&
-            dayOffset === 0 &&
-            !searchQuery.trim() &&
-            !leagueFilter
+            !hasAutoSelectedTabRef.current &&
+            !requestedMatchSlugRef.current &&
+            statusTabRef.current === 'all' &&
+            dayOffsetRef.current === 0 &&
+            !searchQueryRef.current.trim() &&
+            !leagueFilterRef.current
           ) {
             const liveTotal = incoming.filter((m) => m.statusState === 'live').length;
             if (liveTotal > 0) {
               setStatusTab('live');
             }
-            setHasAutoSelectedTab(true);
+            hasAutoSelectedTabRef.current = true;
           }
         }
       } catch {
@@ -178,17 +190,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
         if (seq === boardSeqRef.current && !silent) setLoading(false);
       }
     },
-    [
-      activeDateInfo.dateKey,
-      calendarScope,
-      dayOffset,
-      hasAutoSelectedTab,
-      leagueFilter,
-      requestedMatchSlug,
-      searchQuery,
-      setStatusTab,
-      statusTab,
-    ]
+    [activeDateInfo.dateKey, calendarScope, setStatusTab]
   );
 
   useEffect(() => {
@@ -201,7 +203,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
 
   const loadMatchDetails = useCallback(
     async (item: FootballMatchboardItem, force = false) => {
-      if (!force && detailsMap[item.id] && item.statusState === 'finished') {
+      if (!force && detailsMapRef.current[item.id] && item.statusState === 'finished') {
         return;
       }
       setLoadingDetailId(item.id);
@@ -227,7 +229,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
         setLoadingDetailId((curr) => (curr === item.id ? null : curr));
       }
     },
-    [activeDateInfo.dateKey, detailsMap]
+    [activeDateInfo.dateKey]
   );
 
   const selectedMatchObj = useMemo(

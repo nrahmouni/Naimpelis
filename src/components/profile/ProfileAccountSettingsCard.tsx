@@ -55,7 +55,12 @@ export const ProfileAccountSettingsCard: React.FC<ProfileAccountSettingsCardProp
   onUpdateDisplayName,
   onClose,
 }) => {
-  const { theme, setTheme, density, setDensity, liteMode, setLiteMode } = useThemeStore();
+  const theme = useThemeStore((s) => s.theme);
+  const setTheme = useThemeStore((s) => s.setTheme);
+  const density = useThemeStore((s) => s.density);
+  const setDensity = useThemeStore((s) => s.setDensity);
+  const liteMode = useThemeStore((s) => s.liteMode);
+  const setLiteMode = useThemeStore((s) => s.setLiteMode);
   const [draftName, setDraftName] = useState(displayName);
   const [savedNameFeedback, setSavedNameFeedback] = useState(false);
 

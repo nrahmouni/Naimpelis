@@ -78,9 +78,9 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
   useEffect(() => {
     const clean = query.trim();
     if (!isOpen || clean.length < 2 || /^https?:\/\//i.test(clean)) {
-      setRemoteMovies([]);
-      setRemoteSeries([]);
-      setLoadingRemote(false);
+      setRemoteMovies((prev) => (prev.length === 0 ? prev : []));
+      setRemoteSeries((prev) => (prev.length === 0 ? prev : []));
+      setLoadingRemote((prev) => (prev ? false : prev));
       return;
     }
 

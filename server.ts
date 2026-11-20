@@ -17,7 +17,6 @@ import {
 import { serviceMeshGatewayMiddleware } from './server/gateway/serviceMesh.ts';
 import { registerOperationalRoutes } from './server/routes/health.ts';
 import { registerExpandedCatalogRoutes } from './server/routes/expandedCatalog.ts';
-import { registerKidsRoutes } from './server/routes/kids.ts';
 import { registerProxyRoutes } from './server/routes/proxies.ts';
 import { registerVoiceAssistantRoutes } from './server/routes/voiceAssistant.ts';
 import { setupGeminiLiveWebSocket } from './server/routes/geminiLive.ts';
@@ -169,7 +168,6 @@ registerOperationalRoutes(app, {
 });
 
 registerExpandedCatalogRoutes(app);
-registerKidsRoutes(app);
 registerProxyRoutes(app, { getPublicOrigin });
 registerSportsRoutes(app);
 registerDeepLinkRoutes(app, { getPublicOrigin });
@@ -216,34 +214,6 @@ app.get(
       candidateFilenames: ['RIFFAN-TV.apk', 'NAIM-CINE.apk'],
       errorMessage: 'Unable to build Mobile APK package',
       logKey: 'mobile_apk_build_failed',
-      getPublicOrigin,
-    })
-);
-
-app.get(
-  ['/RIFFAN-KIDS-TV.apk', '/riffankids-tv.apk', '/kids-tv.apk', '/api/download/apk-kids-tv'],
-  (req, res) =>
-    sendApkPackageResponse(req, res, {
-      rootDir: __dirname,
-      variant: 'kids_tv',
-      filename: 'RIFFAN-KIDS-TV.apk',
-      candidateFilenames: ['RIFFAN-KIDS-TV.apk'],
-      errorMessage: 'Unable to build Riffan Kids Google TV APK',
-      logKey: 'kids_tv_apk_build_failed',
-      getPublicOrigin,
-    })
-);
-
-app.get(
-  ['/RIFFAN-KIDS.apk', '/riffankids.apk', '/kids.apk', '/riffan-kids.apk', '/api/download/apk-kids'],
-  (req, res) =>
-    sendApkPackageResponse(req, res, {
-      rootDir: __dirname,
-      variant: 'kids_mobile',
-      filename: 'RIFFAN-KIDS.apk',
-      candidateFilenames: ['RIFFAN-KIDS.apk'],
-      errorMessage: 'Unable to build Riffan Kids Mobile APK',
-      logKey: 'kids_mobile_apk_build_failed',
       getPublicOrigin,
     })
 );

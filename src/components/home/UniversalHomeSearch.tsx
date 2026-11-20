@@ -179,9 +179,9 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
 
   useEffect(() => {
     if (cleanQuery.length < 2) {
-      setRemoteMovies([]);
-      setRemoteSeries([]);
-      setLoadingRemote(false);
+      setRemoteMovies((prev) => (prev.length === 0 ? prev : []));
+      setRemoteSeries((prev) => (prev.length === 0 ? prev : []));
+      setLoadingRemote((prev) => (prev ? false : prev));
       return;
     }
 

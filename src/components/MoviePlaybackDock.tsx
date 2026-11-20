@@ -52,9 +52,9 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
   const [aiBusy, setAiBusy] = useState(false);
 
   useEffect(() => {
-    setAiAnswer(null);
-    setAiSources([]);
-    setAiQuery('');
+    setAiAnswer((prev) => (prev === null ? prev : null));
+    setAiSources((prev) => (prev.length === 0 ? prev : []));
+    setAiQuery((prev) => (prev === '' ? prev : ''));
     const cleanTitle = (movie.title || '').trim();
     if (!movie.tmdbId && !cleanTitle) {
       setDetails(null);

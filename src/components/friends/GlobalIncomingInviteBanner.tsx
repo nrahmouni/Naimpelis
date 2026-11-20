@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { UserPlus } from 'lucide-react';
 import type {
   AppLanguage,
@@ -31,26 +31,28 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
   onDismissFriendNotice,
 }) => {
   const [savingBack, setSavingBack] = useState(false);
+  const onDismissFriendNoticeRef = useRef(onDismissFriendNotice);
+  onDismissFriendNoticeRef.current = onDismissFriendNotice;
 
   React.useEffect(() => {
-    setSavingBack(false);
+    setSavingBack((prev) => (prev ? false : prev));
     if (!friendAddedNotice) return;
     const timer = window.setTimeout(() => {
-      onDismissFriendNotice();
+      onDismissFriendNoticeRef.current();
     }, 6500);
     return () => window.clearTimeout(timer);
-  }, [friendAddedNotice, onDismissFriendNotice]);
+  }, [friendAddedNotice]);
 
   React.useEffect(() => {
     if (!friendAddedNotice) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onDismissFriendNotice();
+        onDismissFriendNoticeRef.current();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [friendAddedNotice, onDismissFriendNotice]);
+  }, [friendAddedNotice]);
 
   if (!invite && !friendAddedNotice) return null;
 

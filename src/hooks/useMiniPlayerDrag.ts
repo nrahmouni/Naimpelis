@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { triggerHaptic } from '../utils/haptics';
 import type { VideoState } from '../types';
 
@@ -33,54 +33,60 @@ export function useMiniPlayerDrag({
     rectHeight: number;
   } | null>(null);
 
-  const handleCatalogOrWorkspaceScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const st = e.currentTarget.scrollTop;
-    if (videoMode === 'idle' || isExtracting || isPlayerClosedLocally) {
-      return;
-    }
-    const now = Date.now();
-    if (now - lastScrollCompressToggleRef.current < 220) {
-      return;
-    }
-    if (st > 105 && !isAutoMiniByScroll) {
-      lastScrollCompressToggleRef.current = now;
-      setIsAutoMiniByScroll(true);
-    } else if (st < 20 && isAutoMiniByScroll) {
-      lastScrollCompressToggleRef.current = now;
-      setIsAutoMiniByScroll(false);
-    }
-  };
+  const handleCatalogOrWorkspaceScroll = useCallback(
+    (e: React.UIEvent<HTMLDivElement>) => {
+      const st = e.currentTarget.scrollTop;
+      if (videoMode === 'idle' || isExtracting || isPlayerClosedLocally) {
+        return;
+      }
+      const now = Date.now();
+      if (now - lastScrollCompressToggleRef.current < 220) {
+        return;
+      }
+      if (st > 105 && !isAutoMiniByScroll) {
+        lastScrollCompressToggleRef.current = now;
+        setIsAutoMiniByScroll(true);
+      } else if (st < 20 && isAutoMiniByScroll) {
+        lastScrollCompressToggleRef.current = now;
+        setIsAutoMiniByScroll(false);
+      }
+    },
+    [videoMode, isExtracting, isPlayerClosedLocally, isAutoMiniByScroll]
+  );
 
-  const handleMiniPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isDockedMini) return;
-    const targetEl = e.target as HTMLElement | null;
-    if (targetEl?.closest('button, input, a')) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    try {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    } catch {
-      // ignore
-    }
-    miniDragStartRef.current = {
-      pointerId: e.pointerId,
-      startX: e.clientX,
-      startY: e.clientY,
-      rectLeft: rect.left,
-      rectTop: rect.top,
-      rectWidth: rect.width,
-      rectHeight: rect.height,
-    };
-  };
+  const handleMiniPointerDown = useCallback(
+    (e: React.PointerEvent<HTMLDivElement>) => {
+      if (!isDockedMini) return;
+      const targetEl = e.target as HTMLElement | null;
+      if (targetEl?.closest('button, input, a')) return;
+      const rect = e.currentTarget.getBoundingClientRect();
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        // ignore
+      }
+      miniDragStartRef.current = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        rectLeft: rect.left,
+        rectTop: rect.top,
+        rectWidth: rect.width,
+        rectHeight: rect.height,
+      };
+    },
+    [isDockedMini]
+  );
 
-  const handleMiniPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleMiniPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const drag = miniDragStartRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
     setMiniDragOffset({ x: dx, y: dy });
-  };
+  }, []);
 
-  const handleMiniPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+  const handleMiniPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const drag = miniDragStartRef.current;
     if (!drag || drag.pointerId !== e.pointerId) return;
     try {
@@ -109,9 +115,9 @@ export function useMiniPlayerDrag({
     setMiniCorner(nextCorner);
     setMiniDragOffset(null);
     miniDragStartRef.current = null;
-  };
+  }, []);
 
-  const miniCornerPositionClasses = (() => {
+  const miniCornerPositionClasses = useMemo(() => {
     switch (miniCorner) {
       case 'top-left':
         return 'top-[68px] left-3 sm:top-20 sm:left-5';
@@ -127,16 +133,27 @@ export function useMiniPlayerDrag({
           ? 'bottom-16 right-3'
           : 'bottom-[86px] right-3 sm:bottom-6 sm:right-5';
     }
-  })();
+  }, [miniCorner, isMobileKeyboardOpen]);
 
-  return {
-    isAutoMiniByScroll,
-    setIsAutoMiniByScroll,
-    miniDragOffset,
-    miniCornerPositionClasses,
-    handleCatalogOrWorkspaceScroll,
-    handleMiniPointerDown,
-    handleMiniPointerMove,
-    handleMiniPointerUp,
-  };
+  return useMemo(
+    () => ({
+      isAutoMiniByScroll,
+      setIsAutoMiniByScroll,
+      miniDragOffset,
+      miniCornerPositionClasses,
+      handleCatalogOrWorkspaceScroll,
+      handleMiniPointerDown,
+      handleMiniPointerMove,
+      handleMiniPointerUp,
+    }),
+    [
+      isAutoMiniByScroll,
+      miniDragOffset,
+      miniCornerPositionClasses,
+      handleCatalogOrWorkspaceScroll,
+      handleMiniPointerDown,
+      handleMiniPointerMove,
+      handleMiniPointerUp,
+    ]
+  );
 }

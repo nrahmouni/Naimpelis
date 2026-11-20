@@ -21,7 +21,6 @@ export type PrimaryWorldId =
   | 'futbol'
   | 'tv'
   | 'juegos'
-  | 'kids'
   | 'sala';
 export type WorldId = 'entry' | PrimaryWorldId | 'youtube';
 export type CineSubTab = 'movies' | 'series';
@@ -74,7 +73,6 @@ const PRIMARY_WORLDS: PrimaryWorldId[] = [
   'futbol',
   'tv',
   'juegos',
-  'kids',
   'sala',
 ];
 

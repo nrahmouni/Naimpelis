@@ -146,8 +146,6 @@ export function registerOperationalRoutes(
         ENV.androidMobilePkg,
         ENV.androidTvPkg,
         ENV.legacyAndroidPkg,
-        'com.riffantv.kids',
-        'com.riffantv.kids.tv',
       ])
     );
     const fingerprints = Array.from(
@@ -178,12 +176,8 @@ export function registerOperationalRoutes(
 
     const mobileApkPath = path.join(ROOT_DIR, 'public', 'RIFFAN-TV.apk');
     const tvApkPath = path.join(ROOT_DIR, 'public', 'RIFFAN-TV-TV.apk');
-    const kidsMobileApkPath = path.join(ROOT_DIR, 'public', 'RIFFAN-KIDS.apk');
-    const kidsTvApkPath = path.join(ROOT_DIR, 'public', 'RIFFAN-KIDS-TV.apk');
     let mobileBytes = fs.existsSync(mobileApkPath) ? fs.statSync(mobileApkPath).size : 0;
     let tvBytes = fs.existsSync(tvApkPath) ? fs.statSync(tvApkPath).size : 0;
-    let kidsMobileBytes = fs.existsSync(kidsMobileApkPath) ? fs.statSync(kidsMobileApkPath).size : 0;
-    let kidsTvBytes = fs.existsSync(kidsTvApkPath) ? fs.statSync(kidsTvApkPath).size : 0;
     if (!mobileBytes) {
       try {
         mobileBytes = buildSignedApkBuffer('mobile', origin).length;
@@ -196,20 +190,6 @@ export function registerOperationalRoutes(
         tvBytes = buildSignedApkBuffer('tv', origin).length;
       } catch {
         tvBytes = 0;
-      }
-    }
-    if (!kidsMobileBytes) {
-      try {
-        kidsMobileBytes = buildSignedApkBuffer('kids_mobile', origin).length;
-      } catch {
-        kidsMobileBytes = 0;
-      }
-    }
-    if (!kidsTvBytes) {
-      try {
-        kidsTvBytes = buildSignedApkBuffer('kids_tv', origin).length;
-      } catch {
-        kidsTvBytes = 0;
       }
     }
 
@@ -248,24 +228,6 @@ export function registerOperationalRoutes(
           ca: 'Nova interfície personalitzada Google TV 10-foot amb comandament físic D-Pad + vinculació per codi de 4 dígits.',
           en: 'Custom 10-foot Google TV UI with full physical D-Pad navigation plus 4-digit mobile pairing.',
         },
-      },
-      kidsMobile: {
-        packageName: 'com.riffantv.kids',
-        versionCode: ENV.appVersionCodeMobile,
-        versionName: ENV.appVersionName,
-        minSupportedVersionCode: 100,
-        forceUpdate: false,
-        apkUrl: `${origin}/RIFFAN-KIDS.apk?v=${ENV.appVersionCodeMobile}`,
-        sizeBytes: kidsMobileBytes,
-      },
-      kidsTv: {
-        packageName: 'com.riffantv.kids.tv',
-        versionCode: ENV.appVersionCodeTv,
-        versionName: ENV.appVersionName,
-        minSupportedVersionCode: 100,
-        forceUpdate: false,
-        apkUrl: `${origin}/RIFFAN-KIDS-TV.apk?v=${ENV.appVersionCodeTv}`,
-        sizeBytes: kidsTvBytes,
       },
     };
 

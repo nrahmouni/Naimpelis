@@ -127,7 +127,11 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
       return;
     }
 
-    if (!videoState.url) return;
+    if (!videoState.url) {
+      video.removeAttribute('src');
+      video.load();
+      return;
+    }
 
     let cancelled = false;
     let videoWatchdogTimer: ReturnType<typeof setTimeout> | null = null;

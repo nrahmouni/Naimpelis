@@ -26,7 +26,7 @@ function findScrollParent(el: HTMLElement | null): HTMLElement | null {
   return document.documentElement;
 }
 
-function getColumnCount(width: number, variant: 'poster' | 'wide' | 'list'): number {
+export function getColumnCount(width: number, variant: 'poster' | 'wide' | 'list'): number {
   if (variant === 'list') return 1;
   if (variant === 'wide') {
     if (width >= 1150) return 3;
@@ -74,40 +74,68 @@ export function VirtualizedPosterGrid<T>({
     if (!el) return;
 
     const parent = findScrollParent(el);
-    setScrollEl(parent);
+    setScrollEl((prev) => (prev === parent ? prev : parent));
+
+    let rafId: number | null = null;
+    const lastMeasuredWidth = { current: -1 };
 
     const updateMetrics = () => {
-      if (!containerRef.current) return;
-      const rect = containerRef.current.getBoundingClientRect();
-      setContainerWidth(rect.width || containerRef.current.clientWidth || 360);
+      rafId = null;
+      const node = containerRef.current;
+      if (!node) return;
+      const rect = node.getBoundingClientRect();
+      const nextWidth = Math.round(rect.width || node.clientWidth || 360);
+      lastMeasuredWidth.current = nextWidth;
+      setContainerWidth((prev) => (prev === nextWidth ? prev : nextWidth));
 
-      if (parent && parent !== document.documentElement) {
-        const parentRect = parent.getBoundingClientRect();
-        const nextMargin = Math.max(0, Math.round(rect.top - parentRect.top + parent.scrollTop));
-        setScrollMargin(nextMargin);
-      } else {
-        setScrollMargin(Math.max(0, Math.round(rect.top + window.scrollY)));
-      }
+      const nextMargin =
+        parent && parent !== document.documentElement
+          ? Math.max(0, Math.round(rect.top - parent.getBoundingClientRect().top + parent.scrollTop))
+          : Math.max(0, Math.round(rect.top + window.scrollY));
+      setScrollMargin((prev) => (prev === nextMargin ? prev : nextMargin));
+    };
+
+    const scheduleMetrics = () => {
+      if (rafId !== null) return;
+      rafId = window.requestAnimationFrame(updateMetrics);
     };
 
     updateMetrics();
 
-    const ro = new ResizeObserver(() => updateMetrics());
+    const ro = new ResizeObserver((entries) => {
+      let shouldUpdate = false;
+      for (const entry of entries) {
+        if (entry.target === el) {
+          const w = Math.round(entry.contentRect.width);
+          if (w !== lastMeasuredWidth.current) {
+            shouldUpdate = true;
+            break;
+          }
+        } else {
+          shouldUpdate = true;
+          break;
+        }
+      }
+      if (shouldUpdate) {
+        scheduleMetrics();
+      }
+    });
     ro.observe(el);
     if (parent && parent !== document.documentElement) {
       ro.observe(parent);
-      parent.addEventListener('scroll', updateMetrics, { passive: true });
+      parent.addEventListener('scroll', scheduleMetrics, { passive: true });
     }
-    window.addEventListener('resize', updateMetrics);
+    window.addEventListener('resize', scheduleMetrics);
 
     return () => {
+      if (rafId !== null) window.cancelAnimationFrame(rafId);
       ro.disconnect();
       if (parent && parent !== document.documentElement) {
-        parent.removeEventListener('scroll', updateMetrics);
+        parent.removeEventListener('scroll', scheduleMetrics);
       }
-      window.removeEventListener('resize', updateMetrics);
+      window.removeEventListener('resize', scheduleMetrics);
     };
-  }, [items.length, columns]);
+  }, []);
 
   const rows = useMemo(() => {
     const chunked: T[][] = [];

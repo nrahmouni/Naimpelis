@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type Hls from 'hls.js';
 import type { AppLanguage, TvRemoteCommandType, VideoState } from '../../types';
 import { pickLang } from '../../utils/i18n';
@@ -37,6 +37,8 @@ export function useDirectCast(params: {
   const [castSdkReady, setCastSdkReady] = useState(false);
   const [isCastingToTv, setIsCastingToTv] = useState(false);
   const [castDeviceName, setCastDeviceName] = useState<string>('');
+  const videoPlayingRef = useRef(videoState.isPlaying);
+  videoPlayingRef.current = videoState.isPlaying;
 
   const getCastPublicOrigin = useCallback(() => {
     if (typeof window === 'undefined') return '';
@@ -276,7 +278,7 @@ export function useDirectCast(params: {
               if (videoRef.current) {
                 videoRef.current.muted = false;
                 setIsMuted(false);
-                if (videoState.isPlaying) {
+                if (videoPlayingRef.current) {
                   videoRef.current.play().catch(() => {});
                 }
               }
@@ -301,7 +303,7 @@ export function useDirectCast(params: {
     return () => {
       window.removeEventListener('naim-cast-api-ready', onCastReady);
     };
-  }, [setIsMuted, videoRef, videoState.isPlaying]);
+  }, [setIsMuted, videoRef]);
 
   useEffect(() => {
     const bridgeVid = castBridgeVideoRef.current as WebKitVideoElement | null;

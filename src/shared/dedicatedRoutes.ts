@@ -563,9 +563,6 @@ export const SYSTEM_RESERVED_SLUGS = new Set([
   'epg',
   'riffantv',
   'tv',
-  'kids',
-  'riffankids',
-  'riffan-kids',
   'ads',
   'naimcine-ads',
   'auth-bridge',
@@ -597,11 +594,11 @@ export const ALL_RESERVED_SLUGS = new Set<string>([
 
 export type AppRouteTarget =
   | { kind: 'home'; roomId?: string }
-  | { kind: 'system'; systemType: 'tv' | 'kids' | 'ads' | 'auth-bridge' | 'design-system'; roomId?: string }
+  | { kind: 'system'; systemType: 'tv' | 'ads' | 'auth-bridge' | 'design-system'; roomId?: string }
   | { kind: 'room'; roomId: string; gameType?: string; isTvMode?: boolean }
   | {
       kind: 'world';
-      world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'kids';
+      world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube';
       cineTab?: 'movies' | 'series';
       cineCastellano?: boolean;
       cineCategory?: string;
@@ -681,9 +678,6 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
   }
   if (params.get('tvpair') === '1' || seg0 === 'tv') {
     return { kind: 'system', systemType: 'tv', roomId: queryRoomId };
-  }
-  if (params.get('kids') === '1' || seg0 === 'kids' || seg0 === 'riffankids' || seg0 === 'riffan-kids') {
-    return { kind: 'system', systemType: 'kids', roomId: queryRoomId };
   }
 
   // Root /
@@ -880,7 +874,7 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
 
 export type CanonicalLinkInput =
   | { kind: 'home' }
-  | { kind: 'world'; world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'kids'; cineTab?: 'movies' | 'series'; cineCategory?: string; futbolTab?: 'matches' | 'channels' }
+  | { kind: 'world'; world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube'; cineTab?: 'movies' | 'series'; cineCategory?: string; futbolTab?: 'matches' | 'channels' }
   | { kind: 'movie'; tmdbId?: number; id?: string; title?: string }
   | { kind: 'series'; tmdbId?: number; id?: string; title?: string; season?: number; episode?: number }
   | { kind: 'channel'; id: string; name?: string }
@@ -912,8 +906,6 @@ export function buildCanonicalRoute(
         basePath = '/juegos';
       } else if (input.world === 'youtube') {
         basePath = '/youtube';
-      } else if (input.world === 'kids') {
-        basePath = '/kids';
       }
       break;
     case 'movie': {

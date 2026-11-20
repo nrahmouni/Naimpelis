@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { triggerHaptic } from '../utils/haptics';
@@ -25,22 +25,24 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
   onDismissKeepRandom,
 }) => {
   const [draftName, setDraftName] = useState('');
+  const onDismissKeepRandomRef = useRef(onDismissKeepRandom);
+  onDismissKeepRandomRef.current = onDismissKeepRandom;
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        onDismissKeepRandom();
+        onDismissKeepRandomRef.current();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     const autoDismissTimer = setTimeout(() => {
-      onDismissKeepRandom();
+      onDismissKeepRandomRef.current();
     }, 12000);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       clearTimeout(autoDismissTimer);
     };
-  }, [onDismissKeepRandom]);
+  }, []);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

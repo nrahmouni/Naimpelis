@@ -55,7 +55,6 @@ export function parseRoomFromWindow(): {
   roomId: string;
   isTvMode: boolean;
   isTvPairLobby: boolean;
-  isKidsMode: boolean;
   isAdsPage?: boolean;
   isAuthBridgePage?: boolean;
   authBridgeSessionId?: string;
@@ -68,7 +67,6 @@ export function parseRoomFromWindow(): {
       roomId: '',
       isTvMode: false,
       isTvPairLobby: false,
-      isKidsMode: false,
       isAdsPage: false,
       isAuthBridgePage: false,
       routeTarget: { kind: 'home' },
@@ -89,7 +87,6 @@ export function parseRoomFromWindow(): {
         roomId: '',
         isTvMode: false,
         isTvPairLobby: false,
-        isKidsMode: false,
         isAdsPage: false,
         isAuthBridgePage: true,
         authBridgeSessionId: params.get('session')?.trim() || '',
@@ -102,23 +99,10 @@ export function parseRoomFromWindow(): {
         roomId: '',
         isTvMode: false,
         isTvPairLobby: false,
-        isKidsMode: false,
         isAdsPage: true,
         gameType,
         routeTarget: target,
         isDedicatedEntry: false,
-      };
-    }
-    if (target.systemType === 'kids') {
-      return {
-        roomId: '',
-        isTvMode: false,
-        isTvPairLobby: false,
-        isKidsMode: true,
-        isAdsPage: false,
-        gameType,
-        routeTarget: target,
-        isDedicatedEntry: true,
       };
     }
     if (target.systemType === 'tv') {
@@ -126,7 +110,6 @@ export function parseRoomFromWindow(): {
         roomId: '',
         isTvMode: false,
         isTvPairLobby: true,
-        isKidsMode: false,
         isAdsPage: false,
         routeTarget: target,
         isDedicatedEntry: false,
@@ -136,7 +119,6 @@ export function parseRoomFromWindow(): {
       roomId: '',
       isTvMode: false,
       isTvPairLobby: false,
-      isKidsMode: false,
       isAdsPage: false,
       routeTarget: target,
       isDedicatedEntry: false,
@@ -148,7 +130,6 @@ export function parseRoomFromWindow(): {
       roomId: target.roomId,
       isTvMode: Boolean(target.isTvMode),
       isTvPairLobby: false,
-      isKidsMode: false,
       isAdsPage: false,
       gameType: target.gameType,
       routeTarget: target,
@@ -163,7 +144,6 @@ export function parseRoomFromWindow(): {
     roomId: attachedRoom,
     isTvMode: Boolean(attachedRoom && isTvMode),
     isTvPairLobby: false,
-    isKidsMode: false,
     isAdsPage: false,
     gameType,
     routeTarget: target,
@@ -259,10 +239,6 @@ export function buildGameInviteUrl(roomId: string, gameType: string): string {
  */
 export function buildTvPairingUrl(): string {
   return `${resolvePublicLinkOrigin()}/tv`;
-}
-
-export function buildKidsUrl(): string {
-  return `${resolvePublicLinkOrigin()}/kids`;
 }
 
 /**

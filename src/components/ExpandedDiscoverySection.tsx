@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronRight, Loader2, Sparkles } from 'lucide-react';
 import type { AppLanguage, CatalogMovie, RoomQueueItem } from '../types';
 import { pickLang } from '../utils/i18n';
@@ -81,6 +81,8 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
 }) => {
   const [collections, setCollections] = useState<EditorialCollection[]>([]);
   const [loadingCollections, setLoadingCollections] = useState(true);
+  const onGenresLoadedRef = useRef(onGenresLoaded);
+  onGenresLoadedRef.current = onGenresLoaded;
 
   const [discoverItems, setDiscoverItems] = useState<CatalogMovie[]>([]);
   const [discoverPage, setDiscoverPage] = useState(1);
@@ -107,7 +109,7 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
           setCollections(colData.collections);
         }
         if (Array.isArray(colData?.genres)) {
-          onGenresLoaded?.(colData.genres);
+          onGenresLoadedRef.current?.(colData.genres);
         }
       })
       .catch(() => {
@@ -120,7 +122,7 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
     return () => {
       active = false;
     };
-  }, [lang, onGenresLoaded]);
+  }, [lang]);
 
   const discoverMediaType: 'movie' | 'tv' = activeMediaFilter === 'tv' ? 'tv' : 'movie';
 
@@ -149,7 +151,9 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
           setDiscoverPage(pageNum);
         }
       } catch {
-        if (!append) setDiscoverItems([]);
+        if (!append) {
+          setDiscoverItems((prev) => (prev.length === 0 ? prev : []));
+        }
       } finally {
         setLoadingDiscover(false);
       }
@@ -168,7 +172,8 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
     if (hasCustomDiscoveryFilter) {
       fetchDiscoveryGrid(1, false);
     } else {
-      setDiscoverItems([]);
+      setDiscoverItems((prev) => (prev.length === 0 ? prev : []));
+      setHasMoreDiscover((prev) => (prev ? false : prev));
     }
   }, [hasCustomDiscoveryFilter, fetchDiscoveryGrid]);
 

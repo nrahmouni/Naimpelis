@@ -376,7 +376,7 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
         backdrop: episode.still || series.backdrop,
       },
       url: '',
-      mode: 'idle',
+      mode: prev.mode !== 'idle' && Boolean(prev.seriesMeta) ? prev.mode : 'idle',
       currentTime: 0,
       duration: 0,
       isPlaying: false,
@@ -522,6 +522,7 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
       setWatchHistory(list);
       upsertCloudWatchHistory(item).catch(() => {});
 
+      clearExtractionSnapshot();
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       commitVideoStateSync('change_url', nextState);

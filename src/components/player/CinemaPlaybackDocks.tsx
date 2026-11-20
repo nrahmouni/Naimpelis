@@ -5,6 +5,7 @@ import { pickLang } from '../../utils/i18n';
 import { resolveTrackLang } from './trackLabelUtils';
 import { triggerHaptic } from '../../utils/haptics';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
+import { shouldShowSeriesEpisodesDock } from '../../hooks/appControllerHelpers';
 
 const LiveMatchCenter = lazyWithRetry(() =>
   import('../LiveMatchCenter').then((m) => ({ default: m.LiveMatchCenter }))
@@ -26,6 +27,7 @@ export interface CinemaPlaybackDocksProps {
   isPlayerMinimized: boolean;
   isAutoImmersiveLandscape: boolean;
   isPlayerActive: boolean;
+  isExtracting?: boolean;
   extractionError: string | null;
   activeSportsMatch: any;
   showLiveMatchDock: boolean;
@@ -55,6 +57,7 @@ export const CinemaPlaybackDocks: React.FC<CinemaPlaybackDocksProps> = ({
   isPlayerMinimized,
   isAutoImmersiveLandscape,
   isPlayerActive,
+  isExtracting = false,
   extractionError,
   activeSportsMatch,
   showLiveMatchDock,
@@ -76,15 +79,22 @@ export const CinemaPlaybackDocks: React.FC<CinemaPlaybackDocksProps> = ({
   onStopRoomPlayback,
   onClearExtractionError,
 }) => {
+  const isSeriesDockVisible = shouldShowSeriesEpisodesDock({
+    videoState,
+    isExtracting,
+    isPlayerClosedLocally,
+    isPlayerMinimized,
+    isAutoImmersiveLandscape,
+  });
   const isAnyDockVisible =
     (videoState.mode !== 'idle' &&
       !isPlayerClosedLocally &&
       !isPlayerMinimized &&
       !isAutoImmersiveLandscape &&
       (activeSportsMatch ||
-        videoState.seriesMeta ||
         isMoviePlaybackDockVisible ||
         isChannelGuideDockVisible)) ||
+    isSeriesDockVisible ||
     (isPlayerClosedLocally && videoState.mode !== 'idle') ||
     (extractionError && !isPlayerActive);
 
@@ -149,12 +159,7 @@ export const CinemaPlaybackDocks: React.FC<CinemaPlaybackDocksProps> = ({
         ))}
 
       {/* 2. SERIES EPISODES GUIDE DOCK */}
-      {videoState.mode !== 'idle' &&
-        !isPlayerClosedLocally &&
-        !isPlayerMinimized &&
-        !isAutoImmersiveLandscape &&
-        videoState.seriesMeta &&
-        !videoState.isLive && (
+      {isSeriesDockVisible && videoState.seriesMeta && (
           <React.Suspense fallback={null}>
             <SeriesEpisodesDock
               seriesMeta={videoState.seriesMeta}

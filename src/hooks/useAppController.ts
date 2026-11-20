@@ -446,6 +446,7 @@ export function useAppController() {
     videoMode: effectiveVideoState.mode,
     isMobileKeyboardOpen,
   });
+  const setIsAutoMiniByScroll = miniDrag.setIsAutoMiniByScroll;
 
   const roomGameActions = useRoomGameActions();
 
@@ -478,10 +479,10 @@ export function useAppController() {
 
     setIsPlayerClosedLocally(false);
     setIsPlayerMinimized(false);
-    miniDrag.setIsAutoMiniByScroll(false);
+    setIsAutoMiniByScroll(false);
     mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-  }, [miniDrag]);
+  }, [setIsAutoMiniByScroll]);
 
   const restorePlaybackOrigin = useCallback(
     (_opts?: { reason: 'close' | 'cancel' | 'minimize' }) => {
@@ -547,7 +548,7 @@ export function useAppController() {
       const next = !prev;
       if (next) {
         setIsPlayerMinimized(false);
-        miniDrag.setIsAutoMiniByScroll(false);
+        setIsAutoMiniByScroll(false);
         setIsPlayerClosedLocally(false);
         mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
         catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -560,7 +561,7 @@ export function useAppController() {
       }
       return next;
     });
-  }, [miniDrag]);
+  }, [setIsAutoMiniByScroll]);
 
   const playback = usePlaybackOrchestrator({
     sessionMode,

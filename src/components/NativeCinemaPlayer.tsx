@@ -77,7 +77,10 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   onUpgradeSoloToParty,
   onShareCurrentMedia,
 }) => {
-  const { subtitleStyle, setSubtitleStyle, syncOffsetMs, setSyncOffsetMs } = useAppStore();
+  const subtitleStyle = useAppStore((s) => s.subtitleStyle);
+  const setSubtitleStyle = useAppStore((s) => s.setSubtitleStyle);
+  const syncOffsetMs = useAppStore((s) => s.syncOffsetMs);
+  const setSyncOffsetMs = useAppStore((s) => s.setSyncOffsetMs);
   const t = UI_COPY[lang];
   const stageWrapperRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);

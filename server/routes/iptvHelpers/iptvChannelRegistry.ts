@@ -11,7 +11,6 @@ import { applySyncedStreamsToChannels } from '../../services/iptvPlaylistService
 import { getCachedFamelackWorldChannels } from '../../services/famelackIptvService.ts';
 import { channelHealthMonitor } from '../../services/channelHealthMonitor.ts';
 import { getPermanent247SportsMatches } from '../sports.ts';
-import { KIDS_LIVE_CHANNELS } from '../kids.ts';
 
 export function getAllIptvChannels(): any[] {
   const seen = new Set<string>();
@@ -143,17 +142,6 @@ export function getAllIptvChannels(): any[] {
             resolverType: 'tdt_hls',
           },
         ],
-      });
-    }
-  }
-
-  for (const k of KIDS_LIVE_CHANNELS) {
-    if (!seen.has(k.id)) {
-      seen.add(k.id);
-      combined.push({
-        ...k,
-        dial: k.dial || 150 + combined.filter((c) => c.dial >= 150 && c.dial < 170).length,
-        category: 'infantil_kids',
       });
     }
   }

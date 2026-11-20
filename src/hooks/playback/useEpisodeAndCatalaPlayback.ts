@@ -92,15 +92,34 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
         ? rawActiveLang
         : 'ES';
 
+    const epLoadId = sanitizeItemKey(`tv-${meta.tmdbId}-${targetSeason}-${targetEp}`);
     const { reqSeq, signal } = beginMediaExtraction();
     setIsExtracting(true);
     isExtractingRef.current = true;
+    setLoadingItemId(epLoadId);
     setExtractionError(null);
     setExtractionLabel(
       `${meta.seriesTitle} (${targetSeason}x${String(targetEp).padStart(2, '0')}) · ${
         delta > 0 ? 'Siguiente episodio...' : 'Capítulo anterior...'
       }`
     );
+    setVideoState((prev) => ({
+      ...prev,
+      title: `${meta.seriesTitle} · ${targetSeason}x${String(targetEp).padStart(2, '0')}`,
+      url: '',
+      mode: prev.mode !== 'idle' ? prev.mode : 'idle',
+      currentTime: 0,
+      duration: 0,
+      isPlaying: false,
+      seriesMeta: prev.seriesMeta
+        ? {
+            ...prev.seriesMeta,
+            season: targetSeason,
+            episode: targetEp,
+            episodeTitle: undefined,
+          }
+        : undefined,
+    }));
 
     try {
       const params = new URLSearchParams({
@@ -130,7 +149,6 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
         tracks.findIndex((tr) => tr.resolvedStreamUrl === data.streamUrl)
       );
 
-      const epLoadId = sanitizeItemKey(`tv-${meta.tmdbId}-${targetSeason}-${targetEp}`);
       activeHistoryIdRef.current = epLoadId;
 
       const nextState: VideoState = {
@@ -200,6 +218,7 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
       if (reqSeq === extractionReqSeqRef.current) {
         isExtractingRef.current = false;
         setIsExtracting(false);
+        setLoadingItemId(null);
       }
     }
   };

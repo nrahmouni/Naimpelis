@@ -116,8 +116,6 @@ import type {
 export * from './typesMediaAndSports';
 
 export type AppLanguage = 'es' | 'ca' | 'en' | 'zh' | 'rif';
-export type KidsLanguageCode = 'es' | 'ca' | 'en' | 'nl' | 'fr' | 'ar' | 'rif' | 'zh';
-export type KidsAgeGroup = '3-5' | '6-8' | '9-12';
 export type AppTheme = 'oled' | 'soft-dark' | 'high-contrast' | 'light' | 'dark';
 export type TextDensity = 'comfortable' | 'compact';
 export type RoomRole = 'host' | 'mod' | 'viewer';

@@ -340,8 +340,30 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
     }
   };
 
+  const remoteKeyHandlersRef = useRef({
+    onClose,
+    handleTogglePlay,
+    handleSeekDelta,
+    handleVolumeDelta,
+    isPlaying,
+  });
+  remoteKeyHandlersRef.current = {
+    onClose,
+    handleTogglePlay,
+    handleSeekDelta,
+    handleVolumeDelta,
+    isPlaying,
+  };
+
   useEffect(() => {
     const handleRemoteKey = (e: KeyboardEvent) => {
+      const {
+        onClose: closePlayer,
+        handleTogglePlay: togglePlay,
+        handleSeekDelta: seekDelta,
+        handleVolumeDelta: volumeDelta,
+        isPlaying: playing,
+      } = remoteKeyHandlersRef.current;
       const code = e.keyCode;
       const key = e.key;
 
@@ -356,7 +378,7 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
       ) {
         e.preventDefault();
         e.stopPropagation();
-        onClose();
+        closePlayer();
         return;
       }
 
@@ -375,43 +397,43 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
           return;
         }
         e.preventDefault();
-        handleTogglePlay();
+        togglePlay();
         return;
       }
 
       if (key === 'MediaPlay' || code === 126) {
         e.preventDefault();
-        if (!isPlaying) handleTogglePlay();
+        if (!playing) togglePlay();
         return;
       }
 
       if (key === 'MediaPause' || code === 127) {
         e.preventDefault();
-        if (isPlaying) handleTogglePlay();
+        if (playing) togglePlay();
         return;
       }
 
       if (key === 'ArrowLeft' || key === 'MediaRewind' || code === 37 || code === 21 || code === 89) {
         e.preventDefault();
-        handleSeekDelta(-10);
+        seekDelta(-10);
         return;
       }
 
       if (key === 'ArrowRight' || key === 'MediaFastForward' || code === 39 || code === 22 || code === 90) {
         e.preventDefault();
-        handleSeekDelta(10);
+        seekDelta(10);
         return;
       }
 
       if (key === 'ArrowUp' || code === 38 || code === 19) {
         e.preventDefault();
-        handleVolumeDelta(10);
+        volumeDelta(10);
         return;
       }
 
       if (key === 'ArrowDown' || code === 40 || code === 20) {
         e.preventDefault();
-        handleVolumeDelta(-10);
+        volumeDelta(-10);
       }
     };
 
@@ -419,7 +441,7 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
     return () => {
       window.removeEventListener('keydown', handleRemoteKey, { capture: true });
     };
-  });
+  }, []);
 
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     const touch = e.touches[0];

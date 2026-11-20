@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
   AlertCircle,
@@ -70,6 +70,8 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
   const [generatedCode, setGeneratedCode] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
   const [claimCodeInput, setClaimCodeInput] = useState('');
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!isOpen) {
@@ -113,7 +115,7 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
           });
           setBridgePolling(false);
           triggerHaptic('success');
-          onClose();
+          onCloseRef.current();
         } else if (data.status === 'expired') {
           setBridgePolling(false);
           setFeedback(
@@ -134,7 +136,7 @@ export const GoogleAuthModal: React.FC<GoogleAuthModalProps> = ({
       active = false;
       window.clearInterval(timer);
     };
-  }, [isOpen, bridgeSessionId, bridgePolling, lang, onClose]);
+  }, [isOpen, bridgeSessionId, bridgePolling, lang]);
 
   const handleStartChromeBridge = async () => {
     triggerHaptic('medium');

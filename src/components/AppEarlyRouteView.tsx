@@ -179,6 +179,32 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
   onPrevEpisode,
   onNextEpisode,
 }) => {
+  const handleDismissInvite = React.useCallback(() => {
+    setIncomingInvite(null);
+  }, [setIncomingInvite]);
+
+  const handleAcceptFriendBack = React.useCallback(
+    (notice: IncomingFriendAddedNotice) => {
+      onAddFriend(
+        {
+          friendId: notice.fromUserId,
+          name: notice.fromUserName,
+          avatar: notice.fromUserAvatar,
+          color: notice.fromUserColor,
+          friendCode: notice.fromFriendCode,
+        },
+        { skipNotify: true }
+      );
+      setFriendAddedNotice(null);
+    },
+    [onAddFriend, setFriendAddedNotice]
+  );
+
+  const handleDismissFriendNotice = React.useCallback(() => {
+    clearFriendNoticeTimer();
+    setFriendAddedNotice(null);
+  }, [clearFriendNoticeTimer, setFriendAddedNotice]);
+
   if (showDesignSystem) {
     return (
       <React.Suspense fallback={null}>
@@ -265,24 +291,9 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
             )
           }
           onAcceptInvite={onAcceptIncomingRoomInvite}
-          onDismissInvite={() => setIncomingInvite(null)}
-          onAcceptFriendBack={(notice) => {
-            onAddFriend(
-              {
-                friendId: notice.fromUserId,
-                name: notice.fromUserName,
-                avatar: notice.fromUserAvatar,
-                color: notice.fromUserColor,
-                friendCode: notice.fromFriendCode,
-              },
-              { skipNotify: true }
-            );
-            setFriendAddedNotice(null);
-          }}
-          onDismissFriendNotice={() => {
-            clearFriendNoticeTimer();
-            setFriendAddedNotice(null);
-          }}
+          onDismissInvite={handleDismissInvite}
+          onAcceptFriendBack={handleAcceptFriendBack}
+          onDismissFriendNotice={handleDismissFriendNotice}
         />
         <LobbyScreen
           initialProfile={profile}

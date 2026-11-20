@@ -235,6 +235,8 @@ export async function handleCatalogMediaExtract(
       new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
     ]);
 
+  const isSpanishNativePreferred = tmdbOriginalLanguage === 'es' && preferLang === 'ES';
+
   const [
     movidyTracks,
     gnulaTracks,
@@ -260,7 +262,7 @@ export async function handleCatalogMediaExtract(
             titleHints: combinedTitleHints,
             episodeTitleHint,
           }),
-          5500,
+          7500,
           [] as TrackRecord[]
         )
       : Promise.resolve([]),
@@ -298,7 +300,7 @@ export async function handleCatalogMediaExtract(
           [] as TrackRecord[]
         )
       : Promise.resolve([]),
-    resolvedTmdbId
+    resolvedTmdbId && !isSpanishNativePreferred
       ? withExtractTimeout(
           extractVidRockHlsTracks({
             tmdbId: resolvedTmdbId,
@@ -310,7 +312,7 @@ export async function handleCatalogMediaExtract(
           [] as TrackRecord[]
         )
       : Promise.resolve([]),
-    resolvedTmdbId
+    resolvedTmdbId && !isSpanishNativePreferred
       ? withExtractTimeout(
           extractBingetrixEnglishTracks({
             tmdbId: resolvedTmdbId,
@@ -322,7 +324,7 @@ export async function handleCatalogMediaExtract(
           [] as TrackRecord[]
         )
       : Promise.resolve([]),
-    resolvedTmdbId
+    resolvedTmdbId && !isSpanishNativePreferred
       ? withExtractTimeout(
           extract2EmbedEnglishTracks({
             tmdbId: resolvedTmdbId,
@@ -335,7 +337,7 @@ export async function handleCatalogMediaExtract(
           [] as TrackRecord[]
         )
       : Promise.resolve([]),
-    resolvedTmdbId || tmdbImdbId
+    (resolvedTmdbId || tmdbImdbId) && !isSpanishNativePreferred
       ? withExtractTimeout(
           extractVidsrcBuzzHlsTracks({
             tmdbId: resolvedTmdbId || undefined,
@@ -366,7 +368,7 @@ export async function handleCatalogMediaExtract(
           null
         )
       : Promise.resolve(null),
-    resolvedTmdbId
+    resolvedTmdbId && !isSpanishNativePreferred
       ? withExtractTimeout(
           extractGhostflixVidboltTracks({
             tmdbId: resolvedTmdbId,

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Users, X, Bot, ArrowLeft, Play } from 'lucide-react';
 import type { AppLanguage, Participant } from '../types';
 import {
@@ -124,9 +124,13 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
     muted,
   });
 
+  const onActiveStateChangeRef = useRef(onActiveStateChange);
+  onActiveStateChangeRef.current = onActiveStateChange;
+  const hasActiveState = Boolean(activeState);
+
   useEffect(() => {
-    onActiveStateChange?.(Boolean(activeState));
-  }, [activeState, onActiveStateChange]);
+    onActiveStateChangeRef.current?.(hasActiveState);
+  }, [hasActiveState]);
 
   useEffect(() => {
     if (!isOffline) return;

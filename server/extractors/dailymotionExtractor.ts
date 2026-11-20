@@ -2,6 +2,7 @@ import { LruTtlCache } from '../utils/lruCache.ts';
 import {
   CHROME_UA,
   buildHlsProxyUrl,
+  fetchTextWithCurlFallback,
   normalizeTitleForMatch,
   type TrackRecord,
 } from './httpHelpers.ts';
@@ -128,30 +129,43 @@ function matchesEpisodeTitleHint(videoTitle: string, episodeTitleHint?: string):
 }
 
 async function resolveDailymotionVideoToM3u8(videoId: string): Promise<string | null> {
-  try {
-    const res = await fetch(
-      `https://www.dailymotion.com/player/metadata/video/${encodeURIComponent(videoId)}`,
-      {
-        headers: {
-          'User-Agent': CHROME_UA,
-          Referer: 'https://www.dailymotion.com/',
-          'Accept-Language': 'es-ES,es;q=0.9',
-        },
-        signal: AbortSignal.timeout(4200),
-      }
-    );
-    if (!res.ok) return null;
-    const meta: any = await res.json();
-    if (meta?.error) return null;
+  const url = `https://www.dailymotion.com/player/metadata/video/${encodeURIComponent(videoId)}`;
+  const headers = {
+    'User-Agent': CHROME_UA,
+    Referer: 'https://www.dailymotion.com/',
+    'Accept-Language': 'es-ES,es;q=0.9',
+  };
+  const extractFromMeta = (meta: any): string | null => {
+    if (!meta || meta?.error) return null;
     const m3uUrl =
       meta?.qualities?.auto?.[0]?.url ||
       meta?.qualities?.['1080']?.[0]?.url ||
       meta?.qualities?.['720']?.[0]?.url ||
       '';
     return typeof m3uUrl === 'string' && m3uUrl.includes('.m3u8') ? m3uUrl : null;
+  };
+  try {
+    const res = await fetch(url, {
+      headers,
+      signal: AbortSignal.timeout(4200),
+    });
+    if (res.ok) {
+      const meta: any = await res.json();
+      const found = extractFromMeta(meta);
+      if (found) return found;
+    }
   } catch {
-    return null;
+    // fallback to curl below
   }
+  try {
+    const raw = await fetchTextWithCurlFallback(url, headers, 3800);
+    if (raw) {
+      return extractFromMeta(JSON.parse(raw));
+    }
+  } catch {
+    // ignore
+  }
+  return null;
 }
 
 export async function extractDailymotionSeriesTracks(opts: {
@@ -165,7 +179,9 @@ export async function extractDailymotionSeriesTracks(opts: {
   const { tmdbId, mediaType, season = 1, episode = 1, titleHints, episodeTitleHint } = opts;
   if (mediaType !== 'tv' || !titleHints || titleHints.length === 0) return [];
 
-  const mainTitle = String(titleHints[0] || '').trim();
+  const rawMainTitle = String(titleHints[0] || '').trim();
+  const mainTitle =
+    rawMainTitle.replace(/\s*·\s*\d+\s*[xX×]\s*\d+.*$/i, '').trim() || rawMainTitle;
   if (!mainTitle) return [];
 
   const cacheKey = `${String(tmdbId || mainTitle)}:${season}x${episode}`;
@@ -177,14 +193,17 @@ export async function extractDailymotionSeriesTracks(opts: {
     titleHints.some((h) => normalizeTitleForMatch(h).includes('la que se avecina'));
 
   const epPad = String(episode).padStart(2, '0');
-  const candidateIds: string[] = [];
+  const seededIds: string[] = isLqsa
+    ? [...(KNOWN_LQSA_DM_MAP[`${season}x${episode}`] || [])]
+    : [];
 
-  if (isLqsa) {
-    const seededIds = KNOWN_LQSA_DM_MAP[`${season}x${episode}`] || [];
-    for (const sid of seededIds) {
-      if (!candidateIds.includes(sid)) candidateIds.push(sid);
-    }
-  }
+  // Resolve seeded IDs immediately at t=0 so slow Dailymotion searches never cause a timeout
+  const seededPromise = Promise.all(
+    seededIds.map(async (vid) => ({
+      vid,
+      m3uUrl: await resolveDailymotionVideoToM3u8(vid),
+    }))
+  );
 
   const globalEp = isLqsa ? lqsaSeasonEpToGlobal(season, episode) : null;
   const queries = [
@@ -210,7 +229,7 @@ export async function extractDailymotionSeriesTracks(opts: {
         )}&fields=id,title,duration&longer_than=18&limit=30`,
         {
           headers: { 'User-Agent': CHROME_UA, 'Accept-Language': 'es-ES,es;q=0.9' },
-          signal: AbortSignal.timeout(4000),
+          signal: AbortSignal.timeout(3500),
         }
       )
         .then((r) => (r.ok ? r.json() : null))
@@ -224,7 +243,7 @@ export async function extractDailymotionSeriesTracks(opts: {
       )}&fields=id,title,duration&longer_than=18&sort=recent&limit=30`,
       {
         headers: { 'User-Agent': CHROME_UA, 'Accept-Language': 'es-ES,es;q=0.9' },
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(3500),
       }
     )
       .then((r) => (r.ok ? r.json() : null))
@@ -235,15 +254,24 @@ export async function extractDailymotionSeriesTracks(opts: {
     searchRequests.push(
       fetch('https://api.dailymotion.com/user/x3qhrza/videos?fields=id,title,duration&limit=20', {
         headers: { 'User-Agent': CHROME_UA, 'Accept-Language': 'es-ES,es;q=0.9' },
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(3500),
       })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null)
     );
   }
 
-  const searchResults = await Promise.all(searchRequests);
+  const seededPairs = await seededPromise;
+  const hasSeededLive = seededPairs.some((p) => Boolean(p.m3uUrl));
+  const searchWaitMs = hasSeededLive ? 1400 : 3800;
 
+  const searchResults = await Promise.race([
+    Promise.all(searchRequests),
+    new Promise<any[]>((resolve) => setTimeout(() => resolve([]), searchWaitMs)),
+  ]);
+
+  const extraIds: string[] = [];
+  const seededSet = new Set(seededIds);
   const lqsaHints = isLqsa ? [...titleHints, 'LQSA'] : titleHints;
   for (const data of searchResults) {
     const list: any[] = Array.isArray(data?.list) ? data.list : [];
@@ -266,19 +294,23 @@ export async function extractDailymotionSeriesTracks(opts: {
       const epTitleOk =
         !parsed.season && matchesEpisodeTitleHint(vTitle, episodeTitleHint);
       if (!exactPair && !epTitleOk) continue;
-      if (!candidateIds.includes(id)) candidateIds.push(id);
+      if (!seededSet.has(id) && !extraIds.includes(id)) extraIds.push(id);
     }
   }
 
-  const resolvedPairs = await Promise.all(
-    candidateIds.slice(0, 18).map(async (vid) => ({
-      vid,
-      m3uUrl: await resolveDailymotionVideoToM3u8(vid),
-    }))
-  );
+  const remainingCap = Math.max(0, 18 - seededPairs.length);
+  const extraPairs =
+    remainingCap > 0 && extraIds.length > 0
+      ? await Promise.all(
+          extraIds.slice(0, remainingCap).map(async (vid) => ({
+            vid,
+            m3uUrl: await resolveDailymotionVideoToM3u8(vid),
+          }))
+        )
+      : [];
 
   const tracks: TrackRecord[] = [];
-  for (const { vid, m3uUrl } of resolvedPairs) {
+  for (const { vid, m3uUrl } of [...seededPairs, ...extraPairs]) {
     if (!m3uUrl) continue;
     tracks.push({
       id: `dm-${vid}`,

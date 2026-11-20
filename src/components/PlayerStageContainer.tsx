@@ -441,6 +441,7 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
         isPlayerMinimized={isPlayerMinimized}
         isAutoImmersiveLandscape={isAutoImmersiveLandscape}
         isPlayerActive={isPlayerActive}
+        isExtracting={isExtracting}
         extractionError={extractionError}
         activeSportsMatch={activeSportsMatch}
         showLiveMatchDock={showLiveMatchDock}

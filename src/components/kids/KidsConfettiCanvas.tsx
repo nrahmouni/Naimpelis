@@ -37,11 +37,13 @@ export const KidsConfettiCanvas: React.FC<KidsConfettiCanvasProps> = ({
   onComplete,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
   useEffect(() => {
     if (!active || lowStimulation || typeof window === 'undefined') return;
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-      onComplete?.();
+      onCompleteRef.current?.();
       return;
     }
 
@@ -83,7 +85,7 @@ export const KidsConfettiCanvas: React.FC<KidsConfettiCanvasProps> = ({
       const elapsed = now - startedAt;
       if (elapsed >= durationMs) {
         ctx.clearRect(0, 0, width, height);
-        onComplete?.();
+        onCompleteRef.current?.();
         return;
       }
 
@@ -131,7 +133,7 @@ export const KidsConfettiCanvas: React.FC<KidsConfettiCanvasProps> = ({
     return () => {
       if (rafId) window.cancelAnimationFrame(rafId);
     };
-  }, [active, lowStimulation, onComplete]);
+  }, [active, lowStimulation]);
 
   if (!active || lowStimulation) return null;
 

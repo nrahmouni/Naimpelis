@@ -150,15 +150,18 @@ export function useGamesHubController({
     }
   };
 
+  const onSelectedGameChangeRef = React.useRef(onSelectedGameChange);
+  onSelectedGameChangeRef.current = onSelectedGameChange;
+
   useEffect(() => {
-    onSelectedGameChange?.(selectedGame);
-  }, [selectedGame, onSelectedGameChange]);
+    onSelectedGameChangeRef.current?.(selectedGame);
+  }, [selectedGame]);
 
   useEffect(() => {
     return () => {
-      onSelectedGameChange?.(null);
+      onSelectedGameChangeRef.current?.(null);
     };
-  }, [onSelectedGameChange]);
+  }, []);
 
   const lastHandledRequestSeqRef = React.useRef<number>(0);
   useEffect(() => {
