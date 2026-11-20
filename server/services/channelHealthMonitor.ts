@@ -175,6 +175,98 @@ export async function probeChannelTrack(
           checkedAt: Date.now(),
         };
       }
+
+      if (!options?.fetchImpl && !isDvbHeadend) {
+        try {
+          let mediaText = bodyText;
+          let mediaBase = cleanUrl;
+          if (mediaText.includes('#EXT-X-STREAM-INF')) {
+            const subLines = mediaText.split(/\r?\n/);
+            let nextIsVar = false;
+            let pickedVar = '';
+            for (const sl of subLines) {
+              const st = sl.trim();
+              if (!st) continue;
+              if (st.startsWith('#EXT-X-STREAM-INF')) {
+                nextIsVar = true;
+              } else if (nextIsVar && !st.startsWith('#')) {
+                nextIsVar = false;
+                try {
+                  const candidate = new URL(st, mediaBase).href;
+                  const vRes = await fetchFn(candidate, {
+                    method: 'GET',
+                    headers,
+                    signal: AbortSignal.timeout(timeoutMs),
+                  });
+                  if (vRes.ok) {
+                    const vTxt = await vRes.text();
+                    if (vTxt.includes('#EXTM3U') && !/nosignal/i.test(vTxt)) {
+                      mediaText = vTxt;
+                      mediaBase = candidate;
+                      pickedVar = candidate;
+                      break;
+                    }
+                  } else {
+                    await vRes.body?.cancel?.().catch(() => {});
+                  }
+                } catch {
+                  // try next variant
+                }
+              }
+            }
+            if (!pickedVar) {
+              return {
+                status: 'down',
+                latencyMs,
+                statusCode: 404,
+                failCount: prevFails + 1,
+                checkedAt: Date.now(),
+              };
+            }
+          }
+
+          if (!mediaText.includes('#EXT-X-STREAM-INF')) {
+            const mLines = mediaText.split(/\r?\n/);
+            let segUrl = '';
+            for (let i = mLines.length - 1; i >= 0; i--) {
+              const tr = mLines[i].trim();
+              if (!tr || tr.startsWith('#')) continue;
+              try {
+                segUrl = new URL(tr, mediaBase).href;
+                break;
+              } catch {
+                // skip
+              }
+            }
+            if (segUrl) {
+              const segRes = await fetchFn(segUrl, {
+                method: 'GET',
+                headers: { ...headers, Range: 'bytes=0-4095' },
+                signal: AbortSignal.timeout(timeoutMs),
+              });
+              const segStatus = segRes.status;
+              await segRes.body?.cancel?.().catch(() => {});
+              if (!segRes.ok && segStatus !== 416) {
+                return {
+                  status: 'down',
+                  latencyMs,
+                  statusCode: segStatus,
+                  failCount: prevFails + 1,
+                  checkedAt: Date.now(),
+                };
+              }
+            }
+          }
+        } catch {
+          return {
+            status: 'down',
+            latencyMs,
+            failCount: prevFails + 1,
+            checkedAt: Date.now(),
+          };
+        }
+      }
+
       return {
         status: latencyMs <= DEGRADED_LATENCY_MS ? 'up' : 'degraded',
         latencyMs,
@@ -276,8 +368,14 @@ export class ChannelHealthMonitor {
     if (!Array.isArray(tracks) || tracks.length === 0) return [];
     const indexed = tracks.map((track, originalIndex) => {
       const health = this.getTrackHealth(track.sourceUrl) ?? track.health;
+      const src = String(track.sourceUrl || '');
+      const isDvbHeadend = src.includes('90.163.85.113:8093');
+      const isUnstableLegacy = /interactvty\.pro/i.test(src);
+      const transportPreferencePenalty = isDvbHeadend ? 1200 : isUnstableLegacy ? 1500 : 0;
       const penaltyMs =
-        (health?.qoeFailures || 0) * 1500 + (health?.qoeRebuffers || 0) * 250;
+        (health?.qoeFailures || 0) * 1500 +
+        (health?.qoeRebuffers || 0) * 250 +
+        transportPreferencePenalty;
       const effectiveLatency =
         (health?.latencyMs ?? (health?.status === 'unknown' ? 1200 : 800)) + penaltyMs;
       return {

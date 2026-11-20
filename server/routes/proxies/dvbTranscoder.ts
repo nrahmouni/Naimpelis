@@ -254,10 +254,10 @@ setInterval(() => {
 
 export async function ensureLiveDvbCleanHlsSession(
   rawUpstreamUrl: string,
-  profile: 'hd' | 'fast' = 'hd',
+  profile: 'hd' | 'fast' | 'iptv' = 'hd',
   referer = ''
 ): Promise<string | null> {
-  const cleanUpstream = rawUpstreamUrl.replace(/[?&]profile=(hd|fast)\b/gi, '');
+  const cleanUpstream = rawUpstreamUrl.replace(/[?&]profile=(hd|fast|iptv)\b/gi, '');
   const hash = crypto
     .createHash('sha1')
     .update(`${cleanUpstream}|${profile}`)
@@ -269,13 +269,24 @@ export async function ensureLiveDvbCleanHlsSession(
   if (existing && !existing.dead) {
     existing.lastAccessAt = Date.now();
     const ok = await existing.readyPromise;
-    if (ok && fs.existsSync(path.join(existing.dir, 'index.m3u8'))) {
+    const plFile = path.join(existing.dir, 'index.m3u8');
+    let fresh = false;
+    if (ok && fs.existsSync(plFile)) {
+      try {
+        const st = fs.statSync(plFile);
+        fresh = Date.now() - st.mtimeMs < 15_000;
+      } catch {
+        fresh = false;
+      }
+    }
+    if (fresh) {
       return `/api/dvb-live/${sessionKey}/index.m3u8`;
     }
     destroyLiveDvbSession(sessionKey);
   }
 
-  if (liveDvbSessions.size >= 4) {
+  const maxSessions = profile === 'iptv' ? 2 : 3;
+  if (liveDvbSessions.size >= maxSessions) {
     let oldestKey = '';
     let oldestAccess = Infinity;
     for (const [k, s] of liveDvbSessions.entries()) {
@@ -297,10 +308,6 @@ export async function ensureLiveDvbCleanHlsSession(
 
   const playlistPath = path.join(sessionDir, 'index.m3u8');
   const segmentPattern = path.join(sessionDir, 'seg_%05d.ts');
-  const vfFilter =
-    profile === 'fast'
-      ? 'yadif=mode=0:parity=-1:deint=1,scale=960:540:flags=bicubic,setsar=1:1'
-      : 'yadif=mode=0:parity=-1:deint=1,scale=1280:720:flags=bicubic,setsar=1:1';
 
   const ffArgs = [
     '-hide_banner',
@@ -312,79 +319,162 @@ export async function ensureLiveDvbCleanHlsSession(
   if (referer && /^https?:\/\//i.test(referer)) {
     ffArgs.push('-headers', `Referer: ${referer}\r\n`);
   }
-  ffArgs.push(
-    '-reconnect',
-    '1',
-    '-reconnect_streamed',
-    '1',
-    '-reconnect_delay_max',
-    '2',
-    '-live_start_index',
-    '-2',
-    '-err_detect',
-    'ignore_err',
-    '-fflags',
-    '+genpts+discardcorrupt',
-    '-threads',
-    '3',
-    '-i',
-    cleanUpstream,
-    '-map',
-    '0:v:0',
-    '-map',
-    '0:a:0?',
-    '-vf',
-    vfFilter,
-    '-c:v',
-    'libx264',
-    '-preset',
-    'ultrafast',
-    '-tune',
-    'zerolatency',
-    '-profile:v',
-    'main',
-    '-level',
-    '3.1',
-    '-pix_fmt',
-    'yuv420p',
-    '-flags',
-    '+cgop',
-    '-r',
-    '25',
-    '-g',
-    '50',
-    '-keyint_min',
-    '50',
-    '-sc_threshold',
-    '0',
-    '-bf',
-    '0',
-    '-crf',
-    profile === 'fast' ? '23' : '21',
-    '-maxrate',
-    profile === 'fast' ? '2200k' : '3500k',
-    '-bufsize',
-    profile === 'fast' ? '4400k' : '7000k',
-    '-c:a',
-    'aac',
-    '-ac',
-    '2',
-    '-ar',
-    '48000',
-    '-b:a',
-    '128k',
-    '-f',
-    'hls',
-    '-hls_time',
-    '2',
-    '-hls_list_size',
-    '8',
-    '-hls_flags',
-    'delete_segments+independent_segments+omit_endlist+temp_file',
-    '-hls_segment_filename',
-    segmentPattern,
-    playlistPath
-  );
+
+  if (profile === 'iptv') {
+    ffArgs.push(
+      '-reconnect',
+      '1',
+      '-reconnect_streamed',
+      '1',
+      '-reconnect_delay_max',
+      '2',
+      '-live_start_index',
+      '-3',
+      '-err_detect',
+      'ignore_err',
+      '-fflags',
+      '+genpts+discardcorrupt',
+      '-threads',
+      '2',
+      '-i',
+      cleanUpstream,
+      '-map',
+      '0:v:0',
+      '-map',
+      '0:a:0?',
+      '-vf',
+      'yadif=mode=0:parity=-1:deint=1,scale=1280:720:flags=fast_bilinear,setsar=1:1',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-tune',
+      'zerolatency',
+      '-profile:v',
+      'main',
+      '-level',
+      '3.1',
+      '-pix_fmt',
+      'yuv420p',
+      '-flags',
+      '+cgop',
+      '-r',
+      '25',
+      '-g',
+      '50',
+      '-keyint_min',
+      '50',
+      '-sc_threshold',
+      '0',
+      '-bf',
+      '0',
+      '-crf',
+      '23',
+      '-maxrate',
+      '2500k',
+      '-bufsize',
+      '5000k',
+      '-c:a',
+      'aac',
+      '-ac',
+      '2',
+      '-ar',
+      '48000',
+      '-b:a',
+      '128k',
+      '-sn',
+      '-dn',
+      '-f',
+      'hls',
+      '-hls_time',
+      '2',
+      '-hls_list_size',
+      '8',
+      '-hls_flags',
+      'delete_segments+omit_endlist+temp_file',
+      '-hls_segment_filename',
+      segmentPattern,
+      playlistPath
+    );
+  } else {
+    const vfFilter =
+      profile === 'fast'
+        ? 'yadif=mode=0:parity=-1:deint=1,scale=960:540:flags=bicubic,setsar=1:1'
+        : 'yadif=mode=0:parity=-1:deint=1,scale=1280:720:flags=bicubic,setsar=1:1';
+    ffArgs.push(
+      '-reconnect',
+      '1',
+      '-reconnect_streamed',
+      '1',
+      '-reconnect_delay_max',
+      '2',
+      '-live_start_index',
+      '-2',
+      '-err_detect',
+      'ignore_err',
+      '-fflags',
+      '+genpts+discardcorrupt',
+      '-threads',
+      '3',
+      '-i',
+      cleanUpstream,
+      '-map',
+      '0:v:0',
+      '-map',
+      '0:a:0?',
+      '-vf',
+      vfFilter,
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-tune',
+      'zerolatency',
+      '-profile:v',
+      'main',
+      '-level',
+      '3.1',
+      '-pix_fmt',
+      'yuv420p',
+      '-flags',
+      '+cgop',
+      '-r',
+      '25',
+      '-g',
+      '50',
+      '-keyint_min',
+      '50',
+      '-sc_threshold',
+      '0',
+      '-bf',
+      '0',
+      '-crf',
+      profile === 'fast' ? '23' : '21',
+      '-maxrate',
+      profile === 'fast' ? '2200k' : '3500k',
+      '-bufsize',
+      profile === 'fast' ? '4400k' : '7000k',
+      '-c:a',
+      'aac',
+      '-ac',
+      '2',
+      '-ar',
+      '48000',
+      '-b:a',
+      '128k',
+      '-f',
+      'hls',
+      '-hls_time',
+      '2',
+      '-hls_list_size',
+      '8',
+      '-hls_flags',
+      'delete_segments+independent_segments+omit_endlist+temp_file',
+      '-hls_segment_filename',
+      segmentPattern,
+      playlistPath
+    );
+  }
 
   const proc = spawn(FFMPEG_BIN, ffArgs);
 
@@ -399,15 +489,23 @@ export async function ensureLiveDvbCleanHlsSession(
     readyPromise: Promise.resolve(false),
   };
 
-  proc.on('exit', () => {
+  let stderrTail = '';
+  proc.stderr?.on('data', (chunk: Buffer) => {
+    stderrTail = (stderrTail + chunk.toString('utf8')).slice(-400);
+  });
+  proc.on('exit', (code) => {
+    if (code !== 0 && !session.dead) {
+      console.warn('[dvb-transcoder] ffmpeg exited early', { key: sessionKey, code, stderrTail });
+    }
     session.dead = true;
   });
-  proc.on('error', () => {
+  proc.on('error', (err) => {
+    console.warn('[dvb-transcoder] ffmpeg spawn error', { key: sessionKey, err: err?.message });
     session.dead = true;
   });
 
   session.readyPromise = new Promise<boolean>((resolve) => {
-    const deadline = Date.now() + 7500;
+    const deadline = Date.now() + 13_500;
     const poll = setInterval(() => {
       if (session.dead) {
         clearInterval(poll);
@@ -418,7 +516,7 @@ export async function ensureLiveDvbCleanHlsSession(
         if (fs.existsSync(playlistPath)) {
           const content = fs.readFileSync(playlistPath, 'utf8');
           const segMatches = content.match(/seg_\d+\.ts/g);
-          if (segMatches && segMatches.length >= 2) {
+          if (segMatches && segMatches.length >= 3) {
             clearInterval(poll);
             resolve(true);
             return;
@@ -432,12 +530,47 @@ export async function ensureLiveDvbCleanHlsSession(
         destroyLiveDvbSession(sessionKey);
         resolve(false);
       }
-    }, 100);
+    }, 60);
   });
 
   liveDvbSessions.set(sessionKey, session);
   const ready = await session.readyPromise;
   return ready ? `/api/dvb-live/${sessionKey}/index.m3u8` : null;
+}
+
+export function readLiveDvbPlaylistForIptv(
+  sessionPath: string,
+  publicOrigin: string
+): string | null {
+  const m = String(sessionPath || '').match(/\/api\/dvb-live\/([^/]+)\/index\.m3u8/i);
+  if (!m) return null;
+  const sessionKey = m[1].replace(/[^a-zA-Z0-9_-]/g, '');
+  const sess = liveDvbSessions.get(sessionKey);
+  if (!sess || sess.dead) return null;
+  sess.lastAccessAt = Date.now();
+  const playlistPath = path.join(sess.dir, 'index.m3u8');
+  if (!fs.existsSync(playlistPath)) return null;
+  try {
+    const raw = fs.readFileSync(playlistPath, 'utf8');
+    if (!raw.includes('#EXTM3U')) return null;
+    const prefix = publicOrigin.replace(/\/+$/, '');
+    return (
+      raw
+        .split(/\r?\n/)
+        .map((line) => {
+          const trimmed = line.trim();
+          if (!trimmed) return '';
+          if (/^seg_\d+\.ts$/i.test(trimmed)) {
+            return `${prefix}/api/dvb-live/${sessionKey}/${trimmed}`;
+          }
+          return trimmed;
+        })
+        .filter((line) => line.length > 0)
+        .join('\n') + '\n'
+    );
+  } catch {
+    return null;
+  }
 }
 
 export const handleDvbLive = (req: express.Request, res: express.Response): void => {

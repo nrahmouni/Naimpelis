@@ -14,6 +14,22 @@ export const TDT_NATIONAL_AND_PAY_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Telediario, cine, entretenimiento, selección española y grandes eventos en directo',
     channels: [
       {
+        id: 'la1-ottera',
+        label: 'Señal Oficial FHD (La 1)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://lge-lgla1.otteravision.com/lge/lgla1/lgla1.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'la1-ottera-ads',
+        label: 'Señal Alternativa HD (La 1)',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'https://stream.ads.ottera.tv/playlist.m3u8?network_id=15619',
+        resolverType: 'tdt_hls',
+      },
+      {
         id: 'la1-rtve',
         label: 'Señal Oficial RTVE HD (La 1 España)',
         lang: 'ES',
@@ -42,6 +58,14 @@ export const TDT_NATIONAL_AND_PAY_CHANNELS: SpanishTdtChannelDef[] = [
     quality: '1080p HD',
     description: 'Documentales, cultura, cine clásico e independiente y Saber y Ganar',
     channels: [
+      {
+        id: 'la2-ottera',
+        label: 'Señal Oficial FHD (La 2)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://lge-lgla2.otteravision.com/lge/lgla2/lgla2.m3u8',
+        resolverType: 'tdt_hls',
+      },
       {
         id: 'la2-rtve',
         label: 'Señal Oficial RTVE HD (La 2 España)',

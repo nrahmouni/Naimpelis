@@ -137,7 +137,25 @@ httpServer.on('upgrade', (req, socket, head) => {
   }
 });
 
-app.use(compression());
+app.use(
+  compression({
+    filter: (req, res) => {
+      const p = (req.path || '').toLowerCase();
+      if (
+        p.endsWith('.m3u') ||
+        p.endsWith('.m3u8') ||
+        p.endsWith('.ts') ||
+        p.startsWith('/api/iptv/') ||
+        p.startsWith('/api/ts-proxy') ||
+        p.startsWith('/api/hls-proxy') ||
+        p.startsWith('/api/dvb-live/')
+      ) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+  })
+);
 app.use(securityHeadersMiddleware);
 app.use(express.json({ limit: '10mb' }));
 app.use('/api', serviceMeshGatewayMiddleware);

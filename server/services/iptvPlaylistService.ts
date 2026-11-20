@@ -57,6 +57,8 @@ function normName(val: string): string {
 
 function isPlayableHlsUrl(url: string): boolean {
   if (!/^https?:\/\//i.test(url)) return false;
+  if (/\[(IP|UA|DEVICE_ID|MAC)\]/i.test(url)) return false;
+  if (/ztnr\.rtve\.es|interactvty\.pro/i.test(url)) return false;
   if (/\.mpd(\?|$|#)/i.test(url)) return false;
   if (/youtube\.com|youtu\.be|twitch\.tv|dailymotion\.com|vimeo\.com/i.test(url)) return false;
   return /\.m3u8(\?|$|#)|\/hls\/|\/manifest/i.test(url);
@@ -102,132 +104,6 @@ const KNOWN_TDT_ALIASES: Record<string, string[]> = {
 };
 
 const CURATED_IPTV_ORG_ADDONS: LiveIptvChannelEntry[] = [
-  {
-    id: 'tdt-rtve-star',
-    dial: 82,
-    name: 'RTVE Play Cine',
-    shortMark: 'RTVE',
-    brandTone: '#2563EB',
-    network: 'RTVE Play',
-    category: 'cine_series',
-    quality: '1080p HD',
-    description: 'Cine español e internacional en emisión continua 24/7',
-    channels: [
-      {
-        id: 'rtve-somos-cine',
-        label: 'RTVE Somos Cine HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://ztnr.rtve.es/ztnr/1688877.m3u8',
-        resolverType: 'tdt_hls',
-      },
-    ],
-  },
-  {
-    id: 'tdt-euronews-es',
-    dial: 83,
-    name: 'Euronews Español',
-    shortMark: 'EURO',
-    brandTone: '#0284C7',
-    network: 'Euronews',
-    category: 'noticias_deportes',
-    quality: '1080p HD',
-    description: 'Noticias de Europa y el mundo en directo en español 24 horas',
-    channels: [
-      {
-        id: 'euronews-es-hls',
-        label: 'Señal Oficial Euronews ES HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://euronews-euronews-spanish-3-es.samsung.wurl.tv/playlist.m3u8',
-        resolverType: 'tdt_hls',
-      },
-    ],
-  },
-  {
-    id: 'tdt-rakuten-top-movies-es',
-    dial: 84,
-    name: 'Top Cine España FAST',
-    shortMark: 'CINE',
-    brandTone: '#9146FF',
-    network: 'Rakuten FAST',
-    category: 'cine_series',
-    quality: '1080p HD',
-    description: 'Películas en castellano y estrenos FAST en streaming continuo HD',
-    channels: [
-      {
-        id: 'rakuten-topmovies-es',
-        label: 'Señal Oficial Top Movies ES HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://rakuten-topmovies-1-es.samsung.wurl.tv/playlist.m3u8',
-        resolverType: 'tdt_hls',
-      },
-    ],
-  },
-  {
-    id: 'tdt-rakuten-action-es',
-    dial: 85,
-    name: 'Cine Acción FAST ES',
-    shortMark: 'ACT',
-    brandTone: '#EA580C',
-    network: 'Rakuten FAST',
-    category: 'cine_series',
-    quality: '1080p HD',
-    description: 'Maratón de cine de acción y suspense doblado al castellano 24/7',
-    channels: [
-      {
-        id: 'rakuten-action-es',
-        label: 'Señal Oficial Action Movies ES HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://rakuten-actionmovies-1-es.samsung.wurl.tv/playlist.m3u8',
-        resolverType: 'tdt_hls',
-      },
-    ],
-  },
-  {
-    id: 'tdt-love-the-planet-es',
-    dial: 86,
-    name: 'Planeta Naturaleza ES',
-    shortMark: 'NAT',
-    brandTone: '#16A34A',
-    network: 'Love Nature',
-    category: 'documentales',
-    quality: '1080p HD',
-    description: 'Documentales de vida salvaje, ciencia y océanos en castellano',
-    channels: [
-      {
-        id: 'lovenature-es-fast',
-        label: 'Señal Oficial Love Nature ES HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://amg01856-lovenature-lovenaturees-samsunges-0r39n.amagi.tv/playlist.m3u8',
-        resolverType: 'tdt_hls',
-      },
-    ],
-  },
-  {
-    id: 'tdt-fifa-plus-es',
-    dial: 87,
-    name: 'FIFA+ Fútbol Clásico',
-    shortMark: 'FIFA+',
-    brandTone: '#0D9488',
-    network: 'FIFA+',
-    category: 'noticias_deportes',
-    quality: '1080p HD',
-    description: 'Partidos históricos de Mundiales, documentales y torneos FIFA en directo',
-    channels: [
-      {
-        id: 'fifaplus-es-fast',
-        label: 'Señal Oficial FIFA+ ES HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://amg01668-fifa-amg01668c2-samsung-es-2485.playouts.now.amagi.tv/playlist.m3u8',
-        resolverType: 'tdt_hls',
-      },
-    ],
-  },
   {
     id: 'tdt-trace-sport-stars',
     dial: 88,
@@ -347,7 +223,10 @@ export async function refreshLiveIptvRegistry(force = false): Promise<{
             const isMatchedAlias = Object.values(KNOWN_TDT_ALIASES).some((list) =>
               list.some((a) => nKey === a || nKey.includes(a))
             );
-            if (!isMatchedAlias && !seenExtraNames.has(nKey) && extras.length < 28) {
+            const hasOnlyGeoOrDeadExtra = m3u8Opts.every((o) =>
+              /rtvelivestream\.rtve\.es\/(?:rtvesec|eventual)\/|energeek/i.test(String(o.url || ''))
+            );
+            if (!isMatchedAlias && !hasOnlyGeoOrDeadExtra && !seenExtraNames.has(nKey) && extras.length < 28) {
               if (/deporte|cine|noticia|infantil|tv|3cat|telemadrid|galicia|arag|extremadura|asturias|navarra|murcia|castilla/i.test(chName + ' ' + ambitName)) {
                 seenExtraNames.add(nKey);
                 const slug = nKey.replace(/\s+/g, '-').slice(0, 26);

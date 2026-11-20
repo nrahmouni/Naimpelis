@@ -2,10 +2,11 @@
  * @module server/routes/iptv
  * @description TDT catalog API + Smart TV IPTV suite (.m3u playlists, live HLS resolver, PNG channel badges, and XMLTV /epg.xml).
  */
-import type { Express, Request } from 'express';
+import type { Express, Request, Response } from 'express';
 import { resolveOfficialChannelLogoUrl } from '../../src/shared/channelLogos.ts';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import {
+  isDvbHeadendStream,
   maybeSignEasyBroadcastUrl,
   resolveKnownUpstreamReferer,
   type TrackRecord,
@@ -26,6 +27,10 @@ import {
   refreshFamelackAndWorldCatalog,
 } from '../services/famelackIptvService.ts';
 import {
+  ensureLiveDvbCleanHlsSession,
+  readLiveDvbPlaylistForIptv,
+} from './proxies/dvbTranscoder.ts';
+import {
   IPTV_GROUP_TITLES,
   IPTV_MACRO_GROUP_LABELS,
   escapeXmlText,
@@ -35,7 +40,9 @@ import {
   getIptvMacroGroup,
   renderIptvChannelPng,
   rewriteManifestForSamsungIptv,
+  trimLiveDvrManifestForIptv,
   unwrapMasterPlaylistForIptv,
+  verifyIptvMediaManifestSegments,
 } from './iptvHelpers/iptvMediaHelpers.ts';
 
 export function getLiveVoiceChannels() {
@@ -46,10 +53,6 @@ export function getLiveVoiceChannels() {
   }));
 }
 
-
-
-
-
 const iptvChannelResolveCache = new LruTtlCache<
   string,
   {
@@ -57,9 +60,31 @@ const iptvChannelResolveCache = new LruTtlCache<
     referer: string;
     forceAac: boolean;
     isPublicCorsCdn: boolean;
+    isDvb?: boolean;
     ts: number;
   }
 >(150, 20 * 60 * 1000);
+
+async function resolveDvbIptvPlaylistText(
+  cleanUrl: string,
+  referer: string,
+  publicOrigin: string
+): Promise<string | null> {
+  const sessionPath = await ensureLiveDvbCleanHlsSession(cleanUrl, 'iptv', referer).catch(() => null);
+  if (!sessionPath) return null;
+  return readLiveDvbPlaylistForIptv(sessionPath, publicOrigin);
+}
+
+function sendIptvM3u8Response(res: Response, body: string): Response {
+  const cleanBody = body.endsWith('\n') ? body : `${body}\n`;
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.setHeader('Content-Length', String(Buffer.byteLength(cleanBody, 'utf8')));
+  return res.send(cleanBody);
+}
 
 
 
@@ -166,6 +191,7 @@ export function registerIptvAndTdtRoutes(
       res.setHeader('Access-Control-Allow-Headers', '*');
       res.setHeader('Content-Type', 'audio/x-mpegurl; charset=utf-8');
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Content-Length', String(Buffer.byteLength(playlistBody, 'utf8')));
       if (forceDownload) {
         res.setHeader('Content-Disposition', 'attachment; filename="RIFFANTV-IPTV.m3u"');
       }
@@ -299,37 +325,58 @@ export function registerIptvAndTdtRoutes(
     const forceAacOverride = req.query.aac === '1';
     const cached = iptvChannelResolveCache.get(channel.id);
     if (cached && Date.now() - cached.ts < 45_000) {
-      const manifestObj = await fetchUpstreamManifestText(
-        cached.rawM3u8Url,
-        cached.referer,
-        forceAacOverride || cached.forceAac
-      );
-      if (manifestObj) {
-        const unwrapped = await unwrapMasterPlaylistForIptv(
-          manifestObj,
+      if (cached.isDvb) {
+        const dvbText = await resolveDvbIptvPlaylistText(
+          cached.rawM3u8Url,
+          cached.referer,
+          publicOrigin
+        );
+        if (dvbText) {
+          return sendIptvM3u8Response(res, dvbText);
+        }
+        iptvChannelResolveCache.delete(channel.id);
+      } else {
+        const manifestObj = await fetchUpstreamManifestText(
+          cached.rawM3u8Url,
           cached.referer,
           forceAacOverride || cached.forceAac
         );
-        const rewritten = rewriteManifestForSamsungIptv(
-          unwrapped.text,
-          unwrapped.finalUrl,
-          cached.referer,
-          forceAacOverride || cached.forceAac,
-          false,
-          publicOrigin
-        );
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', '*');
-        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        return res.send(rewritten);
+        if (manifestObj) {
+          const unwrapped = await unwrapMasterPlaylistForIptv(
+            manifestObj,
+            cached.referer,
+            forceAacOverride || cached.forceAac
+          );
+          if (unwrapped) {
+            const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
+            const rewritten = rewriteManifestForSamsungIptv(
+              trimmedText,
+              unwrapped.finalUrl,
+              cached.referer,
+              forceAacOverride || cached.forceAac,
+              false,
+              publicOrigin
+            );
+            return sendIptvM3u8Response(res, rewritten);
+          }
+        }
+        iptvChannelResolveCache.delete(channel.id);
       }
-      iptvChannelResolveCache.delete(channel.id);
     }
+
+    const markTrackDown = (url: string, statusCode = 502) => {
+      const prev = channelHealthMonitor.getTrackHealth(url);
+      channelHealthMonitor.setTrackHealth(url, {
+        status: 'down',
+        statusCode,
+        failCount: (prev?.failCount || 0) + 1,
+        checkedAt: Date.now(),
+      });
+    };
 
     const rawTracks: TrackRecord[] = Array.isArray(channel.channels) ? channel.channels : [];
     const tracks = channelHealthMonitor.prioritizeTracks(rawTracks);
+    const triedDvbUrls = new Set<string>();
     for (const track of tracks) {
       try {
         const sourceUrl = String(track?.sourceUrl || '').trim();
@@ -343,27 +390,31 @@ export function registerIptvAndTdtRoutes(
           const manifestObj = await fetchUpstreamManifestText(signedElUrl, elResolved.referer, forceAacOverride);
           if (!manifestObj) continue;
           const unwrapped = await unwrapMasterPlaylistForIptv(manifestObj, elResolved.referer, forceAacOverride);
+          if (!unwrapped) continue;
+          const segOk = await verifyIptvMediaManifestSegments(
+            unwrapped.text,
+            unwrapped.finalUrl,
+            elResolved.referer
+          );
+          if (!segOk) continue;
+          const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
           iptvChannelResolveCache.set(channel.id, {
             rawM3u8Url: unwrapped.finalUrl,
             referer: elResolved.referer,
             forceAac: forceAacOverride,
             isPublicCorsCdn: false,
+            isDvb: false,
             ts: Date.now(),
           });
           const rewritten = rewriteManifestForSamsungIptv(
-            unwrapped.text,
+            trimmedText,
             unwrapped.finalUrl,
             elResolved.referer,
             forceAacOverride,
             false,
             publicOrigin
           );
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', '*');
-          res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-          return res.send(rewritten);
+          return sendIptvM3u8Response(res, rewritten);
         }
 
         const isDirectHls =
@@ -379,33 +430,82 @@ export function registerIptvAndTdtRoutes(
             resolveKnownUpstreamReferer(cleanUrl, track.referer) || new URL(cleanUrl).origin + '/';
           const forceAac = forceAacOverride;
 
+          if (isDvbHeadendStream(cleanUrl)) {
+            if (triedDvbUrls.has(cleanUrl)) {
+              continue;
+            }
+            triedDvbUrls.add(cleanUrl);
+            const probeManifest = await fetchUpstreamManifestText(cleanUrl, referer, false);
+            if (!probeManifest) {
+              markTrackDown(sourceUrl, 502);
+              continue;
+            }
+            const dvbPlaylist = await resolveDvbIptvPlaylistText(cleanUrl, referer, publicOrigin);
+            if (dvbPlaylist) {
+              iptvChannelResolveCache.set(channel.id, {
+                rawM3u8Url: cleanUrl,
+                referer,
+                forceAac: false,
+                isPublicCorsCdn: false,
+                isDvb: true,
+                ts: Date.now(),
+              });
+              return sendIptvM3u8Response(res, dvbPlaylist);
+            }
+            const trimmedFallback = trimLiveDvrManifestForIptv(probeManifest.text, 6);
+            const rewrittenFallback = rewriteManifestForSamsungIptv(
+              trimmedFallback,
+              probeManifest.finalUrl,
+              referer,
+              false,
+              false,
+              publicOrigin
+            );
+            return sendIptvM3u8Response(res, rewrittenFallback);
+          }
+
           const manifestObj = await fetchUpstreamManifestText(cleanUrl, referer, forceAac);
-          if (!manifestObj) continue;
+          if (!manifestObj) {
+            markTrackDown(sourceUrl, 502);
+            continue;
+          }
 
           const unwrapped = await unwrapMasterPlaylistForIptv(manifestObj, referer, forceAac);
+          if (!unwrapped) {
+            markTrackDown(sourceUrl, 404);
+            continue;
+          }
+
+          const segOk = await verifyIptvMediaManifestSegments(
+            unwrapped.text,
+            unwrapped.finalUrl,
+            referer
+          );
+          if (!segOk) {
+            markTrackDown(sourceUrl, 403);
+            continue;
+          }
+
+          const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
 
           iptvChannelResolveCache.set(channel.id, {
             rawM3u8Url: unwrapped.finalUrl,
             referer,
             forceAac,
             isPublicCorsCdn: false,
+            isDvb: false,
             ts: Date.now(),
           });
 
           const rewritten = rewriteManifestForSamsungIptv(
-            unwrapped.text,
+            trimmedText,
             unwrapped.finalUrl,
             referer,
             forceAac,
             false,
             publicOrigin
           );
-          res.setHeader('Access-Control-Allow-Origin', '*');
-          res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-          res.setHeader('Access-Control-Allow-Headers', '*');
-          res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-          return res.send(rewritten);
+          return sendIptvM3u8Response(res, rewritten);
         }
 
         const fullTarget = /^https?:\/\//i.test(sourceUrl) ? sourceUrl : `https://${sourceUrl}`;
@@ -426,6 +526,7 @@ export function registerIptvAndTdtRoutes(
         if (!manifestObj) continue;
 
         const unwrapped = await unwrapMasterPlaylistForIptv(manifestObj, directSports.referer, false);
+        if (!unwrapped) continue;
 
         const clean = await verifyM3u8HasCleanVideoFrame(
           unwrapped.text,
@@ -434,28 +535,26 @@ export function registerIptvAndTdtRoutes(
         );
         if (!clean) continue;
 
+        const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
+
         iptvChannelResolveCache.set(channel.id, {
           rawM3u8Url: unwrapped.finalUrl,
           referer: directSports.referer,
           forceAac: forceAacOverride,
           isPublicCorsCdn: false,
+          isDvb: false,
           ts: Date.now(),
         });
 
         const rewritten = rewriteManifestForSamsungIptv(
-          unwrapped.text,
+          trimmedText,
           unwrapped.finalUrl,
           directSports.referer,
           forceAacOverride,
           false,
           publicOrigin
         );
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', '*');
-        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        return res.send(rewritten);
+        return sendIptvM3u8Response(res, rewritten);
       } catch {
         // try next backup track
       }

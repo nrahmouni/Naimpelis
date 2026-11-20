@@ -316,6 +316,14 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Información continua nacional e internacional en tiempo real',
     channels: [
       {
+        id: '24h-ottera',
+        label: 'Señal Oficial FHD (24 Horas)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://lge-lg24h.otteravision.com/lge/lg24h/lg24h.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
         id: '24h-rtve',
         label: 'Señal Oficial RTVE HD',
         lang: 'ES',
@@ -344,6 +352,14 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     quality: '1080p HD',
     description: 'Tenis, ciclismo, fútbol, atletismo, motor y Estudio Estadio en vivo',
     channels: [
+      {
+        id: 'tdp-ottera',
+        label: 'Señal Oficial FHD (Teledeporte)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://lge-lgtdp.otteravision.com/lge/lgtdp/lgtdp.m3u8',
+        resolverType: 'tdt_hls',
+      },
       {
         id: 'tdp-dvb',
         label: 'Señal Antena TDT 1080p',
@@ -403,6 +419,14 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Series infantiles, animación familiar y cine juvenil',
     channels: [
       {
+        id: 'clan-oficial-hd',
+        label: 'Señal Oficial Clan HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://lge-lgla2.otteravision.com/lge/lgcla/lgcla.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
         id: 'clan-dvb',
         label: 'Señal Antena TDT 1080p',
         lang: 'ES',
@@ -416,14 +440,6 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/clan/clan_main.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
-        id: 'clan-rtve-alt',
-        label: 'Señal Oficial RTVE Respaldo HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://ztnr.rtve.es/ztnr/5466990.m3u8',
         resolverType: 'tdt_hls',
       },
       {
@@ -469,20 +485,20 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Televisión pública de Andalucía: entretenimiento, cine e informativos',
     channels: [
       {
-        id: 'canalsur-dvb',
-        label: 'Antena TDT 1080p',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'http://90.163.85.113:8093/stream/34/index.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
         id: 'canalsur-oficial',
         label: 'Señal Oficial Canal Sur HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl:
           'https://dfk2a268yviz9.cloudfront.net/v1/master/3722c60a815c199d9c0ef36c5b73da68a62b09d1/cc-ddiii1m6jt6of/CanalSurAndaluciaES.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'canalsur-dvb',
+        label: 'Antena TDT 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/34/index.m3u8',
         resolverType: 'tdt_hls',
       },
     ],

@@ -33,11 +33,38 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     return;
   }
 
+  const isUrlSubtitle = /\.(vtt|webvtt|srt)(\?|$)/i.test(targetUrl);
   const isUrlMp4 =
     /\.(m4s|mp4|cmfv|cmfa)(\?|$)/i.test(targetUrl) ||
     /\/segs\/[^/]+\/init\./i.test(targetUrl);
+  const effectiveForceAac = !isUrlSubtitle && !isUrlMp4 && forceAac;
 
   if (req.method === 'HEAD') {
+    if (effectiveForceAac) {
+      try {
+        const remuxedBuf = await remuxDvbTsToAac(targetUrl, referer, true);
+        if (req.destroyed || res.writableEnded) return;
+        if (!remuxedBuf || remuxedBuf.length < 564 || remuxedBuf[0] !== 0x47) {
+          res.status(502).end();
+          return;
+        }
+        applyProxyCorsHeaders(res, reqId);
+        res.status(200);
+        res.setHeader('Content-Type', 'video/mp2t');
+        res.setHeader('Accept-Ranges', 'bytes');
+        res.setHeader('Content-Length', String(remuxedBuf.length));
+        res.end();
+        return;
+      } catch {
+        if (!res.writableEnded) res.status(502).end();
+        return;
+      }
+    }
+    const defaultHeadCt = isUrlSubtitle
+      ? 'text/vtt; charset=utf-8'
+      : isUrlMp4
+      ? 'video/mp4'
+      : 'video/mp2t';
     try {
       const headers: Record<string, string> = {
         'User-Agent': getPreferredUpstreamUa(targetUrl),
@@ -51,7 +78,7 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
       });
       applyProxyCorsHeaders(res, reqId);
       res.status(upstream.status);
-      res.setHeader('Content-Type', isUrlMp4 ? 'video/mp4' : 'video/mp2t');
+      res.setHeader('Content-Type', defaultHeadCt);
       res.setHeader('Accept-Ranges', upstream.headers.get('accept-ranges') || 'bytes');
       const cl = upstream.headers.get('content-length');
       if (cl) res.setHeader('Content-Length', cl);
@@ -60,14 +87,14 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     } catch {
       applyProxyCorsHeaders(res, reqId);
       res.status(200);
-      res.setHeader('Content-Type', isUrlMp4 ? 'video/mp4' : 'video/mp2t');
+      res.setHeader('Content-Type', defaultHeadCt);
       res.setHeader('Accept-Ranges', 'bytes');
       res.end();
       return;
     }
   }
 
-  if (forceAac && !isUrlMp4) {
+  if (effectiveForceAac) {
     try {
       const remuxedBuf = await remuxDvbTsToAac(targetUrl, referer, true);
       if (req.destroyed || res.writableEnded) return;
@@ -164,20 +191,25 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     }
 
     const rawCt = (upstream.headers.get('content-type') || '').toLowerCase();
+    const isSubtitleContent = isUrlSubtitle || rawCt.includes('vtt') || rawCt.includes('subrip');
     const isDisguisedSegment =
-      !rawCt ||
-      rawCt.startsWith('text/html') ||
-      rawCt.startsWith('text/plain') ||
-      rawCt.startsWith('text/css') ||
-      rawCt.startsWith('image/') ||
-      rawCt.startsWith('font/') ||
-      rawCt.includes('woff') ||
-      rawCt.includes('javascript') ||
-      rawCt.startsWith('application/octet-stream');
+      !isSubtitleContent &&
+      (!rawCt ||
+        rawCt.startsWith('text/html') ||
+        rawCt.startsWith('text/plain') ||
+        rawCt.startsWith('text/css') ||
+        rawCt.startsWith('image/') ||
+        rawCt.startsWith('font/') ||
+        rawCt.includes('woff') ||
+        rawCt.includes('javascript') ||
+        rawCt.startsWith('application/octet-stream'));
 
     // Always strip disguised image headers on !isUrlMp4 even on Safari/webOS Range: bytes=0-... probes!
     const shouldSniffImageHeader =
-      !isUrlMp4 && isDisguisedSegment && (!req.headers.range || isInitialByteZeroRangeProbe);
+      !isUrlMp4 &&
+      !isSubtitleContent &&
+      isDisguisedSegment &&
+      (!req.headers.range || isInitialByteZeroRangeProbe);
 
     const cl = upstream.headers.get('content-length');
     const cr = upstream.headers.get('content-range');
@@ -206,7 +238,13 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
       applyProxyCorsHeaders(res, reqId);
       res.setHeader(
         'Content-Type',
-        isDisguisedSegment ? (isUrlMp4 ? 'video/mp4' : 'video/mp2t') : rawCt
+        isSubtitleContent
+          ? 'text/vtt; charset=utf-8'
+          : isDisguisedSegment
+          ? isUrlMp4
+            ? 'video/mp4'
+            : 'video/mp2t'
+          : rawCt
       );
       if (cl) {
         const numCl = Number(cl);

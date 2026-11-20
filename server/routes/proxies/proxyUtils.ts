@@ -1,8 +1,26 @@
 import crypto from 'crypto';
 import type express from 'express';
 import fs from 'fs';
+import { createRequire } from 'module';
 
-export const FFMPEG_BIN: string = fs.existsSync('/usr/bin/ffmpeg') ? '/usr/bin/ffmpeg' : 'ffmpeg';
+const require = createRequire(import.meta.url);
+
+function resolveFfmpegBin(): string {
+  if (fs.existsSync('/usr/bin/ffmpeg')) {
+    return '/usr/bin/ffmpeg';
+  }
+  try {
+    const mod = require('@ffmpeg-installer/ffmpeg') as { path?: string };
+    if (mod?.path && fs.existsSync(mod.path)) {
+      return mod.path;
+    }
+  } catch {
+    // fallback to PATH
+  }
+  return 'ffmpeg';
+}
+
+export const FFMPEG_BIN: string = resolveFfmpegBin();
 
 export function getOrCreateRequestId(req: express.Request): string {
   const existing = String(req.headers['x-naim-request-id'] || '').trim();

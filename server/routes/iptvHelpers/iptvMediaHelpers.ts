@@ -1,11 +1,13 @@
 import zlib from 'zlib';
 import { LruTtlCache } from '../../utils/lruCache.ts';
+import { streamingFetch } from '../../utils/tlsFetch.ts';
 import {
   CHROME_UA,
   TDT_DVB_UA,
   buildHlsProxyUrl,
   buildTsProxyUrl,
   curlGetText,
+  getPreferredUpstreamUa,
   isDvbHeadendStream,
   markHostNeedsCurlFallback,
   resolveKnownUpstreamReferer,
@@ -294,7 +296,7 @@ export async function fetchUpstreamManifestText(
   forceAac: boolean
 ): Promise<{ text: string; finalUrl: string } | null> {
   const headers: Record<string, string> = {
-    'User-Agent': isDvbHeadendStream(targetUrl) || forceAac ? TDT_DVB_UA : CHROME_UA,
+    'User-Agent': isDvbHeadendStream(targetUrl) || forceAac ? TDT_DVB_UA : getPreferredUpstreamUa(targetUrl),
     Accept: '*/*',
   };
   if (referer) {
@@ -308,13 +310,13 @@ export async function fetchUpstreamManifestText(
 
   if (!shouldBypassNodeFetch(targetUrl)) {
     try {
-      const resp = await fetch(targetUrl, {
+      const resp = await streamingFetch(targetUrl, {
         headers,
-        signal: AbortSignal.timeout(3500),
+        timeoutMs: 3800,
       });
       if (resp.ok) {
         const text = await resp.text();
-        if (text.includes('#EXTM3U')) {
+        if (text.includes('#EXTM3U') && !/nosignal/i.test(text)) {
           return { text, finalUrl: resp.url || targetUrl };
         }
       }
@@ -327,7 +329,7 @@ export async function fetchUpstreamManifestText(
     text: '',
     effectiveUrl: targetUrl,
   }));
-  if (fb.text && fb.text.includes('#EXTM3U')) {
+  if (fb.text && fb.text.includes('#EXTM3U') && !/nosignal/i.test(fb.text)) {
     return { text: fb.text, finalUrl: fb.effectiveUrl || targetUrl };
   }
   return null;
@@ -337,7 +339,7 @@ export async function unwrapMasterPlaylistForIptv(
   manifestObj: { text: string; finalUrl: string },
   referer: string,
   forceAac: boolean
-): Promise<{ text: string; finalUrl: string }> {
+): Promise<{ text: string; finalUrl: string } | null> {
   let current = manifestObj;
 
   for (let depth = 0; depth < 3; depth++) {
@@ -364,8 +366,7 @@ export async function unwrapMasterPlaylistForIptv(
       return current;
     }
 
-    let bestUrl = '';
-    let bestBw = -1;
+    const variants: Array<{ url: string; bw: number }> = [];
     let pendingBw = 0;
     let expectingUrl = false;
     for (const raw of lines) {
@@ -384,23 +385,288 @@ export async function unwrapMasterPlaylistForIptv(
         expectingUrl = false;
         try {
           const absVariant = new URL(line, current.finalUrl).href;
-          if (pendingBw >= bestBw) {
-            bestBw = pendingBw;
-            bestUrl = absVariant;
-          }
+          variants.push({ url: absVariant, bw: pendingBw });
         } catch {
-          // ignore
+          // ignore invalid variant URL
         }
       }
     }
 
-    if (!bestUrl) return current;
-    const sub = await fetchUpstreamManifestText(bestUrl, referer, forceAac);
-    if (!sub) return current;
-    current = sub;
+    if (variants.length === 0) return null;
+    variants.sort((a, b) => b.bw - a.bw);
+
+    let loadedSub: { text: string; finalUrl: string } | null = null;
+    for (const variant of variants) {
+      const sub = await fetchUpstreamManifestText(variant.url, referer, forceAac);
+      if (sub) {
+        loadedSub = sub;
+        break;
+      }
+    }
+    if (!loadedSub) return null;
+    current = loadedSub;
   }
 
   return current;
+}
+
+export function trimLiveDvrManifestForIptv(manifestText: string, maxSegments = 6): string {
+  if (
+    !manifestText ||
+    manifestText.includes('#EXT-X-ENDLIST') ||
+    manifestText.includes('#EXT-X-STREAM-INF')
+  ) {
+    return manifestText;
+  }
+
+  const lines = manifestText.split(/\r?\n/);
+  const headerLines: string[] = [];
+  const segments: Array<{ tags: string[]; uri: string }> = [];
+  let inSegments = false;
+  let pendingTags: string[] = [];
+
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) continue;
+
+    const isSegTag =
+      trimmed.startsWith('#EXTINF:') ||
+      trimmed.startsWith('#EXT-X-PROGRAM-DATE-TIME:') ||
+      trimmed.startsWith('#EXT-X-DISCONTINUITY') ||
+      trimmed.startsWith('#EXT-X-BYTERANGE:') ||
+      trimmed.startsWith('#EXT-X-KEY:') ||
+      trimmed.startsWith('#EXT-X-MAP:');
+
+    if (!trimmed.startsWith('#')) {
+      inSegments = true;
+      segments.push({ tags: pendingTags, uri: rawLine });
+      pendingTags = [];
+      continue;
+    }
+
+    if (
+      trimmed.startsWith('#EXT-X-DISCONTINUITY-SEQUENCE:') ||
+      trimmed.startsWith('#EXT-X-MEDIA-SEQUENCE:') ||
+      trimmed.startsWith('#EXT-X-TARGETDURATION:') ||
+      trimmed.startsWith('#EXT-X-VERSION:') ||
+      trimmed.startsWith('#EXT-X-ALLOW-CACHE:') ||
+      trimmed === '#EXTM3U' ||
+      trimmed.startsWith('#EXT-X-INDEPENDENT-SEGMENTS') ||
+      trimmed.startsWith('#EXT-X-PLAYLIST-TYPE:')
+    ) {
+      headerLines.push(rawLine);
+      continue;
+    }
+
+    if (inSegments || isSegTag) {
+      if (trimmed.startsWith('#EXTINF:') || inSegments) {
+        inSegments = true;
+        pendingTags.push(rawLine);
+      } else {
+        headerLines.push(rawLine);
+      }
+    } else {
+      headerLines.push(rawLine);
+    }
+  }
+
+  if (segments.length <= maxSegments + 2) {
+    return manifestText;
+  }
+
+  const keepCount = Math.max(3, maxSegments);
+  const dropped = segments.slice(0, segments.length - keepCount);
+  const kept = segments.slice(segments.length - keepCount);
+  const droppedCount = dropped.length;
+
+  let droppedDiscont = 0;
+  let lastDroppedKey = '';
+  let lastDroppedMap = '';
+  for (const seg of dropped) {
+    for (const t of seg.tags) {
+      const tr = t.trim();
+      if (tr === '#EXT-X-DISCONTINUITY') droppedDiscont++;
+      if (tr.startsWith('#EXT-X-KEY:')) lastDroppedKey = tr;
+      if (tr.startsWith('#EXT-X-MAP:')) lastDroppedMap = tr;
+    }
+  }
+
+  let hasMediaSeq = false;
+  const outHeader: string[] = [];
+  for (const h of headerLines) {
+    const tr = h.trim();
+    if (tr.startsWith('#EXT-X-PLAYLIST-TYPE:EVENT')) {
+      continue;
+    }
+    const seqMatch = tr.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/i);
+    if (seqMatch) {
+      hasMediaSeq = true;
+      outHeader.push(`#EXT-X-MEDIA-SEQUENCE:${parseInt(seqMatch[1], 10) + droppedCount}`);
+      continue;
+    }
+    const discMatch = tr.match(/^#EXT-X-DISCONTINUITY-SEQUENCE:(\d+)/i);
+    if (discMatch) {
+      outHeader.push(`#EXT-X-DISCONTINUITY-SEQUENCE:${parseInt(discMatch[1], 10) + droppedDiscont}`);
+      continue;
+    }
+    outHeader.push(h);
+  }
+  if (!hasMediaSeq) {
+    outHeader.push(`#EXT-X-MEDIA-SEQUENCE:${droppedCount}`);
+  }
+  if (lastDroppedKey && !kept[0].tags.some((t) => t.trim().startsWith('#EXT-X-KEY:'))) {
+    outHeader.push(lastDroppedKey);
+  }
+  if (lastDroppedMap && !kept[0].tags.some((t) => t.trim().startsWith('#EXT-X-MAP:'))) {
+    outHeader.push(lastDroppedMap);
+  }
+
+  const outLines = [...outHeader];
+  for (const seg of kept) {
+    outLines.push(...seg.tags);
+    outLines.push(seg.uri);
+  }
+  return outLines.join('\n') + '\n';
+}
+
+async function probeLiveEdgeSegmentOk(segUrl: string, referer: string): Promise<boolean> {
+  const headers: Record<string, string> = {
+    'User-Agent': getPreferredUpstreamUa(segUrl),
+    Accept: '*/*',
+    Range: 'bytes=0-16383',
+  };
+  if (referer) {
+    headers['Referer'] = referer;
+  }
+
+  try {
+    const resp = await streamingFetch(segUrl, {
+      method: 'GET',
+      headers,
+      timeoutMs: 4000,
+    });
+    if (resp.status === 416) {
+      // Some CDNs reject Range probes; re-check without Range and read only the first chunk
+      const plainHeaders = { ...headers };
+      delete plainHeaders['Range'];
+      const fullResp = await streamingFetch(segUrl, {
+        method: 'GET',
+        headers: plainHeaders,
+        timeoutMs: 4000,
+      });
+      if (!fullResp.ok) return false;
+      try {
+        await fullResp.body?.cancel?.();
+      } catch {
+        // ignore
+      }
+      return true;
+    }
+    if (!resp.ok) {
+      try {
+        await resp.body?.cancel?.();
+      } catch {
+        // ignore
+      }
+      return false;
+    }
+    const ct = (resp.headers.get('content-type') || '').toLowerCase();
+    if (ct.includes('text/html')) {
+      try {
+        await resp.body?.cancel?.();
+      } catch {
+        // ignore
+      }
+      return false;
+    }
+    // Consume just the small chunk or cancel immediately to avoid buffering multi-MB TS files
+    if (resp.body) {
+      const reader = resp.body.getReader();
+      try {
+        const first = await reader.read();
+        if (first.value && first.value.length > 0) {
+          const headText = Buffer.from(first.value.subarray(0, 64)).toString('utf8').trimStart();
+          if (/^(<!doctype|<html\b|<head\b|<body\b|<error\b)/i.test(headText)) {
+            return false;
+          }
+        }
+      } finally {
+        reader.cancel().catch(() => {});
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function verifyIptvMediaManifestSegments(
+  manifestText: string,
+  manifestUrl: string,
+  referer: string
+): Promise<boolean> {
+  if (/METHOD=(SAMPLE-AES|SAMPLE-AES-CTR|SAMPLE-AES-CENC)|com\.apple\.streamingkeydelivery/i.test(manifestText)) {
+    return false;
+  }
+  const effectiveReferer = resolveKnownUpstreamReferer(manifestUrl, referer) || '';
+  const lines = manifestText.split(/\r?\n/);
+
+  if (manifestText.includes('#EXT-X-STREAM-INF')) {
+    let firstVideoVariantUrl = '';
+    let firstAudioUrl = '';
+    let expectingVariant = false;
+    for (const raw of lines) {
+      const tr = raw.trim();
+      if (!tr) continue;
+      if (tr.startsWith('#EXT-X-MEDIA') && tr.includes('TYPE=AUDIO') && !firstAudioUrl) {
+        const m = tr.match(/URI="([^"]+)"/i);
+        if (m) {
+          try {
+            firstAudioUrl = new URL(m[1], manifestUrl).href;
+          } catch {
+            // ignore
+          }
+        }
+      } else if (tr.startsWith('#EXT-X-STREAM-INF')) {
+        expectingVariant = true;
+      } else if (expectingVariant && !tr.startsWith('#')) {
+        expectingVariant = false;
+        if (!firstVideoVariantUrl) {
+          try {
+            firstVideoVariantUrl = new URL(tr, manifestUrl).href;
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
+    if (!firstVideoVariantUrl) return false;
+    const vSub = await fetchUpstreamManifestText(firstVideoVariantUrl, effectiveReferer, false);
+    if (!vSub) return false;
+    const vOk = await verifyIptvMediaManifestSegments(vSub.text, vSub.finalUrl, effectiveReferer);
+    if (!vOk) return false;
+    if (firstAudioUrl) {
+      const aSub = await fetchUpstreamManifestText(firstAudioUrl, effectiveReferer, false);
+      if (!aSub) return false;
+      const aOk = await verifyIptvMediaManifestSegments(aSub.text, aSub.finalUrl, effectiveReferer);
+      if (!aOk) return false;
+    }
+    return true;
+  }
+
+  let lastSegmentUrl = '';
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const tr = lines[i].trim();
+    if (!tr || tr.startsWith('#')) continue;
+    try {
+      lastSegmentUrl = new URL(tr, manifestUrl).href;
+      break;
+    } catch {
+      // skip invalid URI
+    }
+  }
+  if (!lastSegmentUrl) return false;
+  return probeLiveEdgeSegmentOk(lastSegmentUrl, effectiveReferer);
 }
 
 export function rewriteManifestForSamsungIptv(
@@ -414,53 +680,68 @@ export function rewriteManifestForSamsungIptv(
   const effectiveReferer = resolveKnownUpstreamReferer(baseUrl, referer) || new URL(baseUrl).origin + '/';
   const lines = manifestText.split(/\r?\n/);
   let nextLineIsVariantPlaylist = false;
+  const outLines: string[] = [];
 
-  return lines
-    .map((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return line;
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed || trimmed.startsWith('##')) {
+      continue;
+    }
 
-      if (trimmed.startsWith('#')) {
-        if (trimmed.startsWith('#EXT-X-STREAM-INF')) {
-          nextLineIsVariantPlaylist = true;
-        }
-        if (trimmed.includes('URI="')) {
-          return line.replace(/URI="([^"]+)"/g, (_match, uriVal) => {
-            try {
-              const absUri = new URL(uriVal, baseUrl).href;
-              if (isPublicCorsCdn) {
-                return `URI="${absUri}"`;
-              }
-              if (trimmed.startsWith('#EXT-X-MEDIA') || absUri.includes('.m3u8')) {
-                return `URI="${buildHlsProxyUrl(absUri, effectiveReferer, forceAac, publicOrigin)}"`;
-              }
-              return `URI="${buildTsProxyUrl(absUri, effectiveReferer, forceAac, publicOrigin)}"`;
-            } catch {
-              return _match;
+    // Strip external WebVTT subtitle tracks on Smart TV IPTV playlists (causes AVPlay / ffmpeg errors)
+    if (trimmed.startsWith('#EXT-X-MEDIA') && /TYPE=SUBTITLES/i.test(trimmed)) {
+      continue;
+    }
+
+    let line = rawLine;
+    if (trimmed.startsWith('#EXT-X-STREAM-INF')) {
+      line = line.replace(/,?SUBTITLES="[^"]*"/gi, '').replace(/,(\s*)$/, '$1');
+      nextLineIsVariantPlaylist = true;
+    }
+
+    if (trimmed.startsWith('#')) {
+      if (trimmed.includes('URI="')) {
+        line = line.replace(/URI="([^"]+)"/g, (_match, uriVal) => {
+          try {
+            const absUri = new URL(uriVal, baseUrl).href;
+            if (isPublicCorsCdn) {
+              return `URI="${absUri}"`;
             }
-          });
-        }
-        return line;
+            if (trimmed.startsWith('#EXT-X-MEDIA') || absUri.includes('.m3u8')) {
+              return `URI="${buildHlsProxyUrl(absUri, effectiveReferer, forceAac, publicOrigin)}"`;
+            }
+            return `URI="${buildTsProxyUrl(absUri, effectiveReferer, forceAac, publicOrigin)}"`;
+          } catch {
+            return _match;
+          }
+        });
       }
+      outLines.push(line);
+      continue;
+    }
 
-      try {
-        const absUrl = new URL(trimmed, baseUrl).href;
-        const isPlaylist =
-          nextLineIsVariantPlaylist ||
-          /\.m3u8(\?|$)/i.test(absUrl) ||
-          absUrl.includes('stream_tv=');
-        nextLineIsVariantPlaylist = false;
+    try {
+      const absUrl = new URL(trimmed, baseUrl).href;
+      const isPlaylist =
+        nextLineIsVariantPlaylist ||
+        /\.m3u8(\?|$)/i.test(absUrl) ||
+        absUrl.includes('stream_tv=');
+      nextLineIsVariantPlaylist = false;
 
-        if (isPublicCorsCdn) {
-          return absUrl;
-        }
-        return isPlaylist
-          ? buildHlsProxyUrl(absUrl, effectiveReferer, forceAac, publicOrigin)
-          : buildTsProxyUrl(absUrl, effectiveReferer, forceAac, publicOrigin);
-      } catch {
-        nextLineIsVariantPlaylist = false;
-        return line;
+      if (isPublicCorsCdn) {
+        outLines.push(absUrl);
+      } else {
+        outLines.push(
+          isPlaylist
+            ? buildHlsProxyUrl(absUrl, effectiveReferer, forceAac, publicOrigin)
+            : buildTsProxyUrl(absUrl, effectiveReferer, forceAac, publicOrigin)
+        );
       }
-    })
-    .join('\n');
+    } catch {
+      nextLineIsVariantPlaylist = false;
+      outLines.push(line);
+    }
+  }
+
+  return outLines.length > 0 ? outLines.join('\n') + '\n' : '';
 }
