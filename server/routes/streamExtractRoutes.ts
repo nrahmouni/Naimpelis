@@ -125,51 +125,15 @@ export function registerStreamExtractRoute(
 
       return res.status(404).json({
         success: false,
-        canUseCloudBrowser: true,
-        error: 'No se encontró ninguna señal activa para este enlace.',
+        canUseCloudBrowser: false,
+        error: 'No se encontró ninguna señal estable para reproducir dentro de la app.',
       });
     } catch (err) {
       console.error('Extract stream error:', err);
-      // Return a robust fallback result with embedded/YouTube tracks instead of 502/500
-      const fallbackTitle = titleHint || 'RiffanTV HD Directo';
-      return res.json({
-        success: true,
-        mode: 'embed',
-        streamUrl: `https://vidsrc.xyz/embed/movie?tmdb=${tmdbIdParam || '550'}`,
-        title: fallbackTitle,
-        canUseCloudBrowser: true,
-        tracks: [
-          {
-            id: 'fallback-vidsrc-1',
-            label: 'Señal Principal HD (Español)',
-            lang: 'ES',
-            quality: '1080p',
-            sourceUrl: `https://vidsrc.xyz/embed/movie?tmdb=${tmdbIdParam || '550'}`,
-            resolverType: 'web_embed',
-          },
-          {
-            id: 'fallback-vidsrc-2',
-            label: 'Señal de Respaldo 2 (HD)',
-            lang: 'ES',
-            quality: '1080p',
-            sourceUrl: `https://vidsrc.to/embed/movie/${tmdbIdParam || '550'}`,
-            resolverType: 'web_embed',
-          },
-          {
-            id: 'fallback-rtve-1',
-            label: 'RTVE La 1 HD (Directo España)',
-            lang: 'ES',
-            quality: '1080p',
-            sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/la1/la1_main.m3u8',
-            resolverType: 'tdt_hls',
-          },
-        ],
-        requestedLang: preferLang,
-        resolvedLang: 'ES',
-        resolvedLabel: 'Señal Principal HD',
-        languageFallbackUsed: false,
-        availableLanguages: ['ES'],
-        expiresAt: Date.now() + 60 * 1000,
+      return res.status(502).json({
+        success: false,
+        canUseCloudBrowser: false,
+        error: 'Esta señal no responde de forma estable en este momento.',
       });
     }
   });

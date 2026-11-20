@@ -306,6 +306,12 @@ export function useDeepLinkRouter({
       nextRoute = '/juegos';
     } else if (activeWorld === 'youtube') {
       nextRoute = '/youtube';
+    } else if (activeWorld === 'clipbox') {
+      nextRoute = '/clipbox';
+    } else if (activeWorld === 'rbtv') {
+      nextRoute = '/rbtv';
+    } else if (activeWorld === 'belix') {
+      nextRoute = '/belix';
     } else {
       // On entry home, preserve active deep-linked channel/series path only if navigating back explicitly from home?
       // When user explicitly returns to Entry Home in Solo mode, update URL cleanly to '/'

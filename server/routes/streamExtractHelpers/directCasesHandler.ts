@@ -317,15 +317,19 @@ export async function handleDirectExtractCases(params: {
     }
   }
 
-  // CASE 1C: Verified Web Embed Player track switch (`web_embed`)
-  if (resolverType === 'web_embed' && rawInput) {
+  // CASE 1C: Verified Web Embed Player track switch (`web_embed`) & ClipBox embed players
+  const isClipboxPlayerHost =
+    /(?:^|\.)(vidlink\.pro|player\.videasy\.net|player\.vidzee\.wtf|vixsrc\.to|vidrock\.net|vidnest\.io|moviesapi\.club|2embed\.cc|megaplay\.buzz|vidfast\.[a-z.]+|vidsrc\.[a-z]+|videm\.buzz|primesrc\.me)/i.test(
+      rawInput
+    );
+  if ((resolverType === 'web_embed' || (!resolverType && isClipboxPlayerHost)) && rawInput) {
     const fullEmbedUrl = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
     const isCloudflareDirectEmbed =
       /(?:^|\.)(voe\.sx|voe\.bar|hglink\.to|streamwish\.[a-z]+|ok\.ru|byse\.[a-z]+|filelions\.[a-z]+)/i.test(
         fullEmbedUrl
       );
     const isHtmlProxyTarget =
-      /(^|\.)(vidsrc\.buzz|videm\.buzz|2embed\.cc|www\.2embed\.cc|vidfast\.[a-z.]+)/i.test(
+      /(^|\.)(vidsrc\.buzz|videm\.buzz|vidrock\.net|2embed\.cc|www\.2embed\.cc|vidfast\.[a-z.]+)/i.test(
         fullEmbedUrl
       ) ||
       (isSandboxedFrame && !isCloudflareDirectEmbed);
@@ -360,24 +364,27 @@ export async function handleDirectExtractCases(params: {
     return sendOk(result);
   }
 
-  // CASE 3: Direct .m3u8 or .mp4 URL
-  if (/^\/api\/vod-manifest\//i.test(rawInput)) {
+  // CASE 3: Direct .m3u8, .mp4, or internal proxy URL
+  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/xtream\/play)\//i.test(rawInput)) {
+    const isDirectFile = /\.(mp4|mkv|webm)(\?|$)/i.test(rawInput);
     const result: ExtractedStreamResult = {
       success: true,
-      mode: 'hls',
+      mode: isDirectFile ? 'direct' : 'hls',
       streamUrl: rawInput,
       rawStreamUrl: rawInput,
+      requestedLang: preferLang,
+      resolvedLang: preferLang,
       expiresAt: Date.now() + 15 * 60 * 1000,
     };
     setCache(cacheKey, result);
     return sendOk(result);
   }
   if (/\.m3u8(\?|$)/i.test(rawInput)) {
-    const originRef = new URL(rawInput).origin + '/';
+    const originRef = /^https?:\/\//i.test(rawInput) ? new URL(rawInput).origin + '/' : '';
     const result: ExtractedStreamResult = {
       success: true,
       mode: 'hls',
-      streamUrl: buildHlsProxyUrl(rawInput, originRef),
+      streamUrl: rawInput.startsWith('/api/') ? rawInput : buildHlsProxyUrl(rawInput, originRef),
       rawStreamUrl: rawInput,
       expiresAt: Date.now() + 15 * 60 * 1000,
     };
@@ -386,14 +393,14 @@ export async function handleDirectExtractCases(params: {
   }
 
   if (resolverType === 'direct_mp4' || /\.(mp4|webm|mkv)(\?|$)/i.test(rawInput)) {
-    const isGlobalCorsCdn =
-      resolverType === 'direct_mp4' ||
+    const isInternalOrCorsCdn =
+      rawInput.startsWith('/api/') ||
       /archive\.org\/download\/|3catvideos\.cat\//i.test(rawInput);
-    const originRef = new URL(rawInput).origin + '/';
+    const originRef = /^https?:\/\//i.test(rawInput) ? new URL(rawInput).origin + '/' : '';
     const result: ExtractedStreamResult = {
       success: true,
       mode: 'direct',
-      streamUrl: isGlobalCorsCdn ? rawInput : buildTsProxyUrl(rawInput, originRef),
+      streamUrl: isInternalOrCorsCdn ? rawInput : buildTsProxyUrl(rawInput, originRef),
       rawStreamUrl: rawInput,
       requestedLang: preferLang,
       resolvedLang: preferLang,

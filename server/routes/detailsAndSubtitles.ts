@@ -6,7 +6,7 @@ import type { Express } from 'express';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { assertSafeProxyUrl } from '../utils/ssrfGuard.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
-import { CHROME_UA } from '../extractors/httpHelpers.ts';
+import { CHROME_UA, curlGetBuffer } from '../extractors/httpHelpers.ts';
 import {
   fetchMovidyPageMetadata,
   probeAvailableLanguages,
@@ -20,6 +20,12 @@ import { fetchTmdbJson, fetchTmdbTitleLogo, resolveLocalizedTmdbTitle } from '..
 import { curlPlainGetText } from '../services/vestMirrorService.ts';
 import { filterTmdbValidSeasons } from './catalog/tvDetailsHandler.ts';
 
+import {
+  decodeSubtitleBuffer,
+  searchAggregatedSubtitles,
+} from '../services/subtitleAggregator.ts';
+import { extractClipboxDirectStreams } from '../extractors/clipboxDirectExtractor.ts';
+
 const subtitleSearchCache = new LruTtlCache<string, { tracks: any[]; ts: number }>(
   250,
   15 * 60 * 1000
@@ -30,42 +36,50 @@ export async function fetchAndCacheSubtitles(
   tmdbId: string,
   season = 0,
   episode = 0,
-  timeoutMs = 5000
+  timeoutMs = 5000,
+  extraOpts?: { title?: string; mediaType?: 'movie' | 'tv' }
 ): Promise<any[]> {
   const cleanId = String(tmdbId || '').replace(/\D/g, '');
-  if (!cleanId) return [];
-  const cacheKey = `${cleanId}|${season}|${episode}`;
+  const cleanTitle = String(extraOpts?.title || '').trim();
+  if (!cleanId && !cleanTitle) return [];
+
+  const mediaType: 'movie' | 'tv' =
+    extraOpts?.mediaType === 'tv' || (season > 0 && episode > 0) ? 'tv' : 'movie';
+  const cacheKey = `${cleanId || cleanTitle.toLowerCase()}|${mediaType}|${season}|${episode}`;
   const cached = subtitleSearchCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
     return cached.tracks;
   }
+
   try {
-    const qs = new URLSearchParams({ id: cleanId });
-    if (season > 0 && episode > 0) {
-      qs.set('season', String(season));
-      qs.set('episode', String(episode));
-    }
-    const subRes = await fetch(`https://sub.wyzie.ru/search?${qs.toString()}`, {
-      headers: { 'User-Agent': CHROME_UA },
-      signal: AbortSignal.timeout(timeoutMs),
+    const clipboxCapTask = cleanId
+      ? extractClipboxDirectStreams({
+          tmdbId: cleanId,
+          mediaType,
+          season: season || 1,
+          episode: episode || 1,
+        })
+          .then((r) => r.subtitles)
+          .catch(() => [])
+      : Promise.resolve([]);
+
+    const clipboxSubs = await Promise.race([
+      clipboxCapTask,
+      new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 2400)),
+    ]);
+
+    const prioritized = await searchAggregatedSubtitles({
+      tmdbId: cleanId || undefined,
+      title: cleanTitle || undefined,
+      mediaType,
+      season,
+      episode,
+      timeoutMs,
+      extraInlineTracks: clipboxSubs,
     });
-    if (!subRes.ok) return [];
-    const rawList: any[] = await subRes.json();
-    if (!Array.isArray(rawList)) return [];
-    const prioritized = rawList
-      .filter((s) => s?.url && /^(es|spa|en|eng)/i.test(String(s.language || '')))
-      .slice(0, 10)
-      .map((s, idx) => {
-        const code = String(s.language || '').toLowerCase();
-        const isEs = code.startsWith('es') || code.startsWith('spa');
-        return {
-          id: `sub-${cleanId}-${idx}-${code}`,
-          label: `${isEs ? 'Español' : 'English'}${s.display ? ` · ${s.display}` : ''} #${idx + 1}`,
-          lang: isEs ? 'ES' : 'EN',
-          url: `/api/subtitles/proxy?url=${encodeURIComponent(s.url)}`,
-        };
-      });
-    subtitleSearchCache.set(cacheKey, { tracks: prioritized, ts: Date.now() });
+    if (prioritized.length > 0) {
+      subtitleSearchCache.set(cacheKey, { tracks: prioritized, ts: Date.now() });
+    }
     return prioritized;
   } catch {
     return [];
@@ -380,11 +394,17 @@ export function registerDetailsAndSubtitlesRoutes(
   app.get('/api/subtitles/search', async (req, res) => {
     try {
       const tmdbId = String(req.query.tmdbId || '').replace(/\D/g, '');
-      if (!tmdbId) return res.json({ success: true, tracks: [] });
+      const title = String(req.query.title || '').trim();
+      const mediaType =
+        String(req.query.mediaType || '').toLowerCase() === 'tv' ? 'tv' : 'movie';
+      if (!tmdbId && !title) return res.json({ success: true, tracks: [] });
       const season = parseInt(String(req.query.season || '0'), 10) || 0;
       const episode = parseInt(String(req.query.episode || '0'), 10) || 0;
 
-      const prioritized = await fetchAndCacheSubtitles(tmdbId, season, episode, 5000);
+      const prioritized = await fetchAndCacheSubtitles(tmdbId, season, episode, 5200, {
+        title: title || undefined,
+        mediaType,
+      });
       res.json({ success: true, tracks: prioritized });
     } catch {
       res.json({ success: true, tracks: [] });
@@ -400,22 +420,32 @@ export function registerDetailsAndSubtitlesRoutes(
       return res.status(403).send('');
     }
     try {
-      let txt = '';
+      let rawBuf: Buffer | null = null;
       try {
         const r = await streamingFetch(rawUrl, {
-          headers: { 'User-Agent': CHROME_UA },
+          headers: { 'User-Agent': CHROME_UA, Accept: '*/*' },
           timeoutMs: 5500,
         });
         if (r.ok) {
-          txt = await r.text();
+          const ab = await r.arrayBuffer();
+          if (ab.byteLength > 0 && ab.byteLength <= 5 * 1024 * 1024) {
+            rawBuf = Buffer.from(ab);
+          }
         }
       } catch {
-        // fallback to plain curl below
+        // fallback to curl binary fetch below
       }
-      if (!txt) {
-        txt = await curlPlainGetText(rawUrl, 7).catch(() => '');
+      if (!rawBuf || rawBuf.length === 0) {
+        const curled = await curlGetBuffer(rawUrl, { 'User-Agent': CHROME_UA }, 7).catch(() =>
+          Buffer.alloc(0)
+        );
+        if (curled.length > 0 && curled.length <= 5 * 1024 * 1024) {
+          rawBuf = curled;
+        }
       }
-      if (!txt) return res.status(404).send('');
+      if (!rawBuf || rawBuf.length === 0) return res.status(404).send('');
+      const txt = decodeSubtitleBuffer(rawBuf, rawUrl);
+      if (!txt || /^<!doctype|^<html/i.test(txt)) return res.status(404).send('');
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
       res.setHeader('Cache-Control', 'public, max-age=3600');
       res.send(txt);

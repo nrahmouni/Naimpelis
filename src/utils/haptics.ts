@@ -280,7 +280,7 @@ function playNaimcineIntroSound(): boolean {
 
 export const playRiffanIntroSound = playNaimcineIntroSound;
 
-export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala') {
+export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix') {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
@@ -367,6 +367,54 @@ export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'tv' | 'juegos'
         g.connect(master);
         osc.start(at);
         osc.stop(at + 0.44);
+      });
+    } else if (portal === 'clipbox') {
+      // Crystalline vault prism arpeggio (D4 -> A4 -> C#5 -> E5)
+      [293.66, 440.0, 554.37, 659.25].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = idx % 2 === 0 ? 'sine' : 'triangle';
+        const at = now + idx * 0.042;
+        osc.frequency.setValueAtTime(freq, at);
+        g.gain.setValueAtTime(0.001, at);
+        g.gain.linearRampToValueAtTime(0.09, at + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0008, at + 0.36);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(at);
+        osc.stop(at + 0.38);
+      });
+    } else if (portal === 'rbtv') {
+      // Broadcast signal lock-in triad (A3 -> E4 -> A4 -> C#5)
+      [220.0, 329.63, 440.0, 554.37].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = idx === 0 ? 'triangle' : 'sine';
+        const at = now + idx * 0.045;
+        osc.frequency.setValueAtTime(freq, at);
+        g.gain.setValueAtTime(0.001, at);
+        g.gain.linearRampToValueAtTime(0.095, at + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0008, at + 0.34);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(at);
+        osc.stop(at + 0.36);
+      });
+    } else if (portal === 'belix') {
+      // Xtream carrier harmonic chord (D4 -> F#4 -> A4 -> D5)
+      [293.66, 369.99, 440.0, 587.33].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = idx % 2 === 0 ? 'triangle' : 'sine';
+        const at = now + idx * 0.042;
+        osc.frequency.setValueAtTime(freq, at);
+        g.gain.setValueAtTime(0.001, at);
+        g.gain.linearRampToValueAtTime(0.09, at + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0008, at + 0.35);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(at);
+        osc.stop(at + 0.37);
       });
     } else {
       // Snappy arcade triad lock-in (C5 -> E5 -> G5)

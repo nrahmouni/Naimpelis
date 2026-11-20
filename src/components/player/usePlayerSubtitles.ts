@@ -43,20 +43,67 @@ export function usePlayerSubtitles({
 
     let detectedTmdbId = videoState.seriesMeta?.tmdbId;
     if (!detectedTmdbId && videoState.rawSourceUrl) {
-      const m = videoState.rawSourceUrl.match(/(?:watch|movie|-)\/?(\d{2,9})(?:$|\/)/i);
+      const m = videoState.rawSourceUrl.match(/(?:watch|movie|tv|-|\/)(\d{2,9})(?:$|\/|\?)/i);
       if (m) detectedTmdbId = Number(m[1]);
     }
-    if (!detectedTmdbId) {
+    const cleanTitle = String(videoState.seriesMeta?.seriesTitle || videoState.title || '')
+      .replace(/\s*·\s*\d+x\d+.*$/i, '')
+      .trim();
+
+    if (!detectedTmdbId && (!cleanTitle || videoState.isLive)) {
       setSubtitleTracks(builtInSubs);
       return;
     }
 
     setSubtitleTracks(builtInSubs);
     let cancelled = false;
-    const qs = new URLSearchParams({ tmdbId: String(detectedTmdbId) });
+    const qs = new URLSearchParams();
+    if (detectedTmdbId) qs.set('tmdbId', String(detectedTmdbId));
+    if (cleanTitle) qs.set('title', cleanTitle);
     if (videoState.seriesMeta?.season && videoState.seriesMeta?.episode) {
+      qs.set('mediaType', 'tv');
       qs.set('season', String(videoState.seriesMeta.season));
       qs.set('episode', String(videoState.seriesMeta.episode));
+    }
+
+    const applyBestDefaultIfForeign = async (tracks: SubtitleTrackItem[]) => {
+      if (cancelled || tracks.length === 0) return;
+      const activeTrackLang = String(
+        videoState.tracks?.[videoState.activeTrackIndex]?.lang || ''
+      ).toUpperCase();
+      const needsAutoSub =
+        activeTrackLang === 'VOSE' ||
+        activeTrackLang === 'EN' ||
+        activeTrackLang === 'JP' ||
+        activeTrackLang === 'FR' ||
+        activeTrackLang === 'IT';
+      if (!needsAutoSub) return;
+
+      const preferredSub =
+        tracks.find((s) => /^(ES|LAT)$/i.test(String(s.lang || ''))) ||
+        tracks.find((s) => /^CAT$/i.test(String(s.lang || '')));
+      if (!preferredSub) return;
+
+      setActiveSubId((curr) => (curr === 'off' ? preferredSub.id : curr));
+      if (preferredSub.rawContent) {
+        if (!cancelled) setParsedCues(parseSubtitleText(preferredSub.rawContent));
+        return;
+      }
+      if (preferredSub.url) {
+        try {
+          const r = await fetch(preferredSub.url);
+          if (!r.ok) return;
+          const text = await r.text();
+          const cues = parseSubtitleText(text);
+          if (!cancelled && cues.length > 0) setParsedCues(cues);
+        } catch {
+          // ignore silent prefill failure
+        }
+      }
+    };
+
+    if (builtInSubs.length > 0) {
+      void applyBestDefaultIfForeign(builtInSubs);
     }
 
     fetch(`/api/subtitles/search?${qs.toString()}`)
@@ -64,14 +111,18 @@ export function usePlayerSubtitles({
       .then((data) => {
         if (!cancelled && Array.isArray(data?.tracks)) {
           const merged = [...builtInSubs];
-          const seenIds = new Set(merged.map((s) => s.id));
+          const seenKeys = new Set(merged.map((s) => s.url || s.id));
           for (const tr of data.tracks as SubtitleTrackItem[]) {
-            if (tr?.id && !seenIds.has(tr.id)) {
-              seenIds.add(tr.id);
+            const key = tr?.url || tr?.id;
+            if (key && !seenKeys.has(key)) {
+              seenKeys.add(key);
               merged.push(tr);
             }
           }
           setSubtitleTracks(merged);
+          if (builtInSubs.length === 0 && merged.length > 0) {
+            void applyBestDefaultIfForeign(merged);
+          }
         }
       })
       .catch(() => {});
@@ -83,8 +134,13 @@ export function usePlayerSubtitles({
     videoState.url,
     videoState.mode,
     videoState.rawSourceUrl,
+    videoState.title,
+    videoState.isLive,
     videoState.subtitles,
+    videoState.activeTrackIndex,
+    videoState.tracks,
     videoState.seriesMeta?.tmdbId,
+    videoState.seriesMeta?.seriesTitle,
     videoState.seriesMeta?.season,
     videoState.seriesMeta?.episode,
   ]);
@@ -104,8 +160,19 @@ export function usePlayerSubtitles({
     if (found.url) {
       try {
         const res = await fetch(found.url);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const text = await res.text();
-        setParsedCues(parseSubtitleText(text));
+        const cues = parseSubtitleText(text);
+        setParsedCues(cues);
+        if (cues.length === 0) {
+          showTransientToast(
+            pickLang(lang, {
+              es: 'Este subtítulo no contiene líneas válidas',
+              ca: 'Aquest subtítol no conté línies vàlides',
+              en: 'This subtitle track had no valid cues',
+            })
+          );
+        }
       } catch {
         showTransientToast(
           pickLang(lang, {

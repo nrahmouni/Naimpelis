@@ -52,6 +52,9 @@ import {
   registerStreamExtractRoute,
   type RankCandidateTracksInput,
 } from './server/routes/streamExtractRoutes.ts';
+import { registerClipboxRoutes } from './server/routes/clipboxRoutes.ts';
+import { registerRbtvRoutes } from './server/routes/rbtvRoutes.ts';
+import { registerBelixRoutes } from './server/routes/belixRoutes.ts';
 import { SPANISH_TDT_CHANNELS } from './server/data/tdtChannels.ts';
 import { CATALA_LIVE_CHANNELS } from './server/data/catalaRegistry.ts';
 import {
@@ -197,6 +200,9 @@ registerEpgRoutes(app);
 registerCastellanoCatalogRoutes(app);
 registerCatalaCatalogRoutes(app);
 registerYouTubeCatalogRoutes(app);
+registerClipboxRoutes(app);
+registerRbtvRoutes(app);
+registerBelixRoutes(app);
 registerVoiceAssistantRoutes(app, {
   getChannels: getLiveVoiceChannels,
   resolveLogoUrl: resolveOfficialChannelLogoUrl,
@@ -375,6 +381,7 @@ function rankCandidateTracks({
     if (tr.id.startsWith('dm-') || tr.id.startsWith('seriesmetro-')) return 2;
     if (tr.id.startsWith('archive-')) return 3;
     if (
+      tr.id.startsWith('clipbox-') ||
       tr.id.startsWith('vidbolt-') ||
       tr.id.startsWith('bingetrix-') ||
       tr.id.startsWith('vidrock-') ||

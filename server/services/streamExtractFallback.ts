@@ -419,7 +419,7 @@ export async function buildWebEmbedTracks(opts: {
 
   let baseEntries: any[];
   if (isExplicitVidfastInput) {
-    baseEntries = [vidfastEntry, vidrockEntry, vidnestEntry, twoEmbedEntry, vidlinkEntry];
+    baseEntries = [vidfastEntry, vidrockEntry, vidnestEntry, twoEmbedEntry];
   } else if (hasBuzzContent) {
     baseEntries = [
       vidsrcBuzzEntry,
@@ -427,7 +427,6 @@ export async function buildWebEmbedTracks(opts: {
       vidfastEntry,
       vidrockEntry,
       twoEmbedEntry,
-      vidlinkEntry,
     ];
   } else {
     baseEntries = [
@@ -435,15 +434,13 @@ export async function buildWebEmbedTracks(opts: {
       vidrockEntry,
       vidnestEntry,
       twoEmbedEntry,
-      vidlinkEntry,
-      vidsrcShEntry,
     ];
   }
 
   const orderedEntries = (isSandboxedFrame
     ? baseEntries.filter((entry) => entry.sandboxSafe)
     : baseEntries
-  ).slice(0, 5);
+  ).slice(0, 4);
 
   return orderedEntries.map((entry) => ({
     id: entry.id,

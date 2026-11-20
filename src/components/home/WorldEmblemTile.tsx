@@ -1,7 +1,7 @@
 import React, { useId } from 'react';
 import type { AppLanguage } from '../../types';
 
-export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala';
+export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix';
 
 export interface WorldSpec {
   accent: string;
@@ -116,6 +116,69 @@ export const WORLD_SPECS: Record<WorldPortalKind, WorldSpec> = {
       en: 'DTT, sports & 24/7 channels',
       rif: 'Talfaza d lkanalat 24/7',
       zh: '实时频道与全天候播出',
+    },
+  },
+  clipbox: {
+    accent: '#06B6D4',
+    secondary: '#7C3AED',
+    glowRgb: '6,182,212',
+    ambient:
+      'radial-gradient(ellipse 68% 54% at 50% 47%, rgba(6,182,212,0.22) 0%, rgba(124,58,237,0.10) 42%, rgba(6,7,12,0) 74%)',
+    title: {
+      es: 'ClipBox Vault',
+      ca: 'ClipBox Vault',
+      en: 'ClipBox Vault',
+      rif: 'ClipBox Vault',
+      zh: 'ClipBox 片源库',
+    },
+    subtitle: {
+      es: '574 URLs · 440 hosts · 954 rutas descifradas',
+      ca: '574 URLs · 440 hosts · 954 rutes desxifrades',
+      en: '574 URLs · 440 hosts · 954 decoded routes',
+      rif: '574 URLs · 440 hosts · 954 tibridin',
+      zh: '574 链接 · 440 源站 · 954 解析路由',
+    },
+  },
+  rbtv: {
+    accent: '#F59E0B',
+    secondary: '#10B981',
+    glowRgb: '245,158,11',
+    ambient:
+      'radial-gradient(ellipse 68% 54% at 50% 47%, rgba(245,158,11,0.22) 0%, rgba(16,185,129,0.10) 42%, rgba(6,7,12,0) 74%)',
+    title: {
+      es: 'RBTV+ Cluster',
+      ca: 'RBTV+ Clúster',
+      en: 'RBTV+ Cluster',
+      rif: 'RBTV+ Cluster',
+      zh: 'RBTV+ 体育集群',
+    },
+    subtitle: {
+      es: '61 URLs · 47 hosts · 13 DoH & P2P',
+      ca: '61 URLs · 47 hosts · 13 DoH i P2P',
+      en: '61 URLs · 47 hosts · 13 DoH & P2P',
+      rif: '61 URLs · 47 hosts · 13 DoH & P2P',
+      zh: '61 链接 · 47 节点 · 13 DoH 解析',
+    },
+  },
+  belix: {
+    accent: '#F43F5E',
+    secondary: '#818CF8',
+    glowRgb: '244,63,94',
+    ambient:
+      'radial-gradient(ellipse 68% 54% at 50% 47%, rgba(244,63,94,0.22) 0%, rgba(129,140,248,0.10) 42%, rgba(6,7,12,0) 74%)',
+    title: {
+      es: 'Belix TV Xtream',
+      ca: 'Belix TV Xtream',
+      en: 'Belix TV Xtream',
+      rif: 'Belix TV Xtream',
+      zh: 'Belix TV 直播引擎',
+    },
+    subtitle: {
+      es: '15 APIs Xtream · 48 URLs · 21 hosts',
+      ca: '15 APIs Xtream · 48 URLs · 21 hosts',
+      en: '15 Xtream APIs · 48 URLs · 21 hosts',
+      rif: '15 APIs Xtream · 48 URLs · 21 hosts',
+      zh: '15 Xtream 接口 · 48 链接 · 21 域名',
     },
   },
 };
@@ -498,6 +561,131 @@ export const WorldEmblemTile: React.FC<{
 
           <line x1="60" y1="83" x2="60" y2="88.5" stroke={`url(#${ids.platinum})`} strokeWidth="3.2" strokeLinecap="round" />
           <line x1="45" y1="89.5" x2="75" y2="89.5" stroke={`url(#${ids.accent})`} strokeWidth="3" strokeLinecap="round" />
+        </g>
+      )}
+
+      {kind === 'clipbox' && (
+        <g filter={`url(#${ids.drop})`}>
+          <polygon
+            points="60,24 91,42 91,78 60,96 29,78 29,42"
+            fill={`url(#${ids.accentSoft})`}
+            stroke={`url(#${ids.accent})`}
+            strokeWidth="2.2"
+            strokeLinejoin="round"
+          />
+          <polygon
+            points="60,31 84,45 84,75 60,89 36,75 36,45"
+            fill="#070B13"
+            stroke="#FFFFFF"
+            strokeOpacity="0.12"
+            strokeWidth="1"
+            strokeLinejoin="round"
+          />
+          <circle
+            cx="60"
+            cy="60"
+            r="19"
+            stroke={spec.accent}
+            strokeOpacity="0.45"
+            strokeWidth="1.2"
+            strokeDasharray="10 6 4 6"
+            className="rtv-we-center rtv-we-orbit"
+          />
+          <polygon
+            points="60,41 76,50.5 76,69.5 60,79 44,69.5 44,50.5"
+            fill={`url(#${ids.platinum})`}
+            fillOpacity="0.14"
+            stroke={`url(#${ids.platinum})`}
+            strokeWidth="1.6"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M 55.5 52.5 C 55.5 51.5 56.6 50.9 57.5 51.5 L 69.5 59.1 C 70.3 59.6 70.3 60.8 69.5 61.3 L 57.5 68.9 C 56.6 69.5 55.5 68.9 55.5 67.9 Z"
+            fill={`url(#${ids.platinum})`}
+          />
+        </g>
+      )}
+
+      {kind === 'rbtv' && (
+        <g filter={`url(#${ids.drop})`}>
+          <circle
+            cx="60"
+            cy="58"
+            r="27"
+            stroke={`url(#${ids.accent})`}
+            strokeOpacity="0.4"
+            strokeWidth="1.4"
+            strokeDasharray="14 6"
+            className="rtv-we-center rtv-we-orbit"
+          />
+          <circle
+            cx="60"
+            cy="58"
+            r="18"
+            fill={`url(#${ids.accentSoft})`}
+            stroke={`url(#${ids.accent})`}
+            strokeWidth="2.1"
+          />
+          <path
+            d="M 35 42 A 28 28 0 0 1 85 42"
+            stroke={spec.accent}
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            className="rtv-we-wave"
+          />
+          <path
+            d="M 41 48 A 20 20 0 0 1 79 48"
+            stroke={spec.secondary}
+            strokeWidth="2"
+            strokeLinecap="round"
+            className="rtv-we-wave"
+            style={{ animationDelay: '0.24s' }}
+          />
+          <path
+            d="M 55 50.5 C 55 49.4 56.2 48.8 57.1 49.4 L 69 57 C 69.9 57.6 69.9 58.9 69 59.5 L 57.1 67.1 C 56.2 67.7 55 67.1 55 66 Z"
+            fill={`url(#${ids.platinum})`}
+          />
+          <line x1="60" y1="77" x2="60" y2="88" stroke={`url(#${ids.platinum})`} strokeWidth="3" strokeLinecap="round" />
+          <line x1="45" y1="89" x2="75" y2="89" stroke={`url(#${ids.accent})`} strokeWidth="2.8" strokeLinecap="round" />
+        </g>
+      )}
+
+      {kind === 'belix' && (
+        <g filter={`url(#${ids.drop})`}>
+          <rect
+            x="27"
+            y="30"
+            width="66"
+            height="58"
+            rx="16"
+            fill={`url(#${ids.accentSoft})`}
+            stroke={`url(#${ids.accent})`}
+            strokeWidth="2.2"
+          />
+          <rect
+            x="33"
+            y="36"
+            width="54"
+            height="46"
+            rx="11"
+            fill="#070B13"
+            stroke="#FFFFFF"
+            strokeOpacity="0.12"
+            strokeWidth="1"
+          />
+          <path
+            d="M 41 47 H 59 M 41 59 H 68 M 41 71 H 54"
+            stroke={`url(#${ids.accent})`}
+            strokeWidth="3.2"
+            strokeLinecap="round"
+          />
+          <path
+            d="M 65 46 L 78 59 L 65 72"
+            stroke={`url(#${ids.platinum})`}
+            strokeWidth="3.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </g>
       )}
 

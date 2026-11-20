@@ -1,5 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
+import { Database, Radio, Server } from 'lucide-react';
 import type { AppLanguage, CatalogMovie } from '../../types';
 import type { PrimaryWorldId } from '../../store/useAppStore';
 import { pickLang } from '../../utils/i18n';
@@ -318,6 +319,141 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
             es: 'Billar, Parchís, UNO y más',
             ca: 'Billar, Parxís, UNO i més',
             en: 'Pool, Parchís, UNO & more',
+          })}
+        </p>
+      </div>
+    </motion.button>
+
+    {/* CARD 6: CLIPBOX · BÓVEDA & MOTORES */}
+    <motion.button
+      type="button"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.16, delay: 0.2 }}
+      whileTap={{ scale: 0.95 }}
+      onPointerEnter={() => onPreloadWorld?.('clipbox')}
+      onTouchStart={() => onPreloadWorld?.('clipbox')}
+      onPointerMove={(e) => onCardPointerMove('clipbox', e)}
+      onClick={(e) => onCardClick('clipbox', e)}
+      className="group relative col-span-1 md:col-span-2 md:order-6 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#06B6D4]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+    >
+      {renderSpotlightOverlay('clipbox')}
+
+      <div className="relative z-10 flex items-center justify-between gap-2">
+        <span className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-[#06B6D4] shrink-0">
+          <Database className="w-4 h-4" />
+        </span>
+
+        {lastUsedWorld === 'clipbox' ? (
+          <span className="text-[11px] font-medium text-[#06B6D4]">
+            {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
+          </span>
+        ) : (
+          <span className="text-[11px] font-medium text-zinc-400 tabular-nums">
+            440 hosts
+          </span>
+        )}
+      </div>
+
+      <div className="relative z-10 min-w-0 space-y-1 pt-4">
+        <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
+          ClipBox
+        </h2>
+        <p className="text-xs text-zinc-400 leading-snug">
+          {pickLang(lang, {
+            es: 'Motores de cine/anime, subs y descifrador',
+            ca: 'Motors de cinema/anime, subs i desxifrador',
+            en: 'Cinema/anime engines, subs & decoder',
+          })}
+        </p>
+      </div>
+    </motion.button>
+
+    {/* CARD 7: RBTV+ · DEPORTES, DOH & P2P */}
+    <motion.button
+      type="button"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.16, delay: 0.24 }}
+      whileTap={{ scale: 0.95 }}
+      onPointerEnter={() => onPreloadWorld?.('rbtv')}
+      onTouchStart={() => onPreloadWorld?.('rbtv')}
+      onPointerMove={(e) => onCardPointerMove('rbtv', e)}
+      onClick={(e) => onCardClick('rbtv', e)}
+      className="group relative col-span-1 md:col-span-2 md:order-7 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#F59E0B]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+    >
+      {renderSpotlightOverlay('rbtv')}
+
+      <div className="relative z-10 flex items-center justify-between gap-2">
+        <span className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-[#F59E0B] shrink-0">
+          <Radio className="w-4 h-4" />
+        </span>
+
+        {lastUsedWorld === 'rbtv' ? (
+          <span className="text-[11px] font-medium text-[#F59E0B]">
+            {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
+          </span>
+        ) : (
+          <span className="text-[11px] font-medium text-zinc-400 tabular-nums">
+            47 hosts · DoH
+          </span>
+        )}
+      </div>
+
+      <div className="relative z-10 min-w-0 space-y-1 pt-4">
+        <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
+          RBTV+
+        </h2>
+        <p className="text-xs text-zinc-400 leading-snug">
+          {pickLang(lang, {
+            es: 'Cluster deportivo, DoH y arquitectura P2P',
+            ca: 'Clúster esportiu, DoH i arquitectura P2P',
+            en: 'Sports cluster, DoH & P2P architecture',
+          })}
+        </p>
+      </div>
+    </motion.button>
+
+    {/* CARD 8: BELIX TV · MOTOR XTREAM CODES */}
+    <motion.button
+      type="button"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.16, delay: 0.28 }}
+      whileTap={{ scale: 0.95 }}
+      onPointerEnter={() => onPreloadWorld?.('belix')}
+      onTouchStart={() => onPreloadWorld?.('belix')}
+      onPointerMove={(e) => onCardPointerMove('belix', e)}
+      onClick={(e) => onCardClick('belix', e)}
+      className="group relative col-span-2 md:col-span-2 md:order-8 rounded-[24px] p-4 sm:p-5 min-h-[140px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#F43F5E]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+    >
+      {renderSpotlightOverlay('belix')}
+
+      <div className="relative z-10 flex items-center justify-between gap-2">
+        <span className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-[#F43F5E] shrink-0">
+          <Server className="w-4 h-4" />
+        </span>
+
+        {lastUsedWorld === 'belix' ? (
+          <span className="text-[11px] font-medium text-[#F43F5E]">
+            {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
+          </span>
+        ) : (
+          <span className="text-[11px] font-medium text-zinc-400 tabular-nums">
+            15 APIs · 21 hosts
+          </span>
+        )}
+      </div>
+
+      <div className="relative z-10 min-w-0 space-y-1 pt-4">
+        <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
+          Belix TV
+        </h2>
+        <p className="text-xs text-zinc-400 leading-snug">
+          {pickLang(lang, {
+            es: 'Motor Xtream Codes, directos y constructor',
+            ca: 'Motor Xtream Codes, directes i constructor',
+            en: 'Xtream Codes engine, live TV & builder',
           })}
         </p>
       </div>

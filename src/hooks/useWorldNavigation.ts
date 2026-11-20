@@ -132,6 +132,12 @@ export function useWorldNavigation({
       void import('../components/GamesHubSection').catch(noop);
     } else if (world === 'cine') {
       void import('../components/ExpandedDiscoverySection').catch(noop);
+    } else if (world === 'clipbox') {
+      void import('../components/clipbox/ClipBoxWorldView').catch(noop);
+    } else if (world === 'rbtv') {
+      void import('../components/rbtv/RbtvWorldView').catch(noop);
+    } else if (world === 'belix') {
+      void import('../components/belix/BelixWorldView').catch(noop);
     }
   }, []);
 
@@ -160,7 +166,10 @@ export function useWorldNavigation({
           nextWorld === 'futbol' ||
           nextWorld === 'tv' ||
           nextWorld === 'juegos' ||
-          nextWorld === 'sala')
+          nextWorld === 'sala' ||
+          nextWorld === 'clipbox' ||
+          nextWorld === 'rbtv' ||
+          nextWorld === 'belix')
       ) {
         if (nextWorld !== 'sala') preloadWorld(nextWorld);
         playWorldPortalSound(nextWorld);

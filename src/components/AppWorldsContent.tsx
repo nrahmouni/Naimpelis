@@ -21,6 +21,15 @@ import { lazyWithRetry } from '../utils/lazyWithRetry';
 const GamesHubSection = lazyWithRetry(() =>
   import('./GamesHubSection').then((m) => ({ default: m.GamesHubSection }))
 );
+const ClipBoxWorldView = lazyWithRetry(() =>
+  import('./clipbox/ClipBoxWorldView').then((m) => ({ default: m.ClipBoxWorldView }))
+);
+const RbtvWorldView = lazyWithRetry(() =>
+  import('./rbtv/RbtvWorldView').then((m) => ({ default: m.RbtvWorldView }))
+);
+const BelixWorldView = lazyWithRetry(() =>
+  import('./belix/BelixWorldView').then((m) => ({ default: m.BelixWorldView }))
+);
 
 interface AppWorldsContentProps {
   controller: ReturnType<typeof useAppController>;
@@ -158,6 +167,15 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     } else if (activeWorld === 'youtube') {
       target = { kind: 'world', world: 'youtube' };
       title = 'RiffanTV · YouTube';
+    } else if (activeWorld === 'clipbox') {
+      target = { kind: 'world', world: 'clipbox' };
+      title = 'RiffanTV · ClipBox Vault';
+    } else if (activeWorld === 'rbtv') {
+      target = { kind: 'world', world: 'rbtv' };
+      title = 'RiffanTV · RBTV+ Cluster';
+    } else if (activeWorld === 'belix') {
+      target = { kind: 'world', world: 'belix' };
+      title = 'RiffanTV · Belix TV Xtream';
     }
 
     void shareDedicatedLink({ target, roomId: shareRoomId, title });
@@ -198,7 +216,10 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
                 world === 'futbol' ||
                 world === 'tv' ||
                 world === 'juegos' ||
-                world === 'sala',
+                world === 'sala' ||
+                world === 'clipbox' ||
+                world === 'rbtv' ||
+                world === 'belix',
               originRect,
             })
           }
@@ -327,6 +348,112 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
             {...roomGameActions}
           />
         </div>
+      </WorldShell>
+    );
+  }
+
+  if (activeWorld === 'clipbox') {
+    return (
+      <WorldShell
+        world="clipbox"
+        title="ClipBox"
+        lang={lang}
+        sessionMode={sessionMode}
+        onUpgradeSoloToParty={() =>
+          void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
+        }
+        onShareWorld={handleShareActiveWorld}
+        onBack={() => enterWorld('entry')}
+        onGoHome={() => enterWorld('entry')}
+        onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+        searchValue={worldSearchQuery}
+        onSearchChange={setWorldSearchQuery}
+        searchPlaceholder={pickLang(lang, {
+          es: 'Buscar película, serie o anime en ClipBox...',
+          ca: 'Cercar pel·lícula, sèrie o anime a ClipBox...',
+          en: 'Search movie, series or anime in ClipBox...',
+        })}
+        className={portalLandingActive ? 'rtv-world-touchdown' : ''}
+      >
+        <ClipBoxWorldView
+          lang={lang}
+          externalSearchQuery={worldSearchQuery}
+          onPlayCustomUrl={playback.handlePlayCustomUrl}
+          onPlayMovie={playback.handlePlayMovie}
+        />
+      </WorldShell>
+    );
+  }
+
+  if (activeWorld === 'rbtv') {
+    return (
+      <WorldShell
+        world="rbtv"
+        title="RBTV+"
+        lang={lang}
+        sessionMode={sessionMode}
+        onUpgradeSoloToParty={() =>
+          void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
+        }
+        onShareWorld={handleShareActiveWorld}
+        onBack={() => enterWorld('entry')}
+        onGoHome={() => enterWorld('entry')}
+        onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+        searchValue={worldSearchQuery}
+        onSearchChange={setWorldSearchQuery}
+        searchPlaceholder={pickLang(lang, {
+          es: 'Buscar partido, canal 24/7 o dominio RBTV+...',
+          ca: 'Cercar partit, canal 24/7 o domini RBTV+...',
+          en: 'Search match, 24/7 channel or RBTV+ domain...',
+        })}
+        className={portalLandingActive ? 'rtv-world-touchdown' : ''}
+      >
+        <RbtvWorldView
+          lang={lang}
+          externalSearchQuery={worldSearchQuery}
+          onPlaySportsMatch={(match, idx) => {
+            void playback.handlePlaySportsMatch(match, idx);
+          }}
+          onPlayCustomUrl={playback.handlePlayCustomUrl}
+        />
+      </WorldShell>
+    );
+  }
+
+  if (activeWorld === 'belix') {
+    return (
+      <WorldShell
+        world="belix"
+        title="Belix TV"
+        lang={lang}
+        sessionMode={sessionMode}
+        onUpgradeSoloToParty={() =>
+          void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
+        }
+        onShareWorld={handleShareActiveWorld}
+        onBack={() => enterWorld('entry')}
+        onGoHome={() => enterWorld('entry')}
+        onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+        searchValue={worldSearchQuery}
+        onSearchChange={setWorldSearchQuery}
+        searchPlaceholder={pickLang(lang, {
+          es: 'Buscar canal, partido o ruta Xtream en Belix TV...',
+          ca: 'Cercar canal, partit o ruta Xtream a Belix TV...',
+          en: 'Search channel, match or Xtream route in Belix TV...',
+        })}
+        className={portalLandingActive ? 'rtv-world-touchdown' : ''}
+      >
+        <BelixWorldView
+          lang={lang}
+          externalSearchQuery={worldSearchQuery}
+          onPlaySportsMatch={(match, idx) => {
+            void playback.handlePlaySportsMatch(match, idx);
+          }}
+          onPlayTdtChannel={(ch, idx) => {
+            void playback.handlePlayTdtChannel(ch, idx);
+          }}
+          onPlayCustomUrl={playback.handlePlayCustomUrl}
+        />
       </WorldShell>
     );
   }

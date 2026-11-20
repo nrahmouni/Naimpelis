@@ -21,7 +21,10 @@ export type PrimaryWorldId =
   | 'futbol'
   | 'tv'
   | 'juegos'
-  | 'sala';
+  | 'sala'
+  | 'clipbox'
+  | 'rbtv'
+  | 'belix';
 export type WorldId = 'entry' | PrimaryWorldId | 'youtube';
 export type CineSubTab = 'movies' | 'series';
 export type FutbolSubTab = 'matches' | 'channels';
@@ -74,6 +77,9 @@ const PRIMARY_WORLDS: PrimaryWorldId[] = [
   'tv',
   'juegos',
   'sala',
+  'clipbox',
+  'rbtv',
+  'belix',
 ];
 
 function loadLastUsedWorld(): PrimaryWorldId | null {
