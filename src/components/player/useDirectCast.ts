@@ -73,6 +73,14 @@ export function useDirectCast(params: {
           sp.set('abs', '1');
           return `${publicOrigin}${parsed.pathname}?${sp.toString()}`;
         }
+        if (
+          parsed.pathname.startsWith('/api/belix/stream/') ||
+          parsed.pathname.startsWith('/api/iptv/')
+        ) {
+          const sp = new URLSearchParams(parsed.search);
+          sp.set('abs', '1');
+          return `${publicOrigin}${parsed.pathname}?${sp.toString()}`;
+        }
         if (parsed.origin !== publicOrigin) {
           return `${publicOrigin}/api/hls-proxy/stream.m3u8?url=${encodeURIComponent(
             absUrl
@@ -134,19 +142,18 @@ export function useDirectCast(params: {
       if (mainVid.getAttribute('src') !== absUrl) {
         mainVid.setAttribute('src', absUrl);
         mainVid.load();
-        if (savedTime > 1) {
-          mainVid.addEventListener(
-            'loadedmetadata',
-            () => {
-              try {
-                mainVid.currentTime = savedTime;
-              } catch {
-                // ignore
-              }
-            },
-            { once: true }
-          );
-        }
+        mainVid.addEventListener(
+          'loadedmetadata',
+          () => {
+            try {
+              if (savedTime > 1) mainVid.currentTime = savedTime;
+              mainVid.play().catch(() => {});
+            } catch {
+              // ignore
+            }
+          },
+          { once: true }
+        );
       }
     } catch {
       // ignore
@@ -427,6 +434,10 @@ export function useDirectCast(params: {
       if (e && 'stopPropagation' in e && typeof e.stopPropagation === 'function') {
         e.stopPropagation();
       }
+      const fromModal =
+        typeof CustomEvent !== 'undefined' &&
+        e instanceof CustomEvent &&
+        Boolean((e.detail as { fromModal?: boolean } | undefined)?.fromModal);
       triggerHaptic('medium');
       const mainVideo = videoRef.current as WebKitVideoElement | null;
       const bridgeVideo = castBridgeVideoRef.current as WebKitVideoElement | null;
@@ -614,6 +625,11 @@ export function useDirectCast(params: {
             en: '✓ Synced directly on your paired Smart TV',
           })
         );
+        return;
+      }
+
+      if (fromModal) {
+        window.dispatchEvent(new CustomEvent('naim-direct-cast-fallback'));
         return;
       }
 

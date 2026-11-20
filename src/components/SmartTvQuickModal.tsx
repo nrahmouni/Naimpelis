@@ -85,9 +85,31 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
     }
   };
 
+  useEffect(() => {
+    const onFallback = () => {
+      setShowCodePairing(true);
+      setCastFeedback(
+        pickLang(lang, {
+          es: 'Usa AirPlay, Chromecast o Smart View desde el menú de tu móvil, o vincula tu TV con el código.',
+          ca: 'Usa AirPlay, Chromecast o Smart View des del menú del mòbil, o vincula la TV amb el codi.',
+          en: 'Use AirPlay, Chromecast, or Smart View from your phone, or pair with the 4-digit code below.',
+        })
+      );
+    };
+    window.addEventListener('naim-direct-cast-fallback', onFallback);
+    return () => window.removeEventListener('naim-direct-cast-fallback', onFallback);
+  }, [lang]);
+
   const handleCastAction = async () => {
     triggerHaptic('medium');
     setCastFeedback(null);
+
+    if (document.querySelector('video')) {
+      window.dispatchEvent(
+        new CustomEvent('naim-trigger-direct-cast', { detail: { fromModal: true } })
+      );
+      return;
+    }
 
     if (onTriggerAirPlayPicker && onTriggerAirPlayPicker()) {
       setCastFeedback(
@@ -115,15 +137,10 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
       // Fallback below
     }
 
-    const v = document.querySelector('video') as
-      | (HTMLVideoElement & {
-          remote?: { prompt?: () => Promise<void> };
-        })
-      | null;
-
-    if (v?.remote?.prompt) {
+    if (window.cast?.framework && window.chrome?.cast) {
       try {
-        await v.remote.prompt();
+        const context = window.cast.framework.CastContext.getInstance();
+        await context.requestSession();
         return;
       } catch {
         // Fallback below

@@ -2,7 +2,13 @@ import fs from 'fs';
 import path from 'path';
 import { BELIX_EMBEDDED_RAW_TEXT } from './belixRawData.ts';
 
-export type BelixHostCategoryId = 'app_players' | 'community' | 'streaming_specs' | 'sdk_docs';
+export type BelixHostCategoryId =
+  | 'xtream_panel'
+  | 'licensing_activation'
+  | 'app_players'
+  | 'community'
+  | 'streaming_specs'
+  | 'sdk_docs';
 
 export interface BelixApiEndpoint {
   id: string;
@@ -46,12 +52,30 @@ export interface BelixCodeFileNode {
   component: string;
   role: string;
   mechanism: string;
+  layer: 'auth_native' | 'api_builder' | 'playback_model';
+}
+
+export interface BelixReverseEngineeringUpdate {
+  forkPackage: string;
+  developerAlias: string;
+  baseFramework: string;
+  originalPackages: string[];
+  panelName: string;
+  injectedEndpoint: string;
+  playlistTemplate: string;
+  playerApiTemplate: string;
+  activationDomains: string[];
+  evidenceClasses: string[];
+  obfuscationMethod: string;
+  summaryText: string;
 }
 
 export interface BelixParsedInventory {
   sourceFile: string;
   archiveName: string;
   packageName: string;
+  originalPackages: string[];
+  reverseEngineeringUpdate: BelixReverseEngineeringUpdate;
   declaredSummary: {
     literalUrls: number;
     uniqueHosts: number;
@@ -78,10 +102,21 @@ export interface BelixParsedInventory {
 }
 
 const CATEGORY_LABELS: Record<BelixHostCategoryId, string> = {
-  app_players: 'App com.ibopro.ultra (Tráilers / Reproductores)',
+  xtream_panel: 'Panel Xtream (Shark Pro)',
+  licensing_activation: 'Licencias IBO Player',
+  app_players: 'App IBO Pro / RTX (Tráilers / Reproductores)',
   community: 'Canal Telegram & Enlaces Externos',
   streaming_specs: 'Motor ExoPlayer / DASH / DRM / Local',
   sdk_docs: 'SDK Android / Google / Realm / GitHub',
+};
+
+const CATEGORY_SORT_ORDER: Record<BelixHostCategoryId, number> = {
+  xtream_panel: 0,
+  licensing_activation: 1,
+  app_players: 2,
+  community: 3,
+  streaming_specs: 4,
+  sdk_docs: 5,
 };
 
 const STREAMING_SPEC_HOSTS = new Set([
@@ -96,7 +131,22 @@ const STREAMING_SPEC_HOSTS = new Set([
   'x',
 ]);
 
-const APP_CODE_HOSTS = new Set(['www.youtube.com', 'play.google.com']);
+const LICENSING_HOSTS = new Set([
+  'activation.iboplayer.com',
+  'iboproapp.com',
+  'iboplayer.pro',
+]);
+
+const XTREAM_PANEL_HOSTS = new Set(['1.sharkpro.ink', 'sharkpro.ink']);
+
+const APP_CODE_HOSTS = new Set([
+  '1.sharkpro.ink',
+  'activation.iboplayer.com',
+  'iboproapp.com',
+  'iboplayer.pro',
+  'www.youtube.com',
+  'play.google.com',
+]);
 
 function resolveBelixTextFile(): string {
   const candidates = [
@@ -133,9 +183,7 @@ function detectRequiredEntityParam(
 }
 
 function classifyHost(
-  host: string,
-  urls: string[],
-  origins: string[]
+  host: string
 ): {
   category: BelixHostCategoryId;
   role: string;
@@ -144,6 +192,31 @@ function classifyHost(
   probeAllowed: boolean;
 } {
   const h = host.toLowerCase();
+
+  if (XTREAM_PANEL_HOSTS.has(h)) {
+    return {
+      category: 'xtream_panel',
+      role: 'Servidor Xtream Codes inyectado dinámicamente (Shark Pro / Shark IPTV)',
+      decodedNote:
+        'Resuelto dinámicamente desde librerías nativas (.so) tras validar el código contra IBO Player. Sirve /get.php (M3U Plus) y /player_api.php en el puerto 80.',
+      isAppCodeHost: true,
+      probeAllowed: true,
+    };
+  }
+
+  if (LICENSING_HOSTS.has(h)) {
+    const isActivationSubdomain = h === 'activation.iboplayer.com';
+    return {
+      category: 'licensing_activation',
+      role: isActivationSubdomain
+        ? 'Endpoint principal de activación y validación de dispositivos IBO Player'
+        : 'Backend de licencias y portal original de IBO Pro / IBO Player',
+      decodedNote:
+        'Heredado de IBO Pro Ultra / RTX IBO Pro (com.rtx.niceibo). Valida dispositivos y códigos numéricos antes de resolver el host Xtream en .so.',
+      isAppCodeHost: true,
+      probeAllowed: true,
+    };
+  }
 
   if (h === 'www.youtube.com') {
     return {
@@ -172,7 +245,7 @@ function classifyHost(
       category: 'community',
       role: 'Canal o contacto comunitario embebido (t.me/shadeedtv)',
       decodedNote:
-        'Enlace Telegram literal hallado en recursos/código del APK compilado.',
+        'Enlace Telegram literal hallado en recursos/código del APK compilado (coherente con com.shadeed.belixtv).',
       isAppCodeHost: false,
       probeAllowed: true,
     };
@@ -219,6 +292,21 @@ function classifyHost(
   };
 }
 
+function normalizeUrlForHostExtraction(rawUrl: string): string {
+  return rawUrl.replace(/\{[^}]+\}/g, 'placeholder');
+}
+
+function classifyCodeLayer(filePart: string): BelixCodeFileNode['layer'] {
+  const lower = filePart.toLowerCase();
+  if (lower.includes('niceibo') || lower.includes('.so') || lower.includes('login')) {
+    return 'auth_native';
+  }
+  if (lower.includes('apiservice') || lower.includes('getsharedinfo')) {
+    return 'api_builder';
+  }
+  return 'playback_model';
+}
+
 let cachedBelixInventory: BelixParsedInventory | null = null;
 
 export function parseBelixInventory(forceReload = false): BelixParsedInventory {
@@ -234,14 +322,14 @@ export function parseBelixInventory(forceReload = false): BelixParsedInventory {
       : raw;
   const lines = normalizedRaw.split(/\r?\n/);
 
-  let archiveName = 'Belix TV (1).apk_Decompiler.com.zip';
+  let archiveName = 'Belix TV (com.shadeed.belixtv) · Fork IBO Pro Ultra / RTX';
   const declaredSummary = {
-    literalUrls: 48,
-    uniqueHosts: 21,
+    literalUrls: 54,
+    uniqueHosts: 25,
     appPackageUrls: 3,
   };
 
-  let section: 'header' | 's1' | 's2' | 's3' | 's4' | 's5' | 's6' | 's7' | 's8' = 'header';
+  let section: 'header' | 's0' | 's1' | 's2' | 's3' | 's4' | 's5' | 's6' | 's7' | 's8' = 'header';
   let inParamsBlock = false;
   let inDynamicNotesBlock = false;
 
@@ -271,7 +359,7 @@ export function parseBelixInventory(forceReload = false): BelixParsedInventory {
       declaredSummary.literalUrls = Number(literalMatch[1]);
       continue;
     }
-    const hostsMatch = trimmed.match(/^- Hosts\/dominios extraídos[^:]*:\s*(\d+)/i);
+    const hostsMatch = trimmed.match(/^- Hosts\/dominios (?:extraídos|totales catalogados)[^:]*:\s*(\d+)/i);
     if (hostsMatch) {
       declaredSummary.uniqueHosts = Number(hostsMatch[1]);
       continue;
@@ -282,6 +370,10 @@ export function parseBelixInventory(forceReload = false): BelixParsedInventory {
       continue;
     }
 
+    if (trimmed.startsWith('0) IDENTIFICACIÓN DE SERVIDOR')) {
+      section = 's0';
+      continue;
+    }
     if (trimmed.startsWith('1) ENDPOINTS API')) {
       section = 's1';
       inParamsBlock = false;
@@ -316,7 +408,7 @@ export function parseBelixInventory(forceReload = false): BelixParsedInventory {
       section = 's7';
       continue;
     }
-    if (trimmed.startsWith('8) LIMITACIONES DEL ANÁLISIS')) {
+    if (trimmed.startsWith('8) LIMITACIONES')) {
       section = 's8';
       continue;
     }
@@ -417,19 +509,32 @@ export function parseBelixInventory(forceReload = false): BelixParsedInventory {
       if (trimmed.startsWith('- ')) {
         const body = trimmed.slice(2).trim();
         const [filePart, rolePart] = body.split('—').map((p) => p.trim());
-        const fileName = path.basename(filePart || body).replace(/\.smali$/i, '');
+        const fileName = path
+          .basename((filePart || body).replace(/^L/, '').replace(/;->.*$/, ''))
+          .replace(/\.smali$/i, '');
         const mechanismMap: Record<string, string> = {
+          aaaaaaaaaaLogin:
+            'Pantalla heredada de IBO RTX App donde el usuario introduce los códigos numéricos validados por licencias IBO.',
+          mURL:
+            'Descriptor Dalvik (Lcom/rtx/niceibo/mURL;->weblink) que recibe el host dinámico resuelto desde librerías nativas.',
+          '*.so':
+            'Capa nativa de Pukat Digital que oculta/desencripta http://1.sharkpro.ink:80 fuera del bytecode Java.',
           APIService: 'Interfaces Retrofit que mapean /player_api.php y /xmltv.php con parámetros Query.',
           GetSharedInfo: 'Helper central que concatena baseHost + credenciales para /live/, /movie/, /series/ y /get.php.',
           LiveChannelActivity: 'Lee las preferencias de extensión live y arranca ExoPlayer o reproductor externo.',
           MoviePlayerActivity: 'Inyecta getExtension() dinámico sobre /movie/{user}/{pass}/{id}.{ext}.',
           MovieModel: 'Modelo Realm/POJO VOD que almacena container_extension y stream_id.',
         };
+        const componentName = filePart?.includes('mURL;->weblink')
+          ? 'mURL.weblink'
+          : fileName;
         codeFiles.push({
           file: filePart || body,
-          component: fileName,
+          component: componentName,
           role: rolePart || 'Clase clave de Belix TV',
-          mechanism: mechanismMap[fileName] || rolePart || 'Componente Smali del paquete com.ibopro.ultra.',
+          mechanism:
+            mechanismMap[fileName] || rolePart || 'Componente Smali/nativo del paquete Belix TV.',
+          layer: classifyCodeLayer(filePart || body),
         });
       }
     } else if (section === 's8') {
@@ -444,7 +549,7 @@ export function parseBelixInventory(forceReload = false): BelixParsedInventory {
     currentAppUrl = null;
   }
 
-  // Group all 48 literal URLs by extracted domain preserving all origins
+  // Group all literal URLs by extracted domain preserving origins
   const allUrls = [...appExternalUrls.map((a) => a.url), ...projectLiteralUrls];
   const hostUrlMap = new Map<string, string[]>();
   const hostOriginMap = new Map<string, string[]>();
@@ -462,9 +567,22 @@ export function parseBelixInventory(forceReload = false): BelixParsedInventory {
     hostOriginMap.set(appEntry.host, existingOrigins);
   }
 
+  // Attach known origins to new reverse-engineered domains
+  hostOriginMap.set('1.sharkpro.ink', [
+    'lib/arm64-v8a/*.so (inyección dinámica)',
+    'Lcom/rtx/niceibo/mURL;->weblink',
+    'smali/com/ibopro/ultra/helper/GetSharedInfo.smali',
+  ]);
+  for (const licHost of ['activation.iboplayer.com', 'iboproapp.com', 'iboplayer.pro']) {
+    hostOriginMap.set(licHost, [
+      'smali/com/rtx/niceibo/activity/aaaaaaaaaaLogin.smali',
+      'IBO Pro Ultra / RTX App Licensing Layer',
+    ]);
+  }
+
   for (const rawUrl of allUrls) {
     try {
-      const parsed = new URL(rawUrl);
+      const parsed = new URL(normalizeUrlForHostExtraction(rawUrl));
       const h = parsed.hostname.toLowerCase();
       if (!hostUrlMap.has(h)) hostUrlMap.set(h, []);
       const arr = hostUrlMap.get(h)!;
@@ -475,33 +593,86 @@ export function parseBelixInventory(forceReload = false): BelixParsedInventory {
   }
 
   const categoryCounts: Record<BelixHostCategoryId, number> = {
+    xtream_panel: 0,
+    licensing_activation: 0,
     app_players: 0,
     community: 0,
     streaming_specs: 0,
     sdk_docs: 0,
   };
 
-  const hosts: BelixHostEntry[] = Array.from(hostUrlMap.entries()).map(([host, urls]) => {
-    const origins = hostOriginMap.get(host) || [];
-    const cls = classifyHost(host, urls, origins);
-    categoryCounts[cls.category] += 1;
-    return {
-      host,
-      urls,
-      category: cls.category,
-      categoryLabel: CATEGORY_LABELS[cls.category],
-      role: cls.role,
-      decodedNote: cls.decodedNote,
-      origins,
-      isAppCodeHost: cls.isAppCodeHost || APP_CODE_HOSTS.has(host),
-      probeAllowed: cls.probeAllowed,
-    };
+  const hosts: BelixHostEntry[] = Array.from(hostUrlMap.entries())
+    .map(([host, urls]) => {
+      const origins = hostOriginMap.get(host) || [];
+      const cls = classifyHost(host);
+      categoryCounts[cls.category] += 1;
+      return {
+        host,
+        urls,
+        category: cls.category,
+        categoryLabel: CATEGORY_LABELS[cls.category],
+        role: cls.role,
+        decodedNote: cls.decodedNote,
+        origins,
+        isAppCodeHost: cls.isAppCodeHost || APP_CODE_HOSTS.has(host),
+        probeAllowed: cls.probeAllowed,
+      };
+    })
+    .sort((a, b) => {
+      const catDiff = CATEGORY_SORT_ORDER[a.category] - CATEGORY_SORT_ORDER[b.category];
+      if (catDiff !== 0) return catDiff;
+      return a.host.localeCompare(b.host);
+    });
+
+  // Sort API endpoints logically: auth_epg -> live -> vod -> series
+  const endpointGroupOrder: Record<BelixApiEndpoint['group'], number> = {
+    auth_epg: 0,
+    live: 1,
+    vod: 2,
+    series: 3,
+  };
+  apiEndpoints.sort((a, b) => {
+    const gDiff = endpointGroupOrder[a.group] - endpointGroupOrder[b.group];
+    if (gDiff !== 0) return gDiff;
+    return a.path.localeCompare(b.path);
   });
+
+  // Sort codeFiles logically by layer: auth_native -> api_builder -> playback_model
+  const layerOrder: Record<BelixCodeFileNode['layer'], number> = {
+    auth_native: 0,
+    api_builder: 1,
+    playback_model: 2,
+  };
+  codeFiles.sort((a, b) => layerOrder[a.layer] - layerOrder[b.layer]);
+
+  const reverseEngineeringUpdate: BelixReverseEngineeringUpdate = {
+    forkPackage: 'com.shadeed.belixtv',
+    developerAlias: 'Pukat Digital',
+    baseFramework: 'IBO Pro Ultra / RTX IBO Pro',
+    originalPackages: ['com.rtx.niceibo', 'com.ibopro.ultra'],
+    panelName: 'Shark Pro / Shark IPTV (Xtream Codes)',
+    injectedEndpoint: 'http://1.sharkpro.ink:80',
+    playlistTemplate: 'http://1.sharkpro.ink:80/get.php?username={username}&password={password}&type=m3u_plus',
+    playerApiTemplate: 'http://1.sharkpro.ink:80/player_api.php?username={username}&password={password}',
+    activationDomains: ['activation.iboplayer.com', 'iboproapp.com', 'iboplayer.pro'],
+    evidenceClasses: [
+      'com.rtx.niceibo.activity.aaaaaaaaaaLogin',
+      'Lcom/rtx/niceibo/mURL;->weblink',
+      'com.ibopro.ultra.remote.APIService',
+      'com.ibopro.ultra.helper.GetSharedInfo',
+    ],
+    obfuscationMethod:
+      'El dominio 1.sharkpro.ink no está hardcodeado en Java; Pukat Digital lo cifra en librerías nativas (.so) y lo inyecta tras validar los códigos contra el backend de licencias original de IBO Player.',
+    summaryText:
+      'Fork/clon ofuscado de IBO Pro Ultra (RTX App) bajo paquete com.shadeed.belixtv que resuelve dinámicamente http://1.sharkpro.ink:80 (Shark Pro) mediante capa nativa (.so) y licencias IBO Player.',
+  };
 
   cachedBelixInventory = {
     sourceFile: 'rutas_Belix_TV_6fb3f038.txt',
     archiveName,
-    packageName: 'com.ibopro.ultra',
+    packageName: 'com.shadeed.belixtv',
+    originalPackages: ['com.rtx.niceibo', 'com.ibopro.ultra'],
+    reverseEngineeringUpdate,
     declaredSummary,
     actualCounts: {
       literalUrls: allUrls.length,

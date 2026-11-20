@@ -30,6 +30,9 @@ const RbtvWorldView = lazyWithRetry(() =>
 const BelixWorldView = lazyWithRetry(() =>
   import('./belix/BelixWorldView').then((m) => ({ default: m.BelixWorldView }))
 );
+const AtresplayerWorldView = lazyWithRetry(() =>
+  import('./atresplayer/AtresplayerWorldView').then((m) => ({ default: m.AtresplayerWorldView }))
+);
 
 interface AppWorldsContentProps {
   controller: ReturnType<typeof useAppController>;
@@ -176,6 +179,9 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     } else if (activeWorld === 'belix') {
       target = { kind: 'world', world: 'belix' };
       title = 'RiffanTV · Belix TV Xtream';
+    } else if (activeWorld === 'atresplayer') {
+      target = { kind: 'world', world: 'atresplayer' };
+      title = 'RiffanTV · Atresplayer VOD & TDT';
     }
 
     void shareDedicatedLink({ target, roomId: shareRoomId, title });
@@ -219,7 +225,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
                 world === 'sala' ||
                 world === 'clipbox' ||
                 world === 'rbtv' ||
-                world === 'belix',
+                world === 'belix' ||
+                world === 'atresplayer',
               originRect,
             })
           }
@@ -456,6 +463,40 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
             void playback.handlePlayTdtChannel(ch, idx);
           }}
           onPlayCustomUrl={playback.handlePlayCustomUrl}
+        />
+      </WorldShell>
+    );
+  }
+
+  if (activeWorld === 'atresplayer') {
+    return (
+      <WorldShell
+        world="atresplayer"
+        title="Atresplayer"
+        lang={lang}
+        sessionMode={sessionMode}
+        onUpgradeSoloToParty={() =>
+          void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
+        }
+        onShareWorld={handleShareActiveWorld}
+        onBack={() => enterWorld('entry')}
+        onGoHome={() => enterWorld('entry')}
+        onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+        searchValue={worldSearchQuery}
+        onSearchChange={setWorldSearchQuery}
+        searchPlaceholder={pickLang(lang, {
+          es: 'Buscar canal, servicio Retrofit, host o ruta en Atresplayer...',
+          ca: 'Cercar canal, servei Retrofit, host o ruta a Atresplayer...',
+          en: 'Search channel, Retrofit service, host or route in Atresplayer...',
+        })}
+        className={portalLandingActive ? 'rtv-world-touchdown' : ''}
+      >
+        <AtresplayerWorldView
+          lang={lang}
+          externalSearchQuery={worldSearchQuery}
+          onPlayTdtChannel={(ch, idx) => {
+            void playback.handlePlayTdtChannel(ch, idx);
+          }}
         />
       </WorldShell>
     );

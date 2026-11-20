@@ -20,6 +20,7 @@ import type {
   BelixConnectionStatus,
   BelixDynamicRoute,
   BelixLiveOverviewResponse,
+  BelixReverseEngineeringUpdate,
 } from './belixTypes';
 
 interface BelixLiveTabProps {
@@ -27,6 +28,7 @@ interface BelixLiveTabProps {
   externalQuery?: string;
   apiEndpoints: BelixApiEndpoint[];
   dynamicRoutes: BelixDynamicRoute[];
+  reverseEngineeringUpdate?: BelixReverseEngineeringUpdate;
   onPlaySportsMatch: (match: SportsMatch, channelIndex: number) => void;
   onPlayTdtChannel: (channel: SpanishTdtChannel, signalIndex?: number) => void;
   onPlayCustomUrl?: (url: string) => void;
@@ -38,6 +40,7 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
   externalQuery = '',
   apiEndpoints,
   dynamicRoutes,
+  reverseEngineeringUpdate,
   onPlaySportsMatch,
   onPlayTdtChannel,
 }) => {
@@ -47,9 +50,11 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
   const [loading, setLoading] = useState(true);
   const [filterText, setFilterText] = useState(externalQuery);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
+  const [onlyVerified, setOnlyVerified] = useState(false);
+  const [visibleLimit, setVisibleLimit] = useState(60);
 
-  // Empty runtime credentials only (stored exclusively in server RAM during active session)
-  const [serverUrl, setServerUrl] = useState('');
+  // Default server host (non-secret); credentials are kept RAM-only or via BELIX_XTREAM_* env
+  const [serverUrl, setServerUrl] = useState('http://1.sharkpro.ink:80');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [connecting, setConnecting] = useState(false);
@@ -59,6 +64,10 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
   useEffect(() => {
     setFilterText(externalQuery);
   }, [externalQuery]);
+
+  useEffect(() => {
+    setVisibleLimit(60);
+  }, [selectedCategoryId, filterText, onlyVerified]);
 
   const fetchOverview = useCallback(async () => {
     setLoading(true);
@@ -84,7 +93,7 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
     if (!belixStatus?.connected || !belixStatus?.probing) return;
     const timer = window.setInterval(async () => {
       try {
-        const res = await fetch('/api/belix/channels');
+        const res = await fetch('/api/belix/channels?includeAll=1');
         const json = (await res.json().catch(() => null)) as {
           success?: boolean;
           status?: BelixConnectionStatus;
@@ -139,6 +148,7 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
         } else {
           setPassword('');
           setSelectedCategoryId('all');
+          window.dispatchEvent(new CustomEvent('belix-channels-synced'));
         }
       } else {
         setConnectError('No se pudo conectar con el servidor Belix TV.');
@@ -165,6 +175,7 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
     setBelixChannels([]);
     setSelectedCategoryId('all');
     setConnectError(null);
+    window.dispatchEvent(new CustomEvent('belix-channels-synced'));
   };
 
   const handleRefreshBelix = async () => {
@@ -178,6 +189,7 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
       } | null;
       if (json?.status) setBelixStatus(json.status);
       if (Array.isArray(json?.channels)) setBelixChannels(json.channels);
+      window.dispatchEvent(new CustomEvent('belix-channels-synced'));
     } finally {
       setRefreshingBelix(false);
     }
@@ -187,7 +199,9 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
 
   const filteredBelixChannels = useMemo(() => {
     return belixChannels.filter((ch) => {
-      const catId = String((ch as SpanishTdtChannel & { belixCategoryId?: string }).belixCategoryId || '');
+      const typed = ch as SpanishTdtChannel & { belixCategoryId?: string; probeOk?: boolean };
+      if (onlyVerified && !typed.probeOk) return false;
+      const catId = String(typed.belixCategoryId || '');
       if (selectedCategoryId !== 'all' && catId !== selectedCategoryId) return false;
       if (!q) return true;
       return (
@@ -196,12 +210,19 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
         (ch.description || '').toLowerCase().includes(q)
       );
     });
-  }, [belixChannels, selectedCategoryId, q]);
+  }, [belixChannels, selectedCategoryId, q, onlyVerified]);
 
-  const activeCategories = useMemo(
-    () => (belixStatus?.categories || []).filter((c) => c.count > 0),
-    [belixStatus?.categories]
-  );
+  const activeCategories = useMemo(() => {
+    const list = (belixStatus?.categories || []).filter((c) => c.count > 0);
+    const scoreCat = (name: string): number => {
+      const lower = name.toLowerCase();
+      if (/\b(es|esp|spain|espa[ñn]a|tdt|castellano)\b/i.test(lower)) return 0;
+      if (/\b(deport|sport|f[uú]tbol|futbol|laliga|champions|dazn|movistar)\b/i.test(lower)) return 1;
+      if (/\b(cine|pel[ií]cul|series)\b/i.test(lower)) return 2;
+      return 3;
+    };
+    return [...list].sort((a, b) => scoreCat(a.name) - scoreCat(b.name));
+  }, [belixStatus?.categories]);
 
   const filteredTdt = useMemo(() => {
     const list = overview?.featuredTdt || [];
@@ -283,23 +304,57 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
               <Server className="w-4 h-4 text-[#F43F5E]" />
               <span>
                 {pickLang(lang, {
-                  es: 'Sesión Belix TV Xtream (Solo en RAM · Proxy Opaco)',
-                  ca: 'Sessió Belix TV Xtream (Només en RAM · Proxy Opac)',
-                  en: 'Belix TV Xtream Session (RAM-Only · Opaque Proxy)',
+                  es: 'Sesión Belix TV Xtream (Shark Pro · Solo en RAM)',
+                  ca: 'Sessió Belix TV Xtream (Shark Pro · Només en RAM)',
+                  en: 'Belix TV Xtream Session (Shark Pro · RAM-Only)',
                 })}
               </span>
             </h2>
             <p className="text-xs text-zinc-400">
               {pickLang(lang, {
-                es: 'Filtra únicamente canales estables verificados y los reproduce dentro de RiffanTV sin exponer credenciales.',
-                ca: 'Filtra únicament canals estables verificats i els reprodueix dins RiffanTV sense exposar credencials.',
-                en: 'Probes and exposes only stable channels directly inside RiffanTV player without exposing credentials.',
+                es: `Host identificado: ${reverseEngineeringUpdate?.injectedEndpoint || 'http://1.sharkpro.ink:80'}. Introduce tus credenciales Xtream para verificar canales en directo sin guardarlos en disco.`,
+                ca: `Host identificat: ${reverseEngineeringUpdate?.injectedEndpoint || 'http://1.sharkpro.ink:80'}. Introdueix les teves credencials Xtream per verificar canals en directe sense desar-les al disc.`,
+                en: `Identified host: ${reverseEngineeringUpdate?.injectedEndpoint || 'http://1.sharkpro.ink:80'}. Enter your Xtream credentials to probe stable channels in RAM only.`,
               })}
             </p>
           </div>
-          <span className="text-xs font-mono text-zinc-400 tabular-nums whitespace-nowrap shrink-0">
-            {dynamicRoutes.length} rutas · {apiEndpoints.length} APIs
-          </span>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {!belixStatus?.connected && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setServerUrl(reverseEngineeringUpdate?.injectedEndpoint || 'http://1.sharkpro.ink:80');
+                  }}
+                  className={`min-h-9 px-3 rounded-xl border text-[11px] font-mono cursor-pointer whitespace-nowrap transition-colors ${
+                    serverUrl.trim() === (reverseEngineeringUpdate?.injectedEndpoint || 'http://1.sharkpro.ink:80')
+                      ? 'bg-[#F43F5E]/20 border-[#F43F5E]/50 text-white'
+                      : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.08] text-zinc-200'
+                  }`}
+                >
+                  Shark Pro (1.sharkpro.ink:80)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setServerUrl('');
+                  }}
+                  className={`min-h-9 px-3 rounded-xl border text-[11px] font-semibold cursor-pointer whitespace-nowrap transition-colors ${
+                    serverUrl.trim() !== (reverseEngineeringUpdate?.injectedEndpoint || 'http://1.sharkpro.ink:80')
+                      ? 'bg-white text-black border-white'
+                      : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.08] text-zinc-300'
+                  }`}
+                >
+                  {pickLang(lang, { es: 'Otro servidor', ca: 'Altre servidor', en: 'Other server' })}
+                </button>
+              </>
+            )}
+            <span className="text-xs font-mono text-zinc-400 tabular-nums whitespace-nowrap">
+              {dynamicRoutes.length} rutas · {apiEndpoints.length} APIs
+            </span>
+          </div>
         </div>
 
         {belixStatus?.connected ? (
@@ -312,10 +367,10 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
                 </span>
               </div>
               <p className="text-xs text-zinc-300 tabular-nums">
-                {belixStatus.stableCount} {pickLang(lang, { es: 'estables de', ca: 'estables de', en: 'stable of' })}{' '}
-                {belixStatus.totalRawStreams} {pickLang(lang, { es: 'canales', ca: 'canals', en: 'channels' })}
+                {belixChannels.length} {pickLang(lang, { es: 'canales cargados', ca: 'canals carregats', en: 'channels loaded' })}
+                {` · ${belixStatus.stableCount} ${pickLang(lang, { es: 'verificados', ca: 'verificats', en: 'verified' })}`}
                 {belixStatus.probing
-                  ? ` · ${pickLang(lang, { es: 'Verificando señales...', ca: 'Verificant senyals...', en: 'Probing feeds...' })}`
+                  ? ` · ${pickLang(lang, { es: 'Comprobando señales...', ca: 'Comprovant senyals...', en: 'Probing feeds...' })}`
                   : ''}
                 {belixStatus.maxConnections
                   ? ` · ${belixStatus.activeConnections || '0'}/${belixStatus.maxConnections} conex.`
@@ -357,7 +412,7 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
                 type="url"
                 value={serverUrl}
                 onChange={(e) => setServerUrl(e.target.value)}
-                placeholder="http://portal:puerto"
+                placeholder="http://1.sharkpro.ink:80"
                 autoComplete="off"
                 className="w-full min-h-11 px-3 rounded-xl bg-[#000000] border border-white/[0.08] focus:border-[#F43F5E]/60 text-xs font-mono text-white focus:outline-none"
               />
@@ -369,10 +424,11 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
               </label>
               <input
                 type="text"
+                name="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="Usuario Xtream"
-                autoComplete="off"
+                autoComplete="username"
                 className="w-full min-h-11 px-3 rounded-xl bg-[#000000] border border-white/[0.08] focus:border-[#F43F5E]/60 text-xs font-mono text-white focus:outline-none"
               />
             </div>
@@ -383,10 +439,11 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
               </label>
               <input
                 type="password"
+                name="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                autoComplete="off"
+                autoComplete="current-password"
                 className="w-full min-h-11 px-3 rounded-xl bg-[#000000] border border-white/[0.08] focus:border-[#F43F5E]/60 text-xs font-mono text-white focus:outline-none"
               />
             </div>
@@ -417,9 +474,39 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
           </div>
         )}
 
-        {/* BELIX STABLE CHANNELS GRID WHEN CONNECTED */}
+        {/* BELIX CHANNELS GRID WHEN CONNECTED */}
         {belixStatus?.connected && (
           <div className="space-y-3 pt-1">
+            {(belixStatus.warning || belixStatus.error) && (
+              <div className="rounded-xl bg-amber-500/[0.08] border border-amber-500/30 p-3 flex items-start gap-2 text-xs text-amber-200">
+                <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                <span>{belixStatus.error || belixStatus.warning}</span>
+              </div>
+            )}
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs text-zinc-400 tabular-nums">
+                {filteredBelixChannels.length} {pickLang(lang, { es: 'canales en esta vista', ca: 'canals en aquesta vista', en: 'channels in view' })}
+                {activeCategories.length > 0 ? ` · ${activeCategories.length} categorías` : ''}
+              </span>
+
+              {belixStatus.stableCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setOnlyVerified((prev) => !prev)}
+                  className={`min-h-9 px-3 rounded-xl text-xs font-semibold cursor-pointer transition-colors border whitespace-nowrap ${
+                    onlyVerified
+                      ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-200'
+                      : 'bg-black border-white/[0.08] text-zinc-300 hover:bg-white/[0.06]'
+                  }`}
+                >
+                  {onlyVerified
+                    ? `Solo verificados (${belixStatus.stableCount})`
+                    : `Ver todos (${belixChannels.length})`}
+                </button>
+              )}
+            </div>
+
             {activeCategories.length > 0 && (
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
                 <button
@@ -451,59 +538,79 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
             )}
 
             {filteredBelixChannels.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {filteredBelixChannels.map((ch) => (
-                  <div
-                    key={ch.id}
-                    className="rounded-2xl bg-[#000000] border border-white/[0.08] hover:border-[#F43F5E]/50 p-3.5 flex items-center justify-between gap-3 transition-colors"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      {ch.logoUrl ? (
-                        <img
-                          src={ch.logoUrl}
-                          alt={ch.name}
-                          referrerPolicy="no-referrer"
-                          className="w-9 h-9 rounded-xl object-contain bg-white/[0.06] border border-white/10 p-1 shrink-0"
-                        />
-                      ) : (
-                        <span className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-rose-200 bg-white/[0.06] shrink-0 border border-white/10">
-                          {ch.shortMark || 'BLX'}
-                        </span>
-                      )}
-                      <div className="min-w-0">
-                        <p className="text-xs sm:text-sm font-bold text-white truncate">{ch.name}</p>
-                        <p className="text-[11px] text-zinc-400 truncate">
-                          {ch.network || 'Belix TV'} · HLS Opaco
-                        </p>
-                      </div>
-                    </div>
+              <div className="space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+                  {filteredBelixChannels.slice(0, visibleLimit).map((ch) => {
+                    const isVerified = Boolean((ch as SpanishTdtChannel & { probeOk?: boolean }).probeOk);
+                    return (
+                      <div
+                        key={ch.id}
+                        className="rounded-2xl bg-[#000000] border border-white/[0.08] hover:border-[#F43F5E]/50 p-3.5 flex items-center justify-between gap-3 transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          {ch.logoUrl ? (
+                            <img
+                              src={ch.logoUrl}
+                              alt={ch.name}
+                              referrerPolicy="no-referrer"
+                              className="w-9 h-9 rounded-xl object-contain bg-white/[0.06] border border-white/10 p-1 shrink-0"
+                            />
+                          ) : (
+                            <span className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-rose-200 bg-white/[0.06] shrink-0 border border-white/10">
+                              {ch.shortMark || 'BLX'}
+                            </span>
+                          )}
+                          <div className="min-w-0">
+                            <p className="text-xs sm:text-sm font-bold text-white truncate">{ch.name}</p>
+                            <p className="text-[11px] text-zinc-400 truncate">
+                              {ch.network || 'Belix TV'} ·{' '}
+                              <span className={isVerified ? 'text-emerald-400' : 'text-zinc-400'}>
+                                {isVerified ? 'Verificado' : 'Directo Xtream'}
+                              </span>
+                            </p>
+                          </div>
+                        </div>
 
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('medium');
+                            onPlayTdtChannel(ch, 0);
+                          }}
+                          className="min-h-11 px-3.5 rounded-xl bg-[#F43F5E] hover:bg-[#E11D48] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0 active:scale-95 transition-all"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                          <span>{pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })}</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {filteredBelixChannels.length > visibleLimit && (
+                  <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
                     <button
                       type="button"
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        onPlayTdtChannel(ch, 0);
-                      }}
-                      className="min-h-11 px-3.5 rounded-xl bg-[#F43F5E] hover:bg-[#E11D48] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0 active:scale-95 transition-all"
+                      onClick={() => setVisibleLimit((prev) => prev + 60)}
+                      className="min-h-10 px-4 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs font-semibold text-white cursor-pointer"
                     >
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>{pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })}</span>
+                      Mostrar 60 más ({filteredBelixChannels.length - visibleLimit} restantes)
                     </button>
                   </div>
-                ))}
+                )}
               </div>
             ) : (
               <p className="text-xs text-zinc-400 py-2">
                 {belixStatus.probing
                   ? pickLang(lang, {
-                      es: 'Verificando canales estables en segundo plano...',
-                      ca: 'Verificant canals estables en segon pla...',
-                      en: 'Probing stable channels in background...',
+                      es: 'Cargando canales en segundo plano...',
+                      ca: 'Carregant canals en segon pla...',
+                      en: 'Loading channels in background...',
                     })
                   : pickLang(lang, {
-                      es: 'No se encontraron canales estables reproducibles en esta categoría.',
-                      ca: 'No s’han trobat canals estables reproduïbles en aquesta categoria.',
-                      en: 'No stable direct-play channels found in this category.',
+                      es: 'No se encontraron canales reproducibles con este filtro.',
+                      ca: 'No s’han trobat canals reproduïbles amb aquest filtre.',
+                      en: 'No playable channels found for this filter.',
                     })}
               </p>
             )}

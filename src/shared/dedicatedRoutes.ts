@@ -551,6 +551,7 @@ export const DEDICATED_WORLD_ROUTES = new Set([
   'clipbox',
   'rbtv',
   'belix',
+  'atresplayer',
 ]);
 
 export const SYSTEM_RESERVED_SLUGS = new Set([
@@ -601,7 +602,7 @@ export type AppRouteTarget =
   | { kind: 'room'; roomId: string; gameType?: string; isTvMode?: boolean }
   | {
       kind: 'world';
-      world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix';
+      world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer';
       cineTab?: 'movies' | 'series';
       cineCastellano?: boolean;
       cineCategory?: string;
@@ -851,6 +852,10 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
     return { kind: 'world', world: 'belix', roomId: queryRoomId };
   }
 
+  if (seg0 === 'atresplayer') {
+    return { kind: 'world', world: 'atresplayer', roomId: queryRoomId };
+  }
+
   // Single-segment shortcuts (Packs, Top Channels, Top Games, else Room code!)
   if (segments.length === 1) {
     const norm = slugify(seg0);
@@ -889,7 +894,7 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
 
 export type CanonicalLinkInput =
   | { kind: 'home' }
-  | { kind: 'world'; world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix'; cineTab?: 'movies' | 'series'; cineCategory?: string; futbolTab?: 'matches' | 'channels' }
+  | { kind: 'world'; world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer'; cineTab?: 'movies' | 'series'; cineCategory?: string; futbolTab?: 'matches' | 'channels' }
   | { kind: 'movie'; tmdbId?: number; id?: string; title?: string }
   | { kind: 'series'; tmdbId?: number; id?: string; title?: string; season?: number; episode?: number }
   | { kind: 'channel'; id: string; name?: string }
@@ -927,6 +932,8 @@ export function buildCanonicalRoute(
         basePath = '/rbtv';
       } else if (input.world === 'belix') {
         basePath = '/belix';
+      } else if (input.world === 'atresplayer') {
+        basePath = '/atresplayer';
       }
       break;
     case 'movie': {

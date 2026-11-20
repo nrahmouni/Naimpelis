@@ -64,7 +64,7 @@ export interface ResolvedDeepLinkResult {
   match?: any;
   game?: { gameId: string; gameSlug: string; title: string };
   world?: {
-    world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix';
+    world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer';
     cineTab?: 'movies' | 'series';
     cineCategory?: string;
     futbolTab?: 'matches' | 'channels';
@@ -614,6 +614,7 @@ export async function resolveDeepLinkTarget(
         clipbox: 'ClipBox Vault — Motores, Búsqueda y Descifrado',
         rbtv: 'RBTV+ — Cluster Deportivo, DoH y Arquitectura P2P',
         belix: 'Belix TV — Motor Xtream Codes y Rutas com.ibopro.ultra',
+        atresplayer: 'Atresplayer — Servidores, Rutas Retrofit y Cadena DRM/VOD',
       };
       const title = `${worldLabels[target.world] || 'RiffanTV'} — RiffanTV`;
       result = {

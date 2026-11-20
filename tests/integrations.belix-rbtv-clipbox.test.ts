@@ -231,6 +231,11 @@ describe('Belix TV Xtream Client & Opaque Proxy', () => {
     expect(channels[0].sourceHub).toBe('belix');
     expect(channels[0].channels[0].sourceUrl).toBe('/api/belix/stream/101.m3u8');
 
+    const allLoaded = getBelixLiveChannels({ includeAll: true });
+    expect(allLoaded).toHaveLength(2);
+    expect(allLoaded[0].probeOk).toBe(true);
+    expect(allLoaded[1].probeOk).toBe(false);
+
     const serialized = JSON.stringify({ status, channels });
     expect(serialized).not.toContain(testUser);
     expect(serialized).not.toContain(testPass);
@@ -304,6 +309,58 @@ describe('Belix TV Xtream Client & Opaque Proxy', () => {
     const segData = await fetchBelixOpaqueSegment(`${segMatch![1]}.ts`);
     expect(segData?.status).toBe(200);
     expect(segData?.buffer.byteLength).toBe(4);
+  });
+
+  it('falls back to M3U Plus /get.php when get_live_streams fails and warns when connection slots are full', async () => {
+    const portalOrigin = 'http://93.184.216.34:8080';
+    mocks.streamingFetch.mockImplementation(async (rawUrl: string) => {
+      if (rawUrl.includes('action=get_live_categories')) {
+        return makeJsonResponse([], 200);
+      }
+      if (rawUrl.includes('action=get_live_streams')) {
+        return makeTextResponse('<html>403</html>', rawUrl, 403, 'text/html');
+      }
+      if (rawUrl.includes('/get.php')) {
+        return makeTextResponse(
+          [
+            '#EXTM3U',
+            '#EXTINF:-1 group-title="ESPAÑA TDT" tvg-logo="https://cdn.example.net/a3.png",Antena 3 HD',
+            `${portalOrigin}/live/u/p/701.ts`,
+            '#EXTINF:-1 group-title="DEPORTES",Movistar LaLiga HD',
+            `${portalOrigin}/live/u/p/702.ts`,
+            '#EXTINF:-1 group-title="ADULTS 18+",Restricted Channel',
+            `${portalOrigin}/live/u/p/703.ts`,
+          ].join('\n'),
+          rawUrl,
+          200,
+          'audio/x-mpegurl'
+        );
+      }
+      if (rawUrl.includes('player_api.php')) {
+        return makeJsonResponse({
+          user_info: {
+            auth: 1,
+            status: 'Active',
+            active_cons: '2',
+            max_connections: '2',
+          },
+          server_info: { timezone: 'Europe/Madrid' },
+        });
+      }
+      return makeTextResponse('', rawUrl, 404);
+    });
+
+    const status = await connectBelixSession({
+      serverUrl: portalOrigin,
+      username: 'demo_user',
+      password: 'demo_password',
+    });
+
+    expect(status.connected).toBe(true);
+    expect(status.totalRawStreams).toBe(2);
+    expect(status.warning).toContain('2/2');
+    expect(status.categories.map((c) => c.name)).toEqual(['ESPAÑA TDT', 'DEPORTES']);
+    expect(getBelixLiveChannels({ includeAll: true })).toHaveLength(2);
   });
 });
 

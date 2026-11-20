@@ -24,7 +24,8 @@ export type PrimaryWorldId =
   | 'sala'
   | 'clipbox'
   | 'rbtv'
-  | 'belix';
+  | 'belix'
+  | 'atresplayer';
 export type WorldId = 'entry' | PrimaryWorldId | 'youtube';
 export type CineSubTab = 'movies' | 'series';
 export type FutbolSubTab = 'matches' | 'channels';
@@ -80,6 +81,7 @@ const PRIMARY_WORLDS: PrimaryWorldId[] = [
   'clipbox',
   'rbtv',
   'belix',
+  'atresplayer',
 ];
 
 function loadLastUsedWorld(): PrimaryWorldId | null {

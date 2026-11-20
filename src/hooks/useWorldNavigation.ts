@@ -138,6 +138,8 @@ export function useWorldNavigation({
       void import('../components/rbtv/RbtvWorldView').catch(noop);
     } else if (world === 'belix') {
       void import('../components/belix/BelixWorldView').catch(noop);
+    } else if (world === 'atresplayer') {
+      void import('../components/atresplayer/AtresplayerWorldView').catch(noop);
     }
   }, []);
 
@@ -169,7 +171,8 @@ export function useWorldNavigation({
           nextWorld === 'sala' ||
           nextWorld === 'clipbox' ||
           nextWorld === 'rbtv' ||
-          nextWorld === 'belix')
+          nextWorld === 'belix' ||
+          nextWorld === 'atresplayer')
       ) {
         if (nextWorld !== 'sala') preloadWorld(nextWorld);
         playWorldPortalSound(nextWorld);

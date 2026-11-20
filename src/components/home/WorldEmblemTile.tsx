@@ -1,7 +1,7 @@
 import React, { useId } from 'react';
 import type { AppLanguage } from '../../types';
 
-export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix';
+export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer';
 
 export interface WorldSpec {
   accent: string;
@@ -179,6 +179,27 @@ export const WORLD_SPECS: Record<WorldPortalKind, WorldSpec> = {
       en: '15 Xtream APIs · 48 URLs · 21 hosts',
       rif: '15 APIs Xtream · 48 URLs · 21 hosts',
       zh: '15 Xtream 接口 · 48 链接 · 21 域名',
+    },
+  },
+  atresplayer: {
+    accent: '#FF5E1A',
+    secondary: '#F59E0B',
+    glowRgb: '255,94,26',
+    ambient:
+      'radial-gradient(ellipse 68% 54% at 50% 47%, rgba(255,94,26,0.24) 0%, rgba(245,158,11,0.10) 42%, rgba(6,7,12,0) 74%)',
+    title: {
+      es: 'Atresplayer',
+      ca: 'Atresplayer',
+      en: 'Atresplayer',
+      rif: 'Atresplayer',
+      zh: 'Atresplayer 平台',
+    },
+    subtitle: {
+      es: '177 APIs Retrofit · 55 URLs · TDT & DRM',
+      ca: '177 APIs Retrofit · 55 URLs · TDT i DRM',
+      en: '177 Retrofit APIs · 55 URLs · DTT & DRM',
+      rif: '177 APIs · 55 URLs · TDT d DRM',
+      zh: '177 Retrofit 接口 · 55 链接 · 直播与 DRM',
     },
   },
 };
@@ -683,6 +704,39 @@ export const WorldEmblemTile: React.FC<{
             d="M 65 46 L 78 59 L 65 72"
             stroke={`url(#${ids.platinum})`}
             strokeWidth="3.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </g>
+      )}
+
+      {kind === 'atresplayer' && (
+        <g filter={`url(#${ids.drop})`}>
+          <circle
+            cx="60"
+            cy="60"
+            r="27"
+            fill={`url(#${ids.accentSoft})`}
+            stroke={`url(#${ids.accent})`}
+            strokeWidth="2.4"
+          />
+          <circle
+            cx="60"
+            cy="60"
+            r="19.5"
+            fill="#070A13"
+            stroke="#FFFFFF"
+            strokeOpacity="0.14"
+            strokeWidth="1"
+          />
+          <path
+            d="M 52 46.5 L 73 60 L 52 73.5 Z"
+            fill={`url(#${ids.accent})`}
+          />
+          <path
+            d="M 45 48 L 62 60 L 45 72"
+            stroke={`url(#${ids.platinum})`}
+            strokeWidth="2.8"
             strokeLinecap="round"
             strokeLinejoin="round"
           />

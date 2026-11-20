@@ -108,10 +108,12 @@ export const BelixVaultTab: React.FC<BelixVaultTabProps> = ({
 
   const categories: Array<{ id: 'all' | BelixHostCategoryId; label: string; count: number }> = [
     { id: 'all', label: pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' }), count: hosts.length },
-    { id: 'app_players', label: 'App com.ibopro.ultra', count: categoryCounts.app_players },
-    { id: 'community', label: 'Telegram / Comunidad', count: categoryCounts.community },
-    { id: 'streaming_specs', label: 'ExoPlayer / Local', count: categoryCounts.streaming_specs },
-    { id: 'sdk_docs', label: 'SDK & Docs', count: categoryCounts.sdk_docs },
+    { id: 'xtream_panel', label: 'Panel Shark Pro', count: categoryCounts.xtream_panel || 0 },
+    { id: 'licensing_activation', label: 'Licencias IBO', count: categoryCounts.licensing_activation || 0 },
+    { id: 'app_players', label: 'App IBO / RTX', count: categoryCounts.app_players || 0 },
+    { id: 'community', label: 'Telegram / Comunidad', count: categoryCounts.community || 0 },
+    { id: 'streaming_specs', label: 'ExoPlayer / Local', count: categoryCounts.streaming_specs || 0 },
+    { id: 'sdk_docs', label: 'SDK & Docs', count: categoryCounts.sdk_docs || 0 },
   ];
 
   return (
@@ -125,9 +127,9 @@ export const BelixVaultTab: React.FC<BelixVaultTabProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder={pickLang(lang, {
-                es: 'Buscar dominio, URL, t.me/shadeedtv o clase .smali...',
-                ca: 'Cercar domini, URL o classe .smali...',
-                en: 'Search domain, URL or .smali origin...',
+                es: 'Buscar 1.sharkpro.ink, iboplayer.pro, t.me/shadeedtv o clase .smali...',
+                ca: 'Cercar 1.sharkpro.ink, iboplayer.pro, t.me/shadeedtv o classe .smali...',
+                en: 'Search 1.sharkpro.ink, iboplayer.pro, or .smali origin...',
               })}
               className="w-full min-h-11 pl-10 pr-4 rounded-xl bg-[#000000] border border-white/[0.08] focus:border-[#F43F5E]/60 text-sm text-white placeholder:text-zinc-500 focus:outline-none"
             />

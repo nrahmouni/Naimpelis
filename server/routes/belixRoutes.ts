@@ -1,4 +1,4 @@
-import type { Express } from 'express';
+import type { Express, Request } from 'express';
 import { parseBelixInventory } from '../services/belix/belixParser.ts';
 import {
   connectBelixSession,
@@ -17,7 +17,21 @@ import {
   probeBelixUrl,
 } from '../services/belixService.ts';
 
-export function registerBelixRoutes(app: Express): void {
+function resolveBelixOriginPrefix(
+  req: Request,
+  getPublicOrigin?: (req: Request) => string
+): string {
+  if (req.query.abs !== '1') return '';
+  if (getPublicOrigin) return getPublicOrigin(req);
+  const proto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http').split(',')[0].trim();
+  const host = String(req.headers['x-forwarded-host'] || req.get('host') || '').split(',')[0].trim();
+  return host ? `${proto}://${host}` : '';
+}
+
+export function registerBelixRoutes(
+  app: Express,
+  deps?: { getPublicOrigin?: (req: Request) => string }
+): void {
   // Belix Xtream live session status (never exposes credentials)
   app.get('/api/belix/status', (_req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -31,7 +45,7 @@ export function registerBelixRoutes(app: Express): void {
     const username = String(req.body?.username || '').trim();
     const password = String(req.body?.password || '').trim();
     const status = await connectBelixSession({ serverUrl, username, password });
-    const channels = status.connected ? getBelixLiveChannels() : [];
+    const channels = status.connected ? getBelixLiveChannels({ includeAll: true }) : [];
     res.status(status.connected ? 200 : 400).json({
       success: status.connected,
       status,
@@ -50,7 +64,7 @@ export function registerBelixRoutes(app: Express): void {
     res.json({
       success: status.connected,
       status,
-      channels: status.connected ? getBelixLiveChannels() : [],
+      channels: status.connected ? getBelixLiveChannels({ includeAll: true }) : [],
     });
   });
 
@@ -58,8 +72,9 @@ export function registerBelixRoutes(app: Express): void {
     res.setHeader('Cache-Control', 'no-store');
     const categoryId = String(req.query.categoryId || '').trim();
     const query = String(req.query.q || '').trim();
+    const includeAll = req.query.includeAll === '1' || req.query.includeAll === 'true';
     const status = getBelixStatus();
-    const channels = getBelixLiveChannels({ categoryId, query });
+    const channels = getBelixLiveChannels({ categoryId, query, includeAll });
     res.json({
       success: true,
       status,
@@ -74,7 +89,8 @@ export function registerBelixRoutes(app: Express): void {
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     if (req.method === 'OPTIONS') return res.status(204).end();
     const streamId = String(req.params.streamId || '').replace(/\.m3u8$/i, '');
-    const manifest = await resolveBelixManifest(streamId);
+    const originPrefix = resolveBelixOriginPrefix(req, deps?.getPublicOrigin);
+    const manifest = await resolveBelixManifest(streamId, originPrefix);
     if (!manifest) {
       return res.status(503).send('Belix live stream unavailable');
     }
@@ -88,7 +104,8 @@ export function registerBelixRoutes(app: Express): void {
     res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     if (req.method === 'OPTIONS') return res.status(204).end();
-    const manifest = await resolveBelixSubPlaylist(String(req.params.token || ''));
+    const originPrefix = resolveBelixOriginPrefix(req, deps?.getPublicOrigin);
+    const manifest = await resolveBelixSubPlaylist(String(req.params.token || ''), originPrefix);
     if (!manifest) return res.status(404).send('Playlist token expired');
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
     if (req.method === 'HEAD') return res.status(200).end();
@@ -137,6 +154,8 @@ export function registerBelixRoutes(app: Express): void {
       sourceFile: inv.sourceFile,
       archiveName: inv.archiveName,
       packageName: inv.packageName,
+      originalPackages: inv.originalPackages,
+      reverseEngineeringUpdate: inv.reverseEngineeringUpdate,
       declaredSummary: inv.declaredSummary,
       actualCounts: inv.actualCounts,
       categoryCounts: inv.categoryCounts,

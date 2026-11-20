@@ -46,8 +46,8 @@ interface PlayerProSettingsModalProps {
   setSubtitleOffsetSec: React.Dispatch<React.SetStateAction<number>>;
   subtitleSize: 'sm' | 'md' | 'lg';
   setSubtitleSize: (sz: 'sm' | 'md' | 'lg') => void;
-  subtitleStyle: { fontColor: string; bgOpacity: number };
-  setSubtitleStyle: (patch: Partial<{ fontColor: string; bgOpacity: number }>) => void;
+  subtitleStyle: { fontColor: string; bgOpacity: number; textOpacity?: number };
+  setSubtitleStyle: (patch: Partial<{ fontColor: string; bgOpacity: number; textOpacity: number }>) => void;
   syncOffsetMs: number;
   setSyncOffsetMs: (ms: number) => void;
   vocalBoostEnabled: boolean;

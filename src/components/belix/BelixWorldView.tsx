@@ -90,11 +90,12 @@ export const BelixWorldView: React.FC<BelixWorldViewProps> = ({
     setActiveTab('decoder');
   }, []);
 
-  const totalUrls = inventory?.actualCounts.literalUrls ?? 48;
-  const totalHosts = inventory?.actualCounts.hosts ?? 21;
+  const totalUrls = inventory?.actualCounts.literalUrls ?? 54;
+  const totalHosts = inventory?.actualCounts.hosts ?? 25;
   const totalEndpoints = inventory?.actualCounts.apiEndpoints ?? 15;
   const totalDynamic = inventory?.actualCounts.dynamicRoutes ?? 4;
-  const totalSmali = inventory?.actualCounts.relevantCodeFiles ?? 5;
+  const totalSmali = inventory?.actualCounts.relevantCodeFiles ?? 8;
+  const pkgDisplay = inventory?.packageName || 'com.shadeed.belixtv';
 
   return (
     <div className="w-full space-y-4">
@@ -104,16 +105,16 @@ export const BelixWorldView: React.FC<BelixWorldViewProps> = ({
           <div className="space-y-1 min-w-0">
             <h1 className="font-display font-bold text-lg sm:text-xl text-white tracking-tight">
               {pickLang(lang, {
-                es: 'Belix TV · Motor Xtream Codes (com.ibopro.ultra)',
-                ca: 'Belix TV · Motor Xtream Codes (com.ibopro.ultra)',
-                en: 'Belix TV · Xtream Codes Engine (com.ibopro.ultra)',
+                es: `Belix TV · Fork IBO Pro / RTX (${pkgDisplay})`,
+                ca: `Belix TV · Fork IBO Pro / RTX (${pkgDisplay})`,
+                en: `Belix TV · IBO Pro / RTX Fork (${pkgDisplay})`,
               })}
             </h1>
             <p className="text-xs sm:text-[13px] text-zinc-400">
               {pickLang(lang, {
-                es: 'Canales en directo listos para reproducir, constructor Xtream /player_api.php & /get.php y mapa Smali completo.',
-                ca: 'Canals en directe llestos per reproduir, constructor Xtream /player_api.php & /get.php i mapa Smali complet.',
-                en: 'Ready-to-watch live feeds, Xtream /player_api.php & /get.php builder, and full com.ibopro.ultra Smali map.',
+                es: 'Panel Xtream Shark Pro (1.sharkpro.ink:80), licencias IBO Player y arquitectura Smali/nativa ordenada.',
+                ca: 'Panell Xtream Shark Pro (1.sharkpro.ink:80), llicències IBO Player i arquitectura Smali/nativa ordenada.',
+                en: 'Shark Pro Xtream host (1.sharkpro.ink:80), IBO Player licensing domains, and ordered Smali/native map.',
               })}
             </p>
           </div>
@@ -137,7 +138,7 @@ export const BelixWorldView: React.FC<BelixWorldViewProps> = ({
             </span>
             <span aria-hidden="true" className="text-zinc-600">·</span>
             <span>
-              <strong className="text-zinc-100 font-bold">{totalSmali}</strong> Smali
+              <strong className="text-zinc-100 font-bold">{totalSmali}</strong> Clases/.so
             </span>
           </div>
         </div>
@@ -187,7 +188,7 @@ export const BelixWorldView: React.FC<BelixWorldViewProps> = ({
             }`}
           >
             <Database className="w-4 h-4 shrink-0" />
-            <span className="truncate">Hosts ({totalHosts})</span>
+            <span className="truncate">Hosts y Licencias ({totalHosts})</span>
           </button>
 
           <button
@@ -206,7 +207,7 @@ export const BelixWorldView: React.FC<BelixWorldViewProps> = ({
           >
             <Code2 className="w-4 h-4 shrink-0" />
             <span className="truncate">
-              {pickLang(lang, { es: 'Arquitectura', ca: 'Arquitectura', en: 'Architecture' })}
+              {pickLang(lang, { es: 'Reporte y Arquitectura', ca: 'Informe i Arquitectura', en: 'Report & Architecture' })}
             </span>
           </button>
         </div>
@@ -255,6 +256,7 @@ export const BelixWorldView: React.FC<BelixWorldViewProps> = ({
           externalQuery={externalSearchQuery}
           apiEndpoints={inventory.apiEndpoints}
           dynamicRoutes={inventory.dynamicRoutes}
+          reverseEngineeringUpdate={inventory.reverseEngineeringUpdate}
           onPlaySportsMatch={onPlaySportsMatch}
           onPlayTdtChannel={onPlayTdtChannel}
           onPlayCustomUrl={onPlayCustomUrl}
@@ -271,6 +273,7 @@ export const BelixWorldView: React.FC<BelixWorldViewProps> = ({
         <BelixDecoderTab
           lang={lang}
           initialInput={decoderInitialInput}
+          reverseEngineeringUpdate={inventory.reverseEngineeringUpdate}
           apiEndpoints={inventory.apiEndpoints}
           apiParams={inventory.apiParams}
           dynamicRoutes={inventory.dynamicRoutes}

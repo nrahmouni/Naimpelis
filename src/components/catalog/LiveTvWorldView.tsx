@@ -198,9 +198,7 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
     return { pinnedFavorites: favs, remainingChannels: rest };
   }, [searchScopedChannels, isChannelFavorited, tvFavOnly]);
 
-  const displayedRemaining = normalizedQuery
-    ? remainingChannels
-    : remainingChannels.slice(0, visibleLimit);
+  const displayedRemaining = remainingChannels.slice(0, visibleLimit);
   const remainingHiddenCount = Math.max(0, remainingChannels.length - displayedRemaining.length);
 
   const resetAllFilters = () => {

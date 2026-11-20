@@ -1,6 +1,12 @@
 import type { SpanishTdtChannel, SportsMatch } from '../../types';
 
-export type BelixHostCategoryId = 'app_players' | 'community' | 'streaming_specs' | 'sdk_docs';
+export type BelixHostCategoryId =
+  | 'xtream_panel'
+  | 'licensing_activation'
+  | 'app_players'
+  | 'community'
+  | 'streaming_specs'
+  | 'sdk_docs';
 
 export interface BelixApiEndpoint {
   id: string;
@@ -44,6 +50,22 @@ export interface BelixCodeFileNode {
   component: string;
   role: string;
   mechanism: string;
+  layer: 'auth_native' | 'api_builder' | 'playback_model';
+}
+
+export interface BelixReverseEngineeringUpdate {
+  forkPackage: string;
+  developerAlias: string;
+  baseFramework: string;
+  originalPackages: string[];
+  panelName: string;
+  injectedEndpoint: string;
+  playlistTemplate: string;
+  playerApiTemplate: string;
+  activationDomains: string[];
+  evidenceClasses: string[];
+  obfuscationMethod: string;
+  summaryText: string;
 }
 
 export interface BelixInventoryResponse {
@@ -51,6 +73,8 @@ export interface BelixInventoryResponse {
   sourceFile: string;
   archiveName: string;
   packageName: string;
+  originalPackages?: string[];
+  reverseEngineeringUpdate?: BelixReverseEngineeringUpdate;
   declaredSummary: {
     literalUrls: number;
     uniqueHosts: number;
@@ -80,6 +104,7 @@ export interface BelixXtreamCategory {
   id: string;
   name: string;
   count: number;
+  stableCount?: number;
 }
 
 export interface BelixConnectionStatus {
@@ -97,12 +122,15 @@ export interface BelixConnectionStatus {
   lastSyncedAt?: number;
   categories: BelixXtreamCategory[];
   error?: string;
+  warning?: string;
 }
 
 export interface BelixLiveOverviewResponse {
   success: boolean;
   checkedAt: number;
   packageName: string;
+  originalPackages?: string[];
+  reverseEngineeringUpdate?: BelixReverseEngineeringUpdate;
   belixStatus?: BelixConnectionStatus;
   belixChannels?: SpanishTdtChannel[];
   apiEndpoints: BelixApiEndpoint[];

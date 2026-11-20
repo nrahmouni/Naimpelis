@@ -29,7 +29,7 @@ export function registerWorldTvRoutes(app: Express): void {
       void refreshFamelackAndWorldCatalog(false).catch(() => undefined);
     }
 
-    let filtered = [...worldChannels, ...getBelixLiveChannels(), ...getCuratedRbtvChannels()];
+    let filtered = [...worldChannels, ...getBelixLiveChannels({ includeAll: true }), ...getCuratedRbtvChannels()];
     if (countryFilter) {
       filtered = filtered.filter((c) => (c.countryCode || '').toLowerCase() === countryFilter);
     }

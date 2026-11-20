@@ -160,7 +160,7 @@ export function getAllIptvChannels(): any[] {
     });
   }
 
-  for (const b of getBelixLiveChannels()) {
+  for (const b of getBelixLiveChannels({ includeAll: true })) {
     if (!b?.id || seen.has(b.id)) continue;
     seen.add(b.id);
     combined.push(b);

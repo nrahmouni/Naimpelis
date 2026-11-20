@@ -50,6 +50,7 @@ export function rewritePlaylistWithOpaqueTokens(
 
     if (trimmed.startsWith('#')) {
       if (trimmed.startsWith('#EXT-X-STREAM-INF')) nextIsPlaylist = true;
+      const absSuffix = originPrefix ? '?abs=1' : '';
       if (trimmed.includes('URI="')) {
         const replaced = rawLine.replace(/URI="([^"]+)"/g, (_m, uriVal) => {
           try {
@@ -57,7 +58,7 @@ export function rewritePlaylistWithOpaqueTokens(
             const token = createOpaqueToken(absUri);
             if (trimmed.startsWith('#EXT-X-MEDIA') || /\.m3u8(\?|$)/i.test(absUri)) {
               opaqueSubPlaylistCache.set(token, { rawUrl: absUri, referer, ts: now });
-              return `URI="${originPrefix}/api/belix/sub/${token}.m3u8"`;
+              return `URI="${originPrefix}/api/belix/sub/${token}.m3u8${absSuffix}"`;
             }
             opaqueSegmentCache.set(token, { rawUrl: absUri, referer, ts: now });
             return `URI="${originPrefix}/api/belix/seg/${token}.bin"`;
@@ -77,9 +78,10 @@ export function rewritePlaylistWithOpaqueTokens(
       const isPlaylist = nextIsPlaylist || /\.m3u8(\?|$)/i.test(absUrl);
       nextIsPlaylist = false;
       const token = createOpaqueToken(absUrl);
+      const absSuffix = originPrefix ? '?abs=1' : '';
       if (isPlaylist) {
         opaqueSubPlaylistCache.set(token, { rawUrl: absUrl, referer, ts: now });
-        out.push(`${originPrefix}/api/belix/sub/${token}.m3u8`);
+        out.push(`${originPrefix}/api/belix/sub/${token}.m3u8${absSuffix}`);
       } else {
         const extMatch = absUrl.match(/\.(m4s|mp4|aac|ts)(\?|$)/i);
         const ext = extMatch ? extMatch[1].toLowerCase() : 'ts';
@@ -118,14 +120,22 @@ export async function fetchBelixPlaylistText(
   } catch {
     // try curl fallback below
   }
-  const fb = await curlGetText(targetUrl, headers, 6, false, true).catch(() => ({
-    text: '',
-    effectiveUrl: targetUrl,
-  }));
-  if (fb.text && fb.text.includes('#EXTM3U') && !/nosignal|<!doctype|<html/i.test(fb.text)) {
-    const finalUrl = fb.effectiveUrl || targetUrl;
-    await assertSafeProxyUrl(finalUrl);
-    return { text: fb.text, baseUrl: finalUrl };
+  for (const ua of [CHROME_UA, 'IPTVSmartersPlayer']) {
+    const fb = await curlGetText(
+      targetUrl,
+      { ...headers, 'User-Agent': ua },
+      6,
+      false,
+      true
+    ).catch(() => ({
+      text: '',
+      effectiveUrl: targetUrl,
+    }));
+    if (fb.text && fb.text.includes('#EXTM3U') && !/nosignal|<!doctype|<html/i.test(fb.text)) {
+      const finalUrl = fb.effectiveUrl || targetUrl;
+      await assertSafeProxyUrl(finalUrl);
+      return { text: fb.text, baseUrl: finalUrl };
+    }
   }
   return null;
 }

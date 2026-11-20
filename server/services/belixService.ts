@@ -288,6 +288,9 @@ export function decodeBelixInput(rawInput: string): BelixDecodeResult {
           ? `Endpoint Xtream Codes identificado: "${matchedEp.label}".`
           : 'Llamada a la API REST Xtream Codes (player_api.php).'
       );
+      if (hostLower.includes('sharkpro.ink')) {
+        notes.push('Host asociado al panel Shark Pro / Shark IPTV (inyectado dinámicamente por la capa nativa de Belix TV).');
+      }
       notes.push('Declarado mediante Retrofit en smali/com/ibopro/ultra/remote/APIService.smali.');
       if (params.category_id) notes.push(`Filtro por categoría activa: category_id=${params.category_id}.`);
       if (params.vod_id) notes.push(`Consulta de ficha VOD: vod_id=${params.vod_id}.`);
@@ -296,7 +299,9 @@ export function decodeBelixInput(rawInput: string): BelixDecodeResult {
 
       return {
         input,
-        detectedType: 'Xtream Codes API (APIService)',
+        detectedType: hostLower.includes('sharkpro.ink')
+          ? 'Panel Xtream Shark Pro (APIService)'
+          : 'Xtream Codes API (APIService)',
         matchedHost,
         smaliOriginRef: 'smali/com/ibopro/ultra/remote/APIService.smali',
         xtreamBreakdown: {
@@ -306,7 +311,11 @@ export function decodeBelixInput(rawInput: string): BelixDecodeResult {
           action,
           streamId: params.vod_id || params.series_id || params.stream_id,
           hasCredentials,
-          params,
+          params: {
+            ...params,
+            ...(params.username ? { username: '***' } : {}),
+            ...(params.password ? { password: '***' } : {}),
+          },
         },
         notes,
       };
@@ -333,9 +342,12 @@ export function decodeBelixInput(rawInput: string): BelixDecodeResult {
     }
 
     if (/\/get\.php$/i.test(pathname)) {
+      const isSharkPro = hostLower.includes('sharkpro.ink');
       return {
         input,
-        detectedType: 'Playlist M3U Plus (GetSharedInfo)',
+        detectedType: isSharkPro
+          ? 'Playlist M3U Plus · Shark Pro (GetSharedInfo)'
+          : 'Playlist M3U Plus (GetSharedInfo)',
         matchedHost,
         smaliOriginRef: 'smali/com/ibopro/ultra/helper/GetSharedInfo.smali',
         xtreamBreakdown: {
@@ -344,11 +356,18 @@ export function decodeBelixInput(rawInput: string): BelixDecodeResult {
           maskedUrl: masked,
           extension: params.output || 'ts',
           hasCredentials,
-          params,
+          params: {
+            ...params,
+            ...(params.username ? { username: '***' } : {}),
+            ...(params.password ? { password: '***' } : {}),
+          },
         },
         notes: [
           'Construida por GetSharedInfo.smali para exportar la lista completa M3U Plus.',
-          `Belix TV solicita explícitamente transporte ${params.output || 'ts'} (type=${params.type || 'm3u_plus'}).`,
+          `Belix TV solicita transporte ${params.output || 'ts'} (type=${params.type || 'm3u_plus'}).`,
+          ...(isSharkPro
+            ? ['Endpoint confirmado del panel Shark Pro resuelto dinámicamente por Pukat Digital desde librerías nativas (.so).']
+            : []),
         ],
       };
     }
@@ -411,16 +430,38 @@ export function decodeBelixInput(rawInput: string): BelixDecodeResult {
     }
   }
 
-  // Smali / Java class query fallback
-  const matchedCode = inv.codeFiles.find(
-    (c) =>
-      c.file.toLowerCase().includes(input.toLowerCase()) ||
-      c.component.toLowerCase().includes(input.toLowerCase())
-  );
+  // Dalvik descriptor / Smali / package / native query fallback
+  const lowerInput = input.toLowerCase();
+  if (lowerInput.includes('com.shadeed.belixtv') || lowerInput.includes('pukat')) {
+    return {
+      input,
+      detectedType: 'Paquete Reskin Belix TV (com.shadeed.belixtv)',
+      smaliOriginRef: 'com.shadeed.belixtv (fork de com.ibopro.ultra / com.rtx.niceibo)',
+      notes: [
+        inv.reverseEngineeringUpdate.summaryText,
+        inv.reverseEngineeringUpdate.obfuscationMethod,
+      ],
+    };
+  }
+
+  const matchedCode =
+    inv.codeFiles.find(
+      (c) =>
+        c.file.toLowerCase().includes(lowerInput) ||
+        c.component.toLowerCase().includes(lowerInput) ||
+        lowerInput.includes(c.component.toLowerCase()) ||
+        (lowerInput.includes('weblink') && c.file.toLowerCase().includes('weblink')) ||
+        (lowerInput.includes('aaaaaaaaaalogin') && c.file.toLowerCase().includes('aaaaaaaaaalogin'))
+    ) ||
+    inv.codeFiles.find(
+      (c) => lowerInput.includes('rtx/niceibo') && c.file.toLowerCase().includes('rtx/niceibo')
+    );
   if (matchedCode) {
     return {
       input,
-      detectedType: 'Clase Smali com.ibopro.ultra',
+      detectedType: matchedCode.layer === 'auth_native'
+        ? 'Evidencia IBO RTX / Capa Nativa'
+        : 'Clase Smali com.ibopro.ultra',
       smaliOriginRef: matchedCode.file,
       notes: [matchedCode.role, matchedCode.mechanism],
     };
@@ -430,8 +471,8 @@ export function decodeBelixInput(rawInput: string): BelixDecodeResult {
     input,
     detectedType: 'Entrada genérica',
     notes: [
-      'No coincide con un host del inventario estático de Belix TV ni con un patrón Xtream estándar.',
-      'Prueba con /player_api.php?action=get_live_streams, /live/usuario/clave/101.ts, o t.me/shadeedtv.',
+      'No coincide con un host del inventario de Belix TV ni con un patrón Xtream estándar.',
+      'Prueba con http://1.sharkpro.ink:80/player_api.php, Lcom/rtx/niceibo/mURL;->weblink, activation.iboplayer.com o /live/usuario/clave/101.ts.',
     ],
   };
 }
@@ -576,7 +617,7 @@ export async function inspectXtreamServer(params: {
 export function getBelixLiveOverview() {
   const inv = parseBelixInventory();
   const status = getBelixStatus();
-  const belixChannels = getBelixLiveChannels();
+  const belixChannels = getBelixLiveChannels({ includeAll: true });
   const boardSnapshot = getCachedFootballBoardSnapshot();
   const liveMatches = (
     boardSnapshot && boardSnapshot.matches.length > 0
@@ -604,6 +645,8 @@ export function getBelixLiveOverview() {
   return {
     checkedAt: Date.now(),
     packageName: inv.packageName,
+    originalPackages: inv.originalPackages,
+    reverseEngineeringUpdate: inv.reverseEngineeringUpdate,
     belixStatus: status,
     belixChannels,
     apiEndpoints: inv.apiEndpoints,

@@ -1,18 +1,29 @@
-export const BELIX_EMBEDDED_RAW_TEXT = `INVENTARIO DE RUTAS — BELIX TV
-==========================================
-Fuente: Belix TV (1).apk_Decompiler.com.zip
-Método: análisis estático de recursos y código Smali del APK decompilado.
+export const BELIX_EMBEDDED_RAW_TEXT = `INVENTARIO DE RUTAS Y ARQUITECTURA — BELIX TV
+==================================================
+Fuente: Belix TV (com.shadeed.belixtv) · Reskin de IBO Pro Ultra / RTX IBO Pro
+Método: análisis estático de recursos/Smali + correlación de backend Xtream y licencias.
 
-RESUMEN
--------
-- URLs literales únicas detectadas en el conjunto de archivos de texto: 48
-- Hosts/dominios extraídos de esas URLs literales: 21
-- URLs literales halladas dentro del paquete de la aplicación com/ibopro/ultra: 3
-- La aplicación usa una API tipo Xtream Codes y construye las rutas de reproducción a partir del servidor, usuario, contraseña, ID y extensión configurados.
-- No se encontró en el código una lista fija de servidores IPTV de contenido ni una URL HLS .m3u8 fija.
+RESUMEN ACTUALIZADO
+-------------------
+- Paquete APK compilado: com.shadeed.belixtv (desarrollador/reskin: Pukat Digital)
+- Framework base original: IBO Pro Ultra / RTX IBO Pro (com.ibopro.ultra / com.rtx.niceibo)
+- Panel Xtream Codes identificado: Shark Pro / Shark IPTV (http://1.sharkpro.ink:80)
+- URLs literales únicas detectadas en análisis estático + correlación: 54
+- Hosts/dominios totales catalogados: 25
+- URLs literales halladas dentro del paquete base com/ibopro/ultra: 3
+- Método de configuración de red: el dominio 1.sharkpro.ink no está hardcodeado en Java; las librerías nativas (.so) lo inyectan dinámicamente tras validar el código contra los servidores de licencias de IBO Player.
 
-1) ENDPOINTS API (rutas relativas)
-----------------------------------
+0) IDENTIFICACIÓN DE SERVIDOR Y LICENCIAS (ACTUALIZACIÓN TÉCNICA)
+-------------------------------------------------------------------
+- Panel Xtream Codes inyectado (Shark Pro): http://1.sharkpro.ink:80
+- Ruta Playlist M3U Plus (Shark Pro): http://1.sharkpro.ink:80/get.php?username={username}&password={password}&type=m3u_plus
+- Ruta Player API Xtream (Shark Pro): http://1.sharkpro.ink:80/player_api.php?username={username}&password={password}
+- Servidor de licencias IBO Player (Activación principal): https://activation.iboplayer.com
+- Servidor de licencias IBO Pro App: https://iboproapp.com
+- Servidor de licencias IBO Player Pro: https://iboplayer.pro
+
+1) ENDPOINTS API (rutas relativas Xtream Codes)
+------------------------------------------------
 - API general / autenticación: /player_api.php?
 - EPG XMLTV: /xmltv.php
 - Tabla EPG simple: /player_api.php?action=get_simple_data_table
@@ -47,16 +58,15 @@ Parámetros que aparecen en el código para estas llamadas:
 Notas:
 - {extension} es un valor dinámico; el reproductor obtiene el formato de las preferencias o del modelo de contenido.
 - La ruta de TV en directo recibe también el formato configurado para streams en directo.
-- Las rutas anteriores son patrones reconstruidos del código, no enlaces funcionales completos: el host y las credenciales los aporta el usuario/proveedor.
+- Host base resuelto en runtime tras activación: http://1.sharkpro.ink:80 (Shark Pro) o el portal suministrado por el usuario.
 
 3) FORMATOS Y REFERENCIAS DE STREAMING
 --------------------------------------
-- M3U Plus: output=ts&type=m3u_plus
+- M3U Plus: output=ts&type=m3u_plus (y type=m3u_plus en Shark Pro)
 - Transporte TS: la app solicita explícitamente output=ts para la playlist.
 - El modelo de película expone una extensión de archivo dinámica (getExtension()).
-- No se encontró una ruta .m3u8 literal ni un manifiesto HLS fijo en las clases propias de la app.
-- No se encontró una ruta .mpd literal en las clases propias de la app.
-- La presencia de ExoPlayer y soporte de formatos multimedia no demuestra por sí sola que el proveedor entregue HLS o DASH.
+- Las librerías nativas (.so) desencriptan e inyectan dinámicamente el host 1.sharkpro.ink sobre mURL->weblink.
+- No se encontró una ruta .m3u8 o .mpd literal fija en las clases Java propias; todo se resuelve desde el panel Xtream.
 
 4) URLS EXTERNAS LITERALES EN EL CÓDIGO DE LA APP
 --------------------------------------------------
@@ -76,8 +86,14 @@ Notas:
     origen: smali/com/ibopro/ultra/activities/MovieSecondActivity.smali
     origen: smali/com/ibopro/ultra/activities/SeasonActivity.smali
 
-5) OTRAS URLS LITERALES DEL PROYECTO (SDK / FRAMEWORK / DOCUMENTACIÓN)
+5) OTRAS URLS LITERALES DEL PROYECTO (BACKEND, LICENCIAS, SDK & DOCS)
 ---------------------------------------------------------------------
+- http://1.sharkpro.ink:80
+- http://1.sharkpro.ink:80/get.php?username={username}&password={password}&type=m3u_plus
+- http://1.sharkpro.ink:80/player_api.php?username={username}&password={password}
+- https://activation.iboplayer.com
+- https://iboproapp.com
+- https://iboplayer.pro
 - http://0.0.0.0:1234
 - http://dashif.org/guidelines/last-segment-number
 - http://dashif.org/guidelines/thumbnail_tile
@@ -126,6 +142,10 @@ Notas:
 
 6) DOMINIOS DE LAS URLS LITERALES DETECTADAS
 --------------------------------------------
+- 1.sharkpro.ink
+- activation.iboplayer.com
+- iboproapp.com
+- iboplayer.pro
 - 0.0.0.0
 - aomedia.org
 - dashif.org
@@ -148,19 +168,21 @@ Notas:
 - www.youtube.com
 - x
 
-7) ARCHIVOS DE CÓDIGO RELEVANTES
---------------------------------
-- smali/com/ibopro/ultra/remote/APIService.smali — declaraciones Retrofit de API.
+7) ARCHIVOS DE CÓDIGO RELEVANTES (IBO RTX + IBO PRO ULTRA + NATIVO)
+-------------------------------------------------------------------
+- smali/com/rtx/niceibo/activity/aaaaaaaaaaLogin.smali — Activity de activación y validación numérica heredada de IBO RTX App.
+- Lcom/rtx/niceibo/mURL;->weblink — Hook Dalvik que recibe el host dinámico (1.sharkpro.ink) resuelto desde la capa nativa.
+- lib/arm64-v8a/*.so — Librerías nativas (Pukat Digital) que ofuscan y desencriptan el host Shark Pro en runtime.
+- smali/com/ibopro/ultra/remote/APIService.smali — declaraciones Retrofit de API (/player_api.php y /xmltv.php).
 - smali/com/ibopro/ultra/helper/GetSharedInfo.smali — construcción de rutas /live/, /movie/, /series/ y /get.php.
 - smali/com/ibopro/ultra/activities/LiveChannelActivity.smali — uso de la URL de directo y formato configurado.
 - smali/com/ibopro/ultra/activities/MoviePlayerActivity.smali — reproducción de películas y extensión dinámica.
 - smali/com/ibopro/ultra/models/MovieModel.smali — modelo de contenido VOD.
 
-8) LIMITACIONES DEL ANÁLISIS
-----------------------------
-- Este inventario procede del código estático incluido en el ZIP; no se inició sesión ni se contactó con servidores de proveedores.
-- Las URLs finales dependen del servidor IPTV, credenciales, IDs y extensión suministrados al configurar la app.
-- No se pueden deducir credenciales, hosts de proveedores ni manifiestos de reproducción activos a partir de estas rutas genéricas.
+8) LIMITACIONES Y SEGURIDAD DEL ANÁLISIS
+----------------------------------------
+- Este inventario combina el análisis estático del APK (com.shadeed.belixtv / com.ibopro.ultra / com.rtx.niceibo) con la correlación del endpoint Xtream Shark Pro (http://1.sharkpro.ink:80) y licencias IBO Player.
+- Las credenciales no se almacenan ni se hardcodean en código ni disco; cualquier conexión en directo requiere credenciales válidas introducidas por el usuario únicamente en RAM.
 - No se deben interpretar los enlaces de documentación de Android/Google incluidos en el inventario como servidores de vídeo.
 
 FIN DEL INVENTARIO

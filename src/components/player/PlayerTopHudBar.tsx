@@ -134,7 +134,7 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
                 </button>
               )}
 
-              {!isTouchLocked && !isTvMode && (isFullscreen || isHorizontalFullscreen) && (
+              {!isTouchLocked && !isTvMode && (
                 <button
                   type="button"
                   onClick={onDirectCastToTv}

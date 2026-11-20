@@ -1,6 +1,6 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Database, Radio, Server } from 'lucide-react';
+import { Database, Radio, Server, Tv } from 'lucide-react';
 import type { AppLanguage, CatalogMovie } from '../../types';
 import type { PrimaryWorldId } from '../../store/useAppStore';
 import { pickLang } from '../../utils/i18n';
@@ -335,7 +335,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       onTouchStart={() => onPreloadWorld?.('clipbox')}
       onPointerMove={(e) => onCardPointerMove('clipbox', e)}
       onClick={(e) => onCardClick('clipbox', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-6 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#06B6D4]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-1 md:col-span-3 md:order-6 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#06B6D4]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('clipbox')}
 
@@ -380,7 +380,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       onTouchStart={() => onPreloadWorld?.('rbtv')}
       onPointerMove={(e) => onCardPointerMove('rbtv', e)}
       onClick={(e) => onCardClick('rbtv', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-7 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#F59E0B]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-1 md:col-span-3 md:order-7 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#F59E0B]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('rbtv')}
 
@@ -425,7 +425,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       onTouchStart={() => onPreloadWorld?.('belix')}
       onPointerMove={(e) => onCardPointerMove('belix', e)}
       onClick={(e) => onCardClick('belix', e)}
-      className="group relative col-span-2 md:col-span-2 md:order-8 rounded-[24px] p-4 sm:p-5 min-h-[140px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#F43F5E]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-1 md:col-span-3 md:order-8 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#F43F5E]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('belix')}
 
@@ -454,6 +454,51 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
             es: 'Motor Xtream Codes, directos y constructor',
             ca: 'Motor Xtream Codes, directes i constructor',
             en: 'Xtream Codes engine, live TV & builder',
+          })}
+        </p>
+      </div>
+    </motion.button>
+
+    {/* CARD 9: ATRESPLAYER · VOD, WIDEVINE DRM & TDT ATRESMEDIA */}
+    <motion.button
+      type="button"
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.16, delay: 0.32 }}
+      whileTap={{ scale: 0.95 }}
+      onPointerEnter={() => onPreloadWorld?.('atresplayer')}
+      onTouchStart={() => onPreloadWorld?.('atresplayer')}
+      onPointerMove={(e) => onCardPointerMove('atresplayer', e)}
+      onClick={(e) => onCardClick('atresplayer', e)}
+      className="group relative col-span-1 md:col-span-3 md:order-9 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#FF5E1A]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+    >
+      {renderSpotlightOverlay('atresplayer')}
+
+      <div className="relative z-10 flex items-center justify-between gap-2">
+        <span className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-[#FF5E1A] shrink-0">
+          <Tv className="w-4 h-4" />
+        </span>
+
+        {lastUsedWorld === 'atresplayer' ? (
+          <span className="text-[11px] font-medium text-[#FF5E1A]">
+            {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
+          </span>
+        ) : (
+          <span className="text-[11px] font-medium text-zinc-400 tabular-nums">
+            177 APIs · 55 URLs
+          </span>
+        )}
+      </div>
+
+      <div className="relative z-10 min-w-0 space-y-1 pt-4">
+        <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
+          Atresplayer
+        </h2>
+        <p className="text-xs text-zinc-400 leading-snug">
+          {pickLang(lang, {
+            es: 'Cadena VOD/DRM, Retrofit y directo TDT',
+            ca: 'Cadena VOD/DRM, Retrofit i directe TDT',
+            en: 'VOD/DRM chain, Retrofit & live DTT',
           })}
         </p>
       </div>

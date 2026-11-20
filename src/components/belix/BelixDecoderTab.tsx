@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Code2, Cpu, FileCode2, Info, Loader2, Play } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Code2, Cpu, FileCode2, Info, Loader2, Play, Server, ShieldCheck } from 'lucide-react';
 import type { AppLanguage } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
@@ -9,11 +9,13 @@ import type {
   BelixCodeFileNode,
   BelixDecodeResult,
   BelixDynamicRoute,
+  BelixReverseEngineeringUpdate,
 } from './belixTypes';
 
 interface BelixDecoderTabProps {
   lang: AppLanguage;
   initialInput?: string;
+  reverseEngineeringUpdate?: BelixReverseEngineeringUpdate;
   apiEndpoints: BelixApiEndpoint[];
   apiParams: string[];
   dynamicRoutes: BelixDynamicRoute[];
@@ -24,16 +26,30 @@ interface BelixDecoderTabProps {
 }
 
 const SAMPLE_INPUTS = [
-  '/player_api.php?action=get_live_streams&category_id=12',
-  'https://iptv-portal.ejemplo.com/live/demo/secret/8841.ts',
-  'https://iptv-portal.ejemplo.com/get.php?username=demo&password=secret&output=ts&type=m3u_plus',
-  'https://t.me/shadeedtv',
-  'GetSharedInfo.smali',
+  'http://1.sharkpro.ink:80/get.php?username=demo&password=secret&type=m3u_plus',
+  'http://1.sharkpro.ink:80/player_api.php?username=demo&password=secret',
+  'Lcom/rtx/niceibo/mURL;->weblink',
+  'com.rtx.niceibo.activity.aaaaaaaaaaLogin',
+  'https://activation.iboplayer.com',
 ];
+
+const ENDPOINT_GROUP_LABELS: Record<BelixApiEndpoint['group'], string> = {
+  auth_epg: 'Autenticación y EPG',
+  live: 'TV en Directo (Live)',
+  vod: 'Películas (VOD)',
+  series: 'Series',
+};
+
+const CODE_LAYER_LABELS: Record<BelixCodeFileNode['layer'], string> = {
+  auth_native: '1. Activación IBO RTX y Capa Nativa (.so)',
+  api_builder: '2. Clientes Retrofit API y Constructor Xtream',
+  playback_model: '3. Reproducción ExoPlayer y Modelos Realm',
+};
 
 export const BelixDecoderTab: React.FC<BelixDecoderTabProps> = ({
   lang,
   initialInput = '',
+  reverseEngineeringUpdate,
   apiEndpoints,
   apiParams,
   dynamicRoutes,
@@ -73,8 +89,114 @@ export const BelixDecoderTab: React.FC<BelixDecoderTabProps> = ({
     }
   }, [initialInput]);
 
+  const groupedCodeLayers = useMemo(() => {
+    const order: BelixCodeFileNode['layer'][] = ['auth_native', 'api_builder', 'playback_model'];
+    return order
+      .map((layer) => ({
+        layer,
+        label: CODE_LAYER_LABELS[layer],
+        items: codeFiles.filter((c) => c.layer === layer),
+      }))
+      .filter((g) => g.items.length > 0);
+  }, [codeFiles]);
+
+  const groupedEndpoints = useMemo(() => {
+    const order: BelixApiEndpoint['group'][] = ['auth_epg', 'live', 'vod', 'series'];
+    return order
+      .map((group) => ({
+        group,
+        label: ENDPOINT_GROUP_LABELS[group],
+        items: apiEndpoints.filter((ep) => ep.group === group),
+      }))
+      .filter((g) => g.items.length > 0);
+  }, [apiEndpoints]);
+
   return (
     <div className="space-y-6">
+      {/* SECTION 0: REVERSE ENGINEERING REPORT UPDATE */}
+      {reverseEngineeringUpdate && (
+        <section className="rounded-[24px] bg-[#0D0D12] border border-[#F43F5E]/30 p-4 sm:p-5 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <div className="space-y-1">
+              <h2 className="font-display font-bold text-sm sm:text-base text-white flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-[#F43F5E]" />
+                <span>
+                  {pickLang(lang, {
+                    es: 'Actualización de Ingeniería Inversa · Origen y Host Verificado',
+                    ca: 'Actualització d’Enginyeria Inversa · Origen i Host Verificat',
+                    en: 'Reverse Engineering Update · Verified Base App & Host',
+                  })}
+                </span>
+              </h2>
+              <p className="text-xs text-zinc-300">{reverseEngineeringUpdate.summaryText}</p>
+            </div>
+            <span className="font-mono text-[11px] font-bold text-[#F43F5E] shrink-0">
+              {reverseEngineeringUpdate.forkPackage}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+            <div className="rounded-2xl bg-[#000000] border border-white/[0.08] p-3.5 space-y-1">
+              <p className="text-[11px] font-semibold text-zinc-400">Framework Base (Reskin)</p>
+              <p className="font-bold text-white">{reverseEngineeringUpdate.baseFramework}</p>
+              <p className="font-mono text-[11px] text-[#818CF8]">
+                {reverseEngineeringUpdate.originalPackages.join(' · ')}
+              </p>
+              <p className="text-[11px] text-zinc-400">
+                Reskin compilado por {reverseEngineeringUpdate.developerAlias}.
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-[#000000] border border-white/[0.08] p-3.5 space-y-1">
+              <p className="text-[11px] font-semibold text-zinc-400">Host IPTV Inyectado</p>
+              <p className="font-bold text-white">{reverseEngineeringUpdate.panelName}</p>
+              <p className="font-mono text-[11px] text-emerald-400 break-all">
+                {reverseEngineeringUpdate.injectedEndpoint}
+              </p>
+              <p className="text-[11px] text-zinc-400">
+                Inyectado dinámicamente en runtime al validar la licencia.
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-[#000000] border border-white/[0.08] p-3.5 space-y-1">
+              <p className="text-[11px] font-semibold text-zinc-400">Licencias IBO Player</p>
+              <ul className="space-y-0.5 font-mono text-[11px] text-zinc-200">
+                {reverseEngineeringUpdate.activationDomains.map((dom) => (
+                  <li key={dom}>· {dom}</li>
+                ))}
+              </ul>
+              <p className="text-[11px] text-zinc-400">
+                Validan dispositivos y códigos numéricos originales.
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-[#000000] border border-white/[0.08] p-3.5 space-y-1">
+              <p className="text-[11px] font-semibold text-zinc-400">Ofuscación y Evidencia</p>
+              <p className="text-[11px] text-zinc-300 leading-relaxed">
+                {reverseEngineeringUpdate.obfuscationMethod}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 text-[11px] font-mono">
+            <div className="rounded-xl bg-[#000000] border border-white/[0.08] px-3.5 py-2.5 space-y-1">
+              <p className="font-sans text-[11px] font-semibold text-zinc-400 flex items-center gap-1.5">
+                <Server className="w-3.5 h-3.5 text-[#F43F5E]" />
+                <span>Playlist M3U Plus (Shark Pro)</span>
+              </p>
+              <p className="text-zinc-200 break-all">{reverseEngineeringUpdate.playlistTemplate}</p>
+            </div>
+            <div className="rounded-xl bg-[#000000] border border-white/[0.08] px-3.5 py-2.5 space-y-1">
+              <p className="font-sans text-[11px] font-semibold text-zinc-400 flex items-center gap-1.5">
+                <Code2 className="w-3.5 h-3.5 text-[#818CF8]" />
+                <span>Player API Xtream (Shark Pro)</span>
+              </p>
+              <p className="text-zinc-200 break-all">{reverseEngineeringUpdate.playerApiTemplate}</p>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* DECODER INPUT */}
       <section className="rounded-[24px] bg-[#0D0D12] border border-white/[0.08] p-4 sm:p-5 space-y-4">
         <div className="space-y-1">
@@ -82,17 +204,17 @@ export const BelixDecoderTab: React.FC<BelixDecoderTabProps> = ({
             <Code2 className="w-4 h-4 text-[#818CF8]" />
             <span>
               {pickLang(lang, {
-                es: 'Decodificador de Rutas Xtream & Referencias Smali',
-                ca: 'Descodificador de Rutes Xtream i Referències Smali',
-                en: 'Xtream Route & Smali Reference Decoder',
+                es: 'Decodificador de Rutas Shark Pro, Licencias IBO & Smali',
+                ca: 'Descodificador de Rutes Shark Pro, Llicències IBO i Smali',
+                en: 'Shark Pro Route, IBO Licensing & Smali Decoder',
               })}
             </span>
           </h2>
           <p className="text-xs text-zinc-400">
             {pickLang(lang, {
-              es: 'Analiza cualquier URL Xtream (/live/, /movie/, /series/, /player_api.php, /get.php), dominio Belix o clase Java/Smali.',
-              ca: 'Analitza qualsevol URL Xtream, domini Belix o classe Java/Smali.',
-              en: 'Inspect any Xtream URL (/live/, /movie/, /series/, /player_api.php, /get.php), Belix host or Smali class.',
+              es: 'Analiza URLs Xtream de 1.sharkpro.ink, dominios iboplayer, rutas /live/, /movie/, /series/ o descriptores Dalvik.',
+              ca: 'Analitza URLs Xtream de 1.sharkpro.ink, dominis iboplayer o descriptors Dalvik.',
+              en: 'Inspect 1.sharkpro.ink Xtream URLs, iboplayer domains, /live/, /movie/, /series/ paths or Dalvik descriptors.',
             })}
           </p>
         </div>
@@ -108,7 +230,7 @@ export const BelixDecoderTab: React.FC<BelixDecoderTabProps> = ({
             type="text"
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
-            placeholder="/player_api.php?action=get_vod_info&vod_id=501"
+            placeholder="http://1.sharkpro.ink:80/player_api.php?username=demo&password=secret"
             className="flex-1 min-h-11 px-4 rounded-xl bg-[#000000] border border-white/[0.08] focus:border-[#818CF8]/60 text-xs font-mono text-white focus:outline-none"
           />
           <button
@@ -182,69 +304,85 @@ export const BelixDecoderTab: React.FC<BelixDecoderTabProps> = ({
         )}
       </section>
 
-      {/* ARCHITECTURE NODES: 5 KEY SMALI CLASSES + 3 APP EXTERNAL URLS */}
-      <section className="space-y-3">
+      {/* ORDERED ARCHITECTURE LAYERS: IBO RTX AUTH / NATIVE .SO + API + PLAYBACK */}
+      <section className="space-y-4">
         <h2 className="font-display font-bold text-sm sm:text-base text-white flex items-center gap-2">
           <FileCode2 className="w-4 h-4 text-[#F43F5E]" />
           <span>
             {pickLang(lang, {
-              es: 'Arquitectura Smali com.ibopro.ultra (5 Clases + 3 URLs Externas)',
-              ca: 'Arquitectura Smali com.ibopro.ultra (5 Classes + 3 URLs Externes)',
-              en: 'com.ibopro.ultra Smali Architecture (5 Key Classes + 3 App URLs)',
+              es: `Arquitectura Ordenada por Capas (${codeFiles.length} Módulos + ${appExternalUrls.length} URLs Externas)`,
+              ca: `Arquitectura Ordenada per Capes (${codeFiles.length} Mòduls + ${appExternalUrls.length} URLs Externes)`,
+              en: `Layered Architecture (${codeFiles.length} Modules + ${appExternalUrls.length} External URLs)`,
             })}
           </span>
         </h2>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {codeFiles.map((node) => (
-            <div
-              key={node.file}
-              className="rounded-2xl bg-[#0D0D12] border border-white/[0.08] p-4 space-y-1.5"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="text-sm font-bold text-white">{node.component}</h3>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInputValue(node.component);
-                    void runDecode(node.component);
-                  }}
-                  className="text-[11px] font-semibold text-[#818CF8] hover:underline cursor-pointer"
-                >
-                  Inspeccionar
-                </button>
+        <div className="space-y-4">
+          {groupedCodeLayers.map((group) => (
+            <div key={group.layer} className="space-y-2.5">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                {group.label}
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {group.items.map((node) => (
+                  <div
+                    key={node.file}
+                    className="rounded-2xl bg-[#0D0D12] border border-white/[0.08] p-4 space-y-1.5"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <h4 className="text-sm font-bold text-white">{node.component}</h4>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInputValue(node.file);
+                          void runDecode(node.file);
+                        }}
+                        className="text-[11px] font-semibold text-[#818CF8] hover:underline cursor-pointer"
+                      >
+                        Inspeccionar
+                      </button>
+                    </div>
+                    <p className="font-mono text-[11px] text-zinc-400 break-all">{node.file}</p>
+                    <p className="text-xs text-zinc-300">{node.role}</p>
+                    <p className="text-[11px] text-zinc-400">{node.mechanism}</p>
+                  </div>
+                ))}
               </div>
-              <p className="font-mono text-[11px] text-zinc-400 break-all">{node.file}</p>
-              <p className="text-xs text-zinc-300">{node.role}</p>
-              <p className="text-[11px] text-zinc-400">{node.mechanism}</p>
             </div>
           ))}
 
-          {appExternalUrls.map((appUrl) => (
-            <div
-              key={appUrl.url}
-              className="rounded-2xl bg-[#0D0D12] border border-white/[0.08] p-4 space-y-1.5"
-            >
-              <h3 className="text-sm font-bold text-white">{appUrl.role}</h3>
-              <p className="font-mono text-[11px] text-[#F43F5E] break-all">{appUrl.url}</p>
-              <p className="font-mono text-[10px] text-zinc-500 break-all">
-                Orígenes: {appUrl.origins.join(' · ')}
-              </p>
+          <div className="space-y-2.5">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+              4. Derivación a Reproductores y Tráilers Externos
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {appExternalUrls.map((appUrl) => (
+                <div
+                  key={appUrl.url}
+                  className="rounded-2xl bg-[#0D0D12] border border-white/[0.08] p-4 space-y-1.5"
+                >
+                  <h4 className="text-sm font-bold text-white">{appUrl.role}</h4>
+                  <p className="font-mono text-[11px] text-[#F43F5E] break-all">{appUrl.url}</p>
+                  <p className="font-mono text-[10px] text-zinc-500 break-all">
+                    Orígenes: {appUrl.origins.join(' · ')}
+                  </p>
+                </div>
+              ))}
             </div>
-          ))}
+          </div>
         </div>
       </section>
 
-      {/* FULL 15 XTREAM API ENDPOINTS + 6 PARAMS + 4 DYNAMIC ROUTES */}
-      <section className="rounded-[24px] bg-[#0D0D12] border border-white/[0.08] p-4 sm:p-5 space-y-4">
+      {/* FULL 15 XTREAM API ENDPOINTS ORDERED BY FUNCTIONAL GROUP */}
+      <section className="rounded-[24px] bg-[#0D0D12] border border-white/[0.08] p-4 sm:p-5 space-y-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-display font-bold text-sm sm:text-base text-white flex items-center gap-2">
             <Cpu className="w-4 h-4 text-[#818CF8]" />
             <span>
               {pickLang(lang, {
-                es: 'Catálogo Completo: 15 Endpoints API & 4 Rutas Dinámicas',
-                ca: 'Catàleg Complet: 15 Endpoints API i 4 Rutes Dinàmiques',
-                en: 'Full Spec: 15 API Endpoints & 4 Dynamic Stream Templates',
+                es: `Catálogo Ordenado: ${apiEndpoints.length} Endpoints API & ${dynamicRoutes.length} Rutas Dinámicas`,
+                ca: `Catàleg Ordenat: ${apiEndpoints.length} Endpoints API i ${dynamicRoutes.length} Rutes Dinàmiques`,
+                en: `Ordered Spec: ${apiEndpoints.length} API Endpoints & ${dynamicRoutes.length} Dynamic Routes`,
               })}
             </span>
           </h2>
@@ -266,36 +404,43 @@ export const BelixDecoderTab: React.FC<BelixDecoderTabProps> = ({
           ))}
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="border-b border-white/[0.08] text-zinc-400">
-                <th className="py-2 pr-3 font-semibold">Función</th>
-                <th className="py-2 pr-3 font-semibold">Ruta Relativa</th>
-                <th className="py-2 font-semibold text-right">Acción</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/[0.06]">
-              {apiEndpoints.map((ep) => (
-                <tr key={ep.id} className="hover:bg-white/[0.02]">
-                  <td className="py-2 pr-3 text-white font-medium">{ep.label}</td>
-                  <td className="py-2 pr-3 font-mono text-[11px] text-zinc-300">{ep.path}</td>
-                  <td className="py-2 text-right">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {groupedEndpoints.map((group) => (
+            <div
+              key={group.group}
+              className="rounded-2xl bg-[#000000] border border-white/[0.08] p-3.5 space-y-2"
+            >
+              <div className="flex items-center justify-between border-b border-white/[0.08] pb-2">
+                <h3 className="text-xs font-bold text-white">{group.label}</h3>
+                <span className="text-[11px] font-mono text-zinc-400 tabular-nums">
+                  {group.items.length} endpoints
+                </span>
+              </div>
+              <div className="divide-y divide-white/[0.06]">
+                {group.items.map((ep) => (
+                  <div
+                    key={ep.id}
+                    className="py-2 flex items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="min-w-0">
+                      <p className="text-white font-medium truncate">{ep.label}</p>
+                      <p className="font-mono text-[11px] text-zinc-400 truncate">{ep.path}</p>
+                    </div>
                     <button
                       type="button"
                       onClick={() => {
                         setInputValue(ep.path);
                         void runDecode(ep.path);
                       }}
-                      className="text-[11px] font-semibold text-[#818CF8] hover:underline cursor-pointer whitespace-nowrap"
+                      className="text-[11px] font-semibold text-[#818CF8] hover:underline cursor-pointer whitespace-nowrap shrink-0"
                     >
                       Decodificar
                     </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 
@@ -303,7 +448,7 @@ export const BelixDecoderTab: React.FC<BelixDecoderTabProps> = ({
       <section className="rounded-[24px] bg-[#0D0D12] border border-white/[0.08] p-4 sm:p-5 space-y-3">
         <h2 className="font-display font-bold text-sm text-white flex items-center gap-2">
           <Info className="w-4 h-4 text-zinc-400" />
-          <span>Notas del Motor de Streaming y Alcance Estático</span>
+          <span>Notas del Motor de Streaming y Alcance del Análisis</span>
         </h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs text-zinc-300">
           <ul className="space-y-1.5">

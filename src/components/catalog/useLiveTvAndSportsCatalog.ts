@@ -109,7 +109,7 @@ export function useLiveTvAndSportsCatalog({
         fetch('/api/catalog/tdt').then((r) => r.json()),
         fetch('/api/catalog/world-tv').then((r) => r.json()),
         fetch('/api/rbtv/channels').then((r) => r.json()),
-        fetch('/api/belix/channels').then((r) => r.json()),
+        fetch('/api/belix/channels?includeAll=1').then((r) => r.json()),
       ]);
       const baseList: SpanishTdtChannel[] =
         tdtSettled.status === 'fulfilled' && Array.isArray(tdtSettled.value?.channels)
@@ -197,6 +197,14 @@ export function useLiveTvAndSportsCatalog({
   }, [worldMode, activeSection, fetchLiveEpg]);
 
   useEffect(() => {
+    const onBelixSynced = () => {
+      void fetchTdtCatalog();
+    };
+    window.addEventListener('belix-channels-synced', onBelixSynced);
+    return () => window.removeEventListener('belix-channels-synced', onBelixSynced);
+  }, [fetchTdtCatalog]);
+
+  useEffect(() => {
     if (
       (worldMode === 'tv' ||
         worldMode === 'futbol' ||
@@ -274,7 +282,12 @@ export function useLiveTvAndSportsCatalog({
     ]);
     const filtered = tdtChannels.filter((ch) => {
       const isExtraSportCh = ch.id === 'ma-arryadia' || ch.id === 'us-fox-sports1';
-      if (!allowedCats.has(ch.category) && !isExtraSportCh) return false;
+      const isBelixSport =
+        ch.category === 'belix_live' &&
+        /futbol|fútbol|deport|sport|dazn|movistar|laliga|champions|bein|espn|f1|moto/i.test(
+          `${ch.name} ${ch.network}`
+        );
+      if (!allowedCats.has(ch.category) && !isExtraSportCh && !isBelixSport) return false;
       if (
         ch.category === 'movistar' &&
         (ch.id === 'mplus-estrenos' || ch.id === 'mplus-accion' || ch.id === 'mplus-series')
