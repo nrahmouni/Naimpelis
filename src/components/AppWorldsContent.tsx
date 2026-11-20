@@ -181,7 +181,7 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
       title = 'RiffanTV · Belix TV Xtream';
     } else if (activeWorld === 'atresplayer') {
       target = { kind: 'world', world: 'atresplayer' };
-      title = 'RiffanTV · Atresplayer VOD & TDT';
+      title = 'RiffanTV · Atresmedia en Directo y Programas';
     }
 
     void shareDedicatedLink({ target, roomId: shareRoomId, title });
@@ -472,7 +472,7 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     return (
       <WorldShell
         world="atresplayer"
-        title="Atresplayer"
+        title="Atresmedia"
         lang={lang}
         sessionMode={sessionMode}
         onUpgradeSoloToParty={() =>
@@ -485,17 +485,35 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
         searchValue={worldSearchQuery}
         onSearchChange={setWorldSearchQuery}
         searchPlaceholder={pickLang(lang, {
-          es: 'Buscar canal, servicio Retrofit, host o ruta en Atresplayer...',
-          ca: 'Cercar canal, servei Retrofit, host o ruta a Atresplayer...',
-          en: 'Search channel, Retrofit service, host or route in Atresplayer...',
+          es: 'Buscar Pasapalabra, El Hormiguero, series o directos...',
+          ca: 'Cercar Pasapalabra, El Hormiguero, sèries o directes...',
+          en: 'Search Pasapalabra, El Hormiguero, series or live TV...',
         })}
         className={portalLandingActive ? 'rtv-world-touchdown' : ''}
       >
         <AtresplayerWorldView
           lang={lang}
           externalSearchQuery={worldSearchQuery}
-          onPlayTdtChannel={(ch, idx) => {
-            void playback.handlePlayTdtChannel(ch, idx);
+          onPlayTdtChannel={(ch, idx, liveHint) => {
+            void playback.handlePlayTdtChannel(ch, idx, liveHint);
+          }}
+          onPlayYouTubeVideo={playback.handlePlayYouTubeVideo}
+          onPlayCustomUrl={playback.handlePlayCustomUrl}
+          onOpenSeriesPage={(seriesItem) => {
+            const store = useAppStore.getState();
+            const resolvedTmdbId = Number(
+              seriesItem.tmdbId || String(seriesItem.id || '').replace(/[^\d]/g, '') || 0
+            );
+            if (resolvedTmdbId > 0) {
+              store.setRequestedMovieModal(null);
+              store.setRequestedSeriesModal({
+                series: { ...seriesItem, tmdbId: resolvedTmdbId, mediaType: 'tv' },
+                season: seriesItem.seasonNumber || 1,
+              });
+              return;
+            }
+            store.setRequestedSeriesModal(null);
+            store.setRequestedMovieModal(seriesItem);
           }}
         />
       </WorldShell>

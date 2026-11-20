@@ -81,7 +81,13 @@ function normName(val: string): string {
 function isPlayableHlsUrl(url: string): boolean {
   if (!/^https?:\/\//i.test(url)) return false;
   if (/\[(IP|UA|DEVICE_ID|MAC)\]/i.test(url)) return false;
-  if (/ztnr\.rtve\.es|interactvty\.pro/i.test(url)) return false;
+  if (
+    /ztnr\.rtve\.es|interactvty\.pro|c21livecloud\.com|azotosolutions\.com|voxel-tv|90\.170\.214\.40|185\.47\.212\.25/i.test(
+      url
+    )
+  ) {
+    return false;
+  }
   if (/\.mpd(\?|$|#)/i.test(url)) return false;
   if (/youtube\.com|youtu\.be|twitch\.tv|dailymotion\.com|vimeo\.com/i.test(url)) return false;
   return /\.m3u8(\?|$|#)|\/hls\/|\/manifest/i.test(url);
@@ -93,7 +99,7 @@ const KNOWN_TDT_ALIASES: Record<string, string[]> = {
   'tdt-24h': ['24h', 'canal 24 horas', '24 horas'],
   'tdt-teledeporte': ['teledeporte', 'tdp'],
   'tdt-clan': ['clan', 'clan tv'],
-  'tdt-antena3': ['antena 3', 'antena 3 internacional'],
+  'tdt-antena3': ['antena 3'],
   'tdt-cuatro': ['cuatro'],
   'tdt-telecinco': ['telecinco'],
   'tdt-lasexta': ['lasexta', 'la sexta'],
@@ -235,9 +241,18 @@ export async function refreshLiveIptvRegistry(force = false): Promise<{
           for (const ch of ambit.channels || []) {
             const chName = String(ch?.name || '').trim();
             if (!chName) continue;
-            const m3u8Opts = (ch.options || []).filter(
-              (o) => o?.url && isPlayableHlsUrl(o.url) && o.geo2 !== 'blocked'
-            );
+            const m3u8Opts = (ch.options || [])
+              .filter((o) => {
+                if (!o?.url || !isPlayableHlsUrl(o.url) || o.geo2 === 'blocked') return false;
+                const resNum = Number(String(o.res || '').replace(/[^\d]/g, '') || 0);
+                if (resNum > 0 && resNum < 540) return false;
+                return true;
+              })
+              .sort((a, b) => {
+                const ra = Number(String(a?.res || '').replace(/[^\d]/g, '') || 0);
+                const rb = Number(String(b?.res || '').replace(/[^\d]/g, '') || 0);
+                return rb - ra;
+              });
             if (m3u8Opts.length === 0) continue;
             for (const opt of m3u8Opts) {
               registerUrl(chName, String(opt.url), ch.logo, ch.web);
@@ -355,7 +370,7 @@ export function applySyncedStreamsToChannels<T extends LiveIptvChannelEntry>(bas
       });
     }
 
-    const combinedTracks = [...httpsTracks, ...syncedTracks, ...legacyTracks];
+    const combinedTracks = [...httpsTracks, ...legacyTracks, ...syncedTracks];
     return {
       ...ch,
       logoUrl: ch.logoUrl || match?.logo,

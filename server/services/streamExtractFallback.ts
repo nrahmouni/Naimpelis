@@ -166,7 +166,7 @@ export async function searchYouTubeFullFallback(opts: {
           const durSec = parseYtDurationSeconds(durStr);
 
           if (effectiveMediaType === 'tv') {
-            if (durSec < 1100 || durSec > 7200) continue;
+            if (durSec < 1100 || durSec > 16200) continue;
           } else {
             if (durSec < 2700 || durSec > 14400) continue;
           }
@@ -199,6 +199,10 @@ export async function searchYouTubeFullFallback(opts: {
           );
           const hasSeason1ImplicitMatch =
             effectiveSeason === 1 && !seasonMatch && epNumRegex.test(vTitle);
+
+          if (effectiveMediaType === 'tv' && durSec > 7200 && !hasDistinctTitleMatch) {
+            continue;
+          }
 
           const exactEpisodeMatch =
             effectiveMediaType === 'movie' ||

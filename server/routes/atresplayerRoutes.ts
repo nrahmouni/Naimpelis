@@ -5,8 +5,72 @@ import {
   getAtresplayerOverview,
   probeAtresplayerUrl,
 } from '../services/atresplayerService.ts';
+import {
+  getAtresmediaHome,
+  getAtresmediaProgramDetail,
+  resolveAtresmediaPlayVideo,
+} from '../services/atresmediaCatalogService.ts';
 
 export function registerAtresplayerRoutes(app: Express): void {
+  // ============================================================================
+  // CONSUMER-FACING ATRESMEDIA HUB (DIRECTOS HD + PROGRAMAS + SERIES)
+  // ============================================================================
+  app.get('/api/atresmedia/home', async (_req, res) => {
+    try {
+      const data = await getAtresmediaHome();
+      res.json({ success: true, ...data });
+    } catch (err) {
+      res.status(500).json({
+        success: false,
+        error: err instanceof Error ? err.message : 'Error cargando catálogo Atresmedia',
+      });
+    }
+  });
+
+  app.get('/api/atresmedia/program/:formatId', async (req, res) => {
+    try {
+      const formatId = String(req.params.formatId || '').trim();
+      const titleHint = String(req.query.title || '').trim();
+      if (!formatId) {
+        return res.status(400).json({ success: false, error: 'formatId requerido' });
+      }
+      const data = await getAtresmediaProgramDetail(formatId, titleHint);
+      res.json({ success: true, ...data });
+    } catch (err) {
+      res.status(500).json({
+        success: false,
+        error: err instanceof Error ? err.message : 'Error cargando episodios del programa',
+      });
+    }
+  });
+
+  app.get('/api/atresmedia/play-video', async (req, res) => {
+    try {
+      const source = String(req.query.source || '').trim();
+      const id = String(req.query.id || '').trim();
+      const programTitle = String(req.query.programTitle || '').trim();
+      const episodeTitle = String(req.query.episodeTitle || '').trim();
+      const result = await resolveAtresmediaPlayVideo({
+        source,
+        id,
+        programTitle,
+        episodeTitle,
+      });
+      if (!result.success) {
+        return res.status(404).json(result);
+      }
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({
+        success: false,
+        error: err instanceof Error ? err.message : 'Error resolviendo el programa',
+      });
+    }
+  });
+
+  // ============================================================================
+  // LEGACY TECHNICAL INVENTORY ENDPOINTS
+  // ============================================================================
   app.get('/api/atresplayer/inventory', (req, res) => {
     const category = String(req.query.category || '').trim();
     const serviceGroup = String(req.query.serviceGroup || '').trim();

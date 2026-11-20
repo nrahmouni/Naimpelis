@@ -485,20 +485,20 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
           </span>
         ) : (
           <span className="text-[11px] font-medium text-zinc-400 tabular-nums">
-            177 APIs · 55 URLs
+            6 directos HD
           </span>
         )}
       </div>
 
       <div className="relative z-10 min-w-0 space-y-1 pt-4">
         <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
-          Atresplayer
+          Atresmedia
         </h2>
         <p className="text-xs text-zinc-400 leading-snug">
           {pickLang(lang, {
-            es: 'Cadena VOD/DRM, Retrofit y directo TDT',
-            ca: 'Cadena VOD/DRM, Retrofit i directe TDT',
-            en: 'VOD/DRM chain, Retrofit & live DTT',
+            es: 'Antena 3, laSexta, Pasapalabra y programas HD',
+            ca: 'Antena 3, laSexta, Pasapalabra i programes HD',
+            en: 'Antena 3, laSexta, Pasapalabra & HD shows',
           })}
         </p>
       </div>

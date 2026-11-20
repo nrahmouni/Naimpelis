@@ -232,7 +232,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         nudgeMaxRetry: videoState.isLive ? 5 : 10,
         stretchShortVideoTrack: !videoState.isLive,
         maxAudioFramesDrift: videoState.isLive ? 2 : 4,
-        abrEwmaDefaultEstimate: 3_500_000,
+        abrEwmaDefaultEstimate: 7_500_000,
         manifestLoadingTimeOut: 20000,
         manifestLoadingMaxRetry: 8,
         manifestLoadingRetryDelay: 1000,

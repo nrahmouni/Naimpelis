@@ -350,7 +350,10 @@ export function createTrackAndQueuePlaybackHandlers(
     await handleSelectTrack(nextIdx, resumeSec);
   };
 
-  const handlePlayCustomUrl = async (rawUrl: string) => {
+  const handlePlayCustomUrl = async (
+    rawUrl: string,
+    meta?: { title?: string; subtitle?: string; poster?: string }
+  ) => {
     if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
@@ -364,11 +367,16 @@ export function createTrackAndQueuePlaybackHandlers(
     isExtractingRef.current = true;
     setLoadingItemId('custom-url');
     setExtractionError(null);
-    setExtractionLabel('Analizando enlace y extrayendo flujo limpio...');
+    setExtractionLabel(
+      meta?.title
+        ? `Cargando ${meta.title}...`
+        : 'Analizando enlace y extrayendo flujo limpio...'
+    );
 
     try {
       const params = new URLSearchParams({
         url: rawUrl,
+        ...(meta?.title ? { title: meta.title } : {}),
         ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
       });
       const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
@@ -389,15 +397,16 @@ export function createTrackAndQueuePlaybackHandlers(
           mode: data.mode || 'hls',
           url: data.streamUrl,
           rawSourceUrl: rawUrl,
-          title: data.title || 'Reproducción Directa HD',
+          title: meta?.title || data.title || 'Reproducción Directa HD',
           subtitle:
-            data.mode === 'youtube'
+            meta?.subtitle ||
+            (data.mode === 'youtube'
               ? 'YouTube Sincronizado'
               : data.mode === 'embed'
               ? 'Reproductor Web Integrado'
-              : data.resolvedLabel || 'Flujo Nativo Sin Anuncios',
-          poster: data.poster || undefined,
-          backdrop: data.backdrop || data.poster || undefined,
+              : data.resolvedLabel || 'Flujo Nativo Sin Anuncios'),
+          poster: meta?.poster || data.poster || undefined,
+          backdrop: meta?.poster || data.backdrop || data.poster || undefined,
           currentTime: 0,
           isPlaying: true,
           isLive: false,

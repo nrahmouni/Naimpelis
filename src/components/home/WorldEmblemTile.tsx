@@ -188,18 +188,18 @@ export const WORLD_SPECS: Record<WorldPortalKind, WorldSpec> = {
     ambient:
       'radial-gradient(ellipse 68% 54% at 50% 47%, rgba(255,94,26,0.24) 0%, rgba(245,158,11,0.10) 42%, rgba(6,7,12,0) 74%)',
     title: {
-      es: 'Atresplayer',
-      ca: 'Atresplayer',
-      en: 'Atresplayer',
-      rif: 'Atresplayer',
-      zh: 'Atresplayer 平台',
+      es: 'Atresmedia',
+      ca: 'Atresmedia',
+      en: 'Atresmedia',
+      rif: 'Atresmedia',
+      zh: 'Atresmedia 频道',
     },
     subtitle: {
-      es: '177 APIs Retrofit · 55 URLs · TDT & DRM',
-      ca: '177 APIs Retrofit · 55 URLs · TDT i DRM',
-      en: '177 Retrofit APIs · 55 URLs · DTT & DRM',
-      rif: '177 APIs · 55 URLs · TDT d DRM',
-      zh: '177 Retrofit 接口 · 55 链接 · 直播与 DRM',
+      es: 'Directos 1080p · Pasapalabra y programas HD',
+      ca: 'Directes 1080p · Pasapalabra i programes HD',
+      en: '1080p Live · Pasapalabra & HD Shows',
+      rif: 'Directos 1080p · Pasapalabra d programas HD',
+      zh: '1080p 直播 · Pasapalabra 与高清节目',
     },
   },
 };

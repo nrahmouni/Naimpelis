@@ -74,7 +74,7 @@ export async function handleDirectExtractCases(params: {
     const isDvb = isDvbHeadendStream(cleanCheckUrl);
 
     if (isDvb) {
-      const existingDvbPath = getActiveDvbSessionPath(cleanCheckUrl);
+      const existingDvbPath = getActiveDvbSessionPath(cleanCheckUrl, dvbProfile);
       if (existingDvbPath) {
         const fastResult: ExtractedStreamResult = {
           success: true,

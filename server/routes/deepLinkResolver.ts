@@ -614,7 +614,7 @@ export async function resolveDeepLinkTarget(
         clipbox: 'ClipBox Vault — Motores, Búsqueda y Descifrado',
         rbtv: 'RBTV+ — Cluster Deportivo, DoH y Arquitectura P2P',
         belix: 'Belix TV — Motor Xtream Codes y Rutas com.ibopro.ultra',
-        atresplayer: 'Atresplayer — Servidores, Rutas Retrofit y Cadena DRM/VOD',
+        atresplayer: 'Atresmedia — Directos 1080p, Pasapalabra, Programas y Series',
       };
       const title = `${worldLabels[target.world] || 'RiffanTV'} — RiffanTV`;
       result = {

@@ -528,7 +528,10 @@ export async function resolveTmdbIdByTitle(
 ): Promise<number | null> {
   try {
     const rawStr = String(title || '').trim();
-    const clean = rawStr.replace(/\s*\([^)]*\)/g, '').trim();
+    const clean = rawStr
+      .replace(/\s*\([^)]*\)/g, '')
+      .replace(/\s+(?:la\s+serie|serie\s+completa|serie)$/i, '')
+      .trim();
     const parenYear = rawStr.match(/\(((?:19|20)\d{2})\)/)?.[1] || '';
     if (!clean || normalizeTitleForMatch(clean).length < 2) return null;
 

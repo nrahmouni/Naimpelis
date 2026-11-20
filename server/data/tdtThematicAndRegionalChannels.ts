@@ -14,10 +14,18 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'neox-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa 1080p HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/22/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'neox-fast',
+        label: 'Señal 2 · Ligera 720p HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/22/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -35,10 +43,18 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'fdf-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa 1080p HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/39/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'fdf-fast',
+        label: 'Señal 2 · Ligera 720p HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/39/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -56,10 +72,18 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'nova-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa 1080p HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/23/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'nova-fast',
+        label: 'Señal 2 · Ligera 720p HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/23/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -77,10 +101,18 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'energy-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa 1080p HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/18/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'energy-fast',
+        label: 'Señal 2 · Ligera 720p HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/18/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -98,10 +130,18 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'a3s-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa 1080p HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/24/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'a3s-fast',
+        label: 'Señal 2 · Ligera 720p HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/24/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -119,10 +159,18 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'bemad-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa 1080p HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/25/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'bemad-fast',
+        label: 'Señal 2 · Ligera 720p HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/25/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -140,10 +188,18 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'paramount-dvb',
-        label: 'Antena TDT Cine 1080p',
+        label: 'Señal Directa 1080p HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/50/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'paramount-fast',
+        label: 'Señal 2 · Ligera 720p HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/50/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -161,10 +217,18 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'bom-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa 1080p HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/35/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'bom-fast',
+        label: 'Señal 2 · Ligera 720p HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/35/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -182,10 +246,18 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'mega-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa 1080p HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/11/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'mega-fast',
+        label: 'Señal 2 · Ligera 720p HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/11/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -203,10 +275,18 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'dmax-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa 1080p HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/51/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'dmax-fast',
+        label: 'Señal 2 · Ligera 720p HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/51/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -224,10 +304,18 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'divinity-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa 1080p HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/40/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'divinity-fast',
+        label: 'Señal 2 · Ligera 720p HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/40/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -245,10 +333,18 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'dkiss-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa 1080p HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/4/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'dkiss-fast',
+        label: 'Señal 2 · Ligera 720p HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/4/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -266,10 +362,18 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'ten-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa 1080p HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/27/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'ten-fast',
+        label: 'Señal 2 · Ligera 720p HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/27/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -465,10 +569,18 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'boing-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa 1080p HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/19/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'boing-fast',
+        label: 'Señal 2 · Ligera 720p HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/19/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -522,6 +634,14 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
         sourceUrl: 'https://directes3-tv-int.3catdirectes.cat/live-content/tvi-hls/master.m3u8',
         resolverType: 'tdt_hls',
       },
+      {
+        id: '3cat-cmaf',
+        label: 'Señal 2 · TV3 FHD Alternativa',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://directes-tv-int-dev.3catdirectes.cat/live-content/tv3-uhd-cmaf/master.m3u8',
+        resolverType: 'tdt_hls',
+      },
     ],
   },
   {
@@ -541,6 +661,14 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://multimedia.eitb.eus/live-content/etb1hd-hls/master.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'etb1-on',
+        label: 'Señal 2 · EITB On HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://cdn1.etbon.eus/etb1on/index.m3u8',
         resolverType: 'tdt_hls',
       },
     ],
@@ -564,6 +692,14 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
         sourceUrl: 'https://multimedia.eitb.eus/live-content/etb2hd-hls/master.m3u8',
         resolverType: 'tdt_hls',
       },
+      {
+        id: 'etb2-on',
+        label: 'Señal 2 · EITB On HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://cdn1.etbon.eus/etb2on/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
     ],
   },
   {
@@ -577,6 +713,14 @@ export const TDT_THEMATIC_AND_REGIONAL_CHANNELS: SpanishTdtChannelDef[] = [
     quality: '1080p HD',
     description: 'Televisión Pública de Canarias · Directos, cine e informativos',
     channels: [
+      {
+        id: 'tvcanaria-cf',
+        label: 'Señal Oficial CloudFront HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'https://d1oyt3v08gcy18.cloudfront.net/index-events.m3u8',
+        resolverType: 'tdt_hls',
+      },
       {
         id: 'tvcanaria-oficial',
         label: 'Señal Oficial RTVC HD',

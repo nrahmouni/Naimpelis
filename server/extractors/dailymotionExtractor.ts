@@ -9,11 +9,12 @@ import {
 
 const dailymotionTrackCache = new LruTtlCache<string, TrackRecord[]>(150, 20 * 60 * 1000);
 
-// Seeded Dailymotion video IDs verified against live player metadata for La que se avecina T17
-const KNOWN_LQSA_T17_MAP: Record<string, string> = {
-  '17x1': 'xbx77vu',
-  '17x2': 'xbx81xu',
-  '17x3': 'xby1p9i',
+// Seeded Dailymotion video IDs verified against live player metadata for La que se avecina
+const KNOWN_LQSA_SEED_MAP: Record<string, string> = {
+  '17x1': 'xbxpqdm',
+  '16x7': 'xb6oa0e',
+  '11x1': 'x8grox1',
+  '1x1': 'x9m4pzc',
 };
 
 const LQSA_SEASON_EPISODE_COUNTS: Record<number, number> = {
@@ -150,7 +151,7 @@ async function dmCurlJson<T>(url: string, headers: Record<string, string>, maxSe
   }
 }
 
-async function resolveDailymotionVideoToM3u8(videoId: string): Promise<string | null> {
+export async function resolveDailymotionVideoToM3u8(videoId: string): Promise<string | null> {
   const url = `https://www.dailymotion.com/player/metadata/video/${encodeURIComponent(videoId)}`;
   const headers = {
     'User-Agent': CHROME_UA,
@@ -189,16 +190,17 @@ export async function extractDailymotionSeriesTracks(opts: {
   const mainTitle = String(titleHints[0] || '').trim();
   if (!mainTitle) return [];
 
-  const cacheKey = `${String(tmdbId || mainTitle)}:${season}x${episode}`;
-  const cached = dailymotionTrackCache.get(cacheKey);
-  if (cached) return cached;
-
   const isLqsa =
     String(tmdbId || '') === '35338' ||
     titleHints.some((h) => normalizeTitleForMatch(h).includes('la que se avecina'));
 
+  const searchBaseTitle = isLqsa ? 'La que se avecina' : mainTitle;
+  const cacheKey = `${String(tmdbId || searchBaseTitle)}:${season}x${episode}`;
+  const cached = dailymotionTrackCache.get(cacheKey);
+  if (cached) return cached;
+
   const epPad = String(episode).padStart(2, '0');
-  const seededId = isLqsa ? KNOWN_LQSA_T17_MAP[`${season}x${episode}`] : undefined;
+  const seededId = isLqsa ? KNOWN_LQSA_SEED_MAP[`${season}x${episode}`] : undefined;
 
   // Fast-path: resolve seeded ID immediately via IPv4 curl (~220ms) instead of blocking on 6+ API searches!
   if (seededId) {
@@ -221,12 +223,19 @@ export async function extractDailymotionSeriesTracks(opts: {
     }
   }
 
-  const candidateIds: string[] = seededId ? [seededId] : [];
+  const candidateIds: string[] = [];
+  const globalEp = isLqsa ? lqsaSeasonEpToGlobal(season, episode) : null;
   const queries = [
-    `${mainTitle} T${season} E${episode}`,
-    `${mainTitle} ${season}x${epPad}`,
-    `${mainTitle} temporada ${season} capitulo ${episode}`,
-    ...(isLqsa ? [`LQSA ${season}x${epPad}`, `La que se avecina T${season}_E${episode}`] : []),
+    `${searchBaseTitle} T${season} E${episode}`,
+    `${searchBaseTitle} ${season}x${epPad}`,
+    `${searchBaseTitle} temporada ${season} capitulo ${episode}`,
+    ...(isLqsa
+      ? [
+          `LQSA ${season} Capitulo ${episode}`,
+          `La que se avecina ${season} Capitulo ${episode}`,
+          ...(globalEp ? [`La que se avecina capitulo ${globalEp}`] : []),
+        ]
+      : []),
   ];
 
   const cleanEpHint = String(episodeTitleHint || '').trim();
@@ -238,18 +247,21 @@ export async function extractDailymotionSeriesTracks(opts: {
   }
 
   const dmHeaders = { 'User-Agent': CHROME_UA, 'Accept-Language': 'es-ES,es;q=0.9' };
-  const searchRequests: Promise<any>[] = queries.slice(0, 6).map((q) =>
+  const searchRequests: Promise<any>[] = queries.slice(0, 7).map((q) =>
     dmCurlJson(
-      `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&fields=id,title,duration&limit=25`,
+      `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&fields=id,title,duration&limit=50`,
       dmHeaders,
       3
     )
   );
 
-  if (isLqsa && season >= 17) {
+  // Also check most recent LQSA uploads so newly re-uploaded mirrors after DMCA purges appear immediately
+  if (isLqsa) {
     searchRequests.push(
       dmCurlJson(
-        'https://api.dailymotion.com/user/x3qhrza/videos?fields=id,title,duration&limit=25',
+        `https://api.dailymotion.com/videos?search=${encodeURIComponent(
+          `La que se avecina ${season}`
+        )}&fields=id,title,duration&limit=50&sort=recent`,
         dmHeaders,
         3
       )
@@ -258,7 +270,7 @@ export async function extractDailymotionSeriesTracks(opts: {
 
   const searchResults = await Promise.all(searchRequests);
 
-  const lqsaHints = isLqsa ? [...titleHints, 'LQSA'] : titleHints;
+  const lqsaHints = isLqsa ? [...titleHints, 'La que se avecina', 'LQSA'] : titleHints;
   const normFirstClause = firstClause.length >= 6 ? normalizeTitleForMatch(firstClause) : '';
   for (const data of searchResults) {
     const list: any[] = Array.isArray(data?.list) ? data.list : [];
@@ -287,9 +299,9 @@ export async function extractDailymotionSeriesTracks(opts: {
     }
   }
 
-  // Probe up to 14 unique IDs (many older uploads have DM005 copyright placeholders)
+  // Probe up to 36 unique IDs in parallel so alive re-uploads lower in search results are still reached
   const resolvedPairs = await Promise.all(
-    candidateIds.slice(0, 14).map(async (vid) => ({
+    candidateIds.slice(0, 36).map(async (vid) => ({
       vid,
       m3uUrl: await resolveDailymotionVideoToM3u8(vid),
     }))

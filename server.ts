@@ -56,6 +56,7 @@ import { registerClipboxRoutes } from './server/routes/clipboxRoutes.ts';
 import { registerRbtvRoutes } from './server/routes/rbtvRoutes.ts';
 import { registerBelixRoutes } from './server/routes/belixRoutes.ts';
 import { registerAtresplayerRoutes } from './server/routes/atresplayerRoutes.ts';
+import { registerMovistarDaznRoutes } from './server/routes/movistarDaznRoutes.ts';
 import { initBelixFromEnv } from './server/services/belix/belixXtreamClient.ts';
 import { SPANISH_TDT_CHANNELS } from './server/data/tdtChannels.ts';
 import { CATALA_LIVE_CHANNELS } from './server/data/catalaRegistry.ts';
@@ -209,6 +210,7 @@ registerClipboxRoutes(app);
 registerRbtvRoutes(app);
 registerBelixRoutes(app, { getPublicOrigin });
 registerAtresplayerRoutes(app);
+registerMovistarDaznRoutes(app);
 registerVoiceAssistantRoutes(app, {
   getChannels: getLiveVoiceChannels,
   resolveLogoUrl: resolveOfficialChannelLogoUrl,
