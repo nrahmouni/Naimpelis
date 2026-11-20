@@ -81,7 +81,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
       : '';
 
   const rowClass =
-    'w-full min-h-13 px-4 py-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] flex items-center justify-between gap-3 text-left transition-colors';
+    'w-full min-h-13 px-4 py-2.5 rounded-2xl bg-[#14141C]/80 hover:bg-[#14141C] border border-white/[0.08] flex items-center justify-between gap-3 text-left transition-all';
 
   return (
     <>
@@ -108,11 +108,11 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
               <div className="flex items-center gap-3 min-w-0">
                 <Cloud
                   className={`w-5 h-5 shrink-0 ${
-                    isVerifiedAccount ? 'text-[#00F593]' : 'text-[#BF94FF]'
+                    isVerifiedAccount ? 'text-[#00F593]' : 'text-[#A78BFA]'
                   }`}
                 />
                 <div className="min-w-0">
-                  <div className="text-sm font-bold text-white truncate">
+                  <div className="text-sm font-bold text-white leading-snug break-words">
                     {isVerifiedAccount
                       ? authUser?.displayName || authUser?.email || 'Google'
                       : pickLang(lang, {
@@ -121,7 +121,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                           en: 'Sync with Google',
                         })}
                   </div>
-                  <div className="text-xs text-zinc-400 truncate">
+                  <div className="text-xs text-zinc-400 leading-snug break-words">
                     {isVerifiedAccount
                       ? authUser?.email ||
                         pickLang(lang, {
@@ -147,7 +147,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                   loading={authLoading}
                   className="!min-h-10 !px-3.5 shrink-0"
                 >
-                  <LogIn className="w-4 h-4 text-[#BF94FF]" />
+                  <LogIn className="w-4 h-4 text-[#A78BFA]" />
                   <span>
                     {pickLang(lang, {
                       es: 'Conectar',
@@ -166,10 +166,10 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                   onClose();
                   onOpenLinkDevice();
                 }}
-                className={`${rowClass} cursor-pointer active:scale-[0.98]`}
+                className={`${rowClass} cursor-pointer active:scale-95`}
               >
                 <span className="flex items-center gap-3 min-w-0">
-                  <KeyRound className="w-4 h-4 text-[#BF94FF] shrink-0" />
+                  <KeyRound className="w-4 h-4 text-[#A78BFA] shrink-0" />
                   <span className="min-w-0">
                     <span className="block text-sm font-semibold text-white">
                       {isVerifiedAccount
@@ -225,13 +225,13 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                 triggerHaptic('light');
                 onToggleViewMode();
               }}
-              className={`${rowClass} cursor-pointer active:scale-[0.98]`}
+              className={`${rowClass} cursor-pointer active:scale-95`}
             >
               <span className="flex items-center gap-3 min-w-0">
                 {effectiveView === 'desktop' ? (
-                  <Smartphone className="w-5 h-5 text-[#BF94FF] shrink-0" />
+                  <Smartphone className="w-5 h-5 text-[#A78BFA] shrink-0" />
                 ) : (
-                  <Monitor className="w-5 h-5 text-[#BF94FF] shrink-0" />
+                  <Monitor className="w-5 h-5 text-[#A78BFA] shrink-0" />
                 )}
                 <span className="min-w-0">
                   <span className="block text-sm font-bold text-white">
@@ -291,10 +291,10 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                       triggerHaptic('light');
                       onChangeLang(l.id as AppLanguage);
                     }}
-                    className={`min-h-8 px-1.5 rounded-lg text-[11px] font-semibold border cursor-pointer transition-colors ${
+                    className={`min-h-[42px] px-1.5 rounded-xl text-[11px] font-semibold border cursor-pointer active:scale-95 transition-all ${
                       lang === l.id
-                        ? 'bg-[#9146FF] text-white border-[#9146FF]'
-                        : 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.08] text-zinc-300'
+                        ? 'bg-[#7C3AED] text-white border-[#8B5CF6]'
+                        : 'bg-[#14141C] hover:bg-white/[0.1] border-white/[0.08] text-zinc-300'
                     }`}
                   >
                     {l.label}
@@ -324,10 +324,10 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                   setTvAdvancedOpen((v) => !v);
                 }
               }}
-              className={`${rowClass} cursor-pointer active:scale-[0.98]`}
+              className={`${rowClass} cursor-pointer active:scale-95`}
             >
               <span className="flex items-center gap-3 min-w-0">
-                <Tv className="w-5 h-5 text-[#BF94FF] shrink-0" />
+                <Tv className="w-5 h-5 text-[#A78BFA] shrink-0" />
                 <span className="min-w-0">
                   <span className="block text-sm font-bold text-white">
                     {pickLang(lang, {
@@ -350,7 +350,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
               <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
             </button>
 
-            <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] overflow-hidden">
+            <div className="rounded-2xl bg-[#14141C]/80 border border-white/[0.08] overflow-hidden">
               <button
                 type="button"
                 onClick={() => {
@@ -361,7 +361,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                 className="w-full min-h-12 px-4 flex items-center justify-between gap-3 text-left cursor-pointer hover:bg-white/[0.04]"
               >
                 <span className="flex items-center gap-3 text-sm font-semibold text-white">
-                  <QrCode className="w-4 h-4 text-[#BF94FF]" />
+                  <QrCode className="w-4 h-4 text-[#A78BFA]" />
                   <span>
                     {pickLang(lang, {
                       es: 'Vincular con código',
@@ -434,7 +434,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                         onOpenTvPairLobby();
                       }}
                     >
-                      <Tv className="w-4 h-4 text-[#BF94FF]" />
+                      <Tv className="w-4 h-4 text-[#A78BFA]" />
                       <span>
                         {pickLang(lang, {
                           es: 'Usar esta pantalla como TV',
@@ -464,10 +464,10 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                 triggerHaptic('light');
                 setInstallSheetOpen(true);
               }}
-              className={`${rowClass} cursor-pointer active:scale-[0.98]`}
+              className={`${rowClass} cursor-pointer active:scale-95`}
             >
               <span className="flex items-center gap-3 min-w-0">
-                <Download className="w-5 h-5 text-[#BF94FF] shrink-0" />
+                <Download className="w-5 h-5 text-[#A78BFA] shrink-0" />
                 <span className="min-w-0">
                   <span className="block text-sm font-bold text-white">
                     {pickLang(lang, {

@@ -35,21 +35,27 @@ const FAMELACK_COUNTRIES: Array<{
   tone: string;
   maxCount: number;
 }> = [
-  { code: 'fr', file: 'fr', label: 'Francia', lang: 'FR', defaultCategory: 'adrar_europa', tone: '#2563EB', maxCount: 28 },
-  { code: 'de', file: 'de', label: 'Alemania', lang: 'DE', defaultCategory: 'adrar_europa', tone: '#EAB308', maxCount: 28 },
-  { code: 'it', file: 'it', label: 'Italia', lang: 'IT', defaultCategory: 'adrar_europa', tone: '#16A34A', maxCount: 28 },
+  { code: 'es', file: 'es', label: 'España', lang: 'ES', defaultCategory: 'adrar_europa', tone: '#DC2626', maxCount: 28 },
+  { code: 'fr', file: 'fr', label: 'Francia', lang: 'FR', defaultCategory: 'adrar_europa', tone: '#2563EB', maxCount: 30 },
+  { code: 'de', file: 'de', label: 'Alemania', lang: 'DE', defaultCategory: 'adrar_europa', tone: '#EAB308', maxCount: 30 },
+  { code: 'it', file: 'it', label: 'Italia', lang: 'IT', defaultCategory: 'adrar_europa', tone: '#16A34A', maxCount: 30 },
   { code: 'tr', file: 'tr', label: 'Turquía', lang: 'TR', defaultCategory: 'adrar_europa', tone: '#DC2626', maxCount: 28 },
-  { code: 'uk', file: 'uk', label: 'Reino Unido', lang: 'EN', defaultCategory: 'adrar_europa', tone: '#1D4ED8', maxCount: 28 },
-  { code: 'nl', file: 'nl', label: 'Países Bajos', lang: 'NL', defaultCategory: 'adrar_europa', tone: '#EA580C', maxCount: 22 },
-  { code: 'be', file: 'be', label: 'Bélgica', lang: 'FR', defaultCategory: 'adrar_europa', tone: '#CA8A04', maxCount: 16 },
+  { code: 'uk', file: 'uk', label: 'Reino Unido', lang: 'EN', defaultCategory: 'adrar_europa', tone: '#1D4ED8', maxCount: 30 },
+  { code: 'pt', file: 'pt', label: 'Portugal', lang: 'PT', defaultCategory: 'adrar_europa', tone: '#16A34A', maxCount: 20 },
+  { code: 'nl', file: 'nl', label: 'Países Bajos', lang: 'NL', defaultCategory: 'adrar_europa', tone: '#EA580C', maxCount: 24 },
+  { code: 'be', file: 'be', label: 'Bélgica', lang: 'FR', defaultCategory: 'adrar_europa', tone: '#CA8A04', maxCount: 18 },
   { code: 'ru', file: 'ru', label: 'Rusia', lang: 'RU', defaultCategory: 'adrar_europa', tone: '#2563EB', maxCount: 24 },
-  { code: 'ma', file: 'ma', label: 'Marruecos', lang: 'AR', defaultCategory: 'marruecos', tone: '#B91C1C', maxCount: 12 },
-  { code: 'dz', file: 'dz', label: 'Argelia', lang: 'AR', defaultCategory: 'elahmad_mena', tone: '#15803D', maxCount: 12 },
-  { code: 'eg', file: 'eg', label: 'Egipto', lang: 'AR', defaultCategory: 'elahmad_mena', tone: '#B91C1C', maxCount: 18 },
-  { code: 'sa', file: 'sa', label: 'Arabia Saudí', lang: 'AR', defaultCategory: 'elahmad_mena', tone: '#15803D', maxCount: 22 },
-  { code: 'ae', file: 'ae', label: 'Emiratos Árabes', lang: 'AR', defaultCategory: 'elahmad_mena', tone: '#047857', maxCount: 22 },
-  { code: 'in', file: 'in', label: 'India · Cricket & Sports', lang: 'EN', defaultCategory: 'world_cricket', tone: '#EA580C', maxCount: 20 },
-  { code: 'pk', file: 'pk', label: 'Pakistán', lang: 'EN', defaultCategory: 'world_cricket', tone: '#15803D', maxCount: 12 },
+  { code: 'us', file: 'us', label: 'Estados Unidos', lang: 'EN', defaultCategory: 'usa_tv', tone: '#1D4ED8', maxCount: 32 },
+  { code: 'mx', file: 'mx', label: 'México', lang: 'ES', defaultCategory: 'entretenimiento', tone: '#16A34A', maxCount: 24 },
+  { code: 'ar', file: 'ar', label: 'Argentina', lang: 'ES', defaultCategory: 'tnt_space', tone: '#0EA5E9', maxCount: 20 },
+  { code: 'br', file: 'br', label: 'Brasil', lang: 'PT', defaultCategory: 'entretenimiento', tone: '#16A34A', maxCount: 24 },
+  { code: 'ma', file: 'ma', label: 'Marruecos', lang: 'AR', defaultCategory: 'marruecos', tone: '#B91C1C', maxCount: 16 },
+  { code: 'dz', file: 'dz', label: 'Argelia', lang: 'AR', defaultCategory: 'elahmad_mena', tone: '#15803D', maxCount: 16 },
+  { code: 'eg', file: 'eg', label: 'Egipto', lang: 'AR', defaultCategory: 'elahmad_mena', tone: '#B91C1C', maxCount: 22 },
+  { code: 'sa', file: 'sa', label: 'Arabia Saudí', lang: 'AR', defaultCategory: 'elahmad_mena', tone: '#15803D', maxCount: 24 },
+  { code: 'ae', file: 'ae', label: 'Emiratos Árabes', lang: 'AR', defaultCategory: 'elahmad_mena', tone: '#047857', maxCount: 24 },
+  { code: 'in', file: 'in', label: 'India · Cricket & Sports', lang: 'EN', defaultCategory: 'world_cricket', tone: '#EA580C', maxCount: 24 },
+  { code: 'pk', file: 'pk', label: 'Pakistán', lang: 'EN', defaultCategory: 'world_cricket', tone: '#15803D', maxCount: 14 },
 ];
 
 let cachedWorldChannels: WorldIptvChannelEntry[] = [];
@@ -127,13 +133,13 @@ export function parseWorldM3uPlaylist(
             ? 'elahmad_mena'
             : 'europa_tv';
 
-          if (isSports || isAdrar || isMena || isMovie) {
+          if (isSports || isKids || isAdrar || isMena || isMovie) {
             const slug = normKey(current.name).replace(/\s+/g, '-').slice(0, 32) || 'ch';
             out.push({
               id: `${sourceHub}-${slug}-${out.length}`,
               name: current.name,
               shortMark: current.name.replace(/[^A-Za-z0-9]/g, '').slice(0, 5).toUpperCase() || 'TV',
-              brandTone: isSports ? '#10B981' : isMovie ? '#9146FF' : '#0EA5E9',
+              brandTone: isSports ? '#10B981' : isKids ? '#F59E0B' : isMovie ? '#7C3AED' : '#0EA5E9',
               network: `${sourceHub === 'freetv' ? 'Free-TV' : 'IPTV-Org'} · ${current.group || 'World'}`,
               category,
               countryCode: current.country,
@@ -266,33 +272,51 @@ export async function refreshFamelackAndWorldCatalog(
       }
     };
 
-    const [sportsJson, moviesJson, kidsJson, docJson, freeTvText, iptvOrgSportsText] =
-      await Promise.all([
-        fetchJsonSafe<FamelackChannelJson[]>(
-          'https://raw.githubusercontent.com/famelack/famelack-data/main/tv/categories/sports.json'
-        ),
-        fetchJsonSafe<FamelackChannelJson[]>(
-          'https://raw.githubusercontent.com/famelack/famelack-data/main/tv/categories/movies.json'
-        ),
-        fetchJsonSafe<FamelackChannelJson[]>(
-          'https://raw.githubusercontent.com/famelack/famelack-data/main/tv/categories/kids.json'
-        ),
-        fetchJsonSafe<FamelackChannelJson[]>(
-          'https://raw.githubusercontent.com/famelack/famelack-data/main/tv/categories/documentary.json'
-        ),
-        fetch('https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8', {
-          headers: { 'User-Agent': 'RiffanTV-WorldSync/2.0' },
-          signal: AbortSignal.timeout(7000),
-        })
-          .then((r) => (r.ok ? r.text() : ''))
-          .catch(() => ''),
-        fetch('https://iptv-org.github.io/iptv/categories/sports.m3u', {
-          headers: { 'User-Agent': 'RiffanTV-WorldSync/2.0' },
-          signal: AbortSignal.timeout(7000),
-        })
-          .then((r) => (r.ok ? r.text() : ''))
-          .catch(() => ''),
-      ]);
+    const fetchM3uText = (url: string) =>
+      fetch(url, {
+        headers: { 'User-Agent': 'RiffanTV-WorldSync/3.2' },
+        signal: AbortSignal.timeout(7000),
+      })
+        .then((r) => (r.ok ? r.text() : ''))
+        .catch(() => '');
+
+    const [
+      sportsJson,
+      moviesJson,
+      kidsJson,
+      docJson,
+      newsJson,
+      entJson,
+      freeTvText,
+      iptvOrgSportsText,
+      iptvOrgMoviesText,
+      iptvOrgKidsText,
+      iptvOrgDocsText,
+    ] = await Promise.all([
+      fetchJsonSafe<FamelackChannelJson[]>(
+        'https://raw.githubusercontent.com/famelack/famelack-data/main/tv/categories/sports.json'
+      ),
+      fetchJsonSafe<FamelackChannelJson[]>(
+        'https://raw.githubusercontent.com/famelack/famelack-data/main/tv/categories/movies.json'
+      ),
+      fetchJsonSafe<FamelackChannelJson[]>(
+        'https://raw.githubusercontent.com/famelack/famelack-data/main/tv/categories/kids.json'
+      ),
+      fetchJsonSafe<FamelackChannelJson[]>(
+        'https://raw.githubusercontent.com/famelack/famelack-data/main/tv/categories/documentary.json'
+      ),
+      fetchJsonSafe<FamelackChannelJson[]>(
+        'https://raw.githubusercontent.com/famelack/famelack-data/main/tv/categories/news.json'
+      ),
+      fetchJsonSafe<FamelackChannelJson[]>(
+        'https://raw.githubusercontent.com/famelack/famelack-data/main/tv/categories/entertainment.json'
+      ),
+      fetchM3uText('https://raw.githubusercontent.com/Free-TV/IPTV/master/playlist.m3u8'),
+      fetchM3uText('https://iptv-org.github.io/iptv/categories/sports.m3u'),
+      fetchM3uText('https://iptv-org.github.io/iptv/categories/movies.m3u'),
+      fetchM3uText('https://iptv-org.github.io/iptv/categories/kids.m3u'),
+      fetchM3uText('https://iptv-org.github.io/iptv/categories/documentary.m3u'),
+    ]);
 
     if (Array.isArray(sportsJson)) {
       appendEntries(
@@ -301,7 +325,7 @@ export async function refreshFamelackAndWorldCatalog(
           category: 'world_cricket',
           networkLabel: 'Famelack Sports Worldwide',
           tone: '#10B981',
-          limit: 95,
+          limit: 105,
         })
       );
     }
@@ -312,8 +336,8 @@ export async function refreshFamelackAndWorldCatalog(
           prefix: 'fl-mov',
           category: 'famelack_movies',
           networkLabel: 'Famelack Movies 24/7',
-          tone: '#9146FF',
-          limit: 45,
+          tone: '#7C3AED',
+          limit: 55,
         })
       );
     }
@@ -325,7 +349,7 @@ export async function refreshFamelackAndWorldCatalog(
           category: 'kids_world',
           networkLabel: 'Famelack Kids World',
           tone: '#F59E0B',
-          limit: 28,
+          limit: 36,
         })
       );
     }
@@ -337,12 +361,36 @@ export async function refreshFamelackAndWorldCatalog(
           category: 'documentales',
           networkLabel: 'Famelack Documentary',
           tone: '#0EA5E9',
-          limit: 28,
+          limit: 32,
         })
       );
     }
 
-    // ADRAR & MENA Country Packs from Famelack
+    if (Array.isArray(newsJson)) {
+      appendEntries(
+        mapFamelackItemsToEntries(newsJson, {
+          prefix: 'fl-news',
+          category: 'noticias_intl',
+          networkLabel: 'Famelack Noticias Internacional',
+          tone: '#0EA5E9',
+          limit: 32,
+        })
+      );
+    }
+
+    if (Array.isArray(entJson)) {
+      appendEntries(
+        mapFamelackItemsToEntries(entJson, {
+          prefix: 'fl-ent',
+          category: 'entretenimiento',
+          networkLabel: 'Famelack Entretenimiento',
+          tone: '#8B5CF6',
+          limit: 32,
+        })
+      );
+    }
+
+    // ADRAR, LatAm & MENA Country Packs from Famelack
     const countryResults = await Promise.all(
       FAMELACK_COUNTRIES.map(async (c) => {
         const list = await fetchJsonSafe<FamelackChannelJson[]>(
@@ -368,10 +416,19 @@ export async function refreshFamelackAndWorldCatalog(
     }
 
     if (freeTvText) {
-      appendEntries(parseWorldM3uPlaylist(freeTvText, 'freetv', 120));
+      appendEntries(parseWorldM3uPlaylist(freeTvText, 'freetv', 150));
     }
     if (iptvOrgSportsText) {
-      appendEntries(parseWorldM3uPlaylist(iptvOrgSportsText, 'iptvorg', 65));
+      appendEntries(parseWorldM3uPlaylist(iptvOrgSportsText, 'iptvorg', 75));
+    }
+    if (iptvOrgMoviesText) {
+      appendEntries(parseWorldM3uPlaylist(iptvOrgMoviesText, 'iptvorg', 45));
+    }
+    if (iptvOrgKidsText) {
+      appendEntries(parseWorldM3uPlaylist(iptvOrgKidsText, 'iptvorg', 35));
+    }
+    if (iptvOrgDocsText) {
+      appendEntries(parseWorldM3uPlaylist(iptvOrgDocsText, 'iptvorg', 30));
     }
 
     if (collected.length > 0) {

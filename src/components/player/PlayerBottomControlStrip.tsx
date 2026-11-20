@@ -93,7 +93,7 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
     videoState.tracks[videoState.activeTrackIndex]?.sourceUrl || videoState.url;
 
   return (
-    <div className="bg-[#0B0C14]/96 backdrop-blur-2xl border-t border-white/[0.08] px-3 sm:px-4 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+    <div className="bg-[#000000]/96 backdrop-blur-2xl border-t border-white/[0.08] px-3 sm:px-4 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
       {/* Left: Quick Language Switcher (VOD) or Signal Selector */}
       <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
         {!videoState.isLive && (videoState.tracks || []).length > 0 ? (
@@ -153,9 +153,9 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
                           }
                         }}
                         title={tr.label}
-                        className={`min-h-[34px] px-2.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
+                        className={`min-h-[38px] px-3 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
                           active
-                            ? 'bg-[#9146FF] text-white shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
+                            ? 'bg-[#7C3AED] text-white shadow-[0_4px_14px_rgba(124,58,237,0.4)]'
                             : 'text-zinc-300 hover:bg-white/10'
                         }`}
                       >
@@ -181,9 +181,9 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
                     triggerHaptic('light');
                     onSelectTrack(idx, 0);
                   }}
-                  className={`min-h-[36px] px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer active:scale-95 transition-all inline-flex items-center gap-1.5 ${
+                  className={`min-h-[38px] px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer active:scale-95 transition-all inline-flex items-center gap-1.5 ${
                     active
-                      ? 'bg-[#9146FF] text-white shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
+                      ? 'bg-[#7C3AED] text-white shadow-[0_4px_14px_rgba(124,58,237,0.4)]'
                       : 'text-zinc-300 hover:bg-white/10'
                   }`}
                 >
@@ -202,9 +202,9 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
             <RiffanLiveIcon
               size={15}
               animate={videoState.isLive ? 'always' : 'hover'}
-              className={videoState.isLive ? 'text-[#EB0400]' : ''}
+              className={videoState.isLive ? 'text-[#EB0400] shrink-0' : 'shrink-0'}
             />
-            <span className="truncate max-w-[200px]">
+            <span className="leading-snug break-words">
               {videoState.tracks[videoState.activeTrackIndex]?.label ||
                 (videoState.isLive
                   ? pickLang(lang, { es: 'Señal en directo', ca: 'Senyal en directe', en: 'Live feed' })
@@ -223,7 +223,7 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
               triggerHaptic('medium');
               onUpgradeSoloToParty();
             }}
-            className="min-h-[38px] px-3.5 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border bg-[#9146FF] hover:bg-[#7C2AE8] text-white border-[#BF94FF]/60 shadow-[0_4px_14px_rgba(145,70,255,0.4)]"
+            className="min-h-[40px] px-3.5 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border bg-[#7C3AED] hover:bg-[#8B5CF6] text-white border-[#8B5CF6]/60 shadow-[0_4px_14px_rgba(124,58,237,0.4)]"
           >
             <Users className="w-3.5 h-3.5 shrink-0" />
             <span>
@@ -245,10 +245,10 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
                 onToggleFloatingChat();
               }}
               aria-pressed={floatingChatOpen}
-              className={`relative min-h-[38px] px-3.5 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
+              className={`relative min-h-[40px] px-3.5 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
                 floatingChatOpen
-                  ? 'bg-[#9146FF] text-white border-[#BF94FF]/60 shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
-                  : 'bg-white/[0.045] hover:bg-white/[0.1] text-zinc-100 border-white/[0.09]'
+                  ? 'bg-[#7C3AED] text-white border-[#8B5CF6]/60 shadow-[0_4px_14px_rgba(124,58,237,0.4)]'
+                  : 'bg-[#0D0D12] hover:bg-[#14141C] text-zinc-100 border-white/[0.08]'
               }`}
             >
               <RiffanChatIcon size={15} tone={floatingChatOpen ? 'current' : 'brand'} />
@@ -270,10 +270,10 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
             aria-expanded={moreOpen}
             aria-haspopup="menu"
             aria-label={pickLang(lang, { es: 'Más acciones', ca: 'Més accions', en: 'More actions' })}
-            className={`min-h-[38px] min-w-[38px] px-3 rounded-2xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+            className={`min-h-[40px] min-w-[40px] px-3 rounded-2xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
               moreOpen || isCastingToTv || batterySaverTvMode
-                ? 'bg-[#9146FF]/18 border-[#9146FF]/50 text-white'
-                : 'bg-white/[0.045] hover:bg-white/[0.1] border-white/[0.09] text-zinc-200'
+                ? 'bg-[#7C3AED]/20 border-[#8B5CF6]/50 text-white'
+                : 'bg-[#0D0D12] hover:bg-[#14141C] border-white/[0.08] text-zinc-200'
             }`}
           >
             <MoreHorizontal className="w-4 h-4 shrink-0" />
@@ -285,7 +285,7 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
           {moreOpen && (
             <div
               role="menu"
-              className="absolute right-0 bottom-full mb-2 w-60 rounded-2xl bg-[#0E1019]/96 backdrop-blur-2xl border border-white/[0.1] shadow-[0_18px_48px_rgba(0,0,0,0.82)] p-1.5 space-y-1 z-50 animate-fade-in"
+              className="absolute right-0 bottom-full mb-2 w-60 rounded-2xl bg-[#0D0D12]/96 backdrop-blur-2xl border border-white/[0.08] shadow-[0_18px_48px_rgba(0,0,0,0.82)] p-1.5 space-y-1 z-50 animate-fade-in"
             >
               <button
                 type="button"
@@ -375,7 +375,7 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
                   }}
                   className="w-full min-h-11 px-3 rounded-xl hover:bg-white/[0.08] text-left text-xs font-semibold text-zinc-100 flex items-center gap-2.5 cursor-pointer transition-colors"
                 >
-                  <Share2 className="w-4 h-4 text-[#BF94FF] shrink-0" />
+                  <Share2 className="w-4 h-4 text-[#A78BFA] shrink-0" />
                   <span>
                     {pickLang(lang, {
                       es: 'Compartir enlace',
@@ -397,7 +397,7 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
             triggerHaptic('medium');
             onOpenProMenu();
           }}
-          className="min-h-[38px] px-3.5 rounded-2xl bg-white/[0.045] hover:bg-white/[0.1] border border-white/[0.09] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
+          className="min-h-[40px] px-3.5 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
         >
           <RiffanSlidersIcon size={15} tone="current" />
           <span>{pickLang(lang, { es: 'Ajustes', ca: 'Ajustos', en: 'Settings' })}</span>

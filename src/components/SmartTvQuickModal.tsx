@@ -240,12 +240,12 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
         </p>
 
         {castFeedback && (
-          <div className="rounded-xl bg-[#9146FF]/12 border border-[#9146FF]/35 px-3.5 py-2.5 text-xs text-[#DFCCFF] leading-relaxed">
+          <div className="rounded-xl bg-[#7C3AED]/12 border border-[#7C3AED]/35 px-3.5 py-2.5 text-xs text-[#DDD6FE] leading-relaxed">
             {castFeedback}
           </div>
         )}
 
-        <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] overflow-hidden">
+        <div className="rounded-2xl bg-[#0D0D12] border border-white/[0.08] overflow-hidden">
           <button
             type="button"
             onClick={() => {
@@ -273,7 +273,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
           </button>
 
           {showCodePairing && (
-            <div className="px-4 pb-4 pt-2 border-t border-white/[0.06] space-y-4">
+            <div className="px-4 pb-4 pt-2 border-t border-white/[0.08] space-y-4">
               <form
                 onSubmit={(e) => {
                   e.preventDefault();
@@ -301,7 +301,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                 <button
                   type="submit"
                   disabled={tvCodeInput.length !== 4}
-                  className="min-h-12 px-4 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] disabled:opacity-45 text-sm font-bold text-white shrink-0 cursor-pointer transition-colors"
+                  className="min-h-12 px-4 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] disabled:opacity-45 text-sm font-bold text-white shrink-0 cursor-pointer transition-colors"
                 >
                   {pickLang(lang, {
                     es: 'Vincular',
@@ -333,7 +333,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                   <QRCodeSVG value={tvUrl} size={136} level="M" includeMargin={false} />
                 </div>
                 <span className="text-xs text-zinc-400 flex items-center gap-1.5 text-center">
-                  <QrCode className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+                  <QrCode className="w-3.5 h-3.5 text-[#A78BFA] shrink-0" />
                   <span>
                     {pickLang(lang, {
                       es: `O abre ${tvShortLabel} en el navegador de tu TV`,
@@ -348,19 +348,19 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
         </div>
 
         {/* Separated M3U + EPG XML quick setup box for Smart TV IPTV Apps */}
-        <div className="pt-2 border-t border-white/[0.06] space-y-2.5">
-          <div className="grid grid-cols-2 gap-2">
-            <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.08] space-y-1.5">
-              <div className="text-[10px] font-bold uppercase tracking-wider text-[#BF94FF]">
+        <div className="pt-2 border-t border-white/[0.08] space-y-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="p-2.5 rounded-xl bg-[#0D0D12] border border-white/[0.08] space-y-1.5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#A78BFA]">
                 Lista M3U
               </div>
-              <div className="text-[11px] font-mono text-zinc-300 truncate">{m3uUrl}</div>
+              <div className="text-[11px] font-mono text-zinc-300 break-all">{m3uUrl}</div>
               <div className="flex items-center gap-1">
                 <a
                   href={m3uDownloadUrl}
                   download="RIFFANTV-IPTV.m3u"
                   onClick={() => triggerHaptic('light')}
-                  className="flex-1 min-h-8 px-2 rounded-lg bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
+                  className="flex-1 min-h-9 px-2 rounded-lg bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
                 >
                   <Download className="w-3 h-3" />
                   <span>.m3u</span>
@@ -368,24 +368,24 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                 <button
                   type="button"
                   onClick={() => void handleCopyIptv(m3uUrl, 'm3u')}
-                  className="min-h-8 px-2 rounded-lg bg-white/[0.07] hover:bg-white/[0.13] text-zinc-200 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                  className="min-h-9 px-2.5 rounded-lg bg-white/[0.07] hover:bg-white/[0.13] text-zinc-200 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
                 >
                   {copiedIptv === 'm3u' ? <CheckCheck className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                 </button>
               </div>
             </div>
 
-            <div className="p-2.5 rounded-xl bg-white/[0.03] border border-emerald-400/20 space-y-1.5">
+            <div className="p-2.5 rounded-xl bg-[#0D0D12] border border-emerald-400/20 space-y-1.5">
               <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
                 Guía EPG (XML)
               </div>
-              <div className="text-[11px] font-mono text-zinc-300 truncate">{epgUrl}</div>
+              <div className="text-[11px] font-mono text-zinc-300 break-all">{epgUrl}</div>
               <div className="flex items-center gap-1">
                 <a
                   href={epgDownloadUrl}
                   download="RIFFANTV-EPG.xml"
                   onClick={() => triggerHaptic('light')}
-                  className="flex-1 min-h-8 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
+                  className="flex-1 min-h-9 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
                 >
                   <Download className="w-3 h-3" />
                   <span>.xml</span>
@@ -393,7 +393,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                 <button
                   type="button"
                   onClick={() => void handleCopyIptv(epgUrl, 'epg')}
-                  className="min-h-8 px-2 rounded-lg bg-white/[0.07] hover:bg-white/[0.13] text-zinc-200 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                  className="min-h-9 px-2.5 rounded-lg bg-white/[0.07] hover:bg-white/[0.13] text-zinc-200 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
                 >
                   {copiedIptv === 'epg' ? <CheckCheck className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
                 </button>
@@ -407,7 +407,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               triggerHaptic('light');
               setShowTizenGuide(true);
             }}
-            className="w-full min-h-11 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] text-xs font-semibold text-zinc-200 flex items-center justify-between gap-2 cursor-pointer transition-colors"
+            className="w-full min-h-11 px-3.5 py-2.5 rounded-2xl bg-[#0D0D12] hover:bg-[#14141D] border border-white/[0.08] text-xs font-semibold text-zinc-200 flex items-center justify-between gap-2 cursor-pointer transition-colors"
           >
             <span className="flex items-center gap-2.5">
               <RiffanTvRemoteIcon size={17} animate="hover" />

@@ -179,7 +179,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
   const isLongOverview = overviewText.length > 105;
 
   return (
-    <div className="relative bg-[#090A10] shrink-0">
+    <div className="relative bg-[#0D0D12] shrink-0">
       {/* 1. COMPACT STREAMING HERO WITH BACKDROP + SCRIM */}
       <div className="relative w-full overflow-hidden">
         {heroImage && (
@@ -192,8 +192,8 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
               className="w-full h-full"
               imgClassName="w-full h-full object-cover object-center opacity-55 sm:opacity-65 scale-[1.03]"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#090A10] via-[#090A10]/72 to-black/55" />
-            <div className="hidden sm:block absolute inset-0 bg-gradient-to-r from-[#090A10]/85 via-transparent to-[#090A10]/40" />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#0D0D12] via-[#0D0D12]/72 to-black/55" />
+            <div className="hidden sm:block absolute inset-0 bg-gradient-to-r from-[#0D0D12]/85 via-transparent to-[#0D0D12]/40" />
           </div>
         )}
 
@@ -257,7 +257,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
               title={pickLang(lang, { es: 'Compartir', ca: 'Compartir', en: 'Share' })}
               className="w-10 h-10 rounded-full bg-black/55 hover:bg-black/80 backdrop-blur-md border border-white/15 text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
             >
-              <Share2 className="w-4 h-4 text-[#D8B4FE]" />
+              <Share2 className="w-4 h-4 text-[#A78BFA]" />
             </button>
 
             <button
@@ -275,9 +275,9 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
         </div>
 
         {/* Hero Metadata + Title */}
-        <div className="relative z-10 px-3.5 pt-4 pb-2 sm:px-6 sm:pt-7 sm:pb-2.5 space-y-1">
+        <div className="relative z-10 px-4 pt-4 pb-2 sm:px-6 sm:pt-7 sm:pb-2.5 space-y-1">
           <div className="text-[11px] sm:text-xs text-zinc-300 flex items-center flex-wrap gap-x-1.5 gap-y-0.5 tabular-nums">
-            <span className="text-[#BF94FF] font-semibold">
+            <span className="text-[#A78BFA] font-semibold">
               {pickLang(lang, { es: 'Serie TV', ca: 'Sèrie TV', en: 'TV Series' })}
             </span>
             {selectedSeries.year && (
@@ -323,7 +323,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
             <button
               type="button"
               onClick={() => setSynopsisExpanded((v) => !v)}
-              className="mt-0.5 text-[11px] font-semibold text-[#C4A7FF] hover:text-white cursor-pointer"
+              className="mt-0.5 text-[11px] font-semibold text-[#A78BFA] hover:text-white cursor-pointer"
             >
               {synopsisExpanded
                 ? pickLang(lang, { es: 'Ver menos', ca: 'Veure menys', en: 'Show less' })
@@ -334,7 +334,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
       )}
 
       {/* 3. PRIMARY PLAY CTA + COMPACT LANGUAGE POPOVER (WITH FORCE CASTILIAN INSIDE) */}
-      <div className="px-3.5 pb-2.5 sm:px-6 sm:pb-3 flex items-center gap-2">
+      <div className="px-4 pb-2.5 sm:px-6 sm:pb-3 flex items-center gap-2">
         {historyMatchesActiveSeason && selectedSeriesHistory ? (
           <button
             type="button"
@@ -342,7 +342,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
               triggerHaptic('success');
               onReplayHistoryItem(selectedSeriesHistory, false);
             }}
-            className="flex-1 sm:flex-initial min-h-[44px] px-4 sm:px-5 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer active:scale-[0.98] transition-all shadow-[0_8px_24px_rgba(145,70,255,0.34)]"
+            className="flex-1 sm:flex-initial min-h-[44px] px-4 sm:px-5 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer active:scale-95 transition-all shadow-[0_8px_24px_rgba(124,58,237,0.34)]"
           >
             <Play className="w-4 h-4 fill-current shrink-0" />
             <span className="tabular-nums">
@@ -365,7 +365,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
                 forceSpanishSeriesActive ? { forceSpanish: true } : undefined
               );
             }}
-            className="flex-1 sm:flex-initial min-h-[44px] px-4 sm:px-5 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer active:scale-[0.98] transition-all shadow-[0_8px_24px_rgba(145,70,255,0.34)]"
+            className="flex-1 sm:flex-initial min-h-[44px] px-4 sm:px-5 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer active:scale-95 transition-all shadow-[0_8px_24px_rgba(124,58,237,0.34)]"
           >
             <Play className="w-4 h-4 fill-current shrink-0" />
             <span className="tabular-nums">
@@ -383,7 +383,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
               triggerHaptic('success');
               onReplayHistoryItem(selectedSeriesHistory, false);
             }}
-            className="flex-1 sm:flex-initial min-h-[44px] px-4 sm:px-5 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer active:scale-[0.98] transition-all shadow-[0_8px_24px_rgba(145,70,255,0.34)]"
+            className="flex-1 sm:flex-initial min-h-[44px] px-4 sm:px-5 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer active:scale-95 transition-all shadow-[0_8px_24px_rgba(124,58,237,0.34)]"
           >
             <Play className="w-4 h-4 fill-current shrink-0" />
             <span className="tabular-nums">
@@ -408,9 +408,9 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
               ca: `Reprendre on ho vas deixar (T${selectedSeriesHistory.season} Cap. ${selectedSeriesHistory.episode})`,
               en: `Resume where you left off (S${selectedSeriesHistory.season} Ep ${selectedSeriesHistory.episode})`,
             })}
-            className="min-h-[44px] px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/12 text-xs font-semibold text-zinc-200 flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors tabular-nums"
+            className="min-h-[44px] px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/12 text-xs font-semibold text-zinc-200 flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all tabular-nums"
           >
-            <Play className="w-3 h-3 text-[#BF94FF] fill-current shrink-0" />
+            <Play className="w-3 h-3 text-[#A78BFA] fill-current shrink-0" />
             <span>
               T{selectedSeriesHistory.season}·E{selectedSeriesHistory.episode}
             </span>
@@ -432,9 +432,9 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
               ca: `Idioma d'àudio: ${activeLangMeta.title}`,
               en: `Audio language: ${activeLangMeta.title}`,
             })}
-            className={`min-h-[44px] px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
+            className={`min-h-[44px] px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all ${
               forceSpanishSeriesActive
-                ? 'bg-[#9146FF]/18 hover:bg-[#9146FF]/28 border-[#BF94FF]/55 text-white'
+                ? 'bg-[#7C3AED]/20 hover:bg-[#7C3AED]/30 border-[#8B5CF6]/60 text-white'
                 : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/12 text-white'
             }`}
           >
@@ -445,7 +445,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
             ) : (
               <ChevronDown
                 className={`w-3.5 h-3.5 text-zinc-400 transition-transform ${
-                  langMenuOpen ? 'rotate-180 text-[#BF94FF]' : ''
+                  langMenuOpen ? 'rotate-180 text-[#A78BFA]' : ''
                 }`}
               />
             )}
@@ -454,7 +454,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
           {langMenuOpen && (
             <div
               role="listbox"
-              className="absolute right-0 mt-2 z-[120] w-60 rounded-2xl bg-[#10121E]/98 backdrop-blur-2xl border border-white/15 p-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.9)] space-y-1"
+              className="absolute right-0 mt-2 z-[120] w-64 rounded-2xl bg-[#0D0D12]/98 backdrop-blur-2xl border border-white/[0.1] p-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.9)] space-y-1"
             >
               <div className="px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider text-zinc-400">
                 {pickLang(lang, {
@@ -479,17 +479,17 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
                         onSeriesModalLangChange(code);
                         setLangMenuOpen(false);
                       }}
-                      className={`w-full min-h-[38px] px-2.5 py-1.5 rounded-xl flex items-center justify-between gap-2 text-left text-xs font-semibold cursor-pointer transition-colors ${
+                      className={`w-full min-h-[40px] px-2.5 py-1.5 rounded-xl flex items-center justify-between gap-2 text-left text-xs font-semibold cursor-pointer transition-colors ${
                         isSelected
-                          ? 'bg-[#9146FF]/25 text-white border border-[#9146FF]/45'
+                          ? 'bg-[#7C3AED]/25 text-white border border-[#8B5CF6]/45'
                           : 'text-zinc-200 hover:bg-white/[0.08]'
                       }`}
                     >
                       <span className="flex items-center gap-2 min-w-0">
                         <FlagBadgeSvg code={meta.flag} className="w-4.5 h-3 shrink-0" />
-                        <span className="truncate">{meta.title}</span>
+                        <span className="leading-snug break-words">{meta.title}</span>
                       </span>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />}
+                      {isSelected && <Check className="w-3.5 h-3.5 text-[#A78BFA] shrink-0" />}
                     </button>
                   );
                 })}
@@ -509,14 +509,14 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
                       true
                     );
                   }}
-                  className="w-full min-h-[38px] px-2.5 py-1.5 rounded-xl bg-white/[0.05] hover:bg-[#9146FF]/20 text-left text-xs font-semibold text-[#E9D5FF] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
+                  className="w-full min-h-[40px] px-2.5 py-1.5 rounded-xl bg-white/[0.05] hover:bg-[#7C3AED]/20 text-left text-xs font-semibold text-[#E9D5FF] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
                 >
                   <RefreshCw
-                    className={`w-3.5 h-3.5 text-[#BF94FF] shrink-0 ${
+                    className={`w-3.5 h-3.5 text-[#A78BFA] shrink-0 ${
                       probingSeriesLangs ? 'animate-spin' : ''
                     }`}
                   />
-                  <span className="truncate">
+                  <span className="leading-snug break-words">
                     {pickLang(lang, {
                       es: 'Forzar búsqueda en Castellano',
                       ca: 'Forçar cerca en Castellà',
@@ -531,7 +531,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
       </div>
 
       {/* 4. SINGLE-LINE COMPACT SEASON SWITCHER + EPISODE SORT BAR */}
-      <div className="px-3.5 py-2 sm:px-6 bg-[#0C0E16] border-t border-b border-white/[0.07] flex items-center justify-between gap-2">
+      <div className="px-4 py-2 sm:px-6 bg-[#0D0D12] border-t border-b border-white/[0.08] flex items-center justify-between gap-2">
         <div ref={seasonMenuRef} className="relative flex items-center gap-1 min-w-0">
           {sortedSeasons.length > 1 ? (
             <>
@@ -548,7 +548,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
                   ca: 'Temporada anterior',
                   en: 'Previous season',
                 })}
-                className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] disabled:opacity-30 disabled:pointer-events-none border border-white/10 text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                className="w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] disabled:opacity-30 disabled:pointer-events-none border border-white/10 text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
@@ -561,9 +561,9 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
                 }}
                 aria-haspopup="listbox"
                 aria-expanded={seasonMenuOpen}
-                className="min-h-[38px] px-3 rounded-xl bg-white/[0.07] hover:bg-white/[0.12] border border-white/12 text-xs sm:text-sm font-bold text-white flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors min-w-0"
+                className="min-h-[40px] px-3 rounded-xl bg-white/[0.07] hover:bg-white/[0.12] border border-white/12 text-xs sm:text-sm font-bold text-white flex items-center gap-2 cursor-pointer active:scale-95 transition-all min-w-0"
               >
-                <span className="truncate tabular-nums">
+                <span className="tabular-nums leading-snug">
                   {pickLang(lang, {
                     es: `Temporada ${selectedSeries.activeSeason}`,
                     ca: `Temporada ${selectedSeries.activeSeason}`,
@@ -572,7 +572,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
                   {activeSeasonEpCount > 0 ? ` · ${activeSeasonEpCount} cap.` : ''}
                 </span>
                 <ChevronDown
-                  className={`w-3.5 h-3.5 text-[#BF94FF] shrink-0 transition-transform ${
+                  className={`w-3.5 h-3.5 text-[#A78BFA] shrink-0 transition-transform ${
                     seasonMenuOpen ? 'rotate-180' : ''
                   }`}
                 />
@@ -591,7 +591,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
                   ca: 'Següent temporada',
                   en: 'Next season',
                 })}
-                className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] disabled:opacity-30 disabled:pointer-events-none border border-white/10 text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                className="w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] disabled:opacity-30 disabled:pointer-events-none border border-white/10 text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
@@ -599,7 +599,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
               {seasonMenuOpen && (
                 <div
                   role="listbox"
-                  className="absolute left-0 top-full mt-1.5 z-[120] w-64 max-w-[82vw] max-h-64 overflow-y-auto custom-scrollbar rounded-2xl bg-[#10121E]/98 backdrop-blur-2xl border border-white/15 p-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.92)] space-y-0.5"
+                  className="absolute left-0 top-full mt-1.5 z-[120] w-64 max-w-[82vw] max-h-64 overflow-y-auto custom-scrollbar rounded-2xl bg-[#0D0D12]/98 backdrop-blur-2xl border border-white/[0.1] p-1.5 shadow-[0_20px_50px_rgba(0,0,0,0.92)] space-y-0.5"
                 >
                   {sortedSeasons.map((s) => {
                     const isActive = s.seasonNumber === selectedSeries.activeSeason;
@@ -619,7 +619,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
                         }}
                         className={`w-full min-h-[40px] px-3 py-2 rounded-xl flex items-center justify-between gap-2 text-left text-xs font-semibold cursor-pointer transition-colors tabular-nums ${
                           isActive
-                            ? 'bg-[#9146FF] text-white font-bold shadow-sm'
+                            ? 'bg-[#7C3AED] text-white font-bold shadow-sm'
                             : 'text-zinc-200 hover:bg-white/[0.08]'
                         }`}
                       >
@@ -659,7 +659,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
               triggerHaptic('light');
               onToggleSortDesc();
             }}
-            className="min-h-[38px] px-2.5 sm:px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-[11px] sm:text-xs font-semibold text-zinc-200 flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+            className="min-h-[40px] px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-[11px] sm:text-xs font-semibold text-zinc-200 flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
             title={
               episodeSortDesc
                 ? pickLang(lang, {
@@ -674,7 +674,7 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
                   })
             }
           >
-            <ArrowUpDown className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+            <ArrowUpDown className="w-3.5 h-3.5 text-[#A78BFA] shrink-0" />
             <span className="tabular-nums">
               {episodeSortDesc
                 ? pickLang(lang, {

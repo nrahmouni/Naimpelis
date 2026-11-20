@@ -61,14 +61,14 @@ export const PartySidebarHeader: React.FC<PartySidebarHeaderProps> = ({
 
   if (worldSalaMode) {
     return (
-      <div className="border-b border-white/[0.08] shrink-0 bg-[#10121C]/95 backdrop-blur-xl z-20">
-        <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+      <div className="border-b border-white/[0.08] shrink-0 bg-[#0D0D12]/95 backdrop-blur-xl z-20">
+        <div className="px-4 py-3 flex items-center justify-between gap-2">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 min-w-0">
               <h3 className="font-display font-bold text-sm sm:text-base text-white break-words leading-snug min-w-0">
                 {roomName}
               </h3>
-              {hasPin && <KeyRound className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />}
+              {hasPin && <KeyRound className="w-3.5 h-3.5 text-[#A78BFA] shrink-0" />}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-[#00F593] font-semibold mt-0.5">
               <span className="w-2 h-2 rounded-full bg-[#00F593] shrink-0" />
@@ -87,7 +87,7 @@ export const PartySidebarHeader: React.FC<PartySidebarHeaderProps> = ({
             <button
               type="button"
               onClick={onOpenInviteAction}
-              className="min-h-10 px-3.5 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-[0_4px_14px_rgba(145,70,255,0.35)]"
+              className="min-h-10 px-3.5 rounded-2xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-[0_4px_14px_rgba(124,58,237,0.35)]"
             >
               {copiedLink ? (
                 <>
@@ -152,7 +152,7 @@ export const PartySidebarHeader: React.FC<PartySidebarHeaderProps> = ({
   if (hideInternalTabs && !showMenusButton) return null;
 
   return (
-    <div className="px-2.5 py-1.5 border-b border-white/[0.06] flex items-center gap-2 shrink-0 bg-[#0D0F18]/95 backdrop-blur-xl z-20 overflow-hidden">
+    <div className="px-2.5 py-1.5 border-b border-white/[0.08] flex items-center gap-2 shrink-0 bg-[#0D0D12]/95 backdrop-blur-xl z-20 overflow-hidden">
       {showMenusButton && onShowMenus && (
         <button
           type="button"
@@ -165,9 +165,9 @@ export const PartySidebarHeader: React.FC<PartySidebarHeaderProps> = ({
             ca: 'Mostrar menús',
             en: 'Show menus',
           })}
-          className="h-8 px-2.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-[11px] font-semibold text-zinc-100 flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
+          className="h-8 px-2.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.08] text-[11px] font-semibold text-zinc-100 flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
         >
-          <ChevronUp className="w-3 h-3 text-[#BF94FF]" />
+          <ChevronUp className="w-3 h-3 text-[#A78BFA]" />
           <span>{pickLang(lang, { es: 'Menús', ca: 'Menús', en: 'Menus' })}</span>
         </button>
       )}
@@ -214,7 +214,7 @@ export const PartySidebarHeader: React.FC<PartySidebarHeaderProps> = ({
                 ca: 'Xat flotant sobre el vídeo',
                 en: 'Floating chat over video',
               })}
-              className="w-8 h-8 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] flex items-center justify-center text-[#BF94FF] cursor-pointer shrink-0 transition-colors"
+              className="w-8 h-8 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] flex items-center justify-center text-[#A78BFA] cursor-pointer shrink-0 transition-colors"
             >
               <Maximize2 className="w-3.5 h-3.5" />
             </button>
@@ -237,7 +237,7 @@ export const PartySidebarHeader: React.FC<PartySidebarHeaderProps> = ({
               className={`w-8 h-8 rounded-xl border flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
                 copiedLink
                   ? 'bg-emerald-500/20 border-emerald-500/40 text-white'
-                  : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.08] text-[#BF94FF]'
+                  : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.08] text-[#A78BFA]'
               }`}
             >
               {copiedLink ? (

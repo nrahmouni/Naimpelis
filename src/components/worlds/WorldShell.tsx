@@ -24,6 +24,7 @@ interface WorldShellProps {
   onSearchChange?: (val: string) => void;
   searchPlaceholder?: string;
   headerActions?: React.ReactNode;
+  quickActions?: React.ReactNode;
   onOpenVoiceAssistant?: () => void;
   sessionMode?: 'solo' | 'party';
   onUpgradeSoloToParty?: () => void;
@@ -43,6 +44,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
   onSearchChange,
   searchPlaceholder,
   headerActions,
+  quickActions,
   onOpenVoiceAssistant,
   sessionMode,
   onUpgradeSoloToParty,
@@ -122,9 +124,9 @@ export const WorldShell: React.FC<WorldShellProps> = ({
         fullHeight ? 'flex-1 min-h-0 h-full overflow-hidden' : 'min-h-[calc(100dvh-4rem)] pb-14'
       } ${className}`}
     >
-      {/* CALM 3-ZONE WORLD HEADER (LOBBY-STYLE SIMPLICITY) */}
-      <header className="sticky top-0 z-30 shrink-0 bg-[#07080C]/88 backdrop-blur-2xl border-b border-white/[0.06] px-3 sm:px-5">
-        <div className="max-w-6xl mx-auto h-14 flex items-center justify-between gap-2">
+      {/* CALM STICKY OLED WORLD HEADER */}
+      <header className="sticky top-0 z-30 shrink-0 bg-[#000000]/92 backdrop-blur-2xl border-b border-white/[0.08] px-4 sm:px-5">
+        <div className="max-w-6xl mx-auto min-h-14 py-1.5 flex items-center justify-between gap-2.5">
           {searchOpen && onSearchChange ? (
             <div className="flex-1 flex items-center gap-2 min-w-0">
               <div className="relative flex-1 min-w-0">
@@ -146,14 +148,14 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                       en: 'Search here...',
                     })
                   }
-                  className="w-full min-h-11 pl-10 pr-4 rounded-2xl bg-white/[0.05] border border-[#9146FF]/55 text-sm text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#9146FF]/30"
+                  className="w-full min-h-11 pl-10 pr-4 rounded-2xl bg-[#0D0D12] border border-[#7C3AED]/60 text-sm text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#7C3AED]/35"
                 />
               </div>
               <button
                 type="button"
                 onClick={handleCloseSearch}
                 aria-label={pickLang(lang, { es: 'Cerrar búsqueda', ca: 'Tancar cerca', en: 'Close search' })}
-                className="min-w-11 min-h-11 rounded-2xl bg-white/[0.045] hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center text-zinc-200 cursor-pointer shrink-0 transition-colors"
+                className="min-w-11 min-h-11 rounded-2xl bg-[#0D0D12] hover:bg-white/[0.08] border border-white/[0.08] flex items-center justify-center text-zinc-200 cursor-pointer shrink-0 active:scale-95 transition-all"
               >
                 <RiffanCloseIcon size={18} animate="hover" />
               </button>
@@ -177,19 +179,20 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                   className="flex items-center gap-2.5 min-w-0 py-1 pr-2 cursor-pointer active:scale-95 transition-transform"
                 >
                   <NaimBrandLogo variant="mark" size={26} />
-                  <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight truncate">
+                  <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-tight">
                     {title}
                   </h2>
                 </button>
               </div>
 
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-2 shrink-0">
+                {quickActions}
                 {onSearchChange && (
                   <button
                     type="button"
                     onClick={() => setSearchOpen(true)}
                     aria-label={pickLang(lang, { es: 'Buscar', ca: 'Cercar', en: 'Search' })}
-                    className="min-w-11 min-h-11 rounded-2xl bg-white/[0.045] hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer active:scale-95 transition-all"
+                    className="min-w-11 min-h-11 rounded-2xl bg-[#0D0D12] hover:bg-white/[0.08] border border-white/[0.08] flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer active:scale-95 transition-all"
                   >
                     <RiffanSearchIcon size={17} animate="hover" />
                   </button>
@@ -206,7 +209,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                       className={`min-w-11 min-h-11 rounded-2xl border flex items-center justify-center cursor-pointer active:scale-95 transition-all ${
                         moreMenuOpen
                           ? 'bg-white/[0.12] border-white/20 text-white'
-                          : 'bg-white/[0.045] hover:bg-white/[0.1] border-white/[0.08] text-zinc-200 hover:text-white'
+                          : 'bg-[#0D0D12] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200 hover:text-white'
                       }`}
                     >
                       <MoreHorizontal className="w-4 h-4" />
@@ -215,7 +218,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                     {moreMenuOpen && (
                       <div
                         role="menu"
-                        className="absolute right-0 mt-2 w-56 rounded-2xl bg-[#0E1019]/96 backdrop-blur-2xl border border-white/[0.1] shadow-[0_18px_48px_rgba(0,0,0,0.72)] p-1.5 space-y-1 z-50 animate-fade-in"
+                        className="absolute right-0 mt-2 w-56 rounded-2xl bg-[#0D0D12]/96 backdrop-blur-2xl border border-white/[0.08] shadow-[0_18px_48px_rgba(0,0,0,0.85)] p-1.5 space-y-1 z-50 animate-fade-in"
                       >
                         {headerActions && (
                           <div className="px-1 py-0.5 flex flex-wrap gap-1">{headerActions}</div>
@@ -228,9 +231,9 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                               setMoreMenuOpen(false);
                               onUpgradeSoloToParty();
                             }}
-                            className="w-full min-h-11 px-3 rounded-xl hover:bg-[#9146FF]/15 text-left text-xs font-semibold text-white flex items-center gap-2.5 cursor-pointer transition-colors"
+                            className="w-full min-h-11 px-3 rounded-xl hover:bg-[#7C3AED]/18 text-left text-xs font-semibold text-white flex items-center gap-2.5 cursor-pointer transition-colors"
                           >
-                            <Users className="w-4 h-4 text-[#BF94FF] shrink-0" />
+                            <Users className="w-4 h-4 text-[#A78BFA] shrink-0" />
                             <span>
                               {pickLang(lang, {
                                 es: 'Ver con amigos',
@@ -270,7 +273,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                             }}
                             className="w-full min-h-11 px-3 rounded-xl hover:bg-white/[0.07] text-left text-xs font-semibold text-zinc-100 flex items-center gap-2.5 cursor-pointer transition-colors"
                           >
-                            <Mic className="w-4 h-4 text-[#BF94FF] shrink-0" />
+                            <Mic className="w-4 h-4 text-[#A78BFA] shrink-0" />
                             <span>
                               {pickLang(lang, {
                                 es: 'Asistente por voz',

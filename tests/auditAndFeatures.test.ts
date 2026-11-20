@@ -242,7 +242,7 @@ describe('Audit & Feature Verification Suite', () => {
 
     const indexHtml = readFileSync(join(process.cwd(), 'index.html'), 'utf8');
     expect(indexHtml).toContain('RiffanTV');
-    expect(indexHtml).toContain('#07080C');
+    expect(indexHtml).toContain('#000000');
 
     const viteConfig = readFileSync(join(process.cwd(), 'vite.config.ts'), 'utf8');
     expect(viteConfig).toContain("short_name: 'Riffan TV'");

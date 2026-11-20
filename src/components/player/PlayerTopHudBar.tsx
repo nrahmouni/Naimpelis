@@ -125,8 +125,8 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
                   aria-label={isTouchLocked ? 'Desbloquear pantalla' : 'Bloquear pantalla'}
                   className={`min-h-[44px] min-w-[44px] px-3 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
                     isTouchLocked
-                      ? 'bg-[#9146FF] border-[#BF94FF] text-white shadow-[0_8px_24px_rgba(145,70,255,0.45)]'
-                      : 'bg-[#141418]/75 hover:bg-[#141418]/95 border-white/15 text-white'
+                      ? 'bg-[#7C3AED] border-[#8B5CF6] text-white shadow-[0_8px_24px_rgba(124,58,237,0.45)]'
+                      : 'bg-[#0D0D12]/80 hover:bg-[#0D0D12]/95 border-white/15 text-white'
                   }`}
                 >
                   {isTouchLocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
@@ -143,7 +143,7 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
                   className={`min-h-[44px] min-w-[44px] px-3 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
                     isCastingToTv || hasConnectedSmartTv
                       ? 'bg-emerald-500/25 border-emerald-400/60 text-emerald-100 shadow-[0_8px_20px_rgba(16,185,129,0.35)]'
-                      : 'bg-[#141418]/80 hover:bg-[#9146FF] border-white/20 text-white'
+                      : 'bg-[#0D0D12]/80 hover:bg-[#7C3AED] border-white/20 text-white'
                   }`}
                 >
                   <RiffanCastIcon size={16} tone="current" />
@@ -169,8 +169,8 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
                     isInPiP ||
                     vocalBoostEnabled ||
                     activeSubId !== 'off'
-                      ? 'bg-[#9146FF]/25 border-[#9146FF]/60 text-white shadow-[0_0_20px_rgba(145,70,255,0.3)]'
-                      : 'bg-[#141418]/75 hover:bg-[#141418]/95 border-white/15 text-white'
+                      ? 'bg-[#7C3AED]/25 border-[#8B5CF6]/60 text-white shadow-[0_0_20px_rgba(124,58,237,0.3)]'
+                      : 'bg-[#0D0D12]/80 hover:bg-[#0D0D12]/95 border-white/15 text-white'
                   }`}
                 >
                   <RiffanSlidersIcon size={16} tone="current" />
@@ -186,8 +186,8 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
                   aria-label={isInPiP ? 'Salir de Picture-in-Picture' : 'Activar Picture-in-Picture'}
                   className={`min-h-[44px] min-w-[44px] rounded-2xl backdrop-blur-xl border flex items-center justify-center cursor-pointer active:scale-95 transition-all ${
                     isInPiP
-                      ? 'bg-[#9146FF]/30 border-[#9146FF] text-white shadow-[0_0_16px_rgba(145,70,255,0.4)]'
-                      : 'bg-[#18181B]/70 hover:bg-[#18181B]/90 border-white/15 text-zinc-100'
+                      ? 'bg-[#7C3AED]/30 border-[#8B5CF6] text-white shadow-[0_0_16px_rgba(124,58,237,0.4)]'
+                      : 'bg-[#0D0D12]/75 hover:bg-[#0D0D12]/95 border-white/15 text-zinc-100'
                   }`}
                 >
                   <PictureInPicture2 className="w-4 h-4 text-sky-400" />
@@ -207,7 +207,7 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
                     }}
                     title="Mini-Player flotante arrastrable (16:9)"
                     aria-label="Activar Mini-Player flotante"
-                    className="min-h-[44px] min-w-[44px] rounded-2xl bg-[#18181B]/70 hover:bg-[#18181B]/90 backdrop-blur-xl border border-white/15 flex items-center justify-center text-zinc-100 cursor-pointer active:scale-95 transition-all"
+                    className="min-h-[44px] min-w-[44px] rounded-2xl bg-[#0D0D12]/75 hover:bg-[#0D0D12]/95 backdrop-blur-xl border border-white/15 flex items-center justify-center text-zinc-100 cursor-pointer active:scale-95 transition-all"
                   >
                     <Minimize2 className="w-4 h-4" />
                   </button>
@@ -217,7 +217,7 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
                 <button
                   type="button"
                   onClick={onToggleFullscreen}
-                  className="min-h-[44px] px-4 rounded-2xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer"
+                  className="min-h-[44px] px-4 rounded-2xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
                 >
                   {isFullscreen ? (
                     <>

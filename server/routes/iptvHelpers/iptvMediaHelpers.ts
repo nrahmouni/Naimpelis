@@ -13,33 +13,83 @@ import {
 } from '../../extractors/httpHelpers.ts';
 
 export const IPTV_GROUP_TITLES: Record<string, string> = {
-  generalistas: 'TDT España Generalistas',
-  movistar: 'Fútbol · Movistar+ & LaLiga',
-  dazn: 'Fútbol & Motor · DAZN',
-  uk_sports: 'Deportes UK · Sky Sports & Eurosport',
-  china_football: 'Fútbol · Streaming Internacional',
-  beinsports: 'Fútbol · beIN SPORTS HD',
-  bein_arabic: 'Fútbol · beIN SPORTS (العربية)',
-  marruecos: 'TV Marruecos (المغرب · SNRT & 2M)',
-  documentales: 'Documentales y Ciencia (Nat Geo & Discovery)',
-  usa_tv: 'TV Estados Unidos (FOX · NBC · CNN)',
-  europa_tv: 'TV Europa (BBC · Euronews · DW · France 24)',
-  noticias_intl: 'Noticias Internacionales (Al Jazeera · Al Arabiya)',
-  espn: 'Fútbol & Deportes · ESPN 1-7',
-  dsports: 'Fútbol & Deportes · DSports',
+  generalistas: 'España · TDT Generalistas',
+  infantil_autonomicas: 'España · Infantil y Autonómicas',
+  movistar: 'Deportes · Movistar+ & LaLiga',
+  dazn: 'Deportes · DAZN & Motor',
+  uk_sports: 'Deportes · UK Sports & Eurosport',
+  china_football: 'Deportes · Fútbol Internacional',
+  beinsports: 'Deportes · beIN SPORTS HD',
+  bein_arabic: 'Deportes · beIN SPORTS العربية',
+  espn: 'Deportes · ESPN & LatAm',
+  dsports: 'Deportes · DSports',
   tnt_space: 'Deportes · TNT Sports & Space',
+  world_cricket: 'Deportes Mundial & Cricket',
+  noticias_deportes: 'Deportes & Noticias Directo',
   cine_series: 'Cine y Series 24/7',
+  famelack_movies: 'Cine Mundial · Famelack 24/7',
+  documentales: 'Documentales y Ciencia',
   entretenimiento: 'Entretenimiento y Variedades',
-  noticias_deportes: 'Noticias y Deporte en Directo',
-  infantil_autonomicas: 'Infantil y Autonómicas (TV3 · SX3 · Autonómicas)',
   fast_thematic: 'Canales Temáticos FAST 24/7',
-  world_cricket: 'Deportes Mundial & Cricket (Sportzfy · Famelack)',
-  elahmad_mena: 'Elahmad MENA & Árabe (Magreb · MBC · Golfo)',
-  adrar_europa: 'ADRAR Europa (FR · DE · IT · TR · UK · NL · BE · RU)',
-  famelack_movies: 'Famelack Cine & Series 24/7',
-  kids_world: 'Infantil Mundial (Elahmad & Famelack Kids)',
+  kids_world: 'Infantil Mundial',
+  marruecos: 'Marruecos · SNRT & 2M',
+  elahmad_mena: 'MENA & Árabe · Elahmad',
+  adrar_europa: 'Europa · ADRAR (ES/FR/DE/IT/TR/UK/PT/NL/BE/RU)',
+  europa_tv: 'Europa · Noticias & Generalistas',
+  usa_tv: 'Estados Unidos · FOX / NBC / CNN',
+  noticias_intl: 'Noticias Internacionales',
   internacional: 'Canales Internacionales',
 };
+
+export type IptvMacroGroupId =
+  | 'espana'
+  | 'deportes'
+  | 'cine_docs'
+  | 'europa_usa'
+  | 'mena_marruecos'
+  | 'infantil';
+
+export const IPTV_MACRO_GROUP_LABELS: Record<IptvMacroGroupId, string> = {
+  espana: 'España y Autonómicas',
+  deportes: 'Fútbol y Deportes',
+  cine_docs: 'Cine, Series y Docs',
+  europa_usa: 'Europa y América',
+  mena_marruecos: 'Marruecos y MENA',
+  infantil: 'Infantil y Familia',
+};
+
+export function getIptvMacroGroup(category: string): IptvMacroGroupId {
+  switch (category) {
+    case 'generalistas':
+      return 'espana';
+    case 'infantil_autonomicas':
+    case 'kids_world':
+      return 'infantil';
+    case 'movistar':
+    case 'dazn':
+    case 'uk_sports':
+    case 'china_football':
+    case 'beinsports':
+    case 'bein_arabic':
+    case 'espn':
+    case 'dsports':
+    case 'tnt_space':
+    case 'world_cricket':
+    case 'noticias_deportes':
+      return 'deportes';
+    case 'cine_series':
+    case 'famelack_movies':
+    case 'documentales':
+    case 'fast_thematic':
+    case 'entretenimiento':
+      return 'cine_docs';
+    case 'marruecos':
+    case 'elahmad_mena':
+      return 'mena_marruecos';
+    default:
+      return 'europa_usa';
+  }
+}
 
 const IPTV_EPG_ID_ALIASES: Record<string, string> = {
   'cat-sx3-live': 'cat-sx3',

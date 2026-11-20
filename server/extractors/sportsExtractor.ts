@@ -188,12 +188,7 @@ export async function extractLiveSportsHlsDirect(
           };
         }
       }
-      return {
-        streamUrl: '',
-        referer: currentUrl,
-        isDirectMp4: false,
-        isBrokenGreenFeed: true,
-      };
+      return null;
     }
 
     const directM3u8Match = html.match(

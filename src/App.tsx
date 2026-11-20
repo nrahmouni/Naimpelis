@@ -300,13 +300,13 @@ export function App() {
             ? { height: `${visualViewportHeight}px` }
             : undefined
         }
-        className="h-[100dvh] w-full max-w-[100vw] bg-[#0B0B0E] text-[#EFEFF1] overflow-hidden"
+        className="h-[100dvh] w-full max-w-[100vw] bg-[#000000] text-[#EFEFF1] overflow-hidden"
       >
         <div
           className={`h-full w-full flex flex-col overflow-hidden pt-safe animate-room-warp ${
             isFramedMobileOnPc
-              ? 'max-w-[27rem] mx-auto bg-[#0B0B0E] border-x border-white/[0.08] shadow-[0_0_120px_rgba(0,0,0,0.96)]'
-              : 'bg-[#0B0B0E]'
+              ? 'max-w-[27rem] mx-auto bg-[#000000] border-x border-white/[0.08] shadow-[0_0_120px_rgba(0,0,0,0.96)]'
+              : 'bg-[#000000]'
           }`}
         >
           <PreviewAutoEscapeBanner variant="bar" />
@@ -320,7 +320,7 @@ export function App() {
           )}
 
           {activeWorld === 'entry' && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
-            <header className="shrink-0 z-30 h-14 px-4 sm:px-6 bg-[#07080C]/88 backdrop-blur-2xl border-b border-white/[0.06] flex items-center justify-between gap-3">
+            <header className="shrink-0 z-30 h-14 px-4 sm:px-6 bg-[#000000]/92 backdrop-blur-2xl border-b border-white/[0.08] flex items-center justify-between gap-3">
               <button
                 type="button"
                 onClick={() => {
@@ -345,14 +345,14 @@ export function App() {
                   ca: 'Menú de perfil',
                   en: 'Profile menu',
                 })}
-                className="relative w-10 h-10 rounded-2xl border border-white/15 flex items-center justify-center text-sm font-bold text-white cursor-pointer active:scale-95 transition-transform shrink-0 overflow-visible"
-                style={{ backgroundColor: profile.color || '#9146FF' }}
+                className="relative w-10 h-10 rounded-full border border-white/15 flex items-center justify-center text-sm font-bold text-white cursor-pointer active:scale-95 transition-transform shrink-0 overflow-visible shadow-[0_0_0_2px_rgba(124,58,237,0.22)]"
+                style={{ backgroundColor: profile.color || '#7C3AED' }}
               >
                 {authUser?.photoURL ? (
                   <img
                     src={authUser.photoURL}
                     alt={profile.name}
-                    className="w-full h-full object-cover rounded-2xl"
+                    className="w-full h-full object-cover rounded-full"
                   />
                 ) : (
                   <span>{getMonogramInitials(profile.name)}</span>
@@ -360,7 +360,7 @@ export function App() {
                 {unreadNotificationsCount > 0 && (
                   <span
                     aria-hidden="true"
-                    className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-[#EB0400] ring-2 ring-[#0B0B0E]"
+                    className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-[#EB0400] ring-2 ring-[#000000]"
                   />
                 )}
               </button>
@@ -697,7 +697,7 @@ export function App() {
             <div
               role="status"
               aria-live="polite"
-              className="fixed top-16 left-1/2 -translate-x-1/2 z-[120] px-4 py-2 rounded-2xl bg-[#10121C]/95 backdrop-blur-xl border border-[#9146FF]/45 text-xs font-semibold text-white shadow-[0_14px_40px_rgba(0,0,0,0.75)] flex items-center gap-2.5 pointer-events-none animate-fade-in"
+              className="fixed top-16 left-1/2 -translate-x-1/2 z-[120] px-4 py-2 rounded-2xl bg-[#0D0D12]/96 backdrop-blur-xl border border-[#7C3AED]/50 text-xs font-semibold text-white shadow-[0_14px_40px_rgba(0,0,0,0.85)] flex items-center gap-2.5 pointer-events-none animate-fade-in"
             >
               <RiffanLoaderR size={20} />
               <span>
@@ -714,8 +714,8 @@ export function App() {
             <div
               role="status"
               aria-live="polite"
-              className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[135] w-auto max-w-[calc(100%-2rem)] px-4 py-2.5 rounded-2xl bg-[#121420]/96 backdrop-blur-xl text-xs font-semibold text-white shadow-[0_20px_50px_rgba(0,0,0,0.85)] flex items-center gap-2 pointer-events-none animate-fade-in border ${
-                exitToastVisible ? 'border-white/20' : 'border-[#9146FF]/55'
+              className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[135] w-auto max-w-[calc(100%-2rem)] px-4 py-2.5 rounded-2xl bg-[#0D0D12]/96 backdrop-blur-xl text-xs font-semibold text-white shadow-[0_20px_50px_rgba(0,0,0,0.9)] flex items-center gap-2 pointer-events-none animate-fade-in border ${
+                exitToastVisible ? 'border-white/20' : 'border-[#7C3AED]/55'
               }`}
             >
               {exitToastVisible ? (
@@ -728,10 +728,10 @@ export function App() {
                 </span>
               ) : (
                 <>
-                  <span className="w-5 h-5 rounded-full bg-[#9146FF]/25 border border-[#BF94FF]/45 flex items-center justify-center text-[#D8B4FE] shrink-0">
+                  <span className="w-5 h-5 rounded-full bg-[#7C3AED]/25 border border-[#8B5CF6]/45 flex items-center justify-center text-[#D8B4FE] shrink-0">
                     <Check className="w-3 h-3" />
                   </span>
-                  <span className="truncate">{shareToast}</span>
+                  <span className="leading-snug">{shareToast}</span>
                 </>
               )}
             </div>

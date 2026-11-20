@@ -316,8 +316,8 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
               })}
               className={`min-h-12 px-4 rounded-2xl text-xs font-bold border inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
                 (isSeriesTab ? seriesSort === '4k' : movieSort === '4k')
-                  ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_6px_18px_rgba(145,70,255,0.35)]'
-                  : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.09] text-zinc-200'
+                  ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_6px_20px_rgba(124,58,237,0.38)]'
+                  : 'bg-[#0D0D12] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
               }`}
             >
               <span>4K UHD</span>
@@ -331,8 +331,8 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
               }}
               className={`min-h-12 px-4 rounded-2xl text-xs font-bold border inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
                 activeFilterCount > 0
-                  ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_6px_18px_rgba(145,70,255,0.3)]'
-                  : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.09] text-zinc-200'
+                  ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_6px_20px_rgba(124,58,237,0.38)]'
+                  : 'bg-[#0D0D12] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
               }`}
             >
               <RiffanSlidersIcon
@@ -343,8 +343,12 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
               <FlagBadgeSvg code={activeAudioFlag} className="w-3.5 h-2.5 shrink-0" />
               <span>
                 {pickLang(lang, { es: 'Filtros', ca: 'Filtres', en: 'Filters' })}
-                {activeFilterCount > 0 ? ` · ${activeFilterCount}` : ''}
               </span>
+              {activeFilterCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-white font-mono text-[11px] tabular-nums leading-none">
+                  {activeFilterCount}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -395,10 +399,10 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
 
       {/* Direct URL Launch */}
       {isUrlSearch && (
-        <div className="p-4 rounded-2xl bg-[#11131B] border border-[#9146FF]/40 flex flex-wrap items-center justify-between gap-3">
+        <div className="p-4 rounded-2xl bg-[#0D0D12] border border-[#7C3AED]/45 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0 text-xs text-zinc-200">
-            <Link2 className="w-4 h-4 text-[#BF94FF] shrink-0" />
-            <span className="font-mono truncate max-w-[260px] sm:max-w-[420px]">
+            <Link2 className="w-4 h-4 text-[#A78BFA] shrink-0" />
+            <span className="font-mono break-all">
               {trimmedSearch}
             </span>
           </div>
@@ -410,7 +414,7 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
                 onPlayCustomUrl(trimmedSearch);
                 onClearExternalSearch?.();
               }}
-              className="min-h-11 px-4 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer"
+              className="min-h-11 px-4 rounded-2xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
               <span>{pickLang(lang, { es: 'Reproducir', ca: 'Reproduir', en: 'Play' })}</span>
@@ -422,7 +426,7 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
                 onOpenCloudBrowser(trimmedSearch);
                 onClearExternalSearch?.();
               }}
-              className="min-h-11 px-4 rounded-2xl bg-white/[0.07] hover:bg-white/[0.12] text-xs font-semibold text-white cursor-pointer"
+              className="min-h-11 px-4 rounded-2xl bg-white/[0.07] hover:bg-white/[0.12] text-xs font-semibold text-white cursor-pointer active:scale-95 transition-all"
             >
               {t.openWebBtn}
             </button>

@@ -256,7 +256,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         style={{ ['--ambient-poster-glow' as string]: ambientGlow }}
-        className="w-full sm:max-w-[860px] max-h-[92dvh] sm:max-h-[88dvh] rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden ambient-poster-aura animate-sheet-up outline-none"
+        className="w-full sm:max-w-[860px] max-h-[92dvh] sm:max-h-[88dvh] rounded-t-3xl sm:rounded-3xl bg-[#0D0D12] nc-specular-surface border-t sm:border border-white/[0.08] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden ambient-poster-aura animate-sheet-up outline-none"
       >
         <MediaDetailsHero
           lang={lang}
@@ -278,7 +278,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
           <div className="space-y-2.5">
             <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
-              <span className="font-semibold uppercase tracking-wider text-[#BF94FF]">
+              <span className="font-semibold uppercase tracking-wider text-[#A78BFA]">
                 {isSeries
                   ? pickLang(lang, { es: 'Serie TV', ca: 'Sèrie TV', en: 'TV Series' })
                   : pickLang(lang, { es: 'Película HD', ca: 'Pel·lícula HD', en: 'HD Movie' })}
@@ -365,7 +365,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               />
 
               {visibleAudioOptions.length > 0 && (
-                <span className="text-xs font-semibold text-[#BF94FF]">
+                <span className="text-xs font-semibold text-[#A78BFA]">
                   {selectedOptLabel}
                 </span>
               )}
@@ -383,9 +383,9 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                       onClose();
                       onOpenSeriesEpisodes(id);
                     }}
-                    className="min-h-[48px] px-6 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 text-xs sm:text-sm font-bold text-white flex items-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-[0_10px_28px_rgba(145,70,255,0.38)]"
+                    className="min-h-[48px] px-6 rounded-2xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs sm:text-sm font-bold text-white flex items-center gap-2 cursor-pointer transition-all active:scale-95 shadow-[0_10px_28px_rgba(124,58,237,0.38)]"
                   >
-                    <Play className="w-4 h-4 fill-current" />
+                    <Play className="w-4 h-4 fill-current shrink-0" />
                     <span>
                       {pickLang(lang, {
                         es: 'Elegir Temporada y Episodio',
@@ -398,7 +398,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     type="button"
                     disabled={forcingSpanish}
                     onClick={() => void handleForceSpanishSearch()}
-                    className="min-h-[48px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-[#BF94FF]/40 text-xs font-bold text-[#EFEFF1] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
+                    className="min-h-[48px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-[#8B5CF6]/40 text-xs font-bold text-[#EFEFF1] flex items-center gap-2 cursor-pointer active:scale-95 transition-all disabled:opacity-60"
                   >
                     {forcingSpanish ? (
                       <RiffanSpinner size={16} />
@@ -444,7 +444,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                       onClose();
                       onPlayMovie(enrichedMovie, selectedAudioLang);
                     }}
-                    className="flex-1 sm:flex-initial min-h-[48px] px-6 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-[0_10px_28px_rgba(145,70,255,0.38)]"
+                    className="flex-1 sm:flex-initial min-h-[48px] px-6 rounded-2xl bg-[#7C3AED] hover:bg-[#8B5CF6] disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-95 shadow-[0_10px_28px_rgba(124,58,237,0.38)]"
                   >
                     {loading && !hasProbedLanguages ? (
                       <RiffanSpinner size={16} tone="current" />
@@ -475,7 +475,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     type="button"
                     disabled={forcingSpanish}
                     onClick={() => void handleForceSpanishSearch()}
-                    className="min-h-[48px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-[#BF94FF]/40 text-xs font-bold text-[#EFEFF1] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
+                    className="min-h-[48px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-[#8B5CF6]/40 text-xs font-bold text-[#EFEFF1] flex items-center gap-2 cursor-pointer active:scale-95 transition-all disabled:opacity-60"
                   >
                     {forcingSpanish ? (
                       <RiffanSpinner size={16} />
@@ -563,7 +563,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               >
                 <Heart
                   className={`w-4 h-4 ${
-                    isBookmarked ? 'fill-current text-[#9146FF]' : 'text-zinc-300'
+                    isBookmarked ? 'fill-current text-[#8B5CF6]' : 'text-zinc-300'
                   }`}
                 />
                 <span>
@@ -584,9 +584,9 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     title,
                   });
                 }}
-                className="min-h-[48px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-zinc-200 flex items-center gap-1.5 cursor-pointer transition-colors"
+                className="min-h-[48px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs font-semibold text-zinc-200 flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
               >
-                <Share2 className="w-4 h-4 text-[#BF94FF]" />
+                <Share2 className="w-4 h-4 text-[#A78BFA]" />
                 <span>
                   {pickLang(lang, { es: 'Compartir', ca: 'Compartir', en: 'Share' })}
                 </span>

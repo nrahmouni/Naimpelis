@@ -249,7 +249,7 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
         aria-label={selectedSeries.title}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-[940px] max-h-[94dvh] sm:max-h-[90dvh] rounded-t-3xl sm:rounded-3xl bg-[#090A10] border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden outline-none"
+        className="w-full sm:max-w-[940px] max-h-[94dvh] sm:max-h-[90dvh] rounded-t-3xl sm:rounded-3xl bg-[#0D0D12] border-t sm:border border-white/[0.08] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden outline-none"
       >
         <SeriesPickerHeader
           lang={lang}
@@ -286,7 +286,7 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
         />
 
         {showEpisodeSearchBar && (
-          <div className="px-3.5 py-2 sm:px-6 bg-[#0C0E16] border-b border-white/[0.07] space-y-2 shrink-0">
+          <div className="px-4 py-2.5 sm:px-6 bg-[#0D0D12] border-b border-white/[0.08] space-y-2 shrink-0">
             <div className="relative flex-1 min-w-0">
               <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
@@ -298,7 +298,7 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                   ca: `Anar al cap. # (1–${allSeasonEpisodes.length}) o cercar títol...`,
                   en: `Jump to ep # (1–${allSeasonEpisodes.length}) or search title...`,
                 })}
-                className="w-full h-9 pl-9 pr-8 rounded-xl bg-[#06070B] border border-white/10 focus:border-[#9146FF]/60 text-xs sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
+                className="w-full h-10 pl-9 pr-8 rounded-xl bg-black border border-white/10 focus:border-[#8B5CF6]/70 text-xs sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
               />
               {episodeSearchQuery && (
                 <button
@@ -337,10 +337,10 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                         setEpisodeRangeStart(startIdx);
                         episodeListScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                       }}
-                      className={`min-h-[32px] px-3 rounded-lg text-xs font-semibold tabular-nums whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      className={`min-h-[34px] px-3 rounded-lg text-xs font-semibold tabular-nums whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
                         isCurrentChunk
-                          ? 'bg-[#9146FF] text-white shadow-sm'
-                          : 'bg-white/[0.04] hover:bg-white/[0.1] text-zinc-300 border border-white/[0.07]'
+                          ? 'bg-[#7C3AED] text-white shadow-sm'
+                          : 'bg-white/[0.04] hover:bg-white/[0.1] text-zinc-300 border border-white/[0.08]'
                       }`}
                     >
                       {firstEpNum === lastEpNum
@@ -356,7 +356,7 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
 
         <div
           ref={episodeListScrollRef}
-          className="flex-1 overflow-y-auto px-3.5 py-3 sm:px-6 sm:py-4 space-y-2.5 pb-[max(1.75rem,env(safe-area-inset-bottom))] custom-scrollbar"
+          className="flex-1 overflow-y-auto px-4 py-3.5 sm:px-6 sm:py-4 space-y-3 pb-[max(1.75rem,env(safe-area-inset-bottom))] custom-scrollbar"
         >
           {loadingSeriesDetails ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
@@ -402,7 +402,7 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                 {visibleEpisodes.map((ep) => {
                   const epLoadId = `tv-${selectedSeries.tmdbId}-${ep.seasonNumber}-${ep.episodeNumber}`;
                   const isExtractingEp = loadingItemId === epLoadId;
@@ -448,12 +448,12 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                   return (
                     <div
                       key={ep.id}
-                      className={`group relative min-w-0 text-left rounded-2xl border p-2.5 sm:p-3 flex items-start gap-3 transition-colors ${
+                      className={`group relative min-w-0 text-left rounded-2xl border p-3.5 flex items-start gap-3 transition-colors ${
                         isHighlightedEp
-                          ? 'ring-2 ring-[#9146FF] bg-[#9146FF]/10 border-[#9146FF]/60'
+                          ? 'ring-2 ring-[#8B5CF6] bg-[#7C3AED]/12 border-[#8B5CF6]/60'
                           : isUnreleasedEp
-                          ? 'bg-[#0D0F16]/80 hover:bg-[#141722] border-amber-400/20 opacity-85'
-                          : 'bg-[#0F1119] hover:bg-[#161925] border-white/[0.08] hover:border-white/25'
+                          ? 'bg-[#0D0D12]/80 hover:bg-[#14141C] border-amber-400/20 opacity-85'
+                          : 'bg-[#0D0D12] hover:bg-[#14141C] border-white/[0.08] hover:border-white/25'
                       }`}
                     >
                       <button
@@ -472,11 +472,11 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                           );
                         }}
                         aria-label={`${pickLang(lang, { es: 'Reproducir', ca: 'Reproduir', en: 'Play' })} ${displayEpHeading}`}
-                        className="absolute inset-0 z-0 cursor-pointer rounded-2xl focus-visible:outline-2 focus-visible:outline-[#9146FF]"
+                        className="absolute inset-0 z-0 cursor-pointer rounded-2xl focus-visible:outline-2 focus-visible:outline-[#8B5CF6]"
                       />
 
                       {/* Thumbnail 16:9 */}
-                      <div className="relative w-[112px] sm:w-[144px] aspect-video rounded-xl overflow-hidden bg-[#090A10] shrink-0 pointer-events-none z-[1]">
+                      <div className="relative w-[112px] sm:w-[144px] aspect-video rounded-xl overflow-hidden bg-black shrink-0 pointer-events-none z-[1]">
                         <PosterImage
                           src={ep.still || selectedSeries.backdrop || selectedSeries.poster}
                           alt={displayEpHeading}
@@ -486,7 +486,7 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                         />
 
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent flex items-center justify-center">
-                          <div className="w-8 h-8 rounded-full bg-[#9146FF]/95 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                          <div className="w-8 h-8 rounded-full bg-[#7C3AED]/95 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
                             {isExtractingEp ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
                             ) : (
@@ -503,7 +503,7 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                           <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20">
                             <div
                               className={`h-full ${
-                                epProgressPct >= 88 ? 'bg-emerald-400' : 'bg-[#9146FF]'
+                                epProgressPct >= 88 ? 'bg-emerald-400' : 'bg-[#7C3AED]'
                               }`}
                               style={{
                                 width: `${epProgressPct >= 88 ? 100 : epProgressPct}%`,
@@ -513,13 +513,13 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                         )}
                       </div>
 
-                      {/* Full-width Details Column (no right-side button squeeze on titles) */}
-                      <div className="min-w-0 flex-1 space-y-1 pointer-events-none relative z-[1]">
-                        <h4 className="font-display font-semibold text-[13px] sm:text-sm text-white leading-snug line-clamp-2">
+                      {/* Full-width Details Column (untruncated titles & metadata) */}
+                      <div className="min-w-0 flex-1 space-y-1.5 pointer-events-none relative z-[1]">
+                        <h4 className="font-display font-semibold text-sm text-white leading-snug break-words">
                           {displayEpHeading}
                         </h4>
 
-                        <p className="text-[11px] sm:text-xs text-zinc-400/90 line-clamp-1 sm:line-clamp-2 leading-snug">
+                        <p className="text-[11px] sm:text-xs text-zinc-400/90 line-clamp-2 leading-snug">
                           {isUnreleasedEp
                             ? pickLang(lang, {
                                 es: `Estreno programado el ${formattedAirDate}`,
@@ -541,8 +541,8 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                         </p>
 
                         <div className="flex items-center justify-between gap-2 pt-0.5">
-                          <div className="min-w-0 flex-1 text-[11px] text-zinc-400 flex items-center gap-1.5 whitespace-nowrap overflow-hidden tabular-nums">
-                            <span className="text-[#BF94FF] font-semibold">
+                          <div className="min-w-0 flex-1 text-[11px] text-zinc-400 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 tabular-nums">
+                            <span className="text-[#A78BFA] font-semibold">
                               T{ep.seasonNumber}
                             </span>
                             {ep.runtime ? (
@@ -554,9 +554,9 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                             {isUnreleasedEp && (
                               <>
                                 <span aria-hidden="true">·</span>
-                                <span className="inline-flex items-center gap-1 text-amber-300 font-semibold truncate">
+                                <span className="inline-flex items-center gap-1 text-amber-300 font-semibold">
                                   <Clock className="w-3 h-3 shrink-0" />
-                                  <span className="truncate">{formattedAirDate}</span>
+                                  <span>{formattedAirDate}</span>
                                 </span>
                               </>
                             )}
@@ -577,7 +577,7 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                           </div>
 
                           {/* Compact inline secondary actions below title */}
-                          <div className="pointer-events-auto relative z-10 flex items-center gap-1 shrink-0">
+                          <div className="pointer-events-auto relative z-10 flex items-center gap-1.5 shrink-0">
                             <button
                               type="button"
                               onClick={(e) => {
@@ -606,9 +606,9 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                                 ca: 'Compartir capítol',
                                 en: 'Share episode',
                               })}
-                              className="min-h-[34px] min-w-[34px] rounded-lg bg-white/[0.06] hover:bg-white/[0.15] border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                              className="min-h-[38px] min-w-[38px] rounded-xl bg-white/[0.06] hover:bg-white/[0.15] border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
                             >
-                              <Share2 className="w-3.5 h-3.5 text-[#BF94FF]" />
+                              <Share2 className="w-3.5 h-3.5 text-[#A78BFA]" />
                             </button>
 
                             <button
@@ -631,7 +631,7 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                               }}
                               title={t.addToQueue}
                               aria-label={t.addToQueue}
-                              className="min-h-[34px] min-w-[34px] rounded-lg bg-white/[0.06] hover:bg-white/[0.15] border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                              className="min-h-[38px] min-w-[38px] rounded-xl bg-white/[0.06] hover:bg-white/[0.15] border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
                             >
                               <Plus className="w-3.5 h-3.5" />
                             </button>

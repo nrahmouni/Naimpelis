@@ -166,6 +166,9 @@ export async function verifyM3u8HasCleanVideoFrame(
   }
 
   try {
+    if (/#EXT-X-KEY:/i.test(m3uText)) {
+      return true;
+    }
     const segLines = m3uText
       .split(/\r?\n/)
       .map((l) => l.trim())

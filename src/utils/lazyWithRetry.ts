@@ -5,15 +5,25 @@ function delay(ms: number): Promise<void> {
 }
 
 export function isChunkOrModuleLoadError(err: unknown): boolean {
-  const msg = (err instanceof Error ? err.message : String(err || '')).toLowerCase();
+  const msg = (err instanceof Error ? errorMessage(err) : String(err || '')).toLowerCase();
   return (
     msg.includes('failed to fetch dynamically imported module') ||
     msg.includes('importing a module script failed') ||
     msg.includes('loading chunk') ||
     msg.includes('loading css chunk') ||
     msg.includes('chunkloaderror') ||
-    msg.includes('error loading dynamically imported module')
+    msg.includes('error loading dynamically imported module') ||
+    msg.includes("reading 'usestate'") ||
+    msg.includes("reading 'useref'") ||
+    msg.includes("reading 'useeffect'") ||
+    msg.includes("reading 'usecontext'") ||
+    msg.includes("reading 'usememo'") ||
+    msg.includes('invalid hook call')
   );
+}
+
+function errorMessage(err: Error): string {
+  return err.message || '';
 }
 
 /**

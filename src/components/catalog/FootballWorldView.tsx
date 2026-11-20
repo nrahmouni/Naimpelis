@@ -9,6 +9,7 @@ import type {
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { buildChannelFavId } from '../../utils/storage';
+import { useAppStore } from '../../store/useAppStore';
 import { ChannelLogoBadge, getChannelRegionMeta } from '../ui/ChannelLogoBadge';
 import { FlagBadgeSvg } from '../ui/LanguageBadge';
 import { BottomSheet, SegmentedControl } from '../ui/DesignSystem';
@@ -89,13 +90,109 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
   onPlaySecondaryChannel,
   onPlayTdtChannel,
 }) => {
+  const futbolFavOnly = useAppStore((s) => s.futbolFavOnly);
+  const setFutbolFavOnly = useAppStore((s) => s.setFutbolFavOnly);
+
   const activeFilterCount =
-    (futbolLeagueFilter ? 1 : 0) + (footballLiveBrand !== 'all' ? 1 : 0);
+    (futbolLeagueFilter ? 1 : 0) +
+    (footballLiveBrand !== 'all' ? 1 : 0) +
+    (futbolFavOnly ? 1 : 0);
+
+  const { favChannels, regularChannels } = React.useMemo(() => {
+    const favs: SpanishTdtChannel[] = [];
+    const rest: SpanishTdtChannel[] = [];
+    for (const ch of footballSectionLiveChannels) {
+      const favId = buildChannelFavId(ch.channels[0]?.sourceUrl || ch.id, ch.name);
+      if (isChannelFavorited(favId)) {
+        favs.push(ch);
+      } else if (!futbolFavOnly) {
+        rest.push(ch);
+      }
+    }
+    return { favChannels: favs, regularChannels: rest };
+  }, [footballSectionLiveChannels, isChannelFavorited, futbolFavOnly]);
+
+  const renderChannelCard = (ch: SpanishTdtChannel) => {
+    const favId = buildChannelFavId(ch.channels[0]?.sourceUrl || ch.id, ch.name);
+    const faved = isChannelFavorited(favId);
+    const regMeta = getChannelRegionMeta(ch);
+    const isPlaying = Boolean(
+      activeVideoRawUrl && ch.channels.some((s) => s.sourceUrl === activeVideoRawUrl)
+    );
+    return (
+      <div
+        key={ch.id}
+        className={`relative group min-h-[76px] p-4 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
+          isPlaying
+            ? 'border-[#7C3AED] bg-[#7C3AED]/[0.14] shadow-[0_8px_24px_rgba(124,58,237,0.2)]'
+            : 'bg-[#0D0D12] border-white/[0.08] hover:border-white/20'
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            triggerHaptic('success');
+            onPlayTdtChannel(ch, 0);
+          }}
+          aria-label={`${pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })} ${ch.name}`}
+          className="absolute inset-0 z-0 rounded-2xl cursor-pointer"
+        />
+
+        <div className="relative z-10 flex-1 min-w-0 flex items-center gap-3 pointer-events-none">
+          <ChannelLogoBadge channel={ch} size="md" />
+          <div className="min-w-0 flex-1 space-y-0.5">
+            <p className="font-display font-bold text-[15px] text-white leading-snug break-words flex items-baseline flex-wrap gap-x-1.5">
+              <span className="break-words">{ch.name}</span>
+              <span className="text-xs font-medium text-zinc-400 shrink-0">
+                · {regMeta.langTag}
+              </span>
+            </p>
+            <p className="text-xs text-zinc-400 leading-snug break-words">
+              {ch.category === 'china_football'
+                ? pickLang(lang, {
+                    es: 'China · Fútbol Internacional HD',
+                    ca: 'Xina · Futbol Internacional HD',
+                    en: 'China · World Football HD',
+                  })
+                : ch.network}
+            </p>
+          </div>
+        </div>
+
+        <div className="relative z-10 flex items-center shrink-0">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic('light');
+              onToggleChannelFavorite({
+                favId,
+                title: ch.name,
+                channelLabel: ch.shortMark,
+                channelUrl: ch.channels[0]?.sourceUrl || '',
+                competition: ch.network,
+                sport: 'soccer',
+              });
+            }}
+            aria-pressed={faved}
+            aria-label={pickLang(lang, { es: 'Favorito', ca: 'Favorit', en: 'Favorite' })}
+            className={`min-w-11 min-h-11 rounded-xl flex items-center justify-center cursor-pointer active:scale-95 transition-all ${
+              faved
+                ? 'text-[#A78BFA] bg-[#7C3AED]/18'
+                : 'text-zinc-400 hover:text-white hover:bg-white/[0.08]'
+            }`}
+          >
+            <Star className={`w-4 h-4 ${faved ? 'fill-current nc-pop-spring' : ''}`} />
+          </button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div ref={pull.containerRef} {...pull.pullHandlers} className="space-y-4">
       {pull.pullDistance > 10 && (
-        <div className="text-center text-xs text-[#BF94FF] font-semibold py-1">
+        <div className="text-center text-xs text-[#A78BFA] font-semibold py-1">
           {pull.isRefreshing
             ? pickLang(lang, {
                 es: 'Actualizando...',
@@ -110,7 +207,7 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
         </div>
       )}
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2.5">
         <div className="flex-1 min-w-0">
           <SegmentedControl
             layoutId="futbol-main-tabs"
@@ -134,15 +231,17 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
           }}
           className={`min-h-12 px-4 rounded-2xl border text-xs font-bold inline-flex items-center gap-2 shrink-0 cursor-pointer active:scale-95 transition-all ${
             activeFilterCount > 0
-              ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_6px_18px_rgba(145,70,255,0.3)]'
-              : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.09] text-zinc-200'
+              ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_6px_20px_rgba(124,58,237,0.38)]'
+              : 'bg-[#0D0D12] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
           }`}
         >
-          <SlidersHorizontal className="w-4 h-4 text-[#BF94FF]" />
+          <SlidersHorizontal
+            className={`w-4 h-4 ${activeFilterCount > 0 ? 'text-white' : 'text-[#A78BFA]'}`}
+          />
           <span>{pickLang(lang, { es: 'Filtros', ca: 'Filtres', en: 'Filters' })}</span>
           {activeFilterCount > 0 && (
-            <span className="font-mono text-[11px] tabular-nums opacity-90">
-              · {activeFilterCount}
+            <span className="px-1.5 py-0.5 rounded-full bg-white/20 text-white font-mono text-[11px] tabular-nums leading-none">
+              {activeFilterCount}
             </span>
           )}
         </button>
@@ -152,7 +251,7 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
         <React.Suspense
           fallback={
             <div className="py-10 flex justify-center">
-              <Loader2 className="w-6 h-6 animate-spin text-[#9146FF]" />
+              <Loader2 className="w-6 h-6 animate-spin text-[#7C3AED]" />
             </div>
           }
         >
@@ -165,6 +264,7 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
             leagueFilter={futbolLeagueFilter}
             onSelectLeagueFilter={setFutbolLeagueFilter}
             brandFilter={footballLiveBrand}
+            favoritesOnly={futbolFavOnly}
             onClearCalendarScope={() => {
               setSportsSearch('');
               setFutbolLeagueFilter('');
@@ -174,6 +274,7 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
               setFutbolLeagueFilter('');
               setFootballLiveBrand('all');
               setFutbolLangFilter('all');
+              setFutbolFavOnly(false);
             }}
             activeVideoRawUrl={activeVideoRawUrl}
             loadingItemId={loadingItemId}
@@ -193,95 +294,54 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
           />
         </React.Suspense>
       ) : (
-        <div className="space-y-2">
+        <div className="space-y-4">
           {loadingTdt && footballSectionLiveChannels.length === 0 ? (
             <div className="py-10 flex justify-center">
-              <Loader2 className="w-6 h-6 animate-spin text-[#9146FF]" />
+              <Loader2 className="w-6 h-6 animate-spin text-[#7C3AED]" />
             </div>
-          ) : footballSectionLiveChannels.length === 0 ? (
-            <div className="py-10 rounded-3xl bg-white/[0.03] border border-white/[0.08] text-center text-sm text-zinc-400">
-              {pickLang(lang, {
-                es: 'No hay canales con este filtro.',
-                ca: 'No hi ha canals amb aquest filtre.',
-                en: 'No channels match this filter.',
-              })}
+          ) : favChannels.length === 0 && regularChannels.length === 0 ? (
+            <div className="py-10 px-4 rounded-2xl bg-[#0D0D12] border border-white/[0.08] text-center text-sm text-zinc-400">
+              {futbolFavOnly
+                ? pickLang(lang, {
+                    es: 'No tienes canales de fútbol favoritos todavía.',
+                    ca: 'Encara no tens canals de futbol favorits.',
+                    en: 'No favorite football channels yet.',
+                  })
+                : pickLang(lang, {
+                    es: 'No hay canales con este filtro.',
+                    ca: 'No hi ha canals amb aquest filtre.',
+                    en: 'No channels match this filter.',
+                  })}
             </div>
           ) : (
-            footballSectionLiveChannels.map((ch) => {
-              const favId = buildChannelFavId(ch.channels[0]?.sourceUrl || ch.id, ch.name);
-              const faved = isChannelFavorited(favId);
-              const regMeta = getChannelRegionMeta(ch);
-              const isPlaying = Boolean(
-                activeVideoRawUrl &&
-                  ch.channels.some((s) => s.sourceUrl === activeVideoRawUrl)
-              );
-              return (
-                <div
-                  key={ch.id}
-                  className={`relative group min-h-[72px] p-3.5 rounded-2xl border flex items-center justify-between gap-3 transition-colors ${
-                    isPlaying
-                      ? 'border-[#9146FF] bg-[#9146FF]/[0.1]'
-                      : 'bg-white/[0.03] border-white/[0.08] hover:border-white/20 hover:bg-white/[0.055]'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('success');
-                      onPlayTdtChannel(ch, 0);
-                    }}
-                    aria-label={`${pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })} ${ch.name}`}
-                    className="absolute inset-0 z-0 rounded-2xl cursor-pointer"
-                  />
-
-                  <div className="relative z-10 flex-1 min-w-0 flex items-center gap-3 pointer-events-none">
-                    <ChannelLogoBadge channel={ch} size="md" />
-                    <div className="min-w-0 flex-1">
-                      <p className="font-display font-bold text-sm text-white leading-snug break-words flex items-baseline flex-wrap gap-x-1.5">
-                        <span className="break-words">{ch.name}</span>
-                        <span className="text-xs font-medium text-zinc-400 shrink-0">
-                          · {regMeta.langTag}
-                        </span>
-                      </p>
-                      <p className="text-xs text-zinc-400 truncate mt-0.5">
-                        {ch.category === 'china_football'
-                          ? pickLang(lang, {
-                              es: 'China · Fútbol Internacional HD',
-                              ca: 'Xina · Futbol Internacional HD',
-                              en: 'China · World Football HD',
-                            })
-                          : ch.network}
-                      </p>
-                    </div>
+            <>
+              {favChannels.length > 0 && (
+                <section className="space-y-3">
+                  <div className="flex items-center gap-2 px-1">
+                    <Star className="w-4 h-4 text-[#A78BFA] fill-current" />
+                    <h3 className="text-sm font-bold text-white">
+                      {pickLang(lang, { es: 'Favoritos', ca: 'Favorits', en: 'Favorites' })}
+                    </h3>
                   </div>
+                  <div className="space-y-3">{favChannels.map(renderChannelCard)}</div>
+                </section>
+              )}
 
-                  <div className="relative z-10 flex items-center shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onToggleChannelFavorite({
-                          favId,
-                          title: ch.name,
-                          channelLabel: ch.shortMark,
-                          channelUrl: ch.channels[0]?.sourceUrl || '',
-                          competition: ch.network,
-                          sport: 'soccer',
-                        });
-                      }}
-                      aria-label={pickLang(lang, { es: 'Favorito', ca: 'Favorit', en: 'Favorite' })}
-                      className={`min-w-11 min-h-11 rounded-xl flex items-center justify-center cursor-pointer transition-colors ${
-                        faved
-                          ? 'text-[#C4A7FF] bg-[#9146FF]/15'
-                          : 'text-zinc-400 hover:text-white hover:bg-white/[0.08]'
-                      }`}
-                    >
-                      <Star className={`w-4 h-4 ${faved ? 'fill-current' : ''}`} />
-                    </button>
-                  </div>
-                </div>
-              );
-            })
+              {regularChannels.length > 0 && (
+                <section className="space-y-3">
+                  {favChannels.length > 0 && (
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1">
+                      {pickLang(lang, {
+                        es: 'Todos los canales',
+                        ca: 'Tots els canals',
+                        en: 'All channels',
+                      })}
+                    </h3>
+                  )}
+                  <div className="space-y-3">{regularChannels.map(renderChannelCard)}</div>
+                </section>
+              )}
+            </>
           )}
         </div>
       )}
@@ -291,9 +351,36 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
         onClose={() => setFutbolFiltersOpen(false)}
         lang={lang}
         title={pickLang(lang, { es: 'Filtros de Fútbol', ca: 'Filtres de Futbol', en: 'Football Filters' })}
+        footer={
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setFutbolLangFilter('all');
+                setFutbolLeagueFilter('');
+                setFootballLiveBrand('all');
+                setFutbolFavOnly(false);
+              }}
+              className="flex-1 min-h-12 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs font-bold text-white cursor-pointer active:scale-95 transition-all"
+            >
+              {pickLang(lang, { es: 'Limpiar', ca: 'Netejar', en: 'Reset' })}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setFutbolFiltersOpen(false);
+              }}
+              className="flex-1 min-h-12 rounded-2xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-bold text-white cursor-pointer active:scale-95 transition-all shadow-[0_8px_24px_rgba(124,58,237,0.35)]"
+            >
+              {pickLang(lang, { es: 'Aplicar', ca: 'Aplicar', en: 'Apply' })}
+            </button>
+          </div>
+        }
       >
         <div className="space-y-5">
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
               {pickLang(lang, {
                 es: 'Ligas (filtra partidos)',
@@ -319,15 +406,16 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
                   key={lg.id || 'all-lg'}
                   type="button"
                   onClick={() => {
+                    triggerHaptic('light');
                     setFutbolLeagueFilter(lg.id);
                     if (lg.id && effectiveFutbolTab !== 'matches') {
                       setEffectiveFutbolTab('matches');
                     }
                   }}
-                  className={`min-h-10 px-3.5 rounded-xl text-xs font-semibold border cursor-pointer transition-colors ${
+                  className={`min-h-10 px-3.5 rounded-xl text-xs font-semibold border cursor-pointer active:scale-95 transition-all ${
                     futbolLeagueFilter === lg.id
-                      ? 'bg-[#9146FF] border-[#9146FF] text-white'
-                      : 'bg-white/[0.05] border-white/[0.1] text-zinc-200 hover:bg-white/[0.09]'
+                      ? 'bg-[#7C3AED] border-[#7C3AED] text-white'
+                      : 'bg-white/[0.04] border-white/[0.08] text-zinc-200 hover:bg-white/[0.09]'
                   }`}
                 >
                   {lg.label}
@@ -336,7 +424,7 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
               {pickLang(lang, {
                 es: 'Redes de Canales (filtra señales)',
@@ -367,22 +455,23 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
                     key={br.id}
                     type="button"
                     onClick={() => {
+                      triggerHaptic('light');
                       setFootballLiveBrand(br.id);
                       if (br.id !== 'china_football' && br.id !== 'all') {
                         setFutbolLangFilter('all');
                       }
                     }}
-                    className={`min-h-10 px-3.5 rounded-xl text-xs font-semibold border inline-flex items-center gap-2 cursor-pointer transition-colors ${
+                    className={`min-h-10 px-3.5 rounded-xl text-xs font-semibold border inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all ${
                       active
-                        ? 'bg-[#9146FF] border-[#9146FF] text-white'
-                        : 'bg-white/[0.05] border-white/[0.1] text-zinc-200 hover:bg-white/[0.09]'
+                        ? 'bg-[#7C3AED] border-[#7C3AED] text-white'
+                        : 'bg-white/[0.04] border-white/[0.08] text-zinc-200 hover:bg-white/[0.09]'
                     }`}
                   >
                     <FlagBadgeSvg code={br.flagCode} className="w-4 h-2.5 shrink-0" />
                     <span>{br.label}</span>
                     <span
                       className={`text-[11px] font-mono tabular-nums ${
-                        active ? 'text-white/85' : 'text-zinc-400'
+                        active ? 'text-white/90' : 'text-zinc-400'
                       }`}
                     >
                       ({netCount})
@@ -391,27 +480,6 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
                 );
               })}
             </div>
-          </div>
-
-          <div className="flex items-center gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                setFutbolLangFilter('all');
-                setFutbolLeagueFilter('');
-                setFootballLiveBrand('all');
-              }}
-              className="flex-1 min-h-12 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-bold text-white cursor-pointer"
-            >
-              {pickLang(lang, { es: 'Limpiar', ca: 'Netejar', en: 'Reset' })}
-            </button>
-            <button
-              type="button"
-              onClick={() => setFutbolFiltersOpen(false)}
-              className="flex-1 min-h-12 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white cursor-pointer"
-            >
-              {pickLang(lang, { es: 'Aplicar', ca: 'Aplicar', en: 'Apply' })}
-            </button>
           </div>
         </div>
       </BottomSheet>

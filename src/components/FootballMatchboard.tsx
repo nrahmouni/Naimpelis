@@ -11,6 +11,7 @@ import { useAppStore } from '../store/useAppStore';
 import { slugify } from '../shared/dedicatedRoutes';
 import { triggerHaptic } from '../utils/haptics';
 import { pickLang } from '../utils/i18n';
+import { buildChannelFavId } from '../utils/storage';
 import {
   FootballMatchDetailSheet,
   RegionFlagImg,
@@ -27,6 +28,7 @@ import {
   isSpainNationalTeamMatch,
   matchesFootballSearchFilter,
   normalizeFootballText,
+  pickPreferredChannelIndex,
   resolveActiveCalendarScope,
 } from './sports/FootballMatchboardHelpers';
 import { FootballMatchRow } from './sports/FootballMatchRow';
@@ -40,6 +42,7 @@ interface FootballMatchboardProps {
   leagueFilter?: string;
   onSelectLeagueFilter?: (val: string) => void;
   brandFilter?: string;
+  favoritesOnly?: boolean;
   onClearCalendarScope?: () => void;
   onResetFilters?: () => void;
   activeVideoRawUrl?: string;
@@ -61,6 +64,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   leagueFilter = '',
   onSelectLeagueFilter,
   brandFilter = 'all',
+  favoritesOnly = false,
   onClearCalendarScope,
   onResetFilters,
   activeVideoRawUrl,
@@ -353,9 +357,28 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
         }
       }
       if (!matchesFootballSearchFilter(m, searchQuery)) return false;
+      if (favoritesOnly) {
+        const prefIdx = pickPreferredChannelIndex(m.channels, lang, langFilter === 'ZH');
+        const primaryCh = prefIdx >= 0 ? m.channels[prefIdx] : m.channels[0];
+        const favId = buildChannelFavId(
+          primaryCh?.sourceUrl || m.eventId || m.id,
+          `${m.homeTeam} vs ${m.awayTeam}`
+        );
+        if (!isChannelFavorited(favId)) return false;
+      }
       return true;
     });
-  }, [matches, statusTab, searchQuery, langFilter, leagueFilter, brandFilter]);
+  }, [
+    matches,
+    statusTab,
+    searchQuery,
+    langFilter,
+    leagueFilter,
+    brandFilter,
+    favoritesOnly,
+    isChannelFavorited,
+    lang,
+  ]);
 
   const groupedCompetitions = useMemo(() => {
     const getKickoffMs = (m: FootballMatchboardItem) => {
@@ -527,211 +550,216 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
 
   return (
     <>
-      <section className="rounded-3xl overflow-hidden bg-white/[0.03] border border-white/[0.08] shadow-[0_14px_40px_rgba(0,0,0,0.45)]">
-        <div className="px-3 sm:px-4 py-2.5 bg-white/[0.025] border-b border-white/[0.07] flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5">
-            {statusOptions.map((opt) => {
-              const active = statusTab === opt.id;
-              return (
+      <div className="space-y-4">
+        <section className="rounded-2xl overflow-hidden bg-[#0D0D12] border border-white/[0.08]">
+          <div className="px-4 py-3 border-b border-white/[0.08] flex flex-wrap items-center justify-between gap-2.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {statusOptions.map((opt) => {
+                const active = statusTab === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setStatusTab(opt.id);
+                    }}
+                    className={`min-h-10 px-3.5 rounded-full text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all inline-flex items-center gap-1.5 ${
+                      active
+                        ? 'bg-[#7C3AED] text-white shadow-[0_6px_18px_rgba(124,58,237,0.35)]'
+                        : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300'
+                    }`}
+                  >
+                    {opt.id === 'live' && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#EF4444]" aria-hidden="true" />
+                    )}
+                    <span>{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {calendarScope ? (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setDayOffset(0);
+                  if (onClearCalendarScope) {
+                    onClearCalendarScope();
+                  } else {
+                    onSearchQueryChange('');
+                  }
+                }}
+                className="min-h-10 px-3.5 rounded-xl bg-[#7C3AED]/18 hover:bg-[#7C3AED]/28 border border-[#7C3AED]/45 text-xs font-bold text-[#E9D5FF] whitespace-nowrap cursor-pointer shrink-0 ml-auto active:scale-95 transition-all"
+              >
+                {pickLang(lang, { es: 'Volver a Hoy', ca: 'Tornar a Avui', en: 'Back to Today', zh: '返回今天', rif: 'Uɣal ar Assa' })}
+              </button>
+            ) : (
+              <div className="inline-flex items-center rounded-xl bg-white/[0.05] border border-white/[0.08] shrink-0 ml-auto">
                 <button
-                  key={opt.id}
                   type="button"
                   onClick={() => {
                     triggerHaptic('light');
-                    setStatusTab(opt.id);
+                    setDayOffset((d) => Math.max(-30, d - 1));
+                    setStatusTab('all');
                   }}
-                  className={`min-h-10 px-3 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                    active
-                      ? 'bg-[#9146FF] text-white'
-                      : 'bg-white/[0.045] hover:bg-white/[0.09] text-zinc-300'
+                  aria-label={pickLang(lang, {
+                    es: 'Día anterior',
+                    ca: 'Dia anterior',
+                    en: 'Previous day',
+                    zh: '前一天',
+                    rif: 'Ass iɛeddan',
+                  })}
+                  className="min-w-10 min-h-10 flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <label className="relative px-2.5 min-h-10 flex items-center gap-1.5 text-xs font-bold text-white whitespace-nowrap cursor-pointer hover:text-[#C4B5FD] transition-colors">
+                  <Calendar className="w-3.5 h-3.5 text-[#A78BFA] shrink-0" />
+                  <span>{activeDateLabel}</span>
+                  <input
+                    type="date"
+                    value={activeDateInfo.isoDate}
+                    aria-label={pickLang(lang, {
+                      es: 'Elegir fecha del calendario',
+                      ca: 'Triar data del calendari',
+                      en: 'Pick calendar date',
+                      zh: '选择赛季日期',
+                      rif: 'Fren ass deg lbaramij',
+                    })}
+                    onChange={(e) => {
+                      const offset = computeDayOffsetFromIsoDate(e.target.value);
+                      if (offset !== null) {
+                        triggerHaptic('light');
+                        setDayOffset(Math.max(-30, Math.min(365, offset)));
+                        setStatusTab('all');
+                      }
+                    }}
+                    className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setDayOffset((d) => Math.min(365, d + 1));
+                    setStatusTab('all');
+                  }}
+                  aria-label={pickLang(lang, {
+                    es: 'Día siguiente',
+                    ca: 'Dia següent',
+                    en: 'Next day',
+                    zh: '下一天',
+                    rif: 'Ass i d-yegguren',
+                  })}
+                  className="min-w-10 min-h-10 flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Full-Season Navigable Calendar Bar */}
+          <div className="px-4 py-2.5 bg-[#0D0D12] flex items-center gap-2 overflow-x-auto no-scrollbar">
+            {(
+              [
+                {
+                  id: '',
+                  label: pickLang(lang, {
+                    es: 'Hoy / Fecha',
+                    ca: 'Avui / Data',
+                    en: 'Daily / Date',
+                    zh: '今日赛程',
+                    rif: 'Assa / Azemz',
+                  }),
+                },
+                {
+                  id: 'barca_madrid',
+                  label: pickLang(lang, {
+                    es: 'Barça y Madrid',
+                    ca: 'Barça i Madrid',
+                    en: 'Barça & Madrid',
+                    zh: '巴萨与皇马',
+                    rif: 'Barça d Madrid',
+                  }),
+                },
+                {
+                  id: 'espana',
+                  label: pickLang(lang, {
+                    es: 'Selección Española',
+                    ca: 'Selecció Espanyola',
+                    en: 'Spain NT',
+                    zh: '西班牙国家队',
+                    rif: 'Spanya',
+                  }),
+                },
+                {
+                  id: 'laliga',
+                  label: 'LaLiga',
+                },
+                {
+                  id: 'champions',
+                  label: 'Champions',
+                },
+              ] as const
+            ).map((scopeBtn) => {
+              const isScopeActive =
+                scopeBtn.id === ''
+                  ? !calendarScope
+                  : calendarScope === scopeBtn.id;
+              return (
+                <button
+                  key={scopeBtn.id || 'daily-scope'}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    if (scopeBtn.id === '') {
+                      if (onClearCalendarScope) {
+                        onClearCalendarScope();
+                      } else {
+                        onSelectLeagueFilter?.('');
+                        onSearchQueryChange('');
+                      }
+                      setDayOffset(0);
+                    } else {
+                      onSearchQueryChange('');
+                      onSelectLeagueFilter?.(scopeBtn.id);
+                      setStatusTab('all');
+                    }
+                  }}
+                  className={`min-h-9 px-3.5 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
+                    isScopeActive
+                      ? 'bg-[#7C3AED] border-[#7C3AED] text-white'
+                      : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300 hover:text-white'
                   }`}
                 >
-                  {opt.label}
+                  {scopeBtn.label}
                 </button>
               );
             })}
           </div>
 
-          {calendarScope ? (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setDayOffset(0);
-                if (onClearCalendarScope) {
-                  onClearCalendarScope();
-                } else {
-                  onSearchQueryChange('');
-                }
-              }}
-              className="min-h-10 px-3 rounded-xl bg-[#9146FF]/15 hover:bg-[#9146FF]/25 border border-[#9146FF]/40 text-xs font-bold text-[#E9D5FF] whitespace-nowrap cursor-pointer shrink-0 ml-auto transition-colors"
-            >
-              {pickLang(lang, { es: 'Volver a Hoy', ca: 'Tornar a Avui', en: 'Back to Today', zh: '返回今天', rif: 'Uɣal ar Assa' })}
-            </button>
-          ) : (
-            <div className="inline-flex items-center rounded-xl bg-white/[0.045] border border-white/[0.08] shrink-0 ml-auto">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setDayOffset((d) => Math.max(-30, d - 1));
-                  setStatusTab('all');
-                }}
-                aria-label={pickLang(lang, {
-                  es: 'Día anterior',
-                  ca: 'Dia anterior',
-                  en: 'Previous day',
-                  zh: '前一天',
-                  rif: 'Ass iɛeddan',
+          {calendarScope && (
+            <div className="px-4 py-2 bg-[#7C3AED]/[0.12] border-t border-[#7C3AED]/25 text-xs">
+              <span className="text-[#E9D5FF] font-semibold leading-snug">
+                {pickLang(lang, {
+                  es: 'Calendario completo · Toda la temporada navegable de la competición',
+                  ca: 'Calendari complet · Tota la temporada navegable de la competició',
+                  en: 'Full-season schedule · All upcoming competition fixtures',
+                  zh: '全赛季赛程 · 查看整季比赛日程',
+                  rif: 'Lbaramij n ussegwas ikemlen · Akk lmatchat i d-yegguren',
                 })}
-                className="min-w-10 min-h-10 flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <label className="relative px-2.5 min-h-10 flex items-center gap-1.5 text-xs font-bold text-white whitespace-nowrap cursor-pointer hover:text-[#D8B4FE] transition-colors">
-                <Calendar className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
-                <span>{activeDateLabel}</span>
-                <input
-                  type="date"
-                  value={activeDateInfo.isoDate}
-                  aria-label={pickLang(lang, {
-                    es: 'Elegir fecha del calendario',
-                    ca: 'Triar data del calendari',
-                    en: 'Pick calendar date',
-                    zh: '选择赛季日期',
-                    rif: 'Fren ass deg lbaramij',
-                  })}
-                  onChange={(e) => {
-                    const offset = computeDayOffsetFromIsoDate(e.target.value);
-                    if (offset !== null) {
-                      triggerHaptic('light');
-                      setDayOffset(Math.max(-30, Math.min(365, offset)));
-                      setStatusTab('all');
-                    }
-                  }}
-                  className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-                />
-              </label>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setDayOffset((d) => Math.min(365, d + 1));
-                  setStatusTab('all');
-                }}
-                aria-label={pickLang(lang, {
-                  es: 'Día siguiente',
-                  ca: 'Dia següent',
-                  en: 'Next day',
-                  zh: '下一天',
-                  rif: 'Ass i d-yegguren',
-                })}
-                className="min-w-10 min-h-10 flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
+              </span>
             </div>
           )}
-        </div>
-
-        {/* Full-Season Navigable Calendar Bar */}
-        <div className="px-3 sm:px-4 py-2 bg-[#121521] border-b border-white/[0.06] flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-          {(
-            [
-              {
-                id: '',
-                label: pickLang(lang, {
-                  es: 'Hoy / Fecha',
-                  ca: 'Avui / Data',
-                  en: 'Daily / Date',
-                  zh: '今日赛程',
-                  rif: 'Assa / Azemz',
-                }),
-              },
-              {
-                id: 'barca_madrid',
-                label: pickLang(lang, {
-                  es: 'Barça y Madrid',
-                  ca: 'Barça i Madrid',
-                  en: 'Barça & Madrid',
-                  zh: '巴萨与皇马',
-                  rif: 'Barça d Madrid',
-                }),
-              },
-              {
-                id: 'espana',
-                label: pickLang(lang, {
-                  es: 'Selección Española',
-                  ca: 'Selecció Espanyola',
-                  en: 'Spain NT',
-                  zh: '西班牙国家队',
-                  rif: 'Spanya',
-                }),
-              },
-              {
-                id: 'laliga',
-                label: 'LaLiga',
-              },
-              {
-                id: 'champions',
-                label: 'Champions',
-              },
-            ] as const
-          ).map((scopeBtn) => {
-            const isScopeActive =
-              scopeBtn.id === ''
-                ? !calendarScope
-                : calendarScope === scopeBtn.id;
-            return (
-              <button
-                key={scopeBtn.id || 'daily-scope'}
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  if (scopeBtn.id === '') {
-                    if (onClearCalendarScope) {
-                      onClearCalendarScope();
-                    } else {
-                      onSelectLeagueFilter?.('');
-                      onSearchQueryChange('');
-                    }
-                    setDayOffset(0);
-                  } else {
-                    onSearchQueryChange('');
-                    onSelectLeagueFilter?.(scopeBtn.id);
-                    setStatusTab('all');
-                  }
-                }}
-                className={`min-h-9 px-3 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
-                  isScopeActive
-                    ? 'bg-[#9146FF] border-[#9146FF] text-white'
-                    : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300 hover:text-white'
-                }`}
-              >
-                {scopeBtn.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {calendarScope && (
-          <div className="px-3.5 py-2 bg-[#9146FF]/[0.12] border-b border-[#9146FF]/25 text-[11px]">
-            <span className="text-[#E9D5FF] font-semibold leading-snug">
-              {pickLang(lang, {
-                es: 'Calendario completo · Toda la temporada navegable de la competición',
-                ca: 'Calendari complet · Tota la temporada navegable de la competició',
-                en: 'Full-season schedule · All upcoming competition fixtures',
-                zh: '全赛季赛程 · 查看整季比赛日程',
-                rif: 'Lbaramij n ussegwas ikemlen · Akk lmatchat i d-yegguren',
-              })}
-            </span>
-          </div>
-        )}
+        </section>
 
         {loading && (matches.length === 0 || loadedBoardKey !== currentBoardKey) ? (
-          <div>
-            <div className="px-4 py-2.5 bg-[#121520] border-b border-white/[0.06] flex items-center gap-2 text-xs font-semibold text-[#D8B4FE]">
-              <span className="w-2 h-2 rounded-full bg-[#9146FF] animate-pulse shrink-0" />
+          <div className="space-y-3">
+            <div className="px-4 py-3 rounded-2xl bg-[#0D0D12] border border-white/[0.08] flex items-center gap-2.5 text-xs font-semibold text-[#C4B5FD]">
+              <span className="w-2 h-2 rounded-full bg-[#7C3AED] animate-pulse shrink-0" />
               <span>
                 {calendarScope
                   ? pickLang(lang, {
@@ -746,30 +774,36 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                     })}
               </span>
             </div>
-            <div className="divide-y divide-white/[0.06]">
-              {Array.from({ length: 6 }).map((_, idx) => (
+            <div className="space-y-3">
+              {Array.from({ length: 5 }).map((_, idx) => (
                 <div
                   key={idx}
-                  className="h-20 bg-[#10121C] px-4 flex items-center justify-between skeleton-shimmer"
+                  className="h-32 rounded-2xl bg-[#0D0D12] border border-white/[0.08] p-4 flex flex-col justify-between skeleton-shimmer"
                 >
-                  <div className="w-14 h-7 rounded bg-white/[0.06]" />
-                  <div className="flex-1 mx-4 space-y-2">
-                    <div className="w-40 h-3.5 rounded bg-white/[0.07]" />
-                    <div className="w-32 h-3.5 rounded bg-white/[0.05]" />
+                  <div className="w-28 h-3.5 rounded bg-white/[0.06]" />
+                  <div className="space-y-2">
+                    <div className="w-48 h-4 rounded bg-white/[0.07]" />
+                    <div className="w-40 h-4 rounded bg-white/[0.05]" />
                   </div>
-                  <div className="w-20 h-10 rounded-xl bg-white/[0.06]" />
+                  <div className="w-24 h-8 rounded-xl bg-white/[0.06]" />
                 </div>
               ))}
             </div>
           </div>
         ) : groupedCompetitions.length === 0 ? (
-          <div className="p-8 text-center bg-[#10121C] space-y-3">
+          <div className="p-8 rounded-2xl bg-[#0D0D12] border border-white/[0.08] text-center space-y-3">
             <p className="text-sm text-zinc-200 font-semibold">
               {fetchError
                 ? pickLang(lang, {
                     es: 'No se pudo cargar la cartelera de partidos ahora.',
                     ca: 'No s’ha pogut carregar la cartellera de partits ara.',
                     en: 'Could not load the match schedule right now.',
+                  })
+                : favoritesOnly
+                ? pickLang(lang, {
+                    es: 'No tienes partidos favoritos guardados para este filtro.',
+                    ca: 'No tens partits favorits desats per a aquest filtre.',
+                    en: 'No favorite matches saved for this filter.',
                   })
                 : statusTab === 'live'
                 ? pickLang(lang, {
@@ -794,7 +828,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                 <button
                   type="button"
                   onClick={() => setStatusTab('all')}
-                  className="min-h-11 px-4 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-xs font-bold cursor-pointer transition-colors"
+                  className="min-h-11 px-4 rounded-2xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-xs font-bold cursor-pointer active:scale-95 transition-all"
                 >
                   {pickLang(lang, {
                     es: 'Ver todos los partidos',
@@ -807,6 +841,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                 Boolean(leagueFilter) ||
                 brandFilter !== 'all' ||
                 langFilter === 'ZH' ||
+                favoritesOnly ||
                 dayOffset !== 0) && (
                 <button
                   type="button"
@@ -822,7 +857,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                       onSearchQueryChange('');
                     }
                   }}
-                  className="min-h-11 px-4 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-xs font-bold cursor-pointer transition-colors"
+                  className="min-h-11 px-4 rounded-2xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-xs font-bold cursor-pointer active:scale-95 transition-all"
                 >
                   {pickLang(lang, {
                     es: 'Limpiar filtros',
@@ -837,7 +872,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                   triggerHaptic('light');
                   void fetchBoard(false);
                 }}
-                className="min-h-11 px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/[0.12] text-zinc-100 text-xs font-bold cursor-pointer transition-colors"
+                className="min-h-11 px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-zinc-100 text-xs font-bold cursor-pointer active:scale-95 transition-all"
               >
                 {pickLang(lang, {
                   es: 'Reintentar',
@@ -848,21 +883,21 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
             </div>
           </div>
         ) : (
-          <div>
+          <div className="space-y-5">
             {groupedCompetitions.map((group) => (
-              <div key={group.key}>
-                <div className="px-3.5 sm:px-4 py-2.5 bg-[#151824] border-y border-white/[0.06] flex items-center gap-2.5">
+              <section key={group.key} className="space-y-3">
+                <div className="px-4 py-2.5 rounded-2xl bg-[#0D0D12] border border-white/[0.08] flex items-center gap-2.5">
                   <RegionFlagImg
                     src={group.regionFlagUrl}
                     alt={group.regionName}
                     groupTitle={group.groupTitle}
                   />
-                  <h3 className="text-xs font-bold text-zinc-200 leading-snug break-words">
+                  <h3 className="text-sm font-bold text-white leading-snug break-words">
                     {group.groupTitle}
                   </h3>
                 </div>
 
-                <div className="divide-y divide-white/[0.06]">
+                <div className="space-y-3">
                   {group.items.map((item) => (
                     <FootballMatchRow
                       key={item.id}
@@ -880,11 +915,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                     />
                   ))}
                 </div>
-              </div>
+              </section>
             ))}
           </div>
         )}
-      </section>
+      </div>
 
       <FootballMatchDetailSheet
         lang={lang}

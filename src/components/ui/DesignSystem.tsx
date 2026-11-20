@@ -41,7 +41,7 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
     <button
       {...props}
       disabled={disabled || loading}
-      className={`group relative overflow-hidden inline-flex items-center justify-center gap-2 font-bold text-white bg-[#9146FF] hover:bg-[#7C2AE8] active:scale-[0.97] transition-all duration-150 shadow-[0_6px_18px_rgba(145,70,255,0.28)] disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer ${
+      className={`group relative overflow-hidden inline-flex items-center justify-center gap-2 font-bold text-white bg-[#7C3AED] hover:bg-[#8B5CF6] active:scale-95 transition-all duration-150 shadow-[0_6px_18px_rgba(124,58,237,0.3)] disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer ${
         fullWidth ? 'w-full' : ''
       } ${sizeClass} ${className}`}
     >
@@ -77,10 +77,10 @@ export const SecondaryButton: React.FC<SecondaryButtonProps> = ({
     <button
       {...props}
       disabled={disabled || loading}
-      className={`inline-flex items-center justify-center gap-2 font-semibold active:scale-[0.97] transition-all duration-150 disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer border ${
+      className={`inline-flex items-center justify-center gap-2 font-semibold active:scale-95 transition-all duration-150 disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer border ${
         active
-          ? 'bg-[#9146FF]/22 border-[#9146FF]/60 text-white'
-          : 'bg-white/[0.06] hover:bg-white/[0.11] border-white/[0.1] hover:border-white/[0.18] text-zinc-100 hover:text-white'
+          ? 'bg-[#7C3AED]/22 border-[#7C3AED]/60 text-white'
+          : 'bg-white/[0.06] hover:bg-white/[0.11] border-white/[0.08] hover:border-white/[0.16] text-zinc-100 hover:text-white'
       } ${fullWidth ? 'w-full' : ''} ${sizeClass} ${className}`}
     >
       {loading ? <RiffanSpinner size={16} className="shrink-0" /> : null}
@@ -104,19 +104,19 @@ export const IconButton: React.FC<IconButtonProps> = ({
 }) => {
   const variantClasses =
     variant === 'crimson'
-      ? 'bg-[#9146FF] hover:bg-[#7C2AE8] text-white border border-white/15'
+      ? 'bg-[#7C3AED] hover:bg-[#8B5CF6] text-white border border-white/15'
       : variant === 'ghost'
       ? active
         ? 'bg-white/15 text-white'
         : 'bg-transparent hover:bg-white/[0.09] text-zinc-300 hover:text-white'
       : active
-      ? 'bg-[#9146FF]/24 border border-[#9146FF]/60 text-white'
-      : 'bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-zinc-200 hover:text-white';
+      ? 'bg-[#7C3AED]/24 border border-[#7C3AED]/60 text-white'
+      : 'bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-zinc-200 hover:text-white';
 
   return (
     <button
       {...props}
-      className={`min-h-12 min-w-12 rounded-2xl inline-flex items-center justify-center active:scale-95 transition-all duration-150 select-none cursor-pointer shrink-0 ${variantClasses} ${className}`}
+      className={`min-h-11 min-w-11 rounded-2xl inline-flex items-center justify-center active:scale-95 transition-all duration-150 select-none cursor-pointer shrink-0 ${variantClasses} ${className}`}
     >
       {children}
     </button>
@@ -133,7 +133,7 @@ export const StandardInput = React.forwardRef<HTMLInputElement, StandardInputPro
     return (
       <div className="relative flex items-center w-full group">
         {icon && (
-          <div className="absolute left-3.5 text-zinc-400 group-focus-within:text-[#BF94FF] transition-colors pointer-events-none flex items-center justify-center">
+          <div className="absolute left-3.5 text-zinc-400 group-focus-within:text-[#A78BFA] transition-colors pointer-events-none flex items-center justify-center">
             {icon}
           </div>
         )}
@@ -142,7 +142,7 @@ export const StandardInput = React.forwardRef<HTMLInputElement, StandardInputPro
           {...props}
           className={`w-full min-h-12 ${icon ? 'pl-10' : 'pl-4'} ${
             rightElement ? 'pr-12' : 'pr-4'
-          } py-2.5 rounded-2xl bg-white/[0.05] hover:bg-white/[0.07] focus:bg-white/[0.085] border border-white/[0.1] focus:border-[#9146FF] focus:ring-2 focus:ring-[#9146FF]/50 text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-all duration-150 ${className}`}
+          } py-2.5 rounded-2xl bg-white/[0.05] hover:bg-white/[0.07] focus:bg-white/[0.085] border border-white/[0.08] focus:border-[#7C3AED] focus:ring-2 focus:ring-[#7C3AED]/45 text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-all duration-150 ${className}`}
         />
         {rightElement && (
           <div className="absolute right-1.5 flex items-center justify-center">
@@ -166,6 +166,7 @@ export interface BottomSheetProps {
   subtitle?: string;
   icon?: React.ReactNode;
   children: React.ReactNode;
+  footer?: React.ReactNode;
   maxWidth?: string;
   lang?: AppLanguage;
 }
@@ -177,6 +178,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
   subtitle,
   icon,
   children,
+  footer,
   maxWidth = 'sm:max-w-lg',
   lang = 'es',
 }) => {
@@ -218,28 +220,28 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 16 }}
             transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
-            className={`w-full min-w-0 max-w-full ${maxWidth} rounded-t-3xl sm:rounded-3xl bg-[#141418] border-t sm:border border-white/[0.1] shadow-[0_-24px_80px_rgba(0,0,0,0.92)] overflow-hidden flex flex-col max-h-[88dvh] outline-none`}
+            className={`w-full min-w-0 max-w-full ${maxWidth} rounded-t-3xl sm:rounded-3xl bg-[#0D0D12] border-t sm:border border-white/[0.08] shadow-[0_-24px_80px_rgba(0,0,0,0.94)] overflow-hidden flex flex-col max-h-[88dvh] outline-none`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Drag handle for mobile swipe-to-dismiss feel */}
-            <div className="pt-2.5 pb-1 flex justify-center sm:hidden touch-none">
+            <div className="pt-2.5 pb-1 flex justify-center sm:hidden touch-none shrink-0">
               <div className="w-10 h-1 rounded-full bg-white/25" />
             </div>
 
-            {/* Header */}
-            <div className="px-4 sm:px-5 py-3 border-b border-white/[0.07] flex items-center justify-between gap-3 min-w-0">
+            {/* Sticky Header */}
+            <div className="shrink-0 px-4 sm:px-5 py-3 border-b border-white/[0.08] flex items-center justify-between gap-3 min-w-0 bg-[#0D0D12]">
               <div className="flex items-center gap-3 min-w-0">
                 {icon && (
-                  <div className="w-10 h-10 rounded-2xl bg-[#9146FF]/18 border border-[#9146FF]/35 flex items-center justify-center text-[#BF94FF] shrink-0">
+                  <div className="w-10 h-10 rounded-2xl bg-[#7C3AED]/18 border border-[#7C3AED]/35 flex items-center justify-center text-[#A78BFA] shrink-0">
                     {icon}
                   </div>
                 )}
                 <div className="min-w-0">
-                  <h3 id={titleId} className="font-display text-base font-bold text-white tracking-tight truncate">
+                  <h3 id={titleId} className="font-display text-base font-bold text-white tracking-tight leading-snug">
                     {title}
                   </h3>
                   {subtitle && (
-                    <p className="text-xs text-zinc-400 truncate mt-0.5">{subtitle}</p>
+                    <p className="text-xs text-zinc-400 leading-snug mt-0.5">{subtitle}</p>
                   )}
                 </div>
               </div>
@@ -253,9 +255,20 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
             </div>
 
             {/* Body */}
-            <div className="p-4 sm:p-5 overflow-y-auto overflow-x-clip min-w-0 w-full custom-scrollbar space-y-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            <div
+              className={`p-4 sm:p-5 overflow-y-auto overflow-x-clip min-w-0 w-full custom-scrollbar space-y-4 ${
+                footer ? 'pb-4' : 'pb-[max(1.25rem,env(safe-area-inset-bottom))]'
+              }`}
+            >
               {children}
             </div>
+
+            {/* Optional Sticky Bottom Footer */}
+            {footer && (
+              <div className="shrink-0 px-4 sm:px-5 py-3.5 border-t border-white/[0.08] bg-[#0D0D12] pb-[max(0.875rem,env(safe-area-inset-bottom))]">
+                {footer}
+              </div>
+            )}
           </motion.div>
         </motion.div>
       )}
@@ -305,7 +318,7 @@ export function SegmentedControl<T extends string>({
         compact
           ? 'w-auto inline-flex p-0.5 rounded-xl gap-0.5'
           : 'w-full min-w-0 p-1 rounded-2xl flex items-center gap-1'
-      } bg-white/[0.04] border border-white/[0.08] items-center overflow-hidden ${className}`}
+      } bg-[#0D0D12] border border-white/[0.08] items-center overflow-hidden ${className}`}
     >
       {options.map((option) => {
         const isActive = option.id === value;
@@ -314,10 +327,10 @@ export function SegmentedControl<T extends string>({
             key={option.id}
             type="button"
             onClick={() => onChange(option.id)}
-            className={`relative flex items-center justify-center select-none cursor-pointer active:scale-[0.98] transition-colors duration-150 ${
+            className={`relative flex items-center justify-center select-none cursor-pointer active:scale-95 transition-colors duration-150 ${
               compact
-                ? 'flex-none min-h-10 px-2.5 py-1 rounded-lg text-xs font-semibold gap-1'
-                : 'flex-1 min-w-0 min-h-12 px-2 sm:px-3 py-2 rounded-xl text-xs font-bold gap-1 sm:gap-1.5'
+                ? 'flex-none min-h-10 px-3 py-1 rounded-lg text-xs font-semibold gap-1.5'
+                : 'flex-1 min-w-0 min-h-11 px-2.5 sm:px-3.5 py-2 rounded-xl text-xs font-bold gap-1.5'
             } ${isActive ? 'text-white' : 'text-zinc-400 hover:text-zinc-100'}`}
           >
             {isActive && (
@@ -326,17 +339,17 @@ export function SegmentedControl<T extends string>({
                 transition={{ duration: 0.16, ease: 'easeOut' }}
                 className={`absolute inset-0 ${
                   compact ? 'rounded-lg' : 'rounded-xl'
-                } bg-[#9146FF]`}
+                } bg-[#7C3AED] shadow-[0_4px_14px_rgba(124,58,237,0.35)]`}
                 aria-hidden="true"
               />
             )}
-            <span className="relative z-10 flex items-center justify-center gap-1 min-w-0 max-w-full">
+            <span className="relative z-10 flex items-center justify-center gap-1.5 min-w-0 max-w-full">
               {option.icon && <span className="shrink-0">{option.icon}</span>}
-              <span className="truncate">{option.label}</span>
+              <span className="whitespace-nowrap">{option.label}</span>
               {option.badge !== undefined && option.badge !== 0 && option.badge !== '0' && (
                 <span
                   className={`${
-                    compact ? 'px-1 py-0.5 text-[9px]' : 'px-1.5 py-0.5 text-[0.65rem]'
+                    compact ? 'px-1.5 py-0.5 text-[10px]' : 'px-1.5 py-0.5 text-[0.65rem]'
                   } rounded-full font-mono font-bold leading-none tabular-nums shrink-0 ${
                     isActive ? 'bg-black/30 text-white' : 'bg-white/10 text-zinc-200'
                   }`}
@@ -405,9 +418,9 @@ export const EmptyStateCard: React.FC<EmptyStateCardProps> = ({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25 }}
-      className="py-12 px-6 rounded-3xl bg-white/[0.025] border border-white/[0.07] text-center max-w-md mx-auto my-4 flex flex-col items-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+      className="py-12 px-6 rounded-3xl bg-[#0D0D12] border border-white/[0.08] text-center max-w-md mx-auto my-4 flex flex-col items-center shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
     >
-      <div className="w-14 h-14 rounded-2xl bg-[#9146FF]/15 border border-[#9146FF]/30 flex items-center justify-center text-[#BF94FF] mb-3.5 shadow-inner">
+      <div className="w-14 h-14 rounded-2xl bg-[#7C3AED]/15 border border-[#7C3AED]/35 flex items-center justify-center text-[#A78BFA] mb-3.5 shadow-inner">
         {icon}
       </div>
       <h4 className="font-display text-base font-bold text-white tracking-tight">{title}</h4>
@@ -443,10 +456,10 @@ export const Chip: React.FC<ChipProps> = ({
   <button
     type="button"
     {...props}
-    className={`min-h-12 px-4 rounded-2xl text-xs font-bold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-[0.97] transition-all duration-150 border disabled:opacity-45 disabled:pointer-events-none ${
+    className={`min-h-11 px-4 rounded-2xl text-xs font-bold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all duration-150 border disabled:opacity-45 disabled:pointer-events-none ${
       active
-        ? 'bg-[#9146FF] border-[#9146FF] text-white'
-        : 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.09] text-zinc-200'
+        ? 'bg-[#7C3AED] border-[#8B5CF6] text-white shadow-[0_4px_14px_rgba(124,58,237,0.3)]'
+        : 'bg-[#0D0D12] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
     } ${className}`}
   >
     {children}
@@ -466,8 +479,8 @@ export const Card: React.FC<CardProps> = ({
 }) => (
   <div
     {...props}
-    className={`rounded-3xl border border-white/[0.09] ${
-      elevated ? 'bg-[#181B26] shadow-[0_14px_36px_rgba(0,0,0,0.65)]' : 'bg-[#11131B]'
+    className={`rounded-3xl border border-white/[0.08] ${
+      elevated ? 'bg-[#14141C] shadow-[0_14px_36px_rgba(0,0,0,0.75)]' : 'bg-[#0D0D12]'
     } ${className}`}
   >
     {children}
@@ -494,7 +507,7 @@ export const Poster: React.FC<PosterProps> = ({
   className = '',
 }) => (
   <div
-    className={`group relative overflow-hidden rounded-2xl bg-[#0E0F16] border border-white/[0.08] hover:border-[#9146FF]/50 transition-colors ${
+    className={`group relative overflow-hidden rounded-2xl bg-[#0D0D12] border border-white/[0.08] hover:border-[#7C3AED]/60 transition-colors ${
       aspect === 'poster' ? 'aspect-[2/3]' : 'aspect-video'
     } ${className}`}
   >
@@ -515,11 +528,11 @@ export const Poster: React.FC<PosterProps> = ({
     </div>
     {topRight && <div className="absolute top-2 right-2 z-10">{topRight}</div>}
     <div className="absolute inset-x-0 bottom-0 z-[2] pt-14 pb-3 px-3 bg-gradient-to-t from-black/95 via-black/75 to-transparent pointer-events-none">
-      <div className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2 leading-snug">
+      <div className="font-display font-bold text-xs sm:text-sm text-white leading-snug">
         {title}
       </div>
       {subtitle && (
-        <div className="text-[11px] text-zinc-300 mt-0.5 truncate tabular-nums">{subtitle}</div>
+        <div className="text-[11px] text-zinc-300 mt-0.5 tabular-nums">{subtitle}</div>
       )}
     </div>
   </div>

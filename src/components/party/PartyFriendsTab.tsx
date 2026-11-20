@@ -85,12 +85,12 @@ export const PartyFriendsTab: React.FC<PartyFriendsTabProps> = ({
             return (
               <div
                 key={p.id}
-                className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] gap-2"
+                className="flex items-center justify-between p-3.5 rounded-2xl bg-[#0D0D12] border border-white/[0.08] gap-2.5"
               >
                 <div className="flex items-center gap-2.5 min-w-0 flex-1">
                   <div
                     className="w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold text-white border border-white/15 shrink-0"
-                    style={{ backgroundColor: p.color || '#9146FF' }}
+                    style={{ backgroundColor: p.color || '#7C3AED' }}
                   >
                     {isTvDevice ? '📺' : getParticipantInitials(p.name)}
                   </div>
@@ -98,7 +98,7 @@ export const PartyFriendsTab: React.FC<PartyFriendsTabProps> = ({
                     <p className="text-sm font-bold text-white break-words leading-snug">
                       {p.name} {isSelf ? `(${t.you})` : ''}
                     </p>
-                    <p className="text-[11px] text-emerald-400 truncate">
+                    <p className="text-[11px] text-emerald-400 leading-snug break-words mt-0.5">
                       {activeMediaTitle
                         ? isRoomPlaying
                           ? `▶ ${activeMediaTitle}`
@@ -130,7 +130,7 @@ export const PartyFriendsTab: React.FC<PartyFriendsTabProps> = ({
                           friendCode: pCode,
                         })
                       }
-                      className="min-h-9 px-3 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center gap-1 cursor-pointer active:scale-95 transition-all shrink-0"
+                      className="min-h-10 px-3 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-bold text-white flex items-center gap-1 cursor-pointer active:scale-95 transition-all shrink-0"
                     >
                       <UserPlus className="w-3.5 h-3.5" />
                       <span>{pickLang(lang, { es: 'Añadir', ca: 'Afegir', en: 'Add' })}</span>
@@ -157,7 +157,7 @@ export const PartyFriendsTab: React.FC<PartyFriendsTabProps> = ({
             <button
               type="button"
               onClick={onOpenFriendsModal}
-              className="text-xs font-semibold text-[#BF94FF] hover:underline flex items-center gap-1 cursor-pointer"
+              className="text-xs font-semibold text-[#A78BFA] hover:underline flex items-center gap-1 cursor-pointer"
             >
               <UserPlus className="w-3.5 h-3.5" />
               <span>{pickLang(lang, { es: 'Añadir amigo', ca: 'Afegir amic', en: 'Add friend' })}</span>
@@ -166,7 +166,7 @@ export const PartyFriendsTab: React.FC<PartyFriendsTabProps> = ({
         </div>
 
         {savedFriends.length === 0 ? (
-          <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] space-y-3">
+          <div className="p-4 rounded-2xl bg-[#0D0D12] border border-white/[0.08] space-y-3">
             <p className="text-xs text-zinc-300 leading-relaxed">
               {pickLang(lang, {
                 es: 'Añade amigos por su código o comparte tu sala con 1 toque para ver juntos en tiempo real.',
@@ -182,13 +182,13 @@ export const PartyFriendsTab: React.FC<PartyFriendsTabProps> = ({
                 </PrimaryButton>
               )}
               <SecondaryButton onClick={onShareInvite} className="flex-1">
-                <Share2 className="w-4 h-4 text-[#BF94FF] shrink-0" />
+                <Share2 className="w-4 h-4 text-[#A78BFA] shrink-0" />
                 <span>{copiedLink ? t.copied : pickLang(lang, { es: 'Copiar enlace', ca: 'Copiar enllaç', en: 'Copy link' })}</span>
               </SecondaryButton>
             </div>
           </div>
         ) : (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {savedFriends.map((friend) => {
               const inCurrentRoom = participants.some(
                 (p) =>
@@ -205,25 +205,25 @@ export const PartyFriendsTab: React.FC<PartyFriendsTabProps> = ({
               return (
                 <div
                   key={friend.friendId}
-                  className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] gap-2"
+                  className="flex items-center justify-between p-3.5 rounded-2xl bg-[#0D0D12] border border-white/[0.08] gap-2.5"
                 >
-                  <div className="flex items-center gap-3 min-w-0">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="relative shrink-0">
                       <div
                         className="w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold text-white border border-white/15"
-                        style={{ backgroundColor: friend.color || '#9146FF' }}
+                        style={{ backgroundColor: friend.color || '#7C3AED' }}
                       >
                         {getParticipantInitials(friend.name)}
                       </div>
                       <span
-                        className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#18181B] ${
+                        className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0D0D12] ${
                           isOnline ? 'bg-emerald-400' : 'bg-zinc-600'
                         }`}
                       />
                     </div>
-                    <div className="min-w-0">
-                      <div className="text-sm font-bold text-white truncate">{friend.name}</div>
-                      <div className="text-xs truncate mt-0.5">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-bold text-white leading-snug break-words">{friend.name}</div>
+                      <div className="text-xs leading-snug mt-0.5">
                         {inCurrentRoom ? (
                           <span className="text-emerald-400 font-semibold">
                             {pickLang(lang, {
@@ -263,7 +263,7 @@ export const PartyFriendsTab: React.FC<PartyFriendsTabProps> = ({
                           friendCode: friend.friendCode,
                         })
                       }
-                      className="min-h-9 px-3.5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shrink-0"
+                      className="min-h-10 px-3.5 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shrink-0"
                     >
                       <Send className="w-3.5 h-3.5" />
                       <span>{pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })}</span>

@@ -70,7 +70,7 @@ function applyAttributesToRoot(state: Pick<ThemeState, 'theme' | 'density' | 'li
   root.setAttribute('data-density', state.density);
   root.setAttribute('data-lite', state.liteMode ? 'true' : 'false');
   root.setAttribute('data-reduced-motion', state.reducedMotion ? 'true' : 'false');
-  root.style.setProperty('--ambient-poster-glow', state.posterAmbientColor || 'rgba(225, 29, 72, 0.28)');
+  root.style.setProperty('--ambient-poster-glow', state.posterAmbientColor || 'rgba(124, 58, 237, 0.28)');
 }
 
 const saved = loadSavedThemePrefs();
@@ -82,7 +82,7 @@ const initialStateValues = {
   liteMode: initialLite,
   liteModeAuto: initialLiteAuto,
   reducedMotion: saved.reducedMotion ?? detectReducedMotion(),
-  posterAmbientColor: 'rgba(225, 29, 72, 0.28)',
+  posterAmbientColor: 'rgba(124, 58, 237, 0.28)',
   tvOverscanSafe: Boolean(saved.tvOverscanSafe),
 };
 

@@ -35,11 +35,11 @@ function formatQuickChannelLabel(ch: StreamTrack, lang: AppLanguage): string {
   const raw = String(ch.label || '').trim();
   if (!raw) {
     return pickLang(lang, {
-      es: 'Ver',
-      ca: 'Veure',
-      en: 'Watch',
-      zh: '观看',
-      rif: 'Wali',
+      es: 'Ver señal',
+      ca: 'Veure senyal',
+      en: 'Watch feed',
+      zh: '观看直播',
+      rif: 'Wali lqanat',
     });
   }
   const cleaned = raw
@@ -86,12 +86,12 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
     [item.channels, lang, showZhIndicator]
   );
 
-  const primaryCh = preferredIdx >= 0 ? item.channels[preferredIdx] : undefined;
-  const primaryLangBucket = primaryCh ? getTrackLanguageBucket(primaryCh) : recommendedSportsLang;
-  const favId = primaryCh
-    ? buildChannelFavId(primaryCh.sourceUrl, `${item.homeTeam} vs ${item.awayTeam}`)
-    : '';
-  const isSaved = favId ? isChannelFavorited(favId) : false;
+  const primaryCh = preferredIdx >= 0 ? item.channels[preferredIdx] : item.channels[0];
+  const favId = buildChannelFavId(
+    primaryCh?.sourceUrl || item.eventId || item.id,
+    `${item.homeTeam} vs ${item.awayTeam}`
+  );
+  const isSaved = isChannelFavorited(favId);
   const isPlayingThisMatch = item.channels.some(
     (c) => activeVideoRawUrl && c.sourceUrl === activeVideoRawUrl
   );
@@ -152,34 +152,50 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
     return null;
   }, [recommendedSportsLang, item.verifiedTvGuide, item.spanishBroadcaster, primaryCh, lang]);
 
+  // Prioritize preferred channel index first while preserving all original indices
+  const orderedFeedEntries = React.useMemo(() => {
+    if (item.channels.length === 0) return [];
+    const entries = item.channels.map((ch, idx) => ({ ch, idx }));
+    if (preferredIdx > 0 && preferredIdx < entries.length) {
+      const [pref] = entries.splice(preferredIdx, 1);
+      entries.unshift(pref);
+    }
+    return entries;
+  }, [item.channels, preferredIdx]);
+
   return (
-    <div
-      className={`relative px-3.5 sm:px-4 py-3 flex flex-col gap-2 transition-colors ${
+    <article
+      className={`relative rounded-2xl p-4 space-y-3 border transition-colors ${
         isPlayingThisMatch
-          ? 'bg-[#9146FF]/15'
+          ? 'bg-[#7C3AED]/[0.14] border-[#7C3AED] shadow-[0_8px_28px_rgba(124,58,237,0.22)]'
           : isFeaturedClub
-          ? 'bg-gradient-to-r from-[#9146FF]/[0.10] via-[#131624] to-[#10121C] hover:from-[#9146FF]/[0.15]'
-          : 'bg-[#10121C] hover:bg-white/[0.03]'
+          ? 'bg-[#0D0D12] border-[#7C3AED]/35 hover:border-[#7C3AED]/70'
+          : 'bg-[#0D0D12] border-white/[0.08] hover:border-white/20'
       }`}
     >
       <button
         type="button"
         onClick={() => onOpenMatchSheet(item)}
         aria-label={`${item.homeTeam} vs ${item.awayTeam} (${item.kickoffTime})`}
-        className="absolute inset-0 z-0 cursor-pointer"
+        className="absolute inset-0 z-0 rounded-2xl cursor-pointer"
       />
 
-      {/* Top Metadata Strip (Unboxed typographic row with · separators) */}
-      <div className="relative z-[1] pointer-events-none flex items-center justify-between gap-2 min-w-0">
-        <div className="flex items-center gap-1.5 flex-wrap min-w-0 text-[11px] leading-tight">
+      {/* NIVEL 1: Cabecera (Horario / Vivo pulsante + Estrella Favorito con pop spring) */}
+      <div className="relative z-[1] flex items-center justify-between gap-2 min-w-0">
+        <div className="pointer-events-none flex items-center gap-x-2 gap-y-1 flex-wrap min-w-0 text-xs leading-snug">
           {item.statusState === 'live' ? (
-            <span className="inline-flex items-center gap-1 text-[#FF6B6B] text-[11px] font-bold tracking-wide whitespace-nowrap">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#EB0400]" />
-              {pickLang(lang, { es: 'EN VIVO', ca: 'EN DIRECTE', en: 'LIVE', zh: '直播中', rif: 'Srid' })}
-              {item.statusLabel && !/^en vivo$/i.test(item.statusLabel) ? ` · ${item.statusLabel}` : ''}
+            <span className="inline-flex items-center gap-1.5 text-[#EF4444] font-bold tracking-wide">
+              <span className="relative flex h-2 w-2 shrink-0" aria-hidden="true">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#EF4444] opacity-75" />
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#EF4444]" />
+              </span>
+              <span>
+                {pickLang(lang, { es: 'EN VIVO', ca: 'EN DIRECTE', en: 'LIVE', zh: '直播中', rif: 'Srid' })}
+                {item.statusLabel && !/^en vivo$/i.test(item.statusLabel) ? ` · ${item.statusLabel}` : ''}
+              </span>
             </span>
           ) : (
-            <span className="font-bold tabular-nums text-[#C4A7FF] whitespace-nowrap">
+            <span className="font-bold tabular-nums text-[#A78BFA]">
               {item.kickoffDateLabel && item.kickoffDateLabel !== 'Hoy'
                 ? `${item.kickoffDateLabel} · ${item.kickoffTime}`
                 : `${pickLang(lang, { es: 'Hoy', ca: 'Avui', en: 'Today', zh: '今天', rif: 'Assa' })} · ${item.kickoffTime}`}
@@ -187,152 +203,176 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
           )}
 
           {showNonDefaultStatus && (
-            <span className="text-zinc-400 font-semibold whitespace-nowrap">
-              · {item.statusLabel}
-            </span>
+            <span className="text-zinc-400 font-semibold">· {item.statusLabel}</span>
           )}
 
           {showLeagueBadge && item.leagueName && (
-            <span className="text-sky-300 font-semibold whitespace-nowrap">
-              · {item.leagueName}
-            </span>
+            <span className="text-sky-300 font-semibold">· {item.leagueName}</span>
           )}
 
           {showMatchday && (
-            <span className="text-zinc-400 font-medium whitespace-nowrap">
-              · {item.matchdayLabel}
+            <span className="text-zinc-400 font-medium">· {item.matchdayLabel}</span>
+          )}
+        </div>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            triggerHaptic('light');
+            onToggleChannelFavorite({
+              favId,
+              title: `${item.homeTeam} vs ${item.awayTeam}`,
+              channelLabel:
+                primaryCh?.label ||
+                item.groupTitle ||
+                pickLang(lang, { es: 'Partido', ca: 'Partit', en: 'Match' }),
+              channelUrl: primaryCh?.sourceUrl || `match:${item.eventId || item.id}`,
+              competition: item.groupTitle,
+              sport: 'soccer',
+            });
+          }}
+          aria-pressed={isSaved}
+          aria-label={pickLang(lang, {
+            es: 'Guardar partido en favoritos',
+            ca: 'Desar partit als favorits',
+            en: 'Save match to favorites',
+            zh: '收藏比赛',
+            rif: 'Ḥrez lmatch',
+          })}
+          className={`relative z-10 min-w-11 min-h-11 -my-1.5 -mr-1.5 rounded-xl flex items-center justify-center cursor-pointer active:scale-95 transition-colors shrink-0 ${
+            isSaved
+              ? 'text-[#A78BFA] bg-[#7C3AED]/18'
+              : 'text-zinc-400 hover:text-white hover:bg-white/[0.06]'
+          }`}
+        >
+          <Star className={`w-4 h-4 ${isSaved ? 'fill-current nc-pop-spring' : ''}`} />
+        </button>
+      </div>
+
+      {/* NIVEL 2: Cuerpo Central al 100% de ancho (Local arriba, Visitante abajo, cero truncate) */}
+      <div className="relative z-[1] pointer-events-none w-full space-y-2.5">
+        <div className="flex items-center justify-between gap-3 w-full">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <TeamCrestImg
+              src={item.homeLogo}
+              shortCode={item.homeShort}
+              alt={item.homeTeam}
+            />
+            <span className="text-[15px] font-semibold text-white leading-snug break-words">
+              {item.homeTeam}
+            </span>
+            {hasZhChannel && (
+              <span className="px-1.5 py-0.5 rounded bg-white/10 text-zinc-200 text-[10px] font-bold shrink-0">
+                ZH
+              </span>
+            )}
+          </div>
+          {showNumericScore && (
+            <span className="text-base font-extrabold tabular-nums text-white shrink-0">
+              {item.homeScore}
             </span>
           )}
         </div>
 
-        {broadcasterHint ? (
-          <span
-            className="inline-flex items-center gap-1 text-[11px] font-bold whitespace-nowrap shrink-0"
-            style={{ color: broadcasterHint.color }}
-          >
-            <span
-              className="w-1.5 h-1.5 rounded-full shrink-0"
-              style={{ backgroundColor: broadcasterHint.color }}
+        <div className="flex items-center justify-between gap-3 w-full">
+          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+            <TeamCrestImg
+              src={item.awayLogo}
+              shortCode={item.awayShort}
+              alt={item.awayTeam}
             />
-            <span>{broadcasterHint.name}</span>
-          </span>
-        ) : item.statusState !== 'finished' ? (
-          <span className="text-[11px] font-medium text-zinc-500 whitespace-nowrap shrink-0">
-            {pickLang(lang, {
-              es: 'TV por confirmar',
-              ca: 'TV per confirmar',
-              en: 'TV TBA',
-              zh: '频道待定',
-              rif: 'TV urɛad yettwaqqen',
-            })}
-          </span>
-        ) : null}
+            <span className="text-[15px] font-semibold text-white leading-snug break-words">
+              {item.awayTeam}
+            </span>
+          </div>
+          {showNumericScore && (
+            <span className="text-base font-extrabold tabular-nums text-white shrink-0">
+              {item.awayScore}
+            </span>
+          )}
+        </div>
       </div>
 
-      {/* Main Content Row: Spacious Team Rows + Star & Quick Watch CTA */}
-      <div className="relative z-[1] flex items-center justify-between gap-2.5 min-w-0">
-        <div className="pointer-events-none flex-1 min-w-0 space-y-1.5">
-          <div className="flex items-center justify-between gap-2 min-w-0">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <TeamCrestImg
-                src={item.homeLogo}
-                shortCode={item.homeShort}
-                alt={item.homeTeam}
-              />
-              <span className="text-sm font-semibold text-white leading-snug truncate">
-                {item.homeTeam}
-              </span>
-              {hasZhChannel && (
-                <span className="px-1.5 py-0.5 rounded bg-white/10 text-zinc-200 text-[10px] font-bold shrink-0">
-                  ZH
-                </span>
-              )}
-            </div>
-            {showNumericScore && (
-              <span className="text-sm font-extrabold tabular-nums text-white shrink-0 pl-1">
-                {item.homeScore}
-              </span>
-            )}
-          </div>
+      {/* NIVEL 3: Pie de Señales (píldoras táctiles >= 38px con flex-wrap, cero recorte) */}
+      <div className="relative z-10 pt-1 flex flex-wrap items-center justify-between gap-2">
+        {orderedFeedEntries.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {orderedFeedEntries.map(({ ch, idx }) => {
+              const langBucket = getTrackLanguageBucket(ch);
+              const isFeedPlaying = Boolean(activeVideoRawUrl && ch.sourceUrl === activeVideoRawUrl);
+              const isPrimarySlot = idx === (preferredIdx >= 0 ? preferredIdx : 0);
+              return (
+                <button
+                  key={`${item.id}-feed-${ch.id || idx}-${idx}`}
+                  type="button"
+                  disabled={Boolean(loadingItemId)}
+                  onClick={(e) => onQuickWatch(e, item, idx)}
+                  className={`min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 border ${
+                    isFeedPlaying
+                      ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_4px_16px_rgba(124,58,237,0.42)]'
+                      : isPrimarySlot && langBucket === 'ES'
+                      ? 'bg-[#7C3AED]/18 hover:bg-[#7C3AED] border-[#7C3AED]/45 hover:border-[#7C3AED] text-[#E9D5FF] hover:text-white'
+                      : isPrimarySlot && langBucket === 'EN'
+                      ? 'bg-sky-500/[0.14] hover:bg-sky-600 border-sky-500/40 text-sky-200 hover:text-white'
+                      : 'bg-white/[0.06] hover:bg-[#7C3AED] border-white/[0.1] hover:border-[#7C3AED] text-zinc-100 hover:text-white'
+                  }`}
+                >
+                  {isExtracting && isPrimarySlot ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                  ) : (
+                    <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+                  )}
+                  <span>{formatQuickChannelLabel(ch, lang)}</span>
+                </button>
+              );
+            })}
 
-          <div className="flex items-center justify-between gap-2 min-w-0">
-            <div className="flex items-center gap-2 min-w-0 flex-1">
-              <TeamCrestImg
-                src={item.awayLogo}
-                shortCode={item.awayShort}
-                alt={item.awayTeam}
-              />
-              <span className="text-sm font-semibold text-zinc-200 leading-snug truncate">
-                {item.awayTeam}
-              </span>
-            </div>
-            {showNumericScore && (
-              <span className="text-sm font-extrabold tabular-nums text-white shrink-0 pl-1">
-                {item.awayScore}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="relative z-10 pointer-events-auto shrink-0 flex items-center gap-1">
-          {primaryCh ? (
-            <>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  triggerHaptic('light');
-                  onToggleChannelFavorite({
-                    favId,
-                    title: `${item.homeTeam} vs ${item.awayTeam}`,
-                    channelLabel:
-                      primaryCh.label ||
-                      pickLang(lang, { es: 'Señal 1', ca: 'Senyal 1', en: 'Feed 1', zh: '信号 1', rif: 'Lqanat 1' }),
-                    channelUrl: primaryCh.sourceUrl,
-                    competition: item.groupTitle,
-                    sport: 'soccer',
-                  });
-                }}
-                aria-label={pickLang(lang, {
-                  es: 'Guardar partido',
-                  ca: 'Desar partit',
-                  en: 'Save match',
-                  zh: '收藏比赛',
-                  rif: 'Ḥrez lmatch',
-                })}
-                className="min-w-11 min-h-11 flex items-center justify-center rounded-xl text-zinc-400 hover:text-[#9146FF] cursor-pointer"
-              >
-                <Star
-                  className={`w-4 h-4 ${isSaved ? 'fill-current text-[#9146FF]' : ''}`}
-                />
-              </button>
-
-              <button
-                type="button"
-                disabled={Boolean(loadingItemId)}
-                onClick={(e) => onQuickWatch(e, item, preferredIdx)}
-                className={`min-h-11 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap shrink-0 border ${
-                  isPlayingThisMatch
-                    ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.4)]'
-                    : primaryLangBucket === 'EN'
-                    ? 'bg-sky-500/[0.12] hover:bg-sky-500/[0.22] border-sky-500/40 text-sky-200 hover:text-white'
-                    : primaryLangBucket === 'ES'
-                    ? 'bg-amber-500/[0.12] hover:bg-amber-500/[0.22] border-amber-500/40 text-amber-200 hover:text-white'
-                    : 'bg-white/[0.06] hover:bg-[#9146FF] border-white/[0.12] hover:border-[#9146FF] text-zinc-100 hover:text-white'
-                }`}
-              >
-                {isExtracting ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                ) : (
-                  <Play className="w-3.5 h-3.5 fill-current shrink-0" />
-                )}
-                <span>{formatQuickChannelLabel(primaryCh, lang)}</span>
-              </button>
-            </>
-          ) : (
             <button
               type="button"
-              onClick={() => onOpenMatchSheet(item)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenMatchSheet(item);
+              }}
+              className="min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 cursor-pointer bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] text-zinc-300 hover:text-white transition-all active:scale-95"
+            >
+              <span>{pickLang(lang, { es: 'Detalles', ca: 'Detalls', en: 'Details' })}</span>
+              <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
+            </button>
+          </div>
+        ) : (
+          <div className="w-full flex flex-wrap items-center justify-between gap-2">
+            {broadcasterHint ? (
+              <span
+                className="inline-flex items-center gap-1.5 text-xs font-semibold"
+                style={{ color: broadcasterHint.color }}
+              >
+                <span
+                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                  style={{ backgroundColor: broadcasterHint.color }}
+                />
+                <span>{broadcasterHint.name}</span>
+              </span>
+            ) : (
+              <span className="text-xs font-medium text-zinc-500">
+                {item.statusState === 'finished'
+                  ? pickLang(lang, { es: 'Finalizado', ca: 'Finalitzat', en: 'Full time' })
+                  : pickLang(lang, {
+                      es: 'TV por confirmar',
+                      ca: 'TV per confirmar',
+                      en: 'TV TBA',
+                      zh: '频道待定',
+                      rif: 'TV urɛad yettwaqqen',
+                    })}
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenMatchSheet(item);
+              }}
               aria-label={pickLang(lang, {
                 es: 'Ver previa y detalles',
                 ca: 'Veure prèvia i detalls',
@@ -340,14 +380,14 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
                 zh: '查看赛前详情',
                 rif: 'Wali tfassil',
               })}
-              className="min-h-11 px-3 rounded-xl text-xs font-semibold flex items-center gap-1 cursor-pointer bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-zinc-300 hover:text-white transition-all whitespace-nowrap active:scale-95"
+              className="min-h-[38px] px-3.5 py-1.5 rounded-xl text-xs font-semibold inline-flex items-center gap-1 cursor-pointer bg-white/[0.05] hover:bg-[#7C3AED] border border-white/[0.08] hover:border-[#7C3AED] text-zinc-200 hover:text-white transition-all active:scale-95"
             >
               <span>{pickLang(lang, { es: 'Previa', ca: 'Prèvia', en: 'Preview', zh: '赛前', rif: 'Qbel' })}</span>
-              <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
+              <ChevronRight className="w-3.5 h-3.5" />
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
-    </div>
+    </article>
   );
 };

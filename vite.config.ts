@@ -30,8 +30,8 @@ export default defineConfig(() => {
           short_name: 'Riffan TV',
           description:
             'Riffan TV (RTV): tu plataforma multiplataforma en directo para ver películas, series, anime, fútbol y TV con amigos en tiempo real.',
-          theme_color: '#07080C',
-          background_color: '#07080C',
+          theme_color: '#000000',
+          background_color: '#000000',
           display: 'standalone',
           orientation: 'any',
           start_url: '/',

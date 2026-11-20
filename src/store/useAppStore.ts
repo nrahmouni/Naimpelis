@@ -115,6 +115,7 @@ interface AppShellState {
   futbolSearchQuery: string;
   futbolDayOffset: number;
   futbolStatusTab: 'live' | 'upcoming' | 'all';
+  futbolFavOnly: boolean;
   requestedMovieModal: CatalogMovie | null;
   requestedSeriesModal: RequestedSeriesModalPayload | null;
   requestedCatalaModal: RequestedCatalaModalPayload | null;
@@ -157,6 +158,7 @@ interface AppShellState {
   setFutbolSearchQuery: (q: string) => void;
   setFutbolDayOffset: (offset: number) => void;
   setFutbolStatusTab: (tab: 'live' | 'upcoming' | 'all') => void;
+  setFutbolFavOnly: (val: boolean) => void;
   setRequestedMovieModal: (movie: CatalogMovie | null) => void;
   setRequestedSeriesModal: (payload: RequestedSeriesModalPayload | null) => void;
   setRequestedCatalaModal: (payload: RequestedCatalaModalPayload | null) => void;
@@ -241,6 +243,7 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   futbolSearchQuery: '',
   futbolDayOffset: 0,
   futbolStatusTab: 'all',
+  futbolFavOnly: false,
   requestedMovieModal: null,
   requestedSeriesModal: null,
   requestedCatalaModal: null,
@@ -325,6 +328,10 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   setFutbolStatusTab: (futbolStatusTab) => {
     if (get().futbolStatusTab === futbolStatusTab) return;
     set({ futbolStatusTab });
+  },
+  setFutbolFavOnly: (futbolFavOnly) => {
+    if (get().futbolFavOnly === futbolFavOnly) return;
+    set({ futbolFavOnly });
   },
   setRequestedMovieModal: (requestedMovieModal) => {
     if (get().requestedMovieModal === requestedMovieModal) return;

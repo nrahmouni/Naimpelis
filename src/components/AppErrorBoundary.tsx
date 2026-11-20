@@ -73,8 +73,8 @@ export class AppErrorBoundary extends React.Component<
     const lang = getBoundaryLang();
 
     return (
-      <div className="min-h-full w-full bg-[#07080C] text-[#F4F5F8] flex items-center justify-center p-6">
-        <div className="max-w-md w-full rounded-3xl bg-[#11131B] border border-white/12 p-6 text-center space-y-4">
+      <div className="min-h-full w-full bg-[#000000] text-[#F4F5F8] flex items-center justify-center p-6">
+        <div className="max-w-md w-full rounded-3xl bg-[#0D0D12] border border-white/[0.08] p-6 text-center space-y-4 shadow-[0_24px_64px_rgba(0,0,0,0.9)]">
           <h2 className="font-display font-bold text-lg text-white">
             {isQuota
               ? pickLang(lang, {
@@ -113,15 +113,15 @@ export class AppErrorBoundary extends React.Component<
                 })}
           </p>
           {this.state.message && (
-            <p className="text-[11px] font-mono text-zinc-400 bg-black/30 border border-white/8 rounded-xl px-3 py-2 break-words">
+            <p className="text-[11px] font-mono text-zinc-400 bg-black/50 border border-white/[0.08] rounded-xl px-3 py-2 break-words">
               {this.state.message.slice(0, 180)}
             </p>
           )}
-          <div className="flex items-center justify-center gap-2.5 flex-wrap">
+          <div className="flex items-center justify-center gap-3 flex-wrap">
             <button
               type="button"
               onClick={() => this.setState({ hasError: false, message: '' })}
-              className="min-h-[44px] px-4 rounded-2xl bg-white/8 hover:bg-white/14 border border-white/12 text-xs sm:text-sm font-semibold text-zinc-200 inline-flex items-center gap-2 cursor-pointer"
+              className="min-h-[44px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs sm:text-sm font-semibold text-zinc-200 inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-transform"
             >
               <span>
                 {pickLang(lang, {
@@ -135,7 +135,7 @@ export class AppErrorBoundary extends React.Component<
             <button
               type="button"
               onClick={() => void clearStaleCachesAndReload({ force: true })}
-              className="min-h-[44px] px-5 rounded-2xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-xs sm:text-sm font-semibold text-white inline-flex items-center gap-2 cursor-pointer"
+              className="min-h-[44px] px-5 rounded-2xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs sm:text-sm font-semibold text-white inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-transform"
             >
               <RefreshCw className="w-4 h-4" />
               <span>

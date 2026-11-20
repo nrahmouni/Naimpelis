@@ -83,7 +83,7 @@ export async function handleExternalSportsExtract(params: {
       checkedAt: Date.now(),
       qoeFailures: 3,
     });
-    return sendJsonStatus(502, {
+    return sendJsonStatus(422, {
       success: false,
       brokenGreenFeed: true,
       canUseCloudBrowser: false,
@@ -120,7 +120,7 @@ export async function handleExternalSportsExtract(params: {
             checkedAt: Date.now(),
             qoeFailures: 3,
           });
-          return sendJsonStatus(502, {
+          return sendJsonStatus(422, {
             success: false,
             brokenGreenFeed: true,
             canUseCloudBrowser: false,

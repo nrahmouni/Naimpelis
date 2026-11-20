@@ -57,8 +57,8 @@ export const CinePosterCard: React.FC<CinePosterCardProps> = ({
           <div
             className={
               is4kCard
-                ? 'relative aspect-[2/3] w-full card-4k-border-beam shadow-[0_12px_28px_rgba(0,0,0,0.45)]'
-                : 'relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border border-white/[0.08] group-hover:border-[#9146FF]/65 shadow-[0_10px_24px_rgba(0,0,0,0.38)] group-hover:shadow-[0_14px_30px_rgba(145,70,255,0.22)] transition-all duration-200'
+                ? 'relative aspect-[2/3] w-full card-4k-border-beam shadow-[0_12px_28px_rgba(0,0,0,0.55)]'
+                : 'relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0D0D12] border border-white/[0.08] group-hover:border-[#7C3AED]/65 shadow-[0_10px_24px_rgba(0,0,0,0.45)] group-hover:shadow-[0_14px_30px_rgba(124,58,237,0.22)] transition-all duration-200'
             }
           >
             <div className={is4kCard ? 'card-4k-inner' : 'w-full h-full'}>
@@ -91,11 +91,11 @@ export const CinePosterCard: React.FC<CinePosterCardProps> = ({
           </div>
 
           <div className="px-0.5 pt-2 min-w-0">
-            <h4 className="font-display font-bold text-xs sm:text-[13px] text-white truncate leading-snug group-hover:text-[#D8B4FE] transition-colors">
+            <h4 className="font-display font-bold text-xs sm:text-[13px] text-white leading-snug break-words group-hover:text-[#C4B5FD] transition-colors">
               {normalized.title}
             </h4>
             {primaryMetaParts.length > 0 && (
-              <p className="text-[11px] text-zinc-400 mt-0.5 tabular-nums truncate">
+              <p className="text-[11px] text-zinc-400 mt-0.5 tabular-nums leading-snug">
                 {primaryMetaParts.join(' · ')}
               </p>
             )}
@@ -113,8 +113,8 @@ export const CinePosterCard: React.FC<CinePosterCardProps> = ({
             aria-label={isBookmarked ? 'Quitar de guardados' : 'Guardar título'}
             className={`absolute top-2 right-2 z-20 w-9 h-9 rounded-xl backdrop-blur-md border flex items-center justify-center cursor-pointer active:scale-90 transition-all ${
               isBookmarked
-                ? 'bg-[#9146FF] border-[#9146FF] text-white opacity-100 shadow-lg'
-                : 'bg-black/70 border-white/20 text-white opacity-85 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 hover:bg-[#9146FF]'
+                ? 'bg-[#7C3AED] border-[#7C3AED] text-white opacity-100 shadow-lg'
+                : 'bg-black/75 border-white/20 text-white opacity-85 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 hover:bg-[#7C3AED]'
             }`}
           >
             <RiffanBookmarkIcon size={15} tone="current" active={isBookmarked} animate="none" />

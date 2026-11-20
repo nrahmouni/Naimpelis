@@ -34,26 +34,76 @@ function getChannelBrandGradient(ch) {
   return 'linear-gradient(145deg, #3b2472 0%, #121218 100%)';
 }
 
+function mergeTvLiveCatalog() {
+  var base = Array.isArray(catalogData.tdtBase) ? catalogData.tdtBase : [];
+  var world = Array.isArray(catalogData.worldTv) ? catalogData.worldTv : [];
+  var merged = [];
+  var seen = {};
+  var i;
+  for (i = 0; i < base.length; i++) {
+    if (base[i] && base[i].id && !seen[base[i].id]) {
+      seen[base[i].id] = true;
+      merged.push(base[i]);
+    }
+  }
+  for (i = 0; i < world.length; i++) {
+    if (world[i] && world[i].id && !seen[world[i].id]) {
+      seen[world[i].id] = true;
+      merged.push(world[i]);
+    }
+  }
+  catalogData.tdt = merged;
+}
+
+function channelMatchesCategoryFilter(c, filterKey) {
+  if (!filterKey || filterKey === 'all') return true;
+  var cat = c.category || '';
+  if (filterKey === 'es_tdt') return cat === 'generalistas' || cat === 'noticias_deportes' || cat === 'entretenimiento';
+  if (filterKey === 'es_sports') return cat === 'movistar' || cat === 'dazn';
+  if (filterKey === 'world_cricket') return cat === 'world_cricket';
+  if (filterKey === 'bein_arabic') return cat === 'bein_arabic';
+  if (filterKey === 'marruecos') return cat === 'marruecos';
+  if (filterKey === 'elahmad_mena') return cat === 'elahmad_mena';
+  if (filterKey === 'adrar_europa') {
+    if (cat !== 'adrar_europa') return false;
+    if (activeAdrarCountry && activeAdrarCountry !== 'all') {
+      return String(c.countryCode || '').toLowerCase() === activeAdrarCountry;
+    }
+    return true;
+  }
+  if (filterKey === 'documentales') return cat === 'documentales';
+  if (filterKey === 'usa_tv') return cat === 'usa_tv';
+  if (filterKey === 'europa_tv') return cat === 'europa_tv';
+  if (filterKey === 'noticias_intl') return cat === 'noticias_intl';
+  if (filterKey === 'uk_sports') return cat === 'uk_sports';
+  if (filterKey === 'china_football') return cat === 'china_football';
+  if (filterKey === 'intl_sports') return cat === 'espn' || cat === 'dsports' || cat === 'beinsports' || cat === 'tnt_space';
+  if (filterKey === 'cine') return cat === 'cine_series';
+  if (filterKey === 'famelack_movies') return cat === 'famelack_movies';
+  if (filterKey === 'kids_world') return cat === 'kids_world';
+  if (filterKey === 'kids_reg') return cat === 'infantil_autonomicas';
+  return cat === filterKey;
+}
+
 function filterTdtChannels(filterKey) {
   var all = catalogData.tdt || [];
-  if (!filterKey || filterKey === 'all') return all;
+  var q = String(activeLiveSearch || '').replace(/^\s+|\s+$/g, '').toLowerCase();
   var out = [];
   for (var i = 0; i < all.length; i++) {
     var c = all[i];
-    var cat = c.category || '';
-    if (filterKey === 'es_tdt' && (cat === 'generalistas' || cat === 'noticias_deportes' || cat === 'entretenimiento')) out.push(c);
-    else if (filterKey === 'es_sports' && (cat === 'movistar' || cat === 'dazn')) out.push(c);
-    else if (filterKey === 'bein_arabic' && cat === 'bein_arabic') out.push(c);
-    else if (filterKey === 'marruecos' && cat === 'marruecos') out.push(c);
-    else if (filterKey === 'documentales' && cat === 'documentales') out.push(c);
-    else if (filterKey === 'usa_tv' && cat === 'usa_tv') out.push(c);
-    else if (filterKey === 'europa_tv' && cat === 'europa_tv') out.push(c);
-    else if (filterKey === 'noticias_intl' && cat === 'noticias_intl') out.push(c);
-    else if (filterKey === 'uk_sports' && cat === 'uk_sports') out.push(c);
-    else if (filterKey === 'china_football' && cat === 'china_football') out.push(c);
-    else if (filterKey === 'intl_sports' && (cat === 'espn' || cat === 'dsports' || cat === 'beinsports' || cat === 'tnt_space')) out.push(c);
-    else if (filterKey === 'cine' && cat === 'cine_series') out.push(c);
-    else if (filterKey === 'kids_reg' && cat === 'infantil_autonomicas') out.push(c);
+    if (!channelMatchesCategoryFilter(c, filterKey)) continue;
+    if (q) {
+      var chEpg = catalogData.epg ? catalogData.epg[c.id] : null;
+      var epgTitle = chEpg && chEpg.now && chEpg.now.title ? chEpg.now.title.toLowerCase() : '';
+      var hay =
+        (c.name ? c.name.toLowerCase() : '') + ' ' +
+        (c.network ? c.network.toLowerCase() : '') + ' ' +
+        (c.dial ? String(c.dial) : '') + ' ' +
+        (c.countryCode ? String(c.countryCode).toLowerCase() : '') + ' ' +
+        epgTitle;
+      if (hay.indexOf(q) === -1) continue;
+    }
+    out.push(c);
   }
   return out;
 }
@@ -120,7 +170,7 @@ function buildCardButton(item, kind) {
   return btn;
 }
 
-function appendSection(parent, title, subtitle, items, kind, useGrid) {
+function appendSection(parent, title, subtitle, items, kind, useGrid, maxOverride) {
   if (!items || !items.length) return;
   var sec = document.createElement('div');
   sec.className = 'tv-section';
@@ -133,7 +183,9 @@ function appendSection(parent, title, subtitle, items, kind, useGrid) {
 
   var list = document.createElement('div');
   list.className = useGrid ? 'tv-grid' : 'tv-rail';
-  var limit = useGrid ? items.length : Math.min(18, items.length);
+  var limit = useGrid
+    ? (typeof maxOverride === 'number' && maxOverride > 0 ? Math.min(maxOverride, items.length) : items.length)
+    : Math.min(18, items.length);
   for (var i = 0; i < limit; i++) {
     list.appendChild(buildCardButton(items[i], kind));
   }
@@ -321,12 +373,51 @@ function renderHubContent(focusFirstResult) {
     appendSection(hubDynamicContent, tvT('secMoviesTitle'), tvT('secMoviesSub'), catalogData.movies, 'media', false);
     appendSection(hubDynamicContent, tvT('secAnimeTitle'), tvT('secAnimeSub'), catalogData.anime, 'media', false);
   } else if (activeHubTab === 'tdt') {
+    var searchPanel = document.createElement('div');
+    searchPanel.className = 'tv-search-panel';
+    searchPanel.innerHTML =
+      '<form id="tv-live-search-form" class="tv-search-row" style="margin-bottom:0;">' +
+      '<input type="text" id="tv-live-search-input" class="tv-search-input" placeholder="' + escapeHtml(tvT('liveSearchPh')) + '" value="' + escapeHtml(activeLiveSearch) + '" tabindex="0" />' +
+      '<button type="submit" class="tv-btn-primary" style="margin-right:8px;" tabindex="0">' + escapeHtml(tvT('searchSubmit')) + '</button>' +
+      (activeLiveSearch ? '<button type="button" id="btn-live-search-clear" class="tv-btn" tabindex="0">' + escapeHtml(tvT('liveSearchClear')) + '</button>' : '') +
+      '</form>';
+    hubDynamicContent.appendChild(searchPanel);
+
+    setTimeout(function () {
+      var lForm = document.getElementById('tv-live-search-form');
+      var lInput = document.getElementById('tv-live-search-input');
+      var lClear = document.getElementById('btn-live-search-clear');
+      if (lForm && lInput) {
+        lForm.onsubmit = function (ev) {
+          if (ev && ev.preventDefault) ev.preventDefault();
+          activeLiveSearch = lInput.value || '';
+          activeLiveVisibleLimit = 60;
+          renderHubContent();
+          setTimeout(function () {
+            var ni = document.getElementById('tv-live-search-input');
+            if (ni && ni.focus) ni.focus();
+          }, 20);
+          return false;
+        };
+      }
+      if (lClear) {
+        lClear.onclick = function () {
+          activeLiveSearch = '';
+          activeLiveVisibleLimit = 60;
+          renderHubContent();
+        };
+      }
+    }, 0);
+
     var filters = [
       { key: 'all', label: tvT('filterAll') + ' (' + catalogData.tdt.length + ')' },
       { key: 'es_tdt', label: tvT('filterEsTdt') },
       { key: 'es_sports', label: tvT('filterEsSports') },
+      { key: 'world_cricket', label: tvT('filterWorldCricket') },
       { key: 'bein_arabic', label: tvT('filterBeinAr') },
       { key: 'marruecos', label: tvT('filterMarruecos') },
+      { key: 'elahmad_mena', label: tvT('filterElahmadMena') },
+      { key: 'adrar_europa', label: tvT('filterAdrarEuropa') },
       { key: 'documentales', label: tvT('filterDocs') },
       { key: 'usa_tv', label: tvT('filterUsa') },
       { key: 'europa_tv', label: tvT('filterEuropa') },
@@ -335,6 +426,8 @@ function renderHubContent(focusFirstResult) {
       { key: 'china_football', label: tvT('filterChina') },
       { key: 'intl_sports', label: tvT('filterIntlSports') },
       { key: 'cine', label: tvT('filterCine') },
+      { key: 'famelack_movies', label: tvT('filterFamelackMovies') },
+      { key: 'kids_world', label: tvT('filterKidsWorld') },
       { key: 'kids_reg', label: tvT('filterKidsReg') }
     ];
     var filterRow = document.createElement('div');
@@ -349,6 +442,8 @@ function renderHubContent(focusFirstResult) {
         fb.setAttribute('data-filter', fObj.key);
         fb.onclick = function () {
           activeLiveFilter = fObj.key;
+          activeLiveVisibleLimit = 60;
+          if (fObj.key !== 'adrar_europa') activeAdrarCountry = 'all';
           renderHubContent();
           setTimeout(function () {
             var activePill = hubDynamicContent.querySelector('.tv-filter-pill[data-filter="' + fObj.key + '"]');
@@ -359,15 +454,77 @@ function renderHubContent(focusFirstResult) {
       })(filters[f]);
     }
     hubDynamicContent.appendChild(filterRow);
+
+    if (activeLiveFilter === 'adrar_europa') {
+      var countries = [
+        { code: 'all', label: tvT('filterAll') },
+        { code: 'es', label: '🇪🇸 ES' },
+        { code: 'fr', label: '🇫🇷 FR' },
+        { code: 'de', label: '🇩🇪 DE' },
+        { code: 'it', label: '🇮🇹 IT' },
+        { code: 'tr', label: '🇹🇷 TR' },
+        { code: 'uk', label: '🇬🇧 UK' },
+        { code: 'pt', label: '🇵🇹 PT' },
+        { code: 'nl', label: '🇳🇱 NL' },
+        { code: 'be', label: '🇧🇪 BE' },
+        { code: 'ru', label: '🇷🇺 RU' }
+      ];
+      var subRow = document.createElement('div');
+      subRow.className = 'tv-filter-row';
+      for (var ac = 0; ac < countries.length; ac++) {
+        (function (cObj) {
+          var cb = document.createElement('button');
+          cb.type = 'button';
+          cb.className = 'tv-filter-pill' + (activeAdrarCountry === cObj.code ? ' active' : '');
+          cb.textContent = cObj.label;
+          cb.tabIndex = 0;
+          cb.setAttribute('data-country', cObj.code);
+          cb.onclick = function () {
+            activeAdrarCountry = cObj.code;
+            activeLiveVisibleLimit = 60;
+            renderHubContent();
+            setTimeout(function () {
+              var activeC = hubDynamicContent.querySelector('.tv-filter-pill[data-country="' + cObj.code + '"]');
+              if (activeC && activeC.focus) activeC.focus();
+            }, 20);
+          };
+          subRow.appendChild(cb);
+        })(countries[ac]);
+      }
+      hubDynamicContent.appendChild(subRow);
+    }
+
     var filteredList = filterTdtChannels(activeLiveFilter);
+    var limitToUse = activeLiveSearch ? filteredList.length : Math.min(activeLiveVisibleLimit, filteredList.length);
+    var subtitleStr =
+      limitToUse < filteredList.length
+        ? tvT('showingPrefix') + limitToUse + ' / ' + filteredList.length + tvT('liveGridSubSuffix')
+        : filteredList.length + tvT('liveGridSubSuffix');
     appendSection(
       hubDynamicContent,
       tvT('liveGridTitle'),
-      filteredList.length + tvT('liveGridSubSuffix'),
+      subtitleStr,
       filteredList,
       'tdt',
-      true
+      true,
+      limitToUse
     );
+
+    if (limitToUse < filteredList.length) {
+      var moreWrap = document.createElement('div');
+      moreWrap.style.cssText = 'display:flex;justify-content:center;padding:8px 0 24px 0;';
+      var moreBtn = document.createElement('button');
+      moreBtn.type = 'button';
+      moreBtn.className = 'tv-btn-primary';
+      moreBtn.tabIndex = 0;
+      moreBtn.textContent = tvT('loadMoreChannels') + ' (' + (filteredList.length - limitToUse) + ')';
+      moreBtn.onclick = function () {
+        activeLiveVisibleLimit += 60;
+        renderHubContent();
+      };
+      moreWrap.appendChild(moreBtn);
+      hubDynamicContent.appendChild(moreWrap);
+    }
   } else if (activeHubTab === 'releases') {
     var rHero = buildHeroCard(catalogData.cinemaReleases[0] || catalogData.newSeasons[0]);
     if (rHero) hubDynamicContent.appendChild(rHero);
@@ -402,10 +559,11 @@ function loadLiveEpg() {
 }
 
 function loadTvCatalog() {
-  var pending = 5;
+  var pending = 6;
   function checkDone() {
     pending--;
     if (pending <= 0) {
+      mergeTvLiveCatalog();
       catalogData.loaded = true;
       renderHubContent();
     }
@@ -430,7 +588,13 @@ function loadTvCatalog() {
     checkDone();
   });
   xhrJson('GET', '/api/catalog/tdt', null, function (_e, d) {
-    if (d && Array.isArray(d.channels)) catalogData.tdt = d.channels;
+    if (d && Array.isArray(d.channels)) catalogData.tdtBase = d.channels;
+    mergeTvLiveCatalog();
+    checkDone();
+  });
+  xhrJson('GET', '/api/catalog/world-tv', null, function (_e, d) {
+    if (d && Array.isArray(d.channels)) catalogData.worldTv = d.channels;
+    mergeTvLiveCatalog();
     checkDone();
   });
   loadLiveEpg();

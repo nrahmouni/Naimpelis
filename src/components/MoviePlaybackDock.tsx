@@ -149,20 +149,20 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
         ca: 'Fitxa de la pel·lícula i suggeriments',
         en: 'Movie details & suggestions',
       })}
-      className="rounded-3xl bg-[#10121C]/95 border border-white/[0.09] overflow-hidden shadow-[0_18px_48px_rgba(0,0,0,0.65),inset_0_1px_0_rgba(255,255,255,0.06)]"
+      className="rounded-3xl bg-[#0D0D12]/95 border border-white/[0.08] overflow-hidden shadow-[0_18px_48px_rgba(0,0,0,0.65),inset_0_1px_0_rgba(255,255,255,0.06)]"
     >
       {/* Header */}
-      <div className="px-3.5 py-2.5 flex items-center justify-between gap-2 border-b border-white/[0.06]">
+      <div className="px-4 py-3 flex items-center justify-between gap-2 border-b border-white/[0.08]">
         <div className="flex items-center gap-2 min-w-0">
-          <Film className="w-4 h-4 text-[#BF94FF] shrink-0" />
-          <h3 className="font-display font-bold text-xs sm:text-sm text-white truncate">
+          <Film className="w-4 h-4 text-[#A78BFA] shrink-0" />
+          <h3 className="font-display font-bold text-xs sm:text-sm text-white break-words">
             {pickLang(lang, {
               es: 'Ficha y similares',
               ca: 'Fitxa i similars',
               en: 'Movie Info & Similar',
             })}
           </h3>
-          {loading && <Loader2 className="w-3.5 h-3.5 text-[#9146FF] animate-spin shrink-0" />}
+          {loading && <Loader2 className="w-3.5 h-3.5 text-[#8B5CF6] animate-spin shrink-0" />}
         </div>
 
         <button
@@ -270,9 +270,9 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
                 {cast.slice(0, 10).map((actor) => (
                   <div
                     key={`${actor.name}-${actor.character || ''}`}
-                    className="w-[104px] shrink-0 p-2 rounded-xl bg-white/[0.03] border border-white/[0.06] flex flex-col items-center text-center gap-1.5"
+                    className="w-[110px] shrink-0 p-2 rounded-xl bg-[#000000]/60 border border-white/[0.08] flex flex-col items-center text-center gap-1.5"
                   >
-                    <div className="w-11 h-11 rounded-full overflow-hidden bg-[#1B1D29] border border-white/15 shrink-0 flex items-center justify-center text-xs font-bold text-zinc-300">
+                    <div className="w-11 h-11 rounded-full overflow-hidden bg-[#14141C] border border-white/15 shrink-0 flex items-center justify-center text-xs font-bold text-zinc-300">
                       {actor.photo ? (
                         <img
                           src={actor.photo}
@@ -284,11 +284,11 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
                         actor.name.slice(0, 2).toUpperCase()
                       )}
                     </div>
-                    <p className="text-[11px] font-bold text-white line-clamp-1 w-full">
+                    <p className="text-[11px] font-bold text-white leading-snug break-words w-full">
                       {actor.name}
                     </p>
                     {actor.character && (
-                      <p className="text-[10px] text-zinc-400 line-clamp-1 w-full">
+                      <p className="text-[10px] text-zinc-400 leading-snug break-words w-full">
                         {actor.character}
                       </p>
                     )}
@@ -299,10 +299,10 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
           )}
 
           {/* RiffanAI In-Player Movie Copilot */}
-          <div className="rounded-2xl bg-[#0B0D14] border border-white/[0.08] p-3.5 space-y-2.5">
+          <div className="rounded-2xl bg-[#000000] border border-white/[0.08] p-4 space-y-2.5">
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-[#D8B4FE]">
-                <Sparkles className="w-3.5 h-3.5 text-[#9146FF]" />
+              <div className="flex items-center gap-1.5 text-xs font-bold text-[#A78BFA]">
+                <Sparkles className="w-3.5 h-3.5 text-[#8B5CF6]" />
                 <span>
                   {pickLang(lang, {
                     es: 'Asistente IA de esta película',
@@ -311,7 +311,7 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
                   })}
                 </span>
               </div>
-              {aiBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-[#BF94FF]" />}
+              {aiBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-[#A78BFA]" />}
             </div>
 
             <div className="flex flex-wrap gap-1.5">
@@ -337,7 +337,7 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
                   type="button"
                   disabled={aiBusy}
                   onClick={() => void askMovieAi(preset)}
-                  className="px-2.5 py-1.5 rounded-xl bg-white/[0.05] hover:bg-[#9146FF]/25 border border-white/[0.08] hover:border-[#9146FF]/45 text-[11px] font-semibold text-zinc-200 cursor-pointer transition-colors"
+                  className="min-h-9 px-3 py-1.5 rounded-xl bg-white/[0.05] hover:bg-[#7C3AED]/25 border border-white/[0.08] hover:border-[#8B5CF6]/45 text-[11px] font-semibold text-zinc-200 cursor-pointer active:scale-95 transition-all"
                 >
                   {preset}
                 </button>
@@ -360,12 +360,12 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
                   ca: `Pregunta sobre "${title}"...`,
                   en: `Ask about "${title}"...`,
                 })}
-                className="flex-1 min-h-9 px-3 rounded-xl bg-[#10121B] border border-white/[0.1] text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-[#9146FF]"
+                className="flex-1 min-h-10 px-3 rounded-xl bg-[#0D0D12] border border-white/[0.08] text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-[#7C3AED]"
               />
               <button
                 type="submit"
                 disabled={aiBusy || !aiQuery.trim()}
-                className="min-h-9 px-3 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] disabled:opacity-45 text-white text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
+                className="min-h-10 px-3.5 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] disabled:opacity-45 text-white text-xs font-bold inline-flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
               >
                 <Search className="w-3.5 h-3.5" />
                 <span>{pickLang(lang, { es: 'Buscar', ca: 'Cercar', en: 'Ask' })}</span>
@@ -373,7 +373,7 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
             </form>
 
             {aiAnswer && (
-              <div className="rounded-xl bg-[#141724] border border-white/[0.07] p-3 space-y-2 text-xs text-zinc-200 leading-relaxed whitespace-pre-wrap">
+              <div className="rounded-xl bg-[#0D0D12] border border-white/[0.08] p-3 space-y-2 text-xs text-zinc-200 leading-relaxed whitespace-pre-wrap">
                 <p>{aiAnswer}</p>
                 {aiSources.length > 0 && (
                   <div className="flex flex-wrap gap-1.5 pt-1">
@@ -383,10 +383,10 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
                         href={s.uri}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="px-2 py-1 rounded-lg bg-white/[0.05] text-[11px] text-[#C4A7FF] inline-flex items-center gap-1"
+                        className="px-2 py-1 rounded-lg bg-white/[0.05] text-[11px] text-[#A78BFA] inline-flex items-center gap-1"
                       >
-                        <span className="max-w-[160px] truncate">{s.title}</span>
-                        <ExternalLink className="w-2.5 h-2.5" />
+                        <span className="break-words">{s.title}</span>
+                        <ExternalLink className="w-2.5 h-2.5 shrink-0" />
                       </a>
                     ))}
                   </div>
@@ -398,8 +398,8 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
           {/* Similar / Suggested Movies */}
           {similarMovies.length > 0 && (
             <div className="space-y-2.5">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-[#D8B4FE]">
-                <Sparkles className="w-3.5 h-3.5 text-[#9146FF]" />
+              <div className="flex items-center gap-1.5 text-xs font-bold text-[#A78BFA]">
+                <Sparkles className="w-3.5 h-3.5 text-[#8B5CF6]" />
                 <span>
                   {pickLang(lang, {
                     es: 'Películas similares sugeridas',
@@ -409,7 +409,7 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
                 </span>
               </div>
 
-              <div className="flex items-stretch gap-2.5 overflow-x-auto no-scrollbar pb-1">
+              <div className="flex items-stretch gap-3 overflow-x-auto no-scrollbar pb-1">
                 {similarMovies.slice(0, 12).map((sim) => {
                   const isLoadingThis = loadingItemId === sim.id;
                   return (
@@ -421,9 +421,9 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
                         triggerHaptic('medium');
                         onSelectMovie(sim, preferLang);
                       }}
-                      className="group w-[124px] sm:w-[138px] shrink-0 rounded-xl bg-[#10121B] hover:bg-[#171A26] border border-white/[0.07] hover:border-[#9146FF]/60 overflow-hidden text-left cursor-pointer transition-all active:scale-[0.97] flex flex-col"
+                      className="group w-[128px] sm:w-[140px] shrink-0 rounded-2xl bg-[#000000] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#8B5CF6]/60 overflow-hidden text-left cursor-pointer transition-all active:scale-[0.97] flex flex-col"
                     >
-                      <div className="relative aspect-[2/3] w-full bg-[#0A0B10] overflow-hidden">
+                      <div className="relative aspect-[2/3] w-full bg-[#0D0D12] overflow-hidden">
                         <PosterImage
                           src={sim.poster}
                           alt={sim.title}
@@ -432,7 +432,7 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
                           imgClassName="object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                        <span className="absolute bottom-1.5 right-1.5 w-7 h-7 rounded-full bg-[#9146FF] text-white flex items-center justify-center shadow-md opacity-95 group-hover:scale-105 transition-transform">
+                        <span className="absolute bottom-1.5 right-1.5 w-7 h-7 rounded-full bg-[#7C3AED] text-white flex items-center justify-center shadow-md opacity-95 group-hover:scale-105 transition-transform">
                           {isLoadingThis ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           ) : (
@@ -440,11 +440,11 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
                           )}
                         </span>
                       </div>
-                      <div className="p-2 min-w-0">
-                        <p className="text-xs font-bold text-white line-clamp-1 group-hover:text-[#D8B4FE]">
+                      <div className="p-2.5 min-w-0">
+                        <p className="text-xs font-bold text-white leading-snug break-words group-hover:text-[#A78BFA]">
                           {sim.title}
                         </p>
-                        <p className="text-[10px] text-zinc-400 tabular-nums mt-0.5 truncate">
+                        <p className="text-[10px] text-zinc-400 tabular-nums mt-0.5 break-words">
                           {sim.year || 'HD'}
                           {sim.rating ? ` · ★ ${sim.rating}` : ''}
                         </p>

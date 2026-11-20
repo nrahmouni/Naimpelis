@@ -99,16 +99,16 @@ export const CatalaEpisodePickerModal: React.FC<CatalaEpisodePickerModalProps> =
         aria-label={selectedSeries.title}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-[940px] max-h-[93dvh] sm:max-h-[89dvh] rounded-t-3xl sm:rounded-3xl bg-[#090A10] border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden outline-none"
+        className="w-full sm:max-w-[940px] max-h-[93dvh] sm:max-h-[89dvh] rounded-t-3xl sm:rounded-3xl bg-[#0D0D12] border-t sm:border border-white/[0.08] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden outline-none"
       >
         <div className="sm:hidden pt-2 flex justify-center shrink-0">
           <div className="w-10 h-1.5 rounded-full bg-white/25" />
         </div>
 
         {/* Header */}
-        <div className="relative px-3.5 py-3 sm:px-6 sm:py-4 bg-gradient-to-b from-[#1A130D] to-[#090A10] border-b border-white/[0.08] space-y-2.5 shrink-0">
+        <div className="relative px-4 py-3.5 sm:px-6 sm:py-4 bg-gradient-to-b from-[#161224] to-[#0D0D12] border-b border-white/[0.08] space-y-2.5 shrink-0">
           <div className="flex items-center justify-between gap-2">
-            <div className="text-xs text-amber-300 font-semibold truncate">
+            <div className="text-xs text-[#A78BFA] font-semibold break-words">
               <span>Anime en Català</span>
               <span className="mx-1.5 text-zinc-500">·</span>
               <span className="text-zinc-300 font-normal">
@@ -182,10 +182,10 @@ export const CatalaEpisodePickerModal: React.FC<CatalaEpisodePickerModalProps> =
                         sn.seasonNumber
                       );
                     }}
-                    className={`min-h-[38px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+                    className={`min-h-[40px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
                       active
-                        ? 'bg-[#9146FF] text-white border-[#9146FF] shadow-[0_4px_16px_rgba(145,70,255,0.35)]'
-                        : 'bg-white/[0.05] text-zinc-300 border-white/10 hover:bg-white/[0.1]'
+                        ? 'bg-[#7C3AED] text-white border-[#8B5CF6] shadow-[0_4px_16px_rgba(124,58,237,0.35)]'
+                        : 'bg-[#000000] text-zinc-300 border-white/[0.08] hover:bg-[#14141C]'
                     }`}
                   >
                     {sn.name}
@@ -281,11 +281,11 @@ export const CatalaEpisodePickerModal: React.FC<CatalaEpisodePickerModalProps> =
               No s&apos;han trobat capítols per a aquesta cerca.
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {visibleCatEps.map((ep) => (
                 <div
                   key={ep.id}
-                  className="group relative min-w-0 text-left rounded-2xl bg-[#0F1119] hover:bg-[#161925] border border-white/[0.08] hover:border-amber-400/45 p-2.5 sm:p-3 flex items-center gap-3 transition-colors"
+                  className="group relative min-w-0 text-left rounded-2xl bg-[#000000] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#8B5CF6]/45 p-3 sm:p-3.5 flex items-center gap-3 transition-colors"
                 >
                   <button
                     type="button"
@@ -295,9 +295,9 @@ export const CatalaEpisodePickerModal: React.FC<CatalaEpisodePickerModalProps> =
                       onClose();
                     }}
                     aria-label={`${pickLang(lang, { es: 'Reproducir', ca: 'Reproduir', en: 'Play' })} ${ep.episodeNumber}. ${ep.title}`}
-                    className="absolute inset-0 z-0 cursor-pointer rounded-2xl focus-visible:outline-2 focus-visible:outline-[#9146FF]"
+                    className="absolute inset-0 z-0 cursor-pointer rounded-2xl focus-visible:outline-2 focus-visible:outline-[#7C3AED]"
                   />
-                  <div className="relative w-28 sm:w-36 aspect-video rounded-xl overflow-hidden bg-[#090A10] shrink-0 pointer-events-none z-[1]">
+                  <div className="relative w-28 sm:w-36 aspect-video rounded-xl overflow-hidden bg-[#0D0D12] shrink-0 pointer-events-none z-[1]">
                     <PosterImage
                       src={ep.still || selectedSeries.backdrop}
                       alt={ep.title}
@@ -306,7 +306,7 @@ export const CatalaEpisodePickerModal: React.FC<CatalaEpisodePickerModalProps> =
                       fallbackIcon={<Tv className="w-5 h-5 text-zinc-500" />}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent flex items-center justify-center">
-                      <div className="w-8 h-8 rounded-full bg-[#E11D48]/95 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                      <div className="w-8 h-8 rounded-full bg-[#7C3AED]/95 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
                         <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
                       </div>
                     </div>
@@ -315,12 +315,12 @@ export const CatalaEpisodePickerModal: React.FC<CatalaEpisodePickerModalProps> =
                     </span>
                   </div>
 
-                  <div className="min-w-0 flex-1 space-y-0.5 pointer-events-none relative z-[1]">
-                    <h4 className="font-display font-semibold text-sm text-white line-clamp-1">
+                  <div className="min-w-0 flex-1 space-y-1 pointer-events-none relative z-[1]">
+                    <h4 className="font-display font-semibold text-sm text-white leading-snug break-words">
                       {ep.episodeNumber}. {ep.title}
                     </h4>
-                    <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 whitespace-nowrap overflow-hidden tabular-nums">
-                      <span className="text-amber-300 font-semibold">Català</span>
+                    <div className="text-[11px] text-zinc-400 flex flex-wrap items-center gap-1.5 tabular-nums">
+                      <span className="text-[#A78BFA] font-semibold">Català</span>
                       {ep.runtime ? (
                         <>
                           <span aria-hidden="true">·</span>
@@ -328,7 +328,7 @@ export const CatalaEpisodePickerModal: React.FC<CatalaEpisodePickerModalProps> =
                         </>
                       ) : null}
                     </div>
-                    <p className="text-xs text-zinc-400/90 line-clamp-1">{ep.overview}</p>
+                    <p className="text-xs text-zinc-400/90 line-clamp-2 leading-relaxed">{ep.overview}</p>
                   </div>
 
                   {ep.streamUrl && (

@@ -22,11 +22,17 @@ import { channelHealthMonitor } from '../services/channelHealthMonitor.ts';
 import { loadSpanishEpgSchedule } from '../services/epgService.ts';
 import { getAllIptvChannels } from './iptvHelpers/iptvChannelRegistry.ts';
 import {
+  getCachedFamelackWorldChannels,
+  refreshFamelackAndWorldCatalog,
+} from '../services/famelackIptvService.ts';
+import {
   IPTV_GROUP_TITLES,
+  IPTV_MACRO_GROUP_LABELS,
   escapeXmlText,
   fetchUpstreamManifestText,
   formatXmltvUtcTime,
   getIptvEpgId,
+  getIptvMacroGroup,
   renderIptvChannelPng,
   rewriteManifestForSamsungIptv,
   unwrapMasterPlaylistForIptv,
@@ -96,15 +102,42 @@ export function registerIptvAndTdtRoutes(
       '/api/iptv/playlist.m3u',
     ],
     async (req, res) => {
-      if (req.query.refresh === '1') {
-        await refreshLiveIptvRegistry(true).catch(() => undefined);
+      const forceRefresh = req.query.refresh === '1';
+      if (forceRefresh) {
+        await Promise.all([
+          refreshLiveIptvRegistry(true).catch(() => undefined),
+          refreshFamelackAndWorldCatalog(true).catch(() => undefined),
+        ]);
       } else {
-        await refreshLiveIptvRegistry(false).catch(() => undefined);
+        const tasks: Promise<unknown>[] = [refreshLiveIptvRegistry(false).catch(() => undefined)];
+        if (getCachedFamelackWorldChannels().length === 0) {
+          tasks.push(refreshFamelackAndWorldCatalog(false).catch(() => undefined));
+        } else {
+          void refreshFamelackAndWorldCatalog(false).catch(() => undefined);
+        }
+        await Promise.all(tasks);
       }
+
       const publicOrigin = getPublicOrigin(req);
-      const channels = getAllIptvChannels();
+      const groupFilter = String(req.query.group || '').trim().toLowerCase();
+      const countryFilter = String(req.query.country || '').trim().toLowerCase();
+
+      let channels = getAllIptvChannels();
+      if (groupFilter && groupFilter !== 'all') {
+        channels = channels.filter(
+          (ch) =>
+            (ch.category || '').toLowerCase() === groupFilter ||
+            getIptvMacroGroup(ch.category || 'generalistas') === groupFilter
+        );
+      }
+      if (countryFilter) {
+        channels = channels.filter(
+          (ch) => (ch.countryCode || '').toLowerCase() === countryFilter
+        );
+      }
+
       const lines: string[] = [
-        `#EXTM3U x-tvg-url="${publicOrigin}/epg.xml" url-tvg="${publicOrigin}/epg.xml"`,
+        `#EXTM3U x-tvg-url="${publicOrigin}/epg.xml" url-tvg="${publicOrigin}/epg.xml" refresh="3600"`,
       ];
 
       channels.forEach((ch, idx) => {
@@ -142,7 +175,12 @@ export function registerIptvAndTdtRoutes(
 
   app.get('/api/iptv/status', async (req, res) => {
     if (req.query.refresh === '1') {
-      await refreshLiveIptvRegistry(true).catch(() => undefined);
+      await Promise.all([
+        refreshLiveIptvRegistry(true).catch(() => undefined),
+        refreshFamelackAndWorldCatalog(true).catch(() => undefined),
+      ]);
+    } else if (getCachedFamelackWorldChannels().length === 0) {
+      await refreshFamelackAndWorldCatalog(false).catch(() => undefined);
     }
     const channels = getAllIptvChannels();
     res.json({
@@ -154,22 +192,52 @@ export function registerIptvAndTdtRoutes(
 
   app.get('/api/iptv/summary', async (req, res) => {
     if (req.query.refresh === '1') {
-      await refreshLiveIptvRegistry(true).catch(() => undefined);
+      await Promise.all([
+        refreshLiveIptvRegistry(true).catch(() => undefined),
+        refreshFamelackAndWorldCatalog(true).catch(() => undefined),
+      ]);
+    } else if (getCachedFamelackWorldChannels().length === 0) {
+      await refreshFamelackAndWorldCatalog(false).catch(() => undefined);
     }
     const publicOrigin = getPublicOrigin(req);
-    const channels = getAllIptvChannels();
-    const catMap: Record<string, { label: string; count: number; sampleChannels: string[] }> = {};
+    const groupFilter = String(req.query.group || '').trim().toLowerCase();
+    const countryFilter = String(req.query.country || '').trim().toLowerCase();
+    let channels = getAllIptvChannels();
+    if (groupFilter && groupFilter !== 'all') {
+      channels = channels.filter(
+        (ch) =>
+          (ch.category || '').toLowerCase() === groupFilter ||
+          getIptvMacroGroup(ch.category || 'generalistas') === groupFilter
+      );
+    }
+    if (countryFilter) {
+      channels = channels.filter(
+        (ch) => (ch.countryCode || '').toLowerCase() === countryFilter
+      );
+    }
+
+    const catMap: Record<string, { label: string; macroGroup: string; count: number; sampleChannels: string[] }> = {};
+    const macroMap: Record<string, { id: string; label: string; count: number }> = {};
 
     channels.forEach((ch) => {
       const cat = ch.category || 'generalistas';
+      const macro = getIptvMacroGroup(cat);
       const groupLabel = IPTV_GROUP_TITLES[cat] || 'TDT y Directo';
       if (!catMap[cat]) {
-        catMap[cat] = { label: groupLabel, count: 0, sampleChannels: [] };
+        catMap[cat] = { label: groupLabel, macroGroup: macro, count: 0, sampleChannels: [] };
       }
       catMap[cat].count++;
       if (catMap[cat].sampleChannels.length < 5) {
         catMap[cat].sampleChannels.push(ch.name);
       }
+      if (!macroMap[macro]) {
+        macroMap[macro] = {
+          id: macro,
+          label: IPTV_MACRO_GROUP_LABELS[macro] || macro,
+          count: 0,
+        };
+      }
+      macroMap[macro].count++;
     });
 
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -183,9 +251,11 @@ export function registerIptvAndTdtRoutes(
       riffantvEpgUrl: `${publicOrigin}/epg.xml`,
       tvUrl: `${publicOrigin}/tv`,
       legacyM3uUrl: `${publicOrigin}/naim-cine.m3u`,
+      groups: Object.values(macroMap),
       categories: Object.entries(catMap).map(([id, info]) => ({
         id,
         label: info.label,
+        macroGroup: info.macroGroup,
         count: info.count,
         sampleChannels: info.sampleChannels,
       })),
@@ -194,10 +264,13 @@ export function registerIptvAndTdtRoutes(
         dial: c.dial || idx + 1,
         name: c.name,
         category: c.category,
+        macroGroup: getIptvMacroGroup(c.category || 'generalistas'),
+        countryCode: c.countryCode || undefined,
+        network: c.network || undefined,
         groupTitle: IPTV_GROUP_TITLES[c.category] || 'TDT y Directo',
         quality: c.quality || '1080p HD',
         shortMark: c.shortMark || c.name.slice(0, 4).toUpperCase(),
-        brandTone: c.brandTone || '#9146FF',
+        brandTone: c.brandTone || '#7C3AED',
         logoUrl: c.logoUrl || `${publicOrigin}/api/iptv/logo/${encodeURIComponent(c.id)}.png`,
       })),
     });

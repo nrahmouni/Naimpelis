@@ -387,7 +387,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   return (
     <aside
       className={`w-full h-full flex flex-col select-none overflow-hidden relative ${
-        worldSalaMode ? 'bg-[#0B0D14] border-l border-white/[0.08]' : 'bg-transparent'
+        worldSalaMode ? 'bg-[#000000] lg:bg-[#0D0D12] border-l border-white/[0.08]' : 'bg-transparent'
       }`}
     >
       <PartySidebarHeader

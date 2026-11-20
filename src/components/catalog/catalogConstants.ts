@@ -92,6 +92,8 @@ export const ADRAR_COUNTRY_FILTERS: {
   en: string;
 }[] = [
   { id: 'all', flagCode: 'eu', es: 'Toda ADRAR', ca: 'Tota ADRAR', en: 'All ADRAR' },
+  { id: 'es', flagCode: 'es', es: 'España', ca: 'Espanya', en: 'Spain' },
+  { id: 'pt', flagCode: 'pt', es: 'Portugal', ca: 'Portugal', en: 'Portugal' },
   { id: 'fr', flagCode: 'fr', es: 'Francia', ca: 'França', en: 'France' },
   { id: 'de', flagCode: 'de', es: 'Alemania', ca: 'Alemanya', en: 'Germany' },
   { id: 'it', flagCode: 'it', es: 'Italia', ca: 'Itàlia', en: 'Italy' },

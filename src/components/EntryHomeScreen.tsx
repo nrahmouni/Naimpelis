@@ -88,6 +88,8 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
 }) => {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(displayName);
+  const [voiceWaveActive, setVoiceWaveActive] = useState(false);
+  const [surprisePulse, setSurprisePulse] = useState(false);
   const [spotlightPos, setSpotlightPos] = useState<Record<string, { x: number; y: number }>>({});
 
   const handleSaveName = (e?: React.FormEvent) => {
@@ -181,7 +183,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
         aria-hidden="true"
         className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300"
         style={{
-          background: `radial-gradient(240px circle at ${pos.x}% ${pos.y}%, rgba(255,255,255,0.05), transparent 72%)`,
+          background: `radial-gradient(280px circle at ${pos.x}% ${pos.y}%, rgba(124,58,237,0.16), transparent 72%)`,
         }}
       />
     );
@@ -206,11 +208,11 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                     ca: 'El teu nom',
                     en: 'Your name',
                   })}
-                  className="flex-1 min-h-11 px-3.5 rounded-xl bg-white/[0.06] border border-[#9146FF] text-base font-display font-bold text-white focus:outline-none"
+                  className="flex-1 min-h-11 px-3.5 rounded-xl bg-[#0D0D12] border border-[#7C3AED] text-base font-display font-bold text-white focus:outline-none"
                 />
                 <button
                   type="submit"
-                  className="min-h-11 min-w-11 px-3.5 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-white font-bold flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                  className="min-h-11 min-w-11 px-3.5 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-white font-bold flex items-center justify-center cursor-pointer active:scale-95 transition-all"
                   aria-label={pickLang(lang, { es: 'Guardar', ca: 'Desar', en: 'Save' })}
                 >
                   <Check className="w-4 h-4" />
@@ -218,33 +220,27 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               </form>
             ) : (
               <div className="flex items-center gap-2">
-                {isGuestName ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setNameDraft(displayName);
-                      setEditingName(true);
-                    }}
-                    className="group inline-flex items-center gap-2 text-left cursor-pointer rounded-xl focus:outline-none"
-                    title={pickLang(lang, {
-                      es: 'Toca para cambiar tu nombre',
-                      ca: 'Toca per canviar el teu nom',
-                      en: 'Tap to change your name',
-                    })}
-                  >
-                    <h1 className="font-display font-bold text-[1.45rem] sm:text-[1.85rem] leading-tight tracking-tight text-white truncate">
-                      {greetingWord}, {displayName}
-                    </h1>
-                    <span className="w-7 h-7 rounded-full bg-white/[0.05] group-hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center text-zinc-400 group-hover:text-white transition-colors shrink-0">
-                      <Pencil className="w-3 h-3" />
-                    </span>
-                  </button>
-                ) : (
-                  <h1 className="font-display font-bold text-[1.45rem] sm:text-[1.85rem] leading-tight tracking-tight text-white truncate">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setNameDraft(displayName);
+                    setEditingName(true);
+                  }}
+                  className="group inline-flex items-center gap-2.5 text-left cursor-pointer rounded-xl focus:outline-none active:scale-95 transition-transform"
+                  title={pickLang(lang, {
+                    es: isGuestName ? 'Toca para cambiar tu nombre' : 'Editar apodo',
+                    ca: isGuestName ? 'Toca per canviar el teu nom' : 'Editar sobrenom',
+                    en: isGuestName ? 'Tap to change your name' : 'Edit nickname',
+                  })}
+                >
+                  <h1 className="font-display font-bold text-[1.45rem] sm:text-[1.85rem] leading-tight tracking-tight text-white">
                     {greetingWord}, {displayName}
                   </h1>
-                )}
+                  <span className="w-8 h-8 rounded-full bg-[#0D0D12] group-hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center text-zinc-400 group-hover:text-white transition-colors shrink-0">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </span>
+                </button>
               </div>
             )}
 
@@ -263,6 +259,8 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               type="button"
               onClick={() => {
                 triggerHaptic('medium');
+                setVoiceWaveActive(true);
+                window.setTimeout(() => setVoiceWaveActive(false), 650);
                 onOpenVoiceAssistant();
               }}
               aria-label={pickLang(lang, {
@@ -276,9 +274,15 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                 ca: 'Assistent de veu',
                 en: 'Voice assistant',
               })}
-              className="w-11 h-11 rounded-2xl bg-white/[0.045] hover:bg-white/[0.1] backdrop-blur-xl border border-white/[0.09] text-zinc-200 hover:text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
+              className="group relative w-11 h-11 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/50 text-zinc-200 hover:text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all overflow-visible"
             >
-              <Mic className="w-4.5 h-4.5 text-[#C4A7FF]" />
+              <span
+                aria-hidden="true"
+                className={`absolute inset-0 rounded-2xl border border-[#8B5CF6]/55 pointer-events-none transition-opacity ${
+                  voiceWaveActive ? 'animate-ping opacity-90' : 'opacity-0 group-hover:opacity-60 group-hover:animate-ping'
+                }`}
+              />
+              <Mic className="relative z-10 w-4.5 h-4.5 text-[#A78BFA]" />
             </button>
           )}
         </section>
@@ -367,9 +371,9 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                       triggerHaptic('light');
                       onResumeHistoryItem(item);
                     }}
-                    className="scroll-snap-item w-[164px] sm:w-[185px] shrink-0 rounded-2xl bg-white/[0.035] border border-white/[0.08] hover:border-[#9146FF]/50 overflow-hidden text-left group active:scale-[0.97] transition-all cursor-pointer"
+                    className="scroll-snap-item w-[164px] sm:w-[185px] shrink-0 rounded-2xl bg-[#0D0D12] border border-white/[0.08] hover:border-[#7C3AED]/60 overflow-hidden text-left group active:scale-95 transition-all cursor-pointer"
                   >
-                    <div className="relative aspect-video w-full bg-[#090A0F]">
+                    <div className="relative aspect-video w-full bg-[#000000]">
                       <PosterImage
                         src={item.backdrop || item.poster}
                         alt={item.title}
@@ -379,7 +383,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
                       <span className="absolute inset-0 flex items-center justify-center">
-                        <span className="w-9 h-9 rounded-full bg-black/65 backdrop-blur-md border border-white/20 flex items-center justify-center text-white group-hover:bg-[#9146FF] group-hover:border-[#9146FF] transition-colors">
+                        <span className="w-9 h-9 rounded-full bg-black/65 backdrop-blur-md border border-white/20 flex items-center justify-center text-white group-hover:bg-[#7C3AED] group-hover:border-[#7C3AED] transition-colors">
                           <RiffanPlayIcon size={16} tone="current" animate="hover" />
                         </span>
                       </span>
@@ -394,19 +398,19 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                         </span>
                       )}
                       <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/20">
-                        <div className="h-full bg-[#9146FF]" style={{ width: `${pct}%` }} />
+                        <div className="h-full bg-[#7C3AED]" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
-                    <div className="p-2.5">
-                      <p className="text-xs font-semibold text-white leading-snug line-clamp-2 min-h-[2.1rem]">
+                    <div className="p-3">
+                      <p className="text-xs font-semibold text-white leading-snug">
                         {item.title}
                       </p>
                       {cleanedSubtitle ? (
-                        <p className="text-[11px] text-zinc-400 truncate mt-1">
+                        <p className="text-[11px] text-zinc-400 leading-snug mt-1">
                           {cleanedSubtitle}
                         </p>
                       ) : minsLeft !== null ? (
-                        <p className="text-[11px] text-zinc-400 truncate mt-1 tabular-nums">
+                        <p className="text-[11px] text-zinc-400 mt-1 tabular-nums">
                           {pickLang(lang, {
                             es: `Quedan ~${minsLeft} min`,
                             ca: `Queden ~${minsLeft} min`,
@@ -414,7 +418,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                           })}
                         </p>
                       ) : (
-                        <p className="text-[11px] text-zinc-500 truncate mt-1">
+                        <p className="text-[11px] text-zinc-500 mt-1">
                           {item.year ? `${item.year}` : ''}
                         </p>
                       )}
@@ -442,41 +446,51 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
           renderSpotlightOverlay={renderSpotlightOverlay}
         />
 
-        {/* 5. QUIET SECONDARY CTA: SORPRÉNDEME */}
+        {/* 5. BOTTOM RANDOM PICKER BAR: SORPRÉNDEME */}
         <section>
           <motion.button
             type="button"
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.14 }}
-            whileTap={{ scale: 0.985 }}
+            whileTap={{ scale: 0.96 }}
             onClick={() => {
               triggerHaptic('light');
-              onOpenSurpriseMe();
+              setSurprisePulse(true);
+              window.setTimeout(() => {
+                setSurprisePulse(false);
+                onOpenSurpriseMe();
+              }, 160);
             }}
-            className="w-full min-h-12 px-4 py-2.5 rounded-2xl bg-white/[0.035] hover:bg-white/[0.06] border border-white/[0.08] hover:border-white/20 flex items-center justify-between gap-2.5 text-left cursor-pointer transition-all duration-200 group"
+            className="w-full min-h-12 px-4 py-3 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/55 flex items-center justify-between gap-3 text-left cursor-pointer active:scale-95 transition-all duration-200 group"
           >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-7 h-7 rounded-lg bg-white/[0.06] text-[#C4A7FF] border border-white/[0.08] flex items-center justify-center shrink-0">
-                <RiffanSurpriseIcon size={15} animate="always" />
+            <div className="flex items-center gap-3 min-w-0">
+              <motion.div
+                animate={surprisePulse ? { rotate: 360, scale: 1.15 } : { rotate: 0, scale: 1 }}
+                transition={{ duration: 0.22 }}
+                className="w-8 h-8 rounded-xl bg-[#7C3AED]/15 text-[#A78BFA] border border-[#7C3AED]/30 flex items-center justify-center shrink-0"
+              >
+                <RiffanSurpriseIcon size={16} animate="always" />
+              </motion.div>
+              <div className="min-w-0">
+                <span className="font-display font-semibold text-xs sm:text-sm text-white">
+                  {pickLang(lang, {
+                    es: 'Sorpréndeme',
+                    ca: 'Sorprèn-me',
+                    en: 'Surprise me',
+                    zh: '随机推荐',
+                  })}
+                </span>
+                <span className="text-xs text-zinc-400 ml-1.5">
+                  ·{' '}
+                  {pickLang(lang, {
+                    es: 'Elige algo al azar',
+                    ca: "Tria alguna cosa a l'atzar",
+                    en: 'Pick something at random',
+                    zh: '随机选一部播放',
+                  })}
+                </span>
               </div>
-              <span className="font-display font-semibold text-xs sm:text-sm text-white shrink-0">
-                {pickLang(lang, {
-                  es: 'Sorpréndeme',
-                  ca: 'Sorprèn-me',
-                  en: 'Surprise me',
-                  zh: '随机推荐',
-                })}
-              </span>
-              <span className="text-xs text-zinc-400 truncate">
-                ·{' '}
-                {pickLang(lang, {
-                  es: 'Elige algo al azar',
-                  ca: "Tria alguna cosa a l'atzar",
-                  en: 'Pick something at random',
-                  zh: '随机选一部播放',
-                })}
-              </span>
             </div>
             <RiffanChevronRightIcon size={16} animate="hover" className="shrink-0" />
           </motion.button>

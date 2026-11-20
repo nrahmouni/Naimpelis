@@ -15,6 +15,7 @@ import {
   parseWorldM3uPlaylist,
 } from '../server/services/famelackIptvService.ts';
 import { getAllIptvChannels } from '../server/routes/iptvHelpers/iptvChannelRegistry.ts';
+import { getIptvMacroGroup } from '../server/routes/iptvHelpers/iptvMediaHelpers.ts';
 
 describe('Ghostflix / VidBolt Multi-Audio VOD Extractor', () => {
   it('detects ghostflix and vidbolt movie & episode URLs cleanly', () => {
@@ -110,25 +111,32 @@ describe('Famelack, Free-TV & IPTV Registry Integration', () => {
     expect(mapped[0].channels[0].sourceUrl).toBe('https://amagi.example.com/willow/playlist.m3u8');
   });
 
-  it('parses Free-TV & iptv-org M3U playlists and categorizes Sports, ADRAR Europe & Movies', () => {
+  it('parses Free-TV & iptv-org M3U playlists and categorizes Sports, ADRAR Europe, Kids & Movies', () => {
     const m3u = [
       '#EXTM3U',
       '#EXTINF:-1 group-title="France" tvg-country="FR",ARTE Français',
       'https://arte.example.com/live/master.m3u8',
       '#EXTINF:-1 group-title="Sports" tvg-country="IN",Star Sports Live',
       'https://starsports.example.com/hls/live.m3u8',
+      '#EXTINF:-1 group-title="Kids" tvg-country="ES",Clan Kids Live',
+      'https://kids.example.com/hls/clan.m3u8',
     ].join('\n');
 
     const entries = parseWorldM3uPlaylist(m3u, 'freetv', 50);
-    expect(entries.length).toBe(2);
+    expect(entries.length).toBe(3);
     expect(entries.find((e) => e.name.includes('ARTE'))?.category).toBe('adrar_europa');
     expect(entries.find((e) => e.name.includes('Star Sports'))?.category).toBe('world_cricket');
+    expect(entries.find((e) => e.name.includes('Clan Kids'))?.category).toBe('kids_world');
   });
 
-  it('includes Cricket/Sports, Elahmad MENA, and ADRAR Europe packs in unified IPTV registry', () => {
+  it('includes Cricket/Sports, Elahmad MENA, ADRAR Europe and organized macro-groups in unified IPTV registry', () => {
     const all = getAllIptvChannels();
     expect(all.some((c) => c.category === 'world_cricket')).toBe(true);
     expect(all.some((c) => c.category === 'elahmad_mena')).toBe(true);
     expect(all.some((c) => c.category === 'adrar_europa')).toBe(true);
+    expect(getIptvMacroGroup('movistar')).toBe('deportes');
+    expect(getIptvMacroGroup('world_cricket')).toBe('deportes');
+    expect(getIptvMacroGroup('adrar_europa')).toBe('europa_usa');
+    expect(getIptvMacroGroup('kids_world')).toBe('infantil');
   });
 });

@@ -11,6 +11,7 @@ import {
 import type { AppLanguage } from '../../types';
 import { triggerHaptic } from '../../utils/haptics';
 import { pickLang } from '../../utils/i18n';
+import { CLIENT_APK_VERSION_CODE } from '../../utils/versionSync';
 import { RiffanDownloadIcon, RiffanSpinner } from '../ui/RiffanIcons';
 
 interface PwaInstallMainOptionsProps {
@@ -45,8 +46,8 @@ export const PwaInstallMainOptions: React.FC<PwaInstallMainOptionsProps> = ({
   const cardClass = (highlighted: boolean) =>
     `w-full min-h-14 px-4 py-3 rounded-2xl border flex items-center justify-between gap-3 text-left cursor-pointer active:scale-[0.98] transition-all duration-150 ${
       highlighted
-        ? 'bg-[#9146FF]/16 border-[#9146FF]/60 text-white'
-        : 'bg-white/[0.045] hover:bg-white/[0.09] border-white/[0.09] text-white'
+        ? 'bg-[#7C3AED]/16 border-[#7C3AED]/60 text-white'
+        : 'bg-[#0D0D12] hover:bg-[#14141D] border-white/[0.08] text-white'
     }`;
 
   return (
@@ -61,11 +62,11 @@ export const PwaInstallMainOptions: React.FC<PwaInstallMainOptionsProps> = ({
         className={cardClass(true)}
       >
         <span className="flex items-center gap-3 min-w-0">
-          <span className="w-10 h-10 rounded-xl bg-[#9146FF]/20 border border-[#9146FF]/40 flex items-center justify-center shrink-0">
-            <Tv className="w-5 h-5 text-[#BF94FF]" />
+          <span className="w-10 h-10 rounded-xl bg-[#7C3AED]/20 border border-[#7C3AED]/40 flex items-center justify-center shrink-0">
+            <Tv className="w-5 h-5 text-[#A78BFA]" />
           </span>
           <span className="min-w-0">
-            <span className="flex items-center gap-2">
+            <span className="flex items-center gap-2 flex-wrap">
               <span className="block text-sm font-bold text-white">
                 Samsung Tizen / LG webOS
               </span>
@@ -73,16 +74,16 @@ export const PwaInstallMainOptions: React.FC<PwaInstallMainOptionsProps> = ({
                 M3U + XML
               </span>
             </span>
-            <span className="block text-xs text-zinc-300 truncate">
+            <span className="block text-xs text-zinc-300 leading-snug break-words mt-0.5">
               {pickLang(lang, {
-                es: 'Guía paso a paso, lista M3U y guía EPG con +160 canales',
-                ca: 'Guia pas a pas, llista M3U i guia EPG amb +160 canals',
-                en: 'Step-by-step guide, M3U playlist & EPG XML with 160+ channels',
+                es: 'Guía paso a paso, lista M3U y guía EPG con +900 canales',
+                ca: 'Guia pas a pas, llista M3U i guia EPG amb +900 canals',
+                en: 'Step-by-step guide, M3U playlist & EPG XML with 900+ channels',
               })}
             </span>
           </span>
         </span>
-        <div className="flex items-center gap-1 shrink-0 text-[#BF94FF]">
+        <div className="flex items-center gap-1 shrink-0 text-[#A78BFA]">
           <span className="text-xs font-bold hidden sm:inline">Ver Guía</span>
           <ChevronRight className="w-4 h-4" />
         </div>
@@ -92,7 +93,9 @@ export const PwaInstallMainOptions: React.FC<PwaInstallMainOptionsProps> = ({
       <div className="space-y-2">
         <button
           type="button"
-          onClick={() => onDownloadApk('mobile', '/RIFFAN-TV.apk?v=300', 'RIFFANTV.apk')}
+          onClick={() =>
+            onDownloadApk('mobile', `/RIFFAN-TV.apk?v=${CLIENT_APK_VERSION_CODE}`, 'RIFFANTV.apk')
+          }
           className={cardClass(recommendedDevice === 'android')}
         >
           <span className="flex items-center gap-3 min-w-0">
@@ -102,12 +105,12 @@ export const PwaInstallMainOptions: React.FC<PwaInstallMainOptionsProps> = ({
               ) : apkDone === 'mobile' ? (
                 <Check className="w-5 h-5 text-emerald-400" />
               ) : (
-                <Smartphone className="w-5 h-5 text-[#BF94FF]" />
+                <Smartphone className="w-5 h-5 text-[#A78BFA]" />
               )}
             </span>
             <span className="min-w-0">
               <span className="block text-sm font-bold text-white">Android (APK Oficial)</span>
-              <span className="block text-xs text-zinc-400">
+              <span className="block text-xs text-zinc-400 leading-snug break-words">
                 {pickLang(lang, {
                   es: 'Descarga directa para móvil o tablet Android',
                   ca: 'Descàrrega directa per a mòbil o tauleta Android',
@@ -117,7 +120,7 @@ export const PwaInstallMainOptions: React.FC<PwaInstallMainOptionsProps> = ({
             </span>
           </span>
           {recommendedDevice === 'android' && (
-            <span className="px-2.5 py-1 rounded-full bg-[#9146FF] text-[10px] font-bold text-white shrink-0">
+            <span className="px-2.5 py-1 rounded-full bg-[#7C3AED] text-[10px] font-bold text-white shrink-0">
               {pickLang(lang, { es: 'Tu dispositivo', ca: 'El teu dispositiu', en: 'Your device' })}
             </span>
           )}
@@ -127,7 +130,7 @@ export const PwaInstallMainOptions: React.FC<PwaInstallMainOptionsProps> = ({
           <button
             type="button"
             onClick={onInstallPwa}
-            className="w-full min-h-10 px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-semibold text-zinc-200 flex items-center justify-center gap-2 cursor-pointer transition-colors"
+            className="w-full min-h-10 px-3.5 py-2 rounded-xl bg-[#0D0D12] hover:bg-[#14141D] border border-white/[0.08] text-xs font-semibold text-zinc-200 flex items-center justify-center gap-2 cursor-pointer transition-colors"
           >
             <RiffanDownloadIcon size={14} />
             <span>
@@ -144,7 +147,9 @@ export const PwaInstallMainOptions: React.FC<PwaInstallMainOptionsProps> = ({
       {/* OPTION 3: Google TV / Chromecast APK */}
       <button
         type="button"
-        onClick={() => onDownloadApk('tv', '/RIFFAN-TV-TV.apk?v=300', 'RIFFANTV-TV.apk')}
+        onClick={() =>
+          onDownloadApk('tv', `/RIFFAN-TV-TV.apk?v=${CLIENT_APK_VERSION_CODE}`, 'RIFFANTV-TV.apk')
+        }
         className={cardClass(recommendedDevice === 'tv')}
       >
         <span className="flex items-center gap-3 min-w-0">
@@ -154,12 +159,12 @@ export const PwaInstallMainOptions: React.FC<PwaInstallMainOptionsProps> = ({
             ) : apkDone === 'tv' ? (
               <Check className="w-5 h-5 text-emerald-400" />
             ) : (
-              <Tv className="w-5 h-5 text-[#BF94FF]" />
+              <Tv className="w-5 h-5 text-[#A78BFA]" />
             )}
           </span>
           <span className="min-w-0">
             <span className="block text-sm font-bold text-white">Google TV / Chromecast (APK)</span>
-            <span className="block text-xs text-zinc-400">
+            <span className="block text-xs text-zinc-400 leading-snug break-words">
               {pickLang(lang, {
                 es: 'Adaptada para televisor y control con mando físico D-Pad',
                 ca: 'Adaptada per a televisor i control amb comandament físic',
@@ -169,7 +174,7 @@ export const PwaInstallMainOptions: React.FC<PwaInstallMainOptionsProps> = ({
           </span>
         </span>
         {recommendedDevice === 'tv' && (
-          <span className="px-2.5 py-1 rounded-full bg-[#9146FF] text-[10px] font-bold text-white shrink-0">
+          <span className="px-2.5 py-1 rounded-full bg-[#7C3AED] text-[10px] font-bold text-white shrink-0">
             {pickLang(lang, { es: 'Tu dispositivo', ca: 'El teu dispositiu', en: 'Your device' })}
           </span>
         )}
@@ -183,11 +188,11 @@ export const PwaInstallMainOptions: React.FC<PwaInstallMainOptionsProps> = ({
       >
         <span className="flex items-center gap-3 min-w-0">
           <span className="w-10 h-10 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center shrink-0">
-            <Monitor className="w-5 h-5 text-[#BF94FF]" />
+            <Monitor className="w-5 h-5 text-[#A78BFA]" />
           </span>
           <span className="min-w-0">
             <span className="block text-sm font-bold text-white">iPhone / iPad / PC</span>
-            <span className="block text-xs text-zinc-400">
+            <span className="block text-xs text-zinc-400 leading-snug break-words">
               {pickLang(lang, {
                 es: 'Acceso directo en pantalla de inicio con Safari o Chrome',
                 ca: 'Accés ràpid des del navegador a la pantalla d’inici',
@@ -197,7 +202,7 @@ export const PwaInstallMainOptions: React.FC<PwaInstallMainOptionsProps> = ({
           </span>
         </span>
         {recommendedDevice === 'web' && (
-          <span className="px-2.5 py-1 rounded-full bg-[#9146FF] text-[10px] font-bold text-white shrink-0">
+          <span className="px-2.5 py-1 rounded-full bg-[#7C3AED] text-[10px] font-bold text-white shrink-0">
             {pickLang(lang, { es: 'Tu dispositivo', ca: 'El teu dispositiu', en: 'Your device' })}
           </span>
         )}
@@ -206,10 +211,10 @@ export const PwaInstallMainOptions: React.FC<PwaInstallMainOptionsProps> = ({
       {apkError && <p className="text-xs text-rose-300 px-1 pt-1">{apkError}</p>}
 
       {showWebSteps && (
-        <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] text-xs text-zinc-300 space-y-2">
+        <div className="p-3.5 rounded-2xl bg-[#0D0D12] border border-white/[0.08] text-xs text-zinc-300 space-y-2">
           {isIOS ? (
             <div className="flex items-center gap-2">
-              <Share className="w-4 h-4 text-[#BF94FF] shrink-0" />
+              <Share className="w-4 h-4 text-[#A78BFA] shrink-0" />
               <span>
                 {pickLang(lang, {
                   es: 'Pulsa Compartir en Safari y elige «Añadir a pantalla de inicio».',
@@ -220,7 +225,7 @@ export const PwaInstallMainOptions: React.FC<PwaInstallMainOptionsProps> = ({
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <MoreVertical className="w-4 h-4 text-[#BF94FF] shrink-0" />
+              <MoreVertical className="w-4 h-4 text-[#A78BFA] shrink-0" />
               <span>
                 {pickLang(lang, {
                   es: 'Abre el menú del navegador y pulsa «Instalar aplicación».',

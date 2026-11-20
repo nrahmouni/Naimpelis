@@ -70,7 +70,7 @@ export const CineHeroSpotlight: React.FC<CineHeroSpotlightProps> = ({
       }}
       onMouseEnter={() => onHeroHoverChange(true)}
       onMouseLeave={() => onHeroHoverChange(false)}
-      className="group relative w-full min-h-[250px] sm:min-h-[310px] aspect-[4/3] sm:aspect-[21/9] rounded-3xl overflow-hidden bg-[#101118] border border-white/[0.1] shadow-[0_22px_54px_rgba(0,0,0,0.6)]"
+      className="group relative w-full min-h-[250px] sm:min-h-[310px] aspect-[4/3] sm:aspect-[21/9] rounded-3xl overflow-hidden bg-[#0D0D12] border border-white/[0.08] shadow-[0_22px_54px_rgba(0,0,0,0.65)]"
     >
       <img
         src={activeHeroSlide.backdrop || activeHeroSlide.poster}
@@ -79,8 +79,8 @@ export const CineHeroSpotlight: React.FC<CineHeroSpotlightProps> = ({
         className="w-full h-full object-cover object-center sm:group-hover:scale-[1.02] transition-transform duration-700"
       />
       {/* Dual multi-stop scrim guaranteeing crisp text legibility */}
-      <div className="absolute inset-0 bg-gradient-to-t from-[#0B0B0F] via-[#0B0B0F]/60 to-transparent" />
-      <div className="absolute inset-0 bg-gradient-to-r from-[#0B0B0F]/85 via-[#0B0B0F]/35 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-t from-[#000000] via-[#000000]/60 to-transparent" />
+      <div className="absolute inset-0 bg-gradient-to-r from-[#000000]/85 via-[#000000]/35 to-transparent" />
 
       {/* Desktop prev/next spotlight arrows */}
       {heroSlides.length > 1 && (
@@ -91,7 +91,7 @@ export const CineHeroSpotlight: React.FC<CineHeroSpotlightProps> = ({
             onClick={() =>
               onChangeHeroSlideIndex((prev) => (prev - 1 + heroSlides.length) % heroSlides.length)
             }
-            className="hidden sm:flex absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/55 hover:bg-[#9146FF] border border-white/15 items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+            className="hidden sm:flex absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/55 hover:bg-[#7C3AED] border border-white/15 items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
           >
             <RiffanChevronLeftIcon size={18} tone="current" animate="none" />
           </button>
@@ -99,7 +99,7 @@ export const CineHeroSpotlight: React.FC<CineHeroSpotlightProps> = ({
             type="button"
             aria-label="Siguiente"
             onClick={() => onChangeHeroSlideIndex((prev) => (prev + 1) % heroSlides.length)}
-            className="hidden sm:flex absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/55 hover:bg-[#9146FF] border border-white/15 items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+            className="hidden sm:flex absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/55 hover:bg-[#7C3AED] border border-white/15 items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
           >
             <RiffanChevronRightIcon size={18} tone="current" animate="none" />
           </button>
@@ -114,15 +114,15 @@ export const CineHeroSpotlight: React.FC<CineHeroSpotlightProps> = ({
           }
           className="text-left space-y-1.5 cursor-pointer focus:outline-none"
         >
-          <p className="text-[11px] font-bold uppercase tracking-widest text-[#D8B4FE]">
+          <p className="text-[11px] font-bold uppercase tracking-widest text-[#A78BFA]">
             {isSeriesTab
               ? pickLang(lang, { es: 'Serie destacada', ca: 'Sèrie destacada', en: 'Featured series' })
               : pickLang(lang, { es: 'Estreno destacado', ca: 'Estrena destacada', en: 'Featured cinema' })}
           </p>
-          <h3 className="font-display font-black text-2xl sm:text-3xl text-white leading-tight line-clamp-2 text-balance">
+          <h3 className="font-display font-black text-2xl sm:text-3xl text-white leading-tight text-balance">
             {activeHeroSlide.title}
           </h3>
-          <p className="text-xs sm:text-sm text-zinc-200 tabular-nums truncate">
+          <p className="text-xs sm:text-sm text-zinc-200 tabular-nums break-words">
             {[
               activeHeroSlide.year,
               activeHeroSlide.rating ? `★ ${activeHeroSlide.rating}` : '',
@@ -158,7 +158,7 @@ export const CineHeroSpotlight: React.FC<CineHeroSpotlightProps> = ({
                   );
                 }
               }}
-              className="min-h-[44px] px-5 sm:px-6 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs sm:text-sm font-bold text-white inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all shadow-[0_8px_22px_rgba(145,70,255,0.45)]"
+              className="min-h-[44px] px-5 sm:px-6 rounded-2xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs sm:text-sm font-bold text-white inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all shadow-[0_8px_22px_rgba(124,58,237,0.45)]"
             >
               <Play className="w-4 h-4 fill-current shrink-0" />
               <span>
@@ -191,7 +191,7 @@ export const CineHeroSpotlight: React.FC<CineHeroSpotlightProps> = ({
               })}
               className={`min-h-[44px] min-w-[44px] px-3.5 rounded-2xl border inline-flex items-center justify-center gap-1.5 text-xs font-semibold cursor-pointer active:scale-95 transition-all ${
                 isBookmarked(activeHeroSlide)
-                  ? 'bg-[#9146FF] border-[#9146FF] text-white'
+                  ? 'bg-[#7C3AED] border-[#8B5CF6] text-white'
                   : 'bg-black/55 hover:bg-white/15 border-white/20 text-white'
               }`}
             >
@@ -219,7 +219,7 @@ export const CineHeroSpotlight: React.FC<CineHeroSpotlightProps> = ({
                     onClick={() => onChangeHeroSlideIndex(idx)}
                     aria-label={`Slide ${idx + 1}`}
                     className={`h-2 rounded-full transition-all cursor-pointer ${
-                      active ? 'w-6 bg-[#9146FF]' : 'w-2 bg-white/35 hover:bg-white/60'
+                      active ? 'w-6 bg-[#8B5CF6]' : 'w-2 bg-white/35 hover:bg-white/60'
                     }`}
                   />
                 );

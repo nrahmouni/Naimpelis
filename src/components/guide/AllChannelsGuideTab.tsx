@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Play } from 'lucide-react';
 import { RiffanCloseIcon, RiffanSearchIcon, RiffanSpinner } from '../ui/RiffanIcons';
 import type {
@@ -12,6 +12,8 @@ import { triggerHaptic } from '../../utils/haptics';
 import { ChannelLogoBadge, type TvRegionId } from '../ui/ChannelLogoBadge';
 import { FlagBadgeSvg } from '../ui/LanguageBadge';
 import { REGION_FILTER_TABS, computeLiveProgramSnapshot } from './channelGuideUtils';
+
+const GUIDE_BATCH_SIZE = 60;
 
 interface AllChannelsGuideTabProps {
   lang: AppLanguage;
@@ -48,6 +50,17 @@ export const AllChannelsGuideTab: React.FC<AllChannelsGuideTabProps> = ({
   onZapChannel,
   onInspectChannel,
 }) => {
+  const [visibleLimit, setVisibleLimit] = useState(GUIDE_BATCH_SIZE);
+
+  useEffect(() => {
+    setVisibleLimit(GUIDE_BATCH_SIZE);
+  }, [guideSearch, guideRegion, guideCategory]);
+
+  const displayedChannels = guideSearch.trim()
+    ? filteredGuideChannels
+    : filteredGuideChannels.slice(0, visibleLimit);
+  const hiddenCount = Math.max(0, filteredGuideChannels.length - displayedChannels.length);
+
   return (
     <div className="space-y-3">
       <div className="relative">
@@ -61,7 +74,7 @@ export const AllChannelsGuideTab: React.FC<AllChannelsGuideTabProps> = ({
             ca: 'Cercar canal, pel·lícula, sèrie o partit en emissió...',
             en: 'Search channel, movie, show, or live match...',
           })}
-          className="w-full min-h-10 pl-10 pr-10 rounded-xl bg-[#0A0B10] border border-white/[0.09] focus:border-[#9146FF] text-xs sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none"
+          className="w-full min-h-10 pl-10 pr-10 rounded-xl bg-[#000000] border border-white/[0.08] focus:border-[#7C3AED] text-xs sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none"
         />
         {guideSearch && (
           <button
@@ -87,10 +100,10 @@ export const AllChannelsGuideTab: React.FC<AllChannelsGuideTabProps> = ({
                 onChangeRegion(reg.id);
                 onChangeCategory('all');
               }}
-              className={`min-h-8 px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all border shrink-0 inline-flex items-center gap-1.5 ${
+              className={`min-h-8 px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all active:scale-95 border shrink-0 inline-flex items-center gap-1.5 ${
                 active
-                  ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_3px_12px_rgba(145,70,255,0.35)]'
-                  : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300'
+                  ? 'bg-[#7C3AED] border-[#8B5CF6] text-white shadow-[0_3px_12px_rgba(124,58,237,0.35)]'
+                  : 'bg-[#0D0D12] hover:bg-[#14141C] border-white/[0.08] text-zinc-300'
               }`}
             >
               <FlagBadgeSvg code={reg.flagCode} className="w-4 h-2.5" />
@@ -111,10 +124,10 @@ export const AllChannelsGuideTab: React.FC<AllChannelsGuideTabProps> = ({
                 triggerHaptic('light');
                 onChangeCategory(cat.id);
               }}
-              className={`min-h-8 px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all border shrink-0 ${
+              className={`min-h-8 px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all active:scale-95 border shrink-0 ${
                 isSelected
-                  ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_3px_12px_rgba(145,70,255,0.35)]'
-                  : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.07] text-zinc-300'
+                  ? 'bg-[#7C3AED] border-[#8B5CF6] text-white shadow-[0_3px_12px_rgba(124,58,237,0.35)]'
+                  : 'bg-[#0D0D12] hover:bg-[#14141C] border-white/[0.08] text-zinc-300'
               }`}
             >
               {pickLang(lang, cat.label)}
@@ -123,129 +136,152 @@ export const AllChannelsGuideTab: React.FC<AllChannelsGuideTabProps> = ({
         })}
       </div>
 
-      <div className="space-y-2 gpu-layer">
-        {filteredGuideChannels.length === 0 ? (
-          <div className="py-8 text-center text-xs text-zinc-400">
-            {pickLang(lang, {
-              es: 'No hay canales o programas que coincidan con tu búsqueda.',
-              ca: 'No hi ha canals o programes que coincideixin amb la cerca.',
-              en: 'No channels or programs match your search.',
-            })}
-          </div>
-        ) : (
-          filteredGuideChannels.slice(0, 60).map((ch) => {
-            const snap = computeLiveProgramSnapshot(epgMap[ch.id], clockMs);
-            const isCurrentlyPlaying = playingChannelId === ch.id;
-            const isLoadingThis = loadingItemId === `tdt-${ch.id}-0`;
+      {filteredGuideChannels.length === 0 ? (
+        <div className="py-8 text-center text-xs text-zinc-400">
+          {pickLang(lang, {
+            es: 'No hay canales o programas que coincidan con tu búsqueda.',
+            ca: 'No hi ha canals o programes que coincideixin amb la cerca.',
+            en: 'No channels or programs match your search.',
+          })}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 gpu-layer">
+            {displayedChannels.map((ch) => {
+              const snap = computeLiveProgramSnapshot(epgMap[ch.id], clockMs);
+              const isCurrentlyPlaying = playingChannelId === ch.id;
+              const isLoadingThis = loadingItemId === `tdt-${ch.id}-0`;
 
-            return (
-              <div
-                key={ch.id}
-                className={`cv-row-auto rounded-xl p-2.5 sm:p-3 border transition-[border-color,background-color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] flex items-center justify-between gap-3 ${
-                  isCurrentlyPlaying
-                    ? 'bg-[#9146FF]/16 border-[#9146FF]/60'
-                    : 'bg-[#161822]/85 hover:bg-[#1B1E2B] border-white/[0.07]'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => onZapChannel(ch)}
-                  className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer group"
+              return (
+                <div
+                  key={ch.id}
+                  className={`cv-row-auto rounded-2xl p-3.5 sm:p-4 border transition-[border-color,background-color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                    isCurrentlyPlaying
+                      ? 'bg-[#7C3AED]/15 border-[#8B5CF6]/60'
+                      : 'bg-[#0D0D12] hover:bg-[#14141C] border-white/[0.08]'
+                  }`}
                 >
-                  <div className="relative shrink-0">
-                    <ChannelLogoBadge channel={ch} size="md" />
-                    {isLoadingThis && (
-                      <span className="absolute inset-0 rounded-2xl bg-black/70 flex items-center justify-center">
-                        <RiffanSpinner size={16} />
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="min-w-0 flex-1 space-y-1">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="font-display font-bold text-xs sm:text-sm text-white group-hover:text-[#D8B4FE] transition-colors truncate">
-                        {ch.name}
-                      </span>
-                      {isCurrentlyPlaying && (
-                        <span className="px-1.5 py-0.5 rounded bg-[#9146FF] text-white text-[9px] font-extrabold uppercase">
-                          {pickLang(lang, { es: 'Viendo', ca: 'Veient', en: 'Playing' })}
-                        </span>
-                      )}
-                      <span className="text-[10px] text-zinc-500 hidden sm:inline">
-                        · {ch.network}
-                      </span>
-                    </div>
-
-                    {snap?.now ? (
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-1.5 text-xs text-zinc-200 min-w-0">
-                          <span className="font-mono text-[10px] font-bold text-[#BF94FF] shrink-0 tabular-nums">
-                            {snap.now.startLabel}
-                          </span>
-                          <span className="truncate font-semibold">{snap.now.title}</span>
-                          <span className="text-[10px] text-zinc-400 shrink-0 tabular-nums">
-                            · {snap.remainingMin}m
-                          </span>
-                        </div>
-                        <div className="w-full max-w-[260px] h-1 rounded-full bg-white/[0.08] overflow-hidden">
-                          <div
-                            className="h-full bg-[#9146FF]"
-                            style={{ width: `${snap.progressPct}%` }}
-                          />
-                        </div>
-                        {snap.next && (
-                          <p className="text-[11px] text-zinc-400 truncate">
-                            <span className="font-mono text-zinc-500 tabular-nums">
-                              {snap.next.startLabel}
-                            </span>{' '}
-                            {snap.next.title}
-                          </p>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-[11px] text-zinc-400 truncate">{ch.description}</p>
-                    )}
-                  </div>
-                </button>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {snap && snap.upcoming.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        onInspectChannel(ch.id);
-                      }}
-                      title={pickLang(lang, {
-                        es: 'Ver programación completa',
-                        ca: 'Veure programació completa',
-                        en: 'View full schedule',
-                      })}
-                      className="min-h-8 px-2.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-[11px] font-semibold text-zinc-200 cursor-pointer transition-colors"
-                    >
-                      {pickLang(lang, { es: 'Guía', ca: 'Guia', en: 'Guide' })}
-                    </button>
-                  )}
                   <button
                     type="button"
                     onClick={() => onZapChannel(ch)}
-                    className={`min-h-8 px-2.5 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-all ${
-                      isCurrentlyPlaying
-                        ? 'bg-[#9146FF] text-white'
-                        : 'bg-[#9146FF]/22 hover:bg-[#9146FF] text-[#E9D5FF] hover:text-white border border-[#9146FF]/40'
-                    }`}
+                    className="flex items-start sm:items-center gap-3 min-w-0 flex-1 text-left cursor-pointer group"
                   >
-                    <Play className="w-3 h-3 fill-current" />
-                    <span className="hidden xs:inline">
-                      {pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })}
-                    </span>
+                    <div className="relative shrink-0">
+                      <ChannelLogoBadge channel={ch} size="md" />
+                      {isLoadingThis && (
+                        <span className="absolute inset-0 rounded-2xl bg-black/70 flex items-center justify-center">
+                          <RiffanSpinner size={16} />
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1 space-y-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-display font-bold text-xs sm:text-sm text-white group-hover:text-[#A78BFA] transition-colors break-words">
+                          {ch.name}
+                        </span>
+                        {isCurrentlyPlaying && (
+                          <span className="px-1.5 py-0.5 rounded bg-[#7C3AED] text-white text-[9px] font-extrabold uppercase">
+                            {pickLang(lang, { es: 'Viendo', ca: 'Veient', en: 'Playing' })}
+                          </span>
+                        )}
+                        <span className="text-[10px] font-mono text-zinc-400 tabular-nums">
+                          · Dial {ch.dial}
+                        </span>
+                      </div>
+
+                      {snap?.now ? (
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-200 min-w-0">
+                            <span className="font-mono text-[10px] font-bold text-[#A78BFA] shrink-0 tabular-nums">
+                              {snap.now.startLabel}
+                            </span>
+                            <span className="font-semibold break-words leading-snug">{snap.now.title}</span>
+                            <span className="text-[10px] text-zinc-400 shrink-0 tabular-nums">
+                              · {snap.remainingMin}m
+                            </span>
+                          </div>
+                          <div className="w-full max-w-[260px] h-1 rounded-full bg-white/[0.08] overflow-hidden">
+                            <div
+                              className="h-full bg-[#8B5CF6]"
+                              style={{ width: `${snap.progressPct}%` }}
+                            />
+                          </div>
+                          {snap.next && (
+                            <p className="text-[11px] text-zinc-400 break-words leading-snug">
+                              <span className="font-mono text-zinc-500 tabular-nums">
+                                {snap.next.startLabel}
+                              </span>{' '}
+                              {snap.next.title}
+                            </p>
+                          )}
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-zinc-400 break-words leading-snug">
+                          {ch.network} · {ch.description}
+                        </p>
+                      )}
+                    </div>
                   </button>
+
+                  <div className="flex items-center justify-end gap-2 shrink-0">
+                    {snap && snap.upcoming.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          onInspectChannel(ch.id);
+                        }}
+                        title={pickLang(lang, {
+                          es: 'Ver programación completa',
+                          ca: 'Veure programació completa',
+                          en: 'View full schedule',
+                        })}
+                        className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs font-semibold text-zinc-200 cursor-pointer active:scale-95 transition-all"
+                      >
+                        {pickLang(lang, { es: 'Guía', ca: 'Guia', en: 'Guide' })}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => onZapChannel(ch)}
+                      className={`min-h-10 px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                        isCurrentlyPlaying
+                          ? 'bg-[#7C3AED] text-white'
+                          : 'bg-[#7C3AED]/20 hover:bg-[#7C3AED] text-[#A78BFA] hover:text-white border border-[#8B5CF6]/40'
+                      }`}
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>
+                        {pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })}
+                      </span>
+                    </button>
+                  </div>
                 </div>
-              </div>
-            );
-          })
-        )}
-      </div>
+              );
+            })}
+          </div>
+
+          {hiddenCount > 0 && (
+            <div className="flex justify-center pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setVisibleLimit((prev) => prev + GUIDE_BATCH_SIZE);
+                }}
+                className="min-h-11 px-5 rounded-xl bg-[#0D0D12] hover:bg-[#161622] border border-white/[0.12] hover:border-[#7C3AED]/60 text-xs font-bold text-white cursor-pointer active:scale-95 transition-all"
+              >
+                {pickLang(lang, {
+                  es: `Mostrar más canales (+${Math.min(GUIDE_BATCH_SIZE, hiddenCount)} de ${hiddenCount} restantes)`,
+                  ca: `Mostrar més canals (+${Math.min(GUIDE_BATCH_SIZE, hiddenCount)} de ${hiddenCount} restants)`,
+                  en: `Show more channels (+${Math.min(GUIDE_BATCH_SIZE, hiddenCount)} of ${hiddenCount} left)`,
+                })}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

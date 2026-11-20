@@ -57,7 +57,7 @@ function connectRoomWs() {
             roomId: currentRoomId,
             roomName: currentRoomName,
             tvAuthToken: tvAuthToken,
-            user: { id: tvDeviceId, name: 'Google TV', avatar: '📺', color: '#9146FF' }
+            user: { id: tvDeviceId, name: 'Google TV', avatar: '📺', color: '#7C3AED' }
           }
         })
       );

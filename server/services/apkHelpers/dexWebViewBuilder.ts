@@ -147,8 +147,8 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
   emitU16(onCreateInsns, typeIdx.get('Landroid/webkit/WebView;')!);
   invoke35c(onCreateInsns, 0x70, mId('Landroid/webkit/WebView;', '<init>', 'V', ['Landroid/content/Context;']), [0, 4]);
   emitU16(onCreateInsns, 0x0114);
-  emitU16(onCreateInsns, 0x0e10);
-  emitU16(onCreateInsns, 0xff0e);
+  emitU16(onCreateInsns, 0x0000);
+  emitU16(onCreateInsns, 0xff00);
   invoke35c(onCreateInsns, 0x6e, mId('Landroid/webkit/WebView;', 'setBackgroundColor', 'V', ['I']), [0, 1]);
   invoke35c(onCreateInsns, 0x6e, mId(SUPER_CLS, 'getWindow', 'Landroid/view/Window;'), [4]);
   emitU16(onCreateInsns, 0x020c);

@@ -77,11 +77,29 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
   useEffect(() => {
     if (channels.length > 0 || fallbackChannels.length > 0) return;
     let cancelled = false;
-    fetch('/api/catalog/tdt')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (!cancelled && Array.isArray(data?.channels)) {
-          setFallbackChannels(data.channels as SpanishTdtChannel[]);
+    Promise.allSettled([
+      fetch('/api/catalog/tdt').then((r) => (r.ok ? r.json() : null)),
+      fetch('/api/catalog/world-tv').then((r) => (r.ok ? r.json() : null)),
+    ])
+      .then(([tdtSettled, worldSettled]) => {
+        if (cancelled) return;
+        const baseList: SpanishTdtChannel[] =
+          tdtSettled.status === 'fulfilled' && Array.isArray(tdtSettled.value?.channels)
+            ? tdtSettled.value.channels
+            : [];
+        const worldList: SpanishTdtChannel[] =
+          worldSettled.status === 'fulfilled' && Array.isArray(worldSettled.value?.channels)
+            ? worldSettled.value.channels
+            : [];
+        if (baseList.length > 0 || worldList.length > 0) {
+          const seen = new Set<string>();
+          const merged: SpanishTdtChannel[] = [];
+          for (const ch of [...baseList, ...worldList]) {
+            if (!ch?.id || seen.has(ch.id)) continue;
+            seen.add(ch.id);
+            merged.push(ch);
+          }
+          setFallbackChannels(merged);
         }
       })
       .catch(() => {});
@@ -220,6 +238,8 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
         ch.name,
         ch.network,
         ch.shortMark,
+        ch.countryCode || '',
+        String(ch.dial || ''),
         ch.description,
         snap?.now?.title || '',
         snap?.now?.category || '',
@@ -268,15 +288,15 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
           ca: 'Guia del canal i programació',
           en: 'Channel Guide & TV Schedule',
         })}
-        className="rounded-2xl bg-[#111218]/95 border border-white/[0.08] overflow-hidden shadow-[0_16px_42px_rgba(0,0,0,0.55)]"
+        className="rounded-2xl bg-[#0D0D12] border border-white/[0.08] overflow-hidden shadow-[0_16px_42px_rgba(0,0,0,0.65)]"
       >
-        <div className="px-3.5 py-2.5 flex items-center justify-between gap-2 border-b border-white/[0.06] bg-white/[0.015]">
+        <div className="px-3.5 py-2.5 flex items-center justify-between gap-2 border-b border-white/[0.08] bg-white/[0.015]">
           <div className="flex items-center gap-2.5 min-w-0">
             {headerChannel ? (
               <ChannelLogoBadge channel={headerChannel} size="sm" />
             ) : (
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-[#9146FF]/20 border border-[#9146FF]/40 shrink-0">
-                <Tv className="w-4 h-4 text-[#BF94FF]" />
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-[#7C3AED]/20 border border-[#7C3AED]/40 shrink-0">
+                <Tv className="w-4 h-4 text-[#A78BFA]" />
               </div>
             )}
 
@@ -295,7 +315,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-zinc-400 leading-snug break-words line-clamp-2">
+              <p className="text-[11px] text-zinc-400 leading-snug break-words">
                 {headerChannel ? `${headerChannel.name} · ${headerChannel.network}` : activeChannelTitle}
               </p>
             </div>
@@ -303,8 +323,8 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
 
           <div className="flex items-center gap-1.5 shrink-0">
             {madridClockLabel && (
-              <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/[0.05] border border-white/[0.07] text-[11px] font-mono font-semibold text-zinc-300 tabular-nums">
-                <Clock className="w-3 h-3 text-[#BF94FF]" />
+              <span className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/[0.05] border border-white/[0.08] text-[11px] font-mono font-semibold text-zinc-300 tabular-nums">
+                <Clock className="w-3 h-3 text-[#A78BFA]" />
                 {madridClockLabel}
               </span>
             )}
@@ -324,7 +344,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                     ca: 'Canal anterior',
                     en: 'Previous channel',
                   })}
-                  className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-[#9146FF]/25 border border-white/[0.08] hover:border-[#9146FF]/60 text-zinc-200 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                  className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-[#7C3AED]/25 border border-white/[0.08] hover:border-[#7C3AED]/60 text-zinc-200 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -341,7 +361,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                     ca: 'Canal següent',
                     en: 'Next channel',
                   })}
-                  className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-[#9146FF]/25 border border-white/[0.08] hover:border-[#9146FF]/60 text-zinc-200 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                  className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-[#7C3AED]/25 border border-white/[0.08] hover:border-[#7C3AED]/60 text-zinc-200 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -361,7 +381,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
               })}
               className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loadingEpg ? 'animate-spin text-[#BF94FF]' : ''}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${loadingEpg ? 'animate-spin text-[#A78BFA]' : ''}`} />
             </button>
 
             <button
@@ -385,7 +405,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
         {!collapsed && (
           <div className="p-3.5 sm:p-4 space-y-4">
             {isPreviewingOtherChannel && inspectedChannel && (
-              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#9146FF]/15 border border-[#9146FF]/40">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#7C3AED]/15 border border-[#7C3AED]/40">
                 <div className="text-xs text-zinc-200 min-w-0">
                   {pickLang(lang, {
                     es: 'Consultando programación de',
@@ -414,7 +434,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                   <button
                     type="button"
                     onClick={() => handleZap(inspectedChannel)}
-                    className="min-h-8 px-3 rounded-lg bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
+                    className="min-h-8 px-3 rounded-lg bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer"
                   >
                     <Play className="w-3 h-3 fill-current" />
                     <span>{pickLang(lang, { es: 'Ver ahora', ca: 'Veure ara', en: 'Watch now' })}</span>
@@ -424,16 +444,16 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
             )}
 
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="inline-flex items-center p-1 rounded-xl bg-[#0A0B10] border border-white/[0.07] gap-1">
+              <div className="inline-flex items-center p-1 rounded-xl bg-[#000000] border border-white/[0.08] gap-1">
                 <button
                   type="button"
                   onClick={() => {
                     triggerHaptic('light');
                     setActiveTab('channel');
                   }}
-                  className={`min-h-9 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
+                  className={`min-h-10 px-3.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
                     activeTab === 'channel'
-                      ? 'bg-[#9146FF] text-white shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
+                      ? 'bg-[#7C3AED] text-white shadow-[0_4px_14px_rgba(124,58,237,0.4)]'
                       : 'text-zinc-400 hover:text-white'
                   }`}
                 >
@@ -452,9 +472,9 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                     triggerHaptic('light');
                     setActiveTab('all');
                   }}
-                  className={`min-h-9 px-3 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
+                  className={`min-h-10 px-3.5 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
                     activeTab === 'all'
-                      ? 'bg-[#9146FF] text-white shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
+                      ? 'bg-[#7C3AED] text-white shadow-[0_4px_14px_rgba(124,58,237,0.4)]'
                       : 'text-zinc-400 hover:text-white'
                   }`}
                 >

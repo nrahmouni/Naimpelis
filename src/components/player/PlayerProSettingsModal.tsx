@@ -138,15 +138,15 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
         aria-labelledby="naim-player-pro-settings-title"
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="pointer-events-auto w-[276px] sm:w-[306px] max-w-[calc(100vw-1.25rem)] rounded-2xl bg-[#11121A]/82 backdrop-blur-xl nc-specular-surface border border-white/15 shadow-[0_14px_40px_rgba(0,0,0,0.78)] overflow-hidden flex flex-col max-h-[44vh] animate-sheet-up sm:animate-scale-in outline-none"
+        className="pointer-events-auto w-[276px] sm:w-[306px] max-w-[calc(100vw-1.25rem)] rounded-2xl bg-[#0D0D12]/94 backdrop-blur-xl nc-specular-surface border border-white/[0.08] shadow-[0_14px_40px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col max-h-[48vh] animate-sheet-up sm:animate-scale-in outline-none"
       >
         <div className="px-3 py-2 border-b border-white/[0.08] flex items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-1.5 min-w-0">
-            <div className="w-6 h-6 rounded-lg bg-[#9146FF]/20 border border-[#9146FF]/35 flex items-center justify-center text-[#BF94FF] shrink-0">
+            <div className="w-6 h-6 rounded-lg bg-[#7C3AED]/20 border border-[#8B5CF6]/35 flex items-center justify-center text-[#A78BFA] shrink-0">
               <SlidersHorizontal className="w-3 h-3" />
             </div>
             <div className="min-w-0">
-              <h3 id="naim-player-pro-settings-title" className="text-[11px] font-bold text-white tracking-tight truncate">
+              <h3 id="naim-player-pro-settings-title" className="text-[11px] font-bold text-white tracking-tight leading-snug">
                 {pickLang(lang, {
                   es: 'Ajustes rápidos',
                   ca: 'Ajustos ràpids',
@@ -198,7 +198,7 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                 }}
                 className={`min-h-[34px] px-2 py-1 rounded-xl border flex items-center justify-center gap-1.5 text-[11px] font-bold transition-all active:scale-95 cursor-pointer ${
                   isInPiP
-                    ? 'bg-[#9146FF]/25 border-[#9146FF]/60 text-white'
+                    ? 'bg-[#7C3AED]/25 border-[#8B5CF6]/60 text-white'
                     : 'bg-white/[0.05] hover:bg-white/[0.09] border-white/[0.08] text-zinc-200'
                 }`}
               >
@@ -211,7 +211,7 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
           {(videoState.tracks.length > 0 || hlsAudioTracks.length > 0 || !videoState.isLive) && (
             <div className="p-2 rounded-xl bg-white/[0.035] border border-white/[0.08] space-y-1.5">
               <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
-                <Globe className="w-3.5 h-3.5 text-[#9146FF]" />
+                <Globe className="w-3.5 h-3.5 text-[#8B5CF6]" />
                 <span>
                   {pickLang(lang, {
                     es: 'Audio y Servidor',
@@ -249,14 +249,14 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                               onQuickLanguageSwitch(lBtn.code);
                               onClose();
                             }}
-                            className={`min-h-[32px] px-2 rounded-lg text-[11px] font-bold cursor-pointer transition-all border inline-flex items-center justify-center gap-1.5 truncate ${
+                            className={`min-h-[34px] px-2 rounded-lg text-[11px] font-bold cursor-pointer active:scale-95 transition-all border inline-flex items-center justify-center gap-1.5 ${
                               isCurrent
-                                ? 'bg-[#9146FF] border-[#9146FF] text-white'
-                                : 'bg-[#26262C]/85 hover:bg-white/[0.12] border-white/[0.08] text-zinc-200'
+                                ? 'bg-[#7C3AED] border-[#8B5CF6] text-white'
+                                : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.08] text-zinc-200'
                             }`}
                           >
                             <FlagBadgeSvg code={lBtn.flagCode} className="w-4 h-2.5 shrink-0" />
-                            <span className="truncate">{lBtn.label}</span>
+                            <span>{lBtn.label}</span>
                           </button>
                         );
                       })}
@@ -398,8 +398,8 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                         onClick={() => setSubtitleSize(sz)}
                         className={`min-h-[30px] min-w-[30px] rounded-lg text-[10px] font-bold uppercase cursor-pointer ${
                           subtitleSize === sz
-                            ? 'bg-[#9146FF] text-white'
-                            : 'bg-[#26262C] text-zinc-300'
+                            ? 'bg-[#7C3AED] text-white'
+                            : 'bg-white/[0.06] text-zinc-300'
                         }`}
                       >
                         {sz === 'sm' ? 'S' : sz === 'md' ? 'M' : 'L'}
@@ -503,8 +503,8 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                 }
                 className={`min-h-[34px] px-2.5 rounded-xl border text-[10px] font-bold flex items-center justify-between cursor-pointer ${
                   ambilightEnabled
-                    ? 'bg-[#9146FF]/20 border-[#9146FF]/50 text-white'
-                    : 'bg-[#26262C] border-white/[0.08] text-zinc-300'
+                    ? 'bg-[#7C3AED]/20 border-[#8B5CF6]/50 text-white'
+                    : 'bg-white/[0.06] border-white/[0.08] text-zinc-300'
                 }`}
               >
                 <span>Ambilight</span>
@@ -531,8 +531,8 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                       onClick={() => onSelectSpeed(spd)}
                       className={`min-h-[28px] rounded-lg font-mono text-[10px] font-bold cursor-pointer ${
                         playbackSpeed === spd
-                          ? 'bg-[#9146FF] text-white'
-                          : 'bg-[#26262C] hover:bg-white/15 text-zinc-300'
+                          ? 'bg-[#7C3AED] text-white'
+                          : 'bg-white/[0.06] hover:bg-white/15 text-zinc-300'
                       }`}
                     >
                       {spd}x

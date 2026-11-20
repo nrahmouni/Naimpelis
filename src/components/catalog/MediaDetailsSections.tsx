@@ -121,7 +121,7 @@ export const MediaDetailsHero: React.FC<MediaDetailsHeroProps> = ({
             isSeries ? <Tv className="w-6 h-6 text-zinc-500" /> : <Film className="w-6 h-6 text-zinc-500" />
           }
         />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#141418] via-[#141418]/35 to-black/30 pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0D0D12] via-[#0D0D12]/40 to-black/30 pointer-events-none" />
         {details?.trailerKey && (
           <button
             type="button"
@@ -130,9 +130,9 @@ export const MediaDetailsHero: React.FC<MediaDetailsHeroProps> = ({
               setTrailerMuted(false);
               setPlayTrailer(true);
             }}
-            className="absolute left-4 bottom-4 z-20 min-h-[42px] px-4 rounded-xl bg-[#141418]/85 hover:bg-[#1C1C22] border border-white/15 text-xs font-bold text-[#EFEFF1] flex items-center gap-2 backdrop-blur-xl shadow-xl cursor-pointer transition-all active:scale-95"
+            className="absolute left-4 bottom-4 z-20 min-h-[42px] px-4 rounded-xl bg-[#0D0D12]/90 hover:bg-[#14141C] border border-white/15 text-xs font-bold text-[#EFEFF1] flex items-center gap-2 backdrop-blur-xl shadow-xl cursor-pointer transition-all active:scale-95"
           >
-            <Youtube className="w-4 h-4 text-[#BF94FF]" />
+            <Youtube className="w-4 h-4 text-[#A78BFA]" />
             <span>
               {pickLang(lang, {
                 es: '▶ Ver Tráiler 4K',
@@ -160,8 +160,8 @@ export const MediaDetailsHero: React.FC<MediaDetailsHeroProps> = ({
           onClick={onToggleTrailerMute}
           className={`min-h-[36px] px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 backdrop-blur-md cursor-pointer transition-colors ${
             trailerMuted
-              ? 'bg-[#9146FF] border-[#9146FF] text-white'
-              : 'bg-[#18181B]/80 hover:bg-[#18181B] border-white/20 text-white'
+              ? 'bg-[#7C3AED] border-[#8B5CF6] text-white'
+              : 'bg-[#0D0D12]/85 hover:bg-[#14141C] border-white/20 text-white'
           }`}
           title={
             trailerMuted
@@ -200,9 +200,9 @@ export const MediaDetailsHero: React.FC<MediaDetailsHeroProps> = ({
               return next;
             });
           }}
-          className="min-h-[36px] px-3 rounded-xl bg-[#18181B]/80 hover:bg-[#18181B] border border-white/20 text-xs font-semibold text-white flex items-center gap-1.5 backdrop-blur-md cursor-pointer transition-colors"
+          className="min-h-[36px] px-3 rounded-xl bg-[#0D0D12]/85 hover:bg-[#14141C] border border-white/20 text-xs font-semibold text-white flex items-center gap-1.5 backdrop-blur-md cursor-pointer active:scale-95 transition-all"
         >
-          <Youtube className="w-3.5 h-3.5 text-[#BF94FF]" />
+          <Youtube className="w-3.5 h-3.5 text-[#A78BFA]" />
           <span>
             {playTrailer
               ? pickLang(lang, { es: 'Ocultar tráiler', ca: 'Amagar tràiler', en: 'Hide trailer' })
@@ -214,7 +214,7 @@ export const MediaDetailsHero: React.FC<MediaDetailsHeroProps> = ({
         type="button"
         onClick={onClose}
         aria-label={pickLang(lang, { es: 'Cerrar ficha', ca: 'Tancar fitxa', en: 'Close details' })}
-        className="w-10 h-10 rounded-xl bg-[#141418]/80 hover:bg-[#9146FF] border border-white/20 flex items-center justify-center text-white backdrop-blur-md cursor-pointer transition-colors"
+        className="w-10 h-10 rounded-xl bg-[#0D0D12]/85 hover:bg-[#7C3AED] border border-white/20 flex items-center justify-center text-white backdrop-blur-md cursor-pointer active:scale-95 transition-all"
       >
         <X className="w-4 h-4" />
       </button>
@@ -240,7 +240,7 @@ export const MediaDetailsCastAndSimilar: React.FC<MediaDetailsCastAndSimilarProp
       <div className="space-y-2.5">
         <div className="flex items-center justify-between">
           <h3 className="font-display font-semibold text-xs sm:text-sm text-zinc-200 flex items-center gap-1.5">
-            <Users className="w-4 h-4 text-[#9146FF]" />
+            <Users className="w-4 h-4 text-[#8B5CF6]" />
             <span>
               {pickLang(lang, { es: 'Reparto Principal', ca: 'Repartiment Principal', en: 'Top Cast' })}
             </span>
@@ -259,7 +259,7 @@ export const MediaDetailsCastAndSimilar: React.FC<MediaDetailsCastAndSimilarProp
           {details.cast.map((actor) => (
             <div
               key={actor.id}
-              className="w-[104px] sm:w-[116px] shrink-0 rounded-2xl bg-white/[0.04] border border-white/[0.08] p-2 flex flex-col items-center text-center gap-1.5"
+              className="w-[114px] sm:w-[126px] shrink-0 rounded-2xl bg-[#0D0D12] border border-white/[0.08] p-2.5 flex flex-col items-center text-center gap-1.5"
             >
               {actor.photo ? (
                 <img
@@ -274,9 +274,9 @@ export const MediaDetailsCastAndSimilar: React.FC<MediaDetailsCastAndSimilarProp
                   {actor.name.slice(0, 2).toUpperCase()}
                 </div>
               )}
-              <div className="min-w-0 w-full">
-                <div className="text-[11px] font-semibold text-white truncate">{actor.name}</div>
-                <div className="text-[10px] text-zinc-400 truncate">{actor.character}</div>
+              <div className="min-w-0 w-full space-y-0.5">
+                <div className="text-[11px] font-semibold text-white leading-snug break-words">{actor.name}</div>
+                <div className="text-[10px] text-zinc-400 leading-snug break-words">{actor.character}</div>
               </div>
             </div>
           ))}
@@ -298,7 +298,7 @@ export const MediaDetailsCastAndSimilar: React.FC<MediaDetailsCastAndSimilarProp
                 triggerHaptic('light');
                 onSelectSimilar(sim);
               }}
-              className="group text-left rounded-2xl overflow-hidden bg-white/[0.04] nc-card-sheen border border-white/[0.08] hover:border-[#9146FF]/50 transition-all cursor-pointer flex flex-col"
+              className="group text-left rounded-2xl overflow-hidden bg-[#0D0D12] nc-card-sheen border border-white/[0.08] hover:border-[#8B5CF6]/60 active:scale-95 transition-all cursor-pointer flex flex-col"
             >
               <PosterImage
                 src={sim.poster}
@@ -308,9 +308,9 @@ export const MediaDetailsCastAndSimilar: React.FC<MediaDetailsCastAndSimilarProp
                 imgClassName="object-cover group-hover:scale-105 transition-transform duration-300"
                 fallbackTitle={sim.title}
               />
-              <div className="p-2">
-                <div className="text-[11px] font-semibold text-white truncate">{sim.title}</div>
-                <div className="text-[10px] text-zinc-400 truncate">
+              <div className="p-2.5 space-y-0.5">
+                <div className="text-[11px] font-semibold text-white leading-snug break-words">{sim.title}</div>
+                <div className="text-[10px] text-zinc-400 leading-snug">
                   {sim.year}
                   {sim.rating ? ` · ★ ${sim.rating}` : ''}
                 </div>

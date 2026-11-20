@@ -63,9 +63,40 @@ export const CineFilterSheet: React.FC<CineFilterSheetProps> = ({
       onClose={onClose}
       lang={lang}
       title={pickLang(lang, { es: 'Filtros de Cine', ca: 'Filtres de Cine', en: 'Cinema Filters' })}
+      footer={
+        <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              onChangeCineCastellano(true);
+              onChangeCineAudioOverride('ES');
+              onChangeSeriesLangMode('ES');
+              onChangeMovieSort('trending');
+              onChangeMovieGenre('');
+              onChangeSeriesSort('trending');
+              onChangeSeriesGenre('');
+              onChangeCineSpecialPortal('none');
+            }}
+            className="flex-1 min-h-12 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs font-bold text-white cursor-pointer active:scale-95 transition-all"
+          >
+            {pickLang(lang, { es: 'Limpiar', ca: 'Netejar', en: 'Reset' })}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              onClose();
+            }}
+            className="flex-1 min-h-12 rounded-2xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-bold text-white cursor-pointer active:scale-95 transition-all shadow-[0_8px_24px_rgba(124,58,237,0.35)]"
+          >
+            {pickLang(lang, { es: 'Aplicar', ca: 'Aplicar', en: 'Apply' })}
+          </button>
+        </div>
+      }
     >
       <div className="space-y-5">
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
             {pickLang(lang, {
               es: 'Versión Original',
@@ -103,10 +134,10 @@ export const CineFilterSheet: React.FC<CineFilterSheetProps> = ({
                     onChangeCineAudioOverride(opt.id);
                     onChangeSeriesLangMode(opt.id);
                   }}
-                  className={`min-h-[44px] px-3.5 rounded-xl text-xs font-semibold border inline-flex items-center gap-2 cursor-pointer transition-all ${
+                  className={`min-h-[44px] px-3.5 rounded-xl text-xs font-semibold border inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all ${
                     active
-                      ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.3)]'
-                      : 'bg-white/[0.05] border-white/[0.1] text-zinc-200 hover:bg-white/[0.08]'
+                      ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_4px_16px_rgba(124,58,237,0.3)]'
+                      : 'bg-white/[0.04] border-white/[0.08] text-zinc-200 hover:bg-white/[0.08]'
                   }`}
                 >
                   <FlagBadgeSvg code={opt.flagCode} className="w-4 h-2.5 shrink-0" />
@@ -117,7 +148,7 @@ export const CineFilterSheet: React.FC<CineFilterSheetProps> = ({
           </div>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
             {pickLang(lang, { es: 'Doblaje', ca: 'Doblatge', en: 'Dubbing' })}
           </p>
@@ -131,10 +162,10 @@ export const CineFilterSheet: React.FC<CineFilterSheetProps> = ({
                 onChangeCineAudioOverride('ES');
                 onChangeSeriesLangMode('ES');
               }}
-              className={`min-h-[44px] px-3.5 rounded-xl text-xs font-semibold border inline-flex items-center gap-2 cursor-pointer transition-all ${
+              className={`min-h-[44px] px-3.5 rounded-xl text-xs font-semibold border inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all ${
                 cineSpecialPortal === 'none' && effectiveCineCastellano
-                  ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.3)]'
-                  : 'bg-white/[0.05] border-white/[0.1] text-zinc-200 hover:bg-white/[0.08]'
+                  ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_4px_16px_rgba(124,58,237,0.3)]'
+                  : 'bg-white/[0.04] border-white/[0.08] text-zinc-200 hover:bg-white/[0.08]'
               }`}
             >
               <FlagBadgeSvg code="es" className="w-4 h-2.5 shrink-0" />
@@ -148,10 +179,10 @@ export const CineFilterSheet: React.FC<CineFilterSheetProps> = ({
                 onChangeCineSpecialPortal('catala');
                 onClose();
               }}
-              className={`min-h-[44px] px-3.5 rounded-xl text-xs font-semibold border inline-flex items-center gap-2 cursor-pointer transition-all ${
+              className={`min-h-[44px] px-3.5 rounded-xl text-xs font-semibold border inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all ${
                 cineSpecialPortal === 'catala'
-                  ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.3)]'
-                  : 'bg-white/[0.05] border-white/[0.1] text-zinc-200 hover:bg-white/[0.08]'
+                  ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_4px_16px_rgba(124,58,237,0.3)]'
+                  : 'bg-white/[0.04] border-white/[0.08] text-zinc-200 hover:bg-white/[0.08]'
               }`}
             >
               <FlagBadgeSvg code="ca" className="w-4 h-2.5 shrink-0" />
@@ -160,7 +191,7 @@ export const CineFilterSheet: React.FC<CineFilterSheetProps> = ({
           </div>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
             {pickLang(lang, { es: 'Ordenar por', ca: 'Ordenar per', en: 'Sort by' })}
           </p>
@@ -182,10 +213,10 @@ export const CineFilterSheet: React.FC<CineFilterSheetProps> = ({
                       onResetMoviePage();
                     }
                   }}
-                  className={`min-h-[44px] px-3.5 rounded-xl text-xs font-semibold border cursor-pointer transition-all ${
+                  className={`min-h-[44px] px-3.5 rounded-xl text-xs font-semibold border cursor-pointer active:scale-95 transition-all ${
                     active
-                      ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.3)]'
-                      : 'bg-white/[0.05] border-white/[0.1] text-zinc-200 hover:bg-white/[0.08]'
+                      ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_4px_16px_rgba(124,58,237,0.3)]'
+                      : 'bg-white/[0.04] border-white/[0.08] text-zinc-200 hover:bg-white/[0.08]'
                   }`}
                 >
                   {pickLang(lang, opt)}
@@ -195,7 +226,7 @@ export const CineFilterSheet: React.FC<CineFilterSheetProps> = ({
           </div>
         </div>
 
-        <div className="space-y-2">
+        <div className="space-y-2.5">
           <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
             {pickLang(lang, { es: 'Géneros', ca: 'Gèneres', en: 'Genres' })}
           </p>
@@ -213,10 +244,10 @@ export const CineFilterSheet: React.FC<CineFilterSheetProps> = ({
                   onResetMoviePage();
                 }
               }}
-              className={`min-h-[44px] px-3.5 rounded-xl text-xs font-semibold border cursor-pointer transition-all ${
+              className={`min-h-[44px] px-3.5 rounded-xl text-xs font-semibold border cursor-pointer active:scale-95 transition-all ${
                 currentGenre === '' && cineSpecialPortal === 'none'
-                  ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.3)]'
-                  : 'bg-white/[0.05] border-white/[0.1] text-zinc-200 hover:bg-white/[0.08]'
+                  ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_4px_16px_rgba(124,58,237,0.3)]'
+                  : 'bg-white/[0.04] border-white/[0.08] text-zinc-200 hover:bg-white/[0.08]'
               }`}
             >
               {pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' })}
@@ -239,10 +270,10 @@ export const CineFilterSheet: React.FC<CineFilterSheetProps> = ({
                       onResetMoviePage();
                     }
                   }}
-                  className={`min-h-[44px] px-3.5 rounded-xl text-xs font-semibold border cursor-pointer transition-all ${
+                  className={`min-h-[44px] px-3.5 rounded-xl text-xs font-semibold border cursor-pointer active:scale-95 transition-all ${
                     active
-                      ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.3)]'
-                      : 'bg-white/[0.05] border-white/[0.1] text-zinc-200 hover:bg-white/[0.08]'
+                      ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_4px_16px_rgba(124,58,237,0.3)]'
+                      : 'bg-white/[0.04] border-white/[0.08] text-zinc-200 hover:bg-white/[0.08]'
                   }`}
                 >
                   {pickLang(lang, gen)}
@@ -250,32 +281,6 @@ export const CineFilterSheet: React.FC<CineFilterSheetProps> = ({
               );
             })}
           </div>
-        </div>
-
-        <div className="flex items-center gap-2 pt-2">
-          <button
-            type="button"
-            onClick={() => {
-              onChangeCineCastellano(true);
-              onChangeCineAudioOverride('ES');
-              onChangeSeriesLangMode('ES');
-              onChangeMovieSort('trending');
-              onChangeMovieGenre('');
-              onChangeSeriesSort('trending');
-              onChangeSeriesGenre('');
-              onChangeCineSpecialPortal('none');
-            }}
-            className="flex-1 min-h-12 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-bold text-white cursor-pointer"
-          >
-            {pickLang(lang, { es: 'Limpiar', ca: 'Netejar', en: 'Reset' })}
-          </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex-1 min-h-12 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white cursor-pointer"
-          >
-            {pickLang(lang, { es: 'Aplicar', ca: 'Aplicar', en: 'Apply' })}
-          </button>
         </div>
       </div>
     </BottomSheet>

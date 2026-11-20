@@ -45,7 +45,7 @@ describe('Cross-Platform Version Control & Google TV 10-Foot UI', () => {
   it('keeps client version synced with server ENV release metadata', () => {
     expect(CLIENT_APP_VERSION).toBe(ENV.appVersionName);
     expect(CLIENT_APK_VERSION_CODE).toBe(ENV.appVersionCodeMobile);
-    expect(ENV.appVersionCodeTv).toBeGreaterThanOrEqual(300);
+    expect(ENV.appVersionCodeTv).toBeGreaterThanOrEqual(302);
   });
 
   it('embeds apkv query version tracking into signed Mobile & Google TV APKs', () => {
@@ -60,7 +60,7 @@ describe('Cross-Platform Version Control & Google TV 10-Foot UI', () => {
     );
   });
 
-  it('serves valid ES5 JavaScript in public/tv-receiver.html with D-Pad Hub + Pairing + OTA sync', () => {
+  it('serves valid ES5 JavaScript in public/tv-receiver.html with D-Pad Hub + World TV merge + OTA sync', () => {
     const publicDir = path.resolve(process.cwd(), 'public');
     const htmlPath = path.join(publicDir, 'tv-receiver.html');
     const html = fs.readFileSync(htmlPath, 'utf8');
@@ -81,6 +81,7 @@ describe('Cross-Platform Version Control & Google TV 10-Foot UI', () => {
     expect(combined).toContain('id="tv-series-modal"');
     expect(combined).toContain('/api/app/latest?platform=tv');
     expect(combined).toContain('/api/catalog/latest-releases');
+    expect(combined).toContain('/api/catalog/world-tv');
     expect(combined).toContain('/api/catalog/tv/');
     expect(combined).toContain('moveFocusDirection');
   });

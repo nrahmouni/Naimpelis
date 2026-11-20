@@ -112,39 +112,39 @@ export const CinematicNebulaCanvas: React.FC = () => {
       ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, width, height);
 
-      // 2. Very restrained nocturnal deep-violet breath (keeps >85% deep black)
+      // 2. Subtle dark purple & indigo aurora orbs behind central card
       ctx.globalCompositeOperation = 'lighter';
 
       const glow1X = width * 0.34 + Math.sin(t * 0.16) * (width * 0.08) + px * 16;
-      const glow1Y = height * 0.44 + Math.cos(t * 0.13) * (height * 0.05) + py * 12;
+      const glow1Y = height * 0.42 + Math.cos(t * 0.13) * (height * 0.05) + py * 12;
       const deepViolet = ctx.createRadialGradient(
         glow1X,
         glow1Y,
         0,
         glow1X,
         glow1Y,
-        maxDim * 0.48
+        maxDim * 0.5
       );
-      deepViolet.addColorStop(0, 'rgba(124, 58, 237, 0.12)');
-      deepViolet.addColorStop(0.45, 'rgba(76, 29, 149, 0.045)');
+      deepViolet.addColorStop(0, 'rgba(124, 58, 237, 0.15)');
+      deepViolet.addColorStop(0.45, 'rgba(76, 29, 149, 0.06)');
       deepViolet.addColorStop(1, 'rgba(0, 0, 0, 0)');
       ctx.fillStyle = deepViolet;
       ctx.fillRect(0, 0, width, height);
 
-      const glow2X = width * 0.72 + Math.cos(t * 0.14 + 1.4) * (width * 0.09) - px * 14;
-      const glow2Y = height * 0.58 + Math.sin(t * 0.17 + 0.6) * (height * 0.06) - py * 10;
-      const deepCyan = ctx.createRadialGradient(
+      const glow2X = width * 0.68 + Math.cos(t * 0.14 + 1.4) * (width * 0.09) - px * 14;
+      const glow2Y = height * 0.56 + Math.sin(t * 0.17 + 0.6) * (height * 0.06) - py * 10;
+      const deepIndigo = ctx.createRadialGradient(
         glow2X,
         glow2Y,
         0,
         glow2X,
         glow2Y,
-        maxDim * 0.42
+        maxDim * 0.45
       );
-      deepCyan.addColorStop(0, 'rgba(56, 189, 248, 0.065)');
-      deepCyan.addColorStop(0.45, 'rgba(79, 70, 229, 0.03)');
-      deepCyan.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = deepCyan;
+      deepIndigo.addColorStop(0, 'rgba(79, 70, 229, 0.11)');
+      deepIndigo.addColorStop(0.45, 'rgba(67, 56, 202, 0.045)');
+      deepIndigo.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = deepIndigo;
       ctx.fillRect(0, 0, width, height);
 
       // 3. Liquid Silk Light Filaments (Ultra Full-HD crisp hairlines gliding calmly across OLED black)

@@ -294,8 +294,8 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
 
         {loadingRemote && (
           <div className="space-y-2.5">
-            <div className="px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center gap-2 text-xs text-zinc-300">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#BF94FF] shrink-0" />
+            <div className="px-3 py-2 rounded-xl bg-[#0D0D12] border border-white/[0.08] flex items-center gap-2 text-xs text-zinc-300">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#A78BFA] shrink-0" />
               <span>
                 {pickLang(lang, {
                   es: 'Buscando en todo el catálogo...',
@@ -305,11 +305,11 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
               </span>
             </div>
             {flatActions.length === 0 && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 {Array.from({ length: 4 }).map((_, idx) => (
                   <div
                     key={idx}
-                    className="h-14 rounded-xl bg-white/[0.04] border border-white/[0.06] skeleton-shimmer"
+                    className="h-14 rounded-xl bg-[#0D0D12] border border-white/[0.08] skeleton-shimmer"
                   />
                 ))}
               </div>
@@ -318,8 +318,8 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
         )}
 
         {!loadingRemote && flatActions.length === 0 ? (
-          <div className="py-8 text-center space-y-3 rounded-2xl bg-white/[0.02] border border-white/[0.06] px-4">
-            <Sparkles className="w-6 h-6 text-[#BF94FF] mx-auto" />
+          <div className="py-8 text-center space-y-3 rounded-2xl bg-[#0D0D12] border border-white/[0.08] px-4">
+            <Sparkles className="w-6 h-6 text-[#A78BFA] mx-auto" />
             <p className="text-sm font-semibold text-white">
               {pickLang(lang, {
                 es: query.trim().length >= 2
@@ -342,7 +342,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                   onClose();
                   onSearchWithAi(cleanQ, 'all');
                 }}
-                className="min-h-12 px-5 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-xs font-bold inline-flex items-center gap-2 cursor-pointer transition-all"
+                className="min-h-12 px-5 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-xs font-bold inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
               >
                 <Wand2 className="w-4 h-4 shrink-0" />
                 <span>
@@ -360,7 +360,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
             {matchedMovies.length > 0 && (
               <section className="space-y-2">
                 <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                  <Film className="w-3.5 h-3.5 text-[#BF94FF]" />
+                  <Film className="w-3.5 h-3.5 text-[#A78BFA]" />
                   <span>
                     {pickLang(lang, {
                       es: `Películas (${matchedMovies.length})`,
@@ -369,7 +369,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                     })}
                   </span>
                 </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {matchedMovies.map((item) => {
                     const idx = runningIdx++;
                     const isFocused = idx === activeIndex;
@@ -384,10 +384,10 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                           onSelectCatalogItem(item);
                           onClose();
                         }}
-                        className={`min-h-14 p-2 rounded-xl border flex items-center gap-3 text-left cursor-pointer transition-colors ${
+                        className={`min-h-14 p-2.5 rounded-xl border flex items-center gap-3 text-left cursor-pointer transition-colors ${
                           isFocused
-                            ? 'bg-[#9146FF]/15 border-[#9146FF]/55'
-                            : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.07]'
+                            ? 'bg-[#7C3AED]/15 border-[#8B5CF6]/55'
+                            : 'bg-[#0D0D12] hover:bg-[#14141C] border-white/[0.08]'
                         }`}
                       >
                         <div className="w-10 shrink-0 rounded-lg overflow-hidden">
@@ -399,13 +399,13 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                           />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-xs font-bold text-white line-clamp-2">{item.title}</div>
+                          <div className="text-xs font-bold text-white leading-snug break-words">{item.title}</div>
                           <div className="text-[11px] text-zinc-400 tabular-nums">
                             {item.year} {item.rating ? `· ★ ${item.rating}` : ''}
                           </div>
                         </div>
                         {isFocused && (
-                          <CornerDownLeft className="w-3.5 h-3.5 text-[#BF94FF] shrink-0 mr-1" />
+                          <CornerDownLeft className="w-3.5 h-3.5 text-[#A78BFA] shrink-0 mr-1" />
                         )}
                       </motion.button>
                     );
@@ -417,7 +417,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
             {matchedSeries.length > 0 && (
               <section className="space-y-2">
                 <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                  <Tv className="w-3.5 h-3.5 text-[#BF94FF]" />
+                  <Tv className="w-3.5 h-3.5 text-[#A78BFA]" />
                   <span>
                     {pickLang(lang, {
                       es: `Series (${matchedSeries.length})`,
@@ -426,7 +426,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                     })}
                   </span>
                 </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {matchedSeries.map((item) => {
                     const idx = runningIdx++;
                     const isFocused = idx === activeIndex;
@@ -441,10 +441,10 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                           onSelectCatalogItem(item);
                           onClose();
                         }}
-                        className={`min-h-14 p-2 rounded-xl border flex items-center gap-3 text-left cursor-pointer transition-colors ${
+                        className={`min-h-14 p-2.5 rounded-xl border flex items-center gap-3 text-left cursor-pointer transition-colors ${
                           isFocused
-                            ? 'bg-[#9146FF]/15 border-[#9146FF]/55'
-                            : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.07]'
+                            ? 'bg-[#7C3AED]/15 border-[#8B5CF6]/55'
+                            : 'bg-[#0D0D12] hover:bg-[#14141C] border-white/[0.08]'
                         }`}
                       >
                         <div className="w-10 shrink-0 rounded-lg overflow-hidden">
@@ -456,14 +456,14 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                           />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="text-xs font-bold text-white line-clamp-2">{item.title}</div>
+                          <div className="text-xs font-bold text-white leading-snug break-words">{item.title}</div>
                           <div className="text-[11px] text-zinc-400 tabular-nums">
                             {pickLang(lang, { es: 'Serie', ca: 'Sèrie', en: 'Series' })}{' '}
                             {item.year ? `· ${item.year}` : ''}
                           </div>
                         </div>
                         {isFocused && (
-                          <CornerDownLeft className="w-3.5 h-3.5 text-[#BF94FF] shrink-0 mr-1" />
+                          <CornerDownLeft className="w-3.5 h-3.5 text-[#A78BFA] shrink-0 mr-1" />
                         )}
                       </motion.button>
                     );
@@ -475,7 +475,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
             {matchedChannels.length > 0 && onSelectChannel && (
               <section className="space-y-2">
                 <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                  <Trophy className="w-3.5 h-3.5 text-[#BF94FF]" />
+                  <Trophy className="w-3.5 h-3.5 text-[#A78BFA]" />
                   <span>
                     {pickLang(lang, {
                       es: `En directo (${matchedChannels.length})`,
@@ -484,7 +484,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                     })}
                   </span>
                 </h4>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                   {matchedChannels.map((ch) => {
                     const idx = runningIdx++;
                     const isFocused = idx === activeIndex;
@@ -501,14 +501,14 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                         }}
                         className={`min-h-14 p-2.5 rounded-xl border flex items-center gap-2.5 text-left cursor-pointer transition-colors ${
                           isFocused
-                            ? 'bg-[#9146FF]/15 border-[#9146FF]/55'
-                            : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.07]'
+                            ? 'bg-[#7C3AED]/15 border-[#8B5CF6]/55'
+                            : 'bg-[#0D0D12] hover:bg-[#14141C] border-white/[0.08]'
                         }`}
                       >
                         <ChannelLogoBadge channel={ch} size="sm" />
                         <div className="min-w-0 flex-1">
-                          <div className="text-xs font-bold text-white truncate">{ch.name}</div>
-                          <div className="text-[11px] text-[#BF94FF]">
+                          <div className="text-xs font-bold text-white leading-snug break-words">{ch.name}</div>
+                          <div className="text-[11px] text-[#A78BFA]">
                             {pickLang(lang, {
                               es: 'En directo',
                               ca: 'En directe',
@@ -524,7 +524,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
             )}
             {onSearchWithAi && query.trim().length >= 2 && !loadingRemote && (
               <div className="pt-1">
-                <div className="p-3 rounded-xl bg-[#9146FF]/[0.08] border border-[#9146FF]/25 flex flex-wrap items-center justify-between gap-2.5">
+                <div className="p-3 rounded-xl bg-[#7C3AED]/[0.08] border border-[#8B5CF6]/25 flex flex-wrap items-center justify-between gap-2.5">
                   <div className="min-w-0">
                     <div className="text-xs font-bold text-white">
                       {pickLang(lang, {
@@ -542,7 +542,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                       onClose();
                       onSearchWithAi(cleanQ, 'all');
                     }}
-                    className="min-h-12 px-4 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-xs font-bold inline-flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+                    className="min-h-12 px-4 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-xs font-bold inline-flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all"
                   >
                     <Wand2 className="w-4 h-4 shrink-0" />
                     <span>

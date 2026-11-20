@@ -108,6 +108,7 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [dynamicChannels, setDynamicChannels] = useState<SmartTvChannelInfo[]>(STATIC_CHANNELS_CATALOG);
   const [totalCount, setTotalCount] = useState<number>(STATIC_CHANNELS_CATALOG.length);
+  const displayTotal = totalCount > STATIC_CHANNELS_CATALOG.length ? totalCount : 900;
 
   useEffect(() => {
     if (isOpen) {
@@ -232,10 +233,10 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
       subtitle={
         viewingSection === 'samsung_tizen'
           ? pickLang(lang, {
-              es: 'Lista M3U con +160 canales, guía EPG XML y tutorial de instalación',
-              ca: 'Llista M3U amb +160 canals, guia EPG XML i tutorial d’instal·lació',
-              en: 'M3U playlist with 160+ channels, EPG XML guide & setup tutorial',
-              zh: '提供 160+ 频道 M3U 播放列表与 EPG XML 电子节目指南',
+              es: `Lista M3U con +${displayTotal} canales, guía EPG XML y tutorial de instalación`,
+              ca: `Llista M3U amb +${displayTotal} canals, guia EPG XML i tutorial d’instal·lació`,
+              en: `M3U playlist with ${displayTotal}+ channels, EPG XML guide & setup tutorial`,
+              zh: `提供 ${displayTotal}+ 频道 M3U 播放列表与 EPG XML 电子节目指南`,
             })
           : pickLang(lang, {
               es: 'Elige tu Smart TV, Android APK, Google TV o navegador',

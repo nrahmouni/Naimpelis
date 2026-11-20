@@ -19,6 +19,9 @@ var localTrackIdx = 0;
 var activeLiveChannel = null;
 var activeLiveTrackIdx = 0;
 var activeLiveFilter = 'all';
+var activeAdrarCountry = 'all';
+var activeLiveSearch = '';
+var activeLiveVisibleLimit = 60;
 var lastHubFocusedEl = null;
 
 var pairingWs = null;
@@ -90,6 +93,8 @@ var catalogData = {
   movies: [],
   series: [],
   anime: [],
+  tdtBase: [],
+  worldTv: [],
   tdt: [],
   epg: {},
   searchQuery: '',

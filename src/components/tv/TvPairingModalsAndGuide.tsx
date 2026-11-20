@@ -52,7 +52,7 @@ export const TvIptvConfigModal: React.FC<TvIptvConfigModalProps> = ({
       aria-modal="true"
       aria-label="IPTV M3U & EPG XML"
     >
-      <div className="w-full max-w-3xl rounded-3xl bg-[#10121C] border border-white/[0.12] shadow-2xl p-5 sm:p-7 space-y-5 my-auto">
+      <div className="w-full max-w-3xl rounded-3xl bg-[#0D0D12] border border-white/[0.1] shadow-2xl p-5 sm:p-7 space-y-5 my-auto">
         <div className="flex items-start justify-between gap-4 border-b border-white/[0.08] pb-4">
           <div>
             <h2 className="font-display font-bold text-xl sm:text-2xl text-white">
@@ -81,8 +81,8 @@ export const TvIptvConfigModal: React.FC<TvIptvConfigModalProps> = ({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="p-4 rounded-2xl bg-[#161926] border border-[#9146FF]/35 space-y-3">
-            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#C4A7FF]">
+          <div className="p-4 rounded-2xl bg-[#000000] border border-[#7C3AED]/40 space-y-3">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#A78BFA]">
               <ListVideo className="w-4 h-4" />
               <span>
                 {pickLang(lang, {
@@ -92,14 +92,14 @@ export const TvIptvConfigModal: React.FC<TvIptvConfigModalProps> = ({
                 })}
               </span>
             </div>
-            <div className="p-2.5 rounded-xl bg-black/45 border border-white/[0.08] font-mono text-xs text-white break-all select-all">
+            <div className="p-2.5 rounded-xl bg-[#0D0D12] border border-white/[0.08] font-mono text-xs text-white break-all select-all">
               {m3uUrl}
             </div>
             <div className="flex items-center gap-2">
               <a
                 href={m3uDownloadUrl}
                 download="RIFFANTV-IPTV.m3u"
-                className="flex-1 min-h-10 px-3 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
+                className="flex-1 min-h-10 px-3 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors"
               >
                 <Download className="w-4 h-4" />
                 <span>Descargar .m3u</span>
@@ -115,7 +115,7 @@ export const TvIptvConfigModal: React.FC<TvIptvConfigModalProps> = ({
             </div>
           </div>
 
-          <div className="p-4 rounded-2xl bg-[#161926] border border-emerald-400/35 space-y-3">
+          <div className="p-4 rounded-2xl bg-[#000000] border border-emerald-400/35 space-y-3">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-emerald-300">
               <FileCode2 className="w-4 h-4" />
               <span>
@@ -126,7 +126,7 @@ export const TvIptvConfigModal: React.FC<TvIptvConfigModalProps> = ({
                 })}
               </span>
             </div>
-            <div className="p-2.5 rounded-xl bg-black/45 border border-white/[0.08] font-mono text-xs text-white break-all select-all">
+            <div className="p-2.5 rounded-xl bg-[#0D0D12] border border-white/[0.08] font-mono text-xs text-white break-all select-all">
               {epgUrl}
             </div>
             <div className="flex items-center gap-2">
@@ -150,15 +150,15 @@ export const TvIptvConfigModal: React.FC<TvIptvConfigModalProps> = ({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 items-center p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08]">
+        <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-4 items-center p-4 rounded-2xl bg-[#000000] border border-white/[0.08]">
           <div className="space-y-2.5 text-xs sm:text-sm text-zinc-300 leading-relaxed">
             <p>
-              <strong className="text-emerald-300">¿Qué es el EPG / XML?</strong> Es el enlace de guía de horarios y logos de canales que piden apps como <strong className="text-white">IBO Player, TiviMate, IPTV Smarters o Smart IPTV</strong>. Pega la ruta <code className="text-[#C4A7FF]">/riffantv.m3u</code> como Lista y <code className="text-emerald-300">/epg.xml</code> como EPG.
+              <strong className="text-emerald-300">¿Qué es el EPG / XML?</strong> Es el enlace de guía de horarios y logos de canales que piden apps como <strong className="text-white">IBO Player, TiviMate, IPTV Smarters o Smart IPTV</strong>. Pega la ruta <code className="text-[#A78BFA]">/riffantv.m3u</code> como Lista y <code className="text-emerald-300">/epg.xml</code> como EPG.
             </p>
             <ul className="space-y-1 text-xs text-zinc-400 list-disc pl-5">
               <li><strong className="text-white">Samsung Tizen / LG webOS:</strong> Abre IBO Player / Smart IPTV → sube la M3U y la URL XMLTV.</li>
               <li><strong className="text-white">Google TV / Android TV:</strong> En TiviMate o Televizo añade Lista M3U y Fuente EPG.</li>
-              <li><strong className="text-white">Navegador directo:</strong> Entra siempre en <strong className="text-white">{tvPairingFullUrl}</strong> para usar el mando con tu móvil.</li>
+              <li><strong className="text-white">Navegador directo:</strong> Entra siempre en <strong className="text-white break-all">{tvPairingFullUrl}</strong> para usar el mando con tu móvil.</li>
             </ul>
           </div>
           <div className="flex flex-col items-center gap-1.5 shrink-0 mx-auto">
@@ -180,7 +180,7 @@ export const TvPairingSalonFooter: React.FC<{ lang: AppLanguage; liveHostLabel: 
   liveHostLabel,
 }) => (
   <footer className="relative z-10 max-w-4xl mx-auto w-full grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
-    <div className="p-4 rounded-2xl bg-[#10121C] border border-white/[0.08] flex items-start gap-3">
+    <div className="p-4 rounded-2xl bg-[#0D0D12] border border-white/[0.08] flex items-start gap-3">
       <div className="w-8 h-8 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center font-mono font-bold text-xs text-white shrink-0">
         1
       </div>
@@ -202,7 +202,7 @@ export const TvPairingSalonFooter: React.FC<{ lang: AppLanguage; liveHostLabel: 
       </div>
     </div>
 
-    <div className="p-4 rounded-2xl bg-[#10121C] border border-white/[0.08] flex items-start gap-3">
+    <div className="p-4 rounded-2xl bg-[#0D0D12] border border-white/[0.08] flex items-start gap-3">
       <div className="w-8 h-8 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center font-mono font-bold text-xs text-white shrink-0">
         2
       </div>
@@ -222,9 +222,9 @@ export const TvPairingSalonFooter: React.FC<{ lang: AppLanguage; liveHostLabel: 
       </div>
     </div>
 
-    <div className="p-4 rounded-2xl bg-[#10121C] border border-white/[0.08] flex items-start gap-3">
-      <div className="w-8 h-8 rounded-xl bg-[#9146FF]/18 border border-[#9146FF]/40 flex items-center justify-center shrink-0">
-        <Smartphone className="w-4 h-4 text-[#BF94FF]" />
+    <div className="p-4 rounded-2xl bg-[#0D0D12] border border-white/[0.08] flex items-start gap-3">
+      <div className="w-8 h-8 rounded-xl bg-[#7C3AED]/18 border border-[#7C3AED]/40 flex items-center justify-center shrink-0">
+        <Smartphone className="w-4 h-4 text-[#A78BFA]" />
       </div>
       <div className="text-xs sm:text-sm text-zinc-300">
         <strong className="text-white block mb-0.5">

@@ -278,7 +278,7 @@ export const FootballMatchDetailSheet: React.FC<FootballMatchDetailSheetProps> =
               })}
               className="min-h-11 px-3 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-zinc-100 flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
             >
-              <Share2 className="w-3.5 h-3.5 text-[#BF94FF]" />
+              <Share2 className="w-3.5 h-3.5 text-[#A78BFA]" />
               <span className="hidden sm:inline">
                 {pickLang(lang, { es: 'Compartir partido', ca: 'Compartir partit', en: 'Share match' })}
               </span>
@@ -385,18 +385,18 @@ export const FootballMatchDetailSheet: React.FC<FootballMatchDetailSheetProps> =
                               onPlaySportsMatch(selectedSportsMatch, idx);
                               onClose();
                             }}
-                            className={`flex-1 min-h-14 px-3.5 py-2 rounded-2xl text-xs font-bold flex items-center justify-between gap-2.5 cursor-pointer transition-colors border ${
+                            className={`flex-1 min-h-14 px-3.5 py-2 rounded-2xl text-xs font-bold flex items-center justify-between gap-2.5 cursor-pointer active:scale-95 transition-all border ${
                               isActiveSignal
-                                ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-lg'
+                                ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-lg'
                                 : isSpanish
                                 ? 'bg-amber-500/[0.08] hover:bg-amber-500/[0.16] border-amber-500/30 text-white'
                                 : isEn
                                 ? 'bg-sky-500/[0.08] hover:bg-sky-500/[0.16] border-sky-500/30 text-white'
-                                : 'bg-white/[0.06] hover:bg-white/[0.12] text-white border-white/[0.1]'
+                                : 'bg-white/[0.05] hover:bg-white/[0.1] text-white border-white/[0.09]'
                             }`}
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <Play className="w-3.5 h-3.5 fill-current shrink-0 text-[#BF94FF]" />
+                              <Play className="w-3.5 h-3.5 fill-current shrink-0 text-[#A78BFA]" />
                               <div className="text-left min-w-0">
                                 <p className="text-xs font-bold text-white leading-snug break-words">
                                   {ch.label ||

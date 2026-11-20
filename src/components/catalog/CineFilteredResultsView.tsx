@@ -44,8 +44,8 @@ export const CineUnifiedSearchResults: React.FC<CineUnifiedSearchResultsProps> =
     <div className="space-y-6">
       {loadingHomeSearch && (
         <div className="space-y-4">
-          <div className="px-4 py-2.5 rounded-2xl bg-[#9146FF]/12 border border-[#9146FF]/30 flex items-center gap-2.5 text-xs font-semibold text-[#E9D5FF]">
-            <Loader2 className="w-4 h-4 animate-spin text-[#BF94FF] shrink-0" />
+          <div className="px-4 py-2.5 rounded-2xl bg-[#7C3AED]/15 border border-[#7C3AED]/35 flex items-center gap-2.5 text-xs font-semibold text-[#E9D5FF]">
+            <Loader2 className="w-4 h-4 animate-spin text-[#A78BFA] shrink-0" />
             <span>
               {pickLang(lang, {
                 es: `Buscando «${trimmedSearch}» en ${isSeriesTab ? 'Series' : 'Películas'}...`,
@@ -113,7 +113,7 @@ export const CineUnifiedSearchResults: React.FC<CineUnifiedSearchResultsProps> =
       )}
 
       {!loadingHomeSearch && activeResults.length === 0 && (
-        <div className="py-10 px-4 rounded-3xl bg-[#11131B] border border-white/[0.08] text-center space-y-3">
+        <div className="py-10 px-4 rounded-2xl bg-[#0D0D12] border border-white/[0.08] text-center space-y-3">
           <p className="text-sm font-semibold text-white">
             {isSeriesTab
               ? pickLang(lang, {
@@ -135,9 +135,9 @@ export const CineUnifiedSearchResults: React.FC<CineUnifiedSearchResultsProps> =
                   triggerHaptic('light');
                   onSwitchTab(targetSwitchTab);
                 }}
-                className="min-h-11 px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-xs font-bold text-white inline-flex items-center gap-1.5 cursor-pointer"
+                className="min-h-11 px-4 rounded-2xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-xs font-bold text-white inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
               >
-                <ArrowRightLeft className="w-4 h-4 text-[#BF94FF]" />
+                <ArrowRightLeft className="w-4 h-4 text-[#A78BFA]" />
                 <span>
                   {isSeriesTab
                     ? pickLang(lang, {
@@ -157,7 +157,7 @@ export const CineUnifiedSearchResults: React.FC<CineUnifiedSearchResultsProps> =
               <button
                 type="button"
                 onClick={() => onSearchWithAi(trimmedSearch, isSeriesTab ? 'tv' : 'movie')}
-                className="min-h-11 px-5 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white inline-flex items-center gap-2 cursor-pointer"
+                className="min-h-11 px-5 rounded-2xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-bold text-white inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
               >
                 <Wand2 className="w-4 h-4" />
                 <span>
@@ -211,8 +211,8 @@ export const CineCatalaPortalView: React.FC<CineCatalaPortalViewProps> = ({
 
     {loadingCatala ? (
       <div className="space-y-4">
-        <div className="px-4 py-2.5 rounded-2xl bg-[#9146FF]/12 border border-[#9146FF]/30 flex items-center gap-2.5 text-xs font-semibold text-[#E9D5FF]">
-          <Loader2 className="w-4 h-4 animate-spin text-[#BF94FF] shrink-0" />
+        <div className="px-4 py-2.5 rounded-2xl bg-[#7C3AED]/15 border border-[#7C3AED]/35 flex items-center gap-2.5 text-xs font-semibold text-[#E9D5FF]">
+          <Loader2 className="w-4 h-4 animate-spin text-[#A78BFA] shrink-0" />
           <span>
             {pickLang(lang, {
               es: 'Cargando catálogo en Català...',
@@ -236,9 +236,9 @@ export const CineCatalaPortalView: React.FC<CineCatalaPortalViewProps> = ({
               triggerHaptic('light');
               onOpenCatalaSeriesDetails(item, 1);
             }}
-            className="group w-full text-left cursor-pointer flex flex-col gap-1.5"
+            className="group w-full text-left cursor-pointer active:scale-[0.98] transition-transform flex flex-col gap-1.5"
           >
-            <div className="relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border border-white/[0.08] group-hover:border-[#9146FF]/60 transition-colors">
+            <div className="relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0D0D12] border border-white/[0.08] group-hover:border-[#7C3AED]/65 transition-colors">
               <PosterImage
                 src={item.poster}
                 alt={item.title}
@@ -247,8 +247,12 @@ export const CineCatalaPortalView: React.FC<CineCatalaPortalViewProps> = ({
               />
             </div>
             <div className="px-0.5 min-w-0">
-              <div className="font-display font-bold text-xs text-white truncate">{item.title}</div>
-              <div className="text-[11px] text-zinc-400 mt-0.5 truncate">{item.episodeHint}</div>
+              <div className="font-display font-bold text-xs text-white leading-snug break-words">
+                {item.title}
+              </div>
+              <div className="text-[11px] text-zinc-400 mt-0.5 leading-snug break-words">
+                {item.episodeHint}
+              </div>
             </div>
           </button>
         )}
@@ -328,8 +332,8 @@ export const CineFilteredGridView: React.FC<CineFilteredGridViewProps> = ({
 
     {loading ? (
       <div className="space-y-4">
-        <div className="px-4 py-2.5 rounded-2xl bg-[#9146FF]/12 border border-[#9146FF]/30 flex items-center gap-2.5 text-xs font-semibold text-[#E9D5FF]">
-          <Loader2 className="w-4 h-4 animate-spin text-[#BF94FF] shrink-0" />
+        <div className="px-4 py-2.5 rounded-2xl bg-[#7C3AED]/15 border border-[#7C3AED]/35 flex items-center gap-2.5 text-xs font-semibold text-[#E9D5FF]">
+          <Loader2 className="w-4 h-4 animate-spin text-[#A78BFA] shrink-0" />
           <span>
             {pickLang(lang, {
               es: isSeriesTab ? 'Cargando series...' : 'Cargando películas...',

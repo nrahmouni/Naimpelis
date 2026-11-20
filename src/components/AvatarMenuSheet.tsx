@@ -117,7 +117,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
       onClick: onOpenNotifications,
       badge:
         unreadNotificationsCount > 0 ? (
-          <span className="min-w-6 h-6 px-1.5 rounded-full bg-[#9146FF] text-white text-xs font-bold flex items-center justify-center tabular-nums">
+          <span className="min-w-6 h-6 px-1.5 rounded-full bg-[#7C3AED] text-white text-xs font-bold flex items-center justify-center tabular-nums">
             {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
           </span>
         ) : null,
@@ -182,7 +182,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
         <div className="flex items-center gap-3 px-2 pb-2 border-b border-white/[0.06]">
           <div
             className="w-12 h-12 rounded-2xl flex items-center justify-center text-base font-bold text-white shrink-0 border border-white/15"
-            style={{ backgroundColor: color || '#9146FF' }}
+            style={{ backgroundColor: color || '#7C3AED' }}
           >
             {authUser?.photoURL ? (
               <img
@@ -200,8 +200,8 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
             )}
           </div>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold text-white truncate">{displayName}</p>
-            <p className="text-xs text-zinc-400 truncate">
+            <p className="text-sm font-bold text-white break-words leading-snug">{displayName}</p>
+            <p className="text-xs text-zinc-400 break-words">
               {authUser
                 ? authUser.email || pickLang(lang, { es: 'Sesión iniciada', ca: 'Sessió iniciada', en: 'Signed in' })
                 : pickLang(lang, { es: 'Perfil invitado', ca: 'Perfil convidat', en: 'Guest profile' })}
@@ -219,7 +219,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
             >
               <span className="flex items-center gap-3 min-w-0">
                 {item.iconEl}
-                <span className="text-sm font-semibold text-white truncate">
+                <span className="text-sm font-semibold text-white break-words leading-snug">
                   {item.label}
                 </span>
               </span>
@@ -232,16 +232,16 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
         </nav>
 
         {((sessionMode === 'solo' && onUpgradeSoloToParty) || (inRoom && onLeaveRoom) || (onLeaveRoom && sessionMode === 'solo') || (authUser && onSignOut)) && (
-          <div className="pt-2 border-t border-white/[0.07] space-y-1.5">
+          <div className="pt-2 border-t border-white/[0.08] space-y-1.5">
             {sessionMode === 'solo' && onUpgradeSoloToParty && (
               <button
                 type="button"
                 onClick={() => runAction(onUpgradeSoloToParty)}
-                className="w-full min-h-11 px-3.5 rounded-xl bg-[#9146FF]/18 hover:bg-[#9146FF]/28 border border-[#9146FF]/45 flex items-center justify-between gap-3 text-left cursor-pointer active:scale-[0.99] transition-all duration-150"
+                className="w-full min-h-11 px-3.5 rounded-xl bg-[#7C3AED]/18 hover:bg-[#7C3AED]/28 border border-[#8B5CF6]/45 flex items-center justify-between gap-3 text-left cursor-pointer active:scale-[0.99] transition-all duration-150"
               >
                 <span className="flex items-center gap-3 min-w-0">
                   <RiffanUsersIcon size={16} animate="hover" className="shrink-0" />
-                  <span className="text-sm font-semibold text-white truncate">
+                  <span className="text-sm font-semibold text-white break-words leading-snug">
                     {pickLang(lang, {
                       es: 'Crear sala con amigos',
                       ca: 'Crear sala amb amics',
@@ -261,7 +261,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
               >
                 <span className="flex items-center gap-3 min-w-0">
                   <RiffanLogoutIcon size={16} animate="hover" className="shrink-0" />
-                  <span className="text-sm font-semibold text-rose-200 truncate">
+                  <span className="text-sm font-semibold text-rose-200 break-words leading-snug">
                     {sessionMode === 'solo'
                       ? pickLang(lang, {
                           es: 'Volver a pantalla de inicio',
@@ -288,7 +288,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
                 className="w-full min-h-11 px-3.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] flex items-center gap-3 text-left cursor-pointer active:scale-[0.99] transition-all duration-150"
               >
                 <RiffanLogoutIcon size={16} animate="hover" className="shrink-0" />
-                <span className="text-sm font-semibold text-zinc-300 truncate">
+                <span className="text-sm font-semibold text-zinc-300 break-words">
                   {pickLang(lang, { es: 'Cerrar sesión', ca: 'Tancar sessió', en: 'Sign out' })}
                 </span>
               </button>

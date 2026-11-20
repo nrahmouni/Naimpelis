@@ -148,7 +148,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
         userId: p.id,
         name: p.name,
         avatar: p.avatar || '🍿',
-        color: p.color || '#9146FF',
+        color: p.color || '#7C3AED',
         friendCode: deriveFriendCode(p.id),
         inMyRoom: true,
         roomName,
@@ -161,7 +161,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
         userId: u.userId,
         name: u.name,
         avatar: u.avatar || '🍿',
-        color: u.color || '#9146FF',
+        color: u.color || '#7C3AED',
         friendCode: u.friendCode || deriveFriendCode(u.userId),
         inMyRoom: u.roomId === roomId,
         roomName: u.roomName,
@@ -266,7 +266,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
           rawName ||
           `${pickLang(lang, { es: 'Amigo', ca: 'Amic', en: 'Friend' })} #${rawCode}`,
         avatar: '🎬',
-        color: '#9146FF',
+        color: '#7C3AED',
         friendCode: rawCode || deriveFriendCode(generatedId),
       });
     }
@@ -327,7 +327,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
         />
 
         {/* My code + Copy */}
-        <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-between gap-3">
+        <div className="p-4 rounded-2xl bg-[#0D0D12] border border-white/[0.08] flex items-center justify-between gap-3">
           <div className="min-w-0">
             <span className="text-xs text-zinc-400 block">
               {pickLang(lang, {
@@ -349,7 +349,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
               </>
             ) : (
               <>
-                <Copy className="w-4 h-4 text-[#BF94FF]" />
+                <Copy className="w-4 h-4 text-[#A78BFA]" />
                 <span>{pickLang(lang, { es: 'Copiar', ca: 'Copiar', en: 'Copy' })}</span>
               </>
             )}
@@ -390,28 +390,28 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                 return (
                   <div
                     key={friend.friendId}
-                    className="p-3 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-between gap-2.5"
+                    className="p-3.5 rounded-2xl bg-[#0D0D12] border border-white/[0.08] flex flex-wrap sm:flex-nowrap items-center justify-between gap-3"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div className="relative shrink-0">
                         <div
                           className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white border border-white/15"
-                          style={{ backgroundColor: friend.color || '#9146FF' }}
+                          style={{ backgroundColor: friend.color || '#7C3AED' }}
                         >
                           {friend.avatar && friend.avatar.length <= 2
                             ? friend.avatar
                             : friend.name.slice(0, 2).toUpperCase()}
                         </div>
                         <span
-                          className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#141418] ${
+                          className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0D0D12] ${
                             onlineInfo || isInSameRoom ? 'bg-emerald-400' : 'bg-zinc-600'
                           }`}
                         />
                       </div>
 
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-sm font-bold text-white truncate">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="text-sm font-bold text-white break-words">
                             {friend.name}
                           </span>
                           {friend.friendCode && (
@@ -420,7 +420,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                             </span>
                           )}
                         </div>
-                        <div className="text-xs text-zinc-400 truncate">
+                        <div className="text-xs text-zinc-400 break-words">
                           {isInSameRoom
                             ? pickLang(lang, {
                                 es: 'En tu sala',
@@ -453,10 +453,10 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                               friendCode: friend.friendCode,
                             })
                           }
-                          className={`min-h-12 px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                          className={`min-h-11 px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
                             justInvited
                               ? 'bg-emerald-500 text-white'
-                              : 'bg-[#9146FF] hover:bg-[#7C2AE8] text-white'
+                              : 'bg-[#7C3AED] hover:bg-[#8B5CF6] text-white'
                           }`}
                         >
                           {justInvited ? (
@@ -518,19 +518,19 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
               {discoverableUsers.slice(0, 4).map((u) => (
                 <div
                   key={u.userId}
-                  className="p-2.5 rounded-2xl bg-white/[0.02] border border-white/[0.07] flex items-center justify-between gap-2"
+                  className="p-3 rounded-2xl bg-[#0D0D12] border border-white/[0.08] flex items-center justify-between gap-2.5"
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
                     <div
                       className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                      style={{ backgroundColor: u.color || '#9146FF' }}
+                      style={{ backgroundColor: u.color || '#7C3AED' }}
                     >
                       {u.avatar && u.avatar.length <= 2
                         ? u.avatar
                         : u.name.slice(0, 2).toUpperCase()}
                     </div>
                     <div className="min-w-0">
-                      <div className="text-xs font-bold text-white truncate">
+                      <div className="text-xs font-bold text-white break-words">
                         {u.name} <span className="font-mono text-zinc-400">#{u.friendCode}</span>
                       </div>
                     </div>
@@ -548,9 +548,9 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                         friendCode: u.friendCode,
                       });
                     }}
-                    className="min-h-12 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-xs font-semibold text-white flex items-center gap-1 cursor-pointer shrink-0"
+                    className="min-h-11 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.08] text-xs font-semibold text-white flex items-center gap-1 cursor-pointer active:scale-95 transition-all shrink-0"
                   >
-                    <UserCheck className="w-4 h-4 text-[#BF94FF]" />
+                    <UserCheck className="w-4 h-4 text-[#A78BFA]" />
                     <span>{pickLang(lang, { es: 'Añadir', ca: 'Afegir', en: 'Add' })}</span>
                   </button>
                 </div>
@@ -581,12 +581,12 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
               ca: 'Afegir amic (nom o #codi)',
               en: 'Add friend (name or #code)',
             })}
-            className="flex-1 min-h-12 px-3.5 rounded-xl bg-black/45 border border-white/10 focus:border-[#9146FF] text-sm text-white placeholder:text-zinc-500 outline-none"
+            className="flex-1 min-h-12 px-3.5 rounded-xl bg-[#000000] border border-white/[0.08] focus:border-[#7C3AED] text-sm text-white placeholder:text-zinc-500 outline-none"
           />
           <button
             type="submit"
             disabled={!manualNameInput.trim() && !manualCodeInput.trim()}
-            className="min-h-12 px-4 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] disabled:opacity-35 text-sm font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer shrink-0 transition-colors"
+            className="min-h-12 px-4 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] disabled:opacity-35 text-sm font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer shrink-0 active:scale-95 transition-all"
           >
             <UserPlus className="w-4 h-4" />
             <span>{pickLang(lang, { es: 'Añadir', ca: 'Afegir', en: 'Add' })}</span>

@@ -1,6 +1,8 @@
 import React from 'react';
+import { Star } from 'lucide-react';
 import type { RoomGameInviteType } from '../shared/protocol';
 import { pickLang } from '../utils/i18n';
+import { triggerHaptic } from '../utils/haptics';
 import { socketService } from '../services/socket';
 import { shareDedicatedLink } from '../utils/shareDedicatedLink';
 import {
@@ -83,6 +85,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
 
   const requestedMovieModal = useAppStore((s) => s.requestedMovieModal);
   const requestedSeriesModal = useAppStore((s) => s.requestedSeriesModal);
+  const futbolFavOnly = useAppStore((s) => s.futbolFavOnly);
+  const setFutbolFavOnly = useAppStore((s) => s.setFutbolFavOnly);
   const suppressHomeSearchOverlay = Boolean(
     requestedMovieModal ||
       requestedSeriesModal ||
@@ -353,6 +357,61 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
       onBack={() => enterWorld('entry')}
       onGoHome={() => enterWorld('entry')}
       onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+      quickActions={
+        activeWorld === 'futbol' ? (
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setFutbolFavOnly(!futbolFavOnly);
+            }}
+            aria-pressed={futbolFavOnly}
+            aria-label={pickLang(lang, {
+              es: 'Solo favoritos',
+              ca: 'Només favorits',
+              en: 'Favorites only',
+            })}
+            title={pickLang(lang, {
+              es: 'Solo favoritos',
+              ca: 'Només favorits',
+              en: 'Favorites only',
+            })}
+            className={`min-w-11 min-h-11 rounded-2xl border flex items-center justify-center cursor-pointer active:scale-95 transition-all ${
+              futbolFavOnly
+                ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_6px_18px_rgba(124,58,237,0.38)]'
+                : 'bg-[#0D0D12] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200 hover:text-white'
+            }`}
+          >
+            <Star className={`w-4 h-4 ${futbolFavOnly ? 'fill-current nc-pop-spring' : ''}`} />
+          </button>
+        ) : activeWorld === 'cine' ? (
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setShowWatchlistOnly(!showWatchlistOnly);
+            }}
+            aria-pressed={showWatchlistOnly}
+            aria-label={pickLang(lang, {
+              es: 'Mi lista guardada',
+              ca: 'La meva llista',
+              en: 'Saved list',
+            })}
+            title={pickLang(lang, {
+              es: 'Mi lista guardada',
+              ca: 'La meva llista',
+              en: 'Saved list',
+            })}
+            className={`min-w-11 min-h-11 rounded-2xl border flex items-center justify-center cursor-pointer active:scale-95 transition-all ${
+              showWatchlistOnly
+                ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_6px_18px_rgba(124,58,237,0.38)]'
+                : 'bg-[#0D0D12] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200 hover:text-white'
+            }`}
+          >
+            <Star className={`w-4 h-4 ${showWatchlistOnly ? 'fill-current nc-pop-spring' : ''}`} />
+          </button>
+        ) : undefined
+      }
       searchValue={worldSearchQuery}
       onSearchChange={setWorldSearchQuery}
       searchPlaceholder={

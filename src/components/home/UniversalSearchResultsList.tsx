@@ -68,7 +68,7 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {matchedSports.map((match) => (
               <button
                 key={match.id}
@@ -78,15 +78,15 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
                   onBeforeDirectPlay?.();
                   onPlayMatch(match);
                 }}
-                className="flex items-center justify-between gap-2.5 p-3 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-[#00F593]/50 text-left cursor-pointer transition-all active:scale-[0.98]"
+                className="flex items-center justify-between gap-3 p-3.5 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#00F593]/50 text-left cursor-pointer transition-all active:scale-95"
               >
                 <div className="min-w-0 space-y-1">
-                  <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 font-medium">
-                    <span className="truncate">{match.competition}</span>
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-zinc-400 font-medium">
+                    <span>{match.competition}</span>
                     <span aria-hidden="true">·</span>
                     <span className="text-zinc-300 tabular-nums">{match.time}</span>
                   </div>
-                  <p className="text-xs font-bold text-white leading-snug line-clamp-2">
+                  <p className="text-xs font-bold text-white leading-snug">
                     {match.title}
                   </p>
                 </div>
@@ -97,7 +97,7 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
                       LIVE
                     </span>
                   )}
-                  <span className="w-8 h-8 rounded-xl bg-white/[0.06] flex items-center justify-center text-white">
+                  <span className="w-9 h-9 rounded-xl bg-white/[0.06] flex items-center justify-center text-white">
                     <Play className="w-3.5 h-3.5 fill-current" />
                   </span>
                 </div>
@@ -121,7 +121,7 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
           </span>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {matchedTdt.map((ch) => (
             <button
               key={ch.id}
@@ -131,11 +131,11 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
                 onBeforeDirectPlay?.();
                 onPlayChannel(ch);
               }}
-              className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-sky-400/50 text-left cursor-pointer transition-all active:scale-[0.98]"
+              className="flex items-center gap-2.5 p-3 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-sky-400/50 text-left cursor-pointer transition-all active:scale-95"
             >
               <ChannelLogoBadge channel={ch} size="sm" />
               <div className="min-w-0">
-                <p className="text-xs font-bold text-white truncate">{ch.name}</p>
+                <p className="text-xs font-bold text-white leading-snug">{ch.name}</p>
                 <p className="text-[10px] text-zinc-400">Dial {ch.dial}</p>
               </div>
             </button>
@@ -159,7 +159,7 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {matchedGames.map((game) => (
               <button
                 key={game.id}
@@ -169,16 +169,16 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
                   onCloseSearch();
                   onSelectGame(game.id);
                 }}
-                className="flex items-center justify-between gap-2.5 p-3 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-fuchsia-400/50 text-left cursor-pointer transition-all active:scale-[0.98]"
+                className="flex items-center justify-between gap-2.5 p-3.5 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 text-left cursor-pointer transition-all active:scale-95"
               >
                 <div className="flex items-center gap-2.5 min-w-0">
                   <span className="text-2xl shrink-0">{game.icon}</span>
                   <div className="min-w-0">
-                    <p className="text-xs font-bold text-white truncate">{game.title}</p>
-                    <p className="text-[11px] text-zinc-400 truncate">{game.desc}</p>
+                    <p className="text-xs font-bold text-white leading-snug">{game.title}</p>
+                    <p className="text-[11px] text-zinc-400 leading-snug mt-0.5">{game.desc}</p>
                   </div>
                 </div>
-                <span className="px-2.5 py-1 rounded-xl bg-fuchsia-500/20 text-fuchsia-300 text-[11px] font-bold shrink-0">
+                <span className="px-3 py-1.5 rounded-xl bg-[#7C3AED]/20 text-[#C4A7FF] text-[11px] font-bold shrink-0">
                   {pickLang(lang, { es: 'Jugar', ca: 'Jugar', en: 'Play' })}
                 </span>
               </button>
@@ -202,7 +202,7 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
             </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {matchedMovies.map((movie) => (
               <button
                 key={movie.id || movie.tmdbId}
@@ -211,9 +211,9 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
                   triggerHaptic('light');
                   onOpenMovieDetails(movie);
                 }}
-                className="group rounded-2xl overflow-hidden bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-[#9146FF]/50 text-left cursor-pointer transition-all active:scale-[0.98] flex flex-col"
+                className="group rounded-2xl overflow-hidden bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 text-left cursor-pointer transition-all active:scale-95 flex flex-col"
               >
-                <div className="relative aspect-[2/3] w-full bg-[#0D0E15]">
+                <div className="relative aspect-[2/3] w-full bg-[#000000]">
                   <PosterImage
                     src={movie.poster}
                     alt={movie.title}
@@ -237,11 +237,11 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
                     </span>
                   )}
                 </div>
-                <div className="p-2 min-w-0">
-                  <p className="text-xs font-bold text-white truncate group-hover:text-[#D8B4FE]">
+                <div className="p-2.5 min-w-0">
+                  <p className="text-xs font-bold text-white leading-snug group-hover:text-[#D8B4FE]">
                     {movie.title}
                   </p>
-                  <div className="flex items-center gap-1.5 text-[10px] text-zinc-400">
+                  <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 mt-1">
                     <span>{movie.year || 'HD'}</span>
                     {Boolean(movie.is4k) && (
                       <span className="px-1 rounded bg-amber-400/20 text-amber-300 font-mono text-[9px] font-bold">
@@ -274,7 +274,7 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
             </span>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {matchedSeries.map((s) => (
               <button
                 key={s.id || s.tmdbId}
@@ -283,9 +283,9 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
                   triggerHaptic('light');
                   onOpenSeriesPage(s);
                 }}
-                className="group rounded-2xl overflow-hidden bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-[#9146FF]/50 text-left cursor-pointer transition-all active:scale-[0.98] flex flex-col"
+                className="group rounded-2xl overflow-hidden bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 text-left cursor-pointer transition-all active:scale-95 flex flex-col"
               >
-                <div className="relative aspect-[2/3] w-full bg-[#0D0E15]">
+                <div className="relative aspect-[2/3] w-full bg-[#000000]">
                   <PosterImage
                     src={s.poster}
                     alt={s.title}
@@ -300,11 +300,11 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
                     </span>
                   )}
                 </div>
-                <div className="p-2 min-w-0">
-                  <p className="text-xs font-bold text-white truncate group-hover:text-[#D8B4FE]">
+                <div className="p-2.5 min-w-0">
+                  <p className="text-xs font-bold text-white leading-snug group-hover:text-[#D8B4FE]">
                     {s.title}
                   </p>
-                  <p className="text-[10px] text-zinc-400">
+                  <p className="text-[10px] text-zinc-400 mt-1">
                     {s.year || 'HD'} · {pickLang(lang, { es: 'Serie', ca: 'Sèrie', en: 'Series' })}
                   </p>
                 </div>

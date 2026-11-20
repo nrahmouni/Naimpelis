@@ -84,7 +84,7 @@ export const PartyQueuePanel: React.FC<PartyQueuePanelProps> = ({
           <div className="flex items-center gap-2 shrink-0">
             {roomQueue.length >= 2 && (
               <SecondaryButton onClick={onStartPollFromQueue}>
-                <BarChart2 className="w-4 h-4 text-[#BF94FF]" />
+                <BarChart2 className="w-4 h-4 text-[#A78BFA]" />
                 <span>
                   {pickLang(lang, {
                     es: 'Votar Cola',
@@ -106,7 +106,7 @@ export const PartyQueuePanel: React.FC<PartyQueuePanelProps> = ({
 
             {onBrowseCatalog && (
               <SecondaryButton onClick={onBrowseCatalog}>
-                <Plus className="w-4 h-4 text-[#BF94FF]" />
+                <Plus className="w-4 h-4 text-[#A78BFA]" />
                 <span>
                   {pickLang(lang, { es: 'Catálogo', ca: 'Catàleg', en: 'Catalog' })}
                 </span>
@@ -162,10 +162,10 @@ export const PartyQueuePanel: React.FC<PartyQueuePanelProps> = ({
           onAction={canManageMedia ? onOpenUrlLoaderSheet : undefined}
         />
       ) : (
-        <div className="space-y-2.5">
+        <div className="space-y-3">
           {undoRemovedItem && onRestoreQueueItem && (
-            <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-400/35 flex items-center justify-between gap-2">
-              <span className="text-xs text-amber-100 truncate">
+            <div className="p-3 rounded-xl bg-amber-500/15 border border-amber-400/35 flex items-center justify-between gap-2">
+              <span className="text-xs text-amber-100 leading-snug break-words">
                 {pickLang(lang, {
                   es: `Quitado "${undoRemovedItem.title}"`,
                   ca: `Tret "${undoRemovedItem.title}"`,
@@ -175,7 +175,7 @@ export const PartyQueuePanel: React.FC<PartyQueuePanelProps> = ({
               <button
                 type="button"
                 onClick={() => onRestoreUndoItem(undoRemovedItem)}
-                className="px-2.5 py-1 rounded-lg bg-amber-400 text-[#140E02] text-xs font-bold flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+                className="px-2.5 py-1.5 rounded-lg bg-amber-400 text-[#140E02] text-xs font-bold flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-transform"
               >
                 <RotateCcw className="w-3 h-3" />
                 <span>{pickLang(lang, { es: 'Deshacer', ca: 'Desfer', en: 'Undo' })}</span>
@@ -186,7 +186,7 @@ export const PartyQueuePanel: React.FC<PartyQueuePanelProps> = ({
           {roomQueue.map((item, idx) => (
             <div
               key={item.id}
-              className="group relative overflow-hidden rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.07] p-2.5 flex items-center gap-3 transition-all"
+              className="group relative overflow-hidden rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] p-3 flex items-center gap-3 transition-all"
             >
               <div className="relative w-20 aspect-video rounded-xl overflow-hidden bg-black shrink-0">
                 <PosterImage
@@ -205,11 +205,11 @@ export const PartyQueuePanel: React.FC<PartyQueuePanelProps> = ({
                 </div>
               </div>
 
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-bold text-white truncate">
+              <div className="flex-1 min-w-0 space-y-0.5">
+                <div className="text-xs font-bold text-white leading-snug break-words">
                   {item.title}
                 </div>
-                <div className="text-xs text-zinc-400 truncate mt-0.5">
+                <div className="text-xs text-zinc-400 leading-snug break-words">
                   {pickLang(lang, {
                     es: `Añadido por ${item.addedBy}`,
                     ca: `Afegit per ${item.addedBy}`,
@@ -236,10 +236,10 @@ export const PartyQueuePanel: React.FC<PartyQueuePanelProps> = ({
                       ca: 'Votar aquest títol a la cua',
                       en: 'Vote for this title in queue',
                     })}
-                    className={`min-h-9 px-2 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
+                    className={`min-h-9 px-2 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer active:scale-95 transition-all ${
                       item.voterIds?.includes(currentUser.id)
-                        ? 'bg-[#9146FF]/25 border border-[#9146FF]/55 text-[#BF94FF]'
-                        : 'bg-[#26262C] hover:bg-white/[0.12] text-[#EFEFF1]'
+                        ? 'bg-[#7C3AED]/25 border border-[#8B5CF6]/55 text-[#A78BFA]'
+                        : 'bg-white/[0.06] hover:bg-white/[0.12] text-[#EFEFF1]'
                     }`}
                   >
                     <ThumbsUp className="w-3 h-3" />

@@ -47,12 +47,12 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.16 }}
-      whileTap={{ scale: 0.985 }}
+      whileTap={{ scale: 0.96 }}
       onPointerEnter={() => onPreloadWorld?.('cine')}
       onTouchStart={() => onPreloadWorld?.('cine')}
       onPointerMove={(e) => onCardPointerMove('cine', e)}
       onClick={(e) => onCardClick('cine', e)}
-      className="group relative col-span-2 md:col-span-4 md:order-1 rounded-[24px] p-5 sm:p-6 min-h-[156px] sm:min-h-[184px] bg-white/[0.035] hover:bg-white/[0.055] backdrop-blur-2xl border border-white/[0.09] hover:border-[#9146FF]/45 shadow-[0_18px_50px_rgba(0,0,0,0.45)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-2 md:col-span-4 md:order-1 rounded-[24px] p-5 sm:p-6 min-h-[164px] sm:min-h-[188px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_18px_50px_rgba(0,0,0,0.65)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('cine')}
 
@@ -64,14 +64,14 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
           <div className="relative w-full h-full flex items-center justify-end pr-2 sm:pr-4 pt-1 opacity-90">
             {heroPosters.slice(0, 3).map((m, idx) => {
               const offsets = [
-                'right-16 sm:right-24 bottom-3 sm:bottom-4 -rotate-6 opacity-75 scale-90',
-                'right-8 sm:right-12 bottom-4 sm:bottom-5 rotate-2 opacity-90 scale-95 z-[1]',
-                'right-1 sm:right-2 bottom-3 sm:bottom-4 rotate-6 opacity-100 z-[2]',
+                'right-16 sm:right-24 bottom-3 sm:bottom-4 -rotate-6 opacity-75 scale-90 group-hover:-translate-x-2.5 group-hover:-rotate-12 group-hover:scale-95',
+                'right-8 sm:right-12 bottom-4 sm:bottom-5 rotate-2 opacity-90 scale-95 z-[1] group-hover:-translate-y-2 group-hover:scale-100',
+                'right-1 sm:right-2 bottom-3 sm:bottom-4 rotate-6 opacity-100 z-[2] group-hover:translate-x-2 group-hover:rotate-12 group-hover:scale-105',
               ];
               return (
                 <div
                   key={m.id || idx}
-                  className={`absolute w-[68px] h-[98px] sm:w-[88px] sm:h-[126px] rounded-xl overflow-hidden border border-white/15 bg-[#12141E] shadow-[0_14px_30px_rgba(0,0,0,0.65)] transition-transform duration-300 group-hover:-translate-y-1 ${
+                  className={`absolute w-[68px] h-[98px] sm:w-[88px] sm:h-[126px] rounded-xl overflow-hidden border border-white/15 bg-[#0D0D12] shadow-[0_14px_30px_rgba(0,0,0,0.75)] transition-transform duration-300 ${
                     offsets[idx] || offsets[0]
                   }`}
                 >
@@ -87,15 +87,15 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
             })}
           </div>
         ) : null}
-        <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-[#0B0C12] via-[#0B0C12]/60 to-transparent" />
+        <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-[#0D0D12] via-[#0D0D12]/65 to-transparent" />
       </div>
 
       <div className="relative z-10 flex items-center gap-2 text-xs font-medium text-zinc-400">
-        <span className="w-8 h-8 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-[#C4A7FF] shrink-0">
+        <span className="w-8 h-8 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-[#A78BFA] shrink-0">
           <RiffanMoviesIcon size={16} animate="hover" />
         </span>
         {lastUsedWorld === 'cine' ? (
-          <span className="text-[#C4A7FF] font-semibold">
+          <span className="text-[#A78BFA] font-semibold">
             {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
           </span>
         ) : (
@@ -107,14 +107,14 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
         <h2 className="font-display font-bold text-lg sm:text-2xl text-white tracking-tight leading-tight">
           {pickLang(lang, { es: 'Cine y Series', ca: 'Cine i Sèries', en: 'Movies & Series' })}
         </h2>
-        <p className="text-xs sm:text-[13px] text-zinc-400 leading-snug line-clamp-2">
+        <p className="text-xs sm:text-[13px] text-zinc-400 leading-snug">
           {pickLang(lang, {
             es: 'Películas, series y anime en 4K',
             ca: 'Pel·lícules, sèries i anime en 4K',
             en: 'Movies, series & anime in 4K',
           })}
         </p>
-        <div className="pt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-zinc-200 group-hover:text-[#C4A7FF] transition-colors">
+        <div className="pt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-zinc-200 group-hover:text-[#A78BFA] transition-colors">
           <span>{pickLang(lang, { es: 'Explorar', ca: 'Explorar', en: 'Browse' })}</span>
           <RiffanArrowRightIcon size={14} animate="hover" />
         </div>
@@ -126,25 +126,28 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       type="button"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16 }}
-      whileTap={{ scale: 0.98 }}
+      transition={{ duration: 0.16, delay: 0.04 }}
+      whileTap={{ scale: 0.95 }}
       onPointerEnter={() => onPreloadWorld?.('sala')}
       onTouchStart={() => onPreloadWorld?.('sala')}
       onPointerMove={(e) => onCardPointerMove('sala', e)}
       onClick={(e) => onCardClick('sala', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-2 rounded-[24px] p-4 sm:p-5 min-h-[142px] sm:min-h-[184px] bg-white/[0.035] hover:bg-white/[0.055] backdrop-blur-2xl border border-white/[0.09] hover:border-[#9146FF]/45 shadow-[0_14px_40px_rgba(0,0,0,0.4)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-1 md:col-span-2 md:order-2 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[188px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('sala')}
 
       <div className="relative z-10 flex items-center justify-between gap-2">
-        <span className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-[#C4A7FF] shrink-0">
+        <span className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-[#A78BFA] shrink-0">
           <RiffanUsersIcon size={17} animate="hover" />
         </span>
 
         {sessionMode !== 'solo' && (
-          <span className="text-[11px] font-semibold text-emerald-400 tabular-nums">
-            {roomParticipantsCount > 0 ? roomParticipantsCount : 1}{' '}
-            {pickLang(lang, { es: 'en sala', ca: 'a la sala', en: 'in room' })}
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#10B981] tabular-nums">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]" />
+            <span>
+              {roomParticipantsCount > 0 ? roomParticipantsCount : 1}{' '}
+              {pickLang(lang, { es: 'en sala', ca: 'a la sala', en: 'in room' })}
+            </span>
           </span>
         )}
       </div>
@@ -157,7 +160,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
             en: 'Watch Party',
           })}
         </h2>
-        <p className="text-xs text-zinc-400 leading-snug line-clamp-2">
+        <p className="text-xs text-zinc-400 leading-snug">
           {sessionMode === 'solo'
             ? pickLang(lang, {
                 es: 'Crea una sala para ver juntos',
@@ -178,13 +181,13 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       type="button"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16 }}
-      whileTap={{ scale: 0.98 }}
+      transition={{ duration: 0.16, delay: 0.08 }}
+      whileTap={{ scale: 0.95 }}
       onPointerEnter={() => onPreloadWorld?.('futbol')}
       onTouchStart={() => onPreloadWorld?.('futbol')}
       onPointerMove={(e) => onCardPointerMove('futbol', e)}
       onClick={(e) => onCardClick('futbol', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-3 rounded-[24px] p-4 sm:p-5 min-h-[142px] sm:min-h-[164px] bg-white/[0.035] hover:bg-white/[0.055] backdrop-blur-2xl border border-white/[0.09] hover:border-white/20 shadow-[0_14px_40px_rgba(0,0,0,0.4)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-1 md:col-span-2 md:order-3 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[168px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('futbol')}
 
@@ -195,7 +198,10 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
 
         {liveMatchesCount > 0 ? (
           <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#FF6B6B] tabular-nums">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#EB0400]" />
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#EF4444] opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#EF4444]" />
+            </span>
             <span>
               {pickLang(lang, {
                 es: `${liveMatchesCount} en vivo`,
@@ -215,7 +221,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
         <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
           {pickLang(lang, { es: 'Fútbol', ca: 'Futbol', en: 'Football' })}
         </h2>
-        <p className="text-xs text-zinc-400 leading-snug line-clamp-2">
+        <p className="text-xs text-zinc-400 leading-snug">
           {featuredLiveMatch
             ? featuredLiveMatch
             : pickLang(lang, {
@@ -232,13 +238,13 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       type="button"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16 }}
-      whileTap={{ scale: 0.98 }}
+      transition={{ duration: 0.16, delay: 0.12 }}
+      whileTap={{ scale: 0.95 }}
       onPointerEnter={() => onPreloadWorld?.('tv')}
       onTouchStart={() => onPreloadWorld?.('tv')}
       onPointerMove={(e) => onCardPointerMove('tv', e)}
       onClick={(e) => onCardClick('tv', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-4 rounded-[24px] p-4 sm:p-5 min-h-[142px] sm:min-h-[164px] bg-white/[0.035] hover:bg-white/[0.055] backdrop-blur-2xl border border-white/[0.09] hover:border-white/20 shadow-[0_14px_40px_rgba(0,0,0,0.4)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-1 md:col-span-2 md:order-4 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[168px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('tv')}
 
@@ -247,9 +253,17 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
           <RiffanChannelsIcon size={17} animate="hover" />
         </span>
 
-        {lastUsedWorld === 'tv' && (
-          <span className="text-[11px] font-medium text-zinc-400">
+        {lastUsedWorld === 'tv' ? (
+          <span className="text-[11px] font-medium text-[#A78BFA]">
             {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-red-400">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#EF4444] opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#EF4444]" />
+            </span>
+            <span>24/7</span>
           </span>
         )}
       </div>
@@ -258,7 +272,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
         <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
           {pickLang(lang, { es: 'TV en Directo', ca: 'TV en Directe', en: 'Live TV' })}
         </h2>
-        <p className="text-xs text-zinc-400 leading-snug line-clamp-2">
+        <p className="text-xs text-zinc-400 leading-snug">
           {pickLang(lang, {
             es: 'TDT, programación y canales 24/7',
             ca: 'TDT, programació i canals 24/7',
@@ -273,13 +287,13 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       type="button"
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16 }}
-      whileTap={{ scale: 0.98 }}
+      transition={{ duration: 0.16, delay: 0.16 }}
+      whileTap={{ scale: 0.95 }}
       onPointerEnter={() => onPreloadWorld?.('juegos')}
       onTouchStart={() => onPreloadWorld?.('juegos')}
       onPointerMove={(e) => onCardPointerMove('juegos', e)}
       onClick={(e) => onCardClick('juegos', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-5 rounded-[24px] p-4 sm:p-5 min-h-[142px] sm:min-h-[164px] bg-white/[0.035] hover:bg-white/[0.055] backdrop-blur-2xl border border-white/[0.09] hover:border-white/20 shadow-[0_14px_40px_rgba(0,0,0,0.4)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
+      className="group relative col-span-1 md:col-span-2 md:order-5 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[168px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
     >
       {renderSpotlightOverlay('juegos')}
 
@@ -289,7 +303,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
         </span>
 
         {lastUsedWorld === 'juegos' && (
-          <span className="text-[11px] font-medium text-zinc-400">
+          <span className="text-[11px] font-medium text-[#A78BFA]">
             {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
           </span>
         )}
@@ -299,7 +313,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
         <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
           {pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' })}
         </h2>
-        <p className="text-xs text-zinc-400 leading-snug line-clamp-2">
+        <p className="text-xs text-zinc-400 leading-snug">
           {pickLang(lang, {
             es: 'Billar, Parchís, UNO y más',
             ca: 'Billar, Parxís, UNO i més',
