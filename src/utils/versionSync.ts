@@ -3,6 +3,7 @@ export const CLIENT_APK_VERSION_CODE = 302;
 
 const VERSION_STORAGE_KEY = 'naim_cine_client_version_v1';
 const APK_VERSION_STORAGE_KEY = 'naim_cine_native_apk_code_v1';
+const APK_FLAVOR_STORAGE_KEY = 'naim_cine_native_apk_flavor_v1';
 const AUTO_RELOAD_GUARD_KEY = 'naim_cine_auto_reload_ts_v1';
 
 export interface AppLatestManifest {
@@ -22,10 +23,16 @@ export interface AppLatestManifest {
     versionName?: string;
     apkUrl?: string;
   };
+  music?: {
+    packageName?: string;
+    versionCode?: number;
+    versionName?: string;
+    apkUrl?: string;
+  };
 }
 
 export interface NativeApkUpdateAvailable {
-  flavor: 'mobile' | 'tv';
+  flavor: 'mobile' | 'tv' | 'music';
   currentCode: number;
   latestCode: number;
   versionName: string;
@@ -35,10 +42,11 @@ export interface NativeApkUpdateAvailable {
 export function detectNativeApkContext(): {
   isAndroidMobileApk: boolean;
   isGoogleTvApk: boolean;
+  isMusicApk: boolean;
   installedCode: number | null;
 } {
   if (typeof window === 'undefined') {
-    return { isAndroidMobileApk: false, isGoogleTvApk: false, installedCode: null };
+    return { isAndroidMobileApk: false, isGoogleTvApk: false, isMusicApk: false, installedCode: null };
   }
 
   const params = new URLSearchParams(window.location.search);
@@ -46,11 +54,23 @@ export function detectNativeApkContext(): {
   const platformParam = (params.get('platform') || '').toLowerCase();
 
   let storedCode = 0;
+  let storedFlavor = '';
   try {
     storedCode = Number(localStorage.getItem(APK_VERSION_STORAGE_KEY) || '0');
+    storedFlavor = localStorage.getItem(APK_FLAVOR_STORAGE_KEY) || '';
     if (apkvParam > 0) {
       localStorage.setItem(APK_VERSION_STORAGE_KEY, String(apkvParam));
       storedCode = apkvParam;
+    }
+    if (platformParam === 'android-music') {
+      localStorage.setItem(APK_FLAVOR_STORAGE_KEY, 'music');
+      storedFlavor = 'music';
+    } else if (platformParam === 'googletv') {
+      localStorage.setItem(APK_FLAVOR_STORAGE_KEY, 'tv');
+      storedFlavor = 'tv';
+    } else if (platformParam === 'android') {
+      localStorage.setItem(APK_FLAVOR_STORAGE_KEY, 'mobile');
+      storedFlavor = 'mobile';
     }
   } catch {
     storedCode = apkvParam;
@@ -59,18 +79,28 @@ export function detectNativeApkContext(): {
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
   const isGoogleTvApk =
     platformParam === 'googletv' ||
+    storedFlavor === 'tv' ||
     /NaimCineGoogleTV|GoogleTV|Android TV|BRAVIA|AFT/i.test(ua) ||
     window.location.pathname.startsWith('/tv');
 
+  const isMusicApk =
+    !isGoogleTvApk &&
+    (platformParam === 'android-music' ||
+      storedFlavor === 'music' ||
+      (/^\/(musica|music)(\/|$)/i.test(window.location.pathname) && apkvParam > 0));
+
   const isAndroidMobileApk =
     !isGoogleTvApk &&
+    !isMusicApk &&
     (platformParam === 'android' ||
+      storedFlavor === 'mobile' ||
       /Android/i.test(ua) ||
       apkvParam > 0);
 
   return {
     isAndroidMobileApk,
     isGoogleTvApk,
+    isMusicApk,
     installedCode: storedCode > 0 ? storedCode : null,
   };
 }
@@ -132,7 +162,13 @@ export async function checkRemoteAppVersion(
 
   try {
     const ctx = detectNativeApkContext();
-    const platform = ctx.isGoogleTvApk ? 'tv' : ctx.isAndroidMobileApk ? 'mobile' : 'web';
+    const platform = ctx.isGoogleTvApk
+      ? 'tv'
+      : ctx.isMusicApk
+      ? 'music'
+      : ctx.isAndroidMobileApk
+      ? 'mobile'
+      : 'web';
     const res = await fetch(`/api/app/latest?platform=${platform}&_=${Date.now()}`, {
       cache: 'no-store',
     });
@@ -154,9 +190,14 @@ export async function checkRemoteAppVersion(
     }
 
     // Check if native APK shell itself needs an optional 1-tap APK upgrade
-    if (ctx.installedCode && (ctx.isAndroidMobileApk || ctx.isGoogleTvApk)) {
-      const flavor = ctx.isGoogleTvApk ? 'tv' : 'mobile';
-      const targetMeta = flavor === 'tv' ? data.tv : data.mobile;
+    if (ctx.installedCode && (ctx.isAndroidMobileApk || ctx.isGoogleTvApk || ctx.isMusicApk)) {
+      const flavor: 'mobile' | 'tv' | 'music' = ctx.isGoogleTvApk
+        ? 'tv'
+        : ctx.isMusicApk
+        ? 'music'
+        : 'mobile';
+      const targetMeta =
+        flavor === 'tv' ? data.tv : flavor === 'music' ? data.music : data.mobile;
       const latestCode = Number(targetMeta?.versionCode || 0);
       if (latestCode > ctx.installedCode && targetMeta?.apkUrl && opts.onApkUpdate) {
         opts.onApkUpdate({

@@ -285,38 +285,53 @@ async function getSoundCloudClientId(allowScrape = true): Promise<string> {
     }
     return '';
   }
-  try {
-    const res = await fetch('https://soundcloud.com/', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
-      },
-      signal: AbortSignal.timeout(2200),
-    });
-    if (!res.ok) return '';
-    const html = await res.text();
-    const scripts = [...html.matchAll(/https:\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js/g)].map((m) => m[0]);
-    const recentScripts = scripts.slice(-3).reverse();
-    const jsTexts = await Promise.all(
-      recentScripts.map((sUrl) =>
-        fetch(sUrl, { signal: AbortSignal.timeout(2200) })
-          .then((r) => (r.ok ? r.text() : ''))
-          .catch(() => '')
-      )
-    );
-    for (const js of jsTexts) {
-      const match = js.match(/client_id\s*:\s*"([a-zA-Z0-9]{20,42})"/);
-      if (match?.[1]) {
-        scClientIdCache = {
-          id: match[1],
-          expiresAt: Date.now() + 3 * 60 * 60 * 1000,
-        };
-        return match[1];
-      }
-    }
-  } catch {
-    // ignore transient SC scrape issues
+  if (scWarmPromise) {
+    return scWarmPromise;
   }
-  return '';
+  scWarmPromise = (async () => {
+    try {
+      const res = await fetch('https://soundcloud.com/', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
+        },
+        signal: AbortSignal.timeout(3000),
+      });
+      if (!res.ok) return '';
+      const html = await res.text();
+      const scripts = [...html.matchAll(/https:\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js/g)].map((m) => m[0]);
+      const recentScripts = scripts.slice(-4).reverse();
+      const jsTexts = await Promise.all(
+        recentScripts.map((sUrl) =>
+          fetch(sUrl, { signal: AbortSignal.timeout(3000) })
+            .then((r) => (r.ok ? r.text() : ''))
+            .catch(() => '')
+        )
+      );
+      for (const js of jsTexts) {
+        const match = js.match(/client_id\s*:\s*"([a-zA-Z0-9]{20,42})"/);
+        if (match?.[1]) {
+          scClientIdCache = {
+            id: match[1],
+            expiresAt: Date.now() + 3 * 60 * 60 * 1000,
+          };
+          return match[1];
+        }
+      }
+    } catch {
+      // ignore transient SC scrape issues
+    }
+    return '';
+  })().finally(() => {
+    scWarmPromise = null;
+  });
+  return scWarmPromise;
+}
+
+// Pre-warm SoundCloud client_id quietly on server boot so first 8D track resolves in ~400ms
+if (typeof setTimeout !== 'undefined') {
+  setTimeout(() => {
+    void getSoundCloudClientId(true).catch(() => {});
+  }, 800);
 }
 
 function normalizeStr(s: string): string {
@@ -483,6 +498,23 @@ async function resolveYouTubeMatch(artist: string, title: string, durationSec: n
   }
 }
 
+const GENERIC_CHANNEL_RE =
+  /^(youtube music|top music mix|mega mix|mashup lab|various artists|varios artistas|ile music|dj mix|music mix|reggaeton mix.*|topic|vevo|official|auto-generated)$/i;
+
+function sanitizeMusicSearchText(raw: string): string {
+  return String(raw || '')
+    .replace(/\([^)]*\)|\[[^\]]*\]|【[^】]*】|《|》/g, ' ')
+    .replace(/[×xX+·|/—–•,]+/g, ' ')
+    .replace(/\b(official video|video oficial|official audio|audio oficial|music video|videoclip|lyric video|lyrics?|full hd|4k|remix 20\d\d|20\d\d|prod\.? by [^\s]+)\b/gi, ' ')
+    .replace(/\.\.\./g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isSyntheticOrLongDuration(durationSec: number): boolean {
+  return durationSec <= 0 || durationSec === 205 || durationSec >= 540;
+}
+
 async function resolveSoundCloudStream(
   artist: string,
   title: string,
@@ -499,53 +531,82 @@ async function resolveSoundCloudStream(
     if (explicitScId) {
       const single = await fetchJsonSafe<any>(
         `https://api-v2.soundcloud.com/tracks/${encodeURIComponent(explicitScId)}?client_id=${cid}`,
-        2200
+        2500
       );
       if (single?.id) candidates = [single];
     }
 
-    const primaryArtist = artist.split(',')[0].trim();
-    const cleanTitle = title.replace(/\([^)]*\)|\[[^\]]*\]/g, '').trim() || title;
+    const rawPrimaryArtist = artist.split(',')[0].trim();
+    const primaryArtist = GENERIC_CHANNEL_RE.test(rawPrimaryArtist) ? '' : sanitizeMusicSearchText(rawPrimaryArtist);
+    const cleanTitle = sanitizeMusicSearchText(title) || title;
+    const titleWords = cleanTitle.split(' ').filter((w) => w.length >= 2);
+    const shortKeywords = titleWords.slice(0, 5).join(' ');
+    const anchorPair = titleWords.length >= 3 ? `${titleWords[0]} ${titleWords[titleWords.length - 1]}` : '';
+
     if (candidates.length === 0) {
-      const q = `${primaryArtist} ${cleanTitle}`.trim();
-      const sr = await fetchJsonSafe<any>(
-        `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(q)}&client_id=${cid}&limit=10`,
-        2400
-      );
-      candidates = Array.isArray(sr?.collection) ? sr.collection : [];
-      if (candidates.length === 0 && relaxed && cleanTitle) {
-        const srTitleOnly = await fetchJsonSafe<any>(
-          `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(cleanTitle)}&client_id=${cid}&limit=8`,
-          2200
+      const primaryQuery = [primaryArtist, cleanTitle].filter(Boolean).join(' ').trim();
+      const queriesToTry: string[] = [];
+      if (primaryQuery) queriesToTry.push(primaryQuery);
+      if (cleanTitle && cleanTitle !== primaryQuery) queriesToTry.push(cleanTitle);
+      if (shortKeywords && !queriesToTry.includes(shortKeywords)) {
+        const kwWithArtist = primaryArtist ? `${primaryArtist} ${shortKeywords}` : shortKeywords;
+        queriesToTry.push(kwWithArtist);
+        if (kwWithArtist !== shortKeywords) queriesToTry.push(shortKeywords);
+      }
+      if (relaxed && anchorPair && !queriesToTry.includes(anchorPair)) {
+        queriesToTry.push(anchorPair);
+      }
+
+      for (const q of queriesToTry.slice(0, relaxed ? 4 : 2)) {
+        const sr = await fetchJsonSafe<any>(
+          `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(q)}&client_id=${cid}&limit=12`,
+          2600
         );
-        candidates = Array.isArray(srTitleOnly?.collection) ? srTitleOnly.collection : [];
+        const found = Array.isArray(sr?.collection) ? sr.collection : [];
+        if (found.length > 0) {
+          candidates = [...candidates, ...found];
+          // Stop early if first query already returned playable candidates
+          if (found.some((t: any) => Array.isArray(t?.media?.transcodings) && t.media.transcodings.some((x: any) => !x?.snipped))) {
+            break;
+          }
+        }
       }
     }
 
-    const cleanQuery = `${artist} ${title}`;
-    const wantRemix = /\b(remix|sped up|slowed|nightcore|acoustic|live|cover)\b/i.test(cleanQuery);
-    const minScore = relaxed ? 0.24 : 0.35;
+    const effectiveQuery = [primaryArtist, cleanTitle].filter(Boolean).join(' ').trim() || cleanTitle;
+    const wantRemix = /\b(remix|mashup|mix|sped up|slowed|nightcore|acoustic|live|cover)\b/i.test(`${artist} ${title}`);
+    const longOrSynthetic = isSyntheticOrLongDuration(durationSec);
+    const minScore = relaxed ? (longOrSynthetic ? 0.14 : 0.2) : 0.34;
 
     const scoreCandidate = (t: any): number => {
       const scTitle = String(t?.title || '');
       const scUser = String(t?.user?.username || '');
       const hay = `${scUser} ${scTitle}`;
-      const titleOverlap = tokenOverlapScore(cleanTitle, scTitle);
-      const fullOverlap = tokenOverlapScore(cleanQuery, hay);
-      let score = titleOverlap * 1.4 + fullOverlap;
-      if (!wantRemix && /\b(remix|bootleg|flip|nightcore|sped up|slowed|amapiano|8d|karaoke|instrumental)\b/i.test(scTitle)) {
-        score -= 0.7;
+      const titleOverlap = tokenOverlapScore(cleanTitle, hay);
+      const fullOverlap = tokenOverlapScore(effectiveQuery, hay);
+      let score = titleOverlap * 1.45 + fullOverlap;
+      if (!wantRemix && /\b(bootleg|flip|nightcore|sped up|slowed|8d|karaoke|instrumental)\b/i.test(scTitle)) {
+        score -= 0.55;
+      }
+      if (durationSec >= 540) {
+        const tDur = Number(t?.full_duration || t?.duration || 0) / 1000;
+        if (tDur >= 420) score += 0.45;
       }
       const hasProg = t?.media?.transcodings?.some((x: any) => !x?.snipped && x?.format?.protocol === 'progressive');
       if (hasProg) score += 0.15;
       const tDur = Number(t?.full_duration || t?.duration || 0) / 1000;
-      if (durationSec > 45 && tDur > 0) {
-        score -= Math.min(0.8, Math.abs(tDur - durationSec) / 90);
+      if (!longOrSynthetic && durationSec > 45 && tDur > 0) {
+        score -= Math.min(0.7, Math.abs(tDur - durationSec) / 100);
       }
       return score;
     };
 
-    const valid = candidates
+    const dedupMap = new Map<string, any>();
+    for (const c of candidates) {
+      if (c?.id && !dedupMap.has(String(c.id))) dedupMap.set(String(c.id), c);
+    }
+
+    const valid = [...dedupMap.values()]
       .filter((t) => {
         const trans = t?.media?.transcodings;
         if (!Array.isArray(trans) || trans.length === 0) return false;
@@ -557,11 +618,18 @@ async function resolveSoundCloudStream(
         if (!playable) return false;
         const tDur = Number(t?.full_duration || t?.duration || 0) / 1000;
         if (tDur < 45) return false;
-        if (durationSec > 45 && Math.abs(tDur - durationSec) > (relaxed ? 65 : 38)) return false;
+        if (durationSec >= 540) {
+          // Mix / mashup session: accept any full mix >= 5 min or fallback >= 90s when relaxed
+          if (tDur < (relaxed ? 90 : 300)) return false;
+        } else if (!longOrSynthetic && durationSec > 45) {
+          const maxDiff = relaxed ? Math.max(120, durationSec * 0.6) : 38;
+          if (Math.abs(tDur - durationSec) > maxDiff) return false;
+        }
         const hay = `${t?.user?.username || ''} ${t?.title || ''}`;
-        const titleOv = tokenOverlapScore(cleanTitle, t?.title || '');
-        const fullOv = tokenOverlapScore(cleanQuery, hay);
-        return titleOv >= minScore || fullOv >= minScore;
+        const titleOv = tokenOverlapScore(cleanTitle, hay);
+        const fullOv = tokenOverlapScore(effectiveQuery, hay);
+        const kwOv = shortKeywords ? tokenOverlapScore(shortKeywords, hay) : 0;
+        return Math.max(titleOv, fullOv, kwOv) >= minScore;
       })
       .sort((a, b) => scoreCandidate(b) - scoreCandidate(a));
 
@@ -570,14 +638,15 @@ async function resolveSoundCloudStream(
 
     const transcodings = chosen.media.transcodings as any[];
     const prog = transcodings.find((x) => !x.snipped && x.format?.protocol === 'progressive');
-    const hls = transcodings.find(
-      (x) => !x.snipped && x.format?.protocol === 'hls' && String(x.preset || '').includes('aac')
-    ) || transcodings.find((x) => !x.snipped && x.format?.protocol === 'hls');
+    const hls =
+      transcodings.find(
+        (x) => !x.snipped && x.format?.protocol === 'hls' && String(x.preset || '').includes('aac')
+      ) || transcodings.find((x) => !x.snipped && x.format?.protocol === 'hls');
 
     const picked = prog || hls;
     if (!picked?.url) return null;
 
-    const streamInfo = await fetchJsonSafe<{ url?: string }>(`${picked.url}?client_id=${cid}`, 2000);
+    const streamInfo = await fetchJsonSafe<{ url?: string }>(`${picked.url}?client_id=${cid}`, 2400);
     if (!streamInfo?.url) return null;
 
     return {
@@ -590,7 +659,13 @@ async function resolveSoundCloudStream(
   }
 }
 
-async function resolveAudiusStream(artist: string, title: string, durationSec: number, explicitAudiusId?: string) {
+async function resolveAudiusStream(
+  artist: string,
+  title: string,
+  durationSec: number,
+  explicitAudiusId?: string,
+  relaxed = false
+) {
   try {
     if (explicitAudiusId) {
       return {
@@ -599,17 +674,27 @@ async function resolveAudiusStream(artist: string, title: string, durationSec: n
         label: 'Audius Hi-Fi',
       };
     }
-    const q = `${artist.split(',')[0].trim()} ${title}`.trim();
+    const rawPrimary = artist.split(',')[0].trim();
+    const cleanArtist = GENERIC_CHANNEL_RE.test(rawPrimary) ? '' : sanitizeMusicSearchText(rawPrimary);
+    const cleanTitle = sanitizeMusicSearchText(title) || title;
+    const q = [cleanArtist, cleanTitle].filter(Boolean).join(' ').trim();
     const res = await fetchJsonSafe<{ data?: any[] }>(
       `https://discoveryprovider.audius.co/v1/tracks/search?query=${encodeURIComponent(q)}&app_name=RIFFAN`,
-      1600
+      2000
     );
     const items = Array.isArray(res?.data) ? res.data : [];
+    const longOrSynthetic = isSyntheticOrLongDuration(durationSec);
+    const minScore = relaxed ? 0.35 : 0.62;
     const hit = items.find((t) => {
       const dur = Number(t?.duration || 0);
-      if (durationSec > 45 && dur > 0 && Math.abs(dur - durationSec) > 35) return false;
+      if (dur < 45) return false;
+      if (!longOrSynthetic && durationSec > 45 && dur > 0) {
+        const maxDiff = relaxed ? 100 : 35;
+        if (Math.abs(dur - durationSec) > maxDiff) return false;
+      }
       const hay = `${t?.user?.name || ''} ${t?.title || ''}`;
-      return tokenOverlapScore(q, hay) >= 0.65 && !/remix|flip|bootleg/i.test(t?.title || '');
+      const score = Math.max(tokenOverlapScore(q, hay), tokenOverlapScore(cleanTitle, hay));
+      return score >= minScore && (relaxed || !/bootleg|nightcore|sped up/i.test(t?.title || ''));
     });
     if (hit?.id) {
       return {
@@ -1313,6 +1398,74 @@ export async function getTrackLyrics(params: {
   return payload;
 }
 
+async function resolveYouTubeAudioStream(
+  videoId: string
+): Promise<{ sourceType: 'audio-mp3'; url: string; label: string } | null> {
+  const cleanId = String(videoId || '').trim();
+  if (!cleanId || cleanId.length !== 11) return null;
+  try {
+    const res = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent':
+          'com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',
+      },
+      body: JSON.stringify({
+        context: {
+          client: {
+            clientName: 'ANDROID_VR',
+            clientVersion: '1.60.19',
+            androidSdkVersion: 32,
+            userAgent:
+              'com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip',
+          },
+        },
+        videoId: cleanId,
+        contentCheckOk: true,
+        racyOk: true,
+      }),
+      signal: AbortSignal.timeout(4500),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as any;
+    if (data?.playabilityStatus?.status !== 'OK') return null;
+
+    const formats: any[] = [
+      ...(Array.isArray(data?.streamingData?.adaptiveFormats)
+        ? data.streamingData.adaptiveFormats
+        : []),
+      ...(Array.isArray(data?.streamingData?.formats) ? data.streamingData.formats : []),
+    ];
+    const audioOnly = formats.filter(
+      (f) => f?.url && String(f?.mimeType || '').toLowerCase().startsWith('audio/')
+    );
+    if (audioOnly.length === 0) return null;
+
+    // Prefer itag 140 (128kbps AAC-LC MP4) for universal Safari/iOS + Chrome/Android hardware decode & seeking
+    const preferredOrder = [140, 141, 139, 251, 250, 249];
+    audioOnly.sort((a, b) => {
+      const ia = preferredOrder.indexOf(Number(a?.itag || 0));
+      const ib = preferredOrder.indexOf(Number(b?.itag || 0));
+      const ra = ia === -1 ? 99 : ia;
+      const rb = ib === -1 ? 99 : ib;
+      if (ra !== rb) return ra - rb;
+      return Number(b?.bitrate || 0) - Number(a?.bitrate || 0);
+    });
+
+    const best = audioOnly[0];
+    if (!best?.url) return null;
+
+    return {
+      sourceType: 'audio-mp3',
+      url: String(best.url),
+      label: 'Audio HD · Directo 8D',
+    };
+  } catch {
+    return null;
+  }
+}
+
 export async function resolveTrackPlayback(params: {
   title: string;
   artist: string;
@@ -1346,7 +1499,7 @@ export async function resolveTrackPlayback(params: {
     return fastAu;
   }
 
-  // 0ms fast path when track carries a YouTube Video ID and direct WebAudio isn't explicitly requested
+  // 0ms fast path when track carries a YouTube Video ID and direct WebAudio (8D/EQ) isn't explicitly requested
   if (params.youtubeVideoId && !preferAudio) {
     const fastYt: ResolvedTrackPlayback = {
       sourceType: 'youtube',
@@ -1360,7 +1513,13 @@ export async function resolveTrackPlayback(params: {
     return fastYt;
   }
 
-  // Trigger SoundCloud & Audius direct streams (allowing on-demand client_id scrape when preferAudio is requested for 8D)
+  // Fast direct YouTube AAC-MP4 stream when track has known youtubeVideoId & WebAudio DSP is active (exact track + duration)
+  const ytDirectFastPromise =
+    preferAudio && params.youtubeVideoId
+      ? resolveYouTubeAudioStream(params.youtubeVideoId)
+      : Promise.resolve(null);
+
+  // Trigger SoundCloud & Audius direct streams in parallel
   const scPromise = resolveSoundCloudStream(
     params.artist,
     params.title,
@@ -1371,19 +1530,24 @@ export async function resolveTrackPlayback(params: {
   );
   const audiusPromise = CJK_CHAR_RE.test(`${params.artist} ${params.title}`) && !preferAudio
     ? Promise.resolve(null)
-    : resolveAudiusStream(params.artist, params.title, durationSec);
+    : resolveAudiusStream(params.artist, params.title, durationSec, params.audiusId, preferAudio);
   const ytPromise = params.youtubeVideoId
     ? Promise.resolve({ audioId: params.youtubeVideoId, mvId: params.youtubeVideoId })
     : resolveYouTubeMatch(params.artist, params.title, durationSec);
 
   type DirectStream = { sourceType: 'audio-mp3' | 'audio-hls'; url: string; label: string } | null;
   const holder: {
+    ytDirect: DirectStream;
     sc: DirectStream;
     audius: DirectStream;
     yt: { audioId?: string; mvId?: string };
-  } = { sc: null, audius: null, yt: {} };
+  } = { ytDirect: null, sc: null, audius: null, yt: {} };
 
   const directRace = Promise.all([
+    ytDirectFastPromise.then((v) => {
+      holder.ytDirect = v;
+      return v;
+    }),
     audiusPromise.then((v) => {
       holder.audius = v;
       return v;
@@ -1394,16 +1558,19 @@ export async function resolveTrackPlayback(params: {
     }),
   ]);
 
-  const ytSettled = ytPromise.then((v) => {
+  const ytSettled = ytPromise.then(async (v) => {
     holder.yt = v;
+    if (preferAudio && !params.youtubeVideoId && !holder.ytDirect && !holder.audius && !holder.sc && v.audioId) {
+      holder.ytDirect = await resolveYouTubeAudioStream(v.audioId);
+    }
     return v;
   });
 
   if (preferAudio) {
-    // Wait up to 3400ms for a direct CORS-compatible MP3/HLS stream for real-time 8D DSP
+    // Resolve direct CORS-proxied stream quickly (~500ms if ytDirect hits) or cap at 6200ms
     await Promise.race([
       Promise.all([directRace, ytSettled]),
-      new Promise((r) => setTimeout(r, 3400)),
+      new Promise((r) => setTimeout(r, 6200)),
     ]);
   } else {
     // Normal mode: return as soon as YouTube resolves + brief 180ms grace window for direct MP3, hard cap 2400ms
@@ -1420,7 +1587,8 @@ export async function resolveTrackPlayback(params: {
     ]);
   }
 
-  const direct = holder.audius || holder.sc;
+  // Prefer exact YT Direct or SoundCloud full match ahead of general Audius search (explicit audiusId returned early at line 1486)
+  const direct = holder.ytDirect || holder.sc || holder.audius;
   let result: ResolvedTrackPlayback;
 
   if (direct) {
@@ -1435,26 +1603,14 @@ export async function resolveTrackPlayback(params: {
       fullLength: true,
     };
   } else if (preferAudio) {
-    // Last-resort fallback for rare tracks with no SoundCloud/Audius mirror: look up an 8D YouTube rendition or keep regular YT
-    const cleanArtist = params.artist.split(',')[0].trim();
-    const yt8dCandidates = await searchYouTubeHtmlFallback(`${cleanArtist} ${params.title} 8D audio`, durationSec, true);
-    const yt8dId = yt8dCandidates[0]?.id;
-    if (yt8dId) {
-      result = {
-        sourceType: 'youtube',
-        sourceLabel: 'YouTube 8D Audio',
-        youtubeVideoId: yt8dId,
-        youtubeMvId: holder.yt.mvId || params.youtubeVideoId || yt8dId,
-        previewUrl: params.previewUrl,
-        fullLength: true,
-        spatial8dYtFallback: true,
-      };
-    } else if (holder.yt.audioId || holder.yt.mvId || params.youtubeVideoId) {
+    // Last-resort fallback for rare tracks with no SoundCloud/Audius/YouTube direct stream
+    const fallbackYtId = holder.yt.audioId || holder.yt.mvId || params.youtubeVideoId;
+    if (fallbackYtId) {
       result = {
         sourceType: 'youtube',
         sourceLabel: 'YouTube Audio HD',
-        youtubeVideoId: holder.yt.audioId || holder.yt.mvId || params.youtubeVideoId,
-        youtubeMvId: holder.yt.mvId || holder.yt.audioId || params.youtubeVideoId,
+        youtubeVideoId: fallbackYtId,
+        youtubeMvId: holder.yt.mvId || fallbackYtId,
         previewUrl: params.previewUrl,
         fullLength: true,
       };
@@ -1502,7 +1658,7 @@ export async function resolveTrackPlayback(params: {
     },
     'riffan_music_resolved_playback'
   );
-  if (result.fullLength || result.streamUrl) {
+  if ((result.fullLength && (!preferAudio || result.sourceType !== 'youtube')) || result.proxiedUrl) {
     playbackCache.set(key, result);
   }
   return result;

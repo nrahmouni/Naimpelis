@@ -19,6 +19,7 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { useMusicStore } from '../../store/useMusicStore';
+import { unlockGlobalAudio8dContexts } from '../../hooks/useAudio8D';
 import { triggerHaptic } from '../../utils/haptics';
 import { RiffanMusicLogo } from './RiffanMusicLogo';
 import { MUSIC_I18N } from './musicI18n';
@@ -65,15 +66,22 @@ export const SpotifyPlayerBar: React.FC = () => {
   const setShowQueueDrawer = useMusicStore((s) => s.setShowQueueDrawer);
   const setShowEqModal = useMusicStore((s) => s.setShowEqModal);
 
+  const [imgError, setImgError] = React.useState(false);
+
+  const coverSrc = activeRadio
+    ? activeRadio.favicon
+    : currentTrack?.album.coverXl || currentTrack?.album.cover || '';
+
+  React.useEffect(() => {
+    setImgError(false);
+  }, [coverSrc]);
+
   if (!currentTrack && !activeRadio) return null;
 
   const isLiked = currentTrack ? likedTracks.some((t) => t.id === currentTrack.id) : false;
   const effectiveDuration = duration > 0 ? duration : currentTrack?.durationSec || 0;
   const pct = effectiveDuration > 0 ? Math.min(100, Math.max(0, (currentTime / effectiveDuration) * 100)) : 0;
 
-  const coverSrc = activeRadio
-    ? activeRadio.favicon
-    : currentTrack?.album.coverXl || currentTrack?.album.cover || '';
   const titleText = activeRadio ? activeRadio.name : currentTrack?.title || '';
   const subText = activeRadio
     ? `${m.liveRadioCountry} · ${activeRadio.country}`
@@ -81,13 +89,13 @@ export const SpotifyPlayerBar: React.FC = () => {
 
   return (
     <div
-      className="fixed bottom-0 inset-x-0 z-40 bg-[#050911]/95 backdrop-blur-2xl border-t border-[#10B981]/20 px-3 sm:px-6 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] shadow-[0_-18px_48px_rgba(0,0,0,0.82)]"
+      className="fixed bottom-0 inset-x-0 z-40 bg-[#050911]/96 backdrop-blur-2xl border-t border-white/[0.08] px-3 sm:px-6 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] shadow-[0_-18px_48px_rgba(0,0,0,0.85)]"
       role="region"
       aria-label={m.playerRegionAria}
     >
-      {/* Mobile ultra-slim hairline progress bar */}
+      {/* Mobile slim progress indicator */}
       {!activeRadio && (
-        <div className="sm:hidden absolute top-0 inset-x-0 h-[2.5px] bg-white/10">
+        <div className="sm:hidden absolute top-0 inset-x-0 h-[2.5px] bg-white/10 overflow-hidden">
           <div
             className="h-full bg-gradient-to-r from-[#10B981] via-[#22D3EE] to-[#6EE7B7] transition-[width] duration-200"
             style={{ width: `${pct}%` }}
@@ -97,35 +105,32 @@ export const SpotifyPlayerBar: React.FC = () => {
 
       <div className="max-w-[1680px] mx-auto flex items-center justify-between gap-2 sm:gap-4 min-h-[54px] sm:min-h-[64px]">
         {/* Left: Cover + Track metadata + Heart */}
-        <div className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1 sm:flex-initial sm:w-[29%]">
+        <div className="flex items-center gap-1.5 sm:gap-3 min-w-0 flex-1 sm:flex-initial sm:w-[29%]">
           <button
             type="button"
             onClick={() => {
               triggerHaptic('light');
               setShowNowPlayingModal(true);
             }}
-            className="group flex items-center gap-2.5 sm:gap-3 min-w-0 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] rounded-xl"
+            className="group flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1 sm:flex-initial text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] rounded-xl"
           >
-            <div className="relative w-11 h-11 sm:w-13 sm:h-13 rounded-xl overflow-hidden bg-[#0B121D] border border-[#10B981]/25 shrink-0 flex items-center justify-center shadow-[0_6px_18px_rgba(16,185,129,0.16)]">
-              {coverSrc ? (
+            <div className="relative w-11 h-11 sm:w-13 sm:h-13 rounded-xl overflow-hidden bg-[#0B121D] border border-white/12 shrink-0 flex items-center justify-center shadow-[0_6px_18px_rgba(0,0,0,0.45)]">
+              {coverSrc && !imgError ? (
                 <img
                   src={coverSrc}
                   alt={titleText}
                   referrerPolicy="no-referrer"
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none';
-                  }}
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  onError={() => setImgError(true)}
+                  className="relative z-10 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
-              ) : null}
-              {activeRadio ? (
-                <Radio className="w-5 h-5 text-[#22D3EE] absolute pointer-events-none opacity-85" />
+              ) : activeRadio ? (
+                <Radio className="w-5 h-5 text-[#22D3EE]" />
               ) : (
-                <RiffanMusicLogo variant="mark" size={28} withFrame={false} className="-z-10" />
+                <RiffanMusicLogo variant="mark" size={26} withFrame={false} />
               )}
             </div>
 
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <p className="text-xs sm:text-sm font-semibold text-white truncate leading-tight">
                 {titleText}
               </p>
@@ -161,7 +166,7 @@ export const SpotifyPlayerBar: React.FC = () => {
                 toggleLikeTrack(currentTrack);
               }}
               aria-label={isLiked ? m.likeRemove : m.likeAdd}
-              className={`min-w-11 min-h-11 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] ${
+              className={`min-w-10 min-h-10 sm:min-w-11 sm:min-h-11 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] ${
                 isLiked ? 'text-[#34D399]' : 'text-zinc-400 hover:text-white'
               }`}
             >
@@ -263,6 +268,7 @@ export const SpotifyPlayerBar: React.FC = () => {
           <button
             type="button"
             onClick={() => {
+              unlockGlobalAudio8dContexts();
               triggerHaptic('light');
               toggleSpatial8d();
             }}
@@ -293,6 +299,7 @@ export const SpotifyPlayerBar: React.FC = () => {
           <button
             type="button"
             onClick={() => {
+              unlockGlobalAudio8dContexts();
               triggerHaptic('light');
               togglePlayPause();
             }}
@@ -312,6 +319,7 @@ export const SpotifyPlayerBar: React.FC = () => {
           <button
             type="button"
             onClick={() => {
+              unlockGlobalAudio8dContexts();
               triggerHaptic('light');
               toggleSpatial8d();
             }}

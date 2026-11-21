@@ -145,6 +145,7 @@ export function registerOperationalRoutes(
       new Set([
         ENV.androidMobilePkg,
         ENV.androidTvPkg,
+        ENV.androidMusicPkg,
         ENV.legacyAndroidPkg,
       ])
     );
@@ -176,8 +177,10 @@ export function registerOperationalRoutes(
 
     const mobileApkPath = path.join(ROOT_DIR, 'public', 'RIFFAN-TV.apk');
     const tvApkPath = path.join(ROOT_DIR, 'public', 'RIFFAN-TV-TV.apk');
+    const musicApkPath = path.join(ROOT_DIR, 'public', 'RIFFAN-MUSIC.apk');
     let mobileBytes = fs.existsSync(mobileApkPath) ? fs.statSync(mobileApkPath).size : 0;
     let tvBytes = fs.existsSync(tvApkPath) ? fs.statSync(tvApkPath).size : 0;
+    let musicBytes = fs.existsSync(musicApkPath) ? fs.statSync(musicApkPath).size : 0;
     if (!mobileBytes) {
       try {
         mobileBytes = buildSignedApkBuffer('mobile', origin).length;
@@ -190,6 +193,13 @@ export function registerOperationalRoutes(
         tvBytes = buildSignedApkBuffer('tv', origin).length;
       } catch {
         tvBytes = 0;
+      }
+    }
+    if (!musicBytes) {
+      try {
+        musicBytes = buildSignedApkBuffer('music', origin).length;
+      } catch {
+        musicBytes = 0;
       }
     }
 
@@ -227,6 +237,20 @@ export function registerOperationalRoutes(
           es: 'Nueva interfaz personalizada Google TV 10-foot con mando físico D-Pad + vinculación rápida por código de 4 dígitos.',
           ca: 'Nova interfície personalitzada Google TV 10-foot amb comandament físic D-Pad + vinculació per codi de 4 dígits.',
           en: 'Custom 10-foot Google TV UI with full physical D-Pad navigation plus 4-digit mobile pairing.',
+        },
+      },
+      music: {
+        packageName: ENV.androidMusicPkg,
+        versionCode: ENV.appVersionCodeMusic,
+        versionName: ENV.appVersionName,
+        minSupportedVersionCode: 100,
+        forceUpdate: false,
+        apkUrl: `${origin}/RIFFAN-MUSIC.apk?v=${ENV.appVersionCodeMusic}`,
+        sizeBytes: musicBytes,
+        changelog: {
+          es: 'App independiente Riffan Music con Audio 8D HRTF, ecualizador de 10 bandas con 18 perfiles, letras sincronizadas y +70 radios.',
+          ca: 'App independent Riffan Music amb Àudio 8D HRTF, equalitzador de 10 bandes amb 18 perfils, lletres sincronitzades i +70 ràdios.',
+          en: 'Standalone Riffan Music app with 8D HRTF spatial audio, 10-band 18-profile equalizer, synced lyrics, and 70+ live radios.',
         },
       },
     };

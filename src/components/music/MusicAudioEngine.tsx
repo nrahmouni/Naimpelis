@@ -1,36 +1,43 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import { useMusicStore } from '../../store/useMusicStore';
-import type { EqPresetId, ResolvedTrackPlayback, Spatial8dMode } from '../../types/music';
+import { useAudio8D, type Audio8DTelemetry } from '../../hooks/useAudio8D';
+import type { ResolvedTrackPlayback } from '../../types/music';
+import { EQ_PRESETS, resolveEqGains } from './eqPresets';
+import { hasActiveAudioFx, resolveAudioFxParams } from './audioEffects';
 
-const EQ_BANDS_HZ = [60, 230, 910, 4000, 14000] as const;
-
-export const EQ_PRESETS: Record<EqPresetId, { label: string; gains: number[] }> = {
-  flat: { label: 'Plano', gains: [0, 0, 0, 0, 0] },
-  bass: { label: 'Sub Bass', gains: [6, 4.5, 0.5, 1, 2] },
-  vocal: { label: 'Voz Clara', gains: [-2, -1, 4.5, 3.5, 1] },
-  club: { label: 'Club / Electrónica', gains: [5, 2.5, -1.5, 3, 5] },
-  acoustic: { label: 'Acústico', gains: [2.5, 1.5, 2, 3, 2] },
-};
-
-const SPATIAL_PROFILES: Record<
-  Spatial8dMode,
-  { periodSec: number; radius: number; stereoDepth: number; reverbMix: number; centerMix: number; warmthDb: number }
-> = {
-  orbit: { periodSec: 9.5, radius: 1.75, stereoDepth: 0.42, reverbMix: 0.24, centerMix: 0.2, warmthDb: 2.2 },
-  concert: { periodSec: 11.5, radius: 2.05, stereoDepth: 0.48, reverbMix: 0.36, centerMix: 0.18, warmthDb: 2.8 },
-  club: { periodSec: 5.2, radius: 1.9, stereoDepth: 0.55, reverbMix: 0.2, centerMix: 0.16, warmthDb: 3.2 },
-};
+export { EQ_PRESETS };
 
 let sharedAnalyserNode: AnalyserNode | null = null;
 let sharedFreqArray: Uint8Array<ArrayBuffer> | null = null;
-let sharedSpatialAngleRad = 0;
-let sharedSpatialEngineActive = false;
+let sharedTelemetryGetter: (() => Audio8DTelemetry) | null = null;
 
-export function getSpatial8dTelemetry() {
+export function getSpatial8dTelemetry(): {
+  angleRad: number;
+  x: number;
+  y: number;
+  z: number;
+  occlusionCutoffHz: number;
+  activeWebAudio: boolean;
+} {
+  const t = sharedTelemetryGetter?.();
+  if (!t) {
+    return {
+      angleRad: 0,
+      x: 0,
+      y: 0,
+      z: 1.8,
+      occlusionCutoffHz: 20000,
+      activeWebAudio: false,
+    };
+  }
   return {
-    angleRad: sharedSpatialAngleRad,
-    activeWebAudio: sharedSpatialEngineActive,
+    angleRad: t.angleRad,
+    x: t.x,
+    y: t.y,
+    z: t.z,
+    occlusionCutoffHz: t.occlusionCutoffHz,
+    activeWebAudio: t.isWebAudioActive,
   };
 }
 
@@ -49,31 +56,6 @@ export function sampleMusicSpectrum(barCount = 24): number[] {
   return out;
 }
 
-function createStudioHallImpulse(ctx: AudioContext, durationSec = 1.45, decay = 2.6): AudioBuffer {
-  const sampleRate = ctx.sampleRate || 44100;
-  const length = Math.max(1, Math.floor(sampleRate * durationSec));
-  const buffer = ctx.createBuffer(2, length, sampleRate);
-  const earlyTaps = [0.016, 0.031, 0.053];
-
-  for (let ch = 0; ch < 2; ch++) {
-    const data = buffer.getChannelData(ch);
-    let lp = 0;
-    for (let i = 0; i < length; i++) {
-      const t = i / length;
-      const noise = Math.random() * 2 - 1;
-      lp = lp * 0.52 + noise * 0.48;
-      data[i] = lp * Math.pow(1 - t, decay) * 0.65;
-    }
-    earlyTaps.forEach((tapSec, idx) => {
-      const tapIdx = Math.floor((tapSec + ch * 0.004) * sampleRate);
-      if (tapIdx < length) {
-        data[tapIdx] += 0.28 / (idx + 1);
-      }
-    });
-  }
-  return buffer;
-}
-
 export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
   ytVideoMountId = 'riffan-music-yt-player',
 }) => {
@@ -86,266 +68,84 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
   const playbackRate = useMusicStore((s) => s.playbackRate);
   const viewMode = useMusicStore((s) => s.viewMode);
   const eqPreset = useMusicStore((s) => s.eqPreset);
+  const customEqBands = useMusicStore((s) => s.customEqBands);
+  const fxPreset = useMusicStore((s) => s.fxPreset);
+  const customFxParams = useMusicStore((s) => s.customFxParams);
+  const stemMode = useMusicStore((s) => s.stemMode);
   const spatial8dEnabled = useMusicStore((s) => s.spatial8dEnabled);
   const spatial8dMode = useMusicStore((s) => s.spatial8dMode);
+  const spatial8dSpeed = useMusicStore((s) => s.spatial8dSpeed);
+  const spatial8dReverb = useMusicStore((s) => s.spatial8dReverb);
+  const spatial8dDepth = useMusicStore((s) => s.spatial8dDepth);
   const seekRequestSec = useMusicStore((s) => s.seekRequestSec);
   const sleepTimerEndsAt = useMusicStore((s) => s.sleepTimerEndsAt);
+
+  const setSpatial8dEnabled = useMusicStore((s) => s.setSpatial8dEnabled);
+  const setSpatial8dSpeed = useMusicStore((s) => s.setSpatial8dSpeed);
+  const setSpatial8dReverb = useMusicStore((s) => s.setSpatial8dReverb);
+  const setSpatial8dDepth = useMusicStore((s) => s.setSpatial8dDepth);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const ytPlayerRef = useRef<any>(null);
   const ytReadyRef = useRef<boolean>(false);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const filtersRef = useRef<BiquadFilterNode[]>([]);
-  const mediaSourceConnectedRef = useRef<boolean>(false);
   const activeBackendRef = useRef<'html-audio' | 'youtube' | 'none'>('none');
+  const [activeBackend, setActiveBackend] = useState<'html-audio' | 'youtube' | 'none'>('none');
   const pendingResumeSecRef = useRef<number | null>(null);
-
-  // Web Audio 8D Spatializer node refs
-  const dryBypassGainRef = useRef<GainNode | null>(null);
-  const spatialMasterGainRef = useRef<GainNode | null>(null);
-  const spatialWarmthRef = useRef<BiquadFilterNode | null>(null);
-  const panner3dRef = useRef<PannerNode | null>(null);
-  const stereoPannerRef = useRef<StereoPannerNode | null>(null);
-  const centerAnchorGainRef = useRef<GainNode | null>(null);
-  const reverbWetGainRef = useRef<GainNode | null>(null);
+  const lastResolvedTrackIdRef = useRef<string | null>(null);
 
   const playNextRef = useRef(() => useMusicStore.getState().playNext());
   playNextRef.current = () => useMusicStore.getState().playNext();
 
-  const ensureWebAudioChain = () => {
-    const el = audioRef.current;
-    if (!el || typeof window === 'undefined') return;
-    try {
-      const AC =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AC) return;
-      const ctx = audioCtxRef.current || new AC();
-      audioCtxRef.current = ctx;
-      if (ctx.state === 'suspended') {
-        void ctx.resume().catch(() => {});
-      }
-      if (mediaSourceConnectedRef.current) return;
+  const eqGainsDb = useMemo(
+    () => resolveEqGains(eqPreset, customEqBands),
+    [eqPreset, customEqBands]
+  );
 
-      const src = ctx.createMediaElementSource(el);
-      const filters = EQ_BANDS_HZ.map((freq, idx) => {
-        const biquad = ctx.createBiquadFilter();
-        biquad.type = idx === 0 ? 'lowshelf' : idx === EQ_BANDS_HZ.length - 1 ? 'highshelf' : 'peaking';
-        biquad.frequency.value = freq;
-        biquad.Q.value = 1.1;
-        biquad.gain.value = EQ_PRESETS[useMusicStore.getState().eqPreset]?.gains[idx] || 0;
-        return biquad;
-      });
+  const activeFxParams = useMemo(
+    () => resolveAudioFxParams(fxPreset, customFxParams),
+    [fxPreset, customFxParams]
+  );
 
-      const eqOut = ctx.createGain();
-      eqOut.gain.value = 1;
+  const isFxActive = useMemo(
+    () => fxPreset !== 'none' || hasActiveAudioFx(activeFxParams),
+    [fxPreset, activeFxParams]
+  );
 
-      let prev: AudioNode = src;
-      for (const f of filters) {
-        prev.connect(f);
-        prev = f;
-      }
-      prev.connect(eqOut);
+  const audio8d = useAudio8D({
+    mediaElementRef: audioRef,
+    isPlaying,
+    isActiveBackend: activeBackend === 'html-audio',
+    enabled: spatial8dEnabled,
+    spatialMode: spatial8dMode,
+    stemMode,
+    fxParams: activeFxParams,
+    speed: spatial8dSpeed,
+    reverbAmount: spatial8dReverb,
+    depth: spatial8dDepth,
+    eqGainsDb,
+    onEnabledChange: setSpatial8dEnabled,
+    onSpeedChange: setSpatial8dSpeed,
+    onReverbAmountChange: setSpatial8dReverb,
+    onDepthChange: setSpatial8dDepth,
+  });
 
-      // Dry bypass branch
-      const st = useMusicStore.getState();
-      const use8d = st.spatial8dEnabled;
-      const prof = SPATIAL_PROFILES[st.spatial8dMode] || SPATIAL_PROFILES.orbit;
-
-      const dryBypassGain = ctx.createGain();
-      dryBypassGain.gain.value = use8d ? 0 : 1;
-
-      // 8D Binaural Spatializer branch
-      const spatialMasterGain = ctx.createGain();
-      spatialMasterGain.gain.value = use8d ? 1.04 : 0;
-
-      const spatialWarmth = ctx.createBiquadFilter();
-      spatialWarmth.type = 'lowshelf';
-      spatialWarmth.frequency.value = 115;
-      spatialWarmth.gain.value = prof.warmthDb;
-
-      const centerAnchorGain = ctx.createGain();
-      centerAnchorGain.gain.value = prof.centerMix;
-
-      const panner3d = ctx.createPanner();
-      panner3d.panningModel = 'HRTF';
-      panner3d.distanceModel = 'inverse';
-      panner3d.refDistance = 2.2;
-      panner3d.maxDistance = 100;
-      panner3d.rolloffFactor = 0.32;
-      panner3d.coneInnerAngle = 360;
-      panner3d.coneOuterAngle = 360;
-      panner3d.coneOuterGain = 1;
-
-      const stereoPanner = ctx.createStereoPanner();
-      stereoPanner.pan.value = 0;
-
-      const spatialDirectGain = ctx.createGain();
-      spatialDirectGain.gain.value = 0.92;
-
-      const convolver = ctx.createConvolver();
-      convolver.buffer = createStudioHallImpulse(ctx);
-
-      const reverbDamp = ctx.createBiquadFilter();
-      reverbDamp.type = 'lowpass';
-      reverbDamp.frequency.value = 5600;
-
-      const reverbWetGain = ctx.createGain();
-      reverbWetGain.gain.value = prof.reverbMix;
-
-      eqOut.connect(dryBypassGain);
-      eqOut.connect(spatialWarmth);
-
-      // Centered vocal body anchor
-      spatialWarmth.connect(centerAnchorGain);
-      centerAnchorGain.connect(spatialMasterGain);
-
-      // 360° HRTF orbit + stereo smoothness + hall reverb
-      spatialWarmth.connect(panner3d);
-      panner3d.connect(stereoPanner);
-      stereoPanner.connect(spatialDirectGain);
-      spatialDirectGain.connect(spatialMasterGain);
-
-      stereoPanner.connect(convolver);
-      convolver.connect(reverbDamp);
-      reverbDamp.connect(reverbWetGain);
-      reverbWetGain.connect(spatialMasterGain);
-
-      // Analyser + Protective Studio Compressor -> Output
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 128;
-      analyser.smoothingTimeConstant = 0.78;
-
-      const limiter = ctx.createDynamicsCompressor();
-      limiter.threshold.value = -11;
-      limiter.knee.value = 16;
-      limiter.ratio.value = 3;
-      limiter.attack.value = 0.004;
-      limiter.release.value = 0.18;
-
-      dryBypassGain.connect(analyser);
-      spatialMasterGain.connect(analyser);
-      analyser.connect(limiter);
-      limiter.connect(ctx.destination);
-
-      filtersRef.current = filters;
-      dryBypassGainRef.current = dryBypassGain;
-      spatialMasterGainRef.current = spatialMasterGain;
-      spatialWarmthRef.current = spatialWarmth;
-      panner3dRef.current = panner3d;
-      stereoPannerRef.current = stereoPanner;
-      centerAnchorGainRef.current = centerAnchorGain;
-      reverbWetGainRef.current = reverbWetGain;
-
-      sharedAnalyserNode = analyser;
-      sharedFreqArray = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
-      mediaSourceConnectedRef.current = true;
-    } catch {
-      // Fall back silently to direct HTML5 audio output
-    }
-  };
-
-  // Smoothly crossfade 8D spatializer nodes whenever enabled/mode updates
+  // Exponer analizador de espectro y telemetría DSP a la UI
   useEffect(() => {
-    const ctx = audioCtxRef.current;
-    if (!ctx || !mediaSourceConnectedRef.current) return;
-    if (spatial8dEnabled && ctx.state === 'suspended') {
-      void ctx.resume().catch(() => {});
-    }
-    const now = ctx.currentTime;
-    const prof = SPATIAL_PROFILES[spatial8dMode] || SPATIAL_PROFILES.orbit;
-    try {
-      dryBypassGainRef.current?.gain.setTargetAtTime(spatial8dEnabled ? 0 : 1, now, 0.08);
-      spatialMasterGainRef.current?.gain.setTargetAtTime(spatial8dEnabled ? 1.04 : 0, now, 0.08);
-      spatialWarmthRef.current?.gain.setTargetAtTime(prof.warmthDb, now, 0.08);
-      centerAnchorGainRef.current?.gain.setTargetAtTime(prof.centerMix, now, 0.08);
-      reverbWetGainRef.current?.gain.setTargetAtTime(prof.reverbMix, now, 0.08);
-    } catch {
-      // ignore
-    }
-  }, [spatial8dEnabled, spatial8dMode]);
-
-  // Continuous 60fps 360° Binaural Orbit Animator
-  useEffect(() => {
-    const panner = panner3dRef.current;
-    const stereo = stereoPannerRef.current;
-    const ctx = audioCtxRef.current;
-
-    if (!spatial8dEnabled) {
-      sharedSpatialEngineActive = false;
-      if (ctx && panner && stereo) {
-        const now = ctx.currentTime;
-        try {
-          panner.positionX.setTargetAtTime(0, now, 0.06);
-          panner.positionY.setTargetAtTime(0, now, 0.06);
-          panner.positionZ.setTargetAtTime(-1, now, 0.06);
-          stereo.pan.setTargetAtTime(0, now, 0.06);
-        } catch {
-          // ignore
-        }
-      }
-      return;
-    }
-
-    if (!isPlaying) {
-      sharedSpatialEngineActive = activeBackendRef.current === 'html-audio';
-      return;
-    }
-
-    let rafId = 0;
-    let lastTs = performance.now();
-    const tick = (ts: number) => {
-      const dtSec = Math.min(0.1, Math.max(0.001, (ts - lastTs) / 1000));
-      lastTs = ts;
-
-      const prof = SPATIAL_PROFILES[useMusicStore.getState().spatial8dMode] || SPATIAL_PROFILES.orbit;
-      const isHtmlAudio = activeBackendRef.current === 'html-audio';
-      sharedSpatialEngineActive = isHtmlAudio;
-
-      if (useMusicStore.getState().isPlaying) {
-        const omega = (Math.PI * 2) / prof.periodSec;
-        sharedSpatialAngleRad = (sharedSpatialAngleRad + omega * dtSec) % (Math.PI * 2);
-
-        const cCtx = audioCtxRef.current;
-        const p3 = panner3dRef.current;
-        const sp = stereoPannerRef.current;
-        if (cCtx && p3 && sp && isHtmlAudio) {
-          const now = cCtx.currentTime;
-          const x = prof.radius * Math.sin(sharedSpatialAngleRad);
-          const z = -prof.radius * Math.cos(sharedSpatialAngleRad);
-          const y = 0.24 * Math.sin(sharedSpatialAngleRad * 2);
-          try {
-            p3.positionX.setTargetAtTime(x, now, 0.028);
-            p3.positionY.setTargetAtTime(y, now, 0.028);
-            p3.positionZ.setTargetAtTime(z, now, 0.028);
-            sp.pan.setTargetAtTime(Math.sin(sharedSpatialAngleRad) * prof.stereoDepth, now, 0.028);
-          } catch {
-            // ignore
-          }
-        }
-      }
-      rafId = requestAnimationFrame(tick);
-    };
-
-    rafId = requestAnimationFrame(tick);
+    const analyser = audio8d.getAnalyserNode();
+    sharedAnalyserNode = analyser;
+    sharedFreqArray = analyser ? new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount)) : null;
+    sharedTelemetryGetter = audio8d.getTelemetry;
     return () => {
-      cancelAnimationFrame(rafId);
-      sharedSpatialEngineActive = false;
+      sharedAnalyserNode = null;
+      sharedFreqArray = null;
+      sharedTelemetryGetter = null;
     };
-  }, [spatial8dEnabled, spatial8dMode, isPlaying, activeRadio?.id, currentTrack?.id, resolvedPlayback?.sourceType]);
+  }, [audio8d]);
 
-  // Sync EQ gains whenever preset changes
-  useEffect(() => {
-    const gains = EQ_PRESETS[eqPreset]?.gains || [0, 0, 0, 0, 0];
-    filtersRef.current.forEach((filter, idx) => {
-      try {
-        filter.gain.setTargetAtTime(gains[idx] ?? 0, audioCtxRef.current?.currentTime || 0, 0.05);
-      } catch {
-        // ignore
-      }
-    });
-  }, [eqPreset]);
+  const ensureWebAudioChain = () => {
+    void audio8d.resumeAudioContext();
+  };
 
   // Sleep timer monitor
   useEffect(() => {
@@ -370,29 +170,20 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
     }
   }, []);
 
-  // Resolve track playback URLs on track change (or upgrade YouTube -> direct audio when 8D is active!)
+  // Resolve track playback URLs on track change (or upgrade YouTube -> direct audio when 8D, EQ, or Stem isolation is active!)
   useEffect(() => {
     if (!currentTrack) return;
 
-    const wantDirectAudioFor8d = spatial8dEnabled && viewMode !== 'video';
+    const wantDirectAudioForDsp =
+      (spatial8dEnabled || eqPreset !== 'flat' || stemMode !== 'both' || isFxActive) &&
+      viewMode !== 'video';
 
-    // Mid-song 8D activation on a YouTube track: preserve playback second!
-    const currentResolved = useMusicStore.getState().resolvedPlayback;
-    if (
-      wantDirectAudioFor8d &&
-      currentResolved &&
-      currentResolved.sourceType === 'youtube' &&
-      !currentResolved.proxiedUrl &&
-      !currentResolved.spatial8dYtFallback
-    ) {
-      const curTime = useMusicStore.getState().currentTime;
-      if (curTime > 1.5) {
-        pendingResumeSecRef.current = curTime;
-      }
-    }
+    const isSameTrack = lastResolvedTrackIdRef.current === currentTrack.id;
+    const currentResolved = isSameTrack ? useMusicStore.getState().resolvedPlayback : null;
 
     if (currentTrack.audiusId) {
       const streamUrl = `https://discoveryprovider.audius.co/v1/tracks/${encodeURIComponent(currentTrack.audiusId)}/stream?app_name=RIFFAN`;
+      lastResolvedTrackIdRef.current = currentTrack.id;
       useMusicStore.getState().setResolvedPlayback({
         sourceType: 'audio-mp3',
         sourceLabel: 'Audius Hi-Fi',
@@ -406,7 +197,8 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
       return;
     }
 
-    if (currentTrack.youtubeVideoId && !wantDirectAudioFor8d) {
+    if (currentTrack.youtubeVideoId && !wantDirectAudioForDsp) {
+      lastResolvedTrackIdRef.current = currentTrack.id;
       useMusicStore.getState().setResolvedPlayback({
         sourceType: 'youtube',
         sourceLabel: 'YouTube Audio HD',
@@ -418,9 +210,9 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
       return;
     }
 
-    // If currentResolved already has direct proxied audio stream for this track, keep it without re-fetching!
+    // If currentResolved already has direct proxied audio stream for this SAME track, keep it without re-fetching!
     if (
-      wantDirectAudioFor8d &&
+      wantDirectAudioForDsp &&
       currentResolved &&
       (currentResolved.sourceType === 'audio-mp3' || currentResolved.sourceType === 'audio-hls') &&
       currentResolved.proxiedUrl
@@ -428,14 +220,17 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
       return;
     }
 
-    // If we ALREADY resolved a fallback (e.g. YouTube 8D Audio) for this track, don't re-fetch
-    if (wantDirectAudioFor8d && currentResolved?.spatial8dYtFallback) {
+    // If we ALREADY resolved a fallback (e.g. YouTube) for this SAME track, don't re-fetch infinitely
+    if (wantDirectAudioForDsp && currentResolved?.spatial8dYtFallback) {
       return;
     }
 
     let cancelled = false;
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(() => controller.abort(), wantDirectAudioFor8d ? 5500 : 4500);
+    const timeoutId = window.setTimeout(
+      () => controller.abort(),
+      wantDirectAudioForDsp ? 8500 : 4500
+    );
     const store = useMusicStore.getState();
     store.setResolvingTrack(true);
     store.setPlaybackError(null);
@@ -448,15 +243,31 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
     if (currentTrack.previewUrl) qs.set('preview', currentTrack.previewUrl);
     if (currentTrack.soundcloudId) qs.set('scId', currentTrack.soundcloudId);
     if (currentTrack.youtubeVideoId) qs.set('ytId', currentTrack.youtubeVideoId);
-    if (wantDirectAudioFor8d) qs.set('preferAudio', '1');
+    if (wantDirectAudioForDsp) qs.set('preferAudio', '1');
 
     fetch(`/api/music/play?${qs.toString()}`, { signal: controller.signal })
       .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
         if (data?.success && data?.sourceType) {
+          if (wantDirectAudioForDsp && isSameTrack && activeBackendRef.current === 'youtube') {
+            try {
+              const ytSec = Number(
+                ytPlayerRef.current?.getCurrentTime?.() ||
+                  useMusicStore.getState().currentTime ||
+                  0
+              );
+              if (Number.isFinite(ytSec) && ytSec > 1.5) {
+                pendingResumeSecRef.current = ytSec;
+              }
+            } catch {
+              // ignore
+            }
+          }
+          lastResolvedTrackIdRef.current = currentTrack.id;
           useMusicStore.getState().setResolvedPlayback(data as ResolvedTrackPlayback);
         } else if (currentTrack.youtubeVideoId) {
+          lastResolvedTrackIdRef.current = currentTrack.id;
           useMusicStore.getState().setResolvedPlayback({
             sourceType: 'youtube',
             sourceLabel: 'YouTube Audio HD',
@@ -511,14 +322,15 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [currentTrack?.id, spatial8dEnabled, viewMode]);
+  }, [currentTrack?.id, spatial8dEnabled, eqPreset, stemMode, isFxActive, viewMode]);
 
   // Silently warm next track in queue so skip/auto-next starts immediately
   useEffect(() => {
     if (!currentTrack) return;
     const { queue, queueIndex } = useMusicStore.getState();
     const nextTrack = queue[queueIndex + 1];
-    if (!nextTrack || nextTrack.audiusId || (nextTrack.youtubeVideoId && !spatial8dEnabled)) return;
+    const needDirect = spatial8dEnabled || eqPreset !== 'flat' || stemMode !== 'both' || isFxActive;
+    if (!nextTrack || nextTrack.audiusId || (nextTrack.youtubeVideoId && !needDirect)) return;
     const timer = window.setTimeout(() => {
       const qs = new URLSearchParams({
         title: nextTrack.title,
@@ -528,11 +340,11 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
       if (nextTrack.previewUrl) qs.set('preview', nextTrack.previewUrl);
       if (nextTrack.soundcloudId) qs.set('scId', nextTrack.soundcloudId);
       if (nextTrack.youtubeVideoId) qs.set('ytId', nextTrack.youtubeVideoId);
-      if (spatial8dEnabled) qs.set('preferAudio', '1');
+      if (needDirect) qs.set('preferAudio', '1');
       void fetch(`/api/music/play?${qs.toString()}`).catch(() => {});
     }, 1000);
     return () => window.clearTimeout(timer);
-  }, [currentTrack?.id, spatial8dEnabled]);
+  }, [currentTrack?.id, spatial8dEnabled, eqPreset, stemMode, isFxActive]);
 
   // Attach chosen playback backend (Radio, MP3/HLS direct audio, or YouTube Audio/MV)
   useEffect(() => {
@@ -569,7 +381,7 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
       cleanupHlsAndHtml();
       if (!el) return;
       activeBackendRef.current = 'html-audio';
-      sharedSpatialEngineActive = Boolean(useMusicStore.getState().spatial8dEnabled);
+      setActiveBackend('html-audio');
       ensureWebAudioChain();
       const src = `/api/music/stream-proxy?url=${encodeURIComponent(activeRadio.streamUrl)}`;
       el.src = src;
@@ -584,7 +396,7 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
       stopYt();
       cleanupHlsAndHtml();
       activeBackendRef.current = 'none';
-      sharedSpatialEngineActive = false;
+      setActiveBackend('none');
       return;
     }
 
@@ -600,7 +412,7 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
         resolvedPlayback.youtubeMvId ||
         '';
       activeBackendRef.current = 'youtube';
-      sharedSpatialEngineActive = false;
+      setActiveBackend('youtube');
 
       const loadIntoYt = () => {
         const container = document.getElementById(ytVideoMountId);
@@ -645,7 +457,7 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
             onError: () => {
               if (resolvedPlayback.previewUrl && el) {
                 activeBackendRef.current = 'html-audio';
-                sharedSpatialEngineActive = Boolean(useMusicStore.getState().spatial8dEnabled);
+                setActiveBackend('html-audio');
                 ensureWebAudioChain();
                 el.src = `/api/music/stream-proxy?url=${encodeURIComponent(resolvedPlayback.previewUrl)}`;
                 el.load();
@@ -700,7 +512,7 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
     if (!targetSrc) return;
 
     activeBackendRef.current = 'html-audio';
-    sharedSpatialEngineActive = Boolean(useMusicStore.getState().spatial8dEnabled);
+    setActiveBackend('html-audio');
     ensureWebAudioChain();
 
     if (resolvedPlayback.sourceType === 'audio-hls') {
@@ -712,22 +524,20 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
         hlsRef.current = hls;
         hls.loadSource(targetSrc);
         hls.attachMedia(el);
+        let mediaRecoveryAttempted = false;
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          const resumeAt = pendingResumeSecRef.current;
-          if (resumeAt !== null && resumeAt > 1) {
-            pendingResumeSecRef.current = null;
-            try {
-              el.currentTime = resumeAt;
-            } catch {
-              // ignore
-            }
-          }
+          ensureWebAudioChain();
           if (useMusicStore.getState().isPlaying) {
             void el.play().catch(() => {});
           }
         });
         hls.on(Hls.Events.ERROR, (_ev, data) => {
           if (data.fatal) {
+            if (!mediaRecoveryAttempted && data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+              mediaRecoveryAttempted = true;
+              hls.recoverMediaError();
+              return;
+            }
             hls.destroy();
             hlsRef.current = null;
             if (resolvedPlayback.youtubeVideoId) {
@@ -751,17 +561,27 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
         void el.play().catch(() => {});
       }
     }
-  }, [currentTrack?.id, activeRadio?.id, resolvedPlayback?.sourceType, resolvedPlayback?.streamUrl, resolvedPlayback?.youtubeVideoId, viewMode, ytVideoMountId]);
+  }, [
+    currentTrack?.id,
+    activeRadio?.id,
+    resolvedPlayback?.sourceType,
+    resolvedPlayback?.proxiedUrl,
+    resolvedPlayback?.streamUrl,
+    resolvedPlayback?.youtubeVideoId,
+    viewMode,
+    ytVideoMountId,
+  ]);
 
   // Sync play/pause
   useEffect(() => {
     const el = audioRef.current;
     if (activeBackendRef.current === 'html-audio' && el) {
-      if (audioCtxRef.current?.state === 'suspended' && isPlaying) {
-        void audioCtxRef.current.resume().catch(() => {});
+      if (isPlaying) {
+        void audio8d.resumeAudioContext();
+        void el.play().catch(() => {});
+      } else {
+        el.pause();
       }
-      if (isPlaying) void el.play().catch(() => {});
-      else el.pause();
     } else if (activeBackendRef.current === 'youtube' && ytPlayerRef.current && ytReadyRef.current) {
       try {
         if (isPlaying) ytPlayerRef.current.playVideo();
@@ -772,22 +592,30 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
     }
   }, [isPlaying]);
 
-  // Sync volume + mute + rate
+  // Sync volume + mute + rate + preservesPitch
   useEffect(() => {
     const el = audioRef.current;
+    const targetRate = activeFxParams.playbackRate || playbackRate || 1;
     if (el) {
       el.volume = isMuted ? 0 : volume;
-      el.playbackRate = playbackRate;
-    }
-    if (ytPlayerRef.current && ytReadyRef.current) {
+      el.playbackRate = targetRate;
       try {
-        ytPlayerRef.current.setVolume(isMuted ? 0 : Math.round(volume * 100));
-        ytPlayerRef.current.setPlaybackRate(playbackRate);
+        (el as HTMLMediaElement & { preservesPitch?: boolean; mozPreservesPitch?: boolean; webkitPreservesPitch?: boolean }).preservesPitch = activeFxParams.preservePitch;
+        (el as HTMLMediaElement & { mozPreservesPitch?: boolean }).mozPreservesPitch = activeFxParams.preservePitch;
+        (el as HTMLMediaElement & { webkitPreservesPitch?: boolean }).webkitPreservesPitch = activeFxParams.preservePitch;
       } catch {
         // ignore
       }
     }
-  }, [volume, isMuted, playbackRate]);
+    if (ytPlayerRef.current && ytReadyRef.current) {
+      try {
+        ytPlayerRef.current.setVolume(isMuted ? 0 : Math.round(volume * 100));
+        ytPlayerRef.current.setPlaybackRate(targetRate);
+      } catch {
+        // ignore
+      }
+    }
+  }, [volume, isMuted, playbackRate, activeFxParams.playbackRate, activeFxParams.preservePitch]);
 
   // Handle explicit seeks
   useEffect(() => {
@@ -865,12 +693,21 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
       playsInline
       preload="auto"
       onLoadedMetadata={(e) => {
+        const el = e.currentTarget;
+        try {
+          el.playbackRate = activeFxParams.playbackRate || 1;
+          (el as HTMLMediaElement & { preservesPitch?: boolean; mozPreservesPitch?: boolean; webkitPreservesPitch?: boolean }).preservesPitch = activeFxParams.preservePitch;
+          (el as HTMLMediaElement & { mozPreservesPitch?: boolean }).mozPreservesPitch = activeFxParams.preservePitch;
+          (el as HTMLMediaElement & { webkitPreservesPitch?: boolean }).webkitPreservesPitch = activeFxParams.preservePitch;
+        } catch {
+          // ignore
+        }
         const resumeAt = pendingResumeSecRef.current;
         if (resumeAt !== null && resumeAt > 1) {
           pendingResumeSecRef.current = null;
           try {
-            if (Number.isFinite(e.currentTarget.duration) && resumeAt < e.currentTarget.duration - 2) {
-              e.currentTarget.currentTime = resumeAt;
+            if (Number.isFinite(el.duration) && resumeAt < el.duration - 2) {
+              el.currentTime = resumeAt;
             }
           } catch {
             // ignore

@@ -104,8 +104,54 @@ export interface UserMusicPlaylist {
   tracks: MusicTrack[];
 }
 
-export type EqPresetId = 'flat' | 'bass' | 'vocal' | 'club' | 'acoustic';
+export type EqPresetId =
+  | 'flat'
+  | 'bass'
+  | 'sub_deep'
+  | 'reggaeton'
+  | 'hiphop'
+  | 'club'
+  | 'pop'
+  | 'rock'
+  | 'vocal'
+  | 'acoustic'
+  | 'flamenco'
+  | 'arabic_oriental'
+  | 'jazz'
+  | 'classical'
+  | 'lofi'
+  | 'car_audio'
+  | 'night'
+  | 'custom';
 export type Spatial8dMode = 'orbit' | 'concert' | 'club';
+export type VocalStemMode = 'both' | 'vocals' | 'instrumental';
+export type AudioEffectId =
+  | 'none'
+  | 'slowed_reverb'
+  | 'nightcore'
+  | 'bass_boost'
+  | 'lofi_vinyl'
+  | 'underwater'
+  | 'stadium_echo'
+  | 'vaporwave'
+  | 'radio_vintage'
+  | 'club_pingpong'
+  | 'custom';
+
+export interface AudioFxParams {
+  playbackRate: number;
+  preservePitch: boolean;
+  reverbMix: number;
+  echoMix: number;
+  echoTimeMs: number;
+  lowpassHz: number;
+  highpassHz: number;
+  saturation: number;
+  chorusMix: number;
+  bassBoostDb: number;
+  trebleBoostDb: number;
+}
+
 export type MusicRepeatMode = 'off' | 'all' | 'one';
 export type MusicViewMode = 'audio' | 'video';
 

@@ -1,6 +1,6 @@
 import { ENV } from '../../config/env.ts';
 
-export type ApkFlavor = 'mobile' | 'tv';
+export type ApkFlavor = 'mobile' | 'tv' | 'music';
 
 const CRC_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -126,8 +126,17 @@ const ANDROID_NS = 'http://schemas.android.com/apk/res/android';
 
 export function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
   const isTv = flavor === 'tv';
-  const pkgName = flavor === 'tv' ? ENV.androidTvPkg : ENV.androidMobilePkg;
-  const versionCode = isTv ? ENV.appVersionCodeTv : ENV.appVersionCodeMobile;
+  const pkgName =
+    flavor === 'tv'
+      ? ENV.androidTvPkg
+      : flavor === 'music'
+        ? ENV.androidMusicPkg
+        : ENV.androidMobilePkg;
+  const versionCode = isTv
+    ? ENV.appVersionCodeTv
+    : flavor === 'music'
+      ? ENV.appVersionCodeMusic
+      : ENV.appVersionCodeMobile;
   const versionName = ENV.appVersionName;
 
   const manifestChildren: AxmlNode[] = [
@@ -491,8 +500,14 @@ export function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
 // BINARY resources.arsc GENERATOR
 // ============================================================================
 export function buildResourcesArsc(flavor: ApkFlavor): Buffer {
-  const pkgName = flavor === 'tv' ? ENV.androidTvPkg : ENV.androidMobilePkg;
-  const appLabel = flavor === 'tv' ? 'RiffanTV TV' : 'RiffanTV';
+  const pkgName =
+    flavor === 'tv'
+      ? ENV.androidTvPkg
+      : flavor === 'music'
+        ? ENV.androidMusicPkg
+        : ENV.androidMobilePkg;
+  const appLabel =
+    flavor === 'tv' ? 'RiffanTV TV' : flavor === 'music' ? 'Riffan Music' : 'RiffanTV';
   const iconResPath = 'res/mipmap-xxxhdpi-v4/ic_launcher.png';
 
   const globalPool = buildResStringPoolUtf16([iconResPath, appLabel]);

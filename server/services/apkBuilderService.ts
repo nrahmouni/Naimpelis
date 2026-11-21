@@ -23,12 +23,20 @@ export { getApkSigningCertSha256 };
 const APK_CACHE_TTL_MS = 30 * 60 * 1000;
 const generatedApkCache = new LruTtlCache<string, Buffer>(16, APK_CACHE_TTL_MS);
 
-function loadAppIconPng(): Buffer {
-  const candidates = [
-    path.join(ROOT_DIR, 'public', 'pwa-512x512.png'),
-    path.join(ROOT_DIR, 'public', 'pwa-192x192.png'),
-    path.join(ROOT_DIR, 'public', 'apple-touch-icon.png'),
-  ];
+function loadAppIconPng(flavor: ApkFlavor): Buffer {
+  const candidates =
+    flavor === 'music'
+      ? [
+          path.join(ROOT_DIR, 'public', 'music-pwa-512x512.png'),
+          path.join(ROOT_DIR, 'public', 'music-pwa-192x192.png'),
+          path.join(ROOT_DIR, 'public', 'music-apple-touch-icon.png'),
+          path.join(ROOT_DIR, 'public', 'pwa-512x512.png'),
+        ]
+      : [
+          path.join(ROOT_DIR, 'public', 'pwa-512x512.png'),
+          path.join(ROOT_DIR, 'public', 'pwa-192x192.png'),
+          path.join(ROOT_DIR, 'public', 'apple-touch-icon.png'),
+        ];
   for (const p of candidates) {
     if (fs.existsSync(p)) {
       return fs.readFileSync(p);
@@ -42,12 +50,18 @@ function loadAppIconPng(): Buffer {
 
 export function buildSignedApkBuffer(flavor: ApkFlavor, origin: string): Buffer {
   const cleanOrigin = origin.replace(/\/+$/, '');
-  const isTv = flavor === 'tv';
-  const apkVersionCode = isTv ? ENV.appVersionCodeTv : ENV.appVersionCodeMobile;
+  const apkVersionCode =
+    flavor === 'tv'
+      ? ENV.appVersionCodeTv
+      : flavor === 'music'
+        ? ENV.appVersionCodeMusic
+        : ENV.appVersionCodeMobile;
   const launchUrl =
     flavor === 'tv'
       ? `${cleanOrigin}/tv?platform=googletv&apkv=${apkVersionCode}`
-      : `${cleanOrigin}/?platform=android&web=1&apkv=${apkVersionCode}`;
+      : flavor === 'music'
+        ? `${cleanOrigin}/musica?platform=android-music&web=1&apkv=${apkVersionCode}`
+        : `${cleanOrigin}/?platform=android&web=1&apkv=${apkVersionCode}`;
   const cacheKey = `${flavor}|${launchUrl}`;
 
   const cached = generatedApkCache.get(cacheKey);
@@ -59,7 +73,7 @@ export function buildSignedApkBuffer(flavor: ApkFlavor, origin: string): Buffer 
   const manifestBin = buildBinaryAndroidManifest(flavor);
   const dexBin = buildWebViewMainActivityDex(launchUrl);
   const arscBin = buildResourcesArsc(flavor);
-  const iconPng = loadAppIconPng();
+  const iconPng = loadAppIconPng(flavor);
 
   const baseFiles: ZipInputFile[] = [
     { name: 'AndroidManifest.xml', data: manifestBin },

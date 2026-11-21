@@ -23,6 +23,12 @@ export default defineConfig(() => {
           'logo-mark.png',
           'logo-mark-light.png',
           'logo-monochrome.png',
+          'music-icon.svg',
+          'music-apple-touch-icon.png',
+          'music-pwa-192x192.png',
+          'music-pwa-512x512.png',
+          'music-pwa-maskable-512x512.png',
+          'music-manifest.webmanifest',
         ],
         manifest: {
           id: '/',
@@ -96,6 +102,7 @@ export default defineConfig(() => {
             /^\/tv(\/|$)/,
             /^\/vendor\//,
             /^\/\.well-known\//,
+            /^\/music-manifest\.webmanifest$/i,
             /\.apk(\?|$)/i,
           ],
           runtimeCaching: [

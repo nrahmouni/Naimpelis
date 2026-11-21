@@ -15,7 +15,7 @@ export function normalizeMusicLang(appLang?: AppLanguage | string): MusicLang {
     return appLang;
   }
   if (appLang === 'rif') return 'fr';
-  return 'en';
+  return 'es';
 }
 
 export interface MusicCopy {
@@ -35,6 +35,7 @@ export interface MusicCopy {
   navExploreLong: string;
   navLibrary: string;
   navRadios: string;
+  navRadiosShort: string;
   newPlaylist: string;
   likedSongs: string;
   songsCount: string;
@@ -198,6 +199,8 @@ export interface MusicCopy {
   eqTitle: string;
   eqSubtitle: string;
   eqProfile: string;
+  eqBandsLabel: string;
+  eqResetBtn: string;
   playbackSpeed: string;
   sleepTimer: string;
   minsRemaining: string;
@@ -224,6 +227,50 @@ export interface MusicCopy {
   spatial8dConcert: string;
   spatial8dClub: string;
   spatial8dBadgeLive: string;
+  spatial8dSpeedLabel: string;
+  spatial8dReverbLabel: string;
+  spatial8dDepthLabel: string;
+  spatial8dOcclusionLabel: string;
+  spatial8dResetLabel: string;
+  spatial8dAdjustBtn: string;
+  stemLabel: string;
+  stemBoth: string;
+  stemVocals: string;
+  stemInstrumental: string;
+  studioTabFx: string;
+  studioTabEq: string;
+  studioTabDownload: string;
+  fxBtn: string;
+  fxTitle: string;
+  fxSubtitle: string;
+  fxResetBtn: string;
+  fxSpeedLabel: string;
+  fxPreservePitchLabel: string;
+  fxPreservePitchSub: string;
+  fxReverbLabel: string;
+  fxEchoLabel: string;
+  fxEchoTimeLabel: string;
+  fxLowpassLabel: string;
+  fxHighpassLabel: string;
+  fxSaturationLabel: string;
+  fxChorusLabel: string;
+  fxBassLabel: string;
+  fxTrebleLabel: string;
+  downloadBtn: string;
+  downloadTitle: string;
+  downloadSubtitle: string;
+  downloadApplyFxLabel: string;
+  downloadApplyFxSub: string;
+  downloadFullBtn: string;
+  downloadFullSub: string;
+  downloadBaseBtn: string;
+  downloadBaseSub: string;
+  downloadVocalsBtn: string;
+  downloadVocalsSub: string;
+  downloadingLabel: string;
+  downloadReadyMsg: string;
+  downloadErrorMsg: string;
+  downloadRadioDisabled: string;
 }
 
 export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
@@ -244,6 +291,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     navExploreLong: 'Explorar & Mundo',
     navLibrary: 'Biblioteca',
     navRadios: 'Radios 24/7',
+    navRadiosShort: 'Radios',
     newPlaylist: 'Nueva Playlist',
     likedSongs: 'Tus Me Gusta',
     songsCount: 'canciones',
@@ -319,8 +367,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     create: 'Crear',
     addTrackPrefix: 'Añadir',
     createNewPlaylistBtn: 'Crear nueva playlist',
-    installAppTitle: 'Instalar Riffan App',
-    installAppSub: 'Android APK · iPhone · Chrome',
+    installAppTitle: 'Instalar Riffan Music',
+    installAppSub: 'APK propia · iPhone · Chrome',
     removeFromPlaylist: 'Quitar de la playlist',
     addToQueue: 'Añadir a la cola',
     addToPlaylist: 'Añadir a playlist',
@@ -401,8 +449,10 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     liveRadioCountry: 'Radio en Directo',
     loadingTrack: 'Cargando...',
     eqTitle: 'Ecualizador & Motor Hi-Fi',
-    eqSubtitle: 'WebAudio 5 bandas en tiempo real',
+    eqSubtitle: 'WebAudio 10 bandas · 18 perfiles',
     eqProfile: 'Perfil Acústico',
+    eqBandsLabel: 'Bandas de Frecuencia (32 Hz – 16 kHz)',
+    eqResetBtn: 'Reiniciar EQ',
     playbackSpeed: 'Velocidad de reproducción',
     sleepTimer: 'Temporizador de sueño',
     minsRemaining: 'min restantes',
@@ -429,6 +479,50 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     spatial8dConcert: 'Sala Concierto',
     spatial8dClub: 'Club 360°',
     spatial8dBadgeLive: '8D ACTIVO',
+    spatial8dSpeedLabel: 'Velocidad de órbita',
+    spatial8dReverbLabel: 'Reverb de sala',
+    spatial8dDepthLabel: 'Profundidad espacial',
+    spatial8dOcclusionLabel: 'Oclusión craneal',
+    spatial8dResetLabel: 'Restablecer',
+    spatial8dAdjustBtn: 'Ajustar 8D',
+    stemLabel: 'Mezcla vocal / base',
+    stemBoth: 'Las dos',
+    stemVocals: 'Solo voz',
+    stemInstrumental: 'Solo base',
+    studioTabFx: 'Efectos FX',
+    studioTabEq: 'EQ · 8D',
+    studioTabDownload: 'Descargar MP3',
+    fxBtn: 'Efectos',
+    fxTitle: 'Estudio de Efectos en Directo',
+    fxSubtitle: 'Slowed + Reverb, Nightcore, Bass Boost, Lo-Fi, Bajo el agua y más',
+    fxResetBtn: 'Quitar efectos',
+    fxSpeedLabel: 'Velocidad / Pitch',
+    fxPreservePitchLabel: 'Mantener tono original',
+    fxPreservePitchSub: 'Desactívalo para voz grave Slowed o aguda Nightcore',
+    fxReverbLabel: 'Reverb de sala',
+    fxEchoLabel: 'Eco / Delay estéreo',
+    fxEchoTimeLabel: 'Tiempo de eco',
+    fxLowpassLabel: 'Filtro sumergido / Lo-Fi',
+    fxHighpassLabel: 'Corte graves (Radio)',
+    fxSaturationLabel: 'Calidez / Saturación cinta',
+    fxChorusLabel: 'Chorus / Shimmer 3D',
+    fxBassLabel: 'Refuerzo de graves FX',
+    fxTrebleLabel: 'Brillo / Aire FX',
+    downloadBtn: 'MP3',
+    downloadTitle: 'Descargar Canción en MP3',
+    downloadSubtitle: 'Exporta la canción completa, solo la base o solo la voz en 192 kbps',
+    downloadApplyFxLabel: 'Incluir mis efectos y EQ al descargar',
+    downloadApplyFxSub: 'Guarda Slowed+Reverb, Nightcore, Bass Boost o tu EQ dentro del MP3',
+    downloadFullBtn: 'Canción Completa (.mp3)',
+    downloadFullSub: 'Voz + Base originales en alta calidad',
+    downloadBaseBtn: 'Solo Base / Instrumental (.mp3)',
+    downloadBaseSub: 'Pista sin voz · conserva el bombo y bajo',
+    downloadVocalsBtn: 'Solo Voz / Acapella (.mp3)',
+    downloadVocalsSub: 'Voz principal aislada en primer plano',
+    downloadingLabel: 'Generando MP3...',
+    downloadReadyMsg: 'MP3 descargado correctamente',
+    downloadErrorMsg: 'No se pudo generar el MP3 de esta pista',
+    downloadRadioDisabled: 'Selecciona una canción del catálogo para descargar en MP3',
   },
 
   en: {
@@ -448,6 +542,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     navExploreLong: 'Explore & World',
     navLibrary: 'Library',
     navRadios: '24/7 Radios',
+    navRadiosShort: 'Radios',
     newPlaylist: 'New Playlist',
     likedSongs: 'Liked Songs',
     songsCount: 'songs',
@@ -523,8 +618,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     create: 'Create',
     addTrackPrefix: 'Add',
     createNewPlaylistBtn: 'Create new playlist',
-    installAppTitle: 'Install Riffan App',
-    installAppSub: 'Android APK · iPhone · Chrome',
+    installAppTitle: 'Install Riffan Music',
+    installAppSub: 'Dedicated APK · iPhone · Chrome',
     removeFromPlaylist: 'Remove from playlist',
     addToQueue: 'Add to queue',
     addToPlaylist: 'Add to playlist',
@@ -605,8 +700,10 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     liveRadioCountry: 'Live Radio',
     loadingTrack: 'Loading...',
     eqTitle: 'Equalizer & Hi-Fi Engine',
-    eqSubtitle: 'Real-time 5-band WebAudio',
+    eqSubtitle: '10-band WebAudio · 18 profiles',
     eqProfile: 'Acoustic Profile',
+    eqBandsLabel: 'Frequency Bands (32 Hz – 16 kHz)',
+    eqResetBtn: 'Reset EQ',
     playbackSpeed: 'Playback Speed',
     sleepTimer: 'Sleep Timer',
     minsRemaining: 'min left',
@@ -633,6 +730,50 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     spatial8dConcert: 'Concert Hall',
     spatial8dClub: 'Club 360°',
     spatial8dBadgeLive: '8D ACTIVE',
+    spatial8dSpeedLabel: 'Orbit speed',
+    spatial8dReverbLabel: 'Hall reverb',
+    spatial8dDepthLabel: 'Spatial depth',
+    spatial8dOcclusionLabel: 'Skull occlusion',
+    spatial8dResetLabel: 'Reset',
+    spatial8dAdjustBtn: '8D Studio',
+    stemLabel: 'Vocals / Beat Mix',
+    stemBoth: 'Both',
+    stemVocals: 'Vocals only',
+    stemInstrumental: 'Beat only',
+    studioTabFx: 'Audio FX',
+    studioTabEq: 'EQ · 8D',
+    studioTabDownload: 'MP3 Export',
+    fxBtn: 'FX',
+    fxTitle: 'Live Audio Effects Studio',
+    fxSubtitle: 'Slowed + Reverb, Nightcore, Bass Boost, Lo-Fi, Underwater & more',
+    fxResetBtn: 'Clear FX',
+    fxSpeedLabel: 'Speed / Pitch',
+    fxPreservePitchLabel: 'Preserve original pitch',
+    fxPreservePitchSub: 'Turn off for authentic pitched-down Slowed or pitched-up Nightcore',
+    fxReverbLabel: 'Hall reverb',
+    fxEchoLabel: 'Stereo echo / delay',
+    fxEchoTimeLabel: 'Echo delay time',
+    fxLowpassLabel: 'Underwater / Lo-Fi filter',
+    fxHighpassLabel: 'Low-cut (Vintage Radio)',
+    fxSaturationLabel: 'Tape saturation warmth',
+    fxChorusLabel: 'Stereo chorus shimmer',
+    fxBassLabel: 'FX Bass boost',
+    fxTrebleLabel: 'FX Air / Brightness',
+    downloadBtn: 'MP3',
+    downloadTitle: 'Download Track as MP3',
+    downloadSubtitle: 'Export Full Song, Beat Only, or Vocals Only in 192 kbps MP3',
+    downloadApplyFxLabel: 'Bake active FX & EQ into MP3',
+    downloadApplyFxSub: 'Export with Slowed+Reverb, Nightcore, Bass Boost, or custom EQ',
+    downloadFullBtn: 'Full Song (.mp3)',
+    downloadFullSub: 'Complete vocals + beat master audio',
+    downloadBaseBtn: 'Instrumental / Beat Only (.mp3)',
+    downloadBaseSub: 'Vocals removed · keeps punchy kick & sub-bass',
+    downloadVocalsBtn: 'Vocals / Acapella Only (.mp3)',
+    downloadVocalsSub: 'Isolated center lead vocal presence',
+    downloadingLabel: 'Encoding MP3...',
+    downloadReadyMsg: 'MP3 downloaded successfully',
+    downloadErrorMsg: 'Could not export this track to MP3',
+    downloadRadioDisabled: 'Play a song from the catalog to download MP3 stems',
   },
 
   fr: {
@@ -652,6 +793,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     navExploreLong: 'Explorer & Monde',
     navLibrary: 'Bibliothèque',
     navRadios: 'Radios 24/7',
+    navRadiosShort: 'Radios',
     newPlaylist: 'Nouvelle Playlist',
     likedSongs: 'Titres Likés',
     songsCount: 'titres',
@@ -727,8 +869,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     create: 'Créer',
     addTrackPrefix: 'Ajouter',
     createNewPlaylistBtn: 'Créer une playlist',
-    installAppTitle: 'Installer Riffan App',
-    installAppSub: 'APK Android · iPhone · Chrome',
+    installAppTitle: 'Installer Riffan Music',
+    installAppSub: 'APK dédiée · iPhone · Chrome',
     removeFromPlaylist: 'Retirer de la playlist',
     addToQueue: 'Ajouter à la file',
     addToPlaylist: 'Ajouter à une playlist',
@@ -809,8 +951,10 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     liveRadioCountry: 'Radio en Direct',
     loadingTrack: 'Chargement...',
     eqTitle: 'Égaliseur & Moteur Hi-Fi',
-    eqSubtitle: 'WebAudio 5 bandes en temps réel',
+    eqSubtitle: 'WebAudio 10 bandes · 18 profils',
     eqProfile: 'Profil Acoustique',
+    eqBandsLabel: 'Bandes de fréquence (32 Hz – 16 kHz)',
+    eqResetBtn: 'Réinitialiser EQ',
     playbackSpeed: 'Vitesse de lecture',
     sleepTimer: 'Minuteur de veille',
     minsRemaining: 'min restantes',
@@ -837,6 +981,50 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     spatial8dConcert: 'Salle Concert',
     spatial8dClub: 'Club 360°',
     spatial8dBadgeLive: '8D ACTIF',
+    spatial8dSpeedLabel: 'Vitesse de rotation',
+    spatial8dReverbLabel: 'Réverbération salle',
+    spatial8dDepthLabel: 'Profondeur spatiale',
+    spatial8dOcclusionLabel: 'Occlusion crânienne',
+    spatial8dResetLabel: 'Réinitialiser',
+    spatial8dAdjustBtn: 'Réglages 8D',
+    stemLabel: 'Mix Voix / Instru',
+    stemBoth: 'Les deux',
+    stemVocals: 'Voix seule',
+    stemInstrumental: 'Instru seule',
+    studioTabFx: 'Effets FX',
+    studioTabEq: 'EQ · 8D',
+    studioTabDownload: 'Export MP3',
+    fxBtn: 'Effets',
+    fxTitle: 'Studio d’Effets en Direct',
+    fxSubtitle: 'Slowed + Reverb, Nightcore, Bass Boost, Lo-Fi, Sous l’eau et plus',
+    fxResetBtn: 'Réinitialiser FX',
+    fxSpeedLabel: 'Vitesse / Pitch',
+    fxPreservePitchLabel: 'Conserver la tonalité',
+    fxPreservePitchSub: 'Désactivez pour un vrai effet Slowed grave ou Nightcore aigu',
+    fxReverbLabel: 'Réverbération salle',
+    fxEchoLabel: 'Écho / Delay stéréo',
+    fxEchoTimeLabel: 'Temps d’écho',
+    fxLowpassLabel: 'Filtre sous-marin / Lo-Fi',
+    fxHighpassLabel: 'Coupe-bas (Radio rétro)',
+    fxSaturationLabel: 'Chaleur bande analogique',
+    fxChorusLabel: 'Chorus stéréo',
+    fxBassLabel: 'Renfort basses FX',
+    fxTrebleLabel: 'Brillance / Air FX',
+    downloadBtn: 'MP3',
+    downloadTitle: 'Télécharger en MP3',
+    downloadSubtitle: 'Exportez le titre complet, l’instru seule ou la voix seule en 192 kbps',
+    downloadApplyFxLabel: 'Appliquer mes effets et EQ au MP3',
+    downloadApplyFxSub: 'Inclure Slowed+Reverb, Nightcore, Bass Boost ou EQ dans le fichier',
+    downloadFullBtn: 'Chanson Complète (.mp3)',
+    downloadFullSub: 'Voix + Instru réunies en haute qualité',
+    downloadBaseBtn: 'Instru Seule / Base (.mp3)',
+    downloadBaseSub: 'Sans chant · basses et batterie préservées',
+    downloadVocalsBtn: 'Voix Seule / Acapella (.mp3)',
+    downloadVocalsSub: 'Voix principale isolée au premier plan',
+    downloadingLabel: 'Encodage MP3...',
+    downloadReadyMsg: 'MP3 téléchargé avec succès',
+    downloadErrorMsg: 'Impossible d’exporter ce titre en MP3',
+    downloadRadioDisabled: 'Lancez une chanson du catalogue pour télécharger en MP3',
   },
 
   zh: {
@@ -856,6 +1044,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     navExploreLong: '探索全球',
     navLibrary: '音乐库',
     navRadios: '全球电台',
+    navRadiosShort: '电台',
     newPlaylist: '新建歌单',
     likedSongs: '我喜欢的音乐',
     songsCount: '首歌曲',
@@ -931,8 +1120,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     create: '创建',
     addTrackPrefix: '添加',
     createNewPlaylistBtn: '创建新歌单',
-    installAppTitle: '安装 Riffan 应用',
-    installAppSub: 'Android APK · iPhone · Chrome',
+    installAppTitle: '安装 Riffan Music',
+    installAppSub: '独立 APK · iPhone · Chrome',
     removeFromPlaylist: '从歌单移除',
     addToQueue: '加入播放队列',
     addToPlaylist: '添加到歌单',
@@ -1013,8 +1202,10 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     liveRadioCountry: '直播电台',
     loadingTrack: '加载中...',
     eqTitle: '均衡器 & Hi-Fi 引擎',
-    eqSubtitle: '实时 5 段 WebAudio 调音',
+    eqSubtitle: '实时 10 段 WebAudio · 18 种预设',
     eqProfile: '音效预设',
+    eqBandsLabel: '频段调节 (32 Hz – 16 kHz)',
+    eqResetBtn: '重置均衡器',
     playbackSpeed: '播放倍速',
     sleepTimer: '定时关闭',
     minsRemaining: '分钟后关闭',
@@ -1041,6 +1232,50 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     spatial8dConcert: '音乐厅',
     spatial8dClub: '360° 派对',
     spatial8dBadgeLive: '8D 开启',
+    spatial8dSpeedLabel: '环绕速度',
+    spatial8dReverbLabel: '大厅混响',
+    spatial8dDepthLabel: '空间半径',
+    spatial8dOcclusionLabel: '头部遮挡滤波',
+    spatial8dResetLabel: '重置',
+    spatial8dAdjustBtn: '8D 调音',
+    stemLabel: '人声 / 伴奏分离',
+    stemBoth: '原曲全部',
+    stemVocals: '纯人声',
+    stemInstrumental: '纯伴奏',
+    studioTabFx: '音效 FX',
+    studioTabEq: '均衡 · 8D',
+    studioTabDownload: 'MP3 下载',
+    fxBtn: '音效',
+    fxTitle: '实时音乐特效工作室',
+    fxSubtitle: '慢速混响、Nightcore、重低音、Lo-Fi 黑胶、水下闷响等',
+    fxResetBtn: '清除特效',
+    fxSpeedLabel: '速度 / 音调',
+    fxPreservePitchLabel: '保持原调不变',
+    fxPreservePitchSub: '关闭可体验真实的慢速降调或 Nightcore 升调效果',
+    fxReverbLabel: '大厅混响',
+    fxEchoLabel: '立体声回声',
+    fxEchoTimeLabel: '回声延迟',
+    fxLowpassLabel: '水下 / Lo-Fi 低通滤波',
+    fxHighpassLabel: '高通复古收音机',
+    fxSaturationLabel: '模拟磁带饱和度',
+    fxChorusLabel: '立体声合唱光泽',
+    fxBassLabel: 'FX 重低音增益',
+    fxTrebleLabel: 'FX 高频空气感',
+    downloadBtn: 'MP3',
+    downloadTitle: '下载 MP3 音频',
+    downloadSubtitle: '支持下载完整歌曲、纯伴奏或纯人声 (192 kbps MP3)',
+    downloadApplyFxLabel: '下载时应用当前特效与均衡器',
+    downloadApplyFxSub: '将慢速混响、Nightcore、重低音或 EQ 写入导出的 MP3',
+    downloadFullBtn: '完整歌曲 (.mp3)',
+    downloadFullSub: '高清原曲人声 + 伴奏',
+    downloadBaseBtn: '仅伴奏 / Base (.mp3)',
+    downloadBaseSub: '消除主唱 · 保留鼓点与重低音',
+    downloadVocalsBtn: '仅人声 / Acapella (.mp3)',
+    downloadVocalsSub: '突出分离中央人声轨道',
+    downloadingLabel: '正在生成 MP3...',
+    downloadReadyMsg: 'MP3 下载完成',
+    downloadErrorMsg: '暂无法导出该曲目的 MP3',
+    downloadRadioDisabled: '请播放曲库中的歌曲后再下载 MP3',
   },
 
   ca: {
@@ -1060,6 +1295,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     navExploreLong: 'Explorar & Món',
     navLibrary: 'Biblioteca',
     navRadios: 'Ràdios 24/7',
+    navRadiosShort: 'Ràdios',
     newPlaylist: 'Nova Playlist',
     likedSongs: 'Els teus M’agrada',
     songsCount: 'cançons',
@@ -1135,8 +1371,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     create: 'Crear',
     addTrackPrefix: 'Afegir',
     createNewPlaylistBtn: 'Crear nova playlist',
-    installAppTitle: 'Instal·lar Riffan App',
-    installAppSub: 'Android APK · iPhone · Chrome',
+    installAppTitle: 'Instal·lar Riffan Music',
+    installAppSub: 'APK pròpia · iPhone · Chrome',
     removeFromPlaylist: 'Treure de la playlist',
     addToQueue: 'Afegir a la cua',
     addToPlaylist: 'Afegir a playlist',
@@ -1217,8 +1453,10 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     liveRadioCountry: 'Ràdio en Directe',
     loadingTrack: 'Carregant...',
     eqTitle: 'Equalitzador & Motor Hi-Fi',
-    eqSubtitle: 'WebAudio 5 bandes en temps real',
+    eqSubtitle: 'WebAudio 10 bandes · 18 perfils',
     eqProfile: 'Perfil Acústic',
+    eqBandsLabel: 'Bandes de freqüència (32 Hz – 16 kHz)',
+    eqResetBtn: 'Reiniciar EQ',
     playbackSpeed: 'Velocitat de reproducció',
     sleepTimer: 'Temporitzador de son',
     minsRemaining: 'min restants',
@@ -1245,5 +1483,49 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     spatial8dConcert: 'Sala Concert',
     spatial8dClub: 'Club 360°',
     spatial8dBadgeLive: '8D ACTIU',
+    spatial8dSpeedLabel: 'Velocitat d’òrbita',
+    spatial8dReverbLabel: 'Reverb de sala',
+    spatial8dDepthLabel: 'Profunditat espacial',
+    spatial8dOcclusionLabel: 'Oclusió cranial',
+    spatial8dResetLabel: 'Restablir',
+    spatial8dAdjustBtn: 'Ajustar 8D',
+    stemLabel: 'Mescla veu / base',
+    stemBoth: 'Totes dues',
+    stemVocals: 'Només veu',
+    stemInstrumental: 'Només base',
+    studioTabFx: 'Efectes FX',
+    studioTabEq: 'EQ · 8D',
+    studioTabDownload: 'Descarregar MP3',
+    fxBtn: 'Efectes',
+    fxTitle: 'Estudi d’Efectes en Directe',
+    fxSubtitle: 'Slowed + Reverb, Nightcore, Bass Boost, Lo-Fi, Sota l’aigua i més',
+    fxResetBtn: 'Treure efectes',
+    fxSpeedLabel: 'Velocitat / Pitch',
+    fxPreservePitchLabel: 'Mantenir el to original',
+    fxPreservePitchSub: 'Desactiva-ho per a veu greu Slowed o aguda Nightcore',
+    fxReverbLabel: 'Reverb de sala',
+    fxEchoLabel: 'Eco / Delay estèreo',
+    fxEchoTimeLabel: 'Temps d’eco',
+    fxLowpassLabel: 'Filtre submergit / Lo-Fi',
+    fxHighpassLabel: 'Tall greus (Ràdio)',
+    fxSaturationLabel: 'Calidesa de cinta',
+    fxChorusLabel: 'Chorus estèreo',
+    fxBassLabel: 'Reforç de greus FX',
+    fxTrebleLabel: 'Brillantor / Aire FX',
+    downloadBtn: 'MP3',
+    downloadTitle: 'Descarregar en MP3',
+    downloadSubtitle: 'Exporta la cançó completa, només la base o només la veu en 192 kbps',
+    downloadApplyFxLabel: 'Incloure els meus efectes i EQ al MP3',
+    downloadApplyFxSub: 'Desa Slowed+Reverb, Nightcore, Bass Boost o el teu EQ dins del MP3',
+    downloadFullBtn: 'Cançó Completa (.mp3)',
+    downloadFullSub: 'Veu + Base originals en alta qualitat',
+    downloadBaseBtn: 'Només Base / Instrumental (.mp3)',
+    downloadBaseSub: 'Pista sense veu · conserva bombo i greu',
+    downloadVocalsBtn: 'Només Veu / Acapella (.mp3)',
+    downloadVocalsSub: 'Veu principal aïllada en primer pla',
+    downloadingLabel: 'Generant MP3...',
+    downloadReadyMsg: 'MP3 descarregat correctament',
+    downloadErrorMsg: 'No s’ha pogut exportar aquesta pista a MP3',
+    downloadRadioDisabled: 'Selecciona una cançó del catàleg per descarregar MP3',
   },
 };

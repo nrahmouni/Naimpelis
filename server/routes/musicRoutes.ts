@@ -12,6 +12,7 @@ import {
   resolveTrackPlayback,
   searchMusicCatalog,
 } from '../services/riffanMusicService.ts';
+import { handleMp3DownloadRequest } from '../services/musicDownloadService.ts';
 
 function isPrivateOrDisallowedHost(hostname: string): boolean {
   const low = hostname.trim().toLowerCase();
@@ -182,6 +183,10 @@ export function registerMusicRoutes(app: express.Express): void {
     }
   });
 
+  app.get('/api/music/download-mp3', (req, res) => {
+    void handleMp3DownloadRequest(req, res);
+  });
+
   app.get('/api/music/stream-proxy', async (req, res) => {
     const rawUrl = String(req.query.url || '').trim();
     if (!rawUrl) {
@@ -204,8 +209,11 @@ export function registerMusicRoutes(app: express.Express): void {
     req.on('close', () => controller.abort());
 
     try {
+      const isGoogleVideo = parsed.hostname.toLowerCase().endsWith('googlevideo.com');
       const upstreamHeaders: Record<string, string> = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
+        'User-Agent': isGoogleVideo
+          ? 'com.google.android.apps.youtube.vr.oculus/1.60.19 (Linux; U; Android 12L; eureka-user Build/SQ3A.220605.009.A1) gzip'
+          : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
       };
       if (req.headers.range) {
         upstreamHeaders.Range = String(req.headers.range);
@@ -223,6 +231,7 @@ export function registerMusicRoutes(app: express.Express): void {
 
       const contentType = upstream.headers.get('content-type') || 'audio/mpeg';
       res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length, Content-Type');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 
       if (

@@ -325,7 +325,9 @@ export function useDeepLinkRouter({
     }
 
     const currentFull = `${window.location.pathname}${window.location.search}`;
-    if (currentFull !== nextRoute) {
+    const hasInstallMusicQuery =
+      activeWorld === 'music' && window.location.search.includes('install=music');
+    if (currentFull !== nextRoute && !hasInstallMusicQuery) {
       lastObservedHrefRef.current = nextRoute;
       window.history.replaceState(window.history.state, '', nextRoute);
     }
@@ -351,6 +353,51 @@ export function useDeepLinkRouter({
     futbolDayOffset,
     futbolStatusTab,
   ]);
+
+  // Keep PWA manifest, iOS Safari apple-touch-icon, and browser theme synced with Riffan Music vs RiffanTV
+  useEffect(() => {
+    if (typeof document === 'undefined' || isTvMode || isTvPairLobby) return;
+    const isMusic = activeWorld === 'music';
+
+    const manifestLink = document.querySelector<HTMLLinkElement>('link[rel="manifest"]');
+    if (manifestLink) {
+      manifestLink.setAttribute(
+        'href',
+        isMusic ? '/music-manifest.webmanifest' : '/manifest.webmanifest'
+      );
+    }
+
+    const appleTouchIcon = document.querySelector<HTMLLinkElement>('link[rel="apple-touch-icon"]');
+    if (appleTouchIcon) {
+      appleTouchIcon.setAttribute(
+        'href',
+        isMusic ? '/music-apple-touch-icon.png' : '/apple-touch-icon.png'
+      );
+    }
+
+    const svgIcon = document.querySelector<HTMLLinkElement>('link[rel="icon"][type="image/svg+xml"]');
+    if (svgIcon) {
+      svgIcon.setAttribute('href', isMusic ? '/music-icon.svg' : '/icon.svg');
+    }
+
+    const appleTitle = document.querySelector<HTMLMetaElement>(
+      'meta[name="apple-mobile-web-app-title"]'
+    );
+    if (appleTitle) {
+      appleTitle.setAttribute('content', isMusic ? 'Riffan Music' : 'RiffanTV');
+    }
+
+    const themeMeta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+    if (themeMeta) {
+      themeMeta.setAttribute('content', isMusic ? '#05080D' : '#060608');
+    }
+
+    if (isMusic) {
+      document.title = 'Riffan Music — Audio 8D, Letras y Radios';
+    } else if (document.title.startsWith('Riffan Music')) {
+      document.title = 'RiffanTV';
+    }
+  }, [activeWorld, isTvMode, isTvPairLobby]);
 
   return {
     deepLinkResolving,

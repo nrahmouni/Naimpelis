@@ -31,6 +31,8 @@ import {
 } from './server/routes/sports.ts';
 import {
   injectDynamicOgMeta,
+  injectMusicPwaMeta,
+  isMusicAppPath,
   registerDeepLinkRoutes,
   resolveOpenGraphMetaForRequest,
   shouldInjectDeepLinkOg,
@@ -256,6 +258,32 @@ app.get(
       getPublicOrigin,
     })
 );
+
+app.get(
+  ['/RIFFAN-MUSIC.apk', '/riffan-music.apk', '/riffanmusic.apk', '/music.apk', '/api/download/apk-music'],
+  (req, res) =>
+    sendApkPackageResponse(req, res, {
+      rootDir: __dirname,
+      variant: 'music',
+      filename: 'RIFFAN-MUSIC.apk',
+      candidateFilenames: ['RIFFAN-MUSIC.apk'],
+      errorMessage: 'Unable to build Riffan Music APK package',
+      logKey: 'music_apk_build_failed',
+      getPublicOrigin,
+    })
+);
+
+app.get('/music-manifest.webmanifest', (_req, res) => {
+  res.setHeader('Content-Type', 'application/manifest+json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+  const publicPath = path.resolve(__dirname, 'public', 'music-manifest.webmanifest');
+  const distPath = path.resolve(__dirname, 'dist', 'music-manifest.webmanifest');
+  const target = fs.existsSync(publicPath) ? publicPath : distPath;
+  if (fs.existsSync(target)) {
+    return res.sendFile(target);
+  }
+  return res.status(404).json({ error: 'Music manifest not found' });
+});
 
 function sendSmartTvReceiverHtml(res: express.Response) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -541,15 +569,21 @@ async function startServer() {
         });
         return;
       }
-      if (req.method === 'GET' && viteInstance && shouldInjectDeepLinkOg(req.path)) {
+      const isMusicReq = isMusicAppPath(req.path);
+      if (req.method === 'GET' && viteInstance && (isMusicReq || shouldInjectDeepLinkOg(req.path))) {
         try {
           const indexHtmlPath = path.resolve(__dirname, 'index.html');
           const [rawHtml, ogMeta] = await Promise.all([
             fs.promises.readFile(indexHtmlPath, 'utf8'),
-            resolveOpenGraphMetaForRequest(req.originalUrl, getPublicOrigin(req)),
+            shouldInjectDeepLinkOg(req.path)
+              ? resolveOpenGraphMetaForRequest(req.originalUrl, getPublicOrigin(req))
+              : Promise.resolve(null),
           ]);
           const transformed = await viteInstance.transformIndexHtml(req.originalUrl, rawHtml);
-          const finalHtml = ogMeta ? injectDynamicOgMeta(transformed, ogMeta) : transformed;
+          let finalHtml = ogMeta ? injectDynamicOgMeta(transformed, ogMeta) : transformed;
+          if (isMusicReq) {
+            finalHtml = injectMusicPwaMeta(finalHtml, getPublicOrigin(req));
+          }
           res.status(200).setHeader('Content-Type', 'text/html; charset=utf-8');
           res.end(finalHtml);
           return;
@@ -587,14 +621,21 @@ async function startServer() {
       }
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
       if (fs.existsSync(distIndex)) {
-        if (shouldInjectDeepLinkOg(req.path)) {
+        const isMusicReq = isMusicAppPath(req.path);
+        if (isMusicReq || shouldInjectDeepLinkOg(req.path)) {
           try {
             const [rawHtml, ogMeta] = await Promise.all([
               fs.promises.readFile(distIndex, 'utf8'),
-              resolveOpenGraphMetaForRequest(req.originalUrl, getPublicOrigin(req)),
+              shouldInjectDeepLinkOg(req.path)
+                ? resolveOpenGraphMetaForRequest(req.originalUrl, getPublicOrigin(req))
+                : Promise.resolve(null),
             ]);
-            if (ogMeta) {
-              return res.type('html').send(injectDynamicOgMeta(rawHtml, ogMeta));
+            let finalHtml = ogMeta ? injectDynamicOgMeta(rawHtml, ogMeta) : rawHtml;
+            if (isMusicReq) {
+              finalHtml = injectMusicPwaMeta(finalHtml, getPublicOrigin(req));
+            }
+            if (isMusicReq || ogMeta) {
+              return res.type('html').send(finalHtml);
             }
           } catch {
             // Fall through cleanly to static dist/index.html

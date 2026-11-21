@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   Clock,
+  Disc3,
   Headphones,
   Heart,
+  Layers,
   ListMusic,
   Mic2,
   Pause,
@@ -12,6 +14,7 @@ import {
   Radio,
   Repeat,
   Repeat1,
+  RotateCcw,
   Shuffle,
   SkipBack,
   SkipForward,
@@ -19,8 +22,16 @@ import {
   Video,
 } from 'lucide-react';
 import { useMusicStore } from '../../store/useMusicStore';
-import type { EqPresetId, LyricsPayload, Spatial8dMode } from '../../types/music';
-import { EQ_PRESETS, getSpatial8dTelemetry, sampleMusicSpectrum } from './MusicAudioEngine';
+import { AUDIO_8D_LIMITS, unlockGlobalAudio8dContexts } from '../../hooks/useAudio8D';
+import type { LyricsPayload, Spatial8dMode, VocalStemMode } from '../../types/music';
+import { getSpatial8dTelemetry, sampleMusicSpectrum } from './MusicAudioEngine';
+import {
+  EQ_BAND_LABELS,
+  EQ_MAX_DB,
+  EQ_MIN_DB,
+  EQ_PRESET_LIST,
+  resolveEqGains,
+} from './eqPresets';
 import { formatMusicTime } from './SpotifyPlayerBar';
 import { useBackInterceptor } from '../../lib/backInterceptor';
 import { triggerHaptic } from '../../utils/haptics';
@@ -31,17 +42,51 @@ export const EqAndTimerModal: React.FC = () => {
   const showEqModal = useMusicStore((s) => s.showEqModal);
   const setShowEqModal = useMusicStore((s) => s.setShowEqModal);
   const eqPreset = useMusicStore((s) => s.eqPreset);
+  const customEqBands = useMusicStore((s) => s.customEqBands);
   const setEqPreset = useMusicStore((s) => s.setEqPreset);
+  const setCustomEqBand = useMusicStore((s) => s.setCustomEqBand);
+  const resetEqToFlat = useMusicStore((s) => s.resetEqToFlat);
+  const stemMode = useMusicStore((s) => s.stemMode);
+  const setStemMode = useMusicStore((s) => s.setStemMode);
   const spatial8dEnabled = useMusicStore((s) => s.spatial8dEnabled);
   const toggleSpatial8d = useMusicStore((s) => s.toggleSpatial8d);
   const spatial8dMode = useMusicStore((s) => s.spatial8dMode);
   const setSpatial8dMode = useMusicStore((s) => s.setSpatial8dMode);
+  const spatial8dSpeed = useMusicStore((s) => s.spatial8dSpeed);
+  const setSpatial8dSpeed = useMusicStore((s) => s.setSpatial8dSpeed);
+  const spatial8dReverb = useMusicStore((s) => s.spatial8dReverb);
+  const setSpatial8dReverb = useMusicStore((s) => s.setSpatial8dReverb);
+  const spatial8dDepth = useMusicStore((s) => s.spatial8dDepth);
+  const setSpatial8dDepth = useMusicStore((s) => s.setSpatial8dDepth);
+  const resetSpatial8dControls = useMusicStore((s) => s.resetSpatial8dControls);
   const playbackRate = useMusicStore((s) => s.playbackRate);
   const setPlaybackRate = useMusicStore((s) => s.setPlaybackRate);
   const sleepTimerEndsAt = useMusicStore((s) => s.sleepTimerEndsAt);
   const setSleepTimerMinutes = useMusicStore((s) => s.setSleepTimerMinutes);
   const musicLang = useMusicStore((s) => s.musicLang);
   const m = MUSIC_I18N[musicLang];
+  const activeEqGains = useMemo(
+    () => resolveEqGains(eqPreset, customEqBands),
+    [eqPreset, customEqBands]
+  );
+
+  const [liveCutoffHz, setLiveCutoffHz] = useState<number>(AUDIO_8D_LIMITS.frontCutoffHz);
+
+  useEffect(() => {
+    if (!showEqModal || !spatial8dEnabled) return;
+    let raf = 0;
+    let last = 0;
+    const poll = (ts: number) => {
+      if (ts - last > 80) {
+        last = ts;
+        const tel = getSpatial8dTelemetry();
+        setLiveCutoffHz(tel.occlusionCutoffHz);
+      }
+      raf = requestAnimationFrame(poll);
+    };
+    raf = requestAnimationFrame(poll);
+    return () => cancelAnimationFrame(raf);
+  }, [showEqModal, spatial8dEnabled]);
 
   useBackInterceptor(showEqModal, 'music-eq-modal', () => setShowEqModal(false), { priority: 25 });
 
@@ -54,7 +99,7 @@ export const EqAndTimerModal: React.FC = () => {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-[#090F18] border border-[#10B981]/25 p-5 sm:p-6 space-y-5 shadow-2xl"
+        className="w-full sm:max-w-md max-h-[90dvh] overflow-y-auto no-scrollbar rounded-t-3xl sm:rounded-3xl bg-[#090F18] border border-[#10B981]/25 p-5 sm:p-6 space-y-5 shadow-2xl"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -77,9 +122,9 @@ export const EqAndTimerModal: React.FC = () => {
 
         {/* 8D Binaural Spatial Studio */}
         <div
-          className={`rounded-2xl border p-3.5 space-y-3 transition-colors ${
+          className={`rounded-2xl border p-3.5 space-y-3.5 transition-colors ${
             spatial8dEnabled
-              ? 'bg-[#10B981]/12 border-[#10B981]/40'
+              ? 'bg-[#10B981]/10 border-[#10B981]/40'
               : 'bg-white/[0.03] border-white/10'
           }`}
         >
@@ -102,11 +147,12 @@ export const EqAndTimerModal: React.FC = () => {
             <button
               type="button"
               onClick={() => {
+                unlockGlobalAudio8dContexts();
                 triggerHaptic('medium');
                 toggleSpatial8d();
               }}
               aria-pressed={spatial8dEnabled}
-              className={`h-8 px-3.5 rounded-full text-xs font-black tracking-wide cursor-pointer shrink-0 transition-all ${
+              className={`h-8 px-3.5 rounded-lg text-xs font-black tracking-wide cursor-pointer shrink-0 transition-all ${
                 spatial8dEnabled
                   ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.4)]'
                   : 'bg-white/10 text-zinc-200 hover:bg-white/18'
@@ -145,29 +191,205 @@ export const EqAndTimerModal: React.FC = () => {
               );
             })}
           </div>
+
+          {/* Precision DSP Sliders: Speed (2-25s), Reverb (0-0.6), Depth */}
+          <div className="space-y-3 pt-1 border-t border-white/[0.08]">
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-semibold text-zinc-300">{m.spatial8dSpeedLabel}</span>
+                <span className="font-bold text-[#6EE7B7] tabular-nums">{spatial8dSpeed.toFixed(1)}s</span>
+              </div>
+              <input
+                type="range"
+                min={AUDIO_8D_LIMITS.minSpeedSec}
+                max={AUDIO_8D_LIMITS.maxSpeedSec}
+                step={0.5}
+                value={spatial8dSpeed}
+                onChange={(e) => setSpatial8dSpeed(Number(e.target.value))}
+                aria-label={m.spatial8dSpeedLabel}
+                className="w-full h-1.5 accent-[#10B981] bg-white/15 rounded-full cursor-pointer"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-semibold text-zinc-300">{m.spatial8dReverbLabel}</span>
+                <span className="font-bold text-[#6EE7B7] tabular-nums">
+                  {Math.round((spatial8dReverb / AUDIO_8D_LIMITS.maxReverb) * 100)}% ({spatial8dReverb.toFixed(2)})
+                </span>
+              </div>
+              <input
+                type="range"
+                min={AUDIO_8D_LIMITS.minReverb}
+                max={AUDIO_8D_LIMITS.maxReverb}
+                step={0.01}
+                value={spatial8dReverb}
+                onChange={(e) => setSpatial8dReverb(Number(e.target.value))}
+                aria-label={m.spatial8dReverbLabel}
+                className="w-full h-1.5 accent-[#22D3EE] bg-white/15 rounded-full cursor-pointer"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="font-semibold text-zinc-300">{m.spatial8dDepthLabel}</span>
+                <span className="font-bold text-[#6EE7B7] tabular-nums">{spatial8dDepth.toFixed(1)}m</span>
+              </div>
+              <input
+                type="range"
+                min={AUDIO_8D_LIMITS.minDepth}
+                max={AUDIO_8D_LIMITS.maxDepth}
+                step={0.1}
+                value={spatial8dDepth}
+                onChange={(e) => setSpatial8dDepth(Number(e.target.value))}
+                aria-label={m.spatial8dDepthLabel}
+                className="w-full h-1.5 accent-[#10B981] bg-white/15 rounded-full cursor-pointer"
+              />
+            </div>
+
+            <div className="flex items-center justify-between pt-0.5 text-[11px] text-zinc-400 tabular-nums">
+              <span>
+                {m.spatial8dOcclusionLabel}:{' '}
+                <strong className="text-zinc-200 font-semibold">
+                  {(liveCutoffHz / 1000).toFixed(1)} kHz
+                </strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  resetSpatial8dControls();
+                }}
+                className="inline-flex items-center gap-1 text-zinc-400 hover:text-white cursor-pointer"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>{m.spatial8dResetLabel}</span>
+              </button>
+            </div>
+          </div>
         </div>
 
+        {/* Vocal / Instrumental Real-Time Stem Separator */}
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-zinc-400">{m.eqProfile}</p>
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            {(Object.keys(EQ_PRESETS) as EqPresetId[]).map((key) => {
-              const active = eqPreset === key;
+          <p className="text-xs font-semibold text-zinc-400">{m.stemLabel}</p>
+          <div className="grid grid-cols-3 gap-2">
+            {(
+              [
+                { id: 'both', label: m.stemBoth, Icon: Layers },
+                { id: 'vocals', label: m.stemVocals, Icon: Mic2 },
+                { id: 'instrumental', label: m.stemInstrumental, Icon: Disc3 },
+              ] as Array<{ id: VocalStemMode; label: string; Icon: React.ComponentType<{ className?: string }> }>
+            ).map(({ id, label, Icon }) => {
+              const active = stemMode === id;
               return (
                 <button
-                  key={key}
+                  key={id}
                   type="button"
                   onClick={() => {
+                    unlockGlobalAudio8dContexts();
                     triggerHaptic('light');
-                    setEqPreset(key);
+                    setStemMode(id);
                   }}
-                  className={`min-h-11 px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
+                  aria-pressed={active}
+                  className={`min-h-10 px-2 rounded-xl border text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
+                    active
+                      ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] border-[#10B981] text-[#03130E] shadow-[0_6px_18px_rgba(16,185,129,0.32)]'
+                      : 'bg-white/[0.04] border-white/10 text-zinc-200 hover:bg-white/[0.08]'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 18 Acoustic EQ Profiles */}
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-zinc-400">{m.eqProfile}</p>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                resetEqToFlat();
+              }}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-400 hover:text-white cursor-pointer"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>{m.eqResetBtn}</span>
+            </button>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-48 overflow-y-auto no-scrollbar pr-0.5">
+            {EQ_PRESET_LIST.map((preset) => {
+              const active = eqPreset === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => {
+                    unlockGlobalAudio8dContexts();
+                    triggerHaptic('light');
+                    setEqPreset(preset.id);
+                  }}
+                  className={`min-h-10 px-2.5 py-1.5 rounded-xl border text-[11px] font-semibold cursor-pointer transition-all text-left truncate ${
                     active
                       ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] border-[#10B981] text-[#03130E] font-bold shadow-[0_6px_18px_rgba(16,185,129,0.32)]'
                       : 'bg-white/[0.04] border-white/10 text-zinc-200 hover:bg-white/[0.08]'
                   }`}
                 >
-                  {EQ_PRESETS[key].label}
+                  {preset.labels[musicLang] || preset.labels.es}
                 </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Interactive 10-Band ISO Graphic Equalizer (32 Hz – 16 kHz) */}
+        <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-3.5 space-y-2.5">
+          <div className="flex items-center justify-between text-[11px]">
+            <span className="font-semibold text-zinc-300">{m.eqBandsLabel}</span>
+            <span className="font-bold text-[#6EE7B7] tabular-nums">
+              {EQ_PRESET_LIST.find((p) => p.id === eqPreset)?.labels[musicLang] || 'Custom'}
+            </span>
+          </div>
+          <div className="grid grid-cols-5 sm:grid-cols-10 gap-x-2 gap-y-2.5">
+            {EQ_BAND_LABELS.map((hzLabel, idx) => {
+              const val = activeEqGains[idx] ?? 0;
+              const fillPct = Math.round(((val - EQ_MIN_DB) / (EQ_MAX_DB - EQ_MIN_DB)) * 100);
+              return (
+                <div key={hzLabel} className="flex flex-col items-center gap-1 min-w-0">
+                  <span
+                    className={`text-[10px] font-bold tabular-nums ${
+                      val > 0 ? 'text-[#34D399]' : val < 0 ? 'text-[#22D3EE]' : 'text-zinc-400'
+                    }`}
+                  >
+                    {val > 0 ? `+${val}` : val}
+                  </span>
+                  <div className="relative w-full h-2 rounded-full bg-white/10 overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-[#10B981] to-[#22D3EE]"
+                      style={{ width: `${fillPct}%` }}
+                    />
+                  </div>
+                  <input
+                    type="range"
+                    min={EQ_MIN_DB}
+                    max={EQ_MAX_DB}
+                    step={0.5}
+                    value={val}
+                    onChange={(e) => {
+                      unlockGlobalAudio8dContexts();
+                      setCustomEqBand(idx, Number(e.target.value));
+                    }}
+                    aria-label={`${hzLabel} Hz`}
+                    className="w-full h-2 accent-[#10B981] bg-transparent cursor-pointer"
+                  />
+                  <span className="text-[10px] font-semibold text-zinc-400 tabular-nums">
+                    {hzLabel}
+                  </span>
+                </div>
               );
             })}
           </div>
@@ -236,6 +458,7 @@ export const FullScreenNowPlayingModal: React.FC<{
   const currentTrack = useMusicStore((s) => s.currentTrack);
   const activeRadio = useMusicStore((s) => s.activeRadio);
   const resolvedPlayback = useMusicStore((s) => s.resolvedPlayback);
+  const isResolvingTrack = useMusicStore((s) => s.isResolvingTrack);
   const isPlaying = useMusicStore((s) => s.isPlaying);
   const currentTime = useMusicStore((s) => s.currentTime);
   const duration = useMusicStore((s) => s.duration);
@@ -252,7 +475,11 @@ export const FullScreenNowPlayingModal: React.FC<{
   const toggleLikeTrack = useMusicStore((s) => s.toggleLikeTrack);
   const setShowQueueDrawer = useMusicStore((s) => s.setShowQueueDrawer);
   const setShowEqModal = useMusicStore((s) => s.setShowEqModal);
+  const stemMode = useMusicStore((s) => s.stemMode);
+  const setStemMode = useMusicStore((s) => s.setStemMode);
   const spatial8dEnabled = useMusicStore((s) => s.spatial8dEnabled);
+  const spatial8dSpeed = useMusicStore((s) => s.spatial8dSpeed);
+  const spatial8dReverb = useMusicStore((s) => s.spatial8dReverb);
   const toggleSpatial8d = useMusicStore((s) => s.toggleSpatial8d);
   const musicLang = useMusicStore((s) => s.musicLang);
   const m = MUSIC_I18N[musicLang];
@@ -261,7 +488,18 @@ export const FullScreenNowPlayingModal: React.FC<{
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [spectrumBars, setSpectrumBars] = useState<number[]>(() => Array.from({ length: 24 }, () => 0.16));
   const [orbitDeg, setOrbitDeg] = useState(0);
+  const [cutoffHz, setCutoffHz] = useState<number>(AUDIO_8D_LIMITS.frontCutoffHz);
+  const [activeWebAudio, setActiveWebAudio] = useState(false);
+  const [coverError, setCoverError] = useState(false);
   const activeLineRef = useRef<HTMLButtonElement | null>(null);
+
+  const coverSrc = activeRadio
+    ? activeRadio.favicon
+    : currentTrack?.album.coverXl || currentTrack?.album.cover || '';
+
+  useEffect(() => {
+    setCoverError(false);
+  }, [coverSrc]);
 
   useBackInterceptor(
     showNowPlayingModal,
@@ -322,6 +560,8 @@ export const FullScreenNowPlayingModal: React.FC<{
         }
         const telemetry = getSpatial8dTelemetry();
         setOrbitDeg((telemetry.angleRad * 180) / Math.PI);
+        setCutoffHz(telemetry.occlusionCutoffHz);
+        setActiveWebAudio(telemetry.activeWebAudio);
       }
       raf = requestAnimationFrame(loop);
     };
@@ -351,9 +591,6 @@ export const FullScreenNowPlayingModal: React.FC<{
   if (!showNowPlayingModal || (!currentTrack && !activeRadio)) return null;
 
   const isLiked = currentTrack ? likedTracks.some((t) => t.id === currentTrack.id) : false;
-  const coverSrc = activeRadio
-    ? activeRadio.favicon
-    : currentTrack?.album.coverXl || currentTrack?.album.cover || '';
   const effectiveDuration = duration > 0 ? duration : currentTrack?.durationSec || 0;
   const hasVideoOption = Boolean(
     currentTrack && (resolvedPlayback?.youtubeMvId || resolvedPlayback?.youtubeVideoId)
@@ -362,10 +599,10 @@ export const FullScreenNowPlayingModal: React.FC<{
   return (
     <div className="fixed inset-0 z-50 bg-[#05080D] text-white flex flex-col overflow-hidden animate-fade-in">
       {/* Ambient Blurred Album Background */}
-      {coverSrc ? (
+      {coverSrc && !coverError ? (
         <div
           aria-hidden="true"
-          className="absolute inset-0 pointer-events-none opacity-40 blur-3xl scale-125 transition-all duration-700"
+          className="absolute inset-0 pointer-events-none opacity-38 blur-3xl scale-125 transition-all duration-700"
           style={{
             backgroundImage: `url("${coverSrc}")`,
             backgroundSize: 'cover',
@@ -378,27 +615,27 @@ export const FullScreenNowPlayingModal: React.FC<{
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            'radial-gradient(ellipse 80% 55% at 50% 25%, rgba(16,185,129,0.2), rgba(34,211,238,0.09) 45%, rgba(5,8,13,0.92) 85%), linear-gradient(to bottom, rgba(5,8,13,0.45), rgba(5,8,13,0.88) 70%, #05080D)',
+            'radial-gradient(ellipse 80% 55% at 50% 25%, rgba(16,185,129,0.2), rgba(34,211,238,0.09) 45%, rgba(5,8,13,0.92) 85%), linear-gradient(to bottom, rgba(5,8,13,0.45), rgba(5,8,13,0.9) 70%, #05080D)',
         }}
       />
 
-      {/* Top Header */}
-      <header className="relative z-10 flex items-center justify-between px-4 sm:px-8 pt-[calc(env(safe-area-inset-top,0px)+14px)] pb-3">
+      {/* Top Header (Fits 340px+ mobile screens cleanly with zero right-edge clipping) */}
+      <header className="relative z-10 w-full max-w-full flex items-center justify-between gap-1.5 sm:gap-3 px-3 sm:px-8 pt-[calc(env(safe-area-inset-top,0px)+10px)] pb-2 overflow-hidden">
         <button
           type="button"
           onClick={() => setShowNowPlayingModal(false)}
-          aria-label="Minimizar reproductor"
-          className="min-w-11 min-h-11 rounded-full bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-[#10B981]"
+          aria-label={m.back}
+          className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-[#10B981] shrink-0"
         >
-          <ChevronDown className="w-5 h-5" />
+          <ChevronDown className="w-4.5 h-4.5 sm:w-5 sm:h-5" />
         </button>
 
         {/* Segmented Mode Switch: Portada / Letras / Videoclip */}
-        <div className="inline-flex items-center p-1 rounded-full bg-white/[0.08] border border-white/12 backdrop-blur-md">
+        <div className="min-w-0 flex items-center p-0.5 sm:p-1 rounded-xl bg-white/[0.08] border border-white/10 backdrop-blur-md">
           <button
             type="button"
             onClick={() => setNowPlayingTab('artwork')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-all whitespace-nowrap ${
+            className={`px-2 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold cursor-pointer transition-all whitespace-nowrap ${
               nowPlayingTab === 'artwork'
                 ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.35)]'
                 : 'text-zinc-300 hover:text-white'
@@ -410,67 +647,59 @@ export const FullScreenNowPlayingModal: React.FC<{
             <button
               type="button"
               onClick={() => setNowPlayingTab('lyrics')}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
+              className={`px-2 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
                 nowPlayingTab === 'lyrics'
                   ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.35)]'
                   : 'text-zinc-300 hover:text-white'
               }`}
             >
-              <Mic2 className="w-3.5 h-3.5" />
-              {m.tabLyrics}
+              <Mic2 className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
+              <span>{m.tabLyrics}</span>
             </button>
           )}
           {hasVideoOption && (
             <button
               type="button"
               onClick={() => setNowPlayingTab('video')}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
+              className={`px-2 sm:px-3.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
                 nowPlayingTab === 'video'
                   ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.35)]'
                   : 'text-zinc-300 hover:text-white'
               }`}
             >
-              <Video className="w-3.5 h-3.5" />
-              {m.tabVideo}
+              <Video className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
+              <span>{m.tabVideo}</span>
             </button>
           )}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
           <button
             type="button"
             onClick={() => {
+              unlockGlobalAudio8dContexts();
               triggerHaptic('medium');
               toggleSpatial8d();
             }}
             aria-pressed={spatial8dEnabled}
             title={m.spatial8dTitle}
-            className={`h-11 px-3.5 rounded-full text-xs font-black tracking-wide inline-flex items-center gap-1.5 cursor-pointer transition-all ${
+            className={`h-9 sm:h-10 px-2.5 sm:px-3 rounded-xl text-[11px] sm:text-xs font-black tracking-wide inline-flex items-center gap-1 sm:gap-1.5 cursor-pointer transition-all ${
               spatial8dEnabled
-                ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_0_20px_rgba(16,185,129,0.5)]'
+                ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_0_20px_rgba(16,185,129,0.45)]'
                 : 'bg-white/[0.08] hover:bg-white/15 text-zinc-200'
             }`}
           >
-            <Headphones className="w-4 h-4" />
+            <Headphones className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             <span>8D</span>
           </button>
-          {onOpenPlaylistPicker && currentTrack && (
-            <button
-              type="button"
-              onClick={onOpenPlaylistPicker}
-              title={m.addToPlaylist}
-              className="min-w-11 min-h-11 rounded-full bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors"
-            >
-              <Plus className="w-5 h-5" />
-            </button>
-          )}
           <button
             type="button"
             onClick={() => setShowEqModal(true)}
             title={m.eqBtn}
-            className="min-w-11 min-h-11 rounded-full bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors"
+            aria-label={m.eqBtn}
+            className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors"
           >
-            <Sliders className="w-4.5 h-4.5" />
+            <Sliders className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
           </button>
         </div>
       </header>
@@ -478,12 +707,12 @@ export const FullScreenNowPlayingModal: React.FC<{
       {/* Main Content Stage */}
       <main className="relative z-10 flex-1 min-h-0 flex flex-col items-center justify-center px-5 sm:px-10 py-2 overflow-hidden">
         {nowPlayingTab === 'artwork' && (
-          <div className="w-full max-w-md flex flex-col items-center gap-6">
+          <div className="w-full max-w-md flex flex-col items-center gap-3.5 sm:gap-5">
             <div className="relative flex items-center justify-center">
               {spatial8dEnabled && (
                 <div
                   aria-hidden="true"
-                  className="absolute -inset-6 sm:-inset-7 rounded-full border border-[#22D3EE]/30 pointer-events-none"
+                  className="absolute -inset-5 sm:-inset-7 rounded-full border border-[#22D3EE]/30 pointer-events-none"
                 >
                   <div
                     className="w-full h-full relative"
@@ -500,39 +729,30 @@ export const FullScreenNowPlayingModal: React.FC<{
                 }`}
                 style={{
                   background:
-                    'radial-gradient(circle, rgba(16,185,129,0.36) 0%, rgba(34,211,238,0.18) 60%, transparent 100%)',
+                    'radial-gradient(circle, rgba(16,185,129,0.34) 0%, rgba(34,211,238,0.16) 60%, transparent 100%)',
                 }}
               />
-              <div className="relative w-64 h-64 sm:w-80 sm:h-80 rounded-3xl overflow-hidden bg-[#0A111B] border border-white/20 shadow-[0_28px_72px_rgba(0,0,0,0.88)] flex items-center justify-center">
-                {coverSrc ? (
+              <div className="relative w-52 h-52 sm:w-72 sm:h-72 rounded-3xl overflow-hidden bg-[#0A111B] border border-white/16 shadow-[0_28px_72px_rgba(0,0,0,0.88)] flex items-center justify-center">
+                {coverSrc && !coverError ? (
                   <img
                     src={coverSrc}
                     alt={currentTrack?.title || activeRadio?.name || ''}
                     referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
-                    className={`w-full h-full object-cover transition-transform duration-700 ${
+                    onError={() => setCoverError(true)}
+                    className={`relative z-10 w-full h-full object-cover transition-transform duration-700 ${
                       isPlaying ? 'scale-100' : 'scale-95 opacity-80'
                     }`}
                   />
-                ) : null}
-                {activeRadio ? (
-                  <Radio className="w-16 h-16 text-[#22D3EE] absolute pointer-events-none opacity-85" />
+                ) : activeRadio ? (
+                  <Radio className="w-16 h-16 text-[#22D3EE] opacity-85" />
                 ) : (
-                  <RiffanMusicLogo variant="mark" size={76} withFrame={false} className="-z-10" />
-                )}
-                {spatial8dEnabled && (
-                  <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-[#05080D]/80 backdrop-blur-md border border-[#10B981]/45 text-[10px] font-black tracking-wider text-[#6EE7B7] inline-flex items-center gap-1">
-                    <Headphones className="w-3 h-3 text-[#22D3EE]" />
-                    {m.spatial8dBadgeLive}
-                  </span>
+                  <RiffanMusicLogo variant="mark" size={76} withFrame={false} />
                 )}
               </div>
             </div>
 
             {/* Live Sonic Audio Spectrum Visualizer */}
-            <div className="w-full max-w-xs h-9 flex items-end justify-center gap-1" aria-hidden="true">
+            <div className="w-full max-w-xs h-8 flex items-end justify-center gap-1" aria-hidden="true">
               {spectrumBars.map((val, i) => (
                 <span
                   key={i}
@@ -544,6 +764,32 @@ export const FullScreenNowPlayingModal: React.FC<{
                 />
               ))}
             </div>
+
+            {/* Clean unboxed 8D DSP Telemetry & Quick Studio Trigger (Never covers faces) */}
+            {spatial8dEnabled && (
+              <button
+                type="button"
+                onClick={() => setShowEqModal(true)}
+                className="flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 text-[11px] font-medium text-[#6EE7B7] hover:text-white transition-colors cursor-pointer tabular-nums"
+              >
+                <Headphones className="w-3.5 h-3.5 text-[#22D3EE] shrink-0" />
+                {activeWebAudio ? (
+                  <span>
+                    {m.spatial8dBadgeLive} · {spatial8dSpeed.toFixed(0)}s ·{' '}
+                    {Math.round((spatial8dReverb / AUDIO_8D_LIMITS.maxReverb) * 100)}% Reverb ·{' '}
+                    {(cutoffHz / 1000).toFixed(1)} kHz
+                  </span>
+                ) : isResolvingTrack ? (
+                  <span>{m.spatial8dTitle} · HRTF...</span>
+                ) : (
+                  <span>
+                    {m.spatial8dBadgeLive} · {spatial8dSpeed.toFixed(0)}s ·{' '}
+                    {Math.round((spatial8dReverb / AUDIO_8D_LIMITS.maxReverb) * 100)}% Reverb
+                  </span>
+                )}
+                <span className="text-zinc-400 underline underline-offset-2">{m.spatial8dAdjustBtn}</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -598,12 +844,12 @@ export const FullScreenNowPlayingModal: React.FC<{
 
       {/* Bottom Controls */}
       <footer className="relative z-10 w-full max-w-2xl mx-auto px-5 sm:px-8 pb-[calc(env(safe-area-inset-bottom,0px)+20px)] pt-3 space-y-4">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-xl sm:text-2xl font-extrabold text-white truncate">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg sm:text-2xl font-extrabold text-white line-clamp-2 leading-tight">
               {activeRadio ? activeRadio.name : currentTrack?.title}
             </h2>
-            <p className="text-sm text-zinc-300 truncate mt-0.5">
+            <p className="text-xs sm:text-sm text-zinc-300 truncate mt-1">
               {activeRadio
                 ? `${activeRadio.country} · ${activeRadio.tags.join(' · ')}`
                 : `${currentTrack?.artist.name}${currentTrack?.album.title ? ` · ${currentTrack.album.title}` : ''}`}
@@ -611,21 +857,73 @@ export const FullScreenNowPlayingModal: React.FC<{
           </div>
 
           {currentTrack && (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                toggleLikeTrack(currentTrack);
-              }}
-              aria-label={isLiked ? m.likeRemove : m.likeAdd}
-              className={`min-w-11 min-h-11 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-90 ${
-                isLiked ? 'text-[#34D399]' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <Heart className={`w-6 h-6 ${isLiked ? 'fill-current' : ''}`} />
-            </button>
+            <div className="flex items-center gap-0.5 shrink-0">
+              {onOpenPlaylistPicker && (
+                <button
+                  type="button"
+                  onClick={onOpenPlaylistPicker}
+                  aria-label={m.addToPlaylist}
+                  title={m.addToPlaylist}
+                  className="min-w-10 min-h-10 rounded-full flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer transition-colors"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  toggleLikeTrack(currentTrack);
+                }}
+                aria-label={isLiked ? m.likeRemove : m.likeAdd}
+                className={`min-w-10 min-h-10 rounded-full flex items-center justify-center cursor-pointer transition-transform active:scale-90 ${
+                  isLiked ? 'text-[#34D399]' : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <Heart className={`w-5 h-5 ${isLiked ? 'fill-current' : ''}`} />
+              </button>
+            </div>
           )}
         </div>
+
+        {/* Vocal / Instrumental / Both Real-Time Switch right inside Now Playing */}
+        {currentTrack && !activeRadio && (
+          <div
+            role="group"
+            aria-label={m.stemLabel}
+            className="grid grid-cols-3 gap-1.5 p-1 rounded-2xl bg-white/[0.06] border border-white/10"
+          >
+            {(
+              [
+                { id: 'both', label: m.stemBoth, Icon: Layers },
+                { id: 'vocals', label: m.stemVocals, Icon: Mic2 },
+                { id: 'instrumental', label: m.stemInstrumental, Icon: Disc3 },
+              ] as Array<{ id: VocalStemMode; label: string; Icon: React.ComponentType<{ className?: string }> }>
+            ).map(({ id, label, Icon }) => {
+              const active = stemMode === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => {
+                    unlockGlobalAudio8dContexts();
+                    triggerHaptic('light');
+                    setStemMode(id);
+                  }}
+                  aria-pressed={active}
+                  className={`h-9 px-2 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-all whitespace-nowrap ${
+                    active
+                      ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.35)]'
+                      : 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">{label}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Scrubber */}
         <div className="space-y-1.5">
@@ -641,13 +939,10 @@ export const FullScreenNowPlayingModal: React.FC<{
           />
           <div className="flex items-center justify-between text-xs text-zinc-400 tabular-nums">
             <span>{activeRadio ? 'LIVE' : formatMusicTime(currentTime)}</span>
-            <span>
-              {activeRadio
-                ? 'STREAM 24/7'
-                : resolvedPlayback?.sourceLabel
-                ? `${resolvedPlayback.sourceLabel} · ${formatMusicTime(effectiveDuration)}`
-                : formatMusicTime(effectiveDuration)}
+            <span className="text-[11px] text-zinc-500">
+              {activeRadio ? 'STREAM 24/7' : resolvedPlayback?.sourceLabel || ''}
             </span>
+            <span>{activeRadio ? '24/7' : formatMusicTime(effectiveDuration)}</span>
           </div>
         </div>
 
@@ -676,6 +971,7 @@ export const FullScreenNowPlayingModal: React.FC<{
           <button
             type="button"
             onClick={() => {
+              unlockGlobalAudio8dContexts();
               triggerHaptic('medium');
               togglePlayPause();
             }}

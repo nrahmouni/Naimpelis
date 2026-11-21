@@ -718,6 +718,72 @@ export async function resolveOpenGraphMetaForRequest(
   }
 }
 
+export function isMusicAppPath(pathname: string): boolean {
+  const clean = String(pathname || '/').split('?')[0].toLowerCase().replace(/\/+$/, '') || '/';
+  return clean === '/musica' || clean === '/music';
+}
+
+export function injectMusicPwaMeta(html: string, origin = PUBLIC_PRODUCTION_ORIGIN): string {
+  const cleanOrigin = origin.replace(/\/+$/, '');
+  const musicIconAbs = `${cleanOrigin}/music-pwa-512x512.png`;
+  let out = html;
+
+  out = out.replace(
+    /<title>[\s\S]*?<\/title>/i,
+    '<title>Riffan Music — Audio 8D, Ecualizador, Letras y Radios 24/7</title>'
+  );
+  out = out.replace(
+    /<meta\b[^>]*\bname=["']description["'][^>]*>/i,
+    '<meta name="description" content="Riffan Music: plataforma musical Hi-Fi con Audio 8D binaural, ecualizador de 10 bandas, letras sincronizadas, videoclips y +70 radios 24/7." />'
+  );
+  out = out.replace(
+    /<meta\b[^>]*\bproperty=["']og:title["'][^>]*>/i,
+    '<meta property="og:title" content="Riffan Music — Audio 8D, Letras y Radios 24/7" />'
+  );
+  out = out.replace(
+    /<meta\b[^>]*\bproperty=["']og:description["'][^>]*>/i,
+    '<meta property="og:description" content="Música global Hi-Fi con Audio 8D HRTF, ecualizador de 10 bandas, letras en vivo y +70 radios mundiales." />'
+  );
+  out = out.replace(
+    /<meta\b[^>]*\bname=["']theme-color["'][^>]*>/i,
+    '<meta name="theme-color" content="#05080D" />'
+  );
+  out = out.replace(
+    /<meta\b[^>]*\bname=["']apple-mobile-web-app-title["'][^>]*>/i,
+    '<meta name="apple-mobile-web-app-title" content="Riffan Music" />'
+  );
+  out = out.replace(
+    /<link\b[^>]*\brel=["']apple-touch-icon["'][^>]*>/i,
+    '<link rel="apple-touch-icon" href="/music-apple-touch-icon.png" />'
+  );
+  out = out.replace(
+    /<link\b[^>]*\btype=["']image\/svg\+xml["'][^>]*>/i,
+    '<link rel="icon" type="image/svg+xml" href="/music-icon.svg" />'
+  );
+  out = out.replace(
+    /<link\b[^>]*\bhref=["'][^"']*\/favicon-(?:16x16|32x32)\.png["'][^>]*>/gi,
+    '<link rel="icon" type="image/png" sizes="192x192" href="/music-pwa-192x192.png" />'
+  );
+  if (/<link\b[^>]*\brel=["']manifest["'][^>]*>/i.test(out)) {
+    out = out.replace(
+      /<link\b[^>]*\brel=["']manifest["'][^>]*>/i,
+      '<link rel="manifest" href="/music-manifest.webmanifest" />'
+    );
+  } else {
+    out = out.replace(
+      /<\/head>/i,
+      '    <link rel="manifest" href="/music-manifest.webmanifest" />\n  </head>'
+    );
+  }
+  if (!/property=["']og:image["']/i.test(out)) {
+    out = out.replace(
+      /<\/head>/i,
+      `    <meta property="og:image" content="${escapeHtmlAttr(musicIconAbs)}" />\n  </head>`
+    );
+  }
+  return out;
+}
+
 export function injectDynamicOgMeta(html: string, meta: OpenGraphMeta): string {
   const safeTitle = escapeHtmlAttr(meta.title || DEFAULT_OG_META.title);
   const safeDesc = escapeHtmlAttr(meta.description || DEFAULT_OG_META.description);

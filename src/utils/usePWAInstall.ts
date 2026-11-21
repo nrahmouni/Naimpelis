@@ -7,6 +7,8 @@ interface BeforeInstallPromptEvent extends Event {
 
 let globalDeferredPrompt: BeforeInstallPromptEvent | null = null;
 const promptListeners = new Set<(ev: BeforeInstallPromptEvent | null) => void>();
+const BOOTED_AS_MUSIC_PWA =
+  typeof window !== 'undefined' && /^\/(musica|music)(\/|$)/i.test(window.location.pathname);
 
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeinstallprompt', (e: Event) => {
@@ -86,6 +88,7 @@ export function usePWAInstall() {
     isInstalled,
     isIOS,
     isAndroid,
+    bootedAsMusic: BOOTED_AS_MUSIC_PWA,
     install,
   };
 }

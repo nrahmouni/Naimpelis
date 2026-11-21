@@ -1,0 +1,33 @@
+{
+  "id": "/musica",
+  "name": "Riffan Music — Audio 8D, Letras y Radios",
+  "short_name": "Riffan Music",
+  "description": "Riffan Music: plataforma musical Hi-Fi con Audio 8D binaural, ecualizador de 10 bandas, letras sincronizadas, videoclips y +70 radios 24/7.",
+  "theme_color": "#05080D",
+  "background_color": "#05080D",
+  "display": "standalone",
+  "orientation": "any",
+  "start_url": "/musica?pwa=music",
+  "scope": "/musica",
+  "categories": ["music", "audio", "entertainment"],
+  "icons": [
+    {
+      "src": "/music-pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/music-pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/music-pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

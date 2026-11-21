@@ -16,8 +16,10 @@ export interface AppEnvironmentConfig {
   appVersionName: string;
   appVersionCodeMobile: number;
   appVersionCodeTv: number;
+  appVersionCodeMusic: number;
   androidMobilePkg: string;
   androidTvPkg: string;
+  androidMusicPkg: string;
   legacyAndroidPkg: string;
   androidCertSha256: string;
   belixXtreamServer: string;
@@ -46,8 +48,10 @@ export const ENV: AppEnvironmentConfig = {
   appVersionName: process.env.NAIM_APP_VERSION || '3.2.0',
   appVersionCodeMobile: Number(process.env.NAIM_MOBILE_VERSION_CODE) || 302,
   appVersionCodeTv: Number(process.env.NAIM_TV_VERSION_CODE) || 302,
+  appVersionCodeMusic: Number(process.env.NAIM_MUSIC_VERSION_CODE) || 302,
   androidMobilePkg: process.env.ANDROID_MOBILE_PKG || 'com.naimcine.mobile',
   androidTvPkg: process.env.ANDROID_TV_PKG || 'com.naimcine.tv',
+  androidMusicPkg: process.env.ANDROID_MUSIC_PKG || 'com.riffan.music',
   legacyAndroidPkg: 'studio.ai.naimcine.app',
   androidCertSha256:
     process.env.ANDROID_SHA256_FINGERPRINT ||

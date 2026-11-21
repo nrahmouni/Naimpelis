@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import type {
+  AudioEffectId,
+  AudioFxParams,
   EqPresetId,
   MusicAlbumRef,
   MusicPlaylist,
@@ -10,11 +12,34 @@ import type {
   ResolvedTrackPlayback,
   Spatial8dMode,
   UserMusicPlaylist,
+  VocalStemMode,
 } from '../types/music';
 
-import type { MusicLang } from '../components/music/musicI18n';
+import {
+  AUDIO_8D_LIMITS,
+  clamp8dDepth,
+  clamp8dReverb,
+  clamp8dSpeed,
+} from '../hooks/useAudio8D';
+import { normalizeMusicLang, type MusicLang } from '../components/music/musicI18n';
+import { EQ_PRESETS, normalizeCustomEqBands } from '../components/music/eqPresets';
+import {
+  AUDIO_EFFECTS,
+  DEFAULT_AUDIO_FX_PARAMS,
+  normalizeAudioFxParams,
+  resolveAudioFxParams,
+} from '../components/music/audioEffects';
 
 const STORAGE_KEY = 'riffan_music_library_v1';
+
+export const SPATIAL_8D_PRESETS: Record<
+  Spatial8dMode,
+  { speed: number; reverbAmount: number; depth: number }
+> = {
+  orbit: { speed: 10, reverbAmount: 0.25, depth: 1.8 },
+  concert: { speed: 13, reverbAmount: 0.42, depth: 2.4 },
+  club: { speed: 5.5, reverbAmount: 0.22, depth: 2.1 },
+};
 
 interface PersistedLibrary {
   likedTracks: MusicTrack[];
@@ -23,11 +48,26 @@ interface PersistedLibrary {
   userPlaylists: UserMusicPlaylist[];
   recentTracks: MusicTrack[];
   eqPreset: EqPresetId;
+  customEqBands: number[];
+  fxPreset: AudioEffectId;
+  customFxParams: AudioFxParams;
   spatial8dEnabled: boolean;
   spatial8dMode: Spatial8dMode;
+  spatial8dSpeed: number;
+  spatial8dReverb: number;
+  spatial8dDepth: number;
   volume: number;
   musicLang: MusicLang;
+  musicLangCustom?: boolean;
   musicLangV2?: boolean;
+}
+
+function isValidEqPreset(val: unknown): val is EqPresetId {
+  return typeof val === 'string' && val in EQ_PRESETS;
+}
+
+function isValidAudioEffect(val: unknown): val is AudioEffectId {
+  return typeof val === 'string' && val in AUDIO_EFFECTS;
 }
 
 function isValidMusicLang(val: unknown): val is MusicLang {
@@ -38,7 +78,19 @@ function isValidSpatialMode(val: unknown): val is Spatial8dMode {
   return val === 'orbit' || val === 'concert' || val === 'club';
 }
 
+function readAppDefaultMusicLang(): MusicLang {
+  if (typeof localStorage === 'undefined') return 'es';
+  try {
+    const appLang = localStorage.getItem('riffan_lang') || localStorage.getItem('naim_lang');
+    if (appLang) return normalizeMusicLang(appLang);
+  } catch {
+    // ignore
+  }
+  return 'es';
+}
+
 function loadLibrary(): PersistedLibrary {
+  const defaultLang = readAppDefaultMusicLang();
   const defaults: PersistedLibrary = {
     likedTracks: [],
     savedAlbums: [],
@@ -46,10 +98,17 @@ function loadLibrary(): PersistedLibrary {
     userPlaylists: [],
     recentTracks: [],
     eqPreset: 'flat',
+    customEqBands: normalizeCustomEqBands(),
+    fxPreset: 'none',
+    customFxParams: { ...DEFAULT_AUDIO_FX_PARAMS },
     spatial8dEnabled: false,
     spatial8dMode: 'orbit',
+    spatial8dSpeed: AUDIO_8D_LIMITS.defaultSpeedSec,
+    spatial8dReverb: AUDIO_8D_LIMITS.defaultReverb,
+    spatial8dDepth: AUDIO_8D_LIMITS.defaultDepth,
     volume: 0.85,
-    musicLang: 'en',
+    musicLang: defaultLang,
+    musicLangCustom: false,
     musicLangV2: true,
   };
   if (typeof localStorage === 'undefined') return defaults;
@@ -57,17 +116,36 @@ function loadLibrary(): PersistedLibrary {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return defaults;
     const parsed = JSON.parse(raw) as Partial<PersistedLibrary>;
+    const hasCustomLang = Boolean(parsed.musicLangCustom && isValidMusicLang(parsed.musicLang));
     return {
       likedTracks: Array.isArray(parsed.likedTracks) ? parsed.likedTracks : [],
       savedAlbums: Array.isArray(parsed.savedAlbums) ? parsed.savedAlbums : [],
       savedPlaylists: Array.isArray(parsed.savedPlaylists) ? parsed.savedPlaylists : [],
       userPlaylists: Array.isArray(parsed.userPlaylists) ? parsed.userPlaylists : [],
       recentTracks: Array.isArray(parsed.recentTracks) ? parsed.recentTracks : [],
-      eqPreset: parsed.eqPreset || 'flat',
+      eqPreset: isValidEqPreset(parsed.eqPreset) ? parsed.eqPreset : 'flat',
+      customEqBands: normalizeCustomEqBands(
+        Array.isArray(parsed.customEqBands) ? parsed.customEqBands : undefined
+      ),
+      fxPreset: isValidAudioEffect(parsed.fxPreset) ? parsed.fxPreset : 'none',
+      customFxParams: normalizeAudioFxParams(parsed.customFxParams),
       spatial8dEnabled: Boolean(parsed.spatial8dEnabled),
       spatial8dMode: isValidSpatialMode(parsed.spatial8dMode) ? parsed.spatial8dMode : 'orbit',
+      spatial8dSpeed:
+        typeof parsed.spatial8dSpeed === 'number'
+          ? clamp8dSpeed(parsed.spatial8dSpeed)
+          : AUDIO_8D_LIMITS.defaultSpeedSec,
+      spatial8dReverb:
+        typeof parsed.spatial8dReverb === 'number'
+          ? clamp8dReverb(parsed.spatial8dReverb)
+          : AUDIO_8D_LIMITS.defaultReverb,
+      spatial8dDepth:
+        typeof parsed.spatial8dDepth === 'number'
+          ? clamp8dDepth(parsed.spatial8dDepth)
+          : AUDIO_8D_LIMITS.defaultDepth,
       volume: typeof parsed.volume === 'number' ? Math.max(0, Math.min(1, parsed.volume)) : 0.85,
-      musicLang: parsed.musicLangV2 && isValidMusicLang(parsed.musicLang) ? parsed.musicLang : 'en',
+      musicLang: hasCustomLang ? parsed.musicLang! : defaultLang,
+      musicLangCustom: hasCustomLang,
       musicLangV2: true,
     };
   } catch {
@@ -92,10 +170,17 @@ function syncPersisted(state: PersistedLibrary) {
     userPlaylists: state.userPlaylists,
     recentTracks: state.recentTracks,
     eqPreset: state.eqPreset,
+    customEqBands: state.customEqBands,
+    fxPreset: state.fxPreset,
+    customFxParams: state.customFxParams,
     spatial8dEnabled: state.spatial8dEnabled,
     spatial8dMode: state.spatial8dMode,
+    spatial8dSpeed: state.spatial8dSpeed,
+    spatial8dReverb: state.spatial8dReverb,
+    spatial8dDepth: state.spatial8dDepth,
     volume: state.volume,
     musicLang: state.musicLang,
+    musicLangCustom: state.musicLangCustom,
     musicLangV2: true,
   });
 }
@@ -119,6 +204,7 @@ export interface MusicStoreState extends PersistedLibrary {
   repeatMode: MusicRepeatMode;
   playbackRate: number;
   viewMode: MusicViewMode;
+  stemMode: VocalStemMode;
   sleepTimerEndsAt: number | null;
 
   showNowPlayingModal: boolean;
@@ -145,11 +231,22 @@ export interface MusicStoreState extends PersistedLibrary {
   toggleShuffle: () => void;
   cycleRepeat: () => void;
   setEqPreset: (preset: EqPresetId) => void;
+  setCustomEqBand: (bandIdx: number, db: number) => void;
+  setCustomEqBands: (bands: number[]) => void;
+  resetEqToFlat: () => void;
+  setFxPreset: (preset: AudioEffectId) => void;
+  setFxParam: <K extends keyof AudioFxParams>(key: K, value: AudioFxParams[K]) => void;
+  resetAudioFx: () => void;
   toggleSpatial8d: () => void;
   setSpatial8dEnabled: (enabled: boolean) => void;
   setSpatial8dMode: (mode: Spatial8dMode) => void;
+  setSpatial8dSpeed: (speed: number) => void;
+  setSpatial8dReverb: (reverb: number) => void;
+  setSpatial8dDepth: (depth: number) => void;
+  resetSpatial8dControls: () => void;
   setPlaybackRate: (rate: number) => void;
   setViewMode: (mode: MusicViewMode) => void;
+  setStemMode: (mode: VocalStemMode) => void;
   setSleepTimerMinutes: (minutes: number | null) => void;
 
   setShowNowPlayingModal: (open: boolean) => void;
@@ -164,7 +261,8 @@ export interface MusicStoreState extends PersistedLibrary {
   deleteUserPlaylist: (id: string) => void;
   addTrackToUserPlaylist: (playlistId: string, track: MusicTrack) => void;
   removeTrackFromUserPlaylist: (playlistId: string, trackId: string) => void;
-  setMusicLang: (lang: MusicLang) => void;
+  setMusicLang: (lang: MusicLang, isUserSelection?: boolean) => void;
+  syncMusicLangWithApp: (appLang: string) => void;
   stopAllMusic: () => void;
 }
 
@@ -189,8 +287,9 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
   isMuted: false,
   shuffle: false,
   repeatMode: 'off',
-  playbackRate: 1,
+  playbackRate: resolveAudioFxParams(initial.fxPreset, initial.customFxParams).playbackRate,
   viewMode: 'audio',
+  stemMode: 'both',
   sleepTimerEndsAt: null,
 
   showNowPlayingModal: false,
@@ -367,6 +466,84 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
       return next;
     }),
 
+  setCustomEqBand: (bandIdx, db) =>
+    set((prev) => {
+      const baseBands =
+        prev.eqPreset === 'custom'
+          ? normalizeCustomEqBands(prev.customEqBands)
+          : normalizeCustomEqBands(EQ_PRESETS[prev.eqPreset]?.gains);
+      if (bandIdx >= 0 && bandIdx < baseBands.length) {
+        baseBands[bandIdx] = normalizeCustomEqBands([db])[0];
+        baseBands[bandIdx] = Math.round(Math.max(-12, Math.min(12, Number.isFinite(db) ? db : 0)) * 2) / 2;
+      }
+      const next = { ...prev, eqPreset: 'custom' as EqPresetId, customEqBands: baseBands };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setCustomEqBands: (bands) =>
+    set((prev) => {
+      const next = {
+        ...prev,
+        eqPreset: 'custom' as EqPresetId,
+        customEqBands: normalizeCustomEqBands(bands),
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  resetEqToFlat: () =>
+    set((prev) => {
+      const next = {
+        ...prev,
+        eqPreset: 'flat' as EqPresetId,
+        customEqBands: normalizeCustomEqBands(),
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setFxPreset: (preset) =>
+    set((prev) => {
+      const resolved = resolveAudioFxParams(preset, prev.customFxParams);
+      const next = {
+        ...prev,
+        fxPreset: preset,
+        playbackRate: resolved.playbackRate,
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setFxParam: (key, value) =>
+    set((prev) => {
+      const base = resolveAudioFxParams(prev.fxPreset, prev.customFxParams);
+      const updated = normalizeAudioFxParams({
+        ...base,
+        [key]: value,
+      });
+      const next = {
+        ...prev,
+        fxPreset: 'custom' as AudioEffectId,
+        customFxParams: updated,
+        playbackRate: updated.playbackRate,
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  resetAudioFx: () =>
+    set((prev) => {
+      const next = {
+        ...prev,
+        fxPreset: 'none' as AudioEffectId,
+        customFxParams: { ...DEFAULT_AUDIO_FX_PARAMS },
+        playbackRate: 1,
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
   toggleSpatial8d: () =>
     set((prev) => {
       const next = { ...prev, spatial8dEnabled: !prev.spatial8dEnabled };
@@ -383,17 +560,71 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
 
   setSpatial8dMode: (mode) =>
     set((prev) => {
-      const next = { ...prev, spatial8dMode: mode };
+      const preset = SPATIAL_8D_PRESETS[mode] || SPATIAL_8D_PRESETS.orbit;
+      const next = {
+        ...prev,
+        spatial8dMode: mode,
+        spatial8dSpeed: preset.speed,
+        spatial8dReverb: preset.reverbAmount,
+        spatial8dDepth: preset.depth,
+      };
       syncPersisted(next);
       return next;
     }),
 
-  setPlaybackRate: (rate) => set({ playbackRate: rate }),
+  setSpatial8dSpeed: (speed) =>
+    set((prev) => {
+      const next = { ...prev, spatial8dSpeed: clamp8dSpeed(speed) };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setSpatial8dReverb: (reverb) =>
+    set((prev) => {
+      const next = { ...prev, spatial8dReverb: clamp8dReverb(reverb) };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setSpatial8dDepth: (depth) =>
+    set((prev) => {
+      const next = { ...prev, spatial8dDepth: clamp8dDepth(depth) };
+      syncPersisted(next);
+      return next;
+    }),
+
+  resetSpatial8dControls: () =>
+    set((prev) => {
+      const next = {
+        ...prev,
+        spatial8dMode: 'orbit' as Spatial8dMode,
+        spatial8dSpeed: AUDIO_8D_LIMITS.defaultSpeedSec,
+        spatial8dReverb: AUDIO_8D_LIMITS.defaultReverb,
+        spatial8dDepth: AUDIO_8D_LIMITS.defaultDepth,
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setPlaybackRate: (rate) =>
+    set((prev) => {
+      const base = resolveAudioFxParams(prev.fxPreset, prev.customFxParams);
+      const updated = normalizeAudioFxParams({ ...base, playbackRate: rate });
+      const next = {
+        ...prev,
+        playbackRate: updated.playbackRate,
+        fxPreset: 'custom' as AudioEffectId,
+        customFxParams: updated,
+      };
+      syncPersisted(next);
+      return next;
+    }),
   setViewMode: (mode) =>
     set({
       viewMode: mode,
       nowPlayingTab: mode === 'video' ? 'video' : 'artwork',
     }),
+  setStemMode: (stemMode) => set({ stemMode }),
 
   setSleepTimerMinutes: (minutes) =>
     set({
@@ -492,9 +723,23 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
       return next;
     }),
 
-  setMusicLang: (musicLang) =>
+  setMusicLang: (musicLang, isUserSelection = true) =>
     set((prev) => {
-      const next = { ...prev, musicLang };
+      const next = {
+        ...prev,
+        musicLang,
+        musicLangCustom: isUserSelection ? true : prev.musicLangCustom,
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  syncMusicLangWithApp: (appLang) =>
+    set((prev) => {
+      if (prev.musicLangCustom) return prev;
+      const normalized = normalizeMusicLang(appLang);
+      if (prev.musicLang === normalized) return prev;
+      const next = { ...prev, musicLang: normalized };
       syncPersisted(next);
       return next;
     }),

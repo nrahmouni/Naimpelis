@@ -15,6 +15,7 @@ import {
   Radio,
   Search,
   Shuffle,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   UserCheck,
@@ -31,11 +32,14 @@ import type {
   MusicTrack,
 } from '../../types/music';
 import { useMusicStore } from '../../store/useMusicStore';
+import { unlockGlobalAudio8dContexts } from '../../hooks/useAudio8D';
 import { triggerHaptic } from '../../utils/haptics';
+import { usePWAInstall } from '../../utils/usePWAInstall';
 import { useBackInterceptor } from '../../lib/backInterceptor';
 import { MusicAudioEngine } from './MusicAudioEngine';
 import { SpotifyPlayerBar, formatMusicTime } from './SpotifyPlayerBar';
 import { EqAndTimerModal, FullScreenNowPlayingModal } from './FullScreenNowPlayingModal';
+import { RiffanMusicInstallModal } from './RiffanMusicInstallModal';
 import { HorizontalRail } from './HorizontalRail';
 import { MUSIC_I18N, type MusicCopy } from './musicI18n';
 
@@ -167,7 +171,7 @@ const TrackRow: React.FC<{
   copy,
 }) => (
   <div
-    className={`group flex items-center gap-3 px-2.5 sm:px-3.5 py-2 rounded-xl transition-colors ${
+    className={`group flex items-center gap-2 sm:gap-3 px-2 sm:px-3.5 py-2 rounded-xl transition-colors ${
       isActive ? 'bg-[#10B981]/14 border border-[#10B981]/30' : 'hover:bg-white/[0.05]'
     }`}
   >
@@ -175,7 +179,7 @@ const TrackRow: React.FC<{
       type="button"
       onClick={onPlay}
       aria-label={`${copy.playNow} ${track.title}`}
-      className="w-7 h-9 flex items-center justify-center shrink-0 cursor-pointer text-xs font-semibold tabular-nums text-zinc-400 group-hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] rounded-lg"
+      className="w-5 sm:w-7 h-9 flex items-center justify-center shrink-0 cursor-pointer text-xs font-semibold tabular-nums text-zinc-400 group-hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] rounded-lg"
     >
       {isActive && isPlaying ? (
         <span className="flex items-end gap-[2px] h-3.5" aria-hidden="true">
@@ -196,9 +200,10 @@ const TrackRow: React.FC<{
     <button
       type="button"
       onClick={onPlay}
-      className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer"
+      className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1 text-left cursor-pointer"
     >
-      <div className="w-11 h-11 rounded-lg overflow-hidden bg-[#0E1522] border border-white/10 shrink-0 flex items-center justify-center">
+      <div className="relative w-11 h-11 rounded-lg overflow-hidden bg-[#0E1522] border border-white/10 shrink-0 flex items-center justify-center">
+        <Music2 className="w-4 h-4 text-zinc-500 relative z-0" />
         {track.album.cover ? (
           <img
             src={track.album.cover}
@@ -208,11 +213,9 @@ const TrackRow: React.FC<{
             onError={(e) => {
               e.currentTarget.style.display = 'none';
             }}
-            className="w-full h-full object-cover"
+            className="absolute inset-0 z-10 w-full h-full object-cover"
           />
-        ) : (
-          <Music2 className="w-4 h-4 text-zinc-500" />
-        )}
+        ) : null}
       </div>
       <div className="min-w-0 flex-1">
         <p
@@ -263,15 +266,15 @@ const TrackRow: React.FC<{
       </button>
     )}
 
-    <div className="flex items-center gap-1 shrink-0">
+    <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
       <button
         type="button"
         onClick={onToggleLike}
         aria-label={isLiked ? copy.likeRemove : copy.likeAdd}
-        className={`w-10 h-10 sm:w-9 sm:h-9 rounded-full flex items-center justify-center cursor-pointer transition-all ${
+        className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition-all ${
           isLiked
             ? 'text-[#34D399]'
-            : 'text-zinc-400 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 hover:text-white'
+            : 'text-zinc-400 opacity-85 sm:opacity-0 sm:group-hover:opacity-100 hover:text-white'
         }`}
       >
         <Heart className={`w-4 h-4 ${isLiked ? 'fill-current' : ''}`} />
@@ -290,14 +293,14 @@ const TrackRow: React.FC<{
         type="button"
         onClick={onOpenPlaylistPicker}
         title={copy.addToPlaylist}
-        className="w-10 h-10 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-zinc-400 sm:opacity-0 sm:group-hover:opacity-100 hover:text-white cursor-pointer transition-opacity"
+        className="w-9 h-9 rounded-full flex items-center justify-center text-zinc-400 sm:opacity-0 sm:group-hover:opacity-100 hover:text-white cursor-pointer transition-opacity"
       >
         <Plus className="w-4 h-4" />
       </button>
 
       {extraRightAction}
 
-      <span className="w-10 text-right text-xs text-zinc-400 tabular-nums">
+      <span className="w-9 sm:w-10 text-right text-[11px] sm:text-xs text-zinc-400 tabular-nums">
         {formatMusicTime(track.durationSec)}
       </span>
     </div>
@@ -305,6 +308,7 @@ const TrackRow: React.FC<{
 );
 
 export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
+  lang,
   externalSearchQuery = '',
 }) => {
   const [navTab, setNavTab] = useState<MusicNavTab>('home');
@@ -330,7 +334,9 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   const [playlistPickerTrack, setPlaylistPickerTrack] = useState<MusicTrack | null>(null);
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
+  const [showMusicInstallModal, setShowMusicInstallModal] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const { isInstalled: isPwaStandalone } = usePWAInstall();
 
   const currentTrack = useMusicStore((s) => s.currentTrack);
   const activeRadio = useMusicStore((s) => s.activeRadio);
@@ -364,6 +370,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   const addTrackToUserPlaylist = useMusicStore((s) => s.addTrackToUserPlaylist);
   const removeTrackFromUserPlaylist = useMusicStore((s) => s.removeTrackFromUserPlaylist);
   const setShowQueueDrawer = useMusicStore((s) => s.setShowQueueDrawer);
+  const setShowEqModal = useMusicStore((s) => s.setShowEqModal);
+  const syncMusicLangWithApp = useMusicStore((s) => s.syncMusicLangWithApp);
 
   const toastTimerRef = useRef<number | null>(null);
   const showToast = useCallback((msg: string) => {
@@ -379,12 +387,39 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   });
 
   useEffect(() => {
+    syncMusicLangWithApp(lang);
+  }, [lang, syncMusicLangWithApp]);
+
+  useEffect(() => {
     if (externalSearchQuery.trim()) {
       setLocalSearchQuery(externalSearchQuery);
       setNavTab('search');
       setDetail(null);
     }
   }, [externalSearchQuery]);
+
+  // Standalone Riffan Music APK & PWA install event + ?install=music boot trigger
+  useEffect(() => {
+    const onOpenMusicInstall = () => setShowMusicInstallModal(true);
+    window.addEventListener('riffan:open-music-install', onOpenMusicInstall);
+
+    try {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('install') === 'music') {
+        setShowMusicInstallModal(true);
+        params.delete('install');
+        const nextSearch = params.toString();
+        const nextUrl = `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}`;
+        window.history.replaceState(window.history.state, '', nextUrl);
+      }
+    } catch {
+      // ignore URL parsing errors
+    }
+
+    return () => {
+      window.removeEventListener('riffan:open-music-install', onOpenMusicInstall);
+    };
+  }, []);
 
   // Initial load of expanded Global + Platform Home data
   useEffect(() => {
@@ -801,6 +836,25 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
 
   const renderQuickMixes = () => {
     if (!homeData) return null;
+    const usedCovers = new Set<string>([mixHeroCover, rockArenaCover]);
+    const pickUniqueCover = (tracks: MusicTrack[], fallback: string): string => {
+      for (const track of tracks) {
+        const candidate = track.album.cover || track.album.coverXl;
+        if (candidate && !usedCovers.has(candidate)) {
+          usedCovers.add(candidate);
+          return candidate;
+        }
+      }
+      return fallback;
+    };
+
+    const ytmCover = pickUniqueCover(homeData.youtubeMusicHits, spatialHeroCover);
+    const spotifyCover = pickUniqueCover(homeData.spotifyHits, mixUrbanoCover);
+    const moroccoCover = pickUniqueCover(homeData.moroccoMix, mixElectronicCover);
+    const africaCover = pickUniqueCover(homeData.africaMix, acousticSoulCover);
+    const arabCover = pickUniqueCover(homeData.arabMix, chillLofiCover);
+    const russiaCover = pickUniqueCover(homeData.russiaMix, spatialHeroCover);
+
     const cards = [
       {
         id: 'liked',
@@ -812,7 +866,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
       {
         id: 'ytm',
         title: m.moodYtm,
-        cover: homeData.youtubeMusicHits[0]?.album.cover || spatialHeroCover,
+        cover: ytmCover,
         count: `${homeData.youtubeMusicHits.length} hits`,
         onClick: () =>
           setDetail({
@@ -826,7 +880,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
       {
         id: 'spotify',
         title: m.moodSpotify,
-        cover: homeData.spotifyHits[0]?.album.cover || mixUrbanoCover,
+        cover: spotifyCover,
         count: `${homeData.spotifyHits.length} charts`,
         onClick: () =>
           setDetail({
@@ -840,7 +894,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
       {
         id: 'morocco',
         title: m.moodMorocco,
-        cover: homeData.moroccoMix[0]?.album.cover || mixUrbanoCover,
+        cover: moroccoCover,
         count: `${homeData.moroccoMix.length} ${m.songsCount}`,
         onClick: () =>
           setDetail({
@@ -854,7 +908,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
       {
         id: 'africa',
         title: m.moodAfrica,
-        cover: homeData.africaMix[0]?.album.cover || mixElectronicCover,
+        cover: africaCover,
         count: `${homeData.africaMix.length} ${m.songsCount}`,
         onClick: () =>
           setDetail({
@@ -868,7 +922,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
       {
         id: 'arab',
         title: m.moodArab,
-        cover: homeData.arabMix[0]?.album.cover || acousticSoulCover,
+        cover: arabCover,
         count: `${homeData.arabMix.length} ${m.songsCount}`,
         onClick: () =>
           setDetail({
@@ -882,7 +936,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
       {
         id: 'russia',
         title: m.moodRussia,
-        cover: homeData.russiaMix[0]?.album.cover || chillLofiCover,
+        cover: russiaCover,
         count: `${homeData.russiaMix.length} ${m.songsCount}`,
         onClick: () =>
           setDetail({
@@ -895,7 +949,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
       },
       {
         id: 'radios',
-        title: m.navRadios,
+        title: m.navRadiosShort,
         cover: rockArenaCover,
         count: `${homeData.radios.length}+ FM`,
         onClick: () => {
@@ -912,17 +966,20 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             key={c.id}
             type="button"
             onClick={c.onClick}
-            className="group flex items-center gap-3 rounded-2xl bg-white/[0.05] hover:bg-[#10B981]/14 border border-white/[0.07] hover:border-[#10B981]/35 overflow-hidden text-left cursor-pointer transition-all pr-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+            className="group flex items-center gap-2.5 sm:gap-3 rounded-2xl bg-white/[0.05] hover:bg-[#10B981]/14 border border-white/[0.07] hover:border-[#10B981]/35 overflow-hidden text-left cursor-pointer transition-all pr-2.5 sm:pr-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
           >
-            <img
-              src={c.cover}
-              alt={c.title}
-              referrerPolicy="no-referrer"
-              onError={(e) => {
-                e.currentTarget.style.display = 'none';
-              }}
-              className="w-14 h-14 sm:w-16 sm:h-16 object-cover shrink-0 bg-[#0B111C]"
-            />
+            <div className="relative w-14 h-14 sm:w-16 sm:h-16 shrink-0 bg-[#0B111C] flex items-center justify-center overflow-hidden">
+              <Music2 className="w-5 h-5 text-zinc-600 relative z-0" />
+              <img
+                src={c.cover}
+                alt={c.title}
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+                className="absolute inset-0 z-10 w-full h-full object-cover"
+              />
+            </div>
             <div className="min-w-0 flex-1 py-1">
               <p className="text-xs sm:text-sm font-bold text-white truncate">{c.title}</p>
               <p className="text-[11px] text-zinc-400 truncate mt-0.5 tabular-nums">{c.count}</p>
@@ -1787,54 +1844,73 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           ))}
         </div>
 
-        {/* Direct APK & PWA Install Card */}
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent('riffan:open-install'))}
-          className="rounded-2xl bg-gradient-to-r from-[#10B981]/14 via-[#0B121D] to-[#22D3EE]/12 hover:from-[#10B981]/24 hover:to-[#22D3EE]/20 border border-[#10B981]/25 p-3 flex items-center gap-3 text-left cursor-pointer transition-all"
-        >
-          <span className="w-9 h-9 rounded-xl bg-[#10B981]/18 text-[#34D399] flex items-center justify-center shrink-0">
-            <Download className="w-4 h-4" />
-          </span>
-          <div className="min-w-0">
-            <p className="text-xs font-bold text-white truncate">{m.installAppTitle}</p>
-            <p className="text-[11px] text-zinc-400 truncate">{m.installAppSub}</p>
-          </div>
-        </button>
+        {/* Direct APK & PWA Install Card (hidden when already installed standalone) */}
+        {!isPwaStandalone && (
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('riffan:open-music-install'))}
+            className="rounded-2xl bg-gradient-to-r from-[#10B981]/14 via-[#0B121D] to-[#22D3EE]/12 hover:from-[#10B981]/24 hover:to-[#22D3EE]/20 border border-[#10B981]/25 p-3 flex items-center gap-3 text-left cursor-pointer transition-all"
+          >
+            <span className="w-9 h-9 rounded-xl bg-[#10B981]/18 text-[#34D399] flex items-center justify-center shrink-0">
+              <Download className="w-4 h-4" />
+            </span>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-white truncate">{m.installAppTitle}</p>
+              <p className="text-[11px] text-zinc-400 truncate">{m.installAppSub}</p>
+            </div>
+          </button>
+        )}
       </aside>
 
       {/* Main Immersive Sonic Stage */}
       <div className="flex-1 min-w-0 space-y-6">
-        {/* Mobile Compact Navigation Bar */}
-        <HorizontalRail compact gapClassName="gap-2" className="lg:hidden">
-          {[
-            { id: 'home' as const, label: m.navHome, icon: Home },
-            { id: 'search' as const, label: m.navExplore, icon: Search },
-            { id: 'library' as const, label: m.navLibrary, icon: Library },
-            { id: 'radios' as const, label: m.navRadios, icon: Radio },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const active = navTab === tab.id && !detail;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  setDetail(null);
-                  setNavTab(tab.id);
-                }}
-                className={`min-h-10 px-3.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-all whitespace-nowrap shrink-0 ${
-                  active
-                    ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_6px_18px_rgba(16,185,129,0.35)]'
-                    : 'bg-white/[0.07] text-zinc-200 hover:bg-white/[0.12]'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {tab.label}
-              </button>
-            );
-          })}
-        </HorizontalRail>
+        {/* Mobile Compact Segmented Navigation Bar + Install Chip */}
+        <div className="lg:hidden flex items-center gap-1.5">
+          <nav
+            aria-label="Music navigation"
+            className="flex-1 min-w-0 grid grid-cols-4 gap-1 p-1 rounded-2xl bg-[#0B1018] border border-white/[0.07]"
+          >
+            {[
+              { id: 'home' as const, label: m.navHome, icon: Home },
+              { id: 'search' as const, label: m.navExplore, icon: Search },
+              { id: 'library' as const, label: m.navLibrary, icon: Library },
+              { id: 'radios' as const, label: m.navRadiosShort, icon: Radio },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const active = navTab === tab.id && !detail;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setDetail(null);
+                    setNavTab(tab.id);
+                  }}
+                  className={`min-h-10 px-1.5 rounded-xl text-[11px] font-bold inline-flex items-center justify-center gap-1 cursor-pointer transition-all whitespace-nowrap min-w-0 ${
+                    active
+                      ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.3)]'
+                      : 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+          {!isPwaStandalone && (
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new CustomEvent('riffan:open-music-install'))}
+              title={m.installAppTitle}
+              aria-label={m.installAppTitle}
+              className="h-12 px-2.5 rounded-2xl bg-[#10B981]/16 hover:bg-[#10B981]/28 border border-[#10B981]/35 text-[#34D399] inline-flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              <span className="text-[11px] font-bold hidden sm:inline">App</span>
+            </button>
+          )}
+        </div>
 
         {/* Detail View or Active Tab */}
         {detail ? (
@@ -1871,7 +1947,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     {greeting} · {m.spatialAudioLabel} ·{' '}
                     {currentTrack ? m.playingNow : m.worldTrending}
                   </p>
-                  <h1 className="font-display text-3xl sm:text-5xl font-black text-white tracking-tight leading-[1.05]">
+                  <h1 className="font-display text-3xl sm:text-5xl font-black text-white tracking-tight leading-[1.05] text-balance">
                     {heroSpotlightTrack ? heroSpotlightTrack.title : 'Riffan Music'}
                   </h1>
                   <p className="text-sm sm:text-base text-zinc-200/90 leading-snug tabular-nums">
@@ -1886,10 +1962,11 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                       : m.heroFallbackSub}
                   </p>
 
-                  <div className="pt-1 flex flex-wrap items-center gap-2.5">
+                  <div className="pt-1 flex flex-wrap items-center gap-2">
                     <button
                       type="button"
                       onClick={() => {
+                        unlockGlobalAudio8dContexts();
                         triggerHaptic('medium');
                         if (currentTrack && heroSpotlightTrack?.id === currentTrack.id) {
                           togglePlayPause();
@@ -1914,40 +1991,46 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                       <button
                         type="button"
                         onClick={() => {
+                          unlockGlobalAudio8dContexts();
                           triggerHaptic('light');
                           const shuffled = [...heroPool].sort(() => Math.random() - 0.5);
                           playTrack(shuffled[0], shuffled);
                         }}
-                        className="h-11 sm:h-12 px-5 rounded-full bg-white/[0.1] hover:bg-white/[0.18] border border-white/15 text-white font-semibold text-sm inline-flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
+                        className="h-11 sm:h-12 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/15 text-white font-semibold text-sm inline-flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
                       >
                         <Shuffle className="w-4 h-4 text-[#22D3EE]" /> {m.shuffleMix}
                       </button>
                     )}
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        toggleSpatial8d();
-                      }}
-                      aria-pressed={spatial8dEnabled}
-                      className={`h-11 sm:h-12 px-4 rounded-full font-bold text-sm inline-flex items-center gap-2 cursor-pointer transition-all whitespace-nowrap ${
-                        spatial8dEnabled
-                          ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_8px_24px_rgba(16,185,129,0.42)]'
-                          : 'bg-white/[0.06] hover:bg-white/[0.14] border border-white/10 text-zinc-200 hover:text-white'
-                      }`}
-                    >
-                      <Headphones className={`w-4 h-4 ${spatial8dEnabled ? 'text-[#03130E]' : 'text-[#22D3EE]'}`} />
-                      <span>{m.spatial8dBtn}</span>
-                    </button>
+                    <div className="inline-flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          unlockGlobalAudio8dContexts();
+                          triggerHaptic('medium');
+                          toggleSpatial8d();
+                        }}
+                        aria-pressed={spatial8dEnabled}
+                        className={`h-11 sm:h-12 px-4 rounded-xl font-bold text-sm inline-flex items-center gap-2 cursor-pointer transition-all whitespace-nowrap ${
+                          spatial8dEnabled
+                            ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_8px_24px_rgba(16,185,129,0.42)]'
+                            : 'bg-white/[0.07] hover:bg-white/[0.14] border border-white/10 text-zinc-200 hover:text-white'
+                        }`}
+                      >
+                        <Headphones className={`w-4 h-4 ${spatial8dEnabled ? 'text-[#03130E]' : 'text-[#22D3EE]'}`} />
+                        <span>{m.spatial8dBtn}</span>
+                      </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setNavTab('radios')}
-                      className="h-11 sm:h-12 px-4 rounded-full bg-white/[0.06] hover:bg-white/[0.14] border border-white/10 text-zinc-200 hover:text-white font-semibold text-sm inline-flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
-                    >
-                      <Radio className="w-4 h-4 text-[#34D399]" /> {m.radios247}
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowEqModal(true)}
+                        title={m.spatial8dAdjustBtn}
+                        aria-label={m.spatial8dAdjustBtn}
+                        className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/10 text-zinc-200 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                      >
+                        <SlidersHorizontal className="w-4 h-4 text-[#34D399]" />
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1982,7 +2065,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                       triggerHaptic('light');
                       setActiveMood(mood.id);
                     }}
-                    className={`min-h-10 px-4 rounded-full text-xs font-bold cursor-pointer transition-all whitespace-nowrap shrink-0 snap-start ${
+                    className={`h-9 px-3.5 rounded-xl text-xs font-bold cursor-pointer transition-all whitespace-nowrap shrink-0 snap-start ${
                       selected
                         ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_6px_18px_rgba(16,185,129,0.32)]'
                         : 'bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 border border-white/[0.06]'
@@ -2279,7 +2362,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     key={rt.id}
                     type="button"
                     onClick={() => setRadioFilterId(rt.id)}
-                    className={`min-h-10 px-4 rounded-full text-xs font-bold cursor-pointer transition-all whitespace-nowrap shrink-0 snap-start ${
+                    className={`h-9 px-3.5 rounded-xl text-xs font-bold cursor-pointer transition-all whitespace-nowrap shrink-0 snap-start ${
                       selected
                         ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_6px_18px_rgba(16,185,129,0.32)]'
                         : 'bg-white/[0.07] hover:bg-white/[0.12] text-zinc-200'
@@ -2313,6 +2396,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                       }`}
                     >
                       <div className="w-14 h-14 rounded-xl overflow-hidden bg-[#101826] border border-white/10 shrink-0 flex items-center justify-center relative">
+                        <Radio className="w-6 h-6 text-[#22D3EE] relative z-0" />
                         {station.favicon ? (
                           <img
                             src={station.favicon}
@@ -2321,10 +2405,9 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                             onError={(e) => {
                               e.currentTarget.style.display = 'none';
                             }}
-                            className="w-full h-full object-cover"
+                            className="absolute inset-0 z-10 w-full h-full object-cover"
                           />
                         ) : null}
-                        <Radio className="w-6 h-6 text-[#22D3EE] -z-10" />
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className={`text-sm font-bold truncate ${active ? 'text-[#34D399]' : 'text-white'}`}>
@@ -2604,6 +2687,11 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
         }}
       />
       <EqAndTimerModal />
+      <RiffanMusicInstallModal
+        isOpen={showMusicInstallModal}
+        onClose={() => setShowMusicInstallModal(false)}
+        lang={lang}
+      />
     </div>
   );
 };

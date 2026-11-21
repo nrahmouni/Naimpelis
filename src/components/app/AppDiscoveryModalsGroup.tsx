@@ -156,7 +156,11 @@ export const AppDiscoveryModalsGroup: React.FC<AppDiscoveryModalsGroupProps> = (
             type="button"
             onClick={() => {
               const filename =
-                nativeApkUpdate.flavor === 'tv' ? 'RIFFAN-TV-TV.apk' : 'RIFFAN-TV.apk';
+                nativeApkUpdate.flavor === 'tv'
+                  ? 'RIFFAN-TV-TV.apk'
+                  : nativeApkUpdate.flavor === 'music'
+                  ? 'RIFFAN-MUSIC.apk'
+                  : 'RIFFAN-TV.apk';
               void triggerApkDownload(nativeApkUpdate.apkUrl, filename);
               setNativeApkUpdate(null);
             }}
