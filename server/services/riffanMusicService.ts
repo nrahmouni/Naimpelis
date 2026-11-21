@@ -1,5 +1,15 @@
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { logger } from '../utils/logger.ts';
+import {
+  fetchItunesAlbumById,
+  fetchSpotifyChartsAndAlbums,
+  fetchSpotifyPlaylistTracks,
+  fetchYouTubeMusicAlbum,
+  fetchYouTubeMusicExploreAndCharts,
+  mapItunesSongToTrack,
+  searchItunesMusic,
+  searchYouTubeMusic,
+} from './musicPlatformSync.ts';
 
 export interface MusicArtistRef {
   id: string;
@@ -36,10 +46,11 @@ export interface MusicTrack {
   previewUrl?: string;
   isrc?: string;
   rank?: number;
-  source?: 'deezer' | 'audius' | 'soundcloud' | 'radio';
+  source?: 'deezer' | 'audius' | 'soundcloud' | 'youtube_music' | 'spotify' | 'radio';
   audiusId?: string;
   soundcloudId?: string;
   youtubeVideoId?: string;
+  spotifyId?: string;
   streamUrl?: string;
 }
 
@@ -107,34 +118,39 @@ const radioCache = new LruTtlCache<string, MusicRadioStation[]>(12, 20 * 60 * 10
 let scClientIdCache: { id: string; expiresAt: number } | null = null;
 
 const GENRE_COLOR_MAP: Record<string, string> = {
-  Pop: '#148A08',
-  'Rap/Hip Hop': '#BA5D07',
-  Rock: '#E91429',
-  Dance: '#0D73EC',
-  'R&B': '#DC148C',
-  Alternative: '#477D95',
-  Electro: '#006450',
-  Latin: '#E13300',
-  Reggaeton: '#8D67AB',
-  Flamenco: '#B02897',
-  Jazz: '#1E3264',
-  Classical: '#7D4B32',
-  Soul: '#AF2896',
-  Metal: '#503750',
-  Folk: '#537AA1',
+  Pop: '#E11D48',
+  'Rap/Hip Hop': '#D97706',
+  Rock: '#B91C1C',
+  Dance: '#2563EB',
+  'R&B': '#BE185D',
+  Alternative: '#4F46E5',
+  Electro: '#0F766E',
+  Latin: '#EA580C',
+  Reggaeton: '#9333EA',
+  Flamenco: '#9F1239',
+  Jazz: '#1E3A8A',
+  Classical: '#78350F',
+  Soul: '#86198F',
+  Metal: '#3F3F46',
+  Folk: '#0369A1',
+  'Films/Games': '#4338CA',
+  Blues: '#1D4ED8',
+  Reggae: '#15803D',
+  Country: '#B45309',
+  Kids: '#0D9488',
 };
 
 const GENRE_COLORS_FALLBACK = [
-  '#1DB954',
-  '#E13300',
-  '#0D73EC',
-  '#BA5D07',
-  '#8D67AB',
-  '#E91429',
-  '#006450',
-  '#1E3264',
-  '#B02897',
-  '#477D95',
+  '#E11D48',
+  '#EA580C',
+  '#2563EB',
+  '#D97706',
+  '#9333EA',
+  '#B91C1C',
+  '#0F766E',
+  '#1E3A8A',
+  '#BE185D',
+  '#4F46E5',
 ];
 
 async function fetchJsonSafe<T>(url: string, timeoutMs = 6500, headers: Record<string, string> = {}): Promise<T | null> {
@@ -210,6 +226,47 @@ function mapDeezerPlaylist(raw: any): MusicPlaylist {
     nbTracks: typeof raw?.nb_tracks === 'number' ? raw.nb_tracks : undefined,
     creator: raw?.user?.name ? String(raw.user.name) : raw?.creator?.name ? String(raw.creator.name) : 'Riffan Music',
   };
+}
+
+function mapAudiusTrack(t: any): MusicTrack {
+  return {
+    id: `au-${t.id}`,
+    title: String(t.title || 'Track'),
+    artist: {
+      id: `au-art-${t.user?.id || '0'}`,
+      name: String(t.user?.name || 'Audius Artist'),
+      picture: String(t.user?.profile_picture?.['480x480'] || t.user?.profile_picture?.['150x150'] || ''),
+    },
+    album: {
+      id: `au-alb-${t.id}`,
+      title: String(t.genre || 'Audius Hi-Fi'),
+      cover: String(t.artwork?.['480x480'] || t.artwork?.['150x150'] || ''),
+      coverXl: String(t.artwork?.['1000x1000'] || t.artwork?.['480x480'] || ''),
+    },
+    durationSec: Number(t.duration || 0),
+    source: 'audius' as const,
+    audiusId: String(t.id),
+  };
+}
+
+function interleaveUniqueTracks(lists: MusicTrack[][], maxTotal = 32): MusicTrack[] {
+  const seen = new Set<string>();
+  const out: MusicTrack[] = [];
+  const maxLen = Math.max(0, ...lists.map((l) => l.length));
+  for (let i = 0; i < maxLen && out.length < maxTotal; i++) {
+    for (const list of lists) {
+      const t = list[i];
+      if (!t || !t.id || seen.has(t.id)) continue;
+      seen.add(t.id);
+      out.push(t);
+      if (out.length >= maxTotal) break;
+    }
+  }
+  return out;
+}
+
+function mapDeezerTracksSafe(rawList: any): MusicTrack[] {
+  return Array.isArray(rawList) ? rawList.map((t: any) => mapDeezerTrack(t)) : [];
 }
 
 async function getSoundCloudClientId(): Promise<string> {
@@ -451,31 +508,30 @@ async function resolveAudiusStream(artist: string, title: string, durationSec: n
   return null;
 }
 
-export async function getMusicRadios(country = 'ES'): Promise<MusicRadioStation[]> {
-  const key = country.toUpperCase();
-  const cached = radioCache.get(key);
-  if (cached) return cached;
+const COUNTRY_RADIO_GROUPS: Record<string, string[]> = {
+  MA: ['MA'],
+  RU: ['RU'],
+  RO: ['RO'],
+  CN: ['CN', 'HK', 'TW'],
+  US: ['US'],
+  FR: ['FR'],
+  ES: ['ES'],
+  ARAB: ['EG', 'AE', 'SA', 'LB', 'TN', 'DZ'],
+  AFRICA: ['NG', 'ZA', 'KE', 'GH', 'SN', 'CI', 'MA'],
+  LATIN: ['MX', 'CO', 'AR', 'BR', 'CL', 'PR'],
+};
 
-  const [esStations, globalStations] = await Promise.all([
-    fetchJsonSafe<any[]>(
-      'https://de1.api.radio-browser.info/json/stations/bycountrycodeexact/ES?limit=60&order=clickcount&reverse=true&hidebroken=true',
-      6000
-    ),
-    fetchJsonSafe<any[]>(
-      'https://de1.api.radio-browser.info/json/stations/bytag/pop?limit=35&order=clickcount&reverse=true&hidebroken=true',
-      6000
-    ),
-  ]);
-
-  const combined = [...(esStations || []), ...(globalStations || [])];
+function mapRadioStations(rawList: any[], maxTotal = 72): MusicRadioStation[] {
   const seen = new Set<string>();
   const stations: MusicRadioStation[] = [];
-
-  for (const st of combined) {
+  for (const st of rawList) {
     const streamUrl = String(st?.url_resolved || st?.url || '').trim();
     const name = String(st?.name || '').trim();
     if (!streamUrl || !name || seen.has(name.toLowerCase())) continue;
-    if (/\b(am|cope\b|ser\b|ondacero|esradio|rne radio nacional|radio 5|catalunya informacio|noticias)\b/i.test(name) && !/rock|mega|los40|cadena 100|europa|kiss|hit|music/i.test(name)) {
+    if (
+      /\b(am|cope\b|ser\b|ondacero|esradio|rne radio nacional|radio 5|catalunya informacio|noticias)\b/i.test(name) &&
+      !/rock|mega|los40|cadena 100|europa|kiss|hit|music|flaix|radiolé|dial|mars|hitradio/i.test(name)
+    ) {
       continue;
     }
     seen.add(name.toLowerCase());
@@ -487,48 +543,236 @@ export async function getMusicRadios(country = 'ES'): Promise<MusicRadioStation[
     stations.push({
       id: `radio-${st?.stationuuid || stations.length}`,
       name,
-      country: String(st?.countrycode || st?.country || 'ES'),
-      tags: tags.length > 0 ? tags : ['Música 24/7'],
+      country: String(st?.countrycode || st?.country || 'INTL'),
+      tags: tags.length > 0 ? tags : ['Music 24/7'],
       favicon: String(st?.favicon || ''),
       streamUrl,
       bitrate: Number(st?.bitrate || 128),
       codec: String(st?.codec || 'MP3'),
       votes: Number(st?.votes || 0),
     });
-    if (stations.length >= 28) break;
+    if (stations.length >= maxTotal) break;
   }
-
-  radioCache.set(key, stations);
   return stations;
 }
 
-export async function getMusicHome() {
-  const cached = homeCache.get('home');
+const CURATED_FALLBACK_RADIOS: Record<string, MusicRadioStation[]> = {
+  ES: [
+    { id: 'cur-es-1', name: 'LOS40 España', country: 'ES', tags: ['Pop', 'Hits'], favicon: '', streamUrl: 'https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-es-2', name: 'LOS40 Urban', country: 'ES', tags: ['Urbano', 'Reggaeton'], favicon: '', streamUrl: 'https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_URBAN.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-es-3', name: 'Cadena 100', country: 'ES', tags: ['Pop', 'Rock'], favicon: '', streamUrl: 'https://cadena100-cope-rrcast.flumotion.com/cope/cadena100.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-es-4', name: 'RockFM España', country: 'ES', tags: ['Rock', 'Classics'], favicon: '', streamUrl: 'https://rockfm-cope-rrcast.flumotion.com/cope/rockfm.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-es-5', name: 'FlaixFM Barcelona', country: 'ES', tags: ['Electronic', 'Dance'], favicon: '', streamUrl: 'https://nodo05-cloud01.streaming-pro.com:8005/flaixfm.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-es-6', name: 'Radio Olé', country: 'ES', tags: ['Flamenco', 'Español'], favicon: '', streamUrl: 'https://playerservices.streamtheworld.com/api/livestream-redirect/RADIOLE.mp3', bitrate: 128, codec: 'MP3' },
+  ],
+  MA: [
+    { id: 'cur-ma-1', name: 'Hit Radio Maroc', country: 'MA', tags: ['Marruecos', 'Pop', 'Urbano'], favicon: '', streamUrl: 'https://hitradio-maroc.ice.infomaniak.ch/hitradio-maroc-128.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-ma-2', name: 'Hit Radio Mgharba', country: 'MA', tags: ['Marruecos', 'Rap', 'Chaabi'], favicon: '', streamUrl: 'https://mgharba.ice.infomaniak.ch/mgharba-128.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-ma-3', name: 'Hit Radio R&B', country: 'MA', tags: ['R&B', 'Hip Hop'], favicon: '', streamUrl: 'https://hr-rnb.ice.infomaniak.ch/hr-rnb-128.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-ma-4', name: 'Radio Mars', country: 'MA', tags: ['Marruecos', 'Music'], favicon: '', streamUrl: 'https://radiomars.ice.infomaniak.ch/radiomars-128.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-ma-5', name: 'Aswat FM', country: 'MA', tags: ['Marruecos', 'Arabic'], favicon: '', streamUrl: 'https://aswat.ice.infomaniak.ch/aswat-high.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-ma-6', name: 'Chada FM Casablanca', country: 'MA', tags: ['Marruecos', 'Chaabi'], favicon: '', streamUrl: 'https://chadafm.ice.infomaniak.ch/chadafm-high.mp3', bitrate: 128, codec: 'MP3' },
+  ],
+  ARAB: [
+    { id: 'cur-ar-1', name: 'Nogoum FM 100.6', country: 'EG', tags: ['Arabic', 'Pop'], favicon: '', streamUrl: 'https://audio.nrpstream.com/listen/nogoumfm/radio.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-ar-2', name: 'Nile FM 104.2', country: 'EG', tags: ['Egypt', 'Hits'], favicon: '', streamUrl: 'https://audio.nrpstream.com/listen/nilefm/radio.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-ar-3', name: 'Monte Carlo Doualiya', country: 'FR', tags: ['Arabic', 'World'], favicon: '', streamUrl: 'https://montecarlodoualiya128k.ice.infomaniak.ch/mc-doualiya.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-ar-4', name: 'Radio Orient', country: 'LB', tags: ['Arabic', 'Classic'], favicon: '', streamUrl: 'https://n01.rcs.revma.com/75g2k667k5zuv', bitrate: 128, codec: 'MP3' },
+  ],
+  AFRICA: [
+    { id: 'cur-af-1', name: 'Afrobeats FM', country: 'NG', tags: ['Afrobeats', 'Nigeria'], favicon: '', streamUrl: 'https://stream.zeno.fm/0r0xa792kwzuv', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-af-2', name: 'Hit Radio 100% Africa', country: 'CI', tags: ['Africa', 'Amapiano'], favicon: '', streamUrl: 'https://africa.ice.infomaniak.ch/africa-128.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-af-3', name: 'RFI Musique', country: 'FR', tags: ['Afro', 'Rumba'], favicon: '', streamUrl: 'https://rfimonde64k.ice.infomaniak.ch/rfimonde-64k.mp3', bitrate: 64, codec: 'MP3' },
+  ],
+  RU: [
+    { id: 'cur-ru-1', name: 'Europa Plus Russia', country: 'RU', tags: ['Pop', 'Russia'], favicon: '', streamUrl: 'https://ep256.hostingradio.ru:8052/europaplus256.mp3', bitrate: 256, codec: 'MP3' },
+    { id: 'cur-ru-2', name: 'Radio Record Dance', country: 'RU', tags: ['Dance', 'Russian'], favicon: '', streamUrl: 'https://radiorecord.hostingradio.ru/rr_main96.aacp', bitrate: 96, codec: 'AAC' },
+    { id: 'cur-ru-3', name: 'Russian Mix Record', country: 'RU', tags: ['Russian', 'Hits'], favicon: '', streamUrl: 'https://radiorecord.hostingradio.ru/rus96.aacp', bitrate: 96, codec: 'AAC' },
+    { id: 'cur-ru-4', name: 'DFM Moscow', country: 'RU', tags: ['Electronic', 'Pop'], favicon: '', streamUrl: 'https://dfm.hostingradio.ru/dfm96.aacp', bitrate: 96, codec: 'AAC' },
+  ],
+  RO: [
+    { id: 'cur-ro-1', name: 'Kiss FM Romania', country: 'RO', tags: ['Pop', 'Romania'], favicon: '', streamUrl: 'https://live.kissfm.ro/kissfm.aacp', bitrate: 80, codec: 'AAC' },
+    { id: 'cur-ro-2', name: 'Magic FM Romania', country: 'RO', tags: ['Soft Pop', 'Classics'], favicon: '', streamUrl: 'https://live.magicfm.ro/magicfm.aacp', bitrate: 80, codec: 'AAC' },
+    { id: 'cur-ro-3', name: 'Rock FM Romania', country: 'RO', tags: ['Rock', 'Romania'], favicon: '', streamUrl: 'https://live.rockfm.ro/rockfm.aacp', bitrate: 80, codec: 'AAC' },
+  ],
+  CN: [
+    { id: 'cur-cn-1', name: 'Asia Hitz China', country: 'CN', tags: ['C-Pop', 'Mandopop'], favicon: '', streamUrl: 'https://stream.zeno.fm/49y7s033h2zuv', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-cn-2', name: 'Lofi Focus Radio', country: 'INTL', tags: ['Lo-Fi', 'Chill'], favicon: '', streamUrl: 'https://streams.ilovemusic.de/iloveradio17.mp3', bitrate: 192, codec: 'MP3' },
+  ],
+  US: [
+    { id: 'cur-us-1', name: 'KEXP 90.3 Seattle', country: 'US', tags: ['Indie', 'Alternative'], favicon: '', streamUrl: 'https://kexp-mp3-128.streamguys1.com/kexp128.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-us-2', name: 'SomaFM Groove Salad', country: 'US', tags: ['Chill', 'Ambient'], favicon: '', streamUrl: 'https://ice1.somafm.com/groovesalad-128-mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-us-3', name: 'SomaFM Beat Blender', country: 'US', tags: ['Electronic', 'Downtempo'], favicon: '', streamUrl: 'https://ice1.somafm.com/beatblender-128-mp3', bitrate: 128, codec: 'MP3' },
+  ],
+  LATIN: [
+    { id: 'cur-la-1', name: 'Los40 Colombia', country: 'CO', tags: ['Latino', 'Urbano'], favicon: '', streamUrl: 'https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_COLOMBIA.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-la-2', name: 'Salsa Mexico Radio', country: 'MX', tags: ['Salsa', 'Tropical'], favicon: '', streamUrl: 'https://stream.zeno.fm/0c8m7p4r2zuv', bitrate: 128, codec: 'MP3' },
+  ],
+};
+
+function getCuratedFallbackRadios(cleanCountry: string, cleanTag: string): MusicRadioStation[] {
+  if (cleanTag) {
+    const all = Object.values(CURATED_FALLBACK_RADIOS).flat();
+    const matched = all.filter((s) =>
+      s.tags.some((t) => t.toLowerCase().includes(cleanTag)) || s.name.toLowerCase().includes(cleanTag)
+    );
+    return matched.length > 0 ? matched : all.slice(0, 12);
+  }
+  if (cleanCountry === 'ALL') {
+    const groups = Object.values(CURATED_FALLBACK_RADIOS);
+    const out: MusicRadioStation[] = [];
+    for (let i = 0; i < 4; i++) {
+      for (const g of groups) {
+        if (g[i]) out.push(g[i]);
+      }
+    }
+    return out;
+  }
+  return CURATED_FALLBACK_RADIOS[cleanCountry] || CURATED_FALLBACK_RADIOS.ES;
+}
+
+export async function getMusicRadios(country = 'ES', tag?: string): Promise<MusicRadioStation[]> {
+  const cleanCountry = country.trim().toUpperCase() || 'ES';
+  const cleanTag = tag ? tag.trim().toLowerCase() : '';
+  const key = `${cleanCountry}:${cleanTag}`;
+  const cached = radioCache.get(key);
   if (cached) return cached;
 
-  const [
-    globalChart,
-    quevedoRes,
-    badBunnyRes,
-    urbanoChart,
-    popChart,
-    danceChart,
-    genresRes,
-    radios,
-  ] = await Promise.all([
-    fetchJsonSafe<any>('https://api.deezer.com/chart/0?limit=25', 6500),
-    fetchJsonSafe<any>('https://api.deezer.com/search/track?q=quevedo&limit=12', 6500),
-    fetchJsonSafe<any>('https://api.deezer.com/search/track?q=bad+bunny&limit=12', 6500),
-    fetchJsonSafe<any>('https://api.deezer.com/chart/116/tracks?limit=20', 6500),
-    fetchJsonSafe<any>('https://api.deezer.com/chart/132/tracks?limit=20', 6500),
-    fetchJsonSafe<any>('https://api.deezer.com/chart/113/tracks?limit=20', 6500),
-    fetchJsonSafe<any>('https://api.deezer.com/genre', 6000),
-    getMusicRadios('ES'),
-  ]);
+  let urls: string[] = [];
+  if (cleanTag) {
+    urls = [
+      `https://de1.api.radio-browser.info/json/stations/bytag/${encodeURIComponent(cleanTag)}?limit=48&order=clickcount&reverse=true&hidebroken=true`,
+    ];
+  } else if (cleanCountry === 'ALL') {
+    urls = [
+      'https://de1.api.radio-browser.info/json/stations/topclick/72?hidebroken=true',
+    ];
+  } else if (COUNTRY_RADIO_GROUPS[cleanCountry]) {
+    const codes = COUNTRY_RADIO_GROUPS[cleanCountry];
+    const perLimit = codes.length === 1 ? 48 : 16;
+    urls = codes.slice(0, 3).map(
+      (cc) =>
+        `https://de1.api.radio-browser.info/json/stations/bycountrycodeexact/${cc}?limit=${perLimit}&order=clickcount&reverse=true&hidebroken=true`
+    );
+  } else {
+    urls = [
+      `https://de1.api.radio-browser.info/json/stations/bycountrycodeexact/${encodeURIComponent(cleanCountry)}?limit=48&order=clickcount&reverse=true&hidebroken=true`,
+    ];
+  }
 
-  const topTracks: MusicTrack[] = Array.isArray(globalChart?.tracks?.data)
-    ? globalChart.tracks.data.map((t: any) => mapDeezerTrack(t))
-    : [];
+  const settled = await Promise.allSettled(urls.map((u) => fetchJsonSafe<any[]>(u, 4500)));
+  const combined: any[] = [];
+  for (const r of settled) {
+    if (r.status === 'fulfilled' && Array.isArray(r.value)) {
+      combined.push(...r.value);
+    }
+  }
+
+  const liveStations = mapRadioStations(combined, 64);
+  const fallbackStations = getCuratedFallbackRadios(cleanCountry, cleanTag);
+  const seenNames = new Set(liveStations.map((s) => s.name.toLowerCase()));
+  const merged = [...liveStations];
+  for (const fb of fallbackStations) {
+    if (!seenNames.has(fb.name.toLowerCase())) {
+      seenNames.add(fb.name.toLowerCase());
+      merged.push(fb);
+    }
+  }
+
+  radioCache.set(key, merged);
+  return merged;
+}
+
+async function fetchRegionMix(
+  ytmQuery: string,
+  spotifyPlaylistId?: string,
+  spotifyLabel = 'Spotify Charts',
+  maxTotal = 26,
+  itunesCountry = 'US'
+): Promise<MusicTrack[]> {
+  const [ytmRes, spTracks] = await Promise.all([
+    searchYouTubeMusic(ytmQuery),
+    spotifyPlaylistId
+      ? fetchSpotifyPlaylistTracks(spotifyPlaylistId, spotifyLabel, 16)
+      : Promise.resolve([]),
+  ]);
+  const lists: MusicTrack[][] = [];
+  if (ytmRes.tracks.length > 0) lists.push(ytmRes.tracks);
+  if (spTracks.length > 0) lists.push(spTracks);
+  let merged = interleaveUniqueTracks(lists, maxTotal);
+  if (merged.length < 12) {
+    const itRaw = await searchItunesMusic(ytmQuery, 'song', 16, itunesCountry);
+    const itTracks = itRaw.map((x) => mapItunesSongToTrack(x, 'spotify'));
+    if (itTracks.length > 0) {
+      merged = interleaveUniqueTracks([...lists, itTracks], maxTotal);
+    }
+  }
+  return merged;
+}
+
+async function runSettledConcurrency(
+  tasks: Array<() => Promise<unknown>>,
+  concurrency = 4
+): Promise<PromiseSettledResult<unknown>[]> {
+  const results: PromiseSettledResult<unknown>[] = new Array(tasks.length);
+  let cursor = 0;
+  async function worker() {
+    while (true) {
+      const idx = cursor++;
+      if (idx >= tasks.length) break;
+      try {
+        const value = await tasks[idx]();
+        results[idx] = { status: 'fulfilled', value };
+      } catch (reason) {
+        results[idx] = { status: 'rejected', reason };
+      }
+    }
+  }
+  const workers = Array.from({ length: Math.min(concurrency, tasks.length) }, () => worker());
+  await Promise.all(workers);
+  return results;
+}
+
+export async function getMusicHome() {
+  const cached = homeCache.get('home_v5');
+  if (cached) return cached;
+
+  const settled = await runSettledConcurrency([
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/0?limit=35', 6000), // 0: globalChart
+    () => fetchRegionMix('Quevedo Aitana Saiko', '37i9dQZEVXbNFJfN1Vw8d9', 'Top 50 España', 28, 'ES'), // 1: spainHits
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/116/tracks?limit=25', 6000), // 2: urbano
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/132/tracks?limit=25', 6000), // 3: pop
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/113/tracks?limit=25', 6000), // 4: electronic
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/152/tracks?limit=24', 6000), // 5: rock
+    () => fetchRegionMix('Bad Bunny Karol G Feid', '37i9dQZF1DX10zKzsJ2jva', 'Viva Latino', 28, 'US'), // 6: latin
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/165/tracks?limit=24', 6000), // 7: rnb/soul
+    () => searchYouTubeMusic('lofi hip hop chill study beats jazz'), // 8: chill
+    () => searchYouTubeMusic('flamenco camaron paco de lucia'), // 9: flamenco
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/173/tracks?limit=22', 6000), // 10: soundtracks
+    () => searchYouTubeMusic('Queen Michael Jackson Daft Punk classics hits'), // 11: classics
+    () => fetchJsonSafe<any>('https://api.deezer.com/editorial/0/releases?limit=20', 6000), // 12: new releases
+    () => fetchJsonSafe<any>('https://api.deezer.com/genre', 6000), // 13: genres
+    () => fetchJsonSafe<any>('https://discoveryprovider.audius.co/v1/tracks/trending?app_name=RIFFAN&limit=16', 5000), // 14: audius
+    () => getMusicRadios('ALL'), // 15: worldwide radios
+    () => fetchYouTubeMusicExploreAndCharts(), // 16: YouTube Music sync
+    () => fetchSpotifyChartsAndAlbums(), // 17: Spotify sync
+    () => fetchRegionMix('ElGrandeToto Saad Lamjarred Manal Dystinct', '37i9dQZEVXbJU9eQpX8gPT', 'Top 50 Morocco', 28, 'MA'), // 18: Morocco
+    () => fetchRegionMix('Amr Diab Nancy Ajram Tamer Hosny Wegz', undefined, 'Arab Hits', 26, 'EG'), // 19: Arab
+    () => fetchRegionMix('Burna Boy Wizkid Tyla Rema Ayra Starr', '37i9dQZF1DWYkaDif7Ztbp', 'African Heat', 28, 'NG'), // 20: Africa
+    () => fetchRegionMix('Macan Anna Asti Miyagi Jony Zivert', '37i9dQZF1DX8FwnYE6PRvL', 'Russia Top Hits', 28, 'RU'), // 21: Russia
+    () => fetchRegionMix("Inna Carla's Dreams Smiley Delia Theo Rose", undefined, 'Romania Hits', 26, 'RO'), // 22: Romania
+    () => fetchRegionMix('Jay Chou GEM Eason Chan JJ Lin Jackson Wang', undefined, 'China C-Pop', 26, 'CN'), // 23: China
+    () => fetchRegionMix('Kendrick Lamar SZA Sabrina Carpenter Billie Eilish', '37i9dQZEVXbLRQDuF5jeBp', 'USA Top 50', 28, 'US'), // 24: USA
+  ], 4);
+
+  const val = <T>(idx: number): T | null =>
+    settled[idx]?.status === 'fulfilled' ? ((settled[idx] as PromiseFulfilledResult<T>).value ?? null) : null;
+
+  const globalChart = val<any>(0);
+  const ytmData = val<{ tracks: MusicTrack[]; albums: MusicAlbumRef[] }>(16) || { tracks: [], albums: [] };
+  const spData = val<{ tracks: MusicTrack[]; albums: MusicAlbumRef[] }>(17) || { tracks: [], albums: [] };
+
+  const topTracks: MusicTrack[] = mapDeezerTracksSafe(globalChart?.tracks?.data);
   const topAlbums: MusicAlbumRef[] = Array.isArray(globalChart?.albums?.data)
     ? globalChart.albums.data.map((a: any) => mapDeezerAlbum(a))
     : [];
@@ -539,28 +783,21 @@ export async function getMusicHome() {
     ? globalChart.playlists.data.map((p: any) => mapDeezerPlaylist(p))
     : [];
 
-  const qTracks = Array.isArray(quevedoRes?.data) ? quevedoRes.data.map((t: any) => mapDeezerTrack(t)) : [];
-  const bTracks = Array.isArray(badBunnyRes?.data) ? badBunnyRes.data.map((t: any) => mapDeezerTrack(t)) : [];
-  const spainHits: MusicTrack[] = [];
-  const maxEs = Math.max(qTracks.length, bTracks.length);
-  for (let i = 0; i < maxEs; i++) {
-    if (qTracks[i]) spainHits.push(qTracks[i]);
-    if (bTracks[i]) spainHits.push(bTracks[i]);
-  }
-  const urbanoMix: MusicTrack[] = Array.isArray(urbanoChart?.data)
-    ? urbanoChart.data.map((t: any) => mapDeezerTrack(t))
-    : [];
-  const popMix: MusicTrack[] = Array.isArray(popChart?.data)
-    ? popChart.data.map((t: any) => mapDeezerTrack(t))
-    : [];
-  const electronicMix: MusicTrack[] = Array.isArray(danceChart?.data)
-    ? danceChart.data.map((t: any) => mapDeezerTrack(t))
+  const newReleasesRaw = val<any>(12);
+  const newReleases: MusicAlbumRef[] = Array.isArray(newReleasesRaw?.data)
+    ? newReleasesRaw.data.map((a: any) => mapDeezerAlbum(a))
     : [];
 
-  const rawGenres = Array.isArray(genresRes?.data) ? genresRes.data : [];
+  const audiusRaw = val<any>(14);
+  const audiusTrending: MusicTrack[] = Array.isArray(audiusRaw?.data)
+    ? audiusRaw.data.slice(0, 16).map((t: any) => mapAudiusTrack(t))
+    : [];
+
+  const genresRaw = val<any>(13);
+  const rawGenres = Array.isArray(genresRaw?.data) ? genresRaw.data : [];
   const genres: MusicGenre[] = rawGenres
     .filter((g: any) => Number(g?.id) > 0)
-    .slice(0, 16)
+    .slice(0, 22)
     .map((g: any, idx: number) => {
       const name = String(g?.name || 'Música');
       return {
@@ -571,21 +808,50 @@ export async function getMusicHome() {
       };
     });
 
+  const chillSearch = val<{ tracks: MusicTrack[]; albums: MusicAlbumRef[] }>(8);
+  const flamencoSearch = val<{ tracks: MusicTrack[]; albums: MusicAlbumRef[] }>(9);
+  const classicsSearch = val<{ tracks: MusicTrack[]; albums: MusicAlbumRef[] }>(11);
+
   const payload = {
-    topTracks,
-    spainHits,
-    urbanoMix,
-    popMix,
-    electronicMix,
-    topAlbums,
+    topTracks: topTracks.length > 0 ? topTracks : ytmData.tracks,
+    youtubeMusicHits: ytmData.tracks,
+    youtubeMusicAlbums: ytmData.albums,
+    spotifyHits: spData.tracks,
+    spotifyAlbums: spData.albums.length > 0 ? spData.albums : ytmData.albums.slice(0, 14),
+    spainHits: val<MusicTrack[]>(1) || [],
+    moroccoMix: val<MusicTrack[]>(18) || [],
+    arabMix: val<MusicTrack[]>(19) || [],
+    africaMix: val<MusicTrack[]>(20) || [],
+    russiaMix: val<MusicTrack[]>(21) || [],
+    romaniaMix: val<MusicTrack[]>(22) || [],
+    chinaMix: val<MusicTrack[]>(23) || [],
+    usaMix: val<MusicTrack[]>(24) || [],
+    urbanoMix: mapDeezerTracksSafe(val<any>(2)?.data),
+    popMix: mapDeezerTracksSafe(val<any>(3)?.data),
+    electronicMix: mapDeezerTracksSafe(val<any>(4)?.data),
+    rockIndieMix: mapDeezerTracksSafe(val<any>(5)?.data),
+    latinSalsaMix: val<MusicTrack[]>(6) || [],
+    rnbSoulMix: mapDeezerTracksSafe(val<any>(7)?.data),
+    chillLofiMix: chillSearch?.tracks || [],
+    flamencoAcousticMix: flamencoSearch?.tracks || [],
+    soundtrackMix: mapDeezerTracksSafe(val<any>(10)?.data),
+    classicsMix: classicsSearch?.tracks || [],
+    audiusTrending,
+    topAlbums: topAlbums.length > 0 ? topAlbums : ytmData.albums,
+    newReleases: newReleases.length > 0 ? newReleases : ytmData.albums,
     topArtists,
     editorialPlaylists,
     genres,
-    radios,
+    radios: val<MusicRadioStation[]>(15) || [],
   };
 
-  if (topTracks.length > 0 || spainHits.length > 0) {
-    homeCache.set('home', payload);
+  if (
+    payload.topTracks.length > 0 &&
+    payload.spainHits.length > 0 &&
+    payload.latinSalsaMix.length > 0 &&
+    (ytmData.tracks.length > 0 || payload.moroccoMix.length > 0 || spData.tracks.length > 0)
+  ) {
+    homeCache.set('home_v5', payload);
   }
   return payload;
 }
@@ -595,28 +861,37 @@ export async function searchMusicCatalog(query: string, type = 'all') {
   if (!clean) {
     return { tracks: [], albums: [], artists: [], playlists: [], radios: [] };
   }
-  const key = `${type}:${clean.toLowerCase()}`;
+  const key = `v2:${type}:${clean.toLowerCase()}`;
   const cached = searchCache.get(key);
   if (cached) return cached;
 
   const qEnc = encodeURIComponent(clean);
-  const [dzTracks, dzAlbums, dzArtists, dzPlaylists, audiusRes, radioRes] = await Promise.all([
+  const [dzTracks, dzAlbums, dzArtists, dzPlaylists, audiusRes, ytmRes, itSongs, rbByName] = await Promise.all([
     type === 'all' || type === 'track'
-      ? fetchJsonSafe<any>(`https://api.deezer.com/search/track?q=${qEnc}&limit=25`, 5500)
+      ? fetchJsonSafe<any>(`https://api.deezer.com/search/track?q=${qEnc}&limit=20`, 5500)
       : Promise.resolve(null),
     type === 'all' || type === 'album'
-      ? fetchJsonSafe<any>(`https://api.deezer.com/search/album?q=${qEnc}&limit=16`, 5500)
+      ? fetchJsonSafe<any>(`https://api.deezer.com/search/album?q=${qEnc}&limit=14`, 5500)
       : Promise.resolve(null),
     type === 'all' || type === 'artist'
-      ? fetchJsonSafe<any>(`https://api.deezer.com/search/artist?q=${qEnc}&limit=14`, 5500)
+      ? fetchJsonSafe<any>(`https://api.deezer.com/search/artist?q=${qEnc}&limit=12`, 5500)
       : Promise.resolve(null),
     type === 'all' || type === 'playlist'
-      ? fetchJsonSafe<any>(`https://api.deezer.com/search/playlist?q=${qEnc}&limit=14`, 5500)
+      ? fetchJsonSafe<any>(`https://api.deezer.com/search/playlist?q=${qEnc}&limit=12`, 5500)
       : Promise.resolve(null),
     type === 'all' || type === 'track'
       ? fetchJsonSafe<any>(`https://discoveryprovider.audius.co/v1/tracks/search?query=${qEnc}&app_name=RIFFAN`, 4000)
       : Promise.resolve(null),
-    getMusicRadios('ES'),
+    type === 'all' || type === 'track' || type === 'album'
+      ? searchYouTubeMusic(clean)
+      : Promise.resolve({ tracks: [], albums: [] }),
+    type === 'all' || type === 'track'
+      ? searchItunesMusic(clean, 'song', 8, 'US')
+      : Promise.resolve([]),
+    fetchJsonSafe<any[]>(
+      `https://de1.api.radio-browser.info/json/stations/byname/${qEnc}?limit=12&order=clickcount&reverse=true&hidebroken=true`,
+      4500
+    ),
   ]);
 
   const dzMappedTracks: MusicTrack[] = Array.isArray(dzTracks?.data)
@@ -624,32 +899,22 @@ export async function searchMusicCatalog(query: string, type = 'all') {
     : [];
 
   const audiusTracks: MusicTrack[] = Array.isArray(audiusRes?.data)
-    ? audiusRes.data.slice(0, 5).map((t: any) => ({
-        id: `au-${t.id}`,
-        title: String(t.title || 'Track'),
-        artist: {
-          id: `au-art-${t.user?.id || '0'}`,
-          name: String(t.user?.name || 'Audius Artist'),
-          picture: String(t.user?.profile_picture?.['480x480'] || t.user?.profile_picture?.['150x150'] || ''),
-        },
-        album: {
-          id: `au-alb-${t.id}`,
-          title: 'Audius Independent',
-          cover: String(t.artwork?.['480x480'] || t.artwork?.['150x150'] || ''),
-          coverXl: String(t.artwork?.['1000x1000'] || t.artwork?.['480x480'] || ''),
-        },
-        durationSec: Number(t.duration || 0),
-        source: 'audius' as const,
-        audiusId: String(t.id),
-      }))
+    ? audiusRes.data.slice(0, 5).map((t: any) => mapAudiusTrack(t))
     : [];
 
-  const qLow = clean.toLowerCase();
-  const matchingRadios = radioRes.filter(
-    (r) =>
-      r.name.toLowerCase().includes(qLow) ||
-      r.tags.some((t) => t.toLowerCase().includes(qLow))
+  const itTracks: MusicTrack[] = Array.isArray(itSongs)
+    ? itSongs.slice(0, 6).map((x) => mapItunesSongToTrack(x, 'spotify'))
+    : [];
+
+  const mergedTracks = interleaveUniqueTracks(
+    [dzMappedTracks, ytmRes.tracks, itTracks, audiusTracks],
+    42
   );
+
+  const dzMappedAlbums = Array.isArray(dzAlbums?.data) ? dzAlbums.data.map((a: any) => mapDeezerAlbum(a)) : [];
+  const mergedAlbums = [...ytmRes.albums, ...dzMappedAlbums].slice(0, 20);
+
+  const matchingRadios = Array.isArray(rbByName) ? mapRadioStations(rbByName, 16) : [];
 
   const directArtists: MusicArtistRef[] = Array.isArray(dzArtists?.data)
     ? dzArtists.data.map((a: any) => mapDeezerArtist(a))
@@ -665,8 +930,8 @@ export async function searchMusicCatalog(query: string, type = 'all') {
   }
 
   const payload = {
-    tracks: [...dzMappedTracks, ...audiusTracks],
-    albums: Array.isArray(dzAlbums?.data) ? dzAlbums.data.map((a: any) => mapDeezerAlbum(a)) : [],
+    tracks: mergedTracks,
+    albums: mergedAlbums,
     artists: Array.from(derivedArtistMap.values()).slice(0, 14),
     playlists: Array.isArray(dzPlaylists?.data) ? dzPlaylists.data.map((p: any) => mapDeezerPlaylist(p)) : [],
     radios: matchingRadios,
@@ -680,6 +945,22 @@ export async function getAlbumDetails(albumId: string) {
   const key = `album:${albumId}`;
   const cached = entityCache.get(key);
   if (cached) return cached;
+
+  if (albumId.startsWith('ytm-')) {
+    const ytmAlb = await fetchYouTubeMusicAlbum(albumId);
+    if (ytmAlb) {
+      entityCache.set(key, ytmAlb);
+      return ytmAlb;
+    }
+  }
+
+  if (albumId.startsWith('it-alb-')) {
+    const itAlb = await fetchItunesAlbumById(albumId);
+    if (itAlb) {
+      entityCache.set(key, itAlb);
+      return itAlb;
+    }
+  }
 
   const raw = await fetchJsonSafe<any>(`https://api.deezer.com/album/${encodeURIComponent(albumId)}`, 6000);
   if (!raw?.id) return null;
@@ -854,7 +1135,7 @@ export async function resolveTrackPlayback(params: {
   preferVideo?: boolean;
 }): Promise<ResolvedTrackPlayback> {
   const durationSec = Number(params.durationSec || 0);
-  const key = `${params.artist.toLowerCase()}|${params.title.toLowerCase()}|${durationSec}|${params.audiusId || ''}|${params.soundcloudId || ''}`;
+  const key = `${params.artist.toLowerCase()}|${params.title.toLowerCase()}|${durationSec}|${params.audiusId || ''}|${params.soundcloudId || ''}|${params.youtubeVideoId || ''}`;
   const cached = playbackCache.get(key);
   if (cached) return cached;
 

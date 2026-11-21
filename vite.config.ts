@@ -36,7 +36,7 @@ export default defineConfig(() => {
           orientation: 'any',
           start_url: '/',
           scope: '/',
-          categories: ['entertainment', 'video', 'social'],
+          categories: ['entertainment', 'music', 'video', 'social'],
           icons: [
             {
               src: '/pwa-192x192.png',
@@ -58,6 +58,13 @@ export default defineConfig(() => {
             },
           ],
           shortcuts: [
+            {
+              name: 'Riffan Music',
+              short_name: 'Music',
+              description: 'Riffan Music Hi-Fi, letras en vivo y radios 24/7',
+              url: '/musica',
+              icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
+            },
             {
               name: 'Riffan Kids',
               short_name: 'Kids',
@@ -137,7 +144,8 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: false,
+          enabled: true,
+          type: 'module',
         },
       }),
     ],

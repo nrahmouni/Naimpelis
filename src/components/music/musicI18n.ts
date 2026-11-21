@@ -1,0 +1,1207 @@
+import type { AppLanguage } from '../../types';
+
+export type MusicLang = 'es' | 'en' | 'fr' | 'zh' | 'ca';
+
+export const MUSIC_LANGUAGES: Array<{ id: MusicLang; code: string; label: string }> = [
+  { id: 'es', code: 'ES', label: 'Español' },
+  { id: 'en', code: 'EN', label: 'English' },
+  { id: 'fr', code: 'FR', label: 'Français' },
+  { id: 'zh', code: 'ZH', label: '中文' },
+  { id: 'ca', code: 'CA', label: 'Català' },
+];
+
+export function normalizeMusicLang(appLang?: AppLanguage | string): MusicLang {
+  if (appLang === 'en' || appLang === 'fr' || appLang === 'zh' || appLang === 'ca' || appLang === 'es') {
+    return appLang;
+  }
+  if (appLang === 'rif') return 'fr';
+  return 'es';
+}
+
+export interface MusicCopy {
+  goodMorning: string;
+  goodAfternoon: string;
+  goodEvening: string;
+  spatialAudioLabel: string;
+  playingNow: string;
+  worldTrending: string;
+  heroFallbackSub: string;
+  playNow: string;
+  pause: string;
+  shuffleMix: string;
+  radios247: string;
+  navHome: string;
+  navExplore: string;
+  navExploreLong: string;
+  navLibrary: string;
+  navRadios: string;
+  newPlaylist: string;
+  likedSongs: string;
+  songsCount: string;
+  songSingular: string;
+  playlistLabel: string;
+  yourPlaylist: string;
+  curatedSelection: string;
+  albumLabel: string;
+  artistVerified: string;
+  monthlyListeners: string;
+  playAll: string;
+  playList: string;
+  shuffle: string;
+  saveAlbum: string;
+  saved: string;
+  savePlaylist: string;
+  inLibrary: string;
+  deletePlaylist: string;
+  playlistDeleted: string;
+  albumSaved: string;
+  albumRemoved: string;
+  playlistSaved: string;
+  playlistRemoved: string;
+  addedToQueue: string;
+  addedToPlaylist: string;
+  playlistCreated: string;
+  back: string;
+  exploreGenres: string;
+  musicGenre: string;
+  playGenreRadio: string;
+  artistsOf: string;
+  hitsOf: string;
+  popular: string;
+  discography: string;
+  relatedArtists: string;
+  loadingAlbum: string;
+  loadingPlaylist: string;
+  loadingGenre: string;
+  loadingArtist: string;
+  noLikedTitle: string;
+  noLikedSub: string;
+  emptyPlaylistSub: string;
+  viewAll: string;
+  selectedSongs: string;
+  artistRole: string;
+  playSelection: string;
+  catalogLoadError: string;
+  searchPlaceholder: string;
+  clearSearch: string;
+  searchingWorld: string;
+  noResultsTitle: string;
+  noResultsSub: string;
+  topResult: string;
+  songsSection: string;
+  moreResults: string;
+  artistsSection: string;
+  albumsSection: string;
+  playlistsSection: string;
+  exploreByGenre: string;
+  radiosTitle: string;
+  radiosSub: string;
+  tuningRadios: string;
+  libraryTitle: string;
+  librarySub: string;
+  savedAlbumsTitle: string;
+  savedPlaylistsTitle: string;
+  recentlyPlayed: string;
+  queueTitle: string;
+  queueEmpty: string;
+  createPlaylistTitle: string;
+  createPlaylistPlaceholder: string;
+  cancel: string;
+  create: string;
+  addTrackPrefix: string;
+  createNewPlaylistBtn: string;
+  installAppTitle: string;
+  installAppSub: string;
+  removeFromPlaylist: string;
+  addToQueue: string;
+  addToPlaylist: string;
+  likeAdd: string;
+  likeRemove: string;
+  languageTitle: string;
+
+  // Home Sections
+  secYtmHits: string;
+  secYtmAlbums: string;
+  secSpotifyHits: string;
+  secSpotifyAlbums: string;
+  secSpainHits: string;
+  secMorocco: string;
+  secArab: string;
+  secAfrica: string;
+  secRussia: string;
+  secRomania: string;
+  secChina: string;
+  secUsa: string;
+  secNewReleases: string;
+  secTopArtists: string;
+  secTop50: string;
+  secUrbano: string;
+  secPop: string;
+  secChill: string;
+  secRock: string;
+  secFlamenco: string;
+  secAudius: string;
+  secLatin: string;
+  secRnb: string;
+  secSoundtrack: string;
+  secClassics: string;
+  secTopAlbums: string;
+  secEditorialPlaylists: string;
+  secElectronic: string;
+
+  // Mood Pills & Quick Cards
+  moodAll: string;
+  moodYtm: string;
+  moodSpotify: string;
+  moodMorocco: string;
+  moodArab: string;
+  moodAfrica: string;
+  moodRussia: string;
+  moodRomania: string;
+  moodChina: string;
+  moodUsa: string;
+  moodSpain: string;
+  moodUrbano: string;
+  moodPop: string;
+  moodElectronic: string;
+  moodRock: string;
+  moodChill: string;
+  moodFlamenco: string;
+  moodLatin: string;
+  moodRnb: string;
+  moodSoundtrack: string;
+  moodClassics: string;
+  moodAudius: string;
+
+  // Radio Region/Tag Labels
+  radioAll: string;
+  radioSpain: string;
+  radioMorocco: string;
+  radioArab: string;
+  radioAfrica: string;
+  radioRussia: string;
+  radioRomania: string;
+  radioChina: string;
+  radioUsa: string;
+  radioLatin: string;
+  radioPop: string;
+  radioElectronic: string;
+  radioRock: string;
+  radioLofi: string;
+  radioJazz: string;
+
+  // Player Bar & Modal
+  playerRegionAria: string;
+  liveRadioBadge: string;
+  liveRadioCountry: string;
+  loadingTrack: string;
+  eqTitle: string;
+  eqSubtitle: string;
+  eqProfile: string;
+  playbackSpeed: string;
+  sleepTimer: string;
+  minsRemaining: string;
+  tabCover: string;
+  tabLyrics: string;
+  tabVideo: string;
+  searchingLyrics: string;
+  noLyricsTitle: string;
+  noLyricsSub: string;
+  videoStageOpen: string;
+  videoStageSub: string;
+  videoSwitchAudio: string;
+  videoNotFound: string;
+  playingLiveRadio: string;
+  queueBtn: string;
+  lyricsBtn: string;
+  videoBtn: string;
+  eqBtn: string;
+  muteBtn: string;
+}
+
+export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
+  es: {
+    goodMorning: 'Buenos días',
+    goodAfternoon: 'Buenas tardes',
+    goodEvening: 'Buenas noches',
+    spatialAudioLabel: 'Audio Espacial Hi-Fi',
+    playingNow: 'Sonando ahora',
+    worldTrending: 'Global · YouTube Music & Spotify',
+    heroFallbackSub: 'YouTube Music, Spotify Global, África, Marruecos, Árabe, Rusia, China, Rumanía, USA y +70 radios 24/7',
+    playNow: 'Reproducir ahora',
+    pause: 'Pausar',
+    shuffleMix: 'Mix Aleatorio',
+    radios247: 'Radios 24/7',
+    navHome: 'Inicio',
+    navExplore: 'Explorar',
+    navExploreLong: 'Explorar & Mundo',
+    navLibrary: 'Biblioteca',
+    navRadios: 'Radios 24/7',
+    newPlaylist: 'Nueva Playlist',
+    likedSongs: 'Tus Me Gusta',
+    songsCount: 'canciones',
+    songSingular: 'canción',
+    playlistLabel: 'Playlist',
+    yourPlaylist: 'Tu Playlist',
+    curatedSelection: 'Selección Mundial Riffan Music',
+    albumLabel: 'Álbum',
+    artistVerified: 'Artista verificado',
+    monthlyListeners: 'oyentes mensuales',
+    playAll: 'Reproducir todo',
+    playList: 'Reproducir lista',
+    shuffle: 'Aleatorio',
+    saveAlbum: 'Guardar álbum',
+    saved: 'Guardado',
+    savePlaylist: 'Guardar playlist',
+    inLibrary: 'En tu biblioteca',
+    deletePlaylist: 'Eliminar playlist',
+    playlistDeleted: 'Playlist eliminada',
+    albumSaved: 'Álbum guardado',
+    albumRemoved: 'Álbum eliminado de tu biblioteca',
+    playlistSaved: 'Playlist guardada en Tu Biblioteca',
+    playlistRemoved: 'Playlist eliminada',
+    addedToQueue: 'Añadida a la cola',
+    addedToPlaylist: 'Añadida a',
+    playlistCreated: 'Playlist creada',
+    back: 'Volver',
+    exploreGenres: 'Explorar géneros',
+    musicGenre: 'Género Musical',
+    playGenreRadio: 'Reproducir radio de',
+    artistsOf: 'Artistas de',
+    hitsOf: 'Éxitos de',
+    popular: 'Populares',
+    discography: 'Discografía y Lanzamientos',
+    relatedArtists: 'Artistas relacionados',
+    loadingAlbum: 'Cargando canciones del álbum...',
+    loadingPlaylist: 'Cargando lista de canciones...',
+    loadingGenre: 'Cargando música del género...',
+    loadingArtist: 'Cargando discografía y temas...',
+    noLikedTitle: 'Aún no tienes canciones favoritas',
+    noLikedSub: 'Toca el corazón en cualquier canción para guardarla aquí.',
+    emptyPlaylistSub: 'Esta playlist está vacía. Usa el botón + en cualquier tema.',
+    viewAll: 'Ver todo',
+    selectedSongs: 'canciones seleccionadas',
+    artistRole: 'Artista',
+    playSelection: 'Reproducir selección',
+    catalogLoadError: 'No se pudo cargar el catálogo musical. Revisa tu conexión.',
+    searchPlaceholder: 'Busca canciones, YouTube Music, Spotify, álbumes o radios del mundo...',
+    clearSearch: 'Limpiar búsqueda',
+    searchingWorld: 'Buscando en YouTube Music, Spotify, Deezer, iTunes y radios...',
+    noResultsTitle: 'No encontramos resultados para',
+    noResultsSub: 'Prueba con otro artista, idioma o emisora.',
+    topResult: 'Resultado principal',
+    songsSection: 'Canciones',
+    moreResults: 'Más resultados',
+    artistsSection: 'Artistas',
+    albumsSection: 'Álbumes',
+    playlistsSection: 'Playlists',
+    exploreByGenre: 'Explorar por géneros y regiones',
+    radiosTitle: 'Radios Mundiales en Directo 24/7',
+    radiosSub: 'Marruecos, Árabe, África, Rusia, Rumanía, China, USA, España y Latinoamérica en Hi-Fi',
+    tuningRadios: 'Sintonizando emisoras en directo...',
+    libraryTitle: 'Tu Biblioteca',
+    librarySub: 'Tus canciones favoritas, playlists y álbumes guardados',
+    savedAlbumsTitle: 'Álbumes guardados',
+    savedPlaylistsTitle: 'Playlists guardadas',
+    recentlyPlayed: 'Escuchado recientemente',
+    queueTitle: 'Cola de reproducción',
+    queueEmpty: 'La cola está vacía.',
+    createPlaylistTitle: 'Nueva Playlist',
+    createPlaylistPlaceholder: 'Ej: Gimnasio, Coche, Marruecos, Chill...',
+    cancel: 'Cancelar',
+    create: 'Crear',
+    addTrackPrefix: 'Añadir',
+    createNewPlaylistBtn: 'Crear nueva playlist',
+    installAppTitle: 'Instalar Riffan App',
+    installAppSub: 'Android APK · iPhone · Chrome',
+    removeFromPlaylist: 'Quitar de la playlist',
+    addToQueue: 'Añadir a la cola',
+    addToPlaylist: 'Añadir a playlist',
+    likeAdd: 'Añadir a Tus Me Gusta',
+    likeRemove: 'Quitar de Tus Me Gusta',
+    languageTitle: 'Idioma',
+
+    secYtmHits: 'YouTube Music · Lo Último & Tendencias',
+    secYtmAlbums: 'Álbumes Tendencia · YouTube Music',
+    secSpotifyHits: 'Spotify Global & Viral Sync',
+    secSpotifyAlbums: 'Álbumes Destacados · Spotify & iTunes',
+    secSpainHits: 'Éxitos en España y Virales',
+    secMorocco: 'Marruecos · Rap, Raï & Chaabi',
+    secArab: 'Mundo Árabe · Éxitos Top',
+    secAfrica: 'África Entera · Afrobeats, Amapiano & Rumba',
+    secRussia: 'Rusia · Éxitos & Urban',
+    secRomania: 'Rumanía & Balcanes · Pop & Dance',
+    secChina: 'China · C-Pop & Mandopop',
+    secUsa: 'Estados Unidos · Billboard Hot',
+    secNewReleases: 'Novedades & Lanzamientos',
+    secTopArtists: 'Artistas del Momento',
+    secTop50: 'Top 50 Mundial',
+    secUrbano: 'Urbano & Reggaeton',
+    secPop: 'Pop Internacional & Hits',
+    secChill: 'Chill, Lo-Fi & Estudio',
+    secRock: 'Rock, Indie & Guitarra',
+    secFlamenco: 'Flamenco, Acústico & Raíz',
+    secAudius: 'Independiente Hi-Fi (Audius)',
+    secLatin: 'Latina · Reggaeton, Salsa & Corridos',
+    secRnb: 'R&B, Soul & Groove',
+    secSoundtrack: 'Bandas Sonoras & Cine',
+    secClassics: 'Clásicos Eternos 80s · 90s',
+    secTopAlbums: 'Álbumes Destacados',
+    secEditorialPlaylists: 'Playlists Editoriales',
+    secElectronic: 'Electrónica & Club Sessions',
+
+    moodAll: 'Todo el Mundo',
+    moodYtm: 'YouTube Music',
+    moodSpotify: 'Spotify Sync',
+    moodMorocco: 'Marruecos',
+    moodArab: 'Árabe',
+    moodAfrica: 'África',
+    moodRussia: 'Rusia',
+    moodRomania: 'Rumanía',
+    moodChina: 'China',
+    moodUsa: 'USA',
+    moodSpain: 'Top España',
+    moodUrbano: 'Urbano',
+    moodPop: 'Pop',
+    moodElectronic: 'Electrónica',
+    moodRock: 'Rock & Indie',
+    moodChill: 'Chill & Lo-Fi',
+    moodFlamenco: 'Flamenco',
+    moodLatin: 'Latina',
+    moodRnb: 'R&B & Soul',
+    moodSoundtrack: 'Cine & OST',
+    moodClassics: 'Clásicos',
+    moodAudius: 'Audius Hi-Fi',
+
+    radioAll: 'Todo el Mundo',
+    radioSpain: 'España',
+    radioMorocco: 'Marruecos',
+    radioArab: 'Mundo Árabe',
+    radioAfrica: 'África',
+    radioRussia: 'Rusia',
+    radioRomania: 'Rumanía',
+    radioChina: 'China',
+    radioUsa: 'USA',
+    radioLatin: 'Latina',
+    radioPop: 'Pop & Hits',
+    radioElectronic: 'Electrónica',
+    radioRock: 'Rock',
+    radioLofi: 'Lo-Fi',
+    radioJazz: 'Jazz & Soul',
+
+    playerRegionAria: 'Reproductor Riffan Music',
+    liveRadioBadge: 'EN VIVO · 24/7',
+    liveRadioCountry: 'Radio en Directo',
+    loadingTrack: 'Cargando...',
+    eqTitle: 'Ecualizador & Motor Hi-Fi',
+    eqSubtitle: 'WebAudio 5 bandas en tiempo real',
+    eqProfile: 'Perfil Acústico',
+    playbackSpeed: 'Velocidad de reproducción',
+    sleepTimer: 'Temporizador de sueño',
+    minsRemaining: 'min restantes',
+    tabCover: 'Carátula',
+    tabLyrics: 'Letra',
+    tabVideo: 'Vídeo',
+    searchingLyrics: 'Buscando letra sincronizada...',
+    noLyricsTitle: 'Sin letra disponible',
+    noLyricsSub: 'Esta pista es instrumental o no tiene letra indexada.',
+    videoStageOpen: 'Modo Vídeo Musical activo',
+    videoStageSub: 'Reproduciendo el vídeo oficial en el escenario superior de Riffan Music.',
+    videoSwitchAudio: 'Volver a carátula',
+    videoNotFound: 'No hay vídeo disponible para esta pista.',
+    playingLiveRadio: 'Sintonizando Radio en Directo',
+    queueBtn: 'Cola',
+    lyricsBtn: 'Letra',
+    videoBtn: 'Vídeo',
+    eqBtn: 'EQ',
+    muteBtn: 'Silenciar',
+  },
+
+  en: {
+    goodMorning: 'Good morning',
+    goodAfternoon: 'Good afternoon',
+    goodEvening: 'Good evening',
+    spatialAudioLabel: 'Hi-Fi Spatial Audio',
+    playingNow: 'Now Playing',
+    worldTrending: 'Global · YouTube Music & Spotify',
+    heroFallbackSub: 'YouTube Music, Spotify Global, Africa, Morocco, Arabic, Russia, China, Romania, USA & 70+ live radios',
+    playNow: 'Play now',
+    pause: 'Pause',
+    shuffleMix: 'Shuffle Mix',
+    radios247: '24/7 Radios',
+    navHome: 'Home',
+    navExplore: 'Explore',
+    navExploreLong: 'Explore & World',
+    navLibrary: 'Library',
+    navRadios: '24/7 Radios',
+    newPlaylist: 'New Playlist',
+    likedSongs: 'Liked Songs',
+    songsCount: 'songs',
+    songSingular: 'song',
+    playlistLabel: 'Playlist',
+    yourPlaylist: 'Your Playlist',
+    curatedSelection: 'Riffan Music Global Selection',
+    albumLabel: 'Album',
+    artistVerified: 'Verified Artist',
+    monthlyListeners: 'monthly listeners',
+    playAll: 'Play all',
+    playList: 'Play list',
+    shuffle: 'Shuffle',
+    saveAlbum: 'Save album',
+    saved: 'Saved',
+    savePlaylist: 'Save playlist',
+    inLibrary: 'In your library',
+    deletePlaylist: 'Delete playlist',
+    playlistDeleted: 'Playlist deleted',
+    albumSaved: 'Album saved',
+    albumRemoved: 'Album removed from library',
+    playlistSaved: 'Playlist saved to Library',
+    playlistRemoved: 'Playlist removed',
+    addedToQueue: 'Added to queue',
+    addedToPlaylist: 'Added to',
+    playlistCreated: 'Playlist created',
+    back: 'Back',
+    exploreGenres: 'Explore genres',
+    musicGenre: 'Music Genre',
+    playGenreRadio: 'Play radio for',
+    artistsOf: 'Artists in',
+    hitsOf: 'Top hits in',
+    popular: 'Popular',
+    discography: 'Discography & Releases',
+    relatedArtists: 'Related Artists',
+    loadingAlbum: 'Loading album tracks...',
+    loadingPlaylist: 'Loading playlist tracks...',
+    loadingGenre: 'Loading genre catalog...',
+    loadingArtist: 'Loading discography...',
+    noLikedTitle: 'No favorite songs yet',
+    noLikedSub: 'Tap the heart on any track to save it here.',
+    emptyPlaylistSub: 'This playlist is empty. Tap + on any track to add songs.',
+    viewAll: 'View all',
+    selectedSongs: 'selected tracks',
+    artistRole: 'Artist',
+    playSelection: 'Play selection',
+    catalogLoadError: 'Could not load music catalog. Check your connection.',
+    searchPlaceholder: 'Search tracks, YouTube Music, Spotify, albums or world radios...',
+    clearSearch: 'Clear search',
+    searchingWorld: 'Searching YouTube Music, Spotify, Deezer, iTunes & world radios...',
+    noResultsTitle: 'No results found for',
+    noResultsSub: 'Try another artist, language or radio station.',
+    topResult: 'Top Result',
+    songsSection: 'Songs',
+    moreResults: 'More results',
+    artistsSection: 'Artists',
+    albumsSection: 'Albums',
+    playlistsSection: 'Playlists',
+    exploreByGenre: 'Browse by genre and region',
+    radiosTitle: 'World Live Radios 24/7',
+    radiosSub: 'Morocco, Arab World, Africa, Russia, Romania, China, USA, Spain & Latin America in Hi-Fi',
+    tuningRadios: 'Tuning live stations...',
+    libraryTitle: 'Your Library',
+    librarySub: 'Your liked songs, playlists and saved albums',
+    savedAlbumsTitle: 'Saved Albums',
+    savedPlaylistsTitle: 'Saved Playlists',
+    recentlyPlayed: 'Recently Played',
+    queueTitle: 'Up Next',
+    queueEmpty: 'Your queue is empty.',
+    createPlaylistTitle: 'New Playlist',
+    createPlaylistPlaceholder: 'e.g. Gym, Drive, Morocco, Chill...',
+    cancel: 'Cancel',
+    create: 'Create',
+    addTrackPrefix: 'Add',
+    createNewPlaylistBtn: 'Create new playlist',
+    installAppTitle: 'Install Riffan App',
+    installAppSub: 'Android APK · iPhone · Chrome',
+    removeFromPlaylist: 'Remove from playlist',
+    addToQueue: 'Add to queue',
+    addToPlaylist: 'Add to playlist',
+    likeAdd: 'Add to Liked Songs',
+    likeRemove: 'Remove from Liked Songs',
+    languageTitle: 'Language',
+
+    secYtmHits: 'YouTube Music · Latest & Trending',
+    secYtmAlbums: 'Trending Albums · YouTube Music',
+    secSpotifyHits: 'Spotify Global & Viral Sync',
+    secSpotifyAlbums: 'Featured Albums · Spotify & iTunes',
+    secSpainHits: 'Spain Top & Viral',
+    secMorocco: 'Morocco · Rap, Raï & Chaabi',
+    secArab: 'Arab World · Top Hits',
+    secAfrica: 'All Africa · Afrobeats, Amapiano & Rumba',
+    secRussia: 'Russia · Hits & Urban',
+    secRomania: 'Romania & Balkans · Pop & Dance',
+    secChina: 'China · C-Pop & Mandopop',
+    secUsa: 'United States · Billboard Hot',
+    secNewReleases: 'New Releases',
+    secTopArtists: 'Trending Artists',
+    secTop50: 'Global Top 50',
+    secUrbano: 'Urban & Reggaeton',
+    secPop: 'International Pop Hits',
+    secChill: 'Chill, Lo-Fi & Focus',
+    secRock: 'Rock, Indie & Guitar',
+    secFlamenco: 'Flamenco & Acoustic',
+    secAudius: 'Audius Hi-Fi Independent',
+    secLatin: 'Latin · Reggaeton, Salsa & Corridos',
+    secRnb: 'R&B, Soul & Groove',
+    secSoundtrack: 'Film & Soundtracks',
+    secClassics: 'Timeless Classics 80s · 90s',
+    secTopAlbums: 'Featured Albums',
+    secEditorialPlaylists: 'Editorial Playlists',
+    secElectronic: 'Electronic & Club Sessions',
+
+    moodAll: 'Worldwide',
+    moodYtm: 'YouTube Music',
+    moodSpotify: 'Spotify Sync',
+    moodMorocco: 'Morocco',
+    moodArab: 'Arabic',
+    moodAfrica: 'Africa',
+    moodRussia: 'Russia',
+    moodRomania: 'Romania',
+    moodChina: 'China',
+    moodUsa: 'USA',
+    moodSpain: 'Spain Top',
+    moodUrbano: 'Urban',
+    moodPop: 'Pop',
+    moodElectronic: 'Electronic',
+    moodRock: 'Rock & Indie',
+    moodChill: 'Chill & Lo-Fi',
+    moodFlamenco: 'Flamenco',
+    moodLatin: 'Latin',
+    moodRnb: 'R&B & Soul',
+    moodSoundtrack: 'Film & OST',
+    moodClassics: 'Classics',
+    moodAudius: 'Audius Hi-Fi',
+
+    radioAll: 'Worldwide',
+    radioSpain: 'Spain',
+    radioMorocco: 'Morocco',
+    radioArab: 'Arab World',
+    radioAfrica: 'Africa',
+    radioRussia: 'Russia',
+    radioRomania: 'Romania',
+    radioChina: 'China',
+    radioUsa: 'USA',
+    radioLatin: 'Latin',
+    radioPop: 'Pop & Hits',
+    radioElectronic: 'Electronic',
+    radioRock: 'Rock',
+    radioLofi: 'Lo-Fi',
+    radioJazz: 'Jazz & Soul',
+
+    playerRegionAria: 'Riffan Music Player',
+    liveRadioBadge: 'LIVE · 24/7',
+    liveRadioCountry: 'Live Radio',
+    loadingTrack: 'Loading...',
+    eqTitle: 'Equalizer & Hi-Fi Engine',
+    eqSubtitle: 'Real-time 5-band WebAudio',
+    eqProfile: 'Acoustic Profile',
+    playbackSpeed: 'Playback Speed',
+    sleepTimer: 'Sleep Timer',
+    minsRemaining: 'min left',
+    tabCover: 'Artwork',
+    tabLyrics: 'Lyrics',
+    tabVideo: 'Video',
+    searchingLyrics: 'Searching synced lyrics...',
+    noLyricsTitle: 'No lyrics available',
+    noLyricsSub: 'This track is instrumental or not indexed yet.',
+    videoStageOpen: 'Music Video Mode active',
+    videoStageSub: 'Playing official music video in the Riffan Music video stage.',
+    videoSwitchAudio: 'Back to artwork',
+    videoNotFound: 'No music video available for this track.',
+    playingLiveRadio: 'Streaming Live Radio',
+    queueBtn: 'Queue',
+    lyricsBtn: 'Lyrics',
+    videoBtn: 'Video',
+    eqBtn: 'EQ',
+    muteBtn: 'Mute',
+  },
+
+  fr: {
+    goodMorning: 'Bonjour',
+    goodAfternoon: 'Bon après-midi',
+    goodEvening: 'Bonsoir',
+    spatialAudioLabel: 'Audio Spatial Hi-Fi',
+    playingNow: 'En lecture',
+    worldTrending: 'Monde · YouTube Music & Spotify',
+    heroFallbackSub: 'YouTube Music, Spotify Global, Afrique, Maroc, Arabe, Russie, Chine, Roumanie, USA & +70 radios',
+    playNow: 'Lire maintenant',
+    pause: 'Pause',
+    shuffleMix: 'Mix Aléatoire',
+    radios247: 'Radios 24/7',
+    navHome: 'Accueil',
+    navExplore: 'Explorer',
+    navExploreLong: 'Explorer & Monde',
+    navLibrary: 'Bibliothèque',
+    navRadios: 'Radios 24/7',
+    newPlaylist: 'Nouvelle Playlist',
+    likedSongs: 'Titres Likés',
+    songsCount: 'titres',
+    songSingular: 'titre',
+    playlistLabel: 'Playlist',
+    yourPlaylist: 'Votre Playlist',
+    curatedSelection: 'Sélection Mondiale Riffan Music',
+    albumLabel: 'Album',
+    artistVerified: 'Artiste vérifié',
+    monthlyListeners: 'auditeurs mensuels',
+    playAll: 'Tout lire',
+    playList: 'Lire la liste',
+    shuffle: 'Aléatoire',
+    saveAlbum: 'Enregistrer l’album',
+    saved: 'Enregistré',
+    savePlaylist: 'Enregistrer',
+    inLibrary: 'Dans votre bibliothèque',
+    deletePlaylist: 'Supprimer la playlist',
+    playlistDeleted: 'Playlist supprimée',
+    albumSaved: 'Album enregistré',
+    albumRemoved: 'Album retiré de votre bibliothèque',
+    playlistSaved: 'Playlist enregistrée',
+    playlistRemoved: 'Playlist supprimée',
+    addedToQueue: 'Ajouté à la file',
+    addedToPlaylist: 'Ajouté à',
+    playlistCreated: 'Playlist créée',
+    back: 'Retour',
+    exploreGenres: 'Explorer les genres',
+    musicGenre: 'Genre Musical',
+    playGenreRadio: 'Lancer la radio',
+    artistsOf: 'Artistes de',
+    hitsOf: 'Succès de',
+    popular: 'Populaires',
+    discography: 'Discographie & Sorties',
+    relatedArtists: 'Artistes similaires',
+    loadingAlbum: 'Chargement de l’album...',
+    loadingPlaylist: 'Chargement de la playlist...',
+    loadingGenre: 'Chargement du genre...',
+    loadingArtist: 'Chargement de la discographie...',
+    noLikedTitle: 'Aucun titre favori pour le moment',
+    noLikedSub: 'Touchez le cœur sur n’importe quel titre pour le sauvegarder.',
+    emptyPlaylistSub: 'Cette playlist est vide. Utilisez + pour ajouter des morceaux.',
+    viewAll: 'Tout voir',
+    selectedSongs: 'titres sélectionnés',
+    artistRole: 'Artiste',
+    playSelection: 'Lire la sélection',
+    catalogLoadError: 'Impossible de charger le catalogue musical.',
+    searchPlaceholder: 'Rechercher titres, YouTube Music, Spotify, albums ou radios...',
+    clearSearch: 'Effacer',
+    searchingWorld: 'Recherche sur YouTube Music, Spotify, Deezer, iTunes & radios...',
+    noResultsTitle: 'Aucun résultat pour',
+    noResultsSub: 'Essayez un autre artiste, langue ou station.',
+    topResult: 'Meilleur résultat',
+    songsSection: 'Titres',
+    moreResults: 'Plus de résultats',
+    artistsSection: 'Artistes',
+    albumsSection: 'Albums',
+    playlistsSection: 'Playlists',
+    exploreByGenre: 'Parcourir par genres et régions',
+    radiosTitle: 'Radios Mondiales en Direct 24/7',
+    radiosSub: 'Maroc, Monde Arabe, Afrique, Russie, Roumanie, Chine, USA, Espagne & Amérique Latine',
+    tuningRadios: 'Connexion aux stations en direct...',
+    libraryTitle: 'Votre Bibliothèque',
+    librarySub: 'Vos favoris, playlists et albums enregistrés',
+    savedAlbumsTitle: 'Albums enregistrés',
+    savedPlaylistsTitle: 'Playlists enregistrées',
+    recentlyPlayed: 'Écoutés récemment',
+    queueTitle: 'File d’attente',
+    queueEmpty: 'La file d’attente est vide.',
+    createPlaylistTitle: 'Nouvelle Playlist',
+    createPlaylistPlaceholder: 'Ex : Sport, Maroc, Route, Chill...',
+    cancel: 'Annuler',
+    create: 'Créer',
+    addTrackPrefix: 'Ajouter',
+    createNewPlaylistBtn: 'Créer une playlist',
+    installAppTitle: 'Installer Riffan App',
+    installAppSub: 'APK Android · iPhone · Chrome',
+    removeFromPlaylist: 'Retirer de la playlist',
+    addToQueue: 'Ajouter à la file',
+    addToPlaylist: 'Ajouter à une playlist',
+    likeAdd: 'Ajouter aux favoris',
+    likeRemove: 'Retirer des favoris',
+    languageTitle: 'Langue',
+
+    secYtmHits: 'YouTube Music · Nouveautés & Tendances',
+    secYtmAlbums: 'Albums Tendance · YouTube Music',
+    secSpotifyHits: 'Spotify Global & Viral Sync',
+    secSpotifyAlbums: 'Albums Vedettes · Spotify & iTunes',
+    secSpainHits: 'Top Espagne & Viral',
+    secMorocco: 'Maroc · Rap, Raï & Chaabi',
+    secArab: 'Monde Arabe · Top Hits',
+    secAfrica: 'Toute l’Afrique · Afrobeats, Amapiano & Rumba',
+    secRussia: 'Russie · Hits & Urbain',
+    secRomania: 'Roumanie & Balkans · Pop & Dance',
+    secChina: 'Chine · C-Pop & Mandopop',
+    secUsa: 'États-Unis · Billboard Hot',
+    secNewReleases: 'Nouveautés & Sorties',
+    secTopArtists: 'Artistes du Moment',
+    secTop50: 'Top 50 Mondial',
+    secUrbano: 'Urbain & Reggaeton',
+    secPop: 'Pop Internationale',
+    secChill: 'Chill, Lo-Fi & Étude',
+    secRock: 'Rock, Indie & Guitare',
+    secFlamenco: 'Flamenco & Acoustique',
+    secAudius: 'Indépendant Hi-Fi (Audius)',
+    secLatin: 'Latino · Reggaeton, Salsa & Corridos',
+    secRnb: 'R&B, Soul & Groove',
+    secSoundtrack: 'Bandes Originales & Cinéma',
+    secClassics: 'Classiques Éternels 80s · 90s',
+    secTopAlbums: 'Albums Populaires',
+    secEditorialPlaylists: 'Playlists Éditoriales',
+    secElectronic: 'Électro & Club Sessions',
+
+    moodAll: 'Monde entier',
+    moodYtm: 'YouTube Music',
+    moodSpotify: 'Spotify Sync',
+    moodMorocco: 'Maroc',
+    moodArab: 'Arabe',
+    moodAfrica: 'Afrique',
+    moodRussia: 'Russie',
+    moodRomania: 'Roumanie',
+    moodChina: 'Chine',
+    moodUsa: 'USA',
+    moodSpain: 'Top Espagne',
+    moodUrbano: 'Urbain',
+    moodPop: 'Pop',
+    moodElectronic: 'Électro',
+    moodRock: 'Rock & Indie',
+    moodChill: 'Chill & Lo-Fi',
+    moodFlamenco: 'Flamenco',
+    moodLatin: 'Latino',
+    moodRnb: 'R&B & Soul',
+    moodSoundtrack: 'Cinéma & OST',
+    moodClassics: 'Classiques',
+    moodAudius: 'Audius Hi-Fi',
+
+    radioAll: 'Monde',
+    radioSpain: 'Espagne',
+    radioMorocco: 'Maroc',
+    radioArab: 'Monde Arabe',
+    radioAfrica: 'Afrique',
+    radioRussia: 'Russie',
+    radioRomania: 'Roumanie',
+    radioChina: 'Chine',
+    radioUsa: 'USA',
+    radioLatin: 'Latino',
+    radioPop: 'Pop & Hits',
+    radioElectronic: 'Électro',
+    radioRock: 'Rock',
+    radioLofi: 'Lo-Fi',
+    radioJazz: 'Jazz & Soul',
+
+    playerRegionAria: 'Lecteur Riffan Music',
+    liveRadioBadge: 'EN DIRECT · 24/7',
+    liveRadioCountry: 'Radio en Direct',
+    loadingTrack: 'Chargement...',
+    eqTitle: 'Égaliseur & Moteur Hi-Fi',
+    eqSubtitle: 'WebAudio 5 bandes en temps réel',
+    eqProfile: 'Profil Acoustique',
+    playbackSpeed: 'Vitesse de lecture',
+    sleepTimer: 'Minuteur de veille',
+    minsRemaining: 'min restantes',
+    tabCover: 'Pochette',
+    tabLyrics: 'Paroles',
+    tabVideo: 'Vidéo',
+    searchingLyrics: 'Recherche des paroles synchronisées...',
+    noLyricsTitle: 'Paroles indisponibles',
+    noLyricsSub: 'Ce morceau est instrumental ou non indexé.',
+    videoStageOpen: 'Mode Vidéo Musical actif',
+    videoStageSub: 'Lecture du clip officiel sur la scène Riffan Music.',
+    videoSwitchAudio: 'Retour à la pochette',
+    videoNotFound: 'Aucune vidéo disponible pour ce titre.',
+    playingLiveRadio: 'Diffusion Radio en Direct',
+    queueBtn: 'File',
+    lyricsBtn: 'Paroles',
+    videoBtn: 'Vidéo',
+    eqBtn: 'EQ',
+    muteBtn: 'Muet',
+  },
+
+  zh: {
+    goodMorning: '早上好',
+    goodAfternoon: '下午好',
+    goodEvening: '晚上好',
+    spatialAudioLabel: '高保真空间音频',
+    playingNow: '正在播放',
+    worldTrending: '全球 · YouTube Music & Spotify',
+    heroFallbackSub: '同步 YouTube Music、Spotify 全球榜、非洲、摩洛哥、阿拉伯、俄罗斯、中国、罗马尼亚、美国及 70+ 直播电台',
+    playNow: '立即播放',
+    pause: '暂停',
+    shuffleMix: '随机混音',
+    radios247: '24/7 电台',
+    navHome: '首页',
+    navExplore: '探索',
+    navExploreLong: '探索全球',
+    navLibrary: '音乐库',
+    navRadios: '全球电台',
+    newPlaylist: '新建歌单',
+    likedSongs: '我喜欢的音乐',
+    songsCount: '首歌曲',
+    songSingular: '首歌曲',
+    playlistLabel: '歌单',
+    yourPlaylist: '我的歌单',
+    curatedSelection: 'Riffan Music 全球精选',
+    albumLabel: '专辑',
+    artistVerified: '认证艺人',
+    monthlyListeners: '月听众',
+    playAll: '全部播放',
+    playList: '播放列表',
+    shuffle: '随机播放',
+    saveAlbum: '收藏专辑',
+    saved: '已收藏',
+    savePlaylist: '收藏歌单',
+    inLibrary: '已在音乐库',
+    deletePlaylist: '删除歌单',
+    playlistDeleted: '歌单已删除',
+    albumSaved: '专辑已收藏',
+    albumRemoved: '已从音乐库移除专辑',
+    playlistSaved: '歌单已保存',
+    playlistRemoved: '歌单已移除',
+    addedToQueue: '已加入播放队列',
+    addedToPlaylist: '已添加到',
+    playlistCreated: '歌单已创建',
+    back: '返回',
+    exploreGenres: '探索流派',
+    musicGenre: '音乐流派',
+    playGenreRadio: '播放电台',
+    artistsOf: '代表艺人',
+    hitsOf: '热门单曲',
+    popular: '热门歌曲',
+    discography: '专辑与新作',
+    relatedArtists: '相似艺人',
+    loadingAlbum: '正在加载专辑曲目...',
+    loadingPlaylist: '正在加载歌单...',
+    loadingGenre: '正在加载流派音乐...',
+    loadingArtist: '正在加载艺人作品...',
+    noLikedTitle: '暂无喜欢的歌曲',
+    noLikedSub: '点击任意歌曲上的红心即可收藏。',
+    emptyPlaylistSub: '歌单为空，点击歌曲旁的 + 添加曲目。',
+    viewAll: '查看全部',
+    selectedSongs: '首精选歌曲',
+    artistRole: '艺人',
+    playSelection: '播放精选',
+    catalogLoadError: '无法加载音乐目录，请检查网络。',
+    searchPlaceholder: '搜索歌曲、YouTube Music、Spotify、专辑或全球电台...',
+    clearSearch: '清除搜索',
+    searchingWorld: '正在搜索 YouTube Music、Spotify、Deezer、iTunes 与电台...',
+    noResultsTitle: '未找到相关结果',
+    noResultsSub: '请尝试其他歌手、语言或电台。',
+    topResult: '最佳匹配',
+    songsSection: '歌曲',
+    moreResults: '更多结果',
+    artistsSection: '艺人',
+    albumsSection: '专辑',
+    playlistsSection: '歌单',
+    exploreByGenre: '按流派与地区探索',
+    radiosTitle: '全球 24/7 直播音乐电台',
+    radiosSub: '摩洛哥、阿拉伯、非洲、俄罗斯、罗马尼亚、中国、美国、西班牙及拉美 Hi-Fi 直播',
+    tuningRadios: '正在调频直播电台...',
+    libraryTitle: '我的音乐库',
+    librarySub: '收藏的歌曲、个人歌单与专辑',
+    savedAlbumsTitle: '已收藏专辑',
+    savedPlaylistsTitle: '已收藏歌单',
+    recentlyPlayed: '最近播放',
+    queueTitle: '播放队列',
+    queueEmpty: '播放队列为空。',
+    createPlaylistTitle: '新建歌单',
+    createPlaylistPlaceholder: '例如：健身、驾车、华语、Chill...',
+    cancel: '取消',
+    create: '创建',
+    addTrackPrefix: '添加',
+    createNewPlaylistBtn: '创建新歌单',
+    installAppTitle: '安装 Riffan 应用',
+    installAppSub: 'Android APK · iPhone · Chrome',
+    removeFromPlaylist: '从歌单移除',
+    addToQueue: '加入播放队列',
+    addToPlaylist: '添加到歌单',
+    likeAdd: '喜欢',
+    likeRemove: '取消喜欢',
+    languageTitle: '语言',
+
+    secYtmHits: 'YouTube Music · 最新热门与MV',
+    secYtmAlbums: '热门专辑 · YouTube Music',
+    secSpotifyHits: 'Spotify 全球热榜 & 飙升榜',
+    secSpotifyAlbums: '精选专辑 · Spotify & iTunes',
+    secSpainHits: '西班牙热门与飙升榜',
+    secMorocco: '摩洛哥 · Rap, Raï & Chaabi',
+    secArab: '阿拉伯世界 · 金曲热榜',
+    secAfrica: '全非音乐 · Afrobeats & Amapiano',
+    secRussia: '俄罗斯 · 流行与说唱热榜',
+    secRomania: '罗马尼亚与巴尔干 · 舞曲流行',
+    secChina: '华语乐坛 · C-Pop & 流行金曲',
+    secUsa: '美国 Billboard 热门单曲',
+    secNewReleases: '新歌速递',
+    secTopArtists: '当红艺人',
+    secTop50: '全球 Top 50',
+    secUrbano: '都市说唱 & 雷鬼顿',
+    secPop: '全球流行金曲',
+    secChill: '轻音乐 · Lo-Fi & 专注',
+    secRock: '摇滚与独立音乐',
+    secFlamenco: '弗拉明戈与原声吉他',
+    secAudius: 'Audius Hi-Fi 独立音乐',
+    secLatin: '拉丁音乐 · 萨尔萨与热带节奏',
+    secRnb: 'R&B 与灵魂乐',
+    secSoundtrack: '电影原声带',
+    secClassics: '经典怀旧 80s · 90s',
+    secTopAlbums: '热门专辑',
+    secEditorialPlaylists: '编辑精选歌单',
+    secElectronic: '电子音乐与派对混音',
+
+    moodAll: '全球全曲库',
+    moodYtm: 'YouTube Music',
+    moodSpotify: 'Spotify 同步',
+    moodMorocco: '摩洛哥',
+    moodArab: '阿拉伯',
+    moodAfrica: '非洲全境',
+    moodRussia: '俄罗斯',
+    moodRomania: '罗马尼亚',
+    moodChina: '华语中国',
+    moodUsa: '美国',
+    moodSpain: '西班牙',
+    moodUrbano: '说唱都市',
+    moodPop: '流行',
+    moodElectronic: '电子',
+    moodRock: '摇滚独立',
+    moodChill: 'Lo-Fi 放松',
+    moodFlamenco: '弗拉明戈',
+    moodLatin: '拉丁',
+    moodRnb: 'R&B 灵魂',
+    moodSoundtrack: '影视原声',
+    moodClassics: '经典',
+    moodAudius: 'Audius Hi-Fi',
+
+    radioAll: '全球',
+    radioSpain: '西班牙',
+    radioMorocco: '摩洛哥',
+    radioArab: '阿拉伯',
+    radioAfrica: '非洲',
+    radioRussia: '俄罗斯',
+    radioRomania: '罗马尼亚',
+    radioChina: '中国',
+    radioUsa: '美国',
+    radioLatin: '拉丁美洲',
+    radioPop: '流行',
+    radioElectronic: '电子',
+    radioRock: '摇滚',
+    radioLofi: 'Lo-Fi',
+    radioJazz: '爵士灵魂',
+
+    playerRegionAria: 'Riffan 音乐播放器',
+    liveRadioBadge: '直播 · 24/7',
+    liveRadioCountry: '直播电台',
+    loadingTrack: '加载中...',
+    eqTitle: '均衡器 & Hi-Fi 引擎',
+    eqSubtitle: '实时 5 段 WebAudio 调音',
+    eqProfile: '音效预设',
+    playbackSpeed: '播放倍速',
+    sleepTimer: '定时关闭',
+    minsRemaining: '分钟后关闭',
+    tabCover: '封面',
+    tabLyrics: '歌词',
+    tabVideo: '视频',
+    searchingLyrics: '正在搜索同步歌词...',
+    noLyricsTitle: '暂无歌词',
+    noLyricsSub: '该曲目为纯音乐或暂无歌词索引。',
+    videoStageOpen: 'MV 视频模式已开启',
+    videoStageSub: '正在 Riffan Music 顶部舞台播放官方音乐视频。',
+    videoSwitchAudio: '返回封面',
+    videoNotFound: '该歌曲暂无可用音乐视频。',
+    playingLiveRadio: '正在收听直播电台',
+    queueBtn: '队列',
+    lyricsBtn: '歌词',
+    videoBtn: '视频',
+    eqBtn: '均衡器',
+    muteBtn: '静音',
+  },
+
+  ca: {
+    goodMorning: 'Bon dia',
+    goodAfternoon: 'Bona tarda',
+    goodEvening: 'Bona nit',
+    spatialAudioLabel: 'Àudio Espacial Hi-Fi',
+    playingNow: 'Sonant ara',
+    worldTrending: 'Global · YouTube Music & Spotify',
+    heroFallbackSub: 'YouTube Music, Spotify Global, Àfrica, Marroc, Àrab, Rússia, Xina, Romania, EUA i +70 ràdios 24/7',
+    playNow: 'Reproduir ara',
+    pause: 'Pausar',
+    shuffleMix: 'Mix Aleatori',
+    radios247: 'Ràdios 24/7',
+    navHome: 'Inici',
+    navExplore: 'Explorar',
+    navExploreLong: 'Explorar & Món',
+    navLibrary: 'Biblioteca',
+    navRadios: 'Ràdios 24/7',
+    newPlaylist: 'Nova Playlist',
+    likedSongs: 'Els teus M’agrada',
+    songsCount: 'cançons',
+    songSingular: 'cançó',
+    playlistLabel: 'Playlist',
+    yourPlaylist: 'La teva Playlist',
+    curatedSelection: 'Selecció Mundial Riffan Music',
+    albumLabel: 'Àlbum',
+    artistVerified: 'Artista verificat',
+    monthlyListeners: 'oients mensuals',
+    playAll: 'Reproduir-ho tot',
+    playList: 'Reproduir llista',
+    shuffle: 'Aleatori',
+    saveAlbum: 'Desar àlbum',
+    saved: 'Desat',
+    savePlaylist: 'Desar playlist',
+    inLibrary: 'A la biblioteca',
+    deletePlaylist: 'Eliminar playlist',
+    playlistDeleted: 'Playlist eliminada',
+    albumSaved: 'Àlbum desat',
+    albumRemoved: 'Àlbum tret de la biblioteca',
+    playlistSaved: 'Playlist desada a la biblioteca',
+    playlistRemoved: 'Playlist eliminada',
+    addedToQueue: 'Afegida a la cua',
+    addedToPlaylist: 'Afegida a',
+    playlistCreated: 'Playlist creada',
+    back: 'Tornar',
+    exploreGenres: 'Explorar gèneres',
+    musicGenre: 'Gènere Musical',
+    playGenreRadio: 'Reproduir ràdio de',
+    artistsOf: 'Artistes de',
+    hitsOf: 'Èxits de',
+    popular: 'Populars',
+    discography: 'Discografia i Llançaments',
+    relatedArtists: 'Artistes relacionats',
+    loadingAlbum: 'Carregant cançons de l’àlbum...',
+    loadingPlaylist: 'Carregant llista de cançons...',
+    loadingGenre: 'Carregant música del gènere...',
+    loadingArtist: 'Carregant discografia...',
+    noLikedTitle: 'Encara no tens cançons preferides',
+    noLikedSub: 'Toca el cor a qualsevol cançó per desar-la aquí.',
+    emptyPlaylistSub: 'Aquesta playlist és buida. Usa + per afegir temes.',
+    viewAll: 'Veure-ho tot',
+    selectedSongs: 'cançons seleccionades',
+    artistRole: 'Artista',
+    playSelection: 'Reproduir selecció',
+    catalogLoadError: 'No s’ha pogut carregar el catàleg musical.',
+    searchPlaceholder: 'Cerca cançons, YouTube Music, Spotify, àlbums o ràdios...',
+    clearSearch: 'Netejar cerca',
+    searchingWorld: 'Cercant a YouTube Music, Spotify, Deezer, iTunes i ràdios...',
+    noResultsTitle: 'Sense resultats per a',
+    noResultsSub: 'Prova amb un altre artista, idioma o emissora.',
+    topResult: 'Resultat principal',
+    songsSection: 'Cançons',
+    moreResults: 'Més resultats',
+    artistsSection: 'Artistes',
+    albumsSection: 'Àlbums',
+    playlistsSection: 'Playlists',
+    exploreByGenre: 'Explorar per gèneres i regions',
+    radiosTitle: 'Ràdios Mundials en Directe 24/7',
+    radiosSub: 'Marroc, Món Àrab, Àfrica, Rússia, Romania, Xina, EUA, Espanya i Llatinoamèrica',
+    tuningRadios: 'Sintonitzant emissores en directe...',
+    libraryTitle: 'La teva Biblioteca',
+    librarySub: 'Les teves preferides, playlists i àlbums desats',
+    savedAlbumsTitle: 'Àlbums desats',
+    savedPlaylistsTitle: 'Playlists desades',
+    recentlyPlayed: 'Escoltats recentment',
+    queueTitle: 'Cua de reproducció',
+    queueEmpty: 'La cua és buida.',
+    createPlaylistTitle: 'Nova Playlist',
+    createPlaylistPlaceholder: 'Ex: Gimnàs, Cotxe, Marroc, Chill...',
+    cancel: 'Cancel·lar',
+    create: 'Crear',
+    addTrackPrefix: 'Afegir',
+    createNewPlaylistBtn: 'Crear nova playlist',
+    installAppTitle: 'Instal·lar Riffan App',
+    installAppSub: 'Android APK · iPhone · Chrome',
+    removeFromPlaylist: 'Treure de la playlist',
+    addToQueue: 'Afegir a la cua',
+    addToPlaylist: 'Afegir a playlist',
+    likeAdd: 'Afegir als M’agrada',
+    likeRemove: 'Treure dels M’agrada',
+    languageTitle: 'Idioma',
+
+    secYtmHits: 'YouTube Music · Novetats i Tendències',
+    secYtmAlbums: 'Àlbums Tendència · YouTube Music',
+    secSpotifyHits: 'Spotify Global & Viral Sync',
+    secSpotifyAlbums: 'Àlbums Destacats · Spotify & iTunes',
+    secSpainHits: 'Èxits a Espanya i Virals',
+    secMorocco: 'Marroc · Rap, Raï & Chaabi',
+    secArab: 'Món Àrab · Top Èxits',
+    secAfrica: 'Tota l’Àfrica · Afrobeats, Amapiano & Rumba',
+    secRussia: 'Rússia · Èxits & Urbà',
+    secRomania: 'Romania i Balcans · Pop & Dance',
+    secChina: 'Xina · C-Pop & Mandopop',
+    secUsa: 'Estats Units · Billboard Hot',
+    secNewReleases: 'Novetats i Llançaments',
+    secTopArtists: 'Artistes del Moment',
+    secTop50: 'Top 50 Mundial',
+    secUrbano: 'Urbà i Reggaeton',
+    secPop: 'Pop Internacional',
+    secChill: 'Chill, Lo-Fi i Estudi',
+    secRock: 'Rock, Indie i Guitarra',
+    secFlamenco: 'Flamenc i Acústic',
+    secAudius: 'Independent Hi-Fi (Audius)',
+    secLatin: 'Llatina · Reggaeton, Salsa i Corridos',
+    secRnb: 'R&B, Soul i Groove',
+    secSoundtrack: 'Bandes Sonores i Cinema',
+    secClassics: 'Clàssics Eterms 80s · 90s',
+    secTopAlbums: 'Àlbums Destacats',
+    secEditorialPlaylists: 'Playlists Editorials',
+    secElectronic: 'Electrònica i Club Sessions',
+
+    moodAll: 'Tot el Món',
+    moodYtm: 'YouTube Music',
+    moodSpotify: 'Spotify Sync',
+    moodMorocco: 'Marroc',
+    moodArab: 'Àrab',
+    moodAfrica: 'Àfrica',
+    moodRussia: 'Rússia',
+    moodRomania: 'Romania',
+    moodChina: 'Xina',
+    moodUsa: 'EUA',
+    moodSpain: 'Top Espanya',
+    moodUrbano: 'Urbà',
+    moodPop: 'Pop',
+    moodElectronic: 'Electrònica',
+    moodRock: 'Rock & Indie',
+    moodChill: 'Chill & Lo-Fi',
+    moodFlamenco: 'Flamenc',
+    moodLatin: 'Llatina',
+    moodRnb: 'R&B & Soul',
+    moodSoundtrack: 'Cinema & OST',
+    moodClassics: 'Clàssics',
+    moodAudius: 'Audius Hi-Fi',
+
+    radioAll: 'Tot el Món',
+    radioSpain: 'Espanya',
+    radioMorocco: 'Marroc',
+    radioArab: 'Món Àrab',
+    radioAfrica: 'Àfrica',
+    radioRussia: 'Rússia',
+    radioRomania: 'Romania',
+    radioChina: 'Xina',
+    radioUsa: 'EUA',
+    radioLatin: 'Llatina',
+    radioPop: 'Pop & Hits',
+    radioElectronic: 'Electrònica',
+    radioRock: 'Rock',
+    radioLofi: 'Lo-Fi',
+    radioJazz: 'Jazz & Soul',
+
+    playerRegionAria: 'Reproductor Riffan Music',
+    liveRadioBadge: 'EN DIRECTE · 24/7',
+    liveRadioCountry: 'Ràdio en Directe',
+    loadingTrack: 'Carregant...',
+    eqTitle: 'Equalitzador & Motor Hi-Fi',
+    eqSubtitle: 'WebAudio 5 bandes en temps real',
+    eqProfile: 'Perfil Acústic',
+    playbackSpeed: 'Velocitat de reproducció',
+    sleepTimer: 'Temporitzador de son',
+    minsRemaining: 'min restants',
+    tabCover: 'Caràtula',
+    tabLyrics: 'Lletra',
+    tabVideo: 'Vídeo',
+    searchingLyrics: 'Cercant lletra sincronitzada...',
+    noLyricsTitle: 'Lletra no disponible',
+    noLyricsSub: 'Aquesta pista és instrumental o no té lletra indexada.',
+    videoStageOpen: 'Mode Vídeo Musical actiu',
+    videoStageSub: 'Reproduint el vídeo oficial a l’escenari superior de Riffan Music.',
+    videoSwitchAudio: 'Tornar a la caràtula',
+    videoNotFound: 'No hi ha vídeo disponible per a aquesta pista.',
+    playingLiveRadio: 'Sintonitzant Ràdio en Directe',
+    queueBtn: 'Cua',
+    lyricsBtn: 'Lletra',
+    videoBtn: 'Vídeo',
+    eqBtn: 'EQ',
+    muteBtn: 'Silenciar',
+  },
+};

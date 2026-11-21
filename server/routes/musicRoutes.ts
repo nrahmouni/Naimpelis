@@ -120,8 +120,9 @@ export function registerMusicRoutes(app: express.Express): void {
 
   app.get('/api/music/radios', async (req, res) => {
     try {
-      const country = String(req.query.country || 'ES').trim();
-      const radios = await getMusicRadios(country);
+      const country = String(req.query.country || 'ALL').trim();
+      const tag = String(req.query.tag || '').trim() || undefined;
+      const radios = await getMusicRadios(country, tag);
       res.setHeader('Cache-Control', 'public, max-age=300');
       res.json({ success: true, radios });
     } catch {

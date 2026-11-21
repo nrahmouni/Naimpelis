@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   Clock,
-  Disc3,
   Heart,
   ListMusic,
   Mic2,
@@ -24,6 +23,8 @@ import { EQ_PRESETS, sampleMusicSpectrum } from './MusicAudioEngine';
 import { formatMusicTime } from './SpotifyPlayerBar';
 import { useBackInterceptor } from '../../lib/backInterceptor';
 import { triggerHaptic } from '../../utils/haptics';
+import { RiffanMusicLogo } from './RiffanMusicLogo';
+import { MUSIC_I18N } from './musicI18n';
 
 export const EqAndTimerModal: React.FC = () => {
   const showEqModal = useMusicStore((s) => s.showEqModal);
@@ -34,6 +35,8 @@ export const EqAndTimerModal: React.FC = () => {
   const setPlaybackRate = useMusicStore((s) => s.setPlaybackRate);
   const sleepTimerEndsAt = useMusicStore((s) => s.sleepTimerEndsAt);
   const setSleepTimerMinutes = useMusicStore((s) => s.setSleepTimerMinutes);
+  const musicLang = useMusicStore((s) => s.musicLang);
+  const m = MUSIC_I18N[musicLang];
 
   useBackInterceptor(showEqModal, 'music-eq-modal', () => setShowEqModal(false), { priority: 25 });
 
@@ -46,29 +49,29 @@ export const EqAndTimerModal: React.FC = () => {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-[#121318] border border-white/10 p-5 sm:p-6 space-y-5 shadow-2xl"
+        className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-[#0F0814] border border-[#FF3366]/20 p-5 sm:p-6 space-y-5 shadow-2xl"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <span className="w-9 h-9 rounded-xl bg-[#1DB954]/15 border border-[#1DB954]/30 flex items-center justify-center text-[#1DB954]">
+            <span className="w-9 h-9 rounded-xl bg-[#FF3366]/15 border border-[#FF3366]/35 flex items-center justify-center text-[#FF6B4A]">
               <Sliders className="w-4.5 h-4.5" />
             </span>
             <div>
-              <h3 className="text-base font-bold text-white">Ecualizador & Motor Hi-Fi</h3>
-              <p className="text-xs text-zinc-400">WebAudio 5 bandas en tiempo real</p>
+              <h3 className="text-base font-bold text-white">{m.eqTitle}</h3>
+              <p className="text-xs text-zinc-400">{m.eqSubtitle}</p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => setShowEqModal(false)}
-            className="min-w-10 min-h-10 rounded-full bg-white/[0.06] hover:bg-white/12 text-zinc-300 flex items-center justify-center cursor-pointer"
+            className="min-w-11 min-h-11 rounded-full bg-white/[0.06] hover:bg-white/12 text-zinc-300 flex items-center justify-center cursor-pointer"
           >
             <ChevronDown className="w-5 h-5" />
           </button>
         </div>
 
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-zinc-400">Perfil Acústico</p>
+          <p className="text-xs font-semibold text-zinc-400">{m.eqProfile}</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {(Object.keys(EQ_PRESETS) as EqPresetId[]).map((key) => {
               const active = eqPreset === key;
@@ -82,7 +85,7 @@ export const EqAndTimerModal: React.FC = () => {
                   }}
                   className={`min-h-11 px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
                     active
-                      ? 'bg-[#1DB954] border-[#1DB954] text-[#08090C]'
+                      ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] border-[#FF3366] text-white shadow-[0_6px_18px_rgba(255,51,102,0.35)]'
                       : 'bg-white/[0.04] border-white/10 text-zinc-200 hover:bg-white/[0.08]'
                   }`}
                 >
@@ -94,7 +97,7 @@ export const EqAndTimerModal: React.FC = () => {
         </div>
 
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-zinc-400">Velocidad de reproducción</p>
+          <p className="text-xs font-semibold text-zinc-400">{m.playbackSpeed}</p>
           <div className="grid grid-cols-4 gap-2">
             {[0.85, 1, 1.15, 1.25].map((rate) => (
               <button
@@ -103,7 +106,7 @@ export const EqAndTimerModal: React.FC = () => {
                 onClick={() => setPlaybackRate(rate)}
                 className={`min-h-10 rounded-xl border text-xs font-bold tabular-nums cursor-pointer transition-all ${
                   playbackRate === rate
-                    ? 'bg-[#1DB954] border-[#1DB954] text-[#08090C]'
+                    ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] border-[#FF3366] text-white'
                     : 'bg-white/[0.04] border-white/10 text-zinc-200 hover:bg-white/[0.08]'
                 }`}
               >
@@ -116,11 +119,11 @@ export const EqAndTimerModal: React.FC = () => {
         <div className="space-y-2">
           <div className="flex items-center justify-between text-xs">
             <span className="font-semibold text-zinc-400 flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5" /> Temporizador de sueño
+              <Clock className="w-3.5 h-3.5" /> {m.sleepTimer}
             </span>
             {sleepTimerEndsAt && (
-              <span className="text-[#1DB954] font-semibold tabular-nums">
-                {Math.max(1, Math.ceil((sleepTimerEndsAt - Date.now()) / 60000))} min restantes
+              <span className="text-[#FF6B4A] font-semibold tabular-nums">
+                {Math.max(1, Math.ceil((sleepTimerEndsAt - Date.now()) / 60000))} {m.minsRemaining}
               </span>
             )}
           </div>
@@ -172,6 +175,8 @@ export const FullScreenNowPlayingModal: React.FC<{
   const toggleLikeTrack = useMusicStore((s) => s.toggleLikeTrack);
   const setShowQueueDrawer = useMusicStore((s) => s.setShowQueueDrawer);
   const setShowEqModal = useMusicStore((s) => s.setShowEqModal);
+  const musicLang = useMusicStore((s) => s.musicLang);
+  const m = MUSIC_I18N[musicLang];
 
   const [lyrics, setLyrics] = useState<LyricsPayload | null>(null);
   const [lyricsLoading, setLyricsLoading] = useState(false);
@@ -273,12 +278,12 @@ export const FullScreenNowPlayingModal: React.FC<{
   );
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#07080B] text-white flex flex-col overflow-hidden animate-fade-in">
+    <div className="fixed inset-0 z-50 bg-[#07050A] text-white flex flex-col overflow-hidden animate-fade-in">
       {/* Ambient Blurred Album Background */}
       {coverSrc ? (
         <div
           aria-hidden="true"
-          className="absolute inset-0 pointer-events-none opacity-35 blur-3xl scale-125"
+          className="absolute inset-0 pointer-events-none opacity-40 blur-3xl scale-125 transition-all duration-700"
           style={{
             backgroundImage: `url("${coverSrc}")`,
             backgroundSize: 'cover',
@@ -288,7 +293,11 @@ export const FullScreenNowPlayingModal: React.FC<{
       ) : null}
       <div
         aria-hidden="true"
-        className="absolute inset-0 pointer-events-none bg-gradient-to-b from-[#07080B]/70 via-[#07080B]/80 to-[#07080B]"
+        className="absolute inset-0 pointer-events-none"
+        style={{
+          background:
+            'radial-gradient(ellipse 80% 55% at 50% 25%, rgba(255,51,102,0.18), rgba(245,158,11,0.08) 45%, rgba(7,5,10,0.92) 85%), linear-gradient(to bottom, rgba(7,5,10,0.45), rgba(7,5,10,0.88) 70%, #07050A)',
+        }}
       />
 
       {/* Top Header */}
@@ -297,50 +306,50 @@ export const FullScreenNowPlayingModal: React.FC<{
           type="button"
           onClick={() => setShowNowPlayingModal(false)}
           aria-label="Minimizar reproductor"
-          className="min-w-11 min-h-11 rounded-full bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-[#1DB954]"
+          className="min-w-11 min-h-11 rounded-full bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-[#FF3366]"
         >
           <ChevronDown className="w-5 h-5" />
         </button>
 
         {/* Segmented Mode Switch: Portada / Letras / Videoclip */}
-        <div className="inline-flex items-center p-1 rounded-full bg-white/[0.08] border border-white/10 backdrop-blur-md">
+        <div className="inline-flex items-center p-1 rounded-full bg-white/[0.08] border border-white/12 backdrop-blur-md">
           <button
             type="button"
             onClick={() => setNowPlayingTab('artwork')}
-            className={`px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-colors whitespace-nowrap ${
+            className={`px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-all whitespace-nowrap ${
               nowPlayingTab === 'artwork'
-                ? 'bg-[#1DB954] text-[#08090C]'
+                ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white shadow-[0_4px_14px_rgba(255,51,102,0.4)]'
                 : 'text-zinc-300 hover:text-white'
             }`}
           >
-            Portada
+            {m.tabCover}
           </button>
           {currentTrack && (
             <button
               type="button"
               onClick={() => setNowPlayingTab('lyrics')}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-colors whitespace-nowrap ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
                 nowPlayingTab === 'lyrics'
-                  ? 'bg-[#1DB954] text-[#08090C]'
+                  ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white shadow-[0_4px_14px_rgba(255,51,102,0.4)]'
                   : 'text-zinc-300 hover:text-white'
               }`}
             >
               <Mic2 className="w-3.5 h-3.5" />
-              Letras
+              {m.tabLyrics}
             </button>
           )}
           {hasVideoOption && (
             <button
               type="button"
               onClick={() => setNowPlayingTab('video')}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-colors whitespace-nowrap ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
                 nowPlayingTab === 'video'
-                  ? 'bg-[#1DB954] text-[#08090C]'
+                  ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white shadow-[0_4px_14px_rgba(255,51,102,0.4)]'
                   : 'text-zinc-300 hover:text-white'
               }`}
             >
               <Video className="w-3.5 h-3.5" />
-              Videoclip
+              {m.tabVideo}
             </button>
           )}
         </div>
@@ -350,7 +359,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             <button
               type="button"
               onClick={onOpenPlaylistPicker}
-              title="Añadir a playlist"
+              title={m.addToPlaylist}
               className="min-w-11 min-h-11 rounded-full bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors"
             >
               <Plus className="w-5 h-5" />
@@ -359,7 +368,7 @@ export const FullScreenNowPlayingModal: React.FC<{
           <button
             type="button"
             onClick={() => setShowEqModal(true)}
-            title="Ecualizador"
+            title={m.eqBtn}
             className="min-w-11 min-h-11 rounded-full bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors"
           >
             <Sliders className="w-4.5 h-4.5" />
@@ -370,34 +379,49 @@ export const FullScreenNowPlayingModal: React.FC<{
       {/* Main Content Stage */}
       <main className="relative z-10 flex-1 min-h-0 flex flex-col items-center justify-center px-5 sm:px-10 py-2 overflow-hidden">
         {nowPlayingTab === 'artwork' && (
-          <div className="w-full max-w-md flex flex-col items-center gap-5">
-            <div className="relative w-64 h-64 sm:w-80 sm:h-80 rounded-3xl overflow-hidden bg-[#12141A] border border-white/15 shadow-[0_28px_70px_rgba(0,0,0,0.85)] flex items-center justify-center">
-              {coverSrc ? (
-                <img
-                  src={coverSrc}
-                  alt={currentTrack?.title || activeRadio?.name || ''}
-                  referrerPolicy="no-referrer"
-                  className={`w-full h-full object-cover transition-transform duration-700 ${
-                    isPlaying ? 'scale-100' : 'scale-95 opacity-80'
-                  }`}
-                />
-              ) : null}
-              {activeRadio ? (
-                <Radio className="w-16 h-16 text-[#1DB954] absolute pointer-events-none opacity-85" />
-              ) : (
-                <Disc3 className="w-16 h-16 text-zinc-600 -z-10" />
-              )}
+          <div className="w-full max-w-md flex flex-col items-center gap-6">
+            <div className="relative flex items-center justify-center">
+              <div
+                aria-hidden="true"
+                className={`absolute -inset-4 rounded-[36px] blur-2xl transition-opacity duration-700 ${
+                  isPlaying ? 'opacity-70' : 'opacity-25'
+                }`}
+                style={{
+                  background:
+                    'radial-gradient(circle, rgba(255,51,102,0.38) 0%, rgba(245,158,11,0.2) 60%, transparent 100%)',
+                }}
+              />
+              <div className="relative w-64 h-64 sm:w-80 sm:h-80 rounded-3xl overflow-hidden bg-[#140A18] border border-white/20 shadow-[0_28px_72px_rgba(0,0,0,0.88)] flex items-center justify-center">
+                {coverSrc ? (
+                  <img
+                    src={coverSrc}
+                    alt={currentTrack?.title || activeRadio?.name || ''}
+                    referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
+                    className={`w-full h-full object-cover transition-transform duration-700 ${
+                      isPlaying ? 'scale-100' : 'scale-95 opacity-80'
+                    }`}
+                  />
+                ) : null}
+                {activeRadio ? (
+                  <Radio className="w-16 h-16 text-[#FF6B4A] absolute pointer-events-none opacity-85" />
+                ) : (
+                  <RiffanMusicLogo variant="mark" size={76} withFrame={false} className="-z-10" />
+                )}
+              </div>
             </div>
 
-            {/* Live Audio Spectrum Visualizer */}
-            <div className="w-full max-w-xs h-8 flex items-end justify-center gap-1" aria-hidden="true">
+            {/* Live Sonic Audio Spectrum Visualizer */}
+            <div className="w-full max-w-xs h-9 flex items-end justify-center gap-1" aria-hidden="true">
               {spectrumBars.map((val, i) => (
                 <span
                   key={i}
-                  className="w-1.5 rounded-full bg-[#1DB954] transition-[height] duration-75"
+                  className="w-1.5 rounded-full bg-gradient-to-t from-[#FF3366] via-[#FF6B4A] to-[#F59E0B] transition-[height] duration-75"
                   style={{
                     height: `${Math.round(val * 100)}%`,
-                    opacity: 0.4 + val * 0.6,
+                    opacity: 0.45 + val * 0.55,
                   }}
                 />
               ))}
@@ -406,17 +430,17 @@ export const FullScreenNowPlayingModal: React.FC<{
         )}
 
         {nowPlayingTab === 'lyrics' && (
-          <div className="w-full max-w-2xl flex-1 min-h-0 overflow-y-auto px-2 sm:px-6 py-6 space-y-4 text-center mask-gradient">
+          <div className="w-full max-w-2xl flex-1 min-h-0 overflow-y-auto px-2 sm:px-6 py-8 space-y-4 text-center mask-gradient">
             {lyricsLoading ? (
-              <div className="py-20 text-zinc-400 text-sm">Buscando letra sincronizada...</div>
+              <div className="py-20 text-zinc-400 text-sm">{m.searchingLyrics}</div>
             ) : !lyrics?.found ? (
               <div className="py-20 space-y-2">
-                <Mic2 className="w-10 h-10 text-zinc-600 mx-auto" />
-                <p className="text-base font-semibold text-zinc-300">
-                  No hay letra disponible para esta canción todavía
+                <Mic2 className="w-10 h-10 text-[#FF6B4A]/60 mx-auto" />
+                <p className="text-base font-semibold text-zinc-200">
+                  {m.noLyricsTitle}
                 </p>
-                <p className="text-xs text-zinc-500">
-                  Prueba cambiando al modo Videoclip Oficial o Portada
+                <p className="text-xs text-zinc-400">
+                  {m.noLyricsSub}
                 </p>
               </div>
             ) : (
@@ -431,12 +455,12 @@ export const FullScreenNowPlayingModal: React.FC<{
                     onClick={() => {
                       if (lyrics.synced) requestSeek(line.timeSec);
                     }}
-                    className={`block w-full text-center px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                    className={`block w-full text-center px-3 py-2 rounded-2xl transition-all duration-300 cursor-pointer ${
                       isActive
-                        ? 'text-white text-xl sm:text-3xl font-extrabold scale-[1.03]'
+                        ? 'text-white text-2xl sm:text-4xl font-extrabold scale-[1.03] drop-shadow-[0_0_24px_rgba(255,51,102,0.55)] bg-white/[0.04]'
                         : isPast
-                        ? 'text-zinc-400/75 text-base sm:text-xl font-semibold hover:text-white'
-                        : 'text-zinc-400 text-base sm:text-xl font-semibold hover:text-white'
+                        ? 'text-zinc-400/55 text-base sm:text-xl font-semibold hover:text-white'
+                        : 'text-zinc-300/75 text-base sm:text-xl font-semibold hover:text-white'
                     }`}
                   >
                     {line.text}
@@ -449,8 +473,7 @@ export const FullScreenNowPlayingModal: React.FC<{
 
         {nowPlayingTab === 'video' && (
           <div className="w-full max-w-3xl aspect-video rounded-3xl overflow-hidden border border-white/15 bg-black shadow-2xl flex items-center justify-center">
-            {/* The global persistent #riffan-music-yt-player overlays or portals right cleanly when video mode is active */}
-            <p className="text-xs text-zinc-500">Reproduciendo Videoclip HD...</p>
+            <p className="text-xs text-zinc-500">{m.videoStageSub}</p>
           </div>
         )}
       </main>
@@ -476,9 +499,9 @@ export const FullScreenNowPlayingModal: React.FC<{
                 triggerHaptic('light');
                 toggleLikeTrack(currentTrack);
               }}
-              aria-label={isLiked ? 'Quitar de favoritos' : 'Guardar en Tus Me Gusta'}
+              aria-label={isLiked ? m.likeRemove : m.likeAdd}
               className={`min-w-11 min-h-11 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-90 ${
-                isLiked ? 'text-[#1DB954]' : 'text-zinc-400 hover:text-white'
+                isLiked ? 'text-[#FF3366]' : 'text-zinc-400 hover:text-white'
               }`}
             >
               <Heart className={`w-6 h-6 ${isLiked ? 'fill-current' : ''}`} />
@@ -495,11 +518,11 @@ export const FullScreenNowPlayingModal: React.FC<{
             value={activeRadio ? 100 : Math.min(currentTime, effectiveDuration || 100)}
             disabled={Boolean(activeRadio)}
             onChange={(e) => requestSeek(Number(e.target.value))}
-            aria-label="Barra de progreso"
-            className="w-full h-1.5 accent-[#1DB954] bg-white/20 rounded-full cursor-pointer"
+            aria-label={m.playerRegionAria}
+            className="w-full h-1.5 accent-[#FF3366] bg-white/20 rounded-full cursor-pointer"
           />
           <div className="flex items-center justify-between text-xs text-zinc-400 tabular-nums">
-            <span>{activeRadio ? 'EN VIVO' : formatMusicTime(currentTime)}</span>
+            <span>{activeRadio ? 'LIVE' : formatMusicTime(currentTime)}</span>
             <span>
               {activeRadio
                 ? 'STREAM 24/7'
@@ -517,7 +540,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             onClick={toggleShuffle}
             disabled={Boolean(activeRadio)}
             className={`min-w-11 min-h-11 rounded-full flex items-center justify-center cursor-pointer disabled:opacity-30 ${
-              shuffle ? 'text-[#1DB954]' : 'text-zinc-400 hover:text-white'
+              shuffle ? 'text-[#FF3366]' : 'text-zinc-400 hover:text-white'
             }`}
           >
             <Shuffle className="w-5 h-5" />
@@ -538,8 +561,8 @@ export const FullScreenNowPlayingModal: React.FC<{
               triggerHaptic('medium');
               togglePlayPause();
             }}
-            aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
-            className="w-16 h-16 rounded-full bg-[#1DB954] hover:scale-105 text-[#08090C] flex items-center justify-center shadow-[0_12px_32px_rgba(29,185,84,0.45)] cursor-pointer transition-transform active:scale-95"
+            aria-label={isPlaying ? m.pause : m.playNow}
+            className="w-16 h-16 rounded-full bg-gradient-to-br from-[#FF3366] via-[#FF544F] to-[#F59E0B] hover:scale-105 text-white flex items-center justify-center shadow-[0_14px_36px_rgba(255,51,102,0.5)] cursor-pointer transition-transform active:scale-95"
           >
             {isPlaying ? (
               <Pause className="w-7 h-7 fill-current" />
@@ -565,7 +588,7 @@ export const FullScreenNowPlayingModal: React.FC<{
               setShowQueueDrawer(true);
             }}
             className="min-w-11 min-h-11 rounded-full flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-            title="Cola de reproducción"
+            title={m.queueTitle}
           >
             <ListMusic className="w-5 h-5" />
           </button>
@@ -575,7 +598,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             onClick={cycleRepeat}
             disabled={Boolean(activeRadio)}
             className={`min-w-11 min-h-11 rounded-full flex items-center justify-center cursor-pointer disabled:opacity-30 ${
-              repeatMode !== 'off' ? 'text-[#1DB954]' : 'text-zinc-400 hover:text-white'
+              repeatMode !== 'off' ? 'text-[#FF3366]' : 'text-zinc-400 hover:text-white'
             }`}
           >
             {repeatMode === 'one' ? (

@@ -33,10 +33,11 @@ export interface MusicTrack {
   previewUrl?: string;
   isrc?: string;
   rank?: number;
-  source?: 'deezer' | 'audius' | 'soundcloud' | 'radio';
+  source?: 'deezer' | 'audius' | 'soundcloud' | 'youtube_music' | 'spotify' | 'radio';
   audiusId?: string;
   soundcloudId?: string;
   youtubeVideoId?: string;
+  spotifyId?: string;
   streamUrl?: string;
 }
 
@@ -105,3 +106,36 @@ export interface UserMusicPlaylist {
 export type EqPresetId = 'flat' | 'bass' | 'vocal' | 'club' | 'acoustic';
 export type MusicRepeatMode = 'off' | 'all' | 'one';
 export type MusicViewMode = 'audio' | 'video';
+
+export interface MusicHomePayload {
+  topTracks: MusicTrack[];
+  youtubeMusicHits: MusicTrack[];
+  youtubeMusicAlbums: MusicAlbumRef[];
+  spotifyHits: MusicTrack[];
+  spotifyAlbums: MusicAlbumRef[];
+  spainHits: MusicTrack[];
+  moroccoMix: MusicTrack[];
+  arabMix: MusicTrack[];
+  africaMix: MusicTrack[];
+  russiaMix: MusicTrack[];
+  romaniaMix: MusicTrack[];
+  chinaMix: MusicTrack[];
+  usaMix: MusicTrack[];
+  urbanoMix: MusicTrack[];
+  popMix: MusicTrack[];
+  electronicMix: MusicTrack[];
+  rockIndieMix: MusicTrack[];
+  latinSalsaMix: MusicTrack[];
+  rnbSoulMix: MusicTrack[];
+  chillLofiMix: MusicTrack[];
+  flamencoAcousticMix: MusicTrack[];
+  soundtrackMix: MusicTrack[];
+  classicsMix: MusicTrack[];
+  audiusTrending: MusicTrack[];
+  topAlbums: MusicAlbumRef[];
+  newReleases: MusicAlbumRef[];
+  topArtists: MusicArtistRef[];
+  editorialPlaylists: MusicPlaylist[];
+  genres: MusicGenre[];
+  radios: MusicRadioStation[];
+}

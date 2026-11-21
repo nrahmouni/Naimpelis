@@ -10,6 +10,7 @@ import {
   RiffanCastIcon,
   RiffanChevronRightIcon,
   RiffanContinueWatchingIcon,
+  RiffanDownloadIcon,
   RiffanLogoutIcon,
   RiffanSettingsGearIcon,
   RiffanUserIcon,
@@ -35,6 +36,7 @@ interface AvatarMenuSheetProps {
   onOpenSmartTv: () => void;
   onOpenYouTube: () => void;
   onOpenSettings: () => void;
+  onOpenInstallApp?: () => void;
   inRoom?: boolean;
   sessionMode?: 'solo' | 'party';
   roomName?: string;
@@ -61,6 +63,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
   onOpenSmartTv,
   onOpenYouTube,
   onOpenSettings,
+  onOpenInstallApp,
   inRoom = false,
   sessionMode = 'party',
   roomName,
@@ -153,6 +156,25 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
       onClick: onOpenYouTube,
       badge: null as React.ReactNode,
     },
+    ...(onOpenInstallApp
+      ? [
+          {
+            id: 'install-app',
+            iconEl: <RiffanDownloadIcon size={20} animate="hover" className="shrink-0 text-[#FF6B4A]" />,
+            label: pickLang(lang, {
+              es: 'Instalar App (APK · iPhone · Chrome)',
+              ca: 'Instal·lar App (APK · iPhone · Chrome)',
+              en: 'Install App (APK · iPhone · Chrome)',
+            }),
+            onClick: onOpenInstallApp,
+            badge: (
+              <span className="px-1.5 py-0.5 rounded bg-[#FF3366]/20 text-[#FF6B4A] text-[10px] font-bold">
+                APK/PWA
+              </span>
+            ) as React.ReactNode,
+          },
+        ]
+      : []),
     {
       id: 'settings',
       iconEl: <RiffanSettingsGearIcon size={20} animate="hover" className="shrink-0" />,

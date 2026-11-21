@@ -60,7 +60,10 @@ try {
         .getRegistrations()
         .then((regs) => {
           for (const reg of regs) {
-            void reg.unregister();
+            const scriptUrl = reg.active?.scriptURL || reg.installing?.scriptURL || reg.waiting?.scriptURL || '';
+            if (!scriptUrl.includes('dev-sw.js')) {
+              void reg.unregister();
+            }
           }
         })
         .catch(() => {});

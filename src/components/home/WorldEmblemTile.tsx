@@ -224,11 +224,11 @@ export const WORLD_SPECS: Record<WorldPortalKind, WorldSpec> = {
     },
   },
   music: {
-    accent: '#1DB954',
-    secondary: '#34D399',
-    glowRgb: '29,185,84',
+    accent: '#FF3366',
+    secondary: '#F59E0B',
+    glowRgb: '255,51,102',
     ambient:
-      'radial-gradient(ellipse 68% 54% at 50% 47%, rgba(29,185,84,0.24) 0%, rgba(52,211,153,0.10) 44%, rgba(6,7,12,0) 76%)',
+      'radial-gradient(ellipse 68% 54% at 50% 47%, rgba(255,51,102,0.24) 0%, rgba(245,158,11,0.12) 44%, rgba(7,5,10,0) 76%)',
     title: {
       es: 'Riffan Music',
       ca: 'Riffan Music',
@@ -832,43 +832,48 @@ export const WorldEmblemTile: React.FC<{
 
       {kind === 'music' && (
         <g filter={`url(#${ids.drop})`}>
+          {/* Sonic vinyl outer halo */}
           <circle
             cx="60"
             cy="60"
-            r="28.5"
+            r="30"
             fill={`url(#${ids.accentSoft})`}
             stroke={`url(#${ids.accent})`}
-            strokeWidth="2.2"
+            strokeWidth="2.1"
           />
           <circle
             cx="60"
             cy="60"
-            r="22"
-            fill="#070A10"
-            stroke={spec.accent}
-            strokeOpacity="0.4"
+            r="23.5"
+            fill="#0A060C"
+            stroke={spec.secondary}
+            strokeOpacity="0.45"
             strokeWidth="1.2"
-            strokeDasharray="14 6"
+            strokeDasharray="14 6 4 6"
             className="rtv-we-center rtv-we-orbit"
           />
+          {/* Folded Ribbon R core (Sonic Studio remix of RiffanTV monogram) */}
+          <rect x="44" y="40" width="9.5" height="40" rx="4.75" fill={`url(#${ids.platinum})`} />
           <path
-            d="M 41 52 Q 60 44 79 52"
-            stroke={spec.accent}
-            strokeWidth="3.4"
+            d="M 48 41.5 H 64.5 C 72.5 41.5 76.5 46.5 76.5 52 C 76.5 57.5 72.2 61.5 64.5 61.5 H 52.5"
+            stroke={`url(#${ids.accent})`}
+            strokeWidth="6.8"
             strokeLinecap="round"
+            fill="none"
           />
           <path
-            d="M 44.5 60.5 Q 60 54 75.5 60.5"
-            stroke={`url(#${ids.platinum})`}
-            strokeWidth="3"
+            d="M 55.5 61.5 L 74.5 79"
+            stroke={spec.secondary}
+            strokeWidth="6.6"
             strokeLinecap="round"
           />
+          {/* Harmonic acoustic arc accents */}
           <path
-            d="M 48 68.5 Q 60 63.5 72 68.5"
+            d="M 81.5 50.5 C 85 55.5 85 64.5 81.5 69.5"
             stroke={spec.accent}
-            strokeOpacity="0.88"
-            strokeWidth="2.6"
+            strokeWidth="2.2"
             strokeLinecap="round"
+            fill="none"
           />
         </g>
       )}

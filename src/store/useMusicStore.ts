@@ -11,6 +11,8 @@ import type {
   UserMusicPlaylist,
 } from '../types/music';
 
+import type { MusicLang } from '../components/music/musicI18n';
+
 const STORAGE_KEY = 'riffan_music_library_v1';
 
 interface PersistedLibrary {
@@ -21,6 +23,11 @@ interface PersistedLibrary {
   recentTracks: MusicTrack[];
   eqPreset: EqPresetId;
   volume: number;
+  musicLang: MusicLang;
+}
+
+function isValidMusicLang(val: unknown): val is MusicLang {
+  return val === 'es' || val === 'en' || val === 'fr' || val === 'zh' || val === 'ca';
 }
 
 function loadLibrary(): PersistedLibrary {
@@ -32,6 +39,7 @@ function loadLibrary(): PersistedLibrary {
     recentTracks: [],
     eqPreset: 'flat',
     volume: 0.85,
+    musicLang: 'es',
   };
   if (typeof localStorage === 'undefined') return defaults;
   try {
@@ -46,6 +54,7 @@ function loadLibrary(): PersistedLibrary {
       recentTracks: Array.isArray(parsed.recentTracks) ? parsed.recentTracks : [],
       eqPreset: parsed.eqPreset || 'flat',
       volume: typeof parsed.volume === 'number' ? Math.max(0, Math.min(1, parsed.volume)) : 0.85,
+      musicLang: isValidMusicLang(parsed.musicLang) ? parsed.musicLang : 'es',
     };
   } catch {
     return defaults;
@@ -70,6 +79,7 @@ function syncPersisted(state: PersistedLibrary) {
     recentTracks: state.recentTracks,
     eqPreset: state.eqPreset,
     volume: state.volume,
+    musicLang: state.musicLang,
   });
 }
 
@@ -134,6 +144,7 @@ export interface MusicStoreState extends PersistedLibrary {
   deleteUserPlaylist: (id: string) => void;
   addTrackToUserPlaylist: (playlistId: string, track: MusicTrack) => void;
   removeTrackFromUserPlaylist: (playlistId: string, trackId: string) => void;
+  setMusicLang: (lang: MusicLang) => void;
   stopAllMusic: () => void;
 }
 
@@ -436,6 +447,13 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
         return { ...pl, tracks: pl.tracks.filter((t) => t.id !== trackId) };
       });
       const next = { ...prev, userPlaylists };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setMusicLang: (musicLang) =>
+    set((prev) => {
+      const next = { ...prev, musicLang };
       syncPersisted(next);
       return next;
     }),

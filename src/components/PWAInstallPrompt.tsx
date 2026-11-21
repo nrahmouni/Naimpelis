@@ -141,10 +141,12 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
     };
   }, [isOpen]);
 
-  const recommendedDevice: 'android' | 'tv' | 'samsung' | 'web' = isTvDevice
+  const recommendedDevice: 'android' | 'ios' | 'tv' | 'samsung' | 'web' = isTvDevice
     ? 'tv'
     : isAndroid
     ? 'android'
+    : isIOS
+    ? 'ios'
     : 'web';
 
   const m3uUrl = buildM3uPlaylistUrl(false);

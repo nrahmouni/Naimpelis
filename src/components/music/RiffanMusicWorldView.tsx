@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
-  Disc3,
+  Download,
+  Globe,
   Heart,
   Home,
   Library,
@@ -14,6 +15,7 @@ import {
   Radio,
   Search,
   Shuffle,
+  Sparkles,
   Trash2,
   UserCheck,
   X,
@@ -23,6 +25,7 @@ import type {
   MusicAlbumRef,
   MusicArtistRef,
   MusicGenre,
+  MusicHomePayload,
   MusicPlaylist,
   MusicRadioStation,
   MusicTrack,
@@ -33,6 +36,12 @@ import { useBackInterceptor } from '../../lib/backInterceptor';
 import { MusicAudioEngine } from './MusicAudioEngine';
 import { SpotifyPlayerBar, formatMusicTime } from './SpotifyPlayerBar';
 import { EqAndTimerModal, FullScreenNowPlayingModal } from './FullScreenNowPlayingModal';
+import { MUSIC_I18N, MUSIC_LANGUAGES, type MusicCopy, type MusicLang } from './musicI18n';
+
+import spatialHeroCover from '../../assets/images/music_spatial_hero_1795220135333.jpg';
+import chillLofiCover from '../../assets/images/music_chill_lofi_1795220135922.jpg';
+import rockArenaCover from '../../assets/images/music_rock_arena_1795220136170.jpg';
+import acousticSoulCover from '../../assets/images/music_acoustic_soul_1795220138262.jpg';
 import mixHeroCover from '../../assets/images/riffan_music_bento_1795218458890.jpg';
 import mixUrbanoCover from '../../assets/images/riffan_mix_urbano_1795218458959.jpg';
 import mixElectronicCover from '../../assets/images/riffan_mix_electronic_1795218458940.jpg';
@@ -42,20 +51,31 @@ interface RiffanMusicWorldViewProps {
   externalSearchQuery?: string;
 }
 
-interface MusicHomeData {
-  topTracks: MusicTrack[];
-  spainHits: MusicTrack[];
-  urbanoMix: MusicTrack[];
-  popMix: MusicTrack[];
-  electronicMix: MusicTrack[];
-  topAlbums: MusicAlbumRef[];
-  topArtists: MusicArtistRef[];
-  editorialPlaylists: MusicPlaylist[];
-  genres: MusicGenre[];
-  radios: MusicRadioStation[];
-}
-
 type MusicNavTab = 'home' | 'search' | 'library' | 'radios';
+
+type HomeMoodFilterId =
+  | 'all'
+  | 'youtube_music'
+  | 'spotify'
+  | 'morocco'
+  | 'arab'
+  | 'africa'
+  | 'russia'
+  | 'romania'
+  | 'china'
+  | 'usa'
+  | 'latin'
+  | 'spain'
+  | 'urbano'
+  | 'pop'
+  | 'electronic'
+  | 'rock'
+  | 'chill'
+  | 'flamenco'
+  | 'rnb'
+  | 'soundtrack'
+  | 'classics'
+  | 'audius';
 
 type MusicDetailView =
   | { kind: 'album'; id: string; album?: MusicAlbumRef; tracks: MusicTrack[]; loading: boolean }
@@ -74,11 +94,46 @@ type MusicDetailView =
   | { kind: 'curated'; title: string; subtitle: string; cover: string; tracks: MusicTrack[] }
   | { kind: 'user_playlist'; playlistId: string };
 
-function getTimeGreeting(): string {
+interface RadioFilterSpec {
+  id: string;
+  mode: 'country' | 'tag';
+  value: string;
+  labelKey: keyof MusicCopy;
+}
+
+const RADIO_FILTERS: RadioFilterSpec[] = [
+  { id: 'all', mode: 'country', value: 'ALL', labelKey: 'radioAll' },
+  { id: 'es', mode: 'country', value: 'ES', labelKey: 'radioSpain' },
+  { id: 'ma', mode: 'country', value: 'MA', labelKey: 'radioMorocco' },
+  { id: 'arab', mode: 'country', value: 'ARAB', labelKey: 'radioArab' },
+  { id: 'africa', mode: 'country', value: 'AFRICA', labelKey: 'radioAfrica' },
+  { id: 'ru', mode: 'country', value: 'RU', labelKey: 'radioRussia' },
+  { id: 'ro', mode: 'country', value: 'RO', labelKey: 'radioRomania' },
+  { id: 'cn', mode: 'country', value: 'CN', labelKey: 'radioChina' },
+  { id: 'us', mode: 'country', value: 'US', labelKey: 'radioUsa' },
+  { id: 'latin', mode: 'country', value: 'LATIN', labelKey: 'radioLatin' },
+  { id: 'pop', mode: 'tag', value: 'pop', labelKey: 'radioPop' },
+  { id: 'electronic', mode: 'tag', value: 'electronic', labelKey: 'radioElectronic' },
+  { id: 'rock', mode: 'tag', value: 'rock', labelKey: 'radioRock' },
+  { id: 'lofi', mode: 'tag', value: 'lofi', labelKey: 'radioLofi' },
+  { id: 'jazz', mode: 'tag', value: 'jazz', labelKey: 'radioJazz' },
+];
+
+function getTimeGreeting(m: MusicCopy): string {
   const hr = new Date().getHours();
-  if (hr < 12) return 'Buenos días';
-  if (hr < 20) return 'Buenas tardes';
-  return 'Buenas noches';
+  if (hr < 12) return m.goodMorning;
+  if (hr < 20) return m.goodAfternoon;
+  return m.goodEvening;
+}
+
+function isOpenableArtistId(id?: string): boolean {
+  return Boolean(id && /^\d+$/.test(id));
+}
+
+function isOpenableAlbumId(id?: string): boolean {
+  return Boolean(
+    id && (/^\d+$/.test(id) || id.startsWith('ytm-MPREb_') || id.startsWith('it-alb-'))
+  );
 }
 
 const TrackRow: React.FC<{
@@ -94,6 +149,7 @@ const TrackRow: React.FC<{
   onOpenArtist?: (artistId: string) => void;
   onOpenAlbum?: (albumId: string) => void;
   extraRightAction?: React.ReactNode;
+  copy: MusicCopy;
 }> = ({
   track,
   index,
@@ -107,28 +163,28 @@ const TrackRow: React.FC<{
   onOpenArtist,
   onOpenAlbum,
   extraRightAction,
+  copy,
 }) => (
   <div
     className={`group flex items-center gap-3 px-2.5 sm:px-3.5 py-2 rounded-xl transition-colors ${
-      isActive ? 'bg-white/[0.09]' : 'hover:bg-white/[0.05]'
+      isActive ? 'bg-[#FF3366]/14 border border-[#FF3366]/25' : 'hover:bg-white/[0.05]'
     }`}
   >
-    {/* Track # or Play indicator */}
     <button
       type="button"
       onClick={onPlay}
-      aria-label={`Reproducir ${track.title}`}
-      className="w-7 h-9 flex items-center justify-center shrink-0 cursor-pointer text-xs font-semibold tabular-nums text-zinc-400 group-hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1DB954] rounded-lg"
+      aria-label={`${copy.playNow} ${track.title}`}
+      className="w-7 h-9 flex items-center justify-center shrink-0 cursor-pointer text-xs font-semibold tabular-nums text-zinc-400 group-hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366] rounded-lg"
     >
       {isActive && isPlaying ? (
-        <span className="flex items-end gap-[2px] h-3.5">
-          <span className="w-[3px] bg-[#1DB954] rounded-full animate-pulse h-full" />
-          <span className="w-[3px] bg-[#1DB954] rounded-full animate-pulse h-2/3" />
-          <span className="w-[3px] bg-[#1DB954] rounded-full animate-pulse h-4/5" />
+        <span className="flex items-end gap-[2px] h-3.5" aria-hidden="true">
+          <span className="w-[3px] bg-[#FF3366] rounded-full h-full" />
+          <span className="w-[3px] bg-[#FF6B4A] rounded-full h-2/3" />
+          <span className="w-[3px] bg-[#F59E0B] rounded-full h-4/5" />
         </span>
       ) : (
         <>
-          <span className={`group-hover:hidden ${isActive ? 'text-[#1DB954]' : ''}`}>
+          <span className={`group-hover:hidden ${isActive ? 'text-[#FF6B4A]' : ''}`}>
             {index + 1}
           </span>
           <Play className="w-3.5 h-3.5 fill-current hidden group-hover:block text-white" />
@@ -136,13 +192,12 @@ const TrackRow: React.FC<{
       )}
     </button>
 
-    {/* Cover + Title + Artist */}
     <button
       type="button"
       onClick={onPlay}
       className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer"
     >
-      <div className="w-11 h-11 rounded-lg overflow-hidden bg-[#181B22] border border-white/10 shrink-0 flex items-center justify-center">
+      <div className="w-11 h-11 rounded-lg overflow-hidden bg-[#181020] border border-white/10 shrink-0 flex items-center justify-center">
         {track.album.cover ? (
           <img
             src={track.album.cover}
@@ -161,25 +216,29 @@ const TrackRow: React.FC<{
       <div className="min-w-0 flex-1">
         <p
           className={`text-sm font-semibold truncate leading-snug ${
-            isActive ? 'text-[#1DB954]' : 'text-white'
+            isActive ? 'text-[#FF6B4A]' : 'text-white'
           }`}
         >
           {track.title}
         </p>
         <div className="flex items-center gap-1.5 text-xs text-zinc-400 truncate mt-0.5">
           {track.explicit && (
-            <span className="px-1 rounded bg-zinc-700/80 text-zinc-200 text-[9px] font-bold leading-tight">
+            <span className="px-1 rounded bg-white/15 text-zinc-200 text-[9px] font-bold leading-tight">
               E
             </span>
           )}
           <span
             onClick={(e) => {
-              if (onOpenArtist && track.artist.id && !track.artist.id.startsWith('au-')) {
+              if (onOpenArtist && isOpenableArtistId(track.artist.id)) {
                 e.stopPropagation();
                 onOpenArtist(track.artist.id);
               }
             }}
-            className={onOpenArtist && track.artist.id && !track.artist.id.startsWith('au-') ? 'hover:underline hover:text-white truncate' : 'truncate'}
+            className={
+              onOpenArtist && isOpenableArtistId(track.artist.id)
+                ? 'hover:underline hover:text-white truncate'
+                : 'truncate'
+            }
           >
             {track.artist.name}
           </span>
@@ -187,12 +246,11 @@ const TrackRow: React.FC<{
       </div>
     </button>
 
-    {/* Album column desktop */}
     {track.album.title && (
       <button
         type="button"
         onClick={() => {
-          if (onOpenAlbum && track.album.id && !track.album.id.startsWith('au-')) {
+          if (onOpenAlbum && isOpenableAlbumId(track.album.id)) {
             onOpenAlbum(track.album.id);
           } else {
             onPlay();
@@ -204,15 +262,14 @@ const TrackRow: React.FC<{
       </button>
     )}
 
-    {/* Quick actions + Duration */}
     <div className="flex items-center gap-1 shrink-0">
       <button
         type="button"
         onClick={onToggleLike}
-        aria-label={isLiked ? 'Quitar de favoritos' : 'Guardar en Tus Me Gusta'}
-        className={`w-9 h-9 rounded-full flex items-center justify-center cursor-pointer transition-all ${
+        aria-label={isLiked ? copy.likeRemove : copy.likeAdd}
+        className={`w-10 h-10 sm:w-9 sm:h-9 rounded-full flex items-center justify-center cursor-pointer transition-all ${
           isLiked
-            ? 'text-[#1DB954]'
+            ? 'text-[#FF3366]'
             : 'text-zinc-400 opacity-80 sm:opacity-0 sm:group-hover:opacity-100 hover:text-white'
         }`}
       >
@@ -222,7 +279,7 @@ const TrackRow: React.FC<{
       <button
         type="button"
         onClick={onAddToQueue}
-        title="Añadir a la cola"
+        title={copy.addToQueue}
         className="hidden sm:flex w-9 h-9 rounded-full items-center justify-center text-zinc-400 opacity-0 group-hover:opacity-100 hover:text-white cursor-pointer transition-opacity"
       >
         <ListPlus className="w-4 h-4" />
@@ -231,8 +288,8 @@ const TrackRow: React.FC<{
       <button
         type="button"
         onClick={onOpenPlaylistPicker}
-        title="Añadir a playlist"
-        className="w-9 h-9 rounded-full flex items-center justify-center text-zinc-400 sm:opacity-0 sm:group-hover:opacity-100 hover:text-white cursor-pointer transition-opacity"
+        title={copy.addToPlaylist}
+        className="w-10 h-10 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-zinc-400 sm:opacity-0 sm:group-hover:opacity-100 hover:text-white cursor-pointer transition-opacity"
       >
         <Plus className="w-4 h-4" />
       </button>
@@ -250,9 +307,14 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   externalSearchQuery = '',
 }) => {
   const [navTab, setNavTab] = useState<MusicNavTab>('home');
+  const [activeMood, setActiveMood] = useState<HomeMoodFilterId>('all');
   const [detail, setDetail] = useState<MusicDetailView | null>(null);
-  const [homeData, setHomeData] = useState<MusicHomeData | null>(null);
+  const [homeData, setHomeData] = useState<MusicHomePayload | null>(null);
   const [homeLoading, setHomeLoading] = useState<boolean>(true);
+
+  const [radioFilterId, setRadioFilterId] = useState<string>('all');
+  const [filteredRadios, setFilteredRadios] = useState<MusicRadioStation[] | null>(null);
+  const [radiosLoading, setRadiosLoading] = useState(false);
 
   const [localSearchQuery, setLocalSearchQuery] = useState<string>(externalSearchQuery);
   const [searchResults, setSearchResults] = useState<{
@@ -280,10 +342,12 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   const savedPlaylists = useMusicStore((s) => s.savedPlaylists);
   const userPlaylists = useMusicStore((s) => s.userPlaylists);
   const recentTracks = useMusicStore((s) => s.recentTracks);
-  const viewMode = useMusicStore((s) => s.viewMode);
   const showNowPlayingModal = useMusicStore((s) => s.showNowPlayingModal);
   const nowPlayingTab = useMusicStore((s) => s.nowPlayingTab);
   const showQueueDrawer = useMusicStore((s) => s.showQueueDrawer);
+  const musicLang = useMusicStore((s) => s.musicLang);
+  const setMusicLang = useMusicStore((s) => s.setMusicLang);
+  const m = MUSIC_I18N[musicLang];
 
   const playTrack = useMusicStore((s) => s.playTrack);
   const playRadio = useMusicStore((s) => s.playRadio);
@@ -308,9 +372,10 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
 
   useBackInterceptor(Boolean(detail), 'music-detail-view', () => setDetail(null), { priority: 8 });
   useBackInterceptor(showQueueDrawer, 'music-queue-drawer', () => setShowQueueDrawer(false), { priority: 18 });
-  useBackInterceptor(Boolean(playlistPickerTrack), 'music-pl-picker', () => setPlaylistPickerTrack(null), { priority: 22 });
+  useBackInterceptor(Boolean(playlistPickerTrack), 'music-pl-picker', () => setPlaylistPickerTrack(null), {
+    priority: 22,
+  });
 
-  // Sync top WorldShell search query into Riffan Music search
   useEffect(() => {
     if (externalSearchQuery.trim()) {
       setLocalSearchQuery(externalSearchQuery);
@@ -319,7 +384,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
     }
   }, [externalSearchQuery]);
 
-  // Initial load of Home data
+  // Initial load of expanded Global + Platform Home data
   useEffect(() => {
     let cancelled = false;
     setHomeLoading(true);
@@ -330,11 +395,31 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
         if (data?.success) {
           setHomeData({
             topTracks: data.topTracks || [],
+            youtubeMusicHits: data.youtubeMusicHits || [],
+            youtubeMusicAlbums: data.youtubeMusicAlbums || [],
+            spotifyHits: data.spotifyHits || [],
+            spotifyAlbums: data.spotifyAlbums || [],
             spainHits: data.spainHits || [],
+            moroccoMix: data.moroccoMix || [],
+            arabMix: data.arabMix || [],
+            africaMix: data.africaMix || [],
+            russiaMix: data.russiaMix || [],
+            romaniaMix: data.romaniaMix || [],
+            chinaMix: data.chinaMix || [],
+            usaMix: data.usaMix || [],
             urbanoMix: data.urbanoMix || [],
             popMix: data.popMix || [],
             electronicMix: data.electronicMix || [],
+            rockIndieMix: data.rockIndieMix || [],
+            latinSalsaMix: data.latinSalsaMix || [],
+            rnbSoulMix: data.rnbSoulMix || [],
+            chillLofiMix: data.chillLofiMix || [],
+            flamencoAcousticMix: data.flamencoAcousticMix || [],
+            soundtrackMix: data.soundtrackMix || [],
+            classicsMix: data.classicsMix || [],
+            audiusTrending: data.audiusTrending || [],
             topAlbums: data.topAlbums || [],
+            newReleases: data.newReleases || [],
             topArtists: data.topArtists || [],
             editorialPlaylists: data.editorialPlaylists || [],
             genres: data.genres || [],
@@ -351,7 +436,39 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
     };
   }, []);
 
-  // Debounced multi-entity search
+  // Load filtered radios by country group or music tag
+  useEffect(() => {
+    if (radioFilterId === 'all') {
+      setFilteredRadios(null);
+      setRadiosLoading(false);
+      return;
+    }
+    const spec = RADIO_FILTERS.find((r) => r.id === radioFilterId);
+    if (!spec) return;
+    let cancelled = false;
+    setRadiosLoading(true);
+    const qs =
+      spec.mode === 'country'
+        ? `country=${encodeURIComponent(spec.value)}`
+        : `tag=${encodeURIComponent(spec.value)}`;
+    fetch(`/api/music/radios?${qs}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (data?.success) {
+          setFilteredRadios(data.radios || []);
+        }
+        setRadiosLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) setRadiosLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [radioFilterId]);
+
+  // Debounced search
   useEffect(() => {
     const clean = localSearchQuery.trim();
     if (!clean) {
@@ -480,84 +597,305 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   }, []);
 
   const hasBottomBar = Boolean(currentTrack || activeRadio);
-  const greeting = useMemo(() => getTimeGreeting(), []);
-
+  const greeting = useMemo(() => getTimeGreeting(m), [m]);
   const likedIdSet = useMemo(() => new Set(likedTracks.map((t) => t.id)), [likedTracks]);
 
-  const showYtStage =
-    Boolean(showNowPlayingModal && nowPlayingTab === 'video' && (resolvedPlayback?.youtubeMvId || resolvedPlayback?.youtubeVideoId));
+  const showYtStage = Boolean(
+    showNowPlayingModal &&
+      nowPlayingTab === 'video' &&
+      (resolvedPlayback?.youtubeMvId || resolvedPlayback?.youtubeVideoId)
+  );
+
+  // Dynamic Hero spotlight track (follows active track if playing, else top hit)
+  const heroSpotlightTrack = useMemo(() => {
+    if (currentTrack) return currentTrack;
+    if (homeData?.youtubeMusicHits?.[0]) return homeData.youtubeMusicHits[0];
+    if (homeData?.spotifyHits?.[0]) return homeData.spotifyHits[0];
+    if (homeData?.spainHits?.[0]) return homeData.spainHits[0];
+    if (homeData?.topTracks?.[0]) return homeData.topTracks[0];
+    return null;
+  }, [currentTrack, homeData]);
+
+  const heroPool = useMemo(() => {
+    if (!homeData) return [];
+    const merged = [
+      ...homeData.youtubeMusicHits,
+      ...homeData.spotifyHits,
+      ...homeData.spainHits,
+      ...homeData.moroccoMix,
+      ...homeData.africaMix,
+      ...homeData.arabMix,
+      ...homeData.usaMix,
+      ...homeData.topTracks,
+    ];
+    const seen = new Set<string>();
+    return merged.filter((t) => {
+      if (seen.has(t.id)) return false;
+      seen.add(t.id);
+      return true;
+    });
+  }, [homeData]);
+
+  const moodFilters = useMemo<Array<{ id: HomeMoodFilterId; label: string }>>(
+    () => [
+      { id: 'all', label: m.moodAll },
+      { id: 'youtube_music', label: m.moodYtm },
+      { id: 'spotify', label: m.moodSpotify },
+      { id: 'morocco', label: m.moodMorocco },
+      { id: 'arab', label: m.moodArab },
+      { id: 'africa', label: m.moodAfrica },
+      { id: 'russia', label: m.moodRussia },
+      { id: 'romania', label: m.moodRomania },
+      { id: 'china', label: m.moodChina },
+      { id: 'usa', label: m.moodUsa },
+      { id: 'latin', label: m.moodLatin },
+      { id: 'spain', label: m.moodSpain },
+      { id: 'urbano', label: m.moodUrbano },
+      { id: 'pop', label: m.moodPop },
+      { id: 'electronic', label: m.moodElectronic },
+      { id: 'rock', label: m.moodRock },
+      { id: 'chill', label: m.moodChill },
+      { id: 'flamenco', label: m.moodFlamenco },
+      { id: 'rnb', label: m.moodRnb },
+      { id: 'soundtrack', label: m.moodSoundtrack },
+      { id: 'classics', label: m.moodClassics },
+      { id: 'audius', label: m.moodAudius },
+    ],
+    [m]
+  );
+
+  const activeMoodSelection = useMemo(() => {
+    if (!homeData || activeMood === 'all') return null;
+    const map: Record<Exclude<HomeMoodFilterId, 'all'>, { title: string; subtitle: string; tracks: MusicTrack[]; cover: string }> = {
+      youtube_music: {
+        title: m.secYtmHits,
+        subtitle: 'YouTube Music Charts · MV & Official Audio',
+        tracks: homeData.youtubeMusicHits,
+        cover: homeData.youtubeMusicHits[0]?.album.coverXl || spatialHeroCover,
+      },
+      spotify: {
+        title: m.secSpotifyHits,
+        subtitle: 'Global Top 50 · Today’s Top Hits · Viral 50',
+        tracks: homeData.spotifyHits,
+        cover: homeData.spotifyHits[0]?.album.coverXl || mixHeroCover,
+      },
+      morocco: {
+        title: m.secMorocco,
+        subtitle: 'ElGrandeToto · Saad Lamjarred · Manal · Tagne · Dystinct · Cheb Khaled',
+        tracks: homeData.moroccoMix,
+        cover: homeData.moroccoMix[0]?.album.coverXl || mixUrbanoCover,
+      },
+      arab: {
+        title: m.secArab,
+        subtitle: 'Amr Diab · Nancy Ajram · Wegz · Tamer Hosny · Sherine · Elissa',
+        tracks: homeData.arabMix,
+        cover: homeData.arabMix[0]?.album.coverXl || acousticSoulCover,
+      },
+      africa: {
+        title: m.secAfrica,
+        subtitle: 'Burna Boy · Wizkid · Tyla · Rema · Ayra Starr · Diamond Platnumz · Fally Ipupa',
+        tracks: homeData.africaMix,
+        cover: homeData.africaMix[0]?.album.coverXl || mixUrbanoCover,
+      },
+      russia: {
+        title: m.secRussia,
+        subtitle: 'Macan · Anna Asti · Miyagi & Andy Panda · Jony · Xcho · Zivert',
+        tracks: homeData.russiaMix,
+        cover: homeData.russiaMix[0]?.album.coverXl || mixElectronicCover,
+      },
+      romania: {
+        title: m.secRomania,
+        subtitle: "Inna · Carla's Dreams · Smiley · Delia · Theo Rose · Tzanca Uraganu",
+        tracks: homeData.romaniaMix,
+        cover: homeData.romaniaMix[0]?.album.coverXl || mixElectronicCover,
+      },
+      china: {
+        title: m.secChina,
+        subtitle: 'Jay Chou · G.E.M. · Eason Chan · JJ Lin · Joker Xue · Jackson Wang',
+        tracks: homeData.chinaMix,
+        cover: homeData.chinaMix[0]?.album.coverXl || spatialHeroCover,
+      },
+      usa: {
+        title: m.secUsa,
+        subtitle: 'Kendrick Lamar · SZA · Sabrina Carpenter · The Weeknd · Billie Eilish',
+        tracks: homeData.usaMix,
+        cover: homeData.usaMix[0]?.album.coverXl || rockArenaCover,
+      },
+      spain: {
+        title: m.secSpainHits,
+        subtitle: 'Quevedo · Rosalía · Aitana · Saiko · Bad Bunny',
+        tracks: homeData.spainHits,
+        cover: homeData.spainHits[0]?.album.coverXl || mixUrbanoCover,
+      },
+      urbano: {
+        title: m.secUrbano,
+        subtitle: 'Trap · Reggaeton · Urban Charts',
+        tracks: homeData.urbanoMix,
+        cover: mixUrbanoCover,
+      },
+      pop: {
+        title: m.secPop,
+        subtitle: 'Global Pop · Dance Pop',
+        tracks: homeData.popMix,
+        cover: homeData.popMix[0]?.album.coverXl || spatialHeroCover,
+      },
+      electronic: {
+        title: m.secElectronic,
+        subtitle: 'House · Techno · Clubbing',
+        tracks: homeData.electronicMix,
+        cover: mixElectronicCover,
+      },
+      rock: {
+        title: m.secRock,
+        subtitle: 'Rock · Indie · Alternative',
+        tracks: homeData.rockIndieMix,
+        cover: rockArenaCover,
+      },
+      chill: {
+        title: m.secChill,
+        subtitle: 'Lo-Fi Beats · Ambient · Focus',
+        tracks: homeData.chillLofiMix,
+        cover: chillLofiCover,
+      },
+      flamenco: {
+        title: m.secFlamenco,
+        subtitle: 'Flamenco · Acoustic Guitar',
+        tracks: homeData.flamencoAcousticMix,
+        cover: acousticSoulCover,
+      },
+      latin: {
+        title: m.secLatin,
+        subtitle: 'Salsa · Bachata · Reggaeton · Corridos',
+        tracks: homeData.latinSalsaMix,
+        cover: homeData.latinSalsaMix[0]?.album.coverXl || mixUrbanoCover,
+      },
+      rnb: {
+        title: m.secRnb,
+        subtitle: 'R&B · Neo Soul · Groove',
+        tracks: homeData.rnbSoulMix,
+        cover: homeData.rnbSoulMix[0]?.album.coverXl || acousticSoulCover,
+      },
+      soundtrack: {
+        title: m.secSoundtrack,
+        subtitle: 'Cinema · Series · Anime OST',
+        tracks: homeData.soundtrackMix,
+        cover: homeData.soundtrackMix[0]?.album.coverXl || spatialHeroCover,
+      },
+      classics: {
+        title: m.secClassics,
+        subtitle: '80s · 90s · Legends',
+        tracks: homeData.classicsMix,
+        cover: homeData.classicsMix[0]?.album.coverXl || rockArenaCover,
+      },
+      audius: {
+        title: m.secAudius,
+        subtitle: 'Audius Hi-Fi Independent',
+        tracks: homeData.audiusTrending,
+        cover: homeData.audiusTrending[0]?.album.coverXl || mixElectronicCover,
+      },
+    };
+    return map[activeMood];
+  }, [activeMood, homeData, m]);
 
   const renderQuickMixes = () => {
     if (!homeData) return null;
     const cards = [
       {
         id: 'liked',
-        title: 'Tus Me Gusta',
+        title: m.likedSongs,
         cover: mixHeroCover,
-        count: `${likedTracks.length} canciones`,
+        count: `${likedTracks.length} ${m.songsCount}`,
         onClick: () => setDetail({ kind: 'liked' }),
       },
       {
-        id: 'spain',
-        title: 'Top España & Viral',
-        cover: homeData.spainHits[0]?.album.cover || mixUrbanoCover,
-        count: `${homeData.spainHits.length} éxitos`,
+        id: 'ytm',
+        title: m.moodYtm,
+        cover: homeData.youtubeMusicHits[0]?.album.cover || spatialHeroCover,
+        count: `${homeData.youtubeMusicHits.length} hits`,
         onClick: () =>
           setDetail({
             kind: 'curated',
-            title: 'Top España & Tendencias',
-            subtitle: 'Lo más escuchado en España hoy',
-            cover: homeData.spainHits[0]?.album.coverXl || mixUrbanoCover,
-            tracks: homeData.spainHits,
+            title: m.secYtmHits,
+            subtitle: 'YouTube Music · Official Audio & MV',
+            cover: homeData.youtubeMusicHits[0]?.album.coverXl || spatialHeroCover,
+            tracks: homeData.youtubeMusicHits,
           }),
       },
       {
-        id: 'global',
-        title: 'Top 50 Mundial',
-        cover: homeData.topTracks[0]?.album.cover || mixHeroCover,
-        count: `${homeData.topTracks.length} temas`,
+        id: 'spotify',
+        title: m.moodSpotify,
+        cover: homeData.spotifyHits[0]?.album.cover || mixUrbanoCover,
+        count: `${homeData.spotifyHits.length} charts`,
         onClick: () =>
           setDetail({
             kind: 'curated',
-            title: 'Top 50 Mundial',
-            subtitle: 'Rankings globales en directo',
-            cover: homeData.topTracks[0]?.album.coverXl || mixHeroCover,
-            tracks: homeData.topTracks,
+            title: m.secSpotifyHits,
+            subtitle: 'Spotify Global Top 50 · Viral 50',
+            cover: homeData.spotifyHits[0]?.album.coverXl || mixUrbanoCover,
+            tracks: homeData.spotifyHits,
           }),
       },
       {
-        id: 'urbano',
-        title: 'Mix Urbano & Reggaeton',
-        cover: mixUrbanoCover,
-        count: `${homeData.urbanoMix.length} temas`,
+        id: 'morocco',
+        title: m.moodMorocco,
+        cover: homeData.moroccoMix[0]?.album.cover || mixUrbanoCover,
+        count: `${homeData.moroccoMix.length} ${m.songsCount}`,
         onClick: () =>
           setDetail({
             kind: 'curated',
-            title: 'Mix Urbano & Reggaeton',
-            subtitle: 'Perreo, trap y éxitos latinos sin pausa',
-            cover: mixUrbanoCover,
-            tracks: homeData.urbanoMix,
+            title: m.secMorocco,
+            subtitle: 'ElGrandeToto · Saad Lamjarred · Manal · Dystinct',
+            cover: homeData.moroccoMix[0]?.album.coverXl || mixUrbanoCover,
+            tracks: homeData.moroccoMix,
           }),
       },
       {
-        id: 'electronic',
-        title: 'Electrónica & Club',
-        cover: mixElectronicCover,
-        count: `${homeData.electronicMix.length} temas`,
+        id: 'africa',
+        title: m.moodAfrica,
+        cover: homeData.africaMix[0]?.album.cover || mixElectronicCover,
+        count: `${homeData.africaMix.length} ${m.songsCount}`,
         onClick: () =>
           setDetail({
             kind: 'curated',
-            title: 'Electrónica & Club',
-            subtitle: 'House, techno y sesiones de festival',
-            cover: mixElectronicCover,
-            tracks: homeData.electronicMix,
+            title: m.secAfrica,
+            subtitle: 'Burna Boy · Wizkid · Tyla · Rema · Amapiano',
+            cover: homeData.africaMix[0]?.album.coverXl || mixElectronicCover,
+            tracks: homeData.africaMix,
+          }),
+      },
+      {
+        id: 'arab',
+        title: m.moodArab,
+        cover: homeData.arabMix[0]?.album.cover || acousticSoulCover,
+        count: `${homeData.arabMix.length} ${m.songsCount}`,
+        onClick: () =>
+          setDetail({
+            kind: 'curated',
+            title: m.secArab,
+            subtitle: 'Amr Diab · Nancy Ajram · Wegz · Sherine',
+            cover: homeData.arabMix[0]?.album.coverXl || acousticSoulCover,
+            tracks: homeData.arabMix,
+          }),
+      },
+      {
+        id: 'russia',
+        title: m.moodRussia,
+        cover: homeData.russiaMix[0]?.album.cover || chillLofiCover,
+        count: `${homeData.russiaMix.length} ${m.songsCount}`,
+        onClick: () =>
+          setDetail({
+            kind: 'curated',
+            title: m.secRussia,
+            subtitle: 'Macan · Anna Asti · Miyagi · Jony',
+            cover: homeData.russiaMix[0]?.album.coverXl || chillLofiCover,
+            tracks: homeData.russiaMix,
           }),
       },
       {
         id: 'radios',
-        title: 'Radios Musicales 24/7',
-        cover: mixHeroCover,
-        count: `${homeData.radios.length} emisoras`,
+        title: m.navRadios,
+        cover: rockArenaCover,
+        count: `${homeData.radios.length}+ FM`,
         onClick: () => {
           setDetail(null);
           setNavTab('radios');
@@ -566,25 +904,28 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
     ];
 
     return (
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3">
         {cards.map((c) => (
           <button
             key={c.id}
             type="button"
             onClick={c.onClick}
-            className="group flex items-center gap-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.06] overflow-hidden text-left cursor-pointer transition-all pr-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1DB954]"
+            className="group flex items-center gap-3 rounded-2xl bg-white/[0.05] hover:bg-[#FF3366]/14 border border-white/[0.07] hover:border-[#FF3366]/35 overflow-hidden text-left cursor-pointer transition-all pr-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366]"
           >
             <img
               src={c.cover}
               alt={c.title}
               referrerPolicy="no-referrer"
-              className="w-14 h-14 sm:w-16 sm:h-16 object-cover shrink-0 bg-[#14171E]"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+              className="w-14 h-14 sm:w-16 sm:h-16 object-cover shrink-0 bg-[#180E1E]"
             />
             <div className="min-w-0 flex-1 py-1">
               <p className="text-xs sm:text-sm font-bold text-white truncate">{c.title}</p>
               <p className="text-[11px] text-zinc-400 truncate mt-0.5 tabular-nums">{c.count}</p>
             </div>
-            <span className="hidden sm:flex w-9 h-9 rounded-full bg-[#1DB954] text-[#08090C] items-center justify-center opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all shadow-lg shrink-0">
+            <span className="hidden sm:flex w-9 h-9 rounded-full bg-gradient-to-br from-[#FF3366] to-[#FF6B4A] text-white items-center justify-center opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all shadow-[0_6px_18px_rgba(255,51,102,0.45)] shrink-0">
               <Play className="w-4 h-4 fill-current ml-0.5" />
             </span>
           </button>
@@ -608,19 +949,19 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 setDetail({
                   kind: 'curated',
                   title: viewAllTitle,
-                  subtitle: `${tracks.length} canciones seleccionadas`,
-                  cover: tracks[0]?.album.coverXl || tracks[0]?.album.cover || mixHeroCover,
+                  subtitle: `${tracks.length} ${m.selectedSongs}`,
+                  cover: tracks[0]?.album.coverXl || tracks[0]?.album.cover || spatialHeroCover,
                   tracks,
                 })
               }
-              className="text-xs font-semibold text-zinc-400 hover:text-white cursor-pointer whitespace-nowrap"
+              className="text-xs font-semibold text-[#FF6B4A] hover:text-[#F59E0B] cursor-pointer whitespace-nowrap"
             >
-              Ver todo
+              {m.viewAll}
             </button>
           )}
         </div>
         <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 snap-x">
-          {tracks.slice(0, 14).map((t) => {
+          {tracks.slice(0, 18).map((t) => {
             const active = currentTrack?.id === t.id;
             return (
               <button
@@ -630,9 +971,9 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   triggerHaptic('light');
                   playTrack(t, tracks);
                 }}
-                className="group shrink-0 w-[142px] sm:w-[168px] p-2.5 rounded-2xl bg-[#121318] hover:bg-[#1B1D24] border border-white/[0.05] text-left cursor-pointer transition-colors snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1DB954]"
+                className="group shrink-0 w-[144px] sm:w-[172px] p-2.5 rounded-2xl bg-[#110C18]/90 hover:bg-[#1B1225] border border-white/[0.06] hover:border-[#FF3366]/35 text-left cursor-pointer transition-all duration-200 hover:-translate-y-0.5 snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366]"
               >
-                <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#181B22] mb-2.5">
+                <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#191124] mb-2.5">
                   {t.album.cover ? (
                     <img
                       src={t.album.cover}
@@ -646,7 +987,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     />
                   ) : null}
                   <span
-                    className={`absolute right-2 bottom-2 w-10 h-10 rounded-full bg-[#1DB954] text-[#08090C] flex items-center justify-center shadow-[0_8px_20px_rgba(0,0,0,0.6)] transition-all ${
+                    className={`absolute right-2 bottom-2 w-10 h-10 rounded-full bg-gradient-to-br from-[#FF3366] to-[#FF6B4A] text-white flex items-center justify-center shadow-[0_8px_22px_rgba(255,51,102,0.5)] transition-all ${
                       active
                         ? 'opacity-100 translate-y-0'
                         : 'opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0'
@@ -659,7 +1000,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     )}
                   </span>
                 </div>
-                <p className={`text-sm font-bold truncate ${active ? 'text-[#1DB954]' : 'text-white'}`}>
+                <p className={`text-sm font-bold truncate ${active ? 'text-[#FF6B4A]' : 'text-white'}`}>
                   {t.title}
                 </p>
                 <p className="text-xs text-zinc-400 truncate mt-0.5">{t.artist.name}</p>
@@ -677,14 +1018,14 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
       <section className="space-y-3">
         <h2 className="font-display text-lg sm:text-xl font-bold text-white tracking-tight">{title}</h2>
         <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 snap-x">
-          {artists.slice(0, 14).map((art) => (
+          {artists.slice(0, 16).map((art) => (
             <button
               key={art.id}
               type="button"
               onClick={() => openArtistDetail(art.id, art)}
-              className="group shrink-0 w-[132px] sm:w-[154px] p-2.5 rounded-2xl bg-[#121318] hover:bg-[#1B1D24] border border-white/[0.05] text-center cursor-pointer transition-colors snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1DB954]"
+              className="group shrink-0 w-[132px] sm:w-[156px] p-2.5 rounded-2xl bg-[#110C18]/90 hover:bg-[#1B1225] border border-white/[0.06] hover:border-[#FF3366]/35 text-center cursor-pointer transition-all hover:-translate-y-0.5 snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366]"
             >
-              <div className="aspect-square w-full rounded-full overflow-hidden bg-[#181B22] border border-white/10 mb-2.5 shadow-lg">
+              <div className="aspect-square w-full rounded-full overflow-hidden bg-[#191124] border border-white/12 group-hover:border-[#FF3366]/50 mb-2.5 shadow-lg transition-colors">
                 {art.picture ? (
                   <img
                     src={art.picture}
@@ -699,7 +1040,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 ) : null}
               </div>
               <p className="text-sm font-bold text-white truncate">{art.name}</p>
-              <p className="text-[11px] text-zinc-400 mt-0.5">Artista</p>
+              <p className="text-[11px] text-zinc-400 mt-0.5">{m.artistRole}</p>
             </button>
           ))}
         </div>
@@ -713,14 +1054,14 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
       <section className="space-y-3">
         <h2 className="font-display text-lg sm:text-xl font-bold text-white tracking-tight">{title}</h2>
         <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 snap-x">
-          {albums.slice(0, 14).map((alb) => (
+          {albums.slice(0, 18).map((alb) => (
             <button
               key={alb.id}
               type="button"
               onClick={() => openAlbumDetail(alb.id, alb)}
-              className="group shrink-0 w-[142px] sm:w-[168px] p-2.5 rounded-2xl bg-[#121318] hover:bg-[#1B1D24] border border-white/[0.05] text-left cursor-pointer transition-colors snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1DB954]"
+              className="group shrink-0 w-[144px] sm:w-[172px] p-2.5 rounded-2xl bg-[#110C18]/90 hover:bg-[#1B1225] border border-white/[0.06] hover:border-[#FF3366]/35 text-left cursor-pointer transition-all hover:-translate-y-0.5 snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366]"
             >
-              <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#181B22] mb-2.5">
+              <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#191124] mb-2.5">
                 {alb.cover ? (
                   <img
                     src={alb.cover}
@@ -733,13 +1074,13 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
                 ) : null}
-                <span className="absolute right-2 bottom-2 w-10 h-10 rounded-full bg-[#1DB954] text-[#08090C] flex items-center justify-center shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all">
+                <span className="absolute right-2 bottom-2 w-10 h-10 rounded-full bg-gradient-to-br from-[#FF3366] to-[#FF6B4A] text-white flex items-center justify-center shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all">
                   <Play className="w-4 h-4 fill-current ml-0.5" />
                 </span>
               </div>
               <p className="text-sm font-bold text-white truncate">{alb.title}</p>
               <p className="text-xs text-zinc-400 truncate mt-0.5">
-                {alb.artist?.name || (alb.releaseDate ? alb.releaseDate.slice(0, 4) : 'Álbum')}
+                {alb.artist?.name || (alb.releaseDate ? alb.releaseDate.slice(0, 4) : m.albumLabel)}
               </p>
             </button>
           ))}
@@ -754,14 +1095,14 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
       <section className="space-y-3">
         <h2 className="font-display text-lg sm:text-xl font-bold text-white tracking-tight">{title}</h2>
         <div className="flex gap-3 sm:gap-4 overflow-x-auto pb-2 snap-x">
-          {playlists.slice(0, 14).map((pl) => (
+          {playlists.slice(0, 16).map((pl) => (
             <button
               key={pl.id}
               type="button"
               onClick={() => openPlaylistDetail(pl.id, pl)}
-              className="group shrink-0 w-[142px] sm:w-[168px] p-2.5 rounded-2xl bg-[#121318] hover:bg-[#1B1D24] border border-white/[0.05] text-left cursor-pointer transition-colors snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1DB954]"
+              className="group shrink-0 w-[144px] sm:w-[172px] p-2.5 rounded-2xl bg-[#110C18]/90 hover:bg-[#1B1225] border border-white/[0.06] hover:border-[#FF3366]/35 text-left cursor-pointer transition-all hover:-translate-y-0.5 snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366]"
             >
-              <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#181B22] mb-2.5">
+              <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#191124] mb-2.5">
                 {pl.cover ? (
                   <img
                     src={pl.cover}
@@ -774,7 +1115,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                   />
                 ) : null}
-                <span className="absolute right-2 bottom-2 w-10 h-10 rounded-full bg-[#1DB954] text-[#08090C] flex items-center justify-center shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all">
+                <span className="absolute right-2 bottom-2 w-10 h-10 rounded-full bg-gradient-to-br from-[#FF3366] to-[#FF6B4A] text-white flex items-center justify-center shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all">
                   <Play className="w-4 h-4 fill-current ml-0.5" />
                 </span>
               </div>
@@ -797,6 +1138,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           isActive={currentTrack?.id === track.id}
           isPlaying={isPlaying}
           isLiked={likedIdSet.has(track.id)}
+          copy={m}
           onPlay={() => {
             triggerHaptic('light');
             playTrack(track, tracks);
@@ -807,7 +1149,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           }}
           onAddToQueue={() => {
             addToQueue(track);
-            showToast(`Añadida a la cola: ${track.title}`);
+            showToast(`${m.addedToQueue}: ${track.title}`);
           }}
           onOpenPlaylistPicker={() => setPlaylistPickerTrack(track)}
           onOpenArtist={(aid) => openArtistDetail(aid)}
@@ -817,8 +1159,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               <button
                 type="button"
                 onClick={() => removeTrackFromUserPlaylist(userPlId, track.id)}
-                title="Quitar de la playlist"
-                className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-500 hover:text-red-400 cursor-pointer"
+                title={m.removeFromPlaylist}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-zinc-500 hover:text-rose-400 cursor-pointer"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -835,35 +1177,33 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
     if (detail.kind === 'liked') {
       return (
         <div className="space-y-6 animate-fade-in">
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setDetail(null)}
-              className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer"
-            >
-              <ArrowLeft className="w-4 h-4" /> Volver
-            </button>
-          </div>
-          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#1DB954]/25 via-[#121318] to-[#0A0B0E] border border-white/10">
-            <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-2xl bg-gradient-to-br from-[#1DB954] to-[#064E3B] flex items-center justify-center shadow-2xl shrink-0">
+          <button
+            type="button"
+            onClick={() => setDetail(null)}
+            className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer"
+          >
+            <ArrowLeft className="w-4 h-4" /> {m.back}
+          </button>
+          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#FF3366]/25 via-[#130C1A] to-[#08050C] border border-[#FF3366]/20">
+            <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-2xl bg-gradient-to-br from-[#FF3366] via-[#FF6B4A] to-[#F59E0B] flex items-center justify-center shadow-2xl shrink-0">
               <Heart className="w-16 h-16 text-white fill-current" />
             </div>
             <div className="space-y-2 min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wider text-[#1DB954]">Playlist</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-[#FF6B4A]">{m.playlistLabel}</p>
               <h1 className="font-display text-3xl sm:text-5xl font-black text-white tracking-tight">
-                Tus Me Gusta
+                {m.likedSongs}
               </h1>
               <p className="text-sm text-zinc-300 tabular-nums">
-                {likedTracks.length} {likedTracks.length === 1 ? 'canción' : 'canciones'} guardadas
+                {likedTracks.length} {likedTracks.length === 1 ? m.songSingular : m.songsCount}
               </p>
               {likedTracks.length > 0 && (
                 <div className="pt-2 flex items-center gap-3">
                   <button
                     type="button"
                     onClick={() => playTrack(likedTracks[0], likedTracks)}
-                    className="h-12 px-6 rounded-full bg-[#1DB954] hover:scale-105 text-[#08090C] font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg transition-transform"
+                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] hover:scale-105 text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-[0_8px_24px_rgba(255,51,102,0.4)] transition-transform"
                   >
-                    <Play className="w-4 h-4 fill-current" /> Reproducir todo
+                    <Play className="w-4 h-4 fill-current" /> {m.playAll}
                   </button>
                 </div>
               )}
@@ -871,12 +1211,10 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           </div>
 
           {likedTracks.length === 0 ? (
-            <div className="py-16 text-center rounded-3xl bg-[#121318] border border-white/[0.06]">
+            <div className="py-16 text-center rounded-3xl bg-[#110C18] border border-white/[0.06]">
               <Heart className="w-10 h-10 text-zinc-600 mx-auto mb-2" />
-              <p className="text-base font-bold text-white">Aún no tienes canciones favoritas</p>
-              <p className="text-xs text-zinc-400 mt-1">
-                Toca el corazón en cualquier canción para guardarla aquí.
-              </p>
+              <p className="text-base font-bold text-white">{m.noLikedTitle}</p>
+              <p className="text-xs text-zinc-400 mt-1">{m.noLikedSub}</p>
             </div>
           ) : (
             renderTrackList(likedTracks)
@@ -896,42 +1234,47 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               onClick={() => setDetail(null)}
               className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer"
             >
-              <ArrowLeft className="w-4 h-4" /> Volver
+              <ArrowLeft className="w-4 h-4" /> {m.back}
             </button>
             <button
               type="button"
               onClick={() => {
                 deleteUserPlaylist(pl.id);
                 setDetail(null);
-                showToast('Playlist eliminada');
+                showToast(m.playlistDeleted);
               }}
-              className="min-h-10 px-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-xs font-semibold text-red-400 inline-flex items-center gap-1.5 cursor-pointer"
+              className="min-h-10 px-3 rounded-xl bg-rose-500/12 hover:bg-rose-500/22 text-xs font-semibold text-rose-300 inline-flex items-center gap-1.5 cursor-pointer"
             >
-              <Trash2 className="w-3.5 h-3.5" /> Eliminar playlist
+              <Trash2 className="w-3.5 h-3.5" /> {m.deletePlaylist}
             </button>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#1DB954]/20 via-[#121318] to-[#0A0B0E] border border-white/10">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#FF3366]/22 via-[#130C1A] to-[#08050C] border border-[#FF3366]/20">
             <img
               src={pl.tracks[0]?.album.coverXl || pl.tracks[0]?.album.cover || mixHeroCover}
               alt={pl.name}
               referrerPolicy="no-referrer"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
               className="w-36 h-36 sm:w-44 sm:h-44 rounded-2xl object-cover shadow-2xl shrink-0"
             />
             <div className="space-y-2 min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wider text-[#1DB954]">Tu Playlist</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-[#FF6B4A]">{m.yourPlaylist}</p>
               <h1 className="font-display text-3xl sm:text-5xl font-black text-white tracking-tight truncate">
                 {pl.name}
               </h1>
-              <p className="text-sm text-zinc-300 tabular-nums">{pl.tracks.length} canciones</p>
+              <p className="text-sm text-zinc-300 tabular-nums">
+                {pl.tracks.length} {pl.tracks.length === 1 ? m.songSingular : m.songsCount}
+              </p>
               {pl.tracks.length > 0 && (
                 <div className="pt-2">
                   <button
                     type="button"
                     onClick={() => playTrack(pl.tracks[0], pl.tracks)}
-                    className="h-12 px-6 rounded-full bg-[#1DB954] hover:scale-105 text-[#08090C] font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
+                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] hover:scale-105 text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
                   >
-                    <Play className="w-4 h-4 fill-current" /> Reproducir
+                    <Play className="w-4 h-4 fill-current" /> {m.playNow}
                   </button>
                 </div>
               )}
@@ -939,10 +1282,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           </div>
 
           {pl.tracks.length === 0 ? (
-            <div className="py-16 text-center rounded-3xl bg-[#121318] border border-white/[0.06]">
-              <p className="text-sm text-zinc-400">
-                Esta playlist está vacía. Usa el botón + en cualquier tema para añadir canciones.
-              </p>
+            <div className="py-16 text-center rounded-3xl bg-[#110C18] border border-white/[0.06]">
+              <p className="text-sm text-zinc-400">{m.emptyPlaylistSub}</p>
             </div>
           ) : (
             renderTrackList(pl.tracks, pl.id)
@@ -959,30 +1300,45 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             onClick={() => setDetail(null)}
             className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4" /> Volver
+            <ArrowLeft className="w-4 h-4" /> {m.back}
           </button>
 
-          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#1DB954]/20 via-[#121318] to-[#0A0B0E] border border-white/10">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#FF3366]/22 via-[#130C1A] to-[#08050C] border border-[#FF3366]/20">
             <img
               src={detail.cover}
               alt={detail.title}
               referrerPolicy="no-referrer"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
               className="w-36 h-36 sm:w-44 sm:h-44 rounded-2xl object-cover shadow-2xl shrink-0"
             />
             <div className="space-y-2 min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wider text-[#1DB954]">Selección Riffan</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-[#FF6B4A]">
+                {m.curatedSelection}
+              </p>
               <h1 className="font-display text-3xl sm:text-4xl font-black text-white tracking-tight">
                 {detail.title}
               </h1>
               <p className="text-sm text-zinc-300">{detail.subtitle}</p>
               {detail.tracks.length > 0 && (
-                <div className="pt-2">
+                <div className="pt-2 flex flex-wrap items-center gap-2.5">
                   <button
                     type="button"
                     onClick={() => playTrack(detail.tracks[0], detail.tracks)}
-                    className="h-12 px-6 rounded-full bg-[#1DB954] hover:scale-105 text-[#08090C] font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
+                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] hover:scale-105 text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg transition-transform"
                   >
-                    <Play className="w-4 h-4 fill-current" /> Reproducir lista
+                    <Play className="w-4 h-4 fill-current" /> {m.playList}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const shuffled = [...detail.tracks].sort(() => Math.random() - 0.5);
+                      playTrack(shuffled[0], shuffled);
+                    }}
+                    className="h-12 px-5 rounded-full border border-white/20 hover:border-[#FF6B4A] text-white font-semibold text-sm inline-flex items-center gap-2 cursor-pointer"
+                  >
+                    <Shuffle className="w-4 h-4" /> {m.shuffle}
                   </button>
                 </div>
               )}
@@ -1004,37 +1360,50 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             onClick={() => setDetail(null)}
             className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4" /> Volver
+            <ArrowLeft className="w-4 h-4" /> {m.back}
           </button>
 
-          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#1DB954]/18 via-[#121318] to-[#0A0B0E] border border-white/10">
-            <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-2xl overflow-hidden bg-[#181B22] shadow-2xl shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#FF3366]/20 via-[#130C1A] to-[#08050C] border border-[#FF3366]/20">
+            <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-2xl overflow-hidden bg-[#191124] shadow-2xl shrink-0">
               {alb?.coverXl || alb?.cover ? (
                 <img
                   src={alb.coverXl || alb.cover}
                   alt={alb.title}
                   referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
                   className="w-full h-full object-cover"
                 />
               ) : null}
             </div>
             <div className="space-y-2 min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">Álbum</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-[#FF6B4A]">{m.albumLabel}</p>
               <h1 className="font-display text-2xl sm:text-4xl font-black text-white tracking-tight">
-                {alb?.title || 'Cargando álbum...'}
+                {alb?.title || m.loadingAlbum}
               </h1>
               <div className="flex flex-wrap items-center gap-1.5 text-sm text-zinc-300">
                 {alb?.artist && (
                   <button
                     type="button"
-                    onClick={() => openArtistDetail(alb.artist!.id, alb.artist)}
-                    className="font-bold text-white hover:underline cursor-pointer"
+                    onClick={() => {
+                      if (isOpenableArtistId(alb.artist?.id)) {
+                        openArtistDetail(alb.artist!.id, alb.artist);
+                      }
+                    }}
+                    className={`font-bold text-white ${
+                      isOpenableArtistId(alb.artist?.id) ? 'hover:underline cursor-pointer' : ''
+                    }`}
                   >
                     {alb.artist.name}
                   </button>
                 )}
                 {alb?.releaseDate && <span>· {alb.releaseDate.slice(0, 4)}</span>}
-                {detail.tracks.length > 0 && <span className="tabular-nums">· {detail.tracks.length} temas</span>}
+                {detail.tracks.length > 0 && (
+                  <span className="tabular-nums">
+                    · {detail.tracks.length} {detail.tracks.length === 1 ? m.songSingular : m.songsCount}
+                  </span>
+                )}
               </div>
 
               <div className="pt-2 flex flex-wrap items-center gap-2.5">
@@ -1042,9 +1411,9 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   <button
                     type="button"
                     onClick={() => playTrack(detail.tracks[0], detail.tracks)}
-                    className="h-12 px-6 rounded-full bg-[#1DB954] hover:scale-105 text-[#08090C] font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
+                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] hover:scale-105 text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg transition-transform"
                   >
-                    <Play className="w-4 h-4 fill-current" /> Reproducir
+                    <Play className="w-4 h-4 fill-current" /> {m.playNow}
                   </button>
                 )}
                 {alb && (
@@ -1052,15 +1421,15 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     type="button"
                     onClick={() => {
                       toggleSaveAlbum(alb);
-                      showToast(isSaved ? 'Álbum eliminado de tu biblioteca' : 'Álbum guardado');
+                      showToast(isSaved ? m.albumRemoved : m.albumSaved);
                     }}
                     className={`h-12 px-5 rounded-full border text-sm font-semibold cursor-pointer transition-colors ${
                       isSaved
-                        ? 'bg-white/15 border-[#1DB954] text-[#1DB954]'
+                        ? 'bg-[#FF3366]/15 border-[#FF3366] text-[#FF6B4A]'
                         : 'border-white/20 text-white hover:border-white'
                     }`}
                   >
-                    {isSaved ? 'Guardado' : 'Guardar álbum'}
+                    {isSaved ? m.saved : m.saveAlbum}
                   </button>
                 )}
               </div>
@@ -1068,7 +1437,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           </div>
 
           {detail.loading ? (
-            <div className="py-12 text-center text-sm text-zinc-400">Cargando canciones del álbum...</div>
+            <div className="py-12 text-center text-sm text-zinc-400">{m.loadingAlbum}</div>
           ) : (
             renderTrackList(detail.tracks)
           )}
@@ -1086,23 +1455,31 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             onClick={() => setDetail(null)}
             className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4" /> Volver
+            <ArrowLeft className="w-4 h-4" /> {m.back}
           </button>
 
-          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#1DB954]/18 via-[#121318] to-[#0A0B0E] border border-white/10">
-            <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-2xl overflow-hidden bg-[#181B22] shadow-2xl shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#FF3366]/20 via-[#130C1A] to-[#08050C] border border-[#FF3366]/20">
+            <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-2xl overflow-hidden bg-[#191124] shadow-2xl shrink-0">
               {pl?.cover ? (
-                <img src={pl.cover} alt={pl.title} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                <img
+                  src={pl.cover}
+                  alt={pl.title}
+                  referrerPolicy="no-referrer"
+                  onError={(e) => {
+                    e.currentTarget.style.display = 'none';
+                  }}
+                  className="w-full h-full object-cover"
+                />
               ) : null}
             </div>
             <div className="space-y-2 min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wider text-[#1DB954]">Playlist</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-[#FF6B4A]">{m.playlistLabel}</p>
               <h1 className="font-display text-2xl sm:text-4xl font-black text-white tracking-tight">
-                {pl?.title || 'Cargando...'}
+                {pl?.title || m.loadingPlaylist}
               </h1>
               {pl?.description && <p className="text-xs text-zinc-400 line-clamp-2">{pl.description}</p>}
               <p className="text-xs text-zinc-300 tabular-nums">
-                {pl?.creator || 'Editorial'} · {detail.tracks.length} canciones
+                {pl?.creator || 'Editorial'} · {detail.tracks.length} {m.songsCount}
               </p>
 
               <div className="pt-2 flex flex-wrap items-center gap-2.5">
@@ -1110,9 +1487,9 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   <button
                     type="button"
                     onClick={() => playTrack(detail.tracks[0], detail.tracks)}
-                    className="h-12 px-6 rounded-full bg-[#1DB954] hover:scale-105 text-[#08090C] font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
+                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] hover:scale-105 text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
                   >
-                    <Play className="w-4 h-4 fill-current" /> Reproducir
+                    <Play className="w-4 h-4 fill-current" /> {m.playNow}
                   </button>
                 )}
                 {pl && (
@@ -1120,15 +1497,15 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     type="button"
                     onClick={() => {
                       toggleSavePlaylist(pl);
-                      showToast(isSaved ? 'Playlist eliminada' : 'Playlist guardada en Tu Biblioteca');
+                      showToast(isSaved ? m.playlistRemoved : m.playlistSaved);
                     }}
                     className={`h-12 px-5 rounded-full border text-sm font-semibold cursor-pointer ${
                       isSaved
-                        ? 'bg-white/15 border-[#1DB954] text-[#1DB954]'
+                        ? 'bg-[#FF3366]/15 border-[#FF3366] text-[#FF6B4A]'
                         : 'border-white/20 text-white hover:border-white'
                     }`}
                   >
-                    {isSaved ? 'En tu biblioteca' : 'Guardar playlist'}
+                    {isSaved ? m.inLibrary : m.savePlaylist}
                   </button>
                 )}
               </div>
@@ -1136,7 +1513,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           </div>
 
           {detail.loading ? (
-            <div className="py-12 text-center text-sm text-zinc-400">Cargando lista de canciones...</div>
+            <div className="py-12 text-center text-sm text-zinc-400">{m.loadingPlaylist}</div>
           ) : (
             renderTrackList(detail.tracks)
           )}
@@ -1152,16 +1529,16 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             onClick={() => setDetail(null)}
             className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer"
           >
-            <ArrowLeft className="w-4 h-4" /> Explorar géneros
+            <ArrowLeft className="w-4 h-4" /> {m.exploreGenres}
           </button>
 
           <div
             className="p-6 sm:p-8 rounded-3xl border border-white/10"
             style={{
-              background: `linear-gradient(135deg, ${detail.genre.color}55 0%, #121318 75%)`,
+              background: `linear-gradient(135deg, ${detail.genre.color}66 0%, #110C18 75%)`,
             }}
           >
-            <p className="text-xs font-bold uppercase tracking-wider text-white/80">Género Musical</p>
+            <p className="text-xs font-bold uppercase tracking-wider text-white/80">{m.musicGenre}</p>
             <h1 className="font-display text-3xl sm:text-5xl font-black text-white mt-1">
               {detail.genre.name}
             </h1>
@@ -1169,20 +1546,22 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               <button
                 type="button"
                 onClick={() => playTrack(detail.tracks[0], detail.tracks)}
-                className="mt-4 h-11 px-6 rounded-full bg-[#1DB954] text-[#08090C] font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
+                className="mt-4 h-11 px-6 rounded-full bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
               >
-                <Play className="w-4 h-4 fill-current" /> Reproducir radio de {detail.genre.name}
+                <Play className="w-4 h-4 fill-current" /> {m.playGenreRadio} {detail.genre.name}
               </button>
             )}
           </div>
 
           {detail.loading ? (
-            <div className="py-12 text-center text-sm text-zinc-400">Cargando música del género...</div>
+            <div className="py-12 text-center text-sm text-zinc-400">{m.loadingGenre}</div>
           ) : (
             <>
-              {renderArtistsCarousel(`Artistas de ${detail.genre.name}`, detail.artists)}
+              {renderArtistsCarousel(`${m.artistsOf} ${detail.genre.name}`, detail.artists)}
               <section className="space-y-3">
-                <h2 className="font-display text-lg font-bold text-white">Éxitos de {detail.genre.name}</h2>
+                <h2 className="font-display text-lg font-bold text-white">
+                  {m.hitsOf} {detail.genre.name}
+                </h2>
                 {renderTrackList(detail.tracks)}
               </section>
             </>
@@ -1191,8 +1570,18 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
       );
     }
 
-    // Artist detail page
     const art = detail.artist;
+    const numLocale =
+      musicLang === 'en'
+        ? 'en-US'
+        : musicLang === 'fr'
+        ? 'fr-FR'
+        : musicLang === 'zh'
+        ? 'zh-CN'
+        : musicLang === 'ca'
+        ? 'ca-ES'
+        : 'es-ES';
+
     return (
       <div className="space-y-7 animate-fade-in">
         <button
@@ -1200,25 +1589,33 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           onClick={() => setDetail(null)}
           className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer"
         >
-          <ArrowLeft className="w-4 h-4" /> Volver
+          <ArrowLeft className="w-4 h-4" /> {m.back}
         </button>
 
-        <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#1DB954]/20 via-[#121318] to-[#0A0B0E] border border-white/10">
-          <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-full overflow-hidden bg-[#181B22] border-2 border-white/15 shadow-2xl shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#FF3366]/22 via-[#130C1A] to-[#08050C] border border-[#FF3366]/20">
+          <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-full overflow-hidden bg-[#191124] border-2 border-[#FF3366]/35 shadow-2xl shrink-0">
             {art?.picture ? (
-              <img src={art.picture} alt={art.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+              <img
+                src={art.picture}
+                alt={art.name}
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+                className="w-full h-full object-cover"
+              />
             ) : null}
           </div>
           <div className="space-y-2 min-w-0">
-            <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#1DB954]">
-              <UserCheck className="w-4 h-4" /> Artista verificado
+            <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#FF6B4A]">
+              <UserCheck className="w-4 h-4" /> {m.artistVerified}
             </div>
             <h1 className="font-display text-3xl sm:text-5xl font-black text-white tracking-tight">
-              {art?.name || 'Artista'}
+              {art?.name || m.artistRole}
             </h1>
             {typeof art?.nbFan === 'number' && art.nbFan > 0 && (
               <p className="text-xs sm:text-sm text-zinc-300 tabular-nums">
-                {art.nbFan.toLocaleString('es-ES')} oyentes mensuales
+                {art.nbFan.toLocaleString(numLocale)} {m.monthlyListeners}
               </p>
             )}
             {detail.topTracks.length > 0 && (
@@ -1226,9 +1623,9 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 <button
                   type="button"
                   onClick={() => playTrack(detail.topTracks[0], detail.topTracks)}
-                  className="h-12 px-6 rounded-full bg-[#1DB954] hover:scale-105 text-[#08090C] font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
+                  className="h-12 px-6 rounded-full bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] hover:scale-105 text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
                 >
-                  <Play className="w-4 h-4 fill-current" /> Reproducir
+                  <Play className="w-4 h-4 fill-current" /> {m.playNow}
                 </button>
                 <button
                   type="button"
@@ -1238,7 +1635,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   }}
                   className="h-12 px-5 rounded-full border border-white/20 hover:border-white text-white font-semibold text-sm inline-flex items-center gap-2 cursor-pointer"
                 >
-                  <Shuffle className="w-4 h-4" /> Aleatorio
+                  <Shuffle className="w-4 h-4" /> {m.shuffle}
                 </button>
               </div>
             )}
@@ -1246,33 +1643,35 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
         </div>
 
         {detail.loading ? (
-          <div className="py-12 text-center text-sm text-zinc-400">Cargando discografía y temas...</div>
+          <div className="py-12 text-center text-sm text-zinc-400">{m.loadingArtist}</div>
         ) : (
           <>
             {detail.topTracks.length > 0 && (
               <section className="space-y-3">
-                <h2 className="font-display text-lg font-bold text-white">Populares</h2>
+                <h2 className="font-display text-lg font-bold text-white">{m.popular}</h2>
                 {renderTrackList(detail.topTracks)}
               </section>
             )}
-            {renderAlbumsCarousel('Discografía y Lanzamientos', detail.albums)}
-            {renderArtistsCarousel('Artistas relacionados', detail.related)}
+            {renderAlbumsCarousel(m.discography, detail.albums)}
+            {renderArtistsCarousel(m.relatedArtists, detail.related)}
           </>
         )}
       </div>
     );
   };
 
+  const radiosToDisplay = radioFilterId !== 'all' ? filteredRadios ?? [] : homeData?.radios ?? [];
+
   return (
     <div
-      className={`min-h-[75vh] w-full flex flex-col lg:flex-row gap-4 lg:gap-5 ${
-        hasBottomBar ? 'pb-24 sm:pb-28' : 'pb-6'
+      className={`min-h-screen w-full bg-[#07050A] flex flex-col lg:flex-row gap-4 lg:gap-6 px-3 sm:px-6 lg:px-8 pt-3 sm:pt-5 ${
+        hasBottomBar ? 'pb-28 sm:pb-32' : 'pb-10'
       }`}
     >
       {/* Headless Multi-Source Audio + WebAudio EQ Engine */}
       <MusicAudioEngine ytVideoMountId="riffan-music-yt-player" />
 
-      {/* Persistent YouTube Audio / Video Frame (never unmounts while playing) */}
+      {/* Persistent YouTube Audio / Video Frame */}
       <div
         className={
           showYtStage
@@ -1283,23 +1682,14 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
         <div id="riffan-music-yt-player" className="w-full h-full" />
       </div>
 
-      {/* Desktop Spotify Sidebar */}
-      <aside className="hidden lg:flex flex-col w-[264px] shrink-0 gap-3 self-start sticky top-20">
-        <div className="rounded-3xl bg-[#101217] border border-white/[0.07] p-3 space-y-1">
-          <div className="flex items-center gap-2.5 px-3 py-2 mb-1">
-            <span className="w-8 h-8 rounded-full bg-[#1DB954] text-[#08090C] flex items-center justify-center shadow-[0_0_16px_rgba(29,185,84,0.4)]">
-              <Disc3 className="w-5 h-5" />
-            </span>
-            <span className="font-display text-base font-black tracking-tight text-white">
-              RIFFAN <span className="text-[#1DB954]">MUSIC</span>
-            </span>
-          </div>
-
+      {/* Desktop Sonic Studio Sidebar */}
+      <aside className="hidden lg:flex flex-col w-[264px] shrink-0 gap-3 self-start sticky top-12">
+        <div className="rounded-3xl bg-[#110C18]/90 border border-[#FF3366]/18 p-3 space-y-1 shadow-[0_14px_40px_rgba(0,0,0,0.45)]">
           {[
-            { id: 'home' as const, label: 'Inicio', icon: Home },
-            { id: 'search' as const, label: 'Buscar', icon: Search },
-            { id: 'library' as const, label: 'Tu Biblioteca', icon: Library },
-            { id: 'radios' as const, label: 'Radios 24/7', icon: Radio },
+            { id: 'home' as const, label: m.navHome, icon: Home },
+            { id: 'search' as const, label: m.navExploreLong, icon: Search },
+            { id: 'library' as const, label: m.navLibrary, icon: Library },
+            { id: 'radios' as const, label: m.navRadios, icon: Radio },
           ].map((item) => {
             const Icon = item.icon;
             const active = navTab === item.id && !detail;
@@ -1311,29 +1701,60 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   setDetail(null);
                   setNavTab(item.id);
                 }}
-                className={`w-full min-h-11 px-3.5 rounded-2xl flex items-center gap-3 text-sm font-bold cursor-pointer transition-colors ${
+                className={`w-full min-h-11 px-3.5 rounded-2xl flex items-center gap-3 text-sm font-bold cursor-pointer transition-all ${
                   active
-                    ? 'bg-white/[0.11] text-white'
+                    ? 'bg-gradient-to-r from-[#FF3366]/20 to-[#FF6B4A]/10 text-white border border-[#FF3366]/30'
                     : 'text-zinc-400 hover:text-white hover:bg-white/[0.05]'
                 }`}
               >
-                <Icon className={`w-5 h-5 ${active ? 'text-[#1DB954]' : ''}`} />
-                <span>{item.label}</span>
+                <Icon className={`w-5 h-5 ${active ? 'text-[#FF3366]' : ''}`} />
+                <span className="truncate">{item.label}</span>
               </button>
             );
           })}
+
+          {/* 5-Language Live Switcher (ES · EN · FR · ZH · CA) */}
+          <div className="pt-2 mt-2 border-t border-white/[0.07] px-1">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-zinc-400 mb-1.5 px-1">
+              <Globe className="w-3.5 h-3.5 text-[#FF6B4A]" />
+              <span>{m.languageTitle}</span>
+            </div>
+            <div className="grid grid-cols-5 gap-1">
+              {MUSIC_LANGUAGES.map((l) => {
+                const selected = musicLang === l.id;
+                return (
+                  <button
+                    key={l.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setMusicLang(l.id as MusicLang);
+                    }}
+                    title={l.label}
+                    className={`h-8 rounded-xl text-[11px] font-bold cursor-pointer transition-all whitespace-nowrap ${
+                      selected
+                        ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white shadow-[0_4px_12px_rgba(255,51,102,0.4)]'
+                        : 'bg-white/[0.05] text-zinc-300 hover:bg-white/[0.12] hover:text-white'
+                    }`}
+                  >
+                    {l.code}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* Library Shortcuts */}
-        <div className="rounded-3xl bg-[#101217] border border-white/[0.07] p-3 space-y-2.5 max-h-[54vh] overflow-y-auto">
+        <div className="rounded-3xl bg-[#110C18]/90 border border-white/[0.07] p-3 space-y-2 max-h-[44vh] overflow-y-auto">
           <div className="flex items-center justify-between px-2 pt-1">
             <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-              Tu Biblioteca
+              {m.navLibrary}
             </span>
             <button
               type="button"
               onClick={() => setShowCreatePlaylist(true)}
-              title="Crear playlist"
+              title={m.newPlaylist}
               className="w-8 h-8 rounded-full hover:bg-white/10 text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer"
             >
               <Plus className="w-4 h-4" />
@@ -1345,12 +1766,14 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             onClick={() => setDetail({ kind: 'liked' })}
             className="w-full p-2 rounded-2xl hover:bg-white/[0.06] flex items-center gap-3 text-left cursor-pointer"
           >
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#1DB954] to-[#064E3B] flex items-center justify-center shrink-0">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#FF3366] via-[#FF6B4A] to-[#F59E0B] flex items-center justify-center shrink-0">
               <Heart className="w-5 h-5 text-white fill-current" />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-bold text-white truncate">Tus Me Gusta</p>
-              <p className="text-[11px] text-zinc-400 tabular-nums">{likedTracks.length} canciones</p>
+              <p className="text-sm font-bold text-white truncate">{m.likedSongs}</p>
+              <p className="text-[11px] text-zinc-400 tabular-nums">
+                {likedTracks.length} {m.songsCount}
+              </p>
             </div>
           </button>
 
@@ -1365,12 +1788,15 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 src={pl.tracks[0]?.album.cover || mixHeroCover}
                 alt={pl.name}
                 referrerPolicy="no-referrer"
-                className="w-11 h-11 rounded-xl object-cover shrink-0 bg-[#181B22]"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+                className="w-11 h-11 rounded-xl object-cover shrink-0 bg-[#191124]"
               />
               <div className="min-w-0">
                 <p className="text-sm font-bold text-white truncate">{pl.name}</p>
                 <p className="text-[11px] text-zinc-400 tabular-nums">
-                  Playlist · {pl.tracks.length}
+                  {m.playlistLabel} · {pl.tracks.length}
                 </p>
               </div>
             </button>
@@ -1387,48 +1813,95 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 src={alb.cover}
                 alt={alb.title}
                 referrerPolicy="no-referrer"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
                 className="w-11 h-11 rounded-xl object-cover shrink-0"
               />
               <div className="min-w-0">
                 <p className="text-sm font-bold text-white truncate">{alb.title}</p>
-                <p className="text-[11px] text-zinc-400 truncate">Álbum · {alb.artist?.name}</p>
+                <p className="text-[11px] text-zinc-400 truncate">
+                  {m.albumLabel} · {alb.artist?.name}
+                </p>
               </div>
             </button>
           ))}
         </div>
+
+        {/* Direct APK & PWA Install Card */}
+        <button
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent('riffan:open-install'))}
+          className="rounded-2xl bg-gradient-to-r from-[#FF3366]/14 via-[#180B1C] to-[#F59E0B]/12 hover:from-[#FF3366]/24 hover:to-[#F59E0B]/20 border border-[#FF3366]/25 p-3 flex items-center gap-3 text-left cursor-pointer transition-all"
+        >
+          <span className="w-9 h-9 rounded-xl bg-[#FF3366]/20 text-[#FF6B4A] flex items-center justify-center shrink-0">
+            <Download className="w-4 h-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-white truncate">{m.installAppTitle}</p>
+            <p className="text-[11px] text-zinc-400 truncate">{m.installAppSub}</p>
+          </div>
+        </button>
       </aside>
 
-      {/* Main Spotify Stage */}
-      <div className="flex-1 min-w-0 space-y-5">
-        {/* Mobile Compact Nav Tabs */}
-        <div className="flex lg:hidden items-center gap-2 overflow-x-auto pb-1">
-          {[
-            { id: 'home' as const, label: 'Inicio', icon: Home },
-            { id: 'search' as const, label: 'Buscar', icon: Search },
-            { id: 'library' as const, label: 'Biblioteca', icon: Library },
-            { id: 'radios' as const, label: 'Radios 24/7', icon: Radio },
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const active = navTab === tab.id && !detail;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  setDetail(null);
-                  setNavTab(tab.id);
-                }}
-                className={`min-h-11 px-4 rounded-full text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
-                  active
-                    ? 'bg-[#1DB954] text-[#08090C]'
-                    : 'bg-white/[0.07] text-zinc-200 hover:bg-white/[0.12]'
-                }`}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {tab.label}
-              </button>
-            );
-          })}
+      {/* Main Immersive Sonic Stage */}
+      <div className="flex-1 min-w-0 space-y-6">
+        {/* Mobile Compact Nav + 5-Language Switcher Strip */}
+        <div className="flex lg:hidden items-center justify-between gap-2 overflow-x-auto pb-1">
+          <div className="flex items-center gap-2 shrink-0">
+            {[
+              { id: 'home' as const, label: m.navHome, icon: Home },
+              { id: 'search' as const, label: m.navExplore, icon: Search },
+              { id: 'library' as const, label: m.navLibrary, icon: Library },
+              { id: 'radios' as const, label: m.navRadios, icon: Radio },
+            ].map((tab) => {
+              const Icon = tab.icon;
+              const active = navTab === tab.id && !detail;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => {
+                    setDetail(null);
+                    setNavTab(tab.id);
+                  }}
+                  className={`min-h-10 px-3.5 rounded-full text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-all whitespace-nowrap shrink-0 ${
+                    active
+                      ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white shadow-[0_6px_18px_rgba(255,51,102,0.4)]'
+                      : 'bg-white/[0.07] text-zinc-200 hover:bg-white/[0.12]'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Mobile 5-Language Compact Selector */}
+          <div className="flex items-center gap-1 bg-white/[0.05] border border-white/[0.08] rounded-full p-1 shrink-0">
+            {MUSIC_LANGUAGES.map((l) => {
+              const selected = musicLang === l.id;
+              return (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setMusicLang(l.id as MusicLang);
+                  }}
+                  title={l.label}
+                  className={`h-8 px-2.5 rounded-full text-[11px] font-bold cursor-pointer transition-all whitespace-nowrap ${
+                    selected
+                      ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white'
+                      : 'text-zinc-300 hover:text-white'
+                  }`}
+                >
+                  {l.code}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Detail View or Active Tab */}
@@ -1436,64 +1909,238 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           renderDetailView()
         ) : navTab === 'home' ? (
           <div className="space-y-7 animate-fade-in">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h1 className="font-display text-2xl sm:text-3xl font-black text-white tracking-tight">
-                  {greeting}
-                </h1>
-                <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">
-                  Toda la música del mundo, letras en vivo, videoclips y radios 24/7
-                </p>
+            {/* SPATIAL FULL-BLEED HERO STAGE */}
+            <section className="relative rounded-[28px] overflow-hidden border border-[#FF3366]/22 bg-[#120A18] min-h-[240px] sm:min-h-[296px] flex items-end p-5 sm:p-8 shadow-[0_24px_64px_rgba(0,0,0,0.68)]">
+              <img
+                src={
+                  heroSpotlightTrack?.album.coverXl ||
+                  heroSpotlightTrack?.album.cover ||
+                  spatialHeroCover
+                }
+                alt=""
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  e.currentTarget.src = spatialHeroCover;
+                }}
+                className="absolute inset-0 w-full h-full object-cover opacity-50 scale-105 blur-[2px] transition-all duration-700 pointer-events-none select-none"
+              />
+              <div
+                aria-hidden="true"
+                className="absolute inset-0 pointer-events-none"
+                style={{
+                  background:
+                    'radial-gradient(ellipse 80% 70% at 85% 20%, rgba(255,51,102,0.28), transparent 60%), radial-gradient(ellipse 65% 60% at 20% 90%, rgba(245,158,11,0.18), transparent 55%), linear-gradient(95deg, rgba(7,5,10,0.96) 0%, rgba(7,5,10,0.82) 55%, rgba(7,5,10,0.45) 100%)',
+                }}
+              />
+
+              <div className="relative z-10 w-full flex flex-col md:flex-row md:items-end justify-between gap-6">
+                <div className="space-y-3 max-w-2xl">
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#FF6B4A]">
+                    {greeting} · {m.spatialAudioLabel} ·{' '}
+                    {currentTrack ? m.playingNow : m.worldTrending}
+                  </p>
+                  <h1 className="font-display text-3xl sm:text-5xl font-black text-white tracking-tight leading-[1.05]">
+                    {heroSpotlightTrack ? heroSpotlightTrack.title : 'Riffan Music'}
+                  </h1>
+                  <p className="text-sm sm:text-base text-zinc-200/90 leading-snug tabular-nums">
+                    {heroSpotlightTrack
+                      ? `${heroSpotlightTrack.artist.name}${
+                          heroSpotlightTrack.album.title ? ` · ${heroSpotlightTrack.album.title}` : ''
+                        }${
+                          heroSpotlightTrack.durationSec > 0
+                            ? ` · ${formatMusicTime(heroSpotlightTrack.durationSec)}`
+                            : ''
+                        }`
+                      : m.heroFallbackSub}
+                  </p>
+
+                  <div className="pt-1 flex flex-wrap items-center gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        if (currentTrack && heroSpotlightTrack?.id === currentTrack.id) {
+                          togglePlayPause();
+                        } else if (heroSpotlightTrack) {
+                          playTrack(heroSpotlightTrack, heroPool.length > 0 ? heroPool : [heroSpotlightTrack]);
+                        }
+                      }}
+                      className="h-11 sm:h-12 px-6 rounded-full bg-gradient-to-r from-[#FF3366] via-[#FF544F] to-[#F59E0B] hover:scale-[1.03] text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-[0_10px_28px_rgba(255,51,102,0.45)] transition-transform whitespace-nowrap"
+                    >
+                      {currentTrack && heroSpotlightTrack?.id === currentTrack.id && isPlaying ? (
+                        <>
+                          <Pause className="w-4 h-4 fill-current" /> {m.pause}
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 fill-current ml-0.5" /> {m.playNow}
+                        </>
+                      )}
+                    </button>
+
+                    {heroPool.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          const shuffled = [...heroPool].sort(() => Math.random() - 0.5);
+                          playTrack(shuffled[0], shuffled);
+                        }}
+                        className="h-11 sm:h-12 px-5 rounded-full bg-white/[0.1] hover:bg-white/[0.18] border border-white/15 text-white font-semibold text-sm inline-flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
+                      >
+                        <Shuffle className="w-4 h-4 text-[#F59E0B]" /> {m.shuffleMix}
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => setNavTab('radios')}
+                      className="h-11 sm:h-12 px-4 rounded-full bg-white/[0.06] hover:bg-white/[0.14] border border-white/10 text-zinc-200 hover:text-white font-semibold text-sm inline-flex items-center gap-2 cursor-pointer transition-colors whitespace-nowrap"
+                    >
+                      <Radio className="w-4 h-4 text-[#FF6B4A]" /> {m.radios247}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Floating Spotlight Cover Card on Desktop */}
+                {heroSpotlightTrack?.album.coverXl && (
+                  <div className="hidden md:flex items-center gap-4 shrink-0">
+                    <div className="relative w-36 h-36 lg:w-44 lg:h-44 rounded-2xl overflow-hidden border border-white/20 shadow-[0_22px_50px_rgba(0,0,0,0.85)] rotate-2 hover:rotate-0 transition-transform duration-500">
+                      <img
+                        src={heroSpotlightTrack.album.coverXl}
+                        alt={heroSpotlightTrack.title}
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
-              <button
-                type="button"
-                onClick={() => setNavTab('search')}
-                className="hidden sm:inline-flex h-10 px-4 rounded-full bg-white/[0.08] hover:bg-white/[0.14] text-xs font-semibold text-white items-center gap-2 cursor-pointer"
-              >
-                <Search className="w-3.5 h-3.5 text-[#1DB954]" /> Buscar canción o artista
-              </button>
+            </section>
+
+            {/* INTERACTIVE GLOBAL REGION, PLATFORM & MOOD STRIP */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {moodFilters.map((mood) => {
+                const selected = activeMood === mood.id;
+                return (
+                  <button
+                    key={mood.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setActiveMood(mood.id);
+                    }}
+                    className={`min-h-10 px-4 rounded-full text-xs font-bold cursor-pointer transition-all whitespace-nowrap shrink-0 ${
+                      selected
+                        ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white shadow-[0_6px_18px_rgba(255,51,102,0.35)]'
+                        : 'bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 border border-white/[0.06]'
+                    }`}
+                  >
+                    {mood.label}
+                  </button>
+                );
+              })}
             </div>
 
             {homeLoading ? (
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <div key={i} className="h-16 rounded-xl bg-white/[0.05] animate-pulse" />
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {Array.from({ length: 8 }).map((_, i) => (
+                  <div key={i} className="h-16 rounded-2xl bg-white/[0.05] border border-white/[0.04]" />
                 ))}
               </div>
             ) : homeData ? (
-              <>
-                {renderQuickMixes()}
-                {renderTrackCardsCarousel('Éxitos en España y Virales', homeData.spainHits, 'Éxitos en España')}
-                {renderArtistsCarousel('Artistas del Momento', homeData.topArtists)}
-                {renderTrackCardsCarousel('Top 50 Mundial', homeData.topTracks, 'Top 50 Mundial')}
-                {renderAlbumsCarousel('Álbumes Destacados', homeData.topAlbums)}
-                {renderTrackCardsCarousel('Urbano & Reggaeton', homeData.urbanoMix, 'Urbano & Reggaeton')}
-                {renderTrackCardsCarousel('Pop Internacional & Hits', homeData.popMix, 'Pop Internacional')}
-                {renderPlaylistsCarousel('Playlists Editoriales', homeData.editorialPlaylists)}
-                {renderTrackCardsCarousel('Electrónica & Club Sessions', homeData.electronicMix, 'Electrónica & Club')}
-              </>
+              activeMoodSelection ? (
+                <section className="space-y-5 animate-fade-in">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl bg-gradient-to-r from-[#FF3366]/18 via-[#140B1C] to-[#120A18] border border-[#FF3366]/25">
+                    <div className="flex items-center gap-4 min-w-0">
+                      <img
+                        src={activeMoodSelection.cover}
+                        alt={activeMoodSelection.title}
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                        className="w-16 h-16 sm:w-20 sm:h-20 rounded-2xl object-cover shrink-0 shadow-lg"
+                      />
+                      <div className="min-w-0">
+                        <h2 className="font-display text-xl sm:text-2xl font-black text-white truncate">
+                          {activeMoodSelection.title}
+                        </h2>
+                        <p className="text-xs sm:text-sm text-zinc-300 truncate">
+                          {activeMoodSelection.subtitle}
+                        </p>
+                      </div>
+                    </div>
+                    {activeMoodSelection.tracks.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          playTrack(activeMoodSelection.tracks[0], activeMoodSelection.tracks)
+                        }
+                        className="h-11 px-5 rounded-full bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white font-bold text-xs inline-flex items-center gap-2 cursor-pointer shrink-0 shadow-lg whitespace-nowrap"
+                      >
+                        <Play className="w-4 h-4 fill-current" /> {m.playSelection}
+                      </button>
+                    )}
+                  </div>
+                  {renderTrackList(activeMoodSelection.tracks)}
+                </section>
+              ) : (
+                <>
+                  {renderQuickMixes()}
+                  {renderTrackCardsCarousel(m.secYtmHits, homeData.youtubeMusicHits, m.secYtmHits)}
+                  {renderAlbumsCarousel(m.secYtmAlbums, homeData.youtubeMusicAlbums)}
+                  {renderTrackCardsCarousel(m.secSpotifyHits, homeData.spotifyHits, m.secSpotifyHits)}
+                  {renderAlbumsCarousel(m.secSpotifyAlbums, homeData.spotifyAlbums)}
+                  {renderTrackCardsCarousel(m.secSpainHits, homeData.spainHits, m.secSpainHits)}
+                  {renderTrackCardsCarousel(m.secMorocco, homeData.moroccoMix, m.secMorocco)}
+                  {renderTrackCardsCarousel(m.secArab, homeData.arabMix, m.secArab)}
+                  {renderTrackCardsCarousel(m.secAfrica, homeData.africaMix, m.secAfrica)}
+                  {renderTrackCardsCarousel(m.secRussia, homeData.russiaMix, m.secRussia)}
+                  {renderTrackCardsCarousel(m.secRomania, homeData.romaniaMix, m.secRomania)}
+                  {renderTrackCardsCarousel(m.secChina, homeData.chinaMix, m.secChina)}
+                  {renderTrackCardsCarousel(m.secUsa, homeData.usaMix, m.secUsa)}
+                  {renderTrackCardsCarousel(m.secLatin, homeData.latinSalsaMix, m.secLatin)}
+                  {renderAlbumsCarousel(m.secNewReleases, homeData.newReleases)}
+                  {renderArtistsCarousel(m.secTopArtists, homeData.topArtists)}
+                  {renderTrackCardsCarousel(m.secTop50, homeData.topTracks, m.secTop50)}
+                  {renderTrackCardsCarousel(m.secUrbano, homeData.urbanoMix, m.secUrbano)}
+                  {renderTrackCardsCarousel(m.secPop, homeData.popMix, m.secPop)}
+                  {renderTrackCardsCarousel(m.secChill, homeData.chillLofiMix, m.secChill)}
+                  {renderTrackCardsCarousel(m.secRock, homeData.rockIndieMix, m.secRock)}
+                  {renderTrackCardsCarousel(m.secFlamenco, homeData.flamencoAcousticMix, m.secFlamenco)}
+                  {renderTrackCardsCarousel(m.secAudius, homeData.audiusTrending, m.secAudius)}
+                  {renderTrackCardsCarousel(m.secRnb, homeData.rnbSoulMix, m.secRnb)}
+                  {renderTrackCardsCarousel(m.secSoundtrack, homeData.soundtrackMix, m.secSoundtrack)}
+                  {renderTrackCardsCarousel(m.secClassics, homeData.classicsMix, m.secClassics)}
+                  {renderAlbumsCarousel(m.secTopAlbums, homeData.topAlbums)}
+                  {renderPlaylistsCarousel(m.secEditorialPlaylists, homeData.editorialPlaylists)}
+                  {renderTrackCardsCarousel(m.secElectronic, homeData.electronicMix, m.secElectronic)}
+                </>
+              )
             ) : (
-              <div className="py-16 text-center text-sm text-zinc-400">
-                No se pudo cargar el catálogo musical. Revisa tu conexión.
-              </div>
+              <div className="py-16 text-center text-sm text-zinc-400">{m.catalogLoadError}</div>
             )}
           </div>
         ) : navTab === 'search' ? (
           <div className="space-y-6 animate-fade-in">
             <div className="relative">
-              <Search className="w-5 h-5 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-5 h-5 text-[#FF6B4A] absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={localSearchQuery}
                 onChange={(e) => setLocalSearchQuery(e.target.value)}
-                placeholder="¿Qué quieres escuchar? Canciones, artistas, álbumes o radios..."
-                className="w-full h-12 sm:h-13 pl-12 pr-12 rounded-2xl bg-[#16181F] border border-white/10 focus:border-[#1DB954] text-sm sm:text-base text-white placeholder:text-zinc-500 outline-none transition-colors"
+                placeholder={m.searchPlaceholder}
+                className="w-full h-12 sm:h-13 pl-12 pr-12 rounded-2xl bg-[#130C1B] border border-white/12 focus:border-[#FF3366] text-sm sm:text-base text-white placeholder:text-zinc-500 outline-none transition-colors"
               />
               {localSearchQuery && (
                 <button
                   type="button"
                   onClick={() => setLocalSearchQuery('')}
-                  aria-label="Limpiar búsqueda"
+                  aria-label={m.clearSearch}
                   className="absolute right-2 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer"
                 >
                   <X className="w-4 h-4" />
@@ -1502,68 +2149,126 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             </div>
 
             {searchLoading ? (
-              <div className="py-16 text-center text-sm text-zinc-400">Buscando en todo el catálogo mundial...</div>
+              <div className="py-16 text-center text-sm text-zinc-400">{m.searchingWorld}</div>
             ) : searchResults ? (
               <div className="space-y-7">
                 {searchResults.tracks.length === 0 &&
                 searchResults.artists.length === 0 &&
-                searchResults.albums.length === 0 ? (
-                  <div className="py-14 text-center rounded-3xl bg-[#121318] border border-white/[0.06]">
+                searchResults.albums.length === 0 &&
+                searchResults.radios.length === 0 ? (
+                  <div className="py-14 text-center rounded-3xl bg-[#110C18] border border-white/[0.06]">
                     <p className="text-base font-bold text-white">
-                      No encontramos resultados para “{localSearchQuery}”
+                      {m.noResultsTitle} “{localSearchQuery}”
                     </p>
-                    <p className="text-xs text-zinc-400 mt-1">
-                      Prueba con otro artista, tema o género musical.
-                    </p>
+                    <p className="text-xs text-zinc-400 mt-1">{m.noResultsSub}</p>
                   </div>
                 ) : (
                   <>
-                    {/* Spotify Top Result + Top Songs grid */}
                     {searchResults.tracks.length > 0 && (
                       <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
                         <div className="lg:col-span-5 space-y-2.5">
-                          <h2 className="font-display text-lg font-bold text-white">Resultado principal</h2>
+                          <h2 className="font-display text-lg font-bold text-white">{m.topResult}</h2>
                           <button
                             type="button"
                             onClick={() => {
                               const top = searchResults.tracks[0];
                               playTrack(top, searchResults.tracks);
                             }}
-                            className="group w-full p-5 rounded-3xl bg-[#15171E] hover:bg-[#1E212B] border border-white/[0.07] text-left cursor-pointer transition-all relative overflow-hidden"
+                            className="group w-full p-5 rounded-3xl bg-gradient-to-br from-[#FF3366]/18 via-[#140D1E] to-[#0D0812] hover:border-[#FF3366]/45 border border-white/[0.08] text-left cursor-pointer transition-all relative overflow-hidden"
                           >
                             <img
                               src={searchResults.tracks[0].album.coverXl || searchResults.tracks[0].album.cover}
                               alt={searchResults.tracks[0].title}
                               referrerPolicy="no-referrer"
+                              onError={(e) => {
+                                e.currentTarget.style.display = 'none';
+                              }}
                               className="w-24 h-24 rounded-2xl object-cover shadow-xl mb-4"
                             />
                             <h3 className="font-display text-2xl font-black text-white truncate">
                               {searchResults.tracks[0].title}
                             </h3>
                             <p className="text-sm text-zinc-300 mt-1 truncate">
-                              Canción · {searchResults.tracks[0].artist.name}
+                              {m.songSingular} · {searchResults.tracks[0].artist.name}
                             </p>
-                            <span className="absolute right-5 bottom-5 w-12 h-12 rounded-full bg-[#1DB954] text-[#08090C] flex items-center justify-center shadow-xl group-hover:scale-105 transition-transform">
+                            <span className="absolute right-5 bottom-5 w-12 h-12 rounded-full bg-gradient-to-br from-[#FF3366] to-[#FF6B4A] text-white flex items-center justify-center shadow-[0_8px_24px_rgba(255,51,102,0.5)] group-hover:scale-105 transition-transform">
                               <Play className="w-5 h-5 fill-current ml-0.5" />
                             </span>
                           </button>
                         </div>
 
                         <div className="lg:col-span-7 space-y-2.5">
-                          <h2 className="font-display text-lg font-bold text-white">Canciones</h2>
-                          <div className="rounded-2xl bg-[#101217] border border-white/[0.05] p-2">
+                          <h2 className="font-display text-lg font-bold text-white">{m.songsSection}</h2>
+                          <div className="rounded-2xl bg-[#110C18] border border-white/[0.06] p-2">
                             {renderTrackList(searchResults.tracks.slice(0, 6))}
                           </div>
                         </div>
                       </div>
                     )}
 
-                    {renderArtistsCarousel('Artistas', searchResults.artists)}
-                    {renderAlbumsCarousel('Álbumes', searchResults.albums)}
-                    {renderPlaylistsCarousel('Playlists', searchResults.playlists)}
+                    {renderArtistsCarousel(m.artistsSection, searchResults.artists)}
+                    {renderAlbumsCarousel(m.albumsSection, searchResults.albums)}
+                    {renderPlaylistsCarousel(m.playlistsSection, searchResults.playlists)}
+
+                    {searchResults.radios.length > 0 && (
+                      <section className="space-y-3">
+                        <h2 className="font-display text-lg font-bold text-white">{m.navRadios}</h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {searchResults.radios.slice(0, 9).map((station) => {
+                            const active = activeRadio?.id === station.id;
+                            return (
+                              <button
+                                key={station.id}
+                                type="button"
+                                onClick={() => {
+                                  triggerHaptic('light');
+                                  if (active) togglePlayPause();
+                                  else playRadio(station);
+                                }}
+                                className={`p-3 rounded-2xl border flex items-center gap-3 text-left cursor-pointer transition-all ${
+                                  active
+                                    ? 'bg-[#FF3366]/16 border-[#FF3366]/60'
+                                    : 'bg-[#110C18] hover:bg-[#191124] border-white/[0.06]'
+                                }`}
+                              >
+                                <div className="w-12 h-12 rounded-xl overflow-hidden bg-[#1D1229] border border-white/10 shrink-0 flex items-center justify-center">
+                                  {station.favicon ? (
+                                    <img
+                                      src={station.favicon}
+                                      alt={station.name}
+                                      referrerPolicy="no-referrer"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none';
+                                      }}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <Radio className="w-5 h-5 text-[#FF6B4A]" />
+                                  )}
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                  <p className={`text-sm font-bold truncate ${active ? 'text-[#FF6B4A]' : 'text-white'}`}>
+                                    {station.name}
+                                  </p>
+                                  <p className="text-xs text-zinc-400 truncate">{station.country}</p>
+                                </div>
+                                <span className="w-9 h-9 rounded-full bg-gradient-to-br from-[#FF3366] to-[#FF6B4A] text-white flex items-center justify-center shrink-0">
+                                  {active && isPlaying ? (
+                                    <Pause className="w-4 h-4 fill-current" />
+                                  ) : (
+                                    <Play className="w-4 h-4 fill-current ml-0.5" />
+                                  )}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    )}
+
                     {searchResults.tracks.length > 6 && (
                       <section className="space-y-3">
-                        <h2 className="font-display text-lg font-bold text-white">Más resultados</h2>
+                        <h2 className="font-display text-lg font-bold text-white">{m.moreResults}</h2>
                         {renderTrackList(searchResults.tracks.slice(6))}
                       </section>
                     )}
@@ -1572,17 +2277,22 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               </div>
             ) : (
               <section className="space-y-4">
-                <h2 className="font-display text-lg sm:text-xl font-bold text-white">
-                  Explorar por géneros
-                </h2>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-[#F59E0B]" />
+                  <h2 className="font-display text-lg sm:text-xl font-bold text-white">
+                    {m.exploreByGenre}
+                  </h2>
+                </div>
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                   {(homeData?.genres || []).map((g) => (
                     <button
                       key={g.id}
                       type="button"
                       onClick={() => openGenreDetail(g)}
-                      style={{ backgroundColor: g.color }}
-                      className="group relative h-28 sm:h-32 rounded-2xl p-4 text-left overflow-hidden cursor-pointer shadow-lg hover:brightness-110 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                      style={{
+                        background: `linear-gradient(135deg, ${g.color} 0%, #120B1A 115%)`,
+                      }}
+                      className="group relative h-28 sm:h-32 rounded-2xl p-4 text-left overflow-hidden cursor-pointer border border-white/10 shadow-lg hover:brightness-110 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366]"
                     >
                       <span className="relative z-10 font-display text-base sm:text-lg font-extrabold text-white drop-shadow">
                         {g.name}
@@ -1593,6 +2303,9 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                           alt=""
                           loading="lazy"
                           referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                          }}
                           className="absolute -right-3 -bottom-2 w-20 h-20 rounded-xl object-cover rotate-[22deg] shadow-2xl group-hover:scale-105 transition-transform"
                         />
                       )}
@@ -1605,85 +2318,102 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
         ) : navTab === 'radios' ? (
           <div className="space-y-6 animate-fade-in">
             <div>
-              <h1 className="font-display text-2xl sm:text-3xl font-black text-white">
-                Radios Musicales en Directo 24/7
-              </h1>
-              <p className="text-xs sm:text-sm text-zinc-400 mt-1">
-                Emisoras de España y del mundo en audio directo continuo
-              </p>
+              <h1 className="font-display text-2xl sm:text-3xl font-black text-white">{m.radiosTitle}</h1>
+              <p className="text-xs sm:text-sm text-zinc-400 mt-1">{m.radiosSub}</p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-              {(homeData?.radios || []).map((station) => {
-                const active = activeRadio?.id === station.id;
+            <div className="flex items-center gap-2 overflow-x-auto pb-1">
+              {RADIO_FILTERS.map((rt) => {
+                const selected = radioFilterId === rt.id;
                 return (
                   <button
-                    key={station.id}
+                    key={rt.id}
                     type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      if (active) togglePlayPause();
-                      else playRadio(station);
-                    }}
-                    className={`p-3.5 rounded-2xl border flex items-center gap-3.5 text-left cursor-pointer transition-all ${
-                      active
-                        ? 'bg-[#1DB954]/15 border-[#1DB954]/60'
-                        : 'bg-[#121318] hover:bg-[#191B22] border-white/[0.06]'
+                    onClick={() => setRadioFilterId(rt.id)}
+                    className={`min-h-10 px-4 rounded-full text-xs font-bold cursor-pointer transition-all whitespace-nowrap shrink-0 ${
+                      selected
+                        ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white shadow-[0_6px_18px_rgba(255,51,102,0.35)]'
+                        : 'bg-white/[0.07] hover:bg-white/[0.12] text-zinc-200'
                     }`}
                   >
-                    <div className="w-14 h-14 rounded-xl overflow-hidden bg-[#1B1E26] border border-white/10 shrink-0 flex items-center justify-center relative">
-                      {station.favicon ? (
-                        <img
-                          src={station.favicon}
-                          alt={station.name}
-                          referrerPolicy="no-referrer"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                          }}
-                          className="w-full h-full object-cover"
-                        />
-                      ) : null}
-                      <Radio className={`w-6 h-6 text-[#1DB954] -z-10`} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className={`text-sm font-bold truncate ${active ? 'text-[#1DB954]' : 'text-white'}`}>
-                        {station.name}
-                      </p>
-                      <p className="text-xs text-zinc-400 truncate mt-0.5">
-                        {station.country} · {station.tags.join(' · ')}
-                      </p>
-                      <p className="text-[11px] text-zinc-500 mt-0.5 tabular-nums">
-                        {station.codec || 'MP3'} {station.bitrate ? `${station.bitrate} kbps` : ''}
-                      </p>
-                    </div>
-                    <span className="w-10 h-10 rounded-full bg-[#1DB954] text-[#08090C] flex items-center justify-center shrink-0">
-                      {active && isPlaying ? (
-                        <Pause className="w-4 h-4 fill-current" />
-                      ) : (
-                        <Play className="w-4 h-4 fill-current ml-0.5" />
-                      )}
-                    </span>
+                    {m[rt.labelKey]}
                   </button>
                 );
               })}
             </div>
+
+            {radiosLoading ? (
+              <div className="py-12 text-center text-sm text-zinc-400">{m.tuningRadios}</div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
+                {radiosToDisplay.map((station) => {
+                  const active = activeRadio?.id === station.id;
+                  return (
+                    <button
+                      key={station.id}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        if (active) togglePlayPause();
+                        else playRadio(station);
+                      }}
+                      className={`p-3.5 rounded-2xl border flex items-center gap-3.5 text-left cursor-pointer transition-all ${
+                        active
+                          ? 'bg-[#FF3366]/16 border-[#FF3366]/60'
+                          : 'bg-[#110C18] hover:bg-[#191124] border-white/[0.06]'
+                      }`}
+                    >
+                      <div className="w-14 h-14 rounded-xl overflow-hidden bg-[#1D1229] border border-white/10 shrink-0 flex items-center justify-center relative">
+                        {station.favicon ? (
+                          <img
+                            src={station.favicon}
+                            alt={station.name}
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                            }}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : null}
+                        <Radio className="w-6 h-6 text-[#FF6B4A] -z-10" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className={`text-sm font-bold truncate ${active ? 'text-[#FF6B4A]' : 'text-white'}`}>
+                          {station.name}
+                        </p>
+                        <p className="text-xs text-zinc-400 truncate mt-0.5">
+                          {station.country} · {station.tags.join(' · ')}
+                        </p>
+                        <p className="text-[11px] text-zinc-500 mt-0.5 tabular-nums">
+                          {station.codec || 'MP3'} {station.bitrate ? `${station.bitrate} kbps` : ''}
+                        </p>
+                      </div>
+                      <span className="w-10 h-10 rounded-full bg-gradient-to-br from-[#FF3366] to-[#FF6B4A] text-white flex items-center justify-center shrink-0 shadow-[0_6px_16px_rgba(255,51,102,0.35)]">
+                        {active && isPlaying ? (
+                          <Pause className="w-4 h-4 fill-current" />
+                        ) : (
+                          <Play className="w-4 h-4 fill-current ml-0.5" />
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         ) : (
-          /* Tu Biblioteca */
           <div className="space-y-7 animate-fade-in">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h1 className="font-display text-2xl sm:text-3xl font-black text-white">Tu Biblioteca</h1>
-                <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">
-                  Tus canciones favoritas, playlists y álbumes guardados
-                </p>
+                <h1 className="font-display text-2xl sm:text-3xl font-black text-white">{m.libraryTitle}</h1>
+                <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">{m.librarySub}</p>
               </div>
               <button
                 type="button"
                 onClick={() => setShowCreatePlaylist(true)}
-                className="h-10 px-4 rounded-full bg-[#1DB954] text-[#08090C] font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer"
+                className="h-10 px-4 rounded-full bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               >
-                <Plus className="w-4 h-4" /> Nueva Playlist
+                <Plus className="w-4 h-4" /> {m.newPlaylist}
               </button>
             </div>
 
@@ -1691,14 +2421,16 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               <button
                 type="button"
                 onClick={() => setDetail({ kind: 'liked' })}
-                className="p-4 rounded-2xl bg-gradient-to-br from-[#1DB954]/30 to-[#121318] border border-white/10 flex items-center gap-3.5 text-left cursor-pointer hover:border-[#1DB954]/60"
+                className="p-4 rounded-2xl bg-gradient-to-br from-[#FF3366]/25 to-[#120C18] border border-[#FF3366]/25 flex items-center gap-3.5 text-left cursor-pointer hover:border-[#FF3366]/60"
               >
-                <div className="w-14 h-14 rounded-xl bg-[#1DB954] flex items-center justify-center shrink-0">
-                  <Heart className="w-7 h-7 text-[#08090C] fill-current" />
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#FF3366] via-[#FF6B4A] to-[#F59E0B] flex items-center justify-center shrink-0">
+                  <Heart className="w-7 h-7 text-white fill-current" />
                 </div>
                 <div>
-                  <p className="text-base font-bold text-white">Tus Me Gusta</p>
-                  <p className="text-xs text-zinc-300 tabular-nums">{likedTracks.length} canciones</p>
+                  <p className="text-base font-bold text-white">{m.likedSongs}</p>
+                  <p className="text-xs text-zinc-300 tabular-nums">
+                    {likedTracks.length} {m.songsCount}
+                  </p>
                 </div>
               </button>
 
@@ -1707,28 +2439,33 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   key={pl.id}
                   type="button"
                   onClick={() => setDetail({ kind: 'user_playlist', playlistId: pl.id })}
-                  className="p-4 rounded-2xl bg-[#121318] hover:bg-[#191B22] border border-white/[0.08] flex items-center gap-3.5 text-left cursor-pointer"
+                  className="p-4 rounded-2xl bg-[#110C18] hover:bg-[#191124] border border-white/[0.08] flex items-center gap-3.5 text-left cursor-pointer"
                 >
                   <img
                     src={pl.tracks[0]?.album.cover || mixHeroCover}
                     alt={pl.name}
                     referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                    }}
                     className="w-14 h-14 rounded-xl object-cover shrink-0"
                   />
                   <div className="min-w-0">
                     <p className="text-base font-bold text-white truncate">{pl.name}</p>
-                    <p className="text-xs text-zinc-400 tabular-nums">{pl.tracks.length} canciones</p>
+                    <p className="text-xs text-zinc-400 tabular-nums">
+                      {pl.tracks.length} {m.songsCount}
+                    </p>
                   </div>
                 </button>
               ))}
             </div>
 
-            {savedAlbums.length > 0 && renderAlbumsCarousel('Álbumes guardados', savedAlbums)}
-            {savedPlaylists.length > 0 && renderPlaylistsCarousel('Playlists guardadas', savedPlaylists)}
+            {savedAlbums.length > 0 && renderAlbumsCarousel(m.savedAlbumsTitle, savedAlbums)}
+            {savedPlaylists.length > 0 && renderPlaylistsCarousel(m.savedPlaylistsTitle, savedPlaylists)}
 
             {recentTracks.length > 0 && (
               <section className="space-y-3">
-                <h2 className="font-display text-lg font-bold text-white">Escuchado recientemente</h2>
+                <h2 className="font-display text-lg font-bold text-white">{m.recentlyPlayed}</h2>
                 {renderTrackList(recentTracks.slice(0, 15))}
               </section>
             )}
@@ -1738,23 +2475,23 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
 
       {/* Queue Drawer */}
       {showQueueDrawer && (
-        <aside className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm bg-[#101217]/98 backdrop-blur-2xl border-l border-white/10 p-5 flex flex-col gap-4 shadow-2xl">
+        <aside className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm bg-[#0F0916]/98 backdrop-blur-2xl border-l border-[#FF3366]/20 p-5 flex flex-col gap-4 shadow-2xl">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <ListMusic className="w-5 h-5 text-[#1DB954]" />
-              <h3 className="font-display text-base font-bold text-white">Cola de reproducción</h3>
+              <ListMusic className="w-5 h-5 text-[#FF3366]" />
+              <h3 className="font-display text-base font-bold text-white">{m.queueTitle}</h3>
             </div>
             <button
               type="button"
               onClick={() => setShowQueueDrawer(false)}
-              className="w-9 h-9 rounded-full hover:bg-white/10 text-zinc-300 flex items-center justify-center cursor-pointer"
+              className="w-10 h-10 rounded-full hover:bg-white/10 text-zinc-300 flex items-center justify-center cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
           <div className="flex-1 overflow-y-auto space-y-1.5">
             {queue.length === 0 ? (
-              <p className="text-xs text-zinc-500 py-8 text-center">La cola está vacía.</p>
+              <p className="text-xs text-zinc-500 py-8 text-center">{m.queueEmpty}</p>
             ) : (
               queue.map((t, idx) => {
                 const active = idx === queueIndex;
@@ -1762,7 +2499,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   <div
                     key={`${t.id}-q-${idx}`}
                     className={`flex items-center gap-2.5 p-2 rounded-xl ${
-                      active ? 'bg-[#1DB954]/15 border border-[#1DB954]/40' : 'hover:bg-white/[0.05]'
+                      active ? 'bg-[#FF3366]/16 border border-[#FF3366]/40' : 'hover:bg-white/[0.05]'
                     }`}
                   >
                     <button
@@ -1774,10 +2511,13 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                         src={t.album.cover}
                         alt={t.title}
                         referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
                         className="w-10 h-10 rounded-lg object-cover shrink-0"
                       />
                       <div className="min-w-0">
-                        <p className={`text-xs font-bold truncate ${active ? 'text-[#1DB954]' : 'text-white'}`}>
+                        <p className={`text-xs font-bold truncate ${active ? 'text-[#FF6B4A]' : 'text-white'}`}>
                           {t.title}
                         </p>
                         <p className="text-[11px] text-zinc-400 truncate">{t.artist.name}</p>
@@ -1787,7 +2527,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                       <button
                         type="button"
                         onClick={() => removeFromQueue(idx)}
-                        className="w-8 h-8 rounded-full text-zinc-500 hover:text-red-400 flex items-center justify-center cursor-pointer"
+                        className="w-8 h-8 rounded-full text-zinc-500 hover:text-rose-400 flex items-center justify-center cursor-pointer"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
                       </button>
@@ -1816,18 +2556,18 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               setShowCreatePlaylist(false);
               setPlaylistPickerTrack(null);
               setDetail({ kind: 'user_playlist', playlistId: id });
-              showToast('Playlist creada');
+              showToast(m.playlistCreated);
             }}
-            className="w-full max-w-sm rounded-3xl bg-[#14161D] border border-white/10 p-6 space-y-4 shadow-2xl"
+            className="w-full max-w-sm rounded-3xl bg-[#130C1B] border border-[#FF3366]/20 p-6 space-y-4 shadow-2xl"
           >
-            <h3 className="font-display text-lg font-bold text-white">Nueva Playlist</h3>
+            <h3 className="font-display text-lg font-bold text-white">{m.createPlaylistTitle}</h3>
             <input
               type="text"
               autoFocus
               value={newPlaylistName}
               onChange={(e) => setNewPlaylistName(e.target.value)}
-              placeholder="Ej: Gimnasio, Coche, Chill..."
-              className="w-full h-11 px-4 rounded-xl bg-white/[0.06] border border-white/15 focus:border-[#1DB954] text-sm text-white outline-none"
+              placeholder={m.createPlaylistPlaceholder}
+              className="w-full h-11 px-4 rounded-xl bg-white/[0.06] border border-white/15 focus:border-[#FF3366] text-sm text-white outline-none"
             />
             <div className="flex justify-end gap-2">
               <button
@@ -1835,13 +2575,13 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 onClick={() => setShowCreatePlaylist(false)}
                 className="h-10 px-4 rounded-full text-xs font-semibold text-zinc-300 hover:text-white cursor-pointer"
               >
-                Cancelar
+                {m.cancel}
               </button>
               <button
                 type="submit"
-                className="h-10 px-5 rounded-full bg-[#1DB954] text-[#08090C] text-xs font-bold cursor-pointer"
+                className="h-10 px-5 rounded-full bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white text-xs font-bold cursor-pointer"
               >
-                Crear
+                {m.create}
               </button>
             </div>
           </form>
@@ -1856,16 +2596,16 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl bg-[#14161D] border border-white/10 p-5 space-y-4 shadow-2xl"
+            className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl bg-[#130C1B] border border-[#FF3366]/20 p-5 space-y-4 shadow-2xl"
           >
             <div className="flex items-center justify-between">
               <h3 className="font-display text-base font-bold text-white truncate pr-3">
-                Añadir “{playlistPickerTrack.title}”
+                {m.addTrackPrefix} “{playlistPickerTrack.title}”
               </h3>
               <button
                 type="button"
                 onClick={() => setPlaylistPickerTrack(null)}
-                className="w-8 h-8 rounded-full hover:bg-white/10 text-zinc-400 flex items-center justify-center cursor-pointer"
+                className="w-9 h-9 rounded-full hover:bg-white/10 text-zinc-400 flex items-center justify-center cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -1874,9 +2614,9 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             <button
               type="button"
               onClick={() => setShowCreatePlaylist(true)}
-              className="w-full h-11 px-4 rounded-2xl bg-[#1DB954]/15 border border-[#1DB954]/40 text-sm font-bold text-[#1DB954] flex items-center gap-2 cursor-pointer"
+              className="w-full h-11 px-4 rounded-2xl bg-[#FF3366]/15 border border-[#FF3366]/40 text-sm font-bold text-[#FF6B4A] flex items-center gap-2 cursor-pointer"
             >
-              <Plus className="w-4 h-4" /> Crear nueva playlist
+              <Plus className="w-4 h-4" /> {m.createNewPlaylistBtn}
             </button>
 
             <div className="space-y-1.5 max-h-60 overflow-y-auto">
@@ -1886,7 +2626,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   type="button"
                   onClick={() => {
                     addTrackToUserPlaylist(pl.id, playlistPickerTrack);
-                    showToast(`Añadida a ${pl.name}`);
+                    showToast(`${m.addedToPlaylist} ${pl.name}`);
                     setPlaylistPickerTrack(null);
                   }}
                   className="w-full p-2.5 rounded-xl hover:bg-white/[0.06] flex items-center justify-between text-left cursor-pointer"
@@ -1902,12 +2642,12 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
 
       {/* Toast Feedback */}
       {toastMsg && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-[#1DB954] text-[#08090C] text-xs font-bold shadow-xl pointer-events-none">
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white text-xs font-bold shadow-[0_8px_24px_rgba(255,51,102,0.45)] pointer-events-none">
           {toastMsg}
         </div>
       )}
 
-      {/* Persistent Spotify Player Bar, Full Screen Lyrics/NowPlaying Modal & EQ Modal */}
+      {/* Persistent Sonic Player Bar, Full Screen Lyrics/NowPlaying Modal & EQ Modal */}
       <SpotifyPlayerBar />
       <FullScreenNowPlayingModal
         onOpenPlaylistPicker={() => {

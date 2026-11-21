@@ -12,6 +12,7 @@ import {
 } from './home/WorldPortalTransition';
 import { AvatarMenuSheet } from './AvatarMenuSheet';
 import { SettingsBottomSheet } from './SettingsBottomSheet';
+import { PWAInstallOptionsSheet } from './PWAInstallPrompt';
 import { GameMatchInviteModal } from './games/GameMatchInviteModal';
 import { AppDiscoveryModalsGroup } from './app/AppDiscoveryModalsGroup';
 import { GlobalVodModals } from './catalog/GlobalVodModals';
@@ -208,6 +209,14 @@ interface AppGlobalModalsLayerProps {
 }
 
 export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => {
+  const [installSheetOpen, setInstallSheetOpen] = React.useState(false);
+
+  React.useEffect(() => {
+    const onOpenInstall = () => setInstallSheetOpen(true);
+    window.addEventListener('riffan:open-install', onOpenInstall);
+    return () => window.removeEventListener('riffan:open-install', onOpenInstall);
+  }, []);
+
   const {
     lang,
     onChangeLang,
@@ -545,12 +554,19 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
           onOpenSmartTv={() => setSmartTvModalOpen(true)}
           onOpenYouTube={() => enterWorld('youtube')}
           onOpenSettings={() => setSettingsSheetOpen(true)}
+          onOpenInstallApp={() => setInstallSheetOpen(true)}
           inRoom={inRoom}
           sessionMode={sessionMode}
           roomName={roomName}
           onUpgradeSoloToParty={onUpgradeSoloToParty}
           onLeaveRoom={onLeaveRoom}
           onSignOut={onSignOut}
+        />
+
+        <PWAInstallOptionsSheet
+          isOpen={installSheetOpen}
+          onClose={() => setInstallSheetOpen(false)}
+          lang={lang}
         />
 
         <SettingsBottomSheet
