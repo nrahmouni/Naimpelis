@@ -8,6 +8,7 @@ import type {
   MusicTrack,
   MusicViewMode,
   ResolvedTrackPlayback,
+  Spatial8dMode,
   UserMusicPlaylist,
 } from '../types/music';
 
@@ -22,12 +23,19 @@ interface PersistedLibrary {
   userPlaylists: UserMusicPlaylist[];
   recentTracks: MusicTrack[];
   eqPreset: EqPresetId;
+  spatial8dEnabled: boolean;
+  spatial8dMode: Spatial8dMode;
   volume: number;
   musicLang: MusicLang;
+  musicLangV2?: boolean;
 }
 
 function isValidMusicLang(val: unknown): val is MusicLang {
   return val === 'es' || val === 'en' || val === 'fr' || val === 'zh' || val === 'ca';
+}
+
+function isValidSpatialMode(val: unknown): val is Spatial8dMode {
+  return val === 'orbit' || val === 'concert' || val === 'club';
 }
 
 function loadLibrary(): PersistedLibrary {
@@ -38,8 +46,11 @@ function loadLibrary(): PersistedLibrary {
     userPlaylists: [],
     recentTracks: [],
     eqPreset: 'flat',
+    spatial8dEnabled: false,
+    spatial8dMode: 'orbit',
     volume: 0.85,
-    musicLang: 'es',
+    musicLang: 'en',
+    musicLangV2: true,
   };
   if (typeof localStorage === 'undefined') return defaults;
   try {
@@ -53,8 +64,11 @@ function loadLibrary(): PersistedLibrary {
       userPlaylists: Array.isArray(parsed.userPlaylists) ? parsed.userPlaylists : [],
       recentTracks: Array.isArray(parsed.recentTracks) ? parsed.recentTracks : [],
       eqPreset: parsed.eqPreset || 'flat',
+      spatial8dEnabled: Boolean(parsed.spatial8dEnabled),
+      spatial8dMode: isValidSpatialMode(parsed.spatial8dMode) ? parsed.spatial8dMode : 'orbit',
       volume: typeof parsed.volume === 'number' ? Math.max(0, Math.min(1, parsed.volume)) : 0.85,
-      musicLang: isValidMusicLang(parsed.musicLang) ? parsed.musicLang : 'es',
+      musicLang: parsed.musicLangV2 && isValidMusicLang(parsed.musicLang) ? parsed.musicLang : 'en',
+      musicLangV2: true,
     };
   } catch {
     return defaults;
@@ -64,7 +78,7 @@ function loadLibrary(): PersistedLibrary {
 function saveLibrary(lib: PersistedLibrary) {
   if (typeof localStorage === 'undefined') return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(lib));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...lib, musicLangV2: true }));
   } catch {
     // ignore storage quota errors
   }
@@ -78,8 +92,11 @@ function syncPersisted(state: PersistedLibrary) {
     userPlaylists: state.userPlaylists,
     recentTracks: state.recentTracks,
     eqPreset: state.eqPreset,
+    spatial8dEnabled: state.spatial8dEnabled,
+    spatial8dMode: state.spatial8dMode,
     volume: state.volume,
     musicLang: state.musicLang,
+    musicLangV2: true,
   });
 }
 
@@ -128,6 +145,9 @@ export interface MusicStoreState extends PersistedLibrary {
   toggleShuffle: () => void;
   cycleRepeat: () => void;
   setEqPreset: (preset: EqPresetId) => void;
+  toggleSpatial8d: () => void;
+  setSpatial8dEnabled: (enabled: boolean) => void;
+  setSpatial8dMode: (mode: Spatial8dMode) => void;
   setPlaybackRate: (rate: number) => void;
   setViewMode: (mode: MusicViewMode) => void;
   setSleepTimerMinutes: (minutes: number | null) => void;
@@ -343,6 +363,27 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
   setEqPreset: (preset) =>
     set((prev) => {
       const next = { ...prev, eqPreset: preset };
+      syncPersisted(next);
+      return next;
+    }),
+
+  toggleSpatial8d: () =>
+    set((prev) => {
+      const next = { ...prev, spatial8dEnabled: !prev.spatial8dEnabled };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setSpatial8dEnabled: (enabled) =>
+    set((prev) => {
+      const next = { ...prev, spatial8dEnabled: enabled };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setSpatial8dMode: (mode) =>
+    set((prev) => {
+      const next = { ...prev, spatial8dMode: mode };
       syncPersisted(next);
       return next;
     }),

@@ -3,8 +3,8 @@ import type { AppLanguage } from '../../types';
 export type MusicLang = 'es' | 'en' | 'fr' | 'zh' | 'ca';
 
 export const MUSIC_LANGUAGES: Array<{ id: MusicLang; code: string; label: string }> = [
-  { id: 'es', code: 'ES', label: 'Español' },
   { id: 'en', code: 'EN', label: 'English' },
+  { id: 'es', code: 'ES', label: 'Español' },
   { id: 'fr', code: 'FR', label: 'Français' },
   { id: 'zh', code: 'ZH', label: '中文' },
   { id: 'ca', code: 'CA', label: 'Català' },
@@ -15,7 +15,7 @@ export function normalizeMusicLang(appLang?: AppLanguage | string): MusicLang {
     return appLang;
   }
   if (appLang === 'rif') return 'fr';
-  return 'es';
+  return 'en';
 }
 
 export interface MusicCopy {
@@ -217,6 +217,13 @@ export interface MusicCopy {
   videoBtn: string;
   eqBtn: string;
   muteBtn: string;
+  spatial8dBtn: string;
+  spatial8dTitle: string;
+  spatial8dSub: string;
+  spatial8dOrbit: string;
+  spatial8dConcert: string;
+  spatial8dClub: string;
+  spatial8dBadgeLive: string;
 }
 
 export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
@@ -415,6 +422,13 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     videoBtn: 'Vídeo',
     eqBtn: 'EQ',
     muteBtn: 'Silenciar',
+    spatial8dBtn: 'Audio 8D',
+    spatial8dTitle: 'Audio Espacial 8D Binaural',
+    spatial8dSub: 'Órbita HRTF 360° + Reverb de Sala (usa auriculares para máximo 8D)',
+    spatial8dOrbit: 'Órbita 360°',
+    spatial8dConcert: 'Sala Concierto',
+    spatial8dClub: 'Club 360°',
+    spatial8dBadgeLive: '8D ACTIVO',
   },
 
   en: {
@@ -612,6 +626,13 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     videoBtn: 'Video',
     eqBtn: 'EQ',
     muteBtn: 'Mute',
+    spatial8dBtn: '8D Audio',
+    spatial8dTitle: '8D Binaural Spatial Audio',
+    spatial8dSub: '360° HRTF orbit + studio hall reverb (headphones recommended)',
+    spatial8dOrbit: '360° Orbit',
+    spatial8dConcert: 'Concert Hall',
+    spatial8dClub: 'Club 360°',
+    spatial8dBadgeLive: '8D ACTIVE',
   },
 
   fr: {
@@ -809,6 +830,13 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     videoBtn: 'Vidéo',
     eqBtn: 'EQ',
     muteBtn: 'Muet',
+    spatial8dBtn: 'Audio 8D',
+    spatial8dTitle: 'Audio Spatial 8D Binaural',
+    spatial8dSub: 'Orbite HRTF 360° + réverbération studio (casque recommandé)',
+    spatial8dOrbit: 'Orbite 360°',
+    spatial8dConcert: 'Salle Concert',
+    spatial8dClub: 'Club 360°',
+    spatial8dBadgeLive: '8D ACTIF',
   },
 
   zh: {
@@ -1006,6 +1034,13 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     videoBtn: '视频',
     eqBtn: '均衡器',
     muteBtn: '静音',
+    spatial8dBtn: '8D 环绕',
+    spatial8dTitle: '8D 双耳空间音频',
+    spatial8dSub: '360° HRTF 声场环绕 + 音乐厅混响（佩戴耳机效果最佳）',
+    spatial8dOrbit: '360° 环绕',
+    spatial8dConcert: '音乐厅',
+    spatial8dClub: '360° 派对',
+    spatial8dBadgeLive: '8D 开启',
   },
 
   ca: {
@@ -1203,5 +1238,12 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     videoBtn: 'Vídeo',
     eqBtn: 'EQ',
     muteBtn: 'Silenciar',
+    spatial8dBtn: 'Àudio 8D',
+    spatial8dTitle: 'Àudio Espacial 8D Binaural',
+    spatial8dSub: 'Òrbita HRTF 360° + reverb d’estudi (auriculars recomanats)',
+    spatial8dOrbit: 'Òrbita 360°',
+    spatial8dConcert: 'Sala Concert',
+    spatial8dClub: 'Club 360°',
+    spatial8dBadgeLive: '8D ACTIU',
   },
 };

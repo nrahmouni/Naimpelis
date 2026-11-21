@@ -14,6 +14,9 @@ import {
 import { useAppStore } from '../store/useAppStore';
 import { EntryHomeScreen } from './EntryHomeScreen';
 import { WorldShell } from './worlds/WorldShell';
+import { MusicLanguageDropdown } from './music/MusicLanguageDropdown';
+import { MUSIC_I18N } from './music/musicI18n';
+import { useMusicStore } from '../store/useMusicStore';
 import { MediaCatalogHub } from './MediaCatalogHub';
 import type { useAppController } from '../hooks/useAppController';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
@@ -109,6 +112,7 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
   const requestedSeriesModal = useAppStore((s) => s.requestedSeriesModal);
   const futbolFavOnly = useAppStore((s) => s.futbolFavOnly);
   const setFutbolFavOnly = useAppStore((s) => s.setFutbolFavOnly);
+  const musicLang = useMusicStore((s) => s.musicLang);
   const suppressHomeSearchOverlay = Boolean(
     requestedMovieModal ||
       requestedSeriesModal ||
@@ -607,13 +611,10 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
         onBack={() => enterWorld('entry')}
         onGoHome={() => enterWorld('entry')}
         onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+        quickActions={<MusicLanguageDropdown />}
         searchValue={worldSearchQuery}
         onSearchChange={setWorldSearchQuery}
-        searchPlaceholder={pickLang(lang, {
-          es: 'Buscar canción, artista, álbum o radio...',
-          ca: 'Cercar cançó, artista, àlbum o ràdio...',
-          en: 'Search song, artist, album or radio...',
-        })}
+        searchPlaceholder={MUSIC_I18N[musicLang].searchPlaceholder}
         className={portalLandingActive ? 'rtv-world-touchdown' : ''}
       >
         <RiffanMusicWorldView

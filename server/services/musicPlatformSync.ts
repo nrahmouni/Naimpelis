@@ -53,10 +53,47 @@ function parseDurationLabel(label: string): number {
   return Number(m[1]) * 60 + Number(m[2]);
 }
 
+const YTM_TYPE_OR_NOISE_RE =
+  /^(song|canción|cancion|video|vídeo|single|ep|album|álbum|podcast|episode|episodio|歌曲|专辑|專輯|单曲|單曲|视频|影片|chanson|titre|cançó|àlbum|трек|песня)$/i;
+const YTM_DURATION_RE = /^\d+:\d{2}(?::\d{2})?$/;
+const YTM_VIEWS_RE = /\b(views?|plays?|reproducciones|visualizaciones|listeners?|subscribers?)\b|次播放|次观看|次觀看|萬|万/i;
+
+function getYtmContextForQuery(query: string) {
+  if (/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(query)) {
+    return {
+      client: {
+        ...YTM_CONTEXT.client,
+        hl: 'zh-CN',
+        gl: 'TW',
+      },
+    };
+  }
+  if (/[\u0600-\u06ff]/.test(query)) {
+    return {
+      client: {
+        ...YTM_CONTEXT.client,
+        hl: 'ar',
+        gl: 'EG',
+      },
+    };
+  }
+  if (/[\u0400-\u04ff]/.test(query)) {
+    return {
+      client: {
+        ...YTM_CONTEXT.client,
+        hl: 'ru',
+        gl: 'RU',
+      },
+    };
+  }
+  return YTM_CONTEXT;
+}
+
 function parseYtmTrackFromResponsive(item: any): MusicTrack | null {
   const flexCols = Array.isArray(item?.flexColumns) ? item.flexColumns : [];
   const titleRun = flexCols[0]?.musicResponsiveListItemFlexColumnRenderer?.text;
   const subRun = flexCols[1]?.musicResponsiveListItemFlexColumnRenderer?.text;
+  const thirdRun = flexCols[2]?.musicResponsiveListItemFlexColumnRenderer?.text;
   const title = parseRunsText(titleRun).trim();
 
   const videoId =
@@ -68,14 +105,20 @@ function parseYtmTrackFromResponsive(item: any): MusicTrack | null {
 
   if (!title || !videoId || typeof videoId !== 'string' || videoId.length !== 11) return null;
 
-  const subParts = parseRunsText(subRun)
+  const rawParts = [parseRunsText(subRun), parseRunsText(thirdRun)]
+    .filter(Boolean)
+    .join('•')
     .split('•')
     .map((s) => s.trim())
-    .filter((s) => s && !/^(song|canción|video|vídeo|single|ep)$/i.test(s));
+    .filter(Boolean);
+
+  const durPart = rawParts.find((p) => YTM_DURATION_RE.test(p)) || '';
+  const subParts = rawParts.filter(
+    (s) => !YTM_TYPE_OR_NOISE_RE.test(s) && !YTM_DURATION_RE.test(s) && !YTM_VIEWS_RE.test(s)
+  );
 
   const artistName = subParts[0] || 'YouTube Music';
   const albumTitle = subParts[1] || 'YouTube Music';
-  const durPart = subParts.find((p) => /^\d+:\d{2}/.test(p)) || '';
   const thumbs = item?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails;
   const cover = pickBestThumb(thumbs) || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
@@ -117,9 +160,9 @@ function parseYtmItemFromTwoRow(item: any): { track?: MusicTrack; album?: MusicA
     .map((s) => s.trim())
     .filter(Boolean);
   const cleanedParts = parts.filter(
-    (p) => !/^(album|álbum|single|ep|song|canción|video|vídeo)$/i.test(p)
+    (p) => !YTM_TYPE_OR_NOISE_RE.test(p) && !YTM_DURATION_RE.test(p) && !YTM_VIEWS_RE.test(p)
   );
-  const artistName = cleanedParts[0] || parts[parts.length - 1] || 'YouTube Music';
+  const artistName = cleanedParts[0] || 'YouTube Music';
 
   if (typeof browseId === 'string' && browseId.startsWith('MPREb_')) {
     return {
@@ -132,7 +175,7 @@ function parseYtmItemFromTwoRow(item: any): { track?: MusicTrack; album?: MusicA
           id: `ytm-art-${encodeURIComponent(artistName.toLowerCase())}`,
           name: artistName,
         },
-        genres: parts[0] && /^(album|álbum|single|ep)$/i.test(parts[0]) ? [parts[0]] : ['Álbum'],
+        genres: parts[0] && /^(album|álbum|single|ep|专辑|單曲)$/i.test(parts[0]) ? [parts[0]] : ['Álbum'],
       },
     };
   }
@@ -238,7 +281,7 @@ export async function searchYouTubeMusic(query: string): Promise<{
         'User-Agent': CHROME_UA,
         Origin: 'https://music.youtube.com',
       },
-      body: JSON.stringify({ context: YTM_CONTEXT, query }),
+      body: JSON.stringify({ context: getYtmContextForQuery(query), query }),
       signal: AbortSignal.timeout(8500),
     });
     if (!res.ok) return { tracks: [], albums: [] };
@@ -247,6 +290,42 @@ export async function searchYouTubeMusic(query: string): Promise<{
     const albums: MusicAlbumRef[] = [];
     const seenT = new Set<string>();
     const seenA = new Set<string>();
+
+    // Parse Top Result card if it links directly to a song/video
+    for (const card of collectRenderers(doc, 'musicCardShelfRenderer')) {
+      const title = parseRunsText(card?.title).trim();
+      const videoId =
+        card?.title?.runs?.[0]?.navigationEndpoint?.watchEndpoint?.videoId ||
+        card?.onTap?.watchEndpoint?.videoId ||
+        '';
+      const cover = pickBestThumb(card?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails);
+      if (title && typeof videoId === 'string' && videoId.length === 11 && !seenT.has(`ytm-${videoId}`)) {
+        const subParts = parseRunsText(card?.subtitle)
+          .split('•')
+          .map((s) => s.trim())
+          .filter((s) => s && !YTM_TYPE_OR_NOISE_RE.test(s) && !YTM_DURATION_RE.test(s) && !YTM_VIEWS_RE.test(s));
+        const artistName = subParts[0] || title;
+        seenT.add(`ytm-${videoId}`);
+        tracks.push({
+          id: `ytm-${videoId}`,
+          title,
+          artist: {
+            id: `ytm-art-${encodeURIComponent(artistName.toLowerCase())}`,
+            name: artistName,
+            picture: cover,
+          },
+          album: {
+            id: `ytm-alb-trk-${videoId}`,
+            title: subParts[1] || 'YouTube Music',
+            cover: cover || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+            coverXl: cover ? cover.replace(/=w\d+-h\d+/, '=w720-h720') : `https://i.ytimg.com/vi/${videoId}/hq720.jpg`,
+          },
+          durationSec: 205,
+          source: 'youtube_music',
+          youtubeVideoId: videoId,
+        });
+      }
+    }
 
     for (const item of collectRenderers(doc, 'musicResponsiveListItemRenderer')) {
       const t = parseYtmTrackFromResponsive(item);
@@ -261,7 +340,7 @@ export async function searchYouTubeMusic(query: string): Promise<{
         const sub = parseRunsText(flex[1]?.musicResponsiveListItemFlexColumnRenderer?.text)
           .split('•')
           .map((s) => s.trim())
-          .filter((s) => s && !/^(album|álbum|single|ep)$/i.test(s));
+          .filter((s) => s && !YTM_TYPE_OR_NOISE_RE.test(s) && !YTM_DURATION_RE.test(s));
         const cover = pickBestThumb(item?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails);
         if (title && cover) {
           seenA.add(`ytm-${browseId}`);
@@ -286,7 +365,7 @@ export async function searchYouTubeMusic(query: string): Promise<{
         albums.push(parsed.album);
       }
     }
-    return { tracks: tracks.slice(0, 18), albums: albums.slice(0, 10) };
+    return { tracks: tracks.slice(0, 20), albums: albums.slice(0, 12) };
   } catch {
     return { tracks: [], albums: [] };
   }

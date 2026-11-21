@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  Headphones,
   Heart,
   ListMusic,
   Maximize2,
@@ -45,6 +46,8 @@ export const SpotifyPlayerBar: React.FC = () => {
   const viewMode = useMusicStore((s) => s.viewMode);
   const likedTracks = useMusicStore((s) => s.likedTracks);
   const showQueueDrawer = useMusicStore((s) => s.showQueueDrawer);
+  const spatial8dEnabled = useMusicStore((s) => s.spatial8dEnabled);
+  const toggleSpatial8d = useMusicStore((s) => s.toggleSpatial8d);
   const musicLang = useMusicStore((s) => s.musicLang);
   const m = MUSIC_I18N[musicLang];
 
@@ -78,7 +81,7 @@ export const SpotifyPlayerBar: React.FC = () => {
 
   return (
     <div
-      className="fixed bottom-0 inset-x-0 z-40 bg-[#0B060F]/94 backdrop-blur-2xl border-t border-[#FF3366]/20 px-3 sm:px-6 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] shadow-[0_-18px_48px_rgba(0,0,0,0.82)]"
+      className="fixed bottom-0 inset-x-0 z-40 bg-[#050911]/95 backdrop-blur-2xl border-t border-[#10B981]/20 px-3 sm:px-6 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] shadow-[0_-18px_48px_rgba(0,0,0,0.82)]"
       role="region"
       aria-label={m.playerRegionAria}
     >
@@ -86,7 +89,7 @@ export const SpotifyPlayerBar: React.FC = () => {
       {!activeRadio && (
         <div className="sm:hidden absolute top-0 inset-x-0 h-[2.5px] bg-white/10">
           <div
-            className="h-full bg-gradient-to-r from-[#FF3366] via-[#FF6B4A] to-[#F59E0B] transition-[width] duration-200"
+            className="h-full bg-gradient-to-r from-[#10B981] via-[#22D3EE] to-[#6EE7B7] transition-[width] duration-200"
             style={{ width: `${pct}%` }}
           />
         </div>
@@ -101,9 +104,9 @@ export const SpotifyPlayerBar: React.FC = () => {
               triggerHaptic('light');
               setShowNowPlayingModal(true);
             }}
-            className="group flex items-center gap-2.5 sm:gap-3 min-w-0 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366] rounded-xl"
+            className="group flex items-center gap-2.5 sm:gap-3 min-w-0 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] rounded-xl"
           >
-            <div className="relative w-11 h-11 sm:w-13 sm:h-13 rounded-xl overflow-hidden bg-[#160C19] border border-[#FF3366]/25 shrink-0 flex items-center justify-center shadow-[0_6px_18px_rgba(255,51,102,0.18)]">
+            <div className="relative w-11 h-11 sm:w-13 sm:h-13 rounded-xl overflow-hidden bg-[#0B121D] border border-[#10B981]/25 shrink-0 flex items-center justify-center shadow-[0_6px_18px_rgba(16,185,129,0.16)]">
               {coverSrc ? (
                 <img
                   src={coverSrc}
@@ -116,7 +119,7 @@ export const SpotifyPlayerBar: React.FC = () => {
                 />
               ) : null}
               {activeRadio ? (
-                <Radio className="w-5 h-5 text-[#FF6B4A] absolute pointer-events-none opacity-85" />
+                <Radio className="w-5 h-5 text-[#22D3EE] absolute pointer-events-none opacity-85" />
               ) : (
                 <RiffanMusicLogo variant="mark" size={28} withFrame={false} className="-z-10" />
               )}
@@ -128,7 +131,7 @@ export const SpotifyPlayerBar: React.FC = () => {
               </p>
               <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-zinc-400 truncate mt-0.5">
                 {activeRadio ? (
-                  <span className="inline-flex items-center gap-1 text-[#FF6B4A] font-bold tracking-wider">
+                  <span className="inline-flex items-center gap-1 text-[#22D3EE] font-bold tracking-wider">
                     {m.liveRadioBadge}
                   </span>
                 ) : (
@@ -140,7 +143,7 @@ export const SpotifyPlayerBar: React.FC = () => {
                       </span>
                     )}
                     {isResolvingTrack && (
-                      <span className="hidden md:inline text-[10px] text-[#FF6B4A] shrink-0">
+                      <span className="hidden md:inline text-[10px] text-[#34D399] shrink-0">
                         · {m.loadingTrack}
                       </span>
                     )}
@@ -158,8 +161,8 @@ export const SpotifyPlayerBar: React.FC = () => {
                 toggleLikeTrack(currentTrack);
               }}
               aria-label={isLiked ? m.likeRemove : m.likeAdd}
-              className={`min-w-11 min-h-11 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366] ${
-                isLiked ? 'text-[#FF3366]' : 'text-zinc-400 hover:text-white'
+              className={`min-w-11 min-h-11 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] ${
+                isLiked ? 'text-[#34D399]' : 'text-zinc-400 hover:text-white'
               }`}
             >
               <Heart className={`w-4.5 h-4.5 ${isLiked ? 'fill-current' : ''}`} />
@@ -176,7 +179,7 @@ export const SpotifyPlayerBar: React.FC = () => {
               disabled={Boolean(activeRadio)}
               title={m.shuffle}
               className={`w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-colors disabled:opacity-30 ${
-                shuffle ? 'text-[#FF3366]' : 'text-zinc-400 hover:text-white'
+                shuffle ? 'text-[#34D399]' : 'text-zinc-400 hover:text-white'
               }`}
             >
               <Shuffle className="w-4 h-4" />
@@ -199,7 +202,7 @@ export const SpotifyPlayerBar: React.FC = () => {
                 togglePlayPause();
               }}
               aria-label={isPlaying ? m.pause : m.playNow}
-              className="w-10 h-10 rounded-full bg-gradient-to-br from-[#FF3366] to-[#FF6B4A] hover:scale-105 text-white flex items-center justify-center cursor-pointer transition-all shadow-[0_6px_20px_rgba(255,51,102,0.4)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366]"
+              className="w-10 h-10 rounded-full bg-gradient-to-br from-[#10B981] to-[#22D3EE] hover:scale-105 text-[#03130E] flex items-center justify-center cursor-pointer transition-all shadow-[0_6px_20px_rgba(16,185,129,0.38)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
             >
               {isPlaying ? (
                 <Pause className="w-4.5 h-4.5 fill-current" />
@@ -224,7 +227,7 @@ export const SpotifyPlayerBar: React.FC = () => {
               disabled={Boolean(activeRadio)}
               title="Repeat"
               className={`w-8 h-8 rounded-full flex items-center justify-center cursor-pointer transition-colors disabled:opacity-30 ${
-                repeatMode !== 'off' ? 'text-[#FF3366]' : 'text-zinc-400 hover:text-white'
+                repeatMode !== 'off' ? 'text-[#34D399]' : 'text-zinc-400 hover:text-white'
               }`}
             >
               {repeatMode === 'one' ? (
@@ -247,7 +250,7 @@ export const SpotifyPlayerBar: React.FC = () => {
               disabled={Boolean(activeRadio)}
               onChange={(e) => requestSeek(Number(e.target.value))}
               aria-label={m.playerRegionAria}
-              className="flex-1 h-1 accent-[#FF3366] bg-white/15 rounded-full cursor-pointer"
+              className="flex-1 h-1 accent-[#10B981] bg-white/15 rounded-full cursor-pointer"
             />
             <span className="w-9">
               {activeRadio ? '24/7' : formatMusicTime(effectiveDuration)}
@@ -257,6 +260,23 @@ export const SpotifyPlayerBar: React.FC = () => {
 
         {/* Mobile Compact Transport */}
         <div className="flex sm:hidden items-center gap-1 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              toggleSpatial8d();
+            }}
+            aria-label={m.spatial8dBtn}
+            aria-pressed={spatial8dEnabled}
+            className={`h-9 px-2.5 rounded-full text-[11px] font-black tracking-wide inline-flex items-center gap-1 cursor-pointer transition-all ${
+              spatial8dEnabled
+                ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_0_14px_rgba(16,185,129,0.45)]'
+                : 'bg-white/[0.06] text-zinc-300 hover:text-white'
+            }`}
+          >
+            <Headphones className="w-3.5 h-3.5" />
+            <span>8D</span>
+          </button>
           {currentTrack && (
             <button
               type="button"
@@ -265,7 +285,7 @@ export const SpotifyPlayerBar: React.FC = () => {
                 setShowNowPlayingModal(true);
               }}
               aria-label={m.lyricsBtn}
-              className="min-w-11 min-h-11 rounded-full flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
+              className="min-w-10 min-h-10 rounded-full flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
             >
               <Mic2 className="w-4.5 h-4.5" />
             </button>
@@ -277,7 +297,7 @@ export const SpotifyPlayerBar: React.FC = () => {
               togglePlayPause();
             }}
             aria-label={isPlaying ? m.pause : m.playNow}
-            className="min-w-11 min-h-11 rounded-full bg-gradient-to-br from-[#FF3366] to-[#FF6B4A] text-white flex items-center justify-center cursor-pointer active:scale-95 transition-transform shadow-[0_6px_18px_rgba(255,51,102,0.4)]"
+            className="min-w-11 min-h-11 rounded-full bg-gradient-to-br from-[#10B981] to-[#22D3EE] text-[#03130E] flex items-center justify-center cursor-pointer active:scale-95 transition-transform shadow-[0_6px_18px_rgba(16,185,129,0.38)]"
           >
             {isPlaying ? (
               <Pause className="w-5 h-5 fill-current" />
@@ -287,8 +307,25 @@ export const SpotifyPlayerBar: React.FC = () => {
           </button>
         </div>
 
-        {/* Right: Video Toggle, Lyrics, EQ, Queue, Volume, Expand */}
-        <div className="hidden sm:flex items-center justify-end gap-1.5 sm:w-[29%]">
+        {/* Right: 8D Audio, Video Toggle, Lyrics, EQ, Queue, Volume, Expand */}
+        <div className="hidden sm:flex items-center justify-end gap-1.5 sm:w-[32%]">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              toggleSpatial8d();
+            }}
+            aria-pressed={spatial8dEnabled}
+            title={m.spatial8dTitle}
+            className={`h-8 px-2.5 rounded-full inline-flex items-center gap-1.5 text-[11px] font-black tracking-wide cursor-pointer transition-all whitespace-nowrap shrink-0 ${
+              spatial8dEnabled
+                ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_0_16px_rgba(16,185,129,0.45)]'
+                : 'bg-white/[0.06] text-zinc-300 hover:text-white hover:bg-white/[0.12] border border-white/10'
+            }`}
+          >
+            <Headphones className="w-3.5 h-3.5" />
+            <span>8D</span>
+          </button>
           {currentTrack && (resolvedPlayback?.youtubeMvId || resolvedPlayback?.youtubeVideoId) && (
             <button
               type="button"
@@ -299,7 +336,7 @@ export const SpotifyPlayerBar: React.FC = () => {
               title={m.videoBtn}
               className={`h-9 px-2.5 rounded-xl flex items-center gap-1.5 text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap ${
                 viewMode === 'video'
-                  ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white'
+                  ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] font-bold'
                   : 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
               }`}
             >
@@ -316,7 +353,7 @@ export const SpotifyPlayerBar: React.FC = () => {
                 setShowNowPlayingModal(true);
               }}
               title={m.lyricsBtn}
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-300 hover:text-[#FF6B4A] hover:bg-white/[0.06] cursor-pointer transition-colors"
+              className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-300 hover:text-[#34D399] hover:bg-white/[0.06] cursor-pointer transition-colors"
             >
               <Mic2 className="w-4 h-4" />
             </button>
@@ -326,7 +363,7 @@ export const SpotifyPlayerBar: React.FC = () => {
             type="button"
             onClick={() => setShowEqModal(true)}
             title={m.eqBtn}
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-300 hover:text-[#FF6B4A] hover:bg-white/[0.06] cursor-pointer transition-colors"
+            className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-300 hover:text-[#34D399] hover:bg-white/[0.06] cursor-pointer transition-colors"
           >
             <Sliders className="w-4 h-4" />
           </button>
@@ -337,7 +374,7 @@ export const SpotifyPlayerBar: React.FC = () => {
             title={m.queueTitle}
             className={`w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer transition-colors ${
               showQueueDrawer
-                ? 'text-[#FF3366] bg-[#FF3366]/15'
+                ? 'text-[#34D399] bg-[#10B981]/15'
                 : 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
             }`}
           >
@@ -365,7 +402,7 @@ export const SpotifyPlayerBar: React.FC = () => {
               value={isMuted ? 0 : volume}
               onChange={(e) => setVolume(Number(e.target.value))}
               aria-label="Volume"
-              className="w-20 h-1 accent-[#FF3366] bg-white/15 rounded-full cursor-pointer"
+              className="w-20 h-1 accent-[#10B981] bg-white/15 rounded-full cursor-pointer"
             />
           </div>
 

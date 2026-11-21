@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ChevronDown,
   Clock,
+  Headphones,
   Heart,
   ListMusic,
   Mic2,
@@ -18,8 +19,8 @@ import {
   Video,
 } from 'lucide-react';
 import { useMusicStore } from '../../store/useMusicStore';
-import type { EqPresetId, LyricsPayload } from '../../types/music';
-import { EQ_PRESETS, sampleMusicSpectrum } from './MusicAudioEngine';
+import type { EqPresetId, LyricsPayload, Spatial8dMode } from '../../types/music';
+import { EQ_PRESETS, getSpatial8dTelemetry, sampleMusicSpectrum } from './MusicAudioEngine';
 import { formatMusicTime } from './SpotifyPlayerBar';
 import { useBackInterceptor } from '../../lib/backInterceptor';
 import { triggerHaptic } from '../../utils/haptics';
@@ -31,6 +32,10 @@ export const EqAndTimerModal: React.FC = () => {
   const setShowEqModal = useMusicStore((s) => s.setShowEqModal);
   const eqPreset = useMusicStore((s) => s.eqPreset);
   const setEqPreset = useMusicStore((s) => s.setEqPreset);
+  const spatial8dEnabled = useMusicStore((s) => s.spatial8dEnabled);
+  const toggleSpatial8d = useMusicStore((s) => s.toggleSpatial8d);
+  const spatial8dMode = useMusicStore((s) => s.spatial8dMode);
+  const setSpatial8dMode = useMusicStore((s) => s.setSpatial8dMode);
   const playbackRate = useMusicStore((s) => s.playbackRate);
   const setPlaybackRate = useMusicStore((s) => s.setPlaybackRate);
   const sleepTimerEndsAt = useMusicStore((s) => s.sleepTimerEndsAt);
@@ -49,11 +54,11 @@ export const EqAndTimerModal: React.FC = () => {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-[#0F0814] border border-[#FF3366]/20 p-5 sm:p-6 space-y-5 shadow-2xl"
+        className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl bg-[#090F18] border border-[#10B981]/25 p-5 sm:p-6 space-y-5 shadow-2xl"
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <span className="w-9 h-9 rounded-xl bg-[#FF3366]/15 border border-[#FF3366]/35 flex items-center justify-center text-[#FF6B4A]">
+            <span className="w-9 h-9 rounded-xl bg-[#10B981]/15 border border-[#10B981]/35 flex items-center justify-center text-[#34D399]">
               <Sliders className="w-4.5 h-4.5" />
             </span>
             <div>
@@ -68,6 +73,78 @@ export const EqAndTimerModal: React.FC = () => {
           >
             <ChevronDown className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* 8D Binaural Spatial Studio */}
+        <div
+          className={`rounded-2xl border p-3.5 space-y-3 transition-colors ${
+            spatial8dEnabled
+              ? 'bg-[#10B981]/12 border-[#10B981]/40'
+              : 'bg-white/[0.03] border-white/10'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span
+                className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                  spatial8dEnabled
+                    ? 'bg-gradient-to-br from-[#10B981] to-[#22D3EE] text-[#03130E]'
+                    : 'bg-white/[0.06] text-zinc-300'
+                }`}
+              >
+                <Headphones className="w-4.5 h-4.5" />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs sm:text-sm font-bold text-white truncate">{m.spatial8dTitle}</p>
+                <p className="text-[11px] text-zinc-400 leading-snug">{m.spatial8dSub}</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                toggleSpatial8d();
+              }}
+              aria-pressed={spatial8dEnabled}
+              className={`h-8 px-3.5 rounded-full text-xs font-black tracking-wide cursor-pointer shrink-0 transition-all ${
+                spatial8dEnabled
+                  ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.4)]'
+                  : 'bg-white/10 text-zinc-200 hover:bg-white/18'
+              }`}
+            >
+              {spatial8dEnabled ? 'ON' : 'OFF'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            {(
+              [
+                { id: 'orbit', label: m.spatial8dOrbit },
+                { id: 'concert', label: m.spatial8dConcert },
+                { id: 'club', label: m.spatial8dClub },
+              ] as Array<{ id: Spatial8dMode; label: string }>
+            ).map((opt) => {
+              const active = spatial8dMode === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    if (!spatial8dEnabled) toggleSpatial8d();
+                    setSpatial8dMode(opt.id);
+                  }}
+                  className={`min-h-9 px-2 rounded-xl border text-[11px] font-bold cursor-pointer transition-all ${
+                    active && spatial8dEnabled
+                      ? 'bg-[#10B981]/25 border-[#10B981] text-[#6EE7B7]'
+                      : 'bg-white/[0.04] border-white/10 text-zinc-300 hover:bg-white/[0.08]'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="space-y-2">
@@ -85,7 +162,7 @@ export const EqAndTimerModal: React.FC = () => {
                   }}
                   className={`min-h-11 px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
                     active
-                      ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] border-[#FF3366] text-white shadow-[0_6px_18px_rgba(255,51,102,0.35)]'
+                      ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] border-[#10B981] text-[#03130E] font-bold shadow-[0_6px_18px_rgba(16,185,129,0.32)]'
                       : 'bg-white/[0.04] border-white/10 text-zinc-200 hover:bg-white/[0.08]'
                   }`}
                 >
@@ -106,7 +183,7 @@ export const EqAndTimerModal: React.FC = () => {
                 onClick={() => setPlaybackRate(rate)}
                 className={`min-h-10 rounded-xl border text-xs font-bold tabular-nums cursor-pointer transition-all ${
                   playbackRate === rate
-                    ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] border-[#FF3366] text-white'
+                    ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] border-[#10B981] text-[#03130E]'
                     : 'bg-white/[0.04] border-white/10 text-zinc-200 hover:bg-white/[0.08]'
                 }`}
               >
@@ -122,7 +199,7 @@ export const EqAndTimerModal: React.FC = () => {
               <Clock className="w-3.5 h-3.5" /> {m.sleepTimer}
             </span>
             {sleepTimerEndsAt && (
-              <span className="text-[#FF6B4A] font-semibold tabular-nums">
+              <span className="text-[#34D399] font-semibold tabular-nums">
                 {Math.max(1, Math.ceil((sleepTimerEndsAt - Date.now()) / 60000))} {m.minsRemaining}
               </span>
             )}
@@ -175,12 +252,15 @@ export const FullScreenNowPlayingModal: React.FC<{
   const toggleLikeTrack = useMusicStore((s) => s.toggleLikeTrack);
   const setShowQueueDrawer = useMusicStore((s) => s.setShowQueueDrawer);
   const setShowEqModal = useMusicStore((s) => s.setShowEqModal);
+  const spatial8dEnabled = useMusicStore((s) => s.spatial8dEnabled);
+  const toggleSpatial8d = useMusicStore((s) => s.toggleSpatial8d);
   const musicLang = useMusicStore((s) => s.musicLang);
   const m = MUSIC_I18N[musicLang];
 
   const [lyrics, setLyrics] = useState<LyricsPayload | null>(null);
   const [lyricsLoading, setLyricsLoading] = useState(false);
   const [spectrumBars, setSpectrumBars] = useState<number[]>(() => Array.from({ length: 24 }, () => 0.16));
+  const [orbitDeg, setOrbitDeg] = useState(0);
   const activeLineRef = useRef<HTMLButtonElement | null>(null);
 
   useBackInterceptor(
@@ -223,13 +303,13 @@ export const FullScreenNowPlayingModal: React.FC<{
     };
   }, [currentTrack?.id]);
 
-  // Animate FFT visualizer when open in artwork mode
+  // Animate FFT visualizer & 8D spatial orbit radar when open in artwork mode
   useEffect(() => {
     if (!showNowPlayingModal || nowPlayingTab !== 'artwork' || !isPlaying) return;
     let raf = 0;
     let lastTick = 0;
     const loop = (ts: number) => {
-      if (ts - lastTick > 65) {
+      if (ts - lastTick > 55) {
         lastTick = ts;
         const sampled = sampleMusicSpectrum(24);
         const allFlat = sampled.every((v) => v <= 0.15);
@@ -240,6 +320,8 @@ export const FullScreenNowPlayingModal: React.FC<{
         } else {
           setSpectrumBars(sampled);
         }
+        const telemetry = getSpatial8dTelemetry();
+        setOrbitDeg((telemetry.angleRad * 180) / Math.PI);
       }
       raf = requestAnimationFrame(loop);
     };
@@ -278,7 +360,7 @@ export const FullScreenNowPlayingModal: React.FC<{
   );
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#07050A] text-white flex flex-col overflow-hidden animate-fade-in">
+    <div className="fixed inset-0 z-50 bg-[#05080D] text-white flex flex-col overflow-hidden animate-fade-in">
       {/* Ambient Blurred Album Background */}
       {coverSrc ? (
         <div
@@ -296,7 +378,7 @@ export const FullScreenNowPlayingModal: React.FC<{
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            'radial-gradient(ellipse 80% 55% at 50% 25%, rgba(255,51,102,0.18), rgba(245,158,11,0.08) 45%, rgba(7,5,10,0.92) 85%), linear-gradient(to bottom, rgba(7,5,10,0.45), rgba(7,5,10,0.88) 70%, #07050A)',
+            'radial-gradient(ellipse 80% 55% at 50% 25%, rgba(16,185,129,0.2), rgba(34,211,238,0.09) 45%, rgba(5,8,13,0.92) 85%), linear-gradient(to bottom, rgba(5,8,13,0.45), rgba(5,8,13,0.88) 70%, #05080D)',
         }}
       />
 
@@ -306,7 +388,7 @@ export const FullScreenNowPlayingModal: React.FC<{
           type="button"
           onClick={() => setShowNowPlayingModal(false)}
           aria-label="Minimizar reproductor"
-          className="min-w-11 min-h-11 rounded-full bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-[#FF3366]"
+          className="min-w-11 min-h-11 rounded-full bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors focus-visible:ring-2 focus-visible:ring-[#10B981]"
         >
           <ChevronDown className="w-5 h-5" />
         </button>
@@ -318,7 +400,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             onClick={() => setNowPlayingTab('artwork')}
             className={`px-3.5 py-1.5 rounded-full text-xs font-bold cursor-pointer transition-all whitespace-nowrap ${
               nowPlayingTab === 'artwork'
-                ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white shadow-[0_4px_14px_rgba(255,51,102,0.4)]'
+                ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.35)]'
                 : 'text-zinc-300 hover:text-white'
             }`}
           >
@@ -330,7 +412,7 @@ export const FullScreenNowPlayingModal: React.FC<{
               onClick={() => setNowPlayingTab('lyrics')}
               className={`px-3.5 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
                 nowPlayingTab === 'lyrics'
-                  ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white shadow-[0_4px_14px_rgba(255,51,102,0.4)]'
+                  ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.35)]'
                   : 'text-zinc-300 hover:text-white'
               }`}
             >
@@ -344,7 +426,7 @@ export const FullScreenNowPlayingModal: React.FC<{
               onClick={() => setNowPlayingTab('video')}
               className={`px-3.5 py-1.5 rounded-full text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
                 nowPlayingTab === 'video'
-                  ? 'bg-gradient-to-r from-[#FF3366] to-[#FF6B4A] text-white shadow-[0_4px_14px_rgba(255,51,102,0.4)]'
+                  ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.35)]'
                   : 'text-zinc-300 hover:text-white'
               }`}
             >
@@ -355,6 +437,23 @@ export const FullScreenNowPlayingModal: React.FC<{
         </div>
 
         <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('medium');
+              toggleSpatial8d();
+            }}
+            aria-pressed={spatial8dEnabled}
+            title={m.spatial8dTitle}
+            className={`h-11 px-3.5 rounded-full text-xs font-black tracking-wide inline-flex items-center gap-1.5 cursor-pointer transition-all ${
+              spatial8dEnabled
+                ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_0_20px_rgba(16,185,129,0.5)]'
+                : 'bg-white/[0.08] hover:bg-white/15 text-zinc-200'
+            }`}
+          >
+            <Headphones className="w-4 h-4" />
+            <span>8D</span>
+          </button>
           {onOpenPlaylistPicker && currentTrack && (
             <button
               type="button"
@@ -381,6 +480,19 @@ export const FullScreenNowPlayingModal: React.FC<{
         {nowPlayingTab === 'artwork' && (
           <div className="w-full max-w-md flex flex-col items-center gap-6">
             <div className="relative flex items-center justify-center">
+              {spatial8dEnabled && (
+                <div
+                  aria-hidden="true"
+                  className="absolute -inset-6 sm:-inset-7 rounded-full border border-[#22D3EE]/30 pointer-events-none"
+                >
+                  <div
+                    className="w-full h-full relative"
+                    style={{ transform: `rotate(${orbitDeg}deg)` }}
+                  >
+                    <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] shadow-[0_0_16px_rgba(34,211,238,0.95)]" />
+                  </div>
+                </div>
+              )}
               <div
                 aria-hidden="true"
                 className={`absolute -inset-4 rounded-[36px] blur-2xl transition-opacity duration-700 ${
@@ -388,10 +500,10 @@ export const FullScreenNowPlayingModal: React.FC<{
                 }`}
                 style={{
                   background:
-                    'radial-gradient(circle, rgba(255,51,102,0.38) 0%, rgba(245,158,11,0.2) 60%, transparent 100%)',
+                    'radial-gradient(circle, rgba(16,185,129,0.36) 0%, rgba(34,211,238,0.18) 60%, transparent 100%)',
                 }}
               />
-              <div className="relative w-64 h-64 sm:w-80 sm:h-80 rounded-3xl overflow-hidden bg-[#140A18] border border-white/20 shadow-[0_28px_72px_rgba(0,0,0,0.88)] flex items-center justify-center">
+              <div className="relative w-64 h-64 sm:w-80 sm:h-80 rounded-3xl overflow-hidden bg-[#0A111B] border border-white/20 shadow-[0_28px_72px_rgba(0,0,0,0.88)] flex items-center justify-center">
                 {coverSrc ? (
                   <img
                     src={coverSrc}
@@ -406,9 +518,15 @@ export const FullScreenNowPlayingModal: React.FC<{
                   />
                 ) : null}
                 {activeRadio ? (
-                  <Radio className="w-16 h-16 text-[#FF6B4A] absolute pointer-events-none opacity-85" />
+                  <Radio className="w-16 h-16 text-[#22D3EE] absolute pointer-events-none opacity-85" />
                 ) : (
                   <RiffanMusicLogo variant="mark" size={76} withFrame={false} className="-z-10" />
+                )}
+                {spatial8dEnabled && (
+                  <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-[#05080D]/80 backdrop-blur-md border border-[#10B981]/45 text-[10px] font-black tracking-wider text-[#6EE7B7] inline-flex items-center gap-1">
+                    <Headphones className="w-3 h-3 text-[#22D3EE]" />
+                    {m.spatial8dBadgeLive}
+                  </span>
                 )}
               </div>
             </div>
@@ -418,7 +536,7 @@ export const FullScreenNowPlayingModal: React.FC<{
               {spectrumBars.map((val, i) => (
                 <span
                   key={i}
-                  className="w-1.5 rounded-full bg-gradient-to-t from-[#FF3366] via-[#FF6B4A] to-[#F59E0B] transition-[height] duration-75"
+                  className="w-1.5 rounded-full bg-gradient-to-t from-[#059669] via-[#10B981] to-[#22D3EE] transition-[height] duration-75"
                   style={{
                     height: `${Math.round(val * 100)}%`,
                     opacity: 0.45 + val * 0.55,
@@ -435,7 +553,7 @@ export const FullScreenNowPlayingModal: React.FC<{
               <div className="py-20 text-zinc-400 text-sm">{m.searchingLyrics}</div>
             ) : !lyrics?.found ? (
               <div className="py-20 space-y-2">
-                <Mic2 className="w-10 h-10 text-[#FF6B4A]/60 mx-auto" />
+                <Mic2 className="w-10 h-10 text-[#34D399]/60 mx-auto" />
                 <p className="text-base font-semibold text-zinc-200">
                   {m.noLyricsTitle}
                 </p>
@@ -457,7 +575,7 @@ export const FullScreenNowPlayingModal: React.FC<{
                     }}
                     className={`block w-full text-center px-3 py-2 rounded-2xl transition-all duration-300 cursor-pointer ${
                       isActive
-                        ? 'text-white text-2xl sm:text-4xl font-extrabold scale-[1.03] drop-shadow-[0_0_24px_rgba(255,51,102,0.55)] bg-white/[0.04]'
+                        ? 'text-white text-2xl sm:text-4xl font-extrabold scale-[1.03] drop-shadow-[0_0_24px_rgba(16,185,129,0.55)] bg-white/[0.04]'
                         : isPast
                         ? 'text-zinc-400/55 text-base sm:text-xl font-semibold hover:text-white'
                         : 'text-zinc-300/75 text-base sm:text-xl font-semibold hover:text-white'
@@ -501,7 +619,7 @@ export const FullScreenNowPlayingModal: React.FC<{
               }}
               aria-label={isLiked ? m.likeRemove : m.likeAdd}
               className={`min-w-11 min-h-11 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-90 ${
-                isLiked ? 'text-[#FF3366]' : 'text-zinc-400 hover:text-white'
+                isLiked ? 'text-[#34D399]' : 'text-zinc-400 hover:text-white'
               }`}
             >
               <Heart className={`w-6 h-6 ${isLiked ? 'fill-current' : ''}`} />
@@ -519,7 +637,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             disabled={Boolean(activeRadio)}
             onChange={(e) => requestSeek(Number(e.target.value))}
             aria-label={m.playerRegionAria}
-            className="w-full h-1.5 accent-[#FF3366] bg-white/20 rounded-full cursor-pointer"
+            className="w-full h-1.5 accent-[#10B981] bg-white/20 rounded-full cursor-pointer"
           />
           <div className="flex items-center justify-between text-xs text-zinc-400 tabular-nums">
             <span>{activeRadio ? 'LIVE' : formatMusicTime(currentTime)}</span>
@@ -540,7 +658,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             onClick={toggleShuffle}
             disabled={Boolean(activeRadio)}
             className={`min-w-11 min-h-11 rounded-full flex items-center justify-center cursor-pointer disabled:opacity-30 ${
-              shuffle ? 'text-[#FF3366]' : 'text-zinc-400 hover:text-white'
+              shuffle ? 'text-[#34D399]' : 'text-zinc-400 hover:text-white'
             }`}
           >
             <Shuffle className="w-5 h-5" />
@@ -562,7 +680,7 @@ export const FullScreenNowPlayingModal: React.FC<{
               togglePlayPause();
             }}
             aria-label={isPlaying ? m.pause : m.playNow}
-            className="w-16 h-16 rounded-full bg-gradient-to-br from-[#FF3366] via-[#FF544F] to-[#F59E0B] hover:scale-105 text-white flex items-center justify-center shadow-[0_14px_36px_rgba(255,51,102,0.5)] cursor-pointer transition-transform active:scale-95"
+            className="w-16 h-16 rounded-full bg-gradient-to-br from-[#10B981] via-[#14B8A6] to-[#22D3EE] hover:scale-105 text-[#03130E] flex items-center justify-center shadow-[0_14px_36px_rgba(16,185,129,0.45)] cursor-pointer transition-transform active:scale-95"
           >
             {isPlaying ? (
               <Pause className="w-7 h-7 fill-current" />
@@ -598,7 +716,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             onClick={cycleRepeat}
             disabled={Boolean(activeRadio)}
             className={`min-w-11 min-h-11 rounded-full flex items-center justify-center cursor-pointer disabled:opacity-30 ${
-              repeatMode !== 'off' ? 'text-[#FF3366]' : 'text-zinc-400 hover:text-white'
+              repeatMode !== 'off' ? 'text-[#34D399]' : 'text-zinc-400 hover:text-white'
             }`}
           >
             {repeatMode === 'one' ? (

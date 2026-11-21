@@ -58,7 +58,15 @@ export function registerMusicRoutes(app: express.Express): void {
     }
     try {
       const data = await searchMusicCatalog(q, type);
-      res.setHeader('Cache-Control', 'public, max-age=120');
+      const countOf = (v: unknown) => (Array.isArray(v) ? v.length : 0);
+      const hasAny =
+        countOf(data.tracks) +
+          countOf(data.albums) +
+          countOf(data.artists) +
+          countOf(data.playlists) +
+          countOf(data.radios) >
+        0;
+      res.setHeader('Cache-Control', hasAny ? 'public, max-age=120' : 'no-store');
       res.json({ success: true, ...data });
     } catch {
       res.status(500).json({ success: false, error: 'Music search failed' });
@@ -155,6 +163,7 @@ export function registerMusicRoutes(app: express.Express): void {
       res.status(400).json({ success: false, error: 'Missing title or artist' });
       return;
     }
+    const preferAudio = req.query.preferAudio === '1' || req.query.preferAudio === 'true';
     try {
       const resolved = await resolveTrackPlayback({
         title,
@@ -164,6 +173,7 @@ export function registerMusicRoutes(app: express.Express): void {
         soundcloudId: String(req.query.scId || '').trim() || undefined,
         audiusId: String(req.query.audiusId || '').trim() || undefined,
         youtubeVideoId: String(req.query.ytId || '').trim() || undefined,
+        preferAudio,
       });
       res.setHeader('Cache-Control', 'no-store');
       res.json({ success: true, ...resolved });

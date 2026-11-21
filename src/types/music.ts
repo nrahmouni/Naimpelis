@@ -93,6 +93,7 @@ export interface ResolvedTrackPlayback {
   youtubeMvId?: string;
   previewUrl?: string;
   fullLength: boolean;
+  spatial8dYtFallback?: boolean;
 }
 
 export interface UserMusicPlaylist {
@@ -104,6 +105,7 @@ export interface UserMusicPlaylist {
 }
 
 export type EqPresetId = 'flat' | 'bass' | 'vocal' | 'club' | 'acoustic';
+export type Spatial8dMode = 'orbit' | 'concert' | 'club';
 export type MusicRepeatMode = 'off' | 'all' | 'one';
 export type MusicViewMode = 'audio' | 'video';
 
