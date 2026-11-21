@@ -25,7 +25,7 @@ export const POSTER_I18N = {
     f5Title: 'Asistente por Voz con IA',
     f5Desc: '«Hola, ¿qué quieres ver hoy?» Pide canales, capítulos o partidos con tu voz.',
     cta: 'Descarga gratis el APK o disfruta online en cualquier navegador',
-    footerUrl: 'riffantv.ai.studio · Cine, Fútbol y Salas Multijugador',
+    footerUrl: 'riffan.ai.studio · Cine, Fútbol y Salas Multijugador',
   },
   en: {
     tag: 'THE ULTIMATE STREAMING PLATFORM',
@@ -43,7 +43,7 @@ export const POSTER_I18N = {
     f5Title: 'AI Voice Assistant',
     f5Desc: '“Hi, what do you want to watch today?” Instant voice tuning for channels, episodes, and matches.',
     cta: 'Download free Android & TV APK or watch instantly in any browser',
-    footerUrl: 'riffantv.ai.studio · Cinema, World Football & Live Watch Parties',
+    footerUrl: 'riffan.ai.studio · Cinema, World Football & Live Watch Parties',
   },
   zh: {
     tag: '全能高清流媒体与体育互动平台',
@@ -61,7 +61,7 @@ export const POSTER_I18N = {
     f5Title: 'AI智能声控助手',
     f5Desc: '“你好！今天想看什么？” 一句话声控点播剧集、换台或查询焦点赛事。',
     cta: '立即免费下载电视端APK或在浏览器直接观看',
-    footerUrl: 'riffantv.ai.studio · 高清电影 · 顶级足球直播 · 多人连麦影院',
+    footerUrl: 'riffan.ai.studio · 高清电影 · 顶级足球直播 · 多人连麦影院',
   },
 };
 
@@ -284,7 +284,7 @@ export const DesignPostersTab: React.FC<DesignPostersTabProps> = ({
             </div>
 
             <div className="w-12 h-12 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 shadow-lg">
-              <QRCodeSVG value="https://riffantv.ai.studio" size={40} level="M" includeMargin={false} />
+              <QRCodeSVG value="https://riffan.ai.studio/" size={40} level="M" includeMargin={false} />
             </div>
           </div>
         </div>

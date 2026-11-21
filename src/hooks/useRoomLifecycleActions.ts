@@ -21,6 +21,7 @@ import {
   buildShortInviteUrl,
   generateShortRoomCode,
   parseRoomFromWindow,
+  resolvePublicLinkOrigin,
 } from '../utils/shortLink';
 import { INITIAL_VIDEO_STATE, normalizeDeepLinkGameType } from '../utils/appSessionHelpers';
 import { getLastBackPopHandledAt } from '../lib/backInterceptor';
@@ -247,7 +248,7 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
             const u = new URL(window.location.href);
             u.searchParams.set('room', freshCode);
             window.history.replaceState({}, '', `${u.pathname}${u.search}${u.hash}`);
-            const publicOrigin = buildShortInviteUrl(freshCode).replace(/\/[^/]+$/, '');
+            const publicOrigin = resolvePublicLinkOrigin();
             inviteUrl = `${publicOrigin}${u.pathname}${u.search}`;
           } catch {
             // fallback to short invite URL

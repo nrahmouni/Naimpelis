@@ -216,7 +216,7 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
 }) => {
   const handleShareCurrentMedia = () => {
     let target: CanonicalLinkInput = { kind: 'home' };
-    if (effectiveVideoState.seriesMeta?.tmdbId) {
+    if (effectiveVideoState.seriesMeta) {
       target = {
         kind: 'series',
         tmdbId: effectiveVideoState.seriesMeta.tmdbId,
@@ -224,7 +224,7 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
         season: effectiveVideoState.seriesMeta.season,
         episode: effectiveVideoState.seriesMeta.episode,
       };
-    } else if (activeMovieContext?.tmdbId) {
+    } else if (activeMovieContext?.tmdbId || activeMovieContext?.title) {
       target = {
         kind: 'movie',
         tmdbId: activeMovieContext.tmdbId,

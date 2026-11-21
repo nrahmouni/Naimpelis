@@ -113,9 +113,12 @@ function getPublicOrigin(req: express.Request): string {
   if (hostWithoutPort === 'localhost' || hostWithoutPort === '127.0.0.1' || hostWithoutPort.startsWith('192.168.')) {
     return `${rawProto}://${rawHost}`;
   }
-  const domain = rawHost.includes('run.app') || rawHost.includes('ai.studio') || rawHost.includes('riffantv.ai.studio')
-    ? rawHost
-    : (ENV.publicDomain || 'riffantv.ai.studio');
+  const domain =
+    rawHost.includes('run.app') ||
+    rawHost.includes('ai.studio') ||
+    rawHost.includes('riffan.ai.studio')
+      ? rawHost
+      : (ENV.publicDomain || 'riffan.ai.studio');
   const proto = domain.includes('localhost') ? 'http' : 'https';
   return `${proto}://${domain}`;
 }

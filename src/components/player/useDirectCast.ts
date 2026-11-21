@@ -3,6 +3,7 @@ import type Hls from 'hls.js';
 import type { AppLanguage, TvRemoteCommandType, VideoState } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
+import { isPrivateDevPreviewHost, resolvePublicLinkOrigin } from '../../utils/shortLink';
 import type { CastSessionLike, WebKitVideoElement } from './playerTypes';
 
 export function useDirectCast(params: {
@@ -42,11 +43,8 @@ export function useDirectCast(params: {
 
   const getCastPublicOrigin = useCallback(() => {
     if (typeof window === 'undefined') return '';
-    if (
-      /^ais-dev-/i.test(window.location.hostname || '') &&
-      import.meta.env?.VITE_PUBLIC_APP_HOST
-    ) {
-      return `https://${String(import.meta.env.VITE_PUBLIC_APP_HOST)}`;
+    if (isPrivateDevPreviewHost()) {
+      return resolvePublicLinkOrigin();
     }
     return window.location.origin;
   }, []);

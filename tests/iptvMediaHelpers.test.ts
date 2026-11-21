@@ -77,7 +77,7 @@ describe('IPTV Media Helpers & Smart TV Compatibility', () => {
       'https://directes3-tv-int.3catdirectes.cat/',
       false,
       false,
-      'https://riffantv.ai.studio'
+      'https://riffan.ai.studio'
     );
 
     expect(rewritten).not.toContain('TYPE=SUBTITLES');
@@ -196,8 +196,8 @@ describe('IPTV Media Helpers & Smart TV Compatibility', () => {
         streamUrl: '/api/dvb-live/dvb_abc123/index.m3u8',
         expiresAt: Date.now() + 30_000,
       },
-      () => 'https://riffantv.ai.studio'
+      () => 'https://riffan.ai.studio'
     );
-    expect(out.streamUrl).toBe('https://riffantv.ai.studio/api/dvb-live/dvb_abc123/index.m3u8');
+    expect(out.streamUrl).toBe('https://riffan.ai.studio/api/dvb-live/dvb_abc123/index.m3u8');
   });
 });

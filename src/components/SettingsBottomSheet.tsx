@@ -22,6 +22,7 @@ import type { AppLanguage } from '../types';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { usePWAInstall } from '../utils/usePWAInstall';
+import { buildTvPairingUrl } from '../utils/shortLink';
 import type { EffectiveViewMode } from './MobileViewportGuard';
 import { BottomSheet, SecondaryButton, StandardInput } from './ui/DesignSystem';
 import { PWAInstallOptionsSheet } from './PWAInstallPrompt';
@@ -82,12 +83,9 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
   const importedTasteCount =
     tasteProfile.favoriteArtists.length + tasteProfile.favoriteGenres.length;
 
-  const tvUrl =
-    typeof window !== 'undefined' && roomId
-      ? `${window.location.origin}/tv?room=${encodeURIComponent(roomId)}`
-      : typeof window !== 'undefined'
-      ? `${window.location.origin}/tv`
-      : '';
+  const tvUrl = roomId
+    ? `${buildTvPairingUrl()}?room=${encodeURIComponent(roomId)}`
+    : buildTvPairingUrl();
 
   const rowClass =
     'w-full min-h-13 px-4 py-2.5 rounded-2xl bg-[#14141C]/80 hover:bg-[#14141C] border border-white/[0.08] flex items-center justify-between gap-3 text-left transition-all';

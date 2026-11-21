@@ -3,6 +3,7 @@ import {
   buildCanonicalShareUrl,
   type CanonicalLinkInput,
 } from '../shared/dedicatedRoutes';
+import { resolvePublicLinkOrigin } from './shortLink';
 import { useAppStore } from '../store/useAppStore';
 
 let toastTimer: ReturnType<typeof setTimeout> | null = null;
@@ -72,7 +73,10 @@ export async function shareDedicatedLink({
   toastLabel,
   preferClipboardOnly = false,
 }: ShareDedicatedLinkOptions): Promise<{ url: string; copied: boolean }> {
-  const url = buildCanonicalShareUrl(target, { roomId });
+  const url = buildCanonicalShareUrl(target, {
+    roomId,
+    origin: resolvePublicLinkOrigin(),
+  });
   triggerHaptic('medium');
 
   if (!preferClipboardOnly && isLikelyMobileNativeShareDevice()) {

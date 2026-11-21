@@ -5,7 +5,7 @@
  * Shared across frontend (React router / share actions) and backend (deepLinkResolver / OG SSR).
  */
 
-export const PUBLIC_PRODUCTION_DOMAIN = 'riffantv.ai.studio';
+export const PUBLIC_PRODUCTION_DOMAIN = 'riffan.ai.studio';
 export const PUBLIC_PRODUCTION_ORIGIN = `https://${PUBLIC_PRODUCTION_DOMAIN}`;
 
 export function slugify(text: string): string {
@@ -1049,11 +1049,8 @@ export function buildCanonicalRoute(
 
 export function resolveConfiguredPublicOrigin(): string {
   if (typeof window !== 'undefined') {
-    const host = window.location.hostname || '';
-    if (/^ais-dev-/i.test(host) || /^localhost$/i.test(host) || /^127\.0\.0\.1$/.test(host)) {
-      return PUBLIC_PRODUCTION_ORIGIN;
-    }
-    if (host === PUBLIC_PRODUCTION_DOMAIN || host.endsWith('.riffantv.ai.studio')) {
+    const host = (window.location.hostname || '').toLowerCase();
+    if (host === PUBLIC_PRODUCTION_DOMAIN || host.endsWith(`.${PUBLIC_PRODUCTION_DOMAIN}`)) {
       return window.location.origin;
     }
   }

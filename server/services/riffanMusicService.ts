@@ -223,7 +223,7 @@ async function fetchJsonSafe<T>(url: string, timeoutMs = 6500, headers: Record<s
   try {
     const res = await fetch(url, {
       headers: {
-        'User-Agent': 'RiffanMusic/1.0 (+https://riffantv.ai.studio)',
+        'User-Agent': 'RiffanMusic/1.0 (+https://riffan.ai.studio)',
         Accept: 'application/json',
         ...headers,
       },

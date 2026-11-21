@@ -11,7 +11,7 @@ const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 
 /**
  * Generates a compact, readable 4-character room code (e.g. "k8x4")
- * so invite links on riffantv.ai.studio are ultra-short and never collide
+ * so invite links on riffan.ai.studio are ultra-short and never collide
  * with reserved dedicated routes.
  */
 export function generateShortRoomCode(length = 4): string {
@@ -153,7 +153,7 @@ export function parseRoomFromWindow(): {
 
 /**
  * Parses either a raw code ("k8x4", "#k8x4") or a pasted full invite URL
- * ("https://riffantv.ai.studio/k8x4").
+ * ("https://riffan.ai.studio/k8x4").
  */
 export function extractRoomCodeFromInput(raw: string): string {
   const trimmed = raw.trim();
@@ -162,6 +162,7 @@ export function extractRoomCodeFromInput(raw: string): string {
   try {
     if (
       /^https?:\/\//i.test(trimmed) ||
+      trimmed.includes('riffan.') ||
       trimmed.includes('riffantv.') ||
       trimmed.includes('naimcine.')
     ) {
@@ -193,7 +194,12 @@ export { PUBLIC_PRODUCTION_DOMAIN };
  */
 export function isPrivateDevPreviewHost(): boolean {
   if (typeof window === 'undefined') return false;
-  return /^ais-dev-/i.test(window.location.hostname || '');
+  const host = window.location.hostname || '';
+  return (
+    /^(ais-dev-|ais-pre-)/i.test(host) ||
+    /^localhost$/i.test(host) ||
+    /^127\.0\.0\.1$/.test(host)
+  );
 }
 
 export function resolvePublicLinkOrigin(): string {
@@ -208,10 +214,12 @@ export function resolvePublicLinkOrigin(): string {
 }
 
 /**
- * Builds a clean, ultra-short invite URL (e.g. https://riffantv.ai.studio/k8x4)
+ * Builds a clean, ultra-short invite URL (e.g. https://riffan.ai.studio/k8x4)
  */
 export function buildShortInviteUrl(roomId: string, tvMode = false): string {
-  if (!roomId?.trim()) return resolvePublicLinkOrigin();
+  if (!roomId?.trim()) {
+    return buildCanonicalShareUrl({ kind: 'home' }, { origin: resolvePublicLinkOrigin() });
+  }
   return buildCanonicalShareUrl(
     { kind: 'room', roomId, tvMode },
     { origin: resolvePublicLinkOrigin() }
@@ -245,11 +253,19 @@ export function buildTvPairingUrl(): string {
  * Returns the public host (without protocol) for UI display on phones & TVs.
  */
 export function getDisplayAppHost(): string {
-  if (typeof window === 'undefined') return PUBLIC_PRODUCTION_DOMAIN;
-  if (isPrivateDevPreviewHost()) {
-    return PUBLIC_PRODUCTION_DOMAIN;
+  const envHost =
+    typeof import.meta !== 'undefined'
+      ? (import.meta.env?.VITE_PUBLIC_APP_HOST as string | undefined)
+      : undefined;
+  if (envHost && envHost.trim()) {
+    return envHost.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '');
   }
-  return window.location.host || PUBLIC_PRODUCTION_DOMAIN;
+  if (typeof window === 'undefined') return PUBLIC_PRODUCTION_DOMAIN;
+  const host = (window.location.hostname || '').toLowerCase();
+  if (host === PUBLIC_PRODUCTION_DOMAIN || host.endsWith(`.${PUBLIC_PRODUCTION_DOMAIN}`)) {
+    return window.location.host || PUBLIC_PRODUCTION_DOMAIN;
+  }
+  return PUBLIC_PRODUCTION_DOMAIN;
 }
 
 /**

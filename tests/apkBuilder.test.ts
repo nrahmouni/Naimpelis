@@ -121,11 +121,11 @@ describe('Signed Android APK Builder Service', () => {
     expect(manifestTxt).toContain('LEANBACK_LAUNCHER');
   });
 
-  it('embeds riffantv.ai.studio launch URL, RiffanTV resources.arsc label, and exposes /RIFFAN-TV*.apk routes on server', () => {
-    const apk = buildSignedApkBuffer('mobile', 'https://riffantv.ai.studio');
+  it('embeds riffan.ai.studio launch URL, RiffanTV resources.arsc label, and exposes /RIFFAN-TV*.apk routes on server', () => {
+    const apk = buildSignedApkBuffer('mobile', 'https://riffan.ai.studio');
     const { entries } = parseZipEntries(apk);
     expect(entries.get('classes.dex')!.data.toString('utf8')).toContain(
-      'https://riffantv.ai.studio/?platform=android&web=1'
+      'https://riffan.ai.studio/?platform=android&web=1'
     );
     expect(entries.get('resources.arsc')!.data.toString('utf16le')).toContain('RiffanTV');
 
@@ -152,7 +152,7 @@ describe('Signed Android APK Builder Service', () => {
     }
   });
 
-  it('points Design System poster URLs and QR to riffantv.ai.studio and keeps friend notice banner above floating bubble', () => {
+  it('points Design System poster URLs and QR to riffan.ai.studio and keeps friend notice banner above floating bubble', () => {
     const dsSrc = fs.readFileSync(
       path.resolve(process.cwd(), 'src/components/DesignSystemShowcase.tsx'),
       'utf8'
@@ -161,8 +161,8 @@ describe('Signed Android APK Builder Service', () => {
       path.resolve(process.cwd(), 'src/components/design/DesignPostersTab.tsx'),
       'utf8'
     );
-    expect(dsSrc).toContain('https://riffantv.ai.studio');
-    expect(postersTabSrc).toContain('<QRCodeSVG value="https://riffantv.ai.studio"');
+    expect(dsSrc).toContain('https://riffan.ai.studio/');
+    expect(postersTabSrc).toContain('<QRCodeSVG value="https://riffan.ai.studio/"');
 
     const friendsSrc = fs.readFileSync(
       path.resolve(process.cwd(), 'src/components/friends/GlobalIncomingInviteBanner.tsx'),

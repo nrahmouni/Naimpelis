@@ -47,6 +47,9 @@ export function isPrivateIpAddress(rawIp: string): boolean {
   return true;
 }
 
+export const isPrivateOrMetadataIp = isPrivateIpAddress;
+export const isPrivateOrMetadataIpv4 = isPrivateIpAddress;
+
 export function isDisallowedHostnameSyntax(hostname: string): boolean {
   const low = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '');
   if (

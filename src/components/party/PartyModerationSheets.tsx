@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import type { AppLanguage, Participant, TvRemoteCommandType } from '../../types';
 import { UI_COPY, pickLang } from '../../utils/i18n';
+import { buildTvPairingUrl } from '../../utils/shortLink';
 import {
   EffectiveViewMode,
   ViewModeSwitchButton,
@@ -280,7 +281,7 @@ export const PartyModerationSheets: React.FC<PartyModerationSheetsProps> = ({
           >
             <p className="text-xs text-zinc-400">
               {pickLang(lang, { es: 'Abre', ca: 'Obre', en: 'Open' })}{' '}
-              <span className="text-white font-mono">{window.location.origin}/tv</span>{' '}
+              <span className="text-white font-mono">{buildTvPairingUrl()}</span>{' '}
               {pickLang(lang, {
                 es: 'en tu televisor e introduce el código de 4 dígitos:',
                 ca: 'al teu televisor i introdueix el codi de 4 dígits:',

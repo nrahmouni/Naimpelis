@@ -76,7 +76,7 @@ const DEFAULT_OG_META: OpenGraphMeta = {
   title: 'RiffanTV — Cine, Directos y Sala Privada',
   description:
     'RiffanTV (RTV): tu plataforma multiplataforma en directo para ver películas, series, anime, fútbol y TV en solitario o con amigos en tiempo real.',
-  url: PUBLIC_PRODUCTION_ORIGIN,
+  url: `${PUBLIC_PRODUCTION_ORIGIN}/`,
   type: 'website',
 };
 
@@ -677,7 +677,7 @@ export async function resolveDeepLinkTarget(
         route: '/',
         og: {
           ...DEFAULT_OG_META,
-          url: cleanOrigin,
+          url: `${cleanOrigin}/`,
         },
       };
       break;
@@ -806,9 +806,25 @@ export function injectDynamicOgMeta(html: string, meta: OpenGraphMeta): string {
     `<meta property="og:description" content="${safeDesc}" />`
   );
 
+  const hasOgUrl = /<meta\b[^>]*\bproperty=["']og:url["'][^>]*>/i.test(out);
+  if (hasOgUrl) {
+    out = out.replace(
+      /<meta\b[^>]*\bproperty=["']og:url["'][^>]*>/i,
+      `<meta property="og:url" content="${safeUrl}" />`
+    );
+  }
+  const hasCanonical = /<link\b[^>]*\brel=["']canonical["'][^>]*>/i.test(out);
+  if (hasCanonical) {
+    out = out.replace(
+      /<link\b[^>]*\brel=["']canonical["'][^>]*>/i,
+      `<link rel="canonical" href="${safeUrl}" />`
+    );
+  }
+
   const extraTags: string[] = [
     `<meta property="og:type" content="${safeType}" />`,
-    `<meta property="og:url" content="${safeUrl}" />`,
+    ...(hasOgUrl ? [] : [`<meta property="og:url" content="${safeUrl}" />`]),
+    ...(hasCanonical ? [] : [`<link rel="canonical" href="${safeUrl}" />`]),
     `<meta property="og:site_name" content="RiffanTV" />`,
     `<meta name="twitter:card" content="${safeImage ? 'summary_large_image' : 'summary'}" />`,
     `<meta name="twitter:title" content="${safeTitle}" />`,

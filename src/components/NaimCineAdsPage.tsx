@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { domToPng } from 'modern-screenshot';
 import { ArrowLeft, Check, Download, Loader2 } from 'lucide-react';
-import { getDisplayAppHost } from '../utils/shortLink';
+import { getDisplayAppHost, resolvePublicLinkOrigin } from '../utils/shortLink';
 import { triggerHaptic } from '../utils/haptics';
 import { StoryAdFlyer, VerticalPosterAd } from './ads/AdPosterAndStory';
 import { FullSalesSheetAd, LandscapeBillboardAd } from './ads/AdFullAndLandscapeSheets';
@@ -26,10 +26,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
   const [exportedDone, setExportedDone] = useState(false);
 
   const displayHost = getDisplayAppHost();
-  const publicUrl =
-    typeof window !== 'undefined' && !/^ais-dev-/i.test(window.location.hostname || '')
-      ? window.location.origin
-      : `https://${displayHost}`;
+  const publicUrl = `${resolvePublicLinkOrigin()}/`;
 
   const handleExportPng = async () => {
     if (!captureRef.current || exporting) return;

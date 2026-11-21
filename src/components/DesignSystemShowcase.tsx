@@ -134,20 +134,20 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
 
           <div className="flex items-center gap-2 flex-wrap">
             <a
-              href="https://riffantv.ai.studio"
+              href="https://riffan.ai.studio/"
               target="_blank"
               rel="noopener noreferrer"
               className="min-h-10 px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-mono font-bold text-[#D8B4FE] inline-flex items-center gap-1.5 transition-colors"
             >
               <Globe className="w-3.5 h-3.5 text-[#00F0FF]" />
-              <span>riffantv.ai.studio</span>
+              <span>riffan.ai.studio</span>
             </a>
             <button
               type="button"
               onClick={() => {
                 triggerHaptic('light');
-                void navigator.clipboard?.writeText('https://riffantv.ai.studio').then(() => {
-                  setExportNotice('Enlace copiado: https://riffantv.ai.studio');
+                void navigator.clipboard?.writeText('https://riffan.ai.studio/').then(() => {
+                  setExportNotice('Enlace copiado: https://riffan.ai.studio/');
                   setTimeout(() => setExportNotice(null), 2500);
                 });
               }}

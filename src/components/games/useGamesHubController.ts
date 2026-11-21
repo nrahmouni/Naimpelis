@@ -24,6 +24,7 @@ import type { UnifiedGameId } from './GameLogos';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { buildCanonicalShareUrl } from '../../shared/dedicatedRoutes';
+import { resolvePublicLinkOrigin } from '../../utils/shortLink';
 import { copyTextToClipboard, showAppShareToast } from '../../utils/shareDedicatedLink';
 import { useAppStore } from '../../store/useAppStore';
 import { useBackInterceptor } from '../../lib/backInterceptor';
@@ -119,7 +120,10 @@ export function useGamesHubController({
     const sessionMode = useAppStore.getState().sessionMode;
     const url = buildCanonicalShareUrl(
       { kind: 'game', gameId: gt },
-      { roomId: sessionMode !== 'solo' && roomId ? roomId : undefined }
+      {
+        roomId: sessionMode !== 'solo' && roomId ? roomId : undefined,
+        origin: resolvePublicLinkOrigin(),
+      }
     );
     const shareTitle = `RiffanTV · ${gt.toUpperCase()}`;
     const shareText = pickLang(lang, {
