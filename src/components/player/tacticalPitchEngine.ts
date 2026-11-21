@@ -294,19 +294,28 @@ export function computeMatchTiltPct(params: {
   attackDirection: 'home' | 'away' | 'neutral';
   attackIntensity: number;
   details?: FootballMatchDetails | null;
+  preferLiveVisualTilt?: boolean;
 }): { homeTiltPct: number; awayTiltPct: number } {
-  let score = (params.homePossessionPct - 50) * 0.65;
+  const possWeight = params.preferLiveVisualTilt ? 0.32 : 0.65;
+  let score = (params.homePossessionPct - 50) * possWeight;
   if (params.attackDirection === 'home') {
-    score += 10 + (params.attackIntensity / 100) * 24;
+    score += (params.preferLiveVisualTilt ? 14 : 10) + (params.attackIntensity / 100) * (params.preferLiveVisualTilt ? 28 : 24);
   } else if (params.attackDirection === 'away') {
-    score -= 10 + (params.attackIntensity / 100) * 24;
+    score -= (params.preferLiveVisualTilt ? 14 : 10) + (params.attackIntensity / 100) * (params.preferLiveVisualTilt ? 28 : 24);
   }
 
   const momentum = params.details?.momentum;
-  if (momentum && momentum.length > 0) {
+  if (momentum && momentum.length > 0 && !params.preferLiveVisualTilt) {
     const recent = momentum.slice(-5);
     const avg = recent.reduce((acc, m) => acc + m.value, 0) / recent.length;
     score += Math.max(-20, Math.min(20, avg * 0.35));
+  }
+
+  // Keep tilt coherent with active visual attack direction when pixel tracker is live
+  if (params.preferLiveVisualTilt && params.attackDirection === 'home') {
+    score = Math.max(6, score);
+  } else if (params.preferLiveVisualTilt && params.attackDirection === 'away') {
+    score = Math.min(-6, score);
   }
 
   const homeTiltPct = Math.max(15, Math.min(85, Math.round(50 + score)));

@@ -116,19 +116,20 @@ export function registerTacticalVisionRoute(app: Express): void {
       const promptParts = [
         `Analiza este fotograma real de fútbol: ${homeTeam} (${homeShort}, LOCAL) vs ${awayTeam} (${awayShort}, VISITANTE).`,
         competition ? `Competición: ${competition}` : '',
-        statusLabel ? `Minuto/Estado: ${statusLabel} · Marcador ${homeScore}-${awayScore}` : '',
-        body.homeColor ? `Color probable local: ${body.homeColor}` : '',
-        body.awayColor ? `Color probable visitante: ${body.awayColor}` : '',
+        statusLabel ? `Minuto/Estado API: ${statusLabel} · Marcador ${homeScore}-${awayScore}` : '',
+        body.homeColor ? `Color oficial local: ${body.homeColor}` : '',
+        body.awayColor ? `Color oficial visitante: ${body.awayColor}` : '',
         homeRosterText ? `XI Local (${homeShort}): ${homeRosterText}` : '',
         awayRosterText ? `XI Visitante (${awayShort}): ${awayRosterText}` : '',
         statsText ? `Estadísticas en vivo de referencia: ${statsText}` : '',
-        `Reglas CRÍTICAS de precisión espacial (sistema tipo Bet365 / Opta Live Tracker):`,
-        `1. No devuelvas coordenadas de píxeles recortados de la cámara: proyecta SIEMPRE sobre el CAMPO COMPLETO 2D horizontal (x=0 portería que defiende ${homeShort}, x=500 mediocampo, x=1000 portería que defiende ${awayShort}; y=0 banda superior, y=1000 banda inferior).`,
-        `2. Fíjate en líneas de área, círculo central, banderín de córner, portero en área y marcador TV para saber exactamente en qué tercio del campo ocurre la acción y hacia qué portería ataca el poseedor del balón.`,
-        `3. Si el plano es primer plano, celebración, repetición o banquillo, marca isMatchPitchVisible=false y cameraAngle="replay_or_studio", pero mantén una estimación coherente según los datos previos sin inventar jugadas falsas.`,
-        `4. Indica quién inclina el partido en este instante: attackDirection ("home", "away" o "neutral"), attackIntensity (0..100), dangerZone y phaseType.`,
-        `5. Indica altura táctica del bloque (homeLineHeight 0..100 desde su propia portería hacia delante; awayLineHeight 0..100 desde su portería hacia delante) para ajustar los 22 puntos de las alineaciones.`,
-        `6. Todos los textos en ${langLabel}.`,
+        `Reglas CRÍTICAS de precisión espacial y sincronización (sistema tipo Bet365 / Opta Live Tracker):`,
+        `1. Lee el reloj visible en el marcador de TV (arriba izquierda/derecha) y devuélvelo en tvClock (ej. "59:59"). Si no se ve claro, deja "".`,
+        `2. Determina hacia qué lado ataca ${homeShort} (LOCAL) en la imagen de TV en esta parte: si es 2ª parte o el portero local está a la derecha, homeAttacksRightToLeftOnTv=true.`,
+        `3. Proyecta SIEMPRE sobre el CAMPO COMPLETO 2D canónico (x=0 portería que defiende ${homeShort}, x=500 mediocampo, x=1000 portería que defiende ${awayShort}; y=0 banda superior, y=1000 banda inferior).`,
+        `4. Identifica qué color real de camiseta ves en cada equipo (observedHomeKitColor / observedAwayKitColor) y fíjate en QUIÉN lleva el balón o presiona en la jugada actual para fijar attackDirection ("home", "away" o "neutral") y possession.team.`,
+        `5. Si es primer plano de un jugador conduciendo o plano corto, sigue identificando por el color de camiseta qué equipo lleva el balón y su tercio probable; marca isMatchPitchVisible=false si no se ven líneas de campo.`,
+        `6. Indica altura táctica del bloque (homeLineHeight 0..100; awayLineHeight 0..100).`,
+        `7. Todos los textos en ${langLabel}.`,
       ]
         .filter(Boolean)
         .join('\n');
@@ -153,8 +154,24 @@ export function registerTacticalVisionRoute(app: Express): void {
                 type: Type.STRING,
                 description: 'wide_tactical, attacking_third, box_closeup o replay_or_studio.',
               },
+              tvClock: {
+                type: Type.STRING,
+                description: 'Reloj exacto visible en el marcador TV (ej. 59:59) o cadena vacía si no se distingue.',
+              },
+              homeAttacksRightToLeftOnTv: {
+                type: Type.BOOLEAN,
+                description: 'true si el equipo local ataca de derecha a izquierda en pantalla TV (típico 2ª parte).',
+              },
               homeKitColor: { type: Type.STRING },
               awayKitColor: { type: Type.STRING },
+              observedHomeKitColor: {
+                type: Type.STRING,
+                description: 'Hex exacto (#RRGGBB) de la camiseta real que lleva el equipo local en la imagen TV.',
+              },
+              observedAwayKitColor: {
+                type: Type.STRING,
+                description: 'Hex exacto (#RRGGBB) de la camiseta real que lleva el equipo visitante en la imagen TV.',
+              },
               ballPitch: {
                 type: Type.OBJECT,
                 properties: {
@@ -225,6 +242,10 @@ export function registerTacticalVisionRoute(app: Express): void {
       };
 
       const parsed = JSON.parse(String(visionResponse.text || '{}').trim()) as Record<string, any>;
+      const rawTvClock = String(parsed.tvClock || '').trim();
+      const cleanTvClock = /^\d{1,3}:\d{2}$/.test(rawTvClock) || /^\d{1,3}(?:\+\d{1,2})?'$/.test(rawTvClock)
+        ? rawTvClock
+        : undefined;
       const ballX = clampCoord(parsed.ballPitch?.x, 30, 970);
       const ballY = clampCoord(parsed.ballPitch?.y, 60, 940);
       const attackDirection: 'home' | 'away' | 'neutral' =
@@ -280,8 +301,15 @@ export function registerTacticalVisionRoute(app: Express): void {
           engineMode: 'gemini',
           isMatchPitchVisible: Boolean(parsed.isMatchPitchVisible),
           cameraAngle,
+          tvClock: cleanTvClock,
+          homeAttacksRightToLeftOnTv:
+            typeof parsed.homeAttacksRightToLeftOnTv === 'boolean'
+              ? parsed.homeAttacksRightToLeftOnTv
+              : undefined,
           homeKitColor: normalizeHex(parsed.homeKitColor, body.homeColor || '#00F593'),
           awayKitColor: normalizeHex(parsed.awayKitColor, body.awayColor || '#9146FF'),
+          observedHomeKitHex: normalizeHex(parsed.observedHomeKitColor, body.homeColor || '#00F593'),
+          observedAwayKitHex: normalizeHex(parsed.observedAwayKitColor, body.awayColor || '#9146FF'),
           ballZone: { x: ballX, y: ballY },
           attackDirection,
           attackIntensity,

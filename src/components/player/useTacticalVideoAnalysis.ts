@@ -18,13 +18,21 @@ import type {
 import {
   analyzeMatchFrameOptically,
   createOpticalTrackerMemory,
+  type OpticalGeminiCalibration,
   type OpticalRosterItem,
   type OpticalStatItem,
 } from './localOpticalTacticalTracker';
+import { formatSecondsAsClock, parseClockToSeconds } from './opticalKitAndMotion';
 
-const OPTICAL_SAMPLE_INTERVAL_MS = 1600;
-const GEMINI_ENRICH_INTERVAL_MS = 12_000;
+const OPTICAL_SAMPLE_INTERVAL_MS = 420;
+const GEMINI_ENRICH_INTERVAL_MS = 9500;
 const MAX_CAPTURE_WIDTH = 768;
+
+interface TvClockAnchor {
+  tvSeconds: number;
+  capturedAtMs: number;
+  videoTimeSec: number | null;
+}
 
 export interface CaptureFrameResult {
   ok: boolean;
@@ -131,8 +139,10 @@ export function useTacticalVideoAnalysis({
   const opticalMemoryRef = useRef(createOpticalTrackerMemory());
   const momentumSamplesRef = useRef<MomentumTimelineSample[]>([]);
   const geminiCooldownUntilRef = useRef<number>(0);
-  const lastGeminiSuccessAtRef = useRef<number>(0);
   const lastGeminiAttemptAtRef = useRef<number>(0);
+  const lastMomentumPushAtRef = useRef<number>(0);
+  const geminiCalibrationRef = useRef<OpticalGeminiCalibration | null>(null);
+  const tvClockAnchorRef = useRef<TvClockAnchor | null>(null);
 
   const resolvedTeams = useMemo(() => {
     if (matchContext?.homeTeam && matchContext?.awayTeam) {
@@ -164,17 +174,42 @@ export function useTacticalVideoAnalysis({
     };
   }, [matchContext, videoState.title, videoState.subtitle, videoState.isLive]);
 
+  const computeSyncedTvClock = useCallback(
+    (): { tvClock?: string; streamDelaySec?: number } => {
+      const anchor = tvClockAnchorRef.current;
+      if (!anchor) return {};
+      const videoEl = videoRef.current;
+      const elapsedSec =
+        videoEl && Number.isFinite(videoEl.currentTime) && anchor.videoTimeSec !== null
+          ? Math.max(0, videoEl.currentTime - anchor.videoTimeSec)
+          : Math.max(0, (Date.now() - anchor.capturedAtMs) / 1000);
+      const currentTvSec = Math.round(anchor.tvSeconds + elapsedSec);
+      const tvClock = formatSecondsAsClock(currentTvSec);
+      const apiSec = parseClockToSeconds(resolvedTeams.statusLabel);
+      const streamDelaySec =
+        apiSec !== null && apiSec > currentTvSec ? Math.min(240, apiSec - currentTvSec) : undefined;
+      return { tvClock, streamDelaySec };
+    },
+    [videoRef, resolvedTeams.statusLabel]
+  );
+
   const appendMomentumSample = useCallback(
-    (tiltSigned: number) => {
+    (tiltSigned: number, tvClockOverride?: string) => {
+      const now = Date.now();
+      if (now - lastMomentumPushAtRef.current < 1400 && momentumSamplesRef.current.length > 0) {
+        return;
+      }
+      lastMomentumPushAtRef.current = now;
       const clamped = Math.max(-100, Math.min(100, Math.round(tiltSigned)));
       const nowLabel =
-        resolvedTeams.statusLabel && /\d+/.test(resolvedTeams.statusLabel)
+        tvClockOverride ||
+        (resolvedTeams.statusLabel && /\d+/.test(resolvedTeams.statusLabel)
           ? resolvedTeams.statusLabel
-          : new Date().toLocaleTimeString([], { minute: '2-digit', second: '2-digit' });
+          : new Date().toLocaleTimeString([], { minute: '2-digit', second: '2-digit' }));
       const prev = momentumSamplesRef.current;
       momentumSamplesRef.current = [
         ...prev.slice(-19),
-        { id: `rt-${Date.now()}-${prev.length}`, label: nowLabel, value: clamped },
+        { id: `rt-${now}-${prev.length}`, label: nowLabel, value: clamped },
       ];
     },
     [resolvedTeams.statusLabel]
@@ -255,21 +290,36 @@ export function useTacticalVideoAnalysis({
   const enrichAnalysisWithPitch = useCallback(
     (raw: TacticalVisionAnalysis): TacticalVisionAnalysis => {
       const details = matchContext?.details;
-      const ballX = raw.ballZone?.x ?? opticalMemoryRef.current.smoothBallX;
-      const ballY = raw.ballZone?.y ?? opticalMemoryRef.current.smoothBallY;
+      const isOptical = raw.engineMode === 'optical_local';
+      const rawBallX = raw.ballZone?.x ?? opticalMemoryRef.current.smoothBallX;
+      const rawBallY = raw.ballZone?.y ?? opticalMemoryRef.current.smoothBallY;
 
-      // Temporal smoothing on Gemini frames so markers glide like broadcast graphics
-      const smoothX = Math.round(opticalMemoryRef.current.smoothBallX * 0.45 + ballX * 0.55);
-      const smoothY = Math.round(opticalMemoryRef.current.smoothBallY * 0.45 + ballY * 0.55);
-      opticalMemoryRef.current.smoothBallX = smoothX;
-      opticalMemoryRef.current.smoothBallY = smoothY;
+      // Optical already applies single-pass smoothing; do NOT double-smooth optical frames!
+      const ballX = isOptical
+        ? Math.round(rawBallX)
+        : Math.round(opticalMemoryRef.current.smoothBallX * 0.35 + rawBallX * 0.65);
+      const ballY = isOptical
+        ? Math.round(rawBallY)
+        : Math.round(opticalMemoryRef.current.smoothBallY * 0.35 + rawBallY * 0.65);
+
+      if (!isOptical) {
+        opticalMemoryRef.current.prevSmoothBallX = opticalMemoryRef.current.smoothBallX;
+        opticalMemoryRef.current.smoothBallX = ballX;
+        opticalMemoryRef.current.smoothBallY = ballY;
+      }
 
       const dir =
         raw.attackDirection ||
         (raw.possession.team === 'home' || raw.possession.team === 'away' ? raw.possession.team : 'neutral');
       const intensity = raw.attackIntensity ?? 48;
-      const signedTilt = dir === 'home' ? intensity : dir === 'away' ? -intensity : (raw.possession.homePct - 50) * 1.4;
-      appendMomentumSample(signedTilt);
+      const signedTilt =
+        dir === 'home' ? intensity : dir === 'away' ? -intensity : (raw.possession.homePct - 50) * 1.1;
+
+      const syncedClock = computeSyncedTvClock();
+      const tvClock = syncedClock.tvClock || raw.tvClock;
+      const streamDelaySec = syncedClock.streamDelaySec ?? raw.streamDelaySec;
+
+      appendMomentumSample(signedTilt, tvClock);
 
       const players =
         raw.players && raw.players.length >= 18
@@ -279,8 +329,8 @@ export function useTacticalVideoAnalysis({
               awayTeam: resolvedTeams.awayTeam,
               homeLineup: details?.homeLineup,
               awayLineup: details?.awayLineup,
-              ballX: smoothX,
-              ballY: smoothY,
+              ballX,
+              ballY,
               possessionTeam: raw.possession.team,
               attackDirection: dir,
               attackIntensity: intensity,
@@ -293,22 +343,37 @@ export function useTacticalVideoAnalysis({
         attackDirection: dir,
         attackIntensity: intensity,
         details,
+        preferLiveVisualTilt: true,
       });
+
+      // When TV HLS stream lags >=15s behind live API feed, show real-time visual samples first so momentum stays synced to video
+      const momentumHistory =
+        typeof streamDelaySec === 'number' && streamDelaySec >= 15 && momentumSamplesRef.current.length >= 4
+          ? momentumSamplesRef.current.slice(-20)
+          : buildMomentumTimeline(details, momentumSamplesRef.current);
 
       return {
         ...raw,
-        ballZone: { x: smoothX, y: smoothY },
+        tvClock,
+        streamDelaySec,
+        ballZone: { x: ballX, y: ballY },
         attackDirection: dir,
         attackIntensity: intensity,
-        dangerZone: raw.dangerZone || deriveDangerZone(smoothX),
-        phaseType: raw.phaseType || derivePhaseFromPitch(smoothX, dir, intensity),
-        homeTiltPct: raw.homeTiltPct ?? homeTiltPct,
-        awayTiltPct: raw.awayTiltPct ?? awayTiltPct,
+        dangerZone: raw.dangerZone || deriveDangerZone(ballX),
+        phaseType: raw.phaseType || derivePhaseFromPitch(ballX, dir, intensity),
+        homeTiltPct,
+        awayTiltPct,
         players,
-        momentumHistory: buildMomentumTimeline(details, momentumSamplesRef.current),
+        momentumHistory,
       };
     },
-    [matchContext?.details, resolvedTeams.homeTeam, resolvedTeams.awayTeam, appendMomentumSample]
+    [
+      matchContext?.details,
+      resolvedTeams.homeTeam,
+      resolvedTeams.awayTeam,
+      appendMomentumSample,
+      computeSyncedTvClock,
+    ]
   );
 
   const runOpticalFrameStep = useCallback(
@@ -321,19 +386,22 @@ export function useTacticalVideoAnalysis({
       }
       if (!opticalSource) return false;
 
+      const syncedClock = computeSyncedTvClock();
       const optResult = analyzeMatchFrameOptically(opticalSource, {
         lang,
         homeTeam: resolvedTeams.homeTeam,
         awayTeam: resolvedTeams.awayTeam,
+        statusLabel: resolvedTeams.statusLabel,
+        tvClock: syncedClock.tvClock,
         details: matchContext?.details,
         liveStats,
         memory: opticalMemoryRef.current,
+        geminiCalibration: geminiCalibrationRef.current,
       });
 
       if (!optResult.ok) {
         if (optResult.reason === 'cors_blocked') {
           setCaptureStatus('cors_blocked');
-          // Keep full 11v11 tactical board & match data alive smoothly even if video pixel read is CORS-locked!
           setAnalysis((prev) => prev || buildBaselineAnalysis());
           setErrorMsg(null);
         } else {
@@ -356,9 +424,11 @@ export function useTacticalVideoAnalysis({
       lang,
       resolvedTeams.homeTeam,
       resolvedTeams.awayTeam,
+      resolvedTeams.statusLabel,
       matchContext?.details,
       buildBaselineAnalysis,
       enrichAnalysisWithPitch,
+      computeSyncedTvClock,
     ]
   );
 
@@ -394,14 +464,11 @@ export function useTacticalVideoAnalysis({
         awayValue: s.awayValue,
       }));
 
+      // ALWAYS run continuous 420ms optical tracking (never pause optical between Gemini refreshes!)
+      await runOpticalFrameStep(liveStats);
+
       const now = Date.now();
       const inGeminiCooldown = now < geminiCooldownUntilRef.current && !forceGemini;
-      const geminiFreshlyApplied = now - lastGeminiSuccessAtRef.current < 8000;
-
-      if (inGeminiCooldown || !geminiFreshlyApplied) {
-        await runOpticalFrameStep(liveStats);
-      }
-
       if (inGeminiCooldown) return;
       if (!forceGemini && now - lastGeminiAttemptAtRef.current < GEMINI_ENRICH_INTERVAL_MS) {
         return;
@@ -418,6 +485,10 @@ export function useTacticalVideoAnalysis({
       }
       if (!frameDataUrl) return;
 
+      const capturedVideoTime =
+        videoRef.current && Number.isFinite(videoRef.current.currentTime)
+          ? videoRef.current.currentTime
+          : null;
       lastGeminiAttemptAtRef.current = Date.now();
       inFlightRef.current = true;
       setIsAnalyzing(true);
@@ -460,12 +531,40 @@ export function useTacticalVideoAnalysis({
 
         if (resp?.fallbackSuggested || resp?.engineMode === 'use_local_optical') {
           geminiCooldownUntilRef.current = Date.now() + (resp.retryAfterMs || 65_000);
-          await runOpticalFrameStep(liveStats);
           return;
         }
 
         if (resp?.analysis) {
-          lastGeminiSuccessAtRef.current = Date.now();
+          const parsedClockSec = parseClockToSeconds(resp.analysis.tvClock);
+          if (parsedClockSec !== null) {
+            tvClockAnchorRef.current = {
+              tvSeconds: parsedClockSec,
+              capturedAtMs: Date.now(),
+              videoTimeSec: capturedVideoTime,
+            };
+          }
+          geminiCalibrationRef.current = {
+            homeAttacksRightToLeftOnTv: resp.analysis.homeAttacksRightToLeftOnTv,
+            observedHomeKitHex: resp.analysis.observedHomeKitHex,
+            observedAwayKitHex: resp.analysis.observedAwayKitHex,
+            lastAnchorAtMs: Date.now(),
+            anchorBallX: resp.analysis.ballZone?.x,
+            anchorBallY: resp.analysis.ballZone?.y,
+            anchorAttackDirection: resp.analysis.attackDirection,
+            anchorPhaseType: resp.analysis.phaseType,
+          };
+          // Nudge optical tilt cleanly so carrier transitions calibrate without freezing subsequent 420ms ticks
+          if (resp.analysis.attackDirection === 'home') {
+            opticalMemoryRef.current.smoothAttackTilt = Math.max(
+              opticalMemoryRef.current.smoothAttackTilt,
+              Math.min(85, Math.round((resp.analysis.attackIntensity ?? 52) * 0.85))
+            );
+          } else if (resp.analysis.attackDirection === 'away') {
+            opticalMemoryRef.current.smoothAttackTilt = Math.min(
+              opticalMemoryRef.current.smoothAttackTilt,
+              -Math.min(85, Math.round((resp.analysis.attackIntensity ?? 52) * 0.85))
+            );
+          }
           setCaptureStatus('ready');
           setAnalysis(enrichAnalysisWithPitch({ ...resp.analysis, engineMode: 'gemini' }));
           setLastUpdatedAt(resp.analyzedAt || Date.now());
@@ -474,7 +573,6 @@ export function useTacticalVideoAnalysis({
       } catch {
         if (ctrl.signal.aborted) return;
         geminiCooldownUntilRef.current = Date.now() + 65_000;
-        await runOpticalFrameStep(liveStats);
       } finally {
         inFlightRef.current = false;
         if (!ctrl.signal.aborted) {
@@ -536,7 +634,9 @@ export function useTacticalVideoAnalysis({
   useEffect(() => {
     opticalMemoryRef.current = createOpticalTrackerMemory();
     momentumSamplesRef.current = [];
-    lastGeminiSuccessAtRef.current = 0;
+    geminiCalibrationRef.current = null;
+    tvClockAnchorRef.current = null;
+    lastMomentumPushAtRef.current = 0;
     lastGeminiAttemptAtRef.current = 0;
     setAnalysis(null);
     setLastUpdatedAt(null);

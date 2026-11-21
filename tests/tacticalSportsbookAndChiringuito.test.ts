@@ -16,6 +16,14 @@ import {
   scoreChiringuitoCandidate,
 } from '../server/services/chiringuitoLiveService';
 import { shouldRenderBottomControlStrip } from '../src/components/player/buildCinemaPlayerProps';
+import {
+  computeHotspotSalience,
+  detectHotspotCarrierTeam,
+  formatSecondsAsClock,
+  isSecondHalfPeriod,
+  mapTvXToPitchX,
+  parseClockToSeconds,
+} from '../src/components/player/opticalKitAndMotion';
 
 describe('Sportsbook Live Pitch Engine (11v11 always-on & directional flow)', () => {
   it('always projects all 22 players (11 home + 11 away) even without lineups', () => {
@@ -212,5 +220,54 @@ describe('El Chiringuito de Jugones & Barça/Madrid Halftime Auto-Switch', () =>
     expect(sRand).toBeGreaterThan(250);
     expect(sCam).toBeLessThan(0);
     expect(sSim).toBeLessThan(sRand);
+  });
+
+  it('correctly syncs TV clock, mirrors 2nd-half horizontal sides, and identifies ball-carrier team by kit RGB', () => {
+    expect(parseClockToSeconds('59:59')).toBe(3599);
+    expect(parseClockToSeconds('61:04')).toBe(3664);
+    expect(formatSecondsAsClock(3605)).toBe('60:05');
+
+    // Second-half side swap detection (excludes 1st half & 45+ stoppage)
+    expect(isSecondHalfPeriod('59:59')).toBe(true);
+    expect(isSecondHalfPeriod('61:04')).toBe(true);
+    expect(isSecondHalfPeriod('2ª parte')).toBe(true);
+    expect(isSecondHalfPeriod("45+2'")).toBe(false);
+    expect(isSecondHalfPeriod('Descanso')).toBe(false);
+
+    // 2nd half TV camera mirror: Home defends Right (tvX=900 -> pitchX=100), Away defends Left (tvX=100 -> pitchX=900)
+    expect(mapTvXToPitchX(100, false)).toBe(100);
+    expect(mapTvXToPitchX(100, true)).toBe(900);
+    expect(mapTvXToPitchX(850, true)).toBe(150);
+
+    // Quadratic motion dominance over stationary background cells
+    expect(computeHotspotSalience(18, 0.28)).toBeGreaterThan(computeHotspotSalience(0.5, 0.65) * 40);
+
+    // White Home kit carrier vs Navy/Light-Blue Away kit carrier
+    const carrierHome = detectHotspotCarrierTeam(
+      [
+        { x: 640, y: 680, r: 232, g: 232, b: 234, w: 120, motion: 18 },
+        { x: 660, y: 690, r: 226, g: 224, b: 228, w: 98, motion: 15 },
+        { x: 300, y: 500, r: 34, g: 64, b: 112, w: 4, motion: 1 },
+      ],
+      [245, 245, 245],
+      [42, 88, 160]
+    );
+    expect(carrierHome).toBe('home');
+
+    // Live visual tilt must agree with live attacking team even if older API momentum leans away
+    const coherent = computeMatchTiltPct({
+      homePossessionPct: 48,
+      attackDirection: 'home',
+      attackIntensity: 68,
+      preferLiveVisualTilt: true,
+      details: {
+        id: 'm1',
+        momentum: [
+          { minute: 55, value: -75 },
+          { minute: 58, value: -60 },
+        ],
+      } as never,
+    });
+    expect(coherent.homeTiltPct).toBeGreaterThan(60);
   });
 });

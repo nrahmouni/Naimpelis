@@ -357,7 +357,7 @@ export const SportsbookPitchDiagram: React.FC<SportsbookPitchDiagramProps> = ({
                 className="cursor-pointer"
                 style={{
                   transform: `translate(${px}px, ${py}px)`,
-                  transition: 'transform 700ms cubic-bezier(0.22, 1, 0.36, 1)',
+                  transition: 'transform 340ms cubic-bezier(0.22, 1, 0.36, 1)',
                 }}
               >
                 {(p.hasBall || isSelected) && (
@@ -420,7 +420,7 @@ export const SportsbookPitchDiagram: React.FC<SportsbookPitchDiagramProps> = ({
           <g
             style={{
               transform: `translate(${Math.round(ballSvgX * 10) / 10}px, ${Math.round(ballSvgY * 10) / 10}px)`,
-              transition: 'transform 540ms cubic-bezier(0.22, 1, 0.36, 1)',
+              transition: 'transform 260ms cubic-bezier(0.22, 1, 0.36, 1)',
             }}
           >
             <circle cx={0} cy={0} r="17" fill={attackAccent} fillOpacity="0.24" />

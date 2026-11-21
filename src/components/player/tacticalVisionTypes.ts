@@ -74,6 +74,11 @@ export interface TacticalVisionAnalysis {
   cameraAngle?: TacticalCameraAngle;
   homeKitColor: string;
   awayKitColor: string;
+  observedHomeKitHex?: string;
+  observedAwayKitHex?: string;
+  tvClock?: string;
+  streamDelaySec?: number;
+  homeAttacksRightToLeftOnTv?: boolean;
   ballZone?: {
     x: number; // 0..1000 full pitch X
     y: number; // 0..1000 full pitch Y

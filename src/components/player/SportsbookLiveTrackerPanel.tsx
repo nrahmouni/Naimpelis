@@ -101,9 +101,14 @@ export const SportsbookLiveTrackerPanel: React.FC<SportsbookLiveTrackerPanelProp
               style={{ backgroundColor: awayColor }}
             />
 
-            {statusLabel && (
-              <span className="ml-0.5 px-1.5 py-0.5 rounded bg-[#00F593]/15 text-[#00F593] font-mono font-bold text-[10px] tabular-nums shrink-0">
-                {statusLabel}
+            {(analysis?.tvClock || statusLabel) && (
+              <span className="ml-0.5 px-1.5 py-0.5 rounded bg-[#00F593]/15 text-[#00F593] font-mono font-bold text-[10px] tabular-nums shrink-0 flex items-center gap-1">
+                <span>{analysis?.tvClock || statusLabel}</span>
+                {typeof analysis?.streamDelaySec === 'number' && analysis.streamDelaySec >= 12 && (
+                  <span className="text-[9px] text-zinc-300/80 font-normal">
+                    TV
+                  </span>
+                )}
               </span>
             )}
             {competition && (

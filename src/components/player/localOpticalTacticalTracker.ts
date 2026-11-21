@@ -6,10 +6,31 @@ import {
   derivePhaseFromPitch,
   projectLiveLineupsToPitch,
 } from './tacticalPitchEngine';
+import {
+  colorDist,
+  computeHotspotSalience,
+  detectHotspotCarrierTeam,
+  hexToRgb,
+  isSecondHalfPeriod,
+  mapTvXToPitchX,
+  type OpticalForegroundSample,
+} from './opticalKitAndMotion';
 import type {
   TacticalAttackVector,
+  TacticalPhaseType,
   TacticalVisionAnalysis,
 } from './tacticalVisionTypes';
+
+export interface OpticalGeminiCalibration {
+  homeAttacksRightToLeftOnTv?: boolean;
+  observedHomeKitHex?: string;
+  observedAwayKitHex?: string;
+  lastAnchorAtMs?: number;
+  anchorBallX?: number;
+  anchorBallY?: number;
+  anchorAttackDirection?: 'home' | 'away' | 'neutral';
+  anchorPhaseType?: TacticalPhaseType;
+}
 
 export interface OpticalRosterItem {
   jersey?: string;
@@ -76,13 +97,6 @@ function isWhiteLinePixel(r: number, g: number, b: number): boolean {
   return r > 178 && g > 178 && b > 178 && Math.max(r, g, b) - Math.min(r, g, b) < 35;
 }
 
-function rgbDist(a: [number, number, number], b: [number, number, number]): number {
-  const dr = a[0] - b[0];
-  const dg = a[1] - b[1];
-  const db = a[2] - b[2];
-  return Math.sqrt(dr * dr + dg * dg + db * db);
-}
-
 function toReadableHex(rgb: [number, number, number], fallback: string): string {
   const max = Math.max(rgb[0], rgb[1], rgb[2]);
   const min = Math.min(rgb[0], rgb[1], rgb[2]);
@@ -113,9 +127,12 @@ export function analyzeMatchFrameOptically(
     lang: AppLanguage;
     homeTeam: string;
     awayTeam: string;
+    statusLabel?: string;
+    tvClock?: string;
     details?: FootballMatchDetails | null;
     liveStats?: OpticalStatItem[];
     memory: OpticalTrackerMemory;
+    geminiCalibration?: OpticalGeminiCalibration | null;
   }
 ): { ok: true; analysis: TacticalVisionAnalysis } | { ok: false; reason: 'not_ready' | 'cors_blocked' } {
   const isVideo = 'videoWidth' in source;
@@ -178,9 +195,12 @@ export function analyzeMatchFrameOptically(
     const statsPoss = extractPossessionFromStats(params.liveStats);
     const detailsHomeColor = params.details?.homeColor || '#00F593';
     const detailsAwayColor = params.details?.awayColor || '#9146FF';
+    const mirrorHorizontal =
+      params.geminiCalibration?.homeAttacksRightToLeftOnTv ??
+      isSecondHalfPeriod(params.statusLabel || params.details?.statusLabel, params.tvClock);
 
-    // Close-up or replay: preserve smoothed position & always show full 11v11 lineup dots!
-    if (pitchRatio < 0.22) {
+    // Close-up or replay: preserve smoothed ball zone, keep 11v11 lineup dots live, and stay coherent
+    if (pitchRatio < 0.2) {
       const homePct =
         statsPoss?.homePct ??
         Math.round(
@@ -189,12 +209,12 @@ export function analyzeMatchFrameOptically(
             100
         );
       const tiltDir: 'home' | 'away' | 'neutral' =
-        params.memory.smoothAttackTilt > 12
+        params.memory.smoothAttackTilt > 10
           ? 'home'
-          : params.memory.smoothAttackTilt < -12
+          : params.memory.smoothAttackTilt < -10
             ? 'away'
             : 'neutral';
-      const intensity = Math.min(82, Math.round(Math.abs(params.memory.smoothAttackTilt)));
+      const intensity = Math.min(84, Math.max(20, Math.round(Math.abs(params.memory.smoothAttackTilt) * 1.1)));
       const players = projectLiveLineupsToPitch({
         homeTeam: params.homeTeam,
         awayTeam: params.awayTeam,
@@ -211,6 +231,7 @@ export function analyzeMatchFrameOptically(
         attackDirection: tiltDir,
         attackIntensity: intensity,
         details: params.details,
+        preferLiveVisualTilt: true,
       });
 
       const totalLane = Math.max(
@@ -295,7 +316,7 @@ export function analyzeMatchFrameOptically(
     let weightedScreenX = 0;
     let weightedScreenY = 0;
 
-    const fgSamples: Array<{ x: number; y: number; r: number; g: number; b: number; w: number }> = [];
+    const fgSamples: OpticalForegroundSample[] = [];
 
     for (let rIdx = 0; rIdx < rows; rIdx++) {
       for (let cIdx = 0; cIdx < cols; cIdx++) {
@@ -331,16 +352,16 @@ export function analyzeMatchFrameOptically(
         const normY = Math.round(((startY + (rIdx + 0.5) * cellH) / H) * 1000);
 
         if (rIdx >= 2 && rIdx <= 11) {
-          if (rIdx <= 4) rawLeftLane += avgMotion + fgRatio * 6;
-          else if (rIdx >= 9) rawRightLane += avgMotion + fgRatio * 6;
-          else rawCenterLane += avgMotion + fgRatio * 6;
+          if (rIdx <= 4) rawLeftLane += avgMotion * 1.4 + fgRatio * 4;
+          else if (rIdx >= 9) rawRightLane += avgMotion * 1.4 + fgRatio * 4;
+          else rawCenterLane += avgMotion * 1.4 + fgRatio * 4;
         }
 
-        // Ignore broadcast scorebug top-left corner
-        if (normY < 200 && normX < 360) continue;
+        // Ignore broadcast scorebug top-left / top-right corners
+        if (normY < 200 && (normX < 360 || normX > 780)) continue;
 
-        if (fgRatio >= 0.14 && fgRatio <= 0.72) {
-          const salience = avgMotion * 1.6 + fgRatio * 30;
+        if (fgRatio >= 0.1 && fgRatio <= 0.78) {
+          const salience = computeHotspotSalience(avgMotion, fgRatio);
           motionWeightSum += salience;
           weightedScreenX += normX * salience;
           weightedScreenY += normY * salience;
@@ -352,17 +373,18 @@ export function analyzeMatchFrameOptically(
               g: sumG / fgCount,
               b: sumB / fgCount,
               w: salience,
+              motion: avgMotion,
             });
           }
         }
       }
     }
 
-    // Smooth lane activity
+    // Smooth lane activity responsively
     const laneSum = Math.max(1, rawLeftLane + rawCenterLane + rawRightLane);
-    params.memory.leftEnergy = params.memory.leftEnergy * 0.68 + (rawLeftLane / laneSum) * 100 * 0.32;
-    params.memory.centerEnergy = params.memory.centerEnergy * 0.68 + (rawCenterLane / laneSum) * 100 * 0.32;
-    params.memory.rightEnergy = params.memory.rightEnergy * 0.68 + (rawRightLane / laneSum) * 100 * 0.32;
+    params.memory.leftEnergy = params.memory.leftEnergy * 0.48 + (rawLeftLane / laneSum) * 100 * 0.52;
+    params.memory.centerEnergy = params.memory.centerEnergy * 0.48 + (rawCenterLane / laneSum) * 100 * 0.52;
+    params.memory.rightEnergy = params.memory.rightEnergy * 0.48 + (rawRightLane / laneSum) * 100 * 0.52;
     const smoothLaneSum = Math.max(
       1,
       params.memory.leftEnergy + params.memory.centerEnergy + params.memory.rightEnergy
@@ -371,84 +393,93 @@ export function analyzeMatchFrameOptically(
     const centerPct = Math.max(16, Math.min(68, Math.round((params.memory.centerEnergy / smoothLaneSum) * 100)));
     const rightPct = Math.max(10, 100 - leftPct - centerPct);
 
-    // Estimate which pitch third camera focuses on using penalty box / halfway line density
+    // Estimate camera third in TV space then mirror into canonical 2D pitch coordinates
     const lineTotal = Math.max(1, leftWhiteLines + centerWhiteLines + rightWhiteLines);
     const leftDensity = leftWhiteLines / lineTotal;
     const rightDensity = rightWhiteLines / lineTotal;
-    let cameraPitchBiasX = 500;
+    let cameraPitchBiasTvX = 500;
     let cameraAngle: 'wide_tactical' | 'attacking_third' = 'wide_tactical';
-    if (rightDensity > 0.56 && rightWhiteLines > 45) {
-      cameraPitchBiasX = 760;
+    if (rightDensity > 0.54 && rightWhiteLines > 42) {
+      cameraPitchBiasTvX = 775;
       cameraAngle = 'attacking_third';
-    } else if (leftDensity > 0.56 && leftWhiteLines > 45) {
-      cameraPitchBiasX = 240;
+    } else if (leftDensity > 0.54 && leftWhiteLines > 42) {
+      cameraPitchBiasTvX = 225;
       cameraAngle = 'attacking_third';
     }
 
     const screenCenterX = motionWeightSum > 0 ? weightedScreenX / motionWeightSum : 500;
     const screenCenterY = motionWeightSum > 0 ? weightedScreenY / motionWeightSum : 500;
-
-    // Combine camera third bias + local motion focus into full-pitch target (including 6-yard boxes & corners)
-    const estBallX = Math.max(
-      48,
-      Math.min(952, Math.round(cameraPitchBiasX * 0.55 + screenCenterX * 0.45))
-    );
-    const estBallY = Math.max(55, Math.min(945, Math.round(screenCenterY)));
+    const rawTvBallX = cameraPitchBiasTvX * 0.28 + screenCenterX * 0.72;
+    const estBallX = mapTvXToPitchX(rawTvBallX, mirrorHorizontal);
+    const estBallY = Math.max(55, Math.min(945, Math.round(mirrorHorizontal ? 1000 - screenCenterY : screenCenterY)));
 
     params.memory.prevSmoothBallX = params.memory.smoothBallX;
-    params.memory.smoothBallX = Math.round(params.memory.smoothBallX * 0.68 + estBallX * 0.32);
-    params.memory.smoothBallY = Math.round(params.memory.smoothBallY * 0.68 + estBallY * 0.32);
+    params.memory.smoothBallX = Math.round(params.memory.smoothBallX * 0.42 + estBallX * 0.58);
+    params.memory.smoothBallY = Math.round(params.memory.smoothBallY * 0.42 + estBallY * 0.58);
 
-    // Gentle kit color detection with high hysteresis so colors never jitter wildly
+    // Maintain live kit RGB centroids (respecting 2nd-half side flip!) and display hexes
     let homeKitColor = detailsHomeColor;
     let awayKitColor = detailsAwayColor;
-    if (fgSamples.length >= 6 && !params.details?.homeColor) {
-      fgSamples.sort((a, b) => a.x - b.x);
-      const leftHalf = fgSamples.slice(0, Math.floor(fgSamples.length / 2));
-      const rightHalf = fgSamples.slice(Math.floor(fgSamples.length / 2));
+    if (fgSamples.length >= 6) {
+      const sorted = [...fgSamples].sort((a, b) => a.x - b.x);
+      const leftHalf = sorted.slice(0, Math.floor(sorted.length / 2));
+      const rightHalf = sorted.slice(Math.floor(sorted.length / 2));
       const avgRgb = (arr: typeof fgSamples): [number, number, number] => [
         arr.reduce((s, x) => s + x.r, 0) / Math.max(1, arr.length),
         arr.reduce((s, x) => s + x.g, 0) / Math.max(1, arr.length),
         arr.reduce((s, x) => s + x.b, 0) / Math.max(1, arr.length),
       ];
-      const cA = avgRgb(leftHalf);
-      const cB = avgRgb(rightHalf);
-      if (!params.memory.homeCentroid) params.memory.homeCentroid = cA;
-      else if (rgbDist(params.memory.homeCentroid, cA) < 90) {
+      const cLeft = avgRgb(leftHalf);
+      const cRight = avgRgb(rightHalf);
+      const cHome = mirrorHorizontal ? cRight : cLeft;
+      const cAway = mirrorHorizontal ? cLeft : cRight;
+      if (!params.memory.homeCentroid) params.memory.homeCentroid = cHome;
+      else if (colorDist(params.memory.homeCentroid, cHome) < 95) {
         params.memory.homeCentroid = [
-          params.memory.homeCentroid[0] * 0.85 + cA[0] * 0.15,
-          params.memory.homeCentroid[1] * 0.85 + cA[1] * 0.15,
-          params.memory.homeCentroid[2] * 0.85 + cA[2] * 0.15,
+          params.memory.homeCentroid[0] * 0.8 + cHome[0] * 0.2,
+          params.memory.homeCentroid[1] * 0.8 + cHome[1] * 0.2,
+          params.memory.homeCentroid[2] * 0.8 + cHome[2] * 0.2,
         ];
       }
-      if (!params.memory.awayCentroid) params.memory.awayCentroid = cB;
-      else if (rgbDist(params.memory.awayCentroid, cB) < 90) {
+      if (!params.memory.awayCentroid) params.memory.awayCentroid = cAway;
+      else if (colorDist(params.memory.awayCentroid, cAway) < 95) {
         params.memory.awayCentroid = [
-          params.memory.awayCentroid[0] * 0.85 + cB[0] * 0.15,
-          params.memory.awayCentroid[1] * 0.85 + cB[1] * 0.15,
-          params.memory.awayCentroid[2] * 0.85 + cB[2] * 0.15,
+          params.memory.awayCentroid[0] * 0.8 + cAway[0] * 0.2,
+          params.memory.awayCentroid[1] * 0.8 + cAway[1] * 0.2,
+          params.memory.awayCentroid[2] * 0.8 + cAway[2] * 0.2,
         ];
       }
-      homeKitColor = toReadableHex(params.memory.homeCentroid, '#00F593');
-      awayKitColor = toReadableHex(params.memory.awayCentroid, '#9146FF');
-      if (homeKitColor.toLowerCase() === awayKitColor.toLowerCase()) {
-        awayKitColor = '#9146FF';
+      if (!params.details?.homeColor) {
+        homeKitColor = toReadableHex(params.memory.homeCentroid, '#00F593');
+        awayKitColor = toReadableHex(params.memory.awayCentroid, '#9146FF');
+        if (homeKitColor.toLowerCase() === awayKitColor.toLowerCase()) awayKitColor = '#9146FF';
       }
     }
 
-    // Hysteretic attack tilt computation (-100 Away <-> +100 Home)
+    const matchHomeRgb =
+      hexToRgb(params.geminiCalibration?.observedHomeKitHex) ||
+      hexToRgb(params.details?.homeColor) ||
+      params.memory.homeCentroid;
+    const matchAwayRgb =
+      hexToRgb(params.geminiCalibration?.observedAwayKitHex) ||
+      hexToRgb(params.details?.awayColor) ||
+      params.memory.awayCentroid;
+    const hotspotCarrier = detectHotspotCarrierTeam(fgSamples, matchHomeRgb, matchAwayRgb);
+
+    // Responsive attack tilt (-100 Away <-> +100 Home) blending pitch territory + velocity + hotspot kit color
     const ballDeltaX = params.memory.smoothBallX - params.memory.prevSmoothBallX;
-    const rawZoneTilt = (params.memory.smoothBallX - 500) / 5 + ballDeltaX * 0.55;
+    const carrierBoost = hotspotCarrier === 'home' ? 28 : hotspotCarrier === 'away' ? -28 : 0;
+    const rawZoneTilt = (params.memory.smoothBallX - 500) / 4.4 + ballDeltaX * 0.95 + carrierBoost;
     params.memory.smoothAttackTilt =
-      params.memory.smoothAttackTilt * 0.65 + Math.max(-100, Math.min(100, rawZoneTilt)) * 0.35;
+      params.memory.smoothAttackTilt * 0.44 + Math.max(-100, Math.min(100, rawZoneTilt)) * 0.56;
 
     const attackDirection: 'home' | 'away' | 'neutral' =
-      params.memory.smoothAttackTilt > 11
+      params.memory.smoothAttackTilt > 9
         ? 'home'
-        : params.memory.smoothAttackTilt < -11
+        : params.memory.smoothAttackTilt < -9
           ? 'away'
-          : 'neutral';
-    const attackIntensity = Math.min(95, Math.max(22, Math.round(Math.abs(params.memory.smoothAttackTilt) * 1.3)));
+          : hotspotCarrier;
+    const attackIntensity = Math.min(95, Math.max(22, Math.round(Math.abs(params.memory.smoothAttackTilt) * 1.28)));
 
     if (attackDirection === 'home') params.memory.homePossFrames++;
     else if (attackDirection === 'away') params.memory.awayPossFrames++;
@@ -502,6 +533,7 @@ export function analyzeMatchFrameOptically(
       attackDirection,
       attackIntensity,
       details: params.details,
+      preferLiveVisualTilt: true,
     });
 
     const players = projectLiveLineupsToPitch({
@@ -612,6 +644,7 @@ export function analyzeMatchFrameOptically(
         engineMode: 'optical_local',
         isMatchPitchVisible: true,
         cameraAngle,
+        homeAttacksRightToLeftOnTv: mirrorHorizontal,
         homeKitColor,
         awayKitColor,
         ballZone: { x: params.memory.smoothBallX, y: params.memory.smoothBallY },
