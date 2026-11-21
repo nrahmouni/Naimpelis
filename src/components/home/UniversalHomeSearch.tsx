@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Clock, Film, Loader2, Search, Sparkles, Tv, X } from 'lucide-react';
+import { ArrowLeft, Clock, Film, Loader2, Music2, Search, Sparkles, Tv, X } from 'lucide-react';
 import type {
   AppLanguage,
   CatalogMovie,
   SpanishTdtChannel,
   SportsMatch,
 } from '../../types';
+import type { MusicArtistRef, MusicRadioStation, MusicTrack } from '../../types/music';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { RiffanDiceIcon, RiffanFootballIcon } from '../ui/RiffanIcons';
@@ -37,6 +38,7 @@ interface UniversalHomeSearchProps {
   onPlayChannel: (channel: SpanishTdtChannel) => void;
   onPlayMatch: (match: SportsMatch) => void;
   onSelectGame: (gameId: string) => void;
+  onOpenMusicWorld?: () => void;
 }
 
 const RECENT_SEARCHES_KEY = 'riffantv_home_recent_searches_v1';
@@ -65,6 +67,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   onPlayChannel,
   onPlayMatch,
   onSelectGame,
+  onOpenMusicWorld,
 }) => {
   const query = useAppStore((s) => s.homeSearchQuery);
   const setQuery = useAppStore((s) => s.setHomeSearchQuery);
@@ -75,6 +78,11 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
 
   const [remoteMovies, setRemoteMovies] = useState<CatalogMovie[]>([]);
   const [remoteSeries, setRemoteSeries] = useState<CatalogMovie[]>([]);
+  const [remoteMusic, setRemoteMusic] = useState<{
+    tracks: MusicTrack[];
+    artists: MusicArtistRef[];
+    radios: MusicRadioStation[];
+  }>({ tracks: [], artists: [], radios: [] });
   const [loadingRemote, setLoadingRemote] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>(readRecentSearches);
 
@@ -189,6 +197,11 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     if (cleanQuery.length < 2) {
       setRemoteMovies((prev) => (prev.length === 0 ? prev : []));
       setRemoteSeries((prev) => (prev.length === 0 ? prev : []));
+      setRemoteMusic((prev) =>
+        prev.tracks.length === 0 && prev.artists.length === 0 && prev.radios.length === 0
+          ? prev
+          : { tracks: [], artists: [], radios: [] }
+      );
       setLoadingRemote((prev) => (prev ? false : prev));
       return;
     }
@@ -198,7 +211,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     setLoadingRemote(true);
 
     const timer = window.setTimeout(() => {
-      let pending = 2;
+      let pending = 3;
       const doneOne = () => {
         pending -= 1;
         if (active && pending <= 0) setLoadingRemote(false);
@@ -239,6 +252,25 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
         })
         .catch(() => {
           if (active && !controller.signal.aborted) setRemoteSeries([]);
+        })
+        .finally(doneOne);
+
+      fetch(`/api/music/search?q=${encodeURIComponent(cleanQuery)}`, {
+        signal: controller.signal,
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!active) return;
+          setRemoteMusic({
+            tracks: Array.isArray(data?.tracks) ? data.tracks.slice(0, 10) : [],
+            artists: Array.isArray(data?.artists) ? data.artists.slice(0, 8) : [],
+            radios: Array.isArray(data?.radios) ? data.radios.slice(0, 6) : [],
+          });
+        })
+        .catch(() => {
+          if (active && !controller.signal.aborted) {
+            setRemoteMusic({ tracks: [], artists: [], radios: [] });
+          }
         })
         .finally(doneOne);
     }, 200);
@@ -445,7 +477,11 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     });
   }, [hasMinQuery, normQuery, queryMatchesFields]);
 
+  const matchedMusicCount =
+    remoteMusic.tracks.length + remoteMusic.artists.length + remoteMusic.radios.length;
+
   const totalHits =
+    matchedMusicCount +
     matchedMovies.length +
     matchedSeries.length +
     matchedSports.length +
@@ -453,6 +489,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     matchedGames.length;
 
   const visibleCategoryHits = useMemo(() => {
+    if (activeCategory === 'music') return matchedMusicCount;
     if (activeCategory === 'movies') return matchedMovies.length;
     if (activeCategory === 'series') return matchedSeries.length;
     if (activeCategory === 'sports') return matchedSports.length;
@@ -461,6 +498,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     return totalHits;
   }, [
     activeCategory,
+    matchedMusicCount,
     matchedMovies.length,
     matchedSeries.length,
     matchedSports.length,
@@ -525,6 +563,12 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
       label: pickLang(lang, { es: 'Todo', ca: 'Tot', en: 'All' }),
       count: totalHits,
       icon: <Sparkles className="w-3.5 h-3.5" />,
+    },
+    {
+      id: 'music',
+      label: pickLang(lang, { es: 'Música', ca: 'Música', en: 'Music' }),
+      count: matchedMusicCount,
+      icon: <Music2 className="w-3.5 h-3.5" />,
     },
     {
       id: 'movies',
@@ -600,9 +644,9 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
               }
             }}
             placeholder={pickLang(lang, {
-              es: 'Buscar películas, series, canales...',
-              ca: 'Cercar pel·lícules, sèries, canals...',
-              en: 'Search movies, series, channels...',
+              es: 'Buscar películas, series, música, canales...',
+              ca: 'Cercar pel·lícules, sèries, música, canals...',
+              en: 'Search movies, series, music, channels...',
             })}
             className="flex-1 min-w-0 bg-transparent text-sm sm:text-[15px] font-medium text-white placeholder:text-zinc-500 focus:outline-none"
           />
@@ -681,9 +725,9 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                       }
                     }}
                     placeholder={pickLang(lang, {
-                      es: 'Buscar películas, series, deportes, canales...',
-                      ca: 'Cercar pel·lícules, sèries, esports, canals...',
-                      en: 'Search movies, series, sports, channels...',
+                      es: 'Buscar películas, series, música, deportes, canales...',
+                      ca: 'Cercar pel·lícules, sèries, música, esports, canals...',
+                      en: 'Search movies, series, music, sports, channels...',
                     })}
                     className="flex-1 min-w-0 bg-transparent text-sm sm:text-base font-semibold text-white placeholder:text-zinc-500 focus:outline-none"
                   />
@@ -762,6 +806,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                     </p>
                     <div className="flex flex-wrap items-center justify-center gap-2">
                       {[
+                        { label: 'Música', q: 'Bad Bunny' },
                         { label: 'Fútbol hoy', q: 'futbol' },
                         { label: 'TV en vivo', q: 'tv' },
                         { label: 'Juegos', q: 'juegos' },
@@ -895,14 +940,17 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
 
                   <UniversalSearchResultsList
                     lang={lang}
+                    cleanQuery={cleanQuery}
                     activeCategory={activeCategory}
+                    matchedMusic={remoteMusic}
                     matchedSports={matchedSports}
                     matchedTdt={matchedTdt}
                     matchedGames={matchedGames}
                     matchedMovies={matchedMovies}
                     matchedSeries={matchedSeries}
-                    onCloseSearch={closeSearchOverlay}
+                    onDismissSearch={dismissSearchOverlay}
                     onBeforeDirectPlay={snapshotSearchOriginBeforeDirectPlay}
+                    onOpenMusicWorld={onOpenMusicWorld}
                     onPlayMatch={onPlayMatch}
                     onPlayChannel={onPlayChannel}
                     onSelectGame={onSelectGame}

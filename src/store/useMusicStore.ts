@@ -344,6 +344,10 @@ export interface MusicStoreState extends PersistedLibrary {
   driveModeOpen: boolean;
   showImportModal: boolean;
   showDownloadDrawer: boolean;
+  playlistPickerTrack: MusicTrack | null;
+  showCreatePlaylistModal: boolean;
+  setPlaylistPickerTrack: (track: MusicTrack | null) => void;
+  setShowCreatePlaylistModal: (open: boolean) => void;
 
   downloadJobs: DownloadJob[];
   offlineTrackIds: string[];
@@ -542,6 +546,10 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
   driveModeOpen: false,
   showImportModal: false,
   showDownloadDrawer: false,
+  playlistPickerTrack: null,
+  showCreatePlaylistModal: false,
+  setPlaylistPickerTrack: (playlistPickerTrack) => set({ playlistPickerTrack }),
+  setShowCreatePlaylistModal: (showCreatePlaylistModal) => set({ showCreatePlaylistModal }),
 
   downloadJobs: [],
   offlineTrackIds: [],

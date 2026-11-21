@@ -1,6 +1,6 @@
 import type { CatalogMovie } from '../../types';
 
-export type SearchCategoryFilter = 'all' | 'movies' | 'series' | 'sports' | 'tv' | 'games';
+export type SearchCategoryFilter = 'all' | 'music' | 'movies' | 'series' | 'sports' | 'tv' | 'games';
 
 export interface AiSearchJobState {
   status: 'idle' | 'searching' | 'verifying' | 'found' | 'not_found' | 'error';

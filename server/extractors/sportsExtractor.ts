@@ -64,7 +64,10 @@ export function decodeSportsPlaystreamEconfig(econfig: string): any | null {
   }
 }
 
-export async function fetchSportsHtmlHop(url: string, referer: string): Promise<string> {
+export async function fetchSportsHtmlHopWithUrl(
+  url: string,
+  referer: string
+): Promise<{ text: string; finalUrl: string }> {
   try {
     const res = await streamingFetch(url, {
       headers: {
@@ -72,16 +75,21 @@ export async function fetchSportsHtmlHop(url: string, referer: string): Promise<
         'User-Agent': CHROME_UA,
         Accept: 'text/html,application/xhtml+xml,*/*;q=0.9',
       },
-      timeoutMs: 4500,
+      timeoutMs: 4000,
     });
-    if (res.ok) return await res.text();
+    if (res.ok) return { text: await res.text(), finalUrl: res.url || url };
   } catch {
     // fallback to HTTP/2 helper
   }
-  const fb = await curlGetText(url, { Referer: referer, 'User-Agent': CHROME_UA }, 5).catch(
+  const fb = await curlGetText(url, { Referer: referer, 'User-Agent': CHROME_UA }, 4).catch(
     () => ({ text: '', effectiveUrl: url })
   );
-  return fb.text;
+  return { text: fb.text, finalUrl: fb.effectiveUrl || url };
+}
+
+export async function fetchSportsHtmlHop(url: string, referer: string): Promise<string> {
+  const { text } = await fetchSportsHtmlHopWithUrl(url, referer);
+  return text;
 }
 
 export async function extractLiveSportsHlsDirect(
@@ -91,6 +99,7 @@ export async function extractLiveSportsHlsDirect(
   referer: string;
   isDirectMp4: boolean;
   isBrokenGreenFeed?: boolean;
+  verifiedClean?: boolean;
 } | null> {
   let currentUrl = healUpstreamSportsDomain(initialUrl);
   let currentReferer = 'https://www.rojadirectv.live/';
@@ -102,16 +111,24 @@ export async function extractLiveSportsHlsDirect(
 
   for (let hop = 0; hop < 7; hop++) {
     currentUrl = healUpstreamSportsDomain(currentUrl);
-    const html = await fetchSportsHtmlHop(currentUrl, currentReferer);
+    const { text: html, finalUrl: resolvedHtmlUrl } = await fetchSportsHtmlHopWithUrl(
+      currentUrl,
+      currentReferer
+    );
     if (!html) break;
+    if (resolvedHtmlUrl) currentUrl = healUpstreamSportsDomain(resolvedHtmlUrl);
 
     if (html.includes('var playbackURL=')) {
       const streamXhdM3u = decodeStreamXhdPlaybackUrl(html);
       if (streamXhdM3u) {
         const refOrigin = new URL(currentUrl).origin + '/';
-        const checkM3u = await fetchSportsHtmlHop(streamXhdM3u, refOrigin);
+        const { text: checkM3u, finalUrl: finalM3uUrl } = await fetchSportsHtmlHopWithUrl(
+          streamXhdM3u,
+          refOrigin
+        );
+        const resolvedM3u = finalM3uUrl || streamXhdM3u;
         if (checkM3u.includes('#EXTM3U')) {
-          const frameOk = await verifyM3u8HasCleanVideoFrame(checkM3u, streamXhdM3u, refOrigin);
+          const frameOk = await verifyM3u8HasCleanVideoFrame(checkM3u, resolvedM3u, refOrigin);
           if (!frameOk) {
             return {
               streamUrl: '',
@@ -121,9 +138,10 @@ export async function extractLiveSportsHlsDirect(
             };
           }
           return {
-            streamUrl: streamXhdM3u,
+            streamUrl: resolvedM3u,
             referer: refOrigin,
             isDirectMp4: false,
+            verifiedClean: true,
           };
         }
       }
@@ -165,17 +183,22 @@ export async function extractLiveSportsHlsDirect(
 
         let sawM3uButScrambled = false;
         for (const cand of candidateTargets) {
-          const checkM3u = await fetchSportsHtmlHop(cand.url, cand.ref);
+          const { text: checkM3u, finalUrl: finalCandUrl } = await fetchSportsHtmlHopWithUrl(
+            cand.url,
+            cand.ref
+          );
+          const resolvedCand = finalCandUrl || cand.url;
           if (checkM3u.includes('#EXTM3U')) {
-            const frameOk = await verifyM3u8HasCleanVideoFrame(checkM3u, cand.url, cand.ref);
+            const frameOk = await verifyM3u8HasCleanVideoFrame(checkM3u, resolvedCand, cand.ref);
             if (!frameOk) {
               sawM3uButScrambled = true;
               continue;
             }
             return {
-              streamUrl: cand.url,
+              streamUrl: resolvedCand,
               referer: cand.ref,
               isDirectMp4: false,
+              verifiedClean: true,
             };
           }
         }
@@ -196,9 +219,14 @@ export async function extractLiveSportsHlsDirect(
     );
     if (directM3u8Match && directM3u8Match[1] && !isBlockedAdUrl(directM3u8Match[1])) {
       const m3uCandidate = directM3u8Match[1];
-      const checkM3u = await fetchSportsHtmlHop(m3uCandidate, currentUrl);
+      const { text: checkM3u, finalUrl: finalM3uUrl } = await fetchSportsHtmlHopWithUrl(
+        m3uCandidate,
+        currentUrl
+      );
+      const resolvedM3u = finalM3uUrl || m3uCandidate;
+      let verifiedClean = false;
       if (checkM3u.includes('#EXTM3U')) {
-        const frameOk = await verifyM3u8HasCleanVideoFrame(checkM3u, m3uCandidate, currentUrl);
+        const frameOk = await verifyM3u8HasCleanVideoFrame(checkM3u, resolvedM3u, currentUrl);
         if (!frameOk) {
           return {
             streamUrl: '',
@@ -207,11 +235,13 @@ export async function extractLiveSportsHlsDirect(
             isBrokenGreenFeed: true,
           };
         }
+        verifiedClean = true;
       }
       return {
-        streamUrl: m3uCandidate,
+        streamUrl: resolvedM3u,
         referer: currentUrl,
         isDirectMp4: false,
+        verifiedClean,
       };
     }
 

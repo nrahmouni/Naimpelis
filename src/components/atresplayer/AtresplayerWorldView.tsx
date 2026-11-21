@@ -8,6 +8,8 @@ import type {
 } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
+import { useBackInterceptor } from '../../lib/backInterceptor';
+import { useAppStore } from '../../store/useAppStore';
 import {
   AtresmediaProgramPanel,
   type AtresmediaCatalogItemUi,
@@ -71,9 +73,17 @@ export const AtresplayerWorldView: React.FC<AtresplayerWorldViewProps> = ({
   const [catalog, setCatalog] = useState<AtresmediaCatalogItemUi[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [activeCategory, setActiveCategory] = useState<CategoryFilter>('all');
+  const activeCategory = useAppStore((s) => s.atresplayerCategory);
+  const setActiveCategory = useAppStore((s) => s.setAtresplayerCategory);
   const [selectedProgram, setSelectedProgram] = useState<AtresmediaCatalogItemUi | null>(null);
   const [failedImgs, setFailedImgs] = useState<Record<string, boolean>>({});
+
+  useBackInterceptor(
+    !selectedProgram && activeCategory !== 'all',
+    'atresplayer-category-reset',
+    () => setActiveCategory('all'),
+    { priority: 4 }
+  );
 
   const fetchHome = useCallback(async () => {
     setLoading(true);

@@ -17,6 +17,8 @@ import { AppWorldsContent } from './components/AppWorldsContent';
 import { PlayerStageContainer } from './components/PlayerStageContainer';
 import { useAppController } from './hooks/useAppController';
 import { lazyWithRetry } from './utils/lazyWithRetry';
+import { GlobalMusicLayer } from './components/music/GlobalMusicLayer';
+import { useMusicStore } from './store/useMusicStore';
 
 const PartySidebar = lazyWithRetry(() =>
   import('./components/PartySidebar').then((m) => ({ default: m.PartySidebar }))
@@ -65,6 +67,8 @@ export function App() {
     sessionMode, hasEnteredApp, shareToast, deepLinkResolving,
     exitToastVisible, restorePlaybackOrigin,
   } = c;
+
+  const hasActiveMusicBar = useMusicStore((s) => Boolean(s.currentTrack || s.activeRadio));
 
   const handleDismissLanguageNotice = useCallback(() => {
     playback.setLanguageNotice(null);
@@ -532,7 +536,9 @@ export function App() {
               />
 
               {hideBrowseBelowPlayer ? null : (
-                <AppWorldsContent controller={c} renderPartySidebar={renderPartySidebar} />
+                <div className={hasActiveMusicBar && activeWorld !== 'music' ? 'pb-24 sm:pb-28' : ''}>
+                  <AppWorldsContent controller={c} renderPartySidebar={renderPartySidebar} />
+                </div>
               )}
             </div>
           </div>
@@ -736,6 +742,10 @@ export function App() {
               )}
             </div>
           )}
+          <GlobalMusicLayer
+            isFullscreenVideoActive={isPlayerActive && !isDockedMini && !isPlayerClosedLocally}
+            onOpenMusicWorld={() => enterWorld('music')}
+          />
         </div>
       </div>
     </MotionConfig>

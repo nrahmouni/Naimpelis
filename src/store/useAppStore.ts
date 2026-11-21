@@ -31,7 +31,14 @@ export type PrimaryWorldId =
 export type WorldId = 'entry' | PrimaryWorldId | 'youtube';
 export type CineSubTab = 'movies' | 'series';
 export type FutbolSubTab = 'matches' | 'channels';
-export type HomeSearchCategoryFilter = 'all' | 'movies' | 'series' | 'sports' | 'tv' | 'games';
+export type HomeSearchCategoryFilter =
+  | 'all'
+  | 'music'
+  | 'movies'
+  | 'series'
+  | 'sports'
+  | 'tv'
+  | 'games';
 
 export interface RequestedSeriesModalPayload {
   series: CatalogMovie | TvSeriesDetails;
@@ -141,11 +148,19 @@ interface AppShellState {
   worldSearchQueries: Partial<Record<WorldId, string>>;
   activeNavSection: ShellNavSection;
   activeWorld: WorldId;
+  worldHistoryStack: WorldId[];
+  worldScrollPositions: Partial<Record<WorldId, { mainTop: number; catalogTop: number }>>;
   lastUsedWorld: PrimaryWorldId | null;
   cineTab: CineSubTab;
   cineCastellano: boolean;
   cineSpecialPortal: 'none' | 'catala';
   futbolTab: FutbolSubTab;
+  clipboxTab: 'search' | 'vault' | 'decoder';
+  rbtvTab: 'live' | 'vault' | 'decoder';
+  belixTab: 'live' | 'vault' | 'decoder';
+  atresplayerCategory: 'all' | 'concursos' | 'entretenimiento' | 'series' | 'actualidad';
+  movistarDaznOperator: 'all' | 'movistar' | 'dazn';
+  movistarDaznCategory: 'all' | 'futbol' | 'motor' | 'deportes' | 'entretenimiento' | 'series';
   isFloatingRoomOpen: boolean;
   floatingBubbleSuppressCount: number;
   showDesignSystem: boolean;
@@ -186,10 +201,24 @@ interface AppShellState {
   setWorldSearchQuery: (world: WorldId, q: string) => void;
   setActiveNavSection: (section: ShellNavSection) => void;
   setActiveWorld: (world: WorldId) => void;
+  pushWorldHistory: (world: WorldId) => void;
+  popWorldHistory: () => WorldId | null;
+  clearWorldHistory: () => void;
+  saveWorldScrollPosition: (world: WorldId, pos: { mainTop: number; catalogTop: number }) => void;
   setCineTab: (tab: CineSubTab) => void;
   setCineCastellano: (enabled: boolean) => void;
   setCineSpecialPortal: (portal: 'none' | 'catala') => void;
   setFutbolTab: (tab: FutbolSubTab) => void;
+  setClipboxTab: (tab: 'search' | 'vault' | 'decoder') => void;
+  setRbtvTab: (tab: 'live' | 'vault' | 'decoder') => void;
+  setBelixTab: (tab: 'live' | 'vault' | 'decoder') => void;
+  setAtresplayerCategory: (
+    cat: 'all' | 'concursos' | 'entretenimiento' | 'series' | 'actualidad'
+  ) => void;
+  setMovistarDaznOperator: (op: 'all' | 'movistar' | 'dazn') => void;
+  setMovistarDaznCategory: (
+    cat: 'all' | 'futbol' | 'motor' | 'deportes' | 'entretenimiento' | 'series'
+  ) => void;
   setIsFloatingRoomOpen: (open: boolean) => void;
   pushBubbleSuppression: () => void;
   popBubbleSuppression: () => void;
@@ -274,11 +303,19 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   worldSearchQueries: {},
   activeNavSection: 'home',
   activeWorld: 'entry',
+  worldHistoryStack: [],
+  worldScrollPositions: {},
   lastUsedWorld: loadLastUsedWorld(),
   cineTab: 'movies',
   cineCastellano: true,
   cineSpecialPortal: 'none',
   futbolTab: 'matches',
+  clipboxTab: 'search',
+  rbtvTab: 'live',
+  belixTab: 'live',
+  atresplayerCategory: 'all',
+  movistarDaznOperator: 'all',
+  movistarDaznCategory: 'all',
   isFloatingRoomOpen: false,
   floatingBubbleSuppressCount: 0,
   showDesignSystem:
@@ -437,6 +474,34 @@ export const useAppStore = create<AppShellState>((set, get) => ({
     if (cur.activeWorld === activeWorld && cur.isFloatingRoomOpen === false) return;
     set({ activeWorld, isFloatingRoomOpen: false });
   },
+  pushWorldHistory: (world) => {
+    set((prev) => {
+      const top = prev.worldHistoryStack[prev.worldHistoryStack.length - 1];
+      if (top === world) return prev;
+      return {
+        worldHistoryStack: [...prev.worldHistoryStack.slice(-11), world],
+      };
+    });
+  },
+  popWorldHistory: () => {
+    const stack = get().worldHistoryStack;
+    if (stack.length === 0) return null;
+    const prevWorld = stack[stack.length - 1];
+    set({ worldHistoryStack: stack.slice(0, -1) });
+    return prevWorld;
+  },
+  clearWorldHistory: () => {
+    if (get().worldHistoryStack.length === 0) return;
+    set({ worldHistoryStack: [] });
+  },
+  saveWorldScrollPosition: (world, pos) => {
+    set((prev) => ({
+      worldScrollPositions: {
+        ...prev.worldScrollPositions,
+        [world]: pos,
+      },
+    }));
+  },
   setCineTab: (cineTab) => {
     if (get().cineTab === cineTab) return;
     set({ cineTab });
@@ -452,6 +517,30 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   setFutbolTab: (futbolTab) => {
     if (get().futbolTab === futbolTab) return;
     set({ futbolTab });
+  },
+  setClipboxTab: (clipboxTab) => {
+    if (get().clipboxTab === clipboxTab) return;
+    set({ clipboxTab });
+  },
+  setRbtvTab: (rbtvTab) => {
+    if (get().rbtvTab === rbtvTab) return;
+    set({ rbtvTab });
+  },
+  setBelixTab: (belixTab) => {
+    if (get().belixTab === belixTab) return;
+    set({ belixTab });
+  },
+  setAtresplayerCategory: (atresplayerCategory) => {
+    if (get().atresplayerCategory === atresplayerCategory) return;
+    set({ atresplayerCategory });
+  },
+  setMovistarDaznOperator: (movistarDaznOperator) => {
+    if (get().movistarDaznOperator === movistarDaznOperator) return;
+    set({ movistarDaznOperator });
+  },
+  setMovistarDaznCategory: (movistarDaznCategory) => {
+    if (get().movistarDaznCategory === movistarDaznCategory) return;
+    set({ movistarDaznCategory });
   },
   setIsFloatingRoomOpen: (isFloatingRoomOpen) => {
     if (get().isFloatingRoomOpen === isFloatingRoomOpen) return;

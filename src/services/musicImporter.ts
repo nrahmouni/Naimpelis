@@ -90,6 +90,13 @@ function finalizeImport(
         album: t.album,
         durationSec: t.durationSec,
         sourceHint: t.sourceHint,
+        spotifyId: t.spotifyId,
+        isrc: t.isrc,
+        previewUrl: t.previewUrl,
+        cover: t.cover,
+        explicit: t.explicit,
+        genres: t.genres,
+        releaseDate: t.releaseDate,
         weight: w,
       });
     }
@@ -289,14 +296,20 @@ export function parseMusicImportText(content: string, fileName = ''): ParsedMusi
   // 3. CSV (Exportify, TuneMyMusic, Soundiiz, Google Takeout CSV)
   const lines = trimmed.split(/\r?\n/).filter((l) => l.trim().length > 0);
   if (lines.length >= 2 && lines[0].includes(',')) {
-    const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase());
+    const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase().trim());
     const idxTitle = headers.findIndex((h) =>
-      /track name|title|song|cancion|canción|name/.test(h)
+      /track name|title|song|cancion|canción|name/.test(h) && !/album|artist/.test(h)
     );
-    const idxArtist = headers.findIndex((h) => /artist|artista/.test(h));
-    const idxAlbum = headers.findIndex((h) => /album|álbum/.test(h));
+    const idxArtist = headers.findIndex((h) => /artist name|artist\(s\)|artista/.test(h) || h === 'artist');
+    const idxAlbum = headers.findIndex((h) => /album name|album|álbum/.test(h) && !/uri|image|release|artist/.test(h));
     const idxGenres = headers.findIndex((h) => /genre|género/.test(h));
     const idxDur = headers.findIndex((h) => /duration|length|duración/.test(h));
+    const idxTrackUri = headers.findIndex((h) => /track uri|spotify uri|uri/.test(h) && !/album|artist/.test(h));
+    const idxIsrc = headers.findIndex((h) => /isrc/.test(h));
+    const idxPreview = headers.findIndex((h) => /preview/.test(h));
+    const idxImage = headers.findIndex((h) => /album image|cover|artwork|image url/.test(h));
+    const idxExplicit = headers.findIndex((h) => /explicit/.test(h));
+    const idxReleaseDate = headers.findIndex((h) => /release date/.test(h));
 
     if (idxTitle !== -1 || idxArtist !== -1) {
       const tracks: ImportedTrackInput[] = [];
@@ -306,13 +319,43 @@ export function parseMusicImportText(content: string, fileName = ''): ParsedMusi
         const title = idxTitle !== -1 ? cols[idxTitle] || '' : '';
         const artist = idxArtist !== -1 ? cols[idxArtist] || '' : '';
         const album = idxAlbum !== -1 ? cols[idxAlbum] || '' : '';
+        const rowGenres: string[] = [];
         if (idxGenres !== -1 && cols[idxGenres]) {
-          cols[idxGenres].split(/[;,]/).forEach((g) => rawGenres.push(g));
+          cols[idxGenres].split(/[;,]/).forEach((g) => {
+            const cg = g.trim();
+            if (cg) {
+              rawGenres.push(cg);
+              rowGenres.push(cg);
+            }
+          });
         }
-        const durMs = idxDur !== -1 ? Number(cols[idxDur] || 0) : 0;
-        const durationSec = durMs > 1000 ? Math.round(durMs / 1000) : durMs > 0 ? durMs : undefined;
+        const durRaw = idxDur !== -1 ? Number(cols[idxDur] || 0) : 0;
+        const durationSec = durRaw > 1000 ? Math.round(durRaw / 1000) : durRaw > 0 ? durRaw : undefined;
+        const uriVal = idxTrackUri !== -1 ? String(cols[idxTrackUri] || '').trim() : '';
+        const spMatch = uriVal.match(/spotify:track:([a-zA-Z0-9]+)|open\.spotify\.com\/track\/([a-zA-Z0-9]+)/i);
+        const spotifyId = spMatch ? (spMatch[1] || spMatch[2]) : undefined;
+        const isrc = idxIsrc !== -1 ? String(cols[idxIsrc] || '').trim() || undefined : undefined;
+        const previewUrl = idxPreview !== -1 ? String(cols[idxPreview] || '').trim() || undefined : undefined;
+        const cover = idxImage !== -1 ? String(cols[idxImage] || '').trim() || undefined : undefined;
+        const explicitRaw = idxExplicit !== -1 ? String(cols[idxExplicit] || '').trim().toLowerCase() : '';
+        const explicit = explicitRaw === 'true' || explicitRaw === '1' || explicitRaw === 'yes';
+        const releaseDate = idxReleaseDate !== -1 ? String(cols[idxReleaseDate] || '').trim() || undefined : undefined;
+
         if (title) {
-          tracks.push({ title, artist, album, durationSec });
+          tracks.push({
+            title,
+            artist,
+            album,
+            durationSec,
+            sourceHint: spotifyId || idxTrackUri !== -1 ? 'spotify' : undefined,
+            spotifyId,
+            isrc,
+            previewUrl,
+            cover,
+            explicit: idxExplicit !== -1 ? explicit : undefined,
+            genres: rowGenres.length > 0 ? rowGenres : undefined,
+            releaseDate,
+          });
         }
       }
       if (tracks.length > 0) {
@@ -321,7 +364,7 @@ export function parseMusicImportText(content: string, fileName = ''): ParsedMusi
           tracks,
           [],
           rawGenres,
-          fileName.replace(/\.csv$/i, '') || 'Playlist Importada'
+          fileName.replace(/\.csv$/i, '').replace(/_/g, ' ') || 'Exportify Playlist'
         );
       }
     }
@@ -343,6 +386,63 @@ export function parseMusicImportText(content: string, fileName = ''): ParsedMusi
     }
   }
   return finalizeImport('text', textTracks, [], [], fileName || 'Lista de Canciones');
+}
+
+function escapeCsvCell(val: unknown): string {
+  const s = String(val ?? '');
+  if (/[",\r\n]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+export function buildExportifyCsvFromTracks(
+  _name: string,
+  tracks: Array<{
+    id?: string;
+    spotifyId?: string;
+    title: string;
+    artist: { name: string };
+    album?: { title?: string; cover?: string; coverXl?: string };
+    durationSec?: number;
+    explicit?: boolean;
+    isrc?: string;
+    previewUrl?: string;
+  }>
+): string {
+  const header = [
+    'Track URI',
+    'Track Name',
+    'Artist Name(s)',
+    'Album Name',
+    'Album Image URL',
+    'Track Duration (ms)',
+    'Explicit',
+    'ISRC',
+    'Track Preview URL',
+  ].join(',');
+
+  const rows = tracks.map((t) => {
+    const trackUri = t.spotifyId
+      ? `spotify:track:${t.spotifyId}`
+      : t.id?.startsWith('sp-')
+      ? `spotify:track:${t.id.slice(3)}`
+      : `riffan:track:${t.id || t.title}`;
+    return [
+      escapeCsvCell(trackUri),
+      escapeCsvCell(t.title),
+      escapeCsvCell(t.artist?.name || ''),
+      escapeCsvCell(t.album?.title || ''),
+      escapeCsvCell(t.album?.coverXl || t.album?.cover || ''),
+      escapeCsvCell(Math.max(0, Math.round((t.durationSec || 0) * 1000))),
+      escapeCsvCell(t.explicit ? 'true' : 'false'),
+      escapeCsvCell(t.isrc || ''),
+      escapeCsvCell(t.previewUrl || ''),
+    ].join(',');
+  });
+
+  // UTF-8 BOM + CRLF for Excel & Exportify compatibility
+  return `\uFEFF${[header, ...rows].join('\r\n')}`;
 }
 
 export function buildM3u8FromTracks(name: string, tracks: Array<{ title: string; artist: { name: string }; durationSec: number; streamUrl?: string; previewUrl?: string }>): string {

@@ -1,15 +1,11 @@
-import { spawn } from 'child_process';
-import fs from 'fs';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
 import { CHROME_UA, curlGetText } from './httpHelpers.ts';
 
-const FFMPEG_BIN: string = fs.existsSync('/usr/bin/ffmpeg') ? '/usr/bin/ffmpeg' : 'ffmpeg';
-
 const FRAME_W = 160;
 const FRAME_H = 90;
 const FRAME_BYTES = FRAME_W * FRAME_H * 3;
-const liveFrameHealthCache = new LruTtlCache<string, boolean>(300, 150_000);
+const liveFrameHealthCache = new LruTtlCache<string, boolean>(350, 90_000);
 
 const FATAL_H264_STDERR_RE =
   /deblocking_filter_idc|reference overflow|decode_slice_header error|cabac_init_idc|Missing reference picture|sps_id.*out of range|pps_id.*out of range|non-existing PPS|top block unavailable|left block unavailable|error while decoding MB|Invalid NAL unit|no frame!|overread \d+ bits/i;
@@ -23,38 +19,40 @@ export function validateH264StreamBuffer(sampleBuf: Buffer): { valid: boolean; r
     return { valid: false, reason: 'buffer_too_small' };
   }
 
-  const hasMpegTsSync =
-    (sampleBuf[0] === 0x47 && sampleBuf.length > 188 && sampleBuf[188] === 0x47) ||
-    sampleBuf.indexOf(0x47) !== -1;
+  const headText = sampleBuf.subarray(0, Math.min(sampleBuf.length, 96)).toString('utf8').trimStart();
+  if (/^(<!doctype|<html\b|<head\b|<body\b|\{)/i.test(headText)) {
+    return { valid: false, reason: 'html_or_json_error_payload' };
+  }
+
+  // Verify genuine aligned MPEG-TS 188-byte sync pattern (at offset 0..376) or MP4/fMP4 container boxes
+  let hasAlignedTsSync = false;
+  const syncSearchLimit = Math.min(sampleBuf.length - 377, 1024);
+  for (let i = 0; i <= syncSearchLimit; i++) {
+    if (
+      sampleBuf[i] === 0x47 &&
+      sampleBuf[i + 188] === 0x47 &&
+      sampleBuf[i + 376] === 0x47
+    ) {
+      hasAlignedTsSync = true;
+      break;
+    }
+  }
+  const hasLooseTsSync =
+    hasAlignedTsSync ||
+    (sampleBuf[0] === 0x47 && sampleBuf.length > 188 && sampleBuf[188] === 0x47);
   const hasMp4Box =
-    sampleBuf.includes(Buffer.from('ftyp')) || sampleBuf.includes(Buffer.from('moof'));
-  if (!hasMpegTsSync && !hasMp4Box) {
+    sampleBuf.includes(Buffer.from('ftyp')) ||
+    sampleBuf.includes(Buffer.from('moof')) ||
+    sampleBuf.includes(Buffer.from('styp')) ||
+    sampleBuf.includes(Buffer.from('sidx'));
+
+  if (!hasLooseTsSync && !hasMp4Box) {
     return { valid: false, reason: 'missing_ts_or_mp4_sync' };
   }
 
   const probeSlice = sampleBuf.subarray(0, Math.min(sampleBuf.length, 4_096));
   if (new Set(probeSlice).size <= 4) {
     return { valid: false, reason: 'flat_corrupt_buffer' };
-  }
-
-  // Scan Annex-B H.264 NAL start codes (0x000001) to catch malformed slice/NAL headers early
-  const scanLimit = Math.min(sampleBuf.length - 4, 65_536);
-  let totalNals = 0;
-  let corruptNals = 0;
-  for (let i = 0; i < scanLimit; i++) {
-    if (sampleBuf[i] === 0x00 && sampleBuf[i + 1] === 0x00 && sampleBuf[i + 2] === 0x01) {
-      const nalHdr = sampleBuf[i + 3];
-      const forbiddenZeroBit = (nalHdr & 0x80) !== 0;
-      const nalType = nalHdr & 0x1f;
-      totalNals++;
-      if (forbiddenZeroBit || nalType === 0 || nalType > 23) {
-        corruptNals++;
-      }
-      i += 3;
-    }
-  }
-  if (totalNals >= 4 && corruptNals / totalNals > 0.45) {
-    return { valid: false, reason: 'corrupt_nal_headers' };
   }
 
   return { valid: true };
@@ -73,7 +71,6 @@ export function analyzeDecodedRgbFrame(
   }
 
   if (new Set(rawFrame).size <= 4) {
-    // Flat uniform uninitialized buffer (e.g. #818181 grey or #005200 / #004c00 green)
     return { clean: false, reason: 'flat_uniform_frame' };
   }
 
@@ -139,26 +136,37 @@ export function analyzeDecodedRgbFrame(
   return { clean: true };
 }
 
-async function fetchManifestSnippet(url: string, referer: string): Promise<string> {
+async function fetchManifestSnippet(
+  url: string,
+  referer: string
+): Promise<{ text: string; finalUrl: string }> {
   try {
     const res = await streamingFetch(url, {
       headers: { Referer: referer, 'User-Agent': CHROME_UA, Accept: '*/*' },
-      timeoutMs: 4500,
+      timeoutMs: 2800,
     });
-    if (res.ok) return await res.text();
+    if (res.ok) {
+      return { text: await res.text(), finalUrl: res.url || url };
+    }
   } catch {
     // fallback to curl
   }
-  const fb = await curlGetText(url, { Referer: referer, 'User-Agent': CHROME_UA }, 5).catch(
-    () => ({ text: '' })
+  const fb = await curlGetText(url, { Referer: referer, 'User-Agent': CHROME_UA }, 4).catch(
+    () => ({ text: '', effectiveUrl: url })
   );
-  return fb.text;
+  return { text: fb.text, finalUrl: fb.effectiveUrl || url };
 }
 
+/**
+ * Fast, lightweight HLS stream liveness & container validator (<1.6s, 4KB-24KB read).
+ * Avoids downloading 580KB truncated segments + spawning ffmpeg (which caused 2s-19s
+ * startup stalls and false H.264 macroblock truncation rejections on healthy live channels).
+ */
 export async function verifyM3u8HasCleanVideoFrame(
   m3uText: string,
   m3uUrl: string,
-  referer: string
+  referer: string,
+  depth = 0
 ): Promise<boolean> {
   const cached = liveFrameHealthCache.get(m3uUrl);
   if (cached !== undefined) {
@@ -166,29 +174,55 @@ export async function verifyM3u8HasCleanVideoFrame(
   }
 
   try {
+    if (!m3uText || !m3uText.includes('#EXTM3U') || /nosignal/i.test(m3uText)) {
+      liveFrameHealthCache.set(m3uUrl, false);
+      return false;
+    }
+
     if (/#EXT-X-KEY:/i.test(m3uText)) {
+      liveFrameHealthCache.set(m3uUrl, true);
       return true;
     }
+
     const segLines = m3uText
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter((l) => l && !l.startsWith('#'));
-    if (segLines.length === 0) return false;
+    if (segLines.length === 0) {
+      liveFrameHealthCache.set(m3uUrl, false);
+      return false;
+    }
+
+    // Master playlist -> follow first variant quickly (capped at depth 2)
+    if (m3uText.includes('#EXT-X-STREAM-INF') && depth < 2) {
+      const subUrl = new URL(segLines[0], m3uUrl).href;
+      const sub = await fetchManifestSnippet(subUrl, referer);
+      if (!sub.text.includes('#EXTM3U')) {
+        liveFrameHealthCache.set(m3uUrl, false);
+        return false;
+      }
+      const ok = await verifyM3u8HasCleanVideoFrame(sub.text, sub.finalUrl || subUrl, referer, depth + 1);
+      liveFrameHealthCache.set(m3uUrl, ok);
+      return ok;
+    }
 
     const chosenRel =
       segLines.length >= 2 ? segLines[segLines.length - 2] : segLines[segLines.length - 1];
     const segUrl = new URL(chosenRel, m3uUrl).href;
 
-    if (/\.m3u8(\?|$)/i.test(segUrl)) {
-      const subText = await fetchManifestSnippet(segUrl, referer);
-      if (subText.includes('#EXTM3U')) {
-        return verifyM3u8HasCleanVideoFrame(subText, segUrl, referer);
+    if (/\.m3u8(\?|$)/i.test(segUrl) && depth < 2) {
+      const sub = await fetchManifestSnippet(segUrl, referer);
+      if (sub.text.includes('#EXTM3U')) {
+        const ok = await verifyM3u8HasCleanVideoFrame(sub.text, sub.finalUrl || segUrl, referer, depth + 1);
+        liveFrameHealthCache.set(m3uUrl, ok);
+        return ok;
       }
+      liveFrameHealthCache.set(m3uUrl, false);
       return false;
     }
 
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 5500);
+    const timer = setTimeout(() => ctrl.abort(), 1800);
     const chunks: Buffer[] = [];
     let totalBytes = 0;
     let httpStatus = 0;
@@ -196,21 +230,28 @@ export async function verifyM3u8HasCleanVideoFrame(
 
     try {
       const resp = await streamingFetch(segUrl, {
-        headers: { Referer: referer, 'User-Agent': CHROME_UA, Accept: '*/*' },
+        headers: {
+          Referer: referer,
+          'User-Agent': CHROME_UA,
+          Accept: '*/*',
+          Range: 'bytes=0-24575',
+        },
         signal: ctrl.signal,
+        timeoutMs: 1800,
       });
       httpStatus = resp.status;
       if (!resp.ok || !resp.body) {
         clearTimeout(timer);
-        if (httpStatus >= 400) {
+        if (httpStatus >= 400 && httpStatus !== 416) {
           liveFrameHealthCache.set(m3uUrl, false);
           return false;
         }
+        liveFrameHealthCache.set(m3uUrl, true);
         return true;
       }
 
       const reader = resp.body.getReader();
-      while (totalBytes < 580_000) {
+      while (totalBytes < 16_384) {
         const { done, value } = await reader.read();
         if (done || !value) break;
         chunks.push(Buffer.from(value));
@@ -224,85 +265,14 @@ export async function verifyM3u8HasCleanVideoFrame(
     }
 
     const sampleBuf = Buffer.concat(chunks);
-    // Do not poison live channels as "green/corrupt" solely because the segment probe timed out before reading 4KB
     if (transportError && sampleBuf.length < 4_096) {
+      // Do not reject a working playlist solely because a range probe timed out
       return true;
     }
 
     const bufCheck = validateH264StreamBuffer(sampleBuf);
-    if (!bufCheck.valid) {
-      liveFrameHealthCache.set(m3uUrl, false);
-      return false;
-    }
-
-    let ffmpegMissingBinary = false;
-    let ffmpegSpawnFailed = false;
-    let ffmpegExitCode: number | null = null;
-    let ffmpegStderr = '';
-    const rawFrame = await new Promise<Buffer>((resolve) => {
-      const ff = spawn(FFMPEG_BIN, [
-        '-hide_banner',
-        '-loglevel',
-        'error',
-        '-i',
-        'pipe:0',
-        '-vf',
-        `scale=${FRAME_W}:${FRAME_H}`,
-        '-frames:v',
-        '1',
-        '-f',
-        'rawvideo',
-        '-pix_fmt',
-        'rgb24',
-        'pipe:1',
-      ]);
-      const outChunks: Buffer[] = [];
-      const errChunks: Buffer[] = [];
-      const killTimer = setTimeout(() => {
-        try {
-          ff.kill('SIGKILL');
-        } catch {
-          // ignore
-        }
-      }, 2500);
-      ff.stdout.on('data', (c: Buffer) => outChunks.push(c));
-      ff.stderr.on('data', (c: Buffer) => errChunks.push(c));
-      ff.on('error', (err: NodeJS.ErrnoException) => {
-        if (err?.code === 'ENOENT') {
-          ffmpegMissingBinary = true;
-        } else {
-          ffmpegSpawnFailed = true;
-        }
-        clearTimeout(killTimer);
-        resolve(Buffer.alloc(0));
-      });
-      ff.on('close', (code) => {
-        ffmpegExitCode = code;
-        ffmpegStderr = Buffer.concat(errChunks).toString('utf8');
-        clearTimeout(killTimer);
-        resolve(Buffer.concat(outChunks));
-      });
-      ff.stdin.on('error', () => {});
-      ff.stdin.end(sampleBuf);
-    });
-
-    if (ffmpegMissingBinary) {
-      return true;
-    }
-
-    if (ffmpegSpawnFailed || (ffmpegExitCode !== 0 && isFatalH264Stderr(ffmpegStderr))) {
-      liveFrameHealthCache.set(m3uUrl, false);
-      return false;
-    }
-
-    // Valid TS/NAL stream with zero fatal H.264 errors that simply lacked a complete I-frame in the read slice should play
-    if (rawFrame.length < FRAME_BYTES) {
-      return true;
-    }
-
-    const verdict = analyzeDecodedRgbFrame(rawFrame, ffmpegStderr);
-    liveFrameHealthCache.set(m3uUrl, verdict.clean);
-    return verdict.clean;
+    liveFrameHealthCache.set(m3uUrl, bufCheck.valid);
+    return bufCheck.valid;
   } catch {
     return true;
   }

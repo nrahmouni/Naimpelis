@@ -31,17 +31,42 @@ export function useLiveScoresQuery(enabled = true) {
   });
 }
 
-export function useFootballBoardQuery(enabled = true) {
+export function useFootballBoardQuery(enabled = true, lang = 'es') {
   return useQuery<SportsMatch[]>({
-    queryKey: ['sports', 'football-board-home'],
+    queryKey: ['sports', 'football-board-home', lang],
     enabled,
-    staleTime: 90_000,
-    refetchInterval: enabled ? 120_000 : false,
+    staleTime: 30_000,
+    refetchInterval: (query) => {
+      if (!enabled) return false;
+      const matches = query.state.data;
+      if (Array.isArray(matches)) {
+        const now = Date.now();
+        const nearOrLiveFeatured = matches.some((m) => {
+          const home = String(m.matchMeta?.homeTeam || '').toLowerCase();
+          const away = String(m.matchMeta?.awayTeam || '').toLowerCase();
+          const isFeatured =
+            home === 'barcelona' ||
+            home === 'fc barcelona' ||
+            home === 'real madrid' ||
+            away === 'barcelona' ||
+            away === 'fc barcelona' ||
+            away === 'real madrid';
+          if (!isFeatured) return false;
+          if (m.matchMeta?.statusState === 'live' || m.isLive) return true;
+          const k = Number(m.matchMeta?.kickoffMs || 0);
+          return k > 0 && k - now <= 15 * 60 * 1000 && k - now >= -150 * 60 * 1000;
+        });
+        if (nearOrLiveFeatured) return 25_000;
+      }
+      return 60_000;
+    },
     queryFn: async () => {
       const dateKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' })
         .format(new Date())
         .replace(/-/g, '');
-      const res = await fetch(`/api/sports/football-board?date=${dateKey}`);
+      const res = await fetch(
+        `/api/sports/football-board?date=${dateKey}&lang=${encodeURIComponent(lang)}`
+      );
       if (!res.ok) throw new Error('Failed to load football board');
       const data = await res.json();
       const rawItems: FootballMatchboardItem[] = Array.isArray(data?.matches) ? data.matches : [];
@@ -61,6 +86,7 @@ export function useFootballBoardQuery(enabled = true) {
           eventId: item.eventId,
           fotmobMatchId: item.fotmobMatchId,
           leagueSlug: item.leagueSlug,
+          leagueName: item.leagueName,
           homeTeam: item.homeTeam,
           awayTeam: item.awayTeam,
           homeShort: item.homeShort,
@@ -71,6 +97,10 @@ export function useFootballBoardQuery(enabled = true) {
           awayScore: item.awayScore,
           statusState: item.statusState,
           statusLabel: item.statusLabel,
+          kickoffMs: item.kickoffMs,
+          kickoffIso: item.kickoffIso,
+          kickoffTime: item.kickoffTime,
+          spanishBroadcaster: item.spanishBroadcaster,
         },
       }));
     },

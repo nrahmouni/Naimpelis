@@ -118,6 +118,7 @@ export interface ResolvedTrackPlayback {
   proxiedUrl?: string;
   youtubeVideoId?: string;
   youtubeMvId?: string;
+  youtubeAltIds?: string[];
   previewUrl?: string;
   fullLength: boolean;
   spatial8dYtFallback?: boolean;
@@ -337,7 +338,10 @@ function mapDeezerTracksSafe(rawList: any): MusicTrack[] {
 let scWarmPromise: Promise<string> | null = null;
 
 export async function warmMusicPlaybackEngine(): Promise<void> {
-  await getSoundCloudClientId(true).catch(() => '');
+  await Promise.allSettled([
+    getSoundCloudClientId(true),
+    getAudiusMirrorHost(),
+  ]);
 }
 
 async function getSoundCloudClientId(allowScrape = true): Promise<string> {
@@ -456,7 +460,36 @@ function extractPrimaryArtist(artist: string): string {
     .trim();
 }
 
-const VARIANT_MODIFIER_RE = /\b(remix|bootleg|flip|mashup|sped up|slowed|reverb|nightcore|karaoke|instrumental|tribute|cover version|piano cover|guitar cover|8d|lofi|lo-fi|reaction|interview|podcast|tutorial|1 hour|10 hours|pitched)\b/i;
+const VARIANT_MODIFIER_RE =
+  /\b(remix|bootleg|flip|mashup|megamix|sped up|slowed|reverb|nightcore|karaoke|instrumental|tribute|cover version|cover|piano cover|guitar cover|8d|8-bit|midi|lofi|lo-fi|parody|parodia|acapella|a capella|acoustic|acustico|acústico|live|en vivo|en directo|type beat|beat|snippet|preview|teaser|trailer|demo|leak|loop|chipmunk|bass boosted|earrape|orchestral|symphony|ringtone|reaction|interview|podcast|tutorial|1 hour|10 hours|pitched)\b/i;
+
+const VERSION_INTENT_TOKENS = [
+  'remix',
+  'live',
+  'en vivo',
+  'en directo',
+  'acoustic',
+  'acustico',
+  'instrumental',
+  'sped up',
+  'slowed',
+  'nightcore',
+  'radio edit',
+  'extended',
+  'remastered',
+  'deluxe',
+  'version',
+  'part 2',
+  'pt 2',
+];
+
+function extractTitleOnlyWithoutTrailingFeat(rawTitle: string): string {
+  return String(rawTitle || '')
+    .replace(/\([^)]*\b(?:feat|ft|con|with)\.?\b[^)]*\)/gi, ' ')
+    .replace(/\[[^\]]*\b(?:feat|ft|con|with)\.?\b[^\]]*\]/gi, ' ')
+    .replace(/\s+\b(?:feat|ft)\.?\s+[^([]+$/i, ' ')
+    .trim();
+}
 
 export function isStrictTrackMatch(params: {
   expectedArtist: string;
@@ -467,10 +500,23 @@ export function isStrictTrackMatch(params: {
   candidateDurationSec?: number;
   maxDurationDeltaSec?: number;
 }): { ok: boolean; score: number } {
-  const cleanExpTitle = params.expectedTitle.replace(/\([^)]*\)|\[[^\]]*\]|【[^】]*】/g, ' ').trim() || params.expectedTitle;
+  const cleanExpTitle =
+    params.expectedTitle.replace(/\([^)]*\)|\[[^\]]*\]|【[^】]*】/g, ' ').trim() ||
+    params.expectedTitle;
   const primaryExpArtist = extractPrimaryArtist(params.expectedArtist);
-  const candTitle = String(params.candidateTitle || '');
-  const candArtist = String(params.candidateArtist || '');
+  const candTitleRaw = String(params.candidateTitle || '');
+  let candArtist = String(params.candidateArtist || '').trim();
+  let candTitle = candTitleRaw.trim();
+
+  // Extract artist from "Artist - Title" if uploader/artist field is empty or generic
+  if (!candArtist || GENERIC_ARTIST_NAMES.has(normalizeStr(candArtist)) || normalizeStr(candArtist) === 'youtube music') {
+    const dashSplit = candTitleRaw.match(/^(.{2,45}?)\s+[-–—]\s+(.{2,})$/);
+    if (dashSplit) {
+      candArtist = dashSplit[1].trim();
+      candTitle = dashSplit[2].trim();
+    }
+  }
+
   const candCombined = `${candArtist} ${candTitle}`.trim();
 
   const expDur = Number(params.expectedDurationSec || 0);
@@ -478,17 +524,30 @@ export function isStrictTrackMatch(params: {
   if (candDur > 0 && (candDur < 45 || candDur > 900)) {
     return { ok: false, score: -1 };
   }
-  const maxDelta = params.maxDurationDeltaSec ?? 28;
+  const maxDelta = params.maxDurationDeltaSec ?? 25;
   if (expDur > 35 && candDur > 35 && Math.abs(candDur - expDur) > maxDelta) {
     return { ok: false, score: -1 };
   }
 
-  // Reject unrequested remixes/covers/karaoke/tributes/podcasts/slowed/nightcore
+  // Reject unrequested variants unless explicitly requested in expected title/artist
   const expectedTags = normalizeRawWithTags(`${params.expectedArtist} ${params.expectedTitle}`);
-  const candTags = normalizeRawWithTags(`${candArtist} ${candTitle}`);
-  if (!VARIANT_MODIFIER_RE.test(expectedTags) && VARIANT_MODIFIER_RE.test(candTags)) {
-    return { ok: false, score: -1 };
+  const candTags = normalizeRawWithTags(`${params.candidateArtist} ${candTitleRaw}`);
+  const variantMatch = candTags.match(VARIANT_MODIFIER_RE);
+  if (variantMatch) {
+    const modWord = variantMatch[0].toLowerCase();
+    if (!expectedTags.includes(modWord)) {
+      return { ok: false, score: -1 };
+    }
   }
+  // If expected explicitly specifies Remix / Live / Acoustic, require candidate to match that intent too
+  for (const intent of VERSION_INTENT_TOKENS) {
+    if (expectedTags.includes(intent) && !candTags.includes(intent)) {
+      if (intent === 'remix' || intent === 'live' || intent === 'acoustic' || intent === 'instrumental') {
+        return { ok: false, score: -1 };
+      }
+    }
+  }
+
   // Always block karaoke/reaction/podcast/tribute unless explicitly asked
   if (
     !/\b(karaoke|reaction|podcast|tribute)\b/i.test(expectedTags) &&
@@ -498,50 +557,63 @@ export function isStrictTrackMatch(params: {
   }
 
   const normExpTitle = normalizeStr(cleanExpTitle);
-  const normCandTitle = normalizeStr(candTitle);
+  const cleanCandTitleNoFeat = extractTitleOnlyWithoutTrailingFeat(candTitle);
+  const normCandTitle = normalizeStr(cleanCandTitleNoFeat || candTitle);
   const normExpArtist = normalizeStr(primaryExpArtist);
+  const normCandArtist = normalizeStr(candArtist);
   const normCandCombined = normalizeStr(candCombined);
 
   if (!normExpTitle || !normCandTitle) return { ok: false, score: -1 };
 
-  const titleM = tokenMatchMetrics(cleanExpTitle, candTitle);
-  const titleInCombinedM = tokenMatchMetrics(cleanExpTitle, candCombined);
-  const effectiveTitleRecall = Math.max(titleM.recall, titleInCombinedM.recall);
-  const effectiveTitleF1 = Math.max(titleM.f1, titleInCombinedM.f1);
-  const titleExactish =
-    normExpTitle.length >= 4 &&
-    (normCandTitle.includes(normExpTitle) || normExpTitle.includes(normCandTitle));
+  const titleM = tokenMatchMetrics(cleanExpTitle, cleanCandTitleNoFeat || candTitle);
+  const expTokenCount = tokenizeForMatch(cleanExpTitle).size;
+  const candTokenCount = tokenizeForMatch(cleanCandTitleNoFeat || candTitle).size;
 
-  // Title must genuinely match
-  if (!titleExactish && (effectiveTitleRecall < 0.6 || effectiveTitleF1 < 0.45)) {
-    return { ok: false, score: -1 };
-  }
-  if (titleExactish && effectiveTitleRecall < 0.5 && normExpTitle.length < 6) {
-    return { ok: false, score: -1 };
+  // Strict title matching — never let short substring bypass or uploader leakage pass unrelated tracks
+  if (normExpTitle !== normCandTitle) {
+    if (expTokenCount <= 1 || normExpTitle.length <= 5) {
+      // Single-word or very short titles ("Love", "Solo", "Stay", "Dile") must match essentially all candidate title words
+      if (titleM.recall < 1 || titleM.precision < 0.72 || candTokenCount > expTokenCount + 1) {
+        return { ok: false, score: -1 };
+      }
+    } else if (expTokenCount === 2) {
+      if (titleM.recall < 1 || titleM.f1 < 0.72) {
+        return { ok: false, score: -1 };
+      }
+    } else {
+      if (titleM.recall < 0.8 || titleM.f1 < 0.65) {
+        return { ok: false, score: -1 };
+      }
+    }
   }
 
-  // Artist verification: require artist match against candidateArtist OR uploader+title combined
+  // Strict Artist verification: prevent 1-of-2 word collisions like "Justin" matching "Justin Bieber"
   const hasRealArtist = normExpArtist.length >= 2 && !GENERIC_ARTIST_NAMES.has(normExpArtist);
   let artScore = 0;
   if (hasRealArtist) {
     const artDirect = tokenMatchMetrics(primaryExpArtist, candArtist);
     const artCombined = tokenMatchMetrics(primaryExpArtist, candCombined);
-    const fullArtistCombined = tokenMatchMetrics(params.expectedArtist, candCombined);
-    const bestArtRecall = Math.max(artDirect.recall, artCombined.recall, fullArtistCombined.recall);
-    const artistExactInCombined = normCandCombined.includes(normExpArtist);
+    const fullArtistDirect = tokenMatchMetrics(params.expectedArtist, candArtist);
+    const expArtistTokens = tokenizeForMatch(primaryExpArtist);
+    const artistExactPhrase =
+      normExpArtist.length >= 3 &&
+      (normCandArtist.includes(normExpArtist) || normCandCombined.includes(normExpArtist));
 
-    if (!artistExactInCombined && bestArtRecall < 0.5) {
+    const bestArtRecall = Math.max(artDirect.recall, artCombined.recall, fullArtistDirect.recall);
+    const minArtRecall = expArtistTokens.size <= 2 ? 0.99 : 0.75;
+
+    if (!artistExactPhrase && bestArtRecall < minArtRecall) {
       return { ok: false, score: -1 };
     }
-    artScore = artistExactInCombined ? 1.0 : bestArtRecall;
+    artScore = artistExactPhrase ? 1.0 : bestArtRecall;
   }
 
   const durPenalty = expDur > 35 && candDur > 35 ? Math.min(0.45, Math.abs(candDur - expDur) / 60) : 0;
   const totalScore =
-    effectiveTitleF1 * 1.4 +
-    effectiveTitleRecall * 0.6 +
+    titleM.f1 * 1.5 +
+    titleM.recall * 0.7 +
     artScore * 1.3 +
-    (titleExactish ? 0.4 : 0) -
+    (normExpTitle === normCandTitle ? 0.45 : 0) -
     durPenalty;
 
   return { ok: true, score: totalScore };
@@ -622,11 +694,15 @@ async function searchYouTubeHtmlFallback(
   }
 }
 
-async function resolveYouTubeMatch(artist: string, title: string, durationSec: number): Promise<{ audioId?: string; mvId?: string }> {
+async function resolveYouTubeMatch(
+  artist: string,
+  title: string,
+  durationSec: number
+): Promise<{ audioId?: string; mvId?: string; altIds?: string[] }> {
   const cleanArtist = artist.split(',')[0].trim();
   const query = `${cleanArtist} ${title}`.trim();
   try {
-    // 1. Fast structured YouTube Music search (~300-500ms, handles CJK/Arabic/Cyrillic natively)
+    // 1. Fast structured YouTube Music search (~250-500ms, returns official Topic studio tracks first)
     const ytm = await searchYouTubeMusic(query);
     if (ytm.tracks.length > 0) {
       const scored = ytm.tracks
@@ -650,9 +726,11 @@ async function resolveYouTubeMatch(artist: string, title: string, durationSec: n
         .filter((x) => x.ok)
         .sort((a, b) => b.score - a.score);
       if (scored[0]?.id) {
+        const uniqueIds = Array.from(new Set(scored.map((x) => x.id))).slice(0, 3);
         return {
-          audioId: scored[0].id,
-          mvId: scored[0].id,
+          audioId: uniqueIds[0],
+          mvId: uniqueIds[0],
+          altIds: uniqueIds.slice(1),
         };
       }
     }
@@ -675,9 +753,13 @@ async function resolveYouTubeMatch(artist: string, title: string, durationSec: n
     );
     const bestAudio = verified.find((c) => !c.isVideo) || verified[0];
     const bestMv = verified.find((c) => c.isVideo) || verified[0];
+    const uniqueIds = Array.from(
+      new Set([bestAudio?.id, bestMv?.id, ...verified.map((v) => v.id)].filter(Boolean) as string[])
+    ).slice(0, 3);
     return {
       audioId: bestAudio?.id,
       mvId: bestMv?.id,
+      altIds: uniqueIds.filter((id) => id !== bestAudio?.id),
     };
   } catch {
     return {};
@@ -810,10 +892,17 @@ async function resolveSoundCloudStream(
 
     const valid = candidates
       .map((t) => {
+        if (!t || t.policy === 'SNIP' || t.snipped) return null;
+        const fullDur = Number(t?.full_duration || t?.duration || 0);
+        const playDur = Number(t?.duration || fullDur || 0);
+        if (fullDur > 45_000 && playDur > 0 && fullDur - playDur > 15_000) {
+          // Go+ 30-second snipped preview masquerading as full track
+          return null;
+        }
         const trans = t?.media?.transcodings;
         if (!Array.isArray(trans) || trans.length === 0) return null;
         if (!trans.some(isUnencryptedPlayable)) return null;
-        const tDur = Number(t?.full_duration || t?.duration || 0) / 1000;
+        const tDur = fullDur / 1000;
         if (tDur < 45) return null;
 
         if (isExplicitIdLookup) {
@@ -827,19 +916,20 @@ async function resolveSoundCloudStream(
           candidateTitle: String(t?.title || ''),
           expectedDurationSec: durationSec,
           candidateDurationSec: tDur,
-          maxDurationDeltaSec: 28,
+          maxDurationDeltaSec: 25,
         });
         if (!check.ok) return null;
 
         const hasProg = trans.some(
           (x: any) => !x?.snipped && String(x?.format?.protocol || '').toLowerCase() === 'progressive'
         );
-        return { track: t, score: check.score + (hasProg ? 0.15 : 0) };
+        const verifiedBonus = t?.user?.verified ? 0.12 : 0;
+        return { track: t, score: check.score + (hasProg ? 0.15 : 0) + verifiedBonus };
       })
       .filter((x): x is { track: any; score: number } => Boolean(x))
       .sort((a, b) => b.score - a.score);
 
-    for (const { track: chosen } of valid.slice(0, 3)) {
+    for (const { track: chosen } of valid.slice(0, 2)) {
       const transcodings = (chosen.media.transcodings as any[]).filter(isUnencryptedPlayable);
       const prog = transcodings.find((x) => String(x.format?.protocol || '').toLowerCase() === 'progressive');
       const hls =
@@ -850,11 +940,8 @@ async function resolveSoundCloudStream(
       const picked = prog || hls;
       if (!picked?.url) continue;
 
-      const streamInfo = await fetchJsonSafe<{ url?: string }>(`${picked.url}?client_id=${cid}`, 3000);
-      if (!streamInfo?.url) continue;
-
-      const ok = await verifyDirectStreamUrl(streamInfo.url, 2800);
-      if (!ok) continue;
+      const streamInfo = await fetchJsonSafe<{ url?: string }>(`${picked.url}?client_id=${cid}`, 2000);
+      if (!streamInfo?.url || !streamInfo.url.startsWith('http')) continue;
 
       const isProg = String(picked.format?.protocol || '').toLowerCase() === 'progressive';
       return {
@@ -875,21 +962,19 @@ async function resolveAudiusStream(artist: string, title: string, durationSec: n
     const mirrorHost = await getAudiusMirrorHost();
     if (explicitAudiusId) {
       const url = `${mirrorHost}/v1/tracks/${encodeURIComponent(explicitAudiusId)}/stream?app_name=RIFFAN`;
-      if (await verifyDirectStreamUrl(url, 1800)) {
-        return {
-          sourceType: 'audio-mp3' as const,
-          url,
-          label: 'Audius 320kbps',
-          bitrateKbps: 320,
-        };
-      }
+      return {
+        sourceType: 'audio-mp3' as const,
+        url,
+        label: 'Audius 320kbps',
+        bitrateKbps: 320,
+      };
     }
     const cleanArtist = extractPrimaryArtist(artist);
     const cleanTitle = title.replace(/\([^)]*\)|\[[^\]]*\]/g, '').trim() || title;
     const q = `${cleanArtist} ${cleanTitle}`.trim();
     const res = await fetchJsonSafe<{ data?: any[] }>(
       `${mirrorHost}/v1/tracks/search?query=${encodeURIComponent(q)}&app_name=RIFFAN`,
-      2400
+      1900
     );
     const items = Array.isArray(res?.data) ? res.data : [];
     const scored = items
@@ -908,16 +993,14 @@ async function resolveAudiusStream(artist: string, title: string, durationSec: n
       .filter((x): x is { hit: any; score: number } => Boolean(x))
       .sort((a, b) => b.score - a.score);
 
-    for (const { hit } of scored.slice(0, 2)) {
-      const url = `${mirrorHost}/v1/tracks/${encodeURIComponent(hit.id)}/stream?app_name=RIFFAN`;
-      if (await verifyDirectStreamUrl(url, 2600)) {
-        return {
-          sourceType: 'audio-mp3' as const,
-          url,
-          label: 'Audius 320kbps',
-          bitrateKbps: 320,
-        };
-      }
+    const hit = scored[0]?.hit;
+    if (hit?.id) {
+      return {
+        sourceType: 'audio-mp3' as const,
+        url: `${mirrorHost}/v1/tracks/${encodeURIComponent(hit.id)}/stream?app_name=RIFFAN`,
+        label: 'Audius 320kbps',
+        bitrateKbps: 320,
+      };
     }
   } catch {
     // ignore
@@ -1404,20 +1487,29 @@ export async function searchMusicCatalog(query: string, type = 'all') {
   let ytFallbackTracks: MusicTrack[] = [];
   if (wantTracks && ytmRes.tracks.length === 0 && dzMappedTracks.length === 0 && itTracks.length === 0) {
     const ytHtml = await searchYouTubeHtmlFallback(clean);
-    ytFallbackTracks = ytHtml.slice(0, 12).map((v) => ({
-      id: `ytm-${v.id}`,
-      title: v.title,
-      artist: { id: `ytm-art-${encodeURIComponent(clean)}`, name: clean, picture: `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg` },
-      album: {
-        id: `ytm-alb-trk-${v.id}`,
-        title: 'YouTube Music',
-        cover: `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`,
-        coverXl: `https://i.ytimg.com/vi/${v.id}/hq720.jpg`,
-      },
-      durationSec: v.sec,
-      source: 'youtube_music' as const,
-      youtubeVideoId: v.id,
-    }));
+    ytFallbackTracks = ytHtml.slice(0, 12).map((v) => {
+      const sepMatch = v.title.match(/^(.{2,45}?)\s+[-–—]\s+(.{2,})$/);
+      const parsedArtist = sepMatch ? sepMatch[1].trim() : 'Artista';
+      const parsedTitle = sepMatch ? sepMatch[2].replace(/\([^)]*official[^)]*\)/gi, '').trim() : v.title;
+      return {
+        id: `ytm-${v.id}`,
+        title: parsedTitle || v.title,
+        artist: {
+          id: `ytm-art-${encodeURIComponent(parsedArtist.toLowerCase())}`,
+          name: parsedArtist,
+          picture: `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`,
+        },
+        album: {
+          id: `ytm-alb-trk-${v.id}`,
+          title: 'YouTube Music',
+          cover: `https://i.ytimg.com/vi/${v.id}/hqdefault.jpg`,
+          coverXl: `https://i.ytimg.com/vi/${v.id}/hq720.jpg`,
+        },
+        durationSec: v.sec,
+        source: 'youtube_music' as const,
+        youtubeVideoId: v.id,
+      };
+    });
   }
 
   const mergedTracks = interleaveUniqueTracks(
@@ -1662,6 +1754,7 @@ export async function getTrackLyrics(params: {
 }
 
 export async function resolveTrackPlayback(params: {
+  trackId?: string;
   title: string;
   artist: string;
   durationSec?: number;
@@ -1669,11 +1762,12 @@ export async function resolveTrackPlayback(params: {
   soundcloudId?: string;
   audiusId?: string;
   youtubeVideoId?: string;
+  isrc?: string;
   preferVideo?: boolean;
   preferAudio?: boolean;
 }): Promise<ResolvedTrackPlayback> {
   const durationSec = Number(params.durationSec || 0);
-  const key = `v4-strict:${normalizeStr(params.artist)}|${normalizeStr(params.title)}|${durationSec}|${params.audiusId || ''}|${params.soundcloudId || ''}`;
+  const key = `v6-full:${params.trackId || ''}|${normalizeRawWithTags(params.artist)}|${normalizeRawWithTags(params.title)}|${Math.round(durationSec / 10)}|${params.audiusId || ''}|${params.soundcloudId || ''}|${params.youtubeVideoId || ''}`;
   const cached = playbackCache.get(key);
   if (cached) return cached;
 
@@ -1715,6 +1809,7 @@ export async function resolveTrackPlayback(params: {
         sourceLabel: auTimed.value.label,
         streamUrl: auTimed.value.url,
         proxiedUrl: cand.proxiedUrl,
+        youtubeVideoId: params.youtubeVideoId,
         youtubeMvId: params.youtubeVideoId,
         previewUrl: params.previewUrl,
         fullLength: true,
@@ -1727,20 +1822,76 @@ export async function resolveTrackPlayback(params: {
     }
   }
 
-  // Parallel verified native non-YouTube audio resolution + strict matching
-  const [jioTimed, scTimed, audiusTimed, ytRes] = await Promise.all([
-    timed('jiosaavn', () => resolveJioSaavnStream(params.artist, params.title, durationSec)),
-    timed('soundcloud', () =>
-      resolveSoundCloudStream(params.artist, params.title, durationSec, params.soundcloudId, true)
-    ),
-    timed('audius', () => resolveAudiusStream(params.artist, params.title, durationSec)),
-    params.youtubeVideoId
-      ? Promise.resolve({ mvId: params.youtubeVideoId })
-      : Promise.race([
-          resolveYouTubeMatch(params.artist, params.title, durationSec),
-          new Promise<{ mvId?: string }>((r) => setTimeout(() => r({}), 1100)),
-        ]),
-  ]);
+  // Launch all full-length providers in parallel with fast-first early exit
+  const jioP = timed('jiosaavn', () => resolveJioSaavnStream(params.artist, params.title, durationSec));
+  const scP = timed('soundcloud', () =>
+    resolveSoundCloudStream(params.artist, params.title, durationSec, params.soundcloudId, true)
+  );
+  const audiusP = timed('audius', () => resolveAudiusStream(params.artist, params.title, durationSec));
+  const ytP: Promise<{ audioId?: string; mvId?: string; altIds?: string[] }> = params.youtubeVideoId
+    ? Promise.resolve({ audioId: params.youtubeVideoId, mvId: params.youtubeVideoId, altIds: [] })
+    : resolveYouTubeMatch(params.artist, params.title, durationSec).catch(() => ({}));
+
+  type DirectTimed = {
+    provider: string;
+    value: { sourceType: 'audio-mp3' | 'audio-hls'; url: string; label: string; bitrateKbps?: number } | null;
+    latencyMs: number;
+  };
+  let jioTimed: DirectTimed = { provider: 'jiosaavn', value: null, latencyMs: 0 };
+  let scTimed: DirectTimed = { provider: 'soundcloud', value: null, latencyMs: 0 };
+  let audiusTimed: DirectTimed = { provider: 'audius', value: null, latencyMs: 0 };
+  let ytRes: { audioId?: string; mvId?: string; altIds?: string[] } = {};
+
+  void jioP.then((r) => {
+    jioTimed = r as DirectTimed;
+  });
+  void scP.then((r) => {
+    scTimed = r;
+  });
+  void audiusP.then((r) => {
+    audiusTimed = r;
+  });
+  void ytP.then((r) => {
+    ytRes = r;
+  });
+
+  // Fast-first synchronization: return as soon as a direct audio hit arrives + 160ms grace window,
+  // or after 2200ms max so slow providers never stall playback start!
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    const maxTimer = setTimeout(finish, 3400);
+    let graceStarted = false;
+    const triggerGrace = () => {
+      if (graceStarted || settled) return;
+      graceStarted = true;
+      setTimeout(() => {
+        clearTimeout(maxTimer);
+        finish();
+      }, 160);
+    };
+
+    const directPromises = [jioP, scP, audiusP];
+    let doneCount = 0;
+    for (const p of directPromises) {
+      void p.then((res) => {
+        doneCount++;
+        if (res?.value) {
+          triggerGrace();
+        } else if (doneCount === directPromises.length) {
+          // None of the direct providers resolved — finish immediately once ytP resolves
+          Promise.race([ytP, new Promise((r) => setTimeout(r, 1800))]).finally(() => {
+            clearTimeout(maxTimer);
+            finish();
+          });
+        }
+      });
+    }
+  });
 
   const rawCandidates: Array<{ score: number; cand: PlaybackSourceCandidate }> = [];
   const pushCand = (
@@ -1768,7 +1919,7 @@ export async function resolveTrackPlayback(params: {
     });
   };
 
-  pushCand('jiosaavn', 'jiosaavn', 'Hi-Fi Mirror', 100, jioTimed.latencyMs, jioTimed.value as any);
+  pushCand('jiosaavn', 'jiosaavn', 'Hi-Fi Mirror', 100, jioTimed.latencyMs, jioTimed.value);
   pushCand(
     'soundcloud',
     'soundcloud',
@@ -1779,16 +1930,11 @@ export async function resolveTrackPlayback(params: {
   );
   pushCand('audius', 'audius', 'Audius', 82, audiusTimed.latencyMs, audiusTimed.value);
 
-  if (rawCandidates.length === 0) {
-    const arcTimed = await timed('archive', () =>
-      resolveArchiveAudioFallback(params.artist, params.title, durationSec)
-    );
-    pushCand('archive', 'archive', 'Archive.org', 72, arcTimed.latencyMs, arcTimed.value);
-  }
-
   rawCandidates.sort((a, b) => b.score - a.score);
   const alternatives = rawCandidates.map((x) => x.cand);
-  const mvId = ytRes?.mvId || params.youtubeVideoId;
+  const primaryYtId = params.youtubeVideoId || ytRes?.audioId || ytRes?.mvId;
+  const mvId = ytRes?.mvId || primaryYtId;
+  const ytAltIds = (ytRes?.altIds || []).filter((id) => id && id !== primaryYtId);
   let result: ResolvedTrackPlayback;
 
   if (alternatives.length > 0) {
@@ -1810,80 +1956,119 @@ export async function resolveTrackPlayback(params: {
       sourceLabel: primary.sourceLabel,
       streamUrl: primary.streamUrl,
       proxiedUrl: primary.proxiedUrl,
+      youtubeVideoId: primaryYtId,
       youtubeMvId: mvId,
+      youtubeAltIds: ytAltIds,
       previewUrl: params.previewUrl,
       fullLength: true,
       bitrateKbps: primary.bitrateKbps,
       provider: primary.provider,
       alternatives,
     };
-  } else {
-    let fallbackPreview = params.previewUrl;
-    if (!fallbackPreview) {
-      const qTerm = `${extractPrimaryArtist(params.artist)} ${params.title}`.trim();
-      const [itList, dzList] = await Promise.all([
-        searchItunesMusic(qTerm, 'song', 5, 'US'),
-        fetchJsonSafe<{ data?: any[] }>(
-          `https://api.deezer.com/search/track?q=${encodeURIComponent(qTerm)}&limit=5`,
-          3000
-        ),
-      ]);
-      const itMatch = itList.find(
-        (x) =>
-          x?.previewUrl &&
-          isStrictTrackMatch({
-            expectedArtist: params.artist,
-            expectedTitle: params.title,
-            candidateArtist: String(x?.artistName || ''),
-            candidateTitle: String(x?.trackName || ''),
-            expectedDurationSec: durationSec,
-            candidateDurationSec: x?.trackTimeMillis ? Math.round(Number(x.trackTimeMillis) / 1000) : 0,
-            maxDurationDeltaSec: 35,
-          }).ok
-      );
-      const dzMatch = dzList?.data?.find(
-        (x) =>
-          x?.preview &&
-          isStrictTrackMatch({
-            expectedArtist: params.artist,
-            expectedTitle: params.title,
-            candidateArtist: String(x?.artist?.name || ''),
-            candidateTitle: String(x?.title || ''),
-            expectedDurationSec: durationSec,
-            candidateDurationSec: Number(x?.duration || 0),
-            maxDurationDeltaSec: 35,
-          }).ok
-      );
-      const hitPreview = itMatch?.previewUrl || dzMatch?.preview;
-      if (hitPreview) fallbackPreview = String(hitPreview);
-    }
+  } else if (primaryYtId) {
+    // Full-length Studio / Official Audio track (zero 30s truncation!)
     result = {
-      sourceType: 'preview',
-      sourceLabel: fallbackPreview ? 'Preview HD (30s)' : 'No Audio Stream',
-      streamUrl: fallbackPreview,
-      proxiedUrl: fallbackPreview
-        ? `/api/music/stream-proxy?url=${encodeURIComponent(fallbackPreview)}`
-        : undefined,
+      sourceType: 'youtube',
+      sourceLabel: 'Audio Completo HD',
+      youtubeVideoId: primaryYtId,
       youtubeMvId: mvId,
-      previewUrl: fallbackPreview,
-      fullLength: false,
-      bitrateKbps: fallbackPreview ? 128 : undefined,
-      provider: 'Preview',
-      alternatives: fallbackPreview
-        ? [
-            {
-              id: 'preview-hd',
-              sourceType: 'preview',
-              sourceLabel: 'Preview HD (30s)',
-              streamUrl: fallbackPreview,
-              proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(fallbackPreview)}`,
-              bitrateKbps: 128,
-              fullLength: false,
-              provider: 'Preview',
-            },
-          ]
-        : [],
+      youtubeAltIds: ytAltIds,
+      previewUrl: params.previewUrl,
+      fullLength: true,
+      bitrateKbps: 256,
+      provider: 'Riffan Engine',
+      alternatives: [],
     };
+  } else {
+    // Archive.org fallback only if neither direct MP3/HLS nor YouTube full track resolved
+    const arcTimed = await timed('archive', () =>
+      resolveArchiveAudioFallback(params.artist, params.title, durationSec)
+    );
+    pushCand('archive', 'archive', 'Archive.org', 72, arcTimed.latencyMs, arcTimed.value);
+    if (rawCandidates.length > 0) {
+      const arcPrimary = rawCandidates[0].cand;
+      result = {
+        sourceType: arcPrimary.sourceType,
+        sourceLabel: arcPrimary.sourceLabel,
+        streamUrl: arcPrimary.streamUrl,
+        proxiedUrl: arcPrimary.proxiedUrl,
+        youtubeVideoId: mvId,
+        youtubeMvId: mvId,
+        youtubeAltIds: ytAltIds,
+        previewUrl: params.previewUrl,
+        fullLength: true,
+        bitrateKbps: arcPrimary.bitrateKbps,
+        provider: arcPrimary.provider,
+        alternatives: [arcPrimary],
+      };
+    } else {
+      let fallbackPreview = params.previewUrl;
+      if (!fallbackPreview) {
+        const qTerm = `${extractPrimaryArtist(params.artist)} ${params.title}`.trim();
+        const [itList, dzList] = await Promise.all([
+          searchItunesMusic(qTerm, 'song', 5, 'US'),
+          fetchJsonSafe<{ data?: any[] }>(
+            `https://api.deezer.com/search/track?q=${encodeURIComponent(qTerm)}&limit=5`,
+            2500
+          ),
+        ]);
+        const itMatch = itList.find(
+          (x) =>
+            x?.previewUrl &&
+            isStrictTrackMatch({
+              expectedArtist: params.artist,
+              expectedTitle: params.title,
+              candidateArtist: String(x?.artistName || ''),
+              candidateTitle: String(x?.trackName || ''),
+              expectedDurationSec: durationSec,
+              candidateDurationSec: x?.trackTimeMillis ? Math.round(Number(x.trackTimeMillis) / 1000) : 0,
+              maxDurationDeltaSec: 35,
+            }).ok
+        );
+        const dzMatch = dzList?.data?.find(
+          (x) =>
+            x?.preview &&
+            isStrictTrackMatch({
+              expectedArtist: params.artist,
+              expectedTitle: params.title,
+              candidateArtist: String(x?.artist?.name || ''),
+              candidateTitle: String(x?.title || ''),
+              expectedDurationSec: durationSec,
+              candidateDurationSec: Number(x?.duration || 0),
+              maxDurationDeltaSec: 35,
+            }).ok
+        );
+        const hitPreview = itMatch?.previewUrl || dzMatch?.preview;
+        if (hitPreview) fallbackPreview = String(hitPreview);
+      }
+      result = {
+        sourceType: 'preview',
+        sourceLabel: fallbackPreview ? 'Preview HD (30s)' : 'No Audio Stream',
+        streamUrl: fallbackPreview,
+        proxiedUrl: fallbackPreview
+          ? `/api/music/stream-proxy?url=${encodeURIComponent(fallbackPreview)}`
+          : undefined,
+        youtubeMvId: mvId,
+        previewUrl: fallbackPreview,
+        fullLength: false,
+        bitrateKbps: fallbackPreview ? 128 : undefined,
+        provider: 'Preview',
+        alternatives: fallbackPreview
+          ? [
+              {
+                id: 'preview-hd',
+                sourceType: 'preview',
+                sourceLabel: 'Preview HD (30s)',
+                streamUrl: fallbackPreview,
+                proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(fallbackPreview)}`,
+                bitrateKbps: 128,
+                fullLength: false,
+                provider: 'Preview',
+              },
+            ]
+          : [],
+      };
+    }
   }
 
   logger.info(
@@ -1896,7 +2081,7 @@ export async function resolveTrackPlayback(params: {
       altCount: alternatives.length,
       fullLength: result.fullLength,
     },
-    'riffan_music_resolved_nonyt_playback'
+    'riffan_music_resolved_full_playback'
   );
   if (result.fullLength || result.streamUrl) {
     playbackCache.set(key, result);

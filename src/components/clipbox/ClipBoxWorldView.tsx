@@ -10,6 +10,7 @@ import type { AppLanguage, CatalogMovie } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { useBackInterceptor } from '../../lib/backInterceptor';
+import { useAppStore } from '../../store/useAppStore';
 import { ClipBoxSearchTab } from './ClipBoxSearchTab';
 import { ClipBoxHostsVaultTab } from './ClipBoxHostsVaultTab';
 import { ClipBoxDecoderTab } from './ClipBoxDecoderTab';
@@ -42,7 +43,8 @@ export const ClipBoxWorldView: React.FC<ClipBoxWorldViewProps> = ({
   onPlayMovie,
   onPlayClipboxMedia,
 }) => {
-  const [activeTab, setActiveTab] = useState<ClipBoxSubTab>('search');
+  const activeTab = useAppStore((s) => s.clipboxTab);
+  const setActiveTab = useAppStore((s) => s.setClipboxTab);
   const [inventory, setInventory] = useState<ClipboxInventoryResponse | null>(null);
   const [loadingInventory, setLoadingInventory] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);

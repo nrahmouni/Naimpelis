@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { socketService } from '../services/socket';
 import { triggerHaptic } from '../utils/haptics';
 import { INITIAL_VIDEO_STATE } from '../utils/appSessionHelpers';
+import { useMusicStore } from '../store/useMusicStore';
 import type { LanguageNoticePopup, VideoState } from '../types';
 import type {
   PlaybackCoreContext,
@@ -76,6 +77,14 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
   }, []);
 
   const beginMediaExtraction = useCallback(() => {
+    try {
+      const music = useMusicStore.getState();
+      if (music.isPlaying) {
+        music.setIsPlaying(false);
+      }
+    } catch {
+      // ignore
+    }
     if (!isExtractingRef.current && !preExtractionSnapshotRef.current) {
       preExtractionSnapshotRef.current = {
         videoState: videoStateRef.current,

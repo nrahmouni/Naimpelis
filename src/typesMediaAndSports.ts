@@ -282,6 +282,7 @@ export interface SportsMatch {
     eventId?: string;
     fotmobMatchId?: string;
     leagueSlug?: string;
+    leagueName?: string;
     homeTeam: string;
     awayTeam: string;
     homeShort?: string;
@@ -292,6 +293,10 @@ export interface SportsMatch {
     awayScore?: string;
     statusState?: 'live' | 'upcoming' | 'finished';
     statusLabel?: string;
+    kickoffMs?: number;
+    kickoffIso?: string;
+    kickoffTime?: string;
+    spanishBroadcaster?: FootballMatchboardItem['spanishBroadcaster'];
   };
 }
 

@@ -10,6 +10,7 @@ import type { AppLanguage, SpanishTdtChannel, SportsMatch } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { useBackInterceptor } from '../../lib/backInterceptor';
+import { useAppStore } from '../../store/useAppStore';
 import { RbtvLiveTab } from './RbtvLiveTab';
 import { RbtvHostsVaultTab } from './RbtvHostsVaultTab';
 import { RbtvDecoderTab } from './RbtvDecoderTab';
@@ -31,7 +32,8 @@ export const RbtvWorldView: React.FC<RbtvWorldViewProps> = ({
   onPlaySportsMatch,
   onPlayTdtChannel,
 }) => {
-  const [activeTab, setActiveTab] = useState<RbtvSubTab>('live');
+  const activeTab = useAppStore((s) => s.rbtvTab);
+  const setActiveTab = useAppStore((s) => s.setRbtvTab);
   const [inventory, setInventory] = useState<RbtvInventoryResponse | null>(null);
   const [loadingInventory, setLoadingInventory] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);

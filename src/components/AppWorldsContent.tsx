@@ -98,6 +98,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     portalLandingActive,
     preloadWorld,
     enterWorld,
+    goBackWorld,
+    goHome,
     socialActions,
     roomGameActions,
     playback,
@@ -287,9 +289,10 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           onPlayChannel={(ch) => {
             void playback.handlePlayTdtChannel(ch, 0);
           }}
-          onPlayMatch={(matchItem) => {
-            void playback.handlePlaySportsMatch(matchItem, 0);
+          onPlayMatch={(matchItem, channelIndex = 0) => {
+            void playback.handlePlaySportsMatch(matchItem, channelIndex);
           }}
+          loadingItemId={playback.loadingItemId}
           onSelectGame={(gid) => {
             const mappedGame = (gid === 'billar' ? 'pool' : gid) as RoomGameInviteType;
             roomState.setForcedOpenGame({ gameType: mappedGame, seq: Date.now() });
@@ -312,8 +315,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           en: 'Watch Party',
         })}
         lang={lang}
-        onBack={() => enterWorld('entry')}
-        onGoHome={() => enterWorld('entry')}
+        onBack={goBackWorld}
+        onGoHome={goHome}
         onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
         fullHeight
         className={portalLandingActive ? 'rtv-world-touchdown' : ''}
@@ -339,9 +342,15 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
             roomState.setIsInActiveGame(false);
             roomState.setForcedOpenGame(null);
           }
-          enterWorld('entry');
+          goBackWorld();
         }}
-        onGoHome={() => enterWorld('entry')}
+        onGoHome={() => {
+          if (roomState.isInActiveGame) {
+            roomState.setIsInActiveGame(false);
+            roomState.setForcedOpenGame(null);
+          }
+          goHome();
+        }}
         onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
         fullHeight={roomState.isInActiveGame}
         className={portalLandingActive ? 'rtv-world-touchdown' : ''}
@@ -392,8 +401,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
         }
         onShareWorld={handleShareActiveWorld}
-        onBack={() => enterWorld('entry')}
-        onGoHome={() => enterWorld('entry')}
+        onBack={goBackWorld}
+        onGoHome={goHome}
         onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
         searchValue={worldSearchQuery}
         onSearchChange={setWorldSearchQuery}
@@ -426,8 +435,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
         }
         onShareWorld={handleShareActiveWorld}
-        onBack={() => enterWorld('entry')}
-        onGoHome={() => enterWorld('entry')}
+        onBack={goBackWorld}
+        onGoHome={goHome}
         onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
         searchValue={worldSearchQuery}
         onSearchChange={setWorldSearchQuery}
@@ -463,8 +472,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
         }
         onShareWorld={handleShareActiveWorld}
-        onBack={() => enterWorld('entry')}
-        onGoHome={() => enterWorld('entry')}
+        onBack={goBackWorld}
+        onGoHome={goHome}
         onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
         searchValue={worldSearchQuery}
         onSearchChange={setWorldSearchQuery}
@@ -501,8 +510,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
         }
         onShareWorld={handleShareActiveWorld}
-        onBack={() => enterWorld('entry')}
-        onGoHome={() => enterWorld('entry')}
+        onBack={goBackWorld}
+        onGoHome={goHome}
         onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
         searchValue={worldSearchQuery}
         onSearchChange={setWorldSearchQuery}
@@ -553,8 +562,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
         }
         onShareWorld={handleShareActiveWorld}
-        onBack={() => enterWorld('entry')}
-        onGoHome={() => enterWorld('entry')}
+        onBack={goBackWorld}
+        onGoHome={goHome}
         onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
         searchValue={worldSearchQuery}
         onSearchChange={setWorldSearchQuery}
@@ -608,8 +617,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
         }
         onShareWorld={handleShareActiveWorld}
-        onBack={() => enterWorld('entry')}
-        onGoHome={() => enterWorld('entry')}
+        onBack={goBackWorld}
+        onGoHome={goHome}
         onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
         quickActions={<MusicLanguageDropdown />}
         className={portalLandingActive ? 'rtv-world-touchdown' : ''}
@@ -645,8 +654,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           : 'YouTube'
       }
       lang={lang}
-      onBack={() => enterWorld('entry')}
-      onGoHome={() => enterWorld('entry')}
+      onBack={goBackWorld}
+      onGoHome={goHome}
       onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
       quickActions={
         activeWorld === 'futbol' ? (

@@ -80,6 +80,7 @@ export function toSportsMatch(item: FootballMatchboardItem, lang: AppLanguage): 
       eventId: item.eventId,
       fotmobMatchId: item.fotmobMatchId,
       leagueSlug: item.leagueSlug,
+      leagueName: item.leagueName,
       homeTeam: item.homeTeam,
       awayTeam: item.awayTeam,
       homeShort: item.homeShort,
@@ -90,6 +91,10 @@ export function toSportsMatch(item: FootballMatchboardItem, lang: AppLanguage): 
       awayScore: item.awayScore,
       statusState: item.statusState,
       statusLabel: item.statusLabel,
+      kickoffMs: item.kickoffMs,
+      kickoffIso: item.kickoffIso,
+      kickoffTime: item.kickoffTime,
+      spanishBroadcaster: item.spanishBroadcaster,
     },
   };
 }

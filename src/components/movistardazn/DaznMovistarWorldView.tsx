@@ -20,6 +20,8 @@ import type {
 } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
+import { useBackInterceptor } from '../../lib/backInterceptor';
+import { useAppStore } from '../../store/useAppStore';
 import {
   MovistarDaznProgramPanel,
   resolveThemeArtwork,
@@ -64,7 +66,6 @@ interface MovistarDaznLiveMatchUi {
   matchMeta: NonNullable<SportsMatch['matchMeta']>;
 }
 
-type OperatorFilter = 'all' | 'movistar' | 'dazn';
 type CategoryFilter = 'all' | 'futbol' | 'motor' | 'deportes' | 'entretenimiento' | 'series';
 
 interface DaznMovistarWorldViewProps {
@@ -112,11 +113,23 @@ export const DaznMovistarWorldView: React.FC<DaznMovistarWorldViewProps> = ({
   const [catalog, setCatalog] = useState<MovistarDaznCatalogItemUi[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [operatorFilter, setOperatorFilter] = useState<OperatorFilter>('all');
-  const [activeCategory, setActiveCategory] = useState<CategoryFilter>('all');
+  const operatorFilter = useAppStore((s) => s.movistarDaznOperator);
+  const setOperatorFilter = useAppStore((s) => s.setMovistarDaznOperator);
+  const activeCategory = useAppStore((s) => s.movistarDaznCategory);
+  const setActiveCategory = useAppStore((s) => s.setMovistarDaznCategory);
   const [selectedProgram, setSelectedProgram] = useState<MovistarDaznCatalogItemUi | null>(null);
   const [failedImgs, setFailedImgs] = useState<Record<string, boolean>>({});
   const fetchAbortRef = useRef<AbortController | null>(null);
+
+  useBackInterceptor(
+    !selectedProgram && (activeCategory !== 'all' || operatorFilter !== 'all'),
+    'movistardazn-filter-reset',
+    () => {
+      if (activeCategory !== 'all') setActiveCategory('all');
+      else setOperatorFilter('all');
+    },
+    { priority: 4 }
+  );
 
   const fetchHome = useCallback(async () => {
     fetchAbortRef.current?.abort();

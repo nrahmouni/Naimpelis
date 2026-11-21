@@ -65,6 +65,9 @@ export function isDisallowedHostnameSyntax(hostname: string): boolean {
   return false;
 }
 
+const PUBLIC_DNS_HOST_CACHE = new Map<string, number>();
+const PUBLIC_DNS_TTL_MS = 90_000;
+
 export async function validateSafeOutboundUrl(
   rawUrl: string
 ): Promise<{ safe: true; url: URL } | { safe: false; status: number; reason: string }> {
@@ -88,6 +91,11 @@ export async function validateSafeOutboundUrl(
   }
 
   if (!net.isIP(host)) {
+    const lowHost = host.toLowerCase();
+    const cachedUntil = PUBLIC_DNS_HOST_CACHE.get(lowHost);
+    if (cachedUntil && cachedUntil > Date.now()) {
+      return { safe: true, url: parsed };
+    }
     try {
       const records = await dns.lookup(host, { all: true });
       if (!records || records.length === 0) {
@@ -98,6 +106,11 @@ export async function validateSafeOutboundUrl(
           return { safe: false, status: 403, reason: 'Host resolves to private or disallowed IP' };
         }
       }
+      if (PUBLIC_DNS_HOST_CACHE.size >= 500) {
+        const firstKey = PUBLIC_DNS_HOST_CACHE.keys().next().value;
+        if (firstKey) PUBLIC_DNS_HOST_CACHE.delete(firstKey);
+      }
+      PUBLIC_DNS_HOST_CACHE.set(lowHost, Date.now() + PUBLIC_DNS_TTL_MS);
     } catch {
       return { safe: false, status: 502, reason: 'DNS resolution failed for upstream host' };
     }

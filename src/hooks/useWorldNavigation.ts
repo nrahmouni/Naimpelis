@@ -62,7 +62,8 @@ export function useWorldNavigation({
   useEffect(() => () => clearPortalTimers(), [clearPortalTimers]);
 
   const applyWorldChange = useCallback(
-    (nextWorld: WorldId, opts?: { skipScrollReset?: boolean }) => {
+    (nextWorld: WorldId, opts?: { skipScrollReset?: boolean; restoreScroll?: boolean }) => {
+      const store = useAppStore.getState();
       setActiveWorld(nextWorld);
       if (nextWorld === 'cine') {
         setCatalogSection('movies');
@@ -86,6 +87,14 @@ export function useWorldNavigation({
         setCatalogSection('home');
         setMobileTab('home');
         setIsInActiveGame(false);
+      }
+
+      if (opts?.restoreScroll) {
+        const savedPos = store.worldScrollPositions[nextWorld];
+        if (savedPos && (savedPos.mainTop > 0 || savedPos.catalogTop > 0)) {
+          store.setPendingScrollRestore(savedPos);
+          return;
+        }
       }
 
       if (!opts?.skipScrollReset) {
@@ -148,7 +157,16 @@ export function useWorldNavigation({
   }, []);
 
   const enterWorld = useCallback(
-    (nextWorld: WorldId, opts?: { withPortal?: boolean; originRect?: PortalOriginRect }) => {
+    (
+      nextWorld: WorldId,
+      opts?: {
+        withPortal?: boolean;
+        originRect?: PortalOriginRect;
+        isBack?: boolean;
+        restoreScroll?: boolean;
+        clearHistory?: boolean;
+      }
+    ) => {
       if (nextWorld === 'sala' && sessionMode === 'solo' && onUpgradeSoloToPartyRef.current) {
         onUpgradeSoloToPartyRef.current({ targetWorld: 'sala' });
         return;
@@ -156,12 +174,37 @@ export function useWorldNavigation({
 
       setShowWatchlistOnly(false);
       const navStore = useAppStore.getState();
+      const prevWorld = navStore.activeWorld;
+
+      if (prevWorld !== nextWorld) {
+        navStore.saveWorldScrollPosition(prevWorld, {
+          mainTop: mainScrollRef.current?.scrollTop ?? 0,
+          catalogTop: catalogScrollRef.current?.scrollTop ?? 0,
+        });
+        if (opts?.clearHistory) {
+          navStore.clearWorldHistory();
+        } else if (!opts?.isBack) {
+          if (nextWorld === 'entry') {
+            navStore.clearWorldHistory();
+          } else {
+            navStore.pushWorldHistory(prevWorld);
+          }
+        }
+      } else if (opts?.clearHistory) {
+        navStore.clearWorldHistory();
+      }
+
       navStore.setRequestedMovieModal(null);
       navStore.setRequestedSeriesModal(null);
       if (nextWorld === 'entry') {
         navStore.setCineSpecialPortal('none');
       }
       clearPortalTimers();
+
+      const applyOpts = {
+        skipScrollReset: Boolean(opts?.restoreScroll),
+        restoreScroll: Boolean(opts?.restoreScroll),
+      };
 
       if (
         opts?.withPortal &&
@@ -184,7 +227,7 @@ export function useWorldNavigation({
         setPortalOriginRect(opts.originRect ?? null);
         setActivePortalTransition(nextWorld);
         const swapTimer = window.setTimeout(() => {
-          applyWorldChange(nextWorld);
+          applyWorldChange(nextWorld, applyOpts);
           setPortalLandingActive(true);
         }, 110);
         const exitTimer = window.setTimeout(() => {
@@ -202,7 +245,7 @@ export function useWorldNavigation({
       setPortalOriginRect(null);
       setPortalLandingActive(false);
       runWithViewTransition(() => {
-        applyWorldChange(nextWorld);
+        applyWorldChange(nextWorld, applyOpts);
       });
     },
     [
@@ -213,8 +256,21 @@ export function useWorldNavigation({
       reducedMotion,
       preloadWorld,
       applyWorldChange,
+      mainScrollRef,
+      catalogScrollRef,
     ]
   );
+
+  const goBackWorld = useCallback(() => {
+    const navStore = useAppStore.getState();
+    const prev = navStore.popWorldHistory();
+    const target: WorldId = prev && prev !== navStore.activeWorld ? prev : 'entry';
+    enterWorld(target, { isBack: true, restoreScroll: true });
+  }, [enterWorld]);
+
+  const goHome = useCallback(() => {
+    enterWorld('entry', { clearHistory: true, restoreScroll: true });
+  }, [enterWorld]);
 
   return {
     activePortalTransition,
@@ -222,6 +278,8 @@ export function useWorldNavigation({
     portalLandingActive,
     preloadWorld,
     enterWorld,
+    goBackWorld,
+    goHome,
     applyWorldChange,
   };
 }

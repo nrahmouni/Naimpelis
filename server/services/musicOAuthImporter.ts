@@ -21,6 +21,7 @@ const SESSION_TTL_MS = 20 * 60 * 1000;
 interface PendingOAuthState {
   redirectUri: string;
   openerOrigin: string;
+  codeVerifier?: string;
   createdAt: number;
 }
 
@@ -31,6 +32,15 @@ interface StoredSpotifySession {
 
 const spotifyPendingStates = new Map<string, PendingOAuthState>();
 const spotifySessions = new Map<string, StoredSpotifySession>();
+
+function generatePkcePair(): { codeVerifier: string; codeChallenge: string } {
+  const codeVerifier = crypto.randomBytes(48).toString('base64url');
+  const codeChallenge = crypto
+    .createHash('sha256')
+    .update(codeVerifier)
+    .digest('base64url');
+  return { codeVerifier, codeChallenge };
+}
 
 function pruneExpiredMaps() {
   const now = Date.now();
@@ -83,7 +93,8 @@ function resolveSpotifyBaseOrigin(requestedOrigin?: string): string {
 }
 
 export function getSpotifyOAuthStatus(requestedOrigin?: string) {
-  const configured = Boolean(ENV.spotifyClientId && ENV.spotifyClientSecret);
+  const configured = Boolean(ENV.spotifyClientId);
+  const pkceMode = Boolean(ENV.spotifyClientId && !ENV.spotifyClientSecret);
   const baseOrigin = resolveSpotifyBaseOrigin(requestedOrigin);
   const activeCallbackUrl = `${baseOrigin}${SPOTIFY_CALLBACK_PATH}`;
   const devCallbackUrl = ENV.appUrl
@@ -92,6 +103,7 @@ export function getSpotifyOAuthStatus(requestedOrigin?: string) {
 
   return {
     configured,
+    pkceMode,
     activeCallbackUrl,
     devCallbackUrl,
     scopes: SPOTIFY_OAUTH_SCOPES.split(' '),
@@ -104,10 +116,10 @@ export function createSpotifyAuthorizeUrl(requestedOrigin?: string): {
   error?: string;
 } {
   pruneExpiredMaps();
-  if (!ENV.spotifyClientId || !ENV.spotifyClientSecret) {
+  if (!ENV.spotifyClientId) {
     return {
       ok: false,
-      error: 'SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET no están configurados en el servidor.',
+      error: 'SPOTIFY_CLIENT_ID no está configurado en el servidor (soportado con PKCE al estilo Exportify sin secreto).',
     };
   }
 
@@ -115,10 +127,12 @@ export function createSpotifyAuthorizeUrl(requestedOrigin?: string): {
   const redirectOrigin = ENV.appUrl || openerOrigin;
   const redirectUri = `${redirectOrigin}${SPOTIFY_CALLBACK_PATH}`;
   const state = crypto.randomBytes(24).toString('hex');
+  const { codeVerifier, codeChallenge } = generatePkcePair();
 
   spotifyPendingStates.set(state, {
     redirectUri,
     openerOrigin,
+    codeVerifier,
     createdAt: Date.now(),
   });
 
@@ -128,6 +142,8 @@ export function createSpotifyAuthorizeUrl(requestedOrigin?: string): {
     redirect_uri: redirectUri,
     scope: SPOTIFY_OAUTH_SCOPES,
     state,
+    code_challenge_method: 'S256',
+    code_challenge: codeChallenge,
     show_dialog: 'true',
   });
 
@@ -173,31 +189,38 @@ export async function handleSpotifyOAuthCallback(params: {
     };
   }
 
-  if (!ENV.spotifyClientId || !ENV.spotifyClientSecret) {
+  if (!ENV.spotifyClientId) {
     return {
       ok: false,
       openerOrigin,
-      error: 'Faltan credenciales de Spotify en el servidor.',
+      error: 'Falta SPOTIFY_CLIENT_ID en el servidor.',
     };
   }
 
   try {
-    const basicAuth = Buffer.from(
-      `${ENV.spotifyClientId}:${ENV.spotifyClientSecret}`
-    ).toString('base64');
-
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
       code: String(params.code),
       redirect_uri: pending.redirectUri,
+      client_id: ENV.spotifyClientId,
     });
+    if (pending.codeVerifier) {
+      body.set('code_verifier', pending.codeVerifier);
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    };
+    if (ENV.spotifyClientSecret) {
+      const basicAuth = Buffer.from(
+        `${ENV.spotifyClientId}:${ENV.spotifyClientSecret}`
+      ).toString('base64');
+      headers.Authorization = `Basic ${basicAuth}`;
+    }
 
     const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
       method: 'POST',
-      headers: {
-        Authorization: `Basic ${basicAuth}`,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
+      headers,
       body: body.toString(),
       signal: AbortSignal.timeout(8000),
     });
@@ -215,7 +238,7 @@ export async function handleSpotifyOAuthCallback(params: {
         error:
           tokenJson?.error_description ||
           tokenJson?.error ||
-          'Spotify rechazó el intercambio de token.',
+          'Spotify rechazó el intercambio de token PKCE.',
       };
     }
 
@@ -323,13 +346,36 @@ function mapSpotifyRawTrack(raw: any, fallbackAlbum = 'Spotify'): MusicTrack | n
   };
 }
 
+async function fetchSpotifyPaginatedItems(
+  initialUrl: string,
+  accessToken: string,
+  maxItems = 250
+): Promise<any[]> {
+  const out: any[] = [];
+  let nextUrl: string | null = initialUrl;
+  let pages = 0;
+  while (nextUrl && out.length < maxItems && pages < 5) {
+    pages++;
+    const page: { items?: any[]; next?: string | null } | null = await fetchJsonWithBearer(nextUrl, accessToken, 7000);
+    if (!page || !Array.isArray(page.items) || page.items.length === 0) break;
+    out.push(...page.items);
+    nextUrl = page.next ? String(page.next) : null;
+  }
+  return out.slice(0, maxItems);
+}
+
 export async function importFullSpotifyAccount(
-  sessionToken: string
+  sessionTokenOrAccessToken: string
 ): Promise<FullOAuthImportPayload> {
   pruneExpiredMaps();
-  const cleanSession = String(sessionToken || '').trim();
+  const cleanSession = String(sessionTokenOrAccessToken || '').trim();
   const session = cleanSession ? spotifySessions.get(cleanSession) : undefined;
-  if (!session) {
+  const directBearer = cleanSession.startsWith('sp-direct:')
+    ? cleanSession.slice('sp-direct:'.length).trim()
+    : '';
+  const token = session?.accessToken || directBearer;
+
+  if (!token) {
     return {
       ok: false,
       provider: 'spotify',
@@ -343,21 +389,19 @@ export async function importFullSpotifyAccount(
     };
   }
 
-  const token = session.accessToken;
-
-  const [me, topArtistsMed, topArtistsShort, topTracks, savedTracks, followed, recentlyPlayed, userPlaylists] =
+  const [me, topArtistsMed, topArtistsShort, topTracks, savedItems, followed, recentlyPlayed, playlistItems] =
     await Promise.all([
       fetchJsonWithBearer('https://api.spotify.com/v1/me', token),
-      fetchJsonWithBearer('https://api.spotify.com/v1/me/top/artists?time_range=medium_term&limit=30', token),
-      fetchJsonWithBearer('https://api.spotify.com/v1/me/top/artists?time_range=short_term&limit=20', token),
-      fetchJsonWithBearer('https://api.spotify.com/v1/me/top/tracks?time_range=medium_term&limit=40', token),
-      fetchJsonWithBearer('https://api.spotify.com/v1/me/tracks?limit=50', token),
+      fetchJsonWithBearer('https://api.spotify.com/v1/me/top/artists?time_range=medium_term&limit=35', token),
+      fetchJsonWithBearer('https://api.spotify.com/v1/me/top/artists?time_range=short_term&limit=25', token),
+      fetchJsonWithBearer('https://api.spotify.com/v1/me/top/tracks?time_range=medium_term&limit=50', token),
+      fetchSpotifyPaginatedItems('https://api.spotify.com/v1/me/tracks?limit=50', token, 250),
       fetchJsonWithBearer('https://api.spotify.com/v1/me/following?type=artist&limit=50', token),
-      fetchJsonWithBearer('https://api.spotify.com/v1/me/recently-played?limit=30', token),
-      fetchJsonWithBearer('https://api.spotify.com/v1/me/playlists?limit=20', token),
+      fetchJsonWithBearer('https://api.spotify.com/v1/me/recently-played?limit=40', token),
+      fetchSpotifyPaginatedItems('https://api.spotify.com/v1/me/playlists?limit=50', token, 25),
     ]);
 
-  if (!me && !savedTracks && !topArtistsMed) {
+  if (!me && savedItems.length === 0 && !topArtistsMed) {
     return {
       ok: false,
       provider: 'spotify',
@@ -373,14 +417,16 @@ export async function importFullSpotifyAccount(
 
   const accountLabel = String(me?.display_name || me?.id || 'Spotify Account').trim();
 
-  // Extract Top Artists + Genres with frequency weighting
+  // Extract Top Artists + Genres with frequency weighting (Exportify-style artist metadata enrichment)
   const artistScores = new Map<string, number>();
   const genreScores = new Map<string, number>();
+  const discoveredArtistIds = new Set<string>();
 
   const registerArtists = (items: any[], weight: number) => {
     for (const a of items || []) {
       const name = String(a?.name || '').trim();
       if (name) artistScores.set(name, (artistScores.get(name) || 0) + weight);
+      if (a?.id) discoveredArtistIds.add(String(a.id));
       const genres = Array.isArray(a?.genres) ? a.genres : [];
       for (const g of genres) {
         const cleanG = normalizeSpotifyGenreLabel(g);
@@ -397,43 +443,49 @@ export async function importFullSpotifyAccount(
   const likedTracksRaw: MusicTrack[] = [];
   const seenLiked = new Set<string>();
 
-  const pushLiked = (tr: MusicTrack | null, boostArtist = false) => {
+  const pushLiked = (tr: MusicTrack | null, rawTrack?: any, boostArtist = false) => {
     if (!tr) return;
     const key = `${tr.artist.name.toLowerCase()}|${tr.title.toLowerCase()}`;
     if (seenLiked.has(key)) return;
     seenLiked.add(key);
     likedTracksRaw.push(tr);
+    if (Array.isArray(rawTrack?.artists)) {
+      for (const a of rawTrack.artists) {
+        if (a?.id && discoveredArtistIds.size < 50) discoveredArtistIds.add(String(a.id));
+      }
+    }
     if (boostArtist) {
       const art = tr.artist.name.split(',')[0].trim();
       if (art) artistScores.set(art, (artistScores.get(art) || 0) + 1);
     }
   };
 
-  for (const item of savedTracks?.items || []) {
-    pushLiked(mapSpotifyRawTrack(item?.track, 'Tus Me Gusta'), true);
+  for (const item of savedItems) {
+    pushLiked(mapSpotifyRawTrack(item?.track, 'Tus Me Gusta'), item?.track, true);
   }
   for (const item of topTracks?.items || []) {
-    pushLiked(mapSpotifyRawTrack(item, 'Top Spotify'), true);
+    pushLiked(mapSpotifyRawTrack(item, 'Top Spotify'), item, true);
   }
   for (const item of recentlyPlayed?.items || []) {
-    pushLiked(mapSpotifyRawTrack(item?.track, 'Recientes'), true);
+    pushLiked(mapSpotifyRawTrack(item?.track, 'Recientes'), item?.track, true);
   }
 
-  // Fetch up to top 6 user playlists concurrently
-  const rawPlaylistItems = Array.isArray(userPlaylists?.items)
-    ? userPlaylists.items.filter((p: any) => p?.id && Number(p?.tracks?.total || 0) > 0).slice(0, 6)
-    : [];
+  // Paginated Exportify-style user playlist extraction (up to 16 playlists × 200 tracks)
+  const rawPlaylistItems = playlistItems
+    .filter((p: any) => p?.id && Number(p?.tracks?.total || 0) > 0)
+    .slice(0, 16);
 
   const playlists: OAuthImportedPlaylist[] = [];
   await Promise.all(
     rawPlaylistItems.map(async (pl: any) => {
-      const plTracksData = await fetchJsonWithBearer(
-        `https://api.spotify.com/v1/playlists/${encodeURIComponent(String(pl.id))}/tracks?limit=50`,
-        token
+      const plEntries = await fetchSpotifyPaginatedItems(
+        `https://api.spotify.com/v1/playlists/${encodeURIComponent(String(pl.id))}/tracks?limit=100`,
+        token,
+        200
       );
       const mappedTracks: MusicTrack[] = [];
       const seenPl = new Set<string>();
-      for (const entry of plTracksData?.items || []) {
+      for (const entry of plEntries) {
         const t = mapSpotifyRawTrack(entry?.track, String(pl.name || 'Spotify'));
         if (t && !seenPl.has(t.id)) {
           seenPl.add(t.id);
@@ -454,8 +506,20 @@ export async function importFullSpotifyAccount(
     })
   );
 
-  // Also ensure likedTracks have crisp playable audio previews/artwork matched if missing previewUrl
-  const needMatch = likedTracksRaw.filter((t) => !t.previewUrl || !t.album.cover).slice(0, 35);
+  // Batch lookup artist genres if few genres were collected (identical to Exportify's /v1/artists?ids= pattern)
+  if (genreScores.size < 4 && discoveredArtistIds.size > 0) {
+    const idBatch = Array.from(discoveredArtistIds).slice(0, 50).join(',');
+    const batchArtists = await fetchJsonWithBearer(
+      `https://api.spotify.com/v1/artists?ids=${encodeURIComponent(idBatch)}`,
+      token
+    );
+    if (Array.isArray(batchArtists?.artists)) {
+      registerArtists(batchArtists.artists, 1.5);
+    }
+  }
+
+  // Enrich first 35 tracks without artwork
+  const needMatch = likedTracksRaw.filter((t) => !t.album.cover).slice(0, 35);
   if (needMatch.length > 0) {
     const matched = await matchImportedTracksBatch(
       needMatch.map((t) => ({
@@ -463,6 +527,8 @@ export async function importFullSpotifyAccount(
         artist: t.artist.name,
         album: t.album.title,
         durationSec: t.durationSec,
+        spotifyId: t.spotifyId,
+        isrc: t.isrc,
       }))
     );
     const matchedByIdx = new Map<number, MusicTrack>();
@@ -479,12 +545,12 @@ export async function importFullSpotifyAccount(
 
   const favoriteArtists = Array.from(artistScores.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 35)
+    .slice(0, 40)
     .map(([name]) => name);
 
   const favoriteGenres = Array.from(genreScores.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 16)
+    .slice(0, 20)
     .map(([name]) => name);
 
   const totalTracksImported =
@@ -494,7 +560,7 @@ export async function importFullSpotifyAccount(
     ok: true,
     provider: 'spotify',
     accountLabel,
-    likedTracks: likedTracksRaw.slice(0, 120),
+    likedTracks: likedTracksRaw.slice(0, 250),
     playlists,
     favoriteArtists,
     favoriteGenres,

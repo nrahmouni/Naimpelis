@@ -143,19 +143,24 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
   }
 
   const hdrCtrl = new AbortController();
-  const hdrTimer = setTimeout(() => hdrCtrl.abort(), 9000);
+  const hdrTimer = setTimeout(() => hdrCtrl.abort(), 6500);
   req.on('close', () => {
     if (!res.writableEnded) hdrCtrl.abort();
   });
 
+  const isLiveSportsStreamHost =
+    /footunder\.online|7odxv0l067ka\.net|futlivehd\.com|streamxhd\.(?:sbs|st)|tilinhd\.lol/i.test(
+      targetUrl
+    );
+
   try {
-    if (shouldBypassNodeFetch(targetUrl)) {
+    if (!isLiveSportsStreamHost && shouldBypassNodeFetch(targetUrl)) {
       throw new Error('Use fast curl/h2 fallback');
     }
     let upstream = await streamingFetch(targetUrl, {
       headers,
       signal: hdrCtrl.signal,
-      timeoutMs: 9000,
+      timeoutMs: 6500,
     });
     if (
       (upstream.status === 400 ||

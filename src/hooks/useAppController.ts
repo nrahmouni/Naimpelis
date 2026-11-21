@@ -330,7 +330,8 @@ export function useAppController() {
   const { data: liveScores = [] } = useLiveScoresQuery((inRoom || hasEnteredApp) && !isTvMode);
   const liveMatchesCount = liveScores.filter((m) => m.isLive).length;
   const { data: homeFootballMatches = [] } = useFootballBoardQuery(
-    (inRoom || hasEnteredApp) && !isTvMode && activeWorld === 'entry'
+    (inRoom || hasEnteredApp) && !isTvMode && activeWorld === 'entry',
+    lang
   );
 
   const handleNavUpgradeSoloToParty = useCallback(
@@ -344,6 +345,8 @@ export function useAppController() {
     portalLandingActive,
     preloadWorld,
     enterWorld,
+    goBackWorld,
+    goHome,
     applyWorldChange,
   } = useWorldNavigation({
     sessionMode,
@@ -518,6 +521,9 @@ export function useAppController() {
       }
       if (typeof ctx.homeSearchQuery === 'string') {
         store.setHomeSearchQuery(ctx.homeSearchQuery);
+        if (ctx.homeSearchQuery.trim()) {
+          store.setHomeSearchOverlayDismissed(false);
+        }
       }
       if (ctx.homeSearchCategory) {
         store.setHomeSearchCategory(ctx.homeSearchCategory);
@@ -879,7 +885,7 @@ export function useAppController() {
     { priority: 22 }
   );
 
-  const handleReturnToEntry = useCallback(() => enterWorld('entry'), [enterWorld]);
+  const handleReturnToEntry = useCallback(() => goBackWorld(), [goBackWorld]);
   const handleExitFullscreen = useCallback(() => {
     try {
       void document.exitFullscreen?.();
@@ -938,7 +944,7 @@ export function useAppController() {
     loadingActiveMatchDetails, showLiveMatchDock, setShowLiveMatchDock, refreshActiveMatchDetails,
     isHostUser, currentUser, canChangeMedia, canControlRoom, voiceChat, liveMatchesCount,
     homeFootballMatches, activePortalTransition, portalOriginRect, portalLandingActive, preloadWorld,
-    enterWorld, showHostLockNotice, isCurrentRoomPermanent, currentHostPin, roomHasPin,
+    enterWorld, goBackWorld, goHome, showHostLockNotice, isCurrentRoomPermanent, currentHostPin, roomHasPin,
     socialActions, isOnMobileSocialTab, effectiveVideoState, isPlayerActive, isDockedMini, miniDrag,
     roomGameActions, handleToggleCinemaMode, playback, handleClaimTvCode,
     handleSendTvRemoteCommand, lifecycle, isScrollCompressed, showCinemaOverlay,

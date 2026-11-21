@@ -48,16 +48,29 @@ function pickBestThumb(thumbs: any): string {
 
 function parseDurationLabel(label: string): number {
   const m = String(label || '').match(/(\d+):(\d{2})(?::(\d{2}))?/);
-  if (!m) return 205;
+  if (!m) return 0;
   if (m[3]) return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
   return Number(m[1]) * 60 + Number(m[2]);
 }
 
 const YTM_TYPE_OR_NOISE_RE =
-  /^(song|canción|cancion|video|vídeo|single|ep|album|álbum|podcast|episode|episodio|歌曲|专辑|專輯|单曲|單曲|视频|影片|chanson|titre|cançó|àlbum|трек|песня)$/i;
+  /^(song|canción|cancion|video|vídeo|single|ep|album|álbum|podcast|episode|episodio|explicit|e|lyrics|letra|hd|4k|歌曲|专辑|專輯|单曲|單曲|视频|影片|chanson|titre|cançó|àlbum|трек|песня|(?:19|20)\d{2})$/i;
 const YTM_DURATION_RE = /^\d+:\d{2}(?::\d{2})?$/;
 const YTM_VIEWS_RE =
   /(\b(views?|plays?|reproducciones|visualizaciones|vues|listeners?|subscribers?|oyentes)\b|\d+(?:[.,]\d+)?\s*(?:[kmb]\s+de\s+|m\s+de\s+|mil(?:lones)?\s+de\s+)?(?:visualizaciones|reproducciones|views?|plays?|vues)|次播放|次观看|次觀看|萬|万)/i;
+
+function splitCombinedArtistTitle(rawTitle: string, rawArtist: string): { title: string; artist: string } {
+  const t = String(rawTitle || '').trim();
+  const a = String(rawArtist || '').trim();
+  if (a && a !== 'YouTube Music' && a !== 'Artista' && a.toLowerCase() !== t.toLowerCase()) {
+    return { title: t, artist: a };
+  }
+  const sep = t.match(/^(.{2,48}?)\s+[-–—]\s+(.{2,})$/);
+  if (sep && !/^(official|video|audio|lyric|live|remix)\b/i.test(sep[1])) {
+    return { artist: sep[1].trim(), title: sep[2].trim() };
+  }
+  return { title: t, artist: a || 'YouTube Music' };
+}
 
 function getYtmContextForQuery(query: string) {
   if (/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(query)) {
@@ -118,14 +131,16 @@ function parseYtmTrackFromResponsive(item: any): MusicTrack | null {
     (s) => !YTM_TYPE_OR_NOISE_RE.test(s) && !YTM_DURATION_RE.test(s) && !YTM_VIEWS_RE.test(s)
   );
 
-  const artistName = subParts[0] || 'YouTube Music';
+  const resolved = splitCombinedArtistTitle(title, subParts[0] || 'YouTube Music');
+  const artistName = resolved.artist;
+  const cleanTitle = resolved.title;
   const albumTitle = subParts[1] || 'YouTube Music';
   const thumbs = item?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails;
   const cover = pickBestThumb(thumbs) || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
   return {
     id: `ytm-${videoId}`,
-    title,
+    title: cleanTitle,
     artist: {
       id: `ytm-art-${encodeURIComponent(artistName.toLowerCase())}`,
       name: artistName,
@@ -182,13 +197,14 @@ function parseYtmItemFromTwoRow(item: any): { track?: MusicTrack; album?: MusicA
   }
 
   if (typeof videoId === 'string' && videoId.length === 11) {
+    const resolved = splitCombinedArtistTitle(title, artistName);
     return {
       track: {
         id: `ytm-${videoId}`,
-        title,
+        title: resolved.title,
         artist: {
-          id: `ytm-art-${encodeURIComponent(artistName.toLowerCase())}`,
-          name: artistName,
+          id: `ytm-art-${encodeURIComponent(resolved.artist.toLowerCase())}`,
+          name: resolved.artist,
           picture: cover,
         },
         album: {
@@ -197,7 +213,7 @@ function parseYtmItemFromTwoRow(item: any): { track?: MusicTrack; album?: MusicA
           cover,
           coverXl: cover.includes('=w') ? cover.replace(/=w\d+-h\d+/, '=w720-h720') : `https://i.ytimg.com/vi/${videoId}/hq720.jpg`,
         },
-        durationSec: 205,
+        durationSec: 0,
         source: 'youtube_music',
         youtubeVideoId: videoId,
       },
@@ -301,18 +317,22 @@ export async function searchYouTubeMusic(query: string): Promise<{
         '';
       const cover = pickBestThumb(card?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails);
       if (title && typeof videoId === 'string' && videoId.length === 11 && !seenT.has(`ytm-${videoId}`)) {
-        const subParts = parseRunsText(card?.subtitle)
+        const rawSubParts = parseRunsText(card?.subtitle)
           .split('•')
           .map((s) => s.trim())
-          .filter((s) => s && !YTM_TYPE_OR_NOISE_RE.test(s) && !YTM_DURATION_RE.test(s) && !YTM_VIEWS_RE.test(s));
-        const artistName = subParts[0] || title;
+          .filter(Boolean);
+        const durPart = rawSubParts.find((p) => YTM_DURATION_RE.test(p)) || '';
+        const subParts = rawSubParts.filter(
+          (s) => !YTM_TYPE_OR_NOISE_RE.test(s) && !YTM_DURATION_RE.test(s) && !YTM_VIEWS_RE.test(s)
+        );
+        const resolved = splitCombinedArtistTitle(title, subParts[0] || 'YouTube Music');
         seenT.add(`ytm-${videoId}`);
         tracks.push({
           id: `ytm-${videoId}`,
-          title,
+          title: resolved.title,
           artist: {
-            id: `ytm-art-${encodeURIComponent(artistName.toLowerCase())}`,
-            name: artistName,
+            id: `ytm-art-${encodeURIComponent(resolved.artist.toLowerCase())}`,
+            name: resolved.artist,
             picture: cover,
           },
           album: {
@@ -321,7 +341,7 @@ export async function searchYouTubeMusic(query: string): Promise<{
             cover: cover || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
             coverXl: cover ? cover.replace(/=w\d+-h\d+/, '=w720-h720') : `https://i.ytimg.com/vi/${videoId}/hq720.jpg`,
           },
-          durationSec: 205,
+          durationSec: parseDurationLabel(durPart),
           source: 'youtube_music',
           youtubeVideoId: videoId,
         });
@@ -1150,12 +1170,66 @@ export async function importExternalMusicUrl(rawUrl: string): Promise<ImportedCo
   };
 }
 
+function simpleMatchCheck(
+  expectedTitle: string,
+  expectedArtist: string,
+  candTitle: string,
+  candArtist: string,
+  expectedDurationSec?: number,
+  candDurationSec?: number
+): boolean {
+  const norm = (s: string) =>
+    String(s || '')
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\([^)]*\)|\[[^\]]*\]/g, ' ')
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const et = norm(expectedTitle);
+  const ct = norm(candTitle);
+  if (!et || !ct) return false;
+  const etTokens = et.split(' ').filter((w) => w.length >= 2 || /^\d+$/.test(w));
+  const ctSet = new Set(ct.split(' ').filter(Boolean));
+  if (etTokens.length > 0) {
+    const hits = etTokens.filter((w) => ctSet.has(w)).length;
+    if (hits / etTokens.length < 0.75) return false;
+  } else if (et !== ct) {
+    return false;
+  }
+  const ea = norm(expectedArtist.split(',')[0]);
+  const ca = norm(candArtist);
+  if (ea && ea !== 'artista' && ea !== 'desconocido' && ca) {
+    const eaTokens = ea.split(' ').filter((w) => w.length >= 2);
+    const caSet = new Set(ca.split(' ').filter(Boolean));
+    if (eaTokens.length > 0 && !ca.includes(ea) && !ea.includes(ca)) {
+      const aHits = eaTokens.filter((w) => caSet.has(w)).length;
+      if (aHits / eaTokens.length < 0.7) return false;
+    }
+  }
+  if (expectedDurationSec && expectedDurationSec > 35 && candDurationSec && candDurationSec > 35) {
+    if (Math.abs(expectedDurationSec - candDurationSec) > 30) return false;
+  }
+  return true;
+}
+
 export async function matchImportedTracksBatch(
-  items: Array<{ title: string; artist: string; album?: string; durationSec?: number }>
+  items: Array<{
+    title: string;
+    artist: string;
+    album?: string;
+    durationSec?: number;
+    spotifyId?: string;
+    isrc?: string;
+    previewUrl?: string;
+    cover?: string;
+    explicit?: boolean;
+  }>
 ): Promise<MusicTrack[]> {
   const cleanItems = items
     .filter((i) => i && typeof i.title === 'string' && i.title.trim())
-    .slice(0, 45);
+    .slice(0, 60);
 
   const results: Array<MusicTrack | null> = new Array(cleanItems.length).fill(null);
   let cursor = 0;
@@ -1167,71 +1241,152 @@ export async function matchImportedTracksBatch(
       const item = cleanItems[idx];
       const title = item.title.trim();
       const artist = String(item.artist || '').trim();
-      const query = artist && artist.toLowerCase() !== 'desconocido' ? `${artist} ${title}` : title;
+      const primaryArtist = artist.split(',')[0].trim();
+      const query = artist && artist.toLowerCase() !== 'desconocido' ? `${primaryArtist} ${title}` : title;
+
+      // Fast path when Exportify CSV already supplies rich artwork + preview + duration + spotifyId/isrc
+      if (item.spotifyId && item.cover && (item.previewUrl || item.durationSec)) {
+        results[idx] = {
+          id: `sp-${item.spotifyId}`,
+          title,
+          artist: {
+            id: `sp-art-${encodeURIComponent((primaryArtist || 'art').toLowerCase())}`,
+            name: artist || 'Artista',
+            picture: item.cover,
+          },
+          album: {
+            id: `sp-alb-${idx}`,
+            title: item.album || 'Spotify Import',
+            cover: item.cover,
+            coverXl: item.cover,
+          },
+          durationSec: item.durationSec || 0,
+          explicit: Boolean(item.explicit),
+          previewUrl: item.previewUrl,
+          isrc: item.isrc,
+          source: 'spotify',
+          spotifyId: item.spotifyId,
+        };
+        continue;
+      }
 
       try {
-        // Fast iTunes + Deezer lookup to grab cover art, clean artist/title, and duration
-        const [dzRes, itList] = await Promise.all([
-          fetch(`https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&limit=3`, {
+        const [dzByIsrc, dzRes, itList] = await Promise.all([
+          item.isrc
+            ? fetch(`https://api.deezer.com/track/isrc:${encodeURIComponent(item.isrc)}`, {
+                signal: AbortSignal.timeout(3000),
+              })
+                .then((r) => (r.ok ? r.json() : null))
+                .catch(() => null)
+            : Promise.resolve(null),
+          fetch(`https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&limit=5`, {
             signal: AbortSignal.timeout(3500),
           })
             .then((r) => (r.ok ? r.json() : null))
             .catch(() => null),
-          searchItunesMusic(query, 'song', 2, 'ES'),
+          searchItunesMusic(query, 'song', 4, 'ES'),
         ]);
 
-        const dzHit = Array.isArray(dzRes?.data) ? dzRes.data[0] : null;
+        const dzHits = Array.isArray(dzRes?.data) ? dzRes.data : [];
+        const dzHit =
+          (dzByIsrc?.id ? dzByIsrc : null) ||
+          dzHits.find((d: any) =>
+            simpleMatchCheck(
+              title,
+              artist,
+              String(d?.title_short || d?.title || ''),
+              String(d?.artist?.name || ''),
+              item.durationSec,
+              Number(d?.duration || 0)
+            )
+          );
+
         if (dzHit?.id) {
           results[idx] = {
-            id: `dz-${dzHit.id}`,
-            title: String(dzHit.title_short || dzHit.title || title),
+            id: item.spotifyId ? `sp-${item.spotifyId}` : `dz-${dzHit.id}`,
+            title: title || String(dzHit.title_short || dzHit.title),
             artist: {
               id: String(dzHit.artist?.id || `imp-art-${idx}`),
-              name: String(dzHit.artist?.name || artist || 'Artista'),
-              picture: String(dzHit.artist?.picture_medium || dzHit.album?.cover_medium || ''),
+              name: artist || String(dzHit.artist?.name || 'Artista'),
+              picture: String(dzHit.artist?.picture_medium || item.cover || dzHit.album?.cover_medium || ''),
             },
             album: {
               id: String(dzHit.album?.id || `imp-alb-${idx}`),
-              title: String(dzHit.album?.title || item.album || 'Importado'),
-              cover: String(dzHit.album?.cover_big || dzHit.album?.cover_medium || ''),
-              coverXl: String(dzHit.album?.cover_xl || dzHit.album?.cover_big || ''),
+              title: item.album || String(dzHit.album?.title || 'Importado'),
+              cover: item.cover || String(dzHit.album?.cover_big || dzHit.album?.cover_medium || ''),
+              coverXl: item.cover || String(dzHit.album?.cover_xl || dzHit.album?.cover_big || ''),
             },
-            durationSec: Number(dzHit.duration || item.durationSec || 195),
-            explicit: Boolean(dzHit.explicit_lyrics),
-            previewUrl: dzHit.preview ? String(dzHit.preview) : undefined,
-            isrc: dzHit.isrc ? String(dzHit.isrc) : undefined,
-            source: 'deezer',
+            durationSec: Number(dzHit.duration || item.durationSec || 0),
+            explicit: item.explicit ?? Boolean(dzHit.explicit_lyrics),
+            previewUrl: item.previewUrl || (dzHit.preview ? String(dzHit.preview) : undefined),
+            isrc: item.isrc || (dzHit.isrc ? String(dzHit.isrc) : undefined),
+            spotifyId: item.spotifyId,
+            source: item.spotifyId ? 'spotify' : 'deezer',
           };
           continue;
         }
 
-        if (itList[0]) {
-          results[idx] = mapItunesSongToTrack(itList[0], 'spotify');
+        const itHit = itList.find((x) =>
+          simpleMatchCheck(
+            title,
+            artist,
+            String(x?.trackName || ''),
+            String(x?.artistName || ''),
+            item.durationSec,
+            x?.trackTimeMillis ? Math.round(Number(x.trackTimeMillis) / 1000) : 0
+          )
+        );
+        if (itHit) {
+          const mappedIt = mapItunesSongToTrack(itHit, 'spotify');
+          results[idx] = {
+            ...mappedIt,
+            id: item.spotifyId ? `sp-${item.spotifyId}` : mappedIt.id,
+            title,
+            artist: { ...mappedIt.artist, name: artist || mappedIt.artist.name },
+            album: {
+              ...mappedIt.album,
+              title: item.album || mappedIt.album.title,
+              cover: item.cover || mappedIt.album.cover,
+              coverXl: item.cover || mappedIt.album.coverXl,
+            },
+            durationSec: item.durationSec || mappedIt.durationSec,
+            previewUrl: item.previewUrl || mappedIt.previewUrl,
+            isrc: item.isrc,
+            spotifyId: item.spotifyId,
+          };
           continue;
         }
       } catch {
-        // fallback cleanly to raw imported metadata so song is never lost
+        // fallback cleanly to exact imported metadata so song never gets swapped
       }
 
       results[idx] = {
-        id: `imp-${Buffer.from(`${artist}|${title}`).toString('base64url').slice(0, 18)}`,
+        id: item.spotifyId
+          ? `sp-${item.spotifyId}`
+          : `imp-${Buffer.from(`${artist}|${title}`).toString('base64url').slice(0, 18)}`,
         title,
         artist: {
-          id: `imp-art-${encodeURIComponent((artist || 'art').toLowerCase())}`,
+          id: `imp-art-${encodeURIComponent((primaryArtist || 'art').toLowerCase())}`,
           name: artist || 'Artista',
+          picture: item.cover,
         },
         album: {
           id: `imp-alb-${idx}`,
           title: item.album || 'Importado',
-          cover: '',
+          cover: item.cover || '',
+          coverXl: item.cover || '',
         },
-        durationSec: item.durationSec || 200,
+        durationSec: item.durationSec || 0,
+        explicit: item.explicit,
+        previewUrl: item.previewUrl,
+        isrc: item.isrc,
+        spotifyId: item.spotifyId,
         source: 'spotify',
       };
     }
   }
 
-  await Promise.all(Array.from({ length: Math.min(5, cleanItems.length) }, () => worker()));
+  await Promise.all(Array.from({ length: Math.min(6, cleanItems.length) }, () => worker()));
   return results.filter((t): t is MusicTrack => Boolean(t));
 }
 

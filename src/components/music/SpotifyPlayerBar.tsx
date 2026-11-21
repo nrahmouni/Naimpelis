@@ -34,7 +34,15 @@ export function formatMusicTime(sec: number): string {
   return `${mins}:${String(secs).padStart(2, '0')}`;
 }
 
-export const SpotifyPlayerBar: React.FC = () => {
+export interface SpotifyPlayerBarProps {
+  dockedAboveMusicNav?: boolean;
+  onOpenMusicWorld?: () => void;
+}
+
+export const SpotifyPlayerBar: React.FC<SpotifyPlayerBarProps> = ({
+  dockedAboveMusicNav = false,
+  onOpenMusicWorld,
+}) => {
   const currentTrack = useMusicStore((s) => s.currentTrack);
   const activeRadio = useMusicStore((s) => s.activeRadio);
   const resolvedPlayback = useMusicStore((s) => s.resolvedPlayback);
@@ -92,7 +100,11 @@ export const SpotifyPlayerBar: React.FC = () => {
 
   return (
     <div
-      className="fixed bottom-0 inset-x-0 z-40 bg-[#0C0C0F]/92 backdrop-blur-2xl border-t border-white/[0.1] px-3 sm:px-6 pt-2 pb-[calc(env(safe-area-inset-bottom,0px)+8px)] shadow-[0_-18px_48px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.08)]"
+      className={`fixed inset-x-0 z-40 bg-[#0C0C0F]/94 backdrop-blur-2xl border-t border-white/[0.1] px-3 sm:px-6 pt-2 shadow-[0_-18px_48px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.08)] ${
+        dockedAboveMusicNav
+          ? 'bottom-[calc(64px+env(safe-area-inset-bottom,0px))] lg:bottom-0 pb-2 lg:pb-[calc(env(safe-area-inset-bottom,0px)+8px)]'
+          : 'bottom-0 pb-[calc(env(safe-area-inset-bottom,0px)+8px)]'
+      }`}
       role="region"
       aria-label={m.playerRegionAria}
     >
@@ -271,6 +283,19 @@ export const SpotifyPlayerBar: React.FC = () => {
 
         {/* Mobile Compact Transport */}
         <div className="flex sm:hidden items-center gap-1 shrink-0">
+          {onOpenMusicWorld && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                onOpenMusicWorld();
+              }}
+              aria-label="Abrir Riffan Music"
+              className="h-8 px-2.5 rounded-full bg-[#3B82F6]/20 border border-[#3B82F6]/35 text-[11px] font-bold text-[#93C5FD] inline-flex items-center cursor-pointer whitespace-nowrap"
+            >
+              Music
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -447,6 +472,19 @@ export const SpotifyPlayerBar: React.FC = () => {
               className="w-20 h-1 accent-[#3B82F6] bg-white/15 rounded-full cursor-pointer"
             />
           </div>
+
+          {onOpenMusicWorld && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                onOpenMusicWorld();
+              }}
+              className="h-8 px-3 rounded-xl bg-[#3B82F6]/16 hover:bg-[#3B82F6]/28 border border-[#3B82F6]/30 text-xs font-bold text-[#93C5FD] cursor-pointer whitespace-nowrap transition-colors shrink-0"
+            >
+              Riffan Music
+            </button>
+          )}
 
           <button
             type="button"

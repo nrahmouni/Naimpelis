@@ -104,6 +104,7 @@ export interface ResolvedTrackPlayback {
   proxiedUrl?: string;
   youtubeVideoId?: string;
   youtubeMvId?: string;
+  youtubeAltIds?: string[];
   previewUrl?: string;
   fullLength: boolean;
   spatial8dYtFallback?: boolean;
@@ -271,6 +272,13 @@ export interface ImportedTrackInput {
   album?: string;
   durationSec?: number;
   sourceHint?: string;
+  spotifyId?: string;
+  isrc?: string;
+  previewUrl?: string;
+  cover?: string;
+  explicit?: boolean;
+  genres?: string[];
+  releaseDate?: string;
 }
 
 export interface MusicHomePayload {

@@ -109,7 +109,12 @@ export async function handleExternalSportsExtract(params: {
   const sniffed = directSports || (await sniffStreamWithHeadless(fullTargetUrl));
 
   if (sniffed && sniffed.streamUrl) {
-    if (!sniffed.isDirectMp4 && (resolverType === 'sports_channel' || /\.m3u8(\?|$)/i.test(sniffed.streamUrl))) {
+    const alreadyVerified = Boolean(directSports && directSports.verifiedClean);
+    if (
+      !alreadyVerified &&
+      !sniffed.isDirectMp4 &&
+      (resolverType === 'sports_channel' || /\.m3u8(\?|$)/i.test(sniffed.streamUrl))
+    ) {
       const checkM3u = await fetchSportsHtmlHop(sniffed.streamUrl, sniffed.referer);
       if (checkM3u.includes('#EXTM3U')) {
         const clean = await verifyM3u8HasCleanVideoFrame(
@@ -118,12 +123,7 @@ export async function handleExternalSportsExtract(params: {
           sniffed.referer
         );
         if (!clean) {
-          channelHealthMonitor.setTrackHealth(fullTargetUrl, {
-            status: 'down',
-            failCount: 3,
-            checkedAt: Date.now(),
-            qoeFailures: 3,
-          });
+          channelHealthMonitor.recordPlaybackFeedback(fullTargetUrl, { failed: true });
           return sendJsonStatus(422, {
             success: false,
             brokenGreenFeed: true,

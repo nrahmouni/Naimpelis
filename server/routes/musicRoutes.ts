@@ -237,6 +237,7 @@ export function registerMusicRoutes(app: express.Express): void {
     const preferAudio = req.query.preferAudio === '1' || req.query.preferAudio === 'true';
     try {
       const resolved = await resolveTrackPlayback({
+        trackId: String(req.query.trackId || '').trim() || undefined,
         title,
         artist,
         durationSec: Number(req.query.duration || 0) || undefined,
@@ -244,6 +245,7 @@ export function registerMusicRoutes(app: express.Express): void {
         soundcloudId: String(req.query.scId || '').trim() || undefined,
         audiusId: String(req.query.audiusId || '').trim() || undefined,
         youtubeVideoId: String(req.query.ytId || '').trim() || undefined,
+        isrc: String(req.query.isrc || '').trim() || undefined,
         preferAudio,
       });
       res.setHeader('Cache-Control', 'no-store');
@@ -443,11 +445,6 @@ export function registerMusicRoutes(app: express.Express): void {
       res.status(400).send('Missing url');
       return;
     }
-    const check = await validateSafeOutboundUrl(rawUrl);
-    if (!check.safe) {
-      res.status(check.status).send(check.reason);
-      return;
-    }
 
     const controller = new AbortController();
     res.on('close', () => {
@@ -462,7 +459,7 @@ export function registerMusicRoutes(app: express.Express): void {
         upstreamHeaders.Range = String(req.headers.range);
       }
       const { response: upstream, finalUrl } = await safeFetchFollowingRedirects(
-        check.url.toString(),
+        rawUrl,
         {
           headers: upstreamHeaders,
           signal: controller.signal,
@@ -479,12 +476,16 @@ export function registerMusicRoutes(app: express.Express): void {
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
 
-      if (
-        contentType.includes('mpegurl') ||
-        check.url.pathname.toLowerCase().endsWith('.m3u8')
-      ) {
+      let parsedPath = '';
+      try {
+        parsedPath = new URL(finalUrl || rawUrl).pathname.toLowerCase();
+      } catch {
+        parsedPath = '';
+      }
+
+      if (contentType.includes('mpegurl') || parsedPath.endsWith('.m3u8')) {
         const text = await upstream.text();
-        const base = finalUrl || check.url.toString();
+        const base = finalUrl || rawUrl;
         const rewritten = text
           .split('\n')
           .map((line) => {
@@ -509,7 +510,7 @@ export function registerMusicRoutes(app: express.Express): void {
           .join('\n');
         res.status(200);
         res.setHeader('Content-Type', 'application/vnd.apple.mpegurl; charset=utf-8');
-        res.setHeader('Cache-Control', 'no-store');
+        res.setHeader('Cache-Control', 'private, max-age=120');
         res.send(rewritten);
         return;
       }
@@ -522,6 +523,9 @@ export function registerMusicRoutes(app: express.Express): void {
       if (contentRange) res.setHeader('Content-Range', contentRange);
       const contentLength = upstream.headers.get('content-length');
       if (contentLength) res.setHeader('Content-Length', contentLength);
+      if (/\.(m4s|mp4|aac|mp3|ts|m4a)$/.test(parsedPath)) {
+        res.setHeader('Cache-Control', 'private, max-age=300');
+      }
 
       if (!upstream.body) {
         res.end();

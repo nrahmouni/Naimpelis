@@ -2,7 +2,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Check,
-  Copy,
   FileUp,
   Heart,
   Link2,
@@ -17,7 +16,7 @@ import {
 import { useMusicStore } from '../../store/useMusicStore';
 import { useBackInterceptor } from '../../lib/backInterceptor';
 import { triggerHaptic } from '../../utils/haptics';
-import { parseMusicImportText } from '../../services/musicImporter';
+import { buildExportifyCsvFromTracks, parseMusicImportText } from '../../services/musicImporter';
 import {
   connectAndImportSpotifyAccount,
   connectAndImportYoutubeAccount,
@@ -80,6 +79,7 @@ export const SpotifyYtmImportModal: React.FC<{
   const mergeTasteProfile = useMusicStore((s) => s.mergeTasteProfile);
   const removeFavoriteArtist = useMusicStore((s) => s.removeFavoriteArtist);
   const removeFavoriteGenre = useMusicStore((s) => s.removeFavoriteGenre);
+  const likedTracks = useMusicStore((s) => s.likedTracks);
   const playTrack = useMusicStore((s) => s.playTrack);
   const m = MUSIC_I18N[musicLang];
 
@@ -92,7 +92,6 @@ export const SpotifyYtmImportModal: React.FC<{
     'spotify' | 'youtube_music' | null
   >(null);
   const [spotifyStatus, setSpotifyStatus] = useState<SpotifyOAuthStatus | null>(null);
-  const [copiedCallback, setCopiedCallback] = useState(false);
   const [oauthPreview, setOauthPreview] = useState<FullOAuthImportResult | null>(null);
   const [selectedPlaylistIds, setSelectedPlaylistIds] = useState<Set<string>>(new Set());
   const [includeOAuthLikes, setIncludeOAuthLikes] = useState(true);
@@ -135,18 +134,6 @@ export const SpotifyYtmImportModal: React.FC<{
   const emitToast = (msg: string) => {
     showMusicToast(msg);
     onImportedToast?.(msg);
-  };
-
-  const handleCopyCallbackUrl = async () => {
-    const urlToCopy = spotifyStatus?.activeCallbackUrl || spotifyStatus?.devCallbackUrl;
-    if (!urlToCopy) return;
-    try {
-      await navigator.clipboard.writeText(urlToCopy);
-      setCopiedCallback(true);
-      setTimeout(() => setCopiedCallback(false), 2000);
-    } catch {
-      // ignore clipboard errors
-    }
   };
 
   const handleConnectYoutube = async () => {
@@ -658,54 +645,90 @@ export const SpotifyYtmImportModal: React.FC<{
                     </div>
 
                     {spotifyStatus?.configured ? (
-                      <button
-                        type="button"
-                        disabled={Boolean(oauthLoadingProvider)}
-                        onClick={() => void handleConnectSpotify()}
-                        className="w-full h-11 px-4 rounded-xl bg-[#1DB954] hover:bg-[#1ed760] text-black font-extrabold text-xs sm:text-sm inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-[0_8px_24px_rgba(29,185,84,0.28)] transition-all"
-                      >
-                        {oauthLoadingProvider === 'spotify' ? (
-                          <Loader2 className="w-4 h-4 animate-spin text-black" />
-                        ) : (
-                          <LogIn className="w-4 h-4" />
-                        )}
-                        <span>{m.connectSpotifyBtn}</span>
-                      </button>
-                    ) : (
-                      <div className="space-y-2.5">
-                        <div className="p-2.5 rounded-xl bg-[#0C0C0F] border border-white/[0.08] text-[11px] text-zinc-400 space-y-1.5">
-                          <p className="text-zinc-300 font-semibold">
-                            Activa las credenciales de Spotify en AI Studio Secrets (
-                            <span className="font-mono text-[#93C5FD]">SPOTIFY_CLIENT_ID</span> +{' '}
-                            <span className="font-mono text-[#93C5FD]">SPOTIFY_CLIENT_SECRET</span>)
-                            con esta Redirect URI:
-                          </p>
-                          {spotifyStatus?.activeCallbackUrl && (
-                            <div className="flex items-center gap-1.5">
-                              <code className="flex-1 truncate px-2 py-1 rounded-lg bg-[#131318] border border-white/[0.08] text-[10px] font-mono text-[#93C5FD]">
-                                {spotifyStatus.activeCallbackUrl}
-                              </code>
-                              <button
-                                type="button"
-                                onClick={() => void handleCopyCallbackUrl()}
-                                className="h-7 px-2 rounded-lg bg-white/[0.08] hover:bg-white/[0.15] text-[10px] font-bold text-white inline-flex items-center gap-1 cursor-pointer shrink-0"
-                              >
-                                <Copy className="w-3 h-3" />
-                                <span>{copiedCallback ? 'OK' : 'Copiar'}</span>
-                              </button>
-                            </div>
-                          )}
-                        </div>
-
+                      <div className="space-y-2">
                         <button
                           type="button"
-                          onClick={() => setTab('link')}
-                          className="w-full h-10 px-3 rounded-xl bg-[#3B82F6]/16 hover:bg-[#3B82F6]/25 border border-[#3B82F6]/45 text-[#93C5FD] font-bold text-xs inline-flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                          disabled={Boolean(oauthLoadingProvider)}
+                          onClick={() => void handleConnectSpotify()}
+                          className="w-full h-11 px-4 rounded-xl bg-[#1DB954] hover:bg-[#1ed760] text-black font-extrabold text-xs sm:text-sm inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 shadow-[0_8px_24px_rgba(29,185,84,0.28)] transition-all"
                         >
-                          <Link2 className="w-3.5 h-3.5" />
-                          <span>O pega tu enlace de Perfil / Playlist pública ahora</span>
+                          {oauthLoadingProvider === 'spotify' ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-black" />
+                          ) : (
+                            <LogIn className="w-4 h-4" />
+                          )}
+                          <span>{m.connectSpotifyBtn}</span>
                         </button>
+                        <p className="text-[10px] text-zinc-400 text-center">
+                          {spotifyStatus.pkceMode
+                            ? 'OAuth PKCE activado (estilo Exportify · paginado completo)'
+                            : 'OAuth Web API completo · Me gusta, Playlists y Géneros'}
+                        </p>
                       </div>
+                    ) : (
+                      <div className="space-y-2.5">
+                        <div className="p-3 rounded-xl bg-[#0C0C0F] border border-[#1DB954]/25 text-[11px] text-zinc-300 space-y-2">
+                          <p className="font-bold text-white">
+                            Importación instantánea con Exportify (CSV / Playlists de Spotify)
+                          </p>
+                          <p className="text-zinc-400 leading-relaxed">
+                            Exporta tus playlists de Spotify en{' '}
+                            <a
+                              href="https://exportify.net/"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-[#1DB954] font-bold underline underline-offset-2"
+                            >
+                              exportify.net
+                            </a>{' '}
+                            y sube el CSV aquí con URI, ISRC, carátulas y duración exactas, o pega cualquier enlace público de Spotify.
+                          </p>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setTab('file');
+                                setTimeout(() => fileInputRef.current?.click(), 80);
+                              }}
+                              className="min-h-10 px-3 rounded-xl bg-[#1DB954] hover:bg-[#1ed760] text-black font-extrabold text-xs inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                            >
+                              <FileUp className="w-3.5 h-3.5 shrink-0" />
+                              <span>Subir CSV de Exportify</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTab('link')}
+                              className="min-h-10 px-3 rounded-xl bg-[#3B82F6]/16 hover:bg-[#3B82F6]/25 border border-[#3B82F6]/45 text-[#93C5FD] font-bold text-xs inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                            >
+                              <Link2 className="w-3.5 h-3.5 shrink-0" />
+                              <span>Pegar enlace de Spotify</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {likedTracks.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const csv = buildExportifyCsvFromTracks('Riffan Music Me Gusta', likedTracks);
+                          const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                          const url = URL.createObjectURL(blob);
+                          const a = document.createElement('a');
+                          a.href = url;
+                          a.download = 'riffan-music-exportify.csv';
+                          document.body.appendChild(a);
+                          a.click();
+                          document.body.removeChild(a);
+                          URL.revokeObjectURL(url);
+                          emitToast('CSV Exportify descargado');
+                        }}
+                        className="w-full h-9 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] text-zinc-300 hover:text-white font-semibold text-[11px] inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <FileUp className="w-3.5 h-3.5 text-[#1DB954]" />
+                        <span>Exportar tus Me Gusta en formato Exportify (.csv)</span>
+                      </button>
                     )}
                   </div>
                 </div>

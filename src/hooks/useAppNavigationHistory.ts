@@ -88,6 +88,9 @@ export function useAppNavigationHistory(params: {
     activeWorld !== 'entry' ||
     (hasActivePlayer && !isPlayerMinimized) ||
     isFullscreen;
+  const hasSubLayerRef = useRef(hasSubLayer);
+  hasSubLayerRef.current = hasSubLayer;
+  const guardResyncTimerRef = useRef<number | null>(null);
 
   const pushGuard = useCallback((kind: 'root' | 'layer') => {
     if (typeof window === 'undefined') return;
@@ -123,6 +126,23 @@ export function useAppNavigationHistory(params: {
     }
   }, []);
 
+  const scheduleGuardResync = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    if (guardResyncTimerRef.current) {
+      window.clearTimeout(guardResyncTimerRef.current);
+    }
+    guardResyncTimerRef.current = window.setTimeout(() => {
+      guardResyncTimerRef.current = null;
+      if (!latestRef.current.enabled || readyToExitRef.current) return;
+      const currentKind = getGuardType(window.history.state);
+      if (!currentKind) {
+        pushGuard(hasSubLayerRef.current ? 'layer' : 'root');
+      } else if (hasSubLayerRef.current && currentKind === 'root') {
+        pushGuard('layer');
+      }
+    }, 32);
+  }, [pushGuard]);
+
   // Ensure initial root sentinel + layer sentinel exist whenever interactive layers are open
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return;
@@ -134,7 +154,7 @@ export function useAppNavigationHistory(params: {
     } else if (hasSubLayer && currentKind === 'root') {
       pushGuard('layer');
     }
-  }, [enabled, hasSubLayer, pushGuard]);
+  }, [enabled, hasSubLayer, overlayCount, activeWorld, pushGuard]);
 
   const armExitWindow = useCallback(() => {
     readyToExitRef.current = true;
@@ -149,7 +169,7 @@ export function useAppNavigationHistory(params: {
       readyToExitRef.current = false;
       setExitToastVisible(false);
       if (latestRef.current.enabled) {
-        pushGuard('root');
+        pushGuard(hasSubLayerRef.current ? 'layer' : 'root');
       }
     }, 2200);
   }, [pushGuard]);
@@ -174,16 +194,14 @@ export function useAppNavigationHistory(params: {
 
       const cur = latestRef.current;
 
-      // Step 1: Close top-most modal / sheet / details / search / active game
+      // Step 1: Close top-most modal / sheet / details / search / active game / detail stack
       if (tryConsumeBackInterceptor()) {
         markBackPopHandled();
         disarmExitWindow();
-        const stillHasLayer =
-          getActiveBackInterceptorCount() > 0 ||
-          cur.activeWorld !== 'entry' ||
-          (cur.hasActivePlayer && !cur.isPlayerMinimized) ||
-          cur.isFullscreen;
-        pushGuard(stillHasLayer ? 'layer' : 'root');
+        if (!getGuardType(window.history.state)) {
+          pushGuard('root');
+        }
+        scheduleGuardResync();
         return;
       }
 
@@ -192,7 +210,8 @@ export function useAppNavigationHistory(params: {
         markBackPopHandled();
         disarmExitWindow();
         cur.onExitFullscreen();
-        pushGuard('layer');
+        if (!getGuardType(window.history.state)) pushGuard('root');
+        scheduleGuardResync();
         return;
       }
 
@@ -201,16 +220,18 @@ export function useAppNavigationHistory(params: {
         markBackPopHandled();
         disarmExitWindow();
         cur.onMinimizePlayer();
-        pushGuard(cur.activeWorld !== 'entry' ? 'layer' : 'root');
+        if (!getGuardType(window.history.state)) pushGuard('root');
+        scheduleGuardResync();
         return;
       }
 
-      // Step 4: Return from any sub-world (Cine, Fútbol, TV, Juegos, Sala, YT) to Entry Home
+      // Step 4: Step back through sub-worlds toward Entry Home
       if (cur.activeWorld !== 'entry') {
         markBackPopHandled();
         disarmExitWindow();
         cur.onReturnToEntry();
-        pushGuard('root');
+        if (!getGuardType(window.history.state)) pushGuard('root');
+        scheduleGuardResync();
         return;
       }
 
@@ -230,12 +251,15 @@ export function useAppNavigationHistory(params: {
     return () => {
       window.removeEventListener('popstate', handlePopState, true);
     };
-  }, [armExitWindow, disarmExitWindow, pushGuard, enabled]);
+  }, [armExitWindow, disarmExitWindow, pushGuard, scheduleGuardResync, enabled]);
 
   useEffect(() => {
     return () => {
       if (exitWindowTimerRef.current) {
         window.clearTimeout(exitWindowTimerRef.current);
+      }
+      if (guardResyncTimerRef.current) {
+        window.clearTimeout(guardResyncTimerRef.current);
       }
     };
   }, []);

@@ -26,6 +26,7 @@ export interface FullOAuthImportResult {
 
 export interface SpotifyOAuthStatus {
   configured: boolean;
+  pkceMode?: boolean;
   activeCallbackUrl: string;
   devCallbackUrl: string;
   scopes: string[];
@@ -64,6 +65,7 @@ export async function fetchSpotifyOAuthStatus(): Promise<SpotifyOAuthStatus> {
   const data = await res.json();
   return {
     configured: Boolean(data?.configured),
+    pkceMode: Boolean(data?.pkceMode),
     activeCallbackUrl: String(data?.activeCallbackUrl || ''),
     devCallbackUrl: String(data?.devCallbackUrl || ''),
     scopes: Array.isArray(data?.scopes) ? data.scopes : [],

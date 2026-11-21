@@ -1,701 +1,421 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Database, Radio, Server, Trophy, Tv } from 'lucide-react';
+import {
+  ChevronRight,
+  Database,
+  Pause,
+  Play,
+  Radio,
+  Server,
+  Trophy,
+  Tv,
+} from 'lucide-react';
 import type { AppLanguage, CatalogMovie } from '../../types';
 import type { PrimaryWorldId } from '../../store/useAppStore';
+import { useMusicStore } from '../../store/useMusicStore';
 import { pickLang } from '../../utils/i18n';
+import { triggerHaptic } from '../../utils/haptics';
 import {
-  RiffanArrowRightIcon,
   RiffanChannelsIcon,
   RiffanDiceIcon,
   RiffanFootballIcon,
   RiffanMoviesIcon,
   RiffanUsersIcon,
 } from '../ui/RiffanIcons';
-import heroStadiumImg from '../../assets/images/movistar_dazn_hero_stadium.webp';
-import f1NightImg from '../../assets/images/dazn_motor_f1_night.webp';
-import basketballArenaImg from '../../assets/images/movistar_arena_basketball.webp';
-import musicHeroImg from '../../assets/images/music_spatial_hero_1795220135333.jpg';
-import musicChillImg from '../../assets/images/music_chill_lofi_1795220135922.jpg';
-import mixUrbanoImg from '../../assets/images/riffan_mix_urbano_1795218458959.jpg';
 import { RiffanMusicLogo } from '../music/RiffanMusicLogo';
+import { CoverArt } from '../music/CoverArt';
 
 interface EntryHomeBentoGridProps {
   lang: AppLanguage;
   sessionMode?: 'solo' | 'party';
   lastUsedWorld: PrimaryWorldId | null;
-  heroPosters: CatalogMovie[];
-  featuredChannels: Array<{ id: string; mark: string; tone: string }>;
+  heroPosters?: CatalogMovie[];
+  featuredChannels?: Array<{ id: string; mark: string; tone: string }>;
   liveMatchesCount: number;
   featuredLiveMatch: string | null;
   roomParticipantsCount: number;
   onPreloadWorld?: (world: PrimaryWorldId) => void;
-  onCardPointerMove: (id: string, e: React.PointerEvent<HTMLButtonElement>) => void;
   onCardClick: (worldId: PrimaryWorldId, e?: React.MouseEvent<HTMLButtonElement>) => void;
-  renderSpotlightOverlay: (id: string) => React.ReactNode;
 }
 
 export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
   lang,
   sessionMode = 'party',
   lastUsedWorld,
-  heroPosters,
   liveMatchesCount,
   featuredLiveMatch,
   roomParticipantsCount,
   onPreloadWorld,
-  onCardPointerMove,
   onCardClick,
-  renderSpotlightOverlay,
-}) => (
-  <section className="grid grid-cols-2 md:grid-cols-6 gap-3 sm:gap-3.5">
-    {/* HERO CARD: CINE Y SERIES */}
-    <motion.button
-      type="button"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16 }}
-      whileTap={{ scale: 0.96 }}
-      onPointerEnter={() => onPreloadWorld?.('cine')}
-      onTouchStart={() => onPreloadWorld?.('cine')}
-      onPointerMove={(e) => onCardPointerMove('cine', e)}
-      onClick={(e) => onCardClick('cine', e)}
-      className="group relative col-span-2 md:col-span-4 md:order-1 rounded-[24px] p-5 sm:p-6 min-h-[164px] sm:min-h-[188px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_18px_50px_rgba(0,0,0,0.65)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
-    >
-      {renderSpotlightOverlay('cine')}
+}) => {
+  const currentTrack = useMusicStore((s) => s.currentTrack);
+  const activeRadio = useMusicStore((s) => s.activeRadio);
+  const isPlaying = useMusicStore((s) => s.isPlaying);
+  const likedCount = useMusicStore((s) => s.likedTracks.length);
+  const togglePlayPause = useMusicStore((s) => s.togglePlayPause);
 
-      <div
-        aria-hidden="true"
-        className="absolute right-0 top-0 bottom-0 w-[44%] sm:w-[46%] pointer-events-none overflow-hidden select-none"
-      >
-        {heroPosters.length > 0 ? (
-          <div className="relative w-full h-full flex items-center justify-end pr-2 sm:pr-4 pt-1 opacity-90">
-            {heroPosters.slice(0, 3).map((m, idx) => {
-              const offsets = [
-                'right-16 sm:right-24 bottom-3 sm:bottom-4 -rotate-6 opacity-75 scale-90 group-hover:-translate-x-2.5 group-hover:-rotate-12 group-hover:scale-95',
-                'right-8 sm:right-12 bottom-4 sm:bottom-5 rotate-2 opacity-90 scale-95 z-[1] group-hover:-translate-y-2 group-hover:scale-100',
-                'right-1 sm:right-2 bottom-3 sm:bottom-4 rotate-6 opacity-100 z-[2] group-hover:translate-x-2 group-hover:rotate-12 group-hover:scale-105',
-              ];
-              return (
-                <div
-                  key={m.id || idx}
-                  className={`absolute w-[68px] h-[98px] sm:w-[88px] sm:h-[126px] rounded-xl overflow-hidden border border-white/15 bg-[#0D0D12] shadow-[0_14px_30px_rgba(0,0,0,0.75)] transition-transform duration-300 ${
-                    offsets[idx] || offsets[0]
-                  }`}
-                >
-                  <img
-                    src={m.poster}
-                    alt=""
-                    referrerPolicy="no-referrer"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                    }}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                </div>
-              );
-            })}
+  const primaryTiles: Array<{
+    id: PrimaryWorldId;
+    title: string;
+    subtitle: string;
+    icon: React.ReactNode;
+    accentBorder: string;
+    highlightBadge?: string;
+  }> = [
+    {
+      id: 'cine',
+      title: pickLang(lang, { es: 'Cine y Series', ca: 'Cine i Sèries', en: 'Movies & Series' }),
+      subtitle: pickLang(lang, {
+        es: 'Películas, series y anime 4K',
+        ca: 'Pel·lícules, sèries i anime 4K',
+        en: 'Movies, series & anime 4K',
+      }),
+      icon: (
+        <span className="w-11 h-11 rounded-xl bg-[#7C3AED]/15 border border-[#7C3AED]/30 flex items-center justify-center text-[#A78BFA] shrink-0">
+          <RiffanMoviesIcon size={20} animate="hover" />
+        </span>
+      ),
+      accentBorder: 'hover:border-[#7C3AED]/60',
+    },
+    {
+      id: 'music',
+      title: 'Riffan Music',
+      subtitle:
+        likedCount > 0
+          ? pickLang(lang, {
+              es: `Hi-Fi, letras · ${likedCount} favoritas`,
+              ca: `Hi-Fi, lletres · ${likedCount} preferides`,
+              en: `Hi-Fi, lyrics · ${likedCount} liked`,
+            })
+          : pickLang(lang, {
+              es: 'Música Hi-Fi, letras y radios',
+              ca: 'Música Hi-Fi, lletres i ràdios',
+              en: 'Hi-Fi music, lyrics & radios',
+            }),
+      icon: <RiffanMusicLogo variant="mark" size={44} frameStyle="obsidian" />,
+      accentBorder: 'hover:border-[#3B82F6]/65 border-[#3B82F6]/25',
+    },
+    {
+      id: 'tv',
+      title: pickLang(lang, { es: 'TV en Directo', ca: 'TV en Directe', en: 'Live TV' }),
+      subtitle: pickLang(lang, {
+        es: 'TDT España y canales 24/7',
+        ca: 'TDT Espanya i canals 24/7',
+        en: 'Spanish DTT & 24/7 channels',
+      }),
+      icon: (
+        <span className="w-11 h-11 rounded-xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-400 shrink-0">
+          <RiffanChannelsIcon size={20} animate="hover" />
+        </span>
+      ),
+      accentBorder: 'hover:border-sky-400/55',
+    },
+    {
+      id: 'futbol',
+      title: pickLang(lang, { es: 'Fútbol', ca: 'Futbol', en: 'Football' }),
+      subtitle:
+        liveMatchesCount > 0
+          ? featuredLiveMatch ||
+            pickLang(lang, {
+              es: `${liveMatchesCount} partidos en vivo`,
+              ca: `${liveMatchesCount} partits en directe`,
+              en: `${liveMatchesCount} live matches`,
+            })
+          : featuredLiveMatch ||
+            pickLang(lang, {
+              es: 'Agenda de partidos',
+              ca: 'Agenda de partits',
+              en: 'Match schedule',
+            }),
+      icon: (
+        <span className="w-11 h-11 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shrink-0">
+          <RiffanFootballIcon size={20} animate="hover" />
+        </span>
+      ),
+      accentBorder: 'hover:border-emerald-400/55',
+      highlightBadge:
+        liveMatchesCount > 0
+          ? pickLang(lang, {
+              es: `${liveMatchesCount} en vivo`,
+              ca: `${liveMatchesCount} en directe`,
+              en: `${liveMatchesCount} live`,
+            })
+          : undefined,
+    },
+    {
+      id: 'sala',
+      title: pickLang(lang, { es: 'Sala con Amigos', ca: 'Sala amb Amics', en: 'Watch Party' }),
+      subtitle:
+        sessionMode === 'solo'
+          ? pickLang(lang, {
+              es: 'Crea una sala para ver juntos',
+              ca: 'Crea una sala per veure junts',
+              en: 'Watch together in sync',
+            })
+          : pickLang(lang, {
+              es: `${roomParticipantsCount > 0 ? roomParticipantsCount : 1} en sala · Chat y voz`,
+              ca: `${roomParticipantsCount > 0 ? roomParticipantsCount : 1} a la sala · Xat i veu`,
+              en: `${roomParticipantsCount > 0 ? roomParticipantsCount : 1} in room · Chat & voice`,
+            }),
+      icon: (
+        <span className="w-11 h-11 rounded-xl bg-[#7C3AED]/15 border border-[#7C3AED]/30 flex items-center justify-center text-[#A78BFA] shrink-0">
+          <RiffanUsersIcon size={19} animate="hover" />
+        </span>
+      ),
+      accentBorder: 'hover:border-[#7C3AED]/60',
+    },
+    {
+      id: 'juegos',
+      title: pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' }),
+      subtitle: pickLang(lang, {
+        es: 'Billar, Parchís, UNO y Pinturillo',
+        ca: 'Billar, Parxís, UNO i Pinturillo',
+        en: 'Pool, Parchís, UNO & Pictionary',
+      }),
+      icon: (
+        <span className="w-11 h-11 rounded-xl bg-fuchsia-500/15 border border-fuchsia-400/30 flex items-center justify-center text-fuchsia-300 shrink-0">
+          <RiffanDiceIcon size={20} animate="hover" />
+        </span>
+      ),
+      accentBorder: 'hover:border-fuchsia-400/55',
+    },
+  ];
+
+  const platformTiles: Array<{
+    id: PrimaryWorldId;
+    title: string;
+    subtitle: string;
+    icon: React.ReactNode;
+    accentBorder: string;
+  }> = [
+    {
+      id: 'movistardazn',
+      title: 'DAZN & Movistar+',
+      subtitle: pickLang(lang, {
+        es: 'Deporte en vivo y Originales M+',
+        ca: 'Esport en directe i Originals M+',
+        en: 'Live sports & M+ Originals',
+      }),
+      icon: (
+        <span className="w-10 h-10 rounded-xl bg-[#00A9E0]/15 border border-[#00A9E0]/30 flex items-center justify-center text-[#38BDF8] shrink-0">
+          <Trophy className="w-4.5 h-4.5" />
+        </span>
+      ),
+      accentBorder: 'hover:border-[#00A9E0]/60',
+    },
+    {
+      id: 'atresplayer',
+      title: 'Atresmedia',
+      subtitle: pickLang(lang, {
+        es: 'Antena 3, laSexta y programas',
+        ca: 'Antena 3, laSexta i programes',
+        en: 'Antena 3, laSexta & shows',
+      }),
+      icon: (
+        <span className="w-10 h-10 rounded-xl bg-[#FF5E1A]/15 border border-[#FF5E1A]/30 flex items-center justify-center text-[#FF7A3D] shrink-0">
+          <Tv className="w-4.5 h-4.5" />
+        </span>
+      ),
+      accentBorder: 'hover:border-[#FF5E1A]/60',
+    },
+    {
+      id: 'clipbox',
+      title: 'ClipBox',
+      subtitle: pickLang(lang, {
+        es: 'Cine, anime y subtítulos',
+        ca: 'Cinema, anime i subtítols',
+        en: 'Cinema, anime & subtitles',
+      }),
+      icon: (
+        <span className="w-10 h-10 rounded-xl bg-cyan-500/15 border border-cyan-400/30 flex items-center justify-center text-cyan-300 shrink-0">
+          <Database className="w-4.5 h-4.5" />
+        </span>
+      ),
+      accentBorder: 'hover:border-cyan-400/55',
+    },
+    {
+      id: 'rbtv',
+      title: 'RBTV+',
+      subtitle: pickLang(lang, {
+        es: 'Canales deportivos',
+        ca: 'Canals esportius',
+        en: 'Sports channels',
+      }),
+      icon: (
+        <span className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-300 shrink-0">
+          <Radio className="w-4.5 h-4.5" />
+        </span>
+      ),
+      accentBorder: 'hover:border-amber-400/55',
+    },
+    {
+      id: 'belix',
+      title: 'Belix TV',
+      subtitle: pickLang(lang, {
+        es: 'Parrilla y directos',
+        ca: 'Graella i directes',
+        en: 'Lineup & live feeds',
+      }),
+      icon: (
+        <span className="w-10 h-10 rounded-xl bg-rose-500/15 border border-rose-400/30 flex items-center justify-center text-rose-300 shrink-0">
+          <Server className="w-4.5 h-4.5" />
+        </span>
+      ),
+      accentBorder: 'hover:border-rose-400/55',
+    },
+  ];
+
+  const activeTitle = activeRadio ? activeRadio.name : currentTrack?.title || '';
+  const activeSubtitle = activeRadio
+    ? `${activeRadio.country} · FM 24/7`
+    : currentTrack?.artist.name || '';
+  const activeCover = activeRadio
+    ? activeRadio.favicon
+    : currentTrack?.album.coverXl || currentTrack?.album.cover || '';
+
+  return (
+    <div className="space-y-5">
+      {/* ACTIVE RIFFAN MUSIC 1-ROW CARD (WHEN A TRACK OR RADIO IS LOADED) */}
+      {(currentTrack || activeRadio) && (
+        <motion.div
+          initial={{ opacity: 0, y: 6 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.14 }}
+          className="flex items-center justify-between gap-3 p-2.5 sm:p-3 rounded-2xl bg-gradient-to-r from-[#0C1426] via-[#0D0D12] to-[#120D1F] border border-[#3B82F6]/35 shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
+        >
+          <button
+            type="button"
+            onClick={(e) => onCardClick('music', e)}
+            onPointerEnter={() => onPreloadWorld?.('music')}
+            className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer group"
+          >
+            <CoverArt
+              src={activeCover}
+              alt={activeTitle}
+              fallbackLabel={activeSubtitle || activeTitle}
+              className="w-12 h-12 rounded-xl object-cover shrink-0 border border-white/10"
+            />
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-bold text-[#60A5FA] leading-tight">
+                {pickLang(lang, {
+                  es: 'Escuchando ahora · Riffan Music',
+                  ca: 'Escoltant ara · Riffan Music',
+                  en: 'Listening now · Riffan Music',
+                })}
+              </p>
+              <p className="text-sm font-bold text-white truncate mt-0.5">{activeTitle}</p>
+              <p className="text-xs text-zinc-400 truncate">{activeSubtitle}</p>
+            </div>
+          </button>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                togglePlayPause();
+              }}
+              aria-label={isPlaying ? 'Pausar' : 'Reproducir'}
+              className="w-11 h-11 rounded-full bg-gradient-to-br from-[#2563EB] to-[#3B82F6] text-white flex items-center justify-center cursor-pointer active:scale-95 transition-transform shadow-md"
+            >
+              {isPlaying ? (
+                <Pause className="w-4.5 h-4.5 fill-current" />
+              ) : (
+                <Play className="w-4.5 h-4.5 fill-current ml-0.5" />
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={(e) => onCardClick('music', e)}
+              className="hidden sm:inline-flex min-h-11 px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs font-semibold text-zinc-100 items-center gap-1 cursor-pointer transition-colors"
+            >
+              <span>
+                {pickLang(lang, {
+                  es: 'Abrir Riffan Music',
+                  ca: 'Obrir Riffan Music',
+                  en: 'Open Riffan Music',
+                })}
+              </span>
+              <ChevronRight className="w-3.5 h-3.5 text-zinc-400" />
+            </button>
           </div>
-        ) : null}
-        <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-[#0D0D12] via-[#0D0D12]/65 to-transparent" />
-      </div>
+        </motion.div>
+      )}
 
-      <div className="relative z-10 flex items-center gap-2 text-xs font-medium text-zinc-400">
-        <span className="w-8 h-8 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-[#A78BFA] shrink-0">
-          <RiffanMoviesIcon size={16} animate="hover" />
-        </span>
-        {lastUsedWorld === 'cine' ? (
-          <span className="text-[#A78BFA] font-semibold">
-            {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
-          </span>
-        ) : (
-          <span>{pickLang(lang, { es: 'Catálogo 4K', ca: 'Catàleg 4K', en: '4K Catalog' })}</span>
-        )}
-      </div>
-
-      <div className="relative z-10 max-w-[62%] sm:max-w-[56%] space-y-1 mt-4">
-        <h2 className="font-display font-bold text-lg sm:text-2xl text-white tracking-tight leading-tight">
-          {pickLang(lang, { es: 'Cine y Series', ca: 'Cine i Sèries', en: 'Movies & Series' })}
-        </h2>
-        <p className="text-xs sm:text-[13px] text-zinc-400 leading-snug">
-          {pickLang(lang, {
-            es: 'Películas, series y anime en 4K',
-            ca: 'Pel·lícules, sèries i anime en 4K',
-            en: 'Movies, series & anime in 4K',
+      {/* SECTION 1: COMPACT SPOTIFY-STYLE 2-COL QUICK ACCESS TILES */}
+      <section aria-label="Accesos principales">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 sm:gap-3">
+          {primaryTiles.map((tile, idx) => {
+            const isRecent = lastUsedWorld === tile.id;
+            return (
+              <motion.button
+                key={tile.id}
+                type="button"
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.14, delay: idx * 0.02 }}
+                whileTap={{ scale: 0.97 }}
+                onPointerEnter={() => onPreloadWorld?.(tile.id)}
+                onTouchStart={() => onPreloadWorld?.(tile.id)}
+                onClick={(e) => onCardClick(tile.id, e)}
+                className={`group flex items-center gap-3 min-h-[68px] px-3 py-2.5 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] ${tile.accentBorder} text-left cursor-pointer transition-all duration-150`}
+              >
+                {tile.icon}
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-2">
+                    <h2 className="font-display font-bold text-sm sm:text-[15px] text-white truncate leading-snug">
+                      {tile.title}
+                    </h2>
+                    {tile.highlightBadge ? (
+                      <span className="text-[11px] font-bold text-[#FF6B6B] shrink-0 tabular-nums">
+                        {tile.highlightBadge}
+                      </span>
+                    ) : isRecent ? (
+                      <span className="text-[11px] font-semibold text-[#A78BFA] shrink-0">
+                        {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-zinc-400 truncate mt-0.5">{tile.subtitle}</p>
+                </div>
+                <ChevronRight className="w-4 h-4 text-zinc-600 group-hover:text-zinc-300 shrink-0 transition-colors" />
+              </motion.button>
+            );
           })}
-        </p>
-        <div className="pt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-zinc-200 group-hover:text-[#A78BFA] transition-colors">
-          <span>{pickLang(lang, { es: 'Explorar', ca: 'Explorar', en: 'Browse' })}</span>
-          <RiffanArrowRightIcon size={14} animate="hover" />
         </div>
-      </div>
-    </motion.button>
+      </section>
 
-    {/* HERO CARD 2 (JUST BELOW CINE Y SERIES, SAME SIZE): DAZN & MOVISTAR PLUS+ */}
-    <motion.button
-      type="button"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16, delay: 0.03 }}
-      whileTap={{ scale: 0.96 }}
-      onPointerEnter={() => onPreloadWorld?.('movistardazn')}
-      onTouchStart={() => onPreloadWorld?.('movistardazn')}
-      onPointerMove={(e) => onCardPointerMove('movistardazn', e)}
-      onClick={(e) => onCardClick('movistardazn', e)}
-      className="group relative col-span-2 md:col-span-4 md:order-3 rounded-[24px] p-5 sm:p-6 min-h-[164px] sm:min-h-[188px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#00A9E0]/65 shadow-[0_18px_50px_rgba(0,0,0,0.65)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4FF00]"
-    >
-      {renderSpotlightOverlay('movistardazn')}
+      {/* SECTION 2: CANALES Y PLATAFORMAS */}
+      <section className="space-y-2.5">
+        <h2 className="font-display font-semibold text-xs sm:text-sm text-zinc-400 px-0.5">
+          {pickLang(lang, {
+            es: 'Canales y Plataformas',
+            ca: 'Canals i Plataformes',
+            en: 'Channels & Platforms',
+          })}
+        </h2>
 
-      <div
-        aria-hidden="true"
-        className="absolute right-0 top-0 bottom-0 w-[44%] sm:w-[46%] pointer-events-none overflow-hidden select-none"
-      >
-        <div className="relative w-full h-full flex items-center justify-end pr-2 sm:pr-4 pt-1 opacity-90">
-          {[
-            {
-              src: f1NightImg,
-              cls: 'right-16 sm:right-24 bottom-3 sm:bottom-4 -rotate-6 opacity-75 scale-90 group-hover:-translate-x-2.5 group-hover:-rotate-12 group-hover:scale-95',
-            },
-            {
-              src: basketballArenaImg,
-              cls: 'right-8 sm:right-12 bottom-4 sm:bottom-5 rotate-2 opacity-90 scale-95 z-[1] group-hover:-translate-y-2 group-hover:scale-100',
-            },
-            {
-              src: heroStadiumImg,
-              cls: 'right-1 sm:right-2 bottom-3 sm:bottom-4 rotate-6 opacity-100 z-[2] group-hover:translate-x-2 group-hover:rotate-12 group-hover:scale-105',
-            },
-          ].map((art, idx) => (
-            <div
-              key={idx}
-              className={`absolute w-[68px] h-[98px] sm:w-[88px] sm:h-[126px] rounded-xl overflow-hidden border border-white/15 bg-[#0D0D12] shadow-[0_14px_30px_rgba(0,0,0,0.75)] transition-transform duration-300 ${art.cls}`}
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+          {platformTiles.map((tile) => (
+            <button
+              key={tile.id}
+              type="button"
+              onPointerEnter={() => onPreloadWorld?.(tile.id)}
+              onTouchStart={() => onPreloadWorld?.(tile.id)}
+              onClick={(e) => onCardClick(tile.id, e)}
+              className={`group flex items-center gap-2.5 min-h-[60px] p-2.5 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.07] ${tile.accentBorder} text-left cursor-pointer active:scale-97 transition-all`}
             >
-              <img
-                src={art.src}
-                alt=""
-                loading="lazy"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-                className="w-full h-full object-cover"
-              />
-            </div>
+              {tile.icon}
+              <div className="min-w-0 flex-1">
+                <p className="font-display font-bold text-xs sm:text-[13px] text-white truncate">
+                  {tile.title}
+                </p>
+                <p className="text-[11px] text-zinc-400 truncate mt-0.5">{tile.subtitle}</p>
+              </div>
+            </button>
           ))}
         </div>
-        <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-[#0D0D12] via-[#0D0D12]/65 to-transparent" />
-      </div>
-
-      <div className="relative z-10 flex items-center gap-2 text-xs font-medium text-zinc-400">
-        <span className="w-8 h-8 rounded-xl bg-[#D4FF00]/12 border border-[#D4FF00]/25 flex items-center justify-center text-[#D4FF00] shrink-0">
-          <Trophy className="w-4 h-4" />
-        </span>
-        <span className="font-display font-black text-[11px] px-1.5 py-0.5 rounded bg-[#D4FF00] text-[#05060A]">
-          DAZN
-        </span>
-        <span className="font-display font-extrabold text-[11px] px-1.5 py-0.5 rounded bg-[#00A9E0] text-white">
-          M+
-        </span>
-        {lastUsedWorld === 'movistardazn' ? (
-          <span className="text-[#D4FF00] font-semibold">
-            {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
-          </span>
-        ) : (
-          <span className="tabular-nums hidden sm:inline">
-            {pickLang(lang, { es: '17 directos HD', ca: '17 directes HD', en: '17 HD feeds' })}
-          </span>
-        )}
-      </div>
-
-      <div className="relative z-10 max-w-[62%] sm:max-w-[56%] space-y-1 mt-4">
-        <h2 className="font-display font-bold text-lg sm:text-2xl text-white tracking-tight leading-tight">
-          DAZN &amp; Movistar+
-        </h2>
-        <p className="text-xs sm:text-[13px] text-zinc-400 leading-snug">
-          {pickLang(lang, {
-            es: 'LaLiga, Champions, F1, MotoGP y Series M+',
-            ca: 'LaLiga, Champions, F1, MotoGP i Sèries M+',
-            en: 'LaLiga, Champions, F1, MotoGP & M+ Series',
-          })}
-        </p>
-        <div className="pt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-[#38BDF8] group-hover:text-[#D4FF00] transition-colors">
-          <span>{pickLang(lang, { es: 'Explorar', ca: 'Explorar', en: 'Browse' })}</span>
-          <RiffanArrowRightIcon size={14} animate="hover" />
-        </div>
-      </div>
-    </motion.button>
-
-    {/* HERO CARD 3: RIFFAN MUSIC · OBSIDIAN & ELECTRIC COBALT v4.0 */}
-    <motion.button
-      type="button"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16, delay: 0.05 }}
-      whileTap={{ scale: 0.96 }}
-      onPointerEnter={() => onPreloadWorld?.('music')}
-      onTouchStart={() => onPreloadWorld?.('music')}
-      onPointerMove={(e) => onCardPointerMove('music', e)}
-      onClick={(e) => onCardClick('music', e)}
-      className="group relative col-span-2 md:col-span-4 md:order-5 rounded-[24px] p-5 sm:p-6 min-h-[164px] sm:min-h-[188px] bg-gradient-to-br from-[#060608] via-[#0C0C0F] to-[#081022] hover:from-[#0C0C0F] hover:to-[#0F1B33] border border-[#3B82F6]/30 hover:border-[#60A5FA]/75 shadow-[0_18px_50px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.12)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]"
-    >
-      {renderSpotlightOverlay('music')}
-
-      <div
-        aria-hidden="true"
-        className="absolute right-0 top-0 bottom-0 w-[44%] sm:w-[46%] pointer-events-none overflow-hidden select-none"
-      >
-        <div className="relative w-full h-full flex items-center justify-end pr-2 sm:pr-4 pt-1 opacity-92">
-          {[
-            {
-              src: mixUrbanoImg,
-              cls: 'right-16 sm:right-24 bottom-3 sm:bottom-4 -rotate-6 opacity-75 scale-90 group-hover:-translate-x-2.5 group-hover:-rotate-12 group-hover:scale-95',
-            },
-            {
-              src: musicChillImg,
-              cls: 'right-8 sm:right-12 bottom-4 sm:bottom-5 rotate-2 opacity-90 scale-95 z-[1] group-hover:-translate-y-2 group-hover:scale-100',
-            },
-            {
-              src: musicHeroImg,
-              cls: 'right-1 sm:right-2 bottom-3 sm:bottom-4 rotate-6 opacity-100 z-[2] group-hover:translate-x-2 group-hover:rotate-12 group-hover:scale-105',
-            },
-          ].map((art, idx) => (
-            <div
-              key={idx}
-              className={`absolute w-[74px] h-[74px] sm:w-[98px] sm:h-[98px] rounded-2xl overflow-hidden border border-[#3B82F6]/30 bg-[#0C0C0F] shadow-[0_14px_30px_rgba(0,0,0,0.8)] transition-transform duration-300 ${art.cls}`}
-            >
-              <img
-                src={art.src}
-                alt=""
-                loading="lazy"
-                onError={(e) => {
-                  e.currentTarget.style.display = 'none';
-                }}
-                className="w-full h-full object-cover"
-              />
-            </div>
-          ))}
-        </div>
-        <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-[#08090D] via-[#08090D]/70 to-transparent" />
-      </div>
-
-      <div className="relative z-10 flex items-center gap-2 text-xs font-medium text-zinc-400">
-        <RiffanMusicLogo variant="mark" size={32} withFrame={false} />
-        {lastUsedWorld === 'music' ? (
-          <span className="text-[#60A5FA] font-semibold">
-            {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
-          </span>
-        ) : (
-          <span className="text-zinc-300">
-            {pickLang(lang, {
-              es: 'Hi-Fi · Letras · Radio Autoplay',
-              ca: 'Hi-Fi · Lletres · Ràdio Autoplay',
-              en: 'Hi-Fi · Lyrics · Autoplay Radio',
-            })}
-          </span>
-        )}
-      </div>
-
-      <div className="relative z-10 max-w-[62%] sm:max-w-[56%] space-y-1 mt-4">
-        <h2 className="font-display font-bold text-lg sm:text-2xl text-white tracking-tight leading-tight">
-          Riffan{' '}
-          <span className="bg-gradient-to-r from-[#93C5FD] via-[#60A5FA] to-[#3B82F6] bg-clip-text text-transparent">
-            Music
-          </span>
-        </h2>
-        <p className="text-xs sm:text-[13px] text-zinc-300/80 leading-snug">
-          {pickLang(lang, {
-            es: 'Experiencia espacial Hi-Fi, letras en vivo y radio por género',
-            ca: 'Experiència espacial Hi-Fi, lletres en directe i ràdio per gènere',
-            en: 'Spatial Hi-Fi audio, synced lyrics & smart genre radio',
-          })}
-        </p>
-        <div className="pt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-[#60A5FA] group-hover:text-[#93C5FD] transition-colors">
-          <span>{pickLang(lang, { es: 'Escuchar', ca: 'Escoltar', en: 'Listen now' })}</span>
-          <RiffanArrowRightIcon size={14} animate="hover" />
-        </div>
-      </div>
-    </motion.button>
-
-    {/* CARD 2: SALA CON AMIGOS */}
-    <motion.button
-      type="button"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16, delay: 0.06 }}
-      whileTap={{ scale: 0.95 }}
-      onPointerEnter={() => onPreloadWorld?.('sala')}
-      onTouchStart={() => onPreloadWorld?.('sala')}
-      onPointerMove={(e) => onCardPointerMove('sala', e)}
-      onClick={(e) => onCardClick('sala', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-2 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[188px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
-    >
-      {renderSpotlightOverlay('sala')}
-
-      <div className="relative z-10 flex items-center justify-between gap-2">
-        <span className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-[#A78BFA] shrink-0">
-          <RiffanUsersIcon size={17} animate="hover" />
-        </span>
-
-        {sessionMode !== 'solo' && (
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#10B981] tabular-nums">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]" />
-            <span>
-              {roomParticipantsCount > 0 ? roomParticipantsCount : 1}{' '}
-              {pickLang(lang, { es: 'en sala', ca: 'a la sala', en: 'in room' })}
-            </span>
-          </span>
-        )}
-      </div>
-
-      <div className="relative z-10 min-w-0 space-y-1 pt-4">
-        <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
-          {pickLang(lang, {
-            es: 'Sala con Amigos',
-            ca: 'Sala amb Amics',
-            en: 'Watch Party',
-          })}
-        </h2>
-        <p className="text-xs text-zinc-400 leading-snug">
-          {sessionMode === 'solo'
-            ? pickLang(lang, {
-                es: 'Crea una sala para ver juntos',
-                ca: 'Crea una sala per veure junts',
-                en: 'Create a room to watch together',
-              })
-            : pickLang(lang, {
-                es: 'Chat, voz y cola compartida',
-                ca: 'Xat, veu i cua compartida',
-                en: 'Live chat, voice & shared queue',
-              })}
-        </p>
-      </div>
-    </motion.button>
-
-    {/* CARD 3: FÚTBOL */}
-    <motion.button
-      type="button"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16, delay: 0.09 }}
-      whileTap={{ scale: 0.95 }}
-      onPointerEnter={() => onPreloadWorld?.('futbol')}
-      onTouchStart={() => onPreloadWorld?.('futbol')}
-      onPointerMove={(e) => onCardPointerMove('futbol', e)}
-      onClick={(e) => onCardClick('futbol', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-4 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[188px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
-    >
-      {renderSpotlightOverlay('futbol')}
-
-      <div className="relative z-10 flex items-center justify-between gap-2">
-        <span className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-emerald-400 shrink-0">
-          <RiffanFootballIcon size={18} animate="hover" />
-        </span>
-
-        {liveMatchesCount > 0 ? (
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-[#FF6B6B] tabular-nums">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#EF4444] opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#EF4444]" />
-            </span>
-            <span>
-              {pickLang(lang, {
-                es: `${liveMatchesCount} en vivo`,
-                ca: `${liveMatchesCount} en directe`,
-                en: `${liveMatchesCount} live`,
-              })}
-            </span>
-          </span>
-        ) : (
-          <span className="text-[11px] font-medium text-zinc-500">
-            {pickLang(lang, { es: 'Hoy', ca: 'Avui', en: 'Today' })}
-          </span>
-        )}
-      </div>
-
-      <div className="relative z-10 min-w-0 space-y-1 pt-4">
-        <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
-          {pickLang(lang, { es: 'Fútbol', ca: 'Futbol', en: 'Football' })}
-        </h2>
-        <p className="text-xs text-zinc-400 leading-snug">
-          {featuredLiveMatch
-            ? featuredLiveMatch
-            : pickLang(lang, {
-                es: 'Partidos de hoy y señales en vivo',
-                ca: "Partits d'avui i senyals en directe",
-                en: "Today's matches & live feeds",
-              })}
-        </p>
-      </div>
-    </motion.button>
-
-    {/* CARD 4: TV EN DIRECTO */}
-    <motion.button
-      type="button"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16, delay: 0.12 }}
-      whileTap={{ scale: 0.95 }}
-      onPointerEnter={() => onPreloadWorld?.('tv')}
-      onTouchStart={() => onPreloadWorld?.('tv')}
-      onPointerMove={(e) => onCardPointerMove('tv', e)}
-      onClick={(e) => onCardClick('tv', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-6 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[188px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
-    >
-      {renderSpotlightOverlay('tv')}
-
-      <div className="relative z-10 flex items-center justify-between gap-2">
-        <span className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-sky-400 shrink-0">
-          <RiffanChannelsIcon size={17} animate="hover" />
-        </span>
-
-        {lastUsedWorld === 'tv' ? (
-          <span className="text-[11px] font-medium text-[#A78BFA]">
-            {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 text-[11px] font-bold text-red-400">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#EF4444] opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#EF4444]" />
-            </span>
-            <span>24/7</span>
-          </span>
-        )}
-      </div>
-
-      <div className="relative z-10 min-w-0 space-y-1 pt-4">
-        <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
-          {pickLang(lang, { es: 'TV en Directo', ca: 'TV en Directe', en: 'Live TV' })}
-        </h2>
-        <p className="text-xs text-zinc-400 leading-snug">
-          {pickLang(lang, {
-            es: 'TDT, programación y canales 24/7',
-            ca: 'TDT, programació i canals 24/7',
-            en: 'DTT, guide & 24/7 channels',
-          })}
-        </p>
-      </div>
-    </motion.button>
-
-    {/* CARD 5: JUEGOS */}
-    <motion.button
-      type="button"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16, delay: 0.16 }}
-      whileTap={{ scale: 0.95 }}
-      onPointerEnter={() => onPreloadWorld?.('juegos')}
-      onTouchStart={() => onPreloadWorld?.('juegos')}
-      onPointerMove={(e) => onCardPointerMove('juegos', e)}
-      onClick={(e) => onCardClick('juegos', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-7 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[168px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
-    >
-      {renderSpotlightOverlay('juegos')}
-
-      <div className="relative z-10 flex items-center justify-between gap-2">
-        <span className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-fuchsia-300 shrink-0">
-          <RiffanDiceIcon size={18} animate="hover" />
-        </span>
-
-        {lastUsedWorld === 'juegos' && (
-          <span className="text-[11px] font-medium text-[#A78BFA]">
-            {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
-          </span>
-        )}
-      </div>
-
-      <div className="relative z-10 min-w-0 space-y-1 pt-4">
-        <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
-          {pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' })}
-        </h2>
-        <p className="text-xs text-zinc-400 leading-snug">
-          {pickLang(lang, {
-            es: 'Billar, Parchís, UNO y más',
-            ca: 'Billar, Parxís, UNO i més',
-            en: 'Pool, Parchís, UNO & more',
-          })}
-        </p>
-      </div>
-    </motion.button>
-
-    {/* CARD 6: CLIPBOX · BÓVEDA & MOTORES */}
-    <motion.button
-      type="button"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16, delay: 0.2 }}
-      whileTap={{ scale: 0.95 }}
-      onPointerEnter={() => onPreloadWorld?.('clipbox')}
-      onTouchStart={() => onPreloadWorld?.('clipbox')}
-      onPointerMove={(e) => onCardPointerMove('clipbox', e)}
-      onClick={(e) => onCardClick('clipbox', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-8 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[168px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#06B6D4]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
-    >
-      {renderSpotlightOverlay('clipbox')}
-
-      <div className="relative z-10 flex items-center justify-between gap-2">
-        <span className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-[#06B6D4] shrink-0">
-          <Database className="w-4 h-4" />
-        </span>
-
-        {lastUsedWorld === 'clipbox' ? (
-          <span className="text-[11px] font-medium text-[#06B6D4]">
-            {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
-          </span>
-        ) : (
-          <span className="text-[11px] font-medium text-zinc-400 tabular-nums">
-            440 hosts
-          </span>
-        )}
-      </div>
-
-      <div className="relative z-10 min-w-0 space-y-1 pt-4">
-        <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
-          ClipBox
-        </h2>
-        <p className="text-xs text-zinc-400 leading-snug">
-          {pickLang(lang, {
-            es: 'Motores de cine/anime, subs y descifrador',
-            ca: 'Motors de cinema/anime, subs i desxifrador',
-            en: 'Cinema/anime engines, subs & decoder',
-          })}
-        </p>
-      </div>
-    </motion.button>
-
-    {/* CARD 7: RBTV+ · DEPORTES, DOH & P2P */}
-    <motion.button
-      type="button"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16, delay: 0.24 }}
-      whileTap={{ scale: 0.95 }}
-      onPointerEnter={() => onPreloadWorld?.('rbtv')}
-      onTouchStart={() => onPreloadWorld?.('rbtv')}
-      onPointerMove={(e) => onCardPointerMove('rbtv', e)}
-      onClick={(e) => onCardClick('rbtv', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-9 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#F59E0B]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
-    >
-      {renderSpotlightOverlay('rbtv')}
-
-      <div className="relative z-10 flex items-center justify-between gap-2">
-        <span className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-[#F59E0B] shrink-0">
-          <Radio className="w-4 h-4" />
-        </span>
-
-        {lastUsedWorld === 'rbtv' ? (
-          <span className="text-[11px] font-medium text-[#F59E0B]">
-            {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
-          </span>
-        ) : (
-          <span className="text-[11px] font-medium text-zinc-400 tabular-nums">
-            47 hosts · DoH
-          </span>
-        )}
-      </div>
-
-      <div className="relative z-10 min-w-0 space-y-1 pt-4">
-        <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
-          RBTV+
-        </h2>
-        <p className="text-xs text-zinc-400 leading-snug">
-          {pickLang(lang, {
-            es: 'Cluster deportivo, DoH y arquitectura P2P',
-            ca: 'Clúster esportiu, DoH i arquitectura P2P',
-            en: 'Sports cluster, DoH & P2P architecture',
-          })}
-        </p>
-      </div>
-    </motion.button>
-
-    {/* CARD 8: BELIX TV · MOTOR XTREAM CODES */}
-    <motion.button
-      type="button"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16, delay: 0.28 }}
-      whileTap={{ scale: 0.95 }}
-      onPointerEnter={() => onPreloadWorld?.('belix')}
-      onTouchStart={() => onPreloadWorld?.('belix')}
-      onPointerMove={(e) => onCardPointerMove('belix', e)}
-      onClick={(e) => onCardClick('belix', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-10 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#F43F5E]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
-    >
-      {renderSpotlightOverlay('belix')}
-
-      <div className="relative z-10 flex items-center justify-between gap-2">
-        <span className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-[#F43F5E] shrink-0">
-          <Server className="w-4 h-4" />
-        </span>
-
-        {lastUsedWorld === 'belix' ? (
-          <span className="text-[11px] font-medium text-[#F43F5E]">
-            {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
-          </span>
-        ) : (
-          <span className="text-[11px] font-medium text-zinc-400 tabular-nums">
-            15 APIs · 21 hosts
-          </span>
-        )}
-      </div>
-
-      <div className="relative z-10 min-w-0 space-y-1 pt-4">
-        <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
-          Belix TV
-        </h2>
-        <p className="text-xs text-zinc-400 leading-snug">
-          {pickLang(lang, {
-            es: 'Motor Xtream Codes, directos y constructor',
-            ca: 'Motor Xtream Codes, directes i constructor',
-            en: 'Xtream Codes engine, live TV & builder',
-          })}
-        </p>
-      </div>
-    </motion.button>
-
-    {/* CARD 9: ATRESPLAYER · VOD, WIDEVINE DRM & TDT ATRESMEDIA */}
-    <motion.button
-      type="button"
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.16, delay: 0.32 }}
-      whileTap={{ scale: 0.95 }}
-      onPointerEnter={() => onPreloadWorld?.('atresplayer')}
-      onTouchStart={() => onPreloadWorld?.('atresplayer')}
-      onPointerMove={(e) => onCardPointerMove('atresplayer', e)}
-      onClick={(e) => onCardClick('atresplayer', e)}
-      className="group relative col-span-1 md:col-span-2 md:order-11 rounded-[24px] p-4 sm:p-5 min-h-[148px] sm:min-h-[156px] bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#FF5E1A]/60 shadow-[0_14px_40px_rgba(0,0,0,0.55)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
-    >
-      {renderSpotlightOverlay('atresplayer')}
-
-      <div className="relative z-10 flex items-center justify-between gap-2">
-        <span className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center text-[#FF5E1A] shrink-0">
-          <Tv className="w-4 h-4" />
-        </span>
-
-        {lastUsedWorld === 'atresplayer' ? (
-          <span className="text-[11px] font-medium text-[#FF5E1A]">
-            {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
-          </span>
-        ) : (
-          <span className="text-[11px] font-medium text-zinc-400 tabular-nums">
-            6 directos HD
-          </span>
-        )}
-      </div>
-
-      <div className="relative z-10 min-w-0 space-y-1 pt-4">
-        <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight leading-snug">
-          Atresmedia
-        </h2>
-        <p className="text-xs text-zinc-400 leading-snug">
-          {pickLang(lang, {
-            es: 'Antena 3, laSexta, Pasapalabra y programas HD',
-            ca: 'Antena 3, laSexta, Pasapalabra i programes HD',
-            en: 'Antena 3, laSexta, Pasapalabra & HD shows',
-          })}
-        </p>
-      </div>
-    </motion.button>
-  </section>
-);
-
+      </section>
+    </div>
+  );
+};

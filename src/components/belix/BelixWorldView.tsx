@@ -10,6 +10,7 @@ import type { AppLanguage, SpanishTdtChannel, SportsMatch } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { useBackInterceptor } from '../../lib/backInterceptor';
+import { useAppStore } from '../../store/useAppStore';
 import { BelixLiveTab } from './BelixLiveTab';
 import { BelixVaultTab } from './BelixVaultTab';
 import { BelixDecoderTab } from './BelixDecoderTab';
@@ -32,7 +33,8 @@ export const BelixWorldView: React.FC<BelixWorldViewProps> = ({
   onPlayTdtChannel,
   onPlayCustomUrl,
 }) => {
-  const [activeTab, setActiveTab] = useState<BelixSubTab>('live');
+  const activeTab = useAppStore((s) => s.belixTab);
+  const setActiveTab = useAppStore((s) => s.setBelixTab);
   const [inventory, setInventory] = useState<BelixInventoryResponse | null>(null);
   const [loadingInventory, setLoadingInventory] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);

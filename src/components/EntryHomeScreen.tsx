@@ -1,10 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import {
-  Check,
-  Pencil,
-  Mic,
-} from 'lucide-react';
+import { Check, Mic, Pencil } from 'lucide-react';
 import type {
   AppLanguage,
   CatalogMovie,
@@ -19,6 +15,11 @@ import { generateRandomGuestName } from '../utils/storage';
 import { PosterImage } from './ui/PosterImage';
 import { UniversalHomeSearch } from './home/UniversalHomeSearch';
 import { EntryHomeBentoGrid } from './home/EntryHomeBentoGrid';
+import { BarcaMadridDirectBanner } from './home/BarcaMadridDirectBanner';
+import {
+  getBarcaMadridHomeMatches,
+  hasPendingBarcaMadridMatchToday,
+} from './home/barcaMadridHomeHelper';
 import {
   RiffanChevronRightIcon,
   RiffanClockIcon,
@@ -51,7 +52,8 @@ interface EntryHomeScreenProps {
   onOpenMovieDetails?: (movie: CatalogMovie) => void;
   onOpenSeriesPage?: (series: CatalogMovie) => void;
   onPlayChannel?: (channel: SpanishTdtChannel) => void;
-  onPlayMatch?: (match: SportsMatch) => void;
+  onPlayMatch?: (match: SportsMatch, channelIndex?: number) => void;
+  loadingItemId?: string | null;
   onSelectGame?: (gameId: string) => void;
   onOpenVoiceAssistant?: () => void;
   onOpenDesignSystem?: () => void;
@@ -82,15 +84,34 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   onOpenSeriesPage = () => {},
   onPlayChannel = () => {},
   onPlayMatch = () => {},
+  loadingItemId = null,
   onSelectGame = () => {},
   onOpenVoiceAssistant,
   sessionMode = 'party',
 }) => {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(displayName);
-  const [voiceWaveActive, setVoiceWaveActive] = useState(false);
   const [surprisePulse, setSurprisePulse] = useState(false);
-  const [spotlightPos, setSpotlightPos] = useState<Record<string, { x: number; y: number }>>({});
+  const [nowMs, setNowMs] = useState(() => Date.now());
+
+  const hasPendingFeaturedMatch = useMemo(
+    () => hasPendingBarcaMadridMatchToday(liveMatches, nowMs),
+    [liveMatches, nowMs]
+  );
+
+  useEffect(() => {
+    if (!hasPendingFeaturedMatch) return;
+    setNowMs(Date.now());
+    const id = window.setInterval(() => {
+      setNowMs(Date.now());
+    }, 10_000);
+    return () => window.clearInterval(id);
+  }, [hasPendingFeaturedMatch]);
+
+  const directBarcaMadridMatches = useMemo(
+    () => getBarcaMadridHomeMatches(liveMatches, nowMs),
+    [liveMatches, nowMs]
+  );
 
   const handleSaveName = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -107,13 +128,6 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
       setNameDraft(displayName);
     }
     setEditingName(false);
-  };
-
-  const handleCardPointerMove = (id: string, e: React.PointerEvent<HTMLButtonElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = Math.round(((e.clientX - rect.left) / rect.width) * 100);
-    const y = Math.round(((e.clientY - rect.top) / rect.height) * 100);
-    setSpotlightPos((prev) => ({ ...prev, [id]: { x, y } }));
   };
 
   const handleCardClick = (
@@ -161,33 +175,14 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
         /^\d+$/.test(String(meta.homeScore).trim()) &&
         /^\d+$/.test(String(meta.awayScore).trim());
       if (liveOne.isLive && hasScore) {
-        return `${meta.homeShort} ${meta.homeScore} - ${meta.awayScore} ${meta.awayShort} · ${pickLang(
-          lang,
-          { es: 'En vivo', ca: 'En directe', en: 'Live' }
-        )}`;
+        return `${meta.homeShort} ${meta.homeScore} - ${meta.awayScore} ${meta.awayShort}`;
       }
-      const statusSuffix = liveOne.isLive
-        ? pickLang(lang, { es: 'En vivo', ca: 'En directe', en: 'Live' })
-        : liveOne.time || pickLang(lang, { es: 'Hoy', ca: 'Avui', en: 'Today' });
-      return `${meta.homeShort} vs ${meta.awayShort} · ${statusSuffix}`;
+      return `${meta.homeShort} vs ${meta.awayShort}`;
     }
-    return liveOne.time ? `${liveOne.title} · ${liveOne.time}` : liveOne.title;
-  }, [liveMatches, lang]);
+    return liveOne.title;
+  }, [liveMatches]);
 
   const greetingWord = pickLang(lang, { es: 'Hola', ca: 'Hola', en: 'Hi', zh: '你好', rif: 'Azul' });
-
-  const renderSpotlightOverlay = (id: string) => {
-    const pos = spotlightPos[id] || { x: 50, y: 50 };
-    return (
-      <div
-        aria-hidden="true"
-        className="absolute inset-0 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-        style={{
-          background: `radial-gradient(280px circle at ${pos.x}% ${pos.y}%, rgba(124,58,237,0.16), transparent 72%)`,
-        }}
-      />
-    );
-  };
 
   return (
     <div className="relative w-full overflow-x-clip">
@@ -246,10 +241,10 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
 
             <p className="text-xs sm:text-sm text-zinc-400 font-normal">
               {pickLang(lang, {
-                es: '¿Qué quieres ver hoy?',
-                ca: 'Què vols veure avui?',
-                en: 'What do you want to watch today?',
-                zh: '今天想看点什么？',
+                es: '¿Qué te apetece hoy?',
+                ca: 'Què et ve de gust avui?',
+                en: 'What do you want to enjoy today?',
+                zh: '今天想看点什么或听点什么？',
               })}
             </p>
           </div>
@@ -259,14 +254,12 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               type="button"
               onClick={() => {
                 triggerHaptic('medium');
-                setVoiceWaveActive(true);
-                window.setTimeout(() => setVoiceWaveActive(false), 650);
                 onOpenVoiceAssistant();
               }}
               aria-label={pickLang(lang, {
-                es: 'Asistente de voz Gemini Live',
-                ca: 'Assistent de veu Gemini Live',
-                en: 'Gemini Live Voice Assistant',
+                es: 'Asistente de voz',
+                ca: 'Assistent de veu',
+                en: 'Voice Assistant',
                 zh: '语音助手',
               })}
               title={pickLang(lang, {
@@ -274,25 +267,19 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                 ca: 'Assistent de veu',
                 en: 'Voice assistant',
               })}
-              className="group relative w-11 h-11 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/50 text-zinc-200 hover:text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all overflow-visible"
+              className="w-11 h-11 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/50 text-[#A78BFA] hover:text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
             >
-              <span
-                aria-hidden="true"
-                className={`absolute inset-0 rounded-2xl border border-[#8B5CF6]/55 pointer-events-none transition-opacity ${
-                  voiceWaveActive ? 'animate-ping opacity-90' : 'opacity-0 group-hover:opacity-60 group-hover:animate-ping'
-                }`}
-              />
-              <Mic className="relative z-10 w-4.5 h-4.5 text-[#A78BFA]" />
+              <Mic className="w-4.5 h-4.5" />
             </button>
           )}
         </section>
 
-        {/* 2. UNIVERSAL SMART SEARCH */}
+        {/* 2. UNIVERSAL SMART SEARCH (INCLUDING RIFFAN MUSIC) */}
         <section
           aria-label={pickLang(lang, {
-            es: 'Buscador inteligente',
-            ca: 'Cercador intel·ligent',
-            en: 'Smart search',
+            es: 'Buscador universal',
+            ca: 'Cercador universal',
+            en: 'Universal search',
           })}
         >
           <UniversalHomeSearch
@@ -307,12 +294,36 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             onPlayChannel={onPlayChannel}
             onPlayMatch={onPlayMatch}
             onSelectGame={onSelectGame}
+            onOpenMusicWorld={() => onSelectWorld('music')}
           />
         </section>
 
-        {/* 3. CONDITIONAL CONTINUE WATCHING RAIL */}
+        {/* 3. DIRECT BARÇA / REAL MADRID PLAY CARD (ONLY 10 MIN BEFORE KICKOFF OR LIVE) */}
+        <BarcaMadridDirectBanner
+          lang={lang}
+          matches={directBarcaMadridMatches}
+          nowMs={nowMs}
+          loadingItemId={loadingItemId}
+          onPlayMatch={onPlayMatch}
+        />
+
+        {/* 4. SIMPLIFIED SPOTIFY-INSPIRED QUICK ACCESS HUB */}
+        <EntryHomeBentoGrid
+          lang={lang}
+          sessionMode={sessionMode}
+          lastUsedWorld={lastUsedWorld}
+          heroPosters={heroPosters}
+          featuredChannels={featuredChannels}
+          liveMatchesCount={liveMatchesCount}
+          featuredLiveMatch={featuredLiveMatch}
+          roomParticipantsCount={roomParticipantsCount}
+          onPreloadWorld={onPreloadWorld}
+          onCardClick={handleCardClick}
+        />
+
+        {/* 4. CONDITIONAL CONTINUE WATCHING RAIL */}
         {watchHistory.length > 0 && (
-          <section className="space-y-2.5">
+          <section className="space-y-2.5 pt-1">
             <div className="flex items-center justify-between gap-2">
               <h2 className="font-display font-semibold text-sm sm:text-base text-white flex items-center gap-2">
                 <RiffanClockIcon size={16} animate="hover" />
@@ -331,7 +342,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                     triggerHaptic('light');
                     onOpenContinueWatchingAll();
                   }}
-                  className="min-h-10 px-2.5 rounded-xl text-xs font-semibold text-[#C4A7FF] hover:text-white inline-flex items-center gap-1 cursor-pointer transition-colors group"
+                  className="min-h-11 px-2.5 rounded-xl text-xs font-semibold text-[#C4A7FF] hover:text-white inline-flex items-center gap-1 cursor-pointer transition-colors group"
                 >
                   <span>{pickLang(lang, { es: 'Ver todo', ca: 'Veure-ho tot', en: 'See all' })}</span>
                   <RiffanChevronRightIcon size={14} animate="hover" />
@@ -371,7 +382,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                       triggerHaptic('light');
                       onResumeHistoryItem(item);
                     }}
-                    className="scroll-snap-item w-[164px] sm:w-[185px] shrink-0 rounded-2xl bg-[#0D0D12] border border-white/[0.08] hover:border-[#7C3AED]/60 overflow-hidden text-left group active:scale-95 transition-all cursor-pointer"
+                    className="scroll-snap-item w-[160px] sm:w-[180px] shrink-0 rounded-2xl bg-[#0D0D12] border border-white/[0.08] hover:border-[#7C3AED]/60 overflow-hidden text-left group active:scale-95 transition-all cursor-pointer"
                   >
                     <div className="relative aspect-video w-full bg-[#000000]">
                       <PosterImage
@@ -402,15 +413,15 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                       </div>
                     </div>
                     <div className="p-3">
-                      <p className="text-xs font-semibold text-white leading-snug">
+                      <p className="text-xs font-semibold text-white leading-snug truncate">
                         {item.title}
                       </p>
                       {cleanedSubtitle ? (
-                        <p className="text-[11px] text-zinc-400 leading-snug mt-1">
+                        <p className="text-[11px] text-zinc-400 leading-snug mt-0.5 truncate">
                           {cleanedSubtitle}
                         </p>
                       ) : minsLeft !== null ? (
-                        <p className="text-[11px] text-zinc-400 mt-1 tabular-nums">
+                        <p className="text-[11px] text-zinc-400 mt-0.5 tabular-nums">
                           {pickLang(lang, {
                             es: `Quedan ~${minsLeft} min`,
                             ca: `Queden ~${minsLeft} min`,
@@ -418,7 +429,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                           })}
                         </p>
                       ) : (
-                        <p className="text-[11px] text-zinc-500 mt-1">
+                        <p className="text-[11px] text-zinc-500 mt-0.5">
                           {item.year ? `${item.year}` : ''}
                         </p>
                       )}
@@ -429,22 +440,6 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             </div>
           </section>
         )}
-
-        {/* 4. CALM OBSIDIAN BENTO HUB */}
-        <EntryHomeBentoGrid
-          lang={lang}
-          sessionMode={sessionMode}
-          lastUsedWorld={lastUsedWorld}
-          heroPosters={heroPosters}
-          featuredChannels={featuredChannels}
-          liveMatchesCount={liveMatchesCount}
-          featuredLiveMatch={featuredLiveMatch}
-          roomParticipantsCount={roomParticipantsCount}
-          onPreloadWorld={onPreloadWorld}
-          onCardPointerMove={handleCardPointerMove}
-          onCardClick={handleCardClick}
-          renderSpotlightOverlay={renderSpotlightOverlay}
-        />
 
         {/* 5. BOTTOM RANDOM PICKER BAR: SORPRÉNDEME */}
         <section>
@@ -468,7 +463,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               <motion.div
                 animate={surprisePulse ? { rotate: 360, scale: 1.15 } : { rotate: 0, scale: 1 }}
                 transition={{ duration: 0.22 }}
-                className="w-8 h-8 rounded-xl bg-[#7C3AED]/15 text-[#A78BFA] border border-[#7C3AED]/30 flex items-center justify-center shrink-0"
+                className="w-9 h-9 rounded-xl bg-[#7C3AED]/15 text-[#A78BFA] border border-[#7C3AED]/30 flex items-center justify-center shrink-0"
               >
                 <RiffanSurpriseIcon size={16} animate="always" />
               </motion.div>
@@ -499,4 +494,3 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
     </div>
   );
 };
-
