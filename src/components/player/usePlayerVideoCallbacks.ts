@@ -1,6 +1,7 @@
 import React from 'react';
 import { socketService } from '../../services/socket';
 import type { VideoState } from '../../types';
+import type { StreamRefreshPhase } from './playerTypes';
 
 interface UsePlayerVideoCallbacksParams {
   videoState: VideoState;
@@ -24,6 +25,7 @@ interface UsePlayerVideoCallbacksParams {
   setCurrentTime: (t: number) => void;
   setDuration: (d: number) => void;
   setIsBuffering: (b: boolean) => void;
+  setStreamRefreshPhase?: (phase: StreamRefreshPhase) => void;
   setLocalPlaying: (p: boolean) => void;
   setStreamError: (err: string | null) => void;
   setShowControls: (s: boolean) => void;
@@ -62,8 +64,9 @@ export function usePlayerVideoCallbacks(p: UsePlayerVideoCallbacksParams) {
   const onTimeUpdate = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     const ct = e.currentTarget.currentTime;
     const dur = e.currentTarget.duration || 0;
+    const advanced = Math.abs(ct - p.latestCurrentTimeRef.current) >= 0.03;
     p.latestCurrentTimeRef.current = ct;
-    if (!e.currentTarget.paused) {
+    if (!e.currentTarget.paused && (advanced || e.currentTarget.readyState >= 3)) {
       p.clearBufferingIndicator();
     }
     if (
@@ -83,20 +86,26 @@ export function usePlayerVideoCallbacks(p: UsePlayerVideoCallbacksParams) {
     }
   };
 
-  const onWaiting = () => {
+  const handleStallSignal = (immediate: boolean) => {
     const vNow = p.videoRef.current;
     const waitAtTime = vNow ? vNow.currentTime : 0;
+
+    if (immediate && p.videoState.isLive && vNow && !vNow.paused) {
+      p.setStreamRefreshPhase?.('recovering');
+      p.setIsBuffering(true);
+    }
 
     if (p.bufferingDelayTimerRef.current) {
       clearTimeout(p.bufferingDelayTimerRef.current);
     }
+    const delayMs = p.videoState.isLive ? (immediate ? 250 : 550) : 1500;
     p.bufferingDelayTimerRef.current = setTimeout(() => {
       const v = p.videoRef.current;
       if (!v || v.paused) return;
       for (let i = 0; i < v.buffered.length; i++) {
         const bStart = v.buffered.start(i);
         const bEnd = v.buffered.end(i);
-        if (bStart > v.currentTime && bStart - v.currentTime <= 3.0 && bEnd - bStart >= 0.4) {
+        if (bStart > v.currentTime && bStart - v.currentTime <= 3.5 && bEnd - bStart >= 0.35) {
           try {
             v.currentTime = bStart + 0.06;
             v.play().catch(() => {});
@@ -106,10 +115,23 @@ export function usePlayerVideoCallbacks(p: UsePlayerVideoCallbacksParams) {
           }
         }
       }
-      if (v.readyState < 3 && Math.abs((v.currentTime || 0) - waitAtTime) < 0.08) {
+      if (Math.abs((v.currentTime || 0) - waitAtTime) < 0.08) {
+        if (p.videoState.isLive) {
+          p.setStreamRefreshPhase?.('recovering');
+        }
+        p.setIsBuffering(true);
+      } else if (v.readyState < 3) {
         p.setIsBuffering(true);
       }
-    }, 1600);
+    }, delayMs);
+  };
+
+  const onWaiting = () => {
+    handleStallSignal(false);
+  };
+
+  const onStalled = () => {
+    handleStallSignal(true);
   };
 
   const onPlaying = (e: React.SyntheticEvent<HTMLVideoElement>) => {
@@ -188,6 +210,7 @@ export function usePlayerVideoCallbacks(p: UsePlayerVideoCallbacksParams) {
     onEnded,
     onTimeUpdate,
     onWaiting,
+    onStalled,
     onPlaying,
     onPause,
     onVolumeChange,

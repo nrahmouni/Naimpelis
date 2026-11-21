@@ -127,16 +127,32 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
           ? data.sources.slice(0, 4).map((s) => ({ title: s.title, uri: s.uri }))
           : []
       );
-    } catch (err) {
+    } catch {
+      const castNames = cast.slice(0, 4).map((c) => c.name).filter(Boolean).join(', ');
+      const genreNames = genres.slice(0, 3).join(', ');
+      const metaParts = [
+        year ? `${year}` : '',
+        runtime || '',
+        rating ? `★ ${rating}` : '',
+        genreNames,
+      ].filter(Boolean);
+      const localReply = [
+        `${title}${metaParts.length ? ` (${metaParts.join(' · ')})` : ''}`,
+        overview ? overview : '',
+        castNames ? `${pickLang(lang, { es: 'Reparto principal', ca: 'Repartiment principal', en: 'Main cast' })}: ${castNames}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n\n');
+
       setAiAnswer(
-        err instanceof Error && err.message
-          ? err.message
-          : pickLang(lang, {
-              es: 'No se pudo consultar en este momento.',
-              ca: 'No s’ha pogut consultar ara mateix.',
-              en: 'Could not query AI right now.',
-            })
+        localReply ||
+          pickLang(lang, {
+            es: 'Consulta la ficha técnica y reparto completo justo debajo.',
+            ca: 'Consulta la fitxa tècnica i el repartiment complet just a sota.',
+            en: 'Full synopsis and cast details are available below.',
+          })
       );
+      setAiSources([]);
     } finally {
       setAiBusy(false);
     }

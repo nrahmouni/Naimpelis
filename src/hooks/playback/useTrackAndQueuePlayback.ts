@@ -15,7 +15,8 @@ import type {
 import type { PlaybackCoreContext } from './playbackTypes';
 import { pickBestCleanSatelliteTrackIndex } from '../../components/player/hlsHealthWatchdog';
 
-const failedRuntimeUrlsByStream = new Map<string, Set<string>>();
+const failedRuntimeUrlsByStream = new Map<string, Map<string, number>>();
+const LIVE_TRACK_FAILURE_COOLDOWN_MS = 45_000;
 
 interface TrackQueueDeps {
   handlePlayYouTubeVideo: (item: YouTubeSearchItem) => void;
@@ -269,16 +270,25 @@ export function createTrackAndQueuePlaybackHandlers(
     const streamKey = videoState.isLive
       ? videoState.title || 'live-stream'
       : videoState.rawSourceUrl || videoState.title || 'vod-stream';
-    let failedSet = failedRuntimeUrlsByStream.get(streamKey);
-    if (!failedSet) {
-      failedSet = new Set<string>();
-      failedRuntimeUrlsByStream.set(streamKey, failedSet);
+    let failedMap = failedRuntimeUrlsByStream.get(streamKey);
+    if (!failedMap) {
+      failedMap = new Map<string, number>();
+      failedRuntimeUrlsByStream.set(streamKey, failedMap);
+    }
+
+    const nowMs = Date.now();
+    if (videoState.isLive) {
+      for (const [urlKey, failedAt] of failedMap.entries()) {
+        if (nowMs - failedAt > LIVE_TRACK_FAILURE_COOLDOWN_MS) {
+          failedMap.delete(urlKey);
+        }
+      }
     }
 
     const currentTrack = videoState.tracks[videoState.activeTrackIndex];
     const currentRawUrl = currentTrack?.sourceUrl || videoState.rawSourceUrl;
     if (currentRawUrl) {
-      failedSet.add(currentRawUrl);
+      failedMap.set(currentRawUrl, nowMs);
       fetch('/api/telemetry/qoe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -290,6 +300,7 @@ export function createTrackAndQueuePlaybackHandlers(
       }).catch(() => {});
     }
 
+    const failedSet = new Set<string>(failedMap.keys());
     let nextIdx = -1;
     if (videoState.isLive) {
       nextIdx = pickBestCleanSatelliteTrackIndex(
@@ -297,6 +308,25 @@ export function createTrackAndQueuePlaybackHandlers(
         videoState.activeTrackIndex,
         failedSet
       );
+      if (nextIdx === -1 && videoState.tracks.length > 1) {
+        const oldestBackup = videoState.tracks
+          .map((tr, idx) => ({
+            tr,
+            idx,
+            failedAt: failedMap!.get(tr.sourceUrl) || 0,
+          }))
+          .filter(
+            ({ tr, idx }) =>
+              idx !== videoState.activeTrackIndex &&
+              Boolean(tr.sourceUrl) &&
+              tr.resolverType !== 'cloud_browser'
+          )
+          .sort((a, b) => a.failedAt - b.failedAt)[0];
+        if (oldestBackup) {
+          failedMap.delete(oldestBackup.tr.sourceUrl);
+          nextIdx = oldestBackup.idx;
+        }
+      }
     } else {
       const currentLang = String(currentTrack?.lang || '').toUpperCase();
       const isNonNative = (tr: StreamTrack) =>
@@ -305,8 +335,8 @@ export function createTrackAndQueuePlaybackHandlers(
         tr.resolverType === 'cloud_browser';
       const isUnfailed = (tr: StreamTrack, idx: number) =>
         idx !== videoState.activeTrackIndex &&
-        !failedSet!.has(tr.sourceUrl) &&
-        !failedSet!.has(tr.resolvedStreamUrl || '');
+        !failedSet.has(tr.sourceUrl) &&
+        !failedSet.has(tr.resolvedStreamUrl || '');
 
       const candidateIndices = videoState.tracks
         .map((tr, idx) => ({ tr, idx }))

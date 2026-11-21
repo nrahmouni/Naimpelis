@@ -2,7 +2,7 @@ import { useEffect, useRef, type MutableRefObject } from 'react';
 import Hls from 'hls.js';
 import { pickLang } from '../../utils/i18n';
 import type { AppLanguage, VideoState } from '../../types';
-import { formatTimecode } from './playerTypes';
+import { formatTimecode, type StreamRefreshPhase } from './playerTypes';
 import {
   createLivePlaybackHealthMonitor,
   isAndroidChromeBrowser,
@@ -26,6 +26,7 @@ interface UseHlsPlaybackEngineOptions {
   playbackSpeed: number;
   syncOffsetMs: number;
   setIsBuffering: (next: boolean) => void;
+  setStreamRefreshPhase: (phase: StreamRefreshPhase) => void;
   clearBufferingIndicator: () => void;
   setStreamError: (err: string | null) => void;
   setQualityLevels: (levels: { index: number; height: number; bitrate?: number }[]) => void;
@@ -62,6 +63,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     playbackSpeed,
     syncOffsetMs,
     setIsBuffering,
+    setStreamRefreshPhase,
     clearBufferingIndicator,
     setStreamError,
     setQualityLevels,
@@ -136,7 +138,9 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     let cancelled = false;
     let videoWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
     let frameHealthInterval: ReturnType<typeof setInterval> | null = null;
+    let liveAutoReconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let didTriggerBackupSwitch = false;
+    let lastBackupSwitchAt = 0;
     const isAndroidChrome = isAndroidChromeBrowser();
     const liveHealthMonitor = createLivePlaybackHealthMonitor();
     const targetResumeSec =
@@ -145,15 +149,19 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         : 0;
 
     const triggerBackupSwitch = (reason: string) => {
+      const now = Date.now();
       if (
         cancelled ||
-        didTriggerBackupSwitch ||
         !onAutoSwitchBackupTrack ||
-        (videoState.tracks?.length || 0) <= 1
+        (videoState.tracks?.length || 0) <= 1 ||
+        (didTriggerBackupSwitch && now - lastBackupSwitchAt < 10_000)
       ) {
         return false;
       }
       didTriggerBackupSwitch = true;
+      lastBackupSwitchAt = now;
+      setStreamRefreshPhase('switching');
+      setIsBuffering(true);
       const liveOrCurrentSec = videoState.isLive
         ? 0
         : Math.max(targetResumeSec, Math.floor(video.currentTime || 0));
@@ -163,6 +171,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     streamLoadStartRef.current = Date.now();
     rebufferCountRef.current = 0;
     qoeStartupSentForUrlRef.current = '';
+    setStreamRefreshPhase(videoState.isLive ? 'recovering' : 'idle');
     setIsBuffering(true);
 
     const startPlaybackSafely = async () => {
@@ -327,16 +336,67 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
           frameHealthInterval = setInterval(() => {
             if (cancelled || !video || video.paused || hlsRef.current !== hls) return;
             const res = liveHealthMonitor.check(video, Date.now());
-            if (res.action === 'recover_media') {
+            if (res.isStalled) {
+              setIsBuffering(true);
+            }
+            if (res.action === 'recover_signal') {
+              setStreamRefreshPhase('recovering');
+              setIsBuffering(true);
+              try {
+                // Jump small buffer hole if buffered ahead, otherwise pull live edge
+                let nudged = false;
+                for (let i = 0; i < video.buffered.length; i++) {
+                  const bStart = video.buffered.start(i);
+                  const bEnd = video.buffered.end(i);
+                  if (bStart > video.currentTime && bStart - video.currentTime <= 4 && bEnd - bStart >= 0.3) {
+                    video.currentTime = bStart + 0.06;
+                    video.play().catch(() => {});
+                    nudged = true;
+                    break;
+                  }
+                }
+                if (!nudged) {
+                  hls.startLoad(-1);
+                }
+              } catch {
+                // ignore
+              }
+            } else if (res.action === 'recover_media') {
+              setStreamRefreshPhase('recovering');
+              setIsBuffering(true);
               try {
                 hls.recoverMediaError();
               } catch {
                 // ignore
               }
+            } else if (res.action === 'soft_reconnect') {
+              setStreamRefreshPhase('reconnecting');
+              setIsBuffering(true);
+              try {
+                hls.stopLoad();
+                hls.loadSource(videoState.url);
+                hls.startLoad(-1);
+                video.play().catch(() => {});
+              } catch {
+                // ignore
+              }
             } else if (res.action === 'switch_backup') {
-              triggerBackupSwitch(res.reason || 'live_corruption');
+              const switched = triggerBackupSwitch(res.reason || 'live_corruption');
+              if (!switched) {
+                // Single-track live stream: softly reconnect instead of dying
+                setStreamRefreshPhase('reconnecting');
+                setIsBuffering(true);
+                try {
+                  hls.stopLoad();
+                  hls.loadSource(videoState.url);
+                  hls.startLoad(-1);
+                  video.play().catch(() => {});
+                } catch {
+                  // ignore
+                }
+              }
             }
-          }, 2500);
+          }, 1000);
         }
       });
 
@@ -369,16 +429,42 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
       let mediaRecoveries = 0;
       let networkRecoveries = 0;
       let parsingBurstErrors = 0;
+      let liveNetworkStallBurst = 0;
       let lastNonFatalRecoverAt = 0;
 
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
         networkRecoveries = 0;
         parsingBurstErrors = 0;
+        liveNetworkStallBurst = 0;
         setStreamError(null);
       });
 
       hls.on(Hls.Events.ERROR, (_evt, data) => {
         if (!data.fatal) {
+          if (
+            videoState.isLive &&
+            (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
+              data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR ||
+              data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT ||
+              data.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR ||
+              data.details === Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT ||
+              data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR)
+          ) {
+            liveNetworkStallBurst += 1;
+            setStreamRefreshPhase(liveNetworkStallBurst >= 3 ? 'reconnecting' : 'recovering');
+            setIsBuffering(true);
+            if (liveNetworkStallBurst >= 4 && Date.now() - lastNonFatalRecoverAt > 6000) {
+              lastNonFatalRecoverAt = Date.now();
+              if (!triggerBackupSwitch(`live_${data.details}`)) {
+                try {
+                  hls.startLoad(-1);
+                } catch {
+                  // ignore
+                }
+              }
+            }
+            return;
+          }
           if (
             data.type === Hls.ErrorTypes.MEDIA_ERROR &&
             (data.details === Hls.ErrorDetails.FRAG_PARSING_ERROR ||
@@ -388,6 +474,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
             const threshold = isAndroidChrome ? 3 : 5;
             if (parsingBurstErrors === 2 && Date.now() - lastNonFatalRecoverAt > 15_000) {
               lastNonFatalRecoverAt = Date.now();
+              setStreamRefreshPhase('recovering');
               try {
                 hls.recoverMediaError();
               } catch {
@@ -408,13 +495,17 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
 
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 6) {
           networkRecoveries += 1;
+          setStreamRefreshPhase(networkRecoveries >= 3 ? 'reconnecting' : 'recovering');
+          setIsBuffering(true);
           setTimeout(() => {
             if (!cancelled && hlsRef.current === hls) {
-              hls.startLoad();
+              hls.startLoad(-1);
             }
-          }, 1200);
+          }, 900);
         } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < maxMediaRecoveries) {
           mediaRecoveries += 1;
+          setStreamRefreshPhase('recovering');
+          setIsBuffering(true);
           hls.recoverMediaError();
         } else if (triggerBackupSwitch(`fatal_${data.type}_${data.details || 'error'}`)) {
           setIsBuffering(true);
@@ -426,7 +517,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
           video.addEventListener(
             'loadedmetadata',
             () => {
-              setIsBuffering(false);
+              clearBufferingIndicator();
               if (preservedTimeSec > 3) {
                 try {
                   video.currentTime = preservedTimeSec;
@@ -445,9 +536,28 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
             },
             { once: true }
           );
+        } else if (videoState.isLive) {
+          // Keep live match alive even on single-track network drops: auto-reconnect softly instead of halting
+          setStreamError(null);
+          setStreamRefreshPhase('reconnecting');
+          setIsBuffering(true);
+          if (liveAutoReconnectTimer) clearTimeout(liveAutoReconnectTimer);
+          liveAutoReconnectTimer = setTimeout(() => {
+            if (cancelled || hlsRef.current !== hls) return;
+            networkRecoveries = 0;
+            mediaRecoveries = 0;
+            try {
+              hls.stopLoad();
+              hls.loadSource(videoState.url);
+              hls.startLoad(-1);
+              video.play().catch(() => {});
+            } catch {
+              // ignore
+            }
+          }, 2800);
         } else {
           if (!video.paused && video.readyState >= 3) return;
-          setIsBuffering(false);
+          clearBufferingIndicator();
           setStreamError(
             pickLang(lang, {
               es: 'Esta señal no responde ahora mismo. Pulsa Reintentar o elige tú otra señal debajo del reproductor.',
@@ -537,6 +647,8 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
       cleanupDirectListeners?.();
       if (videoWatchdogTimer) clearTimeout(videoWatchdogTimer);
       if (frameHealthInterval) clearInterval(frameHealthInterval);
+      if (liveAutoReconnectTimer) clearTimeout(liveAutoReconnectTimer);
+      setStreamRefreshPhase('idle');
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;

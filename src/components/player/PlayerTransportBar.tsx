@@ -1,5 +1,5 @@
 import React from 'react';
-import { AudioLines, PictureInPicture2, RotateCcw, RotateCw, Settings2 } from 'lucide-react';
+import { Activity, AudioLines, PictureInPicture2, RotateCcw, RotateCw, Settings2 } from 'lucide-react';
 import type { AppLanguage, VideoState } from '../../types';
 import { UI_COPY, pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
@@ -47,6 +47,8 @@ interface PlayerTransportBarProps {
   onToggleFullscreen: (e?: React.MouseEvent) => void;
   isTouchLocked?: boolean;
   onSeekRelative?: (delta: number, e?: React.MouseEvent) => void;
+  tacticalVisionEnabled?: boolean;
+  onToggleTacticalVision?: () => void;
 }
 
 export const PlayerTransportBar: React.FC<PlayerTransportBarProps> = ({
@@ -84,6 +86,8 @@ export const PlayerTransportBar: React.FC<PlayerTransportBarProps> = ({
   onToggleFullscreen,
   isTouchLocked = false,
   onSeekRelative,
+  tacticalVisionEnabled = false,
+  onToggleTacticalVision,
 }) => {
   const t = UI_COPY[lang];
   const controlsActive = showControls && !isTouchLocked;
@@ -393,6 +397,38 @@ export const PlayerTransportBar: React.FC<PlayerTransportBarProps> = ({
                 </div>
               )}
             </div>
+          )}
+
+          {(mode === 'hls' || mode === 'direct') && onToggleTacticalVision && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                revealControls();
+                onToggleTacticalVision();
+              }}
+              aria-pressed={tacticalVisionEnabled}
+              title={pickLang(lang, {
+                es: tacticalVisionEnabled ? 'Desactivar Visión Táctica IA' : 'Activar Visión Táctica IA en el vídeo',
+                ca: tacticalVisionEnabled ? 'Desactivar Visió Tàctica IA' : 'Activar Visió Tàctica IA al vídeo',
+                en: tacticalVisionEnabled ? 'Disable AI Tactical Vision' : 'Enable AI Tactical Vision overlay',
+              })}
+              aria-label={pickLang(lang, {
+                es: 'Visión Táctica IA',
+                ca: 'Visió Tàctica IA',
+                en: 'AI Tactical Vision',
+              })}
+              className={`min-h-[38px] sm:min-h-[40px] px-2 sm:px-2.5 rounded-2xl text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap border ${
+                tacticalVisionEnabled
+                  ? 'bg-[#00F593]/20 border-[#00F593]/55 text-[#00F593]'
+                  : 'bg-white/10 hover:bg-white/18 border-transparent text-zinc-100'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">
+                {pickLang(lang, { es: 'Táctica IA', ca: 'Tàctica IA', en: 'AI Vision' })}
+              </span>
+            </button>
           )}
 
           {canUseNativePiPOrCast && (

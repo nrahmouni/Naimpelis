@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useFocusTrap } from '../utils/useFocusTrap';
-import { type NativeCinemaPlayerProps } from './player/playerTypes';
+import { type NativeCinemaPlayerProps, type StreamRefreshPhase } from './player/playerTypes';
 import { useDirectCast } from './player/useDirectCast';
 import { PlayerProSettingsModal } from './player/PlayerProSettingsModal';
 import { VoiceWaveBars } from './games/GameVoiceBar';
@@ -17,6 +17,8 @@ import { useNativePlayerStageState } from './player/useNativePlayerStageState';
 import { PlayerVoiceBanner } from './player/PlayerYoutubeAndVoiceAlert';
 import { PlayerStripVoiceControls } from './player/PlayerStripVoiceControls';
 import { PlayerViewportContent } from './player/PlayerViewportContent';
+import { TacticalTelemetryPanel } from './player/TacticalVideoOverlay';
+import { useTacticalVideoAnalysis } from './player/useTacticalVideoAnalysis';
 import {
   createStagePointerHandlers,
   getPlayerSectionClass,
@@ -79,11 +81,14 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   sessionMode = 'party',
   onUpgradeSoloToParty,
   onShareCurrentMedia,
+  matchContext = null,
 }) => {
   const subtitleStyle = useAppStore((s) => s.subtitleStyle);
   const setSubtitleStyle = useAppStore((s) => s.setSubtitleStyle);
   const syncOffsetMs = useAppStore((s) => s.syncOffsetMs);
   const setSyncOffsetMs = useAppStore((s) => s.setSyncOffsetMs);
+  const tacticalVisionEnabled = useAppStore((s) => s.tacticalVisionEnabled);
+  const toggleTacticalVision = useAppStore((s) => s.toggleTacticalVision);
   const t = UI_COPY[lang];
   const {
     stageWrapperRef,
@@ -112,6 +117,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [streamRefreshPhase, setStreamRefreshPhase] = useState<StreamRefreshPhase>('idle');
 
   const clearBufferingIndicator = useCallback(() => {
     if (bufferingDelayTimerRef.current) {
@@ -119,6 +125,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       bufferingDelayTimerRef.current = null;
     }
     setIsBuffering(false);
+    setStreamRefreshPhase('idle');
   }, []);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -139,6 +146,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [seekRipple, setSeekRipple] = useState<'left' | 'right' | null>(null);
   const [embedRescueDismissedUrl, setEmbedRescueDismissedUrl] = useState<string>('');
   const [showProMenu, setShowProMenu] = useState<boolean>(false);
+  const [tacticalRadarVisible, setTacticalRadarVisible] = useState<boolean>(true);
+  const [tacticalFieldFlowVisible, setTacticalFieldFlowVisible] = useState<boolean>(false);
   const proMenuRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(showProMenu, () => setShowProMenu(false), proMenuRef);
   const isFullscreenLike = isFullscreen || isHorizontalFullscreen;
@@ -314,6 +323,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     setAmbilightEnabled,
     setIsInPiP,
     setIsBuffering,
+    setStreamRefreshPhase,
     clearBufferingIndicator,
     setStreamError,
     setQualityLevels,
@@ -418,6 +428,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     setCurrentTime,
     setDuration,
     setIsBuffering,
+    setStreamRefreshPhase,
     setLocalPlaying,
     setStreamError,
     setShowControls,
@@ -461,6 +472,15 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     />
   ) : null;
 
+  const tacticalVision = useTacticalVideoAnalysis({
+    enabled: tacticalVisionEnabled,
+    lang,
+    videoState,
+    videoRef,
+    cloudFrame,
+    matchContext,
+  });
+
   const stagePointerHandlers = createStagePointerHandlers({
     isMinimized, lastManualHideAtRef, lastMousePosRef, showControlsRef, revealControls, scheduleHideControls,
   });
@@ -495,6 +515,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           isMuted={isMuted}
           volume={volume}
           isBuffering={isBuffering}
+          streamRefreshPhase={streamRefreshPhase}
           isExtracting={isExtracting}
           streamError={streamError}
           extractionLabel={extractionLabel}
@@ -604,9 +625,40 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             setIsTouchLocked((prev) => !prev);
             revealControls();
           }}
+          tacticalVisionEnabled={tacticalVisionEnabled}
+          onToggleTacticalVision={toggleTacticalVision}
+          tacticalShowRadar={tacticalRadarVisible}
+          tacticalShowFieldFlow={tacticalFieldFlowVisible}
+          tacticalAnalysis={tacticalVision.analysis}
           videoCallbacks={videoCallbacks}
         />
       </div>
+
+      {!isTvMode &&
+        !isMinimized &&
+        !isCompressed &&
+        !isFullscreenLike &&
+        !compactVideoForMobileKeyboard &&
+        (videoState.mode === 'hls' || videoState.mode === 'direct' || videoState.mode === 'cloud') && (
+          <TacticalTelemetryPanel
+            lang={lang}
+            enabled={tacticalVisionEnabled}
+            analysis={tacticalVision.analysis}
+            isAnalyzing={tacticalVision.isAnalyzing}
+            errorMsg={tacticalVision.errorMsg}
+            captureStatus={tacticalVision.captureStatus}
+            homeTeamLabel={tacticalVision.resolvedTeams.homeShort || tacticalVision.resolvedTeams.homeTeam}
+            awayTeamLabel={tacticalVision.resolvedTeams.awayShort || tacticalVision.resolvedTeams.awayTeam}
+            showRadar={tacticalRadarVisible}
+            showFieldFlow={tacticalFieldFlowVisible}
+            onToggleRadar={() => setTacticalRadarVisible((v) => !v)}
+            onToggleFieldFlow={() => setTacticalFieldFlowVisible((v) => !v)}
+            onDisable={toggleTacticalVision}
+            onRefreshNow={() => {
+              void tacticalVision.refreshNow();
+            }}
+          />
+        )}
 
       {!isTvMode &&
         !isMinimized &&
@@ -644,6 +696,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             activeSubId={activeSubId}
             onSelectSubtitleTrack={handleSelectSubtitleTrack}
             subtitleFileInputRef={subtitleFileInputRef}
+            tacticalVisionEnabled={tacticalVisionEnabled}
+            onToggleTacticalVision={toggleTacticalVision}
           />
         )}
 

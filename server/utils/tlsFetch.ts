@@ -1,6 +1,6 @@
 import http from 'http';
 import https from 'https';
-import { PassThrough, Readable } from 'stream';
+import type { Readable } from 'stream';
 import zlib from 'zlib';
 import { logger } from '../utils/logger.ts';
 import { LruTtlCache } from './lruCache.ts';
@@ -96,46 +96,160 @@ function isUndiciTimeoutOrConnectError(err: unknown): boolean {
   );
 }
 
-function createDecompressedWebStream(
-  res: http.IncomingMessage,
+export function createDecompressedWebStream(
+  res: Readable & { complete?: boolean },
   contentEncoding: string,
   onAbortCleanup: () => void
-): ReadableStream<Uint8Array> | null {
+): ReadableStream<Uint8Array> {
+  let decompressor: zlib.Gunzip | zlib.Inflate | zlib.BrotliDecompress | null = null;
   let stream: Readable = res;
   if (contentEncoding === 'gzip') {
-    const gz = zlib.createGunzip();
-    res.pipe(gz);
-    gz.on('error', () => {
-      res.destroy();
-    });
-    stream = gz;
+    decompressor = zlib.createGunzip();
+    res.pipe(decompressor);
+    stream = decompressor;
   } else if (contentEncoding === 'deflate') {
-    const inf = zlib.createInflate();
-    res.pipe(inf);
-    inf.on('error', () => {
-      res.destroy();
-    });
-    stream = inf;
+    decompressor = zlib.createInflate();
+    res.pipe(decompressor);
+    stream = decompressor;
   } else if (contentEncoding === 'br') {
-    const br = zlib.createBrotliDecompress();
-    res.pipe(br);
-    br.on('error', () => {
-      res.destroy();
-    });
-    stream = br;
+    decompressor = zlib.createBrotliDecompress();
+    res.pipe(decompressor);
+    stream = decompressor;
   }
 
-  // Wrap in PassThrough if needed or convert directly to Web ReadableStream
-  const pass = new PassThrough();
-  stream.pipe(pass);
-  stream.once('error', (err) => {
-    if (!pass.destroyed) pass.destroy(err);
-  });
-  res.once('close', () => {
-    onAbortCleanup();
-  });
+  let settled = false;
+  let onData: ((chunk: Buffer | Uint8Array | string) => void) | null = null;
+  let onEnd: (() => void) | null = null;
+  let onResClose: (() => void) | null = null;
 
-  return Readable.toWeb(pass) as unknown as ReadableStream<Uint8Array>;
+  const detachDataListeners = () => {
+    if (onData) {
+      stream.off('data', onData);
+      onData = null;
+    }
+    if (onEnd) {
+      stream.off('end', onEnd);
+      onEnd = null;
+    }
+    if (onResClose) {
+      res.off('close', onResClose);
+      onResClose = null;
+    }
+  };
+
+  const destroyStreams = () => {
+    if (decompressor) {
+      try {
+        res.unpipe(decompressor);
+      } catch {
+        // ignore
+      }
+      if (!decompressor.destroyed) {
+        decompressor.destroy();
+      }
+    }
+    if (!res.destroyed) {
+      res.destroy();
+    }
+  };
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      const closeOnce = () => {
+        if (settled) return;
+        settled = true;
+        detachDataListeners();
+        try {
+          controller.close();
+        } catch {
+          // Controller already closed/errored
+        }
+        onAbortCleanup();
+      };
+
+      const errorOnce = (err: unknown) => {
+        if (settled) return;
+        settled = true;
+        detachDataListeners();
+        destroyStreams();
+        try {
+          controller.error(err);
+        } catch {
+          // Controller already closed/errored
+        }
+        onAbortCleanup();
+      };
+
+      onData = (chunk: Buffer | Uint8Array | string) => {
+        if (settled) return;
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        if (buf.length === 0) return;
+        try {
+          controller.enqueue(new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength));
+          if (controller.desiredSize !== null && controller.desiredSize <= 0) {
+            stream.pause();
+          }
+        } catch {
+          // Controller already closed concurrently
+          settled = true;
+          detachDataListeners();
+          destroyStreams();
+          onAbortCleanup();
+        }
+      };
+
+      onEnd = () => {
+        closeOnce();
+      };
+
+      const onStreamError = (err: Error) => {
+        if (settled) return;
+        errorOnce(err);
+      };
+
+      const onResError = (err: Error) => {
+        if (settled) return;
+        errorOnce(err);
+      };
+
+      onResClose = () => {
+        if (!settled && res.complete === false) {
+          errorOnce(new Error('Upstream response closed prematurely'));
+          return;
+        }
+        if (!decompressor) {
+          closeOnce();
+        } else {
+          onAbortCleanup();
+        }
+      };
+
+      // Keep permanent error listeners so post-cancel teardown errors never surface as uncaught exceptions
+      stream.on('error', onStreamError);
+      if (decompressor) {
+        res.on('error', onResError);
+      }
+      stream.on('data', onData);
+      stream.once('end', onEnd);
+      res.once('close', onResClose);
+
+      if (stream.readableEnded) {
+        closeOnce();
+      }
+    },
+    pull() {
+      if (!settled && stream.isPaused()) {
+        stream.resume();
+      }
+    },
+    cancel() {
+      if (settled) return;
+      settled = true;
+      detachDataListeners();
+      destroyStreams();
+      onAbortCleanup();
+    },
+  });
 }
 
 function relaxedHttpsRequest(

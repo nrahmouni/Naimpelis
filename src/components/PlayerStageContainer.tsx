@@ -377,6 +377,21 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
               sessionMode={sessionMode}
               onUpgradeSoloToParty={onUpgradeSoloToParty}
               onShareCurrentMedia={handleShareCurrentMedia}
+              matchContext={
+                activeSportsMatch
+                  ? {
+                      homeTeam: activeMatchDetails?.homeTeam || activeSportsMatch.homeTeam,
+                      awayTeam: activeMatchDetails?.awayTeam || activeSportsMatch.awayTeam,
+                      homeShort: activeSportsMatch.homeShort,
+                      awayShort: activeSportsMatch.awayShort,
+                      homeScore: activeMatchDetails?.homeScore ?? activeSportsMatch.homeScore,
+                      awayScore: activeMatchDetails?.awayScore ?? activeSportsMatch.awayScore,
+                      statusLabel: activeMatchDetails?.statusLabel ?? activeSportsMatch.statusLabel,
+                      competition: activeMatchDetails?.tournamentName || activeSportsMatch.competition,
+                      details: activeMatchDetails,
+                    }
+                  : null
+              }
             />
           </React.Suspense>
 

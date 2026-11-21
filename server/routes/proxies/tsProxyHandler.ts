@@ -309,11 +309,11 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     nodeStream.on('error', () => {
       if (streamIdleTimer) clearTimeout(streamIdleTimer);
       if (!res.headersSent) res.status(502);
-      res.end();
+      if (!res.writableEnded) res.end();
     });
     req.on('close', () => {
       if (streamIdleTimer) clearTimeout(streamIdleTimer);
-      nodeStream.destroy();
+      if (!res.writableEnded && !nodeStream.destroyed) nodeStream.destroy();
     });
 
     if (!shouldSniffImageHeader) {

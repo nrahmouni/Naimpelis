@@ -12,7 +12,7 @@ import type {
 } from '../../types';
 import type { ParsedSubtitleCue } from '../../utils/subtitles';
 import { triggerHaptic } from '../../utils/haptics';
-import type { NativeCinemaPlayerProps } from './playerTypes';
+import type { NativeCinemaPlayerProps, StreamRefreshPhase } from './playerTypes';
 import { CloudBrowserOverlay } from './CloudBrowserOverlay';
 import { EmbedStagePanel } from './EmbedStagePanel';
 import { IdleStandbyStage } from './IdleStandbyStage';
@@ -21,6 +21,8 @@ import { PlayerStageOverlays } from './PlayerStageOverlays';
 import { PlayerTopHudBar } from './PlayerTopHudBar';
 import { PlayerTransportBar } from './PlayerTransportBar';
 import { PlayerYoutubeStage } from './PlayerYoutubeAndVoiceAlert';
+import { TacticalVideoOverlay } from './TacticalVideoOverlay';
+import type { TacticalVisionAnalysis } from './tacticalVisionTypes';
 
 export interface PlayerViewportContentProps {
   lang: AppLanguage;
@@ -42,6 +44,7 @@ export interface PlayerViewportContentProps {
   isMuted: boolean;
   volume: number;
   isBuffering: boolean;
+  streamRefreshPhase: StreamRefreshPhase;
   isExtracting: boolean;
   streamError: string | null;
   extractionLabel?: string;
@@ -148,11 +151,17 @@ export interface PlayerViewportContentProps {
   handleRetryInlineEmbed: () => void;
   isTouchLocked?: boolean;
   onToggleTouchLock?: () => void;
+  tacticalVisionEnabled?: boolean;
+  onToggleTacticalVision?: () => void;
+  tacticalShowRadar?: boolean;
+  tacticalShowFieldFlow?: boolean;
+  tacticalAnalysis?: TacticalVisionAnalysis | null;
   videoCallbacks: {
     onLoadedMetadata: (e: React.SyntheticEvent<HTMLVideoElement>) => void;
     onEnded: () => void;
     onTimeUpdate: (e: React.SyntheticEvent<HTMLVideoElement>) => void;
     onWaiting: () => void;
+    onStalled: () => void;
     onPlaying: (e: React.SyntheticEvent<HTMLVideoElement>) => void;
     onPause: (e: React.SyntheticEvent<HTMLVideoElement>) => void;
     onVolumeChange: (e: React.SyntheticEvent<HTMLVideoElement>) => void;
@@ -215,6 +224,8 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
         onClosePlayer={p.onClosePlayer}
         isTouchLocked={p.isTouchLocked}
         onToggleTouchLock={p.onToggleTouchLock}
+        tacticalVisionEnabled={p.tacticalVisionEnabled}
+        onToggleTacticalVision={p.onToggleTacticalVision}
       />
 
       {p.videoState.mode === 'idle' && !p.isExtracting && !p.isMinimized && (
@@ -254,6 +265,7 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
           onCanPlay={p.clearBufferingIndicator}
           onCanPlayThrough={p.clearBufferingIndicator}
           onWaiting={p.videoCallbacks.onWaiting}
+          onStalled={p.videoCallbacks.onStalled}
           onPlaying={p.videoCallbacks.onPlaying}
           onPause={p.videoCallbacks.onPause}
           onVolumeChange={p.videoCallbacks.onVolumeChange}
@@ -319,6 +331,18 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
         className="hidden"
       />
 
+      {(p.videoState.mode === 'hls' || p.videoState.mode === 'direct' || p.videoState.mode === 'cloud') && (
+        <TacticalVideoOverlay
+          lang={p.lang}
+          enabled={Boolean(p.tacticalVisionEnabled)}
+          isMinimized={p.isMinimized}
+          isCompressed={p.isCompressed}
+          showRadar={p.tacticalShowRadar}
+          showFieldFlow={p.tacticalShowFieldFlow}
+          analysis={p.tacticalAnalysis ?? null}
+        />
+      )}
+
       <PlayerStageOverlays
         lang={p.lang}
         videoState={p.videoState}
@@ -328,6 +352,7 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
         isStageFullscreen={p.isStageFullscreen}
         isExtracting={p.isExtracting}
         isBuffering={p.isBuffering}
+        streamRefreshPhase={p.streamRefreshPhase}
         streamError={p.streamError}
         extractionLabel={p.extractionLabel}
         extractingTitleCopy={p.extractingTitleCopy}
@@ -469,6 +494,8 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
           onToggleFullscreen={p.handleToggleFullscreen}
           isTouchLocked={p.isTouchLocked}
           onSeekRelative={p.handleSeekRelative}
+          tacticalVisionEnabled={p.tacticalVisionEnabled}
+          onToggleTacticalVision={p.onToggleTacticalVision}
         />
       )}
 

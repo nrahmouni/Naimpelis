@@ -536,7 +536,10 @@ export function registerMusicRoutes(app: express.Express): void {
       );
       nodeStream.on('error', () => {
         if (!res.headersSent) res.status(502);
-        res.end();
+        if (!res.writableEnded) res.end();
+      });
+      req.on('close', () => {
+        if (!res.writableEnded && !nodeStream.destroyed) nodeStream.destroy();
       });
       nodeStream.pipe(res);
     } catch (err: unknown) {

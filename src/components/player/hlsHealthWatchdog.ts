@@ -109,11 +109,18 @@ export function pickBestCleanSatelliteTrackIndex(
   return candidates.length > 0 ? candidates[0].idx : -1;
 }
 
-export type LiveHealthAction = 'healthy' | 'recover_media' | 'switch_backup';
+export type LiveHealthAction =
+  | 'healthy'
+  | 'recover_signal'
+  | 'recover_media'
+  | 'soft_reconnect'
+  | 'switch_backup';
 
 export interface LiveHealthEvaluation {
   action: LiveHealthAction;
   reason?: string;
+  isStalled?: boolean;
+  stallDurationMs?: number;
 }
 
 export function createLivePlaybackHealthMonitor() {
@@ -123,6 +130,10 @@ export function createLivePlaybackHealthMonitor() {
   let consecutiveCorruptFrames = 0;
   let lastRecoveryAt = 0;
 
+  let lastObservedTime = -1;
+  let stalledSinceMs = 0;
+  let lastStallActionTier = 0;
+
   return {
     reset() {
       prevTotalFrames = 0;
@@ -130,10 +141,65 @@ export function createLivePlaybackHealthMonitor() {
       consecutiveDropSpikes = 0;
       consecutiveCorruptFrames = 0;
       lastRecoveryAt = 0;
+      lastObservedTime = -1;
+      stalledSinceMs = 0;
+      lastStallActionTier = 0;
     },
     check(video: HTMLVideoElement, nowMs = Date.now()): LiveHealthEvaluation {
-      if (!video || video.paused || video.readyState < 2) {
-        return { action: 'healthy' };
+      if (!video || video.paused) {
+        stalledSinceMs = 0;
+        lastStallActionTier = 0;
+        return { action: 'healthy', isStalled: false, stallDurationMs: 0 };
+      }
+
+      const curTime = Number(video.currentTime || 0);
+      if (lastObservedTime < 0 || Math.abs(curTime - lastObservedTime) >= 0.04) {
+        lastObservedTime = curTime;
+        stalledSinceMs = nowMs;
+        lastStallActionTier = 0;
+      } else {
+        if (stalledSinceMs === 0) {
+          stalledSinceMs = nowMs;
+        }
+        const stallDurationMs = Math.max(0, nowMs - stalledSinceMs);
+        if (stallDurationMs >= 8500 && lastStallActionTier < 3) {
+          lastStallActionTier = 3;
+          return {
+            action: 'switch_backup',
+            reason: 'live_stream_stalled_timeout',
+            isStalled: true,
+            stallDurationMs,
+          };
+        }
+        if (stallDurationMs >= 5000 && lastStallActionTier < 2) {
+          lastStallActionTier = 2;
+          return {
+            action: 'soft_reconnect',
+            reason: 'live_stream_frozen_reconnect',
+            isStalled: true,
+            stallDurationMs,
+          };
+        }
+        if (stallDurationMs >= 2000 && lastStallActionTier < 1) {
+          lastStallActionTier = 1;
+          return {
+            action: 'recover_signal',
+            reason: 'live_stream_frozen_nudge',
+            isStalled: true,
+            stallDurationMs,
+          };
+        }
+        if (stallDurationMs >= 1400) {
+          return {
+            action: 'healthy',
+            isStalled: true,
+            stallDurationMs,
+          };
+        }
+      }
+
+      if (video.readyState < 2) {
+        return { action: 'healthy', isStalled: false, stallDurationMs: 0 };
       }
 
       const frameCheck = isRenderedFrameGreenOrCorrupt(video);
@@ -176,7 +242,7 @@ export function createLivePlaybackHealthMonitor() {
             : '';
 
       if (!reason) {
-        return { action: 'healthy' };
+        return { action: 'healthy', isStalled: false, stallDurationMs: 0 };
       }
 
       consecutiveCorruptFrames = 0;
@@ -184,10 +250,9 @@ export function createLivePlaybackHealthMonitor() {
 
       if (lastRecoveryAt === 0 || nowMs - lastRecoveryAt > 20_000) {
         lastRecoveryAt = nowMs;
-        return { action: 'recover_media', reason };
+        return { action: 'recover_media', reason, isStalled: true };
       }
-      return { action: 'switch_backup', reason };
+      return { action: 'switch_backup', reason, isStalled: true };
     },
   };
 }
-

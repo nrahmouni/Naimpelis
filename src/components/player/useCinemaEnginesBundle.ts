@@ -5,7 +5,11 @@ import { useCinemaPlatformApis } from './useCinemaPlatformApis';
 import { useHlsPlaybackEngine } from './useHlsPlaybackEngine';
 import { useTvReceiverRemote } from './useTvReceiverRemote';
 import { useYouTubeIframeSync } from './useYouTubeIframeSync';
-import type { NativeCinemaPlayerProps, YouTubePlayerInstance } from './playerTypes';
+import type {
+  NativeCinemaPlayerProps,
+  StreamRefreshPhase,
+  YouTubePlayerInstance,
+} from './playerTypes';
 
 interface UseCinemaEnginesBundleArgs {
   lang: AppLanguage;
@@ -46,6 +50,7 @@ interface UseCinemaEnginesBundleArgs {
   setAmbilightEnabled: React.Dispatch<React.SetStateAction<boolean>>;
   setIsInPiP: React.Dispatch<React.SetStateAction<boolean>>;
   setIsBuffering: React.Dispatch<React.SetStateAction<boolean>>;
+  setStreamRefreshPhase: React.Dispatch<React.SetStateAction<StreamRefreshPhase>>;
   clearBufferingIndicator: () => void;
   setStreamError: React.Dispatch<React.SetStateAction<string | null>>;
   setQualityLevels: React.Dispatch<
@@ -132,6 +137,7 @@ export function useCinemaEnginesBundle(args: UseCinemaEnginesBundleArgs) {
     playbackSpeed: args.playbackSpeed,
     syncOffsetMs: args.syncOffsetMs,
     setIsBuffering: args.setIsBuffering,
+    setStreamRefreshPhase: args.setStreamRefreshPhase,
     clearBufferingIndicator: args.clearBufferingIndicator,
     setStreamError: args.setStreamError,
     setQualityLevels: args.setQualityLevels,

@@ -34,9 +34,17 @@ export function registerEmbedProxyRoutes(app: express.Express): void {
       res.setHeader('X-Naim-Request-Id', reqId);
       res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/webp');
       res.setHeader('Cache-Control', 'public, max-age=86400');
-      Readable.fromWeb(upstream.body as never).pipe(res);
+      const imgStream = Readable.fromWeb(upstream.body as never);
+      imgStream.on('error', () => {
+        if (!res.headersSent) res.status(404);
+        if (!res.writableEnded) res.end();
+      });
+      req.on('close', () => {
+        if (!res.writableEnded && !imgStream.destroyed) imgStream.destroy();
+      });
+      imgStream.pipe(res);
     } catch {
-      res.status(404).end();
+      if (!res.headersSent) res.status(404).end();
     }
   });
 

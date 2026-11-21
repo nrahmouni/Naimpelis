@@ -171,6 +171,7 @@ interface AppShellState {
   typingUsers: TypingUserPayload[];
   subtitleStyle: SubtitleStyleSettings;
   syncOffsetMs: number;
+  tacticalVisionEnabled: boolean;
   miniPlayerDismissed: boolean;
   scheduledRooms: ScheduledRoomItem[];
   swUpdate: SwUpdateRegistration | null;
@@ -232,6 +233,8 @@ interface AppShellState {
   updateSubtitleStyle: (patch: Partial<SubtitleStyleSettings>) => void;
   setSubtitleStyle: (patch: Partial<SubtitleStyleSettings>) => void;
   setSyncOffsetMs: (offsetMs: number) => void;
+  setTacticalVisionEnabled: (enabled: boolean) => void;
+  toggleTacticalVision: () => void;
   setMiniPlayerDismissed: (dismissed: boolean) => void;
   addScheduledRoom: (item: Omit<ScheduledRoomItem, 'id'>) => void;
   removeScheduledRoom: (id: string) => void;
@@ -328,6 +331,7 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   typingUsers: [],
   subtitleStyle: loadSubtitleStyle(),
   syncOffsetMs: 0,
+  tacticalVisionEnabled: false,
   miniPlayerDismissed: false,
   scheduledRooms: loadScheduledRooms(),
   swUpdate: null,
@@ -632,6 +636,14 @@ export const useAppStore = create<AppShellState>((set, get) => ({
     const clamped = Math.max(-1000, Math.min(1000, offsetMs));
     if (get().syncOffsetMs === clamped) return;
     set({ syncOffsetMs: clamped });
+  },
+
+  setTacticalVisionEnabled: (tacticalVisionEnabled) => {
+    if (get().tacticalVisionEnabled === tacticalVisionEnabled) return;
+    set({ tacticalVisionEnabled });
+  },
+  toggleTacticalVision: () => {
+    set((s) => ({ tacticalVisionEnabled: !s.tacticalVisionEnabled }));
   },
 
   setMiniPlayerDismissed: (miniPlayerDismissed) => {

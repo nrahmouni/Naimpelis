@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Check, Globe, MoreHorizontal, Share2, Subtitles, Tv, Upload, Users } from 'lucide-react';
+import { Activity, Check, Globe, MoreHorizontal, Share2, Subtitles, Tv, Upload, Users } from 'lucide-react';
 import {
   RiffanCastIcon,
   RiffanChatIcon,
@@ -43,6 +43,8 @@ interface PlayerBottomControlStripProps {
   activeSubId?: string;
   onSelectSubtitleTrack?: (trackId: string) => void;
   subtitleFileInputRef?: React.RefObject<HTMLInputElement | null>;
+  tacticalVisionEnabled?: boolean;
+  onToggleTacticalVision?: () => void;
 }
 
 export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> = ({
@@ -75,6 +77,8 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
   activeSubId = 'off',
   onSelectSubtitleTrack,
   subtitleFileInputRef,
+  tacticalVisionEnabled = false,
+  onToggleTacticalVision,
 }) => {
   const [moreOpen, setMoreOpen] = useState(false);
   const [ccOpen, setCcOpen] = useState(false);
@@ -235,8 +239,39 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
         )}
       </div>
 
-      {/* Right: Calm 3-Button Group — [Sala / Watch party] + [··· Más] + [Ajustes] */}
+      {/* Right: Calm Action Group — [Táctica IA] + [Sala / Watch party] + [··· Más] + [Ajustes] */}
       <div className="flex items-center justify-end gap-1.5 shrink-0">
+        {(videoState.mode === 'hls' || videoState.mode === 'direct') &&
+          onToggleTacticalVision && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                onToggleTacticalVision();
+              }}
+              aria-pressed={tacticalVisionEnabled}
+              title={pickLang(lang, {
+                es: tacticalVisionEnabled
+                  ? 'Desactivar análisis táctico sobre el vídeo'
+                  : 'Activar líneas de juego, ataques, posesión y nombres en vídeo',
+                ca: tacticalVisionEnabled
+                  ? 'Desactivar anàlisi tàctica sobre el vídeo'
+                  : 'Activar línies de joc, atacs, possessió i noms al vídeo',
+                en: tacticalVisionEnabled
+                  ? 'Disable on-video tactical analysis'
+                  : 'Enable passing lines, attacks, possession & player names on video',
+              })}
+              className={`min-h-[40px] px-3 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
+                tacticalVisionEnabled
+                  ? 'bg-[#00F593]/18 border-[#00F593]/55 text-[#00F593]'
+                  : 'bg-[#0D0D12] hover:bg-[#14141C] text-zinc-200 border-white/[0.08]'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5 shrink-0" />
+              <span>{pickLang(lang, { es: 'Táctica IA', ca: 'Tàctica IA', en: 'AI Vision' })}</span>
+            </button>
+          )}
+
         {sessionMode === 'solo' && onUpgradeSoloToParty ? (
           <button
             type="button"

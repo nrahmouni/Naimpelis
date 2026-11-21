@@ -8,12 +8,12 @@ import {
   RiffanPauseIcon,
   RiffanPlayIcon,
   RiffanRetryIcon,
-  RiffanVideoLoading,
   RiffanWarningIcon,
 } from '../ui/RiffanIcons';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { findActiveSubtitleText, ParsedSubtitleCue } from '../../utils/subtitles';
+import type { StreamRefreshPhase } from './playerTypes';
 import type {
   AppLanguage,
   ChatMessage,
@@ -32,6 +32,7 @@ export interface PlayerStageOverlaysProps {
   isStageFullscreen: boolean;
   isExtracting: boolean;
   isBuffering: boolean;
+  streamRefreshPhase?: StreamRefreshPhase;
   streamError: string | null;
   extractionLabel?: string;
   extractingTitleCopy: string;
@@ -82,6 +83,7 @@ export const PlayerStageOverlays: React.FC<PlayerStageOverlaysProps> = ({
   isStageFullscreen,
   isExtracting,
   isBuffering,
+  streamRefreshPhase = 'idle',
   streamError,
   extractionLabel,
   extractingTitleCopy,
@@ -517,20 +519,83 @@ export const PlayerStageOverlays: React.FC<PlayerStageOverlaysProps> = ({
       )}
 
       {!isExtracting &&
-        isBuffering &&
+        !streamError &&
+        (isBuffering || streamRefreshPhase !== 'idle') &&
         (videoState.mode === 'hls' || videoState.mode === 'direct') && (
-          <div className="pointer-events-none absolute top-3 left-3 z-25 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center gap-1.5">
-            <RiffanVideoLoading size={18} />
-            {!isMinimized && (
-              <span className="text-[10px] font-medium text-zinc-300">
-                {pickLang(lang, {
-                  es: 'Cargando buffer...',
-                  ca: 'Carregant memòria intermèdia...',
-                  en: 'Buffering...',
-                })}
-              </span>
+          <>
+            {videoState.isLive && !isMinimized && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute top-0 inset-x-0 z-25 h-[2.5px] overflow-hidden bg-white/[0.06]"
+              >
+                <div className="h-full w-[42%] bg-gradient-to-r from-transparent via-[#00F593] to-[#9146FF] rtv-signal-sweep" />
+              </div>
             )}
-          </div>
+
+            <div
+              role="status"
+              aria-live="polite"
+              className={`pointer-events-none absolute z-25 flex items-center gap-2.5 bg-[#0B0E17]/82 backdrop-blur-md border border-white/15 shadow-[0_10px_28px_rgba(0,0,0,0.65)] ${
+                isMinimized
+                  ? 'top-2 left-2 p-1.5 rounded-lg'
+                  : 'bottom-14 sm:bottom-5 left-3 sm:left-4 px-3 py-2 rounded-xl max-w-[calc(100%-24px)]'
+              }`}
+            >
+              <div className="relative w-5 h-5 shrink-0 flex items-center justify-center">
+                <svg
+                  viewBox="0 0 24 24"
+                  className="w-5 h-5 animate-spin text-[#00F593]"
+                  fill="none"
+                  aria-hidden="true"
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="9"
+                    stroke="currentColor"
+                    strokeOpacity="0.2"
+                    strokeWidth="2.4"
+                  />
+                  <path
+                    d="M21 12a9 9 0 0 0-9-9"
+                    stroke="currentColor"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span className="w-1.5 h-1.5 rounded-full bg-[#9146FF] absolute" />
+              </div>
+              {!isMinimized && (
+                <div className="min-w-0 leading-tight">
+                  <div className="text-[11px] sm:text-xs font-semibold text-white truncate">
+                    {videoState.isLive
+                      ? streamRefreshPhase === 'switching'
+                        ? pickLang(lang, {
+                            es: 'Cambiando a señal alternativa…',
+                            ca: 'Canviant a senyal alternativa…',
+                            en: 'Switching to backup feed…',
+                          })
+                        : streamRefreshPhase === 'reconnecting'
+                        ? pickLang(lang, {
+                            es: 'Señal pausada · Reconectando emisión…',
+                            ca: 'Senyal aturada · Reconnectant emissió…',
+                            en: 'Signal paused · Reconnecting stream…',
+                          })
+                        : pickLang(lang, {
+                            es: 'Señal detenida · Refrescando en vivo…',
+                            ca: 'Senyal aturada · Refrescant en directe…',
+                            en: 'Signal stalled · Refreshing live feed…',
+                          })
+                      : pickLang(lang, {
+                          es: 'Cargando vídeo…',
+                          ca: 'Carregant vídeo…',
+                          en: 'Buffering…',
+                        })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
         )}
 
       {streamError && !isExtracting && !isMinimized && (

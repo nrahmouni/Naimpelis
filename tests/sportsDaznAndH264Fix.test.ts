@@ -13,7 +13,12 @@ import {
   sortTracksWithDaznPriority,
 } from '../server/routes/sportsHelpers/footballTeamMatcher';
 import { getPermanent247SportsMatches } from '../server/routes/sportsHelpers/sportsChannels247';
-import { pickBestCleanSatelliteTrackIndex } from '../src/components/player/hlsHealthWatchdog';
+import fs from 'fs';
+import path from 'path';
+import {
+  createLivePlaybackHealthMonitor,
+  pickBestCleanSatelliteTrackIndex,
+} from '../src/components/player/hlsHealthWatchdog';
 import { buildMiniGuideForChannel } from '../src/components/guide/channelGuideUtils';
 import { TDT_DAZN_AND_MOVISTAR_SPORTS_CHANNELS } from '../server/data/tdtDaznSportsChannels';
 import {
@@ -33,6 +38,12 @@ import {
 } from '../src/components/sports/FootballMatchboardHelpers';
 import { computeDayOffsetFromIsoDate } from '../src/components/sports/FootballMatchboardParts';
 import type { SpanishTdtChannel, StreamTrack } from '../src/types';
+import {
+  extractErrorDetails,
+  generateContentWithResilience,
+} from '../server/routes/aiStudio/shared';
+import { deriveTeamsFromTitle } from '../src/components/player/useTacticalVideoAnalysis';
+import { useAppStore } from '../src/store/useAppStore';
 
 describe('H.264 frame & green-screen (#005200) validator', () => {
   it('flags fatal FFmpeg H.264 slice/SPS/CABAC errors', () => {
@@ -479,3 +490,127 @@ describe('Language-based channel recommendations, Selección Española priority 
     expect(computeDayOffsetFromIsoDate('2099-01-01')).toBeGreaterThan(365);
   });
 });
+
+describe('Live stream stall watchdog & AI match broadcast insights', () => {
+  it('detects frozen live video progress early and escalates recover_signal -> soft_reconnect -> switch_backup before clearing cleanly on resume', () => {
+    const monitor = createLivePlaybackHealthMonitor();
+    const fakeVideo = {
+      paused: false,
+      readyState: 1,
+      currentTime: 120.5,
+      videoWidth: 1280,
+      videoHeight: 720,
+      getVideoPlaybackQuality: undefined,
+    } as unknown as HTMLVideoElement;
+
+    // Initial baseline at t=1000
+    expect(monitor.check(fakeVideo, 1000).action).toBe('healthy');
+    // Freeze noticed early at +1500ms -> isStalled=true
+    const earlyStall = monitor.check(fakeVideo, 2500);
+    expect(earlyStall.isStalled).toBe(true);
+    expect(earlyStall.action).toBe('healthy');
+    // +2200ms -> recover_signal
+    expect(monitor.check(fakeVideo, 3200).action).toBe('recover_signal');
+    // +5200ms -> soft_reconnect
+    expect(monitor.check(fakeVideo, 6200).action).toBe('soft_reconnect');
+    // +8600ms -> switch_backup
+    expect(monitor.check(fakeVideo, 9600).action).toBe('switch_backup');
+
+    // Playback advances -> clears stall immediately
+    (fakeVideo as unknown as { currentTime: number }).currentTime = 121.2;
+    const resumed = monitor.check(fakeVideo, 10_000);
+    expect(resumed.action).toBe('healthy');
+    expect(resumed.isStalled).toBe(false);
+  });
+
+  it('wires non-intrusive signal refresh overlay and auto-updating Gemini AI match insights', () => {
+    const overlaysSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/player/PlayerStageOverlays.tsx'),
+      'utf8'
+    );
+    expect(overlaysSrc).toContain('rtv-signal-sweep');
+    expect(overlaysSrc).toContain('streamRefreshPhase');
+
+    const aiRouteSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'server/routes/aiStudio/aiMediaRoutes.ts'),
+      'utf8'
+    );
+    expect(aiRouteSrc).toContain("app.post('/api/ai/match-insights'");
+    expect(aiRouteSrc).toContain('gemini-4-hydrogen');
+
+    const matchCenterSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/LiveMatchCenter.tsx'),
+      'utf8'
+    );
+    expect(matchCenterSrc).toContain('MatchAiBroadcastPanel');
+  });
+
+  it('recovers from Gemini 503 high-demand spikes via retry + gemini-3.1-flash-lite fallback and exposes user-friendly 503 messages', async () => {
+    const err503 = {
+      status: 503,
+      message: '{"error":{"code":503,"message":"This model is currently experiencing high demand.","status":"UNAVAILABLE"}}',
+    };
+    const friendly = extractErrorDetails(err503);
+    expect(friendly.status).toBe(503);
+    expect(friendly.code).toBe('MODEL_UNAVAILABLE');
+    expect(friendly.message).not.toContain('{"error"');
+
+    const calls: string[] = [];
+    const fakeAi = {
+      models: {
+        generateContent: async (params: { model: string }) => {
+          calls.push(params.model);
+          if (params.model === 'gemini-4-hydrogen') {
+            throw err503;
+          }
+          return { text: '{"ok":true}' };
+        },
+      },
+    } as unknown as Parameters<typeof generateContentWithResilience>[0];
+
+    const res = await generateContentWithResilience(fakeAi, {
+      model: 'gemini-4-hydrogen',
+      contents: 'test',
+      config: { thinkingConfig: { thinkingLevel: 'LOW' } } as never,
+    });
+    expect(res.text).toBe('{"ok":true}');
+    expect(calls).toEqual(['gemini-4-hydrogen', 'gemini-4-hydrogen', 'gemini-3.1-flash-lite']);
+  });
+
+  it('wires toggleable live video tactical vision (passing lines, attacks, possession & player names)', () => {
+    expect(deriveTeamsFromTitle('FC Barcelona vs Real Madrid · LaLiga')).toEqual({
+      homeTeam: 'FC Barcelona',
+      awayTeam: 'Real Madrid',
+      competition: undefined,
+    });
+
+    expect(useAppStore.getState().tacticalVisionEnabled).toBe(false);
+    useAppStore.getState().toggleTacticalVision();
+    expect(useAppStore.getState().tacticalVisionEnabled).toBe(true);
+    useAppStore.getState().setTacticalVisionEnabled(false);
+    expect(useAppStore.getState().tacticalVisionEnabled).toBe(false);
+
+    const aiRouteSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'server/routes/aiStudio/aiMediaRoutes.ts'),
+      'utf8'
+    );
+    expect(aiRouteSrc).toContain("app.post('/api/ai/tactical-vision'");
+    expect(aiRouteSrc).toContain('passingLines');
+    expect(aiRouteSrc).toContain('attacksSummary');
+
+    const overlaySrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/player/TacticalVideoOverlay.tsx'),
+      'utf8'
+    );
+    expect(overlaySrc).toContain('passingLines');
+    expect(overlaySrc).toContain('attacks');
+    expect(overlaySrc).toContain('possession');
+
+    const transportSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/player/PlayerTransportBar.tsx'),
+      'utf8'
+    );
+    expect(transportSrc).toContain('onToggleTacticalVision');
+  });
+});
+

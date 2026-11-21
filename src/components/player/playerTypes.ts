@@ -13,6 +13,7 @@ import type {
   VideoState,
 } from '../../types';
 import type { GameVoiceChatState } from '../../hooks/useGameVoiceChat';
+import type { PlayerMatchContext } from './tacticalVisionTypes';
 
 export interface YouTubePlayerInstance {
   unMute?: () => void;
@@ -145,6 +146,8 @@ export function formatTimecode(sec: number): string {
   return hrs > 0 ? `${pad(hrs)}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
 }
 
+export type StreamRefreshPhase = 'idle' | 'recovering' | 'reconnecting' | 'switching';
+
 export interface NativeCinemaPlayerProps {
   videoState: VideoState;
   lang: AppLanguage;
@@ -224,4 +227,5 @@ export interface NativeCinemaPlayerProps {
   sessionMode?: 'solo' | 'party';
   onUpgradeSoloToParty?: () => void;
   onShareCurrentMedia?: () => void;
+  matchContext?: PlayerMatchContext | null;
 }
