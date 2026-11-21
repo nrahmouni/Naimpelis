@@ -312,7 +312,7 @@ export function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
       name: 'banner',
       resourceId: 0x010103f2,
       type: 'ref',
-      value: 0x7f020000,
+      value: 0x7f030000,
     });
   }
 
@@ -508,11 +508,19 @@ export function buildResourcesArsc(flavor: ApkFlavor): Buffer {
         : ENV.androidMobilePkg;
   const appLabel =
     flavor === 'tv' ? 'RiffanTV TV' : flavor === 'music' ? 'Riffan Music' : 'RiffanTV';
+  const isTv = flavor === 'tv';
   const iconResPath = 'res/mipmap-xxxhdpi-v4/ic_launcher.png';
+  const bannerResPath = 'res/drawable-xhdpi-v4/tv_banner.png';
 
-  const globalPool = buildResStringPoolUtf16([iconResPath, appLabel]);
-  const typeStrings = buildResStringPoolUtf16(['string', 'mipmap']);
-  const keyStrings = buildResStringPoolUtf16(['app_name', 'ic_launcher']);
+  const globalPool = buildResStringPoolUtf16(
+    isTv ? [iconResPath, appLabel, bannerResPath] : [iconResPath, appLabel]
+  );
+  const typeStrings = buildResStringPoolUtf16(
+    isTv ? ['string', 'mipmap', 'drawable'] : ['string', 'mipmap']
+  );
+  const keyStrings = buildResStringPoolUtf16(
+    isTv ? ['app_name', 'ic_launcher', 'tv_banner'] : ['app_name', 'ic_launcher']
+  );
 
   const buildSingleEntryTypePair = (typeId: number, keyIdx: number, globalStrIdx: number) => {
     const spec = Buffer.alloc(20);
@@ -555,11 +563,14 @@ export function buildResourcesArsc(flavor: ApkFlavor): Buffer {
 
   const stringTypeBlock = buildSingleEntryTypePair(1, 0, 1);
   const mipmapTypeBlock = buildSingleEntryTypePair(2, 1, 0);
+  const typeBlocks = isTv
+    ? [stringTypeBlock, mipmapTypeBlock, buildSingleEntryTypePair(3, 2, 2)]
+    : [stringTypeBlock, mipmapTypeBlock];
 
   const pkgHeaderSize = 288;
   const typeStringsOff = pkgHeaderSize;
   const keyStringsOff = typeStringsOff + typeStrings.length;
-  const pkgBody = Buffer.concat([typeStrings, keyStrings, stringTypeBlock, mipmapTypeBlock]);
+  const pkgBody = Buffer.concat([typeStrings, keyStrings, ...typeBlocks]);
   const pkgTotalSize = pkgHeaderSize + pkgBody.length;
 
   const pkgHeader = Buffer.alloc(pkgHeaderSize);
@@ -569,9 +580,9 @@ export function buildResourcesArsc(flavor: ApkFlavor): Buffer {
   pkgHeader.writeUInt32LE(0x7f, 8);
   Buffer.from(pkgName.slice(0, 127), 'utf16le').copy(pkgHeader, 12);
   pkgHeader.writeUInt32LE(typeStringsOff, 268);
-  pkgHeader.writeUInt32LE(2, 272);
+  pkgHeader.writeUInt32LE(isTv ? 3 : 2, 272);
   pkgHeader.writeUInt32LE(keyStringsOff, 276);
-  pkgHeader.writeUInt32LE(2, 280);
+  pkgHeader.writeUInt32LE(isTv ? 3 : 2, 280);
   pkgHeader.writeUInt32LE(0, 284);
 
   const pkgChunk = Buffer.concat([pkgHeader, pkgBody]);

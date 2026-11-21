@@ -245,11 +245,19 @@ export interface ListeningArtistStat {
   picture?: string;
 }
 
+export interface TrackSignalStat {
+  completions?: number;
+  skips?: number;
+  lastSignalAt?: number;
+  artist?: string;
+}
+
 export interface ListeningStats {
   totalPlays: number;
   totalListenSec: number;
   trackPlayCounts: Record<string, ListeningTrackStat>;
   artistPlayCounts: Record<string, ListeningArtistStat>;
+  trackSignals?: Record<string, TrackSignalStat>;
 }
 
 export interface ImportedTasteSource {

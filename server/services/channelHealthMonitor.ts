@@ -98,6 +98,10 @@ export async function probeChannelTrack(
   const now = Date.now();
   const prevFails = options?.previous?.failCount || 0;
 
+  if (cleanUrl.startsWith('/api/belix/stream/')) {
+    return { status: 'up', latencyMs: 1, checkedAt: now, failCount: 0 };
+  }
+
   if (!cleanUrl || !/^https?:\/\//i.test(cleanUrl)) {
     return { status: 'unknown', checkedAt: now, failCount: prevFails };
   }
@@ -119,6 +123,9 @@ export async function probeChannelTrack(
     /\.m3u8(\?|$)/i.test(cleanUrl);
 
   const isDvbHeadend = cleanUrl.includes('90.163.85.113:8093');
+  if (isDvbHeadend && process.env.ENABLE_LEGACY_DVB_PROBE !== '1') {
+    return { status: 'down', latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
+  }
   const timeoutMs = options?.timeoutMs ?? (isDvbHeadend ? 7500 : PROBE_TIMEOUT_MS);
   const fetchFn: FetchLike =
     options?.fetchImpl ?? ((input, init) => streamingFetch(String(input), { ...init, timeoutMs }));
@@ -472,7 +479,9 @@ export class ChannelHealthMonitor {
       const dvbQueue: Array<[string, HealthProbeTrack]> = [];
       for (const entry of uniqueTracks.entries()) {
         if (entry[0].includes('90.163.85.113:8093')) {
-          dvbQueue.push(entry);
+          if (process.env.ENABLE_LEGACY_DVB_PROBE === '1') {
+            dvbQueue.push(entry);
+          }
         } else {
           normalQueue.push(entry);
         }

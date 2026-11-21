@@ -53,13 +53,14 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
   const [onlyVerified, setOnlyVerified] = useState(false);
   const [visibleLimit, setVisibleLimit] = useState(60);
 
-  // Default server host (non-secret); credentials are kept RAM-only or via BELIX_XTREAM_* env
+  // Default Shark Pro host & suggested credentials for quick 1-click / automatic Belix TV sync (RAM-only)
   const [serverUrl, setServerUrl] = useState('http://1.sharkpro.ink:80');
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
+  const [username, setUsername] = useState('8996754342');
+  const [password, setPassword] = useState('4228202130');
   const [connecting, setConnecting] = useState(false);
   const [refreshingBelix, setRefreshingBelix] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+  const [autoConnectTried, setAutoConnectTried] = useState(false);
 
   useEffect(() => {
     setFilterText(externalQuery);
@@ -88,6 +89,68 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
     void fetchOverview();
   }, [fetchOverview]);
 
+  const connectWithCredentials = useCallback(
+    async (srv: string, usr: string, pwd: string) => {
+      if (!srv.trim() || !usr.trim() || !pwd.trim()) {
+        setConnectError(
+          pickLang(lang, {
+            es: 'Introduce la URL del portal Belix, tu usuario y tu contraseña.',
+            ca: 'Introdueix l’URL del portal Belix, el teu usuari i la teva contrasenya.',
+            en: 'Enter the Belix portal URL, your username, and your password.',
+          })
+        );
+        return;
+      }
+      setConnecting(true);
+      setConnectError(null);
+      try {
+        const res = await fetch('/api/belix/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            serverUrl: srv.trim(),
+            username: usr.trim(),
+            password: pwd.trim(),
+          }),
+        });
+        const json = (await res.json().catch(() => null)) as {
+          success?: boolean;
+          status?: BelixConnectionStatus;
+          channels?: SpanishTdtChannel[];
+        } | null;
+        if (json?.status) {
+          setBelixStatus(json.status);
+          if (Array.isArray(json.channels)) setBelixChannels(json.channels);
+          if (!json.status.connected) {
+            setConnectError(json.status.error || 'No se pudo conectar al portal Xtream.');
+          } else {
+            setSelectedCategoryId('all');
+            window.dispatchEvent(new CustomEvent('belix-channels-synced'));
+          }
+        } else {
+          setConnectError('No se pudo conectar con el servidor Belix TV.');
+        }
+      } catch {
+        setConnectError('Error de red conectando con Belix TV.');
+      } finally {
+        setConnecting(false);
+      }
+    },
+    [lang]
+  );
+
+  useEffect(() => {
+    if (loading || autoConnectTried) return;
+    if (belixStatus?.connected) {
+      setAutoConnectTried(true);
+      return;
+    }
+    setAutoConnectTried(true);
+    if (serverUrl.trim() && username.trim() && password.trim()) {
+      void connectWithCredentials(serverUrl, username, password);
+    }
+  }, [loading, autoConnectTried, belixStatus?.connected, serverUrl, username, password, connectWithCredentials]);
+
   // While background stability probing is active, poll stable verified channels cleanly
   useEffect(() => {
     if (!belixStatus?.connected || !belixStatus?.probing) return;
@@ -112,52 +175,8 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
 
   const handleConnect = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!serverUrl.trim() || !username.trim() || !password.trim()) {
-      setConnectError(
-        pickLang(lang, {
-          es: 'Introduce la URL del portal Belix, tu usuario y tu contraseña.',
-          ca: 'Introdueix l’URL del portal Belix, el teu usuari i la teva contrasenya.',
-          en: 'Enter the Belix portal URL, your username, and your password.',
-        })
-      );
-      return;
-    }
-    setConnecting(true);
-    setConnectError(null);
     triggerHaptic('medium');
-    try {
-      const res = await fetch('/api/belix/connect', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          serverUrl: serverUrl.trim(),
-          username: username.trim(),
-          password: password.trim(),
-        }),
-      });
-      const json = (await res.json().catch(() => null)) as {
-        success?: boolean;
-        status?: BelixConnectionStatus;
-        channels?: SpanishTdtChannel[];
-      } | null;
-      if (json?.status) {
-        setBelixStatus(json.status);
-        if (Array.isArray(json.channels)) setBelixChannels(json.channels);
-        if (!json.status.connected) {
-          setConnectError(json.status.error || 'No se pudo conectar al portal Xtream.');
-        } else {
-          setPassword('');
-          setSelectedCategoryId('all');
-          window.dispatchEvent(new CustomEvent('belix-channels-synced'));
-        }
-      } else {
-        setConnectError('No se pudo conectar con el servidor Belix TV.');
-      }
-    } catch {
-      setConnectError('Error de red conectando con Belix TV.');
-    } finally {
-      setConnecting(false);
-    }
+    await connectWithCredentials(serverUrl, username, password);
   };
 
   const handleDisconnect = async () => {
@@ -324,28 +343,26 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    triggerHaptic('light');
-                    setServerUrl(reverseEngineeringUpdate?.injectedEndpoint || 'http://1.sharkpro.ink:80');
+                    triggerHaptic('medium');
+                    setServerUrl('http://1.sharkpro.ink:80');
+                    setUsername('8996754342');
+                    setPassword('4228202130');
+                    void connectWithCredentials('http://1.sharkpro.ink:80', '8996754342', '4228202130');
                   }}
-                  className={`min-h-9 px-3 rounded-xl border text-[11px] font-mono cursor-pointer whitespace-nowrap transition-colors ${
-                    serverUrl.trim() === (reverseEngineeringUpdate?.injectedEndpoint || 'http://1.sharkpro.ink:80')
-                      ? 'bg-[#F43F5E]/20 border-[#F43F5E]/50 text-white'
-                      : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.08] text-zinc-200'
-                  }`}
+                  disabled={connecting}
+                  className="min-h-10 px-3 rounded-xl border bg-[#F43F5E]/20 border-[#F43F5E]/50 hover:bg-[#F43F5E]/30 text-white text-xs font-semibold cursor-pointer whitespace-nowrap transition-colors"
                 >
-                  Shark Pro (1.sharkpro.ink:80)
+                  Sugerido: Conectar 8996754342
                 </button>
                 <button
                   type="button"
                   onClick={() => {
                     triggerHaptic('light');
                     setServerUrl('');
+                    setUsername('');
+                    setPassword('');
                   }}
-                  className={`min-h-9 px-3 rounded-xl border text-[11px] font-semibold cursor-pointer whitespace-nowrap transition-colors ${
-                    serverUrl.trim() !== (reverseEngineeringUpdate?.injectedEndpoint || 'http://1.sharkpro.ink:80')
-                      ? 'bg-white text-black border-white'
-                      : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.08] text-zinc-300'
-                  }`}
+                  className="min-h-10 px-3 rounded-xl border bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.08] text-zinc-300 text-xs font-semibold cursor-pointer whitespace-nowrap transition-colors"
                 >
                   {pickLang(lang, { es: 'Otro servidor', ca: 'Altre servidor', en: 'Other server' })}
                 </button>
@@ -591,10 +608,17 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
                   <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
                     <button
                       type="button"
-                      onClick={() => setVisibleLimit((prev) => prev + 60)}
+                      onClick={() => setVisibleLimit((prev) => prev + 120)}
                       className="min-h-10 px-4 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs font-semibold text-white cursor-pointer"
                     >
-                      Mostrar 60 más ({filteredBelixChannels.length - visibleLimit} restantes)
+                      Mostrar 120 más ({filteredBelixChannels.length - visibleLimit} restantes)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setVisibleLimit(filteredBelixChannels.length)}
+                      className="min-h-10 px-4 rounded-xl bg-[#F43F5E]/15 hover:bg-[#F43F5E]/25 border border-[#F43F5E]/40 text-xs font-semibold text-rose-200 cursor-pointer"
+                    >
+                      Listar todos ({filteredBelixChannels.length})
                     </button>
                   </div>
                 )}

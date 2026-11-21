@@ -516,6 +516,20 @@ registerDetailsAndSubtitlesRoutes(app, {
 });
 
 // ============================================================================
+// DOWNLOADABLE 100-POINT AUDIT REPORT
+// ============================================================================
+app.get('/api/audit/100-points', (_req, res) => {
+  const auditPath = path.resolve(__dirname, 'auditoria-riffantv-100-puntos.md');
+  if (!fs.existsSync(auditPath)) {
+    return res.status(404).json({ error: 'Audit report not found' });
+  }
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="auditoria-riffantv-100-puntos.md"');
+  res.setHeader('Cache-Control', 'no-cache');
+  return res.sendFile(auditPath);
+});
+
+// ============================================================================
 // PWA SERVICE WORKER: SERVE PRODUCTION DIST SW.JS OR CLEAN NOOP IN DEV
 // ============================================================================
 app.get(['/sw.js', '/service-worker.js'], (_req, res) => {

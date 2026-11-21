@@ -177,7 +177,8 @@ export async function startDownloadMp3Job(
 
   try {
     const res = await fetch(url, { signal: ctrl.signal });
-    if (!res.ok) {
+    const ct = (res.headers.get('content-type') || '').toLowerCase();
+    if (!res.ok || ct.includes('text/html') || ct.includes('application/json')) {
       let errMsg = `HTTP ${res.status}`;
       try {
         const j = await res.json();
@@ -185,6 +186,7 @@ export async function startDownloadMp3Job(
       } catch {
         // keep HTTP error
       }
+      if (ct.includes('text/html')) errMsg = 'Archivo de audio inválido (HTML recibido)';
       st.updateDownloadJob(jobId, { status: 'error', error: errMsg });
       activeDownloadAborts.delete(jobId);
       return { ok: false, error: errMsg };
@@ -223,6 +225,12 @@ export async function startDownloadMp3Job(
       (c) => c.buffer.slice(c.byteOffset, c.byteOffset + c.byteLength) as ArrayBuffer
     );
     const blob = new Blob(blobParts, { type: 'audio/mpeg' });
+    if (blob.size < 32_768) {
+      const errMsg = 'Pista incompleta o dañada (<32 KB)';
+      st.updateDownloadJob(jobId, { status: 'error', error: errMsg });
+      activeDownloadAborts.delete(jobId);
+      return { ok: false, error: errMsg };
+    }
     await saveOfflineTrackAudio(track.id, blob);
     st.markOfflineTrackSaved(track.id);
     st.updateDownloadJob(jobId, {
@@ -275,9 +283,10 @@ export async function exportTracksAsMp3Zip(
     try {
       const { url, fileName } = buildMp3DownloadUrl(tr);
       const res = await fetch(url);
-      if (!res.ok) continue;
+      const ctZip = (res.headers.get('content-type') || '').toLowerCase();
+      if (!res.ok || ctZip.includes('text/html') || ctZip.includes('application/json')) continue;
       const ab = await res.arrayBuffer();
-      if (ab.byteLength > 1000) {
+      if (ab.byteLength > 32_768) {
         entries.push({
           name: `${String(i + 1).padStart(2, '0')} - ${fileName}`,
           data: new Uint8Array(ab),
@@ -1459,7 +1468,7 @@ export const MusicAudioEngine: React.FC = () => {
             onStateChange: ({ data, target }) => {
               if (activeBackendRef.current !== 'youtube') return;
               if (data === 0) {
-                playNextRef.current();
+                useMusicStore.getState().advanceAfterTrackEnd();
               } else if (data === 1) {
                 applyYtParams(target);
                 startProgressLoop();
@@ -1862,7 +1871,7 @@ export const MusicAudioEngine: React.FC = () => {
   const handleEnded = (slot: 'A' | 'B') => {
     if (slot !== activeDeckSlotRef.current) return;
     if (activeBackendRef.current === 'html-audio' && !activeRadio) {
-      playNextRef.current();
+      useMusicStore.getState().advanceAfterTrackEnd();
     }
   };
 
@@ -1995,7 +2004,7 @@ export const MusicAudioEngine: React.FC = () => {
       <div
         ref={ytContainerRef}
         aria-hidden="true"
-        className="fixed -bottom-24 -left-24 w-4 h-4 opacity-0 pointer-events-none overflow-hidden"
+        className="fixed bottom-0 right-0 w-48 h-28 opacity-[0.001] pointer-events-none overflow-hidden"
       />
     </>
   );

@@ -48,6 +48,11 @@ import { useBackInterceptor } from '../../lib/backInterceptor';
 import { getStoredProfile } from '../../utils/storage';
 import { buildExportifyCsvFromTracks } from '../../services/musicImporter';
 import {
+  fetchTasteRecommendationsFromServer,
+  rankTracksByTaste,
+  type TasteScoreInput,
+} from '../../services/musicTasteEngine';
+import {
   removeTrackFromOfflineLibrary,
   saveTrackToOfflineLibrary,
   startDownloadMp3Job,
@@ -71,6 +76,39 @@ interface RiffanMusicWorldViewProps {
   lang: AppLanguage;
   externalSearchQuery?: string;
 }
+
+const TRACK_LIST_PAGE_SIZE = 120;
+
+const PaginatedTrackList: React.FC<{
+  tracks: MusicTrack[];
+  renderRow: (track: MusicTrack, idx: number) => React.ReactNode;
+}> = ({ tracks, renderRow }) => {
+  const [visibleCount, setVisibleCount] = useState(TRACK_LIST_PAGE_SIZE);
+
+  useEffect(() => {
+    setVisibleCount(TRACK_LIST_PAGE_SIZE);
+  }, [tracks.length]);
+
+  const slice = tracks.length > visibleCount ? tracks.slice(0, visibleCount) : tracks;
+  const remaining = Math.max(0, tracks.length - slice.length);
+
+  return (
+    <div className="space-y-1">
+      {slice.map((track, idx) => renderRow(track, idx))}
+      {remaining > 0 && (
+        <div className="pt-3 flex justify-center">
+          <button
+            type="button"
+            onClick={() => setVisibleCount((prev) => prev + TRACK_LIST_PAGE_SIZE)}
+            className="h-10 px-5 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-xs font-bold text-white cursor-pointer transition-colors"
+          >
+            Mostrar {Math.min(TRACK_LIST_PAGE_SIZE, remaining)} canciones más ({remaining} restantes)
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface RadioFilterSpec {
   id: string;
@@ -432,6 +470,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   const [radiosLoading, setRadiosLoading] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [forYouTracks, setForYouTracks] = useState<MusicTrack[]>([]);
+  const [forYouTitle, setForYouTitle] = useState<string>('');
+  const [forYouSubTitle, setForYouSubTitle] = useState<string>('');
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
   const [libraryFilter, setLibraryFilter] = useState<'all' | 'playlists' | 'albums' | 'artists' | 'offline'>('all');
   const [librarySort, setLibrarySort] = useState<'recent' | 'alpha'>('recent');
@@ -500,43 +540,71 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
     return () => window.clearTimeout(timer);
   }, [tasteProfile.importedSources.length]);
 
-  // Personalized "Para Ti · Según tus gustos" shelf
-  const tasteKey = `${tasteProfile.favoriteArtists.slice(0, 4).join('|')}::${tasteProfile.favoriteGenres.slice(0, 3).join('|')}`;
+  // Multi-signal Taste Recommendation Engine ("Para Ti" + completions/likes/playlists/skips)
+  const tasteInput: TasteScoreInput = useMemo(
+    () => ({
+      likedTracks,
+      recentTracks,
+      userPlaylists,
+      tasteProfile,
+      listeningStats,
+    }),
+    [likedTracks, recentTracks, userPlaylists, tasteProfile, listeningStats]
+  );
+
+  const trackSignalsCount = Object.keys(listeningStats.trackSignals || {}).length;
+  const tasteKey = `${tasteProfile.favoriteArtists.slice(0, 4).join('|')}::${tasteProfile.favoriteGenres.slice(0, 3).join('|')}::${likedTracks
+    .slice(0, 3)
+    .map((t) => t.id)
+    .join('|')}::${recentTracks
+    .slice(0, 3)
+    .map((t) => t.id)
+    .join('|')}::${userPlaylists.length}::${trackSignalsCount}`;
+
   useEffect(() => {
-    const queries = [
-      ...tasteProfile.favoriteArtists.slice(0, 3),
-      ...tasteProfile.favoriteGenres.slice(0, 2),
-    ].filter(Boolean);
-    if (queries.length === 0) {
-      setForYouTracks([]);
-      return;
-    }
     let cancelled = false;
-    Promise.all(
-      queries.map((q) =>
-        fetch(`/api/music/search?q=${encodeURIComponent(q)}`)
-          .then((r) => r.json())
-          .catch(() => null)
-      )
-    ).then((results) => {
-      if (cancelled) return;
-      const seen = new Set<string>();
-      const combined: MusicTrack[] = [];
-      for (const res of results) {
-        const list: MusicTrack[] = Array.isArray(res?.tracks) ? res.tracks : [];
-        for (const t of list.slice(0, 5)) {
-          if (!seen.has(t.id)) {
-            seen.add(t.id);
-            combined.push(t);
+    const timer = window.setTimeout(() => {
+      fetchTasteRecommendationsFromServer(tasteInput, [], 28)
+        .then((res) => {
+          if (cancelled) return;
+          if (!res.hasPersonalSignals || res.tracks.length === 0) {
+            setForYouTracks([]);
+            setForYouTitle('');
+            setForYouSubTitle('');
+            return;
           }
-        }
-      }
-      setForYouTracks(combined.slice(0, 18));
-    });
+          setForYouTracks(res.tracks);
+          setForYouTitle(res.reasonLabel || res.shelfHeadline);
+          setForYouSubTitle(res.secondaryHeadline);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setForYouTracks([]);
+          }
+        });
+    }, 180);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [tasteKey, tasteProfile.favoriteArtists, tasteProfile.favoriteGenres]);
+  }, [tasteKey, tasteInput]);
+
+  const rankedForYouDiscovery = useMemo(() => {
+    if (!homeData) return [];
+    const pool = [
+      ...(homeData.spainHits || []),
+      ...(homeData.urbanoMix || []),
+      ...(homeData.popMix || []),
+      ...(homeData.electronicMix || []),
+    ];
+    const seen = new Set<string>();
+    const unique = pool.filter((t) => {
+      if (seen.has(t.id)) return false;
+      seen.add(t.id);
+      return true;
+    });
+    return rankTracksByTaste(unique, tasteInput).slice(0, 18);
+  }, [homeData, tasteInput]);
 
   const loadHomeData = useCallback(() => {
     let cancelled = false;
@@ -1050,8 +1118,9 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   );
 
   const renderTrackList = (tracks: MusicTrack[], userPlId?: string) => (
-    <div className="space-y-1">
-      {tracks.map((track, idx) => (
+    <PaginatedTrackList
+      tracks={tracks}
+      renderRow={(track, idx) => (
         <TrackRow
           key={`${track.id}-${idx}`}
           track={track}
@@ -1100,8 +1169,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             ) : undefined
           }
         />
-      ))}
-    </div>
+      )}
+    />
   );
 
   // Clean Spotify-style square track shelf (unboxed cover + plain metadata below)
@@ -2219,8 +2288,22 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   {renderQuickMixes()}
                   {renderEmisorasPopulares(homeData.topArtists)}
                   {forYouTracks.length > 0 &&
-                    renderTrackCardsCarousel(m.forYouImportedTitle, forYouTracks, m.forYouImportedSub)}
-                  {renderTrackCardsCarousel('Novedades para ti', homeData.spainHits, m.secSpainHits)}
+                    renderTrackCardsCarousel(
+                      forYouTitle || m.forYouImportedTitle,
+                      forYouTracks.slice(0, 14),
+                      forYouSubTitle || m.forYouImportedSub
+                    )}
+                  {forYouTracks.length > 14 &&
+                    renderTrackCardsCarousel(
+                      forYouSubTitle || 'Porque te gusta este sonido',
+                      forYouTracks.slice(14),
+                      'Recomendaciones según tu historial, likes y reproducciones'
+                    )}
+                  {renderTrackCardsCarousel(
+                    'Novedades para ti',
+                    rankedForYouDiscovery.length > 0 ? rankedForYouDiscovery : homeData.spainHits,
+                    m.secSpainHits
+                  )}
                   {renderTrackCardsCarousel(
                     `Hecho para ${storedProfile.name || 'ti'}`,
                     homeData.spotifyHits,

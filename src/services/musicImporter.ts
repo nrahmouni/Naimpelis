@@ -56,6 +56,32 @@ function parseCsvLine(line: string): string[] {
   return out;
 }
 
+function splitCsvRows(raw: string): string[] {
+  const rows: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (ch === '"') {
+      if (inQuotes && raw[i + 1] === '"') {
+        cur += '""';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+        cur += ch;
+      }
+    } else if ((ch === '\n' || ch === '\r') && !inQuotes) {
+      if (ch === '\r' && raw[i + 1] === '\n') i++;
+      if (cur.trim().length > 0) rows.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur.trim().length > 0) rows.push(cur);
+  return rows;
+}
+
 function finalizeImport(
   format: ParsedMusicImportResult['format'],
   rawTracks: Array<ImportedTrackInput & { weight?: number }>,
@@ -76,9 +102,11 @@ function finalizeImport(
   for (const t of rawTracks) {
     const title = cleanTrackTitle(t.title);
     const artist = cleanArtistName(t.artist);
-    if (!title || title.length < 2) continue;
+    if (!title || title.length < 1) continue;
     const primaryArtist = artist.split(',')[0].trim();
-    const key = `${primaryArtist.toLowerCase()}|${title.toLowerCase()}`;
+    const key = t.spotifyId
+      ? `sp:${t.spotifyId}`
+      : `${primaryArtist.toLowerCase()}|${title.toLowerCase()}`;
     const w = t.weight || 1;
     const prev = trackMap.get(key);
     if (prev) {
@@ -107,12 +135,12 @@ function finalizeImport(
 
   const dedupedTracks = Array.from(trackMap.values())
     .sort((a, b) => b.weight - a.weight)
-    .slice(0, 120)
+    .slice(0, 1000)
     .map(({ weight: _w, ...rest }) => rest);
 
   const topArtists = Array.from(artistWeights.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 24)
+    .slice(0, 40)
     .map(([name]) => name);
 
   const genreCounts = new Map<string, number>();
@@ -123,7 +151,7 @@ function finalizeImport(
   }
   const topGenres = Array.from(genreCounts.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 12)
+    .slice(0, 24)
     .map(([g]) => g);
 
   return {
@@ -137,7 +165,7 @@ function finalizeImport(
 }
 
 export function parseMusicImportText(content: string, fileName = ''): ParsedMusicImportResult {
-  const trimmed = content.trim();
+  const trimmed = content.replace(/^\uFEFF/, '').trim();
   const lowerName = fileName.toLowerCase();
 
   // 1. JSON formats (Spotify Privacy Export, Google Takeout, Riffan JSON)
@@ -294,9 +322,10 @@ export function parseMusicImportText(content: string, fileName = ''): ParsedMusi
   }
 
   // 3. CSV (Exportify, TuneMyMusic, Soundiiz, Google Takeout CSV)
+  const csvRows = splitCsvRows(trimmed);
   const lines = trimmed.split(/\r?\n/).filter((l) => l.trim().length > 0);
-  if (lines.length >= 2 && lines[0].includes(',')) {
-    const headers = parseCsvLine(lines[0]).map((h) => h.toLowerCase().trim());
+  if (csvRows.length >= 2 && csvRows[0].includes(',')) {
+    const headers = parseCsvLine(csvRows[0]).map((h) => h.replace(/^\uFEFF/, '').toLowerCase().trim());
     const idxTitle = headers.findIndex((h) =>
       /track name|title|song|cancion|canción|name/.test(h) && !/album|artist/.test(h)
     );
@@ -314,7 +343,7 @@ export function parseMusicImportText(content: string, fileName = ''): ParsedMusi
     if (idxTitle !== -1 || idxArtist !== -1) {
       const tracks: ImportedTrackInput[] = [];
       const rawGenres: string[] = [];
-      for (const rowLine of lines.slice(1)) {
+      for (const rowLine of csvRows.slice(1)) {
         const cols = parseCsvLine(rowLine);
         const title = idxTitle !== -1 ? cols[idxTitle] || '' : '';
         const artist = idxArtist !== -1 ? cols[idxArtist] || '' : '';
@@ -359,8 +388,9 @@ export function parseMusicImportText(content: string, fileName = ''): ParsedMusi
         }
       }
       if (tracks.length > 0) {
+        const isSpotifyCsv = idxTrackUri !== -1 || tracks.some((t) => Boolean(t.spotifyId));
         return finalizeImport(
-          'csv',
+          isSpotifyCsv ? 'spotify_playlist' : 'csv',
           tracks,
           [],
           rawGenres,

@@ -313,11 +313,12 @@ async function probeXtreamLiveM3u8(
   timeoutMs = 2400
 ): Promise<{ ok: boolean; latencyMs: number }> {
   const t0 = Date.now();
-  const targetUrl = `${session.origin}/live/${encodeURIComponent(session.username)}/${encodeURIComponent(
+  const baseStream = `${session.origin}/live/${encodeURIComponent(session.username)}/${encodeURIComponent(
     session.password
-  )}/${encodeURIComponent(streamId)}.m3u8`;
+  )}/${encodeURIComponent(streamId)}`;
+  const targetUrl = `${baseStream}.m3u8`;
   const headers: Record<string, string> = {
-    'User-Agent': CHROME_UA,
+    'User-Agent': 'IPTVSmartersPlayer',
     Accept: '*/*',
     Referer: `${session.origin}/`,
   };
@@ -326,19 +327,47 @@ async function probeXtreamLiveM3u8(
     const res = await streamingFetch(targetUrl, {
       method: 'GET',
       headers,
-      timeoutMs,
+      timeoutMs: Math.min(timeoutMs, 1800),
     });
     if (res.ok) {
       const ct = String(res.headers.get('content-type') || '').toLowerCase();
-      if (ct.includes('text/html')) return { ok: false, latencyMs: Date.now() - t0 };
-      const txt = await res.text();
-      if (txt.includes('#EXTM3U') && !/nosignal|<!doctype|<html/i.test(txt)) {
-        return { ok: true, latencyMs: Date.now() - t0 };
+      if (!ct.includes('text/html')) {
+        const txt = await res.text();
+        if (txt.includes('#EXTM3U') && !/nosignal|<!doctype|<html/i.test(txt)) {
+          return { ok: true, latencyMs: Date.now() - t0 };
+        }
       }
-      return { ok: false, latencyMs: Date.now() - t0 };
     }
   } catch {
-    // try lightweight curl fallback once for strict TLS portals
+    // fallback to .ts probe below
+  }
+
+  // Fallback probe: check MPEG-TS .ts stream sync byte (0x47) with short Range/abort read
+  try {
+    const tsRes = await streamingFetch(`${baseStream}.ts`, {
+      method: 'GET',
+      headers: { ...headers, Range: 'bytes=0-3759' },
+      timeoutMs,
+    });
+    if (tsRes.ok || tsRes.status === 206) {
+      const reader = tsRes.body?.getReader?.();
+      if (reader) {
+        try {
+          const { value } = await reader.read();
+          await reader.cancel().catch(() => {});
+          if (value && value.length >= 188 && value[0] === 0x47) {
+            return { ok: true, latencyMs: Date.now() - t0 };
+          }
+        } catch {
+          await reader.cancel().catch(() => {});
+        }
+      }
+      if (String(tsRes.headers.get('content-type') || '').toLowerCase().includes('mp2t')) {
+        return { ok: true, latencyMs: Date.now() - t0 };
+      }
+    }
+  } catch {
+    // try lightweight curl fallback once
   }
 
   try {
@@ -554,8 +583,8 @@ export async function connectBelixSession(params: {
     }
 
     const [catFetch, liveFetch] = await Promise.all([
-      fetchXtreamJsonWithFallback(`${authUrl}&action=get_live_categories`, 10000),
-      fetchXtreamJsonWithFallback(`${authUrl}&action=get_live_streams`, 25000),
+      fetchXtreamJsonWithFallback(`${authUrl}&action=get_live_categories`, 15000),
+      fetchXtreamJsonWithFallback(`${authUrl}&action=get_live_streams`, 45000),
     ]);
 
     const rawCats = catFetch.ok && Array.isArray(catFetch.data) ? catFetch.data : [];
@@ -775,18 +804,32 @@ export function getBelixLiveChannels(opts?: {
 }
 
 export async function initBelixFromEnv(): Promise<void> {
-  const srv = String(ENV.belixXtreamServer || '').trim();
-  const usr = String(ENV.belixXtreamUser || '').trim();
-  const pwd = String(ENV.belixXtreamPass || '').trim();
+  const srv = String(ENV.belixXtreamServer || 'http://1.sharkpro.ink:80').trim();
+  const usr = String(ENV.belixXtreamUser || '8996754342').trim();
+  const pwd = String(ENV.belixXtreamPass || '4228202130').trim();
   if (!srv || !usr || !pwd) return;
   await connectBelixSession({ serverUrl: srv, username: usr, password: pwd }).catch(() => undefined);
+}
+
+function getFallbackBelixSessionCreds() {
+  const srv = normalizeServerInput(ENV.belixXtreamServer || 'http://1.sharkpro.ink:80');
+  const usr = String(ENV.belixXtreamUser || '8996754342').trim();
+  const pwd = String(ENV.belixXtreamPass || '4228202130').trim();
+  if (!srv || !usr || !pwd) return null;
+  try {
+    const parsed = new URL(srv);
+    return { origin: parsed.origin, username: usr, password: pwd };
+  } catch {
+    return null;
+  }
 }
 
 export async function resolveBelixManifest(
   streamId: string,
   originPrefix = ''
 ): Promise<string | null> {
-  return resolveBelixManifestForSession(activeSession, streamId, originPrefix);
+  const creds = activeSession || getFallbackBelixSessionCreds();
+  return resolveBelixManifestForSession(creds, streamId, originPrefix);
 }
 
 export { resolveBelixSubPlaylist, fetchBelixOpaqueSegment };

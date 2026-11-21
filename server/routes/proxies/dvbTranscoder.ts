@@ -112,7 +112,9 @@ export function remuxDvbTsToAac(
             '-loglevel',
             'error',
             '-fflags',
-            '+genpts',
+            '+genpts+discardcorrupt',
+            '-avoid_negative_ts',
+            'make_zero',
             '-f',
             'mpegts',
             '-i',
@@ -195,7 +197,15 @@ interface LiveDvbRelaySession {
 }
 
 const DVB_LIVE_ROOT = '/tmp/naim-dvb-live';
-const MAX_LIVE_DVB_SESSIONS = 3;
+try {
+  // #20: Purge stale /tmp/naim-dvb-live segments from prior restarts on startup
+  if (fs.existsSync(DVB_LIVE_ROOT)) {
+    fs.rmSync(DVB_LIVE_ROOT, { recursive: true, force: true });
+  }
+} catch {
+  // ignore cleanup permission errors
+}
+const MAX_LIVE_DVB_SESSIONS = 5;
 const DVB_SESSION_IDLE_MS = 45_000;
 const liveDvbSessions = new Map<string, LiveDvbRelaySession>();
 const dvbSessionUpstreamMeta = new LruTtlCache<
@@ -324,12 +334,13 @@ export async function ensureLiveDvbCleanHlsSession(
   const playlistPath = path.join(sessionDir, 'index.m3u8');
   const segmentPattern = path.join(sessionDir, 'seg_%05d.ts');
 
+  const isXtreamLive = /\/live\/[^/]+\/[^/]+\//i.test(cleanUpstream);
   const ffArgs = [
     '-hide_banner',
     '-loglevel',
     'error',
     '-user_agent',
-    TDT_DVB_UA,
+    isXtreamLive ? 'IPTVSmartersPlayer' : TDT_DVB_UA,
   ];
   if (referer && /^https?:\/\//i.test(referer)) {
     ffArgs.push('-headers', `Referer: ${referer}\r\n`);
@@ -362,6 +373,8 @@ export async function ensureLiveDvbCleanHlsSession(
     '-2',
     '-fflags',
     '+genpts+discardcorrupt',
+    '-avoid_negative_ts',
+    'make_zero',
     ...(isUhd4kStream
       ? []
       : ['-err_detect', '+crccheck+bitstream', '-ec', 'favor_inter+deblock']),
@@ -503,7 +516,7 @@ export async function ensureLiveDvbCleanHlsSession(
 
 export function readLiveDvbPlaylistForIptv(
   sessionPath: string,
-  publicOrigin: string
+  publicOrigin = ''
 ): string | null {
   const m = String(sessionPath || '').match(/\/api\/dvb-live\/([^/]+)\/index\.m3u8/i);
   if (!m) return null;
@@ -516,7 +529,7 @@ export function readLiveDvbPlaylistForIptv(
   try {
     const raw = fs.readFileSync(playlistPath, 'utf8');
     if (!raw.includes('#EXTM3U')) return null;
-    const prefix = publicOrigin.replace(/\/+$/, '');
+    const prefix = publicOrigin ? publicOrigin.replace(/\/+$/, '') : '';
     return (
       raw
         .split(/\r?\n/)

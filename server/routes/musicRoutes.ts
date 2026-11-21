@@ -13,6 +13,7 @@ import {
   getMusicRadios,
   getPlaylistDetails,
   getRelatedGenreTracks,
+  getTasteRecommendations,
   getTrackLyrics,
   resolveTrackPlayback,
   searchMusicCatalog,
@@ -194,6 +195,35 @@ export function registerMusicRoutes(app: express.Express): void {
       res.json({ success: true, ...data });
     } catch {
       res.status(500).json({ success: false, error: 'Failed to load related genre tracks', tracks: [] });
+    }
+  });
+
+  app.post('/api/music/recommendations', async (req, res) => {
+    try {
+      const body = (req.body || {}) as {
+        topArtists?: Array<{ name: string; weight?: number }>;
+        favoriteGenres?: string[];
+        likedSeeds?: Array<{ id?: string; title: string; artist: string }>;
+        recentSeeds?: Array<{ id?: string; title: string; artist: string }>;
+        skippedArtists?: string[];
+        excludeIds?: string[];
+        clientHour?: number;
+        limit?: number;
+      };
+      const data = await getTasteRecommendations({
+        topArtists: Array.isArray(body.topArtists) ? body.topArtists.slice(0, 8) : [],
+        favoriteGenres: Array.isArray(body.favoriteGenres) ? body.favoriteGenres.slice(0, 6) : [],
+        likedSeeds: Array.isArray(body.likedSeeds) ? body.likedSeeds.slice(0, 5) : [],
+        recentSeeds: Array.isArray(body.recentSeeds) ? body.recentSeeds.slice(0, 5) : [],
+        skippedArtists: Array.isArray(body.skippedArtists) ? body.skippedArtists.slice(0, 12) : [],
+        excludeIds: Array.isArray(body.excludeIds) ? body.excludeIds.slice(0, 80) : [],
+        clientHour: typeof body.clientHour === 'number' ? body.clientHour : undefined,
+        limit: Number(body.limit || 26),
+      });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ success: true, ...data });
+    } catch {
+      res.status(500).json({ success: false, error: 'Failed to compute taste recommendations', tracks: [] });
     }
   });
 

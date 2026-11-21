@@ -272,8 +272,8 @@ export function useHalftimeChiringuitoBreak(args: {
             label: 'MEGA TV · Señal 1080p HD',
             lang: 'ES',
             quality: '1080p',
-            sourceUrl: payload?.megaTdtUrl || 'http://90.163.85.113:8093/stream/11/index.m3u8',
-            resolverType: 'tdt_hls',
+            sourceUrl: payload?.megaTdtUrl || '/api/belix/stream/743032.m3u8',
+            resolverType: 'direct_hls',
           },
         ];
 
@@ -285,9 +285,9 @@ export function useHalftimeChiringuitoBreak(args: {
           : 'Chiringuito Inside · Descanso';
 
         if (prefer === 'mega' || !targetUrl) {
-          const megaSrc = payload?.megaTdtUrl || 'http://90.163.85.113:8093/stream/11/index.m3u8';
+          const megaSrc = payload?.megaTdtUrl || '/api/belix/stream/743032.m3u8';
           const extRes = await fetch(
-            `/api/extract/stream?url=${encodeURIComponent(megaSrc)}&resolverType=tdt_hls&title=${encodeURIComponent('El Chiringuito · MEGA HD')}`
+            `/api/extract/stream?url=${encodeURIComponent(megaSrc)}&resolverType=direct_hls&title=${encodeURIComponent('El Chiringuito · MEGA HD')}`
           );
           const extData = await extRes.json().catch(() => null);
           if (!extRes.ok || !extData?.success || !extData?.streamUrl) {

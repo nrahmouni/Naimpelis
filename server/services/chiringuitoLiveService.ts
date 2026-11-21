@@ -9,8 +9,8 @@ import { LruTtlCache } from '../utils/lruCache.ts';
 const CHROME_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 
-export const MEGA_CHIRINGUITO_TV_URL = 'http://90.163.85.113:8093/stream/11/index.m3u8';
-export const MEGA_CHIRINGUITO_FAST_URL = 'http://90.163.85.113:8093/stream/11/index.m3u8?profile=fast';
+export const MEGA_CHIRINGUITO_TV_URL = '/api/belix/stream/743032.m3u8';
+export const MEGA_CHIRINGUITO_FAST_URL = '/api/belix/stream/742987.m3u8';
 
 export interface ChiringuitoStreamCandidate {
   videoId: string;

@@ -26,6 +26,7 @@ import {
   SkipForward,
   Sliders,
   Sparkles,
+  ThumbsDown,
   Trash2,
 } from 'lucide-react';
 import { EQ_10_LABELS, useMusicStore } from '../../store/useMusicStore';
@@ -1110,6 +1111,8 @@ export const FullScreenNowPlayingModal: React.FC<{
   const toggleShuffle = useMusicStore((s) => s.toggleShuffle);
   const cycleRepeat = useMusicStore((s) => s.cycleRepeat);
   const toggleLikeTrack = useMusicStore((s) => s.toggleLikeTrack);
+  const dislikeTrack = useMusicStore((s) => s.dislikeTrack);
+  const showMusicToast = useMusicStore((s) => s.showMusicToast);
   const setShowQueueDrawer = useMusicStore((s) => s.setShowQueueDrawer);
   const setShowEqModal = useMusicStore((s) => s.setShowEqModal);
   const setDriveModeOpen = useMusicStore((s) => s.setDriveModeOpen);
@@ -1126,6 +1129,8 @@ export const FullScreenNowPlayingModal: React.FC<{
   const [orbitDeg, setOrbitDeg] = useState(0);
   const activeLineRef = useRef<HTMLButtonElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const artWrapperRef = useRef<HTMLDivElement | null>(null);
+  const artGlowRef = useRef<HTMLDivElement | null>(null);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   useBackInterceptor(
@@ -1168,24 +1173,54 @@ export const FullScreenNowPlayingModal: React.FC<{
     };
   }, [currentTrack?.id]);
 
-  // Smooth Canvas FFT Spectrum & 8D Spatial Radar Animator
+  // Smooth Canvas FFT Spectrum, 8D Spatial Radar & Song-Synced Cover Artwork Animator
   useEffect(() => {
-    if (!showNowPlayingModal || nowPlayingTab !== 'artwork') return;
+    if (!showNowPlayingModal) return;
     let raf = 0;
+    let smoothedBass = 0;
     const renderCanvas = (ts: number) => {
+      const barsCount = 32;
+      const sampled = isPlaying
+        ? sampleMusicSpectrum(barsCount)
+        : Array.from({ length: barsCount }, () => 0.14);
+      const allFlat = isPlaying && sampled.every((v) => v <= 0.15);
+      const values = allFlat
+        ? sampled.map((_, idx) => 0.2 + Math.abs(Math.sin(ts / 245 + idx * 0.52)) * 0.65)
+        : sampled;
+
+      // Drive synchronized cover artwork pulse & ambient glow directly via DOM refs at 60fps
+      if (artWrapperRef.current) {
+        if (isPlaying) {
+          const bassBins = values.slice(0, 6);
+          const bassAvg = bassBins.reduce((sum, v) => sum + v, 0) / bassBins.length;
+          const midBins = values.slice(6, 16);
+          const midAvg = midBins.reduce((sum, v) => sum + v, 0) / midBins.length;
+          const instantEnergy = bassAvg * 0.72 + midAvg * 0.28;
+          smoothedBass = smoothedBass * 0.72 + instantEnergy * 0.28;
+          const scale = 1 + Math.min(0.065, smoothedBass * 0.075);
+          const swayDeg = Math.sin(ts / 880) * Math.min(1.6, smoothedBass * 2.1);
+          const floatY = Math.cos(ts / 640) * Math.min(3, smoothedBass * 3.8);
+          artWrapperRef.current.style.transform = `translate3d(0, ${floatY.toFixed(2)}px, 0) scale(${scale.toFixed(4)}) rotate(${swayDeg.toFixed(2)}deg)`;
+          if (artGlowRef.current) {
+            const glowScale = 1 + Math.min(0.18, smoothedBass * 0.22);
+            const glowOpacity = Math.min(0.95, 0.42 + smoothedBass * 0.62);
+            artGlowRef.current.style.transform = `scale(${glowScale.toFixed(4)})`;
+            artGlowRef.current.style.opacity = glowOpacity.toFixed(3);
+          }
+        } else {
+          smoothedBass = smoothedBass * 0.85;
+          artWrapperRef.current.style.transform = 'translate3d(0, 0px, 0) scale(0.96) rotate(0deg)';
+          if (artGlowRef.current) {
+            artGlowRef.current.style.transform = 'scale(0.95)';
+            artGlowRef.current.style.opacity = '0.24';
+          }
+        }
+      }
+
       const canvas = canvasRef.current;
-      if (canvas) {
+      if (canvas && nowPlayingTab === 'artwork') {
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          const barsCount = 32;
-          const sampled = isPlaying
-            ? sampleMusicSpectrum(barsCount)
-            : Array.from({ length: barsCount }, () => 0.14);
-          const allFlat = isPlaying && sampled.every((v) => v <= 0.15);
-          const values = allFlat
-            ? sampled.map((_, idx) => 0.18 + Math.abs(Math.sin(ts / 260 + idx * 0.55)) * 0.65)
-            : sampled;
-
           const w = canvas.width;
           const h = canvas.height;
           ctx.clearRect(0, 0, w, h);
@@ -1209,7 +1244,7 @@ export const FullScreenNowPlayingModal: React.FC<{
           ctx.globalAlpha = 1;
         }
       }
-      if (isPlaying) {
+      if (isPlaying && nowPlayingTab === 'artwork') {
         const telemetry = getSpatial8dTelemetry();
         setOrbitDeg((telemetry.angleRad * 180) / Math.PI);
       }
@@ -1270,13 +1305,10 @@ export const FullScreenNowPlayingModal: React.FC<{
     if (!start || e.changedTouches.length !== 1) return;
     const dx = e.changedTouches[0].clientX - start.x;
     const dy = e.changedTouches[0].clientY - start.y;
+    // Vertical swipe-down dismisses Now Playing; horizontal swipe never skips tracks (buttons only)
     if (dy > 95 && Math.abs(dy) > Math.abs(dx) * 1.4) {
       triggerHaptic('light');
       setShowNowPlayingModal(false);
-    } else if (!activeRadio && Math.abs(dx) > 75 && Math.abs(dx) > Math.abs(dy) * 1.5) {
-      triggerHaptic('light');
-      if (dx < 0) playNext();
-      else playPrev();
     }
   };
 
@@ -1403,23 +1435,26 @@ export const FullScreenNowPlayingModal: React.FC<{
                 </div>
               )}
               <div
+                ref={artGlowRef}
                 aria-hidden="true"
-                className={`absolute -inset-4 rounded-[36px] blur-2xl transition-opacity duration-700 ${
-                  isPlaying ? 'opacity-70' : 'opacity-25'
-                }`}
+                className="absolute -inset-4 rounded-[36px] blur-2xl will-change-transform transition-[opacity] duration-300"
                 style={{
                   background:
-                    'radial-gradient(circle, rgba(59,130,246,0.36) 0%, rgba(96,165,250,0.18) 60%, transparent 100%)',
+                    'radial-gradient(circle, rgba(59,130,246,0.42) 0%, rgba(96,165,250,0.22) 60%, transparent 100%)',
+                  opacity: isPlaying ? 0.65 : 0.24,
                 }}
               />
-              <div className="relative w-56 h-56 sm:w-76 sm:h-76 rounded-3xl overflow-hidden bg-gradient-to-br from-[#0B1622] to-[#070D14] border border-white/20 shadow-[0_28px_72px_rgba(0,0,0,0.88)] flex items-center justify-center">
+              <div
+                ref={artWrapperRef}
+                className="relative w-56 h-56 sm:w-76 sm:h-76 rounded-3xl overflow-hidden bg-gradient-to-br from-[#0B1622] to-[#070D14] border border-white/20 shadow-[0_28px_72px_rgba(0,0,0,0.88)] flex items-center justify-center will-change-transform"
+              >
                 <CoverArt
                   src={coverSrc}
                   alt={currentTrack?.title || activeRadio?.name || ''}
                   fallbackLabel={currentTrack?.artist.name || activeRadio?.name}
                   priority
-                  className={`w-full h-full object-cover object-center transition-transform duration-700 ${
-                    isPlaying ? 'scale-100' : 'scale-95 opacity-80'
+                  className={`w-full h-full object-cover object-center transition-opacity duration-500 ${
+                    isPlaying ? 'opacity-100' : 'opacity-80'
                   }`}
                 />
                 {activeRadio && !coverSrc && (
@@ -1535,12 +1570,12 @@ export const FullScreenNowPlayingModal: React.FC<{
 
       {/* Bottom Controls */}
       <footer className="relative z-10 w-full max-w-2xl mx-auto px-4 sm:px-8 pb-[calc(env(safe-area-inset-bottom,0px)+18px)] pt-2 space-y-3.5">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-lg sm:text-2xl font-extrabold text-white truncate">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg sm:text-2xl font-extrabold text-white line-clamp-2 leading-tight">
               {activeRadio ? activeRadio.name : currentTrack?.title}
             </h2>
-            <p className="text-xs sm:text-sm text-zinc-300 truncate mt-0.5">
+            <p className="text-xs sm:text-sm text-zinc-300 truncate mt-1">
               {activeRadio
                 ? `${activeRadio.country} · ${activeRadio.tags.join(' · ')}`
                 : `${currentTrack?.artist.name}${currentTrack?.album.title ? ` · ${currentTrack.album.title}` : ''}`}
@@ -1548,19 +1583,34 @@ export const FullScreenNowPlayingModal: React.FC<{
           </div>
 
           {currentTrack && (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                toggleLikeTrack(currentTrack);
-              }}
-              aria-label={isLiked ? m.likeRemove : m.likeAdd}
-              className={`min-w-10 min-h-10 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-90 ${
-                isLiked ? 'text-[#FF2D55]' : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <Heart className={`w-6 h-6 ${isLiked ? 'fill-current' : ''}`} />
-            </button>
+            <div className="flex items-center gap-1 shrink-0 pt-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  dislikeTrack(currentTrack);
+                  showMusicToast('Menos recomendaciones de este tema');
+                }}
+                aria-label="No me interesa este tema"
+                title="No me interesa este tema"
+                className="min-w-10 min-h-10 rounded-full flex items-center justify-center text-zinc-400 hover:text-amber-300 hover:bg-white/[0.06] cursor-pointer transition-colors"
+              >
+                <ThumbsDown className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  toggleLikeTrack(currentTrack);
+                }}
+                aria-label={isLiked ? m.likeRemove : m.likeAdd}
+                className={`min-w-10 min-h-10 rounded-full flex items-center justify-center cursor-pointer transition-transform active:scale-90 ${
+                  isLiked ? 'text-[#FF2D55]' : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <Heart className={`w-6 h-6 ${isLiked ? 'fill-current' : ''}`} />
+              </button>
+            </div>
           )}
         </div>
 
@@ -1669,6 +1719,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             type="button"
             onClick={toggleShuffle}
             disabled={Boolean(activeRadio)}
+            aria-label={m.shuffle || 'Aleatorio'}
             className={`min-w-10 min-h-10 rounded-full flex items-center justify-center cursor-pointer disabled:opacity-30 ${
               shuffle ? 'text-[#60A5FA]' : 'text-zinc-400 hover:text-white'
             }`}
@@ -1680,6 +1731,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             type="button"
             onClick={playPrev}
             disabled={Boolean(activeRadio)}
+            aria-label="Canción anterior"
             className="min-w-11 min-h-11 rounded-full flex items-center justify-center text-white hover:scale-105 cursor-pointer disabled:opacity-30"
           >
             <SkipBack className="w-7 h-7 fill-current" />
@@ -1705,6 +1757,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             type="button"
             onClick={playNext}
             disabled={Boolean(activeRadio)}
+            aria-label="Siguiente canción"
             className="min-w-11 min-h-11 rounded-full flex items-center justify-center text-white hover:scale-105 cursor-pointer disabled:opacity-30"
           >
             <SkipForward className="w-7 h-7 fill-current" />
@@ -1717,6 +1770,7 @@ export const FullScreenNowPlayingModal: React.FC<{
               setShowNowPlayingModal(false);
               setShowQueueDrawer(true);
             }}
+            aria-label={m.queueTitle}
             className="min-w-10 min-h-10 rounded-full flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
             title={m.queueTitle}
           >
@@ -1727,6 +1781,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             type="button"
             onClick={cycleRepeat}
             disabled={Boolean(activeRadio)}
+            aria-label="Repetir"
             className={`min-w-10 min-h-10 rounded-full flex items-center justify-center cursor-pointer disabled:opacity-30 ${
               repeatMode !== 'off' ? 'text-[#60A5FA]' : 'text-zinc-400 hover:text-white'
             }`}

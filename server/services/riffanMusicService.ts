@@ -344,6 +344,11 @@ export async function warmMusicPlaybackEngine(): Promise<void> {
   ]);
 }
 
+const SC_BACKUP_CLIENT_IDS = [
+  'iZIs9mchVcX5lhVRyQGGAYlNPVldzAoX',
+  'a3e059563d7fd3372b49b37f00a00bcf',
+];
+
 async function getSoundCloudClientId(allowScrape = true): Promise<string> {
   if (scClientIdCache && scClientIdCache.expiresAt > Date.now()) {
     return scClientIdCache.id;
@@ -363,29 +368,40 @@ async function getSoundCloudClientId(allowScrape = true): Promise<string> {
       },
       signal: AbortSignal.timeout(4000),
     });
-    if (!res.ok) return '';
-    const html = await res.text();
-    const scripts = [...html.matchAll(/https:\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js/g)].map((m) => m[0]);
-    const recentScripts = scripts.slice(-4).reverse();
-    const jsTexts = await Promise.all(
-      recentScripts.map((sUrl) =>
-        fetch(sUrl, { signal: AbortSignal.timeout(3500) })
-          .then((r) => (r.ok ? r.text() : ''))
-          .catch(() => '')
-      )
-    );
-    for (const js of jsTexts) {
-      const match = js.match(/client_id\s*:\s*"([a-zA-Z0-9]{20,42})"/);
-      if (match?.[1]) {
-        scClientIdCache = {
-          id: match[1],
-          expiresAt: Date.now() + 3 * 60 * 60 * 1000,
-        };
-        return match[1];
+    if (res.ok) {
+      const html = await res.text();
+      const scripts = [...html.matchAll(/https:\/\/a-v2\.sndcdn\.com\/assets\/[^"]+\.js/g)].map((m) => m[0]);
+      const recentScripts = scripts.slice(-5).reverse();
+      const jsTexts = await Promise.all(
+        recentScripts.map((sUrl) =>
+          fetch(sUrl, { signal: AbortSignal.timeout(3500) })
+            .then((r) => (r.ok ? r.text() : ''))
+            .catch(() => '')
+        )
+      );
+      for (const js of jsTexts) {
+        const match = js.match(/client_id\s*[:=]\s*"([a-zA-Z0-9]{20,42})"/);
+        if (match?.[1]) {
+          scClientIdCache = {
+            id: match[1],
+            expiresAt: Date.now() + 3 * 60 * 60 * 1000,
+          };
+          return match[1];
+        }
       }
     }
   } catch {
     // ignore transient SC scrape issues
+  }
+  for (const cand of SC_BACKUP_CLIENT_IDS) {
+    const check = await fetchJsonSafe<any>(
+      `https://api-v2.soundcloud.com/search/tracks?q=music&client_id=${cand}&limit=1`,
+      2200
+    );
+    if (Array.isArray(check?.collection)) {
+      scClientIdCache = { id: cand, expiresAt: Date.now() + 60 * 60 * 1000 };
+      return cand;
+    }
   }
   return '';
 }
@@ -508,12 +524,22 @@ export function isStrictTrackMatch(params: {
   let candArtist = String(params.candidateArtist || '').trim();
   let candTitle = candTitleRaw.trim();
 
-  // Extract artist from "Artist - Title" if uploader/artist field is empty or generic
-  if (!candArtist || GENERIC_ARTIST_NAMES.has(normalizeStr(candArtist)) || normalizeStr(candArtist) === 'youtube music') {
-    const dashSplit = candTitleRaw.match(/^(.{2,45}?)\s+[-–—]\s+(.{2,})$/);
-    if (dashSplit) {
-      candArtist = dashSplit[1].trim();
-      candTitle = dashSplit[2].trim();
+  // Extract artist from "Artist - Title" if uploader/artist is generic OR splitting improves title/artist accuracy
+  const dashSplit = candTitleRaw.match(/^(.{2,60}?)\s+[-–—|]\s+(.{2,})$/);
+  if (dashSplit) {
+    const leftPart = dashSplit[1].trim();
+    const rightPart = dashSplit[2].trim();
+    const isGenericUploader =
+      !candArtist ||
+      GENERIC_ARTIST_NAMES.has(normalizeStr(candArtist)) ||
+      normalizeStr(candArtist) === 'youtube music';
+    const splitBetter =
+      tokenMatchMetrics(cleanExpTitle, rightPart).f1 >
+        tokenMatchMetrics(cleanExpTitle, candTitleRaw).f1 ||
+      (primaryExpArtist.length >= 2 && tokenOverlapScore(primaryExpArtist, leftPart) >= 0.5);
+    if (isGenericUploader || splitBetter) {
+      candArtist = candArtist ? `${candArtist} ${leftPart}` : leftPart;
+      candTitle = rightPart;
     }
   }
 
@@ -929,27 +955,28 @@ async function resolveSoundCloudStream(
       .filter((x): x is { track: any; score: number } => Boolean(x))
       .sort((a, b) => b.score - a.score);
 
-    for (const { track: chosen } of valid.slice(0, 2)) {
+    for (const { track: chosen } of valid.slice(0, 3)) {
       const transcodings = (chosen.media.transcodings as any[]).filter(isUnencryptedPlayable);
-      const prog = transcodings.find((x) => String(x.format?.protocol || '').toLowerCase() === 'progressive');
-      const hls =
-        transcodings.find(
-          (x) => String(x.format?.protocol || '').toLowerCase() === 'hls' && String(x.preset || '').includes('aac')
-        ) || transcodings.find((x) => String(x.format?.protocol || '').toLowerCase() === 'hls');
+      const progs = transcodings.filter((x) => String(x.format?.protocol || '').toLowerCase() === 'progressive');
+      const aacHls = transcodings.filter(
+        (x) => String(x.format?.protocol || '').toLowerCase() === 'hls' && String(x.preset || '').includes('aac')
+      );
+      const otherHls = transcodings.filter(
+        (x) => String(x.format?.protocol || '').toLowerCase() === 'hls' && !String(x.preset || '').includes('aac')
+      );
 
-      const picked = prog || hls;
-      if (!picked?.url) continue;
-
-      const streamInfo = await fetchJsonSafe<{ url?: string }>(`${picked.url}?client_id=${cid}`, 2000);
-      if (!streamInfo?.url || !streamInfo.url.startsWith('http')) continue;
-
-      const isProg = String(picked.format?.protocol || '').toLowerCase() === 'progressive';
-      return {
-        sourceType: isProg ? 'audio-mp3' : 'audio-hls',
-        url: streamInfo.url,
-        label: isProg ? 'SoundCloud MP3 128k' : 'SoundCloud HLS AAC',
-        bitrateKbps: isProg ? 128 : 160,
-      };
+      for (const picked of [...progs, ...aacHls, ...otherHls]) {
+        if (!picked?.url) continue;
+        const streamInfo = await fetchJsonSafe<{ url?: string }>(`${picked.url}?client_id=${cid}`, 2200);
+        if (!streamInfo?.url || !streamInfo.url.startsWith('http')) continue;
+        const isProg = String(picked.format?.protocol || '').toLowerCase() === 'progressive';
+        return {
+          sourceType: isProg ? 'audio-mp3' : 'audio-hls',
+          url: streamInfo.url,
+          label: isProg ? 'SoundCloud MP3 128k' : 'SoundCloud HLS AAC',
+          bitrateKbps: isProg ? 128 : 160,
+        };
+      }
     }
   } catch {
     // ignore transient SC scrape issues
@@ -1512,12 +1539,25 @@ export async function searchMusicCatalog(query: string, type = 'all') {
     });
   }
 
-  const mergedTracks = interleaveUniqueTracks(
+  const rawMerged = interleaveUniqueTracks(
     hasCjk
       ? [ytmRes.tracks, itTracks, dzMappedTracks, ytFallbackTracks]
       : [dzMappedTracks, ytmRes.tracks, itTracks, audiusTracks, ytFallbackTracks],
-    42
+    48
   );
+
+  // #31: Demote unrequested slowed/reverb/nightcore/8d/karaoke/cover edits unless user searched for them
+  const alteredQueryRe = /\b(slowed|reverb|nightcore|8d|sped\s*up|karaoke|cover|remix|live|instrumental)\b/i;
+  const userWantedAltered = alteredQueryRe.test(clean);
+  const alteredTrackRe = /\b(slowed|reverb|nightcore|8d\s*audio|sped\s*up|chipmunk|karaoke|tribute\s*to)\b/i;
+  const mergedTracks = (userWantedAltered
+    ? rawMerged
+    : [...rawMerged].sort((a, b) => {
+        const aAlt = alteredTrackRe.test(`${a.title} ${a.album?.title || ''}`) ? 1 : 0;
+        const bAlt = alteredTrackRe.test(`${b.title} ${b.album?.title || ''}`) ? 1 : 0;
+        return aAlt - bAlt;
+      })
+  ).slice(0, 42);
 
   const dzMappedAlbums = Array.isArray(dzAlbums?.data) ? dzAlbums.data.map((a: any) => mapDeezerAlbum(a)) : [];
   const itMappedAlbums = Array.isArray(itAlbumsCjk) ? itAlbumsCjk.filter((a) => a?.collectionId).map((a) => mapItunesAlbumRef(a)) : [];
@@ -2272,4 +2312,156 @@ export async function getRelatedGenreTracks(params: {
     tracks: filterAndCap(combinedPool),
   };
 }
+
+export async function getTasteRecommendations(params: {
+  topArtists?: Array<{ name: string; weight?: number }>;
+  favoriteGenres?: string[];
+  likedSeeds?: Array<{ id?: string; title: string; artist: string }>;
+  recentSeeds?: Array<{ id?: string; title: string; artist: string }>;
+  skippedArtists?: string[];
+  excludeIds?: string[];
+  clientHour?: number;
+  limit?: number;
+}): Promise<{
+  tracks: MusicTrack[];
+  seedArtists: string[];
+  seedGenres: string[];
+  reasonLabel: string;
+}> {
+  const limit = Math.min(48, Math.max(8, Number(params.limit || 26)));
+  const excludeSet = new Set((params.excludeIds || []).filter(Boolean));
+  const skippedArtistSet = new Set(
+    (params.skippedArtists || []).map((a) => normalizeStr(a)).filter(Boolean)
+  );
+
+  // #51: Time-of-day mood context nudge when explicit genres are sparse
+  const hour = Number.isFinite(params.clientHour) ? Number(params.clientHour) : new Date().getHours();
+  const contextualGenre =
+    hour >= 22 || hour < 6 ? 'Chill Lo-Fi' : hour >= 6 && hour < 12 ? 'Pop Indie' : 'Urbano Latino';
+
+  const canonicalVariantTitle = (title: string): string =>
+    normalizeStr(
+      String(title || '')
+        .replace(/\((clean|explicit|radio edit|album version|remaster(?:ed)?(?:\s+\d{4})?|original mix|official(?:\s+(?:audio|video|lyric video))?|visualizer|feat\.?[^)]+)\)/gi, '')
+        .replace(/\[(clean|explicit|radio edit|remaster(?:ed)?(?:\s+\d{4})?|official(?:\s+audio)?)\]/gi, '')
+        .replace(/\s+-\s+(clean|explicit|radio edit|remastered.*)$/i, '')
+    );
+
+  const seedArtists = Array.from(
+    new Set(
+      (params.topArtists || [])
+        .map((a) => String(a?.name || '').trim())
+        .filter((name) => name && !skippedArtistSet.has(normalizeStr(name)))
+    )
+  ).slice(0, 5);
+
+  const rawGenres = (params.favoriteGenres || []).map((g) => String(g || '').trim()).filter(Boolean);
+  const seedGenres = Array.from(
+    new Set(rawGenres.length >= 2 ? rawGenres : [...rawGenres, contextualGenre])
+  ).slice(0, 3);
+
+  const primarySeed = params.likedSeeds?.[0] || params.recentSeeds?.[0];
+
+  const artistTasks = seedArtists.slice(0, 4).map(async (artName) => {
+    const artRes = await fetchJsonSafe<any>(
+      `https://api.deezer.com/search/artist?q=${encodeURIComponent(artName)}&limit=2`,
+      3200
+    );
+    const hit = Array.isArray(artRes?.data) ? artRes.data[0] : null;
+    if (!hit?.id) {
+      const ytm = await searchYouTubeMusic(`${artName} top songs`);
+      return ytm.tracks.slice(0, 6);
+    }
+    const [topRaw, relRaw] = await Promise.all([
+      fetchJsonSafe<any>(`https://api.deezer.com/artist/${hit.id}/top?limit=8`, 3200),
+      fetchJsonSafe<any>(`https://api.deezer.com/artist/${hit.id}/related?limit=5`, 3200),
+    ]);
+    const lists: MusicTrack[][] = [mapDeezerTracksSafe(topRaw?.data)];
+    const relIds: string[] = Array.isArray(relRaw?.data)
+      ? relRaw.data.slice(0, 3).map((x: any) => String(x?.id || '')).filter(Boolean)
+      : [];
+    if (relIds.length > 0) {
+      const relTops = await Promise.allSettled(
+        relIds.map((rid) => fetchJsonSafe<any>(`https://api.deezer.com/artist/${rid}/top?limit=4`, 2800))
+      );
+      for (const r of relTops) {
+        if (r.status === 'fulfilled' && r.value?.data) {
+          lists.push(mapDeezerTracksSafe(r.value.data));
+        }
+      }
+    }
+    return interleaveUniqueTracks(lists, 14);
+  });
+
+  const genreTasks = seedGenres.slice(0, 2).map(async (genre) => {
+    const [dz, it] = await Promise.all([
+      fetchJsonSafe<any>(`https://api.deezer.com/search/track?q=${encodeURIComponent(genre)}&limit=14`, 3200),
+      searchItunesMusic(genre, 'song', 10, 'ES'),
+    ]);
+    return interleaveUniqueTracks(
+      [mapDeezerTracksSafe(dz?.data), it.map((x) => mapItunesSongToTrack(x, 'spotify'))],
+      14
+    );
+  });
+
+  const relatedSeedTask = primarySeed
+    ? getRelatedGenreTracks({
+        trackId: primarySeed.id,
+        title: primarySeed.title,
+        artist: primarySeed.artist,
+        excludeIds: Array.from(excludeSet),
+        limit: 16,
+      })
+        .then((r) => r.tracks)
+        .catch(() => [] as MusicTrack[])
+    : Promise.resolve([] as MusicTrack[]);
+
+  const settled = await Promise.allSettled([...artistTasks, ...genreTasks, relatedSeedTask]);
+  const pools: MusicTrack[][] = [];
+  for (const s of settled) {
+    if (s.status === 'fulfilled' && Array.isArray(s.value) && s.value.length > 0) {
+      pools.push(s.value);
+    }
+  }
+
+  const merged = interleaveUniqueTracks(pools, limit * 2);
+  const out: MusicTrack[] = [];
+  const seenIds = new Set<string>(excludeSet);
+  const seenVariants = new Set<string>();
+  const perArtist = new Map<string, number>();
+
+  for (const t of merged) {
+    if (!t?.id || seenIds.has(t.id)) continue;
+    const primaryArt = extractPrimaryArtist(t.artist?.name || '');
+    const artNorm = normalizeStr(primaryArt);
+    if (skippedArtistSet.has(artNorm)) continue;
+    // #53: Deduplicate Clean / Explicit / Radio Edit / Remastered variants
+    const variantKey = `${canonicalVariantTitle(t.title)}|${artNorm}`;
+    if (seenVariants.has(variantKey)) continue;
+    const used = perArtist.get(artNorm) || 0;
+    if (used >= 2 && out.length < limit - 4) continue;
+    seenIds.add(t.id);
+    seenVariants.add(variantKey);
+    perArtist.set(artNorm, used + 1);
+    out.push(t);
+    if (out.length >= limit) break;
+  }
+
+  const reasonLabel =
+    seedArtists.length > 0
+      ? `Para ti según ${seedArtists.slice(0, 2).join(' & ')}`
+      : seedGenres.length > 0
+      ? `Mix ${seedGenres[0]} para ti`
+      : primarySeed
+      ? `Porque escuchaste ${primarySeed.artist}`
+      : 'Descubrimiento Riffan';
+
+  return {
+    tracks: out,
+    seedArtists,
+    seedGenres,
+    reasonLabel,
+  };
+}
+
 

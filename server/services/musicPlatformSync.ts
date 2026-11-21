@@ -1271,14 +1271,43 @@ export async function matchImportedTracksBatch(
       }
 
       try {
-        const [dzByIsrc, dzRes, itList] = await Promise.all([
-          item.isrc
-            ? fetch(`https://api.deezer.com/track/isrc:${encodeURIComponent(item.isrc)}`, {
-                signal: AbortSignal.timeout(3000),
-              })
-                .then((r) => (r.ok ? r.json() : null))
-                .catch(() => null)
-            : Promise.resolve(null),
+        const dzByIsrc = item.isrc
+          ? await fetch(`https://api.deezer.com/track/isrc:${encodeURIComponent(item.isrc)}`, {
+              signal: AbortSignal.timeout(3000),
+            })
+              .then((r) => (r.ok ? r.json() : null))
+              .catch(() => null)
+          : null;
+
+        if (dzByIsrc?.id) {
+          results[idx] = {
+            id: item.spotifyId ? `sp-${item.spotifyId}` : `dz-${dzByIsrc.id}`,
+            title: title || String(dzByIsrc.title_short || dzByIsrc.title),
+            artist: {
+              id: String(dzByIsrc.artist?.id || `imp-art-${idx}`),
+              name: artist || String(dzByIsrc.artist?.name || 'Artista'),
+              picture: String(
+                dzByIsrc.artist?.picture_medium || item.cover || dzByIsrc.album?.cover_medium || ''
+              ),
+            },
+            album: {
+              id: String(dzByIsrc.album?.id || `imp-alb-${idx}`),
+              title: item.album || String(dzByIsrc.album?.title || 'Importado'),
+              cover: item.cover || String(dzByIsrc.album?.cover_big || dzByIsrc.album?.cover_medium || ''),
+              coverXl:
+                item.cover || String(dzByIsrc.album?.cover_xl || dzByIsrc.album?.cover_big || ''),
+            },
+            durationSec: Number(dzByIsrc.duration || item.durationSec || 0),
+            explicit: item.explicit ?? Boolean(dzByIsrc.explicit_lyrics),
+            previewUrl: item.previewUrl || (dzByIsrc.preview ? String(dzByIsrc.preview) : undefined),
+            isrc: item.isrc || (dzByIsrc.isrc ? String(dzByIsrc.isrc) : undefined),
+            spotifyId: item.spotifyId,
+            source: item.spotifyId ? 'spotify' : 'deezer',
+          };
+          continue;
+        }
+
+        const [dzRes, itList] = await Promise.all([
           fetch(`https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&limit=5`, {
             signal: AbortSignal.timeout(3500),
           })
@@ -1288,18 +1317,16 @@ export async function matchImportedTracksBatch(
         ]);
 
         const dzHits = Array.isArray(dzRes?.data) ? dzRes.data : [];
-        const dzHit =
-          (dzByIsrc?.id ? dzByIsrc : null) ||
-          dzHits.find((d: any) =>
-            simpleMatchCheck(
-              title,
-              artist,
-              String(d?.title_short || d?.title || ''),
-              String(d?.artist?.name || ''),
-              item.durationSec,
-              Number(d?.duration || 0)
-            )
-          );
+        const dzHit = dzHits.find((d: any) =>
+          simpleMatchCheck(
+            title,
+            artist,
+            String(d?.title_short || d?.title || ''),
+            String(d?.artist?.name || ''),
+            item.durationSec,
+            Number(d?.duration || 0)
+          )
+        );
 
         if (dzHit?.id) {
           results[idx] = {

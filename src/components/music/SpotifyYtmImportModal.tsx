@@ -2,7 +2,10 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Check,
+  Download,
+  FileSpreadsheet,
   FileUp,
+  FolderArchive,
   Heart,
   Link2,
   ListMusic,
@@ -17,6 +20,8 @@ import { useMusicStore } from '../../store/useMusicStore';
 import { useBackInterceptor } from '../../lib/backInterceptor';
 import { triggerHaptic } from '../../utils/haptics';
 import { buildExportifyCsvFromTracks, parseMusicImportText } from '../../services/musicImporter';
+import { extractTextFilesFromZip } from '../../utils/zipImport';
+import { buildZipBlob } from '../../utils/zipExport';
 import {
   connectAndImportSpotifyAccount,
   connectAndImportYoutubeAccount,
@@ -80,14 +85,18 @@ export const SpotifyYtmImportModal: React.FC<{
   const removeFavoriteArtist = useMusicStore((s) => s.removeFavoriteArtist);
   const removeFavoriteGenre = useMusicStore((s) => s.removeFavoriteGenre);
   const likedTracks = useMusicStore((s) => s.likedTracks);
+  const userPlaylists = useMusicStore((s) => s.userPlaylists);
+  const recentTracks = useMusicStore((s) => s.recentTracks);
   const playTrack = useMusicStore((s) => s.playTrack);
   const m = MUSIC_I18N[musicLang];
 
-  const [tab, setTab] = useState<'connect' | 'link' | 'file' | 'taste'>('connect');
+  const [tab, setTab] = useState<'connect' | 'link' | 'file' | 'exportify' | 'taste'>('connect');
+  const [selectedExportIds, setSelectedExportIds] = useState<Set<string>>(() => new Set(['likes', 'recent']));
   const [linkUrl, setLinkUrl] = useState('');
   const [pasteText, setPasteText] = useState('');
   const [loading, setLoading] = useState(false);
   const [matching, setMatching] = useState(false);
+  const [matchProgress, setMatchProgress] = useState<{ done: number; total: number } | null>(null);
   const [oauthLoadingProvider, setOauthLoadingProvider] = useState<
     'spotify' | 'youtube_music' | null
   >(null);
@@ -231,24 +240,66 @@ export const SpotifyYtmImportModal: React.FC<{
     setShowImportModal(false);
   };
 
+  const buildFallbackTrack = (item: ImportedTrackInput, idx: number): MusicTrack => {
+    const primaryArtist = (item.artist || 'Artista').split(',')[0].trim() || 'Artista';
+    return {
+      id: item.spotifyId
+        ? `sp-${item.spotifyId}`
+        : `imp-${encodeURIComponent(`${primaryArtist}-${item.title}`.toLowerCase()).slice(0, 24)}-${idx}`,
+      title: item.title.trim(),
+      artist: {
+        id: `imp-art-${encodeURIComponent(primaryArtist.toLowerCase()).slice(0, 20)}`,
+        name: item.artist?.trim() || 'Artista',
+        picture: item.cover || '',
+      },
+      album: {
+        id: `imp-alb-${idx}`,
+        title: item.album?.trim() || 'Importado',
+        cover: item.cover || '',
+        coverXl: item.cover || '',
+      },
+      durationSec: item.durationSec || 0,
+      explicit: item.explicit,
+      previewUrl: item.previewUrl,
+      isrc: item.isrc,
+      spotifyId: item.spotifyId,
+      source: 'spotify',
+    };
+  };
+
   const matchBatchOnServer = async (items: ImportedTrackInput[]): Promise<MusicTrack[]> => {
-    if (items.length === 0) return [];
+    const validItems = items
+      .filter((i) => i && typeof i.title === 'string' && i.title.trim().length > 0)
+      .slice(0, 1500);
+    if (validItems.length === 0) return [];
     setMatching(true);
+    setMatchProgress({ done: 0, total: validItems.length });
+    const matchedAll: MusicTrack[] = [];
+    const CHUNK_SIZE = 50;
     try {
-      const res = await fetch('/api/music/match-tracks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: items.slice(0, 45) }),
-      });
-      const data = await res.json();
-      if (data?.success && Array.isArray(data.tracks)) {
-        return data.tracks as MusicTrack[];
+      for (let i = 0; i < validItems.length; i += CHUNK_SIZE) {
+        const chunk = validItems.slice(i, i + CHUNK_SIZE);
+        try {
+          const res = await fetch('/api/music/match-tracks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ items: chunk }),
+          });
+          const data = await res.json();
+          if (data?.success && Array.isArray(data.tracks) && data.tracks.length === chunk.length) {
+            matchedAll.push(...(data.tracks as MusicTrack[]));
+          } else {
+            chunk.forEach((item, j) => matchedAll.push(buildFallbackTrack(item, i + j)));
+          }
+        } catch {
+          chunk.forEach((item, j) => matchedAll.push(buildFallbackTrack(item, i + j)));
+        }
+        setMatchProgress({ done: Math.min(i + chunk.length, validItems.length), total: validItems.length });
       }
-      return [];
-    } catch {
-      return [];
+      return matchedAll;
     } finally {
       setMatching(false);
+      setMatchProgress(null);
     }
   };
 
@@ -338,10 +389,156 @@ export const SpotifyYtmImportModal: React.FC<{
     const file = e.target.files?.[0];
     if (!file) return;
     try {
-      const text = await file.text();
-      await handleParsedContent(text, file.name);
-    } catch {
-      setErrorMsg('No se pudo leer el archivo seleccionado.');
+      if (file.name.toLowerCase().endsWith('.zip')) {
+        setErrorMsg(null);
+        setPreview(null);
+        setOauthPreview(null);
+        setLoading(true);
+        const extracted = await extractTextFilesFromZip(file);
+        if (extracted.length === 0) {
+          setLoading(false);
+          setErrorMsg('El archivo ZIP no contiene playlists CSV, JSON o M3U reconocibles.');
+          return;
+        }
+
+        const parsedEntries = extracted
+          .map((entry) => ({
+            entry,
+            parsed: parseMusicImportText(entry.text, entry.baseName),
+          }))
+          .filter((item) => item.parsed.tracks.length > 0 || item.parsed.topArtists.length > 0);
+
+        if (parsedEntries.length === 0) {
+          setLoading(false);
+          setErrorMsg('No se encontraron canciones válidas dentro del paquete ZIP.');
+          return;
+        }
+
+        const makeTrackKey = (t: ImportedTrackInput) =>
+          t.spotifyId
+            ? `sp:${t.spotifyId}`
+            : `${t.artist.toLowerCase().trim()}|${t.title.toLowerCase().trim()}`;
+
+        const uniqueInputs: ImportedTrackInput[] = [];
+        const uniqueInputKeys: string[] = [];
+        const seenTrackKey = new Set<string>();
+        const artistSet = new Set<string>();
+        const genreSet = new Set<string>();
+        let inferredProvider: 'spotify' | 'youtube_music' | 'file' = 'file';
+
+        for (const { parsed } of parsedEntries) {
+          if (parsed.format.startsWith('spotify')) inferredProvider = 'spotify';
+          else if (parsed.format === 'youtube_takeout' && inferredProvider === 'file') {
+            inferredProvider = 'youtube_music';
+          }
+          for (const a of parsed.topArtists) artistSet.add(a);
+          for (const g of parsed.topGenres) genreSet.add(g);
+          for (const t of parsed.tracks) {
+            if (!t.title?.trim()) continue;
+            const k = makeTrackKey(t);
+            if (!seenTrackKey.has(k)) {
+              seenTrackKey.add(k);
+              uniqueInputs.push(t);
+              uniqueInputKeys.push(k);
+            }
+          }
+        }
+
+        setLoading(false);
+
+        const inputsToMatch = uniqueInputs.slice(0, 1500);
+        const matchedList = await matchBatchOnServer(inputsToMatch);
+        const matchedByKey = new Map<string, MusicTrack>();
+        for (let i = 0; i < inputsToMatch.length; i++) {
+          const track = matchedList[i];
+          if (track) matchedByKey.set(uniqueInputKeys[i], track);
+        }
+
+        if (parsedEntries.length === 1) {
+          const { entry, parsed } = parsedEntries[0];
+          const singleTitle = parsed.playlistTitle || entry.baseName.replace(/\.[^.]+$/, '') || file.name.replace(/\.zip$/i, '');
+          const isLikedFile = /(liked|me[_\s-]?gusta|favorit|canciones[_\s-]?que[_\s-]?te[_\s-]?gustan|music-library-songs)/i.test(
+            `${entry.baseName} ${singleTitle}`
+          );
+          setCustomPlaylistName(singleTitle);
+          setTargetDest(isLikedFile ? 'likes' : 'playlist');
+          setPreview({
+            sourceProvider: inferredProvider,
+            title: singleTitle,
+            warning:
+              uniqueInputs.length > 1500
+                ? `Este archivo contiene ${uniqueInputs.length} canciones: se emparejaron las primeras 1500 para importar.`
+                : undefined,
+            rawInputs: uniqueInputs,
+            matchedTracks: matchedList,
+            detectedArtists: Array.from(artistSet).slice(0, 40),
+            detectedGenres: Array.from(genreSet).slice(0, 24),
+          });
+          return;
+        }
+
+        // Multi-file ZIP (Exportify ZIP or Google Takeout ZIP): keep Likes + each CSV as its own playlist
+        const likedTracks: MusicTrack[] = [];
+        const likedSeenIds = new Set<string>();
+        const zipPlaylists: FullOAuthImportResult['playlists'] = [];
+
+        parsedEntries.forEach(({ entry, parsed }, idx) => {
+          const plName = parsed.playlistTitle || entry.baseName.replace(/\.[^.]+$/, '') || `Playlist ${idx + 1}`;
+          const plTracks: MusicTrack[] = [];
+          const plSeenIds = new Set<string>();
+          for (const t of parsed.tracks) {
+            const matched = matchedByKey.get(makeTrackKey(t));
+            if (matched && !plSeenIds.has(matched.id)) {
+              plSeenIds.add(matched.id);
+              plTracks.push(matched);
+            }
+          }
+          if (plTracks.length === 0) return;
+
+          const isLikedFile = /(liked|me[_\s-]?gusta|favorit|canciones[_\s-]?que[_\s-]?te[_\s-]?gustan|music-library-songs)/i.test(
+            `${entry.baseName} ${plName}`
+          );
+          if (isLikedFile) {
+            for (const lt of plTracks) {
+              if (!likedSeenIds.has(lt.id)) {
+                likedSeenIds.add(lt.id);
+                likedTracks.push(lt);
+              }
+            }
+          } else {
+            zipPlaylists.push({
+              id: `zip-pl-${idx}`,
+              name: plName,
+              description: `Importado de ${file.name} · ${entry.baseName}`,
+              tracks: plTracks,
+            });
+          }
+        });
+
+        const totalTracks =
+          likedTracks.length + zipPlaylists.reduce((acc, p) => acc + p.tracks.length, 0);
+
+        setOauthPreview({
+          ok: true,
+          provider: inferredProvider === 'youtube_music' ? 'youtube_music' : 'spotify',
+          accountLabel: `ZIP: ${file.name}`,
+          likedTracks,
+          playlists: zipPlaylists,
+          favoriteArtists: Array.from(artistSet).slice(0, 30),
+          favoriteGenres: Array.from(genreSet).slice(0, 15),
+          totalTracksImported: totalTracks,
+        });
+        setSelectedPlaylistIds(new Set(zipPlaylists.map((p) => p.id)));
+        setIncludeOAuthLikes(true);
+      } else {
+        const text = await file.text();
+        await handleParsedContent(text, file.name);
+      }
+    } catch (err) {
+      setLoading(false);
+      setErrorMsg(
+        err instanceof Error ? err.message : 'No se pudo leer el archivo seleccionado.'
+      );
     } finally {
       e.target.value = '';
     }
@@ -508,14 +705,15 @@ export const SpotifyYtmImportModal: React.FC<{
               </button>
             </div>
 
-            {/* 4-Tab Switcher */}
+            {/* 5-Tab Switcher */}
             <div className="shrink-0 px-4 sm:px-6 pt-3 pb-2.5 border-b border-white/[0.06] bg-[#0C0C0F]">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5">
                 {(
                   [
                     { id: 'connect', label: m.importTabConnect, icon: LogIn },
                     { id: 'link', label: m.importTabLink, icon: Link2 },
-                    { id: 'file', label: m.importTabFile, icon: FileUp },
+                    { id: 'file', label: 'ZIP / CSV', icon: FileUp },
+                    { id: 'exportify', label: 'Exportify', icon: FolderArchive },
                     { id: 'taste', label: m.importTabTaste, icon: Heart },
                   ] as const
                 ).map((item) => {
@@ -547,9 +745,42 @@ export const SpotifyYtmImportModal: React.FC<{
             {/* Body */}
             <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
               {errorMsg && (
-                <div className="p-3 rounded-2xl bg-[#FF2D55]/12 border border-[#FF2D55]/40 text-xs text-rose-200 flex items-start gap-2">
-                  <AlertTriangle className="w-4 h-4 text-[#FF2D55] shrink-0 mt-0.5" />
-                  <span>{errorMsg}</span>
+                <div className="p-3 rounded-2xl bg-[#FF2D55]/12 border border-[#FF2D55]/40 text-xs text-rose-200 space-y-2.5">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-[#FF2D55] shrink-0 mt-0.5" />
+                    <span>{errorMsg}</span>
+                  </div>
+                  {/403|access_denied|verificaci|prueba|bloque/i.test(errorMsg) && (
+                    <div className="pt-2 border-t border-white/10 space-y-2">
+                      <p className="text-[11px] text-zinc-200 font-semibold">
+                        Solución inmediata sin bloqueo de Google:
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setErrorMsg(null);
+                            setTab('link');
+                          }}
+                          className="h-9 px-3 rounded-xl bg-[#3B82F6]/25 hover:bg-[#3B82F6]/35 border border-[#3B82F6]/60 text-white font-bold text-[11px] inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Link2 className="w-3.5 h-3.5" />
+                          <span>Importar por Enlace Público</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setErrorMsg(null);
+                            setTab('file');
+                          }}
+                          className="h-9 px-3 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white font-bold text-[11px] inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <FileUp className="w-3.5 h-3.5" />
+                          <span>Subir Takeout .zip / .csv</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -669,21 +900,12 @@ export const SpotifyYtmImportModal: React.FC<{
                       <div className="space-y-2.5">
                         <div className="p-3 rounded-xl bg-[#0C0C0F] border border-[#1DB954]/25 text-[11px] text-zinc-300 space-y-2">
                           <p className="font-bold text-white">
-                            Importación instantánea con Exportify (CSV / Playlists de Spotify)
+                            Exportify integrado (ZIP y CSV compatibles)
                           </p>
                           <p className="text-zinc-400 leading-relaxed">
-                            Exporta tus playlists de Spotify en{' '}
-                            <a
-                              href="https://exportify.net/"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[#1DB954] font-bold underline underline-offset-2"
-                            >
-                              exportify.net
-                            </a>{' '}
-                            y sube el CSV aquí con URI, ISRC, carátulas y duración exactas, o pega cualquier enlace público de Spotify.
+                            Sube directamente el <strong className="text-white">.zip completo o .csv</strong> descargado de Exportify / Google Takeout sin descomprimirlo, o usa el Exportify integrado de Riffan para generar tu paquete ZIP/CSV.
                           </p>
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             <button
                               type="button"
                               onClick={() => {
@@ -693,7 +915,15 @@ export const SpotifyYtmImportModal: React.FC<{
                               className="min-h-10 px-3 rounded-xl bg-[#1DB954] hover:bg-[#1ed760] text-black font-extrabold text-xs inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                             >
                               <FileUp className="w-3.5 h-3.5 shrink-0" />
-                              <span>Subir CSV de Exportify</span>
+                              <span>Subir ZIP / CSV</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTab('exportify')}
+                              className="min-h-10 px-3 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-white font-bold text-xs inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                            >
+                              <FolderArchive className="w-3.5 h-3.5 shrink-0 text-[#1DB954]" />
+                              <span>Exportify Estudio</span>
                             </button>
                             <button
                               type="button"
@@ -701,7 +931,7 @@ export const SpotifyYtmImportModal: React.FC<{
                               className="min-h-10 px-3 rounded-xl bg-[#3B82F6]/16 hover:bg-[#3B82F6]/25 border border-[#3B82F6]/45 text-[#93C5FD] font-bold text-xs inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                             >
                               <Link2 className="w-3.5 h-3.5 shrink-0" />
-                              <span>Pegar enlace de Spotify</span>
+                              <span>Enlace público</span>
                             </button>
                           </div>
                         </div>
@@ -776,17 +1006,31 @@ export const SpotifyYtmImportModal: React.FC<{
                   <input
                     ref={fileInputRef}
                     type="file"
-                    accept=".json,.csv,.m3u,.m3u8,.txt,application/json,text/csv,text/plain"
+                    accept=".zip,.json,.csv,.m3u,.m3u8,.txt,application/zip,application/x-zip-compressed,application/json,text/csv,text/plain"
                     onChange={handleFileChange}
                     className="hidden"
                   />
                   <button
                     type="button"
+                    disabled={loading || matching}
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full p-4 rounded-2xl border border-dashed border-[#3B82F6]/45 bg-[#3B82F6]/10 hover:bg-[#3B82F6]/16 text-center space-y-1.5 cursor-pointer transition-colors"
+                    className="w-full p-4 rounded-2xl border border-dashed border-[#3B82F6]/45 bg-[#3B82F6]/10 hover:bg-[#3B82F6]/16 text-center space-y-1.5 cursor-pointer disabled:opacity-60 transition-colors"
                   >
-                    <FileUp className="w-6 h-6 text-[#60A5FA] mx-auto" />
-                    <p className="text-xs sm:text-sm font-bold text-white">{m.importFileDrop}</p>
+                    {loading || matching ? (
+                      <>
+                        <Loader2 className="w-6 h-6 text-[#60A5FA] mx-auto animate-spin" />
+                        <p className="text-xs sm:text-sm font-bold text-white">
+                          {matchProgress
+                            ? `Emparejando canciones ${matchProgress.done} / ${matchProgress.total}...`
+                            : 'Descomprimiendo paquete ZIP...'}
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <FolderArchive className="w-6 h-6 text-[#60A5FA] mx-auto" />
+                        <p className="text-xs sm:text-sm font-bold text-white">Subir paquete ZIP (Exportify / Takeout) o archivo CSV/JSON/M3U</p>
+                      </>
+                    )}
                   </button>
 
                   <div className="space-y-2">
@@ -821,6 +1065,162 @@ export const SpotifyYtmImportModal: React.FC<{
                     <p className="text-[11px] text-zinc-300 leading-relaxed">{m.importHowToSpotify}</p>
                     <p className="text-[11px] text-zinc-300 leading-relaxed">{m.importHowToYtm}</p>
                   </div>
+                </div>
+              )}
+
+              {tab === 'exportify' && (
+                <div className="space-y-3.5">
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-br from-[#1DB954]/14 via-[#131318] to-[#0C0C0F] border border-[#1DB954]/30 space-y-1.5">
+                    <div className="flex items-center gap-2">
+                      <FileSpreadsheet className="w-4 h-4 text-[#1DB954]" />
+                      <h4 className="text-xs sm:text-sm font-extrabold text-white">
+                        Exportify Studio integrado (ZIP + CSV estándar)
+                      </h4>
+                    </div>
+                    <p className="text-[11px] text-zinc-300 leading-relaxed">
+                      Genera y descarga tu biblioteca completa con el mismo esquema de columnas que Exportify en un solo paquete <strong className="text-white">.zip</strong> o como CSV individual, sin depender de webs externas.
+                    </p>
+                  </div>
+
+                  {(() => {
+                    const exportSets: Array<{ id: string; label: string; tracks: MusicTrack[] }> = [
+                      { id: 'likes', label: m.likedSongs, tracks: likedTracks },
+                      ...userPlaylists.map((pl) => ({ id: pl.id, label: pl.name, tracks: pl.tracks })),
+                      { id: 'recent', label: 'Historial reciente', tracks: recentTracks },
+                    ].filter((s) => s.tracks.length > 0);
+
+                    const selectedSets = exportSets.filter((s) => selectedExportIds.has(s.id));
+
+                    const handleDownloadExportifyZip = () => {
+                      if (selectedSets.length === 0) return;
+                      triggerHaptic('medium');
+                      const encoder = new TextEncoder();
+                      const entries = selectedSets.map((s) => {
+                        const safeName = s.label.replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'playlist';
+                        const csv = buildExportifyCsvFromTracks(s.label, s.tracks);
+                        return {
+                          name: `${safeName}.csv`,
+                          data: encoder.encode(csv),
+                        };
+                      });
+                      entries.push({
+                        name: 'riffan-library-manifest.json',
+                        data: encoder.encode(
+                          JSON.stringify(
+                            {
+                              exportedAt: new Date().toISOString(),
+                              format: 'riffan-exportify-zip-v1',
+                              playlists: selectedSets.map((s) => ({
+                                id: s.id,
+                                name: s.label,
+                                trackCount: s.tracks.length,
+                              })),
+                            },
+                            null,
+                            2
+                          )
+                        ),
+                      });
+                      const blob = buildZipBlob(entries);
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = 'riffan-exportify-bundle.zip';
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                      emitToast(`ZIP Exportify listo (${selectedSets.length} listas)`);
+                    };
+
+                    const handleDownloadCombinedCsv = () => {
+                      const allTracks = selectedSets.flatMap((s) => s.tracks);
+                      if (allTracks.length === 0) return;
+                      triggerHaptic('light');
+                      const csv = buildExportifyCsvFromTracks('Riffan Exportify Combinado', allTracks);
+                      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = 'riffan-music-exportify.csv';
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                      emitToast(`CSV descargado (${allTracks.length} canciones)`);
+                    };
+
+                    if (exportSets.length === 0) {
+                      return (
+                        <div className="p-4 rounded-2xl bg-[#131318] border border-white/[0.08] text-xs text-zinc-400 text-center space-y-2">
+                          <p>Todavía no tienes canciones en Me Gusta o Playlists para exportar.</p>
+                          <button
+                            type="button"
+                            onClick={() => setTab('file')}
+                            className="h-9 px-4 rounded-xl bg-[#3B82F6]/20 border border-[#3B82F6]/50 text-[#93C5FD] font-bold text-xs cursor-pointer"
+                          >
+                            Importar primero un ZIP o CSV
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-3">
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {exportSets.map((s) => {
+                            const checked = selectedExportIds.has(s.id);
+                            return (
+                              <button
+                                key={s.id}
+                                type="button"
+                                onClick={() => {
+                                  triggerHaptic('light');
+                                  setSelectedExportIds((prev) => {
+                                    const next = new Set(prev);
+                                    if (next.has(s.id)) next.delete(s.id);
+                                    else next.add(s.id);
+                                    return next;
+                                  });
+                                }}
+                                className={`w-full px-3 py-2.5 rounded-xl border text-xs font-semibold flex items-center justify-between cursor-pointer transition-colors ${
+                                  checked
+                                    ? 'bg-[#1DB954]/14 border-[#1DB954]/50 text-white'
+                                    : 'bg-[#131318] border-white/[0.08] text-zinc-400'
+                                }`}
+                              >
+                                <span className="truncate">{s.label}</span>
+                                <span className="font-mono text-[11px] shrink-0">
+                                  {s.tracks.length} {m.songsCount} {checked ? '· ✓' : ''}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            disabled={selectedSets.length === 0}
+                            onClick={handleDownloadExportifyZip}
+                            className="h-11 px-3 rounded-xl bg-[#1DB954] hover:bg-[#1ed760] text-black font-extrabold text-xs inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-45 shadow-[0_8px_22px_rgba(29,185,84,0.28)]"
+                          >
+                            <FolderArchive className="w-4 h-4 shrink-0" />
+                            <span>Descargar Paquete (.zip)</span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={selectedSets.length === 0}
+                            onClick={handleDownloadCombinedCsv}
+                            className="h-11 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/[0.12] text-white font-bold text-xs inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-45"
+                          >
+                            <Download className="w-4 h-4 shrink-0 text-[#60A5FA]" />
+                            <span>Descargar CSV único</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
@@ -940,7 +1340,11 @@ export const SpotifyYtmImportModal: React.FC<{
                   <div className="flex items-center justify-between gap-2">
                     <div className="min-w-0">
                       <span className="text-[10px] font-mono uppercase tracking-[0.12em] text-[#60A5FA] font-bold">
-                        {oauthPreview.provider === 'spotify' ? 'Spotify conectado' : 'YouTube Music conectado'}
+                        {oauthPreview.accountLabel.startsWith('ZIP:')
+                          ? 'Paquete ZIP (Exportify / Takeout)'
+                          : oauthPreview.provider === 'spotify'
+                          ? 'Spotify conectado'
+                          : 'YouTube Music conectado'}
                       </span>
                       <p className="text-sm font-extrabold text-white truncate">
                         {oauthPreview.accountLabel}

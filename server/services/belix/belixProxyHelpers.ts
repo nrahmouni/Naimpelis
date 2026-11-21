@@ -8,6 +8,11 @@ import { LruTtlCache } from '../../utils/lruCache.ts';
 import { assertSafeProxyUrl } from '../../utils/ssrfGuard.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
 import { CHROME_UA, curlGetBufferWithStatus, curlGetText } from '../../extractors/httpHelpers.ts';
+import {
+  ensureLiveDvbCleanHlsSession,
+  getActiveDvbSessionPath,
+  readLiveDvbPlaylistForIptv,
+} from '../../routes/proxies/dvbTranscoder.ts';
 
 export interface BelixSessionCredentials {
   origin: string;
@@ -149,14 +154,34 @@ export async function resolveBelixManifestForSession(
   const cleanId = String(streamId || '').replace(/\.m3u8$/i, '').trim();
   if (!/^[a-zA-Z0-9_-]{1,24}$/.test(cleanId)) return null;
 
-  const targetUrl = `${session.origin}/live/${encodeURIComponent(
-    session.username
-  )}/${encodeURIComponent(session.password)}/${encodeURIComponent(cleanId)}.m3u8`;
+  const u = encodeURIComponent(session.username);
+  const p = encodeURIComponent(session.password);
+  const idEnc = encodeURIComponent(cleanId);
   const referer = `${session.origin}/`;
 
+  // Fast path: reuse an active FFmpeg HLS relay for the .ts stream if already warm
+  const tsUrl = `${session.origin}/live/${u}/${p}/${idEnc}.ts`;
+  await assertSafeProxyUrl(tsUrl);
+  const warmPath = getActiveDvbSessionPath(tsUrl, 'hd');
+  if (warmPath) {
+    const warmManifest = readLiveDvbPlaylistForIptv(warmPath, originPrefix);
+    if (warmManifest) return warmManifest;
+  }
+
+  // Primary: native upstream HLS manifest if responsive
+  const targetUrl = `${session.origin}/live/${u}/${p}/${idEnc}.m3u8`;
   const loaded = await fetchBelixPlaylistText(targetUrl, referer).catch(() => null);
-  if (!loaded) return null;
-  return rewritePlaylistWithOpaqueTokens(loaded.text, loaded.baseUrl, referer, originPrefix);
+  if (loaded) {
+    return rewritePlaylistWithOpaqueTokens(loaded.text, loaded.baseUrl, referer, originPrefix);
+  }
+
+  // Fallback: Xtream portals such as Shark Pro serve stable MPEG-TS (.ts) where .m3u8 stalls;
+  // remux/transcode live to browser-safe H.264 + AAC 48kHz stereo HLS segments.
+  const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, 'hd', referer).catch(() => null);
+  if (dvbPath) {
+    return readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
+  }
+  return null;
 }
 
 export async function resolveBelixSubPlaylist(

@@ -128,11 +128,11 @@ export const WorldShell: React.FC<WorldShellProps> = ({
           : 'min-h-[calc(100dvh-4rem)] pb-14'
       } ${className}`}
     >
-      {/* CALM STICKY WORLD HEADER */}
+      {/* CALM WORLD HEADER (non-sticky in Music world so scroll reveals full stage) */}
       <header
         className={
           isMusicWorld
-            ? 'sticky top-0 z-30 shrink-0 px-2.5 sm:px-5 pt-1.5 pb-1 pointer-events-none'
+            ? 'relative z-30 shrink-0 px-2.5 sm:px-5 pt-1.5 pb-1 pointer-events-none'
             : 'sticky top-0 z-30 shrink-0 bg-[#000000]/92 backdrop-blur-2xl border-b border-white/[0.08] px-4 sm:px-5'
         }
       >
@@ -404,6 +404,22 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                             })}
                           </span>
                         </button>
+                        <a
+                          href="/api/audit/100-points"
+                          download="auditoria-riffantv-100-puntos.md"
+                          role="menuitem"
+                          onClick={() => setMoreMenuOpen(false)}
+                          className="w-full min-h-11 px-3 rounded-xl text-left text-xs font-semibold text-zinc-300 hover:text-white hover:bg-white/[0.07] flex items-center gap-2.5 cursor-pointer transition-colors"
+                        >
+                          <Download className="w-4 h-4 shrink-0 text-emerald-400" />
+                          <span>
+                            {pickLang(lang, {
+                              es: 'Auditoría 100 puntos (.md)',
+                              ca: 'Auditoria 100 punts (.md)',
+                              en: '100-Point Audit (.md)',
+                            })}
+                          </span>
+                        </a>
                       </div>
                     )}
                   </div>

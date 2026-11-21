@@ -72,7 +72,9 @@ export async function handleDirectExtractCases(params: {
       setCache(cacheKey, ytResult);
       return sendOk(ytResult);
     }
-    const megaUrl = buildHlsProxyUrl(MEGA_CHIRINGUITO_TV_URL, 'http://90.163.85.113:8093/', true);
+    const megaUrl = MEGA_CHIRINGUITO_TV_URL.startsWith('/api/')
+      ? MEGA_CHIRINGUITO_TV_URL
+      : buildHlsProxyUrl(MEGA_CHIRINGUITO_TV_URL, new URL(MEGA_CHIRINGUITO_TV_URL).origin + '/', true);
     const megaResult: ExtractedStreamResult = {
       success: true,
       mode: 'hls',

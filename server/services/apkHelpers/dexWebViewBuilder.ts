@@ -23,6 +23,7 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
     { cls: SUPER_CLS, name: 'setContentView', ret: 'V', params: ['Landroid/view/View;'] },
     { cls: SUPER_CLS, name: 'checkSelfPermission', ret: 'I', params: ['Ljava/lang/String;'] },
     { cls: SUPER_CLS, name: 'requestPermissions', ret: 'V', params: [STR_ARR_CLS, 'I'] },
+    { cls: SUPER_CLS, name: 'onBackPressed', ret: 'V', params: [] },
     { cls: 'Landroid/view/Window;', name: 'setStatusBarColor', ret: 'V', params: ['I'] },
     { cls: 'Landroid/view/Window;', name: 'setNavigationBarColor', ret: 'V', params: ['I'] },
     { cls: 'Landroid/webkit/WebView;', name: '<init>', ret: 'V', params: ['Landroid/content/Context;'] },
@@ -31,6 +32,8 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
     { cls: 'Landroid/webkit/WebView;', name: 'setWebViewClient', ret: 'V', params: ['Landroid/webkit/WebViewClient;'] },
     { cls: 'Landroid/webkit/WebView;', name: 'setWebChromeClient', ret: 'V', params: [CHROME_SUPER_CLS] },
     { cls: 'Landroid/webkit/WebView;', name: 'loadUrl', ret: 'V', params: ['Ljava/lang/String;'] },
+    { cls: 'Landroid/webkit/WebView;', name: 'canGoBack', ret: 'Z', params: [] },
+    { cls: 'Landroid/webkit/WebView;', name: 'goBack', ret: 'V', params: [] },
     { cls: 'Landroid/webkit/WebSettings;', name: 'setJavaScriptEnabled', ret: 'V', params: ['Z'] },
     { cls: 'Landroid/webkit/WebSettings;', name: 'setDomStorageEnabled', ret: 'V', params: ['Z'] },
     { cls: 'Landroid/webkit/WebSettings;', name: 'setDatabaseEnabled', ret: 'V', params: ['Z'] },
@@ -45,7 +48,12 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
     { cls: CHROME_CLS, name: '<init>', ret: 'V', params: [] },
     { cls: CHROME_CLS, name: 'onPermissionRequest', ret: 'V', params: [PERM_REQ_CLS] },
     { cls: MAIN_CLS, name: '<init>', ret: 'V', params: [] },
+    { cls: MAIN_CLS, name: 'onBackPressed', ret: 'V', params: [] },
     { cls: MAIN_CLS, name: 'onCreate', ret: 'V', params: ['Landroid/os/Bundle;'] },
+  ];
+
+  const fieldSpecs = [
+    { cls: MAIN_CLS, type: 'Landroid/webkit/WebView;', name: 'webView' },
   ];
 
   const typeSet = new Set<string>([MAIN_CLS, SUPER_CLS, CHROME_CLS, CHROME_SUPER_CLS, STR_ARR_CLS]);
@@ -55,6 +63,14 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
     const ch = (t: string) => (t.length === 1 ? t : 'L');
     return ch(ret) + params.map(ch).join('');
   };
+
+  for (const f of fieldSpecs) {
+    typeSet.add(f.cls);
+    typeSet.add(f.type);
+    stringSet.add(f.cls);
+    stringSet.add(f.type);
+    stringSet.add(f.name);
+  }
 
   for (const m of methodSpecs) {
     typeSet.add(m.cls);
@@ -146,6 +162,9 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
   emitU16(onCreateInsns, 0x0022);
   emitU16(onCreateInsns, typeIdx.get('Landroid/webkit/WebView;')!);
   invoke35c(onCreateInsns, 0x70, mId('Landroid/webkit/WebView;', '<init>', 'V', ['Landroid/content/Context;']), [0, 4]);
+  // Store WebView instance into this.webView (field@0): iput-object v0, v4, field@0
+  emitU16(onCreateInsns, 0x405b);
+  emitU16(onCreateInsns, 0x0000);
   emitU16(onCreateInsns, 0x0114);
   emitU16(onCreateInsns, 0x0000);
   emitU16(onCreateInsns, 0xff00);
@@ -218,6 +237,28 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
   chromePermInsns[ifNullResIdx + 1] = (permRetIdx - ifNullResIdx) & 0xffff;
   emitU16(chromePermInsns, 0x000e);
 
+  // Method 5: MainActivity.onBackPressed()V (WebView.canGoBack() ? goBack() : super.onBackPressed())
+  // Registers: v0 (WebView), v1 (boolean canGoBack), v2 (this)
+  const onBackPressedInsns: number[] = [];
+  // iget-object v0, v2, field@0 -> 0x2054, 0x0000
+  emitU16(onBackPressedInsns, 0x2054);
+  emitU16(onBackPressedInsns, 0x0000);
+  const ifNullWvIdx = onBackPressedInsns.length;
+  emitU16(onBackPressedInsns, 0x0038); // if-eqz v0, +superTarget
+  emitU16(onBackPressedInsns, 0);
+  invoke35c(onBackPressedInsns, 0x6e, mId('Landroid/webkit/WebView;', 'canGoBack', 'Z'), [0]);
+  emitU16(onBackPressedInsns, 0x010a); // move-result v1
+  const ifCannotGoBackIdx = onBackPressedInsns.length;
+  emitU16(onBackPressedInsns, 0x0138); // if-eqz v1, +superTarget
+  emitU16(onBackPressedInsns, 0);
+  invoke35c(onBackPressedInsns, 0x6e, mId('Landroid/webkit/WebView;', 'goBack', 'V'), [0]);
+  emitU16(onBackPressedInsns, 0x000e); // return-void
+  const superBackTargetIdx = onBackPressedInsns.length;
+  onBackPressedInsns[ifNullWvIdx + 1] = (superBackTargetIdx - ifNullWvIdx) & 0xffff;
+  onBackPressedInsns[ifCannotGoBackIdx + 1] = (superBackTargetIdx - ifCannotGoBackIdx) & 0xffff;
+  invoke35c(onBackPressedInsns, 0x6f, mId(SUPER_CLS, 'onBackPressed', 'V'), [2]);
+  emitU16(onBackPressedInsns, 0x000e); // return-void
+
   const makeCodeItem = (regs: number, ins: number, outs: number, insns: number[]): Buffer => {
     const b = Buffer.alloc(16 + insns.length * 2);
     b.writeUInt16LE(regs, 0);
@@ -232,6 +273,7 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
 
   const initCodeItem = makeCodeItem(1, 1, 1, initInsns);
   const onCreateCodeItem = makeCodeItem(6, 2, 3, onCreateInsns);
+  const onBackPressedCodeItem = makeCodeItem(3, 1, 1, onBackPressedInsns);
   const chromeInitCodeItem = makeCodeItem(1, 1, 1, chromeInitInsns);
   const chromePermCodeItem = makeCodeItem(3, 2, 2, chromePermInsns);
 
@@ -242,7 +284,9 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
   const typeIdsSize = types.length * 4;
   const protoIdsOff = typeIdsOff + typeIdsSize;
   const protoIdsSize = protos.length * 12;
-  const methodIdsOff = protoIdsOff + protoIdsSize;
+  const fieldIdsOff = protoIdsOff + protoIdsSize;
+  const fieldIdsSize = fieldSpecs.length * 8;
+  const methodIdsOff = fieldIdsOff + fieldIdsSize;
   const methodIdsSize = methods.length * 8;
   const classDefsOff = methodIdsOff + methodIdsSize;
   const classDefsSize = 64;
@@ -278,6 +322,7 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
 
   const initCodeOff = pushDataAligned4(initCodeItem);
   const onCreateCodeOff = pushDataAligned4(onCreateCodeItem);
+  const onBackPressedCodeOff = pushDataAligned4(onBackPressedCodeItem);
   const chromeInitCodeOff = pushDataAligned4(chromeInitCodeItem);
   const chromePermCodeOff = pushDataAligned4(chromePermCodeItem);
 
@@ -290,20 +335,36 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
 
   const mInitIdx = mId(MAIN_CLS, '<init>', 'V');
   const mOnCreateIdx = mId(MAIN_CLS, 'onCreate', 'V', ['Landroid/os/Bundle;']);
+  const mOnBackPressedIdx = mId(MAIN_CLS, 'onBackPressed', 'V');
   const mChromeInitIdx = mId(CHROME_CLS, '<init>', 'V');
   const mChromePermIdx = mId(CHROME_CLS, 'onPermissionRequest', 'V', [PERM_REQ_CLS]);
 
+  // Virtual methods MUST be strictly sorted by method_idx in class_data_item
+  const mainVirtualMethods = [
+    { idx: mOnCreateIdx, flags: 0x0004, off: onCreateCodeOff },
+    { idx: mOnBackPressedIdx, flags: 0x0001, off: onBackPressedCodeOff },
+  ].sort((a, b) => a.idx - b.idx);
+
   const mainClassDataFixed = Buffer.concat([
+    writeUleb128(0), // static_fields_size
+    writeUleb128(fieldSpecs.length), // instance_fields_size
+    writeUleb128(1), // direct_methods_size
+    writeUleb128(mainVirtualMethods.length), // virtual_methods_size
+    // instance field 0: private WebView webView
     writeUleb128(0),
-    writeUleb128(0),
-    writeUleb128(1),
-    writeUleb128(1),
+    writeUleb128(0x0002),
+    // direct method: <init>
     writeUleb128(mInitIdx),
     writeUleb128(0x10001),
     writeUleb128(initCodeOff),
-    writeUleb128(mOnCreateIdx),
-    writeUleb128(0x0004),
-    writeUleb128(onCreateCodeOff),
+    // virtual method 0
+    writeUleb128(mainVirtualMethods[0].idx),
+    writeUleb128(mainVirtualMethods[0].flags),
+    writeUleb128(mainVirtualMethods[0].off),
+    // virtual method 1 (delta-encoded)
+    writeUleb128(mainVirtualMethods[1].idx - mainVirtualMethods[0].idx),
+    writeUleb128(mainVirtualMethods[1].flags),
+    writeUleb128(mainVirtualMethods[1].off),
   ]);
   const mainClassDataOff = pushDataRaw(mainClassDataFixed);
 
@@ -334,6 +395,7 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
     { type: 0x0001, size: strings.length, off: stringIdsOff },
     { type: 0x0002, size: types.length, off: typeIdsOff },
     { type: 0x0003, size: protos.length, off: protoIdsOff },
+    { type: 0x0004, size: fieldSpecs.length, off: fieldIdsOff },
     { type: 0x0005, size: methods.length, off: methodIdsOff },
     { type: 0x0006, size: 2, off: classDefsOff },
     {
@@ -342,7 +404,7 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
       off: Array.from(protoParamListOff.values()).find((v) => v > 0) || 0,
     },
     { type: 0x2000, size: 2, off: mainClassDataOff },
-    { type: 0x2001, size: 4, off: initCodeOff },
+    { type: 0x2001, size: 5, off: initCodeOff },
     { type: 0x2002, size: strings.length, off: stringDataOffsets[0] },
     { type: 0x1000, size: 1, off: mapOff },
   ]
@@ -380,8 +442,8 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
   dex.writeUInt32LE(typeIdsOff, 68);
   dex.writeUInt32LE(protos.length, 72);
   dex.writeUInt32LE(protoIdsOff, 76);
-  dex.writeUInt32LE(0, 80);
-  dex.writeUInt32LE(0, 84);
+  dex.writeUInt32LE(fieldSpecs.length, 80);
+  dex.writeUInt32LE(fieldIdsOff, 84);
   dex.writeUInt32LE(methods.length, 88);
   dex.writeUInt32LE(methodIdsOff, 92);
   dex.writeUInt32LE(2, 96);
@@ -396,6 +458,12 @@ export function buildWebViewMainActivityDex(launchUrl: string): Buffer {
     dex.writeUInt32LE(strIdx.get(p.shorty)!, o);
     dex.writeUInt32LE(typeIdx.get(p.ret)!, o + 4);
     dex.writeUInt32LE(protoParamListOff.get(p.key) || 0, o + 8);
+  });
+  fieldSpecs.forEach((f, i) => {
+    const o = fieldIdsOff + i * 8;
+    dex.writeUInt16LE(typeIdx.get(f.cls)!, o);
+    dex.writeUInt16LE(typeIdx.get(f.type)!, o + 2);
+    dex.writeUInt32LE(strIdx.get(f.name)!, o + 4);
   });
   methods.forEach((m, i) => {
     const o = methodIdsOff + i * 8;
