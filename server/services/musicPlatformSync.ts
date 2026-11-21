@@ -985,6 +985,80 @@ export async function importExternalMusicUrl(rawUrl: string): Promise<ImportedCo
           };
         }
       }
+      try {
+        const ytPlRes = await fetch(
+          `https://www.youtube.com/playlist?list=${encodeURIComponent(listId)}`,
+          {
+            headers: { 'User-Agent': CHROME_UA, Accept: 'text/html' },
+            signal: AbortSignal.timeout(7000),
+          }
+        );
+        if (ytPlRes.ok) {
+          const html = await ytPlRes.text();
+          const initialMatch = html.match(/var\s+ytInitialData\s*=\s*(\{[\s\S]*?\});\s*<\/script>/);
+          if (initialMatch?.[1]) {
+            const ytData = JSON.parse(initialMatch[1]);
+            const videoRenderers = collectRenderers(ytData, 'playlistVideoRenderer');
+            const tracks: MusicTrack[] = [];
+            const seen = new Set<string>();
+            const artistCount = new Map<string, number>();
+
+            for (const vr of videoRenderers) {
+              const videoId = String(vr?.videoId || '').trim();
+              const title = parseRunsText(vr?.title).trim();
+              if (!videoId || videoId.length !== 11 || !title || seen.has(`ytm-${videoId}`)) continue;
+              seen.add(`ytm-${videoId}`);
+              const artistName = parseRunsText(vr?.shortBylineText).replace(/\s*-\s*Topic$/i, '').trim() || 'YouTube';
+              const cover =
+                pickBestThumb(vr?.thumbnail?.thumbnails) ||
+                `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+              const durationSec = Number(vr?.lengthSeconds || 0) || parseDurationLabel(parseRunsText(vr?.lengthText));
+              tracks.push({
+                id: `ytm-${videoId}`,
+                title,
+                artist: {
+                  id: `ytm-art-${encodeURIComponent(artistName.toLowerCase())}`,
+                  name: artistName,
+                  picture: cover,
+                },
+                album: {
+                  id: `ytm-alb-trk-${videoId}`,
+                  title: 'YouTube Playlist',
+                  cover,
+                  coverXl: `https://i.ytimg.com/vi/${videoId}/hq720.jpg`,
+                },
+                durationSec,
+                source: 'youtube_music',
+                youtubeVideoId: videoId,
+              });
+              if (artistName !== 'YouTube') {
+                artistCount.set(artistName, (artistCount.get(artistName) || 0) + 1);
+              }
+              if (tracks.length >= 100) break;
+            }
+
+            if (tracks.length > 0) {
+              const plMetaTitle =
+                String(ytData?.metadata?.playlistMetadataRenderer?.title || '').trim() ||
+                'YouTube Playlist';
+              return {
+                ok: true,
+                provider: 'youtube_music',
+                title: plMetaTitle,
+                cover: tracks[0].album.cover,
+                tracks,
+                topArtists: Array.from(artistCount.entries())
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 15)
+                  .map(([name]) => name),
+              };
+            }
+          }
+        }
+      } catch {
+        // ignore HTML fallback error
+      }
+
       return {
         ok: false,
         provider: 'youtube_music',

@@ -244,6 +244,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
         cineSpecialPortal: vod.cineSpecialPortal,
         futbolTab: effectiveFutbolTab,
         searchQuery: externalSearchQuery ?? '',
+        homeSearchQuery: store.homeSearchQuery,
+        homeSearchCategory: store.homeSearchCategory,
         scrollTopMain: prev?.scrollTopMain,
         scrollTopCatalog: prev?.scrollTopCatalog,
         ...extra,

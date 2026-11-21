@@ -154,10 +154,8 @@ export function useWorldNavigation({
         return;
       }
 
-      setWorldSearchQuery('');
       setShowWatchlistOnly(false);
       const navStore = useAppStore.getState();
-      navStore.setHomeSearchQuery('');
       navStore.setRequestedMovieModal(null);
       navStore.setRequestedSeriesModal(null);
       if (nextWorld === 'entry') {

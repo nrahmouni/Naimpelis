@@ -54,25 +54,25 @@ export const WorldShell: React.FC<WorldShellProps> = ({
   className = '',
   children,
 }) => {
-  const [searchOpen, setSearchOpen] = useState(Boolean(searchValue));
+  const [searchOpen, setSearchOpen] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
-  const swipeHandlers = useSwipeBack(onBack, true);
+
+  const handleHeaderBack = () => {
+    if (getActiveBackInterceptorCount() > 0 && tryConsumeBackInterceptor()) {
+      return;
+    }
+    onBack();
+  };
+
+  const swipeHandlers = useSwipeBack(handleHeaderBack, true);
 
   useEffect(() => {
-    if (searchValue) {
-      setSearchOpen((prev) => (prev ? prev : true));
+    if (!onSearchChange) {
+      setSearchOpen(false);
     }
-  }, [searchValue]);
-
-  useEffect(() => {
-    if (searchOpen) {
-      const t = window.setTimeout(() => searchInputRef.current?.focus(), 60);
-      return () => window.clearTimeout(t);
-    }
-    return undefined;
-  }, [searchOpen]);
+  }, [world, onSearchChange]);
 
   useEffect(() => {
     if (!moreMenuOpen) return;
@@ -92,24 +92,21 @@ export const WorldShell: React.FC<WorldShellProps> = ({
     };
   }, [moreMenuOpen]);
 
-  const handleCloseSearch = () => {
+  const handleCollapseSearchBar = () => {
+    setSearchOpen(false);
+  };
+
+  const handleClearSearchAndClose = () => {
     setSearchOpen(false);
     onSearchChange?.('');
   };
 
   useBackInterceptor(
-    Boolean(onSearchChange && (searchOpen || searchValue.trim().length > 0)),
+    Boolean(onSearchChange && searchOpen),
     `world-search-${world}`,
-    handleCloseSearch,
+    handleCollapseSearchBar,
     { priority: 6 }
   );
-
-  const handleHeaderBack = () => {
-    if (getActiveBackInterceptorCount() > 0 && tryConsumeBackInterceptor()) {
-      return;
-    }
-    onBack();
-  };
 
   const showWatchPartyAction = Boolean(
     sessionMode === 'solo' && onUpgradeSoloToParty && world !== 'sala'
@@ -184,8 +181,8 @@ export const WorldShell: React.FC<WorldShellProps> = ({
               </div>
               <button
                 type="button"
-                onClick={handleCloseSearch}
-                aria-label={pickLang(lang, { es: 'Cerrar búsqueda', ca: 'Tancar cerca', en: 'Close search' })}
+                onClick={searchValue.trim() ? handleClearSearchAndClose : handleCollapseSearchBar}
+                aria-label={pickLang(lang, { es: 'Limpiar o cerrar búsqueda', ca: 'Netejar o tancar cerca', en: 'Clear or close search' })}
                 className={
                   isMusicWorld
                     ? 'w-7 h-7 rounded-full hover:bg-[#3B82F6]/20 flex items-center justify-center text-zinc-200 cursor-pointer shrink-0 active:scale-95 transition-all'
@@ -249,18 +246,49 @@ export const WorldShell: React.FC<WorldShellProps> = ({
               >
                 {quickActions}
                 {onSearchChange && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchOpen(true)}
-                    aria-label={pickLang(lang, { es: 'Buscar', ca: 'Cercar', en: 'Search' })}
-                    className={
-                      isMusicWorld
-                        ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full hover:bg-[#3B82F6]/18 flex items-center justify-center text-slate-200 hover:text-[#93C5FD] cursor-pointer active:scale-95 transition-all'
-                        : 'min-w-11 min-h-11 rounded-2xl bg-[#0D0D12] hover:bg-white/[0.08] border border-white/[0.08] flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer active:scale-95 transition-all'
-                    }
-                  >
-                    <RiffanSearchIcon size={isMusicWorld ? 14 : 16} animate="hover" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    {searchValue.trim().length > 0 && !isMusicWorld && (
+                      <div className="inline-flex items-center max-w-[130px] sm:max-w-[180px] h-9 sm:h-10 pl-2.5 pr-1 rounded-2xl bg-[#7C3AED]/18 border border-[#7C3AED]/45 text-xs text-white gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSearchOpen(true);
+                            window.setTimeout(() => searchInputRef.current?.focus(), 60);
+                          }}
+                          className="truncate font-semibold cursor-pointer text-left"
+                        >
+                          {searchValue}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleClearSearchAndClose}
+                          aria-label={pickLang(lang, { es: 'Limpiar filtro', ca: 'Netejar filtre', en: 'Clear filter' })}
+                          className="w-6 h-6 rounded-xl hover:bg-white/15 flex items-center justify-center text-zinc-200 cursor-pointer shrink-0"
+                        >
+                          <RiffanCloseIcon size={12} animate="hover" />
+                        </button>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSearchOpen(true);
+                        window.setTimeout(() => searchInputRef.current?.focus(), 60);
+                      }}
+                      aria-label={pickLang(lang, { es: 'Buscar', ca: 'Cercar', en: 'Search' })}
+                      className={
+                        isMusicWorld
+                          ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full hover:bg-[#3B82F6]/18 flex items-center justify-center text-slate-200 hover:text-[#93C5FD] cursor-pointer active:scale-95 transition-all'
+                          : `min-w-11 min-h-11 rounded-2xl border flex items-center justify-center cursor-pointer active:scale-95 transition-all ${
+                              searchValue.trim().length > 0
+                                ? 'bg-[#7C3AED]/20 border-[#7C3AED]/50 text-[#C4A7FF]'
+                                : 'bg-[#0D0D12] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200 hover:text-white'
+                            }`
+                      }
+                    >
+                      <RiffanSearchIcon size={isMusicWorld ? 14 : 16} animate="hover" />
+                    </button>
+                  </div>
                 )}
 
                 {hasSecondaryActions && (

@@ -397,7 +397,18 @@ function normalizeStr(s: string): string {
     .trim();
 }
 
+function normalizeRawWithTags(s: string): string {
+  return String(s || '')
+    .normalize('NFKC')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 const CJK_CHAR_RE = /[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/;
+const GENERIC_ARTIST_NAMES = new Set(['varios', 'various artists', 'artistas varios', 'artista', 'unknown', 'va']);
 
 function tokenizeForMatch(s: string): Set<string> {
   const norm = normalizeStr(s);
@@ -414,22 +425,126 @@ function tokenizeForMatch(s: string): Set<string> {
           }
         }
       }
-    } else if (w.length >= 2) {
+    } else if (w.length >= 2 || /^\d+$/.test(w)) {
       tokens.add(w);
     }
   }
   return tokens;
 }
 
-function tokenOverlapScore(a: string, b: string): number {
-  const ta = tokenizeForMatch(a);
-  const tb = tokenizeForMatch(b);
-  if (ta.size === 0 || tb.size === 0) return 0;
+function tokenMatchMetrics(expected: string, candidate: string): { recall: number; precision: number; f1: number; hits: number } {
+  const ta = tokenizeForMatch(expected);
+  const tb = tokenizeForMatch(candidate);
+  if (ta.size === 0 || tb.size === 0) return { recall: 0, precision: 0, f1: 0, hits: 0 };
   let hits = 0;
   for (const w of ta) {
     if (tb.has(w)) hits++;
   }
-  return hits / Math.max(ta.size, 1);
+  const recall = hits / ta.size;
+  const precision = hits / tb.size;
+  const f1 = hits > 0 ? (2 * recall * precision) / (recall + precision) : 0;
+  return { recall, precision, f1, hits };
+}
+
+function tokenOverlapScore(a: string, b: string): number {
+  return tokenMatchMetrics(a, b).recall;
+}
+
+function extractPrimaryArtist(artist: string): string {
+  return String(artist || '')
+    .split(/,|&|\bfeat\.?\b|\bft\.?\b|\bx\b/i)[0]
+    .trim();
+}
+
+const VARIANT_MODIFIER_RE = /\b(remix|bootleg|flip|mashup|sped up|slowed|reverb|nightcore|karaoke|instrumental|tribute|cover version|piano cover|guitar cover|8d|lofi|lo-fi|reaction|interview|podcast|tutorial|1 hour|10 hours|pitched)\b/i;
+
+export function isStrictTrackMatch(params: {
+  expectedArtist: string;
+  expectedTitle: string;
+  candidateArtist: string;
+  candidateTitle: string;
+  expectedDurationSec?: number;
+  candidateDurationSec?: number;
+  maxDurationDeltaSec?: number;
+}): { ok: boolean; score: number } {
+  const cleanExpTitle = params.expectedTitle.replace(/\([^)]*\)|\[[^\]]*\]|【[^】]*】/g, ' ').trim() || params.expectedTitle;
+  const primaryExpArtist = extractPrimaryArtist(params.expectedArtist);
+  const candTitle = String(params.candidateTitle || '');
+  const candArtist = String(params.candidateArtist || '');
+  const candCombined = `${candArtist} ${candTitle}`.trim();
+
+  const expDur = Number(params.expectedDurationSec || 0);
+  const candDur = Number(params.candidateDurationSec || 0);
+  if (candDur > 0 && (candDur < 45 || candDur > 900)) {
+    return { ok: false, score: -1 };
+  }
+  const maxDelta = params.maxDurationDeltaSec ?? 28;
+  if (expDur > 35 && candDur > 35 && Math.abs(candDur - expDur) > maxDelta) {
+    return { ok: false, score: -1 };
+  }
+
+  // Reject unrequested remixes/covers/karaoke/tributes/podcasts/slowed/nightcore
+  const expectedTags = normalizeRawWithTags(`${params.expectedArtist} ${params.expectedTitle}`);
+  const candTags = normalizeRawWithTags(`${candArtist} ${candTitle}`);
+  if (!VARIANT_MODIFIER_RE.test(expectedTags) && VARIANT_MODIFIER_RE.test(candTags)) {
+    return { ok: false, score: -1 };
+  }
+  // Always block karaoke/reaction/podcast/tribute unless explicitly asked
+  if (
+    !/\b(karaoke|reaction|podcast|tribute)\b/i.test(expectedTags) &&
+    /\b(karaoke|reaction|podcast|tribute)\b/i.test(candTags)
+  ) {
+    return { ok: false, score: -1 };
+  }
+
+  const normExpTitle = normalizeStr(cleanExpTitle);
+  const normCandTitle = normalizeStr(candTitle);
+  const normExpArtist = normalizeStr(primaryExpArtist);
+  const normCandCombined = normalizeStr(candCombined);
+
+  if (!normExpTitle || !normCandTitle) return { ok: false, score: -1 };
+
+  const titleM = tokenMatchMetrics(cleanExpTitle, candTitle);
+  const titleInCombinedM = tokenMatchMetrics(cleanExpTitle, candCombined);
+  const effectiveTitleRecall = Math.max(titleM.recall, titleInCombinedM.recall);
+  const effectiveTitleF1 = Math.max(titleM.f1, titleInCombinedM.f1);
+  const titleExactish =
+    normExpTitle.length >= 4 &&
+    (normCandTitle.includes(normExpTitle) || normExpTitle.includes(normCandTitle));
+
+  // Title must genuinely match
+  if (!titleExactish && (effectiveTitleRecall < 0.6 || effectiveTitleF1 < 0.45)) {
+    return { ok: false, score: -1 };
+  }
+  if (titleExactish && effectiveTitleRecall < 0.5 && normExpTitle.length < 6) {
+    return { ok: false, score: -1 };
+  }
+
+  // Artist verification: require artist match against candidateArtist OR uploader+title combined
+  const hasRealArtist = normExpArtist.length >= 2 && !GENERIC_ARTIST_NAMES.has(normExpArtist);
+  let artScore = 0;
+  if (hasRealArtist) {
+    const artDirect = tokenMatchMetrics(primaryExpArtist, candArtist);
+    const artCombined = tokenMatchMetrics(primaryExpArtist, candCombined);
+    const fullArtistCombined = tokenMatchMetrics(params.expectedArtist, candCombined);
+    const bestArtRecall = Math.max(artDirect.recall, artCombined.recall, fullArtistCombined.recall);
+    const artistExactInCombined = normCandCombined.includes(normExpArtist);
+
+    if (!artistExactInCombined && bestArtRecall < 0.5) {
+      return { ok: false, score: -1 };
+    }
+    artScore = artistExactInCombined ? 1.0 : bestArtRecall;
+  }
+
+  const durPenalty = expDur > 35 && candDur > 35 ? Math.min(0.45, Math.abs(candDur - expDur) / 60) : 0;
+  const totalScore =
+    effectiveTitleF1 * 1.4 +
+    effectiveTitleRecall * 0.6 +
+    artScore * 1.3 +
+    (titleExactish ? 0.4 : 0) -
+    durPenalty;
+
+  return { ok: true, score: totalScore };
 }
 
 async function searchYouTubeHtmlFallback(
@@ -517,14 +632,22 @@ async function resolveYouTubeMatch(artist: string, title: string, durationSec: n
       const scored = ytm.tracks
         .filter((t) => t.youtubeVideoId)
         .map((t) => {
-          const hay = `${t.artist.name} ${t.title}`;
-          const overlap = tokenOverlapScore(query, hay);
-          const durDiff = durationSec > 20 && t.durationSec > 20 ? Math.abs(t.durationSec - durationSec) : 0;
+          const check = isStrictTrackMatch({
+            expectedArtist: artist,
+            expectedTitle: title,
+            candidateArtist: t.artist.name,
+            candidateTitle: t.title,
+            expectedDurationSec: durationSec,
+            candidateDurationSec: t.durationSec,
+            maxDurationDeltaSec: 35,
+          });
           return {
             id: t.youtubeVideoId!,
-            score: overlap * 100 - durDiff * 0.9,
+            ok: check.ok,
+            score: check.score,
           };
         })
+        .filter((x) => x.ok)
         .sort((a, b) => b.score - a.score);
       if (scored[0]?.id) {
         return {
@@ -539,8 +662,19 @@ async function resolveYouTubeMatch(artist: string, title: string, durationSec: n
       CJK_CHAR_RE.test(query) ? query : `${query} official audio`,
       durationSec
     );
-    const bestAudio = candidates.find((c) => !c.isVideo) || candidates[0];
-    const bestMv = candidates.find((c) => c.isVideo) || candidates[0];
+    const verified = candidates.filter((c) =>
+      isStrictTrackMatch({
+        expectedArtist: artist,
+        expectedTitle: title,
+        candidateArtist: '',
+        candidateTitle: c.title,
+        expectedDurationSec: durationSec,
+        candidateDurationSec: c.sec,
+        maxDurationDeltaSec: 35,
+      }).ok
+    );
+    const bestAudio = verified.find((c) => !c.isVideo) || verified[0];
+    const bestMv = verified.find((c) => c.isVideo) || verified[0];
     return {
       audioId: bestAudio?.id,
       mvId: bestMv?.id,
@@ -577,12 +711,11 @@ async function resolveJioSaavnStream(
   durationSec: number
 ): Promise<{ sourceType: 'audio-mp3'; url: string; label: string } | null> {
   try {
-    const primaryArtist = artist.split(',')[0].trim();
+    const primaryArtist = extractPrimaryArtist(artist);
     const cleanTitle = title.replace(/\([^)]*\)|\[[^\]]*\]/g, '').trim() || title;
     const query = `${primaryArtist} ${cleanTitle}`.trim();
     if (!query) return null;
 
-    const wantRemix = /\b(remix|sped up|slowed|nightcore|acoustic|live|cover|8d|lofi)\b/i.test(`${artist} ${title}`);
     const candidates: Array<{ score: number; url: string }> = [];
 
     const res = await fetchJsonSafe<{ results?: any[] }>(
@@ -600,26 +733,21 @@ async function resolveJioSaavnStream(
           ''
       );
       const sDur = Number(s?.more_info?.duration || 0);
-      if (sDur > 0 && sDur < 45) continue;
-      if (durationSec > 45 && sDur > 45 && Math.abs(sDur - durationSec) > 55) continue;
-
-      const titleOv = tokenOverlapScore(cleanTitle, sTitle);
-      const artOv = tokenOverlapScore(primaryArtist, primaryArtists);
-      const fullOv = tokenOverlapScore(query, `${primaryArtists} ${sTitle}`);
-      if (titleOv < 0.4 || (artOv === 0 && !CJK_CHAR_RE.test(primaryArtist))) continue;
-
-      let score = titleOv * 1.4 + artOv * 1.2 + fullOv * 0.6;
-      if (!wantRemix && /\b(remix|sped up|slowed|nightcore|mashup|lofi|8d|karaoke|instrumental|cover)\b/i.test(sTitle)) {
-        score -= 0.95;
-      }
-      if (durationSec > 45 && sDur > 0) {
-        score -= Math.min(0.6, Math.abs(sDur - durationSec) / 90);
-      }
+      const check = isStrictTrackMatch({
+        expectedArtist: artist,
+        expectedTitle: title,
+        candidateArtist: primaryArtists,
+        candidateTitle: sTitle,
+        expectedDurationSec: durationSec,
+        candidateDurationSec: sDur,
+        maxDurationDeltaSec: 28,
+      });
+      if (!check.ok) continue;
 
       const decrypted = decryptDesEcbBase64(enc, '38346591').trim();
       if (!decrypted || !decrypted.startsWith('http')) continue;
       const hiUrl = decrypted.replace(/_96\.mp4$/, '_320.mp4');
-      candidates.push({ score, url: hiUrl });
+      candidates.push({ score: check.score, url: hiUrl });
     }
 
     candidates.sort((a, b) => b.score - a.score);
@@ -644,43 +772,35 @@ async function resolveSoundCloudStream(
   title: string,
   durationSec: number,
   explicitScId?: string,
-  allowScrape = true,
-  relaxed = true
+  allowScrape = true
 ): Promise<{ sourceType: 'audio-mp3' | 'audio-hls'; url: string; label: string; bitrateKbps?: number } | null> {
   try {
     const cid = await getSoundCloudClientId(allowScrape);
     if (!cid) return null;
 
     let candidates: any[] = [];
+    let isExplicitIdLookup = false;
     if (explicitScId) {
       const single = await fetchJsonSafe<any>(
         `https://api-v2.soundcloud.com/tracks/${encodeURIComponent(explicitScId)}?client_id=${cid}`,
         2200
       );
-      if (single?.id) candidates = [single];
+      if (single?.id) {
+        candidates = [single];
+        isExplicitIdLookup = true;
+      }
     }
 
-    const primaryArtist = artist.split(',')[0].trim();
+    const primaryArtist = extractPrimaryArtist(artist);
     const cleanTitle = title.replace(/\([^)]*\)|\[[^\]]*\]/g, '').trim() || title;
     if (candidates.length === 0) {
       const q = `${primaryArtist} ${cleanTitle}`.trim();
       const sr = await fetchJsonSafe<any>(
-        `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(q)}&client_id=${cid}&limit=12`,
+        `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(q)}&client_id=${cid}&limit=14`,
         2400
       );
       candidates = Array.isArray(sr?.collection) ? sr.collection : [];
-      if (candidates.length === 0 && relaxed && cleanTitle) {
-        const srTitleOnly = await fetchJsonSafe<any>(
-          `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(cleanTitle)}&client_id=${cid}&limit=10`,
-          2200
-        );
-        candidates = Array.isArray(srTitleOnly?.collection) ? srTitleOnly.collection : [];
-      }
     }
-
-    const cleanQuery = `${artist} ${title}`;
-    const wantRemix = /\b(remix|sped up|slowed|nightcore|acoustic|live|cover)\b/i.test(cleanQuery);
-    const minScore = relaxed ? 0.25 : 0.35;
 
     const isUnencryptedPlayable = (x: any): boolean => {
       if (!x || x.snipped) return false;
@@ -688,44 +808,38 @@ async function resolveSoundCloudStream(
       return proto === 'progressive' || proto === 'hls';
     };
 
-    const scoreCandidate = (t: any): number => {
-      const scTitle = String(t?.title || '');
-      const scUser = String(t?.user?.username || '');
-      const hay = `${scUser} ${scTitle}`;
-      const titleOverlap = tokenOverlapScore(cleanTitle, scTitle);
-      const fullOverlap = tokenOverlapScore(cleanQuery, hay);
-      let score = titleOverlap * 1.45 + fullOverlap;
-      if (!wantRemix && /\b(remix|bootleg|flip|nightcore|sped up|slowed|amapiano|8d|karaoke|instrumental)\b/i.test(scTitle)) {
-        score -= 0.75;
-      }
-      const hasProg = t?.media?.transcodings?.some(
-        (x: any) => !x?.snipped && String(x?.format?.protocol || '').toLowerCase() === 'progressive'
-      );
-      if (hasProg) score += 0.2;
-      const tDur = Number(t?.full_duration || t?.duration || 0) / 1000;
-      if (durationSec > 45 && tDur > 0) {
-        score -= Math.min(0.8, Math.abs(tDur - durationSec) / 90);
-      }
-      return score;
-    };
-
     const valid = candidates
-      .filter((t) => {
+      .map((t) => {
         const trans = t?.media?.transcodings;
-        if (!Array.isArray(trans) || trans.length === 0) return false;
-        const playable = trans.some(isUnencryptedPlayable);
-        if (!playable) return false;
+        if (!Array.isArray(trans) || trans.length === 0) return null;
+        if (!trans.some(isUnencryptedPlayable)) return null;
         const tDur = Number(t?.full_duration || t?.duration || 0) / 1000;
-        if (tDur < 45) return false;
-        if (durationSec > 45 && Math.abs(tDur - durationSec) > (relaxed ? 65 : 38)) return false;
-        const hay = `${t?.user?.username || ''} ${t?.title || ''}`;
-        const titleOv = tokenOverlapScore(cleanTitle, t?.title || '');
-        const fullOv = tokenOverlapScore(cleanQuery, hay);
-        return titleOv >= minScore || fullOv >= minScore;
-      })
-      .sort((a, b) => scoreCandidate(b) - scoreCandidate(a));
+        if (tDur < 45) return null;
 
-    for (const chosen of valid.slice(0, 3)) {
+        if (isExplicitIdLookup) {
+          return { track: t, score: 10 };
+        }
+
+        const check = isStrictTrackMatch({
+          expectedArtist: artist,
+          expectedTitle: title,
+          candidateArtist: String(t?.user?.username || ''),
+          candidateTitle: String(t?.title || ''),
+          expectedDurationSec: durationSec,
+          candidateDurationSec: tDur,
+          maxDurationDeltaSec: 28,
+        });
+        if (!check.ok) return null;
+
+        const hasProg = trans.some(
+          (x: any) => !x?.snipped && String(x?.format?.protocol || '').toLowerCase() === 'progressive'
+        );
+        return { track: t, score: check.score + (hasProg ? 0.15 : 0) };
+      })
+      .filter((x): x is { track: any; score: number } => Boolean(x))
+      .sort((a, b) => b.score - a.score);
+
+    for (const { track: chosen } of valid.slice(0, 3)) {
       const transcodings = (chosen.media.transcodings as any[]).filter(isUnencryptedPlayable);
       const prog = transcodings.find((x) => String(x.format?.protocol || '').toLowerCase() === 'progressive');
       const hls =
@@ -770,7 +884,7 @@ async function resolveAudiusStream(artist: string, title: string, durationSec: n
         };
       }
     }
-    const cleanArtist = artist.split(',')[0].trim();
+    const cleanArtist = extractPrimaryArtist(artist);
     const cleanTitle = title.replace(/\([^)]*\)|\[[^\]]*\]/g, '').trim() || title;
     const q = `${cleanArtist} ${cleanTitle}`.trim();
     const res = await fetchJsonSafe<{ data?: any[] }>(
@@ -778,28 +892,23 @@ async function resolveAudiusStream(artist: string, title: string, durationSec: n
       2400
     );
     const items = Array.isArray(res?.data) ? res.data : [];
-    const wantRemix = /\b(remix|flip|bootleg|sped up|slowed|nightcore|edit|acoustic|live|cover|8d|lofi)\b/i.test(`${artist} ${title}`);
-    const matches = items.filter((t) => {
-      const dur = Number(t?.duration || 0);
-      if (dur > 0 && dur < 45) return false;
-      if (durationSec > 45 && dur > 0 && Math.abs(dur - durationSec) > 35) return false;
-      const auTitle = String(t?.title || '');
-      const auUser = String(t?.user?.name || '');
-      if (
-        !wantRemix &&
-        /\b(remix|flip|bootleg|edit|mashup|sped up|slowed|nightcore|reverb|cover|karaoke|instrumental|8d|lofi|tribute)\b/i.test(
-          auTitle
-        )
-      ) {
-        return false;
-      }
-      const titleOv = tokenOverlapScore(cleanTitle, auTitle);
-      const hay = `${auUser} ${auTitle}`;
-      const fullOv = tokenOverlapScore(q, hay);
-      const artOv = tokenOverlapScore(cleanArtist, hay);
-      return titleOv >= 0.45 && (artOv > 0 || fullOv >= 0.65);
-    });
-    for (const hit of matches.slice(0, 2)) {
+    const scored = items
+      .map((t) => {
+        const check = isStrictTrackMatch({
+          expectedArtist: artist,
+          expectedTitle: title,
+          candidateArtist: String(t?.user?.name || ''),
+          candidateTitle: String(t?.title || ''),
+          expectedDurationSec: durationSec,
+          candidateDurationSec: Number(t?.duration || 0),
+          maxDurationDeltaSec: 28,
+        });
+        return check.ok ? { hit: t, score: check.score } : null;
+      })
+      .filter((x): x is { hit: any; score: number } => Boolean(x))
+      .sort((a, b) => b.score - a.score);
+
+    for (const { hit } of scored.slice(0, 2)) {
       const url = `${mirrorHost}/v1/tracks/${encodeURIComponent(hit.id)}/stream?app_name=RIFFAN`;
       if (await verifyDirectStreamUrl(url, 2600)) {
         return {
@@ -818,20 +927,33 @@ async function resolveAudiusStream(artist: string, title: string, durationSec: n
 
 async function resolveArchiveAudioFallback(
   artist: string,
-  title: string
+  title: string,
+  durationSec = 0
 ): Promise<{ sourceType: 'audio-mp3'; url: string; label: string; bitrateKbps?: number } | null> {
   try {
-    const cleanArtist = artist.split(',')[0].trim();
+    const cleanArtist = extractPrimaryArtist(artist);
     const cleanTitle = title.replace(/\([^)]*\)|\[[^\]]*\]/g, '').trim() || title;
-    const q = `(${cleanArtist} ${cleanTitle}) AND mediatype:audio`;
-    const res = await fetchJsonSafe<{ response?: { docs?: Array<{ identifier?: string }> } }>(
-      `https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}&fl[]=identifier&rows=3&output=json`,
+    if (!cleanArtist || !cleanTitle) return null;
+    const q = `("${cleanArtist}" AND "${cleanTitle}") AND mediatype:audio`;
+    const res = await fetchJsonSafe<{ response?: { docs?: Array<{ identifier?: string; title?: string; creator?: string | string[] }> } }>(
+      `https://archive.org/advancedsearch.php?q=${encodeURIComponent(q)}&fl[]=identifier&fl[]=title&fl[]=creator&rows=4&output=json`,
       2200
     );
     const docs = Array.isArray(res?.response?.docs) ? res.response.docs : [];
-    for (const d of docs.slice(0, 2)) {
+    for (const d of docs.slice(0, 3)) {
       if (!d?.identifier) continue;
-      const meta = await fetchJsonSafe<{ files?: Array<{ name?: string; format?: string }> }>(
+      const docArtist = Array.isArray(d.creator) ? d.creator.join(' ') : String(d.creator || '');
+      const docTitle = String(d.title || '');
+      const docMatch = isStrictTrackMatch({
+        expectedArtist: artist,
+        expectedTitle: title,
+        candidateArtist: docArtist,
+        candidateTitle: docTitle || d.identifier,
+        expectedDurationSec: durationSec,
+      });
+      if (!docMatch.ok) continue;
+
+      const meta = await fetchJsonSafe<{ files?: Array<{ name?: string; format?: string; length?: string }> }>(
         `https://archive.org/metadata/${encodeURIComponent(d.identifier)}`,
         2200
       );
@@ -1551,7 +1673,7 @@ export async function resolveTrackPlayback(params: {
   preferAudio?: boolean;
 }): Promise<ResolvedTrackPlayback> {
   const durationSec = Number(params.durationSec || 0);
-  const key = `v3-multi:${params.artist.toLowerCase()}|${params.title.toLowerCase()}|${durationSec}|${params.audiusId || ''}|${params.soundcloudId || ''}`;
+  const key = `v4-strict:${normalizeStr(params.artist)}|${normalizeStr(params.title)}|${durationSec}|${params.audiusId || ''}|${params.soundcloudId || ''}`;
   const cached = playbackCache.get(key);
   if (cached) return cached;
 
@@ -1605,11 +1727,11 @@ export async function resolveTrackPlayback(params: {
     }
   }
 
-  // Parallel verified native non-YouTube audio resolution + telemetry scoring
+  // Parallel verified native non-YouTube audio resolution + strict matching
   const [jioTimed, scTimed, audiusTimed, ytRes] = await Promise.all([
     timed('jiosaavn', () => resolveJioSaavnStream(params.artist, params.title, durationSec)),
     timed('soundcloud', () =>
-      resolveSoundCloudStream(params.artist, params.title, durationSec, params.soundcloudId, true, true)
+      resolveSoundCloudStream(params.artist, params.title, durationSec, params.soundcloudId, true)
     ),
     timed('audius', () => resolveAudiusStream(params.artist, params.title, durationSec)),
     params.youtubeVideoId
@@ -1659,7 +1781,7 @@ export async function resolveTrackPlayback(params: {
 
   if (rawCandidates.length === 0) {
     const arcTimed = await timed('archive', () =>
-      resolveArchiveAudioFallback(params.artist, params.title)
+      resolveArchiveAudioFallback(params.artist, params.title, durationSec)
     );
     pushCand('archive', 'archive', 'Archive.org', 72, arcTimed.latencyMs, arcTimed.value);
   }
@@ -1698,17 +1820,41 @@ export async function resolveTrackPlayback(params: {
   } else {
     let fallbackPreview = params.previewUrl;
     if (!fallbackPreview) {
-      const qTerm = `${params.artist.split(',')[0].trim()} ${params.title}`.trim();
+      const qTerm = `${extractPrimaryArtist(params.artist)} ${params.title}`.trim();
       const [itList, dzList] = await Promise.all([
-        searchItunesMusic(qTerm, 'song', 4, 'US'),
+        searchItunesMusic(qTerm, 'song', 5, 'US'),
         fetchJsonSafe<{ data?: any[] }>(
-          `https://api.deezer.com/search/track?q=${encodeURIComponent(qTerm)}&limit=4`,
+          `https://api.deezer.com/search/track?q=${encodeURIComponent(qTerm)}&limit=5`,
           3000
         ),
       ]);
-      const hitPreview =
-        itList.find((x) => x?.previewUrl)?.previewUrl ||
-        dzList?.data?.find((x) => x?.preview)?.preview;
+      const itMatch = itList.find(
+        (x) =>
+          x?.previewUrl &&
+          isStrictTrackMatch({
+            expectedArtist: params.artist,
+            expectedTitle: params.title,
+            candidateArtist: String(x?.artistName || ''),
+            candidateTitle: String(x?.trackName || ''),
+            expectedDurationSec: durationSec,
+            candidateDurationSec: x?.trackTimeMillis ? Math.round(Number(x.trackTimeMillis) / 1000) : 0,
+            maxDurationDeltaSec: 35,
+          }).ok
+      );
+      const dzMatch = dzList?.data?.find(
+        (x) =>
+          x?.preview &&
+          isStrictTrackMatch({
+            expectedArtist: params.artist,
+            expectedTitle: params.title,
+            candidateArtist: String(x?.artist?.name || ''),
+            candidateTitle: String(x?.title || ''),
+            expectedDurationSec: durationSec,
+            candidateDurationSec: Number(x?.duration || 0),
+            maxDurationDeltaSec: 35,
+          }).ok
+      );
+      const hitPreview = itMatch?.previewUrl || dzMatch?.preview;
       if (hitPreview) fallbackPreview = String(hitPreview);
     }
     result = {

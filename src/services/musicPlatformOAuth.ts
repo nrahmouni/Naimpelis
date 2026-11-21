@@ -72,7 +72,44 @@ export async function fetchSpotifyOAuthStatus(): Promise<SpotifyOAuthStatus> {
 
 export async function connectAndImportYoutubeAccount(): Promise<FullOAuthImportResult> {
   initMusicOAuthMemoryCleanup();
-  const result = await signInWithPopup(auth, youtubeGoogleProvider);
+  let result;
+  try {
+    result = await signInWithPopup(auth, youtubeGoogleProvider);
+  } catch (err: unknown) {
+    const code =
+      typeof err === 'object' && err && 'code' in err
+        ? String((err as { code?: unknown }).code || '')
+        : '';
+    const msg = err instanceof Error ? err.message : String(err || '');
+
+    if (code === 'auth/popup-blocked') {
+      throw new Error(
+        'El navegador bloqueó la ventana de Google. Permite popups e inténtalo de nuevo.'
+      );
+    }
+    if (
+      code === 'auth/popup-closed-by-user' ||
+      code === 'auth/cancelled-popup-request'
+    ) {
+      throw new Error(
+        'Se cerró el inicio de sesión de Google antes de completarse. Si Google mostró "Error 403: access_denied (verificación de Google)", añade ese correo en "Usuarios de prueba" (Test users) de Google Cloud Console o usa la pestaña "Enlace" para importar tu playlist sin login.'
+      );
+    }
+    if (code === 'auth/unauthorized-domain') {
+      throw new Error(
+        'Este dominio no está autorizado en Firebase Authentication (Authorized domains).'
+      );
+    }
+    if (msg.toLowerCase().includes('access_denied')) {
+      throw new Error(
+        'Google bloqueó el acceso (Error 403: app en modo prueba). Añade el correo en Google Cloud Console → OAuth consent screen → Test users, o importa por enlace público.'
+      );
+    }
+    throw new Error(
+      'No se pudo completar el inicio de sesión con Google / YouTube. Inténtalo de nuevo o pega tu enlace de playlist en la pestaña "Enlace".'
+    );
+  }
+
   const credential = GoogleAuthProvider.credentialFromResult(result);
   const accessToken = credential?.accessToken || cachedYoutubeAccessToken;
 

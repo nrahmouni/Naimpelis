@@ -97,6 +97,7 @@ export interface PlaybackSourceCandidate {
 }
 
 export interface ResolvedTrackPlayback {
+  trackId?: string;
   sourceType: 'audio-hls' | 'audio-mp3' | 'youtube' | 'preview';
   sourceLabel: string;
   streamUrl?: string;
@@ -304,3 +305,57 @@ export interface MusicHomePayload {
   genres: MusicGenre[];
   radios: MusicRadioStation[];
 }
+
+export type MusicNavTab = 'home' | 'search' | 'library' | 'radios';
+
+export type MusicSearchFilter = 'all' | 'tracks' | 'artists' | 'albums' | 'playlists' | 'radios';
+
+export type HomeMoodFilterId =
+  | 'all'
+  | 'youtube_music'
+  | 'spotify'
+  | 'morocco'
+  | 'arab'
+  | 'africa'
+  | 'russia'
+  | 'romania'
+  | 'china'
+  | 'usa'
+  | 'latin'
+  | 'spain'
+  | 'urbano'
+  | 'pop'
+  | 'electronic'
+  | 'rock'
+  | 'chill'
+  | 'flamenco'
+  | 'rnb'
+  | 'soundtrack'
+  | 'classics'
+  | 'audius';
+
+export type MusicDetailView =
+  | { kind: 'album'; id: string; album?: MusicAlbumRef; tracks: MusicTrack[]; loading: boolean }
+  | {
+      kind: 'artist';
+      id: string;
+      artist?: MusicArtistRef;
+      topTracks: MusicTrack[];
+      albums: MusicAlbumRef[];
+      related: MusicArtistRef[];
+      loading: boolean;
+    }
+  | { kind: 'playlist'; id: string; playlist?: MusicPlaylist; tracks: MusicTrack[]; loading: boolean }
+  | { kind: 'genre'; genre: MusicGenre; artists: MusicArtistRef[]; tracks: MusicTrack[]; loading: boolean }
+  | { kind: 'liked' }
+  | { kind: 'curated'; title: string; subtitle: string; cover: string; tracks: MusicTrack[] }
+  | { kind: 'user_playlist'; playlistId: string };
+
+export interface MusicSearchResultsPayload {
+  tracks: MusicTrack[];
+  albums: MusicAlbumRef[];
+  artists: MusicArtistRef[];
+  playlists: MusicPlaylist[];
+  radios: MusicRadioStation[];
+}
+

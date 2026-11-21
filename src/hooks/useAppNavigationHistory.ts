@@ -225,9 +225,10 @@ export function useAppNavigationHistory(params: {
       cur.onExitRoomOrApp?.();
     };
 
-    window.addEventListener('popstate', handlePopState);
+    // Capture phase ensures Riffan Back Stack runs BEFORE useDeepLinkRouter bubble popstate listener
+    window.addEventListener('popstate', handlePopState, true);
     return () => {
-      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('popstate', handlePopState, true);
     };
   }, [armExitWindow, disarmExitWindow, pushGuard, enabled]);
 

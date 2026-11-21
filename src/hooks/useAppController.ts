@@ -210,7 +210,13 @@ export function useAppController() {
   const [roomId, setRoomId] = useState<string>(effectiveInitialRoom);
   const [roomName, setRoomName] = useState<string>(initialRoomName);
   const [inRoom, setInRoom] = useState<boolean>(Boolean(effectiveInitialRoom));
-  const [worldSearchQuery, setWorldSearchQuery] = useState<string>('');
+  const worldSearchQuery = useAppStore((s) => s.worldSearchQueries[s.activeWorld] ?? '');
+  const setWorldSearchQuery = useCallback((nextVal: React.SetStateAction<string>) => {
+    const st = useAppStore.getState();
+    const cur = st.worldSearchQueries[st.activeWorld] ?? '';
+    const resolved = typeof nextVal === 'function' ? nextVal(cur) : nextVal;
+    st.setWorldSearchQuery(st.activeWorld, resolved);
+  }, []);
   const worldSearchQueryRef = useRef<string>(worldSearchQuery);
   worldSearchQueryRef.current = worldSearchQuery;
   const [avatarMenuOpen, setAvatarMenuOpen] = useState<boolean>(false);

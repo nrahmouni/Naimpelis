@@ -6,11 +6,16 @@ import type {
   EqBands5,
   EqPresetId,
   ExportBitrate,
+  HomeMoodFilterId,
   ListeningStats,
   MusicAlbumRef,
+  MusicDetailView,
+  MusicNavTab,
   MusicPlaylist,
   MusicRadioStation,
   MusicRepeatMode,
+  MusicSearchFilter,
+  MusicSearchResultsPayload,
   MusicTrack,
   MusicViewMode,
   PlaybackSourceCandidate,
@@ -348,6 +353,25 @@ export interface MusicStoreState extends PersistedLibrary {
   isFetchingRelated: boolean;
   musicToast: string | null;
 
+  // Persistent Music World UI & Back-stack Navigation State (survives world exit/re-entry)
+  musicNavTab: MusicNavTab;
+  musicActiveMood: HomeMoodFilterId;
+  musicDetailStack: MusicDetailView[];
+  musicSearchQuery: string;
+  musicSearchFilter: MusicSearchFilter;
+  musicSearchResults: MusicSearchResultsPayload | null;
+  musicRadioFilterId: string;
+  setMusicNavTab: (tab: MusicNavTab) => void;
+  setMusicActiveMood: (mood: HomeMoodFilterId) => void;
+  pushMusicDetail: (view: MusicDetailView) => void;
+  replaceTopMusicDetail: (updater: (prev: MusicDetailView | undefined) => MusicDetailView | undefined) => void;
+  popMusicDetail: () => void;
+  clearMusicDetailStack: () => void;
+  setMusicSearchQuery: (q: string) => void;
+  setMusicSearchFilter: (filter: MusicSearchFilter) => void;
+  setMusicSearchResults: (results: MusicSearchResultsPayload | null) => void;
+  setMusicRadioFilterId: (id: string) => void;
+
   playTrack: (track: MusicTrack, contextTracks?: MusicTrack[], opts?: { preserveSeed?: boolean }) => void;
   playRadio: (station: MusicRadioStation) => void;
   addToQueue: (track: MusicTrack) => void;
@@ -357,7 +381,7 @@ export interface MusicStoreState extends PersistedLibrary {
   setAutoplaySimilar: (enabled: boolean) => void;
   fetchAndEnqueueRelatedTracks: (seed: MusicTrack, opts?: { autoAdvance?: boolean }) => Promise<void>;
   showMusicToast: (msg: string) => void;
-  setResolvedPlayback: (resolved: ResolvedTrackPlayback | null) => void;
+  setResolvedPlayback: (resolved: ResolvedTrackPlayback | null, expectedTrackId?: string) => void;
   switchPlaybackSource: (candidate: PlaybackSourceCandidate) => void;
   setResolvingTrack: (loading: boolean) => void;
   setPlaybackError: (err: string | null) => void;
@@ -526,6 +550,40 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
   seedGenre: null,
   isFetchingRelated: false,
   musicToast: null,
+
+  musicNavTab: 'home',
+  musicActiveMood: 'all',
+  musicDetailStack: [],
+  musicSearchQuery: '',
+  musicSearchFilter: 'all',
+  musicSearchResults: null,
+  musicRadioFilterId: 'all',
+
+  setMusicNavTab: (musicNavTab) => set({ musicNavTab }),
+  setMusicActiveMood: (musicActiveMood) => set({ musicActiveMood }),
+  pushMusicDetail: (view) =>
+    set((prev) => ({
+      musicDetailStack: [...prev.musicDetailStack.slice(-7), view],
+    })),
+  replaceTopMusicDetail: (updater) =>
+    set((prev) => {
+      if (prev.musicDetailStack.length === 0) return prev;
+      const top = prev.musicDetailStack[prev.musicDetailStack.length - 1];
+      const nextTop = updater(top);
+      if (!nextTop) return prev;
+      return {
+        musicDetailStack: [...prev.musicDetailStack.slice(0, -1), nextTop],
+      };
+    }),
+  popMusicDetail: () =>
+    set((prev) => ({
+      musicDetailStack: prev.musicDetailStack.length > 0 ? prev.musicDetailStack.slice(0, -1) : [],
+    })),
+  clearMusicDetailStack: () => set({ musicDetailStack: [] }),
+  setMusicSearchQuery: (musicSearchQuery) => set({ musicSearchQuery }),
+  setMusicSearchFilter: (musicSearchFilter) => set({ musicSearchFilter }),
+  setMusicSearchResults: (musicSearchResults) => set({ musicSearchResults }),
+  setMusicRadioFilterId: (musicRadioFilterId) => set({ musicRadioFilterId }),
 
   showMusicToast: (msg) => {
     set({ musicToast: msg });
@@ -776,7 +834,19 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
     get().playTrack(prevTrack, state.queue, { preserveSeed: true });
   },
 
-  setResolvedPlayback: (resolved) => set({ resolvedPlayback: resolved, isResolvingTrack: false }),
+  setResolvedPlayback: (resolved, expectedTrackId) => {
+    const activeId = get().currentTrack?.id;
+    if (expectedTrackId && activeId !== expectedTrackId) {
+      return;
+    }
+    const stamped = resolved
+      ? {
+          ...resolved,
+          trackId: resolved.trackId || expectedTrackId || activeId,
+        }
+      : null;
+    set({ resolvedPlayback: stamped, isResolvingTrack: false });
+  },
 
   switchPlaybackSource: (candidate) =>
     set((prev) => {

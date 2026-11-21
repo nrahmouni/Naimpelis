@@ -137,6 +137,8 @@ interface AppShellState {
   pendingScrollRestore: { mainTop: number; catalogTop: number } | null;
   homeSearchQuery: string;
   homeSearchCategory: HomeSearchCategoryFilter;
+  homeSearchOverlayDismissed: boolean;
+  worldSearchQueries: Partial<Record<WorldId, string>>;
   activeNavSection: ShellNavSection;
   activeWorld: WorldId;
   lastUsedWorld: PrimaryWorldId | null;
@@ -180,6 +182,8 @@ interface AppShellState {
   setPendingScrollRestore: (pos: { mainTop: number; catalogTop: number } | null) => void;
   setHomeSearchQuery: (q: string) => void;
   setHomeSearchCategory: (category: HomeSearchCategoryFilter) => void;
+  setHomeSearchOverlayDismissed: (dismissed: boolean) => void;
+  setWorldSearchQuery: (world: WorldId, q: string) => void;
   setActiveNavSection: (section: ShellNavSection) => void;
   setActiveWorld: (world: WorldId) => void;
   setCineTab: (tab: CineSubTab) => void;
@@ -266,6 +270,8 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   pendingScrollRestore: null,
   homeSearchQuery: '',
   homeSearchCategory: 'all',
+  homeSearchOverlayDismissed: false,
+  worldSearchQueries: {},
   activeNavSection: 'home',
   activeWorld: 'entry',
   lastUsedWorld: loadLastUsedWorld(),
@@ -385,11 +391,22 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   },
   setHomeSearchQuery: (homeSearchQuery) => {
     if (get().homeSearchQuery === homeSearchQuery) return;
-    set({ homeSearchQuery });
+    set({ homeSearchQuery, homeSearchOverlayDismissed: false });
   },
   setHomeSearchCategory: (homeSearchCategory) => {
     if (get().homeSearchCategory === homeSearchCategory) return;
     set({ homeSearchCategory });
+  },
+  setHomeSearchOverlayDismissed: (homeSearchOverlayDismissed) => {
+    if (get().homeSearchOverlayDismissed === homeSearchOverlayDismissed) return;
+    set({ homeSearchOverlayDismissed });
+  },
+  setWorldSearchQuery: (world, q) => {
+    const cur = get().worldSearchQueries[world] ?? '';
+    if (cur === q) return;
+    set((prev) => ({
+      worldSearchQueries: { ...prev.worldSearchQueries, [world]: q },
+    }));
   },
 
   setActiveNavSection: (activeNavSection) => {

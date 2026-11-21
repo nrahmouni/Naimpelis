@@ -625,6 +625,18 @@ export const SpotifyYtmImportModal: React.FC<{
                       )}
                       <span>{m.connectYoutubeBtn}</span>
                     </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setErrorMsg(null);
+                        setTab('link');
+                      }}
+                      className="w-full h-9 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] text-zinc-300 hover:text-white font-semibold text-[11px] inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <Link2 className="w-3.5 h-3.5 text-[#60A5FA]" />
+                      <span>O pega enlace de Playlist / Canal de YouTube sin login</span>
+                    </button>
                   </div>
 
                   {/* Spotify Login Card */}

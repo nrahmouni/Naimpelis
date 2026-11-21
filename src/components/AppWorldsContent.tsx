@@ -612,9 +612,6 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
         onGoHome={() => enterWorld('entry')}
         onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
         quickActions={<MusicLanguageDropdown />}
-        searchValue={worldSearchQuery}
-        onSearchChange={setWorldSearchQuery}
-        searchPlaceholder={MUSIC_I18N[musicLang].searchPlaceholder}
         className={portalLandingActive ? 'rtv-world-touchdown' : ''}
       >
         <RiffanMusicWorldView

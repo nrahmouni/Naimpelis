@@ -70,6 +70,8 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   const setQuery = useAppStore((s) => s.setHomeSearchQuery);
   const activeCategory = useAppStore((s) => s.homeSearchCategory);
   const setActiveCategory = useAppStore((s) => s.setHomeSearchCategory);
+  const overlayDismissed = useAppStore((s) => s.homeSearchOverlayDismissed);
+  const setOverlayDismissed = useAppStore((s) => s.setHomeSearchOverlayDismissed);
 
   const [remoteMovies, setRemoteMovies] = useState<CatalogMovie[]>([]);
   const [remoteSeries, setRemoteSeries] = useState<CatalogMovie[]>([]);
@@ -94,7 +96,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   const normQuery = norm(cleanQuery);
   const hasMinQuery = cleanQuery.length >= 2;
   const isSearchActive = cleanQuery.length > 0;
-  const showOverlay = isSearchActive && !suppressOverlay;
+  const showOverlay = isSearchActive && !suppressOverlay && !overlayDismissed;
 
   useSuppressFloatingBubble(showOverlay);
 
@@ -107,13 +109,19 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
 
   useEffect(() => () => clearAiPoll(), [clearAiPoll]);
 
+  const dismissSearchOverlay = useCallback(() => {
+    clearAiPoll();
+    setOverlayDismissed(true);
+  }, [clearAiPoll, setOverlayDismissed]);
+
   const closeSearchOverlay = useCallback(() => {
     clearAiPoll();
     setQuery('');
     setActiveCategory('all');
+    setOverlayDismissed(false);
     lastAutoAiQueryRef.current = '';
     setAiJob({ status: 'idle', progressLabel: '', item: null });
-  }, [clearAiPoll, setQuery, setActiveCategory]);
+  }, [clearAiPoll, setQuery, setActiveCategory, setOverlayDismissed]);
 
   const saveRecentSearch = useCallback((rawTerm: string) => {
     const cleaned = rawTerm.trim();
@@ -152,7 +160,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     clearAiPoll();
   }, [clearAiPoll, saveRecentSearch]);
 
-  useBackInterceptor(showOverlay, 'entry-universal-search', closeSearchOverlay, {
+  useBackInterceptor(showOverlay, 'entry-universal-search', dismissSearchOverlay, {
     priority: 8,
     lockScroll: true,
   });
@@ -563,8 +571,14 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
             ref={inputRef}
             type="text"
             value={query}
+            onFocus={() => {
+              if (cleanQuery.length > 0 && overlayDismissed) {
+                setOverlayDismissed(false);
+              }
+            }}
             onChange={(e) => {
               clearAiPoll();
+              setOverlayDismissed(false);
               setQuery(e.target.value);
               if (aiJob.status !== 'idle') {
                 setAiJob({ status: 'idle', progressLabel: '', item: null });
@@ -572,7 +586,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
             }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
-                closeSearchOverlay();
+                dismissSearchOverlay();
               } else if (e.key === 'Enter' && cleanQuery.length >= 2) {
                 e.preventDefault();
                 if (aiJob.status === 'found' && aiJob.item) {
@@ -639,7 +653,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                   type="button"
                   onClick={() => {
                     triggerHaptic('light');
-                    closeSearchOverlay();
+                    dismissSearchOverlay();
                   }}
                   aria-label={pickLang(lang, {
                     es: 'Volver al inicio',

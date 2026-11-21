@@ -890,22 +890,28 @@ export const MusicAudioEngine: React.FC = () => {
       offlineObjectUrlRef.current = null;
     }
 
+    const expectedTrackId = currentTrack.id;
+
     const resolveTrack = async () => {
       try {
-        const offlineBlob = await getOfflineTrackBlob(currentTrack.id);
+        const offlineBlob = await getOfflineTrackBlob(expectedTrackId);
         if (cancelled) return;
         if (offlineBlob && offlineBlob.size > 1000) {
           const objUrl = URL.createObjectURL(offlineBlob);
           offlineObjectUrlRef.current = objUrl;
-          useMusicStore.getState().setResolvedPlayback({
-            sourceType: 'audio-mp3',
-            sourceLabel: 'Offline Hi-Fi',
-            streamUrl: objUrl,
-            proxiedUrl: objUrl,
-            bitrateKbps: 320,
-            provider: 'offline',
-            fullLength: true,
-          });
+          useMusicStore.getState().setResolvedPlayback(
+            {
+              trackId: expectedTrackId,
+              sourceType: 'audio-mp3',
+              sourceLabel: 'Offline Hi-Fi',
+              streamUrl: objUrl,
+              proxiedUrl: objUrl,
+              bitrateKbps: 320,
+              provider: 'offline',
+              fullLength: true,
+            },
+            expectedTrackId
+          );
           return;
         }
       } catch {
@@ -913,7 +919,7 @@ export const MusicAudioEngine: React.FC = () => {
       }
 
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        if (!cancelled) {
+        if (!cancelled && useMusicStore.getState().currentTrack?.id === expectedTrackId) {
           useMusicStore.getState().setResolvingTrack(false);
           useMusicStore.getState().setPlaybackError('Sin conexión y sin caché offline para esta canción');
         }
@@ -934,39 +940,50 @@ export const MusicAudioEngine: React.FC = () => {
       try {
         const r = await fetch(`/api/music/play?${qs.toString()}`, { signal: controller.signal });
         const data = await r.json();
-        if (cancelled) return;
+        if (cancelled || useMusicStore.getState().currentTrack?.id !== expectedTrackId) return;
         if (data?.success && data?.sourceType && data.sourceType !== 'youtube' && data?.proxiedUrl) {
-          useMusicStore.getState().setResolvedPlayback(data as ResolvedTrackPlayback);
+          useMusicStore.getState().setResolvedPlayback(
+            { ...(data as ResolvedTrackPlayback), trackId: expectedTrackId },
+            expectedTrackId
+          );
         } else if (currentTrack.previewUrl) {
-          useMusicStore.getState().setResolvedPlayback({
-            sourceType: 'preview',
-            sourceLabel: 'Preview HD (30s)',
-            streamUrl: currentTrack.previewUrl,
-            proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(currentTrack.previewUrl)}`,
-            youtubeMvId: data?.youtubeMvId || currentTrack.youtubeVideoId,
-            previewUrl: currentTrack.previewUrl,
-            bitrateKbps: 128,
-            provider: 'deezer',
-            fullLength: false,
-          });
+          useMusicStore.getState().setResolvedPlayback(
+            {
+              trackId: expectedTrackId,
+              sourceType: 'preview',
+              sourceLabel: 'Preview HD (30s)',
+              streamUrl: currentTrack.previewUrl,
+              proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(currentTrack.previewUrl)}`,
+              youtubeMvId: data?.youtubeMvId || currentTrack.youtubeVideoId,
+              previewUrl: currentTrack.previewUrl,
+              bitrateKbps: 128,
+              provider: 'deezer',
+              fullLength: false,
+            },
+            expectedTrackId
+          );
         } else {
           useMusicStore.getState().setResolvingTrack(false);
           useMusicStore.getState().setPlaybackError('Sin fuente de audio directa disponible');
         }
       } catch {
-        if (cancelled) return;
+        if (cancelled || useMusicStore.getState().currentTrack?.id !== expectedTrackId) return;
         if (currentTrack.previewUrl) {
-          useMusicStore.getState().setResolvedPlayback({
-            sourceType: 'preview',
-            sourceLabel: 'Preview HD (30s)',
-            streamUrl: currentTrack.previewUrl,
-            proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(currentTrack.previewUrl)}`,
-            youtubeMvId: currentTrack.youtubeVideoId,
-            previewUrl: currentTrack.previewUrl,
-            bitrateKbps: 128,
-            provider: 'deezer',
-            fullLength: false,
-          });
+          useMusicStore.getState().setResolvedPlayback(
+            {
+              trackId: expectedTrackId,
+              sourceType: 'preview',
+              sourceLabel: 'Preview HD (30s)',
+              streamUrl: currentTrack.previewUrl,
+              proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(currentTrack.previewUrl)}`,
+              youtubeMvId: currentTrack.youtubeVideoId,
+              previewUrl: currentTrack.previewUrl,
+              bitrateKbps: 128,
+              provider: 'deezer',
+              fullLength: false,
+            },
+            expectedTrackId
+          );
         } else {
           useMusicStore.getState().setResolvingTrack(false);
           useMusicStore.getState().setPlaybackError('Error de conexión con fuente de audio');
@@ -1103,6 +1120,10 @@ export const MusicAudioEngine: React.FC = () => {
       return;
     }
 
+    if (resolvedPlayback.trackId && resolvedPlayback.trackId !== currentTrack.id) {
+      return;
+    }
+
     const st = useMusicStore.getState();
     const targetSrc = resolvedPlayback.proxiedUrl || resolvedPlayback.streamUrl || '';
     if (!targetSrc) return;
@@ -1194,17 +1215,21 @@ export const MusicAudioEngine: React.FC = () => {
           if (data.fatal) {
             hls.destroy();
             hlsInstancesRef.current[nextSlot] = null;
-            if (resolvedPlayback.previewUrl) {
-              useMusicStore.getState().setResolvedPlayback({
-                sourceType: 'preview',
-                sourceLabel: 'Preview HD (30s)',
-                streamUrl: resolvedPlayback.previewUrl,
-                proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(resolvedPlayback.previewUrl)}`,
-                previewUrl: resolvedPlayback.previewUrl,
-                bitrateKbps: 128,
-                provider: 'deezer',
-                fullLength: false,
-              });
+            if (resolvedPlayback.previewUrl && useMusicStore.getState().currentTrack?.id === currentTrack.id) {
+              useMusicStore.getState().setResolvedPlayback(
+                {
+                  trackId: currentTrack.id,
+                  sourceType: 'preview',
+                  sourceLabel: 'Preview HD (30s)',
+                  streamUrl: resolvedPlayback.previewUrl,
+                  proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(resolvedPlayback.previewUrl)}`,
+                  previewUrl: resolvedPlayback.previewUrl,
+                  bitrateKbps: 128,
+                  provider: 'deezer',
+                  fullLength: false,
+                },
+                currentTrack.id
+              );
             }
           }
         });
@@ -1434,17 +1459,22 @@ export const MusicAudioEngine: React.FC = () => {
     }
 
     if (st.currentTrack?.previewUrl && st.resolvedPlayback?.sourceType !== 'preview') {
-      st.setResolvedPlayback({
-        sourceType: 'preview',
-        sourceLabel: 'Preview HD (30s)',
-        streamUrl: st.currentTrack.previewUrl,
-        proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(st.currentTrack.previewUrl)}`,
-        youtubeMvId: st.resolvedPlayback?.youtubeMvId || st.currentTrack.youtubeVideoId,
-        previewUrl: st.currentTrack.previewUrl,
-        bitrateKbps: 128,
-        provider: 'deezer',
-        fullLength: false,
-      });
+      const errTrackId = st.currentTrack.id;
+      st.setResolvedPlayback(
+        {
+          trackId: errTrackId,
+          sourceType: 'preview',
+          sourceLabel: 'Preview HD (30s)',
+          streamUrl: st.currentTrack.previewUrl,
+          proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(st.currentTrack.previewUrl)}`,
+          youtubeMvId: st.resolvedPlayback?.youtubeMvId || st.currentTrack.youtubeVideoId,
+          previewUrl: st.currentTrack.previewUrl,
+          bitrateKbps: 128,
+          provider: 'deezer',
+          fullLength: false,
+        },
+        errTrackId
+      );
     }
   };
 
