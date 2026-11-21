@@ -425,6 +425,48 @@ export interface FootballMomentumPoint {
   value: number;
 }
 
+export interface FootballStandingRow {
+  rank: number;
+  teamId?: string;
+  teamName: string;
+  shortName?: string;
+  logo?: string;
+  played: number;
+  wins: number;
+  draws: number;
+  losses: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDiff: number;
+  pts: number;
+  deduction?: number;
+  qualColor?: string;
+  isHomeTeam?: boolean;
+  isAwayTeam?: boolean;
+  isPlayingLive?: boolean;
+  liveMatchLabel?: string;
+}
+
+export interface FootballStandingsLegendItem {
+  title: string;
+  color: string;
+}
+
+export interface FootballStandingsGroup {
+  groupName: string;
+  all: FootballStandingRow[];
+  home?: FootballStandingRow[];
+  away?: FootballStandingRow[];
+}
+
+export interface FootballStandingsData {
+  leagueId?: string;
+  leagueName?: string;
+  hasLiveMatches?: boolean;
+  legend?: FootballStandingsLegendItem[];
+  groups: FootballStandingsGroup[];
+}
+
 export interface FootballMatchDetails {
   eventId: string;
   fotmobMatchId?: string;
@@ -459,6 +501,7 @@ export interface FootballMatchDetails {
   commentary?: FootballMatchCommentaryItem[];
   shotsMap?: FootballMatchShotItem[];
   momentum?: FootballMomentumPoint[];
+  standings?: FootballStandingsData;
   updatedAt?: number;
 }
 

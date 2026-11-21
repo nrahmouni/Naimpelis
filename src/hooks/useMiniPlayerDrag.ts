@@ -22,7 +22,6 @@ export function useMiniPlayerDrag({
   const [isAutoMiniByScroll, setIsAutoMiniByScroll] = useState<boolean>(false);
   const [miniCorner, setMiniCorner] = useState<MiniCorner>('bottom-right');
   const [miniDragOffset, setMiniDragOffset] = useState<{ x: number; y: number } | null>(null);
-  const lastScrollCompressToggleRef = useRef<number>(0);
   const miniDragStartRef = useRef<{
     pointerId: number;
     startX: number;
@@ -34,24 +33,12 @@ export function useMiniPlayerDrag({
   } | null>(null);
 
   const handleCatalogOrWorkspaceScroll = useCallback(
-    (e: React.UIEvent<HTMLDivElement>) => {
-      const st = e.currentTarget.scrollTop;
-      if (videoMode === 'idle' || isExtracting || isPlayerClosedLocally) {
-        return;
-      }
-      const now = Date.now();
-      if (now - lastScrollCompressToggleRef.current < 220) {
-        return;
-      }
-      if (st > 105 && !isAutoMiniByScroll) {
-        lastScrollCompressToggleRef.current = now;
-        setIsAutoMiniByScroll(true);
-      } else if (st < 20 && isAutoMiniByScroll) {
-        lastScrollCompressToggleRef.current = now;
+    (_e: React.UIEvent<HTMLDivElement>) => {
+      if (isAutoMiniByScroll) {
         setIsAutoMiniByScroll(false);
       }
     },
-    [videoMode, isExtracting, isPlayerClosedLocally, isAutoMiniByScroll]
+    [isAutoMiniByScroll]
   );
 
   const handleMiniPointerDown = useCallback(

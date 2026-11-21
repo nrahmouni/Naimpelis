@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, AudioLines, PictureInPicture2, RotateCcw, RotateCw, Settings2 } from 'lucide-react';
+import { AudioLines, PictureInPicture2, RotateCcw, RotateCw, Settings2 } from 'lucide-react';
 import type { AppLanguage, VideoState } from '../../types';
 import { UI_COPY, pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
@@ -86,8 +86,6 @@ export const PlayerTransportBar: React.FC<PlayerTransportBarProps> = ({
   onToggleFullscreen,
   isTouchLocked = false,
   onSeekRelative,
-  tacticalVisionEnabled = false,
-  onToggleTacticalVision,
 }) => {
   const t = UI_COPY[lang];
   const controlsActive = showControls && !isTouchLocked;
@@ -398,40 +396,6 @@ export const PlayerTransportBar: React.FC<PlayerTransportBarProps> = ({
               )}
             </div>
           )}
-
-          {(isFullscreen || isHorizontalFullscreen) &&
-            (mode === 'hls' || mode === 'direct') &&
-            onToggleTacticalVision && (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  revealControls();
-                  onToggleTacticalVision();
-                }}
-                aria-pressed={tacticalVisionEnabled}
-                title={pickLang(lang, {
-                  es: tacticalVisionEnabled ? 'Ocultar Centro Táctico IA' : 'Abrir Centro Táctico IA debajo',
-                  ca: tacticalVisionEnabled ? 'Amagar Centre Tàctic IA' : 'Obrir Centre Tàctic IA sota',
-                  en: tacticalVisionEnabled ? 'Hide AI Match Tracker' : 'Open AI Match Tracker',
-                })}
-                aria-label={pickLang(lang, {
-                  es: 'Centro Táctico IA',
-                  ca: 'Centre Tàctic IA',
-                  en: 'AI Match Tracker',
-                })}
-                className={`min-h-[38px] sm:min-h-[40px] px-2.5 rounded-2xl text-[11px] font-bold flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap shrink-0 border ${
-                  tacticalVisionEnabled
-                    ? 'bg-[#00F593]/20 border-[#00F593]/55 text-[#00F593]'
-                    : 'bg-white/10 hover:bg-white/18 border-transparent text-zinc-100'
-                }`}
-              >
-                <Activity className="w-3.5 h-3.5 shrink-0" />
-                <span>
-                  {pickLang(lang, { es: 'Táctica IA', ca: 'Tàctica IA', en: 'AI Tracker' })}
-                </span>
-              </button>
-            )}
 
           {canUseNativePiPOrCast && (
             <button

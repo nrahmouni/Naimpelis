@@ -293,14 +293,10 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
             : `shrink-0 w-full min-w-0 ${
                 isPlayerActive
                   ? isDesktopLayout
-                    ? isScrollCompressed
-                      ? 'sticky top-0 z-30 block w-full max-w-none px-3 pt-1.5 pb-1.5 bg-[#000000]/95 backdrop-blur-md border-b border-white/[0.08] transition-all duration-200'
-                      : 'sticky top-0 z-30 block w-full max-w-none px-2 pt-2 sm:px-4 sm:pt-2 bg-[#000000] transition-all duration-200'
+                    ? 'block w-full max-w-none px-2 pt-2 sm:px-4 sm:pt-2 bg-[#000000]'
                     : isAutoImmersiveLandscape
                     ? 'block h-full flex-1 bg-black'
-                    : isScrollCompressed
-                    ? 'block bg-[#000000]/95 border-b border-white/[0.08] transition-all duration-200'
-                    : 'block border-b border-white/[0.08] transition-all duration-200'
+                    : 'block border-b border-white/[0.08]'
                   : 'hidden'
               }`
         }

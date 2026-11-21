@@ -3,7 +3,7 @@ import { Shield } from 'lucide-react';
 import type { AppLanguage, FootballMatchLineupPlayer } from '../../types';
 import { pickLang } from '../../utils/i18n';
 
-export type MatchCenterTab = 'commentary' | 'lineups' | 'stats' | 'events';
+export type MatchCenterTab = 'commentary' | 'lineups' | 'stats' | 'events' | 'standings';
 export type LineupMetric = 'rating' | 'club' | 'age' | 'marketValue' | 'height';
 export type StatsPeriod = 'all' | 'firstHalf' | 'secondHalf';
 

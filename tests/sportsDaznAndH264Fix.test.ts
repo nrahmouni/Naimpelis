@@ -622,13 +622,13 @@ describe('Live stream stall watchdog & AI match broadcast insights', () => {
       'utf8'
     );
     expect(stripSrc).toContain('onToggleTacticalVision');
-    expect(stripSrc).toContain('justify-center');
+    expect(stripSrc).not.toContain('Abrir Centro Táctico IA (11v11)');
 
     const transportSrc = fs.readFileSync(
       path.resolve(process.cwd(), 'src/components/player/PlayerTransportBar.tsx'),
       'utf8'
     );
-    expect(transportSrc).toContain('onToggleTacticalVision');
+    expect(transportSrc).not.toContain('Táctica IA');
   });
 });
 

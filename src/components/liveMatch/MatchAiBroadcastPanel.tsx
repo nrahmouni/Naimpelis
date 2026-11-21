@@ -1,10 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Activity, Cpu, ExternalLink, RefreshCw, Sparkles, TrendingUp } from 'lucide-react';
+import { Cpu, ExternalLink, RefreshCw, Sparkles, TrendingUp } from 'lucide-react';
 import type { AppLanguage, FootballMatchDetails } from '../../types';
 import { studioFetch } from '../../utils/studioApi';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
-import { useAppStore } from '../../store/useAppStore';
 
 export interface MatchAiInsightCard {
   category: string;
@@ -203,8 +202,6 @@ export const MatchAiBroadcastPanel: React.FC<MatchAiBroadcastPanelProps> = ({
   const [insights, setInsights] = useState<MatchAiInsightsPayload | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [autoUpdateEnabled, setAutoUpdateEnabled] = useState<boolean>(true);
-  const tacticalVisionEnabled = useAppStore((s) => s.tacticalVisionEnabled);
-  const toggleTacticalVision = useAppStore((s) => s.toggleTacticalVision);
   const previousHeadlinesRef = useRef<string[]>([]);
   const lastFetchedSignatureRef = useRef<string>('');
   const abortRef = useRef<AbortController | null>(null);
@@ -429,26 +426,6 @@ export const MatchAiBroadcastPanel: React.FC<MatchAiBroadcastPanelProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-2 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic('light');
-              toggleTacticalVision();
-            }}
-            aria-pressed={tacticalVisionEnabled}
-            className={`min-h-[36px] px-3 rounded-lg text-xs font-semibold border transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5 ${
-              tacticalVisionEnabled
-                ? 'bg-[#00F593]/18 border-[#00F593]/50 text-[#00F593]'
-                : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.1] text-zinc-200'
-            }`}
-          >
-            <Activity className="w-3.5 h-3.5 shrink-0" />
-            <span>
-              {tacticalVisionEnabled
-                ? pickLang(lang, { es: 'Visión vídeo: ON', ca: 'Visió vídeo: ON', en: 'Video AI: ON' })
-                : pickLang(lang, { es: 'Visión vídeo IA', ca: 'Visió vídeo IA', en: 'Video AI' })}
-            </span>
-          </button>
           {statusState === 'live' && (
             <button
               type="button"

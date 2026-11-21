@@ -298,7 +298,7 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
               {ccOpen && (
                 <div
                   role="menu"
-                  className="absolute right-0 bottom-full mb-2 w-64 max-h-72 overflow-y-auto rounded-2xl bg-[#0D0D12]/96 backdrop-blur-2xl border border-white/[0.08] shadow-[0_18px_48px_rgba(0,0,0,0.82)] p-1.5 space-y-1 z-50 animate-fade-in"
+                  className="fixed inset-x-4 bottom-24 mx-auto max-w-xs max-h-[65vh] overflow-y-auto sm:absolute sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:bottom-full sm:mb-2 sm:w-64 sm:max-h-72 rounded-2xl bg-[#0D0D12]/96 backdrop-blur-2xl border border-white/[0.08] shadow-[0_18px_48px_rgba(0,0,0,0.82)] p-1.5 space-y-1 z-[70] animate-fade-in"
                 >
                   <button
                     type="button"
@@ -403,7 +403,7 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
           {moreOpen && (
             <div
               role="menu"
-              className="absolute right-0 bottom-full mb-2 w-60 rounded-2xl bg-[#0D0D12]/96 backdrop-blur-2xl border border-white/[0.08] shadow-[0_18px_48px_rgba(0,0,0,0.82)] p-1.5 space-y-1 z-50 animate-fade-in"
+              className="fixed inset-x-4 bottom-24 mx-auto max-w-xs max-h-[65vh] overflow-y-auto sm:absolute sm:inset-x-auto sm:left-1/2 sm:-translate-x-1/2 sm:bottom-full sm:mb-2 sm:w-64 rounded-2xl bg-[#0D0D12]/96 backdrop-blur-2xl border border-white/[0.08] shadow-[0_18px_48px_rgba(0,0,0,0.82)] p-1.5 space-y-1 z-[70] animate-fade-in"
             >
               <button
                 type="button"
@@ -526,6 +526,38 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
                 </button>
               )}
 
+              {(videoState.mode === 'hls' || videoState.mode === 'direct' || videoState.mode === 'cloud') &&
+                onToggleTacticalVision && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    aria-pressed={tacticalVisionEnabled}
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setMoreOpen(false);
+                      onToggleTacticalVision();
+                    }}
+                    className={`w-full min-h-11 px-3 rounded-xl hover:bg-white/[0.08] text-left text-xs font-semibold flex items-center gap-2.5 cursor-pointer transition-colors ${
+                      tacticalVisionEnabled ? 'text-[#00F593]' : 'text-zinc-200'
+                    }`}
+                  >
+                    <Activity className="w-4 h-4 shrink-0" />
+                    <span>
+                      {tacticalVisionEnabled
+                        ? pickLang(lang, {
+                            es: 'Centro Táctico IA · Activo',
+                            ca: 'Centre Tàctic IA · Actiu',
+                            en: 'AI Match Tracker · Active',
+                          })
+                        : pickLang(lang, {
+                            es: 'Centro Táctico IA (opcional)',
+                            ca: 'Centre Tàctic IA (opcional)',
+                            en: 'AI Match Tracker (optional)',
+                          })}
+                    </span>
+                  </button>
+                )}
+
               {voiceSlot && <div className="px-1 pt-0.5 flex items-center">{voiceSlot}</div>}
             </div>
           )}
@@ -544,41 +576,6 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
         </button>
       </div>
       </div>
-
-      {/* Centered, Unclipped Below-Player Toggle for Bookmaker 11v11 AI Match Tracker */}
-      {(videoState.mode === 'hls' || videoState.mode === 'direct' || videoState.mode === 'cloud') &&
-        onToggleTacticalVision && (
-          <div className="pt-1.5 border-t border-white/[0.06] flex items-center justify-center">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                onToggleTacticalVision();
-              }}
-              aria-pressed={tacticalVisionEnabled}
-              className={`min-h-[42px] px-5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer active:scale-[0.98] transition-all border ${
-                tacticalVisionEnabled
-                  ? 'bg-[#00F593]/16 border-[#00F593]/55 text-[#00F593] shadow-[0_0_20px_rgba(0,245,147,0.14)]'
-                  : 'bg-[#101522] hover:bg-[#161D2E] text-zinc-100 border-white/[0.12]'
-              }`}
-            >
-              <Activity className="w-4 h-4 shrink-0" />
-              <span>
-                {tacticalVisionEnabled
-                  ? pickLang(lang, {
-                      es: 'Visión Táctica IA · En Vivo 11v11',
-                      ca: 'Visió Tàctica IA · En Directe 11v11',
-                      en: 'AI Match Tracker · Live 11v11',
-                    })
-                  : pickLang(lang, {
-                      es: 'Abrir Centro Táctico IA (11v11)',
-                      ca: 'Obrir Centre Tàctic IA (11v11)',
-                      en: 'Open AI Match Tracker (11v11)',
-                    })}
-              </span>
-            </button>
-          </div>
-        )}
     </div>
   );
 };

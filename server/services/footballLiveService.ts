@@ -14,6 +14,7 @@ import {
   parseFotmobLineupTeam,
   parseFotmobPeriodStats,
 } from './footballHelpers/fotmobDetailsParsers.ts';
+import { fetchLeagueStandings } from './footballHelpers/standingsParser.ts';
 
 export * from './footballHelpers/teamMatchingAndFotmobDay.ts';
 
@@ -189,6 +190,29 @@ export async function fetchRealFootballMatchDetails(params: {
     const resolvedAwayLineup =
       awayLineup && awayLineup.starters.length > 0 ? awayLineup : espnParsed?.awayLineup;
 
+    const fotmobTableLeagueId = String(
+      content?.table?.leagueId || general?.leagueId || ''
+    ).replace(/\D/g, '');
+    const fotmobParentLeagueId = String(
+      content?.table?.parentLeagueId || general?.parentLeagueId || ''
+    ).replace(/\D/g, '');
+    const computedHomeScore = statusState === 'upcoming' ? '-' : String(homeTeamObj?.score ?? '0');
+    const computedAwayScore = statusState === 'upcoming' ? '-' : String(awayTeamObj?.score ?? '0');
+
+    const standings = await fetchLeagueStandings({
+      leagueId: fotmobTableLeagueId || undefined,
+      parentLeagueId: fotmobParentLeagueId || undefined,
+      leagueSlug: cleanLeagueSlug,
+      homeTeamId,
+      awayTeamId,
+      homeTeam: homeName,
+      awayTeam: awayName,
+      statusState,
+      homeScore: computedHomeScore,
+      awayScore: computedAwayScore,
+      tournamentName: general?.leagueName ? String(general.leagueName) : undefined,
+    });
+
     const details: FootballMatchDetails = {
       eventId: cleanEventId || fotmobId,
       fotmobMatchId: fotmobId,
@@ -210,8 +234,8 @@ export async function fetchRealFootballMatchDetails(params: {
       awayLogo: awayTeamId
         ? `https://images.fotmob.com/image_resources/logo/teamlogo/${awayTeamId}_small.png`
         : undefined,
-      homeScore: statusState === 'upcoming' ? '-' : String(homeTeamObj?.score ?? '0'),
-      awayScore: statusState === 'upcoming' ? '-' : String(awayTeamObj?.score ?? '0'),
+      homeScore: computedHomeScore,
+      awayScore: computedAwayScore,
       homeColor: general?.teamColors?.darkMode?.home || '#22C55E',
       awayColor: general?.teamColors?.darkMode?.away || '#60A5FA',
       lineupsConfirmed: Boolean(
@@ -229,12 +253,22 @@ export async function fetchRealFootballMatchDetails(params: {
       commentary,
       shotsMap,
       momentum: momentum.length > 0 ? momentum : undefined,
+      standings,
       updatedAt: Date.now(),
     };
 
     fotmobDetailsCache.set(cacheKey, { details, ts: Date.now() });
     return details;
   }
+
+  const fallbackStandings = await fetchLeagueStandings({
+    leagueSlug: cleanLeagueSlug,
+    homeTeam: espnParsed?.homeTeam || params.homeTeam,
+    awayTeam: espnParsed?.awayTeam || params.awayTeam,
+    statusState: espnParsed?.statusState,
+    homeScore: espnParsed?.homeScore,
+    awayScore: espnParsed?.awayScore,
+  });
 
   const fallbackDetails: FootballMatchDetails = {
     eventId: cleanEventId,
@@ -261,6 +295,7 @@ export async function fetchRealFootballMatchDetails(params: {
     awayLineup: espnParsed?.awayLineup,
     commentary: espnParsed?.commentary || [],
     shotsMap: [],
+    standings: fallbackStandings,
     updatedAt: Date.now(),
   };
 

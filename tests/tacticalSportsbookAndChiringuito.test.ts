@@ -24,6 +24,13 @@ import {
   mapTvXToPitchX,
   parseClockToSeconds,
 } from '../src/components/player/opticalKitAndMotion';
+import { deriveAppControllerLayoutFlags } from '../src/hooks/appControllerHelpers';
+import {
+  parseEspnStandingsFallback,
+  parseFotmobTltableStandings,
+} from '../server/services/footballHelpers/standingsParser';
+import { LiveMatchCenter } from '../src/components/LiveMatchCenter';
+import { StandingsTab } from '../src/components/liveMatch/StandingsTab';
 
 describe('Sportsbook Live Pitch Engine (11v11 always-on & directional flow)', () => {
   it('always projects all 22 players (11 home + 11 away) even without lineups', () => {
@@ -269,5 +276,137 @@ describe('El Chiringuito de Jugones & Barça/Madrid Halftime Auto-Switch', () =>
       } as never,
     });
     expect(coherent.homeTiltPct).toBeGreaterThan(60);
+  });
+
+  it('keeps normal document scroll without shrinking or compressing the player stage', () => {
+    const flags = deriveAppControllerLayoutFlags({
+      activeWorld: 'deportes',
+      videoState: {
+        mode: 'hls',
+        url: 'https://example.com/live.m3u8',
+        title: 'Real Madrid vs Celta',
+        isPlaying: true,
+        isLive: true,
+        currentTime: 0,
+        tracks: [],
+        activeTrackIndex: 0,
+        subtitle: '',
+      },
+      isExtracting: false,
+      isPlayerClosedLocally: false,
+      isPlayerMinimized: false,
+      isAutoMiniByScroll: true,
+      pinFullPlayerOnChat: true,
+      isCinemaMode: false,
+      participants: [],
+      isDesktopLayout: true,
+      isMobileKeyboardOpen: false,
+      isMobileLandscape: false,
+      mobileTab: 'home',
+      floatingChatOpen: false,
+      isFloatingRoomOpen: false,
+      activeSportsMatch: null,
+      activeMovieContext: null,
+      isInActiveGame: false,
+    });
+    expect(flags.isScrollCompressed).toBe(false);
+    expect(flags.isDockedMini).toBe(false);
+  });
+
+  it('parses FotMob tltable and ESPN standings with live highlight, groups, and legend zones', () => {
+    const parsedFotmob = parseFotmobTltableStandings(
+      [
+        {
+          data: {
+            leagueId: 87,
+            leagueName: 'LaLiga',
+            legend: [
+              { title: 'Champions League', color: '#2AD572', indices: [0, 1, 2, 3] },
+              { title: 'Relegation', color: '#FF4646', indices: [17, 18, 19] },
+            ],
+            ongoing: [{ hId: 8633, aId: 9910, hScore: 1, aScore: 1 }],
+            table: {
+              all: [
+                {
+                  idx: 1,
+                  id: 8634,
+                  name: 'Barcelona',
+                  shortName: 'Barcelona',
+                  played: 12,
+                  wins: 11,
+                  draws: 0,
+                  losses: 1,
+                  scoresStr: '48-13',
+                  goalConDiff: 35,
+                  pts: 33,
+                  qualColor: '#2AD572',
+                },
+                {
+                  idx: 2,
+                  id: 8633,
+                  name: 'Real Madrid',
+                  shortName: 'Real Madrid',
+                  played: 13,
+                  wins: 10,
+                  draws: 1,
+                  losses: 2,
+                  scoresStr: '32-11',
+                  goalConDiff: 21,
+                  pts: 31,
+                  qualColor: '#2AD572',
+                  ongoing: { hId: 8633, aId: 9910, hScore: 1, aScore: 1 },
+                },
+              ],
+            },
+          },
+        },
+      ],
+      { homeTeam: 'Real Madrid', awayTeam: 'Celta Vigo', statusState: 'live', homeScore: '1', awayScore: '1' }
+    );
+
+    expect(parsedFotmob).not.toBeNull();
+    expect(parsedFotmob?.leagueName).toBe('LaLiga');
+    expect(parsedFotmob?.hasLiveMatches).toBe(true);
+    expect(parsedFotmob?.legend?.[1]?.title).toBe('Descenso');
+    expect(parsedFotmob?.groups[0].all[0].goalsFor).toBe(48);
+    expect(parsedFotmob?.groups[0].all[1].isHomeTeam).toBe(true);
+    expect(parsedFotmob?.groups[0].all[1].isPlayingLive).toBe(true);
+    expect(parsedFotmob?.groups[0].all[1].liveMatchLabel).toBe('1-1');
+
+    const parsedEspn = parseEspnStandingsFallback(
+      {
+        name: 'LaLiga EA Sports',
+        children: [
+          {
+            name: 'Clasificación General',
+            standings: {
+              entries: [
+                {
+                  team: { id: '86', displayName: 'Real Madrid', shortDisplayName: 'RMA' },
+                  note: { color: '#2AD572' },
+                  stats: [
+                    { name: 'rank', value: 1 },
+                    { name: 'gamesPlayed', value: 13 },
+                    { name: 'wins', value: 10 },
+                    { name: 'ties', value: 1 },
+                    { name: 'losses', value: 2 },
+                    { name: 'pointsFor', value: 32 },
+                    { name: 'pointsAgainst', value: 11 },
+                    { name: 'pointDifferential', value: 21 },
+                    { name: 'points', value: 31 },
+                  ],
+                },
+              ],
+            },
+          },
+        ],
+      },
+      { homeTeam: 'Real Madrid', awayTeam: 'Celta Vigo', statusState: 'live', homeScore: '1', awayScore: '1' }
+    );
+
+    expect(parsedEspn?.groups[0].all[0].pts).toBe(31);
+    expect(parsedEspn?.groups[0].all[0].isHomeTeam).toBe(true);
+    expect(typeof LiveMatchCenter).toBe('function');
+    expect(typeof StandingsTab).toBe('function');
   });
 });

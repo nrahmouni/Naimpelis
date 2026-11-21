@@ -198,8 +198,7 @@ export function deriveAppControllerLayoutFlags(params: {
   const isDockedMini =
     isPlayerActive &&
     (isPlayerMinimized || (isPlayingMediaReady && isOnMobileSocialTab && !pinFullPlayerOnChat));
-  const isScrollCompressed =
-    isPlayerActive && isPlayingMediaReady && isAutoMiniByScroll && !isPlayerMinimized && !isOnMobileSocialTab;
+  const isScrollCompressed = false && Boolean(isAutoMiniByScroll);
   const showCinemaOverlay = isCinemaMode && isPlayerActive && !isDockedMini;
   const hasConnectedSmartTv = participants.some((p) => p.name.includes('(TV)') || p.avatar === '📺');
   const isMobileChatWithKeyboard =

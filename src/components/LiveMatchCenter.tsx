@@ -32,6 +32,7 @@ import { LineupsTab } from './liveMatch/LineupsTab';
 import { StatsAndShotsTab } from './liveMatch/StatsAndShotsTab';
 import { CommentaryTab, EventsTab } from './liveMatch/CommentaryAndEventsTabs';
 import { MatchAiBroadcastPanel } from './liveMatch/MatchAiBroadcastPanel';
+import { StandingsTab } from './liveMatch/StandingsTab';
 
 export type { MatchCenterTab };
 
@@ -433,6 +434,16 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                 },
                 { key: 'lineups', es: 'Alineaciones', ca: 'Alineacions', en: 'Lineups' },
                 { key: 'stats', es: 'Estadísticas', ca: 'Estadístiques', en: 'Statistics' },
+                {
+                  key: 'standings',
+                  es: 'Clasificación',
+                  ca: 'Classificació',
+                  en: 'Standings',
+                  liveDot: Boolean(
+                    details?.standings?.hasLiveMatches ||
+                      (resolvedState === 'live' && details?.standings?.groups?.length)
+                  ),
+                },
                 { key: 'events', es: 'Eventos', ca: 'Esdeveniments', en: 'Events' },
               ] as const
             ).map((tab) => (
@@ -584,6 +595,16 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
               resolvedState={resolvedState}
               homeShort={homeShort}
               awayShort={awayShort}
+            />
+          ) : activeTab === 'standings' ? (
+            <StandingsTab
+              lang={lang}
+              details={details}
+              resolvedHomeTeam={resolvedHomeTeam}
+              resolvedAwayTeam={resolvedAwayTeam}
+              homeShort={homeShort}
+              awayShort={awayShort}
+              resolvedState={resolvedState}
             />
           ) : (
             <EventsTab
