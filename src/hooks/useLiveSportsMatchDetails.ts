@@ -39,8 +39,15 @@ export function useLiveSportsMatchDetails({
     }
     if (videoMode !== 'idle' && videoIsLive && !activeSportsMatch) {
       const cleanedTitle = (videoTitle || '').replace(/\s+·\s+.*$/, '').trim();
-      const parts = cleanedTitle.split(/\s+(?:vs\.?|v)\s+/i);
-      if (parts.length === 2 && parts[0].trim().length >= 2 && parts[1].trim().length >= 2) {
+      const parts = cleanedTitle.split(/\s+(?:vs\.?|v|-)\s+/i);
+      const isGenericChannelSuffix = (val: string) =>
+        /^(hd|fhd|uhd|4k|sd|live|directo|en vivo|es|en|cat|tv|1|2)$/i.test(val.trim());
+      if (
+        parts.length === 2 &&
+        parts[0].trim().length >= 2 &&
+        parts[1].trim().length >= 2 &&
+        !isGenericChannelSuffix(parts[1])
+      ) {
         setActiveSportsMatch({
           homeTeam: parts[0].trim(),
           awayTeam: parts[1].trim(),

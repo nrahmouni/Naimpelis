@@ -21,8 +21,6 @@ import { PlayerStageOverlays } from './PlayerStageOverlays';
 import { PlayerTopHudBar } from './PlayerTopHudBar';
 import { PlayerTransportBar } from './PlayerTransportBar';
 import { PlayerYoutubeStage } from './PlayerYoutubeAndVoiceAlert';
-import { TacticalVideoOverlay } from './TacticalVideoOverlay';
-import type { TacticalVisionAnalysis } from './tacticalVisionTypes';
 
 export interface PlayerViewportContentProps {
   lang: AppLanguage;
@@ -153,9 +151,6 @@ export interface PlayerViewportContentProps {
   onToggleTouchLock?: () => void;
   tacticalVisionEnabled?: boolean;
   onToggleTacticalVision?: () => void;
-  tacticalShowRadar?: boolean;
-  tacticalShowFieldFlow?: boolean;
-  tacticalAnalysis?: TacticalVisionAnalysis | null;
   videoCallbacks: {
     onLoadedMetadata: (e: React.SyntheticEvent<HTMLVideoElement>) => void;
     onEnded: () => void;
@@ -224,8 +219,6 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
         onClosePlayer={p.onClosePlayer}
         isTouchLocked={p.isTouchLocked}
         onToggleTouchLock={p.onToggleTouchLock}
-        tacticalVisionEnabled={p.tacticalVisionEnabled}
-        onToggleTacticalVision={p.onToggleTacticalVision}
       />
 
       {p.videoState.mode === 'idle' && !p.isExtracting && !p.isMinimized && (
@@ -330,18 +323,6 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
         onChange={p.handleUploadLocalSubtitle}
         className="hidden"
       />
-
-      {(p.videoState.mode === 'hls' || p.videoState.mode === 'direct' || p.videoState.mode === 'cloud') && (
-        <TacticalVideoOverlay
-          lang={p.lang}
-          enabled={Boolean(p.tacticalVisionEnabled)}
-          isMinimized={p.isMinimized}
-          isCompressed={p.isCompressed}
-          showRadar={p.tacticalShowRadar}
-          showFieldFlow={p.tacticalShowFieldFlow}
-          analysis={p.tacticalAnalysis ?? null}
-        />
-      )}
 
       <PlayerStageOverlays
         lang={p.lang}

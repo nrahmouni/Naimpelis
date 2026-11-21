@@ -12,11 +12,13 @@ import { INTERNATIONAL_TV_CHANNELS } from './internationalChannels.ts';
 import { INTERNATIONAL_CRICKET_AND_SPORTS_CHANNELS } from './internationalSportsAndCricket.ts';
 import { INTERNATIONAL_ELAHMAD_AND_ADRAR_CHANNELS } from './internationalElahmadAndAdrarChannels.ts';
 import { CHINESE_FOOTBALL_CHANNELS } from '../extractors/chineseSports.ts';
+import { CHIRINGUITO_CHANNELS } from './chiringuitoChannels.ts';
 
 export type { SpanishTdtChannelDef };
 
 export const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
   ...TDT_NATIONAL_AND_PAY_CHANNELS,
+  ...CHIRINGUITO_CHANNELS,
   ...TDT_BEIN_SPORTS_CHANNELS,
   ...TDT_UK_SPORTS_CHANNELS,
   // ==========================================================================

@@ -118,7 +118,8 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
     videoState.tracks[videoState.activeTrackIndex]?.sourceUrl || videoState.url;
 
   return (
-    <div className="bg-[#000000]/96 backdrop-blur-2xl border-t border-white/[0.08] px-3 sm:px-4 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+    <div className="bg-[#000000]/96 backdrop-blur-2xl border-t border-white/[0.08] px-3 sm:px-4 py-2 space-y-2">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
       {/* Left: Quick Language Switcher (VOD) or Signal Selector */}
       <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
         {!videoState.isLive && (videoState.tracks || []).length > 0 ? (
@@ -239,81 +240,29 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
         )}
       </div>
 
-      {/* Right: Calm Action Group — [Táctica IA] + [Sala / Watch party] + [··· Más] + [Ajustes] */}
-      <div className="flex items-center justify-end gap-1.5 shrink-0">
-        {(videoState.mode === 'hls' || videoState.mode === 'direct') &&
-          onToggleTacticalVision && (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                onToggleTacticalVision();
-              }}
-              aria-pressed={tacticalVisionEnabled}
-              title={pickLang(lang, {
-                es: tacticalVisionEnabled
-                  ? 'Desactivar análisis táctico sobre el vídeo'
-                  : 'Activar líneas de juego, ataques, posesión y nombres en vídeo',
-                ca: tacticalVisionEnabled
-                  ? 'Desactivar anàlisi tàctica sobre el vídeo'
-                  : 'Activar línies de joc, atacs, possessió i noms al vídeo',
-                en: tacticalVisionEnabled
-                  ? 'Disable on-video tactical analysis'
-                  : 'Enable passing lines, attacks, possession & player names on video',
-              })}
-              className={`min-h-[40px] px-3 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
-                tacticalVisionEnabled
-                  ? 'bg-[#00F593]/18 border-[#00F593]/55 text-[#00F593]'
-                  : 'bg-[#0D0D12] hover:bg-[#14141C] text-zinc-200 border-white/[0.08]'
-              }`}
-            >
-              <Activity className="w-3.5 h-3.5 shrink-0" />
-              <span>{pickLang(lang, { es: 'Táctica IA', ca: 'Tàctica IA', en: 'AI Vision' })}</span>
-            </button>
-          )}
+      {/* Right: Calm Action Group — [Sala / Chat] + [CC] + [··· Más] + [Ajustes] */}
+      <div className="flex flex-wrap items-center justify-center sm:justify-end gap-1.5 shrink-0">
 
-        {sessionMode === 'solo' && onUpgradeSoloToParty ? (
+        {sessionMode !== 'solo' && onToggleFloatingChat && (
           <button
             type="button"
             onClick={() => {
-              triggerHaptic('medium');
-              onUpgradeSoloToParty();
+              triggerHaptic('light');
+              onToggleFloatingChat();
             }}
-            className="min-h-[40px] px-3.5 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border bg-[#7C3AED] hover:bg-[#8B5CF6] text-white border-[#8B5CF6]/60 shadow-[0_4px_14px_rgba(124,58,237,0.4)]"
+            aria-pressed={floatingChatOpen}
+            className={`relative min-h-[40px] px-3.5 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
+              floatingChatOpen
+                ? 'bg-[#7C3AED] text-white border-[#8B5CF6]/60 shadow-[0_4px_14px_rgba(124,58,237,0.4)]'
+                : 'bg-[#0D0D12] hover:bg-[#14141C] text-zinc-100 border-white/[0.08]'
+            }`}
           >
-            <Users className="w-3.5 h-3.5 shrink-0" />
-            <span>
-              {pickLang(lang, {
-                es: 'Ver con amigos',
-                ca: 'Veure amb amics',
-                en: 'Watch party',
-                rif: 'S tmdukkalin',
-                zh: '创建房间',
-              })}
-            </span>
+            <RiffanChatIcon size={15} tone={floatingChatOpen ? 'current' : 'brand'} />
+            <span className="tabular-nums">Sala · {Math.max(1, participantCount)}</span>
+            {unreadChatCount > 0 && !floatingChatOpen && (
+              <span className="w-2 h-2 rounded-full bg-[#EB0400] shrink-0" aria-hidden="true" />
+            )}
           </button>
-        ) : (
-          onToggleFloatingChat && (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                onToggleFloatingChat();
-              }}
-              aria-pressed={floatingChatOpen}
-              className={`relative min-h-[40px] px-3.5 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
-                floatingChatOpen
-                  ? 'bg-[#7C3AED] text-white border-[#8B5CF6]/60 shadow-[0_4px_14px_rgba(124,58,237,0.4)]'
-                  : 'bg-[#0D0D12] hover:bg-[#14141C] text-zinc-100 border-white/[0.08]'
-              }`}
-            >
-              <RiffanChatIcon size={15} tone={floatingChatOpen ? 'current' : 'brand'} />
-              <span className="tabular-nums">Sala · {Math.max(1, participantCount)}</span>
-              {unreadChatCount > 0 && !floatingChatOpen && (
-                <span className="w-2 h-2 rounded-full bg-[#EB0400] shrink-0" aria-hidden="true" />
-              )}
-            </button>
-          )
         )}
 
         {!videoState.isLive &&
@@ -533,6 +482,28 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
                 </button>
               )}
 
+              {sessionMode === 'solo' && onUpgradeSoloToParty && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    setMoreOpen(false);
+                    onUpgradeSoloToParty();
+                  }}
+                  className="w-full min-h-11 px-3 rounded-xl hover:bg-white/[0.08] text-left text-xs font-semibold text-[#C4B5FD] flex items-center gap-2.5 cursor-pointer transition-colors"
+                >
+                  <Users className="w-4 h-4 shrink-0" />
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Ver con amigos',
+                      ca: 'Veure amb amics',
+                      en: 'Watch party',
+                    })}
+                  </span>
+                </button>
+              )}
+
               {onShareCurrentMedia && (
                 <button
                   type="button"
@@ -572,6 +543,42 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
           <span>{pickLang(lang, { es: 'Ajustes', ca: 'Ajustos', en: 'Settings' })}</span>
         </button>
       </div>
+      </div>
+
+      {/* Centered, Unclipped Below-Player Toggle for Bookmaker 11v11 AI Match Tracker */}
+      {(videoState.mode === 'hls' || videoState.mode === 'direct' || videoState.mode === 'cloud') &&
+        onToggleTacticalVision && (
+          <div className="pt-1.5 border-t border-white/[0.06] flex items-center justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                onToggleTacticalVision();
+              }}
+              aria-pressed={tacticalVisionEnabled}
+              className={`min-h-[42px] px-5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer active:scale-[0.98] transition-all border ${
+                tacticalVisionEnabled
+                  ? 'bg-[#00F593]/16 border-[#00F593]/55 text-[#00F593] shadow-[0_0_20px_rgba(0,245,147,0.14)]'
+                  : 'bg-[#101522] hover:bg-[#161D2E] text-zinc-100 border-white/[0.12]'
+              }`}
+            >
+              <Activity className="w-4 h-4 shrink-0" />
+              <span>
+                {tacticalVisionEnabled
+                  ? pickLang(lang, {
+                      es: 'Visión Táctica IA · En Vivo 11v11',
+                      ca: 'Visió Tàctica IA · En Directe 11v11',
+                      en: 'AI Match Tracker · Live 11v11',
+                    })
+                  : pickLang(lang, {
+                      es: 'Abrir Centro Táctico IA (11v11)',
+                      ca: 'Obrir Centre Tàctic IA (11v11)',
+                      en: 'Open AI Match Tracker (11v11)',
+                    })}
+              </span>
+            </button>
+          </div>
+        )}
     </div>
   );
 };

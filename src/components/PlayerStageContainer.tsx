@@ -28,6 +28,7 @@ import { shareDedicatedLink } from '../utils/shareDedicatedLink';
 import type { CanonicalLinkInput } from '../shared/dedicatedRoutes';
 import { CinemaPlaybackDocks } from './player/CinemaPlaybackDocks';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { useHalftimeChiringuitoBreak } from '../hooks/useHalftimeChiringuitoBreak';
 
 const NativeCinemaPlayer = lazyWithRetry(() =>
   import('./NativeCinemaPlayer').then((m) => ({ default: m.NativeCinemaPlayer }))
@@ -214,6 +215,14 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
   onStopRoomPlayback,
   onClearExtractionError,
 }) => {
+  const halftimeBreak = useHalftimeChiringuitoBreak({
+    videoState: effectiveVideoState,
+    activeSportsMatch,
+    activeMatchDetails,
+    userName,
+    onSyncAction,
+  });
+
   const handleShareCurrentMedia = () => {
     let target: CanonicalLinkInput = { kind: 'home' };
     if (effectiveVideoState.seriesMeta) {
@@ -384,6 +393,8 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
                       awayTeam: activeMatchDetails?.awayTeam || activeSportsMatch.awayTeam,
                       homeShort: activeSportsMatch.homeShort,
                       awayShort: activeSportsMatch.awayShort,
+                      homeLogo: activeMatchDetails?.homeLogo || activeSportsMatch.homeLogo,
+                      awayLogo: activeMatchDetails?.awayLogo || activeSportsMatch.awayLogo,
                       homeScore: activeMatchDetails?.homeScore ?? activeSportsMatch.homeScore,
                       awayScore: activeMatchDetails?.awayScore ?? activeSportsMatch.awayScore,
                       statusLabel: activeMatchDetails?.statusLabel ?? activeSportsMatch.statusLabel,
@@ -392,6 +403,7 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
                     }
                   : null
               }
+              halftimeBreak={halftimeBreak}
             />
           </React.Suspense>
 

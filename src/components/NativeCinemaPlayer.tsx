@@ -17,8 +17,14 @@ import { useNativePlayerStageState } from './player/useNativePlayerStageState';
 import { PlayerVoiceBanner } from './player/PlayerYoutubeAndVoiceAlert';
 import { PlayerStripVoiceControls } from './player/PlayerStripVoiceControls';
 import { PlayerViewportContent } from './player/PlayerViewportContent';
-import { TacticalTelemetryPanel } from './player/TacticalVideoOverlay';
+import { SportsbookLiveTrackerPanel } from './player/SportsbookLiveTrackerPanel';
 import { useTacticalVideoAnalysis } from './player/useTacticalVideoAnalysis';
+import { HalftimeChiringuitoBar } from './player/HalftimeChiringuitoBar';
+import {
+  buildCinemaProSettingsProps,
+  shouldRenderBottomControlStrip,
+  shouldRenderSportsbookBelowPlayer,
+} from './player/buildCinemaPlayerProps';
 import {
   createStagePointerHandlers,
   getPlayerSectionClass,
@@ -30,58 +36,21 @@ import {
 import { UI_COPY } from '../utils/i18n';
 
 export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
-  videoState,
-  lang,
-  isExtracting,
-  extractionLabel,
-  extractionError,
-  cloudFrame,
-  cloudState,
-  floatingReactions,
-  onSyncAction,
-  onSelectTrack,
-  onAutoSwitchBackupTrack,
-  onPromoteCloudStreamToNative,
-  onOpenCatalogSection,
-  onPrevEpisode,
-  onNextEpisode,
-  onProgressUpdate,
-  isCinemaMode = false,
-  onToggleCinemaMode,
-  secondaryStream = null,
-  onSwapSecondaryStream,
-  onToggleSecondaryLayout,
-  onCloseSecondaryStream,
-  canControlRoom = true,
-  isMinimized = false,
-  isCompressed = false,
-  onExpandCompressed,
-  onToggleMinimize,
-  onClosePlayer,
-  onCancelExtraction,
-  isTvMode = false,
-  roomCode,
-  roomDisplayName,
-  participantCount = 1,
-  onExitTvMode,
-  onOpenSmartTvModal,
-  hasConnectedSmartTv = false,
-  onSendTvRemoteCommand,
-  languageNotice = null,
-  onDismissLanguageNotice,
-  messages = [],
-  currentUserId = '',
-  floatingChatOpen = false,
-  onToggleFloatingChat,
-  unreadChatCount = 0,
-  compactVideoForMobileKeyboard = false,
-  onOpenInCloudBrowser,
-  voiceChat,
-  onVideoEnded,
-  sessionMode = 'party',
-  onUpgradeSoloToParty,
-  onShareCurrentMedia,
-  matchContext = null,
+  videoState, lang, isExtracting, extractionLabel, extractionError,
+  cloudFrame, cloudState, floatingReactions, onSyncAction, onSelectTrack,
+  onAutoSwitchBackupTrack, onPromoteCloudStreamToNative, onOpenCatalogSection,
+  onPrevEpisode, onNextEpisode, onProgressUpdate, isCinemaMode = false,
+  onToggleCinemaMode, secondaryStream = null, onSwapSecondaryStream,
+  onToggleSecondaryLayout, onCloseSecondaryStream, canControlRoom = true,
+  isMinimized = false, isCompressed = false, onExpandCompressed,
+  onToggleMinimize, onClosePlayer, onCancelExtraction, isTvMode = false,
+  roomCode, roomDisplayName, participantCount = 1, onExitTvMode,
+  onOpenSmartTvModal, hasConnectedSmartTv = false, onSendTvRemoteCommand,
+  languageNotice = null, onDismissLanguageNotice, messages = [],
+  currentUserId = '', floatingChatOpen = false, onToggleFloatingChat,
+  unreadChatCount = 0, compactVideoForMobileKeyboard = false,
+  onOpenInCloudBrowser, voiceChat, onVideoEnded, sessionMode = 'party',
+  onUpgradeSoloToParty, onShareCurrentMedia, matchContext = null, halftimeBreak = null,
 }) => {
   const subtitleStyle = useAppStore((s) => s.subtitleStyle);
   const setSubtitleStyle = useAppStore((s) => s.setSubtitleStyle);
@@ -146,8 +115,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [seekRipple, setSeekRipple] = useState<'left' | 'right' | null>(null);
   const [embedRescueDismissedUrl, setEmbedRescueDismissedUrl] = useState<string>('');
   const [showProMenu, setShowProMenu] = useState<boolean>(false);
-  const [tacticalRadarVisible, setTacticalRadarVisible] = useState<boolean>(true);
-  const [tacticalFieldFlowVisible, setTacticalFieldFlowVisible] = useState<boolean>(false);
   const proMenuRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(showProMenu, () => setShowProMenu(false), proMenuRef);
   const isFullscreenLike = isFullscreen || isHorizontalFullscreen;
@@ -485,6 +452,66 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     isMinimized, lastManualHideAtRef, lastMousePosRef, showControlsRef, revealControls, scheduleHideControls,
   });
 
+  const showBottomStrip = shouldRenderBottomControlStrip({
+    isTvMode,
+    isMinimized,
+    isCompressed,
+    compactVideoForMobileKeyboard,
+    tacticalVisionEnabled,
+    videoMode: videoState.mode,
+  });
+  const showSportsbookBelow = shouldRenderSportsbookBelowPlayer({
+    isTvMode,
+    isMinimized,
+    isCompressed,
+    isFullscreenLike,
+    compactVideoForMobileKeyboard,
+    videoMode: videoState.mode,
+  });
+
+  const proSettingsProps = buildCinemaProSettingsProps({
+    showProMenu,
+    onClose: () => setShowProMenu(false),
+    proMenuRef,
+    lang,
+    videoState,
+    currentTime,
+    isCinemaMode,
+    onToggleCinemaMode,
+    canUseNativePiPOrCast,
+    isInPiP,
+    onTogglePiP: handleTogglePiP,
+    hlsAudioTracks,
+    selectedHlsAudioTrack,
+    onSelectHlsAudioTrack: handleSelectHlsAudioTrack,
+    activeTrackLangCode,
+    onQuickLanguageSwitch: handleQuickLanguageSwitch,
+    onTriggerLanguagePopup: triggerLocalLanguagePopup,
+    onSelectTrack,
+    subtitleFileInputRef,
+    activeSubId,
+    onSelectSubtitleTrack: handleSelectSubtitleTrack,
+    subtitleTracks,
+    subtitleOffsetSec,
+    setSubtitleOffsetSec,
+    subtitleSize,
+    setSubtitleSize,
+    subtitleStyle,
+    setSubtitleStyle,
+    syncOffsetMs,
+    setSyncOffsetMs,
+    vocalBoostEnabled,
+    onToggleVocalBoost: toggleVocalBoost,
+    ambilightEnabled,
+    setAmbilightEnabled,
+    playbackSpeed,
+    onSelectSpeed: handleSelectSpeed,
+    qualityLevels,
+    selectedQuality,
+    autoActiveHeight,
+    onChangeQuality: handleChangeQuality,
+  });
+
   return (
     <section className={getPlayerSectionClass({ isTvMode, isMinimized, isCinemaMode })}>
       <div
@@ -496,257 +523,125 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         })}
       >
         <PlayerViewportContent
-          lang={lang}
-          videoState={videoState}
-          isTvMode={isTvMode}
-          isMinimized={isMinimized}
-          isCompressed={isCompressed}
-          isStageFullscreen={isStageFullscreen}
-          isFullscreen={isFullscreen}
-          isHorizontalFullscreen={isHorizontalFullscreen}
-          forceLandscapeRotation={forceLandscapeRotation}
-          shouldRotate90={shouldRotate90}
-          viewportDims={viewportDims}
-          showControls={showControls}
-          localPlaying={localPlaying}
-          duration={duration}
-          currentTime={currentTime}
-          playbackSpeed={playbackSpeed}
-          isMuted={isMuted}
-          volume={volume}
-          isBuffering={isBuffering}
-          streamRefreshPhase={streamRefreshPhase}
-          isExtracting={isExtracting}
-          streamError={streamError}
-          extractionLabel={extractionLabel}
-          extractionError={extractionError}
-          extractingTitleCopy={t.extractingTitle}
-          extractingSubCopy={t.extractingSub}
-          floatingReactions={floatingReactions}
-          seekRipple={seekRipple}
-          activeLanguagePopup={activeLanguagePopup}
-          playerToast={playerToast}
-          recentIncomingChatBubble={recentIncomingChatBubble}
-          floatingChatOpen={floatingChatOpen}
-          isCastingToTv={isCastingToTv}
-          batterySaverTvMode={batterySaverTvMode}
-          hasConnectedSmartTv={hasConnectedSmartTv}
-          castDeviceName={castDeviceName}
-          showProMenu={showProMenu}
-          isCinemaMode={isCinemaMode}
-          isInPiP={isInPiP}
-          vocalBoostEnabled={vocalBoostEnabled}
-          canUseNativePiPOrCast={canUseNativePiPOrCast}
-          roomCode={roomCode}
-          roomDisplayName={roomDisplayName}
-          participantCount={participantCount}
-          tvAspectMode={tvAspectMode}
-          secondaryStream={secondaryStream}
-          activeSubId={activeSubId}
-          parsedCues={parsedCues}
-          subtitleOffsetSec={subtitleOffsetSec}
-          subtitleSize={subtitleSize}
-          subtitleStyle={subtitleStyle}
-          subtitleFileInputRef={subtitleFileInputRef}
-          autoNextCountdown={autoNextCountdown}
-          autoNextTriggeredUrlRef={autoNextTriggeredUrlRef}
-          ytContainerId={ytContainerId.current}
-          videoRef={videoRef}
-          castBridgeVideoRef={castBridgeVideoRef}
-          cloudFrame={cloudFrame}
-          cloudState={cloudState}
-          cloudUrlInput={cloudUrlInput}
-          setCloudUrlInput={setCloudUrlInput}
-          isMobileExternal={isMobileExternal}
-          externalWinState={externalWinState}
-          externalTargetUrl={externalTargetUrl}
-          embedWatchdogPhase={embedWatchdogPhase}
-          activeEmbedInlineUrl={activeEmbedInlineUrl}
-          activeEmbedDirectUrl={activeEmbedDirectUrl}
-          lastAttemptedEmbedUrl={lastAttemptedEmbedUrl}
-          embedRescueDismissedUrl={embedRescueDismissedUrl}
-          setEmbedRescueDismissedUrl={setEmbedRescueDismissedUrl}
-          hlsAudioTracks={hlsAudioTracks}
-          selectedHlsAudioTrack={selectedHlsAudioTrack}
-          qualityLevels={qualityLevels}
-          selectedQuality={selectedQuality}
-          autoActiveHeight={autoActiveHeight}
-          activeHudMenu={activeHudMenu}
-          setActiveHudMenu={setActiveHudMenu}
-          voiceSlot={fullscreenVoiceSlot}
-          setDuration={setDuration}
-          clearBufferingIndicator={clearBufferingIndicator}
-          revealControls={revealControls}
-          setLocalLangPopup={setLocalLangPopup}
-          setRecentIncomingChatBubble={setRecentIncomingChatBubble}
-          setBatterySaverTvMode={setBatterySaverTvMode}
-          setShowProMenu={setShowProMenu}
-          setAutoNextCancelledForUrl={setAutoNextCancelledForUrl}
-          setAutoNextCountdown={setAutoNextCountdown}
-          onDismissLanguageNotice={onDismissLanguageNotice}
-          onToggleFloatingChat={onToggleFloatingChat}
-          onExpandCompressed={onExpandCompressed}
-          onCancelExtraction={onCancelExtraction}
-          onToggleMinimize={onToggleMinimize}
-          onClosePlayer={onClosePlayer}
-          onExitTvMode={onExitTvMode}
-          onToggleCinemaMode={onToggleCinemaMode}
-          onOpenCatalogSection={onOpenCatalogSection}
-          onPrevEpisode={onPrevEpisode}
-          onNextEpisode={onNextEpisode}
-          onSelectTrack={onSelectTrack}
-          onPromoteCloudStreamToNative={onPromoteCloudStreamToNative}
-          onSwapSecondaryStream={onSwapSecondaryStream}
-          onToggleSecondaryLayout={onToggleSecondaryLayout}
-          onCloseSecondaryStream={onCloseSecondaryStream}
-          onOpenInCloudBrowser={onOpenInCloudBrowser}
-          handleDirectCastToTv={handleDirectCastToTv}
-          handleTogglePiP={handleTogglePiP}
+          lang={lang} videoState={videoState} isTvMode={isTvMode} isMinimized={isMinimized}
+          isCompressed={isCompressed} isStageFullscreen={isStageFullscreen} isFullscreen={isFullscreen}
+          isHorizontalFullscreen={isHorizontalFullscreen} forceLandscapeRotation={forceLandscapeRotation}
+          shouldRotate90={shouldRotate90} viewportDims={viewportDims} showControls={showControls}
+          localPlaying={localPlaying} duration={duration} currentTime={currentTime}
+          playbackSpeed={playbackSpeed} isMuted={isMuted} volume={volume} isBuffering={isBuffering}
+          streamRefreshPhase={streamRefreshPhase} isExtracting={isExtracting} streamError={streamError}
+          extractionLabel={extractionLabel} extractionError={extractionError}
+          extractingTitleCopy={t.extractingTitle} extractingSubCopy={t.extractingSub}
+          floatingReactions={floatingReactions} seekRipple={seekRipple}
+          activeLanguagePopup={activeLanguagePopup} playerToast={playerToast}
+          recentIncomingChatBubble={recentIncomingChatBubble} floatingChatOpen={floatingChatOpen}
+          isCastingToTv={isCastingToTv} batterySaverTvMode={batterySaverTvMode}
+          hasConnectedSmartTv={hasConnectedSmartTv} castDeviceName={castDeviceName}
+          showProMenu={showProMenu} isCinemaMode={isCinemaMode} isInPiP={isInPiP}
+          vocalBoostEnabled={vocalBoostEnabled} canUseNativePiPOrCast={canUseNativePiPOrCast}
+          roomCode={roomCode} roomDisplayName={roomDisplayName} participantCount={participantCount}
+          tvAspectMode={tvAspectMode} secondaryStream={secondaryStream} activeSubId={activeSubId}
+          parsedCues={parsedCues} subtitleOffsetSec={subtitleOffsetSec} subtitleSize={subtitleSize}
+          subtitleStyle={subtitleStyle} subtitleFileInputRef={subtitleFileInputRef}
+          autoNextCountdown={autoNextCountdown} autoNextTriggeredUrlRef={autoNextTriggeredUrlRef}
+          ytContainerId={ytContainerId.current} videoRef={videoRef} castBridgeVideoRef={castBridgeVideoRef}
+          cloudFrame={cloudFrame} cloudState={cloudState} cloudUrlInput={cloudUrlInput}
+          setCloudUrlInput={setCloudUrlInput} isMobileExternal={isMobileExternal}
+          externalWinState={externalWinState} externalTargetUrl={externalTargetUrl}
+          embedWatchdogPhase={embedWatchdogPhase} activeEmbedInlineUrl={activeEmbedInlineUrl}
+          activeEmbedDirectUrl={activeEmbedDirectUrl} lastAttemptedEmbedUrl={lastAttemptedEmbedUrl}
+          embedRescueDismissedUrl={embedRescueDismissedUrl} setEmbedRescueDismissedUrl={setEmbedRescueDismissedUrl}
+          hlsAudioTracks={hlsAudioTracks} selectedHlsAudioTrack={selectedHlsAudioTrack}
+          qualityLevels={qualityLevels} selectedQuality={selectedQuality} autoActiveHeight={autoActiveHeight}
+          activeHudMenu={activeHudMenu} setActiveHudMenu={setActiveHudMenu} voiceSlot={fullscreenVoiceSlot}
+          setDuration={setDuration} clearBufferingIndicator={clearBufferingIndicator}
+          revealControls={revealControls} setLocalLangPopup={setLocalLangPopup}
+          setRecentIncomingChatBubble={setRecentIncomingChatBubble} setBatterySaverTvMode={setBatterySaverTvMode}
+          setShowProMenu={setShowProMenu} setAutoNextCancelledForUrl={setAutoNextCancelledForUrl}
+          setAutoNextCountdown={setAutoNextCountdown} onDismissLanguageNotice={onDismissLanguageNotice}
+          onToggleFloatingChat={onToggleFloatingChat} onExpandCompressed={onExpandCompressed}
+          onCancelExtraction={onCancelExtraction} onToggleMinimize={onToggleMinimize}
+          onClosePlayer={onClosePlayer} onExitTvMode={onExitTvMode} onToggleCinemaMode={onToggleCinemaMode}
+          onOpenCatalogSection={onOpenCatalogSection} onPrevEpisode={onPrevEpisode} onNextEpisode={onNextEpisode}
+          onSelectTrack={onSelectTrack} onPromoteCloudStreamToNative={onPromoteCloudStreamToNative}
+          onSwapSecondaryStream={onSwapSecondaryStream} onToggleSecondaryLayout={onToggleSecondaryLayout}
+          onCloseSecondaryStream={onCloseSecondaryStream} onOpenInCloudBrowser={onOpenInCloudBrowser}
+          handleDirectCastToTv={handleDirectCastToTv} handleTogglePiP={handleTogglePiP}
           handleToggleFullscreen={handleToggleFullscreen}
           handleToggleLandscapeRotation={handleToggleLandscapeRotation}
           handleVideoSurfaceTap={handleVideoSurfaceTap}
           handleUploadLocalSubtitle={handleUploadLocalSubtitle}
-          handleForceReloadStream={handleForceReloadStream}
-          handleSeekRelative={handleSeekRelative}
-          handleTogglePlay={handleTogglePlay}
-          handleToggleMute={handleToggleMute}
-          handleVolumeSlider={handleVolumeSlider}
-          handleScrub={handleScrub}
-          handleSelectHlsAudioTrack={handleSelectHlsAudioTrack}
-          handleChangeQuality={handleChangeQuality}
+          handleForceReloadStream={handleForceReloadStream} handleSeekRelative={handleSeekRelative}
+          handleTogglePlay={handleTogglePlay} handleToggleMute={handleToggleMute}
+          handleVolumeSlider={handleVolumeSlider} handleScrub={handleScrub}
+          handleSelectHlsAudioTrack={handleSelectHlsAudioTrack} handleChangeQuality={handleChangeQuality}
           openControlledExternalWindow={openControlledExternalWindow}
           handleFocusExternalWindow={handleFocusExternalWindow}
           handleCloseExternalWindow={handleCloseExternalWindow}
           handleSelectExternalServer={handleSelectExternalServer}
           handleMarkInlineServerWorking={handleMarkInlineServerWorking}
-          handleRetryInlineEmbed={handleRetryInlineEmbed}
-          isTouchLocked={isTouchLocked}
+          handleRetryInlineEmbed={handleRetryInlineEmbed} isTouchLocked={isTouchLocked}
           onToggleTouchLock={() => {
             setIsTouchLocked((prev) => !prev);
             revealControls();
           }}
           tacticalVisionEnabled={tacticalVisionEnabled}
           onToggleTacticalVision={toggleTacticalVision}
-          tacticalShowRadar={tacticalRadarVisible}
-          tacticalShowFieldFlow={tacticalFieldFlowVisible}
-          tacticalAnalysis={tacticalVision.analysis}
           videoCallbacks={videoCallbacks}
         />
       </div>
 
-      {!isTvMode &&
-        !isMinimized &&
-        !isCompressed &&
-        !isFullscreenLike &&
-        !compactVideoForMobileKeyboard &&
-        (videoState.mode === 'hls' || videoState.mode === 'direct' || videoState.mode === 'cloud') && (
-          <TacticalTelemetryPanel
-            lang={lang}
-            enabled={tacticalVisionEnabled}
-            analysis={tacticalVision.analysis}
-            isAnalyzing={tacticalVision.isAnalyzing}
-            errorMsg={tacticalVision.errorMsg}
-            captureStatus={tacticalVision.captureStatus}
-            homeTeamLabel={tacticalVision.resolvedTeams.homeShort || tacticalVision.resolvedTeams.homeTeam}
-            awayTeamLabel={tacticalVision.resolvedTeams.awayShort || tacticalVision.resolvedTeams.awayTeam}
-            showRadar={tacticalRadarVisible}
-            showFieldFlow={tacticalFieldFlowVisible}
-            onToggleRadar={() => setTacticalRadarVisible((v) => !v)}
-            onToggleFieldFlow={() => setTacticalFieldFlowVisible((v) => !v)}
-            onDisable={toggleTacticalVision}
-            onRefreshNow={() => {
-              void tacticalVision.refreshNow();
-            }}
-          />
-        )}
+      {showBottomStrip && (
+        <PlayerBottomControlStrip
+          lang={lang} videoState={videoState} activeTrackLangCode={activeTrackLangCode}
+          currentTime={currentTime} externalWinState={externalWinState} isMobileExternal={isMobileExternal}
+          participantCount={participantCount} floatingChatOpen={floatingChatOpen}
+          unreadChatCount={unreadChatCount} hasConnectedSmartTv={hasConnectedSmartTv}
+          batterySaverTvMode={batterySaverTvMode} isCastingToTv={isCastingToTv}
+          voiceSlot={sessionMode === 'solo' ? null : stripVoiceSlot} sessionMode={sessionMode}
+          onUpgradeSoloToParty={onUpgradeSoloToParty} onShareCurrentMedia={onShareCurrentMedia}
+          onQuickLanguageSwitch={handleQuickLanguageSwitch} onSelectTrack={onSelectTrack}
+          onSelectExternalServer={handleSelectExternalServer}
+          onOpenControlledExternalWindow={openControlledExternalWindow}
+          onOpenInCloudBrowser={onOpenInCloudBrowser} onToggleFloatingChat={onToggleFloatingChat}
+          onToggleBatterySaverTvMode={() => setBatterySaverTvMode((v) => !v)}
+          onDirectCastToTv={handleDirectCastToTv} onOpenProMenu={() => setShowProMenu(true)}
+          subtitleTracks={subtitleTracks} activeSubId={activeSubId}
+          onSelectSubtitleTrack={handleSelectSubtitleTrack} subtitleFileInputRef={subtitleFileInputRef}
+          tacticalVisionEnabled={tacticalVisionEnabled} onToggleTacticalVision={toggleTacticalVision}
+        />
+      )}
 
-      {!isTvMode &&
-        !isMinimized &&
-        !isCompressed &&
-        !compactVideoForMobileKeyboard &&
-        videoState.mode !== 'idle' &&
-        videoState.mode !== 'cloud' && (
-          <PlayerBottomControlStrip
-            lang={lang}
-            videoState={videoState}
-            activeTrackLangCode={activeTrackLangCode}
-            currentTime={currentTime}
-            externalWinState={externalWinState}
-            isMobileExternal={isMobileExternal}
-            participantCount={participantCount}
-            floatingChatOpen={floatingChatOpen}
-            unreadChatCount={unreadChatCount}
-            hasConnectedSmartTv={hasConnectedSmartTv}
-            batterySaverTvMode={batterySaverTvMode}
-            isCastingToTv={isCastingToTv}
-            voiceSlot={sessionMode === 'solo' ? null : stripVoiceSlot}
-            sessionMode={sessionMode}
-            onUpgradeSoloToParty={onUpgradeSoloToParty}
-            onShareCurrentMedia={onShareCurrentMedia}
-            onQuickLanguageSwitch={handleQuickLanguageSwitch}
-            onSelectTrack={onSelectTrack}
-            onSelectExternalServer={handleSelectExternalServer}
-            onOpenControlledExternalWindow={openControlledExternalWindow}
-            onOpenInCloudBrowser={onOpenInCloudBrowser}
-            onToggleFloatingChat={onToggleFloatingChat}
-            onToggleBatterySaverTvMode={() => setBatterySaverTvMode((v) => !v)}
-            onDirectCastToTv={handleDirectCastToTv}
-            onOpenProMenu={() => setShowProMenu(true)}
-            subtitleTracks={subtitleTracks}
-            activeSubId={activeSubId}
-            onSelectSubtitleTrack={handleSelectSubtitleTrack}
-            subtitleFileInputRef={subtitleFileInputRef}
-            tacticalVisionEnabled={tacticalVisionEnabled}
-            onToggleTacticalVision={toggleTacticalVision}
-          />
-        )}
+      {!isTvMode && !isMinimized && !isCompressed && !isFullscreenLike && halftimeBreak && (
+        <HalftimeChiringuitoBar state={halftimeBreak} />
+      )}
+
+      {showSportsbookBelow && (
+        <SportsbookLiveTrackerPanel
+          lang={lang}
+          enabled={tacticalVisionEnabled}
+          analysis={tacticalVision.analysis}
+          isAnalyzing={tacticalVision.isAnalyzing}
+          captureStatus={tacticalVision.captureStatus}
+          homeTeamLabel={tacticalVision.resolvedTeams.homeShort || tacticalVision.resolvedTeams.homeTeam}
+          awayTeamLabel={tacticalVision.resolvedTeams.awayShort || tacticalVision.resolvedTeams.awayTeam}
+          homeScore={tacticalVision.resolvedTeams.homeScore}
+          awayScore={tacticalVision.resolvedTeams.awayScore}
+          statusLabel={tacticalVision.resolvedTeams.statusLabel}
+          competition={tacticalVision.resolvedTeams.competition}
+          matchContext={matchContext}
+          onDisable={toggleTacticalVision}
+          onRefreshNow={() => {
+            void tacticalVision.refreshNow();
+          }}
+        />
+      )}
 
       {!isTvMode && !isMinimized && !isCompressed && voiceChat && (
         <PlayerVoiceBanner lang={lang} voiceChat={voiceChat} />
       )}
 
-      <PlayerProSettingsModal
-        isOpen={showProMenu}
-        onClose={() => setShowProMenu(false)}
-        proMenuRef={proMenuRef}
-        lang={lang}
-        videoState={videoState}
-        currentTime={currentTime}
-        isCinemaMode={isCinemaMode}
-        onToggleCinemaMode={onToggleCinemaMode}
-        canUseNativePiPOrCast={canUseNativePiPOrCast}
-        isInPiP={isInPiP}
-        onTogglePiP={handleTogglePiP}
-        hlsAudioTracks={hlsAudioTracks}
-        selectedHlsAudioTrack={selectedHlsAudioTrack}
-        onSelectHlsAudioTrack={handleSelectHlsAudioTrack}
-        activeTrackLangCode={activeTrackLangCode}
-        onQuickLanguageSwitch={handleQuickLanguageSwitch}
-        onTriggerLanguagePopup={triggerLocalLanguagePopup}
-        onSelectTrack={onSelectTrack}
-        subtitleFileInputRef={subtitleFileInputRef}
-        activeSubId={activeSubId}
-        onSelectSubtitleTrack={handleSelectSubtitleTrack}
-        subtitleTracks={subtitleTracks}
-        subtitleOffsetSec={subtitleOffsetSec}
-        setSubtitleOffsetSec={setSubtitleOffsetSec}
-        subtitleSize={subtitleSize}
-        setSubtitleSize={setSubtitleSize}
-        subtitleStyle={subtitleStyle}
-        setSubtitleStyle={setSubtitleStyle}
-        syncOffsetMs={syncOffsetMs}
-        setSyncOffsetMs={setSyncOffsetMs}
-        vocalBoostEnabled={vocalBoostEnabled}
-        onToggleVocalBoost={toggleVocalBoost}
-        ambilightEnabled={ambilightEnabled}
-        setAmbilightEnabled={setAmbilightEnabled}
-        playbackSpeed={playbackSpeed}
-        onSelectSpeed={handleSelectSpeed}
-        qualityLevels={qualityLevels}
-        selectedQuality={selectedQuality}
-        autoActiveHeight={autoActiveHeight}
-        onChangeQuality={handleChangeQuality}
-      />
+      <PlayerProSettingsModal {...proSettingsProps} />
     </section>
   );
 };

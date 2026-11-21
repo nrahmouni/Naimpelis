@@ -577,7 +577,7 @@ describe('Live stream stall watchdog & AI match broadcast insights', () => {
     expect(calls).toEqual(['gemini-4-hydrogen', 'gemini-4-hydrogen', 'gemini-3.1-flash-lite']);
   });
 
-  it('wires toggleable live video tactical vision (passing lines, attacks, possession & player names)', () => {
+  it('wires toggleable live video tactical vision (below-player sportsbook pitch, 11v11 dots & directional tilt)', () => {
     expect(deriveTeamsFromTitle('FC Barcelona vs Real Madrid · LaLiga')).toEqual({
       homeTeam: 'FC Barcelona',
       awayTeam: 'Real Madrid',
@@ -590,21 +590,39 @@ describe('Live stream stall watchdog & AI match broadcast insights', () => {
     useAppStore.getState().setTacticalVisionEnabled(false);
     expect(useAppStore.getState().tacticalVisionEnabled).toBe(false);
 
-    const aiRouteSrc = fs.readFileSync(
-      path.resolve(process.cwd(), 'server/routes/aiStudio/aiMediaRoutes.ts'),
+    const routeSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'server/routes/aiStudio/tacticalVisionRoute.ts'),
       'utf8'
     );
-    expect(aiRouteSrc).toContain("app.post('/api/ai/tactical-vision'");
-    expect(aiRouteSrc).toContain('passingLines');
-    expect(aiRouteSrc).toContain('attacksSummary');
+    expect(routeSrc).toContain("app.post('/api/ai/tactical-vision'");
+    expect(routeSrc).toContain('attackDirection');
+    expect(routeSrc).toContain('homeDangerousAttacks');
 
-    const overlaySrc = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/components/player/TacticalVideoOverlay.tsx'),
+    const viewportSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/player/PlayerViewportContent.tsx'),
       'utf8'
     );
-    expect(overlaySrc).toContain('passingLines');
-    expect(overlaySrc).toContain('attacks');
-    expect(overlaySrc).toContain('possession');
+    expect(viewportSrc).not.toContain('TacticalVideoOverlay');
+
+    const pitchSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/player/SportsbookPitchDiagram.tsx'),
+      'utf8'
+    );
+    expect(pitchSrc).toContain('attackDirection');
+    expect(pitchSrc).toContain('.jersey');
+
+    const panelSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/player/SportsbookLiveTrackerPanel.tsx'),
+      'utf8'
+    );
+    expect(panelSrc).toContain('SportsbookPitchDiagram');
+
+    const stripSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/player/PlayerBottomControlStrip.tsx'),
+      'utf8'
+    );
+    expect(stripSrc).toContain('onToggleTacticalVision');
+    expect(stripSrc).toContain('justify-center');
 
     const transportSrc = fs.readFileSync(
       path.resolve(process.cwd(), 'src/components/player/PlayerTransportBar.tsx'),

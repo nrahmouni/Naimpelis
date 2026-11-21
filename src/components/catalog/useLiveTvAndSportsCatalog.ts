@@ -281,10 +281,15 @@ export function useLiveTvAndSportsCatalog({
       'rbtv_sports',
     ]);
     const filtered = tdtChannels.filter((ch) => {
-      const isExtraSportCh = ch.id === 'ma-arryadia' || ch.id === 'us-fox-sports1';
+      const isExtraSportCh =
+        ch.id === 'ma-arryadia' ||
+        ch.id === 'us-fox-sports1' ||
+        ch.id === 'chiringuito-inside-live' ||
+        ch.id === 'chiringuito-jugones-tv' ||
+        ch.id === 'tdt-mega';
       const isBelixSport =
         ch.category === 'belix_live' &&
-        /futbol|fútbol|deport|sport|dazn|movistar|laliga|champions|bein|espn|f1|moto/i.test(
+        /futbol|fútbol|deport|sport|dazn|movistar|laliga|champions|bein|espn|f1|moto|chiringuito/i.test(
           `${ch.name} ${ch.network}`
         );
       if (!allowedCats.has(ch.category) && !isExtraSportCh && !isBelixSport) return false;
@@ -304,7 +309,7 @@ export function useLiveTvAndSportsCatalog({
           norm(ch.shortMark).includes(q) ||
           norm(ch.network).includes(q);
         if (
-          /cctv|china|chino|zh|guangdong|fengyun|xinshijue|tianjin|sky|uk|premier|eurosport|mutv|talksport|fifa|bein|arab|arabe|arryadia|maroc|marruecos|fox|espn|dsport|directv|tnt|space|movistar|dazn|laliga|campeones|vamos|f1|motor|fight|cricket|willow|sony|star sport|bahrain|rta|iraqia|aci|ekol|famelack|sportzfy/i.test(
+          /chiringuito|inside|mega|cctv|china|chino|zh|guangdong|fengyun|xinshijue|tianjin|sky|uk|premier|eurosport|mutv|talksport|fifa|bein|arab|arabe|arryadia|maroc|marruecos|fox|espn|dsport|directv|tnt|space|movistar|dazn|laliga|campeones|vamos|f1|motor|fight|cricket|willow|sony|star sport|bahrain|rta|iraqia|aci|ekol|famelack|sportzfy/i.test(
             q
           )
         ) {

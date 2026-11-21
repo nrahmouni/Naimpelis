@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
-import type { AppLanguage, VideoState } from '../../types';
+import type { AppLanguage, FootballMatchDetails, VideoState } from '../../types';
 import { studioFetch } from '../../utils/studioApi';
 import { pickLang } from '../../utils/i18n';
+import {
+  buildMomentumTimeline,
+  computeMatchTiltPct,
+  deriveDangerZone,
+  derivePhaseFromPitch,
+  projectLiveLineupsToPitch,
+} from './tacticalPitchEngine';
 import type {
+  MomentumTimelineSample,
   PlayerMatchContext,
   TacticalCaptureStatus,
   TacticalVisionAnalysis,
@@ -14,8 +22,8 @@ import {
   type OpticalStatItem,
 } from './localOpticalTacticalTracker';
 
-const OPTICAL_SAMPLE_INTERVAL_MS = 1800;
-const GEMINI_ENRICH_INTERVAL_MS = 14_000;
+const OPTICAL_SAMPLE_INTERVAL_MS = 1600;
+const GEMINI_ENRICH_INTERVAL_MS = 12_000;
 const MAX_CAPTURE_WIDTH = 768;
 
 export interface CaptureFrameResult {
@@ -81,6 +89,20 @@ function loadImageElement(src: string): Promise<HTMLImageElement | null> {
   });
 }
 
+function extractPossPct(details?: FootballMatchDetails | null): number {
+  const stats = details?.statsByPeriod?.all?.length ? details.statsByPeriod.all : details?.stats || [];
+  for (const s of stats) {
+    if (/pos(es|ses)i[oó]n|possession/i.test(String(s.label || ''))) {
+      const h = parseFloat(String(s.homeValue || '').replace(/[^\d.]/g, ''));
+      const a = parseFloat(String(s.awayValue || '').replace(/[^\d.]/g, ''));
+      if (Number.isFinite(h) && Number.isFinite(a) && h + a > 0) {
+        return Math.max(15, Math.min(85, Math.round((h / (h + a)) * 100)));
+      }
+    }
+  }
+  return 50;
+}
+
 interface UseTacticalVideoAnalysisOptions {
   enabled: boolean;
   lang: AppLanguage;
@@ -107,6 +129,7 @@ export function useTacticalVideoAnalysis({
   const inFlightRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
   const opticalMemoryRef = useRef(createOpticalTrackerMemory());
+  const momentumSamplesRef = useRef<MomentumTimelineSample[]>([]);
   const geminiCooldownUntilRef = useRef<number>(0);
   const lastGeminiSuccessAtRef = useRef<number>(0);
   const lastGeminiAttemptAtRef = useRef<number>(0);
@@ -118,6 +141,8 @@ export function useTacticalVideoAnalysis({
         awayTeam: matchContext.awayTeam,
         homeShort: matchContext.homeShort,
         awayShort: matchContext.awayShort,
+        homeLogo: matchContext.homeLogo ?? matchContext.details?.homeLogo,
+        awayLogo: matchContext.awayLogo ?? matchContext.details?.awayLogo,
         homeScore: matchContext.homeScore ?? matchContext.details?.homeScore ?? '-',
         awayScore: matchContext.awayScore ?? matchContext.details?.awayScore ?? '-',
         statusLabel: matchContext.statusLabel ?? matchContext.details?.statusLabel ?? '',
@@ -130,19 +155,164 @@ export function useTacticalVideoAnalysis({
       awayTeam: parsed.awayTeam,
       homeShort: undefined,
       awayShort: undefined,
+      homeLogo: undefined,
+      awayLogo: undefined,
       homeScore: '-',
       awayScore: '-',
-      statusLabel: '',
+      statusLabel: videoState.isLive ? 'EN VIVO' : '',
       competition: parsed.competition || '',
     };
-  }, [matchContext, videoState.title, videoState.subtitle]);
+  }, [matchContext, videoState.title, videoState.subtitle, videoState.isLive]);
+
+  const appendMomentumSample = useCallback(
+    (tiltSigned: number) => {
+      const clamped = Math.max(-100, Math.min(100, Math.round(tiltSigned)));
+      const nowLabel =
+        resolvedTeams.statusLabel && /\d+/.test(resolvedTeams.statusLabel)
+          ? resolvedTeams.statusLabel
+          : new Date().toLocaleTimeString([], { minute: '2-digit', second: '2-digit' });
+      const prev = momentumSamplesRef.current;
+      momentumSamplesRef.current = [
+        ...prev.slice(-19),
+        { id: `rt-${Date.now()}-${prev.length}`, label: nowLabel, value: clamped },
+      ];
+    },
+    [resolvedTeams.statusLabel]
+  );
+
+  const buildBaselineAnalysis = useCallback((): TacticalVisionAnalysis => {
+    const details = matchContext?.details;
+    const mom = details?.momentum || [];
+    const lastMom = mom.length > 0 ? mom[mom.length - 1].value : 0;
+    const homePct = extractPossPct(details);
+    const attackDir: 'home' | 'away' | 'neutral' =
+      lastMom > 8 ? 'home' : lastMom < -8 ? 'away' : homePct > 54 ? 'home' : homePct < 46 ? 'away' : 'neutral';
+    const intensity = Math.min(88, Math.max(30, Math.round(Math.abs(lastMom) + 25)));
+    const ballX = attackDir === 'home' ? 680 : attackDir === 'away' ? 320 : 500;
+    const ballY = 500;
+    const players = projectLiveLineupsToPitch({
+      homeTeam: resolvedTeams.homeTeam,
+      awayTeam: resolvedTeams.awayTeam,
+      homeLineup: details?.homeLineup,
+      awayLineup: details?.awayLineup,
+      ballX,
+      ballY,
+      possessionTeam: attackDir === 'neutral' ? 'contested' : attackDir,
+      attackDirection: attackDir,
+      attackIntensity: intensity,
+    });
+    const { homeTiltPct, awayTiltPct } = computeMatchTiltPct({
+      homePossessionPct: homePct,
+      attackDirection: attackDir,
+      attackIntensity: intensity,
+      details,
+    });
+
+    return {
+      engineMode: 'optical_local',
+      isMatchPitchVisible: false,
+      cameraAngle: 'wide_tactical',
+      homeKitColor: details?.homeColor || '#00F593',
+      awayKitColor: details?.awayColor || '#9146FF',
+      ballZone: { x: ballX, y: ballY },
+      attackDirection: attackDir,
+      attackIntensity: intensity,
+      dangerZone: deriveDangerZone(ballX),
+      phaseType: derivePhaseFromPitch(ballX, attackDir, intensity),
+      homeTiltPct,
+      awayTiltPct,
+      laneActivity: { leftPct: 33, centerPct: 34, rightPct: 33 },
+      possession: {
+        team: attackDir === 'neutral' ? 'contested' : attackDir,
+        homePct,
+        awayPct: 100 - homePct,
+        zoneLabel: pickLang(lang, { es: 'Campo completo 11v11', ca: 'Camp complet 11v11', en: 'Full 11v11 Pitch' }),
+        summary: pickLang(lang, {
+          es: 'Alineaciones 11v11 activas · Calibrando ritmo de juego.',
+          ca: 'Alineacions 11v11 actives · Calibrant ritme de joc.',
+          en: '11v11 lineups active · Calibrating live flow.',
+        }),
+      },
+      players,
+      passingLines: [],
+      attacks: [],
+      attacksSummary: {
+        homeAttacks: opticalMemoryRef.current.homeAttacksCount,
+        awayAttacks: opticalMemoryRef.current.awayAttacksCount,
+        homeDangerousAttacks: opticalMemoryRef.current.homeDangerousCount,
+        awayDangerousAttacks: opticalMemoryRef.current.awayDangerousCount,
+        phaseLabel: pickLang(lang, { es: 'Alineación en vivo', ca: 'Alineació en directe', en: 'Live Lineups' }),
+      },
+      momentumHistory: buildMomentumTimeline(details, momentumSamplesRef.current),
+      tacticalNote: pickLang(lang, {
+        es: 'Pizarra en directo sincronizada con alineaciones y estadísticas.',
+        ca: 'Pissarra en directe sincronitzada amb alineacions i estadístiques.',
+        en: 'Live tactical board synced with lineups and match telemetry.',
+      }),
+    };
+  }, [matchContext?.details, resolvedTeams.homeTeam, resolvedTeams.awayTeam, lang]);
+
+  const enrichAnalysisWithPitch = useCallback(
+    (raw: TacticalVisionAnalysis): TacticalVisionAnalysis => {
+      const details = matchContext?.details;
+      const ballX = raw.ballZone?.x ?? opticalMemoryRef.current.smoothBallX;
+      const ballY = raw.ballZone?.y ?? opticalMemoryRef.current.smoothBallY;
+
+      // Temporal smoothing on Gemini frames so markers glide like broadcast graphics
+      const smoothX = Math.round(opticalMemoryRef.current.smoothBallX * 0.45 + ballX * 0.55);
+      const smoothY = Math.round(opticalMemoryRef.current.smoothBallY * 0.45 + ballY * 0.55);
+      opticalMemoryRef.current.smoothBallX = smoothX;
+      opticalMemoryRef.current.smoothBallY = smoothY;
+
+      const dir =
+        raw.attackDirection ||
+        (raw.possession.team === 'home' || raw.possession.team === 'away' ? raw.possession.team : 'neutral');
+      const intensity = raw.attackIntensity ?? 48;
+      const signedTilt = dir === 'home' ? intensity : dir === 'away' ? -intensity : (raw.possession.homePct - 50) * 1.4;
+      appendMomentumSample(signedTilt);
+
+      const players =
+        raw.players && raw.players.length >= 18
+          ? raw.players
+          : projectLiveLineupsToPitch({
+              homeTeam: resolvedTeams.homeTeam,
+              awayTeam: resolvedTeams.awayTeam,
+              homeLineup: details?.homeLineup,
+              awayLineup: details?.awayLineup,
+              ballX: smoothX,
+              ballY: smoothY,
+              possessionTeam: raw.possession.team,
+              attackDirection: dir,
+              attackIntensity: intensity,
+              homeLineHeight: raw.homeLineHeight,
+              awayLineHeight: raw.awayLineHeight,
+            });
+
+      const { homeTiltPct, awayTiltPct } = computeMatchTiltPct({
+        homePossessionPct: raw.possession.homePct,
+        attackDirection: dir,
+        attackIntensity: intensity,
+        details,
+      });
+
+      return {
+        ...raw,
+        ballZone: { x: smoothX, y: smoothY },
+        attackDirection: dir,
+        attackIntensity: intensity,
+        dangerZone: raw.dangerZone || deriveDangerZone(smoothX),
+        phaseType: raw.phaseType || derivePhaseFromPitch(smoothX, dir, intensity),
+        homeTiltPct: raw.homeTiltPct ?? homeTiltPct,
+        awayTiltPct: raw.awayTiltPct ?? awayTiltPct,
+        players,
+        momentumHistory: buildMomentumTimeline(details, momentumSamplesRef.current),
+      };
+    },
+    [matchContext?.details, resolvedTeams.homeTeam, resolvedTeams.awayTeam, appendMomentumSample]
+  );
 
   const runOpticalFrameStep = useCallback(
-    async (
-      homeRoster: OpticalRosterItem[],
-      awayRoster: OpticalRosterItem[],
-      liveStats: OpticalStatItem[]
-    ): Promise<boolean> => {
+    async (liveStats: OpticalStatItem[]): Promise<boolean> => {
       let opticalSource: HTMLVideoElement | HTMLImageElement | null = null;
       if (videoState.mode === 'hls' || videoState.mode === 'direct') {
         opticalSource = videoRef.current;
@@ -155,8 +325,7 @@ export function useTacticalVideoAnalysis({
         lang,
         homeTeam: resolvedTeams.homeTeam,
         awayTeam: resolvedTeams.awayTeam,
-        homeRoster,
-        awayRoster,
+        details: matchContext?.details,
         liveStats,
         memory: opticalMemoryRef.current,
       });
@@ -164,26 +333,33 @@ export function useTacticalVideoAnalysis({
       if (!optResult.ok) {
         if (optResult.reason === 'cors_blocked') {
           setCaptureStatus('cors_blocked');
-          setErrorMsg(
-            pickLang(lang, {
-              es: 'Esta señal externa bloquea la lectura de fotogramas. Cambia a otra señal/canal del partido para activar el tracking en vídeo.',
-              ca: 'Aquest senyal extern bloqueja la lectura de fotogrames. Canvia a un altre senyal per activar el tracking.',
-              en: 'This external feed blocks video frame capture. Switch to another feed/channel to run live visual tracking.',
-            })
-          );
+          // Keep full 11v11 tactical board & match data alive smoothly even if video pixel read is CORS-locked!
+          setAnalysis((prev) => prev || buildBaselineAnalysis());
+          setErrorMsg(null);
         } else {
           setCaptureStatus('waiting_frame');
+          setAnalysis((prev) => prev || buildBaselineAnalysis());
         }
         return false;
       }
 
       setCaptureStatus('ready');
       setErrorMsg(null);
-      setAnalysis(optResult.analysis);
+      setAnalysis(enrichAnalysisWithPitch(optResult.analysis));
       setLastUpdatedAt(Date.now());
       return true;
     },
-    [videoState.mode, videoRef, cloudFrame, lang, resolvedTeams.homeTeam, resolvedTeams.awayTeam]
+    [
+      videoState.mode,
+      videoRef,
+      cloudFrame,
+      lang,
+      resolvedTeams.homeTeam,
+      resolvedTeams.awayTeam,
+      matchContext?.details,
+      buildBaselineAnalysis,
+      enrichAnalysisWithPitch,
+    ]
   );
 
   const analyzeCurrentFrame = useCallback(
@@ -192,13 +368,7 @@ export function useTacticalVideoAnalysis({
 
       if (videoState.mode !== 'hls' && videoState.mode !== 'direct' && !(videoState.mode === 'cloud' && cloudFrame)) {
         setCaptureStatus('unsupported_mode');
-        setErrorMsg(
-          pickLang(lang, {
-            es: 'El análisis visual en tiempo real requiere reproducción nativa HLS/Directa o Cloud HD.',
-            ca: 'L’anàlisi visual en directe requereix reproducció nativa HLS/Directa o Cloud HD.',
-            en: 'Live visual tracking requires native HLS/Direct playback or Cloud HD.',
-          })
-        );
+        setAnalysis((prev) => prev || buildBaselineAnalysis());
         return;
       }
 
@@ -226,16 +396,12 @@ export function useTacticalVideoAnalysis({
 
       const now = Date.now();
       const inGeminiCooldown = now < geminiCooldownUntilRef.current && !forceGemini;
-      const geminiFreshlyApplied = now - lastGeminiSuccessAtRef.current < 8500;
+      const geminiFreshlyApplied = now - lastGeminiSuccessAtRef.current < 8000;
 
-      // Always keep UI snappy with real-time Local Optical CV whenever Gemini is cooling down
-      // or hasn't produced a fresh frame recently.
       if (inGeminiCooldown || !geminiFreshlyApplied) {
-        const opticalOk = await runOpticalFrameStep(homeRoster, awayRoster, liveStats);
-        if (!opticalOk) return;
+        await runOpticalFrameStep(liveStats);
       }
 
-      // Skip cloud call if in cooldown or called within Gemini pacing window
       if (inGeminiCooldown) return;
       if (!forceGemini && now - lastGeminiAttemptAtRef.current < GEMINI_ENRICH_INTERVAL_MS) {
         return;
@@ -245,9 +411,7 @@ export function useTacticalVideoAnalysis({
       let frameDataUrl: string | undefined;
       if (videoState.mode === 'hls' || videoState.mode === 'direct') {
         const cap = captureVideoFrameDataUrl(videoRef.current);
-        if (!cap.ok || !cap.dataUrl) {
-          return;
-        }
+        if (!cap.ok || !cap.dataUrl) return;
         frameDataUrl = cap.dataUrl;
       } else if (videoState.mode === 'cloud' && cloudFrame) {
         frameDataUrl = cloudFrame;
@@ -283,6 +447,8 @@ export function useTacticalVideoAnalysis({
             awayScore: resolvedTeams.awayScore,
             statusLabel: resolvedTeams.statusLabel,
             competition: resolvedTeams.competition,
+            homeColor: details?.homeColor,
+            awayColor: details?.awayColor,
             homeRoster,
             awayRoster,
             liveStats,
@@ -294,21 +460,21 @@ export function useTacticalVideoAnalysis({
 
         if (resp?.fallbackSuggested || resp?.engineMode === 'use_local_optical') {
           geminiCooldownUntilRef.current = Date.now() + (resp.retryAfterMs || 65_000);
-          await runOpticalFrameStep(homeRoster, awayRoster, liveStats);
+          await runOpticalFrameStep(liveStats);
           return;
         }
 
         if (resp?.analysis) {
           lastGeminiSuccessAtRef.current = Date.now();
-          setAnalysis({ ...resp.analysis, engineMode: 'gemini' });
+          setCaptureStatus('ready');
+          setAnalysis(enrichAnalysisWithPitch({ ...resp.analysis, engineMode: 'gemini' }));
           setLastUpdatedAt(resp.analyzedAt || Date.now());
           setErrorMsg(null);
         }
       } catch {
         if (ctrl.signal.aborted) return;
-        // Seamless fallback to Local Optical CV on any quota / network / capacity interruption
         geminiCooldownUntilRef.current = Date.now() + 65_000;
-        await runOpticalFrameStep(homeRoster, awayRoster, liveStats);
+        await runOpticalFrameStep(liveStats);
       } finally {
         inFlightRef.current = false;
         if (!ctrl.signal.aborted) {
@@ -324,9 +490,17 @@ export function useTacticalVideoAnalysis({
       lang,
       matchContext?.details,
       resolvedTeams,
+      buildBaselineAnalysis,
+      enrichAnalysisWithPitch,
       runOpticalFrameStep,
     ]
   );
+
+  // Immediately show 11v11 tactical baseline when enabled or match details update
+  useEffect(() => {
+    if (!enabled) return;
+    setAnalysis((prev) => (prev ? enrichAnalysisWithPitch(prev) : buildBaselineAnalysis()));
+  }, [enabled, matchContext?.details, buildBaselineAnalysis, enrichAnalysisWithPitch]);
 
   useEffect(() => {
     if (!enabled || videoState.mode === 'idle') {
@@ -342,7 +516,7 @@ export function useTacticalVideoAnalysis({
 
     const kickoff = setTimeout(() => {
       void analyzeCurrentFrame(false);
-    }, 250);
+    }, 220);
 
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
@@ -359,9 +533,9 @@ export function useTacticalVideoAnalysis({
     };
   }, [enabled, videoState.mode, videoState.url, analyzeCurrentFrame, videoRef]);
 
-  // Clear stale frame coordinates when switching stream/channel
   useEffect(() => {
     opticalMemoryRef.current = createOpticalTrackerMemory();
+    momentumSamplesRef.current = [];
     lastGeminiSuccessAtRef.current = 0;
     lastGeminiAttemptAtRef.current = 0;
     setAnalysis(null);

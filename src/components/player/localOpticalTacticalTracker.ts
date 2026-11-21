@@ -1,9 +1,13 @@
-import type { AppLanguage } from '../../types';
+import type { AppLanguage, FootballMatchDetails } from '../../types';
 import { pickLang } from '../../utils/i18n';
+import {
+  computeMatchTiltPct,
+  deriveDangerZone,
+  derivePhaseFromPitch,
+  projectLiveLineupsToPitch,
+} from './tacticalPitchEngine';
 import type {
   TacticalAttackVector,
-  TacticalPassingLine,
-  TacticalPlayerNode,
   TacticalVisionAnalysis,
 } from './tacticalVisionTypes';
 
@@ -26,44 +30,50 @@ export interface OpticalTrackerMemory {
   awayPossFrames: number;
   homeAttacksCount: number;
   awayAttacksCount: number;
+  homeDangerousCount: number;
+  awayDangerousCount: number;
   homeCentroid: [number, number, number] | null;
   awayCentroid: [number, number, number] | null;
   smoothBallX: number;
   smoothBallY: number;
+  prevSmoothBallX: number;
+  smoothAttackTilt: number; // -100..+100 hysteretic
   leftEnergy: number;
   centerEnergy: number;
   rightEnergy: number;
+  lastZoneTickTeam: 'home' | 'away' | null;
+  zoneDwellTicks: number;
 }
 
 export function createOpticalTrackerMemory(): OpticalTrackerMemory {
   return {
     prevLuma: null,
-    homePossFrames: 1,
-    awayPossFrames: 1,
-    homeAttacksCount: 1,
-    awayAttacksCount: 1,
+    homePossFrames: 2,
+    awayPossFrames: 2,
+    homeAttacksCount: 3,
+    awayAttacksCount: 3,
+    homeDangerousCount: 1,
+    awayDangerousCount: 1,
     homeCentroid: null,
     awayCentroid: null,
     smoothBallX: 500,
     smoothBallY: 500,
+    prevSmoothBallX: 500,
+    smoothAttackTilt: 0,
     leftEnergy: 33,
     centerEnergy: 34,
     rightEnergy: 33,
+    lastZoneTickTeam: null,
+    zoneDwellTicks: 0,
   };
 }
 
-interface BlobCandidate {
-  x: number; // 0..1000
-  y: number; // 0..1000
-  r: number;
-  g: number;
-  b: number;
-  salience: number;
-  motion: number;
+function isGrassPixel(r: number, g: number, b: number): boolean {
+  return g >= 42 && g > r * 1.06 && g > b * 1.08 && Math.abs(r - b) < 92;
 }
 
-function isGrassPixel(r: number, g: number, b: number): boolean {
-  return g >= 44 && g > r * 1.07 && g > b * 1.09 && Math.abs(r - b) < 88;
+function isWhiteLinePixel(r: number, g: number, b: number): boolean {
+  return r > 178 && g > 178 && b > 178 && Math.max(r, g, b) - Math.min(r, g, b) < 35;
 }
 
 function rgbDist(a: [number, number, number], b: [number, number, number]): number {
@@ -76,13 +86,11 @@ function rgbDist(a: [number, number, number], b: [number, number, number]): numb
 function toReadableHex(rgb: [number, number, number], fallback: string): string {
   const max = Math.max(rgb[0], rgb[1], rgb[2]);
   const min = Math.min(rgb[0], rgb[1], rgb[2]);
-  if (max < 45 || max - min < 16) return fallback;
-  const r = Math.min(255, Math.max(24, Math.round(rgb[0])));
-  const g = Math.min(255, Math.max(24, Math.round(rgb[1])));
-  const b = Math.min(255, Math.max(24, Math.round(rgb[2])));
-  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b
-    .toString(16)
-    .padStart(2, '0')}`;
+  if (max < 42 || max - min < 18) return fallback;
+  const r = Math.min(255, Math.max(28, Math.round(rgb[0])));
+  const g = Math.min(255, Math.max(28, Math.round(rgb[1])));
+  const b = Math.min(255, Math.max(28, Math.round(rgb[2])));
+  return `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
 }
 
 function extractPossessionFromStats(liveStats?: OpticalStatItem[]): { homePct: number; awayPct: number } | null {
@@ -99,53 +107,13 @@ function extractPossessionFromStats(liveStats?: OpticalStatItem[]): { homePct: n
   return null;
 }
 
-function pickRosterLabel(
-  team: 'home' | 'away',
-  idx: number,
-  x: number,
-  y: number,
-  roster: OpticalRosterItem[] | undefined,
-  lang: AppLanguage
-): { name: string; jersey?: string; roleHint: string } {
-  const validRoster = (Array.isArray(roster) ? roster : []).filter(
-    (p) => (p.shortName || p.name || '').trim().length > 0
-  );
-  if (validRoster.length > 0) {
-    const mapped = validRoster[idx % validRoster.length];
-    const fullName = String(mapped.shortName || mapped.name || '').trim();
-    const surname = fullName.split(/\s+/).slice(-1)[0] || fullName;
-    return {
-      name: surname.slice(0, 18),
-      jersey: mapped.jersey ? String(mapped.jersey).trim().slice(0, 3) : undefined,
-      roleHint: String(mapped.position || '').trim().slice(0, 16),
-    };
-  }
-
-  const zoneRole =
-    x < 260
-      ? pickLang(lang, { es: 'Zaga', ca: 'Defensa', en: 'Def' })
-      : x > 740
-        ? pickLang(lang, { es: 'Ataque', ca: 'Atac', en: 'Fwd' })
-        : y < 340 || y > 680
-          ? pickLang(lang, { es: 'Banda', ca: 'Banda', en: 'Wing' })
-          : pickLang(lang, { es: 'Medio', ca: 'Mig', en: 'Mid' });
-
-  const jerseyNum = team === 'home' ? String((idx % 10) + 2) : String(((idx + 5) % 10) + 2);
-  return {
-    name: `${zoneRole} #${jerseyNum}`,
-    jersey: jerseyNum,
-    roleHint: zoneRole,
-  };
-}
-
 export function analyzeMatchFrameOptically(
   source: HTMLVideoElement | HTMLImageElement,
   params: {
     lang: AppLanguage;
     homeTeam: string;
     awayTeam: string;
-    homeRoster?: OpticalRosterItem[];
-    awayRoster?: OpticalRosterItem[];
+    details?: FootballMatchDetails | null;
     liveStats?: OpticalStatItem[];
     memory: OpticalTrackerMemory;
   }
@@ -154,12 +122,8 @@ export function analyzeMatchFrameOptically(
   const srcW = isVideo ? source.videoWidth : source.naturalWidth;
   const srcH = isVideo ? source.videoHeight : source.naturalHeight;
 
-  if (isVideo && source.readyState < 2) {
-    return { ok: false, reason: 'not_ready' };
-  }
-  if (!srcW || !srcH || srcW < 64 || srcH < 64) {
-    return { ok: false, reason: 'not_ready' };
-  }
+  if (isVideo && source.readyState < 2) return { ok: false, reason: 'not_ready' };
+  if (!srcW || !srcH || srcW < 64 || srcH < 64) return { ok: false, reason: 'not_ready' };
 
   const W = 192;
   const H = 108;
@@ -174,11 +138,13 @@ export function analyzeMatchFrameOptically(
     ctx.drawImage(source, 0, 0, W, H);
     const imgData = ctx.getImageData(0, 0, W, H).data;
 
-    // 1. Measure grass coverage & build downsampled luma map
     const currLuma = new Uint8Array(W * H);
     const grassMask = new Uint8Array(W * H);
     let pitchPixels = 0;
     let pitchGrassPixels = 0;
+    let leftWhiteLines = 0;
+    let rightWhiteLines = 0;
+    let centerWhiteLines = 0;
 
     const pitchTopRow = Math.floor(H * 0.16);
     const pitchBottomRow = Math.floor(H * 0.91);
@@ -196,6 +162,11 @@ export function analyzeMatchFrameOptically(
         if (y >= pitchTopRow && y <= pitchBottomRow) {
           pitchPixels++;
           if (green) pitchGrassPixels++;
+          else if (isWhiteLinePixel(r, g, b)) {
+            if (x < W * 0.3) leftWhiteLines++;
+            else if (x > W * 0.7) rightWhiteLines++;
+            else if (x > W * 0.42 && x < W * 0.58) centerWhiteLines++;
+          }
         }
       }
     }
@@ -205,21 +176,10 @@ export function analyzeMatchFrameOptically(
 
     const pitchRatio = pitchPixels > 0 ? pitchGrassPixels / pitchPixels : 0;
     const statsPoss = extractPossessionFromStats(params.liveStats);
-    const totalLane = Math.max(
-      1,
-      params.memory.leftEnergy + params.memory.centerEnergy + params.memory.rightEnergy
-    );
-    const currentLaneActivity = {
-      leftPct: Math.round((params.memory.leftEnergy / totalLane) * 100),
-      centerPct: Math.round((params.memory.centerEnergy / totalLane) * 100),
-      rightPct: Math.max(
-        5,
-        100 -
-          Math.round((params.memory.leftEnergy / totalLane) * 100) -
-          Math.round((params.memory.centerEnergy / totalLane) * 100)
-      ),
-    };
+    const detailsHomeColor = params.details?.homeColor || '#00F593';
+    const detailsAwayColor = params.details?.awayColor || '#9146FF';
 
+    // Close-up or replay: preserve smoothed position & always show full 11v11 lineup dots!
     if (pitchRatio < 0.22) {
       const homePct =
         statsPoss?.homePct ??
@@ -228,52 +188,99 @@ export function analyzeMatchFrameOptically(
             Math.max(1, params.memory.homePossFrames + params.memory.awayPossFrames)) *
             100
         );
+      const tiltDir: 'home' | 'away' | 'neutral' =
+        params.memory.smoothAttackTilt > 12
+          ? 'home'
+          : params.memory.smoothAttackTilt < -12
+            ? 'away'
+            : 'neutral';
+      const intensity = Math.min(82, Math.round(Math.abs(params.memory.smoothAttackTilt)));
+      const players = projectLiveLineupsToPitch({
+        homeTeam: params.homeTeam,
+        awayTeam: params.awayTeam,
+        homeLineup: params.details?.homeLineup,
+        awayLineup: params.details?.awayLineup,
+        ballX: params.memory.smoothBallX,
+        ballY: params.memory.smoothBallY,
+        possessionTeam: tiltDir === 'neutral' ? 'contested' : tiltDir,
+        attackDirection: tiltDir,
+        attackIntensity: intensity,
+      });
+      const { homeTiltPct, awayTiltPct } = computeMatchTiltPct({
+        homePossessionPct: homePct,
+        attackDirection: tiltDir,
+        attackIntensity: intensity,
+        details: params.details,
+      });
+
+      const totalLane = Math.max(
+        1,
+        params.memory.leftEnergy + params.memory.centerEnergy + params.memory.rightEnergy
+      );
       return {
         ok: true,
         analysis: {
           engineMode: 'optical_local',
           isMatchPitchVisible: false,
-          homeKitColor: '#00F593',
-          awayKitColor: '#9146FF',
+          cameraAngle: 'replay_or_studio',
+          homeKitColor: detailsHomeColor,
+          awayKitColor: detailsAwayColor,
           ballZone: { x: params.memory.smoothBallX, y: params.memory.smoothBallY },
-          laneActivity: currentLaneActivity,
+          attackDirection: tiltDir,
+          attackIntensity: intensity,
+          dangerZone: deriveDangerZone(params.memory.smoothBallX),
+          phaseType: derivePhaseFromPitch(params.memory.smoothBallX, tiltDir, intensity),
+          homeTiltPct,
+          awayTiltPct,
+          laneActivity: {
+            leftPct: Math.round((params.memory.leftEnergy / totalLane) * 100),
+            centerPct: Math.round((params.memory.centerEnergy / totalLane) * 100),
+            rightPct: Math.max(
+              8,
+              100 -
+                Math.round((params.memory.leftEnergy / totalLane) * 100) -
+                Math.round((params.memory.centerEnergy / totalLane) * 100)
+            ),
+          },
           possession: {
-            team: 'contested',
+            team: tiltDir === 'neutral' ? 'contested' : tiltDir,
             homePct,
             awayPct: 100 - homePct,
             zoneLabel: pickLang(params.lang, {
-              es: 'Plano cerrado / pausa',
-              ca: 'Pla tancat / pausa',
-              en: 'Close-up / replay',
+              es: 'Plano cerrado · Bloque táctico activo',
+              ca: 'Pla tancat · Bloc tàctic actiu',
+              en: 'Close-up · Tactical block held',
             }),
             summary: pickLang(params.lang, {
-              es: 'Esperando plano abierto del terreno de juego.',
-              ca: 'Esperant pla obert del terreny de joc.',
-              en: 'Waiting for wide tactical pitch camera.',
+              es: 'Cámara en plano corto; alineación y tendencia fijadas.',
+              ca: 'Càmera en pla curt; alineació i tendència fixades.',
+              en: 'Close camera angle; lineups and flow held steady.',
             }),
           },
-          players: [],
+          players,
           passingLines: [],
           attacks: [],
           attacksSummary: {
             homeAttacks: params.memory.homeAttacksCount,
             awayAttacks: params.memory.awayAttacksCount,
+            homeDangerousAttacks: params.memory.homeDangerousCount,
+            awayDangerousAttacks: params.memory.awayDangerousCount,
             phaseLabel: pickLang(params.lang, {
-              es: 'Óptica Local',
-              ca: 'Òptica Local',
-              en: 'Local Optical',
+              es: 'Plano cerrado / Repetición',
+              ca: 'Pla tancat / Repetició',
+              en: 'Close-up / Replay',
             }),
           },
           tacticalNote: pickLang(params.lang, {
-            es: 'Plano sin campo amplio visible · En espera de jugada.',
-            ca: 'Pla sense camp ampli visible · Esperant jugada.',
-            en: 'Non-pitch camera angle · Waiting for open play.',
+            es: 'Plano cerrado en retransmisión; manteniendo dibujo 11v11 y última tendencia de ataque.',
+            ca: 'Pla tancat en retransmissió; mantenint dibuix 11v11 i última tendència.',
+            en: 'Close-up broadcast view; holding 11v11 shape and latest attack flow.',
           }),
         },
       };
     }
 
-    // 2. Macro-grid foreground blob extraction inside pitch region (24 x 14 cells)
+    // Macro-grid foreground & motion scan inside pitch bounds
     const cols = 24;
     const rows = 14;
     const cellW = Math.floor((W * 0.92) / cols);
@@ -281,27 +288,20 @@ export function analyzeMatchFrameOptically(
     const startX = Math.floor(W * 0.04);
     const startY = Math.floor(H * 0.17);
 
-    const cellGrassRatio = new Float32Array(cols * rows);
-    const cellCandidates: Array<{
-      col: number;
-      row: number;
-      fgRatio: number;
-      r: number;
-      g: number;
-      b: number;
-      motion: number;
-    }> = [];
+    let rawLeftLane = 0;
+    let rawCenterLane = 0;
+    let rawRightLane = 0;
+    let motionWeightSum = 0;
+    let weightedScreenX = 0;
+    let weightedScreenY = 0;
 
-    let rawLeftMotion = 0;
-    let rawCenterMotion = 0;
-    let rawRightMotion = 0;
+    const fgSamples: Array<{ x: number; y: number; r: number; g: number; b: number; w: number }> = [];
 
     for (let rIdx = 0; rIdx < rows; rIdx++) {
       for (let cIdx = 0; cIdx < cols; cIdx++) {
         const x0 = startX + cIdx * cellW;
         const y0 = startY + rIdx * cellH;
         let total = 0;
-        let grass = 0;
         let fgCount = 0;
         let sumR = 0;
         let sumG = 0;
@@ -312,17 +312,12 @@ export function analyzeMatchFrameOptically(
           for (let xx = x0; xx < x0 + cellW && xx < W; xx++) {
             const pIdx = yy * W + xx;
             total++;
-            if (grassMask[pIdx]) {
-              grass++;
-            } else {
+            if (!grassMask[pIdx]) {
               const p4 = pIdx * 4;
-              const pr = imgData[p4];
-              const pg = imgData[p4 + 1];
-              const pb = imgData[p4 + 2];
               fgCount++;
-              sumR += pr;
-              sumG += pg;
-              sumB += pb;
+              sumR += imgData[p4];
+              sumG += imgData[p4 + 1];
+              sumB += imgData[p4 + 2];
             }
             if (prevLuma) {
               motionSum += Math.abs(currLuma[pIdx] - prevLuma[pIdx]);
@@ -330,228 +325,159 @@ export function analyzeMatchFrameOptically(
           }
         }
 
-        const avgCellMotion = total > 0 ? motionSum / total : 0;
+        const avgMotion = total > 0 ? motionSum / total : 0;
+        const fgRatio = total > 0 ? fgCount / total : 0;
+        const normX = Math.round(((startX + (cIdx + 0.5) * cellW) / W) * 1000);
+        const normY = Math.round(((startY + (rIdx + 0.5) * cellH) / H) * 1000);
+
         if (rIdx >= 2 && rIdx <= 11) {
-          if (rIdx <= 4) rawLeftMotion += avgCellMotion + (fgCount / Math.max(1, total)) * 8;
-          else if (rIdx >= 9) rawRightMotion += avgCellMotion + (fgCount / Math.max(1, total)) * 8;
-          else rawCenterMotion += avgCellMotion + (fgCount / Math.max(1, total)) * 8;
+          if (rIdx <= 4) rawLeftLane += avgMotion + fgRatio * 6;
+          else if (rIdx >= 9) rawRightLane += avgMotion + fgRatio * 6;
+          else rawCenterLane += avgMotion + fgRatio * 6;
         }
 
-        const gRatio = total > 0 ? grass / total : 0;
-        cellGrassRatio[rIdx * cols + cIdx] = gRatio;
-        const fgRatio = total > 0 ? fgCount / total : 0;
+        // Ignore broadcast scorebug top-left corner
+        if (normY < 200 && normX < 360) continue;
 
-        if (fgCount > 0 && fgRatio >= 0.16 && fgRatio <= 0.85) {
-          cellCandidates.push({
-            col: cIdx,
-            row: rIdx,
-            fgRatio,
-            r: sumR / fgCount,
-            g: sumG / fgCount,
-            b: sumB / fgCount,
-            motion: avgCellMotion,
-          });
+        if (fgRatio >= 0.14 && fgRatio <= 0.72) {
+          const salience = avgMotion * 1.6 + fgRatio * 30;
+          motionWeightSum += salience;
+          weightedScreenX += normX * salience;
+          weightedScreenY += normY * salience;
+          if (fgCount > 0) {
+            fgSamples.push({
+              x: normX,
+              y: normY,
+              r: sumR / fgCount,
+              g: sumG / fgCount,
+              b: sumB / fgCount,
+              w: salience,
+            });
+          }
         }
       }
     }
 
-    // Smooth 3-lane energy over time (exponential moving average)
-    const laneTotal = Math.max(1, rawLeftMotion + rawCenterMotion + rawRightMotion);
-    params.memory.leftEnergy = params.memory.leftEnergy * 0.65 + (rawLeftMotion / laneTotal) * 100 * 0.35;
-    params.memory.centerEnergy =
-      params.memory.centerEnergy * 0.65 + (rawCenterMotion / laneTotal) * 100 * 0.35;
-    params.memory.rightEnergy =
-      params.memory.rightEnergy * 0.65 + (rawRightMotion / laneTotal) * 100 * 0.35;
-
-    const smoothedLaneSum = Math.max(
+    // Smooth lane activity
+    const laneSum = Math.max(1, rawLeftLane + rawCenterLane + rawRightLane);
+    params.memory.leftEnergy = params.memory.leftEnergy * 0.68 + (rawLeftLane / laneSum) * 100 * 0.32;
+    params.memory.centerEnergy = params.memory.centerEnergy * 0.68 + (rawCenterLane / laneSum) * 100 * 0.32;
+    params.memory.rightEnergy = params.memory.rightEnergy * 0.68 + (rawRightLane / laneSum) * 100 * 0.32;
+    const smoothLaneSum = Math.max(
       1,
       params.memory.leftEnergy + params.memory.centerEnergy + params.memory.rightEnergy
     );
-    const leftPct = Math.max(12, Math.min(68, Math.round((params.memory.leftEnergy / smoothedLaneSum) * 100)));
-    const centerPct = Math.max(
-      14,
-      Math.min(68, Math.round((params.memory.centerEnergy / smoothedLaneSum) * 100))
-    );
+    const leftPct = Math.max(12, Math.min(68, Math.round((params.memory.leftEnergy / smoothLaneSum) * 100)));
+    const centerPct = Math.max(16, Math.min(68, Math.round((params.memory.centerEnergy / smoothLaneSum) * 100)));
     const rightPct = Math.max(10, 100 - leftPct - centerPct);
 
-    // Keep foreground blobs surrounded by grass
-    const rawBlobs: BlobCandidate[] = [];
-    for (const c of cellCandidates) {
-      let neighborGrass = 0;
-      let neighborCount = 0;
-      for (let dr = -1; dr <= 1; dr++) {
-        for (let dc = -1; dc <= 1; dc++) {
-          if (dr === 0 && dc === 0) continue;
-          const nr = c.row + dr;
-          const nc = c.col + dc;
-          if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
-            neighborCount++;
-            if (cellGrassRatio[nr * cols + nc] >= 0.45) neighborGrass++;
+    // Estimate which pitch third camera focuses on using penalty box / halfway line density
+    const lineTotal = Math.max(1, leftWhiteLines + centerWhiteLines + rightWhiteLines);
+    const leftDensity = leftWhiteLines / lineTotal;
+    const rightDensity = rightWhiteLines / lineTotal;
+    let cameraPitchBiasX = 500;
+    let cameraAngle: 'wide_tactical' | 'attacking_third' = 'wide_tactical';
+    if (rightDensity > 0.56 && rightWhiteLines > 45) {
+      cameraPitchBiasX = 760;
+      cameraAngle = 'attacking_third';
+    } else if (leftDensity > 0.56 && leftWhiteLines > 45) {
+      cameraPitchBiasX = 240;
+      cameraAngle = 'attacking_third';
+    }
+
+    const screenCenterX = motionWeightSum > 0 ? weightedScreenX / motionWeightSum : 500;
+    const screenCenterY = motionWeightSum > 0 ? weightedScreenY / motionWeightSum : 500;
+
+    // Combine camera third bias + local motion focus into full-pitch target (including 6-yard boxes & corners)
+    const estBallX = Math.max(
+      48,
+      Math.min(952, Math.round(cameraPitchBiasX * 0.55 + screenCenterX * 0.45))
+    );
+    const estBallY = Math.max(55, Math.min(945, Math.round(screenCenterY)));
+
+    params.memory.prevSmoothBallX = params.memory.smoothBallX;
+    params.memory.smoothBallX = Math.round(params.memory.smoothBallX * 0.68 + estBallX * 0.32);
+    params.memory.smoothBallY = Math.round(params.memory.smoothBallY * 0.68 + estBallY * 0.32);
+
+    // Gentle kit color detection with high hysteresis so colors never jitter wildly
+    let homeKitColor = detailsHomeColor;
+    let awayKitColor = detailsAwayColor;
+    if (fgSamples.length >= 6 && !params.details?.homeColor) {
+      fgSamples.sort((a, b) => a.x - b.x);
+      const leftHalf = fgSamples.slice(0, Math.floor(fgSamples.length / 2));
+      const rightHalf = fgSamples.slice(Math.floor(fgSamples.length / 2));
+      const avgRgb = (arr: typeof fgSamples): [number, number, number] => [
+        arr.reduce((s, x) => s + x.r, 0) / Math.max(1, arr.length),
+        arr.reduce((s, x) => s + x.g, 0) / Math.max(1, arr.length),
+        arr.reduce((s, x) => s + x.b, 0) / Math.max(1, arr.length),
+      ];
+      const cA = avgRgb(leftHalf);
+      const cB = avgRgb(rightHalf);
+      if (!params.memory.homeCentroid) params.memory.homeCentroid = cA;
+      else if (rgbDist(params.memory.homeCentroid, cA) < 90) {
+        params.memory.homeCentroid = [
+          params.memory.homeCentroid[0] * 0.85 + cA[0] * 0.15,
+          params.memory.homeCentroid[1] * 0.85 + cA[1] * 0.15,
+          params.memory.homeCentroid[2] * 0.85 + cA[2] * 0.15,
+        ];
+      }
+      if (!params.memory.awayCentroid) params.memory.awayCentroid = cB;
+      else if (rgbDist(params.memory.awayCentroid, cB) < 90) {
+        params.memory.awayCentroid = [
+          params.memory.awayCentroid[0] * 0.85 + cB[0] * 0.15,
+          params.memory.awayCentroid[1] * 0.85 + cB[1] * 0.15,
+          params.memory.awayCentroid[2] * 0.85 + cB[2] * 0.15,
+        ];
+      }
+      homeKitColor = toReadableHex(params.memory.homeCentroid, '#00F593');
+      awayKitColor = toReadableHex(params.memory.awayCentroid, '#9146FF');
+      if (homeKitColor.toLowerCase() === awayKitColor.toLowerCase()) {
+        awayKitColor = '#9146FF';
+      }
+    }
+
+    // Hysteretic attack tilt computation (-100 Away <-> +100 Home)
+    const ballDeltaX = params.memory.smoothBallX - params.memory.prevSmoothBallX;
+    const rawZoneTilt = (params.memory.smoothBallX - 500) / 5 + ballDeltaX * 0.55;
+    params.memory.smoothAttackTilt =
+      params.memory.smoothAttackTilt * 0.65 + Math.max(-100, Math.min(100, rawZoneTilt)) * 0.35;
+
+    const attackDirection: 'home' | 'away' | 'neutral' =
+      params.memory.smoothAttackTilt > 11
+        ? 'home'
+        : params.memory.smoothAttackTilt < -11
+          ? 'away'
+          : 'neutral';
+    const attackIntensity = Math.min(95, Math.max(22, Math.round(Math.abs(params.memory.smoothAttackTilt) * 1.3)));
+
+    if (attackDirection === 'home') params.memory.homePossFrames++;
+    else if (attackDirection === 'away') params.memory.awayPossFrames++;
+
+    // Count structured attacks only when sustaining possession in attacking third
+    if (attackDirection !== 'neutral' && (params.memory.smoothBallX > 650 || params.memory.smoothBallX < 350)) {
+      if (params.memory.lastZoneTickTeam === attackDirection) {
+        params.memory.zoneDwellTicks++;
+        if (params.memory.zoneDwellTicks === 3) {
+          if (attackDirection === 'home') {
+            params.memory.homeAttacksCount = Math.min(99, params.memory.homeAttacksCount + 1);
+            if (params.memory.smoothBallX > 780) params.memory.homeDangerousCount++;
+          } else {
+            params.memory.awayAttacksCount = Math.min(99, params.memory.awayAttacksCount + 1);
+            if (params.memory.smoothBallX < 220) params.memory.awayDangerousCount++;
           }
         }
+      } else {
+        params.memory.lastZoneTickTeam = attackDirection;
+        params.memory.zoneDwellTicks = 1;
       }
-      if (neighborCount === 0 || neighborGrass / neighborCount < 0.38) continue;
-
-      const normX = Math.round(((startX + (c.col + 0.5) * cellW) / W) * 1000);
-      const normY = Math.round(((startY + (c.row + 0.5) * cellH) / H) * 1000);
-      if (normY < 190 && normX < 340) continue;
-
-      rawBlobs.push({
-        x: Math.max(60, Math.min(940, normX)),
-        y: Math.max(180, Math.min(890, normY)),
-        r: c.r,
-        g: c.g,
-        b: c.b,
-        salience: c.fgRatio * 100 + c.motion * 1.4,
-        motion: c.motion,
-      });
+    } else {
+      params.memory.zoneDwellTicks = 0;
     }
-
-    rawBlobs.sort((a, b) => b.salience - a.salience);
-    const blobs: BlobCandidate[] = [];
-    for (const b of rawBlobs) {
-      const tooClose = blobs.some((existing) => Math.hypot(existing.x - b.x, existing.y - b.y) < 92);
-      if (!tooClose) {
-        blobs.push(b);
-      }
-      if (blobs.length >= 11) break;
-    }
-
-    // 3. Bipartite RGB clustering for home vs away jerseys
-    let cHome: [number, number, number] = params.memory.homeCentroid || [235, 240, 245];
-    let cAway: [number, number, number] = params.memory.awayCentroid || [42, 68, 175];
-
-    if (blobs.length >= 2) {
-      if (!params.memory.homeCentroid || !params.memory.awayCentroid) {
-        let bestD = -1;
-        let seedA = blobs[0];
-        let seedB = blobs[1];
-        for (let i = 0; i < blobs.length; i++) {
-          for (let j = i + 1; j < blobs.length; j++) {
-            const d = rgbDist([blobs[i].r, blobs[i].g, blobs[i].b], [blobs[j].r, blobs[j].g, blobs[j].b]);
-            if (d > bestD) {
-              bestD = d;
-              seedA = blobs[i];
-              seedB = blobs[j];
-            }
-          }
-        }
-        cHome = [seedA.r, seedA.g, seedA.b];
-        cAway = [seedB.r, seedB.g, seedB.b];
-      }
-
-      for (let iter = 0; iter < 3; iter++) {
-        const gA: BlobCandidate[] = [];
-        const gB: BlobCandidate[] = [];
-        for (const b of blobs) {
-          const dA = rgbDist([b.r, b.g, b.b], cHome);
-          const dB = rgbDist([b.r, b.g, b.b], cAway);
-          if (dA <= dB) gA.push(b);
-          else gB.push(b);
-        }
-        if (gA.length > 0) {
-          cHome = [
-            gA.reduce((s, x) => s + x.r, 0) / gA.length,
-            gA.reduce((s, x) => s + x.g, 0) / gA.length,
-            gA.reduce((s, x) => s + x.b, 0) / gA.length,
-          ];
-        }
-        if (gB.length > 0) {
-          cAway = [
-            gB.reduce((s, x) => s + x.r, 0) / gB.length,
-            gB.reduce((s, x) => s + x.g, 0) / gB.length,
-            gB.reduce((s, x) => s + x.b, 0) / gB.length,
-          ];
-        }
-      }
-      params.memory.homeCentroid = cHome;
-      params.memory.awayCentroid = cAway;
-    }
-
-    const colorSeparation = rgbDist(cHome, cAway);
-    const homeKitColor = colorSeparation > 45 ? toReadableHex(cHome, '#00F593') : '#00F593';
-    const awayKitColor = colorSeparation > 45 ? toReadableHex(cAway, '#9146FF') : '#9146FF';
-    const safeAwayColor =
-      homeKitColor.toLowerCase() === awayKitColor.toLowerCase() ? '#9146FF' : awayKitColor;
-
-    const assigned = blobs.map((b) => {
-      const team: 'home' | 'away' =
-        colorSeparation > 45
-          ? rgbDist([b.r, b.g, b.b], cHome) <= rgbDist([b.r, b.g, b.b], cAway)
-            ? 'home'
-            : 'away'
-          : b.x < 520
-            ? 'home'
-            : 'away';
-      return { ...b, team };
-    });
-
-    const homeBlobs = assigned.filter((b) => b.team === 'home').sort((a, b) => a.x - b.x || a.y - b.y);
-    const awayBlobs = assigned.filter((b) => b.team === 'away').sort((a, b) => b.x - a.x || a.y - b.y);
-
-    let ballCarrierId = '';
-    let topMotion = -1;
-    const players: TacticalPlayerNode[] = [];
-
-    homeBlobs.forEach((b, idx) => {
-      const id = `opt-h-${idx + 1}`;
-      const info = pickRosterLabel('home', idx, b.x, b.y, params.homeRoster, params.lang);
-      const motionScore = b.motion + (b.x > 220 && b.x < 800 ? 3 : 0);
-      if (motionScore > topMotion) {
-        topMotion = motionScore;
-        ballCarrierId = id;
-      }
-      players.push({
-        id,
-        name: info.name,
-        jersey: info.jersey,
-        team: 'home',
-        x: b.x,
-        y: b.y,
-        hasBall: false,
-        roleHint: info.roleHint,
-      });
-    });
-
-    awayBlobs.forEach((b, idx) => {
-      const id = `opt-a-${idx + 1}`;
-      const info = pickRosterLabel('away', idx, b.x, b.y, params.awayRoster, params.lang);
-      const motionScore = b.motion + (b.x > 220 && b.x < 800 ? 3 : 0);
-      if (motionScore > topMotion) {
-        topMotion = motionScore;
-        ballCarrierId = id;
-      }
-      players.push({
-        id,
-        name: info.name,
-        jersey: info.jersey,
-        team: 'away',
-        x: b.x,
-        y: b.y,
-        hasBall: false,
-        roleHint: info.roleHint,
-      });
-    });
-
-    let activeTeam: 'home' | 'away' | 'contested' = 'contested';
-    let carrier: TacticalPlayerNode | undefined;
-    if (ballCarrierId) {
-      carrier = players.find((p) => p.id === ballCarrierId);
-      if (carrier) {
-        carrier.hasBall = true;
-        activeTeam = carrier.team;
-        params.memory.smoothBallX = Math.round(params.memory.smoothBallX * 0.55 + carrier.x * 0.45);
-        params.memory.smoothBallY = Math.round(params.memory.smoothBallY * 0.55 + carrier.y * 0.45);
-      }
-    }
-
-    if (activeTeam === 'home') params.memory.homePossFrames++;
-    else if (activeTeam === 'away') params.memory.awayPossFrames++;
 
     const rollingHomePct = Math.max(
-      24,
+      25,
       Math.min(
-        76,
+        75,
         Math.round(
           (params.memory.homePossFrames /
             Math.max(1, params.memory.homePossFrames + params.memory.awayPossFrames)) *
@@ -562,137 +488,175 @@ export function analyzeMatchFrameOptically(
     const homePct = statsPoss?.homePct ?? rollingHomePct;
     const awayPct = 100 - homePct;
 
-    // 4. Passing lines & compact team links
-    const passingLines: TacticalPassingLine[] = [];
-    const connectTeam = (list: TacticalPlayerNode[]) => {
-      for (let i = 0; i < list.length; i++) {
-        const a = list[i];
-        let nearest: TacticalPlayerNode | null = null;
-        let nearestD = Infinity;
-        for (let j = i + 1; j < list.length; j++) {
-          const b = list[j];
-          const d = Math.hypot(a.x - b.x, a.y - b.y);
-          if (d < 360 && d < nearestD) {
-            nearestD = d;
-            nearest = b;
-          }
-        }
-        if (nearest) {
-          passingLines.push({
-            fromId: a.id,
-            toId: nearest.id,
-            team: a.team,
-            kind: a.hasBall || nearest.hasBall ? 'pass_link' : 'compact_line',
-          });
-        }
-      }
-    };
+    const possessionTeam: 'home' | 'away' | 'contested' =
+      attackDirection !== 'neutral' ? attackDirection : 'contested';
+    const dangerZone = deriveDangerZone(params.memory.smoothBallX);
+    const phaseType = derivePhaseFromPitch(
+      params.memory.smoothBallX,
+      attackDirection,
+      attackIntensity,
+      params.memory.smoothBallY
+    );
+    const { homeTiltPct, awayTiltPct } = computeMatchTiltPct({
+      homePossessionPct: homePct,
+      attackDirection,
+      attackIntensity,
+      details: params.details,
+    });
 
-    const homePlayers = players.filter((p) => p.team === 'home');
-    const awayPlayers = players.filter((p) => p.team === 'away');
-    connectTeam(homePlayers);
-    connectTeam(awayPlayers);
+    const players = projectLiveLineupsToPitch({
+      homeTeam: params.homeTeam,
+      awayTeam: params.awayTeam,
+      homeLineup: params.details?.homeLineup,
+      awayLineup: params.details?.awayLineup,
+      ballX: params.memory.smoothBallX,
+      ballY: params.memory.smoothBallY,
+      possessionTeam,
+      attackDirection,
+      attackIntensity,
+    });
 
-    // 5. Attack vectors based on ball carrier & territorial progression
-    const attacks: TacticalAttackVector[] = [];
-    if (carrier) {
-      const teamPlayers = carrier.team === 'home' ? homePlayers : awayPlayers;
-      const forwardTarget = teamPlayers
-        .filter((p) => p.id !== carrier!.id)
-        .sort((a, b) => (carrier!.team === 'home' ? b.x - a.x : a.x - b.x))[0];
+    const attacks: TacticalAttackVector[] =
+      phaseType === 'goal_kick'
+        ? [
+            {
+              id: 'opt-gk-launch',
+              team: params.memory.smoothBallX <= 500 ? 'home' : 'away',
+              fromX: params.memory.smoothBallX <= 500 ? 60 : 940,
+              fromY: 500,
+              toX: params.memory.smoothBallX <= 500 ? 540 : 460,
+              toY: params.memory.smoothBallY < 500 ? 340 : 660,
+              type: 'through_ball',
+              label: pickLang(params.lang, {
+                es: 'Saque de puerta',
+                ca: 'Servei de porteria',
+                en: 'Goal Kick',
+              }),
+            },
+          ]
+        : phaseType === 'corner'
+          ? [
+              {
+                id: 'opt-corner-cross',
+                team: params.memory.smoothBallX >= 500 ? 'home' : 'away',
+                fromX: params.memory.smoothBallX >= 500 ? 985 : 15,
+                fromY: params.memory.smoothBallY <= 500 ? 35 : 965,
+                toX: params.memory.smoothBallX >= 500 ? 875 : 125,
+                toY: 500,
+                type: 'wing_attack',
+                label: pickLang(params.lang, {
+                  es: 'Saque de esquina',
+                  ca: 'Córner',
+                  en: 'Corner Kick',
+                }),
+              },
+            ]
+          : attackDirection === 'neutral'
+            ? []
+            : [
+                {
+                  id: 'opt-atk-1',
+                  team: attackDirection,
+                  fromX: params.memory.smoothBallX,
+                  fromY: params.memory.smoothBallY,
+                  toX:
+                    attackDirection === 'home'
+                      ? Math.min(960, params.memory.smoothBallX + 165)
+                      : Math.max(40, params.memory.smoothBallX - 165),
+                  toY: Math.max(
+                    200,
+                    Math.min(800, params.memory.smoothBallY + (params.memory.smoothBallY < 500 ? 60 : -60))
+                  ),
+                  type:
+                    dangerZone === 'home_box' || dangerZone === 'away_box'
+                      ? 'shot_threat'
+                      : params.memory.smoothBallY < 320 || params.memory.smoothBallY > 680
+                        ? 'wing_attack'
+                        : 'through_ball',
+                  label:
+                    phaseType === 'dangerous_attack' || phaseType === 'shot_threat'
+                      ? pickLang(params.lang, {
+                          es: 'Ataque peligroso',
+                          ca: 'Atac perillós',
+                          en: 'Dangerous attack',
+                        })
+                      : pickLang(params.lang, {
+                          es: 'Progresión ofensiva',
+                          ca: 'Progressió ofensiva',
+                          en: 'Attacking build-up',
+                        }),
+                },
+              ];
 
-      const dirX = carrier.team === 'home' ? 1 : -1;
-      const targetX = forwardTarget
-        ? Math.max(60, Math.min(940, Math.round(forwardTarget.x + dirX * 55)))
-        : Math.max(60, Math.min(940, carrier.x + dirX * 165));
-      const targetY = forwardTarget
-        ? forwardTarget.y
-        : Math.max(230, Math.min(820, carrier.y + (carrier.y < 500 ? 45 : -45)));
-
-      const isWing = carrier.y < 350 || carrier.y > 680;
-      const isBox = carrier.x < 240 || carrier.x > 760;
-
-      if (carrier.team === 'home' && Math.hypot(targetX - carrier.x, targetY - carrier.y) > 90) {
-        params.memory.homeAttacksCount = Math.min(99, params.memory.homeAttacksCount + (isBox ? 1 : 0));
-      } else if (carrier.team === 'away' && Math.hypot(targetX - carrier.x, targetY - carrier.y) > 90) {
-        params.memory.awayAttacksCount = Math.min(99, params.memory.awayAttacksCount + (isBox ? 1 : 0));
-      }
-
-      attacks.push({
-        id: 'opt-atk-1',
-        team: carrier.team,
-        fromX: carrier.x,
-        fromY: carrier.y,
-        toX: targetX,
-        toY: targetY,
-        type: isBox ? 'shot_threat' : isWing ? 'wing_attack' : 'through_ball',
-        label: isBox
-          ? pickLang(params.lang, { es: 'Zona de remate', ca: 'Zona de xut', en: 'Shot zone' })
-          : isWing
-            ? pickLang(params.lang, { es: 'Profundidad banda', ca: 'Profunditat banda', en: 'Wing run' })
-            : pickLang(params.lang, { es: 'Línea de pase', ca: 'Línia de passada', en: 'Through lane' }),
-      });
-    }
+    const zoneLabel =
+      dangerZone === 'away_box'
+        ? pickLang(params.lang, { es: `Área de ${params.awayTeam}`, ca: `Àrea de ${params.awayTeam}`, en: `${params.awayTeam} box` })
+        : dangerZone === 'away_third'
+          ? pickLang(params.lang, { es: `Campo de ${params.awayTeam}`, ca: `Camp de ${params.awayTeam}`, en: `${params.awayTeam} third` })
+          : dangerZone === 'home_box'
+            ? pickLang(params.lang, { es: `Área de ${params.homeTeam}`, ca: `Àrea de ${params.homeTeam}`, en: `${params.homeTeam} box` })
+            : dangerZone === 'home_third'
+              ? pickLang(params.lang, { es: `Campo de ${params.homeTeam}`, ca: `Camp de ${params.homeTeam}`, en: `${params.homeTeam} third` })
+              : pickLang(params.lang, { es: 'Mediocampo', ca: 'Migcamp', en: 'Midfield' });
 
     const activeName =
-      activeTeam === 'home'
+      attackDirection === 'home'
         ? params.homeTeam
-        : activeTeam === 'away'
+        : attackDirection === 'away'
           ? params.awayTeam
           : `${params.homeTeam} / ${params.awayTeam}`;
-
-    const zoneLabel = carrier
-      ? carrier.y < 360
-        ? pickLang(params.lang, { es: 'Banda superior', ca: 'Banda superior', en: 'Far flank' })
-        : carrier.y > 670
-          ? pickLang(params.lang, { es: 'Banda inferior', ca: 'Banda inferior', en: 'Near flank' })
-          : pickLang(params.lang, { es: 'Carril central', ca: 'Carril central', en: 'Central lane' })
-      : pickLang(params.lang, { es: 'Zona media', ca: 'Zona mitjana', en: 'Midfield' });
 
     return {
       ok: true,
       analysis: {
         engineMode: 'optical_local',
         isMatchPitchVisible: true,
+        cameraAngle,
         homeKitColor,
-        awayKitColor: safeAwayColor,
+        awayKitColor,
         ballZone: { x: params.memory.smoothBallX, y: params.memory.smoothBallY },
+        attackDirection,
+        attackIntensity,
+        dangerZone,
+        phaseType,
+        homeTiltPct,
+        awayTiltPct,
         laneActivity: { leftPct, centerPct, rightPct },
         possession: {
-          team: activeTeam,
+          team: possessionTeam,
           homePct,
           awayPct,
           zoneLabel,
           summary: pickLang(params.lang, {
-            es: `${activeName} conduce por ${zoneLabel.toLowerCase()}.`,
-            ca: `${activeName} condueix per ${zoneLabel.toLowerCase()}.`,
-            en: `${activeName} progressing through ${zoneLabel.toLowerCase()}.`,
+            es: `${activeName} empuja en ${zoneLabel.toLowerCase()}.`,
+            ca: `${activeName} empeny a ${zoneLabel.toLowerCase()}.`,
+            en: `${activeName} pushing in ${zoneLabel.toLowerCase()}.`,
           }),
         },
         players,
-        passingLines: passingLines.slice(0, 10),
+        passingLines: [],
         attacks,
         attacksSummary: {
           homeAttacks: params.memory.homeAttacksCount,
           awayAttacks: params.memory.awayAttacksCount,
-          phaseLabel: pickLang(params.lang, {
-            es: 'Radar 2D en vivo',
-            ca: 'Radar 2D en directe',
-            en: 'Live 2D Radar',
-          }),
+          homeDangerousAttacks: params.memory.homeDangerousCount,
+          awayDangerousAttacks: params.memory.awayDangerousCount,
+          phaseLabel:
+            phaseType === 'goal_kick'
+              ? pickLang(params.lang, { es: 'Saque de puerta', ca: 'Servei de porteria', en: 'Goal Kick' })
+              : phaseType === 'corner'
+                ? pickLang(params.lang, { es: 'Saque de esquina', ca: 'Córner', en: 'Corner Kick' })
+                : phaseType === 'dangerous_attack' || phaseType === 'shot_threat'
+                  ? pickLang(params.lang, { es: 'Ataque peligroso', ca: 'Atac perillós', en: 'Dangerous Attack' })
+                  : attackDirection !== 'neutral'
+                    ? pickLang(params.lang, { es: 'Ataque en curso', ca: 'Atac en curs', en: 'Attacking Play' })
+                    : pickLang(params.lang, { es: 'Juego en mediocampo', ca: 'Joc al migcamp', en: 'Midfield Battle' }),
         },
-        tacticalNote:
-          players.length > 0
-            ? pickLang(params.lang, {
-                es: `Actividad óptica en ${zoneLabel.toLowerCase()} · Carriles ${leftPct}% / ${centerPct}% / ${rightPct}%.`,
-                ca: `Activitat òptica a ${zoneLabel.toLowerCase()} · Carrils ${leftPct}% / ${centerPct}% / ${rightPct}%.`,
-                en: `Live pitch load in ${zoneLabel.toLowerCase()} · Lanes ${leftPct}% / ${centerPct}% / ${rightPct}%.`,
-              })
-            : pickLang(params.lang, {
-                es: 'Césped detectado · Analizando carriles de ataque.',
-                ca: 'Gespa detectada · Analitzant carrils d’atac.',
-                en: 'Pitch detected · Scanning attacking lanes.',
-              }),
+        tacticalNote: pickLang(params.lang, {
+          es: `${activeName} carga por ${zoneLabel.toLowerCase()} · Carriles ${leftPct}% / ${centerPct}% / ${rightPct}%.`,
+          ca: `${activeName} carrega per ${zoneLabel.toLowerCase()} · Carrils ${leftPct}% / ${centerPct}% / ${rightPct}%.`,
+          en: `${activeName} pressing via ${zoneLabel.toLowerCase()} · Lanes ${leftPct}% / ${centerPct}% / ${rightPct}%.`,
+        }),
       },
     };
   } catch {

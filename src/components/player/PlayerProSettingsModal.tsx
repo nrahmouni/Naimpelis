@@ -19,7 +19,7 @@ import { UI_COPY, pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { FlagBadgeSvg, type FlagCode } from '../ui/LanguageBadge';
 
-interface PlayerProSettingsModalProps {
+export interface PlayerProSettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   proMenuRef: React.RefObject<HTMLDivElement | null>;
@@ -35,7 +35,7 @@ interface PlayerProSettingsModalProps {
   selectedHlsAudioTrack: number;
   onSelectHlsAudioTrack: (trackId: number) => void;
   activeTrackLangCode: string;
-  onQuickLanguageSwitch: (langCode: 'ES' | 'LAT' | 'VOSE' | 'EN') => void;
+  onQuickLanguageSwitch: (langCode: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT') => void;
   onTriggerLanguagePopup: (notice: Omit<LanguageNoticePopup, 'id'>) => void;
   onSelectTrack: (trackIndex: number, currentTimeSec: number) => void;
   subtitleFileInputRef: React.RefObject<HTMLInputElement | null>;

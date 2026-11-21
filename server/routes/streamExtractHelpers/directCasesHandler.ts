@@ -22,6 +22,10 @@ import {
   ensureLiveDvbCleanHlsSession,
   getActiveDvbSessionPath,
 } from '../proxies/dvbTranscoder.ts';
+import {
+  MEGA_CHIRINGUITO_TV_URL,
+  resolveChiringuitoLiveStream,
+} from '../../services/chiringuitoLiveService.ts';
 
 export async function handleDirectExtractCases(params: {
   rawInput: string;
@@ -45,6 +49,43 @@ export async function handleDirectExtractCases(params: {
     sendOk,
     sendErr,
   } = params;
+
+  // CASE -2: Dynamic El Chiringuito de Jugones / Chiringuito Inside Live Resolver
+  if (rawInput.startsWith('chiringuito://')) {
+    const prefer = rawInput.includes('inside') ? 'inside' : 'live';
+    const resolved = await resolveChiringuitoLiveStream({
+      prefer,
+      matchHint: titleHint,
+      forceRefresh: false,
+    }).catch(() => null);
+    if (resolved?.activeStream?.videoId) {
+      const ytResult: ExtractedStreamResult = {
+        success: true,
+        mode: 'youtube',
+        streamUrl: resolved.activeStream.videoId,
+        youtubeId: resolved.activeStream.videoId,
+        title: resolved.activeStream.title || titleHint || 'Chiringuito Inside · Directo',
+        requestedLang: 'ES',
+        resolvedLang: 'ES',
+        expiresAt: Date.now() + 60 * 1000,
+      };
+      setCache(cacheKey, ytResult);
+      return sendOk(ytResult);
+    }
+    const megaUrl = buildHlsProxyUrl(MEGA_CHIRINGUITO_TV_URL, 'http://90.163.85.113:8093/', true);
+    const megaResult: ExtractedStreamResult = {
+      success: true,
+      mode: 'hls',
+      streamUrl: megaUrl,
+      rawStreamUrl: MEGA_CHIRINGUITO_TV_URL,
+      title: titleHint || 'El Chiringuito de Jugones · MEGA HD',
+      requestedLang: 'ES',
+      resolvedLang: 'ES',
+      expiresAt: Date.now() + 60 * 1000,
+    };
+    setCache(cacheKey, megaResult);
+    return sendOk(megaResult);
+  }
 
   // CASE -1: Internal proxy / Belix live stream URLs must never pass through external host resolvers
   if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play)\//i.test(rawInput)) {

@@ -36,12 +36,8 @@ import {
   resolveCalendarScopeMode,
   translateFootballStatusLabel,
 } from './sportsHelpers/upcomingCalendarHelper.ts';
-import {
-  ensureEpgScheduleReady,
-  extractEspnCompBroadcastNames,
-  runWithConcurrency,
-  verifySingleFixtureTvSchedule,
-} from '../services/tvScheduleVerifier.ts';
+import { ensureEpgScheduleReady, extractEspnCompBroadcastNames, runWithConcurrency, verifySingleFixtureTvSchedule } from '../services/tvScheduleVerifier.ts';
+import { registerChiringuitoRoutes } from './chiringuitoRoutes.ts';
 
 let cachedSportsSchedule: { matches: any[]; ts: number } | null = null;
 let liveScoresCache: { matches: any[]; ts: number } | null = null;
@@ -579,37 +575,29 @@ async function fetchAndCacheFootballBoard(opts: {
 }
 
 export function registerSportsRoutes(app: Express): void {
+  registerChiringuitoRoutes(app);
+
   app.get('/api/catalog/sports', async (_req, res) => {
     if (cachedSportsSchedule && Date.now() - cachedSportsSchedule.ts < 90 * 1000) {
-      return res.json({
-        success: true,
-        events: channelHealthMonitor.prioritizeChannels(cachedSportsSchedule.matches),
-      });
+      return res.json({ success: true, events: channelHealthMonitor.prioritizeChannels(cachedSportsSchedule.matches) });
     }
-
     const permanentChannels = getPermanent247SportsMatches();
     const { rojaMatches } = await fetchLiveSportsAgendaFeeds();
     const combined = [...permanentChannels, ...rojaMatches.slice(0, 40)];
     cachedSportsSchedule = { matches: combined, ts: Date.now() };
-
-    res.json({
-      success: true,
-      events: channelHealthMonitor.prioritizeChannels(combined),
-    });
+    res.json({ success: true, events: channelHealthMonitor.prioritizeChannels(combined) });
   });
 
   app.get('/api/sports/scores', async (_req, res) => {
     if (liveScoresCache && Date.now() - liveScoresCache.ts < 45 * 1000) {
       return res.json({ success: true, scores: liveScoresCache.matches });
     }
-
     const feeds: { url: string; league: string; sport: 'soccer' | 'basketball' }[] = [
       { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard', league: 'LaLiga', sport: 'soccer' },
       { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard', league: 'Champions', sport: 'soccer' },
       { url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard', league: 'Premier', sport: 'soccer' },
       { url: 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard', league: 'NBA', sport: 'basketball' },
     ];
-
     try {
       const responses = await Promise.all(
         feeds.map((f) =>
@@ -619,7 +607,6 @@ export function registerSportsRoutes(app: Express): void {
             .catch(() => ({ feed: f, json: null }))
         )
       );
-
       const parsed: any[] = [];
       for (const { feed, json } of responses) {
         const events: any[] = Array.isArray(json?.events) ? json.events : [];
@@ -629,12 +616,9 @@ export function registerSportsRoutes(app: Express): void {
           const home = competitors.find((c) => c.homeAway === 'home') || competitors[0];
           const away = competitors.find((c) => c.homeAway === 'away') || competitors[1];
           if (!home || !away) continue;
-
           const stateStr = String(ev?.status?.type?.state || '');
           const isLive = stateStr === 'in';
-          const shortDetail =
-            ev?.status?.type?.shortDetail || ev?.status?.displayClock || (isLive ? 'EN JUEGO' : '');
-
+          const shortDetail = ev?.status?.type?.shortDetail || ev?.status?.displayClock || (isLive ? 'EN JUEGO' : '');
           parsed.push({
             id: `${feed.league}-${ev.id}`,
             league: feed.league,
@@ -650,7 +634,6 @@ export function registerSportsRoutes(app: Express): void {
           });
         }
       }
-
       parsed.sort((a, b) => Number(b.isLive) - Number(a.isLive));
       liveScoresCache = { matches: parsed.slice(0, 18), ts: Date.now() };
       res.json({ success: true, scores: liveScoresCache.matches });
@@ -677,27 +660,17 @@ export function registerSportsRoutes(app: Express): void {
     const homeTeam = String(req.query.homeTeam || '').trim();
     const awayTeam = String(req.query.awayTeam || '').trim();
     const dateKey = String(req.query.date || '').replace(/\D/g, '').slice(0, 8);
-
     if (!eventId && !fotmobMatchId && !(homeTeam && awayTeam)) {
       return res.status(400).json({ success: false, error: 'Missing eventId or team info' });
     }
-
     try {
       const details = await fetchRealFootballMatchDetails({
-        eventId,
-        fotmobMatchId,
-        leagueSlug,
-        homeTeam,
-        awayTeam,
-        dateKey: dateKey || undefined,
+        eventId, fotmobMatchId, leagueSlug, homeTeam, awayTeam, dateKey: dateKey || undefined,
       });
       res.json({ success: true, details });
     } catch (err) {
       console.warn('Match details error:', err);
-      res.json({
-        success: true,
-        details: { eventId: eventId || fotmobMatchId, stats: [], events: [], commentary: [], shotsMap: [] },
-      });
+      res.json({ success: true, details: { eventId: eventId || fotmobMatchId, stats: [], events: [], commentary: [], shotsMap: [] } });
     }
   });
 }

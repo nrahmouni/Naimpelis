@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  Activity,
   Minimize2,
   ArrowLeft,
   PictureInPicture2,
@@ -48,8 +47,6 @@ interface PlayerTopHudBarProps {
   onClosePlayer?: () => void;
   isTouchLocked?: boolean;
   onToggleTouchLock?: () => void;
-  tacticalVisionEnabled?: boolean;
-  onToggleTacticalVision?: () => void;
 }
 
 export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
@@ -83,8 +80,6 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
   onClosePlayer,
   isTouchLocked = false,
   onToggleTouchLock,
-  tacticalVisionEnabled = false,
-  onToggleTacticalVision,
 }) => {
   return (
     <>
@@ -153,28 +148,6 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
                 >
                   <RiffanCastIcon size={16} tone="current" />
                   <span className="hidden sm:inline">{isCastingToTv ? 'En TV' : 'Cast'}</span>
-                </button>
-              )}
-
-              {!isTouchLocked && (videoState.mode === 'hls' || videoState.mode === 'direct') && onToggleTacticalVision && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    triggerHaptic('light');
-                    onToggleTacticalVision();
-                  }}
-                  aria-pressed={tacticalVisionEnabled}
-                  title={tacticalVisionEnabled ? 'Desactivar Visión Táctica IA' : 'Activar Visión Táctica IA'}
-                  aria-label="Visión Táctica IA"
-                  className={`min-h-[44px] min-w-[44px] px-3 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
-                    tacticalVisionEnabled
-                      ? 'bg-[#00F593]/20 border-[#00F593]/60 text-[#00F593]'
-                      : 'bg-[#0D0D12]/80 hover:bg-[#0D0D12]/95 border-white/15 text-white'
-                  }`}
-                >
-                  <Activity className="w-4 h-4" />
-                  <span className="hidden sm:inline">Táctica IA</span>
                 </button>
               )}
 

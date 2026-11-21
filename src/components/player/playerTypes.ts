@@ -13,6 +13,7 @@ import type {
   VideoState,
 } from '../../types';
 import type { GameVoiceChatState } from '../../hooks/useGameVoiceChat';
+import type { HalftimeChiringuitoState } from '../../hooks/useHalftimeChiringuitoBreak';
 import type { PlayerMatchContext } from './tacticalVisionTypes';
 
 export interface YouTubePlayerInstance {
@@ -228,4 +229,5 @@ export interface NativeCinemaPlayerProps {
   onUpgradeSoloToParty?: () => void;
   onShareCurrentMedia?: () => void;
   matchContext?: PlayerMatchContext | null;
+  halftimeBreak?: HalftimeChiringuitoState | null;
 }
