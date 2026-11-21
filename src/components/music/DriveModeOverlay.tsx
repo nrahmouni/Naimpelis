@@ -53,15 +53,15 @@ export const DriveModeOverlay: React.FC = () => {
   const pct = activeRadio ? 100 : effDur > 0 ? Math.min(100, (currentTime / effDur) * 100) : 0;
 
   return (
-    <div className="fixed inset-0 z-[60] bg-[#04070B] text-white flex flex-col justify-between p-5 sm:p-8 select-none">
+    <div className="fixed inset-0 z-[60] bg-[#000000] text-white flex flex-col justify-between p-5 sm:p-8 select-none">
       {/* Top Bar */}
       <div className="flex items-center justify-between gap-3 pt-[env(safe-area-inset-top,0px)]">
-        <div className="flex items-center gap-2.5 text-xs font-bold text-[#34D399]">
+        <div className="flex items-center gap-2.5 text-xs font-bold text-[#60A5FA]">
           <Car className="w-5 h-5 shrink-0" />
           <span>{m.driveModeBtn}</span>
           <span className="text-zinc-500">·</span>
           <span className="inline-flex items-center gap-1 text-zinc-300 font-medium">
-            <Sun className="w-3.5 h-3.5 text-[#22D3EE]" />
+            <Sun className="w-3.5 h-3.5 text-[#60A5FA]" />
             {m.driveModeWakeLock}
           </span>
         </div>
@@ -93,7 +93,7 @@ export const DriveModeOverlay: React.FC = () => {
         <div className="w-full space-y-2">
           <div className="w-full h-2.5 rounded-full bg-white/15 overflow-hidden">
             <div
-              className="h-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] transition-[width] duration-200"
+              className="h-full bg-gradient-to-r from-[#3B82F6] to-[#60A5FA] transition-[width] duration-200"
               style={{ width: `${pct}%` }}
             />
           </div>
@@ -127,7 +127,7 @@ export const DriveModeOverlay: React.FC = () => {
               togglePlayPause();
             }}
             aria-label={isPlaying ? m.pause : m.playNow}
-            className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-[#10B981] to-[#22D3EE] text-[#03130E] flex items-center justify-center shadow-[0_12px_36px_rgba(16,185,129,0.45)] cursor-pointer active:scale-95 transition-transform"
+            className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-br from-[#2563EB] to-[#3B82F6] text-white flex items-center justify-center shadow-[0_12px_36px_rgba(59,130,246,0.45)] cursor-pointer active:scale-95 transition-transform"
           >
             {isPlaying ? (
               <Pause className="w-10 h-10 fill-current" />
@@ -160,7 +160,7 @@ export const DriveModeOverlay: React.FC = () => {
               }}
               className={`min-h-12 rounded-2xl border font-bold text-sm inline-flex items-center justify-center gap-2 cursor-pointer ${
                 isLiked
-                  ? 'bg-[#10B981]/20 border-[#10B981] text-[#6EE7B7]'
+                  ? 'bg-[#FF2D55]/20 border-[#FF2D55] text-[#FF2D55]'
                   : 'bg-white/[0.07] border-white/12 text-white'
               }`}
             >
@@ -179,7 +179,7 @@ export const DriveModeOverlay: React.FC = () => {
               currentTrack ? '' : 'col-span-2'
             } ${
               spatial8dEnabled
-                ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] border-[#10B981] text-[#03130E]'
+                ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] border-[#3B82F6] text-white'
                 : 'bg-white/[0.07] border-white/12 text-white'
             }`}
           >

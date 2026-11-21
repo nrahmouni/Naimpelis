@@ -224,7 +224,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       </div>
     </motion.button>
 
-    {/* HERO CARD 3: RIFFAN MUSIC · SONIC STUDIO IDENTITY */}
+    {/* HERO CARD 3: RIFFAN MUSIC · OBSIDIAN & ELECTRIC COBALT v4.0 */}
     <motion.button
       type="button"
       initial={{ opacity: 0, y: 8 }}
@@ -235,7 +235,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       onTouchStart={() => onPreloadWorld?.('music')}
       onPointerMove={(e) => onCardPointerMove('music', e)}
       onClick={(e) => onCardClick('music', e)}
-      className="group relative col-span-2 md:col-span-4 md:order-5 rounded-[24px] p-5 sm:p-6 min-h-[164px] sm:min-h-[188px] bg-gradient-to-br from-[#140710] via-[#0D0B12] to-[#130906] hover:from-[#1B0915] hover:to-[#1A0D08] border border-[#FF3366]/20 hover:border-[#FF3366]/70 shadow-[0_18px_50px_rgba(0,0,0,0.68)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF3366]"
+      className="group relative col-span-2 md:col-span-4 md:order-5 rounded-[24px] p-5 sm:p-6 min-h-[164px] sm:min-h-[188px] bg-gradient-to-br from-[#060608] via-[#0C0C0F] to-[#081022] hover:from-[#0C0C0F] hover:to-[#0F1B33] border border-[#3B82F6]/30 hover:border-[#60A5FA]/75 shadow-[0_18px_50px_rgba(0,0,0,0.75),inset_0_1px_0_rgba(255,255,255,0.12)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]"
     >
       {renderSpotlightOverlay('music')}
 
@@ -260,7 +260,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
           ].map((art, idx) => (
             <div
               key={idx}
-              className={`absolute w-[74px] h-[74px] sm:w-[98px] sm:h-[98px] rounded-2xl overflow-hidden border border-[#FF3366]/25 bg-[#0D0D12] shadow-[0_14px_30px_rgba(0,0,0,0.75)] transition-transform duration-300 ${art.cls}`}
+              className={`absolute w-[74px] h-[74px] sm:w-[98px] sm:h-[98px] rounded-2xl overflow-hidden border border-[#3B82F6]/30 bg-[#0C0C0F] shadow-[0_14px_30px_rgba(0,0,0,0.8)] transition-transform duration-300 ${art.cls}`}
             >
               <img
                 src={art.src}
@@ -274,21 +274,21 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
             </div>
           ))}
         </div>
-        <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-[#11080F] via-[#11080F]/65 to-transparent" />
+        <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-[#08090D] via-[#08090D]/70 to-transparent" />
       </div>
 
       <div className="relative z-10 flex items-center gap-2 text-xs font-medium text-zinc-400">
         <RiffanMusicLogo variant="mark" size={32} withFrame={false} />
         {lastUsedWorld === 'music' ? (
-          <span className="text-[#FF6B4A] font-semibold">
+          <span className="text-[#60A5FA] font-semibold">
             {pickLang(lang, { es: 'Reciente', ca: 'Recent', en: 'Recent' })}
           </span>
         ) : (
           <span className="text-zinc-300">
             {pickLang(lang, {
-              es: 'Hi-Fi · Letras · Videoclips',
-              ca: 'Hi-Fi · Lletres · Videoclips',
-              en: 'Hi-Fi · Lyrics · MVs',
+              es: 'Hi-Fi · Letras · Radio Autoplay',
+              ca: 'Hi-Fi · Lletres · Ràdio Autoplay',
+              en: 'Hi-Fi · Lyrics · Autoplay Radio',
             })}
           </span>
         )}
@@ -297,18 +297,18 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       <div className="relative z-10 max-w-[62%] sm:max-w-[56%] space-y-1 mt-4">
         <h2 className="font-display font-bold text-lg sm:text-2xl text-white tracking-tight leading-tight">
           Riffan{' '}
-          <span className="bg-gradient-to-r from-[#FF3366] via-[#FF6B4A] to-[#F59E0B] bg-clip-text text-transparent">
+          <span className="bg-gradient-to-r from-[#93C5FD] via-[#60A5FA] to-[#3B82F6] bg-clip-text text-transparent">
             Music
           </span>
         </h2>
         <p className="text-xs sm:text-[13px] text-zinc-300/80 leading-snug">
           {pickLang(lang, {
-            es: 'Experiencia espacial Hi-Fi, letras en vivo y radios 24/7',
-            ca: 'Experiència espacial Hi-Fi, lletres en directe i ràdios 24/7',
-            en: 'Spatial Hi-Fi audio, synced lyrics & 24/7 live radios',
+            es: 'Experiencia espacial Hi-Fi, letras en vivo y radio por género',
+            ca: 'Experiència espacial Hi-Fi, lletres en directe i ràdio per gènere',
+            en: 'Spatial Hi-Fi audio, synced lyrics & smart genre radio',
           })}
         </p>
-        <div className="pt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-[#FF6B4A] group-hover:text-[#F59E0B] transition-colors">
+        <div className="pt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-[#60A5FA] group-hover:text-[#93C5FD] transition-colors">
           <span>{pickLang(lang, { es: 'Escuchar', ca: 'Escoltar', en: 'Listen now' })}</span>
           <RiffanArrowRightIcon size={14} animate="hover" />
         </div>

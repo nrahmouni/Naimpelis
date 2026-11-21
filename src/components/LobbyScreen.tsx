@@ -29,6 +29,11 @@ import { SettingsBottomSheet } from './SettingsBottomSheet';
 import { PWAInstallOptionsSheet } from './PWAInstallPrompt';
 import { CinematicNebulaCanvas } from './lobby/CinematicNebulaCanvas';
 import { useAppStore } from '../store/useAppStore';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+
+const SpotifyYtmImportModal = lazyWithRetry(() =>
+  import('./music/SpotifyYtmImportModal').then((m) => ({ default: m.SpotifyYtmImportModal }))
+);
 
 interface LobbyScreenProps {
   initialProfile: StoredProfile;
@@ -681,6 +686,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           isIOS={isIOS}
           isAndroid={isAndroid}
         />
+
+        <React.Suspense fallback={null}>
+          <SpotifyYtmImportModal />
+        </React.Suspense>
       </div>
     </div>
   );

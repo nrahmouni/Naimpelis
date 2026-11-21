@@ -71,7 +71,7 @@ export const HorizontalRail: React.FC<HorizontalRailProps> = ({
           type="button"
           onClick={() => scrollStep(-1)}
           aria-label="Anterior"
-          className="hidden sm:flex absolute left-0 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-[#090E16]/92 hover:bg-[#10B981]/25 border border-white/15 hover:border-[#34D399]/50 text-zinc-200 hover:text-white items-center justify-center shadow-lg backdrop-blur-md cursor-pointer transition-all"
+          className="hidden sm:flex absolute left-0 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-[#0C0C0F]/92 hover:bg-[#3B82F6]/25 border border-white/15 hover:border-[#60A5FA]/50 text-zinc-200 hover:text-white items-center justify-center shadow-lg backdrop-blur-md cursor-pointer transition-all"
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
@@ -95,7 +95,7 @@ export const HorizontalRail: React.FC<HorizontalRailProps> = ({
           type="button"
           onClick={() => scrollStep(1)}
           aria-label="Siguiente"
-          className="hidden sm:flex absolute right-0 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-[#090E16]/92 hover:bg-[#10B981]/25 border border-white/15 hover:border-[#34D399]/50 text-zinc-200 hover:text-white items-center justify-center shadow-lg backdrop-blur-md cursor-pointer transition-all"
+          className="hidden sm:flex absolute right-0 top-1/2 -translate-y-1/2 z-10 w-7 h-7 rounded-full bg-[#0C0C0F]/92 hover:bg-[#3B82F6]/25 border border-white/15 hover:border-[#60A5FA]/50 text-zinc-200 hover:text-white items-center justify-center shadow-lg backdrop-blur-md cursor-pointer transition-all"
         >
           <ChevronRight className="w-4 h-4" />
         </button>
@@ -126,7 +126,7 @@ export const HorizontalRail: React.FC<HorizontalRailProps> = ({
                   onClick={() => scrollStep(-1)}
                   disabled={!canLeft}
                   aria-label="Desplazar izquierda"
-                  className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-[#10B981]/20 border border-white/[0.08] hover:border-[#34D399]/45 text-zinc-200 hover:text-white disabled:opacity-25 disabled:pointer-events-none flex items-center justify-center transition-all cursor-pointer"
+                  className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-[#3B82F6]/20 border border-white/[0.08] hover:border-[#60A5FA]/45 text-zinc-200 hover:text-white disabled:opacity-25 disabled:pointer-events-none flex items-center justify-center transition-all cursor-pointer"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -135,7 +135,7 @@ export const HorizontalRail: React.FC<HorizontalRailProps> = ({
                   onClick={() => scrollStep(1)}
                   disabled={!canRight}
                   aria-label="Desplazar derecha"
-                  className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-[#10B981]/20 border border-white/[0.08] hover:border-[#34D399]/45 text-zinc-200 hover:text-white disabled:opacity-25 disabled:pointer-events-none flex items-center justify-center transition-all cursor-pointer"
+                  className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-[#3B82F6]/20 border border-white/[0.08] hover:border-[#60A5FA]/45 text-zinc-200 hover:text-white disabled:opacity-25 disabled:pointer-events-none flex items-center justify-center transition-all cursor-pointer"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>

@@ -48,7 +48,7 @@ export interface MusicTrack {
   previewUrl?: string;
   isrc?: string;
   rank?: number;
-  source?: 'deezer' | 'audius' | 'soundcloud' | 'youtube_music' | 'spotify' | 'radio';
+  source?: 'deezer' | 'audius' | 'soundcloud' | 'youtube_music' | 'spotify' | 'jamendo' | 'radio';
   audiusId?: string;
   soundcloudId?: string;
   youtubeVideoId?: string;
@@ -1756,5 +1756,189 @@ export async function resolveTrackPlayback(params: {
     playbackCache.set(key, result);
   }
   return result;
+}
+
+export async function getRelatedGenreTracks(params: {
+  trackId?: string;
+  title: string;
+  artist: string;
+  album?: string;
+  excludeIds?: string[];
+  limit?: number;
+}): Promise<{
+  genreId?: string;
+  genreName: string;
+  seedArtist: string;
+  tracks: MusicTrack[];
+}> {
+  const cleanTitle = String(params.title || '').replace(/\([^)]*\)|\[[^\]]*\]/g, '').trim() || String(params.title || '').trim();
+  const primaryArtist = String(params.artist || '').split(',')[0].split('&')[0].split('feat.')[0].trim() || String(params.artist || '').trim();
+  const limit = Math.min(40, Math.max(8, Number(params.limit || 22)));
+  const excludeSet = new Set((params.excludeIds || []).filter(Boolean));
+  if (params.trackId) excludeSet.add(params.trackId);
+
+  const seedNormKey = `${normalizeStr(cleanTitle)}|${normalizeStr(primaryArtist)}`;
+  const cacheKey = `related:${normalizeStr(primaryArtist)}|${normalizeStr(cleanTitle)}|${params.trackId || ''}`;
+  const cached = entityCache.get(cacheKey) as
+    | { genreId?: string; genreName: string; seedArtist: string; tracks: MusicTrack[] }
+    | undefined;
+
+  const filterAndCap = (rawList: MusicTrack[]): MusicTrack[] => {
+    const out: MusicTrack[] = [];
+    const seenIds = new Set<string>();
+    const seenTitleArtist = new Set<string>([seedNormKey]);
+    const artistCount = new Map<string, number>();
+
+    for (const t of rawList) {
+      if (!t?.id || excludeSet.has(t.id) || seenIds.has(t.id)) continue;
+      const tArtist = (t.artist?.name || '').split(',')[0].trim();
+      const taKey = `${normalizeStr(t.title)}|${normalizeStr(tArtist)}`;
+      if (seenTitleArtist.has(taKey)) continue;
+      const artNorm = normalizeStr(tArtist) || 'unknown';
+      const usedCount = artistCount.get(artNorm) || 0;
+      if (usedCount >= 2 && out.length < limit - 4) continue;
+      seenIds.add(t.id);
+      seenTitleArtist.add(taKey);
+      artistCount.set(artNorm, usedCount + 1);
+      out.push(t);
+      if (out.length >= limit) break;
+    }
+    return out;
+  };
+
+  if (cached && Array.isArray(cached.tracks) && cached.tracks.length > 0) {
+    const filtered = filterAndCap(cached.tracks);
+    if (filtered.length >= 6) {
+      return {
+        genreId: cached.genreId,
+        genreName: cached.genreName,
+        seedArtist: cached.seedArtist,
+        tracks: filtered,
+      };
+    }
+  }
+
+  let dzArtistId = '';
+  let dzAlbumId = '';
+
+  if (params.trackId?.startsWith('dz-')) {
+    const dzId = params.trackId.slice(3);
+    const dzTrackRaw = await fetchJsonSafe<any>(`https://api.deezer.com/track/${encodeURIComponent(dzId)}`, 3500);
+    if (dzTrackRaw?.artist?.id) dzArtistId = String(dzTrackRaw.artist.id);
+    if (dzTrackRaw?.album?.id) dzAlbumId = String(dzTrackRaw.album.id);
+  }
+
+  if (!dzArtistId && (primaryArtist || cleanTitle)) {
+    const q = encodeURIComponent(`${primaryArtist} ${cleanTitle}`.trim());
+    const dzSearch = await fetchJsonSafe<any>(`https://api.deezer.com/search/track?q=${q}&limit=4`, 3500);
+    const first = Array.isArray(dzSearch?.data) ? dzSearch.data[0] : null;
+    if (first?.artist?.id) dzArtistId = String(first.artist.id);
+    if (!dzAlbumId && first?.album?.id) dzAlbumId = String(first.album.id);
+
+    if (!dzArtistId && primaryArtist) {
+      const artSearch = await fetchJsonSafe<any>(
+        `https://api.deezer.com/search/artist?q=${encodeURIComponent(primaryArtist)}&limit=2`,
+        3000
+      );
+      const artHit = Array.isArray(artSearch?.data) ? artSearch.data[0] : null;
+      if (artHit?.id) dzArtistId = String(artHit.id);
+    }
+  }
+
+  let genreId = '';
+  let genreName = '';
+
+  const [albumRaw, relatedArtistsRaw, artistTopRaw, itSeedHits] = await Promise.all([
+    dzAlbumId
+      ? fetchJsonSafe<any>(`https://api.deezer.com/album/${encodeURIComponent(dzAlbumId)}`, 3500)
+      : Promise.resolve(null),
+    dzArtistId
+      ? fetchJsonSafe<any>(`https://api.deezer.com/artist/${encodeURIComponent(dzArtistId)}/related?limit=12`, 3500)
+      : Promise.resolve(null),
+    dzArtistId
+      ? fetchJsonSafe<any>(`https://api.deezer.com/artist/${encodeURIComponent(dzArtistId)}/top?limit=10`, 3500)
+      : Promise.resolve(null),
+    searchItunesMusic(`${primaryArtist} ${cleanTitle}`.trim(), 'song', 4, CJK_CHAR_RE.test(cleanTitle) ? 'TW' : 'US'),
+  ]);
+
+  if (albumRaw) {
+    if (albumRaw.genre_id && Number(albumRaw.genre_id) > 0) {
+      genreId = String(albumRaw.genre_id);
+    }
+    if (Array.isArray(albumRaw?.genres?.data) && albumRaw.genres.data[0]?.name) {
+      genreName = String(albumRaw.genres.data[0].name);
+      if (!genreId && albumRaw.genres.data[0].id) {
+        genreId = String(albumRaw.genres.data[0].id);
+      }
+    }
+  }
+
+  if (!genreName && Array.isArray(itSeedHits) && itSeedHits[0]?.primaryGenreName) {
+    genreName = String(itSeedHits[0].primaryGenreName);
+  }
+
+  const relatedArtistIds: string[] = Array.isArray(relatedArtistsRaw?.data)
+    ? relatedArtistsRaw.data.slice(0, 6).map((a: any) => String(a?.id || '')).filter(Boolean)
+    : [];
+
+  const [relatedTopSettled, genreChartRaw, genreSearchRaw, itGenreSongs] = await Promise.all([
+    Promise.allSettled(
+      relatedArtistIds.map((aid) =>
+        fetchJsonSafe<any>(`https://api.deezer.com/artist/${encodeURIComponent(aid)}/top?limit=6`, 3500)
+      )
+    ),
+    genreId
+      ? fetchJsonSafe<any>(`https://api.deezer.com/chart/${encodeURIComponent(genreId)}/tracks?limit=24`, 3500)
+      : Promise.resolve(null),
+    genreName
+      ? fetchJsonSafe<any>(`https://api.deezer.com/search/track?q=${encodeURIComponent(genreName)}&limit=18`, 3500)
+      : Promise.resolve(null),
+    genreName || primaryArtist
+      ? searchItunesMusic(genreName || primaryArtist, 'song', 14, CJK_CHAR_RE.test(cleanTitle) ? 'TW' : 'US')
+      : Promise.resolve([]),
+  ]);
+
+  const relatedArtistsTrackLists: MusicTrack[][] = [];
+  for (const r of relatedTopSettled) {
+    if (r.status === 'fulfilled' && Array.isArray(r.value?.data)) {
+      relatedArtistsTrackLists.push(r.value.data.map((t: any) => mapDeezerTrack(t)));
+    }
+  }
+
+  const relatedInterleaved = interleaveUniqueTracks(relatedArtistsTrackLists, 28);
+  const genreChartTracks = mapDeezerTracksSafe(genreChartRaw?.data);
+  const genreSearchTracks = mapDeezerTracksSafe(genreSearchRaw?.data);
+  const artistTopTracks = mapDeezerTracksSafe(artistTopRaw?.data);
+  const itGenreMapped = Array.isArray(itGenreSongs)
+    ? itGenreSongs.map((x: any) => mapItunesSongToTrack(x, 'spotify'))
+    : [];
+
+  let ytmFallback: MusicTrack[] = [];
+  if (relatedInterleaved.length + genreChartTracks.length + itGenreMapped.length < 10) {
+    const ytm = await searchYouTubeMusic(`${genreName || primaryArtist} mix`);
+    ytmFallback = ytm.tracks || [];
+  }
+
+  const combinedPool = interleaveUniqueTracks(
+    [relatedInterleaved, genreChartTracks, genreSearchTracks, itGenreMapped, artistTopTracks, ytmFallback],
+    48
+  );
+
+  const finalGenreLabel = genreName || (primaryArtist ? `${primaryArtist} Mix` : 'Radio Mix');
+  if (combinedPool.length > 0) {
+    entityCache.set(cacheKey, {
+      genreId: genreId || undefined,
+      genreName: finalGenreLabel,
+      seedArtist: primaryArtist || 'Radio',
+      tracks: combinedPool,
+    });
+  }
+
+  return {
+    genreId: genreId || undefined,
+    genreName: finalGenreLabel,
+    seedArtist: primaryArtist || 'Radio',
+    tracks: filterAndCap(combinedPool),
+  };
 }
 

@@ -1,6 +1,22 @@
 import type { EqPresetId } from '../../types/music';
 import type { MusicLang } from './musicI18n';
 
+export type ExtendedEqPresetId =
+  | EqPresetId
+  | 'sub_deep'
+  | 'reggaeton'
+  | 'hiphop'
+  | 'pop'
+  | 'rock'
+  | 'flamenco'
+  | 'arabic_oriental'
+  | 'jazz'
+  | 'classical'
+  | 'lofi'
+  | 'car_audio'
+  | 'night'
+  | 'custom';
+
 export const EQ_BAND_FREQUENCIES_HZ = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000] as const;
 
 export const EQ_BAND_LABELS = ['32', '64', '125', '250', '500', '1K', '2K', '4K', '8K', '16K'] as const;
@@ -9,7 +25,7 @@ export const EQ_MIN_DB = -12;
 export const EQ_MAX_DB = 12;
 
 export interface EqPresetDefinition {
-  id: EqPresetId;
+  id: ExtendedEqPresetId;
   category: 'studio' | 'bass' | 'urban' | 'vocal' | 'global' | 'custom';
   labels: Record<MusicLang, string>;
   gains: number[];
@@ -126,12 +142,12 @@ export const EQ_PRESET_LIST: EqPresetDefinition[] = [
   },
 ];
 
-export const EQ_PRESETS: Record<EqPresetId, EqPresetDefinition> = EQ_PRESET_LIST.reduce(
+export const EQ_PRESETS: Record<ExtendedEqPresetId, EqPresetDefinition> = EQ_PRESET_LIST.reduce(
   (acc, item) => {
     acc[item.id] = item;
     return acc;
   },
-  {} as Record<EqPresetId, EqPresetDefinition>
+  {} as Record<ExtendedEqPresetId, EqPresetDefinition>
 );
 
 export function clampEqBandDb(val: number): number {
@@ -143,7 +159,7 @@ export function normalizeCustomEqBands(bands?: number[]): number[] {
   return EQ_BAND_FREQUENCIES_HZ.map((_, idx) => clampEqBandDb(bands?.[idx] ?? 0));
 }
 
-export function resolveEqGains(preset: EqPresetId, customBands?: number[]): number[] {
+export function resolveEqGains(preset: ExtendedEqPresetId, customBands?: number[]): number[] {
   if (preset === 'custom') {
     return normalizeCustomEqBands(customBands);
   }

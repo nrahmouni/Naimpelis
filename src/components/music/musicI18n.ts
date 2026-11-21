@@ -337,6 +337,23 @@ export interface MusicCopy {
   tasteGenresLabel: string;
   addArtistPlaceholder: string;
   generateTasteMixBtn: string;
+  autoplayLabel: string;
+  autoplaySub: string;
+  autoplayBadge: string;
+  autoplayLoadingNext: string;
+  importSkipLater: string;
+  importWelcomeBadge: string;
+  forYouImportedTitle: string;
+  forYouImportedSub: string;
+  importTabConnect: string;
+  connectSpotifyTitle: string;
+  connectSpotifySub: string;
+  connectSpotifyBtn: string;
+  connectYoutubeTitle: string;
+  connectYoutubeSub: string;
+  connectYoutubeBtn: string;
+  oauthImportingAll: string;
+  oauthCommitAllBtn: string;
 }
 
 export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
@@ -650,6 +667,23 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     tasteGenresLabel: 'Tus Géneros / Regiones',
     addArtistPlaceholder: 'Añadir artista o género...',
     generateTasteMixBtn: 'Reproducir Mix Para Ti',
+    autoplayLabel: 'Autoplay por género similar',
+    autoplaySub: 'Al terminar, reproduce automáticamente canciones del mismo estilo',
+    autoplayBadge: 'Radio Autoplay',
+    autoplayLoadingNext: 'Buscando temas similares...',
+    importSkipLater: 'Ahora no, ir a escuchar',
+    importWelcomeBadge: 'Personaliza tu Riffan Music',
+    forYouImportedTitle: 'Para Ti · Según tus gustos',
+    forYouImportedSub: 'Generado automáticamente con tus artistas y géneros importados',
+    importTabConnect: 'Conectar Cuenta',
+    connectSpotifyTitle: 'Spotify · Login oficial',
+    connectSpotifySub: 'Importa tus Me Gusta, Top Artistas, Géneros y todas tus Playlists privadas o públicas',
+    connectSpotifyBtn: 'Conectar con Spotify',
+    connectYoutubeTitle: 'YouTube / YouTube Music · Google',
+    connectYoutubeSub: 'Lee tus playlists, vídeos musicales con Me Gusta y canales suscritos con un clic',
+    connectYoutubeBtn: 'Conectar con Google · YouTube Music',
+    oauthImportingAll: 'Conectando y extrayendo tus playlists, Me Gusta, artistas y géneros...',
+    oauthCommitAllBtn: 'Importar todo a Riffan Music',
   },
 
   en: {
@@ -962,6 +996,23 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     tasteGenresLabel: 'Your Genres / Regions',
     addArtistPlaceholder: 'Add artist or genre...',
     generateTasteMixBtn: 'Play For You Mix',
+    autoplayLabel: 'Similar genre autoplay',
+    autoplaySub: 'Automatically queues related tracks matching the initial song style',
+    autoplayBadge: 'Autoplay Radio',
+    autoplayLoadingNext: 'Finding similar tracks...',
+    importSkipLater: 'Skip for now',
+    importWelcomeBadge: 'Personalize Riffan Music',
+    forYouImportedTitle: 'For You · Based on your taste',
+    forYouImportedSub: 'Tailored automatically from your imported artists & genres',
+    importTabConnect: 'Connect Account',
+    connectSpotifyTitle: 'Spotify · Official Login',
+    connectSpotifySub: 'Import Liked Songs, Top Artists, Genres and all your private & public playlists',
+    connectSpotifyBtn: 'Connect with Spotify',
+    connectYoutubeTitle: 'YouTube / YouTube Music · Google',
+    connectYoutubeSub: 'Read your playlists, liked music videos and subscribed channels in one click',
+    connectYoutubeBtn: 'Sign in with Google · YouTube Music',
+    oauthImportingAll: 'Connecting and importing your playlists, likes, artists & genres...',
+    oauthCommitAllBtn: 'Import everything to Riffan Music',
   },
 
   fr: {
@@ -1274,6 +1325,23 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     tasteGenresLabel: 'Vos Genres / Régions',
     addArtistPlaceholder: 'Ajouter artiste ou genre...',
     generateTasteMixBtn: 'Lancer Mix Pour Vous',
+    autoplayLabel: 'Lecture auto par genre similaire',
+    autoplaySub: 'Enchaîne automatiquement des titres du même style musical',
+    autoplayBadge: 'Radio Autoplay',
+    autoplayLoadingNext: 'Recherche de titres similaires...',
+    importSkipLater: 'Plus tard',
+    importWelcomeBadge: 'Personnalisez Riffan Music',
+    forYouImportedTitle: 'Pour Vous · Selon vos goûts',
+    forYouImportedSub: 'Généré automatiquement avec vos artistes et genres importés',
+    importTabConnect: 'Connecter',
+    connectSpotifyTitle: 'Spotify · Connexion officielle',
+    connectSpotifySub: 'Importez vos Titres likés, Top Artistes, Genres et toutes vos Playlists',
+    connectSpotifyBtn: 'Se connecter avec Spotify',
+    connectYoutubeTitle: 'YouTube / YouTube Music · Google',
+    connectYoutubeSub: 'Importe vos playlists, titres aimés et chaînes musicales en un clic',
+    connectYoutubeBtn: 'Se connecter avec Google · YouTube Music',
+    oauthImportingAll: 'Connexion et extraction de vos playlists, goûts, artistes et genres...',
+    oauthCommitAllBtn: 'Tout importer dans Riffan Music',
   },
 
   zh: {
@@ -1586,6 +1654,23 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     tasteGenresLabel: '偏好流派 / 地区',
     addArtistPlaceholder: '添加歌手或流派...',
     generateTasteMixBtn: '播放为你定制混音',
+    autoplayLabel: '相似流派自动连播',
+    autoplaySub: '播放结束时自动衔接同风格关联歌曲',
+    autoplayBadge: '流派电台连播',
+    autoplayLoadingNext: '正在匹配相似歌曲...',
+    importSkipLater: '暂不导入，先去听歌',
+    importWelcomeBadge: '个性化你的 Riffan Music',
+    forYouImportedTitle: '为你推荐 · 基于你的品味',
+    forYouImportedSub: '根据导入的歌手和流派自动生成',
+    importTabConnect: '账号登录',
+    connectSpotifyTitle: 'Spotify · 官方登录',
+    connectSpotifySub: '一键导入喜欢的歌曲、常听歌手、流派以及所有公开/私密歌单',
+    connectSpotifyBtn: '使用 Spotify 登录导入',
+    connectYoutubeTitle: 'YouTube / YouTube Music · Google',
+    connectYoutubeSub: '一键读取你的播放列表、喜欢的音乐视频和订阅歌手',
+    connectYoutubeBtn: '使用 Google 登录 · YouTube Music',
+    oauthImportingAll: '正在连接并提取你的歌单、喜欢、歌手与流派...',
+    oauthCommitAllBtn: '全部导入 Riffan Music',
   },
 
   ca: {
@@ -1898,5 +1983,22 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     tasteGenresLabel: 'Els teus Gèneres / Regions',
     addArtistPlaceholder: 'Afegir artista o gènere...',
     generateTasteMixBtn: 'Reproduir Mix Per a Tu',
+    autoplayLabel: 'Autoplay per gènere similar',
+    autoplaySub: 'En acabar, reprodueix automàticament cançons del mateix estil',
+    autoplayBadge: 'Ràdio Autoplay',
+    autoplayLoadingNext: 'Cercant temes similars...',
+    importSkipLater: 'Ara no, anar a escoltar',
+    importWelcomeBadge: 'Personalitza Riffan Music',
+    forYouImportedTitle: 'Per a Tu · Segons els teus gustos',
+    forYouImportedSub: 'Generat automàticament amb els teus artistes i gèneres importats',
+    importTabConnect: 'Connectar Compte',
+    connectSpotifyTitle: 'Spotify · Login oficial',
+    connectSpotifySub: 'Importa els teus M\'agrada, Top Artistes, Gèneres i totes les teves Playlists',
+    connectSpotifyBtn: 'Connectar amb Spotify',
+    connectYoutubeTitle: 'YouTube / YouTube Music · Google',
+    connectYoutubeSub: 'Llegeix les teves playlists, vídeos musicals agradats i canals subscrits en un clic',
+    connectYoutubeBtn: 'Connectar amb Google · YouTube Music',
+    oauthImportingAll: 'Connectant i extraient les teves playlists, m\'agrada, artistes i gèneres...',
+    oauthCommitAllBtn: 'Importar-ho tot a Riffan Music',
   },
 };

@@ -12,6 +12,7 @@ import {
   getMusicHome,
   getMusicRadios,
   getPlaylistDetails,
+  getRelatedGenreTracks,
   getTrackLyrics,
   resolveTrackPlayback,
   searchMusicCatalog,
@@ -21,6 +22,14 @@ import {
   importExternalMusicUrl,
   matchImportedTracksBatch,
 } from '../services/musicPlatformSync.ts';
+import {
+  createSpotifyAuthorizeUrl,
+  getSpotifyOAuthStatus,
+  handleSpotifyOAuthCallback,
+  importFullSpotifyAccount,
+  importFullYoutubeAccount,
+  SPOTIFY_CALLBACK_PATH,
+} from '../services/musicOAuthImporter.ts';
 import {
   safeFetchFollowingRedirects,
   validateSafeOutboundUrl,
@@ -160,6 +169,34 @@ export function registerMusicRoutes(app: express.Express): void {
     }
   });
 
+  app.get('/api/music/related', async (req, res) => {
+    const title = String(req.query.title || '').trim();
+    const artist = String(req.query.artist || '').trim();
+    if (!title && !artist) {
+      res.status(400).json({ success: false, error: 'Missing title or artist', tracks: [] });
+      return;
+    }
+    const trackId = String(req.query.trackId || '').trim() || undefined;
+    const album = String(req.query.album || '').trim() || undefined;
+    const excludeRaw = String(req.query.exclude || '').trim();
+    const excludeIds = excludeRaw ? excludeRaw.split(',').map((s) => s.trim()).filter(Boolean) : [];
+    const limit = Number(req.query.limit || 22) || 22;
+    try {
+      const data = await getRelatedGenreTracks({
+        trackId,
+        title,
+        artist,
+        album,
+        excludeIds,
+        limit,
+      });
+      res.setHeader('Cache-Control', 'public, max-age=180');
+      res.json({ success: true, ...data });
+    } catch {
+      res.status(500).json({ success: false, error: 'Failed to load related genre tracks', tracks: [] });
+    }
+  });
+
   app.get('/api/music/radios', async (req, res) => {
     try {
       const country = String(req.query.country || 'ALL').trim();
@@ -250,6 +287,107 @@ export function registerMusicRoutes(app: express.Express): void {
       res.json({ success: true, tracks });
     } catch {
       res.status(500).json({ success: false, error: 'Batch match failed', tracks: [] });
+    }
+  });
+
+  // Spotify 3P OAuth Status, Authorize URL, Callback (postMessage) & Full Library Import
+  app.get('/api/music/oauth/spotify/status', (req, res) => {
+    const origin = String(req.query.origin || '').trim() || undefined;
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, ...getSpotifyOAuthStatus(origin) });
+  });
+
+  app.get('/api/music/oauth/spotify/url', (req, res) => {
+    const origin = String(req.query.origin || '').trim() || undefined;
+    const result = createSpotifyAuthorizeUrl(origin);
+    res.setHeader('Cache-Control', 'no-store');
+    if (!result.ok || !result.url) {
+      res.status(503).json({ success: false, error: result.error || 'Spotify OAuth unavailable' });
+      return;
+    }
+    res.json({ success: true, url: result.url });
+  });
+
+  app.get([SPOTIFY_CALLBACK_PATH, `${SPOTIFY_CALLBACK_PATH}/`], async (req, res) => {
+    const result = await handleSpotifyOAuthCallback({
+      code: typeof req.query.code === 'string' ? req.query.code : undefined,
+      state: typeof req.query.state === 'string' ? req.query.state : undefined,
+      error: typeof req.query.error === 'string' ? req.query.error : undefined,
+    });
+
+    const payloadJson = JSON.stringify(
+      result.ok
+        ? { type: 'SPOTIFY_OAUTH_SUCCESS', sessionToken: result.sessionToken }
+        : { type: 'SPOTIFY_OAUTH_ERROR', error: result.error || 'OAuth failed' }
+    ).replace(/</g, '\\u003c');
+
+    const targetOriginJson = JSON.stringify(result.openerOrigin || '*').replace(/</g, '\\u003c');
+    const statusText = result.ok
+      ? 'Spotify conectado. Importando tus gustos a Riffan Music...'
+      : 'No se pudo completar la conexión con Spotify.';
+
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(`<!doctype html>
+<html lang="es">
+  <head><meta charset="utf-8" /><title>Riffan Music · Spotify</title></head>
+  <body style="background:#000;color:#fff;font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:24px;text-align:center">
+    <div>
+      <p style="font-weight:700;font-size:15px">${statusText}</p>
+      <p style="color:#a1a1aa;font-size:13px">Esta ventana se cerrará automáticamente.</p>
+    </div>
+    <script>
+      (function() {
+        var payload = ${payloadJson};
+        var targetOrigin = ${targetOriginJson};
+        try {
+          if (window.opener) {
+            window.opener.postMessage(payload, targetOrigin);
+            setTimeout(function() { window.close(); }, 250);
+          } else {
+            window.location.href = '/musica';
+          }
+        } catch (e) {
+          try {
+            if (window.opener) window.opener.postMessage(payload, '*');
+          } catch (_) {}
+          setTimeout(function() { window.close(); }, 300);
+        }
+      })();
+    </script>
+  </body>
+</html>`);
+  });
+
+  app.post('/api/music/oauth/spotify/import', async (req, res) => {
+    const authHeader = String(req.headers.authorization || '').trim();
+    const match = authHeader.match(/^Bearer\s+([^\s]+)$/i);
+    if (!match?.[1]) {
+      res.status(401).json({ ok: false, error: 'Missing Spotify session token' });
+      return;
+    }
+    try {
+      const payload = await importFullSpotifyAccount(match[1]);
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(payload.ok ? 200 : 401).json(payload);
+    } catch {
+      res.status(500).json({ ok: false, error: 'Failed to import Spotify account library' });
+    }
+  });
+
+  app.post('/api/music/oauth/youtube/import', async (req, res) => {
+    const authHeader = String(req.headers.authorization || '').trim();
+    const match = authHeader.match(/^Bearer\s+([^\s]+)$/i);
+    if (!match?.[1]) {
+      res.status(401).json({ ok: false, error: 'Missing Google YouTube access token' });
+      return;
+    }
+    try {
+      const payload = await importFullYoutubeAccount(match[1]);
+      res.setHeader('Cache-Control', 'no-store');
+      res.status(payload.ok ? 200 : 422).json(payload);
+    } catch {
+      res.status(500).json({ ok: false, error: 'Failed to import YouTube Music library' });
     }
   });
 

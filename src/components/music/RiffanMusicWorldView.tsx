@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  Disc3,
   Download,
   Headphones,
   Heart,
@@ -8,6 +9,7 @@ import {
   Library,
   ListMusic,
   ListPlus,
+  Loader2,
   Music2,
   Pause,
   Play,
@@ -39,6 +41,7 @@ import { SpotifyPlayerBar, formatMusicTime } from './SpotifyPlayerBar';
 import { EqAndTimerModal, FullScreenNowPlayingModal } from './FullScreenNowPlayingModal';
 import { HorizontalRail } from './HorizontalRail';
 import { MUSIC_I18N, type MusicCopy } from './musicI18n';
+import { MUSIC_IMPORT_PROMPT_SEEN_KEY } from './SpotifyYtmImportModal';
 
 import spatialHeroCover from '../../assets/images/music_spatial_hero_1795220135333.jpg';
 import chillLofiCover from '../../assets/images/music_chill_lofi_1795220135922.jpg';
@@ -173,24 +176,24 @@ const TrackRow: React.FC<{
 }) => (
   <div
     className={`group flex items-center gap-2 sm:gap-3 px-2 sm:px-3.5 py-2 rounded-xl transition-colors ${
-      isActive ? 'bg-[#10B981]/14 border border-[#10B981]/30' : 'hover:bg-white/[0.05]'
+      isActive ? 'bg-[#3B82F6]/14 border border-[#3B82F6]/30' : 'hover:bg-white/[0.05]'
     }`}
   >
     <button
       type="button"
       onClick={onPlay}
       aria-label={`${copy.playNow} ${track.title}`}
-      className="hidden sm:flex w-7 h-9 items-center justify-center shrink-0 cursor-pointer text-xs font-semibold tabular-nums text-zinc-400 group-hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] rounded-lg"
+      className="hidden sm:flex w-7 h-9 items-center justify-center shrink-0 cursor-pointer text-xs font-semibold tabular-nums text-zinc-400 group-hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6] rounded-lg"
     >
       {isActive && isPlaying ? (
         <span className="flex items-end gap-[2px] h-3.5" aria-hidden="true">
-          <span className="w-[3px] bg-[#10B981] rounded-full h-full" />
-          <span className="w-[3px] bg-[#22D3EE] rounded-full h-2/3" />
-          <span className="w-[3px] bg-[#6EE7B7] rounded-full h-4/5" />
+          <span className="w-[3px] bg-[#3B82F6] rounded-full h-full" />
+          <span className="w-[3px] bg-[#60A5FA] rounded-full h-2/3" />
+          <span className="w-[3px] bg-[#93C5FD] rounded-full h-4/5" />
         </span>
       ) : (
         <>
-          <span className={`group-hover:hidden ${isActive ? 'text-[#34D399]' : ''}`}>
+          <span className={`group-hover:hidden ${isActive ? 'text-[#60A5FA]' : ''}`}>
             {index + 1}
           </span>
           <Play className="w-3.5 h-3.5 fill-current hidden group-hover:block text-white" />
@@ -203,7 +206,7 @@ const TrackRow: React.FC<{
       onClick={onPlay}
       className="flex items-center gap-2.5 sm:gap-3 min-w-0 flex-1 text-left cursor-pointer"
     >
-      <div className="w-11 h-11 rounded-lg overflow-hidden bg-[#0E1522] border border-white/10 shrink-0 flex items-center justify-center">
+      <div className="w-11 h-11 rounded-lg overflow-hidden bg-[#1B1B22] border border-white/10 shrink-0 flex items-center justify-center">
         {track.album.cover ? (
           <img
             src={track.album.cover}
@@ -222,7 +225,7 @@ const TrackRow: React.FC<{
       <div className="min-w-0 flex-1">
         <p
           className={`text-sm font-semibold truncate leading-snug ${
-            isActive ? 'text-[#34D399]' : 'text-white'
+            isActive ? 'text-[#60A5FA]' : 'text-white'
           }`}
         >
           {track.title}
@@ -275,7 +278,7 @@ const TrackRow: React.FC<{
         aria-label={isLiked ? copy.likeRemove : copy.likeAdd}
         className={`w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center cursor-pointer transition-all ${
           isLiked
-            ? 'text-[#34D399]'
+            ? 'text-[#FF2D55]'
             : 'text-zinc-400 opacity-85 sm:opacity-0 sm:group-hover:opacity-100 hover:text-white'
         }`}
       >
@@ -288,7 +291,7 @@ const TrackRow: React.FC<{
           onClick={onDownloadMp3}
           title={copy.downloadMp3Btn}
           aria-label={copy.downloadMp3Btn}
-          className="flex w-7 h-7 sm:w-9 sm:h-9 rounded-full items-center justify-center text-zinc-400 sm:opacity-0 sm:group-hover:opacity-100 hover:text-[#34D399] cursor-pointer transition-opacity"
+          className="flex w-7 h-7 sm:w-9 sm:h-9 rounded-full items-center justify-center text-zinc-400 sm:opacity-0 sm:group-hover:opacity-100 hover:text-[#60A5FA] cursor-pointer transition-opacity"
         >
           <Download className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         </button>
@@ -300,7 +303,7 @@ const TrackRow: React.FC<{
           onClick={onOpenSettings}
           title={copy.studioTitle}
           aria-label={copy.studioTitle}
-          className="flex w-7 h-7 sm:w-9 sm:h-9 rounded-full items-center justify-center text-zinc-400 sm:opacity-0 sm:group-hover:opacity-100 hover:text-[#22D3EE] cursor-pointer transition-opacity"
+          className="flex w-7 h-7 sm:w-9 sm:h-9 rounded-full items-center justify-center text-zinc-400 sm:opacity-0 sm:group-hover:opacity-100 hover:text-[#60A5FA] cursor-pointer transition-opacity"
         >
           <Sliders className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
         </button>
@@ -360,6 +363,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const [showCreatePlaylist, setShowCreatePlaylist] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [forYouTracks, setForYouTracks] = useState<MusicTrack[]>([]);
 
   const currentTrack = useMusicStore((s) => s.currentTrack);
   const activeRadio = useMusicStore((s) => s.activeRadio);
@@ -375,6 +379,12 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   const musicLang = useMusicStore((s) => s.musicLang);
   const spatial8dEnabled = useMusicStore((s) => s.spatial8dEnabled);
   const toggleSpatial8d = useMusicStore((s) => s.toggleSpatial8d);
+  const tasteProfile = useMusicStore((s) => s.tasteProfile);
+  const autoplaySimilar = useMusicStore((s) => s.autoplaySimilar);
+  const setAutoplaySimilar = useMusicStore((s) => s.setAutoplaySimilar);
+  const seedGenre = useMusicStore((s) => s.seedGenre);
+  const isFetchingRelated = useMusicStore((s) => s.isFetchingRelated);
+  const setShowImportModal = useMusicStore((s) => s.setShowImportModal);
   const m = MUSIC_I18N[musicLang];
 
   const playTrack = useMusicStore((s) => s.playTrack);
@@ -412,6 +422,63 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
       setDetail(null);
     }
   }, [externalSearchQuery]);
+
+  // First-visit startup popup to import Spotify / YouTube Music tastes & playlists
+  useEffect(() => {
+    if (tasteProfile.importedSources.length > 0) return;
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem(MUSIC_IMPORT_PROMPT_SEEN_KEY)) {
+        return;
+      }
+    } catch {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const st = useMusicStore.getState();
+      if (st.tasteProfile.importedSources.length === 0 && !st.showImportModal) {
+        st.setShowImportModal(true);
+      }
+    }, 450);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  // Build personalized "Para Ti · Según tus gustos" carousel from imported artists/genres
+  const tasteKey = `${tasteProfile.favoriteArtists.slice(0, 4).join('|')}::${tasteProfile.favoriteGenres.slice(0, 3).join('|')}`;
+  useEffect(() => {
+    const queries = [
+      ...tasteProfile.favoriteArtists.slice(0, 3),
+      ...tasteProfile.favoriteGenres.slice(0, 2),
+    ].filter(Boolean);
+    if (queries.length === 0) {
+      setForYouTracks([]);
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      queries.map((q) =>
+        fetch(`/api/music/search?q=${encodeURIComponent(q)}`)
+          .then((r) => r.json())
+          .catch(() => null)
+      )
+    ).then((results) => {
+      if (cancelled) return;
+      const seen = new Set<string>();
+      const combined: MusicTrack[] = [];
+      for (const res of results) {
+        const list: MusicTrack[] = Array.isArray(res?.tracks) ? res.tracks : [];
+        for (const t of list.slice(0, 5)) {
+          if (!seen.has(t.id)) {
+            seen.add(t.id);
+            combined.push(t);
+          }
+        }
+      }
+      setForYouTracks(combined.slice(0, 18));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [tasteKey]);
 
   // Initial load of expanded Global + Platform Home data
   useEffect(() => {
@@ -933,7 +1000,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             key={c.id}
             type="button"
             onClick={c.onClick}
-            className="group flex items-center gap-3 rounded-2xl bg-white/[0.05] hover:bg-[#10B981]/14 border border-white/[0.07] hover:border-[#10B981]/35 overflow-hidden text-left cursor-pointer transition-all pr-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+            className="group flex items-center gap-3 rounded-2xl bg-white/[0.05] hover:bg-[#3B82F6]/14 border border-white/[0.07] hover:border-[#3B82F6]/35 overflow-hidden text-left cursor-pointer transition-all pr-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]"
           >
             <img
               src={c.cover}
@@ -948,7 +1015,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               <p className="text-xs sm:text-sm font-bold text-white truncate">{c.title}</p>
               <p className="text-[11px] text-zinc-400 truncate mt-0.5 tabular-nums">{c.count}</p>
             </div>
-            <span className="hidden sm:flex w-9 h-9 rounded-full bg-gradient-to-br from-[#10B981] to-[#22D3EE] text-[#03130E] items-center justify-center opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all shadow-[0_6px_18px_rgba(16,185,129,0.4)] shrink-0">
+            <span className="hidden sm:flex w-9 h-9 rounded-full bg-gradient-to-br from-[#2563EB] to-[#3B82F6] text-white items-center justify-center opacity-0 group-hover:opacity-100 scale-90 group-hover:scale-100 transition-all shadow-[0_6px_18px_rgba(59,130,246,0.4)] shrink-0">
               <Play className="w-4 h-4 fill-current ml-0.5" />
             </span>
           </button>
@@ -975,7 +1042,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   tracks,
                 })
               }
-              className="text-xs font-semibold text-[#34D399] hover:text-[#6EE7B7] cursor-pointer whitespace-nowrap"
+              className="text-xs font-semibold text-[#60A5FA] hover:text-[#93C5FD] cursor-pointer whitespace-nowrap"
             >
               {m.viewAll}
             </button>
@@ -992,9 +1059,9 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 triggerHaptic('light');
                 playTrack(t, tracks);
               }}
-              className="group shrink-0 w-[144px] sm:w-[172px] p-2.5 rounded-2xl bg-[#0B1018]/90 hover:bg-[#121A26] border border-white/[0.06] hover:border-[#10B981]/35 text-left cursor-pointer transition-all duration-200 hover:-translate-y-0.5 snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+              className="group shrink-0 w-[144px] sm:w-[172px] p-2.5 rounded-2xl bg-[#131318]/90 hover:bg-[#1B1B22] border border-white/[0.06] hover:border-[#3B82F6]/35 text-left cursor-pointer transition-all duration-200 hover:-translate-y-0.5 snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]"
             >
-              <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#0F1724] mb-2.5">
+              <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#1B1B22] mb-2.5">
                 {t.album.cover ? (
                   <img
                     src={t.album.cover}
@@ -1008,7 +1075,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   />
                 ) : null}
                 <span
-                  className={`absolute right-2 bottom-2 w-10 h-10 rounded-full bg-gradient-to-br from-[#10B981] to-[#22D3EE] text-[#03130E] flex items-center justify-center shadow-[0_8px_22px_rgba(16,185,129,0.45)] transition-all ${
+                  className={`absolute right-2 bottom-2 w-10 h-10 rounded-full bg-gradient-to-br from-[#2563EB] to-[#3B82F6] text-white flex items-center justify-center shadow-[0_8px_22px_rgba(59,130,246,0.45)] transition-all ${
                     active
                       ? 'opacity-100 translate-y-0'
                       : 'opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0'
@@ -1021,7 +1088,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   )}
                 </span>
               </div>
-              <p className={`text-sm font-bold truncate ${active ? 'text-[#34D399]' : 'text-white'}`}>
+              <p className={`text-sm font-bold truncate ${active ? 'text-[#60A5FA]' : 'text-white'}`}>
                 {t.title}
               </p>
               <p className="text-xs text-zinc-400 truncate mt-0.5">{t.artist.name}</p>
@@ -1041,9 +1108,9 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             key={art.id}
             type="button"
             onClick={() => openArtistDetail(art.id, art)}
-            className="group shrink-0 w-[132px] sm:w-[156px] p-2.5 rounded-2xl bg-[#0B1018]/90 hover:bg-[#121A26] border border-white/[0.06] hover:border-[#10B981]/35 text-center cursor-pointer transition-all hover:-translate-y-0.5 snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+            className="group shrink-0 w-[132px] sm:w-[156px] p-2.5 rounded-2xl bg-[#131318]/90 hover:bg-[#1B1B22] border border-white/[0.06] hover:border-[#3B82F6]/35 text-center cursor-pointer transition-all hover:-translate-y-0.5 snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]"
           >
-            <div className="aspect-square w-full rounded-full overflow-hidden bg-[#0F1724] border border-white/12 group-hover:border-[#34D399]/55 mb-2.5 shadow-lg transition-colors">
+            <div className="aspect-square w-full rounded-full overflow-hidden bg-[#1B1B22] border border-white/12 group-hover:border-[#60A5FA]/55 mb-2.5 shadow-lg transition-colors">
               {art.picture ? (
                 <img
                   src={art.picture}
@@ -1074,9 +1141,9 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             key={alb.id}
             type="button"
             onClick={() => openAlbumDetail(alb.id, alb)}
-            className="group shrink-0 w-[144px] sm:w-[172px] p-2.5 rounded-2xl bg-[#0B1018]/90 hover:bg-[#121A26] border border-white/[0.06] hover:border-[#10B981]/35 text-left cursor-pointer transition-all hover:-translate-y-0.5 snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+            className="group shrink-0 w-[144px] sm:w-[172px] p-2.5 rounded-2xl bg-[#131318]/90 hover:bg-[#1B1B22] border border-white/[0.06] hover:border-[#3B82F6]/35 text-left cursor-pointer transition-all hover:-translate-y-0.5 snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]"
           >
-            <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#0F1724] mb-2.5">
+            <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#1B1B22] mb-2.5">
               {alb.cover ? (
                 <img
                   src={alb.cover}
@@ -1089,7 +1156,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
               ) : null}
-              <span className="absolute right-2 bottom-2 w-10 h-10 rounded-full bg-gradient-to-br from-[#10B981] to-[#22D3EE] text-[#03130E] flex items-center justify-center shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all">
+              <span className="absolute right-2 bottom-2 w-10 h-10 rounded-full bg-gradient-to-br from-[#2563EB] to-[#3B82F6] text-white flex items-center justify-center shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all">
                 <Play className="w-4 h-4 fill-current ml-0.5" />
               </span>
             </div>
@@ -1112,9 +1179,9 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             key={pl.id}
             type="button"
             onClick={() => openPlaylistDetail(pl.id, pl)}
-            className="group shrink-0 w-[144px] sm:w-[172px] p-2.5 rounded-2xl bg-[#0B1018]/90 hover:bg-[#121A26] border border-white/[0.06] hover:border-[#10B981]/35 text-left cursor-pointer transition-all hover:-translate-y-0.5 snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+            className="group shrink-0 w-[144px] sm:w-[172px] p-2.5 rounded-2xl bg-[#131318]/90 hover:bg-[#1B1B22] border border-white/[0.06] hover:border-[#3B82F6]/35 text-left cursor-pointer transition-all hover:-translate-y-0.5 snap-start focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]"
           >
-            <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#0F1724] mb-2.5">
+            <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#1B1B22] mb-2.5">
               {pl.cover ? (
                 <img
                   src={pl.cover}
@@ -1127,7 +1194,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                 />
               ) : null}
-              <span className="absolute right-2 bottom-2 w-10 h-10 rounded-full bg-gradient-to-br from-[#10B981] to-[#22D3EE] text-[#03130E] flex items-center justify-center shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all">
+              <span className="absolute right-2 bottom-2 w-10 h-10 rounded-full bg-gradient-to-br from-[#2563EB] to-[#3B82F6] text-white flex items-center justify-center shadow-lg opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all">
                 <Play className="w-4 h-4 fill-current ml-0.5" />
               </span>
             </div>
@@ -1207,12 +1274,12 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           >
             <ArrowLeft className="w-4 h-4" /> {m.back}
           </button>
-          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#10B981]/20 via-[#0B121D] to-[#05080D] border border-[#10B981]/22">
-            <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-2xl bg-gradient-to-br from-[#10B981] via-[#14B8A6] to-[#22D3EE] flex items-center justify-center shadow-2xl shrink-0">
-              <Heart className="w-16 h-16 text-[#03130E] fill-current" />
+          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#3B82F6]/20 via-[#131318] to-[#000000] border border-[#3B82F6]/22">
+            <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-2xl bg-gradient-to-br from-[#2563EB] via-[#3B82F6] to-[#60A5FA] flex items-center justify-center shadow-2xl shrink-0">
+              <Heart className="w-16 h-16 text-white fill-current" />
             </div>
             <div className="space-y-2 min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wider text-[#34D399]">{m.playlistLabel}</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-[#60A5FA]">{m.playlistLabel}</p>
               <h1 className="font-display text-3xl sm:text-5xl font-black text-white tracking-tight">
                 {m.likedSongs}
               </h1>
@@ -1224,7 +1291,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   <button
                     type="button"
                     onClick={() => playTrack(likedTracks[0], likedTracks)}
-                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] hover:scale-105 text-[#03130E] font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-[0_8px_24px_rgba(16,185,129,0.35)] transition-transform"
+                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#3B82F6] to-[#60A5FA] hover:scale-105 text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-[0_8px_24px_rgba(59,130,246,0.35)] transition-transform"
                   >
                     <Play className="w-4 h-4 fill-current" /> {m.playAll}
                   </button>
@@ -1234,7 +1301,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           </div>
 
           {likedTracks.length === 0 ? (
-            <div className="py-16 text-center rounded-3xl bg-[#0B1018] border border-white/[0.06]">
+            <div className="py-16 text-center rounded-3xl bg-[#131318] border border-white/[0.06]">
               <Heart className="w-10 h-10 text-zinc-600 mx-auto mb-2" />
               <p className="text-base font-bold text-white">{m.noLikedTitle}</p>
               <p className="text-xs text-zinc-400 mt-1">{m.noLikedSub}</p>
@@ -1272,7 +1339,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             </button>
           </div>
 
-          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#10B981]/18 via-[#0B121D] to-[#05080D] border border-[#10B981]/22">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#3B82F6]/18 via-[#131318] to-[#000000] border border-[#3B82F6]/22">
             <img
               src={pl.tracks[0]?.album.coverXl || pl.tracks[0]?.album.cover || mixHeroCover}
               alt={pl.name}
@@ -1283,7 +1350,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               className="w-36 h-36 sm:w-44 sm:h-44 rounded-2xl object-cover shadow-2xl shrink-0"
             />
             <div className="space-y-2 min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wider text-[#34D399]">{m.yourPlaylist}</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-[#60A5FA]">{m.yourPlaylist}</p>
               <h1 className="font-display text-3xl sm:text-5xl font-black text-white tracking-tight truncate">
                 {pl.name}
               </h1>
@@ -1295,7 +1362,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   <button
                     type="button"
                     onClick={() => playTrack(pl.tracks[0], pl.tracks)}
-                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] hover:scale-105 text-[#03130E] font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
+                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#3B82F6] to-[#60A5FA] hover:scale-105 text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
                   >
                     <Play className="w-4 h-4 fill-current" /> {m.playNow}
                   </button>
@@ -1305,7 +1372,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           </div>
 
           {pl.tracks.length === 0 ? (
-            <div className="py-16 text-center rounded-3xl bg-[#0B1018] border border-white/[0.06]">
+            <div className="py-16 text-center rounded-3xl bg-[#131318] border border-white/[0.06]">
               <p className="text-sm text-zinc-400">{m.emptyPlaylistSub}</p>
             </div>
           ) : (
@@ -1326,7 +1393,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             <ArrowLeft className="w-4 h-4" /> {m.back}
           </button>
 
-          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#10B981]/18 via-[#0B121D] to-[#05080D] border border-[#10B981]/22">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#3B82F6]/18 via-[#131318] to-[#000000] border border-[#3B82F6]/22">
             <img
               src={detail.cover}
               alt={detail.title}
@@ -1337,7 +1404,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               className="w-36 h-36 sm:w-44 sm:h-44 rounded-2xl object-cover shadow-2xl shrink-0"
             />
             <div className="space-y-2 min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wider text-[#34D399]">
+              <p className="text-xs font-bold uppercase tracking-wider text-[#60A5FA]">
                 {m.curatedSelection}
               </p>
               <h1 className="font-display text-3xl sm:text-4xl font-black text-white tracking-tight">
@@ -1349,7 +1416,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   <button
                     type="button"
                     onClick={() => playTrack(detail.tracks[0], detail.tracks)}
-                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] hover:scale-105 text-[#03130E] font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg transition-transform"
+                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#3B82F6] to-[#60A5FA] hover:scale-105 text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg transition-transform"
                   >
                     <Play className="w-4 h-4 fill-current" /> {m.playList}
                   </button>
@@ -1359,7 +1426,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                       const shuffled = [...detail.tracks].sort(() => Math.random() - 0.5);
                       playTrack(shuffled[0], shuffled);
                     }}
-                    className="h-12 px-5 rounded-full border border-white/20 hover:border-[#34D399] text-white font-semibold text-sm inline-flex items-center gap-2 cursor-pointer"
+                    className="h-12 px-5 rounded-full border border-white/20 hover:border-[#60A5FA] text-white font-semibold text-sm inline-flex items-center gap-2 cursor-pointer"
                   >
                     <Shuffle className="w-4 h-4" /> {m.shuffle}
                   </button>
@@ -1386,8 +1453,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             <ArrowLeft className="w-4 h-4" /> {m.back}
           </button>
 
-          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#10B981]/18 via-[#0B121D] to-[#05080D] border border-[#10B981]/22">
-            <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-2xl overflow-hidden bg-[#0F1724] shadow-2xl shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#3B82F6]/18 via-[#131318] to-[#000000] border border-[#3B82F6]/22">
+            <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-2xl overflow-hidden bg-[#1B1B22] shadow-2xl shrink-0">
               {alb?.coverXl || alb?.cover ? (
                 <img
                   src={alb.coverXl || alb.cover}
@@ -1401,7 +1468,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               ) : null}
             </div>
             <div className="space-y-2 min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wider text-[#34D399]">{m.albumLabel}</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-[#60A5FA]">{m.albumLabel}</p>
               <h1 className="font-display text-2xl sm:text-4xl font-black text-white tracking-tight">
                 {alb?.title || m.loadingAlbum}
               </h1>
@@ -1434,7 +1501,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   <button
                     type="button"
                     onClick={() => playTrack(detail.tracks[0], detail.tracks)}
-                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] hover:scale-105 text-[#03130E] font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg transition-transform"
+                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#3B82F6] to-[#60A5FA] hover:scale-105 text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg transition-transform"
                   >
                     <Play className="w-4 h-4 fill-current" /> {m.playNow}
                   </button>
@@ -1448,7 +1515,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     }}
                     className={`h-12 px-5 rounded-full border text-sm font-semibold cursor-pointer transition-colors ${
                       isSaved
-                        ? 'bg-[#10B981]/15 border-[#10B981] text-[#6EE7B7]'
+                        ? 'bg-[#3B82F6]/15 border-[#3B82F6] text-[#93C5FD]'
                         : 'border-white/20 text-white hover:border-white'
                     }`}
                   >
@@ -1481,8 +1548,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             <ArrowLeft className="w-4 h-4" /> {m.back}
           </button>
 
-          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#10B981]/18 via-[#0B121D] to-[#05080D] border border-[#10B981]/22">
-            <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-2xl overflow-hidden bg-[#0F1724] shadow-2xl shrink-0">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#3B82F6]/18 via-[#131318] to-[#000000] border border-[#3B82F6]/22">
+            <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-2xl overflow-hidden bg-[#1B1B22] shadow-2xl shrink-0">
               {pl?.cover ? (
                 <img
                   src={pl.cover}
@@ -1496,7 +1563,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               ) : null}
             </div>
             <div className="space-y-2 min-w-0">
-              <p className="text-xs font-bold uppercase tracking-wider text-[#34D399]">{m.playlistLabel}</p>
+              <p className="text-xs font-bold uppercase tracking-wider text-[#60A5FA]">{m.playlistLabel}</p>
               <h1 className="font-display text-2xl sm:text-4xl font-black text-white tracking-tight">
                 {pl?.title || m.loadingPlaylist}
               </h1>
@@ -1510,7 +1577,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   <button
                     type="button"
                     onClick={() => playTrack(detail.tracks[0], detail.tracks)}
-                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] hover:scale-105 text-[#03130E] font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
+                    className="h-12 px-6 rounded-full bg-gradient-to-r from-[#3B82F6] to-[#60A5FA] hover:scale-105 text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
                   >
                     <Play className="w-4 h-4 fill-current" /> {m.playNow}
                   </button>
@@ -1524,7 +1591,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     }}
                     className={`h-12 px-5 rounded-full border text-sm font-semibold cursor-pointer ${
                       isSaved
-                        ? 'bg-[#10B981]/15 border-[#10B981] text-[#6EE7B7]'
+                        ? 'bg-[#3B82F6]/15 border-[#3B82F6] text-[#93C5FD]'
                         : 'border-white/20 text-white hover:border-white'
                     }`}
                   >
@@ -1558,7 +1625,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           <div
             className="p-6 sm:p-8 rounded-3xl border border-white/10"
             style={{
-              background: `linear-gradient(135deg, ${detail.genre.color}66 0%, #0B1018 75%)`,
+              background: `linear-gradient(135deg, ${detail.genre.color}66 0%, #131318 75%)`,
             }}
           >
             <p className="text-xs font-bold uppercase tracking-wider text-white/80">{m.musicGenre}</p>
@@ -1569,7 +1636,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               <button
                 type="button"
                 onClick={() => playTrack(detail.tracks[0], detail.tracks)}
-                className="mt-4 h-11 px-6 rounded-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
+                className="mt-4 h-11 px-6 rounded-full bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
               >
                 <Play className="w-4 h-4 fill-current" /> {m.playGenreRadio} {detail.genre.name}
               </button>
@@ -1615,8 +1682,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           <ArrowLeft className="w-4 h-4" /> {m.back}
         </button>
 
-        <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#10B981]/18 via-[#0B121D] to-[#05080D] border border-[#10B981]/22">
-          <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-full overflow-hidden bg-[#0F1724] border-2 border-[#10B981]/35 shadow-2xl shrink-0">
+        <div className="flex flex-col sm:flex-row sm:items-end gap-5 p-5 sm:p-7 rounded-3xl bg-gradient-to-br from-[#3B82F6]/18 via-[#131318] to-[#000000] border border-[#3B82F6]/22">
+          <div className="w-36 h-36 sm:w-44 sm:h-44 rounded-full overflow-hidden bg-[#1B1B22] border-2 border-[#3B82F6]/35 shadow-2xl shrink-0">
             {art?.picture ? (
               <img
                 src={art.picture}
@@ -1630,7 +1697,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             ) : null}
           </div>
           <div className="space-y-2 min-w-0">
-            <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#34D399]">
+            <div className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#60A5FA]">
               <UserCheck className="w-4 h-4" /> {m.artistVerified}
             </div>
             <h1 className="font-display text-3xl sm:text-5xl font-black text-white tracking-tight">
@@ -1646,7 +1713,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 <button
                   type="button"
                   onClick={() => playTrack(detail.topTracks[0], detail.topTracks)}
-                  className="h-12 px-6 rounded-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] hover:scale-105 text-[#03130E] font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
+                  className="h-12 px-6 rounded-full bg-gradient-to-r from-[#3B82F6] to-[#60A5FA] hover:scale-105 text-white font-bold text-sm inline-flex items-center gap-2 cursor-pointer shadow-lg"
                 >
                   <Play className="w-4 h-4 fill-current" /> {m.playNow}
                 </button>
@@ -1687,7 +1754,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
 
   return (
     <div
-      className={`min-h-screen w-full bg-[#05080D] flex flex-col lg:flex-row gap-4 lg:gap-6 px-3 sm:px-6 lg:px-8 pt-3 sm:pt-5 ${
+      className={`min-h-screen w-full bg-[#000000] flex flex-col lg:flex-row gap-4 lg:gap-6 px-3 sm:px-6 lg:px-8 pt-3 sm:pt-5 ${
         hasBottomBar ? 'pb-28 sm:pb-32' : 'pb-10'
       }`}
     >
@@ -1696,7 +1763,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
 
       {/* Desktop Sonic Studio Sidebar */}
       <aside className="hidden lg:flex flex-col w-[264px] shrink-0 gap-3 self-start sticky top-12">
-        <div className="rounded-3xl bg-[#0B1018]/92 border border-[#10B981]/20 p-3 space-y-1 shadow-[0_14px_40px_rgba(0,0,0,0.45)]">
+        <div className="rounded-3xl bg-[#131318]/92 border border-[#3B82F6]/20 p-3 space-y-1 shadow-[0_14px_40px_rgba(0,0,0,0.45)]">
           {[
             { id: 'home' as const, label: m.navHome, icon: Home },
             { id: 'search' as const, label: m.navExploreLong, icon: Search },
@@ -1715,11 +1782,11 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 }}
                 className={`w-full min-h-11 px-3.5 rounded-2xl flex items-center gap-3 text-sm font-bold cursor-pointer transition-all ${
                   active
-                    ? 'bg-gradient-to-r from-[#10B981]/20 to-[#22D3EE]/10 text-white border border-[#10B981]/35'
+                    ? 'bg-gradient-to-r from-[#3B82F6]/20 to-[#60A5FA]/10 text-white border border-[#3B82F6]/35'
                     : 'text-zinc-400 hover:text-white hover:bg-white/[0.05]'
                 }`}
               >
-                <Icon className={`w-5 h-5 ${active ? 'text-[#34D399]' : ''}`} />
+                <Icon className={`w-5 h-5 ${active ? 'text-[#60A5FA]' : ''}`} />
                 <span className="truncate">{item.label}</span>
               </button>
             );
@@ -1727,7 +1794,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
         </div>
 
         {/* Library Shortcuts */}
-        <div className="rounded-3xl bg-[#0B1018]/92 border border-white/[0.07] p-3 space-y-2 max-h-[44vh] overflow-y-auto no-scrollbar">
+        <div className="rounded-3xl bg-[#131318]/92 border border-white/[0.07] p-3 space-y-2 max-h-[44vh] overflow-y-auto no-scrollbar">
           <div className="flex items-center justify-between px-2 pt-1">
             <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
               {m.navLibrary}
@@ -1747,8 +1814,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             onClick={() => setDetail({ kind: 'liked' })}
             className="w-full p-2 rounded-2xl hover:bg-white/[0.06] flex items-center gap-3 text-left cursor-pointer"
           >
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#10B981] via-[#14B8A6] to-[#22D3EE] flex items-center justify-center shrink-0">
-              <Heart className="w-5 h-5 text-[#03130E] fill-current" />
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-[#2563EB] via-[#3B82F6] to-[#60A5FA] flex items-center justify-center shrink-0">
+              <Heart className="w-5 h-5 text-white fill-current" />
             </div>
             <div className="min-w-0">
               <p className="text-sm font-bold text-white truncate">{m.likedSongs}</p>
@@ -1772,7 +1839,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 onError={(e) => {
                   e.currentTarget.style.display = 'none';
                 }}
-                className="w-11 h-11 rounded-xl object-cover shrink-0 bg-[#0F1724]"
+                className="w-11 h-11 rounded-xl object-cover shrink-0 bg-[#1B1B22]"
               />
               <div className="min-w-0">
                 <p className="text-sm font-bold text-white truncate">{pl.name}</p>
@@ -1809,13 +1876,35 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           ))}
         </div>
 
+        {/* Import Spotify / YouTube Music Shortcut */}
+        <button
+          type="button"
+          onClick={() => {
+            triggerHaptic('light');
+            setShowImportModal(true);
+          }}
+          className="rounded-2xl bg-[#131318] hover:bg-[#1B1B22] border border-[#3B82F6]/30 hover:border-[#60A5FA]/55 p-3 flex items-center gap-3 text-left cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+        >
+          <span className="w-9 h-9 rounded-xl bg-[#3B82F6]/18 text-[#60A5FA] flex items-center justify-center shrink-0">
+            <Disc3 className="w-4 h-4" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-bold text-white truncate">{m.importTitle}</p>
+            <p className="text-[11px] text-zinc-400 truncate">
+              {tasteProfile.favoriteArtists.length + tasteProfile.favoriteGenres.length > 0
+                ? `${tasteProfile.favoriteArtists.length + tasteProfile.favoriteGenres.length} · Spotify / YTM`
+                : 'Spotify · YouTube Music'}
+            </p>
+          </div>
+        </button>
+
         {/* Direct APK & PWA Install Card */}
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('riffan:open-install'))}
-          className="rounded-2xl bg-gradient-to-r from-[#10B981]/14 via-[#0B121D] to-[#22D3EE]/12 hover:from-[#10B981]/24 hover:to-[#22D3EE]/20 border border-[#10B981]/25 p-3 flex items-center gap-3 text-left cursor-pointer transition-all"
+          className="rounded-2xl bg-gradient-to-r from-[#3B82F6]/14 via-[#131318] to-[#60A5FA]/12 hover:from-[#3B82F6]/24 hover:to-[#60A5FA]/20 border border-[#3B82F6]/25 p-3 flex items-center gap-3 text-left cursor-pointer transition-all"
         >
-          <span className="w-9 h-9 rounded-xl bg-[#10B981]/18 text-[#34D399] flex items-center justify-center shrink-0">
+          <span className="w-9 h-9 rounded-xl bg-[#3B82F6]/18 text-[#60A5FA] flex items-center justify-center shrink-0">
             <Download className="w-4 h-4" />
           </span>
           <div className="min-w-0">
@@ -1847,7 +1936,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 }}
                 className={`min-h-10 px-1.5 rounded-full text-[11px] font-bold inline-flex items-center justify-center gap-1 cursor-pointer transition-all min-w-0 ${
                   active
-                    ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_6px_18px_rgba(16,185,129,0.35)]'
+                    ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_6px_18px_rgba(59,130,246,0.35)]'
                     : 'bg-white/[0.07] text-zinc-200 hover:bg-white/[0.12]'
                 }`}
               >
@@ -1864,7 +1953,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
         ) : navTab === 'home' ? (
           <div className="space-y-7 animate-fade-in">
             {/* SPATIAL FULL-BLEED HERO STAGE */}
-            <section className="relative rounded-[28px] overflow-hidden border border-[#10B981]/22 bg-[#0A111B] min-h-[240px] sm:min-h-[296px] flex items-end p-5 sm:p-8 shadow-[0_24px_64px_rgba(0,0,0,0.68)]">
+            <section className="relative rounded-[28px] overflow-hidden border border-[#3B82F6]/22 bg-[#131318] min-h-[240px] sm:min-h-[296px] flex items-end p-5 sm:p-8 shadow-[0_24px_64px_rgba(0,0,0,0.68)]">
               <img
                 src={
                   heroSpotlightTrack?.album.coverXl ||
@@ -1883,13 +1972,13 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 className="absolute inset-0 pointer-events-none"
                 style={{
                   background:
-                    'radial-gradient(ellipse 80% 70% at 85% 20%, rgba(16,185,129,0.26), transparent 60%), radial-gradient(ellipse 65% 60% at 20% 90%, rgba(34,211,238,0.16), transparent 55%), linear-gradient(95deg, rgba(5,8,13,0.96) 0%, rgba(5,8,13,0.82) 55%, rgba(5,8,13,0.45) 100%)',
+                    'radial-gradient(ellipse 80% 70% at 85% 20%, rgba(59,130,246,0.26), transparent 60%), radial-gradient(ellipse 65% 60% at 20% 90%, rgba(96,165,250,0.16), transparent 55%), linear-gradient(95deg, rgba(0,0,0,0.96) 0%, rgba(0,0,0,0.82) 55%, rgba(0,0,0,0.45) 100%)',
                 }}
               />
 
               <div className="relative z-10 w-full flex flex-col md:flex-row md:items-end justify-between gap-6">
                 <div className="space-y-3 max-w-2xl">
-                  <p className="text-xs font-bold uppercase tracking-widest text-[#34D399]">
+                  <p className="text-xs font-bold uppercase tracking-widest text-[#60A5FA]">
                     {greeting} · {m.spatialAudioLabel} ·{' '}
                     {currentTrack ? m.playingNow : m.worldTrending}
                   </p>
@@ -1919,7 +2008,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                           playTrack(heroSpotlightTrack, heroPool.length > 0 ? heroPool : [heroSpotlightTrack]);
                         }
                       }}
-                      className="h-11 sm:h-12 px-6 rounded-full bg-gradient-to-r from-[#10B981] via-[#14B8A6] to-[#22D3EE] hover:scale-[1.03] text-[#03130E] font-bold text-sm inline-flex items-center justify-center gap-2 cursor-pointer shadow-[0_10px_28px_rgba(16,185,129,0.4)] transition-transform whitespace-nowrap"
+                      className="h-11 sm:h-12 px-6 rounded-full bg-gradient-to-r from-[#2563EB] via-[#3B82F6] to-[#60A5FA] hover:scale-[1.03] text-white font-bold text-sm inline-flex items-center justify-center gap-2 cursor-pointer shadow-[0_10px_28px_rgba(59,130,246,0.4)] transition-transform whitespace-nowrap"
                     >
                       {currentTrack && heroSpotlightTrack?.id === currentTrack.id && isPlaying ? (
                         <>
@@ -1943,7 +2032,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                           }}
                           className="h-10 sm:h-12 px-2.5 sm:px-5 rounded-full bg-white/[0.1] hover:bg-white/[0.18] border border-white/15 text-white font-semibold text-[11px] sm:text-sm inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors min-w-0"
                         >
-                          <Shuffle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#22D3EE] shrink-0" />
+                          <Shuffle className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#60A5FA] shrink-0" />
                           <span className="truncate">{m.shuffleMix}</span>
                         </button>
                       )}
@@ -1957,11 +2046,11 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                         aria-pressed={spatial8dEnabled}
                         className={`h-10 sm:h-12 px-2.5 sm:px-4 rounded-full font-bold text-[11px] sm:text-sm inline-flex items-center justify-center gap-1.5 cursor-pointer transition-all min-w-0 ${
                           spatial8dEnabled
-                            ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_8px_24px_rgba(16,185,129,0.42)]'
+                            ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_8px_24px_rgba(59,130,246,0.42)]'
                             : 'bg-white/[0.06] hover:bg-white/[0.14] border border-white/10 text-zinc-200 hover:text-white'
                         }`}
                       >
-                        <Headphones className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${spatial8dEnabled ? 'text-[#03130E]' : 'text-[#22D3EE]'}`} />
+                        <Headphones className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 ${spatial8dEnabled ? 'text-white' : 'text-[#60A5FA]'}`} />
                         <span className="truncate">{m.spatial8dBtn}</span>
                       </button>
 
@@ -1970,7 +2059,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                         onClick={() => setNavTab('radios')}
                         className="h-10 sm:h-12 px-2.5 sm:px-4 rounded-full bg-white/[0.06] hover:bg-white/[0.14] border border-white/10 text-zinc-200 hover:text-white font-semibold text-[11px] sm:text-sm inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors min-w-0"
                       >
-                        <Radio className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#34D399] shrink-0" />
+                        <Radio className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-[#60A5FA] shrink-0" />
                         <span className="truncate">{m.radios247}</span>
                       </button>
                     </div>
@@ -2010,7 +2099,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     }}
                     className={`min-h-10 px-4 rounded-full text-xs font-bold cursor-pointer transition-all whitespace-nowrap shrink-0 snap-start ${
                       selected
-                        ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_6px_18px_rgba(16,185,129,0.32)]'
+                        ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_6px_18px_rgba(59,130,246,0.32)]'
                         : 'bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 border border-white/[0.06]'
                     }`}
                   >
@@ -2029,7 +2118,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             ) : homeData ? (
               activeMoodSelection ? (
                 <section className="space-y-5 animate-fade-in">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl bg-gradient-to-r from-[#10B981]/18 via-[#0B121D] to-[#0A1018] border border-[#10B981]/25">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 rounded-3xl bg-gradient-to-r from-[#3B82F6]/18 via-[#131318] to-[#131318] border border-[#3B82F6]/25">
                     <div className="flex items-center gap-4 min-w-0">
                       <img
                         src={activeMoodSelection.cover}
@@ -2055,7 +2144,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                         onClick={() =>
                           playTrack(activeMoodSelection.tracks[0], activeMoodSelection.tracks)
                         }
-                        className="h-11 px-5 rounded-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] font-bold text-xs inline-flex items-center gap-2 cursor-pointer shrink-0 shadow-lg whitespace-nowrap"
+                        className="h-11 px-5 rounded-full bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white font-bold text-xs inline-flex items-center gap-2 cursor-pointer shrink-0 shadow-lg whitespace-nowrap"
                       >
                         <Play className="w-4 h-4 fill-current" /> {m.playSelection}
                       </button>
@@ -2066,6 +2155,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               ) : (
                 <>
                   {renderQuickMixes()}
+                  {forYouTracks.length > 0 &&
+                    renderTrackCardsCarousel(m.forYouImportedTitle, forYouTracks, m.forYouImportedSub)}
                   {renderTrackCardsCarousel(m.secYtmHits, homeData.youtubeMusicHits, m.secYtmHits)}
                   {renderAlbumsCarousel(m.secYtmAlbums, homeData.youtubeMusicAlbums)}
                   {renderTrackCardsCarousel(m.secSpotifyHits, homeData.spotifyHits, m.secSpotifyHits)}
@@ -2103,13 +2194,13 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
         ) : navTab === 'search' ? (
           <div className="space-y-6 animate-fade-in">
             <div className="relative">
-              <Search className="w-5 h-5 text-[#34D399] absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <Search className="w-5 h-5 text-[#60A5FA] absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
                 type="text"
                 value={localSearchQuery}
                 onChange={(e) => setLocalSearchQuery(e.target.value)}
                 placeholder={m.searchPlaceholder}
-                className="w-full h-12 sm:h-13 pl-12 pr-12 rounded-2xl bg-[#0B1018] border border-white/12 focus:border-[#10B981] text-sm sm:text-base text-white placeholder:text-zinc-500 outline-none transition-colors"
+                className="w-full h-12 sm:h-13 pl-12 pr-12 rounded-2xl bg-[#131318] border border-white/12 focus:border-[#3B82F6] text-sm sm:text-base text-white placeholder:text-zinc-500 outline-none transition-colors"
               />
               {localSearchQuery && (
                 <button
@@ -2131,7 +2222,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 searchResults.artists.length === 0 &&
                 searchResults.albums.length === 0 &&
                 searchResults.radios.length === 0 ? (
-                  <div className="py-14 text-center rounded-3xl bg-[#0B1018] border border-white/[0.06]">
+                  <div className="py-14 text-center rounded-3xl bg-[#131318] border border-white/[0.06]">
                     <p className="text-base font-bold text-white">
                       {m.noResultsTitle} “{localSearchQuery}”
                     </p>
@@ -2149,7 +2240,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                               const top = searchResults.tracks[0];
                               playTrack(top, searchResults.tracks);
                             }}
-                            className="group w-full p-5 rounded-3xl bg-gradient-to-br from-[#10B981]/18 via-[#0C141F] to-[#070B12] hover:border-[#10B981]/45 border border-white/[0.08] text-left cursor-pointer transition-all relative overflow-hidden"
+                            className="group w-full p-5 rounded-3xl bg-gradient-to-br from-[#3B82F6]/18 via-[#0C141F] to-[#070B12] hover:border-[#3B82F6]/45 border border-white/[0.08] text-left cursor-pointer transition-all relative overflow-hidden"
                           >
                             <img
                               src={searchResults.tracks[0].album.coverXl || searchResults.tracks[0].album.cover}
@@ -2166,7 +2257,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                             <p className="text-sm text-zinc-300 mt-1 truncate">
                               {m.songSingular} · {searchResults.tracks[0].artist.name}
                             </p>
-                            <span className="absolute right-5 bottom-5 w-12 h-12 rounded-full bg-gradient-to-br from-[#10B981] to-[#22D3EE] text-[#03130E] flex items-center justify-center shadow-[0_8px_24px_rgba(16,185,129,0.4)] group-hover:scale-105 transition-transform">
+                            <span className="absolute right-5 bottom-5 w-12 h-12 rounded-full bg-gradient-to-br from-[#2563EB] to-[#3B82F6] text-white flex items-center justify-center shadow-[0_8px_24px_rgba(59,130,246,0.4)] group-hover:scale-105 transition-transform">
                               <Play className="w-5 h-5 fill-current ml-0.5" />
                             </span>
                           </button>
@@ -2174,7 +2265,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
 
                         <div className="lg:col-span-7 space-y-2.5">
                           <h2 className="font-display text-lg font-bold text-white">{m.songsSection}</h2>
-                          <div className="rounded-2xl bg-[#0B1018] border border-white/[0.06] p-2">
+                          <div className="rounded-2xl bg-[#131318] border border-white/[0.06] p-2">
                             {renderTrackList(searchResults.tracks.slice(0, 6))}
                           </div>
                         </div>
@@ -2202,8 +2293,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                                 }}
                                 className={`p-3 rounded-2xl border flex items-center gap-3 text-left cursor-pointer transition-all ${
                                   active
-                                    ? 'bg-[#10B981]/16 border-[#10B981]/60'
-                                    : 'bg-[#0B1018] hover:bg-[#121A26] border-white/[0.06]'
+                                    ? 'bg-[#3B82F6]/16 border-[#3B82F6]/60'
+                                    : 'bg-[#131318] hover:bg-[#1B1B22] border-white/[0.06]'
                                 }`}
                               >
                                 <div className="w-12 h-12 rounded-xl overflow-hidden bg-[#101826] border border-white/10 shrink-0 flex items-center justify-center">
@@ -2218,16 +2309,16 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                                       className="w-full h-full object-cover"
                                     />
                                   ) : (
-                                    <Radio className="w-5 h-5 text-[#22D3EE]" />
+                                    <Radio className="w-5 h-5 text-[#60A5FA]" />
                                   )}
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                  <p className={`text-sm font-bold truncate ${active ? 'text-[#34D399]' : 'text-white'}`}>
+                                  <p className={`text-sm font-bold truncate ${active ? 'text-[#60A5FA]' : 'text-white'}`}>
                                     {station.name}
                                   </p>
                                   <p className="text-xs text-zinc-400 truncate">{station.country}</p>
                                 </div>
-                                <span className="w-9 h-9 rounded-full bg-gradient-to-br from-[#10B981] to-[#22D3EE] text-[#03130E] flex items-center justify-center shrink-0">
+                                <span className="w-9 h-9 rounded-full bg-gradient-to-br from-[#2563EB] to-[#3B82F6] text-white flex items-center justify-center shrink-0">
                                   {active && isPlaying ? (
                                     <Pause className="w-4 h-4 fill-current" />
                                   ) : (
@@ -2253,7 +2344,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             ) : (
               <section className="space-y-4">
                 <div className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-[#22D3EE]" />
+                  <Sparkles className="w-5 h-5 text-[#60A5FA]" />
                   <h2 className="font-display text-lg sm:text-xl font-bold text-white">
                     {m.exploreByGenre}
                   </h2>
@@ -2267,7 +2358,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                       style={{
                         background: `linear-gradient(135deg, ${g.color} 0%, #09111B 115%)`,
                       }}
-                      className="group relative h-28 sm:h-32 rounded-2xl p-4 text-left overflow-hidden cursor-pointer border border-white/10 shadow-lg hover:brightness-110 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981]"
+                      className="group relative h-28 sm:h-32 rounded-2xl p-4 text-left overflow-hidden cursor-pointer border border-white/10 shadow-lg hover:brightness-110 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3B82F6]"
                     >
                       <span className="relative z-10 font-display text-base sm:text-lg font-extrabold text-white drop-shadow">
                         {g.name}
@@ -2307,7 +2398,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     onClick={() => setRadioFilterId(rt.id)}
                     className={`min-h-10 px-4 rounded-full text-xs font-bold cursor-pointer transition-all whitespace-nowrap shrink-0 snap-start ${
                       selected
-                        ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_6px_18px_rgba(16,185,129,0.32)]'
+                        ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_6px_18px_rgba(59,130,246,0.32)]'
                         : 'bg-white/[0.07] hover:bg-white/[0.12] text-zinc-200'
                     }`}
                   >
@@ -2334,8 +2425,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                       }}
                       className={`p-3.5 rounded-2xl border flex items-center gap-3.5 text-left cursor-pointer transition-all ${
                         active
-                          ? 'bg-[#10B981]/16 border-[#10B981]/60'
-                          : 'bg-[#0B1018] hover:bg-[#121A26] border-white/[0.06]'
+                          ? 'bg-[#3B82F6]/16 border-[#3B82F6]/60'
+                          : 'bg-[#131318] hover:bg-[#1B1B22] border-white/[0.06]'
                       }`}
                     >
                       <div className="w-14 h-14 rounded-xl overflow-hidden bg-[#101826] border border-white/10 shrink-0 flex items-center justify-center relative">
@@ -2350,10 +2441,10 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                             className="w-full h-full object-cover"
                           />
                         ) : null}
-                        <Radio className="w-6 h-6 text-[#22D3EE] -z-10" />
+                        <Radio className="w-6 h-6 text-[#60A5FA] -z-10" />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <p className={`text-sm font-bold truncate ${active ? 'text-[#34D399]' : 'text-white'}`}>
+                        <p className={`text-sm font-bold truncate ${active ? 'text-[#60A5FA]' : 'text-white'}`}>
                           {station.name}
                         </p>
                         <p className="text-xs text-zinc-400 truncate mt-0.5">
@@ -2363,7 +2454,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                           {station.codec || 'MP3'} {station.bitrate ? `${station.bitrate} kbps` : ''}
                         </p>
                       </div>
-                      <span className="w-10 h-10 rounded-full bg-gradient-to-br from-[#10B981] to-[#22D3EE] text-[#03130E] flex items-center justify-center shrink-0 shadow-[0_6px_16px_rgba(16,185,129,0.32)]">
+                      <span className="w-10 h-10 rounded-full bg-gradient-to-br from-[#2563EB] to-[#3B82F6] text-white flex items-center justify-center shrink-0 shadow-[0_6px_16px_rgba(59,130,246,0.32)]">
                         {active && isPlaying ? (
                           <Pause className="w-4 h-4 fill-current" />
                         ) : (
@@ -2378,28 +2469,40 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           </div>
         ) : (
           <div className="space-y-7 animate-fade-in">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <h1 className="font-display text-2xl sm:text-3xl font-black text-white">{m.libraryTitle}</h1>
                 <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">{m.librarySub}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowCreatePlaylist(true)}
-                className="h-10 px-4 rounded-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
-              >
-                <Plus className="w-4 h-4" /> {m.newPlaylist}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setShowImportModal(true);
+                  }}
+                  className="h-10 px-3.5 rounded-full bg-[#131318] hover:bg-[#1B1B22] border border-[#3B82F6]/40 text-[#93C5FD] font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                >
+                  <Disc3 className="w-4 h-4" /> Spotify / YTM
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowCreatePlaylist(true)}
+                  className="h-10 px-4 rounded-full bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white font-bold text-xs inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap shadow-[0_6px_18px_rgba(37,99,235,0.35)]"
+                >
+                  <Plus className="w-4 h-4" /> {m.newPlaylist}
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               <button
                 type="button"
                 onClick={() => setDetail({ kind: 'liked' })}
-                className="p-4 rounded-2xl bg-gradient-to-br from-[#10B981]/22 to-[#0B121D] border border-[#10B981]/25 flex items-center gap-3.5 text-left cursor-pointer hover:border-[#10B981]/60"
+                className="p-4 rounded-2xl bg-gradient-to-br from-[#3B82F6]/22 to-[#131318] border border-[#3B82F6]/25 flex items-center gap-3.5 text-left cursor-pointer hover:border-[#3B82F6]/60"
               >
-                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#10B981] via-[#14B8A6] to-[#22D3EE] flex items-center justify-center shrink-0">
-                  <Heart className="w-7 h-7 text-[#03130E] fill-current" />
+                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-[#2563EB] via-[#3B82F6] to-[#60A5FA] flex items-center justify-center shrink-0">
+                  <Heart className="w-7 h-7 text-white fill-current" />
                 </div>
                 <div>
                   <p className="text-base font-bold text-white">{m.likedSongs}</p>
@@ -2414,7 +2517,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   key={pl.id}
                   type="button"
                   onClick={() => setDetail({ kind: 'user_playlist', playlistId: pl.id })}
-                  className="p-4 rounded-2xl bg-[#0B1018] hover:bg-[#121A26] border border-white/[0.08] flex items-center gap-3.5 text-left cursor-pointer"
+                  className="p-4 rounded-2xl bg-[#131318] hover:bg-[#1B1B22] border border-white/[0.08] flex items-center gap-3.5 text-left cursor-pointer"
                 >
                   <img
                     src={pl.tracks[0]?.album.cover || mixHeroCover}
@@ -2450,10 +2553,10 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
 
       {/* Queue Drawer */}
       {showQueueDrawer && (
-        <aside className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm bg-[#070C14]/98 backdrop-blur-2xl border-l border-[#10B981]/20 p-5 flex flex-col gap-4 shadow-2xl">
+        <aside className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-sm bg-[#0C0C0F]/98 backdrop-blur-2xl border-l border-white/[0.1] p-5 flex flex-col gap-3.5 shadow-2xl">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <ListMusic className="w-5 h-5 text-[#34D399]" />
+              <ListMusic className="w-5 h-5 text-[#60A5FA]" />
               <h3 className="font-display text-base font-bold text-white">{m.queueTitle}</h3>
             </div>
             <button
@@ -2464,6 +2567,52 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               <X className="w-4 h-4" />
             </button>
           </div>
+
+          {/* Spotify-style Genre Radio Autoplay Bar */}
+          <div className="p-3 rounded-2xl bg-[#131318] border border-white/[0.08] space-y-2 shrink-0">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Radio className={`w-3.5 h-3.5 ${autoplaySimilar ? 'text-[#60A5FA]' : 'text-zinc-500'}`} />
+                  <span className="truncate">{m.autoplayLabel}</span>
+                </p>
+                <p className="text-[10px] text-zinc-400 truncate">{m.autoplaySub}</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoplaySimilar}
+                onClick={() => {
+                  triggerHaptic('light');
+                  setAutoplaySimilar(!autoplaySimilar);
+                }}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                  autoplaySimilar ? 'bg-[#30D158]' : 'bg-white/15'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4.5 w-4.5 transform rounded-full bg-white shadow transition-transform ${
+                    autoplaySimilar ? 'translate-x-[22px]' : 'translate-x-[3px]'
+                  }`}
+                />
+              </button>
+            </div>
+            {(seedGenre || isFetchingRelated) && autoplaySimilar && (
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#93C5FD]">
+                {isFetchingRelated ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                    <span>{m.autoplayLoadingNext}</span>
+                  </>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full bg-[#3B82F6]/18 border border-[#3B82F6]/35">
+                    {m.autoplayBadge} · {seedGenre}
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="flex-1 overflow-y-auto space-y-1.5 no-scrollbar">
             {queue.length === 0 ? (
               <p className="text-xs text-zinc-500 py-8 text-center">{m.queueEmpty}</p>
@@ -2474,12 +2623,12 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   <div
                     key={`${t.id}-q-${idx}`}
                     className={`flex items-center gap-2.5 p-2 rounded-xl ${
-                      active ? 'bg-[#10B981]/16 border border-[#10B981]/40' : 'hover:bg-white/[0.05]'
+                      active ? 'bg-[#3B82F6]/16 border border-[#3B82F6]/40' : 'hover:bg-white/[0.05]'
                     }`}
                   >
                     <button
                       type="button"
-                      onClick={() => playTrack(t, queue)}
+                      onClick={() => playTrack(t, queue, { preserveSeed: true })}
                       className="flex items-center gap-2.5 min-w-0 flex-1 text-left cursor-pointer"
                     >
                       <img
@@ -2492,7 +2641,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                         className="w-10 h-10 rounded-lg object-cover shrink-0"
                       />
                       <div className="min-w-0">
-                        <p className={`text-xs font-bold truncate ${active ? 'text-[#34D399]' : 'text-white'}`}>
+                        <p className={`text-xs font-bold truncate ${active ? 'text-[#60A5FA]' : 'text-white'}`}>
                           {t.title}
                         </p>
                         <p className="text-[11px] text-zinc-400 truncate">{t.artist.name}</p>
@@ -2533,7 +2682,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               setDetail({ kind: 'user_playlist', playlistId: id });
               showToast(m.playlistCreated);
             }}
-            className="w-full max-w-sm rounded-3xl bg-[#090F18] border border-[#10B981]/25 p-6 space-y-4 shadow-2xl"
+            className="w-full max-w-sm rounded-3xl bg-[#0C0C0F] border border-[#3B82F6]/25 p-6 space-y-4 shadow-2xl"
           >
             <h3 className="font-display text-lg font-bold text-white">{m.createPlaylistTitle}</h3>
             <input
@@ -2542,7 +2691,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               value={newPlaylistName}
               onChange={(e) => setNewPlaylistName(e.target.value)}
               placeholder={m.createPlaylistPlaceholder}
-              className="w-full h-11 px-4 rounded-xl bg-white/[0.06] border border-white/15 focus:border-[#10B981] text-sm text-white outline-none"
+              className="w-full h-11 px-4 rounded-xl bg-white/[0.06] border border-white/15 focus:border-[#3B82F6] text-sm text-white outline-none"
             />
             <div className="flex justify-end gap-2">
               <button
@@ -2554,7 +2703,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               </button>
               <button
                 type="submit"
-                className="h-10 px-5 rounded-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] text-xs font-bold cursor-pointer"
+                className="h-10 px-5 rounded-full bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white text-xs font-bold cursor-pointer"
               >
                 {m.create}
               </button>
@@ -2571,7 +2720,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl bg-[#090F18] border border-[#10B981]/25 p-5 space-y-4 shadow-2xl"
+            className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl bg-[#0C0C0F] border border-[#3B82F6]/25 p-5 space-y-4 shadow-2xl"
           >
             <div className="flex items-center justify-between">
               <h3 className="font-display text-base font-bold text-white truncate pr-3">
@@ -2589,7 +2738,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             <button
               type="button"
               onClick={() => setShowCreatePlaylist(true)}
-              className="w-full h-11 px-4 rounded-2xl bg-[#10B981]/15 border border-[#10B981]/40 text-sm font-bold text-[#6EE7B7] flex items-center gap-2 cursor-pointer"
+              className="w-full h-11 px-4 rounded-2xl bg-[#3B82F6]/15 border border-[#3B82F6]/40 text-sm font-bold text-[#93C5FD] flex items-center gap-2 cursor-pointer"
             >
               <Plus className="w-4 h-4" /> {m.createNewPlaylistBtn}
             </button>
@@ -2617,7 +2766,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
 
       {/* Toast Feedback */}
       {toastMsg && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] text-xs font-bold shadow-[0_8px_24px_rgba(16,185,129,0.42)] pointer-events-none">
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white text-xs font-bold shadow-[0_8px_24px_rgba(59,130,246,0.42)] pointer-events-none">
           {toastMsg}
         </div>
       )}

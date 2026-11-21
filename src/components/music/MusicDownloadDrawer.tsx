@@ -72,11 +72,11 @@ export const MusicDownloadDrawer: React.FC = () => {
     >
       <aside
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md h-full bg-[#070C14]/98 border-l border-[#10B981]/25 p-5 flex flex-col gap-4 shadow-2xl"
+        className="w-full max-w-md h-full bg-[#0C0C0F]/98 border-l border-[#3B82F6]/25 p-5 flex flex-col gap-4 shadow-2xl"
       >
         <div className="flex items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
-            <Download className="w-5 h-5 text-[#34D399] shrink-0" />
+            <Download className="w-5 h-5 text-[#60A5FA] shrink-0" />
             <h3 className="font-display text-base font-bold text-white truncate">
               {m.downloadsTitle}
             </h3>
@@ -105,7 +105,7 @@ export const MusicDownloadDrawer: React.FC = () => {
                 }}
                 className={`h-8 rounded-xl text-xs font-bold cursor-pointer transition-all ${
                   exportBitrate === br
-                    ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E]'
+                    ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white'
                     : 'bg-white/[0.05] text-zinc-300 hover:bg-white/[0.1]'
                 }`}
               >
@@ -124,7 +124,7 @@ export const MusicDownloadDrawer: React.FC = () => {
               downloadJobs.map((job) => (
                 <div
                   key={job.id}
-                  className="p-3 rounded-2xl bg-[#0B121D] border border-white/[0.08] space-y-2"
+                  className="p-3 rounded-2xl bg-[#131318] border border-white/[0.08] space-y-2"
                 >
                   <div className="flex items-center gap-2.5">
                     <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0">
@@ -152,7 +152,7 @@ export const MusicDownloadDrawer: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => void startDownloadMp3Job(job.track, { bitrate: job.bitrate })}
-                        className="w-8 h-8 rounded-full hover:bg-white/10 text-[#22D3EE] flex items-center justify-center cursor-pointer"
+                        className="w-8 h-8 rounded-full hover:bg-white/10 text-[#60A5FA] flex items-center justify-center cursor-pointer"
                       >
                         <RefreshCw className="w-3.5 h-3.5" />
                       </button>
@@ -160,7 +160,7 @@ export const MusicDownloadDrawer: React.FC = () => {
                       <button
                         type="button"
                         onClick={() => removeDownloadJob(job.id)}
-                        className="w-8 h-8 rounded-full hover:bg-white/10 text-[#34D399] flex items-center justify-center cursor-pointer"
+                        className="w-8 h-8 rounded-full hover:bg-white/10 text-[#60A5FA] flex items-center justify-center cursor-pointer"
                       >
                         <CheckCircle2 className="w-4 h-4" />
                       </button>
@@ -171,7 +171,7 @@ export const MusicDownloadDrawer: React.FC = () => {
                     <div className="space-y-1">
                       <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
                         <div
-                          className="h-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] transition-[width] duration-150"
+                          className="h-full bg-gradient-to-r from-[#3B82F6] to-[#60A5FA] transition-[width] duration-150"
                           style={{ width: `${job.progressPct}%` }}
                         />
                       </div>
@@ -194,7 +194,7 @@ export const MusicDownloadDrawer: React.FC = () => {
           <section className="space-y-2.5 pt-2 border-t border-white/[0.08]">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-zinc-300 inline-flex items-center gap-1.5">
-                <HardDrive className="w-3.5 h-3.5 text-[#34D399]" />
+                <HardDrive className="w-3.5 h-3.5 text-[#60A5FA]" />
                 {m.offlineLibTitle} ({offlineTrackIds.length})
               </span>
               {offlineTrackIds.length > 0 && (
@@ -242,7 +242,7 @@ export const MusicDownloadDrawer: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => playTrack(tr, offlineResolvedTracks)}
-                      className="w-8 h-8 rounded-full text-[#34D399] hover:bg-white/10 flex items-center justify-center cursor-pointer"
+                      className="w-8 h-8 rounded-full text-[#60A5FA] hover:bg-white/10 flex items-center justify-center cursor-pointer"
                     >
                       <Play className="w-3.5 h-3.5 fill-current" />
                     </button>

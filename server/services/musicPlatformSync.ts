@@ -758,6 +758,80 @@ export async function importExternalMusicUrl(rawUrl: string): Promise<ImportedCo
     }
     const m = targetUrl.match(/spotify\.com\/(?:intl-[a-z]+\/)?(playlist|album|track)\/([a-zA-Z0-9]+)/i);
     if (!m) {
+      const userMatch = targetUrl.match(/spotify\.com\/(?:intl-[a-z]+\/)?user\/([a-zA-Z0-9._-]+)/i);
+      if (userMatch) {
+        const spUser = userMatch[1];
+        try {
+          const profRes = await fetch(`https://open.spotify.com/user/${encodeURIComponent(spUser)}`, {
+            headers: { 'User-Agent': CHROME_UA, Accept: 'text/html' },
+            signal: AbortSignal.timeout(6000),
+          });
+          const html = profRes.ok ? await profRes.text() : '';
+          const plIds = Array.from(
+            new Set(
+              Array.from(html.matchAll(/spotify(?:\.com)?[:/]playlist[:/]([a-zA-Z0-9]{15,32})/g)).map(
+                (x) => x[1]
+              )
+            )
+          ).slice(0, 4);
+
+          if (plIds.length > 0) {
+            const scraped = await Promise.all(plIds.map((pid) => fetchSpotifyEmbedEntity('playlist', pid)));
+            const allTracks: MusicTrack[] = [];
+            const seen = new Set<string>();
+            const artistCount = new Map<string, number>();
+
+            for (const ent of scraped) {
+              for (const entry of ent.entries.filter((e) => e?.title).slice(0, 35)) {
+                const tid = String(entry.uri || '').split(':').pop() || `${allTracks.length}`;
+                if (seen.has(tid)) continue;
+                seen.add(tid);
+                const artistName = String(entry.subtitle || ent.singleArtist || 'Spotify Artist').trim();
+                const primaryArtist = artistName.split(',')[0].trim();
+                if (primaryArtist) {
+                  artistCount.set(primaryArtist, (artistCount.get(primaryArtist) || 0) + 1);
+                }
+                allTracks.push({
+                  id: `sp-${tid}`,
+                  title: String(entry.title || 'Track').trim(),
+                  artist: {
+                    id: `sp-art-${encodeURIComponent(primaryArtist.toLowerCase())}`,
+                    name: artistName,
+                    picture: ent.cover,
+                  },
+                  album: {
+                    id: `sp-user-${spUser}`,
+                    title: ent.title || `Perfil ${spUser}`,
+                    cover: ent.cover,
+                    coverXl: ent.cover,
+                  },
+                  durationSec: Math.max(60, Math.round(Number(entry.duration || 195000) / 1000)),
+                  explicit: Boolean(entry.isExplicit),
+                  previewUrl: entry.audioPreview?.url ? String(entry.audioPreview.url) : undefined,
+                  source: 'spotify',
+                  spotifyId: tid,
+                });
+              }
+            }
+
+            if (allTracks.length > 0) {
+              return {
+                ok: true,
+                provider: 'spotify',
+                title: `Perfil Spotify · ${spUser}`,
+                cover: allTracks[0]?.album.cover || '',
+                tracks: allTracks.slice(0, 100),
+                topArtists: Array.from(artistCount.entries())
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 15)
+                  .map(([n]) => n),
+              };
+            }
+          }
+        } catch {
+          // fall through to public playlist message
+        }
+      }
       return {
         ok: false,
         provider: 'spotify',
@@ -765,7 +839,7 @@ export async function importExternalMusicUrl(rawUrl: string): Promise<ImportedCo
         cover: '',
         tracks: [],
         topArtists: [],
-        error: 'Usa un enlace público de playlist, álbum o canción de Spotify (open.spotify.com/playlist/...).',
+        error: 'Usa "Conectar con Spotify" o pega un enlace público de playlist/álbum/perfil (open.spotify.com/playlist/...).',
       };
     }
     const kind = m[1].toLowerCase() as 'playlist' | 'album' | 'track';
@@ -779,7 +853,7 @@ export async function importExternalMusicUrl(rawUrl: string): Promise<ImportedCo
         cover: entity.cover,
         tracks: [],
         topArtists: [],
-        error: 'No pudimos leer esa lista. Asegúrate de que la playlist sea Pública (no privada) o usa la pestaña Subir Archivo.',
+        error: 'No pudimos leer esa lista. Asegúrate de que la playlist sea Pública (no privada) o inicia sesión arriba.',
       };
     }
 
@@ -843,7 +917,7 @@ export async function importExternalMusicUrl(rawUrl: string): Promise<ImportedCo
     };
   }
 
-  // 2. YouTube Music / YouTube Playlist URL
+  // 2. YouTube Music / YouTube Playlist / Channel URL
   if (host.includes('youtube.com') || host === 'youtu.be') {
     const listId = parsedUrl.searchParams.get('list') || '';
     const vId =
@@ -859,7 +933,7 @@ export async function importExternalMusicUrl(rawUrl: string): Promise<ImportedCo
         tracks: [],
         topArtists: [],
         error:
-          'Tu lista "Me gusta" (LM/LL) es privada por cuenta de Google. Exporta tus Me Gusta desde Google Takeout (watch-history.json o likes.json) o crea una playlist No oculta y pega su enlace.',
+          'Tu lista "Me gusta" (LM/LL) requiere iniciar sesión arriba con "Conectar con Google / YouTube Music" para leerla automáticamente.',
       };
     }
 
@@ -918,7 +992,7 @@ export async function importExternalMusicUrl(rawUrl: string): Promise<ImportedCo
         cover: '',
         tracks: [],
         topArtists: [],
-        error: 'No pudimos leer la playlist de YouTube Music. Verifica que sea Pública o Oculta (Unlisted).',
+        error: 'No pudimos leer la playlist de YouTube Music. Inicia sesión arriba o verifica que sea Pública/Oculta.',
       };
     }
 
@@ -936,6 +1010,59 @@ export async function importExternalMusicUrl(rawUrl: string): Promise<ImportedCo
         };
       }
     }
+
+    // Channel / handle public playlists scraping (/channel/... or /@handle)
+    const chPath = parsedUrl.pathname.replace(/\/+$/, '');
+    if (/^\/(@[^/]+|channel\/UC[^/]+)/.test(chPath)) {
+      try {
+        const ytRes = await fetch(`https://www.youtube.com${chPath}/playlists`, {
+          headers: { 'User-Agent': CHROME_UA, Accept: 'text/html' },
+          signal: AbortSignal.timeout(6000),
+        });
+        const html = ytRes.ok ? await ytRes.text() : '';
+        const plIds = Array.from(
+          new Set(
+            Array.from(html.matchAll(/"playlistId":"(PL[a-zA-Z0-9_-]{12,})"/g)).map((x) => x[1])
+          )
+        ).slice(0, 3);
+        if (plIds.length > 0) {
+          const docs = await Promise.all(plIds.map((pid) => ytmBrowse(`VL${pid}`)));
+          const allTracks: MusicTrack[] = [];
+          const seen = new Set<string>();
+          const artistCount = new Map<string, number>();
+          for (const doc of docs) {
+            if (!doc) continue;
+            for (const item of collectRenderers(doc, 'musicResponsiveListItemRenderer')) {
+              const parsed = parseYtmTrackFromResponsive(item);
+              if (parsed && !seen.has(parsed.id)) {
+                seen.add(parsed.id);
+                allTracks.push(parsed);
+                const art = parsed.artist.name.split(',')[0].trim();
+                if (art && art !== 'YouTube Music') {
+                  artistCount.set(art, (artistCount.get(art) || 0) + 1);
+                }
+                if (allTracks.length >= 90) break;
+              }
+            }
+          }
+          if (allTracks.length > 0) {
+            return {
+              ok: true,
+              provider: 'youtube_music',
+              title: `Canal YouTube ${chPath.replace(/^\//, '')}`,
+              cover: allTracks[0]?.album.cover || '',
+              tracks: allTracks,
+              topArtists: Array.from(artistCount.entries())
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 15)
+                .map(([n]) => n),
+            };
+          }
+        }
+      } catch {
+        // ignore channel scrape fallback error
+      }
+    }
   }
 
   return {
@@ -945,7 +1072,7 @@ export async function importExternalMusicUrl(rawUrl: string): Promise<ImportedCo
     cover: '',
     tracks: [],
     topArtists: [],
-    error: 'Enlace no reconocido. Usa open.spotify.com/playlist/... o music.youtube.com/playlist?list=...',
+    error: 'Enlace no reconocido. Usa Conectar Cuenta arriba o pega open.spotify.com/playlist/... / music.youtube.com/playlist?list=...',
   };
 }
 

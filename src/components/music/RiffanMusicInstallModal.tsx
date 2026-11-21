@@ -113,7 +113,7 @@ export const RiffanMusicInstallModal: React.FC<RiffanMusicInstallModalProps> = (
         aria-modal="true"
         aria-label="Riffan Music"
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-md max-h-[92dvh] overflow-y-auto no-scrollbar rounded-t-3xl sm:rounded-3xl bg-[#070D15] border border-[#10B981]/30 p-5 sm:p-6 space-y-4 shadow-[0_28px_80px_rgba(0,0,0,0.85)]"
+        className="w-full sm:max-w-md max-h-[92dvh] overflow-y-auto no-scrollbar rounded-t-3xl sm:rounded-3xl bg-[#0C0C0F] border border-[#3B82F6]/30 p-5 sm:p-6 space-y-4 shadow-[0_28px_80px_rgba(0,0,0,0.85)]"
       >
         {/* Header */}
         <div className="flex items-start justify-between gap-3">
@@ -129,7 +129,7 @@ export const RiffanMusicInstallModal: React.FC<RiffanMusicInstallModalProps> = (
                     zh: '安装 Riffan Music',
                   })}
                 </h2>
-                <span className="px-2 py-0.5 rounded-md bg-[#10B981]/18 border border-[#10B981]/40 text-[10px] font-bold text-[#6EE7B7] shrink-0">
+                <span className="px-2 py-0.5 rounded-md bg-[#3B82F6]/18 border border-[#3B82F6]/40 text-[10px] font-bold text-[#93C5FD] shrink-0">
                   STANDALONE
                 </span>
               </div>
@@ -154,9 +154,9 @@ export const RiffanMusicInstallModal: React.FC<RiffanMusicInstallModalProps> = (
         </div>
 
         {pwa.isInstalled && (
-          <div className="rounded-2xl bg-[#10B981]/14 border border-[#10B981]/35 p-3.5 flex items-center gap-3">
-            <Check className="w-5 h-5 text-[#34D399] shrink-0" />
-            <p className="text-xs font-semibold text-[#A7F3D0] leading-snug">
+          <div className="rounded-2xl bg-[#3B82F6]/14 border border-[#3B82F6]/35 p-3.5 flex items-center gap-3">
+            <Check className="w-5 h-5 text-[#60A5FA] shrink-0" />
+            <p className="text-xs font-semibold text-[#BFDBFE] leading-snug">
               {pickLang(lang, {
                 es: 'Riffan Music ya está ejecutándose como aplicación instalada en tu dispositivo.',
                 ca: 'Riffan Music ja s’està executant com a aplicació instal·lada.',
@@ -169,14 +169,14 @@ export const RiffanMusicInstallModal: React.FC<RiffanMusicInstallModalProps> = (
         <div className="space-y-2.5">
           {/* 1. Chrome / Android / Desktop Standalone PWA */}
           {!pwa.isInstalled && (
-            <div className="rounded-2xl border border-[#10B981]/45 bg-gradient-to-r from-[#10B981]/16 via-[#0A131E] to-[#22D3EE]/14 overflow-hidden">
+            <div className="rounded-2xl border border-[#3B82F6]/45 bg-gradient-to-r from-[#3B82F6]/16 via-[#131318] to-[#60A5FA]/14 overflow-hidden">
               <button
                 type="button"
                 onClick={handleChromeInstall}
                 className="w-full p-3.5 flex items-center justify-between gap-3 text-left cursor-pointer hover:bg-white/[0.03] transition-colors"
               >
                 <span className="flex items-center gap-3 min-w-0">
-                  <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#10B981] to-[#22D3EE] text-[#03130E] flex items-center justify-center shrink-0 shadow-[0_6px_18px_rgba(16,185,129,0.35)]">
+                  <span className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#2563EB] to-[#3B82F6] text-white flex items-center justify-center shrink-0 shadow-[0_6px_18px_rgba(59,130,246,0.35)]">
                     <Chrome className="w-5 h-5" />
                   </span>
                   <span className="min-w-0">
@@ -208,14 +208,14 @@ export const RiffanMusicInstallModal: React.FC<RiffanMusicInstallModalProps> = (
                     </span>
                   </span>
                 </span>
-                <span className="px-2.5 py-1 rounded-lg bg-[#10B981] text-[#03130E] text-[10px] font-black shrink-0">
+                <span className="px-2.5 py-1 rounded-lg bg-[#3B82F6] text-white text-[10px] font-black shrink-0">
                   {pwa.bootedAsMusic && pwa.isInstallable ? '1-TAP' : 'PWA'}
                 </span>
               </button>
 
               {showChromeSteps && (
                 <div className="px-4 pb-3.5 pt-2 border-t border-white/10 text-xs text-zinc-300 space-y-1.5">
-                  <p className="font-semibold text-[#6EE7B7]">
+                  <p className="font-semibold text-[#93C5FD]">
                     {pickLang(lang, {
                       es: 'Pasos manuales en Chrome / Edge:',
                       ca: 'Passos manuals a Chrome / Edge:',
@@ -259,12 +259,12 @@ export const RiffanMusicInstallModal: React.FC<RiffanMusicInstallModalProps> = (
             onClick={handleDownloadMusicApk}
             className={`w-full p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-left cursor-pointer transition-all ${
               pwa.isAndroid
-                ? 'bg-[#0D1724] border-[#22D3EE]/55 hover:bg-[#111E2E]'
-                : 'bg-[#0C121C] border-white/10 hover:bg-[#111926]'
+                ? 'bg-[#131318] border-[#60A5FA]/55 hover:bg-[#1B1B22]'
+                : 'bg-[#131318] border-white/10 hover:bg-[#1B1B22]'
             }`}
           >
             <span className="flex items-center gap-3 min-w-0">
-              <span className="w-10 h-10 rounded-xl bg-[#22D3EE]/15 border border-[#22D3EE]/35 text-[#22D3EE] flex items-center justify-center shrink-0">
+              <span className="w-10 h-10 rounded-xl bg-[#60A5FA]/15 border border-[#60A5FA]/35 text-[#60A5FA] flex items-center justify-center shrink-0">
                 {apkDownloading ? (
                   <RiffanSpinner size={18} />
                 ) : apkDone ? (
@@ -286,7 +286,7 @@ export const RiffanMusicInstallModal: React.FC<RiffanMusicInstallModalProps> = (
                 </span>
               </span>
             </span>
-            <span className="px-2.5 py-1 rounded-lg bg-[#22D3EE]/20 border border-[#22D3EE]/40 text-[#67E8F9] text-[10px] font-bold shrink-0 inline-flex items-center gap-1">
+            <span className="px-2.5 py-1 rounded-lg bg-[#60A5FA]/20 border border-[#60A5FA]/40 text-[#93C5FD] text-[10px] font-bold shrink-0 inline-flex items-center gap-1">
               <Download className="w-3 h-3" /> APK
             </span>
           </button>
@@ -299,8 +299,8 @@ export const RiffanMusicInstallModal: React.FC<RiffanMusicInstallModalProps> = (
           <div
             className={`rounded-2xl border overflow-hidden transition-colors ${
               pwa.isIOS
-                ? 'bg-[#0D1724] border-[#10B981]/50'
-                : 'bg-[#0C121C] border-white/10'
+                ? 'bg-[#131318] border-[#3B82F6]/50'
+                : 'bg-[#131318] border-white/10'
             }`}
           >
             <button
@@ -310,7 +310,7 @@ export const RiffanMusicInstallModal: React.FC<RiffanMusicInstallModalProps> = (
             >
               <span className="flex items-center gap-3 min-w-0">
                 <span className="w-10 h-10 rounded-xl bg-white/[0.07] border border-white/12 text-white flex items-center justify-center shrink-0">
-                  <MonitorSmartphone className="w-5 h-5 text-[#34D399]" />
+                  <MonitorSmartphone className="w-5 h-5 text-[#60A5FA]" />
                 </span>
                 <span className="min-w-0">
                   <span className="block text-sm font-bold text-white">
@@ -332,7 +332,7 @@ export const RiffanMusicInstallModal: React.FC<RiffanMusicInstallModalProps> = (
 
             {showIosSteps && (
               <div className="px-4 pb-3.5 pt-2 border-t border-white/10 text-xs text-zinc-300 space-y-1.5">
-                <p className="font-semibold text-[#6EE7B7] flex items-center gap-1.5">
+                <p className="font-semibold text-[#93C5FD] flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5" />
                   {pickLang(lang, {
                     es: 'Instrucciones en Safari (iPhone / iPad):',
@@ -349,7 +349,7 @@ export const RiffanMusicInstallModal: React.FC<RiffanMusicInstallModalProps> = (
                       en: 'Open in Safari at',
                     })}
                   </span>
-                  <code className="px-1.5 py-0.5 rounded bg-black/50 text-[#6EE7B7] font-mono text-[11px]">
+                  <code className="px-1.5 py-0.5 rounded bg-black/50 text-[#93C5FD] font-mono text-[11px]">
                     /musica
                   </code>
                 </p>

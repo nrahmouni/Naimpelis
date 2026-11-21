@@ -94,20 +94,20 @@ export const MusicLanguageDropdown: React.FC = () => {
         aria-label={active.label}
         className={`h-7 sm:h-7 px-2 rounded-full inline-flex items-center gap-1.5 text-[11px] font-bold tracking-wide cursor-pointer transition-all whitespace-nowrap ${
           open
-            ? 'bg-[#10B981]/24 text-[#6EE7B7]'
-            : 'hover:bg-[#10B981]/16 text-slate-100 hover:text-white'
+            ? 'bg-[#3B82F6]/24 text-[#93C5FD]'
+            : 'hover:bg-[#3B82F6]/16 text-slate-100 hover:text-white'
         }`}
       >
         <MusicLangFlag lang={active.id} />
         <span>{active.code}</span>
-        <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform ${open ? 'rotate-180 text-[#6EE7B7]' : ''}`} />
+        <ChevronDown className={`w-3 h-3 text-zinc-400 transition-transform ${open ? 'rotate-180 text-[#93C5FD]' : ''}`} />
       </button>
 
       {open && (
         <div
           role="listbox"
           aria-label="Language"
-          className="absolute right-0 mt-2 w-44 rounded-2xl bg-[#090F18]/98 backdrop-blur-2xl border border-[#10B981]/25 shadow-[0_18px_48px_rgba(0,0,0,0.85)] p-1.5 space-y-0.5 z-50 animate-fade-in"
+          className="absolute right-0 mt-2 w-44 rounded-2xl bg-[#0C0C0F]/98 backdrop-blur-2xl border border-[#3B82F6]/25 shadow-[0_18px_48px_rgba(0,0,0,0.85)] p-1.5 space-y-0.5 z-50 animate-fade-in"
         >
           {MUSIC_LANGUAGES.map((item) => {
             const selected = item.id === musicLang;
@@ -124,7 +124,7 @@ export const MusicLanguageDropdown: React.FC = () => {
                 }}
                 className={`w-full min-h-10 px-2.5 rounded-xl flex items-center justify-between gap-2 text-xs font-semibold cursor-pointer transition-colors ${
                   selected
-                    ? 'bg-[#10B981]/20 text-[#6EE7B7]'
+                    ? 'bg-[#3B82F6]/20 text-[#93C5FD]'
                     : 'text-zinc-200 hover:bg-white/[0.07] hover:text-white'
                 }`}
               >
@@ -132,7 +132,7 @@ export const MusicLanguageDropdown: React.FC = () => {
                   <MusicLangFlag lang={item.id} />
                   <span className="truncate">{item.label}</span>
                 </span>
-                {selected && <Check className="w-3.5 h-3.5 text-[#34D399] shrink-0" />}
+                {selected && <Check className="w-3.5 h-3.5 text-[#60A5FA] shrink-0" />}
               </button>
             );
           })}

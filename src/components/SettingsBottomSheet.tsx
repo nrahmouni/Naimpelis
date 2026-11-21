@@ -14,6 +14,8 @@ import {
   ChevronDown,
   QrCode,
   KeyRound,
+  Disc3,
+  Radio,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { AppLanguage } from '../types';
@@ -24,6 +26,7 @@ import type { EffectiveViewMode } from './MobileViewportGuard';
 import { BottomSheet, SecondaryButton, StandardInput } from './ui/DesignSystem';
 import { PWAInstallOptionsSheet } from './PWAInstallPrompt';
 import { useAppStore } from '../store/useAppStore';
+import { useMusicStore } from '../store/useMusicStore';
 
 interface SettingsBottomSheetProps {
   isOpen: boolean;
@@ -72,6 +75,12 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
   const [tvAdvancedOpen, setTvAdvancedOpen] = useState(false);
   const [tvCode, setTvCode] = useState('');
   const authNotice = useAppStore((s) => s.authNotice);
+  const autoplaySimilar = useMusicStore((s) => s.autoplaySimilar);
+  const setAutoplaySimilar = useMusicStore((s) => s.setAutoplaySimilar);
+  const setShowImportModal = useMusicStore((s) => s.setShowImportModal);
+  const tasteProfile = useMusicStore((s) => s.tasteProfile);
+  const importedTasteCount =
+    tasteProfile.favoriteArtists.length + tasteProfile.favoriteGenres.length;
 
   const tvUrl =
     typeof window !== 'undefined' && roomId
@@ -302,6 +311,96 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                 ))}
               </div>
             </div>
+          </section>
+
+          {/* Riffan Music · Gustos y Radio Autoplay */}
+          <section className="space-y-2">
+            <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1">
+              {pickLang(lang, {
+                es: 'Riffan Music · Gustos y Radio',
+                ca: 'Riffan Music · Gustos i Ràdio',
+                en: 'Riffan Music · Taste & Radio',
+              })}
+            </h4>
+
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                onClose();
+                setShowImportModal(true);
+              }}
+              className={`${rowClass} cursor-pointer active:scale-95`}
+            >
+              <span className="flex items-center gap-3 min-w-0">
+                <Disc3 className="w-5 h-5 text-[#60A5FA] shrink-0" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold text-white">
+                    {pickLang(lang, {
+                      es: 'Importar Spotify / YouTube Music',
+                      ca: 'Importar Spotify / YouTube Music',
+                      en: 'Import Spotify / YouTube Music',
+                    })}
+                  </span>
+                  <span className="block text-xs text-zinc-400">
+                    {importedTasteCount > 0
+                      ? pickLang(lang, {
+                          es: `${importedTasteCount} artistas y géneros guardados · Actualizar gustos`,
+                          ca: `${importedTasteCount} artistes i gèneres desats · Actualitzar`,
+                          en: `${importedTasteCount} saved artists & genres · Update taste`,
+                        })
+                      : pickLang(lang, {
+                          es: 'Trae tus playlists, canciones y gustos musicales',
+                          ca: 'Porta les teves llistes, cançons i gustos musicals',
+                          en: 'Bring your playlists, liked songs & music taste',
+                        })}
+                  </span>
+                </span>
+              </span>
+              <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
+            </button>
+
+            <button
+              type="button"
+              role="switch"
+              aria-checked={autoplaySimilar}
+              onClick={() => {
+                triggerHaptic('light');
+                setAutoplaySimilar(!autoplaySimilar);
+              }}
+              className={`${rowClass} cursor-pointer active:scale-[0.99]`}
+            >
+              <span className="flex items-center gap-3 min-w-0">
+                <Radio className={`w-5 h-5 shrink-0 ${autoplaySimilar ? 'text-[#3B82F6]' : 'text-zinc-400'}`} />
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold text-white">
+                    {pickLang(lang, {
+                      es: 'Autoplay por género similar',
+                      ca: 'Autoplay per gènere similar',
+                      en: 'Similar genre autoplay',
+                    })}
+                  </span>
+                  <span className="block text-xs text-zinc-400">
+                    {pickLang(lang, {
+                      es: 'Al acabar la canción sigue con temas del mismo estilo',
+                      ca: 'En acabar la cançó segueix amb temes del mateix estil',
+                      en: 'Automatically plays related tracks in the same style',
+                    })}
+                  </span>
+                </span>
+              </span>
+              <span
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors ${
+                  autoplaySimilar ? 'bg-[#30D158]' : 'bg-white/15'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4.5 w-4.5 transform rounded-full bg-white shadow transition-transform ${
+                    autoplaySimilar ? 'translate-x-[22px]' : 'translate-x-[3px]'
+                  }`}
+                />
+              </span>
+            </button>
           </section>
 
           {/* TV */}

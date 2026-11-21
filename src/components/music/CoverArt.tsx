@@ -9,11 +9,11 @@ interface CoverArtProps {
 }
 
 const PALETTES: Array<[string, string]> = [
-  ['#064E3B', '#0E7490'],
-  ['#065F46', '#155E75'],
-  ['#0F766E', '#0369A1'],
-  ['#047857', '#0891B2'],
-  ['#115E59', '#1D4ED8'],
+  ['#0C0C0F', '#2563EB'],
+  ['#131318', '#3B82F6'],
+  ['#1E1B4B', '#2563EB'],
+  ['#111827', '#3B82F6'],
+  ['#131318', '#1D4ED8'],
 ];
 
 function hashSeed(input: string): number {

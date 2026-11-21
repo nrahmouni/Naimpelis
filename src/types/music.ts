@@ -125,6 +125,34 @@ export type SpatialTrajectory = 'orbit' | 'pendulum' | 'figure8' | 'elevated';
 export type MusicRepeatMode = 'off' | 'all' | 'one';
 export type MusicViewMode = 'audio' | 'video';
 export type ExportBitrate = '128k' | '192k' | '320k';
+export type VocalStemMode = 'both' | 'vocals' | 'instrumental';
+
+export type AudioEffectId =
+  | 'none'
+  | 'slowed_reverb'
+  | 'nightcore'
+  | 'bass_boost'
+  | 'lofi_vinyl'
+  | 'underwater'
+  | 'stadium_echo'
+  | 'vaporwave'
+  | 'radio_vintage'
+  | 'club_pingpong'
+  | 'custom';
+
+export interface AudioFxParams {
+  playbackRate: number;
+  preservePitch: boolean;
+  reverbMix: number;
+  echoMix: number;
+  echoTimeMs: number;
+  lowpassHz: number;
+  highpassHz: number;
+  saturation: number;
+  chorusMix: number;
+  bassBoostDb: number;
+  trebleBoostDb: number;
+}
 
 export type EqBands5 = [number, number, number, number, number];
 export type EqBands10 = [

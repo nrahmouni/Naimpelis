@@ -10,10 +10,11 @@ export interface RiffanMusicLogoProps {
 }
 
 /**
- * Riffan Music (RM) — Inspired directly by RiffanTV's 3D Folded Ribbon "R" architecture:
- * - Same sculpted 3-plane folded ribbon geometry and tight viewBox proportions
- * - Refined Hi-Res Studio palette: Deep Teal-Emerald pillar, Studio Emerald -> Electric Cyan kick leg,
- *   and Platinum-Ice Silk upper bow — clean, architectural, and zero visual clutter.
+ * Riffan Music (RM) v4.0 — "La Cinta Acústica 3D"
+ * - Obsidian tile (#18181F -> #0B0B0E -> #030304) with subtle specular rim
+ * - Cobalt Stem (#3B82F6 -> #2563EB -> #1D4ED8)
+ * - Liquid Chrome Ribbon (#FFFFFF -> #E2E8F0 -> #94A3B8)
+ * - 4 Resonant Equalizer Bars (#60A5FA -> #3B82F6 -> #FF2D55)
  */
 export const RiffanMusicLogo: React.FC<RiffanMusicLogoProps> = ({
   size = 34,
@@ -28,27 +29,20 @@ export const RiffanMusicLogo: React.FC<RiffanMusicLogoProps> = ({
   const resolvedFrame: 'glass' | 'none' | 'obsidian' =
     frameStyle ?? (withFrame && !isMonochrome ? 'glass' : 'none');
 
-  const stemId = `rm-stem-${uid}`;
-  const legId = `rm-leg-${uid}`;
-  const bowId = `rm-bow-${uid}`;
-  const shadowId = `rm-sh-${uid}`;
-  const dropId = `rm-dp-${uid}`;
+  const tileId = `rmTile-${uid}`;
+  const stemId = `rmStem-${uid}`;
+  const ribbonId = `rmRibbon-${uid}`;
+  const eqId = `rmEq-${uid}`;
+  const shadowId = `rmShadow-${uid}`;
 
-  const svgViewBox = resolvedFrame === 'obsidian' ? '0 0 512 512' : '96 80 320 352';
+  const svgViewBox = resolvedFrame === 'none' ? '100 80 320 336' : '0 0 512 512';
 
   const frameClass =
     resolvedFrame === 'glass'
-      ? 'rounded-[28%] bg-gradient-to-br from-[#0F1B24]/95 via-[#091017]/95 to-[#05080D] backdrop-blur-xl border border-[#34D399]/25 shadow-[0_6px_22px_rgba(0,0,0,0.52),0_0_22px_rgba(16,185,129,0.18),inset_0_1px_0_rgba(255,255,255,0.18)] group-hover:border-[#34D399]/50 transition-all'
+      ? 'rounded-[26%] bg-gradient-to-br from-[#18181F] via-[#0B0B0E] to-[#030304] backdrop-blur-xl border border-white/[0.16] shadow-[0_8px_24px_rgba(0,0,0,0.65),0_0_24px_rgba(59,130,246,0.22),inset_0_1px_0_rgba(255,255,255,0.16)] group-hover:border-[#3B82F6]/50 transition-all'
       : resolvedFrame === 'obsidian'
-      ? 'rounded-[26%] bg-gradient-to-br from-[#101C26] via-[#080E14] to-[#030508] border border-white/15 shadow-[0_12px_36px_rgba(0,0,0,0.75)]'
+      ? 'rounded-[26%] bg-gradient-to-br from-[#18181F] via-[#0B0B0E] to-[#030304] border border-white/[0.16] shadow-[0_14px_38px_rgba(0,0,0,0.8)]'
       : 'bg-transparent';
-
-  const svgPaddingClass =
-    resolvedFrame === 'glass'
-      ? 'p-[12%]'
-      : resolvedFrame === 'obsidian'
-      ? 'p-[6%]'
-      : '';
 
   const markEl = (
     <div
@@ -61,7 +55,7 @@ export const RiffanMusicLogo: React.FC<RiffanMusicLogoProps> = ({
       {resolvedFrame !== 'none' && !isMonochrome && (
         <span
           aria-hidden="true"
-          className="pointer-events-none absolute -top-1/2 -left-1/4 w-[150%] h-[85%] bg-gradient-to-b from-[#10B981]/22 via-[#22D3EE]/10 to-transparent blur-md"
+          className="pointer-events-none absolute -top-1/2 -left-1/4 w-[150%] h-[85%] bg-gradient-to-b from-[#3B82F6]/22 via-[#60A5FA]/10 to-transparent blur-md"
         />
       )}
 
@@ -71,64 +65,105 @@ export const RiffanMusicLogo: React.FC<RiffanMusicLogoProps> = ({
         xmlns="http://www.w3.org/2000/svg"
         role="img"
         aria-label="Riffan Music"
-        className={`relative z-10 w-full h-full pointer-events-none select-none overflow-visible ${svgPaddingClass} ${
+        className={`relative z-10 w-full h-full pointer-events-none select-none overflow-visible ${
           resolvedFrame === 'none'
-            ? 'drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)]'
-            : 'drop-shadow-[0_3px_8px_rgba(0,0,0,0.55)]'
+            ? 'drop-shadow-[0_2px_10px_rgba(0,0,0,0.55)]'
+            : 'drop-shadow-[0_4px_10px_rgba(0,0,0,0.65)]'
         }`}
       >
         {!isMonochrome && (
           <defs>
-            <linearGradient id={stemId} x1="165" y1="96" x2="145" y2="416" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#34D399" />
-              <stop offset="48%" stopColor="#10B981" />
-              <stop offset="100%" stopColor="#065F46" />
+            <linearGradient id={tileId} x1="20" y1="20" x2="492" y2="492" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#18181F" />
+              <stop offset="50%" stopColor="#0B0B0E" />
+              <stop offset="100%" stopColor="#030304" />
             </linearGradient>
-            <linearGradient id={legId} x1="215" y1="248" x2="386" y2="416" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#059669" />
-              <stop offset="48%" stopColor="#10B981" />
-              <stop offset="100%" stopColor="#22D3EE" />
+            <linearGradient id={stemId} x1="155" y1="148" x2="155" y2="396" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#3B82F6" />
+              <stop offset="52%" stopColor="#2563EB" />
+              <stop offset="100%" stopColor="#1D4ED8" />
             </linearGradient>
-            <linearGradient id={bowId} x1="150" y1="96" x2="368" y2="278" gradientUnits="userSpaceOnUse">
+            <linearGradient id={ribbonId} x1="156" y1="96" x2="395" y2="264" gradientUnits="userSpaceOnUse">
               <stop offset="0%" stopColor="#FFFFFF" />
-              <stop offset="58%" stopColor="#ECFEFF" />
-              <stop offset="100%" stopColor="#A7F3D0" />
+              <stop offset="58%" stopColor="#E2E8F0" />
+              <stop offset="100%" stopColor="#94A3B8" />
             </linearGradient>
-            <linearGradient id={shadowId} x1="230" y1="246" x2="278" y2="318" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#03070B" stopOpacity="0.6" />
-              <stop offset="100%" stopColor="#03070B" stopOpacity="0" />
+            <linearGradient id={eqId} x1="230" y1="274" x2="396" y2="396" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stopColor="#60A5FA" />
+              <stop offset="52%" stopColor="#3B82F6" />
+              <stop offset="100%" stopColor="#FF2D55" />
             </linearGradient>
-            <filter id={dropId} x="-15%" y="-15%" width="135%" height="135%">
-              <feDropShadow dx="0" dy="8" stdDeviation="9" floodColor="#02060A" floodOpacity="0.66" />
+            <filter id={shadowId} x="-15%" y="-15%" width="135%" height="135%">
+              <feDropShadow dx="0" dy="8" stdDeviation="9" floodColor="#000000" floodOpacity="0.65" />
             </filter>
           </defs>
         )}
 
-        <g id={`rm-ribbon-r-${uid}`}>
-          {/* Fold 1: Left Slanted Pillar (Deep Emerald Acoustic Stem) */}
+        {resolvedFrame !== 'none' && !isMonochrome && (
+          <rect
+            x="20"
+            y="20"
+            width="472"
+            height="472"
+            rx="116"
+            fill={`url(#${tileId})`}
+            stroke="rgba(255,255,255,0.16)"
+            strokeWidth="3"
+          />
+        )}
+
+        <g id={`rm-acoustic-ribbon-${uid}`}>
+          {/* Cobalt Stem */}
           <path
-            d="M 156 96 H 214 L 184 416 H 126 C 117 416 112 409 113 399 L 143 111 C 144 102 149 96 156 96 Z"
             fill={isMonochrome ? 'currentColor' : `url(#${stemId})`}
-            opacity={isMonochrome ? 0.72 : 1}
+            opacity={isMonochrome ? 0.78 : 1}
+            d="M155.2 148L217.2 148L188.3 389Q187.4 396 180.4 396L132.4 396Q125.4 396 126.3 389Z"
           />
 
-          {/* Fold 2: Dynamic Diagonal Kick Leg (Emerald -> Electric Cyan) */}
+          {/* Liquid Chrome Acoustic Ribbon */}
           <path
-            d="M 204 260 L 278 248 L 386 401 C 392 409 387 416 376 416 H 320 C 314 416 310 413 306 407 L 204 260 Z"
-            fill={isMonochrome ? 'currentColor' : `url(#${legId})`}
-            opacity={isMonochrome ? 0.86 : 1}
+            filter={isMonochrome ? undefined : `url(#${shadowId})`}
+            fill={isMonochrome ? 'currentColor' : `url(#${ribbonId})`}
+            d="M167.9 96L326 96C372.5 96 405.6 133.6 400 180C394.4 226.4 352.3 264 305.9 264L207.3 264Q203.3 264 203.8 260L209.5 212L312.2 212C329.8 212 345.9 197.7 348 180C350.1 162.3 337.5 148 319.8 148L156.7 148Q151.8 148 152.4 143.1L156.8 105.9Q158 96 167.9 96Z"
           />
 
-          {/* Cast Fold Shadow under the Upper Bow */}
-          {!isMonochrome && (
-            <path d="M 204 260 L 278 248 L 315 300 L 236 306 Z" fill={`url(#${shadowId})`} />
-          )}
-
-          {/* Fold 3: Upper Bow Ribbon (Platinum-Mint Silk) */}
-          <path
-            filter={isMonochrome ? undefined : `url(#${dropId})`}
-            d="M 156 96 H 290 C 358 96 396 132 390 189 C 384 246 344 278 272 278 H 197 L 203 220 H 268 C 306 220 326 206 328 186 C 330 165 312 152 276 152 H 138.8 L 143 111 C 144 102 149 96 156 96 Z"
-            fill={isMonochrome ? 'currentColor' : `url(#${bowId})`}
+          {/* 4 Resonant Equalizer Bars */}
+          <rect
+            x="230"
+            y="274"
+            width="34"
+            height="122"
+            rx="14"
+            fill={isMonochrome ? 'currentColor' : `url(#${eqId})`}
+            opacity={isMonochrome ? 0.9 : 1}
+            className={animated ? 'origin-bottom animate-pulse' : ''}
+          />
+          <rect
+            x="274"
+            y="302"
+            width="34"
+            height="94"
+            rx="14"
+            fill={isMonochrome ? 'currentColor' : `url(#${eqId})`}
+            opacity={isMonochrome ? 0.85 : 1}
+          />
+          <rect
+            x="318"
+            y="330"
+            width="34"
+            height="66"
+            rx="14"
+            fill={isMonochrome ? 'currentColor' : `url(#${eqId})`}
+            opacity={isMonochrome ? 0.8 : 1}
+          />
+          <rect
+            x="362"
+            y="358"
+            width="34"
+            height="38"
+            rx="14"
+            fill={isMonochrome ? 'currentColor' : `url(#${eqId})`}
+            opacity={isMonochrome ? 0.75 : 1}
           />
         </g>
       </svg>
@@ -145,7 +180,7 @@ export const RiffanMusicLogo: React.FC<RiffanMusicLogoProps> = ({
       style={{ fontSize: fontSizeRem }}
     >
       <span className="text-[#F4F5F8]">Riffan</span>
-      <span className="ml-[3px] font-black bg-gradient-to-r from-[#6EE7B7] via-[#10B981] to-[#22D3EE] bg-clip-text text-transparent">
+      <span className="ml-[3px] font-black bg-gradient-to-r from-[#93C5FD] via-[#60A5FA] to-[#3B82F6] bg-clip-text text-transparent">
         Music
       </span>
     </span>

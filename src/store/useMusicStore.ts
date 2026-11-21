@@ -84,6 +84,7 @@ interface PersistedLibrary {
   customPresets: CustomStudioPreset[];
   listeningStats: ListeningStats;
   tasteProfile: TasteProfile;
+  autoplaySimilar: boolean;
   volume: number;
   musicLang: MusicLang;
   musicLangV2?: boolean;
@@ -159,6 +160,7 @@ function loadLibrary(): PersistedLibrary {
     customPresets: [],
     listeningStats: DEFAULT_STATS,
     tasteProfile: DEFAULT_TASTE,
+    autoplaySimilar: true,
     volume: 0.85,
     musicLang: 'en',
     musicLangV2: true,
@@ -232,6 +234,7 @@ function loadLibrary(): PersistedLibrary {
       spatial8dEnabled: Boolean(parsed.spatial8dEnabled),
       spatial8dMode: isValidSpatialMode(parsed.spatial8dMode) ? parsed.spatial8dMode : 'orbit',
       spatialTrajectory: isValidTrajectory(parsed.spatialTrajectory) ? parsed.spatialTrajectory : 'orbit',
+      autoplaySimilar: typeof parsed.autoplaySimilar === 'boolean' ? parsed.autoplaySimilar : true,
       volume: typeof parsed.volume === 'number' ? clamp(parsed.volume, 0, 1) : 0.85,
       musicLang: parsed.musicLangV2 && isValidMusicLang(parsed.musicLang) ? parsed.musicLang : 'en',
       musicLangV2: true,
@@ -285,6 +288,7 @@ function extractPersisted(state: PersistedLibrary): PersistedLibrary {
     customPresets: state.customPresets,
     listeningStats: state.listeningStats,
     tasteProfile: state.tasteProfile,
+    autoplaySimilar: state.autoplaySimilar,
     spatial8dEnabled: state.spatial8dEnabled,
     spatial8dMode: state.spatial8dMode,
     spatialTrajectory: state.spatialTrajectory,
@@ -339,13 +343,20 @@ export interface MusicStoreState extends PersistedLibrary {
   downloadJobs: DownloadJob[];
   offlineTrackIds: string[];
   radioReconnectAttempt: number;
+  seedTrack: MusicTrack | null;
+  seedGenre: string | null;
+  isFetchingRelated: boolean;
+  musicToast: string | null;
 
-  playTrack: (track: MusicTrack, contextTracks?: MusicTrack[]) => void;
+  playTrack: (track: MusicTrack, contextTracks?: MusicTrack[], opts?: { preserveSeed?: boolean }) => void;
   playRadio: (station: MusicRadioStation) => void;
   addToQueue: (track: MusicTrack) => void;
   removeFromQueue: (index: number) => void;
   playNext: () => void;
   playPrev: () => void;
+  setAutoplaySimilar: (enabled: boolean) => void;
+  fetchAndEnqueueRelatedTracks: (seed: MusicTrack, opts?: { autoAdvance?: boolean }) => Promise<void>;
+  showMusicToast: (msg: string) => void;
   setResolvedPlayback: (resolved: ResolvedTrackPlayback | null) => void;
   switchPlaybackSource: (candidate: PlaybackSourceCandidate) => void;
   setResolvingTrack: (loading: boolean) => void;
@@ -439,6 +450,8 @@ export interface MusicStoreState extends PersistedLibrary {
 }
 
 const initial = loadLibrary();
+let relatedInFlightKey: string | null = null;
+let musicToastTimer: number | null = null;
 
 function applyProfileToTrackChange(state: MusicStoreState, track: MusicTrack): Partial<MusicStoreState> {
   if (!state.perTrackProfilesEnabled) {
@@ -509,9 +522,113 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
   downloadJobs: [],
   offlineTrackIds: [],
   radioReconnectAttempt: 0,
+  seedTrack: null,
+  seedGenre: null,
+  isFetchingRelated: false,
+  musicToast: null,
 
-  playTrack: (track, contextTracks) => {
+  showMusicToast: (msg) => {
+    set({ musicToast: msg });
+    if (typeof window !== 'undefined') {
+      if (musicToastTimer) window.clearTimeout(musicToastTimer);
+      musicToastTimer = window.setTimeout(() => {
+        set({ musicToast: null });
+      }, 3600);
+    }
+  },
+
+  setAutoplaySimilar: (enabled) => {
+    set((prev) => {
+      const next = { ...prev, autoplaySimilar: enabled };
+      syncPersisted(next);
+      return next;
+    });
+    if (enabled) {
+      const st = get();
+      const seed = st.seedTrack || st.currentTrack;
+      if (seed && !st.activeRadio && st.queue.length - st.queueIndex <= 2) {
+        void st.fetchAndEnqueueRelatedTracks(seed);
+      }
+    }
+  },
+
+  fetchAndEnqueueRelatedTracks: async (seed, opts) => {
+    if (!seed) return;
+    const reqKey = `${seed.id}:${Boolean(opts?.autoAdvance)}`;
+    if (relatedInFlightKey === reqKey) return;
+    relatedInFlightKey = reqKey;
+    set({ isFetchingRelated: true });
+    try {
+      const st = get();
+      const excludeIds = st.queue
+        .slice(-40)
+        .map((t) => t.id)
+        .filter(Boolean)
+        .join(',');
+      const qs = new URLSearchParams({
+        trackId: seed.id,
+        title: seed.title,
+        artist: seed.artist.name,
+        album: seed.album?.title || '',
+        limit: '18',
+      });
+      if (excludeIds) qs.set('exclude', excludeIds);
+
+      const res = await fetch(`/api/music/related?${qs.toString()}`);
+      if (!res.ok) {
+        if (opts?.autoAdvance) set({ isPlaying: false, isResolvingTrack: false });
+        return;
+      }
+      const data = await res.json();
+      const incoming: MusicTrack[] = Array.isArray(data?.tracks) ? data.tracks : [];
+      const genreName = typeof data?.genreName === 'string' && data.genreName ? data.genreName : null;
+
+      let firstNewTrack: MusicTrack | null = null;
+      let updatedQueue: MusicTrack[] = [];
+
+      set((prev) => {
+        const existingIds = new Set(prev.queue.map((t) => t.id));
+        const existingTitles = new Set(
+          prev.queue.map((t) => `${t.artist.name.toLowerCase()}|${t.title.toLowerCase()}`)
+        );
+        const added: MusicTrack[] = [];
+        for (const t of incoming) {
+          const titleKey = `${t.artist.name.toLowerCase()}|${t.title.toLowerCase()}`;
+          if (!existingIds.has(t.id) && !existingTitles.has(titleKey)) {
+            existingIds.add(t.id);
+            existingTitles.add(titleKey);
+            added.push(t);
+          }
+        }
+        firstNewTrack = added[0] || null;
+        updatedQueue = added.length > 0 ? [...prev.queue, ...added] : prev.queue;
+        return {
+          queue: updatedQueue,
+          seedGenre: genreName || prev.seedGenre,
+        };
+      });
+
+      if (opts?.autoAdvance) {
+        const latest = get();
+        if (firstNewTrack) {
+          latest.playTrack(firstNewTrack, updatedQueue, { preserveSeed: true });
+        } else if (latest.queueIndex + 1 < latest.queue.length) {
+          latest.playTrack(latest.queue[latest.queueIndex + 1], latest.queue, { preserveSeed: true });
+        } else {
+          set({ isPlaying: false, isResolvingTrack: false });
+        }
+      }
+    } catch {
+      if (opts?.autoAdvance) set({ isPlaying: false, isResolvingTrack: false });
+    } finally {
+      if (relatedInFlightKey === reqKey) relatedInFlightKey = null;
+      set({ isFetchingRelated: false });
+    }
+  },
+
+  playTrack: (track, contextTracks, opts) => {
     const state = get();
+    const preserveSeed = Boolean(opts?.preserveSeed);
     const list = contextTracks && contextTracks.length > 0 ? contextTracks : [track];
     const idx = Math.max(
       0,
@@ -564,12 +681,18 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
         isPlaying: true,
         currentTime: 0,
         duration: track.durationSec || 0,
+        seedTrack: preserveSeed ? prev.seedTrack || track : track,
+        seedGenre: preserveSeed ? prev.seedGenre : null,
         recentTracks: updatedRecent,
         listeningStats: nextStats,
       };
       syncPersisted(next);
       return next;
     });
+
+    if (!preserveSeed && state.autoplaySimilar && list.length <= 2) {
+      void get().fetchAndEnqueueRelatedTracks(track);
+    }
   },
 
   playRadio: (station) => {
@@ -623,6 +746,11 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
     } else if (nextIdx >= state.queue.length) {
       if (state.repeatMode === 'all') {
         nextIdx = 0;
+      } else if (state.autoplaySimilar && (state.seedTrack || state.currentTrack)) {
+        const seed = state.seedTrack || state.currentTrack!;
+        set({ isResolvingTrack: true });
+        void get().fetchAndEnqueueRelatedTracks(seed, { autoAdvance: true });
+        return;
       } else {
         set({ isPlaying: false });
         return;
@@ -631,7 +759,7 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
 
     const nextTrack = state.queue[nextIdx];
     if (!nextTrack) return;
-    get().playTrack(nextTrack, state.queue);
+    get().playTrack(nextTrack, state.queue, { preserveSeed: true });
   },
 
   playPrev: () => {
@@ -645,7 +773,7 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
     if (prevIdx < 0) prevIdx = state.repeatMode === 'all' ? state.queue.length - 1 : 0;
     const prevTrack = state.queue[prevIdx];
     if (!prevTrack) return;
-    get().playTrack(prevTrack, state.queue);
+    get().playTrack(prevTrack, state.queue, { preserveSeed: true });
   },
 
   setResolvedPlayback: (resolved) => set({ resolvedPlayback: resolved, isResolvingTrack: false }),

@@ -106,6 +106,16 @@ export async function validateSafeOutboundUrl(
   return { safe: true, url: parsed };
 }
 
+export async function assertSafeProxyUrl(rawUrl: string): Promise<URL> {
+  const check = await validateSafeOutboundUrl(rawUrl);
+  if (!check.safe) {
+    const err = new Error(check.reason) as Error & { statusCode?: number };
+    err.statusCode = check.status;
+    throw err;
+  }
+  return check.url;
+}
+
 export async function safeFetchFollowingRedirects(
   initialUrl: string,
   init: RequestInit = {},

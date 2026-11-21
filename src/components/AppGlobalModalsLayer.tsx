@@ -56,6 +56,9 @@ const GuestWelcomePopup = lazyWithRetry(() =>
 const SmartTvQuickModal = lazyWithRetry(() =>
   import('./SmartTvQuickModal').then((m) => ({ default: m.SmartTvQuickModal }))
 );
+const SpotifyYtmImportModal = lazyWithRetry(() =>
+  import('./music/SpotifyYtmImportModal').then((m) => ({ default: m.SpotifyYtmImportModal }))
+);
 
 interface AppGlobalModalsLayerProps {
   lang: AppLanguage;
@@ -599,6 +602,8 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
             onDismissKeepRandom={onDismissGuestPopup}
           />
         )}
+
+        <SpotifyYtmImportModal />
       </React.Suspense>
 
       <AppDiscoveryModalsGroup

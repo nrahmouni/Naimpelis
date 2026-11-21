@@ -150,7 +150,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
             <div
               className={
                 isMusicWorld
-                  ? 'pointer-events-auto w-full max-w-md ml-auto flex items-center gap-1 h-9 px-1.5 rounded-full bg-[#090E16]/94 backdrop-blur-2xl border border-[#10B981]/45 shadow-[0_8px_26px_rgba(0,0,0,0.72)] min-w-0'
+                  ? 'pointer-events-auto w-full max-w-md ml-auto flex items-center gap-1 h-9 px-1.5 rounded-full bg-[#0C0C0F]/94 backdrop-blur-2xl border border-[#3B82F6]/45 shadow-[0_8px_26px_rgba(0,0,0,0.72)] min-w-0'
                   : 'flex-1 flex items-center gap-2 min-w-0'
               }
             >
@@ -188,7 +188,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                 aria-label={pickLang(lang, { es: 'Cerrar búsqueda', ca: 'Tancar cerca', en: 'Close search' })}
                 className={
                   isMusicWorld
-                    ? 'w-7 h-7 rounded-full hover:bg-[#10B981]/20 flex items-center justify-center text-zinc-200 cursor-pointer shrink-0 active:scale-95 transition-all'
+                    ? 'w-7 h-7 rounded-full hover:bg-[#3B82F6]/20 flex items-center justify-center text-zinc-200 cursor-pointer shrink-0 active:scale-95 transition-all'
                     : 'min-w-11 min-h-11 rounded-2xl bg-[#0D0D12] hover:bg-white/[0.08] border border-white/[0.08] flex items-center justify-center text-zinc-200 cursor-pointer shrink-0 active:scale-95 transition-all'
                 }
               >
@@ -200,7 +200,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
               <div
                 className={
                   isMusicWorld
-                    ? 'pointer-events-auto inline-flex items-center gap-0.5 h-8 sm:h-9 pl-0.5 pr-2 rounded-full bg-[#090E16]/88 backdrop-blur-2xl border border-[#10B981]/28 shadow-[0_6px_18px_rgba(0,0,0,0.58)] min-w-0'
+                    ? 'pointer-events-auto inline-flex items-center gap-0.5 h-8 sm:h-9 pl-0.5 pr-2 rounded-full bg-[#0C0C0F]/88 backdrop-blur-2xl border border-[#3B82F6]/28 shadow-[0_6px_18px_rgba(0,0,0,0.58)] min-w-0'
                     : 'flex items-center gap-1.5 min-w-0'
                 }
               >
@@ -210,7 +210,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                   aria-label={pickLang(lang, { es: 'Volver', ca: 'Tornar', en: 'Back' })}
                   className={
                     isMusicWorld
-                      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full hover:bg-[#10B981]/18 active:scale-95 flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer transition-all shrink-0'
+                      ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full hover:bg-[#3B82F6]/18 active:scale-95 flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer transition-all shrink-0'
                       : 'min-w-11 min-h-11 rounded-2xl hover:bg-white/[0.06] active:scale-95 flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer transition-all shrink-0'
                   }
                 >
@@ -243,7 +243,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
               <div
                 className={
                   isMusicWorld
-                    ? 'pointer-events-auto inline-flex items-center gap-0.5 h-8 sm:h-9 px-0.5 rounded-full bg-[#090E16]/88 backdrop-blur-2xl border border-white/12 shadow-[0_6px_18px_rgba(0,0,0,0.58)] shrink-0'
+                    ? 'pointer-events-auto inline-flex items-center gap-0.5 h-8 sm:h-9 px-0.5 rounded-full bg-[#0C0C0F]/88 backdrop-blur-2xl border border-white/12 shadow-[0_6px_18px_rgba(0,0,0,0.58)] shrink-0'
                     : 'flex items-center gap-1.5 shrink-0'
                 }
               >
@@ -255,7 +255,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                     aria-label={pickLang(lang, { es: 'Buscar', ca: 'Cercar', en: 'Search' })}
                     className={
                       isMusicWorld
-                        ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full hover:bg-[#10B981]/18 flex items-center justify-center text-slate-200 hover:text-[#6EE7B7] cursor-pointer active:scale-95 transition-all'
+                        ? 'w-7 h-7 sm:w-8 sm:h-8 rounded-full hover:bg-[#3B82F6]/18 flex items-center justify-center text-slate-200 hover:text-[#93C5FD] cursor-pointer active:scale-95 transition-all'
                         : 'min-w-11 min-h-11 rounded-2xl bg-[#0D0D12] hover:bg-white/[0.08] border border-white/[0.08] flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer active:scale-95 transition-all'
                     }
                   >
@@ -275,8 +275,8 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                         isMusicWorld
                           ? `w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center cursor-pointer active:scale-95 transition-all ${
                               moreMenuOpen
-                                ? 'bg-[#10B981]/25 text-[#6EE7B7]'
-                                : 'hover:bg-[#10B981]/18 text-slate-200 hover:text-[#6EE7B7]'
+                                ? 'bg-[#3B82F6]/25 text-[#93C5FD]'
+                                : 'hover:bg-[#3B82F6]/18 text-slate-200 hover:text-[#93C5FD]'
                             }`
                           : `min-w-11 min-h-11 rounded-2xl border flex items-center justify-center cursor-pointer active:scale-95 transition-all ${
                               moreMenuOpen
@@ -346,7 +346,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                             }}
                             className="w-full min-h-11 px-3 rounded-xl hover:bg-white/[0.07] text-left text-xs font-semibold text-zinc-100 flex items-center gap-2.5 cursor-pointer transition-colors"
                           >
-                            <Mic className={`w-4 h-4 shrink-0 ${isMusicWorld ? 'text-[#22D3EE]' : 'text-[#A78BFA]'}`} />
+                            <Mic className={`w-4 h-4 shrink-0 ${isMusicWorld ? 'text-[#60A5FA]' : 'text-[#A78BFA]'}`} />
                             <span>
                               {pickLang(lang, {
                                 es: 'Asistente por voz',
@@ -364,10 +364,10 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                             window.dispatchEvent(new CustomEvent('riffan:open-install'));
                           }}
                           className={`w-full min-h-11 px-3 rounded-xl text-left text-xs font-semibold text-zinc-100 flex items-center gap-2.5 cursor-pointer transition-colors ${
-                            isMusicWorld ? 'hover:bg-[#10B981]/15' : 'hover:bg-[#7C3AED]/15'
+                            isMusicWorld ? 'hover:bg-[#3B82F6]/15' : 'hover:bg-[#7C3AED]/15'
                           }`}
                         >
-                          <Download className={`w-4 h-4 shrink-0 ${isMusicWorld ? 'text-[#34D399]' : 'text-[#38BDF8]'}`} />
+                          <Download className={`w-4 h-4 shrink-0 ${isMusicWorld ? 'text-[#60A5FA]' : 'text-[#38BDF8]'}`} />
                           <span>
                             {pickLang(lang, {
                               es: 'Instalar App (APK · iPhone · Chrome)',

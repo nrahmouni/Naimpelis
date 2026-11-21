@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Clock,
   Copy,
+  Disc3,
   Download,
   FolderDown,
   HardDrive,
@@ -114,6 +115,10 @@ export const EqAndTimerModal: React.FC = () => {
   const sleepTimerEndsAt = useMusicStore((s) => s.sleepTimerEndsAt);
   const setSleepTimerMinutes = useMusicStore((s) => s.setSleepTimerMinutes);
   const setShowDownloadDrawer = useMusicStore((s) => s.setShowDownloadDrawer);
+  const autoplaySimilar = useMusicStore((s) => s.autoplaySimilar);
+  const setAutoplaySimilar = useMusicStore((s) => s.setAutoplaySimilar);
+  const setShowImportModal = useMusicStore((s) => s.setShowImportModal);
+  const tasteProfile = useMusicStore((s) => s.tasteProfile);
   const musicLang = useMusicStore((s) => s.musicLang);
   const m = MUSIC_I18N[musicLang];
 
@@ -182,12 +187,12 @@ export const EqAndTimerModal: React.FC = () => {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-lg max-h-[92dvh] rounded-t-3xl sm:rounded-3xl bg-[#070D16] border border-[#10B981]/25 shadow-[0_24px_80px_rgba(0,0,0,0.9)] flex flex-col overflow-hidden"
+        className="w-full sm:max-w-lg max-h-[92dvh] rounded-t-3xl sm:rounded-3xl bg-[#0C0C0F] border border-[#3B82F6]/25 shadow-[0_24px_80px_rgba(0,0,0,0.9)] flex flex-col overflow-hidden"
       >
         {/* Sticky Studio Header */}
-        <div className="shrink-0 px-4 sm:px-6 pt-4 pb-3 border-b border-white/[0.08] flex items-center justify-between gap-2 bg-[#09101B]/95">
+        <div className="shrink-0 px-4 sm:px-6 pt-4 pb-3 border-b border-white/[0.08] flex items-center justify-between gap-2 bg-[#131318]/95">
           <div className="flex items-center gap-2.5 min-w-0">
-            <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#10B981]/25 to-[#22D3EE]/20 border border-[#10B981]/40 flex items-center justify-center text-[#34D399] shrink-0">
+            <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#3B82F6]/25 to-[#60A5FA]/20 border border-[#3B82F6]/40 flex items-center justify-center text-[#60A5FA] shrink-0">
               <Sliders className="w-4 h-4" />
             </span>
             <div className="min-w-0">
@@ -206,7 +211,7 @@ export const EqAndTimerModal: React.FC = () => {
               title={m.resetStudio}
               className="h-9 px-2.5 rounded-full bg-white/[0.06] hover:bg-white/12 border border-white/10 text-[11px] font-semibold text-zinc-200 inline-flex items-center gap-1 cursor-pointer transition-colors"
             >
-              <RotateCcw className="w-3.5 h-3.5 text-[#22D3EE]" />
+              <RotateCcw className="w-3.5 h-3.5 text-[#60A5FA]" />
               <span className="hidden sm:inline">{m.resetStudio}</span>
             </button>
             <button
@@ -221,9 +226,9 @@ export const EqAndTimerModal: React.FC = () => {
         </div>
 
         {/* 1-Tap Studio Vibes Strip */}
-        <div className="shrink-0 px-4 sm:px-6 pt-3 pb-2 border-b border-white/[0.05] space-y-2 bg-[#080E18]">
+        <div className="shrink-0 px-4 sm:px-6 pt-3 pb-2 border-b border-white/[0.05] space-y-2 bg-[#0C0C0F]">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#34D399]">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#60A5FA]">
               {m.proVibesTitle}
             </span>
             {currentTrack && (
@@ -250,7 +255,7 @@ export const EqAndTimerModal: React.FC = () => {
                   }}
                   className={`h-8 px-3 rounded-full text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
                     active
-                      ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.38)]'
+                      ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_4px_14px_rgba(59,130,246,0.38)]'
                       : 'bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-zinc-200'
                   }`}
                 >
@@ -281,7 +286,7 @@ export const EqAndTimerModal: React.FC = () => {
                   }}
                   className={`h-9 px-2 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
                     active
-                      ? 'bg-[#10B981]/20 border border-[#10B981]/60 text-[#6EE7B7]'
+                      ? 'bg-[#3B82F6]/20 border border-[#3B82F6]/60 text-[#93C5FD]'
                       : 'bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 text-zinc-400 hover:text-white'
                   }`}
                 >
@@ -301,7 +306,7 @@ export const EqAndTimerModal: React.FC = () => {
               <div
                 className={`rounded-2xl border p-3.5 space-y-3 transition-colors ${
                   spatial8dEnabled
-                    ? 'bg-[#10B981]/12 border-[#10B981]/45'
+                    ? 'bg-[#3B82F6]/12 border-[#3B82F6]/45'
                     : 'bg-white/[0.03] border-white/10'
                 }`}
               >
@@ -310,7 +315,7 @@ export const EqAndTimerModal: React.FC = () => {
                     <span
                       className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                         spatial8dEnabled
-                          ? 'bg-gradient-to-br from-[#10B981] to-[#22D3EE] text-[#03130E]'
+                          ? 'bg-gradient-to-br from-[#2563EB] to-[#3B82F6] text-white'
                           : 'bg-white/[0.06] text-zinc-300'
                       }`}
                     >
@@ -332,7 +337,7 @@ export const EqAndTimerModal: React.FC = () => {
                     aria-pressed={spatial8dEnabled}
                     className={`h-8 px-3.5 rounded-full text-xs font-black tracking-wide cursor-pointer shrink-0 transition-all ${
                       spatial8dEnabled
-                        ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.4)]'
+                        ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_4px_14px_rgba(59,130,246,0.4)]'
                         : 'bg-white/10 text-zinc-200 hover:bg-white/18'
                     }`}
                   >
@@ -361,7 +366,7 @@ export const EqAndTimerModal: React.FC = () => {
                         }}
                         className={`min-h-9 px-2 rounded-xl border text-[11px] font-bold cursor-pointer transition-all ${
                           active && spatial8dEnabled
-                            ? 'bg-[#10B981]/25 border-[#10B981] text-[#6EE7B7]'
+                            ? 'bg-[#3B82F6]/25 border-[#3B82F6] text-[#93C5FD]'
                             : 'bg-white/[0.04] border-white/10 text-zinc-300 hover:bg-white/[0.08]'
                         }`}
                       >
@@ -395,7 +400,7 @@ export const EqAndTimerModal: React.FC = () => {
                           }}
                           className={`min-h-8 px-2 rounded-lg border text-[11px] font-bold cursor-pointer transition-all ${
                             active && spatial8dEnabled
-                              ? 'bg-[#22D3EE]/20 border-[#22D3EE] text-[#67E8F9]'
+                              ? 'bg-[#60A5FA]/20 border-[#60A5FA] text-[#93C5FD]'
                               : 'bg-white/[0.04] border-white/10 text-zinc-300 hover:bg-white/[0.08]'
                           }`}
                         >
@@ -412,7 +417,7 @@ export const EqAndTimerModal: React.FC = () => {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-zinc-200">{m.speedOrbitLabel}</span>
-                    <span className="text-[#34D399] font-bold tabular-nums">
+                    <span className="text-[#60A5FA] font-bold tabular-nums">
                       {spatial8dSpeedSec.toFixed(1)}s / 360°
                     </span>
                   </div>
@@ -423,14 +428,14 @@ export const EqAndTimerModal: React.FC = () => {
                     step={0.5}
                     value={spatial8dSpeedSec}
                     onChange={(e) => setSpatial8dSpeedSec(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#10B981] bg-white/15 rounded-full cursor-pointer"
+                    className="w-full h-1.5 accent-[#3B82F6] bg-white/15 rounded-full cursor-pointer"
                   />
                 </div>
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-zinc-200">{m.stereoWidthLabel}</span>
-                    <span className="text-[#22D3EE] font-bold tabular-nums">
+                    <span className="text-[#60A5FA] font-bold tabular-nums">
                       {Math.round(stereoWidth * 100)}%
                     </span>
                   </div>
@@ -441,14 +446,14 @@ export const EqAndTimerModal: React.FC = () => {
                     step={0.05}
                     value={stereoWidth}
                     onChange={(e) => setStereoWidth(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#22D3EE] bg-white/15 rounded-full cursor-pointer"
+                    className="w-full h-1.5 accent-[#60A5FA] bg-white/15 rounded-full cursor-pointer"
                   />
                 </div>
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-zinc-200">{m.reverbDepthLabel}</span>
-                    <span className="text-[#34D399] font-bold tabular-nums">
+                    <span className="text-[#60A5FA] font-bold tabular-nums">
                       {Math.round((reverbMix / 0.75) * 100)}%
                     </span>
                   </div>
@@ -459,7 +464,7 @@ export const EqAndTimerModal: React.FC = () => {
                     step={0.02}
                     value={reverbMix}
                     onChange={(e) => setReverbMix(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#10B981] bg-white/15 rounded-full cursor-pointer"
+                    className="w-full h-1.5 accent-[#3B82F6] bg-white/15 rounded-full cursor-pointer"
                   />
                 </div>
               </div>
@@ -473,7 +478,7 @@ export const EqAndTimerModal: React.FC = () => {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-zinc-200">{m.playbackSpeed}</span>
-                    <span className="text-[#34D399] font-bold tabular-nums">
+                    <span className="text-[#60A5FA] font-bold tabular-nums">
                       {playbackRate.toFixed(2)}x
                     </span>
                   </div>
@@ -484,7 +489,7 @@ export const EqAndTimerModal: React.FC = () => {
                     step={0.01}
                     value={playbackRate}
                     onChange={(e) => setPlaybackRate(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#10B981] bg-white/15 rounded-full cursor-pointer"
+                    className="w-full h-1.5 accent-[#3B82F6] bg-white/15 rounded-full cursor-pointer"
                   />
                   <div className="grid grid-cols-4 gap-1.5 pt-1">
                     {[0.85, 0.94, 1, 1.22].map((rate) => (
@@ -494,7 +499,7 @@ export const EqAndTimerModal: React.FC = () => {
                         onClick={() => setPlaybackRate(rate)}
                         className={`h-8 rounded-lg border text-[11px] font-bold tabular-nums cursor-pointer transition-all ${
                           Math.abs(playbackRate - rate) < 0.015
-                            ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] border-[#10B981] text-[#03130E]'
+                            ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] border-[#3B82F6] text-white'
                             : 'bg-white/[0.04] border-white/10 text-zinc-300 hover:bg-white/[0.08]'
                         }`}
                       >
@@ -508,7 +513,7 @@ export const EqAndTimerModal: React.FC = () => {
                 <div className="space-y-1.5 pt-2 border-t border-white/[0.07]">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-zinc-200">{m.pitchSemitonesLabel}</span>
-                    <span className="text-[#22D3EE] font-bold tabular-nums">
+                    <span className="text-[#60A5FA] font-bold tabular-nums">
                       {pitchSemitones > 0 ? `+${pitchSemitones}` : pitchSemitones} st
                     </span>
                   </div>
@@ -519,7 +524,7 @@ export const EqAndTimerModal: React.FC = () => {
                     step={1}
                     value={pitchSemitones}
                     onChange={(e) => setPitchSemitones(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#22D3EE] bg-white/15 rounded-full cursor-pointer"
+                    className="w-full h-1.5 accent-[#60A5FA] bg-white/15 rounded-full cursor-pointer"
                   />
                 </div>
 
@@ -538,8 +543,8 @@ export const EqAndTimerModal: React.FC = () => {
                     aria-pressed={preservesPitch}
                     className={`h-8 px-3 rounded-full text-xs font-black cursor-pointer shrink-0 transition-all ${
                       preservesPitch
-                        ? 'bg-[#10B981]/25 border border-[#10B981] text-[#6EE7B7]'
-                        : 'bg-[#22D3EE]/20 border border-[#22D3EE]/60 text-[#67E8F9]'
+                        ? 'bg-[#3B82F6]/25 border border-[#3B82F6] text-[#93C5FD]'
+                        : 'bg-[#60A5FA]/20 border border-[#60A5FA]/60 text-[#93C5FD]'
                     }`}
                   >
                     {preservesPitch ? 'ON' : 'VINYL'}
@@ -552,7 +557,7 @@ export const EqAndTimerModal: React.FC = () => {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-zinc-200">{m.bassBoostLabel}</span>
-                    <span className="text-[#34D399] font-bold tabular-nums">
+                    <span className="text-[#60A5FA] font-bold tabular-nums">
                       +{bassBoostDb.toFixed(1)} dB
                     </span>
                   </div>
@@ -563,14 +568,14 @@ export const EqAndTimerModal: React.FC = () => {
                     step={0.5}
                     value={bassBoostDb}
                     onChange={(e) => setBassBoostDb(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#10B981] bg-white/15 rounded-full cursor-pointer"
+                    className="w-full h-1.5 accent-[#3B82F6] bg-white/15 rounded-full cursor-pointer"
                   />
                 </div>
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-zinc-200">{m.exciterLabel}</span>
-                    <span className="text-[#22D3EE] font-bold tabular-nums">
+                    <span className="text-[#60A5FA] font-bold tabular-nums">
                       {Math.round(exciterMix * 100)}%
                     </span>
                   </div>
@@ -581,14 +586,14 @@ export const EqAndTimerModal: React.FC = () => {
                     step={0.05}
                     value={exciterMix}
                     onChange={(e) => setExciterMix(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#22D3EE] bg-white/15 rounded-full cursor-pointer"
+                    className="w-full h-1.5 accent-[#60A5FA] bg-white/15 rounded-full cursor-pointer"
                   />
                 </div>
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-zinc-200">{m.vinylCrackleLabel}</span>
-                    <span className="text-[#34D399] font-bold tabular-nums">
+                    <span className="text-[#60A5FA] font-bold tabular-nums">
                       {Math.round(vinylCrackle * 100)}%
                     </span>
                   </div>
@@ -599,14 +604,14 @@ export const EqAndTimerModal: React.FC = () => {
                     step={0.05}
                     value={vinylCrackle}
                     onChange={(e) => setVinylCrackle(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#10B981] bg-white/15 rounded-full cursor-pointer"
+                    className="w-full h-1.5 accent-[#3B82F6] bg-white/15 rounded-full cursor-pointer"
                   />
                 </div>
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-semibold text-zinc-200">{m.crossfadeLabel}</span>
-                    <span className="text-[#22D3EE] font-bold tabular-nums">
+                    <span className="text-[#60A5FA] font-bold tabular-nums">
                       {crossfadeSec.toFixed(1)} s
                     </span>
                   </div>
@@ -617,7 +622,7 @@ export const EqAndTimerModal: React.FC = () => {
                     step={0.5}
                     value={crossfadeSec}
                     onChange={(e) => setCrossfadeSec(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#22D3EE] bg-white/15 rounded-full cursor-pointer"
+                    className="w-full h-1.5 accent-[#60A5FA] bg-white/15 rounded-full cursor-pointer"
                   />
                 </div>
 
@@ -634,7 +639,7 @@ export const EqAndTimerModal: React.FC = () => {
                       aria-pressed={vocalCancel}
                       className={`h-8 px-3 rounded-full text-xs font-black cursor-pointer shrink-0 ${
                         vocalCancel
-                          ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E]'
+                          ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white'
                           : 'bg-white/10 text-zinc-300'
                       }`}
                     >
@@ -650,7 +655,7 @@ export const EqAndTimerModal: React.FC = () => {
                       aria-pressed={normalizeAudio}
                       className={`h-8 px-3 rounded-full text-xs font-black cursor-pointer shrink-0 ${
                         normalizeAudio
-                          ? 'bg-[#10B981]/25 border border-[#10B981] text-[#6EE7B7]'
+                          ? 'bg-[#3B82F6]/25 border border-[#3B82F6] text-[#93C5FD]'
                           : 'bg-white/10 text-zinc-300'
                       }`}
                     >
@@ -718,8 +723,8 @@ export const EqAndTimerModal: React.FC = () => {
                     <line x1="0" y1="34" x2="300" y2="34" stroke="rgba(255,255,255,0.12)" strokeDasharray="4 4" />
                     <defs>
                       <linearGradient id="eqCurveGrad" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#10B981" />
-                        <stop offset="100%" stopColor="#22D3EE" />
+                        <stop offset="0%" stopColor="#3B82F6" />
+                        <stop offset="100%" stopColor="#60A5FA" />
                       </linearGradient>
                     </defs>
                     <polyline
@@ -733,7 +738,7 @@ export const EqAndTimerModal: React.FC = () => {
                     {eqBands10.map((gain, idx) => {
                       const cx = 12 + (idx / 9) * 276;
                       const cy = 8 + ((12 - gain) / 24) * 52;
-                      return <circle key={idx} cx={cx} cy={cy} r="3.4" fill="#6EE7B7" />;
+                      return <circle key={idx} cx={cx} cy={cy} r="3.4" fill="#93C5FD" />;
                     })}
                   </svg>
                 </div>
@@ -753,9 +758,9 @@ export const EqAndTimerModal: React.FC = () => {
                           step={0.5}
                           value={gain}
                           onChange={(e) => setEqBand10(idx, Number(e.target.value))}
-                          className="flex-1 h-1.5 accent-[#10B981] bg-white/15 rounded-full cursor-pointer"
+                          className="flex-1 h-1.5 accent-[#3B82F6] bg-white/15 rounded-full cursor-pointer"
                         />
-                        <span className="w-14 text-right text-[11px] font-bold text-[#34D399] tabular-nums shrink-0">
+                        <span className="w-14 text-right text-[11px] font-bold text-[#60A5FA] tabular-nums shrink-0">
                           {gain > 0 ? `+${gain.toFixed(1)}` : gain.toFixed(1)} dB
                         </span>
                       </div>
@@ -780,7 +785,7 @@ export const EqAndTimerModal: React.FC = () => {
                         }}
                         className={`min-h-10 px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
                           active
-                            ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] border-[#10B981] text-[#03130E] font-bold shadow-[0_6px_18px_rgba(16,185,129,0.32)]'
+                            ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] border-[#3B82F6] text-white font-bold shadow-[0_6px_18px_rgba(59,130,246,0.32)]'
                             : 'bg-white/[0.04] border-white/10 text-zinc-200 hover:bg-white/[0.08]'
                         }`}
                       >
@@ -809,11 +814,11 @@ export const EqAndTimerModal: React.FC = () => {
                     value={presetNameInput}
                     onChange={(e) => setPresetNameInput(e.target.value)}
                     placeholder={m.savePresetPlaceholder}
-                    className="flex-1 h-9 px-3 rounded-xl bg-white/[0.06] border border-white/15 focus:border-[#10B981] text-xs text-white outline-none"
+                    className="flex-1 h-9 px-3 rounded-xl bg-white/[0.06] border border-white/15 focus:border-[#3B82F6] text-xs text-white outline-none"
                   />
                   <button
                     type="submit"
-                    className="h-9 px-3 rounded-xl bg-[#10B981]/20 border border-[#10B981]/50 text-[#6EE7B7] text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
+                    className="h-9 px-3 rounded-xl bg-[#3B82F6]/20 border border-[#3B82F6]/50 text-[#93C5FD] text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
                   >
                     <BookmarkPlus className="w-3.5 h-3.5" />
                     <span>{m.savePresetBtn}</span>
@@ -829,7 +834,7 @@ export const EqAndTimerModal: React.FC = () => {
                         <button
                           type="button"
                           onClick={() => applyCustomStudioPreset(cp.id)}
-                          className="font-semibold hover:text-[#34D399] cursor-pointer"
+                          className="font-semibold hover:text-[#60A5FA] cursor-pointer"
                         >
                           {cp.name}
                         </button>
@@ -855,7 +860,7 @@ export const EqAndTimerModal: React.FC = () => {
                     onClick={() => setPerTrackProfilesEnabled(!perTrackProfilesEnabled)}
                     className={`h-7 px-3 rounded-full text-[11px] font-black cursor-pointer ${
                       perTrackProfilesEnabled
-                        ? 'bg-[#10B981]/25 border border-[#10B981] text-[#6EE7B7]'
+                        ? 'bg-[#3B82F6]/25 border border-[#3B82F6] text-[#93C5FD]'
                         : 'bg-white/10 text-zinc-300'
                     }`}
                   >
@@ -871,12 +876,61 @@ export const EqAndTimerModal: React.FC = () => {
                       setTrackProfileSaved(true);
                       window.setTimeout(() => setTrackProfileSaved(false), 2000);
                     }}
-                    className="w-full h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-bold text-[#6EE7B7] inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                    className="w-full h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-bold text-[#93C5FD] inline-flex items-center justify-center gap-1.5 cursor-pointer"
                   >
                     {trackProfileSaved ? <Check className="w-3.5 h-3.5" /> : <Sliders className="w-3.5 h-3.5" />}
                     <span>{m.saveTrackProfileBtn}</span>
                   </button>
                 )}
+              </div>
+
+              {/* Radio Autoplay & Import Spotify / YouTube Music */}
+              <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-3.5 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Radio className="w-3.5 h-3.5 text-[#60A5FA]" />
+                      <span className="truncate">{m.autoplayLabel}</span>
+                    </p>
+                    <p className="text-[10px] text-zinc-400 truncate">{m.autoplaySub}</p>
+                  </div>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={autoplaySimilar}
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setAutoplaySimilar(!autoplaySimilar);
+                    }}
+                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                      autoplaySimilar ? 'bg-[#30D158]' : 'bg-white/15'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4.5 w-4.5 transform rounded-full bg-white shadow transition-transform ${
+                        autoplaySimilar ? 'translate-x-[22px]' : 'translate-x-[3px]'
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setShowEqModal(false);
+                    setShowImportModal(true);
+                  }}
+                  className="w-full h-9 px-3 rounded-xl bg-[#3B82F6]/15 hover:bg-[#3B82F6]/25 border border-[#3B82F6]/40 text-xs font-bold text-[#93C5FD] inline-flex items-center justify-between cursor-pointer transition-colors"
+                >
+                  <span className="inline-flex items-center gap-2 truncate">
+                    <Disc3 className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{m.importTitle}</span>
+                  </span>
+                  <span className="text-[10px] font-mono text-zinc-300 shrink-0 tabular-nums">
+                    {tasteProfile.favoriteArtists.length + tasteProfile.favoriteGenres.length}
+                  </span>
+                </button>
               </div>
 
               {/* Sleep Timer */}
@@ -886,7 +940,7 @@ export const EqAndTimerModal: React.FC = () => {
                     <Clock className="w-3.5 h-3.5" /> {m.sleepTimer}
                   </span>
                   {sleepTimerEndsAt && (
-                    <span className="text-[#34D399] font-semibold tabular-nums">
+                    <span className="text-[#60A5FA] font-semibold tabular-nums">
                       {Math.max(1, Math.ceil((sleepTimerEndsAt - Date.now()) / 60000))} {m.minsRemaining}
                     </span>
                   )}
@@ -913,7 +967,7 @@ export const EqAndTimerModal: React.FC = () => {
         </div>
 
         {/* Sticky Bitrate + Offline + MP3 Export Bar */}
-        <div className="shrink-0 px-4 sm:px-6 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+14px)] border-t border-white/[0.08] bg-gradient-to-br from-[#0A141E] via-[#070D16] to-[#08131A] space-y-2.5">
+        <div className="shrink-0 px-4 sm:px-6 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+14px)] border-t border-white/[0.08] bg-gradient-to-br from-[#131318] via-[#0C0C0F] to-[#0C0C0F] space-y-2.5">
           {/* Bitrate Selector + Offline Save + Queue Drawer */}
           <div className="flex items-center justify-between gap-2">
             <div className="inline-flex items-center p-0.5 rounded-lg bg-white/[0.06] border border-white/10">
@@ -924,7 +978,7 @@ export const EqAndTimerModal: React.FC = () => {
                   onClick={() => setExportBitrate(br)}
                   className={`h-7 px-2 rounded-md text-[10px] font-extrabold cursor-pointer ${
                     exportBitrate === br
-                      ? 'bg-[#10B981] text-[#03130E]'
+                      ? 'bg-[#3B82F6] text-white'
                       : 'text-zinc-300 hover:text-white'
                   }`}
                 >
@@ -940,7 +994,7 @@ export const EqAndTimerModal: React.FC = () => {
                   onClick={() => void handleSaveOffline()}
                   className={`h-8 px-2.5 rounded-lg border text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer ${
                     isSavedOffline
-                      ? 'bg-[#10B981]/20 border-[#10B981] text-[#6EE7B7]'
+                      ? 'bg-[#3B82F6]/20 border-[#3B82F6] text-[#93C5FD]'
                       : 'bg-white/[0.06] border-white/10 text-zinc-200 hover:bg-white/[0.12]'
                   }`}
                 >
@@ -955,7 +1009,7 @@ export const EqAndTimerModal: React.FC = () => {
                   setShowDownloadDrawer(true);
                 }}
                 title={m.downloadsTitle}
-                className="w-8 h-8 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[#34D399] flex items-center justify-center cursor-pointer"
+                className="w-8 h-8 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[#60A5FA] flex items-center justify-center cursor-pointer"
               >
                 <FolderDown className="w-4 h-4" />
               </button>
@@ -969,14 +1023,14 @@ export const EqAndTimerModal: React.FC = () => {
               onClick={() => handleDownload('original')}
               className="h-10 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-white text-[11px] sm:text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 transition-colors"
             >
-              <Download className="w-3.5 h-3.5 text-[#34D399] shrink-0" />
+              <Download className="w-3.5 h-3.5 text-[#60A5FA] shrink-0" />
               <span className="truncate">{m.downloadMp3Btn}</span>
             </button>
             <button
               type="button"
               disabled={!currentTrack}
               onClick={() => handleDownload('fx')}
-              className="h-10 px-2.5 rounded-xl bg-gradient-to-r from-[#10B981] to-[#22D3EE] hover:opacity-95 text-[#03130E] text-[11px] sm:text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 shadow-[0_6px_18px_rgba(16,185,129,0.32)] transition-opacity"
+              className="h-10 px-2.5 rounded-xl bg-gradient-to-r from-[#3B82F6] to-[#60A5FA] hover:opacity-95 text-white text-[11px] sm:text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 shadow-[0_6px_18px_rgba(59,130,246,0.32)] transition-opacity"
             >
               <Download className="w-3.5 h-3.5 shrink-0" />
               <span className="truncate">{m.downloadMp3FxBtn}</span>
@@ -984,7 +1038,7 @@ export const EqAndTimerModal: React.FC = () => {
           </div>
 
           {downloadStatus && (
-            <p className="text-[11px] text-[#6EE7B7] font-semibold text-center">{downloadStatus}</p>
+            <p className="text-[11px] text-[#93C5FD] font-semibold text-center">{downloadStatus}</p>
           )}
 
           <div className="flex items-center justify-between gap-2 pt-0.5">
@@ -1000,7 +1054,7 @@ export const EqAndTimerModal: React.FC = () => {
                 onClick={() => setWifiOnlyAutoDownload(!wifiOnlyAutoDownload)}
                 className={`h-7 px-2 rounded-full text-[10px] font-bold cursor-pointer border ${
                   wifiOnlyAutoDownload
-                    ? 'bg-[#22D3EE]/15 border-[#22D3EE]/50 text-[#67E8F9]'
+                    ? 'bg-[#60A5FA]/15 border-[#60A5FA]/50 text-[#93C5FD]'
                     : 'bg-white/[0.04] border-white/10 text-zinc-400'
                 }`}
               >
@@ -1015,7 +1069,7 @@ export const EqAndTimerModal: React.FC = () => {
                 aria-pressed={autoDownloadMp3}
                 className={`h-8 px-3.5 rounded-full text-xs font-black cursor-pointer shrink-0 transition-all ${
                   autoDownloadMp3
-                    ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.4)]'
+                    ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_4px_14px_rgba(59,130,246,0.4)]'
                     : 'bg-white/10 text-zinc-300 hover:bg-white/15'
                 }`}
               >
@@ -1138,9 +1192,9 @@ export const FullScreenNowPlayingModal: React.FC<{
           const gap = 3;
           const barW = Math.max(2, (w - gap * (barsCount - 1)) / barsCount);
           const grad = ctx.createLinearGradient(0, h, 0, 0);
-          grad.addColorStop(0, '#059669');
-          grad.addColorStop(0.55, '#10B981');
-          grad.addColorStop(1, '#22D3EE');
+          grad.addColorStop(0, '#1D4ED8');
+          grad.addColorStop(0.55, '#3B82F6');
+          grad.addColorStop(1, '#60A5FA');
           ctx.fillStyle = grad;
 
           values.forEach((v, idx) => {
@@ -1235,7 +1289,7 @@ export const FullScreenNowPlayingModal: React.FC<{
 
   return (
     <div
-      className="fixed inset-0 z-50 bg-[#05080D] text-white flex flex-col overflow-hidden animate-fade-in"
+      className="fixed inset-0 z-50 bg-[#000000] text-white flex flex-col overflow-hidden animate-fade-in"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -1256,7 +1310,7 @@ export const FullScreenNowPlayingModal: React.FC<{
         className="absolute inset-0 pointer-events-none"
         style={{
           background:
-            'radial-gradient(ellipse 80% 55% at 50% 25%, rgba(16,185,129,0.2), rgba(34,211,238,0.09) 45%, rgba(5,8,13,0.92) 85%), linear-gradient(to bottom, rgba(5,8,13,0.45), rgba(5,8,13,0.88) 70%, #05080D)',
+            'radial-gradient(ellipse 80% 55% at 50% 25%, rgba(37,99,235,0.22), rgba(96,165,250,0.09) 45%, rgba(0,0,0,0.94) 85%), linear-gradient(to bottom, rgba(0,0,0,0.45), rgba(0,0,0,0.9) 70%, #000000)',
         }}
       />
 
@@ -1266,7 +1320,7 @@ export const FullScreenNowPlayingModal: React.FC<{
           type="button"
           onClick={() => setShowNowPlayingModal(false)}
           aria-label={m.back}
-          className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-[#10B981]"
+          className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors shrink-0 focus-visible:ring-2 focus-visible:ring-[#3B82F6]"
         >
           <ChevronDown className="w-5 h-5" />
         </button>
@@ -1278,7 +1332,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             onClick={() => setNowPlayingTab('artwork')}
             className={`px-3 sm:px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-bold cursor-pointer transition-all whitespace-nowrap ${
               nowPlayingTab === 'artwork'
-                ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.35)]'
+                ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_4px_14px_rgba(59,130,246,0.35)]'
                 : 'text-zinc-300 hover:text-white'
             }`}
           >
@@ -1290,7 +1344,7 @@ export const FullScreenNowPlayingModal: React.FC<{
               onClick={() => setNowPlayingTab('lyrics')}
               className={`px-3 sm:px-4 py-1.5 rounded-full text-[11px] sm:text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-all whitespace-nowrap ${
                 nowPlayingTab === 'lyrics'
-                  ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_14px_rgba(16,185,129,0.35)]'
+                  ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_4px_14px_rgba(59,130,246,0.35)]'
                   : 'text-zinc-300 hover:text-white'
               }`}
             >
@@ -1308,7 +1362,7 @@ export const FullScreenNowPlayingModal: React.FC<{
               setDriveModeOpen(true);
             }}
             title={m.driveModeBtn}
-            className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors text-[#22D3EE]"
+            className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-white/[0.08] hover:bg-white/15 flex items-center justify-center cursor-pointer transition-colors text-[#60A5FA]"
           >
             <Car className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
           </button>
@@ -1326,7 +1380,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             type="button"
             onClick={() => setShowEqModal(true)}
             title={m.studioTitle}
-            className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-[#10B981]/18 hover:bg-[#10B981]/28 border border-[#10B981]/40 text-[#6EE7B7] flex items-center justify-center cursor-pointer transition-colors"
+            className="w-9 h-9 sm:w-11 sm:h-11 rounded-full bg-[#3B82F6]/18 hover:bg-[#3B82F6]/28 border border-[#3B82F6]/40 text-[#93C5FD] flex items-center justify-center cursor-pointer transition-colors"
           >
             <Sliders className="w-4 h-4 sm:w-4.5 sm:h-4.5" />
           </button>
@@ -1341,10 +1395,10 @@ export const FullScreenNowPlayingModal: React.FC<{
               {spatial8dEnabled && (
                 <div
                   aria-hidden="true"
-                  className="absolute -inset-5 sm:-inset-7 rounded-full border border-[#22D3EE]/35 pointer-events-none"
+                  className="absolute -inset-5 sm:-inset-7 rounded-full border border-[#60A5FA]/35 pointer-events-none"
                 >
                   <div className="w-full h-full relative" style={{ transform: `rotate(${orbitDeg}deg)` }}>
-                    <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-gradient-to-r from-[#10B981] to-[#22D3EE] shadow-[0_0_16px_rgba(34,211,238,0.95)]" />
+                    <span className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-gradient-to-r from-[#3B82F6] to-[#60A5FA] shadow-[0_0_16px_rgba(96,165,250,0.95)]" />
                   </div>
                 </div>
               )}
@@ -1355,7 +1409,7 @@ export const FullScreenNowPlayingModal: React.FC<{
                 }`}
                 style={{
                   background:
-                    'radial-gradient(circle, rgba(16,185,129,0.36) 0%, rgba(34,211,238,0.18) 60%, transparent 100%)',
+                    'radial-gradient(circle, rgba(59,130,246,0.36) 0%, rgba(96,165,250,0.18) 60%, transparent 100%)',
                 }}
               />
               <div className="relative w-56 h-56 sm:w-76 sm:h-76 rounded-3xl overflow-hidden bg-gradient-to-br from-[#0B1622] to-[#070D14] border border-white/20 shadow-[0_28px_72px_rgba(0,0,0,0.88)] flex items-center justify-center">
@@ -1369,11 +1423,11 @@ export const FullScreenNowPlayingModal: React.FC<{
                   }`}
                 />
                 {activeRadio && !coverSrc && (
-                  <Radio className="w-16 h-16 text-[#22D3EE] absolute pointer-events-none opacity-85" />
+                  <Radio className="w-16 h-16 text-[#60A5FA] absolute pointer-events-none opacity-85" />
                 )}
                 {spatial8dEnabled && (
-                  <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-[#05080D]/80 backdrop-blur-md border border-[#10B981]/45 text-[10px] font-black tracking-wider text-[#6EE7B7] inline-flex items-center gap-1">
-                    <Headphones className="w-3 h-3 text-[#22D3EE]" />
+                  <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-[#000000]/80 backdrop-blur-md border border-[#3B82F6]/45 text-[10px] font-black tracking-wider text-[#93C5FD] inline-flex items-center gap-1">
+                    <Headphones className="w-3 h-3 text-[#60A5FA]" />
                     {m.spatial8dBadgeLive}
                   </span>
                 )}
@@ -1404,7 +1458,7 @@ export const FullScreenNowPlayingModal: React.FC<{
                       }}
                       className={`h-7 px-2.5 rounded-full text-[10px] font-bold cursor-pointer transition-all tabular-nums ${
                         active
-                          ? 'bg-[#10B981]/25 border border-[#10B981] text-[#6EE7B7]'
+                          ? 'bg-[#3B82F6]/25 border border-[#3B82F6] text-[#93C5FD]'
                           : 'bg-white/[0.06] border border-white/10 text-zinc-400 hover:text-white'
                       }`}
                     >
@@ -1435,7 +1489,7 @@ export const FullScreenNowPlayingModal: React.FC<{
                   onClick={() => void handleCopyLyrics()}
                   className="h-7 px-2.5 rounded-full bg-white/[0.07] hover:bg-white/[0.14] text-[11px] font-bold text-zinc-200 inline-flex items-center gap-1 cursor-pointer"
                 >
-                  <Copy className="w-3 h-3 text-[#34D399]" />
+                  <Copy className="w-3 h-3 text-[#60A5FA]" />
                   <span>{lyricsCopiedToast ? m.lyricsCopied : m.copyLyricsBtn}</span>
                 </button>
               </div>
@@ -1445,7 +1499,7 @@ export const FullScreenNowPlayingModal: React.FC<{
                 <div className="py-20 text-zinc-400 text-sm">{m.searchingLyrics}</div>
               ) : !lyrics?.found ? (
                 <div className="py-20 space-y-2">
-                  <Mic2 className="w-10 h-10 text-[#34D399]/60 mx-auto" />
+                  <Mic2 className="w-10 h-10 text-[#60A5FA]/60 mx-auto" />
                   <p className="text-base font-semibold text-zinc-200">{m.noLyricsTitle}</p>
                   <p className="text-xs text-zinc-400">{m.noLyricsSub}</p>
                 </div>
@@ -1463,7 +1517,7 @@ export const FullScreenNowPlayingModal: React.FC<{
                       }}
                       className={`block w-full text-center px-3 py-2 rounded-2xl transition-all duration-300 cursor-pointer ${
                         isActive
-                          ? `text-white ${lyricSizeClasses.active} font-extrabold scale-[1.03] drop-shadow-[0_0_24px_rgba(16,185,129,0.55)] bg-white/[0.04]`
+                          ? `text-white ${lyricSizeClasses.active} font-extrabold scale-[1.03] drop-shadow-[0_0_24px_rgba(59,130,246,0.55)] bg-white/[0.04]`
                           : isPast
                           ? `text-zinc-400/55 ${lyricSizeClasses.idle} font-semibold hover:text-white`
                           : `text-zinc-300/75 ${lyricSizeClasses.idle} font-semibold hover:text-white`
@@ -1502,7 +1556,7 @@ export const FullScreenNowPlayingModal: React.FC<{
               }}
               aria-label={isLiked ? m.likeRemove : m.likeAdd}
               className={`min-w-10 min-h-10 rounded-full flex items-center justify-center shrink-0 cursor-pointer transition-transform active:scale-90 ${
-                isLiked ? 'text-[#34D399]' : 'text-zinc-400 hover:text-white'
+                isLiked ? 'text-[#FF2D55]' : 'text-zinc-400 hover:text-white'
               }`}
             >
               <Heart className={`w-6 h-6 ${isLiked ? 'fill-current' : ''}`} />
@@ -1521,7 +1575,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             aria-pressed={spatial8dEnabled}
             className={`h-8 px-3 rounded-full text-[11px] font-black tracking-wide inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-all ${
               spatial8dEnabled
-                ? 'bg-gradient-to-r from-[#10B981] to-[#22D3EE] text-[#03130E] shadow-[0_4px_16px_rgba(16,185,129,0.45)]'
+                ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_4px_16px_rgba(59,130,246,0.45)]'
                 : 'bg-white/[0.08] hover:bg-white/[0.14] border border-white/10 text-zinc-200'
             }`}
           >
@@ -1538,7 +1592,7 @@ export const FullScreenNowPlayingModal: React.FC<{
               }}
               className={`h-8 px-3 rounded-full border text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors ${
                 isSavedOffline
-                  ? 'bg-[#10B981]/20 border-[#10B981] text-[#6EE7B7]'
+                  ? 'bg-[#3B82F6]/20 border-[#3B82F6] text-[#93C5FD]'
                   : 'bg-white/[0.08] hover:bg-white/[0.15] border-white/10 text-zinc-200'
               }`}
             >
@@ -1556,7 +1610,7 @@ export const FullScreenNowPlayingModal: React.FC<{
               }}
               className="h-8 px-3 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-[11px] font-bold text-white inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
             >
-              <Download className="w-3.5 h-3.5 text-[#34D399]" />
+              <Download className="w-3.5 h-3.5 text-[#60A5FA]" />
               <span>MP3 {exportBitrate}</span>
             </button>
           )}
@@ -1566,7 +1620,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             onClick={() => setShowEqModal(true)}
             className="h-8 px-3 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-[11px] font-bold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
           >
-            <Sparkles className="w-3.5 h-3.5 text-[#22D3EE]" />
+            <Sparkles className="w-3.5 h-3.5 text-[#60A5FA]" />
             <span>{m.studioTabFx}</span>
           </button>
 
@@ -1578,7 +1632,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             }}
             className="h-8 px-3 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-[11px] font-bold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
           >
-            <FolderDown className="w-3.5 h-3.5 text-[#34D399]" />
+            <FolderDown className="w-3.5 h-3.5 text-[#60A5FA]" />
             <span>{offlineTrackIds.length}</span>
           </button>
         </div>
@@ -1593,7 +1647,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             disabled={Boolean(activeRadio)}
             onChange={(e) => requestSeek(Number(e.target.value))}
             aria-label={m.playerRegionAria}
-            className="w-full h-1.5 accent-[#10B981] bg-white/20 rounded-full cursor-pointer"
+            className="w-full h-1.5 accent-[#3B82F6] bg-white/20 rounded-full cursor-pointer"
           />
           <div className="flex items-center justify-between text-xs text-zinc-400 tabular-nums">
             <span>{activeRadio ? 'LIVE' : formatMusicTime(currentTime)}</span>
@@ -1616,7 +1670,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             onClick={toggleShuffle}
             disabled={Boolean(activeRadio)}
             className={`min-w-10 min-h-10 rounded-full flex items-center justify-center cursor-pointer disabled:opacity-30 ${
-              shuffle ? 'text-[#34D399]' : 'text-zinc-400 hover:text-white'
+              shuffle ? 'text-[#60A5FA]' : 'text-zinc-400 hover:text-white'
             }`}
           >
             <Shuffle className="w-5 h-5" />
@@ -1638,7 +1692,7 @@ export const FullScreenNowPlayingModal: React.FC<{
               togglePlayPause();
             }}
             aria-label={isPlaying ? m.pause : m.playNow}
-            className="w-15 h-15 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-[#10B981] via-[#14B8A6] to-[#22D3EE] hover:scale-105 text-[#03130E] flex items-center justify-center shadow-[0_14px_36px_rgba(16,185,129,0.45)] cursor-pointer transition-transform active:scale-95"
+            className="w-15 h-15 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br from-[#3B82F6] via-[#6366F1] to-[#60A5FA] hover:scale-105 text-white flex items-center justify-center shadow-[0_14px_36px_rgba(59,130,246,0.45)] cursor-pointer transition-transform active:scale-95"
           >
             {isPlaying ? (
               <Pause className="w-7 h-7 fill-current" />
@@ -1674,7 +1728,7 @@ export const FullScreenNowPlayingModal: React.FC<{
             onClick={cycleRepeat}
             disabled={Boolean(activeRadio)}
             className={`min-w-10 min-h-10 rounded-full flex items-center justify-center cursor-pointer disabled:opacity-30 ${
-              repeatMode !== 'off' ? 'text-[#34D399]' : 'text-zinc-400 hover:text-white'
+              repeatMode !== 'off' ? 'text-[#60A5FA]' : 'text-zinc-400 hover:text-white'
             }`}
           >
             {repeatMode === 'one' ? (

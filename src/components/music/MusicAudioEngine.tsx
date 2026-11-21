@@ -1024,6 +1024,27 @@ export const MusicAudioEngine: React.FC = () => {
     return () => window.clearTimeout(timer);
   }, [currentTrack?.id]);
 
+  // Proactive Spotify-style genre/artist radio refill when queue is near the end
+  const autoplaySimilar = useMusicStore((s) => s.autoplaySimilar);
+  const queueIndex = useMusicStore((s) => s.queueIndex);
+  const queueLength = useMusicStore((s) => s.queue.length);
+  const repeatMode = useMusicStore((s) => s.repeatMode);
+
+  useEffect(() => {
+    if (!currentTrack || activeRadio || !autoplaySimilar || repeatMode === 'one') return;
+    if (queueLength - queueIndex > 2) return;
+
+    const timer = window.setTimeout(() => {
+      const st = useMusicStore.getState();
+      if (!st.autoplaySimilar || st.activeRadio || !st.currentTrack) return;
+      if (st.queue.length - st.queueIndex <= 2) {
+        void st.fetchAndEnqueueRelatedTracks(st.seedTrack || st.currentTrack);
+      }
+    }, 550);
+
+    return () => window.clearTimeout(timer);
+  }, [currentTrack?.id, activeRadio?.id, autoplaySimilar, queueIndex, queueLength, repeatMode]);
+
   // Dual-Deck Crossfade + Radio Playback Attacher
   useEffect(() => {
     const cleanupSlot = (slot: 'A' | 'B') => {
