@@ -547,7 +547,9 @@ async function startServer() {
         server: {
           middlewareMode: true,
           allowedHosts: true,
-          hmr: hmrEnabled ? { server: httpServer } : false,
+          ws: { server: httpServer },
+          hmr: hmrEnabled,
+          watch: hmrEnabled ? {} : null,
         },
         appType: 'spa',
       });

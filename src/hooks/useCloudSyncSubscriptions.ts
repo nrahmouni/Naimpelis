@@ -16,7 +16,9 @@ import {
   deleteCloudWatchHistoryItem,
   ensureCloudUserProfile,
   migrateLocalStateToCloud,
+  pushCloudMusicLibrary,
   subscribeAuthState,
+  subscribeCloudMusicLibrary,
   subscribeUserCloudCollections,
 } from '../services/userCloudSync';
 import {
@@ -93,6 +95,8 @@ export function useCloudSyncSubscriptions(params: {
 
   useEffect(() => {
     let detachCloudListeners: (() => void) | null = null;
+    let detachMusicCloudListener: (() => void) | null = null;
+    let musicSyncTimer: ReturnType<typeof setTimeout> | null = null;
     let migrationTimer: ReturnType<typeof setTimeout> | null = null;
     let active = true;
     let latestFirebaseUser: User | null = auth.currentUser;
@@ -110,10 +114,23 @@ export function useCloudSyncSubscriptions(params: {
         detachCloudListeners();
         detachCloudListeners = null;
       }
+      if (detachMusicCloudListener) {
+        detachMusicCloudListener();
+        detachMusicCloudListener = null;
+      }
+      if (musicSyncTimer) {
+        clearTimeout(musicSyncTimer);
+        musicSyncTimer = null;
+      }
       if (migrationTimer) {
         clearTimeout(migrationTimer);
         migrationTimer = null;
       }
+      void import('../store/useMusicStore')
+        .then(({ registerMusicCloudSyncHook }) => {
+          registerMusicCloudSyncHook(null);
+        })
+        .catch(() => undefined);
 
       if (!active) return;
 
@@ -243,6 +260,51 @@ export function useCloudSyncSubscriptions(params: {
             saveFriendsList(cloudFriends);
           },
         });
+        // Also wire bidirectional Riffan Music library/taste sync to /musicLibraries/{uid}
+        void import('../store/useMusicStore')
+          .then(({ registerMusicCloudSyncHook, useMusicStore }) => {
+            if (!active || auth.currentUser?.uid !== verifiedFbUser.uid) return;
+            detachMusicCloudListener = subscribeCloudMusicLibrary(
+              verifiedFbUser.uid,
+              (payload) => {
+                useMusicStore.getState().hydrateFromCloud(payload);
+              }
+            );
+            registerMusicCloudSyncHook((lib) => {
+              if (musicSyncTimer) clearTimeout(musicSyncTimer);
+              musicSyncTimer = setTimeout(() => {
+                void pushCloudMusicLibrary({
+                  likedTracks: lib.likedTracks,
+                  userPlaylists: lib.userPlaylists,
+                  savedAlbums: lib.savedAlbums,
+                  savedPlaylists: lib.savedPlaylists,
+                  customPresets: lib.customPresets,
+                  tasteProfile: lib.tasteProfile,
+                  listeningStats: lib.listeningStats,
+                  studioSettings: {
+                    eqBands10: lib.eqBands10,
+                    spatial8dEnabled: lib.spatial8dEnabled,
+                    spatial8dMode: lib.spatial8dMode,
+                    spatialTrajectory: lib.spatialTrajectory,
+                    spatial8dSpeedSec: lib.spatial8dSpeedSec,
+                    bassBoostDb: lib.bassBoostDb,
+                    reverbMix: lib.reverbMix,
+                    stereoWidth: lib.stereoWidth,
+                    exciterMix: lib.exciterMix,
+                    vinylCrackle: lib.vinylCrackle,
+                    vocalCancel: lib.vocalCancel,
+                    crossfadeSec: lib.crossfadeSec,
+                    normalizeAudio: lib.normalizeAudio,
+                    exportBitrate: lib.exportBitrate,
+                    wifiOnlyAutoDownload: lib.wifiOnlyAutoDownload,
+                    musicLang: lib.musicLang,
+                    trackProfiles: lib.trackProfiles,
+                  },
+                });
+              }, 1400);
+            });
+          })
+          .catch(() => undefined);
       }
 
       // 3. Merge guest local history / favorites / channels / friends into Cloud (both SQL & Firestore)
@@ -265,6 +327,8 @@ export function useCloudSyncSubscriptions(params: {
       active = false;
       unsubAuth();
       if (detachCloudListeners) detachCloudListeners();
+      if (detachMusicCloudListener) detachMusicCloudListener();
+      if (musicSyncTimer) clearTimeout(musicSyncTimer);
       if (migrationTimer) clearTimeout(migrationTimer);
     };
   }, [rememberSessionPin]); // eslint-disable-line react-hooks/exhaustive-deps

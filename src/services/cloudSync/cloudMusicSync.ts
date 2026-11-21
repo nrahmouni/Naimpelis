@@ -1,5 +1,11 @@
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
-import { auth, db, isTransientFirestoreError } from '../../firebase';
+import { doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import {
+  auth,
+  db,
+  handleFirestoreError,
+  isTransientFirestoreError,
+  OperationType,
+} from '../../firebase';
 import type {
   CustomStudioPreset,
   EqBands10,
@@ -15,6 +21,7 @@ import type {
   UserMusicPlaylist,
 } from '../../types/music';
 import type { MusicLang } from '../../components/music/musicI18n';
+import { enqueueDocWrite, isNotFoundError } from './cloudSyncSanitizers';
 
 export interface CloudMusicSnapshotPayload {
   likedTracks: MusicTrack[];
@@ -54,12 +61,6 @@ function safeJsonParse<T>(raw: unknown, fallback: T): T {
   }
 }
 
-function isPermissionError(err: unknown): boolean {
-  const code =
-    err && typeof err === 'object' && 'code' in err ? String((err as { code?: unknown }).code || '') : '';
-  return code === 'permission-denied';
-}
-
 function capJsonString(value: unknown, maxBytes: number, trimFn?: (v: any) => any): string {
   let str = JSON.stringify(value);
   if (str.length <= maxBytes) return str;
@@ -74,7 +75,9 @@ export async function pushCloudMusicLibrary(payload: CloudMusicSnapshotPayload):
   const user = auth.currentUser;
   if (!user || !user.emailVerified || user.isAnonymous) return;
 
+  const path = `musicLibraries/${user.uid}`;
   const ref = doc(db, 'musicLibraries', user.uid);
+
   const likedTracksJson = capJsonString(payload.likedTracks.slice(0, 180), 215000, (arr: MusicTrack[]) =>
     arr.slice(0, 90)
   );
@@ -104,46 +107,58 @@ export async function pushCloudMusicLibrary(payload: CloudMusicSnapshotPayload):
   const studioJson = capJsonString(payload.studioSettings, 38000);
   const statsJson = capJsonString(payload.listeningStats, 75000);
 
-  try {
-    const existingSnap = await getDoc(ref);
-    if (existingSnap.exists()) {
-      await setDoc(
-        ref,
-        {
-          likedTracksJson,
-          playlistsJson,
-          collectionsJson,
-          tasteJson,
-          studioJson,
-          statsJson,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-    } else {
+  const updateFields = {
+    likedTracksJson,
+    playlistsJson,
+    collectionsJson,
+    tasteJson,
+    studioJson,
+    statsJson,
+    updatedAt: serverTimestamp(),
+  };
+
+  return enqueueDocWrite(path, async () => {
+    if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
+
+    let existsOnServer = false;
+    try {
+      const existingSnap = await getDoc(ref);
+      existsOnServer = existingSnap.exists();
+    } catch (error) {
+      if (isTransientFirestoreError(error)) return;
+      handleFirestoreError(error, OperationType.GET, path);
+    }
+
+    if (existsOnServer) {
+      try {
+        await updateDoc(ref, updateFields);
+        return;
+      } catch (error) {
+        if (!isNotFoundError(error)) {
+          if (isTransientFirestoreError(error)) return;
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
+      }
+    }
+
+    try {
       await setDoc(ref, {
         uid: user.uid,
-        likedTracksJson,
-        playlistsJson,
-        collectionsJson,
-        tasteJson,
-        studioJson,
-        statsJson,
+        ...updateFields,
         createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
       });
+    } catch (error) {
+      if (isTransientFirestoreError(error)) return;
+      handleFirestoreError(error, OperationType.CREATE, path);
     }
-  } catch (error) {
-    if (isTransientFirestoreError(error) || isPermissionError(error)) {
-      return;
-    }
-  }
+  });
 }
 
 export function subscribeCloudMusicLibrary(
   uid: string,
   onRemoteUpdate: (payload: CloudMusicSnapshotPayload) => void
 ): () => void {
+  const path = `musicLibraries/${uid}`;
   const ref = doc(db, 'musicLibraries', uid);
   return onSnapshot(
     ref,
@@ -184,7 +199,8 @@ export function subscribeCloudMusicLibrary(
       });
     },
     (error) => {
-      if (isTransientFirestoreError(error) || isPermissionError(error)) return;
+      if (isTransientFirestoreError(error)) return;
+      handleFirestoreError(error, OperationType.GET, path);
     }
   );
 }

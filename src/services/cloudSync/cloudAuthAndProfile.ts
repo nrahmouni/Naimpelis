@@ -131,7 +131,12 @@ export async function ensureCloudUserProfile(
   user: User,
   localProfile: StoredProfile
 ): Promise<StoredProfile> {
-  if (!auth.currentUser || auth.currentUser.uid !== user.uid || auth.currentUser.isAnonymous) {
+  if (
+    !auth.currentUser ||
+    auth.currentUser.uid !== user.uid ||
+    auth.currentUser.isAnonymous ||
+    !auth.currentUser.emailVerified
+  ) {
     return {
       id: user.uid,
       name: clampString(

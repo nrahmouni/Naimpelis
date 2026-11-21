@@ -37,3 +37,8 @@ export {
   subscribeUserCloudCollections,
   migrateLocalStateToCloud,
 } from './cloudSync/cloudRoomsAndFriendsSync';
+
+export {
+  pushCloudMusicLibrary,
+  subscribeCloudMusicLibrary,
+} from './cloudSync/cloudMusicSync';

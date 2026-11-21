@@ -28,7 +28,7 @@ function getFirebaseProjectId(): string {
   } catch {
     // ignore
   }
-  return process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0607587118';
+  return process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0777375681';
 }
 
 function decodeBase64Url(input: string): Buffer {
