@@ -33,7 +33,7 @@ export interface MusicTrack {
   previewUrl?: string;
   isrc?: string;
   rank?: number;
-  source?: 'deezer' | 'audius' | 'soundcloud' | 'youtube_music' | 'spotify' | 'radio';
+  source?: 'deezer' | 'audius' | 'soundcloud' | 'youtube_music' | 'spotify' | 'jamendo' | 'radio';
   audiusId?: string;
   soundcloudId?: string;
   youtubeVideoId?: string;
@@ -84,6 +84,18 @@ export interface LyricsPayload {
   plainLyrics?: string;
 }
 
+export interface PlaybackSourceCandidate {
+  id: string;
+  sourceType: 'audio-hls' | 'audio-mp3' | 'preview';
+  sourceLabel: string;
+  streamUrl: string;
+  proxiedUrl: string;
+  bitrateKbps?: number;
+  fullLength: boolean;
+  provider: string;
+  latencyMs?: number;
+}
+
 export interface ResolvedTrackPlayback {
   sourceType: 'audio-hls' | 'audio-mp3' | 'youtube' | 'preview';
   sourceLabel: string;
@@ -94,6 +106,9 @@ export interface ResolvedTrackPlayback {
   previewUrl?: string;
   fullLength: boolean;
   spatial8dYtFallback?: boolean;
+  bitrateKbps?: number;
+  provider?: string;
+  alternatives?: PlaybackSourceCandidate[];
 }
 
 export interface UserMusicPlaylist {
@@ -104,56 +119,130 @@ export interface UserMusicPlaylist {
   tracks: MusicTrack[];
 }
 
-export type EqPresetId =
-  | 'flat'
-  | 'bass'
-  | 'sub_deep'
-  | 'reggaeton'
-  | 'hiphop'
-  | 'club'
-  | 'pop'
-  | 'rock'
-  | 'vocal'
-  | 'acoustic'
-  | 'flamenco'
-  | 'arabic_oriental'
-  | 'jazz'
-  | 'classical'
-  | 'lofi'
-  | 'car_audio'
-  | 'night'
-  | 'custom';
+export type EqPresetId = 'flat' | 'bass' | 'vocal' | 'club' | 'acoustic';
 export type Spatial8dMode = 'orbit' | 'concert' | 'club';
-export type VocalStemMode = 'both' | 'vocals' | 'instrumental';
-export type AudioEffectId =
-  | 'none'
-  | 'slowed_reverb'
-  | 'nightcore'
-  | 'bass_boost'
-  | 'lofi_vinyl'
-  | 'underwater'
-  | 'stadium_echo'
-  | 'vaporwave'
-  | 'radio_vintage'
-  | 'club_pingpong'
-  | 'custom';
-
-export interface AudioFxParams {
-  playbackRate: number;
-  preservePitch: boolean;
-  reverbMix: number;
-  echoMix: number;
-  echoTimeMs: number;
-  lowpassHz: number;
-  highpassHz: number;
-  saturation: number;
-  chorusMix: number;
-  bassBoostDb: number;
-  trebleBoostDb: number;
-}
-
+export type SpatialTrajectory = 'orbit' | 'pendulum' | 'figure8' | 'elevated';
 export type MusicRepeatMode = 'off' | 'all' | 'one';
 export type MusicViewMode = 'audio' | 'video';
+export type ExportBitrate = '128k' | '192k' | '320k';
+
+export type EqBands5 = [number, number, number, number, number];
+export type EqBands10 = [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
+
+export type ProVibePresetId =
+  | 'original'
+  | '8d_ultra'
+  | 'slowed_reverb'
+  | 'nightcore'
+  | 'bass_extreme'
+  | 'lofi_warmth';
+
+export interface CustomStudioPreset {
+  id: string;
+  name: string;
+  createdAt: number;
+  eqBands10: EqBands10;
+  spatial8dEnabled: boolean;
+  spatial8dMode: Spatial8dMode;
+  spatialTrajectory: SpatialTrajectory;
+  spatial8dSpeedSec: number;
+  bassBoostDb: number;
+  reverbMix: number;
+  stereoWidth: number;
+  exciterMix: number;
+  vinylCrackle: number;
+  vocalCancel: boolean;
+  pitchSemitones: number;
+  playbackRate: number;
+  preservesPitch: boolean;
+}
+
+export interface TrackStudioProfile {
+  trackId: string;
+  eqBands10?: EqBands10;
+  spatial8dEnabled?: boolean;
+  spatialTrajectory?: SpatialTrajectory;
+  spatial8dSpeedSec?: number;
+  bassBoostDb?: number;
+  reverbMix?: number;
+  stereoWidth?: number;
+  exciterMix?: number;
+  vinylCrackle?: number;
+  vocalCancel?: boolean;
+  pitchSemitones?: number;
+  playbackRate?: number;
+  preservesPitch?: boolean;
+  trimStartSec?: number;
+  trimEndSec?: number;
+  fadeSec?: number;
+}
+
+export interface DownloadJob {
+  id: string;
+  track: MusicTrack;
+  mode: string;
+  bitrate: ExportBitrate;
+  status: 'queued' | 'downloading' | 'done' | 'error' | 'cancelled';
+  progressPct: number;
+  loadedBytes: number;
+  totalBytes: number;
+  error?: string;
+  createdAt: number;
+}
+
+export interface ListeningTrackStat {
+  count: number;
+  title: string;
+  artist: string;
+  cover: string;
+  lastPlayedAt: number;
+}
+
+export interface ListeningArtistStat {
+  count: number;
+  name: string;
+  picture?: string;
+}
+
+export interface ListeningStats {
+  totalPlays: number;
+  totalListenSec: number;
+  trackPlayCounts: Record<string, ListeningTrackStat>;
+  artistPlayCounts: Record<string, ListeningArtistStat>;
+}
+
+export interface ImportedTasteSource {
+  id: string;
+  provider: 'spotify' | 'youtube_music' | 'file';
+  label: string;
+  trackCount: number;
+  importedAt: number;
+}
+
+export interface TasteProfile {
+  favoriteArtists: string[];
+  favoriteGenres: string[];
+  importedSources: ImportedTasteSource[];
+}
+
+export interface ImportedTrackInput {
+  title: string;
+  artist: string;
+  album?: string;
+  durationSec?: number;
+  sourceHint?: string;
+}
 
 export interface MusicHomePayload {
   topTracks: MusicTrack[];

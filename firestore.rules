@@ -246,6 +246,41 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidMusicLibrary(data) {
+      return data.keys().hasAll([
+          'uid',
+          'likedTracksJson',
+          'playlistsJson',
+          'collectionsJson',
+          'tasteJson',
+          'studioJson',
+          'statsJson',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'likedTracksJson',
+          'playlistsJson',
+          'collectionsJson',
+          'tasteJson',
+          'studioJson',
+          'statsJson',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == request.auth.uid &&
+        data.likedTracksJson is string && data.likedTracksJson.size() <= 220000 &&
+        data.playlistsJson is string && data.playlistsJson.size() <= 220000 &&
+        data.collectionsJson is string && data.collectionsJson.size() <= 120000 &&
+        data.tasteJson is string && data.tasteJson.size() <= 80000 &&
+        data.studioJson is string && data.studioJson.size() <= 40000 &&
+        data.statsJson is string && data.statsJson.size() <= 80000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     // =========================================================================
     // 4. COLLECTION RULES (ALL COLLECTIONS IN firebase-blueprint.json)
     // =========================================================================
@@ -498,6 +533,42 @@ service cloud.firestore {
           (resource == null && isOwnCompositeDocId(friendDocId)) ||
           (resource != null && existing().uid == request.auth.uid && friendDocId == request.auth.uid + '_' + existing().friendId)
         );
+    }
+
+    // Riffan Music Cloud Libraries: strictly owner-only; list disabled to prevent enumeration
+    match /musicLibraries/{userId} {
+      allow get: if isVerified() && isValidId(userId) && userId == request.auth.uid;
+      allow list: if false;
+
+      allow create: if isVerified() &&
+        isValidId(userId) &&
+        userId == request.auth.uid &&
+        isValidMusicLibrary(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerified() &&
+        isValidId(userId) &&
+        userId == request.auth.uid &&
+        isValidMusicLibrary(incoming()) &&
+        existing().uid == request.auth.uid &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Action: SyncMusicLibraryState
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'likedTracksJson',
+            'playlistsJson',
+            'collectionsJson',
+            'tasteJson',
+            'studioJson',
+            'statsJson',
+            'updatedAt'
+          ])
+        );
+
+      allow delete: if isVerified() && isValidId(userId) && userId == request.auth.uid;
     }
   }
 }

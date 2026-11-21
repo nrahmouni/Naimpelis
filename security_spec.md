@@ -1,9 +1,9 @@
 # Firestore Zero-Trust Security Specification — NAIMCINE
 
 ## 1. Data Invariants
-1. **Default-Deny Catch-All**: Every path not explicitly matched under `/userProfiles/{userId}`, `/watchHistory/{historyId}`, `/favorites/{favoriteId}`, `/savedRooms/{savedRoomId}`, or `/friends/{friendDocId}` is unconditionally denied (`allow read, write: if false;`).
+1. **Default-Deny Catch-All**: Every path not explicitly matched under `/userProfiles/{userId}`, `/watchHistory/{historyId}`, `/favorites/{favoriteId}`, `/savedRooms/{savedRoomId}`, `/friends/{friendDocId}`, or `/musicLibraries/{userId}` is unconditionally denied (`allow read, write: if false;`).
 2. **Verified Identity Gate**: Every read (`get`, `list`) and write (`create`, `update`, `delete`) requires `request.auth != null && request.auth.token.email_verified == true`. Unauthenticated and unverified-email tokens are rejected everywhere.
-3. **Zero PII & Strict Owner Isolation**: `/userProfiles/{userId}` stores zero PII (no email/phone/address), forbids `list` scraping (`allow list: if false`), and restricts `get`, `create`, `update`, and `delete` strictly to `userId == request.auth.uid`. Similarly, `/savedRooms/{savedRoomId}` and `/friends/{friendDocId}` isolate room PINs and friend lists strictly to `existing().uid == request.auth.uid`.
+3. **Zero PII & Strict Owner Isolation**: `/userProfiles/{userId}` and `/musicLibraries/{userId}` store zero PII (no email/phone/address), forbid `list` scraping (`allow list: if false`), and restrict `get`, `create`, `update`, and `delete` strictly to `userId == request.auth.uid`. Similarly, `/savedRooms/{savedRoomId}` and `/friends/{friendDocId}` isolate room PINs and friend lists strictly to `existing().uid == request.auth.uid`.
 4. **Composite Key Anti-Squatting & Safe Non-Existent `getDoc` Probes**:
    - On `create`: `docId == request.auth.uid + '_' + incoming().itemId` (or `favId` / `roomCode` / `friendId`) and `incoming().uid == request.auth.uid`.
    - On `get` and `delete`: When `resource == null` (document does not yet exist or was already deleted on another device), access is permitted **only** if `docId` strictly matches `^<request.auth.uid>_[a-zA-Z0-9_\-]+$`, preventing cross-user existence probing while enabling clean client upsert checks. When `resource != null`, `existing().uid == request.auth.uid` and exact composite ID equality are enforced.
@@ -11,7 +11,7 @@
    - On `create`: `uid == request.auth.uid`, `createdAt == request.time`, `updatedAt == request.time`.
    - On `update`: `uid`, `createdAt`, `itemId`/`favId`/`roomCode`/`friendId`, and `mediaType`/`kind` are strictly immutable (`incoming().field == existing().field`), and `updatedAt == request.time`.
 6. **Secure List Queries (No Client Delegation)**: `/watchHistory`, `/favorites`, `/savedRooms`, and `/friends` enforce `resource.data.uid == request.auth.uid` inside `allow list` with zero `get()`/`exists()` calls, preventing cross-user scraping and O(n) read-cost amplification.
-7. **Volumetric, Array & PIN Invariants**: Every path ID on single-document operations passes `isValidId()` (`<= 160` chars, `^[a-zA-Z0-9_\-]+$`), `SavedRoom.queueItems` is bounded to `<= 12` map entries, and `SavedRoom.pinCode` must match `^[0-9]{4}$` iff `hasPin == true`.
+7. **Volumetric, Array & PIN Invariants**: Every path ID on single-document operations passes `isValidId()` (`<= 160` chars, `^[a-zA-Z0-9_\-]+$`), `SavedRoom.queueItems` is bounded to `<= 12` map entries, `SavedRoom.pinCode` must match `^[0-9]{4}$` iff `hasPin == true`, and `/musicLibraries/{userId}` string payloads are strictly bounded under Firestore's 1MB limit (`likedTracksJson <= 220KB`, `playlistsJson <= 220KB`, `collectionsJson <= 120KB`, `tasteJson <= 80KB`, `studioJson <= 40KB`, `statsJson <= 80KB`).
 
 ## 2. The "Dirty Dozen" Adversarial Payloads
 1. **Payload 1 (Identity Spoofing on Create)**: Authenticated `userA` creates `/watchHistory/userB_movie-1` with `{ uid: "userB", ... }` -> `PERMISSION_DENIED`.

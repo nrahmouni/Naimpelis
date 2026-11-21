@@ -56,7 +56,8 @@ function parseDurationLabel(label: string): number {
 const YTM_TYPE_OR_NOISE_RE =
   /^(song|canción|cancion|video|vídeo|single|ep|album|álbum|podcast|episode|episodio|歌曲|专辑|專輯|单曲|單曲|视频|影片|chanson|titre|cançó|àlbum|трек|песня)$/i;
 const YTM_DURATION_RE = /^\d+:\d{2}(?::\d{2})?$/;
-const YTM_VIEWS_RE = /\b(views?|plays?|reproducciones|visualizaciones|listeners?|subscribers?)\b|次播放|次观看|次觀看|萬|万/i;
+const YTM_VIEWS_RE =
+  /(\b(views?|plays?|reproducciones|visualizaciones|vues|listeners?|subscribers?|oyentes)\b|\d+(?:[.,]\d+)?\s*(?:[kmb]\s+de\s+|m\s+de\s+|mil(?:lones)?\s+de\s+)?(?:visualizaciones|reproducciones|views?|plays?|vues)|次播放|次观看|次觀看|萬|万)/i;
 
 function getYtmContextForQuery(query: string) {
   if (/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(query)) {
@@ -654,3 +655,382 @@ export async function fetchSpotifyChartsAndAlbums(): Promise<{
     albums: Array.from(albumsMap.values()).slice(0, 20),
   };
 }
+
+async function fetchSpotifyEmbedEntity(
+  kind: 'playlist' | 'album' | 'track',
+  id: string
+): Promise<{
+  title: string;
+  cover: string;
+  entries: SpotifyRawEntry[];
+  singleArtist?: string;
+}> {
+  try {
+    const res = await fetch(`https://open.spotify.com/embed/${kind}/${encodeURIComponent(id)}`, {
+      headers: { 'User-Agent': CHROME_UA },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) return { title: '', cover: '', entries: [] };
+    const html = await res.text();
+    const match = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+    if (!match?.[1]) return { title: '', cover: '', entries: [] };
+    const parsed = JSON.parse(match[1]);
+    const entity = parsed?.props?.pageProps?.state?.data?.entity;
+    const cover = String(
+      entity?.coverArt?.sources?.[0]?.url ||
+        entity?.visualIdentity?.image?.[0]?.url ||
+        ''
+    );
+    if (kind === 'track') {
+      const artistsList = Array.isArray(entity?.artists)
+        ? entity.artists.map((a: any) => String(a?.name || '')).filter(Boolean).join(', ')
+        : String(entity?.subtitle || '');
+      return {
+        title: String(entity?.title || entity?.name || 'Spotify Track'),
+        cover,
+        singleArtist: artistsList || 'Spotify Artist',
+        entries: [
+          {
+            uri: String(entity?.uri || `spotify:track:${id}`),
+            title: String(entity?.title || entity?.name || ''),
+            subtitle: artistsList || 'Spotify Artist',
+            duration: Number(entity?.duration || 195000),
+            isExplicit: Boolean(entity?.isExplicit),
+            audioPreview: entity?.audioPreview,
+          },
+        ],
+      };
+    }
+    const entries = Array.isArray(entity?.trackList) ? (entity.trackList as SpotifyRawEntry[]) : [];
+    return {
+      title: String(entity?.title || entity?.name || (kind === 'album' ? 'Spotify Album' : 'Spotify Playlist')),
+      cover,
+      entries,
+    };
+  } catch {
+    return { title: '', cover: '', entries: [] };
+  }
+}
+
+export interface ImportedCollectionResult {
+  ok: boolean;
+  provider: 'spotify' | 'youtube_music';
+  title: string;
+  cover: string;
+  tracks: MusicTrack[];
+  topArtists: string[];
+  error?: string;
+}
+
+export async function importExternalMusicUrl(rawUrl: string): Promise<ImportedCollectionResult> {
+  const input = String(rawUrl || '').trim();
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(input);
+  } catch {
+    return {
+      ok: false,
+      provider: 'spotify',
+      title: '',
+      cover: '',
+      tracks: [],
+      topArtists: [],
+      error: 'URL no válida. Pega un enlace completo de Spotify o YouTube Music.',
+    };
+  }
+
+  const host = parsedUrl.hostname.toLowerCase();
+
+  // 1. Spotify Playlist / Album / Track URL
+  if (host.includes('spotify.com') || host === 'spoti.fi') {
+    let targetUrl = parsedUrl.toString();
+    if (host === 'spoti.fi') {
+      try {
+        const redir = await fetch(targetUrl, {
+          method: 'HEAD',
+          redirect: 'follow',
+          signal: AbortSignal.timeout(4000),
+        });
+        if (redir.url) targetUrl = redir.url;
+      } catch {
+        // ignore shortlink resolve fallback
+      }
+    }
+    const m = targetUrl.match(/spotify\.com\/(?:intl-[a-z]+\/)?(playlist|album|track)\/([a-zA-Z0-9]+)/i);
+    if (!m) {
+      return {
+        ok: false,
+        provider: 'spotify',
+        title: '',
+        cover: '',
+        tracks: [],
+        topArtists: [],
+        error: 'Usa un enlace público de playlist, álbum o canción de Spotify (open.spotify.com/playlist/...).',
+      };
+    }
+    const kind = m[1].toLowerCase() as 'playlist' | 'album' | 'track';
+    const spId = m[2];
+    const entity = await fetchSpotifyEmbedEntity(kind, spId);
+    if (entity.entries.length === 0) {
+      return {
+        ok: false,
+        provider: 'spotify',
+        title: entity.title || 'Spotify',
+        cover: entity.cover,
+        tracks: [],
+        topArtists: [],
+        error: 'No pudimos leer esa lista. Asegúrate de que la playlist sea Pública (no privada) o usa la pestaña Subir Archivo.',
+      };
+    }
+
+    const sliced = entity.entries.filter((e) => e?.title).slice(0, 100);
+    const artistCount = new Map<string, number>();
+    const tracks: MusicTrack[] = sliced.map((entry, idx) => {
+      const tid = String(entry.uri || '').split(':').pop() || `${spId}-${idx}`;
+      const artistName = String(entry.subtitle || entity.singleArtist || 'Spotify Artist').trim();
+      const primaryArtist = artistName.split(',')[0].trim();
+      if (primaryArtist) {
+        artistCount.set(primaryArtist, (artistCount.get(primaryArtist) || 0) + 1);
+      }
+      return {
+        id: `sp-${tid}`,
+        title: String(entry.title || 'Track').trim(),
+        artist: {
+          id: `sp-art-${encodeURIComponent(primaryArtist.toLowerCase())}`,
+          name: artistName,
+          picture: entity.cover,
+        },
+        album: {
+          id: `sp-${kind}-${spId}`,
+          title: entity.title || 'Spotify Import',
+          cover: entity.cover,
+          coverXl: entity.cover,
+        },
+        durationSec: Math.max(60, Math.round(Number(entry.duration || 195000) / 1000)),
+        explicit: Boolean(entry.isExplicit),
+        previewUrl: entry.audioPreview?.url ? String(entry.audioPreview.url) : undefined,
+        source: 'spotify',
+        spotifyId: tid,
+      };
+    });
+
+    // Enrich first 18 tracks with individual cover art via iTunes/oEmbed concurrently
+    await Promise.allSettled(
+      tracks.slice(0, 18).map(async (trk) => {
+        if (trk.spotifyId) {
+          const thumb = await fetchSpotifyOembedThumb(`spotify:track:${trk.spotifyId}`);
+          if (thumb) {
+            trk.album.cover = thumb;
+            trk.album.coverXl = thumb;
+            trk.artist.picture = thumb;
+          }
+        }
+      })
+    );
+
+    const topArtists = Array.from(artistCount.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 15)
+      .map(([name]) => name);
+
+    return {
+      ok: true,
+      provider: 'spotify',
+      title: entity.title || 'Spotify Import',
+      cover: entity.cover || tracks[0]?.album.cover || '',
+      tracks,
+      topArtists,
+    };
+  }
+
+  // 2. YouTube Music / YouTube Playlist URL
+  if (host.includes('youtube.com') || host === 'youtu.be') {
+    const listId = parsedUrl.searchParams.get('list') || '';
+    const vId =
+      parsedUrl.searchParams.get('v') ||
+      (host === 'youtu.be' ? parsedUrl.pathname.replace(/^\//, '').slice(0, 11) : '');
+
+    if (listId === 'LM' || listId === 'LL' || listId === 'WL') {
+      return {
+        ok: false,
+        provider: 'youtube_music',
+        title: '',
+        cover: '',
+        tracks: [],
+        topArtists: [],
+        error:
+          'Tu lista "Me gusta" (LM/LL) es privada por cuenta de Google. Exporta tus Me Gusta desde Google Takeout (watch-history.json o likes.json) o crea una playlist No oculta y pega su enlace.',
+      };
+    }
+
+    if (listId) {
+      const browseId = listId.startsWith('VL') || listId.startsWith('MPREb_') ? listId : `VL${listId}`;
+      const doc = await ytmBrowse(browseId);
+      if (doc) {
+        const header =
+          collectRenderers(doc, 'musicResponsiveHeaderRenderer')[0] ||
+          collectRenderers(doc, 'musicDetailHeaderRenderer')[0] ||
+          collectRenderers(doc, 'musicEditablePlaylistDetailHeaderRenderer')[0]?.header
+            ?.musicResponsiveHeaderRenderer;
+        const plTitle = parseRunsText(header?.title).trim() || 'YouTube Music Playlist';
+        const plCover =
+          pickBestThumb(
+            header?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails ||
+              header?.thumbnail?.croppedSquareThumbnailRenderer?.thumbnail?.thumbnails
+          ) || '';
+
+        const items = collectRenderers(doc, 'musicResponsiveListItemRenderer');
+        const tracks: MusicTrack[] = [];
+        const seen = new Set<string>();
+        const artistCount = new Map<string, number>();
+
+        for (const item of items) {
+          const parsed = parseYtmTrackFromResponsive(item);
+          if (parsed && !seen.has(parsed.id)) {
+            seen.add(parsed.id);
+            tracks.push(parsed);
+            const art = parsed.artist.name.split(',')[0].trim();
+            if (art && art !== 'YouTube Music') {
+              artistCount.set(art, (artistCount.get(art) || 0) + 1);
+            }
+            if (tracks.length >= 100) break;
+          }
+        }
+
+        if (tracks.length > 0) {
+          return {
+            ok: true,
+            provider: 'youtube_music',
+            title: plTitle,
+            cover: plCover || tracks[0].album.cover,
+            tracks,
+            topArtists: Array.from(artistCount.entries())
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 15)
+              .map(([name]) => name),
+          };
+        }
+      }
+      return {
+        ok: false,
+        provider: 'youtube_music',
+        title: '',
+        cover: '',
+        tracks: [],
+        topArtists: [],
+        error: 'No pudimos leer la playlist de YouTube Music. Verifica que sea Pública o Oculta (Unlisted).',
+      };
+    }
+
+    if (vId && vId.length === 11) {
+      const ytmSingle = await searchYouTubeMusic(vId);
+      const hit = ytmSingle.tracks.find((t) => t.youtubeVideoId === vId) || ytmSingle.tracks[0];
+      if (hit) {
+        return {
+          ok: true,
+          provider: 'youtube_music',
+          title: hit.title,
+          cover: hit.album.cover,
+          tracks: [hit],
+          topArtists: hit.artist.name !== 'YouTube Music' ? [hit.artist.name] : [],
+        };
+      }
+    }
+  }
+
+  return {
+    ok: false,
+    provider: 'youtube_music',
+    title: '',
+    cover: '',
+    tracks: [],
+    topArtists: [],
+    error: 'Enlace no reconocido. Usa open.spotify.com/playlist/... o music.youtube.com/playlist?list=...',
+  };
+}
+
+export async function matchImportedTracksBatch(
+  items: Array<{ title: string; artist: string; album?: string; durationSec?: number }>
+): Promise<MusicTrack[]> {
+  const cleanItems = items
+    .filter((i) => i && typeof i.title === 'string' && i.title.trim())
+    .slice(0, 45);
+
+  const results: Array<MusicTrack | null> = new Array(cleanItems.length).fill(null);
+  let cursor = 0;
+
+  async function worker() {
+    while (true) {
+      const idx = cursor++;
+      if (idx >= cleanItems.length) break;
+      const item = cleanItems[idx];
+      const title = item.title.trim();
+      const artist = String(item.artist || '').trim();
+      const query = artist && artist.toLowerCase() !== 'desconocido' ? `${artist} ${title}` : title;
+
+      try {
+        // Fast iTunes + Deezer lookup to grab cover art, clean artist/title, and duration
+        const [dzRes, itList] = await Promise.all([
+          fetch(`https://api.deezer.com/search/track?q=${encodeURIComponent(query)}&limit=3`, {
+            signal: AbortSignal.timeout(3500),
+          })
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null),
+          searchItunesMusic(query, 'song', 2, 'ES'),
+        ]);
+
+        const dzHit = Array.isArray(dzRes?.data) ? dzRes.data[0] : null;
+        if (dzHit?.id) {
+          results[idx] = {
+            id: `dz-${dzHit.id}`,
+            title: String(dzHit.title_short || dzHit.title || title),
+            artist: {
+              id: String(dzHit.artist?.id || `imp-art-${idx}`),
+              name: String(dzHit.artist?.name || artist || 'Artista'),
+              picture: String(dzHit.artist?.picture_medium || dzHit.album?.cover_medium || ''),
+            },
+            album: {
+              id: String(dzHit.album?.id || `imp-alb-${idx}`),
+              title: String(dzHit.album?.title || item.album || 'Importado'),
+              cover: String(dzHit.album?.cover_big || dzHit.album?.cover_medium || ''),
+              coverXl: String(dzHit.album?.cover_xl || dzHit.album?.cover_big || ''),
+            },
+            durationSec: Number(dzHit.duration || item.durationSec || 195),
+            explicit: Boolean(dzHit.explicit_lyrics),
+            previewUrl: dzHit.preview ? String(dzHit.preview) : undefined,
+            isrc: dzHit.isrc ? String(dzHit.isrc) : undefined,
+            source: 'deezer',
+          };
+          continue;
+        }
+
+        if (itList[0]) {
+          results[idx] = mapItunesSongToTrack(itList[0], 'spotify');
+          continue;
+        }
+      } catch {
+        // fallback cleanly to raw imported metadata so song is never lost
+      }
+
+      results[idx] = {
+        id: `imp-${Buffer.from(`${artist}|${title}`).toString('base64url').slice(0, 18)}`,
+        title,
+        artist: {
+          id: `imp-art-${encodeURIComponent((artist || 'art').toLowerCase())}`,
+          name: artist || 'Artista',
+        },
+        album: {
+          id: `imp-alb-${idx}`,
+          title: item.album || 'Importado',
+          cover: '',
+        },
+        durationSec: item.durationSec || 200,
+        source: 'spotify',
+      };
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(5, cleanItems.length) }, () => worker()));
+  return results.filter((t): t is MusicTrack => Boolean(t));
+}
+

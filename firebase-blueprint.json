@@ -414,6 +414,71 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "MusicLibrary": {
+      "title": "MusicLibrary",
+      "description": "Owner-only cloud-synced Riffan Music library, playlists, Spotify/YTM imported taste profile, listening stats, and Studio Pro DSP settings.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "likedTracksJson": {
+          "type": "string",
+          "description": "Serialized bounded list of liked music tracks.",
+          "maxLength": 220000
+        },
+        "playlistsJson": {
+          "type": "string",
+          "description": "Serialized bounded list of custom user playlists.",
+          "maxLength": 220000
+        },
+        "collectionsJson": {
+          "type": "string",
+          "description": "Serialized saved albums, saved playlists, and custom studio presets.",
+          "maxLength": 120000
+        },
+        "tasteJson": {
+          "type": "string",
+          "description": "Serialized taste profile (favorite artists, genres, Spotify/YTM import logs).",
+          "maxLength": 80000
+        },
+        "studioJson": {
+          "type": "string",
+          "description": "Serialized Studio Pro EQ/8D settings and per-track profiles.",
+          "maxLength": 40000
+        },
+        "statsJson": {
+          "type": "string",
+          "description": "Serialized listening stats (totalPlays, totalListenSec, top tracks/artists).",
+          "maxLength": 80000
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the music library was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the music library was last updated."
+        }
+      },
+      "required": [
+        "uid",
+        "likedTracksJson",
+        "playlistsJson",
+        "collectionsJson",
+        "tasteJson",
+        "studioJson",
+        "statsJson",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -436,6 +501,10 @@
     "/friends/{friendDocId}": {
       "schema": "FriendContact",
       "description": "Owner-only saved friend contacts for direct in-app room invitations."
+    },
+    "/musicLibraries/{userId}": {
+      "schema": "MusicLibrary",
+      "description": "Owner-only cloud-synced Riffan Music library, taste profile, stats, and DSP settings."
     }
   }
 }

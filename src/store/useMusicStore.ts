@@ -1,45 +1,56 @@
 import { create } from 'zustand';
 import type {
-  AudioEffectId,
-  AudioFxParams,
+  CustomStudioPreset,
+  DownloadJob,
+  EqBands10,
+  EqBands5,
   EqPresetId,
+  ExportBitrate,
+  ListeningStats,
   MusicAlbumRef,
   MusicPlaylist,
   MusicRadioStation,
   MusicRepeatMode,
   MusicTrack,
   MusicViewMode,
+  PlaybackSourceCandidate,
+  ProVibePresetId,
   ResolvedTrackPlayback,
   Spatial8dMode,
+  SpatialTrajectory,
+  TasteProfile,
+  TrackStudioProfile,
   UserMusicPlaylist,
-  VocalStemMode,
 } from '../types/music';
+import type { MusicLang } from '../components/music/musicI18n';
+import type { CloudMusicSnapshotPayload } from '../services/cloudSync/cloudMusicSync';
 
-import {
-  AUDIO_8D_LIMITS,
-  clamp8dDepth,
-  clamp8dReverb,
-  clamp8dSpeed,
-} from '../hooks/useAudio8D';
-import { normalizeMusicLang, type MusicLang } from '../components/music/musicI18n';
-import { EQ_PRESETS, normalizeCustomEqBands } from '../components/music/eqPresets';
-import {
-  AUDIO_EFFECTS,
-  DEFAULT_AUDIO_FX_PARAMS,
-  normalizeAudioFxParams,
-  resolveAudioFxParams,
-} from '../components/music/audioEffects';
+const STORAGE_KEY = 'riffan_music_library_v2';
+const LEGACY_STORAGE_KEY = 'riffan_music_library_v1';
 
-const STORAGE_KEY = 'riffan_music_library_v1';
+export const EQ_10_LABELS = ['31', '62', '125', '250', '500', '1k', '2k', '4k', '8k', '16k'] as const;
 
-export const SPATIAL_8D_PRESETS: Record<
-  Spatial8dMode,
-  { speed: number; reverbAmount: number; depth: number }
-> = {
-  orbit: { speed: 10, reverbAmount: 0.25, depth: 1.8 },
-  concert: { speed: 13, reverbAmount: 0.42, depth: 2.4 },
-  club: { speed: 5.5, reverbAmount: 0.22, depth: 2.1 },
+const EQ_BAND_PRESETS_10: Record<EqPresetId, EqBands10> = {
+  flat: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  bass: [6.5, 5.5, 4, 1.5, 0, 0, 0.5, 1, 2, 2.5],
+  vocal: [-3, -2, -1, 0.5, 2.5, 4.5, 4, 3, 1.5, 0],
+  club: [5.5, 4.5, 2.5, 0, -1.5, 0, 2, 3.5, 4.5, 5],
+  acoustic: [3, 2, 1.5, 1, 1.5, 2, 3, 2.5, 2, 1.5],
 };
+
+function toEq5From10(b: EqBands10): EqBands5 {
+  return [
+    Number(((b[0] + b[1]) / 2).toFixed(1)),
+    Number(((b[2] + b[3]) / 2).toFixed(1)),
+    Number(((b[4] + b[5]) / 2).toFixed(1)),
+    Number(((b[6] + b[7]) / 2).toFixed(1)),
+    Number(((b[8] + b[9]) / 2).toFixed(1)),
+  ];
+}
+
+function expandEq5To10(b5: EqBands5): EqBands10 {
+  return [b5[0], b5[0], b5[1], b5[1], b5[2], b5[2], b5[3], b5[3], b5[4], b5[4]];
+}
 
 interface PersistedLibrary {
   likedTracks: MusicTrack[];
@@ -47,27 +58,35 @@ interface PersistedLibrary {
   savedPlaylists: MusicPlaylist[];
   userPlaylists: UserMusicPlaylist[];
   recentTracks: MusicTrack[];
+  searchHistory: string[];
   eqPreset: EqPresetId;
-  customEqBands: number[];
-  fxPreset: AudioEffectId;
-  customFxParams: AudioFxParams;
+  eqBands: EqBands5;
+  eqBands10: EqBands10;
+  preservesPitch: boolean;
+  pitchSemitones: number;
+  bassBoostDb: number;
+  reverbMix: number;
+  stereoWidth: number;
+  exciterMix: number;
+  vinylCrackle: number;
+  vocalCancel: boolean;
+  crossfadeSec: number;
+  normalizeAudio: boolean;
+  spatial8dSpeedSec: number;
   spatial8dEnabled: boolean;
   spatial8dMode: Spatial8dMode;
-  spatial8dSpeed: number;
-  spatial8dReverb: number;
-  spatial8dDepth: number;
+  spatialTrajectory: SpatialTrajectory;
+  autoDownloadMp3: boolean;
+  wifiOnlyAutoDownload: boolean;
+  exportBitrate: ExportBitrate;
+  perTrackProfilesEnabled: boolean;
+  trackProfiles: Record<string, TrackStudioProfile>;
+  customPresets: CustomStudioPreset[];
+  listeningStats: ListeningStats;
+  tasteProfile: TasteProfile;
   volume: number;
   musicLang: MusicLang;
-  musicLangCustom?: boolean;
   musicLangV2?: boolean;
-}
-
-function isValidEqPreset(val: unknown): val is EqPresetId {
-  return typeof val === 'string' && val in EQ_PRESETS;
-}
-
-function isValidAudioEffect(val: unknown): val is AudioEffectId {
-  return typeof val === 'string' && val in AUDIO_EFFECTS;
 }
 
 function isValidMusicLang(val: unknown): val is MusicLang {
@@ -78,79 +97,153 @@ function isValidSpatialMode(val: unknown): val is Spatial8dMode {
   return val === 'orbit' || val === 'concert' || val === 'club';
 }
 
-function readAppDefaultMusicLang(): MusicLang {
-  if (typeof localStorage === 'undefined') return 'es';
-  try {
-    const appLang = localStorage.getItem('riffan_lang') || localStorage.getItem('naim_lang');
-    if (appLang) return normalizeMusicLang(appLang);
-  } catch {
-    // ignore
-  }
-  return 'es';
+function isValidTrajectory(val: unknown): val is SpatialTrajectory {
+  return val === 'orbit' || val === 'pendulum' || val === 'figure8' || val === 'elevated';
 }
 
+function isValidEqBands5(val: unknown): val is EqBands5 {
+  return Array.isArray(val) && val.length === 5 && val.every((n) => typeof n === 'number' && Number.isFinite(n));
+}
+
+function isValidEqBands10(val: unknown): val is EqBands10 {
+  return Array.isArray(val) && val.length === 10 && val.every((n) => typeof n === 'number' && Number.isFinite(n));
+}
+
+function clamp(val: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, val));
+}
+
+const DEFAULT_STATS: ListeningStats = {
+  totalPlays: 0,
+  totalListenSec: 0,
+  trackPlayCounts: {},
+  artistPlayCounts: {},
+};
+
+const DEFAULT_TASTE: TasteProfile = {
+  favoriteArtists: [],
+  favoriteGenres: [],
+  importedSources: [],
+};
+
 function loadLibrary(): PersistedLibrary {
-  const defaultLang = readAppDefaultMusicLang();
   const defaults: PersistedLibrary = {
     likedTracks: [],
     savedAlbums: [],
     savedPlaylists: [],
     userPlaylists: [],
     recentTracks: [],
+    searchHistory: [],
     eqPreset: 'flat',
-    customEqBands: normalizeCustomEqBands(),
-    fxPreset: 'none',
-    customFxParams: { ...DEFAULT_AUDIO_FX_PARAMS },
+    eqBands: [0, 0, 0, 0, 0],
+    eqBands10: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    preservesPitch: true,
+    pitchSemitones: 0,
+    bassBoostDb: 0,
+    reverbMix: 0,
+    stereoWidth: 0.45,
+    exciterMix: 0,
+    vinylCrackle: 0,
+    vocalCancel: false,
+    crossfadeSec: 2,
+    normalizeAudio: true,
+    spatial8dSpeedSec: 9.5,
     spatial8dEnabled: false,
     spatial8dMode: 'orbit',
-    spatial8dSpeed: AUDIO_8D_LIMITS.defaultSpeedSec,
-    spatial8dReverb: AUDIO_8D_LIMITS.defaultReverb,
-    spatial8dDepth: AUDIO_8D_LIMITS.defaultDepth,
+    spatialTrajectory: 'orbit',
+    autoDownloadMp3: false,
+    wifiOnlyAutoDownload: true,
+    exportBitrate: '320k',
+    perTrackProfilesEnabled: true,
+    trackProfiles: {},
+    customPresets: [],
+    listeningStats: DEFAULT_STATS,
+    tasteProfile: DEFAULT_TASTE,
     volume: 0.85,
-    musicLang: defaultLang,
-    musicLangCustom: false,
+    musicLang: 'en',
     musicLangV2: true,
   };
   if (typeof localStorage === 'undefined') return defaults;
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return defaults;
     const parsed = JSON.parse(raw) as Partial<PersistedLibrary>;
-    const hasCustomLang = Boolean(parsed.musicLangCustom && isValidMusicLang(parsed.musicLang));
+    const eqPreset = parsed.eqPreset && EQ_BAND_PRESETS_10[parsed.eqPreset] ? parsed.eqPreset : 'flat';
+    const eqBands10 = isValidEqBands10(parsed.eqBands10)
+      ? parsed.eqBands10
+      : isValidEqBands5(parsed.eqBands)
+      ? expandEq5To10(parsed.eqBands)
+      : ([...EQ_BAND_PRESETS_10[eqPreset]] as EqBands10);
     return {
       likedTracks: Array.isArray(parsed.likedTracks) ? parsed.likedTracks : [],
       savedAlbums: Array.isArray(parsed.savedAlbums) ? parsed.savedAlbums : [],
       savedPlaylists: Array.isArray(parsed.savedPlaylists) ? parsed.savedPlaylists : [],
       userPlaylists: Array.isArray(parsed.userPlaylists) ? parsed.userPlaylists : [],
       recentTracks: Array.isArray(parsed.recentTracks) ? parsed.recentTracks : [],
-      eqPreset: isValidEqPreset(parsed.eqPreset) ? parsed.eqPreset : 'flat',
-      customEqBands: normalizeCustomEqBands(
-        Array.isArray(parsed.customEqBands) ? parsed.customEqBands : undefined
-      ),
-      fxPreset: isValidAudioEffect(parsed.fxPreset) ? parsed.fxPreset : 'none',
-      customFxParams: normalizeAudioFxParams(parsed.customFxParams),
+      searchHistory: Array.isArray(parsed.searchHistory) ? parsed.searchHistory.slice(0, 12) : [],
+      eqPreset,
+      eqBands10,
+      eqBands: toEq5From10(eqBands10),
+      preservesPitch: typeof parsed.preservesPitch === 'boolean' ? parsed.preservesPitch : true,
+      pitchSemitones: typeof parsed.pitchSemitones === 'number' ? clamp(parsed.pitchSemitones, -12, 12) : 0,
+      bassBoostDb: typeof parsed.bassBoostDb === 'number' ? clamp(parsed.bassBoostDb, 0, 12) : 0,
+      reverbMix: typeof parsed.reverbMix === 'number' ? clamp(parsed.reverbMix, 0, 0.75) : 0,
+      stereoWidth: typeof parsed.stereoWidth === 'number' ? clamp(parsed.stereoWidth, 0, 1) : 0.45,
+      exciterMix: typeof parsed.exciterMix === 'number' ? clamp(parsed.exciterMix, 0, 1) : 0,
+      vinylCrackle: typeof parsed.vinylCrackle === 'number' ? clamp(parsed.vinylCrackle, 0, 1) : 0,
+      vocalCancel: Boolean(parsed.vocalCancel),
+      crossfadeSec: typeof parsed.crossfadeSec === 'number' ? clamp(parsed.crossfadeSec, 0, 10) : 2,
+      normalizeAudio: typeof parsed.normalizeAudio === 'boolean' ? parsed.normalizeAudio : true,
+      spatial8dSpeedSec:
+        typeof parsed.spatial8dSpeedSec === 'number' ? clamp(parsed.spatial8dSpeedSec, 3, 20) : 9.5,
+      autoDownloadMp3: Boolean(parsed.autoDownloadMp3),
+      wifiOnlyAutoDownload:
+        typeof parsed.wifiOnlyAutoDownload === 'boolean' ? parsed.wifiOnlyAutoDownload : true,
+      exportBitrate:
+        parsed.exportBitrate === '128k' || parsed.exportBitrate === '192k' ? parsed.exportBitrate : '320k',
+      perTrackProfilesEnabled:
+        typeof parsed.perTrackProfilesEnabled === 'boolean' ? parsed.perTrackProfilesEnabled : true,
+      trackProfiles:
+        parsed.trackProfiles && typeof parsed.trackProfiles === 'object' ? parsed.trackProfiles : {},
+      customPresets: Array.isArray(parsed.customPresets) ? parsed.customPresets : [],
+      listeningStats:
+        parsed.listeningStats && typeof parsed.listeningStats === 'object'
+          ? {
+              totalPlays: Number(parsed.listeningStats.totalPlays || 0),
+              totalListenSec: Number(parsed.listeningStats.totalListenSec || 0),
+              trackPlayCounts: parsed.listeningStats.trackPlayCounts || {},
+              artistPlayCounts: parsed.listeningStats.artistPlayCounts || {},
+            }
+          : DEFAULT_STATS,
+      tasteProfile:
+        parsed.tasteProfile && typeof parsed.tasteProfile === 'object'
+          ? {
+              favoriteArtists: Array.isArray(parsed.tasteProfile.favoriteArtists)
+                ? parsed.tasteProfile.favoriteArtists
+                : [],
+              favoriteGenres: Array.isArray(parsed.tasteProfile.favoriteGenres)
+                ? parsed.tasteProfile.favoriteGenres
+                : [],
+              importedSources: Array.isArray(parsed.tasteProfile.importedSources)
+                ? parsed.tasteProfile.importedSources
+                : [],
+            }
+          : DEFAULT_TASTE,
       spatial8dEnabled: Boolean(parsed.spatial8dEnabled),
       spatial8dMode: isValidSpatialMode(parsed.spatial8dMode) ? parsed.spatial8dMode : 'orbit',
-      spatial8dSpeed:
-        typeof parsed.spatial8dSpeed === 'number'
-          ? clamp8dSpeed(parsed.spatial8dSpeed)
-          : AUDIO_8D_LIMITS.defaultSpeedSec,
-      spatial8dReverb:
-        typeof parsed.spatial8dReverb === 'number'
-          ? clamp8dReverb(parsed.spatial8dReverb)
-          : AUDIO_8D_LIMITS.defaultReverb,
-      spatial8dDepth:
-        typeof parsed.spatial8dDepth === 'number'
-          ? clamp8dDepth(parsed.spatial8dDepth)
-          : AUDIO_8D_LIMITS.defaultDepth,
-      volume: typeof parsed.volume === 'number' ? Math.max(0, Math.min(1, parsed.volume)) : 0.85,
-      musicLang: hasCustomLang ? parsed.musicLang! : defaultLang,
-      musicLangCustom: hasCustomLang,
+      spatialTrajectory: isValidTrajectory(parsed.spatialTrajectory) ? parsed.spatialTrajectory : 'orbit',
+      volume: typeof parsed.volume === 'number' ? clamp(parsed.volume, 0, 1) : 0.85,
+      musicLang: parsed.musicLangV2 && isValidMusicLang(parsed.musicLang) ? parsed.musicLang : 'en',
       musicLangV2: true,
     };
   } catch {
     return defaults;
   }
+}
+
+let cloudSyncHook: ((state: PersistedLibrary) => void) | null = null;
+export function registerMusicCloudSyncHook(fn: ((state: PersistedLibrary) => void) | null) {
+  cloudSyncHook = fn;
 }
 
 function saveLibrary(lib: PersistedLibrary) {
@@ -162,27 +255,51 @@ function saveLibrary(lib: PersistedLibrary) {
   }
 }
 
-function syncPersisted(state: PersistedLibrary) {
-  saveLibrary({
+function extractPersisted(state: PersistedLibrary): PersistedLibrary {
+  return {
     likedTracks: state.likedTracks,
     savedAlbums: state.savedAlbums,
     savedPlaylists: state.savedPlaylists,
     userPlaylists: state.userPlaylists,
     recentTracks: state.recentTracks,
+    searchHistory: state.searchHistory,
     eqPreset: state.eqPreset,
-    customEqBands: state.customEqBands,
-    fxPreset: state.fxPreset,
-    customFxParams: state.customFxParams,
+    eqBands: state.eqBands,
+    eqBands10: state.eqBands10,
+    preservesPitch: state.preservesPitch,
+    pitchSemitones: state.pitchSemitones,
+    bassBoostDb: state.bassBoostDb,
+    reverbMix: state.reverbMix,
+    stereoWidth: state.stereoWidth,
+    exciterMix: state.exciterMix,
+    vinylCrackle: state.vinylCrackle,
+    vocalCancel: state.vocalCancel,
+    crossfadeSec: state.crossfadeSec,
+    normalizeAudio: state.normalizeAudio,
+    spatial8dSpeedSec: state.spatial8dSpeedSec,
+    autoDownloadMp3: state.autoDownloadMp3,
+    wifiOnlyAutoDownload: state.wifiOnlyAutoDownload,
+    exportBitrate: state.exportBitrate,
+    perTrackProfilesEnabled: state.perTrackProfilesEnabled,
+    trackProfiles: state.trackProfiles,
+    customPresets: state.customPresets,
+    listeningStats: state.listeningStats,
+    tasteProfile: state.tasteProfile,
     spatial8dEnabled: state.spatial8dEnabled,
     spatial8dMode: state.spatial8dMode,
-    spatial8dSpeed: state.spatial8dSpeed,
-    spatial8dReverb: state.spatial8dReverb,
-    spatial8dDepth: state.spatial8dDepth,
+    spatialTrajectory: state.spatialTrajectory,
     volume: state.volume,
     musicLang: state.musicLang,
-    musicLangCustom: state.musicLangCustom,
     musicLangV2: true,
-  });
+  };
+}
+
+function syncPersisted(state: PersistedLibrary, skipCloud = false) {
+  const snap = extractPersisted(state);
+  saveLibrary(snap);
+  if (!skipCloud && cloudSyncHook) {
+    cloudSyncHook(snap);
+  }
 }
 
 export interface MusicStoreState extends PersistedLibrary {
@@ -204,13 +321,24 @@ export interface MusicStoreState extends PersistedLibrary {
   repeatMode: MusicRepeatMode;
   playbackRate: number;
   viewMode: MusicViewMode;
-  stemMode: VocalStemMode;
   sleepTimerEndsAt: number | null;
+  activeProVibe: ProVibePresetId | null;
+
+  trimStartSec: number;
+  trimEndSec: number;
+  fadeSec: number;
 
   showNowPlayingModal: boolean;
   nowPlayingTab: 'artwork' | 'lyrics' | 'video';
   showQueueDrawer: boolean;
   showEqModal: boolean;
+  driveModeOpen: boolean;
+  showImportModal: boolean;
+  showDownloadDrawer: boolean;
+
+  downloadJobs: DownloadJob[];
+  offlineTrackIds: string[];
+  radioReconnectAttempt: number;
 
   playTrack: (track: MusicTrack, contextTracks?: MusicTrack[]) => void;
   playRadio: (station: MusicRadioStation) => void;
@@ -219,6 +347,7 @@ export interface MusicStoreState extends PersistedLibrary {
   playNext: () => void;
   playPrev: () => void;
   setResolvedPlayback: (resolved: ResolvedTrackPlayback | null) => void;
+  switchPlaybackSource: (candidate: PlaybackSourceCandidate) => void;
   setResolvingTrack: (loading: boolean) => void;
   setPlaybackError: (err: string | null) => void;
   setIsPlaying: (playing: boolean) => void;
@@ -230,43 +359,116 @@ export interface MusicStoreState extends PersistedLibrary {
   toggleMute: () => void;
   toggleShuffle: () => void;
   cycleRepeat: () => void;
+
   setEqPreset: (preset: EqPresetId) => void;
-  setCustomEqBand: (bandIdx: number, db: number) => void;
-  setCustomEqBands: (bands: number[]) => void;
-  resetEqToFlat: () => void;
-  setFxPreset: (preset: AudioEffectId) => void;
-  setFxParam: <K extends keyof AudioFxParams>(key: K, value: AudioFxParams[K]) => void;
-  resetAudioFx: () => void;
+  setEqBand: (index: number, gainDb: number) => void;
+  setEqBand10: (index: number, gainDb: number) => void;
+  setPreservesPitch: (preserve: boolean) => void;
+  setPitchSemitones: (semitones: number) => void;
+  setBassBoostDb: (db: number) => void;
+  setReverbMix: (mix: number) => void;
+  setStereoWidth: (width: number) => void;
+  setExciterMix: (mix: number) => void;
+  setVinylCrackle: (level: number) => void;
+  setVocalCancel: (enabled: boolean) => void;
+  setCrossfadeSec: (sec: number) => void;
+  setNormalizeAudio: (enabled: boolean) => void;
+  setSpatial8dSpeedSec: (sec: number) => void;
+  setSpatialTrajectory: (traj: SpatialTrajectory) => void;
+  setTrimRange: (startSec: number, endSec: number) => void;
+  setFadeSec: (sec: number) => void;
+  setExportBitrate: (bitrate: ExportBitrate) => void;
+  setAutoDownloadMp3: (enabled: boolean) => void;
+  setWifiOnlyAutoDownload: (enabled: boolean) => void;
+  setPerTrackProfilesEnabled: (enabled: boolean) => void;
+  saveCurrentTrackStudioProfile: () => void;
+  saveCustomStudioPreset: (name: string) => string;
+  applyCustomStudioPreset: (presetId: string) => void;
+  deleteCustomStudioPreset: (presetId: string) => void;
+  applyProVibe: (vibe: ProVibePresetId) => void;
+  resetProEditor: () => void;
   toggleSpatial8d: () => void;
   setSpatial8dEnabled: (enabled: boolean) => void;
   setSpatial8dMode: (mode: Spatial8dMode) => void;
-  setSpatial8dSpeed: (speed: number) => void;
-  setSpatial8dReverb: (reverb: number) => void;
-  setSpatial8dDepth: (depth: number) => void;
-  resetSpatial8dControls: () => void;
   setPlaybackRate: (rate: number) => void;
   setViewMode: (mode: MusicViewMode) => void;
-  setStemMode: (mode: VocalStemMode) => void;
   setSleepTimerMinutes: (minutes: number | null) => void;
 
   setShowNowPlayingModal: (open: boolean) => void;
   setNowPlayingTab: (tab: 'artwork' | 'lyrics' | 'video') => void;
   setShowQueueDrawer: (open: boolean) => void;
   setShowEqModal: (open: boolean) => void;
+  setDriveModeOpen: (open: boolean) => void;
+  setShowImportModal: (open: boolean) => void;
+  setShowDownloadDrawer: (open: boolean) => void;
+
+  enqueueDownloadJob: (track: MusicTrack, mode: string, bitrate?: ExportBitrate) => string;
+  updateDownloadJob: (id: string, patch: Partial<DownloadJob>) => void;
+  removeDownloadJob: (id: string) => void;
+  setOfflineTrackIds: (ids: string[]) => void;
+  markOfflineTrackSaved: (trackId: string) => void;
+  markOfflineTrackRemoved: (trackId: string) => void;
 
   toggleLikeTrack: (track: MusicTrack) => void;
+  importTracksIntoLikes: (tracks: MusicTrack[]) => number;
+  importTracksIntoPlaylist: (name: string, description: string, tracks: MusicTrack[]) => string;
+  mergeTasteProfile: (opts: {
+    artists?: string[];
+    genres?: string[];
+    source?: { provider: 'spotify' | 'youtube_music' | 'file'; label: string; trackCount: number };
+  }) => void;
+  removeFavoriteArtist: (artist: string) => void;
+  removeFavoriteGenre: (genre: string) => void;
+
+  addSearchHistory: (query: string) => void;
+  removeSearchHistory: (query: string) => void;
+  clearSearchHistory: () => void;
+  recordListeningTick: (track: MusicTrack, deltaSec: number) => void;
+
   toggleSaveAlbum: (album: MusicAlbumRef) => void;
   toggleSavePlaylist: (playlist: MusicPlaylist) => void;
   createUserPlaylist: (name: string, initialTrack?: MusicTrack) => string;
   deleteUserPlaylist: (id: string) => void;
   addTrackToUserPlaylist: (playlistId: string, track: MusicTrack) => void;
   removeTrackFromUserPlaylist: (playlistId: string, trackId: string) => void;
-  setMusicLang: (lang: MusicLang, isUserSelection?: boolean) => void;
-  syncMusicLangWithApp: (appLang: string) => void;
+  setMusicLang: (lang: MusicLang) => void;
+  setRadioReconnectAttempt: (attempt: number) => void;
+  hydrateFromCloud: (payload: CloudMusicSnapshotPayload) => void;
+  getPersistedSnapshot: () => PersistedLibrary;
   stopAllMusic: () => void;
 }
 
 const initial = loadLibrary();
+
+function applyProfileToTrackChange(state: MusicStoreState, track: MusicTrack): Partial<MusicStoreState> {
+  if (!state.perTrackProfilesEnabled) {
+    return { trimStartSec: 0, trimEndSec: 0, fadeSec: 0 };
+  }
+  const prof = state.trackProfiles[track.id];
+  if (!prof) {
+    return { trimStartSec: 0, trimEndSec: 0, fadeSec: 0 };
+  }
+  const eq10 = prof.eqBands10 || state.eqBands10;
+  return {
+    eqBands10: eq10,
+    eqBands: toEq5From10(eq10),
+    spatial8dEnabled: prof.spatial8dEnabled ?? state.spatial8dEnabled,
+    spatialTrajectory: prof.spatialTrajectory ?? state.spatialTrajectory,
+    spatial8dSpeedSec: prof.spatial8dSpeedSec ?? state.spatial8dSpeedSec,
+    bassBoostDb: prof.bassBoostDb ?? state.bassBoostDb,
+    reverbMix: prof.reverbMix ?? state.reverbMix,
+    stereoWidth: prof.stereoWidth ?? state.stereoWidth,
+    exciterMix: prof.exciterMix ?? state.exciterMix,
+    vinylCrackle: prof.vinylCrackle ?? state.vinylCrackle,
+    vocalCancel: prof.vocalCancel ?? state.vocalCancel,
+    pitchSemitones: prof.pitchSemitones ?? state.pitchSemitones,
+    playbackRate: prof.playbackRate ?? state.playbackRate,
+    preservesPitch: prof.preservesPitch ?? state.preservesPitch,
+    trimStartSec: prof.trimStartSec ?? 0,
+    trimEndSec: prof.trimEndSec ?? 0,
+    fadeSec: prof.fadeSec ?? 0,
+  };
+}
 
 export const useMusicStore = create<MusicStoreState>((set, get) => ({
   ...initial,
@@ -287,15 +489,26 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
   isMuted: false,
   shuffle: false,
   repeatMode: 'off',
-  playbackRate: resolveAudioFxParams(initial.fxPreset, initial.customFxParams).playbackRate,
+  playbackRate: 1,
   viewMode: 'audio',
-  stemMode: 'both',
   sleepTimerEndsAt: null,
+  activeProVibe: null,
+
+  trimStartSec: 0,
+  trimEndSec: 0,
+  fadeSec: 0,
 
   showNowPlayingModal: false,
   nowPlayingTab: 'artwork',
   showQueueDrawer: false,
   showEqModal: false,
+  driveModeOpen: false,
+  showImportModal: false,
+  showDownloadDrawer: false,
+
+  downloadJobs: [],
+  offlineTrackIds: [],
+  radioReconnectAttempt: 0,
 
   playTrack: (track, contextTracks) => {
     const state = get();
@@ -304,11 +517,43 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
       0,
       list.findIndex((t) => t.id === track.id)
     );
-    const updatedRecent = [track, ...state.recentTracks.filter((t) => t.id !== track.id)].slice(0, 30);
+    const updatedRecent = [track, ...state.recentTracks.filter((t) => t.id !== track.id)].slice(0, 35);
+    const profilePatch = applyProfileToTrackChange(state, track);
+
+    // Record play count immediately on track start
+    const stats = state.listeningStats;
+    const prevT = stats.trackPlayCounts[track.id];
+    const primaryArtist = track.artist.name.split(',')[0].trim() || track.artist.name;
+    const prevA = stats.artistPlayCounts[primaryArtist];
+    const nextStats: ListeningStats = {
+      ...stats,
+      totalPlays: stats.totalPlays + 1,
+      trackPlayCounts: {
+        ...stats.trackPlayCounts,
+        [track.id]: {
+          count: (prevT?.count || 0) + 1,
+          title: track.title,
+          artist: track.artist.name,
+          cover: track.album.coverXl || track.album.cover || '',
+          lastPlayedAt: Date.now(),
+        },
+      },
+      artistPlayCounts: primaryArtist
+        ? {
+            ...stats.artistPlayCounts,
+            [primaryArtist]: {
+              count: (prevA?.count || 0) + 1,
+              name: primaryArtist,
+              picture: track.artist.picture || track.album.cover || prevA?.picture,
+            },
+          }
+        : stats.artistPlayCounts,
+    };
 
     set((prev) => {
       const next = {
         ...prev,
+        ...profilePatch,
         activeRadio: null,
         currentTrack: track,
         resolvedPlayback: null,
@@ -320,6 +565,7 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
         currentTime: 0,
         duration: track.durationSec || 0,
         recentTracks: updatedRecent,
+        listeningStats: nextStats,
       };
       syncPersisted(next);
       return next;
@@ -338,6 +584,7 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
       duration: 0,
       viewMode: 'audio',
       nowPlayingTab: 'artwork',
+      radioReconnectAttempt: 0,
     });
   },
 
@@ -384,25 +631,7 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
 
     const nextTrack = state.queue[nextIdx];
     if (!nextTrack) return;
-    const updatedRecent = [nextTrack, ...state.recentTracks.filter((t) => t.id !== nextTrack.id)].slice(0, 30);
-
-    set((prev) => {
-      const next = {
-        ...prev,
-        activeRadio: null,
-        currentTrack: nextTrack,
-        resolvedPlayback: null,
-        isResolvingTrack: true,
-        playbackError: null,
-        queueIndex: nextIdx,
-        isPlaying: true,
-        currentTime: 0,
-        duration: nextTrack.durationSec || 0,
-        recentTracks: updatedRecent,
-      };
-      syncPersisted(next);
-      return next;
-    });
+    get().playTrack(nextTrack, state.queue);
   },
 
   playPrev: () => {
@@ -416,21 +645,30 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
     if (prevIdx < 0) prevIdx = state.repeatMode === 'all' ? state.queue.length - 1 : 0;
     const prevTrack = state.queue[prevIdx];
     if (!prevTrack) return;
-
-    set({
-      activeRadio: null,
-      currentTrack: prevTrack,
-      resolvedPlayback: null,
-      isResolvingTrack: true,
-      playbackError: null,
-      queueIndex: prevIdx,
-      isPlaying: true,
-      currentTime: 0,
-      duration: prevTrack.durationSec || 0,
-    });
+    get().playTrack(prevTrack, state.queue);
   },
 
   setResolvedPlayback: (resolved) => set({ resolvedPlayback: resolved, isResolvingTrack: false }),
+
+  switchPlaybackSource: (candidate) =>
+    set((prev) => {
+      if (!prev.resolvedPlayback) return prev;
+      return {
+        resolvedPlayback: {
+          ...prev.resolvedPlayback,
+          sourceType: candidate.sourceType,
+          sourceLabel: candidate.sourceLabel,
+          streamUrl: candidate.streamUrl,
+          proxiedUrl: candidate.proxiedUrl,
+          bitrateKbps: candidate.bitrateKbps,
+          provider: candidate.provider,
+          fullLength: candidate.fullLength,
+        },
+        playbackError: null,
+        isPlaying: true,
+      };
+    }),
+
   setResolvingTrack: (loading) => set({ isResolvingTrack: loading }),
   setPlaybackError: (err) => set({ playbackError: err }),
   setIsPlaying: (playing) => set({ isPlaying: playing }),
@@ -444,7 +682,7 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
   clearSeekRequest: () => set({ seekRequestSec: null }),
 
   setVolume: (vol) => {
-    const clamped = Math.max(0, Math.min(1, vol));
+    const clamped = clamp(vol, 0, 1);
     set((prev) => {
       const next = { ...prev, volume: clamped, isMuted: clamped === 0 };
       syncPersisted(next);
@@ -461,84 +699,407 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
 
   setEqPreset: (preset) =>
     set((prev) => {
-      const next = { ...prev, eqPreset: preset };
+      const bands10 = EQ_BAND_PRESETS_10[preset]
+        ? ([...EQ_BAND_PRESETS_10[preset]] as EqBands10)
+        : ([0, 0, 0, 0, 0, 0, 0, 0, 0, 0] as EqBands10);
+      const next = {
+        ...prev,
+        eqPreset: preset,
+        eqBands10: bands10,
+        eqBands: toEq5From10(bands10),
+        activeProVibe: null,
+      };
       syncPersisted(next);
       return next;
     }),
 
-  setCustomEqBand: (bandIdx, db) =>
+  setEqBand: (index, gainDb) =>
     set((prev) => {
-      const baseBands =
-        prev.eqPreset === 'custom'
-          ? normalizeCustomEqBands(prev.customEqBands)
-          : normalizeCustomEqBands(EQ_PRESETS[prev.eqPreset]?.gains);
-      if (bandIdx >= 0 && bandIdx < baseBands.length) {
-        baseBands[bandIdx] = normalizeCustomEqBands([db])[0];
-        baseBands[bandIdx] = Math.round(Math.max(-12, Math.min(12, Number.isFinite(db) ? db : 0)) * 2) / 2;
+      if (index < 0 || index > 4) return prev;
+      const g = clamp(gainDb, -12, 12);
+      const next10 = [...prev.eqBands10] as EqBands10;
+      next10[index * 2] = g;
+      next10[index * 2 + 1] = g;
+      const next = {
+        ...prev,
+        eqBands10: next10,
+        eqBands: toEq5From10(next10),
+        activeProVibe: null,
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setEqBand10: (index, gainDb) =>
+    set((prev) => {
+      if (index < 0 || index > 9) return prev;
+      const next10 = [...prev.eqBands10] as EqBands10;
+      next10[index] = clamp(gainDb, -12, 12);
+      const next = {
+        ...prev,
+        eqBands10: next10,
+        eqBands: toEq5From10(next10),
+        activeProVibe: null,
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setPreservesPitch: (preservesPitch) =>
+    set((prev) => {
+      const next = { ...prev, preservesPitch, activeProVibe: null };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setPitchSemitones: (pitchSemitones) =>
+    set((prev) => {
+      const next = {
+        ...prev,
+        pitchSemitones: clamp(pitchSemitones, -12, 12),
+        activeProVibe: null,
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setBassBoostDb: (db) =>
+    set((prev) => {
+      const next = { ...prev, bassBoostDb: clamp(db, 0, 12), activeProVibe: null };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setReverbMix: (mix) =>
+    set((prev) => {
+      const next = { ...prev, reverbMix: clamp(mix, 0, 0.75), activeProVibe: null };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setStereoWidth: (width) =>
+    set((prev) => {
+      const next = { ...prev, stereoWidth: clamp(width, 0, 1), activeProVibe: null };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setExciterMix: (mix) =>
+    set((prev) => {
+      const next = { ...prev, exciterMix: clamp(mix, 0, 1), activeProVibe: null };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setVinylCrackle: (level) =>
+    set((prev) => {
+      const next = { ...prev, vinylCrackle: clamp(level, 0, 1), activeProVibe: null };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setVocalCancel: (vocalCancel) =>
+    set((prev) => {
+      const next = { ...prev, vocalCancel, activeProVibe: null };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setCrossfadeSec: (sec) =>
+    set((prev) => {
+      const next = { ...prev, crossfadeSec: clamp(sec, 0, 10) };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setNormalizeAudio: (normalizeAudio) =>
+    set((prev) => {
+      const next = { ...prev, normalizeAudio };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setSpatial8dSpeedSec: (sec) =>
+    set((prev) => {
+      const next = { ...prev, spatial8dSpeedSec: clamp(sec, 3, 20), activeProVibe: null };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setSpatialTrajectory: (spatialTrajectory) =>
+    set((prev) => {
+      const next = { ...prev, spatialTrajectory, activeProVibe: null };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setTrimRange: (startSec, endSec) =>
+    set({
+      trimStartSec: Math.max(0, startSec),
+      trimEndSec: Math.max(0, endSec),
+    }),
+
+  setFadeSec: (sec) => set({ fadeSec: clamp(sec, 0, 10) }),
+
+  setExportBitrate: (exportBitrate) =>
+    set((prev) => {
+      const next = { ...prev, exportBitrate };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setAutoDownloadMp3: (autoDownloadMp3) =>
+    set((prev) => {
+      const next = { ...prev, autoDownloadMp3 };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setWifiOnlyAutoDownload: (wifiOnlyAutoDownload) =>
+    set((prev) => {
+      const next = { ...prev, wifiOnlyAutoDownload };
+      syncPersisted(next);
+      return next;
+    }),
+
+  setPerTrackProfilesEnabled: (perTrackProfilesEnabled) =>
+    set((prev) => {
+      const next = { ...prev, perTrackProfilesEnabled };
+      syncPersisted(next);
+      return next;
+    }),
+
+  saveCurrentTrackStudioProfile: () =>
+    set((prev) => {
+      if (!prev.currentTrack) return prev;
+      const profile: TrackStudioProfile = {
+        trackId: prev.currentTrack.id,
+        eqBands10: prev.eqBands10,
+        spatial8dEnabled: prev.spatial8dEnabled,
+        spatialTrajectory: prev.spatialTrajectory,
+        spatial8dSpeedSec: prev.spatial8dSpeedSec,
+        bassBoostDb: prev.bassBoostDb,
+        reverbMix: prev.reverbMix,
+        stereoWidth: prev.stereoWidth,
+        exciterMix: prev.exciterMix,
+        vinylCrackle: prev.vinylCrackle,
+        vocalCancel: prev.vocalCancel,
+        pitchSemitones: prev.pitchSemitones,
+        playbackRate: prev.playbackRate,
+        preservesPitch: prev.preservesPitch,
+        trimStartSec: prev.trimStartSec,
+        trimEndSec: prev.trimEndSec,
+        fadeSec: prev.fadeSec,
+      };
+      const entries = Object.entries(prev.trackProfiles).slice(-39);
+      const next = {
+        ...prev,
+        trackProfiles: {
+          ...Object.fromEntries(entries),
+          [prev.currentTrack.id]: profile,
+        },
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  saveCustomStudioPreset: (name) => {
+    const id = `cp-${Date.now().toString(36)}`;
+    const state = get();
+    const preset: CustomStudioPreset = {
+      id,
+      name: name.trim().slice(0, 32) || 'Mi Ajuste',
+      createdAt: Date.now(),
+      eqBands10: [...state.eqBands10] as EqBands10,
+      spatial8dEnabled: state.spatial8dEnabled,
+      spatial8dMode: state.spatial8dMode,
+      spatialTrajectory: state.spatialTrajectory,
+      spatial8dSpeedSec: state.spatial8dSpeedSec,
+      bassBoostDb: state.bassBoostDb,
+      reverbMix: state.reverbMix,
+      stereoWidth: state.stereoWidth,
+      exciterMix: state.exciterMix,
+      vinylCrackle: state.vinylCrackle,
+      vocalCancel: state.vocalCancel,
+      pitchSemitones: state.pitchSemitones,
+      playbackRate: state.playbackRate,
+      preservesPitch: state.preservesPitch,
+    };
+    set((prev) => {
+      const next = { ...prev, customPresets: [preset, ...prev.customPresets].slice(0, 16) };
+      syncPersisted(next);
+      return next;
+    });
+    return id;
+  },
+
+  applyCustomStudioPreset: (presetId) =>
+    set((prev) => {
+      const p = prev.customPresets.find((x) => x.id === presetId);
+      if (!p) return prev;
+      const next = {
+        ...prev,
+        activeProVibe: null,
+        eqBands10: p.eqBands10,
+        eqBands: toEq5From10(p.eqBands10),
+        spatial8dEnabled: p.spatial8dEnabled,
+        spatial8dMode: p.spatial8dMode,
+        spatialTrajectory: p.spatialTrajectory,
+        spatial8dSpeedSec: p.spatial8dSpeedSec,
+        bassBoostDb: p.bassBoostDb,
+        reverbMix: p.reverbMix,
+        stereoWidth: p.stereoWidth,
+        exciterMix: p.exciterMix,
+        vinylCrackle: p.vinylCrackle,
+        vocalCancel: p.vocalCancel,
+        pitchSemitones: p.pitchSemitones,
+        playbackRate: p.playbackRate,
+        preservesPitch: p.preservesPitch,
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  deleteCustomStudioPreset: (presetId) =>
+    set((prev) => {
+      const next = {
+        ...prev,
+        customPresets: prev.customPresets.filter((p) => p.id !== presetId),
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  applyProVibe: (vibe) =>
+    set((prev) => {
+      let patch: Partial<MusicStoreState> = { activeProVibe: vibe };
+      if (vibe === 'original') {
+        const b10: EqBands10 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        patch = {
+          activeProVibe: 'original',
+          spatial8dEnabled: false,
+          playbackRate: 1,
+          preservesPitch: true,
+          pitchSemitones: 0,
+          bassBoostDb: 0,
+          reverbMix: 0,
+          stereoWidth: 0.45,
+          exciterMix: 0,
+          vinylCrackle: 0,
+          vocalCancel: false,
+          spatial8dSpeedSec: 9.5,
+          eqPreset: 'flat',
+          eqBands10: b10,
+          eqBands: toEq5From10(b10),
+        };
+      } else if (vibe === '8d_ultra') {
+        const b10: EqBands10 = [5, 4, 2.5, 1.5, 0.5, 0.5, 1.5, 2.5, 3.5, 3.5];
+        patch = {
+          activeProVibe: '8d_ultra',
+          spatial8dEnabled: true,
+          spatial8dMode: 'orbit',
+          spatialTrajectory: 'orbit',
+          playbackRate: 1,
+          preservesPitch: true,
+          pitchSemitones: 0,
+          bassBoostDb: 3.5,
+          reverbMix: 0.28,
+          stereoWidth: 0.65,
+          exciterMix: 0.25,
+          spatial8dSpeedSec: 8,
+          eqPreset: 'bass',
+          eqBands10: b10,
+          eqBands: toEq5From10(b10),
+        };
+      } else if (vibe === 'slowed_reverb') {
+        const b10: EqBands10 = [4, 3.5, 2, 1.5, 0, 0, 0.5, 1, -0.5, -1.5];
+        patch = {
+          activeProVibe: 'slowed_reverb',
+          spatial8dEnabled: false,
+          playbackRate: 0.85,
+          preservesPitch: false,
+          pitchSemitones: 0,
+          bassBoostDb: 3.5,
+          reverbMix: 0.44,
+          stereoWidth: 0.52,
+          eqPreset: 'acoustic',
+          eqBands10: b10,
+          eqBands: toEq5From10(b10),
+        };
+      } else if (vibe === 'nightcore') {
+        const b10: EqBands10 = [2.5, 2, 1, 1, 1, 1.5, 3, 3.5, 4.5, 5];
+        patch = {
+          activeProVibe: 'nightcore',
+          spatial8dEnabled: false,
+          playbackRate: 1.22,
+          preservesPitch: false,
+          pitchSemitones: 0,
+          bassBoostDb: 2,
+          reverbMix: 0.12,
+          stereoWidth: 0.5,
+          exciterMix: 0.35,
+          eqPreset: 'club',
+          eqBands10: b10,
+          eqBands: toEq5From10(b10),
+        };
+      } else if (vibe === 'bass_extreme') {
+        const b10: EqBands10 = [9.5, 8.5, 6, 4.5, -1, -0.5, 1, 2, 3, 3];
+        patch = {
+          activeProVibe: 'bass_extreme',
+          playbackRate: 1,
+          preservesPitch: true,
+          bassBoostDb: 9.5,
+          reverbMix: 0.08,
+          eqPreset: 'bass',
+          eqBands10: b10,
+          eqBands: toEq5From10(b10),
+        };
+      } else if (vibe === 'lofi_warmth') {
+        const b10: EqBands10 = [3.5, 3, 2.5, 2, 1.5, 0.5, -2, -3, -5.5, -7];
+        patch = {
+          activeProVibe: 'lofi_warmth',
+          spatial8dEnabled: false,
+          playbackRate: 0.94,
+          preservesPitch: false,
+          pitchSemitones: 0,
+          bassBoostDb: 3,
+          reverbMix: 0.34,
+          vinylCrackle: 0.35,
+          eqPreset: 'acoustic',
+          eqBands10: b10,
+          eqBands: toEq5From10(b10),
+        };
       }
-      const next = { ...prev, eqPreset: 'custom' as EqPresetId, customEqBands: baseBands };
+      const next = { ...prev, ...patch };
       syncPersisted(next);
       return next;
     }),
 
-  setCustomEqBands: (bands) =>
+  resetProEditor: () =>
     set((prev) => {
+      const b10: EqBands10 = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
       const next = {
         ...prev,
-        eqPreset: 'custom' as EqPresetId,
-        customEqBands: normalizeCustomEqBands(bands),
-      };
-      syncPersisted(next);
-      return next;
-    }),
-
-  resetEqToFlat: () =>
-    set((prev) => {
-      const next = {
-        ...prev,
-        eqPreset: 'flat' as EqPresetId,
-        customEqBands: normalizeCustomEqBands(),
-      };
-      syncPersisted(next);
-      return next;
-    }),
-
-  setFxPreset: (preset) =>
-    set((prev) => {
-      const resolved = resolveAudioFxParams(preset, prev.customFxParams);
-      const next = {
-        ...prev,
-        fxPreset: preset,
-        playbackRate: resolved.playbackRate,
-      };
-      syncPersisted(next);
-      return next;
-    }),
-
-  setFxParam: (key, value) =>
-    set((prev) => {
-      const base = resolveAudioFxParams(prev.fxPreset, prev.customFxParams);
-      const updated = normalizeAudioFxParams({
-        ...base,
-        [key]: value,
-      });
-      const next = {
-        ...prev,
-        fxPreset: 'custom' as AudioEffectId,
-        customFxParams: updated,
-        playbackRate: updated.playbackRate,
-      };
-      syncPersisted(next);
-      return next;
-    }),
-
-  resetAudioFx: () =>
-    set((prev) => {
-      const next = {
-        ...prev,
-        fxPreset: 'none' as AudioEffectId,
-        customFxParams: { ...DEFAULT_AUDIO_FX_PARAMS },
+        activeProVibe: null,
+        spatial8dEnabled: false,
+        spatial8dMode: 'orbit' as Spatial8dMode,
+        spatialTrajectory: 'orbit' as SpatialTrajectory,
         playbackRate: 1,
+        preservesPitch: true,
+        pitchSemitones: 0,
+        bassBoostDb: 0,
+        reverbMix: 0,
+        stereoWidth: 0.45,
+        exciterMix: 0,
+        vinylCrackle: 0,
+        vocalCancel: false,
+        spatial8dSpeedSec: 9.5,
+        trimStartSec: 0,
+        trimEndSec: 0,
+        fadeSec: 0,
+        eqPreset: 'flat' as EqPresetId,
+        eqBands10: b10,
+        eqBands: [0, 0, 0, 0, 0] as EqBands5,
       };
       syncPersisted(next);
       return next;
@@ -546,85 +1107,50 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
 
   toggleSpatial8d: () =>
     set((prev) => {
-      const next = { ...prev, spatial8dEnabled: !prev.spatial8dEnabled };
+      const nextEnabled = !prev.spatial8dEnabled;
+      const nextReverb = nextEnabled && prev.reverbMix < 0.15 ? 0.24 : prev.reverbMix;
+      const next = { ...prev, spatial8dEnabled: nextEnabled, reverbMix: nextReverb };
       syncPersisted(next);
       return next;
     }),
 
   setSpatial8dEnabled: (enabled) =>
     set((prev) => {
-      const next = { ...prev, spatial8dEnabled: enabled };
+      const nextReverb = enabled && prev.reverbMix < 0.15 ? 0.24 : prev.reverbMix;
+      const next = { ...prev, spatial8dEnabled: enabled, reverbMix: nextReverb };
       syncPersisted(next);
       return next;
     }),
 
   setSpatial8dMode: (mode) =>
     set((prev) => {
-      const preset = SPATIAL_8D_PRESETS[mode] || SPATIAL_8D_PRESETS.orbit;
+      const modeDefaults: Record<
+        Spatial8dMode,
+        { speed: number; reverb: number; width: number; trajectory: SpatialTrajectory }
+      > = {
+        orbit: { speed: 9.5, reverb: 0.24, width: 0.45, trajectory: 'orbit' },
+        concert: { speed: 12, reverb: 0.38, width: 0.52, trajectory: 'elevated' },
+        club: { speed: 5.2, reverb: 0.2, width: 0.62, trajectory: 'figure8' },
+      };
+      const cfg = modeDefaults[mode] || modeDefaults.orbit;
       const next = {
         ...prev,
         spatial8dMode: mode,
-        spatial8dSpeed: preset.speed,
-        spatial8dReverb: preset.reverbAmount,
-        spatial8dDepth: preset.depth,
+        spatialTrajectory: cfg.trajectory,
+        spatial8dSpeedSec: cfg.speed,
+        reverbMix: cfg.reverb,
+        stereoWidth: cfg.width,
       };
       syncPersisted(next);
       return next;
     }),
 
-  setSpatial8dSpeed: (speed) =>
-    set((prev) => {
-      const next = { ...prev, spatial8dSpeed: clamp8dSpeed(speed) };
-      syncPersisted(next);
-      return next;
-    }),
-
-  setSpatial8dReverb: (reverb) =>
-    set((prev) => {
-      const next = { ...prev, spatial8dReverb: clamp8dReverb(reverb) };
-      syncPersisted(next);
-      return next;
-    }),
-
-  setSpatial8dDepth: (depth) =>
-    set((prev) => {
-      const next = { ...prev, spatial8dDepth: clamp8dDepth(depth) };
-      syncPersisted(next);
-      return next;
-    }),
-
-  resetSpatial8dControls: () =>
-    set((prev) => {
-      const next = {
-        ...prev,
-        spatial8dMode: 'orbit' as Spatial8dMode,
-        spatial8dSpeed: AUDIO_8D_LIMITS.defaultSpeedSec,
-        spatial8dReverb: AUDIO_8D_LIMITS.defaultReverb,
-        spatial8dDepth: AUDIO_8D_LIMITS.defaultDepth,
-      };
-      syncPersisted(next);
-      return next;
-    }),
-
-  setPlaybackRate: (rate) =>
-    set((prev) => {
-      const base = resolveAudioFxParams(prev.fxPreset, prev.customFxParams);
-      const updated = normalizeAudioFxParams({ ...base, playbackRate: rate });
-      const next = {
-        ...prev,
-        playbackRate: updated.playbackRate,
-        fxPreset: 'custom' as AudioEffectId,
-        customFxParams: updated,
-      };
-      syncPersisted(next);
-      return next;
-    }),
+  setPlaybackRate: (rate) => set({ playbackRate: clamp(rate, 0.65, 1.45), activeProVibe: null }),
   setViewMode: (mode) =>
     set({
       viewMode: mode,
       nowPlayingTab: mode === 'video' ? 'video' : 'artwork',
     }),
-  setStemMode: (stemMode) => set({ stemMode }),
 
   setSleepTimerMinutes: (minutes) =>
     set({
@@ -639,6 +1165,50 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
     }),
   setShowQueueDrawer: (open) => set({ showQueueDrawer: open }),
   setShowEqModal: (open) => set({ showEqModal: open }),
+  setDriveModeOpen: (open) => set({ driveModeOpen: open }),
+  setShowImportModal: (open) => set({ showImportModal: open }),
+  setShowDownloadDrawer: (open) => set({ showDownloadDrawer: open }),
+
+  enqueueDownloadJob: (track, mode, bitrate) => {
+    const id = `dl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const job: DownloadJob = {
+      id,
+      track,
+      mode,
+      bitrate: bitrate || get().exportBitrate || '320k',
+      status: 'queued',
+      progressPct: 0,
+      loadedBytes: 0,
+      totalBytes: 0,
+      createdAt: Date.now(),
+    };
+    set((prev) => ({
+      downloadJobs: [job, ...prev.downloadJobs.slice(0, 19)],
+    }));
+    return id;
+  },
+
+  updateDownloadJob: (id, patch) =>
+    set((prev) => ({
+      downloadJobs: prev.downloadJobs.map((j) => (j.id === id ? { ...j, ...patch } : j)),
+    })),
+
+  removeDownloadJob: (id) =>
+    set((prev) => ({
+      downloadJobs: prev.downloadJobs.filter((j) => j.id !== id),
+    })),
+
+  setOfflineTrackIds: (ids) => set({ offlineTrackIds: ids }),
+  markOfflineTrackSaved: (trackId) =>
+    set((prev) => ({
+      offlineTrackIds: prev.offlineTrackIds.includes(trackId)
+        ? prev.offlineTrackIds
+        : [trackId, ...prev.offlineTrackIds],
+    })),
+  markOfflineTrackRemoved: (trackId) =>
+    set((prev) => ({
+      offlineTrackIds: prev.offlineTrackIds.filter((id) => id !== trackId),
+    })),
 
   toggleLikeTrack: (track) =>
     set((prev) => {
@@ -648,6 +1218,153 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
         : [track, ...prev.likedTracks];
       const next = { ...prev, likedTracks };
       syncPersisted(next);
+      return next;
+    }),
+
+  importTracksIntoLikes: (tracks) => {
+    let added = 0;
+    set((prev) => {
+      const existingKeys = new Set(
+        prev.likedTracks.map((t) => `${t.artist.name.toLowerCase()}|${t.title.toLowerCase()}`)
+      );
+      const toAdd: MusicTrack[] = [];
+      for (const tr of tracks) {
+        const key = `${tr.artist.name.toLowerCase()}|${tr.title.toLowerCase()}`;
+        if (!existingKeys.has(key) && !prev.likedTracks.some((x) => x.id === tr.id)) {
+          existingKeys.add(key);
+          toAdd.push(tr);
+        }
+      }
+      added = toAdd.length;
+      if (added === 0) return prev;
+      const next = { ...prev, likedTracks: [...toAdd, ...prev.likedTracks].slice(0, 400) };
+      syncPersisted(next);
+      return next;
+    });
+    return added;
+  },
+
+  importTracksIntoPlaylist: (name, description, tracks) => {
+    const id = `upl-${Date.now().toString(36)}`;
+    const dedup: MusicTrack[] = [];
+    const seen = new Set<string>();
+    for (const t of tracks) {
+      if (!seen.has(t.id)) {
+        seen.add(t.id);
+        dedup.push(t);
+      }
+    }
+    const newPl: UserMusicPlaylist = {
+      id,
+      name: name.trim() || 'Playlist Importada',
+      description: description || 'Importada en Riffan Music',
+      createdAt: Date.now(),
+      tracks: dedup,
+    };
+    set((prev) => {
+      const next = { ...prev, userPlaylists: [newPl, ...prev.userPlaylists] };
+      syncPersisted(next);
+      return next;
+    });
+    return id;
+  },
+
+  mergeTasteProfile: (opts) =>
+    set((prev) => {
+      const artistSet = new Set(prev.tasteProfile.favoriteArtists);
+      for (const a of opts.artists || []) {
+        const clean = a.trim();
+        if (clean) artistSet.add(clean);
+      }
+      const genreSet = new Set(prev.tasteProfile.favoriteGenres);
+      for (const g of opts.genres || []) {
+        const clean = g.trim();
+        if (clean) genreSet.add(clean);
+      }
+      const sources = [...prev.tasteProfile.importedSources];
+      if (opts.source) {
+        sources.unshift({
+          id: `imp-src-${Date.now().toString(36)}`,
+          provider: opts.source.provider,
+          label: opts.source.label,
+          trackCount: opts.source.trackCount,
+          importedAt: Date.now(),
+        });
+      }
+      const next = {
+        ...prev,
+        tasteProfile: {
+          favoriteArtists: Array.from(artistSet).slice(0, 40),
+          favoriteGenres: Array.from(genreSet).slice(0, 20),
+          importedSources: sources.slice(0, 20),
+        },
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  removeFavoriteArtist: (artist) =>
+    set((prev) => {
+      const next = {
+        ...prev,
+        tasteProfile: {
+          ...prev.tasteProfile,
+          favoriteArtists: prev.tasteProfile.favoriteArtists.filter((a) => a !== artist),
+        },
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  removeFavoriteGenre: (genre) =>
+    set((prev) => {
+      const next = {
+        ...prev,
+        tasteProfile: {
+          ...prev.tasteProfile,
+          favoriteGenres: prev.tasteProfile.favoriteGenres.filter((g) => g !== genre),
+        },
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  addSearchHistory: (query) =>
+    set((prev) => {
+      const clean = query.trim();
+      if (!clean) return prev;
+      const nextHist = [clean, ...prev.searchHistory.filter((q) => q.toLowerCase() !== clean.toLowerCase())].slice(0, 12);
+      const next = { ...prev, searchHistory: nextHist };
+      syncPersisted(next);
+      return next;
+    }),
+
+  removeSearchHistory: (query) =>
+    set((prev) => {
+      const next = {
+        ...prev,
+        searchHistory: prev.searchHistory.filter((q) => q !== query),
+      };
+      syncPersisted(next);
+      return next;
+    }),
+
+  clearSearchHistory: () =>
+    set((prev) => {
+      const next = { ...prev, searchHistory: [] };
+      syncPersisted(next);
+      return next;
+    }),
+
+  recordListeningTick: (_track, deltaSec) =>
+    set((prev) => {
+      if (deltaSec <= 0) return prev;
+      const nextStats: ListeningStats = {
+        ...prev.listeningStats,
+        totalListenSec: prev.listeningStats.totalListenSec + deltaSec,
+      };
+      const next = { ...prev, listeningStats: nextStats };
+      saveLibrary(extractPersisted(next));
       return next;
     }),
 
@@ -723,26 +1440,93 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
       return next;
     }),
 
-  setMusicLang: (musicLang, isUserSelection = true) =>
+  setMusicLang: (musicLang) =>
     set((prev) => {
-      const next = {
-        ...prev,
-        musicLang,
-        musicLangCustom: isUserSelection ? true : prev.musicLangCustom,
-      };
+      const next = { ...prev, musicLang };
       syncPersisted(next);
       return next;
     }),
 
-  syncMusicLangWithApp: (appLang) =>
+  setRadioReconnectAttempt: (attempt) => set({ radioReconnectAttempt: attempt }),
+
+  hydrateFromCloud: (payload) =>
     set((prev) => {
-      if (prev.musicLangCustom) return prev;
-      const normalized = normalizeMusicLang(appLang);
-      if (prev.musicLang === normalized) return prev;
-      const next = { ...prev, musicLang: normalized };
-      syncPersisted(next);
+      const mergedLiked = [...prev.likedTracks];
+      const seenLiked = new Set(mergedLiked.map((t) => t.id));
+      for (const ct of payload.likedTracks || []) {
+        if (!seenLiked.has(ct.id)) {
+          seenLiked.add(ct.id);
+          mergedLiked.push(ct);
+        }
+      }
+
+      const mergedPlaylists = [...prev.userPlaylists];
+      const seenPls = new Set(mergedPlaylists.map((p) => p.id));
+      for (const cp of payload.userPlaylists || []) {
+        if (!seenPls.has(cp.id)) {
+          seenPls.add(cp.id);
+          mergedPlaylists.push(cp);
+        }
+      }
+
+      const mergedArtists = Array.from(
+        new Set([
+          ...(prev.tasteProfile?.favoriteArtists || []),
+          ...(payload.tasteProfile?.favoriteArtists || []),
+        ])
+      ).slice(0, 40);
+      const mergedGenres = Array.from(
+        new Set([
+          ...(prev.tasteProfile?.favoriteGenres || []),
+          ...(payload.tasteProfile?.favoriteGenres || []),
+        ])
+      ).slice(0, 20);
+
+      const s = payload.studioSettings || {};
+      const nextEq10 = isValidEqBands10(s.eqBands10) ? s.eqBands10 : prev.eqBands10;
+
+      const next = {
+        ...prev,
+        likedTracks: mergedLiked.slice(0, 400),
+        userPlaylists: mergedPlaylists.slice(0, 50),
+        savedAlbums:
+          payload.savedAlbums?.length > 0 && prev.savedAlbums.length === 0
+            ? payload.savedAlbums
+            : prev.savedAlbums,
+        savedPlaylists:
+          payload.savedPlaylists?.length > 0 && prev.savedPlaylists.length === 0
+            ? payload.savedPlaylists
+            : prev.savedPlaylists,
+        customPresets:
+          payload.customPresets?.length > 0 && prev.customPresets.length === 0
+            ? payload.customPresets
+            : prev.customPresets,
+        tasteProfile: {
+          favoriteArtists: mergedArtists,
+          favoriteGenres: mergedGenres,
+          importedSources:
+            (prev.tasteProfile?.importedSources?.length || 0) >=
+            (payload.tasteProfile?.importedSources?.length || 0)
+              ? prev.tasteProfile.importedSources
+              : payload.tasteProfile.importedSources || [],
+        },
+        listeningStats:
+          (payload.listeningStats?.totalPlays || 0) > prev.listeningStats.totalPlays
+            ? payload.listeningStats
+            : prev.listeningStats,
+        eqBands10: nextEq10,
+        eqBands: toEq5From10(nextEq10),
+        crossfadeSec:
+          typeof s.crossfadeSec === 'number' ? clamp(s.crossfadeSec, 0, 10) : prev.crossfadeSec,
+        normalizeAudio:
+          typeof s.normalizeAudio === 'boolean' ? s.normalizeAudio : prev.normalizeAudio,
+        musicLang: isValidMusicLang(s.musicLang) ? s.musicLang : prev.musicLang,
+      };
+      syncPersisted(next, true);
       return next;
     }),
+
+  getPersistedSnapshot: () => extractPersisted(get()),
 
   stopAllMusic: () =>
     set({
@@ -751,5 +1535,6 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
       activeRadio: null,
       resolvedPlayback: null,
       showNowPlayingModal: false,
+      driveModeOpen: false,
     }),
 }));

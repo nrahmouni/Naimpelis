@@ -1,43 +1,318 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import Hls from 'hls.js';
 import { useMusicStore } from '../../store/useMusicStore';
-import { useAudio8D, type Audio8DTelemetry } from '../../hooks/useAudio8D';
-import type { ResolvedTrackPlayback } from '../../types/music';
-import { EQ_PRESETS, resolveEqGains } from './eqPresets';
-import { hasActiveAudioFx, resolveAudioFxParams } from './audioEffects';
+import type {
+  EqPresetId,
+  ExportBitrate,
+  MusicTrack,
+  ResolvedTrackPlayback,
+  Spatial8dMode,
+  SpatialTrajectory,
+} from '../../types/music';
+import {
+  deleteOfflineTrackAudio,
+  getOfflineTrackBlob,
+  listOfflineTrackMeta,
+  saveOfflineTrackAudio,
+} from '../../services/musicOfflineDb';
+import { buildZipBlob } from '../../utils/zipExport';
 
-export { EQ_PRESETS };
+export const EQ_BANDS_HZ = [60, 230, 910, 4000, 14000] as const;
+export const EQ_10_BANDS_HZ = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000] as const;
+
+export const EQ_PRESETS: Record<EqPresetId, { label: string; gains: number[]; gains10: number[] }> = {
+  flat: {
+    label: 'Plano',
+    gains: [0, 0, 0, 0, 0],
+    gains10: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  },
+  bass: {
+    label: 'Sub Bass',
+    gains: [6, 4.5, 0.5, 1, 2],
+    gains10: [6.5, 5.5, 4, 1.5, 0, 0, 0.5, 1, 2, 2.5],
+  },
+  vocal: {
+    label: 'Voz Clara',
+    gains: [-2, -1, 4.5, 3.5, 1],
+    gains10: [-3, -2, -1, 0.5, 2.5, 4.5, 4, 3, 1.5, 0],
+  },
+  club: {
+    label: 'Club / Electrónica',
+    gains: [5, 2.5, -1.5, 3, 5],
+    gains10: [5.5, 4.5, 2.5, 0, -1.5, 0, 2, 3.5, 4.5, 5],
+  },
+  acoustic: {
+    label: 'Acústico',
+    gains: [2.5, 1.5, 2, 3, 2],
+    gains10: [3, 2, 1.5, 1, 1.5, 2, 3, 2.5, 2, 1.5],
+  },
+};
+
+const SPATIAL_PROFILES: Record<
+  Spatial8dMode,
+  { radius: number; centerMix: number; warmthDb: number }
+> = {
+  orbit: { radius: 1.75, centerMix: 0.2, warmthDb: 2.2 },
+  concert: { radius: 2.05, centerMix: 0.18, warmthDb: 2.8 },
+  club: { radius: 1.9, centerMix: 0.16, warmthDb: 3.2 },
+};
+
+export interface Mp3ExportOptions {
+  mode?: 'original' | '8d' | 'slowed' | 'nightcore';
+  rate?: number;
+  bassDb?: number;
+  bitrate?: ExportBitrate;
+  offlineOnly?: boolean;
+}
+
+const activeDownloadAborts = new Map<string, AbortController>();
+
+export function cancelDownloadJob(jobId: string): void {
+  const ctrl = activeDownloadAborts.get(jobId);
+  if (ctrl) {
+    ctrl.abort();
+    activeDownloadAborts.delete(jobId);
+  }
+  useMusicStore.getState().updateDownloadJob(jobId, { status: 'cancelled' });
+}
+
+export function buildMp3DownloadUrl(track: MusicTrack, opts?: Mp3ExportOptions): {
+  url: string;
+  mode: string;
+  bitrate: ExportBitrate;
+  fileName: string;
+} {
+  const st = useMusicStore.getState();
+  let mode = opts?.mode;
+  if (!mode) {
+    if (st.activeProVibe === 'slowed_reverb') mode = 'slowed';
+    else if (st.activeProVibe === 'nightcore') mode = 'nightcore';
+    else if (st.spatial8dEnabled) mode = '8d';
+    else mode = 'original';
+  }
+  const bitrate: ExportBitrate = opts?.bitrate || st.exportBitrate || '320k';
+
+  const qs = new URLSearchParams({
+    title: track.title,
+    artist: track.artist.name,
+    duration: String(track.durationSec || 0),
+    mode,
+    bitrate,
+    trajectory: st.spatialTrajectory,
+    withLyrics: '1',
+  });
+  if (track.album.title) qs.set('album', track.album.title);
+  if (track.album.coverXl || track.album.cover) {
+    qs.set('coverUrl', track.album.coverXl || track.album.cover);
+  }
+  if (track.previewUrl) qs.set('preview', track.previewUrl);
+  if (track.soundcloudId) qs.set('scId', track.soundcloudId);
+  if (track.audiusId) qs.set('audiusId', track.audiusId);
+  if (track.youtubeVideoId) qs.set('ytId', track.youtubeVideoId);
+
+  if (
+    st.currentTrack?.id === track.id &&
+    st.resolvedPlayback?.streamUrl &&
+    st.resolvedPlayback.provider !== 'offline'
+  ) {
+    qs.set('streamUrl', st.resolvedPlayback.streamUrl);
+  }
+
+  const isOriginalOverride = opts?.mode === 'original';
+  const rate = opts?.rate ?? (isOriginalOverride ? 1 : st.playbackRate);
+  const bassDb = opts?.bassDb ?? (isOriginalOverride ? 0 : st.bassBoostDb);
+  if (Math.abs(rate - 1) > 0.02) qs.set('rate', rate.toFixed(2));
+  if (bassDb > 0.5) qs.set('bassDb', bassDb.toFixed(1));
+  if (!isOriginalOverride) {
+    if (Math.abs(st.pitchSemitones) >= 0.25) qs.set('pitchSemitones', String(st.pitchSemitones));
+    if (st.reverbMix > 0.04) qs.set('reverbMix', st.reverbMix.toFixed(2));
+    if (st.vocalCancel) qs.set('vocalCancel', '1');
+    if (st.exciterMix > 0.05) qs.set('exciterMix', st.exciterMix.toFixed(2));
+    if (mode === '8d') qs.set('speed8dSec', st.spatial8dSpeedSec.toFixed(1));
+    if (st.eqBands10.some((g) => Math.abs(g) > 0.2)) {
+      qs.set('eq', st.eqBands10.map((g) => g.toFixed(1)).join(','));
+    }
+    if (st.trimStartSec > 0) qs.set('trimStart', String(st.trimStartSec));
+    if (st.trimEndSec > st.trimStartSec + 1) qs.set('trimEnd', String(st.trimEndSec));
+    if (st.fadeSec > 0.2) qs.set('fadeSec', String(st.fadeSec));
+  }
+
+  const safeTitle = `${track.artist.name} - ${track.title}${mode !== 'original' ? ` (${mode.toUpperCase()})` : ''}.mp3`.replace(
+    /[\\/:*?"<>|]/g,
+    ''
+  );
+  return {
+    url: `/api/music/download-mp3?${qs.toString()}`,
+    mode,
+    bitrate,
+    fileName: safeTitle,
+  };
+}
+
+function triggerBlobDownload(blob: Blob, fileName: string): void {
+  if (typeof document === 'undefined') return;
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = fileName;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  window.setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(blobUrl);
+  }, 4000);
+}
+
+export async function startDownloadMp3Job(
+  track: MusicTrack,
+  opts?: Mp3ExportOptions
+): Promise<{ ok: boolean; error?: string }> {
+  const st = useMusicStore.getState();
+  const { url, mode, bitrate, fileName } = buildMp3DownloadUrl(track, opts);
+  const jobId = st.enqueueDownloadJob(track, mode, bitrate);
+  const ctrl = new AbortController();
+  activeDownloadAborts.set(jobId, ctrl);
+  st.updateDownloadJob(jobId, { status: 'downloading', progressPct: 5 });
+
+  try {
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) {
+      let errMsg = `HTTP ${res.status}`;
+      try {
+        const j = await res.json();
+        if (j?.error) errMsg = String(j.error);
+      } catch {
+        // keep HTTP error
+      }
+      st.updateDownloadJob(jobId, { status: 'error', error: errMsg });
+      activeDownloadAborts.delete(jobId);
+      return { ok: false, error: errMsg };
+    }
+
+    const totalHeader = Number(res.headers.get('content-length') || 0);
+    const reader = res.body?.getReader();
+    const chunks: Uint8Array[] = [];
+    let loaded = 0;
+
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          loaded += value.byteLength;
+          const pct = totalHeader > 0
+            ? Math.min(99, Math.round((loaded / totalHeader) * 100))
+            : Math.min(92, Math.round(15 + Math.log10(1 + loaded / 40000) * 38));
+          st.updateDownloadJob(jobId, {
+            loadedBytes: loaded,
+            totalBytes: totalHeader,
+            progressPct: pct,
+          });
+        }
+      }
+    } else {
+      const ab = await res.arrayBuffer();
+      const u8 = new Uint8Array(ab);
+      chunks.push(u8);
+      loaded = u8.byteLength;
+    }
+
+    const blobParts: BlobPart[] = chunks.map(
+      (c) => c.buffer.slice(c.byteOffset, c.byteOffset + c.byteLength) as ArrayBuffer
+    );
+    const blob = new Blob(blobParts, { type: 'audio/mpeg' });
+    await saveOfflineTrackAudio(track.id, blob);
+    st.markOfflineTrackSaved(track.id);
+    st.updateDownloadJob(jobId, {
+      status: 'done',
+      loadedBytes: blob.size,
+      totalBytes: blob.size,
+      progressPct: 100,
+    });
+
+    if (!opts?.offlineOnly) {
+      triggerBlobDownload(blob, fileName);
+    }
+
+    activeDownloadAborts.delete(jobId);
+    return { ok: true };
+  } catch (err: unknown) {
+    activeDownloadAborts.delete(jobId);
+    const isAbort = err instanceof Error && err.name === 'AbortError';
+    if (isAbort) {
+      st.updateDownloadJob(jobId, { status: 'cancelled' });
+      return { ok: false, error: 'cancelled' };
+    }
+    const msg = err instanceof Error ? err.message : 'Error de descarga MP3';
+    st.updateDownloadJob(jobId, { status: 'error', error: msg });
+    return { ok: false, error: msg };
+  }
+}
+
+export async function saveTrackToOfflineLibrary(track: MusicTrack): Promise<{ ok: boolean; error?: string }> {
+  return startDownloadMp3Job(track, { offlineOnly: true });
+}
+
+export async function removeTrackFromOfflineLibrary(trackId: string): Promise<void> {
+  await deleteOfflineTrackAudio(trackId);
+  useMusicStore.getState().markOfflineTrackRemoved(trackId);
+}
+
+export async function exportTracksAsMp3Zip(
+  archiveTitle: string,
+  tracks: MusicTrack[],
+  onProgress?: (completed: number, total: number) => void
+): Promise<{ ok: boolean; count: number; error?: string }> {
+  const targetTracks = tracks.slice(0, 25);
+  if (targetTracks.length === 0) return { ok: false, count: 0, error: 'Sin canciones' };
+  const entries: Array<{ name: string; data: Uint8Array }> = [];
+
+  for (let i = 0; i < targetTracks.length; i++) {
+    const tr = targetTracks[i];
+    onProgress?.(i, targetTracks.length);
+    try {
+      const { url, fileName } = buildMp3DownloadUrl(tr);
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const ab = await res.arrayBuffer();
+      if (ab.byteLength > 1000) {
+        entries.push({
+          name: `${String(i + 1).padStart(2, '0')} - ${fileName}`,
+          data: new Uint8Array(ab),
+        });
+      }
+    } catch {
+      // skip failed track cleanly
+    }
+  }
+  onProgress?.(targetTracks.length, targetTracks.length);
+  if (entries.length === 0) {
+    return { ok: false, count: 0, error: 'No se pudo exportar ninguna canción' };
+  }
+  const zipBlob = buildZipBlob(entries);
+  const safeZip = `${archiveTitle.replace(/[\\/:*?"<>|]/g, '').trim() || 'Riffan-Music'}.zip`;
+  triggerBlobDownload(zipBlob, safeZip);
+  return { ok: true, count: entries.length };
+}
+
+export function triggerTrackMp3Download(
+  track: MusicTrack,
+  opts?: Mp3ExportOptions
+): void {
+  void startDownloadMp3Job(track, opts);
+}
 
 let sharedAnalyserNode: AnalyserNode | null = null;
 let sharedFreqArray: Uint8Array<ArrayBuffer> | null = null;
-let sharedTelemetryGetter: (() => Audio8DTelemetry) | null = null;
+let sharedSpatialAngleRad = 0;
+let sharedSpatialEngineActive = false;
 
-export function getSpatial8dTelemetry(): {
-  angleRad: number;
-  x: number;
-  y: number;
-  z: number;
-  occlusionCutoffHz: number;
-  activeWebAudio: boolean;
-} {
-  const t = sharedTelemetryGetter?.();
-  if (!t) {
-    return {
-      angleRad: 0,
-      x: 0,
-      y: 0,
-      z: 1.8,
-      occlusionCutoffHz: 20000,
-      activeWebAudio: false,
-    };
-  }
+export function getSpatial8dTelemetry() {
   return {
-    angleRad: t.angleRad,
-    x: t.x,
-    y: t.y,
-    z: t.z,
-    occlusionCutoffHz: t.occlusionCutoffHz,
-    activeWebAudio: t.isWebAudioActive,
+    angleRad: sharedSpatialAngleRad,
+    activeWebAudio: sharedSpatialEngineActive,
   };
 }
 
@@ -47,18 +322,103 @@ export function sampleMusicSpectrum(barCount = 24): number[] {
   }
   sharedAnalyserNode.getByteFrequencyData(sharedFreqArray);
   const out: number[] = [];
-  const usable = Math.min(sharedFreqArray.length, 48);
-  const step = Math.max(1, Math.floor(usable / barCount));
+  const minBin = 1;
+  const maxBin = Math.min(sharedFreqArray.length - 1, 64);
   for (let i = 0; i < barCount; i++) {
-    const val = sharedFreqArray[Math.min(usable - 1, i * step)] || 0;
-    out.push(Math.max(0.12, Math.min(1, val / 230)));
+    const ratio = i / Math.max(1, barCount - 1);
+    const binIdx = Math.round(minBin + Math.pow(ratio, 1.35) * (maxBin - minBin));
+    const leftVal = sharedFreqArray[Math.max(0, binIdx - 1)] || 0;
+    const centerVal = sharedFreqArray[binIdx] || 0;
+    const rightVal = sharedFreqArray[Math.min(sharedFreqArray.length - 1, binIdx + 1)] || 0;
+    const avg = centerVal * 0.6 + (leftVal + rightVal) * 0.2;
+    const boosted = (avg / 225) * (1 + ratio * 0.32);
+    out.push(Math.max(0.12, Math.min(1, boosted)));
   }
   return out;
 }
 
-export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
-  ytVideoMountId = 'riffan-music-yt-player',
-}) => {
+function createStudioHallImpulse(ctx: AudioContext, durationSec = 1.45, decay = 2.6): AudioBuffer {
+  const sampleRate = ctx.sampleRate || 44100;
+  const length = Math.max(1, Math.floor(sampleRate * durationSec));
+  const buffer = ctx.createBuffer(2, length, sampleRate);
+  const earlyTaps = [0.016, 0.031, 0.053];
+
+  for (let ch = 0; ch < 2; ch++) {
+    const data = buffer.getChannelData(ch);
+    let lp = 0;
+    for (let i = 0; i < length; i++) {
+      const t = i / length;
+      const noise = Math.random() * 2 - 1;
+      lp = lp * 0.52 + noise * 0.48;
+      data[i] = lp * Math.pow(1 - t, decay) * 0.65;
+    }
+    earlyTaps.forEach((tapSec, idx) => {
+      const tapIdx = Math.floor((tapSec + ch * 0.004) * sampleRate);
+      if (tapIdx < length) {
+        data[tapIdx] += 0.28 / (idx + 1);
+      }
+    });
+  }
+  return buffer;
+}
+
+function createVinylCrackleBuffer(ctx: AudioContext): AudioBuffer {
+  const sampleRate = ctx.sampleRate || 44100;
+  const length = sampleRate * 4;
+  const buffer = ctx.createBuffer(2, length, sampleRate);
+  for (let ch = 0; ch < 2; ch++) {
+    const data = buffer.getChannelData(ch);
+    let prev = 0;
+    for (let i = 0; i < length; i++) {
+      const hiss = (Math.random() * 2 - 1) * 0.006;
+      const pop = Math.random() > 0.9994 ? (Math.random() * 2 - 1) * 0.14 : 0;
+      prev = prev * 0.65 + (hiss + pop) * 0.35;
+      data[i] = prev;
+    }
+  }
+  return buffer;
+}
+
+function computeSpatialCoords(
+  trajectory: SpatialTrajectory,
+  angle: number,
+  radius: number
+): { x: number; y: number; z: number } {
+  if (trajectory === 'pendulum') {
+    return {
+      x: radius * Math.sin(angle),
+      y: 0.08 * Math.cos(angle * 2),
+      z: -radius * 0.9 - 0.25 * Math.cos(angle),
+    };
+  }
+  if (trajectory === 'figure8') {
+    return {
+      x: radius * Math.sin(angle),
+      y: 0.22 * Math.sin(angle * 2),
+      z: -radius * 0.78 * Math.sin(angle * 2) - 0.85,
+    };
+  }
+  if (trajectory === 'elevated') {
+    return {
+      x: radius * Math.sin(angle),
+      y: 0.85 * Math.abs(Math.sin(angle * 0.5)) + 0.15,
+      z: -radius * Math.cos(angle),
+    };
+  }
+  return {
+    x: radius * Math.sin(angle),
+    y: 0.24 * Math.sin(angle * 2),
+    z: -radius * Math.cos(angle),
+  };
+}
+
+function isIosSafariBrowser(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  return /iphone|ipad|ipod/i.test(ua) && !Hls.isSupported();
+}
+
+export const MusicAudioEngine: React.FC = () => {
   const currentTrack = useMusicStore((s) => s.currentTrack);
   const activeRadio = useMusicStore((s) => s.activeRadio);
   const resolvedPlayback = useMusicStore((s) => s.resolvedPlayback);
@@ -66,86 +426,442 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
   const volume = useMusicStore((s) => s.volume);
   const isMuted = useMusicStore((s) => s.isMuted);
   const playbackRate = useMusicStore((s) => s.playbackRate);
-  const viewMode = useMusicStore((s) => s.viewMode);
-  const eqPreset = useMusicStore((s) => s.eqPreset);
-  const customEqBands = useMusicStore((s) => s.customEqBands);
-  const fxPreset = useMusicStore((s) => s.fxPreset);
-  const customFxParams = useMusicStore((s) => s.customFxParams);
-  const stemMode = useMusicStore((s) => s.stemMode);
+  const preservesPitch = useMusicStore((s) => s.preservesPitch);
+  const pitchSemitones = useMusicStore((s) => s.pitchSemitones);
+  const eqBands10 = useMusicStore((s) => s.eqBands10);
+  const bassBoostDb = useMusicStore((s) => s.bassBoostDb);
+  const reverbMix = useMusicStore((s) => s.reverbMix);
+  const exciterMix = useMusicStore((s) => s.exciterMix);
+  const vinylCrackle = useMusicStore((s) => s.vinylCrackle);
+  const vocalCancel = useMusicStore((s) => s.vocalCancel);
+  const normalizeAudio = useMusicStore((s) => s.normalizeAudio);
   const spatial8dEnabled = useMusicStore((s) => s.spatial8dEnabled);
   const spatial8dMode = useMusicStore((s) => s.spatial8dMode);
-  const spatial8dSpeed = useMusicStore((s) => s.spatial8dSpeed);
-  const spatial8dReverb = useMusicStore((s) => s.spatial8dReverb);
-  const spatial8dDepth = useMusicStore((s) => s.spatial8dDepth);
+  const spatialTrajectory = useMusicStore((s) => s.spatialTrajectory);
+  const trimStartSec = useMusicStore((s) => s.trimStartSec);
   const seekRequestSec = useMusicStore((s) => s.seekRequestSec);
   const sleepTimerEndsAt = useMusicStore((s) => s.sleepTimerEndsAt);
+  const autoDownloadMp3 = useMusicStore((s) => s.autoDownloadMp3);
+  const wifiOnlyAutoDownload = useMusicStore((s) => s.wifiOnlyAutoDownload);
+  const driveModeOpen = useMusicStore((s) => s.driveModeOpen);
 
-  const setSpatial8dEnabled = useMusicStore((s) => s.setSpatial8dEnabled);
-  const setSpatial8dSpeed = useMusicStore((s) => s.setSpatial8dSpeed);
-  const setSpatial8dReverb = useMusicStore((s) => s.setSpatial8dReverb);
-  const setSpatial8dDepth = useMusicStore((s) => s.setSpatial8dDepth);
+  // Dual Audio Decks (Deck A & Deck B) for seamless Crossfade transitions
+  const deckARef = useRef<HTMLAudioElement | null>(null);
+  const deckBRef = useRef<HTMLAudioElement | null>(null);
+  const activeDeckSlotRef = useRef<'A' | 'B'>('A');
+  const hlsInstancesRef = useRef<{ A: Hls | null; B: Hls | null }>({ A: null, B: null });
+  const crossfadeTimerRef = useRef<number | null>(null);
+  const radioRetryTimerRef = useRef<number | null>(null);
+  const offlineObjectUrlRef = useRef<string | null>(null);
+  const lastStatTickRef = useRef<number>(0);
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const hlsRef = useRef<Hls | null>(null);
-  const ytPlayerRef = useRef<any>(null);
-  const ytReadyRef = useRef<boolean>(false);
-  const activeBackendRef = useRef<'html-audio' | 'youtube' | 'none'>('none');
-  const [activeBackend, setActiveBackend] = useState<'html-audio' | 'youtube' | 'none'>('none');
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const filtersRef = useRef<BiquadFilterNode[]>([]);
+  const mediaSourceConnectedRef = useRef<boolean>(false);
+  const activeBackendRef = useRef<'html-audio' | 'none'>('none');
   const pendingResumeSecRef = useRef<number | null>(null);
-  const lastResolvedTrackIdRef = useRef<string | null>(null);
+  const autoDownloadedTrackIdRef = useRef<string | null>(null);
+  const lastMediaPosSyncRef = useRef<number>(0);
+
+  // WebAudio DSP nodes
+  const deckAGainRef = useRef<GainNode | null>(null);
+  const deckBGainRef = useRef<GainNode | null>(null);
+  const dryBypassGainRef = useRef<GainNode | null>(null);
+  const spatialMasterGainRef = useRef<GainNode | null>(null);
+  const subBassBoostRef = useRef<BiquadFilterNode | null>(null);
+  const exciterShelfRef = useRef<BiquadFilterNode | null>(null);
+  const vocalDryGainRef = useRef<GainNode | null>(null);
+  const vocalCancelGainRef = useRef<GainNode | null>(null);
+  const vinylGainRef = useRef<GainNode | null>(null);
+  const compressorRef = useRef<DynamicsCompressorNode | null>(null);
+  const panner3dRef = useRef<PannerNode | null>(null);
+  const stereoPannerRef = useRef<StereoPannerNode | null>(null);
+  const centerAnchorGainRef = useRef<GainNode | null>(null);
+  const reverbWetGainRef = useRef<GainNode | null>(null);
 
   const playNextRef = useRef(() => useMusicStore.getState().playNext());
   playNextRef.current = () => useMusicStore.getState().playNext();
 
-  const eqGainsDb = useMemo(
-    () => resolveEqGains(eqPreset, customEqBands),
-    [eqPreset, customEqBands]
-  );
+  const getActiveAudioEl = () =>
+    activeDeckSlotRef.current === 'A' ? deckARef.current : deckBRef.current;
 
-  const activeFxParams = useMemo(
-    () => resolveAudioFxParams(fxPreset, customFxParams),
-    [fxPreset, customFxParams]
-  );
+  const getInactiveDeckSlot = (): 'A' | 'B' =>
+    activeDeckSlotRef.current === 'A' ? 'B' : 'A';
 
-  const isFxActive = useMemo(
-    () => fxPreset !== 'none' || hasActiveAudioFx(activeFxParams),
-    [fxPreset, activeFxParams]
-  );
-
-  const audio8d = useAudio8D({
-    mediaElementRef: audioRef,
-    isPlaying,
-    isActiveBackend: activeBackend === 'html-audio',
-    enabled: spatial8dEnabled,
-    spatialMode: spatial8dMode,
-    stemMode,
-    fxParams: activeFxParams,
-    speed: spatial8dSpeed,
-    reverbAmount: spatial8dReverb,
-    depth: spatial8dDepth,
-    eqGainsDb,
-    onEnabledChange: setSpatial8dEnabled,
-    onSpeedChange: setSpatial8dSpeed,
-    onReverbAmountChange: setSpatial8dReverb,
-    onDepthChange: setSpatial8dDepth,
-  });
-
-  // Exponer analizador de espectro y telemetría DSP a la UI
+  // Hydrate offline track IDs once on mount + clean object URLs on unmount
   useEffect(() => {
-    const analyser = audio8d.getAnalyserNode();
-    sharedAnalyserNode = analyser;
-    sharedFreqArray = analyser ? new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount)) : null;
-    sharedTelemetryGetter = audio8d.getTelemetry;
+    void listOfflineTrackMeta()
+      .then((list) => {
+        useMusicStore.getState().setOfflineTrackIds(list.map((m) => m.trackId));
+      })
+      .catch(() => {});
     return () => {
-      sharedAnalyserNode = null;
-      sharedFreqArray = null;
-      sharedTelemetryGetter = null;
+      if (offlineObjectUrlRef.current) {
+        URL.revokeObjectURL(offlineObjectUrlRef.current);
+        offlineObjectUrlRef.current = null;
+      }
+      if (radioRetryTimerRef.current) window.clearTimeout(radioRetryTimerRef.current);
+      if (crossfadeTimerRef.current) window.clearTimeout(crossfadeTimerRef.current);
     };
-  }, [audio8d]);
+  }, []);
 
-  const ensureWebAudioChain = () => {
-    void audio8d.resumeAudioContext();
+  // Screen Wake Lock when Drive Mode is open
+  useEffect(() => {
+    if (!driveModeOpen || typeof navigator === 'undefined' || !('wakeLock' in navigator)) return;
+    let lock: WakeLockSentinel | null = null;
+    let cancelled = false;
+    void (navigator as unknown as { wakeLock: { request: (t: 'screen') => Promise<WakeLockSentinel> } })
+      .wakeLock.request('screen')
+      .then((sentinel) => {
+        if (cancelled) void sentinel.release().catch(() => {});
+        else lock = sentinel;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      if (lock) void lock.release().catch(() => {});
+    };
+  }, [driveModeOpen]);
+
+  const ensureWebAudioChain = (bypassForIosHls = false) => {
+    if (bypassForIosHls) return;
+    const deckA = deckARef.current;
+    const deckB = deckBRef.current;
+    if (!deckA || !deckB || typeof window === 'undefined') return;
+    try {
+      const AC =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!AC) return;
+      const ctx = audioCtxRef.current || new AC();
+      if (!audioCtxRef.current) {
+        ctx.onstatechange = () => {
+          if (ctx.state !== 'running' && useMusicStore.getState().isPlaying) {
+            void ctx.resume().catch(() => {});
+          }
+        };
+      }
+      audioCtxRef.current = ctx;
+      if (ctx.state !== 'running') {
+        void ctx.resume().catch(() => {});
+      }
+      if (mediaSourceConnectedRef.current) return;
+
+      const st = useMusicStore.getState();
+      const srcA = ctx.createMediaElementSource(deckA);
+      const srcB = ctx.createMediaElementSource(deckB);
+
+      const deckAGain = ctx.createGain();
+      const deckBGain = ctx.createGain();
+      deckAGain.gain.value = activeDeckSlotRef.current === 'A' ? 1 : 0;
+      deckBGain.gain.value = activeDeckSlotRef.current === 'B' ? 1 : 0;
+
+      const deckMix = ctx.createGain();
+      srcA.connect(deckAGain);
+      srcB.connect(deckBGain);
+      deckAGain.connect(deckMix);
+      deckBGain.connect(deckMix);
+
+      // Sub-Bass + 10-Band EQ + Aural Exciter
+      const subBassBoost = ctx.createBiquadFilter();
+      subBassBoost.type = 'lowshelf';
+      subBassBoost.frequency.value = 82;
+      subBassBoost.gain.value = st.bassBoostDb + (st.spatial8dEnabled ? 2.2 : 0);
+
+      const filters = EQ_10_BANDS_HZ.map((freq, idx) => {
+        const biquad = ctx.createBiquadFilter();
+        biquad.type =
+          idx === 0 ? 'lowshelf' : idx === EQ_10_BANDS_HZ.length - 1 ? 'highshelf' : 'peaking';
+        biquad.frequency.value = freq;
+        biquad.Q.value = 1.2;
+        biquad.gain.value = st.eqBands10?.[idx] ?? 0;
+        return biquad;
+      });
+
+      const exciterShelf = ctx.createBiquadFilter();
+      exciterShelf.type = 'highshelf';
+      exciterShelf.frequency.value = 6800;
+      exciterShelf.gain.value = (st.exciterMix || 0) * 6.5;
+
+      deckMix.connect(subBassBoost);
+      let prev: AudioNode = subBassBoost;
+      for (const f of filters) {
+        prev.connect(f);
+        prev = f;
+      }
+      prev.connect(exciterShelf);
+
+      // M/S Karaoke Vocal Cancel matrix
+      const eqOut = ctx.createGain();
+      const vocalDryGain = ctx.createGain();
+      vocalDryGain.gain.value = st.vocalCancel ? 0 : 1;
+
+      const vocalCancelGain = ctx.createGain();
+      vocalCancelGain.gain.value = st.vocalCancel ? 1 : 0;
+
+      const splitter = ctx.createChannelSplitter(2);
+      const merger = ctx.createChannelMerger(2);
+      const invertR = ctx.createGain();
+      invertR.gain.value = -0.88;
+      const invertL = ctx.createGain();
+      invertL.gain.value = -0.88;
+
+      exciterShelf.connect(vocalDryGain);
+      vocalDryGain.connect(eqOut);
+
+      exciterShelf.connect(splitter);
+      splitter.connect(merger, 0, 0);
+      splitter.connect(invertR, 1);
+      invertR.connect(merger, 0, 0);
+      splitter.connect(merger, 1, 1);
+      splitter.connect(invertL, 0);
+      invertL.connect(merger, 0, 1);
+      merger.connect(vocalCancelGain);
+      vocalCancelGain.connect(eqOut);
+
+      // Stereo & 8D Spatializer branches
+      const use8d = st.spatial8dEnabled;
+      const prof = SPATIAL_PROFILES[st.spatial8dMode] || SPATIAL_PROFILES.orbit;
+
+      const dryBypassGain = ctx.createGain();
+      dryBypassGain.gain.value = use8d ? 0 : 1;
+
+      const spatialMasterGain = ctx.createGain();
+      spatialMasterGain.gain.value = use8d ? 1.04 : 0;
+
+      const centerAnchorGain = ctx.createGain();
+      centerAnchorGain.gain.value = prof.centerMix;
+
+      const panner3d = ctx.createPanner();
+      panner3d.panningModel = 'HRTF';
+      panner3d.distanceModel = 'inverse';
+      panner3d.refDistance = 2.2;
+      panner3d.maxDistance = 100;
+      panner3d.rolloffFactor = 0.32;
+      panner3d.coneInnerAngle = 360;
+      panner3d.coneOuterAngle = 360;
+      panner3d.coneOuterGain = 1;
+
+      const stereoPanner = ctx.createStereoPanner();
+      stereoPanner.pan.value = 0;
+
+      const spatialDirectGain = ctx.createGain();
+      spatialDirectGain.gain.value = 0.94;
+
+      // Studio Hall Convolver Reverb
+      const convolver = ctx.createConvolver();
+      convolver.buffer = createStudioHallImpulse(ctx);
+
+      const reverbDamp = ctx.createBiquadFilter();
+      reverbDamp.type = 'lowpass';
+      reverbDamp.frequency.value = 5400;
+
+      const reverbWetGain = ctx.createGain();
+      reverbWetGain.gain.value = st.reverbMix;
+
+      eqOut.connect(dryBypassGain);
+      eqOut.connect(centerAnchorGain);
+      centerAnchorGain.connect(spatialMasterGain);
+
+      eqOut.connect(panner3d);
+      panner3d.connect(stereoPanner);
+      stereoPanner.connect(spatialDirectGain);
+      spatialDirectGain.connect(spatialMasterGain);
+
+      dryBypassGain.connect(convolver);
+      stereoPanner.connect(convolver);
+      convolver.connect(reverbDamp);
+      reverbDamp.connect(reverbWetGain);
+
+      // Lo-Fi Vinyl Crackle loop generator
+      const vinylSource = ctx.createBufferSource();
+      vinylSource.buffer = createVinylCrackleBuffer(ctx);
+      vinylSource.loop = true;
+      const vinylGain = ctx.createGain();
+      vinylGain.gain.value = st.isPlaying ? (st.vinylCrackle || 0) * 0.45 : 0;
+      vinylSource.connect(vinylGain);
+      try {
+        vinylSource.start();
+      } catch {
+        // ignore
+      }
+
+      // Analyser + Protective Studio Limiter / LUFS Normalizer
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.78;
+
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = st.normalizeAudio ? -14 : -4;
+      limiter.knee.value = 16;
+      limiter.ratio.value = st.normalizeAudio ? 4.0 : 2.2;
+      limiter.attack.value = 0.004;
+      limiter.release.value = 0.18;
+
+      dryBypassGain.connect(analyser);
+      spatialMasterGain.connect(analyser);
+      reverbWetGain.connect(analyser);
+      vinylGain.connect(analyser);
+      analyser.connect(limiter);
+      limiter.connect(ctx.destination);
+
+      deckAGainRef.current = deckAGain;
+      deckBGainRef.current = deckBGain;
+      subBassBoostRef.current = subBassBoost;
+      filtersRef.current = filters;
+      exciterShelfRef.current = exciterShelf;
+      vocalDryGainRef.current = vocalDryGain;
+      vocalCancelGainRef.current = vocalCancelGain;
+      vinylGainRef.current = vinylGain;
+      compressorRef.current = limiter;
+      dryBypassGainRef.current = dryBypassGain;
+      spatialMasterGainRef.current = spatialMasterGain;
+      panner3dRef.current = panner3d;
+      stereoPannerRef.current = stereoPanner;
+      centerAnchorGainRef.current = centerAnchorGain;
+      reverbWetGainRef.current = reverbWetGain;
+
+      sharedAnalyserNode = analyser;
+      sharedFreqArray = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
+      mediaSourceConnectedRef.current = true;
+    } catch {
+      // Fallback to direct HTML5 audio output
+    }
   };
+
+  // Smoothly update DSP parameters live
+  useEffect(() => {
+    const ctx = audioCtxRef.current;
+    if (!ctx || !mediaSourceConnectedRef.current) return;
+    if (spatial8dEnabled && ctx.state === 'suspended') {
+      void ctx.resume().catch(() => {});
+    }
+    const now = ctx.currentTime;
+    const prof = SPATIAL_PROFILES[spatial8dMode] || SPATIAL_PROFILES.orbit;
+    try {
+      dryBypassGainRef.current?.gain.setTargetAtTime(spatial8dEnabled ? 0 : 1, now, 0.07);
+      spatialMasterGainRef.current?.gain.setTargetAtTime(spatial8dEnabled ? 1.04 : 0, now, 0.07);
+      subBassBoostRef.current?.gain.setTargetAtTime(
+        bassBoostDb + (spatial8dEnabled ? prof.warmthDb : 0),
+        now,
+        0.06
+      );
+      centerAnchorGainRef.current?.gain.setTargetAtTime(prof.centerMix, now, 0.07);
+      reverbWetGainRef.current?.gain.setTargetAtTime(reverbMix, now, 0.06);
+      exciterShelfRef.current?.gain.setTargetAtTime(exciterMix * 6.5, now, 0.06);
+      vocalDryGainRef.current?.gain.setTargetAtTime(vocalCancel ? 0 : 1, now, 0.05);
+      vocalCancelGainRef.current?.gain.setTargetAtTime(vocalCancel ? 1 : 0, now, 0.05);
+      vinylGainRef.current?.gain.setTargetAtTime(isPlaying ? vinylCrackle * 0.45 : 0, now, 0.08);
+      if (compressorRef.current) {
+        compressorRef.current.threshold.setTargetAtTime(normalizeAudio ? -14 : -4, now, 0.08);
+        compressorRef.current.ratio.setTargetAtTime(normalizeAudio ? 4.0 : 2.2, now, 0.08);
+      }
+    } catch {
+      // ignore
+    }
+  }, [
+    spatial8dEnabled,
+    spatial8dMode,
+    bassBoostDb,
+    reverbMix,
+    exciterMix,
+    vocalCancel,
+    vinylCrackle,
+    normalizeAudio,
+    isPlaying,
+  ]);
+
+  // Continuous 60fps 8D Trajectory Animator
+  useEffect(() => {
+    const panner = panner3dRef.current;
+    const stereo = stereoPannerRef.current;
+    const ctx = audioCtxRef.current;
+
+    if (!spatial8dEnabled) {
+      sharedSpatialEngineActive = false;
+      if (ctx && panner && stereo) {
+        const now = ctx.currentTime;
+        try {
+          panner.positionX.setTargetAtTime(0, now, 0.06);
+          panner.positionY.setTargetAtTime(0, now, 0.06);
+          panner.positionZ.setTargetAtTime(-1, now, 0.06);
+          stereo.pan.setTargetAtTime(0, now, 0.06);
+        } catch {
+          // ignore
+        }
+      }
+      return;
+    }
+
+    if (!isPlaying) {
+      sharedSpatialEngineActive = activeBackendRef.current === 'html-audio';
+      return;
+    }
+
+    let rafId = 0;
+    let lastTs = performance.now();
+    const tick = (ts: number) => {
+      const dtSec = Math.min(0.1, Math.max(0.001, (ts - lastTs) / 1000));
+      lastTs = ts;
+
+      const st = useMusicStore.getState();
+      const prof = SPATIAL_PROFILES[st.spatial8dMode] || SPATIAL_PROFILES.orbit;
+      const isHtmlAudio = activeBackendRef.current === 'html-audio';
+      sharedSpatialEngineActive = isHtmlAudio;
+
+      if (st.isPlaying) {
+        const periodSec = Math.max(3, st.spatial8dSpeedSec || 9.5);
+        const omega = (Math.PI * 2) / periodSec;
+        sharedSpatialAngleRad = (sharedSpatialAngleRad + omega * dtSec) % (Math.PI * 2);
+
+        const cCtx = audioCtxRef.current;
+        const p3 = panner3dRef.current;
+        const sp = stereoPannerRef.current;
+        if (cCtx && p3 && sp && isHtmlAudio) {
+          const now = cCtx.currentTime;
+          const { x, y, z } = computeSpatialCoords(
+            st.spatialTrajectory || 'orbit',
+            sharedSpatialAngleRad,
+            prof.radius
+          );
+          try {
+            p3.positionX.setTargetAtTime(x, now, 0.028);
+            p3.positionY.setTargetAtTime(y, now, 0.028);
+            p3.positionZ.setTargetAtTime(z, now, 0.028);
+            sp.pan.setTargetAtTime(Math.sin(sharedSpatialAngleRad) * st.stereoWidth, now, 0.028);
+          } catch {
+            // ignore
+          }
+        }
+      }
+      rafId = requestAnimationFrame(tick);
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(rafId);
+      sharedSpatialEngineActive = false;
+    };
+  }, [
+    spatial8dEnabled,
+    spatial8dMode,
+    spatialTrajectory,
+    isPlaying,
+    activeRadio?.id,
+    currentTrack?.id,
+    resolvedPlayback?.sourceType,
+  ]);
+
+  // Sync live 10-band Equalizer gains smoothly
+  useEffect(() => {
+    filtersRef.current.forEach((filter, idx) => {
+      try {
+        filter.gain.setTargetAtTime(eqBands10[idx] ?? 0, audioCtxRef.current?.currentTime || 0, 0.04);
+      } catch {
+        // ignore
+      }
+    });
+  }, [eqBands10]);
 
   // Sleep timer monitor
   useEffect(() => {
@@ -158,207 +874,169 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
     return () => window.clearTimeout(t);
   }, [sleepTimerEndsAt]);
 
-  // Preload YouTube IFrame API early so first song starts immediately
-  useEffect(() => {
-    if (typeof window === 'undefined' || window.YT?.Player) return;
-    const existing = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
-    if (!existing) {
-      const s = document.createElement('script');
-      s.src = 'https://www.youtube.com/iframe_api';
-      s.async = true;
-      document.head.appendChild(s);
-    }
-  }, []);
-
-  // Resolve track playback URLs on track change (or upgrade YouTube -> direct audio when 8D, EQ, or Stem isolation is active!)
+  // Resolve track playback: Offline IndexedDB first -> Server non-YouTube resolver -> Preview fallback
   useEffect(() => {
     if (!currentTrack) return;
 
-    const wantDirectAudioForDsp =
-      (spatial8dEnabled || eqPreset !== 'flat' || stemMode !== 'both' || isFxActive) &&
-      viewMode !== 'video';
-
-    const isSameTrack = lastResolvedTrackIdRef.current === currentTrack.id;
-    const currentResolved = isSameTrack ? useMusicStore.getState().resolvedPlayback : null;
-
-    if (currentTrack.audiusId) {
-      const streamUrl = `https://discoveryprovider.audius.co/v1/tracks/${encodeURIComponent(currentTrack.audiusId)}/stream?app_name=RIFFAN`;
-      lastResolvedTrackIdRef.current = currentTrack.id;
-      useMusicStore.getState().setResolvedPlayback({
-        sourceType: 'audio-mp3',
-        sourceLabel: 'Audius Hi-Fi',
-        streamUrl,
-        proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(streamUrl)}`,
-        youtubeVideoId: currentTrack.youtubeVideoId,
-        youtubeMvId: currentTrack.youtubeVideoId,
-        previewUrl: currentTrack.previewUrl,
-        fullLength: true,
-      });
-      return;
-    }
-
-    if (currentTrack.youtubeVideoId && !wantDirectAudioForDsp) {
-      lastResolvedTrackIdRef.current = currentTrack.id;
-      useMusicStore.getState().setResolvedPlayback({
-        sourceType: 'youtube',
-        sourceLabel: 'YouTube Audio HD',
-        youtubeVideoId: currentTrack.youtubeVideoId,
-        youtubeMvId: currentTrack.youtubeVideoId,
-        previewUrl: currentTrack.previewUrl,
-        fullLength: true,
-      });
-      return;
-    }
-
-    // If currentResolved already has direct proxied audio stream for this SAME track, keep it without re-fetching!
-    if (
-      wantDirectAudioForDsp &&
-      currentResolved &&
-      (currentResolved.sourceType === 'audio-mp3' || currentResolved.sourceType === 'audio-hls') &&
-      currentResolved.proxiedUrl
-    ) {
-      return;
-    }
-
-    // If we ALREADY resolved a fallback (e.g. YouTube) for this SAME track, don't re-fetch infinitely
-    if (wantDirectAudioForDsp && currentResolved?.spatial8dYtFallback) {
-      return;
-    }
-
     let cancelled = false;
     const controller = new AbortController();
-    const timeoutId = window.setTimeout(
-      () => controller.abort(),
-      wantDirectAudioForDsp ? 8500 : 4500
-    );
+    const timeoutId = window.setTimeout(() => controller.abort(), 7500);
     const store = useMusicStore.getState();
     store.setResolvingTrack(true);
     store.setPlaybackError(null);
 
-    const qs = new URLSearchParams({
-      title: currentTrack.title,
-      artist: currentTrack.artist.name,
-      duration: String(currentTrack.durationSec || 0),
-    });
-    if (currentTrack.previewUrl) qs.set('preview', currentTrack.previewUrl);
-    if (currentTrack.soundcloudId) qs.set('scId', currentTrack.soundcloudId);
-    if (currentTrack.youtubeVideoId) qs.set('ytId', currentTrack.youtubeVideoId);
-    if (wantDirectAudioForDsp) qs.set('preferAudio', '1');
+    if (offlineObjectUrlRef.current) {
+      URL.revokeObjectURL(offlineObjectUrlRef.current);
+      offlineObjectUrlRef.current = null;
+    }
 
-    fetch(`/api/music/play?${qs.toString()}`, { signal: controller.signal })
-      .then((r) => r.json())
-      .then((data) => {
+    const resolveTrack = async () => {
+      try {
+        const offlineBlob = await getOfflineTrackBlob(currentTrack.id);
         if (cancelled) return;
-        if (data?.success && data?.sourceType) {
-          if (wantDirectAudioForDsp && isSameTrack && activeBackendRef.current === 'youtube') {
-            try {
-              const ytSec = Number(
-                ytPlayerRef.current?.getCurrentTime?.() ||
-                  useMusicStore.getState().currentTime ||
-                  0
-              );
-              if (Number.isFinite(ytSec) && ytSec > 1.5) {
-                pendingResumeSecRef.current = ytSec;
-              }
-            } catch {
-              // ignore
-            }
-          }
-          lastResolvedTrackIdRef.current = currentTrack.id;
-          useMusicStore.getState().setResolvedPlayback(data as ResolvedTrackPlayback);
-        } else if (currentTrack.youtubeVideoId) {
-          lastResolvedTrackIdRef.current = currentTrack.id;
+        if (offlineBlob && offlineBlob.size > 1000) {
+          const objUrl = URL.createObjectURL(offlineBlob);
+          offlineObjectUrlRef.current = objUrl;
           useMusicStore.getState().setResolvedPlayback({
-            sourceType: 'youtube',
-            sourceLabel: 'YouTube Audio HD',
-            youtubeVideoId: currentTrack.youtubeVideoId,
-            youtubeMvId: currentTrack.youtubeVideoId,
-            previewUrl: currentTrack.previewUrl,
+            sourceType: 'audio-mp3',
+            sourceLabel: 'Offline Hi-Fi',
+            streamUrl: objUrl,
+            proxiedUrl: objUrl,
+            bitrateKbps: 320,
+            provider: 'offline',
             fullLength: true,
           });
+          return;
+        }
+      } catch {
+        // continue online
+      }
+
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        if (!cancelled) {
+          useMusicStore.getState().setResolvingTrack(false);
+          useMusicStore.getState().setPlaybackError('Sin conexión y sin caché offline para esta canción');
+        }
+        return;
+      }
+
+      const qs = new URLSearchParams({
+        title: currentTrack.title,
+        artist: currentTrack.artist.name,
+        duration: String(currentTrack.durationSec || 0),
+        preferAudio: '1',
+      });
+      if (currentTrack.previewUrl) qs.set('preview', currentTrack.previewUrl);
+      if (currentTrack.soundcloudId) qs.set('scId', currentTrack.soundcloudId);
+      if (currentTrack.audiusId) qs.set('audiusId', currentTrack.audiusId);
+      if (currentTrack.youtubeVideoId) qs.set('ytId', currentTrack.youtubeVideoId);
+
+      try {
+        const r = await fetch(`/api/music/play?${qs.toString()}`, { signal: controller.signal });
+        const data = await r.json();
+        if (cancelled) return;
+        if (data?.success && data?.sourceType && data.sourceType !== 'youtube' && data?.proxiedUrl) {
+          useMusicStore.getState().setResolvedPlayback(data as ResolvedTrackPlayback);
         } else if (currentTrack.previewUrl) {
           useMusicStore.getState().setResolvedPlayback({
             sourceType: 'preview',
             sourceLabel: 'Preview HD (30s)',
+            streamUrl: currentTrack.previewUrl,
             proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(currentTrack.previewUrl)}`,
+            youtubeMvId: data?.youtubeMvId || currentTrack.youtubeVideoId,
             previewUrl: currentTrack.previewUrl,
+            bitrateKbps: 128,
+            provider: 'deezer',
             fullLength: false,
           });
         } else {
           useMusicStore.getState().setResolvingTrack(false);
-          useMusicStore.getState().setPlaybackError('No se pudo obtener señal de audio');
+          useMusicStore.getState().setPlaybackError('Sin fuente de audio directa disponible');
         }
-      })
-      .catch(() => {
+      } catch {
         if (cancelled) return;
-        if (currentTrack.youtubeVideoId) {
-          useMusicStore.getState().setResolvedPlayback({
-            sourceType: 'youtube',
-            sourceLabel: 'YouTube Audio HD',
-            youtubeVideoId: currentTrack.youtubeVideoId,
-            youtubeMvId: currentTrack.youtubeVideoId,
-            previewUrl: currentTrack.previewUrl,
-            fullLength: true,
-          });
-        } else if (currentTrack.previewUrl) {
+        if (currentTrack.previewUrl) {
           useMusicStore.getState().setResolvedPlayback({
             sourceType: 'preview',
             sourceLabel: 'Preview HD (30s)',
+            streamUrl: currentTrack.previewUrl,
             proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(currentTrack.previewUrl)}`,
+            youtubeMvId: currentTrack.youtubeVideoId,
             previewUrl: currentTrack.previewUrl,
+            bitrateKbps: 128,
+            provider: 'deezer',
             fullLength: false,
           });
         } else {
           useMusicStore.getState().setResolvingTrack(false);
           useMusicStore.getState().setPlaybackError('Error de conexión con fuente de audio');
         }
-      })
-      .finally(() => {
+      } finally {
         window.clearTimeout(timeoutId);
-      });
+      }
+    };
+
+    void resolveTrack();
 
     return () => {
       cancelled = true;
       window.clearTimeout(timeoutId);
       controller.abort();
     };
-  }, [currentTrack?.id, spatial8dEnabled, eqPreset, stemMode, isFxActive, viewMode]);
+  }, [currentTrack?.id]);
 
-  // Silently warm next track in queue so skip/auto-next starts immediately
+  // Automatic MP3 download when enabled (respecting Wi-Fi-only preference)
+  useEffect(() => {
+    if (!autoDownloadMp3 || !currentTrack || !resolvedPlayback?.streamUrl) return;
+    if (resolvedPlayback.provider === 'offline') return;
+    if (autoDownloadedTrackIdRef.current === currentTrack.id) return;
+    if (wifiOnlyAutoDownload && typeof navigator !== 'undefined') {
+      const conn = (navigator as unknown as { connection?: { type?: string; saveData?: boolean } })
+        .connection;
+      if (conn?.saveData || conn?.type === 'cellular') return;
+    }
+    autoDownloadedTrackIdRef.current = currentTrack.id;
+    void startDownloadMp3Job(currentTrack);
+  }, [autoDownloadMp3, wifiOnlyAutoDownload, currentTrack?.id, resolvedPlayback?.streamUrl, resolvedPlayback?.provider]);
+
+  // Gapless prefetch of next 2 tracks in queue
   useEffect(() => {
     if (!currentTrack) return;
     const { queue, queueIndex } = useMusicStore.getState();
-    const nextTrack = queue[queueIndex + 1];
-    const needDirect = spatial8dEnabled || eqPreset !== 'flat' || stemMode !== 'both' || isFxActive;
-    if (!nextTrack || nextTrack.audiusId || (nextTrack.youtubeVideoId && !needDirect)) return;
+    const candidates = [queue[queueIndex + 1], queue[queueIndex + 2]].filter(Boolean);
+    if (candidates.length === 0) return;
+
     const timer = window.setTimeout(() => {
-      const qs = new URLSearchParams({
-        title: nextTrack.title,
-        artist: nextTrack.artist.name,
-        duration: String(nextTrack.durationSec || 0),
+      candidates.forEach((nextTrack) => {
+        const qs = new URLSearchParams({
+          title: nextTrack.title,
+          artist: nextTrack.artist.name,
+          duration: String(nextTrack.durationSec || 0),
+          preferAudio: '1',
+        });
+        if (nextTrack.previewUrl) qs.set('preview', nextTrack.previewUrl);
+        if (nextTrack.soundcloudId) qs.set('scId', nextTrack.soundcloudId);
+        if (nextTrack.audiusId) qs.set('audiusId', nextTrack.audiusId);
+        if (nextTrack.youtubeVideoId) qs.set('ytId', nextTrack.youtubeVideoId);
+        void fetch(`/api/music/play?${qs.toString()}`).catch(() => {});
       });
-      if (nextTrack.previewUrl) qs.set('preview', nextTrack.previewUrl);
-      if (nextTrack.soundcloudId) qs.set('scId', nextTrack.soundcloudId);
-      if (nextTrack.youtubeVideoId) qs.set('ytId', nextTrack.youtubeVideoId);
-      if (needDirect) qs.set('preferAudio', '1');
-      void fetch(`/api/music/play?${qs.toString()}`).catch(() => {});
-    }, 1000);
+    }, 900);
     return () => window.clearTimeout(timer);
-  }, [currentTrack?.id, spatial8dEnabled, eqPreset, stemMode, isFxActive]);
+  }, [currentTrack?.id]);
 
-  // Attach chosen playback backend (Radio, MP3/HLS direct audio, or YouTube Audio/MV)
+  // Dual-Deck Crossfade + Radio Playback Attacher
   useEffect(() => {
-    const el = audioRef.current;
-
-    const cleanupHlsAndHtml = () => {
-      if (hlsRef.current) {
+    const cleanupSlot = (slot: 'A' | 'B') => {
+      const h = hlsInstancesRef.current[slot];
+      if (h) {
         try {
-          hlsRef.current.destroy();
+          h.destroy();
         } catch {
           // ignore
         }
-        hlsRef.current = null;
+        hlsInstancesRef.current[slot] = null;
       }
+      const el = slot === 'A' ? deckARef.current : deckBRef.current;
       if (el) {
         el.pause();
         el.removeAttribute('src');
@@ -366,23 +1044,27 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
       }
     };
 
-    const stopYt = () => {
-      if (ytPlayerRef.current && ytReadyRef.current) {
-        try {
-          ytPlayerRef.current.stopVideo();
-        } catch {
-          // ignore
-        }
-      }
-    };
+    if (crossfadeTimerRef.current) {
+      window.clearTimeout(crossfadeTimerRef.current);
+      crossfadeTimerRef.current = null;
+    }
 
     if (activeRadio) {
-      stopYt();
-      cleanupHlsAndHtml();
+      cleanupSlot('A');
+      cleanupSlot('B');
+      activeDeckSlotRef.current = 'A';
+      const el = deckARef.current;
       if (!el) return;
       activeBackendRef.current = 'html-audio';
-      setActiveBackend('html-audio');
-      ensureWebAudioChain();
+      sharedSpatialEngineActive = Boolean(useMusicStore.getState().spatial8dEnabled);
+      ensureWebAudioChain(false);
+
+      if (audioCtxRef.current && deckAGainRef.current && deckBGainRef.current) {
+        const now = audioCtxRef.current.currentTime;
+        deckAGainRef.current.gain.setTargetAtTime(1, now, 0.03);
+        deckBGainRef.current.gain.setTargetAtTime(0, now, 0.03);
+      }
+
       const src = `/api/music/stream-proxy?url=${encodeURIComponent(activeRadio.streamUrl)}`;
       el.src = src;
       el.load();
@@ -393,127 +1075,76 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
     }
 
     if (!currentTrack || !resolvedPlayback) {
-      stopYt();
-      cleanupHlsAndHtml();
+      cleanupSlot('A');
+      cleanupSlot('B');
       activeBackendRef.current = 'none';
-      setActiveBackend('none');
+      sharedSpatialEngineActive = false;
       return;
     }
 
-    const wantYt =
-      (viewMode === 'video' && Boolean(resolvedPlayback.youtubeMvId || resolvedPlayback.youtubeVideoId)) ||
-      resolvedPlayback.sourceType === 'youtube' ||
-      (!resolvedPlayback.proxiedUrl && !resolvedPlayback.streamUrl);
-
-    if (wantYt && (resolvedPlayback.youtubeMvId || resolvedPlayback.youtubeVideoId)) {
-      cleanupHlsAndHtml();
-      const vidId = (viewMode === 'video' ? resolvedPlayback.youtubeMvId : resolvedPlayback.youtubeVideoId) ||
-        resolvedPlayback.youtubeVideoId ||
-        resolvedPlayback.youtubeMvId ||
-        '';
-      activeBackendRef.current = 'youtube';
-      setActiveBackend('youtube');
-
-      const loadIntoYt = () => {
-        const container = document.getElementById(ytVideoMountId);
-        if (!container || !window.YT?.Player) return;
-
-        if (ytPlayerRef.current && ytReadyRef.current) {
-          try {
-            ytPlayerRef.current.loadVideoById(vidId);
-            if (!useMusicStore.getState().isPlaying) {
-              ytPlayerRef.current.pauseVideo();
-            }
-            return;
-          } catch {
-            // recreate cleanly below
-          }
-        }
-
-        try {
-          const eventsConfig = {
-            onReady: (ev: any) => {
-              ytReadyRef.current = true;
-              const st = useMusicStore.getState();
-              ev.target.setVolume?.(st.isMuted ? 0 : Math.round(st.volume * 100));
-              if (st.playbackRate) {
-                try {
-                  ev.target.setPlaybackRate?.(st.playbackRate);
-                } catch {
-                  // ignore
-                }
-              }
-              if (st.isPlaying) ev.target.playVideo();
-            },
-            onStateChange: (ev: any) => {
-              if (ev.data === 0) {
-                playNextRef.current();
-              } else if (ev.data === 1) {
-                if (!useMusicStore.getState().isPlaying) {
-                  useMusicStore.getState().setIsPlaying(true);
-                }
-              }
-            },
-            onError: () => {
-              if (resolvedPlayback.previewUrl && el) {
-                activeBackendRef.current = 'html-audio';
-                setActiveBackend('html-audio');
-                ensureWebAudioChain();
-                el.src = `/api/music/stream-proxy?url=${encodeURIComponent(resolvedPlayback.previewUrl)}`;
-                el.load();
-                void el.play().catch(() => {});
-              } else {
-                useMusicStore.getState().setPlaybackError('Vídeo restringido; prueba otro tema');
-              }
-            },
-          } as any;
-
-          ytPlayerRef.current = new (window.YT.Player as any)(ytVideoMountId, {
-            videoId: vidId,
-            width: '100%',
-            height: '100%',
-            playerVars: {
-              autoplay: useMusicStore.getState().isPlaying ? 1 : 0,
-              controls: 0,
-              modestbranding: 1,
-              rel: 0,
-              playsinline: 1,
-            },
-            events: eventsConfig,
-          });
-        } catch {
-          // ignore
-        }
-      };
-
-      if (window.YT?.Player) {
-        loadIntoYt();
-      } else {
-        const existing = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
-        if (!existing) {
-          const s = document.createElement('script');
-          s.src = 'https://www.youtube.com/iframe_api';
-          document.head.appendChild(s);
-        }
-        const prevReady = window.onYouTubeIframeAPIReady;
-        window.onYouTubeIframeAPIReady = () => {
-          prevReady?.();
-          if (activeBackendRef.current === 'youtube') loadIntoYt();
-        };
-      }
-      return;
-    }
-
-    // HTML5 Audio / HLS path (Full real-time WebAudio 8D Spatializer & 5-band EQ active here!)
-    stopYt();
-    cleanupHlsAndHtml();
-    if (!el) return;
+    const st = useMusicStore.getState();
     const targetSrc = resolvedPlayback.proxiedUrl || resolvedPlayback.streamUrl || '';
     if (!targetSrc) return;
 
+    const bypassIosHls = isIosSafariBrowser() && resolvedPlayback.sourceType === 'audio-hls';
+    const prevSlot = activeDeckSlotRef.current;
+    const prevEl = prevSlot === 'A' ? deckARef.current : deckBRef.current;
+    const canCrossfade =
+      !bypassIosHls &&
+      mediaSourceConnectedRef.current &&
+      st.crossfadeSec > 0.25 &&
+      prevEl &&
+      !prevEl.paused &&
+      Boolean(prevEl.currentSrc || prevEl.src);
+
+    const nextSlot: 'A' | 'B' = canCrossfade ? getInactiveDeckSlot() : prevSlot;
+    cleanupSlot(nextSlot);
+    activeDeckSlotRef.current = nextSlot;
+    const nextEl = nextSlot === 'A' ? deckARef.current : deckBRef.current;
+    if (!nextEl) return;
+
     activeBackendRef.current = 'html-audio';
-    setActiveBackend('html-audio');
-    ensureWebAudioChain();
+    sharedSpatialEngineActive = Boolean(st.spatial8dEnabled && !bypassIosHls);
+    ensureWebAudioChain(bypassIosHls);
+
+    // Execute smooth gain crossfade between decks
+    if (audioCtxRef.current && deckAGainRef.current && deckBGainRef.current) {
+      const now = audioCtxRef.current.currentTime;
+      const incomingGain = nextSlot === 'A' ? deckAGainRef.current : deckBGainRef.current;
+      const outgoingGain = nextSlot === 'A' ? deckBGainRef.current : deckAGainRef.current;
+
+      if (canCrossfade) {
+        const cfSec = Math.max(0.4, st.crossfadeSec);
+        try {
+          outgoingGain.gain.cancelScheduledValues(now);
+          outgoingGain.gain.setValueAtTime(outgoingGain.gain.value, now);
+          outgoingGain.gain.linearRampToValueAtTime(0, now + cfSec);
+
+          incomingGain.gain.cancelScheduledValues(now);
+          incomingGain.gain.setValueAtTime(0.02, now);
+          incomingGain.gain.linearRampToValueAtTime(1, now + cfSec);
+        } catch {
+          // ignore
+        }
+        crossfadeTimerRef.current = window.setTimeout(() => {
+          cleanupSlot(prevSlot);
+        }, Math.round(cfSec * 1000) + 120);
+      } else {
+        cleanupSlot(prevSlot === nextSlot ? (nextSlot === 'A' ? 'B' : 'A') : prevSlot);
+        try {
+          incomingGain.gain.cancelScheduledValues(now);
+          incomingGain.gain.setValueAtTime(1, now);
+          outgoingGain.gain.cancelScheduledValues(now);
+          outgoingGain.gain.setValueAtTime(0, now);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    if (trimStartSec > 0) {
+      pendingResumeSecRef.current = trimStartSec;
+    }
 
     if (resolvedPlayback.sourceType === 'audio-hls') {
       if (Hls.isSupported()) {
@@ -521,114 +1152,95 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
           enableWorker: true,
           lowLatencyMode: false,
         });
-        hlsRef.current = hls;
+        hlsInstancesRef.current[nextSlot] = hls;
         hls.loadSource(targetSrc);
-        hls.attachMedia(el);
-        let mediaRecoveryAttempted = false;
+        hls.attachMedia(nextEl);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          ensureWebAudioChain();
+          const resumeAt = pendingResumeSecRef.current;
+          if (resumeAt !== null && resumeAt > 0.5) {
+            pendingResumeSecRef.current = null;
+            try {
+              nextEl.currentTime = resumeAt;
+            } catch {
+              // ignore
+            }
+          }
           if (useMusicStore.getState().isPlaying) {
-            void el.play().catch(() => {});
+            void nextEl.play().catch(() => {});
           }
         });
         hls.on(Hls.Events.ERROR, (_ev, data) => {
           if (data.fatal) {
-            if (!mediaRecoveryAttempted && data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-              mediaRecoveryAttempted = true;
-              hls.recoverMediaError();
-              return;
-            }
             hls.destroy();
-            hlsRef.current = null;
-            if (resolvedPlayback.youtubeVideoId) {
+            hlsInstancesRef.current[nextSlot] = null;
+            if (resolvedPlayback.previewUrl) {
               useMusicStore.getState().setResolvedPlayback({
-                ...resolvedPlayback,
-                sourceType: 'youtube',
-                sourceLabel: 'YouTube Audio HD',
+                sourceType: 'preview',
+                sourceLabel: 'Preview HD (30s)',
+                streamUrl: resolvedPlayback.previewUrl,
+                proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(resolvedPlayback.previewUrl)}`,
+                previewUrl: resolvedPlayback.previewUrl,
+                bitrateKbps: 128,
+                provider: 'deezer',
+                fullLength: false,
               });
             }
           }
         });
-      } else if (el.canPlayType('application/vnd.apple.mpegurl')) {
-        el.src = targetSrc;
-        el.load();
-        if (useMusicStore.getState().isPlaying) void el.play().catch(() => {});
+      } else if (nextEl.canPlayType('application/vnd.apple.mpegurl')) {
+        nextEl.src = targetSrc;
+        nextEl.load();
+        if (useMusicStore.getState().isPlaying) void nextEl.play().catch(() => {});
       }
     } else {
-      el.src = targetSrc;
-      el.load();
+      nextEl.src = targetSrc;
+      nextEl.load();
       if (useMusicStore.getState().isPlaying) {
-        void el.play().catch(() => {});
+        void nextEl.play().catch(() => {});
       }
     }
-  }, [
-    currentTrack?.id,
-    activeRadio?.id,
-    resolvedPlayback?.sourceType,
-    resolvedPlayback?.proxiedUrl,
-    resolvedPlayback?.streamUrl,
-    resolvedPlayback?.youtubeVideoId,
-    viewMode,
-    ytVideoMountId,
-  ]);
+  }, [currentTrack?.id, activeRadio?.id, resolvedPlayback?.sourceType, resolvedPlayback?.streamUrl]);
 
   // Sync play/pause
   useEffect(() => {
-    const el = audioRef.current;
+    const el = getActiveAudioEl();
     if (activeBackendRef.current === 'html-audio' && el) {
-      if (isPlaying) {
-        void audio8d.resumeAudioContext();
-        void el.play().catch(() => {});
-      } else {
-        el.pause();
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'running' && isPlaying) {
+        void audioCtxRef.current.resume().catch(() => {});
       }
-    } else if (activeBackendRef.current === 'youtube' && ytPlayerRef.current && ytReadyRef.current) {
-      try {
-        if (isPlaying) ytPlayerRef.current.playVideo();
-        else ytPlayerRef.current.pauseVideo();
-      } catch {
-        // ignore
-      }
+      if (isPlaying) void el.play().catch(() => {});
+      else el.pause();
     }
   }, [isPlaying]);
 
-  // Sync volume + mute + rate + preservesPitch
+  // Sync volume, mute, playbackRate + pitchSemitones & preservesPitch on both decks
   useEffect(() => {
-    const el = audioRef.current;
-    const targetRate = activeFxParams.playbackRate || playbackRate || 1;
-    if (el) {
+    const pitchRatio = Math.pow(2, (pitchSemitones || 0) / 12);
+    const effectiveRate = Math.min(2.0, Math.max(0.5, playbackRate * pitchRatio));
+    const effectivePreserve = Math.abs(pitchSemitones) >= 0.25 ? false : preservesPitch;
+
+    [deckARef.current, deckBRef.current].forEach((el) => {
+      if (!el) return;
       el.volume = isMuted ? 0 : volume;
-      el.playbackRate = targetRate;
-      try {
-        (el as HTMLMediaElement & { preservesPitch?: boolean; mozPreservesPitch?: boolean; webkitPreservesPitch?: boolean }).preservesPitch = activeFxParams.preservePitch;
-        (el as HTMLMediaElement & { mozPreservesPitch?: boolean }).mozPreservesPitch = activeFxParams.preservePitch;
-        (el as HTMLMediaElement & { webkitPreservesPitch?: boolean }).webkitPreservesPitch = activeFxParams.preservePitch;
-      } catch {
-        // ignore
-      }
-    }
-    if (ytPlayerRef.current && ytReadyRef.current) {
-      try {
-        ytPlayerRef.current.setVolume(isMuted ? 0 : Math.round(volume * 100));
-        ytPlayerRef.current.setPlaybackRate(targetRate);
-      } catch {
-        // ignore
-      }
-    }
-  }, [volume, isMuted, playbackRate, activeFxParams.playbackRate, activeFxParams.preservePitch]);
+      el.playbackRate = effectiveRate;
+      const anyEl = el as unknown as {
+        preservesPitch?: boolean;
+        mozPreservesPitch?: boolean;
+        webkitPreservesPitch?: boolean;
+      };
+      anyEl.preservesPitch = effectivePreserve;
+      anyEl.mozPreservesPitch = effectivePreserve;
+      anyEl.webkitPreservesPitch = effectivePreserve;
+    });
+  }, [volume, isMuted, playbackRate, preservesPitch, pitchSemitones]);
 
   // Handle explicit seeks
   useEffect(() => {
     if (seekRequestSec === null) return;
-    if (activeBackendRef.current === 'html-audio' && audioRef.current) {
+    const el = getActiveAudioEl();
+    if (activeBackendRef.current === 'html-audio' && el) {
       try {
-        audioRef.current.currentTime = seekRequestSec;
-      } catch {
-        // ignore
-      }
-    } else if (activeBackendRef.current === 'youtube' && ytPlayerRef.current && ytReadyRef.current) {
-      try {
-        ytPlayerRef.current.seekTo(seekRequestSec, true);
+        el.currentTime = seekRequestSec;
       } catch {
         // ignore
       }
@@ -637,43 +1249,37 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
     useMusicStore.getState().clearSeekRequest();
   }, [seekRequestSec]);
 
-  // Poll YouTube progress smoothly while active
-  useEffect(() => {
-    if (!isPlaying || activeRadio) return;
-    const id = window.setInterval(() => {
-      if (activeBackendRef.current === 'youtube' && ytPlayerRef.current && ytReadyRef.current) {
-        try {
-          const cur = Number(ytPlayerRef.current.getCurrentTime?.() || 0);
-          const dur = Number(ytPlayerRef.current.getDuration?.() || currentTrack?.durationSec || 0);
-          if (Number.isFinite(cur)) {
-            useMusicStore.getState().setProgress(cur, dur);
-          }
-        } catch {
-          // ignore
-        }
-      }
-    }, 350);
-    return () => window.clearInterval(id);
-  }, [isPlaying, activeRadio, currentTrack?.durationSec]);
-
-  // Update Lock-Screen / System MediaSession controls
+  // Lock-Screen / Background MediaSession controls with multi-size artwork
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
     try {
       if (activeRadio) {
+        const fav = activeRadio.favicon;
         navigator.mediaSession.metadata = new MediaMetadata({
           title: activeRadio.name,
           artist: 'Radio en Directo · Riffan Music',
           album: activeRadio.tags.join(' · '),
-          artwork: activeRadio.favicon ? [{ src: activeRadio.favicon, sizes: '512x512' }] : [],
+          artwork: fav
+            ? [
+                { src: fav, sizes: '96x96' },
+                { src: fav, sizes: '192x192' },
+                { src: fav, sizes: '512x512' },
+              ]
+            : [],
         });
       } else if (currentTrack) {
+        const artLg = currentTrack.album.coverXl || currentTrack.album.cover;
+        const artSm = currentTrack.album.cover || artLg;
         navigator.mediaSession.metadata = new MediaMetadata({
           title: currentTrack.title,
           artist: currentTrack.artist.name,
           album: currentTrack.album.title || 'Riffan Music',
-          artwork: currentTrack.album.coverXl || currentTrack.album.cover
-            ? [{ src: currentTrack.album.coverXl || currentTrack.album.cover, sizes: '512x512' }]
+          artwork: artLg
+            ? [
+                { src: artSm, sizes: '128x128' },
+                { src: artSm, sizes: '256x256' },
+                { src: artLg, sizes: '512x512' },
+              ]
             : [],
         });
       }
@@ -681,74 +1287,170 @@ export const MusicAudioEngine: React.FC<{ ytVideoMountId?: string }> = ({
       navigator.mediaSession.setActionHandler('pause', () => useMusicStore.getState().setIsPlaying(false));
       navigator.mediaSession.setActionHandler('nexttrack', () => useMusicStore.getState().playNext());
       navigator.mediaSession.setActionHandler('previoustrack', () => useMusicStore.getState().playPrev());
+      navigator.mediaSession.setActionHandler('seekto', (details) => {
+        if (typeof details.seekTime === 'number') {
+          useMusicStore.getState().requestSeek(details.seekTime);
+        }
+      });
+      navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+        const el = getActiveAudioEl();
+        const cur = el?.currentTime || 0;
+        useMusicStore.getState().requestSeek(Math.max(0, cur - (details.seekOffset || 10)));
+      });
+      navigator.mediaSession.setActionHandler('seekforward', (details) => {
+        const el = getActiveAudioEl();
+        const cur = el?.currentTime || 0;
+        useMusicStore.getState().requestSeek(cur + (details.seekOffset || 10));
+      });
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
     } catch {
-      // ignore unsupported MediaSession actions
+      // ignore
     }
-  }, [currentTrack, activeRadio]);
+  }, [currentTrack, activeRadio, isPlaying]);
+
+  const handleLoadedMetadata = (slot: 'A' | 'B', e: React.SyntheticEvent<HTMLAudioElement>) => {
+    if (slot !== activeDeckSlotRef.current) return;
+    const el = e.currentTarget;
+    const st = useMusicStore.getState();
+    const pitchRatio = Math.pow(2, (st.pitchSemitones || 0) / 12);
+    const effectiveRate = Math.min(2.0, Math.max(0.5, st.playbackRate * pitchRatio));
+    const effectivePreserve = Math.abs(st.pitchSemitones) >= 0.25 ? false : st.preservesPitch;
+
+    const anyEl = el as unknown as {
+      preservesPitch?: boolean;
+      mozPreservesPitch?: boolean;
+      webkitPreservesPitch?: boolean;
+    };
+    anyEl.preservesPitch = effectivePreserve;
+    anyEl.mozPreservesPitch = effectivePreserve;
+    anyEl.webkitPreservesPitch = effectivePreserve;
+    el.playbackRate = effectiveRate;
+
+    const resumeAt = pendingResumeSecRef.current;
+    if (resumeAt !== null && resumeAt > 0.5) {
+      pendingResumeSecRef.current = null;
+      try {
+        if (Number.isFinite(el.duration) && resumeAt < el.duration - 2) {
+          el.currentTime = resumeAt;
+        }
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const handleTimeUpdate = (slot: 'A' | 'B', e: React.SyntheticEvent<HTMLAudioElement>) => {
+    if (slot !== activeDeckSlotRef.current || activeBackendRef.current !== 'html-audio' || activeRadio) {
+      return;
+    }
+    const a = e.currentTarget;
+    const st = useMusicStore.getState();
+    const dur = Number.isFinite(a.duration) && a.duration > 0 ? a.duration : undefined;
+    st.setProgress(a.currentTime, dur);
+
+    // Enforce studio trimEnd if set
+    if (st.trimEndSec > st.trimStartSec + 1 && a.currentTime >= st.trimEndSec) {
+      playNextRef.current();
+      return;
+    }
+
+    const nowMs = performance.now();
+    // Listening analytics tick every 5 seconds
+    if (st.currentTrack && st.isPlaying && nowMs - lastStatTickRef.current >= 5000) {
+      lastStatTickRef.current = nowMs;
+      st.recordListeningTick(st.currentTrack, 5);
+    }
+
+    if (
+      nowMs - lastMediaPosSyncRef.current > 1000 &&
+      dur &&
+      typeof navigator !== 'undefined' &&
+      'mediaSession' in navigator &&
+      typeof navigator.mediaSession.setPositionState === 'function'
+    ) {
+      lastMediaPosSyncRef.current = nowMs;
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: dur,
+          playbackRate: a.playbackRate || 1,
+          position: Math.min(dur, Math.max(0, a.currentTime)),
+        });
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  const handleEnded = (slot: 'A' | 'B') => {
+    if (slot !== activeDeckSlotRef.current) return;
+    if (activeBackendRef.current === 'html-audio' && !activeRadio) {
+      playNextRef.current();
+    }
+  };
+
+  const handleError = (slot: 'A' | 'B') => {
+    if (slot !== activeDeckSlotRef.current || activeBackendRef.current !== 'html-audio') return;
+    const st = useMusicStore.getState();
+
+    // Exponential backoff reconnect for Live Radio streams (1s -> 2s -> 4s -> 8s)
+    if (st.activeRadio && st.isPlaying) {
+      const attempt = st.radioReconnectAttempt;
+      if (attempt < 4) {
+        const delayMs = 1000 * Math.pow(2, attempt);
+        st.setRadioReconnectAttempt(attempt + 1);
+        if (radioRetryTimerRef.current) window.clearTimeout(radioRetryTimerRef.current);
+        radioRetryTimerRef.current = window.setTimeout(() => {
+          const cur = useMusicStore.getState();
+          const el = getActiveAudioEl();
+          if (cur.activeRadio && cur.isPlaying && el) {
+            el.src = `/api/music/stream-proxy?url=${encodeURIComponent(cur.activeRadio.streamUrl)}&retry=${attempt + 1}`;
+            el.load();
+            void el.play().catch(() => {});
+          }
+        }, delayMs);
+      }
+      return;
+    }
+
+    if (st.currentTrack?.previewUrl && st.resolvedPlayback?.sourceType !== 'preview') {
+      st.setResolvedPlayback({
+        sourceType: 'preview',
+        sourceLabel: 'Preview HD (30s)',
+        streamUrl: st.currentTrack.previewUrl,
+        proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(st.currentTrack.previewUrl)}`,
+        youtubeMvId: st.resolvedPlayback?.youtubeMvId || st.currentTrack.youtubeVideoId,
+        previewUrl: st.currentTrack.previewUrl,
+        bitrateKbps: 128,
+        provider: 'deezer',
+        fullLength: false,
+      });
+    }
+  };
 
   return (
-    <audio
-      ref={audioRef}
-      crossOrigin="anonymous"
-      playsInline
-      preload="auto"
-      onLoadedMetadata={(e) => {
-        const el = e.currentTarget;
-        try {
-          el.playbackRate = activeFxParams.playbackRate || 1;
-          (el as HTMLMediaElement & { preservesPitch?: boolean; mozPreservesPitch?: boolean; webkitPreservesPitch?: boolean }).preservesPitch = activeFxParams.preservePitch;
-          (el as HTMLMediaElement & { mozPreservesPitch?: boolean }).mozPreservesPitch = activeFxParams.preservePitch;
-          (el as HTMLMediaElement & { webkitPreservesPitch?: boolean }).webkitPreservesPitch = activeFxParams.preservePitch;
-        } catch {
-          // ignore
-        }
-        const resumeAt = pendingResumeSecRef.current;
-        if (resumeAt !== null && resumeAt > 1) {
-          pendingResumeSecRef.current = null;
-          try {
-            if (Number.isFinite(el.duration) && resumeAt < el.duration - 2) {
-              el.currentTime = resumeAt;
-            }
-          } catch {
-            // ignore
-          }
-        }
-      }}
-      onTimeUpdate={(e) => {
-        if (activeBackendRef.current !== 'html-audio' || activeRadio) return;
-        const a = e.currentTarget;
-        useMusicStore
-          .getState()
-          .setProgress(a.currentTime, Number.isFinite(a.duration) && a.duration > 0 ? a.duration : undefined);
-      }}
-      onEnded={() => {
-        if (activeBackendRef.current === 'html-audio' && !activeRadio) {
-          playNextRef.current();
-        }
-      }}
-      onError={() => {
-        if (activeBackendRef.current !== 'html-audio' || activeRadio) return;
-        const st = useMusicStore.getState();
-        if (st.resolvedPlayback?.youtubeVideoId && st.resolvedPlayback.sourceType !== 'youtube') {
-          st.setResolvedPlayback({
-            ...st.resolvedPlayback,
-            sourceType: 'youtube',
-            sourceLabel: 'YouTube Audio HD',
-          });
-        } else if (
-          st.currentTrack?.previewUrl &&
-          st.resolvedPlayback?.sourceType !== 'preview'
-        ) {
-          st.setResolvedPlayback({
-            sourceType: 'preview',
-            sourceLabel: 'Preview HD (30s)',
-            proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(st.currentTrack.previewUrl)}`,
-            previewUrl: st.currentTrack.previewUrl,
-            fullLength: false,
-          });
-        }
-      }}
-      className="hidden"
-    />
+    <>
+      <audio
+        ref={deckARef}
+        crossOrigin="anonymous"
+        playsInline
+        preload="auto"
+        onLoadedMetadata={(e) => handleLoadedMetadata('A', e)}
+        onTimeUpdate={(e) => handleTimeUpdate('A', e)}
+        onEnded={() => handleEnded('A')}
+        onError={() => handleError('A')}
+        className="hidden"
+      />
+      <audio
+        ref={deckBRef}
+        crossOrigin="anonymous"
+        playsInline
+        preload="auto"
+        onLoadedMetadata={(e) => handleLoadedMetadata('B', e)}
+        onTimeUpdate={(e) => handleTimeUpdate('B', e)}
+        onEnded={() => handleEnded('B')}
+        onError={() => handleError('B')}
+        className="hidden"
+      />
+    </>
   );
 };

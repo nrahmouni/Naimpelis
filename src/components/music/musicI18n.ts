@@ -15,7 +15,7 @@ export function normalizeMusicLang(appLang?: AppLanguage | string): MusicLang {
     return appLang;
   }
   if (appLang === 'rif') return 'fr';
-  return 'es';
+  return 'en';
 }
 
 export interface MusicCopy {
@@ -35,7 +35,6 @@ export interface MusicCopy {
   navExploreLong: string;
   navLibrary: string;
   navRadios: string;
-  navRadiosShort: string;
   newPlaylist: string;
   likedSongs: string;
   songsCount: string;
@@ -199,8 +198,6 @@ export interface MusicCopy {
   eqTitle: string;
   eqSubtitle: string;
   eqProfile: string;
-  eqBandsLabel: string;
-  eqResetBtn: string;
   playbackSpeed: string;
   sleepTimer: string;
   minsRemaining: string;
@@ -227,50 +224,119 @@ export interface MusicCopy {
   spatial8dConcert: string;
   spatial8dClub: string;
   spatial8dBadgeLive: string;
-  spatial8dSpeedLabel: string;
-  spatial8dReverbLabel: string;
-  spatial8dDepthLabel: string;
-  spatial8dOcclusionLabel: string;
-  spatial8dResetLabel: string;
-  spatial8dAdjustBtn: string;
-  stemLabel: string;
-  stemBoth: string;
-  stemVocals: string;
-  stemInstrumental: string;
+
+  // Pro Song Editor & MP3 Download
+  studioTitle: string;
+  studioSubtitle: string;
+  studioTab8d: string;
   studioTabFx: string;
   studioTabEq: string;
-  studioTabDownload: string;
-  fxBtn: string;
-  fxTitle: string;
-  fxSubtitle: string;
-  fxResetBtn: string;
-  fxSpeedLabel: string;
-  fxPreservePitchLabel: string;
-  fxPreservePitchSub: string;
-  fxReverbLabel: string;
-  fxEchoLabel: string;
-  fxEchoTimeLabel: string;
-  fxLowpassLabel: string;
-  fxHighpassLabel: string;
-  fxSaturationLabel: string;
-  fxChorusLabel: string;
-  fxBassLabel: string;
-  fxTrebleLabel: string;
-  downloadBtn: string;
-  downloadTitle: string;
-  downloadSubtitle: string;
-  downloadApplyFxLabel: string;
-  downloadApplyFxSub: string;
-  downloadFullBtn: string;
-  downloadFullSub: string;
-  downloadBaseBtn: string;
-  downloadBaseSub: string;
-  downloadVocalsBtn: string;
-  downloadVocalsSub: string;
-  downloadingLabel: string;
-  downloadReadyMsg: string;
-  downloadErrorMsg: string;
-  downloadRadioDisabled: string;
+  proVibesTitle: string;
+  vibeOriginal: string;
+  vibe8dUltra: string;
+  vibeSlowed: string;
+  vibeNightcore: string;
+  vibeBass: string;
+  vibeLofi: string;
+  resetStudio: string;
+  speedOrbitLabel: string;
+  reverbDepthLabel: string;
+  stereoWidthLabel: string;
+  bassBoostLabel: string;
+  pitchLockLabel: string;
+  pitchLockSub: string;
+  downloadMp3Btn: string;
+  downloadMp3FxBtn: string;
+  autoDownloadLabel: string;
+  autoDownloadSub: string;
+  downloadingToast: string;
+
+  // 10-Band EQ, DSP, Trajectories, Custom Presets & Bitrate
+  eq10Subtitle: string;
+  trajectoryLabel: string;
+  trajOrbit: string;
+  trajPendulum: string;
+  trajFigure8: string;
+  trajElevated: string;
+  pitchSemitonesLabel: string;
+  vocalCancelLabel: string;
+  vocalCancelSub: string;
+  exciterLabel: string;
+  vinylCrackleLabel: string;
+  crossfadeLabel: string;
+  normalizeLabel: string;
+  trimFadeTitle: string;
+  trimStartLabel: string;
+  trimEndLabel: string;
+  fadeLabel: string;
+  customPresetsTitle: string;
+  savePresetPlaceholder: string;
+  savePresetBtn: string;
+  perTrackProfileLabel: string;
+  saveTrackProfileBtn: string;
+  exportBitrateLabel: string;
+  wifiOnlyLabel: string;
+
+  // Downloads, Offline Library & Batch Exports
+  downloadsTitle: string;
+  downloadsEmpty: string;
+  saveOfflineBtn: string;
+  savedOfflineBadge: string;
+  offlineLibTitle: string;
+  offlineLibEmpty: string;
+  removeOfflineBtn: string;
+  exportZipBtn: string;
+  exportZipDone: string;
+  exportM3uBtn: string;
+  exportJsonBtn: string;
+  offlineBannerText: string;
+
+  // Drive Mode, Source Switcher, Lyrics, For You & Stats
+  driveModeBtn: string;
+  driveModeExit: string;
+  driveModeWakeLock: string;
+  sourceSwitcherTitle: string;
+  copyLyricsBtn: string;
+  lyricsCopied: string;
+  translateLyricsBtn: string;
+  lyricsFontLabel: string;
+  forYouTitle: string;
+  forYouSub: string;
+  statsTitle: string;
+  statsPlaysLabel: string;
+  statsMinutesLabel: string;
+  statsTopArtistLabel: string;
+  recentSearchesTitle: string;
+  clearHistoryBtn: string;
+  quickSearchesTitle: string;
+
+  // Spotify & YouTube Music Importer
+  importMusicBtn: string;
+  importTitle: string;
+  importSub: string;
+  importTabLink: string;
+  importTabFile: string;
+  importTabTaste: string;
+  importLinkPlaceholder: string;
+  importLinkBtn: string;
+  importLinkHelp: string;
+  importPrivateWarn: string;
+  importFileDrop: string;
+  importFilePastePlaceholder: string;
+  importParseBtn: string;
+  importHowToTitle: string;
+  importHowToSpotify: string;
+  importHowToYtm: string;
+  importTargetLikes: string;
+  importTargetPlaylist: string;
+  importTargetTasteOnly: string;
+  importPlaylistNamePlaceholder: string;
+  importSuccessToast: string;
+  importMatchingLabel: string;
+  tasteArtistsLabel: string;
+  tasteGenresLabel: string;
+  addArtistPlaceholder: string;
+  generateTasteMixBtn: string;
 }
 
 export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
@@ -291,7 +357,6 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     navExploreLong: 'Explorar & Mundo',
     navLibrary: 'Biblioteca',
     navRadios: 'Radios 24/7',
-    navRadiosShort: 'Radios',
     newPlaylist: 'Nueva Playlist',
     likedSongs: 'Tus Me Gusta',
     songsCount: 'canciones',
@@ -367,8 +432,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     create: 'Crear',
     addTrackPrefix: 'Añadir',
     createNewPlaylistBtn: 'Crear nueva playlist',
-    installAppTitle: 'Instalar Riffan Music',
-    installAppSub: 'APK propia · iPhone · Chrome',
+    installAppTitle: 'Instalar Riffan App',
+    installAppSub: 'Android APK · iPhone · Chrome',
     removeFromPlaylist: 'Quitar de la playlist',
     addToQueue: 'Añadir a la cola',
     addToPlaylist: 'Añadir a playlist',
@@ -449,10 +514,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     liveRadioCountry: 'Radio en Directo',
     loadingTrack: 'Cargando...',
     eqTitle: 'Ecualizador & Motor Hi-Fi',
-    eqSubtitle: 'WebAudio 10 bandas · 18 perfiles',
+    eqSubtitle: 'WebAudio 5 bandas en tiempo real',
     eqProfile: 'Perfil Acústico',
-    eqBandsLabel: 'Bandas de Frecuencia (32 Hz – 16 kHz)',
-    eqResetBtn: 'Reiniciar EQ',
     playbackSpeed: 'Velocidad de reproducción',
     sleepTimer: 'Temporizador de sueño',
     minsRemaining: 'min restantes',
@@ -479,50 +542,114 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     spatial8dConcert: 'Sala Concierto',
     spatial8dClub: 'Club 360°',
     spatial8dBadgeLive: '8D ACTIVO',
-    spatial8dSpeedLabel: 'Velocidad de órbita',
-    spatial8dReverbLabel: 'Reverb de sala',
-    spatial8dDepthLabel: 'Profundidad espacial',
-    spatial8dOcclusionLabel: 'Oclusión craneal',
-    spatial8dResetLabel: 'Restablecer',
-    spatial8dAdjustBtn: 'Ajustar 8D',
-    stemLabel: 'Mezcla vocal / base',
-    stemBoth: 'Las dos',
-    stemVocals: 'Solo voz',
-    stemInstrumental: 'Solo base',
-    studioTabFx: 'Efectos FX',
-    studioTabEq: 'EQ · 8D',
-    studioTabDownload: 'Descargar MP3',
-    fxBtn: 'Efectos',
-    fxTitle: 'Estudio de Efectos en Directo',
-    fxSubtitle: 'Slowed + Reverb, Nightcore, Bass Boost, Lo-Fi, Bajo el agua y más',
-    fxResetBtn: 'Quitar efectos',
-    fxSpeedLabel: 'Velocidad / Pitch',
-    fxPreservePitchLabel: 'Mantener tono original',
-    fxPreservePitchSub: 'Desactívalo para voz grave Slowed o aguda Nightcore',
-    fxReverbLabel: 'Reverb de sala',
-    fxEchoLabel: 'Eco / Delay estéreo',
-    fxEchoTimeLabel: 'Tiempo de eco',
-    fxLowpassLabel: 'Filtro sumergido / Lo-Fi',
-    fxHighpassLabel: 'Corte graves (Radio)',
-    fxSaturationLabel: 'Calidez / Saturación cinta',
-    fxChorusLabel: 'Chorus / Shimmer 3D',
-    fxBassLabel: 'Refuerzo de graves FX',
-    fxTrebleLabel: 'Brillo / Aire FX',
-    downloadBtn: 'MP3',
-    downloadTitle: 'Descargar Canción en MP3',
-    downloadSubtitle: 'Exporta la canción completa, solo la base o solo la voz en 192 kbps',
-    downloadApplyFxLabel: 'Incluir mis efectos y EQ al descargar',
-    downloadApplyFxSub: 'Guarda Slowed+Reverb, Nightcore, Bass Boost o tu EQ dentro del MP3',
-    downloadFullBtn: 'Canción Completa (.mp3)',
-    downloadFullSub: 'Voz + Base originales en alta calidad',
-    downloadBaseBtn: 'Solo Base / Instrumental (.mp3)',
-    downloadBaseSub: 'Pista sin voz · conserva el bombo y bajo',
-    downloadVocalsBtn: 'Solo Voz / Acapella (.mp3)',
-    downloadVocalsSub: 'Voz principal aislada en primer plano',
-    downloadingLabel: 'Generando MP3...',
-    downloadReadyMsg: 'MP3 descargado correctamente',
-    downloadErrorMsg: 'No se pudo generar el MP3 de esta pista',
-    downloadRadioDisabled: 'Selecciona una canción del catálogo para descargar en MP3',
+
+    studioTitle: 'Editor Pro de Canción & Estudio 8D',
+    studioSubtitle: 'DSP en vivo, FX vinilo, 8D real y exportación MP3 320k',
+    studioTab8d: '8D Espacial',
+    studioTabFx: 'Editor FX',
+    studioTabEq: 'EQ & Timer',
+    proVibesTitle: 'Estilos Studio 1-Tap',
+    vibeOriginal: 'Original',
+    vibe8dUltra: '8D Ultra',
+    vibeSlowed: 'Slowed + Reverb',
+    vibeNightcore: 'Nightcore',
+    vibeBass: 'Bass Extreme',
+    vibeLofi: 'Lo-Fi Cálido',
+    resetStudio: 'Resetear',
+    speedOrbitLabel: 'Velocidad Órbita 8D',
+    reverbDepthLabel: 'Profundidad Reverb',
+    stereoWidthLabel: 'Amplitud Estéreo 8D',
+    bassBoostLabel: 'Refuerzo Sub-Bass',
+    pitchLockLabel: 'Bloqueo de Tono (Pitch)',
+    pitchLockSub: 'Desactívalo para efecto vinilo real en Slowed / Nightcore',
+    downloadMp3Btn: 'Descargar MP3',
+    downloadMp3FxBtn: 'MP3 con FX / 8D',
+    autoDownloadLabel: 'Auto-descargar MP3',
+    autoDownloadSub: 'Guarda automáticamente cada canción en MP3 al sonar',
+    downloadingToast: 'Preparando descarga MP3 320kbps...',
+
+    eq10Subtitle: 'Ecualizador Gráfico 10 Bandas + Espectro en vivo',
+    trajectoryLabel: 'Trayectoria Espacial 8D',
+    trajOrbit: 'Órbita 360°',
+    trajPendulum: 'Péndulo',
+    trajFigure8: 'Ocho ∞',
+    trajElevated: 'Elevado 3D',
+    pitchSemitonesLabel: 'Tono (Semitonos)',
+    vocalCancelLabel: 'Modo Karaoke (Vocal Cancel)',
+    vocalCancelSub: 'Reduce la voz central en tiempo real y al exportar',
+    exciterLabel: 'Excitador Armónico (Brillo Hi-Fi)',
+    vinylCrackleLabel: 'Textura Vinilo Lo-Fi',
+    crossfadeLabel: 'Crossfade entre canciones',
+    normalizeLabel: 'Normalizar Volumen (LUFS)',
+    trimFadeTitle: 'Recorte & Fade In/Out (MP3 / Reproducción)',
+    trimStartLabel: 'Inicio',
+    trimEndLabel: 'Fin',
+    fadeLabel: 'Fade',
+    customPresetsTitle: 'Tus Ajustes Guardados',
+    savePresetPlaceholder: 'Nombre del preset...',
+    savePresetBtn: 'Guardar',
+    perTrackProfileLabel: 'Recordar DSP por canción',
+    saveTrackProfileBtn: 'Guardar perfil en esta canción',
+    exportBitrateLabel: 'Calidad MP3 Exportación',
+    wifiOnlyLabel: 'Auto-descarga solo con Wi-Fi',
+
+    downloadsTitle: 'Descargas & Biblioteca Offline',
+    downloadsEmpty: 'No hay descargas recientes en la cola.',
+    saveOfflineBtn: 'Guardar Offline',
+    savedOfflineBadge: 'Guardada Offline',
+    offlineLibTitle: 'Canciones Guardadas Offline',
+    offlineLibEmpty: 'Guarda canciones o playlists para escucharlas sin conexión.',
+    removeOfflineBtn: 'Quitar Offline',
+    exportZipBtn: 'Descargar ZIP MP3',
+    exportZipDone: 'ZIP MP3 generado correctamente',
+    exportM3uBtn: 'Exportar M3U8',
+    exportJsonBtn: 'Exportar JSON',
+    offlineBannerText: 'Sin conexión · Reproduciendo desde caché offline',
+
+    driveModeBtn: 'Modo Coche',
+    driveModeExit: 'Salir Modo Coche',
+    driveModeWakeLock: 'Pantalla activa',
+    sourceSwitcherTitle: 'Cambiar Fuente de Audio',
+    copyLyricsBtn: 'Copiar letra',
+    lyricsCopied: 'Letra copiada',
+    translateLyricsBtn: 'Buscar traducción',
+    lyricsFontLabel: 'Tamaño letra',
+    forYouTitle: 'Para Ti · Mix Infinito',
+    forYouSub: 'Generado con tus gustos importados, favoritos e historial',
+    statsTitle: 'Tu Resumen Musical',
+    statsPlaysLabel: 'Reproducciones',
+    statsMinutesLabel: 'Minutos escuchados',
+    statsTopArtistLabel: 'Artista top',
+    recentSearchesTitle: 'Búsquedas recientes',
+    clearHistoryBtn: 'Limpiar',
+    quickSearchesTitle: 'Sugerencias rápidas',
+
+    importMusicBtn: 'Importar Spotify / YT Music',
+    importTitle: 'Importar Gustos, Favoritos y Playlists',
+    importSub: 'Trae tu música de Spotify y YouTube Music por enlace o exportación oficial',
+    importTabLink: 'Pegar Enlace',
+    importTabFile: 'Subir Archivo / Texto',
+    importTabTaste: 'Tus Gustos',
+    importLinkPlaceholder: 'Pega URL pública de playlist, álbum o canción de Spotify / YT Music...',
+    importLinkBtn: 'Analizar Enlace',
+    importLinkHelp: 'Compatible con enlaces de open.spotify.com y music.youtube.com/playlist?list=...',
+    importPrivateWarn: 'Los "Me Gusta" privados de YouTube Music (LM/LL) no son públicos por URL; usa Google Takeout en la pestaña Subir Archivo.',
+    importFileDrop: 'Sube YourLibrary.json, StreamingHistory.json, watch-history.json, CSV o M3U8',
+    importFilePastePlaceholder: 'O pega aquí tu lista en formato "Artista - Canción" (una por línea)...',
+    importParseBtn: 'Procesar Lista y Buscar Carátulas',
+    importHowToTitle: '¿Cómo exportar todos tus Me Gusta e historial?',
+    importHowToSpotify: 'Spotify: Cuenta → Privacidad → Solicitar datos (YourLibrary.json / StreamingHistory_music_0.json) o Exportify CSV.',
+    importHowToYtm: 'YouTube Music: takeout.google.com → selecciona YouTube y YouTube Music (watch-history.json o CSV de playlists).',
+    importTargetLikes: 'Guardar en Tus Me Gusta',
+    importTargetPlaylist: 'Crear Playlist Nueva',
+    importTargetTasteOnly: 'Solo fusionar en Tus Gustos (Para Ti)',
+    importPlaylistNamePlaceholder: 'Nombre de la playlist importada...',
+    importSuccessToast: 'Importación completada',
+    importMatchingLabel: 'Buscando carátulas y audio HD...',
+    tasteArtistsLabel: 'Tus Artistas Favoritos',
+    tasteGenresLabel: 'Tus Géneros / Regiones',
+    addArtistPlaceholder: 'Añadir artista o género...',
+    generateTasteMixBtn: 'Reproducir Mix Para Ti',
   },
 
   en: {
@@ -542,7 +669,6 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     navExploreLong: 'Explore & World',
     navLibrary: 'Library',
     navRadios: '24/7 Radios',
-    navRadiosShort: 'Radios',
     newPlaylist: 'New Playlist',
     likedSongs: 'Liked Songs',
     songsCount: 'songs',
@@ -618,8 +744,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     create: 'Create',
     addTrackPrefix: 'Add',
     createNewPlaylistBtn: 'Create new playlist',
-    installAppTitle: 'Install Riffan Music',
-    installAppSub: 'Dedicated APK · iPhone · Chrome',
+    installAppTitle: 'Install Riffan App',
+    installAppSub: 'Android APK · iPhone · Chrome',
     removeFromPlaylist: 'Remove from playlist',
     addToQueue: 'Add to queue',
     addToPlaylist: 'Add to playlist',
@@ -700,10 +826,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     liveRadioCountry: 'Live Radio',
     loadingTrack: 'Loading...',
     eqTitle: 'Equalizer & Hi-Fi Engine',
-    eqSubtitle: '10-band WebAudio · 18 profiles',
+    eqSubtitle: 'Real-time 5-band WebAudio',
     eqProfile: 'Acoustic Profile',
-    eqBandsLabel: 'Frequency Bands (32 Hz – 16 kHz)',
-    eqResetBtn: 'Reset EQ',
     playbackSpeed: 'Playback Speed',
     sleepTimer: 'Sleep Timer',
     minsRemaining: 'min left',
@@ -730,50 +854,114 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     spatial8dConcert: 'Concert Hall',
     spatial8dClub: 'Club 360°',
     spatial8dBadgeLive: '8D ACTIVE',
-    spatial8dSpeedLabel: 'Orbit speed',
-    spatial8dReverbLabel: 'Hall reverb',
-    spatial8dDepthLabel: 'Spatial depth',
-    spatial8dOcclusionLabel: 'Skull occlusion',
-    spatial8dResetLabel: 'Reset',
-    spatial8dAdjustBtn: '8D Studio',
-    stemLabel: 'Vocals / Beat Mix',
-    stemBoth: 'Both',
-    stemVocals: 'Vocals only',
-    stemInstrumental: 'Beat only',
-    studioTabFx: 'Audio FX',
-    studioTabEq: 'EQ · 8D',
-    studioTabDownload: 'MP3 Export',
-    fxBtn: 'FX',
-    fxTitle: 'Live Audio Effects Studio',
-    fxSubtitle: 'Slowed + Reverb, Nightcore, Bass Boost, Lo-Fi, Underwater & more',
-    fxResetBtn: 'Clear FX',
-    fxSpeedLabel: 'Speed / Pitch',
-    fxPreservePitchLabel: 'Preserve original pitch',
-    fxPreservePitchSub: 'Turn off for authentic pitched-down Slowed or pitched-up Nightcore',
-    fxReverbLabel: 'Hall reverb',
-    fxEchoLabel: 'Stereo echo / delay',
-    fxEchoTimeLabel: 'Echo delay time',
-    fxLowpassLabel: 'Underwater / Lo-Fi filter',
-    fxHighpassLabel: 'Low-cut (Vintage Radio)',
-    fxSaturationLabel: 'Tape saturation warmth',
-    fxChorusLabel: 'Stereo chorus shimmer',
-    fxBassLabel: 'FX Bass boost',
-    fxTrebleLabel: 'FX Air / Brightness',
-    downloadBtn: 'MP3',
-    downloadTitle: 'Download Track as MP3',
-    downloadSubtitle: 'Export Full Song, Beat Only, or Vocals Only in 192 kbps MP3',
-    downloadApplyFxLabel: 'Bake active FX & EQ into MP3',
-    downloadApplyFxSub: 'Export with Slowed+Reverb, Nightcore, Bass Boost, or custom EQ',
-    downloadFullBtn: 'Full Song (.mp3)',
-    downloadFullSub: 'Complete vocals + beat master audio',
-    downloadBaseBtn: 'Instrumental / Beat Only (.mp3)',
-    downloadBaseSub: 'Vocals removed · keeps punchy kick & sub-bass',
-    downloadVocalsBtn: 'Vocals / Acapella Only (.mp3)',
-    downloadVocalsSub: 'Isolated center lead vocal presence',
-    downloadingLabel: 'Encoding MP3...',
-    downloadReadyMsg: 'MP3 downloaded successfully',
-    downloadErrorMsg: 'Could not export this track to MP3',
-    downloadRadioDisabled: 'Play a song from the catalog to download MP3 stems',
+
+    studioTitle: 'Pro Song Editor & 8D Studio',
+    studioSubtitle: 'Live DSP, vinyl pitch FX, real 8D & 320k MP3 export',
+    studioTab8d: '8D Spatial',
+    studioTabFx: 'FX Editor',
+    studioTabEq: 'EQ & Timer',
+    proVibesTitle: '1-Tap Studio Vibes',
+    vibeOriginal: 'Original',
+    vibe8dUltra: '8D Ultra',
+    vibeSlowed: 'Slowed + Reverb',
+    vibeNightcore: 'Nightcore',
+    vibeBass: 'Bass Extreme',
+    vibeLofi: 'Lo-Fi Warmth',
+    resetStudio: 'Reset',
+    speedOrbitLabel: '8D Orbit Speed',
+    reverbDepthLabel: 'Hall Reverb Depth',
+    stereoWidthLabel: '8D Stereo Width',
+    bassBoostLabel: 'Sub-Bass Boost',
+    pitchLockLabel: 'Pitch Lock',
+    pitchLockSub: 'Turn off for true vinyl Slowed & Nightcore pitch shift',
+    downloadMp3Btn: 'Download MP3',
+    downloadMp3FxBtn: 'MP3 with FX / 8D',
+    autoDownloadLabel: 'Auto-Download MP3',
+    autoDownloadSub: 'Automatically save each song as MP3 when played',
+    downloadingToast: 'Preparing 320kbps MP3 download...',
+
+    eq10Subtitle: '10-Band Graphic Equalizer + Live Spectrum',
+    trajectoryLabel: '8D Spatial Trajectory',
+    trajOrbit: '360° Orbit',
+    trajPendulum: 'Pendulum',
+    trajFigure8: 'Figure-8 ∞',
+    trajElevated: 'Elevated 3D',
+    pitchSemitonesLabel: 'Pitch Shift (Semitones)',
+    vocalCancelLabel: 'Karaoke Mode (Vocal Cancel)',
+    vocalCancelSub: 'Reduces center lead vocals in real time & MP3 export',
+    exciterLabel: 'Aural Exciter (Hi-Fi Sheen)',
+    vinylCrackleLabel: 'Lo-Fi Vinyl Warmth',
+    crossfadeLabel: 'Track Crossfade',
+    normalizeLabel: 'Loudness Normalize (LUFS)',
+    trimFadeTitle: 'Trim & Fade In/Out (Playback / MP3)',
+    trimStartLabel: 'Start',
+    trimEndLabel: 'End',
+    fadeLabel: 'Fade',
+    customPresetsTitle: 'Your Saved Presets',
+    savePresetPlaceholder: 'Preset name...',
+    savePresetBtn: 'Save',
+    perTrackProfileLabel: 'Remember DSP per track',
+    saveTrackProfileBtn: 'Save profile to this song',
+    exportBitrateLabel: 'MP3 Export Bitrate',
+    wifiOnlyLabel: 'Auto-download on Wi-Fi only',
+
+    downloadsTitle: 'Downloads & Offline Library',
+    downloadsEmpty: 'No recent downloads in queue.',
+    saveOfflineBtn: 'Save Offline',
+    savedOfflineBadge: 'Saved Offline',
+    offlineLibTitle: 'Offline Saved Tracks',
+    offlineLibEmpty: 'Save tracks or playlists for offline listening.',
+    removeOfflineBtn: 'Remove Offline',
+    exportZipBtn: 'Download ZIP MP3',
+    exportZipDone: 'MP3 ZIP archive ready',
+    exportM3uBtn: 'Export M3U8',
+    exportJsonBtn: 'Export JSON',
+    offlineBannerText: 'Offline · Playing from local cache',
+
+    driveModeBtn: 'Drive Mode',
+    driveModeExit: 'Exit Drive Mode',
+    driveModeWakeLock: 'Screen awake',
+    sourceSwitcherTitle: 'Switch Audio Source',
+    copyLyricsBtn: 'Copy lyrics',
+    lyricsCopied: 'Lyrics copied',
+    translateLyricsBtn: 'Translate lyrics',
+    lyricsFontLabel: 'Lyrics size',
+    forYouTitle: 'For You · Infinite Mix',
+    forYouSub: 'Built from your imported taste, liked tracks and listening history',
+    statsTitle: 'Your Music Recap',
+    statsPlaysLabel: 'Plays',
+    statsMinutesLabel: 'Minutes listened',
+    statsTopArtistLabel: 'Top artist',
+    recentSearchesTitle: 'Recent searches',
+    clearHistoryBtn: 'Clear',
+    quickSearchesTitle: 'Quick picks',
+
+    importMusicBtn: 'Import Spotify / YT Music',
+    importTitle: 'Import Tastes, Likes & Playlists',
+    importSub: 'Bring your music from Spotify & YouTube Music via link or data export',
+    importTabLink: 'Paste Link',
+    importTabFile: 'Upload File / Text',
+    importTabTaste: 'Your Taste',
+    importLinkPlaceholder: 'Paste public Spotify / YT Music playlist, album or track URL...',
+    importLinkBtn: 'Analyze Link',
+    importLinkHelp: 'Supports open.spotify.com and music.youtube.com/playlist?list=...',
+    importPrivateWarn: 'Private YouTube Music Liked tracks (LM/LL) require Google Takeout in Upload File tab.',
+    importFileDrop: 'Upload YourLibrary.json, StreamingHistory.json, watch-history.json, CSV or M3U8',
+    importFilePastePlaceholder: 'Or paste songs in "Artist - Title" format (one per line)...',
+    importParseBtn: 'Parse & Match Cover Art',
+    importHowToTitle: 'How to export all likes & history',
+    importHowToSpotify: 'Spotify: Account → Privacy → Request Data (YourLibrary.json / StreamingHistory_music_0.json) or Exportify CSV.',
+    importHowToYtm: 'YouTube Music: takeout.google.com → select YouTube and YouTube Music (watch-history.json or playlist CSV).',
+    importTargetLikes: 'Save to Liked Songs',
+    importTargetPlaylist: 'Create New Playlist',
+    importTargetTasteOnly: 'Merge into Taste Profile only',
+    importPlaylistNamePlaceholder: 'Imported playlist name...',
+    importSuccessToast: 'Import complete',
+    importMatchingLabel: 'Matching artwork & HD streams...',
+    tasteArtistsLabel: 'Your Favorite Artists',
+    tasteGenresLabel: 'Your Genres / Regions',
+    addArtistPlaceholder: 'Add artist or genre...',
+    generateTasteMixBtn: 'Play For You Mix',
   },
 
   fr: {
@@ -793,7 +981,6 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     navExploreLong: 'Explorer & Monde',
     navLibrary: 'Bibliothèque',
     navRadios: 'Radios 24/7',
-    navRadiosShort: 'Radios',
     newPlaylist: 'Nouvelle Playlist',
     likedSongs: 'Titres Likés',
     songsCount: 'titres',
@@ -869,8 +1056,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     create: 'Créer',
     addTrackPrefix: 'Ajouter',
     createNewPlaylistBtn: 'Créer une playlist',
-    installAppTitle: 'Installer Riffan Music',
-    installAppSub: 'APK dédiée · iPhone · Chrome',
+    installAppTitle: 'Installer Riffan App',
+    installAppSub: 'APK Android · iPhone · Chrome',
     removeFromPlaylist: 'Retirer de la playlist',
     addToQueue: 'Ajouter à la file',
     addToPlaylist: 'Ajouter à une playlist',
@@ -951,10 +1138,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     liveRadioCountry: 'Radio en Direct',
     loadingTrack: 'Chargement...',
     eqTitle: 'Égaliseur & Moteur Hi-Fi',
-    eqSubtitle: 'WebAudio 10 bandes · 18 profils',
+    eqSubtitle: 'WebAudio 5 bandes en temps réel',
     eqProfile: 'Profil Acoustique',
-    eqBandsLabel: 'Bandes de fréquence (32 Hz – 16 kHz)',
-    eqResetBtn: 'Réinitialiser EQ',
     playbackSpeed: 'Vitesse de lecture',
     sleepTimer: 'Minuteur de veille',
     minsRemaining: 'min restantes',
@@ -981,50 +1166,114 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     spatial8dConcert: 'Salle Concert',
     spatial8dClub: 'Club 360°',
     spatial8dBadgeLive: '8D ACTIF',
-    spatial8dSpeedLabel: 'Vitesse de rotation',
-    spatial8dReverbLabel: 'Réverbération salle',
-    spatial8dDepthLabel: 'Profondeur spatiale',
-    spatial8dOcclusionLabel: 'Occlusion crânienne',
-    spatial8dResetLabel: 'Réinitialiser',
-    spatial8dAdjustBtn: 'Réglages 8D',
-    stemLabel: 'Mix Voix / Instru',
-    stemBoth: 'Les deux',
-    stemVocals: 'Voix seule',
-    stemInstrumental: 'Instru seule',
-    studioTabFx: 'Effets FX',
-    studioTabEq: 'EQ · 8D',
-    studioTabDownload: 'Export MP3',
-    fxBtn: 'Effets',
-    fxTitle: 'Studio d’Effets en Direct',
-    fxSubtitle: 'Slowed + Reverb, Nightcore, Bass Boost, Lo-Fi, Sous l’eau et plus',
-    fxResetBtn: 'Réinitialiser FX',
-    fxSpeedLabel: 'Vitesse / Pitch',
-    fxPreservePitchLabel: 'Conserver la tonalité',
-    fxPreservePitchSub: 'Désactivez pour un vrai effet Slowed grave ou Nightcore aigu',
-    fxReverbLabel: 'Réverbération salle',
-    fxEchoLabel: 'Écho / Delay stéréo',
-    fxEchoTimeLabel: 'Temps d’écho',
-    fxLowpassLabel: 'Filtre sous-marin / Lo-Fi',
-    fxHighpassLabel: 'Coupe-bas (Radio rétro)',
-    fxSaturationLabel: 'Chaleur bande analogique',
-    fxChorusLabel: 'Chorus stéréo',
-    fxBassLabel: 'Renfort basses FX',
-    fxTrebleLabel: 'Brillance / Air FX',
-    downloadBtn: 'MP3',
-    downloadTitle: 'Télécharger en MP3',
-    downloadSubtitle: 'Exportez le titre complet, l’instru seule ou la voix seule en 192 kbps',
-    downloadApplyFxLabel: 'Appliquer mes effets et EQ au MP3',
-    downloadApplyFxSub: 'Inclure Slowed+Reverb, Nightcore, Bass Boost ou EQ dans le fichier',
-    downloadFullBtn: 'Chanson Complète (.mp3)',
-    downloadFullSub: 'Voix + Instru réunies en haute qualité',
-    downloadBaseBtn: 'Instru Seule / Base (.mp3)',
-    downloadBaseSub: 'Sans chant · basses et batterie préservées',
-    downloadVocalsBtn: 'Voix Seule / Acapella (.mp3)',
-    downloadVocalsSub: 'Voix principale isolée au premier plan',
-    downloadingLabel: 'Encodage MP3...',
-    downloadReadyMsg: 'MP3 téléchargé avec succès',
-    downloadErrorMsg: 'Impossible d’exporter ce titre en MP3',
-    downloadRadioDisabled: 'Lancez une chanson du catalogue pour télécharger en MP3',
+
+    studioTitle: 'Éditeur Pro & Studio 8D',
+    studioSubtitle: 'DSP en direct, FX vinyle, 8D réel & export MP3 320k',
+    studioTab8d: '8D Spatial',
+    studioTabFx: 'Éditeur FX',
+    studioTabEq: 'EQ & Minuteur',
+    proVibesTitle: 'Styles Studio 1-Clic',
+    vibeOriginal: 'Original',
+    vibe8dUltra: '8D Ultra',
+    vibeSlowed: 'Slowed + Reverb',
+    vibeNightcore: 'Nightcore',
+    vibeBass: 'Bass Extreme',
+    vibeLofi: 'Lo-Fi Doux',
+    resetStudio: 'Réinitialiser',
+    speedOrbitLabel: 'Vitesse Orbite 8D',
+    reverbDepthLabel: 'Profondeur Reverb',
+    stereoWidthLabel: 'Largeur Stéréo 8D',
+    bassBoostLabel: 'Boost Sub-Bass',
+    pitchLockLabel: 'Verrouillage Tonalité',
+    pitchLockSub: 'Désactivez pour un vrai effet vinyle Slowed / Nightcore',
+    downloadMp3Btn: 'Télécharger MP3',
+    downloadMp3FxBtn: 'MP3 avec FX / 8D',
+    autoDownloadLabel: 'Téléchargement MP3 Auto',
+    autoDownloadSub: 'Enregistre chaque titre en MP3 automatiquement',
+    downloadingToast: 'Préparation du MP3 320kbps...',
+
+    eq10Subtitle: 'Égaliseur Graphique 10 Bandes + Spectre en direct',
+    trajectoryLabel: 'Trajectoire Spatiale 8D',
+    trajOrbit: 'Orbite 360°',
+    trajPendulum: 'Pendule',
+    trajFigure8: 'Huit ∞',
+    trajElevated: 'Élevé 3D',
+    pitchSemitonesLabel: 'Tonalité (Demi-tons)',
+    vocalCancelLabel: 'Mode Karaoké (Vocal Cancel)',
+    vocalCancelSub: 'Réduit la voix principale en direct et à l’export',
+    exciterLabel: 'Exciteur Harmonique',
+    vinylCrackleLabel: 'Texture Vinyle Lo-Fi',
+    crossfadeLabel: 'Fondu enchaîné (Crossfade)',
+    normalizeLabel: 'Normaliser le volume (LUFS)',
+    trimFadeTitle: 'Découpe & Fondu (Lecture / MP3)',
+    trimStartLabel: 'Début',
+    trimEndLabel: 'Fin',
+    fadeLabel: 'Fondu',
+    customPresetsTitle: 'Vos Préréglages',
+    savePresetPlaceholder: 'Nom du préréglage...',
+    savePresetBtn: 'Enregistrer',
+    perTrackProfileLabel: 'Mémoriser DSP par titre',
+    saveTrackProfileBtn: 'Enregistrer sur ce titre',
+    exportBitrateLabel: 'Qualité MP3 Export',
+    wifiOnlyLabel: 'Auto-téléchargement Wi-Fi uniquement',
+
+    downloadsTitle: 'Téléchargements & Hors-ligne',
+    downloadsEmpty: 'Aucun téléchargement récent.',
+    saveOfflineBtn: 'Sauver Hors-ligne',
+    savedOfflineBadge: 'Hors-ligne',
+    offlineLibTitle: 'Titres Hors-ligne',
+    offlineLibEmpty: 'Enregistrez des titres pour écouter sans connexion.',
+    removeOfflineBtn: 'Retirer Hors-ligne',
+    exportZipBtn: 'Télécharger ZIP MP3',
+    exportZipDone: 'Archive ZIP MP3 prête',
+    exportM3uBtn: 'Exporter M3U8',
+    exportJsonBtn: 'Exporter JSON',
+    offlineBannerText: 'Hors-ligne · Lecture depuis le cache local',
+
+    driveModeBtn: 'Mode Voiture',
+    driveModeExit: 'Quitter Mode Voiture',
+    driveModeWakeLock: 'Écran actif',
+    sourceSwitcherTitle: 'Changer de Source Audio',
+    copyLyricsBtn: 'Copier paroles',
+    lyricsCopied: 'Paroles copiées',
+    translateLyricsBtn: 'Traduire',
+    lyricsFontLabel: 'Taille paroles',
+    forYouTitle: 'Pour Vous · Mix Infini',
+    forYouSub: 'Basé sur vos goûts importés, favoris et écoutes récentes',
+    statsTitle: 'Votre Bilan Musical',
+    statsPlaysLabel: 'Écoutes',
+    statsMinutesLabel: 'Minutes écoutées',
+    statsTopArtistLabel: 'Artiste top',
+    recentSearchesTitle: 'Recherches récentes',
+    clearHistoryBtn: 'Effacer',
+    quickSearchesTitle: 'Suggestions',
+
+    importMusicBtn: 'Importer Spotify / YT Music',
+    importTitle: 'Importer Goûts, Favoris & Playlists',
+    importSub: 'Importez depuis Spotify et YouTube Music par lien ou export officiel',
+    importTabLink: 'Coller un Lien',
+    importTabFile: 'Fichier / Texte',
+    importTabTaste: 'Vos Goûts',
+    importLinkPlaceholder: 'Collez un lien public Spotify ou YT Music...',
+    importLinkBtn: 'Analyser',
+    importLinkHelp: 'Compatible avec open.spotify.com et music.youtube.com/playlist?list=...',
+    importPrivateWarn: 'Les titres likés privés YT Music (LM/LL) nécessitent Google Takeout.',
+    importFileDrop: 'Importez YourLibrary.json, StreamingHistory.json, watch-history.json, CSV ou M3U8',
+    importFilePastePlaceholder: 'Ou collez vos titres au format "Artiste - Titre"...',
+    importParseBtn: 'Analyser & Chercher Pochettes',
+    importHowToTitle: 'Comment exporter vos favoris et historique',
+    importHowToSpotify: 'Spotify : Compte → Confidentialité → Télécharger les données ou Exportify CSV.',
+    importHowToYtm: 'YouTube Music : takeout.google.com → YouTube & YouTube Music (watch-history.json).',
+    importTargetLikes: 'Ajouter aux Titres Likés',
+    importTargetPlaylist: 'Créer une Playlist',
+    importTargetTasteOnly: 'Fusionner dans Vos Goûts uniquement',
+    importPlaylistNamePlaceholder: 'Nom de la playlist importée...',
+    importSuccessToast: 'Importation réussie',
+    importMatchingLabel: 'Recherche des pochettes HD...',
+    tasteArtistsLabel: 'Vos Artistes Favoris',
+    tasteGenresLabel: 'Vos Genres / Régions',
+    addArtistPlaceholder: 'Ajouter artiste ou genre...',
+    generateTasteMixBtn: 'Lancer Mix Pour Vous',
   },
 
   zh: {
@@ -1044,7 +1293,6 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     navExploreLong: '探索全球',
     navLibrary: '音乐库',
     navRadios: '全球电台',
-    navRadiosShort: '电台',
     newPlaylist: '新建歌单',
     likedSongs: '我喜欢的音乐',
     songsCount: '首歌曲',
@@ -1120,8 +1368,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     create: '创建',
     addTrackPrefix: '添加',
     createNewPlaylistBtn: '创建新歌单',
-    installAppTitle: '安装 Riffan Music',
-    installAppSub: '独立 APK · iPhone · Chrome',
+    installAppTitle: '安装 Riffan 应用',
+    installAppSub: 'Android APK · iPhone · Chrome',
     removeFromPlaylist: '从歌单移除',
     addToQueue: '加入播放队列',
     addToPlaylist: '添加到歌单',
@@ -1202,10 +1450,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     liveRadioCountry: '直播电台',
     loadingTrack: '加载中...',
     eqTitle: '均衡器 & Hi-Fi 引擎',
-    eqSubtitle: '实时 10 段 WebAudio · 18 种预设',
+    eqSubtitle: '实时 5 段 WebAudio 调音',
     eqProfile: '音效预设',
-    eqBandsLabel: '频段调节 (32 Hz – 16 kHz)',
-    eqResetBtn: '重置均衡器',
     playbackSpeed: '播放倍速',
     sleepTimer: '定时关闭',
     minsRemaining: '分钟后关闭',
@@ -1232,50 +1478,114 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     spatial8dConcert: '音乐厅',
     spatial8dClub: '360° 派对',
     spatial8dBadgeLive: '8D 开启',
-    spatial8dSpeedLabel: '环绕速度',
-    spatial8dReverbLabel: '大厅混响',
-    spatial8dDepthLabel: '空间半径',
-    spatial8dOcclusionLabel: '头部遮挡滤波',
-    spatial8dResetLabel: '重置',
-    spatial8dAdjustBtn: '8D 调音',
-    stemLabel: '人声 / 伴奏分离',
-    stemBoth: '原曲全部',
-    stemVocals: '纯人声',
-    stemInstrumental: '纯伴奏',
-    studioTabFx: '音效 FX',
-    studioTabEq: '均衡 · 8D',
-    studioTabDownload: 'MP3 下载',
-    fxBtn: '音效',
-    fxTitle: '实时音乐特效工作室',
-    fxSubtitle: '慢速混响、Nightcore、重低音、Lo-Fi 黑胶、水下闷响等',
-    fxResetBtn: '清除特效',
-    fxSpeedLabel: '速度 / 音调',
-    fxPreservePitchLabel: '保持原调不变',
-    fxPreservePitchSub: '关闭可体验真实的慢速降调或 Nightcore 升调效果',
-    fxReverbLabel: '大厅混响',
-    fxEchoLabel: '立体声回声',
-    fxEchoTimeLabel: '回声延迟',
-    fxLowpassLabel: '水下 / Lo-Fi 低通滤波',
-    fxHighpassLabel: '高通复古收音机',
-    fxSaturationLabel: '模拟磁带饱和度',
-    fxChorusLabel: '立体声合唱光泽',
-    fxBassLabel: 'FX 重低音增益',
-    fxTrebleLabel: 'FX 高频空气感',
-    downloadBtn: 'MP3',
-    downloadTitle: '下载 MP3 音频',
-    downloadSubtitle: '支持下载完整歌曲、纯伴奏或纯人声 (192 kbps MP3)',
-    downloadApplyFxLabel: '下载时应用当前特效与均衡器',
-    downloadApplyFxSub: '将慢速混响、Nightcore、重低音或 EQ 写入导出的 MP3',
-    downloadFullBtn: '完整歌曲 (.mp3)',
-    downloadFullSub: '高清原曲人声 + 伴奏',
-    downloadBaseBtn: '仅伴奏 / Base (.mp3)',
-    downloadBaseSub: '消除主唱 · 保留鼓点与重低音',
-    downloadVocalsBtn: '仅人声 / Acapella (.mp3)',
-    downloadVocalsSub: '突出分离中央人声轨道',
-    downloadingLabel: '正在生成 MP3...',
-    downloadReadyMsg: 'MP3 下载完成',
-    downloadErrorMsg: '暂无法导出该曲目的 MP3',
-    downloadRadioDisabled: '请播放曲库中的歌曲后再下载 MP3',
+
+    studioTitle: '专业歌曲编辑器 & 8D 工作室',
+    studioSubtitle: '实时 DSP 调音、黑胶变速、真 8D 环绕与 320k MP3 下载',
+    studioTab8d: '8D 空间',
+    studioTabFx: '专业特效',
+    studioTabEq: '均衡与定时',
+    proVibesTitle: '一键录音室风格',
+    vibeOriginal: '原声',
+    vibe8dUltra: '8D 至臻',
+    vibeSlowed: '慢放混响',
+    vibeNightcore: '夜核加速',
+    vibeBass: '重低音轰炸',
+    vibeLofi: 'Lo-Fi 复古',
+    resetStudio: '重置',
+    speedOrbitLabel: '8D 环绕转速',
+    reverbDepthLabel: '空间混响深度',
+    stereoWidthLabel: '立体声场宽度',
+    bassBoostLabel: '超重低音增益',
+    pitchLockLabel: '锁定音高 (Pitch Lock)',
+    pitchLockSub: '关闭可体验真实的黑胶慢放变调与 Nightcore 效果',
+    downloadMp3Btn: '下载 MP3',
+    downloadMp3FxBtn: '下载特效 / 8D MP3',
+    autoDownloadLabel: '自动下载 MP3',
+    autoDownloadSub: '播放歌曲时自动保存为 320k MP3',
+    downloadingToast: '正在导出 320kbps MP3...',
+
+    eq10Subtitle: '10 段图示均衡器 + 实时频谱',
+    trajectoryLabel: '8D 空间轨迹模式',
+    trajOrbit: '360° 环绕',
+    trajPendulum: '钟摆摆动',
+    trajFigure8: '8字 ∞ 轨迹',
+    trajElevated: '3D 立体穹顶',
+    pitchSemitonesLabel: '音调升降 (半音)',
+    vocalCancelLabel: '卡拉OK消人声',
+    vocalCancelSub: '实时及导出时削弱中央人声',
+    exciterLabel: '高频谐波激励器',
+    vinylCrackleLabel: '黑胶复古底噪',
+    crossfadeLabel: '曲目交叉淡入淡出',
+    normalizeLabel: '音量响度均衡 (LUFS)',
+    trimFadeTitle: '音频裁剪与淡入淡出 (播放 / MP3)',
+    trimStartLabel: '起点',
+    trimEndLabel: '终点',
+    fadeLabel: '淡入出',
+    customPresetsTitle: '已保存预设',
+    savePresetPlaceholder: '预设名称...',
+    savePresetBtn: '保存',
+    perTrackProfileLabel: '按歌曲记忆音效',
+    saveTrackProfileBtn: '保存到当前歌曲',
+    exportBitrateLabel: 'MP3 导出音质',
+    wifiOnlyLabel: '仅 Wi-Fi 自动下载',
+
+    downloadsTitle: '下载管理 & 离线曲库',
+    downloadsEmpty: '暂无下载任务。',
+    saveOfflineBtn: '离线缓存',
+    savedOfflineBadge: '已离线保存',
+    offlineLibTitle: '已离线缓存歌曲',
+    offlineLibEmpty: '保存歌曲或歌单即可无网络收听。',
+    removeOfflineBtn: '移除缓存',
+    exportZipBtn: '打包下载 MP3 ZIP',
+    exportZipDone: 'MP3 ZIP 压缩包已生成',
+    exportM3uBtn: '导出 M3U8',
+    exportJsonBtn: '导出 JSON',
+    offlineBannerText: '离线模式 · 正在播放本地缓存',
+
+    driveModeBtn: '驾驶模式',
+    driveModeExit: '退出驾驶模式',
+    driveModeWakeLock: '屏幕常亮',
+    sourceSwitcherTitle: '切换音频源',
+    copyLyricsBtn: '复制歌词',
+    lyricsCopied: '已复制歌词',
+    translateLyricsBtn: '翻译歌词',
+    lyricsFontLabel: '歌词字号',
+    forYouTitle: '为你推荐 · 无限混音',
+    forYouSub: '基于你的导入品味、红心歌曲和收听记录生成',
+    statsTitle: '音乐收听统计',
+    statsPlaysLabel: '播放次数',
+    statsMinutesLabel: '收听分钟',
+    statsTopArtistLabel: '最爱艺人',
+    recentSearchesTitle: '最近搜索',
+    clearHistoryBtn: '清除',
+    quickSearchesTitle: '热门建议',
+
+    importMusicBtn: '导入 Spotify / YT Music',
+    importTitle: '导入品味、红心与歌单',
+    importSub: '通过链接或官方导出文件迁移 Spotify 与 YouTube Music 曲库',
+    importTabLink: '粘贴链接',
+    importTabFile: '上传文件 / 文本',
+    importTabTaste: '音乐品味',
+    importLinkPlaceholder: '粘贴 Spotify 或 YouTube Music 公开歌单/专辑链接...',
+    importLinkBtn: '解析链接',
+    importLinkHelp: '支持 open.spotify.com 与 music.youtube.com/playlist?list=...',
+    importPrivateWarn: 'YouTube Music 私人红心 (LM/LL) 需使用 Google Takeout 导出文件上传。',
+    importFileDrop: '上传 YourLibrary.json、StreamingHistory.json、watch-history.json、CSV 或 M3U8',
+    importFilePastePlaceholder: '或按“歌手 - 歌名”每行一首粘贴...',
+    importParseBtn: '解析并匹配高清封面',
+    importHowToTitle: '如何导出红心歌曲与历史记录',
+    importHowToSpotify: 'Spotify：账户隐私设置下载数据，或使用 Exportify 导出 CSV。',
+    importHowToYtm: 'YouTube Music：takeout.google.com 选择 YouTube 和 YouTube Music (watch-history.json)。',
+    importTargetLikes: '添加到我喜欢的音乐',
+    importTargetPlaylist: '创建为新歌单',
+    importTargetTasteOnly: '仅同步到音乐品味画像',
+    importPlaylistNamePlaceholder: '新歌单名称...',
+    importSuccessToast: '导入成功',
+    importMatchingLabel: '正在匹配高清封面与音源...',
+    tasteArtistsLabel: '喜爱艺人',
+    tasteGenresLabel: '偏好流派 / 地区',
+    addArtistPlaceholder: '添加歌手或流派...',
+    generateTasteMixBtn: '播放为你定制混音',
   },
 
   ca: {
@@ -1295,7 +1605,6 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     navExploreLong: 'Explorar & Món',
     navLibrary: 'Biblioteca',
     navRadios: 'Ràdios 24/7',
-    navRadiosShort: 'Ràdios',
     newPlaylist: 'Nova Playlist',
     likedSongs: 'Els teus M’agrada',
     songsCount: 'cançons',
@@ -1371,8 +1680,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     create: 'Crear',
     addTrackPrefix: 'Afegir',
     createNewPlaylistBtn: 'Crear nova playlist',
-    installAppTitle: 'Instal·lar Riffan Music',
-    installAppSub: 'APK pròpia · iPhone · Chrome',
+    installAppTitle: 'Instal·lar Riffan App',
+    installAppSub: 'Android APK · iPhone · Chrome',
     removeFromPlaylist: 'Treure de la playlist',
     addToQueue: 'Afegir a la cua',
     addToPlaylist: 'Afegir a playlist',
@@ -1453,10 +1762,8 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     liveRadioCountry: 'Ràdio en Directe',
     loadingTrack: 'Carregant...',
     eqTitle: 'Equalitzador & Motor Hi-Fi',
-    eqSubtitle: 'WebAudio 10 bandes · 18 perfils',
+    eqSubtitle: 'WebAudio 5 bandes en temps real',
     eqProfile: 'Perfil Acústic',
-    eqBandsLabel: 'Bandes de freqüència (32 Hz – 16 kHz)',
-    eqResetBtn: 'Reiniciar EQ',
     playbackSpeed: 'Velocitat de reproducció',
     sleepTimer: 'Temporitzador de son',
     minsRemaining: 'min restants',
@@ -1483,49 +1790,113 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     spatial8dConcert: 'Sala Concert',
     spatial8dClub: 'Club 360°',
     spatial8dBadgeLive: '8D ACTIU',
-    spatial8dSpeedLabel: 'Velocitat d’òrbita',
-    spatial8dReverbLabel: 'Reverb de sala',
-    spatial8dDepthLabel: 'Profunditat espacial',
-    spatial8dOcclusionLabel: 'Oclusió cranial',
-    spatial8dResetLabel: 'Restablir',
-    spatial8dAdjustBtn: 'Ajustar 8D',
-    stemLabel: 'Mescla veu / base',
-    stemBoth: 'Totes dues',
-    stemVocals: 'Només veu',
-    stemInstrumental: 'Només base',
-    studioTabFx: 'Efectes FX',
-    studioTabEq: 'EQ · 8D',
-    studioTabDownload: 'Descarregar MP3',
-    fxBtn: 'Efectes',
-    fxTitle: 'Estudi d’Efectes en Directe',
-    fxSubtitle: 'Slowed + Reverb, Nightcore, Bass Boost, Lo-Fi, Sota l’aigua i més',
-    fxResetBtn: 'Treure efectes',
-    fxSpeedLabel: 'Velocitat / Pitch',
-    fxPreservePitchLabel: 'Mantenir el to original',
-    fxPreservePitchSub: 'Desactiva-ho per a veu greu Slowed o aguda Nightcore',
-    fxReverbLabel: 'Reverb de sala',
-    fxEchoLabel: 'Eco / Delay estèreo',
-    fxEchoTimeLabel: 'Temps d’eco',
-    fxLowpassLabel: 'Filtre submergit / Lo-Fi',
-    fxHighpassLabel: 'Tall greus (Ràdio)',
-    fxSaturationLabel: 'Calidesa de cinta',
-    fxChorusLabel: 'Chorus estèreo',
-    fxBassLabel: 'Reforç de greus FX',
-    fxTrebleLabel: 'Brillantor / Aire FX',
-    downloadBtn: 'MP3',
-    downloadTitle: 'Descarregar en MP3',
-    downloadSubtitle: 'Exporta la cançó completa, només la base o només la veu en 192 kbps',
-    downloadApplyFxLabel: 'Incloure els meus efectes i EQ al MP3',
-    downloadApplyFxSub: 'Desa Slowed+Reverb, Nightcore, Bass Boost o el teu EQ dins del MP3',
-    downloadFullBtn: 'Cançó Completa (.mp3)',
-    downloadFullSub: 'Veu + Base originals en alta qualitat',
-    downloadBaseBtn: 'Només Base / Instrumental (.mp3)',
-    downloadBaseSub: 'Pista sense veu · conserva bombo i greu',
-    downloadVocalsBtn: 'Només Veu / Acapella (.mp3)',
-    downloadVocalsSub: 'Veu principal aïllada en primer pla',
-    downloadingLabel: 'Generant MP3...',
-    downloadReadyMsg: 'MP3 descarregat correctament',
-    downloadErrorMsg: 'No s’ha pogut exportar aquesta pista a MP3',
-    downloadRadioDisabled: 'Selecciona una cançó del catàleg per descarregar MP3',
+
+    studioTitle: 'Editor Pro de Cançó & Estudi 8D',
+    studioSubtitle: 'DSP en viu, FX vinil, 8D real i exportació MP3 320k',
+    studioTab8d: '8D Espacial',
+    studioTabFx: 'Editor FX',
+    studioTabEq: 'EQ & Timer',
+    proVibesTitle: 'Estils Studio 1-Toc',
+    vibeOriginal: 'Original',
+    vibe8dUltra: '8D Ultra',
+    vibeSlowed: 'Slowed + Reverb',
+    vibeNightcore: 'Nightcore',
+    vibeBass: 'Bass Extreme',
+    vibeLofi: 'Lo-Fi Càlid',
+    resetStudio: 'Reiniciar',
+    speedOrbitLabel: 'Velocitat Òrbita 8D',
+    reverbDepthLabel: 'Profunditat Reverb',
+    stereoWidthLabel: 'Amplitud Estèreo 8D',
+    bassBoostLabel: 'Reforç Sub-Bass',
+    pitchLockLabel: 'Bloqueig de To (Pitch)',
+    pitchLockSub: 'Desactiva-ho per a efecte vinil real en Slowed / Nightcore',
+    downloadMp3Btn: 'Descarregar MP3',
+    downloadMp3FxBtn: 'MP3 amb FX / 8D',
+    autoDownloadLabel: 'Auto-descarregar MP3',
+    autoDownloadSub: 'Desa automàticament cada cançó en MP3 en sonar',
+    downloadingToast: 'Preparant descàrrega MP3 320kbps...',
+
+    eq10Subtitle: 'Equalitzador Gràfic 10 Bandes + Espectre en viu',
+    trajectoryLabel: 'Trajectòria Espacial 8D',
+    trajOrbit: 'Òrbita 360°',
+    trajPendulum: 'Pèndol',
+    trajFigure8: 'Vuit ∞',
+    trajElevated: 'Elevat 3D',
+    pitchSemitonesLabel: 'To (Semitons)',
+    vocalCancelLabel: 'Mode Karaoke (Vocal Cancel)',
+    vocalCancelSub: 'Redueix la veu principal en directe i en exportar',
+    exciterLabel: 'Excitador Harmònic Hi-Fi',
+    vinylCrackleLabel: 'Textura Vinil Lo-Fi',
+    crossfadeLabel: 'Crossfade entre pistes',
+    normalizeLabel: 'Normalitzar Volum (LUFS)',
+    trimFadeTitle: 'Retall & Fade In/Out (Reproducció / MP3)',
+    trimStartLabel: 'Inici',
+    trimEndLabel: 'Fi',
+    fadeLabel: 'Fade',
+    customPresetsTitle: 'Els teus Presets',
+    savePresetPlaceholder: 'Nom del preset...',
+    savePresetBtn: 'Desar',
+    perTrackProfileLabel: 'Recordar DSP per cançó',
+    saveTrackProfileBtn: 'Desar perfil en aquesta cançó',
+    exportBitrateLabel: 'Qualitat MP3 Exportació',
+    wifiOnlyLabel: 'Auto-descàrrega només amb Wi-Fi',
+
+    downloadsTitle: 'Descàrregues & Biblioteca Offline',
+    downloadsEmpty: 'No hi ha descàrregues recents.',
+    saveOfflineBtn: 'Desar Offline',
+    savedOfflineBadge: 'Desada Offline',
+    offlineLibTitle: 'Cançons Desades Offline',
+    offlineLibEmpty: 'Desa cançons o playlists per escoltar-les sense connexió.',
+    removeOfflineBtn: 'Treure Offline',
+    exportZipBtn: 'Descarregar ZIP MP3',
+    exportZipDone: 'ZIP MP3 generat correctament',
+    exportM3uBtn: 'Exportar M3U8',
+    exportJsonBtn: 'Exportar JSON',
+    offlineBannerText: 'Sense connexió · Reproduint des de memòria local',
+
+    driveModeBtn: 'Mode Cotxe',
+    driveModeExit: 'Sortir Mode Cotxe',
+    driveModeWakeLock: 'Pantalla activa',
+    sourceSwitcherTitle: 'Canviar Font d’Àudio',
+    copyLyricsBtn: 'Copiar lletra',
+    lyricsCopied: 'Lletra copiada',
+    translateLyricsBtn: 'Traduir lletra',
+    lyricsFontLabel: 'Mida lletra',
+    forYouTitle: 'Per a Tu · Mix Infinit',
+    forYouSub: 'Generat amb els teus gustos importats, favorits i historial',
+    statsTitle: 'El teu Resum Musical',
+    statsPlaysLabel: 'Reproduccions',
+    statsMinutesLabel: 'Minuts escoltats',
+    statsTopArtistLabel: 'Artista top',
+    recentSearchesTitle: 'Cerques recents',
+    clearHistoryBtn: 'Netejar',
+    quickSearchesTitle: 'Suggeriments ràpids',
+
+    importMusicBtn: 'Importar Spotify / YT Music',
+    importTitle: 'Importar Gustos, Favorits i Playlists',
+    importSub: 'Porta la teva música de Spotify i YouTube Music per enllaç o exportació oficial',
+    importTabLink: 'Enganxar Enllaç',
+    importTabFile: 'Pujar Arxiu / Text',
+    importTabTaste: 'Els teus Gustos',
+    importLinkPlaceholder: 'Enganxa URL pública de Spotify o YT Music...',
+    importLinkBtn: 'Analitzar',
+    importLinkHelp: 'Compatible amb open.spotify.com i music.youtube.com/playlist?list=...',
+    importPrivateWarn: 'Els "M’agrada" privats de YT Music (LM/LL) requereixen Google Takeout.',
+    importFileDrop: 'Puja YourLibrary.json, StreamingHistory.json, watch-history.json, CSV o M3U8',
+    importFilePastePlaceholder: 'O enganxa la teva llista "Artista - Cançó" (una per línia)...',
+    importParseBtn: 'Processar i Cercar Caràtules',
+    importHowToTitle: 'Com exportar els teus favorits i historial',
+    importHowToSpotify: 'Spotify: Compte → Privacitat → Sol·licitar dades o Exportify CSV.',
+    importHowToYtm: 'YouTube Music: takeout.google.com → YouTube i YouTube Music (watch-history.json).',
+    importTargetLikes: 'Desar als teus M’agrada',
+    importTargetPlaylist: 'Crear Playlist Nova',
+    importTargetTasteOnly: 'Només fusionar als teus Gustos',
+    importPlaylistNamePlaceholder: 'Nom de la playlist importada...',
+    importSuccessToast: 'Importació completada',
+    importMatchingLabel: 'Cercant caràtules HD...',
+    tasteArtistsLabel: 'Els teus Artistes Favorits',
+    tasteGenresLabel: 'Els teus Gèneres / Regions',
+    addArtistPlaceholder: 'Afegir artista o gènere...',
+    generateTasteMixBtn: 'Reproduir Mix Per a Tu',
   },
 };

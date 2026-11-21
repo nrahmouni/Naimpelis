@@ -165,6 +165,10 @@
 
   .no-scrollbar::-webkit-scrollbar { display: none; }
   .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+  .mask-gradient {
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 10%, #000 88%, transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0%, #000 10%, #000 88%, transparent 100%);
+  }
 
   .glass-bar { background: color-mix(in srgb, var(--nc-bg-canvas) 94%, transparent); }
   .liquid-glass {
