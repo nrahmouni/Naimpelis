@@ -57,6 +57,7 @@ import { registerRbtvRoutes } from './server/routes/rbtvRoutes.ts';
 import { registerBelixRoutes } from './server/routes/belixRoutes.ts';
 import { registerAtresplayerRoutes } from './server/routes/atresplayerRoutes.ts';
 import { registerMovistarDaznRoutes } from './server/routes/movistarDaznRoutes.ts';
+import { registerMusicRoutes } from './server/routes/musicRoutes.ts';
 import { getMovistarDaznHome } from './server/services/movistarDaznCatalogService.ts';
 import { initBelixFromEnv } from './server/services/belix/belixXtreamClient.ts';
 import { SPANISH_TDT_CHANNELS } from './server/data/tdtChannels.ts';
@@ -158,7 +159,8 @@ app.use(
         p.startsWith('/api/dvb-live/') ||
         p.startsWith('/api/belix/stream') ||
         p.startsWith('/api/belix/sub') ||
-        p.startsWith('/api/belix/seg')
+        p.startsWith('/api/belix/seg') ||
+        p.startsWith('/api/music/stream-proxy')
       ) {
         return false;
       }
@@ -212,6 +214,7 @@ registerRbtvRoutes(app);
 registerBelixRoutes(app, { getPublicOrigin });
 registerAtresplayerRoutes(app);
 registerMovistarDaznRoutes(app);
+registerMusicRoutes(app);
 registerVoiceAssistantRoutes(app, {
   getChannels: getLiveVoiceChannels,
   resolveLogoUrl: resolveOfficialChannelLogoUrl,

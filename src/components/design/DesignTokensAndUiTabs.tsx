@@ -186,7 +186,7 @@ export const DesignComponentsTab: React.FC<DesignComponentsTabProps> = ({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-          {(['cine', 'sala', 'juegos', 'futbol', 'tv', 'clipbox', 'rbtv', 'belix', 'atresplayer', 'movistardazn'] as WorldPortalKind[]).map((kind) => {
+          {(['cine', 'sala', 'juegos', 'futbol', 'tv', 'clipbox', 'rbtv', 'belix', 'atresplayer', 'movistardazn', 'music'] as WorldPortalKind[]).map((kind) => {
             const spec = WORLD_SPECS[kind];
             return (
               <div

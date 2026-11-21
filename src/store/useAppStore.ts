@@ -26,7 +26,8 @@ export type PrimaryWorldId =
   | 'rbtv'
   | 'belix'
   | 'atresplayer'
-  | 'movistardazn';
+  | 'movistardazn'
+  | 'music';
 export type WorldId = 'entry' | PrimaryWorldId | 'youtube';
 export type CineSubTab = 'movies' | 'series';
 export type FutbolSubTab = 'matches' | 'channels';
@@ -84,6 +85,7 @@ const PRIMARY_WORLDS: PrimaryWorldId[] = [
   'belix',
   'atresplayer',
   'movistardazn',
+  'music',
 ];
 
 function loadLastUsedWorld(): PrimaryWorldId | null {

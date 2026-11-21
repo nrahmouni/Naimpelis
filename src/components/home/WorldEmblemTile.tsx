@@ -1,7 +1,7 @@
 import React, { useId } from 'react';
 import type { AppLanguage } from '../../types';
 
-export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn';
+export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music';
 
 export interface WorldSpec {
   accent: string;
@@ -221,6 +221,27 @@ export const WORLD_SPECS: Record<WorldPortalKind, WorldSpec> = {
       en: '17 HD live feeds · LaLiga, F1, MotoGP & M+ Series',
       rif: '17 directos HD · LaLiga, F1, MotoGP d Series M+',
       zh: '17 路高清直播 · 西甲 F1 与 Movistar 原创剧集',
+    },
+  },
+  music: {
+    accent: '#1DB954',
+    secondary: '#34D399',
+    glowRgb: '29,185,84',
+    ambient:
+      'radial-gradient(ellipse 68% 54% at 50% 47%, rgba(29,185,84,0.24) 0%, rgba(52,211,153,0.10) 44%, rgba(6,7,12,0) 76%)',
+    title: {
+      es: 'Riffan Music',
+      ca: 'Riffan Music',
+      en: 'Riffan Music',
+      rif: 'Riffan Music',
+      zh: 'Riffan 音乐',
+    },
+    subtitle: {
+      es: 'Millones de canciones · Letras, Videoclips y Radios 24/7',
+      ca: 'Milions de cançons · Lletres, Videoclips i Ràdios 24/7',
+      en: 'Millions of tracks · Synced Lyrics, MVs & 24/7 Radios',
+      rif: 'Izlan · Imdyaz d Radyu 24/7',
+      zh: '海量曲库 · 实时歌词、MV 与全天候电台',
     },
   },
 };
@@ -804,6 +825,49 @@ export const WorldEmblemTile: React.FC<{
             d="M 76.5 49 V 71 M 65.5 60 H 87.5"
             stroke={`url(#${ids.platinum})`}
             strokeWidth="4.2"
+            strokeLinecap="round"
+          />
+        </g>
+      )}
+
+      {kind === 'music' && (
+        <g filter={`url(#${ids.drop})`}>
+          <circle
+            cx="60"
+            cy="60"
+            r="28.5"
+            fill={`url(#${ids.accentSoft})`}
+            stroke={`url(#${ids.accent})`}
+            strokeWidth="2.2"
+          />
+          <circle
+            cx="60"
+            cy="60"
+            r="22"
+            fill="#070A10"
+            stroke={spec.accent}
+            strokeOpacity="0.4"
+            strokeWidth="1.2"
+            strokeDasharray="14 6"
+            className="rtv-we-center rtv-we-orbit"
+          />
+          <path
+            d="M 41 52 Q 60 44 79 52"
+            stroke={spec.accent}
+            strokeWidth="3.4"
+            strokeLinecap="round"
+          />
+          <path
+            d="M 44.5 60.5 Q 60 54 75.5 60.5"
+            stroke={`url(#${ids.platinum})`}
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+          <path
+            d="M 48 68.5 Q 60 63.5 72 68.5"
+            stroke={spec.accent}
+            strokeOpacity="0.88"
+            strokeWidth="2.6"
             strokeLinecap="round"
           />
         </g>

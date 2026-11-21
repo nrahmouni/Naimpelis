@@ -210,6 +210,7 @@
   .world-tint-belix { background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(244, 63, 94, 0.14), rgba(129, 140, 248, 0.09) 55%, transparent 75%); }
   .world-tint-atresplayer { background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(255, 94, 26, 0.16), rgba(245, 158, 11, 0.08) 55%, transparent 75%); }
   .world-tint-movistardazn { background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(212, 255, 0, 0.11), rgba(0, 169, 224, 0.14) 48%, transparent 75%); }
+  .world-tint-music { background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(29, 185, 84, 0.17), rgba(52, 211, 153, 0.07) 48%, transparent 75%); }
 
   .nc-specular-surface {
     background: color-mix(in srgb, var(--nc-bg-elevated) 92%, transparent);

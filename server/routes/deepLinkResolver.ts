@@ -64,7 +64,7 @@ export interface ResolvedDeepLinkResult {
   match?: any;
   game?: { gameId: string; gameSlug: string; title: string };
   world?: {
-    world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn';
+    world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music';
     cineTab?: 'movies' | 'series';
     cineCategory?: string;
     futbolTab?: 'matches' | 'channels';
@@ -616,6 +616,7 @@ export async function resolveDeepLinkTarget(
         belix: 'Belix TV — Motor Xtream Codes y Rutas com.ibopro.ultra',
         atresplayer: 'Atresmedia — Directos 1080p, Pasapalabra, Programas y Series',
         movistardazn: 'DAZN & Movistar+ — Fútbol, F1, MotoGP, Deportes HD y Series Originales',
+        music: 'Riffan Music — Canciones, Letras Sincronizadas, Videoclips HD y Radios 24/7',
       };
       const title = `${worldLabels[target.world] || 'RiffanTV'} — RiffanTV`;
       result = {

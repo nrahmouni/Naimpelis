@@ -38,6 +38,11 @@ const DaznMovistarWorldView = lazyWithRetry(() =>
     default: m.DaznMovistarWorldView,
   }))
 );
+const RiffanMusicWorldView = lazyWithRetry(() =>
+  import('./music/RiffanMusicWorldView').then((m) => ({
+    default: m.RiffanMusicWorldView,
+  }))
+);
 
 interface AppWorldsContentProps {
   controller: ReturnType<typeof useAppController>;
@@ -190,6 +195,9 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     } else if (activeWorld === 'movistardazn') {
       target = { kind: 'world', world: 'movistardazn' };
       title = 'RiffanTV · DAZN & Movistar Plus+';
+    } else if (activeWorld === 'music') {
+      target = { kind: 'world', world: 'music' };
+      title = 'Riffan Music · Toda la música y radios 24/7';
     }
 
     void shareDedicatedLink({ target, roomId: shareRoomId, title });
@@ -235,7 +243,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
                 world === 'rbtv' ||
                 world === 'belix' ||
                 world === 'atresplayer' ||
-                world === 'movistardazn',
+                world === 'movistardazn' ||
+                world === 'music',
               originRect,
             })
           }
@@ -579,6 +588,37 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
             store.setRequestedSeriesModal(null);
             store.setRequestedMovieModal(seriesItem);
           }}
+        />
+      </WorldShell>
+    );
+  }
+
+  if (activeWorld === 'music') {
+    return (
+      <WorldShell
+        world="music"
+        title="Riffan Music"
+        lang={lang}
+        sessionMode={sessionMode}
+        onUpgradeSoloToParty={() =>
+          void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
+        }
+        onShareWorld={handleShareActiveWorld}
+        onBack={() => enterWorld('entry')}
+        onGoHome={() => enterWorld('entry')}
+        onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+        searchValue={worldSearchQuery}
+        onSearchChange={setWorldSearchQuery}
+        searchPlaceholder={pickLang(lang, {
+          es: 'Buscar canción, artista, álbum o radio...',
+          ca: 'Cercar cançó, artista, àlbum o ràdio...',
+          en: 'Search song, artist, album or radio...',
+        })}
+        className={portalLandingActive ? 'rtv-world-touchdown' : ''}
+      >
+        <RiffanMusicWorldView
+          lang={lang}
+          externalSearchQuery={worldSearchQuery}
         />
       </WorldShell>
     );

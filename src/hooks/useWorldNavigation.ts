@@ -142,6 +142,8 @@ export function useWorldNavigation({
       void import('../components/atresplayer/AtresplayerWorldView').catch(noop);
     } else if (world === 'movistardazn') {
       void import('../components/movistardazn/DaznMovistarWorldView').catch(noop);
+    } else if (world === 'music') {
+      void import('../components/music/RiffanMusicWorldView').catch(noop);
     }
   }, []);
 
@@ -175,7 +177,8 @@ export function useWorldNavigation({
           nextWorld === 'rbtv' ||
           nextWorld === 'belix' ||
           nextWorld === 'atresplayer' ||
-          nextWorld === 'movistardazn')
+          nextWorld === 'movistardazn' ||
+          nextWorld === 'music')
       ) {
         if (nextWorld !== 'sala') preloadWorld(nextWorld);
         playWorldPortalSound(nextWorld);

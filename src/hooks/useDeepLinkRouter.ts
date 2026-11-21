@@ -316,6 +316,8 @@ export function useDeepLinkRouter({
       nextRoute = '/atresplayer';
     } else if (activeWorld === 'movistardazn') {
       nextRoute = '/movistar-dazn';
+    } else if (activeWorld === 'music') {
+      nextRoute = '/musica';
     } else {
       // On entry home, preserve active deep-linked channel/series path only if navigating back explicitly from home?
       // When user explicitly returns to Entry Home in Solo mode, update URL cleanly to '/'
