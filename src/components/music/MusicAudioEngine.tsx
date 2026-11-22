@@ -1037,6 +1037,18 @@ export const MusicAudioEngine: React.FC = () => {
         // continue online
       }
 
+      // #88 Zero-wait 0ms hit from batched preload cache
+      const preCached = useMusicStore.getState().preResolvedByTrackId[expectedTrackId];
+      if (preCached && (preCached.sourceType !== 'youtube' || preCached.youtubeVideoId)) {
+        if (!cancelled && useMusicStore.getState().currentTrack?.id === expectedTrackId) {
+          useMusicStore.getState().setResolvedPlayback(
+            { ...preCached, trackId: expectedTrackId },
+            expectedTrackId
+          );
+          return;
+        }
+      }
+
       if (typeof navigator !== 'undefined' && navigator.onLine === false) {
         if (!cancelled && useMusicStore.getState().currentTrack?.id === expectedTrackId) {
           useMusicStore.getState().setResolvingTrack(false);
@@ -1171,37 +1183,74 @@ export const MusicAudioEngine: React.FC = () => {
     void startDownloadMp3Job(currentTrack);
   }, [autoDownloadMp3, wifiOnlyAutoDownload, currentTrack?.id, resolvedPlayback?.streamUrl, resolvedPlayback?.provider]);
 
-  // Gapless prefetch of next 2 tracks in queue
+  // #88 Zero-wait batched prefetch of next 3 tracks in queue (respecting deterministic shuffledOrder)
+  const shuffleEnabled = useMusicStore((s) => s.shuffle);
+  const queueIndex = useMusicStore((s) => s.queueIndex);
+  const queueLength = useMusicStore((s) => s.queue.length);
+
   useEffect(() => {
     if (!currentTrack) return;
-    const { queue, queueIndex } = useMusicStore.getState();
-    const candidates = [queue[queueIndex + 1], queue[queueIndex + 2]].filter(Boolean);
+    const st = useMusicStore.getState();
+    const offlineSet = new Set(st.offlineTrackIds);
+    const upcoming: typeof st.queue = [];
+    if (st.shuffle && st.shuffledOrder.length > 0 && st.queue.length > 0) {
+      const trackById = new Map(st.queue.map((t) => [t.id, t] as const));
+      const pos = st.shuffledOrder.indexOf(currentTrack.id);
+      const startAt = pos >= 0 ? pos + 1 : 0;
+      for (let offset = 0; offset < st.shuffledOrder.length && upcoming.length < 3; offset++) {
+        const nextId = st.shuffledOrder[(startAt + offset) % st.shuffledOrder.length];
+        if (!nextId || nextId === currentTrack.id) continue;
+        const found = trackById.get(nextId);
+        if (found) upcoming.push(found);
+      }
+    } else {
+      upcoming.push(...st.queue.slice(st.queueIndex + 1, st.queueIndex + 4));
+    }
+
+    const candidates = upcoming.filter(
+      (t) => !st.preResolvedByTrackId[t.id] && !offlineSet.has(t.id)
+    );
     if (candidates.length === 0) return;
 
+    let cancelled = false;
     const timer = window.setTimeout(() => {
-      candidates.forEach((nextTrack) => {
-        const qs = new URLSearchParams({
-          trackId: nextTrack.id,
-          title: nextTrack.title,
-          artist: nextTrack.artist.name,
-          duration: String(nextTrack.durationSec || 0),
-          preferAudio: '1',
-        });
-        if (nextTrack.previewUrl) qs.set('preview', nextTrack.previewUrl);
-        if (nextTrack.soundcloudId) qs.set('scId', nextTrack.soundcloudId);
-        if (nextTrack.audiusId) qs.set('audiusId', nextTrack.audiusId);
-        if (nextTrack.youtubeVideoId) qs.set('ytId', nextTrack.youtubeVideoId);
-        if (nextTrack.isrc) qs.set('isrc', nextTrack.isrc);
-        void fetch(`/api/music/play?${qs.toString()}`).catch(() => {});
-      });
-    }, 900);
-    return () => window.clearTimeout(timer);
-  }, [currentTrack?.id]);
+      void fetch('/api/music/preload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tracks: candidates.slice(0, 3).map((t) => ({
+            id: t.id,
+            title: t.title,
+            artist: t.artist.name,
+            durationSec: t.durationSec || 0,
+            previewUrl: t.previewUrl,
+            soundcloudId: t.soundcloudId,
+            audiusId: t.audiusId,
+            youtubeVideoId: t.youtubeVideoId,
+            isrc: t.isrc,
+          })),
+        }),
+      })
+        .then((r) => r.json())
+        .then((data: { success?: boolean; resolved?: Array<{ trackId?: string } & ResolvedTrackPlayback> }) => {
+          if (cancelled || !data?.success || !Array.isArray(data.resolved)) return;
+          const entries = data.resolved
+            .filter((item) => item && item.trackId)
+            .map((item) => ({ ...item, trackId: item.trackId! }));
+          if (entries.length > 0) {
+            useMusicStore.getState().setPreResolvedBatch(entries);
+          }
+        })
+        .catch(() => {});
+    }, 350);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [currentTrack?.id, shuffleEnabled, queueIndex, queueLength]);
 
   // Proactive Spotify-style genre/artist radio refill when queue is near the end
   const autoplaySimilar = useMusicStore((s) => s.autoplaySimilar);
-  const queueIndex = useMusicStore((s) => s.queueIndex);
-  const queueLength = useMusicStore((s) => s.queue.length);
   const repeatMode = useMusicStore((s) => s.repeatMode);
 
   useEffect(() => {
@@ -1370,6 +1419,7 @@ export const MusicAudioEngine: React.FC = () => {
       const handleYtFailure = (failedId: string) => {
         ytTriedIdsRef.current.add(failedId);
         const curState = useMusicStore.getState();
+        curState.clearPreResolvedTrack(currentTrack.id);
         if (curState.currentTrack?.id !== currentTrack.id) return;
         const pool = [
           resolvedPlayback.youtubeVideoId,
@@ -1439,8 +1489,8 @@ export const MusicAudioEngine: React.FC = () => {
         }
         ytReadyRef.current = false;
         ytPlayerRef.current = new win.YT.Player(ytContainerRef.current, {
-          width: '16',
-          height: '16',
+          width: '192',
+          height: '112',
           videoId,
           playerVars: {
             autoplay: useMusicStore.getState().isPlaying ? 1 : 0,
@@ -1495,10 +1545,11 @@ export const MusicAudioEngine: React.FC = () => {
     const bypassIosHls = isIosSafariBrowser() && resolvedPlayback.sourceType === 'audio-hls';
     const prevSlot = activeDeckSlotRef.current;
     const prevEl = prevSlot === 'A' ? deckARef.current : deckBRef.current;
+    const effectiveCrossfade = st.autoDjEnabled ? Math.max(4.5, st.crossfadeSec) : st.crossfadeSec;
     const canCrossfade =
       !bypassIosHls &&
       mediaSourceConnectedRef.current &&
-      st.crossfadeSec > 0.25 &&
+      effectiveCrossfade > 0.25 &&
       prevEl &&
       !prevEl.paused &&
       Boolean(prevEl.currentSrc || prevEl.src);
@@ -1520,7 +1571,7 @@ export const MusicAudioEngine: React.FC = () => {
       const outgoingGain = nextSlot === 'A' ? deckBGainRef.current : deckAGainRef.current;
 
       if (canCrossfade) {
-        const cfSec = Math.max(0.4, st.crossfadeSec);
+        const cfSec = Math.max(0.4, effectiveCrossfade);
         try {
           outgoingGain.gain.cancelScheduledValues(now);
           outgoingGain.gain.setValueAtTime(outgoingGain.gain.value, now);
@@ -1583,6 +1634,7 @@ export const MusicAudioEngine: React.FC = () => {
             hls.destroy();
             hlsInstancesRef.current[nextSlot] = null;
             const curState = useMusicStore.getState();
+            curState.clearPreResolvedTrack(currentTrack.id);
             if (curState.currentTrack?.id !== currentTrack.id) return;
             const currentUrl = resolvedPlayback.streamUrl || '';
             const remainingAlts = (resolvedPlayback.alternatives || []).filter(
@@ -1902,6 +1954,7 @@ export const MusicAudioEngine: React.FC = () => {
     const activeTrack = st.currentTrack;
     const activePlayback = st.resolvedPlayback;
     if (!activeTrack) return;
+    st.clearPreResolvedTrack(activeTrack.id);
 
     const failedUrl = activePlayback?.streamUrl || '';
     const remainingAlts = (activePlayback?.alternatives || []).filter(

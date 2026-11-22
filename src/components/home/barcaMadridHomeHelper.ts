@@ -10,7 +10,7 @@ const FINISHED_STATUS_RE =
   /^(final|ft|full[- ]?time|terminado|finalizado|suspendido|aplazado|postponed|cancelled|abandonado)$/i;
 
 const NON_FIRST_TEAM_COMPETITION_RE =
-  /(wchampions|femenin|femeni|women|woman|u19|u21|u23|juvenil|youth|segunda\s*rfef|tercera\s*rfef|primera\s*federacion|ecu\.|liga\s*pro)/i;
+  /(wchampions|femenin|femeni|women|woman|u19|u21|u23|sub-?\d+|juvenil|youth|segunda\s*(rfef|division)|tercera\s*rfef|primera\s*(federacion|b)|ecu\.|ecuador|copa\s*ecuador|liga\s*pro|barcelona\s*sc|guayaquil|castilla|barca\s*atletic|barcelona\s*b|real\s*madrid\s*(b|c)\b)/i;
 
 function normalizeClubName(raw: string): string {
   return String(raw || '')
@@ -41,7 +41,7 @@ export function isFirstTeamBarcaOrMadridMatch(match: SportsMatch): boolean {
   const meta = match.matchMeta;
   if (!meta) return false;
 
-  const competitionHay = `${meta.leagueSlug || ''} ${meta.leagueName || ''} ${match.competition || ''}`;
+  const competitionHay = `${meta.leagueSlug || ''} ${meta.leagueName || ''} ${match.competition || ''} ${match.title || ''} ${meta.homeTeam || ''} ${meta.awayTeam || ''}`;
   if (NON_FIRST_TEAM_COMPETITION_RE.test(competitionHay)) return false;
 
   return (

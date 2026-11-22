@@ -17,6 +17,7 @@ import {
   SkipBack,
   SkipForward,
   Sliders,
+  Users,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -58,6 +59,10 @@ export const SpotifyPlayerBar: React.FC<SpotifyPlayerBarProps> = ({
   const showQueueDrawer = useMusicStore((s) => s.showQueueDrawer);
   const spatial8dEnabled = useMusicStore((s) => s.spatial8dEnabled);
   const toggleSpatial8d = useMusicStore((s) => s.toggleSpatial8d);
+  const autoDjEnabled = useMusicStore((s) => s.autoDjEnabled);
+  const toggleAutoDj = useMusicStore((s) => s.toggleAutoDj);
+  const jamSession = useMusicStore((s) => s.jamSession);
+  const toggleJamSession = useMusicStore((s) => s.toggleJamSession);
   const downloadJobs = useMusicStore((s) => s.downloadJobs);
   const offlineTrackIds = useMusicStore((s) => s.offlineTrackIds);
   const setShowDownloadDrawer = useMusicStore((s) => s.setShowDownloadDrawer);
@@ -374,6 +379,41 @@ export const SpotifyPlayerBar: React.FC<SpotifyPlayerBarProps> = ({
           >
             <Headphones className="w-3.5 h-3.5" />
             <span>8D</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              toggleAutoDj();
+            }}
+            aria-pressed={autoDjEnabled}
+            title={m.autoDjSub}
+            className={`hidden md:inline-flex h-8 px-2.5 rounded-full items-center text-[11px] font-bold cursor-pointer transition-all whitespace-nowrap shrink-0 ${
+              autoDjEnabled
+                ? 'bg-[#3B82F6]/25 border border-[#3B82F6] text-[#93C5FD]'
+                : 'bg-white/[0.06] text-zinc-300 hover:text-white hover:bg-white/[0.12] border border-white/10'
+            }`}
+          >
+            DJ
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('medium');
+              toggleJamSession();
+            }}
+            aria-pressed={jamSession.active}
+            title={m.jamSub}
+            className={`hidden md:inline-flex h-8 px-2 rounded-full items-center gap-1 text-[11px] font-bold cursor-pointer transition-all whitespace-nowrap shrink-0 ${
+              jamSession.active
+                ? 'bg-emerald-500/25 border border-emerald-400 text-emerald-200'
+                : 'bg-white/[0.06] text-zinc-300 hover:text-white hover:bg-white/[0.12] border border-white/10'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            {jamSession.active && jamSession.roomCode && <span>{jamSession.roomCode}</span>}
           </button>
 
           {currentTrack && (

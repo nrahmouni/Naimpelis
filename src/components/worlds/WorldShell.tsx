@@ -108,6 +108,13 @@ export const WorldShell: React.FC<WorldShellProps> = ({
     { priority: 6 }
   );
 
+  useBackInterceptor(
+    moreMenuOpen,
+    `world-more-menu-${world}`,
+    () => setMoreMenuOpen(false),
+    { priority: 20 }
+  );
+
   const showWatchPartyAction = Boolean(
     sessionMode === 'solo' && onUpgradeSoloToParty && world !== 'sala'
   );

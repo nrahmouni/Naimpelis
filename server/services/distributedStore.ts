@@ -83,10 +83,13 @@ export function loadRoomsSnapshotFromDisk<T extends { id: string }>(
   }
 }
 
+let snapshotWriteQueue: Promise<void> = Promise.resolve();
+
 export function writeRoomsSnapshotToDisk(serializable: unknown[]): void {
-  try {
-    fs.writeFileSync(ROOMS_SNAPSHOT_PATH, JSON.stringify(serializable), 'utf8');
-  } catch {
-    // ignore disk write error
-  }
+  const payload = JSON.stringify(serializable);
+  snapshotWriteQueue = snapshotWriteQueue
+    .then(() => fs.promises.writeFile(ROOMS_SNAPSHOT_PATH, payload, 'utf8'))
+    .catch(() => {
+      // ignore disk write error
+    });
 }

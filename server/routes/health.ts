@@ -166,7 +166,7 @@ export function registerOperationalRoutes(
   });
 
   // In-App & Android Native OTA Manifest Endpoint (/api/app/latest)
-  app.get('/api/app/latest', (req, res) => {
+  app.get('/api/app/latest', async (req, res) => {
     const platformParam = String(req.query.platform || 'all').toLowerCase();
     const origin = deps.getPublicOrigin(req);
     const cacheKey = `${origin}:${platformParam}`;
@@ -178,9 +178,17 @@ export function registerOperationalRoutes(
     const mobileApkPath = path.join(ROOT_DIR, 'public', 'RIFFAN-TV.apk');
     const tvApkPath = path.join(ROOT_DIR, 'public', 'RIFFAN-TV-TV.apk');
     const musicApkPath = path.join(ROOT_DIR, 'public', 'RIFFAN-MUSIC.apk');
-    let mobileBytes = fs.existsSync(mobileApkPath) ? fs.statSync(mobileApkPath).size : 0;
-    let tvBytes = fs.existsSync(tvApkPath) ? fs.statSync(tvApkPath).size : 0;
-    let musicBytes = fs.existsSync(musicApkPath) ? fs.statSync(musicApkPath).size : 0;
+    const getStatBytes = async (p: string) =>
+      fs.promises
+        .stat(p)
+        .then((s) => s.size)
+        .catch(() => 0);
+
+    let [mobileBytes, tvBytes, musicBytes] = await Promise.all([
+      getStatBytes(mobileApkPath),
+      getStatBytes(tvApkPath),
+      getStatBytes(musicApkPath),
+    ]);
     if (!mobileBytes) {
       try {
         mobileBytes = buildSignedApkBuffer('mobile', origin).length;

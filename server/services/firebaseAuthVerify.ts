@@ -18,17 +18,24 @@ const GOOGLE_CERTS_URL =
 const certsCache = new LruTtlCache<string, Record<string, string>>(4, 3_600_000);
 const verifiedTokenCache = new LruTtlCache<string, VerifiedFirebaseUser>(500, 300_000);
 
+let cachedProjectId: string | null = null;
+
 function getFirebaseProjectId(): string {
+  if (cachedProjectId) return cachedProjectId;
   try {
     const cfgPath = path.join(ROOT_DIR, 'firebase-applet-config.json');
     if (fs.existsSync(cfgPath)) {
       const parsed = JSON.parse(fs.readFileSync(cfgPath, 'utf8')) as { projectId?: string };
-      if (parsed.projectId) return parsed.projectId;
+      if (parsed.projectId) {
+        cachedProjectId = parsed.projectId;
+        return cachedProjectId;
+      }
     }
   } catch {
     // ignore
   }
-  return process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0777375681';
+  cachedProjectId = process.env.FIREBASE_PROJECT_ID || 'gen-lang-client-0777375681';
+  return cachedProjectId;
 }
 
 function decodeBase64Url(input: string): Buffer {

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type {
+  AiMoodPlaylistResult,
   CustomStudioPreset,
   DownloadJob,
   EqBands10,
@@ -7,6 +8,7 @@ import type {
   EqPresetId,
   ExportBitrate,
   HomeMoodFilterId,
+  JamSessionState,
   ListeningStats,
   MusicAlbumRef,
   MusicDetailView,
@@ -90,6 +92,7 @@ interface PersistedLibrary {
   listeningStats: ListeningStats;
   tasteProfile: TasteProfile;
   autoplaySimilar: boolean;
+  autoDjEnabled: boolean;
   volume: number;
   musicLang: MusicLang;
   musicLangV2?: boolean;
@@ -167,6 +170,7 @@ function loadLibrary(): PersistedLibrary {
     listeningStats: DEFAULT_STATS,
     tasteProfile: DEFAULT_TASTE,
     autoplaySimilar: true,
+    autoDjEnabled: false,
     volume: 0.85,
     musicLang: 'en',
     musicLangV2: true,
@@ -242,6 +246,7 @@ function loadLibrary(): PersistedLibrary {
       spatial8dMode: isValidSpatialMode(parsed.spatial8dMode) ? parsed.spatial8dMode : 'orbit',
       spatialTrajectory: isValidTrajectory(parsed.spatialTrajectory) ? parsed.spatialTrajectory : 'orbit',
       autoplaySimilar: typeof parsed.autoplaySimilar === 'boolean' ? parsed.autoplaySimilar : true,
+      autoDjEnabled: Boolean(parsed.autoDjEnabled),
       volume: typeof parsed.volume === 'number' ? clamp(parsed.volume, 0, 1) : 0.85,
       musicLang: parsed.musicLangV2 && isValidMusicLang(parsed.musicLang) ? parsed.musicLang : 'en',
       musicLangV2: true,
@@ -256,13 +261,77 @@ export function registerMusicCloudSyncHook(fn: ((state: PersistedLibrary) => voi
   cloudSyncHook = fn;
 }
 
-function saveLibrary(lib: PersistedLibrary) {
+let pendingSaveLib: PersistedLibrary | null = null;
+let saveLibraryTimer: number | null = null;
+let flushListenersAttached = false;
+
+function saveLibraryImmediate(lib: PersistedLibrary) {
   if (typeof localStorage === 'undefined') return;
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...lib, musicLangV2: true }));
   } catch {
     // ignore storage quota errors
   }
+}
+
+function flushPendingSaveLibrary() {
+  if (saveLibraryTimer !== null && typeof window !== 'undefined') {
+    window.clearTimeout(saveLibraryTimer);
+    saveLibraryTimer = null;
+  }
+  if (pendingSaveLib) {
+    const lib = pendingSaveLib;
+    pendingSaveLib = null;
+    saveLibraryImmediate(lib);
+  }
+}
+
+function scheduleSaveLibrary(lib: PersistedLibrary) {
+  if (typeof localStorage === 'undefined') return;
+  if (typeof window === 'undefined') {
+    saveLibraryImmediate(lib);
+    return;
+  }
+  pendingSaveLib = lib;
+  if (!flushListenersAttached) {
+    flushListenersAttached = true;
+    window.addEventListener('pagehide', flushPendingSaveLibrary);
+    window.addEventListener('beforeunload', flushPendingSaveLibrary);
+  }
+  if (saveLibraryTimer !== null) {
+    window.clearTimeout(saveLibraryTimer);
+  }
+  saveLibraryTimer = window.setTimeout(() => {
+    saveLibraryTimer = null;
+    if (pendingSaveLib) {
+      const target = pendingSaveLib;
+      pendingSaveLib = null;
+      saveLibraryImmediate(target);
+    }
+  }, 400);
+}
+
+function pruneRecordByTimestamp<T>(
+  map: Record<string, T> | undefined,
+  maxEntries: number,
+  getTs: (v: T) => number
+): Record<string, T> {
+  const src = map || {};
+  const entries = Object.entries(src);
+  if (entries.length <= maxEntries) return src;
+  entries.sort((a, b) => getTs(b[1]) - getTs(a[1]));
+  return Object.fromEntries(entries.slice(0, maxEntries));
+}
+
+function buildShuffledOrder(queue: MusicTrack[], currentTrackId?: string | null): string[] {
+  const ids = queue.map((t) => t.id).filter(Boolean);
+  if (ids.length <= 1) return ids;
+  const rest = currentTrackId ? ids.filter((id) => id !== currentTrackId) : [...ids];
+  for (let i = rest.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [rest[i], rest[j]] = [rest[j], rest[i]];
+  }
+  return currentTrackId && ids.includes(currentTrackId) ? [currentTrackId, ...rest] : rest;
 }
 
 function extractPersisted(state: PersistedLibrary): PersistedLibrary {
@@ -296,6 +365,7 @@ function extractPersisted(state: PersistedLibrary): PersistedLibrary {
     listeningStats: state.listeningStats,
     tasteProfile: state.tasteProfile,
     autoplaySimilar: state.autoplaySimilar,
+    autoDjEnabled: state.autoDjEnabled,
     spatial8dEnabled: state.spatial8dEnabled,
     spatial8dMode: state.spatial8dMode,
     spatialTrajectory: state.spatialTrajectory,
@@ -307,7 +377,7 @@ function extractPersisted(state: PersistedLibrary): PersistedLibrary {
 
 function syncPersisted(state: PersistedLibrary, skipCloud = false) {
   const snap = extractPersisted(state);
-  saveLibrary(snap);
+  scheduleSaveLibrary(snap);
   if (!skipCloud && cloudSyncHook) {
     cloudSyncHook(snap);
   }
@@ -322,6 +392,11 @@ export interface MusicStoreState extends PersistedLibrary {
 
   queue: MusicTrack[];
   queueIndex: number;
+  shuffledOrder: string[];
+  prevHistory: MusicTrack[];
+  preResolvedByTrackId: Record<string, ResolvedTrackPlayback>;
+  jamSession: JamSessionState;
+  lastAiMoodMix: AiMoodPlaylistResult | null;
 
   isPlaying: boolean;
   currentTime: number;
@@ -378,7 +453,11 @@ export interface MusicStoreState extends PersistedLibrary {
   setMusicSearchResults: (results: MusicSearchResultsPayload | null) => void;
   setMusicRadioFilterId: (id: string) => void;
 
-  playTrack: (track: MusicTrack, contextTracks?: MusicTrack[], opts?: { preserveSeed?: boolean }) => void;
+  playTrack: (
+    track: MusicTrack,
+    contextTracks?: MusicTrack[],
+    opts?: { preserveSeed?: boolean; preserveHistory?: boolean; fromHistory?: boolean }
+  ) => void;
   playRadio: (station: MusicRadioStation) => void;
   addToQueue: (track: MusicTrack) => void;
   removeFromQueue: (index: number) => void;
@@ -386,6 +465,15 @@ export interface MusicStoreState extends PersistedLibrary {
   advanceAfterTrackEnd: () => void;
   playPrev: () => void;
   setAutoplaySimilar: (enabled: boolean) => void;
+  toggleAutoDj: () => void;
+  toggleJamSession: (roomId?: string, hostName?: string) => void;
+  startSeedRadio: (seed: MusicTrack) => Promise<void>;
+  generateAiMoodPlaylist: (
+    prompt: string,
+    opts?: { playImmediately?: boolean; saveAsPlaylist?: boolean }
+  ) => Promise<AiMoodPlaylistResult | null>;
+  setPreResolvedBatch: (batch: Record<string, ResolvedTrackPlayback>) => void;
+  clearPreResolvedTrack: (trackId: string) => void;
   fetchAndEnqueueRelatedTracks: (seed: MusicTrack, opts?: { autoAdvance?: boolean }) => Promise<void>;
   showMusicToast: (msg: string) => void;
   setResolvedPlayback: (resolved: ResolvedTrackPlayback | null, expectedTrackId?: string) => void;
@@ -528,6 +616,11 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
 
   queue: [],
   queueIndex: -1,
+  shuffledOrder: [],
+  prevHistory: [],
+  preResolvedByTrackId: {},
+  jamSession: { active: false, listeners: 1 },
+  lastAiMoodMix: null,
 
   isPlaying: false,
   currentTime: 0,
@@ -709,8 +802,14 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
         }
         firstNewTrack = added[0] || null;
         updatedQueue = added.length > 0 ? [...prev.queue, ...added] : prev.queue;
+        let nextShuffledOrder = prev.shuffledOrder;
+        if (prev.shuffle && added.length > 0) {
+          const addedShuffled = added.map((t) => t.id).sort(() => Math.random() - 0.5);
+          nextShuffledOrder = [...prev.shuffledOrder, ...addedShuffled];
+        }
         return {
           queue: updatedQueue,
+          shuffledOrder: nextShuffledOrder,
           seedGenre: genreName || prev.seedGenre,
         };
       });
@@ -744,15 +843,13 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
     const updatedRecent = [track, ...state.recentTracks.filter((t) => t.id !== track.id)].slice(0, 35);
     const profilePatch = applyProfileToTrackChange(state, track);
 
-    // Record play count immediately on track start
+    // Record play count immediately on track start (LRU-pruned to 400 tracks)
     const stats = state.listeningStats;
     const prevT = stats.trackPlayCounts[track.id];
     const primaryArtist = track.artist.name.split(',')[0].trim() || track.artist.name;
     const prevA = stats.artistPlayCounts[primaryArtist];
-    const nextStats: ListeningStats = {
-      ...stats,
-      totalPlays: stats.totalPlays + 1,
-      trackPlayCounts: {
+    const nextTrackPlayCounts = pruneRecordByTimestamp(
+      {
         ...stats.trackPlayCounts,
         [track.id]: {
           count: (prevT?.count || 0) + 1,
@@ -762,6 +859,13 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
           lastPlayedAt: Date.now(),
         },
       },
+      400,
+      (v) => v.lastPlayedAt || 0
+    );
+    const nextStats: ListeningStats = {
+      ...stats,
+      totalPlays: stats.totalPlays + 1,
+      trackPlayCounts: nextTrackPlayCounts,
       artistPlayCounts: primaryArtist
         ? {
             ...stats.artistPlayCounts,
@@ -774,17 +878,40 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
         : stats.artistPlayCounts,
     };
 
+    const cachedPlayback = state.preResolvedByTrackId[track.id] || null;
+
     set((prev) => {
+      const sameQueue =
+        prev.queue.length === list.length &&
+        prev.queue.every((q, qIdx) => q.id === list[qIdx]?.id);
+      const nextShuffledOrder =
+        prev.shuffle
+          ? sameQueue && prev.shuffledOrder.includes(track.id)
+            ? prev.shuffledOrder
+            : buildShuffledOrder(list, track.id)
+          : [];
+      const nextPrevHistory = opts?.fromHistory
+        ? prev.prevHistory
+        : opts?.preserveHistory && prev.currentTrack && prev.currentTrack.id !== track.id
+        ? [prev.currentTrack, ...prev.prevHistory.filter((t) => t.id !== prev.currentTrack!.id)].slice(0, 40)
+        : prev.currentTrack && prev.currentTrack.id !== track.id && preserveSeed
+        ? [prev.currentTrack, ...prev.prevHistory.filter((t) => t.id !== prev.currentTrack!.id)].slice(0, 40)
+        : sameQueue
+        ? prev.prevHistory
+        : [];
+
       const next = {
         ...prev,
         ...profilePatch,
         activeRadio: null,
         currentTrack: track,
-        resolvedPlayback: null,
-        isResolvingTrack: true,
+        resolvedPlayback: cachedPlayback ? { ...cachedPlayback, trackId: track.id } : null,
+        isResolvingTrack: !cachedPlayback,
         playbackError: null,
         queue: list,
         queueIndex: idx,
+        shuffledOrder: nextShuffledOrder,
+        prevHistory: nextPrevHistory,
         isPlaying: true,
         currentTime: 0,
         duration: track.durationSec || 0,
@@ -822,18 +949,28 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
     set((prev) => {
       const exists = prev.queue.some((t) => t.id === track.id);
       if (exists) return prev;
-      return { queue: [...prev.queue, track] };
+      return {
+        queue: [...prev.queue, track],
+        shuffledOrder: prev.shuffle ? [...prev.shuffledOrder, track.id] : prev.shuffledOrder,
+      };
     });
   },
 
   removeFromQueue: (index) => {
     set((prev) => {
       if (index < 0 || index >= prev.queue.length) return prev;
+      const removedId = prev.queue[index]?.id;
       const nextQueue = prev.queue.filter((_, idx) => idx !== index);
       let nextIdx = prev.queueIndex;
       if (index < prev.queueIndex) nextIdx = Math.max(0, nextIdx - 1);
       else if (index === prev.queueIndex) nextIdx = Math.min(nextIdx, nextQueue.length - 1);
-      return { queue: nextQueue, queueIndex: nextIdx };
+      return {
+        queue: nextQueue,
+        queueIndex: nextIdx,
+        shuffledOrder: removedId
+          ? prev.shuffledOrder.filter((id) => id !== removedId)
+          : prev.shuffledOrder,
+      };
     });
   },
 
@@ -852,14 +989,18 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
       return;
     }
 
-    let nextIdx = state.queueIndex + 1;
+    let nextTrack: MusicTrack | undefined;
     if (state.shuffle && state.queue.length > 1) {
-      let rand = Math.floor(Math.random() * state.queue.length);
-      if (rand === state.queueIndex) rand = (rand + 1) % state.queue.length;
-      nextIdx = rand;
-    } else if (nextIdx >= state.queue.length) {
-      if (state.repeatMode === 'all') {
-        nextIdx = 0;
+      const order =
+        state.shuffledOrder.length > 0
+          ? state.shuffledOrder
+          : buildShuffledOrder(state.queue, state.currentTrack?.id);
+      const pos = state.currentTrack ? order.indexOf(state.currentTrack.id) : -1;
+      const nextOrderPos = pos + 1;
+      if (nextOrderPos < order.length) {
+        nextTrack = state.queue.find((t) => t.id === order[nextOrderPos]);
+      } else if (state.repeatMode === 'all') {
+        nextTrack = state.queue.find((t) => t.id === order[0]);
       } else if (state.autoplaySimilar && (state.seedTrack || state.currentTrack)) {
         const seed = state.seedTrack || state.currentTrack!;
         set({ isResolvingTrack: true });
@@ -869,11 +1010,26 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
         set({ isPlaying: false });
         return;
       }
+    } else {
+      let nextIdx = state.queueIndex + 1;
+      if (nextIdx >= state.queue.length) {
+        if (state.repeatMode === 'all') {
+          nextIdx = 0;
+        } else if (state.autoplaySimilar && (state.seedTrack || state.currentTrack)) {
+          const seed = state.seedTrack || state.currentTrack!;
+          set({ isResolvingTrack: true });
+          void get().fetchAndEnqueueRelatedTracks(seed, { autoAdvance: true });
+          return;
+        } else {
+          set({ isPlaying: false });
+          return;
+        }
+      }
+      nextTrack = state.queue[nextIdx];
     }
 
-    const nextTrack = state.queue[nextIdx];
     if (!nextTrack) return;
-    get().playTrack(nextTrack, state.queue, { preserveSeed: true });
+    get().playTrack(nextTrack, state.queue, { preserveSeed: true, preserveHistory: true });
   },
 
   advanceAfterTrackEnd: () => {
@@ -886,14 +1042,19 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
       set({ seekRequestSec: 0, isPlaying: true, currentTime: 0 });
       return;
     }
-    let nextIdx = state.queueIndex + 1;
+
+    let nextTrack: MusicTrack | undefined;
     if (state.shuffle && state.queue.length > 1) {
-      let rand = Math.floor(Math.random() * state.queue.length);
-      if (rand === state.queueIndex) rand = (rand + 1) % state.queue.length;
-      nextIdx = rand;
-    } else if (nextIdx >= state.queue.length) {
-      if (state.repeatMode === 'all') {
-        nextIdx = 0;
+      const order =
+        state.shuffledOrder.length > 0
+          ? state.shuffledOrder
+          : buildShuffledOrder(state.queue, state.currentTrack?.id);
+      const pos = state.currentTrack ? order.indexOf(state.currentTrack.id) : -1;
+      const nextOrderPos = pos + 1;
+      if (nextOrderPos < order.length) {
+        nextTrack = state.queue.find((t) => t.id === order[nextOrderPos]);
+      } else if (state.repeatMode === 'all') {
+        nextTrack = state.queue.find((t) => t.id === order[0]);
       } else if (state.autoplaySimilar && (state.seedTrack || state.currentTrack)) {
         const seed = state.seedTrack || state.currentTrack!;
         set({ isResolvingTrack: true });
@@ -903,10 +1064,26 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
         set({ isPlaying: false });
         return;
       }
+    } else {
+      let nextIdx = state.queueIndex + 1;
+      if (nextIdx >= state.queue.length) {
+        if (state.repeatMode === 'all') {
+          nextIdx = 0;
+        } else if (state.autoplaySimilar && (state.seedTrack || state.currentTrack)) {
+          const seed = state.seedTrack || state.currentTrack!;
+          set({ isResolvingTrack: true });
+          void get().fetchAndEnqueueRelatedTracks(seed, { autoAdvance: true });
+          return;
+        } else {
+          set({ isPlaying: false });
+          return;
+        }
+      }
+      nextTrack = state.queue[nextIdx];
     }
-    const nextTrack = state.queue[nextIdx];
+
     if (!nextTrack) return;
-    get().playTrack(nextTrack, state.queue, { preserveSeed: true });
+    get().playTrack(nextTrack, state.queue, { preserveSeed: true, preserveHistory: true });
   },
 
   playPrev: () => {
@@ -915,13 +1092,122 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
       set({ seekRequestSec: 0, currentTime: 0 });
       return;
     }
+    if (state.prevHistory.length > 0) {
+      const [prevTrack, ...restHistory] = state.prevHistory;
+      set({ prevHistory: restHistory });
+      get().playTrack(prevTrack, state.queue.length > 0 ? state.queue : [prevTrack], {
+        preserveSeed: true,
+        fromHistory: true,
+      });
+      return;
+    }
     if (state.queue.length === 0) return;
     let prevIdx = state.queueIndex - 1;
     if (prevIdx < 0) prevIdx = state.repeatMode === 'all' ? state.queue.length - 1 : 0;
     const prevTrack = state.queue[prevIdx];
     if (!prevTrack) return;
-    get().playTrack(prevTrack, state.queue, { preserveSeed: true });
+    get().playTrack(prevTrack, state.queue, { preserveSeed: true, fromHistory: true });
   },
+
+  toggleAutoDj: () =>
+    set((prev) => {
+      const next = { ...prev, autoDjEnabled: !prev.autoDjEnabled };
+      syncPersisted(next);
+      return next;
+    }),
+
+  toggleJamSession: (roomId, hostName) =>
+    set((prev) => {
+      const nextActive = !prev.jamSession.active;
+      return {
+        jamSession: {
+          active: nextActive,
+          roomId: nextActive ? roomId || prev.jamSession.roomId : undefined,
+          hostName: nextActive ? hostName || prev.jamSession.hostName : undefined,
+          listeners: nextActive ? Math.max(1, prev.jamSession.listeners) : 1,
+        },
+      };
+    }),
+
+  startSeedRadio: async (seed) => {
+    if (!seed) return;
+    set({ isFetchingRelated: true });
+    try {
+      const qs = new URLSearchParams({
+        trackId: seed.id,
+        title: seed.title,
+        artist: seed.artist.name,
+        limit: '22',
+      });
+      const res = await fetch(`/api/music/radio-seed?${qs.toString()}`);
+      const data = await res.json().catch(() => null);
+      const tracks: MusicTrack[] = Array.isArray(data?.tracks) && data.tracks.length > 0 ? data.tracks : [seed];
+      get().playTrack(tracks[0], tracks);
+      if (typeof data?.genreName === 'string') {
+        set({ seedGenre: data.genreName });
+      }
+      get().showMusicToast(`Radio · ${seed.title}`);
+    } catch {
+      get().playTrack(seed, [seed]);
+    } finally {
+      set({ isFetchingRelated: false });
+    }
+  },
+
+  generateAiMoodPlaylist: async (prompt, opts) => {
+    const clean = prompt.trim();
+    if (!clean) return null;
+    try {
+      const res = await fetch('/api/ai/mood-playlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: clean,
+          favoriteArtists: get().tasteProfile.favoriteArtists.slice(0, 6),
+          limit: 20,
+        }),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as AiMoodPlaylistResult & { success?: boolean };
+      if (!Array.isArray(data?.tracks) || data.tracks.length === 0) return null;
+      const result: AiMoodPlaylistResult = {
+        title: data.title || `Mix IA · ${clean}`,
+        subtitle: data.subtitle || clean,
+        moodTags: Array.isArray(data.moodTags) ? data.moodTags : [],
+        tracks: data.tracks,
+      };
+      set({ lastAiMoodMix: result });
+      if (opts?.saveAsPlaylist) {
+        get().importTracksIntoPlaylist(result.title, result.subtitle, result.tracks);
+      }
+      if (opts?.playImmediately) {
+        get().playTrack(result.tracks[0], result.tracks);
+      }
+      return result;
+    } catch {
+      return null;
+    }
+  },
+
+  setPreResolvedBatch: (batch) =>
+    set((prev) => {
+      if (!batch || Object.keys(batch).length === 0) return prev;
+      const merged = { ...prev.preResolvedByTrackId, ...batch };
+      const keys = Object.keys(merged);
+      const capped =
+        keys.length > 16
+          ? Object.fromEntries(keys.slice(-16).map((k) => [k, merged[k]]))
+          : merged;
+      return { preResolvedByTrackId: capped };
+    }),
+
+  clearPreResolvedTrack: (trackId) =>
+    set((prev) => {
+      if (!prev.preResolvedByTrackId[trackId]) return prev;
+      const next = { ...prev.preResolvedByTrackId };
+      delete next[trackId];
+      return { preResolvedByTrackId: next };
+    }),
 
   setResolvedPlayback: (resolved, expectedTrackId) => {
     const activeId = get().currentTrack?.id;
@@ -978,7 +1264,14 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
   },
 
   toggleMute: () => set((s) => ({ isMuted: !s.isMuted })),
-  toggleShuffle: () => set((s) => ({ shuffle: !s.shuffle })),
+  toggleShuffle: () =>
+    set((s) => {
+      const nextShuffle = !s.shuffle;
+      return {
+        shuffle: nextShuffle,
+        shuffledOrder: nextShuffle ? buildShuffledOrder(s.queue, s.currentTrack?.id) : [],
+      };
+    }),
   cycleRepeat: () =>
     set((s) => ({
       repeatMode: s.repeatMode === 'off' ? 'all' : s.repeatMode === 'all' ? 'one' : 'off',
@@ -1681,7 +1974,7 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
         totalListenSec: prev.listeningStats.totalListenSec + deltaSec,
       };
       const next = { ...prev, listeningStats: nextStats };
-      saveLibrary(extractPersisted(next));
+      scheduleSaveLibrary(extractPersisted(next));
       return next;
     }),
 
@@ -1691,15 +1984,19 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
       const cur = prevSignals[track.id] || {};
       const nextStats: ListeningStats = {
         ...prev.listeningStats,
-        trackSignals: {
-          ...prevSignals,
-          [track.id]: {
-            ...cur,
-            completions: (cur.completions || 0) + 1,
-            lastSignalAt: Date.now(),
-            artist: track.artist.name,
+        trackSignals: pruneRecordByTimestamp(
+          {
+            ...prevSignals,
+            [track.id]: {
+              ...cur,
+              completions: (cur.completions || 0) + 1,
+              lastSignalAt: Date.now(),
+              artist: track.artist.name,
+            },
           },
-        },
+          300,
+          (v) => v.lastSignalAt || 0
+        ),
       };
       const next = { ...prev, listeningStats: nextStats };
       syncPersisted(next);
@@ -1713,15 +2010,19 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
       const cur = prevSignals[track.id] || {};
       const nextStats: ListeningStats = {
         ...prev.listeningStats,
-        trackSignals: {
-          ...prevSignals,
-          [track.id]: {
-            ...cur,
-            skips: (cur.skips || 0) + 1,
-            lastSignalAt: Date.now(),
-            artist: track.artist.name,
+        trackSignals: pruneRecordByTimestamp(
+          {
+            ...prevSignals,
+            [track.id]: {
+              ...cur,
+              skips: (cur.skips || 0) + 1,
+              lastSignalAt: Date.now(),
+              artist: track.artist.name,
+            },
           },
-        },
+          300,
+          (v) => v.lastSignalAt || 0
+        ),
       };
       const next = { ...prev, listeningStats: nextStats };
       syncPersisted(next);
@@ -1735,16 +2036,20 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
       const cur = prevSignals[track.id] || {};
       const nextStats: ListeningStats = {
         ...prev.listeningStats,
-        trackSignals: {
-          ...prevSignals,
-          [track.id]: {
-            ...cur,
-            completions: 0,
-            skips: Math.max(3, (cur.skips || 0) + 3),
-            lastSignalAt: Date.now(),
-            artist: track.artist.name,
+        trackSignals: pruneRecordByTimestamp(
+          {
+            ...prevSignals,
+            [track.id]: {
+              ...cur,
+              completions: 0,
+              skips: Math.max(3, (cur.skips || 0) + 3),
+              lastSignalAt: Date.now(),
+              artist: track.artist.name,
+            },
           },
-        },
+          300,
+          (v) => v.lastSignalAt || 0
+        ),
       };
       const nextLiked = prev.likedTracks.filter((t) => t.id !== track.id);
       const next = {

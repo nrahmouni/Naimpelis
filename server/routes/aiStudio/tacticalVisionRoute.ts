@@ -4,6 +4,7 @@ import {
   generateContentWithResilience,
   getGenAiClient,
   isAiFallbackEligibleError,
+  parseGeminiJson,
   sendAiEndpointError,
 } from './shared.ts';
 
@@ -241,7 +242,7 @@ export function registerTacticalVisionRoute(app: Express): void {
         return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : fallback;
       };
 
-      const parsed = JSON.parse(String(visionResponse.text || '{}').trim()) as Record<string, any>;
+      const parsed = parseGeminiJson<Record<string, any>>(String(visionResponse.text || '{}'), {});
       const rawTvClock = String(parsed.tvClock || '').trim();
       const cleanTvClock = /^\d{1,3}:\d{2}$/.test(rawTvClock) || /^\d{1,3}(?:\+\d{1,2})?'$/.test(rawTvClock)
         ? rawTvClock

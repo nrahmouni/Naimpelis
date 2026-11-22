@@ -180,6 +180,7 @@ const entityCache = new LruTtlCache<string, Record<string, unknown>>(160, 15 * 6
 const lyricsCache = new LruTtlCache<string, LyricsPayload>(250, 60 * 60 * 1000);
 const playbackCache = new LruTtlCache<string, ResolvedTrackPlayback>(300, 12 * 60 * 1000);
 const radioCache = new LruTtlCache<string, MusicRadioStation[]>(12, 20 * 60 * 1000);
+const inFlightPlaybackResolves = new Map<string, Promise<ResolvedTrackPlayback>>();
 
 let scClientIdCache: { id: string; expiresAt: number } | null = null;
 
@@ -621,9 +622,16 @@ export function isStrictTrackMatch(params: {
     const artCombined = tokenMatchMetrics(primaryExpArtist, candCombined);
     const fullArtistDirect = tokenMatchMetrics(params.expectedArtist, candArtist);
     const expArtistTokens = tokenizeForMatch(primaryExpArtist);
+    const matchesPhraseBoundary = (haystack: string, needle: string): boolean => {
+      if (!haystack || !needle) return false;
+      if (CJK_CHAR_RE.test(needle)) return haystack.includes(needle);
+      const escaped = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(?:^|\\s)${escaped}(?:$|\\s)`).test(haystack);
+    };
     const artistExactPhrase =
       normExpArtist.length >= 3 &&
-      (normCandArtist.includes(normExpArtist) || normCandCombined.includes(normExpArtist));
+      (matchesPhraseBoundary(normCandArtist, normExpArtist) ||
+        matchesPhraseBoundary(normCandCombined, normExpArtist));
 
     const bestArtRecall = Math.max(artDirect.recall, artCombined.recall, fullArtistDirect.recall);
     const minArtRecall = expArtistTokens.size <= 2 ? 0.99 : 0.75;
@@ -1807,10 +1815,39 @@ export async function resolveTrackPlayback(params: {
   preferAudio?: boolean;
 }): Promise<ResolvedTrackPlayback> {
   const durationSec = Number(params.durationSec || 0);
-  const key = `v6-full:${params.trackId || ''}|${normalizeRawWithTags(params.artist)}|${normalizeRawWithTags(params.title)}|${Math.round(durationSec / 10)}|${params.audiusId || ''}|${params.soundcloudId || ''}|${params.youtubeVideoId || ''}`;
+  const key = `v7-full:${params.trackId || ''}|${normalizeRawWithTags(params.artist)}|${normalizeRawWithTags(params.title)}|${Math.round(durationSec / 10)}|${params.audiusId || ''}|${params.soundcloudId || ''}|${params.youtubeVideoId || ''}`;
   const cached = playbackCache.get(key);
   if (cached) return cached;
 
+  const existingFlight = inFlightPlaybackResolves.get(key);
+  if (existingFlight) return existingFlight;
+
+  const job = resolveTrackPlaybackUncached(params, durationSec, key).finally(() => {
+    if (inFlightPlaybackResolves.get(key) === job) {
+      inFlightPlaybackResolves.delete(key);
+    }
+  });
+  inFlightPlaybackResolves.set(key, job);
+  return job;
+}
+
+async function resolveTrackPlaybackUncached(
+  params: {
+    trackId?: string;
+    title: string;
+    artist: string;
+    durationSec?: number;
+    previewUrl?: string;
+    soundcloudId?: string;
+    audiusId?: string;
+    youtubeVideoId?: string;
+    isrc?: string;
+    preferVideo?: boolean;
+    preferAudio?: boolean;
+  },
+  durationSec: number,
+  key: string
+): Promise<ResolvedTrackPlayback> {
   const timed = async <T>(
     provider: string,
     fn: () => Promise<T | null>
@@ -1862,7 +1899,7 @@ export async function resolveTrackPlayback(params: {
     }
   }
 
-  // Launch all full-length providers in parallel with fast-first early exit
+  // Launch ALL full-length providers simultaneously at t=0
   const jioP = timed('jiosaavn', () => resolveJioSaavnStream(params.artist, params.title, durationSec));
   const scP = timed('soundcloud', () =>
     resolveSoundCloudStream(params.artist, params.title, durationSec, params.soundcloudId, true)
@@ -1895,8 +1932,10 @@ export async function resolveTrackPlayback(params: {
     ytRes = r;
   });
 
-  // Fast-first synchronization: return as soon as a direct audio hit arrives + 160ms grace window,
-  // or after 2200ms max so slow providers never stall playback start!
+  // Fast-first synchronization:
+  // 1) As soon as any direct full-length MP3/HLS mirror resolves + 120ms grace, return immediately.
+  // 2) If YouTube Music full-track resolves and 1400ms passed without direct MP3 hits, start immediately!
+  // 3) Hard ceiling at 2800ms so playback never hangs.
   await new Promise<void>((resolve) => {
     let settled = false;
     const finish = () => {
@@ -1904,33 +1943,47 @@ export async function resolveTrackPlayback(params: {
       settled = true;
       resolve();
     };
-    const maxTimer = setTimeout(finish, 3400);
+    const maxTimer = setTimeout(finish, 2800);
     let graceStarted = false;
-    const triggerGrace = () => {
+    const triggerGrace = (ms = 120) => {
       if (graceStarted || settled) return;
       graceStarted = true;
       setTimeout(() => {
         clearTimeout(maxTimer);
         finish();
-      }, 160);
+      }, ms);
     };
 
     const directPromises = [jioP, scP, audiusP];
     let doneCount = 0;
+    let directWon = false;
+
     for (const p of directPromises) {
       void p.then((res) => {
         doneCount++;
         if (res?.value) {
-          triggerGrace();
+          directWon = true;
+          triggerGrace(120);
         } else if (doneCount === directPromises.length) {
-          // None of the direct providers resolved — finish immediately once ytP resolves
-          Promise.race([ytP, new Promise((r) => setTimeout(r, 1800))]).finally(() => {
+          Promise.race([ytP, new Promise((r) => setTimeout(r, 1200))]).finally(() => {
             clearTimeout(maxTimer);
             finish();
           });
         }
       });
     }
+
+    // If ytP is already resolved fast and no direct MP3 hit arrived by 1350ms, don't stall on slow SoundCloud/JioSaavn!
+    void ytP.then((yt) => {
+      if (yt?.audioId || yt?.mvId) {
+        setTimeout(() => {
+          if (!directWon && !settled) {
+            clearTimeout(maxTimer);
+            finish();
+          }
+        }, 1250);
+      }
+    });
   });
 
   const rawCandidates: Array<{ score: number; cand: PlaybackSourceCandidate }> = [];
@@ -1972,9 +2025,9 @@ export async function resolveTrackPlayback(params: {
 
   rawCandidates.sort((a, b) => b.score - a.score);
   const alternatives = rawCandidates.map((x) => x.cand);
-  const primaryYtId = params.youtubeVideoId || ytRes?.audioId || ytRes?.mvId;
-  const mvId = ytRes?.mvId || primaryYtId;
-  const ytAltIds = (ytRes?.altIds || []).filter((id) => id && id !== primaryYtId);
+  let primaryYtId = params.youtubeVideoId || ytRes?.audioId || ytRes?.mvId;
+  let mvId = ytRes?.mvId || primaryYtId;
+  let ytAltIds = (ytRes?.altIds || []).filter((id) => id && id !== primaryYtId);
   let result: ResolvedTrackPlayback;
 
   if (alternatives.length > 0) {
@@ -2006,7 +2059,7 @@ export async function resolveTrackPlayback(params: {
       alternatives,
     };
   } else if (primaryYtId) {
-    // Full-length Studio / Official Audio track (zero 30s truncation!)
+    // Full-length Studio / Official Audio track (never truncated to 30s!)
     result = {
       sourceType: 'youtube',
       sourceLabel: 'Audio Completo HD',
@@ -2020,11 +2073,20 @@ export async function resolveTrackPlayback(params: {
       alternatives: [],
     };
   } else {
-    // Archive.org fallback only if neither direct MP3/HLS nor YouTube full track resolved
-    const arcTimed = await timed('archive', () =>
-      resolveArchiveAudioFallback(params.artist, params.title, durationSec)
-    );
+    // Full-song recovery pass BEFORE preview fallback: try stripped base title on YTM + Archive.org in parallel
+    const strippedTitle = params.title.replace(/\([^)]*\)|\[[^\]]*\]/g, '').trim() || params.title;
+    const [ytRetry, arcTimed] = await Promise.all([
+      strippedTitle !== params.title
+        ? resolveYouTubeMatch(extractPrimaryArtist(params.artist), strippedTitle, durationSec).catch(() => ({}))
+        : Promise.resolve({} as { audioId?: string; mvId?: string; altIds?: string[] }),
+      timed('archive', () => resolveArchiveAudioFallback(params.artist, params.title, durationSec)),
+    ]);
+
+    primaryYtId = ytRetry?.audioId || ytRetry?.mvId;
+    mvId = mvId || ytRetry?.mvId || primaryYtId;
+    ytAltIds = (ytRetry?.altIds || []).filter((id) => id && id !== primaryYtId);
     pushCand('archive', 'archive', 'Archive.org', 72, arcTimed.latencyMs, arcTimed.value);
+
     if (rawCandidates.length > 0) {
       const arcPrimary = rawCandidates[0].cand;
       result = {
@@ -2032,7 +2094,7 @@ export async function resolveTrackPlayback(params: {
         sourceLabel: arcPrimary.sourceLabel,
         streamUrl: arcPrimary.streamUrl,
         proxiedUrl: arcPrimary.proxiedUrl,
-        youtubeVideoId: mvId,
+        youtubeVideoId: primaryYtId || mvId,
         youtubeMvId: mvId,
         youtubeAltIds: ytAltIds,
         previewUrl: params.previewUrl,
@@ -2040,6 +2102,19 @@ export async function resolveTrackPlayback(params: {
         bitrateKbps: arcPrimary.bitrateKbps,
         provider: arcPrimary.provider,
         alternatives: [arcPrimary],
+      };
+    } else if (primaryYtId) {
+      result = {
+        sourceType: 'youtube',
+        sourceLabel: 'Audio Completo HD',
+        youtubeVideoId: primaryYtId,
+        youtubeMvId: mvId,
+        youtubeAltIds: ytAltIds,
+        previewUrl: params.previewUrl,
+        fullLength: true,
+        bitrateKbps: 256,
+        provider: 'Riffan Engine',
+        alternatives: [],
       };
     } else {
       let fallbackPreview = params.previewUrl;
@@ -2049,7 +2124,7 @@ export async function resolveTrackPlayback(params: {
           searchItunesMusic(qTerm, 'song', 5, 'US'),
           fetchJsonSafe<{ data?: any[] }>(
             `https://api.deezer.com/search/track?q=${encodeURIComponent(qTerm)}&limit=5`,
-            2500
+            2200
           ),
         ]);
         const itMatch = itList.find(
@@ -2464,4 +2539,115 @@ export async function getTasteRecommendations(params: {
   };
 }
 
+// #87: Seed Radio generator — infinite mix seeded from track/artist
+export async function generateSeedRadioMix(params: {
+  trackId?: string;
+  title?: string;
+  artist?: string;
+  genre?: string;
+  excludeIds?: string[];
+  limit?: number;
+}): Promise<{ radioName: string; seedArtist: string; genreName: string; tracks: MusicTrack[] }> {
+  const limit = Math.min(35, Math.max(12, Number(params.limit || 25)));
+  const seedArtist = extractPrimaryArtist(params.artist || '') || String(params.artist || '').trim();
+  const baseTitle = String(params.title || '').trim();
+  if (!seedArtist && !baseTitle && params.genre) {
+    const res = await searchMusicCatalog(params.genre, 'track');
+    return {
+      radioName: `Radio ${params.genre}`,
+      seedArtist: params.genre,
+      genreName: params.genre,
+      tracks: (res.tracks || []).slice(0, limit),
+    };
+  }
+  const rel = await getRelatedGenreTracks({
+    trackId: params.trackId,
+    title: baseTitle || seedArtist,
+    artist: seedArtist || baseTitle,
+    excludeIds: params.excludeIds,
+    limit,
+  });
+  return {
+    radioName: `Radio: ${seedArtist || baseTitle || rel.genreName}`,
+    seedArtist: rel.seedArtist || seedArtist,
+    genreName: rel.genreName,
+    tracks: rel.tracks,
+  };
+}
 
+// #89: AI Mood Playlist generator from free-text prompt (Gemini + verified catalog search)
+export async function generateAiMoodPlaylist(params: {
+  prompt: string;
+  apiKey?: string;
+  limit?: number;
+}): Promise<{
+  title: string;
+  description: string;
+  queries: string[];
+  tracks: MusicTrack[];
+  aiPowered: boolean;
+}> {
+  const cleanPrompt = String(params.prompt || '').trim().slice(0, 180);
+  const limit = Math.min(30, Math.max(8, Number(params.limit || 20)));
+  if (!cleanPrompt) {
+    return { title: 'Mix Rápido', description: 'Éxitos del momento', queries: ['top hits'], tracks: [], aiPowered: false };
+  }
+
+  let playlistTitle = `Mix: ${cleanPrompt.slice(0, 36)}`;
+  let playlistDesc = `Playlist generada para "${cleanPrompt}"`;
+  let searchQueries: string[] = [cleanPrompt];
+  let aiPowered = false;
+
+  const key = params.apiKey || process.env.GEMINI_API_KEY || '';
+  if (key) {
+    try {
+      const { GoogleGenAI } = await import('@google/genai');
+      const ai = new GoogleGenAI({ apiKey: key });
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.1-flash-lite',
+        contents: `Eres curador musical experto. Para el mood/contexto: "${cleanPrompt}", responde SOLO JSON estricto con: {"title":"Nombre corto playlist (max 32 chars)","description":"Descripción 1 frase","queries":["artista o subgénero 1","canción o artista 2","artista o subgénero 3","canción o artista 4","estilo musical 5"]}. Usa consultas concretas reales para buscar música en Spotify/Deezer/YouTube Music.`,
+        config: { responseMimeType: 'application/json', temperature: 0.5 },
+      });
+      const raw = String(response.text || '').replace(/^```json\s*/i, '').replace(/```$/i, '').trim();
+      const parsed = JSON.parse(raw) as { title?: string; description?: string; queries?: string[] };
+      if (Array.isArray(parsed?.queries) && parsed.queries.length > 0) {
+        searchQueries = parsed.queries.map((q) => String(q).trim()).filter(Boolean).slice(0, 5);
+        if (parsed.title) playlistTitle = String(parsed.title).trim().slice(0, 48);
+        if (parsed.description) playlistDesc = String(parsed.description).trim().slice(0, 120);
+        aiPowered = true;
+      }
+    } catch {
+      // fallback cleanly to heuristic queries
+    }
+  }
+
+  if (!aiPowered && searchQueries.length === 1) {
+    const low = cleanPrompt.toLowerCase();
+    if (/gym|entreno|correr|running|workout|cardio/.test(low)) {
+      searchQueries = ['Feid Bad Bunny gym hits', 'Eminem Daft Punk workout', 'electronic techno workout'];
+    } else if (/lluvia|triste|noche|melancol|relax|estudiar|chill/.test(low)) {
+      searchQueries = ['lofi chill beats', 'Billie Eilish Frank Ocean', 'acustico indie noche'];
+    } else if (/fiesta|coche|verano|playa|perreo|disco/.test(low)) {
+      searchQueries = ['Karol G Quevedo reggaeton hits', 'Bad Bunny Rauw Alejandro', 'latin party 2025'];
+    }
+  }
+
+  const settled = await Promise.allSettled(
+    searchQueries.slice(0, 5).map((q) => searchMusicCatalog(q, 'track'))
+  );
+  const pools: MusicTrack[][] = [];
+  for (const r of settled) {
+    if (r.status === 'fulfilled' && Array.isArray((r.value as any)?.tracks)) {
+      pools.push((r.value as any).tracks as MusicTrack[]);
+    }
+  }
+  const tracks = interleaveUniqueTracks(pools, limit);
+
+  return {
+    title: playlistTitle,
+    description: playlistDesc,
+    queries: searchQueries,
+    tracks,
+    aiPowered,
+  };
+}

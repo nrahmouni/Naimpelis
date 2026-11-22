@@ -354,6 +354,33 @@ export interface MusicCopy {
   connectYoutubeBtn: string;
   oauthImportingAll: string;
   oauthCommitAllBtn: string;
+
+  // #84-#90 & Simplified Home/Library UI
+  jamLabel: string;
+  jamSub: string;
+  autoDjLabel: string;
+  autoDjSub: string;
+  karaoke1Tap: string;
+  seedRadioBtn: string;
+  aiMoodTitle: string;
+  aiMoodSub: string;
+  aiMoodPlaceholder: string;
+  aiMoodBtn: string;
+  aiMoodGenerating: string;
+  wrappedTitle: string;
+  wrappedTopTrack: string;
+  wrappedPlayMix: string;
+  moreActionsBtn: string;
+  filterAll: string;
+  filterMusic: string;
+  filterAiMix: string;
+  filterGlobal: string;
+  libAll: string;
+  libPlaylists: string;
+  libAlbums: string;
+  libArtists: string;
+  libSortRecent: string;
+  libSortAlpha: string;
 }
 
 export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
@@ -684,6 +711,32 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     connectYoutubeBtn: 'Conectar con Google · YouTube Music',
     oauthImportingAll: 'Conectando y extrayendo tus playlists, Me Gusta, artistas y géneros...',
     oauthCommitAllBtn: 'Importar todo a Riffan Music',
+
+    jamLabel: 'Riffan Jam',
+    jamSub: 'Sincroniza cola y reproducción con tu sala',
+    autoDjLabel: 'Auto-DJ',
+    autoDjSub: 'Mezcla automática sin pausas (4.5s+)',
+    karaoke1Tap: 'Karaoke',
+    seedRadioBtn: 'Radio desde este tema',
+    aiMoodTitle: 'Mix IA al instante',
+    aiMoodSub: 'Describe tu momento y crea una playlist completa al segundo',
+    aiMoodPlaceholder: 'Ej: entrenar de noche, conducir lluvia, chill estudio...',
+    aiMoodBtn: 'Crear Mix',
+    aiMoodGenerating: 'Mezclando...',
+    wrappedTitle: 'Tu Riffan Wrapped',
+    wrappedTopTrack: 'Tema más escuchado',
+    wrappedPlayMix: 'Reproducir Top Mix',
+    moreActionsBtn: 'Más opciones',
+    filterAll: 'Todo',
+    filterMusic: 'Música',
+    filterAiMix: 'Mix IA',
+    filterGlobal: 'Global',
+    libAll: 'Todo',
+    libPlaylists: 'Listas',
+    libAlbums: 'Álbumes',
+    libArtists: 'Artistas',
+    libSortRecent: 'Recientes',
+    libSortAlpha: 'A–Z',
   },
 
   en: {
@@ -1013,6 +1066,32 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     connectYoutubeBtn: 'Sign in with Google · YouTube Music',
     oauthImportingAll: 'Connecting and importing your playlists, likes, artists & genres...',
     oauthCommitAllBtn: 'Import everything to Riffan Music',
+
+    jamLabel: 'Riffan Jam',
+    jamSub: 'Sync queue & playback with your room',
+    autoDjLabel: 'Auto-DJ',
+    autoDjSub: 'Seamless beatmatch crossfade (4.5s+)',
+    karaoke1Tap: 'Karaoke',
+    seedRadioBtn: 'Radio from this track',
+    aiMoodTitle: 'Instant AI Mood Mix',
+    aiMoodSub: 'Describe your vibe and generate a full playable playlist',
+    aiMoodPlaceholder: 'e.g. late night drive, gym focus, rainy chill...',
+    aiMoodBtn: 'Build Mix',
+    aiMoodGenerating: 'Mixing...',
+    wrappedTitle: 'Your Riffan Wrapped',
+    wrappedTopTrack: 'Most played track',
+    wrappedPlayMix: 'Play Top Mix',
+    moreActionsBtn: 'More options',
+    filterAll: 'All',
+    filterMusic: 'Music',
+    filterAiMix: 'AI Mix',
+    filterGlobal: 'Global',
+    libAll: 'All',
+    libPlaylists: 'Playlists',
+    libAlbums: 'Albums',
+    libArtists: 'Artists',
+    libSortRecent: 'Recents',
+    libSortAlpha: 'A–Z',
   },
 
   fr: {
@@ -1342,6 +1421,32 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     connectYoutubeBtn: 'Se connecter avec Google · YouTube Music',
     oauthImportingAll: 'Connexion et extraction de vos playlists, goûts, artistes et genres...',
     oauthCommitAllBtn: 'Tout importer dans Riffan Music',
+
+    jamLabel: 'Riffan Jam',
+    jamSub: 'Synchroniser la file et la lecture avec la salle',
+    autoDjLabel: 'Auto-DJ',
+    autoDjSub: 'Enchaînement fluide sans coupure (4.5s+)',
+    karaoke1Tap: 'Karaoké',
+    seedRadioBtn: 'Radio depuis ce titre',
+    aiMoodTitle: 'Mix IA instantané',
+    aiMoodSub: 'Décrivez votre ambiance pour créer une playlist complète',
+    aiMoodPlaceholder: 'Ex : route de nuit, sport intensif, chill pluie...',
+    aiMoodBtn: 'Créer le Mix',
+    aiMoodGenerating: 'Mixage...',
+    wrappedTitle: 'Votre Riffan Wrapped',
+    wrappedTopTrack: 'Titre le plus écouté',
+    wrappedPlayMix: 'Lire Top Mix',
+    moreActionsBtn: 'Plus d’options',
+    filterAll: 'Tout',
+    filterMusic: 'Musique',
+    filterAiMix: 'Mix IA',
+    filterGlobal: 'Monde',
+    libAll: 'Tout',
+    libPlaylists: 'Playlists',
+    libAlbums: 'Albums',
+    libArtists: 'Artistes',
+    libSortRecent: 'Récents',
+    libSortAlpha: 'A–Z',
   },
 
   zh: {
@@ -1671,6 +1776,32 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     connectYoutubeBtn: '使用 Google 登录 · YouTube Music',
     oauthImportingAll: '正在连接并提取你的歌单、喜欢、歌手与流派...',
     oauthCommitAllBtn: '全部导入 Riffan Music',
+
+    jamLabel: 'Riffan Jam',
+    jamSub: '与房间好友同步播放与队列',
+    autoDjLabel: 'Auto-DJ',
+    autoDjSub: '无缝交叉混音过渡 (4.5s+)',
+    karaoke1Tap: '卡拉OK',
+    seedRadioBtn: '从此歌曲开启电台',
+    aiMoodTitle: 'AI 氛围歌单',
+    aiMoodSub: '输入心情或场景，立即生成完整可播歌单',
+    aiMoodPlaceholder: '例如：深夜开车、健身冲刺、雨天学习...',
+    aiMoodBtn: '生成混音',
+    aiMoodGenerating: '生成中...',
+    wrappedTitle: '我的 Riffan 年度回顾',
+    wrappedTopTrack: '最常播放单曲',
+    wrappedPlayMix: '播放我的 Top 混音',
+    moreActionsBtn: '更多选项',
+    filterAll: '全部',
+    filterMusic: '音乐',
+    filterAiMix: 'AI 混音',
+    filterGlobal: '全球',
+    libAll: '全部',
+    libPlaylists: '歌单',
+    libAlbums: '专辑',
+    libArtists: '艺人',
+    libSortRecent: '最近播放',
+    libSortAlpha: 'A–Z',
   },
 
   ca: {
@@ -2000,5 +2131,31 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     connectYoutubeBtn: 'Connectar amb Google · YouTube Music',
     oauthImportingAll: 'Connectant i extraient les teves playlists, m\'agrada, artistes i gèneres...',
     oauthCommitAllBtn: 'Importar-ho tot a Riffan Music',
+
+    jamLabel: 'Riffan Jam',
+    jamSub: 'Sincronitza cua i reproducció amb la sala',
+    autoDjLabel: 'Auto-DJ',
+    autoDjSub: 'Mescla automàtica sense pauses (4.5s+)',
+    karaoke1Tap: 'Karaoke',
+    seedRadioBtn: 'Ràdio des d’aquest tema',
+    aiMoodTitle: 'Mix IA a l’instant',
+    aiMoodSub: 'Descriu el teu moment i crea una playlist completa al segon',
+    aiMoodPlaceholder: 'Ex: conduir de nit, gimnàs, chill estudi...',
+    aiMoodBtn: 'Crear Mix',
+    aiMoodGenerating: 'Mesclant...',
+    wrappedTitle: 'El teu Riffan Wrapped',
+    wrappedTopTrack: 'Tema més escoltat',
+    wrappedPlayMix: 'Reproduir Top Mix',
+    moreActionsBtn: 'Més opcions',
+    filterAll: 'Tot',
+    filterMusic: 'Música',
+    filterAiMix: 'Mix IA',
+    filterGlobal: 'Global',
+    libAll: 'Tot',
+    libPlaylists: 'Llistes',
+    libAlbums: 'Àlbums',
+    libArtists: 'Artistes',
+    libSortRecent: 'Recents',
+    libSortAlpha: 'A–Z',
   },
 };

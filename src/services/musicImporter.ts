@@ -388,9 +388,8 @@ export function parseMusicImportText(content: string, fileName = ''): ParsedMusi
         }
       }
       if (tracks.length > 0) {
-        const isSpotifyCsv = idxTrackUri !== -1 || tracks.some((t) => Boolean(t.spotifyId));
         return finalizeImport(
-          isSpotifyCsv ? 'spotify_playlist' : 'csv',
+          'csv',
           tracks,
           [],
           rawGenres,

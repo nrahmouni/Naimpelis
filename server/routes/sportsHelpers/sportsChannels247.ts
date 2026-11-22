@@ -29,11 +29,11 @@ export function getPermanent247SportsMatches() {
           resolverType: 'sports_channel',
         },
         {
-          id: 'ch-laliga-dazn1',
-          label: 'DAZN 1 HD',
+          id: 'ch-mlaliga-1',
+          label: 'M+ LaLiga HD',
           lang: 'ES',
           quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/445',
+          sourceUrl: 'https://streamxhd.sbs/live1.php?stream=mlaliga',
           resolverType: 'sports_channel',
         },
         {
@@ -46,10 +46,10 @@ export function getPermanent247SportsMatches() {
         },
         {
           id: 'ch-laliga-sxhd2',
-          label: 'DAZN LaLiga Señal 3 HD',
+          label: 'M+ LaLiga Señal 2 HD',
           lang: 'ES',
           quality: '1080p',
-          sourceUrl: 'https://streamxhd.sbs/live2.php?stream=daznlaliga',
+          sourceUrl: 'https://streamxhd.sbs/live2.php?stream=mlaliga',
           resolverType: 'sports_channel',
         },
         {

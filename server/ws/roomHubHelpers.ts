@@ -39,6 +39,12 @@ export interface RoomChatMessageRecord {
   senderColor: string;
   text: string;
   timestamp: number;
+  replyTo?: {
+    id: string;
+    senderName: string;
+    text: string;
+  };
+  audioStickerId?: string;
   isSystem?: boolean;
   systemUserId?: string;
   systemType?: 'join' | 'leave' | 'video_change' | 'host_transfer' | 'host_change' | 'poll' | 'lock';
@@ -48,6 +54,7 @@ export interface RoomRecord {
   id: string;
   name: string;
   creatorId: string;
+  creatorVerifiedUid?: string;
   hostId: string;
   coHostIds: string[];
   videoState: {
@@ -223,6 +230,7 @@ export function serializeRoomSnapshot(r: RoomRecord) {
     id: r.id,
     name: r.name,
     creatorId: r.creatorId || r.hostId,
+    creatorVerifiedUid: r.creatorVerifiedUid,
     hostId: r.creatorId || r.hostId,
     coHostIds: r.coHostIds || [],
     pinCode: r.pinCode,

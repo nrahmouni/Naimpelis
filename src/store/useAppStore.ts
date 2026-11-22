@@ -154,6 +154,15 @@ interface AppShellState {
   cineTab: CineSubTab;
   cineCastellano: boolean;
   cineSpecialPortal: 'none' | 'catala';
+  cineMovieSort: string;
+  cineMovieGenre: string;
+  cineSeriesSort: string;
+  cineSeriesGenre: string;
+  cineSeriesLangMode: 'ES' | 'LAT' | 'VOSE' | 'EN';
+  cineAudioOverride: 'ES' | 'VOSE' | 'EN';
+  tvFavOnly: boolean;
+  tvEpgFilter: 'all' | 'sports_now' | 'cinema_now';
+  futbolLangFilter: 'all' | 'ZH';
   futbolTab: FutbolSubTab;
   clipboxTab: 'search' | 'vault' | 'decoder';
   rbtvTab: 'live' | 'vault' | 'decoder';
@@ -209,6 +218,15 @@ interface AppShellState {
   setCineTab: (tab: CineSubTab) => void;
   setCineCastellano: (enabled: boolean) => void;
   setCineSpecialPortal: (portal: 'none' | 'catala') => void;
+  setCineMovieSort: (sort: string) => void;
+  setCineMovieGenre: (genre: string) => void;
+  setCineSeriesSort: (sort: string) => void;
+  setCineSeriesGenre: (genre: string) => void;
+  setCineSeriesLangMode: (mode: 'ES' | 'LAT' | 'VOSE' | 'EN') => void;
+  setCineAudioOverride: (override: 'ES' | 'VOSE' | 'EN') => void;
+  setTvFavOnly: (val: boolean) => void;
+  setTvEpgFilter: (filter: 'all' | 'sports_now' | 'cinema_now') => void;
+  setFutbolLangFilter: (filter: 'all' | 'ZH') => void;
   setFutbolTab: (tab: FutbolSubTab) => void;
   setClipboxTab: (tab: 'search' | 'vault' | 'decoder') => void;
   setRbtvTab: (tab: 'live' | 'vault' | 'decoder') => void;
@@ -312,6 +330,15 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   cineTab: 'movies',
   cineCastellano: true,
   cineSpecialPortal: 'none',
+  cineMovieSort: 'trending',
+  cineMovieGenre: '',
+  cineSeriesSort: 'trending',
+  cineSeriesGenre: '',
+  cineSeriesLangMode: 'ES',
+  cineAudioOverride: 'ES',
+  tvFavOnly: false,
+  tvEpgFilter: 'all',
+  futbolLangFilter: 'all',
   futbolTab: 'matches',
   clipboxTab: 'search',
   rbtvTab: 'live',
@@ -517,6 +544,42 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   setCineSpecialPortal: (cineSpecialPortal) => {
     if (get().cineSpecialPortal === cineSpecialPortal) return;
     set({ cineSpecialPortal });
+  },
+  setCineMovieSort: (cineMovieSort) => {
+    if (get().cineMovieSort === cineMovieSort) return;
+    set({ cineMovieSort });
+  },
+  setCineMovieGenre: (cineMovieGenre) => {
+    if (get().cineMovieGenre === cineMovieGenre) return;
+    set({ cineMovieGenre });
+  },
+  setCineSeriesSort: (cineSeriesSort) => {
+    if (get().cineSeriesSort === cineSeriesSort) return;
+    set({ cineSeriesSort });
+  },
+  setCineSeriesGenre: (cineSeriesGenre) => {
+    if (get().cineSeriesGenre === cineSeriesGenre) return;
+    set({ cineSeriesGenre });
+  },
+  setCineSeriesLangMode: (cineSeriesLangMode) => {
+    if (get().cineSeriesLangMode === cineSeriesLangMode) return;
+    set({ cineSeriesLangMode });
+  },
+  setCineAudioOverride: (cineAudioOverride) => {
+    if (get().cineAudioOverride === cineAudioOverride) return;
+    set({ cineAudioOverride });
+  },
+  setTvFavOnly: (tvFavOnly) => {
+    if (get().tvFavOnly === tvFavOnly) return;
+    set({ tvFavOnly });
+  },
+  setTvEpgFilter: (tvEpgFilter) => {
+    if (get().tvEpgFilter === tvEpgFilter) return;
+    set({ tvEpgFilter });
+  },
+  setFutbolLangFilter: (futbolLangFilter) => {
+    if (get().futbolLangFilter === futbolLangFilter) return;
+    set({ futbolLangFilter });
   },
   setFutbolTab: (futbolTab) => {
     if (get().futbolTab === futbolTab) return;

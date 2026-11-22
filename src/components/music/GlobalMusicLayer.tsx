@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ListMusic, Loader2, Plus, Radio, Trash2, X } from 'lucide-react';
+import { Disc3, ListMusic, Loader2, Plus, Radio, Trash2, Users, X } from 'lucide-react';
 import { useMusicStore } from '../../store/useMusicStore';
 import { useAppStore } from '../../store/useAppStore';
 import { useBackInterceptor } from '../../lib/backInterceptor';
@@ -35,6 +35,10 @@ export const GlobalMusicLayer: React.FC<GlobalMusicLayerProps> = ({
   const setShowCreatePlaylistModal = useMusicStore((s) => s.setShowCreatePlaylistModal);
   const autoplaySimilar = useMusicStore((s) => s.autoplaySimilar);
   const setAutoplaySimilar = useMusicStore((s) => s.setAutoplaySimilar);
+  const autoDjEnabled = useMusicStore((s) => s.autoDjEnabled);
+  const toggleAutoDj = useMusicStore((s) => s.toggleAutoDj);
+  const jamSession = useMusicStore((s) => s.jamSession);
+  const toggleJamSession = useMusicStore((s) => s.toggleJamSession);
   const seedGenre = useMusicStore((s) => s.seedGenre);
   const isFetchingRelated = useMusicStore((s) => s.isFetchingRelated);
   const musicToast = useMusicStore((s) => s.musicToast);
@@ -152,6 +156,67 @@ export const GlobalMusicLayer: React.FC<GlobalMusicLayerProps> = ({
                 )}
               </div>
             )}
+
+            {/* #85 Auto-DJ Crossfade Beatmatch */}
+            <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Disc3 className={`w-3.5 h-3.5 ${autoDjEnabled ? 'text-[#60A5FA]' : 'text-zinc-500'}`} />
+                  <span className="truncate">{m.autoDjLabel}</span>
+                </p>
+                <p className="text-[11px] text-zinc-400 truncate">{m.autoDjSub}</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={autoDjEnabled}
+                onClick={() => {
+                  triggerHaptic('light');
+                  toggleAutoDj();
+                }}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                  autoDjEnabled ? 'bg-[#3B82F6]' : 'bg-white/15'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4.5 w-4.5 transform rounded-full bg-white shadow transition-transform ${
+                    autoDjEnabled ? 'translate-x-[22px]' : 'translate-x-[3px]'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* #84 Riffan Jam Session */}
+            <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <Users className={`w-3.5 h-3.5 ${jamSession.active ? 'text-emerald-400' : 'text-zinc-500'}`} />
+                  <span className="truncate">
+                    {m.jamLabel}
+                    {jamSession.active && jamSession.roomCode ? ` · ${jamSession.roomCode}` : ''}
+                  </span>
+                </p>
+                <p className="text-[11px] text-zinc-400 truncate">{m.jamSub}</p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={jamSession.active}
+                onClick={() => {
+                  triggerHaptic('medium');
+                  toggleJamSession();
+                }}
+                className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                  jamSession.active ? 'bg-emerald-500' : 'bg-white/15'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4.5 w-4.5 transform rounded-full bg-white shadow transition-transform ${
+                    jamSession.active ? 'translate-x-[22px]' : 'translate-x-[3px]'
+                  }`}
+                />
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-1.5 no-scrollbar">

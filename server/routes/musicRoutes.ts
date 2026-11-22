@@ -6,6 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import {
+  generateAiMoodPlaylist,
+  generateSeedRadioMix,
   getAlbumDetails,
   getArtistDetails,
   getGenreCatalog,
@@ -282,6 +284,89 @@ export function registerMusicRoutes(app: express.Express): void {
       res.json({ success: true, ...resolved });
     } catch {
       res.status(500).json({ success: false, error: 'Playback resolution failed' });
+    }
+  });
+
+  // #88: Zero-Wait Preload — pre-resolve up to 3 upcoming queue tracks in parallel and return resolved map
+  app.post('/api/music/preload', async (req, res) => {
+    const items = Array.isArray(req.body?.tracks) ? req.body.tracks.slice(0, 3) : [];
+    if (items.length === 0) {
+      res.json({ success: true, resolved: {} });
+      return;
+    }
+    try {
+      const settled = await Promise.allSettled(
+        items.map(async (item: any) => {
+          const title = String(item?.title || '').trim();
+          const artist = String(item?.artist || '').trim();
+          const trackId = String(item?.trackId || item?.id || '').trim();
+          if (!title || !artist || !trackId) return null;
+          const playback = await resolveTrackPlayback({
+            trackId,
+            title,
+            artist,
+            durationSec: Number(item?.durationSec || 0) || undefined,
+            previewUrl: typeof item?.previewUrl === 'string' ? item.previewUrl : undefined,
+            soundcloudId: typeof item?.soundcloudId === 'string' ? item.soundcloudId : undefined,
+            audiusId: typeof item?.audiusId === 'string' ? item.audiusId : undefined,
+            youtubeVideoId: typeof item?.youtubeVideoId === 'string' ? item.youtubeVideoId : undefined,
+            isrc: typeof item?.isrc === 'string' ? item.isrc : undefined,
+            preferAudio: true,
+          });
+          return { trackId, playback };
+        })
+      );
+      const resolved: Record<string, unknown> = {};
+      for (const r of settled) {
+        if (r.status === 'fulfilled' && r.value?.trackId) {
+          resolved[r.value.trackId] = { ...r.value.playback, trackId: r.value.trackId };
+        }
+      }
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ success: true, resolved });
+    } catch {
+      res.json({ success: true, resolved: {} });
+    }
+  });
+
+  // #87: Seed Radio — build continuous radio mix from any track, artist, or genre
+  app.get('/api/music/radio-seed', async (req, res) => {
+    const trackId = String(req.query.trackId || '').trim() || undefined;
+    const title = String(req.query.title || '').trim() || undefined;
+    const artist = String(req.query.artist || '').trim() || undefined;
+    const genre = String(req.query.genre || '').trim() || undefined;
+    const excludeRaw = String(req.query.exclude || '').trim();
+    const excludeIds = excludeRaw ? excludeRaw.split(',').map((s) => s.trim()).filter(Boolean) : [];
+    const limit = Number(req.query.limit || 25) || 25;
+    if (!title && !artist && !genre) {
+      res.status(400).json({ success: false, error: 'Missing seed title, artist or genre', tracks: [] });
+      return;
+    }
+    try {
+      const data = await generateSeedRadioMix({ trackId, title, artist, genre, excludeIds, limit });
+      res.setHeader('Cache-Control', 'public, max-age=180');
+      res.json({ success: true, ...data });
+    } catch {
+      res.status(500).json({ success: false, error: 'Seed radio generation failed', tracks: [] });
+    }
+  });
+
+  // #89: AI Mood Playlist generator from free-text mood/context
+  app.post('/api/ai/mood-playlist', async (req, res) => {
+    const prompt = String(req.body?.prompt || '').trim();
+    if (!prompt) {
+      res.status(400).json({ success: false, error: 'Missing mood prompt', tracks: [] });
+      return;
+    }
+    try {
+      const data = await generateAiMoodPlaylist({
+        prompt,
+        limit: Number(req.body?.limit || 20) || 20,
+      });
+      res.setHeader('Cache-Control', 'no-store');
+      res.json({ success: true, ...data });
+    } catch {
+      res.status(500).json({ success: false, error: 'Failed to generate mood playlist', tracks: [] });
     }
   });
 

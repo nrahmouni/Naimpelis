@@ -118,81 +118,89 @@ export function App() {
     setFriendAddedNotice(null);
   }, [friendNoticeTimerRef, setFriendAddedNotice]);
 
-  if (showDesignSystem || isAdsPageOpen || isTvPairLobby || (!inRoom && !hasEnteredApp) || isTvMode) {
-    return (
-      <AppEarlyRouteView
-        showDesignSystem={showDesignSystem}
-        isAdsPageOpen={isAdsPageOpen}
-        isTvPairLobby={isTvPairLobby}
-        inRoom={inRoom}
-        hasEnteredApp={hasEnteredApp}
-        isTvMode={isTvMode}
-        reducedMotion={reducedMotion}
-        lang={lang}
-        roomId={roomId}
-        roomName={roomName}
-        profile={profile}
-        recentRooms={recentRooms}
-        effectiveView={effectiveView}
-        isFramedMobileOnPc={isFramedMobileOnPc}
-        authUser={authUser}
-        authLoading={authLoading}
-        showIntro={showIntro}
-        introWithSound={introWithSound}
-        incomingInvite={incomingInvite}
-        friendAddedNotice={friendAddedNotice}
-        savedFriends={savedFriends}
-        pinPromptState={pinPromptState}
-        videoState={roomState.videoState}
-        currentUser={currentUser}
-        isExtracting={roomState.isExtracting}
-        extractionLabel={playback.extractionLabel}
-        extractionError={playback.extractionError}
-        languageNotice={playback.languageNotice}
-        cloudFrame={roomState.cloudFrame}
-        cloudState={roomState.cloudState}
-        floatingReactions={roomState.floatingReactions}
-        participantCount={roomState.participants.length}
-        setShowDesignSystem={setShowDesignSystem}
-        setIsAdsPageOpen={setIsAdsPageOpen}
-        setIsTvPairLobby={setIsTvPairLobby}
-        setIsTvMode={setIsTvMode}
-        setTvAuthToken={setTvAuthToken}
-        setRoomId={setRoomId}
-        setRoomName={setRoomName}
-        setInRoom={setInRoom}
-        setShowIntro={setShowIntro}
-        setIntroWithSound={setIntroWithSound}
-        setIncomingInvite={setIncomingInvite}
-        setFriendAddedNotice={setFriendAddedNotice}
-        setLanguageNotice={playback.setLanguageNotice}
-        clearManualLobbyStay={() => {
-          roomState.manualLobbyStayRef.current = false;
-        }}
-        clearFriendNoticeTimer={() => {
-          if (friendNoticeTimerRef.current) clearTimeout(friendNoticeTimerRef.current);
-        }}
-        toggleViewMode={toggleViewMode}
-        onGoogleSignIn={socialActions.handleGoogleSignIn}
-        onGoogleSignOut={socialActions.handleGoogleSignOut}
-        onChangeLang={setLang}
-        onEnterRoom={lifecycle.handleEnterRoom}
-        onEnterSolo={lifecycle.handleEnterSolo}
-        onAcceptIncomingRoomInvite={lifecycle.handleAcceptIncomingRoomInvite}
-        onAddFriend={socialActions.handleAddFriend}
-        onSubmitGuestPin={socialActions.handleSubmitGuestPin}
-        onLeaveRoom={lifecycle.handleLeaveRoom}
-        onCancelMediaExtraction={playback.handleCancelMediaExtraction}
-        onSyncPlayerAction={playback.handleSyncPlayerAction}
-        onSelectTrack={(idx, sec) => {
-          void playback.handleSelectTrack(idx, sec || 0);
-        }}
-        onPromoteCloudStreamToNative={playback.handlePromoteCloudStreamToNative}
-        onPrevEpisode={playback.handlePrevEpisode}
-        onNextEpisode={playback.handleNextEpisode}
-      />
-    );
-  }
+  const isEarlyRoute =
+    showDesignSystem || isAdsPageOpen || isTvPairLobby || (!inRoom && !hasEnteredApp) || isTvMode;
+
+  const handleOpenMusicWorldFromBar = useCallback(() => {
+    if (!inRoom && !hasEnteredApp) {
+      lifecycle.handleEnterSolo(profile);
+    }
+    enterWorld('music');
+  }, [inRoom, hasEnteredApp, lifecycle, profile, enterWorld]);
+
+  const renderEarlyRoute = () => (
+    <AppEarlyRouteView
+      showDesignSystem={showDesignSystem}
+      isAdsPageOpen={isAdsPageOpen}
+      isTvPairLobby={isTvPairLobby}
+      inRoom={inRoom}
+      hasEnteredApp={hasEnteredApp}
+      isTvMode={isTvMode}
+      reducedMotion={reducedMotion}
+      lang={lang}
+      roomId={roomId}
+      roomName={roomName}
+      profile={profile}
+      recentRooms={recentRooms}
+      effectiveView={effectiveView}
+      isFramedMobileOnPc={isFramedMobileOnPc}
+      authUser={authUser}
+      authLoading={authLoading}
+      showIntro={showIntro}
+      introWithSound={introWithSound}
+      incomingInvite={incomingInvite}
+      friendAddedNotice={friendAddedNotice}
+      savedFriends={savedFriends}
+      pinPromptState={pinPromptState}
+      videoState={roomState.videoState}
+      currentUser={currentUser}
+      isExtracting={roomState.isExtracting}
+      extractionLabel={playback.extractionLabel}
+      extractionError={playback.extractionError}
+      languageNotice={playback.languageNotice}
+      cloudFrame={roomState.cloudFrame}
+      cloudState={roomState.cloudState}
+      floatingReactions={roomState.floatingReactions}
+      participantCount={roomState.participants.length}
+      setShowDesignSystem={setShowDesignSystem}
+      setIsAdsPageOpen={setIsAdsPageOpen}
+      setIsTvPairLobby={setIsTvPairLobby}
+      setIsTvMode={setIsTvMode}
+      setTvAuthToken={setTvAuthToken}
+      setRoomId={setRoomId}
+      setRoomName={setRoomName}
+      setInRoom={setInRoom}
+      setShowIntro={setShowIntro}
+      setIntroWithSound={setIntroWithSound}
+      setIncomingInvite={setIncomingInvite}
+      setFriendAddedNotice={setFriendAddedNotice}
+      setLanguageNotice={playback.setLanguageNotice}
+      clearManualLobbyStay={() => {
+        roomState.manualLobbyStayRef.current = false;
+      }}
+      clearFriendNoticeTimer={() => {
+        if (friendNoticeTimerRef.current) clearTimeout(friendNoticeTimerRef.current);
+      }}
+      toggleViewMode={toggleViewMode}
+      onGoogleSignIn={socialActions.handleGoogleSignIn}
+      onGoogleSignOut={socialActions.handleGoogleSignOut}
+      onChangeLang={setLang}
+      onEnterRoom={lifecycle.handleEnterRoom}
+      onEnterSolo={lifecycle.handleEnterSolo}
+      onAcceptIncomingRoomInvite={lifecycle.handleAcceptIncomingRoomInvite}
+      onAddFriend={socialActions.handleAddFriend}
+      onSubmitGuestPin={socialActions.handleSubmitGuestPin}
+      onLeaveRoom={lifecycle.handleLeaveRoom}
+      onCancelMediaExtraction={playback.handleCancelMediaExtraction}
+      onSyncPlayerAction={playback.handleSyncPlayerAction}
+      onSelectTrack={(idx, sec) => {
+        void playback.handleSelectTrack(idx, sec || 0);
+      }}
+      onPromoteCloudStreamToNative={playback.handlePromoteCloudStreamToNative}
+      onPrevEpisode={playback.handlePrevEpisode}
+      onNextEpisode={playback.handleNextEpisode}
+    />
+  );
 
   const renderPartySidebar = () => (
     <React.Suspense
@@ -298,6 +306,9 @@ export function App() {
 
   return (
     <MotionConfig reducedMotion={reducedMotion ? 'always' : 'user'}>
+      {isEarlyRoute ? (
+        renderEarlyRoute()
+      ) : (
       <div
         style={
           !isDesktopLayout && visualViewportHeight
@@ -742,12 +753,17 @@ export function App() {
               )}
             </div>
           )}
-          <GlobalMusicLayer
-            isFullscreenVideoActive={isPlayerActive && !isDockedMini && !isPlayerClosedLocally}
-            onOpenMusicWorld={() => enterWorld('music')}
-          />
         </div>
       </div>
+      )}
+      {!isTvMode && (
+        <GlobalMusicLayer
+          isFullscreenVideoActive={
+            !isEarlyRoute && isPlayerActive && !isDockedMini && !isPlayerClosedLocally
+          }
+          onOpenMusicWorld={handleOpenMusicWorldFromBar}
+        />
+      )}
     </MotionConfig>
   );
 }

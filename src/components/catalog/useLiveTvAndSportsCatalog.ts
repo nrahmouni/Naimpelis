@@ -53,14 +53,16 @@ export function useLiveTvAndSportsCatalog({
   const setTvRegion = useAppStore((s) => s.setTvRegion) as (reg: TvRegionId) => void;
   const adrarCountryFilter = useAppStore((s) => s.adrarCountryFilter);
   const setAdrarCountryFilter = useAppStore((s) => s.setAdrarCountryFilter);
-  const [tvFavOnly, setTvFavOnly] = useState<boolean>(false);
+  const tvFavOnly = useAppStore((s) => s.tvFavOnly);
+  const setTvFavOnly = useAppStore((s) => s.setTvFavOnly);
   const [tdtSearch, setTdtSearch] = useState(() =>
     worldMode === 'tv' ? (externalSearchQuery || '') : ''
   );
   const [epgMap, setEpgMap] = useState<Record<string, ChannelLiveEpg>>({});
   const [epgMadridClock, setEpgMadridClock] = useState<string>('');
   const [loadingEpg, setLoadingEpg] = useState(false);
-  const [epgFilter, setEpgFilter] = useState<'all' | 'sports_now' | 'cinema_now'>('all');
+  const epgFilter = useAppStore((s) => s.tvEpgFilter);
+  const setEpgFilter = useAppStore((s) => s.setTvEpgFilter);
   const [selectedEpgChannel, setSelectedEpgChannel] = useState<SpanishTdtChannel | null>(null);
   const requestedEpgChannel = useAppStore((s) => s.requestedEpgChannel);
   useEffect(() => {
@@ -76,7 +78,8 @@ export function useLiveTvAndSportsCatalog({
   const sportsSearch = useAppStore((s) => s.futbolSearchQuery);
   const setSportsSearch = useAppStore((s) => s.setFutbolSearchQuery);
   const [futbolFiltersOpen, setFutbolFiltersOpen] = useState(false);
-  const [futbolLangFilter, setFutbolLangFilter] = useState<'all' | 'ZH'>('all');
+  const futbolLangFilter = useAppStore((s) => s.futbolLangFilter);
+  const setFutbolLangFilter = useAppStore((s) => s.setFutbolLangFilter);
   const rawFutbolLeagueFilter = useAppStore((s) => s.futbolLeagueFilter);
   const futbolLeagueFilter = rawFutbolLeagueFilter === 'all' ? '' : rawFutbolLeagueFilter;
   const setFutbolLeagueFilter = useAppStore((s) => s.setFutbolLeagueFilter);
@@ -97,10 +100,10 @@ export function useLiveTvAndSportsCatalog({
   useEffect(() => {
     if (activeSection === 'home' && !worldMode) {
       setTdtCategory('all');
-      setEpgFilter((prev) => (prev === 'all' ? prev : 'all'));
+      setEpgFilter('all');
       onResetWatchlistOnly();
     }
-  }, [activeSection, worldMode, onResetWatchlistOnly, setTdtCategory]);
+  }, [activeSection, worldMode, onResetWatchlistOnly, setTdtCategory, setEpgFilter]);
 
   const fetchTdtCatalog = useCallback(async () => {
     setLoadingTdt(true);

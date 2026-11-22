@@ -238,6 +238,9 @@ export function registerEmbedProxyRoutes(app: express.Express): void {
             respText = await curlPostJsonText(targetUrl, parsedPayload, postHeaders, 6).catch(
               () => ''
             );
+            if (!respText) {
+              status = 502;
+            }
           }
           applyProxyCorsHeaders(res, reqId);
           res.setHeader('Content-Type', respCt);

@@ -1,4 +1,5 @@
-import type { Express, Request } from 'express';
+import crypto from 'crypto';
+import type { Express, Request, Response } from 'express';
 import { parseBelixInventory } from '../services/belix/belixParser.ts';
 import {
   connectBelixSession,
@@ -17,6 +18,35 @@ import {
   probeBelixUrl,
 } from '../services/belixService.ts';
 
+function readCookieValue(req: Request, name: string): string {
+  const raw = String(req.headers.cookie || '');
+  if (!raw) return '';
+  for (const part of raw.split(';')) {
+    const idx = part.indexOf('=');
+    if (idx <= 0) continue;
+    if (part.slice(0, idx).trim() === name) {
+      return decodeURIComponent(part.slice(idx + 1).trim());
+    }
+  }
+  return '';
+}
+
+function getBelixSessionKey(req: Request, res?: Response): string {
+  const headerKey = String(req.headers['x-belix-session'] || '').trim();
+  if (/^[a-zA-Z0-9_-]{8,64}$/.test(headerKey)) return headerKey;
+  const cookieKey = readCookieValue(req, 'belix_sid');
+  if (/^[a-zA-Z0-9_-]{8,64}$/.test(cookieKey)) return cookieKey;
+  if (res) {
+    const newKey = crypto.randomBytes(16).toString('hex');
+    res.setHeader(
+      'Set-Cookie',
+      `belix_sid=${newKey}; Path=/api/belix; HttpOnly; SameSite=Lax; Max-Age=21600`
+    );
+    return newKey;
+  }
+  return 'default';
+}
+
 function resolveBelixOriginPrefix(
   req: Request,
   getPublicOrigin?: (req: Request) => string
@@ -33,19 +63,21 @@ export function registerBelixRoutes(
   deps?: { getPublicOrigin?: (req: Request) => string }
 ): void {
   // Belix Xtream live session status (never exposes credentials)
-  app.get('/api/belix/status', (_req, res) => {
+  app.get('/api/belix/status', (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    res.json({ success: true, status: getBelixStatus() });
+    const sessionKey = getBelixSessionKey(req);
+    res.json({ success: true, status: getBelixStatus(sessionKey) });
   });
 
   // Connect runtime Xtream session in RAM only
   app.post('/api/belix/connect', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
+    const sessionKey = getBelixSessionKey(req, res);
     const serverUrl = String(req.body?.serverUrl || '').trim();
     const username = String(req.body?.username || '').trim();
     const password = String(req.body?.password || '').trim();
-    const status = await connectBelixSession({ serverUrl, username, password });
-    const channels = status.connected ? getBelixLiveChannels({ includeAll: true }) : [];
+    const status = await connectBelixSession({ serverUrl, username, password, sessionKey });
+    const channels = status.connected ? getBelixLiveChannels({ includeAll: true, sessionKey }) : [];
     res.status(status.connected ? 200 : 400).json({
       success: status.connected,
       status,
@@ -53,28 +85,31 @@ export function registerBelixRoutes(
     });
   });
 
-  app.post('/api/belix/disconnect', (_req, res) => {
-    disconnectBelixSession();
-    res.json({ success: true, status: getBelixStatus() });
+  app.post('/api/belix/disconnect', (req, res) => {
+    const sessionKey = getBelixSessionKey(req);
+    disconnectBelixSession(sessionKey);
+    res.json({ success: true, status: getBelixStatus(sessionKey) });
   });
 
-  app.post('/api/belix/refresh', async (_req, res) => {
+  app.post('/api/belix/refresh', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
-    const status = await refreshBelixChannels();
+    const sessionKey = getBelixSessionKey(req);
+    const status = await refreshBelixChannels(sessionKey);
     res.json({
       success: status.connected,
       status,
-      channels: status.connected ? getBelixLiveChannels({ includeAll: true }) : [],
+      channels: status.connected ? getBelixLiveChannels({ includeAll: true, sessionKey }) : [],
     });
   });
 
   app.get('/api/belix/channels', (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
+    const sessionKey = getBelixSessionKey(req);
     const categoryId = String(req.query.categoryId || '').trim();
     const query = String(req.query.q || '').trim();
     const includeAll = req.query.includeAll === '1' || req.query.includeAll === 'true';
-    const status = getBelixStatus();
-    const channels = getBelixLiveChannels({ categoryId, query, includeAll });
+    const status = getBelixStatus(sessionKey);
+    const channels = getBelixLiveChannels({ categoryId, query, includeAll, sessionKey });
     res.json({
       success: true,
       status,
@@ -90,7 +125,8 @@ export function registerBelixRoutes(
     if (req.method === 'OPTIONS') return res.status(204).end();
     const streamId = String(req.params.streamId || '').replace(/\.m3u8$/i, '');
     const originPrefix = resolveBelixOriginPrefix(req, deps?.getPublicOrigin);
-    const manifest = await resolveBelixManifest(streamId, originPrefix);
+    const sessionKey = getBelixSessionKey(req);
+    const manifest = await resolveBelixManifest(streamId, originPrefix, sessionKey);
     if (!manifest) {
       return res.status(503).send('Belix live stream unavailable');
     }

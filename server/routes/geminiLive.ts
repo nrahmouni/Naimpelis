@@ -15,6 +15,7 @@ import {
   searchTmdbPersonCredits,
   searchTmdbTitlesRanked,
 } from './voiceAssistant.ts';
+import { searchMusicCatalog } from '../services/riffanMusicService.ts';
 import { logger } from '../utils/logger.ts';
 
 export interface GeminiLiveDeps {
@@ -79,16 +80,34 @@ const LIVE_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   },
   {
     name: 'open_app_section',
-    description: 'Navega a una sección de RiffanTV: cine, futbol, tv, juegos, sala o amigos.',
+    description: 'Navega a una sección de RiffanTV: cine, futbol, tv, musica, juegos, sala o amigos.',
     parameters: {
       type: Type.OBJECT,
       properties: {
         section: {
           type: Type.STRING,
-          description: 'Sección destino: cine | futbol | tv | juegos | sala | friends | surprise_me',
+          description: 'Sección destino: cine | futbol | tv | musica | juegos | sala | friends | surprise_me',
         },
       },
       required: ['section'],
+    },
+  },
+  {
+    name: 'play_music',
+    description: 'Busca y reproduce una canción, artista o álbum en Riffan Music.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        query: {
+          type: Type.STRING,
+          description: 'Nombre de la canción, artista o álbum a reproducir',
+        },
+        autoPlay: {
+          type: Type.BOOLEAN,
+          description: 'true para reproducir el mejor resultado de inmediato',
+        },
+      },
+      required: ['query'],
     },
   },
   {
@@ -156,7 +175,8 @@ export function setupGeminiLiveWebSocket(
         : lang === 'zh'
         ? '中文'
         : 'Español de España';
-    const voiceName = lang === 'en' ? 'Kore' : 'Zephyr';
+    const voiceName =
+      lang === 'en' ? 'Kore' : lang === 'zh' ? 'Aoede' : lang === 'ca' ? 'Leda' : 'Zephyr';
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let liveSession: any = null;
@@ -189,6 +209,31 @@ export function setupGeminiLiveWebSocket(
               : { type: 'open_world', payload: section };
           sendJson(clientWs, { toolAction: action });
           return { ok: true, opened: section };
+        }
+
+        if (name === 'play_music') {
+          const musicQ = String(args.query || '').trim();
+          const musicRes = await searchMusicCatalog(musicQ, 'track').catch(() => ({ tracks: [] as any[] }));
+          const items = (musicRes.tracks || []).slice(0, 5).map((tr: any) => ({
+            kind: 'music',
+            id: tr.id,
+            title: tr.title,
+            subtitle: `${tr.artist?.name || 'Riffan Music'} · ${tr.album?.title || 'Single'}`,
+            imageUrl: tr.album?.coverXl || tr.album?.cover || '',
+            badge: 'MÚSICA',
+            musicTrack: {
+              id: tr.id,
+              title: tr.title,
+              artistName: tr.artist?.name || 'Riffan Music',
+              cover: tr.album?.coverXl || tr.album?.cover || '',
+              durationSec: tr.durationSec,
+            },
+          }));
+          sendJson(clientWs, {
+            toolItems: items,
+            autoPlay: args.autoPlay !== false && items.length > 0,
+          });
+          return { found: items.length, tracks: items.map((i: any) => i.title) };
         }
 
         if (name === 'search_movies_by_person') {

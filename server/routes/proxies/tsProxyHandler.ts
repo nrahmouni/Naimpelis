@@ -249,19 +249,52 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     const cr = upstream.headers.get('content-range');
     const ar = upstream.headers.get('accept-ranges');
 
-    // When Safari sends Range: bytes=0-1 or bytes=0-65535 on a disguised TS segment, read & slice cleanly
+    // When Safari sends Range: bytes=0-1 or bytes=0-65535 on a disguised TS segment, read bounded head bytes & slice cleanly
     if (isInitialByteZeroRangeProbe && shouldSniffImageHeader && rangeMatch) {
-      const fullBuf = Buffer.from(await upstream.arrayBuffer());
+      const parsedReqEnd = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : 65535;
+      const maxProbeBytes = Math.min(512 * 1024, Math.max(65536, parsedReqEnd + 16384));
+      const reader = upstream.body.getReader();
+      const probeChunks: Buffer[] = [];
+      let totalRead = 0;
+      let streamCompleted = false;
+      try {
+        while (totalRead < maxProbeBytes) {
+          const { done, value } = await reader.read();
+          if (done) {
+            streamCompleted = true;
+            break;
+          }
+          if (value && value.length > 0) {
+            const b = Buffer.from(value);
+            probeChunks.push(b);
+            totalRead += b.length;
+          }
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+      }
+
+      const fullBuf = Buffer.concat(probeChunks);
       const offset = findDisguisedTsOffset(fullBuf);
       const cleanBuf = offset > 0 ? fullBuf.subarray(offset) : fullBuf;
+      const crTotalMatch = cr?.match(/\/(\d+)$/);
+      const rawTotalLen = crTotalMatch
+        ? parseInt(crTotalMatch[1], 10)
+        : cl
+        ? parseInt(cl, 10)
+        : streamCompleted
+        ? fullBuf.length
+        : 0;
+      const adjustedTotal =
+        rawTotalLen > offset ? rawTotalLen - offset : Math.max(cleanBuf.length, 1);
       const reqEnd = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : cleanBuf.length - 1;
-      const end = Math.min(cleanBuf.length - 1, Math.max(0, reqEnd));
+      const end = Math.min(Math.max(cleanBuf.length - 1, 0), Math.max(0, reqEnd));
       const slice = cleanBuf.subarray(0, end + 1);
       applyProxyCorsHeaders(res, reqId);
       res.status(206);
       res.setHeader('Content-Type', 'video/mp2t');
       res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Content-Range', `bytes 0-${end}/${cleanBuf.length}`);
+      res.setHeader('Content-Range', `bytes 0-${end}/${adjustedTotal}`);
       res.setHeader('Content-Length', String(slice.length));
       res.end(slice);
       return;

@@ -14,7 +14,30 @@ import { getPermanent247SportsMatches } from '../sports.ts';
 import { getBelixLiveChannels } from '../../services/belix/belixXtreamClient.ts';
 import { curateSportsTracks, getCuratedRbtvChannels } from '../../services/rbtv/rbtvLiveCurator.ts';
 
+interface CachedIptvSnapshot {
+  channels: any[];
+  byId: Map<string, any>;
+  builtAt: number;
+}
+
+const IPTV_REGISTRY_CACHE_TTL_MS = 15_000;
+let cachedIptvSnapshot: CachedIptvSnapshot | null = null;
+
+export function invalidateIptvChannelCache(): void {
+  cachedIptvSnapshot = null;
+}
+
+export function getIptvChannelById(id: string): any | undefined {
+  getAllIptvChannels();
+  return cachedIptvSnapshot?.byId.get(id);
+}
+
 export function getAllIptvChannels(): any[] {
+  const now = Date.now();
+  if (cachedIptvSnapshot && now - cachedIptvSnapshot.builtAt < IPTV_REGISTRY_CACHE_TTL_MS) {
+    return cachedIptvSnapshot.channels;
+  }
+
   const seen = new Set<string>();
   const combined: any[] = [];
 
@@ -172,5 +195,11 @@ export function getAllIptvChannels(): any[] {
     combined.push(r);
   }
 
-  return channelHealthMonitor.prioritizeChannels(combined);
+  const prioritized = channelHealthMonitor.prioritizeChannels(combined);
+  const byId = new Map<string, any>();
+  for (const ch of prioritized) {
+    if (ch?.id) byId.set(ch.id, ch);
+  }
+  cachedIptvSnapshot = { channels: prioritized, byId, builtAt: Date.now() };
+  return prioritized;
 }

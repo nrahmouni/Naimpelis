@@ -289,7 +289,7 @@ export const handleSyncAndChatMessage: WsMessageHandler = async (
     const roomId = String(rawRoomId || '').trim().toLowerCase();
     const room = rooms.get(roomId);
     const senderMeta = clients.get(ws);
-    const voterId = senderMeta?.userId || userId;
+    const voterId = senderMeta?.userId || (!senderMeta ? userId : undefined);
     if (!room || !itemId || !voterId) return true;
     room.queue = toggleQueueItemVote(room.queue, String(itemId), String(voterId));
     schedulePersistRoom(roomId);
@@ -353,9 +353,9 @@ export const handleSyncAndChatMessage: WsMessageHandler = async (
     if (!valid.success) return true;
     const senderMeta = clients.get(ws);
     const roomId = valid.data.roomId.toLowerCase();
-    const uid = senderMeta?.userId || valid.data.userId;
+    const uid = senderMeta?.userId;
     const room = rooms.get(roomId);
-    if (!room || !uid) return true;
+    if (!room || !uid || senderMeta?.roomId !== roomId) return true;
     broadcastToRoom(
       roomId,
       {
@@ -379,13 +379,15 @@ export const handleSyncAndChatMessage: WsMessageHandler = async (
     if (!room) return true;
 
     const senderMeta = clients.get(ws);
+    if (!senderMeta?.userId || senderMeta.roomId !== roomId) return true;
     const msg: RoomChatMessageRecord = {
       id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-      senderId: senderMeta?.userId || valid.data.user?.id || 'anon',
-      senderName: senderMeta?.userName || valid.data.user?.name || 'Invitado',
-      senderAvatar: senderMeta?.userAvatar || valid.data.user?.avatar || '🍿',
-      senderColor: senderMeta?.userColor || valid.data.user?.color || '#e11d48',
+      senderId: senderMeta.userId,
+      senderName: senderMeta.userName || valid.data.user?.name || 'Invitado',
+      senderAvatar: senderMeta.userAvatar || valid.data.user?.avatar || '🍿',
+      senderColor: senderMeta.userColor || valid.data.user?.color || '#e11d48',
       text: valid.data.text,
+      ...(valid.data.replyTo ? { replyTo: valid.data.replyTo } : {}),
       timestamp: Date.now(),
     };
 
@@ -431,17 +433,21 @@ export const handleSyncAndChatMessage: WsMessageHandler = async (
   }
 
   if (type === 'SEND_REACTION') {
-    const { roomId: rawRoomId, emoji, user } = payload || {};
+    const { roomId: rawRoomId, emoji, audioStickerId, user } = payload || {};
     const roomId = String(rawRoomId || '').trim().toLowerCase();
     if (!rooms.has(roomId) || typeof emoji !== 'string' || !emoji) return true;
     const senderMeta = clients.get(ws);
+    if (!senderMeta?.userId || senderMeta.roomId !== roomId) return true;
     broadcastToRoom(roomId, {
       type: 'FLOATING_REACTION',
       payload: {
         id: `react-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         emoji: emoji.slice(0, 16),
-        senderName: senderMeta?.userName || user?.name || 'Invitado',
-        senderColor: senderMeta?.userColor || user?.color || '#e11d48',
+        ...(typeof audioStickerId === 'string' && audioStickerId
+          ? { audioStickerId: audioStickerId.slice(0, 32) }
+          : {}),
+        senderName: senderMeta.userName || user?.name || 'Invitado',
+        senderColor: senderMeta.userColor || user?.color || '#e11d48',
         xOffset: 12 + Math.floor(Math.random() * 76),
         timestamp: Date.now(),
       },

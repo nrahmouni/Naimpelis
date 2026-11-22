@@ -96,8 +96,55 @@ interface BelixRamSession {
   warning?: string;
 }
 
-let activeSession: BelixRamSession | null = null;
-let backgroundProbeSeq = 0;
+const DEFAULT_BELIX_SESSION_KEY = 'default';
+const MAX_BELIX_SESSIONS = 32;
+const BELIX_SESSION_TTL_MS = 6 * 60 * 60 * 1000;
+
+interface BelixSessionSlot {
+  session: BelixRamSession | null;
+  probeSeq: number;
+  updatedAt: number;
+}
+
+const belixSessionSlots = new Map<string, BelixSessionSlot>();
+
+function getOrCreateSlot(sessionKey = DEFAULT_BELIX_SESSION_KEY): BelixSessionSlot {
+  const key = String(sessionKey || DEFAULT_BELIX_SESSION_KEY).trim() || DEFAULT_BELIX_SESSION_KEY;
+  const now = Date.now();
+  for (const [k, slot] of belixSessionSlots.entries()) {
+    if (k !== DEFAULT_BELIX_SESSION_KEY && now - slot.updatedAt > BELIX_SESSION_TTL_MS) {
+      belixSessionSlots.delete(k);
+    }
+  }
+  let slot = belixSessionSlots.get(key);
+  if (!slot) {
+    if (belixSessionSlots.size >= MAX_BELIX_SESSIONS) {
+      let oldestKey = '';
+      let oldestTs = Infinity;
+      for (const [k, v] of belixSessionSlots.entries()) {
+        if (k !== DEFAULT_BELIX_SESSION_KEY && v.updatedAt < oldestTs) {
+          oldestTs = v.updatedAt;
+          oldestKey = k;
+        }
+      }
+      if (oldestKey) belixSessionSlots.delete(oldestKey);
+    }
+    slot = { session: null, probeSeq: 0, updatedAt: now };
+    belixSessionSlots.set(key, slot);
+  }
+  slot.updatedAt = now;
+  return slot;
+}
+
+function getActiveSession(sessionKey = DEFAULT_BELIX_SESSION_KEY): BelixRamSession | null {
+  const key = String(sessionKey || DEFAULT_BELIX_SESSION_KEY).trim() || DEFAULT_BELIX_SESSION_KEY;
+  const slot = belixSessionSlots.get(key);
+  if (slot?.session) return slot.session;
+  if (key !== DEFAULT_BELIX_SESSION_KEY) {
+    return belixSessionSlots.get(DEFAULT_BELIX_SESSION_KEY)?.session || null;
+  }
+  return null;
+}
 
 function maskUsername(username: string): string {
   const clean = String(username || '').trim();
@@ -452,6 +499,7 @@ function rebuildCategoryCounts(session: BelixRamSession): void {
 }
 
 async function probeCandidatesIntoSession(
+  slot: BelixSessionSlot,
   session: BelixRamSession,
   candidates: RawCandidate[],
   seq: number,
@@ -463,11 +511,11 @@ async function probeCandidatesIntoSession(
 
   const workers = Array.from({ length: Math.min(concurrency, candidates.length) }, async () => {
     while (cursor < candidates.length) {
-      if (activeSession !== session || backgroundProbeSeq !== seq) return;
+      if (slot.session !== session || slot.probeSeq !== seq) return;
       const item = candidates[cursor++];
       if (!item || stableIds.has(item.streamId)) continue;
       const res = await probeXtreamLiveM3u8(session, item.streamId, 2400);
-      if (activeSession !== session || backgroundProbeSeq !== seq) return;
+      if (slot.session !== session || slot.probeSeq !== seq) return;
       if (res.ok) {
         stableIds.add(item.streamId);
         const existing = channelById.get(item.streamId);
@@ -487,7 +535,7 @@ async function probeCandidatesIntoSession(
   });
 
   await Promise.all(workers);
-  if (activeSession === session && backgroundProbeSeq === seq) {
+  if (slot.session === session && slot.probeSeq === seq) {
     rebuildCategoryCounts(session);
   }
 }
@@ -496,7 +544,10 @@ export async function connectBelixSession(params: {
   serverUrl: string;
   username: string;
   password: string;
+  sessionKey?: string;
 }): Promise<BelixConnectionStatus> {
+  const sessionKey = params.sessionKey || DEFAULT_BELIX_SESSION_KEY;
+  const slot = getOrCreateSlot(sessionKey);
   const normalizedServer = normalizeServerInput(params.serverUrl);
   const username = String(params.username || '').trim();
   const password = String(params.password || '').trim();
@@ -662,7 +713,7 @@ export async function connectBelixSession(params: {
 
     const allChannels = rawCandidates.map((item, idx) => toBelixChannel(item, idx, false));
 
-    const seq = ++backgroundProbeSeq;
+    const seq = ++slot.probeSeq;
     const nextSession: BelixRamSession = {
       origin,
       username,
@@ -682,7 +733,8 @@ export async function connectBelixSession(params: {
       warning,
     };
     rebuildCategoryCounts(nextSession);
-    activeSession = nextSession;
+    slot.session = nextSession;
+    slot.updatedAt = Date.now();
 
     if (rawCandidates.length > 0) {
       const initialSliceCount = slotsFull ? Math.min(4, rawCandidates.length) : 48;
@@ -692,6 +744,7 @@ export async function connectBelixSession(params: {
 
       nextSession.probing = true;
       const runInitial = probeCandidatesIntoSession(
+        slot,
         nextSession,
         initialBatch,
         seq,
@@ -699,26 +752,26 @@ export async function connectBelixSession(params: {
       );
       if (rawCandidates.length <= 12) {
         await runInitial.catch(() => undefined);
-        if (activeSession === nextSession && backgroundProbeSeq === seq) {
+        if (slot.session === nextSession && slot.probeSeq === seq) {
           nextSession.probing = false;
         }
       } else {
         void runInitial
           .then(async () => {
-            if (remaining.length > 0 && activeSession === nextSession && backgroundProbeSeq === seq) {
-              await probeCandidatesIntoSession(nextSession, remaining, seq, 4);
+            if (remaining.length > 0 && slot.session === nextSession && slot.probeSeq === seq) {
+              await probeCandidatesIntoSession(slot, nextSession, remaining, seq, 4);
             }
           })
           .catch(() => undefined)
           .finally(() => {
-            if (activeSession === nextSession && backgroundProbeSeq === seq) {
+            if (slot.session === nextSession && slot.probeSeq === seq) {
               nextSession.probing = false;
             }
           });
       }
     }
 
-    return getBelixStatus();
+    return getBelixStatus(sessionKey);
   } catch (err) {
     return {
       connected: false,
@@ -733,23 +786,37 @@ export async function connectBelixSession(params: {
   }
 }
 
-export function disconnectBelixSession(): void {
-  backgroundProbeSeq += 1;
-  activeSession = null;
-  clearBelixOpaqueCaches();
+export function disconnectBelixSession(sessionKey = DEFAULT_BELIX_SESSION_KEY): void {
+  const key = String(sessionKey || DEFAULT_BELIX_SESSION_KEY).trim() || DEFAULT_BELIX_SESSION_KEY;
+  const slot = belixSessionSlots.get(key);
+  if (slot) {
+    slot.probeSeq += 1;
+    slot.session = null;
+    if (key !== DEFAULT_BELIX_SESSION_KEY) {
+      belixSessionSlots.delete(key);
+    }
+  }
+  if (key === DEFAULT_BELIX_SESSION_KEY) {
+    clearBelixOpaqueCaches();
+  }
 }
 
-export async function refreshBelixChannels(): Promise<BelixConnectionStatus> {
-  if (!activeSession) return getBelixStatus();
+export async function refreshBelixChannels(
+  sessionKey = DEFAULT_BELIX_SESSION_KEY
+): Promise<BelixConnectionStatus> {
+  const sess = getActiveSession(sessionKey);
+  if (!sess) return getBelixStatus(sessionKey);
   return connectBelixSession({
-    serverUrl: activeSession.origin,
-    username: activeSession.username,
-    password: activeSession.password,
+    serverUrl: sess.origin,
+    username: sess.username,
+    password: sess.password,
+    sessionKey,
   });
 }
 
-export function getBelixStatus(): BelixConnectionStatus {
-  if (!activeSession) {
+export function getBelixStatus(sessionKey = DEFAULT_BELIX_SESSION_KEY): BelixConnectionStatus {
+  const sess = getActiveSession(sessionKey);
+  if (!sess) {
     return {
       connected: false,
       serverOrigin: '',
@@ -762,20 +829,20 @@ export function getBelixStatus(): BelixConnectionStatus {
   }
   return {
     connected: true,
-    serverOrigin: activeSession.origin,
-    maskedUsername: maskUsername(activeSession.username),
-    userStatus: activeSession.userStatus,
-    activeConnections: activeSession.activeConnections,
-    maxConnections: activeSession.maxConnections,
-    expDate: activeSession.expDate,
-    serverTimezone: activeSession.serverTimezone,
-    totalRawStreams: activeSession.rawCandidates.length,
-    stableCount: activeSession.stableChannels.length,
-    probing: activeSession.probing,
-    lastSyncedAt: activeSession.lastSyncedAt,
-    categories: activeSession.categories,
-    error: activeSession.lastError,
-    warning: activeSession.warning,
+    serverOrigin: sess.origin,
+    maskedUsername: maskUsername(sess.username),
+    userStatus: sess.userStatus,
+    activeConnections: sess.activeConnections,
+    maxConnections: sess.maxConnections,
+    expDate: sess.expDate,
+    serverTimezone: sess.serverTimezone,
+    totalRawStreams: sess.rawCandidates.length,
+    stableCount: sess.stableChannels.length,
+    probing: sess.probing,
+    lastSyncedAt: sess.lastSyncedAt,
+    categories: sess.categories,
+    error: sess.lastError,
+    warning: sess.warning,
   };
 }
 
@@ -783,11 +850,13 @@ export function getBelixLiveChannels(opts?: {
   categoryId?: string;
   query?: string;
   includeAll?: boolean;
+  sessionKey?: string;
 }): BelixLiveChannel[] {
-  if (!activeSession) return [];
+  const sess = getActiveSession(opts?.sessionKey);
+  if (!sess) return [];
   let list = opts?.includeAll
-    ? [...activeSession.allChannels].sort((a, b) => Number(b.probeOk) - Number(a.probeOk))
-    : [...activeSession.stableChannels];
+    ? [...sess.allChannels].sort((a, b) => Number(b.probeOk) - Number(a.probeOk))
+    : [...sess.stableChannels];
   const catFilter = String(opts?.categoryId || '').trim();
   const q = String(opts?.query || '').trim().toLowerCase();
   if (catFilter && catFilter !== 'all') {
@@ -804,17 +873,22 @@ export function getBelixLiveChannels(opts?: {
 }
 
 export async function initBelixFromEnv(): Promise<void> {
-  const srv = String(ENV.belixXtreamServer || 'http://1.sharkpro.ink:80').trim();
-  const usr = String(ENV.belixXtreamUser || '8996754342').trim();
-  const pwd = String(ENV.belixXtreamPass || '4228202130').trim();
+  const srv = String(ENV.belixXtreamServer || '').trim();
+  const usr = String(ENV.belixXtreamUser || '').trim();
+  const pwd = String(ENV.belixXtreamPass || '').trim();
   if (!srv || !usr || !pwd) return;
-  await connectBelixSession({ serverUrl: srv, username: usr, password: pwd }).catch(() => undefined);
+  await connectBelixSession({
+    serverUrl: srv,
+    username: usr,
+    password: pwd,
+    sessionKey: DEFAULT_BELIX_SESSION_KEY,
+  }).catch(() => undefined);
 }
 
 function getFallbackBelixSessionCreds() {
-  const srv = normalizeServerInput(ENV.belixXtreamServer || 'http://1.sharkpro.ink:80');
-  const usr = String(ENV.belixXtreamUser || '8996754342').trim();
-  const pwd = String(ENV.belixXtreamPass || '4228202130').trim();
+  const srv = normalizeServerInput(ENV.belixXtreamServer || '');
+  const usr = String(ENV.belixXtreamUser || '').trim();
+  const pwd = String(ENV.belixXtreamPass || '').trim();
   if (!srv || !usr || !pwd) return null;
   try {
     const parsed = new URL(srv);
@@ -826,9 +900,10 @@ function getFallbackBelixSessionCreds() {
 
 export async function resolveBelixManifest(
   streamId: string,
-  originPrefix = ''
+  originPrefix = '',
+  sessionKey = DEFAULT_BELIX_SESSION_KEY
 ): Promise<string | null> {
-  const creds = activeSession || getFallbackBelixSessionCreds();
+  const creds = getActiveSession(sessionKey) || getFallbackBelixSessionCreds();
   return resolveBelixManifestForSession(creds, streamId, originPrefix);
 }
 

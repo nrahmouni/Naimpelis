@@ -1,7 +1,8 @@
 import { GoogleGenAI, Type, ThinkingLevel } from '@google/genai';
 import { logger } from '../../utils/logger.ts';
+import { parseGeminiJson } from '../aiStudio/shared.ts';
 import type { ParsedVoiceIntent, VoiceChatHistoryTurn } from './types.ts';
-import { normalizeSearchStr, parseSeriesSeasonAndEpisode } from './parsers.ts';
+import { parseSeriesSeasonAndEpisode } from './parsers.ts';
 import { buildFallbackVoicePlan } from './fallbackPlanner.ts';
 
 export function getGeminiClient(): GoogleGenAI | null {
@@ -66,38 +67,41 @@ DEVUELVE SIEMPRE SOLO JSON ESTRUCTURADO según las reglas:
    - action: { type: "player_control", payload: "pause" | "play" | "mute" | "unmute" | "fullscreen" | "next_episode" }
 
 3. NAVEGACIÓN / ACCIONES DE LA APP:
-   - "abre el cine / vete a series / fútbol / tv / juegos / sala":
-     intent: "open_world", action: { type: "open_world", payload: "cine" | "futbol" | "tv" | "juegos" | "sala" }
+   - "abre el cine / vete a series / fútbol / tv / música / juegos / sala":
+     intent: "open_world", action: { type: "open_world", payload: "cine" | "futbol" | "tv" | "musica" | "juegos" | "sala" }
    - "invitar amigos / ver amigos":
      intent: "open_world", action: { type: "open_friends" }
    - "sorpréndeme" (sin género específico):
      intent: "open_world", action: { type: "surprise_me" }
 
-4. SI PIDE UN CAPÍTULO Y/O TEMPORADA DE UNA SERIE ("ponle el segundo capítulo de la temporada 2 de Juego de Tronos", "pon el 2x03 de Breaking Bad"):
+4. SI PIDE ESCUCHAR UNA CANCIÓN, ARTISTA O ÁLBUM EN RIFFAN MUSIC ("pon la canción X", "pon música de Bad Bunny"):
+   - intent: "play_music", autoPlay: false, tmdbQuery: { mediaType: "multi", limit: 5, titleSearch: "<artista o canción>" }.
+
+5. SI PIDE UN CAPÍTULO Y/O TEMPORADA DE UNA SERIE ("ponle el segundo capítulo de la temporada 2 de Juego de Tronos", "pon el 2x03 de Breaking Bad"):
    - intent: "play_series", autoPlay: false, targetSeason: 2, targetEpisode: 2, tmdbQuery: { mediaType: "tv", limit: 4, titleSearch: "Juego de Tronos" }.
    - spokenReply: Responde cordialmente informando que le muestras el capítulo exacto para que pulse reproducir cuando quiera.
 
-5. SI PIDE PELÍCULAS O SERIES DE UN DIRECTOR O ACTOR ("dime las películas de Christopher Nolan", "qué películas tiene Leonardo DiCaprio", "dime las pelis de este actor"):
+6. SI PIDE PELÍCULAS O SERIES DE UN DIRECTOR O ACTOR ("dime las películas de Christopher Nolan", "qué películas tiene Leonardo DiCaprio", "dime las pelis de este actor"):
    - intent: "recommend_movies" (o "recommend_series" si pide series), autoPlay: false.
    - tmdbQuery: { mediaType: "movie", limit: 8, personSearch: "<Nombre exacto de la persona>", personRole: "director" | "actor" | "any" }.
    - spokenReply: Breve introducción natural enumerando brevemente 2 o 3 títulos suyos icónicos mientras mostramos la lista visual lista para reproducir.
 
-6. SI PREGUNTA CUÁNDO JUEGA UN EQUIPO O HORARIO DE PARTIDO:
+7. SI PREGUNTA CUÁNDO JUEGA UN EQUIPO O HORARIO DE PARTIDO:
    - intent: "sports_info", autoPlay: false, matchKeywords: ["equipo"], channelKeywords: ["dazn", "laliga", "movistar"].
 
-7. SOLO SI PIDE EXPRESAMENTE UN CANAL DE TV EN DIRECTO ("ponme DAZN LaLiga", "pon La 1", "quiero ver Antena 3"):
+8. SOLO SI PIDE EXPRESAMENTE UN CANAL DE TV EN DIRECTO ("ponme DAZN LaLiga", "pon La 1", "quiero ver Antena 3"):
    - intent: "play_channel", autoPlay: false, channelKeywords, categoryHint.
    - ¡PROHIBIDO elegir play_channel o browse_channels si el usuario pide una película, serie, actor o director!
 
-8. SI PIDE VER UN PARTIDO EN DIRECTO:
+9. SI PIDE VER UN PARTIDO EN DIRECTO:
    - intent: "play_match", autoPlay: false, matchKeywords.
 
-9. SI PIDE RECOMENDACIONES POR GÉNERO O DESCRIPCIÓN ("recomiéndame alguna película", "recomiéndame 3 pelis de terror", "pelis donde el tiempo es dinero"):
+10. SI PIDE RECOMENDACIONES POR GÉNERO O DESCRIPCIÓN ("recomiéndame alguna película", "recomiéndame 3 pelis de terror", "pelis donde el tiempo es dinero"):
    - Para peticiones de recomendación ("recomiéndame alguna película", "qué puedo ver", "sugiéreme algo"), habla con naturalidad y calidez humana (p.ej. "¡Por supuesto! Aquí tienes una selección de películas muy recomendadas de nuestro catálogo:") y JAMÁS repitas textualmente las palabras del usuario como "Aquí tienes recomiendame...".
    - Si describe una película concreta por su argumento (p.ej. "la peli donde pagan con tiempo"), identifica el título exacto en titleSearch (p.ej. "In Time") y usa play_movie / recommend_movies con autoPlay: false.
    - Si pide género o ranking, usa recommend_movies / recommend_series con genreId / timeframe / sortBy / limit y autoPlay: false.
 
-10. SI PIDE REPRODUCIR UNA PELÍCULA O SERIE CONCRETA ("ponle la película In Time", "ponme Interstellar", "quiero ver Deadpool"):
+11. SI PIDE REPRODUCIR UNA PELÍCULA O SERIE CONCRETA ("ponle la película In Time", "ponme Interstellar", "quiero ver Deadpool"):
     - intent: "play_movie" o "play_series", autoPlay: false, channelKeywords: [], categoryHint: "", tmdbQuery: { mediaType: "movie" | "tv", limit: 4, titleSearch: "<Título limpio exacto, p.ej. In Time>" }.
     - REGLA ABSOLUTA: NUNCA pongas autoPlay en true. Muestra siempre las opciones para que el usuario elija y pulse con un clic.`;
 
@@ -124,6 +128,7 @@ DEVUELVE SIEMPRE SOLO JSON ESTRUCTURADO según las reglas:
                 'play_match',
                 'play_movie',
                 'play_series',
+                'play_music',
                 'recommend_movies',
                 'recommend_series',
                 'browse_channels',
@@ -184,7 +189,10 @@ DEVUELVE SIEMPRE SOLO JSON ESTRUCTURADO según las reglas:
 
     const rawText = response.text;
     if (rawText) {
-      const parsed = JSON.parse(rawText) as ParsedVoiceIntent;
+      const parsed = parseGeminiJson<Partial<ParsedVoiceIntent>>(rawText, {});
+      if (!parsed || typeof parsed !== 'object' || !parsed.intent) {
+        return buildFallbackVoicePlan(query, lang);
+      }
       const epFallback = parseSeriesSeasonAndEpisode(query);
       const targetSeason = parsed.targetSeason || (epFallback.hasEpisodeRequest ? epFallback.season : undefined);
       const targetEpisode = parsed.targetEpisode || (epFallback.hasEpisodeRequest ? epFallback.episode : undefined);

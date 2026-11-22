@@ -174,7 +174,7 @@ export const EPG_CHANNEL_STREAM_INFO: Record<
   'dazn-f1': {
     label: 'DAZN F1 HD',
     lang: 'ES',
-    sourceUrl: 'https://pig.footunder.online/stream/436',
+    sourceUrl: 'https://footunder.online/tvtodo/daznf1.php',
     resolverType: 'sports_channel',
   },
   'tdt-teledeporte': {
@@ -210,7 +210,7 @@ export const EPG_CHANNEL_STREAM_INFO: Record<
   'mplus-deportes': {
     label: 'M+ Deportes HD',
     lang: 'ES',
-    sourceUrl: 'https://pig.footunder.online/stream/435',
+    sourceUrl: 'https://pig.footunder.online/stream/438',
     resolverType: 'sports_channel',
   },
   'tdt-rmtv': {
@@ -603,7 +603,8 @@ export async function loadSpanishEpgSchedule(): Promise<Map<string, RawEpgEvent[
               }
             }
             if (leftover.length > 250_000) {
-              leftover = leftover.slice(-60_000);
+              const lastProg = leftover.lastIndexOf('<programme ');
+              leftover = lastProg !== -1 ? leftover.slice(lastProg) : leftover.slice(-60_000);
             }
           });
           gunzip.on('end', () => resolve());

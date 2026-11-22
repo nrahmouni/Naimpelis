@@ -42,6 +42,8 @@ function generatePkcePair(): { codeVerifier: string; codeChallenge: string } {
   return { codeVerifier, codeChallenge };
 }
 
+const MAX_OAUTH_MAP_ENTRIES = 500;
+
 function pruneExpiredMaps() {
   const now = Date.now();
   for (const [k, v] of spotifyPendingStates.entries()) {
@@ -49,6 +51,16 @@ function pruneExpiredMaps() {
   }
   for (const [k, v] of spotifySessions.entries()) {
     if (now - v.createdAt > SESSION_TTL_MS) spotifySessions.delete(k);
+  }
+  while (spotifyPendingStates.size > MAX_OAUTH_MAP_ENTRIES) {
+    const oldestKey = spotifyPendingStates.keys().next().value;
+    if (!oldestKey) break;
+    spotifyPendingStates.delete(oldestKey);
+  }
+  while (spotifySessions.size > MAX_OAUTH_MAP_ENTRIES) {
+    const oldestKey = spotifySessions.keys().next().value;
+    if (!oldestKey) break;
+    spotifySessions.delete(oldestKey);
   }
 }
 
@@ -168,7 +180,7 @@ export async function handleSpotifyOAuthCallback(params: {
   const pending = stateKey ? spotifyPendingStates.get(stateKey) : undefined;
   if (stateKey) spotifyPendingStates.delete(stateKey);
 
-  const openerOrigin = pending?.openerOrigin || ENV.appUrl || '*';
+  const openerOrigin = pending?.openerOrigin || resolveSpotifyBaseOrigin();
 
   if (params.error) {
     return {

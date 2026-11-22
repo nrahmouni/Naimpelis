@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ArrowLeft,
   ArrowUpDown,
+  Award,
   Car,
   Check,
   Disc3,
@@ -16,6 +17,7 @@ import {
   Library,
   ListPlus,
   Loader2,
+  MoreHorizontal,
   Music2,
   Pause,
   Play,
@@ -27,6 +29,8 @@ import {
   Sparkles,
   Trash2,
   UserCheck,
+  Users,
+  Wand2,
   X,
 } from 'lucide-react';
 import type { AppLanguage } from '../../types';
@@ -215,11 +219,8 @@ const TrackRow: React.FC<{
   isOffline: boolean;
   onPlay: () => void;
   onToggleLike: () => void;
-  onAddToQueue: () => void;
   onOpenPlaylistPicker: () => void;
-  onDownloadMp3: () => void;
-  onToggleOffline: () => void;
-  onOpenSettings: () => void;
+  onOpenMoreActions: () => void;
   onOpenArtist?: (artistId: string) => void;
   onOpenAlbum?: (albumId: string) => void;
   extraRightAction?: React.ReactNode;
@@ -233,11 +234,8 @@ const TrackRow: React.FC<{
   isOffline,
   onPlay,
   onToggleLike,
-  onAddToQueue,
   onOpenPlaylistPicker,
-  onDownloadMp3,
-  onToggleOffline,
-  onOpenSettings,
+  onOpenMoreActions,
   onOpenArtist,
   onOpenAlbum,
   extraRightAction,
@@ -275,13 +273,21 @@ const TrackRow: React.FC<{
       onClick={onPlay}
       className="flex items-center gap-3 min-w-0 flex-1 text-left cursor-pointer min-h-11"
     >
-      <div className="w-11 h-11 rounded-lg overflow-hidden bg-[#1B1B22] shrink-0">
+      <div className="relative w-11 h-11 rounded-lg overflow-hidden bg-[#1B1B22] shrink-0">
         <CoverArt
           src={track.album.cover}
           alt={track.title}
           fallbackLabel={track.artist.name}
           className="w-full h-full object-cover"
         />
+        {isOffline && (
+          <span
+            title={copy.savedOfflineBadge}
+            className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-[#2563EB] text-white flex items-center justify-center shadow"
+          >
+            <Check className="w-2.5 h-2.5" />
+          </span>
+        )}
       </div>
       <div className="min-w-0 flex-1">
         <p className={`text-sm font-semibold truncate leading-snug ${isActive ? 'text-[#60A5FA]' : 'text-white'}`}>
@@ -350,49 +356,17 @@ const TrackRow: React.FC<{
         <Plus className="w-4 h-4" />
       </button>
 
-      <button
-        type="button"
-        onClick={onAddToQueue}
-        title={copy.addToQueue}
-        aria-label={copy.addToQueue}
-        className="hidden sm:flex w-9 h-9 rounded-full items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-      >
-        <ListPlus className="w-4 h-4" />
-      </button>
-
-      <button
-        type="button"
-        onClick={onToggleOffline}
-        title={isOffline ? copy.savedOfflineBadge : copy.saveOfflineBtn}
-        aria-label={isOffline ? copy.savedOfflineBadge : copy.saveOfflineBtn}
-        className={`hidden sm:flex w-9 h-9 rounded-full items-center justify-center cursor-pointer ${
-          isOffline ? 'text-[#60A5FA]' : 'text-zinc-400 hover:text-white'
-        }`}
-      >
-        {isOffline ? <Check className="w-4 h-4" /> : <FolderDown className="w-4 h-4" />}
-      </button>
-
-      <button
-        type="button"
-        onClick={onDownloadMp3}
-        title={copy.downloadMp3Btn}
-        aria-label={copy.downloadMp3Btn}
-        className="hidden md:flex w-9 h-9 rounded-full items-center justify-center text-zinc-400 hover:text-[#60A5FA] cursor-pointer"
-      >
-        <Download className="w-4 h-4" />
-      </button>
-
-      <button
-        type="button"
-        onClick={onOpenSettings}
-        title={copy.studioTitle}
-        aria-label={copy.studioTitle}
-        className="hidden md:flex w-9 h-9 rounded-full items-center justify-center text-zinc-400 hover:text-[#60A5FA] cursor-pointer"
-      >
-        <Sliders className="w-4 h-4" />
-      </button>
-
       {extraRightAction}
+
+      <button
+        type="button"
+        onClick={onOpenMoreActions}
+        title={copy.moreActionsBtn}
+        aria-label={copy.moreActionsBtn}
+        className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer transition-colors"
+      >
+        <MoreHorizontal className="w-4.5 h-4.5" />
+      </button>
 
       <span className="hidden sm:inline w-10 text-right text-xs text-zinc-400 tabular-nums">
         {formatMusicTime(track.durationSec)}
@@ -459,6 +433,13 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   const addSearchHistory = useMusicStore((s) => s.addSearchHistory);
   const removeSearchHistory = useMusicStore((s) => s.removeSearchHistory);
   const clearSearchHistory = useMusicStore((s) => s.clearSearchHistory);
+  const autoDjEnabled = useMusicStore((s) => s.autoDjEnabled);
+  const toggleAutoDj = useMusicStore((s) => s.toggleAutoDj);
+  const jamSession = useMusicStore((s) => s.jamSession);
+  const toggleJamSession = useMusicStore((s) => s.toggleJamSession);
+  const startSeedRadio = useMusicStore((s) => s.startSeedRadio);
+  const generateAiMoodPlaylist = useMusicStore((s) => s.generateAiMoodPlaylist);
+  const lastAiMoodMix = useMusicStore((s) => s.lastAiMoodMix);
 
   const m = MUSIC_I18N[musicLang];
   const detail: MusicDetailView | null =
@@ -473,6 +454,11 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   const [forYouTitle, setForYouTitle] = useState<string>('');
   const [forYouSubTitle, setForYouSubTitle] = useState<string>('');
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
+  const [actionSheetTrack, setActionSheetTrack] = useState<MusicTrack | null>(null);
+  const [globalPillsExpanded, setGlobalPillsExpanded] = useState(false);
+  const [aiMoodSectionOpen, setAiMoodSectionOpen] = useState(false);
+  const [aiMoodPrompt, setAiMoodPrompt] = useState('');
+  const [aiMoodLoading, setAiMoodLoading] = useState(false);
   const [libraryFilter, setLibraryFilter] = useState<'all' | 'playlists' | 'albums' | 'artists' | 'offline'>('all');
   const [librarySort, setLibrarySort] = useState<'recent' | 'alpha'>('recent');
   const [libraryLayout, setLibraryLayout] = useState<'list' | 'grid'>('list');
@@ -480,6 +466,10 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const prevNavTabRef = useRef(navTab);
 
+  useBackInterceptor(Boolean(actionSheetTrack), 'music-track-action-sheet', () => setActionSheetTrack(null), {
+    priority: 17,
+    lockScroll: true,
+  });
   useBackInterceptor(profileDrawerOpen, 'music-profile-drawer', () => setProfileDrawerOpen(false), {
     priority: 16,
     lockScroll: true,
@@ -938,6 +928,30 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
     return entries[0].name;
   }, [listeningStats.artistPlayCounts]);
 
+  const topStatTrack = useMemo(() => {
+    const entries = Object.values(listeningStats.trackPlayCounts || {});
+    if (entries.length === 0) return '—';
+    entries.sort((a, b) => b.count - a.count);
+    return `${entries[0].title} · ${entries[0].artistName}`;
+  }, [listeningStats.trackPlayCounts]);
+
+  const handleGenerateAiMood = useCallback(
+    async (presetPrompt?: string) => {
+      const prompt = (presetPrompt ?? aiMoodPrompt).trim();
+      if (!prompt || aiMoodLoading) return;
+      triggerHaptic('medium');
+      setAiMoodLoading(true);
+      const res = await generateAiMoodPlaylist(prompt);
+      setAiMoodLoading(false);
+      if (!res || res.tracks.length === 0) {
+        showToast(m.catalogLoadError);
+      } else {
+        setAiMoodSectionOpen(true);
+      }
+    },
+    [aiMoodPrompt, aiMoodLoading, generateAiMoodPlaylist, showToast, m.catalogLoadError]
+  );
+
   const moodFilters = useMemo<Array<{ id: HomeMoodFilterId; label: string }>>(
     () => [
       { id: 'all', label: m.moodAll },
@@ -1138,21 +1152,10 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             triggerHaptic('light');
             toggleLikeTrack(track);
           }}
-          onAddToQueue={() => {
-            addToQueue(track);
-            showToast(`${m.addedToQueue}: ${track.title}`);
-          }}
           onOpenPlaylistPicker={() => setPlaylistPickerTrack(track)}
-          onDownloadMp3={() => {
-            triggerHaptic('medium');
-            void startDownloadMp3Job(track);
-            showToast(m.downloadingToast);
-          }}
-          onToggleOffline={() => void handleToggleOffline(track)}
-          onOpenSettings={() => {
+          onOpenMoreActions={() => {
             triggerHaptic('light');
-            if (currentTrack?.id !== track.id) playTrack(track, tracks);
-            setShowEqModal(true);
+            setActionSheetTrack(track);
           }}
           onOpenArtist={(aid) => openArtistDetail(aid)}
           onOpenAlbum={(albid) => openAlbumDetail(albid)}
@@ -1965,7 +1968,13 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    const shuffled = [...detail.topTracks].sort(() => Math.random() - 0.5);
+                    const shuffled = [...detail.topTracks];
+                    for (let i = shuffled.length - 1; i > 0; i--) {
+                      const j = Math.floor(Math.random() * (i + 1));
+                      const tmp = shuffled[i];
+                      shuffled[i] = shuffled[j];
+                      shuffled[j] = tmp;
+                    }
                     playTrack(shuffled[0], shuffled);
                   }}
                   className="h-11 px-5 rounded-full border border-white/20 hover:border-white text-white font-semibold text-sm inline-flex items-center gap-2 cursor-pointer"
@@ -2175,42 +2184,128 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           renderDetailView()
         ) : navTab === 'home' ? (
           <div className="space-y-6 animate-fade-in">
-            {/* Spotify-Style Top Row: Avatar + Interactive Filter Tabs */}
-            <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar pb-0.5">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setProfileDrawerOpen(true);
-                }}
-                aria-label="Abrir perfil y estudio de audio"
-                className="w-11 h-11 rounded-full bg-gradient-to-br from-[#7C3AED] to-[#2563EB] border border-white/20 text-white font-display font-black text-sm flex items-center justify-center shrink-0 cursor-pointer shadow-md active:scale-95 transition-transform"
-              >
-                {userInitial}
-              </button>
+            {/* Spotify-Style Clean Top Row: Avatar + 6 Concise Primary Pills */}
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar pb-0.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setProfileDrawerOpen(true);
+                  }}
+                  aria-label="Abrir perfil y estudio de audio"
+                  className="w-10 h-10 rounded-full bg-gradient-to-br from-[#7C3AED] to-[#2563EB] border border-white/20 text-white font-display font-black text-sm flex items-center justify-center shrink-0 cursor-pointer shadow-md active:scale-95 transition-transform"
+                >
+                  {userInitial}
+                </button>
 
-              <HorizontalRail compact gapClassName="gap-2" className="flex-1 min-w-0">
-                {moodFilters.map((mood) => {
-                  const selected = activeMood === mood.id;
-                  return (
+                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar flex-1 min-w-0">
+                  {[
+                    {
+                      id: 'all',
+                      label: m.filterAll,
+                      selected: activeMood === 'all' && !aiMoodSectionOpen && !globalPillsExpanded,
+                      onClick: () => {
+                        setAiMoodSectionOpen(false);
+                        setGlobalPillsExpanded(false);
+                        setActiveMood('all');
+                      },
+                    },
+                    {
+                      id: 'music',
+                      label: m.filterMusic,
+                      selected: activeMood === 'urbano' || activeMood === 'pop' || activeMood === 'chill',
+                      onClick: () => {
+                        setAiMoodSectionOpen(false);
+                        setGlobalPillsExpanded(false);
+                        setActiveMood(activeMood === 'pop' ? 'all' : 'pop');
+                      },
+                    },
+                    {
+                      id: 'ai-mix',
+                      label: m.filterAiMix,
+                      selected: aiMoodSectionOpen,
+                      onClick: () => {
+                        setGlobalPillsExpanded(false);
+                        setAiMoodSectionOpen((prev) => !prev);
+                      },
+                    },
+                    {
+                      id: 'spotify',
+                      label: 'Spotify / YTM',
+                      selected: activeMood === 'spotify' || activeMood === 'youtube_music',
+                      onClick: () => {
+                        setAiMoodSectionOpen(false);
+                        setGlobalPillsExpanded(false);
+                        setActiveMood(activeMood === 'spotify' ? 'youtube_music' : 'spotify');
+                      },
+                    },
+                    {
+                      id: 'spain',
+                      label: m.moodSpain,
+                      selected: activeMood === 'spain',
+                      onClick: () => {
+                        setAiMoodSectionOpen(false);
+                        setGlobalPillsExpanded(false);
+                        setActiveMood(activeMood === 'spain' ? 'all' : 'spain');
+                      },
+                    },
+                    {
+                      id: 'global',
+                      label: m.filterGlobal,
+                      selected: globalPillsExpanded || (!['all', 'pop', 'spotify', 'youtube_music', 'spain'].includes(activeMood)),
+                      onClick: () => {
+                        setAiMoodSectionOpen(false);
+                        setGlobalPillsExpanded((prev) => !prev);
+                      },
+                    },
+                  ].map((pill) => (
                     <button
-                      key={mood.id}
+                      key={pill.id}
                       type="button"
                       onClick={() => {
                         triggerHaptic('light');
-                        setActiveMood(mood.id);
+                        pill.onClick();
                       }}
-                      className={`min-h-10 px-4 rounded-full text-xs font-bold cursor-pointer transition-all whitespace-nowrap shrink-0 snap-start ${
-                        selected
+                      className={`min-h-9 px-4 rounded-full text-xs font-bold cursor-pointer transition-all whitespace-nowrap shrink-0 ${
+                        pill.selected
                           ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_6px_18px_rgba(37,99,235,0.35)]'
                           : 'bg-[#131318] hover:bg-[#1B1B24] text-zinc-200 border border-white/[0.08]'
                       }`}
                     >
-                      {mood.label}
+                      {pill.label}
                     </button>
-                  );
-                })}
-              </HorizontalRail>
+                  ))}
+                </div>
+              </div>
+
+              {/* Optional secondary global regions & genres rail (revealed on demand) */}
+              {globalPillsExpanded && (
+                <HorizontalRail compact gapClassName="gap-2">
+                  {moodFilters
+                    .filter((item) => item.id !== 'all')
+                    .map((mood) => {
+                      const selected = activeMood === mood.id;
+                      return (
+                        <button
+                          key={mood.id}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setActiveMood(mood.id);
+                          }}
+                          className={`min-h-8 px-3.5 rounded-full text-[11px] font-bold cursor-pointer transition-all whitespace-nowrap shrink-0 snap-start ${
+                            selected
+                              ? 'bg-[#3B82F6] text-white'
+                              : 'bg-[#0D0D12] hover:bg-[#1B1B24] text-zinc-300 border border-white/[0.08]'
+                          }`}
+                        >
+                          {mood.label}
+                        </button>
+                      );
+                    })}
+                </HorizontalRail>
+              )}
             </div>
 
             {/* Instant 1-Tap Search Trigger (Always visible, never buried) */}
@@ -2235,6 +2330,111 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 Buscar
               </span>
             </button>
+
+            {/* #89 AI Mood Playlist Generator Panel */}
+            {aiMoodSectionOpen && (
+              <section className="rounded-3xl bg-gradient-to-br from-[#2563EB]/18 via-[#131318] to-[#0C0C0F] border border-[#3B82F6]/35 p-4 sm:p-5 space-y-3.5 animate-fade-in">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="font-display text-base sm:text-lg font-extrabold text-white flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-[#60A5FA]" />
+                      <span>{m.aiMoodTitle}</span>
+                    </h2>
+                    <p className="text-xs text-zinc-400 mt-0.5">{m.aiMoodSub}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAiMoodSectionOpen(false)}
+                    aria-label={m.cancel}
+                    className="w-8 h-8 rounded-full hover:bg-white/10 text-zinc-400 flex items-center justify-center cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    void handleGenerateAiMood();
+                  }}
+                  className="flex flex-col sm:flex-row gap-2"
+                >
+                  <input
+                    type="text"
+                    value={aiMoodPrompt}
+                    onChange={(e) => setAiMoodPrompt(e.target.value)}
+                    placeholder={m.aiMoodPlaceholder}
+                    className="flex-1 h-11 px-4 rounded-xl bg-black/50 border border-white/15 focus:border-[#3B82F6] text-sm text-white placeholder:text-zinc-500 outline-none"
+                  />
+                  <button
+                    type="submit"
+                    disabled={aiMoodLoading || !aiMoodPrompt.trim()}
+                    className="h-11 px-5 rounded-xl bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white text-xs font-bold inline-flex items-center justify-center gap-2 cursor-pointer disabled:opacity-45 shrink-0"
+                  >
+                    {aiMoodLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>{m.aiMoodGenerating}</span>
+                      </>
+                    ) : (
+                      <>
+                        <Wand2 className="w-4 h-4" />
+                        <span>{m.aiMoodBtn}</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+
+                <div className="flex flex-wrap gap-1.5">
+                  {['Noche conduciendo', 'Entreno intenso', 'Chill Lofi', 'Verano urbano'].map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => {
+                        setAiMoodPrompt(chip);
+                        void handleGenerateAiMood(chip);
+                      }}
+                      className="h-8 px-3 rounded-full bg-white/[0.06] hover:bg-[#3B82F6]/20 border border-white/10 text-[11px] font-semibold text-zinc-200 cursor-pointer"
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+
+                {lastAiMoodMix && lastAiMoodMix.tracks.length > 0 && (
+                  <div className="pt-2 border-t border-white/[0.08] space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-extrabold text-white truncate">{lastAiMoodMix.title}</p>
+                        <p className="text-[11px] text-zinc-400 truncate">{lastAiMoodMix.subtitle}</p>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => playTrack(lastAiMoodMix.tracks[0], lastAiMoodMix.tracks)}
+                          className="h-9 px-4 rounded-full bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                          <span>{m.playAll}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            downloadExportifyCsv(lastAiMoodMix.title, lastAiMoodMix.tracks);
+                            showToast('CSV Exportify descargado');
+                          }}
+                          className="h-9 px-3 rounded-full bg-white/[0.08] hover:bg-white/[0.15] text-xs font-bold text-white inline-flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <FileSpreadsheet className="w-3.5 h-3.5 text-[#60A5FA]" />
+                          <span>CSV</span>
+                        </button>
+                      </div>
+                    </div>
+                    {renderTrackList(lastAiMoodMix.tracks.slice(0, 8))}
+                  </div>
+                )}
+              </section>
+            )}
 
             {homeLoading ? (
               <div className="space-y-4">
@@ -2590,6 +2790,41 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   </section>
                 )}
 
+                {/* #89 AI Mood Playlist Quick Generator inside Idle Search */}
+                <section className="rounded-2xl bg-gradient-to-r from-[#2563EB]/16 via-[#131318] to-[#0D0D12] border border-[#3B82F6]/25 p-4 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="w-4 h-4 text-[#60A5FA]" />
+                      <h2 className="font-display text-sm font-bold text-white">{m.aiMoodTitle}</h2>
+                    </div>
+                  </div>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void handleGenerateAiMood().then(() => {
+                        setNavTab('home');
+                        setAiMoodSectionOpen(true);
+                      });
+                    }}
+                    className="flex gap-2"
+                  >
+                    <input
+                      type="text"
+                      value={aiMoodPrompt}
+                      onChange={(e) => setAiMoodPrompt(e.target.value)}
+                      placeholder={m.aiMoodPlaceholder}
+                      className="flex-1 h-10 px-3.5 rounded-xl bg-black/50 border border-white/15 focus:border-[#3B82F6] text-xs text-white placeholder:text-zinc-500 outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={aiMoodLoading || !aiMoodPrompt.trim()}
+                      className="h-10 px-4 rounded-xl bg-[#3B82F6] text-white text-xs font-bold cursor-pointer disabled:opacity-45 shrink-0"
+                    >
+                      {aiMoodLoading ? '...' : m.aiMoodBtn}
+                    </button>
+                  </form>
+                </section>
+
                 {/* Quick Pick Suggestions + Favorite Imported Artists */}
                 <section className="space-y-2.5">
                   <h2 className="font-display text-sm font-bold text-zinc-300">{m.quickSearchesTitle}</h2>
@@ -2794,10 +3029,10 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             {/* Category Filter Chips */}
             <HorizontalRail compact gapClassName="gap-2">
               {[
-                { id: 'all' as const, label: 'Todo' },
-                { id: 'playlists' as const, label: 'Listas' },
-                { id: 'albums' as const, label: 'Álbumes' },
-                { id: 'artists' as const, label: 'Artistas' },
+                { id: 'all' as const, label: m.libAll },
+                { id: 'playlists' as const, label: m.libPlaylists },
+                { id: 'albums' as const, label: m.libAlbums },
+                { id: 'artists' as const, label: m.libArtists },
                 { id: 'offline' as const, label: `Offline (${offlineTracks.length})` },
               ].map((chip) => {
                 const active = libraryFilter === chip.id;
@@ -2826,7 +3061,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                 className="min-h-9 px-2 rounded-lg hover:bg-white/[0.06] inline-flex items-center gap-1.5 font-semibold cursor-pointer"
               >
                 <ArrowUpDown className="w-3.5 h-3.5" />
-                <span>{librarySort === 'recent' ? 'Recientes' : 'A–Z'}</span>
+                <span>{librarySort === 'recent' ? m.libSortRecent : m.libSortAlpha}</span>
               </button>
 
               <button
@@ -3053,9 +3288,14 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               </button>
             </div>
 
-            {/* Listening Stats */}
-            <div className="p-3.5 rounded-2xl bg-[#131318] border border-white/[0.08] space-y-2.5">
-              <p className="text-xs font-bold text-zinc-300">{m.statsTitle}</p>
+            {/* #90 Riffan Wrapped Visual Recap Card */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-[#2563EB]/24 via-[#131318] to-[#7C3AED]/16 border border-[#3B82F6]/35 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-black tracking-wide uppercase text-[#93C5FD] inline-flex items-center gap-1.5">
+                  <Award className="w-4 h-4" />
+                  <span>{m.wrappedTitle}</span>
+                </span>
+              </div>
               <div className="grid grid-cols-3 gap-2 text-center">
                 <div>
                   <p className="text-base font-black text-white tabular-nums">{listeningStats.totalPlays}</p>
@@ -3071,6 +3311,82 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   <p className="text-sm font-bold text-[#60A5FA] truncate">{topStatArtist}</p>
                   <p className="text-[10px] text-zinc-400">{m.statsTopArtistLabel}</p>
                 </div>
+              </div>
+              <div className="pt-2 border-t border-white/[0.08]">
+                <p className="text-[10px] uppercase tracking-wider text-zinc-400">{m.wrappedTopTrack}</p>
+                <p className="text-xs font-bold text-white truncate mt-0.5">{topStatTrack}</p>
+              </div>
+              {(recentTracks.length > 0 || likedTracks.length > 0) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const topMix = [...likedTracks, ...recentTracks].slice(0, 20);
+                    if (topMix.length > 0) {
+                      playTrack(topMix[0], topMix);
+                      setProfileDrawerOpen(false);
+                    }
+                  }}
+                  className="w-full h-9 rounded-full bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>{m.wrappedPlayMix}</span>
+                </button>
+              )}
+            </div>
+
+            {/* #84 Riffan Jam & #85 Auto-DJ Quick Switches */}
+            <div className="p-3 rounded-2xl bg-[#131318] border border-white/[0.08] space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Disc3 className={`w-3.5 h-3.5 ${autoDjEnabled ? 'text-[#60A5FA]' : 'text-zinc-500'}`} />
+                    <span className="truncate">{m.autoDjLabel}</span>
+                  </p>
+                  <p className="text-[10px] text-zinc-400 truncate">{m.autoDjSub}</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={autoDjEnabled}
+                  onClick={() => toggleAutoDj()}
+                  className={`relative inline-flex h-6 w-10 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                    autoDjEnabled ? 'bg-[#3B82F6]' : 'bg-white/15'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      autoDjEnabled ? 'translate-x-5' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/[0.06]">
+                <div className="min-w-0">
+                  <p className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Users className={`w-3.5 h-3.5 ${jamSession.active ? 'text-emerald-400' : 'text-zinc-500'}`} />
+                    <span className="truncate">
+                      {m.jamLabel}
+                      {jamSession.active && jamSession.roomCode ? ` · ${jamSession.roomCode}` : ''}
+                    </span>
+                  </p>
+                  <p className="text-[10px] text-zinc-400 truncate">{m.jamSub}</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={jamSession.active}
+                  onClick={() => toggleJamSession()}
+                  className={`relative inline-flex h-6 w-10 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
+                    jamSession.active ? 'bg-emerald-500' : 'bg-white/15'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      jamSession.active ? 'translate-x-5' : 'translate-x-1'
+                    }`}
+                  />
+                </button>
               </div>
             </div>
 
@@ -3152,6 +3468,142 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
               </div>
             </div>
           </aside>
+        </div>
+      )}
+
+      {/* Clean Unified Track Action Sheet (...) including #87 Seed Radio */}
+      {actionSheetTrack && (
+        <div
+          className="fixed inset-0 z-[80] bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
+          onClick={() => setActionSheetTrack(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl bg-[#0C0C0F] border border-white/[0.12] p-5 pb-[calc(env(safe-area-inset-bottom,0px)+20px)] space-y-4 shadow-2xl"
+          >
+            <div className="flex items-center gap-3 pb-3 border-b border-white/[0.08]">
+              <CoverArt
+                src={actionSheetTrack.album.cover}
+                alt={actionSheetTrack.title}
+                fallbackLabel={actionSheetTrack.artist.name}
+                className="w-12 h-12 rounded-xl object-cover shrink-0"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold text-white truncate">{actionSheetTrack.title}</p>
+                <p className="text-xs text-zinc-400 truncate">{actionSheetTrack.artist.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActionSheetTrack(null)}
+                aria-label={m.cancel}
+                className="w-9 h-9 rounded-full hover:bg-white/10 text-zinc-400 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1">
+              <button
+                type="button"
+                onClick={() => {
+                  const t = actionSheetTrack;
+                  setActionSheetTrack(null);
+                  addToQueue(t);
+                  showToast(`${m.addedToQueue}: ${t.title}`);
+                }}
+                className="w-full min-h-11 px-3 rounded-xl hover:bg-white/[0.06] flex items-center gap-3 text-sm font-semibold text-white cursor-pointer"
+              >
+                <ListPlus className="w-4 h-4 text-[#60A5FA]" />
+                <span>{m.addToQueue}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const t = actionSheetTrack;
+                  setActionSheetTrack(null);
+                  void startSeedRadio(t);
+                }}
+                className="w-full min-h-11 px-3 rounded-xl hover:bg-white/[0.06] flex items-center gap-3 text-sm font-semibold text-white cursor-pointer"
+              >
+                <Wand2 className="w-4 h-4 text-[#60A5FA]" />
+                <span>{m.seedRadioBtn}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const t = actionSheetTrack;
+                  setActionSheetTrack(null);
+                  setPlaylistPickerTrack(t);
+                }}
+                className="w-full min-h-11 px-3 rounded-xl hover:bg-white/[0.06] flex items-center gap-3 text-sm font-semibold text-white cursor-pointer"
+              >
+                <Plus className="w-4 h-4 text-[#60A5FA]" />
+                <span>{m.addToPlaylist}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const t = actionSheetTrack;
+                  setActionSheetTrack(null);
+                  void handleToggleOffline(t);
+                }}
+                className="w-full min-h-11 px-3 rounded-xl hover:bg-white/[0.06] flex items-center gap-3 text-sm font-semibold text-white cursor-pointer"
+              >
+                <FolderDown className="w-4 h-4 text-[#60A5FA]" />
+                <span>
+                  {offlineIdSet.has(actionSheetTrack.id) ? m.removeOfflineBtn : m.saveOfflineBtn}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const t = actionSheetTrack;
+                  setActionSheetTrack(null);
+                  triggerHaptic('medium');
+                  void startDownloadMp3Job(t);
+                  showToast(m.downloadingToast);
+                }}
+                className="w-full min-h-11 px-3 rounded-xl hover:bg-white/[0.06] flex items-center gap-3 text-sm font-semibold text-white cursor-pointer"
+              >
+                <Download className="w-4 h-4 text-[#60A5FA]" />
+                <span>{m.downloadMp3Btn}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const t = actionSheetTrack;
+                  setActionSheetTrack(null);
+                  if (currentTrack?.id !== t.id) playTrack(t);
+                  setShowEqModal(true);
+                }}
+                className="w-full min-h-11 px-3 rounded-xl hover:bg-white/[0.06] flex items-center gap-3 text-sm font-semibold text-white cursor-pointer"
+              >
+                <Sliders className="w-4 h-4 text-[#A78BFA]" />
+                <span>{m.studioTitle}</span>
+              </button>
+
+              {isOpenableArtistId(actionSheetTrack.artist.id) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const aid = actionSheetTrack.artist.id;
+                    const artistObj = actionSheetTrack.artist;
+                    setActionSheetTrack(null);
+                    void openArtistDetail(aid, artistObj);
+                  }}
+                  className="w-full min-h-11 px-3 rounded-xl hover:bg-white/[0.06] flex items-center gap-3 text-sm font-semibold text-white cursor-pointer"
+                >
+                  <Music2 className="w-4 h-4 text-zinc-300" />
+                  <span>{actionSheetTrack.artist.name}</span>
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

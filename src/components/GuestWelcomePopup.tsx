@@ -3,6 +3,7 @@ import { Check, X } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { triggerHaptic } from '../utils/haptics';
 import { pickLang } from '../utils/i18n';
+import { useBackInterceptor } from '../lib/backInterceptor';
 import { getMonogramInitials } from './MobileViewportGuard';
 
 interface GuestWelcomePopupProps {
@@ -27,6 +28,13 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
   const [draftName, setDraftName] = useState('');
   const onDismissKeepRandomRef = useRef(onDismissKeepRandom);
   onDismissKeepRandomRef.current = onDismissKeepRandom;
+
+  useBackInterceptor(
+    true,
+    'guest-welcome-popup',
+    () => onDismissKeepRandomRef.current(),
+    { priority: 22 }
+  );
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

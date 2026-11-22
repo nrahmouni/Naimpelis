@@ -263,11 +263,7 @@ export function destroyLiveDvbSession(key: string): void {
   } catch {
     // ignore
   }
-  try {
-    fs.rmSync(sess.dir, { recursive: true, force: true });
-  } catch {
-    // ignore
-  }
+  void fs.promises.rm(sess.dir, { recursive: true, force: true }).catch(() => {});
 }
 
 setInterval(() => {
@@ -325,8 +321,8 @@ export async function ensureLiveDvbCleanHlsSession(
 
   const sessionDir = path.join(DVB_LIVE_ROOT, sessionKey);
   try {
-    fs.rmSync(sessionDir, { recursive: true, force: true });
-    fs.mkdirSync(sessionDir, { recursive: true });
+    await fs.promises.rm(sessionDir, { recursive: true, force: true });
+    await fs.promises.mkdir(sessionDir, { recursive: true });
   } catch {
     return null;
   }
@@ -470,32 +466,37 @@ export async function ensureLiveDvbCleanHlsSession(
 
   session.readyPromise = new Promise<boolean>((resolve) => {
     const deadline = Date.now() + 12_000;
-    const poll = setInterval(() => {
+    let inTick = false;
+    const poll = setInterval(async () => {
       if (session.dead) {
         clearInterval(poll);
         resolve(false);
         return;
       }
-      try {
-        if (fs.existsSync(playlistPath)) {
-          const content = fs.readFileSync(playlistPath, 'utf8');
-          const segMatches = content.match(/seg_\d+\.ts/g);
-          if (segMatches && segMatches.length >= 2) {
-            const firstSegPath = path.join(sessionDir, segMatches[0]);
-            if (fs.existsSync(firstSegPath) && fs.statSync(firstSegPath).size > 564) {
-              clearInterval(poll);
-              resolve(true);
-              return;
-            }
-          }
-        }
-      } catch {
-        // wait next tick
-      }
       if (Date.now() > deadline) {
         clearInterval(poll);
         destroyLiveDvbSession(sessionKey);
         resolve(false);
+        return;
+      }
+      if (inTick) return;
+      inTick = true;
+      try {
+        const content = await fs.promises.readFile(playlistPath, 'utf8');
+        const segMatches = content.match(/seg_\d+\.ts/g);
+        if (segMatches && segMatches.length >= 2) {
+          const firstSegPath = path.join(sessionDir, segMatches[0]);
+          const st = await fs.promises.stat(firstSegPath);
+          if (st.size > 564) {
+            clearInterval(poll);
+            resolve(true);
+            return;
+          }
+        }
+      } catch {
+        // wait next tick
+      } finally {
+        inTick = false;
       }
     }, 50);
   });
@@ -580,12 +581,13 @@ export const handleDvbLive = async (
   }
 
   sess.lastAccessAt = Date.now();
-  let filePath = path.join(sess.dir, filename);
-  if (!fs.existsSync(filePath) && filename === 'index.m3u8') {
+  const filePath = path.join(sess.dir, filename);
+  let fileStat: fs.Stats | null = await fs.promises.stat(filePath).catch(() => null);
+  if (!fileStat && filename === 'index.m3u8') {
     await sess.readyPromise.catch(() => false);
-    filePath = path.join(sess.dir, filename);
+    fileStat = await fs.promises.stat(filePath).catch(() => null);
   }
-  if (!fs.existsSync(filePath)) {
+  if (!fileStat) {
     res.status(404).send('Segment not ready');
     return;
   }
@@ -599,12 +601,7 @@ export const handleDvbLive = async (
     res.setHeader('Cache-Control', 'public, max-age=15');
   }
   if (req.method === 'HEAD') {
-    try {
-      const st = fs.statSync(filePath);
-      res.setHeader('Content-Length', String(st.size));
-    } catch {
-      // ignore
-    }
+    res.setHeader('Content-Length', String(fileStat.size));
     res.status(200).end();
     return;
   }

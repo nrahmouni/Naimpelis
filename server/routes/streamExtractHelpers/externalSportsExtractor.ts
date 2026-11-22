@@ -56,6 +56,9 @@ export function formatExtractResponseForClient(
   };
 }
 
+type SniffedExtractResult = NonNullable<Awaited<ReturnType<typeof extractLiveSportsHlsDirect>>>;
+const inFlightExternalExtracts = new Map<string, Promise<SniffedExtractResult | null>>();
+
 export async function handleExternalSportsExtract(params: {
   rawInput: string;
   resolverType: string;
@@ -78,9 +81,28 @@ export async function handleExternalSportsExtract(params: {
   } = params;
 
   const fullTargetUrl = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
-  const directSports = await extractLiveSportsHlsDirect(fullTargetUrl);
+  const dedupKey = `${resolverType}:${fullTargetUrl}`;
+  let inflight = inFlightExternalExtracts.get(dedupKey);
+  if (!inflight) {
+    inflight = (async (): Promise<SniffedExtractResult | null> => {
+      const directSports = await extractLiveSportsHlsDirect(fullTargetUrl);
+      if (directSports) return directSports;
+      const isKnownDirectMirror = /footunder\.online|tilinhd\.|streamxhd\./i.test(fullTargetUrl);
+      if (resolverType === 'sports_channel' && isKnownDirectMirror) {
+        return null;
+      }
+      return (await sniffStreamWithHeadless(fullTargetUrl)) as SniffedExtractResult | null;
+    })().finally(() => {
+      if (inFlightExternalExtracts.get(dedupKey) === inflight) {
+        inFlightExternalExtracts.delete(dedupKey);
+      }
+    });
+    inFlightExternalExtracts.set(dedupKey, inflight);
+  }
 
-  if (directSports?.isBrokenGreenFeed) {
+  const resolvedSniff = await inflight;
+
+  if (resolvedSniff?.isBrokenGreenFeed) {
     channelHealthMonitor.setTrackHealth(fullTargetUrl, {
       status: 'down',
       failCount: 3,
@@ -97,7 +119,7 @@ export async function handleExternalSportsExtract(params: {
   }
 
   const isKnownDirectMirror = /footunder\.online|tilinhd\.|streamxhd\./i.test(fullTargetUrl);
-  if (!directSports && resolverType === 'sports_channel' && isKnownDirectMirror) {
+  if (!resolvedSniff && resolverType === 'sports_channel' && isKnownDirectMirror) {
     channelHealthMonitor.recordPlaybackFeedback(fullTargetUrl, { failed: true });
     return sendJsonStatus(404, {
       success: false,
@@ -106,10 +128,10 @@ export async function handleExternalSportsExtract(params: {
     });
   }
 
-  const sniffed = directSports || (await sniffStreamWithHeadless(fullTargetUrl));
+  const sniffed = resolvedSniff;
 
   if (sniffed && sniffed.streamUrl) {
-    const alreadyVerified = Boolean(directSports && directSports.verifiedClean);
+    const alreadyVerified = Boolean(sniffed.verifiedClean);
     if (
       !alreadyVerified &&
       !sniffed.isDirectMp4 &&

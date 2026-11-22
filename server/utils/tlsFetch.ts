@@ -4,6 +4,7 @@ import type { Readable } from 'stream';
 import zlib from 'zlib';
 import { logger } from '../utils/logger.ts';
 import { LruTtlCache } from './lruCache.ts';
+import { assertSafeProxyUrl } from './ssrfGuard.ts';
 
 const tlsRelaxedAgent = new https.Agent({
   rejectUnauthorized: false,
@@ -39,7 +40,7 @@ const STREAMING_TLS_RELAX_PATTERNS = [
   /(\.|^)vest/i,
   /(\.|^)ok\.ru$/i,
   /(\.|^)vk\.com$/i,
-  /\.(pw|lat|sbs|cfd|stream|top|xyz|icu|lol|buzz)$/i,
+  /(\.|^)tilinhd\.lol$/i,
 ];
 
 const DIRECT_IPV4_HTTPS_HOSTS = new LruTtlCache<string, true>(400, 6 * 60 * 60 * 1000);
@@ -319,11 +320,14 @@ function relaxedHttpsRequest(
           cleanupSignal();
           settled = true;
           const nextUrl = new URL(res.headers.location, targetUrl);
-          relaxedHttpsRequest(nextUrl, {
-            ...options,
-            method: status === 303 ? 'GET' : options.method,
-            redirectCount: redirectCount + 1,
-          })
+          assertSafeProxyUrl(nextUrl.toString())
+            .then((safeNextUrl) =>
+              relaxedHttpsRequest(safeNextUrl, {
+                ...options,
+                method: status === 303 ? 'GET' : options.method,
+                redirectCount: redirectCount + 1,
+              })
+            )
             .then(resolve)
             .catch(reject);
           return;

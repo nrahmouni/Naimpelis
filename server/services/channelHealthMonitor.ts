@@ -123,7 +123,7 @@ export async function probeChannelTrack(
     /\.m3u8(\?|$)/i.test(cleanUrl);
 
   const isDvbHeadend = cleanUrl.includes('90.163.85.113:8093');
-  if (isDvbHeadend && process.env.ENABLE_LEGACY_DVB_PROBE !== '1') {
+  if (isDvbHeadend && process.env.ENABLE_LEGACY_DVB_PROBE !== '1' && !options?.fetchImpl) {
     return { status: 'down', latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
   }
   const timeoutMs = options?.timeoutMs ?? (isDvbHeadend ? 7500 : PROBE_TIMEOUT_MS);
@@ -479,7 +479,7 @@ export class ChannelHealthMonitor {
       const dvbQueue: Array<[string, HealthProbeTrack]> = [];
       for (const entry of uniqueTracks.entries()) {
         if (entry[0].includes('90.163.85.113:8093')) {
-          if (process.env.ENABLE_LEGACY_DVB_PROBE === '1') {
+          if (process.env.ENABLE_LEGACY_DVB_PROBE === '1' || Boolean(options?.fetchImpl)) {
             dvbQueue.push(entry);
           }
         } else {

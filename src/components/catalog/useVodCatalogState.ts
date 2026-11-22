@@ -54,8 +54,10 @@ export function useVodCatalogState({
 
   const [movieQuery, setMovieQuery] = useState(initialCineSearch);
   const [debouncedMovieQuery, setDebouncedMovieQuery] = useState(initialCineTrimmed);
-  const [movieSort, setMovieSort] = useState<string>('trending');
-  const [movieGenre, setMovieGenre] = useState<string>('');
+  const movieSort = useAppStore((s) => s.cineMovieSort);
+  const setMovieSort = useAppStore((s) => s.setCineMovieSort);
+  const movieGenre = useAppStore((s) => s.cineMovieGenre);
+  const setMovieGenre = useAppStore((s) => s.setCineMovieGenre);
   const [moviePage, setMoviePage] = useState<number>(1);
   const [hasMoreMovies, setHasMoreMovies] = useState<boolean>(false);
   const [movies, setMovies] = useState<CatalogMovie[]>([]);
@@ -64,9 +66,12 @@ export function useVodCatalogState({
 
   const [seriesQuery, setSeriesQuery] = useState(initialCineSearch);
   const [debouncedSeriesQuery, setDebouncedSeriesQuery] = useState(initialCineTrimmed);
-  const [seriesSort, setSeriesSort] = useState<string>('trending');
-  const [seriesGenre, setSeriesGenre] = useState<string>('');
-  const [seriesLangMode, setSeriesLangMode] = useState<'ES' | 'LAT' | 'VOSE' | 'EN'>('ES');
+  const seriesSort = useAppStore((s) => s.cineSeriesSort);
+  const setSeriesSort = useAppStore((s) => s.setCineSeriesSort);
+  const seriesGenre = useAppStore((s) => s.cineSeriesGenre);
+  const setSeriesGenre = useAppStore((s) => s.setCineSeriesGenre);
+  const seriesLangMode = useAppStore((s) => s.cineSeriesLangMode);
+  const setSeriesLangMode = useAppStore((s) => s.setCineSeriesLangMode);
   const [seriesPage, setSeriesPage] = useState<number>(1);
   const [hasMoreSeries, setHasMoreSeries] = useState<boolean>(false);
   const [seriesList, setSeriesList] = useState<CatalogMovie[]>([]);
@@ -87,7 +92,8 @@ export function useVodCatalogState({
   const cineSpecialPortal = useAppStore((s) => s.cineSpecialPortal);
   const setCineSpecialPortal = useAppStore((s) => s.setCineSpecialPortal);
   const [cineFiltersOpen, setCineFiltersOpen] = useState(false);
-  const [cineAudioOverride, setCineAudioOverride] = useState<'ES' | 'VOSE' | 'EN'>('ES');
+  const cineAudioOverride = useAppStore((s) => s.cineAudioOverride);
+  const setCineAudioOverride = useAppStore((s) => s.setCineAudioOverride);
 
   const [catalaQuery, setCatalaQuery] = useState(initialCineSearch);
   const [debouncedCatalaQuery, setDebouncedCatalaQuery] = useState(initialCineTrimmed);

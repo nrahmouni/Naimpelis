@@ -21,7 +21,7 @@ import {
 } from '../services/iptvPlaylistService.ts';
 import { channelHealthMonitor } from '../services/channelHealthMonitor.ts';
 import { loadSpanishEpgSchedule } from '../services/epgService.ts';
-import { getAllIptvChannels } from './iptvHelpers/iptvChannelRegistry.ts';
+import { getAllIptvChannels, getIptvChannelById, invalidateIptvChannelCache } from './iptvHelpers/iptvChannelRegistry.ts';
 import {
   getCachedFamelackWorldChannels,
   refreshFamelackAndWorldCatalog,
@@ -68,6 +68,8 @@ const iptvChannelResolveCache = new LruTtlCache<
   }
 >(150, 20 * 60 * 1000);
 
+const epgXmlResponseCache = new LruTtlCache<string, string>(6, 5 * 60 * 1000);
+
 async function resolveDvbIptvPlaylistText(
   cleanUrl: string,
   referer: string,
@@ -100,6 +102,7 @@ export function registerIptvAndTdtRoutes(
   app.get('/api/catalog/tdt', async (req, res) => {
     if (req.query.refresh === '1') {
       await refreshLiveIptvRegistry(true).catch(() => undefined);
+      invalidateIptvChannelCache();
     } else {
       void refreshLiveIptvRegistry(false).catch(() => undefined);
     }
@@ -140,6 +143,7 @@ export function registerIptvAndTdtRoutes(
           refreshLiveIptvRegistry(true).catch(() => undefined),
           refreshFamelackAndWorldCatalog(true).catch(() => undefined),
         ]);
+        invalidateIptvChannelCache();
       } else {
         const tasks: Promise<unknown>[] = [refreshLiveIptvRegistry(false).catch(() => undefined)];
         if (getCachedFamelackWorldChannels().length === 0) {
@@ -212,6 +216,7 @@ export function registerIptvAndTdtRoutes(
         refreshLiveIptvRegistry(true).catch(() => undefined),
         refreshFamelackAndWorldCatalog(true).catch(() => undefined),
       ]);
+      invalidateIptvChannelCache();
     } else if (getCachedFamelackWorldChannels().length === 0) {
       await refreshFamelackAndWorldCatalog(false).catch(() => undefined);
     }
@@ -311,7 +316,7 @@ export function registerIptvAndTdtRoutes(
 
   app.get('/api/iptv/logo/:channelId', (req, res) => {
     const rawId = String(req.params.channelId || '').replace(/\.png$/i, '');
-    const ch = getAllIptvChannels().find((c) => c.id === rawId);
+    const ch = getIptvChannelById(rawId);
     const png = renderIptvChannelPng(ch?.shortMark || rawId.slice(0, 3), ch?.brandTone || '#E11D48');
 
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -323,7 +328,7 @@ export function registerIptvAndTdtRoutes(
 
   app.get('/api/iptv/live/:channelId', async (req, res) => {
     const rawId = String(req.params.channelId || '').replace(/\.m3u8$/i, '');
-    const channel = getAllIptvChannels().find((c) => c.id === rawId);
+    const channel = getIptvChannelById(rawId);
     if (!channel) {
       return res.status(404).send('Channel not found');
     }
@@ -590,88 +595,94 @@ export function registerIptvAndTdtRoutes(
   app.get(['/epg.xml', '/riffantv-epg.xml', '/api/iptv/epg.xml'], async (req, res) => {
     try {
       const publicOrigin = getPublicOrigin(req);
-      const store = await loadSpanishEpgSchedule();
-      const channels = getAllIptvChannels();
-      const xmlParts: string[] = [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        '<tv generator-info-name="RIFFANTV IPTV EPG" generator-info-url="' +
-          escapeXmlText(publicOrigin) +
-          '">',
-      ];
+      const forceDownload = req.query.download === '1';
+      let xmlPayload = epgXmlResponseCache.get(publicOrigin);
+      if (!xmlPayload) {
+        const store = await loadSpanishEpgSchedule();
+        const channels = getAllIptvChannels();
+        const xmlParts: string[] = [
+          '<?xml version="1.0" encoding="UTF-8"?>',
+          '<tv generator-info-name="RIFFANTV IPTV EPG" generator-info-url="' +
+            escapeXmlText(publicOrigin) +
+            '">',
+        ];
 
-      const emittedChannelIds = new Set<string>();
-      for (const ch of channels) {
-        const epgId = getIptvEpgId(ch.id);
-        if (emittedChannelIds.has(epgId)) continue;
-        emittedChannelIds.add(epgId);
-        const officialLogo = ch.logoUrl || resolveOfficialChannelLogoUrl(ch);
-        const logoUrl =
-          officialLogo && /^https?:\/\//i.test(officialLogo)
-            ? officialLogo
-            : `${publicOrigin}/api/iptv/logo/${encodeURIComponent(ch.id)}.png`;
-        xmlParts.push(`  <channel id="${escapeXmlText(epgId)}">`);
-        xmlParts.push(`    <display-name lang="es">${escapeXmlText(ch.name)}</display-name>`);
-        xmlParts.push(`    <icon src="${escapeXmlText(logoUrl)}" />`);
-        xmlParts.push('  </channel>');
-      }
+        const emittedChannelIds = new Set<string>();
+        for (const ch of channels) {
+          const epgId = getIptvEpgId(ch.id);
+          if (emittedChannelIds.has(epgId)) continue;
+          emittedChannelIds.add(epgId);
+          const officialLogo = ch.logoUrl || resolveOfficialChannelLogoUrl(ch);
+          const logoUrl =
+            officialLogo && /^https?:\/\//i.test(officialLogo)
+              ? officialLogo
+              : `${publicOrigin}/api/iptv/logo/${encodeURIComponent(ch.id)}.png`;
+          xmlParts.push(`  <channel id="${escapeXmlText(epgId)}">`);
+          xmlParts.push(`    <display-name lang="es">${escapeXmlText(ch.name)}</display-name>`);
+          xmlParts.push(`    <icon src="${escapeXmlText(logoUrl)}" />`);
+          xmlParts.push('  </channel>');
+        }
 
-      const now = Date.now();
-      for (const ch of channels) {
-        const epgId = getIptvEpgId(ch.id);
-        const events = store.get(epgId) || [];
-        if (events.length > 0) {
-          for (const ev of events) {
-            xmlParts.push(
-              `  <programme start="${formatXmltvUtcTime(ev.startMs)}" stop="${formatXmltvUtcTime(
-                ev.stopMs
-              )}" channel="${escapeXmlText(epgId)}">`
-            );
-            xmlParts.push(`    <title lang="es">${escapeXmlText(ev.title)}</title>`);
-            if (ev.subtitle) {
-              xmlParts.push(`    <sub-title lang="es">${escapeXmlText(ev.subtitle)}</sub-title>`);
+        const now = Date.now();
+        for (const ch of channels) {
+          const epgId = getIptvEpgId(ch.id);
+          const events = store.get(epgId) || [];
+          if (events.length > 0) {
+            for (const ev of events) {
+              xmlParts.push(
+                `  <programme start="${formatXmltvUtcTime(ev.startMs)}" stop="${formatXmltvUtcTime(
+                  ev.stopMs
+                )}" channel="${escapeXmlText(epgId)}">`
+              );
+              xmlParts.push(`    <title lang="es">${escapeXmlText(ev.title)}</title>`);
+              if (ev.subtitle) {
+                xmlParts.push(`    <sub-title lang="es">${escapeXmlText(ev.subtitle)}</sub-title>`);
+              }
+              if (ev.description) {
+                xmlParts.push(`    <desc lang="es">${escapeXmlText(ev.description)}</desc>`);
+              }
+              if (ev.category) {
+                xmlParts.push(`    <category lang="es">${escapeXmlText(ev.category)}</category>`);
+              }
+              xmlParts.push('  </programme>');
             }
-            if (ev.description) {
-              xmlParts.push(`    <desc lang="es">${escapeXmlText(ev.description)}</desc>`);
-            }
-            if (ev.category) {
-              xmlParts.push(`    <category lang="es">${escapeXmlText(ev.category)}</category>`);
-            }
-            xmlParts.push('  </programme>');
-          }
-        } else {
-          const blockDuration = 4 * 60 * 60 * 1000;
-          const currentBlockStart = Math.floor(now / blockDuration) * blockDuration;
-          for (let b = 0; b < 6; b++) {
-            const bStart = currentBlockStart + b * blockDuration;
-            const bStop = bStart + blockDuration;
-            const blockTitle = ch.category?.includes('futbol') || ch.category?.includes('movistar') || ch.category?.includes('dazn')
-              ? `${ch.name} · Fútbol y Deportes en Directo HD`
-              : ch.category === 'documentales'
-              ? `${ch.name} · Documentales y Naturaleza HD`
-              : ch.category === 'cine_series'
-              ? `${ch.name} · Cine y Series en Emisión Continua`
-              : `${ch.name} · Emisión en Directo HD`;
+          } else {
+            const blockDuration = 4 * 60 * 60 * 1000;
+            const currentBlockStart = Math.floor(now / blockDuration) * blockDuration;
+            for (let b = 0; b < 6; b++) {
+              const bStart = currentBlockStart + b * blockDuration;
+              const bStop = bStart + blockDuration;
+              const blockTitle = ch.category?.includes('futbol') || ch.category?.includes('movistar') || ch.category?.includes('dazn')
+                ? `${ch.name} · Fútbol y Deportes en Directo HD`
+                : ch.category === 'documentales'
+                ? `${ch.name} · Documentales y Naturaleza HD`
+                : ch.category === 'cine_series'
+                ? `${ch.name} · Cine y Series en Emisión Continua`
+                : `${ch.name} · Emisión en Directo HD`;
 
-            xmlParts.push(
-              `  <programme start="${formatXmltvUtcTime(bStart)}" stop="${formatXmltvUtcTime(bStop)}" channel="${escapeXmlText(epgId)}">`
-            );
-            xmlParts.push(`    <title lang="es">${escapeXmlText(blockTitle)}</title>`);
-            xmlParts.push(`    <desc lang="es">${escapeXmlText(ch.description || `Transmisión oficial en directo de ${ch.name} sin cortes para Smart TV.`)}</desc>`);
-            xmlParts.push(`    <category lang="es">${escapeXmlText(IPTV_GROUP_TITLES[ch.category] || 'Directo')}</category>`);
-            xmlParts.push('  </programme>');
+              xmlParts.push(
+                `  <programme start="${formatXmltvUtcTime(bStart)}" stop="${formatXmltvUtcTime(bStop)}" channel="${escapeXmlText(epgId)}">`
+              );
+              xmlParts.push(`    <title lang="es">${escapeXmlText(blockTitle)}</title>`);
+              xmlParts.push(`    <desc lang="es">${escapeXmlText(ch.description || `Transmisión oficial en directo de ${ch.name} sin cortes para Smart TV.`)}</desc>`);
+              xmlParts.push(`    <category lang="es">${escapeXmlText(IPTV_GROUP_TITLES[ch.category] || 'Directo')}</category>`);
+              xmlParts.push('  </programme>');
+            }
           }
         }
+
+        xmlParts.push('</tv>');
+        xmlPayload = xmlParts.join('\n');
+        epgXmlResponseCache.set(publicOrigin, xmlPayload);
       }
 
-      xmlParts.push('</tv>');
-      const forceDownload = req.query.download === '1';
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Content-Type', 'application/xml; charset=utf-8');
       res.setHeader('Cache-Control', 'public, max-age=300');
       if (forceDownload) {
         res.setHeader('Content-Disposition', 'attachment; filename="RIFFANTV-EPG.xml"');
       }
-      res.send(xmlParts.join('\n'));
+      res.send(xmlPayload);
     } catch (err) {
       console.warn('/epg.xml error:', err);
       res.status(500).type('application/xml').send('<tv></tv>');

@@ -4,6 +4,7 @@ import { ArrowLeft, Copy, Film, Globe, Layers, Palette, Sparkles } from 'lucide-
 import { RiffanBrandLogo } from './NaimBrandLogo';
 import { SecondaryButton } from './ui/DesignSystem';
 import { triggerHaptic } from '../utils/haptics';
+import { useBackInterceptor } from '../lib/backInterceptor';
 import {
   WorldPortalTransition,
   type PortalOriginRect,
@@ -22,6 +23,12 @@ interface DesignSystemShowcaseProps {
 }
 
 export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onClose }) => {
+  useBackInterceptor(
+    Boolean(onClose),
+    'design-system-showcase',
+    () => onClose?.(),
+    { priority: 26, lockScroll: true }
+  );
   const [activeTab, setActiveTab] = useState<'posters' | 'logos' | 'tokens' | 'components'>('logos');
   const [posterLang, setPosterLang] = useState<PosterLanguage>('es');
   const [posterFormat, setPosterFormat] = useState<PosterFormat>('vertical');

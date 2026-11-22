@@ -128,6 +128,7 @@ function getPublicOrigin(req: express.Request): string {
 // ============================================================================
 const app = express();
 app.disable('x-powered-by');
+app.set('trust proxy', 1);
 const httpServer = createServer(app);
 const wss = new WebSocketServer({
   noServer: true,
@@ -147,6 +148,8 @@ httpServer.on('upgrade', (req, socket, head) => {
     });
   } else if (pathname === '/ws/gemini-live' && geminiLiveBridge) {
     geminiLiveBridge.handleUpgrade(req, socket, head);
+  } else {
+    socket.destroy();
   }
 });
 
@@ -174,7 +177,9 @@ app.use(
   })
 );
 app.use(securityHeadersMiddleware);
-app.use(express.json({ limit: '10mb' }));
+app.use('/api/ai', express.json({ limit: '10mb' }));
+app.use('/api/music/match-tracks', express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '2mb' }));
 app.use('/api', serviceMeshGatewayMiddleware);
 
 // Serve ES5 UMD Hls.js locally for Samsung Tizen / LG webOS Smart TVs
@@ -678,12 +683,12 @@ async function startServer() {
     if (ENV.nodeEnv !== 'test') {
       setImmediate(() => {
         try {
-          void resolveActiveGnulaMirrors().catch(() => undefined);
-          void refreshLiveIptvRegistry(false).catch(() => undefined);
-          void refreshFamelackAndWorldCatalog(false).catch(() => undefined);
-          void prewarmTodayFootballBoard().catch(() => undefined);
-          void getMovistarDaznHome().catch(() => undefined);
-          void initBelixFromEnv().catch(() => undefined);
+          void resolveActiveGnulaMirrors().catch((err) => logger.warn({ err }, 'prewarm_gnula_failed'));
+          void refreshLiveIptvRegistry(false).catch((err) => logger.warn({ err }, 'prewarm_iptv_failed'));
+          void refreshFamelackAndWorldCatalog(false).catch((err) => logger.warn({ err }, 'prewarm_world_failed'));
+          void prewarmTodayFootballBoard().catch((err) => logger.warn({ err }, 'prewarm_football_failed'));
+          void getMovistarDaznHome().catch((err) => logger.warn({ err }, 'prewarm_dazn_failed'));
+          void initBelixFromEnv().catch((err) => logger.warn({ err }, 'prewarm_belix_failed'));
           channelHealthMonitor.startScheduler(
             () => [
               ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),

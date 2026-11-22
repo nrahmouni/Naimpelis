@@ -28,6 +28,8 @@ import {
   Sparkles,
   ThumbsDown,
   Trash2,
+  Users,
+  Wand2,
 } from 'lucide-react';
 import { EQ_10_LABELS, useMusicStore } from '../../store/useMusicStore';
 import type {
@@ -1119,6 +1121,13 @@ export const FullScreenNowPlayingModal: React.FC<{
   const setShowDownloadDrawer = useMusicStore((s) => s.setShowDownloadDrawer);
   const spatial8dEnabled = useMusicStore((s) => s.spatial8dEnabled);
   const toggleSpatial8d = useMusicStore((s) => s.toggleSpatial8d);
+  const vocalCancel = useMusicStore((s) => s.vocalCancel);
+  const setVocalCancel = useMusicStore((s) => s.setVocalCancel);
+  const autoDjEnabled = useMusicStore((s) => s.autoDjEnabled);
+  const toggleAutoDj = useMusicStore((s) => s.toggleAutoDj);
+  const jamSession = useMusicStore((s) => s.jamSession);
+  const toggleJamSession = useMusicStore((s) => s.toggleJamSession);
+  const startSeedRadio = useMusicStore((s) => s.startSeedRadio);
   const musicLang = useMusicStore((s) => s.musicLang);
   const m = MUSIC_I18N[musicLang];
 
@@ -1614,7 +1623,7 @@ export const FullScreenNowPlayingModal: React.FC<{
           )}
         </div>
 
-        {/* Studio Quick Action Strip: 8D + Offline + MP3 + Downloads + FX Studio */}
+        {/* Studio Quick Action Strip: 8D + Karaoke + Auto-DJ + Seed Radio + Jam + Offline + MP3 */}
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
           <button
             type="button"
@@ -1631,6 +1640,76 @@ export const FullScreenNowPlayingModal: React.FC<{
           >
             <Headphones className="w-3.5 h-3.5" />
             <span>{m.spatial8dBtn}</span>
+          </button>
+
+          {currentTrack && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                const nextKaraoke = !(vocalCancel && nowPlayingTab === 'lyrics');
+                setVocalCancel(nextKaraoke);
+                setNowPlayingTab(nextKaraoke ? 'lyrics' : 'artwork');
+                showMusicToast(nextKaraoke ? m.karaoke1Tap : m.tabCover);
+              }}
+              aria-pressed={vocalCancel && nowPlayingTab === 'lyrics'}
+              className={`h-8 px-3 rounded-full text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-all ${
+                vocalCancel && nowPlayingTab === 'lyrics'
+                  ? 'bg-gradient-to-r from-[#7C3AED] to-[#3B82F6] text-white shadow-[0_4px_16px_rgba(124,58,237,0.4)]'
+                  : 'bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-zinc-200'
+              }`}
+            >
+              <Mic2 className="w-3.5 h-3.5" />
+              <span>{m.karaoke1Tap}</span>
+            </button>
+          )}
+
+          {currentTrack && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                void startSeedRadio(currentTrack);
+              }}
+              className="h-8 px-3 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-[11px] font-bold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
+            >
+              <Wand2 className="w-3.5 h-3.5 text-[#60A5FA]" />
+              <span>{m.seedRadioBtn}</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              toggleAutoDj();
+            }}
+            aria-pressed={autoDjEnabled}
+            className={`h-8 px-3 rounded-full text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-all ${
+              autoDjEnabled
+                ? 'bg-[#3B82F6]/25 border border-[#3B82F6] text-[#93C5FD]'
+                : 'bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-zinc-200'
+            }`}
+          >
+            <Disc3 className="w-3.5 h-3.5" />
+            <span>{m.autoDjLabel}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('medium');
+              toggleJamSession();
+            }}
+            aria-pressed={jamSession.active}
+            className={`h-8 px-3 rounded-full text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-all ${
+              jamSession.active
+                ? 'bg-emerald-500/25 border border-emerald-400 text-emerald-200'
+                : 'bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-zinc-200'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>{jamSession.active && jamSession.roomCode ? `Jam · ${jamSession.roomCode}` : m.jamLabel}</span>
           </button>
 
           {currentTrack && (

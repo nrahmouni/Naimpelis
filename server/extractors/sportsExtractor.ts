@@ -64,6 +64,43 @@ export function decodeSportsPlaystreamEconfig(econfig: string): any | null {
   }
 }
 
+const verifiedCleanFrameCache = new Map<string, { ok: boolean; ts: number }>();
+const resolvedSportsDirectCache = new Map<
+  string,
+  {
+    result: {
+      streamUrl: string;
+      referer: string;
+      isDirectMp4: boolean;
+      isBrokenGreenFeed?: boolean;
+      verifiedClean?: boolean;
+    };
+    ts: number;
+  }
+>();
+const inFlightSportsDirect = new Map<
+  string,
+  Promise<{
+    streamUrl: string;
+    referer: string;
+    isDirectMp4: boolean;
+    isBrokenGreenFeed?: boolean;
+    verifiedClean?: boolean;
+  } | null>
+>();
+
+async function verifyCleanFrameCached(m3u: string, m3uUrl: string, referer: string): Promise<boolean> {
+  const now = Date.now();
+  const cached = verifiedCleanFrameCache.get(m3uUrl);
+  if (cached && now - cached.ts < 120_000) {
+    return cached.ok;
+  }
+  const ok = await verifyM3u8HasCleanVideoFrame(m3u, m3uUrl, referer);
+  if (verifiedCleanFrameCache.size > 160) verifiedCleanFrameCache.clear();
+  verifiedCleanFrameCache.set(m3uUrl, { ok, ts: now });
+  return ok;
+}
+
 export async function fetchSportsHtmlHopWithUrl(
   url: string,
   referer: string
@@ -75,13 +112,13 @@ export async function fetchSportsHtmlHopWithUrl(
         'User-Agent': CHROME_UA,
         Accept: 'text/html,application/xhtml+xml,*/*;q=0.9',
       },
-      timeoutMs: 4000,
+      timeoutMs: 2600,
     });
     if (res.ok) return { text: await res.text(), finalUrl: res.url || url };
   } catch {
     // fallback to HTTP/2 helper
   }
-  const fb = await curlGetText(url, { Referer: referer, 'User-Agent': CHROME_UA }, 4).catch(
+  const fb = await curlGetText(url, { Referer: referer, 'User-Agent': CHROME_UA }, 3).catch(
     () => ({ text: '', effectiveUrl: url })
   );
   return { text: fb.text, finalUrl: fb.effectiveUrl || url };
@@ -93,6 +130,37 @@ export async function fetchSportsHtmlHop(url: string, referer: string): Promise<
 }
 
 export async function extractLiveSportsHlsDirect(
+  initialUrl: string
+): Promise<{
+  streamUrl: string;
+  referer: string;
+  isDirectMp4: boolean;
+  isBrokenGreenFeed?: boolean;
+  verifiedClean?: boolean;
+} | null> {
+  const normalizedInitial = healUpstreamSportsDomain(initialUrl);
+  const now = Date.now();
+  const cachedDirect = resolvedSportsDirectCache.get(normalizedInitial);
+  if (cachedDirect && now - cachedDirect.ts < 45_000) {
+    return cachedDirect.result;
+  }
+  const inflight = inFlightSportsDirect.get(normalizedInitial);
+  if (inflight) return inflight;
+
+  const job = extractLiveSportsHlsDirectUncached(normalizedInitial).then((res) => {
+    if (res && res.streamUrl) {
+      if (resolvedSportsDirectCache.size > 120) resolvedSportsDirectCache.clear();
+      resolvedSportsDirectCache.set(normalizedInitial, { result: res, ts: Date.now() });
+    }
+    return res;
+  }).finally(() => {
+    inFlightSportsDirect.delete(normalizedInitial);
+  });
+  inFlightSportsDirect.set(normalizedInitial, job);
+  return job;
+}
+
+async function extractLiveSportsHlsDirectUncached(
   initialUrl: string
 ): Promise<{
   streamUrl: string;
@@ -128,7 +196,7 @@ export async function extractLiveSportsHlsDirect(
         );
         const resolvedM3u = finalM3uUrl || streamXhdM3u;
         if (checkM3u.includes('#EXTM3U')) {
-          const frameOk = await verifyM3u8HasCleanVideoFrame(checkM3u, resolvedM3u, refOrigin);
+          const frameOk = await verifyCleanFrameCached(checkM3u, resolvedM3u, refOrigin);
           if (!frameOk) {
             return {
               streamUrl: '',
@@ -182,17 +250,18 @@ export async function extractLiveSportsHlsDirect(
         }
 
         let sawM3uButScrambled = false;
-        for (const cand of candidateTargets) {
-          const { text: checkM3u, finalUrl: finalCandUrl } = await fetchSportsHtmlHopWithUrl(
-            cand.url,
-            cand.ref
-          );
-          const resolvedCand = finalCandUrl || cand.url;
-          if (checkM3u.includes('#EXTM3U')) {
-            const frameOk = await verifyM3u8HasCleanVideoFrame(checkM3u, resolvedCand, cand.ref);
+        const settled = await Promise.allSettled(
+          candidateTargets.map(async (cand) => {
+            const { text: checkM3u, finalUrl: finalCandUrl } = await fetchSportsHtmlHopWithUrl(
+              cand.url,
+              cand.ref
+            );
+            const resolvedCand = finalCandUrl || cand.url;
+            if (!checkM3u.includes('#EXTM3U')) return null;
+            const frameOk = await verifyCleanFrameCached(checkM3u, resolvedCand, cand.ref);
             if (!frameOk) {
               sawM3uButScrambled = true;
-              continue;
+              return null;
             }
             return {
               streamUrl: resolvedCand,
@@ -200,6 +269,11 @@ export async function extractLiveSportsHlsDirect(
               isDirectMp4: false,
               verifiedClean: true,
             };
+          })
+        );
+        for (const entry of settled) {
+          if (entry.status === 'fulfilled' && entry.value) {
+            return entry.value;
           }
         }
         if (sawM3uButScrambled) {
@@ -226,7 +300,7 @@ export async function extractLiveSportsHlsDirect(
       const resolvedM3u = finalM3uUrl || m3uCandidate;
       let verifiedClean = false;
       if (checkM3u.includes('#EXTM3U')) {
-        const frameOk = await verifyM3u8HasCleanVideoFrame(checkM3u, resolvedM3u, currentUrl);
+        const frameOk = await verifyCleanFrameCached(checkM3u, resolvedM3u, currentUrl);
         if (!frameOk) {
           return {
             streamUrl: '',

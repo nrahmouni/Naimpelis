@@ -5,6 +5,7 @@ export type VoiceIntent =
   | 'play_match'
   | 'play_movie'
   | 'play_series'
+  | 'play_music'
   | 'recommend_movies'
   | 'recommend_series'
   | 'browse_channels'
@@ -26,7 +27,7 @@ export interface VoiceChatHistoryTurn {
 }
 
 export interface VoiceAssistantCandidateItem {
-  kind: 'channel' | 'movie' | 'series' | 'match';
+  kind: 'channel' | 'movie' | 'series' | 'match' | 'music';
   id: string;
   title: string;
   subtitle?: string;
@@ -37,6 +38,13 @@ export interface VoiceAssistantCandidateItem {
   channel?: SpanishTdtChannel & { logoUrl?: string };
   media?: CatalogMovie & { targetSeason?: number; targetEpisode?: number };
   match?: SportsMatch;
+  musicTrack?: {
+    id: string;
+    title: string;
+    artistName: string;
+    cover: string;
+    durationSec?: number;
+  };
 }
 
 export interface ParsedVoiceIntent {

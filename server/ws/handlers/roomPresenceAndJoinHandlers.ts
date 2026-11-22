@@ -194,9 +194,24 @@ export const handlePresenceAndJoinMessage: WsMessageHandler = async (
       userName.includes('(TV)') ||
       userAvatar === '📺';
 
+    if (room.creatorVerifiedUid && room.creatorId === userId && verifiedUid !== room.creatorVerifiedUid) {
+      ws.send(
+        JSON.stringify({
+          type: 'AUTH_ERROR',
+          payload: { error: 'La identidad del anfitrión requiere sesión verificada.' },
+        })
+      );
+      return true;
+    }
+
     if (!room.creatorId && !isTvClient) {
       room.creatorId = userId;
       room.hostId = userId;
+      if (verifiedUid) {
+        room.creatorVerifiedUid = verifiedUid;
+      }
+    } else if (room.creatorId === userId && verifiedUid && !room.creatorVerifiedUid) {
+      room.creatorVerifiedUid = verifiedUid;
     }
 
     const bp = d.restoredBlueprint;
@@ -209,6 +224,7 @@ export const handlePresenceAndJoinMessage: WsMessageHandler = async (
       }
       if (!room.creatorId) {
         room.creatorId = userId;
+        if (verifiedUid) room.creatorVerifiedUid = verifiedUid;
       }
       room.hostId = room.creatorId;
       schedulePersistRoom(roomId);
@@ -441,17 +457,17 @@ export const handlePresenceAndJoinMessage: WsMessageHandler = async (
   if (type === 'SEND_ROOM_INVITE') {
     const senderMeta = clients.get(ws);
     const fromUser = payload?.fromUser || {};
-    const fromUserId = String(fromUser.id || senderMeta?.userId || '').trim();
-    const fromUserName = String(fromUser.name || senderMeta?.userName || 'Tu amigo')
+    const fromUserId = String(senderMeta?.userId || fromUser.id || '').trim();
+    const fromUserName = String(senderMeta?.userName || fromUser.name || 'Tu amigo')
       .trim()
       .slice(0, 40);
-    const fromUserAvatar = String(fromUser.avatar || senderMeta?.userAvatar || '🍿').slice(0, 16);
-    const fromUserColor = String(fromUser.color || senderMeta?.userColor || '#E11D48').slice(0, 16);
+    const fromUserAvatar = String(senderMeta?.userAvatar || fromUser.avatar || '🍿').slice(0, 16);
+    const fromUserColor = String(senderMeta?.userColor || fromUser.color || '#E11D48').slice(0, 16);
 
     const targetRoomId = String(payload?.roomId || senderMeta?.roomId || '')
       .trim()
       .toLowerCase();
-    if (!targetRoomId) return true;
+    if (!targetRoomId || !fromUserId) return true;
 
     const { room } = getOrCreateRoom(targetRoomId, payload?.roomName);
     const inviteAuthToken = crypto.randomBytes(16).toString('hex');
@@ -543,12 +559,12 @@ export const handlePresenceAndJoinMessage: WsMessageHandler = async (
   if (type === 'NOTIFY_FRIEND_ADDED') {
     const senderMeta = clients.get(ws);
     const fromUser = payload?.fromUser || {};
-    const fromUserId = String(fromUser.id || senderMeta?.userId || '').trim();
-    const fromUserName = String(fromUser.name || senderMeta?.userName || 'Un amigo')
+    const fromUserId = String(senderMeta?.userId || fromUser.id || '').trim();
+    const fromUserName = String(senderMeta?.userName || fromUser.name || 'Un amigo')
       .trim()
       .slice(0, 40);
-    const fromUserAvatar = String(fromUser.avatar || senderMeta?.userAvatar || '🍿').slice(0, 16);
-    const fromUserColor = String(fromUser.color || senderMeta?.userColor || '#E11D48').slice(0, 16);
+    const fromUserAvatar = String(senderMeta?.userAvatar || fromUser.avatar || '🍿').slice(0, 16);
+    const fromUserColor = String(senderMeta?.userColor || fromUser.color || '#E11D48').slice(0, 16);
     if (!fromUserId) return true;
 
     const toUserId = String(payload?.toUserId || '').trim();

@@ -5,8 +5,11 @@ import {
   saveDistributedKey,
 } from '../services/distributedStore.ts';
 import { canUserControlRoom } from '../services/roomSync.ts';
+import { LruTtlCache } from '../utils/lruCache.ts';
 import type { TvPairingSession } from './roomHubHelpers.ts';
 import type { RoomHubContext } from './handlers/types.ts';
+
+const tvClaimAttemptsByIp = new LruTtlCache<string, { count: number; resetAt: number }>(500, 120_000);
 
 export function registerRoomHttpRoutes(app: express.Express, ctx: RoomHubContext): void {
   const {
@@ -90,9 +93,37 @@ export function registerRoomHttpRoutes(app: express.Express, ctx: RoomHubContext
   });
 
   app.post('/api/tv/claim', (req, res) => {
+    const clientIp = String(req.headers['x-forwarded-for'] || req.ip || 'unknown')
+      .split(',')[0]
+      .trim();
+    const now = Date.now();
+    const bucket = tvClaimAttemptsByIp.get(clientIp);
+    if (bucket && now < bucket.resetAt && bucket.count >= 12) {
+      return res.status(429).json({
+        success: false,
+        error: 'Demasiados intentos de vinculación. Espera un momento.',
+      });
+    }
+    tvClaimAttemptsByIp.set(
+      clientIp,
+      bucket && now < bucket.resetAt
+        ? { count: bucket.count + 1, resetAt: bucket.resetAt }
+        : { count: 1, resetAt: now + 120_000 }
+    );
+
+    const targetRoomId = String(req.body?.roomId || '')
+      .trim()
+      .toLowerCase();
+    if (!/^[a-z0-9_-]{1,64}$/.test(targetRoomId)) {
+      return res.status(400).json({
+        success: false,
+        error: 'ID de sala inválido.',
+      });
+    }
+
     const result = claimTvPairingCodeCore({
       rawCode: req.body?.code,
-      targetRoomId: req.body?.roomId,
+      targetRoomId,
       roomNameHint: req.body?.roomName,
       claimedByRaw: req.body?.claimedBy,
     });
@@ -234,11 +265,13 @@ export function registerRoomHttpRoutes(app: express.Express, ctx: RoomHubContext
 
     const now = Date.now();
     let pruned = false;
+    const prefix = `${roomId}:`;
     for (const [key, lastSeen] of tvHttpHeartbeats.entries()) {
+      if (!key.startsWith(prefix)) continue;
       if (now - lastSeen > 12_000) {
         tvHttpHeartbeats.delete(key);
-        const [rId, pId] = key.split(':');
-        if (rId === roomId && pId) {
+        const pId = key.slice(prefix.length);
+        if (pId) {
           const before = room.participants.length;
           room.participants = room.participants.filter((p) => p.id !== pId);
           if (room.participants.length !== before) pruned = true;

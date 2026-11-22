@@ -864,18 +864,40 @@ export function useAppController() {
 
   useEffect(() => {
     if (!pendingScrollRestore || hideBrowseBelowPlayer) return;
-    const raf = window.requestAnimationFrame(() => {
-      mainScrollRef.current?.scrollTo({
-        top: pendingScrollRestore.mainTop,
-        behavior: 'auto',
-      });
-      catalogScrollRef.current?.scrollTo({
-        top: pendingScrollRestore.catalogTop,
-        behavior: 'auto',
-      });
-      setPendingScrollRestore(null);
-    });
-    return () => window.cancelAnimationFrame(raf);
+    let rafId = 0;
+    let attempts = 0;
+    const maxAttempts = 24;
+
+    const tryRestore = () => {
+      attempts += 1;
+      const mainEl = mainScrollRef.current;
+      const catEl = catalogScrollRef.current;
+      const needMain = pendingScrollRestore.mainTop;
+      const needCat = pendingScrollRestore.catalogTop;
+
+      if (mainEl && needMain > 0) {
+        mainEl.scrollTo({ top: needMain, behavior: 'auto' });
+      }
+      if (catEl && needCat > 0) {
+        catEl.scrollTo({ top: needCat, behavior: 'auto' });
+      }
+
+      const mainSettled =
+        needMain <= 0 || !mainEl || Math.abs(mainEl.scrollTop - needMain) <= 8 || mainEl.scrollHeight >= needMain + mainEl.clientHeight;
+      const catSettled =
+        needCat <= 0 || !catEl || Math.abs(catEl.scrollTop - needCat) <= 8 || catEl.scrollHeight >= needCat + catEl.clientHeight;
+
+      if ((mainSettled && catSettled) || attempts >= maxAttempts) {
+        setPendingScrollRestore(null);
+        return;
+      }
+      rafId = window.requestAnimationFrame(tryRestore);
+    };
+
+    rafId = window.requestAnimationFrame(tryRestore);
+    return () => {
+      if (rafId) window.cancelAnimationFrame(rafId);
+    };
   }, [pendingScrollRestore, hideBrowseBelowPlayer, setPendingScrollRestore]);
 
   useBackInterceptor(

@@ -118,9 +118,33 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
   function cleanupInactiveRooms() {
     const now = Date.now();
     const maxInactiveMs = 24 * 60 * 60 * 1000;
+    const clearTimerMap = (map: Map<string, ReturnType<typeof setTimeout>>, key: string) => {
+      const t = map.get(key);
+      if (t) {
+        clearTimeout(t);
+        map.delete(key);
+      }
+    };
     for (const [id, r] of rooms.entries()) {
       if ((!r.participants || r.participants.length === 0) && now - (r.createdAt || 0) > maxInactiveMs) {
         rooms.delete(id);
+        clearTimerMap(roomPollTimers, id);
+        clearTimerMap(partyBotTimers, id);
+        clearTimerMap(boardTurnTimers, id);
+        clearTimerMap(pinturilloTimers, id);
+        clearTimerMap(poolTurnTimers, id);
+        clearTimerMap(chapasTurnTimers, id);
+        clearTimerMap(pokerBotTimers, id);
+        headSoccerSeqByRoom.delete(id);
+        roomVoicePeers.delete(id);
+        cloudSessions.delete(id);
+        const prefix = `${id}:`;
+        for (const [poolKey, poolTimer] of poolDisconnectTimers.entries()) {
+          if (poolKey.startsWith(prefix)) {
+            clearTimeout(poolTimer);
+            poolDisconnectTimers.delete(poolKey);
+          }
+        }
       }
     }
     pruneJoinCooldownCache(now);

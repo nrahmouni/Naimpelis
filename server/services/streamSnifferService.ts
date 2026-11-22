@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger.ts';
+import { safeFetchFollowingRedirects, validateSafeOutboundUrl } from '../utils/ssrfGuard.ts';
 
 const CHROME_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -76,6 +77,11 @@ export async function sniffStreamViaHttp(
       return null;
     }
 
+    const urlSafety = await validateSafeOutboundUrl(currentUrl);
+    if (!urlSafety.safe) {
+      return null;
+    }
+
     if (/\.(m3u8)(\?|$)/i.test(currentUrl)) {
       return { streamUrl: currentUrl, referer: currentReferer, isDirectMp4: false };
     }
@@ -84,17 +90,15 @@ export async function sniffStreamViaHttp(
     }
 
     try {
-      const resp = await fetch(currentUrl, {
+      const { response: resp, finalUrl } = await safeFetchFollowingRedirects(currentUrl, {
         headers: {
           'User-Agent': CHROME_UA,
           Referer: currentReferer,
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         },
-        redirect: 'follow',
         signal: AbortSignal.timeout(6500),
       });
 
-      const finalUrl = resp.url || currentUrl;
       const contentType = String(resp.headers.get('content-type') || '').toLowerCase();
 
       if (contentType.includes('mpegurl') || finalUrl.includes('.m3u8')) {

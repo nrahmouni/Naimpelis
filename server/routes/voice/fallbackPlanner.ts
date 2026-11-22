@@ -166,6 +166,18 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
       tmdbQuery: { mediaType: 'multi', limit: 1 },
     };
   }
+  if (openWorldTrigger && /\b(musica|music|riffan music|canciones|radio)\b/.test(norm)) {
+    return {
+      spokenReply: lang === 'en' ? 'Opening Riffan Music.' : lang === 'ca' ? 'Obrint Riffan Music.' : lang === 'zh' ? '正在打开 Riffan 音乐。' : 'Abriendo Riffan Music.',
+      intent: 'open_world',
+      autoPlay: false,
+      action: { type: 'open_world', payload: 'musica' },
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 1 },
+    };
+  }
   if (openWorldTrigger && /\b(sala|watch party|chat)\b/.test(norm)) {
     return {
       spokenReply: lang === 'en' ? 'Taking you to the Watch Party room.' : lang === 'ca' ? 'Portant-te a la Sala.' : lang === 'zh' ? '正在前往派对房间。' : 'Entrando a la Sala con amigos.',
@@ -297,6 +309,33 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
         mediaType: 'multi',
         limit,
       },
+    };
+  }
+
+  const wantsMusicTrack =
+    /\b(cancion|tema|musica de|pon musica|escuchar musica|escuchar a|song|track|album de)\b/.test(norm) &&
+    !mentionsMovieOrSeries;
+  if (wantsMusicTrack) {
+    const musicQuery = norm
+      .replace(/^(?:ponme|ponle|pon|reproduce|escuchar|busca|buscame)\s+/g, '')
+      .replace(/\b(?:la cancion|cancion|tema|musica de|song|track)\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim() || query.trim();
+    return {
+      spokenReply:
+        lang === 'en'
+          ? `Searching Riffan Music for ${musicQuery}.`
+          : lang === 'ca'
+          ? `Cercant a Riffan Music: ${musicQuery}.`
+          : lang === 'zh'
+          ? `正在 Riffan 音乐中搜索 ${musicQuery}。`
+          : `Buscando en Riffan Music: ${musicQuery}.`,
+      intent: 'play_music',
+      autoPlay: isWantPlayNow,
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 5, titleSearch: musicQuery },
     };
   }
 

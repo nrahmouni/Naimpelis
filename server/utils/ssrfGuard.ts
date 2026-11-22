@@ -2,7 +2,7 @@ import dns from 'node:dns/promises';
 import net from 'node:net';
 
 export function isPrivateIpAddress(rawIp: string): boolean {
-  const ip = rawIp.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  const ip = rawIp.trim().toLowerCase().replace(/^\[|\]$/g, '').split('%')[0];
   if (!ip) return true;
 
   // Handle IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1 or ::ffff:7f00:1)
@@ -18,6 +18,7 @@ export function isPrivateIpAddress(rawIp: string): boolean {
       const v4 = `${(hi >> 8) & 0xff}.${hi & 0xff}.${(lo >> 8) & 0xff}.${lo & 0xff}`;
       return isPrivateIpAddress(v4);
     }
+    return true;
   }
 
   const ver = net.isIP(ip);
@@ -40,7 +41,14 @@ export function isPrivateIpAddress(rawIp: string): boolean {
     if (ip === '::' || ip === '::1') return true;
     if (ip.startsWith('fc') || ip.startsWith('fd')) return true; // ULA fc00::/7
     if (/^fe[89ab][0-9a-f]:/.test(ip) || ip.startsWith('fe80')) return true; // link-local fe80::/10
+    if (/^fe[cdef][0-9a-f]:/.test(ip) || ip.startsWith('fec0')) return true; // deprecated site-local fec0::/10
     if (ip.startsWith('ff')) return true; // multicast
+    if (ip.startsWith('64:ff9b:') || ip.startsWith('0064:ff9b:')) return true; // NAT64 RFC 6052 / RFC 8215
+    if (ip.startsWith('100::') || ip.startsWith('0100::')) return true; // discard-only 100::/64
+    if (ip.startsWith('2001:0:') || ip.startsWith('2001:0000:')) return true; // Teredo
+    if (ip.startsWith('2001:db8:') || ip.startsWith('2001:0db8:')) return true; // documentation
+    if (ip.startsWith('2001:2:') || ip.startsWith('2001:0002:')) return true; // benchmarking
+    if (ip.startsWith('2002:')) return true; // 6to4 potentially wrapping private IPv4
     return false;
   }
 

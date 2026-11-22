@@ -11,6 +11,7 @@ import type { AppLanguage, CatalaCatalogItem, CatalogMovie } from '../../types';
 import type { CatalogGenreItem } from '../ExpandedDiscoverySection';
 import { UI_COPY, pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
+import { useBackInterceptor } from '../../lib/backInterceptor';
 import { SegmentedControl } from '../ui/DesignSystem';
 import {
   RiffanMoviesIcon,
@@ -168,6 +169,13 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
   onOpenSurpriseMe,
 }) => {
   const t = UI_COPY[lang];
+
+  useBackInterceptor(
+    cineSpecialPortal === 'catala',
+    'cine-catala-portal',
+    () => onChangeCineSpecialPortal('none'),
+    { priority: 7 }
+  );
 
   const isMoviesTab = effectiveCineTab === 'movies';
   const isSeriesTab = effectiveCineTab === 'series';

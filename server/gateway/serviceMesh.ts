@@ -28,6 +28,7 @@ export interface MicroserviceStatus {
 class ServiceMeshRegistry {
   private services = new Map<MicroserviceId, MicroserviceStatus>();
   private latencySamples = new Map<MicroserviceId, number[]>();
+  private consecutiveErrors = new Map<MicroserviceId, number>();
 
   constructor() {
     const initialDefs: Array<{ id: MicroserviceId; name: string; version: string }> = [
@@ -52,6 +53,7 @@ class ServiceMeshRegistry {
         circuitOpenUntil: 0,
       });
       this.latencySamples.set(def.id, []);
+      this.consecutiveErrors.set(def.id, 0);
     }
   }
 
@@ -59,10 +61,11 @@ class ServiceMeshRegistry {
     const svc = this.services.get(id);
     if (!svc) return;
     svc.requestsTotal += 1;
+    this.consecutiveErrors.set(id, 0);
     if (svc.circuitOpenUntil > 0 && Date.now() > svc.circuitOpenUntil) {
       svc.circuitOpenUntil = 0;
     }
-    svc.status = 'healthy';
+    svc.status = svc.circuitOpenUntil > Date.now() ? 'open-circuit' : 'healthy';
     const samples = this.latencySamples.get(id) || [];
     samples.push(Math.max(0, Math.round(latencyMs)));
     if (samples.length > 50) samples.shift();
@@ -74,16 +77,30 @@ class ServiceMeshRegistry {
   recordError(id: MicroserviceId, errMsg: string): void {
     const svc = this.services.get(id);
     if (!svc) return;
+    const now = Date.now();
     svc.requestsTotal += 1;
     svc.errorsTotal += 1;
-    svc.lastErrorAt = Date.now();
+    svc.lastErrorAt = now;
     svc.lastErrorMsg = errMsg.slice(0, 180);
+    const streak = (this.consecutiveErrors.get(id) || 0) + 1;
+    this.consecutiveErrors.set(id, streak);
+    if (streak >= 5) {
+      svc.circuitOpenUntil = now + 15_000;
+      svc.status = 'open-circuit';
+      return;
+    }
     const errorRate = svc.errorsTotal / Math.max(1, svc.requestsTotal);
     svc.status = svc.requestsTotal >= 10 && errorRate > 0.5 ? 'degraded' : 'healthy';
   }
 
   getAllStatuses(): MicroserviceStatus[] {
-    return Array.from(this.services.values());
+    const now = Date.now();
+    return Array.from(this.services.values()).map((svc) => {
+      if (svc.status === 'open-circuit' && svc.circuitOpenUntil > 0 && now > svc.circuitOpenUntil) {
+        return { ...svc, status: 'degraded', circuitOpenUntil: 0 };
+      }
+      return svc;
+    });
   }
 }
 

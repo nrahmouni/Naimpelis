@@ -8,6 +8,7 @@ import type {
 } from './types.ts';
 import { detectOrdinalSelection, normalizeSearchStr } from './parsers.ts';
 import { getGeminiClient, parseIntentWithGemini } from './geminiPlanner.ts';
+import { searchMusicCatalog } from '../../services/riffanMusicService.ts';
 import { findUpcomingMatchInFotmob, resolveTmdbRecommendations } from './tmdbSearch.ts';
 
 export function matchChannelsByKeywords(
@@ -16,9 +17,13 @@ export function matchChannelsByKeywords(
   categoryHint: string,
   limit = 8
 ): Array<SpanishTdtChannel & { logoUrl?: string }> {
-  const normKeywords = keywords
+  const compiledKeywords = keywords
     .map((k) => normalizeSearchStr(k))
-    .filter((k) => k.length >= 2);
+    .filter((k) => k.length >= 2)
+    .map((kw) => ({
+      kw,
+      regex: new RegExp(`(?:^|\\s)${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|\\s)`),
+    }));
   const hintNorm = normalizeSearchStr(categoryHint);
 
   const scored: Array<{ ch: SpanishTdtChannel & { logoUrl?: string }; score: number }> = [];
@@ -37,12 +42,12 @@ export function matchChannelsByKeywords(
       }
     }
 
-    for (const kw of normKeywords) {
+    for (const { kw, regex } of compiledKeywords) {
       if (chNameNorm === kw) {
         score += 65;
-      } else if (new RegExp(`(?:^|\\s)${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|\\s)`).test(chNameNorm)) {
+      } else if (regex.test(chNameNorm)) {
         score += 42;
-      } else if (new RegExp(`(?:^|\\s)${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|\\s)`).test(chMetaHaystack)) {
+      } else if (regex.test(chMetaHaystack)) {
         score += 22;
       }
     }
@@ -410,12 +415,35 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
         }
       }
 
+      if (plan.intent === 'play_music') {
+        const musicQ = plan.tmdbQuery?.titleSearch || query;
+        const musicRes = await searchMusicCatalog(musicQ, 'track').catch(() => ({ tracks: [] as any[] }));
+        for (const tr of (musicRes.tracks || []).slice(0, 6)) {
+          items.push({
+            kind: 'music',
+            id: tr.id,
+            title: tr.title,
+            subtitle: `${tr.artist?.name || 'Riffan Music'} · ${tr.album?.title || 'Single'}`,
+            imageUrl: tr.album?.coverXl || tr.album?.cover || '',
+            badge: 'MÚSICA',
+            musicTrack: {
+              id: tr.id,
+              title: tr.title,
+              artistName: tr.artist?.name || 'Riffan Music',
+              cover: tr.album?.coverXl || tr.album?.cover || '',
+              durationSec: tr.durationSec,
+            },
+          });
+        }
+      }
+
       const shouldAutoPlay =
         Boolean(plan.autoPlay) &&
         items.length > 0 &&
         (plan.intent === 'play_channel' ||
           plan.intent === 'play_movie' ||
           plan.intent === 'play_series' ||
+          plan.intent === 'play_music' ||
           plan.intent === 'play_match');
 
       let finalReply = plan.spokenReply;
@@ -544,7 +572,7 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
       const lang = String(body.lang || 'es').toLowerCase().slice(0, 2);
       const voiceName = String(
         body.voiceName ||
-          (lang === 'en' ? 'Kore' : 'Zephyr')
+          (lang === 'en' ? 'Kore' : lang === 'zh' ? 'Aoede' : lang === 'ca' ? 'Leda' : 'Zephyr')
       ).trim();
 
       const ai = getGeminiClient();
@@ -585,7 +613,7 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
         synthesized = await synthesizeWithModel('gemini-3.8-flash-lite-tts');
       } catch (firstErr) {
         logger.debug({ firstErr }, 'tts_primary_model_retry');
-        synthesized = await synthesizeWithModel('gemini-2.5-flash-preview-tts');
+        synthesized = await synthesizeWithModel('gemini-3.8-flash-tts');
       }
 
       if (!synthesized.base64Audio) {

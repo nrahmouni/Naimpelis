@@ -2,14 +2,17 @@ import type { Express, Request, Response } from 'express';
 import { ThinkingLevel, Type, type Content } from '@google/genai';
 import {
   ALLOWED_CHAT_MODELS,
+  checkAiIpRateLimit,
   generateContentWithResilience,
   getGenAiClient,
   isAiFallbackEligibleError,
+  parseGeminiJson,
   sendAiEndpointError,
   type AllowedChatModel,
 } from './shared.ts';
 import { buildTelemetryMatchInsights } from './matchAnalyticsFallback.ts';
 import { registerTacticalVisionRoute } from './tacticalVisionRoute.ts';
+import { searchTmdbTitlesRanked } from '../voice/tmdbSearch.ts';
 
 interface GroundingSource {
   kind: 'web' | 'maps';
@@ -56,6 +59,20 @@ function collectGroundingSources(rawChunks: RawGroundingChunk[]): GroundingSourc
 }
 
 export function registerAiMediaRoutes(app: Express): void {
+  // Global AI rate limit protection per IP
+  app.use('/api/ai', (req, res, next) => {
+    const { allowed, retryAfterSec } = checkAiIpRateLimit(req.ip || 'unknown', 45, 60_000);
+    if (!allowed) {
+      res.setHeader('Retry-After', String(retryAfterSec));
+      return res.status(429).json({
+        ok: false,
+        code: 'RATE_LIMITED',
+        error: `Demasiadas solicitudes de IA. Reintenta en ${retryAfterSec}s.`,
+      });
+    }
+    return next();
+  });
+
   // 1. MULTI-TURN GEMINI CHAT + SEARCH / MAPS GROUNDING
   app.post('/api/ai/chat', async (req: Request, res: Response) => {
     try {
@@ -316,7 +333,7 @@ export function registerAiMediaRoutes(app: Express): void {
       });
 
       const rawJson = String(insightsResponse.text || '{}').trim();
-      const parsed = JSON.parse(rawJson) as {
+      const parsed = parseGeminiJson<{
         headline?: string;
         momentum?: { favoredTeam?: string; intensity?: number; summary?: string };
         cards?: Array<{
@@ -327,7 +344,7 @@ export function registerAiMediaRoutes(app: Express): void {
           insight?: string;
         }>;
         watchNext?: string;
-      };
+      }>(rawJson, {});
 
       const normalizedFavored =
         parsed.momentum?.favoredTeam === 'home' || parsed.momentum?.favoredTeam === 'away'
@@ -370,6 +387,118 @@ export function registerAiMediaRoutes(app: Express): void {
     }
   });
 
-  // 3. LIVE MATCH VIDEO TACTICAL VISION
+  // 3. #96 SEMANTIC SEARCH ("peli de un atraco en Madrid que dura 2 horas")
+  app.post('/api/ai/semantic-search', async (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as { query?: string; lang?: string };
+      const query = String(body.query || '').trim().slice(0, 320);
+      if (!query) {
+        return res.status(400).json({ ok: false, error: 'Escribe qué película o serie estás buscando.' });
+      }
+      const lang = String(body.lang || 'es').slice(0, 2);
+      let suggestedTitles: string[] = [query];
+      let reason = '';
+
+      try {
+        const ai = getGenAiClient();
+        const planResp = await generateContentWithResilience(ai, {
+          model: 'gemini-3.1-flash-lite',
+          contents: `El usuario busca cine/series en lenguaje natural: "${query}". Sugiere entre 1 y 4 títulos oficiales exactos (en idioma original o español conocido) y una frase breve en ${resolveChatLangLabel(lang)} explicando la coincidencia.`,
+          config: {
+            responseMimeType: 'application/json',
+            responseSchema: {
+              type: Type.OBJECT,
+              properties: {
+                titles: { type: Type.ARRAY, items: { type: Type.STRING } },
+                explanation: { type: Type.STRING },
+              },
+              required: ['titles', 'explanation'],
+            },
+          },
+        });
+        const parsed = parseGeminiJson<{ titles?: string[]; explanation?: string }>(
+          String(planResp.text || '{}'),
+          {}
+        );
+        if (Array.isArray(parsed.titles) && parsed.titles.length > 0) {
+          suggestedTitles = parsed.titles.map((t) => String(t).trim()).filter(Boolean).slice(0, 4);
+        }
+        reason = String(parsed.explanation || '').trim();
+      } catch {
+        // Fallback: direct query search
+      }
+
+      const settled = await Promise.allSettled(
+        suggestedTitles.map((titleSearch) =>
+          searchTmdbTitlesRanked({ titleSearch, mediaType: 'multi', lang, limit: 3 })
+        )
+      );
+      const seenIds = new Set<string>();
+      const results: any[] = [];
+      for (const s of settled) {
+        if (s.status !== 'fulfilled') continue;
+        for (const item of s.value) {
+          if (!seenIds.has(item.id)) {
+            seenIds.add(item.id);
+            results.push(item);
+          }
+        }
+      }
+      return res.json({
+        ok: true,
+        query,
+        suggestedTitles,
+        explanation: reason || `Resultados semánticos para "${query}"`,
+        results: results.slice(0, 10),
+      });
+    } catch (err) {
+      sendAiEndpointError(res, 'ai_semantic_search', err);
+    }
+  });
+
+  // 4. #97 SPOILER-FREE Q&A ("¿Quién era este personaje antes de este episodio?")
+  app.post('/api/ai/spoiler-free-qa', async (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        question?: string;
+        mediaTitle?: string;
+        mediaType?: 'movie' | 'tv';
+        season?: number;
+        episode?: number;
+        minute?: number;
+        lang?: string;
+      };
+      const question = String(body.question || '').trim().slice(0, 360);
+      const mediaTitle = String(body.mediaTitle || '').trim().slice(0, 140);
+      if (!question || !mediaTitle) {
+        return res.status(400).json({ ok: false, error: 'Indica título y pregunta.' });
+      }
+      const progressCtx =
+        body.mediaType === 'tv' && body.season && body.episode
+          ? `Temporada ${body.season}, Episodio ${body.episode}${body.minute ? ` (minuto ${body.minute})` : ''}`
+          : body.minute
+          ? `minuto ${body.minute}`
+          : 'inicio del visionado';
+
+      const ai = getGenAiClient();
+      const resp = await generateContentWithResilience(ai, {
+        model: 'gemini-3.1-flash-lite',
+        contents: `Obra: "${mediaTitle}". Progreso actual del espectador: ${progressCtx}.\nPregunta: "${question}"`,
+        config: {
+          systemInstruction: `Eres el guía SIN SPOILERS de RiffanTV. Responde ÚNICAMENTE con hechos ocurridos ANTES o EN ${progressCtx} de "${mediaTitle}". Jamás reveles giros, muertes ni tramas posteriores. Si la respuesta implica spoiler futuro, advierte amablemente que se desvelará más adelante. Responde en ${resolveChatLangLabel(body.lang)}.`,
+        },
+      });
+      return res.json({
+        ok: true,
+        spoilerFree: true,
+        progressContext: progressCtx,
+        answer: String(resp.text || '').trim() || 'No puedo responder sin arriesgar spoilers en este punto.',
+      });
+    } catch (err) {
+      sendAiEndpointError(res, 'ai_spoiler_free_qa', err);
+    }
+  });
+
+  // 5. LIVE MATCH VIDEO TACTICAL VISION
   registerTacticalVisionRoute(app);
 }

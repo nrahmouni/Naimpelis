@@ -368,7 +368,10 @@ export const SpotifyYtmImportModal: React.FC<{
 
     const title = parsed.playlistTitle || 'Lista Importada';
     setCustomPlaylistName(title);
-    const provider: 'spotify' | 'youtube_music' | 'file' = parsed.format.startsWith('spotify')
+    const isSpotifyCsvOrZip =
+      parsed.format.startsWith('spotify') ||
+      parsed.tracks.some((t) => t.sourceHint === 'spotify' || Boolean(t.spotifyId));
+    const provider: 'spotify' | 'youtube_music' | 'file' = isSpotifyCsvOrZip
       ? 'spotify'
       : parsed.format === 'youtube_takeout'
       ? 'youtube_music'
@@ -427,7 +430,10 @@ export const SpotifyYtmImportModal: React.FC<{
         let inferredProvider: 'spotify' | 'youtube_music' | 'file' = 'file';
 
         for (const { parsed } of parsedEntries) {
-          if (parsed.format.startsWith('spotify')) inferredProvider = 'spotify';
+          const isSpotifyZipEntry =
+            parsed.format.startsWith('spotify') ||
+            parsed.tracks.some((t) => t.sourceHint === 'spotify' || Boolean(t.spotifyId));
+          if (isSpotifyZipEntry) inferredProvider = 'spotify';
           else if (parsed.format === 'youtube_takeout' && inferredProvider === 'file') {
             inferredProvider = 'youtube_music';
           }

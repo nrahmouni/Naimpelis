@@ -225,6 +225,46 @@ export async function generateContentWithResilience(
   throw lastError;
 }
 
+export function parseGeminiJson<T = Record<string, unknown>>(rawText: string, fallback: T): T {
+  try {
+    const trimmed = String(rawText || '').trim();
+    if (!trimmed) return fallback;
+    const stripped = trimmed
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
+    return JSON.parse(stripped) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+const aiRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+export function checkAiIpRateLimit(
+  ipRaw: string,
+  limit = 45,
+  windowMs = 60_000
+): { allowed: boolean; retryAfterSec: number } {
+  const now = Date.now();
+  const key = ipRaw || 'unknown';
+  if (aiRateLimitMap.size > 1000) {
+    for (const [k, v] of aiRateLimitMap.entries()) {
+      if (now >= v.resetAt) aiRateLimitMap.delete(k);
+    }
+  }
+  const entry = aiRateLimitMap.get(key);
+  if (!entry || now >= entry.resetAt) {
+    aiRateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
+    return { allowed: true, retryAfterSec: 0 };
+  }
+  entry.count += 1;
+  if (entry.count > limit) {
+    return { allowed: false, retryAfterSec: Math.max(1, Math.ceil((entry.resetAt - now) / 1000)) };
+  }
+  return { allowed: true, retryAfterSec: 0 };
+}
+
 export function sendAiEndpointError(res: Response, routeTag: string, err: unknown): void {
   const details = extractErrorDetails(err);
   if (details.status === 429 || details.status === 403 || details.status === 503) {

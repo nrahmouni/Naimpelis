@@ -375,3 +375,23 @@ export interface MusicSearchResultsPayload {
   radios: MusicRadioStation[];
 }
 
+export interface JamSessionState {
+  active: boolean;
+  roomId?: string;
+  hostName?: string;
+  listeners: number;
+}
+
+export interface SeedRadioResult {
+  seedTrack: MusicTrack;
+  genreName: string | null;
+  tracks: MusicTrack[];
+}
+
+export interface AiMoodPlaylistResult {
+  title: string;
+  subtitle: string;
+  moodTags: string[];
+  tracks: MusicTrack[];
+}
+

@@ -38,6 +38,7 @@ import {
 } from './sportsHelpers/upcomingCalendarHelper.ts';
 import { ensureEpgScheduleReady, extractEspnCompBroadcastNames, runWithConcurrency, verifySingleFixtureTvSchedule } from '../services/tvScheduleVerifier.ts';
 import { registerChiringuitoRoutes } from './chiringuitoRoutes.ts';
+import { extractLiveSportsHlsDirect } from '../extractors/sportsExtractor.ts';
 
 let cachedSportsSchedule: { matches: any[]; ts: number } | null = null;
 let liveScoresCache: { matches: any[]; ts: number } | null = null;
@@ -71,6 +72,7 @@ export async function getFootballBoardMatches(opts?: {
   league?: string;
   team?: string;
   lang?: string;
+  forceRefresh?: boolean;
 }): Promise<{ dateKey: string; calendarScope?: string; matches: any[] }> {
   const requestedDate = String(opts?.date || '').replace(/\D/g, '').slice(0, 8);
   const madridToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' })
@@ -135,7 +137,7 @@ export async function getFootballBoardMatches(opts?: {
     return job;
   };
 
-  if (cachedFootballBoard && cachedFootballBoard.dateKey === dateKey) {
+  if (!opts?.forceRefresh && cachedFootballBoard && cachedFootballBoard.dateKey === dateKey) {
     const ageMs = Date.now() - cachedFootballBoard.ts;
     if (ageMs < cacheTtlMs) {
       return { dateKey, matches: prioritizeBoard(cachedFootballBoard.matches) };
@@ -152,7 +154,18 @@ export async function getFootballBoardMatches(opts?: {
 
 export async function prewarmTodayFootballBoard(): Promise<void> {
   try {
-    await getFootballBoardMatches({ lang: 'ES' });
+    const board = await getFootballBoardMatches({ lang: 'ES' });
+    const topTracks = (board.matches || [])
+      .filter((m: any) => m.statusState === 'live' || isFeaturedSpanishClubMatch(m.homeTeam || '', m.awayTeam || ''))
+      .slice(0, 3)
+      .flatMap((m: any) => (Array.isArray(m.channels) ? m.channels.slice(0, 1) : []))
+      .map((ch: any) => String(ch?.sourceUrl || '').trim())
+      .filter((u: string) => u.startsWith('http'));
+    if (topTracks.length > 0) {
+      void Promise.allSettled(
+        Array.from(new Set(topTracks)).slice(0, 3).map((u) => extractLiveSportsHlsDirect(u))
+      );
+    }
   } catch {
     // non-fatal background prewarm
   }
@@ -649,6 +662,7 @@ export function registerSportsRoutes(app: Express): void {
       league: typeof req.query.league === 'string' ? req.query.league : undefined,
       team: typeof req.query.team === 'string' ? req.query.team : undefined,
       lang: typeof req.query.lang === 'string' ? req.query.lang : undefined,
+      forceRefresh: req.query.refresh === '1',
     });
     return res.json({ success: true, ...result });
   });
