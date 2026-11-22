@@ -122,7 +122,9 @@ describe('Samsung Smart TV (Tizen .wgt) Architecture, Navigation & Packager', ()
     const workflowPath = path.join(ROOT, '.github', 'workflows', 'build-tizen-wgt.yml');
     expect(fs.existsSync(workflowPath)).toBe(true);
     const yml = fs.readFileSync(workflowPath, 'utf8');
+    expect(yml).toContain('--legacy-peer-deps');
     expect(yml).toContain('npx vite build --base=./');
+    expect(yml).toContain('registerSW');
     expect(yml).toContain('tizen package -t wgt');
     expect(yml).toContain('actions/upload-artifact@v4');
   });

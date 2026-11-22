@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: '22' }
-      - run: npm ci && npx vite build --base=./
+      - run: npm install --legacy-peer-deps && npx vite build --base=./
       - run: cp config.xml dist/ && cp public/pwa-512x512.png dist/icon.png
       - run: tizen package -t wgt -s riffan_tv_profile -o release-wgt -- dist
       - uses: actions/upload-artifact@v4
@@ -71,6 +71,10 @@ export const SamsungTvGuidePage: React.FC<SamsungTvGuidePageProps> = ({
   }, [activeTab]);
 
   const canonicalXml = generateTizenConfigXml();
+  const liveTvUrl =
+    typeof window !== 'undefined' && window.location?.origin?.startsWith('http')
+      ? `${window.location.origin}/tv`
+      : 'https://riffan.ai.studio/tv';
 
   const handleCopy = async (text: string, id: string) => {
     triggerHaptic('light');
@@ -269,7 +273,10 @@ export const SamsungTvGuidePage: React.FC<SamsungTvGuidePageProps> = ({
                 <li>Enciende tu Samsung TV y abre el menú <strong className="text-white">Apps</strong>.</li>
                 <li>Con el mando a distancia, marca la secuencia numérica <strong className="text-white font-mono">1 2 3 4 5</strong>.</li>
                 <li>En el cuadro emergente, cambia <strong className="text-white">Developer mode</strong> a <strong className="text-[#00F593]">On</strong>.</li>
-                <li>Introduce la dirección <strong className="text-white">IP</strong> de tu PC o servidor local y confirma con <strong className="text-white">OK</strong>.</li>
+                <li>
+                  Introduce la <strong className="text-white">Host PC IP</strong> del ordenador (o móvil con Apps2Samsung/SDB) que enviará el <code className="text-zinc-200">.wgt</code> y pulsa <strong className="text-white">OK</strong>.{' '}
+                  <span className="text-zinc-400">(No es una web para abrir en el navegador de la TV).</span>
+                </li>
                 <li>Mantén pulsado el botón de encendido del mando 3 segundos para <strong className="text-white">reiniciar la TV</strong>.</li>
               </ol>
             </article>
@@ -277,20 +284,31 @@ export const SamsungTvGuidePage: React.FC<SamsungTvGuidePageProps> = ({
             <article className="p-5 rounded-3xl bg-[#07070A] border border-white/[0.09] space-y-3">
               <div className="text-xs font-mono font-bold text-[#60A5FA]">PASO 02</div>
               <h2 className="text-base font-display font-bold text-white">
-                Instalar sin Tizen Studio en PC
+                Cómo abrir o instalar RiffanTV
               </h2>
               <ul className="text-xs text-zinc-300 space-y-2.5 leading-relaxed">
                 <li>
-                  <strong className="text-white">Opción A — Auto-Firma en GitHub Actions:</strong>{' '}
-                  Sube el código a GitHub y ejecuta el workflow incluido; obtienes un <code className="text-[#A78BFA]">.wgt</code> firmado listo para descargar al móvil.
+                  <strong className="text-white">Opción A — Navegador directo de la TV (Sin PC ni certificados):</strong>{' '}
+                  Abre la app <strong className="text-white">Internet</strong> en tu Samsung TV y entra directamente a la URL pública:{' '}
+                  <span className="inline-flex items-center gap-1.5 flex-wrap mt-1">
+                    <code className="text-[#00F593] bg-black px-2 py-0.5 rounded border border-white/10 break-all">{liveTvUrl}</code>
+                    <button
+                      type="button"
+                      data-tv-focusable="true"
+                      onClick={() => void handleCopy(liveTvUrl, 'live-tv-url')}
+                      className="px-2 py-0.5 rounded bg-white/[0.08] hover:bg-white/[0.15] text-[11px] font-bold text-white cursor-pointer"
+                    >
+                      {copiedId === 'live-tv-url' ? 'Copiado' : 'Copiar URL'}
+                    </button>
+                  </span>
                 </li>
                 <li>
-                  <strong className="text-white">Opción B — Apps2Samsung / Tizen Web Installer:</strong>{' '}
-                  Abre la app desde el navegador o Android en la misma Wi-Fi, pon la IP de tu TV y selecciona el archivo <code className="text-white">.wgt</code> generado aquí.
+                  <strong className="text-white">Opción B — Instalar .wgt desde PC (Tizen Studio Device Manager):</strong>{' '}
+                  Conecta la TV en Device Manager usando la <strong className="text-white">IP de la TV</strong>, crea un <strong className="text-white">Certificado Samsung TV (con el DUID de la TV)</strong> y arrastra o instala el <code className="text-[#A78BFA]">.wgt</code>.
                 </li>
                 <li>
-                  <strong className="text-white">Opción C — Navegador directo 10-Foot:</strong>{' '}
-                  Entra a <code className="text-[#00F593]">/tv</code> o añade <code className="text-white">?tizen=1</code> desde el navegador integrado de tu Samsung TV sin instalar nada.
+                  <strong className="text-white">Opción C — Auto-Compilación en GitHub Actions:</strong>{' '}
+                  Lanza el workflow incluido para compilar el paquete <code className="text-white">.wgt</code> y descargarlo listo como artefacto.
                 </li>
               </ul>
             </article>

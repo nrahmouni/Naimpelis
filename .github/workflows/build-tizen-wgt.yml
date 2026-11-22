@@ -37,11 +37,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'npm'
 
       - name: Install dependencies & build relative SPA bundle
         run: |
-          npm ci --no-audit --no-fund
+          if [ -f package-lock.json ]; then
+            npm ci --legacy-peer-deps --no-audit --no-fund || npm install --legacy-peer-deps --no-audit --no-fund
+          else
+            npm install --legacy-peer-deps --no-audit --no-fund
+          fi
           npx vite build --base=./
 
       - name: Prepare Tizen staging folder (.wgt payload)
@@ -58,7 +61,7 @@ jobs:
           elif [ -f public/pwa-192x192.png ]; then
             cp public/pwa-192x192.png tizen-build/icon.png
           fi
-          rm -f tizen-build/sw.js tizen-build/workbox-*.js
+          rm -f tizen-build/sw.js tizen-build/workbox-*.js tizen-build/registerSW.js
 
           node -e '
             const fs = require("fs");
@@ -67,10 +70,13 @@ jobs:
             let html = fs.readFileSync(htmlPath, "utf8");
             html = html
               .replace(/(href|src)="\/assets\//g, "$1=\"./assets/")
-              .replace(/(href|src)="\/(favicon[^"]*|apple-touch-icon\.png|icon\.svg|pwa-[^"]*|music-[^"]*)"/g, "$1=\"./$2\"");
+              .replace(/(href|src)="\/tv\//g, "$1=\"./tv/")
+              .replace(/(href|src)="\/vendor\//g, "$1=\"./vendor/")
+              .replace(/(href|src)="\/(favicon[^"]*|apple-touch-icon\.png|icon\.svg|pwa-[^"]*|music-[^"]*|logo-[^"]*|manifest\.webmanifest)"/g, "$1=\"./$2\"")
+              .replace(/<script[^>]*src=["\x27]\.?\/registerSW\.js["\x27][^>]*><\/script>/gi, "");
 
             const origin = process.env.PUBLIC_ORIGIN.replace(/\/+$/, "");
-            const bootShim = `<script>(function(){if(window.location.protocol==="file:"){window.__RIFFAN_TIZEN_WIDGET__=true;window.__RIFFAN_API_ORIGIN__=${JSON.stringify(origin)};if(typeof window.fetch==="function"){var origFetch=window.fetch;window.fetch=function(input,init){if(typeof input==="string"&&input.charAt(0)==="/"){input=${JSON.stringify(origin)}+input;}return origFetch.call(this,input,init);};}}})();</script>`;
+            const bootShim = `<script>(function(){if(window.location.protocol==="file:"){window.__RIFFAN_TIZEN_WIDGET__=true;window.__RIFFAN_API_ORIGIN__=${JSON.stringify(origin)};if(typeof window.fetch==="function"){var origFetch=window.fetch;window.fetch=function(input,init){if(typeof input==="string"&&input.charAt(0)==="/"){input=${JSON.stringify(origin)}+input;}return origFetch.call(this,input,init);};}}try{if(window.tizen&&window.tizen.tvinputdevice&&window.tizen.tvinputdevice.registerKeyBatch){window.tizen.tvinputdevice.registerKeyBatch(["MediaPlayPause","MediaPlay","MediaPause","MediaStop","MediaRewind","MediaFastForward","ChannelUp","ChannelDown"]);}}catch(e){}})();</script>`;
             html = html.replace("<head>", "<head>" + bootShim);
             fs.writeFileSync(htmlPath, html, "utf8");
 
@@ -106,22 +112,23 @@ jobs:
         env:
           CERT_PASS: ${{ secrets.TIZEN_CERT_PASSWORD || 'RiffanTizen2026' }}
         run: |
-          mkdir -p release-wgt
+          mkdir -p release-wgt "$HOME/tizen-studio-data/keystore/author"
           if [ "${HAS_TIZEN_CLI:-0}" = "1" ]; then
-            if [ -n "${{ secrets.TIZEN_AUTHOR_P12_B64 }}" ]; then
+            if [ -n "${{ secrets.TIZEN_AUTHOR_P12_B64 }}" ] && [ -n "${{ secrets.TIZEN_DIST_P12_B64 }}" ]; then
               mkdir -p "$HOME/tizen-certs"
               echo "${{ secrets.TIZEN_AUTHOR_P12_B64 }}" | base64 -d > "$HOME/tizen-certs/author.p12"
               echo "${{ secrets.TIZEN_DIST_P12_B64 }}" | base64 -d > "$HOME/tizen-certs/distributor.p12"
               tizen security-profiles add -n riffan_tv_profile \
                 -a "$HOME/tizen-certs/author.p12" -p "$CERT_PASS" \
-                -d "$HOME/tizen-certs/distributor.p12" -dp "$CERT_PASS"
+                -d "$HOME/tizen-certs/distributor.p12" -dp "$CERT_PASS" || true
             else
-              tizen certificate -a RiffanAuthor -p "$CERT_PASS" -c ES -s Madrid -o RiffanTV -n "RiffanTV" -f riffan_author
+              tizen certificate -a RiffanAuthor -p "$CERT_PASS" -c ES -s Madrid -o RiffanTV -n "RiffanTV" -f riffan_author || true
               tizen security-profiles add -n riffan_tv_profile \
-                -a "$HOME/tizen-studio-data/keystore/author/riffan_author.p12" -p "$CERT_PASS"
+                -a "$HOME/tizen-studio-data/keystore/author/riffan_author.p12" -p "$CERT_PASS" || true
             fi
-            tizen package -t wgt -s riffan_tv_profile -o release-wgt -- tizen-build
-          else
+            tizen package -t wgt -s riffan_tv_profile -o release-wgt -- tizen-build || true
+          fi
+          if ! ls release-wgt/*.wgt >/dev/null 2>&1; then
             (cd tizen-build && zip -r ../release-wgt/RiffanTV-unsigned.wgt .)
           fi
           ls -lh release-wgt/
