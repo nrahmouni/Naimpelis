@@ -62,7 +62,7 @@ interface LiveTvWorldViewProps {
   onPlayTdtChannel: (ch: SpanishTdtChannel, signalIdx: number, liveHint?: string) => void;
   onOpenEpgModal: (ch: SpanishTdtChannel) => void;
   onTvFiltersOpenChange: (open: boolean) => void;
-  onTvFavOnlyChange: React.Dispatch<React.SetStateAction<boolean>>;
+  onTvFavOnlyChange: (value: boolean) => void;
   onTvRegionChange: (region: TvRegionId) => void;
   onTdtCategoryChange: (cat: 'all' | 'tdt_all' | TdtCategory) => void;
   onEpgFilterChange: (filter: 'all' | 'sports_now' | 'cinema_now') => void;

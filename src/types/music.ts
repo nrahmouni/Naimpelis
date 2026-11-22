@@ -235,6 +235,7 @@ export interface ListeningTrackStat {
   count: number;
   title: string;
   artist: string;
+  artistName?: string;
   cover: string;
   lastPlayedAt: number;
 }
@@ -378,6 +379,7 @@ export interface MusicSearchResultsPayload {
 export interface JamSessionState {
   active: boolean;
   roomId?: string;
+  roomCode?: string;
   hostName?: string;
   listeners: number;
 }

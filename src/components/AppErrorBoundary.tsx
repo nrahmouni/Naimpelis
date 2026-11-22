@@ -1,5 +1,5 @@
 import React from 'react';
-import { RefreshCw } from 'lucide-react';
+import { Check, Copy, RefreshCw } from 'lucide-react';
 import { pickLang } from '../utils/i18n';
 import { isChunkOrModuleLoadError } from '../utils/lazyWithRetry';
 import { clearStaleCachesAndReload } from '../utils/versionSync';
@@ -8,9 +8,20 @@ import type { AppLanguage } from '../types';
 interface State {
   hasError: boolean;
   message: string;
+  copied: boolean;
+  diagCode: string;
 }
 
 const CHUNK_RELOAD_GUARD_KEY = 'naim_chunk_reload_at';
+
+function computeErrorCode(msg: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < msg.length; i++) {
+    hash ^= msg.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return `RTV-${(hash >>> 0).toString(16).toUpperCase().padStart(6, '0').slice(0, 6)}`;
+}
 
 function getBoundaryLang(): AppLanguage {
   try {
@@ -35,17 +46,17 @@ export class AppErrorBoundary extends React.Component<
 > {
   constructor(props: AppErrorBoundaryProps) {
     super(props);
-    this.state = { hasError: false, message: '' };
+    this.state = { hasError: false, message: '', copied: false, diagCode: 'RTV-000000' };
   }
 
-  static getDerivedStateFromError(error: unknown): State {
+  static getDerivedStateFromError(error: unknown): Partial<State> {
     const raw = error instanceof Error ? error.message : String(error);
-    return { hasError: true, message: raw };
+    return { hasError: true, message: raw, copied: false, diagCode: computeErrorCode(raw) };
   }
 
   componentDidUpdate(prevProps: AppErrorBoundaryProps) {
     if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
-      this.setState({ hasError: false, message: '' });
+      this.setState({ hasError: false, message: '', copied: false });
     }
   }
 
@@ -63,6 +74,17 @@ export class AppErrorBoundary extends React.Component<
     }
   }
 
+  private handleCopyDiagnostics = async () => {
+    const payload = `[${this.state.diagCode}] ${this.state.message.slice(0, 240)}`;
+    try {
+      await navigator.clipboard.writeText(payload);
+      this.setState({ copied: true });
+      window.setTimeout(() => this.setState({ copied: false }), 2500);
+    } catch {
+      // ignore clipboard permissions error
+    }
+  };
+
   render() {
     if (!this.state.hasError) {
       return this.props.children;
@@ -73,8 +95,15 @@ export class AppErrorBoundary extends React.Component<
     const lang = getBoundaryLang();
 
     return (
-      <div className="min-h-full w-full bg-[#000000] text-[#F4F5F8] flex items-center justify-center p-6">
+      <div
+        role="alert"
+        aria-live="assertive"
+        className="min-h-full w-full bg-[#000000] text-[#F4F5F8] flex items-center justify-center p-6"
+      >
         <div className="max-w-md w-full rounded-3xl bg-[#0D0D12] border border-white/[0.08] p-6 text-center space-y-4 shadow-[0_24px_64px_rgba(0,0,0,0.9)]">
+          <div className="text-[11px] font-mono text-zinc-400">
+            {this.state.diagCode}
+          </div>
           <h2 className="font-display font-bold text-lg text-white">
             {isQuota
               ? pickLang(lang, {
@@ -117,10 +146,10 @@ export class AppErrorBoundary extends React.Component<
               {this.state.message.slice(0, 180)}
             </p>
           )}
-          <div className="flex items-center justify-center gap-3 flex-wrap">
+          <div className="flex items-center justify-center gap-2.5 flex-wrap">
             <button
               type="button"
-              onClick={() => this.setState({ hasError: false, message: '' })}
+              onClick={() => this.setState({ hasError: false, message: '', copied: false })}
               className="min-h-[44px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs sm:text-sm font-semibold text-zinc-200 inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-transform"
             >
               <span>
@@ -130,6 +159,18 @@ export class AppErrorBoundary extends React.Component<
                   en: 'Retry',
                   rif: 'Ɛawed jerrab',
                 })}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void this.handleCopyDiagnostics()}
+              className="min-h-[44px] px-3.5 rounded-2xl bg-white/[0.05] hover:bg-white/[0.11] border border-white/[0.08] text-xs font-semibold text-zinc-300 inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-transform"
+            >
+              {this.state.copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+              <span>
+                {this.state.copied
+                  ? pickLang(lang, { es: 'Copiado', ca: 'Copiat', en: 'Copied' })
+                  : pickLang(lang, { es: 'Copiar diagnóstico', ca: 'Copiar diagnòstic', en: 'Copy info' })}
               </span>
             </button>
             <button

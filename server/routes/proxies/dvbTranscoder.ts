@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import { LruTtlCache } from '../../utils/lruCache.ts';
+import { logger } from '../../utils/logger.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
 import {
   curlGetBuffer,
@@ -266,6 +267,18 @@ export function destroyLiveDvbSession(key: string): void {
   void fs.promises.rm(sess.dir, { recursive: true, force: true }).catch(() => {});
 }
 
+export function destroyAllLiveDvbSessions(): number {
+  const keys = Array.from(liveDvbSessions.keys());
+  for (const key of keys) {
+    destroyLiveDvbSession(key);
+  }
+  return keys.length;
+}
+
+export function getActiveDvbSessionCount(): number {
+  return liveDvbSessions.size;
+}
+
 setInterval(() => {
   const now = Date.now();
   for (const [key, sess] of liveDvbSessions.entries()) {
@@ -455,12 +468,12 @@ export async function ensureLiveDvbCleanHlsSession(
   });
   proc.on('exit', (code) => {
     if (code !== 0 && !session.dead) {
-      console.warn('[dvb-transcoder] ffmpeg exited early', { key: sessionKey, code, stderrTail });
+      logger.warn({ key: sessionKey, code, stderrTail }, 'dvb_ffmpeg_exited_early');
     }
     session.dead = true;
   });
   proc.on('error', (err) => {
-    console.warn('[dvb-transcoder] ffmpeg spawn error', { key: sessionKey, err: err?.message });
+    logger.warn({ key: sessionKey, err: err?.message }, 'dvb_ffmpeg_spawn_error');
     session.dead = true;
   });
 

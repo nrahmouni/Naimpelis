@@ -1,4 +1,5 @@
 import type express from 'express';
+import { logger } from '../../utils/logger.ts';
 import { assertSafeProxyUrl } from '../../utils/ssrfGuard.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
 import { curlPlainGetText } from '../../services/vestMirrorService.ts';
@@ -297,7 +298,7 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
       }
       res.send(finalManifest);
     } catch (err) {
-      console.error('HLS proxy error:', err);
+      logger.error({ err, reqId, targetUrl }, 'hls_proxy_fetch_failed');
       res.status(502).send('HLS proxy fetch failed');
     }
   };

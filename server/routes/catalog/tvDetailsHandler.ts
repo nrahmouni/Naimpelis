@@ -1,4 +1,5 @@
 import type express from 'express';
+import { logger } from '../../utils/logger.ts';
 import { LruTtlCache } from '../../utils/lruCache.ts';
 import { fetchTmdbJson } from '../../services/tmdbService.ts';
 
@@ -318,7 +319,7 @@ export async function handleTvDetailsRequest(req: express.Request, res: express.
 
     return res.json({ success: true, details });
   } catch (err) {
-    console.error('TV details error:', err);
+    logger.error({ err, tmdbId: req.params.tmdbId }, 'tv_details_fetch_error');
     return res.status(500).json({ success: false });
   }
 }

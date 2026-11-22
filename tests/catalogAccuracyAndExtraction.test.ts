@@ -449,14 +449,23 @@ describe('Strict catalog & extractor title/year/director/runtime matching', () =
     ).toMatchObject({ ok: true, exactYear: true });
   });
 
-  it('enforces Movidy -> GnulaHD -> Bingetrix -> Others priority and alternative_titles localization in server.ts', () => {
-    const serverSrc = fs.readFileSync(path.resolve(process.cwd(), 'server.ts'), 'utf8');
+  it('enforces Movidy -> GnulaHD -> Bingetrix -> Others priority and alternative_titles localization in server modules', () => {
+    const serverSrc = [
+      fs.readFileSync(path.resolve(process.cwd(), 'server.ts'), 'utf8'),
+      fs.readFileSync(path.resolve(process.cwd(), 'server/services/trackRankingService.ts'), 'utf8'),
+      fs.readFileSync(path.resolve(process.cwd(), 'server/services/tmdbCatalogHelpers.ts'), 'utf8'),
+      fs.readFileSync(path.resolve(process.cwd(), 'server/routes/detailsAndSubtitles.ts'), 'utf8'),
+      fs.readFileSync(
+        path.resolve(process.cwd(), 'server/routes/streamExtractHelpers/catalogTrackResolver.ts'),
+        'utf8'
+      ),
+    ].join('\n');
     expect(serverSrc).toContain('extractLocalizedTmdbTitleHints');
     expect(serverSrc).toContain('alternative_titles');
     expect(serverSrc).toContain("if (tr.id.startsWith('movidy-') || tr.resolverType === 'movidy_embed') return 1;");
     expect(serverSrc).toContain("if (tr.id.startsWith('gnula-')) return 2;");
     expect(serverSrc).toContain('const lDiff = getLangScore(a.lang) - getLangScore(b.lang);');
-    expect(serverSrc).toContain('Resolve streams strictly tier-by-tier in language preference order');
+    expect(serverSrc).toContain('const tierScores = Array.from(new Set(orderedTracks.map((t) => getLangScore(t.lang))))');
   });
 });
 

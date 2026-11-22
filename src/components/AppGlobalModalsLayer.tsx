@@ -17,6 +17,7 @@ import { GameMatchInviteModal } from './games/GameMatchInviteModal';
 import { AppDiscoveryModalsGroup } from './app/AppDiscoveryModalsGroup';
 import { GlobalVodModals } from './catalog/GlobalVodModals';
 import { RoomPinPromptModal } from './RoomPinPromptModal';
+import { GlobalA11yHost, SkipToContentLink } from './ui/A11yUtilities';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import type { ProfileHubTab } from './UserProfileHubModal';
 import type { ActiveMovieContext } from './MoviePlaybackDock';
@@ -341,6 +342,8 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
 
   return (
     <>
+      <SkipToContentLink lang={lang} />
+      <GlobalA11yHost lang={lang} />
       <GlobalIncomingInviteBanner
         invite={incomingInvite}
         friendAddedNotice={friendAddedNotice}

@@ -50,6 +50,7 @@ export interface HealthRouteDeps {
     roomsCount: number;
     connectedClientsCount: number;
     uptimeSec: number;
+    activeDvbSessions?: number;
   };
   getPublicOrigin: (req: express.Request) => string;
   refreshChannelHealth?: (force?: boolean) => Promise<void>;

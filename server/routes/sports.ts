@@ -3,6 +3,7 @@
  * @description Live sports agenda feeds (24/7 multiplexes, StreamXHD, RojaDirecta), ESPN + FotMob scoreboards, football matchboard, and live match telemetry.
  */
 import type { Express } from 'express';
+import { logger } from '../utils/logger.ts';
 import {
   getRegionLabelFromCcode as getFotmobRegionLabel,
   doFootballTeamNamesMatch,
@@ -109,7 +110,7 @@ export async function getFootballBoardMatches(opts?: {
         matches: prioritized,
       };
     } catch (err) {
-      console.warn('Extended football calendar error:', err);
+      logger.warn({ err, scope: calendarScope.key }, 'extended_football_calendar_error');
     }
   }
 
@@ -578,7 +579,7 @@ async function fetchAndCacheFootballBoard(opts: {
       }));
       return { dateKey, matches: prioritizedItems };
     } catch (err) {
-      console.warn('Football matchboard fetch error:', err);
+      logger.warn({ err, dateKey }, 'football_matchboard_fetch_error');
       const fallbackItems = (cachedFootballBoard?.matches || []).map((m: any) => ({
         ...m,
         channels: orderBoardChannels(m.channels || [], m.leagueSlug, preferredLang),
@@ -683,7 +684,7 @@ export function registerSportsRoutes(app: Express): void {
       });
       res.json({ success: true, details });
     } catch (err) {
-      console.warn('Match details error:', err);
+      logger.warn({ err, eventId, fotmobMatchId }, 'match_details_fetch_error');
       res.json({ success: true, details: { eventId: eventId || fotmobMatchId, stats: [], events: [], commentary: [], shotsMap: [] } });
     }
   });

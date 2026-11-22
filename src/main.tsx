@@ -6,10 +6,12 @@ import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { queryClient } from './hooks/useCatalogQueries';
 import { useAppStore } from './store/useAppStore';
 import { useThemeStore } from './store/useThemeStore';
+import { installForceOfflineNetworkGuard } from './utils/offlineModeManager';
 import './index.css';
 
-// Sync initial theme, density, lite mode, and reduced-motion DOM attributes immediately on boot
+// Enforce persisted Force Offline mode & sync initial theme/layout DOM attributes immediately on boot
 try {
+  installForceOfflineNetworkGuard();
   localStorage.removeItem('naim_arcade_save_v1');
   useThemeStore.getState().syncDomAttributes();
 

@@ -7,6 +7,10 @@ import {
 import type { VoiceSignalPayload } from '../shared/protocol';
 import { auth } from '../firebase';
 import {
+  FORCE_OFFLINE_CHANGED_EVENT,
+  isForceOfflineEnabled,
+} from '../utils/offlineModeManager';
+import {
   type ConnectRoomOptions,
   type Listener,
   NON_QUEUEABLE_TYPES,
@@ -26,8 +30,48 @@ export class SocketTransport {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private pendingMessages: Array<{ type: string; payload: unknown }> = [];
   private intentionalClose = false;
+  private pausedByOfflineMode = false;
   public latencyMs = 24;
   public serverClockOffsetMs = 0;
+
+  constructor() {
+    if (typeof window !== 'undefined') {
+      window.addEventListener(FORCE_OFFLINE_CHANGED_EVENT, (ev: Event) => {
+        const enabled = Boolean((ev as CustomEvent<{ enabled?: boolean }>).detail?.enabled);
+        if (enabled) {
+          this.pauseForForceOffline();
+        } else {
+          this.resumeFromForceOffline();
+        }
+      });
+    }
+  }
+
+  private pauseForForceOffline() {
+    this.pausedByOfflineMode = true;
+    this.stopHeartbeat();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      this.ws.onclose = null;
+      this.ws.close();
+      this.ws = null;
+    }
+    this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: false } });
+  }
+
+  private resumeFromForceOffline() {
+    if (!this.pausedByOfflineMode) return;
+    this.pausedByOfflineMode = false;
+    if (this.intentionalClose || isForceOfflineEnabled()) return;
+    if (this.roomId && this.user) {
+      this.connect(this.roomId, this.user, this.roomName, this.connectOptions);
+    } else if (this.user) {
+      this.connectPresenceOnly(this.user);
+    }
+  }
 
   protected async resolveFirebaseIdToken(): Promise<string | undefined> {
     try {
@@ -76,6 +120,14 @@ export class SocketTransport {
       this.ws.close();
       this.ws = null;
     }
+
+    if (isForceOfflineEnabled()) {
+      this.pausedByOfflineMode = true;
+      this.stopHeartbeat();
+      this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: false } });
+      return;
+    }
+    this.pausedByOfflineMode = false;
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;

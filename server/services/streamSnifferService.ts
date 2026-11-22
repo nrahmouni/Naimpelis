@@ -1,5 +1,9 @@
 import { logger } from '../utils/logger.ts';
-import { safeFetchFollowingRedirects, validateSafeOutboundUrl } from '../utils/ssrfGuard.ts';
+import {
+  isDisallowedHostnameSyntax,
+  safeFetchFollowingRedirects,
+  validateSafeOutboundUrl,
+} from '../utils/ssrfGuard.ts';
 
 const CHROME_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -77,8 +81,18 @@ export async function sniffStreamViaHttp(
       return null;
     }
 
-    const urlSafety = await validateSafeOutboundUrl(currentUrl);
-    if (!urlSafety.safe) {
+    let parsedCurrent: URL;
+    try {
+      parsedCurrent = new URL(currentUrl);
+    } catch {
+      return null;
+    }
+    if (
+      (parsedCurrent.protocol !== 'http:' && parsedCurrent.protocol !== 'https:') ||
+      parsedCurrent.username ||
+      parsedCurrent.password ||
+      isDisallowedHostnameSyntax(parsedCurrent.hostname)
+    ) {
       return null;
     }
 
@@ -87,6 +101,11 @@ export async function sniffStreamViaHttp(
     }
     if (/\.(mp4)(\?|$)/i.test(currentUrl)) {
       return { streamUrl: currentUrl, referer: currentReferer, isDirectMp4: true };
+    }
+
+    const urlSafety = await validateSafeOutboundUrl(currentUrl);
+    if (!urlSafety.safe) {
+      return null;
     }
 
     try {

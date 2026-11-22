@@ -11,6 +11,60 @@ export interface TrackHealthInfo {
   statusCode?: number;
   qoeRebuffers?: number;
   qoeFailures?: number;
+  hasVideo?: boolean;
+  audioOnly?: boolean;
+  videoCodec?: string;
+  audioCodec?: string;
+}
+
+export interface HlsCodecInspection {
+  hasCodecAttr: boolean;
+  hasVideo: boolean;
+  hasAudio: boolean;
+  audioOnly: boolean;
+  isVodEnded: boolean;
+  videoCodec?: string;
+  audioCodec?: string;
+}
+
+export function inspectHlsCodecManifest(manifestText: string): HlsCodecInspection {
+  const text = String(manifestText || '');
+  const isVodEnded = /#EXT-X-ENDLIST/i.test(text);
+  const codecsMatches = Array.from(text.matchAll(/CODECS="([^"]+)"/gi));
+  if (codecsMatches.length === 0) {
+    return {
+      hasCodecAttr: false,
+      hasVideo: true,
+      hasAudio: true,
+      audioOnly: false,
+      isVodEnded,
+    };
+  }
+
+  let videoCodec: string | undefined;
+  let audioCodec: string | undefined;
+  for (const match of codecsMatches) {
+    const tokens = match[1].split(',').map((t) => t.trim()).filter(Boolean);
+    for (const token of tokens) {
+      if (!videoCodec && /^(avc1|hev1|hvc1|vp09|vp9|vp8|av01|mp4v)/i.test(token)) {
+        videoCodec = token;
+      } else if (!audioCodec && /^(mp4a|ec-3|ac-3|opus|flac|vorbis)/i.test(token)) {
+        audioCodec = token;
+      }
+    }
+  }
+
+  const hasVideo = Boolean(videoCodec);
+  const hasAudio = Boolean(audioCodec);
+  return {
+    hasCodecAttr: true,
+    hasVideo,
+    hasAudio,
+    audioOnly: !hasVideo && hasAudio,
+    isVodEnded,
+    ...(videoCodec ? { videoCodec } : {}),
+    ...(audioCodec ? { audioCodec } : {}),
+  };
 }
 
 export interface ChannelHealthSummary {
@@ -182,6 +236,13 @@ export async function probeChannelTrack(
         };
       }
 
+      const codecInfo = inspectHlsCodecManifest(bodyText);
+      let effectiveStatus: ChannelHealthStatus =
+        latencyMs <= DEGRADED_LATENCY_MS ? 'up' : 'degraded';
+      if (codecInfo.audioOnly) {
+        effectiveStatus = 'degraded';
+      }
+
       if (!options?.fetchImpl && !isDvbHeadend) {
         try {
           let mediaText = bodyText;
@@ -261,6 +322,14 @@ export async function probeChannelTrack(
                   checkedAt: Date.now(),
                 };
               }
+            } else if (!codecInfo.isVodEnded) {
+              return {
+                status: 'degraded',
+                latencyMs,
+                statusCode: res.status,
+                failCount: prevFails + 1,
+                checkedAt: Date.now(),
+              };
             }
           }
         } catch {
@@ -274,11 +343,15 @@ export async function probeChannelTrack(
       }
 
       return {
-        status: latencyMs <= DEGRADED_LATENCY_MS ? 'up' : 'degraded',
+        status: effectiveStatus,
         latencyMs,
         statusCode: res.status,
         failCount: 0,
         checkedAt: Date.now(),
+        hasVideo: codecInfo.hasVideo,
+        audioOnly: codecInfo.audioOnly,
+        ...(codecInfo.videoCodec ? { videoCodec: codecInfo.videoCodec } : {}),
+        ...(codecInfo.audioCodec ? { audioCodec: codecInfo.audioCodec } : {}),
       };
     }
 

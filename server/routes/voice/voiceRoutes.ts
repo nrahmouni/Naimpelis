@@ -417,8 +417,17 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
 
       if (plan.intent === 'play_music') {
         const musicQ = plan.tmdbQuery?.titleSearch || query;
-        const musicRes = await searchMusicCatalog(musicQ, 'track').catch(() => ({ tracks: [] as any[] }));
-        for (const tr of (musicRes.tracks || []).slice(0, 6)) {
+        interface VoiceMusicTrackItem {
+          id: string;
+          title: string;
+          artist?: { name?: string };
+          album?: { title?: string; coverXl?: string; cover?: string };
+          durationSec?: number;
+        }
+        const rawMusicRes = (await searchMusicCatalog(musicQ, 'track').catch(() => ({
+          tracks: [] as VoiceMusicTrackItem[],
+        }))) as { tracks?: VoiceMusicTrackItem[] };
+        for (const tr of (rawMusicRes.tracks || []).slice(0, 6)) {
           items.push({
             kind: 'music',
             id: tr.id,

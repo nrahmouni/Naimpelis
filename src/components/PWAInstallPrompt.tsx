@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { WifiOff } from 'lucide-react';
 import { RiffanDownloadIcon } from './ui/RiffanIcons';
 import { AppLanguage } from '../types';
 import { useOnlineStatus, usePWAInstall } from '../utils/usePWAInstall';
+import { useForceOfflineMode } from '../utils/offlineModeManager';
 import { triggerHaptic } from '../utils/haptics';
 import { triggerApkDownload } from '../utils/apkDownload';
 import { pickLang } from '../utils/i18n';
@@ -293,6 +295,48 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
 
 export const OfflineIndicator: React.FC<{ lang: AppLanguage }> = ({ lang }) => {
   const isOnline = useOnlineStatus();
+  const { forceOffline, blockedCount, setForceOffline } = useForceOfflineMode();
+
+  if (forceOffline) {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid="force-offline-banner"
+        className="fixed top-3 left-1/2 -translate-x-1/2 z-[150] max-w-[calc(100vw-1.5rem)] flex items-center gap-2.5 rounded-2xl bg-amber-400/96 border border-amber-200/60 px-3.5 py-2 text-xs font-bold text-zinc-950 shadow-[0_12px_32px_rgba(0,0,0,0.65)] backdrop-blur-md"
+      >
+        <WifiOff className="w-4 h-4 text-zinc-950 shrink-0" />
+        <span className="leading-snug truncate">
+          {pickLang(lang, {
+            es: 'Modo solo sin conexión activo · Red desactivada',
+            ca: 'Mode només sense connexió actiu · Xarxa desactivada',
+            en: 'Offline-only mode active · Network disabled',
+            rif: 'Amekra n war internet yermed · Aẓeṭṭa yeḥbes',
+            zh: '仅离线模式已启用 · 已禁用网络请求',
+          })}
+          {blockedCount > 0 ? ` (${blockedCount})` : ''}
+        </span>
+        <button
+          type="button"
+          data-testid="force-offline-disable-btn"
+          onClick={() => {
+            triggerHaptic('light');
+            setForceOffline(false);
+          }}
+          className="px-2.5 py-1 rounded-lg bg-zinc-950 text-amber-300 text-[11px] font-bold hover:bg-zinc-900 cursor-pointer whitespace-nowrap shrink-0"
+        >
+          {pickLang(lang, {
+            es: 'Activar red',
+            ca: 'Activar xarxa',
+            en: 'Go Online',
+            rif: 'Rred internet',
+            zh: '恢复网络',
+          })}
+        </button>
+      </div>
+    );
+  }
+
   if (isOnline) return null;
 
   return (

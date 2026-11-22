@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useForceOfflineMode } from './offlineModeManager';
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>;
@@ -33,7 +34,8 @@ export function usePWAInstall() {
 
   useEffect(() => {
     const isStandalone =
-      window.matchMedia('(display-mode: standalone)').matches ||
+      (typeof window.matchMedia === 'function' &&
+        window.matchMedia('(display-mode: standalone)').matches) ||
       (window.navigator as unknown as { standalone?: boolean }).standalone === true;
     setIsInstalled(isStandalone);
 
@@ -45,7 +47,8 @@ export function usePWAInstall() {
       setDeferredPrompt(ev);
       if (!ev) {
         const nowStandalone =
-          window.matchMedia('(display-mode: standalone)').matches ||
+          (typeof window.matchMedia === 'function' &&
+            window.matchMedia('(display-mode: standalone)').matches) ||
           (window.navigator as unknown as { standalone?: boolean }).standalone === true;
         if (nowStandalone) setIsInstalled(true);
       }
@@ -94,6 +97,7 @@ export function usePWAInstall() {
 }
 
 export function useOnlineStatus() {
+  const { forceOffline } = useForceOfflineMode();
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
@@ -111,5 +115,5 @@ export function useOnlineStatus() {
     };
   }, []);
 
-  return isOnline;
+  return isOnline && !forceOffline;
 }

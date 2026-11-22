@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Download, Mic, MoreHorizontal, Share2, Users } from 'lucide-react';
+import { Download, Keyboard, Mic, MoreHorizontal, Share2, Users } from 'lucide-react';
+import { openKeyboardShortcutsModal } from '../ui/A11yUtilities';
 import type { AppLanguage } from '../../types';
 import type { WorldId } from '../../store/useAppStore';
 import { pickLang } from '../../utils/i18n';
@@ -411,6 +412,24 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                             })}
                           </span>
                         </button>
+                        <button
+                          type="button"
+                          role="menuitem"
+                          onClick={() => {
+                            setMoreMenuOpen(false);
+                            openKeyboardShortcutsModal();
+                          }}
+                          className="w-full min-h-11 px-3 rounded-xl text-left text-xs font-semibold text-zinc-200 hover:text-white hover:bg-white/[0.07] flex items-center gap-2.5 cursor-pointer transition-colors"
+                        >
+                          <Keyboard className="w-4 h-4 shrink-0 text-zinc-300" />
+                          <span>
+                            {pickLang(lang, {
+                              es: 'Atajos de teclado (?)',
+                              ca: 'Dreceres de teclat (?)',
+                              en: 'Keyboard shortcuts (?)',
+                            })}
+                          </span>
+                        </button>
                         <a
                           href="/api/audit/100-points"
                           download="auditoria-riffantv-100-puntos.md"
@@ -438,11 +457,13 @@ export const WorldShell: React.FC<WorldShellProps> = ({
       </header>
 
       {/* WORLD CONTENT */}
-      <div
+      <main
+        id="main-world-content"
+        tabIndex={-1}
         className={
           isMusicWorld
-            ? 'w-full max-w-none flex-1 min-w-0 px-0 pt-0 pb-0'
-            : `w-full max-w-6xl mx-auto ${
+            ? 'w-full max-w-none flex-1 min-w-0 px-0 pt-0 pb-0 focus:outline-none'
+            : `w-full max-w-6xl mx-auto focus:outline-none ${
                 fullHeight
                   ? 'flex-1 min-h-0 flex flex-col overflow-hidden'
                   : 'px-3 sm:px-5 pt-3 pb-4'
@@ -460,7 +481,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
             {children}
           </React.Suspense>
         </AppErrorBoundary>
-      </div>
+      </main>
     </div>
   );
 };

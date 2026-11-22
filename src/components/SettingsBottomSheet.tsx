@@ -28,6 +28,7 @@ import { BottomSheet, SecondaryButton, StandardInput } from './ui/DesignSystem';
 import { PWAInstallOptionsSheet } from './PWAInstallPrompt';
 import { useAppStore } from '../store/useAppStore';
 import { useMusicStore } from '../store/useMusicStore';
+import { ForceOfflineSettingsControl } from './settings/ForceOfflineSettingsControl';
 
 interface SettingsBottomSheetProps {
   isOpen: boolean;
@@ -271,6 +272,8 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
               </span>
               <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
             </button>
+
+            <ForceOfflineSettingsControl lang={lang} rowClass={rowClass} />
 
             {/* Language Selector */}
             <div className="pt-2 border-t border-white/[0.04] space-y-1.5">

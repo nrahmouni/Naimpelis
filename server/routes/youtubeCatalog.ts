@@ -1,8 +1,46 @@
 import type express from 'express';
 import { LruTtlCache } from '../utils/lruCache.ts';
+import { logger } from '../utils/logger.ts';
 
 const CHROME_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36';
+
+export interface YouTubeCatalogItem {
+  id: string;
+  videoId: string;
+  title: string;
+  channel: string;
+  duration: string;
+  views: string;
+  thumbnail: string;
+  url: string;
+}
+
+interface YtInitialSearchJson {
+  contents?: {
+    twoColumnSearchResultsRenderer?: {
+      primaryContents?: {
+        sectionListRenderer?: {
+          contents?: Array<{
+            itemSectionRenderer?: {
+              contents?: Array<{
+                videoRenderer?: {
+                  videoId?: string;
+                  title?: { runs?: Array<{ text?: string }> };
+                  ownerText?: { runs?: Array<{ text?: string }> };
+                  longBylineText?: { runs?: Array<{ text?: string }> };
+                  lengthText?: { simpleText?: string };
+                  shortViewCountText?: { simpleText?: string };
+                  viewCountText?: { simpleText?: string };
+                };
+              }>;
+            };
+          }>;
+        };
+      };
+    };
+  };
+}
 
 export function parseYouTubeVideoId(url: string): string | null {
   const m = url.match(
@@ -11,7 +49,10 @@ export function parseYouTubeVideoId(url: string): string | null {
   return m ? m[1] : null;
 }
 
-const ytSearchCache = new LruTtlCache<string, { videos: any[]; ts: number }>(150, 5 * 60 * 1000);
+const ytSearchCache = new LruTtlCache<string, { videos: YouTubeCatalogItem[]; ts: number }>(
+  150,
+  5 * 60 * 1000
+);
 
 export function registerYouTubeCatalogRoutes(app: express.Express) {
   app.get('/api/catalog/youtube', async (req, res) => {
@@ -22,7 +63,6 @@ export function registerYouTubeCatalogRoutes(app: express.Express) {
     }
 
     try {
-      // Support direct YouTube URL pasted into the search bar
       const directId = parseYouTubeVideoId(q);
       if (directId) {
         return res.json({
@@ -58,18 +98,18 @@ export function registerYouTubeCatalogRoutes(app: express.Express) {
       const initMatch = html.match(/var\s+ytInitialData\s*=\s*(\{[\s\S]+?\});<\/script>/);
       if (!initMatch) return res.json({ success: true, videos: [] });
 
-      const data = JSON.parse(initMatch[1]);
+      const data = JSON.parse(initMatch[1]) as YtInitialSearchJson;
       const sections =
         data?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer
           ?.contents || [];
 
-      const videos: any[] = [];
+      const videos: YouTubeCatalogItem[] = [];
       for (const sec of sections) {
         const items = sec?.itemSectionRenderer?.contents || [];
         for (const item of items) {
           const vr = item?.videoRenderer;
           if (!vr?.videoId) continue;
-          const title = vr.title?.runs?.map((r: any) => r.text).join('') || 'YouTube Video';
+          const title = vr.title?.runs?.map((r) => r.text || '').join('') || 'YouTube Video';
           const channel =
             vr.ownerText?.runs?.[0]?.text || vr.longBylineText?.runs?.[0]?.text || 'YouTube';
           const duration = vr.lengthText?.simpleText || 'LIVE';
@@ -92,7 +132,7 @@ export function registerYouTubeCatalogRoutes(app: express.Express) {
       ytSearchCache.set(q.toLowerCase(), { videos, ts: Date.now() });
       res.json({ success: true, videos });
     } catch (err) {
-      console.warn('YouTube search error:', err);
+      logger.warn({ err, q }, 'youtube_catalog_search_error');
       res.json({ success: true, videos: [] });
     }
   });

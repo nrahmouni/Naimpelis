@@ -213,8 +213,17 @@ export function setupGeminiLiveWebSocket(
 
         if (name === 'play_music') {
           const musicQ = String(args.query || '').trim();
-          const musicRes = await searchMusicCatalog(musicQ, 'track').catch(() => ({ tracks: [] as any[] }));
-          const items = (musicRes.tracks || []).slice(0, 5).map((tr: any) => ({
+          interface LiveMusicTrackItem {
+            id: string;
+            title: string;
+            artist?: { name?: string };
+            album?: { title?: string; coverXl?: string; cover?: string };
+            durationSec?: number;
+          }
+          const rawMusicRes = (await searchMusicCatalog(musicQ, 'track').catch(() => ({
+            tracks: [] as LiveMusicTrackItem[],
+          }))) as { tracks?: LiveMusicTrackItem[] };
+          const items = (rawMusicRes.tracks || []).slice(0, 5).map((tr) => ({
             kind: 'music',
             id: tr.id,
             title: tr.title,

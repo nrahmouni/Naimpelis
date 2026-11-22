@@ -1,5 +1,7 @@
 import express from 'express';
 import { LruTtlCache } from '../utils/lruCache.ts';
+import { logger } from '../utils/logger.ts';
+import type { TrackHealthInfo } from '../services/channelHealthMonitor.ts';
 import { type ExtractedStreamResult, type TrackRecord } from '../extractors/httpHelpers.ts';
 import { handleDirectExtractCases } from './streamExtractHelpers/directCasesHandler.ts';
 import { handleCatalogMediaExtract } from './streamExtractHelpers/catalogMediaExtractor.ts';
@@ -16,7 +18,7 @@ export interface RankCandidateTracksInput {
   isVestLink: boolean;
   hasExplicitMovidyUrl: boolean;
   hasExplicitGnulaUrl: boolean;
-  healthMap: Record<string, any>;
+  healthMap: Record<string, TrackHealthInfo>;
 }
 
 export interface RankCandidateTracksOutput {
@@ -131,7 +133,7 @@ export function registerStreamExtractRoute(
         error: 'No se encontró ninguna señal estable para reproducir dentro de la app.',
       });
     } catch (err) {
-      console.error('Extract stream error:', err);
+      logger.error({ err, tmdbIdParam, mediaTypeParam, titleHint }, 'extract_stream_error');
       return res.status(502).json({
         success: false,
         canUseCloudBrowser: false,

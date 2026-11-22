@@ -20,6 +20,88 @@ export interface StandingsParseContext {
   tournamentName?: string;
 }
 
+interface FotmobOngoingMatch {
+  hId?: number | string;
+  aId?: number | string;
+  hScore?: number | string;
+  aScore?: number | string;
+}
+
+interface FotmobTableRowRaw {
+  idx?: number;
+  id?: number | string;
+  name?: string;
+  shortName?: string;
+  scoresStr?: string;
+  ongoing?: FotmobOngoingMatch | null;
+  played?: number;
+  wins?: number;
+  draws?: number;
+  losses?: number;
+  goalConDiff?: number;
+  pts?: number;
+  deduction?: number;
+  qualColor?: string;
+}
+
+interface FotmobLegendRaw {
+  title?: string;
+  color?: string;
+}
+
+interface FotmobTableBlock {
+  leagueName?: string;
+  name?: string;
+  ongoing?: FotmobOngoingMatch[];
+  table?: {
+    all?: FotmobTableRowRaw[];
+    home?: FotmobTableRowRaw[];
+    away?: FotmobTableRowRaw[];
+  };
+}
+
+interface FotmobTltablePayload {
+  leagueId?: number | string;
+  leagueName?: string;
+  ongoing?: FotmobOngoingMatch[];
+  legend?: FotmobLegendRaw[];
+  table?: FotmobTableBlock['table'];
+  tables?: FotmobTableBlock[];
+  data?: FotmobTltablePayload;
+}
+
+interface EspnStatRaw {
+  name?: string;
+  value?: number | string;
+  displayValue?: number | string;
+}
+
+interface EspnEntryRaw {
+  team?: {
+    id?: string | number;
+    displayName?: string;
+    shortDisplayName?: string;
+    abbreviation?: string;
+    name?: string;
+    logos?: Array<{ href?: string }>;
+  };
+  stats?: EspnStatRaw[];
+  note?: { color?: string };
+}
+
+interface EspnChildStandingsRaw {
+  name?: string;
+  abbreviation?: string;
+  standings?: { entries?: EspnEntryRaw[] };
+}
+
+interface EspnStandingsPayloadRaw {
+  name?: string;
+  shortName?: string;
+  children?: EspnChildStandingsRaw[];
+  standings?: { entries?: EspnEntryRaw[] };
+}
+
 const standingsCache = new Map<string, { data: FootballStandingsData; ts: number }>();
 
 const LEGEND_TITLE_ES_MAP: Record<string, string> = {
@@ -55,7 +137,7 @@ function parseScoresStr(scoresStr: unknown): { gf: number; ga: number } {
   };
 }
 
-function formatOngoingMatchLabel(ongoing: any): string | undefined {
+function formatOngoingMatchLabel(ongoing?: FotmobOngoingMatch | null): string | undefined {
   if (!ongoing || typeof ongoing !== 'object') return undefined;
   const h = ongoing.hScore;
   const a = ongoing.aScore;
@@ -66,12 +148,12 @@ function formatOngoingMatchLabel(ongoing: any): string | undefined {
 function mapFotmobRows(
   rawRows: unknown,
   ctx: StandingsParseContext,
-  ongoingByTeamId: Map<number, any>
+  ongoingByTeamId: Map<number, FotmobOngoingMatch>
 ): FootballStandingRow[] {
   if (!Array.isArray(rawRows)) return [];
   return rawRows
-    .filter((r) => r && typeof r === 'object' && r.name)
-    .map((r: any, idx: number): FootballStandingRow => {
+    .filter((r): r is FotmobTableRowRaw => Boolean(r && typeof r === 'object' && 'name' in r && r.name))
+    .map((r, idx): FootballStandingRow => {
       const teamIdNum = Number(r.id || 0);
       const teamName = String(r.name || '').trim();
       const shortName = String(r.shortName || teamName).trim();
@@ -130,7 +212,7 @@ function buildLegend(rawLegend: unknown): FootballStandingsLegendItem[] {
   if (!Array.isArray(rawLegend)) return [];
   const seen = new Set<string>();
   const out: FootballStandingsLegendItem[] = [];
-  for (const item of rawLegend) {
+  for (const item of rawLegend as FotmobLegendRaw[]) {
     const title = translateLegendTitle(item?.title);
     const color = String(item?.color || '').trim();
     if (!title || !color) continue;
@@ -146,14 +228,14 @@ export function parseFotmobTltableStandings(
   raw: unknown,
   ctx: StandingsParseContext = {}
 ): FootballStandingsData | null {
-  const root = Array.isArray(raw) ? raw[0] : raw;
-  const d = (root as any)?.data ?? root;
+  const root = (Array.isArray(raw) ? raw[0] : raw) as FotmobTltablePayload | undefined;
+  const d = root?.data ?? root;
   if (!d || typeof d !== 'object') return null;
 
-  const ongoingByTeamId = new Map<number, any>();
+  const ongoingByTeamId = new Map<number, FotmobOngoingMatch>();
   const registerOngoing = (list: unknown) => {
     if (!Array.isArray(list)) return;
-    for (const o of list) {
+    for (const o of list as FotmobOngoingMatch[]) {
       if (!o || typeof o !== 'object') continue;
       if (o.hId) ongoingByTeamId.set(Number(o.hId), o);
       if (o.aId) ongoingByTeamId.set(Number(o.aId), o);
@@ -210,19 +292,20 @@ export function parseFotmobTltableStandings(
 }
 
 export function parseEspnStandingsFallback(
-  raw: any,
+  rawInput: unknown,
   ctx: StandingsParseContext = {}
 ): FootballStandingsData | null {
-  const children: any[] = Array.isArray(raw?.children)
+  const raw = rawInput as EspnStandingsPayloadRaw | undefined;
+  const children: EspnChildStandingsRaw[] = Array.isArray(raw?.children)
     ? raw.children
     : raw?.standings
-      ? [raw]
+      ? [{ standings: raw.standings }]
       : [];
   const groups: FootballStandingsGroup[] = [];
 
   for (let i = 0; i < children.length; i++) {
     const child = children[i];
-    const entries: any[] = Array.isArray(child?.standings?.entries)
+    const entries: EspnEntryRaw[] = Array.isArray(child?.standings?.entries)
       ? child.standings.entries
       : [];
     if (entries.length === 0) continue;

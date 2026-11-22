@@ -6,6 +6,7 @@ import {
   buildHlsProxyUrl,
   buildTsProxyUrl,
   type ExtractedStreamResult,
+  type SubtitleTrackOutput,
   type TrackRecord,
 } from '../../extractors/httpHelpers.ts';
 import { unpackVidhideToHls } from '../../extractors/vidhideEmbed69.ts';
@@ -23,6 +24,14 @@ import {
   toProxiedEmbedUrl,
   verifyWebEmbedCandidateAlive,
 } from '../../services/streamExtractFallback.ts';
+
+export interface SubtitleCandidateRecord {
+  id?: string;
+  label?: string;
+  lang?: string;
+  url: string;
+  source?: string;
+}
 
 function withExtractTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
   return Promise.race([
@@ -290,12 +299,12 @@ export async function buildResolvedCatalogStreamResult(opts: {
     coverVerticalUrl?: string;
     coverHorizontalUrl?: string;
   } | null;
-  vestSubtitles: any[];
-  clipboxSubtitles: any[];
-  ghostflixSubtitles: any[];
-  extraSubtitles?: any[];
+  vestSubtitles: SubtitleCandidateRecord[];
+  clipboxSubtitles: SubtitleCandidateRecord[];
+  ghostflixSubtitles: SubtitleCandidateRecord[];
+  extraSubtitles?: SubtitleCandidateRecord[];
   resolvedTmdbId: string | number | null;
-  subtitlesPromise: Promise<any[]>;
+  subtitlesPromise: Promise<SubtitleCandidateRecord[]>;
 }): Promise<ExtractedStreamResult> {
   const { primaryStreamUrl, primaryMode, resolvedTrack, validTracks } = opts.resolvedSelection;
   const resolvedLang = String(resolvedTrack?.lang || opts.preferLang).toUpperCase();
@@ -325,26 +334,34 @@ export async function buildResolvedCatalogStreamResult(opts: {
         : baseCleanTitle
       : 'RiffanTV HD');
 
-  const rawMergedSubs = [
+  const rawMergedSubs: SubtitleCandidateRecord[] = [
     ...(opts.extraSubtitles || []),
     ...opts.vestSubtitles,
     ...opts.clipboxSubtitles,
     ...opts.ghostflixSubtitles,
   ];
   if (rawMergedSubs.length === 0 && (opts.resolvedTmdbId || baseCleanTitle || opts.titleHint)) {
-    const searchedSubs = await withExtractTimeout(opts.subtitlesPromise, 650, [] as any[]);
+    const searchedSubs = await withExtractTimeout(opts.subtitlesPromise, 650, [] as SubtitleCandidateRecord[]);
     rawMergedSubs.push(...searchedSubs);
   } else if (opts.resolvedTmdbId) {
-    const searchedSubs = await withExtractTimeout(opts.subtitlesPromise, 250, [] as any[]);
+    const searchedSubs = await withExtractTimeout(opts.subtitlesPromise, 250, [] as SubtitleCandidateRecord[]);
     rawMergedSubs.push(...searchedSubs);
   }
   const seenSubUrls = new Set<string>();
-  const combinedSubtitles = rawMergedSubs.filter((s) => {
+  const combinedSubtitles: SubtitleTrackOutput[] = [];
+  for (const s of rawMergedSubs) {
     const u = String(s?.url || '').trim();
-    if (!u || seenSubUrls.has(u)) return false;
+    if (!u || seenSubUrls.has(u)) continue;
     seenSubUrls.add(u);
-    return true;
-  });
+    const langCode = String(s?.lang || 'ES').trim().toUpperCase() || 'ES';
+    combinedSubtitles.push({
+      id: String(s?.id || `sub-${langCode.toLowerCase()}-${combinedSubtitles.length}`),
+      label: String(s?.label || langCode),
+      lang: langCode,
+      url: u,
+      ...(s?.source ? { source: s.source } : {}),
+    });
+  }
 
   const cacheTtlMs =
     primaryMode === 'hls' && !languageFallbackUsed

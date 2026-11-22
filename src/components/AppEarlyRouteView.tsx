@@ -19,6 +19,7 @@ import { GlobalIncomingInviteBanner } from './FriendsInviteModal';
 import { NaimcineIntro } from './NaimcineIntro';
 import { LobbyScreen } from './LobbyScreen';
 import { RoomPinPromptModal } from './RoomPinPromptModal';
+import { OfflineIndicator } from './PWAInstallPrompt';
 import { socketService } from '../services/socket';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 
@@ -271,6 +272,7 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
     return (
       <MotionConfig reducedMotion={reducedMotion ? 'always' : 'user'}>
         <PreviewAutoEscapeBanner variant="floating" />
+        <OfflineIndicator lang={lang} />
         {showIntro && (
           <NaimcineIntro
             withSound={introWithSound}
@@ -329,6 +331,7 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
   if (isTvMode) {
     return (
       <div className="w-full h-[100dvh] bg-[#0B0B0F] overflow-hidden">
+        <OfflineIndicator lang={lang} />
         {pinPromptState.open && (
           <RoomPinPromptModal
             isOpen={pinPromptState.open}

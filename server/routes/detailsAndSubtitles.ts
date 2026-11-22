@@ -3,6 +3,7 @@
  * @description Rich TMDB media details (trailer, cast, watch providers, language probe) and cloud subtitle search/proxy endpoints.
  */
 import type { Express } from 'express';
+import { logger } from '../utils/logger.ts';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { assertSafeProxyUrl } from '../utils/ssrfGuard.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
@@ -23,14 +24,18 @@ import { filterTmdbValidSeasons } from './catalog/tvDetailsHandler.ts';
 import {
   decodeSubtitleBuffer,
   searchAggregatedSubtitles,
+  type NormalizedSubtitleTrack,
 } from '../services/subtitleAggregator.ts';
 import { extractClipboxDirectStreams } from '../extractors/clipboxDirectExtractor.ts';
 
-const subtitleSearchCache = new LruTtlCache<string, { tracks: any[]; ts: number }>(
+const subtitleSearchCache = new LruTtlCache<string, { tracks: NormalizedSubtitleTrack[]; ts: number }>(
   250,
   15 * 60 * 1000
 );
-const richDetailsCache = new LruTtlCache<string, { details: any; ts: number }>(350, 30 * 60 * 1000);
+const richDetailsCache = new LruTtlCache<string, { details: Record<string, unknown>; ts: number }>(
+  350,
+  30 * 60 * 1000
+);
 
 export async function fetchAndCacheSubtitles(
   tmdbId: string,
@@ -38,7 +43,7 @@ export async function fetchAndCacheSubtitles(
   episode = 0,
   timeoutMs = 5000,
   extraOpts?: { title?: string; mediaType?: 'movie' | 'tv' }
-): Promise<any[]> {
+): Promise<NormalizedSubtitleTrack[]> {
   const cleanId = String(tmdbId || '').replace(/\D/g, '');
   const cleanTitle = String(extraOpts?.title || '').trim();
   if (!cleanId && !cleanTitle) return [];
@@ -66,7 +71,7 @@ export async function fetchAndCacheSubtitles(
 
     const clipboxSubs = await Promise.race([
       clipboxCapTask,
-      new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 2400)),
+      new Promise<NormalizedSubtitleTrack[]>((resolve) => setTimeout(() => resolve([]), 2400)),
     ]);
 
     const prioritized = await searchAggregatedSubtitles({
@@ -387,7 +392,7 @@ export function registerDetailsAndSubtitlesRoutes(
       }
       res.json({ success: true, details });
     } catch (err) {
-      console.warn('Rich details error:', err);
+      logger.warn({ err, mediaType: req.params.mediaType, tmdbId: req.params.tmdbId }, 'rich_details_error');
       res.status(500).json({ success: false });
     }
   });

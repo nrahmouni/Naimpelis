@@ -121,6 +121,48 @@ export default defineConfig(() => {
               },
             },
             {
+              urlPattern: /^\/api\/catalog\/football-board(\?.*)?$/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'football-board-swr-cache',
+                expiration: {
+                  maxEntries: 20,
+                  maxAgeSeconds: 60 * 5,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              urlPattern: /^https:\/\/image\.tmdb\.org\/t\/p\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'tmdb-images-cache',
+                expiration: {
+                  maxEntries: 250,
+                  maxAgeSeconds: 60 * 60 * 24 * 14,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              urlPattern: /^https:\/\/images\.fotmob\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'fotmob-assets-cache',
+                expiration: {
+                  maxEntries: 200,
+                  maxAgeSeconds: 60 * 60 * 24 * 7,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'CacheFirst',
               options: {
@@ -151,19 +193,26 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: true,
+          enabled: false,
           type: 'module',
         },
       }),
     ],
     build: {
       target: 'es2020',
+      cssCodeSplit: true,
       chunkSizeWarningLimit: 900,
       rollupOptions: {
         output: {
           manualChunks(id) {
             if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
               return 'vendor-react';
+            }
+            if (id.includes('node_modules/@tanstack/react-query/')) {
+              return 'vendor-tanstack';
+            }
+            if (id.includes('node_modules/zod/')) {
+              return 'vendor-zod';
             }
             if (id.includes('node_modules/firebase/') || id.includes('node_modules/@firebase/')) {
               return 'vendor-firebase';
@@ -179,6 +228,15 @@ export default defineConfig(() => {
             }
             if (id.includes('/src/components/kids/') || id.includes('/src/store/useKidsStore')) {
               return 'feature-kids';
+            }
+            if (id.includes('/src/components/music/') || id.includes('/src/store/useMusicStore')) {
+              return 'feature-music';
+            }
+            if (id.includes('/src/components/liveMatch/') || id.includes('FootballWorldView')) {
+              return 'feature-sports';
+            }
+            if (id.includes('/src/components/games/') || id.includes('GamesHubSection')) {
+              return 'feature-games';
             }
           },
         },

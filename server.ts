@@ -11,6 +11,7 @@ import { resolveOfficialChannelLogoUrl } from './src/shared/channelLogos.ts';
 import { logger } from './server/utils/logger.ts';
 import {
   applyPublicCacheHeaders,
+  createSlidingWindowRateLimiter,
   expressErrorHandler,
   securityHeadersMiddleware,
 } from './server/middleware/errorHandler.ts';
@@ -29,14 +30,7 @@ import {
   getLiveVoiceMatches,
   prewarmTodayFootballBoard,
 } from './server/routes/sports.ts';
-import {
-  injectDynamicOgMeta,
-  injectMusicPwaMeta,
-  isMusicAppPath,
-  registerDeepLinkRoutes,
-  resolveOpenGraphMetaForRequest,
-  shouldInjectDeepLinkOg,
-} from './server/routes/deepLinkResolver.ts';
+import { registerDeepLinkRoutes } from './server/routes/deepLinkResolver.ts';
 import { registerIptvAndTdtRoutes, getLiveVoiceChannels } from './server/routes/iptv.ts';
 import { registerWorldTvRoutes } from './server/routes/worldTvRoutes.ts';
 import { registerEpgRoutes } from './server/services/epgService.ts';
@@ -50,10 +44,7 @@ import {
   sendApkPackageResponse,
   seriesCatalogStaleCache,
 } from './server/routes/vodCatalogRoutes.ts';
-import {
-  registerStreamExtractRoute,
-  type RankCandidateTracksInput,
-} from './server/routes/streamExtractRoutes.ts';
+import { registerStreamExtractRoute } from './server/routes/streamExtractRoutes.ts';
 import { registerClipboxRoutes } from './server/routes/clipboxRoutes.ts';
 import { registerRbtvRoutes } from './server/routes/rbtvRoutes.ts';
 import { registerBelixRoutes } from './server/routes/belixRoutes.ts';
@@ -76,11 +67,13 @@ import {
 } from './server/services/iptvPlaylistService.ts';
 import { refreshFamelackAndWorldCatalog } from './server/services/famelackIptvService.ts';
 import { createRoomHub } from './server/ws/roomHub.ts';
-import { type TrackRecord } from './server/extractors/httpHelpers.ts';
 import { resolveActiveGnulaMirrors } from './server/extractors/gnulaHdExtractor.ts';
 import { fetchTmdbUrlJson } from './server/services/tmdbService.ts';
 import { channelHealthMonitor } from './server/services/channelHealthMonitor.ts';
-import { startCatalogRefreshScheduler } from './server/services/catalogRefreshService.ts';
+import {
+  startCatalogRefreshScheduler,
+  stopCatalogRefreshScheduler,
+} from './server/services/catalogRefreshService.ts';
 import {
   getAiMovieRequestJob,
   startAiMovieRequest,
@@ -89,6 +82,14 @@ import {
   extractLocalizedTmdbTitleHints,
   resolveTmdbIdByTitle,
 } from './server/services/tmdbCatalogHelpers.ts';
+import { rankCandidateTracks } from './server/services/trackRankingService.ts';
+import { mountSpaFrontend } from './server/routes/spaFrontendMount.ts';
+import { createGracefulShutdownHandler } from './server/utils/gracefulShutdown.ts';
+import {
+  destroyAllLiveDvbSessions,
+  getActiveDvbSessionCount,
+} from './server/routes/proxies/dvbTranscoder.ts';
+import { getImprovementsSummary } from './server/services/improvementsRegistry.ts';
 
 // Prefer IPv4 to avoid transient container IPv6 socket resets with upstream CDNs
 dns.setDefaultResultOrder('ipv4first');
@@ -192,10 +193,17 @@ app.get('/vendor/hls.min.js', (_req, res) => {
 
 const roomHub = createRoomHub(app, wss);
 
+const aiRequestRateLimit = createSlidingWindowRateLimiter({
+  maxRequests: 24,
+  windowMs: 60_000,
+  keyPrefix: 'ai-request',
+});
+
 registerOperationalRoutes(app, {
   getStats: () => ({
     ...roomHub.getStats(),
     uptimeSec: Math.round(process.uptime()),
+    activeDvbSessions: getActiveDvbSessionCount(),
   }),
   getPublicOrigin,
   refreshChannelHealth: async (force = true) => {
@@ -323,7 +331,7 @@ app.get('/', (req, res, next) => {
 // ============================================================================
 registerVodCatalogRoutes(app);
 
-app.post('/api/ai/request-movie', (req, res) => {
+app.post('/api/ai/request-movie', aiRequestRateLimit, (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   const query = String(req.body?.query || '').trim();
   const mediaType =
@@ -361,155 +369,6 @@ app.get('/api/catalog/series', (req, res) =>
 
 app.get('/api/catalog/tv/:tmdbId', handleTvDetailsRequest);
 
-// ============================================================================
-// STREAM EXTRACTION RANKING (alternative_titles localization + strict priority)
-// Resolve streams strictly tier-by-tier in language preference order (ES -> LAT -> VOSE -> EN)
-// ============================================================================
-function rankCandidateTracks({
-  allDiscovered,
-  preferLang,
-  isVestLink,
-  hasExplicitMovidyUrl,
-  hasExplicitGnulaUrl,
-  healthMap,
-}: RankCandidateTracksInput) {
-  const getLangScore = (trackLang: string): number => {
-    const tl = String(trackLang || '').toUpperCase();
-    if (preferLang === 'EN') {
-      if (tl === 'EN') return 1;
-      if (tl === 'VOSE') return 2;
-      if (tl === 'ES') return 3;
-      if (tl === 'LAT') return 4;
-      return 5;
-    }
-    if (preferLang === 'LAT') {
-      if (tl === 'LAT') return 1;
-      if (tl === 'ES') return 2;
-      if (tl === 'VOSE') return 3;
-      if (tl === 'EN') return 4;
-      return 5;
-    }
-    if (preferLang === 'VOSE') {
-      if (tl === 'VOSE') return 1;
-      if (tl === 'EN') return 2;
-      if (tl === 'ES') return 3;
-      if (tl === 'LAT') return 4;
-      return 5;
-    }
-    if (tl === 'ES') return 1;
-    if (tl === 'LAT') return 2;
-    if (tl === 'VOSE') return 3;
-    if (tl === 'EN') return 4;
-    return 5;
-  };
-
-  const qualityRank = (q?: string): number => {
-    const s = String(q || '').toLowerCase();
-    if (s.includes('4k') || s.includes('2160')) return 0;
-    if (s.includes('1080')) return 1;
-    if (s.includes('720') || s === 'hd') return 2;
-    if (s.includes('480')) return 3;
-    if (s.includes('380') || s.includes('360') || s.includes('288')) return 4;
-    return 2;
-  };
-
-  const resolverPriority = (tr: TrackRecord): number => {
-    const rt = tr.resolverType;
-    if (isVestLink && rt === 'vest_hls') return 0;
-    if (
-      rt === 'direct_mp4' &&
-      (tr.id.startsWith('cm-lqsa-') || tr.id.startsWith('ia-') || tr.id.startsWith('archive-'))
-    ) {
-      return 1;
-    }
-    if (rt === 'direct_hls' && qualityRank(tr.quality) >= 3) {
-      return 2;
-    }
-    if (
-      rt === 'vest_hls' ||
-      rt === 'direct_hls' ||
-      rt === 'vidhide_hls' ||
-      rt === 'movidy_embed' ||
-      rt === 'bingetrix_en'
-    ) {
-      return 1;
-    }
-    if (rt === 'direct_mp4') return 2;
-    if (rt === 'embed_sniff') return 3;
-    if (rt === 'web_embed') return 4;
-    return 5;
-  };
-
-  const sourcePriority = (tr: TrackRecord): number => {
-    if (isVestLink && tr.resolverType === 'vest_hls') return 0;
-    if (!hasExplicitMovidyUrl && hasExplicitGnulaUrl && tr.id.startsWith('gnula-')) return 0;
-    if (tr.id.startsWith('cm-lqsa-') && tr.resolverType === 'direct_mp4') return 0;
-    if (tr.id.startsWith('movidy-') || tr.resolverType === 'movidy_embed') return 1;
-    if (tr.id.startsWith('gnula-')) return 2;
-    if (tr.id.startsWith('ia-')) return 2;
-    if (tr.id.startsWith('dm-') || tr.id.startsWith('seriesmetro-')) return 2;
-    if (tr.id.startsWith('archive-')) return 3;
-    if (tr.id.startsWith('cm-lqsa-')) return 3;
-    if (
-      tr.id.startsWith('clipbox-') ||
-      tr.id.startsWith('vidbolt-') ||
-      tr.id.startsWith('bingetrix-') ||
-      tr.id.startsWith('vidrock-') ||
-      tr.id.startsWith('2embed-') ||
-      tr.id.startsWith('vidbuzz-') ||
-      tr.resolverType === 'bingetrix_en'
-    ) {
-      return 3;
-    }
-    return 4;
-  };
-
-  const healthStatusRank = (status?: string): number => {
-    if (status === 'up') return 0;
-    if (status === 'unknown' || !status) return 1;
-    if (status === 'degraded') return 2;
-    return 3;
-  };
-  const getEffectiveDownPenalty = (tr: TrackRecord): number => {
-    const key = String(tr.resolvedStreamUrl || tr.sourceUrl || '').trim();
-    const info = (key && healthMap[key]) || healthMap[String(tr.sourceUrl || '').trim()];
-    if (!info) return 0;
-    if (info.status === 'down') return 2;
-    if ((info.qoeFailures || 0) >= 2) return 1;
-    return 0;
-  };
-  const getTrackHealthScore = (tr: TrackRecord): number => {
-    const key = String(tr.resolvedStreamUrl || tr.sourceUrl || '').trim();
-    const info = (key && healthMap[key]) || healthMap[String(tr.sourceUrl || '').trim()];
-    if (!info) return 100;
-    const statusBase = healthStatusRank(info.status) * 1000;
-    const qoePenalty = (info.qoeFailures || 0) * 80 + (info.qoeRebuffers || 0) * 15 + (info.failCount || 0) * 50;
-    const latencyScore = Math.min(400, Math.round((info.latencyMs || 150) / 10));
-    return statusBase + qoePenalty + latencyScore;
-  };
-
-  const orderedTracks: TrackRecord[] = [...allDiscovered].sort((a, b) => {
-    const lDiff = getLangScore(a.lang) - getLangScore(b.lang);
-    if (lDiff !== 0) return lDiff;
-    const aIsWeb = a.resolverType === 'web_embed' || a.resolverType === 'embed_sniff';
-    const bIsWeb = b.resolverType === 'web_embed' || b.resolverType === 'embed_sniff';
-    if (aIsWeb !== bIsWeb) {
-      return aIsWeb ? 1 : -1;
-    }
-    const dDiff = getEffectiveDownPenalty(a) - getEffectiveDownPenalty(b);
-    if (dDiff !== 0) return dDiff;
-    const rDiff = resolverPriority(a) - resolverPriority(b);
-    if (rDiff !== 0) return rDiff;
-    const sDiff = sourcePriority(a) - sourcePriority(b);
-    if (sDiff !== 0) return sDiff;
-    const qDiff = qualityRank(a.quality) - qualityRank(b.quality);
-    if (qDiff !== 0) return qDiff;
-    return getTrackHealthScore(a) - getTrackHealthScore(b);
-  });
-
-  return { orderedTracks, getLangScore, sourcePriority, getTrackHealthScore };
-}
-
 registerStreamExtractRoute(app, {
   getPublicOrigin,
   rankCandidateTracks,
@@ -521,7 +380,7 @@ registerDetailsAndSubtitlesRoutes(app, {
 });
 
 // ============================================================================
-// DOWNLOADABLE 100-POINT AUDIT REPORT
+// DOWNLOADABLE 100-POINT & 100-IMPROVEMENTS AUDIT REPORTS
 // ============================================================================
 app.get('/api/audit/100-points', (_req, res) => {
   const auditPath = path.resolve(__dirname, 'auditoria-riffantv-100-puntos.md');
@@ -532,6 +391,22 @@ app.get('/api/audit/100-points', (_req, res) => {
   res.setHeader('Content-Disposition', 'attachment; filename="auditoria-riffantv-100-puntos.md"');
   res.setHeader('Cache-Control', 'no-cache');
   return res.sendFile(auditPath);
+});
+
+app.get('/api/audit/100-improvements', (_req, res) => {
+  const auditPath = path.resolve(__dirname, 'auditoria-100-mejoras-f1-f11.md');
+  if (!fs.existsSync(auditPath)) {
+    return res.status(404).json({ error: '100 improvements report not found' });
+  }
+  res.setHeader('Content-Type', 'text/markdown; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="auditoria-100-mejoras-f1-f11.md"');
+  res.setHeader('Cache-Control', 'no-cache');
+  return res.sendFile(auditPath);
+});
+
+app.get('/api/audit/improvements-summary', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  return res.json({ ok: true, ...getImprovementsSummary() });
 });
 
 // ============================================================================
@@ -558,121 +433,13 @@ async function startServer() {
 
   app.use(expressErrorHandler);
 
-  if (!isProd) {
-    let viteMiddleware: express.RequestHandler | null = null;
-    let viteInstance: { transformIndexHtml: (url: string, html: string) => Promise<string> } | null = null;
-    let viteInitError: unknown = null;
-    const viteReady = (async () => {
-      const { createServer: createViteServer } = await import('vite');
-      const hmrEnabled = process.env.DISABLE_HMR !== 'true';
-      const vite = await createViteServer({
-        server: {
-          middlewareMode: true,
-          allowedHosts: true,
-          ws: { server: httpServer },
-          hmr: hmrEnabled,
-          watch: hmrEnabled ? {} : null,
-        },
-        appType: 'spa',
-      });
-      viteInstance = vite;
-      viteMiddleware = vite.middlewares;
-    })().catch((err) => {
-      viteInitError = err;
-      logger.error({ err }, 'vite_dev_server_init_failed');
-    });
-
-    app.use(async (req, res, next) => {
-      if (!viteMiddleware && !viteInitError) {
-        await viteReady;
-      }
-      if (viteInitError || !viteMiddleware) {
-        res.status(503).json({
-          ok: false,
-          error: 'Dev frontend compiler unavailable',
-        });
-        return;
-      }
-      const isMusicReq = isMusicAppPath(req.path);
-      if (req.method === 'GET' && viteInstance && (isMusicReq || shouldInjectDeepLinkOg(req.path))) {
-        try {
-          const indexHtmlPath = path.resolve(__dirname, 'index.html');
-          const [rawHtml, ogMeta] = await Promise.all([
-            fs.promises.readFile(indexHtmlPath, 'utf8'),
-            shouldInjectDeepLinkOg(req.path)
-              ? resolveOpenGraphMetaForRequest(req.originalUrl, getPublicOrigin(req))
-              : Promise.resolve(null),
-          ]);
-          const transformed = await viteInstance.transformIndexHtml(req.originalUrl, rawHtml);
-          let finalHtml = ogMeta ? injectDynamicOgMeta(transformed, ogMeta) : transformed;
-          if (isMusicReq) {
-            finalHtml = injectMusicPwaMeta(finalHtml, getPublicOrigin(req));
-          }
-          res.status(200).setHeader('Content-Type', 'text/html; charset=utf-8');
-          res.end(finalHtml);
-          return;
-        } catch {
-          // Fall back gracefully to standard Vite SPA middleware
-        }
-      }
-      return viteMiddleware(req, res, next);
-    });
-  } else {
-    const distDir = path.resolve(__dirname, 'dist');
-    const distIndex = path.join(distDir, 'index.html');
-    if (fs.existsSync(distDir)) {
-      app.use(
-        express.static(distDir, {
-          maxAge: '7d',
-          setHeaders: (res, filePath) => {
-            if (
-              filePath.endsWith('.html') ||
-              filePath.endsWith('sw.js') ||
-              filePath.includes(`${path.sep}tv${path.sep}`)
-            ) {
-              res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-            }
-          },
-        })
-      );
-    } else {
-      logger.warn({ distDir }, 'production_dist_directory_missing');
-    }
-
-    app.get('*', async (req, res) => {
-      if (req.path === '/tv' || req.path === '/tv/') {
-        return sendSmartTvReceiverHtml(res);
-      }
-      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-      if (fs.existsSync(distIndex)) {
-        const isMusicReq = isMusicAppPath(req.path);
-        if (isMusicReq || shouldInjectDeepLinkOg(req.path)) {
-          try {
-            const [rawHtml, ogMeta] = await Promise.all([
-              fs.promises.readFile(distIndex, 'utf8'),
-              shouldInjectDeepLinkOg(req.path)
-                ? resolveOpenGraphMetaForRequest(req.originalUrl, getPublicOrigin(req))
-                : Promise.resolve(null),
-            ]);
-            let finalHtml = ogMeta ? injectDynamicOgMeta(rawHtml, ogMeta) : rawHtml;
-            if (isMusicReq) {
-              finalHtml = injectMusicPwaMeta(finalHtml, getPublicOrigin(req));
-            }
-            if (isMusicReq || ogMeta) {
-              return res.type('html').send(finalHtml);
-            }
-          } catch {
-            // Fall through cleanly to static dist/index.html
-          }
-        }
-        return res.sendFile(distIndex);
-      }
-      return res
-        .status(503)
-        .type('text/plain')
-        .send('RiffanTV engine is running; frontend build (dist/index.html) not found.');
-    });
-  }
+  mountSpaFrontend(app, {
+    rootDir: __dirname,
+    isProd,
+    httpServer,
+    getPublicOrigin,
+    sendSmartTvReceiverHtml,
+  });
 
   httpServer.on('error', (err) => {
     logger.error({ err, port: PORT }, 'http_server_listen_error');
@@ -712,6 +479,20 @@ startServer().catch((err) => {
   logger.error({ err }, 'fatal_start_server_error');
 });
 
+const shutdownHandler = createGracefulShutdownHandler({
+  httpServer,
+  wss,
+  stopTimers: [
+    () => channelHealthMonitor.stopScheduler(),
+    () => stopCatalogRefreshScheduler(),
+  ],
+  cleanupSessions: [
+    () => {
+      destroyAllLiveDvbSessions();
+    },
+  ],
+});
+
 process.on('uncaughtException', (err) => {
   logger.error({ err }, 'uncaught_exception');
 });
@@ -719,10 +500,8 @@ process.on('unhandledRejection', (reason) => {
   logger.error({ reason }, 'unhandled_rejection');
 });
 process.on('SIGTERM', () => {
-  logger.info('sigterm_graceful_shutdown');
-  httpServer.close(() => process.exit(0));
+  void shutdownHandler('SIGTERM');
 });
 process.on('SIGINT', () => {
-  logger.info('sigint_graceful_shutdown');
-  httpServer.close(() => process.exit(0));
+  void shutdownHandler('SIGINT');
 });

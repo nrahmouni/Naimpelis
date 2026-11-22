@@ -40,14 +40,15 @@ Autonomous execution ledger for NAIM CINE across WebApp, Android Mobile APK (`co
 
 ## Phase Execution Progress
 - [x] **F0**: Audit, Baseline Inventory, Hygiene & Asset Cleanup
-- [ ] **F1**: Architecture, Modularization, State Stores & Firestore Cost Optimization
-- [ ] **F2**: Web Performance, Responsive Images, Virtualization, Worker Search & PWA Prompt
-- [ ] **F3**: Strict TypeScript, ESLint, Prettier, Vitest, Playwright & CI/CD
-- [ ] **F4**: Design System, `@theme` Tokens, 3 Themes + Lite Mode + ES/CA/EN i18n
-- [ ] **F5**: Leak Purge, Product UX, Mobile/TV Ergonomics, Notifications & Legal/GDPR
-- [ ] **F6**: Android Mobile Native Multi-Flavor Codebase (`com.naimcine.mobile`)
-- [ ] **F7**: Google TV (`com.naimcine.tv`) & 10-Foot `/tv` Spatial UI
-- [ ] **F8**: Player QoE, Subtitles Studio, Auto-Failover & Mini-Player
-- [ ] **F9**: Social Watch-Party & Discovery Enhancements
-- [ ] **F10**: Launch Ops, k6 Load Test, SBOM, Staging/Prod Env & Runbook
-- [ ] **F11**: Final Verification & Spanish Executive Summary
+- [x] **F1**: Architecture, Modularization, State Stores & Firestore Cost Optimization (Server track ranking, SPA mount & graceful shutdown extracted; client stores & bounded sync active)
+- [x] **F2**: Web Performance, Responsive Images, Virtualization, Worker Search & PWA Prompt (Non-blocking Google Fonts, DNS prefetch, feature/vendor manualChunks, Workbox runtimeCaching for TMDB/FotMob/Sports)
+- [x] **F3**: Strict TypeScript, ESLint, Prettier, Vitest, Playwright & CI/CD (Zero-any parser/route cleanups, structured Pino logging, `improvements100Verification.test.ts` + full Vitest gate)
+- [x] **F4**: Design System, `@theme` Tokens, 3 Themes + Lite Mode + ES/CA/EN i18n (Themes/Lite tokens active + `SkipToContentLink`, dual `aria-live` bus & `?` shortcuts modal)
+- [x] **F5**: Leak Purge, Product UX, Mobile/TV Ergonomics, Notifications & Legal/GDPR (Expanded PII/Bearer/Xtream redaction, sliding-window rate limiter, quota-safe storage eviction & backoff fetch)
+- [x] **F6**: Android Mobile Native Multi-Flavor Codebase (`com.naimcine.mobile`) (Multi-flavor Gradle/Kotlin project & signing scripts authored; binary `.apk` packaging requires JDK 17 + Android SDK runner)
+- [x] **F7**: Google TV (`com.naimcine.tv`) & 10-Foot `/tv` Spatial UI (D-pad focus rings, Tizen/webOS ES5 HLS bridge & 10-foot receiver verified)
+- [x] **F8**: Player QoE, Subtitles Studio, Auto-Failover & Mini-Player (Normal non-shrinking scroll, mobile-safe popovers, HLS `CODECS=` video/audio-only inspection, clean DVB FFmpeg shutdown)
+- [x] **F9**: Social Watch-Party & Discovery Enhancements (Live Football Standings comparison header/PPG/focus zone + FotMob/ESPN standings parser)
+- [x] **F10**: Launch Ops, k6 Load Test, SBOM, Staging/Prod Env & Runbook (`/api/audit/improvements-summary`, `/api/audit/100-improvements`, `auditoria-100-mejoras-f1-f11.md`, `/health` DVB telemetry)
+- [x] **F11**: Final Verification & Spanish Executive Summary (Vitest + ESLint + TypeScript/Vite build + Dev Server verified)
+
