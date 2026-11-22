@@ -65,7 +65,7 @@ function makeMatch(overrides: Partial<SportsMatch> & {
   };
 }
 
-describe('Barcelona / Real Madrid Home 10-minute direct playback window', () => {
+describe('Barcelona / Real Madrid Home 30-minute direct playback window', () => {
   const baseNow = 1_800_000_000_000;
 
   it('matches only first-team FC Barcelona and Real Madrid clubs', () => {
@@ -83,32 +83,33 @@ describe('Barcelona / Real Madrid Home 10-minute direct playback window', () => 
     expect(isFirstTeamBarcelonaOrRealMadridName('Atlético Madrid')).toBe(false);
   });
 
-  it('hides match at 10m01s before kickoff and shows it at exact 10m00s before kickoff', () => {
+  it('hides match at 30m01s before kickoff and shows it at exact 30m00s before kickoff', () => {
+    expect(BARCA_MADRID_PRE_KICKOFF_WINDOW_MS).toBe(30 * 60 * 1000);
     const tooEarly = makeMatch({
       homeTeam: 'FC Barcelona',
       awayTeam: 'Sevilla',
       statusState: 'upcoming',
       kickoffMs: baseNow + BARCA_MADRID_PRE_KICKOFF_WINDOW_MS + 1000,
     });
-    const exact10Min = makeMatch({
+    const exact30Min = makeMatch({
       homeTeam: 'FC Barcelona',
       awayTeam: 'Sevilla',
       statusState: 'upcoming',
       kickoffMs: baseNow + BARCA_MADRID_PRE_KICKOFF_WINDOW_MS,
     });
-    const fiveMinLeft = makeMatch({
+    const fifteenMinLeft = makeMatch({
       homeTeam: 'Real Madrid',
       awayTeam: 'Celta Vigo',
       statusState: 'upcoming',
-      kickoffMs: baseNow + 5 * 60 * 1000,
+      kickoffMs: baseNow + 15 * 60 * 1000,
     });
 
     expect(isBarcaOrMadridHomeReadyMatch(tooEarly, baseNow)).toBe(false);
-    expect(isBarcaOrMadridHomeReadyMatch(exact10Min, baseNow)).toBe(true);
-    expect(isBarcaOrMadridHomeReadyMatch(fiveMinLeft, baseNow)).toBe(true);
+    expect(isBarcaOrMadridHomeReadyMatch(exact30Min, baseNow)).toBe(true);
+    expect(isBarcaOrMadridHomeReadyMatch(fifteenMinLeft, baseNow)).toBe(true);
   });
 
-  it('shows live match with score and hides finished or channelless matches', () => {
+  it('shows live match with score and removes finished, other-club, or channelless matches', () => {
     const liveMatch = makeMatch({
       id: 'live-barca',
       homeTeam: 'Barcelona',
@@ -129,6 +130,25 @@ describe('Barcelona / Real Madrid Home 10-minute direct playback window', () => 
       statusLabel: 'Final',
       isLive: false,
       kickoffMs: baseNow - 130 * 60 * 1000,
+    });
+
+    const finishedPenalties = makeMatch({
+      id: 'fin-pen',
+      homeTeam: 'Real Madrid',
+      awayTeam: 'Getafe',
+      statusState: 'upcoming',
+      statusLabel: 'FT-PEN',
+      isLive: false,
+      kickoffMs: baseNow - 125 * 60 * 1000,
+    });
+
+    const otherClubLive = makeMatch({
+      id: 'other-club',
+      homeTeam: 'Betis',
+      awayTeam: 'Sevilla',
+      statusState: 'live',
+      isLive: true,
+      kickoffMs: baseNow - 30 * 60 * 1000,
     });
 
     const reserveMadridC = makeMatch({
@@ -161,8 +181,28 @@ describe('Barcelona / Real Madrid Home 10-minute direct playback window', () => 
       kickoffMs: baseNow - 20 * 60 * 1000,
     });
 
+    const basketMatch = makeMatch({
+      id: 'basket',
+      homeTeam: 'Real Madrid',
+      awayTeam: 'Barcelona',
+      leagueSlug: 'esp.acb',
+      leagueName: 'Liga Endesa Baloncesto',
+      statusState: 'live',
+      isLive: true,
+      kickoffMs: baseNow - 20 * 60 * 1000,
+    });
+
     const visible = getBarcaMadridHomeMatches(
-      [finishedMadrid, reserveMadridC, noChannelsBarca, womenMatch, liveMatch],
+      [
+        finishedMadrid,
+        finishedPenalties,
+        otherClubLive,
+        reserveMadridC,
+        noChannelsBarca,
+        womenMatch,
+        basketMatch,
+        liveMatch,
+      ],
       baseNow
     );
 

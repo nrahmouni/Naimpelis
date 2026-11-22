@@ -2,10 +2,12 @@ import React from 'react';
 import { socketService } from '../../services/socket';
 import type { VideoState } from '../../types';
 import type { StreamRefreshPhase } from './playerTypes';
+import { shouldAdvanceEpisodeOnEnded } from './playerAutoNextGuard';
 
 interface UsePlayerVideoCallbacksParams {
   videoState: VideoState;
   isTvMode: boolean;
+  isExtracting: boolean;
   playbackSpeed: number;
   currentTime: number;
   activeSubId: string;
@@ -46,18 +48,31 @@ export function usePlayerVideoCallbacks(p: UsePlayerVideoCallbacksParams) {
     }
   };
 
-  const onEnded = () => {
-    p.onVideoEnded?.();
+  const onEnded = (e: React.SyntheticEvent<HTMLVideoElement>) => {
+    const vid = e.currentTarget || p.videoRef.current;
+    const domCurrentTime = vid && Number.isFinite(vid.currentTime) ? vid.currentTime : 0;
+    const domDuration = vid && Number.isFinite(vid.duration) ? vid.duration : 0;
+    if (p.videoState.url && domDuration >= 10 && domCurrentTime >= domDuration - 10) {
+      p.onVideoEnded?.();
+    }
     if (
-      p.videoState.seriesMeta &&
-      p.onNextEpisode &&
-      p.canControlRoom &&
-      p.autoNextCancelledForUrl !== p.videoState.url &&
-      p.autoNextTriggeredUrlRef.current !== p.videoState.url
+      shouldAdvanceEpisodeOnEnded({
+        hasSeriesMeta: Boolean(p.videoState.seriesMeta),
+        hasNextEpisode: Boolean(p.onNextEpisode),
+        isLive: Boolean(p.videoState.isLive),
+        isExtracting: p.isExtracting,
+        canControlRoom: p.canControlRoom,
+        videoMode: p.videoState.mode,
+        videoUrl: p.videoState.url,
+        autoNextCancelledForUrl: p.autoNextCancelledForUrl,
+        autoNextTriggeredForUrl: p.autoNextTriggeredUrlRef.current,
+        domCurrentTime,
+        domDuration,
+      })
     ) {
       p.autoNextTriggeredUrlRef.current = p.videoState.url;
       p.setAutoNextCountdown(null);
-      p.onNextEpisode();
+      p.onNextEpisode?.();
     }
   };
 

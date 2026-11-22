@@ -16,6 +16,8 @@ import {
   securityHeadersMiddleware,
 } from './server/middleware/errorHandler.ts';
 import { serviceMeshGatewayMiddleware } from './server/gateway/serviceMesh.ts';
+import { resolveSafePublicOrigin } from './server/utils/ssrfGuard.ts';
+import { initializeTelemetryStore, closeTelemetryStore, pruneOldTelemetryRecords } from './server/services/telemetryStore.ts';
 import { registerOperationalRoutes } from './server/routes/health.ts';
 import { registerExpandedCatalogRoutes } from './server/routes/expandedCatalog.ts';
 import { registerProxyRoutes } from './server/routes/proxies.ts';
@@ -91,11 +93,11 @@ import {
 } from './server/routes/proxies/dvbTranscoder.ts';
 import { getImprovementsSummary } from './server/services/improvementsRegistry.ts';
 import { runtimeMetrics } from './server/services/runtimeMetricsCollector.ts';
-import { initializeTelemetryStore, closeTelemetryStore } from './server/services/telemetryStore.ts';
 import { livePushHub, registerLivePushRoutes } from './server/services/livePushHub.ts';
 import { workerBridge } from './server/services/workerBridge.ts';
 import { roomPubSubBridge } from './server/services/roomPubSubBridge.ts';
 import { registerAdminRoutes } from './server/routes/adminRoutes.ts';
+import { registerTizenRoutes } from './server/routes/tizenRoutes.ts';
 
 // Prefer IPv4 to avoid transient container IPv6 socket resets with upstream CDNs
 dns.setDefaultResultOrder('ipv4first');
@@ -106,28 +108,16 @@ const __dirname = path.dirname(__filename);
 export { CURATED_4K_MOVIE_IDS, CURATED_4K_MOVIE_SET, CURATED_4K_SERIES_IDS, CURATED_4K_SERIES_SET };
 
 function getPublicOrigin(req: express.Request): string {
-  const overrideOrigin = String(req.query.origin || '').trim();
-  if (/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(overrideOrigin)) {
-    return overrideOrigin.replace(/\/+$/, '');
-  }
-  const rawProto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http')
-    .split(',')[0]
-    .trim();
-  const rawHost = String(req.headers['x-forwarded-host'] || req.get('host') || 'localhost:3000')
-    .split(',')[0]
-    .trim();
-  const hostWithoutPort = rawHost.split(':')[0].toLowerCase();
-  if (hostWithoutPort === 'localhost' || hostWithoutPort === '127.0.0.1' || hostWithoutPort.startsWith('192.168.')) {
-    return `${rawProto}://${rawHost}`;
-  }
-  const domain =
-    rawHost.includes('run.app') ||
-    rawHost.includes('ai.studio') ||
-    rawHost.includes('riffan.ai.studio')
-      ? rawHost
-      : (ENV.publicDomain || 'riffan.ai.studio');
-  const proto = domain.includes('localhost') ? 'http' : 'https';
-  return `${proto}://${domain}`;
+  return resolveSafePublicOrigin(
+    {
+      queryOrigin: String(req.query.origin || ''),
+      forwardedProto: String(req.headers['x-forwarded-proto'] || ''),
+      forwardedHost: String(req.headers['x-forwarded-host'] || ''),
+      hostHeader: String(req.get('host') || ''),
+      protocol: req.protocol,
+    },
+    ENV.publicDomain || 'riffan.ai.studio'
+  );
 }
 
 // ============================================================================
@@ -212,6 +202,35 @@ const aiRequestRateLimit = createSlidingWindowRateLimiter({
   windowMs: 60_000,
   keyPrefix: 'ai-request',
 });
+
+const extractStreamRateLimit = createSlidingWindowRateLimiter({
+  maxRequests: 60,
+  windowMs: 60_000,
+  keyPrefix: 'extract-stream',
+});
+
+const hlsProxyRateLimit = createSlidingWindowRateLimiter({
+  maxRequests: 240,
+  windowMs: 60_000,
+  keyPrefix: 'hls-proxy',
+});
+
+const adminRateLimit = createSlidingWindowRateLimiter({
+  maxRequests: 90,
+  windowMs: 60_000,
+  keyPrefix: 'admin-api',
+});
+
+const musicMatchRateLimit = createSlidingWindowRateLimiter({
+  maxRequests: 20,
+  windowMs: 60_000,
+  keyPrefix: 'music-match',
+});
+
+app.use('/api/extract/stream', extractStreamRateLimit);
+app.use('/api/hls-proxy', hlsProxyRateLimit);
+app.use('/api/admin', adminRateLimit);
+app.use('/api/music/match-tracks', musicMatchRateLimit);
 
 registerOperationalRoutes(app, {
   getStats: () => ({
@@ -339,7 +358,7 @@ app.get(['/tv', '/tv/'], (_req, res) => {
 });
 
 app.get('/', (req, res, next) => {
-  if (req.query.web === '1' || req.query.room) {
+  if (req.query.web === '1' || req.query.tizen === '1' || req.query.room) {
     return next();
   }
   const ua = String(req.headers['user-agent'] || '');
@@ -402,6 +421,7 @@ registerDetailsAndSubtitlesRoutes(app, {
   extractLocalizedTmdbTitleHints,
 });
 
+registerTizenRoutes(app, __dirname);
 // ============================================================================
 // DOWNLOADABLE 100-POINT & 100-IMPROVEMENTS AUDIT REPORTS
 // ============================================================================
@@ -473,16 +493,25 @@ async function startServer() {
     if (ENV.nodeEnv !== 'test') {
       setImmediate(() => {
         try {
-          void initializeTelemetryStore();
+          void initializeTelemetryStore().then(() => pruneOldTelemetryRecords(14)).catch(() => {});
           livePushHub.start();
           workerBridge.start();
           roomPubSubBridge.startSyncLoop();
+          // Stagger cold-start prewarm jobs to prevent simultaneous network/DNS congestion
           void resolveActiveGnulaMirrors().catch((err) => logger.warn({ err }, 'prewarm_gnula_failed'));
-          void refreshLiveIptvRegistry(false).catch((err) => logger.warn({ err }, 'prewarm_iptv_failed'));
-          void refreshFamelackAndWorldCatalog(false).catch((err) => logger.warn({ err }, 'prewarm_world_failed'));
-          void prewarmTodayFootballBoard().catch((err) => logger.warn({ err }, 'prewarm_football_failed'));
-          void getMovistarDaznHome().catch((err) => logger.warn({ err }, 'prewarm_dazn_failed'));
-          void initBelixFromEnv().catch((err) => logger.warn({ err }, 'prewarm_belix_failed'));
+          setTimeout(() => {
+            void refreshLiveIptvRegistry(false).catch((err) => logger.warn({ err }, 'prewarm_iptv_failed'));
+          }, 250).unref?.();
+          setTimeout(() => {
+            void refreshFamelackAndWorldCatalog(false).catch((err) => logger.warn({ err }, 'prewarm_world_failed'));
+          }, 600).unref?.();
+          setTimeout(() => {
+            void prewarmTodayFootballBoard().catch((err) => logger.warn({ err }, 'prewarm_football_failed'));
+          }, 950).unref?.();
+          setTimeout(() => {
+            void getMovistarDaznHome().catch((err) => logger.warn({ err }, 'prewarm_dazn_failed'));
+            void initBelixFromEnv().catch((err) => logger.warn({ err }, 'prewarm_belix_failed'));
+          }, 1350).unref?.();
           channelHealthMonitor.startScheduler(
             () => [
               ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),

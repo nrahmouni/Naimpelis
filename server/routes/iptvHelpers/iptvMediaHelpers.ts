@@ -1,9 +1,7 @@
-import { LruTtlCache } from '../../utils/lruCache.ts';
 export { renderIptvChannelPng } from './iptvPngBadge.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
 import { curlPlainGetText } from '../../services/vestMirrorService.ts';
 import {
-  CHROME_UA,
   TDT_DVB_UA,
   buildHlsProxyUrl,
   buildTsProxyUrl,

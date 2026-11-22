@@ -1,3 +1,4 @@
+import { logger } from '../../utils/logger.ts';
 import { LruTtlCache } from '../../utils/lruCache.ts';
 import {
   CHROME_UA,
@@ -446,7 +447,7 @@ export async function extractMovidyPageTracks(
 
     return extractMovidyTracksFromHtml(meta.html, slug);
   } catch (err) {
-    console.warn('extractMovidyPageTracks error:', err);
+    logger.warn({ err }, 'extractMovidyPageTracks error');
     return [];
   }
 }

@@ -48,6 +48,8 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
     scrollDesktopToPlayer,
   } = opts;
 
+  const inFlightStepKeyRef = useRef<string>('');
+
   const handleStepEpisode = async (delta: -1 | 1) => {
     if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
@@ -93,6 +95,10 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
         : 'ES';
 
     const epLoadId = sanitizeItemKey(`tv-${meta.tmdbId}-${targetSeason}-${targetEp}`);
+    if (isExtractingRef.current && inFlightStepKeyRef.current === epLoadId) {
+      return;
+    }
+    inFlightStepKeyRef.current = epLoadId;
     const { reqSeq, signal } = beginMediaExtraction();
     setIsExtracting(true);
     isExtractingRef.current = true;
@@ -215,6 +221,9 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
           : 'Error al cargar el capítulo anterior.'
       );
     } finally {
+      if (inFlightStepKeyRef.current === epLoadId) {
+        inFlightStepKeyRef.current = '';
+      }
       if (reqSeq === extractionReqSeqRef.current) {
         isExtractingRef.current = false;
         setIsExtracting(false);

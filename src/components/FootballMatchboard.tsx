@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { Calendar, ChevronLeft, ChevronRight } from 'lucide-react';
 import type {
   AppLanguage,
@@ -305,6 +305,8 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
     }
   }, [requestedMatchSlug, matches, loadMatchDetails]);
 
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+
   const filteredMatches = useMemo(() => {
     const lf = normalizeFootballText(leagueFilter);
     return matches.filter((m) => {
@@ -356,7 +358,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
           return false;
         }
       }
-      if (!matchesFootballSearchFilter(m, searchQuery)) return false;
+      if (!matchesFootballSearchFilter(m, deferredSearchQuery)) return false;
       if (favoritesOnly) {
         const prefIdx = pickPreferredChannelIndex(m.channels, lang, langFilter === 'ZH');
         const primaryCh = prefIdx >= 0 ? m.channels[prefIdx] : m.channels[0];
@@ -371,7 +373,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   }, [
     matches,
     statusTab,
-    searchQuery,
+    deferredSearchQuery,
     langFilter,
     leagueFilter,
     brandFilter,

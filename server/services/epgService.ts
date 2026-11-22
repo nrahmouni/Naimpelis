@@ -5,6 +5,7 @@
 import https from 'https';
 import zlib from 'zlib';
 import type { Express } from 'express';
+import { logger } from '../utils/logger.ts';
 import { CHROME_UA } from '../extractors/httpHelpers.ts';
 
 export interface RawEpgEvent {
@@ -781,7 +782,7 @@ export function registerEpgRoutes(app: Express): void {
         epg: epgMap,
       });
     } catch (err) {
-      console.warn('/api/epg/live error:', err);
+      logger.warn({ err }, '/api/epg/live error');
       res.json({ success: true, serverTimeMs: Date.now(), epg: {} });
     }
   });

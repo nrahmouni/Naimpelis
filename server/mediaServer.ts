@@ -1,5 +1,6 @@
 import dns from 'dns';
 import express from 'express';
+import compression from 'compression';
 import { createServer } from 'http';
 import { ENV } from './config/env.ts';
 import { logger } from './utils/logger.ts';
@@ -20,6 +21,22 @@ const MEDIA_PORT = Number(process.env.MEDIA_PORT || 3001);
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+app.use(
+  compression({
+    filter: (req, res) => {
+      const p = (req.path || '').toLowerCase();
+      if (
+        p.endsWith('.ts') ||
+        p.endsWith('.m4s') ||
+        p.startsWith('/api/ts-proxy') ||
+        p.startsWith('/api/dvb-live/')
+      ) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+  })
+);
 app.use(securityHeadersMiddleware);
 
 function getPublicOrigin(req: express.Request): string {
@@ -40,6 +57,21 @@ app.get(['/health', '/ready'], (_req, res) => {
     mediaPlane: getMediaPlaneSnapshot(),
     ts: Date.now(),
   });
+});
+
+app.get('/metrics', (_req, res) => {
+  const snap = getMediaPlaneSnapshot();
+  res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+  res.send(
+    [
+      '# HELP riffan_media_dvb_sessions Active FFmpeg DVB sessions',
+      '# TYPE riffan_media_dvb_sessions gauge',
+      `riffan_media_dvb_sessions ${snap.activeDvbFfmpegSessions}`,
+      '# HELP riffan_media_direct_play_pct Direct play percentage',
+      '# TYPE riffan_media_direct_play_pct gauge',
+      `riffan_media_direct_play_pct ${snap.directPlayEligiblePct}`,
+    ].join('\n') + '\n'
+  );
 });
 
 registerProxyRoutes(app, { getPublicOrigin });

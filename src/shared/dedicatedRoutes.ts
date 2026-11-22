@@ -576,6 +576,7 @@ export const SYSTEM_RESERVED_SLUGS = new Set([
   'auth-bridge',
   'design-system',
   'admin',
+  'samsung',
   'sala',
   's',
   'r',
@@ -603,7 +604,7 @@ export const ALL_RESERVED_SLUGS = new Set<string>([
 
 export type AppRouteTarget =
   | { kind: 'home'; roomId?: string }
-  | { kind: 'system'; systemType: 'tv' | 'ads' | 'auth-bridge' | 'design-system' | 'admin'; roomId?: string }
+  | { kind: 'system'; systemType: 'tv' | 'ads' | 'auth-bridge' | 'design-system' | 'admin' | 'samsung'; roomId?: string }
   | { kind: 'room'; roomId: string; gameType?: string; isTvMode?: boolean }
   | {
       kind: 'world';
@@ -612,6 +613,8 @@ export type AppRouteTarget =
       cineCastellano?: boolean;
       cineCategory?: string;
       futbolTab?: 'matches' | 'channels';
+      musicTrackParam?: string;
+      musicQuery?: string;
       roomId?: string;
     }
   | { kind: 'movie'; idOrSlug: string; tmdbId?: number; roomId?: string }
@@ -666,6 +669,8 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
   const rawGame = params.get('game')?.trim().toLowerCase() || '';
   const queryGameType = /^[a-z0-9_-]{2,24}$/.test(rawGame) ? rawGame : undefined;
   const isTvMode = params.get('tv') === '1';
+  const musicTrackParam = params.get('track')?.trim() || undefined;
+  const musicQuery = params.get('musicq')?.trim() || undefined;
 
   const segments = String(pathname || '/')
     .split('/')
@@ -688,12 +693,24 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
   if (seg0 === 'admin') {
     return { kind: 'system', systemType: 'admin', roomId: queryRoomId };
   }
+  if (seg0 === 'samsung' || params.get('samsung') === '1') {
+    return { kind: 'system', systemType: 'samsung', roomId: queryRoomId };
+  }
   if (params.get('tvpair') === '1' || seg0 === 'tv') {
     return { kind: 'system', systemType: 'tv', roomId: queryRoomId };
   }
 
   // Root /
   if (segments.length === 0) {
+    if (musicTrackParam || musicQuery) {
+      return {
+        kind: 'world',
+        world: 'music',
+        musicTrackParam,
+        musicQuery,
+        roomId: queryRoomId,
+      };
+    }
     if (queryRoomId) {
       return { kind: 'room', roomId: queryRoomId, gameType: queryGameType, isTvMode };
     }
@@ -869,7 +886,13 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
   }
 
   if (seg0 === 'musica' || seg0 === 'music') {
-    return { kind: 'world', world: 'music', roomId: queryRoomId };
+    return {
+      kind: 'world',
+      world: 'music',
+      musicTrackParam,
+      musicQuery,
+      roomId: queryRoomId,
+    };
   }
 
   // Single-segment shortcuts (Packs, Top Channels, Top Games, else Room code!)

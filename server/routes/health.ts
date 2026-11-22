@@ -159,6 +159,48 @@ export function registerOperationalRoutes(
     });
   });
 
+  app.get('/metrics', (req, res) => {
+    if (process.env.INTERNAL_METRICS_TOKEN && !hasValidInternalMetricsToken(req)) {
+      return res.status(401).send('# Unauthorized\n');
+    }
+    const stats = deps.getStats();
+    const snap = runtimeMetrics.getSnapshot();
+    const mediaPlane = getMediaPlaneSnapshot();
+    const services = serviceMesh.getAllStatuses();
+    const lines = [
+      '# HELP riffan_uptime_seconds Process uptime in seconds',
+      '# TYPE riffan_uptime_seconds gauge',
+      `riffan_uptime_seconds ${stats.uptimeSec}`,
+      '# HELP riffan_connected_clients Current WebSocket connected clients',
+      '# TYPE riffan_connected_clients gauge',
+      `riffan_connected_clients ${stats.connectedClientsCount}`,
+      '# HELP riffan_active_rooms Active watch-party rooms',
+      '# TYPE riffan_active_rooms gauge',
+      `riffan_active_rooms ${stats.roomsCount}`,
+      '# HELP riffan_event_loop_p95_ms Node.js event loop delay p95 in ms',
+      '# TYPE riffan_event_loop_p95_ms gauge',
+      `riffan_event_loop_p95_ms ${snap.eventLoop.p95Ms}`,
+      '# HELP riffan_active_dvb_sessions Active FFmpeg DVB transcoding sessions',
+      '# TYPE riffan_active_dvb_sessions gauge',
+      `riffan_active_dvb_sessions ${mediaPlane.activeDvbFfmpegSessions}`,
+      '# HELP riffan_direct_play_eligible_pct Percentage of media streams eligible for direct play',
+      '# TYPE riffan_direct_play_eligible_pct gauge',
+      `riffan_direct_play_eligible_pct ${mediaPlane.directPlayEligiblePct}`,
+      '# HELP riffan_microservice_requests_total Requests processed per microservice node',
+      '# TYPE riffan_microservice_requests_total counter',
+      ...services.map(
+        (s) =>
+          `riffan_microservice_requests_total{service="${s.id}",status="${s.status}"} ${s.requestsTotal}`
+      ),
+      '# HELP riffan_microservice_errors_total Errors recorded per microservice node',
+      '# TYPE riffan_microservice_errors_total counter',
+      ...services.map((s) => `riffan_microservice_errors_total{service="${s.id}"} ${s.errorsTotal}`),
+    ];
+    res.setHeader('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(lines.join('\n') + '\n');
+  });
+
   // Dynamic Digital Asset Links covering mobile, tv, and legacy Android packages
   // Includes both configured env SHA-256 and active server APK signing certificate SHA-256
   app.get('/.well-known/assetlinks.json', (_req, res) => {

@@ -211,7 +211,7 @@ async function scrapeMovidySeriesCatalog(opts: {
     const hasNextPage = html.includes(`/page/${page + 1}`);
     return { series, hasMore: hasNextPage && series.length > 0 };
   } catch (err) {
-    console.warn('scrapeMovidySeriesCatalog error:', err);
+    logger.warn({ err }, 'scrapeMovidySeriesCatalog error');
     return { series: [], hasMore: false };
   }
 }

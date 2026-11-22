@@ -3,7 +3,7 @@
  * @description World 3 (TV en Directo) — OLED channel cards, pinned favorites section,
  * untruncated channel/EPG names, real-time EPG indicator bars, and region/EPG filter bottom sheet.
  */
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Clock, Film, Loader2, Search, SlidersHorizontal, Star, Trophy, X } from 'lucide-react';
 import type {
   AppLanguage,
@@ -26,6 +26,7 @@ import {
 } from './catalogConstants';
 import { LiveTvFilterSheet } from './LiveTvFilterSheet';
 import { LiveTvChannelRow } from './LiveTvChannelRow';
+import { useBackInterceptor } from '../../lib/backInterceptor';
 
 const RECENT_TV_STORAGE_KEY = 'riffan_recent_tv_v1';
 const CHANNELS_BATCH_SIZE = 60;
@@ -112,19 +113,22 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
     setVisibleLimit(CHANNELS_BATCH_SIZE);
   }, [tvRegion, tdtCategory, tvFavOnly, epgFilter, adrarCountryFilter, inlineQuery]);
 
-  const handlePlayAndRecord = (ch: SpanishTdtChannel, liveTitle?: string) => {
-    triggerHaptic('success');
-    setRecentIds((prev) => {
-      const next = [ch.id, ...prev.filter((id) => id !== ch.id)].slice(0, 8);
-      try {
-        localStorage.setItem(RECENT_TV_STORAGE_KEY, JSON.stringify(next));
-      } catch {
-        // ignore storage quota errors
-      }
-      return next;
-    });
-    onPlayTdtChannel(ch, 0, liveTitle);
-  };
+  const handlePlayAndRecord = useCallback(
+    (ch: SpanishTdtChannel, liveTitle?: string) => {
+      triggerHaptic('success');
+      setRecentIds((prev) => {
+        const next = [ch.id, ...prev.filter((id) => id !== ch.id)].slice(0, 8);
+        try {
+          localStorage.setItem(RECENT_TV_STORAGE_KEY, JSON.stringify(next));
+        } catch {
+          // ignore storage quota errors
+        }
+        return next;
+      });
+      onPlayTdtChannel(ch, 0, liveTitle);
+    },
+    [onPlayTdtChannel]
+  );
 
   const matchedAllCat = ALL_LIVE_CATEGORIES.find((c) => c.id === tdtCategory);
   const matchedNatCat = TDT_NATIONAL_CATEGORIES.find((c) => c.id === tdtCategory);
@@ -149,7 +153,8 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
     ? 'es'
     : 'all';
 
-  const normalizedQuery = inlineQuery.trim().toLowerCase();
+  const deferredInlineQuery = useDeferredValue(inlineQuery);
+  const normalizedQuery = deferredInlineQuery.trim().toLowerCase();
 
   const searchScopedChannels = useMemo(() => {
     if (!normalizedQuery) return filteredChannels;
@@ -210,6 +215,30 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
     onEpgFilterChange('all');
     onAdrarCountryFilterChange?.('all');
   };
+
+  useBackInterceptor(
+    inlineQuery.trim() !== '',
+    'livetv-inline-search',
+    () => setInlineQuery(''),
+    { priority: 6 }
+  );
+
+  const hasIntraTvFilters =
+    tvFavOnly ||
+    tvRegion !== 'all' ||
+    tdtCategory !== 'all' ||
+    epgFilter !== 'all' ||
+    adrarCountryFilter !== 'all';
+
+  useBackInterceptor(
+    hasIntraTvFilters,
+    'livetv-intra-filters',
+    () => {
+      resetAllFilters();
+      return true;
+    },
+    { priority: 5 }
+  );
 
   const renderChannelRow = (ch: SpanishTdtChannel) => (
     <LiveTvChannelRow

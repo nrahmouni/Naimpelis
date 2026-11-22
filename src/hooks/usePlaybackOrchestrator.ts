@@ -24,7 +24,6 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     hostId,
     participants,
     isNestedSandboxFrame,
-    videoState,
     setVideoState,
     videoStateRef,
     videoStateUrlRef,
@@ -45,7 +44,6 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     setActiveMatchDetails,
     activeMovieContextRef,
     setActiveMovieContext,
-    setSecondaryStream,
     showHostLockNotice,
   } = opts;
 

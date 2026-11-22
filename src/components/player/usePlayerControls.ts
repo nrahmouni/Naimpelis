@@ -556,15 +556,19 @@ export function usePlayerControls(opts: UsePlayerControlsOptions) {
       ) {
         return;
       }
-      if (e.key === 'Escape' && isCinemaMode && !document.fullscreenElement) {
-        onToggleCinemaMode?.();
+      if (e.key === 'Escape' && !document.fullscreenElement) {
+        if (isHorizontalFullscreen) {
+          void handleToggleFullscreen();
+        } else if (isCinemaMode) {
+          onToggleCinemaMode?.();
+        }
       } else if ((e.key === 't' || e.key === 'T') && !e.metaKey && !e.ctrlKey && !e.altKey) {
         onToggleCinemaMode?.();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isTvMode, videoState.mode, isCinemaMode, onToggleCinemaMode]);
+  }, [isTvMode, videoState.mode, isCinemaMode, isHorizontalFullscreen, onToggleCinemaMode]);
 
   // Global PC Keyboard Shortcuts (Space/K, F, M, J/ArrowLeft, L/ArrowRight, C)
   useEffect(() => {

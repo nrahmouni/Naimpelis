@@ -7,6 +7,7 @@ import {
 } from '../../utils/storage';
 import { upsertCloudWatchHistory } from '../../services/userCloudSync';
 import { isAbortError } from '../../utils/appSessionHelpers';
+import { sanitizeSavedResumeSec } from '../../components/player/playerAutoNextGuard';
 import type { ActiveMovieContext } from '../../components/MoviePlaybackDock';
 import type {
   CatalogMovie,
@@ -469,7 +470,9 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
-    const resumeAtSec = forceRestart ? 0 : Math.floor(item.resumeTimeSec || 0);
+    const resumeAtSec = forceRestart
+      ? 0
+      : sanitizeSavedResumeSec(item.resumeTimeSec, item.durationSec);
 
     if (item.mediaType === 'tv' && item.tmdbId && item.season && item.episode) {
       const epLoadId = sanitizeItemKey(`tv-${item.tmdbId}-${item.season}-${item.episode}`);

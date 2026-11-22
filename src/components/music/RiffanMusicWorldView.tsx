@@ -1922,6 +1922,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
       );
     }
 
+    if (detail.kind !== 'artist') return null;
+
     const art = detail.artist;
     const numLocale =
       musicLang === 'en'

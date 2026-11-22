@@ -12,6 +12,7 @@ import type { PrimaryWorldId } from '../store/useAppStore';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { generateRandomGuestName } from '../utils/storage';
+import { useBackInterceptor } from '../lib/backInterceptor';
 import { PosterImage } from './ui/PosterImage';
 import { UniversalHomeSearch } from './home/UniversalHomeSearch';
 import { EntryHomeBentoGrid } from './home/EntryHomeBentoGrid';
@@ -113,6 +114,24 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
     [liveMatches, nowMs]
   );
 
+  const directBarcaMadridLiveCount = useMemo(
+    () =>
+      directBarcaMadridMatches.filter(
+        (m) => m.isLive || m.matchMeta?.statusState === 'live'
+      ).length,
+    [directBarcaMadridMatches]
+  );
+
+  useBackInterceptor(
+    editingName,
+    'entry-edit-name',
+    () => {
+      setNameDraft(displayName);
+      setEditingName(false);
+    },
+    { priority: 7 }
+  );
+
   const handleSaveName = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const cleaned = nameDraft.trim();
@@ -165,7 +184,9 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   );
 
   const featuredLiveMatch = useMemo(() => {
-    const liveOne = liveMatches.find((m) => m.isLive) || liveMatches[0];
+    const liveOne =
+      directBarcaMadridMatches.find((m) => m.isLive || m.matchMeta?.statusState === 'live') ||
+      directBarcaMadridMatches[0];
     if (!liveOne) return null;
     const meta = liveOne.matchMeta;
     if (meta?.homeShort && meta?.awayShort) {
@@ -174,13 +195,13 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
         meta.awayScore !== undefined &&
         /^\d+$/.test(String(meta.homeScore).trim()) &&
         /^\d+$/.test(String(meta.awayScore).trim());
-      if (liveOne.isLive && hasScore) {
+      if ((liveOne.isLive || meta.statusState === 'live') && hasScore) {
         return `${meta.homeShort} ${meta.homeScore} - ${meta.awayScore} ${meta.awayShort}`;
       }
       return `${meta.homeShort} vs ${meta.awayShort}`;
     }
     return liveOne.title;
-  }, [liveMatches]);
+  }, [directBarcaMadridMatches]);
 
   const greetingWord = pickLang(lang, { es: 'Hola', ca: 'Hola', en: 'Hi', zh: '你好', rif: 'Azul' });
 
@@ -298,7 +319,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
           />
         </section>
 
-        {/* 3. DIRECT BARÇA / REAL MADRID PLAY CARD (ONLY 10 MIN BEFORE KICKOFF OR LIVE) */}
+        {/* 3. DIRECT BARÇA / REAL MADRID PLAY CARD (ONLY 30 MIN BEFORE KICKOFF OR LIVE; REMOVED WHEN FINISHED) */}
         <BarcaMadridDirectBanner
           lang={lang}
           matches={directBarcaMadridMatches}
@@ -314,7 +335,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
           lastUsedWorld={lastUsedWorld}
           heroPosters={heroPosters}
           featuredChannels={featuredChannels}
-          liveMatchesCount={liveMatchesCount}
+          liveMatchesCount={directBarcaMadridLiveCount}
           featuredLiveMatch={featuredLiveMatch}
           roomParticipantsCount={roomParticipantsCount}
           onPreloadWorld={onPreloadWorld}

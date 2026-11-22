@@ -7,6 +7,7 @@ export type TvRemoteAction =
   | 'RIGHT'
   | 'SELECT'
   | 'BACK'
+  | 'STOP'
   | 'BLUR_INPUT'
   | 'PLAY_PAUSE'
   | 'PLAY'
@@ -25,24 +26,114 @@ interface NaimTvAndroidBridge {
   exitApp?: () => void;
 }
 
+interface TizenTvInputDevice {
+  registerKey?: (keyName: string) => void;
+  registerKeyBatch?: (keyNames: string[]) => void;
+}
+
+interface TizenRuntime {
+  tvinputdevice?: TizenTvInputDevice;
+  application?: {
+    getCurrentApplication?: () => { exit?: () => void };
+  };
+}
+
+interface SamsungWebApisRuntime {
+  appcommon?: {
+    setScreenSaver?: (state: number, successCb?: () => void, errorCb?: () => void) => void;
+  };
+}
+
 declare global {
   interface Window {
     __NAIM_GOOGLE_TV__?: boolean;
     __naimTvKey?: (action: TvRemoteAction) => 'HANDLED' | 'AT_ROOT';
     __naimInitTvFocus?: () => void;
     NaimTvBridge?: NaimTvAndroidBridge;
+    tizen?: TizenRuntime;
+    webapis?: SamsungWebApisRuntime;
+  }
+}
+
+const TIZEN_HARDWARE_KEYS = [
+  'MediaPlayPause',
+  'MediaPlay',
+  'MediaPause',
+  'MediaStop',
+  'MediaRewind',
+  'MediaFastForward',
+  'ChannelUp',
+  'ChannelDown',
+  'ColorF0Red',
+  'ColorF1Green',
+  'ColorF2Yellow',
+  'ColorF3Blue',
+  'Menu',
+  'Info',
+  'Exit',
+  '0',
+  '1',
+  '2',
+  '3',
+  '4',
+  '5',
+  '6',
+  '7',
+  '8',
+  '9',
+];
+
+export function isTizenTvRuntime(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (window.tizen) return true;
+  const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+  return /Tizen|SamsungBrowser.*TV|SMART-TV/i.test(ua);
+}
+
+export function registerTizenRemoteKeys(): boolean {
+  if (typeof window === 'undefined' || !window.tizen?.tvinputdevice) return false;
+  const dev = window.tizen.tvinputdevice;
+  try {
+    if (typeof dev.registerKeyBatch === 'function') {
+      dev.registerKeyBatch(TIZEN_HARDWARE_KEYS);
+      return true;
+    }
+    if (typeof dev.registerKey === 'function') {
+      for (const k of TIZEN_HARDWARE_KEYS) {
+        try {
+          dev.registerKey(k);
+        } catch {
+          // ignore unsupported key on specific Samsung TV year
+        }
+      }
+      return true;
+    }
+  } catch {
+    // ignore Tizen API guard errors on non-Tizen runtimes
+  }
+  return false;
+}
+
+export function syncTizenScreenSaver(preventSleep: boolean): void {
+  if (typeof window === 'undefined') return;
+  try {
+    // Samsung TV WebAPIs: 0 = SCREEN_SAVER_OFF, 1 = SCREEN_SAVER_ON
+    window.webapis?.appcommon?.setScreenSaver?.(preventSleep ? 0 : 1);
+  } catch {
+    // ignore
   }
 }
 
 export function isGoogleTvEnvironment(): boolean {
   if (typeof window === 'undefined') return false;
-  if (window.__NAIM_GOOGLE_TV__) return true;
+  if (window.__NAIM_GOOGLE_TV__ || isTizenTvRuntime()) return true;
   try {
     const params = new URLSearchParams(window.location.search);
     if (
       params.get('googletv') === '1' ||
       params.get('platform')?.toLowerCase() === 'googletv' ||
-      params.get('tv') === '1'
+      params.get('tv') === '1' ||
+      params.get('tizen') === '1'
     ) {
       window.sessionStorage?.setItem('naim_google_tv_env', '1');
       return true;
@@ -54,7 +145,92 @@ export function isGoogleTvEnvironment(): boolean {
     // ignore
   }
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
-  return /NaimCineGoogleTV|GoogleTV|Android TV|BRAVIA|AFTB|AFTT|AFTM|AFTKA|Chromecast|SmartTV|Tizen|Web0S|NetCast|VIDAA|HbbTV|AppleTV/i.test(ua);
+  return /NaimCineGoogleTV|GoogleTV|Android TV|BRAVIA|AFTB|AFTT|AFTM|AFTKA|Chromecast|SmartTV|SMART-TV|Tizen|Web0S|NetCast|VIDAA|HbbTV|AppleTV/i.test(
+    ua
+  );
+}
+
+/**
+ * Pure keyboard/remote event mapper covering W3C D-pad, Android TV, and Samsung Tizen keyCodes.
+ */
+export function mapKeyboardEventToTvAction(e: {
+  key?: string;
+  keyCode?: number;
+  which?: number;
+}): TvRemoteAction | null {
+  const key = e.key || '';
+  const code = e.keyCode || e.which || 0;
+
+  switch (key) {
+    case 'ArrowUp':
+      return 'UP';
+    case 'ArrowDown':
+      return 'DOWN';
+    case 'ArrowLeft':
+      return 'LEFT';
+    case 'ArrowRight':
+      return 'RIGHT';
+    case 'Escape':
+    case 'GoBack':
+    case 'BrowserBack':
+      return 'BACK';
+    case 'MediaPlayPause':
+      return 'PLAY_PAUSE';
+    case 'MediaPlay':
+      return 'PLAY';
+    case 'MediaPause':
+      return 'PAUSE';
+    case 'MediaStop':
+      return 'STOP';
+    case 'MediaFastForward':
+      return 'FF';
+    case 'MediaRewind':
+      return 'RW';
+    case 'ChannelUp':
+      return 'CH_UP';
+    case 'ChannelDown':
+      return 'CH_DOWN';
+    default:
+      break;
+  }
+
+  // Samsung Tizen / Android TV / LG webOS hardware keyCodes
+  if (code === 10009 || code === 461 || code === 27 || code === 4) {
+    return 'BACK';
+  }
+  if (code === 10252 || code === 179 || code === 85) {
+    return 'PLAY_PAUSE';
+  }
+  if (code === 415 || code === 126) {
+    return 'PLAY';
+  }
+  if (code === 19 && key !== 'ArrowUp') {
+    return 'PAUSE';
+  }
+  if (code === 413) {
+    return 'STOP';
+  }
+  if (code === 412) {
+    return 'RW';
+  }
+  if (code === 417) {
+    return 'FF';
+  }
+  if (code === 427 || code === 166) {
+    return 'CH_UP';
+  }
+  if (code === 428 || code === 167) {
+    return 'CH_DOWN';
+  }
+  if (code === 23 || code === 66 || code === 13) {
+    return 'SELECT';
+  }
+  if (code === 37 || code === 21) return 'LEFT';
+  if (code === 38) return 'UP';
+  if (code === 39 || code === 22) return 'RIGHT';
+  if (code === 40 || code === 20) return 'DOWN';
+
+  return null;
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -80,7 +256,6 @@ function isElementVisible(el: HTMLElement): boolean {
   }
   const rect = el.getBoundingClientRect();
   if (rect.width < 14 || rect.height < 14) return false;
-  // Ignore elements completely far off-screen horizontally inside collapsed drawers
   if (rect.right < -80 || rect.left > window.innerWidth + 80) return false;
   return true;
 }
@@ -134,7 +309,6 @@ function findNextSpatialTarget(
 ): HTMLElement | null {
   if (candidates.length === 0) return null;
   if (!current || !candidates.includes(current)) {
-    // Pick first element currently inside the viewport, or fallback to first candidate
     const inView = candidates.find((el) => {
       const r = el.getBoundingClientRect();
       return r.top >= 0 && r.bottom <= window.innerHeight;
@@ -151,7 +325,6 @@ function findNextSpatialTarget(
 
   for (const cand of candidates) {
     if (cand === current) continue;
-    // Skip nested child/parent of current element
     if (current.contains(cand) || cand.contains(current)) continue;
 
     const r = cand.getBoundingClientRect();
@@ -174,7 +347,6 @@ function findNextSpatialTarget(
       if (vertOverlap > 4) {
         overlapBonus = -120;
       } else if (crossDist > Math.max(curRect.height, r.height) * 1.8) {
-        // Strongly avoid jumping across distant rows on LEFT/RIGHT
         crossDist *= 4.5;
       }
     } else if (dir === 'LEFT') {
@@ -272,8 +444,13 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
 
   useEffect(() => {
     const isTv = isGoogleTvEnvironment();
+    const isTizen = isTizenTvRuntime();
     if (isTv) {
       document.documentElement.classList.add('tv-dpad-active', 'is-google-tv');
+    }
+    if (isTizen) {
+      document.documentElement.classList.add('is-tizen-tv', 'tv-dpad-active');
+      registerTizenRemoteKeys();
     }
 
     const onPointerMove = () => {
@@ -284,7 +461,7 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
     window.addEventListener('mousemove', onPointerMove, { passive: true });
 
     const controlPrimaryVideo = (
-      cmd: 'PLAY_PAUSE' | 'PLAY' | 'PAUSE' | 'FF' | 'RW'
+      cmd: 'PLAY_PAUSE' | 'PLAY' | 'PAUSE' | 'STOP' | 'FF' | 'RW'
     ): boolean => {
       const videos = Array.from(document.querySelectorAll('video')).filter(
         (v) => v.readyState >= 1 || Boolean(v.currentSrc || v.src)
@@ -292,23 +469,38 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
       const video = videos[0];
       if (!video) return false;
 
-      // Wake up player HUD if present
       video.dispatchEvent(new MouseEvent('mousemove', { bubbles: true }));
 
       if (cmd === 'PLAY_PAUSE') {
         if (video.paused) {
           video.play().catch(() => {});
+          syncTizenScreenSaver(true);
         } else {
           video.pause();
+          syncTizenScreenSaver(false);
         }
         return true;
       }
       if (cmd === 'PLAY') {
         video.play().catch(() => {});
+        syncTizenScreenSaver(true);
         return true;
       }
       if (cmd === 'PAUSE') {
         video.pause();
+        syncTizenScreenSaver(false);
+        return true;
+      }
+      if (cmd === 'STOP') {
+        video.pause();
+        if (Number.isFinite(video.duration) && video.duration > 0) {
+          try {
+            video.currentTime = 0;
+          } catch {
+            // ignore live stream seek
+          }
+        }
+        syncTizenScreenSaver(false);
         return true;
       }
       if (cmd === 'FF') {
@@ -349,6 +541,15 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
         return 'HANDLED';
       }
 
+      if (action === 'STOP') {
+        const hadVideo = controlPrimaryVideo('STOP');
+        if (hadVideo) {
+          cbRef.current.onBackStep();
+          return 'HANDLED';
+        }
+        action = 'BACK';
+      }
+
       if (action === 'CH_UP') {
         cbRef.current.onChannelStep?.(1);
         return 'HANDLED';
@@ -375,7 +576,6 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
           return 'HANDLED';
         }
 
-        // Check if an open modal has a close button
         const scope = getActiveScopeContainer();
         if (scope !== document && scope instanceof HTMLElement) {
           const closeBtn = scope.querySelector<HTMLElement>(
@@ -440,9 +640,9 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
     };
 
     const onKeyDown = (e: KeyboardEvent) => {
-      // When typing inside a text input in a regular browser, only intercept Escape
       if (isTextInput(document.activeElement)) {
-        if (e.key === 'Escape') {
+        const code = e.keyCode || e.which;
+        if (e.key === 'Escape' || code === 10009) {
           e.preventDefault();
           handleTvAction('BLUR_INPUT');
         } else if (e.key === 'Enter') {
@@ -454,92 +654,21 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
 
       if (e.metaKey || e.ctrlKey || e.altKey) return;
 
-      let mapped: TvRemoteAction | null = null;
-      switch (e.key) {
-        case 'ArrowUp':
-          mapped = 'UP';
-          break;
-        case 'ArrowDown':
-          mapped = 'DOWN';
-          break;
-        case 'ArrowLeft':
-          mapped = 'LEFT';
-          break;
-        case 'ArrowRight':
-          mapped = 'RIGHT';
-          break;
-        case 'Enter':
-          // If native button already handles Enter click on browser, only manually trigger on role="button" divs
-          if (
-            document.activeElement &&
-            !['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA'].includes(
-              document.activeElement.tagName
-            )
-          ) {
-            e.preventDefault();
-            handleTvAction('SELECT');
-          } else if (
-            !document.activeElement ||
-            document.activeElement === document.body
-          ) {
-            e.preventDefault();
-            handleTvAction('SELECT');
-          }
-          return;
-        case 'Escape':
-        case 'GoBack':
-        case 'BrowserBack':
-          mapped = 'BACK';
-          break;
-        case 'MediaPlayPause':
-          mapped = 'PLAY_PAUSE';
-          break;
-        case 'MediaPlay':
-          mapped = 'PLAY';
-          break;
-        case 'MediaPause':
-          mapped = 'PAUSE';
-          break;
-        case 'MediaFastForward':
-          mapped = 'FF';
-          break;
-        case 'MediaRewind':
-          mapped = 'RW';
-          break;
-        case 'ChannelUp':
-          mapped = 'CH_UP';
-          break;
-        case 'ChannelDown':
-          mapped = 'CH_DOWN';
-          break;
-        default:
-          break;
+      const mapped = mapKeyboardEventToTvAction(e);
+      if (!mapped) return;
+
+      // Preserve native button/anchor Enter click behavior when focused cleanly inside browser
+      if (
+        mapped === 'SELECT' &&
+        e.key === 'Enter' &&
+        document.activeElement &&
+        ['BUTTON', 'A', 'INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)
+      ) {
+        return;
       }
 
-      if (!mapped) {
-        const legacyCode = e.keyCode || e.which;
-        if (legacyCode === 10009 || legacyCode === 461) {
-          // Samsung Tizen Return (10009) & LG webOS Back (461)
-          mapped = 'BACK';
-        } else if (legacyCode === 415) {
-          mapped = 'PLAY';
-        } else if (legacyCode === 19 || legacyCode === 413) {
-          mapped = 'PAUSE';
-        } else if (legacyCode === 412) {
-          mapped = 'RW';
-        } else if (legacyCode === 417) {
-          mapped = 'FF';
-        } else if (legacyCode === 427) {
-          mapped = 'CH_UP';
-        } else if (legacyCode === 428) {
-          mapped = 'CH_DOWN';
-        }
-      }
-
-      if (mapped) {
-        e.preventDefault();
-        handleTvAction(mapped);
-      }
+      e.preventDefault();
+      handleTvAction(mapped);
     };
 
     const onFocusIn = (e: FocusEvent) => {
@@ -551,19 +680,68 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
       }
     };
 
+    // Keep Tizen TV screensaver disabled while any HTML5 <video> plays
+    const onMediaPlayState = (e: Event) => {
+      const target = e.target as HTMLElement | null;
+      if (!target || target.tagName !== 'VIDEO') return;
+      const video = target as HTMLVideoElement;
+      syncTizenScreenSaver(!video.paused && !video.ended);
+    };
+
+    // Recover TV focus gracefully if currently focused node unmounts
+    let focusGuardTimer: number | null = null;
+    const observer =
+      typeof MutationObserver !== 'undefined' && (isTv || isTizen)
+        ? new MutationObserver(() => {
+            if (!document.documentElement.classList.contains('tv-dpad-active')) return;
+            const cur = document.activeElement;
+            if (cur && cur !== document.body && cur !== document.documentElement && cur.isConnected) {
+              return;
+            }
+            if (focusGuardTimer !== null) window.clearTimeout(focusGuardTimer);
+            focusGuardTimer = window.setTimeout(() => {
+              const candidates = getVisibleFocusables();
+              if (
+                candidates.length > 0 &&
+                (!document.activeElement ||
+                  document.activeElement === document.body ||
+                  document.activeElement === document.documentElement)
+              ) {
+                const preferred =
+                  candidates.find((el) => el.getAttribute('data-tv-focusable') === 'true') ||
+                  candidates[0];
+                focusElementForTv(preferred);
+              }
+            }, 90);
+          })
+        : null;
+
+    if (observer && document.body) {
+      observer.observe(document.body, { childList: true, subtree: true });
+    }
+
     window.addEventListener('keydown', onKeyDown);
     document.addEventListener('focusin', onFocusIn);
+    document.addEventListener('play', onMediaPlayState, true);
+    document.addEventListener('pause', onMediaPlayState, true);
+    document.addEventListener('ended', onMediaPlayState, true);
 
-    if (isTv) {
+    if (isTv || isTizen) {
       setTimeout(() => {
         window.__naimInitTvFocus?.();
       }, 350);
     }
 
     return () => {
+      if (focusGuardTimer !== null) window.clearTimeout(focusGuardTimer);
+      observer?.disconnect();
+      syncTizenScreenSaver(false);
       window.removeEventListener('mousemove', onPointerMove);
       window.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('focusin', onFocusIn);
+      document.removeEventListener('play', onMediaPlayState, true);
+      document.removeEventListener('pause', onMediaPlayState, true);
+      document.removeEventListener('ended', onMediaPlayState, true);
     };
   }, []);
 }

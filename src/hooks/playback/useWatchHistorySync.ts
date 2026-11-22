@@ -9,6 +9,7 @@ import {
   updateCloudWatchProgressOnly,
   upsertCloudWatchHistory,
 } from '../../services/userCloudSync';
+import { sanitizeSavedResumeSec } from '../../components/player/playerAutoNextGuard';
 import type { VideoState, WatchHistoryItem } from '../../types';
 
 interface UseWatchHistorySyncOptions {
@@ -34,8 +35,8 @@ export function useWatchHistorySync({
     (rawId: string): number => {
       const cleanId = sanitizeItemKey(rawId);
       const match = watchHistoryRef.current.find((h) => sanitizeItemKey(h.id) === cleanId);
-      if (!match || !match.resumeTimeSec || match.resumeTimeSec <= 5) return 0;
-      return Math.floor(match.resumeTimeSec);
+      if (!match) return 0;
+      return sanitizeSavedResumeSec(match.resumeTimeSec, match.durationSec);
     },
     [watchHistoryRef]
   );

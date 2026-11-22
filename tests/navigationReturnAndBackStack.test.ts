@@ -119,6 +119,51 @@ describe('Global LIFO backInterceptor priority stack & pop coordination', () => 
     markBackPopHandled();
     expect(getLastBackPopHandledAt()).toBe(Date.now());
   });
+
+  it('orders player settings > HUD menu > horizontal fullscreen > trailer > details > lobby join > intra-world filters', () => {
+    const order: string[] = [];
+
+    cleanups.push(
+      registerBackInterceptor('cine-intra-filters', () => {
+        order.push('intra-filters');
+        return true;
+      }, 5),
+      registerBackInterceptor('lobby-join-tab', () => {
+        order.push('lobby-join');
+      }, 8),
+      registerBackInterceptor('media-details-modal', () => {
+        order.push('details');
+      }, 15),
+      registerBackInterceptor('media-details-trailer', () => {
+        order.push('trailer');
+      }, 17),
+      registerBackInterceptor('player-horizontal-fullscreen', () => {
+        order.push('horizontal-fs');
+      }, 21),
+      registerBackInterceptor('player-hud-menu', () => {
+        order.push('hud-menu');
+      }, 29),
+      registerBackInterceptor('player-pro-settings', () => {
+        order.push('pro-settings');
+      }, 30)
+    );
+
+    for (let i = 0; i < 7; i++) {
+      expect(tryConsumeBackInterceptor()).toBe(true);
+      cleanups.pop()?.();
+    }
+
+    expect(order).toEqual([
+      'pro-settings',
+      'hud-menu',
+      'horizontal-fs',
+      'trailer',
+      'details',
+      'lobby-join',
+      'intra-filters',
+    ]);
+    expect(tryConsumeBackInterceptor()).toBe(false);
+  });
 });
 
 describe('PlaybackReturnContext & store restoration state', () => {

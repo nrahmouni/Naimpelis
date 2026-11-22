@@ -1,4 +1,5 @@
 import { ENV } from '../config/env.ts';
+import { logger } from '../utils/logger.ts';
 import { type TrackRecord } from './httpHelpers.ts';
 import { resolveImdbId } from './vidhideHelpers/directHostUnpackers.ts';
 import {
@@ -231,7 +232,7 @@ export async function extractEmbed69SpanishTracks(opts: {
       return resolverRank(a.resolverType) - resolverRank(b.resolverType);
     });
   } catch (err) {
-    console.warn('extractEmbed69SpanishTracks error:', err);
+    logger.warn({ err }, 'extractEmbed69SpanishTracks error');
     return [];
   }
 }

@@ -21,8 +21,10 @@ function getGuardType(state: unknown): 'root' | 'layer' | null {
 export function useAppNavigationHistory(params: {
   enabled: boolean;
   inRoom: boolean;
+  hasEnteredApp?: boolean;
   activeWorld: WorldId;
   onReturnToEntry: () => void;
+  onReturnToLogin?: () => void;
   hasActivePlayer: boolean;
   isPlayerMinimized: boolean;
   isFullscreen: boolean;
@@ -33,8 +35,10 @@ export function useAppNavigationHistory(params: {
   const {
     enabled,
     inRoom,
+    hasEnteredApp = false,
     activeWorld,
     onReturnToEntry,
+    onReturnToLogin,
     hasActivePlayer,
     isPlayerMinimized,
     isFullscreen,
@@ -55,8 +59,10 @@ export function useAppNavigationHistory(params: {
   const latestRef = useRef({
     enabled,
     inRoom,
+    hasEnteredApp,
     activeWorld,
     onReturnToEntry,
+    onReturnToLogin,
     hasActivePlayer,
     isPlayerMinimized,
     isFullscreen,
@@ -67,8 +73,10 @@ export function useAppNavigationHistory(params: {
   latestRef.current = {
     enabled,
     inRoom,
+    hasEnteredApp,
     activeWorld,
     onReturnToEntry,
+    onReturnToLogin,
     hasActivePlayer,
     isPlayerMinimized,
     isFullscreen,
@@ -85,6 +93,8 @@ export function useAppNavigationHistory(params: {
 
   const hasSubLayer =
     overlayCount > 0 ||
+    inRoom ||
+    hasEnteredApp ||
     activeWorld !== 'entry' ||
     (hasActivePlayer && !isPlayerMinimized) ||
     isFullscreen;
@@ -143,7 +153,7 @@ export function useAppNavigationHistory(params: {
     }, 32);
   }, [pushGuard]);
 
-  // Ensure initial root sentinel + layer sentinel exist whenever interactive layers are open
+  // Ensure initial root sentinel + layer sentinel exist whenever interactive layers or inside-app session are active
   useEffect(() => {
     if (!enabled || typeof window === 'undefined') return;
     if (readyToExitRef.current && !hasSubLayer) return;
@@ -154,7 +164,7 @@ export function useAppNavigationHistory(params: {
     } else if (hasSubLayer && currentKind === 'root') {
       pushGuard('layer');
     }
-  }, [enabled, hasSubLayer, overlayCount, activeWorld, pushGuard]);
+  }, [enabled, hasSubLayer, overlayCount, activeWorld, inRoom, hasEnteredApp, pushGuard]);
 
   const armExitWindow = useCallback(() => {
     readyToExitRef.current = true;
@@ -194,7 +204,7 @@ export function useAppNavigationHistory(params: {
 
       const cur = latestRef.current;
 
-      // Step 1: Close top-most modal / sheet / details / search / active game / detail stack
+      // Step 1: Close top-most modal / sheet / settings / HUD / filters / search / active game
       if (tryConsumeBackInterceptor()) {
         markBackPopHandled();
         disarmExitWindow();
@@ -215,7 +225,7 @@ export function useAppNavigationHistory(params: {
         return;
       }
 
-      // Step 3: Collapse full active player into persistent floating mini-dock
+      // Step 3: Collapse full active player into persistent floating mini-dock and restore origin
       if (cur.hasActivePlayer && !cur.isPlayerMinimized) {
         markBackPopHandled();
         disarmExitWindow();
@@ -235,7 +245,22 @@ export function useAppNavigationHistory(params: {
         return;
       }
 
-      // Step 5: Root level sentinel — require double-back within 2.2s before leaving
+      // Step 5: From Entry Home (solo or party), return cleanly to Login (LobbyScreen)
+      if (cur.inRoom || cur.hasEnteredApp) {
+        markBackPopHandled();
+        disarmExitWindow();
+        cur.onReturnToLogin?.();
+        if (!getGuardType(window.history.state)) {
+          window.history.replaceState(
+            { ...(window.history.state || {}), __riffanGuard: 'root' },
+            '',
+            window.location.href
+          );
+        }
+        return;
+      }
+
+      // Step 6: Root level (Login / LobbyScreen) — require double-back within 2.2s before exiting
       if (!readyToExitRef.current) {
         markBackPopHandled();
         armExitWindow();
@@ -264,28 +289,40 @@ export function useAppNavigationHistory(params: {
     };
   }, []);
 
-  const triggerBackStep = useCallback(() => {
-    if (typeof window === 'undefined') return;
-    if (tryConsumeBackInterceptor()) return;
+  const triggerBackStep = useCallback((): boolean => {
+    if (typeof window === 'undefined') return false;
+    if (tryConsumeBackInterceptor()) {
+      disarmExitWindow();
+      return true;
+    }
     const cur = latestRef.current;
     if (cur.isFullscreen || document.fullscreenElement) {
+      disarmExitWindow();
       cur.onExitFullscreen();
-      return;
+      return true;
     }
     if (cur.hasActivePlayer && !cur.isPlayerMinimized) {
+      disarmExitWindow();
       cur.onMinimizePlayer();
-      return;
+      return true;
     }
     if (cur.activeWorld !== 'entry') {
+      disarmExitWindow();
       cur.onReturnToEntry();
-      return;
+      return true;
+    }
+    if (cur.inRoom || cur.hasEnteredApp) {
+      disarmExitWindow();
+      cur.onReturnToLogin?.();
+      return true;
     }
     if (!readyToExitRef.current) {
       armExitWindow();
-    } else {
-      disarmExitWindow();
-      cur.onExitRoomOrApp?.();
+      return true;
     }
+    disarmExitWindow();
+    cur.onExitRoomOrApp?.();
+    return false;
   }, [armExitWindow, disarmExitWindow]);
 
   return {

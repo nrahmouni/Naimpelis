@@ -1,3 +1,4 @@
+import { spawn } from 'child_process';
 import type express from 'express';
 import { Readable } from 'stream';
 import { assertSafeProxyUrl } from '../../utils/ssrfGuard.ts';
@@ -426,6 +427,109 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
       res.end();
       return;
     }
+    if (!rangeMatch) {
+      await new Promise<void>((resolve) => {
+        const args = ['-4', '-sS', '-L', '-k', '--connect-timeout', '4', '--max-time', '22'];
+        for (const [k, v] of Object.entries(headers)) {
+          if (v) args.push('-H', `${k}: ${v}`);
+        }
+        args.push(targetUrl);
+        const child = spawn('curl', args, { stdio: ['ignore', 'pipe', 'ignore'] });
+        let headerFlushed = false;
+        const headChunks: Buffer[] = [];
+        let headLen = 0;
+
+        const finishEarly = (statusCode: number) => {
+          if (!res.headersSent) res.status(statusCode);
+          if (!res.writableEnded) res.end();
+          try {
+            child.kill('SIGKILL');
+          } catch {
+            // ignore
+          }
+          resolve();
+        };
+
+        const flushHead = (ended: boolean) => {
+          if (headerFlushed) return;
+          headerFlushed = true;
+          const headBuf = Buffer.concat(headChunks);
+          headChunks.length = 0;
+          if (headBuf.length === 0) {
+            return finishEarly(502);
+          }
+          const headProbe = headBuf.subarray(0, Math.min(headBuf.length, 64)).toString('utf8').trimStart();
+          if (/^(<!doctype|<html\b|<head\b|<body\b)/i.test(headProbe)) {
+            return finishEarly(502);
+          }
+          const boxType = headBuf.length >= 8 ? headBuf.subarray(4, 8).toString('ascii') : '';
+          const isFmp4 =
+            isUrlMp4 ||
+            boxType === 'ftyp' ||
+            boxType === 'styp' ||
+            boxType === 'moof' ||
+            boxType === 'sidx';
+          let cleanHead = headBuf;
+          if (!isFmp4) {
+            const tsOff = findDisguisedTsOffset(headBuf);
+            if (tsOff > 0) cleanHead = headBuf.subarray(tsOff);
+          }
+          res.status(200);
+          applyProxyCorsHeaders(res, reqId);
+          res.setHeader('Content-Type', isFmp4 ? 'video/mp4' : 'video/mp2t');
+          if (cleanHead.length > 0) {
+            res.write(cleanHead);
+            runtimeMetrics.recordUpstreamTransport(true, cleanHead.length);
+          }
+          if (ended && !res.writableEnded) {
+            res.end();
+            resolve();
+          }
+        };
+
+        req.on('close', () => {
+          if (!res.writableEnded) {
+            try {
+              child.kill('SIGKILL');
+            } catch {
+              // ignore
+            }
+          }
+          resolve();
+        });
+
+        child.stdout.on('data', (chunk: Buffer) => {
+          if (req.destroyed || res.writableEnded) return;
+          const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          if (!headerFlushed) {
+            headChunks.push(b);
+            headLen += b.length;
+            if (headLen >= 512) flushHead(false);
+          } else {
+            runtimeMetrics.recordUpstreamTransport(true, b.length);
+            if (!res.write(b)) {
+              child.stdout.pause();
+              res.once('drain', () => child.stdout.resume());
+            }
+          }
+        });
+
+        child.on('close', () => {
+          if (!headerFlushed) {
+            flushHead(true);
+          } else if (!res.writableEnded) {
+            res.end();
+          }
+          resolve();
+        });
+
+        child.on('error', () => {
+          finishEarly(502);
+        });
+      });
+      return;
+    }
+
     try {
       const buf = await curlGetBuffer(targetUrl, headers, 18);
       if (req.destroyed || res.writableEnded) return;

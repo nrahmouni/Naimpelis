@@ -199,7 +199,7 @@ export default defineConfig(() => {
       }),
     ],
     build: {
-      target: 'es2020',
+      target: ['es2018', 'chrome69'],
       cssCodeSplit: true,
       chunkSizeWarningLimit: 900,
       rollupOptions: {
@@ -219,6 +219,9 @@ export default defineConfig(() => {
             }
             if (id.includes('node_modules/hls.js/')) {
               return 'vendor-media';
+            }
+            if (id.includes('node_modules/jszip/')) {
+              return 'vendor-zip';
             }
             if (id.includes('node_modules/lucide-react/')) {
               return 'vendor-icons';

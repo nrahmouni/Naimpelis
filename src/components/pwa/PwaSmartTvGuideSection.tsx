@@ -4,6 +4,7 @@ import {
   BookOpen,
   CheckCheck,
   Copy,
+  Download,
   ExternalLink,
   Flame,
   Link as LinkIcon,
@@ -350,6 +351,36 @@ export const PwaSmartTvGuideSection: React.FC<PwaSmartTvGuideSectionProps> = ({
               className="w-full min-h-10 px-3 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
             >
               <span>Abrir {tvReceiverUrl}</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
+          <div className="p-3.5 rounded-2xl bg-[#000000] border border-[#7C3AED]/35 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Download className="w-4 h-4 text-[#A78BFA]" />
+                <span>App Nativa Samsung TV (.wgt)</span>
+              </h4>
+              <span className="text-[11px] font-mono text-[#00F593]">/samsung</span>
+            </div>
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              Genera el paquete <strong className="text-white">.wgt</strong> directamente desde tu navegador o móvil con <code className="text-zinc-200">config.xml</code>, icono y navegación 10-Foot completa.
+            </p>
+            <a
+              href="/samsung"
+              onClick={(e) => {
+                e.preventDefault();
+                triggerHaptic('medium');
+                onBack();
+                if (typeof window !== 'undefined') {
+                  window.setTimeout(() => {
+                    window.history.pushState({}, '', '/samsung');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }, 25);
+                }
+              }}
+              className="w-full min-h-10 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <span>Abrir empaquetador y guía /samsung</span>
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           </div>

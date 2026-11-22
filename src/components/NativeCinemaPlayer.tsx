@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { useFocusTrap } from '../utils/useFocusTrap';
+import { useBackInterceptor } from '../lib/backInterceptor';
 import { type NativeCinemaPlayerProps, type StreamRefreshPhase } from './player/playerTypes';
 import { useDirectCast } from './player/useDirectCast';
 import { PlayerProSettingsModal } from './player/PlayerProSettingsModal';
@@ -148,6 +149,23 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
   latestCurrentTimeRef.current = currentTime;
 
+  useEffect(() => {
+    latestCurrentTimeRef.current = 0;
+    setCurrentTime(0);
+    setDuration(0);
+    setAutoNextCountdown(null);
+    setStreamError(null);
+    if (!videoState.url) {
+      autoNextTriggeredUrlRef.current = '';
+    }
+  }, [
+    videoState.url,
+    videoState.mode,
+    videoState.seriesMeta?.tmdbId,
+    videoState.seriesMeta?.season,
+    videoState.seriesMeta?.episode,
+  ]);
+
   const {
     externalWinState,
     externalTargetUrl,
@@ -204,6 +222,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     floatingChatOpen,
     canControlRoom,
     isMinimized,
+    isExtracting,
     showProMenu,
     currentTime,
     duration,
@@ -373,9 +392,33 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     onToggleCinemaMode,
   });
 
+  useBackInterceptor(
+    showProMenu,
+    'player-pro-settings',
+    () => setShowProMenu(false),
+    { priority: 30 }
+  );
+
+  useBackInterceptor(
+    activeHudMenu !== null,
+    'player-hud-menu',
+    () => setActiveHudMenu(null),
+    { priority: 29 }
+  );
+
+  useBackInterceptor(
+    isHorizontalFullscreen && !isTvMode && !isMinimized,
+    'player-horizontal-fullscreen',
+    () => {
+      void handleToggleFullscreen();
+    },
+    { priority: 21 }
+  );
+
   const videoCallbacks = usePlayerVideoCallbacks({
     videoState,
     isTvMode,
+    isExtracting,
     playbackSpeed,
     currentTime,
     activeSubId,
@@ -557,7 +600,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           setDuration={setDuration} clearBufferingIndicator={clearBufferingIndicator}
           revealControls={revealControls} setLocalLangPopup={setLocalLangPopup}
           setRecentIncomingChatBubble={setRecentIncomingChatBubble} setBatterySaverTvMode={setBatterySaverTvMode}
-          setShowProMenu={setShowProMenu} setAutoNextCancelledForUrl={setAutoNextCancelledForUrl}
+          setShowProMenu={(v) => setShowProMenu((prev) => (typeof v === 'boolean' ? v : !prev))}
+          setAutoNextCancelledForUrl={setAutoNextCancelledForUrl}
           setAutoNextCountdown={setAutoNextCountdown} onDismissLanguageNotice={onDismissLanguageNotice}
           onToggleFloatingChat={onToggleFloatingChat} onExpandCompressed={onExpandCompressed}
           onCancelExtraction={onCancelExtraction} onToggleMinimize={onToggleMinimize}
@@ -587,6 +631,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           }}
           tacticalVisionEnabled={tacticalVisionEnabled}
           onToggleTacticalVision={toggleTacticalVision}
+          proSettingsProps={proSettingsProps}
           videoCallbacks={videoCallbacks}
         />
       </div>
@@ -641,7 +686,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         <PlayerVoiceBanner lang={lang} voiceChat={voiceChat} />
       )}
 
-      <PlayerProSettingsModal {...proSettingsProps} />
+      {!isStageFullscreen && <PlayerProSettingsModal {...proSettingsProps} />}
     </section>
   );
 };

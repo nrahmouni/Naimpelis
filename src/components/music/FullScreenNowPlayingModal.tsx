@@ -1,10 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  BookmarkPlus,
   Car,
-  Check,
   ChevronDown,
-  Clock,
   Copy,
   Disc3,
   Download,
@@ -21,28 +18,18 @@ import {
   Repeat,
   Repeat1,
   RotateCcw,
+  RotateCw,
   Shuffle,
   SkipBack,
   SkipForward,
   Sliders,
-  Sparkles,
   ThumbsDown,
-  Trash2,
   Users,
   Wand2,
 } from 'lucide-react';
-import { EQ_10_LABELS, useMusicStore } from '../../store/useMusicStore';
-import type {
-  EqPresetId,
-  ExportBitrate,
-  LyricsPayload,
-  ProVibePresetId,
-  Spatial8dMode,
-  SpatialTrajectory,
-} from '../../types/music';
+import { useMusicStore } from '../../store/useMusicStore';
+import type { LyricsPayload } from '../../types/music';
 import {
-  EQ_10_BANDS_HZ,
-  EQ_PRESETS,
   getSpatial8dTelemetry,
   sampleMusicSpectrum,
   saveTrackToOfflineLibrary,
@@ -53,1038 +40,9 @@ import { useBackInterceptor } from '../../lib/backInterceptor';
 import { triggerHaptic } from '../../utils/haptics';
 import { CoverArt } from './CoverArt';
 import { MUSIC_I18N } from './musicI18n';
+import { getSpatialPresetConfig } from './spatialPresets';
 
-export const EqAndTimerModal: React.FC = () => {
-  const showEqModal = useMusicStore((s) => s.showEqModal);
-  const setShowEqModal = useMusicStore((s) => s.setShowEqModal);
-  const currentTrack = useMusicStore((s) => s.currentTrack);
-  const duration = useMusicStore((s) => s.duration);
-  const eqPreset = useMusicStore((s) => s.eqPreset);
-  const setEqPreset = useMusicStore((s) => s.setEqPreset);
-  const eqBands10 = useMusicStore((s) => s.eqBands10);
-  const setEqBand10 = useMusicStore((s) => s.setEqBand10);
-  const spatial8dEnabled = useMusicStore((s) => s.spatial8dEnabled);
-  const toggleSpatial8d = useMusicStore((s) => s.toggleSpatial8d);
-  const spatial8dMode = useMusicStore((s) => s.spatial8dMode);
-  const setSpatial8dMode = useMusicStore((s) => s.setSpatial8dMode);
-  const spatialTrajectory = useMusicStore((s) => s.spatialTrajectory);
-  const setSpatialTrajectory = useMusicStore((s) => s.setSpatialTrajectory);
-  const spatial8dSpeedSec = useMusicStore((s) => s.spatial8dSpeedSec);
-  const setSpatial8dSpeedSec = useMusicStore((s) => s.setSpatial8dSpeedSec);
-  const stereoWidth = useMusicStore((s) => s.stereoWidth);
-  const setStereoWidth = useMusicStore((s) => s.setStereoWidth);
-  const reverbMix = useMusicStore((s) => s.reverbMix);
-  const setReverbMix = useMusicStore((s) => s.setReverbMix);
-  const playbackRate = useMusicStore((s) => s.playbackRate);
-  const setPlaybackRate = useMusicStore((s) => s.setPlaybackRate);
-  const preservesPitch = useMusicStore((s) => s.preservesPitch);
-  const setPreservesPitch = useMusicStore((s) => s.setPreservesPitch);
-  const pitchSemitones = useMusicStore((s) => s.pitchSemitones);
-  const setPitchSemitones = useMusicStore((s) => s.setPitchSemitones);
-  const bassBoostDb = useMusicStore((s) => s.bassBoostDb);
-  const setBassBoostDb = useMusicStore((s) => s.setBassBoostDb);
-  const vocalCancel = useMusicStore((s) => s.vocalCancel);
-  const setVocalCancel = useMusicStore((s) => s.setVocalCancel);
-  const exciterMix = useMusicStore((s) => s.exciterMix);
-  const setExciterMix = useMusicStore((s) => s.setExciterMix);
-  const vinylCrackle = useMusicStore((s) => s.vinylCrackle);
-  const setVinylCrackle = useMusicStore((s) => s.setVinylCrackle);
-  const crossfadeSec = useMusicStore((s) => s.crossfadeSec);
-  const setCrossfadeSec = useMusicStore((s) => s.setCrossfadeSec);
-  const normalizeAudio = useMusicStore((s) => s.normalizeAudio);
-  const setNormalizeAudio = useMusicStore((s) => s.setNormalizeAudio);
-  const trimStartSec = useMusicStore((s) => s.trimStartSec);
-  const trimEndSec = useMusicStore((s) => s.trimEndSec);
-  const fadeSec = useMusicStore((s) => s.fadeSec);
-  const setTrimRange = useMusicStore((s) => s.setTrimRange);
-  const setFadeSec = useMusicStore((s) => s.setFadeSec);
-  const exportBitrate = useMusicStore((s) => s.exportBitrate);
-  const setExportBitrate = useMusicStore((s) => s.setExportBitrate);
-  const autoDownloadMp3 = useMusicStore((s) => s.autoDownloadMp3);
-  const setAutoDownloadMp3 = useMusicStore((s) => s.setAutoDownloadMp3);
-  const wifiOnlyAutoDownload = useMusicStore((s) => s.wifiOnlyAutoDownload);
-  const setWifiOnlyAutoDownload = useMusicStore((s) => s.setWifiOnlyAutoDownload);
-  const perTrackProfilesEnabled = useMusicStore((s) => s.perTrackProfilesEnabled);
-  const setPerTrackProfilesEnabled = useMusicStore((s) => s.setPerTrackProfilesEnabled);
-  const saveCurrentTrackStudioProfile = useMusicStore((s) => s.saveCurrentTrackStudioProfile);
-  const customPresets = useMusicStore((s) => s.customPresets);
-  const saveCustomStudioPreset = useMusicStore((s) => s.saveCustomStudioPreset);
-  const applyCustomStudioPreset = useMusicStore((s) => s.applyCustomStudioPreset);
-  const deleteCustomStudioPreset = useMusicStore((s) => s.deleteCustomStudioPreset);
-  const offlineTrackIds = useMusicStore((s) => s.offlineTrackIds);
-  const activeProVibe = useMusicStore((s) => s.activeProVibe);
-  const applyProVibe = useMusicStore((s) => s.applyProVibe);
-  const resetProEditor = useMusicStore((s) => s.resetProEditor);
-  const sleepTimerEndsAt = useMusicStore((s) => s.sleepTimerEndsAt);
-  const setSleepTimerMinutes = useMusicStore((s) => s.setSleepTimerMinutes);
-  const setShowDownloadDrawer = useMusicStore((s) => s.setShowDownloadDrawer);
-  const autoplaySimilar = useMusicStore((s) => s.autoplaySimilar);
-  const setAutoplaySimilar = useMusicStore((s) => s.setAutoplaySimilar);
-  const setShowImportModal = useMusicStore((s) => s.setShowImportModal);
-  const tasteProfile = useMusicStore((s) => s.tasteProfile);
-  const musicLang = useMusicStore((s) => s.musicLang);
-  const m = MUSIC_I18N[musicLang];
-
-  const [studioTab, setStudioTab] = useState<'8d' | 'fx' | 'eq'>('8d');
-  const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
-  const [presetNameInput, setPresetNameInput] = useState('');
-  const [trackProfileSaved, setTrackProfileSaved] = useState(false);
-
-  useBackInterceptor(showEqModal, 'music-eq-modal', () => setShowEqModal(false), { priority: 25 });
-
-  // Interactive SVG polyline path for 10-band EQ curve
-  const eqSvgPoints = useMemo(() => {
-    const w = 300;
-    const h = 68;
-    const padX = 12;
-    const padY = 8;
-    return eqBands10
-      .map((gain, idx) => {
-        const x = padX + (idx / Math.max(1, eqBands10.length - 1)) * (w - padX * 2);
-        const norm = (12 - gain) / 24;
-        const y = padY + norm * (h - padY * 2);
-        return `${x.toFixed(1)},${y.toFixed(1)}`;
-      })
-      .join(' ');
-  }, [eqBands10]);
-
-  if (!showEqModal) return null;
-
-  const isSavedOffline = currentTrack ? offlineTrackIds.includes(currentTrack.id) : false;
-  const maxTrackDur = Math.max(30, Math.round(duration || currentTrack?.durationSec || 240));
-
-  const studioVibes: Array<{ id: ProVibePresetId; label: string }> = [
-    { id: 'original', label: m.vibeOriginal },
-    { id: '8d_ultra', label: m.vibe8dUltra },
-    { id: 'slowed_reverb', label: m.vibeSlowed },
-    { id: 'nightcore', label: m.vibeNightcore },
-    { id: 'bass_extreme', label: m.vibeBass },
-    { id: 'lofi_warmth', label: m.vibeLofi },
-  ];
-
-  const handleDownload = (fxMode: 'original' | 'fx') => {
-    if (!currentTrack) return;
-    triggerHaptic('medium');
-    if (fxMode === 'original') {
-      void startDownloadMp3Job(currentTrack, { mode: 'original', rate: 1, bassDb: 0 });
-    } else {
-      void startDownloadMp3Job(currentTrack);
-    }
-    setDownloadStatus(m.downloadingToast);
-    window.setTimeout(() => setDownloadStatus(null), 2400);
-  };
-
-  const handleSaveOffline = async () => {
-    if (!currentTrack) return;
-    triggerHaptic('medium');
-    setDownloadStatus(m.downloadingToast);
-    const res = await saveTrackToOfflineLibrary(currentTrack);
-    setDownloadStatus(res.ok ? m.savedOfflineBadge : res.error || 'Error');
-    window.setTimeout(() => setDownloadStatus(null), 2400);
-  };
-
-  return (
-    <div
-      className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center p-0 sm:p-4"
-      onClick={() => setShowEqModal(false)}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-lg max-h-[92dvh] rounded-t-3xl sm:rounded-3xl bg-[#0C0C0F] border border-[#3B82F6]/25 shadow-[0_24px_80px_rgba(0,0,0,0.9)] flex flex-col overflow-hidden"
-      >
-        {/* Sticky Studio Header */}
-        <div className="shrink-0 px-4 sm:px-6 pt-4 pb-3 border-b border-white/[0.08] flex items-center justify-between gap-2 bg-[#131318]/95">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#3B82F6]/25 to-[#60A5FA]/20 border border-[#3B82F6]/40 flex items-center justify-center text-[#60A5FA] shrink-0">
-              <Sliders className="w-4 h-4" />
-            </span>
-            <div className="min-w-0">
-              <h3 className="text-sm sm:text-base font-extrabold text-white truncate">{m.studioTitle}</h3>
-              <p className="text-[11px] text-zinc-400 truncate">{m.studioSubtitle}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                resetProEditor();
-              }}
-              title={m.resetStudio}
-              className="h-9 px-2.5 rounded-full bg-white/[0.06] hover:bg-white/12 border border-white/10 text-[11px] font-semibold text-zinc-200 inline-flex items-center gap-1 cursor-pointer transition-colors"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-[#60A5FA]" />
-              <span className="hidden sm:inline">{m.resetStudio}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowEqModal(false)}
-              aria-label={m.cancel}
-              className="w-9 h-9 rounded-full bg-white/[0.06] hover:bg-white/12 text-zinc-300 flex items-center justify-center cursor-pointer"
-            >
-              <ChevronDown className="w-5 h-5" />
-            </button>
-          </div>
-        </div>
-
-        {/* 1-Tap Studio Vibes Strip */}
-        <div className="shrink-0 px-4 sm:px-6 pt-3 pb-2 border-b border-white/[0.05] space-y-2 bg-[#0C0C0F]">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-[#60A5FA]">
-              {m.proVibesTitle}
-            </span>
-            {currentTrack && (
-              <span className="text-[11px] text-zinc-400 truncate max-w-[55%]">
-                {currentTrack.title}
-              </span>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
-            {studioVibes.map((vibe) => {
-              const active =
-                activeProVibe === vibe.id ||
-                (!activeProVibe &&
-                  vibe.id === 'original' &&
-                  !spatial8dEnabled &&
-                  Math.abs(playbackRate - 1) < 0.02);
-              return (
-                <button
-                  key={vibe.id}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('medium');
-                    applyProVibe(vibe.id);
-                  }}
-                  className={`h-8 px-3 rounded-full text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
-                    active
-                      ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_4px_14px_rgba(59,130,246,0.38)]'
-                      : 'bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-zinc-200'
-                  }`}
-                >
-                  {vibe.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* 3-Tab Studio Switcher */}
-          <div className="grid grid-cols-3 gap-1.5 pt-1">
-            {(
-              [
-                { id: '8d', label: m.studioTab8d, icon: Headphones },
-                { id: 'fx', label: m.studioTabFx, icon: Sparkles },
-                { id: 'eq', label: m.studioTabEq, icon: Sliders },
-              ] as const
-            ).map((tab) => {
-              const Icon = tab.icon;
-              const active = studioTab === tab.id;
-              return (
-                <button
-                  key={tab.id}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setStudioTab(tab.id);
-                  }}
-                  className={`h-9 px-2 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-all ${
-                    active
-                      ? 'bg-[#3B82F6]/20 border border-[#3B82F6]/60 text-[#93C5FD]'
-                      : 'bg-white/[0.04] hover:bg-white/[0.08] border border-white/5 text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Scrollable Studio Controls Body */}
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 py-4 space-y-4">
-          {studioTab === '8d' && (
-            <div className="space-y-4">
-              {/* Live 8D Activation Card */}
-              <div
-                className={`rounded-2xl border p-3.5 space-y-3 transition-colors ${
-                  spatial8dEnabled
-                    ? 'bg-[#3B82F6]/12 border-[#3B82F6]/45'
-                    : 'bg-white/[0.03] border-white/10'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span
-                      className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                        spatial8dEnabled
-                          ? 'bg-gradient-to-br from-[#2563EB] to-[#3B82F6] text-white'
-                          : 'bg-white/[0.06] text-zinc-300'
-                      }`}
-                    >
-                      <Headphones className="w-4 h-4" />
-                    </span>
-                    <div className="min-w-0">
-                      <p className="text-xs sm:text-sm font-bold text-white truncate">
-                        {m.spatial8dTitle}
-                      </p>
-                      <p className="text-[11px] text-zinc-400 leading-snug">{m.spatial8dSub}</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('medium');
-                      toggleSpatial8d();
-                    }}
-                    aria-pressed={spatial8dEnabled}
-                    className={`h-8 px-3.5 rounded-full text-xs font-black tracking-wide cursor-pointer shrink-0 transition-all ${
-                      spatial8dEnabled
-                        ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_4px_14px_rgba(59,130,246,0.4)]'
-                        : 'bg-white/10 text-zinc-200 hover:bg-white/18'
-                    }`}
-                  >
-                    {spatial8dEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-
-                {/* 3 Room acoustics presets */}
-                <div className="grid grid-cols-3 gap-2">
-                  {(
-                    [
-                      { id: 'orbit', label: m.spatial8dOrbit },
-                      { id: 'concert', label: m.spatial8dConcert },
-                      { id: 'club', label: m.spatial8dClub },
-                    ] as Array<{ id: Spatial8dMode; label: string }>
-                  ).map((opt) => {
-                    const active = spatial8dMode === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          if (!spatial8dEnabled) toggleSpatial8d();
-                          setSpatial8dMode(opt.id);
-                        }}
-                        className={`min-h-9 px-2 rounded-xl border text-[11px] font-bold cursor-pointer transition-all ${
-                          active && spatial8dEnabled
-                            ? 'bg-[#3B82F6]/25 border-[#3B82F6] text-[#93C5FD]'
-                            : 'bg-white/[0.04] border-white/10 text-zinc-300 hover:bg-white/[0.08]'
-                        }`}
-                      >
-                        {opt.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* 4 Spatial Trajectories */}
-                <div className="space-y-1.5 pt-1">
-                  <span className="text-[11px] font-semibold text-zinc-400">{m.trajectoryLabel}</span>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-                    {(
-                      [
-                        { id: 'orbit', label: m.trajOrbit },
-                        { id: 'pendulum', label: m.trajPendulum },
-                        { id: 'figure8', label: m.trajFigure8 },
-                        { id: 'elevated', label: m.trajElevated },
-                      ] as Array<{ id: SpatialTrajectory; label: string }>
-                    ).map((tr) => {
-                      const active = spatialTrajectory === tr.id;
-                      return (
-                        <button
-                          key={tr.id}
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            if (!spatial8dEnabled) toggleSpatial8d();
-                            setSpatialTrajectory(tr.id);
-                          }}
-                          className={`min-h-8 px-2 rounded-lg border text-[11px] font-bold cursor-pointer transition-all ${
-                            active && spatial8dEnabled
-                              ? 'bg-[#60A5FA]/20 border-[#60A5FA] text-[#93C5FD]'
-                              : 'bg-white/[0.04] border-white/10 text-zinc-300 hover:bg-white/[0.08]'
-                          }`}
-                        >
-                          {tr.label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              {/* Precision 8D Live Sliders */}
-              <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-3.5 space-y-3.5">
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-zinc-200">{m.speedOrbitLabel}</span>
-                    <span className="text-[#60A5FA] font-bold tabular-nums">
-                      {spatial8dSpeedSec.toFixed(1)}s / 360°
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={3}
-                    max={20}
-                    step={0.5}
-                    value={spatial8dSpeedSec}
-                    onChange={(e) => setSpatial8dSpeedSec(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#3B82F6] bg-white/15 rounded-full cursor-pointer"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-zinc-200">{m.stereoWidthLabel}</span>
-                    <span className="text-[#60A5FA] font-bold tabular-nums">
-                      {Math.round(stereoWidth * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={stereoWidth}
-                    onChange={(e) => setStereoWidth(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#60A5FA] bg-white/15 rounded-full cursor-pointer"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-zinc-200">{m.reverbDepthLabel}</span>
-                    <span className="text-[#60A5FA] font-bold tabular-nums">
-                      {Math.round((reverbMix / 0.75) * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={0.75}
-                    step={0.02}
-                    value={reverbMix}
-                    onChange={(e) => setReverbMix(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#3B82F6] bg-white/15 rounded-full cursor-pointer"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {studioTab === 'fx' && (
-            <div className="space-y-4">
-              {/* Tempo + Pitch Semitones + Vinyl Pitch Lock */}
-              <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-3.5 space-y-3.5">
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-zinc-200">{m.playbackSpeed}</span>
-                    <span className="text-[#60A5FA] font-bold tabular-nums">
-                      {playbackRate.toFixed(2)}x
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0.65}
-                    max={1.45}
-                    step={0.01}
-                    value={playbackRate}
-                    onChange={(e) => setPlaybackRate(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#3B82F6] bg-white/15 rounded-full cursor-pointer"
-                  />
-                  <div className="grid grid-cols-4 gap-1.5 pt-1">
-                    {[0.85, 0.94, 1, 1.22].map((rate) => (
-                      <button
-                        key={rate}
-                        type="button"
-                        onClick={() => setPlaybackRate(rate)}
-                        className={`h-8 rounded-lg border text-[11px] font-bold tabular-nums cursor-pointer transition-all ${
-                          Math.abs(playbackRate - rate) < 0.015
-                            ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] border-[#3B82F6] text-white'
-                            : 'bg-white/[0.04] border-white/10 text-zinc-300 hover:bg-white/[0.08]'
-                        }`}
-                      >
-                        {rate}x
-                      </button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Pitch Semitones (-12..+12) */}
-                <div className="space-y-1.5 pt-2 border-t border-white/[0.07]">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-zinc-200">{m.pitchSemitonesLabel}</span>
-                    <span className="text-[#60A5FA] font-bold tabular-nums">
-                      {pitchSemitones > 0 ? `+${pitchSemitones}` : pitchSemitones} st
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={-12}
-                    max={12}
-                    step={1}
-                    value={pitchSemitones}
-                    onChange={(e) => setPitchSemitones(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#60A5FA] bg-white/15 rounded-full cursor-pointer"
-                  />
-                </div>
-
-                {/* Pitch Lock Switch */}
-                <div className="pt-2 border-t border-white/[0.07] flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-white">{m.pitchLockLabel}</p>
-                    <p className="text-[11px] text-zinc-400 leading-snug">{m.pitchLockSub}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setPreservesPitch(!preservesPitch);
-                    }}
-                    aria-pressed={preservesPitch}
-                    className={`h-8 px-3 rounded-full text-xs font-black cursor-pointer shrink-0 transition-all ${
-                      preservesPitch
-                        ? 'bg-[#3B82F6]/25 border border-[#3B82F6] text-[#93C5FD]'
-                        : 'bg-[#60A5FA]/20 border border-[#60A5FA]/60 text-[#93C5FD]'
-                    }`}
-                  >
-                    {preservesPitch ? 'ON' : 'VINYL'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Sub-Bass, Exciter, Lo-Fi Vinyl, Crossfade & Reverb */}
-              <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-3.5 space-y-3.5">
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-zinc-200">{m.bassBoostLabel}</span>
-                    <span className="text-[#60A5FA] font-bold tabular-nums">
-                      +{bassBoostDb.toFixed(1)} dB
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={12}
-                    step={0.5}
-                    value={bassBoostDb}
-                    onChange={(e) => setBassBoostDb(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#3B82F6] bg-white/15 rounded-full cursor-pointer"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-zinc-200">{m.exciterLabel}</span>
-                    <span className="text-[#60A5FA] font-bold tabular-nums">
-                      {Math.round(exciterMix * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={exciterMix}
-                    onChange={(e) => setExciterMix(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#60A5FA] bg-white/15 rounded-full cursor-pointer"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-zinc-200">{m.vinylCrackleLabel}</span>
-                    <span className="text-[#60A5FA] font-bold tabular-nums">
-                      {Math.round(vinylCrackle * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={vinylCrackle}
-                    onChange={(e) => setVinylCrackle(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#3B82F6] bg-white/15 rounded-full cursor-pointer"
-                  />
-                </div>
-
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="font-semibold text-zinc-200">{m.crossfadeLabel}</span>
-                    <span className="text-[#60A5FA] font-bold tabular-nums">
-                      {crossfadeSec.toFixed(1)} s
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={10}
-                    step={0.5}
-                    value={crossfadeSec}
-                    onChange={(e) => setCrossfadeSec(Number(e.target.value))}
-                    className="w-full h-1.5 accent-[#60A5FA] bg-white/15 rounded-full cursor-pointer"
-                  />
-                </div>
-
-                {/* Karaoke Vocal Cancel + LUFS Normalize */}
-                <div className="pt-2 border-t border-white/[0.07] space-y-2.5">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-white">{m.vocalCancelLabel}</p>
-                      <p className="text-[11px] text-zinc-400 leading-snug">{m.vocalCancelSub}</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setVocalCancel(!vocalCancel)}
-                      aria-pressed={vocalCancel}
-                      className={`h-8 px-3 rounded-full text-xs font-black cursor-pointer shrink-0 ${
-                        vocalCancel
-                          ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white'
-                          : 'bg-white/10 text-zinc-300'
-                      }`}
-                    >
-                      {vocalCancel ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-xs font-bold text-white">{m.normalizeLabel}</span>
-                    <button
-                      type="button"
-                      onClick={() => setNormalizeAudio(!normalizeAudio)}
-                      aria-pressed={normalizeAudio}
-                      className={`h-8 px-3 rounded-full text-xs font-black cursor-pointer shrink-0 ${
-                        normalizeAudio
-                          ? 'bg-[#3B82F6]/25 border border-[#3B82F6] text-[#93C5FD]'
-                          : 'bg-white/10 text-zinc-300'
-                      }`}
-                    >
-                      {normalizeAudio ? 'ON' : 'OFF'}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Trim Start / Trim End / Fade In-Out */}
-              <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-3.5 space-y-3">
-                <p className="text-xs font-bold text-zinc-200">{m.trimFadeTitle}</p>
-                <div className="grid grid-cols-3 gap-2">
-                  <label className="space-y-1 text-[11px] text-zinc-400">
-                    <span>{m.trimStartLabel} (s)</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={maxTrackDur - 2}
-                      value={trimStartSec}
-                      onChange={(e) => setTrimRange(Number(e.target.value), trimEndSec)}
-                      className="w-full h-9 px-2.5 rounded-xl bg-white/[0.06] border border-white/15 text-xs text-white tabular-nums outline-none"
-                    />
-                  </label>
-                  <label className="space-y-1 text-[11px] text-zinc-400">
-                    <span>{m.trimEndLabel} (s)</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={maxTrackDur}
-                      value={trimEndSec}
-                      onChange={(e) => setTrimRange(trimStartSec, Number(e.target.value))}
-                      className="w-full h-9 px-2.5 rounded-xl bg-white/[0.06] border border-white/15 text-xs text-white tabular-nums outline-none"
-                    />
-                  </label>
-                  <label className="space-y-1 text-[11px] text-zinc-400">
-                    <span>{m.fadeLabel} (s)</span>
-                    <input
-                      type="number"
-                      min={0}
-                      max={10}
-                      step={0.5}
-                      value={fadeSec}
-                      onChange={(e) => setFadeSec(Number(e.target.value))}
-                      className="w-full h-9 px-2.5 rounded-xl bg-white/[0.06] border border-white/15 text-xs text-white tabular-nums outline-none"
-                    />
-                  </label>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {studioTab === 'eq' && (
-            <div className="space-y-4">
-              {/* Interactive 10-Band EQ + SVG Response Curve */}
-              <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-3.5 space-y-3">
-                <p className="text-xs font-semibold text-zinc-300">{m.eq10Subtitle}</p>
-
-                <div className="rounded-xl bg-[#050A12] border border-white/[0.07] p-2">
-                  <svg
-                    viewBox="0 0 300 68"
-                    className="w-full h-16 overflow-visible"
-                    aria-hidden="true"
-                  >
-                    <line x1="0" y1="34" x2="300" y2="34" stroke="rgba(255,255,255,0.12)" strokeDasharray="4 4" />
-                    <defs>
-                      <linearGradient id="eqCurveGrad" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor="#3B82F6" />
-                        <stop offset="100%" stopColor="#60A5FA" />
-                      </linearGradient>
-                    </defs>
-                    <polyline
-                      fill="none"
-                      stroke="url(#eqCurveGrad)"
-                      strokeWidth="2.6"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      points={eqSvgPoints}
-                    />
-                    {eqBands10.map((gain, idx) => {
-                      const cx = 12 + (idx / 9) * 276;
-                      const cy = 8 + ((12 - gain) / 24) * 52;
-                      return <circle key={idx} cx={cx} cy={cy} r="3.4" fill="#93C5FD" />;
-                    })}
-                  </svg>
-                </div>
-
-                <div className="space-y-2">
-                  {EQ_10_BANDS_HZ.map((hz, idx) => {
-                    const gain = eqBands10[idx] ?? 0;
-                    return (
-                      <div key={hz} className="flex items-center gap-2.5">
-                        <span className="w-11 text-[11px] font-bold text-zinc-400 tabular-nums shrink-0">
-                          {EQ_10_LABELS[idx]}Hz
-                        </span>
-                        <input
-                          type="range"
-                          min={-12}
-                          max={12}
-                          step={0.5}
-                          value={gain}
-                          onChange={(e) => setEqBand10(idx, Number(e.target.value))}
-                          className="flex-1 h-1.5 accent-[#3B82F6] bg-white/15 rounded-full cursor-pointer"
-                        />
-                        <span className="w-14 text-right text-[11px] font-bold text-[#60A5FA] tabular-nums shrink-0">
-                          {gain > 0 ? `+${gain.toFixed(1)}` : gain.toFixed(1)} dB
-                        </span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Acoustic EQ Presets */}
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-zinc-400">{m.eqProfile}</p>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {(Object.keys(EQ_PRESETS) as EqPresetId[]).map((key) => {
-                    const active = eqPreset === key;
-                    return (
-                      <button
-                        key={key}
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          setEqPreset(key);
-                        }}
-                        className={`min-h-10 px-3 py-2 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
-                          active
-                            ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] border-[#3B82F6] text-white font-bold shadow-[0_6px_18px_rgba(59,130,246,0.32)]'
-                            : 'bg-white/[0.04] border-white/10 text-zinc-200 hover:bg-white/[0.08]'
-                        }`}
-                      >
-                        {EQ_PRESETS[key].label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Custom Studio Presets */}
-              <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-3.5 space-y-2.5">
-                <p className="text-xs font-bold text-zinc-300">{m.customPresetsTitle}</p>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    if (!presetNameInput.trim()) return;
-                    triggerHaptic('medium');
-                    saveCustomStudioPreset(presetNameInput);
-                    setPresetNameInput('');
-                  }}
-                  className="flex gap-2"
-                >
-                  <input
-                    type="text"
-                    value={presetNameInput}
-                    onChange={(e) => setPresetNameInput(e.target.value)}
-                    placeholder={m.savePresetPlaceholder}
-                    className="flex-1 h-9 px-3 rounded-xl bg-white/[0.06] border border-white/15 focus:border-[#3B82F6] text-xs text-white outline-none"
-                  />
-                  <button
-                    type="submit"
-                    className="h-9 px-3 rounded-xl bg-[#3B82F6]/20 border border-[#3B82F6]/50 text-[#93C5FD] text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
-                  >
-                    <BookmarkPlus className="w-3.5 h-3.5" />
-                    <span>{m.savePresetBtn}</span>
-                  </button>
-                </form>
-                {customPresets.length > 0 && (
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {customPresets.map((cp) => (
-                      <div
-                        key={cp.id}
-                        className="inline-flex items-center gap-1 h-8 pl-2.5 pr-1.5 rounded-full bg-white/[0.06] border border-white/10 text-xs text-zinc-200"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => applyCustomStudioPreset(cp.id)}
-                          className="font-semibold hover:text-[#60A5FA] cursor-pointer"
-                        >
-                          {cp.name}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => deleteCustomStudioPreset(cp.id)}
-                          className="w-5 h-5 rounded-full hover:bg-white/10 text-zinc-400 hover:text-rose-400 flex items-center justify-center cursor-pointer"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Per-Track DSP Memory */}
-              <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-3.5 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-bold text-white">{m.perTrackProfileLabel}</span>
-                  <button
-                    type="button"
-                    onClick={() => setPerTrackProfilesEnabled(!perTrackProfilesEnabled)}
-                    className={`h-7 px-3 rounded-full text-[11px] font-black cursor-pointer ${
-                      perTrackProfilesEnabled
-                        ? 'bg-[#3B82F6]/25 border border-[#3B82F6] text-[#93C5FD]'
-                        : 'bg-white/10 text-zinc-300'
-                    }`}
-                  >
-                    {perTrackProfilesEnabled ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-                {currentTrack && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('medium');
-                      saveCurrentTrackStudioProfile();
-                      setTrackProfileSaved(true);
-                      window.setTimeout(() => setTrackProfileSaved(false), 2000);
-                    }}
-                    className="w-full h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-bold text-[#93C5FD] inline-flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    {trackProfileSaved ? <Check className="w-3.5 h-3.5" /> : <Sliders className="w-3.5 h-3.5" />}
-                    <span>{m.saveTrackProfileBtn}</span>
-                  </button>
-                )}
-              </div>
-
-              {/* Radio Autoplay & Import Spotify / YouTube Music */}
-              <div className="rounded-2xl bg-white/[0.03] border border-white/10 p-3.5 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <Radio className="w-3.5 h-3.5 text-[#60A5FA]" />
-                      <span className="truncate">{m.autoplayLabel}</span>
-                    </p>
-                    <p className="text-[10px] text-zinc-400 truncate">{m.autoplaySub}</p>
-                  </div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={autoplaySimilar}
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setAutoplaySimilar(!autoplaySimilar);
-                    }}
-                    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors cursor-pointer ${
-                      autoplaySimilar ? 'bg-[#30D158]' : 'bg-white/15'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4.5 w-4.5 transform rounded-full bg-white shadow transition-transform ${
-                        autoplaySimilar ? 'translate-x-[22px]' : 'translate-x-[3px]'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setShowEqModal(false);
-                    setShowImportModal(true);
-                  }}
-                  className="w-full h-9 px-3 rounded-xl bg-[#3B82F6]/15 hover:bg-[#3B82F6]/25 border border-[#3B82F6]/40 text-xs font-bold text-[#93C5FD] inline-flex items-center justify-between cursor-pointer transition-colors"
-                >
-                  <span className="inline-flex items-center gap-2 truncate">
-                    <Disc3 className="w-3.5 h-3.5 shrink-0" />
-                    <span className="truncate">{m.importTitle}</span>
-                  </span>
-                  <span className="text-[10px] font-mono text-zinc-300 shrink-0 tabular-nums">
-                    {tasteProfile.favoriteArtists.length + tasteProfile.favoriteGenres.length}
-                  </span>
-                </button>
-              </div>
-
-              {/* Sleep Timer */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-zinc-400 flex items-center gap-1.5">
-                    <Clock className="w-3.5 h-3.5" /> {m.sleepTimer}
-                  </span>
-                  {sleepTimerEndsAt && (
-                    <span className="text-[#60A5FA] font-semibold tabular-nums">
-                      {Math.max(1, Math.ceil((sleepTimerEndsAt - Date.now()) / 60000))} {m.minsRemaining}
-                    </span>
-                  )}
-                </div>
-                <div className="grid grid-cols-4 gap-2">
-                  {[null, 15, 30, 60].map((mins) => (
-                    <button
-                      key={String(mins)}
-                      type="button"
-                      onClick={() => setSleepTimerMinutes(mins)}
-                      className={`min-h-10 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
-                        mins === null && !sleepTimerEndsAt
-                          ? 'bg-white/15 border-white/30 text-white'
-                          : 'bg-white/[0.04] border-white/10 text-zinc-200 hover:bg-white/[0.08]'
-                      }`}
-                    >
-                      {mins ? `${mins} min` : 'Off'}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Sticky Bitrate + Offline + MP3 Export Bar */}
-        <div className="shrink-0 px-4 sm:px-6 pt-3 pb-[calc(env(safe-area-inset-bottom,0px)+14px)] border-t border-white/[0.08] bg-gradient-to-br from-[#131318] via-[#0C0C0F] to-[#0C0C0F] space-y-2.5">
-          {/* Bitrate Selector + Offline Save + Queue Drawer */}
-          <div className="flex items-center justify-between gap-2">
-            <div className="inline-flex items-center p-0.5 rounded-lg bg-white/[0.06] border border-white/10">
-              {(['128k', '192k', '320k'] as ExportBitrate[]).map((br) => (
-                <button
-                  key={br}
-                  type="button"
-                  onClick={() => setExportBitrate(br)}
-                  className={`h-7 px-2 rounded-md text-[10px] font-extrabold cursor-pointer ${
-                    exportBitrate === br
-                      ? 'bg-[#3B82F6] text-white'
-                      : 'text-zinc-300 hover:text-white'
-                  }`}
-                >
-                  {br}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex items-center gap-1.5">
-              {currentTrack && (
-                <button
-                  type="button"
-                  onClick={() => void handleSaveOffline()}
-                  className={`h-8 px-2.5 rounded-lg border text-[11px] font-bold inline-flex items-center gap-1 cursor-pointer ${
-                    isSavedOffline
-                      ? 'bg-[#3B82F6]/20 border-[#3B82F6] text-[#93C5FD]'
-                      : 'bg-white/[0.06] border-white/10 text-zinc-200 hover:bg-white/[0.12]'
-                  }`}
-                >
-                  <HardDrive className="w-3.5 h-3.5" />
-                  <span>{isSavedOffline ? m.savedOfflineBadge : m.saveOfflineBtn}</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  setShowEqModal(false);
-                  setShowDownloadDrawer(true);
-                }}
-                title={m.downloadsTitle}
-                className="w-8 h-8 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[#60A5FA] flex items-center justify-center cursor-pointer"
-              >
-                <FolderDown className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={!currentTrack}
-              onClick={() => handleDownload('original')}
-              className="h-10 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-white text-[11px] sm:text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 transition-colors"
-            >
-              <Download className="w-3.5 h-3.5 text-[#60A5FA] shrink-0" />
-              <span className="truncate">{m.downloadMp3Btn}</span>
-            </button>
-            <button
-              type="button"
-              disabled={!currentTrack}
-              onClick={() => handleDownload('fx')}
-              className="h-10 px-2.5 rounded-xl bg-gradient-to-r from-[#3B82F6] to-[#60A5FA] hover:opacity-95 text-white text-[11px] sm:text-xs font-extrabold inline-flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-40 shadow-[0_6px_18px_rgba(59,130,246,0.32)] transition-opacity"
-            >
-              <Download className="w-3.5 h-3.5 shrink-0" />
-              <span className="truncate">{m.downloadMp3FxBtn}</span>
-            </button>
-          </div>
-
-          {downloadStatus && (
-            <p className="text-[11px] text-[#93C5FD] font-semibold text-center">{downloadStatus}</p>
-          )}
-
-          <div className="flex items-center justify-between gap-2 pt-0.5">
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-white truncate">{m.autoDownloadLabel}</p>
-              <p className="text-[10px] text-zinc-400 truncate">
-                {autoDownloadMp3 && wifiOnlyAutoDownload ? m.wifiOnlyLabel : m.autoDownloadSub}
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setWifiOnlyAutoDownload(!wifiOnlyAutoDownload)}
-                className={`h-7 px-2 rounded-full text-[10px] font-bold cursor-pointer border ${
-                  wifiOnlyAutoDownload
-                    ? 'bg-[#60A5FA]/15 border-[#60A5FA]/50 text-[#93C5FD]'
-                    : 'bg-white/[0.04] border-white/10 text-zinc-400'
-                }`}
-              >
-                Wi-Fi
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('medium');
-                  setAutoDownloadMp3(!autoDownloadMp3);
-                }}
-                aria-pressed={autoDownloadMp3}
-                className={`h-8 px-3.5 rounded-full text-xs font-black cursor-pointer shrink-0 transition-all ${
-                  autoDownloadMp3
-                    ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_4px_14px_rgba(59,130,246,0.4)]'
-                    : 'bg-white/10 text-zinc-300 hover:bg-white/15'
-                }`}
-              >
-                {autoDownloadMp3 ? 'ON' : 'OFF'}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
+export { SpatialAudioPresetModal as EqAndTimerModal } from './SpatialAudioPresetModal';
 
 export const FullScreenNowPlayingModal: React.FC<{
   onOpenPlaylistPicker?: () => void;
@@ -1120,7 +78,7 @@ export const FullScreenNowPlayingModal: React.FC<{
   const setDriveModeOpen = useMusicStore((s) => s.setDriveModeOpen);
   const setShowDownloadDrawer = useMusicStore((s) => s.setShowDownloadDrawer);
   const spatial8dEnabled = useMusicStore((s) => s.spatial8dEnabled);
-  const toggleSpatial8d = useMusicStore((s) => s.toggleSpatial8d);
+  const spatial8dMode = useMusicStore((s) => s.spatial8dMode);
   const vocalCancel = useMusicStore((s) => s.vocalCancel);
   const setVocalCancel = useMusicStore((s) => s.setVocalCancel);
   const autoDjEnabled = useMusicStore((s) => s.autoDjEnabled);
@@ -1130,6 +88,7 @@ export const FullScreenNowPlayingModal: React.FC<{
   const startSeedRadio = useMusicStore((s) => s.startSeedRadio);
   const musicLang = useMusicStore((s) => s.musicLang);
   const m = MUSIC_I18N[musicLang];
+  const activeSpatialPreset = getSpatialPresetConfig(spatial8dMode);
 
   const [lyrics, setLyrics] = useState<LyricsPayload | null>(null);
   const [lyricsLoading, setLyricsLoading] = useState(false);
@@ -1470,9 +429,9 @@ export const FullScreenNowPlayingModal: React.FC<{
                   <Radio className="w-16 h-16 text-[#60A5FA] absolute pointer-events-none opacity-85" />
                 )}
                 {spatial8dEnabled && (
-                  <span className="absolute top-3 left-3 px-2.5 py-1 rounded-full bg-[#000000]/80 backdrop-blur-md border border-[#3B82F6]/45 text-[10px] font-black tracking-wider text-[#93C5FD] inline-flex items-center gap-1">
-                    <Headphones className="w-3 h-3 text-[#60A5FA]" />
-                    {m.spatial8dBadgeLive}
+                  <span className="absolute top-3 left-3 px-2.5 py-1 rounded-lg bg-[#000000]/80 backdrop-blur-md border border-[#3B82F6]/45 text-[11px] font-bold text-[#93C5FD] inline-flex items-center gap-1.5">
+                    <Headphones className="w-3.5 h-3.5 text-[#60A5FA]" />
+                    {activeSpatialPreset.names[musicLang]}
                   </span>
                 )}
               </div>
@@ -1623,23 +582,23 @@ export const FullScreenNowPlayingModal: React.FC<{
           )}
         </div>
 
-        {/* Studio Quick Action Strip: 8D + Karaoke + Auto-DJ + Seed Radio + Jam + Offline + MP3 */}
+        {/* Studio Quick Action Strip: 8D Presets + Karaoke + Auto-DJ + Seed Radio + Jam + Offline + MP3 */}
         <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
           <button
             type="button"
             onClick={() => {
               triggerHaptic('medium');
-              toggleSpatial8d();
+              setShowEqModal(true);
             }}
             aria-pressed={spatial8dEnabled}
-            className={`h-8 px-3 rounded-full text-[11px] font-black tracking-wide inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-all ${
+            className={`min-h-9 px-3 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors ${
               spatial8dEnabled
-                ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_4px_16px_rgba(59,130,246,0.45)]'
+                ? 'bg-[#3B82F6] text-white'
                 : 'bg-white/[0.08] hover:bg-white/[0.14] border border-white/10 text-zinc-200'
             }`}
           >
             <Headphones className="w-3.5 h-3.5" />
-            <span>{m.spatial8dBtn}</span>
+            <span>{spatial8dEnabled ? activeSpatialPreset.names[musicLang] : m.spatial8dBtn}</span>
           </button>
 
           {currentTrack && (
@@ -1746,20 +705,11 @@ export const FullScreenNowPlayingModal: React.FC<{
 
           <button
             type="button"
-            onClick={() => setShowEqModal(true)}
-            className="h-8 px-3 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-[11px] font-bold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-[#60A5FA]" />
-            <span>{m.studioTabFx}</span>
-          </button>
-
-          <button
-            type="button"
             onClick={() => {
               setShowNowPlayingModal(false);
               setShowDownloadDrawer(true);
             }}
-            className="h-8 px-3 rounded-full bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-[11px] font-bold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
+            className="min-h-9 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-xs font-bold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
           >
             <FolderDown className="w-3.5 h-3.5 text-[#60A5FA]" />
             <span>{offlineTrackIds.length}</span>
@@ -1813,7 +763,19 @@ export const FullScreenNowPlayingModal: React.FC<{
             aria-label="Canción anterior"
             className="min-w-11 min-h-11 rounded-full flex items-center justify-center text-white hover:scale-105 cursor-pointer disabled:opacity-30"
           >
-            <SkipBack className="w-7 h-7 fill-current" />
+            <SkipBack className="w-6 h-6 fill-current" />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => requestSeek(Math.max(0, currentTime - 10))}
+            disabled={Boolean(activeRadio)}
+            aria-label="-10s"
+            title="-10s"
+            className="min-w-10 min-h-10 rounded-full flex flex-col items-center justify-center text-zinc-300 hover:text-white cursor-pointer disabled:opacity-30"
+          >
+            <RotateCcw className="w-4 h-4" />
+            <span className="text-[9px] font-bold tabular-nums">-10s</span>
           </button>
 
           <button
@@ -1834,12 +796,24 @@ export const FullScreenNowPlayingModal: React.FC<{
 
           <button
             type="button"
+            onClick={() => requestSeek(Math.min(effectiveDuration || currentTime + 10, currentTime + 10))}
+            disabled={Boolean(activeRadio)}
+            aria-label="+10s"
+            title="+10s"
+            className="min-w-10 min-h-10 rounded-full flex flex-col items-center justify-center text-zinc-300 hover:text-white cursor-pointer disabled:opacity-30"
+          >
+            <RotateCw className="w-4 h-4" />
+            <span className="text-[9px] font-bold tabular-nums">+10s</span>
+          </button>
+
+          <button
+            type="button"
             onClick={playNext}
             disabled={Boolean(activeRadio)}
             aria-label="Siguiente canción"
             className="min-w-11 min-h-11 rounded-full flex items-center justify-center text-white hover:scale-105 cursor-pointer disabled:opacity-30"
           >
-            <SkipForward className="w-7 h-7 fill-current" />
+            <SkipForward className="w-6 h-6 fill-current" />
           </button>
 
           <button

@@ -31,6 +31,15 @@ import type {
 } from '../types/music';
 import type { MusicLang } from '../components/music/musicI18n';
 import type { CloudMusicSnapshotPayload } from '../services/cloudSync/cloudMusicSync';
+import {
+  dedupeMusicTracks,
+  getTrackDedupeKey,
+  isSameMusicTrackVariant,
+} from '../utils/musicDedupe';
+import {
+  getSpatialPresetConfig,
+  normalizeSpatialPresetId,
+} from '../components/music/spatialPresets';
 
 const STORAGE_KEY = 'riffan_music_library_v2';
 const LEGACY_STORAGE_KEY = 'riffan_music_library_v1';
@@ -103,7 +112,16 @@ function isValidMusicLang(val: unknown): val is MusicLang {
 }
 
 function isValidSpatialMode(val: unknown): val is Spatial8dMode {
-  return val === 'orbit' || val === 'concert' || val === 'club';
+  return (
+    val === 'orbit_drift' ||
+    val === 'arena_live' ||
+    val === 'deep_3d' ||
+    val === 'dynamic_groove' ||
+    val === 'intimate_room' ||
+    val === 'orbit' ||
+    val === 'concert' ||
+    val === 'club'
+  );
 }
 
 function isValidTrajectory(val: unknown): val is SpatialTrajectory {
@@ -157,9 +175,9 @@ function loadLibrary(): PersistedLibrary {
     vocalCancel: false,
     crossfadeSec: 2,
     normalizeAudio: true,
-    spatial8dSpeedSec: 9.5,
+    spatial8dSpeedSec: 11.5,
     spatial8dEnabled: false,
-    spatial8dMode: 'orbit',
+    spatial8dMode: 'orbit_drift',
     spatialTrajectory: 'orbit',
     autoDownloadMp3: false,
     wifiOnlyAutoDownload: true,
@@ -243,7 +261,9 @@ function loadLibrary(): PersistedLibrary {
             }
           : DEFAULT_TASTE,
       spatial8dEnabled: Boolean(parsed.spatial8dEnabled),
-      spatial8dMode: isValidSpatialMode(parsed.spatial8dMode) ? parsed.spatial8dMode : 'orbit',
+      spatial8dMode: isValidSpatialMode(parsed.spatial8dMode)
+        ? normalizeSpatialPresetId(parsed.spatial8dMode)
+        : 'orbit_drift',
       spatialTrajectory: isValidTrajectory(parsed.spatialTrajectory) ? parsed.spatialTrajectory : 'orbit',
       autoplaySimilar: typeof parsed.autoplaySimilar === 'boolean' ? parsed.autoplaySimilar : true,
       autoDjEnabled: Boolean(parsed.autoDjEnabled),
@@ -460,6 +480,10 @@ export interface MusicStoreState extends PersistedLibrary {
   ) => void;
   playRadio: (station: MusicRadioStation) => void;
   addToQueue: (track: MusicTrack) => void;
+  playTrackNext: (track: MusicTrack) => void;
+  moveQueueItem: (fromIndex: number, toIndex: number) => void;
+  clearQueue: () => void;
+  saveQueueAsPlaylist: (name?: string) => string;
   removeFromQueue: (index: number) => void;
   playNext: () => void;
   advanceAfterTrackEnd: () => void;
@@ -478,6 +502,7 @@ export interface MusicStoreState extends PersistedLibrary {
   showMusicToast: (msg: string) => void;
   setResolvedPlayback: (resolved: ResolvedTrackPlayback | null, expectedTrackId?: string) => void;
   switchPlaybackSource: (candidate: PlaybackSourceCandidate) => void;
+  switchYoutubeVersion: (videoId: string, label?: string) => void;
   setResolvingTrack: (loading: boolean) => void;
   setPlaybackError: (err: string | null) => void;
   setIsPlaying: (playing: boolean) => void;
@@ -561,9 +586,11 @@ export interface MusicStoreState extends PersistedLibrary {
   toggleSaveAlbum: (album: MusicAlbumRef) => void;
   toggleSavePlaylist: (playlist: MusicPlaylist) => void;
   createUserPlaylist: (name: string, initialTrack?: MusicTrack) => string;
+  renameUserPlaylist: (playlistId: string, name: string, description?: string) => void;
   deleteUserPlaylist: (id: string) => void;
   addTrackToUserPlaylist: (playlistId: string, track: MusicTrack) => void;
   removeTrackFromUserPlaylist: (playlistId: string, trackId: string) => void;
+  moveTrackInUserPlaylist: (playlistId: string, fromIndex: number, toIndex: number) => void;
   setMusicLang: (lang: MusicLang) => void;
   setRadioReconnectAttempt: (attempt: number) => void;
   hydrateFromCloud: (payload: CloudMusicSnapshotPayload) => void;
@@ -788,15 +815,13 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
 
       set((prev) => {
         const existingIds = new Set(prev.queue.map((t) => t.id));
-        const existingTitles = new Set(
-          prev.queue.map((t) => `${t.artist.name.toLowerCase()}|${t.title.toLowerCase()}`)
-        );
+        const existingKeys = new Set(prev.queue.map((t) => getTrackDedupeKey(t)));
         const added: MusicTrack[] = [];
         for (const t of incoming) {
-          const titleKey = `${t.artist.name.toLowerCase()}|${t.title.toLowerCase()}`;
-          if (!existingIds.has(t.id) && !existingTitles.has(titleKey)) {
+          const dk = getTrackDedupeKey(t);
+          if (!existingIds.has(t.id) && !existingKeys.has(dk)) {
             existingIds.add(t.id);
-            existingTitles.add(titleKey);
+            existingKeys.add(dk);
             added.push(t);
           }
         }
@@ -947,13 +972,99 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
 
   addToQueue: (track) => {
     set((prev) => {
-      const exists = prev.queue.some((t) => t.id === track.id);
+      const exists = prev.queue.some((t) => isSameMusicTrackVariant(t, track));
       if (exists) return prev;
       return {
         queue: [...prev.queue, track],
         shuffledOrder: prev.shuffle ? [...prev.shuffledOrder, track.id] : prev.shuffledOrder,
       };
     });
+  },
+
+  playTrackNext: (track) => {
+    const state = get();
+    if (state.queue.length === 0 || state.queueIndex < 0) {
+      state.playTrack(track);
+      return;
+    }
+    set((prev) => {
+      const currentAtIdx = prev.queue[prev.queueIndex];
+      if (currentAtIdx && isSameMusicTrackVariant(currentAtIdx, track)) {
+        return prev;
+      }
+      let nextQueueIndex = prev.queueIndex;
+      const filtered: MusicTrack[] = [];
+      prev.queue.forEach((item, idx) => {
+        if (idx !== prev.queueIndex && isSameMusicTrackVariant(item, track)) {
+          if (idx < prev.queueIndex) nextQueueIndex = Math.max(0, nextQueueIndex - 1);
+          return;
+        }
+        filtered.push(item);
+      });
+      const insertAt = Math.min(filtered.length, Math.max(0, nextQueueIndex + 1));
+      filtered.splice(insertAt, 0, track);
+      return { queue: filtered, queueIndex: nextQueueIndex };
+    });
+  },
+
+  moveQueueItem: (fromIndex, toIndex) => {
+    set((prev) => {
+      if (
+        fromIndex === toIndex ||
+        fromIndex < 0 ||
+        toIndex < 0 ||
+        fromIndex >= prev.queue.length ||
+        toIndex >= prev.queue.length
+      ) {
+        return prev;
+      }
+      const nextQueue = [...prev.queue];
+      const [moved] = nextQueue.splice(fromIndex, 1);
+      nextQueue.splice(toIndex, 0, moved);
+
+      let nextIdx = prev.queueIndex;
+      if (fromIndex === prev.queueIndex) {
+        nextIdx = toIndex;
+      } else if (fromIndex < prev.queueIndex && toIndex >= prev.queueIndex) {
+        nextIdx = prev.queueIndex - 1;
+      } else if (fromIndex > prev.queueIndex && toIndex <= prev.queueIndex) {
+        nextIdx = prev.queueIndex + 1;
+      }
+      return { queue: nextQueue, queueIndex: nextIdx };
+    });
+  },
+
+  clearQueue: () => {
+    set((prev) => {
+      if (prev.currentTrack) {
+        return { queue: [prev.currentTrack], queueIndex: 0 };
+      }
+      return { queue: [], queueIndex: -1 };
+    });
+  },
+
+  saveQueueAsPlaylist: (name) => {
+    const state = get();
+    const tracksToSave = dedupeMusicTracks(state.queue);
+    const id = `upl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const now = Date.now();
+    const cleanName =
+      name?.trim() ||
+      (state.seedGenre ? `Cola · ${state.seedGenre}` : `Cola (${tracksToSave.length} temas)`);
+    const newPl: UserMusicPlaylist = {
+      id,
+      name: cleanName,
+      description: `Guardada desde cola · ${tracksToSave.length} canciones`,
+      createdAt: now,
+      updatedAt: now,
+      tracks: tracksToSave,
+    };
+    set((prev) => {
+      const next = { ...prev, userPlaylists: [newPl, ...prev.userPlaylists] };
+      syncPersisted(next);
+      return next;
+    });
+    return id;
   },
 
   removeFromQueue: (index) => {
@@ -1236,6 +1347,30 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
           bitrateKbps: candidate.bitrateKbps,
           provider: candidate.provider,
           fullLength: candidate.fullLength,
+        },
+        playbackError: null,
+        isPlaying: true,
+      };
+    }),
+
+  switchYoutubeVersion: (videoId, label) =>
+    set((prev) => {
+      const cleanId = String(videoId || '').trim();
+      if (!cleanId) return prev;
+      const base: ResolvedTrackPlayback = prev.resolvedPlayback || {
+        trackId: prev.currentTrack?.id,
+        sourceType: 'youtube',
+        sourceLabel: label || 'YouTube Audio',
+        fullLength: true,
+      };
+      return {
+        resolvedPlayback: {
+          ...base,
+          sourceType: 'youtube',
+          youtubeVideoId: cleanId,
+          sourceLabel: label || 'Versión YouTube',
+          provider: 'YouTube',
+          fullLength: true,
         },
         playbackError: null,
         isPlaying: true,
@@ -1573,20 +1708,21 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
           eqBands: toEq5From10(b10),
         };
       } else if (vibe === '8d_ultra') {
-        const b10: EqBands10 = [5, 4, 2.5, 1.5, 0.5, 0.5, 1.5, 2.5, 3.5, 3.5];
+        const b10: EqBands10 = [4, 3.5, 2, 1, 0.5, 0.5, 1.5, 2.5, 3, 3];
+        const cfg = getSpatialPresetConfig('deep_3d');
         patch = {
           activeProVibe: '8d_ultra',
           spatial8dEnabled: true,
-          spatial8dMode: 'orbit',
-          spatialTrajectory: 'orbit',
+          spatial8dMode: cfg.id,
+          spatialTrajectory: cfg.trajectory,
           playbackRate: 1,
           preservesPitch: true,
           pitchSemitones: 0,
-          bassBoostDb: 3.5,
-          reverbMix: 0.28,
-          stereoWidth: 0.65,
-          exciterMix: 0.25,
-          spatial8dSpeedSec: 8,
+          bassBoostDb: cfg.warmthDb,
+          reverbMix: cfg.reverbWetMix,
+          stereoWidth: cfg.stereoWidth,
+          exciterMix: 0.2,
+          spatial8dSpeedSec: cfg.orbitPeriodSec,
           eqPreset: 'bass',
           eqBands10: b10,
           eqBands: toEq5From10(b10),
@@ -1662,18 +1798,18 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
         ...prev,
         activeProVibe: null,
         spatial8dEnabled: false,
-        spatial8dMode: 'orbit' as Spatial8dMode,
+        spatial8dMode: 'orbit_drift' as Spatial8dMode,
         spatialTrajectory: 'orbit' as SpatialTrajectory,
         playbackRate: 1,
         preservesPitch: true,
         pitchSemitones: 0,
         bassBoostDb: 0,
         reverbMix: 0,
-        stereoWidth: 0.45,
+        stereoWidth: 0.52,
         exciterMix: 0,
         vinylCrackle: 0,
         vocalCancel: false,
-        spatial8dSpeedSec: 9.5,
+        spatial8dSpeedSec: 11.5,
         trimStartSec: 0,
         trimEndSec: 0,
         fadeSec: 0,
@@ -1688,38 +1824,42 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
   toggleSpatial8d: () =>
     set((prev) => {
       const nextEnabled = !prev.spatial8dEnabled;
-      const nextReverb = nextEnabled && prev.reverbMix < 0.15 ? 0.24 : prev.reverbMix;
-      const next = { ...prev, spatial8dEnabled: nextEnabled, reverbMix: nextReverb };
+      const cfg = getSpatialPresetConfig(prev.spatial8dMode);
+      const nextReverb = nextEnabled && prev.reverbMix < 0.08 ? cfg.reverbWetMix : prev.reverbMix;
+      const next = {
+        ...prev,
+        spatial8dEnabled: nextEnabled,
+        spatial8dMode: cfg.id,
+        reverbMix: nextReverb,
+      };
       syncPersisted(next);
       return next;
     }),
 
   setSpatial8dEnabled: (enabled) =>
     set((prev) => {
-      const nextReverb = enabled && prev.reverbMix < 0.15 ? 0.24 : prev.reverbMix;
-      const next = { ...prev, spatial8dEnabled: enabled, reverbMix: nextReverb };
+      const cfg = getSpatialPresetConfig(prev.spatial8dMode);
+      const nextReverb = enabled && prev.reverbMix < 0.08 ? cfg.reverbWetMix : prev.reverbMix;
+      const next = {
+        ...prev,
+        spatial8dEnabled: enabled,
+        spatial8dMode: cfg.id,
+        reverbMix: nextReverb,
+      };
       syncPersisted(next);
       return next;
     }),
 
   setSpatial8dMode: (mode) =>
     set((prev) => {
-      const modeDefaults: Record<
-        Spatial8dMode,
-        { speed: number; reverb: number; width: number; trajectory: SpatialTrajectory }
-      > = {
-        orbit: { speed: 9.5, reverb: 0.24, width: 0.45, trajectory: 'orbit' },
-        concert: { speed: 12, reverb: 0.38, width: 0.52, trajectory: 'elevated' },
-        club: { speed: 5.2, reverb: 0.2, width: 0.62, trajectory: 'figure8' },
-      };
-      const cfg = modeDefaults[mode] || modeDefaults.orbit;
+      const cfg = getSpatialPresetConfig(mode);
       const next = {
         ...prev,
-        spatial8dMode: mode,
+        spatial8dMode: cfg.id,
         spatialTrajectory: cfg.trajectory,
-        spatial8dSpeedSec: cfg.speed,
-        reverbMix: cfg.reverb,
-        stereoWidth: cfg.width,
+        spatial8dSpeedSec: cfg.orbitPeriodSec,
+        reverbMix: cfg.reverbWetMix,
+        stereoWidth: cfg.stereoWidth,
       };
       syncPersisted(next);
       return next;
@@ -1792,10 +1932,10 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
 
   toggleLikeTrack: (track) =>
     set((prev) => {
-      const exists = prev.likedTracks.some((t) => t.id === track.id);
+      const exists = prev.likedTracks.some((t) => isSameMusicTrackVariant(t, track));
       const likedTracks = exists
-        ? prev.likedTracks.filter((t) => t.id !== track.id)
-        : [track, ...prev.likedTracks];
+        ? prev.likedTracks.filter((t) => !isSameMusicTrackVariant(t, track))
+        : dedupeMusicTracks([track, ...prev.likedTracks]);
       const next = { ...prev, likedTracks };
       syncPersisted(next);
       return next;
@@ -1804,20 +1944,19 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
   importTracksIntoLikes: (tracks) => {
     let added = 0;
     set((prev) => {
-      const existingKeys = new Set(
-        prev.likedTracks.map((t) => `${t.artist.name.toLowerCase()}|${t.title.toLowerCase()}`)
-      );
+      const dedupedIncoming = dedupeMusicTracks(tracks);
       const toAdd: MusicTrack[] = [];
-      for (const tr of tracks) {
-        const key = `${tr.artist.name.toLowerCase()}|${tr.title.toLowerCase()}`;
-        if (!existingKeys.has(key) && !prev.likedTracks.some((x) => x.id === tr.id)) {
-          existingKeys.add(key);
+      for (const tr of dedupedIncoming) {
+        if (!prev.likedTracks.some((existing) => isSameMusicTrackVariant(existing, tr))) {
           toAdd.push(tr);
         }
       }
       added = toAdd.length;
       if (added === 0) return prev;
-      const next = { ...prev, likedTracks: [...toAdd, ...prev.likedTracks].slice(0, 1000) };
+      const next = {
+        ...prev,
+        likedTracks: dedupeMusicTracks([...toAdd, ...prev.likedTracks]).slice(0, 1000),
+      };
       syncPersisted(next);
       return next;
     });
@@ -1828,37 +1967,24 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
     const cleanName = name.trim() || 'Playlist Importada';
     const normName = cleanName.toLowerCase();
     let resolvedId = `upl-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
-    const dedupIncoming: MusicTrack[] = [];
-    const seenIncoming = new Set<string>();
-    const seenIncomingMeta = new Set<string>();
-    for (const t of tracks) {
-      const metaKey = `${(t.artist?.name || '').toLowerCase()}|${(t.title || '').toLowerCase()}`;
-      if (!seenIncoming.has(t.id) && !seenIncomingMeta.has(metaKey)) {
-        seenIncoming.add(t.id);
-        seenIncomingMeta.add(metaKey);
-        dedupIncoming.push(t);
-      }
-    }
+    const dedupIncoming = dedupeMusicTracks(tracks);
+    const now = Date.now();
 
     set((prev) => {
-      // #67: Incremental merge if an imported playlist with the same name already exists
+      // Incremental smart merge if an imported playlist with the same name already exists
       const existingIdx = prev.userPlaylists.findIndex((p) => p.name.trim().toLowerCase() === normName);
       if (existingIdx >= 0) {
         const existing = prev.userPlaylists[existingIdx];
         resolvedId = existing.id;
-        const existIds = new Set(existing.tracks.map((t) => t.id));
-        const existMeta = new Set(
-          existing.tracks.map((t) => `${(t.artist?.name || '').toLowerCase()}|${(t.title || '').toLowerCase()}`)
+        const fresh = dedupIncoming.filter(
+          (t) => !existing.tracks.some((ex) => isSameMusicTrackVariant(ex, t))
         );
-        const fresh = dedupIncoming.filter((t) => {
-          const mk = `${(t.artist?.name || '').toLowerCase()}|${(t.title || '').toLowerCase()}`;
-          return !existIds.has(t.id) && !existMeta.has(mk);
-        });
         if (fresh.length === 0) return prev;
         const updatedPlaylists = [...prev.userPlaylists];
         updatedPlaylists[existingIdx] = {
           ...existing,
-          tracks: [...existing.tracks, ...fresh],
+          updatedAt: now,
+          tracks: dedupeMusicTracks([...existing.tracks, ...fresh]),
         };
         const next = { ...prev, userPlaylists: updatedPlaylists };
         syncPersisted(next);
@@ -1869,7 +1995,8 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
         id: resolvedId,
         name: cleanName,
         description: description || 'Importada en Riffan Music',
-        createdAt: Date.now(),
+        createdAt: now,
+        updatedAt: now,
         tracks: dedupIncoming,
       };
       const next = { ...prev, userPlaylists: [newPl, ...prev.userPlaylists] };
@@ -2089,11 +2216,13 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
 
   createUserPlaylist: (name, initialTrack) => {
     const id = `upl-${Date.now().toString(36)}`;
+    const now = Date.now();
     const newPl: UserMusicPlaylist = {
       id,
       name: name.trim() || 'Mi Playlist',
       description: 'Creada en Riffan Music',
-      createdAt: Date.now(),
+      createdAt: now,
+      updatedAt: now,
       tracks: initialTrack ? [initialTrack] : [],
     };
     set((prev) => {
@@ -2103,6 +2232,26 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
     });
     return id;
   },
+
+  renameUserPlaylist: (playlistId, name, description) =>
+    set((prev) => {
+      const cleanName = name.trim();
+      if (!cleanName) return prev;
+      const now = Date.now();
+      const userPlaylists = prev.userPlaylists.map((pl) => {
+        if (pl.id !== playlistId) return pl;
+        return {
+          ...pl,
+          name: cleanName.slice(0, 80),
+          description:
+            typeof description === 'string' ? description.trim().slice(0, 240) : pl.description,
+          updatedAt: now,
+        };
+      });
+      const next = { ...prev, userPlaylists };
+      syncPersisted(next);
+      return next;
+    }),
 
   deleteUserPlaylist: (id) =>
     set((prev) => {
@@ -2116,10 +2265,11 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
 
   addTrackToUserPlaylist: (playlistId, track) =>
     set((prev) => {
+      const now = Date.now();
       const userPlaylists = prev.userPlaylists.map((pl) => {
         if (pl.id !== playlistId) return pl;
-        if (pl.tracks.some((t) => t.id === track.id)) return pl;
-        return { ...pl, tracks: [...pl.tracks, track] };
+        if (pl.tracks.some((t) => isSameMusicTrackVariant(t, track))) return pl;
+        return { ...pl, updatedAt: now, tracks: [...pl.tracks, track] };
       });
       const next = { ...prev, userPlaylists };
       syncPersisted(next);
@@ -2128,9 +2278,38 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
 
   removeTrackFromUserPlaylist: (playlistId, trackId) =>
     set((prev) => {
+      const now = Date.now();
       const userPlaylists = prev.userPlaylists.map((pl) => {
         if (pl.id !== playlistId) return pl;
-        return { ...pl, tracks: pl.tracks.filter((t) => t.id !== trackId) };
+        return {
+          ...pl,
+          updatedAt: now,
+          tracks: pl.tracks.filter((t) => t.id !== trackId),
+        };
+      });
+      const next = { ...prev, userPlaylists };
+      syncPersisted(next);
+      return next;
+    }),
+
+  moveTrackInUserPlaylist: (playlistId, fromIndex, toIndex) =>
+    set((prev) => {
+      const now = Date.now();
+      const userPlaylists = prev.userPlaylists.map((pl) => {
+        if (pl.id !== playlistId) return pl;
+        if (
+          fromIndex === toIndex ||
+          fromIndex < 0 ||
+          toIndex < 0 ||
+          fromIndex >= pl.tracks.length ||
+          toIndex >= pl.tracks.length
+        ) {
+          return pl;
+        }
+        const reordered = [...pl.tracks];
+        const [moved] = reordered.splice(fromIndex, 1);
+        reordered.splice(toIndex, 0, moved);
+        return { ...pl, updatedAt: now, tracks: reordered };
       });
       const next = { ...prev, userPlaylists };
       syncPersisted(next);
@@ -2148,23 +2327,43 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
 
   hydrateFromCloud: (payload) =>
     set((prev) => {
-      const mergedLiked = [...prev.likedTracks];
-      const seenLiked = new Set(mergedLiked.map((t) => t.id));
-      for (const ct of payload.likedTracks || []) {
-        if (!seenLiked.has(ct.id)) {
-          seenLiked.add(ct.id);
-          mergedLiked.push(ct);
-        }
-      }
+      const mergedLiked = dedupeMusicTracks([
+        ...prev.likedTracks,
+        ...(payload.likedTracks || []),
+      ]).slice(0, 600);
 
-      const mergedPlaylists = [...prev.userPlaylists];
-      const seenPls = new Set(mergedPlaylists.map((p) => p.id));
+      const playlistMap = new Map<string, UserMusicPlaylist>();
+      for (const lp of prev.userPlaylists) {
+        playlistMap.set(lp.id, lp);
+      }
       for (const cp of payload.userPlaylists || []) {
-        if (!seenPls.has(cp.id)) {
-          seenPls.add(cp.id);
-          mergedPlaylists.push(cp);
+        const local = playlistMap.get(cp.id);
+        if (!local) {
+          playlistMap.set(cp.id, cp);
+        } else {
+          const remoteTs = cp.updatedAt || cp.createdAt || 0;
+          const localTs = local.updatedAt || local.createdAt || 0;
+          const remoteNewer = remoteTs > localTs;
+          const mergedTracks = remoteNewer
+            ? dedupeMusicTracks([...cp.tracks, ...local.tracks])
+            : dedupeMusicTracks([...local.tracks, ...cp.tracks]);
+          playlistMap.set(cp.id, {
+            ...local,
+            name: remoteNewer ? cp.name || local.name : local.name,
+            description: remoteNewer ? cp.description ?? local.description : local.description,
+            updatedAt: Math.max(remoteTs, localTs) || Date.now(),
+            tracks:
+              remoteNewer && cp.tracks.length === 0
+                ? cp.tracks
+                : remoteNewer
+                ? cp.tracks.length >= local.tracks.length
+                  ? cp.tracks
+                  : mergedTracks
+                : local.tracks,
+          });
         }
       }
+      const mergedPlaylists = Array.from(playlistMap.values()).slice(0, 60);
 
       const mergedArtists = Array.from(
         new Set([
@@ -2179,13 +2378,42 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
         ])
       ).slice(0, 20);
 
+      const remoteStats = payload.listeningStats;
+      const mergedTrackCounts = { ...prev.listeningStats.trackPlayCounts };
+      for (const [tid, stat] of Object.entries(remoteStats?.trackPlayCounts || {})) {
+        const loc = mergedTrackCounts[tid];
+        if (!loc || stat.count > loc.count) {
+          mergedTrackCounts[tid] = stat;
+        }
+      }
+      const mergedArtistCounts = { ...prev.listeningStats.artistPlayCounts };
+      for (const [aid, stat] of Object.entries(remoteStats?.artistPlayCounts || {})) {
+        const loc = mergedArtistCounts[aid];
+        if (!loc || stat.count > loc.count) {
+          mergedArtistCounts[aid] = stat;
+        }
+      }
+      const mergedStats: ListeningStats = {
+        totalPlays: Math.max(prev.listeningStats.totalPlays || 0, remoteStats?.totalPlays || 0),
+        totalListenSec: Math.max(
+          prev.listeningStats.totalListenSec || 0,
+          remoteStats?.totalListenSec || 0
+        ),
+        trackPlayCounts: mergedTrackCounts,
+        artistPlayCounts: mergedArtistCounts,
+        trackSignals: {
+          ...(remoteStats?.trackSignals || {}),
+          ...(prev.listeningStats.trackSignals || {}),
+        },
+      };
+
       const s = payload.studioSettings || {};
       const nextEq10 = isValidEqBands10(s.eqBands10) ? s.eqBands10 : prev.eqBands10;
 
       const next = {
         ...prev,
-        likedTracks: mergedLiked.slice(0, 400),
-        userPlaylists: mergedPlaylists.slice(0, 50),
+        likedTracks: mergedLiked,
+        userPlaylists: mergedPlaylists,
         savedAlbums:
           payload.savedAlbums?.length > 0 && prev.savedAlbums.length === 0
             ? payload.savedAlbums
@@ -2207,10 +2435,7 @@ export const useMusicStore = create<MusicStoreState>((set, get) => ({
               ? prev.tasteProfile.importedSources
               : payload.tasteProfile.importedSources || [],
         },
-        listeningStats:
-          (payload.listeningStats?.totalPlays || 0) > prev.listeningStats.totalPlays
-            ? payload.listeningStats
-            : prev.listeningStats,
+        listeningStats: mergedStats,
         eqBands10: nextEq10,
         eqBands: toEq5From10(nextEq10),
         crossfadeSec:

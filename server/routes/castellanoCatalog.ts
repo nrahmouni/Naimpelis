@@ -4,6 +4,7 @@
  */
 import type { Express } from 'express';
 import { ENV } from '../config/env.ts';
+import { logger } from '../utils/logger.ts';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { areTitlesStrictlyEqual, normalizeTitleForMatch } from '../extractors/httpHelpers.ts';
 import { scrapeGnulaCatalog } from '../extractors/gnulaHdExtractor.ts';
@@ -435,7 +436,7 @@ export function registerCastellanoCatalogRoutes(app: Express): void {
       castellanoCatalogCache.set(cacheKey, { items, hasMore, ts: Date.now() });
       res.json({ success: true, items, hasMore, page });
     } catch (err) {
-      console.error('Castellano catalog error:', err);
+      logger.error({ err }, 'Castellano catalog error');
       res.status(500).json({ success: false, items: [], hasMore: false });
     }
   });

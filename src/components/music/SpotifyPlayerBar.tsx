@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Car,
+  Clock,
   Download,
   FolderDown,
   Headphones,
@@ -26,6 +27,7 @@ import { triggerHaptic } from '../../utils/haptics';
 import { startDownloadMp3Job } from './MusicAudioEngine';
 import { CoverArt } from './CoverArt';
 import { MUSIC_I18N } from './musicI18n';
+import { getSpatialPresetConfig } from './spatialPresets';
 
 export function formatMusicTime(sec: number): string {
   if (!Number.isFinite(sec) || sec <= 0) return '0:00';
@@ -58,7 +60,8 @@ export const SpotifyPlayerBar: React.FC<SpotifyPlayerBarProps> = ({
   const likedTracks = useMusicStore((s) => s.likedTracks);
   const showQueueDrawer = useMusicStore((s) => s.showQueueDrawer);
   const spatial8dEnabled = useMusicStore((s) => s.spatial8dEnabled);
-  const toggleSpatial8d = useMusicStore((s) => s.toggleSpatial8d);
+  const spatial8dMode = useMusicStore((s) => s.spatial8dMode);
+  const sleepTimerEndsAt = useMusicStore((s) => s.sleepTimerEndsAt);
   const autoDjEnabled = useMusicStore((s) => s.autoDjEnabled);
   const toggleAutoDj = useMusicStore((s) => s.toggleAutoDj);
   const jamSession = useMusicStore((s) => s.jamSession);
@@ -67,11 +70,21 @@ export const SpotifyPlayerBar: React.FC<SpotifyPlayerBarProps> = ({
   const offlineTrackIds = useMusicStore((s) => s.offlineTrackIds);
   const setShowDownloadDrawer = useMusicStore((s) => s.setShowDownloadDrawer);
   const setDriveModeOpen = useMusicStore((s) => s.setDriveModeOpen);
-  const autoplaySimilar = useMusicStore((s) => s.autoplaySimilar);
-  const seedGenre = useMusicStore((s) => s.seedGenre);
-  const isFetchingRelated = useMusicStore((s) => s.isFetchingRelated);
   const musicLang = useMusicStore((s) => s.musicLang);
   const m = MUSIC_I18N[musicLang];
+  const activeSpatialPreset = getSpatialPresetConfig(spatial8dMode);
+
+  const [sleepRemainingSec, setSleepRemainingSec] = useState(0);
+  useEffect(() => {
+    if (!sleepTimerEndsAt) {
+      setSleepRemainingSec(0);
+      return;
+    }
+    const tick = () => setSleepRemainingSec(Math.max(0, Math.ceil((sleepTimerEndsAt - Date.now()) / 1000)));
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [sleepTimerEndsAt]);
 
   const togglePlayPause = useMusicStore((s) => s.togglePlayPause);
   const playNext = useMusicStore((s) => s.playNext);
@@ -164,10 +177,14 @@ export const SpotifyPlayerBar: React.FC<SpotifyPlayerBarProps> = ({
                         {resolvedPlayback.bitrateKbps ? ` · ${resolvedPlayback.bitrateKbps} kbps` : ''}
                       </span>
                     )}
-                    {autoplaySimilar && (seedGenre || isFetchingRelated) && (
-                      <span className="hidden lg:inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-[#3B82F6]/15 border border-[#3B82F6]/30 text-[10px] font-semibold text-[#93C5FD] shrink-0">
-                        <Radio className="w-2.5 h-2.5" />
-                        <span>{isFetchingRelated ? m.autoplayLoadingNext : `${m.autoplayBadge} · ${seedGenre}`}</span>
+                    {spatial8dEnabled && (
+                      <span className="hidden md:inline text-[10px] font-semibold text-[#60A5FA] shrink-0">
+                        · 8D {activeSpatialPreset.names[musicLang]}
+                      </span>
+                    )}
+                    {sleepRemainingSec > 0 && (
+                      <span className="hidden lg:inline-flex items-center gap-1 text-[10px] font-semibold text-zinc-400 shrink-0 tabular-nums">
+                        · <Clock className="w-2.5 h-2.5 text-[#60A5FA]" /> {formatMusicTime(sleepRemainingSec)}
                       </span>
                     )}
                     {isResolvingTrack && (
@@ -305,13 +322,13 @@ export const SpotifyPlayerBar: React.FC<SpotifyPlayerBarProps> = ({
             type="button"
             onClick={() => {
               triggerHaptic('light');
-              toggleSpatial8d();
+              setShowEqModal(true);
             }}
             aria-label={m.spatial8dBtn}
             aria-pressed={spatial8dEnabled}
-            className={`h-8 px-2 rounded-full text-[11px] font-black tracking-wide inline-flex items-center gap-1 cursor-pointer transition-all ${
+            className={`min-h-9 px-2.5 rounded-xl text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-colors ${
               spatial8dEnabled
-                ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_0_14px_rgba(59,130,246,0.45)]'
+                ? 'bg-[#3B82F6] text-white'
                 : 'bg-white/[0.06] text-zinc-300 hover:text-white'
             }`}
           >
@@ -367,18 +384,18 @@ export const SpotifyPlayerBar: React.FC<SpotifyPlayerBarProps> = ({
             type="button"
             onClick={() => {
               triggerHaptic('light');
-              toggleSpatial8d();
+              setShowEqModal(true);
             }}
             aria-pressed={spatial8dEnabled}
             title={m.spatial8dTitle}
-            className={`h-8 px-2.5 rounded-full inline-flex items-center gap-1.5 text-[11px] font-black tracking-wide cursor-pointer transition-all whitespace-nowrap shrink-0 ${
+            className={`min-h-9 px-3 rounded-xl inline-flex items-center gap-1.5 text-xs font-bold cursor-pointer transition-colors whitespace-nowrap shrink-0 ${
               spatial8dEnabled
-                ? 'bg-gradient-to-r from-[#2563EB] to-[#3B82F6] text-white shadow-[0_0_16px_rgba(59,130,246,0.45)]'
+                ? 'bg-[#3B82F6] text-white'
                 : 'bg-white/[0.06] text-zinc-300 hover:text-white hover:bg-white/[0.12] border border-white/10'
             }`}
           >
             <Headphones className="w-3.5 h-3.5" />
-            <span>8D</span>
+            <span>{spatial8dEnabled ? activeSpatialPreset.names[musicLang] : '8D'}</span>
           </button>
 
           <button

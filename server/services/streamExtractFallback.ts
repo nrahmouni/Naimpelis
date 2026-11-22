@@ -146,7 +146,7 @@ export async function searchYouTubeFullFallback(opts: {
           'User-Agent': CHROME_UA,
           'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
         },
-        4000
+        2800
       );
       if (!html) continue;
       const initMatch = html.match(/var\s+ytInitialData\s*=\s*(\{[\s\S]+?\});<\/script>/);
@@ -385,40 +385,6 @@ export async function buildWebEmbedTracks(opts: {
           url: `https://www.2embed.cc/embed/${idStr}`,
           proxyHtml: true,
           sandboxSafe: true,
-        };
-
-  const vidlinkEntry =
-    effectiveMediaType === 'tv'
-      ? {
-          id: `embed-vidlink-${idStr}-${s}-${e}`,
-          label: 'Servidor Web 4 · Multi-Audio',
-          url: `https://vidlink.pro/tv/${idStr}/${s}/${e}?autoplay=true&primaryColor=9146FF`,
-          proxyHtml: false,
-          sandboxSafe: false,
-        }
-      : {
-          id: `embed-vidlink-${idStr}`,
-          label: 'Servidor Web 4 · Multi-Audio',
-          url: `https://vidlink.pro/movie/${idStr}?autoplay=true&primaryColor=9146FF`,
-          proxyHtml: false,
-          sandboxSafe: false,
-        };
-
-  const vidsrcShEntry =
-    effectiveMediaType === 'tv'
-      ? {
-          id: `embed-vidsrcsh-${idStr}-${s}-${e}`,
-          label: 'Servidor Web 5 · VidSrc',
-          url: `https://vidsrc.sh/embed/tv/${idStr}/${s}-${e}`,
-          proxyHtml: false,
-          sandboxSafe: false,
-        }
-      : {
-          id: `embed-vidsrcsh-${idStr}`,
-          label: 'Servidor Web 5 · VidSrc',
-          url: `https://vidsrc.sh/embed/movie/${idStr}`,
-          proxyHtml: false,
-          sandboxSafe: false,
         };
 
   let baseEntries: any[];

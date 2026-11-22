@@ -26,7 +26,6 @@ import type {
   PartyGameState,
   PinturilloGameState,
   PokerGameState,
-  PollProposalItem,
   Pool8BallState,
   RestoredRoomBlueprint,
   RoomPollState,
@@ -336,7 +335,11 @@ export function useRoomSocketEvents(opts: UseRoomSocketEventsOptions) {
           const url = new URL(window.location.href);
           url.searchParams.set('room', roomId);
           if (isTvMode) url.searchParams.set('tv', '1');
-          window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+          window.history.replaceState(
+            window.history.state || { __riffanGuard: 'layer' },
+            '',
+            `${url.pathname}${url.search}${url.hash}`
+          );
         } catch {
           // ignore
         }
@@ -344,7 +347,11 @@ export function useRoomSocketEvents(opts: UseRoomSocketEventsOptions) {
         const shortPath = isTvMode
           ? `/${encodeURIComponent(roomId)}?tv=1`
           : `/${encodeURIComponent(roomId)}`;
-        window.history.replaceState({}, '', shortPath);
+        window.history.replaceState(
+          window.history.state || { __riffanGuard: 'layer' },
+          '',
+          shortPath
+        );
       }
     }
 

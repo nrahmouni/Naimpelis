@@ -19,22 +19,18 @@ function createDustMotes(count: number): DustMote[] {
     motes.push({
       x: Math.random(),
       y: Math.random(),
-      vx: (Math.random() - 0.5) * 0.000018,
-      vy: -(0.000016 + Math.random() * 0.000028),
-      size: 0.55 + Math.random() * 0.95,
-      alphaBase: 0.16 + Math.random() * 0.34,
+      vx: (Math.random() - 0.5) * 0.000024,
+      vy: -(0.000022 + Math.random() * 0.000034),
+      size: 0.65 + Math.random() * 0.9,
+      alphaBase: 0.18 + Math.random() * 0.34,
       twinkleOffset: Math.random() * Math.PI * 2,
-      twinkleSpeed: 0.0008 + Math.random() * 0.0014,
+      twinkleSpeed: 0.0009 + Math.random() * 0.0014,
       tint: tints[i % tints.length],
     });
   }
   return motes;
 }
 
-/**
- * Subtle 96x96 monochrome anti-band film grain tile so ultra-dark OLED fades
- * stay completely smooth without gradient stepping.
- */
 function createAntiBandPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
   if (typeof document === 'undefined') return null;
   const tile = document.createElement('canvas');
@@ -52,10 +48,31 @@ function createAntiBandPattern(ctx: CanvasRenderingContext2D): CanvasPattern | n
     data[i] = v;
     data[i + 1] = v;
     data[i + 2] = v;
-    data[i + 3] = 6; // Ultra-subtle ~2.3% anti-band dither
+    data[i + 3] = 6;
   }
   tctx.putImageData(img, 0, 0);
   return ctx.createPattern(tile, 'repeat');
+}
+
+function createAuroraGlowSprite(
+  radius: number,
+  innerColor: string,
+  midColor: string
+): HTMLCanvasElement | null {
+  if (typeof document === 'undefined' || radius <= 0) return null;
+  const size = Math.max(4, Math.ceil(radius * 2));
+  const c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  const cctx = c.getContext('2d');
+  if (!cctx) return null;
+  const grad = cctx.createRadialGradient(radius, radius, 0, radius, radius, radius);
+  grad.addColorStop(0, innerColor);
+  grad.addColorStop(0.45, midColor);
+  grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  cctx.fillStyle = grad;
+  cctx.fillRect(0, 0, size, size);
+  return c;
 }
 
 export const CinematicNebulaCanvas: React.FC = () => {
@@ -85,10 +102,77 @@ export const CinematicNebulaCanvas: React.FC = () => {
     let height = 0;
     let dpr = 1;
     let rafId: number | null = null;
-    const motes = createDustMotes(54);
+    let lastDrawNow = 0;
+    const motes = createDustMotes(36);
+
+    // Cached offscreen assets rebuilt only on resize
+    let vignetteOverlayCanvas: HTMLCanvasElement | null = null;
+    let glow1Sprite: HTMLCanvasElement | null = null;
+    let glow2Sprite: HTMLCanvasElement | null = null;
+    let glow1Radius = 240;
+    let glow2Radius = 220;
+    let veilGrad: CanvasGradient | null = null;
+    let strandStrokeGrad: CanvasGradient | null = null;
+
+    const buildResizeAssets = () => {
+      const maxDim = Math.max(width, height);
+      glow1Radius = Math.max(180, Math.round(maxDim * 0.5));
+      glow2Radius = Math.max(160, Math.round(maxDim * 0.45));
+      glow1Sprite = createAuroraGlowSprite(
+        glow1Radius,
+        'rgba(124, 58, 237, 0.15)',
+        'rgba(76, 29, 149, 0.06)'
+      );
+      glow2Sprite = createAuroraGlowSprite(
+        glow2Radius,
+        'rgba(79, 70, 229, 0.11)',
+        'rgba(67, 56, 202, 0.045)'
+      );
+
+      veilGrad = ctx.createLinearGradient(0, height * 0.25, width, height * 0.85);
+      veilGrad.addColorStop(0, 'rgba(145, 70, 255, 0)');
+      veilGrad.addColorStop(0.38, 'rgba(124, 58, 237, 0.045)');
+      veilGrad.addColorStop(0.68, 'rgba(79, 70, 229, 0.035)');
+      veilGrad.addColorStop(1, 'rgba(56, 189, 248, 0)');
+
+      strandStrokeGrad = ctx.createLinearGradient(0, height * 0.5, width, height * 0.5);
+      strandStrokeGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      strandStrokeGrad.addColorStop(0.24, 'rgba(145, 70, 255, 0.9)');
+      strandStrokeGrad.addColorStop(0.54, 'rgba(196, 181, 253, 0.95)');
+      strandStrokeGrad.addColorStop(0.8, 'rgba(76, 201, 240, 0.65)');
+      strandStrokeGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+      const vCanvas = document.createElement('canvas');
+      vCanvas.width = Math.max(1, Math.floor(width * dpr));
+      vCanvas.height = Math.max(1, Math.floor(height * dpr));
+      const vctx = vCanvas.getContext('2d');
+      if (vctx) {
+        vctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const vignette = vctx.createRadialGradient(
+          width * 0.5,
+          height * 0.48,
+          Math.min(width, height) * 0.35,
+          width * 0.5,
+          height * 0.48,
+          maxDim * 0.85
+        );
+        vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+        vignette.addColorStop(0.65, 'rgba(0, 0, 0, 0.32)');
+        vignette.addColorStop(1, 'rgba(0, 0, 0, 0.82)');
+        vctx.fillStyle = vignette;
+        vctx.fillRect(0, 0, width, height);
+        if (antiBandPattern) {
+          vctx.fillStyle = antiBandPattern;
+          vctx.fillRect(0, 0, width, height);
+        }
+        vignetteOverlayCanvas = vCanvas;
+      } else {
+        vignetteOverlayCanvas = null;
+      }
+    };
 
     const resize = () => {
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      dpr = Math.min(window.devicePixelRatio || 1, 1.5);
       width = Math.max(1, window.innerWidth);
       height = Math.max(1, window.innerHeight);
       canvas.width = Math.floor(width * dpr);
@@ -96,74 +180,58 @@ export const CinematicNebulaCanvas: React.FC = () => {
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      buildResizeAssets();
     };
 
     const drawFrame = (timeMs: number) => {
-      pointerRef.current.x += (pointerRef.current.tx - pointerRef.current.x) * 0.035;
-      pointerRef.current.y += (pointerRef.current.ty - pointerRef.current.y) * 0.035;
+      pointerRef.current.x += (pointerRef.current.tx - pointerRef.current.x) * 0.05;
+      pointerRef.current.y += (pointerRef.current.ty - pointerRef.current.y) * 0.05;
       const px = pointerRef.current.x;
       const py = pointerRef.current.y;
-
       const t = timeMs * 0.001;
-      const maxDim = Math.max(width, height);
 
-      // 1. Dominant Pure OLED Black (#000000) base
+      // 1. Dominant Pure OLED Black base
       ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
       ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, width, height);
 
-      // 2. Subtle dark purple & indigo aurora orbs behind central card
+      // 2. Cached dark purple & indigo aurora orbs (zero per-frame gradient allocs)
       ctx.globalCompositeOperation = 'lighter';
+      if (glow1Sprite) {
+        const glow1X = width * 0.34 + Math.sin(t * 0.16) * (width * 0.08) + px * 16;
+        const glow1Y = height * 0.42 + Math.cos(t * 0.13) * (height * 0.05) + py * 12;
+        ctx.drawImage(
+          glow1Sprite,
+          glow1X - glow1Radius,
+          glow1Y - glow1Radius,
+          glow1Radius * 2,
+          glow1Radius * 2
+        );
+      }
+      if (glow2Sprite) {
+        const glow2X = width * 0.68 + Math.cos(t * 0.14 + 1.4) * (width * 0.09) - px * 14;
+        const glow2Y = height * 0.56 + Math.sin(t * 0.17 + 0.6) * (height * 0.06) - py * 10;
+        ctx.drawImage(
+          glow2Sprite,
+          glow2X - glow2Radius,
+          glow2Y - glow2Radius,
+          glow2Radius * 2,
+          glow2Radius * 2
+        );
+      }
 
-      const glow1X = width * 0.34 + Math.sin(t * 0.16) * (width * 0.08) + px * 16;
-      const glow1Y = height * 0.42 + Math.cos(t * 0.13) * (height * 0.05) + py * 12;
-      const deepViolet = ctx.createRadialGradient(
-        glow1X,
-        glow1Y,
-        0,
-        glow1X,
-        glow1Y,
-        maxDim * 0.5
-      );
-      deepViolet.addColorStop(0, 'rgba(124, 58, 237, 0.15)');
-      deepViolet.addColorStop(0.45, 'rgba(76, 29, 149, 0.06)');
-      deepViolet.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = deepViolet;
-      ctx.fillRect(0, 0, width, height);
-
-      const glow2X = width * 0.68 + Math.cos(t * 0.14 + 1.4) * (width * 0.09) - px * 14;
-      const glow2Y = height * 0.56 + Math.sin(t * 0.17 + 0.6) * (height * 0.06) - py * 10;
-      const deepIndigo = ctx.createRadialGradient(
-        glow2X,
-        glow2Y,
-        0,
-        glow2X,
-        glow2Y,
-        maxDim * 0.45
-      );
-      deepIndigo.addColorStop(0, 'rgba(79, 70, 229, 0.11)');
-      deepIndigo.addColorStop(0.45, 'rgba(67, 56, 202, 0.045)');
-      deepIndigo.addColorStop(1, 'rgba(0, 0, 0, 0)');
-      ctx.fillStyle = deepIndigo;
-      ctx.fillRect(0, 0, width, height);
-
-      // 3. Liquid Silk Light Filaments (Ultra Full-HD crisp hairlines gliding calmly across OLED black)
-      const strandCount = 16;
-      const segments = 44;
-
-      // Translucent silk veil fill underneath the wave crests
-      const veilGrad = ctx.createLinearGradient(0, height * 0.25, width, height * 0.85);
-      veilGrad.addColorStop(0, 'rgba(145, 70, 255, 0)');
-      veilGrad.addColorStop(0.38, 'rgba(124, 58, 237, 0.045)');
-      veilGrad.addColorStop(0.68, 'rgba(79, 70, 229, 0.035)');
-      veilGrad.addColorStop(1, 'rgba(56, 189, 248, 0)');
+      // 3. Liquid Silk Light Filaments (reusing prebuilt gradients)
+      const strandCount = 10;
+      const segments = 26;
+      const midIndex = Math.floor(strandCount * 0.5);
 
       for (let i = 0; i < strandCount; i++) {
         const ratio = i / (strandCount - 1);
-        const centerFade = Math.sin(ratio * Math.PI); // strongest in center of bundle, soft at edges
+        const centerFade = Math.sin(ratio * Math.PI);
         const baseY = height * (0.42 + (ratio - 0.5) * 0.26) + py * (6 + ratio * 10);
-        const phase = i * 0.22;
-        const amp1 = height * (0.045 + Math.sin(ratio * Math.PI) * 0.035);
+        const phase = i * 0.28;
+        const amp1 = height * (0.045 + centerFade * 0.035);
         const amp2 = height * 0.018;
 
         ctx.beginPath();
@@ -178,17 +246,16 @@ export const CinematicNebulaCanvas: React.FC = () => {
           else ctx.lineTo(x, y);
         }
 
-        if (i === Math.floor(strandCount * 0.5)) {
-          // Soft obsidian silk body fade beneath middle wave
+        if (i === midIndex && veilGrad) {
           ctx.save();
           ctx.lineTo(width + 24, height);
           ctx.lineTo(-24, height);
           ctx.closePath();
+          ctx.globalAlpha = 1;
           ctx.fillStyle = veilGrad;
           ctx.fill();
           ctx.restore();
 
-          // Re-trace the single line stroke cleanly
           ctx.beginPath();
           for (let s = 0; s <= segments; s++) {
             const u = s / segments;
@@ -202,21 +269,16 @@ export const CinematicNebulaCanvas: React.FC = () => {
           }
         }
 
-        const strokeGrad = ctx.createLinearGradient(0, baseY, width, baseY);
-        const alpha = (0.045 + centerFade * 0.145).toFixed(3);
-        const cyanAlpha = (0.025 + centerFade * 0.095).toFixed(3);
-        strokeGrad.addColorStop(0, 'rgba(0, 0, 0, 0)');
-        strokeGrad.addColorStop(0.24, `rgba(145, 70, 255, ${alpha})`);
-        strokeGrad.addColorStop(0.54, `rgba(196, 181, 253, ${alpha})`);
-        strokeGrad.addColorStop(0.8, `rgba(76, 201, 240, ${cyanAlpha})`);
-        strokeGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-
-        ctx.strokeStyle = strokeGrad;
-        ctx.lineWidth = i % 5 === 0 ? 1.35 : 0.85;
-        ctx.stroke();
+        if (strandStrokeGrad) {
+          ctx.globalAlpha = 0.055 + centerFade * 0.16;
+          ctx.strokeStyle = strandStrokeGrad;
+          ctx.lineWidth = i % 4 === 0 ? 1.35 : 0.85;
+          ctx.stroke();
+        }
       }
 
-      // 4. Slow drifting pinpoint starlight dust in pure black space
+      // 4. Slow drifting pinpoint starlight dust
+      ctx.globalAlpha = 1;
       for (let i = 0; i < motes.length; i++) {
         const m = motes[i];
         if (!isReducedMotion) {
@@ -242,25 +304,11 @@ export const CinematicNebulaCanvas: React.FC = () => {
         ctx.fill();
       }
 
-      // 5. Crisp OLED black edge frame & anti-band dither
+      // 5. Stamp cached vignette & anti-band dither overlay
       ctx.globalCompositeOperation = 'source-over';
-      const vignette = ctx.createRadialGradient(
-        width * 0.5,
-        height * 0.48,
-        Math.min(width, height) * 0.35,
-        width * 0.5,
-        height * 0.48,
-        maxDim * 0.85
-      );
-      vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
-      vignette.addColorStop(0.65, 'rgba(0, 0, 0, 0.32)');
-      vignette.addColorStop(1, 'rgba(0, 0, 0, 0.82)');
-      ctx.fillStyle = vignette;
-      ctx.fillRect(0, 0, width, height);
-
-      if (antiBandPattern) {
-        ctx.fillStyle = antiBandPattern;
-        ctx.fillRect(0, 0, width, height);
+      ctx.globalAlpha = 1;
+      if (vignetteOverlayCanvas) {
+        ctx.drawImage(vignetteOverlayCanvas, 0, 0, width, height);
       }
     };
 
@@ -274,7 +322,14 @@ export const CinematicNebulaCanvas: React.FC = () => {
 
     const startTime = performance.now();
     const loop = (now: number) => {
-      drawFrame(now - startTime);
+      if (typeof document !== 'undefined' && document.hidden) {
+        rafId = null;
+        return;
+      }
+      if (now - lastDrawNow >= 32) {
+        lastDrawNow = now;
+        drawFrame(now - startTime);
+      }
       if (!isReducedMotion) {
         rafId = window.requestAnimationFrame(loop);
       }
@@ -282,9 +337,22 @@ export const CinematicNebulaCanvas: React.FC = () => {
 
     if (isReducedMotion) {
       drawFrame(1800);
-    } else {
+    } else if (typeof document === 'undefined' || !document.hidden) {
       rafId = window.requestAnimationFrame(loop);
     }
+
+    const handleVisibilityChange = () => {
+      if (typeof document === 'undefined') return;
+      if (document.hidden) {
+        if (rafId !== null) {
+          window.cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+      } else if (!isReducedMotion && rafId === null) {
+        lastDrawNow = 0;
+        rafId = window.requestAnimationFrame(loop);
+      }
+    };
 
     const handleMotionChange = (e: MediaQueryListEvent) => {
       isReducedMotion = e.matches;
@@ -292,19 +360,22 @@ export const CinematicNebulaCanvas: React.FC = () => {
         window.cancelAnimationFrame(rafId);
         rafId = null;
         drawFrame(1800);
-      } else if (!isReducedMotion && rafId === null) {
+      } else if (!isReducedMotion && rafId === null && !document.hidden) {
+        lastDrawNow = 0;
         rafId = window.requestAnimationFrame(loop);
       }
     };
 
     window.addEventListener('resize', resize);
     window.addEventListener('pointermove', handlePointerMove, { passive: true });
+    document.addEventListener('visibilitychange', handleVisibilityChange);
     reducedMotionQuery?.addEventListener('change', handleMotionChange);
 
     return () => {
       if (rafId !== null) window.cancelAnimationFrame(rafId);
       window.removeEventListener('resize', resize);
       window.removeEventListener('pointermove', handlePointerMove);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       reducedMotionQuery?.removeEventListener('change', handleMotionChange);
     };
   }, []);

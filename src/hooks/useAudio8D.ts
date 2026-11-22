@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AudioFxParams, Spatial8dMode, VocalStemMode } from '../types/music';
 import { DEFAULT_AUDIO_FX_PARAMS } from '../components/music/audioEffects';
+import { getSpatialPresetConfig } from '../components/music/spatialPresets';
+import { getCachedRoomImpulseResponse } from '../audio/spatialEngine';
 
 export interface UseAudio8DOptions {
   /** Ref al elemento `<audio>` o `<video>` cuya señal será espacializada */
@@ -116,58 +118,6 @@ export function unlockGlobalAudio8dContexts(): void {
       void ctx.resume().catch(() => {});
     }
   });
-}
-
-/**
- * Genera matemáticamente un Impulse Response (IR) estéreo limpio de ~2.05s
- * con reflexiones tempranas decorreladas L/R y recorte de subgraves
- * para crear sensación de sala de conciertos real mientras la voz gira alrededor.
- */
-function generateCleanHallImpulseResponse(
-  ctx: AudioContext,
-  durationSec = 2.05,
-  decayPower = 2.55
-): AudioBuffer {
-  const sampleRate = ctx.sampleRate || 44100;
-  const length = Math.max(1, Math.floor(sampleRate * durationSec));
-  const irBuffer = ctx.createBuffer(2, length, sampleRate);
-
-  const earlyTapTimesSec = [0.009, 0.019, 0.032, 0.049, 0.071, 0.098];
-  const hpAlpha = Math.exp((-2 * Math.PI * 185) / sampleRate);
-  const lpAlpha = Math.exp((-2 * Math.PI * 7600) / sampleRate);
-
-  for (let channel = 0; channel < 2; channel++) {
-    const channelData = irBuffer.getChannelData(channel);
-    let prevRaw = 0;
-    let prevHp = 0;
-    let prevLp = 0;
-
-    for (let i = 0; i < length; i++) {
-      const progress = i / length;
-      const white = Math.random() * 2 - 1;
-
-      const hp = hpAlpha * (prevHp + white - prevRaw);
-      prevRaw = white;
-      prevHp = hp;
-
-      const lp = (1 - lpAlpha) * hp + lpAlpha * prevLp;
-      prevLp = lp;
-
-      const attackEnv = Math.min(1, i / Math.max(1, sampleRate * 0.008));
-      const decayEnv = Math.pow(1 - progress, decayPower);
-      channelData[i] = lp * attackEnv * decayEnv * 0.56;
-    }
-
-    earlyTapTimesSec.forEach((tapSec, idx) => {
-      const stereoOffset = channel === 0 ? 0 : 0.0062;
-      const tapIndex = Math.floor((tapSec + stereoOffset) * sampleRate);
-      if (tapIndex > 0 && tapIndex < length) {
-        channelData[tapIndex] += (channel === 0 ? 1 : -1) * (0.22 / (idx + 1));
-      }
-    });
-  }
-
-  return irBuffer;
 }
 
 /**
@@ -736,13 +686,20 @@ export function useAudio8D(options: UseAudio8DOptions): UseAudio8DReturn {
     const dryGain = ctx.createGain();
     dryGain.gain.value = 1 - reverbRef.current * 0.18;
 
-    // Ancla sutil de subgraves (< 105 Hz) centrada para conservar pegada física en auriculares
+    const initPreset = getSpatialPresetConfig(spatialModeRef.current);
+
+    // Ancla de subgraves (< 138–148 Hz crossover) centrada + Highpass sincronizado hacia HRTF
     const subAnchorLp = ctx.createBiquadFilter();
     subAnchorLp.type = 'lowpass';
-    subAnchorLp.frequency.value = 105;
-    subAnchorLp.Q.value = 0.7;
+    subAnchorLp.frequency.value = initPreset.crossoverHz;
+    subAnchorLp.Q.value = 0.7071;
     const subAnchorGain = ctx.createGain();
-    subAnchorGain.gain.value = spatialModeRef.current === 'club' ? 0.28 : 0.18;
+    subAnchorGain.gain.value = stemModeRef.current === 'vocals' ? 0 : initPreset.lowAnchorGain * 0.35;
+
+    const spatialBandHp = ctx.createBiquadFilter();
+    spatialBandHp.type = 'highpass';
+    spatialBandHp.frequency.value = initPreset.crossoverHz;
+    spatialBandHp.Q.value = 0.7071;
 
     // Reverb fija de sala (tomada PRE-Panner para envolver ambos oídos mientras el sonido orbita)
     const reverbHp = ctx.createBiquadFilter();
@@ -750,7 +707,7 @@ export function useAudio8D(options: UseAudio8DOptions): UseAudio8DReturn {
     reverbHp.frequency.value = 185;
     const convolver = ctx.createConvolver();
     convolver.normalize = true;
-    convolver.buffer = generateCleanHallImpulseResponse(ctx, 2.05, 2.55);
+    convolver.buffer = getCachedRoomImpulseResponse(ctx, initPreset);
     const wetGain = ctx.createGain();
     wetGain.gain.value = reverbRef.current * 1.18;
 
@@ -779,8 +736,9 @@ export function useAudio8D(options: UseAudio8DOptions): UseAudio8DReturn {
     stemStereoOut.connect(bypassGain);
     bypassGain.connect(analyser);
 
-    // Cableado Ruta 8D
-    stemMonoFor8d.connect(monoPointFocus);
+    // Cableado Ruta 8D con separación de bandas (crossover)
+    stemMonoFor8d.connect(spatialBandHp);
+    spatialBandHp.connect(monoPointFocus);
     monoPointFocus.connect(panner);
     panner.connect(earSplitter);
 
@@ -916,6 +874,7 @@ export function useAudio8D(options: UseAudio8DOptions): UseAudio8DReturn {
       dryGain,
       subAnchorLp,
       subAnchorGain,
+      spatialBandHp,
       reverbHp,
       convolver,
       wetGain,
@@ -1060,14 +1019,9 @@ export function useAudio8D(options: UseAudio8DOptions): UseAudio8DReturn {
       dryGainRef.current?.gain.setTargetAtTime(1 - reverbAmount * 0.18, now, 0.045);
       const effective8dWet = Math.max(reverbAmount, fxParams.reverbMix * 0.72);
       wetGainRef.current?.gain.setTargetAtTime(effective8dWet * 1.18, now, 0.045);
+      const preset = getSpatialPresetConfig(spatialMode);
       const anchorVal =
-        stemMode === 'vocals'
-          ? 0
-          : spatialMode === 'club'
-          ? 0.28
-          : spatialMode === 'concert'
-          ? 0.15
-          : 0.18;
+        stemMode === 'vocals' ? 0 : preset.lowAnchorGain * 0.35;
       subAnchorGainRef.current?.gain.setTargetAtTime(anchorVal, now, 0.045);
     } catch {
       // ignore
@@ -1148,25 +1102,26 @@ export function useAudio8D(options: UseAudio8DOptions): UseAudio8DReturn {
         const omega = (Math.PI * 2) / clamp8dSpeed(speedRef.current);
         const nextAngle = (telemetryRef.current.angleRad + omega * dtSec) % (Math.PI * 2);
 
-        const mode = spatialModeRef.current;
+        const preset = getSpatialPresetConfig(spatialModeRef.current);
+        const mode = preset.id;
         const baseRadius = clamp8dDepth(depthRef.current);
-        const radiusX = baseRadius * (mode === 'concert' ? 1.75 : mode === 'club' ? 1.55 : 1.65);
-        const radiusZ = baseRadius * (mode === 'concert' ? 1.35 : 1.15);
-        const elevAmp = baseRadius * (mode === 'concert' ? 0.55 : 0.36);
+        const radiusX = baseRadius * (mode === 'arena_live' ? 1.78 : mode === 'dynamic_groove' ? 1.55 : mode === 'intimate_room' ? 1.28 : 1.65);
+        const radiusZ = baseRadius * (mode === 'arena_live' ? 1.38 : mode === 'deep_3d' ? 1.28 : 1.15);
+        const elevAmp = baseRadius * (mode === 'arena_live' ? 0.52 : mode === 'deep_3d' ? 0.44 : 0.28);
 
         // Coordenadas espaciales 3D alrededor de la cabeza del oyente
         const panSin = Math.sin(nextAngle); // -1 izquierda .. +1 derecha
         const frontCos = Math.cos(nextAngle); // +1 frente .. -1 atrás
         const x = panSin * radiusX;
         const z = frontCos * radiusZ;
-        const y = Math.sin(nextAngle * 2) * elevAmp + (mode === 'concert' ? 0.25 : 0);
+        const y = Math.sin(nextAngle * 2) * elevAmp + (mode === 'arena_live' ? 0.25 : 0);
 
         const cutoffHz = computeSkullOcclusionCutoff(z, radiusZ);
         const rearAmount = frontCos < 0 ? Math.abs(frontCos) : 0;
         const pinnaNotchDb = -3.8 * rearAmount;
 
         // Sombreado Rayleigh por oído: contraste claro entre oreja cercana y opuesta
-        const minFarEarGain = mode === 'club' ? 0.22 : 0.27;
+        const minFarEarGain = mode === 'deep_3d' || mode === 'dynamic_groove' ? 0.22 : 0.27;
         const maxNearEarGain = 1.14;
         const rightNorm = Math.max(0, panSin);
         const leftNorm = Math.max(0, -panSin);

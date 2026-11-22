@@ -18,6 +18,7 @@ import {
   getTasteRecommendations,
   getTrackLyrics,
   resolveTrackPlayback,
+  resolveYouTubeEffectVariant,
   searchMusicCatalog,
   warmMusicPlaybackEngine,
 } from '../services/riffanMusicService.ts';
@@ -284,6 +285,29 @@ export function registerMusicRoutes(app: express.Express): void {
       res.json({ success: true, ...resolved });
     } catch {
       res.status(500).json({ success: false, error: 'Playback resolution failed' });
+    }
+  });
+
+  app.get('/api/music/yt-variant', async (req, res) => {
+    const title = String(req.query.title || '').trim();
+    const artist = String(req.query.artist || '').trim();
+    const rawVar = String(req.query.variant || '8d').trim().toLowerCase();
+    const variant = rawVar === 'karaoke' ? 'karaoke' : rawVar === 'slowed' ? 'slowed' : '8d';
+    if (!title || !artist) {
+      res.status(400).json({ success: false, found: false });
+      return;
+    }
+    try {
+      const hit = await resolveYouTubeEffectVariant({
+        title,
+        artist,
+        durationSec: Number(req.query.duration || 0) || undefined,
+        variant,
+      });
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.json({ success: true, found: Boolean(hit), variant: hit });
+    } catch {
+      res.json({ success: false, found: false });
     }
   });
 

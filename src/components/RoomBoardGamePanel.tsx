@@ -364,7 +364,6 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
           }`,
         });
 
-  const matchHistory = gameState.matchHistory || [];
   const remainingTurnSec =
     gameState.status === 'playing' && gameState.turnDeadlineAt
       ? Math.max(0, Math.ceil((gameState.turnDeadlineAt - nowTs) / 1000))

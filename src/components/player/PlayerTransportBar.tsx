@@ -92,7 +92,7 @@ export const PlayerTransportBar: React.FC<PlayerTransportBarProps> = ({
 
   return (
     <div
-      className={`pointer-events-none absolute bottom-0 inset-x-0 z-30 px-2.5 sm:px-5 pb-2 sm:pb-3 pt-4 bg-gradient-to-t from-black/95 via-black/75 to-transparent transition-opacity duration-300 ${
+      className={`pointer-events-none absolute bottom-0 inset-x-0 z-30 px-2.5 sm:px-5 pl-[max(0.625rem,env(safe-area-inset-left))] pr-[max(0.625rem,env(safe-area-inset-right))] pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-3 pt-4 bg-gradient-to-t from-black/95 via-black/75 to-transparent transition-opacity duration-300 ${
         controlsActive ? 'opacity-100' : 'opacity-0'
       }`}
     >
@@ -275,7 +275,7 @@ export const PlayerTransportBar: React.FC<PlayerTransportBarProps> = ({
                 <div
                   role="menu"
                   aria-label={t.audioTrackLabel}
-                  className="absolute bottom-full right-0 mb-2 w-48 p-1.5 rounded-2xl bg-[#141418]/96 backdrop-blur-2xl border border-white/15 shadow-[0_18px_45px_rgba(0,0,0,0.85)] z-50 space-y-0.5"
+                  className="absolute bottom-full right-0 mb-2 w-48 max-h-[min(220px,calc(100vh-7rem))] overflow-y-auto overscroll-contain custom-scrollbar p-1.5 rounded-2xl bg-[#141418]/96 backdrop-blur-2xl border border-white/15 shadow-[0_18px_45px_rgba(0,0,0,0.85)] z-50 space-y-0.5"
                 >
                   <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
                     {t.audioTrackEmbedded}
@@ -347,7 +347,7 @@ export const PlayerTransportBar: React.FC<PlayerTransportBarProps> = ({
                 <div
                   role="menu"
                   aria-label={t.qualityLabel}
-                  className="absolute bottom-full right-0 mb-2 w-44 p-1.5 rounded-2xl bg-[#141418]/96 backdrop-blur-2xl border border-white/15 shadow-[0_18px_45px_rgba(0,0,0,0.85)] z-50 space-y-0.5"
+                  className="absolute bottom-full right-0 mb-2 w-44 max-h-[min(220px,calc(100vh-7rem))] overflow-y-auto overscroll-contain custom-scrollbar p-1.5 rounded-2xl bg-[#141418]/96 backdrop-blur-2xl border border-white/15 shadow-[0_18px_45px_rgba(0,0,0,0.85)] z-50 space-y-0.5"
                 >
                   <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
                     {t.qualityLabel}

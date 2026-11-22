@@ -120,7 +120,6 @@ function buildTvBannerPng(): Buffer {
     }
 
     // Centered TV play emblem & geometric "TV" block bars
-    const dx = x - 160;
     const dy = y - 90;
     // Rounded studio badge on the left
     const badgeDist = Math.hypot(x - 104, dy);

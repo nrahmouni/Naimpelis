@@ -261,46 +261,33 @@ export function useCloudSyncSubscriptions(params: {
           },
         });
         // Also wire bidirectional Riffan Music library/taste sync to /musicLibraries/{uid}
-        void import('../store/useMusicStore')
-          .then(({ registerMusicCloudSyncHook, useMusicStore }) => {
+        void Promise.all([
+          import('../store/useMusicStore'),
+          import('../services/cloudSync/cloudMusicSync'),
+        ])
+          .then(([{ registerMusicCloudSyncHook, useMusicStore }, { buildCloudMusicPayload }]) => {
             if (!active || auth.currentUser?.uid !== verifiedFbUser.uid) return;
             detachMusicCloudListener = subscribeCloudMusicLibrary(
               verifiedFbUser.uid,
               (payload) => {
                 useMusicStore.getState().hydrateFromCloud(payload);
+              },
+              () => {
+                const snap = useMusicStore.getState().getPersistedSnapshot();
+                const hasLocalData =
+                  snap.likedTracks.length > 0 ||
+                  snap.userPlaylists.length > 0 ||
+                  snap.tasteProfile.favoriteArtists.length > 0 ||
+                  snap.listeningStats.totalPlays > 0;
+                if (hasLocalData) {
+                  void pushCloudMusicLibrary(buildCloudMusicPayload(snap));
+                }
               }
             );
             registerMusicCloudSyncHook((lib) => {
               if (musicSyncTimer) clearTimeout(musicSyncTimer);
               musicSyncTimer = setTimeout(() => {
-                void pushCloudMusicLibrary({
-                  likedTracks: lib.likedTracks,
-                  userPlaylists: lib.userPlaylists,
-                  savedAlbums: lib.savedAlbums,
-                  savedPlaylists: lib.savedPlaylists,
-                  customPresets: lib.customPresets,
-                  tasteProfile: lib.tasteProfile,
-                  listeningStats: lib.listeningStats,
-                  studioSettings: {
-                    eqBands10: lib.eqBands10,
-                    spatial8dEnabled: lib.spatial8dEnabled,
-                    spatial8dMode: lib.spatial8dMode,
-                    spatialTrajectory: lib.spatialTrajectory,
-                    spatial8dSpeedSec: lib.spatial8dSpeedSec,
-                    bassBoostDb: lib.bassBoostDb,
-                    reverbMix: lib.reverbMix,
-                    stereoWidth: lib.stereoWidth,
-                    exciterMix: lib.exciterMix,
-                    vinylCrackle: lib.vinylCrackle,
-                    vocalCancel: lib.vocalCancel,
-                    crossfadeSec: lib.crossfadeSec,
-                    normalizeAudio: lib.normalizeAudio,
-                    exportBitrate: lib.exportBitrate,
-                    wifiOnlyAutoDownload: lib.wifiOnlyAutoDownload,
-                    musicLang: lib.musicLang,
-                    trackProfiles: lib.trackProfiles,
-                  },
-                });
+                void pushCloudMusicLibrary(buildCloudMusicPayload(lib));
               }, 1400);
             });
           })

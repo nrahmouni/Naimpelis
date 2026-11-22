@@ -1214,24 +1214,36 @@ function simpleMatchCheck(
   return true;
 }
 
-export async function matchImportedTracksBatch(
-  items: Array<{
-    title: string;
-    artist: string;
-    album?: string;
-    durationSec?: number;
-    spotifyId?: string;
-    isrc?: string;
-    previewUrl?: string;
-    cover?: string;
-    explicit?: boolean;
-  }>
-): Promise<MusicTrack[]> {
+export type MatchStrategy = 'isrc' | 'search' | 'fallback';
+
+export interface BatchMatchItemInput {
+  title: string;
+  artist: string;
+  album?: string;
+  durationSec?: number;
+  spotifyId?: string;
+  isrc?: string;
+  previewUrl?: string;
+  cover?: string;
+  explicit?: boolean;
+}
+
+export interface BatchMatchDetailedResult {
+  tracks: MusicTrack[];
+  strategies: MatchStrategy[];
+  breakdown: { isrc: number; search: number; fallback: number };
+}
+
+export async function matchImportedTracksDetailed(
+  items: BatchMatchItemInput[]
+): Promise<BatchMatchDetailedResult> {
   const cleanItems = items
     .filter((i) => i && typeof i.title === 'string' && i.title.trim())
     .slice(0, 60);
 
-  const results: Array<MusicTrack | null> = new Array(cleanItems.length).fill(null);
+  const results: Array<{ track: MusicTrack; strategy: MatchStrategy } | null> = new Array(
+    cleanItems.length
+  ).fill(null);
   let cursor = 0;
 
   async function worker() {
@@ -1247,25 +1259,28 @@ export async function matchImportedTracksBatch(
       // Fast path when Exportify CSV already supplies rich artwork + preview + duration + spotifyId/isrc
       if (item.spotifyId && item.cover && (item.previewUrl || item.durationSec)) {
         results[idx] = {
-          id: `sp-${item.spotifyId}`,
-          title,
-          artist: {
-            id: `sp-art-${encodeURIComponent((primaryArtist || 'art').toLowerCase())}`,
-            name: artist || 'Artista',
-            picture: item.cover,
+          strategy: 'isrc',
+          track: {
+            id: `sp-${item.spotifyId}`,
+            title,
+            artist: {
+              id: `sp-art-${encodeURIComponent((primaryArtist || 'art').toLowerCase())}`,
+              name: artist || 'Artista',
+              picture: item.cover,
+            },
+            album: {
+              id: `sp-alb-${idx}`,
+              title: item.album || 'Spotify Import',
+              cover: item.cover,
+              coverXl: item.cover,
+            },
+            durationSec: item.durationSec || 0,
+            explicit: Boolean(item.explicit),
+            previewUrl: item.previewUrl,
+            isrc: item.isrc,
+            source: 'spotify',
+            spotifyId: item.spotifyId,
           },
-          album: {
-            id: `sp-alb-${idx}`,
-            title: item.album || 'Spotify Import',
-            cover: item.cover,
-            coverXl: item.cover,
-          },
-          durationSec: item.durationSec || 0,
-          explicit: Boolean(item.explicit),
-          previewUrl: item.previewUrl,
-          isrc: item.isrc,
-          source: 'spotify',
-          spotifyId: item.spotifyId,
         };
         continue;
       }
@@ -1281,28 +1296,31 @@ export async function matchImportedTracksBatch(
 
         if (dzByIsrc?.id) {
           results[idx] = {
-            id: item.spotifyId ? `sp-${item.spotifyId}` : `dz-${dzByIsrc.id}`,
-            title: title || String(dzByIsrc.title_short || dzByIsrc.title),
-            artist: {
-              id: String(dzByIsrc.artist?.id || `imp-art-${idx}`),
-              name: artist || String(dzByIsrc.artist?.name || 'Artista'),
-              picture: String(
-                dzByIsrc.artist?.picture_medium || item.cover || dzByIsrc.album?.cover_medium || ''
-              ),
+            strategy: 'isrc',
+            track: {
+              id: item.spotifyId ? `sp-${item.spotifyId}` : `dz-${dzByIsrc.id}`,
+              title: title || String(dzByIsrc.title_short || dzByIsrc.title),
+              artist: {
+                id: String(dzByIsrc.artist?.id || `imp-art-${idx}`),
+                name: artist || String(dzByIsrc.artist?.name || 'Artista'),
+                picture: String(
+                  dzByIsrc.artist?.picture_medium || item.cover || dzByIsrc.album?.cover_medium || ''
+                ),
+              },
+              album: {
+                id: String(dzByIsrc.album?.id || `imp-alb-${idx}`),
+                title: item.album || String(dzByIsrc.album?.title || 'Importado'),
+                cover: item.cover || String(dzByIsrc.album?.cover_big || dzByIsrc.album?.cover_medium || ''),
+                coverXl:
+                  item.cover || String(dzByIsrc.album?.cover_xl || dzByIsrc.album?.cover_big || ''),
+              },
+              durationSec: Number(dzByIsrc.duration || item.durationSec || 0),
+              explicit: item.explicit ?? Boolean(dzByIsrc.explicit_lyrics),
+              previewUrl: item.previewUrl || (dzByIsrc.preview ? String(dzByIsrc.preview) : undefined),
+              isrc: item.isrc || (dzByIsrc.isrc ? String(dzByIsrc.isrc) : undefined),
+              spotifyId: item.spotifyId,
+              source: item.spotifyId ? 'spotify' : 'deezer',
             },
-            album: {
-              id: String(dzByIsrc.album?.id || `imp-alb-${idx}`),
-              title: item.album || String(dzByIsrc.album?.title || 'Importado'),
-              cover: item.cover || String(dzByIsrc.album?.cover_big || dzByIsrc.album?.cover_medium || ''),
-              coverXl:
-                item.cover || String(dzByIsrc.album?.cover_xl || dzByIsrc.album?.cover_big || ''),
-            },
-            durationSec: Number(dzByIsrc.duration || item.durationSec || 0),
-            explicit: item.explicit ?? Boolean(dzByIsrc.explicit_lyrics),
-            previewUrl: item.previewUrl || (dzByIsrc.preview ? String(dzByIsrc.preview) : undefined),
-            isrc: item.isrc || (dzByIsrc.isrc ? String(dzByIsrc.isrc) : undefined),
-            spotifyId: item.spotifyId,
-            source: item.spotifyId ? 'spotify' : 'deezer',
           };
           continue;
         }
@@ -1330,25 +1348,28 @@ export async function matchImportedTracksBatch(
 
         if (dzHit?.id) {
           results[idx] = {
-            id: item.spotifyId ? `sp-${item.spotifyId}` : `dz-${dzHit.id}`,
-            title: title || String(dzHit.title_short || dzHit.title),
-            artist: {
-              id: String(dzHit.artist?.id || `imp-art-${idx}`),
-              name: artist || String(dzHit.artist?.name || 'Artista'),
-              picture: String(dzHit.artist?.picture_medium || item.cover || dzHit.album?.cover_medium || ''),
+            strategy: 'search',
+            track: {
+              id: item.spotifyId ? `sp-${item.spotifyId}` : `dz-${dzHit.id}`,
+              title: title || String(dzHit.title_short || dzHit.title),
+              artist: {
+                id: String(dzHit.artist?.id || `imp-art-${idx}`),
+                name: artist || String(dzHit.artist?.name || 'Artista'),
+                picture: String(dzHit.artist?.picture_medium || item.cover || dzHit.album?.cover_medium || ''),
+              },
+              album: {
+                id: String(dzHit.album?.id || `imp-alb-${idx}`),
+                title: item.album || String(dzHit.album?.title || 'Importado'),
+                cover: item.cover || String(dzHit.album?.cover_big || dzHit.album?.cover_medium || ''),
+                coverXl: item.cover || String(dzHit.album?.cover_xl || dzHit.album?.cover_big || ''),
+              },
+              durationSec: Number(dzHit.duration || item.durationSec || 0),
+              explicit: item.explicit ?? Boolean(dzHit.explicit_lyrics),
+              previewUrl: item.previewUrl || (dzHit.preview ? String(dzHit.preview) : undefined),
+              isrc: item.isrc || (dzHit.isrc ? String(dzHit.isrc) : undefined),
+              spotifyId: item.spotifyId,
+              source: item.spotifyId ? 'spotify' : 'deezer',
             },
-            album: {
-              id: String(dzHit.album?.id || `imp-alb-${idx}`),
-              title: item.album || String(dzHit.album?.title || 'Importado'),
-              cover: item.cover || String(dzHit.album?.cover_big || dzHit.album?.cover_medium || ''),
-              coverXl: item.cover || String(dzHit.album?.cover_xl || dzHit.album?.cover_big || ''),
-            },
-            durationSec: Number(dzHit.duration || item.durationSec || 0),
-            explicit: item.explicit ?? Boolean(dzHit.explicit_lyrics),
-            previewUrl: item.previewUrl || (dzHit.preview ? String(dzHit.preview) : undefined),
-            isrc: item.isrc || (dzHit.isrc ? String(dzHit.isrc) : undefined),
-            spotifyId: item.spotifyId,
-            source: item.spotifyId ? 'spotify' : 'deezer',
           };
           continue;
         }
@@ -1366,20 +1387,23 @@ export async function matchImportedTracksBatch(
         if (itHit) {
           const mappedIt = mapItunesSongToTrack(itHit, 'spotify');
           results[idx] = {
-            ...mappedIt,
-            id: item.spotifyId ? `sp-${item.spotifyId}` : mappedIt.id,
-            title,
-            artist: { ...mappedIt.artist, name: artist || mappedIt.artist.name },
-            album: {
-              ...mappedIt.album,
-              title: item.album || mappedIt.album.title,
-              cover: item.cover || mappedIt.album.cover,
-              coverXl: item.cover || mappedIt.album.coverXl,
+            strategy: 'search',
+            track: {
+              ...mappedIt,
+              id: item.spotifyId ? `sp-${item.spotifyId}` : mappedIt.id,
+              title,
+              artist: { ...mappedIt.artist, name: artist || mappedIt.artist.name },
+              album: {
+                ...mappedIt.album,
+                title: item.album || mappedIt.album.title,
+                cover: item.cover || mappedIt.album.cover,
+                coverXl: item.cover || mappedIt.album.coverXl,
+              },
+              durationSec: item.durationSec || mappedIt.durationSec,
+              previewUrl: item.previewUrl || mappedIt.previewUrl,
+              isrc: item.isrc,
+              spotifyId: item.spotifyId,
             },
-            durationSec: item.durationSec || mappedIt.durationSec,
-            previewUrl: item.previewUrl || mappedIt.previewUrl,
-            isrc: item.isrc,
-            spotifyId: item.spotifyId,
           };
           continue;
         }
@@ -1388,32 +1412,51 @@ export async function matchImportedTracksBatch(
       }
 
       results[idx] = {
-        id: item.spotifyId
-          ? `sp-${item.spotifyId}`
-          : `imp-${Buffer.from(`${artist}|${title}`).toString('base64url').slice(0, 18)}`,
-        title,
-        artist: {
-          id: `imp-art-${encodeURIComponent((primaryArtist || 'art').toLowerCase())}`,
-          name: artist || 'Artista',
-          picture: item.cover,
+        strategy: 'fallback',
+        track: {
+          id: item.spotifyId
+            ? `sp-${item.spotifyId}`
+            : `imp-${Buffer.from(`${artist}|${title}`).toString('base64url').slice(0, 18)}`,
+          title,
+          artist: {
+            id: `imp-art-${encodeURIComponent((primaryArtist || 'art').toLowerCase())}`,
+            name: artist || 'Artista',
+            picture: item.cover,
+          },
+          album: {
+            id: `imp-alb-${idx}`,
+            title: item.album || 'Importado',
+            cover: item.cover || '',
+            coverXl: item.cover || '',
+          },
+          durationSec: item.durationSec || 0,
+          explicit: item.explicit,
+          previewUrl: item.previewUrl,
+          isrc: item.isrc,
+          spotifyId: item.spotifyId,
+          source: 'spotify',
         },
-        album: {
-          id: `imp-alb-${idx}`,
-          title: item.album || 'Importado',
-          cover: item.cover || '',
-          coverXl: item.cover || '',
-        },
-        durationSec: item.durationSec || 0,
-        explicit: item.explicit,
-        previewUrl: item.previewUrl,
-        isrc: item.isrc,
-        spotifyId: item.spotifyId,
-        source: 'spotify',
       };
     }
   }
 
   await Promise.all(Array.from({ length: Math.min(6, cleanItems.length) }, () => worker()));
-  return results.filter((t): t is MusicTrack => Boolean(t));
+  const tracks: MusicTrack[] = [];
+  const strategies: MatchStrategy[] = [];
+  const breakdown = { isrc: 0, search: 0, fallback: 0 };
+
+  for (const row of results) {
+    if (!row) continue;
+    tracks.push(row.track);
+    strategies.push(row.strategy);
+    breakdown[row.strategy] += 1;
+  }
+
+  return { tracks, strategies, breakdown };
+}
+
+export async function matchImportedTracksBatch(items: BatchMatchItemInput[]): Promise<MusicTrack[]> {
+  const res = await matchImportedTracksDetailed(items);
+  return res.tracks;
 }
 

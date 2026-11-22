@@ -7,7 +7,6 @@ import {
   Download,
   Settings,
   Shuffle,
-  X,
 } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { pickLang, formatRoomTitle } from '../utils/i18n';
@@ -30,6 +29,7 @@ import { PWAInstallOptionsSheet } from './PWAInstallPrompt';
 import { CinematicNebulaCanvas } from './lobby/CinematicNebulaCanvas';
 import { useAppStore } from '../store/useAppStore';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { useBackInterceptor } from '../lib/backInterceptor';
 
 const SpotifyYtmImportModal = lazyWithRetry(() =>
   import('./music/SpotifyYtmImportModal').then((m) => ({ default: m.SpotifyYtmImportModal }))
@@ -155,6 +155,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     return () => window.clearTimeout(timer);
   }, [accessTab]);
 
+  useBackInterceptor(langMenuOpen, 'lobby-lang-menu', () => setLangMenuOpen(false), {
+    priority: 20,
+  });
+
+  useBackInterceptor(accessTab === 'join', 'lobby-join-tab', () => setAccessTab('enter'), {
+    priority: 8,
+  });
+
   const buildProfile = (): StoredProfile => {
     const trimmed = name.trim();
     if (!trimmed) {
@@ -257,11 +265,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 ca: 'Instal·lar aplicació',
                 en: 'Install app',
                 zh: '安装应用',
+                rif: 'Sbedd app',
               })}
               title={pickLang(lang, {
                 es: 'Instalar PWA / Smart TV',
                 ca: 'Instal·lar PWA / Smart TV',
                 en: 'Install PWA / Smart TV',
+                zh: '安装 PWA / 智能电视',
+                rif: 'Sbedd PWA / Smart TV',
               })}
               className={`min-h-[44px] min-w-[44px] rounded-2xl bg-[#0D0D12]/80 hover:bg-[#14141C] backdrop-blur-xl border border-white/[0.08] flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer active:scale-95 transition-all ${TV_FOCUS_CLASS}`}
             >
@@ -283,6 +294,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   es: 'Cambiar idioma',
                   ca: 'Canviar idioma',
                   en: 'Change language',
+                  zh: '切换语言',
+                  rif: 'Beddel tutlayt',
                 })}
                 className={`min-h-[44px] px-2.5 sm:px-3 rounded-2xl bg-[#0D0D12]/80 hover:bg-[#14141C] backdrop-blur-xl border border-white/[0.08] flex items-center gap-1.5 text-xs font-display font-bold text-white whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${TV_FOCUS_CLASS}`}
               >
@@ -302,6 +315,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     es: 'Idiomas',
                     ca: 'Idiomes',
                     en: 'Languages',
+                    zh: '语言',
+                    rif: 'Tutlayin',
                   })}
                   className="absolute right-0 top-full mt-2 w-44 p-1.5 rounded-2xl bg-[#0D0D12]/96 backdrop-blur-2xl border border-white/[0.08] shadow-[0_24px_60px_rgba(0,0,0,0.92)] z-50 space-y-0.5"
                 >
@@ -351,6 +366,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 es: 'Ajustes',
                 ca: 'Ajustos',
                 en: 'Settings',
+                zh: '设置',
+                rif: 'Iseɣzanen',
               })}
               className={`min-h-[44px] min-w-[44px] rounded-2xl bg-[#0D0D12]/80 hover:bg-[#14141C] backdrop-blur-xl border border-white/[0.08] flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer active:scale-95 transition-all ${TV_FOCUS_CLASS}`}
             >
@@ -399,6 +416,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 es: 'Modo de acceso',
                 ca: "Mode d'accés",
                 en: 'Access mode',
+                zh: '进入模式',
+                rif: 'Abriḍ n udef',
               })}
               className="grid grid-cols-2 p-1 rounded-2xl bg-black/70 border border-white/[0.08] gap-1"
             >
@@ -429,6 +448,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     ca: 'Entrar / Sala',
                     en: 'Enter / Room',
                     zh: '进入 / 建房',
+                    rif: 'Adef / Taxxamt',
                   })}
                 </span>
               </button>
@@ -460,6 +480,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     ca: 'Tinc codi',
                     en: 'Join code',
                     zh: '输入房间码',
+                    rif: 'Udef s lkod',
                   })}
                 </span>
               </button>
@@ -512,6 +533,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   es: 'Nombre aleatorio',
                   ca: 'Nom aleatori',
                   en: 'Random name',
+                  zh: '随机昵称',
+                  rif: 'Isem amaynut',
                 })}
                 className={`w-10 h-10 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer active:scale-95 transition-all shrink-0 ${TV_FOCUS_CLASS}`}
               >
@@ -576,6 +599,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     es: 'Código de sala',
                     ca: 'Codi de sala',
                     en: 'Room code',
+                    zh: '房间码',
+                    rif: 'Lkod n texxamt',
                   })}
                   className={`w-full min-h-[46px] px-4 rounded-2xl bg-black/60 border border-white/[0.08] focus:border-[#7C3AED] text-sm font-mono uppercase tracking-wider text-white placeholder:text-zinc-500 placeholder:normal-case placeholder:tracking-normal outline-none ${TV_FOCUS_CLASS}`}
                 />
@@ -635,6 +660,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       es: 'Continuar con Google',
                       ca: 'Continuar amb Google',
                       en: 'Continue with Google',
+                      zh: '使用 Google 登录',
+                      rif: 'Kemmel s Google',
                     })}
                   </span>
                 </button>

@@ -21,6 +21,10 @@ import { PlayerStageOverlays } from './PlayerStageOverlays';
 import { PlayerTopHudBar } from './PlayerTopHudBar';
 import { PlayerTransportBar } from './PlayerTransportBar';
 import { PlayerYoutubeStage } from './PlayerYoutubeAndVoiceAlert';
+import {
+  PlayerProSettingsModal,
+  type PlayerProSettingsModalProps,
+} from './PlayerProSettingsModal';
 
 export interface PlayerViewportContentProps {
   lang: AppLanguage;
@@ -151,9 +155,10 @@ export interface PlayerViewportContentProps {
   onToggleTouchLock?: () => void;
   tacticalVisionEnabled?: boolean;
   onToggleTacticalVision?: () => void;
+  proSettingsProps?: PlayerProSettingsModalProps;
   videoCallbacks: {
     onLoadedMetadata: (e: React.SyntheticEvent<HTMLVideoElement>) => void;
-    onEnded: () => void;
+    onEnded: (e: React.SyntheticEvent<HTMLVideoElement>) => void;
     onTimeUpdate: (e: React.SyntheticEvent<HTMLVideoElement>) => void;
     onWaiting: () => void;
     onStalled: () => void;
@@ -497,6 +502,10 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
           onTogglePlay={p.handleTogglePlay}
           onToggleMute={p.handleToggleMute}
         />
+      )}
+
+      {p.isStageFullscreen && p.proSettingsProps && (
+        <PlayerProSettingsModal {...p.proSettingsProps} inStageFullscreen />
       )}
     </div>
   );

@@ -531,8 +531,8 @@ document.addEventListener('keydown', function (e) {
 
   if (targetTag === 'INPUT' && code !== 27) return;
 
-  // Back / Escape / Tizen Return (10009) / LG webOS Back (461) & Stop (413) / Android Back (4)
-  if (code === 27 || code === 8 || code === 4 || code === 10009 || code === 461 || code === 413) {
+  // Back / Escape / Tizen Return (10009) / LG webOS Back (461) / Android Back (4)
+  if (code === 27 || code === 8 || code === 4 || code === 10009 || code === 461) {
     if (voiceModal && voiceModal.style.display === 'block') {
       if (e.preventDefault) e.preventDefault();
       voiceModal.style.display = 'none';
@@ -558,6 +558,16 @@ document.addEventListener('keydown', function (e) {
     }
   }
 
+  // Samsung Tizen MediaStop (413): stop playback cleanly and return to hub
+  if (code === 413) {
+    if (activeScreen === 'player') {
+      if (e.preventDefault) e.preventDefault();
+      try { if (videoEl) { videoEl.pause(); } } catch (err) {}
+      exitPlayerToHubOrPairing();
+      return;
+    }
+  }
+
   if (activeScreen !== 'player') return;
   revealHud();
   if (code === 32 && (currentMode === 'hls' || currentMode === 'direct')) {
@@ -567,15 +577,39 @@ document.addEventListener('keydown', function (e) {
     syncPlayPauseButton();
   } else if (code === 415 || code === 126) {
     if (videoEl.paused) videoEl.play();
-  } else if (code === 179 || code === 85) {
+    syncPlayPauseButton();
+  } else if (code === 10252 || code === 179 || code === 85) {
     if (videoEl.paused) videoEl.play();
     else videoEl.pause();
+    syncPlayPauseButton();
   } else if (code === 412 && !currentIsLive) {
     videoEl.currentTime = Math.max(0, (videoEl.currentTime || 0) - 15);
   } else if (code === 417 && !currentIsLive) {
     videoEl.currentTime = (videoEl.currentTime || 0) + 15;
   }
 });
+
+// Register Samsung Tizen TV hardware remote keys + screensaver protection (ES5-safe)
+try {
+  if (window.tizen && window.tizen.tvinputdevice && window.tizen.tvinputdevice.registerKeyBatch) {
+    window.tizen.tvinputdevice.registerKeyBatch([
+      'MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop',
+      'MediaRewind', 'MediaFastForward', 'ChannelUp', 'ChannelDown'
+    ]);
+  }
+  if (videoEl && videoEl.addEventListener) {
+    var setTvScreenSaver = function (prevent) {
+      try {
+        if (window.webapis && window.webapis.appcommon && window.webapis.appcommon.setScreenSaver) {
+          window.webapis.appcommon.setScreenSaver(prevent ? 0 : 1);
+        }
+      } catch (err) {}
+    };
+    videoEl.addEventListener('play', function () { setTvScreenSaver(true); });
+    videoEl.addEventListener('pause', function () { setTvScreenSaver(false); });
+    videoEl.addEventListener('ended', function () { setTvScreenSaver(false); });
+  }
+} catch (tizenErr) {}
 
 applyTvLanguage(activeTvLang);
 syncFullscreenButtons();

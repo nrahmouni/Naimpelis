@@ -431,18 +431,25 @@
 .top-\[68px\] { top: 4.25rem !important; }
 .bottom-\[86px\] { bottom: 5.375rem !important; }
 
-/* Google TV / Chromecast Physical Remote 10-Foot Focus Ring */
-html.is-google-tv, html.is-google-tv body { cursor: none; user-select: none; }
+/* Google TV / Samsung Tizen Physical Remote 10-Foot Focus Ring */
+html.is-google-tv, html.is-google-tv body,
+html.is-tizen-tv, html.is-tizen-tv body { cursor: none; user-select: none; background-color: #000000; }
 [data-tv-focusable="true"]:focus-visible,
 html.tv-dpad-active *:focus {
   outline: 2.5px solid #ffffff !important;
   outline-offset: 3px !important;
-  box-shadow: 0 0 0 6px rgba(145, 70, 255, 0.78), 0 18px 42px rgba(0, 0, 0, 0.88) !important;
+  box-shadow: 0 0 0 6px rgba(145, 70, 255, 0.82), 0 18px 42px rgba(0, 0, 0, 0.92) !important;
   z-index: 30;
   transition: transform 0.14s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.14s ease !important;
 }
 html.tv-dpad-active :is(button, a, [role="button"]):focus,
 [data-tv-focusable="true"]:focus-visible { transform: scale(1.03); }
+.tv-10foot-stage {
+  background-color: #000000;
+  color: #ffffff;
+}
+.tv-10foot-stage::-webkit-scrollbar { display: none; }
+.tv-10foot-stage { -ms-overflow-style: none; scrollbar-width: none; }
 
 /* Light Theme Surface & Contrast Overrides */
 :root[data-theme="light"] :is(.bg-\[\#000000\], .bg-\[\#000000\]\/92, .bg-\[\#06070B\], .bg-\[\#07080C\], .bg-\[\#0B0B0E\], .bg-\[\#0D0E15\], .bg-\[\#0E0E10\], .bg-\[\#0E0E10\]\/95, .bg-\[\#0E0F16\], .bg-\[\#090A10\], .bg-\[\#0C0E16\]):not(.nc-media-stage *) {

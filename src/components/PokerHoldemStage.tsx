@@ -14,7 +14,6 @@ import {
   createInitialPokerState,
   evaluateBest5Of7,
   formatPokerRank,
-  joinPokerSeat,
   startNextPokerHand,
   type PokerActionType,
   type PokerCard,

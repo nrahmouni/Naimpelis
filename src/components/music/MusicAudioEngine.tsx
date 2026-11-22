@@ -7,7 +7,6 @@ import type {
   MusicTrack,
   ResolvedTrackPlayback,
   Spatial8dMode,
-  SpatialTrajectory,
 } from '../../types/music';
 import {
   deleteOfflineTrackAudio,
@@ -16,6 +15,13 @@ import {
   saveOfflineTrackAudio,
 } from '../../services/musicOfflineDb';
 import { buildZipBlob } from '../../utils/zipExport';
+import { getSpatialPresetConfig } from './spatialPresets';
+import {
+  applySmoothParam,
+  computeSpatialTrajectorySample,
+  getCachedRoomImpulseResponse,
+  resumeSpatialContext,
+} from '../../audio/spatialEngine';
 
 export const EQ_BANDS_HZ = [60, 230, 910, 4000, 14000] as const;
 export const EQ_10_BANDS_HZ = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000] as const;
@@ -48,14 +54,7 @@ export const EQ_PRESETS: Record<EqPresetId, { label: string; gains: number[]; ga
   },
 };
 
-const SPATIAL_PROFILES: Record<
-  Spatial8dMode,
-  { radius: number; centerMix: number; warmthDb: number }
-> = {
-  orbit: { radius: 1.75, centerMix: 0.2, warmthDb: 2.2 },
-  concert: { radius: 2.05, centerMix: 0.18, warmthDb: 2.8 },
-  club: { radius: 1.9, centerMix: 0.16, warmthDb: 3.2 },
-};
+const FALLBACK_SPATIAL_MODE: Spatial8dMode = 'orbit_drift';
 
 export interface Mp3ExportOptions {
   mode?: 'original' | '8d' | 'slowed' | 'nightcore';
@@ -313,15 +312,40 @@ export function triggerTrackMp3Download(
   void startDownloadMp3Job(track, opts);
 }
 
+let sharedAudioCtx: AudioContext | null = null;
 let sharedAnalyserNode: AnalyserNode | null = null;
 let sharedFreqArray: Uint8Array<ArrayBuffer> | null = null;
 let sharedSpatialAngleRad = 0;
 let sharedSpatialEngineActive = false;
+let sharedBackendKind: 'webaudio' | 'direct' | 'youtube' | 'none' = 'none';
+
+export function unlockMusicAudioEngine(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const AC =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AC) return;
+    if (!sharedAudioCtx) {
+      sharedAudioCtx = new AC();
+    }
+    if (sharedAudioCtx.state === 'suspended') {
+      void sharedAudioCtx.resume().catch(() => {});
+    }
+  } catch {
+    // ignore browser audio unlock restrictions
+  }
+}
+
+export function getMusicAudioBackend(): 'webaudio' | 'direct' | 'youtube' | 'none' {
+  return sharedBackendKind;
+}
 
 export function getSpatial8dTelemetry() {
   return {
     angleRad: sharedSpatialAngleRad,
     activeWebAudio: sharedSpatialEngineActive,
+    backend: sharedBackendKind,
   };
 }
 
@@ -346,31 +370,6 @@ export function sampleMusicSpectrum(barCount = 24): number[] {
   return out;
 }
 
-function createStudioHallImpulse(ctx: AudioContext, durationSec = 1.45, decay = 2.6): AudioBuffer {
-  const sampleRate = ctx.sampleRate || 44100;
-  const length = Math.max(1, Math.floor(sampleRate * durationSec));
-  const buffer = ctx.createBuffer(2, length, sampleRate);
-  const earlyTaps = [0.016, 0.031, 0.053];
-
-  for (let ch = 0; ch < 2; ch++) {
-    const data = buffer.getChannelData(ch);
-    let lp = 0;
-    for (let i = 0; i < length; i++) {
-      const t = i / length;
-      const noise = Math.random() * 2 - 1;
-      lp = lp * 0.52 + noise * 0.48;
-      data[i] = lp * Math.pow(1 - t, decay) * 0.65;
-    }
-    earlyTaps.forEach((tapSec, idx) => {
-      const tapIdx = Math.floor((tapSec + ch * 0.004) * sampleRate);
-      if (tapIdx < length) {
-        data[tapIdx] += 0.28 / (idx + 1);
-      }
-    });
-  }
-  return buffer;
-}
-
 function createVinylCrackleBuffer(ctx: AudioContext): AudioBuffer {
   const sampleRate = ctx.sampleRate || 44100;
   const length = sampleRate * 4;
@@ -386,39 +385,6 @@ function createVinylCrackleBuffer(ctx: AudioContext): AudioBuffer {
     }
   }
   return buffer;
-}
-
-function computeSpatialCoords(
-  trajectory: SpatialTrajectory,
-  angle: number,
-  radius: number
-): { x: number; y: number; z: number } {
-  if (trajectory === 'pendulum') {
-    return {
-      x: radius * Math.sin(angle),
-      y: 0.08 * Math.cos(angle * 2),
-      z: -radius * 0.9 - 0.25 * Math.cos(angle),
-    };
-  }
-  if (trajectory === 'figure8') {
-    return {
-      x: radius * Math.sin(angle),
-      y: 0.22 * Math.sin(angle * 2),
-      z: -radius * 0.78 * Math.sin(angle * 2) - 0.85,
-    };
-  }
-  if (trajectory === 'elevated') {
-    return {
-      x: radius * Math.sin(angle),
-      y: 0.85 * Math.abs(Math.sin(angle * 0.5)) + 0.15,
-      z: -radius * Math.cos(angle),
-    };
-  }
-  return {
-    x: radius * Math.sin(angle),
-    y: 0.24 * Math.sin(angle * 2),
-    z: -radius * Math.cos(angle),
-  };
 }
 
 function isIosSafariBrowser(): boolean {
@@ -594,13 +560,16 @@ export const MusicAudioEngine: React.FC = () => {
   const activeBackendRef = useRef<'html-audio' | 'youtube' | 'none'>('none');
   const pendingResumeSecRef = useRef<number | null>(null);
 
-  // Full-song YouTube IFrame audio engine refs
+  // Full-song YouTube IFrame audio engine refs + effect variant tracking
   const ytContainerRef = useRef<HTMLDivElement | null>(null);
   const ytPlayerRef = useRef<YTPlayerInstance | null>(null);
   const ytReadyRef = useRef<boolean>(false);
   const ytTargetVideoIdRef = useRef<string | null>(null);
   const ytProgressTimerRef = useRef<number | null>(null);
   const ytTriedIdsRef = useRef<Set<string>>(new Set());
+  const ytBaseVideoIdRef = useRef<Record<string, string>>({});
+  const ytVariantCacheRef = useRef<Record<string, { eightD?: string | null; karaoke?: string | null; slowed?: string | null }>>({});
+  const pendingYtSeekSecRef = useRef<number | null>(null);
 
   // WebAudio DSP nodes
   const deckAGainRef = useRef<GainNode | null>(null);
@@ -615,6 +584,17 @@ export const MusicAudioEngine: React.FC = () => {
   const compressorRef = useRef<DynamicsCompressorNode | null>(null);
   const panner3dRef = useRef<PannerNode | null>(null);
   const stereoPannerRef = useRef<StereoPannerNode | null>(null);
+  const itdDelayLRef = useRef<DelayNode | null>(null);
+  const itdDelayRRef = useRef<DelayNode | null>(null);
+  const lowCrossoverRef = useRef<BiquadFilterNode | null>(null);
+  const highCrossoverRef = useRef<BiquadFilterNode | null>(null);
+  const lowAnchorGainRef = useRef<GainNode | null>(null);
+  const spatialDirectGainRef = useRef<GainNode | null>(null);
+  const proximityGainRef = useRef<GainNode | null>(null);
+  const airOcclusionRef = useRef<BiquadFilterNode | null>(null);
+  const convolverRef = useRef<ConvolverNode | null>(null);
+  const reverbDampRef = useRef<BiquadFilterNode | null>(null);
+  const appliedIrPresetIdRef = useRef<string | null>(null);
   const centerAnchorGainRef = useRef<GainNode | null>(null);
   const reverbWetGainRef = useRef<GainNode | null>(null);
 
@@ -685,7 +665,8 @@ export const MusicAudioEngine: React.FC = () => {
         window.AudioContext ||
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AC) return;
-      const ctx = audioCtxRef.current || new AC();
+      const ctx = audioCtxRef.current || sharedAudioCtx || new AC();
+      sharedAudioCtx = ctx;
       if (!audioCtxRef.current) {
         ctx.onstatechange = () => {
           if (ctx.state !== 'running' && useMusicStore.getState().isPlaying) {
@@ -771,57 +752,109 @@ export const MusicAudioEngine: React.FC = () => {
       merger.connect(vocalCancelGain);
       vocalCancelGain.connect(eqOut);
 
-      // Stereo & 8D Spatializer branches
+      // Crossover Separation (~135-148 Hz): anchors bass dead-center while orbiting mids/highs smoothly
       const use8d = st.spatial8dEnabled;
-      const prof = SPATIAL_PROFILES[st.spatial8dMode] || SPATIAL_PROFILES.orbit;
+      const preset = getSpatialPresetConfig(st.spatial8dMode || FALLBACK_SPATIAL_MODE);
 
       const dryBypassGain = ctx.createGain();
       dryBypassGain.gain.value = use8d ? 0 : 1;
 
       const spatialMasterGain = ctx.createGain();
-      spatialMasterGain.gain.value = use8d ? 1.04 : 0;
+      spatialMasterGain.gain.value = use8d ? 1.0 : 0;
+
+      const lowCrossover = ctx.createBiquadFilter();
+      lowCrossover.type = 'lowpass';
+      lowCrossover.frequency.value = preset.crossoverHz;
+      lowCrossover.Q.value = 0.7071;
+
+      const lowAnchorGain = ctx.createGain();
+      lowAnchorGain.gain.value = preset.lowAnchorGain;
+
+      const highCrossover = ctx.createBiquadFilter();
+      highCrossover.type = 'highpass';
+      highCrossover.frequency.value = preset.crossoverHz;
+      highCrossover.Q.value = 0.7071;
 
       const centerAnchorGain = ctx.createGain();
-      centerAnchorGain.gain.value = prof.centerMix;
+      centerAnchorGain.gain.value = preset.centerAnchorMix;
 
       const panner3d = ctx.createPanner();
       panner3d.panningModel = 'HRTF';
       panner3d.distanceModel = 'inverse';
-      panner3d.refDistance = 2.2;
-      panner3d.maxDistance = 100;
-      panner3d.rolloffFactor = 0.32;
+      panner3d.refDistance = 1.65;
+      panner3d.maxDistance = 60;
+      panner3d.rolloffFactor = preset.rolloffFactor;
       panner3d.coneInnerAngle = 360;
       panner3d.coneOuterAngle = 360;
       panner3d.coneOuterGain = 1;
+      panner3d.positionX.value = 0;
+      panner3d.positionY.value = preset.elevationBias;
+      panner3d.positionZ.value = -preset.radius;
+
+      const airOcclusion = ctx.createBiquadFilter();
+      airOcclusion.type = 'lowpass';
+      airOcclusion.frequency.value = preset.frontAirHz;
+      airOcclusion.Q.value = 0.65;
 
       const stereoPanner = ctx.createStereoPanner();
       stereoPanner.pan.value = 0;
 
       const spatialDirectGain = ctx.createGain();
-      spatialDirectGain.gain.value = 0.94;
+      spatialDirectGain.gain.value = preset.spatialBranchGain;
 
-      // Studio Hall Convolver Reverb
+      const proximityGain = ctx.createGain();
+      proximityGain.gain.value = 1.0;
+
+      // Bilateral Haas / ITD micro-delay (~0..0.38ms) for unmistakable azimuth cues even on mobile speakers
+      const itdSplitter = ctx.createChannelSplitter(2);
+      const itdDelayL = ctx.createDelay(0.02);
+      const itdDelayR = ctx.createDelay(0.02);
+      itdDelayL.delayTime.value = 0;
+      itdDelayR.delayTime.value = 0;
+      const itdMerger = ctx.createChannelMerger(2);
+
+      // Room Convolver Reverb + Distance Damping LPF (never muddies rhythm)
       const convolver = ctx.createConvolver();
-      convolver.buffer = createStudioHallImpulse(ctx);
+      convolver.normalize = true;
+      convolver.buffer = getCachedRoomImpulseResponse(ctx, preset);
+      appliedIrPresetIdRef.current = preset.id;
 
       const reverbDamp = ctx.createBiquadFilter();
       reverbDamp.type = 'lowpass';
-      reverbDamp.frequency.value = 5400;
+      reverbDamp.frequency.value = preset.reverbDampHz;
+      reverbDamp.Q.value = 0.7;
 
       const reverbWetGain = ctx.createGain();
-      reverbWetGain.gain.value = st.reverbMix;
+      reverbWetGain.gain.value = use8d ? Math.max(st.reverbMix, preset.reverbWetMix * 0.85) : st.reverbMix;
 
+      // Bypass wiring
       eqOut.connect(dryBypassGain);
-      eqOut.connect(centerAnchorGain);
+
+      // 8D Bass Anchor wiring (< crossoverHz -> straight to spatial master center)
+      eqOut.connect(lowCrossover);
+      lowCrossover.connect(lowAnchorGain);
+      lowAnchorGain.connect(spatialMasterGain);
+
+      // 8D Spatial Highs wiring (> crossoverHz -> frontal center blend + HRTF Panner -> Air LPF -> ITD -> Stereo Pan -> Proximity Gain)
+      eqOut.connect(highCrossover);
+      highCrossover.connect(centerAnchorGain);
       centerAnchorGain.connect(spatialMasterGain);
 
-      eqOut.connect(panner3d);
-      panner3d.connect(stereoPanner);
-      stereoPanner.connect(spatialDirectGain);
+      highCrossover.connect(panner3d);
+      panner3d.connect(airOcclusion);
+      airOcclusion.connect(itdSplitter);
+      itdSplitter.connect(itdDelayL, 0);
+      itdSplitter.connect(itdDelayR, 1);
+      itdDelayL.connect(itdMerger, 0, 0);
+      itdDelayR.connect(itdMerger, 0, 1);
+      itdMerger.connect(stereoPanner);
+      stereoPanner.connect(proximityGain);
+      proximityGain.connect(spatialDirectGain);
       spatialDirectGain.connect(spatialMasterGain);
 
+      // Room reverb fed from clean dry bypass & spatial mid/high branch so sub-bass never booms
       dryBypassGain.connect(convolver);
-      stereoPanner.connect(convolver);
+      highCrossover.connect(convolver);
       convolver.connect(reverbDamp);
       reverbDamp.connect(reverbWetGain);
 
@@ -844,10 +877,10 @@ export const MusicAudioEngine: React.FC = () => {
       analyser.smoothingTimeConstant = 0.78;
 
       const limiter = ctx.createDynamicsCompressor();
-      limiter.threshold.value = st.normalizeAudio ? -14 : -4;
+      limiter.threshold.value = st.normalizeAudio ? preset.compressorThresholdDb : -4;
       limiter.knee.value = 16;
-      limiter.ratio.value = st.normalizeAudio ? 4.0 : 2.2;
-      limiter.attack.value = 0.004;
+      limiter.ratio.value = st.normalizeAudio ? preset.compressorRatio : 2.2;
+      limiter.attack.value = 0.005;
       limiter.release.value = 0.18;
 
       dryBypassGain.connect(analyser);
@@ -868,6 +901,16 @@ export const MusicAudioEngine: React.FC = () => {
       compressorRef.current = limiter;
       dryBypassGainRef.current = dryBypassGain;
       spatialMasterGainRef.current = spatialMasterGain;
+      lowCrossoverRef.current = lowCrossover;
+      highCrossoverRef.current = highCrossover;
+      lowAnchorGainRef.current = lowAnchorGain;
+      spatialDirectGainRef.current = spatialDirectGain;
+      proximityGainRef.current = proximityGain;
+      itdDelayLRef.current = itdDelayL;
+      itdDelayRRef.current = itdDelayR;
+      airOcclusionRef.current = airOcclusion;
+      convolverRef.current = convolver;
+      reverbDampRef.current = reverbDamp;
       panner3dRef.current = panner3d;
       stereoPannerRef.current = stereoPanner;
       centerAnchorGainRef.current = centerAnchorGain;
@@ -881,35 +924,60 @@ export const MusicAudioEngine: React.FC = () => {
     }
   };
 
-  // Smoothly update DSP parameters live
+  // Smoothly update DSP parameters live (zero clicks, cached room IR per preset, reliable ctx.resume)
   useEffect(() => {
     const ctx = audioCtxRef.current;
     if (!ctx || !mediaSourceConnectedRef.current) return;
-    if (spatial8dEnabled && ctx.state === 'suspended') {
-      void ctx.resume().catch(() => {});
+    if (spatial8dEnabled && ctx.state !== 'running') {
+      void resumeSpatialContext(ctx);
     }
-    const now = ctx.currentTime;
-    const prof = SPATIAL_PROFILES[spatial8dMode] || SPATIAL_PROFILES.orbit;
-    try {
-      dryBypassGainRef.current?.gain.setTargetAtTime(spatial8dEnabled ? 0 : 1, now, 0.07);
-      spatialMasterGainRef.current?.gain.setTargetAtTime(spatial8dEnabled ? 1.04 : 0, now, 0.07);
-      subBassBoostRef.current?.gain.setTargetAtTime(
-        bassBoostDb + (spatial8dEnabled ? prof.warmthDb : 0),
-        now,
-        0.06
-      );
-      centerAnchorGainRef.current?.gain.setTargetAtTime(prof.centerMix, now, 0.07);
-      reverbWetGainRef.current?.gain.setTargetAtTime(reverbMix, now, 0.06);
-      exciterShelfRef.current?.gain.setTargetAtTime(exciterMix * 6.5, now, 0.06);
-      vocalDryGainRef.current?.gain.setTargetAtTime(vocalCancel ? 0 : 1, now, 0.05);
-      vocalCancelGainRef.current?.gain.setTargetAtTime(vocalCancel ? 1 : 0, now, 0.05);
-      vinylGainRef.current?.gain.setTargetAtTime(isPlaying ? vinylCrackle * 0.45 : 0, now, 0.08);
-      if (compressorRef.current) {
-        compressorRef.current.threshold.setTargetAtTime(normalizeAudio ? -14 : -4, now, 0.08);
-        compressorRef.current.ratio.setTargetAtTime(normalizeAudio ? 4.0 : 2.2, now, 0.08);
+    const preset = getSpatialPresetConfig(spatial8dMode || FALLBACK_SPATIAL_MODE);
+    const activeReverb = spatial8dEnabled ? Math.max(reverbMix, preset.reverbWetMix * 0.85) : reverbMix;
+
+    applySmoothParam(dryBypassGainRef.current?.gain, spatial8dEnabled ? 0 : 1, ctx, 0.06);
+    applySmoothParam(spatialMasterGainRef.current?.gain, spatial8dEnabled ? 1.0 : 0, ctx, 0.06);
+    applySmoothParam(lowCrossoverRef.current?.frequency, preset.crossoverHz, ctx, 0.05);
+    applySmoothParam(highCrossoverRef.current?.frequency, preset.crossoverHz, ctx, 0.05);
+    applySmoothParam(lowAnchorGainRef.current?.gain, preset.lowAnchorGain, ctx, 0.05);
+    applySmoothParam(spatialDirectGainRef.current?.gain, preset.spatialBranchGain, ctx, 0.05);
+    applySmoothParam(centerAnchorGainRef.current?.gain, preset.centerAnchorMix, ctx, 0.06);
+    applySmoothParam(reverbDampRef.current?.frequency, preset.reverbDampHz, ctx, 0.06);
+    applySmoothParam(reverbWetGainRef.current?.gain, activeReverb, ctx, 0.06);
+    applySmoothParam(
+      subBassBoostRef.current?.gain,
+      bassBoostDb + (spatial8dEnabled ? preset.warmthDb : 0),
+      ctx,
+      0.06
+    );
+    applySmoothParam(exciterShelfRef.current?.gain, exciterMix * 6.5, ctx, 0.06);
+    applySmoothParam(vocalDryGainRef.current?.gain, vocalCancel ? 0 : 1, ctx, 0.05);
+    applySmoothParam(vocalCancelGainRef.current?.gain, vocalCancel ? 1 : 0, ctx, 0.05);
+    applySmoothParam(vinylGainRef.current?.gain, isPlaying ? vinylCrackle * 0.45 : 0, ctx, 0.08);
+
+    if (panner3dRef.current) {
+      panner3dRef.current.rolloffFactor = preset.rolloffFactor;
+    }
+    if (convolverRef.current && appliedIrPresetIdRef.current !== preset.id) {
+      try {
+        convolverRef.current.buffer = getCachedRoomImpulseResponse(ctx, preset);
+        appliedIrPresetIdRef.current = preset.id;
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
+    }
+    if (compressorRef.current) {
+      applySmoothParam(
+        compressorRef.current.threshold,
+        normalizeAudio ? preset.compressorThresholdDb : -4,
+        ctx,
+        0.08
+      );
+      applySmoothParam(
+        compressorRef.current.ratio,
+        normalizeAudio ? preset.compressorRatio : 2.2,
+        ctx,
+        0.08
+      );
     }
   }, [
     spatial8dEnabled,
@@ -927,20 +995,17 @@ export const MusicAudioEngine: React.FC = () => {
   useEffect(() => {
     const panner = panner3dRef.current;
     const stereo = stereoPannerRef.current;
+    const airFilter = airOcclusionRef.current;
     const ctx = audioCtxRef.current;
 
     if (!spatial8dEnabled) {
       sharedSpatialEngineActive = false;
       if (ctx && panner && stereo) {
-        const now = ctx.currentTime;
-        try {
-          panner.positionX.setTargetAtTime(0, now, 0.06);
-          panner.positionY.setTargetAtTime(0, now, 0.06);
-          panner.positionZ.setTargetAtTime(-1, now, 0.06);
-          stereo.pan.setTargetAtTime(0, now, 0.06);
-        } catch {
-          // ignore
-        }
+        applySmoothParam(panner.positionX, 0, ctx, 0.06);
+        applySmoothParam(panner.positionY, 0, ctx, 0.06);
+        applySmoothParam(panner.positionZ, -1.5, ctx, 0.06);
+        applySmoothParam(stereo.pan, 0, ctx, 0.06);
+        applySmoothParam(airFilter?.frequency, 19500, ctx, 0.06);
       }
       return;
     }
@@ -957,33 +1022,40 @@ export const MusicAudioEngine: React.FC = () => {
       lastTs = ts;
 
       const st = useMusicStore.getState();
-      const prof = SPATIAL_PROFILES[st.spatial8dMode] || SPATIAL_PROFILES.orbit;
+      const preset = getSpatialPresetConfig(st.spatial8dMode || FALLBACK_SPATIAL_MODE);
       const isHtmlAudio = activeBackendRef.current === 'html-audio';
       sharedSpatialEngineActive = isHtmlAudio;
 
       if (st.isPlaying) {
-        const periodSec = Math.max(3, st.spatial8dSpeedSec || 9.5);
+        const periodSec = Math.max(3, st.spatial8dSpeedSec || preset.orbitPeriodSec);
         const omega = (Math.PI * 2) / periodSec;
         sharedSpatialAngleRad = (sharedSpatialAngleRad + omega * dtSec) % (Math.PI * 2);
 
         const cCtx = audioCtxRef.current;
         const p3 = panner3dRef.current;
         const sp = stereoPannerRef.current;
+        const af = airOcclusionRef.current;
+        const dl = itdDelayLRef.current;
+        const dr = itdDelayRRef.current;
+        const pg = proximityGainRef.current;
         if (cCtx && p3 && sp && isHtmlAudio) {
-          const now = cCtx.currentTime;
-          const { x, y, z } = computeSpatialCoords(
-            st.spatialTrajectory || 'orbit',
-            sharedSpatialAngleRad,
-            prof.radius
-          );
-          try {
-            p3.positionX.setTargetAtTime(x, now, 0.028);
-            p3.positionY.setTargetAtTime(y, now, 0.028);
-            p3.positionZ.setTargetAtTime(z, now, 0.028);
-            sp.pan.setTargetAtTime(Math.sin(sharedSpatialAngleRad) * st.stereoWidth, now, 0.028);
-          } catch {
-            // ignore
+          if (cCtx.state === 'suspended') {
+            void resumeSpatialContext(cCtx);
           }
+          const sample = computeSpatialTrajectorySample(
+            preset,
+            sharedSpatialAngleRad,
+            st.spatialTrajectory || preset.trajectory,
+            st.stereoWidth ?? preset.stereoWidth
+          );
+          applySmoothParam(p3.positionX, sample.x, cCtx, 0.025);
+          applySmoothParam(p3.positionY, sample.y, cCtx, 0.025);
+          applySmoothParam(p3.positionZ, sample.z, cCtx, 0.025);
+          applySmoothParam(sp.pan, sample.stereoPan, cCtx, 0.025);
+          applySmoothParam(af?.frequency, sample.airCutoffHz, cCtx, 0.03);
+          applySmoothParam(dl?.delayTime, sample.itdLeftSec, cCtx, 0.025);
+          applySmoothParam(dr?.delayTime, sample.itdRightSec, cCtx, 0.025);
+          applySmoothParam(pg?.gain, sample.proximityGain, cCtx, 0.035);
         }
       }
       rafId = requestAnimationFrame(tick);
@@ -1116,6 +1188,25 @@ export const MusicAudioEngine: React.FC = () => {
             expectedTrackId
           );
         } else if (ytId) {
+          const previewCandidate = data?.previewUrl || currentTrack.previewUrl;
+          const alts =
+            Array.isArray(data?.alternatives) && data.alternatives.length > 0
+              ? data.alternatives
+              : previewCandidate
+              ? [
+                  {
+                    id: 'preview-hd',
+                    sourceType: 'preview' as const,
+                    sourceLabel: 'Preview WebAudio DSP (30s)',
+                    streamUrl: previewCandidate,
+                    proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(previewCandidate)}`,
+                    bitrateKbps: 128,
+                    fullLength: false,
+                    provider: 'Preview DSP',
+                  },
+                ]
+              : [];
+          ytBaseVideoIdRef.current[expectedTrackId] = ytId;
           useMusicStore.getState().setResolvedPlayback(
             {
               ...(data || {}),
@@ -1125,10 +1216,11 @@ export const MusicAudioEngine: React.FC = () => {
               youtubeVideoId: ytId,
               youtubeMvId: data?.youtubeMvId || ytId,
               youtubeAltIds: data?.youtubeAltIds || [],
-              previewUrl: data?.previewUrl || currentTrack.previewUrl,
+              previewUrl: previewCandidate,
               fullLength: true,
               bitrateKbps: data?.bitrateKbps || 256,
               provider: data?.provider || 'Riffan Engine',
+              alternatives: alts,
             },
             expectedTrackId
           );
@@ -1356,6 +1448,7 @@ export const MusicAudioEngine: React.FC = () => {
       const el = getAudioElForSlot(nextSlot);
       if (!el) return;
       activeBackendRef.current = 'html-audio';
+      sharedBackendKind = useDsp ? 'webaudio' : 'direct';
       sharedSpatialEngineActive = Boolean(useDsp && st.spatial8dEnabled);
       if (useDsp) {
         ensureWebAudioChain(false);
@@ -1381,6 +1474,7 @@ export const MusicAudioEngine: React.FC = () => {
       cleanupSlot('A');
       cleanupSlot('B');
       activeBackendRef.current = 'none';
+      sharedBackendKind = 'none';
       sharedSpatialEngineActive = false;
       return;
     }
@@ -1398,10 +1492,15 @@ export const MusicAudioEngine: React.FC = () => {
         '';
       if (!videoId) return;
 
+      if (!ytBaseVideoIdRef.current[currentTrack.id] && !resolvedPlayback.spatial8dYtFallback) {
+        ytBaseVideoIdRef.current[currentTrack.id] = videoId;
+      }
+
       cleanupSlot('direct');
       cleanupSlot('A');
       cleanupSlot('B');
       activeBackendRef.current = 'youtube';
+      sharedBackendKind = 'youtube';
       sharedSpatialEngineActive = false;
       ytTargetVideoIdRef.current = videoId;
 
@@ -1517,7 +1616,9 @@ export const MusicAudioEngine: React.FC = () => {
 
         if (ytPlayerRef.current && ytReadyRef.current) {
           applyYtParams(ytPlayerRef.current);
-          const startAt = trimStartSec > 0 ? trimStartSec : 0;
+          const resumeSec = pendingYtSeekSecRef.current;
+          pendingYtSeekSecRef.current = null;
+          const startAt = resumeSec && resumeSec > 0.5 ? resumeSec : trimStartSec > 0 ? trimStartSec : 0;
           ytPlayerRef.current.loadVideoById({ videoId, startSeconds: startAt });
           if (!useMusicStore.getState().isPlaying) {
             ytPlayerRef.current.pauseVideo();
@@ -1554,7 +1655,10 @@ export const MusicAudioEngine: React.FC = () => {
                 return;
               }
               applyYtParams(target);
-              if (trimStartSec > 0) target.seekTo(trimStartSec, true);
+              const resumeSec = pendingYtSeekSecRef.current;
+              pendingYtSeekSecRef.current = null;
+              const startAt = resumeSec && resumeSec > 0.5 ? resumeSec : trimStartSec > 0 ? trimStartSec : 0;
+              if (startAt > 0) target.seekTo(startAt, true);
               if (useMusicStore.getState().isPlaying) target.playVideo();
               else target.pauseVideo();
               startProgressLoop();
@@ -1598,6 +1702,7 @@ export const MusicAudioEngine: React.FC = () => {
       nextSlot = 'direct';
       activeDeckSlotRef.current = 'direct';
       activeBackendRef.current = 'html-audio';
+      sharedBackendKind = 'direct';
       sharedSpatialEngineActive = false;
     } else {
       cleanupSlot('direct');
@@ -1615,6 +1720,7 @@ export const MusicAudioEngine: React.FC = () => {
       cleanupSlot(nextSlot);
       activeDeckSlotRef.current = nextSlot;
       activeBackendRef.current = 'html-audio';
+      sharedBackendKind = 'webaudio';
       sharedSpatialEngineActive = Boolean(st.spatial8dEnabled);
       ensureWebAudioChain(false);
 
@@ -1812,34 +1918,67 @@ export const MusicAudioEngine: React.FC = () => {
 
     if (wantDsp) {
       ensureWebAudioChain(false);
+      sharedBackendKind = 'webaudio';
       sharedSpatialEngineActive = Boolean(st.spatial8dEnabled);
       if (audioCtxRef.current && deckAGainRef.current && deckBGainRef.current) {
         const now = audioCtxRef.current.currentTime;
         deckAGainRef.current.gain.setValueAtTime(1, now);
         deckBGainRef.current.gain.setValueAtTime(0, now);
       }
+      if (audioCtxRef.current && dryBypassGainRef.current && spatialMasterGainRef.current) {
+        const now = audioCtxRef.current.currentTime;
+        const preset = getSpatialPresetConfig(st.spatial8dMode || FALLBACK_SPATIAL_MODE);
+        dryBypassGainRef.current.gain.setTargetAtTime(st.spatial8dEnabled ? 0 : 1, now, 0.04);
+        spatialMasterGainRef.current.gain.setTargetAtTime(st.spatial8dEnabled ? 1 : 0, now, 0.04);
+        if (reverbWetGainRef.current) {
+          const activeRev = st.spatial8dEnabled
+            ? Math.max(st.reverbMix, preset.reverbWetMix * 0.85)
+            : st.reverbMix;
+          reverbWetGainRef.current.gain.setTargetAtTime(activeRev, now, 0.04);
+        }
+      }
     } else {
+      sharedBackendKind = 'direct';
       sharedSpatialEngineActive = false;
     }
 
     activeDeckSlotRef.current = toSlot;
 
-    if (activeHls) {
+    if (activeHls && st.resolvedPlayback?.proxiedUrl && Hls.isSupported()) {
+      const hlsSrc = st.resolvedPlayback.proxiedUrl;
+      try {
+        activeHls.destroy();
+      } catch {
+        // ignore
+      }
       hlsInstancesRef.current[curSlot] = null;
       fromEl.pause();
       fromEl.removeAttribute('src');
       fromEl.load();
-      hlsInstancesRef.current[toSlot] = activeHls;
-      activeHls.detachMedia();
-      activeHls.attachMedia(toEl);
-      if (resumeAt > 0.25) {
-        try {
-          toEl.currentTime = resumeAt;
-        } catch {
-          // ignore
+
+      const freshHls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        startFragPrefetch: true,
+        startPosition: resumeAt > 0.25 ? resumeAt : -1,
+        maxBufferLength: 10,
+        maxMaxBufferLength: 20,
+      });
+      hlsInstancesRef.current[toSlot] = freshHls;
+      freshHls.loadSource(hlsSrc);
+      freshHls.attachMedia(toEl);
+      freshHls.on(Hls.Events.MANIFEST_PARSED, () => {
+        if (resumeAt > 0.25) {
+          try {
+            toEl.currentTime = resumeAt;
+          } catch {
+            // ignore
+          }
         }
-      }
-      if (shouldPlay) void toEl.play().catch(() => {});
+        if (useMusicStore.getState().isPlaying) {
+          void toEl.play().catch(() => {});
+        }
+      });
     } else {
       fromEl.pause();
       fromEl.removeAttribute('src');
@@ -1852,6 +1991,128 @@ export const MusicAudioEngine: React.FC = () => {
       if (shouldPlay) void toEl.play().catch(() => {});
     }
   }, [dspEnabledNow]);
+
+  // Automatic 8D / Karaoke version switch for YouTube-backed tracks (iframe cannot pass through WebAudio)
+  const activeProVibe = useMusicStore((s) => s.activeProVibe);
+  useEffect(() => {
+    if (activeRadio || !currentTrack || !resolvedPlayback) return;
+    if (resolvedPlayback.sourceType !== 'youtube') return;
+
+    const trackId = currentTrack.id;
+    const baseId = ytBaseVideoIdRef.current[trackId] || resolvedPlayback.youtubeVideoId;
+    if (!baseId) return;
+    if (!ytBaseVideoIdRef.current[trackId] && !resolvedPlayback.spatial8dYtFallback) {
+      ytBaseVideoIdRef.current[trackId] = baseId;
+    }
+
+    const wantVariant: '8d' | 'karaoke' | 'slowed' | null = spatial8dEnabled
+      ? '8d'
+      : vocalCancel
+      ? 'karaoke'
+      : activeProVibe === 'slowed_reverb'
+      ? 'slowed'
+      : null;
+
+    if (!wantVariant) {
+      const origId = ytBaseVideoIdRef.current[trackId];
+      if (origId && resolvedPlayback.youtubeVideoId !== origId) {
+        pendingYtSeekSecRef.current = useMusicStore.getState().currentTime;
+        useMusicStore.getState().setResolvedPlayback(
+          {
+            ...resolvedPlayback,
+            trackId,
+            sourceType: 'youtube',
+            sourceLabel: 'Audio Completo HD',
+            youtubeVideoId: origId,
+            spatial8dYtFallback: false,
+            provider: 'Riffan Engine',
+          },
+          trackId
+        );
+      }
+      return;
+    }
+
+    let cancelled = false;
+    const cacheEntry = (ytVariantCacheRef.current[trackId] ||= {});
+    const cachedId =
+      wantVariant === '8d'
+        ? cacheEntry.eightD ?? resolvedPlayback.youtube8dId
+        : wantVariant === 'karaoke'
+        ? cacheEntry.karaoke ?? resolvedPlayback.youtubeKaraokeId
+        : cacheEntry.slowed;
+
+    const applyVariantId = (vid: string) => {
+      if (cancelled) return;
+      const st = useMusicStore.getState();
+      if (st.currentTrack?.id !== trackId || st.resolvedPlayback?.sourceType !== 'youtube') return;
+      if (st.resolvedPlayback.youtubeVideoId === vid) return;
+      pendingYtSeekSecRef.current = st.currentTime;
+      const label =
+        wantVariant === '8d'
+          ? 'Audio 8D HD'
+          : wantVariant === 'karaoke'
+          ? 'Karaoke HD'
+          : 'Slowed + Reverb HD';
+      st.setResolvedPlayback(
+        {
+          ...st.resolvedPlayback,
+          trackId,
+          sourceType: 'youtube',
+          sourceLabel: label,
+          youtubeVideoId: vid,
+          spatial8dYtFallback: wantVariant === '8d',
+          youtube8dId: wantVariant === '8d' ? vid : st.resolvedPlayback.youtube8dId,
+          youtubeKaraokeId: wantVariant === 'karaoke' ? vid : st.resolvedPlayback.youtubeKaraokeId,
+          provider: wantVariant === '8d' ? 'Riffan 8D HD' : 'Riffan HD',
+        },
+        trackId
+      );
+    };
+
+    if (cachedId) {
+      applyVariantId(cachedId);
+      return;
+    }
+    if (
+      (wantVariant === '8d' && cacheEntry.eightD === null) ||
+      (wantVariant === 'karaoke' && cacheEntry.karaoke === null) ||
+      (wantVariant === 'slowed' && cacheEntry.slowed === null)
+    ) {
+      return;
+    }
+
+    const qs = new URLSearchParams({
+      title: currentTrack.title,
+      artist: currentTrack.artist.name,
+      duration: String(currentTrack.durationSec || 0),
+      variant: wantVariant,
+    });
+    void fetch(`/api/music/yt-variant?${qs.toString()}`)
+      .then((r) => r.json())
+      .then((res: { found?: boolean; variant?: { videoId?: string } | null }) => {
+        const vid = res?.found && res.variant?.videoId ? res.variant.videoId : null;
+        if (wantVariant === '8d') cacheEntry.eightD = vid;
+        else if (wantVariant === 'karaoke') cacheEntry.karaoke = vid;
+        else cacheEntry.slowed = vid;
+
+        if (vid) {
+          applyVariantId(vid);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentTrack?.id,
+    activeRadio?.id,
+    resolvedPlayback?.sourceType,
+    spatial8dEnabled,
+    vocalCancel,
+    activeProVibe,
+  ]);
 
   // Background / Lock-screen continuity resilience across iOS, Android, Desktop, and PWA
   useEffect(() => {
@@ -2211,6 +2472,7 @@ export const MusicAudioEngine: React.FC = () => {
         playsInline
         preload="auto"
         onLoadedMetadata={(e) => handleLoadedMetadata('direct', e)}
+        onCanPlay={(e) => handleLoadedMetadata('direct', e)}
         onTimeUpdate={(e) => handleTimeUpdate('direct', e)}
         onEnded={() => handleEnded('direct')}
         onError={() => handleError('direct')}
@@ -2222,6 +2484,7 @@ export const MusicAudioEngine: React.FC = () => {
         playsInline
         preload="auto"
         onLoadedMetadata={(e) => handleLoadedMetadata('A', e)}
+        onCanPlay={(e) => handleLoadedMetadata('A', e)}
         onTimeUpdate={(e) => handleTimeUpdate('A', e)}
         onEnded={() => handleEnded('A')}
         onError={() => handleError('A')}
@@ -2233,6 +2496,7 @@ export const MusicAudioEngine: React.FC = () => {
         playsInline
         preload="auto"
         onLoadedMetadata={(e) => handleLoadedMetadata('B', e)}
+        onCanPlay={(e) => handleLoadedMetadata('B', e)}
         onTimeUpdate={(e) => handleTimeUpdate('B', e)}
         onEnded={() => handleEnded('B')}
         onError={() => handleError('B')}

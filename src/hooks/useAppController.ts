@@ -101,8 +101,9 @@ export function useAppController() {
   const [isTvPairLobby, setIsTvPairLobby] = useState<boolean>(initialRoute.isTvPairLobby);
   const [isAdsPageOpen, setIsAdsPageOpen] = useState<boolean>(Boolean(initialRoute.isAdsPage));
   const [isAdminPage, setIsAdminPage] = useState<boolean>(Boolean(initialRoute.isAdminPage));
+  const [isSamsungPage, setIsSamsungPage] = useState<boolean>(Boolean(initialRoute.isSamsungPage));
   const initialDeepLinkGame =
-    !initialRoute.isTvMode && !initialRoute.isTvPairLobby && !initialRoute.isAdsPage && !initialRoute.isAdminPage
+    !initialRoute.isTvMode && !initialRoute.isTvPairLobby && !initialRoute.isAdsPage && !initialRoute.isAdminPage && !initialRoute.isSamsungPage
       ? normalizeDeepLinkGameType(initialRoute.gameType)
       : null;
   const [tvAuthToken, setTvAuthToken] = useState<string>('');
@@ -794,6 +795,8 @@ export function useAppController() {
     isAdsPageOpen,
     isAdminPage,
     setIsAdminPage,
+    isSamsungPage,
+    setIsSamsungPage,
     enterWorld,
     setForcedOpenGame: roomState.setForcedOpenGame,
     setIsInActiveGame: roomState.setIsInActiveGame,
@@ -935,7 +938,7 @@ export function useAppController() {
   }, [inRoom, sessionMode, lifecycle]);
 
   const { exitToastVisible, triggerBackStep } = useAppNavigationHistory({
-    enabled: !isTvMode && !isTvPairLobby && !isAdsPageOpen && !isAdminPage && (inRoom || hasEnteredApp),
+    enabled: !isTvMode && !isTvPairLobby && !isAdsPageOpen && !isAdminPage && !isSamsungPage && (inRoom || hasEnteredApp),
     inRoom,
     activeWorld,
     onReturnToEntry: handleReturnToEntry,
@@ -955,7 +958,8 @@ export function useAppController() {
     friendAddedNotice, setFriendAddedNotice, inviteSentFeedback, friendNoticeTimerRef,
     effectiveView, isDesktopLayout, isFramedMobileOnPc, toggleViewMode, authUser, authLoading,
     profileHubOpen, setProfileHubOpen, profileHubTab, setProfileHubTab, isTvMode, setIsTvMode,
-    isTvPairLobby, setIsTvPairLobby, isAdsPageOpen, setIsAdsPageOpen, isAdminPage, setIsAdminPage, setTvAuthToken, savedRooms,
+    isTvPairLobby, setIsTvPairLobby, isAdsPageOpen, setIsAdsPageOpen, isAdminPage, setIsAdminPage,
+    isSamsungPage, setIsSamsungPage, setTvAuthToken, savedRooms,
     pinPromptState, tvClaimStatus, smartTvModalOpen, setSmartTvModalOpen, showIntro, setShowIntro,
     introWithSound, setIntroWithSound, showWatchlistOnly, setShowWatchlistOnly, showVoiceAssistant,
     setShowVoiceAssistant, quickPool, quickPoolLoading, nativeApkUpdate,

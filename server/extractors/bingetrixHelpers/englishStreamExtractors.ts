@@ -1,3 +1,4 @@
+import { logger } from '../../utils/logger.ts';
 import { LruTtlCache } from '../../utils/lruCache.ts';
 import {
   CHROME_UA,
@@ -205,7 +206,7 @@ export async function extractBingetrixEnglishTracks(opts: {
 
     return stampedTracks.filter((t): t is NonNullable<typeof t> => Boolean(t));
   } catch (err) {
-    console.warn('extractBingetrixEnglishTracks error:', err);
+    logger.warn({ err }, 'extractBingetrixEnglishTracks error');
     return [];
   }
 }
@@ -383,7 +384,7 @@ export async function extract2EmbedEnglishTracks(opts: {
       },
     ];
   } catch (err) {
-    console.warn('extract2EmbedEnglishTracks error:', err);
+    logger.warn({ err }, 'extract2EmbedEnglishTracks error');
     return [];
   }
 }

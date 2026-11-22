@@ -54,6 +54,7 @@ interface UseRoomSocialActionsParams {
   roomName: string;
   setRoomName: Dispatch<SetStateAction<string>>;
   inRoom: boolean;
+  isAppEntered?: boolean;
   isCurrentRoomPermanent: boolean;
   currentHostPin?: string;
   currentSavedRoom?: CloudSavedRoom;
@@ -96,6 +97,7 @@ export function useRoomSocialActions({
   roomName,
   setRoomName,
   inRoom,
+  isAppEntered = true,
   isCurrentRoomPermanent,
   currentHostPin,
   currentSavedRoom,
@@ -177,9 +179,34 @@ export function useRoomSocialActions({
   }, [lang, setQuickPool, setQuickPoolLoading]);
 
   useEffect(() => {
+    if (!isAppEntered) return;
     if (quickPoolMoviesLen > 0 && quickPoolSeriesLen > 0) return;
-    void loadQuickPool();
-  }, [quickPoolMoviesLen, quickPoolSeriesLen, loadQuickPool]);
+
+    let cancelled = false;
+    const win =
+      typeof window !== 'undefined'
+        ? (window as Window & {
+            requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+            cancelIdleCallback?: (id: number) => void;
+          })
+        : null;
+    const run = () => {
+      if (!cancelled) void loadQuickPool();
+    };
+
+    if (win?.requestIdleCallback) {
+      const idleId = win.requestIdleCallback(run, { timeout: 350 });
+      return () => {
+        cancelled = true;
+        win.cancelIdleCallback?.(idleId);
+      };
+    }
+    const timer = setTimeout(run, 120);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isAppEntered, quickPoolMoviesLen, quickPoolSeriesLen, loadQuickPool]);
 
   const handleGoogleSignIn = async () => {
     manualLobbyStayRef.current = false;

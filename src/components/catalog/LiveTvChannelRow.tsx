@@ -26,7 +26,7 @@ interface LiveTvChannelRowProps {
   onOpenEpgModal: (ch: SpanishTdtChannel) => void;
 }
 
-export const LiveTvChannelRow: React.FC<LiveTvChannelRowProps> = ({
+export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
   channel: ch,
   lang,
   chEpg,
@@ -45,7 +45,7 @@ export const LiveTvChannelRow: React.FC<LiveTvChannelRowProps> = ({
 
   return (
     <div
-      className={`relative group min-h-[82px] p-3.5 sm:p-4 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
+      className={`cv-row-auto relative group min-h-[82px] p-3.5 sm:p-4 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
         isPlaying
           ? 'border-[#7C3AED] bg-[#7C3AED]/[0.16] shadow-[0_8px_24px_rgba(124,58,237,0.25)]'
           : 'bg-[#0D0D12] border-white/[0.08] hover:border-white/20 hover:bg-[#13131B]'
@@ -146,4 +146,4 @@ export const LiveTvChannelRow: React.FC<LiveTvChannelRowProps> = ({
       </div>
     </div>
   );
-};
+});

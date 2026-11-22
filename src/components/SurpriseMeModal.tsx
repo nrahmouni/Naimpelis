@@ -173,12 +173,6 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
     );
   };
 
-  // Quick instant check in already-loaded catalog pool before firing AI lookup
-  const localExactHit = useMemo(
-    () => findLocalExactHit(requestQuery, requestType),
-    [requestQuery, requestType, movies, series]
-  );
-
   const startAiMovieSearch = async (rawQuery: string, targetType: 'all' | 'movie' | 'tv') => {
     const q = rawQuery.trim();
     if (q.length < 2) return;

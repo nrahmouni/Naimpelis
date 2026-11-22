@@ -176,3 +176,69 @@ export async function safeFetchFollowingRedirects(
   err.statusCode = 502;
   throw err;
 }
+
+export function isAllowedPublicOriginHostname(hostname: string, extraDomain?: string): boolean {
+  const low = hostname.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  if (!low) return false;
+  if (low === 'localhost' || low === '127.0.0.1' || low.startsWith('192.168.')) {
+    return true;
+  }
+  if (
+    low === 'riffan.ai.studio' ||
+    low === 'riffantv.ai.studio' ||
+    low.endsWith('.run.app') ||
+    low.endsWith('.ai.studio') ||
+    low.endsWith('.web.app') ||
+    low.endsWith('.firebaseapp.com')
+  ) {
+    return true;
+  }
+  const cleanExtra = (extraDomain || '').trim().toLowerCase().split(':')[0];
+  return Boolean(cleanExtra && (low === cleanExtra || low.endsWith(`.${cleanExtra}`)));
+}
+
+export function resolveSafePublicOrigin(
+  params: {
+    queryOrigin?: string;
+    forwardedProto?: string;
+    forwardedHost?: string;
+    hostHeader?: string;
+    protocol?: string;
+  },
+  fallbackDomain = 'riffan.ai.studio'
+): string {
+  const overrideOrigin = String(params.queryOrigin || '').trim();
+  if (/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(overrideOrigin)) {
+    try {
+      const parsed = new URL(overrideOrigin);
+      if (isAllowedPublicOriginHostname(parsed.hostname, fallbackDomain)) {
+        return overrideOrigin.replace(/\/+$/, '');
+      }
+    } catch {
+      // reject invalid override
+    }
+  }
+
+  const rawProto = String(params.forwardedProto || params.protocol || 'http')
+    .split(',')[0]
+    .trim();
+  const safeProto = rawProto === 'https' ? 'https' : 'http';
+  const rawHost = String(params.forwardedHost || params.hostHeader || 'localhost:3000')
+    .split(',')[0]
+    .trim();
+  const hostWithoutPort = rawHost.split(':')[0].toLowerCase();
+
+  if (
+    hostWithoutPort === 'localhost' ||
+    hostWithoutPort === '127.0.0.1' ||
+    hostWithoutPort.startsWith('192.168.')
+  ) {
+    return `${safeProto}://${rawHost}`;
+  }
+
+  const domain = isAllowedPublicOriginHostname(hostWithoutPort, fallbackDomain)
+    ? rawHost
+    : fallbackDomain || 'riffan.ai.studio';
+  const proto = domain.includes('localhost') ? 'http' : 'https';
+  return `${proto}://${domain}`;
+}

@@ -4,7 +4,6 @@ import type {
   TacticalDangerZone,
   TacticalPhaseType,
   TacticalPlayerNode,
-  TacticalVisionAnalysis,
 } from './tacticalVisionTypes';
 
 const DEFAULT_HOME_FORMATION = '4-3-3';

@@ -4,6 +4,7 @@
  */
 import type { Express, Request, Response } from 'express';
 import { resolveOfficialChannelLogoUrl } from '../../src/shared/channelLogos.ts';
+import { logger } from '../utils/logger.ts';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import {
   isDvbHeadendStream,
@@ -684,7 +685,7 @@ export function registerIptvAndTdtRoutes(
       }
       res.send(xmlPayload);
     } catch (err) {
-      console.warn('/epg.xml error:', err);
+      logger.warn({ err }, '/epg.xml error');
       res.status(500).type('application/xml').send('<tv></tv>');
     }
   });

@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { logger } from '../../utils/logger.ts';
 import { LruTtlCache } from '../../utils/lruCache.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
 import {
@@ -418,7 +419,7 @@ export async function extractVidRockHlsTracks(opts: {
 
     return verified.filter((t): t is TrackRecord => Boolean(t));
   } catch (err) {
-    console.warn('extractVidRockHlsTracks error:', err);
+    logger.warn({ err }, 'extractVidRockHlsTracks error');
     return [];
   }
 }

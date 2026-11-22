@@ -15,11 +15,10 @@ import { useAppStore } from '../store/useAppStore';
 import { EntryHomeScreen } from './EntryHomeScreen';
 import { WorldShell } from './worlds/WorldShell';
 import { MusicLanguageDropdown } from './music/MusicLanguageDropdown';
-import { MUSIC_I18N } from './music/musicI18n';
-import { useMusicStore } from '../store/useMusicStore';
 import { MediaCatalogHub } from './MediaCatalogHub';
 import type { useAppController } from '../hooks/useAppController';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
+import { useBackInterceptor } from '../lib/backInterceptor';
 
 const GamesHubSection = lazyWithRetry(() =>
   import('./GamesHubSection').then((m) => ({ default: m.GamesHubSection }))
@@ -114,7 +113,6 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
   const requestedSeriesModal = useAppStore((s) => s.requestedSeriesModal);
   const futbolFavOnly = useAppStore((s) => s.futbolFavOnly);
   const setFutbolFavOnly = useAppStore((s) => s.setFutbolFavOnly);
-  const musicLang = useMusicStore((s) => s.musicLang);
   const suppressHomeSearchOverlay = Boolean(
     requestedMovieModal ||
       requestedSeriesModal ||
@@ -123,6 +121,20 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
       showCommandSearch ||
       showVoiceAssistant ||
       profileHubOpen
+  );
+
+  useBackInterceptor(
+    activeWorld === 'cine' && showWatchlistOnly,
+    'cine-watchlist-only',
+    () => setShowWatchlistOnly(false),
+    { priority: 5 }
+  );
+
+  useBackInterceptor(
+    activeWorld === 'futbol' && futbolFavOnly,
+    'futbol-fav-only',
+    () => setFutbolFavOnly(false),
+    { priority: 5 }
   );
 
   const handleSelectedGameChange = React.useCallback(

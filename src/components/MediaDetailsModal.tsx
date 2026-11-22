@@ -68,6 +68,9 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
   useFocusTrap(Boolean(item), onClose, dialogRef);
   useSuppressFloatingBubble(Boolean(item));
+  useBackInterceptor(Boolean(item && playTrailer), 'media-details-trailer', () => setPlayTrailer(false), {
+    priority: 17,
+  });
   useBackInterceptor(Boolean(item), 'media-details-modal', onClose, {
     priority: 15,
     lockScroll: true,

@@ -18,7 +18,6 @@ import {
   type GnulaPageMetadata,
 } from '../extractors/gnulaHdExtractor.ts';
 import { fetchTmdbJson, fetchTmdbTitleLogo, resolveLocalizedTmdbTitle } from '../services/tmdbService.ts';
-import { curlPlainGetText } from '../services/vestMirrorService.ts';
 import { filterTmdbValidSeasons } from './catalog/tvDetailsHandler.ts';
 
 import {

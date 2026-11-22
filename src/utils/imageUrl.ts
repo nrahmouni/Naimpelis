@@ -2,8 +2,6 @@
  * Responsive TMDB & Poster Image Helpers + Poster Ambient Color Extractor
  */
 
-const TMDB_BASE = 'https://image.tmdb.org/t/p/';
-
 export function toTmdbSizedUrl(url: string | undefined, size: 'w300' | 'w342' | 'w500' | 'w780' | 'w1280' | 'original'): string {
   if (!url) return '/icon.svg';
   if (!url.includes('image.tmdb.org/t/p/')) return url;

@@ -122,6 +122,8 @@ export interface ResolvedTrackPlayback {
   previewUrl?: string;
   fullLength: boolean;
   spatial8dYtFallback?: boolean;
+  youtube8dId?: string;
+  youtubeKaraokeId?: string;
   bitrateKbps?: number;
   provider?: string;
   alternatives?: PlaybackSourceCandidate[];
@@ -806,6 +808,93 @@ async function resolveYouTubeMatch(
   } catch {
     return {};
   }
+}
+
+export async function resolveYouTubeEffectVariant(params: {
+  artist: string;
+  title: string;
+  durationSec?: number;
+  variant: '8d' | 'karaoke' | 'slowed';
+}): Promise<{ videoId: string; title: string; variant: '8d' | 'karaoke' | 'slowed' } | null> {
+  const cleanArtist = extractPrimaryArtist(params.artist);
+  const cleanTitle = params.title.replace(/\([^)]*\)|\[[^\]]*\]/g, '').trim() || params.title;
+  if (!cleanTitle) return null;
+
+  const variantKey = params.variant;
+  const cacheKey = `ytvar:${variantKey}:${normalizeStr(cleanArtist)}|${normalizeStr(cleanTitle)}`;
+  const cached = playbackCache.get(cacheKey);
+  if (cached?.youtubeVideoId) {
+    return {
+      videoId: cached.youtubeVideoId,
+      title: cached.sourceLabel || `${cleanTitle} (${variantKey})`,
+      variant: variantKey,
+    };
+  }
+
+  const suffix =
+    variantKey === '8d'
+      ? '8D Audio'
+      : variantKey === 'karaoke'
+      ? 'Karaoke Instrumental'
+      : 'Slowed Reverb';
+  const query = `${cleanArtist} ${cleanTitle} ${suffix}`.trim();
+  const dur = Number(params.durationSec || 0);
+
+  const variantRe =
+    variantKey === '8d'
+      ? /\b(8d|10d|16d|spatial|binaural|360)\b/i
+      : variantKey === 'karaoke'
+      ? /\b(karaoke|instrumental|backing track|off vocal)\b/i
+      : /\b(slowed|reverb)\b/i;
+
+  const expectedWithTag = `${cleanTitle} (${variantKey === '8d' ? '8D' : variantKey === 'karaoke' ? 'Karaoke' : 'Slowed'})`;
+
+  try {
+    const ytm = await searchYouTubeMusic(query);
+    for (const t of ytm.tracks) {
+      if (!t.youtubeVideoId) continue;
+      if (!variantRe.test(`${t.title} ${t.artist.name}`)) continue;
+      const check = isStrictTrackMatch({
+        expectedArtist: params.artist,
+        expectedTitle: expectedWithTag,
+        candidateArtist: t.artist.name,
+        candidateTitle: t.title,
+        expectedDurationSec: dur,
+        candidateDurationSec: t.durationSec,
+        maxDurationDeltaSec: variantKey === 'slowed' ? 65 : 35,
+      });
+      if (check.ok || (tokenMatchMetrics(cleanTitle, t.title).recall >= 0.8 && tokenMatchMetrics(cleanArtist, `${t.artist.name} ${t.title}`).recall >= 0.5)) {
+        const hit = { videoId: t.youtubeVideoId, title: t.title, variant: variantKey };
+        playbackCache.set(cacheKey, {
+          sourceType: 'youtube',
+          sourceLabel: t.title,
+          youtubeVideoId: t.youtubeVideoId,
+          fullLength: true,
+        });
+        return hit;
+      }
+    }
+
+    if (variantKey === '8d') {
+      const htmlHits = await searchYouTubeHtmlFallback(query, dur, true);
+      for (const c of htmlHits) {
+        if (!c.id || !variantRe.test(c.title)) continue;
+        if (tokenMatchMetrics(cleanTitle, c.title).recall >= 0.8) {
+          const hit = { videoId: c.id, title: c.title, variant: variantKey };
+          playbackCache.set(cacheKey, {
+            sourceType: 'youtube',
+            sourceLabel: c.title,
+            youtubeVideoId: c.id,
+            fullLength: true,
+          });
+          return hit;
+        }
+      }
+    }
+  } catch {
+    // ignore transient lookup failures
+  }
+  return null;
 }
 
 async function verifyDirectStreamUrl(url: string, timeoutMs = 3200): Promise<boolean> {
@@ -2067,18 +2156,54 @@ async function resolveTrackPlaybackUncached(
       alternatives,
     };
   } else if (primaryYtId) {
-    // Full-length Studio / Official Audio track (never truncated to 30s!)
+    // Full-length Studio / Official Audio track + quick 30s HD preview fallback for instant WebAudio DSP demo if desired
+    let fallbackPreview = params.previewUrl;
+    if (!fallbackPreview) {
+      const qTerm = `${extractPrimaryArtist(params.artist)} ${params.title}`.trim();
+      const dzList = await fetchJsonSafe<{ data?: any[] }>(
+        `https://api.deezer.com/search/track?q=${encodeURIComponent(qTerm)}&limit=3`,
+        1400
+      );
+      const dzMatch = dzList?.data?.find(
+        (x) =>
+          x?.preview &&
+          isStrictTrackMatch({
+            expectedArtist: params.artist,
+            expectedTitle: params.title,
+            candidateArtist: String(x?.artist?.name || ''),
+            candidateTitle: String(x?.title || ''),
+            expectedDurationSec: durationSec,
+            candidateDurationSec: Number(x?.duration || 0),
+            maxDurationDeltaSec: 35,
+          }).ok
+      );
+      if (dzMatch?.preview) fallbackPreview = String(dzMatch.preview);
+    }
+    const ytAlts: PlaybackSourceCandidate[] = fallbackPreview
+      ? [
+          {
+            id: 'preview-hd',
+            sourceType: 'preview',
+            sourceLabel: 'Preview WebAudio DSP (30s)',
+            streamUrl: fallbackPreview,
+            proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(fallbackPreview)}`,
+            bitrateKbps: 128,
+            fullLength: false,
+            provider: 'Preview DSP',
+          },
+        ]
+      : [];
     result = {
       sourceType: 'youtube',
       sourceLabel: 'Audio Completo HD',
       youtubeVideoId: primaryYtId,
       youtubeMvId: mvId,
       youtubeAltIds: ytAltIds,
-      previewUrl: params.previewUrl,
+      previewUrl: fallbackPreview,
       fullLength: true,
       bitrateKbps: 256,
       provider: 'Riffan Engine',
-      alternatives: [],
+      alternatives: ytAlts,
     };
   } else {
     // Full-song recovery pass BEFORE preview fallback: try stripped base title on YTM + Archive.org in parallel

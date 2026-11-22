@@ -4,6 +4,7 @@
  */
 import type { Express } from 'express';
 import { ENV } from '../config/env.ts';
+import { logger } from '../utils/logger.ts';
 import { resolveOfficialChannelLogoUrl } from '../../src/shared/channelLogos.ts';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import {
@@ -216,7 +217,7 @@ async function fetchArchivePackEpisodes(
     archiveMetadataCache.set(cacheKey, { episodes, ts: Date.now() });
     return episodes;
   } catch (err) {
-    console.warn('Archive metadata error:', archiveId, err);
+    logger.warn({ err, archiveId }, 'Archive metadata error');
     return [];
   }
 }
@@ -406,7 +407,7 @@ export function registerCatalaCatalogRoutes(app: Express): void {
         ],
       });
     } catch (err) {
-      console.error('Catala catalog error:', err);
+      logger.error({ err }, 'Catala catalog error');
       res.status(500).json({ success: false, items: [], liveChannels: [] });
     }
   });
@@ -484,7 +485,7 @@ export function registerCatalaCatalogRoutes(app: Express): void {
         },
       });
     } catch (err) {
-      console.error('Catala episodes error:', err);
+      logger.error({ err }, 'Catala episodes error');
       res.status(500).json({ success: false });
     }
   });

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatMessage, CloudBrowserState, LanguageNoticePopup, VideoState } from '../../types';
+import { evaluateSeriesAutoNext } from './playerAutoNextGuard';
 
 interface UseNativePlayerStageStateArgs {
   videoState: VideoState;
@@ -9,6 +10,7 @@ interface UseNativePlayerStageStateArgs {
   floatingChatOpen: boolean;
   canControlRoom: boolean;
   isMinimized: boolean;
+  isExtracting: boolean;
   showProMenu: boolean;
   currentTime: number;
   duration: number;
@@ -39,6 +41,7 @@ export function useNativePlayerStageState({
   floatingChatOpen,
   canControlRoom,
   isMinimized,
+  isExtracting,
   showProMenu,
   currentTime,
   duration,
@@ -187,24 +190,29 @@ export function useNativePlayerStageState({
   }, [setIsFullscreen, setIsHorizontalFullscreen, setViewportDims]);
 
   useEffect(() => {
-    if (
-      !videoState.seriesMeta ||
-      !hasNextEpisode ||
-      videoState.isLive ||
-      !canControlRoom ||
-      !duration ||
-      duration < 90 ||
-      autoNextCancelledForUrl === videoState.url
-    ) {
-      setAutoNextCountdown((prev) => (prev === null ? prev : null));
-      return;
-    }
+    const vid = videoRef.current;
+    const decision = evaluateSeriesAutoNext({
+      hasSeriesMeta: Boolean(videoState.seriesMeta),
+      hasNextEpisode,
+      isLive: Boolean(videoState.isLive),
+      isExtracting,
+      canControlRoom,
+      videoMode: videoState.mode,
+      videoUrl: videoState.url,
+      autoNextCancelledForUrl,
+      autoNextTriggeredForUrl: autoNextTriggeredUrlRef.current,
+      domReadyState: vid ? vid.readyState : 0,
+      domSeeking: vid ? Boolean(vid.seeking) : false,
+      domEnded: vid ? Boolean(vid.ended) : false,
+      domCurrentTime: vid && Number.isFinite(vid.currentTime) ? vid.currentTime : 0,
+      domDuration: vid && Number.isFinite(vid.duration) ? vid.duration : 0,
+    });
 
-    const remaining = duration - currentTime;
-    if (remaining <= 10 && remaining > 0.4) {
-      const nextSeconds = Math.max(1, Math.ceil(remaining));
-      setAutoNextCountdown((prev) => (prev === nextSeconds ? prev : nextSeconds));
-    } else if (remaining <= 0.4 && autoNextTriggeredUrlRef.current !== videoState.url) {
+    if (decision.action === 'countdown') {
+      setAutoNextCountdown((prev) =>
+        prev === decision.secondsLeft ? prev : decision.secondsLeft
+      );
+    } else if (decision.action === 'trigger_next') {
       autoNextTriggeredUrlRef.current = videoState.url;
       setAutoNextCountdown((prev) => (prev === null ? prev : null));
       onNextEpisodeRef.current?.();
@@ -214,12 +222,15 @@ export function useNativePlayerStageState({
   }, [
     currentTime,
     duration,
+    isExtracting,
     videoState.seriesMeta,
     videoState.isLive,
+    videoState.mode,
     videoState.url,
     canControlRoom,
     autoNextCancelledForUrl,
     hasNextEpisode,
+    videoRef,
     autoNextTriggeredUrlRef,
     setAutoNextCountdown,
   ]);

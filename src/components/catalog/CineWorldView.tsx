@@ -17,7 +17,6 @@ import {
   RiffanMoviesIcon,
   RiffanSeriesIcon,
   RiffanSlidersIcon,
-  RiffanSurpriseIcon,
 } from '../ui/RiffanIcons';
 import { LatestReleasesSection } from '../LatestReleasesSection';
 import { FlagBadgeSvg, type FlagCode } from '../ui/LanguageBadge';
@@ -257,6 +256,50 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
       : activeSortMeta
       ? pickLang(lang, activeSortMeta)
       : pickLang(lang, { es: 'Ver todo', ca: 'Veure tot', en: 'View all' });
+
+  const hasIntraCineState =
+    cineSpecialPortal === 'catala' ||
+    movieGenre !== '' ||
+    movieSort !== 'trending' ||
+    seriesGenre !== '' ||
+    seriesSort !== 'trending';
+
+  useBackInterceptor(
+    hasIntraCineState,
+    'cine-intra-filters',
+    () => {
+      if (cineSpecialPortal === 'catala') {
+        onChangeCineSpecialPortal('none');
+        return true;
+      }
+      if (isSeriesTab && (seriesGenre !== '' || seriesSort !== 'trending')) {
+        onChangeSeriesGenre('');
+        onChangeSeriesSort('trending');
+        onResetSeriesPage();
+        return true;
+      }
+      if (!isSeriesTab && (movieGenre !== '' || movieSort !== 'trending')) {
+        onChangeMovieGenre('');
+        onChangeMovieSort('trending');
+        onResetMoviePage();
+        return true;
+      }
+      if (seriesGenre !== '' || seriesSort !== 'trending') {
+        onChangeSeriesGenre('');
+        onChangeSeriesSort('trending');
+        onResetSeriesPage();
+        return true;
+      }
+      if (movieGenre !== '' || movieSort !== 'trending') {
+        onChangeMovieGenre('');
+        onChangeMovieSort('trending');
+        onResetMoviePage();
+        return true;
+      }
+      return false;
+    },
+    { priority: 5 }
+  );
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-8">

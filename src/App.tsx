@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import { Check } from 'lucide-react';
 import { MotionConfig } from 'motion/react';
-import { RiffanLoaderR } from './components/ui/RiffanIcons';
+import { RiffanBackIcon, RiffanLoaderR } from './components/ui/RiffanIcons';
 import { pickLang } from './utils/i18n';
 import { socketService } from './services/socket';
 import { triggerHaptic } from './utils/haptics';
@@ -34,20 +34,20 @@ export function App() {
     effectiveView, isDesktopLayout, isFramedMobileOnPc, toggleViewMode,
     authUser, authLoading, profileHubOpen, setProfileHubOpen, profileHubTab, setProfileHubTab,
     isTvMode, setIsTvMode, isTvPairLobby, setIsTvPairLobby, isAdsPageOpen, setIsAdsPageOpen,
-    isAdminPage, setIsAdminPage,
+    isAdminPage, setIsAdminPage, isSamsungPage, setIsSamsungPage,
     setTvAuthToken, savedRooms, pinPromptState, tvClaimStatus, smartTvModalOpen, setSmartTvModalOpen,
     showIntro, setShowIntro, introWithSound, setIntroWithSound,
-    showWatchlistOnly, setShowWatchlistOnly, showVoiceAssistant, setShowVoiceAssistant,
+    showVoiceAssistant, setShowVoiceAssistant,
     quickPool, quickPoolLoading, nativeApkUpdate, setNativeApkUpdate,
-    reducedMotion, activeWorld, lastUsedWorld, cineTab, setCineTab,
-    cineCastellano, setCineCastellano, futbolTab, setFutbolTab,
+    reducedMotion, activeWorld,
+    cineCastellano,
     isFloatingRoomOpen, setIsFloatingRoomOpen, showDesignSystem, setShowDesignSystem,
     showLegalModal, setShowLegalModal, showNotificationCenter, setShowNotificationCenter,
     showCommandSearch, setShowCommandSearch, showSurpriseModal, setShowSurpriseModal,
     aiSearchLaunch, setAiSearchLaunch, typingUsers, swUpdate, applySwUpdateNow,
     deferredAppUpdateVersion, unreadNotificationsCount,
     roomId, setRoomId, roomName, setRoomName, inRoom, setInRoom,
-    worldSearchQuery, setWorldSearchQuery, avatarMenuOpen, setAvatarMenuOpen,
+    worldSearchQuery, avatarMenuOpen, setAvatarMenuOpen,
     settingsSheetOpen, setSettingsSheetOpen, isPlayerMinimized, setIsPlayerMinimized,
     setPinFullPlayerOnChat, isPlayerClosedLocally, setIsPlayerClosedLocally,
     isCinemaMode, setCinemaModePersist, showGuestPopup,
@@ -55,12 +55,11 @@ export function App() {
     roomState, visualViewportHeight, isMobileKeyboardOpen,
     activeSportsMatch, activeMatchDetails, loadingActiveMatchDetails,
     showLiveMatchDock, setShowLiveMatchDock, refreshActiveMatchDetails,
-    isHostUser, currentUser, canChangeMedia, canControlRoom, voiceChat,
-    liveMatchesCount, homeFootballMatches,
-    activePortalTransition, portalOriginRect, portalLandingActive, preloadWorld, enterWorld,
+    currentUser, canChangeMedia, canControlRoom, voiceChat,
+    activePortalTransition, portalOriginRect, enterWorld,
     showHostLockNotice, isCurrentRoomPermanent, currentHostPin, roomHasPin,
     socialActions, isOnMobileSocialTab, effectiveVideoState,
-    isPlayerActive, isDockedMini, miniDrag, roomGameActions,
+    isPlayerActive, isDockedMini, miniDrag,
     handleToggleCinemaMode, playback, handleClaimTvCode, handleSendTvRemoteCommand,
     lifecycle, isScrollCompressed, showCinemaOverlay, hasConnectedSmartTv,
     isMobileChatWithKeyboard, isAutoImmersiveLandscape, hideBrowseBelowPlayer,
@@ -120,7 +119,7 @@ export function App() {
   }, [friendNoticeTimerRef, setFriendAddedNotice]);
 
   const isEarlyRoute =
-    isAdminPage || showDesignSystem || isAdsPageOpen || isTvPairLobby || (!inRoom && !hasEnteredApp) || isTvMode;
+    isSamsungPage || isAdminPage || showDesignSystem || isAdsPageOpen || isTvPairLobby || (!inRoom && !hasEnteredApp) || isTvMode;
 
   const handleOpenMusicWorldFromBar = useCallback(() => {
     if (!inRoom && !hasEnteredApp) {
@@ -134,6 +133,7 @@ export function App() {
       showDesignSystem={showDesignSystem}
       isAdsPageOpen={isAdsPageOpen}
       isAdminPage={isAdminPage}
+      isSamsungPage={isSamsungPage}
       isTvPairLobby={isTvPairLobby}
       inRoom={inRoom}
       hasEnteredApp={hasEnteredApp}
@@ -167,6 +167,7 @@ export function App() {
       setShowDesignSystem={setShowDesignSystem}
       setIsAdsPageOpen={setIsAdsPageOpen}
       setIsAdminPage={setIsAdminPage}
+      setIsSamsungPage={setIsSamsungPage}
       setIsTvPairLobby={setIsTvPairLobby}
       setIsTvMode={setIsTvMode}
       setTvAuthToken={setTvAuthToken}
@@ -338,22 +339,52 @@ export function App() {
           )}
 
           {activeWorld === 'entry' && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
-            <header className="shrink-0 z-30 h-14 px-4 sm:px-6 bg-[#000000]/92 backdrop-blur-2xl border-b border-white/[0.08] flex items-center justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-                  mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-                }}
-                aria-label="RiffanTV"
-                className="flex items-center min-h-11 py-1 cursor-pointer active:scale-95 transition-transform group"
-              >
-                <NaimBrandLogo variant="full" size={30} />
-              </button>
+            <header className="shrink-0 z-30 h-14 px-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:px-6 bg-[#000000]/92 backdrop-blur-2xl border-b border-white/[0.08] flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <button
+                  type="button"
+                  data-tv-focusable="true"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    c.triggerBackStep();
+                  }}
+                  aria-label={pickLang(lang, {
+                    es: 'Volver atrás',
+                    ca: 'Tornar enrere',
+                    en: 'Go back',
+                    rif: 'Ɣer deffar',
+                    zh: '返回',
+                  })}
+                  title={pickLang(lang, {
+                    es: 'Volver atrás',
+                    ca: 'Tornar enrere',
+                    en: 'Go back',
+                    rif: 'Ɣer deffar',
+                    zh: '返回',
+                  })}
+                  className="min-w-11 min-h-11 rounded-2xl bg-[#0D0D12]/90 hover:bg-white/[0.08] border border-white/[0.08] flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer active:scale-95 transition-all tv-focus-ring shrink-0"
+                >
+                  <RiffanBackIcon size={19} animate="hover" />
+                </button>
+
+                <button
+                  type="button"
+                  data-tv-focusable="true"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                    mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                  aria-label="RiffanTV"
+                  className="flex items-center min-h-11 py-1 px-1.5 rounded-2xl cursor-pointer active:scale-95 transition-transform group tv-focus-ring"
+                >
+                  <NaimBrandLogo variant="full" size={30} />
+                </button>
+              </div>
 
               <button
                 type="button"
+                data-tv-focusable="true"
                 onClick={() => {
                   triggerHaptic('light');
                   setAvatarMenuOpen(true);
@@ -362,8 +393,10 @@ export function App() {
                   es: 'Menú de perfil',
                   ca: 'Menú de perfil',
                   en: 'Profile menu',
+                  rif: 'Umuɣ n uprufil',
+                  zh: '个人菜单',
                 })}
-                className="relative w-10 h-10 rounded-full border border-white/15 flex items-center justify-center text-sm font-bold text-white cursor-pointer active:scale-95 transition-transform shrink-0 overflow-visible shadow-[0_0_0_2px_rgba(124,58,237,0.22)]"
+                className="relative w-11 h-11 rounded-full border border-white/15 flex items-center justify-center text-sm font-bold text-white cursor-pointer active:scale-95 transition-transform shrink-0 overflow-visible shadow-[0_0_0_2px_rgba(124,58,237,0.22)] tv-focus-ring"
                 style={{ backgroundColor: profile.color || '#7C3AED' }}
               >
                 {authUser?.photoURL ? (

@@ -57,6 +57,7 @@ export function parseRoomFromWindow(): {
   isTvPairLobby: boolean;
   isAdsPage?: boolean;
   isAdminPage?: boolean;
+  isSamsungPage?: boolean;
   isAuthBridgePage?: boolean;
   authBridgeSessionId?: string;
   gameType?: string;
@@ -70,6 +71,7 @@ export function parseRoomFromWindow(): {
       isTvPairLobby: false,
       isAdsPage: false,
       isAdminPage: false,
+      isSamsungPage: false,
       isAuthBridgePage: false,
       routeTarget: { kind: 'home' },
       isDedicatedEntry: false,
@@ -124,6 +126,19 @@ export function parseRoomFromWindow(): {
         isTvPairLobby: false,
         isAdsPage: false,
         isAdminPage: true,
+        isSamsungPage: false,
+        routeTarget: target,
+        isDedicatedEntry: false,
+      };
+    }
+    if (target.systemType === 'samsung') {
+      return {
+        roomId: '',
+        isTvMode: false,
+        isTvPairLobby: false,
+        isAdsPage: false,
+        isAdminPage: false,
+        isSamsungPage: true,
         routeTarget: target,
         isDedicatedEntry: false,
       };
@@ -134,6 +149,7 @@ export function parseRoomFromWindow(): {
       isTvPairLobby: false,
       isAdsPage: false,
       isAdminPage: false,
+      isSamsungPage: false,
       routeTarget: target,
       isDedicatedEntry: false,
     };

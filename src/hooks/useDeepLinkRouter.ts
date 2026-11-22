@@ -22,6 +22,8 @@ interface UseDeepLinkRouterOptions {
   isAdsPageOpen: boolean;
   isAdminPage?: boolean;
   setIsAdminPage?: (open: boolean) => void;
+  isSamsungPage?: boolean;
+  setIsSamsungPage?: (open: boolean) => void;
   enterWorld: (world: WorldId) => void;
   setForcedOpenGame: React.Dispatch<
     React.SetStateAction<{ gameType: RoomGameInviteType; seq: number } | null>
@@ -44,6 +46,8 @@ export function useDeepLinkRouter({
   isAdsPageOpen,
   isAdminPage = false,
   setIsAdminPage,
+  isSamsungPage = false,
+  setIsSamsungPage,
   enterWorld,
   setForcedOpenGame,
   setIsInActiveGame,
@@ -64,6 +68,10 @@ export function useDeepLinkRouter({
   isAdminPageRef.current = isAdminPage;
   const setIsAdminPageRef = useRef(setIsAdminPage);
   setIsAdminPageRef.current = setIsAdminPage;
+  const isSamsungPageRef = useRef(isSamsungPage);
+  isSamsungPageRef.current = isSamsungPage;
+  const setIsSamsungPageRef = useRef(setIsSamsungPage);
+  setIsSamsungPageRef.current = setIsSamsungPage;
   const setForcedOpenGameRef = useRef(setForcedOpenGame);
   setForcedOpenGameRef.current = setForcedOpenGame;
   const setIsInActiveGameRef = useRef(setIsInActiveGame);
@@ -98,10 +106,19 @@ export function useDeepLinkRouter({
       const target: AppRouteTarget = parseAppRoute(pathname, search);
       if (target.kind === 'system' && target.systemType === 'admin') {
         setIsAdminPageRef.current?.(true);
+        setIsSamsungPageRef.current?.(false);
+        return;
+      }
+      if (target.kind === 'system' && target.systemType === 'samsung') {
+        setIsSamsungPageRef.current?.(true);
+        setIsAdminPageRef.current?.(false);
         return;
       }
       if (isAdminPageRef.current) {
         setIsAdminPageRef.current?.(false);
+      }
+      if (isSamsungPageRef.current) {
+        setIsSamsungPageRef.current?.(false);
       }
       if (target.kind === 'home' || target.kind === 'system' || target.kind === 'room') {
         return;
@@ -114,6 +131,54 @@ export function useDeepLinkRouter({
         if (typeof target.cineCastellano === 'boolean') store.setCineCastellano(target.cineCastellano);
         if (target.futbolTab) store.setFutbolTab(target.futbolTab);
         enterWorldRef.current(target.world);
+        if (target.world === 'music' && (target.musicTrackParam || target.musicQuery)) {
+          void Promise.all([
+            import('../store/useMusicStore'),
+            import('../utils/musicDedupe'),
+          ])
+            .then(async ([{ useMusicStore }, { decodeMusicTrackShare }]) => {
+              const musicState = useMusicStore.getState();
+              if (target.musicTrackParam) {
+                const decoded = decodeMusicTrackShare(target.musicTrackParam);
+                if (decoded) {
+                  musicState.playTrack(decoded);
+                  musicState.setShowNowPlayingModal(true);
+                  return;
+                }
+                const res = await fetch(
+                  `/api/music/search?q=${encodeURIComponent(target.musicTrackParam)}`
+                )
+                  .then((r) => (r.ok ? r.json() : null))
+                  .catch(() => null);
+                const firstTrack = Array.isArray(res?.tracks) ? res.tracks[0] : null;
+                if (firstTrack) {
+                  musicState.playTrack(firstTrack, res.tracks);
+                  musicState.setShowNowPlayingModal(true);
+                }
+                return;
+              }
+              if (target.musicQuery) {
+                musicState.clearMusicDetailStack();
+                musicState.setMusicNavTab('search');
+                musicState.setMusicSearchQuery(target.musicQuery);
+                const res = await fetch(
+                  `/api/music/search?q=${encodeURIComponent(target.musicQuery)}`
+                )
+                  .then((r) => (r.ok ? r.json() : null))
+                  .catch(() => null);
+                if (res && Array.isArray(res.tracks)) {
+                  musicState.setMusicSearchResults({
+                    tracks: res.tracks || [],
+                    albums: res.albums || [],
+                    artists: res.artists || [],
+                    playlists: res.playlists || [],
+                    radios: res.radios || [],
+                  });
+                }
+              }
+            })
+            .catch(() => undefined);
+        }
         return;
       }
 
@@ -276,7 +341,7 @@ export function useDeepLinkRouter({
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (sessionMode !== 'solo' || !hasEnteredApp) return;
-    if (isTvMode || isTvPairLobby || isAdsPageOpen || isAdminPage || deepLinkResolving) return;
+    if (isTvMode || isTvPairLobby || isAdsPageOpen || isAdminPage || isSamsungPage || deepLinkResolving) return;
     if (requestedMovieModal || requestedSeriesModal || requestedMatchSlug) return;
 
     let nextRoute = '/';
@@ -340,9 +405,12 @@ export function useDeepLinkRouter({
     }
 
     const currentFull = `${window.location.pathname}${window.location.search}`;
-    const hasInstallMusicQuery =
-      activeWorld === 'music' && window.location.search.includes('install=music');
-    if (currentFull !== nextRoute && !hasInstallMusicQuery) {
+    const hasMusicDeepQuery =
+      activeWorld === 'music' &&
+      (window.location.search.includes('install=music') ||
+        window.location.search.includes('track=') ||
+        window.location.search.includes('musicq='));
+    if (currentFull !== nextRoute && !hasMusicDeepQuery) {
       lastObservedHrefRef.current = nextRoute;
       window.history.replaceState(window.history.state, '', nextRoute);
     }
@@ -353,6 +421,7 @@ export function useDeepLinkRouter({
     isTvPairLobby,
     isAdsPageOpen,
     isAdminPage,
+    isSamsungPage,
     deepLinkResolving,
     requestedMovieModal,
     requestedSeriesModal,

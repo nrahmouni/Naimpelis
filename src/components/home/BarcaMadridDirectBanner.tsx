@@ -73,6 +73,7 @@ export const BarcaMadridDirectBanner: React.FC<BarcaMadridDirectBannerProps> = (
           <motion.button
             key={match.id}
             type="button"
+            data-tv-focusable="true"
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.16 }}
@@ -82,7 +83,7 @@ export const BarcaMadridDirectBanner: React.FC<BarcaMadridDirectBannerProps> = (
               triggerHaptic('medium');
               onPlayMatch(match, preferredIdx);
             }}
-            className="w-full text-left rounded-2xl bg-gradient-to-r from-[#11121E] via-[#0E1019] to-[#0D1624] hover:from-[#16182A] hover:to-[#111D30] border border-[#7C3AED]/45 hover:border-[#8B5CF6]/80 p-3.5 sm:p-4 shadow-[0_14px_36px_rgba(0,0,0,0.55)] cursor-pointer transition-all group"
+            className="w-full text-left rounded-2xl bg-gradient-to-r from-[#11121E] via-[#0E1019] to-[#0D1624] hover:from-[#16182A] hover:to-[#111D30] border border-[#7C3AED]/45 hover:border-[#8B5CF6]/80 p-3.5 sm:p-4 shadow-[0_14px_36px_rgba(0,0,0,0.55)] cursor-pointer transition-all group tv-focus-ring"
           >
             {/* Top status + broadcaster bar */}
             <div className="flex items-center justify-between gap-2 mb-3">
@@ -147,7 +148,7 @@ export const BarcaMadridDirectBanner: React.FC<BarcaMadridDirectBannerProps> = (
                 </div>
               </div>
 
-              <span className="shrink-0 min-h-11 px-3.5 sm:px-4 rounded-xl bg-gradient-to-r from-[#7C3AED] to-[#3B82F6] group-hover:from-[#8B5CF6] group-hover:to-[#60A5FA] text-white font-display font-bold text-xs sm:text-sm inline-flex items-center gap-1.5 shadow-[0_6px_20px_rgba(124,58,237,0.4)] transition-all">
+              <span className="shrink-0 min-h-11 px-3.5 sm:px-4 rounded-xl bg-gradient-to-r from-[#7C3AED] to-[#3B82F6] group-hover:from-[#8B5CF6] group-hover:to-[#60A5FA] text-white font-display font-bold text-xs sm:text-sm inline-flex items-center gap-1.5 shadow-[0_6px_20px_rgba(124,58,237,0.4)] transition-all whitespace-nowrap">
                 {isStarting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />
                 ) : (
@@ -159,12 +160,14 @@ export const BarcaMadridDirectBanner: React.FC<BarcaMadridDirectBannerProps> = (
                         es: 'Abriendo...',
                         ca: 'Obrint...',
                         en: 'Opening...',
+                        rif: 'Yettarezem...',
                       })
                     : pickLang(lang, {
                         es: 'Ver ahora',
                         ca: 'Veure ara',
                         en: 'Watch now',
                         zh: '立即观看',
+                        rif: 'Xzar lexxu',
                       })}
                 </span>
               </span>
@@ -176,6 +179,7 @@ export const BarcaMadridDirectBanner: React.FC<BarcaMadridDirectBannerProps> = (
                 es: 'Toca para reproducir directo en Riffan',
                 ca: 'Toca per reproduir en directe a Riffan',
                 en: 'Tap to play live on Riffan',
+                rif: 'Ttek i ad txzared direkt di Riffan',
               })}
             </p>
           </motion.button>

@@ -112,20 +112,22 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
     },
     {
       id: 'futbol',
-      title: pickLang(lang, { es: 'Fútbol', ca: 'Futbol', en: 'Football' }),
+      title: pickLang(lang, { es: 'Fútbol', ca: 'Futbol', en: 'Football', rif: 'Lkurat' }),
       subtitle:
         liveMatchesCount > 0
           ? featuredLiveMatch ||
             pickLang(lang, {
-              es: `${liveMatchesCount} partidos en vivo`,
-              ca: `${liveMatchesCount} partits en directe`,
-              en: `${liveMatchesCount} live matches`,
+              es: `${liveMatchesCount} en directo`,
+              ca: `${liveMatchesCount} en directe`,
+              en: `${liveMatchesCount} live`,
+              rif: `${liveMatchesCount} direkt`,
             })
           : featuredLiveMatch ||
             pickLang(lang, {
-              es: 'Agenda de partidos',
-              ca: 'Agenda de partits',
-              en: 'Match schedule',
+              es: 'Barça y Real Madrid · Agenda',
+              ca: 'Barça i Real Madrid · Agenda',
+              en: 'Barça & Real Madrid · Schedule',
+              rif: 'Barça d Real Madrid · Ahil',
             }),
       icon: (
         <span className="w-11 h-11 rounded-xl bg-emerald-500/15 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shrink-0">
@@ -139,6 +141,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
               es: `${liveMatchesCount} en vivo`,
               ca: `${liveMatchesCount} en directe`,
               en: `${liveMatchesCount} live`,
+              rif: `${liveMatchesCount} direkt`,
             })
           : undefined,
     },
@@ -351,6 +354,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
               <motion.button
                 key={tile.id}
                 type="button"
+                data-tv-focusable="true"
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.14, delay: idx * 0.02 }}
@@ -358,7 +362,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
                 onPointerEnter={() => onPreloadWorld?.(tile.id)}
                 onTouchStart={() => onPreloadWorld?.(tile.id)}
                 onClick={(e) => onCardClick(tile.id, e)}
-                className={`group flex items-center gap-3 min-h-[68px] px-3 py-2.5 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] ${tile.accentBorder} text-left cursor-pointer transition-all duration-150`}
+                className={`group flex items-center gap-3 min-h-[68px] px-3 py-2.5 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] ${tile.accentBorder} text-left cursor-pointer transition-all duration-150 tv-focus-ring`}
               >
                 {tile.icon}
                 <div className="min-w-0 flex-1">
@@ -400,10 +404,11 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
             <button
               key={tile.id}
               type="button"
+              data-tv-focusable="true"
               onPointerEnter={() => onPreloadWorld?.(tile.id)}
               onTouchStart={() => onPreloadWorld?.(tile.id)}
               onClick={(e) => onCardClick(tile.id, e)}
-              className={`group flex items-center gap-2.5 min-h-[60px] p-2.5 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.07] ${tile.accentBorder} text-left cursor-pointer active:scale-97 transition-all`}
+              className={`group flex items-center gap-2.5 min-h-[60px] p-2.5 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.07] ${tile.accentBorder} text-left cursor-pointer active:scale-97 transition-all tv-focus-ring`}
             >
               {tile.icon}
               <div className="min-w-0 flex-1">

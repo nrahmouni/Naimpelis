@@ -1,0 +1,140 @@
+name: Build & Auto-Sign Samsung Tizen (.wgt)
+
+on:
+  workflow_dispatch:
+    inputs:
+      package_id:
+        description: 'Tizen 10-char Package ID'
+        required: false
+        default: 'RiffanTv01'
+      app_name:
+        description: 'Smart Hub App Name'
+        required: false
+        default: 'RiffanTV'
+      public_api_origin:
+        description: 'Public Backend Origin for Live TV/VOD APIs'
+        required: false
+        default: 'https://riffan.ai.studio'
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-sign-wgt:
+    name: Build, Sign & Package Tizen TV (.wgt)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies & build relative SPA bundle
+        run: |
+          npm ci --no-audit --no-fund
+          npx vite build --base=./
+
+      - name: Prepare Tizen staging folder (.wgt payload)
+        env:
+          PKG_ID: ${{ github.event.inputs.package_id || 'RiffanTv01' }}
+          APP_NAME: ${{ github.event.inputs.app_name || 'RiffanTV' }}
+          PUBLIC_ORIGIN: ${{ github.event.inputs.public_api_origin || secrets.RIFFAN_PUBLIC_ORIGIN || 'https://riffan.ai.studio' }}
+        run: |
+          rm -rf tizen-build && mkdir -p tizen-build
+          cp -r dist/* tizen-build/
+          cp config.xml tizen-build/config.xml
+          if [ -f public/pwa-512x512.png ]; then
+            cp public/pwa-512x512.png tizen-build/icon.png
+          elif [ -f public/pwa-192x192.png ]; then
+            cp public/pwa-192x192.png tizen-build/icon.png
+          fi
+          rm -f tizen-build/sw.js tizen-build/workbox-*.js
+
+          node -e '
+            const fs = require("fs");
+            const path = require("path");
+            const htmlPath = path.join("tizen-build", "index.html");
+            let html = fs.readFileSync(htmlPath, "utf8");
+            html = html
+              .replace(/(href|src)="\/assets\//g, "$1=\"./assets/")
+              .replace(/(href|src)="\/(favicon[^"]*|apple-touch-icon\.png|icon\.svg|pwa-[^"]*|music-[^"]*)"/g, "$1=\"./$2\"");
+
+            const origin = process.env.PUBLIC_ORIGIN.replace(/\/+$/, "");
+            const bootShim = `<script>(function(){if(window.location.protocol==="file:"){window.__RIFFAN_TIZEN_WIDGET__=true;window.__RIFFAN_API_ORIGIN__=${JSON.stringify(origin)};if(typeof window.fetch==="function"){var origFetch=window.fetch;window.fetch=function(input,init){if(typeof input==="string"&&input.charAt(0)==="/"){input=${JSON.stringify(origin)}+input;}return origFetch.call(this,input,init);};}}})();</script>`;
+            html = html.replace("<head>", "<head>" + bootShim);
+            fs.writeFileSync(htmlPath, html, "utf8");
+
+            const cfgPath = path.join("tizen-build", "config.xml");
+            const pkg = (process.env.PKG_ID || "RiffanTv01").replace(/[^A-Za-z0-9]/g, "").slice(0, 10).padEnd(10, "0");
+            const name = (process.env.APP_NAME || "RiffanTV").replace(/[<>&"]/g, "");
+            let cfg = fs.readFileSync(cfgPath, "utf8");
+            cfg = cfg
+              .replace(/id="[^"]+\.RiffanTV"/, `id="${pkg}.RiffanTV"`)
+              .replace(/package="[^"]+"/, `package="${pkg}"`)
+              .replace(/<name>[^<]*<\/name>/, `<name>${name}<\/name>`);
+            fs.writeFileSync(cfgPath, cfg, "utf8");
+          '
+
+      - name: Setup Java 17 & Install Tizen Studio Headless CLI
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y zip unzip curl openjdk-17-jre-headless
+          TIZEN_ROOT="$HOME/tizen-studio"
+          mkdir -p "$TIZEN_ROOT"
+          CLI_URL="https://download.tizen.org/sdk/tizenstudio/official/extension_installers/web-cli_Tizen_Studio_5.5_ubuntu-64.bin"
+          if curl -fsSL "$CLI_URL" -o /tmp/tizen-cli.bin; then
+            chmod +x /tmp/tizen-cli.bin
+            /tmp/tizen-cli.bin --accept-license --no-java-check "$TIZEN_ROOT" || true
+          fi
+          if [ -x "$TIZEN_ROOT/tools/ide/bin/tizen" ]; then
+            echo "$TIZEN_ROOT/tools/ide/bin" >> "$GITHUB_PATH"
+            echo "HAS_TIZEN_CLI=1" >> "$GITHUB_ENV"
+          else
+            echo "HAS_TIZEN_CLI=0" >> "$GITHUB_ENV"
+          fi
+
+      - name: Generate Certificate & Package Signed .wgt
+        env:
+          CERT_PASS: ${{ secrets.TIZEN_CERT_PASSWORD || 'RiffanTizen2026' }}
+        run: |
+          mkdir -p release-wgt
+          if [ "${HAS_TIZEN_CLI:-0}" = "1" ]; then
+            if [ -n "${{ secrets.TIZEN_AUTHOR_P12_B64 }}" ]; then
+              mkdir -p "$HOME/tizen-certs"
+              echo "${{ secrets.TIZEN_AUTHOR_P12_B64 }}" | base64 -d > "$HOME/tizen-certs/author.p12"
+              echo "${{ secrets.TIZEN_DIST_P12_B64 }}" | base64 -d > "$HOME/tizen-certs/distributor.p12"
+              tizen security-profiles add -n riffan_tv_profile \
+                -a "$HOME/tizen-certs/author.p12" -p "$CERT_PASS" \
+                -d "$HOME/tizen-certs/distributor.p12" -dp "$CERT_PASS"
+            else
+              tizen certificate -a RiffanAuthor -p "$CERT_PASS" -c ES -s Madrid -o RiffanTV -n "RiffanTV" -f riffan_author
+              tizen security-profiles add -n riffan_tv_profile \
+                -a "$HOME/tizen-studio-data/keystore/author/riffan_author.p12" -p "$CERT_PASS"
+            fi
+            tizen package -t wgt -s riffan_tv_profile -o release-wgt -- tizen-build
+          else
+            (cd tizen-build && zip -r ../release-wgt/RiffanTV-unsigned.wgt .)
+          fi
+          ls -lh release-wgt/
+
+      - name: Upload .wgt Artifact for Direct Mobile/PC Download
+        uses: actions/upload-artifact@v4
+        with:
+          name: riffantv-samsung-tizen-wgt
+          path: release-wgt/*.wgt
+          retention-days: 30
+
+      - name: Attach .wgt to GitHub Release on tags
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-wgt/*.wgt

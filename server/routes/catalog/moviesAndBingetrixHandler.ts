@@ -1,5 +1,6 @@
 import type express from 'express';
 import { ENV } from '../../config/env.ts';
+import { logger } from '../../utils/logger.ts';
 import {
   ANIME_PROVIDER_IDS,
   STREAMING_PROVIDER_MAP,
@@ -289,7 +290,7 @@ export async function handleMoviesCatalogRequest(req: express.Request, res: expr
 
     res.json({ success: true, movies: combinedMovies, hasMore, page });
   } catch (err) {
-    console.error('Spanish movies catalog error:', err);
+    logger.error({ err }, 'Spanish movies catalog error');
     res.status(500).json({ success: false, movies: [], hasMore: false });
   }
 }
@@ -394,7 +395,7 @@ export async function handleBingetrixCatalogRequest(req: express.Request, res: e
 
     res.json({ success: true, movies, hasMore: data.hasMore, page });
   } catch (err) {
-    console.error('Bingetrix catalog error:', err);
+    logger.error({ err }, 'Bingetrix catalog error');
     res.status(500).json({ success: false, movies: [], hasMore: false });
   }
 }

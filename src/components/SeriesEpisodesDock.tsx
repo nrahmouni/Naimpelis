@@ -90,12 +90,6 @@ export const SeriesEpisodesDock: React.FC<SeriesEpisodesDockProps> = ({
     return [...upcoming, ...earlier];
   }, [seriesDetails, selectedSeason, seriesMeta.season, seriesMeta.episode]);
 
-  const nextEpisodeInSeason = useMemo(() => {
-    const eps = seriesDetails?.episodes || [];
-    if (selectedSeason !== seriesMeta.season) return null;
-    return eps.find((ep) => ep.episodeNumber === seriesMeta.episode + 1) || null;
-  }, [seriesDetails, selectedSeason, seriesMeta.season, seriesMeta.episode]);
-
   useEffect(() => {
     railRef.current?.scrollTo({ left: 0, behavior: 'smooth' });
   }, [seriesMeta.tmdbId, seriesMeta.season, seriesMeta.episode, selectedSeason]);

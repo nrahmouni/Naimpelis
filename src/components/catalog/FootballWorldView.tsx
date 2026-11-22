@@ -15,6 +15,7 @@ import { FlagBadgeSvg } from '../ui/LanguageBadge';
 import { BottomSheet, SegmentedControl } from '../ui/DesignSystem';
 import type { FootballBrandFilter } from './useLiveTvAndSportsCatalog';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
+import { useBackInterceptor } from '../../lib/backInterceptor';
 
 const FootballMatchboard = lazyWithRetry(() =>
   import('../FootballMatchboard').then((m) => ({ default: m.FootballMatchboard }))
@@ -97,6 +98,31 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
     (futbolLeagueFilter ? 1 : 0) +
     (footballLiveBrand !== 'all' ? 1 : 0) +
     (futbolFavOnly ? 1 : 0);
+
+  const hasIntraFutbolState =
+    effectiveFutbolTab === 'channels' ||
+    futbolLeagueFilter !== '' ||
+    footballLiveBrand !== 'all' ||
+    futbolLangFilter !== 'all';
+
+  useBackInterceptor(
+    hasIntraFutbolState,
+    'futbol-intra-filters',
+    () => {
+      if (futbolLeagueFilter !== '' || footballLiveBrand !== 'all' || futbolLangFilter !== 'all') {
+        setFutbolLeagueFilter('');
+        setFootballLiveBrand('all');
+        setFutbolLangFilter('all');
+        return true;
+      }
+      if (effectiveFutbolTab === 'channels') {
+        setEffectiveFutbolTab('matches');
+        return true;
+      }
+      return false;
+    },
+    { priority: 5 }
+  );
 
   const { favChannels, regularChannels } = React.useMemo(() => {
     const favs: SpanishTdtChannel[] = [];

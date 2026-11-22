@@ -108,6 +108,8 @@ export interface ResolvedTrackPlayback {
   previewUrl?: string;
   fullLength: boolean;
   spatial8dYtFallback?: boolean;
+  youtube8dId?: string;
+  youtubeKaraokeId?: string;
   bitrateKbps?: number;
   provider?: string;
   alternatives?: PlaybackSourceCandidate[];
@@ -118,11 +120,18 @@ export interface UserMusicPlaylist {
   name: string;
   description: string;
   createdAt: number;
+  updatedAt?: number;
   tracks: MusicTrack[];
 }
 
 export type EqPresetId = 'flat' | 'bass' | 'vocal' | 'club' | 'acoustic';
-export type Spatial8dMode = 'orbit' | 'concert' | 'club';
+export type CanonicalSpatialPresetId =
+  | 'orbit_drift'
+  | 'arena_live'
+  | 'deep_3d'
+  | 'dynamic_groove'
+  | 'intimate_room';
+export type Spatial8dMode = CanonicalSpatialPresetId | 'orbit' | 'concert' | 'club';
 export type SpatialTrajectory = 'orbit' | 'pendulum' | 'figure8' | 'elevated';
 export type MusicRepeatMode = 'off' | 'all' | 'one';
 export type MusicViewMode = 'audio' | 'video';
@@ -365,8 +374,26 @@ export type MusicDetailView =
   | { kind: 'playlist'; id: string; playlist?: MusicPlaylist; tracks: MusicTrack[]; loading: boolean }
   | { kind: 'genre'; genre: MusicGenre; artists: MusicArtistRef[]; tracks: MusicTrack[]; loading: boolean }
   | { kind: 'liked' }
+  | { kind: 'stats' }
   | { kind: 'curated'; title: string; subtitle: string; cover: string; tracks: MusicTrack[] }
   | { kind: 'user_playlist'; playlistId: string };
+
+export type PlaylistSortMode = 'default' | 'alpha' | 'artist' | 'duration';
+
+export type ImportMatchStrategy = 'isrc' | 'search' | 'fallback';
+
+export interface YouTubeVersionCandidate {
+  videoId: string;
+  title: string;
+  channel?: string;
+  durationSec?: number;
+  isVideo?: boolean;
+}
+
+export interface TrackAudioAlternativesPayload {
+  streamAlternatives: PlaybackSourceCandidate[];
+  youtubeVersions: YouTubeVersionCandidate[];
+}
 
 export interface MusicSearchResultsPayload {
   tracks: MusicTrack[];

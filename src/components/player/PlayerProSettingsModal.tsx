@@ -60,6 +60,7 @@ export interface PlayerProSettingsModalProps {
   selectedQuality: number;
   autoActiveHeight: number | null;
   onChangeQuality: (idx: number) => void;
+  inStageFullscreen?: boolean;
 }
 
 export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
@@ -103,6 +104,7 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
   selectedQuality,
   autoActiveHeight,
   onChangeQuality,
+  inStageFullscreen = false,
 }) => {
   const onCloseRef = React.useRef(onClose);
   onCloseRef.current = onClose;
@@ -110,7 +112,10 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     const handlePointerDownOutside = (ev: PointerEvent) => {
-      const target = ev.target as Node | null;
+      const target = ev.target as HTMLElement | null;
+      if (target?.closest?.('[data-pro-settings-trigger="true"]')) {
+        return;
+      }
       if (proMenuRef.current && target && !proMenuRef.current.contains(target)) {
         onCloseRef.current();
       }
@@ -129,16 +134,28 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-[195] pointer-events-none flex items-end sm:items-end justify-end p-2.5 sm:p-4 animate-fade-in"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
+      className={`${
+        inStageFullscreen
+          ? 'absolute inset-0 z-[150] bg-black/50 backdrop-blur-[2px] flex items-end justify-end p-2.5 sm:p-4 pl-[max(0.65rem,env(safe-area-inset-left))] pr-[max(0.65rem,env(safe-area-inset-right))] pb-[max(0.65rem,env(safe-area-inset-bottom))]'
+          : 'fixed inset-0 z-[260] bg-black/35 flex items-end justify-end p-2.5 sm:p-4 pl-[max(0.65rem,env(safe-area-inset-left))] pr-[max(0.65rem,env(safe-area-inset-right))] pb-[max(0.65rem,env(safe-area-inset-bottom))]'
+      } pointer-events-auto animate-fade-in`}
     >
       <div
         ref={proMenuRef}
         role="dialog"
-        aria-modal="false"
+        aria-modal="true"
         aria-labelledby="naim-player-pro-settings-title"
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="pointer-events-auto w-[276px] sm:w-[306px] max-w-[calc(100vw-1.25rem)] rounded-2xl bg-[#0D0D12]/94 backdrop-blur-xl nc-specular-surface border border-white/[0.08] shadow-[0_14px_40px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col max-h-[48vh] animate-sheet-up sm:animate-scale-in outline-none"
+        className={`pointer-events-auto rounded-2xl bg-[#0D0D12]/96 backdrop-blur-2xl nc-specular-surface border border-white/[0.12] shadow-[0_14px_40px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col animate-sheet-up sm:animate-scale-in outline-none ${
+          inStageFullscreen
+            ? 'w-[min(320px,calc(100%-0.5rem))] max-h-[calc(100%-0.75rem)] sm:max-h-[86%]'
+            : 'w-[min(312px,calc(100vw-1.25rem))] max-h-[min(72vh,520px)]'
+        }`}
       >
         <div className="px-3 py-2 border-b border-white/[0.08] flex items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-1.5 min-w-0">
@@ -151,21 +168,23 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                   es: 'Ajustes rápidos',
                   ca: 'Ajustos ràpids',
                   en: 'Quick Settings',
+                  rif: 'Imeslalen ixfifen',
                 })}
               </h3>
             </div>
           </div>
           <button
             type="button"
+            data-tv-focusable="true"
             onClick={onClose}
-            className="w-6 h-6 rounded-lg hover:bg-white/10 flex items-center justify-center text-zinc-300 cursor-pointer shrink-0"
+            className="min-w-[34px] min-h-[34px] rounded-xl hover:bg-white/10 flex items-center justify-center text-zinc-300 cursor-pointer shrink-0 tv-focus-ring"
             aria-label={t.closeModal}
           >
-            <X className="w-3.5 h-3.5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="p-2.5 overflow-y-auto custom-scrollbar space-y-2 pb-[max(0.65rem,env(safe-area-inset-bottom))] text-[11px]">
+        <div className="p-2.5 overflow-y-auto overscroll-contain custom-scrollbar space-y-2 pb-[max(0.65rem,env(safe-area-inset-bottom))] text-[11px]">
           <div className="grid grid-cols-2 gap-1.5">
             {onToggleCinemaMode && (
               <button

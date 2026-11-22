@@ -42,11 +42,15 @@ const NativeCinemaPlayer = lazyWithRetry(() =>
 const AdminConsolePage = lazyWithRetry(() =>
   import('./admin/AdminConsolePage').then((m) => ({ default: m.AdminConsolePage }))
 );
+const SamsungTvGuidePage = lazyWithRetry(() =>
+  import('./samsung/SamsungTvGuidePage').then((m) => ({ default: m.SamsungTvGuidePage }))
+);
 
 interface AppEarlyRouteViewProps {
   showDesignSystem: boolean;
   isAdsPageOpen: boolean;
   isAdminPage: boolean;
+  isSamsungPage: boolean;
   isTvPairLobby: boolean;
   inRoom: boolean;
   hasEnteredApp: boolean;
@@ -80,6 +84,7 @@ interface AppEarlyRouteViewProps {
   setShowDesignSystem: (open: boolean) => void;
   setIsAdsPageOpen: (open: boolean) => void;
   setIsAdminPage: (open: boolean) => void;
+  setIsSamsungPage: (open: boolean) => void;
   setIsTvPairLobby: (open: boolean) => void;
   setIsTvMode: (open: boolean) => void;
   setTvAuthToken: (token: string) => void;
@@ -124,6 +129,7 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
   showDesignSystem,
   isAdsPageOpen,
   isAdminPage,
+  isSamsungPage,
   isTvPairLobby,
   inRoom,
   hasEnteredApp,
@@ -157,6 +163,7 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
   setShowDesignSystem,
   setIsAdsPageOpen,
   setIsAdminPage,
+  setIsSamsungPage,
   setIsTvPairLobby,
   setIsTvMode,
   setTvAuthToken,
@@ -212,6 +219,30 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
     clearFriendNoticeTimer();
     setFriendAddedNotice(null);
   }, [clearFriendNoticeTimer, setFriendAddedNotice]);
+
+  if (isSamsungPage) {
+    return (
+      <React.Suspense fallback={null}>
+        <SamsungTvGuidePage
+          onBack={() => {
+            setIsSamsungPage(false);
+            if (
+              typeof window !== 'undefined' &&
+              (window.location.pathname.toLowerCase().startsWith('/samsung') ||
+                window.location.search.includes('samsung=1'))
+            ) {
+              window.history.replaceState({}, '', inRoom && roomId ? `/${roomId}` : '/');
+            }
+          }}
+          onOpenTvReceiver={() => {
+            setIsSamsungPage(false);
+            if (typeof window !== 'undefined') window.location.href = '/tv';
+            else setIsTvPairLobby(true);
+          }}
+        />
+      </React.Suspense>
+    );
+  }
 
   if (isAdminPage) {
     return (

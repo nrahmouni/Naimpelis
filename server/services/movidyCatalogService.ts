@@ -2,6 +2,7 @@
  * @module server/services/movidyCatalogService
  * @description Scraper and parser for Movidy Spanish cinema catalog feeds.
  */
+import { logger } from '../utils/logger.ts';
 import { CHROME_UA, fetchTextWithCurlFallback } from '../extractors/httpHelpers.ts';
 import { MOVIDY_ORIGIN, normalizeMovidyUrl } from '../extractors/bingetrixMovidy.ts';
 import { MOVIDY_GENRE_SLUGS } from '../data/vodConstants.ts';
@@ -78,7 +79,7 @@ export async function scrapeMovidyCatalog(opts: {
     const hasNextPage = html.includes(`/page/${page + 1}`);
     return { movies, hasMore: hasNextPage && movies.length > 0 };
   } catch (err) {
-    console.warn('scrapeMovidyCatalog error:', err);
+    logger.warn({ err }, 'scrapeMovidyCatalog error');
     return { movies: [], hasMore: false };
   }
 }

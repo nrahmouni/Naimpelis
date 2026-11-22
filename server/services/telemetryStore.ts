@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { desc } from 'drizzle-orm';
+import { desc, lt } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import { adminAuditEvents, qoeMetrics } from '../../src/db/schema.ts';
@@ -220,4 +220,37 @@ export async function loadRecentAdminAuditEvents(limit = 60): Promise<StoredAudi
   }
 
   return memoryAuditLog.slice(0, limit);
+}
+
+export async function pruneOldTelemetryRecords(maxAgeDays = 14): Promise<{ removedMemory: number }> {
+  const safeDays = Math.max(1, Math.min(90, Math.round(maxAgeDays)));
+  const cutoffMs = Date.now() - safeDays * 86_400_000;
+  let removedMemory = 0;
+
+  for (let i = memoryAuditLog.length - 1; i >= 0; i--) {
+    if (memoryAuditLog[i].createdAt < cutoffMs) {
+      memoryAuditLog.splice(i, 1);
+      removedMemory++;
+    }
+  }
+
+  if (removedMemory > 0) {
+    void fs.promises
+      .writeFile(AUDIT_DISK_PATH, JSON.stringify(memoryAuditLog.slice(0, 100)), 'utf8')
+      .catch(() => {});
+  }
+
+  if (drizzleDb && postgresReady) {
+    const cutoffDate = new Date(cutoffMs);
+    try {
+      await Promise.all([
+        drizzleDb.delete(qoeMetrics).where(lt(qoeMetrics.createdAt, cutoffDate)),
+        drizzleDb.delete(adminAuditEvents).where(lt(adminAuditEvents.createdAt, cutoffDate)),
+      ]);
+    } catch (err) {
+      logger.debug({ err }, 'telemetry_ttl_prune_skipped');
+    }
+  }
+
+  return { removedMemory };
 }

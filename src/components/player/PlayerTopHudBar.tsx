@@ -87,7 +87,7 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
         (!isCompressed || isStageFullscreen) &&
         (videoState.mode === 'hls' || videoState.mode === 'direct') && (
           <div
-            className={`pointer-events-none absolute top-0 inset-x-0 z-30 px-3 sm:px-5 pt-3 pb-10 bg-gradient-to-b from-black/90 via-black/45 to-transparent flex items-start justify-between gap-3 transition-opacity duration-300 ${
+            className={`pointer-events-none absolute top-0 inset-x-0 z-30 px-3 sm:px-5 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[max(0.75rem,env(safe-area-inset-top))] pb-10 bg-gradient-to-b from-black/90 via-black/45 to-transparent flex items-start justify-between gap-3 transition-opacity duration-300 ${
               showControls ? 'opacity-100' : 'opacity-0'
             }`}
           >
@@ -156,6 +156,8 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
               {!isTouchLocked && !isTvMode && (isFullscreen || isHorizontalFullscreen) && (
                 <button
                   type="button"
+                  data-pro-settings-trigger="true"
+                  data-tv-focusable="true"
                   onClick={(e) => {
                     e.stopPropagation();
                     triggerHaptic('medium');
@@ -163,7 +165,8 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
                   }}
                   title="Ajustes de Reproducción: Subtítulos, Modo Cine, PiP, Audio y Calidad"
                   aria-label="Abrir Ajustes de Reproducción"
-                  className={`min-h-[44px] min-w-[44px] px-3 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                  aria-expanded={showProMenu}
+                  className={`min-h-[44px] min-w-[44px] px-3 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all tv-focus-ring ${
                     showProMenu ||
                     isCinemaMode ||
                     isInPiP ||

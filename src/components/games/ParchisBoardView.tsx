@@ -6,7 +6,6 @@ import {
   PARCHIS_SAFE_SQUARES,
   PARCHIS_START_OFFSETS,
   getLegalParchisPieceIds,
-  parchisGlobalSquare,
   type ParchisGameState,
   type PartyColor,
   type PartySeatPlayer,

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ArrowLeft, Clock, Film, Loader2, Music2, Search, Sparkles, Tv, X } from 'lucide-react';
 import type {
@@ -101,7 +101,9 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   const norm = normalizeSearchText;
 
   const cleanQuery = query.trim();
-  const normQuery = norm(cleanQuery);
+  const deferredCleanQuery = useDeferredValue(cleanQuery);
+  const deferredNormQuery = norm(deferredCleanQuery);
+  const deferredHasMinQuery = deferredCleanQuery.length >= 2;
   const hasMinQuery = cleanQuery.length >= 2;
   const isSearchActive = cleanQuery.length > 0;
   const showOverlay = isSearchActive && !suppressOverlay && !overlayDismissed;
@@ -423,24 +425,24 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   }, [norm]);
 
   const matchedMovies = useMemo(() => {
-    if (!hasMinQuery || !normQuery) return [];
-    return mergeAndRankCatalogResults(remoteMovies, movies, cleanQuery, {
+    if (!deferredHasMinQuery || !deferredNormQuery) return [];
+    return mergeAndRankCatalogResults(remoteMovies, movies, deferredCleanQuery, {
       limit: 12,
       minLocalScore: 60,
     });
-  }, [hasMinQuery, normQuery, cleanQuery, movies, remoteMovies]);
+  }, [deferredHasMinQuery, deferredNormQuery, deferredCleanQuery, movies, remoteMovies]);
 
   const matchedSeries = useMemo(() => {
-    if (!hasMinQuery || !normQuery) return [];
-    return mergeAndRankCatalogResults(remoteSeries, series, cleanQuery, {
+    if (!deferredHasMinQuery || !deferredNormQuery) return [];
+    return mergeAndRankCatalogResults(remoteSeries, series, deferredCleanQuery, {
       limit: 12,
       minLocalScore: 60,
     });
-  }, [hasMinQuery, normQuery, cleanQuery, series, remoteSeries]);
+  }, [deferredHasMinQuery, deferredNormQuery, deferredCleanQuery, series, remoteSeries]);
 
   const matchedSports = useMemo(() => {
-    if (!hasMinQuery || !normQuery) return [];
-    const isGeneralFootball = /\b(futbol|partido|partidos|deporte|deportes|champions|laliga|directo|live)\b/i.test(normQuery);
+    if (!deferredHasMinQuery || !deferredNormQuery) return [];
+    const isGeneralFootball = /\b(futbol|partido|partidos|deporte|deportes|champions|laliga|directo|live)\b/i.test(deferredNormQuery);
     return liveMatches
       .filter((m) => {
         if (isGeneralFootball) return true;
@@ -451,31 +453,31 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
             m.matchMeta?.homeTeam || '',
             m.matchMeta?.awayTeam || '',
           ],
-          normQuery
+          deferredNormQuery
         );
       })
       .slice(0, 6);
-  }, [hasMinQuery, normQuery, liveMatches, queryMatchesFields]);
+  }, [deferredHasMinQuery, deferredNormQuery, liveMatches, queryMatchesFields]);
 
   const matchedTdt = useMemo(() => {
-    if (!hasMinQuery || !normQuery) return [];
-    const isGeneralTv = /^(tv|tdt|canal|canales|tele|television|televisión)$/i.test(normQuery);
+    if (!deferredHasMinQuery || !deferredNormQuery) return [];
+    const isGeneralTv = /^(tv|tdt|canal|canales|tele|television|televisión)$/i.test(deferredNormQuery);
     return tdtChannels
       .filter((ch) => {
         if (isGeneralTv) return true;
-        return queryMatchesFields([ch.name, ch.network || '', ch.shortMark || ''], normQuery);
+        return queryMatchesFields([ch.name, ch.network || '', ch.shortMark || ''], deferredNormQuery);
       })
       .slice(0, 8);
-  }, [hasMinQuery, normQuery, tdtChannels, queryMatchesFields]);
+  }, [deferredHasMinQuery, deferredNormQuery, tdtChannels, queryMatchesFields]);
 
   const matchedGames = useMemo(() => {
-    if (!hasMinQuery || !normQuery) return [];
-    const isGeneralGame = /\b(juego|juegos|game|games|partida|sala)\b/i.test(normQuery);
+    if (!deferredHasMinQuery || !deferredNormQuery) return [];
+    const isGeneralGame = /\b(juego|juegos|game|games|partida|sala)\b/i.test(deferredNormQuery);
     return HALLMARK_GAMES.filter((g) => {
       if (isGeneralGame) return true;
-      return queryMatchesFields([g.title, ...g.matchKeywords], normQuery);
+      return queryMatchesFields([g.title, ...g.matchKeywords], deferredNormQuery);
     });
-  }, [hasMinQuery, normQuery, queryMatchesFields]);
+  }, [deferredHasMinQuery, deferredNormQuery, queryMatchesFields]);
 
   const matchedMusicCount =
     remoteMusic.tracks.length + remoteMusic.artists.length + remoteMusic.radios.length;
@@ -532,7 +534,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
       totalHits === 0 ||
       (looksLikeNaturalLanguage && matchedMovies.length === 0 && matchedSeries.length === 0);
     if (!shouldAutoSearchAi) return;
-    const normalizedKey = normQuery;
+    const normalizedKey = norm(cleanQuery);
     if (lastAutoAiQueryRef.current === normalizedKey) return;
 
     const timer = window.setTimeout(() => {
@@ -544,7 +546,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   }, [
     showOverlay,
     cleanQuery,
-    normQuery,
+    norm,
     loadingRemote,
     aiJob.status,
     totalHits,
@@ -638,7 +640,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                   if (chosen.mediaType === 'tv') onOpenSeriesPage(chosen);
                   else onOpenMovieDetails(chosen);
                 } else if (aiJob.status === 'idle' && (totalHits === 0 || looksLikeNaturalLanguage)) {
-                  lastAutoAiQueryRef.current = normQuery;
+                  lastAutoAiQueryRef.current = norm(cleanQuery);
                   void triggerAiWebSearch(cleanQuery);
                 }
               }

@@ -1,5 +1,17 @@
-import React, { useState } from 'react';
-import { Disc3, ListMusic, Loader2, Plus, Radio, Trash2, Users, X } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  BookmarkPlus,
+  ChevronDown,
+  ChevronUp,
+  Disc3,
+  ListMusic,
+  Loader2,
+  Plus,
+  Radio,
+  Trash2,
+  Users,
+  X,
+} from 'lucide-react';
 import { useMusicStore } from '../../store/useMusicStore';
 import { useAppStore } from '../../store/useAppStore';
 import { useBackInterceptor } from '../../lib/backInterceptor';
@@ -46,12 +58,67 @@ export const GlobalMusicLayer: React.FC<GlobalMusicLayerProps> = ({
   const musicLang = useMusicStore((s) => s.musicLang);
   const playTrack = useMusicStore((s) => s.playTrack);
   const removeFromQueue = useMusicStore((s) => s.removeFromQueue);
+  const moveQueueItem = useMusicStore((s) => s.moveQueueItem);
+  const clearQueue = useMusicStore((s) => s.clearQueue);
+  const saveQueueAsPlaylist = useMusicStore((s) => s.saveQueueAsPlaylist);
   const createUserPlaylist = useMusicStore((s) => s.createUserPlaylist);
   const addTrackToUserPlaylist = useMusicStore((s) => s.addTrackToUserPlaylist);
   const pushMusicDetail = useMusicStore((s) => s.pushMusicDetail);
 
   const [newPlaylistName, setNewPlaylistName] = useState('');
   const m = MUSIC_I18N[musicLang];
+
+  // Global keyboard shortcuts when Music stage or Music overlays are active
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (
+        tag === 'input' ||
+        tag === 'textarea' ||
+        tag === 'select' ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+      const st = useMusicStore.getState();
+      const appActiveWorld = useAppStore.getState().activeWorld;
+      const isMusicContext =
+        appActiveWorld === 'music' || st.showNowPlayingModal || st.driveModeOpen;
+      if (!isMusicContext || (!st.currentTrack && !st.activeRadio)) return;
+
+      const key = e.key.toLowerCase();
+      if (e.code === 'Space') {
+        e.preventDefault();
+        st.togglePlayPause();
+      } else if (e.key === 'ArrowLeft' && !st.activeRadio) {
+        e.preventDefault();
+        st.requestSeek(Math.max(0, st.currentTime - 5));
+      } else if (e.key === 'ArrowRight' && !st.activeRadio) {
+        e.preventDefault();
+        const dur = st.duration || st.currentTrack?.durationSec || st.currentTime + 5;
+        st.requestSeek(Math.min(dur, st.currentTime + 5));
+      } else if (key === 'n' && !st.activeRadio) {
+        e.preventDefault();
+        st.playNext();
+      } else if (key === 'p' && !st.activeRadio) {
+        e.preventDefault();
+        st.playPrev();
+      } else if (key === 'm') {
+        e.preventDefault();
+        st.toggleMute();
+      } else if (key === 'l' && st.currentTrack) {
+        e.preventDefault();
+        st.toggleLikeTrack(st.currentTrack);
+      } else if (key === 'f' && (st.currentTrack || st.activeRadio)) {
+        e.preventDefault();
+        st.setShowNowPlayingModal(!st.showNowPlayingModal);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   useBackInterceptor(showQueueDrawer, 'music-global-queue-drawer', () => setShowQueueDrawer(false), {
     priority: 18,
@@ -97,19 +164,64 @@ export const GlobalMusicLayer: React.FC<GlobalMusicLayerProps> = ({
       {/* Global Queue Drawer */}
       {showQueueDrawer && (
         <aside className="fixed right-0 top-0 bottom-0 z-[85] w-full max-w-sm bg-[#0C0C0F]/98 backdrop-blur-2xl border-l border-white/[0.1] p-5 flex flex-col gap-3.5 shadow-2xl">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <ListMusic className="w-5 h-5 text-[#60A5FA]" />
-              <h3 className="font-display text-base font-bold text-white">{m.queueTitle}</h3>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <ListMusic className="w-5 h-5 text-[#60A5FA] shrink-0" />
+              <h3 className="font-display text-base font-bold text-white truncate">
+                {m.queueTitle}
+              </h3>
+              {queue.length > 0 && (
+                <span className="text-xs text-zinc-400 tabular-nums shrink-0">
+                  · {queue.length}
+                </span>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={() => setShowQueueDrawer(false)}
-              aria-label={m.back}
-              className="w-10 h-10 rounded-full hover:bg-white/10 text-zinc-300 flex items-center justify-center cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-1 shrink-0">
+              {queue.length > 0 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      const newId = saveQueueAsPlaylist();
+                      showMusicToast(m.playlistCreated);
+                      if (activeWorld === 'music') {
+                        pushMusicDetail({ kind: 'user_playlist', playlistId: newId });
+                        setShowQueueDrawer(false);
+                      }
+                    }}
+                    title="Guardar cola como playlist"
+                    aria-label="Guardar cola como playlist"
+                    className="w-9 h-9 rounded-full hover:bg-white/10 text-zinc-300 hover:text-[#60A5FA] flex items-center justify-center cursor-pointer"
+                  >
+                    <BookmarkPlus className="w-4 h-4" />
+                  </button>
+                  {queue.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        clearQueue();
+                        showMusicToast(m.queueEmpty);
+                      }}
+                      title="Vaciar cola"
+                      aria-label="Vaciar cola"
+                      className="w-9 h-9 rounded-full hover:bg-white/10 text-zinc-300 hover:text-rose-400 flex items-center justify-center cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => setShowQueueDrawer(false)}
+                aria-label={m.back}
+                className="w-10 h-10 rounded-full hover:bg-white/10 text-zinc-300 flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           <div className="p-3 rounded-2xl bg-[#131318] border border-white/[0.08] space-y-2 shrink-0">
@@ -254,16 +366,38 @@ export const GlobalMusicLayer: React.FC<GlobalMusicLayerProps> = ({
                         <p className="text-[11px] text-zinc-400 truncate">{t.artist.name}</p>
                       </div>
                     </button>
-                    {!active && (
-                      <button
-                        type="button"
-                        onClick={() => removeFromQueue(idx)}
-                        aria-label={m.removeFromPlaylist}
-                        className="w-8 h-8 rounded-full text-zinc-500 hover:text-rose-400 flex items-center justify-center cursor-pointer"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    )}
+                    <div className="flex items-center gap-0.5 shrink-0">
+                      {idx > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => moveQueueItem(idx, idx - 1)}
+                          aria-label="Subir en cola"
+                          className="w-8 h-8 rounded-full text-zinc-500 hover:text-white flex items-center justify-center cursor-pointer"
+                        >
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {idx < queue.length - 1 && (
+                        <button
+                          type="button"
+                          onClick={() => moveQueueItem(idx, idx + 1)}
+                          aria-label="Bajar en cola"
+                          className="w-8 h-8 rounded-full text-zinc-500 hover:text-white flex items-center justify-center cursor-pointer"
+                        >
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {!active && (
+                        <button
+                          type="button"
+                          onClick={() => removeFromQueue(idx)}
+                          aria-label={m.removeFromPlaylist}
+                          className="w-8 h-8 rounded-full text-zinc-500 hover:text-rose-400 flex items-center justify-center cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })

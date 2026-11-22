@@ -10,7 +10,7 @@ import {
 import { useNotificationStore } from '../store/useNotificationStore';
 import type { AppLanguage, AppNotificationItem, NotificationCategory } from '../types';
 import { pickLang } from '../utils/i18n';
-import { BottomSheet, EmptyStateCard, SecondaryButton } from './ui/DesignSystem';
+import { BottomSheet, SecondaryButton } from './ui/DesignSystem';
 import {
   RiffanBellIcon,
   RiffanMoviesIcon,

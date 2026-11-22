@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { ENV } from '../../config/env.ts';
+import { logger } from '../../utils/logger.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
 import {
   CHROME_UA,
@@ -92,7 +93,7 @@ export async function unpackByseToHls(
       proxyUrl: buildHlsProxyUrl(rawM3u8, `${u.origin}/`),
     };
   } catch (err) {
-    console.warn('unpackByseToHls error:', err);
+    logger.warn({ err }, 'unpackByseToHls error');
     return null;
   }
 }
@@ -122,32 +123,32 @@ export async function unpackVidhideToHls(
           Referer: cleanEmbedUrl,
         };
         let apiJson: any = null;
-        try {
-          const apiRes = await streamingFetch(`${u.origin}/api/stream`, {
-            method: 'POST',
-            headers: apiHeaders,
-            body: JSON.stringify({ filecode, device: 'web', codecs: [] }),
-            timeoutMs: 4200,
-          });
-          if (apiRes.ok) {
-            apiJson = await apiRes.json();
+        const rawPost = await curlPostJsonText(
+          `${u.origin}/api/stream`,
+          { filecode, device: 'web', codecs: [] },
+          apiHeaders,
+          5
+        );
+        if (rawPost) {
+          try {
+            apiJson = JSON.parse(rawPost);
+          } catch {
+            apiJson = null;
           }
-        } catch {
-          // fallback to curl POST in containerized Cloud Run environments
         }
         if (!apiJson) {
-          const rawPost = await curlPostJsonText(
-            `${u.origin}/api/stream`,
-            { filecode, device: 'web', codecs: [] },
-            apiHeaders,
-            5
-          );
-          if (rawPost) {
-            try {
-              apiJson = JSON.parse(rawPost);
-            } catch {
-              apiJson = null;
+          try {
+            const apiRes = await streamingFetch(`${u.origin}/api/stream`, {
+              method: 'POST',
+              headers: apiHeaders,
+              body: JSON.stringify({ filecode, device: 'web', codecs: [] }),
+              timeoutMs: 4200,
+            });
+            if (apiRes.ok) {
+              apiJson = await apiRes.json();
             }
+          } catch {
+            // fallback exhausted
           }
         }
         const rawM3u8 = String(apiJson?.streaming_url || apiJson?.file || '').trim();
@@ -247,7 +248,7 @@ export async function unpackVidhideToHls(
 
     return null;
   } catch (err) {
-    console.warn('unpackVidhideToHls error:', err);
+    logger.warn({ err }, 'unpackVidhideToHls error');
     return null;
   }
 }
@@ -317,7 +318,7 @@ export async function unpackMp4UploadToDirect(
       proxyUrl: buildTsProxyUrl(rawMp4, 'https://www.mp4upload.com/'),
     };
   } catch (err) {
-    console.warn('unpackMp4UploadToDirect error:', err);
+    logger.warn({ err }, 'unpackMp4UploadToDirect error');
     return null;
   }
 }

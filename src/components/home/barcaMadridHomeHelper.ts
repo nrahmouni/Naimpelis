@@ -2,15 +2,15 @@ import type { AppLanguage, SportsMatch } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { pickPreferredChannelIndex } from '../sports/FootballMatchboardHelpers';
 
-export const BARCA_MADRID_PRE_KICKOFF_WINDOW_MS = 10 * 60 * 1000;
+export const BARCA_MADRID_PRE_KICKOFF_WINDOW_MS = 30 * 60 * 1000;
 export const BARCA_MADRID_LIVE_FALLBACK_WINDOW_MS = 150 * 60 * 1000;
 export const BARCA_MADRID_MAX_LIVE_AGE_MS = 4 * 60 * 60 * 1000;
 
 const FINISHED_STATUS_RE =
-  /^(final|ft|full[- ]?time|terminado|finalizado|suspendido|aplazado|postponed|cancelled|abandonado)$/i;
+  /^(final|ft|ft[- ]?pen|ft[- ]?aet|aet|full[- ]?time|ended|terminado|finalizado|penalties|penaltis|suspendido|aplazado|postponed|cancelled|abandonado)$/i;
 
 const NON_FIRST_TEAM_COMPETITION_RE =
-  /(wchampions|femenin|femeni|women|woman|u19|u21|u23|sub-?\d+|juvenil|youth|segunda\s*(rfef|division)|tercera\s*rfef|primera\s*(federacion|b)|ecu\.|ecuador|copa\s*ecuador|liga\s*pro|barcelona\s*sc|guayaquil|castilla|barca\s*atletic|barcelona\s*b|real\s*madrid\s*(b|c)\b)/i;
+  /(wchampions|femenin|femeni|women|woman|u19|u21|u23|sub-?\d+|juvenil|youth|segunda\s*(rfef|division)|tercera\s*rfef|primera\s*(federacion|b)|ecu\.|ecuador|copa\s*ecuador|liga\s*pro|barcelona\s*sc|guayaquil|castilla|barca\s*atletic|barcelona\s*b|real\s*madrid\s*(b|c)\b|baloncesto|basketball|euroleague|euroliga|esp\.acb|\bacb\b|liga\s*endesa|futsal|futbol\s*sala|balonmano|handball)/i;
 
 function normalizeClubName(raw: string): string {
   return String(raw || '')
@@ -164,6 +164,7 @@ export function getBarcaMadridBannerDisplayMeta(
       ca: 'COMENÇA ARA · SENYAL OBERTA',
       en: 'STARTING NOW · STREAM READY',
       zh: '即将开赛 · 信号就绪',
+      rif: 'YEBDA LEXXU · DIREKT YERZEM',
     });
   } else {
     statusHeadline = pickLang(lang, {
@@ -171,6 +172,7 @@ export function getBarcaMadridBannerDisplayMeta(
       ca: `COMENÇA EN ${minsLeft} MIN · ${kickoffTimeLabel}`,
       en: `STARTS IN ${minsLeft} MIN · ${kickoffTimeLabel}`,
       zh: `${minsLeft} 分钟后开赛 · ${kickoffTimeLabel}`,
+      rif: `AD YEBDA DI ${minsLeft} MIN · ${kickoffTimeLabel}`,
     });
   }
 

@@ -68,7 +68,7 @@ function formatQuickChannelLabel(ch: StreamTrack, lang: AppLanguage): string {
   return cleaned;
 }
 
-export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
+export const FootballMatchRow = React.memo<FootballMatchRowProps>(({
   item,
   lang,
   showLeagueBadge = false,
@@ -165,7 +165,7 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
 
   return (
     <article
-      className={`relative rounded-2xl p-4 space-y-3 border transition-colors ${
+      className={`cv-row-auto relative rounded-2xl p-4 space-y-3 border transition-colors ${
         isPlayingThisMatch
           ? 'bg-[#7C3AED]/[0.14] border-[#7C3AED] shadow-[0_8px_28px_rgba(124,58,237,0.22)]'
           : isFeaturedClub
@@ -390,4 +390,4 @@ export const FootballMatchRow: React.FC<FootballMatchRowProps> = ({
       </div>
     </article>
   );
-};
+});

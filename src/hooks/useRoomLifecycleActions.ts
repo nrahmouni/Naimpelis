@@ -126,8 +126,8 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
         : null;
     if (typeof window !== 'undefined') {
       if (window.location.pathname === '/') {
-        window.history.pushState(
-          { naimInRoom: true },
+        window.history.replaceState(
+          { ...(window.history.state || {}), naimInRoom: true },
           '',
           `/${encodeURIComponent(targetRoomId)}`
         );
@@ -136,7 +136,11 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
           const url = new URL(window.location.href);
           if (url.searchParams.has('game')) {
             url.searchParams.delete('game');
-            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+            window.history.replaceState(
+              { ...(window.history.state || {}) },
+              '',
+              `${url.pathname}${url.search}${url.hash}`
+            );
           }
         } catch {
           // ignore
@@ -200,7 +204,7 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
     cur.setIsInActiveGame(false);
     cur.setWorldSearchQuery('');
     if (typeof window !== 'undefined' && isDedicatedAppPath(window.location.pathname) === false) {
-      window.history.replaceState({}, '', '/');
+      window.history.replaceState({ ...(window.history.state || {}) }, '', '/');
     }
     playCinemaSound('join');
   }, []);
@@ -247,7 +251,11 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
           try {
             const u = new URL(window.location.href);
             u.searchParams.set('room', freshCode);
-            window.history.replaceState({}, '', `${u.pathname}${u.search}${u.hash}`);
+            window.history.replaceState(
+              { ...(window.history.state || {}) },
+              '',
+              `${u.pathname}${u.search}${u.hash}`
+            );
             const publicOrigin = resolvePublicLinkOrigin();
             inviteUrl = `${publicOrigin}${u.pathname}${u.search}`;
           } catch {
@@ -337,7 +345,9 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
     resetRoomUiState();
     p.setRoomId('');
     p.setRoomName('');
-    if (typeof window !== 'undefined') window.history.replaceState({}, '', '/');
+    if (typeof window !== 'undefined') {
+      window.history.replaceState({ __riffanGuard: 'root' }, '', '/');
+    }
   };
 
   useEffect(() => {

@@ -93,6 +93,29 @@ class ServiceMeshRegistry {
     svc.status = svc.requestsTotal >= 10 && errorRate > 0.5 ? 'degraded' : 'healthy';
   }
 
+  isCircuitOpen(id: MicroserviceId, now = Date.now()): boolean {
+    const svc = this.services.get(id);
+    if (!svc) return false;
+    return svc.status === 'open-circuit' && svc.circuitOpenUntil > now;
+  }
+
+  getCircuitRetryAfterSec(id: MicroserviceId, now = Date.now()): number {
+    const svc = this.services.get(id);
+    if (!svc || svc.circuitOpenUntil <= now) return 0;
+    return Math.max(1, Math.ceil((svc.circuitOpenUntil - now) / 1000));
+  }
+
+  resetCircuit(id?: MicroserviceId): void {
+    const ids = id ? [id] : Array.from(this.services.keys());
+    for (const targetId of ids) {
+      const svc = this.services.get(targetId);
+      if (!svc) continue;
+      svc.circuitOpenUntil = 0;
+      svc.status = 'healthy';
+      this.consecutiveErrors.set(targetId, 0);
+    }
+  }
+
   getAllStatuses(): MicroserviceStatus[] {
     const now = Date.now();
     return Array.from(this.services.values()).map((svc) => {
@@ -133,6 +156,16 @@ export function mapPathToServiceId(pathname: string): MicroserviceId {
   return 'api-gateway';
 }
 
+const CIRCUIT_BYPASS_PATHS = new Set([
+  '/api/health',
+  '/api/ready',
+  '/api/services/status',
+  '/api/metrics',
+  '/api/metrics/qoe',
+  '/api/metrics/client-vitals',
+  '/api/metrics/qoe/summary',
+]);
+
 export function serviceMeshGatewayMiddleware(
   req: express.Request,
   res: express.Response,
@@ -145,6 +178,20 @@ export function serviceMeshGatewayMiddleware(
 
   res.setHeader('X-Correlation-Id', correlationId);
   res.setHeader('X-Service-Node', serviceId);
+
+  if (!CIRCUIT_BYPASS_PATHS.has(fullPath) && serviceMesh.isCircuitOpen(serviceId, start)) {
+    const retryAfterSec = serviceMesh.getCircuitRetryAfterSec(serviceId, start);
+    res.setHeader('Retry-After', String(retryAfterSec));
+    logger.warn({ correlationId, serviceId, path: fullPath, retryAfterSec }, 'microservice_circuit_open_rejected');
+    res.status(503).json({
+      ok: false,
+      error: 'Service temporarily unavailable',
+      serviceId,
+      correlationId,
+      retryAfterSec,
+    });
+    return;
+  }
 
   res.on('finish', () => {
     const elapsed = Date.now() - start;

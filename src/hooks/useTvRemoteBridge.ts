@@ -1,5 +1,6 @@
 import type { VideoState } from '../types';
 import type { CatalogSection } from '../components/MediaCatalogHub';
+import { tryConsumeBackInterceptor } from '../lib/backInterceptor';
 import { useTvSpatialRemote } from '../utils/tvSpatialNav';
 
 export function useTvRemoteBridge(params: {
@@ -25,6 +26,7 @@ export function useTvRemoteBridge(params: {
   setCatalogSection: (sec: CatalogSection) => void;
   setMobileTab: (tab: 'home' | 'movies' | 'tdt' | 'sports' | 'youtube' | 'games' | 'chat' | 'room') => void;
   handleSelectTrack: (idx: number, currentTimeSec: number) => void;
+  triggerBackStep?: () => boolean;
 }) {
   const {
     isAdsPageOpen,
@@ -49,13 +51,17 @@ export function useTvRemoteBridge(params: {
     setCatalogSection,
     setMobileTab,
     handleSelectTrack,
+    triggerBackStep,
   } = params;
 
   useTvSpatialRemote({
     onBackStep: () => {
       if (isAdsPageOpen) {
         setIsAdsPageOpen(false);
-        if (typeof window !== 'undefined') window.history.replaceState({}, '', '/');
+        if (typeof window !== 'undefined') window.history.replaceState({ __riffanGuard: 'root' }, '', '/');
+        return true;
+      }
+      if (tryConsumeBackInterceptor()) {
         return true;
       }
       if (smartTvModalOpen) {
@@ -77,6 +83,9 @@ export function useTvRemoteBridge(params: {
       if (sidebarOpen) {
         setSidebarOpen(false);
         return true;
+      }
+      if (triggerBackStep) {
+        return triggerBackStep();
       }
       if (
         (videoState.mode !== 'idle' || isExtracting) &&

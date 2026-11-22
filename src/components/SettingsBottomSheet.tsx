@@ -29,6 +29,11 @@ import { PWAInstallOptionsSheet } from './PWAInstallPrompt';
 import { useAppStore } from '../store/useAppStore';
 import { useMusicStore } from '../store/useMusicStore';
 import { ForceOfflineSettingsControl } from './settings/ForceOfflineSettingsControl';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+
+const SamsungTizenExportModal = lazyWithRetry(() =>
+  import('./samsung/SamsungTizenExportModal').then((m) => ({ default: m.SamsungTizenExportModal }))
+);
 
 interface SettingsBottomSheetProps {
   isOpen: boolean;
@@ -74,6 +79,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
   const isVerifiedAccount = Boolean(authUser && !authUser.isAnonymous);
   const { isIOS, isAndroid } = usePWAInstall();
   const [installSheetOpen, setInstallSheetOpen] = useState(false);
+  const [samsungExportOpen, setSamsungExportOpen] = useState(false);
   const [tvAdvancedOpen, setTvAdvancedOpen] = useState(false);
   const [tvCode, setTvCode] = useState('');
   const authNotice = useAppStore((s) => s.authNotice);
@@ -584,6 +590,36 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
               <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
             </button>
 
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setSamsungExportOpen(true);
+              }}
+              className={`${rowClass} cursor-pointer active:scale-95`}
+            >
+              <span className="flex items-center gap-3 min-w-0">
+                <Tv className="w-5 h-5 text-[#00F593] shrink-0" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold text-white">
+                    {pickLang(lang, {
+                      es: 'Exportar App Samsung TV (.wgt)',
+                      ca: 'Exportar App Samsung TV (.wgt)',
+                      en: 'Export Samsung TV App (.wgt)',
+                    })}
+                  </span>
+                  <span className="block text-xs text-zinc-400">
+                    {pickLang(lang, {
+                      es: 'Empaquetar .wgt desde el navegador + guía /samsung',
+                      ca: 'Empaquetar .wgt des del navegador + guia /samsung',
+                      en: 'Package .wgt in browser + /samsung guide',
+                    })}
+                  </span>
+                </span>
+              </span>
+              <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
+            </button>
+
             {onOpenDesignSystem && (
               <button
                 type="button"
@@ -671,6 +707,25 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
         isIOS={isIOS}
         isAndroid={isAndroid}
       />
+
+      {samsungExportOpen && (
+        <React.Suspense fallback={null}>
+          <SamsungTizenExportModal
+            isOpen={samsungExportOpen}
+            onClose={() => setSamsungExportOpen(false)}
+            lang={lang}
+            onOpenSamsungPage={() => {
+              onClose();
+              if (typeof window !== 'undefined') {
+                window.setTimeout(() => {
+                  window.history.pushState({}, '', '/samsung');
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                }, 25);
+              }
+            }}
+          />
+        </React.Suspense>
+      )}
     </>
   );
 };
