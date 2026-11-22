@@ -5,6 +5,7 @@ import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { BottomSheet } from './ui/DesignSystem';
 import { ShieldCheck } from 'lucide-react';
+import { isDefaultAdminEmail } from '../shared/adminAccess';
 import {
   RiffanBellIcon,
   RiffanBookmarkIcon,
@@ -186,7 +187,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
       badge: null as React.ReactNode,
     },
     ...(onOpenAdminConsole &&
-    authUser?.email?.toLowerCase() === 'felipeallouch@gmail.com'
+    isDefaultAdminEmail(authUser?.email)
       ? [
           {
             id: 'admin-console',

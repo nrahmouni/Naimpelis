@@ -1,6 +1,9 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { isStrictTrackMatch } from '../server/services/riffanMusicService';
 import { buildExportifyCsvFromTracks, parseMusicImportText } from '../src/services/musicImporter';
+import { hasActiveWebAudioDsp } from '../src/components/music/MusicAudioEngine';
 import { useMusicStore } from '../src/store/useMusicStore';
 import { useAppStore } from '../src/store/useAppStore';
 
@@ -225,5 +228,66 @@ describe('Music & World stores preserve navigation stack, search, and platform f
     expect(snap.atresplayerCategory).toBe('series');
     expect(snap.movistarDaznOperator).toBe('dazn');
     expect(snap.movistarDaznCategory).toBe('motor');
+  });
+
+  it('keeps native un-graphed background audio enabled by default and engages WebAudio DSP only when studio FX are active', () => {
+    const baseFlags = {
+      spatial8dEnabled: false,
+      bassBoostDb: 0,
+      reverbMix: 0,
+      exciterMix: 0,
+      vinylCrackle: 0,
+      vocalCancel: false,
+      autoDjEnabled: false,
+      eqBands10: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    };
+    expect(hasActiveWebAudioDsp(baseFlags)).toBe(false);
+    expect(hasActiveWebAudioDsp({ ...baseFlags, spatial8dEnabled: true })).toBe(true);
+    expect(hasActiveWebAudioDsp({ ...baseFlags, bassBoostDb: 3 })).toBe(true);
+    expect(hasActiveWebAudioDsp({ ...baseFlags, eqBands10: [0, 0, 4, 0, 0, 0, 0, 0, 0, 0] })).toBe(true);
+
+    const manifest = JSON.parse(
+      fs.readFileSync(path.join(process.cwd(), 'public/music-manifest.webmanifest'), 'utf8')
+    );
+    expect(manifest.scope).toBe('/');
+  });
+
+  it('rejects stale resolved playback payloads when currentTrack has already switched', () => {
+    useMusicStore.setState({
+      currentTrack: {
+        id: 'track-new',
+        title: 'New Track',
+        artist: { id: 'a1', name: 'Artist' },
+        album: { id: 'al1', title: 'Album', cover: '' },
+        durationSec: 200,
+      },
+      resolvedPlayback: null,
+      isResolvingTrack: true,
+    });
+
+    useMusicStore.getState().setResolvedPlayback(
+      {
+        trackId: 'track-old',
+        sourceType: 'audio-mp3',
+        sourceLabel: 'Wrong Old Song',
+        streamUrl: 'https://audio.example/old.mp3',
+        fullLength: true,
+      },
+      'track-old'
+    );
+    expect(useMusicStore.getState().resolvedPlayback).toBeNull();
+
+    useMusicStore.getState().setResolvedPlayback(
+      {
+        trackId: 'track-new',
+        sourceType: 'audio-mp3',
+        sourceLabel: 'Correct Song',
+        streamUrl: 'https://audio.example/new.mp3',
+        fullLength: true,
+      },
+      'track-new'
+    );
+    expect(useMusicStore.getState().resolvedPlayback?.trackId).toBe('track-new');
+    expect(useMusicStore.getState().isResolvingTrack).toBe(false);
   });
 });

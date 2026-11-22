@@ -427,6 +427,30 @@ function isIosSafariBrowser(): boolean {
   return /iphone|ipad|ipod/i.test(ua) && !Hls.isSupported();
 }
 
+export interface MusicDspFlags {
+  spatial8dEnabled: boolean;
+  bassBoostDb: number;
+  reverbMix: number;
+  exciterMix: number;
+  vinylCrackle: number;
+  vocalCancel: boolean;
+  autoDjEnabled: boolean;
+  eqBands10: number[];
+}
+
+export function hasActiveWebAudioDsp(st: MusicDspFlags): boolean {
+  return (
+    Boolean(st.spatial8dEnabled) ||
+    st.bassBoostDb > 0.1 ||
+    st.reverbMix > 0.01 ||
+    st.exciterMix > 0.01 ||
+    st.vinylCrackle > 0.01 ||
+    Boolean(st.vocalCancel) ||
+    Boolean(st.autoDjEnabled) ||
+    (Array.isArray(st.eqBands10) && st.eqBands10.some((g) => Math.abs(g) > 0.15))
+  );
+}
+
 interface YTPlayerInstance {
   loadVideoById: (opts: string | { videoId: string; startSeconds?: number }) => void;
   cueVideoById?: (opts: string | { videoId: string; startSeconds?: number }) => void;
@@ -544,11 +568,21 @@ export const MusicAudioEngine: React.FC = () => {
   const wifiOnlyAutoDownload = useMusicStore((s) => s.wifiOnlyAutoDownload);
   const driveModeOpen = useMusicStore((s) => s.driveModeOpen);
 
-  // Dual Audio Decks (Deck A & Deck B) for seamless Crossfade transitions
+  const autoDownloadedTrackIdRef = useRef<string | null>(null);
+  const lastMediaPosSyncRef = useRef<number>(0);
+  const autoDjEnabled = useMusicStore((s) => s.autoDjEnabled);
+
+  // Un-graphed Direct Native Deck (immune to iOS/Android AudioContext suspension in background/lock-screen)
+  // + Dual WebAudio DSP Decks (Deck A & Deck B) for 8D / EQ / Auto-DJ Crossfade
+  const directAudioRef = useRef<HTMLAudioElement | null>(null);
   const deckARef = useRef<HTMLAudioElement | null>(null);
   const deckBRef = useRef<HTMLAudioElement | null>(null);
-  const activeDeckSlotRef = useRef<'A' | 'B'>('A');
-  const hlsInstancesRef = useRef<{ A: Hls | null; B: Hls | null }>({ A: null, B: null });
+  const activeDeckSlotRef = useRef<'direct' | 'A' | 'B'>('direct');
+  const hlsInstancesRef = useRef<{ direct: Hls | null; A: Hls | null; B: Hls | null }>({
+    direct: null,
+    A: null,
+    B: null,
+  });
   const crossfadeTimerRef = useRef<number | null>(null);
   const radioRetryTimerRef = useRef<number | null>(null);
   const offlineObjectUrlRef = useRef<string | null>(null);
@@ -559,8 +593,6 @@ export const MusicAudioEngine: React.FC = () => {
   const mediaSourceConnectedRef = useRef<boolean>(false);
   const activeBackendRef = useRef<'html-audio' | 'youtube' | 'none'>('none');
   const pendingResumeSecRef = useRef<number | null>(null);
-  const autoDownloadedTrackIdRef = useRef<string | null>(null);
-  const lastMediaPosSyncRef = useRef<number>(0);
 
   // Full-song YouTube IFrame audio engine refs
   const ytContainerRef = useRef<HTMLDivElement | null>(null);
@@ -589,8 +621,10 @@ export const MusicAudioEngine: React.FC = () => {
   const playNextRef = useRef(() => useMusicStore.getState().playNext());
   playNextRef.current = () => useMusicStore.getState().playNext();
 
-  const getActiveAudioEl = () =>
-    activeDeckSlotRef.current === 'A' ? deckARef.current : deckBRef.current;
+  const getAudioElForSlot = (slot: 'direct' | 'A' | 'B') =>
+    slot === 'direct' ? directAudioRef.current : slot === 'A' ? deckARef.current : deckBRef.current;
+
+  const getActiveAudioEl = () => getAudioElForSlot(activeDeckSlotRef.current);
 
   const getInactiveDeckSlot = (): 'A' | 'B' =>
     activeDeckSlotRef.current === 'A' ? 'B' : 'A';
@@ -1285,9 +1319,9 @@ export const MusicAudioEngine: React.FC = () => {
     }
   };
 
-  // Dual-Deck Crossfade + Full-Song YouTube Engine + Radio Playback Attacher
+  // Dual-Deck Crossfade + Direct Native Background Engine + Full-Song YouTube Engine + Radio Playback Attacher
   useEffect(() => {
-    const cleanupSlot = (slot: 'A' | 'B') => {
+    const cleanupSlot = (slot: 'direct' | 'A' | 'B') => {
       const h = hlsInstancesRef.current[slot];
       if (h) {
         try {
@@ -1297,7 +1331,7 @@ export const MusicAudioEngine: React.FC = () => {
         }
         hlsInstancesRef.current[slot] = null;
       }
-      const el = slot === 'A' ? deckARef.current : deckBRef.current;
+      const el = getAudioElForSlot(slot);
       if (el) {
         el.pause();
         el.removeAttribute('src');
@@ -1312,25 +1346,30 @@ export const MusicAudioEngine: React.FC = () => {
 
     if (activeRadio) {
       stopYouTubePlayer();
+      cleanupSlot('direct');
       cleanupSlot('A');
       cleanupSlot('B');
-      activeDeckSlotRef.current = 'A';
-      const el = deckARef.current;
+      const st = useMusicStore.getState();
+      const useDsp = hasActiveWebAudioDsp(st);
+      const nextSlot: 'direct' | 'A' = useDsp ? 'A' : 'direct';
+      activeDeckSlotRef.current = nextSlot;
+      const el = getAudioElForSlot(nextSlot);
       if (!el) return;
       activeBackendRef.current = 'html-audio';
-      sharedSpatialEngineActive = Boolean(useMusicStore.getState().spatial8dEnabled);
-      ensureWebAudioChain(false);
-
-      if (audioCtxRef.current && deckAGainRef.current && deckBGainRef.current) {
-        const now = audioCtxRef.current.currentTime;
-        deckAGainRef.current.gain.setTargetAtTime(1, now, 0.03);
-        deckBGainRef.current.gain.setTargetAtTime(0, now, 0.03);
+      sharedSpatialEngineActive = Boolean(useDsp && st.spatial8dEnabled);
+      if (useDsp) {
+        ensureWebAudioChain(false);
+        if (audioCtxRef.current && deckAGainRef.current && deckBGainRef.current) {
+          const now = audioCtxRef.current.currentTime;
+          deckAGainRef.current.gain.setTargetAtTime(1, now, 0.03);
+          deckBGainRef.current.gain.setTargetAtTime(0, now, 0.03);
+        }
       }
 
       const src = `/api/music/stream-proxy?url=${encodeURIComponent(activeRadio.streamUrl)}`;
       el.src = src;
       el.load();
-      if (useMusicStore.getState().isPlaying) {
+      if (st.isPlaying) {
         void el.play().catch(() => {});
       }
       return;
@@ -1338,6 +1377,7 @@ export const MusicAudioEngine: React.FC = () => {
 
     if (!currentTrack || !resolvedPlayback) {
       stopYouTubePlayer();
+      cleanupSlot('direct');
       cleanupSlot('A');
       cleanupSlot('B');
       activeBackendRef.current = 'none';
@@ -1358,6 +1398,7 @@ export const MusicAudioEngine: React.FC = () => {
         '';
       if (!videoId) return;
 
+      cleanupSlot('direct');
       cleanupSlot('A');
       cleanupSlot('B');
       activeBackendRef.current = 'youtube';
@@ -1546,61 +1587,76 @@ export const MusicAudioEngine: React.FC = () => {
     if (!targetSrc) return;
 
     const bypassIosHls = isIosSafariBrowser() && resolvedPlayback.sourceType === 'audio-hls';
+    const useDsp = hasActiveWebAudioDsp(st) && !bypassIosHls;
     const prevSlot = activeDeckSlotRef.current;
-    const prevEl = prevSlot === 'A' ? deckARef.current : deckBRef.current;
-    const effectiveCrossfade = st.autoDjEnabled ? Math.max(4.5, st.crossfadeSec) : st.crossfadeSec;
-    const canCrossfade =
-      !bypassIosHls &&
-      mediaSourceConnectedRef.current &&
-      effectiveCrossfade > 0.25 &&
-      prevEl &&
-      !prevEl.paused &&
-      Boolean(prevEl.currentSrc || prevEl.src);
 
-    const nextSlot: 'A' | 'B' = canCrossfade ? getInactiveDeckSlot() : prevSlot;
-    cleanupSlot(nextSlot);
-    activeDeckSlotRef.current = nextSlot;
-    const nextEl = nextSlot === 'A' ? deckARef.current : deckBRef.current;
-    if (!nextEl) return;
+    let nextSlot: 'direct' | 'A' | 'B';
+    if (!useDsp) {
+      cleanupSlot('A');
+      cleanupSlot('B');
+      cleanupSlot('direct');
+      nextSlot = 'direct';
+      activeDeckSlotRef.current = 'direct';
+      activeBackendRef.current = 'html-audio';
+      sharedSpatialEngineActive = false;
+    } else {
+      cleanupSlot('direct');
+      const prevEl = prevSlot === 'A' ? deckARef.current : prevSlot === 'B' ? deckBRef.current : null;
+      const effectiveCrossfade = st.autoDjEnabled ? Math.max(4.5, st.crossfadeSec) : st.crossfadeSec;
+      const canCrossfade =
+        (prevSlot === 'A' || prevSlot === 'B') &&
+        mediaSourceConnectedRef.current &&
+        effectiveCrossfade > 0.25 &&
+        prevEl &&
+        !prevEl.paused &&
+        Boolean(prevEl.currentSrc || prevEl.src);
 
-    activeBackendRef.current = 'html-audio';
-    sharedSpatialEngineActive = Boolean(st.spatial8dEnabled && !bypassIosHls);
-    ensureWebAudioChain(bypassIosHls);
+      nextSlot = canCrossfade ? getInactiveDeckSlot() : prevSlot === 'B' ? 'B' : 'A';
+      cleanupSlot(nextSlot);
+      activeDeckSlotRef.current = nextSlot;
+      activeBackendRef.current = 'html-audio';
+      sharedSpatialEngineActive = Boolean(st.spatial8dEnabled);
+      ensureWebAudioChain(false);
 
-    // Execute smooth gain crossfade between decks
-    if (audioCtxRef.current && deckAGainRef.current && deckBGainRef.current) {
-      const now = audioCtxRef.current.currentTime;
-      const incomingGain = nextSlot === 'A' ? deckAGainRef.current : deckBGainRef.current;
-      const outgoingGain = nextSlot === 'A' ? deckBGainRef.current : deckAGainRef.current;
+      // Execute smooth gain crossfade between decks
+      if (audioCtxRef.current && deckAGainRef.current && deckBGainRef.current) {
+        const now = audioCtxRef.current.currentTime;
+        const incomingGain = nextSlot === 'A' ? deckAGainRef.current : deckBGainRef.current;
+        const outgoingGain = nextSlot === 'A' ? deckBGainRef.current : deckAGainRef.current;
 
-      if (canCrossfade) {
-        const cfSec = Math.max(0.4, effectiveCrossfade);
-        try {
-          outgoingGain.gain.cancelScheduledValues(now);
-          outgoingGain.gain.setValueAtTime(outgoingGain.gain.value, now);
-          outgoingGain.gain.linearRampToValueAtTime(0, now + cfSec);
+        if (canCrossfade) {
+          const cfSec = Math.max(0.4, effectiveCrossfade);
+          try {
+            outgoingGain.gain.cancelScheduledValues(now);
+            outgoingGain.gain.setValueAtTime(outgoingGain.gain.value, now);
+            outgoingGain.gain.linearRampToValueAtTime(0, now + cfSec);
 
-          incomingGain.gain.cancelScheduledValues(now);
-          incomingGain.gain.setValueAtTime(0.02, now);
-          incomingGain.gain.linearRampToValueAtTime(1, now + cfSec);
-        } catch {
-          // ignore
-        }
-        crossfadeTimerRef.current = window.setTimeout(() => {
-          cleanupSlot(prevSlot);
-        }, Math.round(cfSec * 1000) + 120);
-      } else {
-        cleanupSlot(prevSlot === nextSlot ? (nextSlot === 'A' ? 'B' : 'A') : prevSlot);
-        try {
-          incomingGain.gain.cancelScheduledValues(now);
-          incomingGain.gain.setValueAtTime(1, now);
-          outgoingGain.gain.cancelScheduledValues(now);
-          outgoingGain.gain.setValueAtTime(0, now);
-        } catch {
-          // ignore
+            incomingGain.gain.cancelScheduledValues(now);
+            incomingGain.gain.setValueAtTime(0.02, now);
+            incomingGain.gain.linearRampToValueAtTime(1, now + cfSec);
+          } catch {
+            // ignore
+          }
+          const outgoingSlot = prevSlot === 'A' ? 'A' : 'B';
+          crossfadeTimerRef.current = window.setTimeout(() => {
+            cleanupSlot(outgoingSlot);
+          }, Math.round(cfSec * 1000) + 120);
+        } else {
+          cleanupSlot(nextSlot === 'A' ? 'B' : 'A');
+          try {
+            incomingGain.gain.cancelScheduledValues(now);
+            incomingGain.gain.setValueAtTime(1, now);
+            outgoingGain.gain.cancelScheduledValues(now);
+            outgoingGain.gain.setValueAtTime(0, now);
+          } catch {
+            // ignore
+          }
         }
       }
     }
+
+    const nextEl = getAudioElForSlot(nextSlot);
+    if (!nextEl) return;
 
     if (trimStartSec > 0) {
       pendingResumeSecRef.current = trimStartSec;
@@ -1719,11 +1775,124 @@ export const MusicAudioEngine: React.FC = () => {
     resolvedPlayback?.youtubeVideoId,
   ]);
 
+  // Seamless live switch between Direct Native playback (background/lock-screen immune) and WebAudio DSP Decks
+  const dspEnabledNow = hasActiveWebAudioDsp({
+    spatial8dEnabled,
+    bassBoostDb,
+    reverbMix,
+    exciterMix,
+    vinylCrackle,
+    vocalCancel,
+    autoDjEnabled,
+    eqBands10,
+  });
+
+  useEffect(() => {
+    if (activeBackendRef.current !== 'html-audio') return;
+    const st = useMusicStore.getState();
+    const bypassIosHls = isIosSafariBrowser() && st.resolvedPlayback?.sourceType === 'audio-hls';
+    if (bypassIosHls) return;
+
+    const curSlot = activeDeckSlotRef.current;
+    const wantDsp = dspEnabledNow;
+    if (wantDsp && curSlot !== 'direct') return;
+    if (!wantDsp && curSlot === 'direct') return;
+
+    const fromEl = getAudioElForSlot(curSlot);
+    const toSlot: 'direct' | 'A' = wantDsp ? 'A' : 'direct';
+    const toEl = getAudioElForSlot(toSlot);
+    if (!fromEl || !toEl) return;
+
+    const activeSrc = fromEl.currentSrc || fromEl.src;
+    const activeHls = hlsInstancesRef.current[curSlot];
+    if (!activeSrc && !activeHls) return;
+
+    const resumeAt = !st.activeRadio && Number.isFinite(fromEl.currentTime) ? fromEl.currentTime : 0;
+    const shouldPlay = st.isPlaying;
+
+    if (wantDsp) {
+      ensureWebAudioChain(false);
+      sharedSpatialEngineActive = Boolean(st.spatial8dEnabled);
+      if (audioCtxRef.current && deckAGainRef.current && deckBGainRef.current) {
+        const now = audioCtxRef.current.currentTime;
+        deckAGainRef.current.gain.setValueAtTime(1, now);
+        deckBGainRef.current.gain.setValueAtTime(0, now);
+      }
+    } else {
+      sharedSpatialEngineActive = false;
+    }
+
+    activeDeckSlotRef.current = toSlot;
+
+    if (activeHls) {
+      hlsInstancesRef.current[curSlot] = null;
+      fromEl.pause();
+      fromEl.removeAttribute('src');
+      fromEl.load();
+      hlsInstancesRef.current[toSlot] = activeHls;
+      activeHls.detachMedia();
+      activeHls.attachMedia(toEl);
+      if (resumeAt > 0.25) {
+        try {
+          toEl.currentTime = resumeAt;
+        } catch {
+          // ignore
+        }
+      }
+      if (shouldPlay) void toEl.play().catch(() => {});
+    } else {
+      fromEl.pause();
+      fromEl.removeAttribute('src');
+      fromEl.load();
+      toEl.volume = fromEl.volume;
+      toEl.playbackRate = fromEl.playbackRate;
+      pendingResumeSecRef.current = resumeAt > 0.25 ? resumeAt : null;
+      toEl.src = activeSrc;
+      toEl.load();
+      if (shouldPlay) void toEl.play().catch(() => {});
+    }
+  }, [dspEnabledNow]);
+
+  // Background / Lock-screen continuity resilience across iOS, Android, Desktop, and PWA
+  useEffect(() => {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return;
+    const ensureBackgroundContinuity = () => {
+      const st = useMusicStore.getState();
+      if (!st.isPlaying) return;
+      if (audioCtxRef.current && audioCtxRef.current.state !== 'running') {
+        void audioCtxRef.current.resume().catch(() => {});
+      }
+      if (activeBackendRef.current === 'html-audio') {
+        const el = getActiveAudioEl();
+        if (el && el.paused && (el.currentSrc || el.src)) {
+          void el.play().catch(() => {});
+        }
+      } else if (activeBackendRef.current === 'youtube' && ytPlayerRef.current && ytReadyRef.current) {
+        try {
+          if (document.visibilityState === 'visible' && ytPlayerRef.current.getPlayerState?.() === 2) {
+            ytPlayerRef.current.playVideo();
+          }
+        } catch {
+          // ignore
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', ensureBackgroundContinuity);
+    window.addEventListener('pageshow', ensureBackgroundContinuity);
+    window.addEventListener('focus', ensureBackgroundContinuity);
+    return () => {
+      document.removeEventListener('visibilitychange', ensureBackgroundContinuity);
+      window.removeEventListener('pageshow', ensureBackgroundContinuity);
+      window.removeEventListener('focus', ensureBackgroundContinuity);
+    };
+  }, []);
+
   // Sync play/pause
   useEffect(() => {
     const el = getActiveAudioEl();
     if (activeBackendRef.current === 'html-audio' && el) {
-      if (audioCtxRef.current && audioCtxRef.current.state !== 'running' && isPlaying) {
+      if (activeDeckSlotRef.current !== 'direct' && audioCtxRef.current && audioCtxRef.current.state !== 'running' && isPlaying) {
         void audioCtxRef.current.resume().catch(() => {});
       }
       if (isPlaying) void el.play().catch(() => {});
@@ -1738,13 +1907,13 @@ export const MusicAudioEngine: React.FC = () => {
     }
   }, [isPlaying]);
 
-  // Sync volume, mute, playbackRate + pitchSemitones & preservesPitch on both decks & YT player
+  // Sync volume, mute, playbackRate + pitchSemitones & preservesPitch on all 3 HTMLAudio slots & YT player
   useEffect(() => {
     const pitchRatio = Math.pow(2, (pitchSemitones || 0) / 12);
     const effectiveRate = Math.min(2.0, Math.max(0.5, playbackRate * pitchRatio));
     const effectivePreserve = Math.abs(pitchSemitones) >= 0.25 ? false : preservesPitch;
 
-    [deckARef.current, deckBRef.current].forEach((el) => {
+    [directAudioRef.current, deckARef.current, deckBRef.current].forEach((el) => {
       if (!el) return;
       el.volume = isMuted ? 0 : volume;
       el.playbackRate = effectiveRate;
@@ -1827,6 +1996,7 @@ export const MusicAudioEngine: React.FC = () => {
       }
       navigator.mediaSession.setActionHandler('play', () => useMusicStore.getState().setIsPlaying(true));
       navigator.mediaSession.setActionHandler('pause', () => useMusicStore.getState().setIsPlaying(false));
+      navigator.mediaSession.setActionHandler('stop', () => useMusicStore.getState().stopAllMusic());
       navigator.mediaSession.setActionHandler('nexttrack', () => useMusicStore.getState().playNext());
       navigator.mediaSession.setActionHandler('previoustrack', () => useMusicStore.getState().playPrev());
       navigator.mediaSession.setActionHandler('seekto', (details) => {
@@ -1850,7 +2020,7 @@ export const MusicAudioEngine: React.FC = () => {
     }
   }, [currentTrack, activeRadio, isPlaying]);
 
-  const handleLoadedMetadata = (slot: 'A' | 'B', e: React.SyntheticEvent<HTMLAudioElement>) => {
+  const handleLoadedMetadata = (slot: 'direct' | 'A' | 'B', e: React.SyntheticEvent<HTMLAudioElement>) => {
     if (slot !== activeDeckSlotRef.current) return;
     const el = e.currentTarget;
     const st = useMusicStore.getState();
@@ -1881,7 +2051,7 @@ export const MusicAudioEngine: React.FC = () => {
     }
   };
 
-  const handleTimeUpdate = (slot: 'A' | 'B', e: React.SyntheticEvent<HTMLAudioElement>) => {
+  const handleTimeUpdate = (slot: 'direct' | 'A' | 'B', e: React.SyntheticEvent<HTMLAudioElement>) => {
     if (slot !== activeDeckSlotRef.current || activeBackendRef.current !== 'html-audio' || activeRadio) {
       return;
     }
@@ -1923,14 +2093,14 @@ export const MusicAudioEngine: React.FC = () => {
     }
   };
 
-  const handleEnded = (slot: 'A' | 'B') => {
+  const handleEnded = (slot: 'direct' | 'A' | 'B') => {
     if (slot !== activeDeckSlotRef.current) return;
     if (activeBackendRef.current === 'html-audio' && !activeRadio) {
       useMusicStore.getState().advanceAfterTrackEnd();
     }
   };
 
-  const handleError = (slot: 'A' | 'B') => {
+  const handleError = (slot: 'direct' | 'A' | 'B') => {
     if (slot !== activeDeckSlotRef.current || activeBackendRef.current !== 'html-audio') return;
     const st = useMusicStore.getState();
 
@@ -2035,6 +2205,17 @@ export const MusicAudioEngine: React.FC = () => {
 
   return (
     <>
+      <audio
+        ref={directAudioRef}
+        crossOrigin="anonymous"
+        playsInline
+        preload="auto"
+        onLoadedMetadata={(e) => handleLoadedMetadata('direct', e)}
+        onTimeUpdate={(e) => handleTimeUpdate('direct', e)}
+        onEnded={() => handleEnded('direct')}
+        onError={() => handleError('direct')}
+        className="hidden"
+      />
       <audio
         ref={deckARef}
         crossOrigin="anonymous"

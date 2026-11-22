@@ -8,7 +8,7 @@
   "display": "standalone",
   "orientation": "any",
   "start_url": "/musica?pwa=music",
-  "scope": "/musica",
+  "scope": "/",
   "categories": ["music", "audio", "entertainment"],
   "icons": [
     {

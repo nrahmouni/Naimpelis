@@ -21,6 +21,7 @@ interface UseDeepLinkRouterOptions {
   isTvPairLobby: boolean;
   isAdsPageOpen: boolean;
   isAdminPage?: boolean;
+  setIsAdminPage?: (open: boolean) => void;
   enterWorld: (world: WorldId) => void;
   setForcedOpenGame: React.Dispatch<
     React.SetStateAction<{ gameType: RoomGameInviteType; seq: number } | null>
@@ -42,6 +43,7 @@ export function useDeepLinkRouter({
   isTvPairLobby,
   isAdsPageOpen,
   isAdminPage = false,
+  setIsAdminPage,
   enterWorld,
   setForcedOpenGame,
   setIsInActiveGame,
@@ -58,6 +60,10 @@ export function useDeepLinkRouter({
   quickPoolRef.current = quickPool;
   const enterWorldRef = useRef(enterWorld);
   enterWorldRef.current = enterWorld;
+  const isAdminPageRef = useRef(isAdminPage);
+  isAdminPageRef.current = isAdminPage;
+  const setIsAdminPageRef = useRef(setIsAdminPage);
+  setIsAdminPageRef.current = setIsAdminPage;
   const setForcedOpenGameRef = useRef(setForcedOpenGame);
   setForcedOpenGameRef.current = setForcedOpenGame;
   const setIsInActiveGameRef = useRef(setIsInActiveGame);
@@ -84,12 +90,19 @@ export function useDeepLinkRouter({
 
   const resolveAndApplyRoute = useCallback(
     async (pathname: string, search: string) => {
-      if (isTvMode || isTvPairLobby || isAdsPageOpen || isAdminPage) return;
+      if (isTvMode || isTvPairLobby || isAdsPageOpen) return;
       const routeKey = `${pathname}${search}`;
       if (lastResolvedRouteKeyRef.current === routeKey) return;
       lastResolvedRouteKeyRef.current = routeKey;
 
       const target: AppRouteTarget = parseAppRoute(pathname, search);
+      if (target.kind === 'system' && target.systemType === 'admin') {
+        setIsAdminPageRef.current?.(true);
+        return;
+      }
+      if (isAdminPageRef.current) {
+        setIsAdminPageRef.current?.(false);
+      }
       if (target.kind === 'home' || target.kind === 'system' || target.kind === 'room') {
         return;
       }
@@ -234,7 +247,6 @@ export function useDeepLinkRouter({
       isTvMode,
       isTvPairLobby,
       isAdsPageOpen,
-      isAdminPage,
     ]
   );
 

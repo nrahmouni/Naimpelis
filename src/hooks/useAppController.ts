@@ -793,6 +793,7 @@ export function useAppController() {
     isTvPairLobby,
     isAdsPageOpen,
     isAdminPage,
+    setIsAdminPage,
     enterWorld,
     setForcedOpenGame: roomState.setForcedOpenGame,
     setIsInActiveGame: roomState.setIsInActiveGame,

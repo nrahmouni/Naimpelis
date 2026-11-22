@@ -5,6 +5,8 @@ import {
   Award,
   Car,
   Check,
+  ChevronDown,
+  ChevronUp,
   Disc3,
   Download,
   FileSpreadsheet,
@@ -339,7 +341,7 @@ const TrackRow: React.FC<{
         type="button"
         onClick={onToggleLike}
         aria-label={isLiked ? copy.likeRemove : copy.likeAdd}
-        className={`w-10 h-10 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
+        className={`w-11 h-11 rounded-full flex items-center justify-center cursor-pointer transition-colors ${
           isLiked ? 'text-[#FF2D55]' : 'text-zinc-400 hover:text-white'
         }`}
       >
@@ -351,7 +353,7 @@ const TrackRow: React.FC<{
         onClick={onOpenPlaylistPicker}
         title={copy.addToPlaylist}
         aria-label={copy.addToPlaylist}
-        className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer transition-colors"
+        className="hidden sm:flex w-11 h-11 rounded-full items-center justify-center text-zinc-400 hover:text-white cursor-pointer transition-colors"
       >
         <Plus className="w-4 h-4" />
       </button>
@@ -363,7 +365,7 @@ const TrackRow: React.FC<{
         onClick={onOpenMoreActions}
         title={copy.moreActionsBtn}
         aria-label={copy.moreActionsBtn}
-        className="w-10 h-10 rounded-full flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer transition-colors"
+        className="w-11 h-11 rounded-full flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer transition-colors"
       >
         <MoreHorizontal className="w-4.5 h-4.5" />
       </button>
@@ -374,6 +376,8 @@ const TrackRow: React.FC<{
     </div>
   </div>
 );
+
+let lastHandledExternalMusicSearch = '';
 
 export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   externalSearchQuery = '',
@@ -456,6 +460,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   const [profileDrawerOpen, setProfileDrawerOpen] = useState(false);
   const [actionSheetTrack, setActionSheetTrack] = useState<MusicTrack | null>(null);
   const [globalPillsExpanded, setGlobalPillsExpanded] = useState(false);
+  const [exploreAllMixesOpen, setExploreAllMixesOpen] = useState(false);
   const [aiMoodSectionOpen, setAiMoodSectionOpen] = useState(false);
   const [aiMoodPrompt, setAiMoodPrompt] = useState('');
   const [aiMoodLoading, setAiMoodLoading] = useState(false);
@@ -490,14 +495,18 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
     { priority: 4 }
   );
 
-  // Sync external search query from WorldShell top search
+  // Sync external search query from WorldShell top search only when it newly changes
   useEffect(() => {
     const clean = externalSearchQuery.trim();
-    if (clean) {
-      setSearchQuery(clean);
-      clearMusicDetailStack();
-      setNavTab('search');
+    if (!clean) {
+      lastHandledExternalMusicSearch = '';
+      return;
     }
+    if (clean === lastHandledExternalMusicSearch) return;
+    lastHandledExternalMusicSearch = clean;
+    setSearchQuery(clean);
+    clearMusicDetailStack();
+    setNavTab('search');
   }, [externalSearchQuery, setSearchQuery, clearMusicDetailStack, setNavTab]);
 
   // Auto-focus search input when jumping directly to Search
@@ -2512,20 +2521,48 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   {renderTrackCardsCarousel(m.secYtmHits, homeData.youtubeMusicHits, m.secYtmHits)}
                   {renderAlbumsCarousel(m.secNewReleases, homeData.newReleases)}
                   {renderArtistsCarousel(m.secTopArtists, homeData.topArtists)}
-                  {renderTrackCardsCarousel(m.secMorocco, homeData.moroccoMix, m.secMorocco)}
-                  {renderTrackCardsCarousel(m.secArab, homeData.arabMix, m.secArab)}
-                  {renderTrackCardsCarousel(m.secAfrica, homeData.africaMix, m.secAfrica)}
-                  {renderTrackCardsCarousel(m.secUrbano, homeData.urbanoMix, m.secUrbano)}
-                  {renderTrackCardsCarousel(m.secPop, homeData.popMix, m.secPop)}
-                  {renderTrackCardsCarousel(m.secChill, homeData.chillLofiMix, m.secChill)}
-                  {renderTrackCardsCarousel(m.secFlamenco, homeData.flamencoAcousticMix, m.secFlamenco)}
-                  {renderTrackCardsCarousel(m.secElectronic, homeData.electronicMix, m.secElectronic)}
-                  {renderTrackCardsCarousel(m.secRock, homeData.rockIndieMix, m.secRock)}
-                  {renderTrackCardsCarousel(m.secLatin, homeData.latinSalsaMix, m.secLatin)}
-                  {renderTrackCardsCarousel(m.secRnb, homeData.rnbSoulMix, m.secRnb)}
-                  {renderTrackCardsCarousel(m.secTop50, homeData.topTracks, m.secTop50)}
-                  {renderAlbumsCarousel(m.secTopAlbums, homeData.topAlbums)}
-                  {renderPlaylistsCarousel(m.secEditorialPlaylists, homeData.editorialPlaylists)}
+
+                  <div className="pt-1 flex justify-center">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setExploreAllMixesOpen((v) => !v);
+                      }}
+                      className="min-h-11 px-5 rounded-full bg-white/[0.06] hover:bg-white/[0.11] border border-white/[0.1] text-xs font-semibold text-zinc-200 inline-flex items-center gap-2 cursor-pointer transition-colors"
+                    >
+                      {exploreAllMixesOpen ? (
+                        <>
+                          <ChevronUp className="w-4 h-4 text-[#60A5FA]" />
+                          Mostrar menos estilos y países
+                        </>
+                      ) : (
+                        <>
+                          <ChevronDown className="w-4 h-4 text-[#60A5FA]" />
+                          Explorar más estilos, países y Top 50
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {exploreAllMixesOpen && (
+                    <div className="space-y-8 animate-fade-in">
+                      {renderTrackCardsCarousel(m.secMorocco, homeData.moroccoMix, m.secMorocco)}
+                      {renderTrackCardsCarousel(m.secArab, homeData.arabMix, m.secArab)}
+                      {renderTrackCardsCarousel(m.secAfrica, homeData.africaMix, m.secAfrica)}
+                      {renderTrackCardsCarousel(m.secUrbano, homeData.urbanoMix, m.secUrbano)}
+                      {renderTrackCardsCarousel(m.secPop, homeData.popMix, m.secPop)}
+                      {renderTrackCardsCarousel(m.secChill, homeData.chillLofiMix, m.secChill)}
+                      {renderTrackCardsCarousel(m.secFlamenco, homeData.flamencoAcousticMix, m.secFlamenco)}
+                      {renderTrackCardsCarousel(m.secElectronic, homeData.electronicMix, m.secElectronic)}
+                      {renderTrackCardsCarousel(m.secRock, homeData.rockIndieMix, m.secRock)}
+                      {renderTrackCardsCarousel(m.secLatin, homeData.latinSalsaMix, m.secLatin)}
+                      {renderTrackCardsCarousel(m.secRnb, homeData.rnbSoulMix, m.secRnb)}
+                      {renderTrackCardsCarousel(m.secTop50, homeData.topTracks, m.secTop50)}
+                      {renderAlbumsCarousel(m.secTopAlbums, homeData.topAlbums)}
+                      {renderPlaylistsCarousel(m.secEditorialPlaylists, homeData.editorialPlaylists)}
+                    </div>
+                  )}
                 </>
               )
             ) : (

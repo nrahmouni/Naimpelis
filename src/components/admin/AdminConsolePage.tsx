@@ -74,6 +74,7 @@ export const AdminConsolePage: React.FC<AdminConsolePageProps> = ({
   const [logSeverityFilter, setLogSeverityFilter] = useState<'all' | 'info' | 'warn' | 'error'>('all');
 
   const streamAbortRef = useRef<AbortController | null>(null);
+  const attemptedFirebaseUidRef = useRef<string | null>(null);
 
   useEffect(() => {
     void fetch('/api/admin/auth/status')
@@ -105,6 +106,13 @@ export const AdminConsolePage: React.FC<AdminConsolePageProps> = ({
       setAuthBusy(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!authUser || authUser.isAnonymous || adminToken || authBusy) return;
+    if (attemptedFirebaseUidRef.current === authUser.uid) return;
+    attemptedFirebaseUidRef.current = authUser.uid;
+    void authenticateWithFirebaseUser(authUser);
+  }, [authUser, adminToken, authBusy, authenticateWithFirebaseUser]);
 
   const handlePasscodeSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

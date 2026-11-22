@@ -9,6 +9,7 @@ import {
   verifyAdminSessionToken,
   verifyFirebaseAdminIdToken,
 } from '../server/services/adminAuthService.ts';
+import { DEFAULT_ADMIN_EMAILS, isDefaultAdminEmail } from '../src/shared/adminAccess.ts';
 import {
   filterCatalogItemsSync,
   parseM3uTextSync,
@@ -162,5 +163,18 @@ describe('RiffanTV Architecture Phases 1-3 & /admin Console Verification', () =>
     expect(pkg.scripts['build:server']).toContain('esbuild');
     expect(pkg.scripts['start:compiled']).toContain('dist-server/server.mjs');
     expect(pkg.scripts['start:media']).toContain('dist-server/mediaServer.mjs');
+  });
+
+  it('authorizes both primary admin emails and wires /admin SPA navigation & popstate cleanly', () => {
+    expect(DEFAULT_ADMIN_EMAILS).toContain('felipeallouch@gmail.com');
+    expect(DEFAULT_ADMIN_EMAILS).toContain('naimrahmouni1998@gmail.com');
+    expect(isDefaultAdminEmail('NaimRahmouni1998@gmail.com')).toBe(true);
+    expect(isDefaultAdminEmail('felipeallouch@gmail.com')).toBe(true);
+    expect(isDefaultAdminEmail('guest@example.com')).toBe(false);
+
+    const deepLinkSrc = fs.readFileSync(path.join(ROOT, 'src/hooks/useDeepLinkRouter.ts'), 'utf8');
+    expect(deepLinkSrc).toContain("target.systemType === 'admin'");
+    expect(deepLinkSrc).toContain('setIsAdminPageRef.current?.(true)');
+    expect(deepLinkSrc).toContain('setIsAdminPageRef.current?.(false)');
   });
 });

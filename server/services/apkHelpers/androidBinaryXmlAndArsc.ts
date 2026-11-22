@@ -208,6 +208,18 @@ export function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
       ],
     },
     {
+      tag: 'uses-permission',
+      attrs: [
+        {
+          ns: ANDROID_NS,
+          name: 'name',
+          resourceId: 0x01010003,
+          type: 'string',
+          value: 'android.permission.WAKE_LOCK',
+        },
+      ],
+    },
+    {
       tag: 'uses-feature',
       attrs: [
         {

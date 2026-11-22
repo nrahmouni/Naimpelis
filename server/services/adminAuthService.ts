@@ -5,14 +5,13 @@ import { getAuth } from 'firebase-admin/auth';
 import type express from 'express';
 import firebaseConfig from '../../firebase-applet-config.json' with { type: 'json' };
 import { logger } from '../utils/logger.ts';
+import { DEFAULT_ADMIN_EMAILS } from '../../src/shared/adminAccess.ts';
 import { isDistributedStoreEnabled, loadDistributedKey, saveDistributedKey } from './distributedStore.ts';
 
 const CLAIMED_ADMIN_PATH = '/tmp/riffan-admin-claim-v1.json';
 const SESSION_SECRET =
   String(process.env.ADMIN_SESSION_SECRET || '').trim() ||
   crypto.randomBytes(32).toString('hex');
-
-const DEFAULT_ADMIN_EMAILS = ['felipeallouch@gmail.com'];
 
 interface ClaimedAdminRecord {
   salt: string;
