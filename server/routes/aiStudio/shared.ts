@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import type { Response } from 'express';
 import { logger } from '../../utils/logger.ts';
+import { runtimeMetrics } from '../../services/runtimeMetricsCollector.ts';
 
 export type AllowedChatModel =
   | 'gemini-4-hydrogen'
@@ -195,14 +196,18 @@ export async function generateContentWithResilience(
             'gemini_model_cascade_triggered'
           );
         }
-        return await ai.models.generateContent({
+        const response = await ai.models.generateContent({
           ...params,
           model: candidateModel,
           config: adaptedConfig,
         });
+        runtimeMetrics.recordAiOutcome('ok');
+        return response;
       } catch (err) {
         lastError = err;
         const details = extractErrorDetails(err);
+        if (details.status === 429) runtimeMetrics.recordAiOutcome('429');
+        else if (details.status === 503) runtimeMetrics.recordAiOutcome('503');
         if (details.code === 'SPENDING_CAP_EXCEEDED' || details.code === 'API_KEY_ERROR') {
           throw err;
         }

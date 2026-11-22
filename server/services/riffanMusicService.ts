@@ -174,8 +174,16 @@ async function getAudiusMirrorHost(): Promise<string> {
   return 'https://discoveryprovider.audius.co';
 }
 
+export interface MusicSearchCatalogResult {
+  tracks: MusicTrack[];
+  albums: MusicAlbumRef[];
+  artists: MusicArtistRef[];
+  playlists: MusicPlaylist[];
+  radios: MusicRadioStation[];
+}
+
 const homeCache = new LruTtlCache<string, Record<string, unknown>>(8, 12 * 60 * 1000);
-const searchCache = new LruTtlCache<string, Record<string, unknown>>(120, 8 * 60 * 1000);
+const searchCache = new LruTtlCache<string, MusicSearchCatalogResult>(120, 8 * 60 * 1000);
 const entityCache = new LruTtlCache<string, Record<string, unknown>>(160, 15 * 60 * 1000);
 const lyricsCache = new LruTtlCache<string, LyricsPayload>(250, 60 * 60 * 1000);
 const playbackCache = new LruTtlCache<string, ResolvedTrackPlayback>(300, 12 * 60 * 1000);
@@ -1439,7 +1447,7 @@ export async function getMusicHome() {
   return payload;
 }
 
-export async function searchMusicCatalog(query: string, type = 'all') {
+export async function searchMusicCatalog(query: string, type = 'all'): Promise<MusicSearchCatalogResult> {
   const clean = String(query || '').trim();
   if (!clean) {
     return { tracks: [], albums: [], artists: [], playlists: [], radios: [] };
@@ -2077,7 +2085,9 @@ async function resolveTrackPlaybackUncached(
     const strippedTitle = params.title.replace(/\([^)]*\)|\[[^\]]*\]/g, '').trim() || params.title;
     const [ytRetry, arcTimed] = await Promise.all([
       strippedTitle !== params.title
-        ? resolveYouTubeMatch(extractPrimaryArtist(params.artist), strippedTitle, durationSec).catch(() => ({}))
+        ? resolveYouTubeMatch(extractPrimaryArtist(params.artist), strippedTitle, durationSec).catch(
+            () => ({} as { audioId?: string; mvId?: string; altIds?: string[] })
+          )
         : Promise.resolve({} as { audioId?: string; mvId?: string; altIds?: string[] }),
       timed('archive', () => resolveArchiveAudioFallback(params.artist, params.title, durationSec)),
     ]);

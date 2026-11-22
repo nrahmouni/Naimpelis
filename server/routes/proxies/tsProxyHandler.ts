@@ -16,6 +16,7 @@ import {
   getOrCreateRequestId,
 } from './proxyUtils.ts';
 import { remuxDvbTsToAac } from './dvbTranscoder.ts';
+import { runtimeMetrics } from '../../services/runtimeMetricsCollector.ts';
 
 export async function handleTsProxy(req: express.Request, res: express.Response): Promise<void> {
   const reqId = getOrCreateRequestId(req);
@@ -32,6 +33,8 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     res.status(403).end();
     return;
   }
+
+  runtimeMetrics.recordMediaRequest('ts');
 
   const isUrlSubtitle = /\.(vtt|webvtt|srt)(\?|$)/i.test(targetUrl);
   const isUrlMp4 =
@@ -324,6 +327,16 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     };
 
     const nodeStream = Readable.fromWeb(upstream.body as never);
+    runtimeMetrics.adjustActiveMediaStreams(1);
+    let streamMetricClosed = false;
+    const releaseStreamMetric = () => {
+      if (streamMetricClosed) return;
+      streamMetricClosed = true;
+      runtimeMetrics.adjustActiveMediaStreams(-1);
+    };
+    res.once('close', releaseStreamMetric);
+    res.once('finish', releaseStreamMetric);
+
     let streamIdleTimer: ReturnType<typeof setTimeout> | null = null;
     const armIdleTimer = () => {
       if (streamIdleTimer) clearTimeout(streamIdleTimer);
@@ -338,17 +351,21 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     });
     nodeStream.once('close', () => {
       if (streamIdleTimer) clearTimeout(streamIdleTimer);
+      releaseStreamMetric();
     });
     nodeStream.on('error', () => {
       if (streamIdleTimer) clearTimeout(streamIdleTimer);
+      releaseStreamMetric();
       if (!res.headersSent) res.status(502);
       if (!res.writableEnded) res.end();
     });
     req.on('close', () => {
       if (streamIdleTimer) clearTimeout(streamIdleTimer);
+      releaseStreamMetric();
       if (!res.writableEnded && !nodeStream.destroyed) nodeStream.destroy();
     });
 
+    runtimeMetrics.recordUpstreamTransport(false);
     if (!shouldSniffImageHeader) {
       writeCommonHeaders(0);
       nodeStream.pipe(res);
@@ -453,6 +470,7 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
       applyProxyCorsHeaders(res, reqId);
       res.setHeader('Content-Type', isFmp4Buffer ? 'video/mp4' : 'video/mp2t');
       res.setHeader('Content-Length', String(outBuf.length));
+      runtimeMetrics.recordUpstreamTransport(true, outBuf.length);
       res.end(outBuf);
     } catch {
       if (!res.headersSent) res.status(502);

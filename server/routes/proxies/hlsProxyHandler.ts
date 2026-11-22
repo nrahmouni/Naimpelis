@@ -22,6 +22,8 @@ import {
   type RollingDvbSeg,
 } from './dvbTranscoder.ts';
 import { vodHlsManifestCache } from './vodManifestManager.ts';
+import { runtimeMetrics } from '../../services/runtimeMetricsCollector.ts';
+import { evaluateDirectPlayEligibility } from '../../services/mediaPlaneRouter.ts';
 
 export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) => string) {
   return async (req: express.Request, res: express.Response): Promise<void> => {
@@ -43,8 +45,12 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
       return;
     }
 
+    runtimeMetrics.recordMediaRequest('hls');
+    evaluateDirectPlayEligibility(targetUrl, { referer, forceAac });
+
     const cachedVod = !forceAac ? vodHlsManifestCache.get(vodCacheKey) : undefined;
     if (cachedVod) {
+      runtimeMetrics.recordVodManifestHit();
       applyProxyCorsHeaders(res, reqId);
       res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
@@ -87,6 +93,7 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
         }
         baseUrl = fallback.effectiveUrl || targetUrl;
         manifestText = fallback.text;
+        runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(manifestText));
       } else {
         const hdrCtrl = new AbortController();
         const hdrTimer = setTimeout(() => hdrCtrl.abort(), 4800);
@@ -105,6 +112,7 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
           if (!manifestText.includes('#EXTM3U') || /nosignal/i.test(manifestText)) {
             throw new Error('Not M3U8 or offline placeholder');
           }
+          runtimeMetrics.recordUpstreamTransport(false, Buffer.byteLength(manifestText));
         } catch {
           clearTimeout(hdrTimer);
           markHostNeedsCurlFallback(targetUrl);
@@ -124,6 +132,7 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
           }
           baseUrl = fallback.effectiveUrl || targetUrl;
           manifestText = fallback.text;
+          runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(manifestText));
         }
       }
       if (/nosignal/i.test(manifestText)) {

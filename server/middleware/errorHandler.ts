@@ -34,6 +34,22 @@ export function applyPublicCacheHeaders(
   );
 }
 
+export function applyEdgeCacheHeaders(
+  res: express.Response,
+  edgeMaxAgeSec = 60,
+  browserMaxAgeSec = 20,
+  staleWhileRevalidateSec = 180
+): void {
+  res.setHeader(
+    'Cache-Control',
+    `public, max-age=${browserMaxAgeSec}, s-maxage=${edgeMaxAgeSec}, stale-while-revalidate=${staleWhileRevalidateSec}`
+  );
+  res.setHeader(
+    'CDN-Cache-Control',
+    `public, s-maxage=${edgeMaxAgeSec}, stale-while-revalidate=${staleWhileRevalidateSec}`
+  );
+}
+
 interface RateBucket {
   count: number;
   resetAt: number;

@@ -4,6 +4,7 @@ import type { AppLanguage } from '../types';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { BottomSheet } from './ui/DesignSystem';
+import { ShieldCheck } from 'lucide-react';
 import {
   RiffanBellIcon,
   RiffanBookmarkIcon,
@@ -37,6 +38,7 @@ interface AvatarMenuSheetProps {
   onOpenYouTube: () => void;
   onOpenSettings: () => void;
   onOpenInstallApp?: () => void;
+  onOpenAdminConsole?: () => void;
   inRoom?: boolean;
   sessionMode?: 'solo' | 'party';
   roomName?: string;
@@ -64,6 +66,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
   onOpenYouTube,
   onOpenSettings,
   onOpenInstallApp,
+  onOpenAdminConsole,
   inRoom = false,
   sessionMode = 'party',
   roomName,
@@ -182,6 +185,26 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
       onClick: onOpenSettings,
       badge: null as React.ReactNode,
     },
+    ...(onOpenAdminConsole &&
+    authUser?.email?.toLowerCase() === 'felipeallouch@gmail.com'
+      ? [
+          {
+            id: 'admin-console',
+            iconEl: <ShieldCheck className="w-5 h-5 text-[#A78BFA] shrink-0" />,
+            label: pickLang(lang, {
+              es: 'Consola Admin / Telemetría',
+              ca: 'Consola Admin / Telemetria',
+              en: 'Admin Console / Telemetry',
+            }),
+            onClick: onOpenAdminConsole,
+            badge: (
+              <span className="px-1.5 py-0.5 rounded bg-[#7C3AED]/20 text-[#C4B5FD] text-[10px] font-bold">
+                /admin
+              </span>
+            ) as React.ReactNode,
+          },
+        ]
+      : []),
   ];
 
   return (

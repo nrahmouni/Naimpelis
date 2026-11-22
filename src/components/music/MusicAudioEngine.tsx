@@ -1234,11 +1234,14 @@ export const MusicAudioEngine: React.FC = () => {
         .then((r) => r.json())
         .then((data: { success?: boolean; resolved?: Array<{ trackId?: string } & ResolvedTrackPlayback> }) => {
           if (cancelled || !data?.success || !Array.isArray(data.resolved)) return;
-          const entries = data.resolved
-            .filter((item) => item && item.trackId)
-            .map((item) => ({ ...item, trackId: item.trackId! }));
-          if (entries.length > 0) {
-            useMusicStore.getState().setPreResolvedBatch(entries);
+          const batch: Record<string, ResolvedTrackPlayback> = {};
+          for (const item of data.resolved) {
+            if (item && item.trackId) {
+              batch[item.trackId] = item;
+            }
+          }
+          if (Object.keys(batch).length > 0) {
+            useMusicStore.getState().setPreResolvedBatch(batch);
           }
         })
         .catch(() => {});

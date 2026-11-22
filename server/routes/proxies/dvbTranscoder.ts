@@ -16,6 +16,7 @@ import {
   FFMPEG_BIN,
   getOrCreateRequestId,
 } from './proxyUtils.ts';
+import { runtimeMetrics } from '../../services/runtimeMetricsCollector.ts';
 
 export const dvbAacSegmentCache = new LruTtlCache<string, { promise: Promise<Buffer>; ts: number }>(
   80,
@@ -164,8 +165,10 @@ export function remuxDvbTsToAac(
             clearTimeout(safetyTimer);
             const remuxed = Buffer.concat(outChunks);
             if (code === 0 && remuxed.length >= 564 && remuxed[0] === 0x47) {
+              runtimeMetrics.recordDvbTranscodeResult(true);
               resolve(remuxed);
             } else {
+              runtimeMetrics.recordDvbTranscodeResult(false);
               reject(new Error(`DVB segment remux failed (code=${code}, len=${remuxed.length})`));
             }
           });
@@ -567,6 +570,7 @@ export const handleDvbLive = async (
   req: express.Request,
   res: express.Response
 ): Promise<void> => {
+  runtimeMetrics.recordMediaRequest('dvb');
   const reqId = getOrCreateRequestId(req);
   const sessionKey = String(req.params.sessionKey || '').replace(/[^a-zA-Z0-9_-]/g, '');
   const filename = String(req.params.filename || '').replace(/[^a-zA-Z0-9_.-]/g, '');

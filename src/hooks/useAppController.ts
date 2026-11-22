@@ -55,6 +55,7 @@ import { useDeepLinkRouter } from './useDeepLinkRouter';
 import { useAppNavigationHistory } from './useAppNavigationHistory';
 import { useBackInterceptor } from '../lib/backInterceptor';
 import { isGoogleTvEnvironment } from '../utils/tvSpatialNav';
+import { reportClientVitalsOnce } from '../utils/clientTelemetry';
 import {
   checkIsNestedSandboxFrame,
   CINEMA_MODE_SESSION_KEY,
@@ -99,8 +100,9 @@ export function useAppController() {
   const [isTvMode, setIsTvMode] = useState<boolean>(initialRoute.isTvMode);
   const [isTvPairLobby, setIsTvPairLobby] = useState<boolean>(initialRoute.isTvPairLobby);
   const [isAdsPageOpen, setIsAdsPageOpen] = useState<boolean>(Boolean(initialRoute.isAdsPage));
+  const [isAdminPage, setIsAdminPage] = useState<boolean>(Boolean(initialRoute.isAdminPage));
   const initialDeepLinkGame =
-    !initialRoute.isTvMode && !initialRoute.isTvPairLobby && !initialRoute.isAdsPage
+    !initialRoute.isTvMode && !initialRoute.isTvPairLobby && !initialRoute.isAdsPage && !initialRoute.isAdminPage
       ? normalizeDeepLinkGameType(initialRoute.gameType)
       : null;
   const [tvAuthToken, setTvAuthToken] = useState<string>('');
@@ -203,6 +205,9 @@ export function useAppController() {
       setHasEnteredApp(true);
     }
     setBootSyncPending(false);
+    reportClientVitalsOnce(
+      initialRoute.isAdminPage ? 'admin' : activeWorld === 'music' ? 'music' : 'tv'
+    );
     // Run once on mount for initial deep-link/room boot
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -787,6 +792,7 @@ export function useAppController() {
     isTvMode,
     isTvPairLobby,
     isAdsPageOpen,
+    isAdminPage,
     enterWorld,
     setForcedOpenGame: roomState.setForcedOpenGame,
     setIsInActiveGame: roomState.setIsInActiveGame,
@@ -928,7 +934,7 @@ export function useAppController() {
   }, [inRoom, sessionMode, lifecycle]);
 
   const { exitToastVisible, triggerBackStep } = useAppNavigationHistory({
-    enabled: !isTvMode && !isTvPairLobby && !isAdsPageOpen && (inRoom || hasEnteredApp),
+    enabled: !isTvMode && !isTvPairLobby && !isAdsPageOpen && !isAdminPage && (inRoom || hasEnteredApp),
     inRoom,
     activeWorld,
     onReturnToEntry: handleReturnToEntry,
@@ -948,7 +954,7 @@ export function useAppController() {
     friendAddedNotice, setFriendAddedNotice, inviteSentFeedback, friendNoticeTimerRef,
     effectiveView, isDesktopLayout, isFramedMobileOnPc, toggleViewMode, authUser, authLoading,
     profileHubOpen, setProfileHubOpen, profileHubTab, setProfileHubTab, isTvMode, setIsTvMode,
-    isTvPairLobby, setIsTvPairLobby, isAdsPageOpen, setIsAdsPageOpen, setTvAuthToken, savedRooms,
+    isTvPairLobby, setIsTvPairLobby, isAdsPageOpen, setIsAdsPageOpen, isAdminPage, setIsAdminPage, setTvAuthToken, savedRooms,
     pinPromptState, tvClaimStatus, smartTvModalOpen, setSmartTvModalOpen, showIntro, setShowIntro,
     introWithSound, setIntroWithSound, showWatchlistOnly, setShowWatchlistOnly, showVoiceAssistant,
     setShowVoiceAssistant, quickPool, quickPoolLoading, nativeApkUpdate,

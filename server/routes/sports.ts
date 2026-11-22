@@ -40,6 +40,7 @@ import {
 import { ensureEpgScheduleReady, extractEspnCompBroadcastNames, runWithConcurrency, verifySingleFixtureTvSchedule } from '../services/tvScheduleVerifier.ts';
 import { registerChiringuitoRoutes } from './chiringuitoRoutes.ts';
 import { extractLiveSportsHlsDirect } from '../extractors/sportsExtractor.ts';
+import { livePushHub } from '../services/livePushHub.ts';
 
 let cachedSportsSchedule: { matches: any[]; ts: number } | null = null;
 let liveScoresCache: { matches: any[]; ts: number } | null = null;
@@ -573,6 +574,11 @@ async function fetchAndCacheFootballBoard(opts: {
       });
 
       cachedFootballBoard = { dateKey, matches: cleanItems, ts: Date.now() };
+      livePushHub.broadcastPublic('football-board:update', {
+        dateKey,
+        count: cleanItems.length,
+        ts: cachedFootballBoard.ts,
+      });
       const prioritizedItems = cleanItems.map((m) => ({
         ...m,
         channels: orderBoardChannels(m.channels || [], m.leagueSlug, preferredLang),
@@ -650,6 +656,10 @@ export function registerSportsRoutes(app: Express): void {
       }
       parsed.sort((a, b) => Number(b.isLive) - Number(a.isLive));
       liveScoresCache = { matches: parsed.slice(0, 18), ts: Date.now() };
+      livePushHub.broadcastPublic('scores:update', {
+        count: liveScoresCache.matches.length,
+        ts: liveScoresCache.ts,
+      });
       res.json({ success: true, scores: liveScoresCache.matches });
     } catch {
       res.json({ success: true, scores: [] });

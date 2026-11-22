@@ -10,6 +10,14 @@ import {
   getApkSigningCertSha256,
 } from '../services/apkBuilderService.ts';
 import { channelHealthMonitor } from '../services/channelHealthMonitor.ts';
+import {
+  runtimeMetrics,
+  type AppFeatureVertical,
+  type AppPlatformVertical,
+} from '../services/runtimeMetricsCollector.ts';
+import { getTelemetryStorageStatus, persistQoeSample } from '../services/telemetryStore.ts';
+import { livePushHub } from '../services/livePushHub.ts';
+import { getMediaPlaneSnapshot } from '../services/mediaPlaneRouter.ts';
 
 export interface QoeSample {
   id: string;
@@ -67,6 +75,9 @@ export function registerOperationalRoutes(
   // Health & Readiness endpoints (including Cloud Run / GCP health probe aliases)
   app.get(['/health', '/healthz', '/_ah/health', '/api/health'], (_req, res) => {
     const stats = deps.getStats();
+    const snap = runtimeMetrics.getSnapshot();
+    const storage = getTelemetryStorageStatus();
+    const mediaPlane = getMediaPlaneSnapshot();
     res.json({
       ok: true,
       service: 'naim-cine-engine',
@@ -74,6 +85,15 @@ export function registerOperationalRoutes(
       uptimeSec: stats.uptimeSec,
       rooms: stats.roomsCount,
       clients: stats.connectedClientsCount,
+      eventLoopP95Ms: snap.eventLoop.p95Ms,
+      storageDriver: storage.activeDriver,
+      worker: snap.worker,
+      sse: livePushHub.getStats(),
+      mediaPlane: {
+        deploymentMode: mediaPlane.deploymentMode,
+        activeDvbFfmpegSessions: mediaPlane.activeDvbFfmpegSessions,
+        directPlayEligiblePct: mediaPlane.directPlayEligiblePct,
+      },
       microservices: serviceMesh.getAllStatuses().map((s) => ({
         id: s.id,
         status: s.status,
@@ -320,7 +340,74 @@ export function registerOperationalRoutes(
     if (qoeRingBuffer.length > MAX_QOE_SAMPLES) {
       qoeRingBuffer.shift();
     }
+    void persistQoeSample(sample);
     return res.json({ success: true, requestId: sample.requestId });
+  });
+
+  app.post('/api/metrics/client-vitals', (req, res) => {
+    const clientIp = getClientIp(req);
+    const now = Date.now();
+    const bucket = qoeRateByIp.get(clientIp);
+    if (bucket && now < bucket.resetAt && bucket.count >= 40) {
+      return res.status(429).json({ success: false, error: 'Rate limit exceeded' });
+    }
+    qoeRateByIp.set(
+      clientIp,
+      bucket && now < bucket.resetAt
+        ? { count: bucket.count + 1, resetAt: bucket.resetAt }
+        : { count: 1, resetAt: now + 60_000 }
+    );
+
+    const body = (req.body || {}) as Record<string, unknown>;
+    const validPlatforms = new Set<AppPlatformVertical>([
+      'web',
+      'pwa',
+      'android-mobile',
+      'android-tv',
+      'smart-tv',
+      'music-app',
+    ]);
+    const validVerticals = new Set<AppFeatureVertical>([
+      'cine',
+      'futbol',
+      'tv',
+      'iptv',
+      'music',
+      'kids',
+      'juegos',
+      'admin',
+    ]);
+
+    const rawPlatform = String(body.platform || 'web') as AppPlatformVertical;
+    const rawVertical = String(body.vertical || 'tv') as AppFeatureVertical;
+    const clampMs = (v: unknown, max = 120_000): number | undefined => {
+      const n = Number(v);
+      return Number.isFinite(n) && n >= 0 ? Math.min(max, Math.round(n)) : undefined;
+    };
+
+    const recorded = runtimeMetrics.recordClientVitals({
+      platform: validPlatforms.has(rawPlatform) ? rawPlatform : 'web',
+      vertical: validVerticals.has(rawVertical) ? rawVertical : 'tv',
+      ttfbMs: clampMs(body.ttfbMs),
+      fcpMs: clampMs(body.fcpMs),
+      domInteractiveMs: clampMs(body.domInteractiveMs),
+      effectiveNetworkType:
+        typeof body.effectiveNetworkType === 'string'
+          ? body.effectiveNetworkType.slice(0, 16)
+          : undefined,
+      downlinkMbps:
+        typeof body.downlinkMbps === 'number' && Number.isFinite(body.downlinkMbps)
+          ? Math.max(0, Math.min(1000, Number(body.downlinkMbps.toFixed(1))))
+          : undefined,
+      rttMs: clampMs(body.rttMs, 30_000),
+      swActive: Boolean(body.swActive),
+      standalonePwa: Boolean(body.standalonePwa),
+      jsHeapMb: clampMs(body.jsHeapMb, 8192),
+      appVersion:
+        typeof body.appVersion === 'string' ? body.appVersion.slice(0, 32) : undefined,
+    });
+
+    return res.json({ success: true, id: recorded.id });
   });
 
   app.get('/api/metrics/qoe/summary', (req, res) => {

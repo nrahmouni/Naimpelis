@@ -16,6 +16,7 @@ import {
 } from '../wsSchemas.ts';
 import type { WsMessageHandler } from './types.ts';
 import { handleRoomCloudAndPollMessage } from './roomCloudAndPollHandlers.ts';
+import { roomPubSubBridge } from '../../services/roomPubSubBridge.ts';
 
 export const handleSyncAndChatMessage: WsMessageHandler = async (
   type,
@@ -160,6 +161,12 @@ export const handleSyncAndChatMessage: WsMessageHandler = async (
       },
       action === 'play' || action === 'pause' || action === 'seek' ? ws : undefined
     );
+    void roomPubSubBridge.publishRoomEvent(roomId, 'VIDEO_STATE_UPDATED', {
+      action,
+      url: room.videoState.url,
+      isPlaying: room.videoState.isPlaying,
+      ts: room.videoState.lastUpdated,
+    });
     if (action === 'change_url') {
       scheduleBroadcastOnlineUsers();
     }

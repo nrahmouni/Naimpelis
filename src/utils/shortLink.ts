@@ -56,6 +56,7 @@ export function parseRoomFromWindow(): {
   isTvMode: boolean;
   isTvPairLobby: boolean;
   isAdsPage?: boolean;
+  isAdminPage?: boolean;
   isAuthBridgePage?: boolean;
   authBridgeSessionId?: string;
   gameType?: string;
@@ -68,6 +69,7 @@ export function parseRoomFromWindow(): {
       isTvMode: false,
       isTvPairLobby: false,
       isAdsPage: false,
+      isAdminPage: false,
       isAuthBridgePage: false,
       routeTarget: { kind: 'home' },
       isDedicatedEntry: false,
@@ -115,11 +117,23 @@ export function parseRoomFromWindow(): {
         isDedicatedEntry: false,
       };
     }
+    if (target.systemType === 'admin') {
+      return {
+        roomId: '',
+        isTvMode: false,
+        isTvPairLobby: false,
+        isAdsPage: false,
+        isAdminPage: true,
+        routeTarget: target,
+        isDedicatedEntry: false,
+      };
+    }
     return {
       roomId: '',
       isTvMode: false,
       isTvPairLobby: false,
       isAdsPage: false,
+      isAdminPage: false,
       routeTarget: target,
       isDedicatedEntry: false,
     };

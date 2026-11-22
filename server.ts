@@ -90,6 +90,12 @@ import {
   getActiveDvbSessionCount,
 } from './server/routes/proxies/dvbTranscoder.ts';
 import { getImprovementsSummary } from './server/services/improvementsRegistry.ts';
+import { runtimeMetrics } from './server/services/runtimeMetricsCollector.ts';
+import { initializeTelemetryStore, closeTelemetryStore } from './server/services/telemetryStore.ts';
+import { livePushHub, registerLivePushRoutes } from './server/services/livePushHub.ts';
+import { workerBridge } from './server/services/workerBridge.ts';
+import { roomPubSubBridge } from './server/services/roomPubSubBridge.ts';
+import { registerAdminRoutes } from './server/routes/adminRoutes.ts';
 
 // Prefer IPv4 to avoid transient container IPv6 socket resets with upstream CDNs
 dns.setDefaultResultOrder('ipv4first');
@@ -181,6 +187,14 @@ app.use(securityHeadersMiddleware);
 app.use('/api/ai', express.json({ limit: '10mb' }));
 app.use('/api/music/match-tracks', express.json({ limit: '10mb' }));
 app.use(express.json({ limit: '2mb' }));
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api')) return next();
+  const t0 = Date.now();
+  res.on('finish', () => {
+    runtimeMetrics.recordHttpRequest(res.statusCode, Date.now() - t0);
+  });
+  next();
+});
 app.use('/api', serviceMeshGatewayMiddleware);
 
 // Serve ES5 UMD Hls.js locally for Samsung Tizen / LG webOS Smart TVs
@@ -207,6 +221,7 @@ registerOperationalRoutes(app, {
   }),
   getPublicOrigin,
   refreshChannelHealth: async (force = true) => {
+    const t0 = Date.now();
     const channels = [
       ...SPANISH_TDT_CHANNELS,
       ...CATALA_LIVE_CHANNELS,
@@ -214,7 +229,15 @@ registerOperationalRoutes(app, {
       ...getCachedSportsMatches(),
     ];
     await channelHealthMonitor.runSweep(channels, { force });
+    workerBridge.recordSweepCycle(Date.now() - t0);
+    livePushHub.broadcastPublic('channels:health', { summary: channelHealthMonitor.getSummary(), ts: Date.now() });
   },
+});
+
+registerLivePushRoutes(app);
+registerAdminRoutes(app, {
+  getRoomStats: () => roomHub.getStats(),
+  getPublicOrigin,
 });
 
 registerExpandedCatalogRoutes(app);
@@ -450,6 +473,10 @@ async function startServer() {
     if (ENV.nodeEnv !== 'test') {
       setImmediate(() => {
         try {
+          void initializeTelemetryStore();
+          livePushHub.start();
+          workerBridge.start();
+          roomPubSubBridge.startSyncLoop();
           void resolveActiveGnulaMirrors().catch((err) => logger.warn({ err }, 'prewarm_gnula_failed'));
           void refreshLiveIptvRegistry(false).catch((err) => logger.warn({ err }, 'prewarm_iptv_failed'));
           void refreshFamelackAndWorldCatalog(false).catch((err) => logger.warn({ err }, 'prewarm_world_failed'));
@@ -485,11 +512,15 @@ const shutdownHandler = createGracefulShutdownHandler({
   stopTimers: [
     () => channelHealthMonitor.stopScheduler(),
     () => stopCatalogRefreshScheduler(),
+    () => livePushHub.stop(),
+    () => workerBridge.stop(),
+    () => roomPubSubBridge.stopSyncLoop(),
   ],
   cleanupSessions: [
     () => {
       destroyAllLiveDvbSessions();
     },
+    () => closeTelemetryStore(),
   ],
 });
 

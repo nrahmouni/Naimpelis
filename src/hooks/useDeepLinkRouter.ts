@@ -20,6 +20,7 @@ interface UseDeepLinkRouterOptions {
   isTvMode: boolean;
   isTvPairLobby: boolean;
   isAdsPageOpen: boolean;
+  isAdminPage?: boolean;
   enterWorld: (world: WorldId) => void;
   setForcedOpenGame: React.Dispatch<
     React.SetStateAction<{ gameType: RoomGameInviteType; seq: number } | null>
@@ -40,6 +41,7 @@ export function useDeepLinkRouter({
   isTvMode,
   isTvPairLobby,
   isAdsPageOpen,
+  isAdminPage = false,
   enterWorld,
   setForcedOpenGame,
   setIsInActiveGame,
@@ -82,7 +84,7 @@ export function useDeepLinkRouter({
 
   const resolveAndApplyRoute = useCallback(
     async (pathname: string, search: string) => {
-      if (isTvMode || isTvPairLobby || isAdsPageOpen) return;
+      if (isTvMode || isTvPairLobby || isAdsPageOpen || isAdminPage) return;
       const routeKey = `${pathname}${search}`;
       if (lastResolvedRouteKeyRef.current === routeKey) return;
       lastResolvedRouteKeyRef.current = routeKey;
@@ -232,6 +234,7 @@ export function useDeepLinkRouter({
       isTvMode,
       isTvPairLobby,
       isAdsPageOpen,
+      isAdminPage,
     ]
   );
 
@@ -261,7 +264,7 @@ export function useDeepLinkRouter({
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (sessionMode !== 'solo' || !hasEnteredApp) return;
-    if (isTvMode || isTvPairLobby || isAdsPageOpen || deepLinkResolving) return;
+    if (isTvMode || isTvPairLobby || isAdsPageOpen || isAdminPage || deepLinkResolving) return;
     if (requestedMovieModal || requestedSeriesModal || requestedMatchSlug) return;
 
     let nextRoute = '/';
@@ -337,6 +340,7 @@ export function useDeepLinkRouter({
     isTvMode,
     isTvPairLobby,
     isAdsPageOpen,
+    isAdminPage,
     deepLinkResolving,
     requestedMovieModal,
     requestedSeriesModal,

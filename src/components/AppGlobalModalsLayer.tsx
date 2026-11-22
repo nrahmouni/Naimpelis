@@ -136,6 +136,7 @@ interface AppGlobalModalsLayerProps {
   showLegalModal: boolean;
   setShowLegalModal: (open: boolean) => void;
   setShowDesignSystem: (open: boolean) => void;
+  onOpenAdminConsole?: () => void;
   quickPool: {
     movies: CatalogMovie[];
     series: CatalogMovie[];
@@ -561,6 +562,7 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
           onOpenYouTube={() => enterWorld('youtube')}
           onOpenSettings={() => setSettingsSheetOpen(true)}
           onOpenInstallApp={() => setInstallSheetOpen(true)}
+          onOpenAdminConsole={p.onOpenAdminConsole}
           inRoom={inRoom}
           sessionMode={sessionMode}
           roomName={roomName}

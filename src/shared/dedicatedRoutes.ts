@@ -575,6 +575,7 @@ export const SYSTEM_RESERVED_SLUGS = new Set([
   'naimcine-ads',
   'auth-bridge',
   'design-system',
+  'admin',
   'sala',
   's',
   'r',
@@ -602,7 +603,7 @@ export const ALL_RESERVED_SLUGS = new Set<string>([
 
 export type AppRouteTarget =
   | { kind: 'home'; roomId?: string }
-  | { kind: 'system'; systemType: 'tv' | 'ads' | 'auth-bridge' | 'design-system'; roomId?: string }
+  | { kind: 'system'; systemType: 'tv' | 'ads' | 'auth-bridge' | 'design-system' | 'admin'; roomId?: string }
   | { kind: 'room'; roomId: string; gameType?: string; isTvMode?: boolean }
   | {
       kind: 'world';
@@ -683,6 +684,9 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
   }
   if (seg0 === 'design-system') {
     return { kind: 'system', systemType: 'design-system', roomId: queryRoomId };
+  }
+  if (seg0 === 'admin') {
+    return { kind: 'system', systemType: 'admin', roomId: queryRoomId };
   }
   if (params.get('tvpair') === '1' || seg0 === 'tv') {
     return { kind: 'system', systemType: 'tv', roomId: queryRoomId };

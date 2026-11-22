@@ -238,6 +238,9 @@ export default defineConfig(() => {
             if (id.includes('/src/components/games/') || id.includes('GamesHubSection')) {
               return 'feature-games';
             }
+            if (id.includes('/src/components/admin/')) {
+              return 'feature-admin';
+            }
           },
         },
       },

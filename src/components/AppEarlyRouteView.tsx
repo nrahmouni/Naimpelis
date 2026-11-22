@@ -39,10 +39,14 @@ const DesignSystemShowcase = lazyWithRetry(() =>
 const NativeCinemaPlayer = lazyWithRetry(() =>
   import('./NativeCinemaPlayer').then((m) => ({ default: m.NativeCinemaPlayer }))
 );
+const AdminConsolePage = lazyWithRetry(() =>
+  import('./admin/AdminConsolePage').then((m) => ({ default: m.AdminConsolePage }))
+);
 
 interface AppEarlyRouteViewProps {
   showDesignSystem: boolean;
   isAdsPageOpen: boolean;
+  isAdminPage: boolean;
   isTvPairLobby: boolean;
   inRoom: boolean;
   hasEnteredApp: boolean;
@@ -75,6 +79,7 @@ interface AppEarlyRouteViewProps {
   participantCount: number;
   setShowDesignSystem: (open: boolean) => void;
   setIsAdsPageOpen: (open: boolean) => void;
+  setIsAdminPage: (open: boolean) => void;
   setIsTvPairLobby: (open: boolean) => void;
   setIsTvMode: (open: boolean) => void;
   setTvAuthToken: (token: string) => void;
@@ -118,6 +123,7 @@ interface AppEarlyRouteViewProps {
 export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
   showDesignSystem,
   isAdsPageOpen,
+  isAdminPage,
   isTvPairLobby,
   inRoom,
   hasEnteredApp,
@@ -150,6 +156,7 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
   participantCount,
   setShowDesignSystem,
   setIsAdsPageOpen,
+  setIsAdminPage,
   setIsTvPairLobby,
   setIsTvMode,
   setTvAuthToken,
@@ -205,6 +212,26 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
     clearFriendNoticeTimer();
     setFriendAddedNotice(null);
   }, [clearFriendNoticeTimer, setFriendAddedNotice]);
+
+  if (isAdminPage) {
+    return (
+      <React.Suspense fallback={null}>
+        <AdminConsolePage
+          authUser={authUser}
+          onGoogleSignIn={onGoogleSignIn}
+          onExitAdmin={() => {
+            setIsAdminPage(false);
+            if (
+              typeof window !== 'undefined' &&
+              window.location.pathname.toLowerCase().startsWith('/admin')
+            ) {
+              window.history.replaceState({}, '', inRoom && roomId ? `/${roomId}` : '/');
+            }
+          }}
+        />
+      </React.Suspense>
+    );
+  }
 
   if (showDesignSystem) {
     return (

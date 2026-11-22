@@ -34,6 +34,7 @@ export function App() {
     effectiveView, isDesktopLayout, isFramedMobileOnPc, toggleViewMode,
     authUser, authLoading, profileHubOpen, setProfileHubOpen, profileHubTab, setProfileHubTab,
     isTvMode, setIsTvMode, isTvPairLobby, setIsTvPairLobby, isAdsPageOpen, setIsAdsPageOpen,
+    isAdminPage, setIsAdminPage,
     setTvAuthToken, savedRooms, pinPromptState, tvClaimStatus, smartTvModalOpen, setSmartTvModalOpen,
     showIntro, setShowIntro, introWithSound, setIntroWithSound,
     showWatchlistOnly, setShowWatchlistOnly, showVoiceAssistant, setShowVoiceAssistant,
@@ -119,7 +120,7 @@ export function App() {
   }, [friendNoticeTimerRef, setFriendAddedNotice]);
 
   const isEarlyRoute =
-    showDesignSystem || isAdsPageOpen || isTvPairLobby || (!inRoom && !hasEnteredApp) || isTvMode;
+    isAdminPage || showDesignSystem || isAdsPageOpen || isTvPairLobby || (!inRoom && !hasEnteredApp) || isTvMode;
 
   const handleOpenMusicWorldFromBar = useCallback(() => {
     if (!inRoom && !hasEnteredApp) {
@@ -132,6 +133,7 @@ export function App() {
     <AppEarlyRouteView
       showDesignSystem={showDesignSystem}
       isAdsPageOpen={isAdsPageOpen}
+      isAdminPage={isAdminPage}
       isTvPairLobby={isTvPairLobby}
       inRoom={inRoom}
       hasEnteredApp={hasEnteredApp}
@@ -164,6 +166,7 @@ export function App() {
       participantCount={roomState.participants.length}
       setShowDesignSystem={setShowDesignSystem}
       setIsAdsPageOpen={setIsAdsPageOpen}
+      setIsAdminPage={setIsAdminPage}
       setIsTvPairLobby={setIsTvPairLobby}
       setIsTvMode={setIsTvMode}
       setTvAuthToken={setTvAuthToken}
@@ -567,6 +570,7 @@ export function App() {
               !showLegalModal &&
               !showNotificationCenter &&
               !showDesignSystem &&
+              !isAdminPage &&
               !profileHubOpen &&
               !settingsSheetOpen &&
               !smartTvModalOpen &&
@@ -653,6 +657,10 @@ export function App() {
             showLegalModal={showLegalModal}
             setShowLegalModal={setShowLegalModal}
             setShowDesignSystem={setShowDesignSystem}
+            onOpenAdminConsole={() => {
+              setIsAdminPage(true);
+              if (typeof window !== 'undefined') window.history.pushState({}, '', '/admin');
+            }}
             quickPool={quickPool}
             quickPoolLoading={quickPoolLoading}
             loadQuickPool={socialActions.loadQuickPool}
