@@ -9,6 +9,8 @@ export type UnifiedGameId =
   | 'headsoccer'
   | 'penalty'
   | 'racing3d'
+  | 'gyrohockey'
+  | 'gyrospace'
   | 'poker'
   | 'blackjack'
   | 'chess'
@@ -109,6 +111,49 @@ export const GameLogoArtwork: React.FC<GameLogoArtworkProps> = ({
           <rect x="78" y="94" width="84" height="14" rx="5" fill="#0F172A" stroke="#7C3AED" strokeWidth="1.5" />
           <circle cx="88" cy="108" r="7" fill="#38BDF8" />
           <circle cx="152" cy="108" r="7" fill="#38BDF8" />
+        </svg>
+      );
+
+    case 'gyrohockey':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <defs>
+            <linearGradient id="gh-bg" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#082442" />
+              <stop offset="100%" stopColor="#140928" />
+            </linearGradient>
+          </defs>
+          <rect width="240" height="140" fill="url(#gh-bg)" />
+          <rect x="16" y="14" width="208" height="112" rx="14" fill="#071226" stroke="#22D3EE" strokeWidth="2.5" />
+          <line x1="120" y1="14" x2="120" y2="126" stroke="#7C3AED" strokeWidth="2" strokeDasharray="5 4" />
+          <circle cx="120" cy="70" r="24" fill="none" stroke="rgba(56,189,248,0.45)" strokeWidth="2" />
+          <circle cx="62" cy="70" r="20" fill="#7C3AED" stroke="#22D3EE" strokeWidth="3.5" />
+          <circle cx="62" cy="70" r="7" fill="#0F172A" stroke="#FFFFFF" strokeWidth="1.8" />
+          <circle cx="178" cy="70" r="20" fill="#E11D48" stroke="#FDA4AF" strokeWidth="3.5" />
+          <circle cx="178" cy="70" r="7" fill="#0F172A" stroke="#FFFFFF" strokeWidth="1.8" />
+          <circle cx="120" cy="70" r="10.5" fill="#FDE047" stroke="#FFFFFF" strokeWidth="2" />
+        </svg>
+      );
+
+    case 'gyrospace':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <defs>
+            <radialGradient id="gs-bg" cx="50%" cy="50%" r="68%">
+              <stop offset="0%" stopColor="#26134D" />
+              <stop offset="100%" stopColor="#040611" />
+            </radialGradient>
+          </defs>
+          <rect width="240" height="140" fill="url(#gs-bg)" />
+          <circle cx="32" cy="24" r="2" fill="#BAE6FD" />
+          <circle cx="198" cy="20" r="2.5" fill="#FDE047" />
+          <circle cx="212" cy="108" r="2" fill="#E9D5FF" />
+          <circle cx="46" cy="96" r="17" fill="#334155" stroke="#38BDF8" strokeWidth="2.5" />
+          <polygon points="196,42 216,66 176,66" fill="#E11D48" stroke="#FACC15" strokeWidth="2" />
+          <rect x="78" y="16" width="5" height="24" rx="2.5" fill="#22D3EE" />
+          <rect x="157" y="16" width="5" height="24" rx="2.5" fill="#22D3EE" />
+          <polygon points="120,24 162,102 134,88 120,106 106,88 78,102" fill="#7C3AED" stroke="#22D3EE" strokeWidth="2.8" />
+          <ellipse cx="120" cy="62" rx="8.5" ry="17" fill="#E0F2FE" />
         </svg>
       );
 

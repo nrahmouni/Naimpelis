@@ -58,6 +58,32 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
       backdropClass: 'from-[#160D38] via-[#0E1B3A] to-[#0B0D14]',
     },
     {
+      id: 'gyrohockey',
+      category: 'arcade',
+      title: pickLang(lang, { es: 'Neon Air Hockey Gyro', ca: 'Neon Air Hockey Gyro', en: 'Neon Air Hockey Gyro' }),
+      meta: pickLang(lang, {
+        es: 'Air Hockey · Giroscopio móvil QR',
+        ca: 'Air Hockey · Giroscopi mòbil QR',
+        en: 'Air Hockey · Phone gyro QR',
+      }),
+      playersHint: 'GYRO',
+      accentBorder: 'hover:border-cyan-400/75',
+      backdropClass: 'from-[#082442] via-[#1B0D3A] to-[#0B0D14]',
+    },
+    {
+      id: 'gyrospace',
+      category: 'arcade',
+      title: pickLang(lang, { es: 'Galaxia Interceptor Gyro', ca: 'Galàxia Interceptor Gyro', en: 'Galaxy Interceptor Gyro' }),
+      meta: pickLang(lang, {
+        es: 'Nave espacial · Giroscopio móvil',
+        ca: 'Nau espacial · Giroscopi mòbil',
+        en: 'Starfighter · Phone gyro tilt',
+      }),
+      playersHint: 'GYRO',
+      accentBorder: 'hover:border-purple-400/75',
+      backdropClass: 'from-[#2A114F] via-[#121636] to-[#0B0D14]',
+    },
+    {
       id: 'penalty',
       category: 'arcade',
       title: pickLang(lang, { es: 'Penaltis Mundial', ca: 'Penals Mundial', en: 'World Penalty' }),
@@ -198,9 +224,9 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
             <p className="text-xs text-zinc-400 mt-0.5 tabular-nums leading-snug">
               {hubMode === 'online'
                 ? pickLang(lang, {
-                    es: `Sala en directo · ${participants.length} conectado${participants.length === 1 ? '' : 's'} · 13 juegos`,
-                    ca: `Sala en directe · ${participants.length} connectat${participants.length === 1 ? '' : 's'} · 13 jocs`,
-                    en: `Live room · ${participants.length} connected · 13 games`,
+                    es: `Sala en directo · ${participants.length} conectado${participants.length === 1 ? '' : 's'} · 15 juegos`,
+                    ca: `Sala en directe · ${participants.length} connectat${participants.length === 1 ? '' : 's'} · 15 jocs`,
+                    en: `Live room · ${participants.length} connected · 15 games`,
                   })
                 : pickLang(lang, {
                     es: 'Modo entrenamiento offline contra IA · Sin esperas',

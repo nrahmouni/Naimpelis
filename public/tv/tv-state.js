@@ -818,6 +818,88 @@ function runTvVersionCheck(isManual) {
   });
 }
 
+var hardTvUpdateInFlight = false;
+function forceHardTvAppUpdate() {
+  if (hardTvUpdateInFlight) return;
+  hardTvUpdateInFlight = true;
+
+  var topForceBtn = document.getElementById('btn-tv-force-update');
+  var railForceLbl = document.getElementById('lbl-rail-force-update');
+  if (topForceBtn) topForceBtn.textContent = tvT('forceUpdatingBtn');
+  if (railForceLbl) railForceLbl.textContent = tvT('forceUpdatingBtn');
+  if (btnCheckTvUpdate) btnCheckTvUpdate.textContent = tvT('forceUpdatingBtn');
+  showToast(tvT('forceUpdatingToast'));
+
+  var keysToPurge = [
+    'naim_tv_tdt_snap_v2',
+    'naim_tv_web_build_v1',
+    'naim_tv_web_ver_v1',
+    'naim_tv_reload_ts_v1',
+    'naim_cine_web_build_v1',
+    'naim_cine_client_version_v1'
+  ];
+  for (var ki = 0; ki < keysToPurge.length; ki++) {
+    try { localStorage.removeItem(keysToPurge[ki]); } catch (e) {}
+    try { sessionStorage.removeItem(keysToPurge[ki]); } catch (e2) {}
+  }
+  clearTvCachesForUpdate();
+
+  try {
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+      navigator.serviceWorker.getRegistrations().then(function (regs) {
+        for (var i = 0; i < regs.length; i++) {
+          regs[i].unregister();
+        }
+      });
+    }
+  } catch (swErr) {}
+
+  var reloaded = false;
+  function executeHardReload(remoteBuild) {
+    if (reloaded) return;
+    reloaded = true;
+    var stamp = String(remoteBuild || currentTvBuildSig || 'latest').replace(/[^a-zA-Z0-9_-]/g, '');
+    try {
+      sessionStorage.setItem(TV_RELOAD_GUARD_KEY, String(Date.now()));
+      if (remoteBuild) localStorage.setItem(TV_WEB_BUILD_KEY, String(remoteBuild));
+    } catch (stErr) {}
+
+    var apiOrigin = (typeof window.__RIFFAN_API_ORIGIN__ === 'string' && window.__RIFFAN_API_ORIGIN__.indexOf('http') === 0)
+      ? window.__RIFFAN_API_ORIGIN__.replace(/\/+$/, '')
+      : '';
+    var baseTvPath = (window.location && window.location.protocol === 'file:' && apiOrigin)
+      ? (apiOrigin + '/tv')
+      : '/tv';
+    var nextUrl = baseTvPath + '?_upd=force-' + encodeURIComponent(stamp + '-' + Date.now());
+    if (typeof isTizenDevice !== 'undefined' && isTizenDevice) {
+      nextUrl += '&platform=tizen';
+    }
+    if (isPaired && currentRoomId) {
+      nextUrl += '&room=' + encodeURIComponent(currentRoomId);
+    }
+    if (window.location && window.location.protocol === 'file:' && !apiOrigin) {
+      window.location.reload();
+    } else {
+      window.location.replace(nextUrl);
+    }
+  }
+
+  setTimeout(function () {
+    executeHardReload(currentTvBuildSig || 'latest');
+  }, 1500);
+
+  xhrJson('GET', '/api/app/latest?platform=tv&force=1&_=' + Date.now(), null, function (err, data) {
+    var remoteBuild = '';
+    if (!err && data) {
+      remoteBuild = String((data.tvWeb && data.tvWeb.build) || (data.web && data.web.build) || data.versionName || '');
+    }
+    setTimeout(function () {
+      executeHardReload(remoteBuild || currentTvBuildSig || 'latest');
+    }, 220);
+  });
+}
+window.forceHardTvAppUpdate = forceHardTvAppUpdate;
+
 updateOtaStatusLabels(currentTvBuildSig);
 runTvVersionCheck(false);
 document.addEventListener('visibilitychange', function () {

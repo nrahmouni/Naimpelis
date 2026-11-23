@@ -145,6 +145,26 @@ const GAME_INVITE_META: Record<RoomGameInviteType, GameInviteMeta> = {
       en: '3D racing synced with phone gyroscope wheel',
     },
   },
+  gyrohockey: {
+    emoji: '🏒',
+    accent: '#22D3EE',
+    title: { es: 'Neon Air Hockey Gyro', ca: 'Neon Air Hockey Gyro', en: 'Neon Air Hockey Gyro' },
+    subtitle: {
+      es: 'Duelo de hockey neon con giroscopio móvil',
+      ca: 'Duel d’hoquei neó amb giroscopi mòbil',
+      en: 'Neon air hockey controlled with mobile gyro',
+    },
+  },
+  gyrospace: {
+    emoji: '🚀',
+    accent: '#A855F7',
+    title: { es: 'Galaxia Interceptor Gyro', ca: 'Galàxia Interceptor Gyro', en: 'Galaxy Interceptor Gyro' },
+    subtitle: {
+      es: 'Nave espacial controlada inclinando tu smartphone',
+      ca: 'Nau espacial controlada inclinant el teu mòbil',
+      en: 'Starfighter steered with phone gyroscope tilt',
+    },
+  },
 };
 
 interface GameMatchInviteModalProps {

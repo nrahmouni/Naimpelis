@@ -45,6 +45,11 @@ export function normalizeDeepLinkGameType(raw?: string): RoomGameInviteType | nu
     racing: 'racing3d',
     'nitro-gp': 'racing3d',
     f1: 'racing3d',
+    'air-hockey': 'gyrohockey',
+    'hockey-gyro': 'gyrohockey',
+    'galaxia-gyro': 'gyrospace',
+    'space-gyro': 'gyrospace',
+    'nave-3d': 'gyrospace',
   };
   const mapped = aliasMap[trimmed] || trimmed;
   const allowed: RoomGameInviteType[] = [
@@ -53,6 +58,8 @@ export function normalizeDeepLinkGameType(raw?: string): RoomGameInviteType | nu
     'headsoccer',
     'penalty',
     'racing3d',
+    'gyrohockey',
+    'gyrospace',
     'poker',
     'blackjack',
     'parchis',

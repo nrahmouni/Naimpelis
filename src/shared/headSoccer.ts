@@ -591,9 +591,9 @@ export function stepHeadSoccerFrame(
       b.vy *= k;
     }
 
-    // 5. Goal check (completely past goal line under crossbar)
-    if (b.y > HS_CROSSBAR_Y + HS_POST_RADIUS) {
-      if (b.x + HS_BALL_RADIUS * 0.55 < HS_GOAL_W) {
+    // 5. Goal check (cleanly past goal line under crossbar)
+    if (b.y > HS_CROSSBAR_Y + 2) {
+      if (b.x + HS_BALL_RADIUS * 0.45 < HS_GOAL_W) {
         sim.scores[1] += 1;
         sim.phase = 'goal';
         sim.goalBannerSide = 1;
@@ -601,7 +601,7 @@ export function stepHeadSoccerFrame(
         events.goalScoredBy = 1;
         return events;
       }
-      if (b.x - HS_BALL_RADIUS * 0.55 > HS_ARENA_W - HS_GOAL_W) {
+      if (b.x - HS_BALL_RADIUS * 0.45 > HS_ARENA_W - HS_GOAL_W) {
         sim.scores[0] += 1;
         sim.phase = 'goal';
         sim.goalBannerSide = 0;

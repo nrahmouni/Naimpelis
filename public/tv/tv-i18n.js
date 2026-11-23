@@ -85,6 +85,10 @@ var TV_I18N = {
     railPair: 'Conectar Móvil',
     railLang: 'Idioma · ES',
     railFs: 'Pantalla',
+    railForceUpdate: 'Actualizar App',
+    forceUpdateBtn: '↻ Actualizar App',
+    forceUpdatingBtn: 'Actualizando...',
+    forceUpdatingToast: 'Limpiando caché y actualizando Riffan TV...',
     pairPill: 'Móvil · ',
     fsBtn: 'Pantalla',
     fsActive: 'TV Completa',
@@ -116,7 +120,7 @@ var TV_I18N = {
     otaStatusCheck: 'Sin reinstalar en Samsung Tizen · Comprobando...',
     otaStatusSynced: 'Al día automáticamente · Build ',
     otaStatusQueued: 'Nueva mejora lista · Se aplicará al volver al menú',
-    otaCheckBtn: 'Buscar actualización',
+    otaCheckBtn: 'Forzar actualización',
     otaChecking: 'Buscando...',
     otaUpdatedToast: 'TV al día (v3.4 · Auto-update activo)',
     otaApplyingToast: 'Aplicando actualización automática...',
@@ -288,6 +292,10 @@ var TV_I18N = {
     railPair: 'Connectar Mòbil',
     railLang: 'Idioma · CA',
     railFs: 'Pantalla',
+    railForceUpdate: 'Actualitzar App',
+    forceUpdateBtn: '↻ Actualitzar App',
+    forceUpdatingBtn: 'Actualitzant...',
+    forceUpdatingToast: 'Netejant memòria i actualitzant Riffan TV...',
     pairPill: 'Mòbil · ',
     fsBtn: 'Pantalla',
     fsActive: 'TV Completa',
@@ -319,7 +327,7 @@ var TV_I18N = {
     otaStatusCheck: 'Sense reinstal·lar a Samsung Tizen · Comprovant...',
     otaStatusSynced: 'Al dia automàticament · Build ',
     otaStatusQueued: 'Nova millora llesta · S’aplicarà en tornar al menú',
-    otaCheckBtn: 'Cercar actualització',
+    otaCheckBtn: 'Forçar actualització',
     otaChecking: 'Cercant...',
     otaUpdatedToast: 'TV al dia (Auto-update actiu)',
     otaApplyingToast: 'Aplicant actualització automàtica...',
@@ -491,6 +499,10 @@ var TV_I18N = {
     railPair: 'Pair Phone',
     railLang: 'Lang · EN',
     railFs: 'Screen',
+    railForceUpdate: 'Force Update',
+    forceUpdateBtn: '↻ Force Update',
+    forceUpdatingBtn: 'Updating...',
+    forceUpdatingToast: 'Purging cache & updating Riffan TV...',
     pairPill: 'Phone · ',
     fsBtn: 'Fullscreen',
     fsActive: 'TV Full',
@@ -522,7 +534,7 @@ var TV_I18N = {
     otaStatusCheck: 'Zero reinstall on Samsung Tizen · Checking version...',
     otaStatusSynced: 'Automatically up to date · Build ',
     otaStatusQueued: 'New update ready · Applies when returning to menu',
-    otaCheckBtn: 'Check for update',
+    otaCheckBtn: 'Force update',
     otaChecking: 'Checking...',
     otaUpdatedToast: 'TV is up to date (Auto-update active)',
     otaApplyingToast: 'Applying automatic update...',
@@ -710,6 +722,8 @@ function applyTvLanguage(nextLang) {
   setElText('lbl-rail-pair', tvT('railPair'));
   setElText('lbl-rail-lang', tvT('railLang'));
   setElText('lbl-rail-fs', tvT('railFs'));
+  setElText('lbl-rail-force-update', tvT('railForceUpdate'));
+  setElText('btn-tv-force-update', tvT('forceUpdateBtn'));
 
   var tabMap = {
     search: 'tabSearch',

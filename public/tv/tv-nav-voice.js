@@ -367,12 +367,28 @@ if (btnStagePairShortcut) {
 }
 if (btnCheckTvUpdate) {
   btnCheckTvUpdate.onclick = function () {
-    runTvVersionCheck(true);
+    if (typeof forceHardTvAppUpdate === 'function') forceHardTvAppUpdate();
+    else runTvVersionCheck(true);
   };
 }
 if (tvAutoUpdatePill) {
   tvAutoUpdatePill.onclick = function () {
-    runTvVersionCheck(true);
+    if (typeof forceHardTvAppUpdate === 'function') forceHardTvAppUpdate();
+    else runTvVersionCheck(true);
+  };
+}
+var btnTvForceUpdate = document.getElementById('btn-tv-force-update');
+if (btnTvForceUpdate) {
+  btnTvForceUpdate.onclick = function () {
+    if (typeof forceHardTvAppUpdate === 'function') forceHardTvAppUpdate();
+    else runTvVersionCheck(true);
+  };
+}
+var btnHubForceUpdate = document.getElementById('btn-hub-force-update');
+if (btnHubForceUpdate) {
+  btnHubForceUpdate.onclick = function () {
+    if (typeof forceHardTvAppUpdate === 'function') forceHardTvAppUpdate();
+    else runTvVersionCheck(true);
   };
 }
 document.getElementById('btn-back-to-hub').onclick = function () {

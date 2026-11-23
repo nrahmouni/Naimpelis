@@ -470,6 +470,24 @@ input:focus,
   color: #06070B;
   border-color: #FFFFFF;
 }
+.stage-force-update-btn {
+  height: 40px;
+  padding: 0 15px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(196, 181, 253, 0.55);
+  background: #231746;
+  color: #F4F5FA;
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.stage-force-update-btn:hover,
+.stage-force-update-btn:focus {
+  background: #FFFFFF;
+  color: #06070B;
+  border-color: #FFFFFF;
+}
 .stage-clock {
   font-size: 22px;
   font-weight: 800;

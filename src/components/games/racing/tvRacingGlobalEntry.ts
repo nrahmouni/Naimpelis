@@ -1,4 +1,5 @@
 import { createRacing3dEngine } from './racing3dEngine';
+import { createRacing2dFallbackEngine } from './racing2dFallback';
 import type {
   RacingCarTelemetry,
   RacingEngineHandle,
@@ -16,7 +17,11 @@ export function mount(
   }
 ): void {
   unmount();
-  activeEngine = createRacing3dEngine(container, callbacks || {});
+  try {
+    activeEngine = createRacing3dEngine(container, callbacks || {});
+  } catch {
+    activeEngine = createRacing2dFallbackEngine(container, callbacks || {});
+  }
 }
 
 export function setGyroInput(input: Partial<RacingGyroControlState>, expiresInMs = 950): void {

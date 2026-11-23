@@ -7,7 +7,7 @@
     "dev": "tsx server.ts",
     "start": "node server.ts",
     "build": "npm run build:tv-games && vite build && npm run build:server",
-    "build:tv-games": "esbuild src/components/games/racing/tvRacingGlobalEntry.ts --bundle --format=iife --global-name=RiffanRacing3DBundle --minify --outfile=public/vendor/riffan-racing-3d.iife.js",
+    "build:tv-games": "esbuild src/components/games/racing/tvRacingGlobalEntry.ts --bundle --format=iife --global-name=RiffanRacing3DBundle --target=es2015 --minify --outfile=public/vendor/riffan-racing-3d.iife.js",
     "build:server": "esbuild server.ts server/mediaServer.ts --bundle --platform=node --format=esm --packages=external --out-extension:.js=.mjs --outdir=dist-server",
     "start:compiled": "node dist-server/server.mjs",
     "start:media": "node dist-server/mediaServer.mjs",

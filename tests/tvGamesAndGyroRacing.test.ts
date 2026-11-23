@@ -15,6 +15,13 @@ import {
   CURATED_SPANISH_KIDS_TV_IDS,
   MOVIE_GENRE_MAP,
 } from '../server/data/vodConstants.ts';
+import {
+  HS_ARENA_W,
+  HS_GOAL_W,
+  HS_GROUND_Y,
+  createHeadSoccerSimulation,
+  stepHeadSoccerFrame,
+} from '../src/shared/headSoccer.ts';
 
 const ROOT = process.cwd();
 
@@ -169,14 +176,31 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
       expect(racingRoute.gameId).toBe('racing3d');
       expect(racingRoute.roomId).toBe('k8x4');
     }
+
+    const hockeyRoute = parseAppRoute('/juegos/air-hockey', '?room=k8x4');
+    expect(hockeyRoute.kind).toBe('game');
+    if (hockeyRoute.kind === 'game') {
+      expect(hockeyRoute.gameId).toBe('gyrohockey');
+    }
+
+    const spaceRoute = parseAppRoute('/juegos/galaxia-gyro', '?room=k8x4');
+    expect(spaceRoute.kind).toBe('game');
+    if (spaceRoute.kind === 'game') {
+      expect(spaceRoute.gameId).toBe('gyrospace');
+    }
   });
 
-  it('compiles all Smart TV ES5 scripts via vm.Script, verifies bundle size, zero backdrop-filter, and <=700 LOC', () => {
+  it('compiles all Smart TV ES5 scripts via vm.Script, verifies force update controls, zero backdrop-filter, and <=700 LOC', () => {
     const html = fs.readFileSync(path.join(ROOT, 'public/tv-receiver.html'), 'utf8');
     expect(html).toContain('data-tab="kids"');
     expect(html).toContain('data-tab="games"');
     expect(html).toContain('id="tv-games-screen"');
+    expect(html).toContain('id="btn-tv-force-update"');
+    expect(html).toContain('id="btn-hub-force-update"');
     expect(html).toContain('/vendor/riffan-racing-3d.iife.js');
+
+    const tvState = fs.readFileSync(path.join(ROOT, 'public/tv/tv-state.js'), 'utf8');
+    expect(tvState).toContain('forceHardTvAppUpdate');
 
     const bundlePath = path.join(ROOT, 'public/vendor/riffan-racing-3d.iife.js');
     expect(fs.existsSync(bundlePath)).toBe(true);
@@ -194,6 +218,7 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
       'public/tv/tv-games.js',
       'public/tv/tv-games-soccer.js',
       'public/tv/tv-games-racing.js',
+      'public/tv/tv-games-gyro.js',
       'public/tv/tv-nav-voice.js',
     ];
     for (const rel of tvScripts) {
@@ -205,11 +230,50 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
       'public/tv/tv-games.js',
       'public/tv/tv-games-soccer.js',
       'public/tv/tv-games-racing.js',
+      'public/tv/tv-games-gyro.js',
     ];
     for (const rel of lineCapFiles) {
       const lines = fs.readFileSync(path.join(ROOT, rel), 'utf8').split('\n').length;
       expect(lines).toBeLessThanOrEqual(700);
     }
+  });
+
+  it('scores goals cleanly on both left & right goals in Head Soccer physics & TV script', () => {
+    const empty = { left: false, right: false, jump: false, kick: false };
+
+    // Right goal test
+    const simR = createHeadSoccerSimulation();
+    simR.ball.x = HS_ARENA_W - HS_GOAL_W - 12;
+    simR.ball.y = HS_GROUND_Y - 50;
+    simR.ball.vx = 680;
+    simR.ball.vy = -40;
+    let rightEvents: any = {};
+    for (let i = 0; i < 8; i += 1) {
+      rightEvents = stepHeadSoccerFrame(simR, [empty, empty], 1 / 60);
+      if (rightEvents.goalScoredBy === 0) break;
+    }
+    expect(simR.scores[0]).toBe(1);
+    expect(rightEvents.goalScoredBy).toBe(0);
+
+    // Left goal test
+    const simL = createHeadSoccerSimulation();
+    simL.ball.x = HS_GOAL_W + 12;
+    simL.ball.y = HS_GROUND_Y - 50;
+    simL.ball.vx = -680;
+    simL.ball.vy = -40;
+    let leftEvents: any = {};
+    for (let i = 0; i < 8; i += 1) {
+      leftEvents = stepHeadSoccerFrame(simL, [empty, empty], 1 / 60);
+      if (leftEvents.goalScoredBy === 1) break;
+    }
+    expect(simL.scores[1]).toBe(1);
+    expect(leftEvents.goalScoredBy).toBe(1);
+
+    // Confirm TV script removed the GW + BR blocking wall
+    const tvSoccer = fs.readFileSync(path.join(ROOT, 'public/tv/tv-games-soccer.js'), 'utf8');
+    expect(tvSoccer).not.toContain('GW + BR');
+    expect(tvSoccer).toContain('b.x < GW - 4');
+    expect(tvSoccer).toContain('b.x > W - GW + 4');
   });
 
   it('configures 100% Spanish Kids live TV & VOD catalog and Tizen auto-launch persistence', () => {

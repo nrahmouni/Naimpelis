@@ -519,6 +519,13 @@ export const GAME_SLUG_TO_ID: Record<string, string> = {
   racing3d: 'racing3d',
   'nitro-gp': 'racing3d',
   f1: 'racing3d',
+  'air-hockey': 'gyrohockey',
+  'hockey-gyro': 'gyrohockey',
+  gyrohockey: 'gyrohockey',
+  'galaxia-gyro': 'gyrospace',
+  'space-gyro': 'gyrospace',
+  'nave-3d': 'gyrospace',
+  gyrospace: 'gyrospace',
 };
 
 export const GAME_ID_TO_SLUG: Record<string, string> = {
@@ -530,6 +537,8 @@ export const GAME_ID_TO_SLUG: Record<string, string> = {
   headsoccer: 'head-soccer',
   penalty: 'penaltis',
   racing3d: 'coches-3d',
+  gyrohockey: 'air-hockey',
+  gyrospace: 'galaxia-gyro',
   parchis: 'parchis',
   uno: 'uno',
   chess: 'ajedrez',
@@ -546,6 +555,8 @@ export const GAME_TITLES: Record<string, { es: string; ca: string; en: string }>
   headsoccer: { es: 'Head Soccer', ca: 'Head Soccer', en: 'Head Soccer' },
   penalty: { es: 'Penaltis Mundial Pro', ca: 'Penals Mundial Pro', en: 'World Cup Penalties Pro' },
   racing3d: { es: 'Nitro GP 3D · Volante Móvil', ca: 'Nitro GP 3D · Volant Mòbil', en: 'Nitro GP 3D · Phone Wheel' },
+  gyrohockey: { es: 'Neon Air Hockey Gyro', ca: 'Neon Air Hockey Gyro', en: 'Neon Air Hockey Gyro' },
+  gyrospace: { es: 'Galaxia Interceptor Gyro', ca: 'Galàxia Interceptor Gyro', en: 'Galaxy Interceptor Gyro' },
   parchis: { es: 'Parchís', ca: 'Parxís', en: 'Parchís' },
   uno: { es: 'UNO', ca: 'UNO', en: 'UNO' },
   chess: { es: 'Ajedrez', ca: 'Escacs', en: 'Chess' },

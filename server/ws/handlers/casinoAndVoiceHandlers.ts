@@ -117,6 +117,8 @@ export const handleCasinoAndVoiceMessage: WsMessageHandler = (
       connect4: 'Conecta 4',
       penalty: 'Penaltis Mundial',
       racing3d: 'Nitro GP 3D',
+      gyrohockey: 'Neon Air Hockey Gyro',
+      gyrospace: 'Galaxia Interceptor Gyro',
     };
 
     const sysMsg: RoomChatMessageRecord = {

@@ -13,6 +13,8 @@ export const GAME_SIGNATURES: Record<UnifiedGameId, { color: string; label: stri
   headsoccer: { color: '#38BDF8', label: 'Cabezones' },
   penalty: { color: '#10B981', label: 'Penaltis' },
   racing3d: { color: '#22D3EE', label: 'Nitro GP 3D' },
+  gyrohockey: { color: '#22D3EE', label: 'Air Hockey' },
+  gyrospace: { color: '#A855F7', label: 'Galaxia Gyro' },
   poker: { color: '#A855F7', label: 'Póker' },
   blackjack: { color: '#10B981', label: 'Blackjack' },
   chess: { color: '#9146FF', label: 'Ajedrez' },
@@ -30,6 +32,8 @@ export function getGamesHubTitleMap(lang: AppLanguage): Record<UnifiedGameId, st
     headsoccer: pickLang(lang, { es: '🥅 Fútbol Cabezones', ca: '🥅 Futbol Capgrossos', en: '🥅 Head Soccer' }),
     penalty: pickLang(lang, { es: '⚽ Penaltis Mundial', ca: '⚽ Penals Mundial', en: '⚽ World Penalty' }),
     racing3d: '🏎️ Nitro GP 3D',
+    gyrohockey: '🏒 Neon Air Hockey',
+    gyrospace: '🚀 Galaxia Gyro',
     poker: pickLang(lang, { es: '♠️ Póker Hold’em', ca: '♠️ Pòquer Hold’em', en: '♠️ Texas Hold’em' }),
     blackjack: '🃏 Blackjack 21',
     chess: pickLang(lang, { es: '♟️ Ajedrez', ca: '♟️ Escacs', en: '♟️ Chess' }),
@@ -46,6 +50,8 @@ export function getGameSwitcherOptions(titleMap: Record<UnifiedGameId, string>):
 }> {
   return [
     { id: 'racing3d', label: titleMap.racing3d, subtitle: '3D + Giroscopio', color: GAME_SIGNATURES.racing3d.color },
+    { id: 'gyrohockey', label: titleMap.gyrohockey, subtitle: 'Móvil Giroscopio', color: GAME_SIGNATURES.gyrohockey.color },
+    { id: 'gyrospace', label: titleMap.gyrospace, subtitle: 'Nave Giroscopio', color: GAME_SIGNATURES.gyrospace.color },
     { id: 'penalty', label: titleMap.penalty, subtitle: 'Tanda Penaltis', color: GAME_SIGNATURES.penalty.color },
     { id: 'headsoccer', label: titleMap.headsoccer, subtitle: '1v1 · 60s', color: GAME_SIGNATURES.headsoccer.color },
     { id: 'pool', label: titleMap.pool, subtitle: '1v1 · Bola 8', color: GAME_SIGNATURES.pool.color },

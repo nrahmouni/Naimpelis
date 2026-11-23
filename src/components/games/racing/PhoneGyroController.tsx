@@ -41,6 +41,16 @@ interface TelemetrySnapshot {
 }
 
 type SensitivityLevel = 'soft' | 'normal' | 'pro';
+type GyroControllerGame = 'racing3d' | 'gyrohockey' | 'gyrospace' | 'headsoccer';
+
+function parseGyroControllerGameFromUrl(): GyroControllerGame {
+  if (typeof window === 'undefined') return 'racing3d';
+  const raw = (new URLSearchParams(window.location.search).get('game') || '').trim().toLowerCase();
+  if (raw === 'gyrohockey' || raw === 'air-hockey') return 'gyrohockey';
+  if (raw === 'gyrospace' || raw === 'galaxia-gyro') return 'gyrospace';
+  if (raw === 'headsoccer' || raw === 'cabezones') return 'headsoccer';
+  return 'racing3d';
+}
 
 function getScreenAngleDeg(): number {
   if (typeof window === 'undefined') return 0;
@@ -77,6 +87,7 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
 
   const [roomInput, setRoomInput] = useState(cleanInitialRoom);
   const [activeRoomId, setActiveRoomId] = useState(cleanInitialRoom);
+  const [gyroGameMode, setGyroGameMode] = useState<GyroControllerGame>(() => parseGyroControllerGameFromUrl());
   const [wsConnected, setWsConnected] = useState(false);
   const [gyroState, setGyroState] = useState<'idle' | 'active' | 'denied' | 'unsupported'>('idle');
   const [sensitivity, setSensitivity] = useState<SensitivityLevel>('normal');
@@ -462,6 +473,25 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
         <div className="flex items-center gap-1.5">
           <button
             type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setGyroGameMode((m) =>
+                m === 'racing3d' ? 'gyrohockey' : m === 'gyrohockey' ? 'gyrospace' : m === 'gyrospace' ? 'headsoccer' : 'racing3d'
+              );
+            }}
+            className="min-h-11 px-3 rounded-xl bg-[#7C3AED]/25 hover:bg-[#7C3AED]/40 border border-[#7C3AED]/50 text-xs font-black text-purple-200 cursor-pointer"
+          >
+            {gyroGameMode === 'gyrohockey'
+              ? '🏒 Hockey'
+              : gyroGameMode === 'gyrospace'
+              ? '🚀 Nave'
+              : gyroGameMode === 'headsoccer'
+              ? '🥅 Fútbol'
+              : '🏎️ GP3D'}
+          </button>
+
+          <button
+            type="button"
             onClick={handleCalibrate}
             className="min-h-11 px-3 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/10 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
           >
@@ -579,12 +609,22 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
                 : 'bg-[#15101b] border-rose-500/45 text-rose-200'
             }`}
           >
-            <span>FRENO</span>
-            <span className="text-[10px] font-semibold opacity-75">MARCHA ATRÁS</span>
+            <span>
+              {gyroGameMode === 'gyrohockey'
+                ? 'DEFENDER'
+                : gyroGameMode === 'gyrospace'
+                ? 'FRENO / ATRÁS'
+                : gyroGameMode === 'headsoccer'
+                ? 'BAJAR'
+                : 'FRENO'}
+            </span>
+            <span className="text-[10px] font-semibold opacity-75">
+              {gyroGameMode === 'racing3d' ? 'MARCHA ATRÁS' : 'CONTROL SECUNDARIO'}
+            </span>
           </button>
         </div>
 
-        {/* Center Zone: Animated F1/GT Steering Wheel (Also draggable fallback) */}
+        {/* Center Zone: Dynamic Gyro Gauge (Wheel / Hockey Striker / Starfighter / Soccer) */}
         <div className="col-span-4 sm:col-span-6 flex flex-col items-center justify-center gap-2">
           <div
             onPointerDown={handleWheelPointerDown}
@@ -611,7 +651,7 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
                 cy="100"
                 r="82"
                 fill="none"
-                stroke="#7c3aed"
+                stroke={gyroGameMode === 'gyrohockey' ? '#22d3ee' : gyroGameMode === 'gyrospace' ? '#a855f7' : '#7c3aed'}
                 strokeWidth="4"
                 strokeDasharray="110 410"
                 strokeDashoffset="55"
@@ -627,11 +667,17 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
                 y="105"
                 textAnchor="middle"
                 fill="#f8fafc"
-                fontSize="13"
+                fontSize="12"
                 fontWeight="900"
                 fontFamily="monospace"
               >
-                GP3D
+                {gyroGameMode === 'gyrohockey'
+                  ? 'HOCKEY'
+                  : gyroGameMode === 'gyrospace'
+                  ? 'GALAXIA'
+                  : gyroGameMode === 'headsoccer'
+                  ? 'FÚTBOL'
+                  : 'GP3D'}
               </text>
             </svg>
           </div>
@@ -640,13 +686,13 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
             <Gauge className="w-3.5 h-3.5 text-cyan-400" />
             <span>
               {gyroState === 'active'
-                ? 'Inclina el móvil para girar (o arrastra el volante)'
-                : 'Arrastra el volante izquierda / derecha'}
+                ? 'Inclina el móvil para controlar (o arrastra el centro)'
+                : 'Arrastra izquierda / derecha'}
             </span>
           </div>
         </div>
 
-        {/* Right Thumb Zone: Nitro + Gas Pedal */}
+        {/* Right Thumb Zone: Nitro / Action + Gas / Jump / Fire */}
         <div className="col-span-4 sm:col-span-3 flex flex-col gap-3">
           <button
             type="button"
@@ -673,7 +719,13 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
           >
             <span className="flex items-center gap-1.5">
               <Flame className="w-4 h-4 text-cyan-300" />
-              NITRO {telemetry.nitroPct}%
+              {gyroGameMode === 'gyrohockey'
+                ? `SMASH ${telemetry.nitroPct}%`
+                : gyroGameMode === 'gyrospace'
+                ? 'HIPER-LÁSER'
+                : gyroGameMode === 'headsoccer'
+                ? 'CHUTAR'
+                : `NITRO ${telemetry.nitroPct}%`}
             </span>
             <div className="w-full h-1.5 rounded-full bg-white/10 mt-1 overflow-hidden">
               <div
@@ -706,8 +758,24 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
                 : 'bg-[#0c1b18] border-emerald-500/50 text-emerald-200'
             }`}
           >
-            <span>GAS</span>
-            <span className="text-[10px] font-semibold opacity-75">ACELERADOR</span>
+            <span>
+              {gyroGameMode === 'gyrohockey'
+                ? 'ATACAR'
+                : gyroGameMode === 'gyrospace'
+                ? 'LÁSER'
+                : gyroGameMode === 'headsoccer'
+                ? 'SALTAR'
+                : 'GAS'}
+            </span>
+            <span className="text-[10px] font-semibold opacity-75">
+              {gyroGameMode === 'gyrohockey'
+                ? 'AVANZAR PALA'
+                : gyroGameMode === 'gyrospace'
+                ? 'DISPARO DOBLE'
+                : gyroGameMode === 'headsoccer'
+                ? 'REMATE AÉREO'
+                : 'ACELERADOR'}
+            </span>
           </button>
         </div>
       </div>

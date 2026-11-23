@@ -20,6 +20,7 @@ import {
   getDisplayAppHost,
   getDisplayTvPairingLabel,
 } from '../utils/shortLink';
+import { clearStaleCachesAndReload } from '../utils/versionSync';
 
 interface TvReceiverPairingScreenProps {
   lang: AppLanguage;
@@ -598,6 +599,23 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
                     es: 'Lista M3U y EPG XML',
                     ca: 'Llista M3U i EPG XML',
                     en: 'M3U List & EPG XML',
+                  })}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  void clearStaleCachesAndReload({ force: true });
+                }}
+                className="min-h-[52px] px-5 rounded-2xl bg-[#231746] hover:bg-[#312062] border border-[#A78BFA]/45 text-sm font-bold text-[#EDE9FE] flex items-center gap-2 cursor-pointer transition-colors"
+              >
+                <RefreshCw className="w-4 h-4 text-[#C4B5FD]" />
+                <span>
+                  {pickLang(lang, {
+                    es: 'Actualizar app',
+                    ca: 'Actualitzar app',
+                    en: 'Force update',
                   })}
                 </span>
               </button>

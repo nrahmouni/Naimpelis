@@ -94,6 +94,8 @@ export type RoomGameInviteType =
   | 'headsoccer'
   | 'penalty'
   | 'racing3d'
+  | 'gyrohockey'
+  | 'gyrospace'
   | 'poker'
   | 'blackjack'
   | 'parchis'

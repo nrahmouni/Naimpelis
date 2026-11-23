@@ -43,6 +43,11 @@ export function getTvBuildSignature(rootDir: string): string {
     }
   }
 
+  const vendorRacingBundle = path.join(baseDir, 'vendor', 'riffan-racing-3d.iife.js');
+  if (fs.existsSync(vendorRacingBundle)) {
+    candidatePaths.push(vendorRacingBundle);
+  }
+
   for (const srvFile of [
     path.resolve(rootDir, 'server', 'routes', 'proxies', 'dvbCodecProbe.ts'),
     path.resolve(rootDir, 'server', 'routes', 'proxies', 'dvbTranscoder.ts'),

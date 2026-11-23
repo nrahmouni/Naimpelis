@@ -3,6 +3,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { buildFormulaGtCar, type BuiltCarRig } from './racingCarBuilder';
 import { buildGpCircuitScene } from './racingTrackBuilder';
 import { RacingSoundEngine } from './racingAudio';
+import { createRacing2dFallbackEngine } from './racing2dFallback';
 import {
   RIVAL_LIVERIES,
   TOTAL_RACE_LAPS,
@@ -63,20 +64,40 @@ function detectSoftwareGl(renderer: THREE.WebGLRenderer): boolean {
   }
 }
 
+function createResilientWebGlRenderer(): THREE.WebGLRenderer | null {
+  try {
+    return new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: 'high-performance',
+    });
+  } catch {
+    try {
+      return new THREE.WebGLRenderer({
+        antialias: false,
+        powerPreference: 'default',
+        failIfMajorPerformanceCaveat: false,
+      });
+    } catch {
+      return null;
+    }
+  }
+}
+
 export function createRacing3dEngine(
   container: HTMLElement,
   callbacks: RacingEngineCallbacks = {}
 ): RacingEngineHandle {
-  const renderer = new THREE.WebGLRenderer({
-    antialias: true,
-    powerPreference: 'high-performance',
-  });
+  const maybeRenderer = createResilientWebGlRenderer();
+  if (!maybeRenderer) {
+    return createRacing2dFallbackEngine(container, callbacks);
+  }
+  const renderer = maybeRenderer;
   const isSoftwareGl = detectSoftwareGl(renderer);
   const dpr = Math.min(window.devicePixelRatio || 1, isSoftwareGl ? 1 : 2);
   renderer.setPixelRatio(dpr);
   renderer.setSize(
-    Math.max(1, container.clientWidth),
-    Math.max(1, container.clientHeight)
+    Math.max(1, container.clientWidth || window.innerWidth || 1280),
+    Math.max(1, container.clientHeight || window.innerHeight || 720)
   );
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -95,11 +116,21 @@ export function createRacing3dEngine(
   scene.background = new THREE.Color(0x070a14);
   scene.fog = new THREE.FogExp2(0x070a14, 0.0028);
 
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  const envScene = new RoomEnvironment();
-  const envTarget = pmrem.fromScene(envScene, 0.04);
-  scene.environment = envTarget.texture;
-  envScene.dispose();
+  let pmrem: THREE.PMREMGenerator | null = null;
+  let envTarget: THREE.WebGLRenderTarget | null = null;
+  try {
+    pmrem = new THREE.PMREMGenerator(renderer);
+    const envScene = new RoomEnvironment();
+    envTarget = pmrem.fromScene(envScene, 0.04);
+    scene.environment = envTarget.texture;
+    envScene.dispose();
+  } catch {
+    // Older WebGL1 Smart TV GPUs can fail compiling PMREM shaders; directional/hemi lights still illuminate cleanly
+    envTarget?.dispose();
+    pmrem?.dispose();
+    envTarget = null;
+    pmrem = null;
+  }
 
   const camera = new THREE.PerspectiveCamera(
     60,
@@ -664,15 +695,18 @@ export function createRacing3dEngine(
 
   rafId = window.requestAnimationFrame(animate);
 
-  const resizeObserver = new ResizeObserver(() => {
+  const handleResize = () => {
     if (destroyed) return;
-    const w = Math.max(1, container.clientWidth);
-    const h = Math.max(1, container.clientHeight);
+    const w = Math.max(1, container.clientWidth || window.innerWidth || 1280);
+    const h = Math.max(1, container.clientHeight || window.innerHeight || 720);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
-  });
-  resizeObserver.observe(container);
+  };
+  const resizeObserver =
+    typeof ResizeObserver !== 'undefined' ? new ResizeObserver(handleResize) : null;
+  resizeObserver?.observe(container);
+  window.addEventListener('resize', handleResize);
 
   const onContextLost = (ev: Event) => {
     ev.preventDefault();
@@ -744,7 +778,8 @@ export function createRacing3dEngine(
     destroy: () => {
       destroyed = true;
       window.cancelAnimationFrame(rafId);
-      resizeObserver.disconnect();
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', handleResize);
       window.removeEventListener('pointerdown', unlockAudioHandler);
       window.removeEventListener('keydown', unlockAudioHandler);
       renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
@@ -754,8 +789,8 @@ export function createRacing3dEngine(
       circuit.dispose();
       particleGeo.dispose();
       particleMat.dispose();
-      envTarget.dispose();
-      pmrem.dispose();
+      envTarget?.dispose();
+      pmrem?.dispose();
       audio.destroy();
       renderer.dispose();
       if (renderer.domElement.parentNode === container) {

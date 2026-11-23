@@ -29,6 +29,7 @@ import { HeadSoccerStage } from '../HeadSoccerStage';
 import { PokerHoldemStage } from '../PokerHoldemStage';
 import { BlackjackStage } from '../BlackjackStage';
 import { PenaltyShootoutStage } from './PenaltyShootoutStage';
+import { GyroArcadeStage } from './GyroArcadeStage';
 import type { UnifiedGameId } from './GameLogos';
 import { isPartyGame } from './useGamesHubController';
 
@@ -160,6 +161,18 @@ export const GamesHubSecondaryStages: React.FC<GamesHubSecondaryStagesProps> = (
 }) => {
   if (selectedGame === 'penalty') {
     return <PenaltyShootoutStage lang={lang} onClose={handleBackToGames} />;
+  }
+
+  if (selectedGame === 'gyrohockey' || selectedGame === 'gyrospace') {
+    return (
+      <GyroArcadeStage
+        gameId={selectedGame}
+        lang={lang}
+        roomId={roomId}
+        userName={currentUser.name}
+        onClose={handleBackToGames}
+      />
+    );
   }
 
   if (selectedGame === 'racing3d') {

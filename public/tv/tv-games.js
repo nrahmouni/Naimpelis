@@ -1,6 +1,6 @@
 // ===================================================================
-// SMART TV ARCADE GAMES: PENALTIS MUNDIAL PRO + FUTBOL CABEZONES TV
-// Strict ES5 for Samsung Tizen WebKit, LG webOS & Google TV WebView
+// SMART TV ARCADE HUB + PENALTIS MUNDIAL PRO (STRICT ES5, <= 700 LOC)
+// Renders 5 vector-illustrated Smart TV & Gyro games + HD Penalty Arena
 // ===================================================================
 var TV_GAME_ACTIVE = '';
 var TV_GAME_RAF = null;
@@ -14,16 +14,13 @@ function playTvGameBeep(freq, durSec, typeName, gainVal) {
     var AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     if (!TV_GAME_CTX_AUDIO) TV_GAME_CTX_AUDIO = new AC();
-    if (TV_GAME_CTX_AUDIO.state === 'suspended' && TV_GAME_CTX_AUDIO.resume) {
-      TV_GAME_CTX_AUDIO.resume();
-    }
+    if (TV_GAME_CTX_AUDIO.state === 'suspended' && TV_GAME_CTX_AUDIO.resume) TV_GAME_CTX_AUDIO.resume();
     var osc = TV_GAME_CTX_AUDIO.createOscillator();
     var g = TV_GAME_CTX_AUDIO.createGain();
     osc.type = typeName || 'sine';
     osc.frequency.value = freq || 440;
     g.gain.value = gainVal || 0.08;
-    osc.connect(g);
-    g.connect(TV_GAME_CTX_AUDIO.destination);
+    osc.connect(g); g.connect(TV_GAME_CTX_AUDIO.destination);
     var now = TV_GAME_CTX_AUDIO.currentTime;
     osc.start(now);
     g.gain.exponentialRampToValueAtTime(0.001, now + (durSec || 0.14));
@@ -44,9 +41,7 @@ function handleTvGameKeyDown(e) {
     closeTvGame();
     return true;
   }
-  if (tvGameKeyHandler) {
-    return tvGameKeyHandler(e, code);
-  }
+  if (tvGameKeyHandler) return tvGameKeyHandler(e, code);
   return false;
 }
 window.handleTvGameKeyDown = handleTvGameKeyDown;
@@ -54,9 +49,7 @@ window.handleTvGameKeyDown = handleTvGameKeyDown;
 function handleTvGameKeyUp(e) {
   if (!TV_GAME_ACTIVE) return false;
   var code = e.keyCode || e.which;
-  if (tvGameKeyUpHandler) {
-    return tvGameKeyUpHandler(e, code);
-  }
+  if (tvGameKeyUpHandler) return tvGameKeyUpHandler(e, code);
   return false;
 }
 window.handleTvGameKeyUp = handleTvGameKeyUp;
@@ -71,12 +64,15 @@ function closeTvGame() {
   if (TV_GAME_ACTIVE === 'racing3d' && typeof window.closeTvRacingGame === 'function') {
     window.closeTvRacingGame();
   }
+  if (TV_GAME_ACTIVE === 'headsoccer' && typeof window.closeTvSoccerGame === 'function') {
+    window.closeTvSoccerGame();
+  }
+  if ((TV_GAME_ACTIVE === 'gyrohockey' || TV_GAME_ACTIVE === 'gyrospace') && typeof window.closeTvGyroArcadeGame === 'function') {
+    window.closeTvGyroArcadeGame();
+  }
   TV_GAME_ACTIVE = '';
   var scr = document.getElementById('tv-games-screen');
-  if (scr) {
-    scr.style.display = 'none';
-    scr.innerHTML = '';
-  }
+  if (scr) { scr.style.display = 'none'; scr.innerHTML = ''; }
   setTimeout(function () {
     if (lastHubFocusedEl && lastHubFocusedEl.focus) {
       lastHubFocusedEl.focus();
@@ -88,6 +84,54 @@ function closeTvGame() {
 }
 window.closeTvGame = closeTvGame;
 
+function getTvCardSvg(gameId) {
+  if (gameId === 'racing3d') {
+    return '<svg viewBox="0 0 240 92" aria-hidden="true">' +
+      '<polygon points="28,92 86,18 154,18 212,92" fill="#0f172a" stroke="#38BDF8" stroke-width="1.5"/>' +
+      '<line x1="120" y1="22" x2="120" y2="92" stroke="#F8FAFC" stroke-width="2" stroke-dasharray="6 6"/>' +
+      '<path d="M74,64 L92,40 L148,40 L166,64 Z" fill="#7C3AED" stroke="#22D3EE" stroke-width="2"/>' +
+      '<rect x="68" y="62" width="104" height="14" rx="5" fill="#1E1B4B" stroke="#A78BFA" stroke-width="1.5"/>' +
+      '<circle cx="84" cy="76" r="8" fill="#22D3EE"/><circle cx="156" cy="76" r="8" fill="#22D3EE"/>' +
+      '<circle cx="120" cy="52" r="7" fill="#FACC15"/></svg>';
+  }
+  if (gameId === 'gyrohockey') {
+    return '<svg viewBox="0 0 240 92" aria-hidden="true">' +
+      '<rect x="18" y="8" width="204" height="76" rx="12" fill="#071226" stroke="#22D3EE" stroke-width="2.5"/>' +
+      '<line x1="120" y1="8" x2="120" y2="84" stroke="#7C3AED" stroke-width="2" stroke-dasharray="4 4"/>' +
+      '<circle cx="120" cy="46" r="18" fill="none" stroke="rgba(56,189,248,0.45)" stroke-width="2"/>' +
+      '<circle cx="64" cy="46" r="16" fill="#7C3AED" stroke="#22D3EE" stroke-width="3"/>' +
+      '<circle cx="176" cy="46" r="16" fill="#E11D48" stroke="#FDA4AF" stroke-width="3"/>' +
+      '<circle cx="120" cy="46" r="8" fill="#FDE047" stroke="#FFF" stroke-width="1.5"/></svg>';
+  }
+  if (gameId === 'gyrospace') {
+    return '<svg viewBox="0 0 240 92" aria-hidden="true">' +
+      '<circle cx="34" cy="22" r="2" fill="#BAE6FD"/><circle cx="195" cy="18" r="2.5" fill="#FDE047"/><circle cx="212" cy="70" r="2" fill="#E9D5FF"/>' +
+      '<polygon points="120,10 156,74 132,64 120,76 108,64 84,74" fill="#7C3AED" stroke="#22D3EE" stroke-width="2.5"/>' +
+      '<ellipse cx="120" cy="40" rx="7" ry="13" fill="#E0F2FE"/>' +
+      '<rect x="74" y="12" width="4" height="20" rx="2" fill="#38BDF8"/><rect x="162" y="12" width="4" height="20" rx="2" fill="#38BDF8"/>' +
+      '<circle cx="48" cy="60" r="13" fill="#334155" stroke="#38BDF8" stroke-width="2"/>' +
+      '<polygon points="196,30 212,48 180,48" fill="#E11D48" stroke="#FACC15" stroke-width="1.5"/></svg>';
+  }
+  if (gameId === 'headsoccer') {
+    return '<svg viewBox="0 0 240 92" aria-hidden="true">' +
+      '<rect x="0" y="68" width="240" height="24" fill="#14532D"/><rect x="0" y="68" width="240" height="3" fill="#4ADE80"/>' +
+      '<circle cx="70" cy="46" r="19" fill="#9333EA" stroke="#0B0B0F" stroke-width="2.5"/>' +
+      '<rect x="54" y="34" width="32" height="6" rx="2" fill="#FFF"/>' +
+      '<circle cx="170" cy="46" r="19" fill="#E11D48" stroke="#0B0B0F" stroke-width="2.5"/>' +
+      '<rect x="154" y="34" width="32" height="6" rx="2" fill="#FACC15"/>' +
+      '<circle cx="120" cy="36" r="13" fill="#FFFFFF" stroke="#0F172A" stroke-width="2.5"/>' +
+      '<polygon points="120,29 126,34 124,41 116,41 114,34" fill="#18181B"/></svg>';
+  }
+  return '<svg viewBox="0 0 240 92" aria-hidden="true">' +
+    '<rect x="0" y="62" width="240" height="30" fill="#15803D"/>' +
+    '<path d="M50,66 V14 H190 V66" fill="rgba(255,255,255,0.08)" stroke="#FFFFFF" stroke-width="4" stroke-linejoin="round"/>' +
+    '<circle cx="164" cy="32" r="12" fill="none" stroke="#FACC15" stroke-width="2.5" stroke-dasharray="4 3"/>' +
+    '<path d="M88,82 Q126,48 164,32" fill="none" stroke="#4ADE80" stroke-width="2.5" stroke-dasharray="5 4"/>' +
+    '<rect x="108" y="42" width="24" height="20" rx="5" fill="#F97316"/>' +
+    '<circle cx="120" cy="32" r="8" fill="#FDBA74"/>' +
+    '<circle cx="88" cy="80" r="9" fill="#FFFFFF" stroke="#0F172A" stroke-width="2"/></svg>';
+}
+
 function renderTvGamesCatalogInto(container) {
   if (!container) return;
   container.innerHTML = '';
@@ -96,39 +140,47 @@ function renderTvGamesCatalogInto(container) {
   hero.className = 'tv-games-hero';
   hero.innerHTML =
     '<div>' +
-    '<div class="tv-game-badge" style="margin-bottom:8px;background:#4c1d95;">ARCADE SMART TV · MANDO + GIROSCOPIO</div>' +
-    '<div class="tv-games-hero-title">Juegos Interactivos en Pantalla Grande</div>' +
-    '<div class="tv-games-hero-sub">Juega directo con las flechas y OK del mando de la tele, o escanea el QR con tu móvil para usar el volante giroscópico 3D.</div>' +
+    '<div class="tv-game-badge" style="margin-bottom:8px;background:#4c1d95;">ARCADE SMART TV · MANDO + GIROSCOPIO MÓVIL</div>' +
+    '<div class="tv-games-hero-title">Juegos Interactivos HD en Pantalla Grande</div>' +
+    '<div class="tv-games-hero-sub">Controla con las flechas y OK del mando de tu tele, o escanea el QR para usar tu smartphone como volante, pala o nave giroscópica.</div>' +
     '</div>';
   container.appendChild(hero);
 
   var games = [
     {
-      id: 'racing3d',
-      cls: 'racing',
-      badge: '3D WebGL · Volante Móvil QR',
-      icon: '🏎️',
+      id: 'racing3d', cls: 'racing',
+      badge: '3D Circuito · Volante Móvil QR',
       title: 'Nitro GP 3D · Coches con Móvil',
-      desc: 'Circuito 3D fluido con turbos, partículas y físicas reales. Usa tu teléfono como volante con giroscopio escaneando el QR o con las flechas del mando.',
+      desc: 'Circuito 3D fluido con turbos, partículas y motor pseudo-3D compatible con cualquier TV. Escanea el QR para usar el volante giroscópico.',
       cta: 'Arrancar Carrera 3D'
     },
     {
-      id: 'penalty',
-      cls: 'penalty',
-      badge: 'Fútbol · Mando TV (Flechas + OK)',
-      icon: '⚽',
-      title: 'Penaltis Mundial Pro',
-      desc: 'Tanda de 5 penaltis y muerte súbita con portería 3D, red física animada, efectos de tiro con rosca y rondas alternas de tirador y portero.',
-      cta: 'Jugar Penaltis'
+      id: 'gyrohockey', cls: 'hockey',
+      badge: 'Nuevo · Air Hockey Giroscopio QR',
+      title: 'Neon Air Hockey Gyro',
+      desc: 'Duelo de hockey neon a 60 FPS con remate Super Smash, chispas y físicas reales. Inclina el móvil para mover tu pala o usa el mando TV.',
+      cta: 'Jugar Air Hockey'
     },
     {
-      id: 'headsoccer',
-      cls: 'soccer',
-      badge: 'Fútbol Arcade · 60 FPS Mando TV',
-      icon: '🥅',
+      id: 'gyrospace', cls: 'space',
+      badge: 'Nuevo · Nave Espacial Gyro QR',
+      title: 'Galaxia Interceptor Gyro',
+      desc: 'Pilota tu caza espacial esquivando asteroides y naves alienígenas con láser doble e hiper-escudo usando el giroscopio del móvil.',
+      cta: 'Despegar Nave'
+    },
+    {
+      id: 'headsoccer', cls: 'soccer',
+      badge: 'Estadio HD · Mando + Giroscopio',
       title: 'Fútbol Cabezones Stadium TV',
-      desc: 'Partido 1 contra 1 en el estadio a 60 FPS. Muévete con Izquierda/Derecha, salta con Arriba y chuta con OK contra la IA.',
+      desc: 'Goles de ángulo limpio sin rebotes fantasma, público animado, balón con efecto y control por mando TV o giroscopio móvil.',
       cta: 'Saltar al Campo'
+    },
+    {
+      id: 'penalty', cls: 'penalty',
+      badge: 'Mundial HD · Tanda de Penaltis',
+      title: 'Penaltis Mundial Pro',
+      desc: 'Tanda de 5 tiros y muerte súbita con focos de estadio, red 3D animada, efecto con rosca y rondas de tirador y portero.',
+      cta: 'Jugar Penaltis'
     }
   ];
 
@@ -145,17 +197,14 @@ function renderTvGamesCatalogInto(container) {
       btn.innerHTML =
         '<div class="tv-game-card-stage ' + g.cls + '">' +
         '<div class="tv-game-badge-row"><span class="tv-game-badge">' + escapeHtml(g.badge) + '</span></div>' +
-        '<div class="tv-game-icon-big">' + g.icon + '</div>' +
+        '<div class="tv-game-icon-big">' + getTvCardSvg(g.id) + '</div>' +
         '</div>' +
         '<div class="tv-game-card-body">' +
         '<div class="tv-game-card-title">' + escapeHtml(g.title) + '</div>' +
         '<div class="tv-game-card-desc">' + escapeHtml(g.desc) + '</div>' +
         '<span class="tv-game-card-cta">' + escapeHtml(g.cta) + '</span>' +
         '</div>';
-      btn.onclick = function () {
-        lastHubFocusedEl = btn;
-        openTvGame(g.id);
-      };
+      btn.onclick = function () { lastHubFocusedEl = btn; openTvGame(g.id); };
       grid.appendChild(btn);
     })(games[i]);
   }
@@ -173,12 +222,16 @@ function openTvGame(gameId) {
   scr.style.display = 'flex';
 
   if (gameId === 'racing3d' && typeof window.startTvRacingGame === 'function') {
-    window.startTvRacingGame(scr);
-    return;
+    window.startTvRacingGame(scr); return;
+  }
+  if (gameId === 'gyrohockey' && typeof window.startGyroHockeyGame === 'function') {
+    window.startGyroHockeyGame(scr); return;
+  }
+  if (gameId === 'gyrospace' && typeof window.startGyroSpaceGame === 'function') {
+    window.startGyroSpaceGame(scr); return;
   }
   if (gameId === 'penalty') {
-    startPenaltyGame(scr);
-    return;
+    startPenaltyGame(scr); return;
   }
   if (typeof window.startHeadSoccerGame === 'function') {
     window.startHeadSoccerGame(scr);
@@ -187,29 +240,22 @@ function openTvGame(gameId) {
 window.openTvGame = openTvGame;
 
 // ===================================================================
-// GAME 1: PENALTIS MUNDIAL PRO (HTML5 CANVAS 3D STADIUM SHOOTOUT)
+// PENALTIS MUNDIAL PRO (HD FLOODLIT STADIUM + 3D NET + CONFETTI)
 // ===================================================================
 function startPenaltyGame(scr) {
   var bestScore = 0;
-  try {
-    bestScore = Number(localStorage.getItem(TV_PENALTY_BEST_KEY) || '0') || 0;
-  } catch (e) {}
+  try { bestScore = Number(localStorage.getItem(TV_PENALTY_BEST_KEY) || '0') || 0; } catch (e) {}
 
   scr.innerHTML =
-    '<div class="tv-game-topbar">' +
-    '<div class="tv-game-top-left">' +
+    '<div class="tv-game-topbar"><div class="tv-game-top-left">' +
     '<button type="button" id="btn-game-back" class="tv-btn" tabindex="0">Volver (Return)</button>' +
-    '<div class="tv-game-top-title">⚽ Penaltis Mundial Pro</div>' +
-    '</div>' +
-    '<div class="tv-game-top-right">' +
+    '<div class="tv-game-top-title">⚽ Penaltis Mundial Pro</div></div><div class="tv-game-top-right">' +
     '<div class="tv-game-hud-pill accent-green" id="pen-score-pill">TÚ 0 - 0 CPU</div>' +
     '<div class="tv-game-hud-pill accent-purple" id="pen-round-pill">RONDA 1/5 · TIRADOR</div>' +
-    '<div class="tv-game-hud-pill" id="pen-best-pill">Récord: ' + bestScore + '</div>' +
-    '</div></div>' +
+    '<div class="tv-game-hud-pill" id="pen-best-pill">Récord: ' + bestScore + '</div></div></div>' +
     '<div class="tv-game-arena">' +
     '<canvas id="tv-penalty-canvas" class="tv-game-canvas" width="960" height="540"></canvas>' +
-    '<div class="tv-game-finish-overlay" id="pen-finish-ov">' +
-    '<div class="tv-game-finish-card">' +
+    '<div class="tv-game-finish-overlay" id="pen-finish-ov"><div class="tv-game-finish-card">' +
     '<div class="tv-game-finish-title" id="pen-fin-title">¡CAMPEÓN!</div>' +
     '<div class="tv-game-finish-sub" id="pen-fin-sub">Resultado final</div>' +
     '<div class="tv-game-finish-btns">' +
@@ -218,8 +264,7 @@ function startPenaltyGame(scr) {
     '</div></div></div></div>' +
     '<div class="tv-game-controls-hint">' +
     '<span>Tirador: ◀ ▲ ▶ ▼ para apuntar en la portería + OK para chutar con efecto</span>' +
-    '<span>Portero: ◀ Izquierda · ▲ Centro/Alto · ▶ Derecha para parar el tiro</span>' +
-    '</div>';
+    '<span>Portero: ◀ Izquierda · ▲ Centro/Alto · ▶ Derecha para parar el tiro</span></div>';
 
   document.getElementById('btn-game-back').onclick = closeTvGame;
   document.getElementById('btn-pen-exit').onclick = closeTvGame;
@@ -233,59 +278,30 @@ function startPenaltyGame(scr) {
   var finTitle = document.getElementById('pen-fin-title');
   var finSub = document.getElementById('pen-fin-sub');
 
-  var goalLeft = 240;
-  var goalRight = 720;
-  var goalTop = 104;
-  var goalBottom = 304;
-  var spotX = 480;
-  var spotY = 468;
+  var goalLeft = 240, goalRight = 720, goalTop = 104, goalBottom = 304, spotX = 480, spotY = 468;
+  var fans = [], sparks = [];
+  for (var fi = 0; fi < 46; fi++) {
+    fans.push({
+      x: 20 + fi * 20.5, y: 184 + (fi % 3) * 18,
+      c: ['#7C3AED', '#38BDF8', '#F43F5E', '#FACC15', '#22C55E'][fi % 5],
+      ph: fi * 0.7
+    });
+  }
 
   var state = {
-    role: 'kick', // 'kick' | 'save'
-    round: 1,
-    myScore: 0,
-    cpuScore: 0,
-    myHistory: [],
-    cpuHistory: [],
-    phase: 'aim', // 'aim' | 'flight' | 'result' | 'wait_save' | 'finished'
-    aimX: 480,
-    aimY: 196,
-    powerPhase: 0,
-    flightT: 0,
-    startX: spotX,
-    startY: spotY,
-    targetX: 480,
-    targetY: 190,
-    curveDx: 0,
-    keeperX: 480,
-    keeperTargetX: 480,
-    keeperDiveY: 0,
-    bannerMsg: 'APUNTA CON LAS FLECHAS Y PULSA OK',
-    bannerColor: '#FDE047',
-    netWave: 0,
-    resultTimer: 0,
-    cpuWaitTimer: 0,
-    cpuChosenZone: 0
+    role: 'kick', round: 1, myScore: 0, cpuScore: 0, myHistory: [], cpuHistory: [], phase: 'aim',
+    aimX: 480, aimY: 196, powerPhase: 0, flightT: 0, targetX: 480, targetY: 190, curveDx: 0,
+    keeperX: 480, keeperTargetX: 480, keeperDiveY: 0, bannerMsg: 'APUNTA CON LAS FLECHAS Y PULSA OK',
+    bannerColor: '#FDE047', netWave: 0, resultTimer: 0, cpuWaitTimer: 0, cpuChosenZone: 0
   };
 
   function resetPenaltyMatch() {
-    state.role = 'kick';
-    state.round = 1;
-    state.myScore = 0;
-    state.cpuScore = 0;
-    state.myHistory = [];
-    state.cpuHistory = [];
-    state.phase = 'aim';
-    state.aimX = 480;
-    state.aimY = 196;
-    state.keeperX = 480;
-    state.keeperTargetX = 480;
-    state.keeperDiveY = 0;
-    state.netWave = 0;
-    state.bannerMsg = 'APUNTA CON LAS FLECHAS Y PULSA OK';
-    state.bannerColor = '#FDE047';
-    finOv.style.display = 'none';
-    syncHud();
+    state.role = 'kick'; state.round = 1; state.myScore = 0; state.cpuScore = 0;
+    state.myHistory = []; state.cpuHistory = []; state.phase = 'aim';
+    state.aimX = 480; state.aimY = 196; state.keeperX = 480; state.keeperTargetX = 480;
+    state.keeperDiveY = 0; state.netWave = 0; sparks = [];
+    state.bannerMsg = 'APUNTA CON LAS FLECHAS Y PULSA OK'; state.bannerColor = '#FDE047';
+    finOv.style.display = 'none'; syncHud();
   }
   document.getElementById('btn-pen-replay').onclick = resetPenaltyMatch;
 
@@ -297,10 +313,8 @@ function startPenaltyGame(scr) {
 
   function isMatchDecided() {
     if (state.round <= 5) {
-      var myLeft = 5 - state.myHistory.length;
-      var cpuLeft = 5 - state.cpuHistory.length;
-      if (state.myScore - state.cpuScore > cpuLeft) return true;
-      if (state.cpuScore - state.myScore > myLeft) return true;
+      var myLeft = 5 - state.myHistory.length, cpuLeft = 5 - state.cpuHistory.length;
+      if (state.myScore - state.cpuScore > cpuLeft || state.cpuScore - state.myScore > myLeft) return true;
       return state.myHistory.length >= 5 && state.cpuHistory.length >= 5 && state.myScore !== state.cpuScore;
     }
     return state.myHistory.length === state.cpuHistory.length && state.myScore !== state.cpuScore;
@@ -318,34 +332,19 @@ function startPenaltyGame(scr) {
         bestPill.textContent = 'Récord: ' + bestScore;
         playTvGameBeep(660, 0.25, 'triangle', 0.1);
       }
-      finOv.style.display = '-webkit-flex';
-      finOv.style.display = 'flex';
-      var rBtn = document.getElementById('btn-pen-replay');
-      if (rBtn && rBtn.focus) rBtn.focus();
+      finOv.style.display = '-webkit-flex'; finOv.style.display = 'flex';
+      var rBtn = document.getElementById('btn-pen-replay'); if (rBtn && rBtn.focus) rBtn.focus();
       return;
     }
-
     if (state.role === 'kick') {
-      state.role = 'save';
-      state.phase = 'wait_save';
-      state.keeperX = 480;
-      state.keeperTargetX = 480;
-      state.keeperDiveY = 0;
-      state.cpuWaitTimer = 2.1;
-      state.cpuChosenZone = Math.floor(Math.random() * 3) - 1; // -1 left, 0 center, +1 right
-      state.bannerMsg = 'ERES EL PORTERO · ELIGE ◀ ▲ ▶ ANTES DEL DISPARO';
-      state.bannerColor = '#38BDF8';
+      state.role = 'save'; state.phase = 'wait_save';
+      state.keeperX = 480; state.keeperTargetX = 480; state.keeperDiveY = 0;
+      state.cpuWaitTimer = 2.1; state.cpuChosenZone = Math.floor(Math.random() * 3) - 1;
+      state.bannerMsg = 'ERES EL PORTERO · ELIGE ◀ ▲ ▶ ANTES DEL DISPARO'; state.bannerColor = '#38BDF8';
     } else {
-      state.role = 'kick';
-      state.round += 1;
-      state.phase = 'aim';
-      state.aimX = 480;
-      state.aimY = 196;
-      state.keeperX = 480;
-      state.keeperTargetX = 480;
-      state.keeperDiveY = 0;
-      state.bannerMsg = 'TU TURNO · APUNTA CON LAS FLECHAS Y CHUTA CON OK';
-      state.bannerColor = '#FDE047';
+      state.role = 'kick'; state.round += 1; state.phase = 'aim';
+      state.aimX = 480; state.aimY = 196; state.keeperX = 480; state.keeperTargetX = 480; state.keeperDiveY = 0;
+      state.bannerMsg = 'TU TURNO · APUNTA CON LAS FLECHAS Y CHUTA CON OK'; state.bannerColor = '#FDE047';
     }
     syncHud();
   }
@@ -353,16 +352,13 @@ function startPenaltyGame(scr) {
   function shootPlayerBall() {
     if (state.phase !== 'aim') return;
     var pwr = 0.5 + 0.5 * Math.sin(state.powerPhase * 3.8);
-    var spread = (1 - pwr) * 18;
+    var spread = (1 - pwr) * 16;
     state.targetX = state.aimX + (Math.random() - 0.5) * spread;
     state.targetY = state.aimY + (Math.random() - 0.5) * spread * 0.7;
     state.curveDx = (480 - state.targetX) * 0.22;
-    state.flightT = 0;
-    state.phase = 'flight';
+    state.flightT = 0; state.phase = 'flight';
     var diveChoice = Math.random();
-    if (diveChoice < 0.38) state.keeperTargetX = goalLeft + 58;
-    else if (diveChoice < 0.76) state.keeperTargetX = goalRight - 58;
-    else state.keeperTargetX = 480;
+    state.keeperTargetX = diveChoice < 0.38 ? goalLeft + 58 : diveChoice < 0.76 ? goalRight - 58 : 480;
     state.keeperDiveY = Math.random() > 0.45 ? -22 : 6;
     playTvGameBeep(190, 0.12, 'triangle', 0.14);
   }
@@ -371,16 +367,11 @@ function startPenaltyGame(scr) {
     if (state.phase !== 'wait_save') return;
     state.keeperTargetX = dir < 0 ? goalLeft + 62 : dir > 0 ? goalRight - 62 : 480;
     state.keeperDiveY = dir === 0 ? -18 : 6;
-    launchCpuShot();
-  }
-
-  function launchCpuShot() {
     var z = state.cpuChosenZone;
     state.targetX = z < 0 ? goalLeft + 52 + Math.random() * 55 : z > 0 ? goalRight - 52 - Math.random() * 55 : 440 + Math.random() * 80;
     state.targetY = goalTop + 34 + Math.random() * 115;
     state.curveDx = (480 - state.targetX) * 0.16;
-    state.flightT = 0;
-    state.phase = 'flight';
+    state.flightT = 0; state.phase = 'flight';
     playTvGameBeep(210, 0.11, 'triangle', 0.12);
   }
 
@@ -391,39 +382,33 @@ function startPenaltyGame(scr) {
     var saved = inGoalX && inGoalY && distToKeeper < 64;
     var scored = inGoalX && inGoalY && !saved;
 
-    if (state.role === 'kick') {
-      state.myHistory.push(scored ? 'G' : 'X');
-      if (scored) state.myScore += 1;
-    } else {
-      state.cpuHistory.push(scored ? 'G' : 'X');
-      if (scored) state.cpuScore += 1;
-    }
+    if (state.role === 'kick') { state.myHistory.push(scored ? 'G' : 'X'); if (scored) state.myScore += 1; }
+    else { state.cpuHistory.push(scored ? 'G' : 'X'); if (scored) state.cpuScore += 1; }
 
     if (scored) {
       state.netWave = 1;
-      state.bannerMsg = state.role === 'kick' ? '⚽ ¡GOOOOLAZO!' : '⚽ ¡GOL DE LA CPU!';
+      state.bannerMsg = state.role === 'kick' ? '⚽ ¡GOOOOLAZO MUNDIAL!' : '⚽ ¡GOL DE LA CPU!';
       state.bannerColor = '#4ADE80';
+      for (var si = 0; si < 28; si++) {
+        var ang = Math.random() * Math.PI * 2, spd = 90 + Math.random() * 240;
+        sparks.push({ x: state.targetX, y: state.targetY, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, c: ['#FACC15', '#4ADE80', '#38BDF8', '#FFF'][si % 4], l: 1.1 });
+      }
       playTvGameBeep(523, 0.22, 'sawtooth', 0.09);
     } else if (saved) {
       state.bannerMsg = state.role === 'save' ? '🧤 ¡PARADÓN ESPECTACULAR!' : '🧤 ¡PARADA DEL PORTERO!';
       state.bannerColor = '#38BDF8';
       playTvGameBeep(310, 0.18, 'square', 0.08);
     } else {
-      state.bannerMsg = '❌ ¡FUERA / AL LARGUERO!';
-      state.bannerColor = '#FB7185';
+      state.bannerMsg = '❌ ¡FUERA / AL LARGUERO!'; state.bannerColor = '#FB7185';
       playTvGameBeep(130, 0.22, 'sawtooth', 0.09);
     }
-    state.phase = 'result';
-    state.resultTimer = 1.65;
-    syncHud();
+    state.phase = 'result'; state.resultTimer = 1.65; syncHud();
   }
 
   tvGameKeyHandler = function (e, code) {
     if (state.phase === 'finished') {
       if (code === 13 || code === 23 || code === 66 || code === 32) {
-        if (e.preventDefault) e.preventDefault();
-        resetPenaltyMatch();
-        return true;
+        if (e.preventDefault) e.preventDefault(); resetPenaltyMatch(); return true;
       }
       return false;
     }
@@ -438,9 +423,7 @@ function startPenaltyGame(scr) {
       if (code === 37 || code === 21) { if (e.preventDefault) e.preventDefault(); triggerSaveDive(-1); return true; }
       if (code === 39 || code === 22) { if (e.preventDefault) e.preventDefault(); triggerSaveDive(1); return true; }
       if (code === 38 || code === 19 || code === 13 || code === 23 || code === 66 || code === 32) {
-        if (e.preventDefault) e.preventDefault();
-        triggerSaveDive(0);
-        return true;
+        if (e.preventDefault) e.preventDefault(); triggerSaveDive(0); return true;
       }
     }
     return false;
@@ -453,12 +436,14 @@ function startPenaltyGame(scr) {
     lastTs = now;
     state.powerPhase += dt;
     state.netWave = Math.max(0, state.netWave - dt * 1.4);
-
+    for (var sIdx = sparks.length - 1; sIdx >= 0; sIdx--) {
+      sparks[sIdx].x += sparks[sIdx].vx * dt; sparks[sIdx].y += sparks[sIdx].vy * dt;
+      sparks[sIdx].vy += 280 * dt; sparks[sIdx].l -= dt;
+      if (sparks[sIdx].l <= 0) sparks.splice(sIdx, 1);
+    }
     if (state.phase === 'wait_save') {
       state.cpuWaitTimer -= dt;
-      if (state.cpuWaitTimer <= 0) {
-        launchCpuShot();
-      }
+      if (state.cpuWaitTimer <= 0) triggerSaveDive(0);
     } else if (state.phase === 'flight') {
       state.flightT = Math.min(1, state.flightT + dt * 1.85);
       state.keeperX += (state.keeperTargetX - state.keeperX) * Math.min(1, dt * 8.5);
@@ -467,142 +452,131 @@ function startPenaltyGame(scr) {
       state.resultTimer -= dt;
       if (state.resultTimer <= 0) nextTurn();
     }
-
     drawStadiumScene();
     TV_GAME_RAF = requestAnimationFrame(frame);
   }
 
   function drawStadiumScene() {
     var skyGrad = ctx.createLinearGradient(0, 0, 0, 290);
-    skyGrad.addColorStop(0, '#070b18');
-    skyGrad.addColorStop(1, '#111b36');
-    ctx.fillStyle = skyGrad;
-    ctx.fillRect(0, 0, 960, 290);
+    skyGrad.addColorStop(0, '#050918'); skyGrad.addColorStop(1, '#132046');
+    ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, 960, 290);
 
-    // Crowd stands + floodlights
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, 175, 960, 125);
-    ctx.fillStyle = 'rgba(253, 224, 71, 0.12)';
-    ctx.beginPath(); ctx.arc(150, 48, 72, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(810, 48, 72, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#fef08a';
-    ctx.beginPath(); ctx.arc(150, 48, 12, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(810, 48, 12, 0, Math.PI * 2); ctx.fill();
+    // Floodlight beams + stadium stands
+    ctx.fillStyle = 'rgba(186, 230, 253, 0.08)';
+    ctx.beginPath(); ctx.moveTo(140, 38); ctx.lineTo(350, 310); ctx.lineTo(20, 310); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(820, 38); ctx.lineTo(940, 310); ctx.lineTo(610, 310); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#0c1428'; ctx.fillRect(0, 174, 960, 118);
 
-    // Pitch stripes
-    var turf = ctx.createLinearGradient(0, 290, 0, 540);
-    turf.addColorStop(0, '#0f6d34');
-    turf.addColorStop(1, '#15803d');
-    ctx.fillStyle = turf;
-    ctx.fillRect(0, 290, 960, 250);
-    ctx.fillStyle = 'rgba(255,255,255,0.04)';
-    ctx.fillRect(0, 340, 960, 48);
-    ctx.fillRect(0, 440, 960, 52);
-
-    // Penalty box lines
-    ctx.strokeStyle = 'rgba(255,255,255,0.65)';
-    ctx.lineWidth = 3;
-    ctx.strokeRect(140, 296, 680, 195);
-    ctx.beginPath(); ctx.arc(spotX, spotY, 5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
-
-    // Goal Net Mesh with ripple physics
-    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
-    ctx.lineWidth = 1.4;
-    for (var gx = goalLeft; gx <= goalRight; gx += 24) {
-      var wave = state.netWave > 0 ? Math.sin(gx * 0.08 + state.powerPhase * 18) * state.netWave * 12 : 0;
-      ctx.beginPath();
-      ctx.moveTo(gx, goalTop);
-      ctx.quadraticCurveTo(gx + wave, (goalTop + goalBottom) / 2, gx, goalBottom);
-      ctx.stroke();
+    // Cheering stadium crowd silhouettes
+    var jumpBoost = state.netWave > 0.1 ? 7 : 1.5;
+    for (var fi = 0; fi < fans.length; fi++) {
+      var fn = fans[fi], jy = Math.abs(Math.sin(state.powerPhase * (state.netWave > 0 ? 14 : 3.2) + fn.ph)) * jumpBoost;
+      ctx.fillStyle = fn.c; ctx.beginPath(); ctx.arc(fn.x, fn.y - jy, 5.5, 0, Math.PI * 2); ctx.fill();
     }
-    for (var gy = goalTop; gy <= goalBottom; gy += 22) {
-      var hWave = state.netWave > 0 ? Math.sin(gy * 0.1 + state.powerPhase * 20) * state.netWave * 10 : 0;
-      ctx.beginPath();
-      ctx.moveTo(goalLeft, gy);
-      ctx.quadraticCurveTo(480, gy + hWave, goalRight, gy);
-      ctx.stroke();
+
+    // Perimeter LED advertising board
+    ctx.fillStyle = '#090d1c'; ctx.fillRect(0, 266, 960, 24);
+    ctx.strokeStyle = '#7C3AED'; ctx.lineWidth = 2; ctx.strokeRect(0, 266, 960, 24);
+    ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#38BDF8';
+    ctx.fillText('COPA MUNDIAL PRO  ·  RIFFAN STADIUM HD  ·  PENALTY SHOOTOUT', 480, 282);
+
+    // Light towers
+    ctx.fillStyle = '#fef08a';
+    ctx.beginPath(); ctx.arc(140, 38, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(820, 38, 12, 0, Math.PI * 2); ctx.fill();
+
+    // Perspective Pitch Stripes + Penalty Arc
+    var turf = ctx.createLinearGradient(0, 290, 0, 540);
+    turf.addColorStop(0, '#0f6d34'); turf.addColorStop(1, '#168740');
+    ctx.fillStyle = turf; ctx.fillRect(0, 290, 960, 250);
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    ctx.fillRect(0, 326, 960, 34); ctx.fillRect(0, 400, 960, 42); ctx.fillRect(0, 480, 960, 46);
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.72)'; ctx.lineWidth = 3;
+    ctx.strokeRect(140, 296, 680, 196);
+    ctx.beginPath(); ctx.arc(spotX, 342, 74, 0.25, Math.PI - 0.25); ctx.stroke();
+    ctx.beginPath(); ctx.arc(spotX, spotY, 5.5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+
+    // 3D Back Net & Stanchions
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.35)';
+    ctx.fillRect(goalLeft + 22, goalTop + 14, goalRight - goalLeft - 44, goalBottom - goalTop - 22);
+    ctx.strokeStyle = 'rgba(255,255,255,0.28)'; ctx.lineWidth = 1.4;
+    for (var gx = goalLeft; gx <= goalRight; gx += 22) {
+      var wave = state.netWave > 0 ? Math.sin(gx * 0.08 + state.powerPhase * 18) * state.netWave * 13 : 0;
+      ctx.beginPath(); ctx.moveTo(gx, goalTop); ctx.quadraticCurveTo(gx + wave, (goalTop + goalBottom) / 2, gx, goalBottom); ctx.stroke();
+    }
+    for (var gy = goalTop; gy <= goalBottom; gy += 20) {
+      var hWave = state.netWave > 0 ? Math.sin(gy * 0.1 + state.powerPhase * 20) * state.netWave * 11 : 0;
+      ctx.beginPath(); ctx.moveTo(goalLeft, gy); ctx.quadraticCurveTo(480, gy + hWave, goalRight, gy); ctx.stroke();
     }
 
     // 3D Goalposts
-    ctx.strokeStyle = '#ffffff';
-    ctx.lineWidth = 8;
-    ctx.beginPath();
-    ctx.moveTo(goalLeft, goalBottom);
-    ctx.lineTo(goalLeft, goalTop);
-    ctx.lineTo(goalRight, goalTop);
-    ctx.lineTo(goalRight, goalBottom);
-    ctx.stroke();
+    ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 8.5; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.moveTo(goalLeft, goalBottom); ctx.lineTo(goalLeft, goalTop); ctx.lineTo(goalRight, goalTop); ctx.lineTo(goalRight, goalBottom); ctx.stroke();
 
-    // Goalkeeper
-    var kx = state.keeperX;
-    var ky = 248 + state.keeperDiveY;
-    ctx.fillStyle = state.role === 'save' ? '#38BDF8' : '#F97316';
-    ctx.fillRect(kx - 20, ky - 28, 40, 52);
-    ctx.fillStyle = '#FDBA74';
-    ctx.beginPath(); ctx.arc(kx, ky - 42, 15, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath(); ctx.arc(kx - 32, ky - 14, 11, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(kx + 32, ky - 14, 11, 0, Math.PI * 2); ctx.fill();
+    // Articulated Diving Goalkeeper
+    var kx = state.keeperX, ky = 250 + state.keeperDiveY, diveTilt = (kx - 480) * 0.0022;
+    ctx.save(); ctx.translate(kx, ky); ctx.rotate(diveTilt);
+    ctx.fillStyle = 'rgba(0,0,0,0.32)'; ctx.beginPath(); ctx.ellipse(0, 36, 26, 7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = state.role === 'save' ? '#0284C7' : '#EA580C'; ctx.fillRect(-20, -24, 40, 48);
+    ctx.fillStyle = '#0F172A'; ctx.fillRect(-16, 22, 13, 18); ctx.fillRect(3, 22, 13, 18);
+    ctx.fillStyle = '#FDBA74'; ctx.beginPath(); ctx.arc(0, -38, 15, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = '#0F172A'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(-34, -12, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(34, -12, 11, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.restore();
 
-    // Aiming reticle + power meter (Striker aim)
+    // Aiming Trajectory & Crosshair
     if (state.phase === 'aim' && state.role === 'kick') {
-      ctx.strokeStyle = '#FACC15';
-      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.55)'; ctx.lineWidth = 2.2; ctx.setLineDash([7, 6]);
+      ctx.beginPath(); ctx.moveTo(spotX, spotY); ctx.quadraticCurveTo((spotX + state.aimX) / 2 + (480 - state.aimX) * 0.22, Math.min(spotY, state.aimY) - 48, state.aimX, state.aimY); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = '#FACC15'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(state.aimX, state.aimY, 22, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath();
-      ctx.moveTo(state.aimX - 30, state.aimY); ctx.lineTo(state.aimX + 30, state.aimY);
-      ctx.moveTo(state.aimX, state.aimY - 30); ctx.lineTo(state.aimX, state.aimY + 30);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(state.aimX - 30, state.aimY); ctx.lineTo(state.aimX + 30, state.aimY);
+      ctx.moveTo(state.aimX, state.aimY - 30); ctx.lineTo(state.aimX, state.aimY + 30); ctx.stroke();
 
       var pVal = 0.5 + 0.5 * Math.sin(state.powerPhase * 3.8);
-      ctx.fillStyle = '#1E293B';
-      ctx.fillRect(340, 502, 280, 14);
-      ctx.fillStyle = pVal > 0.72 ? '#4ADE80' : '#FACC15';
-      ctx.fillRect(340, 502, 280 * pVal, 14);
+      ctx.fillStyle = '#0F172A'; ctx.fillRect(340, 502, 280, 14);
+      ctx.fillStyle = pVal > 0.72 ? '#4ADE80' : '#FACC15'; ctx.fillRect(340, 502, 280 * pVal, 14);
+      ctx.strokeStyle = 'rgba(255,255,255,0.3)'; ctx.lineWidth = 1.5; ctx.strokeRect(340, 502, 280, 14);
     }
 
-    // Ball (Bezier curved shot with perspective scaling)
-    var bx = spotX;
-    var by = spotY;
-    var bScale = 1;
+    // Geodesic Spinning Ball
+    var bx = spotX, by = spotY, bScale = 1;
     if (state.phase === 'flight' || state.phase === 'result') {
-      var t = state.phase === 'result' ? 1 : state.flightT;
-      var inv = 1 - t;
-      var ctrlX = (spotX + state.targetX) / 2 + state.curveDx;
-      var ctrlY = Math.min(spotY, state.targetY) - 48;
+      var t = state.phase === 'result' ? 1 : state.flightT, inv = 1 - t;
+      var ctrlX = (spotX + state.targetX) / 2 + state.curveDx, ctrlY = Math.min(spotY, state.targetY) - 48;
       bx = inv * inv * spotX + 2 * inv * t * ctrlX + t * t * state.targetX;
       by = inv * inv * spotY + 2 * inv * t * ctrlY + t * t * state.targetY;
       bScale = 1 - 0.52 * t;
     }
     var r = 18 * bScale;
-    ctx.fillStyle = 'rgba(0,0,0,0.38)';
-    ctx.beginPath(); ctx.ellipse(bx, by + r + 5, r * 1.05, r * 0.42, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#FFFFFF';
-    ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#0F172A';
-    ctx.lineWidth = 2;
-    ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,0.42)'; ctx.beginPath(); ctx.ellipse(bx, by + r + 5, r * 1.1, r * 0.42, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.save(); ctx.translate(bx, by); ctx.rotate(state.flightT * 10);
+    ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#0F172A'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#18181B'; ctx.beginPath(); ctx.arc(0, 0, r * 0.36, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
 
-    // Shootout Dots + Banner
-    ctx.font = 'bold 20px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = state.bannerColor;
+    for (var s2 = 0; s2 < sparks.length; s2++) {
+      ctx.globalAlpha = Math.max(0, sparks[s2].l); ctx.fillStyle = sparks[s2].c;
+      ctx.fillRect(sparks[s2].x - 3, sparks[s2].y - 3, 6, 6);
+    }
+    ctx.globalAlpha = 1;
+
+    ctx.font = 'bold 20px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = state.bannerColor;
     ctx.fillText(state.bannerMsg, 480, 56);
-    drawDots(190, 82, 'TÚ', state.myHistory);
-    drawDots(610, 82, 'CPU', state.cpuHistory);
+    drawDots(190, 82, 'TÚ', state.myHistory); drawDots(610, 82, 'CPU', state.cpuHistory);
   }
 
   function drawDots(x0, y0, label, hist) {
-    ctx.font = 'bold 13px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.fillStyle = '#CBD5E1';
+    ctx.font = 'bold 13px sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = '#CBD5E1';
     ctx.fillText(label, x0 - 42, y0 + 5);
     for (var i = 0; i < Math.max(5, hist.length); i++) {
       var v = hist[i];
       ctx.fillStyle = v === 'G' ? '#22C55E' : v === 'X' ? '#EF4444' : '#334155';
-      ctx.beginPath();
-      ctx.arc(x0 + i * 24, y0, 8, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(x0 + i * 24, y0, 8, 0, Math.PI * 2); ctx.fill();
     }
   }
 
