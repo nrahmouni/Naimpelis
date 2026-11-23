@@ -45,12 +45,17 @@ const AdminConsolePage = lazyWithRetry(() =>
 const SamsungTvGuidePage = lazyWithRetry(() =>
   import('./samsung/SamsungTvGuidePage').then((m) => ({ default: m.SamsungTvGuidePage }))
 );
+const PhoneGyroController = lazyWithRetry(() =>
+  import('./games/racing/PhoneGyroController').then((m) => ({ default: m.PhoneGyroController }))
+);
 
 interface AppEarlyRouteViewProps {
   showDesignSystem: boolean;
   isAdsPageOpen: boolean;
   isAdminPage: boolean;
   isSamsungPage: boolean;
+  isControllerPage: boolean;
+  controllerPairCode?: string;
   isTvPairLobby: boolean;
   inRoom: boolean;
   hasEnteredApp: boolean;
@@ -85,6 +90,7 @@ interface AppEarlyRouteViewProps {
   setIsAdsPageOpen: (open: boolean) => void;
   setIsAdminPage: (open: boolean) => void;
   setIsSamsungPage: (open: boolean) => void;
+  setIsControllerPage: (open: boolean) => void;
   setIsTvPairLobby: (open: boolean) => void;
   setIsTvMode: (open: boolean) => void;
   setTvAuthToken: (token: string) => void;
@@ -130,6 +136,8 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
   isAdsPageOpen,
   isAdminPage,
   isSamsungPage,
+  isControllerPage,
+  controllerPairCode,
   isTvPairLobby,
   inRoom,
   hasEnteredApp,
@@ -164,6 +172,7 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
   setIsAdsPageOpen,
   setIsAdminPage,
   setIsSamsungPage,
+  setIsControllerPage,
   setIsTvPairLobby,
   setIsTvMode,
   setTvAuthToken,
@@ -219,6 +228,27 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
     clearFriendNoticeTimer();
     setFriendAddedNotice(null);
   }, [clearFriendNoticeTimer, setFriendAddedNotice]);
+
+  if (isControllerPage) {
+    return (
+      <React.Suspense fallback={null}>
+        <PhoneGyroController
+          lang={lang}
+          initialRoomId={roomId}
+          initialPairCode={controllerPairCode}
+          userId={currentUser.id}
+          userName={currentUser.name}
+          userColor={currentUser.color}
+          onExit={() => {
+            setIsControllerPage(false);
+            if (typeof window !== 'undefined') {
+              window.history.replaceState({}, '', inRoom && roomId ? `/${roomId}` : '/');
+            }
+          }}
+        />
+      </React.Suspense>
+    );
+  }
 
   if (isSamsungPage) {
     return (

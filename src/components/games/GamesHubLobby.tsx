@@ -45,6 +45,32 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
 
   const gameCatalog: GameCatalogEntry[] = [
     {
+      id: 'racing3d',
+      category: 'arcade',
+      title: pickLang(lang, { es: 'Nitro GP 3D', ca: 'Nitro GP 3D', en: 'Nitro GP 3D' }),
+      meta: pickLang(lang, {
+        es: '3D WebGL · Giroscopio móvil TV',
+        ca: '3D WebGL · Giroscopi mòbil TV',
+        en: '3D WebGL · Phone gyro sync',
+      }),
+      playersHint: '3D',
+      accentBorder: 'hover:border-cyan-400/70',
+      backdropClass: 'from-[#160D38] via-[#0E1B3A] to-[#0B0D14]',
+    },
+    {
+      id: 'penalty',
+      category: 'arcade',
+      title: pickLang(lang, { es: 'Penaltis Mundial', ca: 'Penals Mundial', en: 'World Penalty' }),
+      meta: pickLang(lang, {
+        es: 'Fútbol TV · Tanda 5 tiros',
+        ca: 'Futbol TV · Tanda 5 xuts',
+        en: 'TV Shootout · 5 kicks',
+      }),
+      playersHint: '1vIA',
+      accentBorder: 'hover:border-emerald-400/70',
+      backdropClass: 'from-[#0D2B24] via-[#10263A] to-[#0B0D14]',
+    },
+    {
       id: 'headsoccer',
       category: 'arcade',
       title: pickLang(lang, { es: 'Fútbol Cabezones', ca: 'Futbol Capgrossos', en: 'Head Soccer' }),
@@ -172,9 +198,9 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
             <p className="text-xs text-zinc-400 mt-0.5 tabular-nums leading-snug">
               {hubMode === 'online'
                 ? pickLang(lang, {
-                    es: `Sala en directo · ${participants.length} conectado${participants.length === 1 ? '' : 's'} · 11 juegos`,
-                    ca: `Sala en directe · ${participants.length} connectat${participants.length === 1 ? '' : 's'} · 11 jocs`,
-                    en: `Live room · ${participants.length} connected · 11 games`,
+                    es: `Sala en directo · ${participants.length} conectado${participants.length === 1 ? '' : 's'} · 13 juegos`,
+                    ca: `Sala en directe · ${participants.length} connectat${participants.length === 1 ? '' : 's'} · 13 jocs`,
+                    en: `Live room · ${participants.length} connected · 13 games`,
                   })
                 : pickLang(lang, {
                     es: 'Modo entrenamiento offline contra IA · Sin esperas',

@@ -8,6 +8,7 @@ import {
 import type { FutbolChapasState } from '../../src/shared/futbolChapas.ts';
 import type { RoomChatMessageRecord } from './roomHubHelpers.ts';
 import type { RoomHubContext } from './handlers/types.ts';
+import { cleanupRacingGyroPeer } from './handlers/racingGyroHandlers.ts';
 
 export async function handleSocketDisconnect(
   ws: WebSocket,
@@ -41,6 +42,7 @@ export async function handleSocketDisconnect(
 
   const meta = clients.get(ws);
   clients.delete(ws);
+  cleanupRacingGyroPeer(ws, ctx);
   scheduleBroadcastOnlineUsers();
   if (!meta?.roomId || !meta?.userId) return;
 

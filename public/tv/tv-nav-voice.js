@@ -507,6 +507,11 @@ document.addEventListener('click', function () {
 });
 
 document.addEventListener('keydown', function (e) {
+  if (typeof window.isTvGameActive === 'function' && window.isTvGameActive()) {
+    if (typeof window.handleTvGameKeyDown === 'function' && window.handleTvGameKeyDown(e)) {
+      return;
+    }
+  }
   var code = e.keyCode || e.which;
   var keyName = e.key || '';
   var activeEl = document.activeElement;
@@ -695,6 +700,14 @@ document.addEventListener('keydown', function (e) {
     videoEl.currentTime = Math.max(0, (videoEl.currentTime || 0) - 15);
   } else if (code === 417 && !currentIsLive) {
     videoEl.currentTime = (videoEl.currentTime || 0) + 15;
+  }
+});
+
+document.addEventListener('keyup', function (e) {
+  if (typeof window.isTvGameActive === 'function' && window.isTvGameActive()) {
+    if (typeof window.handleTvGameKeyUp === 'function') {
+      window.handleTvGameKeyUp(e);
+    }
   }
 });
 

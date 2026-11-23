@@ -418,6 +418,24 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
             </div>
           </div>
 
+          <a
+            href={`/volante${roomId ? `?room=${encodeURIComponent(roomId)}` : ''}`}
+            onClick={() => triggerHaptic('medium')}
+            className="w-full min-h-11 px-3.5 py-2.5 rounded-2xl bg-[#7C3AED]/15 hover:bg-[#7C3AED]/25 border border-[#7C3AED]/45 text-xs font-bold text-[#DDD6FE] flex items-center justify-between gap-2 cursor-pointer transition-colors"
+          >
+            <span className="flex items-center gap-2.5">
+              <RiffanMobileIcon size={17} animate="hover" />
+              <span>
+                {pickLang(lang, {
+                  es: 'Volante Móvil 3D (Usar giroscopio para Nitro GP en la TV)',
+                  ca: 'Volant Mòbil 3D (Usar giroscopi per a Nitro GP a la TV)',
+                  en: '3D Mobile Steering Wheel (Gyroscope for TV Nitro GP)',
+                })}
+              </span>
+            </span>
+            <RiffanChevronRightIcon size={16} animate="hover" />
+          </a>
+
           <button
             type="button"
             onClick={() => {

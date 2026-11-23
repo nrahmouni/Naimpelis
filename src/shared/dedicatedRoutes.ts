@@ -510,6 +510,15 @@ export const GAME_SLUG_TO_ID: Record<string, string> = {
   connect4: 'connect4',
   conecta4: 'connect4',
   'conecta-4': 'connect4',
+  penaltis: 'penalty',
+  penalty: 'penalty',
+  'penaltis-mundial': 'penalty',
+  coches: 'racing3d',
+  'coches-3d': 'racing3d',
+  racing: 'racing3d',
+  racing3d: 'racing3d',
+  'nitro-gp': 'racing3d',
+  f1: 'racing3d',
 };
 
 export const GAME_ID_TO_SLUG: Record<string, string> = {
@@ -519,6 +528,8 @@ export const GAME_ID_TO_SLUG: Record<string, string> = {
   blackjack: 'blackjack',
   chapas: 'chapas',
   headsoccer: 'head-soccer',
+  penalty: 'penaltis',
+  racing3d: 'coches-3d',
   parchis: 'parchis',
   uno: 'uno',
   chess: 'ajedrez',
@@ -533,6 +544,8 @@ export const GAME_TITLES: Record<string, { es: string; ca: string; en: string }>
   blackjack: { es: 'Blackjack 21', ca: 'Blackjack 21', en: 'Blackjack 21' },
   chapas: { es: 'Fútbol Chapas', ca: 'Futbol Xapes', en: 'Bottlecap Football' },
   headsoccer: { es: 'Head Soccer', ca: 'Head Soccer', en: 'Head Soccer' },
+  penalty: { es: 'Penaltis Mundial Pro', ca: 'Penals Mundial Pro', en: 'World Cup Penalties Pro' },
+  racing3d: { es: 'Nitro GP 3D · Volante Móvil', ca: 'Nitro GP 3D · Volant Mòbil', en: 'Nitro GP 3D · Phone Wheel' },
   parchis: { es: 'Parchís', ca: 'Parxís', en: 'Parchís' },
   uno: { es: 'UNO', ca: 'UNO', en: 'UNO' },
   chess: { es: 'Ajedrez', ca: 'Escacs', en: 'Chess' },
@@ -577,6 +590,8 @@ export const SYSTEM_RESERVED_SLUGS = new Set([
   'design-system',
   'admin',
   'samsung',
+  'volante',
+  'controller',
   'sala',
   's',
   'r',
@@ -604,7 +619,7 @@ export const ALL_RESERVED_SLUGS = new Set<string>([
 
 export type AppRouteTarget =
   | { kind: 'home'; roomId?: string }
-  | { kind: 'system'; systemType: 'tv' | 'ads' | 'auth-bridge' | 'design-system' | 'admin' | 'samsung'; roomId?: string }
+  | { kind: 'system'; systemType: 'tv' | 'ads' | 'auth-bridge' | 'design-system' | 'admin' | 'samsung' | 'controller'; roomId?: string; pairCode?: string }
   | { kind: 'room'; roomId: string; gameType?: string; isTvMode?: boolean }
   | {
       kind: 'world';
@@ -695,6 +710,15 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
   }
   if (seg0 === 'samsung' || params.get('samsung') === '1') {
     return { kind: 'system', systemType: 'samsung', roomId: queryRoomId };
+  }
+  if (seg0 === 'volante' || seg0 === 'controller' || params.get('volante') === '1') {
+    const rawPair = (params.get('pair') || '').replace(/\D/g, '').slice(0, 4);
+    return {
+      kind: 'system',
+      systemType: 'controller',
+      roomId: queryRoomId,
+      pairCode: rawPair.length === 4 ? rawPair : undefined,
+    };
   }
   if (params.get('tvpair') === '1' || seg0 === 'tv') {
     return { kind: 'system', systemType: 'tv', roomId: queryRoomId };

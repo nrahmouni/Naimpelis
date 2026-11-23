@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="/tv/tv-base.css" />
     <link rel="stylesheet" href="/tv/tv-modals.css" />
     <link rel="stylesheet" href="/tv/tv-player.css" />
+    <link rel="stylesheet" href="/tv/tv-games.css" />
     <script src="/vendor/hls.min.js"></script>
   </head>
   <body>
@@ -79,6 +80,20 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg>
             </span>
             <span class="rail-label" data-i18n-tab="anime">Anime</span>
+          </button>
+
+          <button type="button" class="hub-tab-btn rail-item" data-tab="kids" tabindex="0">
+            <span class="rail-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4 4 0 0 0 7 0"/><line x1="9" y1="9.5" x2="9.01" y2="9.5"/><line x1="15" y1="9.5" x2="15.01" y2="9.5"/></svg>
+            </span>
+            <span class="rail-label" data-i18n-tab="kids">Niños</span>
+          </button>
+
+          <button type="button" class="hub-tab-btn rail-item" data-tab="games" tabindex="0">
+            <span class="rail-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="4"/><line x1="6" y1="12" x2="10" y2="12"/><line x1="8" y1="10" x2="8" y2="14"/><circle cx="15.5" cy="10.5" r="1"/><circle cx="17.5" cy="13" r="1"/></svg>
+            </span>
+            <span class="rail-label" data-i18n-tab="games">Juegos</span>
           </button>
         </nav>
 
@@ -488,11 +503,17 @@
       </button>
     </div>
 
+    <div id="tv-games-screen" style="display:none;"></div>
+
     <script src="/tv/tv-i18n.js"></script>
     <script src="/tv/tv-state.js"></script>
     <script src="/tv/tv-player-core.js"></script>
     <script src="/tv/tv-player-modes.js"></script>
     <script src="/tv/tv-hub.js"></script>
+    <script src="/vendor/riffan-racing-3d.iife.js"></script>
+    <script src="/tv/tv-games.js"></script>
+    <script src="/tv/tv-games-soccer.js"></script>
+    <script src="/tv/tv-games-racing.js"></script>
     <script src="/tv/tv-nav-voice.js"></script>
   </body>
 </html>

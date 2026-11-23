@@ -102,8 +102,17 @@ export function useAppController() {
   const [isAdsPageOpen, setIsAdsPageOpen] = useState<boolean>(Boolean(initialRoute.isAdsPage));
   const [isAdminPage, setIsAdminPage] = useState<boolean>(Boolean(initialRoute.isAdminPage));
   const [isSamsungPage, setIsSamsungPage] = useState<boolean>(Boolean(initialRoute.isSamsungPage));
+  const [isControllerPage, setIsControllerPage] = useState<boolean>(
+    Boolean(initialRoute.isControllerPage)
+  );
+  const controllerPairCode = initialRoute.controllerPairCode || '';
   const initialDeepLinkGame =
-    !initialRoute.isTvMode && !initialRoute.isTvPairLobby && !initialRoute.isAdsPage && !initialRoute.isAdminPage && !initialRoute.isSamsungPage
+    !initialRoute.isTvMode &&
+    !initialRoute.isTvPairLobby &&
+    !initialRoute.isAdsPage &&
+    !initialRoute.isAdminPage &&
+    !initialRoute.isSamsungPage &&
+    !initialRoute.isControllerPage
       ? normalizeDeepLinkGameType(initialRoute.gameType)
       : null;
   const [tvAuthToken, setTvAuthToken] = useState<string>('');
@@ -193,6 +202,7 @@ export function useAppController() {
     !initialRoute.isAdsPage &&
     !initialRoute.isAdminPage &&
     !initialRoute.isSamsungPage &&
+    !initialRoute.isControllerPage &&
     !initialRoute.isDedicatedEntry &&
     !/[?&]hub=1\b/i.test(window.location.search || '');
   const isDedicatedSoloBoot = !effectiveInitialRoom && (initialRoute.isDedicatedEntry || isTizenAutoBoot);
@@ -1030,7 +1040,7 @@ export function useAppController() {
   }, [inRoom, sessionMode, lifecycle]);
 
   const { exitToastVisible, triggerBackStep } = useAppNavigationHistory({
-    enabled: !isTvMode && !isTvPairLobby && !isAdsPageOpen && !isAdminPage && !isSamsungPage && (inRoom || hasEnteredApp),
+    enabled: !isTvMode && !isTvPairLobby && !isAdsPageOpen && !isAdminPage && !isSamsungPage && !isControllerPage && (inRoom || hasEnteredApp),
     inRoom,
     activeWorld,
     onReturnToEntry: handleReturnToEntry,
@@ -1051,7 +1061,8 @@ export function useAppController() {
     effectiveView, isDesktopLayout, isFramedMobileOnPc, toggleViewMode, authUser, authLoading,
     profileHubOpen, setProfileHubOpen, profileHubTab, setProfileHubTab, isTvMode, setIsTvMode,
     isTvPairLobby, setIsTvPairLobby, isAdsPageOpen, setIsAdsPageOpen, isAdminPage, setIsAdminPage,
-    isSamsungPage, setIsSamsungPage, setTvAuthToken, savedRooms,
+    isSamsungPage, setIsSamsungPage, isControllerPage, setIsControllerPage, controllerPairCode,
+    setTvAuthToken, savedRooms,
     pinPromptState, tvClaimStatus, smartTvModalOpen, setSmartTvModalOpen, showIntro, setShowIntro,
     introWithSound, setIntroWithSound, showWatchlistOnly, setShowWatchlistOnly, showVoiceAssistant,
     setShowVoiceAssistant, quickPool, quickPoolLoading, nativeApkUpdate,

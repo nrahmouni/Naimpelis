@@ -99,14 +99,25 @@ function buildTizenRuntimeShimScript(targetOrigin) {
     "(function(){",
     "  window.__RIFFAN_TIZEN_WIDGET__ = true;",
     `  window.__RIFFAN_API_ORIGIN__ = ${JSON.stringify(safeOrigin)};`,
-    '  if (window.location && window.location.protocol === "file:" && typeof window.fetch === "function") {',
-    "    var origFetch = window.fetch;",
-    "    window.fetch = function(input, init) {",
-    '      if (typeof input === "string" && input.charAt(0) === "/") {',
-    `        input = ${JSON.stringify(safeOrigin)} + input;`,
-    "      }",
-    "      return origFetch.call(this, input, init);",
-    "    };",
+    '  if (window.location && window.location.protocol === "file:") {',
+    '    if (typeof window.fetch === "function") {',
+    "      var origFetch = window.fetch;",
+    "      window.fetch = function(input, init) {",
+    '        if (typeof input === "string" && input.charAt(0) === "/") {',
+    `          input = ${JSON.stringify(safeOrigin)} + input;`,
+    "        }",
+    "        return origFetch.call(this, input, init);",
+    "      };",
+    "    }",
+    '    if (typeof window.XMLHttpRequest === "function" && window.XMLHttpRequest.prototype) {',
+    "      var origXhrOpen = window.XMLHttpRequest.prototype.open;",
+    "      window.XMLHttpRequest.prototype.open = function(method, url) {",
+    '        var nextUrl = (typeof url === "string" && url.charAt(0) === "/") ? (' + JSON.stringify(safeOrigin) + " + url) : url;",
+    "        var args = Array.prototype.slice.call(arguments);",
+    "        args[1] = nextUrl;",
+    "        return origXhrOpen.apply(this, args);",
+    "      };",
+    "    }",
     "  }",
     "  try {",
     "    if (window.tizen && window.tizen.tvinputdevice && window.tizen.tvinputdevice.registerKeyBatch) {",
@@ -143,7 +154,7 @@ ${out}`;
 function buildHostedTizenLauncherHtml(appName, targetOrigin) {
   const safeOrigin = String(targetOrigin || "https://riffan.ai.studio").replace(/\/+$/, "");
   const launchUrl = `${safeOrigin}/?tizen=1&tv=1`;
-  const tvReceiverUrl = `${safeOrigin}/tv`;
+  const tvReceiverUrl = `${safeOrigin}/tv?platform=tizen`;
   const escapedName = appName.replace(/[<>&"]/g, "");
   return [
     "<!DOCTYPE html>",
@@ -202,7 +213,7 @@ function buildHostedTizenLauncherHtml(appName, targetOrigin) {
 }
 function buildHostedTizenLauncherAssets(appName, targetOrigin) {
   const safeOrigin = String(targetOrigin || "https://riffan.ai.studio").replace(/\/+$/, "");
-  const tvReceiverUrl = `${safeOrigin}/tv`;
+  const tvReceiverUrl = `${safeOrigin}/tv?platform=tizen`;
   const healthUrl = `${safeOrigin}/api/health`;
   const escapedName = appName.replace(/[<>&"]/g, "");
   const appCss = [
@@ -285,7 +296,8 @@ function buildHostedTizenLauncherAssets(appName, targetOrigin) {
     "  function goNow() {",
     "    if (launched) return;",
     "    launched = true;",
-    "    window.location.replace(targetUrl);",
+    '    var sep = targetUrl.indexOf("?") === -1 ? "?_t=" : "&_t=";',
+    "    window.location.replace(targetUrl + sep + Date.now());",
     "  }",
     "",
     "  try {",
@@ -448,7 +460,10 @@ async function buildTizenWgtArchive(options = {}) {
   const appName = (options.appName || "RiffanTV").trim().slice(0, 48) || "RiffanTV";
   const version = options.version || "1.0.0";
   const mode = options.packageMode || "full_bundle";
-  const defaultOrigin = typeof window !== "undefined" && window.location?.origin?.startsWith("http") ? window.location.origin : "https://riffan.ai.studio";
+  const currentOrigin = typeof window !== "undefined" && window.location?.origin?.startsWith("http") ? window.location.origin : "";
+  const currentHost = typeof window !== "undefined" && window.location?.hostname ? window.location.hostname.toLowerCase() : "";
+  const isDevOrigin = !currentHost || currentHost === "localhost" || currentHost === "127.0.0.1" || currentHost.startsWith("ais-dev-");
+  const defaultOrigin = isDevOrigin ? "https://riffan.ai.studio" : currentOrigin;
   const targetOrigin = (options.targetOrigin || defaultOrigin).replace(/\/+$/, "");
   const onProgress = options.onProgress;
   onProgress?.("Inicializando empaquetador JSZip...", 8);
@@ -636,13 +651,13 @@ var init_tizenWgtBuilder = __esm({
 });
 
 // server.ts
-import dns2 from "dns";
-import fs18 from "fs";
+import dns3 from "dns";
+import fs19 from "fs";
 import express3 from "express";
 import compression from "compression";
 import { createServer } from "http";
 import { WebSocketServer as WebSocketServer3 } from "ws";
-import path16 from "path";
+import path17 from "path";
 import { fileURLToPath as fileURLToPath3 } from "url";
 
 // server/config/env.ts
@@ -654,6 +669,8 @@ var __dirname = path.dirname(__filename);
 var ROOT_DIR = path.resolve(__dirname, "../..");
 var isProdEnv = process.env.NODE_ENV === "production";
 var parsedEnvPort = Number(process.env.PORT);
+var rawProxyScope = String(process.env.RIFFAN_SPAIN_PROXY_SCOPE || "auto_spanish").trim().toLowerCase();
+var resolvedProxyScope = rawProxyScope === "all_streaming" || rawProxyScope === "off" ? rawProxyScope : "auto_spanish";
 var ENV = {
   port: isProdEnv ? parsedEnvPort || 3e3 : parsedEnvPort && parsedEnvPort !== 8080 ? parsedEnvPort : 3e3,
   nodeEnv: isProdEnv ? "production" : process.env.NODE_ENV === "test" ? "test" : "development",
@@ -674,7 +691,11 @@ var ENV = {
   androidCertSha256: process.env.ANDROID_SHA256_FINGERPRINT || "70:B5:CB:FA:3D:E2:D3:D3:84:DD:04:93:15:5F:33:39:48:FC:47:B6:AB:E1:DD:13:B9:A8:75:58:29:23:96:30",
   belixXtreamServer: process.env.BELIX_XTREAM_SERVER || "",
   belixXtreamUser: process.env.BELIX_XTREAM_USER || "",
-  belixXtreamPass: process.env.BELIX_XTREAM_PASS || ""
+  belixXtreamPass: process.env.BELIX_XTREAM_PASS || "",
+  spainProxyUrl: (process.env.RIFFAN_SPAIN_PROXY_URL || process.env.SPAIN_VPN_PROXY_URL || "").trim(),
+  spainProxyScope: resolvedProxyScope,
+  urbanVpnApiUser: String(process.env.URBAN_VPN_API_USER || "").trim(),
+  urbanVpnApiPass: String(process.env.URBAN_VPN_API_PASS || "").trim()
 };
 
 // src/shared/channelLogos.ts
@@ -1162,6 +1183,12 @@ function serviceMeshGatewayMiddleware(req, res, next) {
   }
   res.on("finish", () => {
     const elapsed = Date.now() - start;
+    const isExternalProxyPassThrough = fullPath.startsWith("/api/ts-proxy") || fullPath.startsWith("/api/hls-proxy") || fullPath.startsWith("/api/img-proxy") || fullPath.startsWith("/api/embed-proxy") || fullPath.startsWith("/api/embed-fetch");
+    const isExpectedUpstreamFailover = fullPath === "/api/extract/stream" && !res.getHeader("Retry-After") && (res.statusCode === 502 || res.statusCode === 503 || res.statusCode === 504);
+    if (isExternalProxyPassThrough && (res.statusCode === 502 || res.statusCode === 504) || isExpectedUpstreamFailover) {
+      logger.debug({ correlationId, serviceId, path: fullPath, status: res.statusCode, elapsed }, "upstream_proxy_unavailable");
+      return;
+    }
     if (res.statusCode >= 500) {
       serviceMesh.recordError(serviceId, `HTTP ${res.statusCode} on ${fullPath}`);
       logger.warn({ correlationId, serviceId, path: fullPath, status: res.statusCode, elapsed }, "microservice_error_response");
@@ -1677,8 +1704,8 @@ async function pruneOldTelemetryRecords(maxAgeDays = 14) {
 }
 
 // server/routes/health.ts
-import fs7 from "fs";
-import path6 from "path";
+import fs8 from "fs";
+import path7 from "path";
 
 // src/shared/lruCache.ts
 var LruTtlCache = class {
@@ -3191,10 +3218,1116 @@ function buildSignedApkBuffer(flavor, origin) {
   return apkBuffer;
 }
 
+// server/routes/proxies/dvbTranscoder.ts
+import crypto5 from "crypto";
+import fs6 from "fs";
+import path5 from "path";
+import { spawn as spawn3 } from "child_process";
+
 // server/utils/tlsFetch.ts
 import http from "http";
 import https from "https";
 import zlib3 from "zlib";
+import { fetch as undiciFetch2 } from "undici";
+
+// server/services/spainVpnGatewayService.ts
+import dns2 from "node:dns/promises";
+import net3 from "node:net";
+import {
+  ProxyAgent,
+  Socks5ProxyAgent,
+  fetch as undiciFetch
+} from "undici";
+
+// server/services/urbanVpnService.ts
+import net2 from "node:net";
+import tls from "node:tls";
+var RAW_GATEWAYS = [
+  ["ES", "Spain \xB7 Nodo ES1", "p-es1", 1],
+  ["ES", "Spain \xB7 Nodo ES3", "p-es3", 5],
+  ["ES", "Spain \xB7 Nodo ES6", "p-es6", 3],
+  ["ES", "Spain \xB7 Nodo ES7", "p-es7", 10],
+  ["ES_premium", "Spain Premium \xB7 ES8", "p-es8", 10],
+  ["ES_premium", "Spain Premium \xB7 ES9", "p-es9", 10],
+  ["ES", "Spain \xB7 Nodo ES10", "p-es10", 7],
+  ["ES", "Spain \xB7 Nodo ES11", "p-es11", 1],
+  ["ES", "Spain (Madrid legacy)", "p-es4", 0],
+  ["US", "United States", "p-us1", 10],
+  ["GB", "United Kingdom", "p-uk1", 10],
+  ["AU", "Australia", "p-au1", 5],
+  ["RU", "Russia", "p-ru1", 5],
+  ["PT", "Portugal", "p-pt1", 5],
+  ["HK", "Hong Kong", "p-hk1", 5],
+  ["IN", "India", "p-in1", 5],
+  ["TR", "Turkey", "p-tr1", 5],
+  ["IT", "Italy", "p-it1", 5],
+  ["JP", "Japan", "p-jp1", 5],
+  ["CA", "Canada (Vancouver)", "p-ca4", 5],
+  ["PL", "Poland", "p-pl1", 5],
+  ["CN", "China", "p-cn1", 5],
+  ["NO", "Norway", "p-no1", 5],
+  ["DK", "Denmark", "p-dk1", 5],
+  ["GR", "Greece", "p-gr1", 5],
+  ["ID", "Indonesia", "p-id1", 5],
+  ["TW", "Taiwan", "p-tw1", 5],
+  ["CH", "Switzerland", "p-ch1", 5],
+  ["IE", "Ireland", "p-ie1", 5],
+  ["ZA", "South Africa", "p-za1", 5],
+  ["LV", "Latvia", "p-lv1", 5],
+  ["AR", "Argentina", "p-ar1", 5],
+  ["TH", "Thailand", "p-th1", 5],
+  ["MX", "Mexico", "p-mx1", 5],
+  ["LT", "Lithuania", "p-lt1", 5],
+  ["AT", "Austria", "p-at1", 5],
+  ["SK", "Slovakia", "p-sk1", 5],
+  ["CO", "Colombia", "p-co1", 5],
+  ["HU", "Hungary", "p-hu1", 5],
+  ["BY", "Belarus", "p-by1", 5],
+  ["US", "Los Angeles (CA)", "p-us2", 5],
+  ["US", "Chicago (IL)", "p-us3", 5],
+  ["US", "Atlanta (GA)", "p-us4", 5],
+  ["US", "Columbus (OH)", "p-us6", 5],
+  ["US", "Dallas (TX)", "p-us8", 5],
+  ["SI", "Slovenia", "p-si1", 5],
+  ["US", "Boston (MA)", "p-us22", 5],
+  ["US", "Philadelphia (PA)", "p-us16", 5],
+  ["US", "Minneapolis (MN)", "p-us25", 5],
+  ["US", "San Francisco (CA)", "p-us12", 5],
+  ["AE", "United Arab Emirates", "p-ae1", 5],
+  ["US", "Houston (TX)", "p-us17", 5],
+  ["US", "Charlotte (NC)", "p-us18", 5],
+  ["US", "St Louis (MO)", "p-us27", 5],
+  ["US", "Miami (FL)", "p-us23", 5],
+  ["US", "Portland (OR)", "p-us29", 5],
+  ["EE", "Estonia", "p-ee1", 5],
+  ["UA", "Ukraine", "p-ua1", 5],
+  ["NZ", "New Zealand", "p-nz1", 5],
+  ["KR", "Korea Republic", "p-kr1", 5],
+  ["BG", "Bulgaria", "p-bg1", 5],
+  ["CY", "Cyprus", "p-cy1", 5],
+  ["PH", "Philippines", "p-ph1", 5],
+  ["US", "Seattle (WA)", "p-us24", 5],
+  ["US", "San Diego (CA)", "p-us9", 5],
+  ["US", "Las Vegas (NV)", "p-us30", 5],
+  ["US", "Cary (NC)", "p-us32", 5],
+  ["US", "New Orleans (LA)", "p-us33", 5],
+  ["PE", "Peru", "p-pe1", 5],
+  ["US", "Sacramento (CA)", "p-us34", 5],
+  ["US", "Denver (CO)", "p-us35", 5],
+  ["CA", "Canada", "p-ca2", 5],
+  ["US", "Reston (VA)", "p-us36", 5],
+  ["LU", "Luxembourg", "p-lu1", 5],
+  ["US", "Tampa (FL)", "p-us37", 5],
+  ["GB", "United Kingdom (London)", "p-uk2", 5],
+  ["RU", "Russia R1", "p-ru2", 5],
+  ["DE", "Germany (Frankfurt)", "p-de2", 5],
+  ["IN", "India (Punjab)", "p-in2", 5],
+  ["CA", "Canada (Calgary)", "p-ca5", 5],
+  ["CA", "Canada (Toronto)", "p-ca1", 5],
+  ["AU", "Australia (Brisbane)", "p-au4", 5],
+  ["UY", "Uruguay", "p-uy1", 5],
+  ["IS", "Iceland", "p-is1", 5],
+  ["HR", "Croatia", "p-hr1", 5],
+  ["US", "Washington DC", "p-us39", 5],
+  ["JO", "Jordan", "p-jo1", 5],
+  ["MA", "Morocco", "p-ma1", 5],
+  ["AT", "Austria R1", "p-at2", 5],
+  ["DK", "Denmark R1", "p-dk2", 5],
+  ["NL", "Netherlands R1", "p-nl2", 5],
+  ["BR", "Brazil", "p-br1", 5],
+  ["US", "Newark (DE)", "p-us45", 5],
+  ["JP", "Japan R1", "p-jp2", 5],
+  ["AU", "Australia (Adelaide)", "p-au2", 5],
+  ["US", "Matawan (NJ)", "p-us43", 5],
+  ["LT", "Lithuania R1", "p-lt2", 5],
+  ["DZ", "Algeria", "p-dz1", 5],
+  ["MN", "Mongolia", "p-mn1", 5],
+  ["US_premium", "United States R1", "p-us7", 5],
+  ["MT", "Malta", "p-mt1", 5],
+  ["FR", "France (Paris)", "p-fr3", 5],
+  ["IT", "Italy (Milan)", "p-it3", 5],
+  ["IT", "Italy (Rome)", "p-it4", 5],
+  ["CA", "Canada (Montreal) R1", "p-ca6", 5],
+  ["US", "Dallas (TX) R1", "p-us47", 5],
+  ["US", "Seattle (WA) R1", "p-us49", 5]
+];
+function buildDefaultOvpnTemplate(hostname, port = 443) {
+  return [
+    "client",
+    "dev tun",
+    "proto tcp",
+    `remote ${hostname} ${port}`,
+    "resolv-retry infinite",
+    "nobind",
+    "persist-key",
+    "persist-tun",
+    "auth-user-pass pw.txt",
+    "cipher AES-256-CBC",
+    "verb 3",
+    "ca ca.crt",
+    "cert urban.crt",
+    "key urban.key",
+    ""
+  ].join("\n");
+}
+function isSpainGatewayCode(countryCode, profileLocation) {
+  const cc = countryCode.toUpperCase();
+  return cc === "ES" || cc === "ES_PREMIUM" || /^p-es\d+$/i.test(profileLocation);
+}
+var STATIC_URBAN_VPN_GATEWAYS = RAW_GATEWAYS.map(
+  ([countryCode, locationName, profileLocation, weight = 5]) => ({
+    id: profileLocation,
+    countryCode,
+    locationName,
+    profileLocation,
+    hostname: `${profileLocation}.urban-vpn.com`,
+    port: 443,
+    proto: "tcp",
+    cipher: "AES-256-CBC",
+    weight,
+    isSpain: isSpainGatewayCode(countryCode, profileLocation),
+    isPremium: /_premium$/i.test(countryCode)
+  })
+);
+var runtimeGateways = [...STATIC_URBAN_VPN_GATEWAYS];
+var liveSynced = false;
+var lastSyncedAt = null;
+var cachedCdnVersion = null;
+var syncInflight = null;
+function getAllowedGatewayMap() {
+  return new Map(runtimeGateways.map((g) => [g.hostname.toLowerCase(), g]));
+}
+var gatewayProbeCache = new LruTtlCache(160, 6e4);
+function parseAndroidConfigsToGateways(list) {
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const row of list) {
+    const weight = Number(row?.weight ?? 0);
+    if (!Number.isFinite(weight) || weight <= 0) continue;
+    const rawLoc = String(row?.location || "").trim().toLowerCase();
+    if (!/^[a-z0-9-]+$/i.test(rawLoc)) continue;
+    const hostname = `${rawLoc}.urban-vpn.com`;
+    if (seen.has(hostname)) continue;
+    seen.add(hostname);
+    const cc = String(row?.ctrCode || row?.ctrGroup || "XX").trim();
+    const locName = String(row?.ctrName || rawLoc.toUpperCase()).trim();
+    const port = Number(row?.port || 443);
+    out.push({
+      id: rawLoc,
+      countryCode: cc,
+      locationName: /spain|es/i.test(cc) ? `${locName} \xB7 ${rawLoc.toUpperCase()}${/_premium$/i.test(cc) ? " (Premium)" : ""}` : locName,
+      profileLocation: rawLoc,
+      hostname,
+      port: Number.isFinite(port) && port > 0 ? port : 443,
+      proto: "tcp",
+      cipher: "AES-256-CBC",
+      weight,
+      isSpain: isSpainGatewayCode(cc, rawLoc),
+      isPremium: /_premium$/i.test(cc),
+      ovpnContent: typeof row?.ovpnContent === "string" ? row.ovpnContent : void 0
+    });
+  }
+  return out;
+}
+async function fetchUrbanVpnCdnVersion() {
+  try {
+    const res = await fetch("https://cdn-cfg.urban-vpn.com/version.txt", {
+      signal: AbortSignal.timeout(3500)
+    });
+    if (!res.ok) return cachedCdnVersion;
+    const txt = (await res.text()).trim();
+    const m = txt.match(/Version\s*=\s*([^\r\n]+)/i);
+    cachedCdnVersion = (m ? m[1] : txt).trim() || cachedCdnVersion;
+    return cachedCdnVersion;
+  } catch {
+    return cachedCdnVersion;
+  }
+}
+async function syncLiveUrbanVpnCatalog(force = false) {
+  if (!force && lastSyncedAt && Date.now() - lastSyncedAt < 15 * 60 * 1e3) {
+    return {
+      synced: liveSynced,
+      total: runtimeGateways.length,
+      spainCount: listUrbanVpnGateways({ spainOnly: true }).length,
+      cdnVersion: cachedCdnVersion
+    };
+  }
+  if (syncInflight) return syncInflight;
+  syncInflight = (async () => {
+    const cdnVer = await fetchUrbanVpnCdnVersion();
+    const apiUser = ENV.urbanVpnApiUser;
+    const apiPass = ENV.urbanVpnApiPass;
+    if (apiUser && apiPass) {
+      try {
+        const qs = new URLSearchParams({ user: apiUser, pass: apiPass });
+        const resp = await fetch(
+          `https://stats.urban-vpn.com/api/remote/android/androidConfigs?${qs.toString()}`,
+          {
+            method: "GET",
+            headers: { Accept: "application/json", "User-Agent": "Dalvik/2.1.0 (Linux; U; Android 13)" },
+            signal: AbortSignal.timeout(6e3)
+          }
+        );
+        if (resp.ok) {
+          const json = await resp.json();
+          if (Array.isArray(json)) {
+            const parsed = parseAndroidConfigsToGateways(json);
+            if (parsed.length > 0) {
+              runtimeGateways = parsed;
+              liveSynced = true;
+              lastSyncedAt = Date.now();
+            }
+          }
+        }
+      } catch {
+      }
+    }
+    lastSyncedAt = lastSyncedAt || Date.now();
+    return {
+      synced: liveSynced,
+      total: runtimeGateways.length,
+      spainCount: listUrbanVpnGateways({ spainOnly: true }).length,
+      cdnVersion: cdnVer
+    };
+  })().finally(() => {
+    syncInflight = null;
+  });
+  return syncInflight;
+}
+function getUrbanVpnOvpnProfile(locationInput) {
+  const cleanLoc = String(locationInput || "").trim().toLowerCase();
+  if (!/^[a-z0-9_-]{2,24}$/.test(cleanLoc)) {
+    return { ok: false, error: "Identificador de nodo Urban VPN inv\xE1lido." };
+  }
+  const gw = runtimeGateways.find(
+    (g) => g.profileLocation.toLowerCase() === cleanLoc || g.id.toLowerCase() === cleanLoc
+  );
+  if (!gw) {
+    return { ok: false, error: "Nodo Urban VPN no encontrado en el registro verificado." };
+  }
+  const content = gw.ovpnContent?.trim() || buildDefaultOvpnTemplate(gw.hostname, gw.port);
+  return {
+    ok: true,
+    filename: `${gw.profileLocation}.ovpn`,
+    hostname: gw.hostname,
+    ovpnContent: content,
+    isLiveFromApi: Boolean(gw.ovpnContent)
+  };
+}
+function getUrbanVpnAuditSummary() {
+  const spainActive = listUrbanVpnGateways({ spainOnly: true });
+  return {
+    packageName: "com.urbanvpn.android",
+    versionName: "1.0.97",
+    versionCode: 149,
+    totalGateways: runtimeGateways.length,
+    liveSynced,
+    lastSyncedAt,
+    cdnVersion: cachedCdnVersion,
+    spainGateways: spainActive,
+    endpoints: {
+      configApi: "https://stats.urban-vpn.com/api/remote/android/androidConfigs",
+      cdnBase: "https://cdn-cfg.urban-vpn.com",
+      geoLookup: "https://geo.geosurf.io",
+      safeBrowsing: "https://protection-toolbar.urban-vpn.com/api/rest/v1/secure/urls/checkSafety",
+      safeBrowsingFallback: "https://cs.sclpfybn.com/api/rest/v2/secure/urls/checkSafety",
+      firebaseProject: "urban-vpn"
+    },
+    tunnelProtocol: {
+      engine: "OpenVPN (libopenvpn.so / dev tun)",
+      port: 443,
+      proto: "tcp",
+      cipher: "AES-256-CBC",
+      authDirective: "auth-user-pass pw.txt + ca.crt / urban.crt / urban.key"
+    },
+    limitations: [
+      {
+        id: "missing-tunnel-creds",
+        severity: "critical",
+        title: "Credenciales OpenVPN (pw.txt) y certificados dentro de liburban.so",
+        detail: "Los perfiles .ovpn requieren pw.txt, ca.crt, urban.crt y urban.key cifrados dentro del binario nativo ARM de Urban VPN. El servidor web no puede autenticar un t\xFAnel tun OpenVPN de Urban VPN directamente sin esos certificados ni privilegios TUN."
+      },
+      {
+        id: "p2p-exit-eula",
+        severity: "critical",
+        title: "Riesgo de privacidad P2P en el EULA gratuito de Urban VPN",
+        detail: "El EULA de Urban VPN indica que la versi\xF3n gratuita puede usar el dispositivo como nodo de salida para tr\xE1fico de terceros."
+      },
+      {
+        id: "cross-device-tun",
+        severity: "warning",
+        title: "Soluci\xF3n real multi-dispositivo (TV Samsung, m\xF3vil y navegador)",
+        detail: "Activa arriba la Salida Espa\xF1a (HTTP/SOCKS5 o Gluetun WireGuard/OpenVPN). Todas las peticiones a Antena 3, laSexta, Atresplayer y RTVE pasar\xE1n autom\xE1ticamente por la IP espa\xF1ola."
+      },
+      {
+        id: "spain-tdt-ready",
+        severity: "info",
+        title: "Antena 3 y laSexta 1080p HD listas desde cabecera DVB espa\xF1ola",
+        detail: "Los flujos directos 90.163.85.113:8093 (/stream/20 para Antena 3 y /stream/21 para laSexta) transmiten en 1080p HD continuo desde Espa\xF1a sin depender de proxy."
+      }
+    ]
+  };
+}
+function listUrbanVpnGateways(opts) {
+  const q = String(opts?.query || "").trim().toLowerCase();
+  return runtimeGateways.filter((g) => {
+    if (!opts?.includeZeroWeight && g.weight <= 0 && !q) return false;
+    if (opts?.spainOnly && !g.isSpain) return false;
+    if (!q) return true;
+    return g.hostname.toLowerCase().includes(q) || g.locationName.toLowerCase().includes(q) || g.countryCode.toLowerCase().includes(q) || g.profileLocation.toLowerCase().includes(q);
+  }).sort((a, b) => b.weight - a.weight || a.profileLocation.localeCompare(b.profileLocation));
+}
+async function probeUrbanVpnGateway(rawHost) {
+  const host = String(rawHost || "").trim().toLowerCase();
+  const gateway = getAllowedGatewayMap().get(host);
+  if (!gateway) {
+    return {
+      hostname: host,
+      port: 443,
+      ok: false,
+      tcpReachable: false,
+      tlsHandshakeOk: false,
+      latencyMs: 0,
+      error: "Host fuera de la lista verificada de pasarelas Urban VPN"
+    };
+  }
+  const cached = gatewayProbeCache.get(host);
+  if (cached) return cached;
+  const t0 = Date.now();
+  const res = await new Promise((resolve) => {
+    let settled = false;
+    let tcpReachable = false;
+    const finish = (out) => {
+      if (settled) return;
+      settled = true;
+      resolve({
+        hostname: gateway.hostname,
+        port: gateway.port,
+        countryCode: gateway.countryCode,
+        locationName: gateway.locationName,
+        ...out
+      });
+    };
+    const socket = net2.createConnection({ host: gateway.hostname, port: gateway.port, timeout: 2600 });
+    socket.on("connect", () => {
+      tcpReachable = true;
+      const tlsSock = tls.connect(
+        {
+          socket,
+          servername: gateway.hostname,
+          rejectUnauthorized: false,
+          timeout: 2200
+        },
+        () => {
+          tlsSock.destroy();
+          finish({
+            ok: true,
+            tcpReachable: true,
+            tlsHandshakeOk: true,
+            latencyMs: Date.now() - t0
+          });
+        }
+      );
+      tlsSock.on("error", (err) => {
+        tlsSock.destroy();
+        finish({
+          ok: tcpReachable,
+          tcpReachable,
+          tlsHandshakeOk: false,
+          latencyMs: Date.now() - t0,
+          error: err.message
+        });
+      });
+      tlsSock.setTimeout(2200, () => {
+        tlsSock.destroy();
+        finish({
+          ok: tcpReachable,
+          tcpReachable,
+          tlsHandshakeOk: false,
+          latencyMs: Date.now() - t0,
+          error: "Puerto 443 TCP abierto (protocolo OpenVPN)"
+        });
+      });
+    });
+    socket.on("timeout", () => {
+      socket.destroy();
+      finish({
+        ok: false,
+        tcpReachable: false,
+        tlsHandshakeOk: false,
+        latencyMs: Date.now() - t0,
+        error: "Timeout TCP/443"
+      });
+    });
+    socket.on("error", (err) => {
+      socket.destroy();
+      finish({
+        ok: false,
+        tcpReachable: false,
+        tlsHandshakeOk: false,
+        latencyMs: Date.now() - t0,
+        error: err.message
+      });
+    });
+  });
+  gatewayProbeCache.set(host, res);
+  return res;
+}
+async function probeAllSpainUrbanGateways() {
+  const spainNodes = listUrbanVpnGateways({ spainOnly: true });
+  const results = await Promise.all(spainNodes.map((gw) => probeUrbanVpnGateway(gw.hostname)));
+  return results.sort((a, b) => {
+    if (a.tcpReachable !== b.tcpReachable) return a.tcpReachable ? -1 : 1;
+    return a.latencyMs - b.latencyMs;
+  });
+}
+
+// server/services/spainVpnGatewayService.ts
+var SPANISH_GEO_ROUTING_PATTERNS = [
+  /(?:^|\.)atresplayer\.com$/i,
+  /(?:^|\.)atresmedia\.com$/i,
+  /(?:^|\.)atres\.com$/i,
+  /(?:^|\.)a3player\.com$/i,
+  /(?:^|\.)mediaset\.es$/i,
+  /(?:^|\.)mitele\.es$/i,
+  /(?:^|\.)telecinco\.es$/i,
+  /(?:^|\.)cuatro\.com$/i,
+  /(?:^|\.)rtve\.es$/i,
+  /(?:^|\.)ccma\.cat$/i,
+  /(?:^|\.)3cat\.cat$/i,
+  /(?:^|\.)3catdirectes\.cat$/i,
+  /(?:^|\.)eitb\.eus$/i,
+  /(?:^|\.)telemadrid\.es$/i,
+  /(?:^|\.)canalsur\.es$/i,
+  /(?:^|\.)tdtchannels\.com$/i,
+  /(?:^|\.)otteravision\.com$/i,
+  /(?:^|\.)ottera\.tv$/i,
+  /(?:^|\.)sharkpro\.ink$/i,
+  /^90\.163\.85\.113$/i,
+  /^103\.163\.132\.49$/i,
+  /^185\.217\.39\.251$/i
+];
+var BYPASS_PROXY_HOST_PATTERNS = [
+  /(?:^|\.)themoviedb\.org$/i,
+  /(?:^|\.)tmdb\.org$/i,
+  /(?:^|\.)googleapis\.com$/i,
+  /(?:^|\.)firebaseio\.com$/i,
+  /(?:^|\.)google\.com$/i
+];
+var state = {
+  proxyUrl: ENV.spainProxyUrl || "",
+  scope: ENV.spainProxyUrl ? ENV.spainProxyScope : "auto_spanish",
+  enabled: Boolean(ENV.spainProxyUrl && ENV.spainProxyScope !== "off"),
+  source: ENV.spainProxyUrl ? "env" : "none",
+  updatedAt: Date.now()
+};
+var dispatcherCache = /* @__PURE__ */ new Map();
+var geoCache = new LruTtlCache(16, 45e3);
+var socksBridgeServer = null;
+var socksBridgePort = 0;
+var socksBridgeUpstreamUrl = "";
+function closeSocksBridge() {
+  if (socksBridgeServer) {
+    try {
+      socksBridgeServer.close();
+    } catch {
+    }
+    socksBridgeServer = null;
+  }
+  socksBridgePort = 0;
+  socksBridgeUpstreamUrl = "";
+}
+function dialThroughSocks5(proxyParsed, destHost, destPort, timeoutMs = 5500) {
+  return new Promise((resolve, reject) => {
+    const proxyHost = proxyParsed.hostname.replace(/^\[|\]$/g, "");
+    const proxyPort = Number(proxyParsed.port || 1080);
+    const username = decodeURIComponent(proxyParsed.username || "");
+    const password = decodeURIComponent(proxyParsed.password || "");
+    let settled = false;
+    const sock = net3.createConnection({ host: proxyHost, port: proxyPort, timeout: timeoutMs });
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      sock.destroy();
+      reject(err);
+    };
+    sock.on("error", fail);
+    sock.on("timeout", () => fail(new Error("SOCKS5 bridge timeout")));
+    const readExact = (bytesNeeded) => new Promise((res, rej) => {
+      let buf = Buffer.alloc(0);
+      const onData = (chunk) => {
+        buf = Buffer.concat([buf, chunk]);
+        if (buf.length >= bytesNeeded) {
+          cleanup();
+          if (buf.length > bytesNeeded) {
+            sock.unshift(buf.subarray(bytesNeeded));
+          }
+          res(buf.subarray(0, bytesNeeded));
+        }
+      };
+      const onErr = (e) => {
+        cleanup();
+        rej(e);
+      };
+      const onClose = () => {
+        cleanup();
+        rej(new Error("SOCKS5 socket closed early"));
+      };
+      const cleanup = () => {
+        sock.off("data", onData);
+        sock.off("error", onErr);
+        sock.off("close", onClose);
+      };
+      sock.on("data", onData);
+      sock.once("error", onErr);
+      sock.once("close", onClose);
+    });
+    sock.once("connect", async () => {
+      try {
+        const useUserPass = Boolean(username || password);
+        const methods = useUserPass ? Buffer.from([5, 2, 0, 2]) : Buffer.from([5, 1, 0]);
+        sock.write(methods);
+        const greeting = await readExact(2);
+        if (greeting[0] !== 5 || greeting[1] === 255) {
+          throw new Error("SOCKS5 auth method rejected");
+        }
+        if (greeting[1] === 2) {
+          const uBuf = Buffer.from(username, "utf8");
+          const pBuf = Buffer.from(password, "utf8");
+          if (uBuf.length > 255 || pBuf.length > 255) throw new Error("SOCKS5 credentials too long");
+          const authPacket = Buffer.concat([
+            Buffer.from([1, uBuf.length]),
+            uBuf,
+            Buffer.from([pBuf.length]),
+            pBuf
+          ]);
+          sock.write(authPacket);
+          const authResp = await readExact(2);
+          if (authResp[1] !== 0) {
+            throw new Error("SOCKS5 username/password rejected");
+          }
+        }
+        const hostBuf = Buffer.from(destHost, "utf8");
+        if (hostBuf.length === 0 || hostBuf.length > 255) throw new Error("Invalid destination host");
+        const portBuf = Buffer.alloc(2);
+        portBuf.writeUInt16BE(destPort, 0);
+        const reqPacket = Buffer.concat([
+          Buffer.from([5, 1, 0, 3, hostBuf.length]),
+          hostBuf,
+          portBuf
+        ]);
+        sock.write(reqPacket);
+        const repHead = await readExact(4);
+        if (repHead[0] !== 5 || repHead[1] !== 0) {
+          throw new Error(`SOCKS5 CONNECT rejected (${repHead[1]})`);
+        }
+        const atyp = repHead[3];
+        if (atyp === 1) await readExact(6);
+        else if (atyp === 4) await readExact(18);
+        else if (atyp === 3) {
+          const lenB = await readExact(1);
+          await readExact(lenB[0] + 2);
+        }
+        if (!settled) {
+          settled = true;
+          sock.setTimeout(0);
+          sock.off("error", fail);
+          resolve(sock);
+        }
+      } catch (err) {
+        fail(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  });
+}
+function ensureSocksToHttpBridge(proxyUrl) {
+  if (socksBridgeServer && socksBridgePort > 0 && socksBridgeUpstreamUrl === proxyUrl) {
+    return socksBridgePort;
+  }
+  closeSocksBridge();
+  let parsedProxy;
+  try {
+    parsedProxy = new URL(proxyUrl);
+  } catch {
+    return 0;
+  }
+  const server = net3.createServer((clientSock) => {
+    let headerBuf = Buffer.alloc(0);
+    const onData = async (chunk) => {
+      headerBuf = Buffer.concat([headerBuf, chunk]);
+      const sepIdx = headerBuf.indexOf("\r\n\r\n");
+      if (sepIdx === -1) {
+        if (headerBuf.length > 16384) clientSock.destroy();
+        return;
+      }
+      clientSock.off("data", onData);
+      const rawHead = headerBuf.subarray(0, sepIdx).toString("latin1");
+      const remainder = headerBuf.subarray(sepIdx + 4);
+      const firstLine = rawHead.split("\r\n")[0] || "";
+      const [method = "", target = ""] = firstLine.split(" ");
+      let destHost = "";
+      let destPort = 80;
+      if (method.toUpperCase() === "CONNECT") {
+        const idx = target.lastIndexOf(":");
+        destHost = idx > 0 ? target.slice(0, idx) : target;
+        destPort = idx > 0 ? Number(target.slice(idx + 1)) || 443 : 443;
+      } else {
+        try {
+          const u = new URL(target);
+          destHost = u.hostname;
+          destPort = Number(u.port || (u.protocol === "https:" ? 443 : 80));
+        } catch {
+          clientSock.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+          return;
+        }
+      }
+      const cleanDestHost = destHost.replace(/^\[|\]$/g, "").toLowerCase();
+      if (!cleanDestHost || isDisallowedHostnameSyntax(cleanDestHost) || net3.isIP(cleanDestHost) && isPrivateIpAddress(cleanDestHost)) {
+        clientSock.end("HTTP/1.1 403 Forbidden\r\n\r\n");
+        return;
+      }
+      try {
+        const upstreamSock = await dialThroughSocks5(parsedProxy, cleanDestHost, destPort);
+        if (method.toUpperCase() === "CONNECT") {
+          clientSock.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+        } else {
+          const u = new URL(target);
+          const relTarget = `${u.pathname || "/"}${u.search || ""}`;
+          const lines = rawHead.split("\r\n");
+          lines[0] = `${method} ${relTarget} HTTP/1.1`;
+          const filteredLines = lines.filter((l) => !/^proxy-/i.test(l));
+          upstreamSock.write(filteredLines.join("\r\n") + "\r\n\r\n");
+        }
+        if (remainder.length > 0) upstreamSock.write(remainder);
+        clientSock.pipe(upstreamSock);
+        upstreamSock.pipe(clientSock);
+        const destroyBoth = () => {
+          clientSock.destroy();
+          upstreamSock.destroy();
+        };
+        clientSock.on("error", destroyBoth);
+        upstreamSock.on("error", destroyBoth);
+      } catch {
+        clientSock.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+      }
+    };
+    clientSock.on("data", onData);
+    clientSock.on("error", () => {
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  const addr = server.address();
+  if (addr && typeof addr === "object") {
+    socksBridgeServer = server;
+    socksBridgePort = addr.port;
+    socksBridgeUpstreamUrl = proxyUrl;
+    server.unref?.();
+    return socksBridgePort;
+  }
+  server.close();
+  return 0;
+}
+function maskProxyUrl(rawUrl) {
+  const clean = String(rawUrl || "").trim();
+  if (!clean) return "";
+  try {
+    const u = new URL(clean);
+    const authPart = u.username ? `${u.username.slice(0, 2)}***@` : "";
+    const portPart = u.port ? `:${u.port}` : "";
+    return `${u.protocol}//${authPart}${u.hostname}${portPart}`;
+  } catch {
+    return "***";
+  }
+}
+async function validateSpainProxyUrl(rawProxyUrl, options) {
+  const clean = String(rawProxyUrl || "").trim();
+  if (!clean) {
+    return { ok: false, error: "Introduce una URL de proxy v\xE1lida (http://, https:// o socks5h://)." };
+  }
+  if (clean.length > 512) {
+    return { ok: false, error: "URL de proxy demasiado larga." };
+  }
+  let parsed;
+  try {
+    parsed = new URL(clean);
+  } catch {
+    return { ok: false, error: "Formato de URL inv\xE1lido. Ejemplo: socks5h://usuario:clave@ip-espana:1080" };
+  }
+  const proto = parsed.protocol.replace(":", "").toLowerCase();
+  if (proto !== "http" && proto !== "https" && proto !== "socks5" && proto !== "socks5h") {
+    return { ok: false, error: "Protocolo no compatible. Usa http://, https://, socks5:// o socks5h://" };
+  }
+  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (!host) {
+    return { ok: false, error: "Falta el servidor o IP del proxy." };
+  }
+  if (!options?.allowPrivateEnv) {
+    if (isDisallowedHostnameSyntax(host)) {
+      return { ok: false, error: "Host privado o local bloqueado por seguridad SSRF." };
+    }
+    if (!net3.isIP(host)) {
+      try {
+        const records = await dns2.lookup(host, { all: true });
+        if (!records.length || records.some((r) => isPrivateIpAddress(r.address))) {
+          return { ok: false, error: "El host del proxy resuelve a una IP privada o inv\xE1lida." };
+        }
+      } catch {
+        return { ok: false, error: "No se pudo resolver el dominio del proxy." };
+      }
+    }
+  }
+  return {
+    ok: true,
+    normalizedUrl: parsed.toString(),
+    protocol: proto
+  };
+}
+function createDispatcherForProxy(proxyUrl) {
+  const existing = dispatcherCache.get(proxyUrl);
+  if (existing) return existing;
+  const normalizedForUndici = proxyUrl.replace(/^socks5h:\/\//i, "socks5://");
+  const agent = /^socks5/i.test(normalizedForUndici) ? new Socks5ProxyAgent(normalizedForUndici) : new ProxyAgent({
+    uri: normalizedForUndici,
+    requestTls: { rejectUnauthorized: false }
+  });
+  if (dispatcherCache.size > 8) {
+    const firstKey = dispatcherCache.keys().next().value;
+    if (firstKey) dispatcherCache.delete(firstKey);
+  }
+  dispatcherCache.set(proxyUrl, agent);
+  return agent;
+}
+function getSpainGatewayPublicConfig() {
+  let protocol = "none";
+  if (state.proxyUrl) {
+    const m = state.proxyUrl.match(/^(socks5h|socks5|https|http):\/\//i);
+    if (m) protocol = m[1].toLowerCase();
+  }
+  return {
+    enabled: state.enabled && Boolean(state.proxyUrl) && state.scope !== "off",
+    configured: Boolean(state.proxyUrl),
+    source: state.proxyUrl ? state.source : "none",
+    protocol,
+    maskedProxyUrl: maskProxyUrl(state.proxyUrl),
+    scope: state.scope,
+    updatedAt: state.updatedAt
+  };
+}
+function shouldRouteThroughSpainProxy(targetUrl) {
+  if (!state.enabled || !state.proxyUrl || state.scope === "off") return false;
+  let parsed;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    return false;
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (!host || host === "localhost" || host === "127.0.0.1" || host === "::1") {
+    return false;
+  }
+  if (BYPASS_PROXY_HOST_PATTERNS.some((rx) => rx.test(host))) {
+    return false;
+  }
+  if (state.scope === "all_streaming") {
+    return true;
+  }
+  return SPANISH_GEO_ROUTING_PATTERNS.some((rx) => rx.test(host));
+}
+function getSpainProxyUrlForTarget(targetUrl) {
+  if (!shouldRouteThroughSpainProxy(targetUrl)) return null;
+  return state.proxyUrl;
+}
+function getSpainProxyDispatcherForTarget(targetUrl) {
+  const proxyUrl = getSpainProxyUrlForTarget(targetUrl);
+  if (!proxyUrl) return void 0;
+  return createDispatcherForProxy(proxyUrl);
+}
+function getSpainFfmpegHttpProxyArgs(targetUrl) {
+  const proxyUrl = getSpainProxyUrlForTarget(targetUrl);
+  if (!proxyUrl) return [];
+  if (/^https?:\/\//i.test(proxyUrl)) {
+    return ["-http_proxy", proxyUrl];
+  }
+  if (/^socks5h?:\/\//i.test(proxyUrl) && !process.env.VITEST) {
+    const port = ensureSocksToHttpBridge(proxyUrl);
+    if (port > 0) {
+      return ["-http_proxy", `http://127.0.0.1:${port}`];
+    }
+  }
+  return [];
+}
+async function probeGeoExitInfo(proxyUrl) {
+  const cacheKey = proxyUrl ? `proxy:${proxyUrl}` : "direct";
+  const cached = geoCache.get(cacheKey);
+  if (cached) return cached;
+  const dispatcher = proxyUrl ? createDispatcherForProxy(proxyUrl) : void 0;
+  const fallbackInfo = (errMsg) => ({
+    ok: false,
+    ip: "",
+    countryCode: "",
+    country: "",
+    city: "",
+    isp: "",
+    isSpain: false,
+    provider: "ipwho.is",
+    checkedAt: Date.now(),
+    error: errMsg
+  });
+  try {
+    const res = await undiciFetch("https://ipwho.is/", {
+      dispatcher,
+      headers: { Accept: "application/json", "User-Agent": "RiffanTV/3.3" },
+      signal: AbortSignal.timeout(5500)
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.ip) {
+        const cc = String(data.country_code || "").toUpperCase();
+        const info = {
+          ok: data.success !== false,
+          ip: String(data.ip),
+          countryCode: cc,
+          country: String(data.country || ""),
+          city: String(data.city || ""),
+          isp: String(data.connection?.isp || ""),
+          isSpain: cc === "ES",
+          provider: "ipwho.is",
+          checkedAt: Date.now()
+        };
+        geoCache.set(cacheKey, info);
+        return info;
+      }
+    }
+  } catch (err) {
+    logger.debug({ err: err instanceof Error ? err.message : String(err) }, "ipwhois_geo_probe_fallback");
+  }
+  try {
+    const res2 = await undiciFetch("https://geo.geosurf.io/", {
+      dispatcher,
+      headers: { Accept: "application/json", "User-Agent": "RiffanTV/3.3" },
+      signal: AbortSignal.timeout(5e3)
+    });
+    if (res2.ok) {
+      const data2 = await res2.json();
+      const cc = String(data2?.country || "").toUpperCase();
+      const info2 = {
+        ok: Boolean(data2?.ip),
+        ip: String(data2?.ip || ""),
+        countryCode: cc,
+        country: cc === "ES" ? "Spain" : cc,
+        city: String(data2?.city || ""),
+        isp: String(data2?.isp || data2?.organization || ""),
+        isSpain: cc === "ES" || /^spain$/i.test(cc),
+        provider: "geo.geosurf.io",
+        checkedAt: Date.now()
+      };
+      geoCache.set(cacheKey, info2);
+      return info2;
+    }
+    return fallbackInfo(`HTTP ${res2.status}`);
+  } catch (err) {
+    return fallbackInfo(err instanceof Error ? err.message : String(err));
+  }
+}
+async function setRuntimeSpainProxyConfig(input) {
+  const nextScope = input.scope === "all_streaming" || input.scope === "off" ? input.scope : "auto_spanish";
+  if (input.proxyUrl !== void 0) {
+    const clean = String(input.proxyUrl || "").trim();
+    if (!clean) {
+      closeSocksBridge();
+      state.proxyUrl = "";
+      state.enabled = false;
+      state.source = "none";
+      state.scope = nextScope;
+      state.updatedAt = Date.now();
+      return { ok: true, config: getSpainGatewayPublicConfig(), tunneledGeo: null };
+    }
+    const validation = await validateSpainProxyUrl(clean);
+    if (!validation.ok) {
+      return { ok: false, error: validation.error };
+    }
+    if (state.proxyUrl !== validation.normalizedUrl) {
+      closeSocksBridge();
+    }
+    state.proxyUrl = validation.normalizedUrl;
+    state.source = "runtime";
+  }
+  state.scope = nextScope;
+  state.enabled = input.enabled !== void 0 ? Boolean(input.enabled) && Boolean(state.proxyUrl) : Boolean(state.proxyUrl) && nextScope !== "off";
+  state.updatedAt = Date.now();
+  geoCache.clear();
+  const shouldProbe = state.enabled && Boolean(state.proxyUrl) && !input.skipGeoProbe && !process.env.VITEST;
+  const tunneledGeo = shouldProbe ? await probeGeoExitInfo(state.proxyUrl) : null;
+  logger.info(
+    {
+      enabled: state.enabled,
+      scope: state.scope,
+      maskedProxyUrl: maskProxyUrl(state.proxyUrl),
+      tunneledCountry: tunneledGeo?.countryCode || null
+    },
+    "spain_vpn_gateway_updated"
+  );
+  return {
+    ok: true,
+    config: getSpainGatewayPublicConfig(),
+    tunneledGeo
+  };
+}
+function clearRuntimeSpainProxyConfig() {
+  closeSocksBridge();
+  state.proxyUrl = "";
+  state.enabled = false;
+  state.source = "none";
+  state.scope = "auto_spanish";
+  state.updatedAt = Date.now();
+  geoCache.clear();
+  return getSpainGatewayPublicConfig();
+}
+async function checkDvbHeadendHead(url) {
+  const t0 = Date.now();
+  const dispatcher = getSpainProxyDispatcherForTarget(url);
+  try {
+    const res = await undiciFetch(url, {
+      method: "GET",
+      dispatcher,
+      signal: AbortSignal.timeout(2800)
+    });
+    const text2 = res.ok ? await res.text() : "";
+    const isValidM3u = res.ok && text2.includes("#EXTM3U");
+    return { ok: isValidM3u, status: res.status, latencyMs: Date.now() - t0 };
+  } catch {
+    return { ok: false, status: 0, latencyMs: Date.now() - t0 };
+  }
+}
+async function verifySpanishChannelsDirectAccess() {
+  const config = getSpainGatewayPublicConfig();
+  const targets = [
+    {
+      id: "tdt-antena3",
+      name: "Antena 3 HD (Directa DVB Espa\xF1a)",
+      url: "http://90.163.85.113:8093/stream/20/index.m3u8",
+      kind: "hls"
+    },
+    {
+      id: "tdt-lasexta",
+      name: "laSexta HD (Directa DVB Espa\xF1a)",
+      url: "http://90.163.85.113:8093/stream/21/index.m3u8",
+      kind: "hls"
+    },
+    {
+      id: "atresplayer-guide",
+      name: "Atresplayer Gu\xEDa Oficial (Antena 3 & laSexta)",
+      url: "https://api.atresplayer.com/client/v1/row/live",
+      kind: "json"
+    },
+    {
+      id: "atresplayer-a3-player",
+      name: "Atresplayer Oficial Stream (Antena 3)",
+      url: "https://api.atresplayer.com/player/v1/live/5a6a165a7ed1a834493ebf6a",
+      kind: "json"
+    },
+    {
+      id: "atresplayer-lasexta-player",
+      name: "Atresplayer Oficial Stream (laSexta)",
+      url: "https://api.atresplayer.com/player/v1/live/5a6a172c7ed1a834493ebf6b",
+      kind: "json"
+    },
+    {
+      id: "tdt-3cat",
+      name: "TV3 / 3Cat Directo CDN P\xFAblico",
+      url: "https://directes-tv-es.3catdirectes.cat/live-content/tv3-hls/master.m3u8",
+      kind: "hls"
+    }
+  ];
+  const checks = await Promise.all(
+    targets.map(async (t) => {
+      const t0 = Date.now();
+      const routedViaProxy = shouldRouteThroughSpainProxy(t.url);
+      const dispatcher = getSpainProxyDispatcherForTarget(t.url);
+      try {
+        const res = await undiciFetch(t.url, {
+          method: "GET",
+          dispatcher,
+          headers: { "User-Agent": "Mozilla/5.0" },
+          signal: AbortSignal.timeout(4500)
+        });
+        const body = await res.text();
+        const latencyMs = Date.now() - t0;
+        const ok = t.kind === "hls" ? res.ok && body.includes("#EXTM3U") : res.ok;
+        let detail = ok ? "Emisi\xF3n en directo operativa" : `HTTP ${res.status}`;
+        if (!ok && t.id.startsWith("atresplayer-") && res.status === 403) {
+          detail = routedViaProxy ? "Atresplayer requiere cuenta/sesi\xF3n activa (HTTP 403) \xB7 usa se\xF1al Directa HD 1080p" : "Bloqueo geo/cuenta Atresplayer \xB7 activa Proxy Espa\xF1a o usa se\xF1al Directa HD";
+        }
+        return {
+          id: t.id,
+          name: t.name,
+          route: t.url,
+          routedViaProxy,
+          ok,
+          status: res.status,
+          latencyMs,
+          detail
+        };
+      } catch (err) {
+        return {
+          id: t.id,
+          name: t.name,
+          route: t.url,
+          routedViaProxy,
+          ok: false,
+          status: 0,
+          latencyMs: Date.now() - t0,
+          detail: err instanceof Error ? err.message : "Timeout"
+        };
+      }
+    })
+  );
+  return {
+    checkedAt: Date.now(),
+    proxyActive: config.enabled,
+    channels: checks
+  };
+}
+async function getSpainGatewayOverview() {
+  const config = getSpainGatewayPublicConfig();
+  const atresDispatcher = getSpainProxyDispatcherForTarget(
+    "https://api.atresplayer.com/client/v1/row/live"
+  );
+  const [directGeo, tunneledGeo, a3Check, sextaCheck, atresResp] = await Promise.all([
+    probeGeoExitInfo(void 0),
+    config.enabled && state.proxyUrl ? probeGeoExitInfo(state.proxyUrl) : Promise.resolve(null),
+    checkDvbHeadendHead("http://90.163.85.113:8093/stream/20/index.m3u8"),
+    checkDvbHeadendHead("http://90.163.85.113:8093/stream/21/index.m3u8"),
+    (atresDispatcher ? undiciFetch("https://api.atresplayer.com/client/v1/row/live", {
+      dispatcher: atresDispatcher,
+      headers: { "User-Agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(4500)
+    }) : fetch("https://api.atresplayer.com/client/v1/row/live", {
+      headers: { "User-Agent": "Mozilla/5.0" },
+      signal: AbortSignal.timeout(4500)
+    })).then(async (r) => {
+      await r.body?.cancel?.().catch(() => {
+      });
+      return { reachable: r.ok, status: r.status };
+    }).catch(() => ({ reachable: false, status: 0 }))
+  ]);
+  return {
+    config,
+    directGeo,
+    tunneledGeo,
+    spanishDvbHeadend: {
+      host: "90.163.85.113:8093",
+      antena3Ready: a3Check.ok,
+      lasextaReady: sextaCheck.ok,
+      note: "Cabecera DVB Espa\xF1a 1080p HD directa (Antena 3 / laSexta)"
+    },
+    atresplayerApi: atresResp,
+    urbanVpnAudit: getUrbanVpnAuditSummary(),
+    spainUrbanGateways: listUrbanVpnGateways({ spainOnly: true })
+  };
+}
+
+// server/utils/tlsFetch.ts
 var tlsRelaxedAgent = new https.Agent({
   rejectUnauthorized: false,
   keepAlive: true,
@@ -3514,6 +4647,15 @@ async function streamingFetch(rawUrl, init = {}) {
     return out;
   };
   const allowFallback = init.allowTlsFallback !== false && parsed.protocol === "https:" && !STRICT_TLS_ONLY_HOSTS.some((rx) => rx.test(parsed.hostname));
+  const spainDispatcher = getSpainProxyDispatcherForTarget(parsed.toString());
+  if (spainDispatcher) {
+    const proxiedRes = await undiciFetch2(parsed.toString(), {
+      ...init,
+      dispatcher: spainDispatcher,
+      signal
+    });
+    return proxiedRes;
+  }
   if (shouldUseDirectIpv4Http(parsed.hostname)) {
     return relaxedHttpsRequest(parsed, {
       method: init.method || "GET",
@@ -3769,7 +4911,8 @@ function h2GetRaw(targetUrl, headers = {}, maxTimeSec = 6, redirectsLeft = 4) {
   });
 }
 async function curlGetText(targetUrl, headers = {}, maxTimeSec = 6, preferCurlCli = false, forceIpv4 = true) {
-  if (!preferCurlCli) {
+  const spainProxy = getSpainProxyUrlForTarget(targetUrl);
+  if (!preferCurlCli && !spainProxy) {
     try {
       const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
       if (h2.buf.length > 0 && h2.status < 400) {
@@ -3789,6 +4932,7 @@ async function curlGetText(targetUrl, headers = {}, maxTimeSec = 6, preferCurlCl
       String(Math.min(3, Math.max(2, maxTimeSec))),
       "--max-time",
       String(maxTimeSec),
+      ...spainProxy ? ["--proxy", spainProxy] : [],
       "-w",
       "\n__FINAL_URL__:%{url_effective}"
     ];
@@ -3813,12 +4957,15 @@ async function curlGetText(targetUrl, headers = {}, maxTimeSec = 6, preferCurlCl
   });
 }
 async function curlGetBufferWithStatus(targetUrl, headers = {}, maxTimeSec = 7) {
-  try {
-    const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
-    if (h2.buf.length > 0 && h2.status >= 200 && h2.status < 400) {
-      return { buf: h2.buf, status: h2.status };
+  const spainProxy = getSpainProxyUrlForTarget(targetUrl);
+  if (!spainProxy) {
+    try {
+      const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
+      if (h2.buf.length > 0 && h2.status >= 200 && h2.status < 400) {
+        return { buf: h2.buf, status: h2.status };
+      }
+    } catch {
     }
-  } catch {
   }
   const runCurl = (hdrs) => new Promise((resolve, reject) => {
     const marker = Buffer.from("\n__HTTP_STATUS__:");
@@ -3831,6 +4978,7 @@ async function curlGetBufferWithStatus(targetUrl, headers = {}, maxTimeSec = 7) 
       String(Math.min(3, Math.max(2, maxTimeSec))),
       "--max-time",
       String(maxTimeSec),
+      ...spainProxy ? ["--proxy", spainProxy] : [],
       "-w",
       "\n__HTTP_STATUS__:%{http_code}"
     ];
@@ -3899,6 +5047,7 @@ async function curlGetBuffer(targetUrl, headers = {}, maxTimeSec = 7) {
   return res.buf;
 }
 async function curlPostJsonText(url, payload, headers, maxTimeSec = 5) {
+  const spainProxy = getSpainProxyUrlForTarget(url);
   return new Promise((resolve) => {
     const args = [
       "-4",
@@ -3910,6 +5059,7 @@ async function curlPostJsonText(url, payload, headers, maxTimeSec = 5) {
       String(Math.min(3, Math.max(2, maxTimeSec))),
       "--max-time",
       String(maxTimeSec),
+      ...spainProxy ? ["--proxy", spainProxy] : [],
       "-X",
       "POST",
       "-H",
@@ -4597,15 +5747,6 @@ function generateSpanishTitleHints(title) {
   return variants;
 }
 
-// server/services/belix/belixProxyHelpers.ts
-import crypto6 from "crypto";
-
-// server/routes/proxies/dvbTranscoder.ts
-import crypto5 from "crypto";
-import fs6 from "fs";
-import path5 from "path";
-import { spawn } from "child_process";
-
 // server/routes/proxies/proxyUtils.ts
 import crypto4 from "crypto";
 import fs5 from "fs";
@@ -4625,6 +5766,17 @@ function resolveFfmpegBin() {
   return "ffmpeg";
 }
 var FFMPEG_BIN = resolveFfmpegBin();
+function resolveFfprobeBin() {
+  if (fs5.existsSync("/usr/bin/ffprobe")) {
+    return "/usr/bin/ffprobe";
+  }
+  const siblingProbe = FFMPEG_BIN.replace(/ffmpeg(\.exe)?$/i, "ffprobe$1");
+  if (siblingProbe !== FFMPEG_BIN && fs5.existsSync(siblingProbe)) {
+    return siblingProbe;
+  }
+  return "ffprobe";
+}
+var FFPROBE_BIN = resolveFfprobeBin();
 function getOrCreateRequestId(req) {
   const existing = String(req.headers["x-naim-request-id"] || "").trim();
   if (existing && existing.length <= 64) return existing;
@@ -4656,6 +5808,432 @@ function findDisguisedTsOffset(buf) {
   }
   return 0;
 }
+
+// server/routes/proxies/dvbCodecProbe.ts
+import { spawn } from "child_process";
+import { fetch as undiciFetch3 } from "undici";
+var probedStreamCache = new LruTtlCache(
+  160,
+  15 * 60 * 1e3
+);
+function parseFrameRateFraction(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return 0;
+  const parts = s.split("/");
+  if (parts.length === 2) {
+    const num = Number(parts[0]);
+    const den = Number(parts[1]);
+    if (num > 0 && den > 0) return num / den;
+  }
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function parseFfprobeStreamJson(rawJson) {
+  try {
+    const parsed = JSON.parse(rawJson);
+    const streams = Array.isArray(parsed.streams) ? parsed.streams : [];
+    const vStream = streams.find((s) => s.codec_type === "video");
+    if (!vStream || !vStream.codec_name) {
+      return null;
+    }
+    const aStream = streams.find((s) => s.codec_type === "audio");
+    return {
+      videoCodec: String(vStream.codec_name || "").toLowerCase(),
+      pixFmt: String(vStream.pix_fmt || "").toLowerCase(),
+      fieldOrder: String(vStream.field_order || "progressive").toLowerCase(),
+      width: Number(vStream.width || 0),
+      height: Number(vStream.height || 0),
+      fps: parseFrameRateFraction(vStream.avg_frame_rate) || parseFrameRateFraction(vStream.r_frame_rate) || 25,
+      audioCodec: String(aStream?.codec_name || "").toLowerCase(),
+      audioProfile: String(aStream?.profile || "").trim(),
+      hasAudio: Boolean(aStream)
+    };
+  } catch {
+    return null;
+  }
+}
+async function probeDvbStreamFromBuffer(preamble, cacheKeyUrl = "") {
+  if (cacheKeyUrl) {
+    const cached = probedStreamCache.get(cacheKeyUrl);
+    if (cached) return cached;
+  }
+  if (!preamble || preamble.length < 188) return null;
+  return await new Promise((resolve) => {
+    let settled = false;
+    const stdoutChunks = [];
+    const proc = spawn(FFPROBE_BIN, [
+      "-v",
+      "error",
+      "-f",
+      "mpegts",
+      "-analyzeduration",
+      "450000",
+      "-probesize",
+      String(preamble.length),
+      "-show_streams",
+      "-of",
+      "json",
+      "pipe:0"
+    ]);
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(val);
+    };
+    const timer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+      }
+      finish(null);
+    }, 1500);
+    proc.stdout?.on("data", (chunk) => stdoutChunks.push(chunk));
+    proc.on("error", () => finish(null));
+    proc.on("close", () => {
+      const info = parseFfprobeStreamJson(Buffer.concat(stdoutChunks).toString("utf8"));
+      if (info && cacheKeyUrl) {
+        probedStreamCache.set(cacheKeyUrl, info);
+      }
+      finish(info);
+    });
+    proc.stdin?.on("error", () => {
+    });
+    proc.stdin?.end(preamble);
+  });
+}
+async function probeDvbStreamCodec(cleanUpstream, referer = "", isXtreamLive = false, onUpstreamError) {
+  const cached = probedStreamCache.get(cleanUpstream);
+  if (cached) return cached;
+  const probeArgs = [
+    "-v",
+    "error",
+    ...getSpainFfmpegHttpProxyArgs(cleanUpstream),
+    "-user_agent",
+    isXtreamLive ? "IPTVSmartersPlayer" : TDT_DVB_UA
+  ];
+  if (referer && /^https?:\/\//i.test(referer)) {
+    probeArgs.push("-headers", `Referer: ${referer}\r
+`);
+  }
+  probeArgs.push(
+    "-rw_timeout",
+    "2600000",
+    "-analyzeduration",
+    "450000",
+    "-probesize",
+    "450000",
+    "-show_streams",
+    "-of",
+    "json",
+    cleanUpstream
+  );
+  return await new Promise((resolve) => {
+    let settled = false;
+    const stdoutChunks = [];
+    let stderrStr = "";
+    const proc = spawn(FFPROBE_BIN, probeArgs);
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(val);
+    };
+    const timer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+      }
+      finish(null);
+    }, 2600);
+    proc.stdout?.on("data", (chunk) => stdoutChunks.push(chunk));
+    proc.stderr?.on("data", (chunk) => {
+      stderrStr = (stderrStr + chunk.toString("utf8")).slice(-300);
+    });
+    proc.on("error", () => finish(null));
+    proc.on("close", (code) => {
+      if (code !== 0 && stdoutChunks.length === 0) {
+        if (/404 not found|connection refused|502 bad gateway|timed out/i.test(stderrStr)) {
+          onUpstreamError?.(stderrStr.slice(0, 120));
+        }
+        finish(null);
+        return;
+      }
+      const info = parseFfprobeStreamJson(Buffer.concat(stdoutChunks).toString("utf8"));
+      if (info) {
+        probedStreamCache.set(cleanUpstream, info);
+      }
+      finish(info);
+    });
+  });
+}
+function buildDvbLiveFfmpegArgs(options) {
+  const {
+    cleanUpstream,
+    inputUrl,
+    referer,
+    profile,
+    isXtreamLive,
+    playlistPath,
+    segmentPattern,
+    probe
+  } = options;
+  const actualInput = inputUrl || cleanUpstream;
+  const isPipeInput = actualInput === "pipe:0";
+  const isFastProfile = profile === "fast";
+  const isUhd4kStream = /\/stream\/6[4568]\//i.test(cleanUpstream) || (probe ? probe.width >= 3e3 || probe.height >= 1800 : false);
+  const isInterlaced = Boolean(probe && /^(tt|bb|tb|bt)$/i.test(probe.fieldOrder));
+  const isHighFps = Boolean(probe && probe.fps > 31);
+  const canCopyVideo = Boolean(
+    probe && probe.videoCodec === "h264" && (!probe.pixFmt || /^yuvj?420p$/i.test(probe.pixFmt)) && !isInterlaced && !isUhd4kStream && !isFastProfile
+  );
+  const canCopyAudio = Boolean(
+    canCopyVideo && probe?.hasAudio && probe.audioCodec === "aac" && (!probe.audioProfile || /^(lc|main)$/i.test(probe.audioProfile))
+  );
+  const ffArgs = ["-hide_banner", "-loglevel", "error"];
+  if (!isPipeInput) {
+    ffArgs.push(...getSpainFfmpegHttpProxyArgs(cleanUpstream));
+    ffArgs.push("-user_agent", isXtreamLive ? "IPTVSmartersPlayer" : TDT_DVB_UA);
+    if (referer && /^https?:\/\//i.test(referer)) {
+      ffArgs.push("-headers", `Referer: ${referer}\r
+`);
+    }
+  }
+  let codecArgs;
+  if (canCopyVideo) {
+    codecArgs = [
+      "-c:v",
+      "copy",
+      ...canCopyAudio ? ["-c:a", "copy"] : ["-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", "160k"]
+    ];
+  } else {
+    const vfParts = [];
+    if (isInterlaced) {
+      vfParts.push("yadif=0:-1:1");
+    }
+    if (isUhd4kStream || isHighFps) {
+      vfParts.push("fps=25");
+    }
+    if (isUhd4kStream) {
+      vfParts.push("scale=1920:1080:flags=bilinear");
+    } else if (isFastProfile) {
+      vfParts.push("scale='min(1280,iw)':-2");
+    } else {
+      vfParts.push("scale='min(1920,iw)':-2");
+    }
+    vfParts.push("format=yuv420p");
+    const lock25Fps = isUhd4kStream || isHighFps;
+    codecArgs = [
+      "-vf",
+      vfParts.join(","),
+      "-c:v",
+      "libx264",
+      "-preset",
+      isFastProfile ? "ultrafast" : "veryfast",
+      ...isFastProfile ? ["-tune", "zerolatency"] : [],
+      "-profile:v",
+      "high",
+      "-level:v",
+      isFastProfile ? "4.0" : "4.1",
+      "-pix_fmt",
+      "yuv420p",
+      "-crf",
+      isFastProfile ? "21" : "19",
+      "-maxrate",
+      isFastProfile ? "2600k" : "4800k",
+      "-bufsize",
+      isFastProfile ? "5200k" : "9600k",
+      ...lock25Fps ? ["-r", "25", "-g", "50", "-keyint_min", "50"] : ["-g", "50", "-keyint_min", "25"],
+      "-sc_threshold",
+      "0",
+      "-force_key_frames",
+      "expr:gte(t,n_forced*2)",
+      "-threads",
+      "0",
+      "-c:a",
+      "aac",
+      "-ac",
+      "2",
+      "-ar",
+      "48000",
+      "-b:a",
+      isFastProfile ? "128k" : "160k"
+    ];
+  }
+  ffArgs.push(
+    ...isPipeInput ? ["-f", "mpegts"] : [
+      ...isXtreamLive ? [] : ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2"],
+      "-rw_timeout",
+      isXtreamLive ? "7000000" : "5000000",
+      .../\.m3u8(\?|$)/i.test(cleanUpstream) ? ["-live_start_index", "-3"] : []
+    ],
+    "-analyzeduration",
+    "400000",
+    "-probesize",
+    "400000",
+    "-fflags",
+    "+genpts+discardcorrupt",
+    "-err_detect",
+    "ignore_err",
+    "-avoid_negative_ts",
+    "make_zero",
+    "-i",
+    actualInput,
+    "-map",
+    "0:v:0",
+    "-map",
+    "0:a:0?",
+    ...codecArgs,
+    "-sn",
+    "-dn",
+    "-f",
+    "hls",
+    "-hls_init_time",
+    "1",
+    "-hls_time",
+    "2",
+    "-hls_list_size",
+    "12",
+    "-hls_flags",
+    "delete_segments+independent_segments+omit_endlist+temp_file",
+    "-hls_segment_filename",
+    segmentPattern,
+    playlistPath
+  );
+  return ffArgs;
+}
+async function openSingleSocketMpegTsStream(options) {
+  const { cleanUpstream, referer, isXtreamLive, cachedProbe, onError } = options;
+  const ac = new AbortController();
+  const headers = {
+    "User-Agent": isXtreamLive ? "IPTVSmartersPlayer" : TDT_DVB_UA,
+    Accept: "*/*"
+  };
+  if (referer && /^https?:\/\//i.test(referer)) {
+    headers["Referer"] = referer;
+  }
+  const connectTimer = setTimeout(() => {
+    try {
+      ac.abort();
+    } catch {
+    }
+  }, 3200);
+  try {
+    const dispatcher = getSpainProxyDispatcherForTarget(cleanUpstream);
+    const resp = await undiciFetch3(cleanUpstream, {
+      method: "GET",
+      headers,
+      dispatcher,
+      signal: ac.signal
+    });
+    if (!resp.ok || !resp.body) {
+      clearTimeout(connectTimer);
+      if (resp.status === 404 || resp.status >= 500) {
+        onError?.(`HTTP ${resp.status}`);
+      }
+      try {
+        await resp.body?.cancel?.();
+      } catch {
+      }
+      return null;
+    }
+    const reader = resp.body.getReader();
+    const chunks = [];
+    let totalBytes = 0;
+    const targetPreamble = cachedProbe ? 48e3 : 22e4;
+    while (totalBytes < targetPreamble) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value && value.byteLength > 0) {
+        chunks.push(Buffer.from(value));
+        totalBytes += value.byteLength;
+      }
+    }
+    clearTimeout(connectTimer);
+    if (totalBytes < 188) {
+      ac.abort();
+      onError?.("Empty DVB stream");
+      return null;
+    }
+    const preamble = Buffer.concat(chunks);
+    const probe = cachedProbe || await probeDvbStreamFromBuffer(preamble, cleanUpstream);
+    return { reader, preamble, abortController: ac, probe };
+  } catch (err) {
+    clearTimeout(connectTimer);
+    try {
+      ac.abort();
+    } catch {
+    }
+    onError?.(err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+function pumpMpegTsPipeToFfmpeg(options) {
+  const { pipe, stdin, isDead, onStall, readIdleTimeoutMs = 6500 } = options;
+  stdin.on("error", () => {
+  });
+  const waitStdinReady = () => new Promise((resDrain) => {
+    const onDrain = () => {
+      stdin.off("close", onClose);
+      resDrain(true);
+    };
+    const onClose = () => {
+      stdin.off("drain", onDrain);
+      resDrain(false);
+    };
+    stdin.once("drain", onDrain);
+    stdin.once("close", onClose);
+  });
+  const readChunkWithTimeout = async () => {
+    let stallTimer = null;
+    try {
+      return await Promise.race([
+        pipe.reader.read(),
+        new Promise((_resolve, reject) => {
+          stallTimer = setTimeout(() => {
+            onStall?.();
+            try {
+              pipe.abortController.abort();
+            } catch {
+            }
+            reject(new Error("MPEG-TS upstream read stall timeout"));
+          }, readIdleTimeoutMs);
+        })
+      ]);
+    } finally {
+      if (stallTimer) clearTimeout(stallTimer);
+    }
+  };
+  void (async () => {
+    try {
+      if (!stdin.write(pipe.preamble)) {
+        if (!await waitStdinReady()) return;
+      }
+      while (!isDead()) {
+        const { done, value } = await readChunkWithTimeout();
+        if (done || isDead()) break;
+        if (value && value.byteLength > 0) {
+          if (!stdin.write(Buffer.from(value))) {
+            if (!await waitStdinReady()) break;
+          }
+        }
+      }
+    } catch {
+    } finally {
+      try {
+        pipe.abortController.abort();
+      } catch {
+      }
+      try {
+        stdin.end();
+      } catch {
+      }
+    }
+  })();
+}
+
+// server/routes/proxies/dvbSegmentRemuxer.ts
+import { spawn as spawn2 } from "child_process";
 
 // server/services/runtimeMetricsCollector.ts
 import os from "os";
@@ -4873,12 +6451,11 @@ var RuntimeMetricsCollector = class {
 };
 var runtimeMetrics = new RuntimeMetricsCollector();
 
-// server/routes/proxies/dvbTranscoder.ts
+// server/routes/proxies/dvbSegmentRemuxer.ts
 var dvbAacSegmentCache = new LruTtlCache(
   80,
   8e4
 );
-var dvbRollingPlaylistMap = new LruTtlCache(45, 9e4);
 var activeDvbTranscodes = 0;
 var MAX_CONCURRENT_DVB_TRANSCODES = 4;
 var dvbTranscodeQueue = [];
@@ -4905,7 +6482,11 @@ function scheduleDvbTranscode(fn, highPriority) {
     }
   });
 }
-function remuxDvbTsToAac(segmentUrl, referer, highPriority = false) {
+function remuxDvbTsToAacWithHealth(options) {
+  const { segmentUrl, referer, highPriority = false, isCoolingDown, markDown } = options;
+  if (isCoolingDown(segmentUrl)) {
+    return Promise.reject(new Error("DVB upstream headend cooling down"));
+  }
   const now = Date.now();
   const cached = dvbAacSegmentCache.get(segmentUrl);
   if (cached && now - cached.ts < 75e3) {
@@ -4923,7 +6504,7 @@ function remuxDvbTsToAac(segmentUrl, referer, highPriority = false) {
     try {
       const resp = await streamingFetch(segmentUrl, {
         headers: segHeaders,
-        timeoutMs: 7e3
+        timeoutMs: 4500
       });
       if (resp.ok) {
         rawBuf = Buffer.from(await resp.arrayBuffer());
@@ -4931,14 +6512,15 @@ function remuxDvbTsToAac(segmentUrl, referer, highPriority = false) {
     } catch {
     }
     if (!rawBuf || rawBuf.length === 0) {
-      rawBuf = await curlGetBuffer(segmentUrl, segHeaders, 8);
+      rawBuf = await curlGetBuffer(segmentUrl, segHeaders, 5);
     }
     if (!rawBuf || rawBuf.length < 376) {
+      markDown(segmentUrl, "Empty or unreachable DVB segment", 25e3);
       throw new Error("Empty or truncated DVB TS segment");
     }
     return await scheduleDvbTranscode(
       () => new Promise((resolve, reject) => {
-        const ff = spawn(FFMPEG_BIN, [
+        const ff = spawn2(FFMPEG_BIN, [
           "-hide_banner",
           "-loglevel",
           "error",
@@ -5011,6 +6593,85 @@ function remuxDvbTsToAac(segmentUrl, referer, highPriority = false) {
   dvbAacSegmentCache.set(segmentUrl, { promise: jobPromise, ts: now });
   return jobPromise;
 }
+
+// server/routes/proxies/dvbTranscoder.ts
+var dvbRollingPlaylistMap = new LruTtlCache(45, 9e4);
+var dvbHostDownCache = new LruTtlCache(64, 45e3);
+var dvbHostUpCache = new LruTtlCache(64, 15e3);
+function getDvbHostKey(rawUrl) {
+  try {
+    return new URL(rawUrl).host.toLowerCase();
+  } catch {
+    return rawUrl.slice(0, 80);
+  }
+}
+function getDvbCooldownKey(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    return `${u.host.toLowerCase()}${u.pathname}`;
+  } catch {
+    return rawUrl.slice(0, 120);
+  }
+}
+function isDvbUpstreamCoolingDown(rawUrl) {
+  const key = getDvbCooldownKey(rawUrl);
+  const entry = dvbHostDownCache.get(key);
+  if (!entry) return false;
+  if (Date.now() < entry.until) return true;
+  dvbHostDownCache.delete(key);
+  return false;
+}
+function markDvbUpstreamDown(rawUrl, reason, ttlMs = 45e3) {
+  const key = getDvbCooldownKey(rawUrl);
+  const effectiveTtl = isXtreamLiveStreamUrl(rawUrl) ? Math.min(ttlMs, 12e3) : ttlMs;
+  dvbHostDownCache.set(key, { until: Date.now() + effectiveTtl, reason });
+  dvbHostUpCache.delete(key);
+}
+async function probeDvbUpstreamReachable(cleanUpstream, referer, timeoutMs = 2600) {
+  const streamKey = getDvbCooldownKey(cleanUpstream);
+  if (isDvbUpstreamCoolingDown(cleanUpstream)) return false;
+  if (dvbHostUpCache.get(streamKey)) return true;
+  const headers = {
+    "User-Agent": getPreferredUpstreamUa(cleanUpstream),
+    Accept: "*/*"
+  };
+  if (referer && /^https?:\/\//i.test(referer)) {
+    headers["Referer"] = referer;
+  }
+  try {
+    const resp = await streamingFetch(cleanUpstream, {
+      method: "GET",
+      headers,
+      timeoutMs
+    });
+    try {
+      await resp.body?.cancel?.();
+    } catch {
+    }
+    if (resp.ok || resp.status === 206) {
+      dvbHostUpCache.set(streamKey, true);
+      return true;
+    }
+    if (resp.status === 404 || resp.status >= 500) {
+      markDvbUpstreamDown(cleanUpstream, `HTTP ${resp.status}`, 25e3);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    markDvbUpstreamDown(cleanUpstream, msg, 45e3);
+    return false;
+  }
+}
+function remuxDvbTsToAac(segmentUrl, referer, highPriority = false) {
+  return remuxDvbTsToAacWithHealth({
+    segmentUrl,
+    referer,
+    highPriority,
+    isCoolingDown: isDvbUpstreamCoolingDown,
+    markDown: markDvbUpstreamDown
+  });
+}
 var DVB_LIVE_ROOT = "/tmp/naim-dvb-live";
 try {
   if (fs6.existsSync(DVB_LIVE_ROOT)) {
@@ -5018,10 +6679,14 @@ try {
   }
 } catch {
 }
-var MAX_LIVE_DVB_SESSIONS = 4;
-var DVB_SESSION_IDLE_MS = 45e3;
+var MAX_LIVE_DVB_SESSIONS = 6;
+var DVB_SESSION_IDLE_MS = 9e4;
 var liveDvbSessions = /* @__PURE__ */ new Map();
+var inflightDvbSessionStarts = /* @__PURE__ */ new Map();
 var dvbSessionUpstreamMeta = new LruTtlCache(200, 24 * 60 * 60 * 1e3);
+function isXtreamLiveStreamUrl(rawUrl) {
+  return /\/live\/[^/]+\/[^/]+\//i.test(String(rawUrl || ""));
+}
 function normalizeDvbUpstream(rawUpstreamUrl) {
   return String(rawUpstreamUrl || "").trim().replace(/[?&]profile=(hd|fast|iptv)\b/gi, "");
 }
@@ -5038,7 +6703,7 @@ function getActiveDvbSessionPath(rawUpstreamUrl, profile = "hd") {
   if (!fs6.existsSync(plFile)) return null;
   try {
     const st = fs6.statSync(plFile);
-    if (Date.now() - st.mtimeMs < 15e3) {
+    if (Date.now() - st.mtimeMs < 1e4) {
       existing.lastAccessAt = Date.now();
       return `/api/dvb-live/${sessionKey}/index.m3u8`;
     }
@@ -5051,6 +6716,10 @@ function destroyLiveDvbSession(key) {
   if (!sess) return;
   sess.dead = true;
   liveDvbSessions.delete(key);
+  try {
+    sess.abortController?.abort();
+  } catch {
+  }
   try {
     sess.proc.kill("SIGKILL");
   } catch {
@@ -5073,13 +6742,45 @@ setInterval(() => {
   for (const [key, sess] of liveDvbSessions.entries()) {
     if (sess.dead || now - sess.lastAccessAt > DVB_SESSION_IDLE_MS) {
       destroyLiveDvbSession(key);
+      continue;
+    }
+    if (now - sess.startedAt > 15e3) {
+      try {
+        const plFile = path5.join(sess.dir, "index.m3u8");
+        const st = fs6.statSync(plFile);
+        if (now - st.mtimeMs > 12e3) {
+          markDvbUpstreamDown(sess.upstreamUrl, "Live HLS playlist stalled", 2e4);
+          destroyLiveDvbSession(key);
+        }
+      } catch {
+      }
     }
   }
-}, 15e3).unref();
+}, 1e4).unref();
 async function ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile = "hd", referer = "", attempt = 0) {
   const cleanUpstream = normalizeDvbUpstream(rawUpstreamUrl);
   const sessionKey = buildDvbSessionKey(cleanUpstream, profile);
   dvbSessionUpstreamMeta.set(sessionKey, { upstreamUrl: cleanUpstream, profile, referer });
+  const inflight = inflightDvbSessionStarts.get(sessionKey);
+  if (inflight) {
+    return inflight;
+  }
+  const runPromise = startOrReuseLiveDvbCleanHlsSession(
+    rawUpstreamUrl,
+    cleanUpstream,
+    sessionKey,
+    profile,
+    referer,
+    attempt
+  ).finally(() => {
+    if (inflightDvbSessionStarts.get(sessionKey) === runPromise) {
+      inflightDvbSessionStarts.delete(sessionKey);
+    }
+  });
+  inflightDvbSessionStarts.set(sessionKey, runPromise);
+  return runPromise;
+}
+async function startOrReuseLiveDvbCleanHlsSession(rawUpstreamUrl, cleanUpstream, sessionKey, profile, referer, attempt) {
   const existing = liveDvbSessions.get(sessionKey);
   if (existing && !existing.dead) {
     existing.lastAccessAt = Date.now();
@@ -5089,7 +6790,7 @@ async function ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile = "hd", refe
     if (ok && fs6.existsSync(plFile)) {
       try {
         const st = fs6.statSync(plFile);
-        fresh = Date.now() - st.mtimeMs < 15e3;
+        fresh = Date.now() - st.mtimeMs < 1e4;
       } catch {
         fresh = false;
       }
@@ -5099,6 +6800,30 @@ async function ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile = "hd", refe
       return `/api/dvb-live/${sessionKey}/index.m3u8`;
     }
     destroyLiveDvbSession(sessionKey);
+  }
+  const isXtreamLive = isXtreamLiveStreamUrl(cleanUpstream);
+  if (isDvbUpstreamCoolingDown(cleanUpstream)) {
+    return null;
+  }
+  const isM3u8Input = /\.m3u8(\?|$)/i.test(cleanUpstream);
+  let probe = probedStreamCache.get(cleanUpstream) || null;
+  if (isXtreamLive) {
+    const targetHost = getDvbHostKey(cleanUpstream);
+    let evicted = false;
+    for (const [k, s] of liveDvbSessions.entries()) {
+      if (k !== sessionKey && getDvbHostKey(s.upstreamUrl) === targetHost) {
+        destroyLiveDvbSession(k);
+        evicted = true;
+      }
+    }
+    if (evicted) {
+      await new Promise((r) => setTimeout(r, 180));
+    }
+  } else if (isM3u8Input && !probe) {
+    const reachable = await probeDvbUpstreamReachable(cleanUpstream, referer, 1600);
+    if (!reachable) {
+      return null;
+    }
   }
   while (liveDvbSessions.size >= MAX_LIVE_DVB_SESSIONS) {
     let oldestKey = "";
@@ -5121,120 +6846,82 @@ async function ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile = "hd", refe
   }
   const playlistPath = path5.join(sessionDir, "index.m3u8");
   const segmentPattern = path5.join(sessionDir, "seg_%05d.ts");
-  const isXtreamLive = /\/live\/[^/]+\/[^/]+\//i.test(cleanUpstream);
-  const ffArgs = [
-    "-hide_banner",
-    "-loglevel",
-    "error",
-    "-user_agent",
-    isXtreamLive ? "IPTVSmartersPlayer" : TDT_DVB_UA
-  ];
-  if (referer && /^https?:\/\//i.test(referer)) {
-    ffArgs.push("-headers", `Referer: ${referer}\r
-`);
+  const isTestEnv = process.env.NODE_ENV === "test" || Boolean(process.env.VITEST);
+  let mpegTsPipe = null;
+  if (!isTestEnv && !isM3u8Input) {
+    mpegTsPipe = await openSingleSocketMpegTsStream({
+      cleanUpstream,
+      referer,
+      isXtreamLive,
+      cachedProbe: probe,
+      onError: (reason) => markDvbUpstreamDown(cleanUpstream, reason, 12e3)
+    });
+    if (!mpegTsPipe) {
+      return null;
+    }
+    probe = mpegTsPipe.probe;
+  } else if (!probe && !isTestEnv) {
+    probe = await probeDvbStreamCodec(cleanUpstream, referer, isXtreamLive, (reason) => {
+      markDvbUpstreamDown(cleanUpstream, reason, 25e3);
+    });
+    if (isDvbUpstreamCoolingDown(cleanUpstream)) {
+      return null;
+    }
   }
-  const isFastProfile = profile === "fast";
-  const isUhd4kStream = /\/stream\/6[4568]\//i.test(cleanUpstream);
-  const vfFilter = isUhd4kStream ? isFastProfile ? "fps=25,scale=1280:720:flags=fast_bilinear,format=yuv420p" : "fps=25,scale=1920:1080:flags=bilinear,format=yuv420p" : isFastProfile ? "yadif=0:-1:1,scale='min(1280,iw)':-2,format=yuv420p" : "yadif=0:-1:1,scale='min(1920,iw)':-2,format=yuv420p";
-  const useUltrafast = isUhd4kStream || isFastProfile || liveDvbSessions.size >= 2;
-  ffArgs.push(
-    "-reconnect",
-    "1",
-    "-reconnect_streamed",
-    "1",
-    "-reconnect_delay_max",
-    "2",
-    "-rw_timeout",
-    "7000000",
-    "-analyzeduration",
-    "800000",
-    "-probesize",
-    "1000000",
-    "-live_start_index",
-    "-3",
-    "-fflags",
-    "+genpts+discardcorrupt",
-    "-avoid_negative_ts",
-    "make_zero",
-    ...isUhd4kStream ? [] : ["-err_detect", "+crccheck+bitstream", "-ec", "favor_inter+deblock"],
-    "-i",
+  const ffArgs = buildDvbLiveFfmpegArgs({
     cleanUpstream,
-    "-map",
-    "0:v:0",
-    "-map",
-    "0:a:0?",
-    "-vf",
-    vfFilter,
-    "-c:v",
-    "libx264",
-    "-preset",
-    useUltrafast ? "ultrafast" : "superfast",
-    ...isFastProfile ? ["-tune", "zerolatency"] : [],
-    "-profile:v",
-    "high",
-    "-level:v",
-    isFastProfile ? "4.0" : "4.1",
-    "-pix_fmt",
-    "yuv420p",
-    "-crf",
-    isFastProfile ? "21" : "18",
-    "-maxrate",
-    isFastProfile ? "2600k" : "6500k",
-    "-bufsize",
-    isFastProfile ? "5200k" : "13000k",
-    "-r",
-    "25",
-    "-g",
-    "50",
-    "-keyint_min",
-    "50",
-    "-sc_threshold",
-    "0",
-    "-force_key_frames",
-    "expr:gte(t,n_forced*2)",
-    "-threads",
-    "2",
-    "-c:a",
-    "aac",
-    "-ac",
-    "2",
-    "-ar",
-    "48000",
-    "-b:a",
-    isFastProfile ? "128k" : "160k",
-    "-sn",
-    "-dn",
-    "-f",
-    "hls",
-    "-hls_time",
-    "2",
-    "-hls_list_size",
-    "10",
-    "-hls_flags",
-    "delete_segments+independent_segments+omit_endlist+temp_file",
-    "-hls_segment_filename",
+    inputUrl: mpegTsPipe ? "pipe:0" : cleanUpstream,
+    referer,
+    profile,
+    isXtreamLive,
+    playlistPath,
     segmentPattern,
-    playlistPath
-  );
-  const proc = spawn(FFMPEG_BIN, ffArgs);
+    probe
+  });
+  const proc = spawn3(FFMPEG_BIN, ffArgs);
   const session = {
     key: sessionKey,
     upstreamUrl: cleanUpstream,
     referer,
     dir: sessionDir,
     proc,
+    abortController: mpegTsPipe?.abortController,
     startedAt: Date.now(),
     lastAccessAt: Date.now(),
     dead: false,
     readyPromise: Promise.resolve(false)
   };
+  if (mpegTsPipe && proc.stdin) {
+    pumpMpegTsPipeToFfmpeg({
+      pipe: mpegTsPipe,
+      stdin: proc.stdin,
+      isDead: () => session.dead,
+      onStall: () => {
+        markDvbUpstreamDown(cleanUpstream, "Upstream TS stream stalled", 25e3);
+        destroyLiveDvbSession(sessionKey);
+      }
+    });
+  }
   let stderrTail = "";
+  let hadNetworkFailure = false;
   proc.stderr?.on("data", (chunk) => {
     stderrTail = (stderrTail + chunk.toString("utf8")).slice(-400);
   });
   proc.on("exit", (code) => {
+    try {
+      session.abortController?.abort();
+    } catch {
+    }
     if (code !== 0 && !session.dead) {
-      logger.warn({ key: sessionKey, code, stderrTail }, "dvb_ffmpeg_exited_early");
+      hadNetworkFailure = /connection timed out|connection refused|no route to host|failed to resolve|404 not found|502 bad gateway|503 service/i.test(
+        stderrTail
+      );
+      if (hadNetworkFailure) {
+        markDvbUpstreamDown(cleanUpstream, stderrTail.slice(0, 120), 45e3);
+        logger.debug({ key: sessionKey, code }, "dvb_upstream_unreachable");
+      } else {
+        logger.warn({ key: sessionKey, code, stderrTail }, "dvb_ffmpeg_exited_early");
+      }
     }
     session.dead = true;
   });
@@ -5243,7 +6930,7 @@ async function ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile = "hd", refe
     session.dead = true;
   });
   session.readyPromise = new Promise((resolve) => {
-    const deadline = Date.now() + 15e3;
+    const deadline = Date.now() + (isXtreamLive ? 6500 : 12e3);
     let inTick = false;
     const poll = setInterval(async () => {
       if (session.dead) {
@@ -5262,10 +6949,10 @@ async function ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile = "hd", refe
       try {
         const content = await fs6.promises.readFile(playlistPath, "utf8");
         const segMatches = content.match(/seg_\d+\.ts/g);
-        if (segMatches && segMatches.length >= 2) {
+        if (segMatches && segMatches.length >= 1) {
           const firstSegPath = path5.join(sessionDir, segMatches[0]);
           const st = await fs6.promises.stat(firstSegPath);
-          if (st.size > 564) {
+          if (st.size > 1024) {
             clearInterval(poll);
             resolve(true);
             return;
@@ -5285,8 +6972,15 @@ async function ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile = "hd", refe
   }
   const elapsed = Date.now() - session.startedAt;
   destroyLiveDvbSession(sessionKey);
-  if (attempt === 0 && elapsed < 7e3) {
-    return ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile, referer, 1);
+  if (!isXtreamLive && attempt === 0 && !hadNetworkFailure && !isDvbUpstreamCoolingDown(cleanUpstream) && elapsed < 7e3) {
+    return startOrReuseLiveDvbCleanHlsSession(
+      rawUpstreamUrl,
+      cleanUpstream,
+      sessionKey,
+      profile,
+      referer,
+      1
+    );
   }
   return null;
 }
@@ -5368,6 +7062,7 @@ var handleDvbLive = async (req, res) => {
 };
 
 // server/services/belix/belixProxyHelpers.ts
+import crypto6 from "crypto";
 var opaqueSubPlaylistCache = new LruTtlCache(2e3, 15 * 60 * 1e3);
 var opaqueSegmentCache = new LruTtlCache(6e3, 8 * 60 * 1e3);
 function createOpaqueToken(rawUrl) {
@@ -5431,15 +7126,18 @@ function rewritePlaylistWithOpaqueTokens(manifestText, baseUrl, referer, originP
   }
   return out.join("\n") + "\n";
 }
-async function fetchBelixPlaylistText(targetUrl, referer) {
+async function fetchBelixPlaylistText(targetUrl, referer, timeoutMs = 2400, skipCurlRetry = false) {
   await assertSafeProxyUrl(targetUrl);
-  const headers = {
-    "User-Agent": CHROME_UA,
+  const baseHeaders = {
     Accept: "*/*",
     Referer: referer
   };
+  let timedOut = false;
   try {
-    const res = await streamingFetch(targetUrl, { headers, timeoutMs: 6500 });
+    const res = await streamingFetch(targetUrl, {
+      headers: { ...baseHeaders, "User-Agent": "IPTVSmartersPlayer" },
+      timeoutMs
+    });
     if (res.ok) {
       const text2 = await res.text();
       if (text2.includes("#EXTM3U") && !/nosignal|<!doctype|<html/i.test(text2)) {
@@ -5448,24 +7146,27 @@ async function fetchBelixPlaylistText(targetUrl, referer) {
         return { text: text2, baseUrl: finalUrl };
       }
     }
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    timedOut = /timeout|aborted/i.test(msg);
   }
-  for (const ua of [CHROME_UA, "IPTVSmartersPlayer"]) {
-    const fb = await curlGetText(
-      targetUrl,
-      { ...headers, "User-Agent": ua },
-      6,
-      false,
-      true
-    ).catch(() => ({
-      text: "",
-      effectiveUrl: targetUrl
-    }));
-    if (fb.text && fb.text.includes("#EXTM3U") && !/nosignal|<!doctype|<html/i.test(fb.text)) {
-      const finalUrl = fb.effectiveUrl || targetUrl;
-      await assertSafeProxyUrl(finalUrl);
-      return { text: fb.text, baseUrl: finalUrl };
-    }
+  if (timedOut || skipCurlRetry) {
+    return null;
+  }
+  const fb = await curlGetText(
+    targetUrl,
+    { ...baseHeaders, "User-Agent": "IPTVSmartersPlayer" },
+    4,
+    false,
+    true
+  ).catch(() => ({
+    text: "",
+    effectiveUrl: targetUrl
+  }));
+  if (fb.text && fb.text.includes("#EXTM3U") && !/nosignal|<!doctype|<html/i.test(fb.text)) {
+    const finalUrl = fb.effectiveUrl || targetUrl;
+    await assertSafeProxyUrl(finalUrl);
+    return { text: fb.text, baseUrl: finalUrl };
   }
   return null;
 }
@@ -5484,14 +7185,30 @@ async function resolveBelixManifestForSession(session, streamId, originPrefix = 
     const warmManifest = readLiveDvbPlaylistForIptv(warmPath, originPrefix);
     if (warmManifest) return warmManifest;
   }
+  const isTestEnv = process.env.NODE_ENV === "test" || Boolean(process.env.VITEST);
+  const preferTsRelay = !isTestEnv;
+  if (preferTsRelay) {
+    const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, "hd", referer).catch(() => null);
+    if (dvbPath) {
+      const tsManifest = readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
+      if (tsManifest) return tsManifest;
+    }
+  }
   const targetUrl = `${session.origin}/live/${u}/${p}/${idEnc}.m3u8`;
-  const loaded = await fetchBelixPlaylistText(targetUrl, referer).catch(() => null);
+  const loaded = await fetchBelixPlaylistText(
+    targetUrl,
+    referer,
+    preferTsRelay ? 1600 : 2400,
+    preferTsRelay
+  ).catch(() => null);
   if (loaded) {
     return rewritePlaylistWithOpaqueTokens(loaded.text, loaded.baseUrl, referer, originPrefix);
   }
-  const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, "hd", referer).catch(() => null);
-  if (dvbPath) {
-    return readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
+  if (!preferTsRelay) {
+    const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, "hd", referer).catch(() => null);
+    if (dvbPath) {
+      return readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
+    }
   }
   return null;
 }
@@ -5509,7 +7226,7 @@ async function fetchBelixOpaqueSegment(tokenWithExt, rangeHeader) {
   if (!entry) return null;
   await assertSafeProxyUrl(entry.rawUrl);
   const headers = {
-    "User-Agent": CHROME_UA,
+    "User-Agent": "IPTVSmartersPlayer",
     Accept: "*/*",
     Referer: entry.referer
   };
@@ -6191,7 +7908,133 @@ function getBelixLiveChannels(opts) {
   }
   return list;
 }
+function isAnyBelixConnected(sessionKey = DEFAULT_BELIX_SESSION_KEY) {
+  if (getActiveSession(sessionKey)) return true;
+  if (belixBackupPortals.length > 0) return true;
+  if (getFallbackBelixSessionCreds()) return true;
+  for (const slot of belixSessionSlots.values()) {
+    if (slot.session) return true;
+  }
+  return false;
+}
+var belixBackupPortals = [];
+function normalizeChannelLookupName(val) {
+  return String(val || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\b(f?hd|uhd|4k|1080p|720p|es|esp|vip|backup|raw|hevc)\b/gi, " ").replace(/[^a-z0-9]+/g, " ").trim();
+}
+async function addBelixBackupPortal(params) {
+  const normalizedServer = normalizeServerInput(params.serverUrl);
+  const username = String(params.username || "").trim();
+  const password = String(params.password || "").trim();
+  if (!normalizedServer || !username || !password) {
+    return { ok: false, error: "Servidor Xtream, usuario y contrase\xF1a requeridos." };
+  }
+  let parsedServer;
+  try {
+    parsedServer = await assertSafeProxyUrl(normalizedServer);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Servidor no permitido." };
+  }
+  const origin = parsedServer.origin;
+  const dup = belixBackupPortals.find(
+    (b) => b.origin === origin && b.username === username
+  );
+  if (dup) {
+    dup.password = password;
+    return {
+      ok: true,
+      backup: {
+        id: dup.id,
+        serverOrigin: dup.origin,
+        maskedUsername: maskUsername(dup.username),
+        addedAt: dup.addedAt,
+        cachedStreamsCount: dup.nameToStreamId.size
+      }
+    };
+  }
+  if (belixBackupPortals.length >= 4) {
+    belixBackupPortals.shift();
+  }
+  const entry = {
+    id: `bk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    origin,
+    username,
+    password,
+    addedAt: Date.now(),
+    nameToStreamId: /* @__PURE__ */ new Map(),
+    streamsFetchedAt: 0
+  };
+  belixBackupPortals.push(entry);
+  return {
+    ok: true,
+    backup: {
+      id: entry.id,
+      serverOrigin: entry.origin,
+      maskedUsername: maskUsername(entry.username),
+      addedAt: entry.addedAt,
+      cachedStreamsCount: 0
+    }
+  };
+}
+function getBelixBackupPortals() {
+  return belixBackupPortals.map((b) => ({
+    id: b.id,
+    serverOrigin: b.origin,
+    maskedUsername: maskUsername(b.username),
+    addedAt: b.addedAt,
+    cachedStreamsCount: b.nameToStreamId.size
+  }));
+}
+function removeBelixBackupPortal(id) {
+  const idx = belixBackupPortals.findIndex((b) => b.id === id);
+  if (idx === -1) return false;
+  belixBackupPortals.splice(idx, 1);
+  return true;
+}
+async function resolveBackupStreamIdByName(backup, channelNameHint) {
+  const cleanHint = normalizeChannelLookupName(channelNameHint);
+  if (!cleanHint) return null;
+  if (Date.now() - backup.streamsFetchedAt > 30 * 60 * 1e3 || backup.nameToStreamId.size === 0) {
+    backup.streamsFetchedAt = Date.now();
+    const apiUrl = `${backup.origin}/player_api.php?username=${encodeURIComponent(
+      backup.username
+    )}&password=${encodeURIComponent(backup.password)}&action=get_live_streams`;
+    const res = await fetchXtreamJsonWithFallback(apiUrl, 9e3).catch(() => ({
+      ok: false,
+      status: 0,
+      data: null
+    }));
+    if (res.ok && Array.isArray(res.data)) {
+      backup.nameToStreamId.clear();
+      for (const s of res.data) {
+        const sid = String(s?.stream_id || "").trim();
+        const norm = normalizeChannelLookupName(String(s?.name || ""));
+        if (sid && norm && !backup.nameToStreamId.has(norm)) {
+          backup.nameToStreamId.set(norm, sid);
+        }
+      }
+    }
+  }
+  const exact = backup.nameToStreamId.get(cleanHint);
+  if (exact) return exact;
+  for (const [normName2, sid] of backup.nameToStreamId.entries()) {
+    if (normName2.includes(cleanHint) || cleanHint.includes(normName2)) {
+      return sid;
+    }
+  }
+  return null;
+}
 async function initBelixFromEnv() {
+  const backupRaw = String(process.env.BELIX_XTREAM_BACKUPS || "").trim();
+  if (backupRaw) {
+    for (const chunk of backupRaw.split(";")) {
+      const [srv2, usr2, pwd2] = chunk.split("|").map((v) => v.trim());
+      if (srv2 && usr2 && pwd2) {
+        await addBelixBackupPortal({ serverUrl: srv2, username: usr2, password: pwd2 }).catch(
+          () => void 0
+        );
+      }
+    }
+  }
   const srv = String(ENV.belixXtreamServer || "").trim();
   const usr = String(ENV.belixXtreamUser || "").trim();
   const pwd = String(ENV.belixXtreamPass || "").trim();
@@ -6203,10 +8046,15 @@ async function initBelixFromEnv() {
     sessionKey: DEFAULT_BELIX_SESSION_KEY
   }).catch(() => void 0);
 }
+var DEFAULT_BUILTIN_BELIX_PORTAL = {
+  server: "http://1.sharkpro.ink:80",
+  user: "8996754342",
+  pass: "4228202130"
+};
 function getFallbackBelixSessionCreds() {
-  const srv = normalizeServerInput(ENV.belixXtreamServer || "");
-  const usr = String(ENV.belixXtreamUser || "").trim();
-  const pwd = String(ENV.belixXtreamPass || "").trim();
+  const srv = normalizeServerInput(ENV.belixXtreamServer || DEFAULT_BUILTIN_BELIX_PORTAL.server);
+  const usr = String(ENV.belixXtreamUser || DEFAULT_BUILTIN_BELIX_PORTAL.user).trim();
+  const pwd = String(ENV.belixXtreamPass || DEFAULT_BUILTIN_BELIX_PORTAL.pass).trim();
   if (!srv || !usr || !pwd) return null;
   try {
     const parsed = new URL(srv);
@@ -6215,12 +8063,126 @@ function getFallbackBelixSessionCreds() {
     return null;
   }
 }
-async function resolveBelixManifest(streamId, originPrefix = "", sessionKey = DEFAULT_BELIX_SESSION_KEY) {
-  const creds = getActiveSession(sessionKey) || getFallbackBelixSessionCreds();
-  return resolveBelixManifestForSession(creds, streamId, originPrefix);
+var BELIX_SIBLING_STREAM_CANDIDATES = {
+  // Antena 3: fail over immediately to independent Edge-2 531071 before retrying same Edge-1 slots
+  "743056": ["531071", "743023", "743001", "742969"],
+  "743023": ["531071", "743056", "743001", "742969"],
+  "743001": ["531071", "743023", "743056", "742969"],
+  "742969": ["531071", "743056", "743023"],
+  "531071": ["743056", "743023"],
+  // laSexta: 743035 (FHD), 742989 (SD H.264+AAC)
+  "743035": ["742989"],
+  "742989": ["743035"],
+  // Neox: 743053 (HD), 742985 (SD H.264+AAC), 743020 (FHD)
+  "743020": ["742985", "743053"],
+  "743053": ["742985", "743020"],
+  "742985": ["743053", "743020"],
+  // Nova: 742954 (HD H.264+AAC), 742879 (SD H.264+AAC), 742920 (FHD)
+  "742920": ["742954", "742879"],
+  "742954": ["742879", "742920"],
+  "742879": ["742954", "742920"],
+  // Mega
+  "743032": ["742987"],
+  "742987": ["743032"],
+  // Atreseries
+  "743033": ["742972"],
+  "742972": ["743033"],
+  // La 1 / La 2 / Cuatro / Telecinco
+  "743037": ["742805", "742806", "742991"],
+  "743036": ["742990"],
+  "743022": ["743055", "742970"],
+  "743021": ["743054", "742971"],
+  "743054": ["742971", "743021"]
+};
+var inflightBelixManifestResolves = /* @__PURE__ */ new Map();
+var belixResolvedAliasCache = new LruTtlCache(200, 2e4);
+async function resolveBelixManifest(streamId, originPrefix = "", sessionKey = DEFAULT_BELIX_SESSION_KEY, channelNameHint = "") {
+  const cleanId = String(streamId || "").replace(/\.m3u8$/i, "").trim();
+  const dedupeKey = `${sessionKey}|${originPrefix}|${cleanId}`;
+  const existingInflight = inflightBelixManifestResolves.get(dedupeKey);
+  if (existingInflight) {
+    return existingInflight;
+  }
+  const task = resolveBelixManifestInternal(cleanId, originPrefix, sessionKey, channelNameHint).finally(
+    () => {
+      if (inflightBelixManifestResolves.get(dedupeKey) === task) {
+        inflightBelixManifestResolves.delete(dedupeKey);
+      }
+    }
+  );
+  inflightBelixManifestResolves.set(dedupeKey, task);
+  return task;
+}
+async function resolveBelixManifestInternal(streamId, originPrefix, sessionKey, channelNameHint) {
+  const startedAt = Date.now();
+  let primaryCreds = getActiveSession(sessionKey) || null;
+  if (!primaryCreds) {
+    for (const slot of belixSessionSlots.values()) {
+      if (slot.session) {
+        primaryCreds = slot.session;
+        break;
+      }
+    }
+  }
+  primaryCreds = primaryCreds || getFallbackBelixSessionCreds();
+  if (primaryCreds) {
+    const cleanId = String(streamId || "").replace(/\.m3u8$/i, "").trim();
+    const baseIds = [
+      cleanId,
+      ...BELIX_SIBLING_STREAM_CANDIDATES[cleanId] || []
+    ].filter((id, idx, arr) => Boolean(id) && arr.indexOf(id) === idx);
+    const aliasKey = `${sessionKey}|${primaryCreds.origin}|${cleanId}`;
+    const preferredAlias = belixResolvedAliasCache.get(aliasKey);
+    const u = encodeURIComponent(primaryCreds.username);
+    const p = encodeURIComponent(primaryCreds.password);
+    const warmId = baseIds.find(
+      (id) => Boolean(getActiveDvbSessionPath(`${primaryCreds.origin}/live/${u}/${p}/${encodeURIComponent(id)}.ts`, "hd"))
+    );
+    const candidateIds = [
+      ...warmId ? [warmId] : [],
+      ...preferredAlias && baseIds.includes(preferredAlias) ? [preferredAlias] : [],
+      ...baseIds
+    ].filter((id, idx, arr) => Boolean(id) && arr.indexOf(id) === idx);
+    for (let i = 0; i < candidateIds.length; i++) {
+      if (i > 0 && Date.now() - startedAt > 5500) break;
+      if (i > 0 && process.env.NODE_ENV !== "test" && !process.env.VITEST) {
+        await new Promise((r) => setTimeout(r, 150));
+      }
+      const candidateId = candidateIds[i];
+      const primaryRes = await resolveBelixManifestForSession(
+        primaryCreds,
+        candidateId,
+        originPrefix
+      ).catch(() => null);
+      if (primaryRes) {
+        if (candidateId !== cleanId) {
+          belixResolvedAliasCache.set(aliasKey, candidateId);
+        }
+        return primaryRes;
+      }
+      if (candidateId === preferredAlias) {
+        belixResolvedAliasCache.delete(aliasKey);
+      }
+    }
+  }
+  const knownChannelName = channelNameHint || primaryCreds?.allChannels?.find((c) => c.streamId === streamId)?.name || (streamId === "743023" || streamId === "743056" || streamId === "742969" ? "antena 3" : streamId === "743021" || streamId === "743054" || streamId === "742971" ? "telecinco" : streamId === "743022" || streamId === "743055" || streamId === "742970" ? "cuatro" : streamId === "743035" || streamId === "742989" ? "lasexta" : streamId === "743020" || streamId === "743053" || streamId === "742985" ? "neox" : streamId === "742920" || streamId === "742954" || streamId === "742879" ? "nova" : streamId === "743032" || streamId === "742987" ? "mega" : streamId === "743033" || streamId === "742972" ? "atreseries" : streamId === "743037" ? "la 1" : streamId === "743036" ? "la 2" : "");
+  for (const backup of belixBackupPortals) {
+    let targetStreamId = streamId;
+    if (knownChannelName) {
+      const matchedId = await resolveBackupStreamIdByName(backup, knownChannelName).catch(() => null);
+      if (matchedId) targetStreamId = matchedId;
+    }
+    const backupRes = await resolveBelixManifestForSession(
+      { origin: backup.origin, username: backup.username, password: backup.password },
+      targetStreamId,
+      originPrefix
+    ).catch(() => null);
+    if (backupRes) return backupRes;
+  }
+  return null;
 }
 
-// server/services/channelHealthMonitor.ts
+// server/services/channelHealthProbe.ts
 function inspectHlsCodecManifest(manifestText) {
   const text2 = String(manifestText || "");
   const isVodEnded = /#EXT-X-ENDLIST/i.test(text2);
@@ -6272,6 +8234,17 @@ var DEFAULT_STALE_MS = 15e4;
 function normalizeTrackUrl(sourceUrl) {
   return String(sourceUrl || "").trim().replace(/[?&]profile=(hd|fast)\b/gi, "");
 }
+function unwrapProxyTargetUrl(sourceUrl) {
+  const clean = normalizeTrackUrl(sourceUrl);
+  if (clean.startsWith("/api/hls-proxy")) {
+    try {
+      const inner = new URL(clean, "http://localhost").searchParams.get("url");
+      if (inner) return normalizeTrackUrl(inner);
+    } catch {
+    }
+  }
+  return clean;
+}
 function resolveUpstreamReferer(urlStr, explicitReferer) {
   const cleanExplicit = String(explicitReferer || "").trim();
   if (/^https?:\/\//i.test(cleanExplicit)) return cleanExplicit;
@@ -6289,7 +8262,12 @@ async function probeChannelTrack(track, options) {
   const now = Date.now();
   const prevFails = options?.previous?.failCount || 0;
   if (cleanUrl.startsWith("/api/belix/stream/")) {
-    return getBelixStatus().connected ? { status: "up", latencyMs: 1, checkedAt: now, failCount: 0 } : { status: "down", statusCode: 503, latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
+    const belixReady = options?.belixConnected ?? isAnyBelixConnected();
+    return belixReady ? { status: "up", latencyMs: 650, checkedAt: now, failCount: 0 } : { status: "down", statusCode: 503, latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
+  }
+  const effectiveTargetUrl = unwrapProxyTargetUrl(cleanUrl);
+  if (effectiveTargetUrl.includes("90.163.85.113:8093") && isDvbUpstreamCoolingDown(effectiveTargetUrl)) {
+    return { status: "down", statusCode: 502, latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
   }
   if (!cleanUrl || !/^https?:\/\//i.test(cleanUrl)) {
     return { status: "unknown", checkedAt: now, failCount: prevFails };
@@ -6299,11 +8277,11 @@ async function probeChannelTrack(track, options) {
     return { status: "unknown", checkedAt: now, failCount: prevFails };
   }
   const isHlsManifest = track.resolverType === "tdt_hls" || track.resolverType === "direct_hls" || /\.m3u8(\?|$)/i.test(cleanUrl);
-  const isDvbHeadend = cleanUrl.includes("90.163.85.113:8093");
+  const isDvbHeadend = effectiveTargetUrl.includes("90.163.85.113:8093");
   if (isDvbHeadend && process.env.DISABLE_DVB_PROBE === "1" && !options?.fetchImpl) {
     return { status: "down", latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
   }
-  const timeoutMs = options?.timeoutMs ?? (isDvbHeadend ? 7500 : PROBE_TIMEOUT_MS);
+  const timeoutMs = options?.timeoutMs ?? (isDvbHeadend ? 4500 : PROBE_TIMEOUT_MS);
   const fetchFn = options?.fetchImpl ?? ((input, init) => streamingFetch(String(input), { ...init, timeoutMs }));
   const isCnStream = cleanUrl.includes("38.75.136.137") || cleanUrl.includes("63.141.230.178") || cleanUrl.includes("120.76.248.139") || cleanUrl.includes("153.0.171.163") || cleanUrl.includes("223.112.114.228") || cleanUrl.includes("gmxw.7766.org") || cleanUrl.includes("epg.pw/stream/");
   const referer = resolveUpstreamReferer(cleanUrl, track.referer);
@@ -6491,6 +8469,8 @@ async function probeChannelTrack(track, options) {
     };
   }
 }
+
+// server/services/channelHealthMonitor.ts
 var ChannelHealthMonitor = class {
   trackHealth = /* @__PURE__ */ new Map();
   sweepPromise = null;
@@ -6535,24 +8515,64 @@ var ChannelHealthMonitor = class {
   prioritizeTracks(tracks) {
     if (!Array.isArray(tracks) || tracks.length === 0) return [];
     const indexed = tracks.map((track, originalIndex) => {
-      const health = this.getTrackHealth(track.sourceUrl) ?? track.health;
+      const unwrapped = unwrapProxyTargetUrl(track.sourceUrl);
+      const rawHealth = this.getTrackHealth(track.sourceUrl) ?? (unwrapped !== track.sourceUrl ? this.getTrackHealth(unwrapped) : void 0) ?? track.health;
+      const isCoolingDvb = unwrapped.includes("90.163.85.113:8093") && isDvbUpstreamCoolingDown(unwrapped);
+      const health = isCoolingDvb ? {
+        status: "down",
+        statusCode: 502,
+        latencyMs: rawHealth?.latencyMs ?? 0,
+        failCount: (rawHealth?.failCount || 0) + 1,
+        checkedAt: Date.now()
+      } : rawHealth;
       const src = String(track.sourceUrl || "");
       const q = String(track.quality || "").toLowerCase();
-      const qualityTier = /576p|480p|360p/.test(q) || /azotosolutions\.com/i.test(src) ? 3 : /720p/.test(q) ? 2 : /90\.163\.85\.113:8093\/stream\/6[4568]\//i.test(src) ? 1 : 0;
-      const transportPenalty = src.includes("90.163.85.113:8093") ? 1200 : /interactvty\.pro/i.test(src) ? 1500 : 0;
+      const isUhdHevc = /90\.163\.85\.113:8093\/stream\/6[4568]\//i.test(unwrapped);
+      const isResidentialDvb = unwrapped.includes("90.163.85.113:8093");
+      const isHttpsCdn = /^https:\/\//i.test(unwrapped) && !isResidentialDvb;
+      const isPreferredEdge2 = /\/api\/belix\/stream\/531071(?:\.m3u8|\b)/i.test(src);
+      const isBelix = src.startsWith("/api/belix/stream/");
+      const qualityTier = isUhdHevc ? 4 : /576p|480p|360p/.test(q) || /azotosolutions\.com/i.test(src) ? 3 : /720p/.test(q) ? 2 : 0;
+      const transportPenalty = /interactvty\.pro/i.test(src) ? 1500 : isPreferredEdge2 ? 0 : isBelix ? 350 : 0;
       const penaltyMs = (health?.qoeFailures || 0) * 1500 + (health?.qoeRebuffers || 0) * 250 + transportPenalty;
-      const effectiveLatency = (health?.latencyMs ?? (health?.status === "unknown" ? 1200 : 800)) + penaltyMs;
+      const effectiveLatency = Math.max(
+        1,
+        (health?.latencyMs ?? (health?.status === "unknown" ? 1200 : 800)) + penaltyMs
+      );
       return {
         track: health ? { ...track, health } : { ...track },
         originalIndex,
+        isUhdHevc,
+        isResidentialDvb,
+        isHttpsCdn,
+        isPreferredEdge2,
+        isBelix,
         status: health?.status ?? "unknown",
         qualityTier,
         latencyBucket: Math.floor(effectiveLatency / 750)
       };
     });
     indexed.sort((a, b) => {
+      if (a.status !== "down" && b.status !== "down" && a.isUhdHevc !== b.isUhdHevc) {
+        return a.isUhdHevc ? 1 : -1;
+      }
+      if (a.isPreferredEdge2 !== b.isPreferredEdge2) {
+        if (a.isPreferredEdge2 && a.status !== "down") return -1;
+        if (b.isPreferredEdge2 && b.status !== "down") return 1;
+      }
       const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
       if (rankDiff !== 0) return rankDiff;
+      if (a.status === "up" && b.status === "up") {
+        if (a.isHttpsCdn !== b.isHttpsCdn) {
+          return a.isHttpsCdn ? -1 : 1;
+        }
+        if (a.isResidentialDvb !== b.isResidentialDvb) {
+          return a.isResidentialDvb ? -1 : 1;
+        }
+      }
+      if (a.isBelix && b.isBelix && a.status === b.status) {
+        return a.originalIndex - b.originalIndex;
+      }
       if (a.status !== "unknown") {
         if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
         if (a.latencyBucket !== b.latencyBucket) return a.latencyBucket - b.latencyBucket;
@@ -6943,6 +8963,66 @@ function getMediaPlaneSnapshot() {
   };
 }
 
+// server/utils/tvBuildSignature.ts
+import crypto7 from "crypto";
+import fs7 from "fs";
+import path6 from "path";
+var cachedSignature = "";
+var cachedAt = 0;
+var CACHE_TTL_MS = 2e3;
+function getTvBuildSignature(rootDir) {
+  const now = Date.now();
+  if (cachedSignature && now - cachedAt < CACHE_TTL_MS) {
+    return cachedSignature;
+  }
+  const hash = crypto7.createHash("sha1");
+  hash.update(String(ENV.appVersionName || "3.3.0"));
+  const candidatePaths = [];
+  const publicDir = path6.resolve(rootDir, "public");
+  const distDir = path6.resolve(rootDir, "dist");
+  const baseDir = fs7.existsSync(path6.join(publicDir, "tv-receiver.html")) ? publicDir : distDir;
+  const htmlFile = path6.join(baseDir, "tv-receiver.html");
+  if (fs7.existsSync(htmlFile)) {
+    candidatePaths.push(htmlFile);
+  }
+  const tvDir = path6.join(baseDir, "tv");
+  if (fs7.existsSync(tvDir)) {
+    try {
+      const files = fs7.readdirSync(tvDir).sort();
+      for (const f of files) {
+        candidatePaths.push(path6.join(tvDir, f));
+      }
+    } catch {
+    }
+  }
+  for (const srvFile of [
+    path6.resolve(rootDir, "server", "routes", "proxies", "dvbCodecProbe.ts"),
+    path6.resolve(rootDir, "server", "routes", "proxies", "dvbTranscoder.ts"),
+    path6.resolve(rootDir, "server", "services", "belix", "belixProxyHelpers.ts"),
+    path6.resolve(rootDir, "server", "data", "tdtNationalAndPayChannels.ts"),
+    path6.resolve(rootDir, "server", "routes", "streamExtractHelpers", "directCasesHandler.ts"),
+    path6.resolve(rootDir, "server", "services", "spainVpnGatewayService.ts"),
+    path6.resolve(rootDir, "server", "services", "urbanVpnService.ts"),
+    path6.resolve(rootDir, "src", "App.tsx"),
+    path6.resolve(rootDir, "src", "main.tsx"),
+    path6.resolve(rootDir, "dist", "index.html")
+  ]) {
+    if (fs7.existsSync(srvFile)) {
+      candidatePaths.push(srvFile);
+    }
+  }
+  for (const fp of candidatePaths) {
+    try {
+      const st = fs7.statSync(fp);
+      hash.update(`|${path6.basename(fp)}:${st.size}:${Math.round(st.mtimeMs)}`);
+    } catch {
+    }
+  }
+  cachedSignature = hash.digest("hex").slice(0, 12);
+  cachedAt = now;
+  return cachedSignature;
+}
+
 // server/routes/health.ts
 var qoeRingBuffer = [];
 var MAX_QOE_SAMPLES = 250;
@@ -7111,17 +9191,20 @@ function registerOperationalRoutes(app2, deps) {
     res.json(statements);
   });
   app2.get("/api/app/latest", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+    res.setHeader("Pragma", "no-cache");
     const platformParam = String(req.query.platform || "all").toLowerCase();
     const origin = deps.getPublicOrigin(req);
-    const cacheKey = `${origin}:${platformParam}`;
+    const tvBuild = getTvBuildSignature(ROOT_DIR);
+    const cacheKey = `${origin}:${platformParam}:${tvBuild}`;
     const cached = appReleaseCache.get(cacheKey);
     if (cached) {
       return res.json(cached);
     }
-    const mobileApkPath = path6.join(ROOT_DIR, "public", "RIFFAN-TV.apk");
-    const tvApkPath = path6.join(ROOT_DIR, "public", "RIFFAN-TV-TV.apk");
-    const musicApkPath = path6.join(ROOT_DIR, "public", "RIFFAN-MUSIC.apk");
-    const getStatBytes = async (p) => fs7.promises.stat(p).then((s) => s.size).catch(() => 0);
+    const mobileApkPath = path7.join(ROOT_DIR, "public", "RIFFAN-TV.apk");
+    const tvApkPath = path7.join(ROOT_DIR, "public", "RIFFAN-TV-TV.apk");
+    const musicApkPath = path7.join(ROOT_DIR, "public", "RIFFAN-MUSIC.apk");
+    const getStatBytes = async (p) => fs8.promises.stat(p).then((s) => s.size).catch(() => 0);
     let [mobileBytes, tvBytes, musicBytes] = await Promise.all([
       getStatBytes(mobileApkPath),
       getStatBytes(tvApkPath),
@@ -7154,7 +9237,14 @@ function registerOperationalRoutes(app2, deps) {
       releasedAt: (/* @__PURE__ */ new Date()).toISOString().slice(0, 10) + "T12:00:00Z",
       web: {
         version: ENV.appVersionName,
+        build: tvBuild,
         minReloadPrompt: false
+      },
+      tvWeb: {
+        version: ENV.appVersionName,
+        build: tvBuild,
+        checkIntervalMs: 45e3,
+        autoUpdate: true
       },
       mobile: {
         packageName: ENV.androidMobilePkg,
@@ -7200,7 +9290,6 @@ function registerOperationalRoutes(app2, deps) {
       }
     };
     appReleaseCache.set(cacheKey, payload);
-    res.setHeader("Cache-Control", "no-cache, must-revalidate");
     return res.json(payload);
   });
   app2.post("/api/metrics/qoe", (req, res) => {
@@ -8049,11 +10138,11 @@ function registerExpandedCatalogRoutes(app2) {
 }
 
 // server/routes/proxies/vodManifestManager.ts
-import crypto7 from "crypto";
+import crypto8 from "crypto";
 var vodHlsManifestCache = new LruTtlCache(400, 10 * 60 * 1e3);
 var registeredVodManifestCache = new LruTtlCache(500, 18 * 60 * 1e3);
 function registerVodManifest(m3u8Content) {
-  const id = crypto7.createHash("sha1").update(m3u8Content).digest("hex").slice(0, 18);
+  const id = crypto8.createHash("sha1").update(m3u8Content).digest("hex").slice(0, 18);
   registeredVodManifestCache.set(id, m3u8Content);
   return `/api/vod-manifest/${id}.m3u8`;
 }
@@ -9278,6 +11367,10 @@ function createHlsProxyHandler(getPublicOrigin2) {
       res.status(403).send("Forbidden target host");
       return;
     }
+    if (isDvbHeadendStream(targetUrl) && isDvbUpstreamCoolingDown(targetUrl)) {
+      res.status(502).send("DVB upstream headend cooling down");
+      return;
+    }
     runtimeMetrics.recordMediaRequest("hls");
     evaluateDirectPlayEligibility(targetUrl, { referer, forceAac });
     const cachedVod = !forceAac ? vodHlsManifestCache.get(vodCacheKey) : void 0;
@@ -9513,7 +11606,7 @@ function createHlsProxyHandler(getPublicOrigin2) {
 }
 
 // server/routes/proxies/tsProxyHandler.ts
-import { spawn as spawn2 } from "child_process";
+import { spawn as spawn4 } from "child_process";
 import { Readable as Readable2 } from "stream";
 async function handleTsProxy(req, res) {
   const reqId = getOrCreateRequestId(req);
@@ -9850,7 +11943,7 @@ async function handleTsProxy(req, res) {
           if (v) args.push("-H", `${k}: ${v}`);
         }
         args.push(targetUrl);
-        const child = spawn2("curl", args, { stdio: ["ignore", "pipe", "ignore"] });
+        const child = spawn4("curl", args, { stdio: ["ignore", "pipe", "ignore"] });
         let headerFlushed = false;
         const headChunks = [];
         let headLen = 0;
@@ -15033,6 +17126,7 @@ async function resolveArchiveAudioFallback(artist, title, durationSec = 0) {
   return null;
 }
 var COUNTRY_RADIO_GROUPS = {
+  BE: ["BE"],
   MA: ["MA"],
   RU: ["RU"],
   RO: ["RO"],
@@ -15072,6 +17166,16 @@ function mapRadioStations(rawList, maxTotal = 72) {
   return stations;
 }
 var CURATED_FALLBACK_RADIOS = {
+  BE: [
+    { id: "cur-be-1", name: "Classic 21 (RTBF)", country: "BE", tags: ["Rock", "Belgique", "Classics"], favicon: "", streamUrl: "https://radios.rtbf.be/classic21-128.mp3", bitrate: 128, codec: "MP3" },
+    { id: "cur-be-2", name: "La Premi\xE8re (RTBF)", country: "BE", tags: ["Belgique", "Culture", "FR"], favicon: "", streamUrl: "https://radios.rtbf.be/lapremiere-128.mp3", bitrate: 128, codec: "MP3" },
+    { id: "cur-be-3", name: "VivaCit\xE9 Bruxelles (RTBF)", country: "BE", tags: ["Bruxelles", "Pop", "Hits"], favicon: "", streamUrl: "https://radios.rtbf.be/vivabxl-128.mp3", bitrate: 128, codec: "MP3" },
+    { id: "cur-be-4", name: "Tipik (RTBF)", country: "BE", tags: ["Pop", "Urbano", "Electronic"], favicon: "", streamUrl: "https://radios.rtbf.be/pure-128.mp3", bitrate: 128, codec: "MP3" },
+    { id: "cur-be-5", name: "Studio Brussel (VRT)", country: "BE", tags: ["Alternative", "Electronic", "Indie"], favicon: "", streamUrl: "https://icecast.vrtcdn.be/stubru-high.mp3", bitrate: 128, codec: "MP3" },
+    { id: "cur-be-6", name: "MNM (VRT)", country: "BE", tags: ["Pop", "Hits", "Vlaanderen"], favicon: "", streamUrl: "https://icecast.vrtcdn.be/mnm-high.mp3", bitrate: 128, codec: "MP3" },
+    { id: "cur-be-7", name: "NRJ Belgique", country: "BE", tags: ["Hit Music", "Dance", "Urbano"], favicon: "", streamUrl: "https://streamingp.shoutcast.com/NRJ-BE", bitrate: 128, codec: "MP3" },
+    { id: "cur-be-8", name: "Nostalgie Belgique", country: "BE", tags: ["Classics", "80s", "90s"], favicon: "", streamUrl: "https://streamingp.shoutcast.com/NostalgieBE", bitrate: 128, codec: "MP3" }
+  ],
   ES: [
     { id: "cur-es-1", name: "LOS40 Espa\xF1a", country: "ES", tags: ["Pop", "Hits"], favicon: "", streamUrl: "https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40.mp3", bitrate: 128, codec: "MP3" },
     { id: "cur-es-2", name: "LOS40 Urban", country: "ES", tags: ["Urbano", "Reggaeton"], favicon: "", streamUrl: "https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_URBAN.mp3", bitrate: 128, codec: "MP3" },
@@ -15280,8 +17384,10 @@ async function getMusicHome() {
     // 22: Romania
     () => fetchRegionMix("Jay Chou GEM Eason Chan JJ Lin Jackson Wang", void 0, "China C-Pop", 26, "CN"),
     // 23: China
-    () => fetchRegionMix("Kendrick Lamar SZA Sabrina Carpenter Billie Eilish", "37i9dQZEVXbLRQDuF5jeBp", "USA Top 50", 28, "US")
+    () => fetchRegionMix("Kendrick Lamar SZA Sabrina Carpenter Billie Eilish", "37i9dQZEVXbLRQDuF5jeBp", "USA Top 50", 28, "US"),
     // 24: USA
+    () => fetchRegionMix("Stromae Angele Damso Hamza Lost Frequencies Charlotte de Witte", "37i9dQZEVXbJNSeeHswcKB", "Top 50 Belgium", 28, "BE")
+    // 25: Belgium
   ], 4);
   const val = (idx) => settled[idx]?.status === "fulfilled" ? settled[idx].value ?? null : null;
   const globalChart = val(0);
@@ -15316,6 +17422,7 @@ async function getMusicHome() {
     spotifyHits: spData.tracks,
     spotifyAlbums: spData.albums.length > 0 ? spData.albums : ytmData.albums.slice(0, 14),
     spainHits: val(1) || [],
+    belgiumMix: val(25) || [],
     moroccoMix: val(18) || [],
     arabMix: val(19) || [],
     africaMix: val(20) || [],
@@ -18766,7 +20873,7 @@ var SOCCER_BOARD_LEAGUES = [
 ];
 
 // server/routes/sportsHelpers/sportsAgendaScraper.ts
-import crypto8 from "crypto";
+import crypto9 from "crypto";
 function detectSportKind(text2) {
   const lower = text2.toLowerCase();
   if (/baloncesto|basket|nba|eurocup|euroliga|acb|ncaa/.test(lower)) return "basketball";
@@ -18827,7 +20934,7 @@ async function fetchLiveSportsAgendaFeeds() {
                   const timeStr = timeMatch ? timeMatch[1] : "EN VIVO";
                   const key = `sxhd-${leagueName}-${timeStr}-${matchTitle}`;
                   liveGrouped.set(key, {
-                    id: `live-${crypto8.createHash("sha1").update(key).digest("base64url").slice(0, 16)}`,
+                    id: `live-${crypto9.createHash("sha1").update(key).digest("base64url").slice(0, 16)}`,
                     title: matchTitle,
                     homeTeam,
                     awayTeam,
@@ -18899,7 +21006,7 @@ async function fetchLiveSportsAgendaFeeds() {
           const key = `${timeStr}-${matchTitle}`;
           if (!liveGrouped.has(key)) {
             liveGrouped.set(key, {
-              id: `live-${crypto8.createHash("sha1").update(key).digest("base64url").slice(0, 16)}`,
+              id: `live-${crypto9.createHash("sha1").update(key).digest("base64url").slice(0, 16)}`,
               title: matchTitle,
               competition: compPrefix || "Agenda en Directo",
               sport: detectSportKind(`${compPrefix} ${matchTitle}`),
@@ -20805,13 +22912,13 @@ function formatSpanishMatchdayLabel(rawRound, _leagueSlug) {
   if (/group stage|fase de grupos/i.test(txt)) return "Fase de Grupos";
   return void 0;
 }
-function translateFootballStatusLabel(rawStatus, state) {
+function translateFootballStatusLabel(rawStatus, state2) {
   const s = String(rawStatus || "").trim();
-  if (state === "live") {
+  if (state2 === "live") {
     if (/^(ht|half-time|half time)$/i.test(s)) return "Descanso";
     return s || "EN VIVO";
   }
-  if (state === "finished") {
+  if (state2 === "finished") {
     if (/pen/i.test(s)) return "Penaltis";
     if (/aet/i.test(s)) return "Pr\xF3rroga";
     return "Final";
@@ -22539,7 +24646,9 @@ var MOVIE_GENRE_MAP = {
   anime: 16,
   thriller: 53,
   adventure: 12,
-  drama: 18
+  drama: 18,
+  family: 10751,
+  kids: 10751
 };
 var MOVIDY_GENRE_SLUGS = {
   action: "accion",
@@ -22550,7 +24659,9 @@ var MOVIDY_GENRE_SLUGS = {
   anime: "animacion",
   thriller: "suspense",
   adventure: "aventura",
-  drama: "drama"
+  drama: "drama",
+  family: "animacion",
+  kids: "animacion"
 };
 var ANIME_PROVIDER_IDS = /* @__PURE__ */ new Set([
   "anime_all",
@@ -22767,6 +24878,64 @@ var CURATED_4K_SERIES_IDS = [
   // Dark
 ];
 var CURATED_4K_SERIES_SET = new Set(CURATED_4K_SERIES_IDS);
+var CURATED_SPANISH_KIDS_MOVIE_IDS = [
+  1022789,
+  // Del revés 2
+  502356,
+  // Super Mario Bros: La película
+  1241982,
+  // Vaiana 2
+  1184918,
+  // Robot salvaje
+  519182,
+  // Gru 4: Mi villano favorito
+  1011985,
+  // Kung Fu Panda 4
+  354912,
+  // Coco
+  109445,
+  // Frozen: El reino del hielo
+  568124,
+  // Encanto
+  569094,
+  // Spider-Man: Cruzando el Multiverso
+  862,
+  // Toy Story
+  12,
+  // Buscando a Nemo
+  808,
+  // Shrek
+  8587,
+  // El rey león
+  9806
+  // Los Increíbles
+];
+var CURATED_SPANISH_KIDS_TV_IDS = [
+  82728,
+  // Bluey
+  57532,
+  // La Patrulla Canina
+  12225,
+  // Peppa Pig
+  387,
+  // Bob Esponja
+  65334,
+  // Prodigiosa: Las aventuras de Ladybug
+  37606,
+  // El asombroso mundo de Gumball
+  65733,
+  // Doraemon
+  31135,
+  // Pocoyó
+  15260,
+  // Hora de aventuras
+  60572,
+  // Pokémon
+  40075,
+  // Gravity Falls
+  1877
+  // Phineas y Ferb
+];
 var STREAMING_PROVIDER_MAP = {
   netflix: {
     id: "netflix",
@@ -22918,6 +25087,8 @@ var SERIES_GENRE_MAP = {
   comedy: 35,
   animation: 16,
   anime: 16,
+  family: 10751,
+  kids: 10762,
   mystery: 9648
 };
 async function fetchTmdbItemsByIds(ids, mediaType, lang) {
@@ -23090,6 +25261,11 @@ async function fetchTmdbMovieCatalog(opts) {
     const discoverSort = sort === "top_rated" ? "vote_average.desc" : sort === "now_playing" ? "primary_release_date.desc" : "popularity.desc";
     const minVotes = sort === "top_rated" ? 160 : 30;
     endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&sort_by=${discoverSort}&vote_count.gte=${minVotes}&primary_release_date.lte=${todayIso}&with_genres=16&with_original_language=ja&page=${page}&include_adult=false`;
+  } else if (category === "kids") {
+    if (page === 1) {
+      curatedSeedItems = await fetchTmdbItemsByIds(CURATED_SPANISH_KIDS_MOVIE_IDS, "movie", "es-ES");
+    }
+    endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=es-ES&sort_by=popularity.desc&vote_count.gte=120&primary_release_date.lte=${todayIso}&with_genres=10751,16&without_genres=27,53,80,10752&certification_country=ES&certification.lte=7&page=${page}&include_adult=false`;
   } else if (MOVIE_GENRE_MAP[category]) {
     const discoverSort = sort === "top_rated" ? "vote_average.desc" : sort === "now_playing" ? "primary_release_date.desc" : "popularity.desc";
     const minVotes = sort === "top_rated" ? 220 : 45;
@@ -23865,14 +26041,6 @@ var TDT_NATIONAL_AND_PAY_CHANNELS = [
         resolverType: "tdt_hls"
       },
       {
-        id: "la1-dvb-uhd",
-        label: "Se\xF1al TDT UHD 4K->1080p (La 1 UHD)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/66/index.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
         id: "la1-rtve",
         label: "Se\xF1al Oficial RTVE HD (Espa\xF1a)",
         lang: "ES",
@@ -23934,14 +26102,6 @@ var TDT_NATIONAL_AND_PAY_CHANNELS = [
         resolverType: "tdt_hls"
       },
       {
-        id: "la2-dvb-uhd",
-        label: "Se\xF1al TDT UHD 4K->1080p (La 2 UHD)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/65/index.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
         id: "la2-belix-fhd",
         label: "Se\xF1al Belix FHD (La 2)",
         lang: "ES",
@@ -23963,27 +26123,51 @@ var TDT_NATIONAL_AND_PAY_CHANNELS = [
     description: "El Hormiguero, Pasapalabra, Antena 3 Noticias y series estelares",
     channels: [
       {
+        id: "a3-belix-intl",
+        label: "Se\xF1al Principal FHD \xB7 Edge 2 (Antena 3)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "/api/belix/stream/531071.m3u8",
+        resolverType: "direct_hls"
+      },
+      {
         id: "a3-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p",
+        label: "Se\xF1al Directa Espa\xF1a 1080p HD (Antena 3)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "http://90.163.85.113:8093/stream/20/index.m3u8",
         resolverType: "tdt_hls"
       },
       {
-        id: "a3-dvb-uhd",
-        label: "Se\xF1al 2 \xB7 TDT UHD 4K->1080p",
+        id: "a3-belix-hd",
+        label: "Se\xF1al Respaldo Belix HD AAC (Antena 3)",
         lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/64/index.m3u8",
-        resolverType: "tdt_hls"
+        quality: "720p",
+        sourceUrl: "/api/belix/stream/743056.m3u8",
+        resolverType: "direct_hls"
       },
       {
         id: "a3-uhd",
-        label: "Se\xF1al Belix FHD (Antena 3)",
+        label: "Se\xF1al Respaldo Belix FHD AAC (Antena 3)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "/api/belix/stream/743023.m3u8",
+        resolverType: "direct_hls"
+      },
+      {
+        id: "a3-dvb-fast",
+        label: "Se\xF1al Espa\xF1a Estabilidad 720p (Antena 3)",
+        lang: "ES",
+        quality: "720p",
+        sourceUrl: "http://90.163.85.113:8093/stream/20/index.m3u8?profile=fast",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "a3-hls-remux",
+        label: "Se\xF1al Directa Passthrough AAC 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "/api/hls-proxy?url=http%3A%2F%2F90.163.85.113%3A8093%2Fstream%2F20%2Findex.m3u8&aac=1",
         resolverType: "direct_hls"
       }
     ]
@@ -24001,7 +26185,7 @@ var TDT_NATIONAL_AND_PAY_CHANNELS = [
     channels: [
       {
         id: "cuatro-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p",
+        label: "Se\xF1al Directa Espa\xF1a 1080p HD (Cuatro)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "http://90.163.85.113:8093/stream/42/index.m3u8",
@@ -24009,7 +26193,7 @@ var TDT_NATIONAL_AND_PAY_CHANNELS = [
       },
       {
         id: "cuatro-dvb",
-        label: "Se\xF1al Belix FHD (Cuatro)",
+        label: "Se\xF1al Respaldo Belix FHD (Cuatro)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "/api/belix/stream/743022.m3u8",
@@ -24030,23 +26214,23 @@ var TDT_NATIONAL_AND_PAY_CHANNELS = [
     channels: [
       {
         id: "t5-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p",
+        label: "Se\xF1al Directa Espa\xF1a 1080p HD (Telecinco)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "http://90.163.85.113:8093/stream/41/index.m3u8",
         resolverType: "tdt_hls"
       },
       {
-        id: "t5-dvb-uhd",
-        label: "Se\xF1al 2 \xB7 TDT UHD 4K->1080p",
+        id: "t5-belix-hd",
+        label: "Se\xF1al Respaldo Belix HD (Telecinco)",
         lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/68/index.m3u8",
-        resolverType: "tdt_hls"
+        quality: "720p",
+        sourceUrl: "/api/belix/stream/743054.m3u8",
+        resolverType: "direct_hls"
       },
       {
         id: "t5-dvb",
-        label: "Se\xF1al Belix FHD (Telecinco)",
+        label: "Se\xF1al Respaldo Belix FHD (Telecinco)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "/api/belix/stream/743021.m3u8",
@@ -24067,18 +26251,42 @@ var TDT_NATIONAL_AND_PAY_CHANNELS = [
     channels: [
       {
         id: "lasexta-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p",
+        label: "Se\xF1al Directa Espa\xF1a 1080p HD (laSexta)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "http://90.163.85.113:8093/stream/21/index.m3u8",
         resolverType: "tdt_hls"
       },
       {
+        id: "lasexta-dvb-fast",
+        label: "Se\xF1al Espa\xF1a Estabilidad 720p (laSexta)",
+        lang: "ES",
+        quality: "720p",
+        sourceUrl: "http://90.163.85.113:8093/stream/21/index.m3u8?profile=fast",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "lasexta-hls-remux",
+        label: "Se\xF1al Directa Passthrough AAC 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "/api/hls-proxy?url=http%3A%2F%2F90.163.85.113%3A8093%2Fstream%2F21%2Findex.m3u8&aac=1",
+        resolverType: "direct_hls"
+      },
+      {
         id: "lasexta-dvb",
-        label: "Se\xF1al Belix FHD (laSexta)",
+        label: "Se\xF1al Respaldo Belix FHD (laSexta)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "/api/belix/stream/743035.m3u8",
+        resolverType: "direct_hls"
+      },
+      {
+        id: "lasexta-belix-sd",
+        label: "Se\xF1al Respaldo Estable Audio AAC (laSexta)",
+        lang: "ES",
+        quality: "576p",
+        sourceUrl: "/api/belix/stream/742989.m3u8",
         resolverType: "direct_hls"
       }
     ]
@@ -25629,12 +27837,12 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
     description: "Los Simpson, The Big Bang Theory, comedia juvenil y cine taquillero",
     channels: [
       {
-        id: "neox-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p",
+        id: "neox-belix-sd",
+        label: "Se\xF1al Estable Audio AAC (Neox)",
         lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/22/index.m3u8",
-        resolverType: "tdt_hls"
+        quality: "576p",
+        sourceUrl: "/api/belix/stream/742985.m3u8",
+        resolverType: "direct_hls"
       },
       {
         id: "neox-fhd",
@@ -25643,6 +27851,14 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
         quality: "1080p",
         sourceUrl: "/api/belix/stream/743020.m3u8",
         resolverType: "direct_hls"
+      },
+      {
+        id: "neox-dvb-hd",
+        label: "Se\xF1al Directa TDT FHD 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/22/index.m3u8",
+        resolverType: "tdt_hls"
       }
     ]
   },
@@ -25658,12 +27874,20 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
     description: "Series internacionales, grandes estrenos rom\xE1nticos y cine familiar",
     channels: [
       {
-        id: "nova-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p",
+        id: "nova-belix-hd",
+        label: "Se\xF1al Principal HD Audio AAC (Nova)",
         lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/23/index.m3u8",
-        resolverType: "tdt_hls"
+        quality: "720p",
+        sourceUrl: "/api/belix/stream/742954.m3u8",
+        resolverType: "direct_hls"
+      },
+      {
+        id: "nova-belix-sd",
+        label: "Se\xF1al Estable Audio AAC (Nova)",
+        lang: "ES",
+        quality: "576p",
+        sourceUrl: "/api/belix/stream/742879.m3u8",
+        resolverType: "direct_hls"
       },
       {
         id: "nova-fhd",
@@ -25672,6 +27896,14 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
         quality: "1080p",
         sourceUrl: "/api/belix/stream/742920.m3u8",
         resolverType: "direct_hls"
+      },
+      {
+        id: "nova-dvb-hd",
+        label: "Se\xF1al Directa TDT FHD 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/23/index.m3u8",
+        resolverType: "tdt_hls"
       }
     ]
   },
@@ -25687,20 +27919,20 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
     description: "CSI, FBI, Mentes Criminales y las mejores series procedimentales",
     channels: [
       {
-        id: "energy-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/18/index.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
         id: "energy-fhd",
         label: "Se\xF1al Belix FHD (Energy)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "/api/belix/stream/743019.m3u8",
         resolverType: "direct_hls"
+      },
+      {
+        id: "energy-dvb-hd",
+        label: "Se\xF1al Directa TDT FHD 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/18/index.m3u8",
+        resolverType: "tdt_hls"
       }
     ]
   },
@@ -25716,20 +27948,28 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
     description: "Series espa\xF1olas e internacionales en alta definici\xF3n",
     channels: [
       {
-        id: "a3s-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/24/index.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
         id: "a3s-fhd",
         label: "Se\xF1al Belix FHD (Atreseries)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "/api/belix/stream/743033.m3u8",
         resolverType: "direct_hls"
+      },
+      {
+        id: "a3s-belix-sd",
+        label: "Se\xF1al Estable Audio AAC (Atreseries)",
+        lang: "ES",
+        quality: "576p",
+        sourceUrl: "/api/belix/stream/742972.m3u8",
+        resolverType: "direct_hls"
+      },
+      {
+        id: "a3s-dvb-hd",
+        label: "Se\xF1al Directa TDT FHD 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/24/index.m3u8",
+        resolverType: "tdt_hls"
       }
     ]
   },
@@ -25745,20 +27985,20 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
     description: "Canal 100% cine de Hollywood en alta definici\xF3n",
     channels: [
       {
-        id: "bemad-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/25/index.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
         id: "bemad-fhd",
         label: "Se\xF1al Belix FHD (Be Mad)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "/api/belix/stream/743018.m3u8",
         resolverType: "direct_hls"
+      },
+      {
+        id: "bemad-dvb-hd",
+        label: "Se\xF1al Directa TDT FHD 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/25/index.m3u8",
+        resolverType: "tdt_hls"
       }
     ]
   },
@@ -25816,12 +28056,12 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
     description: "Pel\xEDculas ininterrumpidas de todos los g\xE9neros las 24 horas",
     channels: [
       {
-        id: "bom-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p",
+        id: "bom-fhd",
+        label: "Se\xF1al Belix FHD (BOM Cine)",
         lang: "ES",
         quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/35/index.m3u8",
-        resolverType: "tdt_hls"
+        sourceUrl: "/api/belix/stream/743034.m3u8",
+        resolverType: "direct_hls"
       },
       {
         id: "bom-oficial",
@@ -25832,12 +28072,12 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
         resolverType: "tdt_hls"
       },
       {
-        id: "bom-fhd",
-        label: "Se\xF1al Belix FHD (BOM Cine)",
+        id: "bom-dvb-hd",
+        label: "Se\xF1al Directa TDT FHD 1080p",
         lang: "ES",
         quality: "1080p",
-        sourceUrl: "/api/belix/stream/743034.m3u8",
-        resolverType: "direct_hls"
+        sourceUrl: "http://90.163.85.113:8093/stream/35/index.m3u8",
+        resolverType: "tdt_hls"
       }
     ]
   },
@@ -25895,20 +28135,28 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
     description: "El Chiringuito de Jugones, Forjado a Fuego y docu-realities",
     channels: [
       {
-        id: "mega-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/11/index.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
         id: "mega-fhd",
         label: "Se\xF1al Belix FHD (Mega)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "/api/belix/stream/743032.m3u8",
         resolverType: "direct_hls"
+      },
+      {
+        id: "mega-belix-sd",
+        label: "Se\xF1al Estable Audio AAC (Mega)",
+        lang: "ES",
+        quality: "576p",
+        sourceUrl: "/api/belix/stream/742987.m3u8",
+        resolverType: "direct_hls"
+      },
+      {
+        id: "mega-dvb-hd",
+        label: "Se\xF1al Directa TDT FHD 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/11/index.m3u8",
+        resolverType: "tdt_hls"
       }
     ]
   },
@@ -25966,20 +28214,20 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
     description: "Ni que fu\xE9ramos, investigaci\xF3n criminal, magacines y realities",
     channels: [
       {
-        id: "ten-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/27/index.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
         id: "ten-fhd",
         label: "Se\xF1al Belix FHD (TEN)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "/api/belix/stream/743013.m3u8",
         resolverType: "direct_hls"
+      },
+      {
+        id: "ten-dvb-hd",
+        label: "Se\xF1al Directa TDT FHD 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/27/index.m3u8",
+        resolverType: "tdt_hls"
       }
     ]
   },
@@ -26220,20 +28468,20 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
     description: "Doraemon, Gumball, Dragon Ball, Teen Titans y Cartoon Network",
     channels: [
       {
-        id: "boing-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/19/index.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
         id: "boing-fhd",
         label: "Se\xF1al Belix FHD (Boing)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "/api/belix/stream/742508.m3u8",
         resolverType: "direct_hls"
+      },
+      {
+        id: "boing-dvb-hd",
+        label: "Se\xF1al Directa TDT FHD 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/19/index.m3u8",
+        resolverType: "tdt_hls"
       }
     ]
   },
@@ -29940,7 +32188,7 @@ var KNOWN_TDT_ALIASES = {
   "tdt-24h": ["24h", "canal 24 horas", "24 horas"],
   "tdt-teledeporte": ["teledeporte", "tdp"],
   "tdt-clan": ["clan", "clan tv"],
-  "tdt-antena3": ["antena 3"],
+  "tdt-antena3": ["antena 3", "antena 3 hd", "antena3"],
   "tdt-cuatro": ["cuatro"],
   "tdt-telecinco": ["telecinco"],
   "tdt-lasexta": ["lasexta", "la sexta"],
@@ -30156,8 +32404,49 @@ async function refreshLiveIptvRegistry(force = false) {
     lastSyncAt
   };
 }
-function applySyncedStreamsToChannels(baseChannels) {
-  const belixConnected = getBelixStatus().connected;
+function getEnvCustomTdtTracks(channelId) {
+  const custom = [];
+  if (channelId === "tdt-antena3") {
+    const a3Backup = String(
+      process.env.ANTENA3_BACKUP_M3U8 || process.env.TDT_ANTENA3_BACKUP_URL || ""
+    ).trim();
+    if (/^https?:\/\//i.test(a3Backup)) {
+      custom.push({
+        id: "tdt-antena3-env-backup",
+        label: "Se\xF1al Privada HD (Espa\xF1a / VPS)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: a3Backup,
+        resolverType: "tdt_hls"
+      });
+    }
+  }
+  const jsonRaw = String(process.env.TDT_CUSTOM_STREAMS_JSON || "").trim();
+  if (jsonRaw) {
+    try {
+      const parsed = JSON.parse(jsonRaw);
+      const val = parsed?.[channelId];
+      const list = Array.isArray(val) ? val : typeof val === "string" ? [val] : [];
+      list.forEach((u, idx) => {
+        const clean = String(u || "").trim();
+        if (/^https?:\/\//i.test(clean)) {
+          custom.push({
+            id: `${channelId}-env-custom-${idx}`,
+            label: `Cabecera Privada ${idx + 1} (HD)`,
+            lang: "ES",
+            quality: "1080p",
+            sourceUrl: clean,
+            resolverType: "tdt_hls"
+          });
+        }
+      });
+    } catch {
+    }
+  }
+  return custom;
+}
+function applySyncedStreamsToChannels(baseChannels, belixConnectedOverride) {
+  const belixConnected = typeof belixConnectedOverride === "boolean" ? belixConnectedOverride : isAnyBelixConnected();
   const enriched = baseChannels.map((ch) => {
     const aliasKeys = [normName(ch.name), ...KNOWN_TDT_ALIASES[ch.id] || []];
     let match;
@@ -30168,6 +32457,7 @@ function applySyncedStreamsToChannels(baseChannels) {
       }
     }
     const existingTracks = Array.isArray(ch.channels) ? ch.channels : [];
+    const envCustomTracks = getEnvCustomTdtTracks(ch.id);
     const activeExisting = belixConnected ? existingTracks : existingTracks.filter((tr) => !String(tr.sourceUrl || "").startsWith("/api/belix/stream/"));
     const belixTracks = belixConnected ? [] : existingTracks.filter((tr) => String(tr.sourceUrl || "").startsWith("/api/belix/stream/"));
     const syncedTracks = [];
@@ -30187,7 +32477,7 @@ function applySyncedStreamsToChannels(baseChannels) {
         }
       });
     }
-    const combinedTracks = activeExisting.length > 0 || syncedTracks.length > 0 ? [...activeExisting, ...syncedTracks] : belixTracks;
+    const combinedTracks = envCustomTracks.length > 0 || activeExisting.length > 0 || syncedTracks.length > 0 ? [...envCustomTracks, ...activeExisting, ...syncedTracks] : belixTracks;
     return {
       ...ch,
       logoUrl: ch.logoUrl || match?.logo,
@@ -31272,7 +33562,16 @@ var GAME_SLUG_TO_ID = {
   damas: "checkers",
   connect4: "connect4",
   conecta4: "connect4",
-  "conecta-4": "connect4"
+  "conecta-4": "connect4",
+  penaltis: "penalty",
+  penalty: "penalty",
+  "penaltis-mundial": "penalty",
+  coches: "racing3d",
+  "coches-3d": "racing3d",
+  racing: "racing3d",
+  racing3d: "racing3d",
+  "nitro-gp": "racing3d",
+  f1: "racing3d"
 };
 var GAME_ID_TO_SLUG = {
   pool: "billar",
@@ -31281,6 +33580,8 @@ var GAME_ID_TO_SLUG = {
   blackjack: "blackjack",
   chapas: "chapas",
   headsoccer: "head-soccer",
+  penalty: "penaltis",
+  racing3d: "coches-3d",
   parchis: "parchis",
   uno: "uno",
   chess: "ajedrez",
@@ -31294,6 +33595,8 @@ var GAME_TITLES = {
   blackjack: { es: "Blackjack 21", ca: "Blackjack 21", en: "Blackjack 21" },
   chapas: { es: "F\xFAtbol Chapas", ca: "Futbol Xapes", en: "Bottlecap Football" },
   headsoccer: { es: "Head Soccer", ca: "Head Soccer", en: "Head Soccer" },
+  penalty: { es: "Penaltis Mundial Pro", ca: "Penals Mundial Pro", en: "World Cup Penalties Pro" },
+  racing3d: { es: "Nitro GP 3D \xB7 Volante M\xF3vil", ca: "Nitro GP 3D \xB7 Volant M\xF2bil", en: "Nitro GP 3D \xB7 Phone Wheel" },
   parchis: { es: "Parch\xEDs", ca: "Parx\xEDs", en: "Parch\xEDs" },
   uno: { es: "UNO", ca: "UNO", en: "UNO" },
   chess: { es: "Ajedrez", ca: "Escacs", en: "Chess" },
@@ -31336,6 +33639,8 @@ var SYSTEM_RESERVED_SLUGS = /* @__PURE__ */ new Set([
   "design-system",
   "admin",
   "samsung",
+  "volante",
+  "controller",
   "sala",
   "s",
   "r",
@@ -31411,6 +33716,15 @@ function parseAppRoute(pathname, search = "") {
   }
   if (seg0 === "samsung" || params.get("samsung") === "1") {
     return { kind: "system", systemType: "samsung", roomId: queryRoomId };
+  }
+  if (seg0 === "volante" || seg0 === "controller" || params.get("volante") === "1") {
+    const rawPair = (params.get("pair") || "").replace(/\D/g, "").slice(0, 4);
+    return {
+      kind: "system",
+      systemType: "controller",
+      roomId: queryRoomId,
+      pairCode: rawPair.length === 4 ? rawPair : void 0
+    };
   }
   if (params.get("tvpair") === "1" || seg0 === "tv") {
     return { kind: "system", systemType: "tv", roomId: queryRoomId };
@@ -32392,7 +34706,7 @@ function registerDeepLinkRoutes(app2, deps) {
 }
 
 // server/extractors/elahmadExtractor.ts
-import crypto9 from "crypto";
+import crypto10 from "crypto";
 var ELAHMAD_MOBILE_UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
 var ELAHMAD_AES_KEY = Buffer.from("acf40de1dddb1addf66721d1ecfbc5d7", "utf8");
 var ELAHMAD_AES_IV = Buffer.from("b138591ee8715ee0", "utf8");
@@ -32408,7 +34722,7 @@ function decryptElahmadAesPayload(base64Payload) {
   const clean = String(base64Payload || "").trim();
   if (!clean) return "";
   try {
-    const decipher = crypto9.createDecipheriv("aes-256-cbc", ELAHMAD_AES_KEY, ELAHMAD_AES_IV);
+    const decipher = crypto10.createDecipheriv("aes-256-cbc", ELAHMAD_AES_KEY, ELAHMAD_AES_IV);
     let decrypted = decipher.update(clean, "base64", "utf8");
     decrypted += decipher.final("utf8");
     return decrypted.trim();
@@ -33253,9 +35567,12 @@ function registerIptvAndTdtRoutes(app2, deps) {
     } else {
       void refreshLiveIptvRegistry(false).catch(() => void 0);
     }
+    const belixSidMatch = String(req.headers.cookie || "").match(/(?:^|;\s*)belix_sid=([^;]+)/);
+    const belixSessionKey = String(req.headers["x-belix-session"] || "").trim() || (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : "") || "default";
+    const belixActive = isAnyBelixConnected(belixSessionKey);
     const merged = [
-      ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),
-      ...getBelixLiveChannels(),
+      ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, belixActive),
+      ...getBelixLiveChannels({ sessionKey: belixSessionKey }),
       ...getCuratedRbtvChannels()
     ];
     res.json({
@@ -33552,12 +35869,19 @@ function registerIptvAndTdtRoutes(app2, deps) {
         }
         const isDirectHls = track.resolverType === "tdt_hls" || track.resolverType === "direct_hls" || /\.m3u8(\?|$)/i.test(sourceUrl);
         if (sourceUrl.startsWith("/api/belix/stream/")) {
-          if (!getBelixStatus().connected) {
+          const belixSidMatch = String(req.headers.cookie || "").match(/(?:^|;\s*)belix_sid=([^;]+)/);
+          const belixSessionKey = String(req.headers["x-belix-session"] || "").trim() || (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : "") || "default";
+          if (!isAnyBelixConnected(belixSessionKey)) {
             markTrackDown(sourceUrl, 503);
             continue;
           }
           const belixStreamId = sourceUrl.split("/").pop()?.replace(/\.m3u8.*$/i, "") || "";
-          const belixManifest = await resolveBelixManifest(belixStreamId, publicOrigin);
+          const belixManifest = await resolveBelixManifest(
+            belixStreamId,
+            publicOrigin,
+            belixSessionKey,
+            channel.name
+          );
           if (!belixManifest) {
             markTrackDown(sourceUrl, 503);
             continue;
@@ -33838,7 +36162,7 @@ function registerWorldTvRoutes(app2) {
 }
 
 // server/extractors/vidhideHelpers/directHostUnpackers.ts
-import crypto10 from "crypto";
+import crypto11 from "crypto";
 var TMDB_API_KEY2 = ENV.tmdbApiKey;
 async function unpackByseToHls(embedUrl) {
   try {
@@ -33884,7 +36208,7 @@ async function unpackByseToHls(embedUrl) {
     if (payloadBuf.length <= 16) return null;
     const ciphertext = payloadBuf.subarray(0, payloadBuf.length - 16);
     const tag = payloadBuf.subarray(payloadBuf.length - 16);
-    const decipher = crypto10.createDecipheriv("aes-256-gcm", key, iv);
+    const decipher = crypto11.createDecipheriv("aes-256-gcm", key, iv);
     decipher.setAuthTag(tag);
     const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
     const data = JSON.parse(decrypted.toString("utf8"));
@@ -34797,7 +37121,7 @@ async function extractGnulaHdTracks(pageUrl, opts) {
 }
 
 // server/extractors/vidhideHelpers/embed69AndSeriesKao.ts
-import crypto11 from "crypto";
+import crypto12 from "crypto";
 
 // server/extractors/vidhideHelpers/animeAv1Extractor.ts
 var animeAv1SlugCache = new LruTtlCache(400, 30 * 60 * 1e3);
@@ -35477,7 +37801,7 @@ async function fetchEmbed69HtmlWithMirrorAndAnubis(imdbSuffix) {
     let responseHash = "";
     const maxIters = 15e5;
     while (nonce < maxIters) {
-      const hex = crypto11.createHash("sha256").update(randomData + nonce).digest("hex");
+      const hex = crypto12.createHash("sha256").update(randomData + nonce).digest("hex");
       if (hex.startsWith(prefix)) {
         responseHash = hex;
         break;
@@ -35535,7 +37859,7 @@ function parseEmbed69OrMoeTracks(html, tagId) {
         const linkChallengeMatch = html.match(/LINK_CHALLENGE\s*=\s*["']([^"']+)["']/);
         const linkSaltMatch = html.match(/LINK_SALT\s*=\s*["']([^"']+)["']/);
         if (linkChallengeMatch && linkSaltMatch) {
-          aesKey = crypto11.createHash("sha256").update(linkChallengeMatch[1] + linkSaltMatch[1]).digest();
+          aesKey = crypto12.createHash("sha256").update(linkChallengeMatch[1] + linkSaltMatch[1]).digest();
         } else {
           const challengeMatch = html.match(/POW_CHALLENGE\s*=\s*["']([^"']+)["']/);
           const diffMatch = html.match(/POW_DIFFICULTY\s*=\s*(\d+)/);
@@ -35547,11 +37871,11 @@ function parseEmbed69OrMoeTracks(html, tagId) {
             const prefix = "0".repeat(difficulty);
             let nonce = 0;
             while (nonce < 5e5) {
-              const hex = crypto11.createHash("sha256").update(challenge + nonce).digest("hex");
+              const hex = crypto12.createHash("sha256").update(challenge + nonce).digest("hex");
               if (hex.startsWith(prefix)) break;
               nonce++;
             }
-            aesKey = crypto11.createHash("sha256").update(challenge + nonce + salt).digest();
+            aesKey = crypto12.createHash("sha256").update(challenge + nonce + salt).digest();
           }
         }
         if (aesKey) {
@@ -35560,7 +37884,7 @@ function parseEmbed69OrMoeTracks(html, tagId) {
             try {
               const raw = Buffer.from(b64, "base64");
               if (raw.length <= 16) return null;
-              const decipher = crypto11.createDecipheriv(
+              const decipher = crypto12.createDecipheriv(
                 "aes-256-cbc",
                 keyBuf,
                 raw.subarray(0, 16)
@@ -35947,7 +38271,7 @@ async function extractEmbed69SpanishTracks(opts) {
 }
 
 // server/extractors/bingetrixHelpers/vidBuzzAndRockExtractors.ts
-import crypto12 from "crypto";
+import crypto13 from "crypto";
 var vidsrcBuzzEmptyCache = new LruTtlCache(300, 15 * 60 * 1e3);
 var vidRockKey = Buffer.from(
   "7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d7e9f2a5c8b1d4e7f",
@@ -36144,7 +38468,7 @@ function decryptVidRockToken(token) {
     const iv = raw.subarray(0, 12);
     const tag = raw.subarray(raw.length - 16);
     const ciphertext = raw.subarray(12, raw.length - 16);
-    const decipher = crypto12.createDecipheriv("aes-256-gcm", vidRockKey, iv);
+    const decipher = crypto13.createDecipheriv("aes-256-gcm", vidRockKey, iv);
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
   } catch {
@@ -40097,15 +42421,15 @@ function registerDetailsAndSubtitlesRoutes(app2, deps) {
 }
 
 // server/routes/catalog/apkDownloadHelper.ts
-import fs8 from "fs";
-import path7 from "path";
+import fs9 from "fs";
+import path8 from "path";
 function sendApkPackageResponse(req, res, opts) {
   const candidates = [];
   for (const name of opts.candidateFilenames) {
-    candidates.push(path7.resolve(opts.rootDir, "public", name));
-    candidates.push(path7.resolve(opts.rootDir, "dist", name));
+    candidates.push(path8.resolve(opts.rootDir, "public", name));
+    candidates.push(path8.resolve(opts.rootDir, "dist", name));
   }
-  const target = candidates.find((p) => fs8.existsSync(p));
+  const target = candidates.find((p) => fs9.existsSync(p));
   res.setHeader("Content-Type", "application/vnd.android.package-archive");
   res.setHeader("Content-Disposition", `attachment; filename="${opts.filename}"`);
   res.setHeader("X-Content-Type-Options", "nosniff");
@@ -40346,6 +42670,11 @@ async function handleSeriesCatalogRequest(req, res, deps) {
       const discoverSort = sort === "top_rated" ? "vote_average.desc" : sort === "now_playing" ? "first_air_date.desc" : "popularity.desc";
       const minVotes = sort === "top_rated" ? 140 : 30;
       endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY4}&language=${langParam}&sort_by=${discoverSort}&vote_count.gte=${minVotes}&first_air_date.lte=${todayIso}&with_genres=16&with_origin_country=JP&page=${page}&include_adult=false`;
+    } else if (category === "kids") {
+      if (page === 1) {
+        curatedAnimeSeedPromise = fetchTmdbItemsByIds(CURATED_SPANISH_KIDS_TV_IDS, "tv", "es-ES");
+      }
+      endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY4}&language=es-ES&sort_by=popularity.desc&vote_count.gte=25&first_air_date.lte=${todayIso}&with_genres=10762&without_genres=27,80,99,10763,10767&page=${page}&include_adult=false`;
     } else if (SERIES_GENRE_MAP[category]) {
       const discoverSort = sort === "top_rated" ? "vote_average.desc" : sort === "now_playing" ? "first_air_date.desc" : "popularity.desc";
       const minVotes = sort === "top_rated" ? 180 : 40;
@@ -41063,6 +43392,7 @@ async function handleDirectExtractCases(params) {
     preferLang,
     titleHint,
     isSandboxedFrame,
+    belixSessionKey,
     cacheKey,
     setCache,
     sendOk,
@@ -41103,12 +43433,36 @@ async function handleDirectExtractCases(params) {
     setCache(cacheKey, megaResult);
     return sendOk(megaResult);
   }
-  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play)\//i.test(rawInput)) {
-    if (/^\/api\/belix\/(?:stream|xtream\/play)\//i.test(rawInput) && !getBelixStatus().connected) {
+  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play)\//i.test(rawInput) || rawInput.startsWith("/api/hls-proxy?")) {
+    const belixStreamMatch = rawInput.match(/^\/api\/belix\/stream\/([a-zA-Z0-9_-]+)(?:\.m3u8)?/i);
+    if (/^\/api\/belix\/(?:stream|xtream\/play)\//i.test(rawInput) && !isAnyBelixConnected(belixSessionKey)) {
       return sendErr(
-        503,
+        404,
         "Se\xF1al Belix no conectada; cambiando autom\xE1ticamente a se\xF1al TDT en directo."
       );
+    }
+    if (belixStreamMatch && process.env.NODE_ENV !== "test") {
+      const warmed = await resolveBelixManifest(
+        belixStreamMatch[1],
+        "",
+        belixSessionKey,
+        titleHint
+      ).catch(() => null);
+      if (!warmed) {
+        return sendErr(
+          404,
+          "Se\xF1al Belix temporalmente sin respuesta; cambiando autom\xE1ticamente a se\xF1al alternativa."
+        );
+      }
+    }
+    if (rawInput.startsWith("/api/hls-proxy")) {
+      try {
+        const parsedInner = new URL(rawInput, "http://localhost").searchParams.get("url") || "";
+        if (parsedInner && isDvbHeadendStream(parsedInner) && isDvbUpstreamCoolingDown(parsedInner)) {
+          return sendErr(404, "Cabecera TDT en enfriamiento; cambiando autom\xE1ticamente de fuente.");
+        }
+      } catch {
+      }
     }
     const isDirectFile = /\.(mp4|mkv|webm)(\?|$)/i.test(rawInput);
     const result = {
@@ -41119,7 +43473,104 @@ async function handleDirectExtractCases(params) {
       title: titleHint || "Stream en Directo",
       requestedLang: preferLang || "ES",
       resolvedLang: preferLang || "ES",
-      expiresAt: Date.now() + 15 * 60 * 1e3
+      expiresAt: Date.now() + (belixStreamMatch ? 8e3 : 15 * 60 * 1e3)
+    };
+    setCache(cacheKey, result);
+    return sendOk(result);
+  }
+  const atresMatch = rawInput.match(
+    /^https?:\/\/(?:www\.)?atresplayer\.com\/directos\/([a-z0-9-]+)/i
+  );
+  if (atresMatch) {
+    const slug = atresMatch[1].toLowerCase();
+    const ATRES_DIRECTO_MAP = {
+      antena3: {
+        dvbUrl: "http://90.163.85.113:8093/stream/20/index.m3u8",
+        streamUrl: "/api/belix/stream/531071.m3u8?name=Antena%203",
+        title: "Antena 3 \xB7 Directo HD",
+        rawUrl: "https://www.atresplayer.com/directos/antena3/"
+      },
+      "antena3-internacional": {
+        dvbUrl: "http://90.163.85.113:8093/stream/20/index.m3u8",
+        streamUrl: "/api/belix/stream/531071.m3u8?name=Antena%203",
+        title: "Antena 3 \xB7 Directo HD",
+        rawUrl: "https://www.atresplayer.com/directos/antena3/"
+      },
+      lasexta: {
+        dvbUrl: "http://90.163.85.113:8093/stream/21/index.m3u8",
+        streamUrl: "/api/belix/stream/743035.m3u8?name=laSexta",
+        title: "laSexta \xB7 Directo HD",
+        rawUrl: "https://www.atresplayer.com/directos/lasexta/"
+      },
+      neox: {
+        dvbUrl: "http://90.163.85.113:8093/stream/22/index.m3u8",
+        streamUrl: "/api/belix/stream/742985.m3u8?name=Neox",
+        title: "Neox \xB7 Directo HD",
+        rawUrl: "https://www.atresplayer.com/directos/neox/"
+      },
+      nova: {
+        dvbUrl: "http://90.163.85.113:8093/stream/23/index.m3u8",
+        streamUrl: "/api/belix/stream/742954.m3u8?name=Nova",
+        title: "Nova \xB7 Directo HD",
+        rawUrl: "https://www.atresplayer.com/directos/nova/"
+      },
+      mega: {
+        dvbUrl: "http://90.163.85.113:8093/stream/11/index.m3u8",
+        streamUrl: "/api/belix/stream/743032.m3u8?name=Mega",
+        title: "Mega \xB7 Directo HD",
+        rawUrl: "https://www.atresplayer.com/directos/mega/"
+      },
+      atreseries: {
+        dvbUrl: "http://90.163.85.113:8093/stream/24/index.m3u8",
+        streamUrl: "/api/belix/stream/743033.m3u8?name=Atreseries",
+        title: "Atreseries \xB7 Directo HD",
+        rawUrl: "https://www.atresplayer.com/directos/atreseries/"
+      }
+    };
+    const mapped = ATRES_DIRECTO_MAP[slug] || ATRES_DIRECTO_MAP.antena3;
+    const dvbReferer = "http://90.163.85.113:8093/";
+    if (process.env.NODE_ENV !== "test" && !isDvbUpstreamCoolingDown(mapped.dvbUrl)) {
+      const activeDvb = getActiveDvbSessionPath(mapped.dvbUrl, "hd") || await ensureLiveDvbCleanHlsSession(mapped.dvbUrl, "hd", dvbReferer).catch(() => null);
+      if (activeDvb) {
+        const dvbResult = {
+          success: true,
+          mode: "hls",
+          streamUrl: activeDvb,
+          rawStreamUrl: mapped.dvbUrl,
+          referer: dvbReferer,
+          title: titleHint || mapped.title,
+          requestedLang: "ES",
+          resolvedLang: "ES",
+          expiresAt: Date.now() + 3e4
+        };
+        setCache(cacheKey, dvbResult);
+        return sendOk(dvbResult);
+      }
+    }
+    const mappedBelixId = mapped.streamUrl.match(/\/api\/belix\/stream\/([a-zA-Z0-9_-]+)/i)?.[1];
+    if (mappedBelixId && process.env.NODE_ENV !== "test") {
+      const warmed = await resolveBelixManifest(
+        mappedBelixId,
+        "",
+        belixSessionKey,
+        titleHint || mapped.title
+      ).catch(() => null);
+      if (!warmed) {
+        return sendErr(
+          404,
+          `Se\xF1al de ${mapped.title} temporalmente sin respuesta; prueba otra se\xF1al disponible.`
+        );
+      }
+    }
+    const result = {
+      success: true,
+      mode: "hls",
+      streamUrl: mapped.streamUrl,
+      rawStreamUrl: mapped.rawUrl,
+      title: titleHint || mapped.title,
+      requestedLang: "ES",
+      resolvedLang: "ES",
+      expiresAt: Date.now() + 1e4
     };
     setCache(cacheKey, result);
     return sendOk(result);
@@ -41169,6 +43620,9 @@ async function handleDirectExtractCases(params) {
         setCache(cacheKey, dvbResult);
         return sendOk(dvbResult);
       }
+      if (isDvbUpstreamCoolingDown(cleanCheckUrl)) {
+        return sendErr(404, "Se\xF1al TDT directa temporalmente no accesible desde servidor.");
+      }
     }
     const checkHeaders = {
       "User-Agent": getPreferredUpstreamUa(cleanCheckUrl),
@@ -41181,12 +43635,18 @@ async function handleDirectExtractCases(params) {
       } catch {
       }
     }
+    const isDirectBrowserCorsPublicCdn = /^https:\/\/([^/]*\.)?(rtvelivestream\.rtve\.es|3catdirectes\.cat|eitb\.eus)\//i.test(
+      cleanCheckUrl
+    );
+    const isFastTrustedCdn = isDirectBrowserCorsPublicCdn || /otteravision\.com|stream\.ads\.ottera\.tv|pluto\.tv|samsungtvplus|amagi\.tv/i.test(
+      cleanCheckUrl
+    );
     let isAlive = false;
     let manifestText = "";
     try {
       const chk = await fetch(cleanCheckUrl, {
         headers: checkHeaders,
-        signal: AbortSignal.timeout(isDvb ? 7500 : 4e3)
+        signal: AbortSignal.timeout(isDvb ? 6e3 : 2500)
       });
       if (chk.ok) {
         const txt = await chk.text();
@@ -41198,7 +43658,7 @@ async function handleDirectExtractCases(params) {
     } catch {
     }
     if (!isAlive) {
-      const fb = await curlGetText(cleanCheckUrl, checkHeaders, isCnStream || isDvb ? 6 : 5, isCnStream).catch(() => ({
+      const fb = await curlGetText(cleanCheckUrl, checkHeaders, isCnStream || isDvb ? 5 : 3, isCnStream).catch(() => ({
         text: ""
       }));
       if (fb.text && fb.text.includes("#EXTM3U") && !/nosignal/i.test(fb.text)) {
@@ -41207,8 +43667,8 @@ async function handleDirectExtractCases(params) {
       }
     }
     if (!isAlive && isCnStream) {
-      await new Promise((r) => setTimeout(r, 250));
-      const fb2 = await curlGetText(cleanCheckUrl, checkHeaders, 6, true).catch(() => ({
+      await new Promise((r) => setTimeout(r, 200));
+      const fb2 = await curlGetText(cleanCheckUrl, checkHeaders, 5, true).catch(() => ({
         text: ""
       }));
       if (fb2.text && fb2.text.includes("#EXTM3U") && !/nosignal/i.test(fb2.text)) {
@@ -41216,7 +43676,7 @@ async function handleDirectExtractCases(params) {
         manifestText = fb2.text;
       }
     }
-    if (isAlive && !isDvb && !isCnStream && manifestText) {
+    if (isAlive && !isDvb && !isCnStream && !isFastTrustedCdn && manifestText) {
       try {
         let mediaText = manifestText;
         let mediaBase = cleanCheckUrl;
@@ -41234,7 +43694,7 @@ async function handleDirectExtractCases(params) {
               const varUrl = new URL(tr, mediaBase).href;
               const vRes = await fetch(varUrl, {
                 headers: checkHeaders,
-                signal: AbortSignal.timeout(3e3)
+                signal: AbortSignal.timeout(1800)
               }).catch(() => null);
               if (vRes?.ok) {
                 const vTxt = await vRes.text();
@@ -41251,7 +43711,7 @@ async function handleDirectExtractCases(params) {
             isAlive = false;
           }
         }
-        if (isAlive && !mediaText.includes("#EXT-X-STREAM-INF")) {
+        if (isAlive && !mediaText.includes("#EXT-X-STREAM-INF") && !mediaText.includes("#EXTINF:")) {
           const mLines = mediaText.split(/\r?\n/);
           let segUrl = "";
           for (let i = mLines.length - 1; i >= 0; i--) {
@@ -41263,7 +43723,7 @@ async function handleDirectExtractCases(params) {
           if (segUrl) {
             const segRes = await fetch(segUrl, {
               headers: { ...checkHeaders, Range: "bytes=0-2047" },
-              signal: AbortSignal.timeout(3e3)
+              signal: AbortSignal.timeout(1800)
             }).catch(() => null);
             await segRes?.body?.cancel?.().catch(() => {
             });
@@ -41281,9 +43741,6 @@ async function handleDirectExtractCases(params) {
         "Esta se\xF1al TDT est\xE1 temporalmente sin emisi\xF3n. Prueba la se\xF1al alternativa."
       );
     }
-    const isDirectBrowserCorsPublicCdn = /^https:\/\/([^/]*\.)?(rtvelivestream\.rtve\.es|3catdirectes\.cat|eitb\.eus)\//i.test(
-      cleanCheckUrl
-    );
     const finalStreamUrl = isDirectBrowserCorsPublicCdn ? cleanCheckUrl : buildHlsProxyUrl(cleanCheckUrl, originRef, isDvb);
     const resolvedChLang = isCnStream ? "ZH" : "ES";
     const result = {
@@ -44050,6 +46507,7 @@ async function handleExternalSportsExtract(params) {
 
 // server/routes/streamExtractRoutes.ts
 var extractionCache = new LruTtlCache(400, 15 * 60 * 1e3);
+var inFlightExtractMap = /* @__PURE__ */ new Map();
 function registerStreamExtractRoute(app2, deps) {
   const formatResp = (req, payload) => formatExtractResponseForClient(req, payload, deps.getPublicOrigin);
   app2.get("/api/extract/stream", async (req, res) => {
@@ -44079,78 +46537,129 @@ function registerStreamExtractRoute(app2, deps) {
     if (cached && cached.expiresAt > Date.now()) {
       return res.json(formatResp(req, cached));
     }
-    const setCache = (k, val) => extractionCache.set(k, val);
-    const sendOk = (payload) => res.json(formatResp(req, payload));
-    const sendErr = (status, error) => res.status(status).json({ success: false, error });
-    try {
-      const directResp = await handleDirectExtractCases({
-        rawInput,
-        resolverType,
-        preferLang,
-        titleHint,
-        isSandboxedFrame,
-        cacheKey,
-        setCache,
-        sendOk,
-        sendErr
-      });
-      if (directResp) return directResp;
-      const mediaResp = await handleCatalogMediaExtract({
-        rawInput,
-        movidyUrlParam,
-        gnulaUrlParam,
-        vestUrlParam,
-        resolverType,
-        preferLang,
-        titleHint,
-        origTitleHint,
-        yearParam,
-        mediaTypeParam,
-        tmdbIdParam,
-        seasonParam,
-        episodeParam,
-        episodeTitleHint,
-        isSandboxedFrame,
-        forceExtract,
-        directOnly,
-        cacheKey,
-        rankCandidateTracks: deps.rankCandidateTracks,
-        setCache,
-        sendOk,
-        sendUnavailable: (status, body) => res.status(status).json(body)
-      });
-      if (mediaResp) return mediaResp;
-      if (rawInput) {
-        return await handleExternalSportsExtract({
+    const belixSidMatch = String(req.headers.cookie || "").match(/(?:^|;\s*)belix_sid=([^;]+)/);
+    const belixSessionKey = String(req.headers["x-belix-session"] || "").trim() || (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : "") || "default";
+    const coalesceKey = `${belixSessionKey}|${cacheKey}`;
+    if (!forceExtract) {
+      const existingInFlight = inFlightExtractMap.get(coalesceKey);
+      if (existingInFlight) {
+        const joinedOutcome = await existingInFlight;
+        if (joinedOutcome.ok) {
+          return res.json(formatResp(req, joinedOutcome.payload));
+        }
+        return res.status(joinedOutcome.status).json(joinedOutcome.body);
+      }
+    }
+    const runExtraction = async () => {
+      let outcome = null;
+      const setCache = (k, val) => extractionCache.set(k, val);
+      const sendOk = (payload) => {
+        outcome = { ok: true, payload };
+        return null;
+      };
+      const sendErr = (status, error) => {
+        outcome = { ok: false, status, body: { success: false, error } };
+        return null;
+      };
+      const sendJsonStatus = (status, body) => {
+        outcome = { ok: false, status, body };
+        return null;
+      };
+      try {
+        await handleDirectExtractCases({
           rawInput,
           resolverType,
           preferLang,
           titleHint,
+          isSandboxedFrame,
+          belixSessionKey,
           cacheKey,
           setCache,
           sendOk,
-          sendJsonStatus: (status, body) => res.status(status).json(body)
+          sendErr
         });
+        if (outcome) return outcome;
+        await handleCatalogMediaExtract({
+          rawInput,
+          movidyUrlParam,
+          gnulaUrlParam,
+          vestUrlParam,
+          resolverType,
+          preferLang,
+          titleHint,
+          origTitleHint,
+          yearParam,
+          mediaTypeParam,
+          tmdbIdParam,
+          seasonParam,
+          episodeParam,
+          episodeTitleHint,
+          isSandboxedFrame,
+          forceExtract,
+          directOnly,
+          cacheKey,
+          rankCandidateTracks: deps.rankCandidateTracks,
+          setCache,
+          sendOk,
+          sendUnavailable: sendJsonStatus
+        });
+        if (outcome) return outcome;
+        if (rawInput) {
+          await handleExternalSportsExtract({
+            rawInput,
+            resolverType,
+            preferLang,
+            titleHint,
+            cacheKey,
+            setCache,
+            sendOk,
+            sendJsonStatus
+          });
+          if (outcome) return outcome;
+        }
+        return {
+          ok: false,
+          status: 404,
+          body: {
+            success: false,
+            canUseCloudBrowser: false,
+            error: "No se encontr\xF3 ninguna se\xF1al estable para reproducir dentro de la app."
+          }
+        };
+      } catch (err) {
+        logger.error({ err, tmdbIdParam, mediaTypeParam, titleHint }, "extract_stream_error");
+        return {
+          ok: false,
+          status: 502,
+          body: {
+            success: false,
+            canUseCloudBrowser: false,
+            error: "Esta se\xF1al no responde de forma estable en este momento."
+          }
+        };
       }
-      return res.status(404).json({
-        success: false,
-        canUseCloudBrowser: false,
-        error: "No se encontr\xF3 ninguna se\xF1al estable para reproducir dentro de la app."
-      });
-    } catch (err) {
-      logger.error({ err, tmdbIdParam, mediaTypeParam, titleHint }, "extract_stream_error");
-      return res.status(502).json({
-        success: false,
-        canUseCloudBrowser: false,
-        error: "Esta se\xF1al no responde de forma estable en este momento."
-      });
+    };
+    const extractPromise = runExtraction();
+    if (!forceExtract) {
+      inFlightExtractMap.set(coalesceKey, extractPromise);
+    }
+    try {
+      const finalOutcome = await extractPromise;
+      if (finalOutcome.ok) {
+        return res.json(formatResp(req, finalOutcome.payload));
+      }
+      return res.status(finalOutcome.status).json(finalOutcome.body);
+    } finally {
+      if (!forceExtract && inFlightExtractMap.get(coalesceKey) === extractPromise) {
+        inFlightExtractMap.delete(coalesceKey);
+      }
     }
   });
 }
 
 // server/services/clipbox/clipboxParser.ts
-import fs9 from "fs";
-import path8 from "path";
+import fs10 from "fs";
+import path9 from "path";
 
 // server/services/clipbox/clipboxRawData.ts
 var CORE_AND_STREAMING_HOSTS = [
@@ -44772,11 +47281,11 @@ var SDK_HOST_PATTERNS = [
 var EXTRACTOR_REGEX = /(wish|vidhide|filelions|dhtpre|dhcplay|dood|d000d|do7go|dsvplay|myvidplay|mixdrop|m1xdrop|miixdrop|mxdrop|voe\.|filemoon|dropload|dr0pstream|streamtape|vidmoly|bigwarp|luluvid|videostr|megacloud|rabbitstream|ok\.ru|sibnet|uqload|mp4upload|pcloud|pixeldrain|dailymotion|yourupload|streamlare|streamruby|streamsb|streamhub|streamix|streamup|upns\.|strp2p|rpmstream|rpmvid|rpmplay|nupload|vidloft|vidoza|guccihide|ahvsh|sfastwish|flaswish|obeywish|cdnwish|asnwish|wishembed|strwish|embedwish|swiftplayers|hlswish|playerwish|vidcloud|fembed|hexupload|krakenfiles|send\.cm|mediafire|mega\.nz|goodstream|vembed|playerp2p|vidrift|zilla-networks|jeansaispasplus|\.sbs$)/i;
 function resolveClipboxTextFile() {
   const candidates = [
-    path8.resolve(process.cwd(), "public/assets/aistudio/rutas_clipbox_e2495d5e.txt"),
-    path8.resolve(process.cwd(), "rutas_clipbox_e2495d5e.txt")
+    path9.resolve(process.cwd(), "public/assets/aistudio/rutas_clipbox_e2495d5e.txt"),
+    path9.resolve(process.cwd(), "rutas_clipbox_e2495d5e.txt")
   ];
   for (const p of candidates) {
-    if (fs9.existsSync(p)) return p;
+    if (fs10.existsSync(p)) return p;
   }
   return candidates[0];
 }
@@ -45013,7 +47522,7 @@ var cachedInventory = null;
 function parseClipboxInventory(forceReload = false) {
   if (cachedInventory && !forceReload) return cachedInventory;
   const filePath = resolveClipboxTextFile();
-  const raw = fs9.existsSync(filePath) ? fs9.readFileSync(filePath, "utf8") : CLIPBOX_EMBEDDED_RAW_TEXT;
+  const raw = fs10.existsSync(filePath) ? fs10.readFileSync(filePath, "utf8") : CLIPBOX_EMBEDDED_RAW_TEXT;
   const lines = raw.split(/\r?\n/);
   let declaredSummary = { literalUrls: 574, hosts: 440, routePatterns: 954 };
   const hostGroups = [];
@@ -45993,8 +48502,8 @@ function registerClipboxRoutes(app2) {
 }
 
 // server/services/rbtv/rbtvParser.ts
-import fs10 from "fs";
-import path9 from "path";
+import fs11 from "fs";
+import path10 from "path";
 
 // server/services/rbtv/rbtvRawData.ts
 var RBTV_EMBEDDED_RAW_TEXT = `Archivo analizado: RBTV+ (1).apk_Decompiler.com.zip
@@ -46433,11 +48942,11 @@ var ARCHITECTURE_NODES = [
 ];
 function resolveRbtvTextFile() {
   const candidates = [
-    path9.resolve(process.cwd(), "public/assets/aistudio/rutas_RBTV_c34416da.txt"),
-    path9.resolve(process.cwd(), "rutas_RBTV_c34416da.txt")
+    path10.resolve(process.cwd(), "public/assets/aistudio/rutas_RBTV_c34416da.txt"),
+    path10.resolve(process.cwd(), "rutas_RBTV_c34416da.txt")
   ];
   for (const p of candidates) {
-    if (fs10.existsSync(p)) return p;
+    if (fs11.existsSync(p)) return p;
   }
   return candidates[0];
 }
@@ -46495,7 +49004,7 @@ var cachedRbtvInventory = null;
 function parseRbtvInventory(forceReload = false) {
   if (cachedRbtvInventory && !forceReload) return cachedRbtvInventory;
   const filePath = resolveRbtvTextFile();
-  const raw = fs10.existsSync(filePath) ? fs10.readFileSync(filePath, "utf8") : RBTV_EMBEDDED_RAW_TEXT;
+  const raw = fs11.existsSync(filePath) ? fs11.readFileSync(filePath, "utf8") : RBTV_EMBEDDED_RAW_TEXT;
   const normalizedRaw = raw.split(/\r?\n/).length <= 3 && raw.includes("\\n") ? raw.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n") : raw;
   const lines = normalizedRaw.split(/\r?\n/);
   let archiveName = "RBTV+ (1).apk_Decompiler.com.zip";
@@ -47070,11 +49579,11 @@ function registerRbtvRoutes(app2) {
 }
 
 // server/routes/belixRoutes.ts
-import crypto13 from "crypto";
+import crypto14 from "crypto";
 
 // server/services/belix/belixParser.ts
-import fs11 from "fs";
-import path10 from "path";
+import fs12 from "fs";
+import path11 from "path";
 
 // server/services/belix/belixRawData.ts
 var BELIX_EMBEDDED_RAW_TEXT = `INVENTARIO DE RUTAS Y ARQUITECTURA \u2014 BELIX TV
@@ -47311,11 +49820,11 @@ var APP_CODE_HOSTS = /* @__PURE__ */ new Set([
 ]);
 function resolveBelixTextFile() {
   const candidates = [
-    path10.resolve(process.cwd(), "public/assets/aistudio/rutas_Belix_TV_6fb3f038.txt"),
-    path10.resolve(process.cwd(), "rutas_Belix_TV_6fb3f038.txt")
+    path11.resolve(process.cwd(), "public/assets/aistudio/rutas_Belix_TV_6fb3f038.txt"),
+    path11.resolve(process.cwd(), "rutas_Belix_TV_6fb3f038.txt")
   ];
   for (const p of candidates) {
-    if (fs11.existsSync(p)) return p;
+    if (fs12.existsSync(p)) return p;
   }
   return candidates[0];
 }
@@ -47430,7 +49939,7 @@ var cachedBelixInventory = null;
 function parseBelixInventory(forceReload = false) {
   if (cachedBelixInventory && !forceReload) return cachedBelixInventory;
   const filePath = resolveBelixTextFile();
-  const raw = fs11.existsSync(filePath) ? fs11.readFileSync(filePath, "utf8") : BELIX_EMBEDDED_RAW_TEXT;
+  const raw = fs12.existsSync(filePath) ? fs12.readFileSync(filePath, "utf8") : BELIX_EMBEDDED_RAW_TEXT;
   const normalizedRaw = raw.split(/\r?\n/).length <= 3 && raw.includes("\\n") ? raw.replace(/\\r\\n/g, "\n").replace(/\\n/g, "\n") : raw;
   const lines = normalizedRaw.split(/\r?\n/);
   let archiveName = "Belix TV (com.shadeed.belixtv) \xB7 Fork IBO Pro Ultra / RTX";
@@ -47598,7 +50107,7 @@ function parseBelixInventory(forceReload = false) {
       if (trimmed.startsWith("- ")) {
         const body = trimmed.slice(2).trim();
         const [filePart, rolePart] = body.split("\u2014").map((p) => p.trim());
-        const fileName = path10.basename((filePart || body).replace(/^L/, "").replace(/;->.*$/, "")).replace(/\.smali$/i, "");
+        const fileName = path11.basename((filePart || body).replace(/^L/, "").replace(/;->.*$/, "")).replace(/\.smali$/i, "");
         const mechanismMap = {
           aaaaaaaaaaLogin: "Pantalla heredada de IBO RTX App donde el usuario introduce los c\xF3digos num\xE9ricos validados por licencias IBO.",
           mURL: "Descriptor Dalvik (Lcom/rtx/niceibo/mURL;->weblink) que recibe el host din\xE1mico resuelto desde librer\xEDas nativas.",
@@ -48269,10 +50778,10 @@ function getBelixSessionKey(req, res) {
   const cookieKey = readCookieValue(req, "belix_sid");
   if (/^[a-zA-Z0-9_-]{8,64}$/.test(cookieKey)) return cookieKey;
   if (res) {
-    const newKey = crypto13.randomBytes(16).toString("hex");
+    const newKey = crypto14.randomBytes(16).toString("hex");
     res.setHeader(
       "Set-Cookie",
-      `belix_sid=${newKey}; Path=/api/belix; HttpOnly; SameSite=Lax; Max-Age=21600`
+      `belix_sid=${newKey}; Path=/api; HttpOnly; SameSite=Lax; Max-Age=21600`
     );
     return newKey;
   }
@@ -48340,15 +50849,38 @@ function registerBelixRoutes(app2, deps) {
     res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     if (req.method === "OPTIONS") return res.status(204).end();
     const streamId = String(req.params.streamId || "").replace(/\.m3u8$/i, "");
+    const channelHint = String(req.query.name || "").trim();
     const originPrefix = resolveBelixOriginPrefix(req, deps?.getPublicOrigin);
     const sessionKey = getBelixSessionKey(req);
-    const manifest = await resolveBelixManifest(streamId, originPrefix, sessionKey);
+    const manifest = await resolveBelixManifest(streamId, originPrefix, sessionKey, channelHint);
     if (!manifest) {
       return res.status(503).send("Belix live stream unavailable");
     }
     res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
     if (req.method === "HEAD") return res.status(200).end();
     return res.send(manifest);
+  });
+  app2.get("/api/belix/backups", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({ success: true, backups: getBelixBackupPortals() });
+  });
+  app2.post("/api/belix/backups", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const serverUrl = String(req.body?.serverUrl || "").trim();
+    const username = String(req.body?.username || "").trim();
+    const password = String(req.body?.password || "").trim();
+    const added = await addBelixBackupPortal({ serverUrl, username, password });
+    res.status(added.ok ? 200 : 400).json({
+      success: added.ok,
+      backup: added.backup,
+      backups: getBelixBackupPortals(),
+      error: added.error
+    });
+  });
+  app2.delete("/api/belix/backups/:id", (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const removed = removeBelixBackupPortal(String(req.params.id || ""));
+    res.json({ success: removed, backups: getBelixBackupPortals() });
   });
   app2.all("/api/belix/sub/:token", async (req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
@@ -49698,9 +52230,9 @@ function decodeAtresplayerInput(rawInput) {
 function getAtresplayerOverview() {
   const inv = parseAtresplayerInventory();
   const atresmediaTdtChannels = SPANISH_TDT_CHANNELS.filter((ch) => {
-    const net2 = String(ch.network || "").toLowerCase();
+    const net4 = String(ch.network || "").toLowerCase();
     const id = String(ch.id || "").toLowerCase();
-    return net2.includes("atresmedia") || id === "tdt-antena3" || id === "tdt-lasexta" || id === "tdt-neox" || id === "tdt-nova" || id === "tdt-mega" || id === "tdt-atreseries";
+    return net4.includes("atresmedia") || id === "tdt-antena3" || id === "tdt-lasexta" || id === "tdt-neox" || id === "tdt-nova" || id === "tdt-mega" || id === "tdt-atreseries";
   }).map((ch) => ({
     ...ch,
     category: "tdt_es"
@@ -50034,7 +52566,7 @@ function mapApiFormatRow(row, defaultKind) {
     tmdbId
   };
 }
-async function getAtresmediaHome() {
+async function getAtresmediaHome(belixSessionKey = "default") {
   const cached = homeCache2.get("home");
   const now = Date.now();
   const [liveApi, epgStore] = await Promise.all([
@@ -50049,8 +52581,12 @@ async function getAtresmediaHome() {
       liveByTdtId.set(mapped.tdtId, row);
     }
   }
+  const belixActive = isAnyBelixConnected(belixSessionKey);
+  const syncedChannels = channelHealthMonitor.prioritizeChannels(
+    applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, belixActive)
+  );
   const liveChannels = ATRESMEDIA_TDT_IDS.map((tdtId) => {
-    const tdtCh = SPANISH_TDT_CHANNELS.find((c) => c.id === tdtId);
+    const tdtCh = syncedChannels.find((c) => c.id === tdtId) || SPANISH_TDT_CHANNELS.find((c) => c.id === tdtId);
     const apiLive = liveByTdtId.get(tdtId);
     const events = epgStore.get(tdtId) || [];
     let nowIdx = events.findIndex((e) => e.startMs <= now && e.stopMs > now);
@@ -50575,9 +53111,11 @@ async function resolveAtresmediaPlayVideo(opts) {
 
 // server/routes/atresplayerRoutes.ts
 function registerAtresplayerRoutes(app2) {
-  app2.get("/api/atresmedia/home", async (_req, res) => {
+  app2.get("/api/atresmedia/home", async (req, res) => {
     try {
-      const data = await getAtresmediaHome();
+      const belixSidMatch = String(req.headers.cookie || "").match(/(?:^|;\s*)belix_sid=([^;]+)/);
+      const belixSessionKey = String(req.headers["x-belix-session"] || "").trim() || (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : "") || "default";
+      const data = await getAtresmediaHome(belixSessionKey);
       res.json({ success: true, ...data });
     } catch (err) {
       res.status(500).json({
@@ -51552,14 +54090,14 @@ function registerMovistarDaznRoutes(app2) {
 
 // server/routes/musicRoutes.ts
 import { Readable as Readable3 } from "node:stream";
-import { spawn as spawn3, spawnSync } from "node:child_process";
-import fs12 from "node:fs/promises";
+import { spawn as spawn5, spawnSync } from "node:child_process";
+import fs13 from "node:fs/promises";
 import os2 from "node:os";
-import path11 from "node:path";
+import path12 from "node:path";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 
 // server/services/musicOAuthImporter.ts
-import crypto14 from "crypto";
+import crypto15 from "crypto";
 var SPOTIFY_OAUTH_SCOPES = [
   "user-read-private",
   "user-library-read",
@@ -51575,8 +54113,8 @@ var SESSION_TTL_MS = 20 * 60 * 1e3;
 var spotifyPendingStates = /* @__PURE__ */ new Map();
 var spotifySessions = /* @__PURE__ */ new Map();
 function generatePkcePair() {
-  const codeVerifier = crypto14.randomBytes(48).toString("base64url");
-  const codeChallenge = crypto14.createHash("sha256").update(codeVerifier).digest("base64url");
+  const codeVerifier = crypto15.randomBytes(48).toString("base64url");
+  const codeChallenge = crypto15.createHash("sha256").update(codeVerifier).digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 var MAX_OAUTH_MAP_ENTRIES = 500;
@@ -51655,9 +54193,9 @@ function createSpotifyAuthorizeUrl(requestedOrigin) {
   const openerOrigin = resolveSpotifyBaseOrigin(requestedOrigin);
   const redirectOrigin = ENV.appUrl || openerOrigin;
   const redirectUri = `${redirectOrigin}${SPOTIFY_CALLBACK_PATH}`;
-  const state = crypto14.randomBytes(24).toString("hex");
+  const state2 = crypto15.randomBytes(24).toString("hex");
   const { codeVerifier, codeChallenge } = generatePkcePair();
-  spotifyPendingStates.set(state, {
+  spotifyPendingStates.set(state2, {
     redirectUri,
     openerOrigin,
     codeVerifier,
@@ -51668,7 +54206,7 @@ function createSpotifyAuthorizeUrl(requestedOrigin) {
     response_type: "code",
     redirect_uri: redirectUri,
     scope: SPOTIFY_OAUTH_SCOPES,
-    state,
+    state: state2,
     code_challenge_method: "S256",
     code_challenge: codeChallenge,
     show_dialog: "true"
@@ -51738,7 +54276,7 @@ async function handleSpotifyOAuthCallback(params) {
         error: tokenJson?.error_description || tokenJson?.error || "Spotify rechaz\xF3 el intercambio de token PKCE."
       };
     }
-    const sessionToken = crypto14.randomBytes(32).toString("hex");
+    const sessionToken = crypto15.randomBytes(32).toString("hex");
     spotifySessions.set(sessionToken, {
       accessToken: tokenJson.access_token,
       createdAt: Date.now()
@@ -52866,7 +55404,7 @@ function registerMusicRoutes(app2) {
       if (coverTmpPath) {
         const p = coverTmpPath;
         coverTmpPath = null;
-        await fs12.unlink(p).catch(() => {
+        await fs13.unlink(p).catch(() => {
         });
       }
     };
@@ -52922,11 +55460,11 @@ function registerMusicRoutes(app2) {
             const buf = Buffer.from(await covRes.arrayBuffer());
             if (buf.length === 0 || buf.length > 3 * 1024 * 1024) return null;
             const ext = ct.includes("png") ? "png" : "jpg";
-            const tmpFile = path11.join(
+            const tmpFile = path12.join(
               os2.tmpdir(),
               `riffan-cov-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`
             );
-            await fs12.writeFile(tmpFile, buf);
+            await fs13.writeFile(tmpFile, buf);
             return tmpFile;
           } catch {
             return null;
@@ -53108,7 +55646,7 @@ function registerMusicRoutes(app2) {
           activeFfmpegJobs = Math.max(0, activeFfmpegJobs - 1);
         }
       };
-      const ff = spawn3(ffBin, ffArgs, {
+      const ff = spawn5(ffBin, ffArgs, {
         stdio: [isHlsSource ? "pipe" : "ignore", "pipe", "pipe"]
       });
       let killed = false;
@@ -53235,9 +55773,135 @@ function registerMusicRoutes(app2) {
   });
 }
 
+// server/routes/vpnGatewayRoutes.ts
+function registerVpnGatewayRoutes(app2) {
+  app2.get("/api/vpn/overview", async (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const overview = await getSpainGatewayOverview();
+      res.json({ success: true, ...overview });
+    } catch (err) {
+      res.status(500).json({
+        success: false,
+        error: err instanceof Error ? err.message : "Error consultando el estado VPN Espa\xF1a"
+      });
+    }
+  });
+  app2.get("/api/vpn/status", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      success: true,
+      config: getSpainGatewayPublicConfig()
+    });
+  });
+  app2.get("/api/vpn/gateways", (req, res) => {
+    const query = String(req.query.q || "").trim();
+    const spainOnly = req.query.spainOnly === "1" || req.query.spainOnly === "true";
+    const gateways = listUrbanVpnGateways({ query, spainOnly });
+    res.json({ success: true, total: gateways.length, gateways });
+  });
+  app2.post("/api/vpn/sync", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const force = req.body?.force === true || req.query.force === "1";
+      const syncResult = await syncLiveUrbanVpnCatalog(force);
+      const spainGateways = listUrbanVpnGateways({ spainOnly: true });
+      res.json({ success: true, ...syncResult, spainGateways });
+    } catch (err) {
+      res.status(500).json({
+        success: false,
+        error: err instanceof Error ? err.message : "Error sincronizando pasarelas Urban VPN"
+      });
+    }
+  });
+  app2.get("/api/vpn/probe", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const host = String(req.query.host || "p-es1.urban-vpn.com").trim();
+    const probe = await probeUrbanVpnGateway(host);
+    res.status(probe.error === "Host fuera de la lista verificada de pasarelas Urban VPN" ? 403 : 200).json({
+      success: probe.ok,
+      probe
+    });
+  });
+  app2.get("/api/vpn/probe-es", async (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const results = await probeAllSpainUrbanGateways();
+      res.json({ success: true, total: results.length, probes: results });
+    } catch (err) {
+      res.status(500).json({
+        success: false,
+        error: err instanceof Error ? err.message : "Error probando nodos Espa\xF1a"
+      });
+    }
+  });
+  app2.get("/api/vpn/ovpn/:location", (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const profile = getUrbanVpnOvpnProfile(req.params.location);
+    if (!profile.ok) {
+      return res.status(404).json({ success: false, error: profile.error });
+    }
+    const safeFilename = profile.filename.replace(/[^a-zA-Z0-9._-]/g, "");
+    res.setHeader("Content-Type", "application/x-openvpn-profile; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
+    return res.send(profile.ovpnContent);
+  });
+  app2.post("/api/vpn/verify-channels", async (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const report = await verifySpanishChannelsDirectAccess();
+      res.json({ success: true, ...report });
+    } catch (err) {
+      res.status(500).json({
+        success: false,
+        error: err instanceof Error ? err.message : "Error verificando canales espa\xF1oles"
+      });
+    }
+  });
+  app2.post("/api/vpn/test", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const proxyUrl = String(req.body?.proxyUrl || "").trim();
+    if (!proxyUrl) {
+      const directGeo = await probeGeoExitInfo(void 0);
+      return res.json({ success: directGeo.ok, geo: directGeo });
+    }
+    const validation = await validateSpainProxyUrl(proxyUrl);
+    if (!validation.ok) {
+      return res.status(400).json({ success: false, error: validation.error });
+    }
+    const geo = await probeGeoExitInfo(validation.normalizedUrl);
+    return res.status(geo.ok ? 200 : 502).json({
+      success: geo.ok,
+      geo,
+      error: geo.ok ? void 0 : geo.error || "No se pudo conectar a trav\xE9s del proxy indicado"
+    });
+  });
+  app2.post("/api/vpn/config", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const proxyUrl = req.body?.proxyUrl !== void 0 ? String(req.body.proxyUrl) : void 0;
+    const rawScope = String(req.body?.scope || "auto_spanish").trim().toLowerCase();
+    const scope = rawScope === "all_streaming" || rawScope === "off" ? rawScope : "auto_spanish";
+    const enabled = req.body?.enabled !== void 0 ? Boolean(req.body.enabled) : void 0;
+    const updated = await setRuntimeSpainProxyConfig({ proxyUrl, scope, enabled });
+    if (!updated.ok) {
+      return res.status(400).json({ success: false, error: updated.error });
+    }
+    return res.json({
+      success: true,
+      config: updated.config,
+      tunneledGeo: updated.tunneledGeo
+    });
+  });
+  app2.delete("/api/vpn/config", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const config = clearRuntimeSpainProxyConfig();
+    res.json({ success: true, config });
+  });
+}
+
 // server/ws/roomHub.ts
-import crypto18 from "crypto";
-import { WebSocket as WebSocket5 } from "ws";
+import crypto19 from "crypto";
+import { WebSocket as WebSocket6 } from "ws";
 
 // src/shared/pinturillo/typesAndWords.ts
 var PINTURILLO_MAX_PLAYERS = 6;
@@ -53770,12 +56434,12 @@ function createInitialPinturilloState(humans, preservedOrOpts, opts) {
     updatedAt: now
   };
 }
-function joinPinturilloPlayer(state, user) {
-  if (state.players.some((p) => !p.isBot && p.userId === user.id)) {
-    return state;
+function joinPinturilloPlayer(state2, user) {
+  if (state2.players.some((p) => !p.isBot && p.userId === user.id)) {
+    return state2;
   }
   const now = Date.now();
-  const nextPlayers = state.players.map((p) => ({ ...p }));
+  const nextPlayers = state2.players.map((p) => ({ ...p }));
   const botIdx = nextPlayers.findIndex((p) => p.isBot);
   if (botIdx !== -1) {
     nextPlayers[botIdx] = {
@@ -53804,14 +56468,14 @@ function joinPinturilloPlayer(state, user) {
       roundPoints: 0
     });
   } else {
-    return state;
+    return state2;
   }
   return {
-    ...state,
+    ...state2,
     players: nextPlayers,
     totalRounds: Math.min(6, Math.max(4, nextPlayers.length)),
     guesses: [
-      ...state.guesses.slice(-18),
+      ...state2.guesses.slice(-18),
       {
         id: `sys-join-${now}-${user.id}`,
         userId: "system",
@@ -53824,16 +56488,16 @@ function joinPinturilloPlayer(state, user) {
     updatedAt: now
   };
 }
-function startPinturilloMatch(state) {
-  if (state.status !== "waiting") return state;
+function startPinturilloMatch(state2) {
+  if (state2.status !== "waiting") return state2;
   const now = Date.now();
-  const drawer = state.players[state.drawerSeat] || state.players[0];
+  const drawer = state2.players[state2.drawerSeat] || state2.players[0];
   return {
-    ...state,
+    ...state2,
     status: "choosing",
     phaseDeadlineAt: now + PINTURILLO_CHOOSE_MS,
     guesses: [
-      ...state.guesses.slice(-18),
+      ...state2.guesses.slice(-18),
       {
         id: `sys-go-${now}`,
         userId: "system",
@@ -53846,20 +56510,20 @@ function startPinturilloMatch(state) {
     updatedAt: now
   };
 }
-function selectPinturilloWord(state, actorUserId, wordId) {
-  if (state.status !== "choosing") {
+function selectPinturilloWord(state2, actorUserId, wordId) {
+  if (state2.status !== "choosing") {
     return { ok: false, error: "Ya se eligi\xF3 la palabra." };
   }
-  const drawer = state.players[state.drawerSeat];
+  const drawer = state2.players[state2.drawerSeat];
   if (!drawer || !drawer.isBot && drawer.userId !== actorUserId) {
     return { ok: false, error: "Solo quien dibuja elige la palabra." };
   }
-  const chosen = wordId && state.wordChoices.find((w) => w.id === wordId) || state.wordChoices[0] || PINTURILLO_WORDS[0];
+  const chosen = wordId && state2.wordChoices.find((w) => w.id === wordId) || state2.wordChoices[0] || PINTURILLO_WORDS[0];
   const now = Date.now();
   return {
     ok: true,
     state: {
-      ...state,
+      ...state2,
       status: "drawing",
       secretWord: chosen,
       maskedWord: formatMaskedWord(chosen.es, []),
@@ -53867,7 +56531,7 @@ function selectPinturilloWord(state, actorUserId, wordId) {
       hintIndices: [],
       strokes: [],
       guesses: [
-        ...state.guesses.slice(-18),
+        ...state2.guesses.slice(-18),
         {
           id: `sys-draw-${now}`,
           userId: "system",
@@ -53882,11 +56546,11 @@ function selectPinturilloWord(state, actorUserId, wordId) {
     }
   };
 }
-function addPinturilloStroke(state, actorUserId, stroke) {
-  if (state.status !== "drawing") {
+function addPinturilloStroke(state2, actorUserId, stroke) {
+  if (state2.status !== "drawing") {
     return { ok: false, error: "La ronda de dibujo no est\xE1 activa." };
   }
-  const drawer = state.players[state.drawerSeat];
+  const drawer = state2.players[state2.drawerSeat];
   if (!drawer || !drawer.isBot && drawer.userId !== actorUserId) {
     return { ok: false, error: "Solo quien dibuja puede pintar en el lienzo." };
   }
@@ -53907,52 +56571,52 @@ function addPinturilloStroke(state, actorUserId, stroke) {
   return {
     ok: true,
     state: {
-      ...state,
-      strokes: [...state.strokes.slice(-140), nextStroke],
+      ...state2,
+      strokes: [...state2.strokes.slice(-140), nextStroke],
       updatedAt: Date.now()
     }
   };
 }
-function undoPinturilloStroke(state, actorUserId) {
-  if (state.status !== "drawing") return { ok: false, error: "No se puede deshacer ahora." };
-  const drawer = state.players[state.drawerSeat];
+function undoPinturilloStroke(state2, actorUserId) {
+  if (state2.status !== "drawing") return { ok: false, error: "No se puede deshacer ahora." };
+  const drawer = state2.players[state2.drawerSeat];
   if (!drawer || !drawer.isBot && drawer.userId !== actorUserId) {
     return { ok: false, error: "Solo quien dibuja puede deshacer." };
   }
-  if (state.strokes.length === 0) return { ok: true, state };
+  if (state2.strokes.length === 0) return { ok: true, state: state2 };
   return {
     ok: true,
     state: {
-      ...state,
-      strokes: state.strokes.slice(0, -1),
+      ...state2,
+      strokes: state2.strokes.slice(0, -1),
       updatedAt: Date.now()
     }
   };
 }
-function clearPinturilloCanvas(state, actorUserId) {
-  if (state.status !== "drawing") return { ok: false, error: "No se puede limpiar ahora." };
-  const drawer = state.players[state.drawerSeat];
+function clearPinturilloCanvas(state2, actorUserId) {
+  if (state2.status !== "drawing") return { ok: false, error: "No se puede limpiar ahora." };
+  const drawer = state2.players[state2.drawerSeat];
   if (!drawer || !drawer.isBot && drawer.userId !== actorUserId) {
     return { ok: false, error: "Solo quien dibuja puede limpiar." };
   }
   return {
     ok: true,
     state: {
-      ...state,
+      ...state2,
       strokes: [],
       updatedAt: Date.now()
     }
   };
 }
-function revealPinturilloHintIfDue(state, now = Date.now()) {
-  if (state.status !== "drawing" || !state.secretWord) return state;
-  const remainingMs = state.phaseDeadlineAt - now;
-  const word = state.secretWord.es;
+function revealPinturilloHintIfDue(state2, now = Date.now()) {
+  if (state2.status !== "drawing" || !state2.secretWord) return state2;
+  const remainingMs = state2.phaseDeadlineAt - now;
+  const word = state2.secretWord.es;
   const letterIndices = Array.from(word).map((ch, i) => ch === " " ? -1 : i).filter((i) => i >= 0);
-  if (letterIndices.length <= 2) return state;
+  if (letterIndices.length <= 2) return state2;
   const targetHintCount = remainingMs <= 18e3 ? 2 : remainingMs <= 36e3 ? 1 : 0;
-  if (state.hintIndices.length >= targetHintCount) return state;
-  const nextHints = [...state.hintIndices];
+  if (state2.hintIndices.length >= targetHintCount) return state2;
+  const nextHints = [...state2.hintIndices];
   while (nextHints.length < targetHintCount) {
     const candidates = letterIndices.filter((i) => !nextHints.includes(i));
     if (candidates.length === 0) break;
@@ -53960,25 +56624,25 @@ function revealPinturilloHintIfDue(state, now = Date.now()) {
     nextHints.push(pick);
   }
   return {
-    ...state,
+    ...state2,
     hintIndices: nextHints,
     maskedWord: formatMaskedWord(word, nextHints),
     updatedAt: now
   };
 }
-function endPinturilloRound(state, now = Date.now()) {
-  if (state.status !== "drawing" && state.status !== "choosing") return state;
-  const wordLabel = state.secretWord ? `${state.secretWord.es} (${state.secretWord.en})` : "\u2014";
-  const nextPlayers = state.players.map(
-    (pl, idx) => idx !== state.drawerSeat && !pl.hasGuessedThisRound ? { ...pl, streak: 0 } : pl
+function endPinturilloRound(state2, now = Date.now()) {
+  if (state2.status !== "drawing" && state2.status !== "choosing") return state2;
+  const wordLabel = state2.secretWord ? `${state2.secretWord.es} (${state2.secretWord.en})` : "\u2014";
+  const nextPlayers = state2.players.map(
+    (pl, idx) => idx !== state2.drawerSeat && !pl.hasGuessedThisRound ? { ...pl, streak: 0 } : pl
   );
   return {
-    ...state,
+    ...state2,
     status: "round_end",
     players: nextPlayers,
-    maskedWord: state.secretWord ? state.secretWord.es.toUpperCase() : state.maskedWord,
+    maskedWord: state2.secretWord ? state2.secretWord.es.toUpperCase() : state2.maskedWord,
     guesses: [
-      ...state.guesses.slice(-20),
+      ...state2.guesses.slice(-20),
       {
         id: `sys-end-${now}`,
         userId: "system",
@@ -53992,34 +56656,34 @@ function endPinturilloRound(state, now = Date.now()) {
     updatedAt: now
   };
 }
-function submitPinturilloGuess(state, actorUserId, rawText) {
-  if (state.status !== "drawing" || !state.secretWord) {
+function submitPinturilloGuess(state2, actorUserId, rawText) {
+  if (state2.status !== "drawing" || !state2.secretWord) {
     return { ok: false, error: "Ahora no se puede adivinar." };
   }
-  const seatIdx = state.players.findIndex((p) => p.userId === actorUserId);
+  const seatIdx = state2.players.findIndex((p) => p.userId === actorUserId);
   if (seatIdx === -1) return { ok: false, error: "No est\xE1s en la partida." };
-  if (seatIdx === state.drawerSeat) return { ok: false, error: "El dibujante no puede adivinar." };
-  const player = state.players[seatIdx];
+  if (seatIdx === state2.drawerSeat) return { ok: false, error: "El dibujante no puede adivinar." };
+  const player = state2.players[seatIdx];
   if (player.hasGuessedThisRound) {
     return { ok: false, error: "Ya adivinaste esta ronda." };
   }
   const trimmed = rawText.trim().slice(0, 60);
   if (!trimmed) return { ok: false, error: "Escribe una palabra." };
   const normGuess = normalizePinturilloGuess(trimmed);
-  const normEs = normalizePinturilloGuess(state.secretWord.es);
-  const normEn = normalizePinturilloGuess(state.secretWord.en);
+  const normEs = normalizePinturilloGuess(state2.secretWord.es);
+  const normEn = normalizePinturilloGuess(state2.secretWord.en);
   const now = Date.now();
   const isExact = normGuess === normEs || normGuess === normEn;
   if (isExact) {
     const remainingRatio = Math.max(
       0,
-      Math.min(1, (state.phaseDeadlineAt - now) / PINTURILLO_ROUND_MS)
+      Math.min(1, (state2.phaseDeadlineAt - now) / PINTURILLO_ROUND_MS)
     );
     const nextStreak = player.streak + 1;
     const streakBonus = nextStreak >= 2 ? Math.min(80, (nextStreak - 1) * 25) : 0;
     const guesserPts = 110 + Math.round(remainingRatio * 180) + streakBonus;
     const drawerPts = 55;
-    const nextPlayers = state.players.map((pl, idx) => {
+    const nextPlayers = state2.players.map((pl, idx) => {
       if (idx === seatIdx) {
         return {
           ...pl,
@@ -54029,7 +56693,7 @@ function submitPinturilloGuess(state, actorUserId, rawText) {
           roundPoints: pl.roundPoints + guesserPts
         };
       }
-      if (idx === state.drawerSeat) {
+      if (idx === state2.drawerSeat) {
         return {
           ...pl,
           score: pl.score + drawerPts,
@@ -54039,7 +56703,7 @@ function submitPinturilloGuess(state, actorUserId, rawText) {
       return pl;
     });
     const allGuessersDone = nextPlayers.every(
-      (pl, idx) => idx === state.drawerSeat || pl.hasGuessedThisRound
+      (pl, idx) => idx === state2.drawerSeat || pl.hasGuessedThisRound
     );
     const entry2 = {
       id: `g-${now}-${seatIdx}`,
@@ -54051,9 +56715,9 @@ function submitPinturilloGuess(state, actorUserId, rawText) {
       timestamp: now
     };
     const nextState = {
-      ...state,
+      ...state2,
       players: nextPlayers,
-      guesses: [...state.guesses.slice(-24), entry2],
+      guesses: [...state2.guesses.slice(-24), entry2],
       updatedAt: now
     };
     if (allGuessersDone) {
@@ -54088,32 +56752,32 @@ function submitPinturilloGuess(state, actorUserId, rawText) {
     outcome: isClose ? "close" : "guess",
     roundCompleted: false,
     state: {
-      ...state,
-      guesses: [...state.guesses.slice(-24), entry],
+      ...state2,
+      guesses: [...state2.guesses.slice(-24), entry],
       updatedAt: now
     }
   };
 }
-function advancePinturilloRound(state) {
+function advancePinturilloRound(state2) {
   const now = Date.now();
-  if (state.round >= state.totalRounds) {
+  if (state2.round >= state2.totalRounds) {
     let bestIdx = 0;
-    for (let i = 1; i < state.players.length; i += 1) {
-      if (state.players[i].score > state.players[bestIdx].score) bestIdx = i;
+    for (let i = 1; i < state2.players.length; i += 1) {
+      if (state2.players[i].score > state2.players[bestIdx].score) bestIdx = i;
     }
     return {
-      ...state,
+      ...state2,
       status: "finished",
       winnerSeat: bestIdx,
       updatedAt: now
     };
   }
-  const nextRound = state.round + 1;
-  const nextDrawerSeat = (state.drawerSeat + 1) % state.players.length;
-  const usedIds = state.secretWord ? [state.secretWord.id] : [];
+  const nextRound = state2.round + 1;
+  const nextDrawerSeat = (state2.drawerSeat + 1) % state2.players.length;
+  const usedIds = state2.secretWord ? [state2.secretWord.id] : [];
   const wordChoices = pickRandomWordChoices(usedIds);
   return {
-    ...state,
+    ...state2,
     status: "choosing",
     round: nextRound,
     drawerSeat: nextDrawerSeat,
@@ -54123,7 +56787,7 @@ function advancePinturilloRound(state) {
     wordLength: 0,
     hintIndices: [],
     strokes: [],
-    players: state.players.map((pl) => ({
+    players: state2.players.map((pl) => ({
       ...pl,
       hasGuessedThisRound: false,
       roundPoints: 0
@@ -54133,7 +56797,7 @@ function advancePinturilloRound(state) {
         id: `sys-r-${nextRound}-${now}`,
         userId: "system",
         userName: "Pinturillo",
-        text: `Ronda ${nextRound}/${state.totalRounds} \xB7 ${state.players[nextDrawerSeat].name} elige palabra\u2026`,
+        text: `Ronda ${nextRound}/${state2.totalRounds} \xB7 ${state2.players[nextDrawerSeat].name} elige palabra\u2026`,
         kind: "system",
         timestamp: now
       }
@@ -54142,31 +56806,31 @@ function advancePinturilloRound(state) {
     updatedAt: now
   };
 }
-function pickBotPinturilloGuess(state) {
-  if (state.status !== "drawing" || !state.secretWord) return null;
-  const eligibleBots = state.players.filter(
-    (pl, idx) => pl.isBot && idx !== state.drawerSeat && !pl.hasGuessedThisRound
+function pickBotPinturilloGuess(state2) {
+  if (state2.status !== "drawing" || !state2.secretWord) return null;
+  const eligibleBots = state2.players.filter(
+    (pl, idx) => pl.isBot && idx !== state2.drawerSeat && !pl.hasGuessedThisRound
   );
   if (eligibleBots.length === 0) return null;
   const bot = eligibleBots[Math.floor(Math.random() * eligibleBots.length)];
-  const remainingMs = Math.max(0, state.phaseDeadlineAt - Date.now());
+  const remainingMs = Math.max(0, state2.phaseDeadlineAt - Date.now());
   const elapsedFraction = 1 - remainingMs / PINTURILLO_ROUND_MS;
-  const solveChance = state.strokes.length >= 2 ? 0.14 + elapsedFraction * 0.45 : 0.05;
+  const solveChance = state2.strokes.length >= 2 ? 0.14 + elapsedFraction * 0.45 : 0.05;
   if (Math.random() < solveChance) {
-    return { botUserId: bot.userId, guessText: state.secretWord.es };
+    return { botUserId: bot.userId, guessText: state2.secretWord.es };
   }
   const wrong = PINTURILLO_BOT_FILLER_GUESSES[Math.floor(Math.random() * PINTURILLO_BOT_FILLER_GUESSES.length)];
   return { botUserId: bot.userId, guessText: wrong };
 }
-function redactPinturilloForUser(state, viewerUserId) {
-  if (!state) return null;
-  if (state.status === "round_end" || state.status === "finished") return state;
-  const drawer = state.players[state.drawerSeat];
+function redactPinturilloForUser(state2, viewerUserId) {
+  if (!state2) return null;
+  if (state2.status === "round_end" || state2.status === "finished") return state2;
+  const drawer = state2.players[state2.drawerSeat];
   if (drawer && !drawer.isBot && drawer.userId === viewerUserId) {
-    return state;
+    return state2;
   }
   return {
-    ...state,
+    ...state2,
     wordChoices: [],
     secretWord: null
   };
@@ -54371,25 +57035,25 @@ function evaluateBest5Of7(cards) {
   }
   return best;
 }
-function choosePokerBotAction(state) {
-  const actor = state.seats[state.turnSeat];
+function choosePokerBotAction(state2) {
+  const actor = state2.seats[state2.turnSeat];
   if (!actor) return { action: "check" };
-  const toCall = Math.max(0, state.currentBet - actor.currentBet);
+  const toCall = Math.max(0, state2.currentBet - actor.currentBet);
   const r1 = actor.holeCards[0]?.rank || 7;
   const r2 = actor.holeCards[1]?.rank || 5;
   const suited = actor.holeCards[0]?.suit === actor.holeCards[1]?.suit;
   const paired = r1 === r2;
   let strength = 0.25;
-  if (state.communityCards.length >= 3) {
-    const ev = evaluateBest5Of7([...actor.holeCards, ...state.communityCards]);
+  if (state2.communityCards.length >= 3) {
+    const ev = evaluateBest5Of7([...actor.holeCards, ...state2.communityCards]);
     strength = Math.min(1, 0.22 + ev.category * 0.14 + (ev.scoreTuple[1] || 7) * 0.01);
   } else {
     strength = (Math.max(r1, r2) + Math.min(r1, r2) * 0.5) / 22 + (paired ? 0.28 : 0) + (suited ? 0.07 : 0);
   }
   const roll = Math.random();
   if (toCall === 0) {
-    if (strength > 0.72 && actor.chips > state.bigBlind * 2 && roll < 0.65) {
-      const target = Math.min(actor.chips, Math.max(state.bigBlind * 2, Math.round(state.pot * 0.55)));
+    if (strength > 0.72 && actor.chips > state2.bigBlind * 2 && roll < 0.65) {
+      const target = Math.min(actor.chips, Math.max(state2.bigBlind * 2, Math.round(state2.pot * 0.55)));
       return { action: "raise", raiseTo: target };
     }
     return { action: "check" };
@@ -54397,22 +57061,22 @@ function choosePokerBotAction(state) {
   if (toCall > actor.chips * 0.45 && strength < 0.52) {
     return { action: "fold" };
   }
-  if (toCall > state.bigBlind * 4 && strength < 0.44 && roll < 0.75) {
+  if (toCall > state2.bigBlind * 4 && strength < 0.44 && roll < 0.75) {
     return { action: "fold" };
   }
-  if (strength > 0.8 && actor.chips > toCall + state.minRaiseIncrement && roll < 0.45) {
-    const raiseTo = state.currentBet + Math.max(state.minRaiseIncrement, state.bigBlind * 2);
+  if (strength > 0.8 && actor.chips > toCall + state2.minRaiseIncrement && roll < 0.45) {
+    const raiseTo = state2.currentBet + Math.max(state2.minRaiseIncrement, state2.bigBlind * 2);
     return { action: "raise", raiseTo };
   }
   return { action: "call" };
 }
-function redactPokerStateForUser(state, viewerUserId) {
-  if (!state) return null;
-  const revealAll = state.street === "showdown" || state.status === "finished";
+function redactPokerStateForUser(state2, viewerUserId) {
+  if (!state2) return null;
+  const revealAll = state2.street === "showdown" || state2.status === "finished";
   return {
-    ...state,
+    ...state2,
     deck: [],
-    seats: state.seats.map((s) => {
+    seats: state2.seats.map((s) => {
       if (!s) return null;
       const shouldHide = !revealAll && !s.folded && s.userId !== viewerUserId;
       return {
@@ -54501,19 +57165,19 @@ function createInitialPokerState(humans, opts) {
   }
   return base;
 }
-function joinPokerSeat(state, user, seatIndex) {
-  const nextSeats = state.seats.map((s) => s ? { ...s } : null);
+function joinPokerSeat(state2, user, seatIndex) {
+  const nextSeats = state2.seats.map((s) => s ? { ...s } : null);
   const curIdx = nextSeats.findIndex((s) => s && !s.isBot && s.userId === user.id);
   if (seatIndex === "spectate") {
-    if (curIdx === -1) return { ok: false, state };
-    if (state.status === "playing" && !nextSeats[curIdx].folded) return { ok: false, state };
+    if (curIdx === -1) return { ok: false, state: state2 };
+    if (state2.status === "playing" && !nextSeats[curIdx].folded) return { ok: false, state: state2 };
     nextSeats[curIdx] = null;
-    return { ok: true, state: { ...state, seats: nextSeats, updatedAt: Date.now() } };
+    return { ok: true, state: { ...state2, seats: nextSeats, updatedAt: Date.now() } };
   }
   const target = typeof seatIndex === "number" && seatIndex >= 0 && seatIndex < 6 ? seatIndex : nextSeats.findIndex((s) => s === null || s.isBot);
-  if (target < 0 || target >= 6) return { ok: false, state };
+  if (target < 0 || target >= 6) return { ok: false, state: state2 };
   const occupant = nextSeats[target];
-  if (occupant && !occupant.isBot && occupant.userId !== user.id) return { ok: false, state };
+  if (occupant && !occupant.isBot && occupant.userId !== user.id) return { ok: false, state: state2 };
   const preservedChips = curIdx !== -1 && nextSeats[curIdx] ? nextSeats[curIdx].chips : STARTING_CHIPS;
   if (curIdx !== -1 && curIdx !== target) {
     nextSeats[curIdx] = null;
@@ -54528,11 +57192,11 @@ function joinPokerSeat(state, user, seatIndex) {
     holeCards: [],
     currentBet: 0,
     totalCommitted: 0,
-    folded: state.status === "playing",
+    folded: state2.status === "playing",
     allIn: false,
-    actedThisRound: state.status === "playing"
+    actedThisRound: state2.status === "playing"
   };
-  return { ok: true, state: { ...state, seats: nextSeats, updatedAt: Date.now() } };
+  return { ok: true, state: { ...state2, seats: nextSeats, updatedAt: Date.now() } };
 }
 function findNextOccupiedSeat(seats, fromSeat, predicate) {
   for (let offset = 1; offset <= 6; offset += 1) {
@@ -54542,8 +57206,8 @@ function findNextOccupiedSeat(seats, fromSeat, predicate) {
   }
   return -1;
 }
-function startNextPokerHand(state) {
-  const nextSeats = state.seats.map((s) => {
+function startNextPokerHand(state2) {
+  const nextSeats = state2.seats.map((s) => {
     if (!s) return null;
     const chips = s.chips > 0 ? s.chips : s.isBot ? STARTING_CHIPS : STARTING_CHIPS;
     return {
@@ -54561,11 +57225,11 @@ function startNextPokerHand(state) {
   });
   const activeSeatIndices = nextSeats.map((s, i) => s && s.chips > 0 ? i : -1).filter((i) => i !== -1);
   if (activeSeatIndices.length < 2) {
-    return { ok: false, error: "Se necesitan al menos 2 jugadores en la mesa.", state };
+    return { ok: false, error: "Se necesitan al menos 2 jugadores en la mesa.", state: state2 };
   }
   const deck = createShuffledDeck();
-  const handNumber = state.handNumber + 1;
-  const dealerSeat = handNumber === 1 ? activeSeatIndices[0] : findNextOccupiedSeat(nextSeats, state.dealerSeat, (s) => s.chips > 0);
+  const handNumber = state2.handNumber + 1;
+  const dealerSeat = handNumber === 1 ? activeSeatIndices[0] : findNextOccupiedSeat(nextSeats, state2.dealerSeat, (s) => s.chips > 0);
   const isHeadsUp = activeSeatIndices.length === 2;
   const sbSeat = isHeadsUp ? dealerSeat : findNextOccupiedSeat(nextSeats, dealerSeat, (s) => s.chips > 0);
   const bbSeat = findNextOccupiedSeat(nextSeats, sbSeat, (s) => s.chips > 0);
@@ -54583,13 +57247,13 @@ function startNextPokerHand(state) {
     seat.lastActionLabel = `${label} $${actual}`;
     pot += actual;
   };
-  postBlind(sbSeat, state.smallBlind, "SB");
-  postBlind(bbSeat, state.bigBlind, "BB");
+  postBlind(sbSeat, state2.smallBlind, "SB");
+  postBlind(bbSeat, state2.bigBlind, "BB");
   const firstTurn = findNextOccupiedSeat(nextSeats, bbSeat, (s) => !s.folded && !s.allIn);
   return {
     ok: true,
     state: {
-      ...state,
+      ...state2,
       status: "playing",
       street: "preflop",
       handNumber,
@@ -54599,7 +57263,7 @@ function startNextPokerHand(state) {
       turnSeat: firstTurn,
       pot,
       currentBet: Math.max(nextSeats[sbSeat].currentBet, nextSeats[bbSeat].currentBet),
-      minRaiseIncrement: state.bigBlind,
+      minRaiseIncrement: state2.bigBlind,
       communityCards: [],
       deck,
       seats: nextSeats,
@@ -54609,16 +57273,16 @@ function startNextPokerHand(state) {
     }
   };
 }
-function resolveShowdownOrLastStanding(state) {
-  const nextSeats = state.seats.map((s) => s ? { ...s } : null);
-  const deck = [...state.deck];
-  const board = [...state.communityCards];
+function resolveShowdownOrLastStanding(state2) {
+  const nextSeats = state2.seats.map((s) => s ? { ...s } : null);
+  const deck = [...state2.deck];
+  const board = [...state2.communityCards];
   const contenders = nextSeats.filter((s) => Boolean(s && !s.folded));
   if (contenders.length === 1) {
     const sole = contenders[0];
-    sole.chips += state.pot;
+    sole.chips += state2.pot;
     return {
-      ...state,
+      ...state2,
       status: "finished",
       street: "showdown",
       turnSeat: -1,
@@ -54628,11 +57292,11 @@ function resolveShowdownOrLastStanding(state) {
           seatIndex: sole.seatIndex,
           userId: sole.userId,
           name: sole.name,
-          amount: state.pot,
+          amount: state2.pot,
           hand: null
         }
       ],
-      statusMessage: `${sole.name} gana $${state.pot} (todos se retiraron)`,
+      statusMessage: `${sole.name} gana $${state2.pot} (todos se retiraron)`,
       updatedAt: Date.now()
     };
   }
@@ -54698,7 +57362,7 @@ function resolveShowdownOrLastStanding(state) {
   const topWinner = winners[0];
   const label = topWinner?.hand?.categoryLabelEs ? ` (${topWinner.hand.categoryLabelEs})` : "";
   return {
-    ...state,
+    ...state2,
     status: "finished",
     street: "showdown",
     turnSeat: -1,
@@ -54710,17 +57374,17 @@ function resolveShowdownOrLastStanding(state) {
     updatedAt: Date.now()
   };
 }
-function advanceStreetOrNextTurn(state) {
-  const activeNotFolded = state.seats.filter((s) => Boolean(s && !s.folded));
+function advanceStreetOrNextTurn(state2) {
+  const activeNotFolded = state2.seats.filter((s) => Boolean(s && !s.folded));
   if (activeNotFolded.length <= 1) {
-    return resolveShowdownOrLastStanding(state);
+    return resolveShowdownOrLastStanding(state2);
   }
   const canAct = activeNotFolded.filter((s) => !s.allIn);
   const everyoneMatched = canAct.every(
-    (s) => s.actedThisRound && s.currentBet === state.currentBet
+    (s) => s.actedThisRound && s.currentBet === state2.currentBet
   );
   if (everyoneMatched) {
-    const nextSeats = state.seats.map(
+    const nextSeats = state2.seats.map(
       (s) => s ? {
         ...s,
         currentBet: 0,
@@ -54728,24 +57392,24 @@ function advanceStreetOrNextTurn(state) {
         lastActionLabel: s.folded ? "Retirado" : s.allIn ? "All-In" : void 0
       } : null
     );
-    const deck = [...state.deck];
-    const board = [...state.communityCards];
-    let nextStreet = state.street;
-    if (state.street === "preflop") {
+    const deck = [...state2.deck];
+    const board = [...state2.communityCards];
+    let nextStreet = state2.street;
+    if (state2.street === "preflop") {
       nextStreet = "flop";
       board.push(deck.pop(), deck.pop(), deck.pop());
-    } else if (state.street === "flop") {
+    } else if (state2.street === "flop") {
       nextStreet = "turn";
       board.push(deck.pop());
-    } else if (state.street === "turn") {
+    } else if (state2.street === "turn") {
       nextStreet = "river";
       board.push(deck.pop());
     } else {
-      return resolveShowdownOrLastStanding(state);
+      return resolveShowdownOrLastStanding(state2);
     }
     if (canAct.length <= 1) {
       return resolveShowdownOrLastStanding({
-        ...state,
+        ...state2,
         street: nextStreet,
         communityCards: board,
         deck,
@@ -54755,7 +57419,7 @@ function advanceStreetOrNextTurn(state) {
     }
     const firstTurn = findNextOccupiedSeat(
       nextSeats,
-      state.dealerSeat,
+      state2.dealerSeat,
       (s) => !s.folded && !s.allIn
     );
     const streetNames = {
@@ -54767,53 +57431,53 @@ function advanceStreetOrNextTurn(state) {
       showdown: "Showdown"
     };
     return {
-      ...state,
+      ...state2,
       street: nextStreet,
       communityCards: board,
       deck,
       seats: nextSeats,
       currentBet: 0,
-      minRaiseIncrement: state.bigBlind,
+      minRaiseIncrement: state2.bigBlind,
       turnSeat: firstTurn,
-      statusMessage: `Mano #${state.handNumber} \xB7 ${streetNames[nextStreet]}`,
+      statusMessage: `Mano #${state2.handNumber} \xB7 ${streetNames[nextStreet]}`,
       updatedAt: Date.now()
     };
   }
   const nextTurn = findNextOccupiedSeat(
-    state.seats,
-    state.turnSeat,
+    state2.seats,
+    state2.turnSeat,
     (s) => !s.folded && !s.allIn
   );
   if (nextTurn === -1) {
-    return resolveShowdownOrLastStanding(state);
+    return resolveShowdownOrLastStanding(state2);
   }
   return {
-    ...state,
+    ...state2,
     turnSeat: nextTurn,
     updatedAt: Date.now()
   };
 }
-function applyPokerAction(state, userId, action, raiseToAmount) {
-  if (state.status !== "playing") {
-    return { ok: false, error: "La mano no est\xE1 activa.", state };
+function applyPokerAction(state2, userId, action, raiseToAmount) {
+  if (state2.status !== "playing") {
+    return { ok: false, error: "La mano no est\xE1 activa.", state: state2 };
   }
-  const seat = state.seats[state.turnSeat];
+  const seat = state2.seats[state2.turnSeat];
   if (!seat || seat.userId !== userId) {
-    return { ok: false, error: "No es tu turno.", state };
+    return { ok: false, error: "No es tu turno.", state: state2 };
   }
-  const nextSeats = state.seats.map((s) => s ? { ...s } : null);
-  const actor = nextSeats[state.turnSeat];
-  let nextPot = state.pot;
-  let nextCurrentBet = state.currentBet;
-  let nextMinRaise = state.minRaiseIncrement;
-  const toCall = Math.max(0, state.currentBet - actor.currentBet);
+  const nextSeats = state2.seats.map((s) => s ? { ...s } : null);
+  const actor = nextSeats[state2.turnSeat];
+  let nextPot = state2.pot;
+  let nextCurrentBet = state2.currentBet;
+  let nextMinRaise = state2.minRaiseIncrement;
+  const toCall = Math.max(0, state2.currentBet - actor.currentBet);
   if (action === "fold") {
     actor.folded = true;
     actor.actedThisRound = true;
     actor.lastActionLabel = "Fold";
   } else if (action === "check") {
     if (toCall > 0) {
-      return { ok: false, error: "Debes igualar la apuesta o retirarte.", state };
+      return { ok: false, error: "Debes igualar la apuesta o retirarte.", state: state2 };
     }
     actor.actedThisRound = true;
     actor.lastActionLabel = "Pasar";
@@ -54847,13 +57511,13 @@ function applyPokerAction(state, userId, action, raiseToAmount) {
     }
     actor.lastActionLabel = prevBet > 0 ? `All-In $${actor.currentBet}` : `All-In $${pay}`;
   } else if (action === "raise") {
-    const minRaiseTo = state.currentBet + state.minRaiseIncrement;
+    const minRaiseTo = state2.currentBet + state2.minRaiseIncrement;
     const targetTotalBet = Math.max(minRaiseTo, Math.floor(raiseToAmount || minRaiseTo));
     const maxPossible = actor.currentBet + actor.chips;
     const clampedTarget = Math.min(targetTotalBet, maxPossible);
     const delta = Math.max(0, clampedTarget - actor.currentBet);
     if (delta <= 0) {
-      return { ok: false, error: "Cantidad de subida inv\xE1lida.", state };
+      return { ok: false, error: "Cantidad de subida inv\xE1lida.", state: state2 };
     }
     actor.chips -= delta;
     actor.currentBet += delta;
@@ -54874,7 +57538,7 @@ function applyPokerAction(state, userId, action, raiseToAmount) {
     actor.lastActionLabel = actor.allIn ? "All-In" : `Subir $${actor.currentBet}`;
   }
   const nextState = advanceStreetOrNextTurn({
-    ...state,
+    ...state2,
     pot: nextPot,
     currentBet: nextCurrentBet,
     minRaiseIncrement: nextMinRaise,
@@ -54996,17 +57660,17 @@ function createInitialBlackjackState(hostUser) {
     updatedAt: Date.now()
   };
 }
-function joinBlackjackSeat(state, user, seatIndex) {
-  const nextSeats = state.seats.map((s) => s ? { ...s } : null);
+function joinBlackjackSeat(state2, user, seatIndex) {
+  const nextSeats = state2.seats.map((s) => s ? { ...s } : null);
   const curIdx = nextSeats.findIndex((s) => s?.userId === user.id);
   if (seatIndex === "spectate") {
-    if (curIdx === -1 || state.phase !== "betting") return { ok: false, state };
+    if (curIdx === -1 || state2.phase !== "betting") return { ok: false, state: state2 };
     nextSeats[curIdx] = null;
-    return { ok: true, state: { ...state, seats: nextSeats, updatedAt: Date.now() } };
+    return { ok: true, state: { ...state2, seats: nextSeats, updatedAt: Date.now() } };
   }
   const target = typeof seatIndex === "number" && seatIndex >= 0 && seatIndex < 4 ? seatIndex : nextSeats.findIndex((s) => s === null);
-  if (target < 0 || target >= 4) return { ok: false, state };
-  if (nextSeats[target] && nextSeats[target].userId !== user.id) return { ok: false, state };
+  if (target < 0 || target >= 4) return { ok: false, state: state2 };
+  if (nextSeats[target] && nextSeats[target].userId !== user.id) return { ok: false, state: state2 };
   const preservedBankroll = curIdx !== -1 ? nextSeats[curIdx].bankroll + nextSeats[curIdx].pendingBet : 1e3;
   if (curIdx !== -1 && curIdx !== target) {
     nextSeats[curIdx] = null;
@@ -55025,16 +57689,16 @@ function joinBlackjackSeat(state, user, seatIndex) {
     readyToDeal: false,
     donePlaying: false
   };
-  return { ok: true, state: { ...state, seats: nextSeats, updatedAt: Date.now() } };
+  return { ok: true, state: { ...state2, seats: nextSeats, updatedAt: Date.now() } };
 }
-function placeBlackjackBet(state, userId, op) {
-  if (state.phase !== "betting" && state.phase !== "settled") {
-    return { ok: false, state };
+function placeBlackjackBet(state2, userId, op) {
+  if (state2.phase !== "betting" && state2.phase !== "settled") {
+    return { ok: false, state: state2 };
   }
-  const baseState = state.phase === "settled" ? prepareNewBlackjackBettingRound(state) : state;
+  const baseState = state2.phase === "settled" ? prepareNewBlackjackBettingRound(state2) : state2;
   const nextSeats = baseState.seats.map((s) => s ? { ...s } : null);
   const seat = nextSeats.find((s) => s?.userId === userId);
-  if (!seat) return { ok: false, state };
+  if (!seat) return { ok: false, state: state2 };
   if (op.kind === "rebuy") {
     if (seat.bankroll < 50 && seat.pendingBet === 0) {
       seat.bankroll = 1e3;
@@ -55055,13 +57719,13 @@ function placeBlackjackBet(state, userId, op) {
     return { ok: true, state: { ...baseState, seats: nextSeats, updatedAt: Date.now() } };
   }
   const addAmt = Math.max(1, Math.floor(op.amount));
-  if (seat.bankroll < addAmt) return { ok: false, state };
+  if (seat.bankroll < addAmt) return { ok: false, state: state2 };
   seat.bankroll -= addAmt;
   seat.pendingBet += addAmt;
   return { ok: true, state: { ...baseState, seats: nextSeats, updatedAt: Date.now() } };
 }
-function prepareNewBlackjackBettingRound(state) {
-  const nextSeats = state.seats.map((s) => {
+function prepareNewBlackjackBettingRound(state2) {
+  const nextSeats = state2.seats.map((s) => {
     if (!s) return null;
     const autoBankroll = s.bankroll <= 0 && s.pendingBet <= 0 ? 1e3 : s.bankroll;
     return {
@@ -55074,7 +57738,7 @@ function prepareNewBlackjackBettingRound(state) {
     };
   });
   return {
-    ...state,
+    ...state2,
     phase: "betting",
     activeSeatIndex: -1,
     dealerCards: [],
@@ -55090,10 +57754,10 @@ function drawShoeCard(shoe) {
   }
   return shoe.pop();
 }
-function settleDealerAndPayouts(state) {
-  const shoe = state.shoe.length < 52 ? createBlackjackShoe(6) : [...state.shoe];
-  const dealerCards = [...state.dealerCards];
-  const nextSeats = state.seats.map(
+function settleDealerAndPayouts(state2) {
+  const shoe = state2.shoe.length < 52 ? createBlackjackShoe(6) : [...state2.shoe];
+  const dealerCards = [...state2.dealerCards];
+  const nextSeats = state2.seats.map(
     (s) => s ? { ...s, hands: s.hands.map((h) => ({ ...h })) } : null
   );
   const anyNonBustNonBj = nextSeats.some(
@@ -55146,7 +57810,7 @@ function settleDealerAndPayouts(state) {
     }
   }
   return {
-    ...state,
+    ...state2,
     phase: "settled",
     activeSeatIndex: -1,
     dealerCards,
@@ -55157,9 +57821,9 @@ function settleDealerAndPayouts(state) {
     updatedAt: Date.now()
   };
 }
-function advanceActiveTurn(state) {
-  const nextSeats = state.seats;
-  for (let sIdx = Math.max(0, state.activeSeatIndex); sIdx < nextSeats.length; sIdx += 1) {
+function advanceActiveTurn(state2) {
+  const nextSeats = state2.seats;
+  for (let sIdx = Math.max(0, state2.activeSeatIndex); sIdx < nextSeats.length; sIdx += 1) {
     const seat = nextSeats[sIdx];
     if (!seat || seat.hands.length === 0 || seat.donePlaying) continue;
     for (let hIdx = seat.activeHandIndex; hIdx < seat.hands.length; hIdx += 1) {
@@ -55168,7 +57832,7 @@ function advanceActiveTurn(state) {
       if (!hand.stood && !val.isBust && val.total < 21 && !val.isNaturalBlackjack) {
         seat.activeHandIndex = hIdx;
         return {
-          ...state,
+          ...state2,
           phase: "playing",
           activeSeatIndex: sIdx,
           statusMessage: `Turno de ${seat.name}`,
@@ -55179,11 +57843,11 @@ function advanceActiveTurn(state) {
     }
     seat.donePlaying = true;
   }
-  return settleDealerAndPayouts(state);
+  return settleDealerAndPayouts(state2);
 }
-function dealBlackjackRound(state) {
-  const shoe = state.shoe.length < 52 ? createBlackjackShoe(6) : [...state.shoe];
-  const nextSeats = state.seats.map((s) => s ? { ...s } : null);
+function dealBlackjackRound(state2) {
+  const shoe = state2.shoe.length < 52 ? createBlackjackShoe(6) : [...state2.shoe];
+  const nextSeats = state2.seats.map((s) => s ? { ...s } : null);
   let activeCount = 0;
   for (const seat of nextSeats) {
     if (!seat) continue;
@@ -55216,13 +57880,13 @@ function dealBlackjackRound(state) {
     }
   }
   if (activeCount === 0) {
-    return { ok: false, error: "Apuesta al menos $5 antes de repartir.", state };
+    return { ok: false, error: "Apuesta al menos $5 antes de repartir.", state: state2 };
   }
   const dealerCards = [drawShoeCard(shoe), drawShoeCard(shoe)];
   const dealerScore = getBlackjackHandValue(dealerCards);
   const dealtState = {
     phase: "playing",
-    roundNumber: state.roundNumber + 1,
+    roundNumber: state2.roundNumber + 1,
     seats: nextSeats,
     activeSeatIndex: 0,
     dealerCards,
@@ -55236,21 +57900,21 @@ function dealBlackjackRound(state) {
   }
   return { ok: true, state: advanceActiveTurn(dealtState) };
 }
-function applyBlackjackAction(state, userId, action) {
-  if (state.phase !== "playing") {
-    return { ok: false, error: "No hay turno de jugador activo.", state };
+function applyBlackjackAction(state2, userId, action) {
+  if (state2.phase !== "playing") {
+    return { ok: false, error: "No hay turno de jugador activo.", state: state2 };
   }
-  const seat = state.seats[state.activeSeatIndex];
+  const seat = state2.seats[state2.activeSeatIndex];
   if (!seat || seat.userId !== userId) {
-    return { ok: false, error: "No es tu turno.", state };
+    return { ok: false, error: "No es tu turno.", state: state2 };
   }
-  const shoe = [...state.shoe];
-  const nextSeats = state.seats.map(
+  const shoe = [...state2.shoe];
+  const nextSeats = state2.seats.map(
     (s) => s ? { ...s, hands: s.hands.map((h) => ({ ...h, cards: [...h.cards] })) } : null
   );
-  const actor = nextSeats[state.activeSeatIndex];
+  const actor = nextSeats[state2.activeSeatIndex];
   const hand = actor.hands[actor.activeHandIndex];
-  if (!hand) return { ok: false, error: "Mano inv\xE1lida.", state };
+  if (!hand) return { ok: false, error: "Mano inv\xE1lida.", state: state2 };
   if (action === "stand") {
     hand.stood = true;
   } else if (action === "hit") {
@@ -55261,7 +57925,7 @@ function applyBlackjackAction(state, userId, action) {
     }
   } else if (action === "double") {
     if (!canDoubleBlackjackHand(hand, actor)) {
-      return { ok: false, error: "No puedes doblar esta mano.", state };
+      return { ok: false, error: "No puedes doblar esta mano.", state: state2 };
     }
     actor.bankroll -= hand.bet;
     hand.bet *= 2;
@@ -55270,7 +57934,7 @@ function applyBlackjackAction(state, userId, action) {
     hand.stood = true;
   } else if (action === "split") {
     if (!canSplitBlackjackHand(hand, actor)) {
-      return { ok: false, error: "Solo puedes dividir parejas con saldo suficiente.", state };
+      return { ok: false, error: "Solo puedes dividir parejas con saldo suficiente.", state: state2 };
     }
     actor.bankroll -= hand.bet;
     const secondCard = hand.cards.pop();
@@ -55289,18 +57953,18 @@ function applyBlackjackAction(state, userId, action) {
     actor.hands.splice(actor.activeHandIndex + 1, 0, splitHand);
   }
   const nextState = advanceActiveTurn({
-    ...state,
+    ...state2,
     shoe,
     seats: nextSeats
   });
   return { ok: true, state: nextState };
 }
-function redactBlackjackState(state) {
-  if (!state) return null;
+function redactBlackjackState(state2) {
+  if (!state2) return null;
   return {
-    ...state,
+    ...state2,
     shoe: [],
-    dealerCards: state.dealerHoleRevealed ? state.dealerCards : state.dealerCards.length > 0 ? [state.dealerCards[0]] : []
+    dealerCards: state2.dealerHoleRevealed ? state2.dealerCards : state2.dealerCards.length > 0 ? [state2.dealerCards[0]] : []
   };
 }
 
@@ -55737,6 +58401,8 @@ var wsGameInviteRespondSchema = z.object({
     "pool",
     "chapas",
     "headsoccer",
+    "penalty",
+    "racing3d",
     "poker",
     "blackjack",
     "parchis",
@@ -55755,6 +58421,8 @@ var wsGameSwitchSchema = z.object({
     "pool",
     "chapas",
     "headsoccer",
+    "penalty",
+    "racing3d",
     "poker",
     "blackjack",
     "parchis",
@@ -55888,6 +58556,39 @@ var wsCinema3dInteractSchema = z.object({
   targetUserId: safeIdSchema,
   kind: z.enum(["pass_popcorn", "highfive", "wave_at"])
 });
+var wsGyroJoinSchema = z.object({
+  roomId: roomIdSchema,
+  deviceName: z.string().trim().max(40).optional(),
+  role: z.enum(["controller", "display"])
+});
+var wsGyroInputSchema = z.object({
+  roomId: roomIdSchema,
+  steer: z.number().min(-1).max(1),
+  throttle: z.number().min(0).max(1),
+  brake: z.number().min(0).max(1),
+  nitro: z.boolean().optional(),
+  handbrake: z.boolean().optional(),
+  cameraCycle: z.boolean().optional(),
+  horn: z.boolean().optional(),
+  seq: z.number().int().min(0).max(1e9),
+  ts: z.number().min(0)
+});
+var wsRacingTelemetrySchema = z.object({
+  roomId: roomIdSchema,
+  speedKmh: z.number().min(0).max(600),
+  rpmPct: z.number().min(0).max(100),
+  gear: z.number().int().min(0).max(8),
+  lap: z.number().int().min(1).max(99),
+  totalLaps: z.number().int().min(1).max(99),
+  position: z.number().int().min(1).max(16),
+  totalCars: z.number().int().min(1).max(16),
+  nitroPct: z.number().min(0).max(100),
+  collisionImpact: z.number().min(0).max(1).optional(),
+  offroad: z.boolean().optional(),
+  raceState: z.enum(["countdown", "racing", "finished"]),
+  lapTimeMs: z.number().min(0).max(36e5).optional(),
+  bestLapMs: z.number().min(0).max(36e5).optional()
+});
 var wsEnvelopeSchema = z.object({
   type: z.string().trim().min(1).max(48),
   payload: z.record(z.string(), z.any()).optional().default({})
@@ -55923,7 +58624,10 @@ var WS_EVENT_LIMITS = {
   CINEMA3D_ACTION: { max: 35, windowMs: 5e3 },
   CINEMA3D_INTERACT: { max: 25, windowMs: 5e3 },
   CINEMA3D_LEAVE: { max: 15, windowMs: 1e4 },
-  __GLOBAL__: { max: 480, windowMs: 1e4 }
+  GYRO_CONTROLLER_JOIN: { max: 20, windowMs: 1e4 },
+  GYRO_INPUT_UPDATE: { max: 450, windowMs: 5e3 },
+  RACING_TV_TELEMETRY: { max: 200, windowMs: 5e3 },
+  __GLOBAL__: { max: 1200, windowMs: 1e4 }
 };
 var WsRateLimiter = class {
   buckets = /* @__PURE__ */ new WeakMap();
@@ -56006,28 +58710,28 @@ function createInitialChessBoard() {
 function createInitialConnect4Board() {
   return Array.from({ length: 6 }, () => Array(7).fill(null));
 }
-function withClockTick(state, now) {
-  if (!state.clockMinutes || !state.clocksMs || !state.turnStartedAt || state.status !== "playing") {
-    return { clocksMs: state.clocksMs };
+function withClockTick(state2, now) {
+  if (!state2.clockMinutes || !state2.clocksMs || !state2.turnStartedAt || state2.status !== "playing") {
+    return { clocksMs: state2.clocksMs };
   }
-  const elapsed = Math.max(0, now - state.turnStartedAt);
+  const elapsed = Math.max(0, now - state2.turnStartedAt);
   const nextClocks = {
-    w: state.clocksMs.w,
-    b: state.clocksMs.b
+    w: state2.clocksMs.w,
+    b: state2.clocksMs.b
   };
-  nextClocks[state.turn] = Math.max(0, nextClocks[state.turn] - elapsed);
+  nextClocks[state2.turn] = Math.max(0, nextClocks[state2.turn] - elapsed);
   return {
     clocksMs: nextClocks,
-    timedOutSide: nextClocks[state.turn] <= 0 ? state.turn : void 0
+    timedOutSide: nextClocks[state2.turn] <= 0 ? state2.turn : void 0
   };
 }
-function appendHistoryEntry(state, winner, reason, players) {
+function appendHistoryEntry(state2, winner, reason, players) {
   const winnerName = winner === "draw" ? "Empate" : players[winner]?.name || (winner === "w" ? "Jugador 1" : "Jugador 2");
   return [
-    ...(state.matchHistory || []).slice(-14),
+    ...(state2.matchHistory || []).slice(-14),
     {
       id: `mh-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-      gameType: state.gameType,
+      gameType: state2.gameType,
       winnerName,
       winnerSide: winner,
       reason: reason || null,
@@ -56076,10 +58780,10 @@ function createInitialBoardGameState(gameType, starter, soloLocal = false, exist
     updatedAt: now
   };
 }
-function joinGameSeat(state, user, side) {
+function joinGameSeat(state2, user, side) {
   const nextPlayers = {
-    w: state.players.w ? { ...state.players.w } : null,
-    b: state.players.b ? { ...state.players.b } : null
+    w: state2.players.w ? { ...state2.players.w } : null,
+    b: state2.players.b ? { ...state2.players.b } : null
   };
   if (side === "spectate") {
     if (nextPlayers.w?.userId === user.id) nextPlayers.w = null;
@@ -56087,7 +58791,7 @@ function joinGameSeat(state, user, side) {
   } else {
     const prevScore = (nextPlayers[side]?.userId === user.id ? nextPlayers[side]?.score : 0) || 0;
     const otherSide = side === "w" ? "b" : "w";
-    if (!state.soloLocal && nextPlayers[otherSide]?.userId === user.id) {
+    if (!state2.soloLocal && nextPlayers[otherSide]?.userId === user.id) {
       nextPlayers[otherSide] = null;
     }
     nextPlayers[side] = {
@@ -56099,66 +58803,66 @@ function joinGameSeat(state, user, side) {
     };
   }
   const bothSeated = Boolean(nextPlayers.w && nextPlayers.b);
-  const nextSolo = Boolean(nextPlayers.w && nextPlayers.b && nextPlayers.w.userId === nextPlayers.b.userId) || state.soloLocal && !(nextPlayers.w && nextPlayers.b && nextPlayers.w.userId !== nextPlayers.b.userId);
+  const nextSolo = Boolean(nextPlayers.w && nextPlayers.b && nextPlayers.w.userId === nextPlayers.b.userId) || state2.soloLocal && !(nextPlayers.w && nextPlayers.b && nextPlayers.w.userId !== nextPlayers.b.userId);
   const now = Date.now();
-  const nextStatus = state.status === "finished" ? "finished" : state.awaitingHostStart && state.status === "waiting" ? "waiting" : bothSeated || nextSolo ? "playing" : "waiting";
+  const nextStatus = state2.status === "finished" ? "finished" : state2.awaitingHostStart && state2.status === "waiting" ? "waiting" : bothSeated || nextSolo ? "playing" : "waiting";
   return {
-    ...state,
+    ...state2,
     players: nextPlayers,
     soloLocal: nextSolo,
     status: nextStatus,
-    turnStartedAt: nextStatus === "playing" && state.status !== "playing" ? now : state.turnStartedAt,
-    turnDeadlineAt: nextStatus === "playing" ? state.turnDeadlineAt || now + BOARD_TURN_DECISION_MS : void 0,
+    turnStartedAt: nextStatus === "playing" && state2.status !== "playing" ? now : state2.turnStartedAt,
+    turnDeadlineAt: nextStatus === "playing" ? state2.turnDeadlineAt || now + BOARD_TURN_DECISION_MS : void 0,
     updatedAt: now
   };
 }
-function resignBoardGame(state, userId) {
-  if (state.status === "finished") return null;
+function resignBoardGame(state2, userId) {
+  if (state2.status === "finished") return null;
   let resignSide = null;
-  if (state.players.w?.userId === userId && state.players.b?.userId !== userId) {
+  if (state2.players.w?.userId === userId && state2.players.b?.userId !== userId) {
     resignSide = "w";
-  } else if (state.players.b?.userId === userId && state.players.w?.userId !== userId) {
+  } else if (state2.players.b?.userId === userId && state2.players.w?.userId !== userId) {
     resignSide = "b";
-  } else if (state.players.w?.userId === userId && state.players.b?.userId === userId) {
-    resignSide = state.turn;
+  } else if (state2.players.w?.userId === userId && state2.players.b?.userId === userId) {
+    resignSide = state2.turn;
   }
   if (!resignSide) return null;
   const winner = resignSide === "w" ? "b" : "w";
-  const nextPlayers = { ...state.players };
+  const nextPlayers = { ...state2.players };
   if (nextPlayers[winner]) {
     nextPlayers[winner] = { ...nextPlayers[winner], score: nextPlayers[winner].score + 1 };
   }
   return {
-    ...state,
+    ...state2,
     status: "finished",
     players: nextPlayers,
     winner,
     winReason: "resign",
-    matchHistory: appendHistoryEntry(state, winner, "resign", nextPlayers),
+    matchHistory: appendHistoryEntry(state2, winner, "resign", nextPlayers),
     updatedAt: Date.now()
   };
 }
-function resetBoardGame(state, opts) {
-  const nextType = opts?.gameType || state.gameType;
-  const clockMinutes = opts?.clockMinutes ?? state.clockMinutes ?? 0;
+function resetBoardGame(state2, opts) {
+  const nextType = opts?.gameType || state2.gameType;
+  const clockMinutes = opts?.clockMinutes ?? state2.clockMinutes ?? 0;
   const fresh = createInitialBoardGameState(
     nextType,
     void 0,
-    state.soloLocal,
+    state2.soloLocal,
     void 0,
     clockMinutes,
-    state.matchHistory || []
+    state2.matchHistory || []
   );
-  const wSeat = opts?.swapColors ? state.players.b : state.players.w;
-  const bSeat = opts?.swapColors ? state.players.w : state.players.b;
+  const wSeat = opts?.swapColors ? state2.players.b : state2.players.w;
+  const bSeat = opts?.swapColors ? state2.players.w : state2.players.b;
   const nextPlayers = {
     w: wSeat ? { ...wSeat } : null,
     b: bSeat ? { ...bSeat } : null
   };
   const bothSeated = Boolean(nextPlayers.w && nextPlayers.b);
-  const waitForHost = Boolean(opts?.waitForHost) && !state.soloLocal;
+  const waitForHost = Boolean(opts?.waitForHost) && !state2.soloLocal;
   const now = Date.now();
-  const nextStatus = waitForHost ? "waiting" : bothSeated || state.soloLocal ? "playing" : "waiting";
+  const nextStatus = waitForHost ? "waiting" : bothSeated || state2.soloLocal ? "playing" : "waiting";
   return {
     ...fresh,
     players: nextPlayers,
@@ -56169,11 +58873,11 @@ function resetBoardGame(state, opts) {
     updatedAt: now
   };
 }
-function startBoardMatch(state) {
-  if (state.status === "playing") return state;
+function startBoardMatch(state2) {
+  if (state2.status === "playing") return state2;
   const now = Date.now();
   const nextPlayers = {
-    w: state.players.w ? { ...state.players.w } : {
+    w: state2.players.w ? { ...state2.players.w } : {
       userId: "bot-board-w",
       name: "Poca-solta",
       avatar: "\u{1F92A}",
@@ -56181,7 +58885,7 @@ function startBoardMatch(state) {
       score: 0,
       isBot: true
     },
-    b: state.players.b ? { ...state.players.b } : {
+    b: state2.players.b ? { ...state2.players.b } : {
       userId: "bot-board-b",
       name: "Machupichu",
       avatar: "\u{1F5FF}",
@@ -56191,7 +58895,7 @@ function startBoardMatch(state) {
     }
   };
   return {
-    ...state,
+    ...state2,
     players: nextPlayers,
     awaitingHostStart: false,
     status: "playing",
@@ -56459,8 +59163,8 @@ function isChessKingInCheck(board, side) {
   }
   return false;
 }
-function getPseudoChessMoves(state, r, c) {
-  const piece = state.board[r]?.[c];
+function getPseudoChessMoves(state2, r, c) {
+  const piece = state2.board[r]?.[c];
   const side = getPieceSide(piece);
   if (!piece || !side) return [];
   const kind = piece[1];
@@ -56470,13 +59174,13 @@ function getPseudoChessMoves(state, r, c) {
     const dir = side === "w" ? -1 : 1;
     const startRow = side === "w" ? 6 : 1;
     const promoRow = side === "w" ? 0 : 7;
-    if (inBounds(r + dir, c) && !state.board[r + dir][c]) {
+    if (inBounds(r + dir, c) && !state2.board[r + dir][c]) {
       moves.push({
         r: r + dir,
         c,
         isPromotion: r + dir === promoRow
       });
-      if (r === startRow && inBounds(r + dir * 2, c) && !state.board[r + dir * 2][c]) {
+      if (r === startRow && inBounds(r + dir * 2, c) && !state2.board[r + dir * 2][c]) {
         moves.push({ r: r + dir * 2, c });
       }
     }
@@ -56484,7 +59188,7 @@ function getPseudoChessMoves(state, r, c) {
       const tr = r + dir;
       const tc = c + dc;
       if (!inBounds(tr, tc)) continue;
-      const target = state.board[tr][tc];
+      const target = state2.board[tr][tc];
       if (target && getPieceSide(target) === opp) {
         moves.push({
           r: tr,
@@ -56492,7 +59196,7 @@ function getPseudoChessMoves(state, r, c) {
           isCapture: true,
           isPromotion: tr === promoRow
         });
-      } else if (state.enPassant && state.enPassant.r === tr && state.enPassant.c === tc && state.board[r][tc] === `${opp}P`) {
+      } else if (state2.enPassant && state2.enPassant.r === tr && state2.enPassant.c === tc && state2.board[r][tc] === `${opp}P`) {
         moves.push({
           r: tr,
           c: tc,
@@ -56518,7 +59222,7 @@ function getPseudoChessMoves(state, r, c) {
       const tr = r + dr;
       const tc = c + dc;
       if (!inBounds(tr, tc)) continue;
-      const target = state.board[tr][tc];
+      const target = state2.board[tr][tc];
       if (!target || getPieceSide(target) === opp) {
         moves.push({ r: tr, c: tc, isCapture: Boolean(target) });
       }
@@ -56533,7 +59237,7 @@ function getPseudoChessMoves(state, r, c) {
       let tr = r + dr;
       let tc = c + dc;
       while (inBounds(tr, tc)) {
-        const target = state.board[tr][tc];
+        const target = state2.board[tr][tc];
         if (!target) {
           moves.push({ r: tr, c: tc });
         } else {
@@ -56555,20 +59259,20 @@ function getPseudoChessMoves(state, r, c) {
         const tr = r + dr;
         const tc = c + dc;
         if (!inBounds(tr, tc)) continue;
-        const target = state.board[tr][tc];
+        const target = state2.board[tr][tc];
         if (!target || getPieceSide(target) === opp) {
           moves.push({ r: tr, c: tc, isCapture: Boolean(target) });
         }
       }
     }
     const homeRow = side === "w" ? 7 : 0;
-    if (r === homeRow && c === 4 && !isSquareAttacked(state.board, homeRow, 4, opp)) {
-      const canK = side === "w" ? state.castlingRights.wK : state.castlingRights.bK;
-      const canQ = side === "w" ? state.castlingRights.wQ : state.castlingRights.bQ;
-      if (canK && state.board[homeRow][7] === `${side}R` && !state.board[homeRow][5] && !state.board[homeRow][6] && !isSquareAttacked(state.board, homeRow, 5, opp) && !isSquareAttacked(state.board, homeRow, 6, opp)) {
+    if (r === homeRow && c === 4 && !isSquareAttacked(state2.board, homeRow, 4, opp)) {
+      const canK = side === "w" ? state2.castlingRights.wK : state2.castlingRights.bK;
+      const canQ = side === "w" ? state2.castlingRights.wQ : state2.castlingRights.bQ;
+      if (canK && state2.board[homeRow][7] === `${side}R` && !state2.board[homeRow][5] && !state2.board[homeRow][6] && !isSquareAttacked(state2.board, homeRow, 5, opp) && !isSquareAttacked(state2.board, homeRow, 6, opp)) {
         moves.push({ r: homeRow, c: 6, isCastle: "K" });
       }
-      if (canQ && state.board[homeRow][0] === `${side}R` && !state.board[homeRow][1] && !state.board[homeRow][2] && !state.board[homeRow][3] && !isSquareAttacked(state.board, homeRow, 3, opp) && !isSquareAttacked(state.board, homeRow, 2, opp)) {
+      if (canQ && state2.board[homeRow][0] === `${side}R` && !state2.board[homeRow][1] && !state2.board[homeRow][2] && !state2.board[homeRow][3] && !isSquareAttacked(state2.board, homeRow, 3, opp) && !isSquareAttacked(state2.board, homeRow, 2, opp)) {
         moves.push({ r: homeRow, c: 2, isCastle: "Q" });
       }
     }
@@ -56600,20 +59304,20 @@ function simulateChessBoardMove(board, from, move, promotionPiece = "Q") {
 }
 
 // src/shared/boardGames/chessAndMoveEngine.ts
-function getLegalMovesForSquare(state, from) {
-  if (state.status === "finished" || !inBounds(from.r, from.c)) return [];
-  const piece = state.board[from.r][from.c];
+function getLegalMovesForSquare(state2, from) {
+  if (state2.status === "finished" || !inBounds(from.r, from.c)) return [];
+  const piece = state2.board[from.r][from.c];
   const side = getPieceSide(piece);
-  if (!piece || side !== state.turn) return [];
-  if (state.gameType === "checkers") {
-    if (state.mustContinueFrom && (state.mustContinueFrom.r !== from.r || state.mustContinueFrom.c !== from.c)) {
+  if (!piece || side !== state2.turn) return [];
+  if (state2.gameType === "checkers") {
+    if (state2.mustContinueFrom && (state2.mustContinueFrom.r !== from.r || state2.mustContinueFrom.c !== from.c)) {
       return [];
     }
-    const maxGlobalCaps = state.mustContinueFrom ? maxCheckersCaptureChain(state.board, from.r, from.c, side) : getBestCaptureCountForSide(state.board, side);
+    const maxGlobalCaps = state2.mustContinueFrom ? maxCheckersCaptureChain(state2.board, from.r, from.c, side) : getBestCaptureCountForSide(state2.board, side);
     if (maxGlobalCaps > 0) {
-      const jumps = getCheckersJumpsFrom(state.board, from.r, from.c);
+      const jumps = getCheckersJumpsFrom(state2.board, from.r, from.c);
       return jumps.filter((j) => {
-        const sim = cloneBoard(state.board);
+        const sim = cloneBoard(state2.board);
         sim[from.r][from.c] = null;
         sim[j.captureAt.r][j.captureAt.c] = null;
         if (j.isPromotion) {
@@ -56623,16 +59327,16 @@ function getLegalMovesForSquare(state, from) {
         return 1 + maxCheckersCaptureChain(sim, j.r, j.c, side) === maxGlobalCaps;
       });
     }
-    return getCheckersSimpleMovesFrom(state.board, from.r, from.c);
+    return getCheckersSimpleMovesFrom(state2.board, from.r, from.c);
   }
-  const pseudo = getPseudoChessMoves(state, from.r, from.c);
+  const pseudo = getPseudoChessMoves(state2, from.r, from.c);
   return pseudo.filter((mv) => {
-    const sim = simulateChessBoardMove(state.board, from, mv, "Q");
+    const sim = simulateChessBoardMove(state2.board, from, mv, "Q");
     return !isChessKingInCheck(sim, side);
   });
 }
-function getAllLegalMovesForSide(state, side) {
-  const probeState = { ...state, turn: side };
+function getAllLegalMovesForSide(state2, side) {
+  const probeState = { ...state2, turn: side };
   const all = [];
   for (let r = 0; r < 8; r += 1) {
     for (let c = 0; c < 8; c += 1) {
@@ -56646,15 +59350,15 @@ function getAllLegalMovesForSide(state, side) {
   }
   return all;
 }
-function applyBoardMove(state, actorUserId, from, to, promotionPiece = "Q") {
-  if (state.status !== "playing") {
+function applyBoardMove(state2, actorUserId, from, to, promotionPiece = "Q") {
+  if (state2.status !== "playing") {
     return {
       ok: false,
-      error: state.status === "waiting" ? "Esperando a que el anfitri\xF3n pulse Iniciar Partida." : "La partida ya ha finalizado."
+      error: state2.status === "waiting" ? "Esperando a que el anfitri\xF3n pulse Iniciar Partida." : "La partida ya ha finalizado."
     };
   }
-  const activeSeat = state.players[state.turn];
-  if (!state.soloLocal) {
+  const activeSeat = state2.players[state2.turn];
+  if (!state2.soloLocal) {
     if (!activeSeat) {
       return { ok: false, error: "Falta un jugador sentado en ese turno." };
     }
@@ -56663,45 +59367,45 @@ function applyBoardMove(state, actorUserId, from, to, promotionPiece = "Q") {
     }
   }
   const now = Date.now();
-  const { clocksMs, timedOutSide } = withClockTick(state, now);
+  const { clocksMs, timedOutSide } = withClockTick(state2, now);
   if (timedOutSide) {
     const winSide = timedOutSide === "w" ? "b" : "w";
-    const nextPlayers2 = { ...state.players };
+    const nextPlayers2 = { ...state2.players };
     if (nextPlayers2[winSide]) {
       nextPlayers2[winSide] = { ...nextPlayers2[winSide], score: nextPlayers2[winSide].score + 1 };
     }
     return {
       ok: true,
       state: {
-        ...state,
+        ...state2,
         status: "finished",
         clocksMs,
         turnStartedAt: now,
         players: nextPlayers2,
         winner: winSide,
         winReason: "timeout",
-        matchHistory: appendHistoryEntry(state, winSide, "timeout", nextPlayers2),
+        matchHistory: appendHistoryEntry(state2, winSide, "timeout", nextPlayers2),
         updatedAt: now
       },
       notation: "Tiempo agotado",
       finishedNow: true
     };
   }
-  const side = state.turn;
+  const side = state2.turn;
   const opp = side === "w" ? "b" : "w";
-  if (state.gameType === "connect4") {
-    const dropRow = getConnect4DropRow(state.board, to.c);
+  if (state2.gameType === "connect4") {
+    const dropRow = getConnect4DropRow(state2.board, to.c);
     if (dropRow < 0) {
       return { ok: false, error: "Columna completa." };
     }
-    const nextBoard2 = cloneBoard(state.board);
+    const nextBoard2 = cloneBoard(state2.board);
     nextBoard2[dropRow][to.c] = side;
     const notation2 = `Col ${to.c + 1}`;
     const won = checkConnect4Win(nextBoard2, dropRow, to.c, side);
     const winningLine = won ? findConnect4WinningLine(nextBoard2, side) : null;
     const full = !won && nextBoard2[0].every((cell) => cell !== null);
     const finishedNow2 = won || full;
-    const nextPlayers2 = { ...state.players };
+    const nextPlayers2 = { ...state2.players };
     const winner2 = won ? side : full ? "draw" : null;
     if (won && nextPlayers2[side]) {
       nextPlayers2[side] = { ...nextPlayers2[side], score: nextPlayers2[side].score + 1 };
@@ -56709,7 +59413,7 @@ function applyBoardMove(state, actorUserId, from, to, promotionPiece = "Q") {
     return {
       ok: true,
       state: {
-        ...state,
+        ...state2,
         status: finishedNow2 ? "finished" : "playing",
         board: nextBoard2,
         turn: opp,
@@ -56721,22 +59425,22 @@ function applyBoardMove(state, actorUserId, from, to, promotionPiece = "Q") {
         turnStartedAt: now,
         turnDeadlineAt: finishedNow2 ? void 0 : now + BOARD_TURN_DECISION_MS,
         lastMove: { from: { r: dropRow, c: to.c }, to: { r: dropRow, c: to.c }, notation: notation2 },
-        moveHistory: [...state.moveHistory.slice(-39), notation2],
-        matchHistory: finishedNow2 && winner2 ? appendHistoryEntry(state, winner2, won ? "connect4" : "draw_full", nextPlayers2) : state.matchHistory,
+        moveHistory: [...state2.moveHistory.slice(-39), notation2],
+        matchHistory: finishedNow2 && winner2 ? appendHistoryEntry(state2, winner2, won ? "connect4" : "draw_full", nextPlayers2) : state2.matchHistory,
         updatedAt: now
       },
       notation: notation2,
       finishedNow: finishedNow2
     };
   }
-  const legalMoves = getLegalMovesForSquare(state, from);
+  const legalMoves = getLegalMovesForSquare(state2, from);
   const matched = legalMoves.find((m) => m.r === to.r && m.c === to.c);
   if (!matched) {
     return { ok: false, error: "Movimiento no v\xE1lido." };
   }
-  const piece = state.board[from.r][from.c];
-  if (state.gameType === "checkers") {
-    const nextBoard2 = cloneBoard(state.board);
+  const piece = state2.board[from.r][from.c];
+  if (state2.gameType === "checkers") {
+    const nextBoard2 = cloneBoard(state2.board);
     nextBoard2[from.r][from.c] = null;
     let capturedPiece2 = null;
     if (matched.isCapture) {
@@ -56771,13 +59475,13 @@ function applyBoardMove(state, actorUserId, from, to, promotionPiece = "Q") {
       }
     }
     const baseNext = {
-      ...state,
+      ...state2,
       status: "playing",
       board: nextBoard2,
       turn: nextTurn,
       mustContinueFrom: continueSameTurn ? { r: to.r, c: to.c } : null,
       lastMove: { from, to, notation: notation2, captured: capturedPiece2, promoted },
-      moveHistory: [...state.moveHistory.slice(-39), notation2],
+      moveHistory: [...state2.moveHistory.slice(-39), notation2],
       clocksMs,
       turnStartedAt: now,
       turnDeadlineAt: now + BOARD_TURN_DECISION_MS,
@@ -56796,7 +59500,7 @@ function applyBoardMove(state, actorUserId, from, to, promotionPiece = "Q") {
           players: nextPlayers2,
           winner: side,
           winReason: "no_pieces",
-          matchHistory: appendHistoryEntry(state, side, "no_pieces", nextPlayers2)
+          matchHistory: appendHistoryEntry(state2, side, "no_pieces", nextPlayers2)
         },
         notation: notation2,
         finishedNow: true
@@ -56815,7 +59519,7 @@ function applyBoardMove(state, actorUserId, from, to, promotionPiece = "Q") {
           players: nextPlayers2,
           winner: side,
           winReason: "no_moves",
-          matchHistory: appendHistoryEntry(state, side, "no_moves", nextPlayers2)
+          matchHistory: appendHistoryEntry(state2, side, "no_moves", nextPlayers2)
         },
         notation: notation2,
         finishedNow: true
@@ -56823,9 +59527,9 @@ function applyBoardMove(state, actorUserId, from, to, promotionPiece = "Q") {
     }
     return { ok: true, state: baseNext, notation: notation2, finishedNow: false };
   }
-  const nextBoard = simulateChessBoardMove(state.board, from, matched, promotionPiece);
-  const capturedPiece = matched.isEnPassant ? state.board[from.r][to.c] : state.board[to.r][to.c];
-  const nextCastling = { ...state.castlingRights };
+  const nextBoard = simulateChessBoardMove(state2.board, from, matched, promotionPiece);
+  const capturedPiece = matched.isEnPassant ? state2.board[from.r][to.c] : state2.board[to.r][to.c];
+  const nextCastling = { ...state2.castlingRights };
   if (piece === "wK") {
     nextCastling.wK = false;
     nextCastling.wQ = false;
@@ -56844,12 +59548,12 @@ function applyBoardMove(state, actorUserId, from, to, promotionPiece = "Q") {
   if (to.r === 0 && to.c === 7) nextCastling.bK = false;
   if (to.r === 0 && to.c === 0) nextCastling.bQ = false;
   const nextEnPassant = piece[1] === "P" && Math.abs(to.r - from.r) === 2 ? { r: (from.r + to.r) / 2, c: from.c } : null;
-  const nextHalfmoveClock = piece[1] === "P" || Boolean(capturedPiece) ? 0 : (state.halfmoveClock || 0) + 1;
+  const nextHalfmoveClock = piece[1] === "P" || Boolean(capturedPiece) ? 0 : (state2.halfmoveClock || 0) + 1;
   const boardSig = nextBoard.map((row) => row.map((cell) => cell || ".").join(",")).join("/");
   const castlingSig = `${nextCastling.wK ? "K" : ""}${nextCastling.wQ ? "Q" : ""}${nextCastling.bK ? "k" : ""}${nextCastling.bQ ? "q" : ""}`;
   const epSig = nextEnPassant ? `${nextEnPassant.r},${nextEnPassant.c}` : "-";
   const posKey = `${boardSig}|${opp}|${castlingSig}|${epSig}`;
-  const prevCounts = state.positionCounts || {};
+  const prevCounts = state2.positionCounts || {};
   const nextPosCount = (prevCounts[posKey] || 0) + 1;
   const nextPositionCounts = {
     ...prevCounts,
@@ -56871,7 +59575,7 @@ function applyBoardMove(state, actorUserId, from, to, promotionPiece = "Q") {
   const insufficientMaterial = !hasMajorOrPawn && (minors.length === 0 || minors.length === 1 || minors.length === 2 && minors[0].kind[1] === "B" && minors[1].kind[1] === "B" && minors[0].kind[0] !== minors[1].kind[0] && minors[0].color === minors[1].color);
   const oppInCheck = isChessKingInCheck(nextBoard, opp);
   const baseChessNext = {
-    ...state,
+    ...state2,
     status: "playing",
     board: nextBoard,
     turn: opp,
@@ -56882,7 +59586,7 @@ function applyBoardMove(state, actorUserId, from, to, promotionPiece = "Q") {
     positionCounts: nextPositionCounts,
     inCheck: oppInCheck ? opp : null,
     lastMove: { from, to, notation: "", captured: capturedPiece },
-    moveHistory: state.moveHistory,
+    moveHistory: state2.moveHistory,
     clocksMs,
     turnStartedAt: now,
     turnDeadlineAt: now + BOARD_TURN_DECISION_MS,
@@ -56917,31 +59621,31 @@ function applyBoardMove(state, actorUserId, from, to, promotionPiece = "Q") {
       winReason,
       players: nextPlayers,
       lastMove: { from, to, notation, captured: capturedPiece },
-      moveHistory: [...state.moveHistory.slice(-39), notation],
-      matchHistory: finishedNow && winner ? appendHistoryEntry(state, winner, winReason, nextPlayers) : state.matchHistory
+      moveHistory: [...state2.moveHistory.slice(-39), notation],
+      matchHistory: finishedNow && winner ? appendHistoryEntry(state2, winner, winReason, nextPlayers) : state2.matchHistory
     },
     notation,
     finishedNow
   };
 }
-function chooseAutoBoardMove(state) {
-  if (state.status !== "playing") return null;
-  if (state.gameType === "connect4") {
-    const validCols = [3, 2, 4, 1, 5, 0, 6].filter((c) => getConnect4DropRow(state.board, c) >= 0);
+function chooseAutoBoardMove(state2) {
+  if (state2.status !== "playing") return null;
+  if (state2.gameType === "connect4") {
+    const validCols = [3, 2, 4, 1, 5, 0, 6].filter((c) => getConnect4DropRow(state2.board, c) >= 0);
     if (validCols.length === 0) return null;
     for (const col2 of validCols) {
-      const row2 = getConnect4DropRow(state.board, col2);
-      const sim = cloneBoard(state.board);
-      sim[row2][col2] = state.turn;
-      if (checkConnect4Win(sim, row2, col2, state.turn)) {
+      const row2 = getConnect4DropRow(state2.board, col2);
+      const sim = cloneBoard(state2.board);
+      sim[row2][col2] = state2.turn;
+      if (checkConnect4Win(sim, row2, col2, state2.turn)) {
         return { from: { r: 0, c: col2 }, to: { r: row2, c: col2 } };
       }
     }
     const col = validCols[Math.random() < 0.5 ? 0 : Math.floor(Math.random() * validCols.length)];
-    const row = getConnect4DropRow(state.board, col);
+    const row = getConnect4DropRow(state2.board, col);
     return { from: { r: 0, c: col }, to: { r: row, c: col } };
   }
-  const all = getAllLegalMovesForSide(state, state.turn);
+  const all = getAllLegalMovesForSide(state2, state2.turn);
   if (all.length === 0) return null;
   const captures = all.filter((m) => m.move.isCapture || m.move.isPromotion);
   const pickList = captures.length > 0 ? captures : all;
@@ -57041,13 +59745,13 @@ function preserveSeatsForRematch(prevPlayers, humans) {
   }
   return seats;
 }
-function claimPartyBotSeat(state, human, preferredSeatIndex) {
-  const existingIdx = state.players.findIndex((p) => !p.isBot && p.userId === human.id);
+function claimPartyBotSeat(state2, human, preferredSeatIndex) {
+  const existingIdx = state2.players.findIndex((p) => !p.isBot && p.userId === human.id);
   if (existingIdx !== -1) {
-    if (state.status === "waiting" && typeof preferredSeatIndex === "number" && preferredSeatIndex >= 0 && preferredSeatIndex < state.players.length && preferredSeatIndex !== existingIdx && state.players[preferredSeatIndex]?.isBot) {
-      const oldSeat = state.players[existingIdx];
+    if (state2.status === "waiting" && typeof preferredSeatIndex === "number" && preferredSeatIndex >= 0 && preferredSeatIndex < state2.players.length && preferredSeatIndex !== existingIdx && state2.players[preferredSeatIndex]?.isBot) {
+      const oldSeat = state2.players[existingIdx];
       const oldBot = BOT_PROFILES[existingIdx % BOT_PROFILES.length];
-      const nextPlayers2 = state.players.map((pl, idx) => {
+      const nextPlayers2 = state2.players.map((pl, idx) => {
         if (idx === existingIdx) {
           return {
             ...pl,
@@ -57072,28 +59776,28 @@ function claimPartyBotSeat(state, human, preferredSeatIndex) {
         ok: true,
         claimedSeat: preferredSeatIndex,
         state: {
-          ...state,
+          ...state2,
           players: nextPlayers2,
           log: [
-            ...state.log.slice(-14),
-            `\u{1F3A8} ${human.name || "Jugador"} eligi\xF3 el color ${state.players[preferredSeatIndex].color.toUpperCase()}.`
+            ...state2.log.slice(-14),
+            `\u{1F3A8} ${human.name || "Jugador"} eligi\xF3 el color ${state2.players[preferredSeatIndex].color.toUpperCase()}.`
           ],
           updatedAt: Date.now()
         }
       };
     }
-    return { ok: true, state, claimedSeat: existingIdx };
+    return { ok: true, state: state2, claimedSeat: existingIdx };
   }
   let targetIdx = -1;
-  if (typeof preferredSeatIndex === "number" && preferredSeatIndex >= 0 && preferredSeatIndex < state.players.length && state.players[preferredSeatIndex]?.isBot) {
+  if (typeof preferredSeatIndex === "number" && preferredSeatIndex >= 0 && preferredSeatIndex < state2.players.length && state2.players[preferredSeatIndex]?.isBot) {
     targetIdx = preferredSeatIndex;
   } else {
-    targetIdx = state.players.findIndex((p) => p.isBot);
+    targetIdx = state2.players.findIndex((p) => p.isBot);
   }
   if (targetIdx === -1) {
     return { ok: false, error: "La mesa est\xE1 completa (4/4 jugadores)." };
   }
-  const nextPlayers = state.players.map(
+  const nextPlayers = state2.players.map(
     (pl, idx) => idx === targetIdx ? {
       ...pl,
       userId: human.id,
@@ -57106,35 +59810,35 @@ function claimPartyBotSeat(state, human, preferredSeatIndex) {
     ok: true,
     claimedSeat: targetIdx,
     state: {
-      ...state,
+      ...state2,
       players: nextPlayers,
       log: [
-        ...state.log.slice(-14),
+        ...state2.log.slice(-14),
         `\u{1FA91} ${human.name || "Jugador"} ocup\xF3 el asiento #${targetIdx + 1}.`
       ],
       updatedAt: Date.now()
     }
   };
 }
-function startPartyMatch(state) {
-  if (state.status === "playing") return state;
+function startPartyMatch(state2) {
+  if (state2.status === "playing") return state2;
   const now = Date.now();
   return {
-    ...state,
+    ...state2,
     status: "playing",
     turnDeadlineAt: now + PARTY_TURN_DECISION_MS,
-    log: [...state.log.slice(-14), "\u{1F680} \xA1El anfitri\xF3n inici\xF3 la partida! Turnos de 15 segundos."],
+    log: [...state2.log.slice(-14), "\u{1F680} \xA1El anfitri\xF3n inici\xF3 la partida! Turnos de 15 segundos."],
     updatedAt: now
   };
 }
-function vacatePartySeatToBot(state, userId) {
-  const idx = state.players.findIndex((p) => !p.isBot && p.userId === userId);
+function vacatePartySeatToBot(state2, userId) {
+  const idx = state2.players.findIndex((p) => !p.isBot && p.userId === userId);
   if (idx === -1) {
-    return { state, changed: false };
+    return { state: state2, changed: false };
   }
-  const prevSeat = state.players[idx];
+  const prevSeat = state2.players[idx];
   const bot = BOT_PROFILES[idx % BOT_PROFILES.length];
-  const nextPlayers = state.players.map(
+  const nextPlayers = state2.players.map(
     (pl, i) => i === idx ? {
       ...pl,
       userId: `bot-seat-${idx}-${prevSeat.color}`,
@@ -57146,10 +59850,10 @@ function vacatePartySeatToBot(state, userId) {
   return {
     changed: true,
     state: {
-      ...state,
+      ...state2,
       players: nextPlayers,
       log: [
-        ...state.log.slice(-14),
+        ...state2.log.slice(-14),
         `\u{1F916} ${bot.name} tom\xF3 el relevo de ${prevSeat.name}.`
       ],
       updatedAt: Date.now()
@@ -57214,12 +59918,12 @@ function hasBridgeAtRingSquare(pieces, sq) {
   const occupants = countPiecesOnRingSquare(pieces, sq);
   return occupants.length >= 2 && occupants[0].color === occupants[1].color;
 }
-function canPieceAdvanceSteps(state, color, piece, steps) {
+function canPieceAdvanceSteps(state2, color, piece, steps) {
   if (piece.progress === 71 || steps <= 0) return false;
   if (piece.progress === -1) {
     if (steps !== 5) return false;
     const startSq = PARCHIS_START_OFFSETS[color];
-    const occupants = countPiecesOnRingSquare(state.pieces, startSq);
+    const occupants = countPiecesOnRingSquare(state2.pieces, startSq);
     if (occupants.length >= 2) {
       const hasOpponent = occupants.some((o) => o.color !== color);
       return hasOpponent;
@@ -57232,7 +59936,7 @@ function canPieceAdvanceSteps(state, color, piece, steps) {
     const midProg = piece.progress + step;
     if (midProg <= 63) {
       const midSq = parchisGlobalSquare(color, midProg);
-      if (midSq !== null && hasBridgeAtRingSquare(state.pieces, midSq)) {
+      if (midSq !== null && hasBridgeAtRingSquare(state2.pieces, midSq)) {
         return false;
       }
     }
@@ -57240,28 +59944,28 @@ function canPieceAdvanceSteps(state, color, piece, steps) {
   if (targetProg <= 63) {
     const destSq = parchisGlobalSquare(color, targetProg);
     if (destSq !== null) {
-      const occupants = countPiecesOnRingSquare(state.pieces, destSq);
+      const occupants = countPiecesOnRingSquare(state2.pieces, destSq);
       if (occupants.length >= 2) return false;
     }
   } else if (targetProg <= 70) {
-    const sameStepCount = state.pieces[color].filter((p) => p.progress === targetProg).length;
+    const sameStepCount = state2.pieces[color].filter((p) => p.progress === targetProg).length;
     if (sameStepCount >= 2) return false;
   }
   return true;
 }
-function getLegalParchisPieceIds(state, steps) {
-  const seat = state.players[state.turnSeat];
-  if (!seat || state.status === "finished") return [];
-  const own = state.pieces[seat.color];
-  const allCandidates = own.filter((p) => canPieceAdvanceSteps(state, seat.color, p, steps));
+function getLegalParchisPieceIds(state2, steps) {
+  const seat = state2.players[state2.turnSeat];
+  if (!seat || state2.status === "finished") return [];
+  const own = state2.pieces[seat.color];
+  const allCandidates = own.filter((p) => canPieceAdvanceSteps(state2, seat.color, p, steps));
   if (allCandidates.length === 0) return [];
-  if (steps === 5 && state.bonusSteps === 0) {
+  if (steps === 5 && state2.bonusSteps === 0) {
     const inHomeExit = allCandidates.filter((p) => p.progress === -1);
     if (inHomeExit.length > 0) {
       return inHomeExit.map((p) => p.id);
     }
   }
-  if (steps === 6 && state.bonusSteps === 0) {
+  if (steps === 6 && state2.bonusSteps === 0) {
     const bridgePieceIds = /* @__PURE__ */ new Set();
     for (const p of own) {
       const sq = parchisGlobalSquare(seat.color, p.progress);
@@ -57281,31 +59985,31 @@ function getLegalParchisPieceIds(state, steps) {
   }
   return allCandidates.map((p) => p.id);
 }
-function rollParchisDice(state, actorUserId, forcedRoll) {
-  if (state.status !== "playing") {
+function rollParchisDice(state2, actorUserId, forcedRoll) {
+  if (state2.status !== "playing") {
     return {
       ok: false,
-      error: state.status === "waiting" ? "Esperando a que el anfitri\xF3n inicie la partida." : "Partida terminada."
+      error: state2.status === "waiting" ? "Esperando a que el anfitri\xF3n inicie la partida." : "Partida terminada."
     };
   }
-  if (state.phase !== "roll") return { ok: false, error: "Mueve una ficha antes de tirar." };
-  const activeSeat = state.players[state.turnSeat];
+  if (state2.phase !== "roll") return { ok: false, error: "Mueve una ficha antes de tirar." };
+  const activeSeat = state2.players[state2.turnSeat];
   if (!activeSeat.isBot && activeSeat.userId !== actorUserId) {
     return { ok: false, error: "No es tu turno." };
   }
   const now = Date.now();
   const roll = typeof forcedRoll === "number" && forcedRoll >= 1 && forcedRoll <= 6 ? Math.floor(forcedRoll) : 1 + Math.floor(Math.random() * 6);
-  const nextSixes = roll === 6 ? state.consecutiveSixes + 1 : 0;
+  const nextSixes = roll === 6 ? state2.consecutiveSixes + 1 : 0;
   if (nextSixes >= 3) {
     const nextPieces = {
-      red: state.pieces.red.map((p) => ({ ...p })),
-      blue: state.pieces.blue.map((p) => ({ ...p })),
-      yellow: state.pieces.yellow.map((p) => ({ ...p })),
-      green: state.pieces.green.map((p) => ({ ...p }))
+      red: state2.pieces.red.map((p) => ({ ...p })),
+      blue: state2.pieces.blue.map((p) => ({ ...p })),
+      yellow: state2.pieces.yellow.map((p) => ({ ...p })),
+      green: state2.pieces.green.map((p) => ({ ...p }))
     };
     let penaltyText = `${activeSeat.name} sac\xF3 tres 6 seguidos \xB7 pierde el turno.`;
-    if (typeof state.lastMovedPieceId === "number") {
-      const penalizedPiece = nextPieces[activeSeat.color].find((p) => p.id === state.lastMovedPieceId);
+    if (typeof state2.lastMovedPieceId === "number") {
+      const penalizedPiece = nextPieces[activeSeat.color].find((p) => p.id === state2.lastMovedPieceId);
       if (penalizedPiece && penalizedPiece.progress >= 0 && penalizedPiece.progress <= 63) {
         penalizedPiece.progress = -1;
         penaltyText = `${activeSeat.name} sac\xF3 tres 6 seguidos \xB7 ficha #${penalizedPiece.id + 1} vuelve a casa.`;
@@ -57313,36 +60017,36 @@ function rollParchisDice(state, actorUserId, forcedRoll) {
         penaltyText = `${activeSeat.name} sac\xF3 tres 6 seguidos \xB7 ficha #${penalizedPiece.id + 1} a salvo en pasillo.`;
       }
     }
-    const nextSeat = (state.turnSeat + 1) % 4;
+    const nextSeat = (state2.turnSeat + 1) % 4;
     return {
       ok: true,
       state: {
-        ...state,
+        ...state2,
         pieces: nextPieces,
         dice: roll,
         phase: "roll",
         consecutiveSixes: 0,
         lastMovedPieceId: null,
         turnSeat: nextSeat,
-        log: [...state.log.slice(-14), penaltyText],
+        log: [...state2.log.slice(-14), penaltyText],
         turnDeadlineAt: now + PARTY_TURN_DECISION_MS,
         updatedAt: now
       }
     };
   }
-  const legal = getLegalParchisPieceIds(state, roll);
+  const legal = getLegalParchisPieceIds(state2, roll);
   if (legal.length === 0) {
-    const nextSeat = roll === 6 ? state.turnSeat : (state.turnSeat + 1) % 4;
+    const nextSeat = roll === 6 ? state2.turnSeat : (state2.turnSeat + 1) % 4;
     return {
       ok: true,
       state: {
-        ...state,
+        ...state2,
         dice: roll,
         phase: "roll",
         consecutiveSixes: roll === 6 ? nextSixes : 0,
         turnSeat: nextSeat,
         log: [
-          ...state.log.slice(-14),
+          ...state2.log.slice(-14),
           `${activeSeat.name} sac\xF3 ${roll} (sin movimiento${roll === 6 ? ", repite tirada" : ""}).`
         ],
         turnDeadlineAt: now + PARTY_TURN_DECISION_MS,
@@ -57353,44 +60057,44 @@ function rollParchisDice(state, actorUserId, forcedRoll) {
   return {
     ok: true,
     state: {
-      ...state,
+      ...state2,
       dice: roll,
       phase: "move",
       consecutiveSixes: nextSixes,
-      log: [...state.log.slice(-14), `${activeSeat.name} sac\xF3 un ${roll}.`],
+      log: [...state2.log.slice(-14), `${activeSeat.name} sac\xF3 un ${roll}.`],
       turnDeadlineAt: now + PARTY_TURN_DECISION_MS,
       updatedAt: now
     }
   };
 }
-function moveParchisPiece(state, actorUserId, pieceId) {
-  if (state.status !== "playing") {
+function moveParchisPiece(state2, actorUserId, pieceId) {
+  if (state2.status !== "playing") {
     return {
       ok: false,
-      error: state.status === "waiting" ? "Esperando a que el anfitri\xF3n inicie la partida." : "Partida terminada."
+      error: state2.status === "waiting" ? "Esperando a que el anfitri\xF3n inicie la partida." : "Partida terminada."
     };
   }
-  if (state.phase !== "move") return { ok: false, error: "Primero tira el dado." };
-  const activeSeat = state.players[state.turnSeat];
+  if (state2.phase !== "move") return { ok: false, error: "Primero tira el dado." };
+  const activeSeat = state2.players[state2.turnSeat];
   if (!activeSeat.isBot && activeSeat.userId !== actorUserId) {
     return { ok: false, error: "No es tu turno." };
   }
-  const steps = state.bonusSteps > 0 ? state.bonusSteps : state.dice || 0;
+  const steps = state2.bonusSteps > 0 ? state2.bonusSteps : state2.dice || 0;
   if (steps <= 0) return { ok: false, error: "Dado inv\xE1lido." };
-  const legal = getLegalParchisPieceIds(state, steps);
+  const legal = getLegalParchisPieceIds(state2, steps);
   if (!legal.includes(pieceId)) {
     return { ok: false, error: "Movimiento no permitido por las reglas del Parch\xEDs." };
   }
   const nextPieces = {
-    red: state.pieces.red.map((p) => ({ ...p })),
-    blue: state.pieces.blue.map((p) => ({ ...p })),
-    yellow: state.pieces.yellow.map((p) => ({ ...p })),
-    green: state.pieces.green.map((p) => ({ ...p }))
+    red: state2.pieces.red.map((p) => ({ ...p })),
+    blue: state2.pieces.blue.map((p) => ({ ...p })),
+    yellow: state2.pieces.yellow.map((p) => ({ ...p })),
+    green: state2.pieces.green.map((p) => ({ ...p }))
   };
   const targetPiece = nextPieces[activeSeat.color].find((p) => p.id === pieceId);
   const wasInBase = targetPiece.progress === -1;
   targetPiece.progress = wasInBase ? 0 : targetPiece.progress + steps;
-  const logs = [...state.log.slice(-13)];
+  const logs = [...state2.log.slice(-13)];
   let nextBonus = 0;
   const landingSquare = parchisGlobalSquare(activeSeat.color, targetPiece.progress);
   if (landingSquare !== null) {
@@ -57398,7 +60102,7 @@ function moveParchisPiece(state, actorUserId, pieceId) {
       const othersAtStart = PARTY_COLORS.filter((c) => c !== activeSeat.color).flatMap(
         (c) => nextPieces[c].filter((op) => parchisGlobalSquare(c, op.progress) === landingSquare)
       );
-      const totalBeforeEntry = countPiecesOnRingSquare(state.pieces, landingSquare).length;
+      const totalBeforeEntry = countPiecesOnRingSquare(state2.pieces, landingSquare).length;
       if (totalBeforeEntry >= 2 && othersAtStart.length > 0) {
         const victim = othersAtStart[othersAtStart.length - 1];
         victim.progress = -1;
@@ -57426,18 +60130,18 @@ function moveParchisPiece(state, actorUserId, pieceId) {
   }
   const wonNow = nextPieces[activeSeat.color].every((p) => p.progress === 71);
   if (wonNow) {
-    const nextPlayers = state.players.map(
-      (pl, idx) => idx === state.turnSeat ? { ...pl, score: pl.score + 1 } : pl
+    const nextPlayers = state2.players.map(
+      (pl, idx) => idx === state2.turnSeat ? { ...pl, score: pl.score + 1 } : pl
     );
     return {
       ok: true,
       finishedNow: true,
       state: {
-        ...state,
+        ...state2,
         status: "finished",
         players: nextPlayers,
         pieces: nextPieces,
-        winnerSeat: state.turnSeat,
+        winnerSeat: state2.turnSeat,
         phase: "roll",
         bonusSteps: 0,
         lastMovedPieceId: null,
@@ -57448,7 +60152,7 @@ function moveParchisPiece(state, actorUserId, pieceId) {
   }
   const now = Date.now();
   const tempState = {
-    ...state,
+    ...state2,
     pieces: nextPieces,
     bonusSteps: nextBonus,
     lastMovedPieceId: targetPiece.id
@@ -57466,32 +60170,32 @@ function moveParchisPiece(state, actorUserId, pieceId) {
       }
     };
   }
-  const extraTurn = state.dice === 6;
-  const nextSeat = extraTurn ? state.turnSeat : (state.turnSeat + 1) % 4;
+  const extraTurn = state2.dice === 6;
+  const nextSeat = extraTurn ? state2.turnSeat : (state2.turnSeat + 1) % 4;
   return {
     ok: true,
     finishedNow: false,
     state: {
-      ...state,
+      ...state2,
       pieces: nextPieces,
       turnSeat: nextSeat,
       phase: "roll",
       bonusSteps: 0,
       lastMovedPieceId: extraTurn ? targetPiece.id : null,
-      consecutiveSixes: extraTurn ? state.consecutiveSixes : 0,
+      consecutiveSixes: extraTurn ? state2.consecutiveSixes : 0,
       log: logs,
       turnDeadlineAt: now + PARTY_TURN_DECISION_MS,
       updatedAt: now
     }
   };
 }
-function chooseBotParchisAction(state) {
-  if (state.phase === "roll") return { action: "roll_dice" };
-  const steps = state.bonusSteps > 0 ? state.bonusSteps : state.dice || 0;
-  const legal = getLegalParchisPieceIds(state, steps);
+function chooseBotParchisAction(state2) {
+  if (state2.phase === "roll") return { action: "roll_dice" };
+  const steps = state2.bonusSteps > 0 ? state2.bonusSteps : state2.dice || 0;
+  const legal = getLegalParchisPieceIds(state2, steps);
   if (legal.length === 0) return { action: "roll_dice" };
-  const activeColor = state.players[state.turnSeat].color;
-  const own = state.pieces[activeColor];
+  const activeColor = state2.players[state2.turnSeat].color;
+  const own = state2.pieces[activeColor];
   let bestId = legal[0];
   let bestScore = -999;
   for (const id of legal) {
@@ -57503,7 +60207,7 @@ function chooseBotParchisAction(state) {
     const sq = parchisGlobalSquare(activeColor, nextProg);
     if (sq !== null && !PARCHIS_SAFE_SQUARES.has(sq)) {
       const canCapture = PARTY_COLORS.some(
-        (c) => c !== activeColor && state.pieces[c].some((op) => parchisGlobalSquare(c, op.progress) === sq)
+        (c) => c !== activeColor && state2.pieces[c].some((op) => parchisGlobalSquare(c, op.progress) === sq)
       );
       if (canCapture) score += 180;
     }
@@ -57622,15 +60326,15 @@ function createInitialUnoState(humans, opts) {
     updatedAt: now
   };
 }
-function isUnoCardPlayable(state, card) {
-  if (state.pendingWild4Challenge) return false;
-  if (state.drawnPlayableCardId) {
-    return card.id === state.drawnPlayableCardId;
+function isUnoCardPlayable(state2, card) {
+  if (state2.pendingWild4Challenge) return false;
+  if (state2.drawnPlayableCardId) {
+    return card.id === state2.drawnPlayableCardId;
   }
-  const top = state.discardPile[state.discardPile.length - 1];
+  const top = state2.discardPile[state2.discardPile.length - 1];
   if (!top) return true;
   if (card.color === "wild") return true;
-  return card.color === state.activeColor || card.value === top.value;
+  return card.color === state2.activeColor || card.value === top.value;
 }
 function drawFromDeck(deck, discardPile, count) {
   const nextDeck = [...deck];
@@ -57652,57 +60356,57 @@ function drawFromDeck(deck, discardPile, count) {
   }
   return { drawn, deck: nextDeck, discardPile: nextDiscard };
 }
-function playUnoCard(state, actorUserId, cardId, chosenColor) {
-  if (state.status !== "playing") {
+function playUnoCard(state2, actorUserId, cardId, chosenColor) {
+  if (state2.status !== "playing") {
     return {
       ok: false,
-      error: state.status === "waiting" ? "Esperando a que el anfitri\xF3n inicie la partida." : "Partida finalizada."
+      error: state2.status === "waiting" ? "Esperando a que el anfitri\xF3n inicie la partida." : "Partida finalizada."
     };
   }
-  if (state.pendingWild4Challenge) {
+  if (state2.pendingWild4Challenge) {
     return { ok: false, error: "Primero hay que aceptar o desafiar el +4 activo." };
   }
-  const seat = state.players[state.turnSeat];
+  const seat = state2.players[state2.turnSeat];
   if (!seat.isBot && seat.userId !== actorUserId) {
     return { ok: false, error: "No es tu turno." };
   }
-  const hand = state.hands[state.turnSeat] || [];
+  const hand = state2.hands[state2.turnSeat] || [];
   const cardIdx = hand.findIndex((c) => c.id === cardId);
   if (cardIdx === -1) return { ok: false, error: "Carta no encontrada." };
   const card = hand[cardIdx];
-  if (!isUnoCardPlayable(state, card)) {
+  if (!isUnoCardPlayable(state2, card)) {
     return { ok: false, error: "Esa carta no coincide con el color, n\xFAmero o s\xEDmbolo activo." };
   }
   const nextHand = hand.filter((c) => c.id !== cardId);
-  let nextHands = { ...state.hands, [state.turnSeat]: nextHand };
-  let nextDeck = state.deck;
-  let nextDiscard = [...state.discardPile, card];
-  const prevColor = state.activeColor;
+  let nextHands = { ...state2.hands, [state2.turnSeat]: nextHand };
+  let nextDeck = state2.deck;
+  let nextDiscard = [...state2.discardPile, card];
+  const prevColor = state2.activeColor;
   const nextColor = card.color === "wild" ? chosenColor || "red" : card.color;
   if (nextHand.length === 0) {
-    const pts = calculateUnoRoundScore(nextHands, state.turnSeat);
-    const nextPlayers = state.players.map(
-      (pl, idx) => idx === state.turnSeat ? { ...pl, score: pl.score + pts } : pl
+    const pts = calculateUnoRoundScore(nextHands, state2.turnSeat);
+    const nextPlayers = state2.players.map(
+      (pl, idx) => idx === state2.turnSeat ? { ...pl, score: pl.score + pts } : pl
     );
-    const totalScore = nextPlayers[state.turnSeat].score;
+    const totalScore = nextPlayers[state2.turnSeat].score;
     return {
       ok: true,
       finishedNow: true,
       state: {
-        ...state,
+        ...state2,
         status: "finished",
         players: nextPlayers,
         hands: nextHands,
         discardPile: nextDiscard,
         activeColor: nextColor,
-        winnerSeat: state.turnSeat,
+        winnerSeat: state2.turnSeat,
         pendingDraw: 0,
         pendingWild4Challenge: null,
         drawnPlayableCardId: null,
         vulnerableUnoSeat: null,
         roundPointsWon: pts,
         log: [
-          ...state.log.slice(-14),
+          ...state2.log.slice(-14),
           `\u{1F3C6} \xA1${seat.name} se qued\xF3 sin cartas (+${pts} pts \xB7 Total ${totalScore}/${UNO_TARGET_SCORE})!`
         ],
         updatedAt: Date.now()
@@ -57710,48 +60414,48 @@ function playUnoCard(state, actorUserId, cardId, chosenColor) {
     };
   }
   const now = Date.now();
-  const nextUnoCalled = state.unoCalledSeats.includes(state.turnSeat);
-  const nextVulnerable = nextHand.length === 1 && !nextUnoCalled ? state.turnSeat : null;
-  const logs = [...state.log.slice(-13)];
+  const nextUnoCalled = state2.unoCalledSeats.includes(state2.turnSeat);
+  const nextVulnerable = nextHand.length === 1 && !nextUnoCalled ? state2.turnSeat : null;
+  const logs = [...state2.log.slice(-13)];
   if (card.value === "wild4") {
     const wasIllegal = nextHand.some((c) => c.color === prevColor);
-    const victimSeat = ((state.turnSeat + state.direction) % 4 + 4) % 4;
-    logs.push(`${seat.name} lanz\xF3 +4 (${nextColor.toUpperCase()}) \xB7 ${state.players[victimSeat].name} decide si acepta o desaf\xEDa.`);
+    const victimSeat = ((state2.turnSeat + state2.direction) % 4 + 4) % 4;
+    logs.push(`${seat.name} lanz\xF3 +4 (${nextColor.toUpperCase()}) \xB7 ${state2.players[victimSeat].name} decide si acepta o desaf\xEDa.`);
     return {
       ok: true,
       finishedNow: false,
       state: {
-        ...state,
+        ...state2,
         hands: nextHands,
         discardPile: nextDiscard,
         activeColor: nextColor,
         turnSeat: victimSeat,
         pendingWild4Challenge: {
-          offenderSeat: state.turnSeat,
+          offenderSeat: state2.turnSeat,
           victimSeat,
           wasIllegal,
           chosenColor: nextColor
         },
         drawnPlayableCardId: null,
         vulnerableUnoSeat: nextVulnerable,
-        unoCalledSeats: nextHand.length === 1 ? state.unoCalledSeats : state.unoCalledSeats.filter((s) => s !== state.turnSeat),
+        unoCalledSeats: nextHand.length === 1 ? state2.unoCalledSeats : state2.unoCalledSeats.filter((s) => s !== state2.turnSeat),
         log: logs,
         turnDeadlineAt: now + PARTY_TURN_DECISION_MS,
         updatedAt: now
       }
     };
   }
-  let nextDir = state.direction;
+  let nextDir = state2.direction;
   let stepCount = 1;
   if (card.value === "reverse") {
-    nextDir = state.direction * -1;
+    nextDir = state2.direction * -1;
     logs.push(`${seat.name} jug\xF3 Cambio de Sentido (${nextColor}).`);
   } else if (card.value === "skip") {
     stepCount = 2;
-    const skippedSeat = ((state.turnSeat + nextDir) % 4 + 4) % 4;
-    logs.push(`${seat.name} salt\xF3 a ${state.players[skippedSeat].name}.`);
+    const skippedSeat = ((state2.turnSeat + nextDir) % 4 + 4) % 4;
+    logs.push(`${seat.name} salt\xF3 a ${state2.players[skippedSeat].name}.`);
   } else if (card.value === "draw2") {
-    const victimSeat = ((state.turnSeat + nextDir) % 4 + 4) % 4;
+    const victimSeat = ((state2.turnSeat + nextDir) % 4 + 4) % 4;
     const drawRes = drawFromDeck(nextDeck, nextDiscard, 2);
     nextDeck = drawRes.deck;
     nextDiscard = drawRes.discardPile;
@@ -57760,16 +60464,16 @@ function playUnoCard(state, actorUserId, cardId, chosenColor) {
       [victimSeat]: [...nextHands[victimSeat] || [], ...drawRes.drawn]
     };
     stepCount = 2;
-    logs.push(`${seat.name} tir\xF3 +2 \xB7 ${state.players[victimSeat].name} roba 2 y pierde turno.`);
+    logs.push(`${seat.name} tir\xF3 +2 \xB7 ${state2.players[victimSeat].name} roba 2 y pierde turno.`);
   } else {
     logs.push(`${seat.name} jug\xF3 ${card.value.toUpperCase()} (${nextColor}).`);
   }
-  const nextSeat = ((state.turnSeat + nextDir * stepCount) % 4 + 4) % 4;
+  const nextSeat = ((state2.turnSeat + nextDir * stepCount) % 4 + 4) % 4;
   return {
     ok: true,
     finishedNow: false,
     state: {
-      ...state,
+      ...state2,
       hands: nextHands,
       deck: nextDeck,
       discardPile: nextDiscard,
@@ -57780,34 +60484,34 @@ function playUnoCard(state, actorUserId, cardId, chosenColor) {
       pendingWild4Challenge: null,
       drawnPlayableCardId: null,
       vulnerableUnoSeat: nextVulnerable,
-      unoCalledSeats: nextHand.length === 1 ? state.unoCalledSeats : state.unoCalledSeats.filter((s) => s !== state.turnSeat),
+      unoCalledSeats: nextHand.length === 1 ? state2.unoCalledSeats : state2.unoCalledSeats.filter((s) => s !== state2.turnSeat),
       log: logs,
       turnDeadlineAt: now + PARTY_TURN_DECISION_MS,
       updatedAt: now
     }
   };
 }
-function resolveUnoWild4Challenge(state, actorUserId, decision) {
-  if (state.status !== "playing" || !state.pendingWild4Challenge) {
+function resolveUnoWild4Challenge(state2, actorUserId, decision) {
+  if (state2.status !== "playing" || !state2.pendingWild4Challenge) {
     return { ok: false, error: "No hay ning\xFAn +4 pendiente de respuesta." };
   }
-  const { offenderSeat, victimSeat, wasIllegal } = state.pendingWild4Challenge;
-  const victim = state.players[victimSeat];
+  const { offenderSeat, victimSeat, wasIllegal } = state2.pendingWild4Challenge;
+  const victim = state2.players[victimSeat];
   if (!victim.isBot && victim.userId !== actorUserId) {
     return { ok: false, error: "Solo el jugador afectado puede responder al +4." };
   }
   const now = Date.now();
-  let nextDeck = state.deck;
-  let nextDiscard = state.discardPile;
-  const nextHands = { ...state.hands };
+  let nextDeck = state2.deck;
+  let nextDiscard = state2.discardPile;
+  const nextHands = { ...state2.hands };
   let nextTurnSeat = victimSeat;
-  const logs = [...state.log.slice(-13)];
+  const logs = [...state2.log.slice(-13)];
   if (decision === "accept") {
     const drawRes = drawFromDeck(nextDeck, nextDiscard, 4);
     nextDeck = drawRes.deck;
     nextDiscard = drawRes.discardPile;
     nextHands[victimSeat] = [...nextHands[victimSeat] || [], ...drawRes.drawn];
-    nextTurnSeat = ((victimSeat + state.direction) % 4 + 4) % 4;
+    nextTurnSeat = ((victimSeat + state2.direction) % 4 + 4) % 4;
     logs.push(`${victim.name} acept\xF3 el +4, rob\xF3 4 cartas y perdi\xF3 turno.`);
   } else if (wasIllegal) {
     const drawRes = drawFromDeck(nextDeck, nextDiscard, 4);
@@ -57816,90 +60520,90 @@ function resolveUnoWild4Challenge(state, actorUserId, decision) {
     nextHands[offenderSeat] = [...nextHands[offenderSeat] || [], ...drawRes.drawn];
     nextTurnSeat = victimSeat;
     logs.push(
-      `\u2696\uFE0F \xA1Desaf\xEDo ganado! ${state.players[offenderSeat].name} ten\xEDa carta del color y roba 4 cartas.`
+      `\u2696\uFE0F \xA1Desaf\xEDo ganado! ${state2.players[offenderSeat].name} ten\xEDa carta del color y roba 4 cartas.`
     );
   } else {
     const drawRes = drawFromDeck(nextDeck, nextDiscard, 6);
     nextDeck = drawRes.deck;
     nextDiscard = drawRes.discardPile;
     nextHands[victimSeat] = [...nextHands[victimSeat] || [], ...drawRes.drawn];
-    nextTurnSeat = ((victimSeat + state.direction) % 4 + 4) % 4;
+    nextTurnSeat = ((victimSeat + state2.direction) % 4 + 4) % 4;
     logs.push(`\u274C Desaf\xEDo fallido \xB7 ${victim.name} roba 6 cartas (4+2) y pierde turno.`);
   }
   return {
     ok: true,
     state: {
-      ...state,
+      ...state2,
       hands: nextHands,
       deck: nextDeck,
       discardPile: nextDiscard,
       turnSeat: nextTurnSeat,
       pendingWild4Challenge: null,
-      unoCalledSeats: state.unoCalledSeats.filter((s) => s !== victimSeat && s !== offenderSeat),
+      unoCalledSeats: state2.unoCalledSeats.filter((s) => s !== victimSeat && s !== offenderSeat),
       log: logs,
       turnDeadlineAt: now + PARTY_TURN_DECISION_MS,
       updatedAt: now
     }
   };
 }
-function drawUnoCardsAndAdvance(state, actorUserId) {
-  if (state.status !== "playing") {
+function drawUnoCardsAndAdvance(state2, actorUserId) {
+  if (state2.status !== "playing") {
     return {
       ok: false,
-      error: state.status === "waiting" ? "Esperando a que el anfitri\xF3n inicie la partida." : "Partida finalizada."
+      error: state2.status === "waiting" ? "Esperando a que el anfitri\xF3n inicie la partida." : "Partida finalizada."
     };
   }
-  if (state.pendingWild4Challenge) {
-    return resolveUnoWild4Challenge(state, actorUserId, "accept");
+  if (state2.pendingWild4Challenge) {
+    return resolveUnoWild4Challenge(state2, actorUserId, "accept");
   }
-  const seat = state.players[state.turnSeat];
+  const seat = state2.players[state2.turnSeat];
   if (!seat.isBot && seat.userId !== actorUserId) {
     return { ok: false, error: "No es tu turno." };
   }
   const now = Date.now();
-  if (state.drawnPlayableCardId) {
-    const nextSeat2 = ((state.turnSeat + state.direction) % 4 + 4) % 4;
+  if (state2.drawnPlayableCardId) {
+    const nextSeat2 = ((state2.turnSeat + state2.direction) % 4 + 4) % 4;
     return {
       ok: true,
       state: {
-        ...state,
+        ...state2,
         turnSeat: nextSeat2,
         drawnPlayableCardId: null,
         vulnerableUnoSeat: null,
-        log: [...state.log.slice(-14), `${seat.name} decidi\xF3 guardar la carta robada y pas\xF3.`],
+        log: [...state2.log.slice(-14), `${seat.name} decidi\xF3 guardar la carta robada y pas\xF3.`],
         turnDeadlineAt: now + PARTY_TURN_DECISION_MS,
         updatedAt: now
       }
     };
   }
-  const { drawn, deck, discardPile } = drawFromDeck(state.deck, state.discardPile, 1);
+  const { drawn, deck, discardPile } = drawFromDeck(state2.deck, state2.discardPile, 1);
   const drawnCard = drawn[0];
   const nextHands = {
-    ...state.hands,
-    [state.turnSeat]: [...state.hands[state.turnSeat] || [], ...drawn]
+    ...state2.hands,
+    [state2.turnSeat]: [...state2.hands[state2.turnSeat] || [], ...drawn]
   };
-  if (drawnCard && isUnoCardPlayable(state, drawnCard)) {
+  if (drawnCard && isUnoCardPlayable(state2, drawnCard)) {
     return {
       ok: true,
       state: {
-        ...state,
+        ...state2,
         hands: nextHands,
         deck,
         discardPile,
         drawnPlayableCardId: drawnCard.id,
         vulnerableUnoSeat: null,
-        unoCalledSeats: state.unoCalledSeats.filter((s) => s !== state.turnSeat),
-        log: [...state.log.slice(-14), `${seat.name} rob\xF3 1 carta jugable (puede jugarla o pasar).`],
+        unoCalledSeats: state2.unoCalledSeats.filter((s) => s !== state2.turnSeat),
+        log: [...state2.log.slice(-14), `${seat.name} rob\xF3 1 carta jugable (puede jugarla o pasar).`],
         turnDeadlineAt: now + PARTY_TURN_DECISION_MS,
         updatedAt: now
       }
     };
   }
-  const nextSeat = ((state.turnSeat + state.direction) % 4 + 4) % 4;
+  const nextSeat = ((state2.turnSeat + state2.direction) % 4 + 4) % 4;
   return {
     ok: true,
     state: {
-      ...state,
+      ...state2,
       hands: nextHands,
       deck,
       discardPile,
@@ -57907,70 +60611,70 @@ function drawUnoCardsAndAdvance(state, actorUserId) {
       drawnPlayableCardId: null,
       vulnerableUnoSeat: null,
       turnSeat: nextSeat,
-      unoCalledSeats: state.unoCalledSeats.filter((s) => s !== state.turnSeat),
-      log: [...state.log.slice(-14), `${seat.name} rob\xF3 1 carta.`],
+      unoCalledSeats: state2.unoCalledSeats.filter((s) => s !== state2.turnSeat),
+      log: [...state2.log.slice(-14), `${seat.name} rob\xF3 1 carta.`],
       turnDeadlineAt: now + PARTY_TURN_DECISION_MS,
       updatedAt: now
     }
   };
 }
-function callUnoAction(state, actorUserId) {
-  if (state.status === "finished") return { ok: false, error: "Partida finalizada." };
-  const seatIdx = state.players.findIndex((p) => !p.isBot && p.userId === actorUserId);
+function callUnoAction(state2, actorUserId) {
+  if (state2.status === "finished") return { ok: false, error: "Partida finalizada." };
+  const seatIdx = state2.players.findIndex((p) => !p.isBot && p.userId === actorUserId);
   if (seatIdx === -1) return { ok: false, error: "No est\xE1s sentado en la mesa." };
-  const hand = state.hands[seatIdx] || [];
+  const hand = state2.hands[seatIdx] || [];
   if (hand.length > 2) return { ok: false, error: "Solo puedes cantar \xA1UNO! con 1 o 2 cartas." };
-  const seat = state.players[seatIdx];
+  const seat = state2.players[seatIdx];
   return {
     ok: true,
     state: {
-      ...state,
-      unoCalledSeats: Array.from(/* @__PURE__ */ new Set([...state.unoCalledSeats, seatIdx])),
-      vulnerableUnoSeat: state.vulnerableUnoSeat === seatIdx ? null : state.vulnerableUnoSeat,
-      log: [...state.log.slice(-14), `\u{1F4E3} \xA1${seat.name} grit\xF3 \xA1UNO!!`],
+      ...state2,
+      unoCalledSeats: Array.from(/* @__PURE__ */ new Set([...state2.unoCalledSeats, seatIdx])),
+      vulnerableUnoSeat: state2.vulnerableUnoSeat === seatIdx ? null : state2.vulnerableUnoSeat,
+      log: [...state2.log.slice(-14), `\u{1F4E3} \xA1${seat.name} grit\xF3 \xA1UNO!!`],
       updatedAt: Date.now()
     }
   };
 }
-function catchUnoFailureAction(state, catcherUserId) {
-  if (state.status !== "playing") return { ok: false, error: "Partida inactiva." };
-  const targetSeat = state.vulnerableUnoSeat;
+function catchUnoFailureAction(state2, catcherUserId) {
+  if (state2.status !== "playing") return { ok: false, error: "Partida inactiva." };
+  const targetSeat = state2.vulnerableUnoSeat;
   if (targetSeat === null || targetSeat === void 0) {
     return { ok: false, error: "Nadie olvid\xF3 decir \xA1UNO! ahora mismo." };
   }
-  const victim = state.players[targetSeat];
+  const victim = state2.players[targetSeat];
   if (!victim || victim.userId === catcherUserId) {
     return { ok: false, error: "No puedes pillarte a ti mismo." };
   }
-  const catcher = state.players.find((p) => p.userId === catcherUserId)?.name || "Un jugador";
-  const { drawn, deck, discardPile } = drawFromDeck(state.deck, state.discardPile, 2);
+  const catcher = state2.players.find((p) => p.userId === catcherUserId)?.name || "Un jugador";
+  const { drawn, deck, discardPile } = drawFromDeck(state2.deck, state2.discardPile, 2);
   const nextHands = {
-    ...state.hands,
-    [targetSeat]: [...state.hands[targetSeat] || [], ...drawn]
+    ...state2.hands,
+    [targetSeat]: [...state2.hands[targetSeat] || [], ...drawn]
   };
   return {
     ok: true,
     state: {
-      ...state,
+      ...state2,
       hands: nextHands,
       deck,
       discardPile,
       vulnerableUnoSeat: null,
       log: [
-        ...state.log.slice(-14),
+        ...state2.log.slice(-14),
         `\u{1F6A8} \xA1${catcher} pill\xF3 a ${victim.name} sin gritar UNO! (+2 cartas de penalizaci\xF3n).`
       ],
       updatedAt: Date.now()
     }
   };
 }
-function chooseBotUnoMove(state) {
-  if (state.pendingWild4Challenge) {
+function chooseBotUnoMove(state2) {
+  if (state2.pendingWild4Challenge) {
     return { action: Math.random() < 0.3 ? "challenge_wild4" : "accept_wild4" };
   }
-  if (state.drawnPlayableCardId) {
-    const hand2 = state.hands[state.turnSeat] || [];
-    const card = hand2.find((c) => c.id === state.drawnPlayableCardId);
+  if (state2.drawnPlayableCardId) {
+    const hand2 = state2.hands[state2.turnSeat] || [];
+    const card = hand2.find((c) => c.id === state2.drawnPlayableCardId);
     if (card) {
       let chosenColor2 = "red";
       if (card.color === "wild") {
@@ -57982,12 +60686,12 @@ function chooseBotUnoMove(state) {
     }
     return { action: "pass_turn" };
   }
-  const hand = state.hands[state.turnSeat] || [];
-  const playable = hand.filter((c) => isUnoCardPlayable(state, c));
+  const hand = state2.hands[state2.turnSeat] || [];
+  const playable = hand.filter((c) => isUnoCardPlayable(state2, c));
   if (playable.length === 0) {
     return { action: "draw_card" };
   }
-  const hasMatchingColor = hand.some((c) => c.color === state.activeColor);
+  const hasMatchingColor = hand.some((c) => c.color === state2.activeColor);
   const sorted = [...playable].sort((a, b) => {
     const score = (c) => {
       if (c.value === "wild4") return hasMatchingColor ? -10 : 1;
@@ -58059,10 +60763,10 @@ var POOL_JAW_KNUCKLES = [
   { x: 1001.5, y: 470, r: 1.5 }
 ];
 function createSeededRng(seed) {
-  let state = seed >>> 0 || 2654435769;
+  let state2 = seed >>> 0 || 2654435769;
   return () => {
-    state = state + 1831565813 >>> 0;
-    let t = Math.imul(state ^ state >>> 15, 1 | state);
+    state2 = state2 + 1831565813 >>> 0;
+    let t = Math.imul(state2 ^ state2 >>> 15, 1 | state2);
     t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
     return ((t ^ t >>> 14) >>> 0) / 4294967296;
   };
@@ -58083,19 +60787,19 @@ function isOnEightBall(balls, group) {
   if (!group) return false;
   return countRemainingGroupBalls(balls, group) === 0;
 }
-function computePoolChecksum(state) {
+function computePoolChecksum(state2) {
   let hash = 2166136261 >>> 0;
   const mix = (n) => {
     hash ^= n >>> 0;
     hash = Math.imul(hash, 16777619) >>> 0;
   };
-  mix(state.turnSeat + 11);
-  mix(state.turnNumber + 37);
-  mix(state.phase.length);
-  mix((state.winnerSeat ?? 9) + 1);
-  mix(state.players[0]?.group === "solids" ? 1 : state.players[0]?.group === "stripes" ? 2 : 0);
-  mix(state.players[1]?.group === "solids" ? 1 : state.players[1]?.group === "stripes" ? 2 : 0);
-  for (const b of state.balls) {
+  mix(state2.turnSeat + 11);
+  mix(state2.turnNumber + 37);
+  mix(state2.phase.length);
+  mix((state2.winnerSeat ?? 9) + 1);
+  mix(state2.players[0]?.group === "solids" ? 1 : state2.players[0]?.group === "stripes" ? 2 : 0);
+  mix(state2.players[1]?.group === "solids" ? 1 : state2.players[1]?.group === "stripes" ? 2 : 0);
+  for (const b of state2.balls) {
     mix(b.id);
     mix(Math.round(b.x * 100));
     mix(Math.round(b.y * 100));
@@ -58704,9 +61408,9 @@ function createInitialPoolState(humans, opts) {
   base.checksum = computePoolChecksum(base);
   return base;
 }
-function startPoolMatch(state, now = Date.now()) {
-  if (state.status === "playing") return state;
-  const p0 = state.players[0] || {
+function startPoolMatch(state2, now = Date.now()) {
+  if (state2.status === "playing") return state2;
+  const p0 = state2.players[0] || {
     seatIndex: 0,
     userId: "bot-pool-0",
     name: "Bot Billar",
@@ -58716,10 +61420,10 @@ function startPoolMatch(state, now = Date.now()) {
     group: null,
     connected: true
   };
-  const p1 = state.players[1] || {
+  const p1 = state2.players[1] || {
     seatIndex: 1,
     userId: "bot-pool-ai",
-    name: state.difficulty === "hard" ? "Bot Maestro" : state.difficulty === "easy" ? "Bot Novato" : "Bot Billar",
+    name: state2.difficulty === "hard" ? "Bot Maestro" : state2.difficulty === "easy" ? "Bot Novato" : "Bot Billar",
     avatar: "\u{1F916}",
     color: "#10B981",
     isBot: true,
@@ -58727,7 +61431,7 @@ function startPoolMatch(state, now = Date.now()) {
     connected: true
   };
   const next = {
-    ...state,
+    ...state2,
     status: "playing",
     awaitingHostStart: false,
     players: [p0, p1],
@@ -58738,16 +61442,16 @@ function startPoolMatch(state, now = Date.now()) {
   next.checksum = computePoolChecksum(next);
   return next;
 }
-function joinPoolSeat(state, user, seatIndex, now = Date.now(), opts) {
-  if (state.status === "finished") {
+function joinPoolSeat(state2, user, seatIndex, now = Date.now(), opts) {
+  if (state2.status === "finished") {
     return { ok: false, error: "La partida ya termin\xF3" };
   }
   const nextPlayers = [
-    state.players[0] ? { ...state.players[0] } : null,
-    state.players[1] ? { ...state.players[1] } : null
+    state2.players[0] ? { ...state2.players[0] } : null,
+    state2.players[1] ? { ...state2.players[1] } : null
   ];
   if (seatIndex === "spectate") {
-    if (state.status === "playing") {
+    if (state2.status === "playing") {
       return { ok: false, error: "No puedes abandonar una mesa en juego desde aqu\xED" };
     }
     if (nextPlayers[0]?.userId === user.id) nextPlayers[0] = null;
@@ -58758,7 +61462,7 @@ function joinPoolSeat(state, user, seatIndex, now = Date.now(), opts) {
       return { ok: false, error: "Ese asiento ya est\xE1 ocupado" };
     }
     const otherIdx = seatIndex === 0 ? 1 : 0;
-    if (nextPlayers[otherIdx]?.userId === user.id && state.status === "waiting") {
+    if (nextPlayers[otherIdx]?.userId === user.id && state2.status === "waiting") {
       nextPlayers[otherIdx] = null;
     }
     nextPlayers[seatIndex] = {
@@ -58774,52 +61478,52 @@ function joinPoolSeat(state, user, seatIndex, now = Date.now(), opts) {
   }
   const ready = Boolean(nextPlayers[0] && nextPlayers[1]);
   const keepWaiting = Boolean(opts?.keepWaiting);
-  const shouldPlayNow = state.status === "playing" || ready && !keepWaiting;
+  const shouldPlayNow = state2.status === "playing" || ready && !keepWaiting;
   const nextStatus = shouldPlayNow ? "playing" : "waiting";
   const next = {
-    ...state,
+    ...state2,
     status: nextStatus,
-    awaitingHostStart: nextStatus === "playing" ? false : state.awaitingHostStart,
+    awaitingHostStart: nextStatus === "playing" ? false : state2.awaitingHostStart,
     players: nextPlayers,
-    statusMessage: nextStatus === "playing" && state.status === "waiting" ? `Mesa completa \xB7 Saque inicial de ${nextPlayers[0].name}` : ready && keepWaiting ? `${nextPlayers[1]?.name || "Jugador 2"} se uni\xF3 a la mesa` : state.statusMessage,
-    turnDeadlineAt: nextStatus === "playing" && state.status === "waiting" ? now + POOL_TURN_TIMEOUT_MS : state.turnDeadlineAt,
+    statusMessage: nextStatus === "playing" && state2.status === "waiting" ? `Mesa completa \xB7 Saque inicial de ${nextPlayers[0].name}` : ready && keepWaiting ? `${nextPlayers[1]?.name || "Jugador 2"} se uni\xF3 a la mesa` : state2.statusMessage,
+    turnDeadlineAt: nextStatus === "playing" && state2.status === "waiting" ? now + POOL_TURN_TIMEOUT_MS : state2.turnDeadlineAt,
     updatedAt: now
   };
   next.checksum = computePoolChecksum(next);
   return { ok: true, state: next };
 }
-function callPoolPocket(state, userId, pocketId, now = Date.now()) {
-  if (state.status !== "playing" || state.phase === "GAME_OVER") {
+function callPoolPocket(state2, userId, pocketId, now = Date.now()) {
+  if (state2.status !== "playing" || state2.phase === "GAME_OVER") {
     return { ok: false, error: "Partida no activa" };
   }
-  const active = state.players[state.turnSeat];
+  const active = state2.players[state2.turnSeat];
   if (!active || active.userId !== userId) {
     return { ok: false, error: "No es tu turno" };
   }
   const next = {
-    ...state,
+    ...state2,
     calledPocketId: pocketId,
     updatedAt: now
   };
   next.checksum = computePoolChecksum(next);
   return { ok: true, state: next };
 }
-function placePoolCueBall(state, userId, x, y, now = Date.now()) {
-  if (state.status !== "playing") {
+function placePoolCueBall(state2, userId, x, y, now = Date.now()) {
+  if (state2.status !== "playing") {
     return { ok: false, error: "Partida no activa" };
   }
-  const active = state.players[state.turnSeat];
+  const active = state2.players[state2.turnSeat];
   if (!active || active.userId !== userId) {
     return { ok: false, error: "No es tu turno" };
   }
-  const behindHead = state.isBreakShot && state.breakOnlyBehindHeadString;
-  if (state.phase !== "BALL_IN_HAND" && !(state.isBreakShot && state.phase === "AIMING")) {
+  const behindHead = state2.isBreakShot && state2.breakOnlyBehindHeadString;
+  if (state2.phase !== "BALL_IN_HAND" && !(state2.isBreakShot && state2.phase === "AIMING")) {
     return { ok: false, error: "No tienes bola en mano ahora" };
   }
-  if (!isValidCueBallPlacement(state.balls, x, y, behindHead)) {
+  if (!isValidCueBallPlacement(state2.balls, x, y, behindHead)) {
     return { ok: false, error: "Posici\xF3n de bola blanca no v\xE1lida" };
   }
-  const nextBalls = state.balls.map(
+  const nextBalls = state2.balls.map(
     (b) => b.id === 0 ? {
       ...b,
       x,
@@ -58832,24 +61536,24 @@ function placePoolCueBall(state, userId, x, y, now = Date.now()) {
     } : { ...b }
   );
   const next = {
-    ...state,
+    ...state2,
     balls: nextBalls,
-    phase: state.phase === "BALL_IN_HAND" ? "AIMING" : state.phase,
+    phase: state2.phase === "BALL_IN_HAND" ? "AIMING" : state2.phase,
     updatedAt: now
   };
   next.checksum = computePoolChecksum(next);
   return { ok: true, state: next };
 }
-function resolvePoolShotOutcome(state, runtime, calledPocketId, shot, now = Date.now()) {
-  const shooterSeat = state.turnSeat;
+function resolvePoolShotOutcome(state2, runtime, calledPocketId, shot, now = Date.now()) {
+  const shooterSeat = state2.turnSeat;
   const oppSeat = shooterSeat === 0 ? 1 : 0;
-  const shooter = state.players[shooterSeat];
-  const opp = state.players[oppSeat];
+  const shooter = state2.players[shooterSeat];
+  const opp = state2.players[oppSeat];
   const nextPlayers = [
-    state.players[0] ? { ...state.players[0] } : null,
-    state.players[1] ? { ...state.players[1] } : null
+    state2.players[0] ? { ...state2.players[0] } : null,
+    state2.players[1] ? { ...state2.players[1] } : null
   ];
-  const wasOnEight = isOnEightBall(state.balls, shooter.group);
+  const wasOnEight = isOnEightBall(state2.balls, shooter.group);
   const pocketedEntries = runtime.pocketedOrder;
   const pocketedIds = pocketedEntries.map((e) => e.ballId);
   const cueScratched = pocketedIds.includes(0) || runtime.offTableBallIds.includes(0);
@@ -58864,7 +61568,7 @@ function resolvePoolShotOutcome(state, runtime, calledPocketId, shot, now = Date
     foul = "NO_HIT";
   } else {
     const firstId = runtime.firstHitBallId;
-    if (!state.isBreakShot) {
+    if (!state2.isBreakShot) {
       if (shooter.group === null) {
         if (firstId === 8) foul = "WRONG_FIRST_HIT";
       } else if (!wasOnEight) {
@@ -58887,7 +61591,7 @@ function resolvePoolShotOutcome(state, runtime, calledPocketId, shot, now = Date
   let resolvedBalls = runtime.balls.map((b) => ({ ...b, vx: 0, vy: 0 }));
   if (eightOffTable) {
     const next = {
-      ...state,
+      ...state2,
       status: "finished",
       phase: "GAME_OVER",
       balls: resolvedBalls,
@@ -58903,10 +61607,10 @@ function resolvePoolShotOutcome(state, runtime, calledPocketId, shot, now = Date
     return { nextState: next, foul: next.lastFoul, assignedGroup: null, turnContinued: false };
   }
   if (eightPocketedEntry) {
-    if (state.isBreakShot) {
+    if (state2.isBreakShot) {
       if (cueScratched || foul) {
         const next = {
-          ...state,
+          ...state2,
           status: "finished",
           phase: "GAME_OVER",
           balls: resolvedBalls,
@@ -58928,7 +61632,7 @@ function resolvePoolShotOutcome(state, runtime, calledPocketId, shot, now = Date
       if (!wasOnEight || foul !== null || wrongPocket || missingCall) {
         const reasonTxt = !wasOnEight ? `${shooter.name} meti\xF3 la bola 8 antes de tiempo` : cueScratched ? `${shooter.name} hizo scratch con la bola 8` : missingCall ? `${shooter.name} meti\xF3 la bola 8 sin cantar tronera` : wrongPocket ? `${shooter.name} meti\xF3 la bola 8 en tronera distinta` : `${shooter.name} cometi\xF3 falta al meter la bola 8`;
         const next2 = {
-          ...state,
+          ...state2,
           status: "finished",
           phase: "GAME_OVER",
           balls: resolvedBalls,
@@ -58944,7 +61648,7 @@ function resolvePoolShotOutcome(state, runtime, calledPocketId, shot, now = Date
         return { nextState: next2, foul, assignedGroup: null, turnContinued: false };
       }
       const next = {
-        ...state,
+        ...state2,
         status: "finished",
         phase: "GAME_OVER",
         balls: resolvedBalls,
@@ -58971,7 +61675,7 @@ function resolvePoolShotOutcome(state, runtime, calledPocketId, shot, now = Date
   const pocketedObjectIds = pocketedIds.filter((id) => id !== 0 && id !== 8);
   const activeShooterSeat = nextPlayers[shooterSeat];
   const activeOppSeat = nextPlayers[oppSeat];
-  if (!foul && !state.isBreakShot && activeShooterSeat.group === null && pocketedObjectIds.length > 0) {
+  if (!foul && !state2.isBreakShot && activeShooterSeat.group === null && pocketedObjectIds.length > 0) {
     const firstLegalObj = pocketedObjectIds[0];
     const g = getBallGroup(firstLegalObj);
     if (g) {
@@ -58982,7 +61686,7 @@ function resolvePoolShotOutcome(state, runtime, calledPocketId, shot, now = Date
   }
   let legalOwnPocketed = false;
   if (!foul) {
-    if (state.isBreakShot) {
+    if (state2.isBreakShot) {
       legalOwnPocketed = pocketedObjectIds.length > 0;
     } else if (activeShooterSeat.group === null) {
       legalOwnPocketed = pocketedObjectIds.length > 0;
@@ -59015,12 +61719,12 @@ function resolvePoolShotOutcome(state, runtime, calledPocketId, shot, now = Date
   }
   const cueBall = resolvedBalls.find((b) => b.id === 0);
   const nextState = {
-    ...state,
+    ...state2,
     status: "playing",
     phase: nextPhase,
     players: nextPlayers,
     turnSeat: nextTurnSeat,
-    turnNumber: state.turnNumber + 1,
+    turnNumber: state2.turnNumber + 1,
     isBreakShot: false,
     breakOnlyBehindHeadString: false,
     balls: resolvedBalls,
@@ -59033,7 +61737,7 @@ function resolvePoolShotOutcome(state, runtime, calledPocketId, shot, now = Date
     lastShot: {
       shooterSeat,
       shooterUserId: shooter.userId,
-      turnNumber: state.turnNumber,
+      turnNumber: state2.turnNumber,
       angle: shot.angle,
       power: shot.power,
       spinX: shot.spinX,
@@ -59059,11 +61763,11 @@ function resolvePoolShotOutcome(state, runtime, calledPocketId, shot, now = Date
     turnContinued: nextTurnSeat === shooterSeat
   };
 }
-function applyPoolShot(state, userId, shot, now = Date.now()) {
-  if (state.status !== "playing" || state.phase === "GAME_OVER") {
+function applyPoolShot(state2, userId, shot, now = Date.now()) {
+  if (state2.status !== "playing" || state2.phase === "GAME_OVER") {
     return { ok: false, error: "La partida no est\xE1 activa" };
   }
-  const active = state.players[state.turnSeat];
+  const active = state2.players[state2.turnSeat];
   if (!active || active.userId !== userId) {
     return { ok: false, error: "No es tu turno" };
   }
@@ -59073,13 +61777,13 @@ function applyPoolShot(state, userId, shot, now = Date.now()) {
   if (shot.power < POOL_MIN_SHOT_POWER) {
     return { ok: false, error: "Potencia insuficiente (tiro cancelado)" };
   }
-  let workingState = state;
-  if (typeof shot.cueX === "number" && typeof shot.cueY === "number" && (state.phase === "BALL_IN_HAND" || state.isBreakShot)) {
-    const behindHead = state.isBreakShot && state.breakOnlyBehindHeadString;
-    if (isValidCueBallPlacement(state.balls, shot.cueX, shot.cueY, behindHead)) {
+  let workingState = state2;
+  if (typeof shot.cueX === "number" && typeof shot.cueY === "number" && (state2.phase === "BALL_IN_HAND" || state2.isBreakShot)) {
+    const behindHead = state2.isBreakShot && state2.breakOnlyBehindHeadString;
+    if (isValidCueBallPlacement(state2.balls, shot.cueX, shot.cueY, behindHead)) {
       workingState = {
-        ...state,
-        balls: state.balls.map(
+        ...state2,
+        balls: state2.balls.map(
           (b) => b.id === 0 ? { ...b, x: shot.cueX, y: shot.cueY, pocketed: false } : b
         )
       };
@@ -59096,16 +61800,16 @@ function applyPoolShot(state, userId, shot, now = Date.now()) {
     events: sim.events
   };
 }
-function forfeitPoolMatch(state, losingUserId, reason = "forfeit", now = Date.now()) {
-  if (state.status === "finished") return null;
-  const idx = state.players.findIndex((p) => p?.userId === losingUserId);
+function forfeitPoolMatch(state2, losingUserId, reason = "forfeit", now = Date.now()) {
+  if (state2.status === "finished") return null;
+  const idx = state2.players.findIndex((p) => p?.userId === losingUserId);
   if (idx === -1) return null;
   const winnerSeat = idx === 0 ? 1 : 0;
-  const loser = state.players[idx];
-  const winner = state.players[winnerSeat];
+  const loser = state2.players[idx];
+  const winner = state2.players[winnerSeat];
   const reasonLabel = reason === "timeout_forfeit" ? `${loser.name} agot\xF3 su tiempo` : reason === "disconnect_forfeit" ? `${loser.name} se desconect\xF3` : `${loser.name} se retir\xF3`;
   const next = {
-    ...state,
+    ...state2,
     status: "finished",
     phase: "GAME_OVER",
     winnerSeat,
@@ -59323,12 +62027,12 @@ function stepChapasPhysicsFrame(caps, ball) {
     postHitCount
   };
 }
-function chooseChapasAiShot(state) {
-  if (state.status !== "playing") return null;
-  const teamCaps = state.caps.filter((c) => c.team === state.activeTeam);
+function chooseChapasAiShot(state2) {
+  if (state2.status !== "playing") return null;
+  const teamCaps = state2.caps.filter((c) => c.team === state2.activeTeam);
   if (teamCaps.length === 0) return null;
-  const ball = state.ball;
-  const targetGoalY = state.activeTeam === "A" ? CHAPAS_PITCH_BOTTOM : CHAPAS_PITCH_TOP;
+  const ball = state2.ball;
+  const targetGoalY = state2.activeTeam === "A" ? CHAPAS_PITCH_BOTTOM : CHAPAS_PITCH_TOP;
   const targetGoalX = CHAPAS_ARENA_W / 2;
   const goalDx = targetGoalX - ball.x;
   const goalDy = targetGoalY - ball.y;
@@ -59543,18 +62247,18 @@ function createInitialChapasState(humans, opts) {
     updatedAt: now
   };
 }
-function joinChapasSeat(state, user, requestedSeat, now = Date.now()) {
-  if (state.status === "finished") {
+function joinChapasSeat(state2, user, requestedSeat, now = Date.now()) {
+  if (state2.status === "finished") {
     return { ok: false, error: "La partida ya termin\xF3." };
   }
   const nextPlayers = [
-    state.players[0] ? { ...state.players[0] } : null,
-    state.players[1] ? { ...state.players[1] } : null,
-    state.players[2] ? { ...state.players[2] } : null,
-    state.players[3] ? { ...state.players[3] } : null
+    state2.players[0] ? { ...state2.players[0] } : null,
+    state2.players[1] ? { ...state2.players[1] } : null,
+    state2.players[2] ? { ...state2.players[2] } : null,
+    state2.players[3] ? { ...state2.players[3] } : null
   ];
   if (requestedSeat === "spectate") {
-    if (state.status === "playing") {
+    if (state2.status === "playing") {
       return { ok: false, error: "No puedes bajar a espectador con el partido iniciado." };
     }
     for (let i = 0; i < 4; i += 1) {
@@ -59602,19 +62306,19 @@ function joinChapasSeat(state, user, requestedSeat, now = Date.now()) {
   return {
     ok: true,
     state: {
-      ...state,
+      ...state2,
       players: nextPlayers,
       updatedAt: now
     }
   };
 }
-function toggleChapasBots(state, botsEnabled, now = Date.now()) {
-  if (state.status !== "waiting") return state;
+function toggleChapasBots(state2, botsEnabled, now = Date.now()) {
+  if (state2.status !== "waiting") return state2;
   const nextPlayers = [
-    state.players[0] ? { ...state.players[0] } : null,
-    state.players[1] ? { ...state.players[1] } : null,
-    state.players[2] ? { ...state.players[2] } : null,
-    state.players[3] ? { ...state.players[3] } : null
+    state2.players[0] ? { ...state2.players[0] } : null,
+    state2.players[1] ? { ...state2.players[1] } : null,
+    state2.players[2] ? { ...state2.players[2] } : null,
+    state2.players[3] ? { ...state2.players[3] } : null
   ];
   if (!botsEnabled) {
     for (let i = 0; i < 4; i += 1) {
@@ -59629,41 +62333,41 @@ function toggleChapasBots(state, botsEnabled, now = Date.now()) {
     if (!hasB) nextPlayers[2] = makeChapasBot(2);
   }
   return {
-    ...state,
+    ...state2,
     botsEnabled,
     players: nextPlayers,
     updatedAt: now
   };
 }
-function updateChapasTeamFlag(state, team, flag, now = Date.now()) {
-  if (state.status === "finished") return state;
+function updateChapasTeamFlag(state2, team, flag, now = Date.now()) {
+  if (state2.status === "finished") return state2;
   return {
-    ...state,
+    ...state2,
     teamFlags: {
-      ...state.teamFlags,
+      ...state2.teamFlags,
       [team]: flag
     },
     updatedAt: now
   };
 }
-function startChapasMatch(state, now = Date.now()) {
-  if (state.status === "playing") return { ok: true, state };
+function startChapasMatch(state2, now = Date.now()) {
+  if (state2.status === "playing") return { ok: true, state: state2 };
   const nextPlayers = [
-    state.players[0] ? { ...state.players[0] } : null,
-    state.players[1] ? { ...state.players[1] } : null,
-    state.players[2] ? { ...state.players[2] } : null,
-    state.players[3] ? { ...state.players[3] } : null
+    state2.players[0] ? { ...state2.players[0] } : null,
+    state2.players[1] ? { ...state2.players[1] } : null,
+    state2.players[2] ? { ...state2.players[2] } : null,
+    state2.players[3] ? { ...state2.players[3] } : null
   ];
   const hasA = Boolean(nextPlayers[0] || nextPlayers[1]);
   const hasB = Boolean(nextPlayers[2] || nextPlayers[3]);
   if (!hasA) {
-    if (!state.botsEnabled) {
+    if (!state2.botsEnabled) {
       return { ok: false, error: "Falta un jugador en el Equipo 1 (o activa Bots)." };
     }
     nextPlayers[0] = makeChapasBot(0);
   }
   if (!hasB) {
-    if (!state.botsEnabled) {
+    if (!state2.botsEnabled) {
       return { ok: false, error: "Falta un jugador en el Equipo 2 (o activa Bots)." };
     }
     nextPlayers[2] = makeChapasBot(2);
@@ -59672,7 +62376,7 @@ function startChapasMatch(state, now = Date.now()) {
   return {
     ok: true,
     state: {
-      ...state,
+      ...state2,
       players: nextPlayers,
       status: "playing",
       awaitingHostStart: false,
@@ -59686,34 +62390,34 @@ function startChapasMatch(state, now = Date.now()) {
     }
   };
 }
-function shootChapasCap(state, actorUserId, shot, now = Date.now()) {
-  if (state.status !== "playing") {
+function shootChapasCap(state2, actorUserId, shot, now = Date.now()) {
+  if (state2.status !== "playing") {
     return { ok: false, error: "El partido no est\xE1 en juego." };
   }
-  const activeSeat = state.players[state.activeSeatIndex];
+  const activeSeat = state2.players[state2.activeSeatIndex];
   if (!activeSeat || !activeSeat.isBot && activeSeat.userId !== actorUserId) {
     return { ok: false, error: "No es tu turno." };
   }
-  const targetCapIdx = state.caps.findIndex((c) => c.id === shot.capId);
+  const targetCapIdx = state2.caps.findIndex((c) => c.id === shot.capId);
   if (targetCapIdx === -1) {
     return { ok: false, error: "Chapa no encontrada." };
   }
-  const targetCap = state.caps[targetCapIdx];
-  if (targetCap.team !== state.activeTeam) {
+  const targetCap = state2.caps[targetCapIdx];
+  if (targetCap.team !== state2.activeTeam) {
     return { ok: false, error: "Solo puedes mover tus propias chapas." };
   }
   const power = clamp2(Number(shot.power) || 0, CHAPAS_MIN_POWER, 1);
   const angle = Number.isFinite(shot.angle) ? shot.angle : 0;
   const speed = power * CHAPAS_MAX_SHOT_SPEED;
   const preShotState = {
-    ...state,
-    caps: state.caps.map((c) => ({ ...c })),
-    ball: { ...state.ball }
+    ...state2,
+    caps: state2.caps.map((c) => ({ ...c })),
+    ball: { ...state2.ball }
   };
-  const simCaps = state.caps.map((c) => ({ ...c, vx: 0, vy: 0 }));
+  const simCaps = state2.caps.map((c) => ({ ...c, vx: 0, vy: 0 }));
   simCaps[targetCapIdx].vx = Math.cos(angle) * speed;
   simCaps[targetCapIdx].vy = Math.sin(angle) * speed;
-  const simBall = { ...state.ball, vx: 0, vy: 0 };
+  const simBall = { ...state2.ball, vx: 0, vy: 0 };
   let ballTouched = false;
   let goalScoredBy = null;
   for (let frame = 0; frame < CHAPAS_MAX_SIM_FRAMES; frame += 1) {
@@ -59730,54 +62434,54 @@ function shootChapasCap(state, actorUserId, shot, now = Date.now()) {
   }
   simBall.vx = 0;
   simBall.vy = 0;
-  const nextScores = { ...state.scores };
-  const nextTurnNumber = state.turnNumber + 1;
+  const nextScores = { ...state2.scores };
+  const nextTurnNumber = state2.turnNumber + 1;
   let nextCaps = simCaps;
   let nextBall = simBall;
   let nextStatus = "playing";
   let winnerTeam = null;
-  let nextActiveTeam = state.activeTeam;
-  let nextActiveSeatIndex = state.activeSeatIndex;
-  let nextPassesUsed = state.passesUsed;
+  let nextActiveTeam = state2.activeTeam;
+  let nextActiveSeatIndex = state2.activeSeatIndex;
+  let nextPassesUsed = state2.passesUsed;
   let statusMessage = "";
-  let lastGoalTeam = state.lastGoalTeam;
-  let lastGoalByName = state.lastGoalByName;
-  let lastGoalAt = state.lastGoalAt;
+  let lastGoalTeam = state2.lastGoalTeam;
+  let lastGoalByName = state2.lastGoalByName;
+  let lastGoalAt = state2.lastGoalAt;
   if (goalScoredBy) {
     nextScores[goalScoredBy] += 1;
     lastGoalTeam = goalScoredBy;
     lastGoalByName = activeSeat.name;
     lastGoalAt = now;
-    if (nextScores[goalScoredBy] >= state.goalsToWin) {
+    if (nextScores[goalScoredBy] >= state2.goalsToWin) {
       nextStatus = "finished";
       winnerTeam = goalScoredBy;
-      const flagName = CHAPAS_TEAM_PRESETS.find((f) => f.id === state.teamFlags[goalScoredBy])?.name || `Equipo ${goalScoredBy}`;
+      const flagName = CHAPAS_TEAM_PRESETS.find((f) => f.id === state2.teamFlags[goalScoredBy])?.name || `Equipo ${goalScoredBy}`;
       statusMessage = `\u{1F3C6} \xA1${flagName} gana ${nextScores.A} - ${nextScores.B}!`;
     } else {
       nextCaps = createInitialChapasCaps();
       nextBall = createInitialChapasBall();
       nextActiveTeam = goalScoredBy === "A" ? "B" : "A";
       nextPassesUsed = 0;
-      nextActiveSeatIndex = findNextSeatInTeam(state.players, nextActiveTeam, -1);
-      const flagName = CHAPAS_TEAM_PRESETS.find((f) => f.id === state.teamFlags[goalScoredBy])?.name || `Equipo ${goalScoredBy}`;
-      statusMessage = `\u26BD \xA1GOL de ${flagName}! Saca ${state.players[nextActiveSeatIndex]?.name || "rival"}`;
+      nextActiveSeatIndex = findNextSeatInTeam(state2.players, nextActiveTeam, -1);
+      const flagName = CHAPAS_TEAM_PRESETS.find((f) => f.id === state2.teamFlags[goalScoredBy])?.name || `Equipo ${goalScoredBy}`;
+      statusMessage = `\u26BD \xA1GOL de ${flagName}! Saca ${state2.players[nextActiveSeatIndex]?.name || "rival"}`;
     }
-  } else if (ballTouched && state.passesUsed + 1 < state.maxPasses) {
-    nextPassesUsed = state.passesUsed + 1;
-    nextActiveTeam = state.activeTeam;
-    nextActiveSeatIndex = findNextSeatInTeam(state.players, nextActiveTeam, state.activeSeatIndex);
-    statusMessage = `Pase ${nextPassesUsed}/${state.maxPasses} \xB7 Turno de ${state.players[nextActiveSeatIndex]?.name || nextActiveTeam}`;
+  } else if (ballTouched && state2.passesUsed + 1 < state2.maxPasses) {
+    nextPassesUsed = state2.passesUsed + 1;
+    nextActiveTeam = state2.activeTeam;
+    nextActiveSeatIndex = findNextSeatInTeam(state2.players, nextActiveTeam, state2.activeSeatIndex);
+    statusMessage = `Pase ${nextPassesUsed}/${state2.maxPasses} \xB7 Turno de ${state2.players[nextActiveSeatIndex]?.name || nextActiveTeam}`;
   } else {
-    nextActiveTeam = state.activeTeam === "A" ? "B" : "A";
+    nextActiveTeam = state2.activeTeam === "A" ? "B" : "A";
     nextPassesUsed = 0;
-    nextActiveSeatIndex = findNextSeatInTeam(state.players, nextActiveTeam, -1);
-    statusMessage = `Turno de ${state.players[nextActiveSeatIndex]?.name || nextActiveTeam}`;
+    nextActiveSeatIndex = findNextSeatInTeam(state2.players, nextActiveTeam, -1);
+    statusMessage = `Turno de ${state2.players[nextActiveSeatIndex]?.name || nextActiveTeam}`;
   }
   return {
     ok: true,
     preShotState,
     state: {
-      ...state,
+      ...state2,
       status: nextStatus,
       scores: nextScores,
       activeTeam: nextActiveTeam,
@@ -59796,7 +62500,7 @@ function shootChapasCap(state, actorUserId, shot, now = Date.now()) {
         angle,
         power,
         shooterUserId: activeSeat.userId,
-        turnNumber: state.turnNumber,
+        turnNumber: state2.turnNumber,
         goalScoredBy,
         ballTouched
       },
@@ -59805,17 +62509,17 @@ function shootChapasCap(state, actorUserId, shot, now = Date.now()) {
     }
   };
 }
-function forfeitChapasMatch(state, actorUserId, now = Date.now()) {
-  if (state.status !== "playing") return null;
-  const leaver = state.players.find((p) => p?.userId === actorUserId);
+function forfeitChapasMatch(state2, actorUserId, now = Date.now()) {
+  if (state2.status !== "playing") return null;
+  const leaver = state2.players.find((p) => p?.userId === actorUserId);
   if (!leaver) return null;
   const winnerTeam = leaver.team === "A" ? "B" : "A";
-  const nextScores = { ...state.scores };
-  if (nextScores[winnerTeam] < state.goalsToWin) {
-    nextScores[winnerTeam] = state.goalsToWin;
+  const nextScores = { ...state2.scores };
+  if (nextScores[winnerTeam] < state2.goalsToWin) {
+    nextScores[winnerTeam] = state2.goalsToWin;
   }
   return {
-    ...state,
+    ...state2,
     status: "finished",
     winnerTeam,
     scores: nextScores,
@@ -60076,16 +62780,16 @@ function createRoomGameTimers(deps) {
     const timer = setTimeout(() => {
       boardTurnTimers.delete(room.id);
       const latestRoom = rooms.get(room.id);
-      const state = latestRoom?.gameState;
-      if (!latestRoom || !state || state.status !== "playing" || state.turn !== expectedTurn || state.updatedAt !== expectedUpdatedAt) {
+      const state2 = latestRoom?.gameState;
+      if (!latestRoom || !state2 || state2.status !== "playing" || state2.turn !== expectedTurn || state2.updatedAt !== expectedUpdatedAt) {
         return;
       }
-      const seat = state.players[state.turn];
-      const autoMove = chooseAutoBoardMove(state);
+      const seat = state2.players[state2.turn];
+      const autoMove = chooseAutoBoardMove(state2);
       if (!autoMove) return;
       const res = applyBoardMove(
-        state,
-        seat?.userId || `bot-board-${state.turn}`,
+        state2,
+        seat?.userId || `bot-board-${state2.turn}`,
         autoMove.from,
         autoMove.to,
         "Q"
@@ -60154,32 +62858,32 @@ function createRoomGameTimers(deps) {
     const t = setTimeout(() => {
       partyBotTimers.delete(room.id);
       const latestRoom = rooms.get(room.id);
-      const state = latestRoom?.partyGameState;
-      if (!latestRoom || !state || state.status !== "playing" || state.turnSeat !== expectedTurnSeat || state.updatedAt !== expectedUpdatedAt) {
+      const state2 = latestRoom?.partyGameState;
+      if (!latestRoom || !state2 || state2.status !== "playing" || state2.turnSeat !== expectedTurnSeat || state2.updatedAt !== expectedUpdatedAt) {
         return;
       }
-      const activeSeat = state.players[state.turnSeat];
+      const activeSeat = state2.players[state2.turnSeat];
       if (!activeSeat) return;
-      if (state.gameType === "parchis") {
-        const moveSpec = chooseBotParchisAction(state);
+      if (state2.gameType === "parchis") {
+        const moveSpec = chooseBotParchisAction(state2);
         if (moveSpec.action === "roll_dice") {
-          const res = rollParchisDice(state, activeSeat.userId);
+          const res = rollParchisDice(state2, activeSeat.userId);
           if (res.ok) latestRoom.partyGameState = res.state;
         } else if (typeof moveSpec.pieceId === "number") {
-          const res = moveParchisPiece(state, activeSeat.userId, moveSpec.pieceId);
+          const res = moveParchisPiece(state2, activeSeat.userId, moveSpec.pieceId);
           if (res.ok) latestRoom.partyGameState = res.state;
         }
       } else {
-        const unoMove = chooseBotUnoMove(state);
+        const unoMove = chooseBotUnoMove(state2);
         if (unoMove.action === "accept_wild4" || unoMove.action === "challenge_wild4") {
           const res = resolveUnoWild4Challenge(
-            state,
+            state2,
             activeSeat.userId,
             unoMove.action === "challenge_wild4" && isBotTurn ? "challenge" : "accept"
           );
           if (res.ok) latestRoom.partyGameState = res.state;
         } else if (unoMove.action === "play_card" && unoMove.cardId) {
-          const res = playUnoCard(state, activeSeat.userId, unoMove.cardId, unoMove.chosenColor);
+          const res = playUnoCard(state2, activeSeat.userId, unoMove.cardId, unoMove.chosenColor);
           if (res.ok) {
             let nextUno = res.state;
             if (isBotTurn && nextUno.status === "playing" && nextUno.vulnerableUnoSeat === activeSeat.seatIndex && Math.random() < 0.78) {
@@ -60193,7 +62897,7 @@ function createRoomGameTimers(deps) {
             latestRoom.partyGameState = nextUno;
           }
         } else {
-          const res = drawUnoCardsAndAdvance(state, activeSeat.userId);
+          const res = drawUnoCardsAndAdvance(state2, activeSeat.userId);
           if (res.ok) latestRoom.partyGameState = res.state;
         }
       }
@@ -60469,7 +63173,131 @@ function registerRoomHttpRoutes(app2, ctx) {
 }
 
 // server/ws/roomDisconnectHandler.ts
+import { WebSocket as WebSocket3 } from "ws";
+
+// server/ws/handlers/racingGyroHandlers.ts
 import { WebSocket as WebSocket2 } from "ws";
+var gyroPeersByRoom = /* @__PURE__ */ new Map();
+function pruneAndSummarizeGyroPeers(roomId, ctx) {
+  const peerMap = gyroPeersByRoom.get(roomId);
+  if (!peerMap) {
+    return {
+      roomId,
+      controllers: [],
+      displays: 0,
+      hasController: false
+    };
+  }
+  const controllers = [];
+  let displays = 0;
+  for (const [peerWs, info] of peerMap.entries()) {
+    const meta = ctx.clients.get(peerWs);
+    if (peerWs.readyState !== WebSocket2.OPEN || meta?.roomId !== roomId) {
+      peerMap.delete(peerWs);
+      continue;
+    }
+    if (info.role === "controller") {
+      controllers.push({ userId: info.userId, deviceName: info.deviceName });
+    } else {
+      displays += 1;
+    }
+  }
+  if (peerMap.size === 0) {
+    gyroPeersByRoom.delete(roomId);
+  }
+  return {
+    roomId,
+    controllers,
+    displays,
+    hasController: controllers.length > 0
+  };
+}
+function cleanupRacingGyroPeer(ws, ctx) {
+  for (const [roomId, peerMap] of gyroPeersByRoom.entries()) {
+    if (!peerMap.has(ws)) continue;
+    peerMap.delete(ws);
+    const summary = pruneAndSummarizeGyroPeers(roomId, ctx);
+    ctx.broadcastToRoom(roomId, {
+      type: "GYRO_PEER_STATUS",
+      payload: summary
+    });
+  }
+}
+var handleRacingGyroMessage = (type, payload, ws, ctx) => {
+  const { rooms, clients, broadcastToRoom } = ctx;
+  if (type === "GYRO_CONTROLLER_JOIN") {
+    const parsed = wsGyroJoinSchema.safeParse(payload);
+    if (!parsed.success) return true;
+    const { roomId, role, deviceName } = parsed.data;
+    const meta = clients.get(ws);
+    if (!meta || meta.roomId !== roomId || !rooms.has(roomId)) {
+      return true;
+    }
+    let peerMap = gyroPeersByRoom.get(roomId);
+    if (!peerMap) {
+      peerMap = /* @__PURE__ */ new Map();
+      gyroPeersByRoom.set(roomId, peerMap);
+    }
+    peerMap.set(ws, {
+      role,
+      deviceName: deviceName || (role === "controller" ? "Volante M\xF3vil" : "Pantalla TV"),
+      userId: meta.userId || "guest",
+      joinedAt: Date.now()
+    });
+    const summary = pruneAndSummarizeGyroPeers(roomId, ctx);
+    broadcastToRoom(roomId, {
+      type: "GYRO_PEER_STATUS",
+      payload: summary
+    });
+    return true;
+  }
+  if (type === "GYRO_INPUT_UPDATE") {
+    const parsed = wsGyroInputSchema.safeParse(payload);
+    if (!parsed.success) return true;
+    const { roomId, ...input } = parsed.data;
+    const meta = clients.get(ws);
+    if (!meta || meta.roomId !== roomId || !rooms.has(roomId)) {
+      return true;
+    }
+    broadcastToRoom(
+      roomId,
+      {
+        type: "GYRO_INPUT_RELAY",
+        payload: {
+          roomId,
+          senderId: meta.userId || "controller",
+          ...input
+        }
+      },
+      ws
+    );
+    return true;
+  }
+  if (type === "RACING_TV_TELEMETRY") {
+    const parsed = wsRacingTelemetrySchema.safeParse(payload);
+    if (!parsed.success) return true;
+    const { roomId, ...telemetry } = parsed.data;
+    const meta = clients.get(ws);
+    if (!meta || meta.roomId !== roomId || !rooms.has(roomId)) {
+      return true;
+    }
+    broadcastToRoom(
+      roomId,
+      {
+        type: "RACING_TELEMETRY_RELAY",
+        payload: {
+          roomId,
+          ...telemetry
+        }
+      },
+      ws
+    );
+    return true;
+  }
+  return false;
+};
+
+// server/ws/roomDisconnectHandler.ts
 async function handleSocketDisconnect(ws, ctx) {
   const {
     rooms,
@@ -60497,11 +63325,12 @@ async function handleSocketDisconnect(ws, ctx) {
   }
   const meta = clients.get(ws);
   clients.delete(ws);
+  cleanupRacingGyroPeer(ws, ctx);
   scheduleBroadcastOnlineUsers();
   if (!meta?.roomId || !meta?.userId) return;
   let hasOtherOpenSocketInRoom = false;
   clients.forEach((otherMeta, otherWs) => {
-    if (otherWs !== ws && otherWs.readyState === WebSocket2.OPEN && otherMeta.roomId === meta.roomId && otherMeta.userId === meta.userId) {
+    if (otherWs !== ws && otherWs.readyState === WebSocket3.OPEN && otherMeta.roomId === meta.roomId && otherMeta.userId === meta.userId) {
       hasOtherOpenSocketInRoom = true;
     }
   });
@@ -60670,13 +63499,13 @@ async function handleSocketDisconnect(ws, ctx) {
 }
 
 // server/ws/handlers/roomPresenceAndJoinHandlers.ts
-import crypto16 from "crypto";
-import { WebSocket as WebSocket3 } from "ws";
+import crypto17 from "crypto";
+import { WebSocket as WebSocket4 } from "ws";
 
 // server/services/firebaseAuthVerify.ts
-import crypto15 from "crypto";
-import fs13 from "fs";
-import path12 from "path";
+import crypto16 from "crypto";
+import fs14 from "fs";
+import path13 from "path";
 var GOOGLE_CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
 var certsCache = new LruTtlCache(4, 36e5);
 var verifiedTokenCache = new LruTtlCache(500, 3e5);
@@ -60684,9 +63513,9 @@ var cachedProjectId = null;
 function getFirebaseProjectId() {
   if (cachedProjectId) return cachedProjectId;
   try {
-    const cfgPath = path12.join(ROOT_DIR, "firebase-applet-config.json");
-    if (fs13.existsSync(cfgPath)) {
-      const parsed = JSON.parse(fs13.readFileSync(cfgPath, "utf8"));
+    const cfgPath = path13.join(ROOT_DIR, "firebase-applet-config.json");
+    if (fs14.existsSync(cfgPath)) {
+      const parsed = JSON.parse(fs14.readFileSync(cfgPath, "utf8"));
       if (parsed.projectId) {
         cachedProjectId = parsed.projectId;
         return cachedProjectId;
@@ -60718,7 +63547,7 @@ async function fetchGooglePublicCerts() {
 async function verifyFirebaseIdToken(idToken) {
   const token = String(idToken || "").trim();
   if (!token || token.length > 4096) return null;
-  const tokenHash = crypto15.createHash("sha256").update(token).digest("hex");
+  const tokenHash = crypto16.createHash("sha256").update(token).digest("hex");
   const cached = verifiedTokenCache.get(tokenHash);
   if (cached) return cached;
   const parts = token.split(".");
@@ -60747,7 +63576,7 @@ async function verifyFirebaseIdToken(idToken) {
       pem = certs[header.kid];
     }
     if (!pem) return null;
-    const verifier = crypto15.createVerify("RSA-SHA256");
+    const verifier = crypto16.createVerify("RSA-SHA256");
     verifier.update(`${parts[0]}.${parts[1]}`);
     verifier.end();
     const signature = decodeBase64Url(parts[2]);
@@ -61168,7 +63997,7 @@ var handlePresenceAndJoinMessage = async (type, payload, ws, ctx) => {
     const targetRoomId = String(payload?.roomId || senderMeta?.roomId || "").trim().toLowerCase();
     if (!targetRoomId || !fromUserId) return true;
     const { room } = getOrCreateRoom(targetRoomId, payload?.roomName);
-    const inviteAuthToken = crypto16.randomBytes(16).toString("hex");
+    const inviteAuthToken = crypto17.randomBytes(16).toString("hex");
     tvAuthTokens.set(inviteAuthToken, {
       roomId: targetRoomId,
       expiresAt: Date.now() + 2 * 60 * 60 * 1e3
@@ -61192,7 +64021,7 @@ var handlePresenceAndJoinMessage = async (type, payload, ws, ctx) => {
     const toUserNameLower = String(payload?.toUserName || "").trim().toLowerCase();
     let deliveredCount = 0;
     clients.forEach((meta, clientWs) => {
-      if (clientWs.readyState !== WebSocket3.OPEN || clientWs === ws) return;
+      if (clientWs.readyState !== WebSocket4.OPEN || clientWs === ws) return;
       if (meta.userId === fromUserId) return;
       const matchById = Boolean(toUserId && meta.userId === toUserId);
       const matchByCode = Boolean(
@@ -61253,7 +64082,7 @@ var handlePresenceAndJoinMessage = async (type, payload, ws, ctx) => {
       timestamp: Date.now()
     };
     clients.forEach((meta, clientWs) => {
-      if (clientWs.readyState !== WebSocket3.OPEN || clientWs === ws) return;
+      if (clientWs.readyState !== WebSocket4.OPEN || clientWs === ws) return;
       if (meta.userId === fromUserId) return;
       const matchById = Boolean(toUserId && meta.userId === toUserId);
       const matchByCode = Boolean(toFriendCode && meta.friendCode === toFriendCode);
@@ -61605,9 +64434,9 @@ var handleRoomCloudAndPollMessage = async (type, payload, ws, ctx) => {
 };
 
 // server/services/roomPubSubBridge.ts
-import crypto17 from "crypto";
+import crypto18 from "crypto";
 import { EventEmitter } from "events";
-var NODE_ID = crypto17.randomUUID().slice(0, 8);
+var NODE_ID = crypto18.randomUUID().slice(0, 8);
 var RoomPubSubBridge = class extends EventEmitter {
   publishedCount = 0;
   receivedCount = 0;
@@ -62672,24 +65501,24 @@ function createInitialHeadSoccerOnlineState(hostUser) {
     startedAt: null
   };
 }
-function joinHeadSoccerSeat(state, user, requestedSeat) {
+function joinHeadSoccerSeat(state2, user, requestedSeat) {
   const nextPlayers = [
-    state.players[0] ? { ...state.players[0] } : null,
-    state.players[1] ? { ...state.players[1] } : null
+    state2.players[0] ? { ...state2.players[0] } : null,
+    state2.players[1] ? { ...state2.players[1] } : null
   ];
   const existingIdx = nextPlayers.findIndex((p) => p?.userId === user.id);
   if (requestedSeat === "spectate") {
-    if (state.status !== "waiting" || existingIdx === -1) return { ok: false, state };
+    if (state2.status !== "waiting" || existingIdx === -1) return { ok: false, state: state2 };
     nextPlayers[existingIdx] = null;
     return {
       ok: true,
-      state: { ...state, players: nextPlayers, updatedAt: Date.now() }
+      state: { ...state2, players: nextPlayers, updatedAt: Date.now() }
     };
   }
   const targetIdx = requestedSeat === 0 || requestedSeat === 1 ? requestedSeat : nextPlayers[0] === null ? 0 : nextPlayers[1] === null ? 1 : null;
-  if (targetIdx === null) return { ok: false, state };
+  if (targetIdx === null) return { ok: false, state: state2 };
   if (nextPlayers[targetIdx] && nextPlayers[targetIdx].userId !== user.id && !nextPlayers[targetIdx].isBot) {
-    return { ok: false, state };
+    return { ok: false, state: state2 };
   }
   const prevSkin = existingIdx !== -1 && nextPlayers[existingIdx] ? nextPlayers[existingIdx].skinId : targetIdx === 0 ? "striker" : "furia";
   if (existingIdx !== -1 && existingIdx !== targetIdx) {
@@ -62706,32 +65535,32 @@ function joinHeadSoccerSeat(state, user, requestedSeat) {
   };
   return {
     ok: true,
-    state: { ...state, players: nextPlayers, updatedAt: Date.now() }
+    state: { ...state2, players: nextPlayers, updatedAt: Date.now() }
   };
 }
-function selectHeadSoccerSkin(state, userId, skinId) {
+function selectHeadSoccerSkin(state2, userId, skinId) {
   const nextPlayers = [
-    state.players[0] ? { ...state.players[0] } : null,
-    state.players[1] ? { ...state.players[1] } : null
+    state2.players[0] ? { ...state2.players[0] } : null,
+    state2.players[1] ? { ...state2.players[1] } : null
   ];
   const idx = nextPlayers.findIndex((p) => p?.userId === userId);
-  if (idx === -1 || !nextPlayers[idx]) return state;
+  if (idx === -1 || !nextPlayers[idx]) return state2;
   nextPlayers[idx].skinId = skinId;
-  return { ...state, players: nextPlayers, updatedAt: Date.now() };
+  return { ...state2, players: nextPlayers, updatedAt: Date.now() };
 }
-function startHeadSoccerMatch(state) {
-  if (!state.players[0]) {
-    return { ok: false, error: "Falta jugador 1 en la porter\xEDa izquierda.", state };
+function startHeadSoccerMatch(state2) {
+  if (!state2.players[0]) {
+    return { ok: false, error: "Falta jugador 1 en la porter\xEDa izquierda.", state: state2 };
   }
   const players = [
-    { ...state.players[0] },
-    state.players[1] ? { ...state.players[1] } : {
+    { ...state2.players[0] },
+    state2.players[1] ? { ...state2.players[1] } : {
       seatIndex: 1,
       userId: "bot-headsoccer-ia",
       name: "Bot Cabez\xF3n",
       avatar: "\u{1F916}",
       color: "#EF4444",
-      skinId: state.players[0].skinId === "furia" ? "maestro" : "furia",
+      skinId: state2.players[0].skinId === "furia" ? "maestro" : "furia",
       isBot: true,
       connected: true
     }
@@ -63395,7 +66224,7 @@ var handleArcadeGameMessage = (type, payload, ws, ctx) => {
 };
 
 // server/ws/handlers/casinoAndVoiceHandlers.ts
-import { WebSocket as WebSocket4 } from "ws";
+import { WebSocket as WebSocket5 } from "ws";
 
 // server/ws/gameSwitchHelper.ts
 function collectSeatedHumansFromRoom(room, fallbackActor) {
@@ -63874,7 +66703,9 @@ var handleCasinoAndVoiceMessage = (type, payload, ws, ctx) => {
       pinturillo: "Pinturillo",
       chess: "Ajedrez",
       checkers: "Damas",
-      connect4: "Conecta 4"
+      connect4: "Conecta 4",
+      penalty: "Penaltis Mundial",
+      racing3d: "Nitro GP 3D"
     };
     const sysMsg = {
       id: `game-switch-${Date.now()}`,
@@ -63890,7 +66721,7 @@ var handleCasinoAndVoiceMessage = (type, payload, ws, ctx) => {
     if (room.messages.length > 150) room.messages = room.messages.slice(-150);
     schedulePersistRoom(room.id);
     clients.forEach((meta, clientWs) => {
-      if (meta.roomId === room.id && clientWs.readyState === WebSocket4.OPEN) {
+      if (meta.roomId === room.id && clientWs.readyState === WebSocket5.OPEN) {
         const viewerId = meta.userId || "";
         clientWs.send(
           JSON.stringify({
@@ -64149,7 +66980,7 @@ var handleCasinoAndVoiceMessage = (type, payload, ws, ctx) => {
       }
     });
     clients.forEach((meta, clientWs) => {
-      if (meta.roomId === roomId && meta.userId === targetUserId && clientWs.readyState === WebSocket4.OPEN) {
+      if (meta.roomId === roomId && meta.userId === targetUserId && clientWs.readyState === WebSocket5.OPEN) {
         clientWs.send(packet);
       }
     });
@@ -64164,7 +66995,8 @@ var MESSAGE_HANDLERS = [
   handleSyncAndChatMessage,
   handleBoardAndPartyMessage,
   handleArcadeGameMessage,
-  handleCasinoAndVoiceMessage
+  handleCasinoAndVoiceMessage,
+  handleRacingGyroMessage
 ];
 function createRoomHub(app2, wss2) {
   const rooms = /* @__PURE__ */ new Map();
@@ -64279,7 +67111,7 @@ function createRoomHub(app2, wss2) {
   function broadcastToRoom(roomId, message, excludeWs) {
     const serialized = JSON.stringify(message);
     clients.forEach((meta, clientWs) => {
-      if (meta.roomId === roomId && clientWs.readyState === WebSocket5.OPEN && clientWs !== excludeWs) {
+      if (meta.roomId === roomId && clientWs.readyState === WebSocket6.OPEN && clientWs !== excludeWs) {
         clientWs.send(serialized);
       }
     });
@@ -64304,7 +67136,7 @@ function createRoomHub(app2, wss2) {
   }
   function broadcastPokerState(room, message) {
     clients.forEach((meta, clientWs) => {
-      if (meta.roomId === room.id && clientWs.readyState === WebSocket5.OPEN) {
+      if (meta.roomId === room.id && clientWs.readyState === WebSocket6.OPEN) {
         clientWs.send(
           JSON.stringify({
             type: "POKER_STATE_UPDATED",
@@ -64328,7 +67160,7 @@ function createRoomHub(app2, wss2) {
   }
   function broadcastPinturilloState(room, message) {
     clients.forEach((meta, clientWs) => {
-      if (meta.roomId === room.id && clientWs.readyState === WebSocket5.OPEN) {
+      if (meta.roomId === room.id && clientWs.readyState === WebSocket6.OPEN) {
         clientWs.send(
           JSON.stringify({
             type: "PINTURILLO_STATE_UPDATED",
@@ -64413,7 +67245,7 @@ function createRoomHub(app2, wss2) {
       };
     }
     const { room } = getOrCreateRoom(targetRoomId, params.roomNameHint);
-    const tvAuthToken = crypto18.randomBytes(16).toString("hex");
+    const tvAuthToken = crypto19.randomBytes(16).toString("hex");
     const tokenEntry = {
       roomId: targetRoomId,
       expiresAt: Date.now() + 2 * 60 * 60 * 1e3
@@ -64441,7 +67273,7 @@ function createRoomHub(app2, wss2) {
       120
     ).catch(() => {
     });
-    if (session.ws && session.ws.readyState === WebSocket5.OPEN) {
+    if (session.ws && session.ws.readyState === WebSocket6.OPEN) {
       try {
         session.ws.send(
           JSON.stringify({
@@ -64478,7 +67310,7 @@ function createRoomHub(app2, wss2) {
   function getOnlineUsersSnapshot() {
     const byUserId = /* @__PURE__ */ new Map();
     clients.forEach((meta, clientWs) => {
-      if (clientWs.readyState !== WebSocket5.OPEN || !meta.userId || !meta.userName) {
+      if (clientWs.readyState !== WebSocket6.OPEN || !meta.userId || !meta.userName) {
         return;
       }
       if (meta.userName.includes("(TV)") || meta.userAvatar === "\u{1F4FA}") {
@@ -64511,7 +67343,7 @@ function createRoomHub(app2, wss2) {
         payload: { users: snapshot }
       });
       clients.forEach((_meta, clientWs) => {
-        if (clientWs.readyState === WebSocket5.OPEN) {
+        if (clientWs.readyState === WebSocket6.OPEN) {
           try {
             clientWs.send(packet);
           } catch {
@@ -64718,7 +67550,7 @@ function createRoomHub(app2, wss2) {
 }
 
 // server/services/aiMovieRequestService.ts
-import crypto19 from "node:crypto";
+import crypto20 from "node:crypto";
 import { GoogleGenAI as GoogleGenAI4, Type as Type5, ThinkingLevel as ThinkingLevel3 } from "@google/genai";
 
 // server/services/aiMovieSearchHelpers.ts
@@ -64950,7 +67782,7 @@ async function verifyAndBuildCatalogMovie(candidate) {
       ...sourcesFound.length === 0 ? ["Castellano", "Latino", "VOSE"] : []
     ])
   );
-  const itemId = tmdbId ? `tmdb-${mediaType}-${tmdbId}` : `ai-${mediaType}-${crypto19.createHash("md5").update(candidate.title).digest("hex").slice(0, 10)}`;
+  const itemId = tmdbId ? `tmdb-${mediaType}-${tmdbId}` : `ai-${mediaType}-${crypto20.createHash("md5").update(candidate.title).digest("hex").slice(0, 10)}`;
   const item = {
     id: itemId,
     tmdbId,
@@ -65284,7 +68116,7 @@ function startAiMovieRequest(opts) {
   const cleanQuery = String(opts.query || "").trim().slice(0, 180);
   const lang = String(opts.lang || "es").slice(0, 5);
   const preferredType = opts.mediaType === "movie" || opts.mediaType === "tv" ? opts.mediaType : "all";
-  const jobId = crypto19.randomBytes(6).toString("hex");
+  const jobId = crypto20.randomBytes(6).toString("hex");
   const now = Date.now();
   const job = {
     jobId,
@@ -65446,8 +68278,8 @@ function rankCandidateTracks({
 }
 
 // server/routes/spaFrontendMount.ts
-import fs14 from "fs";
-import path13 from "path";
+import fs15 from "fs";
+import path14 from "path";
 import express2 from "express";
 function mountSpaFrontend(app2, deps) {
   const { rootDir, isProd, httpServer: httpServer2, getPublicOrigin: getPublicOrigin2, sendSmartTvReceiverHtml: sendSmartTvReceiverHtml2 } = deps;
@@ -65488,9 +68320,9 @@ function mountSpaFrontend(app2, deps) {
       const isMusicReq = isMusicAppPath(req.path);
       if (req.method === "GET" && viteInstance && (isMusicReq || shouldInjectDeepLinkOg(req.path))) {
         try {
-          const indexHtmlPath = path13.resolve(rootDir, "index.html");
+          const indexHtmlPath = path14.resolve(rootDir, "index.html");
           const [rawHtml, ogMeta] = await Promise.all([
-            fs14.promises.readFile(indexHtmlPath, "utf8"),
+            fs15.promises.readFile(indexHtmlPath, "utf8"),
             shouldInjectDeepLinkOg(req.path) ? resolveOpenGraphMetaForRequest(req.originalUrl, getPublicOrigin2(req)) : Promise.resolve(null)
           ]);
           const transformed = await viteInstance.transformIndexHtml(req.originalUrl, rawHtml);
@@ -65499,23 +68331,40 @@ function mountSpaFrontend(app2, deps) {
             finalHtml = injectMusicPwaMeta(finalHtml, getPublicOrigin2(req));
           }
           res.status(200).setHeader("Content-Type", "text/html; charset=utf-8");
+          res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+          res.setHeader("Pragma", "no-cache");
+          res.setHeader("Expires", "0");
           res.end(finalHtml);
           return;
         } catch {
         }
       }
+      const isHtmlNav = req.method === "GET" && (req.path === "/" || req.path === "/index.html" || !path14.extname(req.path) && String(req.headers.accept || "").includes("text/html"));
+      if (isHtmlNav) {
+        const noStoreValue = "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0";
+        const origSetHeader = res.setHeader.bind(res);
+        res.setHeader = ((name, value) => {
+          if (String(name).toLowerCase() === "cache-control") {
+            return origSetHeader(name, noStoreValue);
+          }
+          return origSetHeader(name, value);
+        });
+        origSetHeader("Cache-Control", noStoreValue);
+        origSetHeader("Pragma", "no-cache");
+        origSetHeader("Expires", "0");
+      }
       return viteMiddleware(req, res, next);
     });
     return;
   }
-  const distDir = path13.resolve(rootDir, "dist");
-  const distIndex = path13.join(distDir, "index.html");
-  if (fs14.existsSync(distDir)) {
+  const distDir = path14.resolve(rootDir, "dist");
+  const distIndex = path14.join(distDir, "index.html");
+  if (fs15.existsSync(distDir)) {
     app2.use(
       express2.static(distDir, {
         maxAge: "7d",
         setHeaders: (res, filePath) => {
-          if (filePath.endsWith(".html") || filePath.endsWith("sw.js") || filePath.includes(`${path13.sep}tv${path13.sep}`)) {
+          if (filePath.endsWith(".html") || filePath.endsWith("sw.js") || filePath.includes(`${path14.sep}tv${path14.sep}`)) {
             res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
           }
         }
@@ -65529,12 +68378,12 @@ function mountSpaFrontend(app2, deps) {
       return sendSmartTvReceiverHtml2(res);
     }
     res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
-    if (fs14.existsSync(distIndex)) {
+    if (fs15.existsSync(distIndex)) {
       const isMusicReq = isMusicAppPath(req.path);
       if (isMusicReq || shouldInjectDeepLinkOg(req.path)) {
         try {
           const [rawHtml, ogMeta] = await Promise.all([
-            fs14.promises.readFile(distIndex, "utf8"),
+            fs15.promises.readFile(distIndex, "utf8"),
             shouldInjectDeepLinkOg(req.path) ? resolveOpenGraphMetaForRequest(req.originalUrl, getPublicOrigin2(req)) : Promise.resolve(null)
           ]);
           let finalHtml = ogMeta ? injectDynamicOgMeta(rawHtml, ogMeta) : rawHtml;
@@ -65738,20 +68587,20 @@ function getImprovementsSummary() {
 }
 
 // server/services/workerBridge.ts
-import fs15 from "fs";
-import path14 from "path";
+import fs16 from "fs";
+import path15 from "path";
 import { fileURLToPath as fileURLToPath2 } from "url";
 import { Worker } from "worker_threads";
 var __filename2 = fileURLToPath2(import.meta.url);
-var __dirname2 = path14.dirname(__filename2);
+var __dirname2 = path15.dirname(__filename2);
 var BackgroundWorkerBridge = class {
   worker = null;
   heartbeatTimer = null;
   lastPongAt = 0;
   start() {
     if (process.env.NODE_ENV === "test" || this.worker) return;
-    const tsPath = path14.resolve(__dirname2, "../workers/backgroundWorker.ts");
-    if (!fs15.existsSync(tsPath)) {
+    const tsPath = path15.resolve(__dirname2, "../workers/backgroundWorker.ts");
+    if (!fs16.existsSync(tsPath)) {
       runtimeMetrics.updateWorkerStatus({ mode: "in-process", healthy: true });
       return;
     }
@@ -65822,8 +68671,8 @@ var BackgroundWorkerBridge = class {
 var workerBridge = new BackgroundWorkerBridge();
 
 // server/services/adminAuthService.ts
-import crypto20 from "crypto";
-import fs16 from "fs";
+import crypto21 from "crypto";
+import fs17 from "fs";
 import { getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 
@@ -65849,7 +68698,7 @@ var DEFAULT_ADMIN_EMAILS = [
 
 // server/services/adminAuthService.ts
 var CLAIMED_ADMIN_PATH = "/tmp/riffan-admin-claim-v1.json";
-var SESSION_SECRET = String(process.env.ADMIN_SESSION_SECRET || "").trim() || crypto20.randomBytes(32).toString("hex");
+var SESSION_SECRET = String(process.env.ADMIN_SESSION_SECRET || "").trim() || crypto21.randomBytes(32).toString("hex");
 var inMemoryClaim = null;
 var claimLoadedFromStore = false;
 function getAllowedAdminEmails() {
@@ -65869,8 +68718,8 @@ async function loadClaimedAdminRecord() {
   if (!claimLoadedFromStore) {
     claimLoadedFromStore = true;
     try {
-      if (fs16.existsSync(CLAIMED_ADMIN_PATH)) {
-        const raw = await fs16.promises.readFile(CLAIMED_ADMIN_PATH, "utf8");
+      if (fs17.existsSync(CLAIMED_ADMIN_PATH)) {
+        const raw = await fs17.promises.readFile(CLAIMED_ADMIN_PATH, "utf8");
         const parsed = JSON.parse(raw);
         if (parsed?.salt && parsed?.hash) {
           inMemoryClaim = {
@@ -65894,15 +68743,15 @@ async function loadClaimedAdminRecord() {
   return inMemoryClaim;
 }
 function hashPasscodeScrypt(passcode, saltHex) {
-  const salt = saltHex || crypto20.randomBytes(16).toString("hex");
-  const derived = crypto20.scryptSync(passcode, salt, 64).toString("hex");
+  const salt = saltHex || crypto21.randomBytes(16).toString("hex");
+  const derived = crypto21.scryptSync(passcode, salt, 64).toString("hex");
   return { salt, hash: derived };
 }
 function constantTimeStringMatch(a, b) {
   const bufA = Buffer.from(a, "utf8");
   const bufB = Buffer.from(b, "utf8");
   if (bufA.length !== bufB.length) return false;
-  return crypto20.timingSafeEqual(bufA, bufB);
+  return crypto21.timingSafeEqual(bufA, bufB);
 }
 async function getAdminAuthStatus() {
   const envPasscode = String(process.env.ADMIN_PASSCODE || "").trim();
@@ -65937,7 +68786,7 @@ async function claimInitialAdminPasscode(passcode, label = "admin") {
   };
   inMemoryClaim = record;
   try {
-    await fs16.promises.writeFile(CLAIMED_ADMIN_PATH, JSON.stringify(record), "utf8");
+    await fs17.promises.writeFile(CLAIMED_ADMIN_PATH, JSON.stringify(record), "utf8");
   } catch {
   }
   if (isDistributedStoreEnabled()) {
@@ -66023,7 +68872,7 @@ async function verifyFirebaseAdminIdToken(idToken) {
 }
 function signAdminSessionToken(claims) {
   const payloadB64 = Buffer.from(JSON.stringify(claims), "utf8").toString("base64url");
-  const sig = crypto20.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
+  const sig = crypto21.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
   return `${payloadB64}.${sig}`;
 }
 function verifyAdminSessionToken(token) {
@@ -66031,7 +68880,7 @@ function verifyAdminSessionToken(token) {
   if (parts.length !== 2) return null;
   const [payloadB64, sigB64] = parts;
   if (!payloadB64 || !sigB64) return null;
-  const expectedSig = crypto20.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
+  const expectedSig = crypto21.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
   if (!constantTimeStringMatch(sigB64, expectedSig)) return null;
   try {
     const parsed = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
@@ -66382,9 +69231,9 @@ function registerAdminRoutes(app2, deps) {
 }
 
 // server/routes/tizenRoutes.ts
+import fs18 from "fs";
+import path16 from "path";
 init_tizenConfigGenerator();
-import fs17 from "fs";
-import path15 from "path";
 var MAX_MANIFEST_FILES = 240;
 var SKIP_EXTS = /* @__PURE__ */ new Set([".apk", ".wgt", ".map", ".ipa", ".aab"]);
 var SKIP_FILES = /* @__PURE__ */ new Set(["sw.js", "config.xml", "registerSW.js"]);
@@ -66392,19 +69241,19 @@ function walkSafeDistFiles(baseDir, currentDir, out) {
   if (out.length >= MAX_MANIFEST_FILES) return;
   let entries = [];
   try {
-    entries = fs17.readdirSync(currentDir, { withFileTypes: true });
+    entries = fs18.readdirSync(currentDir, { withFileTypes: true });
   } catch {
     return;
   }
   for (const entry of entries) {
     if (out.length >= MAX_MANIFEST_FILES) break;
-    const fullPath = path15.join(currentDir, entry.name);
-    const rel = path15.relative(baseDir, fullPath).replace(/\\/g, "/");
+    const fullPath = path16.join(currentDir, entry.name);
+    const rel = path16.relative(baseDir, fullPath).replace(/\\/g, "/");
     if (entry.isDirectory()) {
       if (rel === "assets/aistudio" || rel.startsWith(".")) continue;
       walkSafeDistFiles(baseDir, fullPath, out);
     } else if (entry.isFile()) {
-      const ext = path15.extname(entry.name).toLowerCase();
+      const ext = path16.extname(entry.name).toLowerCase();
       if (SKIP_EXTS.has(ext) || SKIP_FILES.has(entry.name) || entry.name.startsWith("workbox-")) {
         continue;
       }
@@ -66414,10 +69263,10 @@ function walkSafeDistFiles(baseDir, currentDir, out) {
 }
 function registerTizenRoutes(app2, rootDir) {
   app2.get("/api/tv/tizen-wgt-manifest", (_req, res) => {
-    const distDir = path15.resolve(rootDir, "dist");
-    const distIndex = path15.join(distDir, "index.html");
+    const distDir = path16.resolve(rootDir, "dist");
+    const distIndex = path16.join(distDir, "index.html");
     const files = [];
-    if (fs17.existsSync(distIndex)) {
+    if (fs18.existsSync(distIndex)) {
       walkSafeDistFiles(distDir, distDir, files);
       res.setHeader("Cache-Control", "no-cache");
       return res.json({
@@ -66428,7 +69277,7 @@ function registerTizenRoutes(app2, rootDir) {
         defaultPackageId: "RiffanTv01"
       });
     }
-    const publicDir = path15.resolve(rootDir, "public");
+    const publicDir = path16.resolve(rootDir, "public");
     const candidatePublic = [
       "pwa-192x192.png",
       "pwa-512x512.png",
@@ -66437,15 +69286,21 @@ function registerTizenRoutes(app2, rootDir) {
       "tv/tv-base.css",
       "tv/tv-modals.css",
       "tv/tv-player.css",
+      "tv/tv-games.css",
       "tv/tv-i18n.js",
       "tv/tv-state.js",
       "tv/tv-player-core.js",
       "tv/tv-player-modes.js",
       "tv/tv-hub.js",
-      "tv/tv-nav-voice.js"
+      "tv/tv-games.js",
+      "tv/tv-games-soccer.js",
+      "tv/tv-games-racing.js",
+      "tv/tv-nav-voice.js",
+      "vendor/hls.min.js",
+      "vendor/riffan-racing-3d.iife.js"
     ];
     for (const rel of candidatePublic) {
-      if (fs17.existsSync(path15.join(publicDir, rel))) {
+      if (fs18.existsSync(path16.join(publicDir, rel))) {
         files.push(rel);
       }
     }
@@ -66475,7 +69330,27 @@ function registerTizenRoutes(app2, rootDir) {
       const zip = new JSZip();
       const packageId = typeof req.query.packageId === "string" && req.query.packageId.trim() ? req.query.packageId.replace(/[^A-Za-z0-9]/g, "").slice(0, 10).padEnd(10, "0") : "RiffanTv01";
       const appName = typeof req.query.appName === "string" && req.query.appName.trim() ? req.query.appName.trim().slice(0, 48) : "RiffanTV";
-      const targetOrigin = "https://riffan.ai.studio";
+      const rawReqHost = String(req.headers["x-forwarded-host"] || req.get("host") || "").split(",")[0].trim().split(":")[0].toLowerCase();
+      const isDevHost = !rawReqHost || rawReqHost === "localhost" || rawReqHost === "127.0.0.1" || rawReqHost.startsWith("ais-dev-");
+      const explicitOrigin = String(req.query.origin || "").trim();
+      const publishedFallback = `https://${ENV.publicDomain || "riffan.ai.studio"}`;
+      let safeExplicitOrigin = "";
+      if (explicitOrigin) {
+        const probe = resolveSafePublicOrigin({ queryOrigin: explicitOrigin }, ENV.publicDomain || "riffan.ai.studio");
+        if (probe === explicitOrigin.replace(/\/+$/, "")) {
+          safeExplicitOrigin = probe;
+        }
+      }
+      const targetOrigin = resolveSafePublicOrigin(
+        {
+          queryOrigin: safeExplicitOrigin || (isDevHost ? publishedFallback : ""),
+          forwardedProto: String(req.headers["x-forwarded-proto"] || ""),
+          forwardedHost: String(req.headers["x-forwarded-host"] || ""),
+          hostHeader: String(req.get("host") || ""),
+          protocol: req.protocol
+        },
+        ENV.publicDomain || "riffan.ai.studio"
+      );
       const xml = generateTizenConfigXml({
         packageId,
         appName,
@@ -66486,29 +69361,29 @@ function registerTizenRoutes(app2, rootDir) {
         disableScreenSaver: true
       });
       zip.file("config.xml", xml);
-      const publicDir = path15.resolve(rootDir, "public");
-      const iconPath512 = path15.join(publicDir, "pwa-512x512.png");
-      const iconPath192 = path15.join(publicDir, "pwa-192x192.png");
-      if (fs17.existsSync(iconPath512)) {
-        zip.file("icon.png", fs17.readFileSync(iconPath512));
-      } else if (fs17.existsSync(iconPath192)) {
-        zip.file("icon.png", fs17.readFileSync(iconPath192));
+      const publicDir = path16.resolve(rootDir, "public");
+      const iconPath512 = path16.join(publicDir, "pwa-512x512.png");
+      const iconPath192 = path16.join(publicDir, "pwa-192x192.png");
+      if (fs18.existsSync(iconPath512)) {
+        zip.file("icon.png", fs18.readFileSync(iconPath512));
+      } else if (fs18.existsSync(iconPath192)) {
+        zip.file("icon.png", fs18.readFileSync(iconPath192));
       }
-      const distDir = path15.resolve(rootDir, "dist");
-      const distIndex = path15.join(distDir, "index.html");
-      if (fs17.existsSync(distIndex) && req.query.mode === "bundle") {
+      const distDir = path16.resolve(rootDir, "dist");
+      const distIndex = path16.join(distDir, "index.html");
+      if (fs18.existsSync(distIndex) && req.query.mode === "bundle") {
         const files = [];
         walkSafeDistFiles(distDir, distDir, files);
         for (const rel of files) {
-          const fullPath = path15.join(distDir, rel);
+          const fullPath = path16.join(distDir, rel);
           if (rel === "index.html") {
-            let html = fs17.readFileSync(fullPath, "utf8");
+            let html = fs18.readFileSync(fullPath, "utf8");
             html = html.replace(/(href|src)="\/assets\//g, '$1="./assets/').replace(/(href|src)="\/tv\//g, '$1="./tv/').replace(/(href|src)="\/vendor\//g, '$1="./vendor/').replace(/(href|src)="\/(favicon[^"]*|apple-touch-icon\.png|icon\.svg|pwa-[^"]*|music-[^"]*|logo-[^"]*|manifest\.webmanifest)"/g, '$1="./$2"').replace(/<script[^>]*src=["\x27]\.?\/registerSW\.js["\x27][^>]*><\/script>/gi, "");
-            const bootShim = `<script>(function(){if(window.location.protocol==="file:"){window.__RIFFAN_TIZEN_WIDGET__=true;window.__RIFFAN_API_ORIGIN__=${JSON.stringify(targetOrigin)};if(typeof window.fetch==="function"){var origFetch=window.fetch;window.fetch=function(input,init){if(typeof input==="string"&&input.charAt(0)==="/"){input=${JSON.stringify(targetOrigin)}+input;}return origFetch.call(this,input,init);};}}try{if(window.tizen&&window.tizen.tvinputdevice&&window.tizen.tvinputdevice.registerKeyBatch){window.tizen.tvinputdevice.registerKeyBatch(["MediaPlayPause","MediaPlay","MediaPause","MediaStop","MediaRewind","MediaFastForward","ChannelUp","ChannelDown"]);}}catch(e){}})();</script>`;
-            html = html.replace("<head>", "<head>" + bootShim);
+            const { buildTizenRuntimeShimScript: buildTizenRuntimeShimScript2 } = await Promise.resolve().then(() => (init_tizenWgtBuilder(), tizenWgtBuilder_exports));
+            html = html.replace("<head>", "<head>\n" + buildTizenRuntimeShimScript2(targetOrigin));
             zip.file("index.html", html);
-          } else if (fs17.existsSync(fullPath)) {
-            zip.file(rel, fs17.readFileSync(fullPath));
+          } else if (fs18.existsSync(fullPath)) {
+            zip.file(rel, fs18.readFileSync(fullPath));
           }
         }
       } else {
@@ -66532,8 +69407,8 @@ function registerTizenRoutes(app2, rootDir) {
     }
   });
   app2.get("/api/tv/tizen-workflow.yml", (_req, res) => {
-    const workflowPath = path15.resolve(rootDir, ".github", "workflows", "build-tizen-wgt.yml");
-    if (!fs17.existsSync(workflowPath)) {
+    const workflowPath = path16.resolve(rootDir, ".github", "workflows", "build-tizen-wgt.yml");
+    if (!fs18.existsSync(workflowPath)) {
       return res.status(404).json({ ok: false, error: "Workflow file not found" });
     }
     res.setHeader("Content-Type", "text/yaml; charset=utf-8");
@@ -66543,9 +69418,9 @@ function registerTizenRoutes(app2, rootDir) {
 }
 
 // server.ts
-dns2.setDefaultResultOrder("ipv4first");
+dns3.setDefaultResultOrder("ipv4first");
 var __filename3 = fileURLToPath3(import.meta.url);
-var __dirname3 = path16.dirname(__filename3);
+var __dirname3 = path17.dirname(__filename3);
 function getPublicOrigin(req) {
   return resolveSafePublicOrigin(
     {
@@ -66607,7 +69482,7 @@ app.use((req, res, next) => {
 });
 app.use("/api", serviceMeshGatewayMiddleware);
 app.get("/vendor/hls.min.js", (_req, res) => {
-  const hlsPath = path16.resolve(__dirname3, "node_modules", "hls.js", "dist", "hls.min.js");
+  const hlsPath = path17.resolve(__dirname3, "node_modules", "hls.js", "dist", "hls.min.js");
   res.setHeader("Content-Type", "application/javascript; charset=utf-8");
   applyPublicCacheHeaders(res, 86400, 86400);
   res.sendFile(hlsPath);
@@ -66683,6 +69558,7 @@ registerBelixRoutes(app, { getPublicOrigin });
 registerAtresplayerRoutes(app);
 registerMovistarDaznRoutes(app);
 registerMusicRoutes(app);
+registerVpnGatewayRoutes(app);
 registerVoiceAssistantRoutes(app, {
   getChannels: getLiveVoiceChannels,
   resolveLogoUrl: resolveOfficialChannelLogoUrl,
@@ -66732,23 +69608,44 @@ app.get(
 app.get("/music-manifest.webmanifest", (_req, res) => {
   res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, must-revalidate");
-  const publicPath = path16.resolve(__dirname3, "public", "music-manifest.webmanifest");
-  const distPath = path16.resolve(__dirname3, "dist", "music-manifest.webmanifest");
-  const target = fs18.existsSync(publicPath) ? publicPath : distPath;
-  if (fs18.existsSync(target)) {
+  const publicPath = path17.resolve(__dirname3, "public", "music-manifest.webmanifest");
+  const distPath = path17.resolve(__dirname3, "dist", "music-manifest.webmanifest");
+  const target = fs19.existsSync(publicPath) ? publicPath : distPath;
+  if (fs19.existsSync(target)) {
     return res.sendFile(target);
   }
   return res.status(404).json({ error: "Music manifest not found" });
 });
 function sendSmartTvReceiverHtml(res) {
-  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  const publicPath = path16.resolve(__dirname3, "public", "tv-receiver.html");
-  const distPath = path16.resolve(__dirname3, "dist", "tv-receiver.html");
-  const target = fs18.existsSync(publicPath) ? publicPath : distPath;
-  res.sendFile(target);
+  res.setHeader("Surrogate-Control", "no-store");
+  const publicPath = path17.resolve(__dirname3, "public", "tv-receiver.html");
+  const distPath = path17.resolve(__dirname3, "dist", "tv-receiver.html");
+  const target = fs19.existsSync(publicPath) ? publicPath : distPath;
+  if (!fs19.existsSync(target)) {
+    res.status(404).type("text/plain").send("TV receiver not found");
+    return;
+  }
+  try {
+    const sig = getTvBuildSignature(__dirname3);
+    let html = fs19.readFileSync(target, "utf8");
+    const buildMetaTag = `<script>window.__RIFFAN_TV_BUILD__=${JSON.stringify(sig)};window.__RIFFAN_TV_AUTO_UPDATE__=true;</script>`;
+    html = html.replace("<head>", `<head>
+    ${buildMetaTag}`).replace(/((?:href|src)=["'])(\/tv\/[^"'?]+\.(?:css|js))(["'])/gi, `$1$2?v=${sig}$3`).replace(/((?:href|src)=["'])(\/vendor\/[^"'?]+\.js)(["'])/gi, `$1$2?v=${sig}$3`);
+    res.status(200).type("html").send(html);
+  } catch {
+    res.sendFile(target);
+  }
 }
+app.use("/tv", (_req, res, next) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("Expires", "0");
+  res.setHeader("Surrogate-Control", "no-store");
+  next();
+});
 app.get(["/tv", "/tv/"], (_req, res) => {
   sendSmartTvReceiverHtml(res);
 });
@@ -66805,8 +69702,8 @@ registerDetailsAndSubtitlesRoutes(app, {
 });
 registerTizenRoutes(app, __dirname3);
 app.get("/api/audit/100-points", (_req, res) => {
-  const auditPath = path16.resolve(__dirname3, "auditoria-riffantv-100-puntos.md");
-  if (!fs18.existsSync(auditPath)) {
+  const auditPath = path17.resolve(__dirname3, "auditoria-riffantv-100-puntos.md");
+  if (!fs19.existsSync(auditPath)) {
     return res.status(404).json({ error: "Audit report not found" });
   }
   res.setHeader("Content-Type", "text/markdown; charset=utf-8");
@@ -66815,8 +69712,8 @@ app.get("/api/audit/100-points", (_req, res) => {
   return res.sendFile(auditPath);
 });
 app.get("/api/audit/100-improvements", (_req, res) => {
-  const auditPath = path16.resolve(__dirname3, "auditoria-100-mejoras-f1-f11.md");
-  if (!fs18.existsSync(auditPath)) {
+  const auditPath = path17.resolve(__dirname3, "auditoria-100-mejoras-f1-f11.md");
+  if (!fs19.existsSync(auditPath)) {
     return res.status(404).json({ error: "100 improvements report not found" });
   }
   res.setHeader("Content-Type", "text/markdown; charset=utf-8");
@@ -66829,8 +69726,8 @@ app.get("/api/audit/improvements-summary", (_req, res) => {
   return res.json({ ok: true, ...getImprovementsSummary() });
 });
 app.get(["/sw.js", "/service-worker.js"], (_req, res) => {
-  const distSw = path16.resolve(__dirname3, "dist", "sw.js");
-  if (ENV.isProd && fs18.existsSync(distSw)) {
+  const distSw = path17.resolve(__dirname3, "dist", "sw.js");
+  if (ENV.isProd && fs19.existsSync(distSw)) {
     res.setHeader("Content-Type", "application/javascript; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, must-revalidate");
     return res.sendFile(distSw);

@@ -19,10 +19,21 @@ var uaStr = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigato
 var searchStr = (typeof window !== 'undefined' && window.location && window.location.search) ? window.location.search : '';
 var isLgWebOsUa = /Web0S|WebOS|LGE|NetCast/i.test(uaStr);
 var isTizenUa = /Tizen/i.test(uaStr);
+var isExplicitNonTizen = /[?&]tizen=0\b/i.test(searchStr);
+var storedTizenFlag = false;
+try {
+  if (isExplicitNonTizen) localStorage.removeItem('naim_is_tizen_tv');
+  else storedTizenFlag = localStorage.getItem('naim_is_tizen_tv') === '1';
+} catch (e) {}
 var isTizenDevice =
-  isTizenUa ||
-  (typeof window !== 'undefined' && (Boolean(window.tizen) || Boolean(window.__RIFFAN_TIZEN_WIDGET__))) ||
-  /[?&](?:tizen=1|platform=tizen|autoplay=antena3)\b/i.test(searchStr);
+  !isExplicitNonTizen &&
+  (isTizenUa ||
+    storedTizenFlag ||
+    (typeof window !== 'undefined' && (Boolean(window.tizen) || Boolean(window.__RIFFAN_TIZEN_WIDGET__))) ||
+    /[?&](?:tizen=1|platform=tizen|autoplay=antena3)\b/i.test(searchStr));
+try {
+  if (isTizenDevice) localStorage.setItem('naim_is_tizen_tv', '1');
+} catch (e) {}
 var isSmartTvUa = isLgWebOsUa || isTizenDevice || /Tizen|SMART-TV|GoogleTV|Android TV|BRAVIA|AFT|VIDAA/i.test(uaStr);
 try {
   if (isSmartTvUa && document.documentElement) {
@@ -68,6 +79,8 @@ var TV_I18N = {
     tabMovies: 'Cine',
     tabSeries: 'Series',
     tabAnime: 'Anime',
+    tabKids: 'Niños',
+    tabGames: 'Juegos',
     railVoice: 'Voz IA',
     railPair: 'Conectar Móvil',
     railLang: 'Idioma · ES',
@@ -161,6 +174,8 @@ var TV_I18N = {
     quickResumePre: 'Seguir viendo · ',
     quickTdtBtn: 'Toda la TDT España',
     quickSportsBtn: 'DAZN y Movistar+',
+    quickKidsBtn: 'Niños · Español',
+    quickGamesBtn: 'Juegos TV',
     quickSearchBtn: 'Buscar canal o película',
     quickPairBtn: 'Conectar Móvil',
     secTdtEsTitle: 'TDT España en Directo',
@@ -267,6 +282,8 @@ var TV_I18N = {
     tabMovies: 'Cinema',
     tabSeries: 'Sèries',
     tabAnime: 'Anime',
+    tabKids: 'Niños · ES',
+    tabGames: 'Jocs',
     railVoice: 'Veu IA',
     railPair: 'Connectar Mòbil',
     railLang: 'Idioma · CA',
@@ -360,6 +377,8 @@ var TV_I18N = {
     quickResumePre: 'Seguir veient · ',
     quickTdtBtn: 'Tota la TDT Espanya',
     quickSportsBtn: 'DAZN i Movistar+',
+    quickKidsBtn: 'Niños · Español',
+    quickGamesBtn: 'Jocs TV',
     quickSearchBtn: 'Cercar canal o pel·lícula',
     quickPairBtn: 'Connectar Mòbil',
     secTdtEsTitle: 'TDT Espanya en Directe',
@@ -466,6 +485,8 @@ var TV_I18N = {
     tabMovies: 'Movies',
     tabSeries: 'Series',
     tabAnime: 'Anime',
+    tabKids: 'Niños (ES)',
+    tabGames: 'Games',
     railVoice: 'Voice AI',
     railPair: 'Pair Phone',
     railLang: 'Lang · EN',
@@ -559,6 +580,8 @@ var TV_I18N = {
     quickResumePre: 'Continue watching · ',
     quickTdtBtn: 'All Spain DTT',
     quickSportsBtn: 'DAZN & Movistar+',
+    quickKidsBtn: 'Niños · Español',
+    quickGamesBtn: 'TV Games',
     quickSearchBtn: 'Search Channel or Movie',
     quickPairBtn: 'Pair Phone',
     secTdtEsTitle: 'Spain DTT Live Channels',
@@ -695,7 +718,9 @@ function applyTvLanguage(nextLang) {
     releases: 'tabReleases',
     movies: 'tabMovies',
     series: 'tabSeries',
-    anime: 'tabAnime'
+    anime: 'tabAnime',
+    kids: 'tabKids',
+    games: 'tabGames'
   };
   var tabLabels = document.querySelectorAll('#hub-nav-tabs .rail-label[data-i18n-tab]');
   for (var i = 0; i < tabLabels.length; i++) {

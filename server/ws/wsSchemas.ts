@@ -249,6 +249,8 @@ export const wsGameInviteRespondSchema = z.object({
     'pool',
     'chapas',
     'headsoccer',
+    'penalty',
+    'racing3d',
     'poker',
     'blackjack',
     'parchis',
@@ -268,6 +270,8 @@ export const wsGameSwitchSchema = z.object({
     'pool',
     'chapas',
     'headsoccer',
+    'penalty',
+    'racing3d',
     'poker',
     'blackjack',
     'parchis',
@@ -423,6 +427,42 @@ export const wsCinema3dInteractSchema = z.object({
   kind: z.enum(['pass_popcorn', 'highfive', 'wave_at']),
 });
 
+export const wsGyroJoinSchema = z.object({
+  roomId: roomIdSchema,
+  deviceName: z.string().trim().max(40).optional(),
+  role: z.enum(['controller', 'display']),
+});
+
+export const wsGyroInputSchema = z.object({
+  roomId: roomIdSchema,
+  steer: z.number().min(-1).max(1),
+  throttle: z.number().min(0).max(1),
+  brake: z.number().min(0).max(1),
+  nitro: z.boolean().optional(),
+  handbrake: z.boolean().optional(),
+  cameraCycle: z.boolean().optional(),
+  horn: z.boolean().optional(),
+  seq: z.number().int().min(0).max(1_000_000_000),
+  ts: z.number().min(0),
+});
+
+export const wsRacingTelemetrySchema = z.object({
+  roomId: roomIdSchema,
+  speedKmh: z.number().min(0).max(600),
+  rpmPct: z.number().min(0).max(100),
+  gear: z.number().int().min(0).max(8),
+  lap: z.number().int().min(1).max(99),
+  totalLaps: z.number().int().min(1).max(99),
+  position: z.number().int().min(1).max(16),
+  totalCars: z.number().int().min(1).max(16),
+  nitroPct: z.number().min(0).max(100),
+  collisionImpact: z.number().min(0).max(1).optional(),
+  offroad: z.boolean().optional(),
+  raceState: z.enum(['countdown', 'racing', 'finished']),
+  lapTimeMs: z.number().min(0).max(3_600_000).optional(),
+  bestLapMs: z.number().min(0).max(3_600_000).optional(),
+});
+
 export const wsEnvelopeSchema = z.object({
   type: z.string().trim().min(1).max(48),
   payload: z.record(z.string(), z.any()).optional().default({}),
@@ -464,7 +504,10 @@ const WS_EVENT_LIMITS: Record<string, { max: number; windowMs: number }> = {
   CINEMA3D_ACTION: { max: 35, windowMs: 5_000 },
   CINEMA3D_INTERACT: { max: 25, windowMs: 5_000 },
   CINEMA3D_LEAVE: { max: 15, windowMs: 10_000 },
-  __GLOBAL__: { max: 480, windowMs: 10_000 },
+  GYRO_CONTROLLER_JOIN: { max: 20, windowMs: 10_000 },
+  GYRO_INPUT_UPDATE: { max: 450, windowMs: 5_000 },
+  RACING_TV_TELEMETRY: { max: 200, windowMs: 5_000 },
+  __GLOBAL__: { max: 1200, windowMs: 10_000 },
 };
 
 export class WsRateLimiter {

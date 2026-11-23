@@ -7,6 +7,7 @@ import {
   ANIMEBOX_CURATED_TV_IDS,
   CURATED_4K_SERIES_IDS,
   CURATED_4K_SERIES_SET,
+  CURATED_SPANISH_KIDS_TV_IDS,
   STREAMING_PROVIDER_MAP,
   USER_MASTERPIECE_ANIME_TV_IDS,
   matchMasterpieceAnimeIds,
@@ -357,6 +358,11 @@ export async function handleSeriesCatalogRequest(
           : 'popularity.desc';
       const minVotes = sort === 'top_rated' ? 140 : 30;
       endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&sort_by=${discoverSort}&vote_count.gte=${minVotes}&first_air_date.lte=${todayIso}&with_genres=16&with_origin_country=JP&page=${page}&include_adult=false`;
+    } else if (category === 'kids') {
+      if (page === 1) {
+        curatedAnimeSeedPromise = fetchTmdbItemsByIds(CURATED_SPANISH_KIDS_TV_IDS, 'tv', 'es-ES');
+      }
+      endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=es-ES&sort_by=popularity.desc&vote_count.gte=25&first_air_date.lte=${todayIso}&with_genres=10762&without_genres=27,80,99,10763,10767&page=${page}&include_adult=false`;
     } else if (SERIES_GENRE_MAP[category]) {
       const discoverSort =
         sort === 'top_rated'

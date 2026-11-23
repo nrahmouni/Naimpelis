@@ -141,6 +141,8 @@ var catalogData = {
   movies: [],
   series: [],
   anime: [],
+  kidsMovies: [],
+  kidsSeries: [],
   tdtBase: [],
   worldTv: [],
   tdt: [],
@@ -731,6 +733,9 @@ function applyPendingTvAutoUpdate(forceBuildSig, forceManualReload) {
     ? (apiOrigin + '/tv')
     : '/tv';
   var targetUrl = baseTvPath + '?_upd=' + encodeURIComponent(nextBuild + '-' + Date.now());
+  if (typeof isTizenDevice !== 'undefined' && isTizenDevice) {
+    targetUrl += '&platform=tizen';
+  }
   if (isPaired && currentRoomId) {
     targetUrl += '&room=' + encodeURIComponent(currentRoomId);
   }

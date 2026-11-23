@@ -7,6 +7,8 @@ export type UnifiedGameId =
   | 'pool'
   | 'chapas'
   | 'headsoccer'
+  | 'penalty'
+  | 'racing3d'
   | 'poker'
   | 'blackjack'
   | 'chess'
@@ -80,6 +82,33 @@ export const GameLogoArtwork: React.FC<GameLogoArtworkProps> = ({
             <polygon points="0,-6 6,-1.8 3.8,5.2 -3.8,5.2 -6,-1.8" fill="#18181B" />
             <path d="M0,-6 V-14.5 M6,-1.8 L14,-5 M3.8,5.2 L9,12 M-3.8,5.2 L-9,12 M-6,-1.8 L-14,-5" stroke="#18181B" strokeWidth="1.6" />
           </g>
+        </svg>
+      );
+
+    case 'penalty':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#0A1324" />
+          <rect x="0" y="92" width="240" height="48" fill="#14532D" />
+          <path d="M36 96 V28 H204 V96" fill="rgba(255,255,255,0.06)" stroke="#F8FAFC" strokeWidth="4.5" strokeLinejoin="round" />
+          <circle cx="170" cy="48" r="14" fill="none" stroke="#22D3EE" strokeWidth="2.5" strokeDasharray="4 3" />
+          <path d="M72 118 Q122 68 168 50" fill="none" stroke="#A3E635" strokeWidth="2.5" strokeDasharray="5 4" />
+          <circle cx="70" cy="116" r="12" fill="#FFFFFF" stroke="#0F172A" strokeWidth="2" />
+          <circle cx="118" cy="70" r="10" fill="#FDE68A" />
+          <rect x="104" y="80" width="28" height="22" rx="6" fill="#EF4444" />
+        </svg>
+      );
+
+    case 'racing3d':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#070A14" />
+          <polygon points="36,140 94,54 146,54 204,140" fill="#1E2436" />
+          <line x1="120" y1="56" x2="120" y2="140" stroke="#F8FAFC" strokeWidth="2" strokeDasharray="7 7" />
+          <path d="M84 96 L96 76 L144 76 L156 96 Z" fill="#7C3AED" stroke="#22D3EE" strokeWidth="2" />
+          <rect x="78" y="94" width="84" height="14" rx="5" fill="#0F172A" stroke="#7C3AED" strokeWidth="1.5" />
+          <circle cx="88" cy="108" r="7" fill="#38BDF8" />
+          <circle cx="152" cy="108" r="7" fill="#38BDF8" />
         </svg>
       );
 

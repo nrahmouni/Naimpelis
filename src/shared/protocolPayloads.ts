@@ -92,6 +92,8 @@ export type RoomGameInviteType =
   | 'pool'
   | 'chapas'
   | 'headsoccer'
+  | 'penalty'
+  | 'racing3d'
   | 'poker'
   | 'blackjack'
   | 'parchis'
@@ -100,6 +102,36 @@ export type RoomGameInviteType =
   | 'chess'
   | 'checkers'
   | 'connect4';
+
+export interface GyroInputPayload {
+  roomId: string;
+  steer: number;
+  throttle: number;
+  brake: number;
+  nitro?: boolean;
+  handbrake?: boolean;
+  cameraCycle?: boolean;
+  horn?: boolean;
+  seq: number;
+  ts: number;
+}
+
+export interface RacingTelemetryPayload {
+  roomId: string;
+  speedKmh: number;
+  rpmPct: number;
+  gear: number;
+  lap: number;
+  totalLaps: number;
+  position: number;
+  totalCars: number;
+  nitroPct: number;
+  collisionImpact?: number;
+  offroad?: boolean;
+  raceState: 'countdown' | 'racing' | 'finished';
+  lapTimeMs?: number;
+  bestLapMs?: number;
+}
 
 export interface RoomGameInvite {
   id: string;

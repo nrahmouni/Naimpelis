@@ -35,6 +35,7 @@ export function App() {
     authUser, authLoading, profileHubOpen, setProfileHubOpen, profileHubTab, setProfileHubTab,
     isTvMode, setIsTvMode, isTvPairLobby, setIsTvPairLobby, isAdsPageOpen, setIsAdsPageOpen,
     isAdminPage, setIsAdminPage, isSamsungPage, setIsSamsungPage,
+    isControllerPage, setIsControllerPage, controllerPairCode,
     setTvAuthToken, savedRooms, pinPromptState, tvClaimStatus, smartTvModalOpen, setSmartTvModalOpen,
     showIntro, setShowIntro, introWithSound, setIntroWithSound,
     showVoiceAssistant, setShowVoiceAssistant,
@@ -119,7 +120,7 @@ export function App() {
   }, [friendNoticeTimerRef, setFriendAddedNotice]);
 
   const isEarlyRoute =
-    isSamsungPage || isAdminPage || showDesignSystem || isAdsPageOpen || isTvPairLobby || (!inRoom && !hasEnteredApp) || isTvMode;
+    isControllerPage || isSamsungPage || isAdminPage || showDesignSystem || isAdsPageOpen || isTvPairLobby || (!inRoom && !hasEnteredApp) || isTvMode;
 
   const handleOpenMusicWorldFromBar = useCallback(() => {
     if (!inRoom && !hasEnteredApp) {
@@ -134,6 +135,8 @@ export function App() {
       isAdsPageOpen={isAdsPageOpen}
       isAdminPage={isAdminPage}
       isSamsungPage={isSamsungPage}
+      isControllerPage={isControllerPage}
+      controllerPairCode={controllerPairCode}
       isTvPairLobby={isTvPairLobby}
       inRoom={inRoom}
       hasEnteredApp={hasEnteredApp}
@@ -168,6 +171,7 @@ export function App() {
       setIsAdsPageOpen={setIsAdsPageOpen}
       setIsAdminPage={setIsAdminPage}
       setIsSamsungPage={setIsSamsungPage}
+      setIsControllerPage={setIsControllerPage}
       setIsTvPairLobby={setIsTvPairLobby}
       setIsTvMode={setIsTvMode}
       setTvAuthToken={setTvAuthToken}

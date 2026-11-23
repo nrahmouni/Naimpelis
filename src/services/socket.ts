@@ -17,7 +17,11 @@ import {
   PoolPocketId,
   PoolShotInput,
 } from '../types';
-import type { RoomGameInviteType } from '../shared/protocol';
+import type {
+  GyroInputPayload,
+  RacingTelemetryPayload,
+  RoomGameInviteType,
+} from '../shared/protocol';
 import { SocketTransport } from './socketTransport';
 
 export type { SocketPayload, SocketEvent, ConnectRoomOptions } from './socketTypes';
@@ -399,6 +403,38 @@ class SocketService extends SocketTransport {
   switchRoomGame(targetGame: RoomGameInviteType) {
     if (!this.roomId) return;
     this.send('GAME_SWITCH', { roomId: this.roomId, targetGame });
+  }
+
+  getActiveRoomId(): string {
+    return this.roomId;
+  }
+
+  joinGyroChannel(role: 'controller' | 'display', deviceName?: string, targetRoomId?: string) {
+    const rid = (targetRoomId || this.roomId || '').trim().toLowerCase();
+    if (!rid) return;
+    this.sendRaw('GYRO_CONTROLLER_JOIN', {
+      roomId: rid,
+      role,
+      deviceName,
+    });
+  }
+
+  sendGyroInput(input: Omit<GyroInputPayload, 'roomId'> & { roomId?: string }, targetRoomId?: string) {
+    const rid = (targetRoomId || this.roomId || '').trim().toLowerCase();
+    if (!rid) return;
+    this.sendRaw('GYRO_INPUT_UPDATE', {
+      ...input,
+      roomId: rid,
+    });
+  }
+
+  sendRacingTelemetry(telemetry: Omit<RacingTelemetryPayload, 'roomId'> & { roomId?: string }, targetRoomId?: string) {
+    const rid = (targetRoomId || this.roomId || '').trim().toLowerCase();
+    if (!rid) return;
+    this.sendRaw('RACING_TV_TELEMETRY', {
+      ...telemetry,
+      roomId: rid,
+    });
   }
 }
 

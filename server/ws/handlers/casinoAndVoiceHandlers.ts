@@ -115,6 +115,8 @@ export const handleCasinoAndVoiceMessage: WsMessageHandler = (
       chess: 'Ajedrez',
       checkers: 'Damas',
       connect4: 'Conecta 4',
+      penalty: 'Penaltis Mundial',
+      racing3d: 'Nitro GP 3D',
     };
 
     const sysMsg: RoomChatMessageRecord = {

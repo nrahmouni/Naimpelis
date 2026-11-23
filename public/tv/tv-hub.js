@@ -45,12 +45,27 @@ function getChannelBrandGradient(ch) {
   return 'linear-gradient(135deg, #3b2472 0%, #121218 100%)';
 }
 
+var SVG_ICON_KIDS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5a4 4 0 0 0 7 0"/><line x1="9" y1="9.5" x2="9.01" y2="9.5"/><line x1="15" y1="9.5" x2="15.01" y2="9.5"/></svg>';
+var SVG_ICON_GAMES = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="4"/><line x1="6" y1="12" x2="10" y2="12"/><line x1="8" y1="10" x2="8" y2="14"/><circle cx="15.5" cy="10.5" r="1"/><circle cx="17.5" cy="13" r="1"/></svg>';
+
+function isSpanishKidsChannel(ch) {
+  if (!ch) return false;
+  var id = String(ch.id || '').toLowerCase();
+  if (id === 'tdt-clan' || id === 'tdt-boing') return true;
+  var name = String(ch.name || '').toLowerCase();
+  var net = String(ch.network || '').toLowerCase();
+  if (/clan|boing|disney\s*(?:channel|jr|junior)|nickelodeon|nick\s*jr|canal\s*panda|babytv/i.test(name + ' ' + net)) {
+    var lang = String(ch.lang || ch.langCode || '').toUpperCase();
+    var cCode = String(ch.countryCode || '').toLowerCase();
+    if (!lang || lang === 'ES' || cCode === 'es' || id.indexOf('tdt-') === 0) return true;
+  }
+  return false;
+}
+
 function isExcludedKidsChannel(ch) {
   if (!ch) return false;
   var cat = String(ch.category || '').toLowerCase();
-  var id = String(ch.id || '').toLowerCase();
-  if (cat === 'kids_world') return true;
-  if (id === 'tdt-clan' || id === 'tdt-boing') return true;
+  if (cat === 'kids_world' && !isSpanishKidsChannel(ch)) return true;
   return false;
 }
 
@@ -285,7 +300,9 @@ function updateStageHeaderTitle(tabKey) {
     releases: 'tabReleases',
     movies: 'tabMovies',
     series: 'tabSeries',
-    anime: 'tabAnime'
+    anime: 'tabAnime',
+    kids: 'tabKids',
+    games: 'tabGames'
   };
   if (tvStageTitleEl && map[tabKey]) {
     tvStageTitleEl.textContent = tvT(map[tabKey]);
@@ -320,6 +337,8 @@ function buildQuickActionDock() {
   html +=
     '<button type="button" class="tv-quick-btn featured" id="btn-quick-tdt" tabindex="0">' + SVG_ICON_TV + '<span>' + escapeHtml(tvT('quickTdtBtn')) + '</span></button>' +
     '<button type="button" class="tv-quick-btn featured" id="btn-quick-sports" tabindex="0">' + SVG_ICON_SPORTS + '<span>' + escapeHtml(tvT('quickSportsBtn')) + '</span></button>' +
+    '<button type="button" class="tv-quick-btn featured" id="btn-quick-kids" tabindex="0">' + SVG_ICON_KIDS + '<span>' + escapeHtml(tvT('quickKidsBtn')) + '</span></button>' +
+    '<button type="button" class="tv-quick-btn featured" id="btn-quick-games" tabindex="0">' + SVG_ICON_GAMES + '<span>' + escapeHtml(tvT('quickGamesBtn')) + '</span></button>' +
     '<button type="button" class="tv-quick-btn" id="btn-quick-search" tabindex="0">' + SVG_ICON_SEARCH + '<span>' + escapeHtml(tvT('quickSearchBtn')) + '</span></button>' +
     '<button type="button" class="tv-quick-btn" id="btn-quick-pair" tabindex="0">' + SVG_ICON_PHONE + '<span>' + escapeHtml(tvT('quickPairBtn')) + '</span></button>';
   dock.innerHTML = html;
@@ -328,6 +347,8 @@ function buildQuickActionDock() {
     var bRes = document.getElementById('btn-quick-resume');
     var bTdt = document.getElementById('btn-quick-tdt');
     var bSpr = document.getElementById('btn-quick-sports');
+    var bKid = document.getElementById('btn-quick-kids');
+    var bGam = document.getElementById('btn-quick-games');
     var bSrc = document.getElementById('btn-quick-search');
     var bPr = document.getElementById('btn-quick-pair');
     if (bRes && resumeCh) {
@@ -339,6 +360,8 @@ function buildQuickActionDock() {
     }
     if (bTdt) bTdt.onclick = function () { selectHubTabProgrammatic('tdt', 'es_tdt'); };
     if (bSpr) bSpr.onclick = function () { selectHubTabProgrammatic('tdt', 'es_sports'); };
+    if (bKid) bKid.onclick = function () { selectHubTabProgrammatic('kids'); };
+    if (bGam) bGam.onclick = function () { selectHubTabProgrammatic('games'); };
     if (bSrc) bSrc.onclick = function () { selectHubTabProgrammatic('search'); };
     if (bPr) bPr.onclick = function () { switchTvScreen('pairing'); };
   }, 0);
@@ -595,6 +618,9 @@ function renderHubContent(focusFirstResult) {
     appendSection(hubDynamicContent, tvT('secReleasesTitle'), tvT('secReleasesSub'), catalogData.cinemaReleases, 'media', false);
     appendSection(hubDynamicContent, tvT('secSeasonsTitle'), tvT('secSeasonsSub'), catalogData.newSeasons, 'media', false);
     appendSection(hubDynamicContent, tvT('secMoviesTitle'), tvT('secMoviesSub'), catalogData.movies, 'media', false);
+    if (catalogData.kidsMovies && catalogData.kidsMovies.length > 0) {
+      appendSection(hubDynamicContent, 'Niños en Español · Cine Familiar', 'Películas de animación y dibujos en castellano', catalogData.kidsMovies, 'media', false);
+    }
     appendSection(hubDynamicContent, tvT('secAnimeTitle'), tvT('secAnimeSub'), catalogData.anime, 'media', false);
   } else if (activeHubTab === 'tdt') {
     var searchPanel = document.createElement('div');
@@ -742,6 +768,61 @@ function renderHubContent(focusFirstResult) {
     var aHero = buildHeroCard(catalogData.anime[0], false);
     if (aHero) hubDynamicContent.appendChild(aHero);
     appendSection(hubDynamicContent, tvT('secAnimeTitle'), tvT('animeCatalogSub'), catalogData.anime, 'media', true);
+  } else if (activeHubTab === 'kids') {
+    renderSpanishKidsHubInto(hubDynamicContent);
+  } else if (activeHubTab === 'games') {
+    if (typeof window.renderTvGamesCatalogInto === 'function') {
+      window.renderTvGamesCatalogInto(hubDynamicContent);
+    }
+  }
+}
+
+function renderSpanishKidsHubInto(container) {
+  var kidsCh = [];
+  var allLive = catalogData.tdt || [];
+  for (var i = 0; i < allLive.length; i++) {
+    if (isSpanishKidsChannel(allLive[i])) kidsCh.push(allLive[i]);
+  }
+
+  var banner = document.createElement('div');
+  banner.className = 'tv-kids-hero-banner';
+  banner.innerHTML =
+    '<div class="tv-kids-hero-copy">' +
+    '<div class="tv-kids-pill">SECCIÓN INFANTIL · 100% EN ESPAÑOL</div>' +
+    '<div class="tv-kids-title">Dibujos, Cine Familiar y Canales para Niños</div>' +
+    '<div class="tv-kids-sub">Clan RTVE, Boing, las mejores películas Pixar/Disney y series infantiles siempre con títulos y audio en español.</div>' +
+    '</div>' +
+    '<div class="tv-kids-actions">' +
+    (kidsCh[0] ? '<button type="button" class="tv-btn-primary" id="btn-kids-live-first" tabindex="0">Ver ' + escapeHtml(kidsCh[0].name) + '</button>' : '') +
+    '<button type="button" class="tv-btn" id="btn-kids-open-games" tabindex="0">Juegos con Mando</button>' +
+    '</div>';
+  container.appendChild(banner);
+
+  setTimeout(function () {
+    var bLive = document.getElementById('btn-kids-live-first');
+    var bGam = document.getElementById('btn-kids-open-games');
+    if (bLive && kidsCh[0]) {
+      bLive.onclick = function () {
+        lastHubFocusedEl = bLive;
+        unlockAudio();
+        playTdtChannelOnTv(kidsCh[0], 0);
+      };
+    }
+    if (bGam) {
+      bGam.onclick = function () {
+        selectHubTabProgrammatic('games');
+      };
+    }
+  }, 0);
+
+  if (kidsCh.length > 0) {
+    appendSection(container, 'Canales Infantiles en Directo (Español)', 'Clan RTVE y Boing 24h en castellano', kidsCh, 'tdt', false);
+  }
+  if (catalogData.kidsSeries && catalogData.kidsSeries.length > 0) {
+    appendSection(container, 'Series de Dibujos en Español', 'Bluey, Patrulla Canina, Peppa Pig, Bob Esponja, Doraemon y más', catalogData.kidsSeries, 'media', true);
+  }
+  if (catalogData.kidsMovies && catalogData.kidsMovies.length > 0) {
+    appendSection(container, 'Películas Infantiles y Familiares en Español', 'Todo el cine infantil y animación en castellano', catalogData.kidsMovies, 'media', true);
   }
 }
 
@@ -935,14 +1016,15 @@ function maybeAutoLaunchTizenAntena3(fromFreshCatalog) {
 
 var tvCatalogRetryCount = 0;
 function loadTvCatalog() {
-  var pending = 6;
+  var pending = 8;
   var anySuccess = false;
   function onPartialReady() {
     var hasAny =
       catalogData.tdt.length > 0 ||
       catalogData.cinemaReleases.length > 0 ||
       catalogData.movies.length > 0 ||
-      catalogData.series.length > 0;
+      catalogData.series.length > 0 ||
+      catalogData.kidsMovies.length > 0;
     if (hasAny && !catalogData.loaded) {
       catalogData.loaded = true;
       renderHubContent();
@@ -1021,6 +1103,26 @@ function loadTvCatalog() {
       catalogData.worldTv = d.channels;
     }
     mergeTvLiveCatalog();
+    checkDone();
+  });
+  xhrJson('GET', '/api/catalog/movies?category=kids&page=1&lang=es', null, function (err, d) {
+    if (!err && d && Array.isArray(d.movies)) {
+      anySuccess = true;
+      for (var km = 0; km < d.movies.length; km++) {
+        if (d.movies[km]) d.movies[km]._forceEs = true;
+      }
+      catalogData.kidsMovies = d.movies;
+    }
+    checkDone();
+  });
+  xhrJson('GET', '/api/catalog/series?category=kids&page=1&lang=es', null, function (err, d) {
+    if (!err && d && Array.isArray(d.series)) {
+      anySuccess = true;
+      for (var ks = 0; ks < d.series.length; ks++) {
+        if (d.series[ks]) d.series[ks]._forceEs = true;
+      }
+      catalogData.kidsSeries = d.series;
+    }
     checkDone();
   });
   loadLiveEpg();

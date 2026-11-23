@@ -22,6 +22,8 @@ import type {
 import type {
   AuthoritativeVideoState,
   FloatingReactionEvent,
+  GyroInputPayload,
+  RacingTelemetryPayload,
   RoomChatMessage,
   RoomGameInvite,
   RoomGameInviteType,
@@ -232,4 +234,25 @@ export type ServerWsMessage =
         >;
         message?: RoomChatMessage | null;
       };
+    }
+  | {
+      type: 'GYRO_PEER_STATUS';
+      payload: {
+        roomId: string;
+        connected: boolean;
+        deviceName: string;
+        role: 'controller' | 'display';
+        controllerCount: number;
+      };
+    }
+  | {
+      type: 'GYRO_INPUT_RELAY';
+      payload: GyroInputPayload & {
+        userId: string;
+        deviceName: string;
+      };
+    }
+  | {
+      type: 'RACING_TELEMETRY_RELAY';
+      payload: RacingTelemetryPayload;
     };

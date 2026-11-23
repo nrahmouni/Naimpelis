@@ -28,13 +28,19 @@ import { PartyGamesStage, type PartyOnlineAction } from '../PartyGamesStage';
 import { HeadSoccerStage } from '../HeadSoccerStage';
 import { PokerHoldemStage } from '../PokerHoldemStage';
 import { BlackjackStage } from '../BlackjackStage';
+import { PenaltyShootoutStage } from './PenaltyShootoutStage';
 import type { UnifiedGameId } from './GameLogos';
 import { isPartyGame } from './useGamesHubController';
+
+const Racing3DStage = React.lazy(() =>
+  import('./racing/Racing3DStage').then((m) => ({ default: m.Racing3DStage }))
+);
 
 interface GamesHubSecondaryStagesProps {
   selectedGame: UnifiedGameId;
   hubMode: 'offline' | 'online';
   lang: AppLanguage;
+  roomId?: string;
   currentUser: Participant;
   participants: Participant[];
   isHost: boolean;
@@ -102,6 +108,7 @@ export const GamesHubSecondaryStages: React.FC<GamesHubSecondaryStagesProps> = (
   selectedGame,
   hubMode,
   lang,
+  roomId = '',
   currentUser,
   participants,
   isHost,
@@ -151,6 +158,29 @@ export const GamesHubSecondaryStages: React.FC<GamesHubSecondaryStagesProps> = (
   onResignBoardGame,
   onResetBoardGame,
 }) => {
+  if (selectedGame === 'penalty') {
+    return <PenaltyShootoutStage lang={lang} onClose={handleBackToGames} />;
+  }
+
+  if (selectedGame === 'racing3d') {
+    return (
+      <React.Suspense
+        fallback={
+          <div className="w-full h-[520px] rounded-3xl bg-[#070a14] border border-white/10 flex items-center justify-center text-xs font-bold text-zinc-300">
+            Cargando motor 3D WebGL...
+          </div>
+        }
+      >
+        <Racing3DStage
+          lang={lang}
+          roomId={roomId}
+          userName={currentUser.name}
+          onClose={handleBackToGames}
+        />
+      </React.Suspense>
+    );
+  }
+
   if (selectedGame === 'headsoccer') {
     return (
       <HeadSoccerStage

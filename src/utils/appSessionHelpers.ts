@@ -36,11 +36,23 @@ export function isAbortError(err: unknown): boolean {
 export function normalizeDeepLinkGameType(raw?: string): RoomGameInviteType | null {
   if (!raw) return null;
   const trimmed = raw.trim().toLowerCase();
-  const mapped = trimmed === 'billar' ? 'pool' : trimmed;
+  const aliasMap: Record<string, RoomGameInviteType> = {
+    billar: 'pool',
+    penaltis: 'penalty',
+    'penaltis-mundial': 'penalty',
+    coches: 'racing3d',
+    'coches-3d': 'racing3d',
+    racing: 'racing3d',
+    'nitro-gp': 'racing3d',
+    f1: 'racing3d',
+  };
+  const mapped = aliasMap[trimmed] || trimmed;
   const allowed: RoomGameInviteType[] = [
     'pool',
     'chapas',
     'headsoccer',
+    'penalty',
+    'racing3d',
     'poker',
     'blackjack',
     'parchis',

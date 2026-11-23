@@ -11,6 +11,8 @@ export const GAME_SIGNATURES: Record<UnifiedGameId, { color: string; label: stri
   pool: { color: '#10B981', label: 'Billar' },
   chapas: { color: '#84CC16', label: 'Fútbol Chapas' },
   headsoccer: { color: '#38BDF8', label: 'Cabezones' },
+  penalty: { color: '#10B981', label: 'Penaltis' },
+  racing3d: { color: '#22D3EE', label: 'Nitro GP 3D' },
   poker: { color: '#A855F7', label: 'Póker' },
   blackjack: { color: '#10B981', label: 'Blackjack' },
   chess: { color: '#9146FF', label: 'Ajedrez' },
@@ -26,6 +28,8 @@ export function getGamesHubTitleMap(lang: AppLanguage): Record<UnifiedGameId, st
     pool: pickLang(lang, { es: '🎱 Billar Bola 8', ca: '🎱 Billar Bola 8', en: '🎱 8-Ball Pool' }),
     chapas: pickLang(lang, { es: '⚽ Fútbol Chapas', ca: '⚽ Futbol Xapes', en: '⚽ Soccer Caps' }),
     headsoccer: pickLang(lang, { es: '🥅 Fútbol Cabezones', ca: '🥅 Futbol Capgrossos', en: '🥅 Head Soccer' }),
+    penalty: pickLang(lang, { es: '⚽ Penaltis Mundial', ca: '⚽ Penals Mundial', en: '⚽ World Penalty' }),
+    racing3d: '🏎️ Nitro GP 3D',
     poker: pickLang(lang, { es: '♠️ Póker Hold’em', ca: '♠️ Pòquer Hold’em', en: '♠️ Texas Hold’em' }),
     blackjack: '🃏 Blackjack 21',
     chess: pickLang(lang, { es: '♟️ Ajedrez', ca: '♟️ Escacs', en: '♟️ Chess' }),
@@ -41,6 +45,8 @@ export function getGameSwitcherOptions(titleMap: Record<UnifiedGameId, string>):
   color: string;
 }> {
   return [
+    { id: 'racing3d', label: titleMap.racing3d, subtitle: '3D + Giroscopio', color: GAME_SIGNATURES.racing3d.color },
+    { id: 'penalty', label: titleMap.penalty, subtitle: 'Tanda Penaltis', color: GAME_SIGNATURES.penalty.color },
     { id: 'headsoccer', label: titleMap.headsoccer, subtitle: '1v1 · 60s', color: GAME_SIGNATURES.headsoccer.color },
     { id: 'pool', label: titleMap.pool, subtitle: '1v1 · Bola 8', color: GAME_SIGNATURES.pool.color },
     { id: 'chapas', label: titleMap.chapas, subtitle: '1v1 / 2v2', color: GAME_SIGNATURES.chapas.color },

@@ -133,6 +133,30 @@ export interface SocketPayload {
     blackjackState?: BlackjackGameState | null;
     matchResponses?: RoomMatchResponsesState | null;
   };
+  controllers?: Array<{ userId: string; deviceName: string }>;
+  displays?: number;
+  hasController?: boolean;
+  steer?: number;
+  throttle?: number;
+  brake?: number;
+  nitro?: boolean;
+  handbrake?: boolean;
+  cameraCycle?: boolean;
+  horn?: boolean;
+  ts?: number;
+  speedKmh?: number;
+  rpmPct?: number;
+  gear?: number;
+  lap?: number;
+  totalLaps?: number;
+  position?: number;
+  totalCars?: number;
+  nitroPct?: number;
+  collisionImpact?: number;
+  offroad?: boolean;
+  raceState?: 'countdown' | 'racing' | 'finished';
+  lapTimeMs?: number;
+  bestLapMs?: number;
   [key: string]: unknown;
 }
 
@@ -160,4 +184,7 @@ export const NON_QUEUEABLE_TYPES = new Set([
   'VOICE_STATE_UPDATE',
   'VOICE_SIGNAL',
   'POOL_SYNC_CHECKSUM',
+  'GYRO_CONTROLLER_JOIN',
+  'GYRO_INPUT_UPDATE',
+  'RACING_TV_TELEMETRY',
 ]);

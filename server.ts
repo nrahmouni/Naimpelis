@@ -365,7 +365,7 @@ function sendSmartTvReceiverHtml(res: express.Response) {
     html = html
       .replace('<head>', `<head>\n    ${buildMetaTag}`)
       .replace(/((?:href|src)=["'])(\/tv\/[^"'?]+\.(?:css|js))(["'])/gi, `$1$2?v=${sig}$3`)
-      .replace(/((?:href|src)=["'])(\/vendor\/hls\.min\.js)(["'])/gi, `$1$2?v=${sig}$3`);
+      .replace(/((?:href|src)=["'])(\/vendor\/[^"'?]+\.js)(["'])/gi, `$1$2?v=${sig}$3`);
     res.status(200).type('html').send(html);
   } catch {
     res.sendFile(target);

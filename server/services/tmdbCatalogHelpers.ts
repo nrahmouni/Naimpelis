@@ -6,6 +6,7 @@ import {
   ANIMEBOX_CURATED_MOVIE_IDS,
   CURATED_4K_MOVIE_IDS,
   CURATED_4K_MOVIE_SET,
+  CURATED_SPANISH_KIDS_MOVIE_IDS,
   MOVIE_GENRE_MAP,
   STREAMING_PROVIDER_MAP,
   resolveEffectiveProviderAndQuery,
@@ -31,6 +32,8 @@ export const SERIES_GENRE_MAP: Record<string, number> = {
   comedy: 35,
   animation: 16,
   anime: 16,
+  family: 10751,
+  kids: 10762,
   mystery: 9648,
 };
 
@@ -278,6 +281,11 @@ export async function fetchTmdbMovieCatalog(opts: {
         : 'popularity.desc';
     const minVotes = sort === 'top_rated' ? 160 : 30;
     endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&sort_by=${discoverSort}&vote_count.gte=${minVotes}&primary_release_date.lte=${todayIso}&with_genres=16&with_original_language=ja&page=${page}&include_adult=false`;
+  } else if (category === 'kids') {
+    if (page === 1) {
+      curatedSeedItems = await fetchTmdbItemsByIds(CURATED_SPANISH_KIDS_MOVIE_IDS, 'movie', 'es-ES');
+    }
+    endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=es-ES&sort_by=popularity.desc&vote_count.gte=120&primary_release_date.lte=${todayIso}&with_genres=10751,16&without_genres=27,53,80,10752&certification_country=ES&certification.lte=7&page=${page}&include_adult=false`;
   } else if (MOVIE_GENRE_MAP[category]) {
     const discoverSort =
       sort === 'top_rated'

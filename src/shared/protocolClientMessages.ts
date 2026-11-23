@@ -19,6 +19,8 @@ import type {
 } from './protocolGameTypes.ts';
 import type {
   AuthoritativeVideoState,
+  GyroInputPayload,
+  RacingTelemetryPayload,
   RoomGameInviteType,
   RoomParticipant,
   RoomRole,
@@ -453,4 +455,20 @@ export type ClientWsMessage =
         roomId: string;
         targetGame: RoomGameInviteType;
       };
+    }
+  | {
+      type: 'GYRO_CONTROLLER_JOIN';
+      payload: {
+        roomId: string;
+        deviceName?: string;
+        role: 'controller' | 'display';
+      };
+    }
+  | {
+      type: 'GYRO_INPUT_UPDATE';
+      payload: GyroInputPayload;
+    }
+  | {
+      type: 'RACING_TV_TELEMETRY';
+      payload: RacingTelemetryPayload;
     };

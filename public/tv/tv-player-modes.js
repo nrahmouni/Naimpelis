@@ -383,7 +383,8 @@ function exitPlayerToHubOrPairing() {
   if (pairedBanner) pairedBanner.style.display = 'none';
   if (pairingControls) pairingControls.style.display = 'flex';
   try {
-    window.history.replaceState({}, '', '/tv');
+    var cleanExitPath = (typeof isTizenDevice !== 'undefined' && isTizenDevice) ? '/tv?platform=tizen&hub=1' : '/tv';
+    window.history.replaceState({}, '', cleanExitPath);
   } catch (e) {}
 
   if (pendingTvAutoUpdateBuild && typeof applyPendingTvAutoUpdate === 'function') {
@@ -713,6 +714,14 @@ function openSeriesModalOnTv(item) {
   if (!item) return;
   activeSeriesItem = item;
   activeSeriesSeason = item.seasonNumber || 1;
+  if (item._forceEs) {
+    activeSeriesLang = 'ES';
+    var langPills = document.querySelectorAll('#sm-lang-row .series-pill-btn');
+    for (var lp = 0; lp < langPills.length; lp++) {
+      var dl = langPills[lp].getAttribute('data-lang');
+      langPills[lp].className = 'series-pill-btn' + (dl === 'ES' ? ' active' : '');
+    }
+  }
   var smTitle = document.getElementById('sm-title');
   var smOverview = document.getElementById('sm-overview');
   var smBadge = document.getElementById('sm-badge');
@@ -743,8 +752,9 @@ function loadTvSeriesSeason(tmdbId, seasonNum) {
   var smSeasons = document.getElementById('sm-seasons-row');
   var smEpisodes = document.getElementById('sm-episodes-grid');
   smEpisodes.innerHTML = '<div style="color:#adadb8;font-size:16px;padding:14px;">' + escapeHtml(tvT('loadingSeasonNum') + seasonNum) + '...</div>';
+  var reqLang = activeSeriesItem && activeSeriesItem._forceEs ? 'es' : activeTvLang;
 
-  xhrJson('GET', '/api/catalog/tv/' + encodeURIComponent(String(tmdbId)) + '?season=' + seasonNum + '&lang=' + encodeURIComponent(activeTvLang), null, function (err, res) {
+  xhrJson('GET', '/api/catalog/tv/' + encodeURIComponent(String(tmdbId)) + '?season=' + seasonNum + '&lang=' + encodeURIComponent(reqLang), null, function (err, res) {
     if (err || !res || !res.details) {
       smEpisodes.innerHTML = '<div style="color:#fda4af;font-size:16px;">' + escapeHtml(tvT('episodesLoadErr')) + '</div>';
       return;

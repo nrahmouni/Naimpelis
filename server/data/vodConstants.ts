@@ -13,6 +13,8 @@ export const MOVIE_GENRE_MAP: Record<string, number> = {
   thriller: 53,
   adventure: 12,
   drama: 18,
+  family: 10751,
+  kids: 10751,
 };
 
 export const MOVIDY_GENRE_SLUGS: Record<string, string> = {
@@ -25,6 +27,8 @@ export const MOVIDY_GENRE_SLUGS: Record<string, string> = {
   thriller: 'suspense',
   adventure: 'aventura',
   drama: 'drama',
+  family: 'animacion',
+  kids: 'animacion',
 };
 
 export const ANIME_PROVIDER_IDS = new Set([
@@ -194,6 +198,39 @@ export const CURATED_4K_SERIES_IDS = [
   70523,  // Dark
 ];
 export const CURATED_4K_SERIES_SET = new Set(CURATED_4K_SERIES_IDS);
+
+export const CURATED_SPANISH_KIDS_MOVIE_IDS = [
+  1022789, // Del revés 2
+  502356,  // Super Mario Bros: La película
+  1241982, // Vaiana 2
+  1184918, // Robot salvaje
+  519182,  // Gru 4: Mi villano favorito
+  1011985, // Kung Fu Panda 4
+  354912,  // Coco
+  109445,  // Frozen: El reino del hielo
+  568124,  // Encanto
+  569094,  // Spider-Man: Cruzando el Multiverso
+  862,     // Toy Story
+  12,      // Buscando a Nemo
+  808,     // Shrek
+  8587,    // El rey león
+  9806,    // Los Increíbles
+];
+
+export const CURATED_SPANISH_KIDS_TV_IDS = [
+  82728,   // Bluey
+  57532,   // La Patrulla Canina
+  12225,   // Peppa Pig
+  387,     // Bob Esponja
+  65334,   // Prodigiosa: Las aventuras de Ladybug
+  37606,   // El asombroso mundo de Gumball
+  65733,   // Doraemon
+  31135,   // Pocoyó
+  15260,   // Hora de aventuras
+  60572,   // Pokémon
+  40075,   // Gravity Falls
+  1877,    // Phineas y Ferb
+];
 
 export interface StreamingProviderConfig {
   id: string;

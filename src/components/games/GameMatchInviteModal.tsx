@@ -125,6 +125,26 @@ const GAME_INVITE_META: Record<RoomGameInviteType, GameInviteMeta> = {
       en: 'Fast vertical strategy duel',
     },
   },
+  penalty: {
+    emoji: '⚽',
+    accent: '#22C55E',
+    title: { es: 'Penaltis Mundial Pro', ca: 'Penals Mundial Pro', en: 'World Cup Penalties' },
+    subtitle: {
+      es: 'Tanda de penaltis 3D con efecto y paradas',
+      ca: 'Tanda de penals 3D amb efecte i aturades',
+      en: '3D shootout with curve & keeper dives',
+    },
+  },
+  racing3d: {
+    emoji: '🏎️',
+    accent: '#7C3AED',
+    title: { es: 'Nitro GP 3D', ca: 'Nitro GP 3D', en: 'Nitro GP 3D' },
+    subtitle: {
+      es: 'Carreras 3D sincronizadas con volante móvil',
+      ca: 'Curses 3D sincronitzades amb volant mòbil',
+      en: '3D racing synced with phone gyroscope wheel',
+    },
+  },
 };
 
 interface GameMatchInviteModalProps {

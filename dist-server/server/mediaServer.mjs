@@ -13,6 +13,8 @@ var __dirname = path.dirname(__filename);
 var ROOT_DIR = path.resolve(__dirname, "../..");
 var isProdEnv = process.env.NODE_ENV === "production";
 var parsedEnvPort = Number(process.env.PORT);
+var rawProxyScope = String(process.env.RIFFAN_SPAIN_PROXY_SCOPE || "auto_spanish").trim().toLowerCase();
+var resolvedProxyScope = rawProxyScope === "all_streaming" || rawProxyScope === "off" ? rawProxyScope : "auto_spanish";
 var ENV = {
   port: isProdEnv ? parsedEnvPort || 3e3 : parsedEnvPort && parsedEnvPort !== 8080 ? parsedEnvPort : 3e3,
   nodeEnv: isProdEnv ? "production" : process.env.NODE_ENV === "test" ? "test" : "development",
@@ -33,7 +35,11 @@ var ENV = {
   androidCertSha256: process.env.ANDROID_SHA256_FINGERPRINT || "70:B5:CB:FA:3D:E2:D3:D3:84:DD:04:93:15:5F:33:39:48:FC:47:B6:AB:E1:DD:13:B9:A8:75:58:29:23:96:30",
   belixXtreamServer: process.env.BELIX_XTREAM_SERVER || "",
   belixXtreamUser: process.env.BELIX_XTREAM_USER || "",
-  belixXtreamPass: process.env.BELIX_XTREAM_PASS || ""
+  belixXtreamPass: process.env.BELIX_XTREAM_PASS || "",
+  spainProxyUrl: (process.env.RIFFAN_SPAIN_PROXY_URL || process.env.SPAIN_VPN_PROXY_URL || "").trim(),
+  spainProxyScope: resolvedProxyScope,
+  urbanVpnApiUser: String(process.env.URBAN_VPN_API_USER || "").trim(),
+  urbanVpnApiPass: String(process.env.URBAN_VPN_API_PASS || "").trim()
 };
 
 // server/utils/logger.ts
@@ -139,6 +145,17 @@ function resolveFfmpegBin() {
   return "ffmpeg";
 }
 var FFMPEG_BIN = resolveFfmpegBin();
+function resolveFfprobeBin() {
+  if (fs.existsSync("/usr/bin/ffprobe")) {
+    return "/usr/bin/ffprobe";
+  }
+  const siblingProbe = FFMPEG_BIN.replace(/ffmpeg(\.exe)?$/i, "ffprobe$1");
+  if (siblingProbe !== FFMPEG_BIN && fs.existsSync(siblingProbe)) {
+    return siblingProbe;
+  }
+  return "ffprobe";
+}
+var FFPROBE_BIN = resolveFfprobeBin();
 function getOrCreateRequestId(req) {
   const existing = String(req.headers["x-naim-request-id"] || "").trim();
   if (existing && existing.length <= 64) return existing;
@@ -175,7 +192,7 @@ function findDisguisedTsOffset(buf) {
 import crypto2 from "crypto";
 import fs2 from "fs";
 import path2 from "path";
-import { spawn } from "child_process";
+import { spawn as spawn3 } from "child_process";
 
 // src/shared/lruCache.ts
 var LruTtlCache = class {
@@ -239,6 +256,7 @@ var LruTtlCache = class {
 import http from "http";
 import https from "https";
 import zlib from "zlib";
+import { fetch as undiciFetch2 } from "undici";
 
 // server/utils/ssrfGuard.ts
 import dns from "node:dns/promises";
@@ -355,6 +373,450 @@ async function assertSafeProxyUrl(rawUrl) {
     throw err;
   }
   return check.url;
+}
+
+// server/services/spainVpnGatewayService.ts
+import net2 from "node:net";
+import {
+  ProxyAgent,
+  Socks5ProxyAgent,
+  fetch as undiciFetch
+} from "undici";
+
+// server/services/urbanVpnService.ts
+var RAW_GATEWAYS = [
+  ["ES", "Spain \xB7 Nodo ES1", "p-es1", 1],
+  ["ES", "Spain \xB7 Nodo ES3", "p-es3", 5],
+  ["ES", "Spain \xB7 Nodo ES6", "p-es6", 3],
+  ["ES", "Spain \xB7 Nodo ES7", "p-es7", 10],
+  ["ES_premium", "Spain Premium \xB7 ES8", "p-es8", 10],
+  ["ES_premium", "Spain Premium \xB7 ES9", "p-es9", 10],
+  ["ES", "Spain \xB7 Nodo ES10", "p-es10", 7],
+  ["ES", "Spain \xB7 Nodo ES11", "p-es11", 1],
+  ["ES", "Spain (Madrid legacy)", "p-es4", 0],
+  ["US", "United States", "p-us1", 10],
+  ["GB", "United Kingdom", "p-uk1", 10],
+  ["AU", "Australia", "p-au1", 5],
+  ["RU", "Russia", "p-ru1", 5],
+  ["PT", "Portugal", "p-pt1", 5],
+  ["HK", "Hong Kong", "p-hk1", 5],
+  ["IN", "India", "p-in1", 5],
+  ["TR", "Turkey", "p-tr1", 5],
+  ["IT", "Italy", "p-it1", 5],
+  ["JP", "Japan", "p-jp1", 5],
+  ["CA", "Canada (Vancouver)", "p-ca4", 5],
+  ["PL", "Poland", "p-pl1", 5],
+  ["CN", "China", "p-cn1", 5],
+  ["NO", "Norway", "p-no1", 5],
+  ["DK", "Denmark", "p-dk1", 5],
+  ["GR", "Greece", "p-gr1", 5],
+  ["ID", "Indonesia", "p-id1", 5],
+  ["TW", "Taiwan", "p-tw1", 5],
+  ["CH", "Switzerland", "p-ch1", 5],
+  ["IE", "Ireland", "p-ie1", 5],
+  ["ZA", "South Africa", "p-za1", 5],
+  ["LV", "Latvia", "p-lv1", 5],
+  ["AR", "Argentina", "p-ar1", 5],
+  ["TH", "Thailand", "p-th1", 5],
+  ["MX", "Mexico", "p-mx1", 5],
+  ["LT", "Lithuania", "p-lt1", 5],
+  ["AT", "Austria", "p-at1", 5],
+  ["SK", "Slovakia", "p-sk1", 5],
+  ["CO", "Colombia", "p-co1", 5],
+  ["HU", "Hungary", "p-hu1", 5],
+  ["BY", "Belarus", "p-by1", 5],
+  ["US", "Los Angeles (CA)", "p-us2", 5],
+  ["US", "Chicago (IL)", "p-us3", 5],
+  ["US", "Atlanta (GA)", "p-us4", 5],
+  ["US", "Columbus (OH)", "p-us6", 5],
+  ["US", "Dallas (TX)", "p-us8", 5],
+  ["SI", "Slovenia", "p-si1", 5],
+  ["US", "Boston (MA)", "p-us22", 5],
+  ["US", "Philadelphia (PA)", "p-us16", 5],
+  ["US", "Minneapolis (MN)", "p-us25", 5],
+  ["US", "San Francisco (CA)", "p-us12", 5],
+  ["AE", "United Arab Emirates", "p-ae1", 5],
+  ["US", "Houston (TX)", "p-us17", 5],
+  ["US", "Charlotte (NC)", "p-us18", 5],
+  ["US", "St Louis (MO)", "p-us27", 5],
+  ["US", "Miami (FL)", "p-us23", 5],
+  ["US", "Portland (OR)", "p-us29", 5],
+  ["EE", "Estonia", "p-ee1", 5],
+  ["UA", "Ukraine", "p-ua1", 5],
+  ["NZ", "New Zealand", "p-nz1", 5],
+  ["KR", "Korea Republic", "p-kr1", 5],
+  ["BG", "Bulgaria", "p-bg1", 5],
+  ["CY", "Cyprus", "p-cy1", 5],
+  ["PH", "Philippines", "p-ph1", 5],
+  ["US", "Seattle (WA)", "p-us24", 5],
+  ["US", "San Diego (CA)", "p-us9", 5],
+  ["US", "Las Vegas (NV)", "p-us30", 5],
+  ["US", "Cary (NC)", "p-us32", 5],
+  ["US", "New Orleans (LA)", "p-us33", 5],
+  ["PE", "Peru", "p-pe1", 5],
+  ["US", "Sacramento (CA)", "p-us34", 5],
+  ["US", "Denver (CO)", "p-us35", 5],
+  ["CA", "Canada", "p-ca2", 5],
+  ["US", "Reston (VA)", "p-us36", 5],
+  ["LU", "Luxembourg", "p-lu1", 5],
+  ["US", "Tampa (FL)", "p-us37", 5],
+  ["GB", "United Kingdom (London)", "p-uk2", 5],
+  ["RU", "Russia R1", "p-ru2", 5],
+  ["DE", "Germany (Frankfurt)", "p-de2", 5],
+  ["IN", "India (Punjab)", "p-in2", 5],
+  ["CA", "Canada (Calgary)", "p-ca5", 5],
+  ["CA", "Canada (Toronto)", "p-ca1", 5],
+  ["AU", "Australia (Brisbane)", "p-au4", 5],
+  ["UY", "Uruguay", "p-uy1", 5],
+  ["IS", "Iceland", "p-is1", 5],
+  ["HR", "Croatia", "p-hr1", 5],
+  ["US", "Washington DC", "p-us39", 5],
+  ["JO", "Jordan", "p-jo1", 5],
+  ["MA", "Morocco", "p-ma1", 5],
+  ["AT", "Austria R1", "p-at2", 5],
+  ["DK", "Denmark R1", "p-dk2", 5],
+  ["NL", "Netherlands R1", "p-nl2", 5],
+  ["BR", "Brazil", "p-br1", 5],
+  ["US", "Newark (DE)", "p-us45", 5],
+  ["JP", "Japan R1", "p-jp2", 5],
+  ["AU", "Australia (Adelaide)", "p-au2", 5],
+  ["US", "Matawan (NJ)", "p-us43", 5],
+  ["LT", "Lithuania R1", "p-lt2", 5],
+  ["DZ", "Algeria", "p-dz1", 5],
+  ["MN", "Mongolia", "p-mn1", 5],
+  ["US_premium", "United States R1", "p-us7", 5],
+  ["MT", "Malta", "p-mt1", 5],
+  ["FR", "France (Paris)", "p-fr3", 5],
+  ["IT", "Italy (Milan)", "p-it3", 5],
+  ["IT", "Italy (Rome)", "p-it4", 5],
+  ["CA", "Canada (Montreal) R1", "p-ca6", 5],
+  ["US", "Dallas (TX) R1", "p-us47", 5],
+  ["US", "Seattle (WA) R1", "p-us49", 5]
+];
+function isSpainGatewayCode(countryCode, profileLocation) {
+  const cc = countryCode.toUpperCase();
+  return cc === "ES" || cc === "ES_PREMIUM" || /^p-es\d+$/i.test(profileLocation);
+}
+var STATIC_URBAN_VPN_GATEWAYS = RAW_GATEWAYS.map(
+  ([countryCode, locationName, profileLocation, weight = 5]) => ({
+    id: profileLocation,
+    countryCode,
+    locationName,
+    profileLocation,
+    hostname: `${profileLocation}.urban-vpn.com`,
+    port: 443,
+    proto: "tcp",
+    cipher: "AES-256-CBC",
+    weight,
+    isSpain: isSpainGatewayCode(countryCode, profileLocation),
+    isPremium: /_premium$/i.test(countryCode)
+  })
+);
+var runtimeGateways = [...STATIC_URBAN_VPN_GATEWAYS];
+var gatewayProbeCache = new LruTtlCache(160, 6e4);
+
+// server/services/spainVpnGatewayService.ts
+var SPANISH_GEO_ROUTING_PATTERNS = [
+  /(?:^|\.)atresplayer\.com$/i,
+  /(?:^|\.)atresmedia\.com$/i,
+  /(?:^|\.)atres\.com$/i,
+  /(?:^|\.)a3player\.com$/i,
+  /(?:^|\.)mediaset\.es$/i,
+  /(?:^|\.)mitele\.es$/i,
+  /(?:^|\.)telecinco\.es$/i,
+  /(?:^|\.)cuatro\.com$/i,
+  /(?:^|\.)rtve\.es$/i,
+  /(?:^|\.)ccma\.cat$/i,
+  /(?:^|\.)3cat\.cat$/i,
+  /(?:^|\.)3catdirectes\.cat$/i,
+  /(?:^|\.)eitb\.eus$/i,
+  /(?:^|\.)telemadrid\.es$/i,
+  /(?:^|\.)canalsur\.es$/i,
+  /(?:^|\.)tdtchannels\.com$/i,
+  /(?:^|\.)otteravision\.com$/i,
+  /(?:^|\.)ottera\.tv$/i,
+  /(?:^|\.)sharkpro\.ink$/i,
+  /^90\.163\.85\.113$/i,
+  /^103\.163\.132\.49$/i,
+  /^185\.217\.39\.251$/i
+];
+var BYPASS_PROXY_HOST_PATTERNS = [
+  /(?:^|\.)themoviedb\.org$/i,
+  /(?:^|\.)tmdb\.org$/i,
+  /(?:^|\.)googleapis\.com$/i,
+  /(?:^|\.)firebaseio\.com$/i,
+  /(?:^|\.)google\.com$/i
+];
+var state = {
+  proxyUrl: ENV.spainProxyUrl || "",
+  scope: ENV.spainProxyUrl ? ENV.spainProxyScope : "auto_spanish",
+  enabled: Boolean(ENV.spainProxyUrl && ENV.spainProxyScope !== "off"),
+  source: ENV.spainProxyUrl ? "env" : "none",
+  updatedAt: Date.now()
+};
+var dispatcherCache = /* @__PURE__ */ new Map();
+var geoCache = new LruTtlCache(16, 45e3);
+var socksBridgeServer = null;
+var socksBridgePort = 0;
+var socksBridgeUpstreamUrl = "";
+function closeSocksBridge() {
+  if (socksBridgeServer) {
+    try {
+      socksBridgeServer.close();
+    } catch {
+    }
+    socksBridgeServer = null;
+  }
+  socksBridgePort = 0;
+  socksBridgeUpstreamUrl = "";
+}
+function dialThroughSocks5(proxyParsed, destHost, destPort, timeoutMs = 5500) {
+  return new Promise((resolve, reject) => {
+    const proxyHost = proxyParsed.hostname.replace(/^\[|\]$/g, "");
+    const proxyPort = Number(proxyParsed.port || 1080);
+    const username = decodeURIComponent(proxyParsed.username || "");
+    const password = decodeURIComponent(proxyParsed.password || "");
+    let settled = false;
+    const sock = net2.createConnection({ host: proxyHost, port: proxyPort, timeout: timeoutMs });
+    const fail = (err) => {
+      if (settled) return;
+      settled = true;
+      sock.destroy();
+      reject(err);
+    };
+    sock.on("error", fail);
+    sock.on("timeout", () => fail(new Error("SOCKS5 bridge timeout")));
+    const readExact = (bytesNeeded) => new Promise((res, rej) => {
+      let buf = Buffer.alloc(0);
+      const onData = (chunk) => {
+        buf = Buffer.concat([buf, chunk]);
+        if (buf.length >= bytesNeeded) {
+          cleanup();
+          if (buf.length > bytesNeeded) {
+            sock.unshift(buf.subarray(bytesNeeded));
+          }
+          res(buf.subarray(0, bytesNeeded));
+        }
+      };
+      const onErr = (e) => {
+        cleanup();
+        rej(e);
+      };
+      const onClose = () => {
+        cleanup();
+        rej(new Error("SOCKS5 socket closed early"));
+      };
+      const cleanup = () => {
+        sock.off("data", onData);
+        sock.off("error", onErr);
+        sock.off("close", onClose);
+      };
+      sock.on("data", onData);
+      sock.once("error", onErr);
+      sock.once("close", onClose);
+    });
+    sock.once("connect", async () => {
+      try {
+        const useUserPass = Boolean(username || password);
+        const methods = useUserPass ? Buffer.from([5, 2, 0, 2]) : Buffer.from([5, 1, 0]);
+        sock.write(methods);
+        const greeting = await readExact(2);
+        if (greeting[0] !== 5 || greeting[1] === 255) {
+          throw new Error("SOCKS5 auth method rejected");
+        }
+        if (greeting[1] === 2) {
+          const uBuf = Buffer.from(username, "utf8");
+          const pBuf = Buffer.from(password, "utf8");
+          if (uBuf.length > 255 || pBuf.length > 255) throw new Error("SOCKS5 credentials too long");
+          const authPacket = Buffer.concat([
+            Buffer.from([1, uBuf.length]),
+            uBuf,
+            Buffer.from([pBuf.length]),
+            pBuf
+          ]);
+          sock.write(authPacket);
+          const authResp = await readExact(2);
+          if (authResp[1] !== 0) {
+            throw new Error("SOCKS5 username/password rejected");
+          }
+        }
+        const hostBuf = Buffer.from(destHost, "utf8");
+        if (hostBuf.length === 0 || hostBuf.length > 255) throw new Error("Invalid destination host");
+        const portBuf = Buffer.alloc(2);
+        portBuf.writeUInt16BE(destPort, 0);
+        const reqPacket = Buffer.concat([
+          Buffer.from([5, 1, 0, 3, hostBuf.length]),
+          hostBuf,
+          portBuf
+        ]);
+        sock.write(reqPacket);
+        const repHead = await readExact(4);
+        if (repHead[0] !== 5 || repHead[1] !== 0) {
+          throw new Error(`SOCKS5 CONNECT rejected (${repHead[1]})`);
+        }
+        const atyp = repHead[3];
+        if (atyp === 1) await readExact(6);
+        else if (atyp === 4) await readExact(18);
+        else if (atyp === 3) {
+          const lenB = await readExact(1);
+          await readExact(lenB[0] + 2);
+        }
+        if (!settled) {
+          settled = true;
+          sock.setTimeout(0);
+          sock.off("error", fail);
+          resolve(sock);
+        }
+      } catch (err) {
+        fail(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  });
+}
+function ensureSocksToHttpBridge(proxyUrl) {
+  if (socksBridgeServer && socksBridgePort > 0 && socksBridgeUpstreamUrl === proxyUrl) {
+    return socksBridgePort;
+  }
+  closeSocksBridge();
+  let parsedProxy;
+  try {
+    parsedProxy = new URL(proxyUrl);
+  } catch {
+    return 0;
+  }
+  const server = net2.createServer((clientSock) => {
+    let headerBuf = Buffer.alloc(0);
+    const onData = async (chunk) => {
+      headerBuf = Buffer.concat([headerBuf, chunk]);
+      const sepIdx = headerBuf.indexOf("\r\n\r\n");
+      if (sepIdx === -1) {
+        if (headerBuf.length > 16384) clientSock.destroy();
+        return;
+      }
+      clientSock.off("data", onData);
+      const rawHead = headerBuf.subarray(0, sepIdx).toString("latin1");
+      const remainder = headerBuf.subarray(sepIdx + 4);
+      const firstLine = rawHead.split("\r\n")[0] || "";
+      const [method = "", target = ""] = firstLine.split(" ");
+      let destHost = "";
+      let destPort = 80;
+      if (method.toUpperCase() === "CONNECT") {
+        const idx = target.lastIndexOf(":");
+        destHost = idx > 0 ? target.slice(0, idx) : target;
+        destPort = idx > 0 ? Number(target.slice(idx + 1)) || 443 : 443;
+      } else {
+        try {
+          const u = new URL(target);
+          destHost = u.hostname;
+          destPort = Number(u.port || (u.protocol === "https:" ? 443 : 80));
+        } catch {
+          clientSock.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+          return;
+        }
+      }
+      const cleanDestHost = destHost.replace(/^\[|\]$/g, "").toLowerCase();
+      if (!cleanDestHost || isDisallowedHostnameSyntax(cleanDestHost) || net2.isIP(cleanDestHost) && isPrivateIpAddress(cleanDestHost)) {
+        clientSock.end("HTTP/1.1 403 Forbidden\r\n\r\n");
+        return;
+      }
+      try {
+        const upstreamSock = await dialThroughSocks5(parsedProxy, cleanDestHost, destPort);
+        if (method.toUpperCase() === "CONNECT") {
+          clientSock.write("HTTP/1.1 200 Connection Established\r\n\r\n");
+        } else {
+          const u = new URL(target);
+          const relTarget = `${u.pathname || "/"}${u.search || ""}`;
+          const lines = rawHead.split("\r\n");
+          lines[0] = `${method} ${relTarget} HTTP/1.1`;
+          const filteredLines = lines.filter((l) => !/^proxy-/i.test(l));
+          upstreamSock.write(filteredLines.join("\r\n") + "\r\n\r\n");
+        }
+        if (remainder.length > 0) upstreamSock.write(remainder);
+        clientSock.pipe(upstreamSock);
+        upstreamSock.pipe(clientSock);
+        const destroyBoth = () => {
+          clientSock.destroy();
+          upstreamSock.destroy();
+        };
+        clientSock.on("error", destroyBoth);
+        upstreamSock.on("error", destroyBoth);
+      } catch {
+        clientSock.end("HTTP/1.1 502 Bad Gateway\r\n\r\n");
+      }
+    };
+    clientSock.on("data", onData);
+    clientSock.on("error", () => {
+    });
+  });
+  server.listen(0, "127.0.0.1");
+  const addr = server.address();
+  if (addr && typeof addr === "object") {
+    socksBridgeServer = server;
+    socksBridgePort = addr.port;
+    socksBridgeUpstreamUrl = proxyUrl;
+    server.unref?.();
+    return socksBridgePort;
+  }
+  server.close();
+  return 0;
+}
+function createDispatcherForProxy(proxyUrl) {
+  const existing = dispatcherCache.get(proxyUrl);
+  if (existing) return existing;
+  const normalizedForUndici = proxyUrl.replace(/^socks5h:\/\//i, "socks5://");
+  const agent = /^socks5/i.test(normalizedForUndici) ? new Socks5ProxyAgent(normalizedForUndici) : new ProxyAgent({
+    uri: normalizedForUndici,
+    requestTls: { rejectUnauthorized: false }
+  });
+  if (dispatcherCache.size > 8) {
+    const firstKey = dispatcherCache.keys().next().value;
+    if (firstKey) dispatcherCache.delete(firstKey);
+  }
+  dispatcherCache.set(proxyUrl, agent);
+  return agent;
+}
+function shouldRouteThroughSpainProxy(targetUrl) {
+  if (!state.enabled || !state.proxyUrl || state.scope === "off") return false;
+  let parsed;
+  try {
+    parsed = new URL(targetUrl);
+  } catch {
+    return false;
+  }
+  const host = parsed.hostname.toLowerCase();
+  if (!host || host === "localhost" || host === "127.0.0.1" || host === "::1") {
+    return false;
+  }
+  if (BYPASS_PROXY_HOST_PATTERNS.some((rx) => rx.test(host))) {
+    return false;
+  }
+  if (state.scope === "all_streaming") {
+    return true;
+  }
+  return SPANISH_GEO_ROUTING_PATTERNS.some((rx) => rx.test(host));
+}
+function getSpainProxyUrlForTarget(targetUrl) {
+  if (!shouldRouteThroughSpainProxy(targetUrl)) return null;
+  return state.proxyUrl;
+}
+function getSpainProxyDispatcherForTarget(targetUrl) {
+  const proxyUrl = getSpainProxyUrlForTarget(targetUrl);
+  if (!proxyUrl) return void 0;
+  return createDispatcherForProxy(proxyUrl);
+}
+function getSpainFfmpegHttpProxyArgs(targetUrl) {
+  const proxyUrl = getSpainProxyUrlForTarget(targetUrl);
+  if (!proxyUrl) return [];
+  if (/^https?:\/\//i.test(proxyUrl)) {
+    return ["-http_proxy", proxyUrl];
+  }
+  if (/^socks5h?:\/\//i.test(proxyUrl) && !process.env.VITEST) {
+    const port = ensureSocksToHttpBridge(proxyUrl);
+    if (port > 0) {
+      return ["-http_proxy", `http://127.0.0.1:${port}`];
+    }
+  }
+  return [];
 }
 
 // server/utils/tlsFetch.ts
@@ -677,6 +1139,15 @@ async function streamingFetch(rawUrl, init = {}) {
     return out;
   };
   const allowFallback = init.allowTlsFallback !== false && parsed.protocol === "https:" && !STRICT_TLS_ONLY_HOSTS.some((rx) => rx.test(parsed.hostname));
+  const spainDispatcher = getSpainProxyDispatcherForTarget(parsed.toString());
+  if (spainDispatcher) {
+    const proxiedRes = await undiciFetch2(parsed.toString(), {
+      ...init,
+      dispatcher: spainDispatcher,
+      signal
+    });
+    return proxiedRes;
+  }
   if (shouldUseDirectIpv4Http(parsed.hostname)) {
     return relaxedHttpsRequest(parsed, {
       method: init.method || "GET",
@@ -898,7 +1369,8 @@ function h2GetRaw(targetUrl, headers = {}, maxTimeSec = 6, redirectsLeft = 4) {
   });
 }
 async function curlGetText(targetUrl, headers = {}, maxTimeSec = 6, preferCurlCli = false, forceIpv4 = true) {
-  if (!preferCurlCli) {
+  const spainProxy = getSpainProxyUrlForTarget(targetUrl);
+  if (!preferCurlCli && !spainProxy) {
     try {
       const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
       if (h2.buf.length > 0 && h2.status < 400) {
@@ -918,6 +1390,7 @@ async function curlGetText(targetUrl, headers = {}, maxTimeSec = 6, preferCurlCl
       String(Math.min(3, Math.max(2, maxTimeSec))),
       "--max-time",
       String(maxTimeSec),
+      ...spainProxy ? ["--proxy", spainProxy] : [],
       "-w",
       "\n__FINAL_URL__:%{url_effective}"
     ];
@@ -942,12 +1415,15 @@ async function curlGetText(targetUrl, headers = {}, maxTimeSec = 6, preferCurlCl
   });
 }
 async function curlGetBufferWithStatus(targetUrl, headers = {}, maxTimeSec = 7) {
-  try {
-    const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
-    if (h2.buf.length > 0 && h2.status >= 200 && h2.status < 400) {
-      return { buf: h2.buf, status: h2.status };
+  const spainProxy = getSpainProxyUrlForTarget(targetUrl);
+  if (!spainProxy) {
+    try {
+      const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
+      if (h2.buf.length > 0 && h2.status >= 200 && h2.status < 400) {
+        return { buf: h2.buf, status: h2.status };
+      }
+    } catch {
     }
-  } catch {
   }
   const runCurl = (hdrs) => new Promise((resolve, reject) => {
     const marker = Buffer.from("\n__HTTP_STATUS__:");
@@ -960,6 +1436,7 @@ async function curlGetBufferWithStatus(targetUrl, headers = {}, maxTimeSec = 7) 
       String(Math.min(3, Math.max(2, maxTimeSec))),
       "--max-time",
       String(maxTimeSec),
+      ...spainProxy ? ["--proxy", spainProxy] : [],
       "-w",
       "\n__HTTP_STATUS__:%{http_code}"
     ];
@@ -1028,6 +1505,7 @@ async function curlGetBuffer(targetUrl, headers = {}, maxTimeSec = 7) {
   return res.buf;
 }
 async function curlPostJsonText(url, payload, headers, maxTimeSec = 5) {
+  const spainProxy = getSpainProxyUrlForTarget(url);
   return new Promise((resolve) => {
     const args = [
       "-4",
@@ -1039,6 +1517,7 @@ async function curlPostJsonText(url, payload, headers, maxTimeSec = 5) {
       String(Math.min(3, Math.max(2, maxTimeSec))),
       "--max-time",
       String(maxTimeSec),
+      ...spainProxy ? ["--proxy", spainProxy] : [],
       "-X",
       "POST",
       "-H",
@@ -1403,6 +1882,432 @@ function rewriteVidsrcBuzzM3u8(manifestText, baseUrl, embedOrigin) {
   };
 }
 
+// server/routes/proxies/dvbCodecProbe.ts
+import { spawn } from "child_process";
+import { fetch as undiciFetch3 } from "undici";
+var probedStreamCache = new LruTtlCache(
+  160,
+  15 * 60 * 1e3
+);
+function parseFrameRateFraction(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return 0;
+  const parts = s.split("/");
+  if (parts.length === 2) {
+    const num = Number(parts[0]);
+    const den = Number(parts[1]);
+    if (num > 0 && den > 0) return num / den;
+  }
+  const n = Number(s);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+function parseFfprobeStreamJson(rawJson) {
+  try {
+    const parsed = JSON.parse(rawJson);
+    const streams = Array.isArray(parsed.streams) ? parsed.streams : [];
+    const vStream = streams.find((s) => s.codec_type === "video");
+    if (!vStream || !vStream.codec_name) {
+      return null;
+    }
+    const aStream = streams.find((s) => s.codec_type === "audio");
+    return {
+      videoCodec: String(vStream.codec_name || "").toLowerCase(),
+      pixFmt: String(vStream.pix_fmt || "").toLowerCase(),
+      fieldOrder: String(vStream.field_order || "progressive").toLowerCase(),
+      width: Number(vStream.width || 0),
+      height: Number(vStream.height || 0),
+      fps: parseFrameRateFraction(vStream.avg_frame_rate) || parseFrameRateFraction(vStream.r_frame_rate) || 25,
+      audioCodec: String(aStream?.codec_name || "").toLowerCase(),
+      audioProfile: String(aStream?.profile || "").trim(),
+      hasAudio: Boolean(aStream)
+    };
+  } catch {
+    return null;
+  }
+}
+async function probeDvbStreamFromBuffer(preamble, cacheKeyUrl = "") {
+  if (cacheKeyUrl) {
+    const cached = probedStreamCache.get(cacheKeyUrl);
+    if (cached) return cached;
+  }
+  if (!preamble || preamble.length < 188) return null;
+  return await new Promise((resolve) => {
+    let settled = false;
+    const stdoutChunks = [];
+    const proc = spawn(FFPROBE_BIN, [
+      "-v",
+      "error",
+      "-f",
+      "mpegts",
+      "-analyzeduration",
+      "450000",
+      "-probesize",
+      String(preamble.length),
+      "-show_streams",
+      "-of",
+      "json",
+      "pipe:0"
+    ]);
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(val);
+    };
+    const timer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+      }
+      finish(null);
+    }, 1500);
+    proc.stdout?.on("data", (chunk) => stdoutChunks.push(chunk));
+    proc.on("error", () => finish(null));
+    proc.on("close", () => {
+      const info = parseFfprobeStreamJson(Buffer.concat(stdoutChunks).toString("utf8"));
+      if (info && cacheKeyUrl) {
+        probedStreamCache.set(cacheKeyUrl, info);
+      }
+      finish(info);
+    });
+    proc.stdin?.on("error", () => {
+    });
+    proc.stdin?.end(preamble);
+  });
+}
+async function probeDvbStreamCodec(cleanUpstream, referer = "", isXtreamLive = false, onUpstreamError) {
+  const cached = probedStreamCache.get(cleanUpstream);
+  if (cached) return cached;
+  const probeArgs = [
+    "-v",
+    "error",
+    ...getSpainFfmpegHttpProxyArgs(cleanUpstream),
+    "-user_agent",
+    isXtreamLive ? "IPTVSmartersPlayer" : TDT_DVB_UA
+  ];
+  if (referer && /^https?:\/\//i.test(referer)) {
+    probeArgs.push("-headers", `Referer: ${referer}\r
+`);
+  }
+  probeArgs.push(
+    "-rw_timeout",
+    "2600000",
+    "-analyzeduration",
+    "450000",
+    "-probesize",
+    "450000",
+    "-show_streams",
+    "-of",
+    "json",
+    cleanUpstream
+  );
+  return await new Promise((resolve) => {
+    let settled = false;
+    const stdoutChunks = [];
+    let stderrStr = "";
+    const proc = spawn(FFPROBE_BIN, probeArgs);
+    const finish = (val) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(val);
+    };
+    const timer = setTimeout(() => {
+      try {
+        proc.kill("SIGKILL");
+      } catch {
+      }
+      finish(null);
+    }, 2600);
+    proc.stdout?.on("data", (chunk) => stdoutChunks.push(chunk));
+    proc.stderr?.on("data", (chunk) => {
+      stderrStr = (stderrStr + chunk.toString("utf8")).slice(-300);
+    });
+    proc.on("error", () => finish(null));
+    proc.on("close", (code) => {
+      if (code !== 0 && stdoutChunks.length === 0) {
+        if (/404 not found|connection refused|502 bad gateway|timed out/i.test(stderrStr)) {
+          onUpstreamError?.(stderrStr.slice(0, 120));
+        }
+        finish(null);
+        return;
+      }
+      const info = parseFfprobeStreamJson(Buffer.concat(stdoutChunks).toString("utf8"));
+      if (info) {
+        probedStreamCache.set(cleanUpstream, info);
+      }
+      finish(info);
+    });
+  });
+}
+function buildDvbLiveFfmpegArgs(options) {
+  const {
+    cleanUpstream,
+    inputUrl,
+    referer,
+    profile,
+    isXtreamLive,
+    playlistPath,
+    segmentPattern,
+    probe
+  } = options;
+  const actualInput = inputUrl || cleanUpstream;
+  const isPipeInput = actualInput === "pipe:0";
+  const isFastProfile = profile === "fast";
+  const isUhd4kStream = /\/stream\/6[4568]\//i.test(cleanUpstream) || (probe ? probe.width >= 3e3 || probe.height >= 1800 : false);
+  const isInterlaced = Boolean(probe && /^(tt|bb|tb|bt)$/i.test(probe.fieldOrder));
+  const isHighFps = Boolean(probe && probe.fps > 31);
+  const canCopyVideo = Boolean(
+    probe && probe.videoCodec === "h264" && (!probe.pixFmt || /^yuvj?420p$/i.test(probe.pixFmt)) && !isInterlaced && !isUhd4kStream && !isFastProfile
+  );
+  const canCopyAudio = Boolean(
+    canCopyVideo && probe?.hasAudio && probe.audioCodec === "aac" && (!probe.audioProfile || /^(lc|main)$/i.test(probe.audioProfile))
+  );
+  const ffArgs = ["-hide_banner", "-loglevel", "error"];
+  if (!isPipeInput) {
+    ffArgs.push(...getSpainFfmpegHttpProxyArgs(cleanUpstream));
+    ffArgs.push("-user_agent", isXtreamLive ? "IPTVSmartersPlayer" : TDT_DVB_UA);
+    if (referer && /^https?:\/\//i.test(referer)) {
+      ffArgs.push("-headers", `Referer: ${referer}\r
+`);
+    }
+  }
+  let codecArgs;
+  if (canCopyVideo) {
+    codecArgs = [
+      "-c:v",
+      "copy",
+      ...canCopyAudio ? ["-c:a", "copy"] : ["-c:a", "aac", "-ac", "2", "-ar", "48000", "-b:a", "160k"]
+    ];
+  } else {
+    const vfParts = [];
+    if (isInterlaced) {
+      vfParts.push("yadif=0:-1:1");
+    }
+    if (isUhd4kStream || isHighFps) {
+      vfParts.push("fps=25");
+    }
+    if (isUhd4kStream) {
+      vfParts.push("scale=1920:1080:flags=bilinear");
+    } else if (isFastProfile) {
+      vfParts.push("scale='min(1280,iw)':-2");
+    } else {
+      vfParts.push("scale='min(1920,iw)':-2");
+    }
+    vfParts.push("format=yuv420p");
+    const lock25Fps = isUhd4kStream || isHighFps;
+    codecArgs = [
+      "-vf",
+      vfParts.join(","),
+      "-c:v",
+      "libx264",
+      "-preset",
+      isFastProfile ? "ultrafast" : "veryfast",
+      ...isFastProfile ? ["-tune", "zerolatency"] : [],
+      "-profile:v",
+      "high",
+      "-level:v",
+      isFastProfile ? "4.0" : "4.1",
+      "-pix_fmt",
+      "yuv420p",
+      "-crf",
+      isFastProfile ? "21" : "19",
+      "-maxrate",
+      isFastProfile ? "2600k" : "4800k",
+      "-bufsize",
+      isFastProfile ? "5200k" : "9600k",
+      ...lock25Fps ? ["-r", "25", "-g", "50", "-keyint_min", "50"] : ["-g", "50", "-keyint_min", "25"],
+      "-sc_threshold",
+      "0",
+      "-force_key_frames",
+      "expr:gte(t,n_forced*2)",
+      "-threads",
+      "0",
+      "-c:a",
+      "aac",
+      "-ac",
+      "2",
+      "-ar",
+      "48000",
+      "-b:a",
+      isFastProfile ? "128k" : "160k"
+    ];
+  }
+  ffArgs.push(
+    ...isPipeInput ? ["-f", "mpegts"] : [
+      ...isXtreamLive ? [] : ["-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2"],
+      "-rw_timeout",
+      isXtreamLive ? "7000000" : "5000000",
+      .../\.m3u8(\?|$)/i.test(cleanUpstream) ? ["-live_start_index", "-3"] : []
+    ],
+    "-analyzeduration",
+    "400000",
+    "-probesize",
+    "400000",
+    "-fflags",
+    "+genpts+discardcorrupt",
+    "-err_detect",
+    "ignore_err",
+    "-avoid_negative_ts",
+    "make_zero",
+    "-i",
+    actualInput,
+    "-map",
+    "0:v:0",
+    "-map",
+    "0:a:0?",
+    ...codecArgs,
+    "-sn",
+    "-dn",
+    "-f",
+    "hls",
+    "-hls_init_time",
+    "1",
+    "-hls_time",
+    "2",
+    "-hls_list_size",
+    "12",
+    "-hls_flags",
+    "delete_segments+independent_segments+omit_endlist+temp_file",
+    "-hls_segment_filename",
+    segmentPattern,
+    playlistPath
+  );
+  return ffArgs;
+}
+async function openSingleSocketMpegTsStream(options) {
+  const { cleanUpstream, referer, isXtreamLive, cachedProbe, onError } = options;
+  const ac = new AbortController();
+  const headers = {
+    "User-Agent": isXtreamLive ? "IPTVSmartersPlayer" : TDT_DVB_UA,
+    Accept: "*/*"
+  };
+  if (referer && /^https?:\/\//i.test(referer)) {
+    headers["Referer"] = referer;
+  }
+  const connectTimer = setTimeout(() => {
+    try {
+      ac.abort();
+    } catch {
+    }
+  }, 3200);
+  try {
+    const dispatcher = getSpainProxyDispatcherForTarget(cleanUpstream);
+    const resp = await undiciFetch3(cleanUpstream, {
+      method: "GET",
+      headers,
+      dispatcher,
+      signal: ac.signal
+    });
+    if (!resp.ok || !resp.body) {
+      clearTimeout(connectTimer);
+      if (resp.status === 404 || resp.status >= 500) {
+        onError?.(`HTTP ${resp.status}`);
+      }
+      try {
+        await resp.body?.cancel?.();
+      } catch {
+      }
+      return null;
+    }
+    const reader = resp.body.getReader();
+    const chunks = [];
+    let totalBytes = 0;
+    const targetPreamble = cachedProbe ? 48e3 : 22e4;
+    while (totalBytes < targetPreamble) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value && value.byteLength > 0) {
+        chunks.push(Buffer.from(value));
+        totalBytes += value.byteLength;
+      }
+    }
+    clearTimeout(connectTimer);
+    if (totalBytes < 188) {
+      ac.abort();
+      onError?.("Empty DVB stream");
+      return null;
+    }
+    const preamble = Buffer.concat(chunks);
+    const probe = cachedProbe || await probeDvbStreamFromBuffer(preamble, cleanUpstream);
+    return { reader, preamble, abortController: ac, probe };
+  } catch (err) {
+    clearTimeout(connectTimer);
+    try {
+      ac.abort();
+    } catch {
+    }
+    onError?.(err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+function pumpMpegTsPipeToFfmpeg(options) {
+  const { pipe, stdin, isDead, onStall, readIdleTimeoutMs = 6500 } = options;
+  stdin.on("error", () => {
+  });
+  const waitStdinReady = () => new Promise((resDrain) => {
+    const onDrain = () => {
+      stdin.off("close", onClose);
+      resDrain(true);
+    };
+    const onClose = () => {
+      stdin.off("drain", onDrain);
+      resDrain(false);
+    };
+    stdin.once("drain", onDrain);
+    stdin.once("close", onClose);
+  });
+  const readChunkWithTimeout = async () => {
+    let stallTimer = null;
+    try {
+      return await Promise.race([
+        pipe.reader.read(),
+        new Promise((_resolve, reject) => {
+          stallTimer = setTimeout(() => {
+            onStall?.();
+            try {
+              pipe.abortController.abort();
+            } catch {
+            }
+            reject(new Error("MPEG-TS upstream read stall timeout"));
+          }, readIdleTimeoutMs);
+        })
+      ]);
+    } finally {
+      if (stallTimer) clearTimeout(stallTimer);
+    }
+  };
+  void (async () => {
+    try {
+      if (!stdin.write(pipe.preamble)) {
+        if (!await waitStdinReady()) return;
+      }
+      while (!isDead()) {
+        const { done, value } = await readChunkWithTimeout();
+        if (done || isDead()) break;
+        if (value && value.byteLength > 0) {
+          if (!stdin.write(Buffer.from(value))) {
+            if (!await waitStdinReady()) break;
+          }
+        }
+      }
+    } catch {
+    } finally {
+      try {
+        pipe.abortController.abort();
+      } catch {
+      }
+      try {
+        stdin.end();
+      } catch {
+      }
+    }
+  })();
+}
+
+// server/routes/proxies/dvbSegmentRemuxer.ts
+import { spawn as spawn2 } from "child_process";
+
 // server/services/runtimeMetricsCollector.ts
 import os from "os";
 import { monitorEventLoopDelay } from "perf_hooks";
@@ -1619,12 +2524,11 @@ var RuntimeMetricsCollector = class {
 };
 var runtimeMetrics = new RuntimeMetricsCollector();
 
-// server/routes/proxies/dvbTranscoder.ts
+// server/routes/proxies/dvbSegmentRemuxer.ts
 var dvbAacSegmentCache = new LruTtlCache(
   80,
   8e4
 );
-var dvbRollingPlaylistMap = new LruTtlCache(45, 9e4);
 var activeDvbTranscodes = 0;
 var MAX_CONCURRENT_DVB_TRANSCODES = 4;
 var dvbTranscodeQueue = [];
@@ -1651,7 +2555,11 @@ function scheduleDvbTranscode(fn, highPriority) {
     }
   });
 }
-function remuxDvbTsToAac(segmentUrl, referer, highPriority = false) {
+function remuxDvbTsToAacWithHealth(options) {
+  const { segmentUrl, referer, highPriority = false, isCoolingDown, markDown } = options;
+  if (isCoolingDown(segmentUrl)) {
+    return Promise.reject(new Error("DVB upstream headend cooling down"));
+  }
   const now = Date.now();
   const cached = dvbAacSegmentCache.get(segmentUrl);
   if (cached && now - cached.ts < 75e3) {
@@ -1669,7 +2577,7 @@ function remuxDvbTsToAac(segmentUrl, referer, highPriority = false) {
     try {
       const resp = await streamingFetch(segmentUrl, {
         headers: segHeaders,
-        timeoutMs: 7e3
+        timeoutMs: 4500
       });
       if (resp.ok) {
         rawBuf = Buffer.from(await resp.arrayBuffer());
@@ -1677,14 +2585,15 @@ function remuxDvbTsToAac(segmentUrl, referer, highPriority = false) {
     } catch {
     }
     if (!rawBuf || rawBuf.length === 0) {
-      rawBuf = await curlGetBuffer(segmentUrl, segHeaders, 8);
+      rawBuf = await curlGetBuffer(segmentUrl, segHeaders, 5);
     }
     if (!rawBuf || rawBuf.length < 376) {
+      markDown(segmentUrl, "Empty or unreachable DVB segment", 25e3);
       throw new Error("Empty or truncated DVB TS segment");
     }
     return await scheduleDvbTranscode(
       () => new Promise((resolve, reject) => {
-        const ff = spawn(FFMPEG_BIN, [
+        const ff = spawn2(FFMPEG_BIN, [
           "-hide_banner",
           "-loglevel",
           "error",
@@ -1757,6 +2666,85 @@ function remuxDvbTsToAac(segmentUrl, referer, highPriority = false) {
   dvbAacSegmentCache.set(segmentUrl, { promise: jobPromise, ts: now });
   return jobPromise;
 }
+
+// server/routes/proxies/dvbTranscoder.ts
+var dvbRollingPlaylistMap = new LruTtlCache(45, 9e4);
+var dvbHostDownCache = new LruTtlCache(64, 45e3);
+var dvbHostUpCache = new LruTtlCache(64, 15e3);
+function getDvbHostKey(rawUrl) {
+  try {
+    return new URL(rawUrl).host.toLowerCase();
+  } catch {
+    return rawUrl.slice(0, 80);
+  }
+}
+function getDvbCooldownKey(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    return `${u.host.toLowerCase()}${u.pathname}`;
+  } catch {
+    return rawUrl.slice(0, 120);
+  }
+}
+function isDvbUpstreamCoolingDown(rawUrl) {
+  const key = getDvbCooldownKey(rawUrl);
+  const entry = dvbHostDownCache.get(key);
+  if (!entry) return false;
+  if (Date.now() < entry.until) return true;
+  dvbHostDownCache.delete(key);
+  return false;
+}
+function markDvbUpstreamDown(rawUrl, reason, ttlMs = 45e3) {
+  const key = getDvbCooldownKey(rawUrl);
+  const effectiveTtl = isXtreamLiveStreamUrl(rawUrl) ? Math.min(ttlMs, 12e3) : ttlMs;
+  dvbHostDownCache.set(key, { until: Date.now() + effectiveTtl, reason });
+  dvbHostUpCache.delete(key);
+}
+async function probeDvbUpstreamReachable(cleanUpstream, referer, timeoutMs = 2600) {
+  const streamKey = getDvbCooldownKey(cleanUpstream);
+  if (isDvbUpstreamCoolingDown(cleanUpstream)) return false;
+  if (dvbHostUpCache.get(streamKey)) return true;
+  const headers = {
+    "User-Agent": getPreferredUpstreamUa(cleanUpstream),
+    Accept: "*/*"
+  };
+  if (referer && /^https?:\/\//i.test(referer)) {
+    headers["Referer"] = referer;
+  }
+  try {
+    const resp = await streamingFetch(cleanUpstream, {
+      method: "GET",
+      headers,
+      timeoutMs
+    });
+    try {
+      await resp.body?.cancel?.();
+    } catch {
+    }
+    if (resp.ok || resp.status === 206) {
+      dvbHostUpCache.set(streamKey, true);
+      return true;
+    }
+    if (resp.status === 404 || resp.status >= 500) {
+      markDvbUpstreamDown(cleanUpstream, `HTTP ${resp.status}`, 25e3);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    markDvbUpstreamDown(cleanUpstream, msg, 45e3);
+    return false;
+  }
+}
+function remuxDvbTsToAac(segmentUrl, referer, highPriority = false) {
+  return remuxDvbTsToAacWithHealth({
+    segmentUrl,
+    referer,
+    highPriority,
+    isCoolingDown: isDvbUpstreamCoolingDown,
+    markDown: markDvbUpstreamDown
+  });
+}
 var DVB_LIVE_ROOT = "/tmp/naim-dvb-live";
 try {
   if (fs2.existsSync(DVB_LIVE_ROOT)) {
@@ -1764,10 +2752,14 @@ try {
   }
 } catch {
 }
-var MAX_LIVE_DVB_SESSIONS = 4;
-var DVB_SESSION_IDLE_MS = 45e3;
+var MAX_LIVE_DVB_SESSIONS = 6;
+var DVB_SESSION_IDLE_MS = 9e4;
 var liveDvbSessions = /* @__PURE__ */ new Map();
+var inflightDvbSessionStarts = /* @__PURE__ */ new Map();
 var dvbSessionUpstreamMeta = new LruTtlCache(200, 24 * 60 * 60 * 1e3);
+function isXtreamLiveStreamUrl(rawUrl) {
+  return /\/live\/[^/]+\/[^/]+\//i.test(String(rawUrl || ""));
+}
 function normalizeDvbUpstream(rawUpstreamUrl) {
   return String(rawUpstreamUrl || "").trim().replace(/[?&]profile=(hd|fast|iptv)\b/gi, "");
 }
@@ -1781,6 +2773,10 @@ function destroyLiveDvbSession(key) {
   if (!sess) return;
   sess.dead = true;
   liveDvbSessions.delete(key);
+  try {
+    sess.abortController?.abort();
+  } catch {
+  }
   try {
     sess.proc.kill("SIGKILL");
   } catch {
@@ -1803,13 +2799,45 @@ setInterval(() => {
   for (const [key, sess] of liveDvbSessions.entries()) {
     if (sess.dead || now - sess.lastAccessAt > DVB_SESSION_IDLE_MS) {
       destroyLiveDvbSession(key);
+      continue;
+    }
+    if (now - sess.startedAt > 15e3) {
+      try {
+        const plFile = path2.join(sess.dir, "index.m3u8");
+        const st = fs2.statSync(plFile);
+        if (now - st.mtimeMs > 12e3) {
+          markDvbUpstreamDown(sess.upstreamUrl, "Live HLS playlist stalled", 2e4);
+          destroyLiveDvbSession(key);
+        }
+      } catch {
+      }
     }
   }
-}, 15e3).unref();
+}, 1e4).unref();
 async function ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile = "hd", referer = "", attempt = 0) {
   const cleanUpstream = normalizeDvbUpstream(rawUpstreamUrl);
   const sessionKey = buildDvbSessionKey(cleanUpstream, profile);
   dvbSessionUpstreamMeta.set(sessionKey, { upstreamUrl: cleanUpstream, profile, referer });
+  const inflight = inflightDvbSessionStarts.get(sessionKey);
+  if (inflight) {
+    return inflight;
+  }
+  const runPromise = startOrReuseLiveDvbCleanHlsSession(
+    rawUpstreamUrl,
+    cleanUpstream,
+    sessionKey,
+    profile,
+    referer,
+    attempt
+  ).finally(() => {
+    if (inflightDvbSessionStarts.get(sessionKey) === runPromise) {
+      inflightDvbSessionStarts.delete(sessionKey);
+    }
+  });
+  inflightDvbSessionStarts.set(sessionKey, runPromise);
+  return runPromise;
+}
+async function startOrReuseLiveDvbCleanHlsSession(rawUpstreamUrl, cleanUpstream, sessionKey, profile, referer, attempt) {
   const existing = liveDvbSessions.get(sessionKey);
   if (existing && !existing.dead) {
     existing.lastAccessAt = Date.now();
@@ -1819,7 +2847,7 @@ async function ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile = "hd", refe
     if (ok && fs2.existsSync(plFile)) {
       try {
         const st = fs2.statSync(plFile);
-        fresh = Date.now() - st.mtimeMs < 15e3;
+        fresh = Date.now() - st.mtimeMs < 1e4;
       } catch {
         fresh = false;
       }
@@ -1829,6 +2857,30 @@ async function ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile = "hd", refe
       return `/api/dvb-live/${sessionKey}/index.m3u8`;
     }
     destroyLiveDvbSession(sessionKey);
+  }
+  const isXtreamLive = isXtreamLiveStreamUrl(cleanUpstream);
+  if (isDvbUpstreamCoolingDown(cleanUpstream)) {
+    return null;
+  }
+  const isM3u8Input = /\.m3u8(\?|$)/i.test(cleanUpstream);
+  let probe = probedStreamCache.get(cleanUpstream) || null;
+  if (isXtreamLive) {
+    const targetHost = getDvbHostKey(cleanUpstream);
+    let evicted = false;
+    for (const [k, s] of liveDvbSessions.entries()) {
+      if (k !== sessionKey && getDvbHostKey(s.upstreamUrl) === targetHost) {
+        destroyLiveDvbSession(k);
+        evicted = true;
+      }
+    }
+    if (evicted) {
+      await new Promise((r) => setTimeout(r, 180));
+    }
+  } else if (isM3u8Input && !probe) {
+    const reachable = await probeDvbUpstreamReachable(cleanUpstream, referer, 1600);
+    if (!reachable) {
+      return null;
+    }
   }
   while (liveDvbSessions.size >= MAX_LIVE_DVB_SESSIONS) {
     let oldestKey = "";
@@ -1851,120 +2903,82 @@ async function ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile = "hd", refe
   }
   const playlistPath = path2.join(sessionDir, "index.m3u8");
   const segmentPattern = path2.join(sessionDir, "seg_%05d.ts");
-  const isXtreamLive = /\/live\/[^/]+\/[^/]+\//i.test(cleanUpstream);
-  const ffArgs = [
-    "-hide_banner",
-    "-loglevel",
-    "error",
-    "-user_agent",
-    isXtreamLive ? "IPTVSmartersPlayer" : TDT_DVB_UA
-  ];
-  if (referer && /^https?:\/\//i.test(referer)) {
-    ffArgs.push("-headers", `Referer: ${referer}\r
-`);
+  const isTestEnv = process.env.NODE_ENV === "test" || Boolean(process.env.VITEST);
+  let mpegTsPipe = null;
+  if (!isTestEnv && !isM3u8Input) {
+    mpegTsPipe = await openSingleSocketMpegTsStream({
+      cleanUpstream,
+      referer,
+      isXtreamLive,
+      cachedProbe: probe,
+      onError: (reason) => markDvbUpstreamDown(cleanUpstream, reason, 12e3)
+    });
+    if (!mpegTsPipe) {
+      return null;
+    }
+    probe = mpegTsPipe.probe;
+  } else if (!probe && !isTestEnv) {
+    probe = await probeDvbStreamCodec(cleanUpstream, referer, isXtreamLive, (reason) => {
+      markDvbUpstreamDown(cleanUpstream, reason, 25e3);
+    });
+    if (isDvbUpstreamCoolingDown(cleanUpstream)) {
+      return null;
+    }
   }
-  const isFastProfile = profile === "fast";
-  const isUhd4kStream = /\/stream\/6[4568]\//i.test(cleanUpstream);
-  const vfFilter = isUhd4kStream ? isFastProfile ? "fps=25,scale=1280:720:flags=fast_bilinear,format=yuv420p" : "fps=25,scale=1920:1080:flags=bilinear,format=yuv420p" : isFastProfile ? "yadif=0:-1:1,scale='min(1280,iw)':-2,format=yuv420p" : "yadif=0:-1:1,scale='min(1920,iw)':-2,format=yuv420p";
-  const useUltrafast = isUhd4kStream || isFastProfile || liveDvbSessions.size >= 2;
-  ffArgs.push(
-    "-reconnect",
-    "1",
-    "-reconnect_streamed",
-    "1",
-    "-reconnect_delay_max",
-    "2",
-    "-rw_timeout",
-    "7000000",
-    "-analyzeduration",
-    "800000",
-    "-probesize",
-    "1000000",
-    "-live_start_index",
-    "-3",
-    "-fflags",
-    "+genpts+discardcorrupt",
-    "-avoid_negative_ts",
-    "make_zero",
-    ...isUhd4kStream ? [] : ["-err_detect", "+crccheck+bitstream", "-ec", "favor_inter+deblock"],
-    "-i",
+  const ffArgs = buildDvbLiveFfmpegArgs({
     cleanUpstream,
-    "-map",
-    "0:v:0",
-    "-map",
-    "0:a:0?",
-    "-vf",
-    vfFilter,
-    "-c:v",
-    "libx264",
-    "-preset",
-    useUltrafast ? "ultrafast" : "superfast",
-    ...isFastProfile ? ["-tune", "zerolatency"] : [],
-    "-profile:v",
-    "high",
-    "-level:v",
-    isFastProfile ? "4.0" : "4.1",
-    "-pix_fmt",
-    "yuv420p",
-    "-crf",
-    isFastProfile ? "21" : "18",
-    "-maxrate",
-    isFastProfile ? "2600k" : "6500k",
-    "-bufsize",
-    isFastProfile ? "5200k" : "13000k",
-    "-r",
-    "25",
-    "-g",
-    "50",
-    "-keyint_min",
-    "50",
-    "-sc_threshold",
-    "0",
-    "-force_key_frames",
-    "expr:gte(t,n_forced*2)",
-    "-threads",
-    "2",
-    "-c:a",
-    "aac",
-    "-ac",
-    "2",
-    "-ar",
-    "48000",
-    "-b:a",
-    isFastProfile ? "128k" : "160k",
-    "-sn",
-    "-dn",
-    "-f",
-    "hls",
-    "-hls_time",
-    "2",
-    "-hls_list_size",
-    "10",
-    "-hls_flags",
-    "delete_segments+independent_segments+omit_endlist+temp_file",
-    "-hls_segment_filename",
+    inputUrl: mpegTsPipe ? "pipe:0" : cleanUpstream,
+    referer,
+    profile,
+    isXtreamLive,
+    playlistPath,
     segmentPattern,
-    playlistPath
-  );
-  const proc = spawn(FFMPEG_BIN, ffArgs);
+    probe
+  });
+  const proc = spawn3(FFMPEG_BIN, ffArgs);
   const session = {
     key: sessionKey,
     upstreamUrl: cleanUpstream,
     referer,
     dir: sessionDir,
     proc,
+    abortController: mpegTsPipe?.abortController,
     startedAt: Date.now(),
     lastAccessAt: Date.now(),
     dead: false,
     readyPromise: Promise.resolve(false)
   };
+  if (mpegTsPipe && proc.stdin) {
+    pumpMpegTsPipeToFfmpeg({
+      pipe: mpegTsPipe,
+      stdin: proc.stdin,
+      isDead: () => session.dead,
+      onStall: () => {
+        markDvbUpstreamDown(cleanUpstream, "Upstream TS stream stalled", 25e3);
+        destroyLiveDvbSession(sessionKey);
+      }
+    });
+  }
   let stderrTail = "";
+  let hadNetworkFailure = false;
   proc.stderr?.on("data", (chunk) => {
     stderrTail = (stderrTail + chunk.toString("utf8")).slice(-400);
   });
   proc.on("exit", (code) => {
+    try {
+      session.abortController?.abort();
+    } catch {
+    }
     if (code !== 0 && !session.dead) {
-      logger.warn({ key: sessionKey, code, stderrTail }, "dvb_ffmpeg_exited_early");
+      hadNetworkFailure = /connection timed out|connection refused|no route to host|failed to resolve|404 not found|502 bad gateway|503 service/i.test(
+        stderrTail
+      );
+      if (hadNetworkFailure) {
+        markDvbUpstreamDown(cleanUpstream, stderrTail.slice(0, 120), 45e3);
+        logger.debug({ key: sessionKey, code }, "dvb_upstream_unreachable");
+      } else {
+        logger.warn({ key: sessionKey, code, stderrTail }, "dvb_ffmpeg_exited_early");
+      }
     }
     session.dead = true;
   });
@@ -1973,7 +2987,7 @@ async function ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile = "hd", refe
     session.dead = true;
   });
   session.readyPromise = new Promise((resolve) => {
-    const deadline = Date.now() + 15e3;
+    const deadline = Date.now() + (isXtreamLive ? 6500 : 12e3);
     let inTick = false;
     const poll = setInterval(async () => {
       if (session.dead) {
@@ -1992,10 +3006,10 @@ async function ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile = "hd", refe
       try {
         const content = await fs2.promises.readFile(playlistPath, "utf8");
         const segMatches = content.match(/seg_\d+\.ts/g);
-        if (segMatches && segMatches.length >= 2) {
+        if (segMatches && segMatches.length >= 1) {
           const firstSegPath = path2.join(sessionDir, segMatches[0]);
           const st = await fs2.promises.stat(firstSegPath);
-          if (st.size > 564) {
+          if (st.size > 1024) {
             clearInterval(poll);
             resolve(true);
             return;
@@ -2015,8 +3029,15 @@ async function ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile = "hd", refe
   }
   const elapsed = Date.now() - session.startedAt;
   destroyLiveDvbSession(sessionKey);
-  if (attempt === 0 && elapsed < 7e3) {
-    return ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile, referer, 1);
+  if (!isXtreamLive && attempt === 0 && !hadNetworkFailure && !isDvbUpstreamCoolingDown(cleanUpstream) && elapsed < 7e3) {
+    return startOrReuseLiveDvbCleanHlsSession(
+      rawUpstreamUrl,
+      cleanUpstream,
+      sessionKey,
+      profile,
+      referer,
+      1
+    );
   }
   return null;
 }
@@ -2730,6 +3751,10 @@ function createHlsProxyHandler(getPublicOrigin2) {
       res.status(403).send("Forbidden target host");
       return;
     }
+    if (isDvbHeadendStream(targetUrl) && isDvbUpstreamCoolingDown(targetUrl)) {
+      res.status(502).send("DVB upstream headend cooling down");
+      return;
+    }
     runtimeMetrics.recordMediaRequest("hls");
     evaluateDirectPlayEligibility(targetUrl, { referer, forceAac });
     const cachedVod = !forceAac ? vodHlsManifestCache.get(vodCacheKey) : void 0;
@@ -2965,7 +3990,7 @@ function createHlsProxyHandler(getPublicOrigin2) {
 }
 
 // server/routes/proxies/tsProxyHandler.ts
-import { spawn as spawn2 } from "child_process";
+import { spawn as spawn4 } from "child_process";
 import { Readable as Readable2 } from "stream";
 async function handleTsProxy(req, res) {
   const reqId = getOrCreateRequestId(req);
@@ -3302,7 +4327,7 @@ async function handleTsProxy(req, res) {
           if (v) args.push("-H", `${k}: ${v}`);
         }
         args.push(targetUrl);
-        const child = spawn2("curl", args, { stdio: ["ignore", "pipe", "ignore"] });
+        const child = spawn4("curl", args, { stdio: ["ignore", "pipe", "ignore"] });
         let headerFlushed = false;
         const headChunks = [];
         let headLen = 0;

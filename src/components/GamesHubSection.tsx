@@ -189,10 +189,20 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
     const isPool = selectedGame === 'pool';
     const isChapas = selectedGame === 'chapas';
     const isHeadSoccer = selectedGame === 'headsoccer';
+    const isPenalty = selectedGame === 'penalty';
+    const isRacing3d = selectedGame === 'racing3d';
     const isPoker = selectedGame === 'poker';
     const isBlackjack = selectedGame === 'blackjack';
     const activeBoardState =
-      !isParty && !isPinturillo && !isPool && !isChapas && !isHeadSoccer && !isPoker && !isBlackjack
+      !isParty &&
+      !isPinturillo &&
+      !isPool &&
+      !isChapas &&
+      !isHeadSoccer &&
+      !isPenalty &&
+      !isRacing3d &&
+      !isPoker &&
+      !isBlackjack
         ? hubMode === 'offline'
           ? localBoardGame
           : roomBoardGame?.gameType === selectedGame

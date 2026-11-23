@@ -57,6 +57,7 @@ import { handleSyncAndChatMessage } from './handlers/roomSyncAndChatHandlers.ts'
 import { handleBoardAndPartyMessage } from './handlers/boardAndPartyHandlers.ts';
 import { handleArcadeGameMessage } from './handlers/arcadeGameHandlers.ts';
 import { handleCasinoAndVoiceMessage } from './handlers/casinoAndVoiceHandlers.ts';
+import { handleRacingGyroMessage } from './handlers/racingGyroHandlers.ts';
 import type { OnlineUserSnapshot, RoomHubContext, WsMessageHandler } from './handlers/types.ts';
 
 const MESSAGE_HANDLERS: WsMessageHandler[] = [
@@ -65,6 +66,7 @@ const MESSAGE_HANDLERS: WsMessageHandler[] = [
   handleBoardAndPartyMessage,
   handleArcadeGameMessage,
   handleCasinoAndVoiceMessage,
+  handleRacingGyroMessage,
 ];
 
 export function createRoomHub(app: express.Express, wss: WebSocketServer) {

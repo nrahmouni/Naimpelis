@@ -1,0 +1,447 @@
+/* =================================================================== */
+/* SMART TV GAMES HUB, KIDS HERO BANNER & FULL-SCREEN GAME ARENA       */
+/* ZERO GLASS BLUR FOR HARDWARE COMPOSITING ON TIZEN & GOOGLE TV      */
+/* =================================================================== */
+
+.tv-kids-hero-banner {
+  position: relative;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  padding: 24px 28px;
+  border-radius: 22px;
+  border: 2px solid rgba(56, 189, 248, 0.42);
+  background: linear-gradient(135deg, #0b2239 0%, #151435 55%, #1d1035 100%);
+  margin-bottom: 24px;
+}
+
+.tv-kids-hero-copy {
+  max-width: 72%;
+}
+
+.tv-kids-pill {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #0284c7;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.tv-kids-title {
+  font-size: 28px;
+  font-weight: 900;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+
+.tv-kids-sub {
+  font-size: 15px;
+  font-weight: 600;
+  color: #bae6fd;
+  line-height: 1.45;
+}
+
+.tv-kids-actions {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+}
+
+.tv-kids-actions > * {
+  margin-left: 10px;
+}
+
+/* Games Catalog View */
+.tv-games-hero {
+  padding: 22px 26px;
+  border-radius: 20px;
+  border: 1.5px solid rgba(167, 139, 250, 0.35);
+  background: linear-gradient(135deg, #130f2b 0%, #0b1426 65%, #07191f 100%);
+  margin-bottom: 22px;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+}
+
+.tv-games-hero-title {
+  font-size: 27px;
+  font-weight: 900;
+  color: #ffffff;
+  margin-bottom: 5px;
+}
+
+.tv-games-hero-sub {
+  font-size: 15px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.tv-games-grid {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  padding: 6px 2px 28px 2px;
+}
+
+.tv-game-card {
+  width: 31.5%;
+  min-width: 280px;
+  margin: 0 1.7% 18px 0;
+  padding: 0;
+  border-radius: 20px;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  background: #0e121f;
+  color: #f8fafc;
+  text-align: left;
+  overflow: hidden;
+  cursor: pointer;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+}
+
+.tv-game-card:focus,
+.tv-game-card:hover {
+  border-color: #ffffff;
+  background: #171d32;
+}
+
+.tv-game-card-stage {
+  height: 162px;
+  padding: 18px;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+}
+
+.tv-game-card-stage.racing {
+  background: linear-gradient(135deg, #5b21b6 0%, #0f172a 65%, #083344 100%);
+}
+
+.tv-game-card-stage.penalty {
+  background: linear-gradient(135deg, #065f46 0%, #064e3b 50%, #091526 100%);
+}
+
+.tv-game-card-stage.soccer {
+  background: linear-gradient(135deg, #9a3412 0%, #431407 52%, #0f172a 100%);
+}
+
+.tv-game-badge-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+}
+
+.tv-game-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgba(6, 9, 18, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #e2e8f0;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.tv-game-icon-big {
+  font-size: 46px;
+  line-height: 1;
+}
+
+.tv-game-card-body {
+  padding: 16px 18px 18px 18px;
+}
+
+.tv-game-card-title {
+  font-size: 19px;
+  font-weight: 900;
+  color: #ffffff;
+  margin-bottom: 6px;
+}
+
+.tv-game-card-desc {
+  font-size: 13px;
+  font-weight: 600;
+  color: #94a3b8;
+  line-height: 1.42;
+  margin-bottom: 12px;
+}
+
+.tv-game-card-cta {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 10px;
+  background: #7c3aed;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+/* Full-Screen Game Overlay */
+#tv-games-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
+  background: #060912;
+  z-index: 95;
+  display: none;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+}
+
+.tv-game-topbar {
+  height: 64px;
+  padding: 0 22px;
+  background: #0b0f1c;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+
+.tv-game-top-left,
+.tv-game-top-right {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+}
+
+.tv-game-top-left > *,
+.tv-game-top-right > * {
+  margin-right: 12px;
+}
+
+.tv-game-top-title {
+  font-size: 20px;
+  font-weight: 900;
+  color: #ffffff;
+}
+
+.tv-game-hud-pill {
+  padding: 7px 14px;
+  border-radius: 10px;
+  background: #141b2e;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #f1f5f9;
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.tv-game-hud-pill.accent-green {
+  background: #064e3b;
+  border-color: #34d399;
+  color: #ecfdf5;
+}
+
+.tv-game-hud-pill.accent-purple {
+  background: #3b1d7a;
+  border-color: #a78bfa;
+  color: #ffffff;
+}
+
+.tv-game-arena {
+  position: relative;
+  -webkit-flex: 1;
+  flex: 1;
+  width: 100%;
+  overflow: hidden;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  background: #050811;
+}
+
+.tv-game-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 1280px;
+  max-height: 720px;
+  object-fit: contain;
+}
+
+.tv-racing-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #050811;
+}
+
+.tv-game-qr-card {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 222px;
+  padding: 12px;
+  border-radius: 16px;
+  background: rgba(9, 13, 24, 0.94);
+  border: 2px solid rgba(167, 139, 250, 0.52);
+  color: #f8fafc;
+  z-index: 6;
+  text-align: center;
+}
+
+.tv-game-qr-box {
+  width: 144px;
+  height: 144px;
+  margin: 8px auto;
+  padding: 6px;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.tv-game-qr-box svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.tv-game-qr-title {
+  font-size: 13px;
+  font-weight: 900;
+  color: #ffffff;
+}
+
+.tv-game-qr-code {
+  font-size: 13px;
+  font-weight: 800;
+  color: #38bdf8;
+  margin-top: 4px;
+}
+
+.tv-racing-telemetry-bar {
+  position: absolute;
+  left: 20px;
+  bottom: 20px;
+  padding: 12px 18px;
+  border-radius: 16px;
+  background: rgba(8, 12, 22, 0.92);
+  border: 1.5px solid rgba(255, 255, 255, 0.18);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  z-index: 6;
+}
+
+.tv-racing-stat {
+  margin-right: 22px;
+}
+
+.tv-racing-stat-lbl {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+  text-transform: uppercase;
+}
+
+.tv-racing-stat-val {
+  font-size: 24px;
+  font-weight: 900;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+}
+
+.tv-game-controls-hint {
+  height: 44px;
+  padding: 0 22px;
+  background: #0b0f1c;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: #cbd5e1;
+  font-size: 13px;
+  font-weight: 700;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+}
+
+.tv-game-finish-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(5, 8, 17, 0.88);
+  display: none;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  z-index: 12;
+}
+
+.tv-game-finish-card {
+  width: 90%;
+  max-width: 480px;
+  padding: 28px;
+  border-radius: 22px;
+  background: #11172a;
+  border: 2px solid #a78bfa;
+  text-align: center;
+  color: #ffffff;
+}
+
+.tv-game-finish-title {
+  font-size: 28px;
+  font-weight: 900;
+  margin-bottom: 8px;
+}
+
+.tv-game-finish-sub {
+  font-size: 16px;
+  font-weight: 700;
+  color: #cbd5e1;
+  margin-bottom: 20px;
+}
+
+.tv-game-finish-btns {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-justify-content: center;
+  justify-content: center;
+}
+
+.tv-game-finish-btns > * {
+  margin: 0 8px;
+}
