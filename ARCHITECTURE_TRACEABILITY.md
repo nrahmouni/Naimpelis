@@ -54,7 +54,7 @@ Este documento registra con precisión cada fase arquitectónica ejecutada sobre
 
 - **Ruta dedicada**: `/admin` reservada en `SYSTEM_RESERVED_SLUGS` (`src/shared/dedicatedRoutes.ts`), enrutada antes de salas dinámicas en `shortLink.ts`, `useAppController.ts`, `useDeepLinkRouter.ts` y `AppEarlyRouteView.tsx`, con acceso rápido en `AvatarMenuSheet.tsx` únicamente visible para la cuenta propietaria.
 - **Seguridad y Autenticación (`server/services/adminAuthService.ts` + `server/routes/adminRoutes.ts`)**:
-  - Verificación en servidor de Google ID Token vía Firebase Admin SDK (`verifyIdToken`) validando `email_verified === true` y pertenencia a `ADMIN_EMAILS` (por defecto `felipeallouch@gmail.com`).
+  - Verificación en servidor de Google ID Token vía Firebase Admin SDK (`verifyIdToken`) validando `email_verified === true` y pertenencia a `ADMIN_EMAILS` (por defecto `naimrahmouni1998@gmail.com`).
   - Acceso alternativo por clave maestra (`ADMIN_PASSCODE`) o reclamo inicial atómico cifrado con `scrypt` + comparación en tiempo constante (`timingSafeEqual`).
   - Tokens Bearer firmados con `HMAC-SHA256` mantenidos **exclusivamente en memoria de React** (nunca en `localStorage` ni `sessionStorage`) y enviados vía cabecera `Authorization: Bearer` incluso en el stream SSE (`fetch` + `ReadableStream`).
 - **6 Vistas de Monitorización Integral**:

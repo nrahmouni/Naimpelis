@@ -89,13 +89,13 @@ describe('RiffanTV Architecture Phases 1-3 & /admin Console Verification', () =>
   it('signs and verifies HMAC-SHA256 admin session tokens and rejects tampered or expired tokens', async () => {
     const validToken = signAdminSessionToken({
       sub: 'uid-owner',
-      email: 'felipeallouch@gmail.com',
+      email: 'naimrahmouni1998@gmail.com',
       method: 'firebase-google',
       iat: Date.now(),
       exp: Date.now() + 60_000,
     });
     const verified = verifyAdminSessionToken(validToken);
-    expect(verified?.email).toBe('felipeallouch@gmail.com');
+    expect(verified?.email).toBe('naimrahmouni1998@gmail.com');
     expect(verified?.method).toBe('firebase-google');
 
     const [payload, sig] = validToken.split('.');
@@ -104,7 +104,7 @@ describe('RiffanTV Architecture Phases 1-3 & /admin Console Verification', () =>
 
     const expiredToken = signAdminSessionToken({
       sub: 'uid-owner',
-      email: 'felipeallouch@gmail.com',
+      email: 'naimrahmouni1998@gmail.com',
       method: 'firebase-google',
       iat: Date.now() - 120_000,
       exp: Date.now() - 1_000,
