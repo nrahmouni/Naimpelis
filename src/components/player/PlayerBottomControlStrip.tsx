@@ -198,16 +198,29 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
             {videoState.tracks.slice(0, 5).map((tr, idx) => {
               const active = idx === videoState.activeTrackIndex;
               const hasZh = String(tr.lang || '').toUpperCase() === 'ZH' || /中文/.test(tr.label || '');
-              const signalText = `${pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} ${idx + 1}`;
+              const rawLbl = String(tr.label || '');
+              const shortTag = /edge\s*2/i.test(rawLbl)
+                ? 'Edge 2'
+                : /passthrough/i.test(rawLbl)
+                  ? 'AAC'
+                  : /720p|estabilidad/i.test(`${rawLbl} ${tr.quality || ''}`)
+                    ? '720p'
+                    : /belix/i.test(rawLbl)
+                      ? 'Belix'
+                      : /1080p|directa|españa/i.test(`${rawLbl} ${tr.quality || ''}`)
+                        ? 'HD'
+                        : '';
+              const signalText = `${pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} ${idx + 1}${shortTag ? ` · ${shortTag}` : ''}`;
               return (
                 <button
                   key={tr.id || idx}
                   type="button"
+                  title={tr.label}
                   onClick={() => {
                     triggerHaptic('light');
                     onSelectTrack(idx, 0);
                   }}
-                  className={`min-h-[38px] px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer active:scale-95 transition-all inline-flex items-center gap-1.5 ${
+                  className={`min-h-[38px] px-2.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer active:scale-95 transition-all inline-flex items-center gap-1.5 ${
                     active
                       ? 'bg-[#7C3AED] text-white shadow-[0_4px_14px_rgba(124,58,237,0.4)]'
                       : 'text-zinc-300 hover:bg-white/10'

@@ -97,7 +97,7 @@ export async function probeDvbStreamFromBuffer(
       '-f',
       'mpegts',
       '-analyzeduration',
-      '900000',
+      '450000',
       '-probesize',
       String(preamble.length),
       '-show_streams',
@@ -120,7 +120,7 @@ export async function probeDvbStreamFromBuffer(
         // ignore
       }
       finish(null);
-    }, 2000);
+    }, 1500);
 
     proc.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
     proc.on('error', () => finish(null));
@@ -148,6 +148,7 @@ export async function probeDvbStreamCodec(
   const probeArgs = [
     '-v',
     'error',
+    ...getSpainFfmpegHttpProxyArgs(cleanUpstream),
     '-user_agent',
     isXtreamLive ? 'IPTVSmartersPlayer' : TDT_DVB_UA,
   ];
@@ -156,11 +157,11 @@ export async function probeDvbStreamCodec(
   }
   probeArgs.push(
     '-rw_timeout',
-    '4000000',
+    '2600000',
     '-analyzeduration',
-    '900000',
+    '450000',
     '-probesize',
-    '900000',
+    '450000',
     '-show_streams',
     '-of',
     'json',
@@ -187,7 +188,7 @@ export async function probeDvbStreamCodec(
         // ignore
       }
       finish(null);
-    }, 4000);
+    }, 2600);
 
     proc.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
     proc.stderr?.on('data', (chunk: Buffer) => {
@@ -344,13 +345,13 @@ export function buildDvbLiveFfmpegArgs(options: {
             ? []
             : ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '2']),
           '-rw_timeout',
-          isXtreamLive ? '10000000' : '7000000',
+          isXtreamLive ? '7000000' : '5000000',
           ...(/\.m3u8(\?|$)/i.test(cleanUpstream) ? ['-live_start_index', '-3'] : []),
         ]),
     '-analyzeduration',
-    '700000',
+    '400000',
     '-probesize',
-    '700000',
+    '400000',
     '-fflags',
     '+genpts+discardcorrupt',
     '-err_detect',
@@ -368,6 +369,8 @@ export function buildDvbLiveFfmpegArgs(options: {
     '-dn',
     '-f',
     'hls',
+    '-hls_init_time',
+    '1',
     '-hls_time',
     '2',
     '-hls_list_size',
@@ -411,7 +414,7 @@ export async function openSingleSocketMpegTsStream(options: {
     } catch {
       // ignore
     }
-  }, 4_200);
+  }, 3_200);
 
   try {
     const dispatcher = getSpainProxyDispatcherForTarget(cleanUpstream);
@@ -437,7 +440,7 @@ export async function openSingleSocketMpegTsStream(options: {
     const reader = resp.body.getReader();
     const chunks: Buffer[] = [];
     let totalBytes = 0;
-    const targetPreamble = cachedProbe ? 65_536 : 420_000;
+    const targetPreamble = cachedProbe ? 48_000 : 220_000;
     while (totalBytes < targetPreamble) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -473,8 +476,10 @@ export function pumpMpegTsPipeToFfmpeg(options: {
   pipe: OpenedMpegTsPipe;
   stdin: NodeJS.WritableStream;
   isDead: () => boolean;
+  onStall?: () => void;
+  readIdleTimeoutMs?: number;
 }): void {
-  const { pipe, stdin, isDead } = options;
+  const { pipe, stdin, isDead, onStall, readIdleTimeoutMs = 6_500 } = options;
   stdin.on('error', () => {});
   const waitStdinReady = () =>
     new Promise<boolean>((resDrain) => {
@@ -490,13 +495,35 @@ export function pumpMpegTsPipeToFfmpeg(options: {
       stdin.once('close', onClose);
     });
 
+  const readChunkWithTimeout = async () => {
+    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await Promise.race([
+        pipe.reader.read(),
+        new Promise<never>((_resolve, reject) => {
+          stallTimer = setTimeout(() => {
+            onStall?.();
+            try {
+              pipe.abortController.abort();
+            } catch {
+              // ignore
+            }
+            reject(new Error('MPEG-TS upstream read stall timeout'));
+          }, readIdleTimeoutMs);
+        }),
+      ]);
+    } finally {
+      if (stallTimer) clearTimeout(stallTimer);
+    }
+  };
+
   void (async () => {
     try {
       if (!stdin.write(pipe.preamble)) {
         if (!(await waitStdinReady())) return;
       }
       while (!isDead()) {
-        const { done, value } = await pipe.reader.read();
+        const { done, value } = await readChunkWithTimeout();
         if (done || isDead()) break;
         if (value && value.byteLength > 0) {
           if (!stdin.write(Buffer.from(value))) {
@@ -505,7 +532,7 @@ export function pumpMpegTsPipeToFfmpeg(options: {
         }
       }
     } catch {
-      // upstream aborted or closed
+      // upstream aborted, stalled, or closed
     } finally {
       try {
         pipe.abortController.abort();

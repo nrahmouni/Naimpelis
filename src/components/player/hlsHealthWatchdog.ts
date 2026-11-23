@@ -162,7 +162,7 @@ export function createLivePlaybackHealthMonitor() {
           stalledSinceMs = nowMs;
         }
         const stallDurationMs = Math.max(0, nowMs - stalledSinceMs);
-        if (stallDurationMs >= 8500 && lastStallActionTier < 3) {
+        if (stallDurationMs >= 6500 && lastStallActionTier < 3) {
           lastStallActionTier = 3;
           return {
             action: 'switch_backup',
@@ -171,7 +171,7 @@ export function createLivePlaybackHealthMonitor() {
             stallDurationMs,
           };
         }
-        if (stallDurationMs >= 5000 && lastStallActionTier < 2) {
+        if (stallDurationMs >= 4000 && lastStallActionTier < 2) {
           lastStallActionTier = 2;
           return {
             action: 'soft_reconnect',

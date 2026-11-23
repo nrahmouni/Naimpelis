@@ -171,7 +171,7 @@ export async function probeChannelTrack(
   if (cleanUrl.startsWith('/api/belix/stream/')) {
     const belixReady = options?.belixConnected ?? isAnyBelixConnected();
     return belixReady
-      ? { status: 'up', latencyMs: 1, checkedAt: now, failCount: 0 }
+      ? { status: 'up', latencyMs: 650, checkedAt: now, failCount: 0 }
       : { status: 'down', statusCode: 503, latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
   }
 
@@ -498,12 +498,10 @@ export class ChannelHealthMonitor {
         : /720p/.test(q)
         ? 2
         : 0;
-      const transportPenalty = isResidentialDvb
-        ? 1200
-        : /interactvty\.pro/i.test(src)
+      const transportPenalty = /interactvty\.pro/i.test(src)
         ? 1500
         : isBelix
-        ? -200
+        ? 350
         : 0;
       const penaltyMs = (health?.qoeFailures || 0) * 1500 + (health?.qoeRebuffers || 0) * 250 + transportPenalty;
       const effectiveLatency = Math.max(
@@ -528,8 +526,8 @@ export class ChannelHealthMonitor {
       }
       const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
       if (rankDiff !== 0) return rankDiff;
-      if (a.status !== 'down' && b.status !== 'down' && a.isResidentialDvb !== b.isResidentialDvb) {
-        return a.isResidentialDvb ? 1 : -1;
+      if (a.status === 'up' && b.status === 'up' && a.isResidentialDvb !== b.isResidentialDvb) {
+        return a.isResidentialDvb ? -1 : 1;
       }
       if (a.isBelix && b.isBelix && a.status === b.status) {
         return a.originalIndex - b.originalIndex;

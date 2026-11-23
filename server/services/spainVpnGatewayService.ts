@@ -1,9 +1,10 @@
 /**
  * @module server/services/spainVpnGatewayService
  * @description Cross-device server-side Spanish VPN / Egress Proxy gateway.
- * Routes Spanish broadcasters (Atresplayer, Mediaset, RTVE, TDT) through a
- * configured HTTP/HTTPS/SOCKS5 Spanish exit node so Web, Mobile, PWA, Android,
- * Google TV, and Samsung Tizen TV all appear inside Spain automatically.
+ * Routes Spanish broadcasters (Atresplayer, Antena 3, laSexta, Mediaset, RTVE, TDT)
+ * through a configured HTTP/HTTPS/SOCKS5 Spanish exit node (with automatic loopback
+ * HTTP->SOCKS5 relay so FFmpeg/FFprobe also honor SOCKS5 tunnels) so Web, Mobile,
+ * PWA, Android, Google TV, and Samsung Tizen TV appear inside Spain automatically.
  */
 
 import dns from 'node:dns/promises';
@@ -66,10 +67,22 @@ export interface SpainGatewayOverview {
   spainUrbanGateways: ReturnType<typeof listUrbanVpnGateways>;
 }
 
+export interface VerifiedSpanishChannelStatus {
+  id: string;
+  name: string;
+  route: string;
+  routedViaProxy: boolean;
+  ok: boolean;
+  status: number;
+  latencyMs: number;
+  detail: string;
+}
+
 const SPANISH_GEO_ROUTING_PATTERNS: RegExp[] = [
   /(?:^|\.)atresplayer\.com$/i,
   /(?:^|\.)atresmedia\.com$/i,
   /(?:^|\.)atres\.com$/i,
+  /(?:^|\.)a3player\.com$/i,
   /(?:^|\.)mediaset\.es$/i,
   /(?:^|\.)mitele\.es$/i,
   /(?:^|\.)telecinco\.es$/i,
@@ -77,13 +90,17 @@ const SPANISH_GEO_ROUTING_PATTERNS: RegExp[] = [
   /(?:^|\.)rtve\.es$/i,
   /(?:^|\.)ccma\.cat$/i,
   /(?:^|\.)3cat\.cat$/i,
+  /(?:^|\.)3catdirectes\.cat$/i,
   /(?:^|\.)eitb\.eus$/i,
   /(?:^|\.)telemadrid\.es$/i,
   /(?:^|\.)canalsur\.es$/i,
   /(?:^|\.)tdtchannels\.com$/i,
+  /(?:^|\.)otteravision\.com$/i,
+  /(?:^|\.)ottera\.tv$/i,
   /(?:^|\.)sharkpro\.ink$/i,
   /^90\.163\.85\.113$/i,
   /^103\.163\.132\.49$/i,
+  /^185\.217\.39\.251$/i,
 ];
 
 const BYPASS_PROXY_HOST_PATTERNS: RegExp[] = [
@@ -112,6 +129,235 @@ const state: RuntimeProxyState = {
 
 const dispatcherCache = new Map<string, Dispatcher>();
 const geoCache = new LruTtlCache<string, GeoExitInfo>(16, 45_000);
+
+// Loopback HTTP CONNECT bridge -> upstream SOCKS5 proxy for FFmpeg / FFprobe
+let socksBridgeServer: net.Server | null = null;
+let socksBridgePort = 0;
+let socksBridgeUpstreamUrl = '';
+
+function closeSocksBridge(): void {
+  if (socksBridgeServer) {
+    try {
+      socksBridgeServer.close();
+    } catch {
+      // ignore
+    }
+    socksBridgeServer = null;
+  }
+  socksBridgePort = 0;
+  socksBridgeUpstreamUrl = '';
+}
+
+function dialThroughSocks5(
+  proxyParsed: URL,
+  destHost: string,
+  destPort: number,
+  timeoutMs = 5500
+): Promise<net.Socket> {
+  return new Promise((resolve, reject) => {
+    const proxyHost = proxyParsed.hostname.replace(/^\[|\]$/g, '');
+    const proxyPort = Number(proxyParsed.port || 1080);
+    const username = decodeURIComponent(proxyParsed.username || '');
+    const password = decodeURIComponent(proxyParsed.password || '');
+
+    let settled = false;
+    const sock = net.createConnection({ host: proxyHost, port: proxyPort, timeout: timeoutMs });
+
+    const fail = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      sock.destroy();
+      reject(err);
+    };
+
+    sock.on('error', fail);
+    sock.on('timeout', () => fail(new Error('SOCKS5 bridge timeout')));
+
+    const readExact = (bytesNeeded: number): Promise<Buffer> =>
+      new Promise((res, rej) => {
+        let buf = Buffer.alloc(0);
+        const onData = (chunk: Buffer) => {
+          buf = Buffer.concat([buf, chunk]);
+          if (buf.length >= bytesNeeded) {
+            cleanup();
+            if (buf.length > bytesNeeded) {
+              sock.unshift(buf.subarray(bytesNeeded));
+            }
+            res(buf.subarray(0, bytesNeeded));
+          }
+        };
+        const onErr = (e: Error) => {
+          cleanup();
+          rej(e);
+        };
+        const onClose = () => {
+          cleanup();
+          rej(new Error('SOCKS5 socket closed early'));
+        };
+        const cleanup = () => {
+          sock.off('data', onData);
+          sock.off('error', onErr);
+          sock.off('close', onClose);
+        };
+        sock.on('data', onData);
+        sock.once('error', onErr);
+        sock.once('close', onClose);
+      });
+
+    sock.once('connect', async () => {
+      try {
+        const useUserPass = Boolean(username || password);
+        const methods = useUserPass ? Buffer.from([0x05, 0x02, 0x00, 0x02]) : Buffer.from([0x05, 0x01, 0x00]);
+        sock.write(methods);
+        const greeting = await readExact(2);
+        if (greeting[0] !== 0x05 || greeting[1] === 0xff) {
+          throw new Error('SOCKS5 auth method rejected');
+        }
+        if (greeting[1] === 0x02) {
+          const uBuf = Buffer.from(username, 'utf8');
+          const pBuf = Buffer.from(password, 'utf8');
+          if (uBuf.length > 255 || pBuf.length > 255) throw new Error('SOCKS5 credentials too long');
+          const authPacket = Buffer.concat([
+            Buffer.from([0x01, uBuf.length]),
+            uBuf,
+            Buffer.from([pBuf.length]),
+            pBuf,
+          ]);
+          sock.write(authPacket);
+          const authResp = await readExact(2);
+          if (authResp[1] !== 0x00) {
+            throw new Error('SOCKS5 username/password rejected');
+          }
+        }
+
+        const hostBuf = Buffer.from(destHost, 'utf8');
+        if (hostBuf.length === 0 || hostBuf.length > 255) throw new Error('Invalid destination host');
+        const portBuf = Buffer.alloc(2);
+        portBuf.writeUInt16BE(destPort, 0);
+        const reqPacket = Buffer.concat([
+          Buffer.from([0x05, 0x01, 0x00, 0x03, hostBuf.length]),
+          hostBuf,
+          portBuf,
+        ]);
+        sock.write(reqPacket);
+
+        const repHead = await readExact(4);
+        if (repHead[0] !== 0x05 || repHead[1] !== 0x00) {
+          throw new Error(`SOCKS5 CONNECT rejected (${repHead[1]})`);
+        }
+        const atyp = repHead[3];
+        if (atyp === 0x01) await readExact(6);
+        else if (atyp === 0x04) await readExact(18);
+        else if (atyp === 0x03) {
+          const lenB = await readExact(1);
+          await readExact(lenB[0] + 2);
+        }
+
+        if (!settled) {
+          settled = true;
+          sock.setTimeout(0);
+          sock.off('error', fail);
+          resolve(sock);
+        }
+      } catch (err) {
+        fail(err instanceof Error ? err : new Error(String(err)));
+      }
+    });
+  });
+}
+
+function ensureSocksToHttpBridge(proxyUrl: string): number {
+  if (socksBridgeServer && socksBridgePort > 0 && socksBridgeUpstreamUrl === proxyUrl) {
+    return socksBridgePort;
+  }
+  closeSocksBridge();
+
+  let parsedProxy: URL;
+  try {
+    parsedProxy = new URL(proxyUrl);
+  } catch {
+    return 0;
+  }
+
+  const server = net.createServer((clientSock) => {
+    let headerBuf = Buffer.alloc(0);
+    const onData = async (chunk: Buffer) => {
+      headerBuf = Buffer.concat([headerBuf, chunk]);
+      const sepIdx = headerBuf.indexOf('\r\n\r\n');
+      if (sepIdx === -1) {
+        if (headerBuf.length > 16_384) clientSock.destroy();
+        return;
+      }
+      clientSock.off('data', onData);
+      const rawHead = headerBuf.subarray(0, sepIdx).toString('latin1');
+      const remainder = headerBuf.subarray(sepIdx + 4);
+      const firstLine = rawHead.split('\r\n')[0] || '';
+      const [method = '', target = ''] = firstLine.split(' ');
+
+      let destHost = '';
+      let destPort = 80;
+      if (method.toUpperCase() === 'CONNECT') {
+        const idx = target.lastIndexOf(':');
+        destHost = idx > 0 ? target.slice(0, idx) : target;
+        destPort = idx > 0 ? Number(target.slice(idx + 1)) || 443 : 443;
+      } else {
+        try {
+          const u = new URL(target);
+          destHost = u.hostname;
+          destPort = Number(u.port || (u.protocol === 'https:' ? 443 : 80));
+        } catch {
+          clientSock.end('HTTP/1.1 400 Bad Request\r\n\r\n');
+          return;
+        }
+      }
+
+      const cleanDestHost = destHost.replace(/^\[|\]$/g, '').toLowerCase();
+      if (!cleanDestHost || isDisallowedHostnameSyntax(cleanDestHost) || (net.isIP(cleanDestHost) && isPrivateIpAddress(cleanDestHost))) {
+        clientSock.end('HTTP/1.1 403 Forbidden\r\n\r\n');
+        return;
+      }
+
+      try {
+        const upstreamSock = await dialThroughSocks5(parsedProxy, cleanDestHost, destPort);
+        if (method.toUpperCase() === 'CONNECT') {
+          clientSock.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+        } else {
+          const u = new URL(target);
+          const relTarget = `${u.pathname || '/'}${u.search || ''}`;
+          const lines = rawHead.split('\r\n');
+          lines[0] = `${method} ${relTarget} HTTP/1.1`;
+          const filteredLines = lines.filter((l) => !/^proxy-/i.test(l));
+          upstreamSock.write(filteredLines.join('\r\n') + '\r\n\r\n');
+        }
+        if (remainder.length > 0) upstreamSock.write(remainder);
+        clientSock.pipe(upstreamSock);
+        upstreamSock.pipe(clientSock);
+        const destroyBoth = () => {
+          clientSock.destroy();
+          upstreamSock.destroy();
+        };
+        clientSock.on('error', destroyBoth);
+        upstreamSock.on('error', destroyBoth);
+      } catch {
+        clientSock.end('HTTP/1.1 502 Bad Gateway\r\n\r\n');
+      }
+    };
+    clientSock.on('data', onData);
+    clientSock.on('error', () => {});
+  });
+
+  server.listen(0, '127.0.0.1');
+  const addr = server.address();
+  if (addr && typeof addr === 'object') {
+    socksBridgeServer = server;
+    socksBridgePort = addr.port;
+    socksBridgeUpstreamUrl = proxyUrl;
+    server.unref?.();
+    return socksBridgePort;
+  }
+  server.close();
+  return 0;
+}
 
 export function maskProxyUrl(rawUrl: string): string {
   const clean = String(rawUrl || '').trim();
@@ -251,6 +497,12 @@ export function getSpainFfmpegHttpProxyArgs(targetUrl: string): string[] {
   if (/^https?:\/\//i.test(proxyUrl)) {
     return ['-http_proxy', proxyUrl];
   }
+  if (/^socks5h?:\/\//i.test(proxyUrl) && !process.env.VITEST) {
+    const port = ensureSocksToHttpBridge(proxyUrl);
+    if (port > 0) {
+      return ['-http_proxy', `http://127.0.0.1:${port}`];
+    }
+  }
   return [];
 }
 
@@ -287,7 +539,6 @@ export async function probeGeoExitInfo(proxyUrl?: string): Promise<GeoExitInfo> 
         country?: string;
         city?: string;
         connection?: { isp?: string };
-        message?: string;
       };
       if (data && data.ip) {
         const cc = String(data.country_code || '').toUpperCase();
@@ -307,7 +558,6 @@ export async function probeGeoExitInfo(proxyUrl?: string): Promise<GeoExitInfo> 
       }
     }
   } catch (err) {
-    // fallback below to Urban VPN's own geo.geosurf.io endpoint
     logger.debug({ err: err instanceof Error ? err.message : String(err) }, 'ipwhois_geo_probe_fallback');
   }
 
@@ -358,6 +608,7 @@ export async function setRuntimeSpainProxyConfig(input: {
   if (input.proxyUrl !== undefined) {
     const clean = String(input.proxyUrl || '').trim();
     if (!clean) {
+      closeSocksBridge();
       state.proxyUrl = '';
       state.enabled = false;
       state.source = 'none';
@@ -369,12 +620,18 @@ export async function setRuntimeSpainProxyConfig(input: {
     if (!validation.ok) {
       return { ok: false, error: validation.error };
     }
+    if (state.proxyUrl !== validation.normalizedUrl) {
+      closeSocksBridge();
+    }
     state.proxyUrl = validation.normalizedUrl;
     state.source = 'runtime';
   }
 
   state.scope = nextScope;
-  state.enabled = input.enabled !== undefined ? Boolean(input.enabled) && Boolean(state.proxyUrl) : Boolean(state.proxyUrl) && nextScope !== 'off';
+  state.enabled =
+    input.enabled !== undefined
+      ? Boolean(input.enabled) && Boolean(state.proxyUrl)
+      : Boolean(state.proxyUrl) && nextScope !== 'off';
   state.updatedAt = Date.now();
   geoCache.clear();
 
@@ -401,6 +658,7 @@ export async function setRuntimeSpainProxyConfig(input: {
 }
 
 export function clearRuntimeSpainProxyConfig(): SpainGatewayPublicConfig {
+  closeSocksBridge();
   state.proxyUrl = '';
   state.enabled = false;
   state.source = 'none';
@@ -410,17 +668,119 @@ export function clearRuntimeSpainProxyConfig(): SpainGatewayPublicConfig {
   return getSpainGatewayPublicConfig();
 }
 
-async function checkDvbHeadendHead(url: string): Promise<boolean> {
+async function checkDvbHeadendHead(url: string): Promise<{ ok: boolean; status: number; latencyMs: number }> {
+  const t0 = Date.now();
+  const dispatcher = getSpainProxyDispatcherForTarget(url);
   try {
     const res = await undiciFetch(url, {
       method: 'GET',
-      signal: AbortSignal.timeout(2500),
+      dispatcher,
+      signal: AbortSignal.timeout(2800),
     });
-    await res.body?.cancel?.().catch(() => {});
-    return res.ok;
+    const text = res.ok ? await res.text() : '';
+    const isValidM3u = res.ok && text.includes('#EXTM3U');
+    return { ok: isValidM3u, status: res.status, latencyMs: Date.now() - t0 };
   } catch {
-    return false;
+    return { ok: false, status: 0, latencyMs: Date.now() - t0 };
   }
+}
+
+export async function verifySpanishChannelsDirectAccess(): Promise<{
+  checkedAt: number;
+  proxyActive: boolean;
+  channels: VerifiedSpanishChannelStatus[];
+}> {
+  const config = getSpainGatewayPublicConfig();
+  const targets = [
+    {
+      id: 'tdt-antena3',
+      name: 'Antena 3 HD (Directa DVB España)',
+      url: 'http://90.163.85.113:8093/stream/20/index.m3u8',
+      kind: 'hls' as const,
+    },
+    {
+      id: 'tdt-lasexta',
+      name: 'laSexta HD (Directa DVB España)',
+      url: 'http://90.163.85.113:8093/stream/21/index.m3u8',
+      kind: 'hls' as const,
+    },
+    {
+      id: 'atresplayer-guide',
+      name: 'Atresplayer Guía Oficial (Antena 3 & laSexta)',
+      url: 'https://api.atresplayer.com/client/v1/row/live',
+      kind: 'json' as const,
+    },
+    {
+      id: 'atresplayer-a3-player',
+      name: 'Atresplayer Oficial Stream (Antena 3)',
+      url: 'https://api.atresplayer.com/player/v1/live/5a6a165a7ed1a834493ebf6a',
+      kind: 'json' as const,
+    },
+    {
+      id: 'atresplayer-lasexta-player',
+      name: 'Atresplayer Oficial Stream (laSexta)',
+      url: 'https://api.atresplayer.com/player/v1/live/5a6a172c7ed1a834493ebf6b',
+      kind: 'json' as const,
+    },
+    {
+      id: 'tdt-3cat',
+      name: 'TV3 / 3Cat Directo CDN Público',
+      url: 'https://directes-tv-es.3catdirectes.cat/live-content/tv3-hls/master.m3u8',
+      kind: 'hls' as const,
+    },
+  ];
+
+  const checks = await Promise.all(
+    targets.map(async (t): Promise<VerifiedSpanishChannelStatus> => {
+      const t0 = Date.now();
+      const routedViaProxy = shouldRouteThroughSpainProxy(t.url);
+      const dispatcher = getSpainProxyDispatcherForTarget(t.url);
+      try {
+        const res = await undiciFetch(t.url, {
+          method: 'GET',
+          dispatcher,
+          headers: { 'User-Agent': 'Mozilla/5.0' },
+          signal: AbortSignal.timeout(4500),
+        });
+        const body = await res.text();
+        const latencyMs = Date.now() - t0;
+        const ok = t.kind === 'hls' ? res.ok && body.includes('#EXTM3U') : res.ok;
+        let detail = ok ? 'Emisión en directo operativa' : `HTTP ${res.status}`;
+        if (!ok && t.id.startsWith('atresplayer-') && res.status === 403) {
+          detail = routedViaProxy
+            ? 'Atresplayer requiere cuenta/sesión activa (HTTP 403) · usa señal Directa HD 1080p'
+            : 'Bloqueo geo/cuenta Atresplayer · activa Proxy España o usa señal Directa HD';
+        }
+        return {
+          id: t.id,
+          name: t.name,
+          route: t.url,
+          routedViaProxy,
+          ok,
+          status: res.status,
+          latencyMs,
+          detail,
+        };
+      } catch (err) {
+        return {
+          id: t.id,
+          name: t.name,
+          route: t.url,
+          routedViaProxy,
+          ok: false,
+          status: 0,
+          latencyMs: Date.now() - t0,
+          detail: err instanceof Error ? err.message : 'Timeout',
+        };
+      }
+    })
+  );
+
+  return {
+    checkedAt: Date.now(),
+    proxyActive: config.enabled,
+    channels: checks,
+  };
 }
 
 export async function getSpainGatewayOverview(): Promise<SpainGatewayOverview> {
@@ -428,7 +788,7 @@ export async function getSpainGatewayOverview(): Promise<SpainGatewayOverview> {
   const atresDispatcher = getSpainProxyDispatcherForTarget(
     'https://api.atresplayer.com/client/v1/row/live'
   );
-  const [directGeo, tunneledGeo, a3Ok, sextaOk, atresResp] = await Promise.all([
+  const [directGeo, tunneledGeo, a3Check, sextaCheck, atresResp] = await Promise.all([
     probeGeoExitInfo(undefined),
     config.enabled && state.proxyUrl ? probeGeoExitInfo(state.proxyUrl) : Promise.resolve(null),
     checkDvbHeadendHead('http://90.163.85.113:8093/stream/20/index.m3u8'),
@@ -457,8 +817,8 @@ export async function getSpainGatewayOverview(): Promise<SpainGatewayOverview> {
     tunneledGeo,
     spanishDvbHeadend: {
       host: '90.163.85.113:8093',
-      antena3Ready: a3Ok,
-      lasextaReady: sextaOk,
+      antena3Ready: a3Check.ok,
+      lasextaReady: sextaCheck.ok,
       note: 'Cabecera DVB España 1080p HD directa (Antena 3 / laSexta)',
     },
     atresplayerApi: atresResp,

@@ -233,9 +233,10 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
       const hls = new Hls({
         enableWorker: !isSmartTvUa,
         lowLatencyMode: false,
+        startFragPrefetch: true,
         startPosition: targetResumeSec > 3 ? targetResumeSec : -1,
-        liveSyncDurationCount: 3,
-        liveMaxLatencyDurationCount: 10,
+        liveSyncDurationCount: videoState.isLive ? (isDvbLiveUrl ? 1 : 2) : 3,
+        liveMaxLatencyDurationCount: isDvbLiveUrl ? 7 : 8,
         maxLiveSyncPlaybackRate: 1,
         backBufferLength: 20,
         maxBufferLength: 35,
@@ -248,15 +249,15 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         stretchShortVideoTrack: !videoState.isLive,
         maxAudioFramesDrift: videoState.isLive ? 3 : 4,
         abrEwmaDefaultEstimate: 7_500_000,
-        manifestLoadingTimeOut: isDvbLiveUrl ? 12000 : 20000,
-        manifestLoadingMaxRetry: isDvbLiveUrl ? 4 : 8,
-        manifestLoadingRetryDelay: 800,
-        levelLoadingTimeOut: 15000,
-        levelLoadingMaxRetry: 6,
-        levelLoadingRetryDelay: 800,
-        fragLoadingTimeOut: 20000,
+        manifestLoadingTimeOut: isDvbLiveUrl ? 9000 : 12000,
+        manifestLoadingMaxRetry: isDvbLiveUrl ? 4 : 6,
+        manifestLoadingRetryDelay: 300,
+        levelLoadingTimeOut: 11000,
+        levelLoadingMaxRetry: 5,
+        levelLoadingRetryDelay: 300,
+        fragLoadingTimeOut: 15000,
         fragLoadingMaxRetry: 6,
-        fragLoadingRetryDelay: 600,
+        fragLoadingRetryDelay: 350,
       });
       hlsRef.current = hls;
 
@@ -461,9 +462,9 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
               data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR)
           ) {
             liveNetworkStallBurst += 1;
-            setStreamRefreshPhase(liveNetworkStallBurst >= 3 ? 'reconnecting' : 'recovering');
+            setStreamRefreshPhase(liveNetworkStallBurst >= 2 ? 'reconnecting' : 'recovering');
             setIsBuffering(true);
-            if (liveNetworkStallBurst >= 4 && Date.now() - lastNonFatalRecoverAt > 6000) {
+            if (liveNetworkStallBurst >= 3 && Date.now() - lastNonFatalRecoverAt > 5000) {
               lastNonFatalRecoverAt = Date.now();
               if (!triggerBackupSwitch(`live_${data.details}`)) {
                 try {

@@ -4,6 +4,7 @@
 var TV_TDT_SNAP_KEY = 'naim_tv_tdt_snap_v2';
 var tvLiveFilterDebounce = null;
 var tvSearchDebounce = null;
+var tvProgressiveRenderTimer = null;
 
 var SVG_ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>';
 var SVG_ICON_TV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"/><polyline points="8 2 12 6 16 2"/></svg>';
@@ -186,6 +187,7 @@ function buildCardButton(item, kind) {
   btn.tabIndex = 0;
 
   if (kind === 'tdt') {
+    btn.setAttribute('data-tdt-id', item.id);
     var dialText = item.dial ? tvT('dialPrefix') + item.dial : (item.network || tvT('liveNow'));
     var grad = getChannelBrandGradient(item);
     var chEpg = catalogData.epg ? catalogData.epg[item.id] : null;
@@ -215,7 +217,7 @@ function buildCardButton(item, kind) {
         if (typeof prewarmTdtChannelOnTv === 'function') {
           prewarmTdtChannelOnTv(item, 0);
         }
-      }, 240);
+      }, 100);
     };
     btn.onclick = function () {
       lastHubFocusedEl = btn;
@@ -265,10 +267,12 @@ function appendSection(parent, title, subtitle, items, kind, useGrid, maxOverrid
   list.className = useGrid ? 'tv-grid' : 'tv-rail';
   var limit = useGrid
     ? (typeof maxOverride === 'number' && maxOverride > 0 ? Math.min(maxOverride, items.length) : items.length)
-    : Math.min(24, items.length);
+    : Math.min(14, items.length);
+  var frag = document.createDocumentFragment();
   for (var i = 0; i < limit; i++) {
-    list.appendChild(buildCardButton(items[i], kind));
+    frag.appendChild(buildCardButton(items[i], kind));
   }
+  list.appendChild(frag);
   sec.appendChild(list);
   parent.appendChild(sec);
 }
@@ -299,7 +303,7 @@ function selectHubTabProgrammatic(tabKey, filterKey) {
   activeHubTab = tabKey;
   if (filterKey) {
     activeLiveFilter = filterKey;
-    activeLiveVisibleLimit = 60;
+    activeLiveVisibleLimit = 36;
   }
   if (hubScrollBody) hubScrollBody.scrollTop = 0;
   renderHubContent();
@@ -420,7 +424,7 @@ function renderLiveChannelGridInto(containerEl) {
     moreBtn.tabIndex = 0;
     moreBtn.textContent = tvT('loadMoreChannels') + ' (' + (filteredList.length - limitToUse) + ')';
     moreBtn.onclick = function () {
-      activeLiveVisibleLimit += 60;
+      activeLiveVisibleLimit += 36;
       renderLiveChannelGridInto(containerEl);
     };
     moreWrap.appendChild(moreBtn);
@@ -635,7 +639,7 @@ function renderHubContent(focusFirstResult) {
         fb.setAttribute('data-filter', fObj.key);
         fb.onclick = function () {
           activeLiveFilter = fObj.key;
-          activeLiveVisibleLimit = 60;
+          activeLiveVisibleLimit = 36;
           if (fObj.key !== 'adrar_europa') activeAdrarCountry = 'all';
           renderHubContent();
           setTimeout(function () {
@@ -674,7 +678,7 @@ function renderHubContent(focusFirstResult) {
           cb.setAttribute('data-country', cObj.code);
           cb.onclick = function () {
             activeAdrarCountry = cObj.code;
-            activeLiveVisibleLimit = 60;
+            activeLiveVisibleLimit = 36;
             renderHubContent();
             setTimeout(function () {
               var activeC = hubDynamicContent.querySelector('.tv-filter-pill[data-country="' + cObj.code + '"]');
@@ -699,7 +703,7 @@ function renderHubContent(focusFirstResult) {
       if (lForm && lInput) {
         lInput.oninput = function () {
           activeLiveSearch = lInput.value || '';
-          activeLiveVisibleLimit = 60;
+          activeLiveVisibleLimit = 36;
           if (tvLiveFilterDebounce) clearTimeout(tvLiveFilterDebounce);
           tvLiveFilterDebounce = setTimeout(function () {
             renderLiveChannelGridInto(document.getElementById('tv-live-results-wrap'));
@@ -708,7 +712,7 @@ function renderHubContent(focusFirstResult) {
         lForm.onsubmit = function (ev) {
           if (ev && ev.preventDefault) ev.preventDefault();
           activeLiveSearch = lInput.value || '';
-          activeLiveVisibleLimit = 60;
+          activeLiveVisibleLimit = 36;
           renderLiveChannelGridInto(document.getElementById('tv-live-results-wrap'));
           return false;
         };
@@ -716,7 +720,7 @@ function renderHubContent(focusFirstResult) {
       if (lClear) {
         lClear.onclick = function () {
           activeLiveSearch = '';
-          activeLiveVisibleLimit = 60;
+          activeLiveVisibleLimit = 36;
           renderHubContent();
         };
       }
@@ -741,20 +745,62 @@ function renderHubContent(focusFirstResult) {
   }
 }
 
-function renderProgressiveIfSafe() {
+function renderProgressiveIfSafe(immediate) {
   if (!catalogData.loaded) return;
   if (activeScreen !== 'hub') return;
-  var activeEl = document.activeElement;
-  if (activeEl && activeEl.tagName === 'INPUT') return;
-  if (activeEl && hubDynamicContent && hubDynamicContent.contains(activeEl)) {
+  var runRender = function () {
+    tvProgressiveRenderTimer = null;
+    if (!catalogData.loaded || activeScreen !== 'hub') return;
+    var activeEl = document.activeElement;
+    if (activeEl && activeEl.tagName === 'INPUT') return;
+    if (activeEl && hubDynamicContent && hubDynamicContent.contains(activeEl)) {
+      return;
+    }
+    renderHubContent();
+  };
+  if (immediate) {
+    if (tvProgressiveRenderTimer) {
+      clearTimeout(tvProgressiveRenderTimer);
+      tvProgressiveRenderTimer = null;
+    }
+    runRender();
     return;
   }
-  renderHubContent();
+  if (tvProgressiveRenderTimer) clearTimeout(tvProgressiveRenderTimer);
+  tvProgressiveRenderTimer = setTimeout(runRender, 160);
+}
+
+function updateTdtEpgCardsInPlace() {
+  if (!hubDynamicContent || !catalogData.epg) return;
+  var cards = hubDynamicContent.querySelectorAll('.tv-card[data-tdt-id]');
+  for (var i = 0; i < cards.length; i++) {
+    var card = cards[i];
+    var id = card.getAttribute('data-tdt-id');
+    var chEpg = id ? catalogData.epg[id] : null;
+    if (!chEpg) continue;
+    var nowEl = card.querySelector('.tv-channel-epg-now');
+    if (nowEl && chEpg.now && chEpg.now.title) {
+      nowEl.textContent = chEpg.now.title;
+    }
+    var fillEl = card.querySelector('.tv-channel-epg-fill');
+    if (fillEl && typeof chEpg.progressPct === 'number') {
+      fillEl.style.width = Math.max(6, Math.min(100, chEpg.progressPct)) + '%';
+    }
+  }
 }
 
 function prewarmFlagshipChannels() {
   if (typeof prewarmTdtChannelOnTv !== 'function' || !catalogData.tdt || !catalogData.tdt.length) return;
-  var targets = ['tdt-la1', 'tdt-antena3', 'dazn-laliga', 'mplus-laliga'];
+  var targets = [
+    'tdt-la1',
+    'tdt-la2',
+    'tdt-antena3',
+    'tdt-cuatro',
+    'tdt-telecinco',
+    'tdt-lasexta',
+    'dazn-laliga',
+    'mplus-laliga'
+  ];
   var matched = [];
   for (var t = 0; t < targets.length; t++) {
     for (var i = 0; i < catalogData.tdt.length; i++) {
@@ -769,7 +815,7 @@ function prewarmFlagshipChannels() {
       setTimeout(function () {
         if (activeScreen === 'hub') prewarmTdtChannelOnTv(chItem, 0);
       }, delayMs);
-    })(matched[m], 450 + m * 550);
+    })(matched[m], 150 + m * 180);
   }
 }
 
@@ -778,7 +824,7 @@ function loadLiveEpg() {
     if (d && d.epg) {
       catalogData.epg = d.epg;
       if (catalogData.loaded && (activeHubTab === 'tdt' || activeHubTab === 'home')) {
-        renderProgressiveIfSafe();
+        updateTdtEpgCardsInPlace();
       }
     }
   });
@@ -826,7 +872,7 @@ function loadTvCatalog() {
         catalogData.tdt.length > 0;
       if (anySuccess || hasAnyItems) {
         catalogData.loaded = true;
-        renderProgressiveIfSafe();
+        renderProgressiveIfSafe(true);
       } else if (tvCatalogRetryCount < 3) {
         tvCatalogRetryCount += 1;
         setTimeout(loadTvCatalog, 2500);

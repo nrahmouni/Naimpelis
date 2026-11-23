@@ -679,7 +679,10 @@ input:focus,
   transform: scale(1.035);
 }
 
-.tv-section { margin-bottom: 28px; }
+.tv-section {
+  margin-bottom: 28px;
+  contain: layout style;
+}
 .tv-section-head {
   display: -webkit-flex;
   display: flex;
@@ -709,6 +712,7 @@ input:focus,
   overflow-x: auto;
   overflow-y: visible;
   padding: 10px 8px 18px 6px;
+  contain: layout style;
 }
 .tv-rail::-webkit-scrollbar { display: none; }
 .tv-grid {
@@ -717,4 +721,42 @@ input:focus,
   -webkit-flex-wrap: wrap;
   flex-wrap: wrap;
   padding: 10px 6px 26px 6px;
+}
+
+/* Samsung Tizen & Smart TV Low-Overhead Compositing & Zero-Lag Focus */
+html.is-smart-tv .ambient-glow {
+  display: none !important;
+}
+html.is-smart-tv .tv-side-rail,
+html.is-smart-tv .rail-brand-text,
+html.is-smart-tv .rail-label,
+html.is-smart-tv .rail-item,
+html.is-smart-tv .tv-btn,
+html.is-smart-tv .tv-btn-primary,
+html.is-smart-tv .tv-btn-fullscreen,
+html.is-smart-tv .tv-quick-btn,
+html.is-smart-tv .tv-filter-pill,
+html.is-smart-tv .tv-card,
+html.is-smart-tv .tv-chip-btn,
+html.is-smart-tv .mg-ch-row {
+  -webkit-transition: none !important;
+  transition: none !important;
+}
+html.is-smart-tv button:focus,
+html.is-smart-tv input:focus,
+html.is-smart-tv .tv-card:focus,
+html.is-smart-tv .ep-tile-btn:focus,
+html.is-smart-tv .mg-ch-row:focus {
+  outline: 3px solid #FFFFFF !important;
+  outline-offset: 2px;
+  box-shadow: none !important;
+}
+html.is-smart-tv .tv-btn:focus,
+html.is-smart-tv .tv-btn-primary:focus,
+html.is-smart-tv .tv-btn-fullscreen:focus,
+html.is-smart-tv .tv-quick-btn:focus,
+html.is-smart-tv .tv-filter-pill:focus,
+html.is-smart-tv .tv-chip-btn:focus {
+  -webkit-transform: none !important;
+  transform: none !important;
 }

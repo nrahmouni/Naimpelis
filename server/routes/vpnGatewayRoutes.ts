@@ -1,7 +1,8 @@
 /**
  * @module server/routes/vpnGatewayRoutes
- * @description API routes for cross-device Spain VPN / Egress Proxy management
- * and Urban VPN 1.0.97 static analysis & gateway probes.
+ * @description API routes for cross-device Spain VPN / Egress Proxy management,
+ * live Urban VPN gateway catalog/probes, .ovpn template downloads, and direct
+ * verification of Spanish broadcasters (Antena 3, laSexta, Atresplayer).
  */
 
 import type { Express } from 'express';
@@ -12,11 +13,15 @@ import {
   probeGeoExitInfo,
   setRuntimeSpainProxyConfig,
   validateSpainProxyUrl,
+  verifySpanishChannelsDirectAccess,
   type SpainProxyScope,
 } from '../services/spainVpnGatewayService.ts';
 import {
+  getUrbanVpnOvpnProfile,
   listUrbanVpnGateways,
+  probeAllSpainUrbanGateways,
   probeUrbanVpnGateway,
+  syncLiveUrbanVpnCatalog,
 } from '../services/urbanVpnService.ts';
 
 export function registerVpnGatewayRoutes(app: Express): void {
@@ -48,14 +53,69 @@ export function registerVpnGatewayRoutes(app: Express): void {
     res.json({ success: true, total: gateways.length, gateways });
   });
 
+  app.post('/api/vpn/sync', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const force = req.body?.force === true || req.query.force === '1';
+      const syncResult = await syncLiveUrbanVpnCatalog(force);
+      const spainGateways = listUrbanVpnGateways({ spainOnly: true });
+      res.json({ success: true, ...syncResult, spainGateways });
+    } catch (err) {
+      res.status(500).json({
+        success: false,
+        error: err instanceof Error ? err.message : 'Error sincronizando pasarelas Urban VPN',
+      });
+    }
+  });
+
   app.get('/api/vpn/probe', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     const host = String(req.query.host || 'p-es1.urban-vpn.com').trim();
     const probe = await probeUrbanVpnGateway(host);
-    res.status(probe.error === 'Host fuera de la lista verificada de pasarelas Urban VPN' ? 403 : 200).json({
-      success: probe.ok,
-      probe,
-    });
+    res
+      .status(probe.error === 'Host fuera de la lista verificada de pasarelas Urban VPN' ? 403 : 200)
+      .json({
+        success: probe.ok,
+        probe,
+      });
+  });
+
+  app.get('/api/vpn/probe-es', async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const results = await probeAllSpainUrbanGateways();
+      res.json({ success: true, total: results.length, probes: results });
+    } catch (err) {
+      res.status(500).json({
+        success: false,
+        error: err instanceof Error ? err.message : 'Error probando nodos España',
+      });
+    }
+  });
+
+  app.get('/api/vpn/ovpn/:location', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const profile = getUrbanVpnOvpnProfile(req.params.location);
+    if (!profile.ok) {
+      return res.status(404).json({ success: false, error: profile.error });
+    }
+    const safeFilename = profile.filename.replace(/[^a-zA-Z0-9._-]/g, '');
+    res.setHeader('Content-Type', 'application/x-openvpn-profile; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+    return res.send(profile.ovpnContent);
+  });
+
+  app.post('/api/vpn/verify-channels', async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const report = await verifySpanishChannelsDirectAccess();
+      res.json({ success: true, ...report });
+    } catch (err) {
+      res.status(500).json({
+        success: false,
+        error: err instanceof Error ? err.message : 'Error verificando canales españoles',
+      });
+    }
   });
 
   app.post('/api/vpn/test', async (req, res) => {

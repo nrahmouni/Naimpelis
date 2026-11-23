@@ -58,6 +58,7 @@ interface SettingsBottomSheetProps {
   onLeaveRoom?: () => void;
   onOpenDesignSystem?: () => void;
   onOpenLinkDevice?: () => void;
+  onPlayChannelById?: (channelId: 'tdt-antena3' | 'tdt-lasexta') => void | Promise<void>;
 }
 
 export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
@@ -79,6 +80,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
   onLeaveRoom,
   onOpenDesignSystem,
   onOpenLinkDevice,
+  onPlayChannelById,
 }) => {
   const isVerifiedAccount = Boolean(authUser && !authUser.isAnonymous);
   const { isIOS, isAndroid } = usePWAInstall();
@@ -768,6 +770,14 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
             isOpen={vpnGatewayOpen}
             onClose={() => setVpnGatewayOpen(false)}
             lang={lang}
+            onPlayChannelById={
+              onPlayChannelById
+                ? async (channelId) => {
+                    onClose();
+                    await onPlayChannelById(channelId);
+                  }
+                : undefined
+            }
           />
         </React.Suspense>
       )}

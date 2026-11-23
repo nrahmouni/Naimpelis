@@ -71,7 +71,19 @@ export const SamsungTvGuidePage: React.FC<SamsungTvGuidePageProps> = ({
   }, [activeTab]);
 
   const canonicalXml = generateTizenConfigXml();
-  const liveTvUrl = 'https://riffan.ai.studio/tv';
+  const currentHost =
+    typeof window !== 'undefined' && window.location?.hostname
+      ? window.location.hostname.toLowerCase()
+      : '';
+  const isDevHost =
+    !currentHost ||
+    currentHost === 'localhost' ||
+    currentHost === '127.0.0.1' ||
+    currentHost.startsWith('ais-dev-');
+  const liveTvUrl =
+    !isDevHost && typeof window !== 'undefined' && window.location?.origin?.startsWith('http')
+      ? `${window.location.origin}/tv`
+      : 'https://riffan.ai.studio/tv';
 
   const handleCopy = async (text: string, id: string) => {
     triggerHaptic('light');

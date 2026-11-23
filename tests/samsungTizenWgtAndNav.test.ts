@@ -50,6 +50,7 @@ describe('Samsung Smart TV (Tizen .wgt) Architecture, Navigation & Packager', ()
     expect(rewritten).toContain('src="./assets/app.js"');
     expect(rewritten).not.toContain('registerSW.js');
     expect(rewritten).toContain('window.__RIFFAN_TIZEN_WIDGET__ = true;');
+    expect(rewritten).toContain('XMLHttpRequest');
     expect(rewritten).toContain('https://riffan.example.tv');
 
     const launcher = buildHostedTizenLauncherHtml('RiffanTV', 'https://riffan.example.tv/');
@@ -93,6 +94,7 @@ describe('Samsung Smart TV (Tizen .wgt) Architecture, Navigation & Packager', ()
     expect(extractedHtml).toContain('href="app.css"');
     expect(extractedHtml).toContain('src="main.js"');
     expect(extractedJs).toContain('https://riffan.ai.studio/tv');
+    expect(extractedJs).toContain('?_t=');
     expect(hasPngSignature(extractedPng)).toBe(true);
   });
 

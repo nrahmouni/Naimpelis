@@ -25,6 +25,62 @@ interface LiveQueueExtras {
   handlePlayYouTubeVideo: (item: YouTubeSearchItem) => void;
 }
 
+interface CachedLiveExtract {
+  streamUrl: string;
+  mode?: VideoState['mode'];
+  expiresAt: number;
+}
+
+const liveExtractClientCache = new Map<string, CachedLiveExtract>();
+
+function getClientExtractCacheKey(resolverType: string, sourceUrl: string): string {
+  return `${resolverType || 'tdt_hls'}|${sourceUrl || ''}`;
+}
+
+function getCachedClientExtract(resolverType: string, sourceUrl: string): CachedLiveExtract | null {
+  const key = getClientExtractCacheKey(resolverType, sourceUrl);
+  const hit = liveExtractClientCache.get(key);
+  if (hit && hit.expiresAt > Date.now() && hit.streamUrl) {
+    return hit;
+  }
+  if (hit) liveExtractClientCache.delete(key);
+  return null;
+}
+
+function setCachedClientExtract(
+  resolverType: string,
+  sourceUrl: string,
+  streamUrl: string,
+  mode?: VideoState['mode']
+): void {
+  if (!streamUrl) return;
+  if (liveExtractClientCache.size > 160) {
+    const firstKey = liveExtractClientCache.keys().next().value;
+    if (firstKey) liveExtractClientCache.delete(firstKey);
+  }
+  liveExtractClientCache.set(getClientExtractCacheKey(resolverType, sourceUrl), {
+    streamUrl,
+    mode,
+    expiresAt: Date.now() + 90_000,
+  });
+}
+
+function isInstantDirectTdtStream(sourceUrl: string, resolverType: string): boolean {
+  if (!sourceUrl) return false;
+  if (/^\/api\/(?:hls-proxy|iptv\/live|dvb-live|vod-manifest)/i.test(sourceUrl)) {
+    return true;
+  }
+  if (
+    resolverType === 'tdt_hls' &&
+    /^https:\/\/([^/]*\.)?(rtvelivestream\.rtve\.es|3catdirectes\.cat|eitb\.eus)\//i.test(
+      sourceUrl
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
 export function useLiveAndQueuePlayback(
   ctx: PlaybackCoreContext,
   vodHandlers: LiveQueueExtras
@@ -118,16 +174,41 @@ export function useLiveAndQueuePlayback(
     activeHistoryIdRef.current = null;
 
     try {
-      const params = new URLSearchParams({
-        url: channel.sourceUrl,
-        resolverType: channel.resolverType || 'sports_channel',
-        title: match.title,
-      });
-      const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
-      const data = await res.json().catch(() => null);
+      const sportsResolver = channel.resolverType || 'sports_channel';
+      let data: {
+        success?: boolean;
+        streamUrl?: string;
+        mode?: VideoState['mode'] | 'cloud';
+        canUseCloudBrowser?: boolean;
+        error?: string;
+      } | null = null;
+      let resOk = false;
+
+      if (channel.resolvedStreamUrl) {
+        data = { success: true, streamUrl: channel.resolvedStreamUrl, mode: 'hls' };
+        resOk = true;
+      } else {
+        const cachedSports = getCachedClientExtract(sportsResolver, channel.sourceUrl);
+        if (cachedSports) {
+          data = { success: true, streamUrl: cachedSports.streamUrl, mode: cachedSports.mode || 'hls' };
+          resOk = true;
+        } else {
+          const params = new URLSearchParams({
+            url: channel.sourceUrl,
+            resolverType: sportsResolver,
+            title: match.title,
+          });
+          const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
+          resOk = res.ok;
+          data = await res.json().catch(() => null);
+          if (resOk && data?.success && data.streamUrl && data.mode !== 'cloud') {
+            setCachedClientExtract(sportsResolver, channel.sourceUrl, data.streamUrl, data.mode);
+          }
+        }
+      }
       if (reqSeq !== extractionReqSeqRef.current) return;
 
-      if (!res.ok || !data?.success || !data?.streamUrl) {
+      if (!resOk || !data?.success || !data?.streamUrl) {
         if (allowSameMatchMirrorFallback && match.channels.length > 1) {
           const nextFailed = new Set(failedIndices);
           nextFailed.add(channelIndex);
@@ -288,37 +369,63 @@ export function useLiveAndQueuePlayback(
     };
 
     try {
-      const params = new URLSearchParams({
-        url: chosenSignal.sourceUrl,
-        resolverType: signalResolver,
-        title: effectiveTdtCh.name,
-      });
-      const ctrl = new AbortController();
-      const onParentAbort = () => ctrl.abort();
-      if (signal.aborted) {
-        ctrl.abort();
-      } else {
-        signal.addEventListener('abort', onParentAbort, { once: true });
-      }
-      const timeoutId = setTimeout(() => ctrl.abort(), 15_000);
-      let res: Response | null = null;
+      let resOk = false;
       let data: {
         success?: boolean;
         streamUrl?: string;
         mode?: VideoState['mode'];
         error?: string;
       } | null = null;
-      try {
-        res = await fetch(`/api/extract/stream?${params.toString()}`, { signal: ctrl.signal });
-        data = await res.json().catch(() => null);
-      } finally {
-        clearTimeout(timeoutId);
-        signal.removeEventListener('abort', onParentAbort);
+
+      if (isInstantDirectTdtStream(chosenSignal.sourceUrl, signalResolver)) {
+        resOk = true;
+        data = {
+          success: true,
+          streamUrl: chosenSignal.sourceUrl,
+          mode: /\.(mp4|mkv|webm)(\?|$)/i.test(chosenSignal.sourceUrl) ? 'direct' : 'hls',
+        };
+      } else {
+        const cachedTdt = getCachedClientExtract(signalResolver, chosenSignal.sourceUrl);
+        if (cachedTdt) {
+          resOk = true;
+          data = {
+            success: true,
+            streamUrl: cachedTdt.streamUrl,
+            mode: cachedTdt.mode || 'hls',
+          };
+        }
+      }
+
+      if (!data) {
+        const params = new URLSearchParams({
+          url: chosenSignal.sourceUrl,
+          resolverType: signalResolver,
+          title: effectiveTdtCh.name,
+        });
+        const ctrl = new AbortController();
+        const onParentAbort = () => ctrl.abort();
+        if (signal.aborted) {
+          ctrl.abort();
+        } else {
+          signal.addEventListener('abort', onParentAbort, { once: true });
+        }
+        const timeoutId = setTimeout(() => ctrl.abort(), 12_000);
+        try {
+          const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal: ctrl.signal });
+          resOk = res.ok;
+          data = await res.json().catch(() => null);
+          if (resOk && data?.success && data.streamUrl) {
+            setCachedClientExtract(signalResolver, chosenSignal.sourceUrl, data.streamUrl, data.mode);
+          }
+        } finally {
+          clearTimeout(timeoutId);
+          signal.removeEventListener('abort', onParentAbort);
+        }
       }
 
       if (reqSeq !== extractionReqSeqRef.current) return;
 
-      if (!res || !res.ok || !data?.success || !data?.streamUrl) {
+      if (!resOk || !data?.success || !data?.streamUrl) {
         if (allowSameChannelBackup && effectiveTdtCh.channels.length > 1) {
           const nextFailed = getNextFailedSet(failedSignals);
           const nextIdx = effectiveTdtCh.channels.findIndex((_, idx) => !nextFailed.has(idx));
@@ -335,8 +442,7 @@ export function useLiveAndQueuePlayback(
           }
         }
         setExtractionError(
-          data?.error ||
-            `La emisión de ${effectiveTdtCh.name} (${chosenSignal.label}) no responde en este instante.`
+          `Ninguna señal disponible en este instante para ${effectiveTdtCh.name}. Prueba recargar o activar VPN España.`
         );
         return;
       }
@@ -391,7 +497,9 @@ export function useLiveAndQueuePlayback(
           return;
         }
       }
-      setExtractionError(`No se pudo conectar con ${effectiveTdtCh.name}.`);
+      setExtractionError(
+        `No se pudo conectar con ${effectiveTdtCh.name}. Prueba otra señal o activa VPN España.`
+      );
     } finally {
       if (reqSeq === extractionReqSeqRef.current) {
         isExtractingRef.current = false;

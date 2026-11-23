@@ -5,6 +5,7 @@ import {
   ChevronRight,
   ExternalLink,
   Film,
+  Globe,
   Play,
   Plus,
   Radio,
@@ -108,6 +109,10 @@ export const AtresplayerWorldView: React.FC<AtresplayerWorldViewProps> = ({
 
   const antena3Live = useMemo(
     () => liveChannels.find((c) => c.tdtId === 'tdt-antena3') || liveChannels[0] || null,
+    [liveChannels]
+  );
+  const lasextaLive = useMemo(
+    () => liveChannels.find((c) => c.tdtId === 'tdt-lasexta') || null,
     [liveChannels]
   );
 
@@ -269,17 +274,31 @@ export const AtresplayerWorldView: React.FC<AtresplayerWorldViewProps> = ({
                 </span>
               </button>
 
-              {liveChannels[0] && (
+              {antena3Live && (
                 <button
                   type="button"
                   onClick={() => {
                     triggerHaptic('light');
-                    onPlayTdtChannel(liveChannels[0].tdtChannel, 0, liveChannels[0].nowTitle);
+                    onPlayTdtChannel(antena3Live.tdtChannel, 0, antena3Live.nowTitle);
                   }}
                   className="min-h-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/[0.12] text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-2 cursor-pointer transition-colors"
                 >
                   <Radio className="w-4 h-4 text-[#FF5E1A]" />
                   <span>Directo Antena 3 1080p</span>
+                </button>
+              )}
+
+              {lasextaLive && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onPlayTdtChannel(lasextaLive.tdtChannel, 0, lasextaLive.nowTitle);
+                  }}
+                  className="min-h-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/[0.12] text-white text-xs sm:text-sm font-semibold inline-flex items-center gap-2 cursor-pointer transition-colors"
+                >
+                  <Radio className="w-4 h-4 text-emerald-400" />
+                  <span>Directo laSexta 1080p</span>
                 </button>
               )}
             </div>
@@ -338,6 +357,17 @@ export const AtresplayerWorldView: React.FC<AtresplayerWorldViewProps> = ({
               type="button"
               onClick={() => {
                 triggerHaptic('light');
+                window.dispatchEvent(new CustomEvent('riffan:open-vpn-gateway'));
+              }}
+              className="min-h-9 px-3 rounded-xl bg-[#00F593]/12 hover:bg-[#00F593]/20 border border-[#00F593]/35 text-xs font-semibold text-emerald-300 inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>VPN España</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
                 setShowBackupDrawer((v) => !v);
               }}
               className="min-h-9 px-3 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.1] text-xs font-semibold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer transition-colors"
@@ -361,10 +391,10 @@ export const AtresplayerWorldView: React.FC<AtresplayerWorldViewProps> = ({
           <div className="rounded-2xl bg-[#0D0D12] border border-[#FF5E1A]/35 p-4 space-y-3">
             <div className="space-y-1">
               <h3 className="text-xs sm:text-sm font-bold text-white">
-                Señal Multi-Fuente desde Bélgica (Sin hardware ni VPS extra)
+                Señal Directa España 1080p + Pasarela VPN Multi-Fuente
               </h3>
               <p className="text-xs text-zinc-400">
-                Riffan TV rota automáticamente entre nuestras señales HD/SD con audio AAC integrado sin depender de antenas físicas ni servidores propios. Si tienes cualquier URL `.m3u8` pública o enlace de directo, puedes fijarla aquí como prioridad #1 en este navegador.
+                Riffan TV conecta directo con la cabecera DVB española de Antena 3 y laSexta en 1080p HD y rota automáticamente con señales Edge de respaldo sin antenas físicas. Si tienes otra URL `.m3u8` privada, fíjala aquí como prioridad #1.
               </p>
             </div>
 

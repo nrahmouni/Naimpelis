@@ -1,6 +1,8 @@
 import fs from 'fs';
 import path from 'path';
 import type express from 'express';
+import { ENV } from '../config/env.ts';
+import { resolveSafePublicOrigin } from '../utils/ssrfGuard.ts';
 import { generateTizenConfigXml } from '../../src/utils/tizenConfigGenerator.ts';
 
 const MAX_MANIFEST_FILES = 240;
@@ -106,7 +108,35 @@ export function registerTizenRoutes(app: express.Express, rootDir: string): void
       const appName = typeof req.query.appName === 'string' && req.query.appName.trim()
         ? req.query.appName.trim().slice(0, 48)
         : 'RiffanTV';
-      const targetOrigin = 'https://riffan.ai.studio';
+      const rawReqHost = String(req.headers['x-forwarded-host'] || req.get('host') || '')
+        .split(',')[0]
+        .trim()
+        .split(':')[0]
+        .toLowerCase();
+      const isDevHost =
+        !rawReqHost ||
+        rawReqHost === 'localhost' ||
+        rawReqHost === '127.0.0.1' ||
+        rawReqHost.startsWith('ais-dev-');
+      const explicitOrigin = String(req.query.origin || '').trim();
+      const publishedFallback = `https://${ENV.publicDomain || 'riffan.ai.studio'}`;
+      let safeExplicitOrigin = '';
+      if (explicitOrigin) {
+        const probe = resolveSafePublicOrigin({ queryOrigin: explicitOrigin }, ENV.publicDomain || 'riffan.ai.studio');
+        if (probe === explicitOrigin.replace(/\/+$/, '')) {
+          safeExplicitOrigin = probe;
+        }
+      }
+      const targetOrigin = resolveSafePublicOrigin(
+        {
+          queryOrigin: safeExplicitOrigin || (isDevHost ? publishedFallback : ''),
+          forwardedProto: String(req.headers['x-forwarded-proto'] || ''),
+          forwardedHost: String(req.headers['x-forwarded-host'] || ''),
+          hostHeader: String(req.get('host') || ''),
+          protocol: req.protocol,
+        },
+        ENV.publicDomain || 'riffan.ai.studio'
+      );
 
       // 1. config.xml
       const xml = generateTizenConfigXml({
@@ -148,8 +178,8 @@ export function registerTizenRoutes(app: express.Express, rootDir: string): void
               .replace(/(href|src)="\/(favicon[^"]*|apple-touch-icon\.png|icon\.svg|pwa-[^"]*|music-[^"]*|logo-[^"]*|manifest\.webmanifest)"/g, '$1="./$2"')
               .replace(/<script[^>]*src=["\x27]\.?\/registerSW\.js["\x27][^>]*><\/script>/gi, '');
 
-            const bootShim = `<script>(function(){if(window.location.protocol==="file:"){window.__RIFFAN_TIZEN_WIDGET__=true;window.__RIFFAN_API_ORIGIN__=${JSON.stringify(targetOrigin)};if(typeof window.fetch==="function"){var origFetch=window.fetch;window.fetch=function(input,init){if(typeof input==="string"&&input.charAt(0)==="/"){input=${JSON.stringify(targetOrigin)}+input;}return origFetch.call(this,input,init);};}}try{if(window.tizen&&window.tizen.tvinputdevice&&window.tizen.tvinputdevice.registerKeyBatch){window.tizen.tvinputdevice.registerKeyBatch(["MediaPlayPause","MediaPlay","MediaPause","MediaStop","MediaRewind","MediaFastForward","ChannelUp","ChannelDown"]);}}catch(e){}})();</script>`;
-            html = html.replace('<head>', '<head>' + bootShim);
+            const { buildTizenRuntimeShimScript } = await import('../../src/utils/tizenWgtBuilder.ts');
+            html = html.replace('<head>', '<head>\n' + buildTizenRuntimeShimScript(targetOrigin));
             zip.file('index.html', html);
           } else if (fs.existsSync(fullPath)) {
             zip.file(rel, fs.readFileSync(fullPath));

@@ -17,11 +17,9 @@ function getVisibleFocusables() {
   var out = [];
   for (var i = 0; i < all.length; i++) {
     var el = all[i];
-    if (el.disabled) continue;
+    if (el.disabled || el.offsetWidth <= 0 || el.offsetHeight <= 0) continue;
     var rect = el.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) continue;
-    var style = window.getComputedStyle ? window.getComputedStyle(el) : null;
-    if (style && (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none')) continue;
     out.push({ el: el, rect: rect });
   }
   return out;

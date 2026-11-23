@@ -246,13 +246,9 @@ const FOCUSABLE_SELECTOR = [
 
 function isElementVisible(el: HTMLElement): boolean {
   if (!el.isConnected) return false;
-  const style = window.getComputedStyle(el);
-  if (
-    style.display === 'none' ||
-    style.visibility === 'hidden' ||
-    parseFloat(style.opacity || '1') < 0.05
-  ) {
-    return false;
+  if (el.offsetWidth < 14 || el.offsetHeight < 14) {
+    const posStyle = el.style.position || '';
+    if (posStyle !== 'fixed') return false;
   }
   const rect = el.getBoundingClientRect();
   if (rect.width < 14 || rect.height < 14) return false;

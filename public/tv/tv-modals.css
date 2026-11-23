@@ -16,6 +16,7 @@
   text-align: left;
   padding: 0;
   color: #FFFFFF;
+  contain: layout style paint;
   -webkit-transition: -webkit-transform 0.14s ease, border-color 0.14s ease;
   transition: transform 0.14s ease, border-color 0.14s ease;
 }
@@ -25,6 +26,13 @@
   transform: scale(1.055);
   border-color: #FFFFFF;
   z-index: 6;
+}
+html.is-smart-tv .tv-card:focus,
+html.is-smart-tv .tv-card:hover {
+  -webkit-transform: none !important;
+  transform: none !important;
+  border-color: #FFFFFF;
+  background: #1C1635;
 }
 .tv-card-poster-wrap {
   position: relative;

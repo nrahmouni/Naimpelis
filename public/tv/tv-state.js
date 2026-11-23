@@ -21,7 +21,7 @@ var activeLiveTrackIdx = 0;
 var activeLiveFilter = 'es_priority';
 var activeAdrarCountry = 'all';
 var activeLiveSearch = '';
-var activeLiveVisibleLimit = 60;
+var activeLiveVisibleLimit = 36;
 var lastHubFocusedEl = null;
 
 var currentTvBuildSig = typeof window.__RIFFAN_TV_BUILD__ === 'string' ? window.__RIFFAN_TV_BUILD__ : '';
@@ -676,25 +676,63 @@ function unlockAudio() {
 // ===================================================================
 // ZERO-REINSTALL AUTOMATIC VERSION CONTROL & SILENT TIZEN OTA SYNC
 // ===================================================================
-function applyPendingTvAutoUpdate(forceBuildSig) {
-  var nextBuild = forceBuildSig || pendingTvAutoUpdateBuild;
+function clearTvCachesForUpdate() {
+  try {
+    localStorage.removeItem('naim_tv_tdt_snap_v2');
+  } catch (e) {}
+  liveExtractCache = {};
+  try {
+    if (window.caches && window.caches.keys) {
+      window.caches.keys().then(function (keys) {
+        for (var i = 0; i < keys.length; i++) {
+          window.caches.delete(keys[i]);
+        }
+      });
+    }
+  } catch (e) {}
+}
+
+// Clear stale channel snapshot immediately if server build changed since last boot
+try {
+  if (currentTvBuildSig) {
+    var prevBootBuild = localStorage.getItem(TV_WEB_BUILD_KEY) || '';
+    if (prevBootBuild && prevBootBuild !== currentTvBuildSig) {
+      clearTvCachesForUpdate();
+    }
+    localStorage.setItem(TV_WEB_BUILD_KEY, currentTvBuildSig);
+  }
+} catch (e) {}
+
+function applyPendingTvAutoUpdate(forceBuildSig, forceManualReload) {
+  var nextBuild = forceBuildSig || pendingTvAutoUpdateBuild || currentTvBuildSig;
   if (!nextBuild) return false;
   var lastReload = 0;
   try {
     lastReload = Number(sessionStorage.getItem(TV_RELOAD_GUARD_KEY) || '0');
   } catch (e) {}
-  if (Date.now() - lastReload < 25000) return false;
+  if (!forceManualReload && Date.now() - lastReload < 25000) return false;
   try {
     sessionStorage.setItem(TV_RELOAD_GUARD_KEY, String(Date.now()));
     localStorage.setItem(TV_WEB_BUILD_KEY, String(nextBuild));
   } catch (e) {}
-  var targetUrl = '/tv?_upd=' + encodeURIComponent(nextBuild);
+  clearTvCachesForUpdate();
+  var apiOrigin = (typeof window.__RIFFAN_API_ORIGIN__ === 'string' && window.__RIFFAN_API_ORIGIN__.indexOf('http') === 0)
+    ? window.__RIFFAN_API_ORIGIN__.replace(/\/+$/, '')
+    : '';
+  var baseTvPath = (window.location && window.location.protocol === 'file:' && apiOrigin)
+    ? (apiOrigin + '/tv')
+    : '/tv';
+  var targetUrl = baseTvPath + '?_upd=' + encodeURIComponent(nextBuild + '-' + Date.now());
   if (isPaired && currentRoomId) {
     targetUrl += '&room=' + encodeURIComponent(currentRoomId);
   }
   showToast(tvT('otaApplyingToast'));
   setTimeout(function () {
-    window.location.replace(targetUrl);
+    if (window.location && window.location.protocol === 'file:' && !apiOrigin) {
+      window.location.reload();
+    } else {
+      window.location.replace(targetUrl);
+    }
   }, 180);
   return true;
 }
@@ -718,7 +756,10 @@ function runTvVersionCheck(isManual) {
     if (isManual && btnCheckTvUpdate) {
       btnCheckTvUpdate.textContent = tvT('otaCheckBtn');
     }
-    if (err || !data) return;
+    if (err || !data) {
+      if (isManual) showToast(tvT('otaUpdatedToast'));
+      return;
+    }
     var remoteWebVer = String((data.web && data.web.version) || data.versionName || '');
     var remoteBuild = String((data.tvWeb && data.tvWeb.build) || (data.web && data.web.build) || remoteWebVer || '');
 
@@ -739,11 +780,16 @@ function runTvVersionCheck(isManual) {
         updateOtaStatusLabels(remoteBuild);
         var activelyWatching = activeScreen === 'player' && currentMode !== 'idle';
         if (!activelyWatching || isManual) {
-          if (applyPendingTvAutoUpdate(remoteBuild)) return;
+          if (applyPendingTvAutoUpdate(remoteBuild, Boolean(isManual))) return;
         }
       } else {
         updateOtaStatusLabels(remoteBuild);
-        if (isManual) showToast(tvT('otaUpdatedToast'));
+        if (isManual) {
+          // Allow manual click to force a clean cache-free reload & fresh channel catalog
+          clearTvCachesForUpdate();
+          if (typeof loadTvCatalog === 'function') loadTvCatalog();
+          applyPendingTvAutoUpdate(remoteBuild, true);
+        }
       }
     }
 

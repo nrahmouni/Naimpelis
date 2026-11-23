@@ -129,12 +129,19 @@ export function extractTrackHostKey(sourceUrl: string): string {
       // ignore
     }
   }
+  const belixMatch = target.match(/^\/api\/belix\/stream\/([a-zA-Z0-9_-]+)/i);
+  if (belixMatch) {
+    return `belix://stream/${belixMatch[1].toLowerCase()}`;
+  }
   if (target.startsWith('/api/belix/stream/')) {
     return 'belix://xtream';
   }
   if (!/^https?:\/\//i.test(target)) return '';
   try {
     const parsed = new URL(target);
+    if (parsed.hostname === '90.163.85.113') {
+      return `${parsed.protocol}//${parsed.host.toLowerCase()}${parsed.pathname}`;
+    }
     return `${parsed.protocol}//${parsed.host.toLowerCase()}`;
   } catch {
     return '';

@@ -30,6 +30,8 @@ export interface AppEnvironmentConfig {
   belixXtreamPass: string;
   spainProxyUrl: string;
   spainProxyScope: 'auto_spanish' | 'all_streaming' | 'off';
+  urbanVpnApiUser: string;
+  urbanVpnApiPass: string;
 }
 
 const isProdEnv = process.env.NODE_ENV === 'production';
@@ -80,4 +82,6 @@ export const ENV: AppEnvironmentConfig = {
     ''
   ).trim(),
   spainProxyScope: resolvedProxyScope,
+  urbanVpnApiUser: String(process.env.URBAN_VPN_API_USER || '').trim(),
+  urbanVpnApiPass: String(process.env.URBAN_VPN_API_PASS || '').trim(),
 };

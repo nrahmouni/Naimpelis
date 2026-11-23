@@ -28,7 +28,20 @@ export const SamsungWgtExportPanel: React.FC<SamsungWgtExportPanelProps> = ({
   compact = false,
   onOpenFullGuide,
 }) => {
-  const defaultOrigin = 'https://riffan.ai.studio';
+  const currentOrigin =
+    typeof window !== 'undefined' && window.location?.origin?.startsWith('http')
+      ? window.location.origin
+      : '';
+  const currentHost =
+    typeof window !== 'undefined' && window.location?.hostname
+      ? window.location.hostname.toLowerCase()
+      : '';
+  const isDevHost =
+    !currentHost ||
+    currentHost === 'localhost' ||
+    currentHost === '127.0.0.1' ||
+    currentHost.startsWith('ais-dev-');
+  const defaultOrigin = isDevHost ? 'https://riffan.ai.studio' : currentOrigin;
 
   const [appName, setAppName] = useState('RiffanTV');
   const [packageId, setPackageId] = useState('RiffanTv01');

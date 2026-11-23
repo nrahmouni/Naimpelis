@@ -56,15 +56,12 @@ function getDvbHostKey(rawUrl: string): string {
 }
 
 function getDvbCooldownKey(rawUrl: string): string {
-  if (isXtreamLiveStreamUrl(rawUrl)) {
-    try {
-      const u = new URL(rawUrl);
-      return `${u.host.toLowerCase()}${u.pathname}`;
-    } catch {
-      return rawUrl.slice(0, 120);
-    }
+  try {
+    const u = new URL(rawUrl);
+    return `${u.host.toLowerCase()}${u.pathname}`;
+  } catch {
+    return rawUrl.slice(0, 120);
   }
-  return getDvbHostKey(rawUrl);
 }
 
 export function isDvbUpstreamCoolingDown(rawUrl: string): boolean {
@@ -80,7 +77,7 @@ function markDvbUpstreamDown(rawUrl: string, reason: string, ttlMs = 45_000): vo
   const key = getDvbCooldownKey(rawUrl);
   const effectiveTtl = isXtreamLiveStreamUrl(rawUrl) ? Math.min(ttlMs, 12_000) : ttlMs;
   dvbHostDownCache.set(key, { until: Date.now() + effectiveTtl, reason });
-  dvbHostUpCache.delete(getDvbHostKey(rawUrl));
+  dvbHostUpCache.delete(key);
 }
 
 async function probeDvbUpstreamReachable(
@@ -88,9 +85,9 @@ async function probeDvbUpstreamReachable(
   referer: string,
   timeoutMs = 2600
 ): Promise<boolean> {
-  const hostKey = getDvbHostKey(cleanUpstream);
+  const streamKey = getDvbCooldownKey(cleanUpstream);
   if (isDvbUpstreamCoolingDown(cleanUpstream)) return false;
-  if (dvbHostUpCache.get(hostKey)) return true;
+  if (dvbHostUpCache.get(streamKey)) return true;
 
   const headers: Record<string, string> = {
     'User-Agent': getPreferredUpstreamUa(cleanUpstream),
@@ -112,7 +109,7 @@ async function probeDvbUpstreamReachable(
       // ignore
     }
     if (resp.ok || resp.status === 206) {
-      dvbHostUpCache.set(hostKey, true);
+      dvbHostUpCache.set(streamKey, true);
       return true;
     }
     if (resp.status === 404 || resp.status >= 500) {
@@ -206,7 +203,7 @@ export function getActiveDvbSessionPath(
   if (!fs.existsSync(plFile)) return null;
   try {
     const st = fs.statSync(plFile);
-    if (Date.now() - st.mtimeMs < 15_000) {
+    if (Date.now() - st.mtimeMs < 10_000) {
       existing.lastAccessAt = Date.now();
       return `/api/dvb-live/${sessionKey}/index.m3u8`;
     }
@@ -251,9 +248,22 @@ setInterval(() => {
   for (const [key, sess] of liveDvbSessions.entries()) {
     if (sess.dead || now - sess.lastAccessAt > DVB_SESSION_IDLE_MS) {
       destroyLiveDvbSession(key);
+      continue;
+    }
+    if (now - sess.startedAt > 15_000) {
+      try {
+        const plFile = path.join(sess.dir, 'index.m3u8');
+        const st = fs.statSync(plFile);
+        if (now - st.mtimeMs > 12_000) {
+          markDvbUpstreamDown(sess.upstreamUrl, 'Live HLS playlist stalled', 20_000);
+          destroyLiveDvbSession(key);
+        }
+      } catch {
+        // ignore if playlist not yet initialized
+      }
     }
   }
-}, 15_000).unref();
+}, 10_000).unref();
 
 export async function ensureLiveDvbCleanHlsSession(
   rawUpstreamUrl: string,
@@ -303,7 +313,7 @@ async function startOrReuseLiveDvbCleanHlsSession(
     if (ok && fs.existsSync(plFile)) {
       try {
         const st = fs.statSync(plFile);
-        fresh = Date.now() - st.mtimeMs < 15_000;
+        fresh = Date.now() - st.mtimeMs < 10_000;
       } catch {
         fresh = false;
       }
@@ -320,6 +330,9 @@ async function startOrReuseLiveDvbCleanHlsSession(
     return null;
   }
 
+  const isM3u8Input = /\.m3u8(\?|$)/i.test(cleanUpstream);
+  let probe: ProbedStreamCodecInfo | null = probedStreamCache.get(cleanUpstream) || null;
+
   // Xtream portals often enforce strict max_connections (e.g. 2 slots):
   // 1) Destroy any previous active Xtream FFmpeg relay on the same origin before opening a new one.
   // 2) Skip duplicate pre-probe GET so only 1 upstream socket is opened.
@@ -334,10 +347,10 @@ async function startOrReuseLiveDvbCleanHlsSession(
     }
     if (evicted) {
       // Wait cleanly so Xtream edge releases previous max_connections socket before opening next channel
-      await new Promise((r) => setTimeout(r, 380));
+      await new Promise((r) => setTimeout(r, 180));
     }
-  } else {
-    const reachable = await probeDvbUpstreamReachable(cleanUpstream, referer, 2600);
+  } else if (isM3u8Input && !probe) {
+    const reachable = await probeDvbUpstreamReachable(cleanUpstream, referer, 1600);
     if (!reachable) {
       return null;
     }
@@ -368,8 +381,6 @@ async function startOrReuseLiveDvbCleanHlsSession(
   const segmentPattern = path.join(sessionDir, 'seg_%05d.ts');
 
   const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
-  const isM3u8Input = /\.m3u8(\?|$)/i.test(cleanUpstream);
-  let probe: ProbedStreamCodecInfo | null = probedStreamCache.get(cleanUpstream) || null;
   let mpegTsPipe: OpenedMpegTsPipe | null = null;
 
   if (!isTestEnv && !isM3u8Input) {
@@ -424,6 +435,10 @@ async function startOrReuseLiveDvbCleanHlsSession(
       pipe: mpegTsPipe,
       stdin: proc.stdin,
       isDead: () => session.dead,
+      onStall: () => {
+        markDvbUpstreamDown(cleanUpstream, 'Upstream TS stream stalled', 25_000);
+        destroyLiveDvbSession(sessionKey);
+      },
     });
   }
 
@@ -477,10 +492,10 @@ async function startOrReuseLiveDvbCleanHlsSession(
       try {
         const content = await fs.promises.readFile(playlistPath, 'utf8');
         const segMatches = content.match(/seg_\d+\.ts/g);
-        if (segMatches && segMatches.length >= 2) {
+        if (segMatches && segMatches.length >= 1) {
           const firstSegPath = path.join(sessionDir, segMatches[0]);
           const st = await fs.promises.stat(firstSegPath);
-          if (st.size > 564) {
+          if (st.size > 1024) {
             clearInterval(poll);
             resolve(true);
             return;

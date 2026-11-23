@@ -4,7 +4,7 @@
  * untruncated channel/EPG names, real-time EPG indicator bars, and region/EPG filter bottom sheet.
  */
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { Clock, Film, Loader2, Search, SlidersHorizontal, Star, Trophy, X } from 'lucide-react';
+import { Clock, Film, Globe, Loader2, Radio, Search, SlidersHorizontal, Star, Trophy, X } from 'lucide-react';
 import type {
   AppLanguage,
   ChannelLiveEpg,
@@ -435,6 +435,47 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
           })}
         </div>
       )}
+
+      {/* QUICK ATRESMEDIA + VPN SPAIN STRIP */}
+      {(() => {
+        const a3Ch = tdtChannels.find((c) => c.id === 'tdt-antena3');
+        const sextaCh = tdtChannels.find((c) => c.id === 'tdt-lasexta');
+        return (
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
+            {a3Ch && (
+              <button
+                type="button"
+                onClick={() => handlePlayAndRecord(a3Ch, getChannelLiveEpg(a3Ch.id)?.now?.title)}
+                className="min-h-10 px-3.5 rounded-xl bg-[#FF5E1A]/15 hover:bg-[#FF5E1A]/25 border border-[#FF5E1A]/35 text-xs font-bold text-white whitespace-nowrap shrink-0 inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+              >
+                <Radio className="w-3.5 h-3.5 text-[#FF8A4C] shrink-0" />
+                <span>Antena 3 Directo HD</span>
+              </button>
+            )}
+            {sextaCh && (
+              <button
+                type="button"
+                onClick={() => handlePlayAndRecord(sextaCh, getChannelLiveEpg(sextaCh.id)?.now?.title)}
+                className="min-h-10 px-3.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-xs font-bold text-white whitespace-nowrap shrink-0 inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+              >
+                <Radio className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>laSexta Directo HD</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                window.dispatchEvent(new CustomEvent('riffan:open-vpn-gateway'));
+              }}
+              className="min-h-10 px-3.5 rounded-xl bg-[#0D0D12] hover:bg-white/[0.08] border border-white/[0.1] text-xs font-bold text-emerald-300 whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+            >
+              <Globe className="w-3.5 h-3.5 shrink-0" />
+              <span>VPN España</span>
+            </button>
+          </div>
+        );
+      })()}
 
       {/* QUIET METADATA SUMMARY LINE */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-zinc-400">

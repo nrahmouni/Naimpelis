@@ -76,11 +76,32 @@ export function mountSpaFrontend(app: express.Express, deps: SpaFrontendMountDep
             finalHtml = injectMusicPwaMeta(finalHtml, getPublicOrigin(req));
           }
           res.status(200).setHeader('Content-Type', 'text/html; charset=utf-8');
+          res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
           res.end(finalHtml);
           return;
         } catch {
           // Fall back gracefully to standard Vite SPA middleware
         }
+      }
+      const isHtmlNav =
+        req.method === 'GET' &&
+        (req.path === '/' ||
+          req.path === '/index.html' ||
+          (!path.extname(req.path) && String(req.headers.accept || '').includes('text/html')));
+      if (isHtmlNav) {
+        const noStoreValue = 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0';
+        const origSetHeader = res.setHeader.bind(res);
+        res.setHeader = ((name: string, value: number | string | readonly string[]) => {
+          if (String(name).toLowerCase() === 'cache-control') {
+            return origSetHeader(name, noStoreValue);
+          }
+          return origSetHeader(name, value);
+        }) as typeof res.setHeader;
+        origSetHeader('Cache-Control', noStoreValue);
+        origSetHeader('Pragma', 'no-cache');
+        origSetHeader('Expires', '0');
       }
       return viteMiddleware(req, res, next);
     });

@@ -11,6 +11,7 @@ import {
 } from '../server/services/spainVpnGatewayService.ts';
 import {
   getUrbanVpnAuditSummary,
+  getUrbanVpnOvpnProfile,
   listUrbanVpnGateways,
   probeUrbanVpnGateway,
 } from '../server/services/urbanVpnService.ts';
@@ -20,12 +21,18 @@ describe('Urban VPN 1.0.97 Audit & Cross-Device Spain VPN Gateway', () => {
     clearRuntimeSpainProxyConfig();
   });
 
-  it('indexes all 100 Urban VPN gateways including Spain p-es1 and p-es4 Madrid', () => {
+  it('indexes all Urban VPN gateways including 8 active Spain nodes and legacy p-es4 Madrid', () => {
     const audit = getUrbanVpnAuditSummary();
-    expect(audit.totalGateways).toBe(100);
+    expect(audit.totalGateways).toBeGreaterThanOrEqual(100);
     expect(audit.spainGateways.map((g) => g.hostname)).toEqual([
+      'p-es7.urban-vpn.com',
+      'p-es8.urban-vpn.com',
+      'p-es9.urban-vpn.com',
+      'p-es10.urban-vpn.com',
+      'p-es3.urban-vpn.com',
+      'p-es6.urban-vpn.com',
       'p-es1.urban-vpn.com',
-      'p-es4.urban-vpn.com',
+      'p-es11.urban-vpn.com',
     ]);
     expect(audit.tunnelProtocol.port).toBe(443);
     expect(audit.tunnelProtocol.cipher).toBe('AES-256-CBC');
@@ -33,6 +40,25 @@ describe('Urban VPN 1.0.97 Audit & Cross-Device Spain VPN Gateway', () => {
     const madrid = listUrbanVpnGateways({ query: 'Madrid' });
     expect(madrid).toHaveLength(1);
     expect(madrid[0]?.hostname).toBe('p-es4.urban-vpn.com');
+
+    const allSpain = listUrbanVpnGateways({ spainOnly: true, includeZeroWeight: true });
+    expect(allSpain.some((g) => g.hostname === 'p-es4.urban-vpn.com')).toBe(true);
+  });
+
+  it('generates valid allowlisted .ovpn profiles and blocks path traversal or unknown nodes', () => {
+    const valid = getUrbanVpnOvpnProfile('p-es1');
+    expect(valid.ok).toBe(true);
+    if (valid.ok) {
+      expect(valid.filename).toBe('p-es1.ovpn');
+      expect(valid.ovpnContent).toContain('remote p-es1.urban-vpn.com 443');
+      expect(valid.ovpnContent).toContain('cipher AES-256-CBC');
+    }
+
+    const traversal = getUrbanVpnOvpnProfile('../etc/passwd');
+    expect(traversal.ok).toBe(false);
+
+    const unknown = getUrbanVpnOvpnProfile('p-xx999');
+    expect(unknown.ok).toBe(false);
   });
 
   it('blocks non-allowlisted hosts in probeUrbanVpnGateway', async () => {

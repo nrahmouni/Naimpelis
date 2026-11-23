@@ -149,45 +149,73 @@ export async function handleDirectExtractCases(params: {
     const slug = atresMatch[1].toLowerCase();
     const ATRES_DIRECTO_MAP: Record<
       string,
-      { streamUrl: string; title: string; rawUrl: string }
+      { dvbUrl: string; streamUrl: string; title: string; rawUrl: string }
     > = {
       antena3: {
-        streamUrl: '/api/belix/stream/743056.m3u8?name=Antena%203',
+        dvbUrl: 'http://90.163.85.113:8093/stream/20/index.m3u8',
+        streamUrl: '/api/belix/stream/531071.m3u8?name=Antena%203',
         title: 'Antena 3 · Directo HD',
         rawUrl: 'https://www.atresplayer.com/directos/antena3/',
       },
       'antena3-internacional': {
-        streamUrl: '/api/belix/stream/743056.m3u8?name=Antena%203',
+        dvbUrl: 'http://90.163.85.113:8093/stream/20/index.m3u8',
+        streamUrl: '/api/belix/stream/531071.m3u8?name=Antena%203',
         title: 'Antena 3 · Directo HD',
         rawUrl: 'https://www.atresplayer.com/directos/antena3/',
       },
       lasexta: {
+        dvbUrl: 'http://90.163.85.113:8093/stream/21/index.m3u8',
         streamUrl: '/api/belix/stream/743035.m3u8?name=laSexta',
         title: 'laSexta · Directo HD',
         rawUrl: 'https://www.atresplayer.com/directos/lasexta/',
       },
       neox: {
+        dvbUrl: 'http://90.163.85.113:8093/stream/22/index.m3u8',
         streamUrl: '/api/belix/stream/742985.m3u8?name=Neox',
         title: 'Neox · Directo HD',
         rawUrl: 'https://www.atresplayer.com/directos/neox/',
       },
       nova: {
+        dvbUrl: 'http://90.163.85.113:8093/stream/23/index.m3u8',
         streamUrl: '/api/belix/stream/742954.m3u8?name=Nova',
         title: 'Nova · Directo HD',
         rawUrl: 'https://www.atresplayer.com/directos/nova/',
       },
       mega: {
+        dvbUrl: 'http://90.163.85.113:8093/stream/11/index.m3u8',
         streamUrl: '/api/belix/stream/743032.m3u8?name=Mega',
         title: 'Mega · Directo HD',
         rawUrl: 'https://www.atresplayer.com/directos/mega/',
       },
       atreseries: {
+        dvbUrl: 'http://90.163.85.113:8093/stream/24/index.m3u8',
         streamUrl: '/api/belix/stream/743033.m3u8?name=Atreseries',
         title: 'Atreseries · Directo HD',
         rawUrl: 'https://www.atresplayer.com/directos/atreseries/',
       },
     };
     const mapped = ATRES_DIRECTO_MAP[slug] || ATRES_DIRECTO_MAP.antena3;
+    const dvbReferer = 'http://90.163.85.113:8093/';
+    if (process.env.NODE_ENV !== 'test' && !isDvbUpstreamCoolingDown(mapped.dvbUrl)) {
+      const activeDvb =
+        getActiveDvbSessionPath(mapped.dvbUrl, 'hd') ||
+        (await ensureLiveDvbCleanHlsSession(mapped.dvbUrl, 'hd', dvbReferer).catch(() => null));
+      if (activeDvb) {
+        const dvbResult: ExtractedStreamResult = {
+          success: true,
+          mode: 'hls',
+          streamUrl: activeDvb,
+          rawStreamUrl: mapped.dvbUrl,
+          referer: dvbReferer,
+          title: titleHint || mapped.title,
+          requestedLang: 'ES',
+          resolvedLang: 'ES',
+          expiresAt: Date.now() + 30_000,
+        };
+        setCache(cacheKey, dvbResult);
+        return sendOk(dvbResult);
+      }
+    }
     const mappedBelixId = mapped.streamUrl.match(/\/api\/belix\/stream\/([a-zA-Z0-9_-]+)/i)?.[1];
     if (mappedBelixId && process.env.NODE_ENV !== 'test') {
       const warmed = await resolveBelixManifest(
@@ -199,7 +227,7 @@ export async function handleDirectExtractCases(params: {
       if (!warmed) {
         return sendErr(
           404,
-          'Señal de Antena 3 temporalmente sin respuesta; prueba otra señal disponible.'
+          `Señal de ${mapped.title} temporalmente sin respuesta; prueba otra señal disponible.`
         );
       }
     }
@@ -266,7 +294,7 @@ export async function handleDirectExtractCases(params: {
         return sendOk(dvbResult);
       }
       if (isDvbUpstreamCoolingDown(cleanCheckUrl)) {
-        return sendErr(404, 'Señal TDT directa no accesible desde servidor; cambiando a señal alternativa.');
+        return sendErr(404, 'Señal TDT directa temporalmente no accesible desde servidor.');
       }
     }
 
@@ -282,12 +310,22 @@ export async function handleDirectExtractCases(params: {
         // ignore
       }
     }
+    const isDirectBrowserCorsPublicCdn =
+      /^https:\/\/([^/]*\.)?(rtvelivestream\.rtve\.es|3catdirectes\.cat|eitb\.eus)\//i.test(
+        cleanCheckUrl
+      );
+    const isFastTrustedCdn =
+      isDirectBrowserCorsPublicCdn ||
+      /otteravision\.com|stream\.ads\.ottera\.tv|pluto\.tv|samsungtvplus|amagi\.tv/i.test(
+        cleanCheckUrl
+      );
+
     let isAlive = false;
     let manifestText = '';
     try {
       const chk = await fetch(cleanCheckUrl, {
         headers: checkHeaders,
-        signal: AbortSignal.timeout(isDvb ? 7500 : 4000),
+        signal: AbortSignal.timeout(isDvb ? 6000 : 2500),
       });
       if (chk.ok) {
         const txt = await chk.text();
@@ -300,7 +338,7 @@ export async function handleDirectExtractCases(params: {
       // fallback to curl below
     }
     if (!isAlive) {
-      const fb = await curlGetText(cleanCheckUrl, checkHeaders, isCnStream || isDvb ? 6 : 5, isCnStream).catch(() => ({
+      const fb = await curlGetText(cleanCheckUrl, checkHeaders, isCnStream || isDvb ? 5 : 3, isCnStream).catch(() => ({
         text: '',
       }));
       if (fb.text && fb.text.includes('#EXTM3U') && !/nosignal/i.test(fb.text)) {
@@ -309,8 +347,8 @@ export async function handleDirectExtractCases(params: {
       }
     }
     if (!isAlive && isCnStream) {
-      await new Promise((r) => setTimeout(r, 250));
-      const fb2 = await curlGetText(cleanCheckUrl, checkHeaders, 6, true).catch(() => ({
+      await new Promise((r) => setTimeout(r, 200));
+      const fb2 = await curlGetText(cleanCheckUrl, checkHeaders, 5, true).catch(() => ({
         text: '',
       }));
       if (fb2.text && fb2.text.includes('#EXTM3U') && !/nosignal/i.test(fb2.text)) {
@@ -319,7 +357,7 @@ export async function handleDirectExtractCases(params: {
       }
     }
 
-    if (isAlive && !isDvb && !isCnStream && manifestText) {
+    if (isAlive && !isDvb && !isCnStream && !isFastTrustedCdn && manifestText) {
       try {
         let mediaText = manifestText;
         let mediaBase = cleanCheckUrl;
@@ -337,7 +375,7 @@ export async function handleDirectExtractCases(params: {
               const varUrl = new URL(tr, mediaBase).href;
               const vRes = await fetch(varUrl, {
                 headers: checkHeaders,
-                signal: AbortSignal.timeout(3000),
+                signal: AbortSignal.timeout(1800),
               }).catch(() => null);
               if (vRes?.ok) {
                 const vTxt = await vRes.text();
@@ -354,7 +392,7 @@ export async function handleDirectExtractCases(params: {
             isAlive = false;
           }
         }
-        if (isAlive && !mediaText.includes('#EXT-X-STREAM-INF')) {
+        if (isAlive && !mediaText.includes('#EXT-X-STREAM-INF') && !mediaText.includes('#EXTINF:')) {
           const mLines = mediaText.split(/\r?\n/);
           let segUrl = '';
           for (let i = mLines.length - 1; i >= 0; i--) {
@@ -366,7 +404,7 @@ export async function handleDirectExtractCases(params: {
           if (segUrl) {
             const segRes = await fetch(segUrl, {
               headers: { ...checkHeaders, Range: 'bytes=0-2047' },
-              signal: AbortSignal.timeout(3000),
+              signal: AbortSignal.timeout(1800),
             }).catch(() => null);
             await segRes?.body?.cancel?.().catch(() => {});
             if (segRes && !segRes.ok && segRes.status !== 416) {
@@ -385,11 +423,6 @@ export async function handleDirectExtractCases(params: {
         'Esta señal TDT está temporalmente sin emisión. Prueba la señal alternativa.'
       );
     }
-
-    const isDirectBrowserCorsPublicCdn =
-      /^https:\/\/([^/]*\.)?(rtvelivestream\.rtve\.es|3catdirectes\.cat|eitb\.eus)\//i.test(
-        cleanCheckUrl
-      );
     const finalStreamUrl = isDirectBrowserCorsPublicCdn
       ? cleanCheckUrl
       : buildHlsProxyUrl(cleanCheckUrl, originRef, isDvb);

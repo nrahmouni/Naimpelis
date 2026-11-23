@@ -404,7 +404,7 @@ function applyVideoState(vs, forceReload) {
     if (!videoEl.videoWidth || videoEl.videoWidth === 0 || videoEl.readyState < 2) {
       triggerPlaybackFailover('Tiempo de carga agotado');
     }
-  }, isLive ? 11500 : 18500);
+  }, isLive ? 9000 : 16000);
 
   if (nextMode === 'direct') {
     videoEl.src = nextUrl;
@@ -434,13 +434,17 @@ function applyVideoState(vs, forceReload) {
       };
     };
 
+    var isDvbLive =
+      nextUrl.indexOf('/api/dvb-live/') !== -1 ||
+      nextUrl.indexOf('/api/belix/stream/') !== -1;
+
     var hls = new window.Hls({
       enableWorker: !isSmartTvUa,
       lowLatencyMode: false,
       startFragPrefetch: true,
       startPosition: isLive ? -1 : targetSec,
-      liveSyncDurationCount: 3,
-      liveMaxLatencyDurationCount: isLive ? 10 : 12,
+      liveSyncDurationCount: isLive ? (isDvbLive ? 1 : 2) : 3,
+      liveMaxLatencyDurationCount: isLive ? (isDvbLive ? 7 : 9) : 12,
       maxLiveSyncPlaybackRate: 1,
       backBufferLength: isLive ? 18 : 30,
       maxBufferLength: isLive ? 28 : 40,
@@ -452,15 +456,15 @@ function applyVideoState(vs, forceReload) {
       capLevelToPlayerSize: true,
       maxAudioFramesDrift: isLive ? 3 : 4,
       abrEwmaDefaultEstimate: isLive ? 4500000 : 5500000,
-      manifestLoadingTimeOut: 12000,
+      manifestLoadingTimeOut: isDvbLive ? 9000 : 12000,
       manifestLoadingMaxRetry: 4,
-      manifestLoadingRetryDelay: 350,
-      levelLoadingTimeOut: 12000,
+      manifestLoadingRetryDelay: 250,
+      levelLoadingTimeOut: 11000,
       levelLoadingMaxRetry: 4,
-      levelLoadingRetryDelay: 350,
-      fragLoadingTimeOut: 15000,
+      levelLoadingRetryDelay: 250,
+      fragLoadingTimeOut: 14000,
       fragLoadingMaxRetry: 6,
-      fragLoadingRetryDelay: 400
+      fragLoadingRetryDelay: 300
     });
     hlsInstance = hls;
     hls.loadSource(nextUrl);

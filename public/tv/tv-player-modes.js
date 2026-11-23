@@ -66,11 +66,13 @@ function scheduleNextChannelPrewarm(currentCh) {
     for (var i = 0; i < pool.length; i++) {
       if (pool[i] && pool[i].id === currentCh.id) {
         var nextCh = pool[(i + 1) % pool.length];
+        var prevCh = pool[(i - 1 + pool.length) % pool.length];
         if (nextCh) prewarmTdtChannelOnTv(nextCh, 0);
+        if (prevCh && prevCh !== nextCh) prewarmTdtChannelOnTv(prevCh, 0);
         break;
       }
     }
-  }, 1400);
+  }, 550);
 }
 
 // Broadcast Zapping OSD Card (bottom-left when changing channels)
@@ -129,6 +131,7 @@ function renderMiniGuideList() {
   var limit = Math.min(80, list.length);
   var activeBtn = null;
 
+  var frag = document.createDocumentFragment();
   for (var i = 0; i < limit; i++) {
     (function (ch, idxPos) {
       var row = document.createElement('button');
@@ -153,10 +156,11 @@ function renderMiniGuideList() {
         closeMiniGuideDrawer();
         playTdtChannelOnTv(ch, 0);
       };
-      mgChannelList.appendChild(row);
+      frag.appendChild(row);
       if (isCurrent) activeBtn = row;
     })(list[i], i);
   }
+  mgChannelList.appendChild(frag);
 
   setTimeout(function () {
     var focusTarget = activeBtn || mgChannelList.querySelector('.mg-ch-row');

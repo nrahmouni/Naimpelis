@@ -60,6 +60,9 @@ const SmartTvQuickModal = lazyWithRetry(() =>
 const SpotifyYtmImportModal = lazyWithRetry(() =>
   import('./music/SpotifyYtmImportModal').then((m) => ({ default: m.SpotifyYtmImportModal }))
 );
+const SpainVpnGatewayModal = lazyWithRetry(() =>
+  import('./settings/SpainVpnGatewayModal').then((m) => ({ default: m.SpainVpnGatewayModal }))
+);
 
 interface AppGlobalModalsLayerProps {
   lang: AppLanguage;
@@ -215,12 +218,48 @@ interface AppGlobalModalsLayerProps {
 
 export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => {
   const [installSheetOpen, setInstallSheetOpen] = React.useState(false);
+  const [vpnGatewayOpen, setVpnGatewayOpen] = React.useState(false);
+
+  const playTdtChannelById = React.useCallback(
+    async (channelId: 'tdt-antena3' | 'tdt-lasexta') => {
+      const poolList = p.quickPool?.tdt || [];
+      let target = poolList.find((c) => c.id === channelId) || null;
+      if (!target) {
+        try {
+          const res = await fetch('/api/tdt/channels');
+          const data = (await res.json()) as { channels?: SpanishTdtChannel[] };
+          if (Array.isArray(data?.channels)) {
+            target = data.channels.find((c) => c.id === channelId) || null;
+          }
+        } catch {
+          // ignore fetch error
+        }
+      }
+      if (target) {
+        p.onPlayChannel(target);
+      }
+    },
+    [p.quickPool?.tdt, p.onPlayChannel]
+  );
 
   React.useEffect(() => {
     const onOpenInstall = () => setInstallSheetOpen(true);
+    const onOpenVpn = () => setVpnGatewayOpen(true);
+    const onPlayTdtId = (ev: Event) => {
+      const chId = (ev as CustomEvent<{ channelId?: string }>)?.detail?.channelId;
+      if (chId === 'tdt-antena3' || chId === 'tdt-lasexta') {
+        void playTdtChannelById(chId);
+      }
+    };
     window.addEventListener('riffan:open-install', onOpenInstall);
-    return () => window.removeEventListener('riffan:open-install', onOpenInstall);
-  }, []);
+    window.addEventListener('riffan:open-vpn-gateway', onOpenVpn);
+    window.addEventListener('riffan:play-tdt-id', onPlayTdtId);
+    return () => {
+      window.removeEventListener('riffan:open-install', onOpenInstall);
+      window.removeEventListener('riffan:open-vpn-gateway', onOpenVpn);
+      window.removeEventListener('riffan:play-tdt-id', onPlayTdtId);
+    };
+  }, [playTdtChannelById]);
 
   const {
     lang,
@@ -594,7 +633,17 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
           roomId={roomId}
           onClaimTvCode={onClaimTvCode}
           onLeaveRoom={onLeaveRoom}
+          onPlayChannelById={playTdtChannelById}
         />
+
+        {vpnGatewayOpen && (
+          <SpainVpnGatewayModal
+            isOpen={vpnGatewayOpen}
+            onClose={() => setVpnGatewayOpen(false)}
+            lang={lang}
+            onPlayChannelById={playTdtChannelById}
+          />
+        )}
 
         {showGuestPopup && !showIntro && !authUser && !pinPromptState.open && (
           <GuestWelcomePopup

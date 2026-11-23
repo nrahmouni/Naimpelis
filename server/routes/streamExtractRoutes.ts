@@ -12,6 +12,12 @@ import {
 
 const extractionCache = new LruTtlCache<string, ExtractedStreamResult>(400, 15 * 60 * 1000);
 
+type CoalescedExtractOutcome =
+  | { ok: true; payload: ExtractedStreamResult }
+  | { ok: false; status: number; body: Record<string, any> };
+
+const inFlightExtractMap = new Map<string, Promise<CoalescedExtractOutcome>>();
+
 export interface RankCandidateTracksInput {
   allDiscovered: TrackRecord[];
   preferLang: string;
@@ -70,82 +76,132 @@ export function registerStreamExtractRoute(
       return res.json(formatResp(req, cached));
     }
 
-    const setCache = (k: string, val: ExtractedStreamResult) => extractionCache.set(k, val);
-    const sendOk = (payload: ExtractedStreamResult) => res.json(formatResp(req, payload));
-    const sendErr = (status: number, error: string) => res.status(status).json({ success: false, error });
-
     const belixSidMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)belix_sid=([^;]+)/);
     const belixSessionKey =
       String(req.headers['x-belix-session'] || '').trim() ||
       (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
       'default';
 
-    try {
-      const directResp = await handleDirectExtractCases({
-        rawInput,
-        resolverType,
-        preferLang,
-        titleHint,
-        isSandboxedFrame,
-        belixSessionKey,
-        cacheKey,
-        setCache,
-        sendOk,
-        sendErr,
-      });
-      if (directResp) return directResp;
+    const coalesceKey = `${belixSessionKey}|${cacheKey}`;
+    if (!forceExtract) {
+      const existingInFlight = inFlightExtractMap.get(coalesceKey);
+      if (existingInFlight) {
+        const joinedOutcome = await existingInFlight;
+        if (joinedOutcome.ok) {
+          return res.json(formatResp(req, joinedOutcome.payload));
+        }
+        return res.status(joinedOutcome.status).json(joinedOutcome.body);
+      }
+    }
 
-      const mediaResp = await handleCatalogMediaExtract({
-        rawInput,
-        movidyUrlParam,
-        gnulaUrlParam,
-        vestUrlParam,
-        resolverType,
-        preferLang,
-        titleHint,
-        origTitleHint,
-        yearParam,
-        mediaTypeParam,
-        tmdbIdParam,
-        seasonParam,
-        episodeParam,
-        episodeTitleHint,
-        isSandboxedFrame,
-        forceExtract,
-        directOnly,
-        cacheKey,
-        rankCandidateTracks: deps.rankCandidateTracks,
-        setCache,
-        sendOk,
-        sendUnavailable: (status, body) => res.status(status).json(body),
-      });
-      if (mediaResp) return mediaResp;
+    const runExtraction = async (): Promise<CoalescedExtractOutcome> => {
+      let outcome: CoalescedExtractOutcome | null = null;
+      const setCache = (k: string, val: ExtractedStreamResult) => extractionCache.set(k, val);
+      const sendOk = (payload: ExtractedStreamResult): express.Response => {
+        outcome = { ok: true, payload };
+        return null as unknown as express.Response;
+      };
+      const sendErr = (status: number, error: string): express.Response => {
+        outcome = { ok: false, status, body: { success: false, error } };
+        return null as unknown as express.Response;
+      };
+      const sendJsonStatus = (status: number, body: Record<string, any>): express.Response => {
+        outcome = { ok: false, status, body };
+        return null as unknown as express.Response;
+      };
 
-      if (rawInput) {
-        return await handleExternalSportsExtract({
+      try {
+        await handleDirectExtractCases({
           rawInput,
           resolverType,
           preferLang,
           titleHint,
+          isSandboxedFrame,
+          belixSessionKey,
           cacheKey,
           setCache,
           sendOk,
-          sendJsonStatus: (status, body) => res.status(status).json(body),
+          sendErr,
         });
-      }
+        if (outcome) return outcome;
 
-      return res.status(404).json({
-        success: false,
-        canUseCloudBrowser: false,
-        error: 'No se encontró ninguna señal estable para reproducir dentro de la app.',
-      });
-    } catch (err) {
-      logger.error({ err, tmdbIdParam, mediaTypeParam, titleHint }, 'extract_stream_error');
-      return res.status(502).json({
-        success: false,
-        canUseCloudBrowser: false,
-        error: 'Esta señal no responde de forma estable en este momento.',
-      });
+        await handleCatalogMediaExtract({
+          rawInput,
+          movidyUrlParam,
+          gnulaUrlParam,
+          vestUrlParam,
+          resolverType,
+          preferLang,
+          titleHint,
+          origTitleHint,
+          yearParam,
+          mediaTypeParam,
+          tmdbIdParam,
+          seasonParam,
+          episodeParam,
+          episodeTitleHint,
+          isSandboxedFrame,
+          forceExtract,
+          directOnly,
+          cacheKey,
+          rankCandidateTracks: deps.rankCandidateTracks,
+          setCache,
+          sendOk,
+          sendUnavailable: sendJsonStatus,
+        });
+        if (outcome) return outcome;
+
+        if (rawInput) {
+          await handleExternalSportsExtract({
+            rawInput,
+            resolverType,
+            preferLang,
+            titleHint,
+            cacheKey,
+            setCache,
+            sendOk,
+            sendJsonStatus,
+          });
+          if (outcome) return outcome;
+        }
+
+        return {
+          ok: false,
+          status: 404,
+          body: {
+            success: false,
+            canUseCloudBrowser: false,
+            error: 'No se encontró ninguna señal estable para reproducir dentro de la app.',
+          },
+        };
+      } catch (err) {
+        logger.error({ err, tmdbIdParam, mediaTypeParam, titleHint }, 'extract_stream_error');
+        return {
+          ok: false,
+          status: 502,
+          body: {
+            success: false,
+            canUseCloudBrowser: false,
+            error: 'Esta señal no responde de forma estable en este momento.',
+          },
+        };
+      }
+    };
+
+    const extractPromise = runExtraction();
+    if (!forceExtract) {
+      inFlightExtractMap.set(coalesceKey, extractPromise);
+    }
+    try {
+      const finalOutcome = await extractPromise;
+      if (finalOutcome.ok) {
+        return res.json(formatResp(req, finalOutcome.payload));
+      }
+      return res.status(finalOutcome.status).json(finalOutcome.body);
+    } finally {
+      if (!forceExtract && inFlightExtractMap.get(coalesceKey) === extractPromise) {
+        inFlightExtractMap.delete(coalesceKey);
+      }
     }
   });
 }

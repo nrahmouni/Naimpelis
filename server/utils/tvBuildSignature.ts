@@ -47,6 +47,13 @@ export function getTvBuildSignature(rootDir: string): string {
     path.resolve(rootDir, 'server', 'routes', 'proxies', 'dvbCodecProbe.ts'),
     path.resolve(rootDir, 'server', 'routes', 'proxies', 'dvbTranscoder.ts'),
     path.resolve(rootDir, 'server', 'services', 'belix', 'belixProxyHelpers.ts'),
+    path.resolve(rootDir, 'server', 'data', 'tdtNationalAndPayChannels.ts'),
+    path.resolve(rootDir, 'server', 'routes', 'streamExtractHelpers', 'directCasesHandler.ts'),
+    path.resolve(rootDir, 'server', 'services', 'spainVpnGatewayService.ts'),
+    path.resolve(rootDir, 'server', 'services', 'urbanVpnService.ts'),
+    path.resolve(rootDir, 'src', 'App.tsx'),
+    path.resolve(rootDir, 'src', 'main.tsx'),
+    path.resolve(rootDir, 'dist', 'index.html'),
   ]) {
     if (fs.existsSync(srvFile)) {
       candidatePaths.push(srvFile);

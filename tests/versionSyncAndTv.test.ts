@@ -84,5 +84,9 @@ describe('Cross-Platform Version Control & Google TV 10-Foot UI', () => {
     expect(combined).toContain('/api/catalog/world-tv');
     expect(combined).toContain('/api/catalog/tv/');
     expect(combined).toContain('moveFocusDirection');
+    expect(combined).toContain('is-smart-tv');
+    expect(combined).toContain('createDocumentFragment');
+    expect(combined).toContain('updateTdtEpgCardsInPlace');
+    expect(combined).toContain('liveSyncDurationCount: isLive ? (isDvbLive ? 1 : 2) : 3');
   });
 });

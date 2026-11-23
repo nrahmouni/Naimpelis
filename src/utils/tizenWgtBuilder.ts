@@ -51,14 +51,25 @@ export function buildTizenRuntimeShimScript(targetOrigin: string): string {
     '(function(){',
     '  window.__RIFFAN_TIZEN_WIDGET__ = true;',
     `  window.__RIFFAN_API_ORIGIN__ = ${JSON.stringify(safeOrigin)};`,
-    '  if (window.location && window.location.protocol === "file:" && typeof window.fetch === "function") {',
-    '    var origFetch = window.fetch;',
-    '    window.fetch = function(input, init) {',
-    '      if (typeof input === "string" && input.charAt(0) === "/") {',
-    `        input = ${JSON.stringify(safeOrigin)} + input;`,
-    '      }',
-    '      return origFetch.call(this, input, init);',
-    '    };',
+      '  if (window.location && window.location.protocol === "file:") {',
+    '    if (typeof window.fetch === "function") {',
+    '      var origFetch = window.fetch;',
+    '      window.fetch = function(input, init) {',
+    '        if (typeof input === "string" && input.charAt(0) === "/") {',
+    `          input = ${JSON.stringify(safeOrigin)} + input;`,
+    '        }',
+    '        return origFetch.call(this, input, init);',
+    '      };',
+    '    }',
+    '    if (typeof window.XMLHttpRequest === "function" && window.XMLHttpRequest.prototype) {',
+    '      var origXhrOpen = window.XMLHttpRequest.prototype.open;',
+    '      window.XMLHttpRequest.prototype.open = function(method, url) {',
+    '        var nextUrl = (typeof url === "string" && url.charAt(0) === "/") ? (' + JSON.stringify(safeOrigin) + ' + url) : url;',
+    '        var args = Array.prototype.slice.call(arguments);',
+    '        args[1] = nextUrl;',
+    '        return origXhrOpen.apply(this, args);',
+    '      };',
+    '    }',
     '  }',
     '  try {',
     '    if (window.tizen && window.tizen.tvinputdevice && window.tizen.tvinputdevice.registerKeyBatch) {',
@@ -269,7 +280,8 @@ export function buildHostedTizenLauncherAssets(
     '  function goNow() {',
     '    if (launched) return;',
     '    launched = true;',
-    '    window.location.replace(targetUrl);',
+    '    var sep = targetUrl.indexOf("?") === -1 ? "?_t=" : "&_t=";',
+    '    window.location.replace(targetUrl + sep + Date.now());',
     '  }',
     '',
     '  try {',
@@ -463,10 +475,20 @@ export async function buildTizenWgtArchive(
   const appName = (options.appName || 'RiffanTV').trim().slice(0, 48) || 'RiffanTV';
   const version = options.version || '1.0.0';
   const mode: TizenPackageMode = options.packageMode || 'full_bundle';
-  const defaultOrigin =
+  const currentOrigin =
     typeof window !== 'undefined' && window.location?.origin?.startsWith('http')
       ? window.location.origin
-      : 'https://riffan.ai.studio';
+      : '';
+  const currentHost =
+    typeof window !== 'undefined' && window.location?.hostname
+      ? window.location.hostname.toLowerCase()
+      : '';
+  const isDevOrigin =
+    !currentHost ||
+    currentHost === 'localhost' ||
+    currentHost === '127.0.0.1' ||
+    currentHost.startsWith('ais-dev-');
+  const defaultOrigin = isDevOrigin ? 'https://riffan.ai.studio' : currentOrigin;
   const targetOrigin = (options.targetOrigin || defaultOrigin).replace(/\/+$/, '');
   const onProgress = options.onProgress;
 

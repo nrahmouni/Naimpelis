@@ -36,26 +36,62 @@ try {
   // Register Service Worker in production only; unregister any stale dev SW in dev mode
   if ('serviceWorker' in navigator) {
     if (import.meta.env.PROD) {
+      const isTizenOrTvMode =
+        /[?&](tizen|tv)=1\b/i.test(window.location.search) ||
+        /Tizen|SMART-TV|SmartTV|Web0S|WebOS/i.test(navigator.userAgent);
+      const isActivelyPlayingMedia = () =>
+        Array.from(document.querySelectorAll('video')).some(
+          (v) => !v.paused && !v.ended && v.readyState > 1
+        );
+
       window.addEventListener('load', () => {
         navigator.serviceWorker
           .register('/sw.js', { scope: '/' })
           .then((reg) => {
+            const tryAutoApplyTvUpdate = (worker: ServiceWorker | null | undefined) => {
+              if (!worker) return;
+              useAppStore.getState().setSwUpdate({ waitingWorker: worker });
+              if (isTizenOrTvMode && !isActivelyPlayingMedia()) {
+                worker.postMessage({ type: 'SKIP_WAITING' });
+              }
+            };
+
             if (reg.waiting) {
-              useAppStore.getState().setSwUpdate({ waitingWorker: reg.waiting });
+              tryAutoApplyTvUpdate(reg.waiting);
             }
             reg.addEventListener('updatefound', () => {
               const nextWorker = reg.installing;
               if (!nextWorker) return;
               nextWorker.addEventListener('statechange', () => {
                 if (nextWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                  useAppStore.getState().setSwUpdate({ waitingWorker: nextWorker });
+                  tryAutoApplyTvUpdate(nextWorker);
                 }
               });
             });
+
+            void reg.update().catch(() => {});
+            document.addEventListener('visibilitychange', () => {
+              if (document.visibilityState === 'visible') {
+                void reg.update().catch(() => {});
+              }
+            });
+            window.setInterval(() => {
+              void reg.update().catch(() => {});
+            }, 60_000);
           })
           .catch(() => {
             // Graceful fallback when running outside HTTPS/PWA scope
           });
+
+        let reloadedForSw = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (reloadedForSw || !isTizenOrTvMode || isActivelyPlayingMedia()) return;
+          const lastTs = Number(sessionStorage.getItem('riffan_sw_reload_ts') || '0');
+          if (Date.now() - lastTs < 20_000) return;
+          reloadedForSw = true;
+          sessionStorage.setItem('riffan_sw_reload_ts', String(Date.now()));
+          window.location.reload();
+        });
       });
     } else {
       navigator.serviceWorker

@@ -531,6 +531,7 @@ export async function curlPostJsonText(
   headers: Record<string, string>,
   maxTimeSec = 5
 ): Promise<string> {
+  const spainProxy = getSpainProxyUrlForTarget(url);
   return new Promise((resolve) => {
     const args = [
       '-4',
@@ -542,6 +543,7 @@ export async function curlPostJsonText(
       String(Math.min(3, Math.max(2, maxTimeSec))),
       '--max-time',
       String(maxTimeSec),
+      ...(spainProxy ? ['--proxy', spainProxy] : []),
       '-X',
       'POST',
       '-H',
