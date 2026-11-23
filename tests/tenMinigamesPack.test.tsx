@@ -192,7 +192,7 @@ describe('10-Minigame Arcade & Quiz Pack (Smart TV ES5 + Web/Mobile React)', () 
     }
   });
 
-  it('renders 25 games in GamesHubLobby and mounts all Web/Mobile arcade stages without errors', () => {
+  it('renders 26 games in GamesHubLobby and mounts all Web/Mobile arcade stages without errors', () => {
     const onOpen = vi.fn();
     act(() => {
       root.render(
@@ -209,10 +209,10 @@ describe('10-Minigame Arcade & Quiz Pack (Smart TV ES5 + Web/Mobile React)', () 
       );
     });
 
-    for (const gid of ['Tetris Sprint TV', 'Pac-Man Arcade HD', 'Bomberman Party Arena', 'Riffan TV Quiz Show', 'HexGL Hover 3D']) {
+    for (const gid of ['Tetris Sprint TV', 'Pac-Man Arcade HD', 'Bomberman Party Arena', 'Riffan TV Quiz Show', 'HexGL Hover 3D', 'Ping Pong Pro 2P']) {
       expect(container.textContent).toContain(gid);
     }
-    expect(container.textContent).toContain('(25)');
+    expect(container.textContent).toContain('(26)');
 
     for (const pid of ['tetris', 'hextris', 'game2048'] as const) {
       act(() => {

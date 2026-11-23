@@ -29,6 +29,7 @@ import { HeadSoccerStage } from '../HeadSoccerStage';
 import { PokerHoldemStage } from '../PokerHoldemStage';
 import { BlackjackStage } from '../BlackjackStage';
 import { PenaltyShootoutStage } from './PenaltyShootoutStage';
+import { PingPongStage } from './PingPongStage';
 import { GyroArcadeStage } from './GyroArcadeStage';
 import { ArcadePuzzleStage } from './arcade/ArcadePuzzleStage';
 import { ArcadeActionStage } from './arcade/ArcadeActionStage';
@@ -164,7 +165,25 @@ export const GamesHubSecondaryStages: React.FC<GamesHubSecondaryStagesProps> = (
   onResetBoardGame,
 }) => {
   if (selectedGame === 'penalty') {
-    return <PenaltyShootoutStage lang={lang} onClose={handleBackToGames} />;
+    return (
+      <PenaltyShootoutStage
+        lang={lang}
+        roomId={roomId}
+        userName={currentUser.name}
+        onClose={handleBackToGames}
+      />
+    );
+  }
+
+  if (selectedGame === 'pingpong') {
+    return (
+      <PingPongStage
+        lang={lang}
+        roomId={roomId}
+        userName={currentUser.name}
+        onClose={handleBackToGames}
+      />
+    );
   }
 
   if (selectedGame === 'gyrohockey' || selectedGame === 'gyrospace') {

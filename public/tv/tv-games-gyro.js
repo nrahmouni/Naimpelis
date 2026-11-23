@@ -4,7 +4,8 @@
 // 2. gyrospace  — Galaxia Interceptor Gyro     (/volante?game=gyrospace)
 // ===================================================================
 var tvGyroArcadeWs = null;
-var tvGyroInput = { steer: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 };
+var tvGyroInputP1 = { steer: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 };
+var tvGyroInputP2 = { steer: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 };
 var tvGyroHasController = false;
 var tvGyroTelemPushAt = 0;
 var GYRO_BOOM_FRAMES = [
@@ -19,22 +20,18 @@ function gyroTiled(c, p, w, h, sx, sy) { return typeof window.drawTvTiledBg === 
 function preloadGyroSpr() {
   if (typeof window.preloadTvGameSprites === 'function') {
     window.preloadTvGameSprites([
-      'assets/games/space/darkPurple.png', 'assets/games/space/playerShip1_blue.png',
-      'assets/games/space/fire00.png', 'assets/games/space/shield3.png',
-      'assets/games/space/enemyRed3.png', 'assets/games/space/meteorBrown_big1.png',
-      'assets/games/space/laserBlue01.png', 'assets/games/puzzle/ballGrey.png',
-      'assets/games/puzzle/particleStar.png'
+      'assets/games/space/darkPurple.png', 'assets/games/space/playerShip1_blue.png', 'assets/games/space/playerShip2_orange.png',
+      'assets/games/space/fire00.png', 'assets/games/space/shield3.png', 'assets/games/space/enemyRed3.png',
+      'assets/games/space/meteorBrown_big1.png', 'assets/games/space/laserBlue01.png', 'assets/games/space/laserRed01.png',
+      'assets/games/puzzle/ballGrey.png', 'assets/games/puzzle/particleStar.png'
     ].concat(GYRO_BOOM_FRAMES));
   }
 }
 
 function closeTvGyroArcadeGame() {
-  if (tvGyroArcadeWs) {
-    tvGyroArcadeWs.onclose = null;
-    try { tvGyroArcadeWs.close(); } catch (e) {}
-    tvGyroArcadeWs = null;
-  }
-  tvGyroInput = { steer: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 };
+  if (tvGyroArcadeWs) { tvGyroArcadeWs.onclose = null; try { tvGyroArcadeWs.close(); } catch (e) {} tvGyroArcadeWs = null; }
+  tvGyroInputP1 = { steer: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 };
+  tvGyroInputP2 = { steer: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 };
   tvGyroHasController = false;
 }
 window.closeTvGyroArcadeGame = closeTvGyroArcadeGame;
@@ -69,11 +66,10 @@ function connectGyroArcadeWs(roomId, gameId, statusPillEl) {
         if (msg.type === 'GYRO_PEER_STATUS' && msg.payload) {
           tvGyroHasController = Boolean(msg.payload.hasController);
           if (statusPillEl) {
+            var list = msg.payload.controllers || [];
             if (tvGyroHasController) {
-              var list = msg.payload.controllers || [];
-              var dev = list[0] && list[0].deviceName ? list[0].deviceName : 'Móvil';
               statusPillEl.className = 'tv-game-hud-pill accent-green';
-              statusPillEl.textContent = '📱 Gyro conectado (' + dev + ')';
+              statusPillEl.textContent = list.length >= 2 ? '📱 2 Móviles Activos (J1 + J2)' : ('📱 Gyro conectado (' + (list[0] && list[0].deviceName ? list[0].deviceName : 'Móvil') + ')');
             } else {
               statusPillEl.className = 'tv-game-hud-pill accent-purple';
               statusPillEl.textContent = '📱 Escanea el QR para Giroscopio';
@@ -81,12 +77,13 @@ function connectGyroArcadeWs(roomId, gameId, statusPillEl) {
           }
         } else if (msg.type === 'GYRO_INPUT_RELAY' && msg.payload) {
           var p = msg.payload;
-          tvGyroInput.steer = typeof p.steer === 'number' ? p.steer : 0;
-          tvGyroInput.throttle = typeof p.throttle === 'number' ? p.throttle : 0;
-          tvGyroInput.brake = typeof p.brake === 'number' ? p.brake : 0;
-          tvGyroInput.nitro = Boolean(p.nitro);
-          tvGyroInput.handbrake = Boolean(p.handbrake);
-          tvGyroInput.expiresAt = Date.now() + 900;
+          var tgt = p.playerSlot === 2 ? tvGyroInputP2 : tvGyroInputP1;
+          tgt.steer = typeof p.steer === 'number' ? p.steer : 0;
+          tgt.throttle = typeof p.throttle === 'number' ? p.throttle : 0;
+          tgt.brake = typeof p.brake === 'number' ? p.brake : 0;
+          tgt.nitro = Boolean(p.nitro);
+          tgt.handbrake = Boolean(p.handbrake);
+          tgt.expiresAt = Date.now() + 1400;
         }
       } catch (e) {}
     };
@@ -100,25 +97,23 @@ function connectGyroArcadeWs(roomId, gameId, statusPillEl) {
   } catch (e) {}
 }
 
-function pushGyroArcadeTelemetry(roomId, speedKmh, scoreLeft, scoreRight, energyPct, impact, stateStr) {
+function pushGyroArcadeTelemetry(roomId, speedKmh, scoreLeft, scoreRight, energyPct, impact, stateStr, targetSlot, pulseMs) {
   var now = Date.now();
   if (!tvGyroArcadeWs || tvGyroArcadeWs.readyState !== 1 || !tvGyroHasController) return;
-  if (now - tvGyroTelemPushAt < 85) return;
+  if (!pulseMs && now - tvGyroTelemPushAt < 85) return;
   tvGyroTelemPushAt = now;
   try {
     tvGyroArcadeWs.send(JSON.stringify({
       type: 'RACING_TV_TELEMETRY',
       payload: {
-        roomId: roomId,
-        speedKmh: Math.min(500, Math.max(0, Math.round(speedKmh || 0))),
+        roomId: roomId, speedKmh: Math.min(500, Math.max(0, Math.round(speedKmh || 0))),
         rpmPct: Math.min(100, Math.max(0, Math.round(energyPct || 50))),
         gear: Math.min(8, Math.max(1, Number(scoreLeft || 1))),
         lap: Math.min(99, Math.max(1, Number(scoreLeft || 0) + 1)),
         totalLaps: Math.min(99, Math.max(1, Number(scoreRight || 5))),
-        position: 1, totalCars: 2,
-        nitroPct: Math.min(100, Math.max(0, Math.round(energyPct || 0))),
-        collisionImpact: Math.min(1, Math.max(0, impact || 0)),
-        offroad: false, raceState: stateStr || 'racing'
+        position: 1, totalCars: 2, nitroPct: Math.min(100, Math.max(0, Math.round(energyPct || 0))),
+        collisionImpact: Math.min(1, Math.max(0, impact || 0)), offroad: false, raceState: stateStr || 'racing',
+        targetSlot: targetSlot, hapticPulseMs: pulseMs, scoreP1: scoreLeft, scoreP2: scoreRight
       }
     }));
   } catch (e) {}
@@ -198,8 +193,8 @@ function startGyroHockeyGame(scr) {
   }
   document.getElementById('btn-ah-replay').onclick = resetHockey;
 
-  function syncHud() {
-    scorePill.textContent = 'TÚ ' + st.sMe + ' - ' + st.sCpu + ' CPU';
+  function syncHud(p2Human) {
+    scorePill.textContent = 'J1 ' + st.sMe + ' - ' + st.sCpu + (p2Human ? ' J2' : ' CPU');
     smashPill.textContent = 'SMASH ' + Math.round(st.smashCharge) + '%';
   }
 
@@ -231,7 +226,7 @@ function startGyroHockeyGame(scr) {
     return false;
   };
 
-  function hitMallet(m, smashPower) {
+  function hitMallet(m, smashPower, slot) {
     var pk = st.puck, dx = pk.x - m.x, dy = pk.y - m.y, minD = MR + PR, dSq = dx * dx + dy * dy;
     if (dSq >= minD * minD || dSq < 0.001) return false;
     var d = Math.sqrt(dSq), nx = dx / d, ny = dy / d;
@@ -241,6 +236,7 @@ function startGyroHockeyGame(scr) {
     spawnSparks(pk.x - nx * PR, pk.y - ny * PR, smashPower > 120 ? '#FACC15' : '#38BDF8', 12);
     st.impactFlash = 0.7;
     playTvGameBeep(smashPower > 120 ? 520 : 340, 0.07, 'triangle', 0.08);
+    pushGyroArcadeTelemetry(roomId, spd * 0.32, st.sMe, st.sCpu, st.smashCharge, 0.85, st.over ? 'finished' : 'racing', slot, smashPower > 120 ? 70 : 35);
     return true;
   }
 
@@ -261,31 +257,43 @@ function startGyroHockeyGame(scr) {
         st.pauseT -= dt;
         if (st.pauseT <= 0) { st.banner = ''; servePuck(st.sMe > st.sCpu ? -1 : 1); }
       } else {
-        var useGyro = Date.now() < tvGyroInput.expiresAt;
-        var smashOn = (keys.smash || (useGyro && tvGyroInput.nitro)) && st.smashCharge > 10;
+        var tNowH = Date.now();
+        var useGyro = tNowH < tvGyroInputP1.expiresAt;
+        var useGyro2 = tNowH < tvGyroInputP2.expiresAt;
+        var smashOn = (keys.smash || (useGyro && tvGyroInputP1.nitro)) && st.smashCharge > 10;
+        var smash2On = useGyro2 && tvGyroInputP2.nitro;
         st.smashCharge = smashOn ? Math.max(0, st.smashCharge - dt * 45) : Math.min(100, st.smashCharge + dt * 22);
 
         var sub = 3, sDt = dt / sub;
         for (var k = 0; k < sub; k++) {
           var prevMx = st.me.x, prevMy = st.me.y;
-          if (useGyro && Math.abs(tvGyroInput.steer) > 0.03) {
-            var targetX = W / 2 + tvGyroInput.steer * (W / 2 - pad - MR - 12);
+          if (useGyro && Math.abs(tvGyroInputP1.steer) > 0.03) {
+            var targetX = W / 2 + tvGyroInputP1.steer * (W / 2 - pad - MR - 12);
             st.me.x += (targetX - st.me.x) * Math.min(1, sDt * 24);
           } else {
             st.me.x += ((keys.right ? 1 : 0) - (keys.left ? 1 : 0)) * 580 * sDt;
           }
           var dirY = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
-          if (dirY === 0 && useGyro) dirY = tvGyroInput.throttle > 0.3 ? -1 : tvGyroInput.brake > 0.3 ? 1 : 0;
+          if (dirY === 0 && useGyro) dirY = tvGyroInputP1.throttle > 0.3 ? -1 : tvGyroInputP1.brake > 0.3 ? 1 : 0;
           st.me.y += dirY * 460 * sDt;
           st.me.x = Math.max(pad + MR, Math.min(W - pad - MR, st.me.x));
           st.me.y = Math.max(H / 2 + MR + 6, Math.min(H - pad - MR, st.me.y));
           st.me.vx = (st.me.x - prevMx) / sDt; st.me.vy = (st.me.y - prevMy) / sDt;
 
           var prevCx = st.cpu.x, prevCy = st.cpu.y;
-          var aiGoalX = st.puck.y < H * 0.56 ? Math.max(pad + MR + 30, Math.min(W - pad - MR - 30, st.puck.x)) : W / 2;
-          var aiGoalY = st.puck.y < H * 0.45 && st.puck.vy >= -40 ? Math.min(H / 2 - MR - 12, st.puck.y - 16) : 82;
-          st.cpu.x += Math.max(-440 * sDt, Math.min(440 * sDt, aiGoalX - st.cpu.x));
-          st.cpu.y += Math.max(-340 * sDt, Math.min(340 * sDt, aiGoalY - st.cpu.y));
+          if (useGyro2) {
+            var targetX2 = W / 2 + tvGyroInputP2.steer * (W / 2 - pad - MR - 12);
+            st.cpu.x += (targetX2 - st.cpu.x) * Math.min(1, sDt * 24);
+            var dirY2 = tvGyroInputP2.throttle > 0.3 ? 1 : tvGyroInputP2.brake > 0.3 ? -1 : 0;
+            st.cpu.y += dirY2 * 460 * sDt;
+          } else {
+            var aiGoalX = st.puck.y < H * 0.56 ? Math.max(pad + MR + 30, Math.min(W - pad - MR - 30, st.puck.x)) : W / 2;
+            var aiGoalY = st.puck.y < H * 0.45 && st.puck.vy >= -40 ? Math.min(H / 2 - MR - 12, st.puck.y - 16) : 82;
+            st.cpu.x += Math.max(-440 * sDt, Math.min(440 * sDt, aiGoalX - st.cpu.x));
+            st.cpu.y += Math.max(-340 * sDt, Math.min(340 * sDt, aiGoalY - st.cpu.y));
+          }
+          st.cpu.x = Math.max(pad + MR, Math.min(W - pad - MR, st.cpu.x));
+          st.cpu.y = Math.max(pad + MR, Math.min(H / 2 - MR - 6, st.cpu.y));
           st.cpu.vx = (st.cpu.x - prevCx) / sDt; st.cpu.vy = (st.cpu.y - prevCy) / sDt;
 
           st.puck.x += st.puck.vx * sDt; st.puck.y += st.puck.vy * sDt;
@@ -300,15 +308,18 @@ function startGyroHockeyGame(scr) {
             if (st.puck.y > H - pad - PR) { st.puck.y = H - pad - PR; st.puck.vy = -Math.abs(st.puck.vy) * 0.92; spawnSparks(st.puck.x, H - pad, '#8B5CF6', 5); }
           } else {
             if (st.puck.y < pad - 6) {
-              st.sMe += 1; st.pauseT = 1.2; st.banner = '⚡ ¡GOLAZO NEON TUYO!'; st.bannerCol = '#4ADE80';
-              spawnSparks(st.puck.x, pad, '#4ADE80', 28); playTvGameBeep(620, 0.24, 'triangle', 0.12); break;
+              st.sMe += 1; st.pauseT = 1.2; st.banner = '⚡ ¡GOLAZO J1!'; st.bannerCol = '#4ADE80';
+              spawnSparks(st.puck.x, pad, '#4ADE80', 28); playTvGameBeep(620, 0.24, 'triangle', 0.12);
+              pushGyroArcadeTelemetry(roomId, 0, st.sMe, st.sCpu, st.smashCharge, 1, st.over ? 'finished' : 'racing', 1, 90); break;
             } else if (st.puck.y > H - pad + 6) {
-              st.sCpu += 1; st.pauseT = 1.2; st.banner = '💥 ¡PUNTO PARA LA CPU!'; st.bannerCol = '#FB7185';
-              spawnSparks(st.puck.x, H - pad, '#FB7185', 24); playTvGameBeep(200, 0.24, 'sawtooth', 0.1); break;
+              st.sCpu += 1; st.pauseT = 1.2; st.banner = useGyro2 ? '💥 ¡GOLAZO J2!' : '💥 ¡PUNTO CPU!'; st.bannerCol = '#FB7185';
+              spawnSparks(st.puck.x, H - pad, '#FB7185', 24); playTvGameBeep(200, 0.24, 'sawtooth', 0.1);
+              if (useGyro2) pushGyroArcadeTelemetry(roomId, 0, st.sMe, st.sCpu, st.smashCharge, 1, st.over ? 'finished' : 'racing', 2, 90);
+              break;
             }
           }
-          hitMallet(st.me, smashOn ? 240 : 60);
-          hitMallet(st.cpu, 40);
+          hitMallet(st.me, smashOn ? 240 : 60, 1);
+          hitMallet(st.cpu, smash2On ? 220 : 40, 2);
         }
 
         puckTrail.push({ x: st.puck.x, y: st.puck.y });
@@ -316,12 +327,12 @@ function startGyroHockeyGame(scr) {
 
         if ((st.sMe >= 5 || st.sCpu >= 5) && st.pauseT <= 0) {
           st.over = true;
-          finTitle.textContent = st.sMe > st.sCpu ? '🏆 ¡CAMPEÓN AIR HOCKEY!' : '🤖 VICTORIA PARA LA CPU';
-          finSub.textContent = 'Resultado final: TÚ ' + st.sMe + ' - ' + st.sCpu + ' CPU';
+          finTitle.textContent = st.sMe > st.sCpu ? '🏆 ¡CAMPEÓN J1!' : (useGyro2 ? '🏆 ¡CAMPEÓN J2!' : '🤖 VICTORIA PARA LA CPU');
+          finSub.textContent = 'Resultado final: J1 ' + st.sMe + ' - ' + st.sCpu + (useGyro2 ? ' J2' : ' CPU');
           finOv.style.display = '-webkit-flex'; finOv.style.display = 'flex';
           var rb = document.getElementById('btn-ah-replay'); if (rb && rb.focus) rb.focus();
         }
-        syncHud();
+        syncHud(useGyro2);
         pushGyroArcadeTelemetry(roomId, Math.hypot(st.puck.vx, st.puck.vy) * 0.32, st.sMe, st.sCpu, st.smashCharge, st.impactFlash, st.over ? 'finished' : 'racing');
       }
     }
@@ -446,11 +457,11 @@ function startGyroSpaceGame(scr) {
   var stars = [];
   for (var si = 0; si < 75; si++) stars.push({ x: Math.random() * W, y: Math.random() * H, z: 0.4 + Math.random() * 1.6 });
 
-  var sp = { x: W / 2, y: H - 72, bank: 0, hp: 100, score: 0, wave: 1, combo: 1, fireCd: 0, spawnCd: 0.4, shieldFlash: 0, over: false, bgScroll: 0, shieldOn: false, bullets: [], enemies: [], parts: [], booms: [] };
+  var sp = { x: W / 2, y: H - 72, bank: 0, x2: W * 0.65, y2: H - 72, bank2: 0, p2FireCd: 0, p2ShieldOn: false, hp: 100, score: 0, wave: 1, combo: 1, fireCd: 0, spawnCd: 0.4, shieldFlash: 0, over: false, bgScroll: 0, shieldOn: false, bullets: [], enemies: [], parts: [], booms: [] };
 
   function resetSpace() {
-    sp.x = W / 2; sp.y = H - 72; sp.bank = 0; sp.hp = 100; sp.score = 0; sp.wave = 1; sp.combo = 1;
-    sp.fireCd = 0; sp.spawnCd = 0.5; sp.shieldFlash = 0; sp.over = false; sp.bgScroll = 0; sp.shieldOn = false;
+    sp.x = W / 2; sp.y = H - 72; sp.bank = 0; sp.x2 = W * 0.65; sp.y2 = H - 72; sp.bank2 = 0; sp.hp = 100; sp.score = 0; sp.wave = 1; sp.combo = 1;
+    sp.fireCd = 0; sp.p2FireCd = 0; sp.spawnCd = 0.5; sp.shieldFlash = 0; sp.over = false; sp.bgScroll = 0; sp.shieldOn = false; sp.p2ShieldOn = false;
     sp.bullets = []; sp.enemies = []; sp.parts = []; sp.booms = []; finOv.style.display = 'none'; syncHud();
   }
   document.getElementById('btn-sp-replay').onclick = resetSpace;
@@ -508,11 +519,13 @@ function startGyroSpaceGame(scr) {
       if (sp.booms[xmi].t >= sp.booms[xmi].dur) sp.booms.splice(xmi, 1);
     }
 
+    var tNowS = Date.now();
+    var useG2Sp = tNowS < tvGyroInputP2.expiresAt;
     if (!sp.over) {
-      var useGyro = Date.now() < tvGyroInput.expiresAt;
-      var moveIn = useGyro ? tvGyroInput.steer : ((keys.right ? 1 : 0) - (keys.left ? 1 : 0));
-      var fireOn = keys.fire || (useGyro && (tvGyroInput.throttle > 0.2 || tvGyroInput.nitro));
-      sp.shieldOn = keys.up || (useGyro && tvGyroInput.handbrake);
+      var useGyro = tNowS < tvGyroInputP1.expiresAt;
+      var moveIn = useGyro ? tvGyroInputP1.steer : ((keys.right ? 1 : 0) - (keys.left ? 1 : 0));
+      var fireOn = keys.fire || (useGyro && (tvGyroInputP1.throttle > 0.2 || tvGyroInputP1.nitro));
+      sp.shieldOn = keys.up || (useGyro && tvGyroInputP1.handbrake);
 
       sp.x = Math.max(40, Math.min(W - 40, sp.x + moveIn * 520 * dt));
       sp.bank += (moveIn * 0.42 - sp.bank) * Math.min(1, dt * 14);
@@ -525,6 +538,19 @@ function startGyroSpaceGame(scr) {
         sp.bullets.push({ x: sp.x - 14, y: sp.y - 18, vy: -760 });
         sp.bullets.push({ x: sp.x + 14, y: sp.y - 18, vy: -760 });
         playTvGameBeep(680, 0.04, 'square', 0.03);
+      }
+      if (useG2Sp) {
+        var mv2 = tvGyroInputP2.steer;
+        sp.p2ShieldOn = tvGyroInputP2.handbrake;
+        sp.x2 = Math.max(40, Math.min(W - 40, sp.x2 + mv2 * 520 * dt));
+        sp.bank2 += (mv2 * 0.42 - sp.bank2) * Math.min(1, dt * 14);
+        sp.p2FireCd -= dt;
+        if ((tvGyroInputP2.throttle > 0.2 || tvGyroInputP2.nitro) && sp.p2FireCd <= 0) {
+          sp.p2FireCd = 0.14;
+          sp.bullets.push({ x: sp.x2 - 14, y: sp.y2 - 18, vy: -760, p2: true });
+          sp.bullets.push({ x: sp.x2 + 14, y: sp.y2 - 18, vy: -760, p2: true });
+          playTvGameBeep(740, 0.04, 'square', 0.03);
+        }
       }
 
       sp.spawnCd -= dt;
@@ -566,9 +592,12 @@ function startGyroSpaceGame(scr) {
         }
         if (destroyed) continue;
 
-        if (Math.hypot(en.x - sp.x, en.y - sp.y) < en.r + 22) {
-          sp.hp -= sp.shieldOn ? 14 : 34; sp.combo = 1; sp.shieldFlash = 1; hitImpact = 0.9;
+        var hitS1 = Math.hypot(en.x - sp.x, en.y - sp.y) < en.r + 22;
+        var hitS2 = useG2Sp && Math.hypot(en.x - sp.x2, en.y - sp.y2) < en.r + 22;
+        if (hitS1 || hitS2) {
+          sp.hp -= (hitS2 ? sp.p2ShieldOn : sp.shieldOn) ? 14 : 34; sp.combo = 1; sp.shieldFlash = 1; hitImpact = 0.9;
           boom(en.x, en.y, '#FB7185', 18); playTvGameBeep(140, 0.2, 'sawtooth', 0.11);
+          pushGyroArcadeTelemetry(roomId, 210, sp.wave, sp.combo, sp.hp, 1, sp.over ? 'finished' : 'racing', hitS2 ? 2 : 1, 75);
           sp.enemies.splice(ei, 1);
           if (sp.hp <= 0) {
             sp.over = true;
@@ -597,9 +626,9 @@ function startGyroSpaceGame(scr) {
     }
 
     for (var bi2 = 0; bi2 < sp.bullets.length; bi2++) {
-      var bl = sp.bullets[bi2];
-      if (!gyroSpr(ctx, 'assets/games/space/laserBlue01.png', bl.x, bl.y, 10, 30, 0)) {
-        ctx.fillStyle = '#22D3EE'; ctx.fillRect(bl.x - 2.5, bl.y - 12, 5, 18);
+      var bl = sp.bullets[bi2], lSpr = bl.p2 ? 'assets/games/space/laserRed01.png' : 'assets/games/space/laserBlue01.png';
+      if (!gyroSpr(ctx, lSpr, bl.x, bl.y, 10, 30, 0)) {
+        ctx.fillStyle = bl.p2 ? '#FB923C' : '#22D3EE'; ctx.fillRect(bl.x - 2.5, bl.y - 12, 5, 18);
       }
     }
 
@@ -636,23 +665,27 @@ function startGyroSpaceGame(scr) {
       gyroSpr(ctx, 'assets/games/space/fire00.png', -12, 24, 12, 22, 0);
       gyroSpr(ctx, 'assets/games/space/fire00.png', 12, 24, 12, 22, 0);
       if (!gyroSpr(ctx, 'assets/games/space/playerShip1_blue.png', 0, 0, 54, 42, 0)) {
-        ctx.fillStyle = '#38BDF8';
-        ctx.beginPath(); ctx.arc(-11, 22, 5 + Math.random() * 4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(11, 22, 5 + Math.random() * 4, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#7C3AED'; ctx.beginPath();
-        ctx.moveTo(0, -28); ctx.lineTo(-28, 18); ctx.lineTo(-10, 12); ctx.lineTo(0, 22); ctx.lineTo(10, 12); ctx.lineTo(28, 18);
-        ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#22D3EE'; ctx.lineWidth = 2.5; ctx.stroke();
+        ctx.fillStyle = '#38BDF8'; ctx.beginPath(); ctx.arc(-11, 22, 5 + Math.random() * 4, 0, Math.PI * 2); ctx.arc(11, 22, 5 + Math.random() * 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#7C3AED'; ctx.beginPath(); ctx.moveTo(0, -28); ctx.lineTo(-28, 18); ctx.lineTo(-10, 12); ctx.lineTo(0, 22); ctx.lineTo(10, 12); ctx.lineTo(28, 18); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = '#22D3EE'; ctx.lineWidth = 2.5; ctx.stroke();
         ctx.fillStyle = '#E0F2FE'; ctx.beginPath(); ctx.ellipse(0, -6, 6, 12, 0, 0, Math.PI * 2); ctx.fill();
       }
       if (sp.shieldOn || sp.shieldFlash > 0) {
         ctx.globalAlpha = sp.shieldFlash > 0 ? 0.88 : 0.58;
         if (!gyroSpr(ctx, 'assets/games/space/shield3.png', 0, 0, 76, 72, 0)) {
-          ctx.strokeStyle = 'rgba(251, 113, 133, 0.8)'; ctx.lineWidth = 3;
-          ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.stroke();
+          ctx.strokeStyle = 'rgba(251, 113, 133, 0.8)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.stroke();
         }
         ctx.globalAlpha = 1;
       }
       ctx.restore();
+      if (useG2Sp) {
+        ctx.save(); ctx.translate(sp.x2, sp.y2); ctx.rotate(sp.bank2);
+        gyroSpr(ctx, 'assets/games/space/fire00.png', -12, 24, 12, 22, 0); gyroSpr(ctx, 'assets/games/space/fire00.png', 12, 24, 12, 22, 0);
+        if (!gyroSpr(ctx, 'assets/games/space/playerShip2_orange.png', 0, 0, 54, 42, 0)) {
+          ctx.fillStyle = '#FB923C'; ctx.beginPath(); ctx.moveTo(0, -28); ctx.lineTo(-28, 18); ctx.lineTo(0, 12); ctx.lineTo(28, 18); ctx.closePath(); ctx.fill();
+        }
+        ctx.restore();
+      }
     }
     TV_GAME_RAF = requestAnimationFrame(frame);
   }

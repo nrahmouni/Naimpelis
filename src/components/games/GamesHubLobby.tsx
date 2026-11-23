@@ -84,15 +84,28 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
       backdropClass: 'from-[#2A114F] via-[#121636] to-[#0B0D14]',
     },
     {
+      id: 'pingpong',
+      category: 'arcade',
+      title: pickLang(lang, { es: 'Ping Pong Pro 2P', ca: 'Ping Pong Pro 2P', en: 'Ping Pong Pro 2P' }),
+      meta: pickLang(lang, {
+        es: 'Raqueta Móvil 2P · Giroscopio',
+        ca: 'Raqueta Mòbil 2P · Giroscopi',
+        en: '2P Phone Racket · Gyroscope',
+      }),
+      playersHint: '2P',
+      accentBorder: 'hover:border-rose-400/75',
+      backdropClass: 'from-[#063829] via-[#0F1B33] to-[#0B0D14]',
+    },
+    {
       id: 'penalty',
       category: 'arcade',
-      title: pickLang(lang, { es: 'Penaltis Mundial', ca: 'Penals Mundial', en: 'World Penalty' }),
+      title: pickLang(lang, { es: 'Penaltis Mundial Pro', ca: 'Penals Mundial Pro', en: 'World Cup Penalties' }),
       meta: pickLang(lang, {
-        es: 'Fútbol TV · Tanda 5 tiros',
-        ca: 'Futbol TV · Tanda 5 xuts',
-        en: 'TV Shootout · 5 kicks',
+        es: '10 países · Móvil 2P · Rosca 8s',
+        ca: '10 països · Mòbil 2P · Rosca 8s',
+        en: '10 nations · 2P Mobile · Curve 8s',
       }),
-      playersHint: '1vIA',
+      playersHint: '1P/2P',
       accentBorder: 'hover:border-emerald-400/70',
       backdropClass: 'from-[#0D2B24] via-[#10263A] to-[#0B0D14]',
     },
@@ -314,9 +327,9 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
             <p className="text-xs text-zinc-400 mt-0.5 tabular-nums leading-snug">
               {hubMode === 'online'
                 ? pickLang(lang, {
-                    es: `Sala en directo · ${participants.length} conectado${participants.length === 1 ? '' : 's'} · 25 juegos`,
-                    ca: `Sala en directe · ${participants.length} connectat${participants.length === 1 ? '' : 's'} · 25 jocs`,
-                    en: `Live room · ${participants.length} connected · 25 games`,
+                    es: `Sala en directo · ${participants.length} conectado${participants.length === 1 ? '' : 's'} · 26 juegos`,
+                    ca: `Sala en directe · ${participants.length} connectat${participants.length === 1 ? '' : 's'} · 26 jocs`,
+                    en: `Live room · ${participants.length} connected · 26 games`,
                   })
                 : pickLang(lang, {
                     es: 'Modo entrenamiento offline contra IA · Sin esperas',

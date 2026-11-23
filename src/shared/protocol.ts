@@ -239,17 +239,18 @@ export type ServerWsMessage =
       type: 'GYRO_PEER_STATUS';
       payload: {
         roomId: string;
-        connected: boolean;
-        deviceName: string;
-        role: 'controller' | 'display';
-        controllerCount: number;
+        controllers: Array<{ userId: string; deviceName: string; slot?: 1 | 2 }>;
+        displays: number;
+        hasController: boolean;
       };
     }
   | {
       type: 'GYRO_INPUT_RELAY';
       payload: GyroInputPayload & {
-        userId: string;
-        deviceName: string;
+        senderId?: string;
+        playerSlot?: 1 | 2;
+        userId?: string;
+        deviceName?: string;
       };
     }
   | {

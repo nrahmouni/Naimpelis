@@ -24,8 +24,16 @@ export function mount(
   }
 }
 
-export function setGyroInput(input: Partial<RacingGyroControlState>, expiresInMs = 950): void {
-  activeEngine?.setGyroInput(input, expiresInMs);
+export function setGyroInput(
+  input: Partial<RacingGyroControlState>,
+  expiresInMs = 950,
+  playerSlot?: 1 | 2
+): void {
+  activeEngine?.setGyroInput(input, expiresInMs, playerSlot ?? input.playerSlot);
+}
+
+export function setPlayer2Connected(connected: boolean): void {
+  activeEngine?.setPlayer2Connected?.(connected);
 }
 
 export function setRemoteKey(keys: {
@@ -66,6 +74,7 @@ if (typeof window !== 'undefined') {
   (window as unknown as Record<string, unknown>).RiffanRacing3D = {
     mount,
     setGyroInput,
+    setPlayer2Connected,
     setRemoteKey,
     cycleCamera,
     resetRace,

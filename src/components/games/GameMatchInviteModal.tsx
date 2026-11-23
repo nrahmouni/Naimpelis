@@ -145,6 +145,16 @@ const GAME_INVITE_META: Record<RoomGameInviteType, GameInviteMeta> = {
       en: '3D racing synced with phone gyroscope wheel',
     },
   },
+  pingpong: {
+    emoji: '🏓',
+    accent: '#F43F5E',
+    title: { es: 'Ping Pong Pro 2P', ca: 'Ping Pong Pro 2P', en: 'Ping Pong Pro 2P' },
+    subtitle: {
+      es: 'Duelo con 1 o 2 móviles como raqueta real',
+      ca: 'Duel amb 1 o 2 mòbils com a raqueta real',
+      en: '1P or 2P table tennis duel with phone racket',
+    },
+  },
   gyrohockey: {
     emoji: '🏒',
     accent: '#22D3EE',

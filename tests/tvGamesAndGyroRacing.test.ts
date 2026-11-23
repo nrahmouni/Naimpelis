@@ -22,6 +22,7 @@ import {
   createHeadSoccerSimulation,
   stepHeadSoccerFrame,
 } from '../src/shared/headSoccer.ts';
+import { PENALTY_COUNTRIES } from '../src/shared/penaltyCountries.ts';
 
 const ROOT = process.cwd();
 
@@ -188,6 +189,94 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
     if (spaceRoute.kind === 'game') {
       expect(spaceRoute.gameId).toBe('gyrospace');
     }
+
+    const pingPongRoute = parseAppRoute('/juegos/ping-pong', '?room=k8x4');
+    expect(pingPongRoute.kind).toBe('game');
+    if (pingPongRoute.kind === 'game') {
+      expect(pingPongRoute.gameId).toBe('pingpong');
+      expect(pingPongRoute.roomId).toBe('k8x4');
+    }
+
+    expect(PENALTY_COUNTRIES).toHaveLength(10);
+    expect(PENALTY_COUNTRIES.map((c) => c.code)).toContain('ESP');
+    expect(PENALTY_COUNTRIES.map((c) => c.code)).toContain('ARG');
+    expect(PENALTY_COUNTRIES.map((c) => c.code)).toContain('MAR');
+  });
+
+  it('assigns simultaneous 2-player controller slots and relays playerSlot + eventTag', () => {
+    const p1Ws = { readyState: WebSocket.OPEN } as unknown as WebSocket;
+    const p2Ws = { readyState: WebSocket.OPEN } as unknown as WebSocket;
+    const broadcastToRoom = vi.fn();
+    const ctx = {
+      rooms: new Map([['arena-2p', {} as any]]),
+      clients: new Map<WebSocket, any>([
+        [p1Ws, { roomId: 'arena-2p', userId: 'phone-p1' }],
+        [p2Ws, { roomId: 'arena-2p', userId: 'phone-p2' }],
+      ]),
+      broadcastToRoom,
+    } as any;
+
+    handleRacingGyroMessage(
+      'GYRO_CONTROLLER_JOIN',
+      { roomId: 'arena-2p', role: 'controller', deviceName: 'Móvil 1' },
+      p1Ws,
+      ctx
+    );
+    handleRacingGyroMessage(
+      'GYRO_CONTROLLER_JOIN',
+      { roomId: 'arena-2p', role: 'controller', deviceName: 'Móvil 2' },
+      p2Ws,
+      ctx
+    );
+
+    expect(broadcastToRoom).toHaveBeenLastCalledWith(
+      'arena-2p',
+      expect.objectContaining({
+        type: 'GYRO_PEER_STATUS',
+        payload: expect.objectContaining({
+          roomId: 'arena-2p',
+          hasController: true,
+          controllers: expect.arrayContaining([
+            expect.objectContaining({ userId: 'phone-p1', slot: 1 }),
+            expect.objectContaining({ userId: 'phone-p2', slot: 2 }),
+          ]),
+        }),
+      })
+    );
+
+    broadcastToRoom.mockClear();
+    handleRacingGyroMessage(
+      'GYRO_INPUT_UPDATE',
+      {
+        roomId: 'arena-2p',
+        steer: 0.45,
+        throttle: 1,
+        brake: 0,
+        roll: -0.6,
+        pitch: -0.3,
+        swing: 0.92,
+        seq: 11,
+        ts: Date.now(),
+      },
+      p2Ws,
+      ctx
+    );
+
+    expect(broadcastToRoom).toHaveBeenCalledWith(
+      'arena-2p',
+      expect.objectContaining({
+        type: 'GYRO_INPUT_RELAY',
+        payload: expect.objectContaining({
+          roomId: 'arena-2p',
+          senderId: 'phone-p2',
+          playerSlot: 2,
+          roll: -0.6,
+          pitch: -0.3,
+          swing: 0.92,
+        }),
+      }),
+      p2Ws
+    );
   });
 
   it('compiles all Smart TV ES5 scripts via vm.Script, verifies force update controls, zero backdrop-filter, and <=700 LOC', () => {
@@ -206,6 +295,12 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
     expect(fs.existsSync(bundlePath)).toBe(true);
     expect(fs.statSync(bundlePath).size).toBeGreaterThan(50_000);
 
+    const colormapPath = path.join(ROOT, 'public/assets/games/models/Textures/colormap.png');
+    expect(fs.existsSync(colormapPath)).toBe(true);
+    const stadiumBackdropPath = path.join(ROOT, 'public/assets/games/penalty/stadium_backdrop.jpg');
+    expect(fs.existsSync(stadiumBackdropPath)).toBe(true);
+    expect(fs.statSync(stadiumBackdropPath).size).toBeGreaterThan(20_000);
+
     const tvGamesCss = fs.readFileSync(path.join(ROOT, 'public/tv/tv-games.css'), 'utf8');
     expect(tvGamesCss).not.toMatch(/backdrop-filter/i);
 
@@ -218,6 +313,8 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
       'public/tv/tv-game-sprites.js',
       'public/tv/tv-games.js',
       'public/tv/tv-games-soccer.js',
+      'public/tv/tv-games-penalty.js',
+      'public/tv/tv-games-pingpong.js',
       'public/tv/tv-games-racing.js',
       'public/tv/tv-games-gyro.js',
       'public/tv/tv-games-puzzle.js',
@@ -235,6 +332,8 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
       'public/tv/tv-game-sprites.js',
       'public/tv/tv-games.js',
       'public/tv/tv-games-soccer.js',
+      'public/tv/tv-games-penalty.js',
+      'public/tv/tv-games-pingpong.js',
       'public/tv/tv-games-racing.js',
       'public/tv/tv-games-gyro.js',
       'public/tv/tv-games-puzzle.js',

@@ -203,6 +203,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       !isRacing3d &&
       !isPoker &&
       !isBlackjack &&
+      selectedGame !== 'pingpong' &&
       selectedGame !== 'gyrohockey' &&
       selectedGame !== 'gyrospace' &&
       selectedGame !== 'bomberman' &&
@@ -615,6 +616,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
                 selectedGame={selectedGame}
                 hubMode={hubMode}
                 lang={lang}
+                roomId={roomId}
                 currentUser={currentUser}
                 participants={participants}
                 isHost={isHost}

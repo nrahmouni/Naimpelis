@@ -4,7 +4,8 @@
 // Fixes goal-line wall bug, adds crossbar/post physics, stadium HD gfx
 // ===================================================================
 var tvSoccerWs = null;
-var tvSoccerGyro = { steer: 0, throttle: 0, nitro: false, expiresAt: 0 };
+var tvSoccerGyro1 = { steer: 0, throttle: 0, nitro: false, handbrake: false, expiresAt: 0 };
+var tvSoccerGyro2 = { steer: 0, throttle: 0, nitro: false, handbrake: false, expiresAt: 0 };
 
 function closeTvSoccerGame() {
   if (tvSoccerWs) {
@@ -12,7 +13,8 @@ function closeTvSoccerGame() {
     try { tvSoccerWs.close(); } catch (e) {}
     tvSoccerWs = null;
   }
-  tvSoccerGyro = { steer: 0, throttle: 0, nitro: false, expiresAt: 0 };
+  tvSoccerGyro1 = { steer: 0, throttle: 0, nitro: false, handbrake: false, expiresAt: 0 };
+  tvSoccerGyro2 = { steer: 0, throttle: 0, nitro: false, handbrake: false, expiresAt: 0 };
 }
 window.closeTvSoccerGame = closeTvSoccerGame;
 
@@ -86,7 +88,7 @@ function startHeadSoccerGame(scr) {
         }));
         ws.send(JSON.stringify({
           type: 'GYRO_CONTROLLER_JOIN',
-          payload: { roomId: soccerRoom, role: 'display', deviceName: 'Cabezones TV' }
+          payload: { roomId: soccerRoom, role: 'display', deviceName: 'Cabezones TV', gameId: 'headsoccer' }
         }));
       };
       ws.onmessage = function (ev) {
@@ -94,21 +96,26 @@ function startHeadSoccerGame(scr) {
         try {
           var msg = JSON.parse(ev.data);
           if (msg.type === 'GYRO_PEER_STATUS' && msg.payload && gyroPill) {
+            var cList = msg.payload.controllers || [];
             if (msg.payload.hasController) {
               gyroPill.className = 'tv-game-hud-pill accent-green';
-              gyroPill.textContent = '📱 Mando Móvil Activo';
+              gyroPill.textContent = cList.length >= 2 ? '📱 2 Móviles Activos (J1 vs J2)' : '📱 Mando Móvil Activo';
             } else {
               gyroPill.className = 'tv-game-hud-pill accent-purple';
               gyroPill.textContent = '📱 QR Mando Móvil';
             }
           } else if (msg.type === 'GYRO_INPUT_RELAY' && msg.payload) {
-            tvSoccerGyro.steer = typeof msg.payload.steer === 'number' ? msg.payload.steer : 0;
-            tvSoccerGyro.throttle = typeof msg.payload.throttle === 'number' ? msg.payload.throttle : 0;
-            tvSoccerGyro.nitro = Boolean(msg.payload.nitro);
-            tvSoccerGyro.expiresAt = Date.now() + 900;
-            if (tvSoccerGyro.nitro && match.p1.kickCd <= 0 && !match.over) {
-              match.p1.kickT = 0.22;
-              match.p1.kickCd = 0.32;
+            var p = msg.payload;
+            var tgt = p.playerSlot === 2 ? tvSoccerGyro2 : tvSoccerGyro1;
+            var plr = p.playerSlot === 2 ? match.p2 : match.p1;
+            tgt.steer = typeof p.steer === 'number' ? p.steer : 0;
+            tgt.throttle = typeof p.throttle === 'number' ? p.throttle : 0;
+            tgt.handbrake = Boolean(p.handbrake);
+            tgt.nitro = Boolean(p.nitro);
+            tgt.expiresAt = Date.now() + 1200;
+            if (tgt.nitro && plr.kickCd <= 0 && !match.over) {
+              plr.kickT = 0.22;
+              plr.kickCd = 0.32;
             }
           }
         } catch (e) {}
@@ -154,8 +161,8 @@ function startHeadSoccerGame(scr) {
   }
   document.getElementById('btn-hs-replay').onclick = resetHsMatch;
 
-  function syncHsHud() {
-    scorePill.textContent = 'TÚ ' + match.sL + ' - ' + match.sR + ' CPU';
+  function syncHsHud(p2Human) {
+    scorePill.textContent = 'J1 ' + match.sL + ' - ' + match.sR + (p2Human ? ' J2' : ' CPU');
     clockPill.textContent = match.timeLeft <= 0 ? 'GOL DE ORO' : Math.ceil(match.timeLeft) + 's';
   }
 
@@ -305,21 +312,25 @@ function startHeadSoccerGame(scr) {
         }
       } else {
         if (match.timeLeft > 0) match.timeLeft = Math.max(0, match.timeLeft - dt);
-        var useGyro = Date.now() < tvSoccerGyro.expiresAt;
+        var tNowHs = Date.now();
+        var useGyro1 = tNowHs < tvSoccerGyro1.expiresAt;
+        var useGyro2 = tNowHs < tvSoccerGyro2.expiresAt;
         var p1Dir = (keys.right ? 1 : 0) - (keys.left ? 1 : 0);
-        if (p1Dir === 0 && useGyro && Math.abs(tvSoccerGyro.steer) > 0.12) {
-          p1Dir = tvSoccerGyro.steer;
-        }
-        var p1Jump = keys.jump || (useGyro && tvSoccerGyro.throttle > 0.5);
+        if (p1Dir === 0 && useGyro1 && Math.abs(tvSoccerGyro1.steer) > 0.12) p1Dir = tvSoccerGyro1.steer;
+        var p1Jump = keys.jump || (useGyro1 && (tvSoccerGyro1.throttle > 0.35 || tvSoccerGyro1.handbrake));
 
-        // Smart AI rival
-        var aiTargetX = match.ball.x > W * 0.42 ? match.ball.x + 26 : W - 185;
-        if (match.ball.x > W - 165 && match.ball.vx > 0) aiTargetX = W - 115;
-        var aiDir = match.p2.x < aiTargetX - 12 ? 1 : match.p2.x > aiTargetX + 12 ? -1 : 0;
-        var aiJump = match.ball.y < GY - 98 && Math.abs(match.ball.x - match.p2.x) < 62;
-        if (Math.hypot(match.ball.x - match.p2.x, match.ball.y - match.p2.y) < 58 && match.p2.kickCd <= 0) {
-          match.p2.kickT = 0.2;
-          match.p2.kickCd = 0.45;
+        var aiDir = 0, aiJump = false;
+        if (useGyro2) {
+          aiDir = Math.abs(tvSoccerGyro2.steer) > 0.12 ? tvSoccerGyro2.steer : 0;
+          aiJump = tvSoccerGyro2.throttle > 0.35 || tvSoccerGyro2.handbrake;
+        } else {
+          var aiTargetX = match.ball.x > W * 0.42 ? match.ball.x + 26 : W - 185;
+          if (match.ball.x > W - 165 && match.ball.vx > 0) aiTargetX = W - 115;
+          aiDir = match.p2.x < aiTargetX - 12 ? 1 : match.p2.x > aiTargetX + 12 ? -1 : 0;
+          aiJump = match.ball.y < GY - 98 && Math.abs(match.ball.x - match.p2.x) < 62;
+          if (Math.hypot(match.ball.x - match.p2.x, match.ball.y - match.p2.y) < 58 && match.p2.kickCd <= 0) {
+            match.p2.kickT = 0.2; match.p2.kickCd = 0.45;
+          }
         }
 
         var goalTopY = GY - GH;
@@ -395,7 +406,7 @@ function startHeadSoccerGame(scr) {
             if (b.x < GW - 4) {
               match.sR += 1;
               match.goalPause = 1.5;
-              match.banner = '¡GOL DE LA CPU!';
+              match.banner = useGyro2 ? '⚽ ¡GOL DE J2!' : '¡GOL DE LA CPU!';
               match.bannerColor = '#FB7185';
               netRippleL = 1;
               spawnGoalConfetti(GW);
@@ -404,7 +415,7 @@ function startHeadSoccerGame(scr) {
             } else if (b.x > W - GW + 4) {
               match.sL += 1;
               match.goalPause = 1.5;
-              match.banner = '⚽ ¡GOOOOL TUYO!';
+              match.banner = '⚽ ¡GOOOOL DE J1!';
               match.bannerColor = '#4ADE80';
               netRippleR = 1;
               spawnGoalConfetti(W - GW);
@@ -419,14 +430,14 @@ function startHeadSoccerGame(scr) {
 
         if (match.timeLeft <= 0 && match.sL !== match.sR && match.goalPause <= 0) {
           match.over = true;
-          finTitle.textContent = match.sL > match.sR ? '🏆 ¡VICTORIA EN EL ESTADIO!' : '⚽ FINAL DEL PARTIDO';
-          finSub.textContent = 'Marcador final: TÚ ' + match.sL + ' - ' + match.sR + ' CPU';
+          finTitle.textContent = match.sL > match.sR ? '🏆 ¡VICTORIA EN EL ESTADIO!' : (useGyro2 ? '🏆 ¡VICTORIA PARA J2!' : '⚽ FINAL DEL PARTIDO');
+          finSub.textContent = 'Marcador final: J1 ' + match.sL + ' - ' + match.sR + (useGyro2 ? ' J2' : ' CPU');
           finOv.style.display = '-webkit-flex';
           finOv.style.display = 'flex';
           var rb = document.getElementById('btn-hs-replay');
           if (rb && rb.focus) rb.focus();
         }
-        syncHsHud();
+        syncHsHud(useGyro2);
       }
     }
 

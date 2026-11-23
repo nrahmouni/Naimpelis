@@ -253,6 +253,7 @@ export const wsGameInviteRespondSchema = z.object({
     'racing3d',
     'gyrohockey',
     'gyrospace',
+    'pingpong',
     'bomberman',
     'pacman',
     'tetris',
@@ -286,6 +287,7 @@ export const wsGameSwitchSchema = z.object({
     'racing3d',
     'gyrohockey',
     'gyrospace',
+    'pingpong',
     'bomberman',
     'pacman',
     'tetris',
@@ -455,13 +457,20 @@ export const wsGyroJoinSchema = z.object({
   roomId: roomIdSchema,
   deviceName: z.string().trim().max(40).optional(),
   role: z.enum(['controller', 'display']),
+  preferredSlot: z.union([z.literal(1), z.literal(2)]).optional(),
+  gameId: z.string().trim().max(32).optional(),
 });
 
 export const wsGyroInputSchema = z.object({
   roomId: roomIdSchema,
+  playerSlot: z.union([z.literal(1), z.literal(2)]).optional(),
   steer: z.number().min(-1).max(1),
   throttle: z.number().min(0).max(1),
   brake: z.number().min(0).max(1),
+  pitch: z.number().min(-1).max(1).optional(),
+  swing: z.number().min(0).max(3).optional(),
+  roll: z.number().min(-1).max(1).optional(),
+  gameMode: z.string().trim().max(32).optional(),
   nitro: z.boolean().optional(),
   handbrake: z.boolean().optional(),
   cameraCycle: z.boolean().optional(),
@@ -485,6 +494,11 @@ export const wsRacingTelemetrySchema = z.object({
   raceState: z.enum(['countdown', 'racing', 'finished']),
   lapTimeMs: z.number().min(0).max(3_600_000).optional(),
   bestLapMs: z.number().min(0).max(3_600_000).optional(),
+  targetSlot: z.union([z.literal(1), z.literal(2)]).optional(),
+  hapticPulseMs: z.number().int().min(0).max(500).optional(),
+  scoreP1: z.number().int().min(0).max(999).optional(),
+  scoreP2: z.number().int().min(0).max(999).optional(),
+  eventTag: z.string().trim().max(32).optional(),
 });
 
 export const wsEnvelopeSchema = z.object({

@@ -96,6 +96,7 @@ export type RoomGameInviteType =
   | 'racing3d'
   | 'gyrohockey'
   | 'gyrospace'
+  | 'pingpong'
   | 'bomberman'
   | 'pacman'
   | 'tetris'
@@ -117,9 +118,14 @@ export type RoomGameInviteType =
 
 export interface GyroInputPayload {
   roomId: string;
+  playerSlot?: 1 | 2;
   steer: number;
   throttle: number;
   brake: number;
+  pitch?: number;
+  swing?: number;
+  roll?: number;
+  gameMode?: string;
   nitro?: boolean;
   handbrake?: boolean;
   cameraCycle?: boolean;
@@ -143,6 +149,11 @@ export interface RacingTelemetryPayload {
   raceState: 'countdown' | 'racing' | 'finished';
   lapTimeMs?: number;
   bestLapMs?: number;
+  targetSlot?: 1 | 2;
+  hapticPulseMs?: number;
+  scoreP1?: number;
+  scoreP2?: number;
+  eventTag?: string;
 }
 
 export interface RoomGameInvite {

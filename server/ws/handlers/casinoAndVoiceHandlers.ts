@@ -119,6 +119,7 @@ export const handleCasinoAndVoiceMessage: WsMessageHandler = (
       racing3d: 'Nitro GP 3D',
       gyrohockey: 'Neon Air Hockey Gyro',
       gyrospace: 'Galaxia Interceptor Gyro',
+      pingpong: 'Ping Pong Pro 2P',
       bomberman: 'Bomberman Party Arena',
       pacman: 'Pac-Man Arcade HD',
       tetris: 'Tetris Sprint TV',

@@ -33,6 +33,7 @@ import {
 } from './games/HeadSoccerLobbyAndControls';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
+import { socketService } from '../services/socket';
 
 export interface HeadSoccerStageProps {
   lang: AppLanguage;
@@ -103,11 +104,34 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
   const touchButtonsRef = useRef<HeadSoccerInput>({ ...EMPTY_INPUT });
   const keyButtonsRef = useRef<HeadSoccerInput>({ ...EMPTY_INPUT });
   const remoteInputRef = useRef<HeadSoccerInput>({ ...EMPTY_INPUT });
+  const gyroP1Ref = useRef<{ steer: number; jump: boolean; kick: boolean; expiresAt: number }>({ steer: 0, jump: false, kick: false, expiresAt: 0 });
+  const gyroP2Ref = useRef<{ steer: number; jump: boolean; kick: boolean; expiresAt: number }>({ steer: 0, jump: false, kick: false, expiresAt: 0 });
   const activePointersRef = useRef<Map<number, keyof HeadSoccerInput>>(new Map());
   const confettiRef = useRef<ConfettiDot[]>([]);
   const lastSyncSentAtRef = useRef(0);
   const lastInputSentJsonRef = useRef('');
   const lastSeqAppliedRef = useRef(-1);
+
+  useEffect(() => {
+    const activeRid = socketService.getActiveRoomId();
+    if (socketService.isConnected() && activeRid) {
+      socketService.joinGyroChannel('display', `${currentUser.name || 'TV'} (HeadSoccer)`, activeRid, { gameId: 'headsoccer' });
+    }
+    const unsub = socketService.subscribe((ev) => {
+      if (ev.type === 'GYRO_INPUT_RELAY') {
+        const slot = ev.payload.playerSlot === 2 ? 2 : 1;
+        const tgt = slot === 2 ? gyroP2Ref : gyroP1Ref;
+        const st = Number(ev.payload.steer || 0);
+        tgt.current = {
+          steer: st,
+          jump: Number(ev.payload.throttle || 0) > 0.35 || Boolean(ev.payload.handbrake),
+          kick: Boolean(ev.payload.nitro),
+          expiresAt: Date.now() + 1200,
+        };
+      }
+    });
+    return () => unsub();
+  }, [currentUser.name]);
 
   const effectiveState = isOffline ? null : headSoccerState;
 
@@ -299,9 +323,29 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
         : effectiveState?.status === 'playing' && sim.phase !== 'finished';
 
       if (matchActive && isSimAuthority) {
-        const leftInp = localInputRef.current;
-        const seat1IsBot = isOffline || Boolean(effectiveState?.players[1]?.isBot);
-        const rightInp = seat1IsBot ? chooseHeadSoccerAiInput(sim, 1) : remoteInputRef.current;
+        const tNowHs = Date.now();
+        const useG1Hs = tNowHs < gyroP1Ref.current.expiresAt;
+        const useG2Hs = tNowHs < gyroP2Ref.current.expiresAt;
+        const baseLeft = localInputRef.current;
+        const leftInp: HeadSoccerInput = useG1Hs
+          ? {
+              left: baseLeft.left || gyroP1Ref.current.steer < -0.14,
+              right: baseLeft.right || gyroP1Ref.current.steer > 0.14,
+              jump: baseLeft.jump || gyroP1Ref.current.jump,
+              kick: baseLeft.kick || gyroP1Ref.current.kick,
+            }
+          : baseLeft;
+        const seat1IsBot = !useG2Hs && (isOffline || Boolean(effectiveState?.players[1]?.isBot));
+        const rightInp: HeadSoccerInput = useG2Hs
+          ? {
+              left: gyroP2Ref.current.steer < -0.14,
+              right: gyroP2Ref.current.steer > 0.14,
+              jump: gyroP2Ref.current.jump,
+              kick: gyroP2Ref.current.kick,
+            }
+          : seat1IsBot
+          ? chooseHeadSoccerAiInput(sim, 1)
+          : remoteInputRef.current;
         const events = stepHeadSoccerFrame(sim, [leftInp, rightInp], dt);
 
         if (events.kicked) {

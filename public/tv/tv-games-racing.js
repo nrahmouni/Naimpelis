@@ -10,14 +10,7 @@ var tvRacingHasController = false;
 var tvRacingFinished = false;
 var tvRacingEngineHandle = null;
 var tvRacingUsingFallback = false;
-var tvRacingRemoteKeys = {
-  left: false,
-  right: false,
-  up: false,
-  down: false,
-  nitro: false,
-  handbrake: false
-};
+var tvRacingRemoteKeys = { left: false, right: false, up: false, down: false, nitro: false, handbrake: false };
 
 function getTvRacingPublicOrigin() {
   if (typeof window.__RIFFAN_API_ORIGIN__ === 'string' && window.__RIFFAN_API_ORIGIN__.indexOf('http') === 0) {
@@ -91,17 +84,11 @@ function mountEs5RacingFallback(stageEl, opts) {
 
   var keyState = { left: false, right: false, up: false, down: false, nitro: false, handbrake: false };
   var gyroState = { steer: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 };
+  var p2GyroState = { steer: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 };
 
   var car = {
-    x: 0,
-    z: 0,
-    speed: 0,
-    lap: 1,
-    nitroPct: 100,
-    raceStartAt: Date.now() + 2200,
-    lapStartAt: 0,
-    bestLapMs: 0,
-    finished: false,
+    x: 0, z: 0, speed: 0, lap: 1, nitroPct: 100,
+    raceStartAt: Date.now() + 2200, lapStartAt: 0, bestLapMs: 0, finished: false,
     rivals: [
       { z: 65, x: -0.45, spd: 122, color: '#ef4444', trim: '#fecaca' },
       { z: 125, x: 0.45, spd: 118, color: '#22d3ee', trim: '#cffafe' },
@@ -110,18 +97,9 @@ function mountEs5RacingFallback(stageEl, opts) {
   };
 
   function resetRace() {
-    car.x = 0;
-    car.z = 0;
-    car.speed = 0;
-    car.lap = 1;
-    car.nitroPct = 100;
-    car.raceStartAt = Date.now() + 2000;
-    car.lapStartAt = 0;
-    car.bestLapMs = 0;
-    car.finished = false;
-    car.rivals[0].z = 65;
-    car.rivals[1].z = 125;
-    car.rivals[2].z = 185;
+    car.x = 0; car.z = 0; car.speed = 0; car.lap = 1; car.nitroPct = 100;
+    car.raceStartAt = Date.now() + 2000; car.lapStartAt = 0; car.bestLapMs = 0; car.finished = false;
+    car.rivals[0].z = 65; car.rivals[1].z = 125; car.rivals[2].z = 185;
   }
 
   function roadCurveAt(zPos) {
@@ -179,7 +157,14 @@ function mountEs5RacingFallback(stageEl, opts) {
 
     for (var ri = 0; ri < car.rivals.length; ri++) {
       var rv = car.rivals[ri];
-      if (!countingDown) rv.z += rv.spd * dt;
+      if (!countingDown) {
+        if (ri === 0 && now < p2GyroState.expiresAt) {
+          var p2TargetSpd = p2GyroState.throttle > 0.05 ? (p2GyroState.nitro ? 185 : 148) : (p2GyroState.brake > 0.05 ? 45 : 88);
+          rv.spd += (p2TargetSpd - rv.spd) * Math.min(1, dt * 4);
+          rv.x = Math.max(-1.35, Math.min(1.35, rv.x + p2GyroState.steer * dt * 1.4));
+        }
+        rv.z += rv.spd * dt;
+      }
       var dz = Math.abs(rv.z - car.z);
       if (dz < 8 && Math.abs(rv.x - car.x) < 0.34) {
         collisionImpact = 0.7;
@@ -364,13 +349,15 @@ function mountEs5RacingFallback(stageEl, opts) {
   rafId = requestAnimationFrame(loop);
 
   return {
-    setGyroInput: function (inp, ttlMs) {
-      gyroState.steer = inp.steer || 0;
-      gyroState.throttle = inp.throttle || 0;
-      gyroState.brake = inp.brake || 0;
-      gyroState.nitro = Boolean(inp.nitro);
-      gyroState.handbrake = Boolean(inp.handbrake);
-      gyroState.expiresAt = Date.now() + (ttlMs || 900);
+    setGyroInput: function (inp, ttlMs, playerSlot) {
+      var slot = playerSlot || inp.playerSlot || 1;
+      var target = slot === 2 ? p2GyroState : gyroState;
+      target.steer = inp.steer || 0;
+      target.throttle = inp.throttle || 0;
+      target.brake = inp.brake || 0;
+      target.nitro = Boolean(inp.nitro);
+      target.handbrake = Boolean(inp.handbrake);
+      target.expiresAt = Date.now() + (ttlMs || 900);
     },
     setRemoteKey: function (k) {
       keyState.left = Boolean(k.left);
@@ -400,25 +387,11 @@ function connectTvRacingGyroWs(roomId, statusBadgeEl) {
       if (tvRacingWs !== ws) return;
       ws.send(JSON.stringify({
         type: 'JOIN_ROOM',
-        payload: {
-          roomId: roomId,
-          roomName: 'Nitro GP 3D',
-          user: {
-            id: 'tv-race-' + roomId,
-            name: 'Smart TV 3D',
-            avatar: '🏎️',
-            color: '#7C3AED',
-            isHost: true
-          }
-        }
+        payload: { roomId: roomId, roomName: 'Nitro GP 3D', user: { id: 'tv-race-' + roomId, name: 'Smart TV 3D', avatar: '🏎️', color: '#7C3AED', isHost: true } }
       }));
       ws.send(JSON.stringify({
         type: 'GYRO_CONTROLLER_JOIN',
-        payload: {
-          roomId: roomId,
-          role: 'display',
-          deviceName: isTizenDevice ? 'Samsung Tizen 3D' : 'Smart TV 3D'
-        }
+        payload: { roomId: roomId, role: 'display', deviceName: isTizenDevice ? 'Samsung Tizen 3D' : 'Smart TV 3D' }
       }));
     };
     ws.onmessage = function (ev) {
@@ -427,34 +400,46 @@ function connectTvRacingGyroWs(roomId, statusBadgeEl) {
         var msg = JSON.parse(ev.data);
         if (msg.type === 'GYRO_PEER_STATUS' && msg.payload) {
           tvRacingHasController = Boolean(msg.payload.hasController);
+          var cList = msg.payload.controllers || [];
+          var hasP2 = cList.length >= 2;
+          for (var ci = 0; ci < cList.length; ci++) {
+            if (cList[ci] && cList[ci].slot === 2) hasP2 = true;
+          }
+          if (window.RiffanRacing3D && window.RiffanRacing3D.setPlayer2Connected) {
+            window.RiffanRacing3D.setPlayer2Connected(hasP2);
+          }
           if (statusBadgeEl) {
             if (tvRacingHasController) {
-              var cList = msg.payload.controllers || [];
               var dev = cList[0] && cList[0].deviceName ? cList[0].deviceName : 'Móvil';
               statusBadgeEl.className = 'tv-game-hud-pill accent-green';
-              statusBadgeEl.textContent = '📱 Volante conectado (' + dev + ')';
+              statusBadgeEl.textContent = hasP2
+                ? '📱 2P Split Screen (' + cList.length + ' móviles)'
+                : '📱 Volante conectado (' + dev + ')';
             } else {
               statusBadgeEl.className = 'tv-game-hud-pill accent-purple';
-              statusBadgeEl.textContent = '📱 Escanea el QR con tu móvil';
+              statusBadgeEl.textContent = '📱 Escanea el QR con 1 o 2 móviles';
             }
           }
         } else if (msg.type === 'GYRO_INPUT_RELAY' && msg.payload) {
           var inp = msg.payload;
+          var pSlot = inp.playerSlot === 2 ? 2 : 1;
           var parsedInp = {
+            playerSlot: pSlot,
             steer: typeof inp.steer === 'number' ? inp.steer : 0,
             throttle: typeof inp.throttle === 'number' ? inp.throttle : 0,
             brake: typeof inp.brake === 'number' ? inp.brake : 0,
             nitro: Boolean(inp.nitro),
-            handbrake: Boolean(inp.handbrake)
+            handbrake: Boolean(inp.handbrake),
+            cameraCycle: Boolean(inp.cameraCycle),
+            horn: Boolean(inp.horn)
           };
           if (tvRacingEngineHandle && tvRacingEngineHandle.setGyroInput) {
-            tvRacingEngineHandle.setGyroInput(parsedInp, 900);
+            tvRacingEngineHandle.setGyroInput(parsedInp, 900, pSlot);
           } else if (window.RiffanRacing3D && window.RiffanRacing3D.setGyroInput) {
-            window.RiffanRacing3D.setGyroInput(parsedInp, 900);
+            window.RiffanRacing3D.setGyroInput(parsedInp, 900, pSlot);
           }
-          if (inp.cameraCycle) {
+          if (pSlot === 1 && inp.cameraCycle) {
             if (tvRacingEngineHandle && tvRacingEngineHandle.cycleCamera) tvRacingEngineHandle.cycleCamera();
-            else if (window.RiffanRacing3D && window.RiffanRacing3D.cycleCamera) window.RiffanRacing3D.cycleCamera();
           }
           if (inp.horn) {
             if (tvRacingEngineHandle && tvRacingEngineHandle.triggerHorn) tvRacingEngineHandle.triggerHorn();
@@ -566,22 +551,22 @@ function startTvRacingGame(scr) {
           tvRacingWs.send(JSON.stringify({
             type: 'RACING_TV_TELEMETRY',
             payload: {
-              roomId: raceRoom,
-              speedKmh: t.speedKmh,
-              rpmPct: t.rpmPct,
-              gear: t.gear,
-              lap: t.lap,
-              totalLaps: t.totalLaps,
-              position: t.position,
-              totalCars: t.totalCars,
-              nitroPct: t.nitroPct,
-              collisionImpact: t.collisionImpact,
-              offroad: Boolean(t.offroad),
-              raceState: t.raceState,
-              lapTimeMs: t.lapTimeMs,
-              bestLapMs: t.bestLapMs
+              roomId: raceRoom, speedKmh: t.speedKmh, rpmPct: t.rpmPct, gear: t.gear, lap: t.lap, totalLaps: t.totalLaps,
+              position: t.position, totalCars: t.totalCars, nitroPct: t.nitroPct, collisionImpact: t.collisionImpact,
+              offroad: Boolean(t.offroad), raceState: t.raceState, lapTimeMs: t.lapTimeMs, bestLapMs: t.bestLapMs, targetSlot: 1
             }
           }));
+          if (t.splitScreenActive && typeof t.p2SpeedKmh === 'number') {
+            tvRacingWs.send(JSON.stringify({
+              type: 'RACING_TV_TELEMETRY',
+              payload: {
+                roomId: raceRoom, speedKmh: t.p2SpeedKmh, rpmPct: Math.min(99, 18 + Math.round((t.p2SpeedKmh % 60) * 1.3)),
+                gear: Math.min(7, Math.max(1, Math.floor(t.p2SpeedKmh / 48) + 1)), lap: t.p2Lap || 1, totalLaps: t.totalLaps,
+                position: t.p2Position || 2, totalCars: t.totalCars, nitroPct: typeof t.p2NitroPct === 'number' ? t.p2NitroPct : 100,
+                collisionImpact: t.p2CollisionImpact || 0, offroad: false, raceState: t.raceState, targetSlot: 2
+              }
+            }));
+          }
         } catch (e) {}
       }
     },

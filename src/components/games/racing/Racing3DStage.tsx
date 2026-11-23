@@ -50,7 +50,7 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
   const [showQrModal, setShowQrModal] = useState(false);
   const [contextLost, setContextLost] = useState(false);
   const [connectedControllers, setConnectedControllers] = useState<
-    Array<{ userId: string; deviceName: string }>
+    Array<{ userId: string; deviceName: string; slot?: 1 | 2 }>
   >([]);
   const [telemetry, setTelemetry] = useState<RacingCarTelemetry>({
     speedKmh: 0,
@@ -75,6 +75,7 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
     position: number;
     totalTimeMs: number;
     bestLapMs: number;
+    winnerSlot?: 1 | 2;
   } | null>(null);
 
   const effectiveRoomId = useMemo(
@@ -121,9 +122,30 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
               raceState: t.raceState,
               lapTimeMs: t.lapTimeMs,
               bestLapMs: t.bestLapMs,
+              targetSlot: 1,
             },
             socketService.getActiveRoomId()
           );
+          if (t.splitScreenActive && typeof t.p2SpeedKmh === 'number') {
+            socketService.sendRacingTelemetry(
+              {
+                roomId: socketService.getActiveRoomId() || effectiveRoomId,
+                speedKmh: t.p2SpeedKmh,
+                rpmPct: Math.min(99, 18 + Math.round((t.p2SpeedKmh % 60) * 1.3)),
+                gear: Math.min(7, Math.max(1, Math.floor(t.p2SpeedKmh / 48) + 1)),
+                lap: t.p2Lap || 1,
+                totalLaps: t.totalLaps,
+                position: t.p2Position || 2,
+                totalCars: t.totalCars,
+                nitroPct: t.p2NitroPct ?? 100,
+                collisionImpact: t.p2CollisionImpact || 0,
+                offroad: false,
+                raceState: t.raceState,
+                targetSlot: 2,
+              },
+              socketService.getActiveRoomId()
+            );
+          }
         }
       },
       onFinish: (summary) => {
@@ -150,12 +172,16 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
     const unsub = socketService.subscribe((ev) => {
       if (ev.type === 'GYRO_PEER_STATUS') {
         const list = Array.isArray(ev.payload.controllers)
-          ? (ev.payload.controllers as Array<{ userId: string; deviceName: string }>)
+          ? (ev.payload.controllers as Array<{ userId: string; deviceName: string; slot?: 1 | 2 }>)
           : [];
         setConnectedControllers(list);
+        const hasP2 = list.length >= 2 || list.some((c) => c.slot === 2);
+        engineRef.current?.setPlayer2Connected?.(hasP2);
       } else if (ev.type === 'GYRO_INPUT_RELAY') {
+        const slot: 1 | 2 = ev.payload.playerSlot === 2 ? 2 : 1;
         engineRef.current?.setGyroInput(
           {
+            playerSlot: slot,
             steer: Number(ev.payload.steer || 0),
             throttle: Number(ev.payload.throttle || 0),
             brake: Number(ev.payload.brake || 0),
@@ -164,7 +190,8 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
             cameraCycle: Boolean(ev.payload.cameraCycle),
             horn: Boolean(ev.payload.horn),
           },
-          950
+          950,
+          slot
         );
       } else if (ev.type === 'ROOM_STATE' && socketService.getActiveRoomId()) {
         socketService.joinGyroChannel('display', `${userName || 'Pantalla'} (3D)`);
@@ -234,13 +261,33 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
           <span className="font-mono text-cyan-300">{formatLapMs(telemetry.lapTimeMs)}</span>
         </div>
 
-        {connectedControllers.length > 0 && (
-          <div className="px-2.5 py-1.5 rounded-xl bg-emerald-600/85 border border-emerald-400/50 text-[11px] font-bold text-white flex items-center gap-1.5">
-            <Smartphone className="w-3.5 h-3.5" />
-            <span>{connectedControllers[0].deviceName}</span>
+        {connectedControllers.map((ctrl, idx) => {
+          const slot = ctrl.slot || (idx === 0 ? 1 : 2);
+          return (
+            <div
+              key={`${ctrl.userId}-${slot}`}
+              className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold text-white flex items-center gap-1.5 ${
+                slot === 2
+                  ? 'bg-rose-600/85 border-rose-400/50'
+                  : 'bg-emerald-600/85 border-emerald-400/50'
+              }`}
+            >
+              <Smartphone className="w-3.5 h-3.5" />
+              <span>J{slot}: {ctrl.deviceName}</span>
+            </div>
+          );
+        })}
+
+        {telemetry.splitScreenActive && (
+          <div className="px-2.5 py-1.5 rounded-xl bg-rose-600/90 border border-rose-300/50 text-[11px] font-black text-white">
+            SPLIT 2P · J2: {telemetry.p2SpeedKmh || 0} KM/H · POS #{telemetry.p2Position || 2}
           </div>
         )}
       </div>
+
+      {telemetry.splitScreenActive && (
+        <div className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 w-[3px] bg-gradient-to-b from-cyan-400 via-white/80 to-rose-500 shadow-[0_0_16px_rgba(34,211,238,0.8)] z-10" />
+      )}
 
       {/* Top Right Toolbar */}
       <div className="absolute top-3 right-3 flex items-center gap-1.5">
@@ -423,7 +470,9 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
                 Fin de Carrera
               </div>
               <h3 className="text-2xl font-black text-white">
-                Posición #{finishSummary.position}
+                {finishSummary.winnerSlot === 2
+                  ? '🏆 Victoria J2 (Móvil 2)'
+                  : `Posición #${finishSummary.position}`}
               </h3>
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">

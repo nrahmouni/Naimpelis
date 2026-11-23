@@ -330,12 +330,10 @@ export function buildFormulaGtCar(
       disposed = true;
       geometries.forEach((g) => g.dispose());
       materials.forEach((m) => m.dispose());
-      if (glbClone) {
-        glbClone.traverse((node) => {
-          const mesh = node as THREE.Mesh;
-          if (mesh.geometry) mesh.geometry.dispose();
-        });
+      if (glbClone && glbClone.parent) {
+        glbClone.parent.remove(glbClone);
       }
+      glbClone = null;
     },
   };
 }

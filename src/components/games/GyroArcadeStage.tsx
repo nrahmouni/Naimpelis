@@ -35,7 +35,8 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const keysRef = useRef({ left: false, right: false, up: false, down: false, action: false });
-  const gyroRef = useRef({ steer: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 });
+  const gyroP1Ref = useRef({ steer: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 });
+  const gyroP2Ref = useRef({ steer: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 });
   const lastTelemRef = useRef(0);
 
   const [muted, setMuted] = useState(false);
@@ -43,9 +44,9 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
   mutedRef.current = muted;
 
   const [showQrModal, setShowQrModal] = useState(false);
-  const [connectedControllers, setConnectedControllers] = useState<Array<{ userId: string; deviceName: string }>>([]);
+  const [connectedControllers, setConnectedControllers] = useState<Array<{ userId: string; deviceName: string; slot?: 1 | 2 }>>([]);
   const [hud, setHud] = useState({
-    leftText: gameId === 'gyrohockey' ? 'TÚ 0 - 0 CPU' : 'PUNTOS: 0 (x1)',
+    leftText: gameId === 'gyrohockey' ? 'J1 0 - 0 CPU' : 'PUNTOS: 0 (x1)',
     rightText: gameId === 'gyrohockey' ? 'SMASH 100%' : 'ESCUDO: 100%',
   });
   const [finishSummary, setFinishSummary] = useState<{ title: string; sub: string } | null>(null);
@@ -66,29 +67,31 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
 
   useEffect(() => {
     if (socketService.isConnected() && socketService.getActiveRoomId()) {
-      socketService.joinGyroChannel('display', `${userName || 'Jugador'} (${gameId})`);
+      socketService.joinGyroChannel('display', `${userName || 'Jugador'} (${gameId})`, effectiveRoomId, { gameId });
     }
     const unsub = socketService.subscribe((ev) => {
       if (ev.type === 'GYRO_PEER_STATUS') {
         const list = Array.isArray(ev.payload.controllers)
-          ? (ev.payload.controllers as Array<{ userId: string; deviceName: string }>)
+          ? (ev.payload.controllers as Array<{ userId: string; deviceName: string; slot?: 1 | 2 }>)
           : [];
         setConnectedControllers(list);
       } else if (ev.type === 'GYRO_INPUT_RELAY') {
-        gyroRef.current = {
+        const slot = ev.payload.playerSlot === 2 ? 2 : 1;
+        const target = slot === 2 ? gyroP2Ref : gyroP1Ref;
+        target.current = {
           steer: Number(ev.payload.steer || 0),
           throttle: Number(ev.payload.throttle || 0),
           brake: Number(ev.payload.brake || 0),
           nitro: Boolean(ev.payload.nitro),
           handbrake: Boolean(ev.payload.handbrake),
-          expiresAt: Date.now() + 950,
+          expiresAt: Date.now() + 1400,
         };
       } else if (ev.type === 'ROOM_STATE' && socketService.getActiveRoomId()) {
-        socketService.joinGyroChannel('display', `${userName || 'Jugador'} (${gameId})`);
+        socketService.joinGyroChannel('display', `${userName || 'Jugador'} (${gameId})`, effectiveRoomId, { gameId });
       }
     });
     return () => unsub();
-  }, [gameId, userName]);
+  }, [effectiveRoomId, gameId, userName]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -130,19 +133,31 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
     preloadArcadeSprites([
       'assets/games/space/darkPurple.png',
       'assets/games/space/playerShip1_blue.png',
+      'assets/games/space/playerShip2_orange.png',
       'assets/games/space/fire00.png',
       'assets/games/space/shield3.png',
       'assets/games/space/enemyRed3.png',
       'assets/games/space/meteorBrown_big1.png',
       'assets/games/space/laserBlue01.png',
+      'assets/games/space/laserRed01.png',
       'assets/games/puzzle/ballGrey.png',
       'assets/games/puzzle/particleStar.png',
       ...EXPLOSION_FRAMES,
     ]);
 
-    const pushTelemetry = (speedKmh: number, scoreL: number, scoreR: number, energy: number, impact: number, over: boolean) => {
+    const pushTelemetry = (
+      speedKmh: number,
+      scoreL: number,
+      scoreR: number,
+      energy: number,
+      impact: number,
+      over: boolean,
+      targetSlot?: 1 | 2,
+      hapticPulseMs?: number
+    ) => {
       const now = performance.now();
-      if (!socketService.isConnected() || !socketService.getActiveRoomId() || now - lastTelemRef.current < 95) return;
+      if (!socketService.isConnected() || !socketService.getActiveRoomId()) return;
+      if (!hapticPulseMs && now - lastTelemRef.current < 95) return;
       lastTelemRef.current = now;
       socketService.sendRacingTelemetry(
         {
@@ -158,6 +173,10 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
           collisionImpact: Math.min(1, Math.max(0, impact)),
           offroad: false,
           raceState: over ? 'finished' : 'racing',
+          targetSlot,
+          hapticPulseMs,
+          scoreP1: scoreL,
+          scoreP2: scoreR,
         },
         socketService.getActiveRoomId()
       );
@@ -188,7 +207,7 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
         }
       };
 
-      const hitMallet = (m: { x: number; y: number; vx: number; vy: number }, smashPower: number) => {
+      const hitMallet = (m: { x: number; y: number; vx: number; vy: number }, smashPower: number, slot: 1 | 2) => {
         const pk = st.puck;
         const dx = pk.x - m.x;
         const dy = pk.y - m.y;
@@ -206,6 +225,7 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
         st.impactFlash = 0.7;
         spawnSparks(pk.x - nx * PR, pk.y - ny * PR, smashPower > 120 ? '#FACC15' : '#38BDF8', 12);
         playGameSfx('chapas_kick', mutedRef.current);
+        pushTelemetry(spd * 0.32, st.sMe, st.sCpu, st.smashCharge, 0.85, st.over, slot, smashPower > 120 ? 70 : 35);
       };
 
       const servePuck = (dirY: number) => {
@@ -235,8 +255,11 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
               servePuck(st.sMe > st.sCpu ? -1 : 1);
             }
           } else {
-            const useGyro = Date.now() < gyroRef.current.expiresAt;
-            const smashOn = (keysRef.current.action || (useGyro && gyroRef.current.nitro)) && st.smashCharge > 10;
+            const tNow = Date.now();
+            const useGyro = tNow < gyroP1Ref.current.expiresAt;
+            const useGyroP2 = tNow < gyroP2Ref.current.expiresAt;
+            const smashOn = (keysRef.current.action || (useGyro && gyroP1Ref.current.nitro)) && st.smashCharge > 10;
+            const p2SmashOn = useGyroP2 && gyroP2Ref.current.nitro;
             st.smashCharge = smashOn ? Math.max(0, st.smashCharge - dt * 45) : Math.min(100, st.smashCharge + dt * 22);
 
             const sub = 3;
@@ -244,8 +267,8 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
             for (let k = 0; k < sub; k += 1) {
               const prevMx = st.me.x;
               const prevMy = st.me.y;
-              if (useGyro && Math.abs(gyroRef.current.steer) > 0.03) {
-                const targetX = W / 2 + gyroRef.current.steer * (W / 2 - pad - MR - 12);
+              if (useGyro && Math.abs(gyroP1Ref.current.steer) > 0.03) {
+                const targetX = W / 2 + gyroP1Ref.current.steer * (W / 2 - pad - MR - 12);
                 st.me.x += (targetX - st.me.x) * Math.min(1, sDt * 24);
               } else {
                 const dirX = (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0);
@@ -253,7 +276,7 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
               }
               let dirY = (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0);
               if (dirY === 0 && useGyro) {
-                dirY = gyroRef.current.throttle > 0.3 ? -1 : gyroRef.current.brake > 0.3 ? 1 : 0;
+                dirY = gyroP1Ref.current.throttle > 0.3 ? -1 : gyroP1Ref.current.brake > 0.3 ? 1 : 0;
               }
               st.me.y += dirY * 460 * sDt;
               st.me.x = Math.max(pad + MR, Math.min(W - pad - MR, st.me.x));
@@ -263,10 +286,19 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
 
               const prevCx = st.cpu.x;
               const prevCy = st.cpu.y;
-              const aiX = st.puck.y < H * 0.56 ? Math.max(pad + MR + 30, Math.min(W - pad - MR - 30, st.puck.x)) : W / 2;
-              const aiY = st.puck.y < H * 0.45 && st.puck.vy >= -40 ? Math.min(H / 2 - MR - 12, st.puck.y - 16) : 82;
-              st.cpu.x += Math.max(-440 * sDt, Math.min(440 * sDt, aiX - st.cpu.x));
-              st.cpu.y += Math.max(-340 * sDt, Math.min(340 * sDt, aiY - st.cpu.y));
+              if (useGyroP2) {
+                const targetX2 = W / 2 + gyroP2Ref.current.steer * (W / 2 - pad - MR - 12);
+                st.cpu.x += (targetX2 - st.cpu.x) * Math.min(1, sDt * 24);
+                const dirY2 = gyroP2Ref.current.throttle > 0.3 ? 1 : gyroP2Ref.current.brake > 0.3 ? -1 : 0;
+                st.cpu.y += dirY2 * 460 * sDt;
+              } else {
+                const aiX = st.puck.y < H * 0.56 ? Math.max(pad + MR + 30, Math.min(W - pad - MR - 30, st.puck.x)) : W / 2;
+                const aiY = st.puck.y < H * 0.45 && st.puck.vy >= -40 ? Math.min(H / 2 - MR - 12, st.puck.y - 16) : 82;
+                st.cpu.x += Math.max(-440 * sDt, Math.min(440 * sDt, aiX - st.cpu.x));
+                st.cpu.y += Math.max(-340 * sDt, Math.min(340 * sDt, aiY - st.cpu.y));
+              }
+              st.cpu.x = Math.max(pad + MR, Math.min(W - pad - MR, st.cpu.x));
+              st.cpu.y = Math.max(pad + MR, Math.min(H / 2 - MR - 6, st.cpu.y));
               st.cpu.vx = (st.cpu.x - prevCx) / sDt;
               st.cpu.vy = (st.cpu.y - prevCy) / sDt;
 
@@ -283,14 +315,18 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
                 if (st.puck.y < pad + PR) { st.puck.y = pad + PR; st.puck.vy = Math.abs(st.puck.vy) * 0.92; spawnSparks(st.puck.x, pad, '#F43F5E', 5); }
                 if (st.puck.y > H - pad - PR) { st.puck.y = H - pad - PR; st.puck.vy = -Math.abs(st.puck.vy) * 0.92; spawnSparks(st.puck.x, H - pad, '#8B5CF6', 5); }
               } else if (st.puck.y < pad - 6) {
-                st.sMe += 1; st.pauseT = 1.2; st.banner = '⚡ ¡GOLAZO NEON!'; st.bannerCol = '#4ADE80';
-                spawnSparks(st.puck.x, pad, '#4ADE80', 26); playGameSfx('chapas_goal', mutedRef.current); break;
+                st.sMe += 1; st.pauseT = 1.2; st.banner = '⚡ ¡GOLAZO J1!'; st.bannerCol = '#4ADE80';
+                spawnSparks(st.puck.x, pad, '#4ADE80', 26); playGameSfx('chapas_goal', mutedRef.current);
+                pushTelemetry(0, st.sMe, st.sCpu, st.smashCharge, 1, st.over, 1, 90);
+                break;
               } else if (st.puck.y > H - pad + 6) {
-                st.sCpu += 1; st.pauseT = 1.2; st.banner = '💥 ¡PUNTO CPU!'; st.bannerCol = '#FB7185';
-                spawnSparks(st.puck.x, H - pad, '#FB7185', 22); playGameSfx('board_capture', mutedRef.current); break;
+                st.sCpu += 1; st.pauseT = 1.2; st.banner = useGyroP2 ? '💥 ¡GOLAZO J2!' : '💥 ¡PUNTO CPU!'; st.bannerCol = '#FB7185';
+                spawnSparks(st.puck.x, H - pad, '#FB7185', 22); playGameSfx('board_capture', mutedRef.current);
+                if (useGyroP2) pushTelemetry(0, st.sMe, st.sCpu, st.smashCharge, 1, st.over, 2, 90);
+                break;
               }
-              hitMallet(st.me, smashOn ? 240 : 60);
-              hitMallet(st.cpu, 40);
+              hitMallet(st.me, smashOn ? 240 : 60, 1);
+              hitMallet(st.cpu, p2SmashOn ? 220 : 40, 2);
             }
 
             puckTrail.push({ x: st.puck.x, y: st.puck.y });
@@ -301,11 +337,11 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
               const won = st.sMe > st.sCpu;
               playGameSfx(won ? 'victory' : 'defeat', mutedRef.current);
               setFinishSummary({
-                title: won ? '🏆 ¡CAMPEÓN NEON AIR HOCKEY!' : '🤖 VICTORIA PARA LA CPU',
-                sub: `Marcador final: ${st.sMe} - ${st.sCpu}`,
+                title: won ? '🏆 ¡CAMPEÓN J1 AIR HOCKEY!' : useGyroP2 ? '🏆 ¡CAMPEÓN J2!' : '🤖 VICTORIA PARA LA CPU',
+                sub: `Marcador final: J1 ${st.sMe} - ${st.sCpu} ${useGyroP2 ? 'J2' : 'CPU'}`,
               });
             }
-            setHud({ leftText: `TÚ ${st.sMe} - ${st.sCpu} CPU`, rightText: `SMASH ${Math.round(st.smashCharge)}%` });
+            setHud({ leftText: `J1 ${st.sMe} - ${st.sCpu} ${useGyroP2 ? 'J2' : 'CPU'}`, rightText: `SMASH ${Math.round(st.smashCharge)}%` });
             pushTelemetry(Math.hypot(st.puck.vx, st.puck.vy) * 0.32, st.sMe, st.sCpu, st.smashCharge, st.impactFlash, st.over);
           }
         }
@@ -372,8 +408,9 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
     const stars = Array.from({ length: 75 }, () => ({ x: Math.random() * W, y: Math.random() * H, z: 0.4 + Math.random() * 1.6 }));
     const sp = {
       x: W / 2, y: H - 72, bank: 0, hp: 100, score: 0, wave: 1, combo: 1,
+      x2: W * 0.65, y2: H - 72, bank2: 0, p2FireCd: 0, p2ShieldOn: false,
       fireCd: 0, spawnCd: 0.4, shieldFlash: 0, over: false, bgScroll: 0, shieldOn: false,
-      bullets: [] as Array<{ x: number; y: number; vy: number }>,
+      bullets: [] as Array<{ x: number; y: number; vy: number; p2?: boolean }>,
       enemies: [] as Array<{ x: number; y: number; vx: number; vy: number; r: number; hp: number; kind: 'alien' | 'rock'; rot: number }>,
       parts: [] as Array<{ x: number; y: number; vx: number; vy: number; life: number; col: string }>,
       booms: [] as Array<{ x: number; y: number; size: number; t: number; dur: number }>,
@@ -409,11 +446,14 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
         if (sp.booms[i].t >= sp.booms[i].dur) sp.booms.splice(i, 1);
       }
 
+      const tNowSp = Date.now();
+      const useG2Sp = tNowSp < gyroP2Ref.current.expiresAt;
+
       if (!sp.over) {
-        const useGyro = Date.now() < gyroRef.current.expiresAt;
-        const moveIn = useGyro ? gyroRef.current.steer : ((keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0));
-        const fireOn = keysRef.current.action || (useGyro && (gyroRef.current.throttle > 0.2 || gyroRef.current.nitro));
-        sp.shieldOn = keysRef.current.up || (useGyro && gyroRef.current.handbrake);
+        const useGyro = tNowSp < gyroP1Ref.current.expiresAt;
+        const moveIn = useGyro ? gyroP1Ref.current.steer : ((keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0));
+        const fireOn = keysRef.current.action || (useGyro && (gyroP1Ref.current.throttle > 0.2 || gyroP1Ref.current.nitro));
+        sp.shieldOn = keysRef.current.up || (useGyro && gyroP1Ref.current.handbrake);
 
         sp.x = Math.max(40, Math.min(W - 40, sp.x + moveIn * 520 * dt));
         sp.bank += (moveIn * 0.42 - sp.bank) * Math.min(1, dt * 14);
@@ -425,6 +465,20 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
           sp.fireCd = 0.14;
           sp.bullets.push({ x: sp.x - 14, y: sp.y - 18, vy: -760 }, { x: sp.x + 14, y: sp.y - 18, vy: -760 });
           playGameSfx('chapas_kick', mutedRef.current);
+        }
+
+        if (useG2Sp) {
+          const moveIn2 = gyroP2Ref.current.steer;
+          const fire2 = gyroP2Ref.current.throttle > 0.2 || gyroP2Ref.current.nitro;
+          sp.p2ShieldOn = gyroP2Ref.current.handbrake;
+          sp.x2 = Math.max(40, Math.min(W - 40, sp.x2 + moveIn2 * 520 * dt));
+          sp.bank2 += (moveIn2 * 0.42 - sp.bank2) * Math.min(1, dt * 14);
+          sp.p2FireCd -= dt;
+          if (fire2 && sp.p2FireCd <= 0) {
+            sp.p2FireCd = 0.14;
+            sp.bullets.push({ x: sp.x2 - 14, y: sp.y2 - 18, vy: -760, p2: true }, { x: sp.x2 + 14, y: sp.y2 - 18, vy: -760, p2: true });
+            playGameSfx('chapas_kick', mutedRef.current);
+          }
         }
 
         sp.spawnCd -= dt;
@@ -467,9 +521,12 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
           }
           if (destroyed) continue;
 
-          if (Math.hypot(en.x - sp.x, en.y - sp.y) < en.r + 22) {
-            sp.hp -= sp.shieldOn ? 14 : 34; sp.combo = 1; sp.shieldFlash = 1; impact = 0.9;
+          const hitP1 = Math.hypot(en.x - sp.x, en.y - sp.y) < en.r + 22;
+          const hitP2 = useG2Sp && Math.hypot(en.x - sp.x2, en.y - sp.y2) < en.r + 22;
+          if (hitP1 || hitP2) {
+            sp.hp -= (hitP2 ? sp.p2ShieldOn : sp.shieldOn) ? 14 : 34; sp.combo = 1; sp.shieldFlash = 1; impact = 0.9;
             boom(en.x, en.y, '#FB7185', 18); playGameSfx('board_capture', mutedRef.current);
+            pushTelemetry(210, sp.wave, sp.combo, sp.hp, 1, sp.over, hitP2 ? 2 : 1, 75);
             sp.enemies.splice(i, 1);
             if (sp.hp <= 0) {
               sp.over = true;
@@ -494,8 +551,9 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
 
       for (const s of stars) { ctx.fillStyle = s.z > 1.3 ? '#BAE6FD' : '#64748B'; ctx.fillRect(s.x, s.y, s.z * 2, s.z * 2.5); }
       for (const bl of sp.bullets) {
-        if (!drawArcadeSprite(ctx, 'assets/games/space/laserBlue01.png', bl.x, bl.y, 10, 30)) {
-          ctx.fillStyle = '#22D3EE'; ctx.fillRect(bl.x - 2.5, bl.y - 12, 5, 18);
+        const lasPath = bl.p2 ? 'assets/games/space/laserRed01.png' : 'assets/games/space/laserBlue01.png';
+        if (!drawArcadeSprite(ctx, lasPath, bl.x, bl.y, 10, 30)) {
+          ctx.fillStyle = bl.p2 ? '#FB923C' : '#22D3EE'; ctx.fillRect(bl.x - 2.5, bl.y - 12, 5, 18);
         }
       }
 
@@ -542,6 +600,19 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
           }
         }
         ctx.restore();
+        if (useG2Sp) {
+          ctx.save(); ctx.translate(sp.x2, sp.y2); ctx.rotate(sp.bank2);
+          drawArcadeSprite(ctx, 'assets/games/space/fire00.png', -12, 24, 12, 22);
+          drawArcadeSprite(ctx, 'assets/games/space/fire00.png', 12, 24, 12, 22);
+          if (!drawArcadeSprite(ctx, 'assets/games/space/playerShip2_orange.png', 0, 0, 54, 42)) {
+            ctx.fillStyle = '#FB923C'; ctx.beginPath();
+            ctx.moveTo(0, -28); ctx.lineTo(-28, 18); ctx.lineTo(0, 12); ctx.lineTo(28, 18); ctx.closePath(); ctx.fill();
+          }
+          if (sp.p2ShieldOn || sp.shieldFlash > 0) {
+            drawArcadeSprite(ctx, 'assets/games/space/shield3.png', 0, 0, 76, 72, 0, sp.shieldFlash > 0 ? 0.88 : 0.58);
+          }
+          ctx.restore();
+        }
       }
       rafId = requestAnimationFrame(stepSpace);
     };
@@ -560,8 +631,8 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
             </h3>
             <p className="text-[11px] text-zinc-400">
               {connectedControllers.length > 0
-                ? `📱 Gyro conectado: ${connectedControllers[0]?.deviceName || 'Smartphone'}`
-                : pickLang(lang, { es: 'Teclado / Táctil o QR Giroscopio Móvil', ca: 'Teclat / Tàctil o QR Giroscopi Mòbil', en: 'Keyboard / Touch or QR Phone Gyro' })}
+                ? `📱 ${connectedControllers.length}/2 Móviles: ${connectedControllers.map((c, idx) => `J${c.slot || idx + 1}`).join(' · ')}`
+                : pickLang(lang, { es: 'Teclado / Táctil o QR Giroscopio Móvil (1-2P)', ca: 'Teclat / Tàctil o QR Giroscopi Mòbil (1-2P)', en: 'Keyboard / Touch or QR Phone Gyro (1-2P)' })}
             </p>
           </div>
         </div>

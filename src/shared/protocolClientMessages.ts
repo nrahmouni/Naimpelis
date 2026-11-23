@@ -462,6 +462,8 @@ export type ClientWsMessage =
         roomId: string;
         deviceName?: string;
         role: 'controller' | 'display';
+        preferredSlot?: 1 | 2;
+        gameId?: string;
       };
     }
   | {

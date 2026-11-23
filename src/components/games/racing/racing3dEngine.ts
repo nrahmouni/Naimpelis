@@ -138,6 +138,12 @@ export function createRacing3dEngine(
     0.25,
     800
   );
+  const cameraP2 = new THREE.PerspectiveCamera(
+    60,
+    Math.max(1, container.clientWidth) / Math.max(1, container.clientHeight),
+    0.25,
+    800
+  );
 
   // Lighting rig
   const hemiLight = new THREE.HemisphereLight(0xa5b4fc, 0x0f172a, 0.72);
@@ -261,6 +267,24 @@ export function createRacing3dEngine(
   let lastCycleCameraToggle = false;
   let lastHornToggle = false;
 
+  // Player 2 (slot 2 phone) physics driving rivals[0]
+  let p2Connected = false;
+  let px2 = 0;
+  let pz2 = 0;
+  let heading2 = 0;
+  let speedMps2 = 0;
+  let steerVisual2 = 0;
+  let bodyRoll2 = 0;
+  let bodyPitch2 = 0;
+  let wheelSpinAngle2 = 0;
+  let trackHintIdx2 = 0;
+  let nitroPct2 = 100;
+  let padBoostTimer2 = 0;
+  let collisionFlash2 = 0;
+  let cameraMode2: RacingCameraMode = 'chase';
+  let lastCycleCameraToggle2 = false;
+  let splitScreenActive = false;
+
   // Input channels (keyboard + remote mobile gyro)
   const keysState = {
     left: false,
@@ -272,6 +296,15 @@ export function createRacing3dEngine(
   };
 
   const gyroState: RacingGyroControlState & { expiresAt: number } = {
+    steer: 0,
+    throttle: 0,
+    brake: 0,
+    nitro: false,
+    handbrake: false,
+    expiresAt: 0,
+  };
+
+  const p2GyroState: RacingGyroControlState & { expiresAt: number } = {
     steer: 0,
     throttle: 0,
     brake: 0,
@@ -327,13 +360,31 @@ export function createRacing3dEngine(
         _vPos.z + _vNorm.z * rival.lateral
       );
       rival.rig.root.rotation.set(0, Math.atan2(_vTan.x, _vTan.z) + Math.PI, 0);
+      if (idx === 0) {
+        px2 = _vPos.x + _vNorm.x * rival.lateral;
+        pz2 = _vPos.z + _vNorm.z * rival.lateral;
+        heading2 = Math.atan2(_vTan.x, _vTan.z);
+        speedMps2 = 0;
+        steerVisual2 = 0;
+        bodyRoll2 = 0;
+        bodyPitch2 = 0;
+        nitroPct2 = 100;
+        padBoostTimer2 = 0;
+        collisionFlash2 = 0;
+        trackHintIdx2 = Math.floor(startOffsets[0] * circuit.samples.length);
+      }
     });
 
-    // Snap camera behind player immediately
+    // Snap cameras behind P1 & P2 immediately
     const fwdX = Math.sin(heading);
     const fwdZ = Math.cos(heading);
     camera.position.set(px - fwdX * 10.5, 4.4, pz - fwdZ * 10.5);
     camera.lookAt(px + fwdX * 12, 1.4, pz + fwdZ * 12);
+
+    const fwdX2 = Math.sin(heading2);
+    const fwdZ2 = Math.cos(heading2);
+    cameraP2.position.set(px2 - fwdX2 * 10.5, 4.4, pz2 - fwdZ2 * 10.5);
+    cameraP2.lookAt(px2 + fwdX2 * 12, 1.4, pz2 + fwdZ2 * 12);
   }
 
   placeGridStart();
@@ -538,8 +589,155 @@ export function createRacing3dEngine(
       );
     }
 
-    // 7. Update AI rivals along spline + car-to-car bump avoidance
-    for (let i = 0; i < rivals.length; i += 1) {
+    // 7. Update P2 (on rivals[0] when split-screen active) + AI rivals
+    const p2Driving = p2Connected || nowMs < p2GyroState.expiresAt;
+    splitScreenActive = p2Driving;
+
+    if (p2Driving && rivals.length > 0) {
+      const r0 = rivals[0];
+      let p2Steer = nowMs < p2GyroState.expiresAt ? -p2GyroState.steer : 0;
+      let p2Throttle = nowMs < p2GyroState.expiresAt ? p2GyroState.throttle : 0;
+      let p2Brake = nowMs < p2GyroState.expiresAt ? p2GyroState.brake : 0;
+      let p2NitroWanted = nowMs < p2GyroState.expiresAt && p2GyroState.nitro;
+      const p2Handbrake = nowMs < p2GyroState.expiresAt && p2GyroState.handbrake;
+
+      if (raceState === 'countdown') {
+        p2Throttle = 0;
+        p2Brake = 0;
+        p2NitroWanted = false;
+      } else if (raceState === 'finished') {
+        p2Throttle = 0.25;
+        p2Brake = 0;
+        p2NitroWanted = false;
+      }
+
+      const proj2Info = circuit.projectOntoTrack(px2, pz2, trackHintIdx2);
+      trackHintIdx2 = proj2Info.sampleIndex;
+      const p2Proj = proj2Info.proj;
+      const offroad2 = Math.abs(p2Proj.distFromCenter) > TRACK_HALF_WIDTH;
+
+      for (const pad of circuit.boostPads) {
+        const ds = Math.abs(((p2Proj.s - pad.s + 1.5) % 1) - 0.5);
+        if (ds < 0.012 && Math.abs(p2Proj.distFromCenter - pad.lateralOffset) < 2.8) {
+          padBoostTimer2 = 0.9;
+          nitroPct2 = Math.min(100, nitroPct2 + 18);
+        }
+      }
+
+      padBoostTimer2 = Math.max(0, padBoostTimer2 - dt);
+      const nitroUsing2 = raceState === 'racing' && p2NitroWanted && nitroPct2 > 2;
+      if (nitroUsing2) nitroPct2 = Math.max(0, nitroPct2 - 28 * dt);
+      else nitroPct2 = Math.min(100, nitroPct2 + (offroad2 ? 4 : 9.5) * dt);
+      const boosting2 = nitroUsing2 || padBoostTimer2 > 0;
+
+      const topSpeed2 = offroad2 ? 46 : boosting2 ? 96 : 78;
+      const accel2 = boosting2 ? 54 : 34;
+      if (p2Throttle > 0) speedMps2 += p2Throttle * accel2 * dt;
+      if (p2Brake > 0) {
+        if (speedMps2 > 2) speedMps2 -= p2Brake * 48 * dt;
+        else speedMps2 -= p2Brake * 18 * dt;
+      }
+      speedMps2 -= speedMps2 * (offroad2 ? 2.1 : 0.48) * dt;
+      if (p2Throttle === 0 && p2Brake === 0 && Math.abs(speedMps2) < 0.6) speedMps2 = 0;
+      speedMps2 = Math.max(-18, Math.min(topSpeed2, speedMps2));
+
+      const speedRatio2 = Math.min(1, Math.abs(speedMps2) / 22);
+      const dirSign2 = speedMps2 >= -0.5 ? 1 : -1;
+      const steerRate2 = 2.05 * (p2Handbrake ? 1.48 : 1.0) * (0.28 + 0.72 * speedRatio2);
+      heading2 += p2Steer * steerRate2 * dirSign2 * dt;
+
+      const fwdX2 = Math.sin(heading2);
+      const fwdZ2 = Math.cos(heading2);
+      px2 += fwdX2 * speedMps2 * dt;
+      pz2 += fwdZ2 * speedMps2 * dt;
+
+      const after2 = circuit.projectOntoTrack(px2, pz2, trackHintIdx2).proj;
+      if (Math.abs(after2.distFromCenter) > TRACK_BARRIER_HALF_WIDTH) {
+        const sign2 = Math.sign(after2.distFromCenter);
+        px2 = after2.closestX + after2.normalX * sign2 * TRACK_BARRIER_HALF_WIDTH;
+        pz2 = after2.closestZ + after2.normalZ * sign2 * TRACK_BARRIER_HALF_WIDTH;
+        if (Math.abs(speedMps2) > 15) {
+          collisionFlash2 = Math.min(1, Math.abs(speedMps2) / 70);
+          audio.playImpact(collisionFlash2 * 0.7);
+        }
+        speedMps2 *= 0.78;
+        const trackYaw2 = Math.atan2(after2.tangentX, after2.tangentZ);
+        const diff2 = Math.atan2(Math.sin(trackYaw2 - heading2), Math.cos(trackYaw2 - heading2));
+        heading2 += diff2 * 0.28;
+      } else {
+        collisionFlash2 = Math.max(0, collisionFlash2 - dt * 3.5);
+      }
+
+      r0.lastS = r0.s;
+      r0.s = after2.s;
+      r0.lateral = after2.distFromCenter;
+      r0.speedMps = speedMps2;
+      if (r0.s > 0.4 && r0.s < 0.65) r0.passedHalf = true;
+      if (r0.lastS > 0.85 && r0.s < 0.15 && r0.passedHalf && raceState === 'racing') {
+        r0.passedHalf = false;
+        if (r0.lap < TOTAL_RACE_LAPS) {
+          r0.lap += 1;
+          audio.playLapChime(false);
+        } else {
+          raceState = 'finished';
+          audio.playLapChime(true);
+          callbacks.onFinish?.({
+            position: 1,
+            totalTimeMs: Math.round(raceElapsedMs),
+            bestLapMs: Math.round(bestLapMs || raceElapsedMs),
+            winnerSlot: 2,
+          });
+        }
+      }
+
+      steerVisual2 = THREE.MathUtils.damp(steerVisual2, p2Steer * 0.44, 12, dt);
+      bodyRoll2 = THREE.MathUtils.damp(bodyRoll2, -p2Steer * Math.min(1, Math.abs(speedMps2) / 45) * 0.085, 10, dt);
+      bodyPitch2 = THREE.MathUtils.damp(
+        bodyPitch2,
+        (p2Throttle * (boosting2 ? 0.05 : 0.025) - p2Brake * 0.045) * (speedMps2 > 2 ? 1 : 0),
+        10,
+        dt
+      );
+      r0.rig.root.position.set(px2, 0, pz2);
+      r0.rig.root.rotation.set(0, heading2 + Math.PI, 0);
+      r0.rig.bodyGroup.rotation.z = bodyRoll2;
+      r0.rig.bodyGroup.rotation.x = bodyPitch2;
+      r0.rig.frontWheelPivots[0].rotation.y = steerVisual2;
+      r0.rig.frontWheelPivots[1].rotation.y = steerVisual2;
+      wheelSpinAngle2 -= speedMps2 * dt * 2.4;
+      for (const w of r0.rig.wheelSpinGroups) w.rotation.x = wheelSpinAngle2;
+      r0.rig.brakeLightMaterial.emissiveIntensity = p2Brake > 0.1 ? 3.2 : 0.9;
+      const showFlames2 = boosting2 && speedMps2 > 8;
+      r0.rig.nitroFlames[0].visible = showFlames2;
+      r0.rig.nitroFlames[1].visible = showFlames2;
+
+      // Update P2 Chase Camera
+      if (cameraMode2 === 'hood') {
+        _vCamTarget.set(px2 + fwdX2 * 0.45, 1.38, pz2 + fwdZ2 * 0.45);
+        _vCamLook.set(px2 + fwdX2 * 32, 1.15, pz2 + fwdZ2 * 32);
+        cameraP2.position.lerp(_vCamTarget, 0.72);
+      } else {
+        const backDist2 = cameraMode2 === 'far' ? 12.6 : 8.4;
+        const height2 = cameraMode2 === 'far' ? 4.8 : 3.25;
+        const lookAhead2 = cameraMode2 === 'far' ? 14 : 11;
+        _vCamTarget.set(px2 - fwdX2 * backDist2, height2, pz2 - fwdZ2 * backDist2);
+        _vCamLook.set(px2 + fwdX2 * lookAhead2, 1.25, pz2 + fwdZ2 * lookAhead2);
+        cameraP2.position.x = THREE.MathUtils.damp(cameraP2.position.x, _vCamTarget.x, 7.2, dt);
+        cameraP2.position.y = THREE.MathUtils.damp(cameraP2.position.y, _vCamTarget.y, 7.2, dt);
+        cameraP2.position.z = THREE.MathUtils.damp(cameraP2.position.z, _vCamTarget.z, 7.2, dt);
+      }
+      _mRot.lookAt(cameraP2.position, _vCamLook, _vUp);
+      _qDesired.setFromRotationMatrix(_mRot);
+      cameraP2.quaternion.slerp(_qDesired, cameraMode2 === 'hood' ? 0.55 : 0.22);
+      const speedKmh2 = Math.max(0, Math.round(Math.abs(speedMps2) * 3.6));
+      const targetFov2 = 58 + Math.min(20, (speedKmh2 / 330) * 18) + (boosting2 ? 4 : 0);
+      if (Math.abs(cameraP2.fov - targetFov2) > 0.1) {
+        cameraP2.fov = THREE.MathUtils.damp(cameraP2.fov, targetFov2, 6, dt);
+        cameraP2.updateProjectionMatrix();
+      }
+    }
+
+    for (let i = p2Driving ? 1 : 0; i < rivals.length; i += 1) {
       const r = rivals[i];
       if (raceState !== 'countdown') {
         const playerProgress = playerLap + playerS;
@@ -572,6 +770,28 @@ export function createRacing3dEngine(
         w.rotation.x = r.wheelAngle;
       }
 
+      if (i === 0) {
+        px2 = rx;
+        pz2 = rz;
+        heading2 = Math.atan2(_vTan.x, _vTan.z);
+        speedMps2 = r.speedMps;
+      }
+
+      // Car-to-P2 collision if split screen active
+      if (p2Driving) {
+        const dx2 = px2 - rx;
+        const dz2 = pz2 - rz;
+        const dSq2 = dx2 * dx2 + dz2 * dz2;
+        if (dSq2 > 0.001 && dSq2 < 2.95 * 2.95) {
+          const dist2 = Math.sqrt(dSq2);
+          const push2 = (2.95 - dist2) * 0.65;
+          px2 += (dx2 / dist2) * push2;
+          pz2 += (dz2 / dist2) * push2;
+          speedMps2 *= 0.86;
+          collisionFlash2 = 0.65;
+        }
+      }
+
       // Car-to-player collision check
       const dx = px - rx;
       const dz = pz - rz;
@@ -585,6 +805,26 @@ export function createRacing3dEngine(
         speedMps *= 0.86;
         collisionFlash = 0.65;
         audio.playImpact(0.6);
+      }
+    }
+
+    // P1-to-P2 direct collision check when split-screen active
+    if (p2Driving && rivals.length > 0) {
+      const dx12 = px - px2;
+      const dz12 = pz - pz2;
+      const dSq12 = dx12 * dx12 + dz12 * dz12;
+      if (dSq12 > 0.001 && dSq12 < 2.95 * 2.95) {
+        const dist12 = Math.sqrt(dSq12);
+        const halfPush = (2.95 - dist12) * 0.45;
+        px += (dx12 / dist12) * halfPush;
+        pz += (dz12 / dist12) * halfPush;
+        px2 -= (dx12 / dist12) * halfPush;
+        pz2 -= (dz12 / dist12) * halfPush;
+        speedMps *= 0.9;
+        speedMps2 *= 0.9;
+        collisionFlash = 0.6;
+        collisionFlash2 = 0.6;
+        audio.playImpact(0.55);
       }
     }
 
@@ -653,6 +893,7 @@ export function createRacing3dEngine(
     if (nowMs - lastTelemetryEmitMs >= 50) {
       lastTelemetryEmitMs = nowMs;
       const dotHeading = fwdX * pAfter.tangentX + fwdZ * pAfter.tangentZ;
+      const p2Pos = p2Driving && rivals[0] ? computeScorePosition(rivals[0].lap + rivals[0].s) : undefined;
       callbacks.onTelemetry?.({
         speedKmh,
         rpmPct: Math.round(rpmPct),
@@ -671,8 +912,23 @@ export function createRacing3dEngine(
         totalTimeMs: Math.round(raceElapsedMs),
         cameraMode,
         wrongWay: dotHeading < -0.35 && speedKmh > 25,
+        splitScreenActive,
+        p2SpeedKmh: p2Driving ? Math.max(0, Math.round(Math.abs(speedMps2) * 3.6)) : undefined,
+        p2Lap: p2Driving && rivals[0] ? rivals[0].lap : undefined,
+        p2Position: p2Pos,
+        p2NitroPct: p2Driving ? Math.round(nitroPct2) : undefined,
+        p2CollisionImpact: p2Driving ? Number(collisionFlash2.toFixed(2)) : undefined,
       });
     }
+  }
+
+  function computeScorePosition(targetScore: number): number {
+    let rank = 1;
+    if (playerLap + playerS > targetScore) rank += 1;
+    for (const r of rivals) {
+      if (r.lap + r.s > targetScore) rank += 1;
+    }
+    return rank;
   }
 
   function computePlayerPosition(): number {
@@ -690,7 +946,41 @@ export function createRacing3dEngine(
     if (contextLost) return;
     const dt = Math.min(clock.getDelta(), 0.05);
     stepSimulation(dt, performance.now());
-    renderer.render(scene, camera);
+
+    const w = Math.max(1, container.clientWidth || window.innerWidth || 1280);
+    const h = Math.max(1, container.clientHeight || window.innerHeight || 720);
+
+    if (splitScreenActive) {
+      const halfW = Math.floor(w / 2);
+      const rightW = Math.max(1, w - halfW);
+      const leftAspect = halfW / h;
+      const rightAspect = rightW / h;
+      if (Math.abs(camera.aspect - leftAspect) > 0.01) {
+        camera.aspect = leftAspect;
+        camera.updateProjectionMatrix();
+      }
+      if (Math.abs(cameraP2.aspect - rightAspect) > 0.01) {
+        cameraP2.aspect = rightAspect;
+        cameraP2.updateProjectionMatrix();
+      }
+      renderer.setScissorTest(true);
+      renderer.setViewport(0, 0, halfW, h);
+      renderer.setScissor(0, 0, halfW, h);
+      renderer.render(scene, camera);
+
+      renderer.setViewport(halfW, 0, rightW, h);
+      renderer.setScissor(halfW, 0, rightW, h);
+      renderer.render(scene, cameraP2);
+    } else {
+      renderer.setScissorTest(false);
+      const fullAspect = w / h;
+      if (Math.abs(camera.aspect - fullAspect) > 0.01) {
+        camera.aspect = fullAspect;
+        camera.updateProjectionMatrix();
+      }
+      renderer.setViewport(0, 0, w, h);
+      renderer.render(scene, camera);
+    }
   }
 
   rafId = window.requestAnimationFrame(animate);
@@ -725,29 +1015,47 @@ export function createRacing3dEngine(
   window.addEventListener('keydown', unlockAudioHandler, { passive: true });
 
   return {
-    setGyroInput: (input, expiresInMs = 950) => {
+    setGyroInput: (input, expiresInMs = 950, playerSlot) => {
       audio.unlock();
+      const targetSlot = playerSlot ?? input.playerSlot ?? 1;
+      const targetGyro = targetSlot === 2 ? p2GyroState : gyroState;
+      if (targetSlot === 2) p2Connected = true;
       if (typeof input.steer === 'number') {
-        gyroState.steer = THREE.MathUtils.clamp(input.steer, -1, 1);
+        targetGyro.steer = THREE.MathUtils.clamp(input.steer, -1, 1);
       }
       if (typeof input.throttle === 'number') {
-        gyroState.throttle = THREE.MathUtils.clamp(input.throttle, 0, 1);
+        targetGyro.throttle = THREE.MathUtils.clamp(input.throttle, 0, 1);
       }
       if (typeof input.brake === 'number') {
-        gyroState.brake = THREE.MathUtils.clamp(input.brake, 0, 1);
+        targetGyro.brake = THREE.MathUtils.clamp(input.brake, 0, 1);
       }
-      if (typeof input.nitro === 'boolean') gyroState.nitro = input.nitro;
-      if (typeof input.handbrake === 'boolean') gyroState.handbrake = input.handbrake;
-      if (input.cameraCycle && !lastCycleCameraToggle) {
-        const order: RacingCameraMode[] = ['chase', 'hood', 'far'];
-        cameraMode = order[(order.indexOf(cameraMode) + 1) % order.length];
+      if (typeof input.nitro === 'boolean') targetGyro.nitro = input.nitro;
+      if (typeof input.handbrake === 'boolean') targetGyro.handbrake = input.handbrake;
+      if (targetSlot === 2) {
+        if (input.cameraCycle && !lastCycleCameraToggle2) {
+          const order: RacingCameraMode[] = ['chase', 'hood', 'far'];
+          cameraMode2 = order[(order.indexOf(cameraMode2) + 1) % order.length];
+        }
+        lastCycleCameraToggle2 = Boolean(input.cameraCycle);
+      } else {
+        if (input.cameraCycle && !lastCycleCameraToggle) {
+          const order: RacingCameraMode[] = ['chase', 'hood', 'far'];
+          cameraMode = order[(order.indexOf(cameraMode) + 1) % order.length];
+        }
+        lastCycleCameraToggle = Boolean(input.cameraCycle);
       }
-      lastCycleCameraToggle = Boolean(input.cameraCycle);
       if (input.horn && !lastHornToggle) {
         audio.playHorn();
       }
       lastHornToggle = Boolean(input.horn);
-      gyroState.expiresAt = performance.now() + expiresInMs;
+      targetGyro.expiresAt = performance.now() + expiresInMs;
+    },
+    setPlayer2Connected: (connected: boolean) => {
+      p2Connected = connected;
+      if (!connected) {
+        p2GyroState.expiresAt = 0;
+        splitScreenActive = false;
+      }
     },
     setKeyboardState: (keys) => {
       audio.unlock();

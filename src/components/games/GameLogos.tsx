@@ -9,6 +9,7 @@ export type UnifiedGameId =
   | 'headsoccer'
   | 'penalty'
   | 'racing3d'
+  | 'pingpong'
   | 'gyrohockey'
   | 'gyrospace'
   | 'bomberman'
@@ -100,27 +101,75 @@ export const GameLogoArtwork: React.FC<GameLogoArtworkProps> = ({
     case 'penalty':
       return (
         <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
-          <rect width="240" height="140" fill="#0A1324" />
+          <defs>
+            <linearGradient id="pn-sky2" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#040814" />
+              <stop offset="100%" stopColor="#132347" />
+            </linearGradient>
+          </defs>
+          <rect width="240" height="140" fill="url(#pn-sky2)" />
+          <polygon points="34,0 92,98 8,98" fill="#BAE6FD" opacity="0.09" />
+          <polygon points="206,0 232,98 148,98" fill="#BAE6FD" opacity="0.09" />
+          <circle cx="34" cy="14" r="7" fill="#FEF08A" opacity="0.65" />
+          <circle cx="206" cy="14" r="7" fill="#FEF08A" opacity="0.65" />
           <rect x="0" y="92" width="240" height="48" fill="#14532D" />
-          <path d="M36 96 V28 H204 V96" fill="rgba(255,255,255,0.06)" stroke="#F8FAFC" strokeWidth="4.5" strokeLinejoin="round" />
-          <circle cx="170" cy="48" r="14" fill="none" stroke="#22D3EE" strokeWidth="2.5" strokeDasharray="4 3" />
-          <path d="M72 118 Q122 68 168 50" fill="none" stroke="#A3E635" strokeWidth="2.5" strokeDasharray="5 4" />
-          <circle cx="70" cy="116" r="12" fill="#FFFFFF" stroke="#0F172A" strokeWidth="2" />
-          <circle cx="118" cy="70" r="10" fill="#FDE68A" />
-          <rect x="104" y="80" width="28" height="22" rx="6" fill="#EF4444" />
+          <rect x="0" y="106" width="240" height="16" fill="rgba(255,255,255,0.05)" />
+          <path d="M36 96 V26 H204 V96" fill="rgba(255,255,255,0.08)" stroke="#F8FAFC" strokeWidth="4.5" strokeLinejoin="round" />
+          <circle cx="170" cy="46" r="14" fill="none" stroke="#22D3EE" strokeWidth="2.5" strokeDasharray="4 3" />
+          <path d="M72 120 Q128 58 170 46" fill="none" stroke="#FACC15" strokeWidth="2.8" strokeDasharray="5 4" />
+          <circle cx="70" cy="118" r="12" fill="#FFFFFF" stroke="#0F172A" strokeWidth="2.2" />
+          <polygon points="70,113 74.5,116.5 73,122 67,122 65.5,116.5" fill="#18181B" />
+          <circle cx="118" cy="66" r="10" fill="#FED7AA" />
+          <rect x="104" y="76" width="28" height="22" rx="6" fill="#DC2626" stroke="#FACC15" strokeWidth="1.5" />
+          <circle cx="94" cy="78" r="6" fill="#FFFFFF" stroke="#06B6D4" strokeWidth="1.8" />
+          <circle cx="142" cy="78" r="6" fill="#FFFFFF" stroke="#06B6D4" strokeWidth="1.8" />
         </svg>
       );
 
     case 'racing3d':
       return (
         <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
-          <rect width="240" height="140" fill="#070A14" />
-          <polygon points="36,140 94,54 146,54 204,140" fill="#1E2436" />
-          <line x1="120" y1="56" x2="120" y2="140" stroke="#F8FAFC" strokeWidth="2" strokeDasharray="7 7" />
-          <path d="M84 96 L96 76 L144 76 L156 96 Z" fill="#7C3AED" stroke="#22D3EE" strokeWidth="2" />
-          <rect x="78" y="94" width="84" height="14" rx="5" fill="#0F172A" stroke="#7C3AED" strokeWidth="1.5" />
-          <circle cx="88" cy="108" r="7" fill="#38BDF8" />
-          <circle cx="152" cy="108" r="7" fill="#38BDF8" />
+          <defs>
+            <linearGradient id="rc-sky" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#070A18" />
+              <stop offset="100%" stopColor="#1B1040" />
+            </linearGradient>
+          </defs>
+          <rect width="240" height="140" fill="url(#rc-sky)" />
+          <polygon points="18,140 88,46 152,46 222,140" fill="#182034" stroke="#38BDF8" strokeWidth="1.5" />
+          <line x1="120" y1="48" x2="120" y2="140" stroke="#F8FAFC" strokeWidth="2" strokeDasharray="7 7" />
+          {/* Left Blue Car (P1) */}
+          <path d="M52 104 L68 78 L112 78 L126 104 Z" fill="#0284C7" stroke="#22D3EE" strokeWidth="2" />
+          <rect x="48" y="100" width="80" height="14" rx="5" fill="#0F172A" stroke="#38BDF8" strokeWidth="1.5" />
+          <circle cx="62" cy="114" r="7" fill="#38BDF8" />
+          <circle cx="114" cy="114" r="7" fill="#38BDF8" />
+          {/* Right Red Car (P2) */}
+          <path d="M128 84 L142 62 L184 62 L196 84 Z" fill="#E11D48" stroke="#FDA4AF" strokeWidth="2" />
+          <rect x="124" y="82" width="76" height="12" rx="4" fill="#1E1B4B" stroke="#FB7185" strokeWidth="1.4" />
+          <circle cx="138" cy="94" r="6" fill="#FB7185" />
+          <circle cx="186" cy="94" r="6" fill="#FB7185" />
+        </svg>
+      );
+
+    case 'pingpong':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <defs>
+            <linearGradient id="pp-tbl" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#064E3B" />
+              <stop offset="100%" stopColor="#047857" />
+            </linearGradient>
+          </defs>
+          <rect width="240" height="140" fill="#07101E" />
+          <polygon points="36,24 204,24 226,122 14,122" fill="url(#pp-tbl)" stroke="#FFFFFF" strokeWidth="3" />
+          <line x1="120" y1="24" x2="120" y2="122" stroke="rgba(255,255,255,0.45)" strokeWidth="2" />
+          <rect x="22" y="68" width="196" height="6" fill="#F8FAFC" />
+          <ellipse cx="70" cy="98" rx="22" ry="16" fill="#0284C7" stroke="#E0F2FE" strokeWidth="2.5" />
+          <rect x="65" y="112" width="10" height="18" rx="3" fill="#B45309" />
+          <ellipse cx="172" cy="46" rx="18" ry="13" fill="#E11D48" stroke="#FFE4E6" strokeWidth="2.5" />
+          <rect x="168" y="20" width="8" height="14" rx="3" fill="#B45309" />
+          <path d="M74 96 Q120 52 170 48" fill="none" stroke="#FDE047" strokeWidth="2.4" strokeDasharray="4 4" />
+          <circle cx="124" cy="60" r="8.5" fill="#FACC15" stroke="#FFFFFF" strokeWidth="1.5" />
         </svg>
       );
 
@@ -137,7 +186,7 @@ export const GameLogoArtwork: React.FC<GameLogoArtworkProps> = ({
           <rect x="16" y="14" width="208" height="112" rx="14" fill="#071226" stroke="#22D3EE" strokeWidth="2.5" />
           <line x1="120" y1="14" x2="120" y2="126" stroke="#7C3AED" strokeWidth="2" strokeDasharray="5 4" />
           <circle cx="120" cy="70" r="24" fill="none" stroke="rgba(56,189,248,0.45)" strokeWidth="2" />
-          <circle cx="62" cy="70" r="20" fill="#7C3AED" stroke="#22D3EE" strokeWidth="3.5" />
+          <circle cx="62" cy="70" r="20" fill="#0284C7" stroke="#22D3EE" strokeWidth="3.5" />
           <circle cx="62" cy="70" r="7" fill="#0F172A" stroke="#FFFFFF" strokeWidth="1.8" />
           <circle cx="178" cy="70" r="20" fill="#E11D48" stroke="#FDA4AF" strokeWidth="3.5" />
           <circle cx="178" cy="70" r="7" fill="#0F172A" stroke="#FFFFFF" strokeWidth="1.8" />
@@ -158,12 +207,12 @@ export const GameLogoArtwork: React.FC<GameLogoArtworkProps> = ({
           <circle cx="32" cy="24" r="2" fill="#BAE6FD" />
           <circle cx="198" cy="20" r="2.5" fill="#FDE047" />
           <circle cx="212" cy="108" r="2" fill="#E9D5FF" />
-          <circle cx="46" cy="96" r="17" fill="#334155" stroke="#38BDF8" strokeWidth="2.5" />
-          <polygon points="196,42 216,66 176,66" fill="#E11D48" stroke="#FACC15" strokeWidth="2" />
-          <rect x="78" y="16" width="5" height="24" rx="2.5" fill="#22D3EE" />
-          <rect x="157" y="16" width="5" height="24" rx="2.5" fill="#22D3EE" />
-          <polygon points="120,24 162,102 134,88 120,106 106,88 78,102" fill="#7C3AED" stroke="#22D3EE" strokeWidth="2.8" />
-          <ellipse cx="120" cy="62" rx="8.5" ry="17" fill="#E0F2FE" />
+          <circle cx="40" cy="96" r="16" fill="#334155" stroke="#38BDF8" strokeWidth="2.5" />
+          <polygon points="198,38 216,60 180,60" fill="#E11D48" stroke="#FACC15" strokeWidth="2" />
+          <rect x="86" y="14" width="4" height="20" rx="2" fill="#22D3EE" />
+          <rect x="150" y="18" width="4" height="20" rx="2" fill="#FB923C" />
+          <polygon points="88,28 122,96 98,84 88,100 78,84 54,96" fill="#2563EB" stroke="#22D3EE" strokeWidth="2.4" />
+          <polygon points="154,38 184,96 164,86 154,100 144,86 124,96" fill="#EA580C" stroke="#FDBA74" strokeWidth="2.2" />
         </svg>
       );
 

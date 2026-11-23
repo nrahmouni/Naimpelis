@@ -117,6 +117,14 @@ export function createRacing2dFallbackEngine(
     handbrake: false,
     expiresAt: 0,
   };
+  const p2GyroState: RacingGyroControlState & { expiresAt: number } = {
+    steer: 0,
+    throttle: 0,
+    brake: 0,
+    nitro: false,
+    handbrake: false,
+    expiresAt: 0,
+  };
 
   const rivals: FallbackRival[] = [1, 2, 3].map((idx) => ({
     s: 0.991 + idx * 0.002,
@@ -474,11 +482,22 @@ export function createRacing2dFallbackEngine(
       }
     }
 
-    for (const r of rivals) {
+    for (let ri = 0; ri < rivals.length; ri += 1) {
+      const r = rivals[ri];
       if (raceState !== 'countdown') {
-        const gap = playerLap + playerS - (r.lap + r.s);
-        const targetSpd = Math.max(44, r.basePace + clampNum(gap * 11, -8, 12));
-        r.speedMps += (targetSpd - r.speedMps) * Math.min(1, dt * 2.2);
+        if (ri === 0 && nowMs < p2GyroState.expiresAt) {
+          const p2Boost = p2GyroState.nitro ? 92 : 78;
+          const targetSpd = p2GyroState.throttle > 0.05 ? p2Boost : p2GyroState.brake > 0.05 ? 18 : 34;
+          r.speedMps += (targetSpd - r.speedMps) * Math.min(1, dt * 3.5);
+          r.lateral = clampNum(r.lateral + p2GyroState.steer * dt * 1.4, -1.2, 1.2);
+          r.targetLateral = r.lateral;
+        } else {
+          const gap = playerLap + playerS - (r.lap + r.s);
+          const targetSpd = Math.max(44, r.basePace + clampNum(gap * 11, -8, 12));
+          r.speedMps += (targetSpd - r.speedMps) * Math.min(1, dt * 2.2);
+          if (Math.random() < 0.015) r.targetLateral = (Math.random() - 0.5) * 1.1;
+          r.lateral += (r.targetLateral - r.lateral) * Math.min(1, dt * 1.6);
+        }
         r.lastS = r.s;
         r.s = wrapS(r.s + (r.speedMps * dt) / TRACK_LENGTH_M);
         if (r.s > 0.4 && r.s < 0.65) r.passedHalf = true;
@@ -486,8 +505,6 @@ export function createRacing2dFallbackEngine(
           r.passedHalf = false;
           r.lap += 1;
         }
-        if (Math.random() < 0.015) r.targetLateral = (Math.random() - 0.5) * 1.1;
-        r.lateral += (r.targetLateral - r.lateral) * Math.min(1, dt * 1.6);
       }
     }
 
@@ -544,21 +561,23 @@ export function createRacing2dFallbackEngine(
   rafId = window.requestAnimationFrame(stepAndDraw);
 
   return {
-    setGyroInput: (input, expiresInMs = 950) => {
+    setGyroInput: (input, expiresInMs = 950, playerSlot) => {
       audio.unlock();
-      if (typeof input.steer === 'number') gyroState.steer = clampNum(input.steer, -1, 1);
-      if (typeof input.throttle === 'number') gyroState.throttle = clampNum(input.throttle, 0, 1);
-      if (typeof input.brake === 'number') gyroState.brake = clampNum(input.brake, 0, 1);
-      if (typeof input.nitro === 'boolean') gyroState.nitro = input.nitro;
-      if (typeof input.handbrake === 'boolean') gyroState.handbrake = input.handbrake;
-      if (input.cameraCycle && !lastCycleCameraToggle) {
+      const targetSlot = playerSlot ?? input.playerSlot ?? 1;
+      const targetGyro = targetSlot === 2 ? p2GyroState : gyroState;
+      if (typeof input.steer === 'number') targetGyro.steer = clampNum(input.steer, -1, 1);
+      if (typeof input.throttle === 'number') targetGyro.throttle = clampNum(input.throttle, 0, 1);
+      if (typeof input.brake === 'number') targetGyro.brake = clampNum(input.brake, 0, 1);
+      if (typeof input.nitro === 'boolean') targetGyro.nitro = input.nitro;
+      if (typeof input.handbrake === 'boolean') targetGyro.handbrake = input.handbrake;
+      if (targetSlot === 1 && input.cameraCycle && !lastCycleCameraToggle) {
         const order: RacingCameraMode[] = ['chase', 'hood', 'far'];
         cameraMode = order[(order.indexOf(cameraMode) + 1) % order.length];
       }
-      lastCycleCameraToggle = Boolean(input.cameraCycle);
+      if (targetSlot === 1) lastCycleCameraToggle = Boolean(input.cameraCycle);
       if (input.horn && !lastHornToggle) audio.playHorn();
       lastHornToggle = Boolean(input.horn);
-      gyroState.expiresAt = performance.now() + expiresInMs;
+      targetGyro.expiresAt = performance.now() + expiresInMs;
     },
     setKeyboardState: (keys) => {
       audio.unlock();

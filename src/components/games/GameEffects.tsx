@@ -43,6 +43,9 @@ export type GameSfxKind =
   | 'chapas_bounce'
   | 'chapas_goal'
   | 'pinturillo_pop'
+  | 'pingpong_hit'
+  | 'pingpong_bounce'
+  | 'pingpong_point'
   | 'error';
 
 const MUTE_STORAGE_KEY = 'naim_games_sfx_muted';
@@ -204,6 +207,16 @@ export function playGameSfx(kind: GameSfxKind, muted = false): void {
         break;
       case 'pinturillo_pop':
         tone(600, 0.04, 'sine', 0.08, 0, 320);
+        break;
+      case 'pingpong_hit':
+        tone(560, 0.045, 'triangle', 0.1, 0, 410);
+        break;
+      case 'pingpong_bounce':
+        tone(960, 0.028, 'sine', 0.065, 0, 740);
+        break;
+      case 'pingpong_point':
+        tone(523.25, 0.07, 'triangle', 0.09, 0);
+        tone(783.99, 0.14, 'triangle', 0.1, 0.07);
         break;
       case 'error':
         tone(150, 0.11, 'sawtooth', 0.06, 0);

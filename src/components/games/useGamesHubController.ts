@@ -470,6 +470,7 @@ export function useGamesHubController({
     if (
       gt === 'penalty' ||
       gt === 'racing3d' ||
+      gt === 'pingpong' ||
       gt === 'gyrohockey' ||
       gt === 'gyrospace' ||
       gt === 'bomberman' ||

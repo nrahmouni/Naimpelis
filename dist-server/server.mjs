@@ -652,12 +652,12 @@ var init_tizenWgtBuilder = __esm({
 
 // server.ts
 import dns3 from "dns";
-import fs19 from "fs";
+import fs20 from "fs";
 import express3 from "express";
 import compression from "compression";
 import { createServer } from "http";
 import { WebSocketServer as WebSocketServer3 } from "ws";
-import path17 from "path";
+import path18 from "path";
 import { fileURLToPath as fileURLToPath3 } from "url";
 
 // server/config/env.ts
@@ -8994,6 +8994,10 @@ function getTvBuildSignature(rootDir) {
       }
     } catch {
     }
+  }
+  const vendorRacingBundle = path6.join(baseDir, "vendor", "riffan-racing-3d.iife.js");
+  if (fs7.existsSync(vendorRacingBundle)) {
+    candidatePaths.push(vendorRacingBundle);
   }
   for (const srvFile of [
     path6.resolve(rootDir, "server", "routes", "proxies", "dvbCodecProbe.ts"),
@@ -33571,7 +33575,37 @@ var GAME_SLUG_TO_ID = {
   racing: "racing3d",
   racing3d: "racing3d",
   "nitro-gp": "racing3d",
-  f1: "racing3d"
+  f1: "racing3d",
+  "air-hockey": "gyrohockey",
+  "hockey-gyro": "gyrohockey",
+  gyrohockey: "gyrohockey",
+  "galaxia-gyro": "gyrospace",
+  "space-gyro": "gyrospace",
+  "nave-3d": "gyrospace",
+  gyrospace: "gyrospace",
+  bomberman: "bomberman",
+  "bomberman-party": "bomberman",
+  pacman: "pacman",
+  "pac-man": "pacman",
+  laberinto: "pacman",
+  tetris: "tetris",
+  hextris: "hextris",
+  "2048": "game2048",
+  game2048: "game2048",
+  flappy: "flappy",
+  "clumsy-bird": "flappy",
+  pajaro: "flappy",
+  hexgl: "hexgl",
+  "hex-gl": "hexgl",
+  arkanoid: "arkanoid",
+  brickit: "arkanoid",
+  invaders: "invaders",
+  "space-invaders": "invaders",
+  marcianitos: "invaders",
+  tvtrivia: "tvtrivia",
+  "quiz-tv": "tvtrivia",
+  quiz: "tvtrivia",
+  trivia: "tvtrivia"
 };
 var GAME_ID_TO_SLUG = {
   pool: "billar",
@@ -33582,6 +33616,18 @@ var GAME_ID_TO_SLUG = {
   headsoccer: "head-soccer",
   penalty: "penaltis",
   racing3d: "coches-3d",
+  gyrohockey: "air-hockey",
+  gyrospace: "galaxia-gyro",
+  bomberman: "bomberman",
+  pacman: "pacman",
+  tetris: "tetris",
+  hextris: "hextris",
+  game2048: "2048",
+  flappy: "flappy",
+  hexgl: "hexgl",
+  arkanoid: "arkanoid",
+  invaders: "invaders",
+  tvtrivia: "quiz-tv",
   parchis: "parchis",
   uno: "uno",
   chess: "ajedrez",
@@ -33597,6 +33643,18 @@ var GAME_TITLES = {
   headsoccer: { es: "Head Soccer", ca: "Head Soccer", en: "Head Soccer" },
   penalty: { es: "Penaltis Mundial Pro", ca: "Penals Mundial Pro", en: "World Cup Penalties Pro" },
   racing3d: { es: "Nitro GP 3D \xB7 Volante M\xF3vil", ca: "Nitro GP 3D \xB7 Volant M\xF2bil", en: "Nitro GP 3D \xB7 Phone Wheel" },
+  gyrohockey: { es: "Neon Air Hockey Gyro", ca: "Neon Air Hockey Gyro", en: "Neon Air Hockey Gyro" },
+  gyrospace: { es: "Galaxia Interceptor Gyro", ca: "Gal\xE0xia Interceptor Gyro", en: "Galaxy Interceptor Gyro" },
+  bomberman: { es: "Bomberman Party Arena", ca: "Bomberman Party Arena", en: "Bomberman Party Arena" },
+  pacman: { es: "Pac-Man Arcade HD", ca: "Pac-Man Arcade HD", en: "Pac-Man Arcade HD" },
+  tetris: { es: "Tetris Sprint TV", ca: "Tetris Sprint TV", en: "Tetris Sprint TV" },
+  hextris: { es: "Hextris Neon TV", ca: "Hextris Neon TV", en: "Hextris Neon TV" },
+  game2048: { es: "2048 TV Edition", ca: "2048 TV Edition", en: "2048 TV Edition" },
+  flappy: { es: "Clumsy Bird TV", ca: "Clumsy Bird TV", en: "Clumsy Bird TV" },
+  hexgl: { es: "HexGL Hover 3D", ca: "HexGL Hover 3D", en: "HexGL Hover 3D" },
+  arkanoid: { es: "BrickIt Arkanoid Neon", ca: "BrickIt Arkanoid Neon", en: "BrickIt Arkanoid Neon" },
+  invaders: { es: "Space Invaders Retro", ca: "Space Invaders Retro", en: "Space Invaders Retro" },
+  tvtrivia: { es: "Riffan TV Quiz Show", ca: "Riffan TV Quiz Show", en: "Riffan TV Quiz Show" },
   parchis: { es: "Parch\xEDs", ca: "Parx\xEDs", en: "Parch\xEDs" },
   uno: { es: "UNO", ca: "UNO", en: "UNO" },
   chess: { es: "Ajedrez", ca: "Escacs", en: "Chess" },
@@ -33633,12 +33691,16 @@ var SYSTEM_RESERVED_SLUGS = /* @__PURE__ */ new Set([
   "epg",
   "riffantv",
   "tv",
+  "tvlg",
+  "lgtv",
   "ads",
   "naimcine-ads",
   "auth-bridge",
   "design-system",
   "admin",
   "samsung",
+  "webos",
+  "lg",
   "volante",
   "controller",
   "sala",
@@ -33717,6 +33779,9 @@ function parseAppRoute(pathname, search = "") {
   if (seg0 === "samsung" || params.get("samsung") === "1") {
     return { kind: "system", systemType: "samsung", roomId: queryRoomId };
   }
+  if (seg0 === "webos" || seg0 === "lg" || params.get("webos") === "1") {
+    return { kind: "system", systemType: "webos", roomId: queryRoomId };
+  }
   if (seg0 === "volante" || seg0 === "controller" || params.get("volante") === "1") {
     const rawPair = (params.get("pair") || "").replace(/\D/g, "").slice(0, 4);
     return {
@@ -33726,7 +33791,7 @@ function parseAppRoute(pathname, search = "") {
       pairCode: rawPair.length === 4 ? rawPair : void 0
     };
   }
-  if (params.get("tvpair") === "1" || seg0 === "tv") {
+  if (params.get("tvpair") === "1" || seg0 === "tv" || seg0 === "tvlg" || seg0 === "lgtv") {
     return { kind: "system", systemType: "tv", roomId: queryRoomId };
   }
   if (segments.length === 0) {
@@ -58403,6 +58468,18 @@ var wsGameInviteRespondSchema = z.object({
     "headsoccer",
     "penalty",
     "racing3d",
+    "gyrohockey",
+    "gyrospace",
+    "bomberman",
+    "pacman",
+    "tetris",
+    "hextris",
+    "game2048",
+    "flappy",
+    "hexgl",
+    "arkanoid",
+    "invaders",
+    "tvtrivia",
     "poker",
     "blackjack",
     "parchis",
@@ -58423,6 +58500,18 @@ var wsGameSwitchSchema = z.object({
     "headsoccer",
     "penalty",
     "racing3d",
+    "gyrohockey",
+    "gyrospace",
+    "bomberman",
+    "pacman",
+    "tetris",
+    "hextris",
+    "game2048",
+    "flappy",
+    "hexgl",
+    "arkanoid",
+    "invaders",
+    "tvtrivia",
     "poker",
     "blackjack",
     "parchis",
@@ -66705,7 +66794,19 @@ var handleCasinoAndVoiceMessage = (type, payload, ws, ctx) => {
       checkers: "Damas",
       connect4: "Conecta 4",
       penalty: "Penaltis Mundial",
-      racing3d: "Nitro GP 3D"
+      racing3d: "Nitro GP 3D",
+      gyrohockey: "Neon Air Hockey Gyro",
+      gyrospace: "Galaxia Interceptor Gyro",
+      bomberman: "Bomberman Party Arena",
+      pacman: "Pac-Man Arcade HD",
+      tetris: "Tetris Sprint TV",
+      hextris: "Hextris Neon TV",
+      game2048: "2048 TV Edition",
+      flappy: "Clumsy Bird TV",
+      hexgl: "HexGL Hover 3D",
+      arkanoid: "BrickIt Arkanoid",
+      invaders: "Space Invaders Retro",
+      tvtrivia: "Riffan TV Quiz Show"
     };
     const sysMsg = {
       id: `game-switch-${Date.now()}`,
@@ -69234,7 +69335,7 @@ function registerAdminRoutes(app2, deps) {
 import fs18 from "fs";
 import path16 from "path";
 init_tizenConfigGenerator();
-var MAX_MANIFEST_FILES = 240;
+var MAX_MANIFEST_FILES = 400;
 var SKIP_EXTS = /* @__PURE__ */ new Set([".apk", ".wgt", ".map", ".ipa", ".aab"]);
 var SKIP_FILES = /* @__PURE__ */ new Set(["sw.js", "config.xml", "registerSW.js"]);
 function walkSafeDistFiles(baseDir, currentDir, out) {
@@ -69292,9 +69393,15 @@ function registerTizenRoutes(app2, rootDir) {
       "tv/tv-player-core.js",
       "tv/tv-player-modes.js",
       "tv/tv-hub.js",
+      "tv/tv-game-sprites.js",
       "tv/tv-games.js",
       "tv/tv-games-soccer.js",
       "tv/tv-games-racing.js",
+      "tv/tv-games-gyro.js",
+      "tv/tv-games-puzzle.js",
+      "tv/tv-games-action.js",
+      "tv/tv-games-retro.js",
+      "tv/tv-games-quiz.js",
       "tv/tv-nav-voice.js",
       "vendor/hls.min.js",
       "vendor/riffan-racing-3d.iife.js"
@@ -69304,6 +69411,7 @@ function registerTizenRoutes(app2, rootDir) {
         files.push(rel);
       }
     }
+    walkSafeDistFiles(publicDir, path16.join(publicDir, "assets", "games"), files);
     res.setHeader("Cache-Control", "no-cache");
     return res.json({
       ok: true,
@@ -69417,10 +69525,801 @@ function registerTizenRoutes(app2, rootDir) {
   });
 }
 
+// server/routes/webosRoutes.ts
+import fs19 from "fs";
+import path17 from "path";
+
+// src/utils/webosConfigGenerator.ts
+var PUBLISHED_RIFFAN_ORIGIN = "https://riffan.ai.studio";
+function isEphemeralPreviewHost(hostname) {
+  const host = String(hostname || "").trim().toLowerCase();
+  if (!host) return true;
+  return host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host.startsWith("ais-dev-") || host.startsWith("ais-pre-") || host.endsWith(".run.app");
+}
+function normalizeWebOsAppId(raw) {
+  const cleaned = String(raw || "").trim().toLowerCase().replace(/_/g, "-").replace(/[^a-z0-9.-]/g, "").replace(/\.{2,}/g, ".").replace(/^[.-]+|[.-]+$/g, "").slice(0, 64);
+  if (!cleaned || cleaned.length < 3 || !cleaned.includes(".")) {
+    if (!cleaned) return "com.riffantv.webos";
+    const compact = cleaned.replace(/\./g, "").slice(0, 24) || "riffantv";
+    return `com.${compact}.webos`;
+  }
+  return cleaned;
+}
+function normalizeWebOsVersion(raw) {
+  const match = String(raw || "").trim().match(/^(\d{1,3})\.(\d{1,3})(?:\.(\d{1,4}))?/);
+  if (!match) return "1.0.0";
+  return `${Number(match[1])}.${Number(match[2])}.${Number(match[3] || 0)}`;
+}
+function buildWebOsAppInfoObject(options = {}) {
+  const id = normalizeWebOsAppId(options.appId);
+  const version = normalizeWebOsVersion(options.version);
+  const title = (options.appName || "RiffanTV").trim().slice(0, 48) || "RiffanTV";
+  const vendor = (options.vendor || "RiffanTV").trim().slice(0, 48) || "RiffanTV";
+  const main = (options.mainFile || "index.html").trim() || "index.html";
+  const icon = (options.iconFile || "icon.png").trim() || "icon.png";
+  const largeIcon = (options.largeIconFile || "largeIcon.png").trim() || "largeIcon.png";
+  const tier = options.targetTier || "universal";
+  const manifest = {
+    id,
+    version,
+    vendor,
+    type: "web",
+    main,
+    title,
+    icon,
+    largeIcon,
+    bgColor: "#000000",
+    iconColor: "#7C3AED",
+    splashBackground: icon,
+    transparent: false,
+    disableBackHistoryAPI: true,
+    handlesRelaunch: true,
+    resolution: "1920x1080",
+    supportMouse: true,
+    enableKeyboard: true,
+    uiRevision: 2,
+    requiredPermissions: ["time.query", "activity.operation", "application.operation"]
+  };
+  if (tier === "modern") {
+    manifest.allowVideoOnMiniView = true;
+    manifest.supportsAudioGuidance = true;
+  }
+  return manifest;
+}
+function generateWebOsAppInfoJson(options = {}) {
+  return `${JSON.stringify(buildWebOsAppInfoObject(options), null, 2)}
+`;
+}
+
+// src/utils/debianIpkPacker.ts
+var AR_GLOBAL_HEADER = "!<arch>\n";
+var CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) {
+      c = (c & 1) !== 0 ? 3988292384 ^ c >>> 1 : c >>> 1;
+    }
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+function crc32Bytes(data) {
+  let crc = 4294967295;
+  for (let i = 0; i < data.length; i++) {
+    crc = CRC32_TABLE[(crc ^ data[i]) & 255] ^ crc >>> 8;
+  }
+  return (crc ^ 4294967295) >>> 0;
+}
+function encodeUtf8(text2) {
+  if (typeof TextEncoder !== "undefined") {
+    return new TextEncoder().encode(text2);
+  }
+  return Uint8Array.from(Buffer.from(text2, "utf8"));
+}
+function concatUint8Arrays(chunks) {
+  let total = 0;
+  for (const c of chunks) total += c.length;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.length;
+  }
+  return out;
+}
+function writeAsciiFixed(target, offset, value, width) {
+  const bytes = encodeUtf8(value);
+  for (let i = 0; i < width && i < bytes.length; i++) {
+    target[offset + i] = bytes[i];
+  }
+}
+function writeOctalField(target, offset, val, width) {
+  const oct = Math.max(0, Math.floor(val)).toString(8);
+  const padded = oct.padStart(width - 1, "0").slice(-(width - 1));
+  writeAsciiFixed(target, offset, `${padded}\0`, width);
+}
+async function gzipBytesDeterministic(raw) {
+  if (typeof CompressionStream === "function") {
+    try {
+      const cs = new CompressionStream("gzip");
+      const writer = cs.writable.getWriter();
+      const copy = new Uint8Array(raw.byteLength);
+      copy.set(raw);
+      void writer.write(copy);
+      void writer.close();
+      const compressed = await new Response(cs.readable).arrayBuffer();
+      const out = new Uint8Array(compressed);
+      if (out.length >= 10 && out[0] === 31 && out[1] === 139) {
+        return out;
+      }
+    } catch {
+    }
+  }
+  const blocks = [];
+  blocks.push(new Uint8Array([31, 139, 8, 0, 0, 0, 0, 0, 0, 3]));
+  if (raw.length === 0) {
+    blocks.push(new Uint8Array([1, 0, 0, 255, 255]));
+  } else {
+    let pos = 0;
+    while (pos < raw.length) {
+      const chunkLen = Math.min(65535, raw.length - pos);
+      const isFinal = pos + chunkLen >= raw.length ? 1 : 0;
+      const nlen = ~chunkLen & 65535;
+      const hdr = new Uint8Array(5);
+      hdr[0] = isFinal;
+      hdr[1] = chunkLen & 255;
+      hdr[2] = chunkLen >>> 8 & 255;
+      hdr[3] = nlen & 255;
+      hdr[4] = nlen >>> 8 & 255;
+      blocks.push(hdr);
+      blocks.push(raw.subarray(pos, pos + chunkLen));
+      pos += chunkLen;
+    }
+  }
+  const trailer = new Uint8Array(8);
+  const crc = crc32Bytes(raw);
+  const size = raw.length >>> 0;
+  trailer[0] = crc & 255;
+  trailer[1] = crc >>> 8 & 255;
+  trailer[2] = crc >>> 16 & 255;
+  trailer[3] = crc >>> 24 & 255;
+  trailer[4] = size & 255;
+  trailer[5] = size >>> 8 & 255;
+  trailer[6] = size >>> 16 & 255;
+  trailer[7] = size >>> 24 & 255;
+  blocks.push(trailer);
+  return concatUint8Arrays(blocks);
+}
+function buildTarHeader(entry, mtimeSec) {
+  const header = new Uint8Array(512);
+  let namePart = entry.name;
+  let prefixPart = "";
+  if (encodeUtf8(entry.name).length > 99) {
+    const slashIdx = entry.name.lastIndexOf("/");
+    if (slashIdx > 0 && slashIdx <= 154) {
+      prefixPart = entry.name.slice(0, slashIdx);
+      namePart = entry.name.slice(slashIdx + 1);
+    }
+  }
+  writeAsciiFixed(header, 0, namePart.slice(0, 99), 100);
+  writeOctalField(header, 100, entry.mode ?? (entry.isDir ? 493 : 420), 8);
+  writeOctalField(header, 108, 0, 8);
+  writeOctalField(header, 116, 0, 8);
+  writeOctalField(header, 124, entry.isDir ? 0 : entry.bytes?.length ?? 0, 12);
+  writeOctalField(header, 136, mtimeSec, 12);
+  for (let i = 148; i < 156; i++) header[i] = 32;
+  header[156] = entry.isDir ? 53 : 48;
+  writeAsciiFixed(header, 257, "ustar\0", 6);
+  writeAsciiFixed(header, 263, "00", 2);
+  if (prefixPart) {
+    writeAsciiFixed(header, 345, prefixPart.slice(0, 154), 155);
+  }
+  let sum = 0;
+  for (let i = 0; i < 512; i++) sum += header[i];
+  const sumStr = sum.toString(8).padStart(6, "0").slice(-6);
+  writeAsciiFixed(header, 148, `${sumStr}\0 `, 8);
+  return header;
+}
+function buildTarArchive(entries, mtimeSec) {
+  const blocks = [];
+  for (const entry of entries) {
+    blocks.push(buildTarHeader(entry, mtimeSec));
+    if (!entry.isDir && entry.bytes && entry.bytes.length > 0) {
+      blocks.push(entry.bytes);
+      const rem = entry.bytes.length % 512;
+      if (rem !== 0) {
+        blocks.push(new Uint8Array(512 - rem));
+      }
+    }
+  }
+  blocks.push(new Uint8Array(1024));
+  return concatUint8Arrays(blocks);
+}
+function buildArMember(name, bytes, mtimeSec) {
+  const hdr = new Uint8Array(60);
+  hdr.fill(32);
+  writeAsciiFixed(hdr, 0, name.slice(0, 16).padEnd(16, " "), 16);
+  writeAsciiFixed(hdr, 16, String(mtimeSec).padEnd(12, " "), 12);
+  writeAsciiFixed(hdr, 28, "0     ", 6);
+  writeAsciiFixed(hdr, 34, "0     ", 6);
+  writeAsciiFixed(hdr, 40, "100644  ", 8);
+  writeAsciiFixed(hdr, 48, String(bytes.length).padEnd(10, " "), 10);
+  hdr[58] = 96;
+  hdr[59] = 10;
+  const needsPad = bytes.length % 2 === 1;
+  return needsPad ? concatUint8Arrays([hdr, bytes, new Uint8Array([10])]) : concatUint8Arrays([hdr, bytes]);
+}
+async function packWebOsIpkBinary(options) {
+  const mtimeSec = Math.floor(Date.now() / 1e3);
+  const cleanTitle = String(options.appName || "RiffanTV").replace(/[\r\n]/g, " ").trim();
+  const baseAppPath = `./usr/palm/applications/${options.appId}`;
+  const debianBinaryBytes = encodeUtf8("2.0\n");
+  const controlText = [
+    `Package: ${options.appId}`,
+    `Version: ${options.version}`,
+    "Section: misc",
+    "Priority: optional",
+    "Architecture: all",
+    "Maintainer: RiffanTV <dev@riffan.ai.studio>",
+    `Description: ${cleanTitle} Smart TV app for LG webOS`,
+    "webOS-Package-Format-Version: 2",
+    "Source: riffantv",
+    ""
+  ].join("\n");
+  const controlTar = buildTarArchive(
+    [{ name: "./control", isDir: false, bytes: encodeUtf8(controlText) }],
+    mtimeSec
+  );
+  const controlTarGz = await gzipBytesDeterministic(controlTar);
+  const dirSet = /* @__PURE__ */ new Set([
+    "./usr/",
+    "./usr/palm/",
+    "./usr/palm/applications/",
+    `${baseAppPath}/`
+  ]);
+  const tarEntries = [];
+  for (const f of options.files) {
+    const cleanRel = f.relPath.replace(/^\/+/, "").replace(/\\/g, "/");
+    const parts = cleanRel.split("/");
+    let cur = baseAppPath;
+    for (let i = 0; i < parts.length - 1; i++) {
+      cur = `${cur}/${parts[i]}`;
+      dirSet.add(`${cur}/`);
+    }
+  }
+  for (const dirPath of Array.from(dirSet)) {
+    tarEntries.push({ name: dirPath, isDir: true });
+  }
+  for (const f of options.files) {
+    const cleanRel = f.relPath.replace(/^\/+/, "").replace(/\\/g, "/");
+    tarEntries.push({
+      name: `${baseAppPath}/${cleanRel}`,
+      isDir: false,
+      bytes: f.bytes
+    });
+  }
+  const dataTar = buildTarArchive(tarEntries, mtimeSec);
+  const dataTarGz = await gzipBytesDeterministic(dataTar);
+  return concatUint8Arrays([
+    encodeUtf8(AR_GLOBAL_HEADER),
+    buildArMember("debian-binary", debianBinaryBytes, mtimeSec),
+    buildArMember("control.tar.gz", controlTarGz, mtimeSec),
+    buildArMember("data.tar.gz", dataTarGz, mtimeSec)
+  ]);
+}
+
+// src/utils/webosIpkBuilder.ts
+function buildWebOsRuntimeShimScript(targetOrigin, targetTier = "universal") {
+  const safeOrigin = String(targetOrigin || PUBLISHED_RIFFAN_ORIGIN).replace(/\/+$/, "");
+  return [
+    "<script>",
+    "(function(){",
+    "  window.__RIFFAN_WEBOS_APP__ = true;",
+    `  window.__RIFFAN_WEBOS_TIER__ = ${JSON.stringify(targetTier)};`,
+    `  window.__RIFFAN_API_ORIGIN__ = ${JSON.stringify(safeOrigin)};`,
+    '  if (window.location && window.location.protocol === "file:") {',
+    '    if (typeof window.fetch === "function") {',
+    "      var origFetch = window.fetch;",
+    "      window.fetch = function(input, init) {",
+    '        if (typeof input === "string" && input.charAt(0) === "/") {',
+    `          input = ${JSON.stringify(safeOrigin)} + input;`,
+    "        }",
+    "        return origFetch.call(this, input, init);",
+    "      };",
+    "    }",
+    '    if (typeof window.XMLHttpRequest === "function" && window.XMLHttpRequest.prototype) {',
+    "      var origXhrOpen = window.XMLHttpRequest.prototype.open;",
+    "      window.XMLHttpRequest.prototype.open = function(method, url) {",
+    '        var nextUrl = (typeof url === "string" && url.charAt(0) === "/") ? (' + JSON.stringify(safeOrigin) + " + url) : url;",
+    "        var args = Array.prototype.slice.call(arguments);",
+    "        args[1] = nextUrl;",
+    "        return origXhrOpen.apply(this, args);",
+    "      };",
+    "    }",
+    "  }",
+    "})();",
+    "</script>"
+  ].join("\n");
+}
+function rewriteHtmlForWebOsFileProtocol(html, targetOrigin, targetTier = "universal") {
+  let out = String(html || "");
+  out = out.replace(/(href|src)=(["'])\/assets\//gi, "$1=$2./assets/").replace(/(href|src)=(["'])\/tv\//gi, "$1=$2./tv/").replace(/(href|src)=(["'])\/vendor\//gi, "$1=$2./vendor/").replace(
+    /(href|src)=(["'])\/(favicon[^"']*|apple-touch-icon\.png|icon\.svg|pwa-[^"']*|music-[^"']*|logo-[^"']*|manifest\.webmanifest)(["'])/gi,
+    "$1=$2./$3$4"
+  ).replace(/<script[^>]*src=["']\.?\/registerSW\.js["'][^>]*><\/script>/gi, "");
+  const shim = buildWebOsRuntimeShimScript(targetOrigin, targetTier);
+  if (out.includes("<head>")) {
+    out = out.replace("<head>", `<head>
+${shim}`);
+  } else if (out.includes("</head>")) {
+    out = out.replace("</head>", `${shim}
+</head>`);
+  } else {
+    out = `${shim}
+${out}`;
+  }
+  return out;
+}
+function buildUniversalWebOsLauncherAssets(appName, targetOrigin, targetTier = "universal") {
+  const safeOrigin = String(targetOrigin || PUBLISHED_RIFFAN_ORIGIN).replace(/\/+$/, "");
+  const tvReceiverUrl = `${safeOrigin}/tvlg`;
+  const fullAppUrl = `${safeOrigin}/?webos=1&tv=1&tier=${encodeURIComponent(targetTier)}`;
+  const healthUrl = `${safeOrigin}/api/health`;
+  const escapedName = appName.replace(/[<>&"]/g, "");
+  const appCss = [
+    "html, body {",
+    "  margin: 0;",
+    "  padding: 0;",
+    "  width: 100%;",
+    "  height: 100%;",
+    "  background-color: #000000;",
+    "  color: #ffffff;",
+    "  font-family: Arial, Helvetica, sans-serif;",
+    "  overflow: hidden;",
+    "}",
+    ".wrap {",
+    "  display: -webkit-box;",
+    "  display: -webkit-flex;",
+    "  display: flex;",
+    "  -webkit-box-orient: vertical;",
+    "  -webkit-flex-direction: column;",
+    "  flex-direction: column;",
+    "  -webkit-box-align: center;",
+    "  -webkit-align-items: center;",
+    "  align-items: center;",
+    "  -webkit-box-pack: center;",
+    "  -webkit-justify-content: center;",
+    "  justify-content: center;",
+    "  width: 100%;",
+    "  height: 100%;",
+    "  text-align: center;",
+    "  padding: 48px;",
+    "  box-sizing: border-box;",
+    "  background: -webkit-radial-gradient(50% 35%, circle, rgba(124, 58, 237, 0.24) 0%, #000000 68%);",
+    "  background: radial-gradient(circle at 50% 35%, rgba(124, 58, 237, 0.24) 0%, #000000 68%);",
+    "}",
+    ".mark {",
+    "  width: 108px;",
+    "  height: 108px;",
+    "  line-height: 108px;",
+    "  border-radius: 26px;",
+    "  background-color: #7C3AED;",
+    "  color: #ffffff;",
+    "  font-size: 54px;",
+    "  font-weight: 900;",
+    "  margin-bottom: 24px;",
+    "  box-shadow: 0 20px 60px rgba(124, 58, 237, 0.5);",
+    "}",
+    "h1 {",
+    "  font-size: 42px;",
+    "  margin: 0 0 12px 0;",
+    "  color: #ffffff;",
+    "}",
+    ".sub {",
+    "  font-size: 18px;",
+    "  color: #a1a1aa;",
+    "  margin: 0 0 10px 0;",
+    "}",
+    "#status-msg {",
+    "  font-size: 22px;",
+    "  color: #c4b5fd;",
+    "  margin: 0 0 28px 0;",
+    "  max-width: 780px;",
+    "}",
+    ".actions {",
+    "  text-align: center;",
+    "}",
+    "button {",
+    "  min-width: 260px;",
+    "  height: 62px;",
+    "  margin: 0 10px;",
+    "  padding: 0 28px;",
+    "  font-size: 20px;",
+    "  font-weight: 700;",
+    "  border-radius: 14px;",
+    "  border: 2px solid rgba(255, 255, 255, 0.25);",
+    "  background-color: #14141c;",
+    "  color: #ffffff;",
+    "  cursor: pointer;",
+    "}",
+    "button.primary {",
+    "  background-color: #7C3AED;",
+    "  border-color: #A78BFA;",
+    "}",
+    "button:focus, button:hover {",
+    "  outline: 3px solid #ffffff;",
+    "  background-color: #8B5CF6;",
+    "}"
+  ].join("\n");
+  const webOsStubJs = [
+    "(function(){",
+    '  if (typeof window.webOS === "undefined") {',
+    "    window.webOS = {",
+    "      platformBack: function () {",
+    "        try {",
+    "          if (window.PalmSystem && window.PalmSystem.platformBack) {",
+    "            window.PalmSystem.platformBack();",
+    "          } else {",
+    "            window.close();",
+    "          }",
+    "        } catch (e) {}",
+    "      }",
+    "    };",
+    "  }",
+    "})();"
+  ].join("\n");
+  const mainJs = [
+    "window.onload = function () {",
+    `  var targetTvUrl = ${JSON.stringify(tvReceiverUrl)};`,
+    `  var targetAppUrl = ${JSON.stringify(fullAppUrl)};`,
+    `  var healthUrl = ${JSON.stringify(healthUrl)};`,
+    '  var statusEl = document.getElementById("status-msg");',
+    '  var btnTv = document.getElementById("btn-tv");',
+    '  var btnApp = document.getElementById("btn-app");',
+    "  var attempts = 0;",
+    "  var maxAttempts = 4;",
+    "  var launched = false;",
+    "",
+    "  function launchDestination(baseUrl) {",
+    "    if (launched) return;",
+    "    launched = true;",
+    '    var sep = baseUrl.indexOf("?") === -1 ? "?_t=" : "&_t=";',
+    "    window.location.replace(baseUrl + sep + (new Date()).getTime());",
+    "  }",
+    "",
+    "  function exitLgWebOs() {",
+    "    try {",
+    '      if (window.webOS && typeof window.webOS.platformBack === "function") {',
+    "        window.webOS.platformBack();",
+    "        return;",
+    "      }",
+    '      if (window.PalmSystem && typeof window.PalmSystem.platformBack === "function") {',
+    "        window.PalmSystem.platformBack();",
+    "      }",
+    "    } catch (e) {}",
+    "  }",
+    "",
+    "  if (btnTv) {",
+    "    btnTv.onclick = function () { launchDestination(targetTvUrl); };",
+    "    if (btnTv.focus) btnTv.focus();",
+    "  }",
+    "  if (btnApp) {",
+    "    btnApp.onclick = function () { launchDestination(targetAppUrl); };",
+    "  }",
+    "",
+    '  document.addEventListener("keydown", function (e) {',
+    "    var code = e.keyCode || e.which;",
+    "    if (code === 13 || code === 23) {",
+    "      if (document.activeElement === btnApp) launchDestination(targetAppUrl);",
+    "      else launchDestination(targetTvUrl);",
+    "    } else if (code === 37 || code === 39) {",
+    "      if (document.activeElement === btnTv && btnApp && btnApp.focus) btnApp.focus();",
+    "      else if (btnTv && btnTv.focus) btnTv.focus();",
+    "    } else if (code === 461 || code === 27) {",
+    "      if (e.preventDefault) e.preventDefault();",
+    "      exitLgWebOs();",
+    "    }",
+    "  });",
+    "",
+    "  function probeServer() {",
+    "    if (launched) return;",
+    "    attempts += 1;",
+    "    if (statusEl) {",
+    '      statusEl.textContent = attempts === 1 ? "Conectando LG webOS con RiffanTV..." : "Reconectando Wi-Fi LG TV (" + attempts + "/" + maxAttempts + ")...";',
+    "    }",
+    "    try {",
+    "      var xhr = new XMLHttpRequest();",
+    '      xhr.open("GET", healthUrl + "?_=" + (new Date()).getTime(), true);',
+    "      xhr.timeout = 6000;",
+    "      xhr.onreadystatechange = function () {",
+    "        if (xhr.readyState !== 4 || launched) return;",
+    "        if (xhr.status >= 200 && xhr.status < 400) {",
+    '          if (statusEl) statusEl.textContent = "Conectado. Abriendo RiffanTV LG webOS...";',
+    "          setTimeout(function () { launchDestination(targetTvUrl); }, 220);",
+    "        } else if (attempts < maxAttempts) {",
+    "          setTimeout(probeServer, 1400);",
+    "        } else {",
+    '          if (statusEl) statusEl.textContent = "Pulsa OK en el Magic Remote para abrir RiffanTV.";',
+    "        }",
+    "      };",
+    "      xhr.onerror = function () {",
+    "        if (attempts < maxAttempts) setTimeout(probeServer, 1400);",
+    '        else if (statusEl) statusEl.textContent = "Sin red en tu LG TV. Revisa el Wi-Fi y pulsa OK.";',
+    "      };",
+    "      xhr.ontimeout = function () {",
+    "        if (attempts < maxAttempts) setTimeout(probeServer, 1200);",
+    "        else launchDestination(targetTvUrl);",
+    "      };",
+    "      xhr.send();",
+    "    } catch (err) {",
+    "      launchDestination(targetTvUrl);",
+    "    }",
+    "  }",
+    "",
+    "  probeServer();",
+    "};"
+  ].join("\n");
+  const indexHtml = [
+    "<!DOCTYPE html>",
+    '<html lang="es">',
+    "<head>",
+    '  <meta charset="UTF-8" />',
+    '  <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
+    `  <title>${escapedName} \u2014 LG webOS Smart TV</title>`,
+    '  <link rel="stylesheet" href="app.css" />',
+    '  <script src="webOSTV.js"></script>',
+    '  <script src="main.js"></script>',
+    "</head>",
+    '<body bgcolor="#000000" text="#FFFFFF">',
+    '  <div class="wrap">',
+    '    <div class="mark">R</div>',
+    `    <h1>${escapedName}</h1>`,
+    '    <p class="sub">LG webOS Smart TV \xB7 Compatible webOS 3.0 \u2013 24+</p>',
+    '    <p id="status-msg">Iniciando receptor LG TV...</p>',
+    '    <div class="actions">',
+    '      <button id="btn-tv" class="primary" tabindex="0">Abrir RiffanTV Smart TV</button>',
+    '      <button id="btn-app" tabindex="0">App Web Completa</button>',
+    "    </div>",
+    "  </div>",
+    "</body>",
+    "</html>"
+  ].join("\n");
+  return { indexHtml, appCss, mainJs, webOsStubJs };
+}
+
+// server/routes/webosRoutes.ts
+var MAX_MANIFEST_FILES2 = 400;
+var SKIP_EXTS2 = /* @__PURE__ */ new Set([".apk", ".wgt", ".ipk", ".map", ".ipa", ".aab"]);
+var SKIP_FILES2 = /* @__PURE__ */ new Set(["sw.js", "config.xml", "appinfo.json", "registerSW.js"]);
+function walkSafeDistFiles2(baseDir, currentDir, out) {
+  if (out.length >= MAX_MANIFEST_FILES2) return;
+  let entries = [];
+  try {
+    entries = fs19.readdirSync(currentDir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (out.length >= MAX_MANIFEST_FILES2) break;
+    const fullPath = path17.join(currentDir, entry.name);
+    const rel = path17.relative(baseDir, fullPath).replace(/\\/g, "/");
+    if (entry.isDirectory()) {
+      if (rel === "assets/aistudio" || rel.startsWith(".")) continue;
+      walkSafeDistFiles2(baseDir, fullPath, out);
+    } else if (entry.isFile()) {
+      const ext = path17.extname(entry.name).toLowerCase();
+      if (SKIP_EXTS2.has(ext) || SKIP_FILES2.has(entry.name) || entry.name.startsWith("workbox-")) {
+        continue;
+      }
+      out.push(rel);
+    }
+  }
+}
+function parseTargetTier(raw) {
+  const s = String(raw || "").trim().toLowerCase();
+  if (s === "legacy" || s === "old") return "legacy";
+  if (s === "modern" || s === "new") return "modern";
+  return "universal";
+}
+function registerWebOsRoutes(app2, rootDir) {
+  app2.get("/api/tv/webos-manifest", (_req, res) => {
+    const distDir = path17.resolve(rootDir, "dist");
+    const distIndex = path17.join(distDir, "index.html");
+    const files = [];
+    if (fs19.existsSync(distIndex)) {
+      walkSafeDistFiles2(distDir, distDir, files);
+      res.setHeader("Cache-Control", "no-cache");
+      return res.json({
+        ok: true,
+        mode: "dist",
+        files,
+        appName: "RiffanTV",
+        defaultAppId: "com.riffantv.webos"
+      });
+    }
+    const publicDir = path17.resolve(rootDir, "public");
+    const candidatePublic = [
+      "pwa-192x192.png",
+      "pwa-512x512.png",
+      "icon.svg",
+      "tv-receiver.html",
+      "tv/tv-base.css",
+      "tv/tv-modals.css",
+      "tv/tv-player.css",
+      "tv/tv-games.css",
+      "tv/tv-i18n.js",
+      "tv/tv-state.js",
+      "tv/tv-player-core.js",
+      "tv/tv-player-modes.js",
+      "tv/tv-hub.js",
+      "tv/tv-game-sprites.js",
+      "tv/tv-games.js",
+      "tv/tv-games-soccer.js",
+      "tv/tv-games-racing.js",
+      "tv/tv-games-gyro.js",
+      "tv/tv-games-puzzle.js",
+      "tv/tv-games-action.js",
+      "tv/tv-games-retro.js",
+      "tv/tv-games-quiz.js",
+      "tv/tv-nav-voice.js",
+      "vendor/hls.min.js",
+      "vendor/riffan-racing-3d.iife.js"
+    ];
+    for (const rel of candidatePublic) {
+      if (fs19.existsSync(path17.join(publicDir, rel))) {
+        files.push(rel);
+      }
+    }
+    walkSafeDistFiles2(publicDir, path17.join(publicDir, "assets", "games"), files);
+    res.setHeader("Cache-Control", "no-cache");
+    return res.json({
+      ok: true,
+      mode: "public-fallback",
+      files,
+      appName: "RiffanTV",
+      defaultAppId: "com.riffantv.webos"
+    });
+  });
+  app2.get("/api/tv/webos-appinfo.json", (req, res) => {
+    const appId = typeof req.query.appId === "string" ? req.query.appId : void 0;
+    const appName = typeof req.query.appName === "string" ? req.query.appName : void 0;
+    const version = typeof req.query.version === "string" ? req.query.version : void 0;
+    const targetTier = parseTargetTier(req.query.tier);
+    const json = generateWebOsAppInfoJson({ appId, appName, version, targetTier });
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="appinfo.json"');
+    res.setHeader("Cache-Control", "no-cache");
+    return res.send(json);
+  });
+  app2.get(["/api/tv/download-ipk", "/tvlg.ipk", "/lgtv.ipk"], async (req, res) => {
+    try {
+      const appId = normalizeWebOsAppId(
+        typeof req.query.appId === "string" ? req.query.appId : void 0
+      );
+      const appName = typeof req.query.appName === "string" && req.query.appName.trim() ? req.query.appName.trim().slice(0, 48) : "RiffanTV";
+      const version = normalizeWebOsVersion(
+        typeof req.query.version === "string" ? req.query.version : void 0
+      );
+      const targetTier = parseTargetTier(req.query.tier);
+      const format = String(req.query.format || "ipk").toLowerCase() === "zip" ? "zip" : "ipk";
+      const rawReqHost = String(req.headers["x-forwarded-host"] || req.get("host") || "").split(",")[0].trim().split(":")[0].toLowerCase();
+      const isDevHost = isEphemeralPreviewHost(rawReqHost);
+      const explicitOrigin = String(req.query.origin || "").trim();
+      const publishedFallback = ENV.publicDomain ? `https://${ENV.publicDomain}` : PUBLISHED_RIFFAN_ORIGIN;
+      let safeExplicitOrigin = "";
+      if (explicitOrigin) {
+        const probe = resolveSafePublicOrigin(
+          { queryOrigin: explicitOrigin },
+          ENV.publicDomain || "riffan.ai.studio"
+        );
+        if (probe === explicitOrigin.replace(/\/+$/, "")) {
+          safeExplicitOrigin = probe;
+        }
+      }
+      const targetOrigin = resolveSafePublicOrigin(
+        {
+          queryOrigin: safeExplicitOrigin || (isDevHost ? publishedFallback : ""),
+          forwardedProto: String(req.headers["x-forwarded-proto"] || ""),
+          forwardedHost: String(req.headers["x-forwarded-host"] || ""),
+          hostHeader: String(req.get("host") || ""),
+          protocol: req.protocol
+        },
+        ENV.publicDomain || "riffan.ai.studio"
+      );
+      const files = [];
+      const appInfoJson = generateWebOsAppInfoJson({ appId, appName, version, targetTier });
+      files.push({ relPath: "appinfo.json", bytes: Buffer.from(appInfoJson, "utf8") });
+      const publicDir = path17.resolve(rootDir, "public");
+      const iconPath192 = path17.join(publicDir, "pwa-192x192.png");
+      const iconPath512 = path17.join(publicDir, "pwa-512x512.png");
+      if (fs19.existsSync(iconPath192)) {
+        files.push({ relPath: "icon.png", bytes: fs19.readFileSync(iconPath192) });
+      }
+      if (fs19.existsSync(iconPath512)) {
+        files.push({ relPath: "largeIcon.png", bytes: fs19.readFileSync(iconPath512) });
+      } else if (fs19.existsSync(iconPath192)) {
+        files.push({ relPath: "largeIcon.png", bytes: fs19.readFileSync(iconPath192) });
+      }
+      const distDir = path17.resolve(rootDir, "dist");
+      const distIndex = path17.join(distDir, "index.html");
+      if (fs19.existsSync(distIndex) && req.query.mode === "bundle") {
+        const distFiles = [];
+        walkSafeDistFiles2(distDir, distDir, distFiles);
+        for (const rel of distFiles) {
+          const fullPath = path17.join(distDir, rel);
+          if (rel === "index.html") {
+            const rawHtml = fs19.readFileSync(fullPath, "utf8");
+            files.push({
+              relPath: "index.html",
+              bytes: Buffer.from(
+                rewriteHtmlForWebOsFileProtocol(rawHtml, targetOrigin, targetTier),
+                "utf8"
+              )
+            });
+          } else if (fs19.existsSync(fullPath)) {
+            files.push({ relPath: rel, bytes: fs19.readFileSync(fullPath) });
+          }
+        }
+      } else {
+        const launcher = buildUniversalWebOsLauncherAssets(appName, targetOrigin, targetTier);
+        files.push({ relPath: "index.html", bytes: Buffer.from(launcher.indexHtml, "utf8") });
+        files.push({ relPath: "app.css", bytes: Buffer.from(launcher.appCss, "utf8") });
+        files.push({ relPath: "main.js", bytes: Buffer.from(launcher.mainJs, "utf8") });
+        files.push({ relPath: "webOSTV.js", bytes: Buffer.from(launcher.webOsStubJs, "utf8") });
+      }
+      if (format === "zip") {
+        const JSZipMod = await import("jszip");
+        const JSZip = JSZipMod.default || JSZipMod;
+        const zip = new JSZip();
+        for (const f of files) {
+          zip.file(f.relPath, f.bytes);
+        }
+        const buf = await zip.generateAsync({
+          type: "nodebuffer",
+          compression: "DEFLATE",
+          compressionOptions: { level: 6 }
+        });
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${appId}_${version}_${targetTier}.zip"`
+        );
+        res.setHeader("Cache-Control", "no-cache");
+        return res.send(buf);
+      }
+      const ipkBytes = await packWebOsIpkBinary({
+        appId,
+        appName,
+        version,
+        files
+      });
+      res.setHeader("Content-Type", "application/vnd.debian.binary-package");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${appId}_${version}_${targetTier}.ipk"`
+      );
+      res.setHeader("Cache-Control", "no-cache");
+      return res.send(Buffer.from(ipkBytes));
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+  app2.get("/api/tv/webos-workflow.yml", (_req, res) => {
+    const workflowPath = path17.resolve(rootDir, ".github", "workflows", "build-webos-ipk.yml");
+    if (!fs19.existsSync(workflowPath)) {
+      return res.status(404).json({ ok: false, error: "Workflow file not found" });
+    }
+    res.setHeader("Content-Type", "text/yaml; charset=utf-8");
+    res.setHeader("Cache-Control", "no-cache");
+    return res.sendFile(workflowPath);
+  });
+}
+
 // server.ts
 dns3.setDefaultResultOrder("ipv4first");
 var __filename3 = fileURLToPath3(import.meta.url);
-var __dirname3 = path17.dirname(__filename3);
+var __dirname3 = path18.dirname(__filename3);
 function getPublicOrigin(req) {
   return resolveSafePublicOrigin(
     {
@@ -69482,7 +70381,7 @@ app.use((req, res, next) => {
 });
 app.use("/api", serviceMeshGatewayMiddleware);
 app.get("/vendor/hls.min.js", (_req, res) => {
-  const hlsPath = path17.resolve(__dirname3, "node_modules", "hls.js", "dist", "hls.min.js");
+  const hlsPath = path18.resolve(__dirname3, "node_modules", "hls.js", "dist", "hls.min.js");
   res.setHeader("Content-Type", "application/javascript; charset=utf-8");
   applyPublicCacheHeaders(res, 86400, 86400);
   res.sendFile(hlsPath);
@@ -69608,10 +70507,10 @@ app.get(
 app.get("/music-manifest.webmanifest", (_req, res) => {
   res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, must-revalidate");
-  const publicPath = path17.resolve(__dirname3, "public", "music-manifest.webmanifest");
-  const distPath = path17.resolve(__dirname3, "dist", "music-manifest.webmanifest");
-  const target = fs19.existsSync(publicPath) ? publicPath : distPath;
-  if (fs19.existsSync(target)) {
+  const publicPath = path18.resolve(__dirname3, "public", "music-manifest.webmanifest");
+  const distPath = path18.resolve(__dirname3, "dist", "music-manifest.webmanifest");
+  const target = fs20.existsSync(publicPath) ? publicPath : distPath;
+  if (fs20.existsSync(target)) {
     return res.sendFile(target);
   }
   return res.status(404).json({ error: "Music manifest not found" });
@@ -69621,16 +70520,16 @@ function sendSmartTvReceiverHtml(res) {
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
   res.setHeader("Surrogate-Control", "no-store");
-  const publicPath = path17.resolve(__dirname3, "public", "tv-receiver.html");
-  const distPath = path17.resolve(__dirname3, "dist", "tv-receiver.html");
-  const target = fs19.existsSync(publicPath) ? publicPath : distPath;
-  if (!fs19.existsSync(target)) {
+  const publicPath = path18.resolve(__dirname3, "public", "tv-receiver.html");
+  const distPath = path18.resolve(__dirname3, "dist", "tv-receiver.html");
+  const target = fs20.existsSync(publicPath) ? publicPath : distPath;
+  if (!fs20.existsSync(target)) {
     res.status(404).type("text/plain").send("TV receiver not found");
     return;
   }
   try {
     const sig = getTvBuildSignature(__dirname3);
-    let html = fs19.readFileSync(target, "utf8");
+    let html = fs20.readFileSync(target, "utf8");
     const buildMetaTag = `<script>window.__RIFFAN_TV_BUILD__=${JSON.stringify(sig)};window.__RIFFAN_TV_AUTO_UPDATE__=true;</script>`;
     html = html.replace("<head>", `<head>
     ${buildMetaTag}`).replace(/((?:href|src)=["'])(\/tv\/[^"'?]+\.(?:css|js))(["'])/gi, `$1$2?v=${sig}$3`).replace(/((?:href|src)=["'])(\/vendor\/[^"'?]+\.js)(["'])/gi, `$1$2?v=${sig}$3`);
@@ -69639,22 +70538,25 @@ function sendSmartTvReceiverHtml(res) {
     res.sendFile(target);
   }
 }
-app.use("/tv", (_req, res, next) => {
+app.use(["/tv", "/tvlg", "/lgtv"], (_req, res, next) => {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
   res.setHeader("Surrogate-Control", "no-store");
   next();
 });
-app.get(["/tv", "/tv/"], (_req, res) => {
+app.get(["/tv", "/tv/", "/tvlg", "/tvlg/", "/lgtv", "/lgtv/"], (_req, res) => {
   sendSmartTvReceiverHtml(res);
 });
 app.get("/", (req, res, next) => {
-  if (req.query.web === "1" || req.query.tizen === "1" || req.query.room) {
+  if (req.query.web === "1" || req.query.tizen === "1" || req.query.webos === "1" || req.query.room) {
     return next();
   }
   const ua = String(req.headers["user-agent"] || "");
-  if (/SMART-TV|SmartTV|Tizen|Web0S|WebOS|NetCast|BRAVIA|Viera|VIDAA|HbbTV|AFTB|AFTT|AFTM|GoogleTV/i.test(ua)) {
+  if (/Web0S|WebOS|LGE|NetCast/i.test(ua)) {
+    return res.redirect(302, "/tvlg");
+  }
+  if (/SMART-TV|SmartTV|Tizen|BRAVIA|Viera|VIDAA|HbbTV|AFTB|AFTT|AFTM|GoogleTV/i.test(ua)) {
     return res.redirect(302, "/tv");
   }
   return next();
@@ -69701,9 +70603,10 @@ registerDetailsAndSubtitlesRoutes(app, {
   extractLocalizedTmdbTitleHints
 });
 registerTizenRoutes(app, __dirname3);
+registerWebOsRoutes(app, __dirname3);
 app.get("/api/audit/100-points", (_req, res) => {
-  const auditPath = path17.resolve(__dirname3, "auditoria-riffantv-100-puntos.md");
-  if (!fs19.existsSync(auditPath)) {
+  const auditPath = path18.resolve(__dirname3, "auditoria-riffantv-100-puntos.md");
+  if (!fs20.existsSync(auditPath)) {
     return res.status(404).json({ error: "Audit report not found" });
   }
   res.setHeader("Content-Type", "text/markdown; charset=utf-8");
@@ -69712,8 +70615,8 @@ app.get("/api/audit/100-points", (_req, res) => {
   return res.sendFile(auditPath);
 });
 app.get("/api/audit/100-improvements", (_req, res) => {
-  const auditPath = path17.resolve(__dirname3, "auditoria-100-mejoras-f1-f11.md");
-  if (!fs19.existsSync(auditPath)) {
+  const auditPath = path18.resolve(__dirname3, "auditoria-100-mejoras-f1-f11.md");
+  if (!fs20.existsSync(auditPath)) {
     return res.status(404).json({ error: "100 improvements report not found" });
   }
   res.setHeader("Content-Type", "text/markdown; charset=utf-8");
@@ -69726,8 +70629,8 @@ app.get("/api/audit/improvements-summary", (_req, res) => {
   return res.json({ ok: true, ...getImprovementsSummary() });
 });
 app.get(["/sw.js", "/service-worker.js"], (_req, res) => {
-  const distSw = path17.resolve(__dirname3, "dist", "sw.js");
-  if (ENV.isProd && fs19.existsSync(distSw)) {
+  const distSw = path18.resolve(__dirname3, "dist", "sw.js");
+  if (ENV.isProd && fs20.existsSync(distSw)) {
     res.setHeader("Content-Type", "application/javascript; charset=utf-8");
     res.setHeader("Cache-Control", "no-cache, must-revalidate");
     return res.sendFile(distSw);

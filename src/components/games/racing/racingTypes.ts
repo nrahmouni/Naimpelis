@@ -1,6 +1,7 @@
 export type RacingCameraMode = 'chase' | 'hood' | 'far';
 
 export interface RacingGyroControlState {
+  playerSlot?: 1 | 2;
   steer: number; // -1 (left) .. +1 (right)
   throttle: number; // 0 .. 1
   brake: number; // 0 .. 1
@@ -28,16 +29,23 @@ export interface RacingCarTelemetry {
   totalTimeMs: number;
   cameraMode: RacingCameraMode;
   wrongWay: boolean;
+  splitScreenActive?: boolean;
+  p2SpeedKmh?: number;
+  p2Lap?: number;
+  p2Position?: number;
+  p2NitroPct?: number;
+  p2CollisionImpact?: number;
 }
 
 export interface RacingEngineCallbacks {
   onTelemetry?: (telemetry: RacingCarTelemetry) => void;
-  onFinish?: (summary: { position: number; totalTimeMs: number; bestLapMs: number }) => void;
+  onFinish?: (summary: { position: number; totalTimeMs: number; bestLapMs: number; winnerSlot?: 1 | 2 }) => void;
   onContextLost?: () => void;
 }
 
 export interface RacingEngineHandle {
-  setGyroInput: (input: Partial<RacingGyroControlState>, expiresInMs?: number) => void;
+  setGyroInput: (input: Partial<RacingGyroControlState>, expiresInMs?: number, playerSlot?: 1 | 2) => void;
+  setPlayer2Connected?: (connected: boolean) => void;
   setKeyboardState: (keys: {
     left?: boolean;
     right?: boolean;

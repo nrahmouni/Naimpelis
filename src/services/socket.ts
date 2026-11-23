@@ -409,13 +409,20 @@ class SocketService extends SocketTransport {
     return this.roomId;
   }
 
-  joinGyroChannel(role: 'controller' | 'display', deviceName?: string, targetRoomId?: string) {
+  joinGyroChannel(
+    role: 'controller' | 'display',
+    deviceName?: string,
+    targetRoomId?: string,
+    opts?: { preferredSlot?: 1 | 2; gameId?: string }
+  ) {
     const rid = (targetRoomId || this.roomId || '').trim().toLowerCase();
     if (!rid) return;
     this.sendRaw('GYRO_CONTROLLER_JOIN', {
       roomId: rid,
       role,
       deviceName,
+      preferredSlot: opts?.preferredSlot,
+      gameId: opts?.gameId,
     });
   }
 

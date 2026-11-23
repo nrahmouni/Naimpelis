@@ -133,10 +133,15 @@ export interface SocketPayload {
     blackjackState?: BlackjackGameState | null;
     matchResponses?: RoomMatchResponsesState | null;
   };
-  controllers?: Array<{ userId: string; deviceName: string }>;
+  controllers?: Array<{ userId: string; deviceName: string; slot?: 1 | 2 }>;
   displays?: number;
   hasController?: boolean;
+  playerSlot?: 1 | 2;
+  targetSlot?: 1 | 2;
   steer?: number;
+  pitch?: number;
+  roll?: number;
+  swing?: number;
   throttle?: number;
   brake?: number;
   nitro?: boolean;
@@ -157,6 +162,10 @@ export interface SocketPayload {
   raceState?: 'countdown' | 'racing' | 'finished';
   lapTimeMs?: number;
   bestLapMs?: number;
+  hapticPulseMs?: number;
+  eventTag?: string;
+  scoreP1?: number;
+  scoreP2?: number;
   [key: string]: unknown;
 }
 
