@@ -225,20 +225,25 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     const attachHlsJs = () => {
       if (!Hls.isSupported() || cancelled) return false;
       const isDvbLiveUrl = /\/api\/(?:dvb-live|belix\/stream)\//i.test(videoState.url);
+      const isSmartTvUa =
+        typeof navigator !== 'undefined' &&
+        /Tizen|SMART-TV|Web0S|webOS|BRAVIA|VIDAA|NetCast|AFT[A-Z]/i.test(
+          navigator.userAgent || ''
+        );
       const hls = new Hls({
-        enableWorker: true,
+        enableWorker: !isSmartTvUa,
         lowLatencyMode: false,
         startPosition: targetResumeSec > 3 ? targetResumeSec : -1,
-        liveSyncDurationCount: isDvbLiveUrl ? 2 : 3,
+        liveSyncDurationCount: 3,
         liveMaxLatencyDurationCount: 10,
         maxLiveSyncPlaybackRate: 1,
         backBufferLength: 20,
         maxBufferLength: 35,
         maxMaxBufferLength: 75,
-        maxBufferHole: videoState.isLive ? (isDvbLiveUrl ? 0.65 : 0.4) : 0.5,
+        maxBufferHole: videoState.isLive ? (isDvbLiveUrl ? 0.25 : 0.3) : 0.5,
         maxFragLookUpTolerance: 0.25,
         highBufferWatchdogPeriod: 2,
-        nudgeOffset: videoState.isLive ? 0.1 : 0.1,
+        nudgeOffset: videoState.isLive ? 0.05 : 0.1,
         nudgeMaxRetry: videoState.isLive ? 8 : 10,
         stretchShortVideoTrack: !videoState.isLive,
         maxAudioFramesDrift: videoState.isLive ? 3 : 4,
@@ -344,19 +349,23 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
               setStreamRefreshPhase('recovering');
               setIsBuffering(true);
               try {
-                // Jump small buffer hole if buffered ahead, otherwise pull live edge
+                // Jump real gap >= 80ms if buffered ahead, otherwise gently pull edge only if buffer ran dry
                 let nudged = false;
+                let bufferedAhead = 0;
                 for (let i = 0; i < video.buffered.length; i++) {
                   const bStart = video.buffered.start(i);
                   const bEnd = video.buffered.end(i);
-                  if (bStart > video.currentTime && bStart - video.currentTime <= 4 && bEnd - bStart >= 0.3) {
-                    video.currentTime = bStart + 0.06;
+                  if (video.currentTime >= bStart && video.currentTime <= bEnd) {
+                    bufferedAhead = Math.max(bufferedAhead, bEnd - video.currentTime);
+                  }
+                  if (bStart > video.currentTime + 0.08 && bStart - video.currentTime <= 4 && bEnd - bStart >= 0.3) {
+                    video.currentTime = bStart + 0.05;
                     video.play().catch(() => {});
                     nudged = true;
                     break;
                   }
                 }
-                if (!nudged) {
+                if (!nudged && bufferedAhead < 1.5) {
                   hls.startLoad(-1);
                 }
               } catch {

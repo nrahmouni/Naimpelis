@@ -1186,7 +1186,7 @@ async function resolveBelixManifestInternal(
 
     for (let i = 0; i < candidateIds.length; i++) {
       if (i > 0 && Date.now() - startedAt > 12_000) break;
-      if (i > 0 && process.env.NODE_ENV !== 'test') {
+      if (i > 0 && process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
         await new Promise((r) => setTimeout(r, 180));
       }
       const candidateId = candidateIds[i];

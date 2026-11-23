@@ -507,46 +507,40 @@ async function startOrReuseLiveDvbCleanHlsSession(
 
   const isFastProfile = profile === 'fast';
   const isUhd4kStream = /\/stream\/6[4568]\//i.test(cleanUpstream);
-  const canCopyVideo = !isUhd4kStream && !isFastProfile;
   const vfFilter = isUhd4kStream
     ? 'fps=25,scale=1920:1080:flags=bilinear,format=yuv420p'
-    : "yadif=0:-1:1,scale='min(1280,iw)':-2,format=yuv420p";
+    : isFastProfile
+      ? "yadif=0:-1:1,scale='min(1280,iw)':-2,format=yuv420p"
+      : "yadif=0:-1:1,scale='min(1920,iw)':-2,format=yuv420p";
 
-  const videoArgs = canCopyVideo
-    ? ['-c:v', 'copy']
-    : [
-        '-vf',
-        vfFilter,
-        '-c:v',
-        'libx264',
-        '-preset',
-        'ultrafast',
-        ...(isFastProfile ? ['-tune', 'zerolatency'] : []),
-        '-profile:v',
-        'high',
-        '-level:v',
-        isFastProfile ? '4.0' : '4.1',
-        '-pix_fmt',
-        'yuv420p',
-        '-crf',
-        isFastProfile ? '21' : '19',
-        '-maxrate',
-        isFastProfile ? '2600k' : '6000k',
-        '-bufsize',
-        isFastProfile ? '5200k' : '12000k',
-        '-r',
-        '25',
-        '-g',
-        '50',
-        '-keyint_min',
-        '50',
-        '-sc_threshold',
-        '0',
-        '-force_key_frames',
-        'expr:gte(t,n_forced*2)',
-        '-threads',
-        '0',
-      ];
+  const videoArgs = [
+    '-vf',
+    vfFilter,
+    '-c:v',
+    'libx264',
+    '-preset',
+    isFastProfile ? 'ultrafast' : 'superfast',
+    ...(isFastProfile ? ['-tune', 'zerolatency'] : []),
+    '-profile:v',
+    'high',
+    '-level:v',
+    isFastProfile ? '4.0' : '4.1',
+    '-pix_fmt',
+    'yuv420p',
+    '-crf',
+    isFastProfile ? '21' : '20',
+    '-maxrate',
+    isFastProfile ? '2600k' : '4500k',
+    '-bufsize',
+    isFastProfile ? '5200k' : '9000k',
+    ...(isUhd4kStream ? ['-r', '25', '-g', '50', '-keyint_min', '50'] : ['-g', '100', '-keyint_min', '25']),
+    '-sc_threshold',
+    '0',
+    '-force_key_frames',
+    'expr:gte(t,n_forced*2)',
+    '-threads',
+    '0',
+  ];
 
   ffArgs.push(
     ...(isXtreamLive
@@ -560,7 +554,9 @@ async function startOrReuseLiveDvbCleanHlsSession(
     isXtreamLive ? '500000' : '1000000',
     ...(/\.m3u8(\?|$)/i.test(cleanUpstream) ? ['-live_start_index', '-3'] : []),
     '-fflags',
-    '+genpts+discardcorrupt',
+    '+genpts',
+    '-err_detect',
+    'ignore_err',
     '-avoid_negative_ts',
     'make_zero',
     '-i',
@@ -585,7 +581,7 @@ async function startOrReuseLiveDvbCleanHlsSession(
     '-hls_time',
     '2',
     '-hls_list_size',
-    '10',
+    '12',
     '-hls_flags',
     'delete_segments+independent_segments+omit_endlist+temp_file',
     '-hls_segment_filename',
@@ -633,7 +629,7 @@ async function startOrReuseLiveDvbCleanHlsSession(
   });
 
   session.readyPromise = new Promise<boolean>((resolve) => {
-    const deadline = Date.now() + (isXtreamLive ? 4_200 : 12_000);
+    const deadline = Date.now() + (isXtreamLive ? 5_200 : 12_000);
     let inTick = false;
     const poll = setInterval(async () => {
       if (session.dead) {

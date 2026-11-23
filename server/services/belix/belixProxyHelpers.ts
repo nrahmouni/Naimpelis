@@ -181,7 +181,8 @@ export async function resolveBelixManifestForSession(
   // In live runtime, Xtream .ts streams push a pre-buffered MPEG-TS burst in ~0.5-2.4s and allow
   // clean 2-second monotonic HLS segments with a single portal connection (while .m3u8 edges often
   // stall or return static MEDIA-SEQUENCE:0 10s chunks). Keep .m3u8 first in Vitest unit tests.
-  const preferTsRelay = process.env.NODE_ENV !== 'test';
+  const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
+  const preferTsRelay = !isTestEnv;
   if (preferTsRelay) {
     const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, 'hd', referer).catch(() => null);
     if (dvbPath) {

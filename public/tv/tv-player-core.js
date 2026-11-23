@@ -437,18 +437,18 @@ function applyVideoState(vs, forceReload) {
       lowLatencyMode: false,
       startFragPrefetch: true,
       startPosition: isLive ? -1 : targetSec,
-      liveSyncDurationCount: isLive ? 2 : 3,
-      liveMaxLatencyDurationCount: isLive ? 7 : 10,
+      liveSyncDurationCount: 3,
+      liveMaxLatencyDurationCount: isLive ? 10 : 12,
       maxLiveSyncPlaybackRate: 1,
-      backBufferLength: isLive ? 14 : 30,
-      maxBufferLength: isLive ? 22 : 40,
-      maxMaxBufferLength: isLive ? 45 : 80,
-      maxBufferHole: isLive ? 0.35 : 0.5,
+      backBufferLength: isLive ? 18 : 30,
+      maxBufferLength: isLive ? 28 : 40,
+      maxMaxBufferLength: isLive ? 60 : 80,
+      maxBufferHole: isLive ? 0.2 : 0.45,
       highBufferWatchdogPeriod: 2,
-      nudgeOffset: isLive ? 0.08 : 0.12,
+      nudgeOffset: isLive ? 0.04 : 0.1,
       nudgeMaxRetry: 8,
-      maxAudioFramesDrift: isLive ? 2 : 4,
-      abrEwmaDefaultEstimate: isLive ? 2800000 : 5500000,
+      maxAudioFramesDrift: isLive ? 3 : 4,
+      abrEwmaDefaultEstimate: isLive ? 4500000 : 5500000,
       manifestLoadingTimeOut: 12000,
       manifestLoadingMaxRetry: 4,
       manifestLoadingRetryDelay: 350,
@@ -456,8 +456,8 @@ function applyVideoState(vs, forceReload) {
       levelLoadingMaxRetry: 4,
       levelLoadingRetryDelay: 350,
       fragLoadingTimeOut: 15000,
-      fragLoadingMaxRetry: 5,
-      fragLoadingRetryDelay: 350
+      fragLoadingMaxRetry: 6,
+      fragLoadingRetryDelay: 400
     });
     hlsInstance = hls;
     hls.loadSource(nextUrl);
@@ -465,8 +465,29 @@ function applyVideoState(vs, forceReload) {
     hls.on(window.Hls.Events.MANIFEST_PARSED, function () {
       playVideoSafely(targetSec, shouldPlay);
     });
+    var nonFatalMediaErrors = 0;
+    var lastNonFatalMediaAt = 0;
+    hls.on(window.Hls.Events.FRAG_BUFFERED, function () {
+      nonFatalMediaErrors = 0;
+    });
     hls.on(window.Hls.Events.ERROR, function (_ev, data) {
-      if (!data || !data.fatal) return;
+      if (!data) return;
+      if (!data.fatal) {
+        if (
+          data.type === window.Hls.ErrorTypes.MEDIA_ERROR &&
+          (data.details === window.Hls.ErrorDetails.FRAG_PARSING_ERROR ||
+            data.details === window.Hls.ErrorDetails.BUFFER_APPEND_ERROR)
+        ) {
+          nonFatalMediaErrors++;
+          var nowMs = Date.now();
+          if (nonFatalMediaErrors >= 3 && nowMs - lastNonFatalMediaAt > 12000) {
+            lastNonFatalMediaAt = nowMs;
+            nonFatalMediaErrors = 0;
+            try { hls.recoverMediaError(); } catch (e) {}
+          }
+        }
+        return;
+      }
       if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
         netErrorCount++;
         if (!directCorsRetried && nextUrl.indexOf('http') === 0 && nextUrl.indexOf('/api/') === -1) {
