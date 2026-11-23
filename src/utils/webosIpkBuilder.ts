@@ -3,7 +3,7 @@
  * @description Browser & server LG webOS TV (.ipk + .zip) packager for BOTH legacy (webOS 3.0-5.0, ES5)
  * and modern (webOS 6.0 / 22 / 23 / 24+) LG Smart TVs.
  */
-import { packWebOsIpkBinary, type IpkInputFile } from './debianIpkPacker';
+import { packWebOsIpkBinary, type IpkInputFile } from './debianIpkPacker.ts';
 import {
   PUBLISHED_RIFFAN_ORIGIN,
   generateWebOsAppInfoJson,
@@ -11,7 +11,7 @@ import {
   normalizeWebOsVersion,
   resolvePublishedRiffanOrigin,
   type WebOsTargetTier,
-} from './webosConfigGenerator';
+} from './webosConfigGenerator.ts';
 
 export type WebOsArchiveFormat = 'ipk' | 'zip';
 export type WebOsPackageMode = 'universal_launcher' | 'modern_bundle';

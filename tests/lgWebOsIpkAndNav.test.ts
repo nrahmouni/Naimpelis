@@ -270,6 +270,12 @@ describe('LG webOS Smart TV (.ipk) Architecture, Legacy/Modern Tiers, Navigation
     expect(combined).toContain('window.webOS.platformBack');
   });
 
+  it('keeps explicit .ts extensions in webosIpkBuilder imports for Node native ESM server startup (Cloud Run)', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src/utils/webosIpkBuilder.ts'), 'utf8');
+    expect(src).toContain("from './debianIpkPacker.ts'");
+    expect(src).toContain("from './webosConfigGenerator.ts'");
+  });
+
   it('includes GitHub Actions workflow building both Universal (webOS 3-24+) and Modern Offline (.ipk) artifacts', () => {
     const workflowPath = path.join(ROOT, '.github', 'workflows', 'build-webos-ipk.yml');
     expect(fs.existsSync(workflowPath)).toBe(true);
