@@ -119,6 +119,16 @@ export const handleCasinoAndVoiceMessage: WsMessageHandler = (
       racing3d: 'Nitro GP 3D',
       gyrohockey: 'Neon Air Hockey Gyro',
       gyrospace: 'Galaxia Interceptor Gyro',
+      bomberman: 'Bomberman Party Arena',
+      pacman: 'Pac-Man Arcade HD',
+      tetris: 'Tetris Sprint TV',
+      hextris: 'Hextris Neon TV',
+      game2048: '2048 TV Edition',
+      flappy: 'Clumsy Bird TV',
+      hexgl: 'HexGL Hover 3D',
+      arkanoid: 'BrickIt Arkanoid',
+      invaders: 'Space Invaders Retro',
+      tvtrivia: 'Riffan TV Quiz Show',
     };
 
     const sysMsg: RoomChatMessageRecord = {

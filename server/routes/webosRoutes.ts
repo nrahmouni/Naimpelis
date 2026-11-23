@@ -17,7 +17,7 @@ import {
   rewriteHtmlForWebOsFileProtocol,
 } from '../../src/utils/webosIpkBuilder.ts';
 
-const MAX_MANIFEST_FILES = 240;
+const MAX_MANIFEST_FILES = 400;
 const SKIP_EXTS = new Set(['.apk', '.wgt', '.ipk', '.map', '.ipa', '.aab']);
 const SKIP_FILES = new Set(['sw.js', 'config.xml', 'appinfo.json', 'registerSW.js']);
 
@@ -87,10 +87,15 @@ export function registerWebOsRoutes(app: express.Express, rootDir: string): void
       'tv/tv-player-core.js',
       'tv/tv-player-modes.js',
       'tv/tv-hub.js',
+      'tv/tv-game-sprites.js',
       'tv/tv-games.js',
       'tv/tv-games-soccer.js',
       'tv/tv-games-racing.js',
       'tv/tv-games-gyro.js',
+      'tv/tv-games-puzzle.js',
+      'tv/tv-games-action.js',
+      'tv/tv-games-retro.js',
+      'tv/tv-games-quiz.js',
       'tv/tv-nav-voice.js',
       'vendor/hls.min.js',
       'vendor/riffan-racing-3d.iife.js',
@@ -100,6 +105,7 @@ export function registerWebOsRoutes(app: express.Express, rootDir: string): void
         files.push(rel);
       }
     }
+    walkSafeDistFiles(publicDir, path.join(publicDir, 'assets', 'games'), files);
 
     res.setHeader('Cache-Control', 'no-cache');
     return res.json({

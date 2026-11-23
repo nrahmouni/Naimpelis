@@ -7,6 +7,26 @@ var tvGyroArcadeWs = null;
 var tvGyroInput = { steer: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 };
 var tvGyroHasController = false;
 var tvGyroTelemPushAt = 0;
+var GYRO_BOOM_FRAMES = [
+  'assets/games/explosion/groundExplosion00.png', 'assets/games/explosion/groundExplosion01.png',
+  'assets/games/explosion/groundExplosion02.png', 'assets/games/explosion/groundExplosion03.png',
+  'assets/games/explosion/groundExplosion04.png', 'assets/games/explosion/groundExplosion05.png',
+  'assets/games/explosion/groundExplosion06.png', 'assets/games/explosion/groundExplosion07.png',
+  'assets/games/explosion/groundExplosion08.png'
+];
+function gyroSpr(c, p, x, y, w, h, r) { return typeof window.drawTvSprite === 'function' ? window.drawTvSprite(c, p, x, y, w, h, r) : false; }
+function gyroTiled(c, p, w, h, sx, sy) { return typeof window.drawTvTiledBg === 'function' ? window.drawTvTiledBg(c, p, w, h, sx, sy) : false; }
+function preloadGyroSpr() {
+  if (typeof window.preloadTvGameSprites === 'function') {
+    window.preloadTvGameSprites([
+      'assets/games/space/darkPurple.png', 'assets/games/space/playerShip1_blue.png',
+      'assets/games/space/fire00.png', 'assets/games/space/shield3.png',
+      'assets/games/space/enemyRed3.png', 'assets/games/space/meteorBrown_big1.png',
+      'assets/games/space/laserBlue01.png', 'assets/games/puzzle/ballGrey.png',
+      'assets/games/puzzle/particleStar.png'
+    ].concat(GYRO_BOOM_FRAMES));
+  }
+}
 
 function closeTvGyroArcadeGame() {
   if (tvGyroArcadeWs) {
@@ -149,6 +169,7 @@ function startGyroHockeyGame(scr) {
   var finTitle = document.getElementById('ah-fin-title');
   var finSub = document.getElementById('ah-fin-sub');
 
+  preloadGyroSpr();
   connectGyroArcadeWs(roomId, 'gyrohockey', document.getElementById('ah-gyro-pill'));
 
   var W = 920, H = 520, pad = 28, goalHalfW = 114;
@@ -334,15 +355,19 @@ function startGyroHockeyGame(scr) {
       ctx.beginPath(); ctx.arc(puckTrail[ti].x, puckTrail[ti].y, PR * (0.45 + 0.5 * (ti / puckTrail.length)), 0, Math.PI * 2); ctx.fill();
     }
     ctx.globalAlpha = 1;
-    ctx.fillStyle = '#FDE047'; ctx.beginPath(); ctx.arc(st.puck.x, st.puck.y, PR, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2.5; ctx.stroke();
+    if (!gyroSpr(ctx, 'assets/games/puzzle/ballGrey.png', st.puck.x, st.puck.y, PR * 2.15, PR * 2.15, 0)) {
+      ctx.fillStyle = '#FDE047'; ctx.beginPath(); ctx.arc(st.puck.x, st.puck.y, PR, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2.5; ctx.stroke();
+    }
 
     drawMallet(st.me.x, st.me.y, '#7C3AED', '#22D3EE');
     drawMallet(st.cpu.x, st.cpu.y, '#E11D48', '#FDA4AF');
 
     for (var spi = 0; spi < sparks.length; spi++) {
-      var spk = sparks[spi]; ctx.globalAlpha = Math.max(0, spk.life * 2.2); ctx.fillStyle = spk.color;
-      ctx.fillRect(spk.x - 2, spk.y - 2, 5, 5);
+      var spk = sparks[spi]; ctx.globalAlpha = Math.max(0, spk.life * 2.2);
+      if (!gyroSpr(ctx, 'assets/games/puzzle/particleStar.png', spk.x, spk.y, 12, 12, spk.life * 8)) {
+        ctx.fillStyle = spk.color; ctx.fillRect(spk.x - 2, spk.y - 2, 5, 5);
+      }
     }
     ctx.globalAlpha = 1;
 
@@ -414,18 +439,19 @@ function startGyroSpaceGame(scr) {
   var finOv = document.getElementById('sp-finish-ov');
   var finSub = document.getElementById('sp-fin-sub');
 
+  preloadGyroSpr();
   connectGyroArcadeWs(roomId, 'gyrospace', document.getElementById('sp-gyro-pill'));
 
   var W = 920, H = 520, keys = { left: false, right: false, up: false, fire: false };
   var stars = [];
   for (var si = 0; si < 75; si++) stars.push({ x: Math.random() * W, y: Math.random() * H, z: 0.4 + Math.random() * 1.6 });
 
-  var sp = { x: W / 2, y: H - 72, bank: 0, hp: 100, score: 0, wave: 1, combo: 1, fireCd: 0, spawnCd: 0.4, shieldFlash: 0, over: false, bullets: [], enemies: [], parts: [] };
+  var sp = { x: W / 2, y: H - 72, bank: 0, hp: 100, score: 0, wave: 1, combo: 1, fireCd: 0, spawnCd: 0.4, shieldFlash: 0, over: false, bgScroll: 0, shieldOn: false, bullets: [], enemies: [], parts: [], booms: [] };
 
   function resetSpace() {
     sp.x = W / 2; sp.y = H - 72; sp.bank = 0; sp.hp = 100; sp.score = 0; sp.wave = 1; sp.combo = 1;
-    sp.fireCd = 0; sp.spawnCd = 0.5; sp.shieldFlash = 0; sp.over = false;
-    sp.bullets = []; sp.enemies = []; sp.parts = []; finOv.style.display = 'none'; syncHud();
+    sp.fireCd = 0; sp.spawnCd = 0.5; sp.shieldFlash = 0; sp.over = false; sp.bgScroll = 0; sp.shieldOn = false;
+    sp.bullets = []; sp.enemies = []; sp.parts = []; sp.booms = []; finOv.style.display = 'none'; syncHud();
   }
   document.getElementById('btn-sp-replay').onclick = resetSpace;
 
@@ -435,6 +461,7 @@ function startGyroSpaceGame(scr) {
   }
 
   function boom(x, y, col, n) {
+    sp.booms.push({ x: x, y: y, size: n > 15 ? 74 : 56, t: 0, dur: 0.36 });
     for (var i = 0; i < n; i++) {
       var a = Math.random() * Math.PI * 2, spd = 70 + Math.random() * 240;
       sp.parts.push({ x: x, y: y, vx: Math.cos(a) * spd, vy: Math.sin(a) * spd, life: 0.5, col: col });
@@ -465,6 +492,7 @@ function startGyroSpaceGame(scr) {
     var dt = Math.min(0.035, Math.max(0.005, (now - lastTs) / 1000));
     lastTs = now;
     sp.shieldFlash = Math.max(0, sp.shieldFlash - dt * 2.5);
+    sp.bgScroll += (68 + sp.wave * 14) * dt;
 
     for (var sIdx = 0; sIdx < stars.length; sIdx++) {
       var stStar = stars[sIdx];
@@ -475,12 +503,16 @@ function startGyroSpaceGame(scr) {
       sp.parts[pi].x += sp.parts[pi].vx * dt; sp.parts[pi].y += sp.parts[pi].vy * dt; sp.parts[pi].life -= dt;
       if (sp.parts[pi].life <= 0) sp.parts.splice(pi, 1);
     }
+    for (var xmi = sp.booms.length - 1; xmi >= 0; xmi--) {
+      sp.booms[xmi].t += dt;
+      if (sp.booms[xmi].t >= sp.booms[xmi].dur) sp.booms.splice(xmi, 1);
+    }
 
     if (!sp.over) {
       var useGyro = Date.now() < tvGyroInput.expiresAt;
       var moveIn = useGyro ? tvGyroInput.steer : ((keys.right ? 1 : 0) - (keys.left ? 1 : 0));
       var fireOn = keys.fire || (useGyro && (tvGyroInput.throttle > 0.2 || tvGyroInput.nitro));
-      var shieldOn = keys.up || (useGyro && tvGyroInput.handbrake);
+      sp.shieldOn = keys.up || (useGyro && tvGyroInput.handbrake);
 
       sp.x = Math.max(40, Math.min(W - 40, sp.x + moveIn * 520 * dt));
       sp.bank += (moveIn * 0.42 - sp.bank) * Math.min(1, dt * 14);
@@ -535,7 +567,7 @@ function startGyroSpaceGame(scr) {
         if (destroyed) continue;
 
         if (Math.hypot(en.x - sp.x, en.y - sp.y) < en.r + 22) {
-          sp.hp -= shieldOn ? 14 : 34; sp.combo = 1; sp.shieldFlash = 1; hitImpact = 0.9;
+          sp.hp -= sp.shieldOn ? 14 : 34; sp.combo = 1; sp.shieldFlash = 1; hitImpact = 0.9;
           boom(en.x, en.y, '#FB7185', 18); playTvGameBeep(140, 0.2, 'sawtooth', 0.11);
           sp.enemies.splice(ei, 1);
           if (sp.hp <= 0) {
@@ -557,28 +589,36 @@ function startGyroSpaceGame(scr) {
     var bg = ctx.createLinearGradient(0, 0, 0, H);
     bg.addColorStop(0, '#040611'); bg.addColorStop(0.55, '#0b1026'); bg.addColorStop(1, '#180c2e');
     ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = 'rgba(124, 58, 237, 0.09)'; ctx.beginPath(); ctx.arc(220, 140, 180, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(14, 165, 233, 0.08)'; ctx.beginPath(); ctx.arc(700, 320, 210, 0, Math.PI * 2); ctx.fill();
+    gyroTiled(ctx, 'assets/games/space/darkPurple.png', W, H, 0, sp.bgScroll);
 
     for (var s2 = 0; s2 < stars.length; s2++) {
       var sr = stars[s2]; ctx.fillStyle = sr.z > 1.3 ? '#BAE6FD' : '#64748B';
       ctx.fillRect(sr.x, sr.y, sr.z * 2, sr.z * 2.5);
     }
 
-    ctx.fillStyle = '#22D3EE';
-    for (var bi2 = 0; bi2 < sp.bullets.length; bi2++) ctx.fillRect(sp.bullets[bi2].x - 2.5, sp.bullets[bi2].y - 12, 5, 18);
+    for (var bi2 = 0; bi2 < sp.bullets.length; bi2++) {
+      var bl = sp.bullets[bi2];
+      if (!gyroSpr(ctx, 'assets/games/space/laserBlue01.png', bl.x, bl.y, 10, 30, 0)) {
+        ctx.fillStyle = '#22D3EE'; ctx.fillRect(bl.x - 2.5, bl.y - 12, 5, 18);
+      }
+    }
 
     for (var ei2 = 0; ei2 < sp.enemies.length; ei2++) {
-      var eObj = sp.enemies[ei2]; ctx.save(); ctx.translate(eObj.x, eObj.y); ctx.rotate(eObj.rot);
+      var eObj = sp.enemies[ei2];
       if (eObj.kind === 'alien') {
-        ctx.fillStyle = '#E11D48'; ctx.beginPath();
-        ctx.moveTo(0, eObj.r); ctx.lineTo(-eObj.r, -eObj.r * 0.7); ctx.lineTo(0, -eObj.r * 0.25); ctx.lineTo(eObj.r, -eObj.r * 0.7);
-        ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#FACC15'; ctx.lineWidth = 2; ctx.stroke();
-      } else {
+        if (!gyroSpr(ctx, 'assets/games/space/enemyRed3.png', eObj.x, eObj.y, 44, 38, Math.sin(eObj.rot) * 0.16)) {
+          ctx.save(); ctx.translate(eObj.x, eObj.y); ctx.rotate(eObj.rot);
+          ctx.fillStyle = '#E11D48'; ctx.beginPath();
+          ctx.moveTo(0, eObj.r); ctx.lineTo(-eObj.r, -eObj.r * 0.7); ctx.lineTo(0, -eObj.r * 0.25); ctx.lineTo(eObj.r, -eObj.r * 0.7);
+          ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#FACC15'; ctx.lineWidth = 2; ctx.stroke();
+          ctx.restore();
+        }
+      } else if (!gyroSpr(ctx, 'assets/games/space/meteorBrown_big1.png', eObj.x, eObj.y, eObj.r * 2.15, eObj.r * 2.05, eObj.rot)) {
+        ctx.save(); ctx.translate(eObj.x, eObj.y); ctx.rotate(eObj.rot);
         ctx.fillStyle = '#334155'; ctx.beginPath(); ctx.arc(0, 0, eObj.r, 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = '#38BDF8'; ctx.lineWidth = 2.5; ctx.stroke();
+        ctx.restore();
       }
-      ctx.restore();
     }
 
     for (var p2 = 0; p2 < sp.parts.length; p2++) {
@@ -586,20 +626,32 @@ function startGyroSpaceGame(scr) {
       ctx.fillRect(sp.parts[p2].x - 2, sp.parts[p2].y - 2, 5, 5);
     }
     ctx.globalAlpha = 1;
+    for (var b3 = 0; b3 < sp.booms.length; b3++) {
+      var bm = sp.booms[b3], fIdx = Math.min(GYRO_BOOM_FRAMES.length - 1, Math.floor((bm.t / bm.dur) * GYRO_BOOM_FRAMES.length));
+      gyroSpr(ctx, GYRO_BOOM_FRAMES[fIdx], bm.x, bm.y, bm.size, bm.size, 0);
+    }
 
     if (!sp.over) {
       ctx.save(); ctx.translate(sp.x, sp.y); ctx.rotate(sp.bank);
-      if (sp.shieldFlash > 0) {
-        ctx.strokeStyle = 'rgba(251, 113, 133, 0.8)'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.stroke();
+      gyroSpr(ctx, 'assets/games/space/fire00.png', -12, 24, 12, 22, 0);
+      gyroSpr(ctx, 'assets/games/space/fire00.png', 12, 24, 12, 22, 0);
+      if (!gyroSpr(ctx, 'assets/games/space/playerShip1_blue.png', 0, 0, 54, 42, 0)) {
+        ctx.fillStyle = '#38BDF8';
+        ctx.beginPath(); ctx.arc(-11, 22, 5 + Math.random() * 4, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(11, 22, 5 + Math.random() * 4, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#7C3AED'; ctx.beginPath();
+        ctx.moveTo(0, -28); ctx.lineTo(-28, 18); ctx.lineTo(-10, 12); ctx.lineTo(0, 22); ctx.lineTo(10, 12); ctx.lineTo(28, 18);
+        ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#22D3EE'; ctx.lineWidth = 2.5; ctx.stroke();
+        ctx.fillStyle = '#E0F2FE'; ctx.beginPath(); ctx.ellipse(0, -6, 6, 12, 0, 0, Math.PI * 2); ctx.fill();
       }
-      ctx.fillStyle = '#38BDF8';
-      ctx.beginPath(); ctx.arc(-11, 22, 5 + Math.random() * 4, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(11, 22, 5 + Math.random() * 4, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#7C3AED'; ctx.beginPath();
-      ctx.moveTo(0, -28); ctx.lineTo(-28, 18); ctx.lineTo(-10, 12); ctx.lineTo(0, 22); ctx.lineTo(10, 12); ctx.lineTo(28, 18);
-      ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#22D3EE'; ctx.lineWidth = 2.5; ctx.stroke();
-      ctx.fillStyle = '#E0F2FE'; ctx.beginPath(); ctx.ellipse(0, -6, 6, 12, 0, 0, Math.PI * 2); ctx.fill();
+      if (sp.shieldOn || sp.shieldFlash > 0) {
+        ctx.globalAlpha = sp.shieldFlash > 0 ? 0.88 : 0.58;
+        if (!gyroSpr(ctx, 'assets/games/space/shield3.png', 0, 0, 76, 72, 0)) {
+          ctx.strokeStyle = 'rgba(251, 113, 133, 0.8)'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
       ctx.restore();
     }
     TV_GAME_RAF = requestAnimationFrame(frame);

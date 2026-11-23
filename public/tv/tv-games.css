@@ -152,6 +152,46 @@
   background: linear-gradient(135deg, #312e81 0%, #701a75 52%, #050713 100%);
 }
 
+.tv-game-card-stage.tetris {
+  background: linear-gradient(135deg, #1e1b4b 0%, #0e7490 55%, #070b14 100%);
+}
+
+.tv-game-card-stage.hextris {
+  background: linear-gradient(135deg, #3b0764 0%, #1d4ed8 55%, #060913 100%);
+}
+
+.tv-game-card-stage.game2048 {
+  background: linear-gradient(135deg, #78350f 0%, #b45309 50%, #0f172a 100%);
+}
+
+.tv-game-card-stage.pacman {
+  background: linear-gradient(135deg, #172554 0%, #1e3a8a 52%, #060913 100%);
+}
+
+.tv-game-card-stage.bomberman {
+  background: linear-gradient(135deg, #14532d 0%, #9a3412 56%, #070b14 100%);
+}
+
+.tv-game-card-stage.flappy {
+  background: linear-gradient(135deg, #0369a1 0%, #15803d 65%, #071320 100%);
+}
+
+.tv-game-card-stage.arkanoid {
+  background: linear-gradient(135deg, #4c1d95 0%, #be123c 55%, #070a15 100%);
+}
+
+.tv-game-card-stage.invaders {
+  background: linear-gradient(135deg, #0f172a 0%, #312e81 55%, #04060d 100%);
+}
+
+.tv-game-card-stage.hexgl {
+  background: linear-gradient(135deg, #43187a 0%, #0284c7 58%, #040212 100%);
+}
+
+.tv-game-card-stage.tvtrivia {
+  background: linear-gradient(135deg, #6d28d9 0%, #1e3a8a 58%, #090e1c 100%);
+}
+
 .tv-game-badge-row {
   display: -webkit-flex;
   display: flex;

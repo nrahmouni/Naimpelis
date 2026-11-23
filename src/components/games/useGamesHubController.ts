@@ -467,7 +467,24 @@ export function useGamesHubController({
   };
 
   const isLiveGame = (gt: UnifiedGameId) => {
-    if (gt === 'penalty' || gt === 'racing3d' || gt === 'gyrohockey' || gt === 'gyrospace') return false;
+    if (
+      gt === 'penalty' ||
+      gt === 'racing3d' ||
+      gt === 'gyrohockey' ||
+      gt === 'gyrospace' ||
+      gt === 'bomberman' ||
+      gt === 'pacman' ||
+      gt === 'tetris' ||
+      gt === 'hextris' ||
+      gt === 'game2048' ||
+      gt === 'flappy' ||
+      gt === 'hexgl' ||
+      gt === 'arkanoid' ||
+      gt === 'invaders' ||
+      gt === 'tvtrivia'
+    ) {
+      return false;
+    }
     if (gt === 'pool') return Boolean(roomPoolGame);
     if (gt === 'pinturillo') return Boolean(roomPinturilloGame);
     if (gt === 'chapas') return Boolean(roomChapasGame);

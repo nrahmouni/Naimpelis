@@ -30,6 +30,10 @@ import { PokerHoldemStage } from '../PokerHoldemStage';
 import { BlackjackStage } from '../BlackjackStage';
 import { PenaltyShootoutStage } from './PenaltyShootoutStage';
 import { GyroArcadeStage } from './GyroArcadeStage';
+import { ArcadePuzzleStage } from './arcade/ArcadePuzzleStage';
+import { ArcadeActionStage } from './arcade/ArcadeActionStage';
+import { ArcadeRetroStage } from './arcade/ArcadeRetroStage';
+import { TvTriviaStage } from './arcade/TvTriviaStage';
 import type { UnifiedGameId } from './GameLogos';
 import { isPartyGame } from './useGamesHubController';
 
@@ -173,6 +177,22 @@ export const GamesHubSecondaryStages: React.FC<GamesHubSecondaryStagesProps> = (
         onClose={handleBackToGames}
       />
     );
+  }
+
+  if (selectedGame === 'tetris' || selectedGame === 'hextris' || selectedGame === 'game2048') {
+    return <ArcadePuzzleStage gameId={selectedGame} lang={lang} mutedOverride={muted} />;
+  }
+
+  if (selectedGame === 'pacman' || selectedGame === 'bomberman' || selectedGame === 'flappy') {
+    return <ArcadeActionStage gameId={selectedGame} lang={lang} mutedOverride={muted} />;
+  }
+
+  if (selectedGame === 'arkanoid' || selectedGame === 'invaders' || selectedGame === 'hexgl') {
+    return <ArcadeRetroStage gameId={selectedGame} lang={lang} mutedOverride={muted} />;
+  }
+
+  if (selectedGame === 'tvtrivia') {
+    return <TvTriviaStage lang={lang} mutedOverride={muted} />;
   }
 
   if (selectedGame === 'racing3d') {

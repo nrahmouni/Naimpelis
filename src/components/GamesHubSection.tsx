@@ -193,7 +193,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
     const isRacing3d = selectedGame === 'racing3d';
     const isPoker = selectedGame === 'poker';
     const isBlackjack = selectedGame === 'blackjack';
-    const activeBoardState =
+    const isBoardLike =
       !isParty &&
       !isPinturillo &&
       !isPool &&
@@ -202,13 +202,26 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       !isPenalty &&
       !isRacing3d &&
       !isPoker &&
-      !isBlackjack
-        ? hubMode === 'offline'
-          ? localBoardGame
-          : roomBoardGame?.gameType === selectedGame
-          ? roomBoardGame
-          : null
-        : null;
+      !isBlackjack &&
+      selectedGame !== 'gyrohockey' &&
+      selectedGame !== 'gyrospace' &&
+      selectedGame !== 'bomberman' &&
+      selectedGame !== 'pacman' &&
+      selectedGame !== 'tetris' &&
+      selectedGame !== 'hextris' &&
+      selectedGame !== 'game2048' &&
+      selectedGame !== 'flappy' &&
+      selectedGame !== 'hexgl' &&
+      selectedGame !== 'arkanoid' &&
+      selectedGame !== 'invaders' &&
+      selectedGame !== 'tvtrivia';
+    const activeBoardState = isBoardLike
+      ? hubMode === 'offline'
+        ? localBoardGame
+        : roomBoardGame?.gameType === selectedGame
+        ? roomBoardGame
+        : null
+      : null;
 
     const titleMap = getGamesHubTitleMap(lang);
     const switcherOptions = getGameSwitcherOptions(titleMap);

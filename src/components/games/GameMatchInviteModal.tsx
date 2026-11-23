@@ -165,6 +165,66 @@ const GAME_INVITE_META: Record<RoomGameInviteType, GameInviteMeta> = {
       en: 'Starfighter steered with phone gyroscope tilt',
     },
   },
+  bomberman: {
+    emoji: '💣',
+    accent: '#F97316',
+    title: { es: 'Bomberman Party Arena', ca: 'Bomberman Party Arena', en: 'Bomberman Party Arena' },
+    subtitle: { es: 'Explosiones arcade y mejoras contra 3 bots', ca: 'Explosions arcade i millores contra 3 bots', en: 'Arcade bomb arena against 3 bots' },
+  },
+  pacman: {
+    emoji: '🟡',
+    accent: '#FACC15',
+    title: { es: 'Pac-Man Arcade HD', ca: 'Pac-Man Arcade HD', en: 'Pac-Man Arcade HD' },
+    subtitle: { es: 'Laberinto clásico con fantasmas y bolas gigantes', ca: 'Laberint clàssic amb fantasmes', en: 'Classic maze chase with ghosts' },
+  },
+  tetris: {
+    emoji: '🧱',
+    accent: '#A855F7',
+    title: { es: 'Tetris Sprint TV', ca: 'Tetris Sprint TV', en: 'Tetris Sprint TV' },
+    subtitle: { es: 'Encaja tetrominós y completa líneas a toda velocidad', ca: 'Encaixa tetrominós i completa línies', en: 'Fast tetromino stacking & line clears' },
+  },
+  hextris: {
+    emoji: '⬡',
+    accent: '#EC4899',
+    title: { es: 'Hextris Neon TV', ca: 'Hextris Neon TV', en: 'Hextris Neon TV' },
+    subtitle: { es: 'Gira el hexágono y combina 3 o más colores', ca: 'Gira l’hexàgon i combina 3 o més colors', en: 'Rotate the hexagon and match 3+ colors' },
+  },
+  game2048: {
+    emoji: '🔢',
+    accent: '#F59E0B',
+    title: { es: '2048 TV Edition', ca: '2048 TV Edition', en: '2048 TV Edition' },
+    subtitle: { es: 'Desliza fichas numéricas hasta conseguir el 2048', ca: 'Llisca fitxes fins aconseguir el 2048', en: 'Slide and merge tiles to reach 2048' },
+  },
+  flappy: {
+    emoji: '🐦',
+    accent: '#38BDF8',
+    title: { es: 'Clumsy Bird TV', ca: 'Clumsy Bird TV', en: 'Clumsy Bird TV' },
+    subtitle: { es: 'Supera tuberías con un solo botón', ca: 'Supera canonades amb un sol botó', en: 'One-button pipe flying challenge' },
+  },
+  hexgl: {
+    emoji: '🛸',
+    accent: '#22D3EE',
+    title: { es: 'HexGL Hover 3D', ca: 'HexGL Hover 3D', en: 'HexGL Hover 3D' },
+    subtitle: { es: 'Carrera futurista con turbo y escudos en circuito neon', ca: 'Cursa futurista amb turbo i escuts', en: 'Futuristic hovercraft speedway racer' },
+  },
+  arkanoid: {
+    emoji: '🧱',
+    accent: '#3B82F6',
+    title: { es: 'BrickIt Arkanoid Neon', ca: 'BrickIt Arkanoid Neon', en: 'BrickIt Arkanoid Neon' },
+    subtitle: { es: 'Destruye ladrillos con multibola, pala ancha y láser', ca: 'Destrueix maons amb multibola i làser', en: 'Break neon bricks with multiball & laser' },
+  },
+  invaders: {
+    emoji: '👾',
+    accent: '#22C55E',
+    title: { es: 'Space Invaders Retro', ca: 'Space Invaders Retro', en: 'Space Invaders Retro' },
+    subtitle: { es: 'Defiende la galaxia frente a oleadas alienígenas', ca: 'Defensa la galàxia d’onades alienígenes', en: 'Defend Earth against alien waves' },
+  },
+  tvtrivia: {
+    emoji: '🧠',
+    accent: '#8B5CF6',
+    title: { es: 'Riffan TV Quiz Show', ca: 'Riffan TV Quiz Show', en: 'Riffan TV Quiz Show' },
+    subtitle: { es: 'Concurso en español de 1 a 4 jugadores en el sofá', ca: 'Concurs d’1 a 4 jugadors al sofà', en: 'Spanish TV quiz show for 1–4 couch players' },
+  },
 };
 
 interface GameMatchInviteModalProps {

@@ -215,10 +215,15 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
       'public/tv/tv-player-core.js',
       'public/tv/tv-player-modes.js',
       'public/tv/tv-hub.js',
+      'public/tv/tv-game-sprites.js',
       'public/tv/tv-games.js',
       'public/tv/tv-games-soccer.js',
       'public/tv/tv-games-racing.js',
       'public/tv/tv-games-gyro.js',
+      'public/tv/tv-games-puzzle.js',
+      'public/tv/tv-games-action.js',
+      'public/tv/tv-games-retro.js',
+      'public/tv/tv-games-quiz.js',
       'public/tv/tv-nav-voice.js',
     ];
     for (const rel of tvScripts) {
@@ -227,10 +232,15 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
     }
 
     const lineCapFiles = [
+      'public/tv/tv-game-sprites.js',
       'public/tv/tv-games.js',
       'public/tv/tv-games-soccer.js',
       'public/tv/tv-games-racing.js',
       'public/tv/tv-games-gyro.js',
+      'public/tv/tv-games-puzzle.js',
+      'public/tv/tv-games-action.js',
+      'public/tv/tv-games-retro.js',
+      'public/tv/tv-games-quiz.js',
     ];
     for (const rel of lineCapFiles) {
       const lines = fs.readFileSync(path.join(ROOT, rel), 'utf8').split('\n').length;

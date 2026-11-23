@@ -11,6 +11,16 @@ export type UnifiedGameId =
   | 'racing3d'
   | 'gyrohockey'
   | 'gyrospace'
+  | 'bomberman'
+  | 'pacman'
+  | 'tetris'
+  | 'hextris'
+  | 'game2048'
+  | 'flappy'
+  | 'hexgl'
+  | 'arkanoid'
+  | 'invaders'
+  | 'tvtrivia'
   | 'poker'
   | 'blackjack'
   | 'chess'
@@ -505,6 +515,165 @@ export const GameLogoArtwork: React.FC<GameLogoArtworkProps> = ({
             <ellipse cx="0" cy="0" rx="19" ry="13.5" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="2" />
             <path d="M-10 5 L-8 -5 L-2 0 L0 -8 L2 0 L8 -5 L10 5 Z" fill="#FDE047" />
           </g>
+        </svg>
+      );
+
+    case 'bomberman':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#0B1914" />
+          <rect x="26" y="16" width="188" height="108" rx="12" fill="#14532D" stroke="#22C55E" strokeWidth="2.5" />
+          <rect x="46" y="34" width="28" height="28" rx="4" fill="#B45309" stroke="#78350F" strokeWidth="2" />
+          <rect x="166" y="34" width="28" height="28" rx="4" fill="#B45309" stroke="#78350F" strokeWidth="2" />
+          <rect x="46" y="78" width="28" height="28" rx="4" fill="#334155" />
+          <rect x="166" y="78" width="28" height="28" rx="4" fill="#334155" />
+          <path d="M104 30 V110 M82 70 H158" stroke="#F97316" strokeWidth="16" strokeLinecap="round" opacity="0.7" />
+          <path d="M120 34 V106 M88 70 H152" stroke="#FEF08A" strokeWidth="7" strokeLinecap="round" />
+          <circle cx="120" cy="70" r="18" fill="#0F172A" stroke="#FACC15" strokeWidth="2.5" />
+          <circle cx="132" cy="52" r="5" fill="#FACC15" />
+        </svg>
+      );
+
+    case 'pacman':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#050814" />
+          <rect x="18" y="20" width="204" height="100" rx="10" fill="none" stroke="#2563EB" strokeWidth="3.5" />
+          <line x1="18" y1="42" x2="108" y2="42" stroke="#2563EB" strokeWidth="3" />
+          <line x1="18" y1="98" x2="108" y2="98" stroke="#2563EB" strokeWidth="3" />
+          <circle cx="110" cy="70" r="4" fill="#FDE68A" />
+          <circle cx="132" cy="70" r="4" fill="#FDE68A" />
+          <circle cx="154" cy="70" r="7" fill="#FACC15" />
+          <path d="M72 70 L94 56 A26 26 0 1 0 94 84 Z" fill="#FACC15" />
+          <g transform="translate(184, 70)">
+            <path d="M-16 14 V-4 A16 16 0 0 1 16 -4 V14 L10 8 L4 14 L-4 8 L-10 14 Z" fill="#EF4444" />
+            <circle cx="-5" cy="-4" r="3.5" fill="#FFFFFF" />
+            <circle cx="5" cy="-4" r="3.5" fill="#FFFFFF" />
+            <circle cx="-4" cy="-4" r="1.7" fill="#0F172A" />
+            <circle cx="6" cy="-4" r="1.7" fill="#0F172A" />
+          </g>
+        </svg>
+      );
+
+    case 'tetris':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#080C1A" />
+          <rect x="64" y="12" width="112" height="116" rx="8" fill="#0F172A" stroke="#7C3AED" strokeWidth="2.5" />
+          <rect x="92" y="34" width="18" height="18" rx="3" fill="#A855F7" />
+          <rect x="74" y="52" width="18" height="18" rx="3" fill="#A855F7" />
+          <rect x="92" y="52" width="18" height="18" rx="3" fill="#A855F7" />
+          <rect x="110" y="52" width="18" height="18" rx="3" fill="#A855F7" />
+          <rect x="132" y="32" width="18" height="18" rx="3" fill="#22D3EE" />
+          <rect x="132" y="50" width="18" height="18" rx="3" fill="#22D3EE" />
+          <rect x="132" y="68" width="18" height="18" rx="3" fill="#22D3EE" />
+          <rect x="74" y="102" width="18" height="18" rx="3" fill="#FACC15" />
+          <rect x="92" y="102" width="18" height="18" rx="3" fill="#FACC15" />
+          <rect x="110" y="102" width="18" height="18" rx="3" fill="#22C55E" />
+          <rect x="128" y="102" width="18" height="18" rx="3" fill="#F43F5E" />
+          <rect x="146" y="102" width="18" height="18" rx="3" fill="#F97316" />
+        </svg>
+      );
+
+    case 'hextris':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#070A16" />
+          <polygon points="120,26 158,48 158,92 120,114 82,92 82,48" fill="none" stroke="#F43F5E" strokeWidth="6" />
+          <polygon points="120,38 148,54 148,86 120,102 92,86 92,54" fill="none" stroke="#38BDF8" strokeWidth="6" />
+          <polygon points="120,50 138,60 138,80 120,90 102,80 102,60" fill="#141B33" stroke="#A78BFA" strokeWidth="3" />
+          <rect x="184" y="58" width="22" height="12" rx="3" fill="#22C55E" />
+          <rect x="34" y="72" width="22" height="12" rx="3" fill="#FACC15" />
+        </svg>
+      );
+
+    case 'game2048':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#0B1120" />
+          <rect x="52" y="16" width="136" height="108" rx="14" fill="#162036" stroke="#334155" strokeWidth="2" />
+          <rect x="64" y="28" width="52" height="38" rx="8" fill="#F59563" />
+          <text x="90" y="54" textAnchor="middle" fontSize="18" fontWeight="900" fill="#FFFFFF">64</text>
+          <rect x="124" y="28" width="52" height="38" rx="8" fill="#EDCF72" />
+          <text x="150" y="54" textAnchor="middle" fontSize="17" fontWeight="900" fill="#FFFFFF">512</text>
+          <rect x="64" y="74" width="52" height="38" rx="8" fill="#8B5CF6" />
+          <text x="90" y="100" textAnchor="middle" fontSize="15" fontWeight="900" fill="#FFFFFF">1024</text>
+          <rect x="124" y="74" width="52" height="38" rx="8" fill="#22C55E" />
+          <text x="150" y="100" textAnchor="middle" fontSize="16" fontWeight="900" fill="#FFFFFF">2048</text>
+        </svg>
+      );
+
+    case 'flappy':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#0C4A6E" />
+          <rect x="0" y="114" width="240" height="26" fill="#15803D" />
+          <rect x="148" y="0" width="28" height="46" fill="#22C55E" stroke="#14532D" strokeWidth="2" />
+          <rect x="144" y="38" width="36" height="10" rx="2" fill="#22C55E" stroke="#14532D" strokeWidth="2" />
+          <rect x="148" y="88" width="28" height="28" fill="#22C55E" stroke="#14532D" strokeWidth="2" />
+          <rect x="144" y="84" width="36" height="10" rx="2" fill="#22C55E" stroke="#14532D" strokeWidth="2" />
+          <ellipse cx="86" cy="68" rx="18" ry="14" fill="#FACC15" stroke="#0F172A" strokeWidth="2.5" />
+          <circle cx="94" cy="63" r="5" fill="#FFFFFF" />
+          <circle cx="96" cy="63" r="2.2" fill="#0F172A" />
+          <polygon points="101,67 114,71 101,76" fill="#F97316" />
+        </svg>
+      );
+
+    case 'hexgl':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#060A18" />
+          <polygon points="14,140 94,48 146,48 226,140" fill="#111834" stroke="#22D3EE" strokeWidth="2" />
+          <line x1="120" y1="48" x2="120" y2="140" stroke="#7C3AED" strokeWidth="2" strokeDasharray="6 6" />
+          <rect x="92" y="78" width="56" height="8" rx="3" fill="#22D3EE" />
+          <polygon points="120,86 150,118 128,112 120,122 112,112 90,118" fill="#22D3EE" stroke="#FFFFFF" strokeWidth="2" />
+        </svg>
+      );
+
+    case 'arkanoid':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#070B16" />
+          <rect x="28" y="20" width="42" height="14" rx="4" fill="#F43F5E" />
+          <rect x="76" y="20" width="42" height="14" rx="4" fill="#F97316" />
+          <rect x="124" y="20" width="42" height="14" rx="4" fill="#FACC15" />
+          <rect x="172" y="20" width="42" height="14" rx="4" fill="#22C55E" />
+          <rect x="28" y="40" width="42" height="14" rx="4" fill="#38BDF8" />
+          <rect x="76" y="40" width="42" height="14" rx="4" fill="#A855F7" />
+          <rect x="172" y="40" width="42" height="14" rx="4" fill="#38BDF8" />
+          <circle cx="136" cy="76" r="8" fill="#FFFFFF" />
+          <rect x="84" y="114" width="72" height="11" rx="5.5" fill="#38BDF8" stroke="#FFFFFF" strokeWidth="1.5" />
+        </svg>
+      );
+
+    case 'invaders':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#040710" />
+          <g fill="#22C55E">
+            <rect x="52" y="26" width="24" height="14" rx="3" />
+            <rect x="108" y="26" width="24" height="14" rx="3" />
+            <rect x="164" y="26" width="24" height="14" rx="3" />
+          </g>
+          <g fill="#38BDF8">
+            <rect x="78" y="50" width="24" height="14" rx="3" />
+            <rect x="138" y="50" width="24" height="14" rx="3" />
+          </g>
+          <rect x="118" y="74" width="4" height="16" fill="#FDE047" />
+          <polygon points="120,98 138,118 102,118" fill="#22D3EE" />
+        </svg>
+      );
+
+    case 'tvtrivia':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#1E1038" />
+          <circle cx="120" cy="48" r="24" fill="#7C3AED" stroke="#FACC15" strokeWidth="2.5" />
+          <text x="120" y="57" textAnchor="middle" fontSize="26" fontWeight="900" fill="#FFFFFF">?</text>
+          <rect x="34" y="84" width="80" height="20" rx="6" fill="#0F172A" stroke="#38BDF8" strokeWidth="1.8" />
+          <rect x="126" y="84" width="80" height="20" rx="6" fill="#14532D" stroke="#22C55E" strokeWidth="2" />
+          <rect x="34" y="110" width="80" height="18" rx="6" fill="#0F172A" stroke="#A855F7" strokeWidth="1.5" />
+          <rect x="126" y="110" width="80" height="18" rx="6" fill="#0F172A" stroke="#F43F5E" strokeWidth="1.5" />
         </svg>
       );
 

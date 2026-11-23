@@ -7,6 +7,12 @@ import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { resolvePublicLinkOrigin } from '../../utils/shortLink';
 import { playGameSfx } from './GameEffects';
+import {
+  drawArcadeSprite,
+  drawArcadeTiledBg,
+  EXPLOSION_FRAMES,
+  preloadArcadeSprites,
+} from './arcade/arcadeSprites';
 
 export type GyroArcadeGameId = 'gyrohockey' | 'gyrospace';
 
@@ -120,6 +126,19 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
     let rafId = 0;
     let lastTs = performance.now();
     setFinishSummary(null);
+
+    preloadArcadeSprites([
+      'assets/games/space/darkPurple.png',
+      'assets/games/space/playerShip1_blue.png',
+      'assets/games/space/fire00.png',
+      'assets/games/space/shield3.png',
+      'assets/games/space/enemyRed3.png',
+      'assets/games/space/meteorBrown_big1.png',
+      'assets/games/space/laserBlue01.png',
+      'assets/games/puzzle/ballGrey.png',
+      'assets/games/puzzle/particleStar.png',
+      ...EXPLOSION_FRAMES,
+    ]);
 
     const pushTelemetry = (speedKmh: number, scoreL: number, scoreR: number, energy: number, impact: number, over: boolean) => {
       const now = performance.now();
@@ -312,8 +331,10 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
           ctx.beginPath(); ctx.arc(puckTrail[i].x, puckTrail[i].y, PR * (0.45 + 0.5 * (i / puckTrail.length)), 0, Math.PI * 2); ctx.fill();
         }
         ctx.globalAlpha = 1;
-        ctx.fillStyle = '#FDE047'; ctx.beginPath(); ctx.arc(st.puck.x, st.puck.y, PR, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2.5; ctx.stroke();
+        if (!drawArcadeSprite(ctx, 'assets/games/puzzle/ballGrey.png', st.puck.x, st.puck.y, PR * 2.15, PR * 2.15)) {
+          ctx.fillStyle = '#FDE047'; ctx.beginPath(); ctx.arc(st.puck.x, st.puck.y, PR, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2.5; ctx.stroke();
+        }
 
         const drawM = (x: number, y: number, fill: string, ring: string) => {
           ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(x, y, MR, 0, Math.PI * 2); ctx.fill();
@@ -325,8 +346,10 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
         drawM(st.cpu.x, st.cpu.y, '#E11D48', '#FDA4AF');
 
         for (const sp of sparks) {
-          ctx.globalAlpha = Math.max(0, sp.life * 2.2); ctx.fillStyle = sp.color;
-          ctx.fillRect(sp.x - 2, sp.y - 2, 5, 5);
+          if (!drawArcadeSprite(ctx, 'assets/games/puzzle/particleStar.png', sp.x, sp.y, 12, 12, sp.life * 8, Math.max(0, sp.life * 2.2))) {
+            ctx.globalAlpha = Math.max(0, sp.life * 2.2); ctx.fillStyle = sp.color;
+            ctx.fillRect(sp.x - 2, sp.y - 2, 5, 5);
+          }
         }
         ctx.globalAlpha = 1;
 
@@ -349,13 +372,15 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
     const stars = Array.from({ length: 75 }, () => ({ x: Math.random() * W, y: Math.random() * H, z: 0.4 + Math.random() * 1.6 }));
     const sp = {
       x: W / 2, y: H - 72, bank: 0, hp: 100, score: 0, wave: 1, combo: 1,
-      fireCd: 0, spawnCd: 0.4, shieldFlash: 0, over: false,
+      fireCd: 0, spawnCd: 0.4, shieldFlash: 0, over: false, bgScroll: 0, shieldOn: false,
       bullets: [] as Array<{ x: number; y: number; vy: number }>,
       enemies: [] as Array<{ x: number; y: number; vx: number; vy: number; r: number; hp: number; kind: 'alien' | 'rock'; rot: number }>,
       parts: [] as Array<{ x: number; y: number; vx: number; vy: number; life: number; col: string }>,
+      booms: [] as Array<{ x: number; y: number; size: number; t: number; dur: number }>,
     };
 
     const boom = (x: number, y: number, col: string, n: number) => {
+      sp.booms.push({ x, y, size: n > 15 ? 74 : 56, t: 0, dur: 0.36 });
       for (let i = 0; i < n; i += 1) {
         const a = Math.random() * Math.PI * 2;
         const spd = 70 + Math.random() * 240;
@@ -367,6 +392,7 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
       const dt = Math.min(0.035, Math.max(0.005, (now - lastTs) / 1000));
       lastTs = now;
       sp.shieldFlash = Math.max(0, sp.shieldFlash - dt * 2.5);
+      sp.bgScroll += (68 + sp.wave * 14) * dt;
 
       for (const s of stars) {
         s.y += (90 + sp.wave * 18) * s.z * dt;
@@ -378,12 +404,16 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
         sp.parts[i].life -= dt;
         if (sp.parts[i].life <= 0) sp.parts.splice(i, 1);
       }
+      for (let i = sp.booms.length - 1; i >= 0; i -= 1) {
+        sp.booms[i].t += dt;
+        if (sp.booms[i].t >= sp.booms[i].dur) sp.booms.splice(i, 1);
+      }
 
       if (!sp.over) {
         const useGyro = Date.now() < gyroRef.current.expiresAt;
         const moveIn = useGyro ? gyroRef.current.steer : ((keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0));
         const fireOn = keysRef.current.action || (useGyro && (gyroRef.current.throttle > 0.2 || gyroRef.current.nitro));
-        const shieldOn = keysRef.current.up || (useGyro && gyroRef.current.handbrake);
+        sp.shieldOn = keysRef.current.up || (useGyro && gyroRef.current.handbrake);
 
         sp.x = Math.max(40, Math.min(W - 40, sp.x + moveIn * 520 * dt));
         sp.bank += (moveIn * 0.42 - sp.bank) * Math.min(1, dt * 14);
@@ -438,7 +468,7 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
           if (destroyed) continue;
 
           if (Math.hypot(en.x - sp.x, en.y - sp.y) < en.r + 22) {
-            sp.hp -= shieldOn ? 14 : 34; sp.combo = 1; sp.shieldFlash = 1; impact = 0.9;
+            sp.hp -= sp.shieldOn ? 14 : 34; sp.combo = 1; sp.shieldFlash = 1; impact = 0.9;
             boom(en.x, en.y, '#FB7185', 18); playGameSfx('board_capture', mutedRef.current);
             sp.enemies.splice(i, 1);
             if (sp.hp <= 0) {
@@ -460,37 +490,57 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
       const bg = ctx.createLinearGradient(0, 0, 0, H);
       bg.addColorStop(0, '#040611'); bg.addColorStop(0.55, '#0b1026'); bg.addColorStop(1, '#180c2e');
       ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+      drawArcadeTiledBg(ctx, 'assets/games/space/darkPurple.png', W, H, 0, sp.bgScroll);
 
       for (const s of stars) { ctx.fillStyle = s.z > 1.3 ? '#BAE6FD' : '#64748B'; ctx.fillRect(s.x, s.y, s.z * 2, s.z * 2.5); }
-      ctx.fillStyle = '#22D3EE';
-      for (const bl of sp.bullets) ctx.fillRect(bl.x - 2.5, bl.y - 12, 5, 18);
+      for (const bl of sp.bullets) {
+        if (!drawArcadeSprite(ctx, 'assets/games/space/laserBlue01.png', bl.x, bl.y, 10, 30)) {
+          ctx.fillStyle = '#22D3EE'; ctx.fillRect(bl.x - 2.5, bl.y - 12, 5, 18);
+        }
+      }
 
       for (const en of sp.enemies) {
-        ctx.save(); ctx.translate(en.x, en.y); ctx.rotate(en.rot);
         if (en.kind === 'alien') {
-          ctx.fillStyle = '#E11D48'; ctx.beginPath();
-          ctx.moveTo(0, en.r); ctx.lineTo(-en.r, -en.r * 0.7); ctx.lineTo(0, -en.r * 0.25); ctx.lineTo(en.r, -en.r * 0.7);
-          ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#FACC15'; ctx.lineWidth = 2; ctx.stroke();
-        } else {
+          if (!drawArcadeSprite(ctx, 'assets/games/space/enemyRed3.png', en.x, en.y, 44, 38, Math.sin(en.rot) * 0.16)) {
+            ctx.save(); ctx.translate(en.x, en.y); ctx.rotate(en.rot);
+            ctx.fillStyle = '#E11D48'; ctx.beginPath();
+            ctx.moveTo(0, en.r); ctx.lineTo(-en.r, -en.r * 0.7); ctx.lineTo(0, -en.r * 0.25); ctx.lineTo(en.r, -en.r * 0.7);
+            ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#FACC15'; ctx.lineWidth = 2; ctx.stroke();
+            ctx.restore();
+          }
+        } else if (!drawArcadeSprite(ctx, 'assets/games/space/meteorBrown_big1.png', en.x, en.y, en.r * 2.15, en.r * 2.05, en.rot)) {
+          ctx.save(); ctx.translate(en.x, en.y); ctx.rotate(en.rot);
           ctx.fillStyle = '#334155'; ctx.beginPath(); ctx.arc(0, 0, en.r, 0, Math.PI * 2); ctx.fill();
           ctx.strokeStyle = '#38BDF8'; ctx.lineWidth = 2.5; ctx.stroke();
+          ctx.restore();
         }
-        ctx.restore();
       }
 
       for (const pt of sp.parts) { ctx.globalAlpha = Math.max(0, pt.life * 2); ctx.fillStyle = pt.col; ctx.fillRect(pt.x - 2, pt.y - 2, 5, 5); }
       ctx.globalAlpha = 1;
+      for (const bm of sp.booms) {
+        const fIdx = Math.min(EXPLOSION_FRAMES.length - 1, Math.floor((bm.t / bm.dur) * EXPLOSION_FRAMES.length));
+        drawArcadeSprite(ctx, EXPLOSION_FRAMES[fIdx], bm.x, bm.y, bm.size, bm.size);
+      }
 
       if (!sp.over) {
         ctx.save(); ctx.translate(sp.x, sp.y); ctx.rotate(sp.bank);
-        if (sp.shieldFlash > 0) { ctx.strokeStyle = 'rgba(251, 113, 133, 0.8)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.stroke(); }
-        ctx.fillStyle = '#38BDF8';
-        ctx.beginPath(); ctx.arc(-11, 22, 5 + Math.random() * 4, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(11, 22, 5 + Math.random() * 4, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#7C3AED'; ctx.beginPath();
-        ctx.moveTo(0, -28); ctx.lineTo(-28, 18); ctx.lineTo(-10, 12); ctx.lineTo(0, 22); ctx.lineTo(10, 12); ctx.lineTo(28, 18);
-        ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#22D3EE'; ctx.lineWidth = 2.5; ctx.stroke();
-        ctx.fillStyle = '#E0F2FE'; ctx.beginPath(); ctx.ellipse(0, -6, 6, 12, 0, 0, Math.PI * 2); ctx.fill();
+        drawArcadeSprite(ctx, 'assets/games/space/fire00.png', -12, 24, 12, 22);
+        drawArcadeSprite(ctx, 'assets/games/space/fire00.png', 12, 24, 12, 22);
+        if (!drawArcadeSprite(ctx, 'assets/games/space/playerShip1_blue.png', 0, 0, 54, 42)) {
+          ctx.fillStyle = '#38BDF8';
+          ctx.beginPath(); ctx.arc(-11, 22, 5 + Math.random() * 4, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.arc(11, 22, 5 + Math.random() * 4, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#7C3AED'; ctx.beginPath();
+          ctx.moveTo(0, -28); ctx.lineTo(-28, 18); ctx.lineTo(-10, 12); ctx.lineTo(0, 22); ctx.lineTo(10, 12); ctx.lineTo(28, 18);
+          ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#22D3EE'; ctx.lineWidth = 2.5; ctx.stroke();
+          ctx.fillStyle = '#E0F2FE'; ctx.beginPath(); ctx.ellipse(0, -6, 6, 12, 0, 0, Math.PI * 2); ctx.fill();
+        }
+        if (sp.shieldOn || sp.shieldFlash > 0) {
+          if (!drawArcadeSprite(ctx, 'assets/games/space/shield3.png', 0, 0, 76, 72, 0, sp.shieldFlash > 0 ? 0.88 : 0.58)) {
+            ctx.strokeStyle = 'rgba(251, 113, 133, 0.8)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, 34, 0, Math.PI * 2); ctx.stroke();
+          }
+        }
         ctx.restore();
       }
       rafId = requestAnimationFrame(stepSpace);
