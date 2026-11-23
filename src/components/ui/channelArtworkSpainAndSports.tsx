@@ -480,7 +480,56 @@ export function renderSpainAndSportsArtwork(id: string): React.ReactElement | nu
     );
   }
 
-  // 16. Paramount Network (Mountain Silhouettes + Stars)
+  // 16. Squirrel Cine TV / Veo 7 / Paramount Network
+  if (id === 'tdt-squirrel') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-full h-full">
+        <rect width="64" height="64" rx="16" fill="#0B1B3B" />
+        <circle cx="32" cy="32" r="21" fill="#2563EB" opacity="0.24" />
+        <text
+          x="32"
+          y="36"
+          textAnchor="middle"
+          fill="#FFFFFF"
+          fontSize="13.5"
+          fontWeight="900"
+          fontFamily="system-ui, sans-serif"
+        >
+          SQRL
+        </text>
+        <text
+          x="32"
+          y="48"
+          textAnchor="middle"
+          fill="#93C5FD"
+          fontSize="8.5"
+          fontWeight="800"
+          fontFamily="system-ui, sans-serif"
+        >
+          CINE TV
+        </text>
+      </svg>
+    );
+  }
+  if (id === 'tdt-veo7') {
+    return (
+      <svg viewBox="0 0 64 64" className="w-full h-full">
+        <rect width="64" height="64" rx="16" fill="#07192E" />
+        <rect x="10" y="16" width="44" height="32" rx="8" fill="#0EA5E9" opacity="0.2" stroke="#38BDF8" strokeWidth="1.5" />
+        <text
+          x="32"
+          y="38"
+          textAnchor="middle"
+          fill="#FFFFFF"
+          fontSize="15"
+          fontWeight="900"
+          fontFamily="system-ui, sans-serif"
+        >
+          VEO 7
+        </text>
+      </svg>
+    );
+  }
   if (id === 'tdt-paramount') {
     return (
       <svg viewBox="0 0 64 64" className="w-full h-full">

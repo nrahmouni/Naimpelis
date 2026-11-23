@@ -27,7 +27,7 @@ import {
   getCachedFamelackWorldChannels,
   refreshFamelackAndWorldCatalog,
 } from '../services/famelackIptvService.ts';
-import { getBelixLiveChannels, resolveBelixManifest } from '../services/belix/belixXtreamClient.ts';
+import { getBelixLiveChannels, getBelixStatus, resolveBelixManifest } from '../services/belix/belixXtreamClient.ts';
 import { getCuratedRbtvChannels } from '../services/rbtv/rbtvLiveCurator.ts';
 import {
   ensureLiveDvbCleanHlsSession,
@@ -76,7 +76,7 @@ async function resolveDvbIptvPlaylistText(
   referer: string,
   publicOrigin: string
 ): Promise<string | null> {
-  const sessionPath = await ensureLiveDvbCleanHlsSession(cleanUrl, 'iptv', referer).catch(() => null);
+  const sessionPath = await ensureLiveDvbCleanHlsSession(cleanUrl, 'hd', referer).catch(() => null);
   if (!sessionPath) return null;
   return readLiveDvbPlaylistForIptv(sessionPath, publicOrigin);
 }
@@ -104,6 +104,11 @@ export function registerIptvAndTdtRoutes(
     if (req.query.refresh === '1') {
       await refreshLiveIptvRegistry(true).catch(() => undefined);
       invalidateIptvChannelCache();
+    } else if (getIptvSyncMeta().lastSyncAt === 0) {
+      await Promise.race([
+        refreshLiveIptvRegistry(false).catch(() => undefined),
+        new Promise<void>((resolve) => setTimeout(resolve, 1800)),
+      ]);
     } else {
       void refreshLiveIptvRegistry(false).catch(() => undefined);
     }
@@ -440,6 +445,10 @@ export function registerIptvAndTdtRoutes(
           /\.m3u8(\?|$)/i.test(sourceUrl);
 
         if (sourceUrl.startsWith('/api/belix/stream/')) {
+          if (!getBelixStatus().connected) {
+            markTrackDown(sourceUrl, 503);
+            continue;
+          }
           const belixStreamId = sourceUrl.split('/').pop()?.replace(/\.m3u8.*$/i, '') || '';
           const belixManifest = await resolveBelixManifest(belixStreamId, publicOrigin);
           if (!belixManifest) {

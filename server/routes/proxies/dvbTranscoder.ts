@@ -134,7 +134,7 @@ export function remuxDvbTsToAac(
             '-ar',
             '48000',
             '-b:a',
-            '128k',
+            '160k',
             '-sn',
             '-dn',
             '-copyts',
@@ -209,7 +209,7 @@ try {
 } catch {
   // ignore cleanup permission errors
 }
-const MAX_LIVE_DVB_SESSIONS = 5;
+const MAX_LIVE_DVB_SESSIONS = 4;
 const DVB_SESSION_IDLE_MS = 45_000;
 const liveDvbSessions = new Map<string, LiveDvbRelaySession>();
 const dvbSessionUpstreamMeta = new LruTtlCache<
@@ -363,11 +363,12 @@ export async function ensureLiveDvbCleanHlsSession(
   const vfFilter = isUhd4kStream
     ? isFastProfile
       ? 'fps=25,scale=1280:720:flags=fast_bilinear,format=yuv420p'
-      : 'fps=25,scale=1920:1080:flags=fast_bilinear,format=yuv420p'
+      : 'fps=25,scale=1920:1080:flags=bilinear,format=yuv420p'
     : isFastProfile
-    ? "yadif=0:-1:0,scale='min(1280,iw)':-2,format=yuv420p"
-    : "yadif=0:-1:0,scale='min(1920,iw)':-2,format=yuv420p";
+    ? "yadif=0:-1:1,scale='min(1280,iw)':-2,format=yuv420p"
+    : "yadif=0:-1:1,scale='min(1920,iw)':-2,format=yuv420p";
 
+  const useUltrafast = isUhd4kStream || isFastProfile || liveDvbSessions.size >= 2;
   ffArgs.push(
     '-reconnect',
     '1',
@@ -376,13 +377,13 @@ export async function ensureLiveDvbCleanHlsSession(
     '-reconnect_delay_max',
     '2',
     '-rw_timeout',
-    '6000000',
+    '7000000',
     '-analyzeduration',
-    '1200000',
+    '800000',
     '-probesize',
-    '1500000',
+    '1000000',
     '-live_start_index',
-    '-2',
+    '-3',
     '-fflags',
     '+genpts+discardcorrupt',
     '-avoid_negative_ts',
@@ -401,9 +402,8 @@ export async function ensureLiveDvbCleanHlsSession(
     '-c:v',
     'libx264',
     '-preset',
-    isUhd4kStream ? 'ultrafast' : 'superfast',
-    '-tune',
-    'zerolatency',
+    useUltrafast ? 'ultrafast' : 'superfast',
+    ...(isFastProfile ? ['-tune', 'zerolatency'] : []),
     '-profile:v',
     'high',
     '-level:v',
@@ -411,11 +411,11 @@ export async function ensureLiveDvbCleanHlsSession(
     '-pix_fmt',
     'yuv420p',
     '-crf',
-    isFastProfile ? '21' : '19',
+    isFastProfile ? '21' : '18',
     '-maxrate',
-    isFastProfile ? '2600k' : '5200k',
+    isFastProfile ? '2600k' : '6500k',
     '-bufsize',
-    isFastProfile ? '5200k' : '10400k',
+    isFastProfile ? '5200k' : '13000k',
     '-r',
     '25',
     '-g',
@@ -427,7 +427,7 @@ export async function ensureLiveDvbCleanHlsSession(
     '-force_key_frames',
     'expr:gte(t,n_forced*2)',
     '-threads',
-    isUhd4kStream ? '3' : '2',
+    '2',
     '-c:a',
     'aac',
     '-ac',
@@ -435,7 +435,7 @@ export async function ensureLiveDvbCleanHlsSession(
     '-ar',
     '48000',
     '-b:a',
-    '128k',
+    isFastProfile ? '128k' : '160k',
     '-sn',
     '-dn',
     '-f',
@@ -443,7 +443,7 @@ export async function ensureLiveDvbCleanHlsSession(
     '-hls_time',
     '2',
     '-hls_list_size',
-    '8',
+    '10',
     '-hls_flags',
     'delete_segments+independent_segments+omit_endlist+temp_file',
     '-hls_segment_filename',
@@ -481,7 +481,7 @@ export async function ensureLiveDvbCleanHlsSession(
   });
 
   session.readyPromise = new Promise<boolean>((resolve) => {
-    const deadline = Date.now() + 12_000;
+    const deadline = Date.now() + 15_000;
     let inTick = false;
     const poll = setInterval(async () => {
       if (session.dead) {

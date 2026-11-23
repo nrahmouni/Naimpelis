@@ -26,6 +26,7 @@ import {
   MEGA_CHIRINGUITO_TV_URL,
   resolveChiringuitoLiveStream,
 } from '../../services/chiringuitoLiveService.ts';
+import { getBelixStatus } from '../../services/belix/belixXtreamClient.ts';
 
 export async function handleDirectExtractCases(params: {
   rawInput: string;
@@ -91,6 +92,12 @@ export async function handleDirectExtractCases(params: {
 
   // CASE -1: Internal proxy / Belix live stream URLs must never pass through external host resolvers
   if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play)\//i.test(rawInput)) {
+    if (/^\/api\/belix\/(?:stream|xtream\/play)\//i.test(rawInput) && !getBelixStatus().connected) {
+      return sendErr(
+        503,
+        'Señal Belix no conectada; cambiando automáticamente a señal TDT en directo.'
+      );
+    }
     const isDirectFile = /\.(mp4|mkv|webm)(\?|$)/i.test(rawInput);
     const result: ExtractedStreamResult = {
       success: true,
@@ -169,6 +176,7 @@ export async function handleDirectExtractCases(params: {
       }
     }
     let isAlive = false;
+    let manifestText = '';
     try {
       const chk = await fetch(cleanCheckUrl, {
         headers: checkHeaders,
@@ -176,7 +184,10 @@ export async function handleDirectExtractCases(params: {
       });
       if (chk.ok) {
         const txt = await chk.text();
-        isAlive = txt.includes('#EXTM3U') && !/nosignal/i.test(txt);
+        if (txt.includes('#EXTM3U') && !/nosignal/i.test(txt)) {
+          isAlive = true;
+          manifestText = txt;
+        }
       }
     } catch {
       // fallback to curl below
@@ -185,14 +196,80 @@ export async function handleDirectExtractCases(params: {
       const fb = await curlGetText(cleanCheckUrl, checkHeaders, isCnStream || isDvb ? 6 : 5, isCnStream).catch(() => ({
         text: '',
       }));
-      isAlive = Boolean(fb.text && fb.text.includes('#EXTM3U') && !/nosignal/i.test(fb.text));
+      if (fb.text && fb.text.includes('#EXTM3U') && !/nosignal/i.test(fb.text)) {
+        isAlive = true;
+        manifestText = fb.text;
+      }
     }
     if (!isAlive && isCnStream) {
       await new Promise((r) => setTimeout(r, 250));
       const fb2 = await curlGetText(cleanCheckUrl, checkHeaders, 6, true).catch(() => ({
         text: '',
       }));
-      isAlive = Boolean(fb2.text && fb2.text.includes('#EXTM3U') && !/nosignal/i.test(fb2.text));
+      if (fb2.text && fb2.text.includes('#EXTM3U') && !/nosignal/i.test(fb2.text)) {
+        isAlive = true;
+        manifestText = fb2.text;
+      }
+    }
+
+    if (isAlive && !isDvb && !isCnStream && manifestText) {
+      try {
+        let mediaText = manifestText;
+        let mediaBase = cleanCheckUrl;
+        if (mediaText.includes('#EXT-X-STREAM-INF')) {
+          const lines = mediaText.split(/\r?\n/);
+          let nextVar = false;
+          let pickedVar = '';
+          for (const rawLine of lines) {
+            const tr = rawLine.trim();
+            if (!tr) continue;
+            if (tr.startsWith('#EXT-X-STREAM-INF')) {
+              nextVar = true;
+            } else if (nextVar && !tr.startsWith('#')) {
+              nextVar = false;
+              const varUrl = new URL(tr, mediaBase).href;
+              const vRes = await fetch(varUrl, {
+                headers: checkHeaders,
+                signal: AbortSignal.timeout(3000),
+              }).catch(() => null);
+              if (vRes?.ok) {
+                const vTxt = await vRes.text();
+                if (vTxt.includes('#EXTM3U') && !/nosignal/i.test(vTxt)) {
+                  mediaText = vTxt;
+                  mediaBase = varUrl;
+                  pickedVar = varUrl;
+                  break;
+                }
+              }
+            }
+          }
+          if (!pickedVar) {
+            isAlive = false;
+          }
+        }
+        if (isAlive && !mediaText.includes('#EXT-X-STREAM-INF')) {
+          const mLines = mediaText.split(/\r?\n/);
+          let segUrl = '';
+          for (let i = mLines.length - 1; i >= 0; i--) {
+            const tr = mLines[i].trim();
+            if (!tr || tr.startsWith('#')) continue;
+            segUrl = new URL(tr, mediaBase).href;
+            break;
+          }
+          if (segUrl) {
+            const segRes = await fetch(segUrl, {
+              headers: { ...checkHeaders, Range: 'bytes=0-2047' },
+              signal: AbortSignal.timeout(3000),
+            }).catch(() => null);
+            await segRes?.body?.cancel?.().catch(() => {});
+            if (segRes && !segRes.ok && segRes.status !== 416) {
+              isAlive = false;
+            }
+          }
+        }
+      } catch {
+        // keep manifest check result on non-fatal probe edge errors
+      }
     }
 
     if (!isAlive) {

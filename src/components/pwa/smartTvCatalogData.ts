@@ -58,10 +58,12 @@ export const STATIC_CHANNELS_CATALOG: SmartTvChannelInfo[] = [
   { id: 'tdt-divinity', dial: 16, name: 'Divinity HD', category: 'generalistas', groupTitle: 'TDT España Generalistas', quality: '1080p HD', shortMark: 'DIV', brandTone: '#EC4899' },
   { id: 'tdt-bemad', dial: 17, name: 'Be Mad Cine HD', category: 'cine_series', groupTitle: 'Cine y Series 24/7', quality: '1080p HD', shortMark: 'BMAD', brandTone: '#8B5CF6' },
   { id: 'tdt-boing', dial: 18, name: 'Boing Dibujos Animados', category: 'infantil_autonomicas', groupTitle: 'Infantil y Autonómicas (TV3 · SX3 · Autonómicas)', quality: '1080p HD', shortMark: 'BOIN', brandTone: '#06B6D4' },
-  { id: 'tdt-paramount', dial: 19, name: 'Paramount Network HD', category: 'cine_series', groupTitle: 'Cine y Series 24/7', quality: '1080p HD', shortMark: 'PARA', brandTone: '#2563EB' },
-  { id: 'tdt-dmax', dial: 20, name: 'DMAX Documentales', category: 'documentales', groupTitle: 'Documentales y Ciencia (Nat Geo & Discovery)', quality: '1080p HD', shortMark: 'DMAX', brandTone: '#000000' },
-  { id: 'tdt-dkiss', dial: 21, name: 'DKISS HD', category: 'generalistas', groupTitle: 'TDT España Generalistas', quality: '1080p HD', shortMark: 'DKIS', brandTone: '#F43F5E' },
-  { id: 'tdt-ten', dial: 22, name: 'TEN HD', category: 'generalistas', groupTitle: 'TDT España Generalistas', quality: '1080p HD', shortMark: 'TEN', brandTone: '#E11D48' },
+  { id: 'tdt-bomcine', dial: 19, name: 'BOM Cine HD', category: 'cine_series', groupTitle: 'Cine y Series 24/7', quality: '1080p HD', shortMark: 'BOM', brandTone: '#B91C1C' },
+  { id: 'tdt-squirrel', dial: 20, name: 'Squirrel Cine TV HD', category: 'cine_series', groupTitle: 'Cine y Series 24/7', quality: '1080p HD', shortMark: 'SQRL', brandTone: '#2563EB' },
+  { id: 'tdt-veo7', dial: 21, name: 'Veo 7 Cine HD', category: 'cine_series', groupTitle: 'Cine y Series 24/7', quality: '1080p HD', shortMark: 'VEO7', brandTone: '#0EA5E9' },
+  { id: 'tdt-dmax', dial: 22, name: 'DMAX Documentales', category: 'documentales', groupTitle: 'Documentales y Ciencia (Nat Geo & Discovery)', quality: '1080p HD', shortMark: 'DMAX', brandTone: '#000000' },
+  { id: 'tdt-dkiss', dial: 23, name: 'DKISS HD', category: 'generalistas', groupTitle: 'TDT España Generalistas', quality: '1080p HD', shortMark: 'DKIS', brandTone: '#F43F5E' },
+  { id: 'tdt-ten', dial: 24, name: 'TEN HD', category: 'generalistas', groupTitle: 'TDT España Generalistas', quality: '1080p HD', shortMark: 'TEN', brandTone: '#E11D48' },
   { id: 'tdt-trece', dial: 25, name: 'Trece (13TV) HD', category: 'generalistas', groupTitle: 'TDT España Generalistas', quality: '1080p HD', shortMark: '13TV', brandTone: '#0284C7' },
 
   // Cine & Series

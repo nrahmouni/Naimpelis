@@ -520,7 +520,7 @@ async function startServer() {
               ...getCachedSportsMatches(),
             ],
             3 * 60 * 1000,
-            20_000
+            4_500
           );
           startCatalogRefreshScheduler(15 * 60 * 1000);
         } catch (err) {

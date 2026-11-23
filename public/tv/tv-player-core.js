@@ -393,7 +393,7 @@ function applyVideoState(vs, forceReload) {
     if (!videoEl.videoWidth || videoEl.videoWidth === 0 || videoEl.readyState < 2) {
       triggerPlaybackFailover('Tiempo de carga agotado');
     }
-  }, 16000);
+  }, 18500);
 
   if (nextMode === 'direct') {
     videoEl.src = nextUrl;
@@ -428,14 +428,26 @@ function applyVideoState(vs, forceReload) {
       lowLatencyMode: false,
       startPosition: isLive ? -1 : targetSec,
       liveSyncDurationCount: 3,
-      liveMaxLatencyDurationCount: 8,
-      backBufferLength: isLive ? 14 : 30,
-      maxBufferLength: isLive ? 24 : 35,
+      liveMaxLatencyDurationCount: 10,
+      maxLiveSyncPlaybackRate: 1,
+      backBufferLength: isLive ? 18 : 30,
+      maxBufferLength: isLive ? 32 : 40,
+      maxMaxBufferLength: isLive ? 60 : 80,
+      maxBufferHole: isLive ? 0.35 : 0.5,
+      highBufferWatchdogPeriod: 2,
+      nudgeOffset: isLive ? 0.08 : 0.12,
+      nudgeMaxRetry: 8,
+      maxAudioFramesDrift: isLive ? 2 : 4,
+      abrEwmaDefaultEstimate: 6500000,
       manifestLoadingTimeOut: 15000,
-      manifestLoadingMaxRetry: 4,
+      manifestLoadingMaxRetry: 5,
+      manifestLoadingRetryDelay: 700,
       levelLoadingTimeOut: 15000,
+      levelLoadingMaxRetry: 5,
+      levelLoadingRetryDelay: 700,
       fragLoadingTimeOut: 18000,
-      fragLoadingMaxRetry: 5
+      fragLoadingMaxRetry: 6,
+      fragLoadingRetryDelay: 600
     });
     hlsInstance = hls;
     hls.loadSource(nextUrl);

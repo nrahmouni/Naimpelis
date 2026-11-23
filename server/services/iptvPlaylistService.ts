@@ -1,5 +1,6 @@
 import { curlGetText, type TrackRecord } from '../extractors/httpHelpers.ts';
 import { logger } from '../utils/logger.ts';
+import { getBelixStatus } from './belix/belixXtreamClient.ts';
 
 async function fetchSyncTextSafe(url: string, timeoutMs = 7000): Promise<string> {
   try {
@@ -82,7 +83,7 @@ function isPlayableHlsUrl(url: string): boolean {
   if (!/^https?:\/\//i.test(url)) return false;
   if (/\[(IP|UA|DEVICE_ID|MAC)\]/i.test(url)) return false;
   if (
-    /ztnr\.rtve\.es|interactvty\.pro|c21livecloud\.com|azotosolutions\.com|voxel-tv|90\.170\.214\.40|185\.47\.212\.25/i.test(
+    /ztnr\.rtve\.es|interactvty\.pro|c21livecloud\.com|voxel-tv|90\.170\.214\.40|185\.47\.212\.25/i.test(
       url
     )
   ) {
@@ -112,7 +113,9 @@ const KNOWN_TDT_ALIASES: Record<string, string[]> = {
   'tdt-divinity': ['divinity'],
   'tdt-bemad': ['be mad', 'bemad'],
   'tdt-boing': ['boing'],
-  'tdt-paramount': ['paramount network', 'paramount'],
+  'tdt-paramount': ['paramount network', 'paramount', 'squirrel', 'squirrel tv'],
+  'tdt-squirrel': ['squirrel', 'squirrel 2', 'squirrel2', 'squirrel tv'],
+  'tdt-veo7': ['veo 7', 'veo7'],
   'tdt-bomcine': ['bom cine', 'bom'],
   'tdt-dmax': ['dmax'],
   'tdt-dkiss': ['dkiss'],
@@ -337,6 +340,7 @@ export async function refreshLiveIptvRegistry(force = false): Promise<{
 }
 
 export function applySyncedStreamsToChannels<T extends LiveIptvChannelEntry>(baseChannels: T[]): T[] {
+  const belixConnected = getBelixStatus().connected;
   const enriched: T[] = baseChannels.map((ch) => {
     const aliasKeys = [normName(ch.name), ...(KNOWN_TDT_ALIASES[ch.id] || [])];
     let match: { urls: string[]; logo?: string; web?: string } | undefined;
@@ -348,9 +352,12 @@ export function applySyncedStreamsToChannels<T extends LiveIptvChannelEntry>(bas
     }
 
     const existingTracks = Array.isArray(ch.channels) ? ch.channels : [];
-    // Demote stale private LAN/residential IP relays below verified HTTPS CDNs
-    const httpsTracks = existingTracks.filter((tr) => /^https:\/\//i.test(String(tr.sourceUrl || '')));
-    const legacyTracks = existingTracks.filter((tr) => !/^https:\/\//i.test(String(tr.sourceUrl || '')));
+    const activeExisting = belixConnected
+      ? existingTracks
+      : existingTracks.filter((tr) => !String(tr.sourceUrl || '').startsWith('/api/belix/stream/'));
+    const belixTracks = belixConnected
+      ? []
+      : existingTracks.filter((tr) => String(tr.sourceUrl || '').startsWith('/api/belix/stream/'));
 
     const syncedTracks: TrackRecord[] = [];
     if (match?.urls.length) {
@@ -361,7 +368,7 @@ export function applySyncedStreamsToChannels<T extends LiveIptvChannelEntry>(bas
             id: `${ch.id}-sync-${idx}`,
             label: `Señal Actualizada M3U ${idx + 1} (${ch.name})`,
             lang: 'ES',
-            quality: '1080p',
+            quality: /azotosolutions\.com/i.test(u) ? '576p' : '1080p',
             sourceUrl: u,
             resolverType: 'tdt_hls',
             referer: match?.web,
@@ -370,7 +377,10 @@ export function applySyncedStreamsToChannels<T extends LiveIptvChannelEntry>(bas
       });
     }
 
-    const combinedTracks = [...httpsTracks, ...legacyTracks, ...syncedTracks];
+    const combinedTracks =
+      activeExisting.length > 0 || syncedTracks.length > 0
+        ? [...activeExisting, ...syncedTracks]
+        : belixTracks;
     return {
       ...ch,
       logoUrl: ch.logoUrl || match?.logo,

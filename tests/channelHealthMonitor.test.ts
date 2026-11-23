@@ -213,4 +213,14 @@ describe('channelHealthMonitor', () => {
     expect(probedUrls).toHaveLength(1);
     expect(monitor.getSummary().counts.up).toBe(1);
   });
+
+  it('marks disconnected /api/belix/stream/ tracks as down (503)', async () => {
+    const res = await probeChannelTrack({
+      sourceUrl: '/api/belix/stream/743023.m3u8',
+      resolverType: 'direct_hls',
+    });
+    expect(res.status).toBe('down');
+    expect(res.statusCode).toBe(503);
+    expect(res.failCount).toBe(1);
+  });
 });

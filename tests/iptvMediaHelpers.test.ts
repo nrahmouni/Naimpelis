@@ -11,6 +11,8 @@ import {
   shouldBypassNodeFetch,
 } from '../server/extractors/httpHelpers.ts';
 import { formatExtractResponseForClient } from '../server/routes/streamExtractHelpers/externalSportsExtractor.ts';
+import { applySyncedStreamsToChannels } from '../server/services/iptvPlaylistService.ts';
+import { SPANISH_TDT_CHANNELS } from '../server/data/tdtChannels.ts';
 
 describe('IPTV Media Helpers & Smart TV Compatibility', () => {
   it('trims oversized live DVR playlists while updating media and discontinuity sequences', () => {
@@ -199,5 +201,49 @@ describe('IPTV Media Helpers & Smart TV Compatibility', () => {
       () => 'https://riffan.ai.studio'
     );
     expect(out.streamUrl).toBe('https://riffan.ai.studio/api/dvb-live/dvb_abc123/index.m3u8');
+  });
+
+  it('provides verified live non-Belix HD signals for every core Spanish TDT channel when Belix is disconnected', () => {
+    const merged = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS);
+    const expectedIds = [
+      'tdt-la1',
+      'tdt-la2',
+      'tdt-antena3',
+      'tdt-cuatro',
+      'tdt-telecinco',
+      'tdt-lasexta',
+      'tdt-neox',
+      'tdt-nova',
+      'tdt-energy',
+      'tdt-atreseries',
+      'tdt-bemad',
+      'tdt-fdf',
+      'tdt-divinity',
+      'tdt-bomcine',
+      'tdt-squirrel',
+      'tdt-veo7',
+      'tdt-mega',
+      'tdt-dmax',
+      'tdt-dkiss',
+      'tdt-ten',
+      'tdt-trece',
+      'tdt-24h',
+      'tdt-teledeporte',
+      'tdt-rmtv',
+      'tdt-clan',
+      'tdt-boing',
+      'tdt-canalsur',
+      'tdt-3cat',
+      'tdt-etb1',
+      'tdt-etb2',
+      'tdt-tvcanaria',
+      'tdt-tvg',
+    ];
+    for (const id of expectedIds) {
+      const ch = merged.find((c) => c.id === id);
+      expect(ch, `Missing channel ${id}`).toBeDefined();
+      expect(ch!.channels.length, `No active tracks for ${id}`).toBeGreaterThan(0);
+      expect(ch!.channels[0].sourceUrl.startsWith('/api/belix/stream/')).toBe(false);
+    }
   });
 });

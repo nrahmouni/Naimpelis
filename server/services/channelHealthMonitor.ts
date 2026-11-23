@@ -1,5 +1,6 @@
 import { logger } from '../utils/logger.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
+import { getBelixStatus } from './belix/belixXtreamClient.ts';
 
 export type ChannelHealthStatus = 'up' | 'degraded' | 'down' | 'unknown';
 
@@ -153,7 +154,9 @@ export async function probeChannelTrack(
   const prevFails = options?.previous?.failCount || 0;
 
   if (cleanUrl.startsWith('/api/belix/stream/')) {
-    return { status: 'up', latencyMs: 1, checkedAt: now, failCount: 0 };
+    return getBelixStatus().connected
+      ? { status: 'up', latencyMs: 1, checkedAt: now, failCount: 0 }
+      : { status: 'down', statusCode: 503, latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
   }
 
   if (!cleanUrl || !/^https?:\/\//i.test(cleanUrl)) {
@@ -177,7 +180,7 @@ export async function probeChannelTrack(
     /\.m3u8(\?|$)/i.test(cleanUrl);
 
   const isDvbHeadend = cleanUrl.includes('90.163.85.113:8093');
-  if (isDvbHeadend && process.env.ENABLE_LEGACY_DVB_PROBE !== '1' && !options?.fetchImpl) {
+  if (isDvbHeadend && process.env.DISABLE_DVB_PROBE === '1' && !options?.fetchImpl) {
     return { status: 'down', latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
   }
   const timeoutMs = options?.timeoutMs ?? (isDvbHeadend ? 7500 : PROBE_TIMEOUT_MS);
@@ -448,29 +451,26 @@ export class ChannelHealthMonitor {
     const indexed = tracks.map((track, originalIndex) => {
       const health = this.getTrackHealth(track.sourceUrl) ?? track.health;
       const src = String(track.sourceUrl || '');
-      const isDvbHeadend = src.includes('90.163.85.113:8093');
-      const isUnstableLegacy = /interactvty\.pro/i.test(src);
-      const transportPreferencePenalty = isDvbHeadend ? 1200 : isUnstableLegacy ? 1500 : 0;
-      const penaltyMs =
-        (health?.qoeFailures || 0) * 1500 +
-        (health?.qoeRebuffers || 0) * 250 +
-        transportPreferencePenalty;
-      const effectiveLatency =
-        (health?.latencyMs ?? (health?.status === 'unknown' ? 1200 : 800)) + penaltyMs;
+      const q = String(track.quality || '').toLowerCase();
+      const qualityTier = /576p|480p|360p/.test(q) || /azotosolutions\.com/i.test(src) ? 3 : /720p/.test(q) ? 2 : /90\.163\.85\.113:8093\/stream\/6[4568]\//i.test(src) ? 1 : 0;
+      const transportPenalty = src.includes('90.163.85.113:8093') ? 1200 : /interactvty\.pro/i.test(src) ? 1500 : 0;
+      const penaltyMs = (health?.qoeFailures || 0) * 1500 + (health?.qoeRebuffers || 0) * 250 + transportPenalty;
+      const effectiveLatency = (health?.latencyMs ?? (health?.status === 'unknown' ? 1200 : 800)) + penaltyMs;
       return {
         track: health ? { ...track, health } : { ...track },
         originalIndex,
         status: health?.status ?? ('unknown' as ChannelHealthStatus),
-        latencyMs: health?.latencyMs ?? Number.MAX_SAFE_INTEGER,
-        effectiveLatency,
+        qualityTier,
+        latencyBucket: Math.floor(effectiveLatency / 750),
       };
     });
 
     indexed.sort((a, b) => {
       const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
       if (rankDiff !== 0) return rankDiff;
-      if (a.status !== 'unknown' && a.effectiveLatency !== b.effectiveLatency) {
-        return a.effectiveLatency - b.effectiveLatency;
+      if (a.status !== 'unknown') {
+        if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
+        if (a.latencyBucket !== b.latencyBucket) return a.latencyBucket - b.latencyBucket;
       }
       return a.originalIndex - b.originalIndex;
     });
@@ -552,7 +552,7 @@ export class ChannelHealthMonitor {
       const dvbQueue: Array<[string, HealthProbeTrack]> = [];
       for (const entry of uniqueTracks.entries()) {
         if (entry[0].includes('90.163.85.113:8093')) {
-          if (process.env.ENABLE_LEGACY_DVB_PROBE === '1' || Boolean(options?.fetchImpl)) {
+          if (process.env.DISABLE_DVB_PROBE !== '1' || Boolean(options?.fetchImpl)) {
             dvbQueue.push(entry);
           }
         } else {
