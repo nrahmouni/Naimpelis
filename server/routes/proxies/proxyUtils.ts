@@ -22,6 +22,19 @@ function resolveFfmpegBin(): string {
 
 export const FFMPEG_BIN: string = resolveFfmpegBin();
 
+function resolveFfprobeBin(): string {
+  if (fs.existsSync('/usr/bin/ffprobe')) {
+    return '/usr/bin/ffprobe';
+  }
+  const siblingProbe = FFMPEG_BIN.replace(/ffmpeg(\.exe)?$/i, 'ffprobe$1');
+  if (siblingProbe !== FFMPEG_BIN && fs.existsSync(siblingProbe)) {
+    return siblingProbe;
+  }
+  return 'ffprobe';
+}
+
+export const FFPROBE_BIN: string = resolveFfprobeBin();
+
 export function getOrCreateRequestId(req: express.Request): string {
   const existing = String(req.headers['x-naim-request-id'] || '').trim();
   if (existing && existing.length <= 64) return existing;

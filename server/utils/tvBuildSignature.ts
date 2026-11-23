@@ -43,6 +43,16 @@ export function getTvBuildSignature(rootDir: string): string {
     }
   }
 
+  for (const srvFile of [
+    path.resolve(rootDir, 'server', 'routes', 'proxies', 'dvbCodecProbe.ts'),
+    path.resolve(rootDir, 'server', 'routes', 'proxies', 'dvbTranscoder.ts'),
+    path.resolve(rootDir, 'server', 'services', 'belix', 'belixProxyHelpers.ts'),
+  ]) {
+    if (fs.existsSync(srvFile)) {
+      candidatePaths.push(srvFile);
+    }
+  }
+
   for (const fp of candidatePaths) {
     try {
       const st = fs.statSync(fp);

@@ -372,6 +372,11 @@ if (btnCheckTvUpdate) {
     runTvVersionCheck(true);
   };
 }
+if (tvAutoUpdatePill) {
+  tvAutoUpdatePill.onclick = function () {
+    runTvVersionCheck(true);
+  };
+}
 document.getElementById('btn-back-to-hub').onclick = function () {
   switchTvScreen('hub');
 };

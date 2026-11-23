@@ -1185,9 +1185,9 @@ async function resolveBelixManifestInternal(
     ].filter((id, idx, arr) => Boolean(id) && arr.indexOf(id) === idx);
 
     for (let i = 0; i < candidateIds.length; i++) {
-      if (i > 0 && Date.now() - startedAt > 12_000) break;
+      if (i > 0 && Date.now() - startedAt > 5_500) break;
       if (i > 0 && process.env.NODE_ENV !== 'test' && !process.env.VITEST) {
-        await new Promise((r) => setTimeout(r, 180));
+        await new Promise((r) => setTimeout(r, 150));
       }
       const candidateId = candidateIds[i];
       const primaryRes = await resolveBelixManifestForSession(

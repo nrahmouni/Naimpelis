@@ -15,6 +15,7 @@ import {
   QrCode,
   KeyRound,
   Disc3,
+  Globe,
   Radio,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
@@ -33,6 +34,9 @@ import { lazyWithRetry } from '../utils/lazyWithRetry';
 
 const SamsungTizenExportModal = lazyWithRetry(() =>
   import('./samsung/SamsungTizenExportModal').then((m) => ({ default: m.SamsungTizenExportModal }))
+);
+const SpainVpnGatewayModal = lazyWithRetry(() =>
+  import('./settings/SpainVpnGatewayModal').then((m) => ({ default: m.SpainVpnGatewayModal }))
 );
 
 interface SettingsBottomSheetProps {
@@ -80,6 +84,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
   const { isIOS, isAndroid } = usePWAInstall();
   const [installSheetOpen, setInstallSheetOpen] = useState(false);
   const [samsungExportOpen, setSamsungExportOpen] = useState(false);
+  const [vpnGatewayOpen, setVpnGatewayOpen] = useState(false);
   const [tvAdvancedOpen, setTvAdvancedOpen] = useState(false);
   const [tvCode, setTvCode] = useState('');
   const authNotice = useAppStore((s) => s.authNotice);
@@ -620,6 +625,36 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
               <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
             </button>
 
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setVpnGatewayOpen(true);
+              }}
+              className={`${rowClass} cursor-pointer active:scale-95`}
+            >
+              <span className="flex items-center gap-3 min-w-0">
+                <Globe className="w-5 h-5 text-[#00F593] shrink-0" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold text-white">
+                    {pickLang(lang, {
+                      es: 'Salida España · VPN Gateway',
+                      ca: 'Sortida Espanya · VPN Gateway',
+                      en: 'Spain Exit · VPN Gateway',
+                    })}
+                  </span>
+                  <span className="block text-xs text-zinc-400">
+                    {pickLang(lang, {
+                      es: 'Geo-IP España para Antena 3, laSexta y todos los dispositivos + Urban VPN',
+                      ca: 'Geo-IP Espanya per a Antena 3, laSexta i tots els dispositius + Urban VPN',
+                      en: 'Spain Geo-IP for Antena 3, laSexta & all devices + Urban VPN',
+                    })}
+                  </span>
+                </span>
+              </span>
+              <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
+            </button>
+
             {onOpenDesignSystem && (
               <button
                 type="button"
@@ -723,6 +758,16 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                 }, 25);
               }
             }}
+          />
+        </React.Suspense>
+      )}
+
+      {vpnGatewayOpen && (
+        <React.Suspense fallback={null}>
+          <SpainVpnGatewayModal
+            isOpen={vpnGatewayOpen}
+            onClose={() => setVpnGatewayOpen(false)}
+            lang={lang}
           />
         </React.Suspense>
       )}

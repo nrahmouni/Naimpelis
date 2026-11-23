@@ -28,10 +28,19 @@ export interface AppEnvironmentConfig {
   belixXtreamServer: string;
   belixXtreamUser: string;
   belixXtreamPass: string;
+  spainProxyUrl: string;
+  spainProxyScope: 'auto_spanish' | 'all_streaming' | 'off';
 }
 
 const isProdEnv = process.env.NODE_ENV === 'production';
 const parsedEnvPort = Number(process.env.PORT);
+const rawProxyScope = String(process.env.RIFFAN_SPAIN_PROXY_SCOPE || 'auto_spanish')
+  .trim()
+  .toLowerCase();
+const resolvedProxyScope: 'auto_spanish' | 'all_streaming' | 'off' =
+  rawProxyScope === 'all_streaming' || rawProxyScope === 'off'
+    ? rawProxyScope
+    : 'auto_spanish';
 
 export const ENV: AppEnvironmentConfig = {
   port: isProdEnv
@@ -65,4 +74,10 @@ export const ENV: AppEnvironmentConfig = {
   belixXtreamServer: process.env.BELIX_XTREAM_SERVER || '',
   belixXtreamUser: process.env.BELIX_XTREAM_USER || '',
   belixXtreamPass: process.env.BELIX_XTREAM_PASS || '',
+  spainProxyUrl: (
+    process.env.RIFFAN_SPAIN_PROXY_URL ||
+    process.env.SPAIN_VPN_PROXY_URL ||
+    ''
+  ).trim(),
+  spainProxyScope: resolvedProxyScope,
 };

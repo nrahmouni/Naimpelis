@@ -14,6 +14,7 @@ import {
 } from '../server/services/belix/belixXtreamClient.ts';
 import { applySyncedStreamsToChannels } from '../server/services/iptvPlaylistService.ts';
 import { TDT_NATIONAL_AND_PAY_CHANNELS } from '../server/data/tdtNationalAndPayChannels.ts';
+import { buildDvbLiveFfmpegArgs } from '../server/routes/proxies/dvbTranscoder.ts';
 
 describe('Antena 3 & Foreign TDT Failover Architecture', () => {
   it('unwraps /api/hls-proxy and extracts shared upstream host keys cleanly', () => {
@@ -161,5 +162,95 @@ describe('Antena 3 & Foreign TDT Failover Architecture', () => {
       '/api/belix/stream/531071.m3u8',
       '/api/belix/stream/742969.m3u8',
     ]);
+  });
+
+  it('losslessly copies progressive 50fps H.264 + AAC-LC streams (Antena 3 / laSexta) without yadif ghosting', () => {
+    const args = buildDvbLiveFfmpegArgs({
+      cleanUpstream: 'http://1.sharkpro.ink:80/live/u/p/743035.ts',
+      referer: 'http://1.sharkpro.ink/',
+      profile: 'hd',
+      isXtreamLive: true,
+      playlistPath: '/tmp/test/index.m3u8',
+      segmentPattern: '/tmp/test/seg_%05d.ts',
+      probe: {
+        videoCodec: 'h264',
+        pixFmt: 'yuv420p',
+        fieldOrder: 'progressive',
+        width: 1920,
+        height: 1080,
+        fps: 50,
+        audioCodec: 'aac',
+        audioProfile: 'LC',
+        hasAudio: true,
+      },
+    });
+    const joined = args.join(' ');
+    expect(joined).toContain('-c:v copy');
+    expect(joined).toContain('-c:a copy');
+    expect(joined).toContain('+genpts+discardcorrupt');
+    expect(joined).not.toContain('yadif');
+    expect(joined).not.toContain('libx264');
+  });
+
+  it('copies video but normalizes HE-AAC audio to AAC-LC on compatible Smart TV streams', () => {
+    const args = buildDvbLiveFfmpegArgs({
+      cleanUpstream: 'http://1.sharkpro.ink:80/live/u/p/531071.ts',
+      referer: 'http://1.sharkpro.ink/',
+      profile: 'hd',
+      isXtreamLive: true,
+      playlistPath: '/tmp/test/index.m3u8',
+      segmentPattern: '/tmp/test/seg_%05d.ts',
+      probe: {
+        videoCodec: 'h264',
+        pixFmt: 'yuv420p',
+        fieldOrder: 'progressive',
+        width: 1920,
+        height: 1080,
+        fps: 29.97,
+        audioCodec: 'aac',
+        audioProfile: 'HE-AAC',
+        hasAudio: true,
+      },
+    });
+    const joined = args.join(' ');
+    expect(joined).toContain('-c:v copy');
+    expect(joined).toContain('-c:a aac');
+    expect(joined).not.toContain('yadif');
+  });
+
+  it('only applies yadif deinterlacer when stream is explicitly interlaced', () => {
+    const interlacedArgs = buildDvbLiveFfmpegArgs({
+      cleanUpstream: 'http://90.163.85.113:8093/stream/20/index.m3u8',
+      referer: '',
+      profile: 'hd',
+      isXtreamLive: false,
+      playlistPath: '/tmp/test/index.m3u8',
+      segmentPattern: '/tmp/test/seg_%05d.ts',
+      probe: {
+        videoCodec: 'h264',
+        pixFmt: 'yuv420p',
+        fieldOrder: 'tt',
+        width: 1920,
+        height: 1080,
+        fps: 25,
+        audioCodec: 'eac3',
+        audioProfile: '',
+        hasAudio: true,
+      },
+    });
+    expect(interlacedArgs.join(' ')).toContain('yadif=0:-1:1');
+    expect(interlacedArgs.join(' ')).toContain('-c:v libx264');
+
+    const fallbackArgs = buildDvbLiveFfmpegArgs({
+      cleanUpstream: 'http://1.sharkpro.ink:80/live/u/p/743056.ts',
+      referer: '',
+      profile: 'hd',
+      isXtreamLive: true,
+      playlistPath: '/tmp/test/index.m3u8',
+      segmentPattern: '/tmp/test/seg_%05d.ts',
+      probe: null,
+    });
+    expect(fallbackArgs.join(' ')).not.toContain('yadif');
+    expect(fallbackArgs.join(' ')).toContain('+genpts+discardcorrupt');
   });
 });

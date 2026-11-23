@@ -53,6 +53,7 @@ import { registerBelixRoutes } from './server/routes/belixRoutes.ts';
 import { registerAtresplayerRoutes } from './server/routes/atresplayerRoutes.ts';
 import { registerMovistarDaznRoutes } from './server/routes/movistarDaznRoutes.ts';
 import { registerMusicRoutes } from './server/routes/musicRoutes.ts';
+import { registerVpnGatewayRoutes } from './server/routes/vpnGatewayRoutes.ts';
 import { getMovistarDaznHome } from './server/services/movistarDaznCatalogService.ts';
 import { initBelixFromEnv } from './server/services/belix/belixXtreamClient.ts';
 import { SPANISH_TDT_CHANNELS } from './server/data/tdtChannels.ts';
@@ -276,6 +277,7 @@ registerBelixRoutes(app, { getPublicOrigin });
 registerAtresplayerRoutes(app);
 registerMovistarDaznRoutes(app);
 registerMusicRoutes(app);
+registerVpnGatewayRoutes(app);
 registerVoiceAssistantRoutes(app, {
   getChannels: getLiveVoiceChannels,
   resolveLogoUrl: resolveOfficialChannelLogoUrl,

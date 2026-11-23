@@ -2,9 +2,11 @@ import http from 'http';
 import https from 'https';
 import type { Readable } from 'stream';
 import zlib from 'zlib';
+import { fetch as undiciFetch, type RequestInit as UndiciRequestInit } from 'undici';
 import { logger } from '../utils/logger.ts';
 import { LruTtlCache } from './lruCache.ts';
 import { assertSafeProxyUrl } from './ssrfGuard.ts';
+import { getSpainProxyDispatcherForTarget } from '../services/spainVpnGatewayService.ts';
 
 const tlsRelaxedAgent = new https.Agent({
   rejectUnauthorized: false,
@@ -418,6 +420,16 @@ export async function streamingFetch(
     init.allowTlsFallback !== false &&
     parsed.protocol === 'https:' &&
     !STRICT_TLS_ONLY_HOSTS.some((rx) => rx.test(parsed.hostname));
+
+  const spainDispatcher = getSpainProxyDispatcherForTarget(parsed.toString());
+  if (spainDispatcher) {
+    const proxiedRes = await undiciFetch(parsed.toString(), {
+      ...(init as unknown as UndiciRequestInit),
+      dispatcher: spainDispatcher,
+      signal,
+    });
+    return proxiedRes as unknown as Response;
+  }
 
   // Fast path: skip undici fetch() completely for hosts known to stall undici HTTP/2 or IPv6
   if (shouldUseDirectIpv4Http(parsed.hostname)) {

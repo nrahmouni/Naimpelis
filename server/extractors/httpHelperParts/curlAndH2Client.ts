@@ -3,6 +3,7 @@ import http2 from 'http2';
 import zlib from 'zlib';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
 import { LruTtlCache } from '../../utils/lruCache.ts';
+import { getSpainProxyUrlForTarget } from '../../services/spainVpnGatewayService.ts';
 
 export const CHROME_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -367,7 +368,8 @@ export async function curlGetText(
   preferCurlCli = false,
   forceIpv4 = true
 ): Promise<{ text: string; effectiveUrl: string }> {
-  if (!preferCurlCli) {
+  const spainProxy = getSpainProxyUrlForTarget(targetUrl);
+  if (!preferCurlCli && !spainProxy) {
     try {
       const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
       if (h2.buf.length > 0 && h2.status < 400) {
@@ -389,6 +391,7 @@ export async function curlGetText(
       String(Math.min(3, Math.max(2, maxTimeSec))),
       '--max-time',
       String(maxTimeSec),
+      ...(spainProxy ? ['--proxy', spainProxy] : []),
       '-w',
       '\n__FINAL_URL__:%{url_effective}',
     ];
@@ -418,13 +421,16 @@ export async function curlGetBufferWithStatus(
   headers: Record<string, string> = {},
   maxTimeSec = 7
 ): Promise<{ buf: Buffer; status: number }> {
-  try {
-    const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
-    if (h2.buf.length > 0 && h2.status >= 200 && h2.status < 400) {
-      return { buf: h2.buf, status: h2.status };
+  const spainProxy = getSpainProxyUrlForTarget(targetUrl);
+  if (!spainProxy) {
+    try {
+      const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
+      if (h2.buf.length > 0 && h2.status >= 200 && h2.status < 400) {
+        return { buf: h2.buf, status: h2.status };
+      }
+    } catch {
+      // fallback to curl if available
     }
-  } catch {
-    // fallback to curl if available
   }
 
   const runCurl = (hdrs: Record<string, string>): Promise<{ buf: Buffer; status: number }> =>
@@ -439,6 +445,7 @@ export async function curlGetBufferWithStatus(
         String(Math.min(3, Math.max(2, maxTimeSec))),
         '--max-time',
         String(maxTimeSec),
+        ...(spainProxy ? ['--proxy', spainProxy] : []),
         '-w',
         '\n__HTTP_STATUS__:%{http_code}',
       ];
