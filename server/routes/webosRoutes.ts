@@ -123,7 +123,7 @@ export function registerWebOsRoutes(app: express.Express, rootDir: string): void
     return res.send(json);
   });
 
-  app.get(['/api/tv/download-ipk', '/tvlg.ipk'], async (req, res) => {
+  app.get(['/api/tv/download-ipk', '/tvlg.ipk', '/lgtv.ipk'], async (req, res) => {
     try {
       const appId = normalizeWebOsAppId(
         typeof req.query.appId === 'string' ? req.query.appId : undefined

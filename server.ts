@@ -373,7 +373,7 @@ function sendSmartTvReceiverHtml(res: express.Response) {
   }
 }
 
-app.use(['/tv', '/tvlg'], (_req, res, next) => {
+app.use(['/tv', '/tvlg', '/lgtv'], (_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
@@ -381,7 +381,7 @@ app.use(['/tv', '/tvlg'], (_req, res, next) => {
   next();
 });
 
-app.get(['/tv', '/tv/', '/tvlg', '/tvlg/'], (_req, res) => {
+app.get(['/tv', '/tv/', '/tvlg', '/tvlg/', '/lgtv', '/lgtv/'], (_req, res) => {
   sendSmartTvReceiverHtml(res);
 });
 

@@ -230,6 +230,11 @@ describe('LG webOS Smart TV (.ipk) Architecture, Legacy/Modern Tiers, Navigation
       systemType: 'tv',
       roomId: undefined,
     });
+    expect(parseAppRoute('/lgtv')).toEqual({
+      kind: 'system',
+      systemType: 'tv',
+      roomId: undefined,
+    });
   });
 
   it('maps LG Magic Remote Back (461) and media keys cleanly', () => {

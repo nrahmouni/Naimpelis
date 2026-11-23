@@ -297,7 +297,7 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
           }}
           onOpenTvReceiver={() => {
             setIsWebOsPage(false);
-            if (typeof window !== 'undefined') window.location.href = '/tv?platform=webos';
+            if (typeof window !== 'undefined') window.location.href = '/tvlg';
             else setIsTvPairLobby(true);
           }}
         />

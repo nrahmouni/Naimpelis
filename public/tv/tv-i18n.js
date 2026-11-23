@@ -18,7 +18,7 @@ try {
 var uaStr = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
 var searchStr = (typeof window !== 'undefined' && window.location && window.location.search) ? window.location.search : '';
 var pathStr = (typeof window !== 'undefined' && window.location && window.location.pathname) ? window.location.pathname : '';
-var isTvLgPath = /^\/tvlg\/?$/i.test(pathStr);
+var isTvLgPath = /^\/(tvlg|lgtv)\/?$/i.test(pathStr);
 var isLgWebOsUa = /Web0S|WebOS|LGE|NetCast/i.test(uaStr);
 var isExplicitNonWebOs = /[?&]webos=0\b/i.test(searchStr);
 var storedWebOsFlag = false;

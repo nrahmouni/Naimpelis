@@ -596,6 +596,7 @@ export const SYSTEM_RESERVED_SLUGS = new Set([
   'riffantv',
   'tv',
   'tvlg',
+  'lgtv',
   'ads',
   'naimcine-ads',
   'auth-bridge',
@@ -737,7 +738,7 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
       pairCode: rawPair.length === 4 ? rawPair : undefined,
     };
   }
-  if (params.get('tvpair') === '1' || seg0 === 'tv' || seg0 === 'tvlg') {
+  if (params.get('tvpair') === '1' || seg0 === 'tv' || seg0 === 'tvlg' || seg0 === 'lgtv') {
     return { kind: 'system', systemType: 'tv', roomId: queryRoomId };
   }
 
