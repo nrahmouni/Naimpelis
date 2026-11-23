@@ -74,6 +74,12 @@ export function registerStreamExtractRoute(
     const sendOk = (payload: ExtractedStreamResult) => res.json(formatResp(req, payload));
     const sendErr = (status: number, error: string) => res.status(status).json({ success: false, error });
 
+    const belixSidMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)belix_sid=([^;]+)/);
+    const belixSessionKey =
+      String(req.headers['x-belix-session'] || '').trim() ||
+      (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
+      'default';
+
     try {
       const directResp = await handleDirectExtractCases({
         rawInput,
@@ -81,6 +87,7 @@ export function registerStreamExtractRoute(
         preferLang,
         titleHint,
         isSandboxedFrame,
+        belixSessionKey,
         cacheKey,
         setCache,
         sendOk,

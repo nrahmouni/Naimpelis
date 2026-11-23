@@ -1,6 +1,7 @@
 import { logger } from '../utils/logger.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
-import { getBelixStatus } from './belix/belixXtreamClient.ts';
+import { isAnyBelixConnected } from './belix/belixXtreamClient.ts';
+import { isDvbUpstreamCoolingDown } from '../routes/proxies/dvbTranscoder.ts';
 
 export type ChannelHealthStatus = 'up' | 'degraded' | 'down' | 'unknown';
 
@@ -118,6 +119,19 @@ export function normalizeTrackUrl(sourceUrl: string): string {
     .replace(/[?&]profile=(hd|fast)\b/gi, '');
 }
 
+function unwrapProxyTargetUrl(sourceUrl: string): string {
+  const clean = normalizeTrackUrl(sourceUrl);
+  if (clean.startsWith('/api/hls-proxy')) {
+    try {
+      const inner = new URL(clean, 'http://localhost').searchParams.get('url');
+      if (inner) return normalizeTrackUrl(inner);
+    } catch {
+      // ignore parse errors
+    }
+  }
+  return clean;
+}
+
 function resolveUpstreamReferer(urlStr: string, explicitReferer?: string): string {
   const cleanExplicit = String(explicitReferer || '').trim();
   if (/^https?:\/\//i.test(cleanExplicit)) return cleanExplicit;
@@ -147,6 +161,7 @@ export async function probeChannelTrack(
     timeoutMs?: number;
     fetchImpl?: FetchLike;
     previous?: TrackHealthInfo;
+    belixConnected?: boolean;
   }
 ): Promise<TrackHealthInfo> {
   const cleanUrl = normalizeTrackUrl(track.sourceUrl);
@@ -154,9 +169,15 @@ export async function probeChannelTrack(
   const prevFails = options?.previous?.failCount || 0;
 
   if (cleanUrl.startsWith('/api/belix/stream/')) {
-    return getBelixStatus().connected
+    const belixReady = options?.belixConnected ?? isAnyBelixConnected();
+    return belixReady
       ? { status: 'up', latencyMs: 1, checkedAt: now, failCount: 0 }
       : { status: 'down', statusCode: 503, latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
+  }
+
+  const effectiveTargetUrl = unwrapProxyTargetUrl(cleanUrl);
+  if (effectiveTargetUrl.includes('90.163.85.113:8093') && isDvbUpstreamCoolingDown(effectiveTargetUrl)) {
+    return { status: 'down', statusCode: 502, latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
   }
 
   if (!cleanUrl || !/^https?:\/\//i.test(cleanUrl)) {
@@ -179,11 +200,11 @@ export async function probeChannelTrack(
     track.resolverType === 'direct_hls' ||
     /\.m3u8(\?|$)/i.test(cleanUrl);
 
-  const isDvbHeadend = cleanUrl.includes('90.163.85.113:8093');
+  const isDvbHeadend = effectiveTargetUrl.includes('90.163.85.113:8093');
   if (isDvbHeadend && process.env.DISABLE_DVB_PROBE === '1' && !options?.fetchImpl) {
     return { status: 'down', latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
   }
-  const timeoutMs = options?.timeoutMs ?? (isDvbHeadend ? 7500 : PROBE_TIMEOUT_MS);
+  const timeoutMs = options?.timeoutMs ?? (isDvbHeadend ? 4500 : PROBE_TIMEOUT_MS);
   const fetchFn: FetchLike =
     options?.fetchImpl ?? ((input, init) => streamingFetch(String(input), { ...init, timeoutMs }));
   const isCnStream =
@@ -449,10 +470,27 @@ export class ChannelHealthMonitor {
   prioritizeTracks<T extends HealthProbeTrack>(tracks: T[]): T[] {
     if (!Array.isArray(tracks) || tracks.length === 0) return [];
     const indexed = tracks.map((track, originalIndex) => {
-      const health = this.getTrackHealth(track.sourceUrl) ?? track.health;
+      const unwrapped = unwrapProxyTargetUrl(track.sourceUrl);
+      const rawHealth =
+        this.getTrackHealth(track.sourceUrl) ??
+        (unwrapped !== track.sourceUrl ? this.getTrackHealth(unwrapped) : undefined) ??
+        track.health;
+      const isCoolingDvb =
+        unwrapped.includes('90.163.85.113:8093') && isDvbUpstreamCoolingDown(unwrapped);
+      const health: TrackHealthInfo | undefined = isCoolingDvb
+        ? {
+            status: 'down',
+            statusCode: 502,
+            latencyMs: rawHealth?.latencyMs ?? 0,
+            failCount: (rawHealth?.failCount || 0) + 1,
+            checkedAt: Date.now(),
+          }
+        : rawHealth;
       const src = String(track.sourceUrl || '');
       const q = String(track.quality || '').toLowerCase();
-      const isUhdHevc = /90\.163\.85\.113:8093\/stream\/6[4568]\//i.test(src);
+      const isUhdHevc = /90\.163\.85\.113:8093\/stream\/6[4568]\//i.test(unwrapped);
+      const isResidentialDvb = unwrapped.includes('90.163.85.113:8093');
+      const isBelix = src.startsWith('/api/belix/stream/');
       const qualityTier = isUhdHevc
         ? 4
         : /576p|480p|360p/.test(q) || /azotosolutions\.com/i.test(src)
@@ -460,13 +498,24 @@ export class ChannelHealthMonitor {
         : /720p/.test(q)
         ? 2
         : 0;
-      const transportPenalty = src.includes('90.163.85.113:8093') ? 1200 : /interactvty\.pro/i.test(src) ? 1500 : 0;
+      const transportPenalty = isResidentialDvb
+        ? 1200
+        : /interactvty\.pro/i.test(src)
+        ? 1500
+        : isBelix
+        ? -200
+        : 0;
       const penaltyMs = (health?.qoeFailures || 0) * 1500 + (health?.qoeRebuffers || 0) * 250 + transportPenalty;
-      const effectiveLatency = (health?.latencyMs ?? (health?.status === 'unknown' ? 1200 : 800)) + penaltyMs;
+      const effectiveLatency = Math.max(
+        1,
+        (health?.latencyMs ?? (health?.status === 'unknown' ? 1200 : 800)) + penaltyMs
+      );
       return {
         track: health ? { ...track, health } : { ...track },
         originalIndex,
         isUhdHevc,
+        isResidentialDvb,
+        isBelix,
         status: health?.status ?? ('unknown' as ChannelHealthStatus),
         qualityTier,
         latencyBucket: Math.floor(effectiveLatency / 750),
@@ -479,6 +528,12 @@ export class ChannelHealthMonitor {
       }
       const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
       if (rankDiff !== 0) return rankDiff;
+      if (a.status !== 'down' && b.status !== 'down' && a.isResidentialDvb !== b.isResidentialDvb) {
+        return a.isResidentialDvb ? 1 : -1;
+      }
+      if (a.isBelix && b.isBelix && a.status === b.status) {
+        return a.originalIndex - b.originalIndex;
+      }
       if (a.status !== 'unknown') {
         if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
         if (a.latencyBucket !== b.latencyBucket) return a.latencyBucket - b.latencyBucket;

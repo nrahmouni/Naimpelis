@@ -18,6 +18,7 @@ import { applyProxyCorsHeaders, getOrCreateRequestId } from './proxyUtils.ts';
 import {
   dvbAacSegmentCache,
   dvbRollingPlaylistMap,
+  isDvbUpstreamCoolingDown,
   remuxDvbTsToAac,
   type RollingDvbSeg,
 } from './dvbTranscoder.ts';
@@ -42,6 +43,11 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
       await assertSafeProxyUrl(targetUrl);
     } catch {
       res.status(403).send('Forbidden target host');
+      return;
+    }
+
+    if (isDvbHeadendStream(targetUrl) && isDvbUpstreamCoolingDown(targetUrl)) {
+      res.status(502).send('DVB upstream headend cooling down');
       return;
     }
 

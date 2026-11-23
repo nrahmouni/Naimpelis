@@ -123,9 +123,23 @@ export const IdleStandbyStage: React.FC<IdleStandbyStageProps> = ({
       )}
 
       {extractionError && (
-        <div className="mt-3 px-3.5 py-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-200 max-w-md flex items-center gap-2">
-          <RiffanWarningIcon size={16} animate="always" className="text-rose-400" />
-          <span>{extractionError}</span>
+        <div className="mt-3 px-3.5 py-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-200 max-w-md space-y-2">
+          <div className="flex items-center gap-2">
+            <RiffanWarningIcon size={16} animate="always" className="text-rose-400 shrink-0" />
+            <span>{extractionError}</span>
+          </div>
+          {/antena\s*3|lasexta|atresmedia|tdt|90\.163/i.test(extractionError) && (
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              <a
+                href="https://www.atresplayer.com/directos/antena3/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-h-8 px-3 rounded-lg bg-[#FF5E1A] hover:bg-[#EA580C] text-white font-semibold inline-flex items-center gap-1.5 transition-colors"
+              >
+                Abrir Antena 3 en Atresplayer Oficial
+              </a>
+            </div>
+          )}
         </div>
       )}
 

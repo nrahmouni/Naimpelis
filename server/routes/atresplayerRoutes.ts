@@ -15,9 +15,14 @@ export function registerAtresplayerRoutes(app: Express): void {
   // ============================================================================
   // CONSUMER-FACING ATRESMEDIA HUB (DIRECTOS HD + PROGRAMAS + SERIES)
   // ============================================================================
-  app.get('/api/atresmedia/home', async (_req, res) => {
+  app.get('/api/atresmedia/home', async (req, res) => {
     try {
-      const data = await getAtresmediaHome();
+      const belixSidMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)belix_sid=([^;]+)/);
+      const belixSessionKey =
+        String(req.headers['x-belix-session'] || '').trim() ||
+        (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
+        'default';
+      const data = await getAtresmediaHome(belixSessionKey);
       res.json({ success: true, ...data });
     } catch (err) {
       res.status(500).json({

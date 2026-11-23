@@ -5,11 +5,13 @@ import {
   Loader2,
   LogOut,
   Play,
+  Plus,
   Radio,
   RefreshCw,
   Search,
   Server,
   ShieldCheck,
+  Trash2,
   Tv,
 } from 'lucide-react';
 import type { AppLanguage, SpanishTdtChannel, SportsMatch } from '../../types';
@@ -61,6 +63,29 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
   const [refreshingBelix, setRefreshingBelix] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [autoConnectTried, setAutoConnectTried] = useState(false);
+  const [backupPortals, setBackupPortals] = useState<
+    Array<{ id: string; serverOrigin: string; maskedUsername: string }>
+  >([]);
+  const [showBackupForm, setShowBackupForm] = useState(false);
+  const [bkUrl, setBkUrl] = useState('');
+  const [bkUser, setBkUser] = useState('');
+  const [bkPass, setBkPass] = useState('');
+  const [bkStatusMsg, setBkStatusMsg] = useState<string | null>(null);
+
+  const fetchBackups = useCallback(async () => {
+    try {
+      const res = await fetch('/api/belix/backups');
+      const json = (await res.json().catch(() => null)) as {
+        success?: boolean;
+        backups?: Array<{ id: string; serverOrigin: string; maskedUsername: string }>;
+      } | null;
+      if (res.ok && json?.success && Array.isArray(json.backups)) {
+        setBackupPortals(json.backups);
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     setFilterText(externalQuery);
@@ -87,7 +112,8 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
 
   useEffect(() => {
     void fetchOverview();
-  }, [fetchOverview]);
+    void fetchBackups();
+  }, [fetchOverview, fetchBackups]);
 
   const connectWithCredentials = useCallback(
     async (srv: string, usr: string, pwd: string) => {
@@ -411,6 +437,14 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
               </button>
               <button
                 type="button"
+                onClick={() => setShowBackupForm((v) => !v)}
+                className="min-h-11 px-3.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.12] border border-white/[0.08] text-xs font-semibold text-white inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Respaldo ({backupPortals.length})</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => void handleDisconnect()}
                 className="min-h-11 px-3.5 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-xs font-semibold text-red-200 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
               >
@@ -488,6 +522,95 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
           <div className="rounded-xl bg-red-500/[0.08] border border-red-500/30 p-3 flex items-start gap-2 text-xs text-red-200">
             <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />
             <span>{connectError}</span>
+          </div>
+        )}
+
+        {showBackupForm && belixStatus?.connected && (
+          <div className="rounded-2xl bg-black/50 border border-white/[0.1] p-4 space-y-3">
+            <p className="text-xs text-zinc-300">
+              Añade una línea Xtream de respaldo en RAM: si la principal se satura o falla en Antena 3 / TDT, Riffan TV rota automáticamente al servidor de reserva sin cortes.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
+              <input
+                type="url"
+                value={bkUrl}
+                onChange={(e) => setBkUrl(e.target.value)}
+                placeholder="http://backup-xtream:80"
+                className="min-h-10 px-3 rounded-xl bg-black border border-white/[0.1] text-xs font-mono text-white"
+              />
+              <input
+                type="text"
+                value={bkUser}
+                onChange={(e) => setBkUser(e.target.value)}
+                placeholder="Usuario respaldo"
+                className="min-h-10 px-3 rounded-xl bg-black border border-white/[0.1] text-xs font-mono text-white"
+              />
+              <input
+                type="password"
+                value={bkPass}
+                onChange={(e) => setBkPass(e.target.value)}
+                placeholder="Contraseña"
+                className="min-h-10 px-3 rounded-xl bg-black border border-white/[0.1] text-xs font-mono text-white"
+              />
+              <button
+                type="button"
+                onClick={async () => {
+                  setBkStatusMsg(null);
+                  const res = await fetch('/api/belix/backups', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ serverUrl: bkUrl, username: bkUser, password: bkPass }),
+                  });
+                  const json = (await res.json().catch(() => null)) as {
+                    success?: boolean;
+                    backups?: Array<{ id: string; serverOrigin: string; maskedUsername: string }>;
+                    error?: string;
+                  } | null;
+                  if (res.ok && json?.success && Array.isArray(json.backups)) {
+                    setBackupPortals(json.backups);
+                    setBkUrl('');
+                    setBkUser('');
+                    setBkPass('');
+                    setBkStatusMsg('Línea Xtream de respaldo añadida.');
+                  } else {
+                    setBkStatusMsg(json?.error || 'Error añadiendo línea de respaldo.');
+                  }
+                }}
+                className="min-h-10 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
+              >
+                Añadir Respaldo
+              </button>
+            </div>
+            {bkStatusMsg && <p className="text-xs text-emerald-300">{bkStatusMsg}</p>}
+            {backupPortals.length > 0 && (
+              <div className="space-y-1.5">
+                {backupPortals.map((bp) => (
+                  <div
+                    key={bp.id}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs"
+                  >
+                    <span className="font-mono text-zinc-200 truncate">
+                      {bp.serverOrigin} · {bp.maskedUsername}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const res = await fetch(`/api/belix/backups/${encodeURIComponent(bp.id)}`, {
+                          method: 'DELETE',
+                        });
+                        const json = (await res.json().catch(() => null)) as {
+                          backups?: Array<{ id: string; serverOrigin: string; maskedUsername: string }>;
+                        } | null;
+                        if (Array.isArray(json?.backups)) setBackupPortals(json.backups);
+                      }}
+                      className="p-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

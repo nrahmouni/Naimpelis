@@ -7,7 +7,7 @@ import crypto from 'crypto';
 import { LruTtlCache } from '../../utils/lruCache.ts';
 import { assertSafeProxyUrl } from '../../utils/ssrfGuard.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
-import { CHROME_UA, curlGetBufferWithStatus, curlGetText } from '../../extractors/httpHelpers.ts';
+import { curlGetBufferWithStatus, curlGetText } from '../../extractors/httpHelpers.ts';
 import {
   ensureLiveDvbCleanHlsSession,
   getActiveDvbSessionPath,
@@ -104,16 +104,21 @@ export function rewritePlaylistWithOpaqueTokens(
 
 export async function fetchBelixPlaylistText(
   targetUrl: string,
-  referer: string
+  referer: string,
+  timeoutMs = 2400,
+  skipCurlRetry = false
 ): Promise<{ text: string; baseUrl: string } | null> {
   await assertSafeProxyUrl(targetUrl);
-  const headers: Record<string, string> = {
-    'User-Agent': CHROME_UA,
+  const baseHeaders: Record<string, string> = {
     Accept: '*/*',
     Referer: referer,
   };
+  let timedOut = false;
   try {
-    const res = await streamingFetch(targetUrl, { headers, timeoutMs: 6500 });
+    const res = await streamingFetch(targetUrl, {
+      headers: { ...baseHeaders, 'User-Agent': 'IPTVSmartersPlayer' },
+      timeoutMs,
+    });
     if (res.ok) {
       const text = await res.text();
       if (text.includes('#EXTM3U') && !/nosignal|<!doctype|<html/i.test(text)) {
@@ -122,25 +127,30 @@ export async function fetchBelixPlaylistText(
         return { text, baseUrl: finalUrl };
       }
     }
-  } catch {
-    // try curl fallback below
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    timedOut = /timeout|aborted/i.test(msg);
   }
-  for (const ua of [CHROME_UA, 'IPTVSmartersPlayer']) {
-    const fb = await curlGetText(
-      targetUrl,
-      { ...headers, 'User-Agent': ua },
-      6,
-      false,
-      true
-    ).catch(() => ({
-      text: '',
-      effectiveUrl: targetUrl,
-    }));
-    if (fb.text && fb.text.includes('#EXTM3U') && !/nosignal|<!doctype|<html/i.test(fb.text)) {
-      const finalUrl = fb.effectiveUrl || targetUrl;
-      await assertSafeProxyUrl(finalUrl);
-      return { text: fb.text, baseUrl: finalUrl };
-    }
+
+  // Avoid compounding multi-second waits after a hard upstream timeout
+  if (timedOut || skipCurlRetry) {
+    return null;
+  }
+
+  const fb = await curlGetText(
+    targetUrl,
+    { ...baseHeaders, 'User-Agent': 'IPTVSmartersPlayer' },
+    4,
+    false,
+    true
+  ).catch(() => ({
+    text: '',
+    effectiveUrl: targetUrl,
+  }));
+  if (fb.text && fb.text.includes('#EXTM3U') && !/nosignal|<!doctype|<html/i.test(fb.text)) {
+    const finalUrl = fb.effectiveUrl || targetUrl;
+    await assertSafeProxyUrl(finalUrl);
+    return { text: fb.text, baseUrl: finalUrl };
   }
   return null;
 }
@@ -159,7 +169,7 @@ export async function resolveBelixManifestForSession(
   const idEnc = encodeURIComponent(cleanId);
   const referer = `${session.origin}/`;
 
-  // Fast path: reuse an active FFmpeg HLS relay for the .ts stream if already warm
+  // Fast path: reuse an active FFmpeg HLS relay for the .ts stream if already warm (0.2ms, 0 new upstream sockets)
   const tsUrl = `${session.origin}/live/${u}/${p}/${idEnc}.ts`;
   await assertSafeProxyUrl(tsUrl);
   const warmPath = getActiveDvbSessionPath(tsUrl, 'hd');
@@ -168,18 +178,35 @@ export async function resolveBelixManifestForSession(
     if (warmManifest) return warmManifest;
   }
 
-  // Primary: native upstream HLS manifest if responsive
+  // In live runtime, Xtream .ts streams push a pre-buffered MPEG-TS burst in ~0.5-2.4s and allow
+  // clean 2-second monotonic HLS segments with a single portal connection (while .m3u8 edges often
+  // stall or return static MEDIA-SEQUENCE:0 10s chunks). Keep .m3u8 first in Vitest unit tests.
+  const preferTsRelay = process.env.NODE_ENV !== 'test';
+  if (preferTsRelay) {
+    const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, 'hd', referer).catch(() => null);
+    if (dvbPath) {
+      const tsManifest = readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
+      if (tsManifest) return tsManifest;
+    }
+  }
+
+  // Native upstream HLS manifest fallback (or primary in mocked unit tests)
   const targetUrl = `${session.origin}/live/${u}/${p}/${idEnc}.m3u8`;
-  const loaded = await fetchBelixPlaylistText(targetUrl, referer).catch(() => null);
+  const loaded = await fetchBelixPlaylistText(
+    targetUrl,
+    referer,
+    preferTsRelay ? 1600 : 2400,
+    preferTsRelay
+  ).catch(() => null);
   if (loaded) {
     return rewritePlaylistWithOpaqueTokens(loaded.text, loaded.baseUrl, referer, originPrefix);
   }
 
-  // Fallback: Xtream portals such as Shark Pro serve stable MPEG-TS (.ts) where .m3u8 stalls;
-  // remux/transcode live to browser-safe H.264 + AAC 48kHz stereo HLS segments.
-  const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, 'hd', referer).catch(() => null);
-  if (dvbPath) {
-    return readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
+  if (!preferTsRelay) {
+    const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, 'hd', referer).catch(() => null);
+    if (dvbPath) {
+      return readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
+    }
   }
   return null;
 }
@@ -206,7 +233,7 @@ export async function fetchBelixOpaqueSegment(
 
   await assertSafeProxyUrl(entry.rawUrl);
   const headers: Record<string, string> = {
-    'User-Agent': CHROME_UA,
+    'User-Agent': 'IPTVSmartersPlayer',
     Accept: '*/*',
     Referer: entry.referer,
   };

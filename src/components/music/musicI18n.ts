@@ -125,6 +125,7 @@ export interface MusicCopy {
   secSpotifyHits: string;
   secSpotifyAlbums: string;
   secSpainHits: string;
+  secBelgium: string;
   secMorocco: string;
   secArab: string;
   secAfrica: string;
@@ -161,6 +162,7 @@ export interface MusicCopy {
   moodChina: string;
   moodUsa: string;
   moodSpain: string;
+  moodBelgium: string;
   moodUrbano: string;
   moodPop: string;
   moodElectronic: string;
@@ -175,6 +177,7 @@ export interface MusicCopy {
 
   // Radio Region/Tag Labels
   radioAll: string;
+  radioBelgium: string;
   radioSpain: string;
   radioMorocco: string;
   radioArab: string;
@@ -461,7 +464,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     playlistsSection: 'Playlists',
     exploreByGenre: 'Explorar por géneros y regiones',
     radiosTitle: 'Radios Mundiales en Directo 24/7',
-    radiosSub: 'Marruecos, Árabe, África, Rusia, Rumanía, China, USA, España y Latinoamérica en Hi-Fi',
+    radiosSub: 'Bélgica, Marruecos, Árabe, África, Rusia, Rumanía, China, USA, España y Latinoamérica en Hi-Fi',
     tuningRadios: 'Sintonizando emisoras en directo...',
     libraryTitle: 'Tu Biblioteca',
     librarySub: 'Tus canciones favoritas, playlists y álbumes guardados',
@@ -490,6 +493,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     secSpotifyHits: 'Spotify Global & Viral Sync',
     secSpotifyAlbums: 'Álbumes Destacados · Spotify & iTunes',
     secSpainHits: 'Éxitos en España y Virales',
+    secBelgium: 'Bélgica · Bruselas, Flandes & Valonia',
     secMorocco: 'Marruecos · Rap, Raï & Chaabi',
     secArab: 'Mundo Árabe · Éxitos Top',
     secAfrica: 'África Entera · Afrobeats, Amapiano & Rumba',
@@ -525,6 +529,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     moodChina: 'China',
     moodUsa: 'USA',
     moodSpain: 'Top España',
+    moodBelgium: 'Bélgica',
     moodUrbano: 'Urbano',
     moodPop: 'Pop',
     moodElectronic: 'Electrónica',
@@ -538,6 +543,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     moodAudius: 'Audius Hi-Fi',
 
     radioAll: 'Todo el Mundo',
+    radioBelgium: 'Bélgica',
     radioSpain: 'España',
     radioMorocco: 'Marruecos',
     radioArab: 'Mundo Árabe',
@@ -816,7 +822,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     playlistsSection: 'Playlists',
     exploreByGenre: 'Browse by genre and region',
     radiosTitle: 'World Live Radios 24/7',
-    radiosSub: 'Morocco, Arab World, Africa, Russia, Romania, China, USA, Spain & Latin America in Hi-Fi',
+    radiosSub: 'Belgium, Morocco, Arab World, Africa, Russia, Romania, China, USA, Spain & Latin America in Hi-Fi',
     tuningRadios: 'Tuning live stations...',
     libraryTitle: 'Your Library',
     librarySub: 'Your liked songs, playlists and saved albums',
@@ -845,6 +851,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     secSpotifyHits: 'Spotify Global & Viral Sync',
     secSpotifyAlbums: 'Featured Albums · Spotify & iTunes',
     secSpainHits: 'Spain Top & Viral',
+    secBelgium: 'Belgium · Top 50 & Benelux',
     secMorocco: 'Morocco · Rap, Raï & Chaabi',
     secArab: 'Arab World · Top Hits',
     secAfrica: 'All Africa · Afrobeats, Amapiano & Rumba',
@@ -880,6 +887,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     moodChina: 'China',
     moodUsa: 'USA',
     moodSpain: 'Spain Top',
+    moodBelgium: 'Belgium',
     moodUrbano: 'Urban',
     moodPop: 'Pop',
     moodElectronic: 'Electronic',
@@ -893,6 +901,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     moodAudius: 'Audius Hi-Fi',
 
     radioAll: 'Worldwide',
+    radioBelgium: 'Belgium',
     radioSpain: 'Spain',
     radioMorocco: 'Morocco',
     radioArab: 'Arab World',
@@ -1171,7 +1180,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     playlistsSection: 'Playlists',
     exploreByGenre: 'Parcourir par genres et régions',
     radiosTitle: 'Radios Mondiales en Direct 24/7',
-    radiosSub: 'Maroc, Monde Arabe, Afrique, Russie, Roumanie, Chine, USA, Espagne & Amérique Latine',
+    radiosSub: 'Belgique, Maroc, Monde Arabe, Afrique, Russie, Roumanie, Chine, USA, Espagne & Amérique Latine',
     tuningRadios: 'Connexion aux stations en direct...',
     libraryTitle: 'Votre Bibliothèque',
     librarySub: 'Vos favoris, playlists et albums enregistrés',
@@ -1200,6 +1209,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     secSpotifyHits: 'Spotify Global & Viral Sync',
     secSpotifyAlbums: 'Albums Vedettes · Spotify & iTunes',
     secSpainHits: 'Top Espagne & Viral',
+    secBelgium: 'Belgique · Bruxelles, Wallonie & Flandre',
     secMorocco: 'Maroc · Rap, Raï & Chaabi',
     secArab: 'Monde Arabe · Top Hits',
     secAfrica: 'Toute l’Afrique · Afrobeats, Amapiano & Rumba',
@@ -1235,6 +1245,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     moodChina: 'Chine',
     moodUsa: 'USA',
     moodSpain: 'Top Espagne',
+    moodBelgium: 'Belgique',
     moodUrbano: 'Urbain',
     moodPop: 'Pop',
     moodElectronic: 'Électro',
@@ -1248,6 +1259,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     moodAudius: 'Audius Hi-Fi',
 
     radioAll: 'Monde',
+    radioBelgium: 'Belgique',
     radioSpain: 'Espagne',
     radioMorocco: 'Maroc',
     radioArab: 'Monde Arabe',
@@ -1526,7 +1538,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     playlistsSection: '歌单',
     exploreByGenre: '按流派与地区探索',
     radiosTitle: '全球 24/7 直播音乐电台',
-    radiosSub: '摩洛哥、阿拉伯、非洲、俄罗斯、罗马尼亚、中国、美国、西班牙及拉美 Hi-Fi 直播',
+    radiosSub: '比利时、摩洛哥、阿拉伯、非洲、俄罗斯、罗马尼亚、中国、美国、西班牙及拉美 Hi-Fi 直播',
     tuningRadios: '正在调频直播电台...',
     libraryTitle: '我的音乐库',
     librarySub: '收藏的歌曲、个人歌单与专辑',
@@ -1555,6 +1567,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     secSpotifyHits: 'Spotify 全球热榜 & 飙升榜',
     secSpotifyAlbums: '精选专辑 · Spotify & iTunes',
     secSpainHits: '西班牙热门与飙升榜',
+    secBelgium: '比利时 · 布鲁塞尔 & 欧洲热榜',
     secMorocco: '摩洛哥 · Rap, Raï & Chaabi',
     secArab: '阿拉伯世界 · 金曲热榜',
     secAfrica: '全非音乐 · Afrobeats & Amapiano',
@@ -1590,6 +1603,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     moodChina: '华语中国',
     moodUsa: '美国',
     moodSpain: '西班牙',
+    moodBelgium: '比利时',
     moodUrbano: '说唱都市',
     moodPop: '流行',
     moodElectronic: '电子',
@@ -1603,6 +1617,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     moodAudius: 'Audius Hi-Fi',
 
     radioAll: '全球',
+    radioBelgium: '比利时',
     radioSpain: '西班牙',
     radioMorocco: '摩洛哥',
     radioArab: '阿拉伯',
@@ -1881,7 +1896,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     playlistsSection: 'Playlists',
     exploreByGenre: 'Explorar per gèneres i regions',
     radiosTitle: 'Ràdios Mundials en Directe 24/7',
-    radiosSub: 'Marroc, Món Àrab, Àfrica, Rússia, Romania, Xina, EUA, Espanya i Llatinoamèrica',
+    radiosSub: 'Bèlgica, Marroc, Món Àrab, Àfrica, Rússia, Romania, Xina, EUA, Espanya i Llatinoamèrica',
     tuningRadios: 'Sintonitzant emissores en directe...',
     libraryTitle: 'La teva Biblioteca',
     librarySub: 'Les teves preferides, playlists i àlbums desats',
@@ -1910,6 +1925,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     secSpotifyHits: 'Spotify Global & Viral Sync',
     secSpotifyAlbums: 'Àlbums Destacats · Spotify & iTunes',
     secSpainHits: 'Èxits a Espanya i Virals',
+    secBelgium: 'Bèlgica · Top 50 & Benelux',
     secMorocco: 'Marroc · Rap, Raï & Chaabi',
     secArab: 'Món Àrab · Top Èxits',
     secAfrica: 'Tota l’Àfrica · Afrobeats, Amapiano & Rumba',
@@ -1945,6 +1961,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     moodChina: 'Xina',
     moodUsa: 'EUA',
     moodSpain: 'Top Espanya',
+    moodBelgium: 'Bèlgica',
     moodUrbano: 'Urbà',
     moodPop: 'Pop',
     moodElectronic: 'Electrònica',
@@ -1958,6 +1975,7 @@ export const MUSIC_I18N: Record<MusicLang, MusicCopy> = {
     moodAudius: 'Audius Hi-Fi',
 
     radioAll: 'Tot el Món',
+    radioBelgium: 'Bèlgica',
     radioSpain: 'Espanya',
     radioMorocco: 'Marroc',
     radioArab: 'Món Àrab',

@@ -306,6 +306,7 @@ export interface MusicHomePayload {
   spotifyHits: MusicTrack[];
   spotifyAlbums: MusicAlbumRef[];
   spainHits: MusicTrack[];
+  belgiumMix?: MusicTrack[];
   moroccoMix: MusicTrack[];
   arabMix: MusicTrack[];
   africaMix: MusicTrack[];
@@ -349,6 +350,7 @@ export type HomeMoodFilterId =
   | 'usa'
   | 'latin'
   | 'spain'
+  | 'belgium'
   | 'urbano'
   | 'pop'
   | 'electronic'

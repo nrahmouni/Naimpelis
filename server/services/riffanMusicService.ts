@@ -1188,6 +1188,7 @@ async function resolveArchiveAudioFallback(
 }
 
 const COUNTRY_RADIO_GROUPS: Record<string, string[]> = {
+  BE: ['BE'],
   MA: ['MA'],
   RU: ['RU'],
   RO: ['RO'],
@@ -1236,6 +1237,16 @@ function mapRadioStations(rawList: any[], maxTotal = 72): MusicRadioStation[] {
 }
 
 const CURATED_FALLBACK_RADIOS: Record<string, MusicRadioStation[]> = {
+  BE: [
+    { id: 'cur-be-1', name: 'Classic 21 (RTBF)', country: 'BE', tags: ['Rock', 'Belgique', 'Classics'], favicon: '', streamUrl: 'https://radios.rtbf.be/classic21-128.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-be-2', name: 'La Première (RTBF)', country: 'BE', tags: ['Belgique', 'Culture', 'FR'], favicon: '', streamUrl: 'https://radios.rtbf.be/lapremiere-128.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-be-3', name: 'VivaCité Bruxelles (RTBF)', country: 'BE', tags: ['Bruxelles', 'Pop', 'Hits'], favicon: '', streamUrl: 'https://radios.rtbf.be/vivabxl-128.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-be-4', name: 'Tipik (RTBF)', country: 'BE', tags: ['Pop', 'Urbano', 'Electronic'], favicon: '', streamUrl: 'https://radios.rtbf.be/pure-128.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-be-5', name: 'Studio Brussel (VRT)', country: 'BE', tags: ['Alternative', 'Electronic', 'Indie'], favicon: '', streamUrl: 'https://icecast.vrtcdn.be/stubru-high.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-be-6', name: 'MNM (VRT)', country: 'BE', tags: ['Pop', 'Hits', 'Vlaanderen'], favicon: '', streamUrl: 'https://icecast.vrtcdn.be/mnm-high.mp3', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-be-7', name: 'NRJ Belgique', country: 'BE', tags: ['Hit Music', 'Dance', 'Urbano'], favicon: '', streamUrl: 'https://streamingp.shoutcast.com/NRJ-BE', bitrate: 128, codec: 'MP3' },
+    { id: 'cur-be-8', name: 'Nostalgie Belgique', country: 'BE', tags: ['Classics', '80s', '90s'], favicon: '', streamUrl: 'https://streamingp.shoutcast.com/NostalgieBE', bitrate: 128, codec: 'MP3' },
+  ],
   ES: [
     { id: 'cur-es-1', name: 'LOS40 España', country: 'ES', tags: ['Pop', 'Hits'], favicon: '', streamUrl: 'https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40.mp3', bitrate: 128, codec: 'MP3' },
     { id: 'cur-es-2', name: 'LOS40 Urban', country: 'ES', tags: ['Urbano', 'Reggaeton'], favicon: '', streamUrl: 'https://playerservices.streamtheworld.com/api/livestream-redirect/LOS40_URBAN.mp3', bitrate: 128, codec: 'MP3' },
@@ -1443,6 +1454,7 @@ export async function getMusicHome() {
     () => fetchRegionMix("Inna Carla's Dreams Smiley Delia Theo Rose", undefined, 'Romania Hits', 26, 'RO'), // 22: Romania
     () => fetchRegionMix('Jay Chou GEM Eason Chan JJ Lin Jackson Wang', undefined, 'China C-Pop', 26, 'CN'), // 23: China
     () => fetchRegionMix('Kendrick Lamar SZA Sabrina Carpenter Billie Eilish', '37i9dQZEVXbLRQDuF5jeBp', 'USA Top 50', 28, 'US'), // 24: USA
+    () => fetchRegionMix('Stromae Angele Damso Hamza Lost Frequencies Charlotte de Witte', '37i9dQZEVXbJNSeeHswcKB', 'Top 50 Belgium', 28, 'BE'), // 25: Belgium
   ], 4);
 
   const val = <T>(idx: number): T | null =>
@@ -1499,6 +1511,7 @@ export async function getMusicHome() {
     spotifyHits: spData.tracks,
     spotifyAlbums: spData.albums.length > 0 ? spData.albums : ytmData.albums.slice(0, 14),
     spainHits: val<MusicTrack[]>(1) || [],
+    belgiumMix: val<MusicTrack[]>(25) || [],
     moroccoMix: val<MusicTrack[]>(18) || [],
     arabMix: val<MusicTrack[]>(19) || [],
     africaMix: val<MusicTrack[]>(20) || [],

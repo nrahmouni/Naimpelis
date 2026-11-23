@@ -69,7 +69,14 @@ export default defineConfig(() => {
               short_name: 'Music',
               description: 'Riffan Music Hi-Fi, letras en vivo y radios 24/7',
               url: '/musica',
-              icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
+              icons: [{ src: '/music-pwa-192x192.png', sizes: '192x192' }],
+            },
+            {
+              name: 'Music Radios 24/7',
+              short_name: 'Radios',
+              description: 'Live Belgian & Worldwide 24/7 Radio Stations',
+              url: '/musica?view=radios',
+              icons: [{ src: '/music-pwa-192x192.png', sizes: '192x192' }],
             },
             {
               name: 'Riffan Kids',

@@ -204,7 +204,7 @@ describe('IPTV Media Helpers & Smart TV Compatibility', () => {
   });
 
   it('provides verified live non-Belix HD signals for every core Spanish TDT channel when Belix is disconnected', () => {
-    const merged = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS);
+    const merged = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, false);
     const expectedIds = [
       'tdt-la1',
       'tdt-la2',

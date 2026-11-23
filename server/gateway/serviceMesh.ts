@@ -195,6 +195,23 @@ export function serviceMeshGatewayMiddleware(
 
   res.on('finish', () => {
     const elapsed = Date.now() - start;
+    const isExternalProxyPassThrough =
+      fullPath.startsWith('/api/ts-proxy') ||
+      fullPath.startsWith('/api/hls-proxy') ||
+      fullPath.startsWith('/api/img-proxy') ||
+      fullPath.startsWith('/api/embed-proxy') ||
+      fullPath.startsWith('/api/embed-fetch');
+
+    const isExpectedUpstreamFailover =
+      fullPath === '/api/extract/stream' &&
+      !res.getHeader('Retry-After') &&
+      (res.statusCode === 502 || res.statusCode === 503 || res.statusCode === 504);
+
+    if ((isExternalProxyPassThrough && (res.statusCode === 502 || res.statusCode === 504)) || isExpectedUpstreamFailover) {
+      logger.debug({ correlationId, serviceId, path: fullPath, status: res.statusCode, elapsed }, 'upstream_proxy_unavailable');
+      return;
+    }
+
     if (res.statusCode >= 500) {
       serviceMesh.recordError(serviceId, `HTTP ${res.statusCode} on ${fullPath}`);
       logger.warn({ correlationId, serviceId, path: fullPath, status: res.statusCode, elapsed }, 'microservice_error_response');

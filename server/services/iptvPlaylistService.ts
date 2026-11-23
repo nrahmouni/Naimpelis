@@ -1,6 +1,6 @@
 import { curlGetText, type TrackRecord } from '../extractors/httpHelpers.ts';
 import { logger } from '../utils/logger.ts';
-import { getBelixStatus } from './belix/belixXtreamClient.ts';
+import { isAnyBelixConnected } from './belix/belixXtreamClient.ts';
 
 async function fetchSyncTextSafe(url: string, timeoutMs = 7000): Promise<string> {
   try {
@@ -339,8 +339,57 @@ export async function refreshLiveIptvRegistry(force = false): Promise<{
   };
 }
 
-export function applySyncedStreamsToChannels<T extends LiveIptvChannelEntry>(baseChannels: T[]): T[] {
-  const belixConnected = getBelixStatus().connected;
+function getEnvCustomTdtTracks(channelId: string): TrackRecord[] {
+  const custom: TrackRecord[] = [];
+  if (channelId === 'tdt-antena3') {
+    const a3Backup = String(
+      process.env.ANTENA3_BACKUP_M3U8 || process.env.TDT_ANTENA3_BACKUP_URL || ''
+    ).trim();
+    if (/^https?:\/\//i.test(a3Backup)) {
+      custom.push({
+        id: 'tdt-antena3-env-backup',
+        label: 'Señal Privada HD (España / VPS)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: a3Backup,
+        resolverType: 'tdt_hls',
+      });
+    }
+  }
+  const jsonRaw = String(process.env.TDT_CUSTOM_STREAMS_JSON || '').trim();
+  if (jsonRaw) {
+    try {
+      const parsed = JSON.parse(jsonRaw) as Record<string, string | string[]>;
+      const val = parsed?.[channelId];
+      const list = Array.isArray(val) ? val : typeof val === 'string' ? [val] : [];
+      list.forEach((u, idx) => {
+        const clean = String(u || '').trim();
+        if (/^https?:\/\//i.test(clean)) {
+          custom.push({
+            id: `${channelId}-env-custom-${idx}`,
+            label: `Cabecera Privada ${idx + 1} (HD)`,
+            lang: 'ES',
+            quality: '1080p',
+            sourceUrl: clean,
+            resolverType: 'tdt_hls',
+          });
+        }
+      });
+    } catch {
+      // ignore malformed TDT_CUSTOM_STREAMS_JSON
+    }
+  }
+  return custom;
+}
+
+export function applySyncedStreamsToChannels<T extends LiveIptvChannelEntry>(
+  baseChannels: T[],
+  belixConnectedOverride?: boolean
+): T[] {
+  const belixConnected =
+    typeof belixConnectedOverride === 'boolean'
+      ? belixConnectedOverride
+      : isAnyBelixConnected();
   const enriched: T[] = baseChannels.map((ch) => {
     const aliasKeys = [normName(ch.name), ...(KNOWN_TDT_ALIASES[ch.id] || [])];
     let match: { urls: string[]; logo?: string; web?: string } | undefined;
@@ -352,6 +401,7 @@ export function applySyncedStreamsToChannels<T extends LiveIptvChannelEntry>(bas
     }
 
     const existingTracks = Array.isArray(ch.channels) ? ch.channels : [];
+    const envCustomTracks = getEnvCustomTdtTracks(ch.id);
     const activeExisting = belixConnected
       ? existingTracks
       : existingTracks.filter((tr) => !String(tr.sourceUrl || '').startsWith('/api/belix/stream/'));
@@ -378,8 +428,8 @@ export function applySyncedStreamsToChannels<T extends LiveIptvChannelEntry>(bas
     }
 
     const combinedTracks =
-      activeExisting.length > 0 || syncedTracks.length > 0
-        ? [...activeExisting, ...syncedTracks]
+      envCustomTracks.length > 0 || activeExisting.length > 0 || syncedTracks.length > 0
+        ? [...envCustomTracks, ...activeExisting, ...syncedTracks]
         : belixTracks;
     return {
       ...ch,

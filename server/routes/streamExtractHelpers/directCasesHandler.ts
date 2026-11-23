@@ -21,12 +21,13 @@ import {
 import {
   ensureLiveDvbCleanHlsSession,
   getActiveDvbSessionPath,
+  isDvbUpstreamCoolingDown,
 } from '../proxies/dvbTranscoder.ts';
 import {
   MEGA_CHIRINGUITO_TV_URL,
   resolveChiringuitoLiveStream,
 } from '../../services/chiringuitoLiveService.ts';
-import { getBelixStatus } from '../../services/belix/belixXtreamClient.ts';
+import { isAnyBelixConnected, resolveBelixManifest } from '../../services/belix/belixXtreamClient.ts';
 
 export async function handleDirectExtractCases(params: {
   rawInput: string;
@@ -34,6 +35,7 @@ export async function handleDirectExtractCases(params: {
   preferLang: string;
   titleHint: string;
   isSandboxedFrame: boolean;
+  belixSessionKey?: string;
   cacheKey: string;
   setCache: (key: string, val: ExtractedStreamResult) => void;
   sendOk: (payload: ExtractedStreamResult) => express.Response;
@@ -45,6 +47,7 @@ export async function handleDirectExtractCases(params: {
     preferLang,
     titleHint,
     isSandboxedFrame,
+    belixSessionKey,
     cacheKey,
     setCache,
     sendOk,
@@ -91,12 +94,37 @@ export async function handleDirectExtractCases(params: {
   }
 
   // CASE -1: Internal proxy / Belix live stream URLs must never pass through external host resolvers
-  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play)\//i.test(rawInput)) {
-    if (/^\/api\/belix\/(?:stream|xtream\/play)\//i.test(rawInput) && !getBelixStatus().connected) {
+  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play)\//i.test(rawInput) || rawInput.startsWith('/api/hls-proxy?')) {
+    const belixStreamMatch = rawInput.match(/^\/api\/belix\/stream\/([a-zA-Z0-9_-]+)(?:\.m3u8)?/i);
+    if (/^\/api\/belix\/(?:stream|xtream\/play)\//i.test(rawInput) && !isAnyBelixConnected(belixSessionKey)) {
       return sendErr(
-        503,
+        404,
         'Señal Belix no conectada; cambiando automáticamente a señal TDT en directo.'
       );
+    }
+    if (belixStreamMatch && process.env.NODE_ENV !== 'test') {
+      const warmed = await resolveBelixManifest(
+        belixStreamMatch[1],
+        '',
+        belixSessionKey,
+        titleHint
+      ).catch(() => null);
+      if (!warmed) {
+        return sendErr(
+          404,
+          'Señal Belix temporalmente sin respuesta; cambiando automáticamente a señal alternativa.'
+        );
+      }
+    }
+    if (rawInput.startsWith('/api/hls-proxy')) {
+      try {
+        const parsedInner = new URL(rawInput, 'http://localhost').searchParams.get('url') || '';
+        if (parsedInner && isDvbHeadendStream(parsedInner) && isDvbUpstreamCoolingDown(parsedInner)) {
+          return sendErr(404, 'Cabecera TDT en enfriamiento; cambiando automáticamente de fuente.');
+        }
+      } catch {
+        // ignore parse error
+      }
     }
     const isDirectFile = /\.(mp4|mkv|webm)(\?|$)/i.test(rawInput);
     const result: ExtractedStreamResult = {
@@ -107,7 +135,83 @@ export async function handleDirectExtractCases(params: {
       title: titleHint || 'Stream en Directo',
       requestedLang: preferLang || 'ES',
       resolvedLang: preferLang || 'ES',
-      expiresAt: Date.now() + 15 * 60 * 1000,
+      expiresAt: Date.now() + (belixStreamMatch ? 8_000 : 15 * 60 * 1000),
+    };
+    setCache(cacheKey, result);
+    return sendOk(result);
+  }
+
+  // CASE -0.5: Direct Atresplayer web URLs (https://www.atresplayer.com/directos/antena3/, etc.)
+  const atresMatch = rawInput.match(
+    /^https?:\/\/(?:www\.)?atresplayer\.com\/directos\/([a-z0-9-]+)/i
+  );
+  if (atresMatch) {
+    const slug = atresMatch[1].toLowerCase();
+    const ATRES_DIRECTO_MAP: Record<
+      string,
+      { streamUrl: string; title: string; rawUrl: string }
+    > = {
+      antena3: {
+        streamUrl: '/api/belix/stream/743056.m3u8?name=Antena%203',
+        title: 'Antena 3 · Directo HD',
+        rawUrl: 'https://www.atresplayer.com/directos/antena3/',
+      },
+      'antena3-internacional': {
+        streamUrl: '/api/belix/stream/743056.m3u8?name=Antena%203',
+        title: 'Antena 3 · Directo HD',
+        rawUrl: 'https://www.atresplayer.com/directos/antena3/',
+      },
+      lasexta: {
+        streamUrl: '/api/belix/stream/743035.m3u8?name=laSexta',
+        title: 'laSexta · Directo HD',
+        rawUrl: 'https://www.atresplayer.com/directos/lasexta/',
+      },
+      neox: {
+        streamUrl: '/api/belix/stream/742985.m3u8?name=Neox',
+        title: 'Neox · Directo HD',
+        rawUrl: 'https://www.atresplayer.com/directos/neox/',
+      },
+      nova: {
+        streamUrl: '/api/belix/stream/742954.m3u8?name=Nova',
+        title: 'Nova · Directo HD',
+        rawUrl: 'https://www.atresplayer.com/directos/nova/',
+      },
+      mega: {
+        streamUrl: '/api/belix/stream/743032.m3u8?name=Mega',
+        title: 'Mega · Directo HD',
+        rawUrl: 'https://www.atresplayer.com/directos/mega/',
+      },
+      atreseries: {
+        streamUrl: '/api/belix/stream/743033.m3u8?name=Atreseries',
+        title: 'Atreseries · Directo HD',
+        rawUrl: 'https://www.atresplayer.com/directos/atreseries/',
+      },
+    };
+    const mapped = ATRES_DIRECTO_MAP[slug] || ATRES_DIRECTO_MAP.antena3;
+    const mappedBelixId = mapped.streamUrl.match(/\/api\/belix\/stream\/([a-zA-Z0-9_-]+)/i)?.[1];
+    if (mappedBelixId && process.env.NODE_ENV !== 'test') {
+      const warmed = await resolveBelixManifest(
+        mappedBelixId,
+        '',
+        belixSessionKey,
+        titleHint || mapped.title
+      ).catch(() => null);
+      if (!warmed) {
+        return sendErr(
+          404,
+          'Señal de Antena 3 temporalmente sin respuesta; prueba otra señal disponible.'
+        );
+      }
+    }
+    const result: ExtractedStreamResult = {
+      success: true,
+      mode: 'hls',
+      streamUrl: mapped.streamUrl,
+      rawStreamUrl: mapped.rawUrl,
+      title: titleHint || mapped.title,
+      requestedLang: 'ES',
+      resolvedLang: 'ES',
+      expiresAt: Date.now() + 10_000,
     };
     setCache(cacheKey, result);
     return sendOk(result);
@@ -160,6 +264,9 @@ export async function handleDirectExtractCases(params: {
         };
         setCache(cacheKey, dvbResult);
         return sendOk(dvbResult);
+      }
+      if (isDvbUpstreamCoolingDown(cleanCheckUrl)) {
+        return sendErr(404, 'Señal TDT directa no accesible desde servidor; cambiando a señal alternativa.');
       }
     }
 

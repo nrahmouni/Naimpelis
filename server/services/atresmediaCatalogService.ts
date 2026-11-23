@@ -8,6 +8,7 @@ import {
 import { resolveDailymotionVideoToM3u8 } from '../extractors/dailymotionExtractor.ts';
 import { SPANISH_TDT_CHANNELS } from '../data/tdtChannels.ts';
 import { applySyncedStreamsToChannels } from './iptvPlaylistService.ts';
+import { isAnyBelixConnected } from './belix/belixXtreamClient.ts';
 import { channelHealthMonitor } from './channelHealthMonitor.ts';
 import { loadSpanishEpgSchedule } from './epgService.ts';
 import { fetchTmdbItemsByIds, resolveTmdbIdByTitle } from './tmdbCatalogHelpers.ts';
@@ -454,7 +455,7 @@ function mapApiFormatRow(
   };
 }
 
-export async function getAtresmediaHome(): Promise<{
+export async function getAtresmediaHome(belixSessionKey = 'default'): Promise<{
   liveChannels: AtresmediaLiveChannelItem[];
   catalog: AtresmediaCatalogEntry[];
   updatedAt: number;
@@ -477,8 +478,9 @@ export async function getAtresmediaHome(): Promise<{
     }
   }
 
+  const belixActive = isAnyBelixConnected(belixSessionKey);
   const syncedChannels = channelHealthMonitor.prioritizeChannels(
-    applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS)
+    applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, belixActive)
   );
   const liveChannels: AtresmediaLiveChannelItem[] = ATRESMEDIA_TDT_IDS.map((tdtId) => {
     const tdtCh = syncedChannels.find((c) => c.id === tdtId) || SPANISH_TDT_CHANNELS.find((c) => c.id === tdtId)!;

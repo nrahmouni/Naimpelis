@@ -581,10 +581,16 @@ export const PlayerStageOverlays: React.FC<PlayerStageOverlaysProps> = ({
                             ca: 'Senyal aturada · Reconnectant emissió…',
                             en: 'Signal paused · Reconnecting stream…',
                           })
-                        : pickLang(lang, {
+                        : streamRefreshPhase === 'recovering'
+                        ? pickLang(lang, {
                             es: 'Señal detenida · Refrescando en vivo…',
                             ca: 'Senyal aturada · Refrescant en directe…',
                             en: 'Signal stalled · Refreshing live feed…',
+                          })
+                        : pickLang(lang, {
+                            es: 'Conectando emisión en directo…',
+                            ca: 'Connectant emissió en directe…',
+                            en: 'Connecting live stream…',
                           })
                       : pickLang(lang, {
                           es: 'Cargando vídeo…',

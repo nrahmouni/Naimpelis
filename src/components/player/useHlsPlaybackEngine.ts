@@ -171,7 +171,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     streamLoadStartRef.current = Date.now();
     rebufferCountRef.current = 0;
     qoeStartupSentForUrlRef.current = '';
-    setStreamRefreshPhase(videoState.isLive ? 'recovering' : 'idle');
+    setStreamRefreshPhase('idle');
     setIsBuffering(true);
 
     const startPlaybackSafely = async () => {
@@ -224,7 +224,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
 
     const attachHlsJs = () => {
       if (!Hls.isSupported() || cancelled) return false;
-      const isDvbLiveUrl = /\/api\/dvb-live\//i.test(videoState.url);
+      const isDvbLiveUrl = /\/api\/(?:dvb-live|belix\/stream)\//i.test(videoState.url);
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
@@ -243,15 +243,15 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         stretchShortVideoTrack: !videoState.isLive,
         maxAudioFramesDrift: videoState.isLive ? 3 : 4,
         abrEwmaDefaultEstimate: 7_500_000,
-        manifestLoadingTimeOut: 20000,
-        manifestLoadingMaxRetry: 8,
-        manifestLoadingRetryDelay: 1000,
-        levelLoadingTimeOut: 20000,
-        levelLoadingMaxRetry: 8,
-        levelLoadingRetryDelay: 1000,
-        fragLoadingTimeOut: 25000,
-        fragLoadingMaxRetry: 8,
-        fragLoadingRetryDelay: 700,
+        manifestLoadingTimeOut: isDvbLiveUrl ? 12000 : 20000,
+        manifestLoadingMaxRetry: isDvbLiveUrl ? 4 : 8,
+        manifestLoadingRetryDelay: 800,
+        levelLoadingTimeOut: 15000,
+        levelLoadingMaxRetry: 6,
+        levelLoadingRetryDelay: 800,
+        fragLoadingTimeOut: 20000,
+        fragLoadingMaxRetry: 6,
+        fragLoadingRetryDelay: 600,
       });
       hlsRef.current = hls;
 

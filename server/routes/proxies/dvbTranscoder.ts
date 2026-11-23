@@ -32,6 +32,89 @@ export interface RollingDvbSeg {
 }
 export const dvbRollingPlaylistMap = new LruTtlCache<string, RollingDvbSeg[]>(45, 90_000);
 
+const dvbHostDownCache = new LruTtlCache<string, { until: number; reason: string }>(64, 45_000);
+const dvbHostUpCache = new LruTtlCache<string, boolean>(64, 15_000);
+
+function getDvbHostKey(rawUrl: string): string {
+  try {
+    return new URL(rawUrl).host.toLowerCase();
+  } catch {
+    return rawUrl.slice(0, 80);
+  }
+}
+
+function getDvbCooldownKey(rawUrl: string): string {
+  if (isXtreamLiveStreamUrl(rawUrl)) {
+    try {
+      const u = new URL(rawUrl);
+      return `${u.host.toLowerCase()}${u.pathname}`;
+    } catch {
+      return rawUrl.slice(0, 120);
+    }
+  }
+  return getDvbHostKey(rawUrl);
+}
+
+export function isDvbUpstreamCoolingDown(rawUrl: string): boolean {
+  const key = getDvbCooldownKey(rawUrl);
+  const entry = dvbHostDownCache.get(key);
+  if (!entry) return false;
+  if (Date.now() < entry.until) return true;
+  dvbHostDownCache.delete(key);
+  return false;
+}
+
+function markDvbUpstreamDown(rawUrl: string, reason: string, ttlMs = 45_000): void {
+  const key = getDvbCooldownKey(rawUrl);
+  const effectiveTtl = isXtreamLiveStreamUrl(rawUrl) ? Math.min(ttlMs, 12_000) : ttlMs;
+  dvbHostDownCache.set(key, { until: Date.now() + effectiveTtl, reason });
+  dvbHostUpCache.delete(getDvbHostKey(rawUrl));
+}
+
+async function probeDvbUpstreamReachable(
+  cleanUpstream: string,
+  referer: string,
+  timeoutMs = 2600
+): Promise<boolean> {
+  const hostKey = getDvbHostKey(cleanUpstream);
+  if (isDvbUpstreamCoolingDown(cleanUpstream)) return false;
+  if (dvbHostUpCache.get(hostKey)) return true;
+
+  const headers: Record<string, string> = {
+    'User-Agent': getPreferredUpstreamUa(cleanUpstream),
+    Accept: '*/*',
+  };
+  if (referer && /^https?:\/\//i.test(referer)) {
+    headers['Referer'] = referer;
+  }
+
+  try {
+    const resp = await streamingFetch(cleanUpstream, {
+      method: 'GET',
+      headers,
+      timeoutMs,
+    });
+    try {
+      await resp.body?.cancel?.();
+    } catch {
+      // ignore
+    }
+    if (resp.ok || resp.status === 206) {
+      dvbHostUpCache.set(hostKey, true);
+      return true;
+    }
+    if (resp.status === 404 || resp.status >= 500) {
+      markDvbUpstreamDown(cleanUpstream, `HTTP ${resp.status}`, 25_000);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    markDvbUpstreamDown(cleanUpstream, msg, 45_000);
+    return false;
+  }
+}
+
 interface DvbTranscodeTask {
   run: () => void;
   highPriority: boolean;
@@ -71,6 +154,9 @@ export function remuxDvbTsToAac(
   referer: string,
   highPriority = false
 ): Promise<Buffer> {
+  if (isDvbUpstreamCoolingDown(segmentUrl)) {
+    return Promise.reject(new Error('DVB upstream headend cooling down'));
+  }
   const now = Date.now();
   const cached = dvbAacSegmentCache.get(segmentUrl);
   if (cached && now - cached.ts < 75_000) {
@@ -90,7 +176,7 @@ export function remuxDvbTsToAac(
     try {
       const resp = await streamingFetch(segmentUrl, {
         headers: segHeaders,
-        timeoutMs: 7000,
+        timeoutMs: 4500,
       });
       if (resp.ok) {
         rawBuf = Buffer.from(await resp.arrayBuffer());
@@ -100,9 +186,10 @@ export function remuxDvbTsToAac(
     }
 
     if (!rawBuf || rawBuf.length === 0) {
-      rawBuf = await curlGetBuffer(segmentUrl, segHeaders, 8);
+      rawBuf = await curlGetBuffer(segmentUrl, segHeaders, 5);
     }
     if (!rawBuf || rawBuf.length < 376) {
+      markDvbUpstreamDown(segmentUrl, 'Empty or unreachable DVB segment', 25_000);
       throw new Error('Empty or truncated DVB TS segment');
     }
 
@@ -212,10 +299,15 @@ try {
 const MAX_LIVE_DVB_SESSIONS = 6;
 const DVB_SESSION_IDLE_MS = 90_000;
 const liveDvbSessions = new Map<string, LiveDvbRelaySession>();
+const inflightDvbSessionStarts = new Map<string, Promise<string | null>>();
 const dvbSessionUpstreamMeta = new LruTtlCache<
   string,
   { upstreamUrl: string; profile: 'hd' | 'fast' | 'iptv'; referer: string }
 >(200, 24 * 60 * 60 * 1000);
+
+function isXtreamLiveStreamUrl(rawUrl: string): boolean {
+  return /\/live\/[^/]+\/[^/]+\//i.test(String(rawUrl || ''));
+}
 
 function normalizeDvbUpstream(rawUpstreamUrl: string): string {
   return String(rawUpstreamUrl || '')
@@ -301,6 +393,35 @@ export async function ensureLiveDvbCleanHlsSession(
   const sessionKey = buildDvbSessionKey(cleanUpstream, profile);
   dvbSessionUpstreamMeta.set(sessionKey, { upstreamUrl: cleanUpstream, profile, referer });
 
+  const inflight = inflightDvbSessionStarts.get(sessionKey);
+  if (inflight) {
+    return inflight;
+  }
+
+  const runPromise = startOrReuseLiveDvbCleanHlsSession(
+    rawUpstreamUrl,
+    cleanUpstream,
+    sessionKey,
+    profile,
+    referer,
+    attempt
+  ).finally(() => {
+    if (inflightDvbSessionStarts.get(sessionKey) === runPromise) {
+      inflightDvbSessionStarts.delete(sessionKey);
+    }
+  });
+  inflightDvbSessionStarts.set(sessionKey, runPromise);
+  return runPromise;
+}
+
+async function startOrReuseLiveDvbCleanHlsSession(
+  rawUpstreamUrl: string,
+  cleanUpstream: string,
+  sessionKey: string,
+  profile: 'hd' | 'fast' | 'iptv',
+  referer: string,
+  attempt: number
+): Promise<string | null> {
   const existing = liveDvbSessions.get(sessionKey);
   if (existing && !existing.dead) {
     existing.lastAccessAt = Date.now();
@@ -320,6 +441,33 @@ export async function ensureLiveDvbCleanHlsSession(
       return `/api/dvb-live/${sessionKey}/index.m3u8`;
     }
     destroyLiveDvbSession(sessionKey);
+  }
+
+  const isXtreamLive = isXtreamLiveStreamUrl(cleanUpstream);
+  if (isDvbUpstreamCoolingDown(cleanUpstream)) {
+    return null;
+  }
+
+  // Xtream portals often enforce strict max_connections (e.g. 2 slots):
+  // 1) Destroy any previous active Xtream FFmpeg relay on the same origin before opening a new one.
+  // 2) Skip duplicate pre-probe GET so only 1 upstream socket is opened.
+  if (isXtreamLive) {
+    const targetHost = getDvbHostKey(cleanUpstream);
+    let evicted = false;
+    for (const [k, s] of liveDvbSessions.entries()) {
+      if (k !== sessionKey && getDvbHostKey(s.upstreamUrl) === targetHost) {
+        destroyLiveDvbSession(k);
+        evicted = true;
+      }
+    }
+    if (evicted) {
+      await new Promise((r) => setTimeout(r, 90));
+    }
+  } else {
+    const reachable = await probeDvbUpstreamReachable(cleanUpstream, referer, 2600);
+    if (!reachable) {
+      return null;
+    }
   }
 
   while (liveDvbSessions.size >= MAX_LIVE_DVB_SESSIONS) {
@@ -346,7 +494,6 @@ export async function ensureLiveDvbCleanHlsSession(
   const playlistPath = path.join(sessionDir, 'index.m3u8');
   const segmentPattern = path.join(sessionDir, 'seg_%05d.ts');
 
-  const isXtreamLive = /\/live\/[^/]+\/[^/]+\//i.test(cleanUpstream);
   const ffArgs = [
     '-hide_banner',
     '-loglevel',
@@ -360,30 +507,58 @@ export async function ensureLiveDvbCleanHlsSession(
 
   const isFastProfile = profile === 'fast';
   const isUhd4kStream = /\/stream\/6[4568]\//i.test(cleanUpstream);
+  const canCopyVideo = !isUhd4kStream && !isFastProfile;
   const vfFilter = isUhd4kStream
-    ? isFastProfile
-      ? 'fps=25,scale=1280:720:flags=fast_bilinear,format=yuv420p'
-      : 'fps=25,scale=1920:1080:flags=bilinear,format=yuv420p'
-    : isFastProfile
-    ? "yadif=0:-1:1,scale='min(1280,iw)':-2,format=yuv420p"
-    : "yadif=0:-1:1,scale='min(1920,iw)':-2,format=yuv420p";
+    ? 'fps=25,scale=1920:1080:flags=bilinear,format=yuv420p'
+    : "yadif=0:-1:1,scale='min(1280,iw)':-2,format=yuv420p";
 
-  const useUltrafast = true;
+  const videoArgs = canCopyVideo
+    ? ['-c:v', 'copy']
+    : [
+        '-vf',
+        vfFilter,
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        ...(isFastProfile ? ['-tune', 'zerolatency'] : []),
+        '-profile:v',
+        'high',
+        '-level:v',
+        isFastProfile ? '4.0' : '4.1',
+        '-pix_fmt',
+        'yuv420p',
+        '-crf',
+        isFastProfile ? '21' : '19',
+        '-maxrate',
+        isFastProfile ? '2600k' : '6000k',
+        '-bufsize',
+        isFastProfile ? '5200k' : '12000k',
+        '-r',
+        '25',
+        '-g',
+        '50',
+        '-keyint_min',
+        '50',
+        '-sc_threshold',
+        '0',
+        '-force_key_frames',
+        'expr:gte(t,n_forced*2)',
+        '-threads',
+        '0',
+      ];
+
   ffArgs.push(
-    '-reconnect',
-    '1',
-    '-reconnect_streamed',
-    '1',
-    '-reconnect_delay_max',
-    '2',
+    ...(isXtreamLive
+      ? []
+      : ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '2']),
     '-rw_timeout',
-    '7000000',
+    isXtreamLive ? '10000000' : '7000000',
     '-analyzeduration',
-    '800000',
+    isXtreamLive ? '500000' : '800000',
     '-probesize',
-    '1000000',
-    '-live_start_index',
-    '-3',
+    isXtreamLive ? '500000' : '1000000',
+    ...(/\.m3u8(\?|$)/i.test(cleanUpstream) ? ['-live_start_index', '-3'] : []),
     '-fflags',
     '+genpts+discardcorrupt',
     '-avoid_negative_ts',
@@ -394,37 +569,7 @@ export async function ensureLiveDvbCleanHlsSession(
     '0:v:0',
     '-map',
     '0:a:0?',
-    '-vf',
-    vfFilter,
-    '-c:v',
-    'libx264',
-    '-preset',
-    useUltrafast ? 'ultrafast' : 'superfast',
-    ...(isFastProfile ? ['-tune', 'zerolatency'] : []),
-    '-profile:v',
-    'high',
-    '-level:v',
-    isFastProfile ? '4.0' : '4.1',
-    '-pix_fmt',
-    'yuv420p',
-    '-crf',
-    isFastProfile ? '21' : '19',
-    '-maxrate',
-    isFastProfile ? '2600k' : '6000k',
-    '-bufsize',
-    isFastProfile ? '5200k' : '12000k',
-    '-r',
-    '25',
-    '-g',
-    '50',
-    '-keyint_min',
-    '50',
-    '-sc_threshold',
-    '0',
-    '-force_key_frames',
-    'expr:gte(t,n_forced*2)',
-    '-threads',
-    '0',
+    ...videoArgs,
     '-c:a',
     'aac',
     '-ac',
@@ -463,12 +608,22 @@ export async function ensureLiveDvbCleanHlsSession(
   };
 
   let stderrTail = '';
+  let hadNetworkFailure = false;
   proc.stderr?.on('data', (chunk: Buffer) => {
     stderrTail = (stderrTail + chunk.toString('utf8')).slice(-400);
   });
   proc.on('exit', (code) => {
     if (code !== 0 && !session.dead) {
-      logger.warn({ key: sessionKey, code, stderrTail }, 'dvb_ffmpeg_exited_early');
+      hadNetworkFailure =
+        /connection timed out|connection refused|no route to host|failed to resolve|404 not found|502 bad gateway|503 service/i.test(
+          stderrTail
+        );
+      if (hadNetworkFailure) {
+        markDvbUpstreamDown(cleanUpstream, stderrTail.slice(0, 120), 45_000);
+        logger.debug({ key: sessionKey, code }, 'dvb_upstream_unreachable');
+      } else {
+        logger.warn({ key: sessionKey, code, stderrTail }, 'dvb_ffmpeg_exited_early');
+      }
     }
     session.dead = true;
   });
@@ -478,7 +633,7 @@ export async function ensureLiveDvbCleanHlsSession(
   });
 
   session.readyPromise = new Promise<boolean>((resolve) => {
-    const deadline = Date.now() + 15_000;
+    const deadline = Date.now() + (isXtreamLive ? 4_200 : 12_000);
     let inTick = false;
     const poll = setInterval(async () => {
       if (session.dead) {
@@ -522,8 +677,21 @@ export async function ensureLiveDvbCleanHlsSession(
   }
   const elapsed = Date.now() - session.startedAt;
   destroyLiveDvbSession(sessionKey);
-  if (attempt === 0 && elapsed < 7_000) {
-    return ensureLiveDvbCleanHlsSession(rawUpstreamUrl, profile, referer, 1);
+  if (
+    !isXtreamLive &&
+    attempt === 0 &&
+    !hadNetworkFailure &&
+    !isDvbUpstreamCoolingDown(cleanUpstream) &&
+    elapsed < 7_000
+  ) {
+    return startOrReuseLiveDvbCleanHlsSession(
+      rawUpstreamUrl,
+      cleanUpstream,
+      sessionKey,
+      profile,
+      referer,
+      1
+    );
   }
   return null;
 }

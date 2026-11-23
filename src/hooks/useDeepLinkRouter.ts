@@ -409,7 +409,10 @@ export function useDeepLinkRouter({
       activeWorld === 'music' &&
       (window.location.search.includes('install=music') ||
         window.location.search.includes('track=') ||
-        window.location.search.includes('musicq='));
+        window.location.search.includes('musicq=') ||
+        window.location.search.includes('view=') ||
+        window.location.search.includes('import=') ||
+        window.location.search.includes('url='));
     if (currentFull !== nextRoute && !hasMusicDeepQuery) {
       lastObservedHrefRef.current = nextRoute;
       window.history.replaceState(window.history.state, '', nextRoute);

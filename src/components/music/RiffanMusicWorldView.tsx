@@ -33,6 +33,7 @@ import {
   UserCheck,
   Users,
   Wand2,
+  WifiOff,
   X,
 } from 'lucide-react';
 import type { AppLanguage } from '../../types';
@@ -52,13 +53,14 @@ import { useMusicStore } from '../../store/useMusicStore';
 import { triggerHaptic } from '../../utils/haptics';
 import { useBackInterceptor } from '../../lib/backInterceptor';
 import { getStoredProfile } from '../../utils/storage';
-import { buildExportifyCsvFromTracks } from '../../services/musicImporter';
+import { buildExportifyCsvFromTracks, buildM3u8FromTracks } from '../../services/musicImporter';
 import {
   fetchTasteRecommendationsFromServer,
   rankTracksByTaste,
   type TasteScoreInput,
 } from '../../services/musicTasteEngine';
 import {
+  exportTracksAsMp3Zip,
   removeTrackFromOfflineLibrary,
   saveTrackToOfflineLibrary,
   startDownloadMp3Job,
@@ -125,6 +127,7 @@ interface RadioFilterSpec {
 
 const RADIO_FILTERS: RadioFilterSpec[] = [
   { id: 'all', mode: 'country', value: 'ALL', labelKey: 'radioAll' },
+  { id: 'be', mode: 'country', value: 'BE', labelKey: 'radioBelgium' },
   { id: 'es', mode: 'country', value: 'ES', labelKey: 'radioSpain' },
   { id: 'ma', mode: 'country', value: 'MA', labelKey: 'radioMorocco' },
   { id: 'arab', mode: 'country', value: 'ARAB', labelKey: 'radioArab' },
@@ -167,6 +170,18 @@ function downloadExportifyCsv(name: string, tracks: MusicTrack[]) {
   const a = document.createElement('a');
   a.href = url;
   a.download = `${name.replace(/[^a-zA-Z0-9_-]+/g, '_') || 'riffan_music'}_exportify.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+
+function downloadPlaylistFile(name: string, content: string, ext: string, mime: string) {
+  const blob = new Blob([content], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${name.replace(/[^a-zA-Z0-9_-]+/g, '_') || 'riffan_music'}.${ext}`;
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -467,6 +482,10 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   const [libraryFilter, setLibraryFilter] = useState<'all' | 'playlists' | 'albums' | 'artists' | 'offline'>('all');
   const [librarySort, setLibrarySort] = useState<'recent' | 'alpha'>('recent');
   const [libraryLayout, setLibraryLayout] = useState<'list' | 'grid'>('list');
+  const [isOffline, setIsOffline] = useState<boolean>(
+    typeof navigator !== 'undefined' ? navigator.onLine === false : false
+  );
+  const [zipExporting, setZipExporting] = useState(false);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const prevNavTabRef = useRef(navTab);
@@ -519,6 +538,35 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
     prevNavTabRef.current = navTab;
     return undefined;
   }, [navTab, detail]);
+
+  // Track network online/offline status for immediate Offline Library quick switch
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const syncNet = () => setIsOffline(navigator.onLine === false);
+    window.addEventListener('online', syncNet);
+    window.addEventListener('offline', syncNet);
+    return () => {
+      window.removeEventListener('online', syncNet);
+      window.removeEventListener('offline', syncNet);
+    };
+  }, []);
+
+  // Support PWA shortcuts & Web Share Target query params (?view=radios|library&import=1)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const viewParam = params.get('view');
+    if (viewParam === 'radios' || viewParam === 'library' || viewParam === 'search' || viewParam === 'home') {
+      clearMusicDetailStack();
+      setNavTab(viewParam);
+      if (viewParam === 'radios' && !params.get('country')) {
+        setRadioFilterId('be');
+      }
+    }
+    if (params.get('import') === '1' || params.get('url')) {
+      setShowImportModal(true);
+    }
+  }, [clearMusicDetailStack, setNavTab, setRadioFilterId, setShowImportModal]);
 
   // First-visit startup prompt to import Spotify / Exportify / YouTube Music
   useEffect(() => {
@@ -620,6 +668,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             spotifyHits: data.spotifyHits || [],
             spotifyAlbums: data.spotifyAlbums || [],
             spainHits: data.spainHits || [],
+            belgiumMix: data.belgiumMix || [],
             moroccoMix: data.moroccoMix || [],
             arabMix: data.arabMix || [],
             africaMix: data.africaMix || [],
@@ -964,6 +1013,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   const moodFilters = useMemo<Array<{ id: HomeMoodFilterId; label: string }>>(
     () => [
       { id: 'all', label: m.moodAll },
+      { id: 'belgium', label: m.moodBelgium },
       { id: 'youtube_music', label: m.moodYtm },
       { id: 'spotify', label: m.moodSpotify },
       { id: 'spain', label: m.moodSpain },
@@ -1054,6 +1104,12 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
         subtitle: 'Quevedo · Rosalía · Aitana · Bad Bunny',
         tracks: homeData.spainHits,
         cover: homeData.spainHits[0]?.album.coverXl || mixUrbanoCover,
+      },
+      belgium: {
+        title: m.secBelgium,
+        subtitle: 'Stromae · Angèle · Damso · Lost Frequencies · Hamza',
+        tracks: homeData.belgiumMix || [],
+        cover: homeData.belgiumMix?.[0]?.album.coverXl || mixElectronicCover,
       },
       urbano: {
         title: m.secUrbano,
@@ -1470,6 +1526,19 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
           }),
       },
       {
+        id: 'belgium',
+        title: m.moodBelgium,
+        cover: homeData.belgiumMix?.[0]?.album.cover || mixElectronicCover,
+        onClick: () =>
+          pushMusicDetail({
+            kind: 'curated',
+            title: m.secBelgium,
+            subtitle: 'Stromae · Angèle · Damso · Lost Frequencies',
+            cover: homeData.belgiumMix?.[0]?.album.coverXl || mixElectronicCover,
+            tracks: homeData.belgiumMix || [],
+          }),
+      },
+      {
         id: 'morocco',
         title: m.moodMorocco,
         cover: homeData.moroccoMix[0]?.album.cover || mixUrbanoCover,
@@ -1564,7 +1633,36 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     }}
                     className="h-11 px-4 rounded-full bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-xs font-bold text-white inline-flex items-center gap-1.5 cursor-pointer"
                   >
-                    <FileSpreadsheet className="w-4 h-4 text-[#60A5FA]" /> Exportar CSV (Exportify)
+                    <FileSpreadsheet className="w-4 h-4 text-[#60A5FA]" /> CSV
+                  </button>
+                  <button
+                    type="button"
+                    disabled={zipExporting}
+                    onClick={async () => {
+                      setZipExporting(true);
+                      showToast(m.downloadingToast);
+                      const result = await exportTracksAsMp3Zip('Riffan_Liked', likedTracks);
+                      setZipExporting(false);
+                      showToast(result.ok ? `${m.exportZipDone} (${result.count})` : (result.error || m.catalogLoadError));
+                    }}
+                    className="h-11 px-4 rounded-full bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-xs font-bold text-white inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <FolderDown className="w-4 h-4 text-[#60A5FA]" /> {m.exportZipBtn}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      downloadPlaylistFile(
+                        'Riffan_Liked',
+                        buildM3u8FromTracks('Riffan_Liked', likedTracks),
+                        'm3u8',
+                        'audio/x-mpegurl;charset=utf-8'
+                      );
+                      showToast('M3U8');
+                    }}
+                    className="h-11 px-3.5 rounded-full bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-xs font-bold text-white inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {m.exportM3uBtn}
                   </button>
                 </div>
               )}
@@ -1641,7 +1739,36 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     }}
                     className="h-11 px-4 rounded-full bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-xs font-bold text-white inline-flex items-center gap-1.5 cursor-pointer"
                   >
-                    <FileSpreadsheet className="w-4 h-4 text-[#60A5FA]" /> Exportar CSV (Exportify)
+                    <FileSpreadsheet className="w-4 h-4 text-[#60A5FA]" /> CSV
+                  </button>
+                  <button
+                    type="button"
+                    disabled={zipExporting}
+                    onClick={async () => {
+                      setZipExporting(true);
+                      showToast(m.downloadingToast);
+                      const result = await exportTracksAsMp3Zip(pl.name, pl.tracks);
+                      setZipExporting(false);
+                      showToast(result.ok ? `${m.exportZipDone} (${result.count})` : (result.error || m.catalogLoadError));
+                    }}
+                    className="h-11 px-4 rounded-full bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-xs font-bold text-white inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    <FolderDown className="w-4 h-4 text-[#60A5FA]" /> {m.exportZipBtn}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      downloadPlaylistFile(
+                        pl.name,
+                        JSON.stringify({ name: pl.name, tracks: pl.tracks }, null, 2),
+                        'json',
+                        'application/json;charset=utf-8'
+                      );
+                      showToast('JSON');
+                    }}
+                    className="h-11 px-3.5 rounded-full bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-xs font-bold text-white inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {m.exportJsonBtn}
                   </button>
                 </div>
               )}
@@ -2191,6 +2318,25 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
 
       {/* Main Content Area */}
       <div className="flex-1 min-w-0 space-y-5">
+        {isOffline && (
+          <div className="rounded-2xl bg-[#131318] border border-[#3B82F6]/35 px-4 py-2.5 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs font-bold text-[#93C5FD] min-w-0">
+              <WifiOff className="w-4 h-4 shrink-0" />
+              <span className="truncate">{m.offlineBannerText}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                clearMusicDetailStack();
+                setNavTab('library');
+                setLibraryFilter('offline');
+              }}
+              className="min-h-8 px-3 rounded-full bg-[#3B82F6] text-white text-[11px] font-bold shrink-0 cursor-pointer"
+            >
+              Offline ({offlineTracks.length})
+            </button>
+          </div>
+        )}
         {detail ? (
           renderDetailView()
         ) : navTab === 'home' ? (
@@ -2252,19 +2398,19 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                       },
                     },
                     {
-                      id: 'spain',
-                      label: m.moodSpain,
-                      selected: activeMood === 'spain',
+                      id: 'belgium',
+                      label: m.moodBelgium,
+                      selected: activeMood === 'belgium',
                       onClick: () => {
                         setAiMoodSectionOpen(false);
                         setGlobalPillsExpanded(false);
-                        setActiveMood(activeMood === 'spain' ? 'all' : 'spain');
+                        setActiveMood(activeMood === 'belgium' ? 'all' : 'belgium');
                       },
                     },
                     {
                       id: 'global',
                       label: m.filterGlobal,
-                      selected: globalPillsExpanded || (!['all', 'pop', 'spotify', 'youtube_music', 'spain'].includes(activeMood)),
+                      selected: globalPillsExpanded || (!['all', 'pop', 'spotify', 'youtube_music', 'belgium'].includes(activeMood)),
                       onClick: () => {
                         setAiMoodSectionOpen(false);
                         setGlobalPillsExpanded((prev) => !prev);
@@ -2516,6 +2662,11 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                     m.secSpainHits
                   )}
                   {renderTrackCardsCarousel(
+                    m.secBelgium,
+                    homeData.belgiumMix || [],
+                    m.secBelgium
+                  )}
+                  {renderTrackCardsCarousel(
                     `Hecho para ${storedProfile.name || 'ti'}`,
                     homeData.spotifyHits,
                     m.secSpotifyHits
@@ -2549,6 +2700,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
 
                   {exploreAllMixesOpen && (
                     <div className="space-y-8 animate-fade-in">
+                      {renderTrackCardsCarousel(m.secSpainHits, homeData.spainHits, m.secSpainHits)}
                       {renderTrackCardsCarousel(m.secMorocco, homeData.moroccoMix, m.secMorocco)}
                       {renderTrackCardsCarousel(m.secArab, homeData.arabMix, m.secArab)}
                       {renderTrackCardsCarousel(m.secAfrica, homeData.africaMix, m.secAfrica)}
@@ -2870,12 +3022,12 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   <div className="flex flex-wrap gap-2">
                     {[
                       ...tasteProfile.favoriteArtists.slice(0, 4),
-                      'Bad Bunny',
-                      'Quevedo',
+                      'Stromae',
+                      'Angèle',
+                      'Damso',
+                      'Lost Frequencies',
                       'ElGrandeToto',
-                      'Rosalía',
-                      'Morad',
-                      'Burna Boy',
+                      'Bad Bunny',
                     ]
                       .filter((v, idx, arr) => arr.indexOf(v) === idx)
                       .slice(0, 8)

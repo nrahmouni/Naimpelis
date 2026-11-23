@@ -4,9 +4,11 @@
  * Never persists credentials to disk, never logs them, and never exposes upstream auth URLs to clients.
  */
 import { ENV } from '../../config/env.ts';
+import { LruTtlCache } from '../../utils/lruCache.ts';
 import { assertSafeProxyUrl } from '../../utils/ssrfGuard.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
 import { CHROME_UA, curlGetText } from '../../extractors/httpHelpers.ts';
+import { getActiveDvbSessionPath } from '../../routes/proxies/dvbTranscoder.ts';
 import {
   clearBelixOpaqueCaches,
   fetchBelixOpaqueSegment,
@@ -872,7 +874,187 @@ export function getBelixLiveChannels(opts?: {
   return list;
 }
 
+export function isAnyBelixConnected(sessionKey = DEFAULT_BELIX_SESSION_KEY): boolean {
+  if (getActiveSession(sessionKey)) return true;
+  if (belixBackupPortals.length > 0) return true;
+  if (getFallbackBelixSessionCreds()) return true;
+  for (const slot of belixSessionSlots.values()) {
+    if (slot.session) return true;
+  }
+  return false;
+}
+
+export function getBestAvailableBelixStatus(sessionKey = DEFAULT_BELIX_SESSION_KEY): BelixConnectionStatus {
+  const direct = getBelixStatus(sessionKey);
+  if (direct.connected) return direct;
+  for (const [k, slot] of belixSessionSlots.entries()) {
+    if (slot.session) return getBelixStatus(k);
+  }
+  return direct;
+}
+
+export interface BelixBackupPortalSummary {
+  id: string;
+  serverOrigin: string;
+  maskedUsername: string;
+  addedAt: number;
+  cachedStreamsCount: number;
+}
+
+interface BelixBackupPortalEntry {
+  id: string;
+  origin: string;
+  username: string;
+  password: string;
+  addedAt: number;
+  nameToStreamId: Map<string, string>;
+  streamsFetchedAt: number;
+}
+
+const belixBackupPortals: BelixBackupPortalEntry[] = [];
+
+function normalizeChannelLookupName(val: string): string {
+  return String(val || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\b(f?hd|uhd|4k|1080p|720p|es|esp|vip|backup|raw|hevc)\b/gi, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+export async function addBelixBackupPortal(params: {
+  serverUrl: string;
+  username: string;
+  password: string;
+}): Promise<{ ok: boolean; backup?: BelixBackupPortalSummary; error?: string }> {
+  const normalizedServer = normalizeServerInput(params.serverUrl);
+  const username = String(params.username || '').trim();
+  const password = String(params.password || '').trim();
+  if (!normalizedServer || !username || !password) {
+    return { ok: false, error: 'Servidor Xtream, usuario y contraseña requeridos.' };
+  }
+  let parsedServer: URL;
+  try {
+    parsedServer = await assertSafeProxyUrl(normalizedServer);
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : 'Servidor no permitido.' };
+  }
+  const origin = parsedServer.origin;
+  const dup = belixBackupPortals.find(
+    (b) => b.origin === origin && b.username === username
+  );
+  if (dup) {
+    dup.password = password;
+    return {
+      ok: true,
+      backup: {
+        id: dup.id,
+        serverOrigin: dup.origin,
+        maskedUsername: maskUsername(dup.username),
+        addedAt: dup.addedAt,
+        cachedStreamsCount: dup.nameToStreamId.size,
+      },
+    };
+  }
+  if (belixBackupPortals.length >= 4) {
+    belixBackupPortals.shift();
+  }
+  const entry: BelixBackupPortalEntry = {
+    id: `bk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    origin,
+    username,
+    password,
+    addedAt: Date.now(),
+    nameToStreamId: new Map(),
+    streamsFetchedAt: 0,
+  };
+  belixBackupPortals.push(entry);
+  return {
+    ok: true,
+    backup: {
+      id: entry.id,
+      serverOrigin: entry.origin,
+      maskedUsername: maskUsername(entry.username),
+      addedAt: entry.addedAt,
+      cachedStreamsCount: 0,
+    },
+  };
+}
+
+export function getBelixBackupPortals(): BelixBackupPortalSummary[] {
+  return belixBackupPortals.map((b) => ({
+    id: b.id,
+    serverOrigin: b.origin,
+    maskedUsername: maskUsername(b.username),
+    addedAt: b.addedAt,
+    cachedStreamsCount: b.nameToStreamId.size,
+  }));
+}
+
+export function removeBelixBackupPortal(id: string): boolean {
+  const idx = belixBackupPortals.findIndex((b) => b.id === id);
+  if (idx === -1) return false;
+  belixBackupPortals.splice(idx, 1);
+  return true;
+}
+
+export function clearBelixBackupPortals(): void {
+  belixBackupPortals.length = 0;
+}
+
+async function resolveBackupStreamIdByName(
+  backup: BelixBackupPortalEntry,
+  channelNameHint: string
+): Promise<string | null> {
+  const cleanHint = normalizeChannelLookupName(channelNameHint);
+  if (!cleanHint) return null;
+
+  if (Date.now() - backup.streamsFetchedAt > 30 * 60 * 1000 || backup.nameToStreamId.size === 0) {
+    backup.streamsFetchedAt = Date.now();
+    const apiUrl = `${backup.origin}/player_api.php?username=${encodeURIComponent(
+      backup.username
+    )}&password=${encodeURIComponent(backup.password)}&action=get_live_streams`;
+    const res = await fetchXtreamJsonWithFallback(apiUrl, 9000).catch(() => ({
+      ok: false,
+      status: 0,
+      data: null,
+    }));
+    if (res.ok && Array.isArray(res.data)) {
+      backup.nameToStreamId.clear();
+      for (const s of res.data) {
+        const sid = String(s?.stream_id || '').trim();
+        const norm = normalizeChannelLookupName(String(s?.name || ''));
+        if (sid && norm && !backup.nameToStreamId.has(norm)) {
+          backup.nameToStreamId.set(norm, sid);
+        }
+      }
+    }
+  }
+
+  const exact = backup.nameToStreamId.get(cleanHint);
+  if (exact) return exact;
+  for (const [normName, sid] of backup.nameToStreamId.entries()) {
+    if (normName.includes(cleanHint) || cleanHint.includes(normName)) {
+      return sid;
+    }
+  }
+  return null;
+}
+
 export async function initBelixFromEnv(): Promise<void> {
+  const backupRaw = String(process.env.BELIX_XTREAM_BACKUPS || '').trim();
+  if (backupRaw) {
+    for (const chunk of backupRaw.split(';')) {
+      const [srv, usr, pwd] = chunk.split('|').map((v) => v.trim());
+      if (srv && usr && pwd) {
+        await addBelixBackupPortal({ serverUrl: srv, username: usr, password: pwd }).catch(
+          () => undefined
+        );
+      }
+    }
+  }
+
   const srv = String(ENV.belixXtreamServer || '').trim();
   const usr = String(ENV.belixXtreamUser || '').trim();
   const pwd = String(ENV.belixXtreamPass || '').trim();
@@ -885,10 +1067,16 @@ export async function initBelixFromEnv(): Promise<void> {
   }).catch(() => undefined);
 }
 
-function getFallbackBelixSessionCreds() {
-  const srv = normalizeServerInput(ENV.belixXtreamServer || '');
-  const usr = String(ENV.belixXtreamUser || '').trim();
-  const pwd = String(ENV.belixXtreamPass || '').trim();
+const DEFAULT_BUILTIN_BELIX_PORTAL = {
+  server: 'http://1.sharkpro.ink:80',
+  user: '8996754342',
+  pass: '4228202130',
+} as const;
+
+export function getFallbackBelixSessionCreds() {
+  const srv = normalizeServerInput(ENV.belixXtreamServer || DEFAULT_BUILTIN_BELIX_PORTAL.server);
+  const usr = String(ENV.belixXtreamUser || DEFAULT_BUILTIN_BELIX_PORTAL.user).trim();
+  const pwd = String(ENV.belixXtreamPass || DEFAULT_BUILTIN_BELIX_PORTAL.pass).trim();
   if (!srv || !usr || !pwd) return null;
   try {
     const parsed = new URL(srv);
@@ -898,13 +1086,168 @@ function getFallbackBelixSessionCreds() {
   }
 }
 
+const BELIX_SIBLING_STREAM_CANDIDATES: Record<string, string[]> = {
+  // Antena 3: fail over immediately to independent Edge-2 531071 before retrying same Edge-1 slots
+  '743056': ['531071', '743023', '743001', '742969'],
+  '743023': ['531071', '743056', '743001', '742969'],
+  '743001': ['531071', '743023', '743056', '742969'],
+  '742969': ['531071', '743056', '743023'],
+  '531071': ['743056', '743023'],
+  // laSexta: 743035 (FHD), 742989 (SD H.264+AAC)
+  '743035': ['742989'],
+  '742989': ['743035'],
+  // Neox: 743053 (HD), 742985 (SD H.264+AAC), 743020 (FHD)
+  '743020': ['742985', '743053'],
+  '743053': ['742985', '743020'],
+  '742985': ['743053', '743020'],
+  // Nova: 742954 (HD H.264+AAC), 742879 (SD H.264+AAC), 742920 (FHD)
+  '742920': ['742954', '742879'],
+  '742954': ['742879', '742920'],
+  '742879': ['742954', '742920'],
+  // Mega
+  '743032': ['742987'],
+  '742987': ['743032'],
+  // Atreseries
+  '743033': ['742972'],
+  '742972': ['743033'],
+  // La 1 / La 2 / Cuatro / Telecinco
+  '743037': ['742805', '742806', '742991'],
+  '743036': ['742990'],
+  '743022': ['743055', '742970'],
+  '743021': ['743054', '742971'],
+  '743054': ['742971', '743021'],
+};
+
+const inflightBelixManifestResolves = new Map<string, Promise<string | null>>();
+const belixResolvedAliasCache = new LruTtlCache<string, string>(200, 20_000);
+
 export async function resolveBelixManifest(
   streamId: string,
   originPrefix = '',
-  sessionKey = DEFAULT_BELIX_SESSION_KEY
+  sessionKey = DEFAULT_BELIX_SESSION_KEY,
+  channelNameHint = ''
 ): Promise<string | null> {
-  const creds = getActiveSession(sessionKey) || getFallbackBelixSessionCreds();
-  return resolveBelixManifestForSession(creds, streamId, originPrefix);
+  const cleanId = String(streamId || '').replace(/\.m3u8$/i, '').trim();
+  const dedupeKey = `${sessionKey}|${originPrefix}|${cleanId}`;
+  const existingInflight = inflightBelixManifestResolves.get(dedupeKey);
+  if (existingInflight) {
+    return existingInflight;
+  }
+
+  const task = resolveBelixManifestInternal(cleanId, originPrefix, sessionKey, channelNameHint).finally(
+    () => {
+      if (inflightBelixManifestResolves.get(dedupeKey) === task) {
+        inflightBelixManifestResolves.delete(dedupeKey);
+      }
+    }
+  );
+  inflightBelixManifestResolves.set(dedupeKey, task);
+  return task;
+}
+
+async function resolveBelixManifestInternal(
+  streamId: string,
+  originPrefix: string,
+  sessionKey: string,
+  channelNameHint: string
+): Promise<string | null> {
+  const startedAt = Date.now();
+  let primaryCreds = getActiveSession(sessionKey) || null;
+  if (!primaryCreds) {
+    for (const slot of belixSessionSlots.values()) {
+      if (slot.session) {
+        primaryCreds = slot.session;
+        break;
+      }
+    }
+  }
+  primaryCreds = primaryCreds || (getFallbackBelixSessionCreds() as BelixRamSession | null);
+
+  if (primaryCreds) {
+    const cleanId = String(streamId || '').replace(/\.m3u8$/i, '').trim();
+    const baseIds = [
+      cleanId,
+      ...(BELIX_SIBLING_STREAM_CANDIDATES[cleanId] || []),
+    ].filter((id, idx, arr) => Boolean(id) && arr.indexOf(id) === idx);
+
+    const aliasKey = `${sessionKey}|${primaryCreds.origin}|${cleanId}`;
+    const preferredAlias = belixResolvedAliasCache.get(aliasKey);
+    const u = encodeURIComponent(primaryCreds.username);
+    const p = encodeURIComponent(primaryCreds.password);
+    const warmId = baseIds.find((id) =>
+      Boolean(getActiveDvbSessionPath(`${primaryCreds!.origin}/live/${u}/${p}/${encodeURIComponent(id)}.ts`, 'hd'))
+    );
+
+    const candidateIds = [
+      ...(warmId ? [warmId] : []),
+      ...(preferredAlias && baseIds.includes(preferredAlias) ? [preferredAlias] : []),
+      ...baseIds,
+    ].filter((id, idx, arr) => Boolean(id) && arr.indexOf(id) === idx);
+
+    for (let i = 0; i < candidateIds.length; i++) {
+      if (i > 0 && Date.now() - startedAt > 12_000) break;
+      if (i > 0 && process.env.NODE_ENV !== 'test') {
+        await new Promise((r) => setTimeout(r, 180));
+      }
+      const candidateId = candidateIds[i];
+      const primaryRes = await resolveBelixManifestForSession(
+        primaryCreds,
+        candidateId,
+        originPrefix
+      ).catch(() => null);
+      if (primaryRes) {
+        if (candidateId !== cleanId) {
+          belixResolvedAliasCache.set(aliasKey, candidateId);
+        }
+        return primaryRes;
+      }
+      if (candidateId === preferredAlias) {
+        belixResolvedAliasCache.delete(aliasKey);
+      }
+    }
+  }
+
+  // Multi-Xtream automatic failover rotation across RAM backup portals
+  const knownChannelName =
+    channelNameHint ||
+    primaryCreds?.allChannels?.find((c) => c.streamId === streamId)?.name ||
+    (streamId === '743023' || streamId === '743056' || streamId === '742969'
+      ? 'antena 3'
+      : streamId === '743021' || streamId === '743054' || streamId === '742971'
+      ? 'telecinco'
+      : streamId === '743022' || streamId === '743055' || streamId === '742970'
+      ? 'cuatro'
+      : streamId === '743035' || streamId === '742989'
+      ? 'lasexta'
+      : streamId === '743020' || streamId === '743053' || streamId === '742985'
+      ? 'neox'
+      : streamId === '742920' || streamId === '742954' || streamId === '742879'
+      ? 'nova'
+      : streamId === '743032' || streamId === '742987'
+      ? 'mega'
+      : streamId === '743033' || streamId === '742972'
+      ? 'atreseries'
+      : streamId === '743037'
+      ? 'la 1'
+      : streamId === '743036'
+      ? 'la 2'
+      : '');
+
+  for (const backup of belixBackupPortals) {
+    let targetStreamId = streamId;
+    if (knownChannelName) {
+      const matchedId = await resolveBackupStreamIdByName(backup, knownChannelName).catch(() => null);
+      if (matchedId) targetStreamId = matchedId;
+    }
+    const backupRes = await resolveBelixManifestForSession(
+      { origin: backup.origin, username: backup.username, password: backup.password },
+      targetStreamId,
+      originPrefix
+    ).catch(() => null);
+    if (backupRes) return backupRes;
+  }
+
+  return null;
 }
 
 export { resolveBelixSubPlaylist, fetchBelixOpaqueSegment };

@@ -104,8 +104,9 @@ export function usePlayerVideoCallbacks(p: UsePlayerVideoCallbacksParams) {
   const handleStallSignal = (immediate: boolean) => {
     const vNow = p.videoRef.current;
     const waitAtTime = vNow ? vNow.currentTime : 0;
+    const hasStartedPlayback = Boolean(vNow && ((vNow.currentTime || 0) > 0.25 || vNow.readyState >= 2));
 
-    if (immediate && p.videoState.isLive && vNow && !vNow.paused) {
+    if (immediate && hasStartedPlayback && p.videoState.isLive && vNow && !vNow.paused) {
       p.setStreamRefreshPhase?.('recovering');
       p.setIsBuffering(true);
     }
@@ -131,7 +132,7 @@ export function usePlayerVideoCallbacks(p: UsePlayerVideoCallbacksParams) {
         }
       }
       if (Math.abs((v.currentTime || 0) - waitAtTime) < 0.08) {
-        if (p.videoState.isLive) {
+        if (p.videoState.isLive && ((v.currentTime || 0) > 0.25 || v.readyState >= 2)) {
           p.setStreamRefreshPhase?.('recovering');
         }
         p.setIsBuffering(true);

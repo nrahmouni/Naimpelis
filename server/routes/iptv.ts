@@ -27,7 +27,11 @@ import {
   getCachedFamelackWorldChannels,
   refreshFamelackAndWorldCatalog,
 } from '../services/famelackIptvService.ts';
-import { getBelixLiveChannels, getBelixStatus, resolveBelixManifest } from '../services/belix/belixXtreamClient.ts';
+import {
+  getBelixLiveChannels,
+  isAnyBelixConnected,
+  resolveBelixManifest,
+} from '../services/belix/belixXtreamClient.ts';
 import { getCuratedRbtvChannels } from '../services/rbtv/rbtvLiveCurator.ts';
 import {
   ensureLiveDvbCleanHlsSession,
@@ -112,9 +116,15 @@ export function registerIptvAndTdtRoutes(
     } else {
       void refreshLiveIptvRegistry(false).catch(() => undefined);
     }
+    const belixSidMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)belix_sid=([^;]+)/);
+    const belixSessionKey =
+      String(req.headers['x-belix-session'] || '').trim() ||
+      (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
+      'default';
+    const belixActive = isAnyBelixConnected(belixSessionKey);
     const merged = [
-      ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),
-      ...getBelixLiveChannels(),
+      ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, belixActive),
+      ...getBelixLiveChannels({ sessionKey: belixSessionKey }),
       ...getCuratedRbtvChannels(),
     ];
     res.json({
@@ -445,12 +455,22 @@ export function registerIptvAndTdtRoutes(
           /\.m3u8(\?|$)/i.test(sourceUrl);
 
         if (sourceUrl.startsWith('/api/belix/stream/')) {
-          if (!getBelixStatus().connected) {
+          const belixSidMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)belix_sid=([^;]+)/);
+          const belixSessionKey =
+            String(req.headers['x-belix-session'] || '').trim() ||
+            (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
+            'default';
+          if (!isAnyBelixConnected(belixSessionKey)) {
             markTrackDown(sourceUrl, 503);
             continue;
           }
           const belixStreamId = sourceUrl.split('/').pop()?.replace(/\.m3u8.*$/i, '') || '';
-          const belixManifest = await resolveBelixManifest(belixStreamId, publicOrigin);
+          const belixManifest = await resolveBelixManifest(
+            belixStreamId,
+            publicOrigin,
+            belixSessionKey,
+            channel.name
+          );
           if (!belixManifest) {
             markTrackDown(sourceUrl, 503);
             continue;

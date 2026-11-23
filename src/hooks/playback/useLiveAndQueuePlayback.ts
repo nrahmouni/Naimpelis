@@ -13,6 +13,7 @@ import type {
 } from '../../types';
 import type { PlaybackCoreContext } from './playbackTypes';
 import { createTrackAndQueuePlaybackHandlers } from './useTrackAndQueuePlayback';
+import { extractTrackHostKey, mergeCustomTdtTracks } from '../../utils/customTdtSources';
 
 interface LiveQueueExtras {
   handlePlayMovie: (
@@ -228,7 +229,8 @@ export function useLiveAndQueuePlayback(
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
-    const chosenSignal = tdtCh.channels[signalIndex] || tdtCh.channels[0];
+    const effectiveTdtCh = failedSignals.size === 0 ? mergeCustomTdtTracks(tdtCh) : tdtCh;
+    const chosenSignal = effectiveTdtCh.channels[signalIndex] || effectiveTdtCh.channels[0];
     if (!chosenSignal) return;
 
     const extraction = activeExtraction || beginMediaExtraction();
@@ -265,18 +267,31 @@ export function useLiveAndQueuePlayback(
     setExtractionError(null);
     setExtractionLabel(
       liveProgramHint
-        ? `${tdtCh.name} · ${liveProgramHint}...`
-        : `${tdtCh.name} · Conectando ${chosenSignal.label}...`
+        ? `${effectiveTdtCh.name} · ${liveProgramHint}...`
+        : `${effectiveTdtCh.name} · Conectando ${chosenSignal.label}...`
     );
     activeHistoryIdRef.current = null;
 
     const signalResolver = chosenSignal.resolverType || 'tdt_hls';
+    const getNextFailedSet = (curFailed: Set<number>): Set<number> => {
+      const nextFailed = new Set(curFailed);
+      nextFailed.add(signalIndex);
+      const deadHostKey = extractTrackHostKey(chosenSignal.sourceUrl);
+      if (deadHostKey) {
+        effectiveTdtCh.channels.forEach((sig, idx) => {
+          if (extractTrackHostKey(sig.sourceUrl) === deadHostKey) {
+            nextFailed.add(idx);
+          }
+        });
+      }
+      return nextFailed;
+    };
 
     try {
       const params = new URLSearchParams({
         url: chosenSignal.sourceUrl,
         resolverType: signalResolver,
-        title: tdtCh.name,
+        title: effectiveTdtCh.name,
       });
       const ctrl = new AbortController();
       const onParentAbort = () => ctrl.abort();
@@ -285,7 +300,7 @@ export function useLiveAndQueuePlayback(
       } else {
         signal.addEventListener('abort', onParentAbort, { once: true });
       }
-      const timeoutId = setTimeout(() => ctrl.abort(), 18_500);
+      const timeoutId = setTimeout(() => ctrl.abort(), 13_500);
       let res: Response | null = null;
       let data: {
         success?: boolean;
@@ -304,13 +319,12 @@ export function useLiveAndQueuePlayback(
       if (reqSeq !== extractionReqSeqRef.current) return;
 
       if (!res || !res.ok || !data?.success || !data?.streamUrl) {
-        if (allowSameChannelBackup && tdtCh.channels.length > 1) {
-          const nextFailed = new Set(failedSignals);
-          nextFailed.add(signalIndex);
-          const nextIdx = tdtCh.channels.findIndex((_, idx) => !nextFailed.has(idx));
+        if (allowSameChannelBackup && effectiveTdtCh.channels.length > 1) {
+          const nextFailed = getNextFailedSet(failedSignals);
+          const nextIdx = effectiveTdtCh.channels.findIndex((_, idx) => !nextFailed.has(idx));
           if (nextIdx !== -1) {
             await handlePlayTdtChannel(
-              tdtCh,
+              effectiveTdtCh,
               nextIdx,
               liveProgramHint,
               extraction,
@@ -322,14 +336,14 @@ export function useLiveAndQueuePlayback(
         }
         setExtractionError(
           data?.error ||
-            `La emisión de ${tdtCh.name} (${chosenSignal.label}) no responde en este instante.`
+            `La emisión de ${effectiveTdtCh.name} (${chosenSignal.label}) no responde en este instante.`
         );
         return;
       }
 
-      const mappedTracks: StreamTrack[] = tdtCh.channels.map((sig, idx) => ({
+      const mappedTracks: StreamTrack[] = effectiveTdtCh.channels.map((sig, idx) => ({
         id: sig.id,
-        label: `${tdtCh.name} · ${sig.label}`,
+        label: `${effectiveTdtCh.name} · ${sig.label}`,
         lang: 'ES',
         quality: sig.quality,
         sourceUrl: sig.sourceUrl,
@@ -341,10 +355,10 @@ export function useLiveAndQueuePlayback(
         mode: data.mode || 'hls',
         url: data.streamUrl,
         rawSourceUrl: chosenSignal.sourceUrl,
-        title: tdtCh.name,
+        title: effectiveTdtCh.name,
         subtitle: liveProgramHint
-          ? `En emisión: ${liveProgramHint} · ${tdtCh.network}`
-          : `TV en Directo · ${tdtCh.network} · ${chosenSignal.label}`,
+          ? `En emisión: ${liveProgramHint} · ${effectiveTdtCh.network}`
+          : `TV en Directo · ${effectiveTdtCh.network} · ${chosenSignal.label}`,
         currentTime: 0,
         isPlaying: true,
         isLive: true,
@@ -362,13 +376,12 @@ export function useLiveAndQueuePlayback(
       playCinemaSound('play');
     } catch {
       if (signal.aborted || reqSeq !== extractionReqSeqRef.current) return;
-      if (allowSameChannelBackup && tdtCh.channels.length > 1) {
-        const nextFailed = new Set(failedSignals);
-        nextFailed.add(signalIndex);
-        const nextIdx = tdtCh.channels.findIndex((_, idx) => !nextFailed.has(idx));
+      if (allowSameChannelBackup && effectiveTdtCh.channels.length > 1) {
+        const nextFailed = getNextFailedSet(failedSignals);
+        const nextIdx = effectiveTdtCh.channels.findIndex((_, idx) => !nextFailed.has(idx));
         if (nextIdx !== -1) {
           await handlePlayTdtChannel(
-            tdtCh,
+            effectiveTdtCh,
             nextIdx,
             liveProgramHint,
             extraction,
@@ -378,7 +391,7 @@ export function useLiveAndQueuePlayback(
           return;
         }
       }
-      setExtractionError(`No se pudo conectar con ${tdtCh.name}.`);
+      setExtractionError(`No se pudo conectar con ${effectiveTdtCh.name}.`);
     } finally {
       if (reqSeq === extractionReqSeqRef.current) {
         isExtractingRef.current = false;

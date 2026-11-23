@@ -1,5 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertCircle, ChevronRight, Film, Play, Radio, RefreshCw, Tv } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  ChevronRight,
+  ExternalLink,
+  Film,
+  Play,
+  Plus,
+  Radio,
+  RefreshCw,
+  Settings2,
+  Trash2,
+  Tv,
+} from 'lucide-react';
 import type {
   AppLanguage,
   CatalogMovie,
@@ -10,6 +23,11 @@ import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { useBackInterceptor } from '../../lib/backInterceptor';
 import { useAppStore } from '../../store/useAppStore';
+import {
+  getCustomTdtBackups,
+  removeCustomTdtBackup,
+  saveCustomTdtBackup,
+} from '../../utils/customTdtSources';
 import {
   AtresmediaProgramPanel,
   type AtresmediaCatalogItemUi,
@@ -77,6 +95,27 @@ export const AtresplayerWorldView: React.FC<AtresplayerWorldViewProps> = ({
   const setActiveCategory = useAppStore((s) => s.setAtresplayerCategory);
   const [selectedProgram, setSelectedProgram] = useState<AtresmediaCatalogItemUi | null>(null);
   const [failedImgs, setFailedImgs] = useState<Record<string, boolean>>({});
+  const [showBackupDrawer, setShowBackupDrawer] = useState(false);
+  const [backupChannelId, setBackupChannelId] = useState('tdt-antena3');
+  const [backupUrlInput, setBackupUrlInput] = useState('');
+  const [backupMsg, setBackupMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [backupTick, setBackupTick] = useState(0);
+
+  const activeCustomBackups = useMemo(() => {
+    void backupTick;
+    return getCustomTdtBackups(backupChannelId);
+  }, [backupChannelId, backupTick]);
+
+  const antena3Live = useMemo(
+    () => liveChannels.find((c) => c.tdtId === 'tdt-antena3') || liveChannels[0] || null,
+    [liveChannels]
+  );
+
+  const antena3HealthStatus = antena3Live?.tdtChannel?.healthSummary?.bestStatus || 'unknown';
+  const antena3HasCustom = useMemo(() => {
+    void backupTick;
+    return getCustomTdtBackups('tdt-antena3').length > 0;
+  }, [backupTick]);
 
   useBackInterceptor(
     !selectedProgram && activeCategory !== 'all',
@@ -271,13 +310,165 @@ export const AtresplayerWorldView: React.FC<AtresplayerWorldViewProps> = ({
 
       {/* LIVE CHANNELS BAND (ANTENA 3, LASEXTA, NEOX, NOVA, MEGA, ATRESERIES) */}
       <section className="space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight flex items-center gap-2">
-            <Tv className="w-4 h-4 text-[#FF5E1A]" />
-            <span>Canales en Directo Atresmedia · 1080p HD</span>
-          </h2>
-          <span className="text-xs text-zinc-400 tabular-nums">6 señales en vivo</span>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h2 className="font-display font-bold text-base sm:text-lg text-white tracking-tight flex items-center gap-2">
+              <Tv className="w-4 h-4 text-[#FF5E1A]" />
+              <span>Canales en Directo Atresmedia · 1080p HD</span>
+            </h2>
+            <span
+              className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                antena3HasCustom || antena3HealthStatus === 'up'
+                  ? 'bg-emerald-500/12 border-emerald-500/35 text-emerald-300'
+                  : antena3HealthStatus === 'degraded'
+                  ? 'bg-amber-500/12 border-amber-500/35 text-amber-300'
+                  : 'bg-white/[0.06] border-white/[0.12] text-zinc-300'
+              }`}
+            >
+              {antena3HasCustom
+                ? 'Antena 3: Respaldo Propio HD activo'
+                : antena3HealthStatus === 'up'
+                ? 'Antena 3: Señal lista'
+                : 'Antena 3: Fallback / Atresplayer'}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setShowBackupDrawer((v) => !v);
+              }}
+              className="min-h-9 px-3 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.1] text-xs font-semibold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <Settings2 className="w-3.5 h-3.5 text-[#FF8A4C]" />
+              <span>Respaldo en vivo</span>
+            </button>
+            <a
+              href="https://www.atresplayer.com/directos/antena3/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="min-h-9 px-3 rounded-xl bg-[#FF5E1A]/15 hover:bg-[#FF5E1A]/25 border border-[#FF5E1A]/40 text-xs font-semibold text-[#FF8A4C] hover:text-white inline-flex items-center gap-1.5 transition-colors"
+            >
+              <ExternalLink className="w-3.5 h-3.5" />
+              <span>Atresplayer Web</span>
+            </a>
+          </div>
         </div>
+
+        {showBackupDrawer && (
+          <div className="rounded-2xl bg-[#0D0D12] border border-[#FF5E1A]/35 p-4 space-y-3">
+            <div className="space-y-1">
+              <h3 className="text-xs sm:text-sm font-bold text-white">
+                Señal Multi-Fuente desde Bélgica (Sin hardware ni VPS extra)
+              </h3>
+              <p className="text-xs text-zinc-400">
+                Riffan TV rota automáticamente entre nuestras señales HD/SD con audio AAC integrado sin depender de antenas físicas ni servidores propios. Si tienes cualquier URL `.m3u8` pública o enlace de directo, puedes fijarla aquí como prioridad #1 en este navegador.
+              </p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <select
+                value={backupChannelId}
+                onChange={(e) => {
+                  setBackupChannelId(e.target.value);
+                  setBackupMsg(null);
+                }}
+                className="min-h-10 px-3 rounded-xl bg-black border border-white/[0.12] text-xs font-semibold text-white focus:outline-none focus:border-[#FF5E1A]"
+              >
+                <option value="tdt-antena3">Antena 3 HD</option>
+                <option value="tdt-lasexta">laSexta HD</option>
+                <option value="tdt-neox">Neox HD</option>
+                <option value="tdt-nova">Nova HD</option>
+                <option value="tdt-mega">Mega HD</option>
+                <option value="tdt-atreseries">Atreseries HD</option>
+              </select>
+
+              <input
+                type="url"
+                value={backupUrlInput}
+                onChange={(e) => setBackupUrlInput(e.target.value)}
+                placeholder="https://... .m3u8 o https://www.atresplayer.com/directos/antena3/"
+                className="flex-1 min-h-10 px-3 rounded-xl bg-black border border-white/[0.12] focus:border-[#FF5E1A] text-xs font-mono text-white focus:outline-none"
+              />
+
+              <button
+                type="button"
+                onClick={() => {
+                  const res = saveCustomTdtBackup(backupChannelId, backupUrlInput);
+                  setBackupTick((t) => t + 1);
+                  if (res.ok) {
+                    setBackupUrlInput('');
+                    setBackupMsg({
+                      ok: true,
+                      text: 'Señal guardada como prioridad #1 en este dispositivo.',
+                    });
+                  } else {
+                    setBackupMsg({ ok: false, text: res.error || 'URL inválida.' });
+                  }
+                }}
+                className="min-h-10 px-4 rounded-xl bg-[#FF5E1A] hover:bg-[#EA580C] text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Guardar prioridad #1</span>
+              </button>
+            </div>
+
+            {backupMsg && (
+              <div
+                className={`text-xs flex items-center gap-1.5 ${
+                  backupMsg.ok ? 'text-emerald-300' : 'text-rose-300'
+                }`}
+              >
+                {backupMsg.ok ? (
+                  <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span>{backupMsg.text}</span>
+              </div>
+            )}
+
+            {activeCustomBackups.length > 0 && (
+              <div className="space-y-1.5 pt-1">
+                {activeCustomBackups.map((entry) => (
+                  <div
+                    key={entry.url}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs"
+                  >
+                    <span className="font-mono text-zinc-200 truncate">{entry.url}</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const targetCh = liveChannels.find((c) => c.tdtId === backupChannelId);
+                          if (targetCh) {
+                            onPlayTdtChannel(targetCh.tdtChannel, 0, targetCh.nowTitle);
+                          }
+                        }}
+                        className="px-2.5 py-1 rounded-lg bg-[#FF5E1A]/20 hover:bg-[#FF5E1A] text-[#FF8A4C] hover:text-white font-semibold cursor-pointer transition-colors"
+                      >
+                        Probar ahora
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          removeCustomTdtBackup(backupChannelId, entry.url);
+                          setBackupTick((t) => t + 1);
+                        }}
+                        className="p-1.5 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 cursor-pointer"
+                        aria-label="Eliminar URL de respaldo"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {loading && liveChannels.length === 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">

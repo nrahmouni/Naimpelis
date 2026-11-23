@@ -2,12 +2,15 @@ import crypto from 'crypto';
 import type { Express, Request, Response } from 'express';
 import { parseBelixInventory } from '../services/belix/belixParser.ts';
 import {
+  addBelixBackupPortal,
   connectBelixSession,
   disconnectBelixSession,
   fetchBelixOpaqueSegment,
+  getBelixBackupPortals,
   getBelixLiveChannels,
   getBelixStatus,
   refreshBelixChannels,
+  removeBelixBackupPortal,
   resolveBelixManifest,
   resolveBelixSubPlaylist,
 } from '../services/belix/belixXtreamClient.ts';
@@ -40,7 +43,7 @@ function getBelixSessionKey(req: Request, res?: Response): string {
     const newKey = crypto.randomBytes(16).toString('hex');
     res.setHeader(
       'Set-Cookie',
-      `belix_sid=${newKey}; Path=/api/belix; HttpOnly; SameSite=Lax; Max-Age=21600`
+      `belix_sid=${newKey}; Path=/api; HttpOnly; SameSite=Lax; Max-Age=21600`
     );
     return newKey;
   }
@@ -124,15 +127,42 @@ export function registerBelixRoutes(
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     if (req.method === 'OPTIONS') return res.status(204).end();
     const streamId = String(req.params.streamId || '').replace(/\.m3u8$/i, '');
+    const channelHint = String(req.query.name || '').trim();
     const originPrefix = resolveBelixOriginPrefix(req, deps?.getPublicOrigin);
     const sessionKey = getBelixSessionKey(req);
-    const manifest = await resolveBelixManifest(streamId, originPrefix, sessionKey);
+    const manifest = await resolveBelixManifest(streamId, originPrefix, sessionKey, channelHint);
     if (!manifest) {
       return res.status(503).send('Belix live stream unavailable');
     }
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
     if (req.method === 'HEAD') return res.status(200).end();
     return res.send(manifest);
+  });
+
+  // Multi-Xtream backup lines (RAM-only, masked credentials)
+  app.get('/api/belix/backups', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({ success: true, backups: getBelixBackupPortals() });
+  });
+
+  app.post('/api/belix/backups', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const serverUrl = String(req.body?.serverUrl || '').trim();
+    const username = String(req.body?.username || '').trim();
+    const password = String(req.body?.password || '').trim();
+    const added = await addBelixBackupPortal({ serverUrl, username, password });
+    res.status(added.ok ? 200 : 400).json({
+      success: added.ok,
+      backup: added.backup,
+      backups: getBelixBackupPortals(),
+      error: added.error,
+    });
+  });
+
+  app.delete('/api/belix/backups/:id', (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const removed = removeBelixBackupPortal(String(req.params.id || ''));
+    res.json({ success: removed, backups: getBelixBackupPortals() });
   });
 
   app.all('/api/belix/sub/:token', async (req, res) => {

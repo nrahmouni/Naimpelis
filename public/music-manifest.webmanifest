@@ -29,5 +29,28 @@
       "type": "image/png",
       "purpose": "maskable"
     }
+  ],
+  "share_target": {
+    "action": "/musica",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text": "text",
+      "url": "url"
+    }
+  },
+  "shortcuts": [
+    {
+      "name": "Radios 24/7",
+      "short_name": "Radios",
+      "url": "/musica?view=radios",
+      "icons": [{ "src": "/music-pwa-192x192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Your Library",
+      "short_name": "Library",
+      "url": "/musica?view=library",
+      "icons": [{ "src": "/music-pwa-192x192.png", "sizes": "192x192" }]
+    }
   ]
 }
