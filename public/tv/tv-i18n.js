@@ -16,19 +16,23 @@ try {
 } catch (e) {}
 
 var uaStr = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+var searchStr = (typeof window !== 'undefined' && window.location && window.location.search) ? window.location.search : '';
 var isLgWebOsUa = /Web0S|WebOS|LGE|NetCast/i.test(uaStr);
 var isTizenUa = /Tizen/i.test(uaStr);
-var isSmartTvUa = isLgWebOsUa || /Tizen|SMART-TV|GoogleTV|Android TV|BRAVIA|AFT|VIDAA/i.test(uaStr);
+var isTizenDevice =
+  isTizenUa ||
+  (typeof window !== 'undefined' && (Boolean(window.tizen) || Boolean(window.__RIFFAN_TIZEN_WIDGET__))) ||
+  /[?&](?:tizen=1|platform=tizen|autoplay=antena3)\b/i.test(searchStr);
+var isSmartTvUa = isLgWebOsUa || isTizenDevice || /Tizen|SMART-TV|GoogleTV|Android TV|BRAVIA|AFT|VIDAA/i.test(uaStr);
 try {
   if (isSmartTvUa && document.documentElement) {
     var tvCls = document.documentElement.className || '';
     if (tvCls.indexOf('is-smart-tv') === -1) tvCls += (tvCls ? ' ' : '') + 'is-smart-tv';
-    if (isTizenUa && tvCls.indexOf('is-tizen-tv') === -1) tvCls += ' is-tizen-tv';
+    if (isTizenDevice && tvCls.indexOf('is-tizen-tv') === -1) tvCls += ' is-tizen-tv';
     document.documentElement.className = tvCls;
   }
 } catch (e) {}
 
-var searchStr = window.location.search || '';
 var installedApkCode = 0;
 try {
   var apkvMatch = searchStr.match(/[?&]apkv=(\d+)/);

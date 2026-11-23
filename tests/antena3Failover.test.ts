@@ -108,18 +108,16 @@ describe('Antena 3, laSexta & Direct Spanish DVB Failover Architecture', () => {
     expect(getBelixBackupPortals()).toHaveLength(0);
   });
 
-  it('leads Antena 3 and laSexta with Direct Spanish DVB while preserving Belix fallbacks when connected', () => {
+  it('leads Antena 3 with Edge-2 (531071) and laSexta with Direct Spanish DVB while preserving fallbacks when connected', () => {
     const a3 = TDT_NATIONAL_AND_PAY_CHANNELS.find((c) => c.id === 'tdt-antena3')!;
     const laSexta = TDT_NATIONAL_AND_PAY_CHANNELS.find((c) => c.id === 'tdt-lasexta')!;
 
     const withBelix = applySyncedStreamsToChannels([a3, laSexta], true);
-    expect(withBelix[0]?.channels[0]?.sourceUrl).toBe(
-      'http://90.163.85.113:8093/stream/20/index.m3u8'
-    );
+    expect(withBelix[0]?.channels[0]?.sourceUrl).toBe('/api/belix/stream/531071.m3u8');
     expect(withBelix[1]?.channels[0]?.sourceUrl).toBe(
       'http://90.163.85.113:8093/stream/21/index.m3u8'
     );
-    expect(withBelix[0]?.channels.some((t) => t.sourceUrl.includes('/api/belix/stream/'))).toBe(
+    expect(withBelix[0]?.channels.some((t) => t.sourceUrl.includes('90.163.85.113:8093'))).toBe(
       true
     );
 
@@ -127,13 +125,16 @@ describe('Antena 3, laSexta & Direct Spanish DVB Failover Architecture', () => {
     expect(withoutBelix[0]?.channels.some((t) => t.sourceUrl.includes('/api/belix/stream/'))).toBe(
       false
     );
+    expect(withoutBelix[0]?.channels[0]?.sourceUrl).toBe(
+      'http://90.163.85.113:8093/stream/20/index.m3u8'
+    );
   });
 
   it('keeps zero-config Belix fallback available without requiring manual Belix tab visit', () => {
     expect(isAnyBelixConnected()).toBe(true);
   });
 
-  it('keeps Direct Spanish DVB (Antena 3 /stream/20) first when all tracks are up, with Edge-2 & Belix fallbacks behind', () => {
+  it('keeps Antena 3 Edge-2 (531071) first when all tracks are up, and promotes Direct DVB if Edge-2 is down', () => {
     const monitor = new ChannelHealthMonitor();
     monitor.setTrackHealth('http://90.163.85.113:8093/stream/20/index.m3u8', {
       status: 'up',
@@ -162,14 +163,26 @@ describe('Antena 3, laSexta & Direct Spanish DVB Failover Architecture', () => {
 
     const a3 = TDT_NATIONAL_AND_PAY_CHANNELS.find((c) => c.id === 'tdt-antena3')!;
     const [prioritized] = monitor.prioritizeChannels([a3]);
-    expect(prioritized.channels[0]?.sourceUrl).toBe(
-      'http://90.163.85.113:8093/stream/20/index.m3u8'
-    );
-    expect(prioritized.channels.some((t) => t.sourceUrl === '/api/belix/stream/531071.m3u8')).toBe(
-      true
-    );
+    expect(prioritized.channels[0]?.sourceUrl).toBe('/api/belix/stream/531071.m3u8');
+    expect(
+      prioritized.channels.some(
+        (t) => t.sourceUrl === 'http://90.163.85.113:8093/stream/20/index.m3u8'
+      )
+    ).toBe(true);
     expect(prioritized.channels.some((t) => t.sourceUrl === '/api/belix/stream/743056.m3u8')).toBe(
       true
+    );
+
+    monitor.setTrackHealth('/api/belix/stream/531071.m3u8', {
+      status: 'down',
+      statusCode: 502,
+      latencyMs: 0,
+      failCount: 3,
+      checkedAt: Date.now(),
+    });
+    const [fallbackPrioritized] = monitor.prioritizeChannels([a3]);
+    expect(fallbackPrioritized.channels[0]?.sourceUrl).toBe(
+      'http://90.163.85.113:8093/stream/20/index.m3u8'
     );
   });
 

@@ -120,7 +120,7 @@ export function rewriteHtmlForTizenFileProtocol(html: string, targetOrigin: stri
 export function buildHostedTizenLauncherHtml(appName: string, targetOrigin: string): string {
   const safeOrigin = String(targetOrigin || 'https://riffan.ai.studio').replace(/\/+$/, '');
   const launchUrl = `${safeOrigin}/?tizen=1&tv=1`;
-  const tvReceiverUrl = `${safeOrigin}/tv`;
+  const tvReceiverUrl = `${safeOrigin}/tv?platform=tizen`;
   const escapedName = appName.replace(/[<>&"]/g, '');
 
   return [
@@ -195,7 +195,7 @@ export function buildHostedTizenLauncherAssets(
   targetOrigin: string
 ): HostedTizenLauncherAssets {
   const safeOrigin = String(targetOrigin || 'https://riffan.ai.studio').replace(/\/+$/, '');
-  const tvReceiverUrl = `${safeOrigin}/tv`;
+  const tvReceiverUrl = `${safeOrigin}/tv?platform=tizen`;
   const healthUrl = `${safeOrigin}/api/health`;
   const escapedName = appName.replace(/[<>&"]/g, '');
 

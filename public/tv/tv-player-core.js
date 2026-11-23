@@ -75,6 +75,26 @@ function clearEmbedFrame() {
   }
 }
 
+function extractTvTrackHostKey(rawUrl) {
+  var s = String(rawUrl || '').trim();
+  if (!s) return '';
+  if (s.indexOf('/api/hls-proxy') === 0 || s.indexOf('/api/dvb-live') === 0) {
+    var mUrl = s.match(/[?&]url=([^&]+)/);
+    if (mUrl && mUrl[1]) {
+      try { s = decodeURIComponent(mUrl[1]); } catch (e) { s = mUrl[1]; }
+    }
+  }
+  var belixMatch = s.match(/\/api\/belix\/stream\/(\d+)/i);
+  if (belixMatch && belixMatch[1]) {
+    return 'belix://stream/' + belixMatch[1];
+  }
+  var dvbMatch = s.match(/90\.163\.85\.113:8093\/stream\/(\d+)/i);
+  if (dvbMatch && dvbMatch[1]) {
+    return 'dvb://90.163.85.113:8093/stream/' + dvbMatch[1];
+  }
+  return s.split('#')[0].split('?')[0].toLowerCase();
+}
+
 function clearVideoWatchdog() {
   if (videoWatchdogTimer) {
     clearTimeout(videoWatchdogTimer);
@@ -82,9 +102,57 @@ function clearVideoWatchdog() {
   }
 }
 
+function stopLiveStallMonitor() {
+  if (videoStallWatchInterval) {
+    clearInterval(videoStallWatchInterval);
+    videoStallWatchInterval = null;
+  }
+  videoLastProgressTime = -1;
+  videoStallStartedAt = 0;
+}
+
+function startLiveStallMonitor() {
+  stopLiveStallMonitor();
+  videoStallWatchInterval = setInterval(function () {
+    if (
+      activeScreen !== 'player' ||
+      !currentIsLive ||
+      !videoEl ||
+      videoEl.paused ||
+      autoFailoverLock ||
+      (currentMode !== 'hls' && currentMode !== 'direct')
+    ) {
+      videoStallStartedAt = 0;
+      return;
+    }
+    if (videoEl.readyState < 2 || !videoEl.videoWidth || videoEl.videoWidth === 0) {
+      return;
+    }
+    var curT = Number(videoEl.currentTime || 0);
+    if (videoLastProgressTime < 0 || Math.abs(curT - videoLastProgressTime) >= 0.05) {
+      videoLastProgressTime = curT;
+      videoStallStartedAt = 0;
+      return;
+    }
+    var nowMs = Date.now();
+    if (!videoStallStartedAt) {
+      videoStallStartedAt = nowMs;
+      return;
+    }
+    if (nowMs - videoStallStartedAt >= 6500) {
+      videoStallStartedAt = 0;
+      triggerPlaybackFailover('Señal congelada');
+    }
+  }, 1500);
+}
+
 function markVideoFrameActive() {
   clearVideoWatchdog();
   autoFailoverLock = false;
+  if (videoEl) {
+    videoLastProgressTime = Number(videoEl.currentTime || 0);
+    videoStallStartedAt = 0;
+  }
   if (standbyOverlay && standbyOverlay.style.display !== 'none') {
     standbyOverlay.style.display = 'none';
   }
@@ -158,6 +226,18 @@ function playVideoSafely(targetResumeSec, shouldPlay) {
         if (p2 && p2.catch) p2.catch(function () {});
         unmuteBanner.style.display = 'block';
         syncPlayPauseButton();
+        setTimeout(function () {
+          if (
+            activeScreen === 'player' &&
+            !isMiniGuideOpen &&
+            unmuteBanner &&
+            unmuteBanner.style.display !== 'none' &&
+            (!standbyOverlay || standbyOverlay.style.display === 'none')
+          ) {
+            var uBtn = document.getElementById('btn-unmute-now');
+            if (uBtn && uBtn.focus) uBtn.focus();
+          }
+        }, 120);
       }
     );
   }
@@ -188,15 +268,48 @@ function triggerPlaybackFailover(reasonText) {
   autoFailoverLock = true;
   clearVideoWatchdog();
 
-  // Live TV channel multi-track & IPTV failover
+  // Live TV channel multi-track & IPTV failover (strictly stays on the same channel)
   if (activeLiveChannel) {
     var ch = activeLiveChannel;
     var totalChTracks = ch.channels ? ch.channels.length : 0;
-    if (activeLiveTrackIdx + 1 < totalChTracks) {
-      showToast(tvT('switchingBackup'));
+    activeLiveFailedTrackIdxs[activeLiveTrackIdx] = true;
+    var curTrackObj = ch.channels && ch.channels[activeLiveTrackIdx] ? ch.channels[activeLiveTrackIdx] : null;
+    var curTrackUrl = curTrackObj ? (curTrackObj.sourceUrl || curTrackObj.resolvedStreamUrl || '') : (currentUrl || '');
+    var deadHostKey = extractTvTrackHostKey(curTrackUrl);
+    if (deadHostKey) {
+      activeLiveFailedHostKeys[deadHostKey] = true;
+    }
+
+    var nextTrackIdx = -1;
+    var ti;
+    for (ti = activeLiveTrackIdx + 1; ti < totalChTracks; ti++) {
+      if (activeLiveFailedTrackIdxs[ti]) continue;
+      var candTr = ch.channels[ti];
+      var candUrl = candTr ? (candTr.resolvedStreamUrl || candTr.sourceUrl || candTr.url || '') : '';
+      if (!candUrl) continue;
+      var candHost = extractTvTrackHostKey(candUrl);
+      if (candHost && activeLiveFailedHostKeys[candHost]) continue;
+      nextTrackIdx = ti;
+      break;
+    }
+    if (nextTrackIdx === -1) {
+      for (ti = 0; ti < activeLiveTrackIdx; ti++) {
+        if (activeLiveFailedTrackIdxs[ti]) continue;
+        var candPrev = ch.channels[ti];
+        var candPrevUrl = candPrev ? (candPrev.resolvedStreamUrl || candPrev.sourceUrl || candPrev.url || '') : '';
+        if (!candPrevUrl) continue;
+        var candPrevHost = extractTvTrackHostKey(candPrevUrl);
+        if (candPrevHost && activeLiveFailedHostKeys[candPrevHost]) continue;
+        nextTrackIdx = ti;
+        break;
+      }
+    }
+
+    if (nextTrackIdx !== -1) {
+      showToast(tvT('switchingBackup') + ' (' + (nextTrackIdx + 1) + '/' + totalChTracks + ')');
       setTimeout(function () {
         autoFailoverLock = false;
-        playTdtChannelOnTv(ch, activeLiveTrackIdx + 1);
+        playTdtChannelOnTv(ch, nextTrackIdx, true);
       }, 150);
       return;
     }
@@ -238,6 +351,8 @@ function triggerPlaybackFailover(reasonText) {
 }
 
 function showStandbyError(titleStr, msgStr) {
+  clearVideoWatchdog();
+  stopLiveStallMonitor();
   destroyHls();
   clearEmbedFrame();
   try {
@@ -293,6 +408,7 @@ function applyVideoState(vs, forceReload) {
     currentMode = 'idle';
     currentUrl = '';
     clearVideoWatchdog();
+    stopLiveStallMonitor();
     destroyHls();
     clearEmbedFrame();
     try {
@@ -404,7 +520,9 @@ function applyVideoState(vs, forceReload) {
     if (!videoEl.videoWidth || videoEl.videoWidth === 0 || videoEl.readyState < 2) {
       triggerPlaybackFailover('Tiempo de carga agotado');
     }
-  }, isLive ? 9000 : 16000);
+  }, isLive ? 6500 : 16000);
+  if (isLive) startLiveStallMonitor();
+  else stopLiveStallMonitor();
 
   if (nextMode === 'direct') {
     videoEl.src = nextUrl;
@@ -473,13 +591,33 @@ function applyVideoState(vs, forceReload) {
       playVideoSafely(targetSec, shouldPlay);
     });
     var nonFatalMediaErrors = 0;
+    var nonFatalNetErrors = 0;
     var lastNonFatalMediaAt = 0;
     hls.on(window.Hls.Events.FRAG_BUFFERED, function () {
       nonFatalMediaErrors = 0;
+      nonFatalNetErrors = 0;
     });
     hls.on(window.Hls.Events.ERROR, function (_ev, data) {
       if (!data) return;
       if (!data.fatal) {
+        if (
+          isLive &&
+          window.Hls &&
+          window.Hls.ErrorDetails &&
+          (data.details === window.Hls.ErrorDetails.FRAG_LOAD_ERROR ||
+            data.details === window.Hls.ErrorDetails.FRAG_LOAD_TIMEOUT ||
+            data.details === window.Hls.ErrorDetails.LEVEL_LOAD_ERROR ||
+            data.details === window.Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT ||
+            data.details === window.Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
+            data.details === window.Hls.ErrorDetails.MANIFEST_LOAD_ERROR)
+        ) {
+          nonFatalNetErrors++;
+          if (nonFatalNetErrors >= 3) {
+            nonFatalNetErrors = 0;
+            triggerPlaybackFailover('Corte en la señal');
+            return;
+          }
+        }
         if (
           data.type === window.Hls.ErrorTypes.MEDIA_ERROR &&
           (data.details === window.Hls.ErrorDetails.FRAG_PARSING_ERROR ||

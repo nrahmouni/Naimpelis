@@ -85,7 +85,16 @@ const TIZEN_HARDWARE_KEYS = [
 
 export function isTizenTvRuntime(): boolean {
   if (typeof window === 'undefined') return false;
-  if (window.tizen) return true;
+  if (window.tizen || (window as unknown as { __RIFFAN_TIZEN_WIDGET__?: boolean }).__RIFFAN_TIZEN_WIDGET__) {
+    return true;
+  }
+  try {
+    if (/[?&](?:tizen=1|platform=tizen)\b/i.test(window.location.search || '')) {
+      return true;
+    }
+  } catch {
+    // ignore
+  }
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
   return /Tizen|SamsungBrowser.*TV|SMART-TV/i.test(ua);
 }

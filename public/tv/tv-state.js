@@ -111,9 +111,17 @@ var tvZapOsd = document.getElementById('tv-zap-osd');
 var toastTimer = null;
 var fsPromptTimer = null;
 var videoWatchdogTimer = null;
+var videoStallWatchInterval = null;
+var videoLastProgressTime = -1;
+var videoStallStartedAt = 0;
 var aspectModeIndex = 0;
 var activeHubTab = 'home';
 var autoFailoverLock = false;
+var activeLiveFailedTrackIdxs = {};
+var activeLiveFailedHostKeys = {};
+var pendingTizenAutoLaunchAntena3 = false;
+var tizenAutoLaunchTriggered = false;
+var tizenAutoLaunchFallbackTimer = null;
 
 // Clean _upd cache-buster parameter once loaded
 try {

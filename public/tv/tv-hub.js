@@ -843,6 +843,96 @@ try {
   }
 } catch (e) {}
 
+function getBuiltInAntena3Channel() {
+  return {
+    id: 'tdt-antena3',
+    dial: 3,
+    name: 'Antena 3',
+    network: 'Atresmedia',
+    category: 'generalistas',
+    quality: '1080p HD',
+    description: 'El Hormiguero, Pasapalabra, Antena 3 Noticias y series estelares',
+    channels: [
+      {
+        id: 'a3-belix-intl',
+        label: 'Señal Principal FHD · Edge 2 (Antena 3)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: '/api/belix/stream/531071.m3u8',
+        resolverType: 'direct_hls'
+      },
+      {
+        id: 'a3-dvb-hd',
+        label: 'Señal Directa España 1080p HD (Antena 3)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/20/index.m3u8',
+        resolverType: 'tdt_hls'
+      },
+      {
+        id: 'a3-belix-hd',
+        label: 'Señal Respaldo Belix HD AAC (Antena 3)',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: '/api/belix/stream/743056.m3u8',
+        resolverType: 'direct_hls'
+      },
+      {
+        id: 'a3-uhd',
+        label: 'Señal Respaldo Belix FHD AAC (Antena 3)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: '/api/belix/stream/743023.m3u8',
+        resolverType: 'direct_hls'
+      }
+    ]
+  };
+}
+
+function findAntena3InCatalog() {
+  var list = catalogData.tdt || [];
+  for (var i = 0; i < list.length; i++) {
+    if (list[i] && list[i].id === 'tdt-antena3' && list[i].channels && list[i].channels.length) {
+      return list[i];
+    }
+  }
+  return null;
+}
+
+function maybeAutoLaunchTizenAntena3(fromFreshCatalog) {
+  if (!isTizenDevice || !pendingTizenAutoLaunchAntena3 || tizenAutoLaunchTriggered) return;
+  if (isPaired || currentRoomId || activeScreen !== 'hub') return;
+
+  var a3Ch = findAntena3InCatalog();
+  var hasEdge2First =
+    a3Ch &&
+    a3Ch.channels &&
+    a3Ch.channels[0] &&
+    String(a3Ch.channels[0].sourceUrl || '').indexOf('/api/belix/stream/531071') !== -1;
+
+  if (fromFreshCatalog || hasEdge2First) {
+    tizenAutoLaunchTriggered = true;
+    pendingTizenAutoLaunchAntena3 = false;
+    if (tizenAutoLaunchFallbackTimer) {
+      clearTimeout(tizenAutoLaunchFallbackTimer);
+      tizenAutoLaunchFallbackTimer = null;
+    }
+    playTdtChannelOnTv(a3Ch || getBuiltInAntena3Channel(), 0, false);
+    return;
+  }
+
+  if (!tizenAutoLaunchFallbackTimer) {
+    tizenAutoLaunchFallbackTimer = setTimeout(function () {
+      tizenAutoLaunchFallbackTimer = null;
+      if (!pendingTizenAutoLaunchAntena3 || tizenAutoLaunchTriggered) return;
+      if (isPaired || currentRoomId || activeScreen !== 'hub') return;
+      tizenAutoLaunchTriggered = true;
+      pendingTizenAutoLaunchAntena3 = false;
+      playTdtChannelOnTv(findAntena3InCatalog() || getBuiltInAntena3Channel(), 0, false);
+    }, 1100);
+  }
+}
+
 var tvCatalogRetryCount = 0;
 function loadTvCatalog() {
   var pending = 6;
@@ -893,6 +983,7 @@ function loadTvCatalog() {
     }
     mergeTvLiveCatalog();
     checkDone();
+    maybeAutoLaunchTizenAntena3(true);
     prewarmFlagshipChannels();
   });
   xhrJson('GET', '/api/catalog/latest-releases?lang=' + encodeURIComponent(activeTvLang), null, function (err, d) {

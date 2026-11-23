@@ -408,6 +408,12 @@ document.getElementById('btn-dock-aspect').onclick = cycleVideoAspect;
 if (btnStandbyRetry) {
   btnStandbyRetry.onclick = function () {
     autoFailoverLock = false;
+    if (activeLiveChannel && currentUrl.indexOf('/api/iptv/live/') !== -1) {
+      activeLiveFailedTrackIdxs = {};
+      activeLiveFailedHostKeys = {};
+      playTdtChannelOnTv(activeLiveChannel, 0, false);
+      return;
+    }
     triggerPlaybackFailover('Manual retry');
   };
 }
@@ -694,7 +700,7 @@ document.addEventListener('keydown', function (e) {
 
 // Register Samsung Tizen TV hardware remote keys + numeric keys + screensaver protection (ES5-safe)
 try {
-  if (/Tizen/i.test(uaStr)) {
+  if (isTizenDevice) {
     var platformTagEl = document.getElementById('rail-platform-tag');
     if (platformTagEl) platformTagEl.textContent = 'Samsung Tizen';
   }
@@ -732,19 +738,30 @@ syncFullscreenButtons();
 // Boot sequence
 var roomMatch = searchStr.match(/[?&]room=([a-zA-Z0-9-_]+)/);
 var pairMatch = searchStr.match(/[?&]pair=1\b/);
+var skipTizenAutoplay = /[?&]hub=1\b/i.test(searchStr);
+if (isTizenDevice && !roomMatch && !pairMatch && !skipTizenAutoplay) {
+  pendingTizenAutoLaunchAntena3 = true;
+}
+
 requestPairingCode(false);
 connectPairingWs();
 loadTvCatalog();
 if (catalogData.loaded) renderHubContent();
 
 if (roomMatch && roomMatch[1]) {
+  pendingTizenAutoLaunchAntena3 = false;
   enterRoomReceiver(roomMatch[1], tvT('roomPrefix') + roomMatch[1].toUpperCase(), '', tvT('directLinkLabel'));
 } else if (pairMatch) {
+  pendingTizenAutoLaunchAntena3 = false;
   switchTvScreen('pairing');
 } else {
   switchTvScreen('hub');
-  setTimeout(function () {
-    var activeTabEl = document.querySelector('#hub-nav-tabs .hub-tab-btn.active');
-    if (activeTabEl && activeTabEl.focus) activeTabEl.focus();
-  }, 80);
+  if (pendingTizenAutoLaunchAntena3 && typeof maybeAutoLaunchTizenAntena3 === 'function') {
+    maybeAutoLaunchTizenAntena3(false);
+  } else {
+    setTimeout(function () {
+      var activeTabEl = document.querySelector('#hub-nav-tabs .hub-tab-btn.active');
+      if (activeTabEl && activeTabEl.focus) activeTabEl.focus();
+    }, 80);
+  }
 }

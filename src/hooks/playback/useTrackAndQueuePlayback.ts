@@ -14,6 +14,7 @@ import type {
 } from '../../types';
 import type { PlaybackCoreContext } from './playbackTypes';
 import { pickBestCleanSatelliteTrackIndex } from '../../components/player/hlsHealthWatchdog';
+import { extractTrackHostKey } from '../../utils/customTdtSources';
 
 const failedRuntimeUrlsByStream = new Map<string, Map<string, number>>();
 const LIVE_TRACK_FAILURE_COOLDOWN_MS = 45_000;
@@ -289,6 +290,14 @@ export function createTrackAndQueuePlaybackHandlers(
     const currentRawUrl = currentTrack?.sourceUrl || videoState.rawSourceUrl;
     if (currentRawUrl) {
       failedMap.set(currentRawUrl, nowMs);
+      const deadHostKey = extractTrackHostKey(currentRawUrl);
+      if (deadHostKey) {
+        for (const tr of videoState.tracks) {
+          if (tr.sourceUrl && extractTrackHostKey(tr.sourceUrl) === deadHostKey) {
+            failedMap.set(tr.sourceUrl, nowMs);
+          }
+        }
+      }
       fetch('/api/telemetry/qoe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

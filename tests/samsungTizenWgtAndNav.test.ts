@@ -93,7 +93,7 @@ describe('Samsung Smart TV (Tizen .wgt) Architecture, Navigation & Packager', ()
     expect(extractedHtml).toContain('RiffanTV Test');
     expect(extractedHtml).toContain('href="app.css"');
     expect(extractedHtml).toContain('src="main.js"');
-    expect(extractedJs).toContain('https://riffan.ai.studio/tv');
+    expect(extractedJs).toContain('https://riffan.ai.studio/tv?platform=tizen');
     expect(extractedJs).toContain('?_t=');
     expect(hasPngSignature(extractedPng)).toBe(true);
   });
@@ -126,6 +126,32 @@ describe('Samsung Smart TV (Tizen .wgt) Architecture, Navigation & Packager', ()
     expect(mapKeyboardEventToTvAction({ key: '', keyCode: 417 })).toBe('FF');
     expect(mapKeyboardEventToTvAction({ key: '', keyCode: 427 })).toBe('CH_UP');
     expect(mapKeyboardEventToTvAction({ key: '', keyCode: 428 })).toBe('CH_DOWN');
+  });
+
+  it('auto-launches Antena 3 (Edge 2 first) on Samsung Tizen /tv boot and fails over cleanly within the same channel', async () => {
+    const vm = await import('node:vm');
+    const tvScripts = [
+      'tv-i18n.js',
+      'tv-state.js',
+      'tv-player-core.js',
+      'tv-player-modes.js',
+      'tv-hub.js',
+      'tv-nav-voice.js',
+    ].map((name) => fs.readFileSync(path.join(ROOT, 'public/tv', name), 'utf8'));
+
+    for (const src of tvScripts) {
+      expect(() => new vm.Script(src)).not.toThrow();
+    }
+
+    const combined = tvScripts.join('\n');
+    expect(combined).toContain('isTizenDevice');
+    expect(combined).toContain('maybeAutoLaunchTizenAntena3');
+    expect(combined).toContain("id: 'tdt-antena3'");
+    expect(combined).toContain('/api/belix/stream/531071.m3u8');
+    expect(combined).toContain('startLiveStallMonitor');
+    expect(combined).toContain('extractTvTrackHostKey');
+    expect(combined).toContain('activeLiveFailedHostKeys');
+    expect(combined).toContain('nonFatalNetErrors');
   });
 
   it('includes cloud auto-signing GitHub Actions workflow for .wgt builds', () => {

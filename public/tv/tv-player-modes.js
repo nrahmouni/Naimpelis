@@ -339,9 +339,16 @@ function pollRoomStateHttp() {
 
 function exitPlayerToHubOrPairing() {
   var wasPaired = isPaired;
+  pendingTizenAutoLaunchAntena3 = false;
+  if (tizenAutoLaunchFallbackTimer) {
+    clearTimeout(tizenAutoLaunchFallbackTimer);
+    tizenAutoLaunchFallbackTimer = null;
+  }
   isPaired = false;
   isLocalPlayback = false;
   activeLiveChannel = null;
+  activeLiveFailedTrackIdxs = {};
+  activeLiveFailedHostKeys = {};
   currentRoomId = '';
   currentMode = 'idle';
   currentUrl = '';
@@ -353,6 +360,7 @@ function exitPlayerToHubOrPairing() {
   if (btnDockAudio) btnDockAudio.style.display = 'none';
   if (standbyChannelBadge) standbyChannelBadge.style.display = 'none';
   clearVideoWatchdog();
+  if (typeof stopLiveStallMonitor === 'function') stopLiveStallMonitor();
   if (roomHttpTimer) {
     clearInterval(roomHttpTimer);
     roomHttpTimer = null;
@@ -455,9 +463,16 @@ function switchToLocalTrack(trackIdx, resumeSec) {
 }
 
 function playLocalStream(itemTitle, itemSub, extractQueryUrl) {
+  pendingTizenAutoLaunchAntena3 = false;
+  if (tizenAutoLaunchFallbackTimer) {
+    clearTimeout(tizenAutoLaunchFallbackTimer);
+    tizenAutoLaunchFallbackTimer = null;
+  }
   isLocalPlayback = true;
   isPaired = false;
   activeLiveChannel = null;
+  activeLiveFailedTrackIdxs = {};
+  activeLiveFailedHostKeys = {};
   autoFailoverLock = false;
   closeMiniGuideDrawer();
   hideLiveZapOsd();
@@ -510,15 +525,25 @@ function playLocalStream(itemTitle, itemSub, extractQueryUrl) {
   });
 }
 
-function playTdtChannelOnTv(ch, trackIndex) {
+function playTdtChannelOnTv(ch, trackIndex, isFailoverAttempt) {
   if (!ch || !ch.channels || !ch.channels.length) return;
+  pendingTizenAutoLaunchAntena3 = false;
+  if (tizenAutoLaunchFallbackTimer) {
+    clearTimeout(tizenAutoLaunchFallbackTimer);
+    tizenAutoLaunchFallbackTimer = null;
+  }
+  if (!isFailoverAttempt) {
+    activeLiveFailedTrackIdxs = {};
+    activeLiveFailedHostKeys = {};
+  }
   var idx = typeof trackIndex === 'number' ? trackIndex : 0;
   if (idx >= ch.channels.length) idx = 0;
   var track = ch.channels[idx];
   var streamUrl = track.resolvedStreamUrl || track.sourceUrl || track.url || '';
   if (!streamUrl) {
+    activeLiveFailedTrackIdxs[idx] = true;
     if (idx + 1 < ch.channels.length) {
-      playTdtChannelOnTv(ch, idx + 1);
+      playTdtChannelOnTv(ch, idx + 1, true);
     }
     return;
   }
@@ -628,8 +653,10 @@ function playTdtChannelOnTv(ch, trackIndex) {
       scheduleNextChannelPrewarm(ch);
       return;
     }
-    if (idx + 1 < ch.channels.length) {
-      playTdtChannelOnTv(ch, idx + 1);
+    if (typeof triggerPlaybackFailover === 'function') {
+      triggerPlaybackFailover('Error al conectar señal');
+    } else if (idx + 1 < ch.channels.length) {
+      playTdtChannelOnTv(ch, idx + 1, true);
     } else if (ch.id) {
       applyVideoState(
         {

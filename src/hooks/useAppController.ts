@@ -54,7 +54,7 @@ import { useRoomGameActions } from './useRoomGameActions';
 import { useDeepLinkRouter } from './useDeepLinkRouter';
 import { useAppNavigationHistory } from './useAppNavigationHistory';
 import { useBackInterceptor } from '../lib/backInterceptor';
-import { isGoogleTvEnvironment } from '../utils/tvSpatialNav';
+import { isGoogleTvEnvironment, isTizenTvRuntime } from '../utils/tvSpatialNav';
 import { reportClientVitalsOnce } from '../utils/clientTelemetry';
 import {
   checkIsNestedSandboxFrame,
@@ -185,7 +185,17 @@ export function useAppController() {
   );
 
   const [bootSyncPending, setBootSyncPending] = useState<boolean>(true);
-  const isDedicatedSoloBoot = !effectiveInitialRoom && initialRoute.isDedicatedEntry;
+  const isTizenAutoBoot =
+    typeof window !== 'undefined' &&
+    isTizenTvRuntime() &&
+    !effectiveInitialRoom &&
+    !initialRoute.isTvPairLobby &&
+    !initialRoute.isAdsPage &&
+    !initialRoute.isAdminPage &&
+    !initialRoute.isSamsungPage &&
+    !initialRoute.isDedicatedEntry &&
+    !/[?&]hub=1\b/i.test(window.location.search || '');
+  const isDedicatedSoloBoot = !effectiveInitialRoom && (initialRoute.isDedicatedEntry || isTizenAutoBoot);
   const sessionMode: SessionMode = bootSyncPending
     ? effectiveInitialRoom
       ? 'party'
@@ -204,6 +214,9 @@ export function useAppController() {
     } else if (isDedicatedSoloBoot) {
       setSessionMode('solo');
       setHasEnteredApp(true);
+      if (isTizenAutoBoot) {
+        setActiveWorld('tv');
+      }
     }
     setBootSyncPending(false);
     reportClientVitalsOnce(
@@ -804,6 +817,85 @@ export function useAppController() {
     handlePlaySportsMatch: playback.handlePlaySportsMatch,
     quickPool,
   });
+
+  const tizenAntena3AutoStartedRef = useRef<boolean>(false);
+  useEffect(() => {
+    if (!isTizenAutoBoot || tizenAntena3AutoStartedRef.current) return;
+    tizenAntena3AutoStartedRef.current = true;
+    let cancelled = false;
+
+    const launchAntena3 = async () => {
+      let a3Channel: SpanishTdtChannel | undefined;
+      try {
+        const res = await fetch('/api/catalog/tdt');
+        if (res.ok) {
+          const data = (await res.json().catch(() => null)) as {
+            channels?: SpanishTdtChannel[];
+          } | null;
+          a3Channel = data?.channels?.find((ch) => ch.id === 'tdt-antena3');
+        }
+      } catch {
+        // fallback below
+      }
+      if (cancelled) return;
+      if (!a3Channel) {
+        a3Channel = {
+          id: 'tdt-antena3',
+          dial: 3,
+          name: 'Antena 3',
+          shortMark: 'A3',
+          brandTone: '#F97316',
+          network: 'Atresmedia',
+          category: 'generalistas',
+          quality: '1080p HD',
+          description: 'El Hormiguero, Pasapalabra, Antena 3 Noticias y series estelares',
+          channels: [
+            {
+              id: 'a3-belix-intl',
+              label: 'Señal Principal FHD · Edge 2 (Antena 3)',
+              lang: 'ES',
+              quality: '1080p',
+              sourceUrl: '/api/belix/stream/531071.m3u8',
+              resolverType: 'direct_hls',
+            },
+            {
+              id: 'a3-dvb-hd',
+              label: 'Señal Directa España 1080p HD (Antena 3)',
+              lang: 'ES',
+              quality: '1080p',
+              sourceUrl: 'http://90.163.85.113:8093/stream/20/index.m3u8',
+              resolverType: 'tdt_hls',
+            },
+            {
+              id: 'a3-belix-hd',
+              label: 'Señal Respaldo Belix HD AAC (Antena 3)',
+              lang: 'ES',
+              quality: '720p',
+              sourceUrl: '/api/belix/stream/743056.m3u8',
+              resolverType: 'direct_hls',
+            },
+            {
+              id: 'a3-uhd',
+              label: 'Señal Respaldo Belix FHD AAC (Antena 3)',
+              lang: 'ES',
+              quality: '1080p',
+              sourceUrl: '/api/belix/stream/743023.m3u8',
+              resolverType: 'direct_hls',
+            },
+          ],
+        };
+      }
+      if (roomState.videoStateRef.current.mode === 'idle') {
+        void playback.handlePlayTdtChannel(a3Channel, 0);
+      }
+    };
+
+    void launchAntena3();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTizenAutoBoot]);
 
   const handleTvRemoteSetCatalogSection = useCallback(
     (sec: Parameters<typeof roomState.setCatalogSection>[0]) => {
