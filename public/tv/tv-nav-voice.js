@@ -1,10 +1,11 @@
 // ===================================================================
-// ROW-AWARE SPATIAL 10-FOOT D-PAD NAVIGATION ENGINE (ES5)
+// ROW-AWARE SPATIAL 10-FOOT D-PAD, MINI-GUIDE & TIZEN REMOTE (ES5)
 // ===================================================================
 function getFocusableRoot() {
   if (voiceModal && voiceModal.style.display === 'block') return voiceModal;
   if (seriesModal && seriesModal.style.display === 'block') return seriesModal;
   if (fsPromptBanner && fsPromptBanner.style.display === 'block') return fsPromptBanner;
+  if (activeScreen === 'player' && isMiniGuideOpen && miniGuideDrawer) return miniGuideDrawer;
   if (activeScreen === 'player') return playerScreen;
   if (activeScreen === 'pairing') return pairingScreen;
   return hubScreen;
@@ -31,11 +32,13 @@ function ensureFocusVisibleInContainer(el) {
   try {
     var parent = el.parentNode;
     while (parent && parent !== document.body) {
-      if (parent.className && (parent.className.indexOf('tv-rail') !== -1 || parent.className.indexOf('hub-nav-pills') !== -1)) {
+      if (parent.className && (parent.className.indexOf('tv-rail') !== -1 || parent.className.indexOf('mg-channel-list') !== -1)) {
         var pRect = parent.getBoundingClientRect();
         var eRect = el.getBoundingClientRect();
-        if (eRect.right > pRect.right - 28 || eRect.left < pRect.left + 28) {
-          parent.scrollLeft += (eRect.left + eRect.width / 2) - (pRect.left + pRect.width / 2);
+        if (parent.className.indexOf('tv-rail') !== -1) {
+          if (eRect.right > pRect.right - 28 || eRect.left < pRect.left + 28) {
+            parent.scrollLeft += (eRect.left + eRect.width / 2) - (pRect.left + pRect.width / 2);
+          }
         }
       }
       parent = parent.parentNode;
@@ -44,9 +47,9 @@ function ensureFocusVisibleInContainer(el) {
       var sRect = hubScrollBody.getBoundingClientRect();
       var elRect = el.getBoundingClientRect();
       if (elRect.bottom > sRect.bottom - 28) {
-        hubScrollBody.scrollTop += (elRect.bottom - sRect.bottom) + 46;
+        hubScrollBody.scrollTop += (elRect.bottom - sRect.bottom) + 44;
       } else if (elRect.top < sRect.top + 20) {
-        hubScrollBody.scrollTop -= (sRect.top - elRect.top) + 38;
+        hubScrollBody.scrollTop -= (sRect.top - elRect.top) + 36;
       }
     } else if (el.scrollIntoView) {
       el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -130,6 +133,20 @@ function moveFocusDirection(dir) {
   }
 }
 
+// Expand/Collapse left sidebar rail cleanly on D-pad focus
+if (tvSideRail && tvSideRail.addEventListener) {
+  tvSideRail.addEventListener('focusin', function () {
+    tvSideRail.className = 'tv-side-rail expanded';
+  });
+  tvSideRail.addEventListener('focusout', function (ev) {
+    setTimeout(function () {
+      if (!tvSideRail.contains(document.activeElement)) {
+        tvSideRail.className = 'tv-side-rail';
+      }
+    }, 30);
+  });
+}
+
 // ===================================================================
 // UI WIRE-UP & SMART TV VOICE ASSISTANT (ES5)
 // ===================================================================
@@ -138,14 +155,30 @@ for (var t = 0; t < tabBtns.length; t++) {
   (function (tb) {
     tb.onclick = function () {
       for (var k = 0; k < tabBtns.length; k++) {
-        tabBtns[k].className = tabBtns[k].getAttribute('data-tab') === 'search' ? 'hub-tab-btn search-left-btn' : 'hub-tab-btn';
+        var dk = tabBtns[k].getAttribute('data-tab');
+        tabBtns[k].className = dk === 'search' ? 'hub-tab-btn rail-item search-left-btn' : 'hub-tab-btn rail-item';
       }
-      tb.className = (tb.getAttribute('data-tab') === 'search' ? 'hub-tab-btn search-left-btn active' : 'hub-tab-btn active');
-      activeHubTab = tb.getAttribute('data-tab') || 'home';
+      var curTab = tb.getAttribute('data-tab') || 'home';
+      tb.className = (curTab === 'search' ? 'hub-tab-btn rail-item search-left-btn active' : 'hub-tab-btn rail-item active');
+      activeHubTab = curTab;
       if (hubScrollBody) hubScrollBody.scrollTop = 0;
       renderHubContent();
     };
   })(tabBtns[t]);
+}
+
+var mgFilterBtns = document.querySelectorAll('#mg-filter-row .mg-filter-btn');
+for (var mgi = 0; mgi < mgFilterBtns.length; mgi++) {
+  (function (fb) {
+    fb.onclick = function () {
+      for (var k = 0; k < mgFilterBtns.length; k++) {
+        mgFilterBtns[k].className = 'mg-filter-btn';
+      }
+      fb.className = 'mg-filter-btn active';
+      activeMiniGuideFilter = fb.getAttribute('data-mg-filter') || 'es_tdt';
+      renderMiniGuideList();
+    };
+  })(mgFilterBtns[mgi]);
 }
 
 var langBtns = document.querySelectorAll('#sm-lang-row .series-pill-btn');
@@ -214,7 +247,7 @@ function playTvVoiceCandidate(item) {
 function submitTvVoiceQuery(qStr) {
   var cleanQ = String(qStr || '').replace(/^\s+|\s+$/g, '');
   if (!cleanQ) return;
-  if (tvVoiceReplyEl) tvVoiceReplyEl.textContent = '⏳ Buscando "' + cleanQ + '"...';
+  if (tvVoiceReplyEl) tvVoiceReplyEl.textContent = 'Buscando "' + cleanQ + '"...';
   xhrJson(
     'POST',
     '/api/ai/voice-assistant',
@@ -264,7 +297,7 @@ function startTvVoiceRecognition() {
     var rec = new SR();
     rec.lang = activeTvLang === 'ca' ? 'ca-ES' : (activeTvLang === 'en' ? 'en-US' : 'es-ES');
     rec.interimResults = false;
-    if (tvVoiceMicBtn) tvVoiceMicBtn.textContent = '🎙 Escuchando...';
+    if (tvVoiceMicBtn) tvVoiceMicBtn.textContent = 'Escuchando...';
     rec.onresult = function (ev) {
       if (ev.results && ev.results[0] && ev.results[0][0]) {
         var heard = ev.results[0][0].transcript;
@@ -273,10 +306,10 @@ function startTvVoiceRecognition() {
       }
     };
     rec.onend = function () {
-      if (tvVoiceMicBtn) tvVoiceMicBtn.textContent = '🎤 Hablar';
+      if (tvVoiceMicBtn) tvVoiceMicBtn.textContent = 'Hablar';
     };
     rec.onerror = function () {
-      if (tvVoiceMicBtn) tvVoiceMicBtn.textContent = '🎤 Hablar';
+      if (tvVoiceMicBtn) tvVoiceMicBtn.textContent = 'Hablar';
     };
     rec.start();
   } catch (e) {}
@@ -327,6 +360,18 @@ document.getElementById('btn-go-pairing').onclick = function () {
   lastHubFocusedEl = document.getElementById('btn-go-pairing');
   switchTvScreen('pairing');
 };
+var btnStagePairShortcut = document.getElementById('btn-stage-pair-shortcut');
+if (btnStagePairShortcut) {
+  btnStagePairShortcut.onclick = function () {
+    lastHubFocusedEl = btnStagePairShortcut;
+    switchTvScreen('pairing');
+  };
+}
+if (btnCheckTvUpdate) {
+  btnCheckTvUpdate.onclick = function () {
+    runTvVersionCheck(true);
+  };
+}
 document.getElementById('btn-back-to-hub').onclick = function () {
   switchTvScreen('hub');
 };
@@ -363,6 +408,17 @@ if (btnStandbyRetry) {
     triggerPlaybackFailover('Manual retry');
   };
 }
+if (btnDockGuide) {
+  btnDockGuide.onclick = function () {
+    openMiniGuideDrawer();
+  };
+}
+var btnCloseMiniGuide = document.getElementById('btn-close-miniguide');
+if (btnCloseMiniGuide) {
+  btnCloseMiniGuide.onclick = function () {
+    closeMiniGuideDrawer();
+  };
+}
 if (btnDockChPrev) {
   btnDockChPrev.onclick = function () { zapLiveChannel(-1); };
 }
@@ -372,19 +428,19 @@ if (btnDockChNext) {
 document.getElementById('btn-dock-rew').onclick = function () {
   if (!currentIsLive && (currentMode === 'hls' || currentMode === 'direct')) {
     videoEl.currentTime = Math.max(0, (videoEl.currentTime || 0) - 15);
-    showToast('« -15s');
+    showToast('-15s');
   } else if (!currentIsLive && currentMode === 'youtube' && ytPlayer && ytPlayer.getCurrentTime) {
     ytPlayer.seekTo(Math.max(0, ytPlayer.getCurrentTime() - 15), true);
-    showToast('« -15s');
+    showToast('-15s');
   }
 };
 document.getElementById('btn-dock-ff').onclick = function () {
   if (!currentIsLive && (currentMode === 'hls' || currentMode === 'direct')) {
     videoEl.currentTime = (videoEl.currentTime || 0) + 15;
-    showToast('+15s »');
+    showToast('+15s');
   } else if (!currentIsLive && currentMode === 'youtube' && ytPlayer && ytPlayer.getCurrentTime) {
     ytPlayer.seekTo(ytPlayer.getCurrentTime() + 15, true);
-    showToast('+15s »');
+    showToast('+15s');
   }
 };
 if (btnDockAudio) {
@@ -435,10 +491,10 @@ document.getElementById('direct-room-form').onsubmit = function (e) {
 document.addEventListener('fullscreenchange', syncFullscreenButtons);
 document.addEventListener('webkitfullscreenchange', syncFullscreenButtons);
 document.addEventListener('mousemove', function () {
-  if (activeScreen === 'player') revealHud();
+  if (activeScreen === 'player' && !isMiniGuideOpen) revealHud();
 });
 document.addEventListener('click', function () {
-  if (activeScreen === 'player') revealHud();
+  if (activeScreen === 'player' && !isMiniGuideOpen) revealHud();
 });
 
 document.addEventListener('keydown', function (e) {
@@ -446,6 +502,20 @@ document.addEventListener('keydown', function (e) {
   var keyName = e.key || '';
   var activeEl = document.activeElement;
   var targetTag = activeEl && activeEl.tagName ? String(activeEl.tagName).toUpperCase() : '';
+
+  // 0-9 remote numeric dial zapping (when not typing inside an INPUT)
+  if (targetTag !== 'INPUT' && (!voiceModal || voiceModal.style.display !== 'block') && (!seriesModal || seriesModal.style.display !== 'block')) {
+    if (code >= 48 && code <= 57) {
+      if (e.preventDefault) e.preventDefault();
+      handleDialDigit(String(code - 48));
+      return;
+    }
+    if (code >= 96 && code <= 105) {
+      if (e.preventDefault) e.preventDefault();
+      handleDialDigit(String(code - 96));
+      return;
+    }
+  }
 
   if (keyName === 'ChannelUp' || code === 166 || code === 427) {
     if (activeScreen === 'player' && activeLiveChannel) {
@@ -462,15 +532,16 @@ document.addEventListener('keydown', function (e) {
     }
   }
 
-  if (activeScreen === 'player' && currentMode !== 'idle' && !isHudVisible() && standbyOverlay.style.display === 'none') {
+  if (activeScreen === 'player' && !isMiniGuideOpen && currentMode !== 'idle' && !isHudVisible() && standbyOverlay.style.display === 'none') {
     if (code === 23 || code === 66 || code === 13 || code === 32) {
       if (e.preventDefault) e.preventDefault();
       revealHud();
-      if (currentMode === 'hls' || currentMode === 'direct') {
-        if (videoEl.paused) videoEl.play();
-        else videoEl.pause();
-        syncPlayPauseButton();
-      }
+      if (btnPlayPause && btnPlayPause.focus) btnPlayPause.focus();
+      return;
+    }
+    if ((code === 37 || code === 21) && activeLiveChannel) {
+      if (e.preventDefault) e.preventDefault();
+      openMiniGuideDrawer();
       return;
     }
     if ((code === 38 || code === 19) && activeLiveChannel && keyName !== 'MediaPause') {
@@ -494,7 +565,7 @@ document.addEventListener('keydown', function (e) {
   if (code === 37 || code === 21) {
     if (targetTag === 'INPUT' && activeEl.selectionStart > 0) return;
     if (e.preventDefault) e.preventDefault();
-    if (activeScreen === 'player') revealHud();
+    if (activeScreen === 'player' && !isMiniGuideOpen) revealHud();
     moveFocusDirection('left');
     return;
   }
@@ -504,20 +575,20 @@ document.addEventListener('keydown', function (e) {
       return;
     }
     if (e.preventDefault) e.preventDefault();
-    if (activeScreen === 'player') revealHud();
+    if (activeScreen === 'player' && !isMiniGuideOpen) revealHud();
     moveFocusDirection('up');
     return;
   }
   if (code === 39 || code === 22) {
     if (targetTag === 'INPUT' && activeEl.selectionEnd < (activeEl.value || '').length) return;
     if (e.preventDefault) e.preventDefault();
-    if (activeScreen === 'player') revealHud();
+    if (activeScreen === 'player' && !isMiniGuideOpen) revealHud();
     moveFocusDirection('right');
     return;
   }
   if (code === 40 || code === 20) {
     if (e.preventDefault) e.preventDefault();
-    if (activeScreen === 'player') revealHud();
+    if (activeScreen === 'player' && !isMiniGuideOpen) revealHud();
     moveFocusDirection('down');
     return;
   }
@@ -536,6 +607,11 @@ document.addEventListener('keydown', function (e) {
     if (targetTag === 'INPUT') {
       if (e.preventDefault) e.preventDefault();
       activeEl.blur();
+      return;
+    }
+    if (activeScreen === 'player' && isMiniGuideOpen) {
+      if (e.preventDefault) e.preventDefault();
+      closeMiniGuideDrawer();
       return;
     }
     if (voiceModal && voiceModal.style.display === 'block') {
@@ -613,19 +689,25 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
-// Register Samsung Tizen TV hardware remote keys + screensaver protection (ES5-safe)
+// Register Samsung Tizen TV hardware remote keys + numeric keys + screensaver protection (ES5-safe)
 try {
   if (/Tizen/i.test(uaStr)) {
-    var brandTags = document.querySelectorAll('.hub-brand .tag');
-    for (var bt = 0; bt < brandTags.length; bt++) {
-      brandTags[bt].textContent = 'Samsung TV';
-    }
+    var platformTagEl = document.getElementById('rail-platform-tag');
+    if (platformTagEl) platformTagEl.textContent = 'Samsung Tizen';
   }
-  if (window.tizen && window.tizen.tvinputdevice && window.tizen.tvinputdevice.registerKeyBatch) {
-    window.tizen.tvinputdevice.registerKeyBatch([
-      'MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop',
-      'MediaRewind', 'MediaFastForward', 'ChannelUp', 'ChannelDown'
-    ]);
+  if (window.tizen && window.tizen.tvinputdevice) {
+    if (window.tizen.tvinputdevice.registerKeyBatch) {
+      window.tizen.tvinputdevice.registerKeyBatch([
+        'MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop',
+        'MediaRewind', 'MediaFastForward', 'ChannelUp', 'ChannelDown'
+      ]);
+    }
+    if (window.tizen.tvinputdevice.registerKey) {
+      var numKeys = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+      for (var nk = 0; nk < numKeys.length; nk++) {
+        try { window.tizen.tvinputdevice.registerKey(numKeys[nk]); } catch (nkErr) {}
+      }
+    }
   }
   if (videoEl && videoEl.addEventListener) {
     var setTvScreenSaver = function (prevent) {

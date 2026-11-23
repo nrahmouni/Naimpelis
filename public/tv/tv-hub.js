@@ -1,9 +1,15 @@
 // ===================================================================
-// APPLE TV / NETFLIX PRIORITY HUB, LIVE TDT/DAZN/MOVISTAR & SEARCH (ES5)
+// TV v2 10-FOOT BROADCAST HUB, RESUME CHANNEL, LIVE TDT/DAZN & SEARCH (ES5)
 // ===================================================================
 var TV_TDT_SNAP_KEY = 'naim_tv_tdt_snap_v2';
 var tvLiveFilterDebounce = null;
 var tvSearchDebounce = null;
+
+var SVG_ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"/></svg>';
+var SVG_ICON_TV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"/><polyline points="8 2 12 6 16 2"/></svg>';
+var SVG_ICON_SPORTS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polygon points="12 7 16 10 14.5 15 9.5 15 8 10 12 7"/></svg>';
+var SVG_ICON_SEARCH = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.2" y2="16.2"/></svg>';
+var SVG_ICON_PHONE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg>';
 
 function escapeHtml(str) {
   return String(str || '')
@@ -222,7 +228,7 @@ function buildCardButton(item, kind) {
     if (item.seasonNumber) metaParts.push('T' + item.seasonNumber);
     else metaParts.push(isTv ? tvT('seriesLabel') : tvT('movieLabel'));
     if (item.year && item.year !== 'HD') metaParts.push(item.year);
-    if (item.rating) metaParts.push('★ ' + item.rating);
+    if (item.rating) metaParts.push(item.rating + '/10');
 
     btn.innerHTML =
       '<div class="tv-card-poster-wrap">' +
@@ -267,11 +273,26 @@ function appendSection(parent, title, subtitle, items, kind, useGrid, maxOverrid
   parent.appendChild(sec);
 }
 
+function updateStageHeaderTitle(tabKey) {
+  var map = {
+    search: 'tabSearch',
+    home: 'tabHome',
+    tdt: 'tabTdt',
+    releases: 'tabReleases',
+    movies: 'tabMovies',
+    series: 'tabSeries',
+    anime: 'tabAnime'
+  };
+  if (tvStageTitleEl && map[tabKey]) {
+    tvStageTitleEl.textContent = tvT(map[tabKey]);
+  }
+}
+
 function selectHubTabProgrammatic(tabKey, filterKey) {
   var tabBtns = document.querySelectorAll('#hub-nav-tabs .hub-tab-btn');
   for (var k = 0; k < tabBtns.length; k++) {
     var dk = tabBtns[k].getAttribute('data-tab');
-    var cls = dk === 'search' ? 'hub-tab-btn search-left-btn' : 'hub-tab-btn';
+    var cls = dk === 'search' ? 'hub-tab-btn rail-item search-left-btn' : 'hub-tab-btn rail-item';
     if (dk === tabKey) cls += ' active';
     tabBtns[k].className = cls;
   }
@@ -287,17 +308,31 @@ function selectHubTabProgrammatic(tabKey, filterKey) {
 function buildQuickActionDock() {
   var dock = document.createElement('div');
   dock.className = 'tv-quick-dock';
-  dock.innerHTML =
-    '<button type="button" class="tv-quick-btn featured" id="btn-quick-tdt" tabindex="0">' + escapeHtml(tvT('quickTdtBtn')) + '</button>' +
-    '<button type="button" class="tv-quick-btn featured" id="btn-quick-sports" tabindex="0">' + escapeHtml(tvT('quickSportsBtn')) + '</button>' +
-    '<button type="button" class="tv-quick-btn" id="btn-quick-search" tabindex="0">' + escapeHtml(tvT('quickSearchBtn')) + '</button>' +
-    '<button type="button" class="tv-quick-btn" id="btn-quick-pair" tabindex="0">' + escapeHtml(tvT('quickPairBtn')) + '</button>';
+  var resumeCh = typeof getLastWatchedChannelObj === 'function' ? getLastWatchedChannelObj() : null;
+  var html = '';
+  if (resumeCh) {
+    html += '<button type="button" class="tv-quick-btn resume-channel" id="btn-quick-resume" tabindex="0">' + SVG_ICON_PLAY + '<span>' + escapeHtml(tvT('quickResumePre') + resumeCh.name) + '</span></button>';
+  }
+  html +=
+    '<button type="button" class="tv-quick-btn featured" id="btn-quick-tdt" tabindex="0">' + SVG_ICON_TV + '<span>' + escapeHtml(tvT('quickTdtBtn')) + '</span></button>' +
+    '<button type="button" class="tv-quick-btn featured" id="btn-quick-sports" tabindex="0">' + SVG_ICON_SPORTS + '<span>' + escapeHtml(tvT('quickSportsBtn')) + '</span></button>' +
+    '<button type="button" class="tv-quick-btn" id="btn-quick-search" tabindex="0">' + SVG_ICON_SEARCH + '<span>' + escapeHtml(tvT('quickSearchBtn')) + '</span></button>' +
+    '<button type="button" class="tv-quick-btn" id="btn-quick-pair" tabindex="0">' + SVG_ICON_PHONE + '<span>' + escapeHtml(tvT('quickPairBtn')) + '</span></button>';
+  dock.innerHTML = html;
 
   setTimeout(function () {
+    var bRes = document.getElementById('btn-quick-resume');
     var bTdt = document.getElementById('btn-quick-tdt');
     var bSpr = document.getElementById('btn-quick-sports');
     var bSrc = document.getElementById('btn-quick-search');
     var bPr = document.getElementById('btn-quick-pair');
+    if (bRes && resumeCh) {
+      bRes.onclick = function () {
+        lastHubFocusedEl = bRes;
+        unlockAudio();
+        playTdtChannelOnTv(resumeCh, 0);
+      };
+    }
     if (bTdt) bTdt.onclick = function () { selectHubTabProgrammatic('tdt', 'es_tdt'); };
     if (bSpr) bSpr.onclick = function () { selectHubTabProgrammatic('tdt', 'es_sports'); };
     if (bSrc) bSrc.onclick = function () { selectHubTabProgrammatic('search'); };
@@ -316,7 +351,7 @@ function buildHeroCard(featured, showLiveShortcut) {
     (bgSrc ? '<img class="tv-hero-bg" src="' + escapeHtml(bgSrc) + '" alt="" />' : '') +
     '<div class="tv-hero-grad"></div>' +
     '<div class="tv-hero-content">' +
-    '<div class="tv-hero-meta">' + escapeHtml((isTv ? tvT('heroSeriesMeta') : tvT('heroMovieMeta')) + (featured.year ? ' · ' + featured.year : '') + (featured.rating ? ' · ★ ' + featured.rating : '')) + '</div>' +
+    '<div class="tv-hero-meta">' + escapeHtml((isTv ? tvT('heroSeriesMeta') : tvT('heroMovieMeta')) + (featured.year ? ' · ' + featured.year : '') + (featured.rating ? ' · ' + featured.rating + '/10' : '')) + '</div>' +
     '<h1 class="tv-hero-title">' + escapeHtml(featured.title) + '</h1>' +
     '<p class="tv-hero-desc">' + escapeHtml(featured.overview || tvT('heroDescFallback')) + '</p>' +
     '<div class="tv-hero-btns">' +
@@ -443,6 +478,7 @@ function runTvSearch(queryStr) {
 
 function renderHubContent(focusFirstResult) {
   if (!hubDynamicContent) return;
+  updateStageHeaderTitle(activeHubTab);
   hubDynamicContent.innerHTML = '';
 
   if (activeHubTab === 'search') {
@@ -615,16 +651,16 @@ function renderHubContent(focusFirstResult) {
     if (activeLiveFilter === 'adrar_europa') {
       var countries = [
         { code: 'all', label: tvT('filterAll') },
-        { code: 'es', label: '🇪🇸 ES' },
-        { code: 'fr', label: '🇫🇷 FR' },
-        { code: 'de', label: '🇩🇪 DE' },
-        { code: 'it', label: '🇮🇹 IT' },
-        { code: 'tr', label: '🇹🇷 TR' },
-        { code: 'uk', label: '🇬🇧 UK' },
-        { code: 'pt', label: '🇵🇹 PT' },
-        { code: 'nl', label: '🇳🇱 NL' },
-        { code: 'be', label: '🇧🇪 BE' },
-        { code: 'ru', label: '🇷🇺 RU' }
+        { code: 'es', label: 'ES' },
+        { code: 'fr', label: 'FR' },
+        { code: 'de', label: 'DE' },
+        { code: 'it', label: 'IT' },
+        { code: 'tr', label: 'TR' },
+        { code: 'uk', label: 'UK' },
+        { code: 'pt', label: 'PT' },
+        { code: 'nl', label: 'NL' },
+        { code: 'be', label: 'BE' },
+        { code: 'ru', label: 'RU' }
       ];
       var subRow = document.createElement('div');
       subRow.className = 'tv-filter-row';
@@ -855,6 +891,7 @@ function loadTvCatalog() {
 setInterval(loadLiveEpg, 3 * 60 * 1000);
 if (window.addEventListener) {
   window.addEventListener('online', function () {
+    if (typeof runTvVersionCheck === 'function') runTvVersionCheck(false);
     if (!catalogData.loaded || (catalogData.movies.length === 0 && catalogData.tdt.length === 0)) {
       tvCatalogRetryCount = 0;
       loadTvCatalog();

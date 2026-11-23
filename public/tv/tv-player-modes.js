@@ -1,5 +1,5 @@
 // ===================================================================
-// PAIRED ROOM RECEIVER MODE + FAST LIVE CHANNEL PRE-WARMING (ES5)
+// PAIRED ROOM RECEIVER, MINI-GUIDE DRAWER, ZAP OSD & NUMERIC DIAL (ES5)
 // ===================================================================
 var roomHttpTimer = null;
 
@@ -73,12 +73,159 @@ function scheduleNextChannelPrewarm(currentCh) {
   }, 1400);
 }
 
+// Broadcast Zapping OSD Card (bottom-left when changing channels)
+function hideLiveZapOsd() {
+  if (zapOsdTimer) clearTimeout(zapOsdTimer);
+  if (tvZapOsd) tvZapOsd.style.display = 'none';
+}
+
+function showLiveZapOsd(ch, trackIdx) {
+  if (!tvZapOsd || !ch) return;
+  var dialEl = document.getElementById('zap-dial-num');
+  var logoImg = document.getElementById('zap-logo-img');
+  var chName = document.getElementById('zap-channel-name');
+  var liveTag = document.getElementById('zap-live-tag');
+  var sigMeta = document.getElementById('zap-signal-meta');
+  var nowTitle = document.getElementById('zap-now-title');
+  var progFill = document.getElementById('zap-progress-fill');
+  var nextTitle = document.getElementById('zap-next-title');
+
+  var dialNum = ch.dial ? (ch.dial < 10 ? '0' + ch.dial : String(ch.dial)) : '--';
+  if (dialEl) dialEl.textContent = dialNum;
+  if (logoImg) logoImg.src = ch.logoUrl || '/icon.svg';
+  if (chName) chName.textContent = ch.name || 'TV';
+  if (liveTag) liveTag.textContent = tvT('liveNow');
+
+  var tr = ch.channels && ch.channels[trackIdx] ? ch.channels[trackIdx] : null;
+  if (sigMeta) {
+    sigMeta.textContent = tr ? (tr.label || (tr.quality || 'HD')) : (ch.network || 'HD');
+  }
+
+  var chEpg = catalogData.epg ? catalogData.epg[ch.id] : null;
+  if (nowTitle) {
+    nowTitle.textContent = chEpg && chEpg.now ? chEpg.now.title : (ch.description || ch.network || tvT('broadcast247'));
+  }
+  if (progFill) {
+    var pct = chEpg && typeof chEpg.progressPct === 'number' ? Math.max(5, Math.min(100, chEpg.progressPct)) : 35;
+    progFill.style.width = pct + '%';
+  }
+  if (nextTitle) {
+    nextTitle.textContent = chEpg && chEpg.next
+      ? tvT('nextPrefix') + (chEpg.next.startLabel ? chEpg.next.startLabel + ' · ' : '') + chEpg.next.title
+      : '';
+  }
+
+  tvZapOsd.style.display = 'flex';
+  if (zapOsdTimer) clearTimeout(zapOsdTimer);
+  zapOsdTimer = setTimeout(hideLiveZapOsd, 4200);
+}
+
+// Slide-Out Mini-Guide Drawer
+function renderMiniGuideList() {
+  if (!mgChannelList || typeof filterTdtChannels !== 'function') return;
+  mgChannelList.innerHTML = '';
+  var list = filterTdtChannels(activeMiniGuideFilter, '');
+  if (!list || !list.length) list = catalogData.tdt || [];
+  var limit = Math.min(80, list.length);
+  var activeBtn = null;
+
+  for (var i = 0; i < limit; i++) {
+    (function (ch, idxPos) {
+      var row = document.createElement('button');
+      row.type = 'button';
+      var isCurrent = activeLiveChannel && activeLiveChannel.id === ch.id;
+      row.className = 'mg-ch-row' + (isCurrent ? ' active-ch' : '');
+      row.tabIndex = 0;
+      var dialStr = ch.dial ? String(ch.dial) : String(idxPos + 1);
+      var chEpg = catalogData.epg ? catalogData.epg[ch.id] : null;
+      var epgStr = chEpg && chEpg.now ? chEpg.now.title : (ch.network || tvT('broadcast247'));
+      var logoHtml = ch.logoUrl
+        ? '<img src="' + escapeHtml(ch.logoUrl) + '" alt="" referrerpolicy="no-referrer" />'
+        : '<span style="font-weight:900;font-size:12px;">' + escapeHtml(ch.shortMark || ch.name || 'TV') + '</span>';
+      row.innerHTML =
+        '<div class="mg-ch-dial">' + escapeHtml(dialStr) + '</div>' +
+        '<div class="mg-ch-logo">' + logoHtml + '</div>' +
+        '<div class="mg-ch-info">' +
+        '<div class="mg-ch-name">' + escapeHtml(ch.name) + '</div>' +
+        '<div class="mg-ch-epg">' + escapeHtml(epgStr) + '</div>' +
+        '</div>';
+      row.onclick = function () {
+        closeMiniGuideDrawer();
+        playTdtChannelOnTv(ch, 0);
+      };
+      mgChannelList.appendChild(row);
+      if (isCurrent) activeBtn = row;
+    })(list[i], i);
+  }
+
+  setTimeout(function () {
+    var focusTarget = activeBtn || mgChannelList.querySelector('.mg-ch-row');
+    if (focusTarget && focusTarget.focus) focusTarget.focus();
+  }, 40);
+}
+
+function openMiniGuideDrawer() {
+  if (!miniGuideDrawer || activeScreen !== 'player') return;
+  isMiniGuideOpen = true;
+  miniGuideDrawer.className = 'open';
+  hideHudImmediately();
+  renderMiniGuideList();
+}
+
+function closeMiniGuideDrawer() {
+  if (!miniGuideDrawer) return;
+  isMiniGuideOpen = false;
+  miniGuideDrawer.className = '';
+}
+
+function tuneByNumericDial(dialNum) {
+  var list = catalogData.tdt || [];
+  if (!list.length) return;
+  var match = null;
+  for (var i = 0; i < list.length; i++) {
+    if (Number(list[i].dial) === dialNum) {
+      match = list[i];
+      break;
+    }
+  }
+  if (!match && dialNum >= 1 && dialNum <= list.length) {
+    match = list[dialNum - 1];
+  }
+  if (match) {
+    if (activeScreen !== 'player') switchTvScreen('player');
+    unlockAudio();
+    playTdtChannelOnTv(match, 0);
+  } else {
+    showToast(tvT('noDialMatch') + dialNum);
+  }
+}
+
+function handleDialDigit(digitStr) {
+  if (!/^\d$/.test(digitStr)) return;
+  if (dialBuffer.length >= 3) dialBuffer = '';
+  dialBuffer += digitStr;
+  if (tvDialOsd && tvDialOsdNum) {
+    tvDialOsdNum.textContent = dialBuffer;
+    tvDialOsd.style.display = 'flex';
+  }
+  if (dialBufferTimer) clearTimeout(dialBufferTimer);
+  dialBufferTimer = setTimeout(function () {
+    var targetNum = parseInt(dialBuffer, 10);
+    dialBuffer = '';
+    if (tvDialOsd) tvDialOsd.style.display = 'none';
+    if (!isNaN(targetNum) && targetNum > 0) {
+      tuneByNumericDial(targetNum);
+    }
+  }, 1100);
+}
+
 function enterRoomReceiver(roomId, roomName, token, claimedBy) {
   if (isPaired && currentRoomId === roomId) return;
   isPaired = true;
   isLocalPlayback = false;
   activeLiveChannel = null;
   localTracks = [];
+  closeMiniGuideDrawer();
   if (btnDockAudio) btnDockAudio.style.display = 'none';
   currentRoomId = roomId.toLowerCase();
   currentRoomName = roomName || tvT('roomPrefix') + currentRoomId.toUpperCase();
@@ -128,7 +275,7 @@ function connectRoomWs() {
             roomId: currentRoomId,
             roomName: currentRoomName,
             tvAuthToken: tvAuthToken,
-            user: { id: tvDeviceId, name: 'Smart TV', avatar: '📺', color: '#7C3AED' }
+            user: { id: tvDeviceId, name: 'Smart TV', avatar: 'TV', color: '#7C3AED' }
           }
         })
       );
@@ -196,6 +343,9 @@ function exitPlayerToHubOrPairing() {
   currentUrl = '';
   localTracks = [];
   autoFailoverLock = false;
+  closeMiniGuideDrawer();
+  hideLiveZapOsd();
+  if (tvDialOsd) tvDialOsd.style.display = 'none';
   if (btnDockAudio) btnDockAudio.style.display = 'none';
   if (standbyChannelBadge) standbyChannelBadge.style.display = 'none';
   clearVideoWatchdog();
@@ -219,10 +369,14 @@ function exitPlayerToHubOrPairing() {
     try { ytPlayer.stopVideo(); } catch (e) {}
   }
   if (pairedBanner) pairedBanner.style.display = 'none';
-  if (pairingControls) pairingControls.style.display = 'block';
+  if (pairingControls) pairingControls.style.display = 'flex';
   try {
     window.history.replaceState({}, '', '/tv');
   } catch (e) {}
+
+  if (pendingTvAutoUpdateBuild && typeof applyPendingTvAutoUpdate === 'function') {
+    if (applyPendingTvAutoUpdate()) return;
+  }
 
   switchTvScreen('hub');
   if (wasPaired) {
@@ -240,7 +394,7 @@ function switchToLocalTrack(trackIdx, resumeSec) {
   var nextTr = localTracks[localTrackIdx];
   if (!nextTr) return;
   if (btnDockAudio) {
-    btnDockAudio.textContent = '🌐 ' + (nextTr.label || 'Servidor ' + (localTrackIdx + 1));
+    btnDockAudio.textContent = nextTr.label || 'Señal ' + (localTrackIdx + 1);
   }
   if (nextTr.resolvedStreamUrl && (nextTr.resolvedStreamUrl.indexOf('/api/') === 0 || nextTr.resolvedStreamUrl.indexOf('http') === 0 || nextTr.resolverType === 'youtube')) {
     var directMode = nextTr.resolverType === 'youtube'
@@ -301,6 +455,8 @@ function playLocalStream(itemTitle, itemSub, extractQueryUrl) {
   isPaired = false;
   activeLiveChannel = null;
   autoFailoverLock = false;
+  closeMiniGuideDrawer();
+  hideLiveZapOsd();
   switchTvScreen('player');
   if (standbyChannelBadge) standbyChannelBadge.style.display = 'none';
   if (standbySpinner) standbySpinner.style.display = 'block';
@@ -329,8 +485,8 @@ function playLocalStream(itemTitle, itemSub, extractQueryUrl) {
     }
     if (btnDockAudio) {
       if (localTracks.length > 1) {
-        btnDockAudio.style.display = 'inline-block';
-        btnDockAudio.textContent = '🌐 ' + (localTracks[localTrackIdx].label || 'Audio');
+        btnDockAudio.style.display = 'inline-flex';
+        btnDockAudio.textContent = localTracks[localTrackIdx].label || tvT('trackBtn');
       } else {
         btnDockAudio.style.display = 'none';
       }
@@ -370,12 +526,15 @@ function playTdtChannelOnTv(ch, trackIndex) {
   localTracks = ch.channels;
   localTrackIdx = idx;
   autoFailoverLock = false;
+  saveLastWatchedChannel(ch);
   switchTvScreen('player');
+  hideHudImmediately();
+  showLiveZapOsd(ch, idx);
 
   if (btnDockAudio) {
     if (ch.channels.length > 1) {
-      btnDockAudio.style.display = 'inline-block';
-      btnDockAudio.textContent = '📡 ' + (track.label || 'Signal ' + (idx + 1));
+      btnDockAudio.style.display = 'inline-flex';
+      btnDockAudio.textContent = track.label || 'Señal ' + (idx + 1);
     } else {
       btnDockAudio.style.display = 'none';
     }
@@ -403,7 +562,6 @@ function playTdtChannelOnTv(ch, trackIndex) {
   standbySubText.textContent = epgLabel;
   syncPlayerDockMode(true);
 
-  // Fast-path 1: direct internal proxy URL (/api/...) or CORS-direct public CDN (RTVE / 3Cat / EITB)
   if (streamUrl.indexOf('/api/') === 0 || (rType === 'tdt_hls' && isDirectCorsPublicStream(streamUrl))) {
     applyVideoState(
       {
@@ -422,7 +580,6 @@ function playTdtChannelOnTv(ch, trackIndex) {
     return;
   }
 
-  // Fast-path 2: Instant 0ms hit from focus/boot pre-warm extract cache
   var cachedExtract = getCachedLiveExtract(rType, streamUrl);
   if (cachedExtract) {
     applyVideoState(
@@ -504,7 +661,6 @@ function zapLiveChannel(step) {
   var nextIdx = curIdx === -1 ? 0 : (curIdx + step + pool.length) % pool.length;
   var nextCh = pool[nextIdx];
   if (nextCh) {
-    showToast((nextCh.dial ? tvT('dialPrefix') + nextCh.dial + ' · ' : '') + nextCh.name);
     playTdtChannelOnTv(nextCh, 0);
   }
 }

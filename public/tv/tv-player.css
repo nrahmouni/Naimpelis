@@ -1,5 +1,5 @@
 /* =================================================================== */
-/* SCREEN 1: 4-DIGIT SAMSUNG / LG / GOOGLE SMART TV PAIRING            */
+/* SCREEN 1: QR + 4-DIGIT PAIRING & ZERO-REINSTALL AUTO-UPDATE PANEL   */
 /* =================================================================== */
 #pairing-screen {
   position: relative;
@@ -11,7 +11,8 @@
   flex-direction: column;
   -webkit-justify-content: space-between;
   justify-content: space-between;
-  padding: 28px 52px;
+  padding: 24px 48px;
+  background: #06070B;
 }
 .tv-header,
 .brand-row,
@@ -27,92 +28,24 @@
 }
 .status-row > * { margin-left: 12px; }
 .status-badge {
-  padding: 12px 18px;
-  border-radius: 13px;
-  font-size: 15px;
-  font-weight: 800;
-  background: rgba(16, 185, 129, 0.16);
-  border: 1.5px solid rgba(52, 211, 153, 0.45);
-  color: #6ee7b7;
-}
-.status-badge.connecting {
-  background: rgba(245, 158, 11, 0.16);
-  border-color: rgba(251, 191, 36, 0.45);
-  color: #fcd34d;
-}
-.center-stage {
-  max-width: 960px;
-  width: 100%;
-  margin: 0 auto;
-  text-align: center;
-}
-.eyebrow {
+  padding: 10px 16px;
+  border-radius: 11px;
   font-size: 14px;
   font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  color: #c6a2ff;
-  margin-bottom: 10px;
+  background: #102B22;
+  border: 1.5px solid rgba(52, 211, 153, 0.5);
+  color: #6EE7B7;
 }
-.main-heading {
-  font-size: 40px;
-  font-weight: 900;
-  color: #ffffff;
-  letter-spacing: -0.02em;
-  margin-bottom: 12px;
+.status-badge.connecting {
+  background: #2B200E;
+  border-color: rgba(251, 191, 36, 0.5);
+  color: #FCD34D;
 }
-.sub-heading {
-  font-size: 18px;
-  color: #bcbcc8;
-  max-width: 680px;
-  margin: 0 auto 24px auto;
-  line-height: 1.48;
-}
-.digits-row {
-  display: -webkit-flex;
-  display: flex;
-  -webkit-justify-content: center;
-  justify-content: center;
-  margin-bottom: 24px;
-}
-.digit-tile {
-  width: 118px;
-  height: 144px;
-  margin: 0 12px;
-  border-radius: 22px;
-  background: linear-gradient(160deg, #161822 0%, #0B0C12 100%);
-  border: 2px solid rgba(139, 92, 246, 0.5);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.92), 0 0 40px rgba(124, 58, 237, 0.25);
-  display: -webkit-flex;
-  display: flex;
-  -webkit-align-items: center;
-  align-items: center;
-  -webkit-justify-content: center;
-  justify-content: center;
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 74px;
-  font-weight: 900;
-  color: #ffffff;
-}
-.actions-row {
-  display: -webkit-flex;
-  display: flex;
-  -webkit-justify-content: center;
-  justify-content: center;
-  -webkit-align-items: center;
-  align-items: center;
-  -webkit-flex-wrap: wrap;
-  flex-wrap: wrap;
-  margin-bottom: 18px;
-}
-.actions-row > * { margin: 6px 10px; }
-.direct-room-box {
-  max-width: 580px;
+
+.pairing-split-stage {
+  max-width: 1220px;
+  width: 100%;
   margin: 0 auto;
-  padding: 14px 20px;
-  border-radius: 16px;
-  background: #0F1017;
-  border: 1.5px solid rgba(255, 255, 255, 0.1);
   display: -webkit-flex;
   display: flex;
   -webkit-align-items: center;
@@ -120,27 +53,139 @@
   -webkit-justify-content: space-between;
   justify-content: space-between;
 }
-.direct-room-inputs {
+.pairing-left-panel {
+  width: 53%;
+  padding-right: 28px;
+}
+.pairing-right-panel {
+  width: 45%;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+}
+.eyebrow {
+  font-size: 13px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: #C4B5FD;
+  margin-bottom: 8px;
+}
+.main-heading {
+  font-size: 36px;
+  font-weight: 900;
+  color: #FFFFFF;
+  letter-spacing: -0.025em;
+  line-height: 1.12;
+  margin-bottom: 10px;
+}
+.sub-heading {
+  font-size: 17px;
+  color: #B8BDCE;
+  margin-bottom: 22px;
+  line-height: 1.46;
+}
+.pairing-visual-row {
   display: -webkit-flex;
   display: flex;
   -webkit-align-items: center;
   align-items: center;
 }
+.qr-card-frame {
+  width: 168px;
+  height: 168px;
+  padding: 10px;
+  border-radius: 18px;
+  background: #FFFFFF;
+  border: 2px solid rgba(167, 139, 250, 0.6);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  margin-right: 22px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+.qr-card-frame svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.digits-stack {
+  min-width: 0;
+}
+.digits-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+}
+.digit-tile {
+  width: 84px;
+  height: 110px;
+  margin-right: 12px;
+  border-radius: 18px;
+  background: #121521;
+  border: 2px solid rgba(139, 92, 246, 0.58);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 56px;
+  font-weight: 900;
+  color: #FFFFFF;
+}
+.actions-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  -webkit-align-items: center;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.actions-row > * { margin: 0 10px 10px 0; }
+.direct-room-box {
+  width: 100%;
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: #0E1018;
+  border: 1.5px solid rgba(255, 255, 255, 0.11);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  margin-bottom: 14px;
+}
+.direct-room-inputs {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  margin-top: 10px;
+}
 .direct-room-label {
-  font-size: 15px;
-  font-weight: 600;
-  color: #bcbcc8;
-  margin-right: 14px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #C2C7D8;
   text-align: left;
 }
 .direct-room-input {
-  width: 150px;
-  height: 50px;
+  -webkit-flex: 1;
+  flex: 1;
+  height: 48px;
   padding: 0 14px;
-  border-radius: 12px;
+  border-radius: 11px;
   border: 1.5px solid rgba(255, 255, 255, 0.16);
-  background: #050508;
-  color: #ffffff;
+  background: #06070B;
+  color: #FFFFFF;
   font-size: 18px;
   font-weight: 800;
   text-align: center;
@@ -148,30 +193,56 @@
   margin-right: 10px;
 }
 .direct-room-submit {
-  height: 50px;
+  height: 48px;
   padding: 0 22px;
-  border-radius: 12px;
+  border-radius: 11px;
   border: 1.5px solid rgba(255, 255, 255, 0.28);
-  background: #ffffff;
-  color: #09090d;
-  font-size: 16px;
+  background: #FFFFFF;
+  color: #06070B;
+  font-size: 15px;
   font-weight: 900;
   cursor: pointer;
 }
+.tv-ota-status-card {
+  width: 100%;
+  padding: 15px 18px;
+  border-radius: 16px;
+  background: #0E1018;
+  border: 1.5px solid rgba(52, 211, 153, 0.35);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+}
+.ota-status-copy {
+  padding-right: 12px;
+}
+.ota-status-title {
+  font-size: 15px;
+  font-weight: 800;
+  color: #A7F3D0;
+}
+.ota-status-sub {
+  font-size: 13px;
+  font-weight: 600;
+  color: #9DA4BA;
+  margin-top: 3px;
+}
 .paired-banner {
   display: none;
-  max-width: 680px;
-  margin: 0 auto 18px auto;
-  padding: 18px 26px;
-  border-radius: 18px;
-  background: rgba(16, 185, 129, 0.24);
-  border: 1.5px solid rgba(52, 211, 153, 0.6);
-  color: #d1fae5;
-  font-size: 22px;
+  margin-top: 14px;
+  padding: 14px 18px;
+  border-radius: 14px;
+  background: #10352A;
+  border: 1.5px solid #34D399;
+  color: #D1FAE5;
+  font-size: 18px;
   font-weight: 800;
 }
 .steps-footer {
-  max-width: 1060px;
+  max-width: 1220px;
   width: 100%;
   margin: 0 auto;
   display: -webkit-flex;
@@ -181,9 +252,9 @@
 }
 .step-card {
   width: 32%;
-  padding: 16px 18px;
-  border-radius: 16px;
-  background: #0F1017;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #0E1018;
   border: 1px solid rgba(255, 255, 255, 0.1);
   display: -webkit-flex;
   display: flex;
@@ -191,13 +262,13 @@
   align-items: flex-start;
 }
 .step-num {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  background: rgba(145, 70, 255, 0.26);
-  border: 1px solid rgba(167, 139, 250, 0.55);
-  color: #e4d8ff;
-  font-size: 15px;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: #231942;
+  border: 1px solid rgba(167, 139, 250, 0.5);
+  color: #E4D8FF;
+  font-size: 14px;
   font-weight: 900;
   display: -webkit-flex;
   display: flex;
@@ -205,24 +276,24 @@
   align-items: center;
   -webkit-justify-content: center;
   justify-content: center;
-  margin-right: 14px;
+  margin-right: 12px;
   -webkit-flex-shrink: 0;
   flex-shrink: 0;
 }
 .step-text {
-  font-size: 14px;
-  color: #a8a8b6;
-  line-height: 1.42;
+  font-size: 13px;
+  color: #9FA5BA;
+  line-height: 1.4;
 }
 .step-text strong {
   display: block;
-  color: #ffffff;
-  font-size: 16px;
-  margin-bottom: 3px;
+  color: #FFFFFF;
+  font-size: 15px;
+  margin-bottom: 2px;
 }
 
 /* =================================================================== */
-/* SCREEN 2: FULL-SCREEN 1080P PLAYER & APPLE TV STANDBY/HUD OVERLAYS  */
+/* SCREEN 2: FULL-SCREEN 1080P PLAYER + MINI-GUIDE + ZAP / DIAL OSD    */
 /* =================================================================== */
 #player-screen {
   display: none;
@@ -248,7 +319,7 @@
 #tv-video.aspect-cover { object-fit: cover; }
 #tv-video.aspect-fill { object-fit: fill; }
 
-/* Completely suppress Android WebView / Chromium giant grey center play icon */
+/* Completely suppress WebView center grey play icon */
 #tv-video::-webkit-media-controls,
 #tv-video::-webkit-media-controls-enclosure,
 #tv-video::-webkit-media-controls-panel,
@@ -281,13 +352,332 @@
   background: #000000;
 }
 
+/* Slide-Out Live Mini-Guide Drawer */
+#tv-miniguide-drawer {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 430px;
+  max-width: 82vw;
+  background: #0B0D14;
+  border-right: 1.5px solid rgba(255, 255, 255, 0.14);
+  z-index: 38;
+  padding: 22px 20px 18px 20px;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+}
+#tv-miniguide-drawer.open {
+  display: -webkit-flex;
+  display: flex;
+}
+.mg-head {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.mg-kicker {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  color: #A78BFA;
+}
+.mg-title {
+  font-size: 22px;
+  font-weight: 900;
+  color: #FFFFFF;
+}
+.mg-close-btn {
+  height: 40px;
+  padding: 0 14px;
+  font-size: 14px;
+}
+.mg-filter-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.mg-filter-btn {
+  height: 38px;
+  padding: 0 12px;
+  margin: 0 8px 8px 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #141724;
+  color: #BFC4D6;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.mg-filter-btn.active {
+  background: #7C3AED;
+  border-color: #DDD6FE;
+  color: #FFFFFF;
+}
+.mg-filter-btn:focus,
+.mg-filter-btn:hover {
+  background: #FFFFFF;
+  color: #06070B;
+}
+.mg-channel-list {
+  -webkit-flex: 1;
+  flex: 1;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+.mg-channel-list::-webkit-scrollbar { width: 5px; }
+.mg-channel-list::-webkit-scrollbar-thumb {
+  background: rgba(167, 139, 250, 0.45);
+  border-radius: 99px;
+}
+.mg-ch-row {
+  width: 100%;
+  padding: 11px 12px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(255, 255, 255, 0.08);
+  background: #121521;
+  color: #FFFFFF;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  text-align: left;
+  cursor: pointer;
+}
+.mg-ch-row.active-ch {
+  background: #231942;
+  border-color: #A78BFA;
+}
+.mg-ch-row:focus,
+.mg-ch-row:hover {
+  background: #FFFFFF;
+  color: #06070B;
+  border-color: #FFFFFF;
+}
+.mg-ch-dial {
+  width: 36px;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+  font-weight: 900;
+  color: #C4B5FD;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+.mg-ch-row:focus .mg-ch-dial,
+.mg-ch-row:hover .mg-ch-dial {
+  color: #6D28D9;
+}
+.mg-ch-logo {
+  width: 44px;
+  height: 30px;
+  border-radius: 7px;
+  background: #0A0C12;
+  padding: 3px 5px;
+  margin-right: 12px;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+.mg-ch-logo img {
+  max-width: 100%;
+  max-height: 24px;
+  object-fit: contain;
+}
+.mg-ch-info {
+  -webkit-flex: 1;
+  flex: 1;
+  min-width: 0;
+}
+.mg-ch-name {
+  font-size: 15px;
+  font-weight: 800;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mg-ch-epg {
+  font-size: 12px;
+  font-weight: 600;
+  color: #9DA3B8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+.mg-ch-row:focus .mg-ch-epg,
+.mg-ch-row:hover .mg-ch-epg {
+  color: #374151;
+}
+
+/* Numeric Remote Dial OSD (0-9 keys) */
+#tv-dial-osd {
+  display: none;
+  position: absolute;
+  top: 28px;
+  right: 44px;
+  padding: 12px 22px;
+  border-radius: 16px;
+  background: #0E1018;
+  border: 2px solid #8B5CF6;
+  z-index: 42;
+  -webkit-align-items: baseline;
+  align-items: baseline;
+}
+.dial-osd-kicker {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  color: #C4B5FD;
+  margin-right: 12px;
+}
+#tv-dial-osd-num {
+  font-size: 40px;
+  font-weight: 900;
+  color: #FFFFFF;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* Bottom-Left Broadcast Zap OSD Banner */
+#tv-zap-osd {
+  display: none;
+  position: absolute;
+  left: 44px;
+  bottom: 34px;
+  max-width: 700px;
+  min-width: 440px;
+  padding: 16px 20px;
+  border-radius: 18px;
+  background: #0E1018;
+  border: 1.5px solid rgba(255, 255, 255, 0.16);
+  z-index: 34;
+  -webkit-align-items: center;
+  align-items: center;
+}
+.zap-left {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  margin-right: 18px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+.zap-dial-num {
+  font-size: 30px;
+  font-weight: 900;
+  color: #A78BFA;
+  font-variant-numeric: tabular-nums;
+  margin-right: 12px;
+  min-width: 42px;
+}
+.zap-logo-box {
+  width: 72px;
+  height: 46px;
+  border-radius: 10px;
+  background: #161A29;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 4px 8px;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+}
+.zap-logo-box img {
+  max-width: 100%;
+  max-height: 36px;
+  object-fit: contain;
+}
+.zap-body {
+  -webkit-flex: 1;
+  flex: 1;
+  min-width: 0;
+}
+.zap-top-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.zap-channel-name {
+  font-size: 20px;
+  font-weight: 900;
+  color: #FFFFFF;
+  margin-right: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.zap-live-tag {
+  font-size: 11px;
+  font-weight: 900;
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: #991B1B;
+  color: #FECACA;
+  margin-right: 8px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+.zap-signal-meta {
+  font-size: 12px;
+  font-weight: 700;
+  color: #9EA4B8;
+  white-space: nowrap;
+}
+.zap-now-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #E2E5F0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.zap-progress-track {
+  width: 100%;
+  height: 4px;
+  border-radius: 99px;
+  background: rgba(255, 255, 255, 0.14);
+  margin: 7px 0 5px 0;
+  overflow: hidden;
+}
+.zap-progress-fill {
+  width: 35%;
+  height: 100%;
+  background: #8B5CF6;
+}
+.zap-next-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #9298AE;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 #standby-overlay {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
-  background: radial-gradient(circle at center, #141726 0%, #050508 82%);
+  background: radial-gradient(circle at center, #131624 0%, #06070B 82%);
   display: -webkit-flex;
   display: flex;
   -webkit-flex-direction: column;
@@ -297,18 +687,18 @@
   -webkit-justify-content: center;
   justify-content: center;
   text-align: center;
-  padding: 40px 56px;
+  padding: 36px 48px;
   z-index: 18;
 }
 .standby-channel-badge {
   display: none;
-  width: 132px;
-  height: 76px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.08);
+  width: 124px;
+  height: 70px;
+  border-radius: 16px;
+  background: #141724;
   border: 1.5px solid rgba(255, 255, 255, 0.16);
-  padding: 10px 16px;
-  margin-bottom: 20px;
+  padding: 10px 14px;
+  margin-bottom: 18px;
   -webkit-align-items: center;
   align-items: center;
   -webkit-justify-content: center;
@@ -316,16 +706,16 @@
 }
 .standby-logo-img {
   max-width: 100%;
-  max-height: 54px;
+  max-height: 48px;
   object-fit: contain;
 }
 .tv-spinner {
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
   border-radius: 999px;
-  border: 4px solid rgba(191, 148, 255, 0.22);
-  border-top-color: #ffffff;
-  margin-bottom: 20px;
+  border: 4px solid rgba(167, 139, 250, 0.22);
+  border-top-color: #FFFFFF;
+  margin-bottom: 18px;
   -webkit-animation: tvspin 0.8s linear infinite;
   animation: tvspin 0.8s linear infinite;
 }
@@ -338,27 +728,27 @@
   to { transform: rotate(360deg); }
 }
 .room-live-pill {
-  padding: 8px 18px;
-  border-radius: 12px;
-  background: rgba(145, 70, 255, 0.2);
-  border: 1px solid rgba(191, 148, 255, 0.45);
-  color: #e4d8ff;
-  font-size: 16px;
+  padding: 8px 16px;
+  border-radius: 11px;
+  background: #1F1838;
+  border: 1px solid rgba(167, 139, 250, 0.45);
+  color: #E4D8FF;
+  font-size: 15px;
   font-weight: 800;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 .standby-title {
-  font-size: 36px;
+  font-size: 32px;
   font-weight: 900;
-  color: #ffffff;
-  margin-bottom: 10px;
+  color: #FFFFFF;
+  margin-bottom: 8px;
 }
 .standby-sub {
-  font-size: 18px;
-  color: #bcbcc8;
-  max-width: 680px;
-  line-height: 1.5;
-  margin-bottom: 26px;
+  font-size: 17px;
+  color: #B6BCCF;
+  max-width: 640px;
+  line-height: 1.46;
+  margin-bottom: 24px;
 }
 .standby-btn-row {
   display: -webkit-flex;
@@ -369,18 +759,18 @@
   justify-content: center;
 }
 .standby-btn-row > * {
-  margin: 8px 10px;
+  margin: 6px 8px;
 }
 
-/* HUD & Bottom Dock */
+/* HUD & Contextual Bottom Dock */
 .hud-logo-wrap {
   display: none;
-  width: 72px;
-  height: 46px;
-  border-radius: 12px;
-  background: rgba(16, 18, 28, 0.9);
-  border: 1.5px solid rgba(255, 255, 255, 0.22);
-  padding: 5px 10px;
+  width: 68px;
+  height: 44px;
+  border-radius: 11px;
+  background: #141724;
+  border: 1.5px solid rgba(255, 255, 255, 0.2);
+  padding: 4px 8px;
   -webkit-align-items: center;
   align-items: center;
   -webkit-justify-content: center;
@@ -390,7 +780,7 @@
 }
 .hud-logo-img {
   max-width: 100%;
-  max-height: 34px;
+  max-height: 32px;
   object-fit: contain;
 }
 #player-hud {
@@ -398,8 +788,8 @@
   top: 0;
   left: 0;
   right: 0;
-  padding: 28px 48px 48px 48px;
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0) 100%);
+  padding: 24px 44px 42px 44px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0) 100%);
   display: -webkit-flex;
   display: flex;
   -webkit-align-items: center;
@@ -407,7 +797,7 @@
   -webkit-justify-content: space-between;
   justify-content: space-between;
   z-index: 25;
-  transition: opacity 0.22s ease;
+  transition: opacity 0.2s ease;
 }
 #player-hud.hidden-hud,
 #player-bottom-dock.hidden-hud {
@@ -421,20 +811,20 @@
   align-items: center;
   min-width: 0;
 }
-.hud-left-cluster > * { margin-right: 18px; }
+.hud-left-cluster > * { margin-right: 16px; }
 .hud-meta-title {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 900;
-  color: #ffffff;
-  line-height: 1.22;
-  max-width: 740px;
+  color: #FFFFFF;
+  line-height: 1.2;
+  max-width: 720px;
   word-break: break-word;
 }
 .hud-meta-sub {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
-  color: #d4d4dc;
-  margin-top: 4px;
+  color: #C8CDDF;
+  margin-top: 3px;
 }
 .hud-controls {
   display: -webkit-flex;
@@ -443,39 +833,46 @@
   align-items: center;
 }
 .hud-controls > * { margin-left: 12px; }
+.hud-clock {
+  font-size: 20px;
+  font-weight: 800;
+  color: #E4E6F0;
+  font-variant-numeric: tabular-nums;
+  padding: 0 8px;
+}
 
 #player-bottom-dock {
   position: absolute;
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 40px 48px 28px 48px;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.96) 0%, rgba(0, 0, 0, 0.7) 68%, rgba(0, 0, 0, 0) 100%);
+  padding: 36px 44px 24px 44px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.72) 68%, rgba(0, 0, 0, 0) 100%);
   display: -webkit-flex;
   display: flex;
   -webkit-flex-direction: column;
   flex-direction: column;
   z-index: 26;
-  transition: opacity 0.22s ease;
+  transition: opacity 0.2s ease;
 }
 .dock-progress-row {
   display: -webkit-flex;
   display: flex;
   -webkit-align-items: center;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 .dock-time-label {
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
   font-weight: 800;
-  color: #ededf5;
+  color: #EAECF4;
   min-width: 68px;
 }
 .dock-progress-track {
   -webkit-flex: 1;
   flex: 1;
-  height: 7px;
+  height: 6px;
   border-radius: 99px;
   background: rgba(255, 255, 255, 0.2);
   margin: 0 14px;
@@ -485,11 +882,11 @@
   width: 0%;
   height: 100%;
   border-radius: 99px;
-  background: linear-gradient(90deg, #8B5CF6 0%, #e9d5ff 100%);
+  background: #8B5CF6;
 }
 .dock-progress-fill.live-fill {
   width: 100%;
-  background: linear-gradient(90deg, #dc2626 0%, #f87171 100%);
+  background: #DC2626;
 }
 .dock-buttons-row {
   display: -webkit-flex;
@@ -513,24 +910,23 @@
 #tv-toast {
   display: none;
   position: absolute;
-  top: 96px;
+  top: 86px;
   left: 50%;
   -webkit-transform: translateX(-50%);
   transform: translateX(-50%);
-  padding: 14px 28px;
-  border-radius: 16px;
-  background: rgba(14, 16, 26, 0.96);
+  padding: 12px 24px;
+  border-radius: 14px;
+  background: #0E1018;
   border: 1.5px solid rgba(255, 255, 255, 0.28);
-  color: #ffffff;
-  font-size: 18px;
+  color: #FFFFFF;
+  font-size: 17px;
   font-weight: 800;
   z-index: 55;
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.85);
 }
 #unmute-banner {
   display: none;
   position: absolute;
-  bottom: 136px;
+  bottom: 128px;
   left: 50%;
   -webkit-transform: translateX(-50%);
   transform: translateX(-50%);
@@ -539,7 +935,7 @@
 #fs-prompt-banner {
   display: none;
   position: fixed;
-  bottom: 40px;
+  bottom: 36px;
   left: 50%;
   -webkit-transform: translateX(-50%);
   transform: translateX(-50%);
@@ -548,34 +944,33 @@
 #ota-update-banner {
   display: none;
   position: fixed;
-  bottom: 24px;
-  right: 48px;
+  bottom: 22px;
+  right: 40px;
   z-index: 60;
-  padding: 14px 20px;
-  border-radius: 16px;
-  background: rgba(20, 20, 28, 0.96);
-  border: 1.5px solid rgba(145, 70, 255, 0.55);
-  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.85);
+  padding: 12px 18px;
+  border-radius: 14px;
+  background: #0E1018;
+  border: 1.5px solid #8B5CF6;
   -webkit-align-items: center;
   align-items: center;
 }
 #ota-update-banner span {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
-  color: #ffffff;
+  color: #FFFFFF;
   margin-right: 14px;
 }
 #ota-update-banner button {
-  height: 44px;
+  height: 40px;
   font-size: 14px;
-  padding: 0 18px;
+  padding: 0 16px;
 }
 #reactions-layer {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 40px;
-  height: 220px;
+  bottom: 38px;
+  height: 200px;
   pointer-events: none;
   z-index: 28;
   overflow: hidden;
@@ -583,36 +978,40 @@
 .tv-reaction {
   position: absolute;
   bottom: 0;
-  font-size: 42px;
+  font-size: 40px;
   text-align: center;
   transition: all 2.4s ease-out;
 }
 .tv-reaction span {
   display: block;
-  font-size: 13px;
-  color: #ffffff;
-  background: rgba(0, 0, 0, 0.72);
-  padding: 3px 9px;
+  font-size: 12px;
+  color: #FFFFFF;
+  background: rgba(0, 0, 0, 0.78);
+  padding: 3px 8px;
   border-radius: 6px;
 }
 
 @media (max-width: 1100px) {
-  #tv-hub-screen,
-  #pairing-screen { padding: 16px 22px; }
-  .hub-topbar,
-  .hub-left-cluster {
-    -webkit-flex-wrap: wrap;
-    flex-wrap: wrap;
+  .tv-main-stage { padding: 14px 18px 0 18px; }
+  #pairing-screen { padding: 16px 22px; overflow-y: auto; }
+  .pairing-split-stage {
+    -webkit-flex-direction: column;
+    flex-direction: column;
   }
-  .hub-nav-pills { margin-top: 10px; max-width: 100%; }
-  .tv-hero-title { font-size: 30px; }
-  .main-heading { font-size: 28px; }
+  .pairing-left-panel,
+  .pairing-right-panel {
+    width: 100%;
+    padding-right: 0;
+    margin-bottom: 18px;
+  }
+  .tv-hero-title { font-size: 28px; }
+  .main-heading { font-size: 26px; }
   .digit-tile {
-    width: 78px;
-    height: 100px;
-    font-size: 50px;
-    margin: 0 6px;
-    border-radius: 16px;
+    width: 68px;
+    height: 90px;
+    font-size: 42px;
+    margin-right: 8px;
+    border-radius: 14px;
   }
   .steps-footer {
     -webkit-flex-direction: column;
@@ -620,5 +1019,6 @@
   }
   .step-card { width: 100%; margin-bottom: 10px; }
   .ep-tile-btn { width: 48%; }
-  .tv-card.channel-card { width: 270px; }
+  .tv-card.channel-card { width: 256px; }
+  #tv-zap-osd { min-width: 0; left: 16px; right: 16px; bottom: 20px; }
 }

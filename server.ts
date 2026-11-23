@@ -98,6 +98,7 @@ import { workerBridge } from './server/services/workerBridge.ts';
 import { roomPubSubBridge } from './server/services/roomPubSubBridge.ts';
 import { registerAdminRoutes } from './server/routes/adminRoutes.ts';
 import { registerTizenRoutes } from './server/routes/tizenRoutes.ts';
+import { getTvBuildSignature } from './server/utils/tvBuildSignature.ts';
 
 // Prefer IPv4 to avoid transient container IPv6 socket resets with upstream CDNs
 dns.setDefaultResultOrder('ipv4first');
@@ -344,14 +345,38 @@ app.get('/music-manifest.webmanifest', (_req, res) => {
 });
 
 function sendSmartTvReceiverHtml(res: express.Response) {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
   const publicPath = path.resolve(__dirname, 'public', 'tv-receiver.html');
   const distPath = path.resolve(__dirname, 'dist', 'tv-receiver.html');
   const target = fs.existsSync(publicPath) ? publicPath : distPath;
-  res.sendFile(target);
+  if (!fs.existsSync(target)) {
+    res.status(404).type('text/plain').send('TV receiver not found');
+    return;
+  }
+  try {
+    const sig = getTvBuildSignature(__dirname);
+    let html = fs.readFileSync(target, 'utf8');
+    const buildMetaTag = `<script>window.__RIFFAN_TV_BUILD__=${JSON.stringify(sig)};window.__RIFFAN_TV_AUTO_UPDATE__=true;</script>`;
+    html = html
+      .replace('<head>', `<head>\n    ${buildMetaTag}`)
+      .replace(/((?:href|src)=["'])(\/tv\/[^"'?]+\.(?:css|js))(["'])/gi, `$1$2?v=${sig}$3`)
+      .replace(/((?:href|src)=["'])(\/vendor\/hls\.min\.js)(["'])/gi, `$1$2?v=${sig}$3`);
+    res.status(200).type('html').send(html);
+  } catch {
+    res.sendFile(target);
+  }
 }
+
+app.use('/tv', (_req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+  next();
+});
 
 app.get(['/tv', '/tv/'], (_req, res) => {
   sendSmartTvReceiverHtml(res);

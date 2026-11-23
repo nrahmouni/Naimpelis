@@ -2,6 +2,7 @@ export const CLIENT_APP_VERSION = '3.3.0';
 export const CLIENT_APK_VERSION_CODE = 302;
 
 const VERSION_STORAGE_KEY = 'naim_cine_client_version_v1';
+const BUILD_STORAGE_KEY = 'naim_cine_web_build_v1';
 const APK_VERSION_STORAGE_KEY = 'naim_cine_native_apk_code_v1';
 const APK_FLAVOR_STORAGE_KEY = 'naim_cine_native_apk_flavor_v1';
 const AUTO_RELOAD_GUARD_KEY = 'naim_cine_auto_reload_ts_v1';
@@ -11,6 +12,7 @@ export interface AppLatestManifest {
   versionName?: string;
   web?: {
     version?: string;
+    build?: string;
     minReloadPrompt?: boolean;
   };
   mobile?: {
@@ -207,6 +209,35 @@ export async function checkRemoteAppVersion(
           versionName: String(targetMeta.versionName || remoteWebVersion),
           apkUrl: targetMeta.apkUrl,
         });
+      }
+    }
+
+    const remoteBuild = String(data?.web?.build || '').trim();
+    if (remoteBuild) {
+      let prevBuild = '';
+      try {
+        prevBuild = localStorage.getItem(BUILD_STORAGE_KEY) || '';
+      } catch {
+        prevBuild = '';
+      }
+      if (!prevBuild) {
+        try {
+          localStorage.setItem(BUILD_STORAGE_KEY, remoteBuild);
+        } catch {
+          // ignore
+        }
+      } else if (remoteBuild !== prevBuild) {
+        if (opts.shouldDeferReload?.()) {
+          opts.onDeferredUpdate?.(remoteBuild);
+          return;
+        }
+        try {
+          localStorage.setItem(BUILD_STORAGE_KEY, remoteBuild);
+        } catch {
+          // ignore
+        }
+        await clearStaleCachesAndReload();
+        return;
       }
     }
 

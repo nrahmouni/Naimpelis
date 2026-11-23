@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Riffan TV — Smart TV 1080p (Google TV & Samsung Tizen)</title>
+    <title>Riffan TV — Smart TV 1080p (Samsung Tizen & Google TV)</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -17,55 +17,127 @@
     <div class="ambient-glow"></div>
 
     <!-- =================================================================== -->
-    <!-- SCREEN 0: APPLE TV / NETFLIX 10-FOOT SMART TV HUB (D-PAD READY)     -->
+    <!-- SCREEN 0: TV v2 COLLAPSIBLE LEFT RAIL + 10-FOOT BROADCAST STAGE     -->
     <!-- =================================================================== -->
     <div id="tv-hub-screen">
-      <div class="hub-topbar">
-        <div class="hub-left-cluster">
-          <div class="hub-brand">
-            <div class="brand-logo-box">
-              <img src="/icon.svg" alt="Riffan TV" width="32" height="32" class="brand-logo-img" />
-            </div>
-            <div>
-              <div class="brand-title">
-                RIFFAN <span class="accent">TV</span>
-                <span class="tag">Google TV</span>
-              </div>
-              <div class="brand-sub" id="hub-version-label">Smart TV Pro · TDT · DAZN · Movistar+</div>
-            </div>
+      <aside id="tv-side-rail" class="tv-side-rail" aria-label="Menú principal TV">
+        <div class="rail-brand">
+          <div class="brand-logo-box">
+            <img src="/icon.svg" alt="Riffan TV" width="28" height="28" class="brand-logo-img" />
           </div>
-
-          <div class="hub-nav-pills" id="hub-nav-tabs">
-            <button type="button" class="hub-tab-btn search-left-btn" data-tab="search" tabindex="0">🔍 Buscar</button>
-            <button type="button" class="hub-tab-btn active" data-tab="home" tabindex="0">Inicio</button>
-            <button type="button" class="hub-tab-btn" data-tab="tdt" tabindex="0">TDT · DAZN · M+</button>
-            <button type="button" class="hub-tab-btn" data-tab="releases" tabindex="0">Estrenos</button>
-            <button type="button" class="hub-tab-btn" data-tab="movies" tabindex="0">Cine</button>
-            <button type="button" class="hub-tab-btn" data-tab="series" tabindex="0">Series</button>
-            <button type="button" class="hub-tab-btn" data-tab="anime" tabindex="0">Anime</button>
+          <div class="rail-brand-text">
+            <div class="brand-title">RIFFAN <span class="accent">TV</span></div>
+            <div class="brand-platform-tag" id="rail-platform-tag">Smart TV</div>
           </div>
         </div>
 
-        <div class="hub-right-actions">
-          <button type="button" id="btn-hub-voice" class="tv-btn-primary hub-action-voice" tabindex="0" aria-label="Asistente por Voz">🎤 Voz AI</button>
-          <button type="button" id="btn-hub-lang" class="tv-btn" tabindex="0" aria-label="Idioma">🌐 ES</button>
-          <button type="button" id="btn-go-pairing" class="pair-pill-btn" tabindex="0">
-            <span id="hub-pair-label">📺 Móvil · </span><strong id="hub-pair-code">••••</strong>
+        <nav class="rail-nav-list" id="hub-nav-tabs">
+          <button type="button" class="hub-tab-btn rail-item search-left-btn" data-tab="search" tabindex="0">
+            <span class="rail-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="20" y1="20" x2="16.2" y2="16.2"/></svg>
+            </span>
+            <span class="rail-label" data-i18n-tab="search">Buscar</span>
           </button>
-          <button type="button" id="btn-hub-fs" class="tv-btn-fullscreen" tabindex="0">
-            ⛶ Pantalla
+
+          <button type="button" class="hub-tab-btn rail-item active" data-tab="home" tabindex="0">
+            <span class="rail-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>
+            </span>
+            <span class="rail-label" data-i18n-tab="home">Inicio</span>
+          </button>
+
+          <button type="button" class="hub-tab-btn rail-item" data-tab="tdt" tabindex="0">
+            <span class="rail-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="14" rx="2"/><polyline points="8 2 12 6 16 2"/></svg>
+            </span>
+            <span class="rail-label" data-i18n-tab="tdt">TV en Directo</span>
+          </button>
+
+          <button type="button" class="hub-tab-btn rail-item" data-tab="releases" tabindex="0">
+            <span class="rail-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.1 8.3 22 9.3 17 14.1 18.2 21 12 17.7 5.8 21 7 14.1 2 9.3 8.9 8.3 12 2"/></svg>
+            </span>
+            <span class="rail-label" data-i18n-tab="releases">Estrenos</span>
+          </button>
+
+          <button type="button" class="hub-tab-btn rail-item" data-tab="movies" tabindex="0">
+            <span class="rail-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><line x1="7" y1="4" x2="7" y2="20"/><line x1="17" y1="4" x2="17" y2="20"/><line x1="2" y1="9" x2="7" y2="9"/><line x1="17" y1="9" x2="22" y2="9"/><line x1="2" y1="15" x2="7" y2="15"/><line x1="17" y1="15" x2="22" y2="15"/></svg>
+            </span>
+            <span class="rail-label" data-i18n-tab="movies">Cine</span>
+          </button>
+
+          <button type="button" class="hub-tab-btn rail-item" data-tab="series" tabindex="0">
+            <span class="rail-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="12" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            </span>
+            <span class="rail-label" data-i18n-tab="series">Series</span>
+          </button>
+
+          <button type="button" class="hub-tab-btn rail-item" data-tab="anime" tabindex="0">
+            <span class="rail-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 4 20 12 6 20 6 4"/></svg>
+            </span>
+            <span class="rail-label" data-i18n-tab="anime">Anime</span>
+          </button>
+        </nav>
+
+        <div class="rail-footer">
+          <button type="button" id="btn-hub-voice" class="rail-item rail-util-btn" tabindex="0" aria-label="Asistente por Voz">
+            <span class="rail-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/></svg>
+            </span>
+            <span class="rail-label" id="lbl-rail-voice">Voz IA</span>
+          </button>
+
+          <button type="button" id="btn-go-pairing" class="rail-item rail-util-btn" tabindex="0">
+            <span class="rail-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="2"/><line x1="11" y1="18" x2="13" y2="18"/></svg>
+            </span>
+            <span class="rail-label" id="lbl-rail-pair">Conectar Móvil</span>
+          </button>
+
+          <button type="button" id="btn-hub-lang" class="rail-item rail-util-btn" tabindex="0" aria-label="Idioma">
+            <span class="rail-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><line x1="3" y1="12" x2="21" y2="12"/><path d="M12 3a14 14 0 0 1 0 18"/><path d="M12 3a14 14 0 0 0 0 18"/></svg>
+            </span>
+            <span class="rail-label" id="lbl-rail-lang">Idioma · ES</span>
+          </button>
+
+          <button type="button" id="btn-hub-fs" class="rail-item rail-util-btn" tabindex="0">
+            <span class="rail-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+            </span>
+            <span class="rail-label" id="lbl-rail-fs">Pantalla</span>
           </button>
         </div>
-      </div>
+      </aside>
 
-      <div class="hub-scroll-body" id="hub-scroll-body">
-        <div id="hub-dynamic-content">
-          <div id="hub-initial-loading" class="hub-loading-state">
-            <div class="tv-spinner"></div>
-            <div>Cargando TDT España, DAZN, Movistar+ y cartelera 1080p...</div>
+      <main id="tv-main-stage" class="tv-main-stage">
+        <header class="stage-topbar">
+          <div class="stage-heading-group">
+            <div class="stage-title" id="tv-stage-title">Inicio</div>
+            <div class="stage-meta-line" id="hub-version-label">Smart TV · TDT · DAZN · Movistar+</div>
+          </div>
+
+          <div class="stage-status-right">
+            <button type="button" id="btn-stage-pair-shortcut" class="stage-pair-readout" tabindex="0">
+              <span id="hub-pair-label">Móvil · </span><strong id="hub-pair-code">••••</strong>
+            </button>
+            <div class="stage-sync-meta" id="tv-autoupdate-pill">Auto-sync</div>
+            <div class="stage-clock" id="tv-live-clock">--:--</div>
+          </div>
+        </header>
+
+        <div class="hub-scroll-body" id="hub-scroll-body">
+          <div id="hub-dynamic-content">
+            <div id="hub-initial-loading" class="hub-loading-state">
+              <div class="tv-spinner"></div>
+              <div id="hub-loading-text">Cargando TDT España, DAZN, Movistar+ y cartelera 1080p...</div>
+            </div>
           </div>
         </div>
-      </div>
+      </main>
     </div>
 
     <!-- =================================================================== -->
@@ -83,7 +155,7 @@
             </div>
           </div>
           <button type="button" id="btn-close-series-modal" class="tv-btn" tabindex="0">
-            ✕ Volver
+            Volver
           </button>
         </div>
 
@@ -110,16 +182,17 @@
             <h2 class="voice-modal-heading">Dime qué canal o película quieres ver</h2>
           </div>
           <div class="voice-head-actions">
-            <button type="button" id="btn-tv-voice-mic" class="tv-btn-primary" tabindex="0">🎤 Hablar</button>
-            <button type="button" id="btn-close-voice-modal" class="tv-btn" tabindex="0">✕ Volver</button>
+            <button type="button" id="btn-tv-voice-mic" class="tv-btn-primary" tabindex="0">Hablar</button>
+            <button type="button" id="btn-close-voice-modal" class="tv-btn" tabindex="0">Volver</button>
           </div>
         </div>
-        <div class="voice-reply-banner" id="tv-voice-reply">¡Hola! Pídeme DAZN LaLiga, La 1, Movistar Plus+ o cualquier película.</div>
+        <div class="voice-reply-banner" id="tv-voice-reply">¡Hola! Pídeme DAZN LaLiga, La 1, Antena 3, Movistar Plus+ o cualquier película.</div>
         <form id="tv-voice-form" class="tv-search-row">
-          <input type="text" id="tv-voice-input" class="tv-search-input" placeholder="Ej: Pon DAZN LaLiga / Pon Movistar LaLiga / Películas de estreno" tabindex="0" />
+          <input type="text" id="tv-voice-input" class="tv-search-input" placeholder="Ej: Pon Antena 3 / Pon DAZN LaLiga / Películas de estreno" tabindex="0" />
           <button type="submit" class="tv-btn-primary" tabindex="0">Buscar</button>
         </form>
         <div class="tv-chips-row">
+          <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Ponme Antena 3" tabindex="0">Antena 3</button>
           <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Quiero ver DAZN LaLiga" tabindex="0">DAZN LaLiga</button>
           <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Ponme Movistar Plus" tabindex="0">Movistar Plus+</button>
           <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Ponme La 1" tabindex="0">La 1 HD</button>
@@ -130,13 +203,13 @@
     </div>
 
     <!-- =================================================================== -->
-    <!-- SCREEN 1: 4-DIGIT SAMSUNG / LG / GOOGLE TV PAIRING                  -->
+    <!-- SCREEN 1: QR + 4-DIGIT PAIRING & AUTO-UPDATE CONTROL                -->
     <!-- =================================================================== -->
     <div id="pairing-screen">
       <div class="tv-header">
         <div class="brand-row">
           <div class="brand-logo-box">
-            <img src="/icon.svg" alt="Riffan TV" width="34" height="34" class="brand-logo-img" />
+            <img src="/icon.svg" alt="Riffan TV" width="32" height="32" class="brand-logo-img" />
           </div>
           <div>
             <div class="brand-title">
@@ -144,16 +217,16 @@
               <span class="tag">Smart TV</span>
             </div>
             <div class="brand-sub" id="host-url-label">
-              Receptor 1080p · Google TV, Samsung Tizen y LG webOS
+              Receptor 1080p · Samsung Tizen, Google TV y LG webOS
             </div>
           </div>
         </div>
 
         <div class="status-row">
           <div id="conn-badge" class="status-badge connecting">Conectando...</div>
-          <button type="button" id="btn-pairing-lang" class="tv-btn" tabindex="0" aria-label="Idioma">🌐 ES</button>
+          <button type="button" id="btn-pairing-lang" class="tv-btn" tabindex="0" aria-label="Idioma">ES</button>
           <button type="button" id="btn-back-to-hub" class="tv-btn-primary" tabindex="0">
-            ← Volver al Menú TV
+            Volver al Menú TV
           </button>
           <button type="button" id="btn-web-mode" class="tv-btn" tabindex="0">
             Portada Web
@@ -161,30 +234,36 @@
         </div>
       </div>
 
-      <div class="center-stage">
-        <div class="eyebrow" id="pair-eyebrow">VINCULACIÓN RÁPIDA EN 5 SEGUNDOS</div>
-        <h1 class="main-heading" id="pair-heading">Introduce estos 4 números en tu móvil</h1>
-        <p class="sub-heading" id="pair-sub">
-          Abre tu sala de <strong>Riffan TV</strong> en el teléfono, toca el botón
-          <strong>Smart TV</strong> y escribe este código:
-        </p>
+      <div class="pairing-split-stage">
+        <div class="pairing-left-panel">
+          <div class="eyebrow" id="pair-eyebrow">VINCULACIÓN RÁPIDA EN 5 SEGUNDOS</div>
+          <h1 class="main-heading" id="pair-heading">Escanea el QR o escribe el código en tu móvil</h1>
+          <p class="sub-heading" id="pair-sub">
+            Abre tu sala de <strong>Riffan TV</strong> en el teléfono, toca el botón
+            <strong>Smart TV</strong> y escribe este código:
+          </p>
 
-        <div class="digits-row">
-          <div class="digit-tile" id="d0">•</div>
-          <div class="digit-tile" id="d1">•</div>
-          <div class="digit-tile" id="d2">•</div>
-          <div class="digit-tile" id="d3">•</div>
+          <div class="pairing-visual-row">
+            <div class="qr-card-frame" id="pairing-qr-box" aria-label="Código QR de vinculación"></div>
+            <div class="digits-stack">
+              <div class="digits-row">
+                <div class="digit-tile" id="d0">•</div>
+                <div class="digit-tile" id="d1">•</div>
+                <div class="digit-tile" id="d2">•</div>
+                <div class="digit-tile" id="d3">•</div>
+              </div>
+              <div id="paired-banner" class="paired-banner"></div>
+            </div>
+          </div>
         </div>
 
-        <div id="paired-banner" class="paired-banner"></div>
-
-        <div id="pairing-controls">
+        <div class="pairing-right-panel" id="pairing-controls">
           <div class="actions-row">
             <button type="button" id="btn-unlock-audio" class="tv-btn-primary" tabindex="0">
-              🔊 Activar Sonido + Pantalla Completa
+              Activar Sonido + Pantalla
             </button>
             <button type="button" id="btn-pairing-fs" class="tv-btn-fullscreen" tabindex="0">
-              ⛶ Pantalla Completa TV
+              Pantalla Completa TV
             </button>
             <button type="button" id="btn-new-code" class="tv-btn" tabindex="0">
               Nuevo código
@@ -209,6 +288,16 @@
               </button>
             </div>
           </form>
+
+          <div class="tv-ota-status-card" id="tv-ota-status-box">
+            <div class="ota-status-copy">
+              <div class="ota-status-title" id="tv-ota-status-title">Actualizaciones automáticas activas</div>
+              <div class="ota-status-sub" id="tv-ota-status-sub">Sin reinstalar en Samsung Tizen · Comprobando versión...</div>
+            </div>
+            <button type="button" id="btn-check-tv-update" class="tv-btn" tabindex="0">
+              Buscar actualización
+            </button>
+          </div>
         </div>
       </div>
 
@@ -238,7 +327,7 @@
     </div>
 
     <!-- =================================================================== -->
-    <!-- SCREEN 2: FULL-SCREEN 1080P PLAYER (LOCAL + PAIRED PARTY)           -->
+    <!-- SCREEN 2: FULL-SCREEN 1080P PLAYER + LIVE MINI-GUIDE & ZAP OSD      -->
     <!-- =================================================================== -->
     <div id="player-screen">
       <video
@@ -263,6 +352,50 @@
         ></iframe>
       </div>
 
+      <!-- In-player translucent-free Obsidian Slide-Out Mini-Guide Drawer -->
+      <aside id="tv-miniguide-drawer" aria-label="Guía rápida de canales">
+        <div class="mg-head">
+          <div>
+            <div class="mg-kicker">TV EN DIRECTO</div>
+            <div class="mg-title" id="mg-drawer-title">Guía de Canales</div>
+          </div>
+          <button type="button" id="btn-close-miniguide" class="tv-btn mg-close-btn" tabindex="0">Cerrar</button>
+        </div>
+        <div class="mg-filter-row" id="mg-filter-row">
+          <button type="button" class="mg-filter-btn active" data-mg-filter="es_tdt" tabindex="0">TDT ES</button>
+          <button type="button" class="mg-filter-btn" data-mg-filter="es_sports" tabindex="0">Deportes</button>
+          <button type="button" class="mg-filter-btn" data-mg-filter="es_docs_cine" tabindex="0">Cine/Doc</button>
+          <button type="button" class="mg-filter-btn" data-mg-filter="all" tabindex="0">Todos</button>
+        </div>
+        <div class="mg-channel-list" id="mg-channel-list"></div>
+      </aside>
+
+      <!-- Top-Right Numeric Dial OSD (0-9 on remote) -->
+      <div id="tv-dial-osd" aria-live="polite">
+        <span class="dial-osd-kicker">DIAL</span>
+        <strong id="tv-dial-osd-num">0</strong>
+      </div>
+
+      <!-- Bottom-Left Broadcast Zapping Card (CH+ / CH- / Up / Down) -->
+      <div id="tv-zap-osd">
+        <div class="zap-left">
+          <div class="zap-dial-num" id="zap-dial-num">01</div>
+          <div class="zap-logo-box" id="zap-logo-box">
+            <img id="zap-logo-img" src="/icon.svg" alt="" referrerpolicy="no-referrer" />
+          </div>
+        </div>
+        <div class="zap-body">
+          <div class="zap-top-row">
+            <span class="zap-channel-name" id="zap-channel-name">Canal</span>
+            <span class="zap-live-tag" id="zap-live-tag">EN DIRECTO</span>
+            <span class="zap-signal-meta" id="zap-signal-meta">Señal 1</span>
+          </div>
+          <div class="zap-now-title" id="zap-now-title">Emisión continua HD</div>
+          <div class="zap-progress-track"><div class="zap-progress-fill" id="zap-progress-fill"></div></div>
+          <div class="zap-next-title" id="zap-next-title"></div>
+        </div>
+      </div>
+
       <div id="standby-overlay">
         <div class="standby-channel-badge" id="standby-channel-badge">
           <img id="standby-logo-img" class="standby-logo-img" src="/icon.svg" alt="" referrerpolicy="no-referrer" />
@@ -275,10 +408,10 @@
         </p>
         <div class="standby-btn-row">
           <button type="button" id="btn-standby-retry" class="tv-btn-primary" style="display: none;" tabindex="0">
-            ↻ Probar otra señal
+            Probar otra señal
           </button>
           <button type="button" id="btn-standby-exit" class="tv-btn" tabindex="0">
-            ← Volver al Menú TV
+            Volver al Menú TV
           </button>
         </div>
       </div>
@@ -286,7 +419,7 @@
       <div id="player-hud">
         <div class="hud-left-cluster">
           <button type="button" id="btn-hud-exit" class="tv-btn" tabindex="0">
-            ← Volver
+            Volver
           </button>
           <div class="hud-logo-wrap" id="hud-logo-wrap">
             <img id="hud-logo-img" class="hud-logo-img" src="/icon.svg" alt="" referrerpolicy="no-referrer" />
@@ -297,8 +430,9 @@
           </div>
         </div>
         <div class="hud-controls">
+          <div class="hud-clock" id="player-hud-clock">--:--</div>
           <button type="button" id="btn-hud-reload" class="tv-btn" tabindex="0">
-            ↻ Resincronizar
+            Resincronizar
           </button>
         </div>
       </div>
@@ -313,26 +447,27 @@
         </div>
         <div class="dock-buttons-row">
           <div class="dock-btn-group">
-            <button type="button" id="btn-dock-chprev" class="tv-btn" style="display: none;" tabindex="0">‹ Canal Ant.</button>
-            <button type="button" id="btn-dock-rew" class="tv-btn" tabindex="0">« -15s</button>
-            <button type="button" id="btn-hud-playpause" class="tv-btn-primary" tabindex="0">⏸ Pausar</button>
-            <button type="button" id="btn-dock-ff" class="tv-btn" tabindex="0">+15s »</button>
-            <button type="button" id="btn-dock-chnext" class="tv-btn" style="display: none;" tabindex="0">Canal Sig. ›</button>
-            <button type="button" id="btn-dock-audio" class="tv-btn" style="display: none;" tabindex="0">🌐 Pista</button>
+            <button type="button" id="btn-dock-guide" class="tv-btn" style="display: none;" tabindex="0">Guía TV</button>
+            <button type="button" id="btn-dock-chprev" class="tv-btn" style="display: none;" tabindex="0">Canal Ant.</button>
+            <button type="button" id="btn-dock-rew" class="tv-btn" tabindex="0">-15s</button>
+            <button type="button" id="btn-hud-playpause" class="tv-btn-primary" tabindex="0">Pausar</button>
+            <button type="button" id="btn-dock-ff" class="tv-btn" tabindex="0">+15s</button>
+            <button type="button" id="btn-dock-chnext" class="tv-btn" style="display: none;" tabindex="0">Canal Sig.</button>
+            <button type="button" id="btn-dock-audio" class="tv-btn" style="display: none;" tabindex="0">Pista</button>
           </div>
           <div class="dock-btn-group">
-            <button type="button" id="btn-dock-voldown" class="tv-btn" tabindex="0">🔉 -</button>
-            <button type="button" id="btn-dock-mute" class="tv-btn" tabindex="0">🔇 Silenciar</button>
-            <button type="button" id="btn-dock-volup" class="tv-btn" tabindex="0">🔊 +</button>
-            <button type="button" id="btn-dock-aspect" class="tv-btn" tabindex="0">↔ Original</button>
-            <button type="button" id="btn-dock-fs" class="tv-btn-fullscreen" tabindex="0">⛶ Pantalla</button>
+            <button type="button" id="btn-dock-voldown" class="tv-btn dock-vod-vol" tabindex="0">Vol -</button>
+            <button type="button" id="btn-dock-mute" class="tv-btn" tabindex="0">Silenciar</button>
+            <button type="button" id="btn-dock-volup" class="tv-btn dock-vod-vol" tabindex="0">Vol +</button>
+            <button type="button" id="btn-dock-aspect" class="tv-btn" tabindex="0">Original</button>
+            <button type="button" id="btn-dock-fs" class="tv-btn-fullscreen" tabindex="0">Pantalla</button>
           </div>
         </div>
       </div>
 
       <div id="unmute-banner">
         <button type="button" id="btn-unmute-now" class="tv-btn-primary" tabindex="0">
-          🔊 Pulsa OK para activar Sonido
+          Pulsa OK para activar Sonido
         </button>
       </div>
 
@@ -342,14 +477,14 @@
 
     <div id="fs-prompt-banner">
       <button type="button" id="btn-confirm-remote-fs" class="tv-btn-primary" tabindex="0">
-        ⛶ Pulsa OK para Pantalla Completa
+        Pulsa OK para Pantalla Completa
       </button>
     </div>
 
     <div id="ota-update-banner">
-      <span id="ota-update-text">Nueva versión APK disponible</span>
+      <span id="ota-update-text">Nueva versión disponible</span>
       <button type="button" id="btn-ota-install" class="tv-btn-primary" tabindex="0">
-        Actualizar APK
+        Actualizar ahora
       </button>
     </div>
 

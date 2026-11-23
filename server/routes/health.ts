@@ -18,6 +18,7 @@ import {
 import { getTelemetryStorageStatus, persistQoeSample } from '../services/telemetryStore.ts';
 import { livePushHub } from '../services/livePushHub.ts';
 import { getMediaPlaneSnapshot } from '../services/mediaPlaneRouter.ts';
+import { getTvBuildSignature } from '../utils/tvBuildSignature.ts';
 
 export interface QoeSample {
   id: string;
@@ -230,9 +231,12 @@ export function registerOperationalRoutes(
 
   // In-App & Android Native OTA Manifest Endpoint (/api/app/latest)
   app.get('/api/app/latest', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
     const platformParam = String(req.query.platform || 'all').toLowerCase();
     const origin = deps.getPublicOrigin(req);
-    const cacheKey = `${origin}:${platformParam}`;
+    const tvBuild = getTvBuildSignature(ROOT_DIR);
+    const cacheKey = `${origin}:${platformParam}:${tvBuild}`;
     const cached = appReleaseCache.get(cacheKey);
     if (cached) {
       return res.json(cached);
@@ -280,7 +284,14 @@ export function registerOperationalRoutes(
       releasedAt: new Date().toISOString().slice(0, 10) + 'T12:00:00Z',
       web: {
         version: ENV.appVersionName,
+        build: tvBuild,
         minReloadPrompt: false,
+      },
+      tvWeb: {
+        version: ENV.appVersionName,
+        build: tvBuild,
+        checkIntervalMs: 45_000,
+        autoUpdate: true,
       },
       mobile: {
         packageName: ENV.androidMobilePkg,
@@ -327,7 +338,6 @@ export function registerOperationalRoutes(
     };
 
     appReleaseCache.set(cacheKey, payload);
-    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     return res.json(payload);
   });
 

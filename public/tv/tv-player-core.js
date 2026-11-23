@@ -248,7 +248,7 @@ function showStandbyError(titleStr, msgStr) {
   videoEl.style.display = 'none';
   if (standbySpinner) standbySpinner.style.display = 'none';
   if (btnStandbyRetry) {
-    btnStandbyRetry.style.display = (localTracks && localTracks.length > 1) ? 'inline-block' : 'none';
+    btnStandbyRetry.style.display = (localTracks && localTracks.length > 1) ? 'inline-flex' : 'none';
   }
   standbyOverlay.style.display = 'flex';
   standbyRoomPill.textContent = tvT('signalUnavailable');
@@ -269,7 +269,7 @@ function applyVideoState(vs, forceReload) {
   var targetSec = !isLive && vs.currentTime > 0 ? Number(vs.currentTime) : 0;
 
   hudTitle.textContent = vs.title || 'RIFFAN TV';
-  hudSub.textContent = vs.subtitle || (isPaired ? 'Sala ' + currentRoomId.toUpperCase() + ' · 1080p' : 'Smart TV 1080p');
+  hudSub.textContent = vs.subtitle || (isPaired ? tvT('roomPrefix') + currentRoomId.toUpperCase() + ' · 1080p' : 'Smart TV 1080p');
   var chLogo = vs.logoUrl || (activeLiveChannel && activeLiveChannel.logoUrl) || '';
   if (hudLogoWrap && hudLogoImg) {
     if (chLogo) {
@@ -336,7 +336,9 @@ function applyVideoState(vs, forceReload) {
   currentIsLive = isLive;
   autoFailoverLock = false;
   clearVideoWatchdog();
-  revealHud();
+  if (!isLive) {
+    revealHud();
+  }
 
   // Mode 1: YouTube Embed
   if (nextMode === 'youtube') {
