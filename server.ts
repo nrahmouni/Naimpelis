@@ -99,6 +99,7 @@ import { workerBridge } from './server/services/workerBridge.ts';
 import { roomPubSubBridge } from './server/services/roomPubSubBridge.ts';
 import { registerAdminRoutes } from './server/routes/adminRoutes.ts';
 import { registerTizenRoutes } from './server/routes/tizenRoutes.ts';
+import { registerWebOsRoutes } from './server/routes/webosRoutes.ts';
 import { getTvBuildSignature } from './server/utils/tvBuildSignature.ts';
 
 // Prefer IPv4 to avoid transient container IPv6 socket resets with upstream CDNs
@@ -372,7 +373,7 @@ function sendSmartTvReceiverHtml(res: express.Response) {
   }
 }
 
-app.use('/tv', (_req, res, next) => {
+app.use(['/tv', '/tvlg'], (_req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
@@ -380,16 +381,19 @@ app.use('/tv', (_req, res, next) => {
   next();
 });
 
-app.get(['/tv', '/tv/'], (_req, res) => {
+app.get(['/tv', '/tv/', '/tvlg', '/tvlg/'], (_req, res) => {
   sendSmartTvReceiverHtml(res);
 });
 
 app.get('/', (req, res, next) => {
-  if (req.query.web === '1' || req.query.tizen === '1' || req.query.room) {
+  if (req.query.web === '1' || req.query.tizen === '1' || req.query.webos === '1' || req.query.room) {
     return next();
   }
   const ua = String(req.headers['user-agent'] || '');
-  if (/SMART-TV|SmartTV|Tizen|Web0S|WebOS|NetCast|BRAVIA|Viera|VIDAA|HbbTV|AFTB|AFTT|AFTM|GoogleTV/i.test(ua)) {
+  if (/Web0S|WebOS|LGE|NetCast/i.test(ua)) {
+    return res.redirect(302, '/tvlg');
+  }
+  if (/SMART-TV|SmartTV|Tizen|BRAVIA|Viera|VIDAA|HbbTV|AFTB|AFTT|AFTM|GoogleTV/i.test(ua)) {
     return res.redirect(302, '/tv');
   }
   return next();
@@ -449,6 +453,7 @@ registerDetailsAndSubtitlesRoutes(app, {
 });
 
 registerTizenRoutes(app, __dirname);
+registerWebOsRoutes(app, __dirname);
 // ============================================================================
 // DOWNLOADABLE 100-POINT & 100-IMPROVEMENTS AUDIT REPORTS
 // ============================================================================

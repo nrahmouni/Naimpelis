@@ -1,4 +1,8 @@
 import { useEffect, useRef } from 'react';
+import {
+  isWebOsTvRuntime,
+  syncWebOsScreenSaver,
+} from './webosRuntime';
 
 export type TvRemoteAction =
   | 'UP'
@@ -135,7 +139,7 @@ export function syncTizenScreenSaver(preventSleep: boolean): void {
 
 export function isGoogleTvEnvironment(): boolean {
   if (typeof window === 'undefined') return false;
-  if (window.__NAIM_GOOGLE_TV__ || isTizenTvRuntime()) return true;
+  if (window.__NAIM_GOOGLE_TV__ || isTizenTvRuntime() || isWebOsTvRuntime()) return true;
   try {
     const params = new URLSearchParams(window.location.search);
     if (
@@ -450,12 +454,16 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
   useEffect(() => {
     const isTv = isGoogleTvEnvironment();
     const isTizen = isTizenTvRuntime();
+    const isWebOs = isWebOsTvRuntime();
     if (isTv) {
       document.documentElement.classList.add('tv-dpad-active', 'is-google-tv');
     }
     if (isTizen) {
       document.documentElement.classList.add('is-tizen-tv', 'tv-dpad-active');
       registerTizenRemoteKeys();
+    }
+    if (isWebOs) {
+      document.documentElement.classList.add('is-webos-tv', 'tv-dpad-active');
     }
 
     const onPointerMove = () => {
@@ -480,20 +488,24 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
         if (video.paused) {
           video.play().catch(() => {});
           syncTizenScreenSaver(true);
+          syncWebOsScreenSaver(true);
         } else {
           video.pause();
           syncTizenScreenSaver(false);
+          syncWebOsScreenSaver(false);
         }
         return true;
       }
       if (cmd === 'PLAY') {
         video.play().catch(() => {});
         syncTizenScreenSaver(true);
+        syncWebOsScreenSaver(true);
         return true;
       }
       if (cmd === 'PAUSE') {
         video.pause();
         syncTizenScreenSaver(false);
+        syncWebOsScreenSaver(false);
         return true;
       }
       if (cmd === 'STOP') {
@@ -506,6 +518,7 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
           }
         }
         syncTizenScreenSaver(false);
+        syncWebOsScreenSaver(false);
         return true;
       }
       if (cmd === 'FF') {
@@ -685,18 +698,20 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
       }
     };
 
-    // Keep Tizen TV screensaver disabled while any HTML5 <video> plays
+    // Keep Tizen / LG webOS TV screensaver disabled while any HTML5 <video> plays
     const onMediaPlayState = (e: Event) => {
       const target = e.target as HTMLElement | null;
       if (!target || target.tagName !== 'VIDEO') return;
       const video = target as HTMLVideoElement;
-      syncTizenScreenSaver(!video.paused && !video.ended);
+      const playing = !video.paused && !video.ended;
+      syncTizenScreenSaver(playing);
+      syncWebOsScreenSaver(playing);
     };
 
     // Recover TV focus gracefully if currently focused node unmounts
     let focusGuardTimer: number | null = null;
     const observer =
-      typeof MutationObserver !== 'undefined' && (isTv || isTizen)
+      typeof MutationObserver !== 'undefined' && (isTv || isTizen || isWebOs)
         ? new MutationObserver(() => {
             if (!document.documentElement.classList.contains('tv-dpad-active')) return;
             const cur = document.activeElement;
@@ -731,7 +746,7 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
     document.addEventListener('pause', onMediaPlayState, true);
     document.addEventListener('ended', onMediaPlayState, true);
 
-    if (isTv || isTizen) {
+    if (isTv || isTizen || isWebOs) {
       setTimeout(() => {
         window.__naimInitTvFocus?.();
       }, 350);
@@ -741,6 +756,7 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
       if (focusGuardTimer !== null) window.clearTimeout(focusGuardTimer);
       observer?.disconnect();
       syncTizenScreenSaver(false);
+      syncWebOsScreenSaver(false);
       window.removeEventListener('mousemove', onPointerMove);
       window.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('focusin', onFocusIn);

@@ -735,6 +735,8 @@ function applyPendingTvAutoUpdate(forceBuildSig, forceManualReload) {
   var targetUrl = baseTvPath + '?_upd=' + encodeURIComponent(nextBuild + '-' + Date.now());
   if (typeof isTizenDevice !== 'undefined' && isTizenDevice) {
     targetUrl += '&platform=tizen';
+  } else if (typeof isWebOsDevice !== 'undefined' && isWebOsDevice) {
+    targetUrl += '&platform=webos';
   }
   if (isPaired && currentRoomId) {
     targetUrl += '&room=' + encodeURIComponent(currentRoomId);
@@ -873,6 +875,8 @@ function forceHardTvAppUpdate() {
     var nextUrl = baseTvPath + '?_upd=force-' + encodeURIComponent(stamp + '-' + Date.now());
     if (typeof isTizenDevice !== 'undefined' && isTizenDevice) {
       nextUrl += '&platform=tizen';
+    } else if (typeof isWebOsDevice !== 'undefined' && isWebOsDevice) {
+      nextUrl += '&platform=webos';
     }
     if (isPaired && currentRoomId) {
       nextUrl += '&room=' + encodeURIComponent(currentRoomId);

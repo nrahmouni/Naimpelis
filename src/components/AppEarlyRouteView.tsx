@@ -45,6 +45,9 @@ const AdminConsolePage = lazyWithRetry(() =>
 const SamsungTvGuidePage = lazyWithRetry(() =>
   import('./samsung/SamsungTvGuidePage').then((m) => ({ default: m.SamsungTvGuidePage }))
 );
+const LgWebOsTvGuidePage = lazyWithRetry(() =>
+  import('./webos/LgWebOsTvGuidePage').then((m) => ({ default: m.LgWebOsTvGuidePage }))
+);
 const PhoneGyroController = lazyWithRetry(() =>
   import('./games/racing/PhoneGyroController').then((m) => ({ default: m.PhoneGyroController }))
 );
@@ -54,6 +57,7 @@ interface AppEarlyRouteViewProps {
   isAdsPageOpen: boolean;
   isAdminPage: boolean;
   isSamsungPage: boolean;
+  isWebOsPage: boolean;
   isControllerPage: boolean;
   controllerPairCode?: string;
   isTvPairLobby: boolean;
@@ -90,6 +94,7 @@ interface AppEarlyRouteViewProps {
   setIsAdsPageOpen: (open: boolean) => void;
   setIsAdminPage: (open: boolean) => void;
   setIsSamsungPage: (open: boolean) => void;
+  setIsWebOsPage: (open: boolean) => void;
   setIsControllerPage: (open: boolean) => void;
   setIsTvPairLobby: (open: boolean) => void;
   setIsTvMode: (open: boolean) => void;
@@ -136,6 +141,7 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
   isAdsPageOpen,
   isAdminPage,
   isSamsungPage,
+  isWebOsPage,
   isControllerPage,
   controllerPairCode,
   isTvPairLobby,
@@ -172,6 +178,7 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
   setIsAdsPageOpen,
   setIsAdminPage,
   setIsSamsungPage,
+  setIsWebOsPage,
   setIsControllerPage,
   setIsTvPairLobby,
   setIsTvMode,
@@ -267,6 +274,30 @@ export const AppEarlyRouteView: React.FC<AppEarlyRouteViewProps> = ({
           onOpenTvReceiver={() => {
             setIsSamsungPage(false);
             if (typeof window !== 'undefined') window.location.href = '/tv';
+            else setIsTvPairLobby(true);
+          }}
+        />
+      </React.Suspense>
+    );
+  }
+
+  if (isWebOsPage) {
+    return (
+      <React.Suspense fallback={null}>
+        <LgWebOsTvGuidePage
+          onBack={() => {
+            setIsWebOsPage(false);
+            if (
+              typeof window !== 'undefined' &&
+              (/^\/(webos|lg)\b/i.test(window.location.pathname) ||
+                window.location.search.includes('webos=1'))
+            ) {
+              window.history.replaceState({}, '', inRoom && roomId ? `/${roomId}` : '/');
+            }
+          }}
+          onOpenTvReceiver={() => {
+            setIsWebOsPage(false);
+            if (typeof window !== 'undefined') window.location.href = '/tv?platform=webos';
             else setIsTvPairLobby(true);
           }}
         />

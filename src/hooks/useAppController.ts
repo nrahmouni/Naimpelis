@@ -102,6 +102,7 @@ export function useAppController() {
   const [isAdsPageOpen, setIsAdsPageOpen] = useState<boolean>(Boolean(initialRoute.isAdsPage));
   const [isAdminPage, setIsAdminPage] = useState<boolean>(Boolean(initialRoute.isAdminPage));
   const [isSamsungPage, setIsSamsungPage] = useState<boolean>(Boolean(initialRoute.isSamsungPage));
+  const [isWebOsPage, setIsWebOsPage] = useState<boolean>(Boolean(initialRoute.isWebOsPage));
   const [isControllerPage, setIsControllerPage] = useState<boolean>(
     Boolean(initialRoute.isControllerPage)
   );
@@ -112,6 +113,7 @@ export function useAppController() {
     !initialRoute.isAdsPage &&
     !initialRoute.isAdminPage &&
     !initialRoute.isSamsungPage &&
+    !initialRoute.isWebOsPage &&
     !initialRoute.isControllerPage
       ? normalizeDeepLinkGameType(initialRoute.gameType)
       : null;
@@ -202,6 +204,7 @@ export function useAppController() {
     !initialRoute.isAdsPage &&
     !initialRoute.isAdminPage &&
     !initialRoute.isSamsungPage &&
+    !initialRoute.isWebOsPage &&
     !initialRoute.isControllerPage &&
     !initialRoute.isDedicatedEntry &&
     !/[?&]hub=1\b/i.test(window.location.search || '');
@@ -820,6 +823,8 @@ export function useAppController() {
     setIsAdminPage,
     isSamsungPage,
     setIsSamsungPage,
+    isWebOsPage,
+    setIsWebOsPage,
     enterWorld,
     setForcedOpenGame: roomState.setForcedOpenGame,
     setIsInActiveGame: roomState.setIsInActiveGame,
@@ -1040,7 +1045,7 @@ export function useAppController() {
   }, [inRoom, sessionMode, lifecycle]);
 
   const { exitToastVisible, triggerBackStep } = useAppNavigationHistory({
-    enabled: !isTvMode && !isTvPairLobby && !isAdsPageOpen && !isAdminPage && !isSamsungPage && !isControllerPage && (inRoom || hasEnteredApp),
+    enabled: !isTvMode && !isTvPairLobby && !isAdsPageOpen && !isAdminPage && !isSamsungPage && !isWebOsPage && !isControllerPage && (inRoom || hasEnteredApp),
     inRoom,
     activeWorld,
     onReturnToEntry: handleReturnToEntry,
@@ -1061,7 +1066,7 @@ export function useAppController() {
     effectiveView, isDesktopLayout, isFramedMobileOnPc, toggleViewMode, authUser, authLoading,
     profileHubOpen, setProfileHubOpen, profileHubTab, setProfileHubTab, isTvMode, setIsTvMode,
     isTvPairLobby, setIsTvPairLobby, isAdsPageOpen, setIsAdsPageOpen, isAdminPage, setIsAdminPage,
-    isSamsungPage, setIsSamsungPage, isControllerPage, setIsControllerPage, controllerPairCode,
+    isSamsungPage, setIsSamsungPage, isWebOsPage, setIsWebOsPage, isControllerPage, setIsControllerPage, controllerPairCode,
     setTvAuthToken, savedRooms,
     pinPromptState, tvClaimStatus, smartTvModalOpen, setSmartTvModalOpen, showIntro, setShowIntro,
     introWithSound, setIntroWithSound, showWatchlistOnly, setShowWatchlistOnly, showVoiceAssistant,

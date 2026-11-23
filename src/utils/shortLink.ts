@@ -58,6 +58,7 @@ export function parseRoomFromWindow(): {
   isAdsPage?: boolean;
   isAdminPage?: boolean;
   isSamsungPage?: boolean;
+  isWebOsPage?: boolean;
   isControllerPage?: boolean;
   controllerPairCode?: string;
   isAuthBridgePage?: boolean;
@@ -74,6 +75,7 @@ export function parseRoomFromWindow(): {
       isAdsPage: false,
       isAdminPage: false,
       isSamsungPage: false,
+      isWebOsPage: false,
       isControllerPage: false,
       isAuthBridgePage: false,
       routeTarget: { kind: 'home' },
@@ -142,6 +144,20 @@ export function parseRoomFromWindow(): {
         isAdsPage: false,
         isAdminPage: false,
         isSamsungPage: true,
+        isWebOsPage: false,
+        routeTarget: target,
+        isDedicatedEntry: false,
+      };
+    }
+    if (target.systemType === 'webos') {
+      return {
+        roomId: '',
+        isTvMode: false,
+        isTvPairLobby: false,
+        isAdsPage: false,
+        isAdminPage: false,
+        isSamsungPage: false,
+        isWebOsPage: true,
         routeTarget: target,
         isDedicatedEntry: false,
       };

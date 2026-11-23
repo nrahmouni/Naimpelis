@@ -17,7 +17,26 @@ try {
 
 var uaStr = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
 var searchStr = (typeof window !== 'undefined' && window.location && window.location.search) ? window.location.search : '';
+var pathStr = (typeof window !== 'undefined' && window.location && window.location.pathname) ? window.location.pathname : '';
+var isTvLgPath = /^\/tvlg\/?$/i.test(pathStr);
 var isLgWebOsUa = /Web0S|WebOS|LGE|NetCast/i.test(uaStr);
+var isExplicitNonWebOs = /[?&]webos=0\b/i.test(searchStr);
+var storedWebOsFlag = false;
+try {
+  if (isExplicitNonWebOs) localStorage.removeItem('naim_is_webos_tv');
+  else storedWebOsFlag = localStorage.getItem('naim_is_webos_tv') === '1';
+} catch (e) {}
+var isWebOsDevice =
+  !isExplicitNonWebOs &&
+  (isTvLgPath ||
+    isLgWebOsUa ||
+    storedWebOsFlag ||
+    (typeof window !== 'undefined' &&
+      (Boolean(window.webOS) || Boolean(window.PalmSystem) || Boolean(window.__RIFFAN_WEBOS_APP__))) ||
+    /[?&](?:webos=1|lg=1|platform=webos)\b/i.test(searchStr));
+try {
+  if (isWebOsDevice) localStorage.setItem('naim_is_webos_tv', '1');
+} catch (e) {}
 var isTizenUa = /Tizen/i.test(uaStr);
 var isExplicitNonTizen = /[?&]tizen=0\b/i.test(searchStr);
 var storedTizenFlag = false;
@@ -34,12 +53,13 @@ var isTizenDevice =
 try {
   if (isTizenDevice) localStorage.setItem('naim_is_tizen_tv', '1');
 } catch (e) {}
-var isSmartTvUa = isLgWebOsUa || isTizenDevice || /Tizen|SMART-TV|GoogleTV|Android TV|BRAVIA|AFT|VIDAA/i.test(uaStr);
+var isSmartTvUa = isWebOsDevice || isLgWebOsUa || isTizenDevice || /Tizen|SMART-TV|GoogleTV|Android TV|BRAVIA|AFT|VIDAA/i.test(uaStr);
 try {
   if (isSmartTvUa && document.documentElement) {
     var tvCls = document.documentElement.className || '';
     if (tvCls.indexOf('is-smart-tv') === -1) tvCls += (tvCls ? ' ' : '') + 'is-smart-tv';
     if (isTizenDevice && tvCls.indexOf('is-tizen-tv') === -1) tvCls += ' is-tizen-tv';
+    if (isWebOsDevice && tvCls.indexOf('is-webos-tv') === -1) tvCls += ' is-webos-tv';
     document.documentElement.className = tvCls;
   }
 } catch (e) {}

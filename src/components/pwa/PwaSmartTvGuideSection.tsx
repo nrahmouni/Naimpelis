@@ -384,6 +384,36 @@ export const PwaSmartTvGuideSection: React.FC<PwaSmartTvGuideSectionProps> = ({
               <ExternalLink className="w-3.5 h-3.5" />
             </a>
           </div>
+          <div className="p-3.5 rounded-2xl bg-[#000000] border border-[#00F593]/35 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Download className="w-4 h-4 text-[#00F593]" />
+                <span>App Nativa LG webOS TV (.ipk)</span>
+              </h4>
+              <span className="text-[11px] font-mono text-[#00F593]">/webos</span>
+            </div>
+            <p className="text-xs text-zinc-300 leading-relaxed">
+              Genera el paquete <strong className="text-white">.ipk</strong> compatible con LG antiguas (webOS 3–5) y nuevas OLED/QNED (webOS 6–24+) con Magic Remote y <code className="text-zinc-200">appinfo.json</code>.
+            </p>
+            <a
+              href="/webos"
+              onClick={(e) => {
+                e.preventDefault();
+                triggerHaptic('medium');
+                onBack();
+                if (typeof window !== 'undefined') {
+                  window.setTimeout(() => {
+                    window.history.pushState({}, '', '/webos');
+                    window.dispatchEvent(new PopStateEvent('popstate'));
+                  }, 25);
+                }
+              }}
+              className="w-full min-h-10 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <span>Abrir empaquetador y guía /webos</span>
+              <ExternalLink className="w-3.5 h-3.5" />
+            </a>
+          </div>
         </div>
       )}
 

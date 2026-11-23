@@ -675,11 +675,19 @@ document.addEventListener('keydown', function (e) {
       switchTvScreen('hub');
       return;
     }
-    if (activeScreen === 'hub' && code === 10009 && window.tizen && window.tizen.application) {
+    if (activeScreen === 'hub' && ((code === 10009 && window.tizen && window.tizen.application) || (code === 461 && typeof isWebOsDevice !== 'undefined' && isWebOsDevice))) {
       if (e.preventDefault) e.preventDefault();
       var nowTs = Date.now();
       if (window.__riffanBackExitTs && nowTs - window.__riffanBackExitTs < 2600) {
-        try { window.tizen.application.getCurrentApplication().exit(); } catch (exitErr) {}
+        try {
+          if (code === 10009 && window.tizen && window.tizen.application) {
+            window.tizen.application.getCurrentApplication().exit();
+          } else if (window.webOS && typeof window.webOS.platformBack === 'function') {
+            window.webOS.platformBack();
+          } else if (window.PalmSystem && typeof window.PalmSystem.platformBack === 'function') {
+            window.PalmSystem.platformBack();
+          }
+        } catch (exitErr) {}
       } else {
         window.__riffanBackExitTs = nowTs;
         showToast('Pulsa Volver otra vez para salir de RiffanTV');
@@ -732,6 +740,9 @@ try {
   if (isTizenDevice) {
     var platformTagEl = document.getElementById('rail-platform-tag');
     if (platformTagEl) platformTagEl.textContent = 'Samsung Tizen';
+  } else if (typeof isWebOsDevice !== 'undefined' && isWebOsDevice) {
+    var webosTagEl = document.getElementById('rail-platform-tag');
+    if (webosTagEl) webosTagEl.textContent = 'LG webOS';
   }
   if (window.tizen && window.tizen.tvinputdevice) {
     if (window.tizen.tvinputdevice.registerKeyBatch) {
@@ -752,6 +763,13 @@ try {
       try {
         if (window.webapis && window.webapis.appcommon && window.webapis.appcommon.setScreenSaver) {
           window.webapis.appcommon.setScreenSaver(prevent ? 0 : 1);
+        }
+        if (window.webOS && window.webOS.service && window.webOS.service.request) {
+          window.webOS.service.request('luna://com.webos.service.tvpower', {
+            method: 'power/setScreenSaver',
+            parameters: { state: prevent ? 'Active' : 'Inactive', clientName: 'com.riffantv.webos' },
+            onFailure: function () {}
+          });
         }
       } catch (err) {}
     };

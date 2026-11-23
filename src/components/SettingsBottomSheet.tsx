@@ -35,6 +35,9 @@ import { lazyWithRetry } from '../utils/lazyWithRetry';
 const SamsungTizenExportModal = lazyWithRetry(() =>
   import('./samsung/SamsungTizenExportModal').then((m) => ({ default: m.SamsungTizenExportModal }))
 );
+const LgWebOsExportModal = lazyWithRetry(() =>
+  import('./webos/LgWebOsExportModal').then((m) => ({ default: m.LgWebOsExportModal }))
+);
 const SpainVpnGatewayModal = lazyWithRetry(() =>
   import('./settings/SpainVpnGatewayModal').then((m) => ({ default: m.SpainVpnGatewayModal }))
 );
@@ -86,6 +89,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
   const { isIOS, isAndroid } = usePWAInstall();
   const [installSheetOpen, setInstallSheetOpen] = useState(false);
   const [samsungExportOpen, setSamsungExportOpen] = useState(false);
+  const [webOsExportOpen, setWebOsExportOpen] = useState(false);
   const [vpnGatewayOpen, setVpnGatewayOpen] = useState(false);
   const [tvAdvancedOpen, setTvAdvancedOpen] = useState(false);
   const [tvCode, setTvCode] = useState('');
@@ -631,6 +635,36 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
               type="button"
               onClick={() => {
                 triggerHaptic('light');
+                setWebOsExportOpen(true);
+              }}
+              className={`${rowClass} cursor-pointer active:scale-95`}
+            >
+              <span className="flex items-center gap-3 min-w-0">
+                <Tv className="w-5 h-5 text-[#A78BFA] shrink-0" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold text-white">
+                    {pickLang(lang, {
+                      es: 'Exportar App LG webOS TV (.ipk)',
+                      ca: 'Exportar App LG webOS TV (.ipk)',
+                      en: 'Export LG webOS TV App (.ipk)',
+                    })}
+                  </span>
+                  <span className="block text-xs text-zinc-400">
+                    {pickLang(lang, {
+                      es: 'Para LG antiguas (webOS 3–5) y nuevas (6–24+) · guía /webos',
+                      ca: 'Per a LG antigues (webOS 3–5) i noves (6–24+) · guia /webos',
+                      en: 'For old (webOS 3–5) & new (6–24+) LG TVs · /webos guide',
+                    })}
+                  </span>
+                </span>
+              </span>
+              <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
                 setVpnGatewayOpen(true);
               }}
               className={`${rowClass} cursor-pointer active:scale-95`}
@@ -756,6 +790,25 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
               if (typeof window !== 'undefined') {
                 window.setTimeout(() => {
                   window.history.pushState({}, '', '/samsung');
+                  window.dispatchEvent(new PopStateEvent('popstate'));
+                }, 25);
+              }
+            }}
+          />
+        </React.Suspense>
+      )}
+
+      {webOsExportOpen && (
+        <React.Suspense fallback={null}>
+          <LgWebOsExportModal
+            isOpen={webOsExportOpen}
+            onClose={() => setWebOsExportOpen(false)}
+            lang={lang}
+            onOpenWebOsPage={() => {
+              onClose();
+              if (typeof window !== 'undefined') {
+                window.setTimeout(() => {
+                  window.history.pushState({}, '', '/webos');
                   window.dispatchEvent(new PopStateEvent('popstate'));
                 }, 25);
               }

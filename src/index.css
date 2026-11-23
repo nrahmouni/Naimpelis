@@ -431,9 +431,10 @@
 .top-\[68px\] { top: 4.25rem !important; }
 .bottom-\[86px\] { bottom: 5.375rem !important; }
 
-/* Google TV / Samsung Tizen Physical Remote 10-Foot Focus Ring */
+/* Google TV / Samsung Tizen / LG webOS Physical Remote 10-Foot Focus Ring */
 html.is-google-tv, html.is-google-tv body,
 html.is-tizen-tv, html.is-tizen-tv body { cursor: none; user-select: none; background-color: #000000; }
+html.is-webos-tv, html.is-webos-tv body { cursor: auto; user-select: none; background-color: #000000; }
 [data-tv-focusable="true"]:focus-visible,
 html.tv-dpad-active *:focus {
   outline: 2.5px solid #ffffff !important;

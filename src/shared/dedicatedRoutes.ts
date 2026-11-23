@@ -595,12 +595,15 @@ export const SYSTEM_RESERVED_SLUGS = new Set([
   'epg',
   'riffantv',
   'tv',
+  'tvlg',
   'ads',
   'naimcine-ads',
   'auth-bridge',
   'design-system',
   'admin',
   'samsung',
+  'webos',
+  'lg',
   'volante',
   'controller',
   'sala',
@@ -630,7 +633,7 @@ export const ALL_RESERVED_SLUGS = new Set<string>([
 
 export type AppRouteTarget =
   | { kind: 'home'; roomId?: string }
-  | { kind: 'system'; systemType: 'tv' | 'ads' | 'auth-bridge' | 'design-system' | 'admin' | 'samsung' | 'controller'; roomId?: string; pairCode?: string }
+  | { kind: 'system'; systemType: 'tv' | 'ads' | 'auth-bridge' | 'design-system' | 'admin' | 'samsung' | 'webos' | 'controller'; roomId?: string; pairCode?: string }
   | { kind: 'room'; roomId: string; gameType?: string; isTvMode?: boolean }
   | {
       kind: 'world';
@@ -722,6 +725,9 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
   if (seg0 === 'samsung' || params.get('samsung') === '1') {
     return { kind: 'system', systemType: 'samsung', roomId: queryRoomId };
   }
+  if (seg0 === 'webos' || seg0 === 'lg' || params.get('webos') === '1') {
+    return { kind: 'system', systemType: 'webos', roomId: queryRoomId };
+  }
   if (seg0 === 'volante' || seg0 === 'controller' || params.get('volante') === '1') {
     const rawPair = (params.get('pair') || '').replace(/\D/g, '').slice(0, 4);
     return {
@@ -731,7 +737,7 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
       pairCode: rawPair.length === 4 ? rawPair : undefined,
     };
   }
-  if (params.get('tvpair') === '1' || seg0 === 'tv') {
+  if (params.get('tvpair') === '1' || seg0 === 'tv' || seg0 === 'tvlg') {
     return { kind: 'system', systemType: 'tv', roomId: queryRoomId };
   }
 

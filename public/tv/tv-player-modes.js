@@ -383,7 +383,9 @@ function exitPlayerToHubOrPairing() {
   if (pairedBanner) pairedBanner.style.display = 'none';
   if (pairingControls) pairingControls.style.display = 'flex';
   try {
-    var cleanExitPath = (typeof isTizenDevice !== 'undefined' && isTizenDevice) ? '/tv?platform=tizen&hub=1' : '/tv';
+    var cleanExitPath = (typeof isTizenDevice !== 'undefined' && isTizenDevice)
+      ? '/tv?platform=tizen&hub=1'
+      : ((typeof isWebOsDevice !== 'undefined' && isWebOsDevice) ? '/tv?platform=webos&hub=1' : '/tv');
     window.history.replaceState({}, '', cleanExitPath);
   } catch (e) {}
 

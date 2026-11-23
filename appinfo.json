@@ -1,0 +1,25 @@
+{
+  "id": "com.riffantv.webos",
+  "version": "1.0.0",
+  "vendor": "RiffanTV",
+  "type": "web",
+  "main": "index.html",
+  "title": "RiffanTV",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "bgColor": "#000000",
+  "iconColor": "#7C3AED",
+  "splashBackground": "icon.png",
+  "transparent": false,
+  "disableBackHistoryAPI": true,
+  "handlesRelaunch": true,
+  "resolution": "1920x1080",
+  "supportMouse": true,
+  "enableKeyboard": true,
+  "uiRevision": 2,
+  "requiredPermissions": [
+    "time.query",
+    "activity.operation",
+    "application.operation"
+  ]
+}

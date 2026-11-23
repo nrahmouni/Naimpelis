@@ -1,0 +1,147 @@
+name: Build LG webOS TV (.ipk) — Antiguas y Nuevas
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_id:
+        description: 'LG webOS Reverse-DNS App ID'
+        required: false
+        default: 'com.riffantv.webos'
+      app_name:
+        description: 'LG Launcher App Name'
+        required: false
+        default: 'RiffanTV'
+      target_tier:
+        description: 'Compatibility tier: universal (webOS 3-24+), legacy (webOS 3-5 ES5), or modern (webOS 6-24+)'
+        required: false
+        default: 'universal'
+      public_api_origin:
+        description: 'Public Backend Origin for Live TV/VOD APIs'
+        required: false
+        default: 'https://riffan.ai.studio'
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-webos-ipk:
+    name: Package LG webOS TV (.ipk)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install dependencies & build relative SPA bundle
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci --legacy-peer-deps --no-audit --no-fund || npm install --legacy-peer-deps --no-audit --no-fund
+          else
+            npm install --legacy-peer-deps --no-audit --no-fund
+          fi
+          npx vite build --base=./
+
+      - name: Prepare Universal (webOS 3.0 - 24+) & Modern LG webOS payloads
+        env:
+          WEBOS_APP_ID: ${{ github.event.inputs.app_id || 'com.riffantv.webos' }}
+          APP_NAME: ${{ github.event.inputs.app_name || 'RiffanTV' }}
+          TARGET_TIER: ${{ github.event.inputs.target_tier || 'universal' }}
+          PUBLIC_ORIGIN: ${{ github.event.inputs.public_api_origin || secrets.RIFFAN_PUBLIC_ORIGIN || 'https://riffan.ai.studio' }}
+        run: |
+          rm -rf webos-modern webos-universal release-ipk
+          mkdir -p webos-modern webos-universal release-ipk
+
+          cp -r dist/* webos-modern/
+          rm -f webos-modern/sw.js webos-modern/workbox-*.js webos-modern/registerSW.js
+          cp appinfo.json webos-modern/appinfo.json
+          cp appinfo.json webos-universal/appinfo.json
+
+          if [ -f public/pwa-192x192.png ]; then
+            cp public/pwa-192x192.png webos-modern/icon.png
+            cp public/pwa-192x192.png webos-universal/icon.png
+          fi
+          if [ -f public/pwa-512x512.png ]; then
+            cp public/pwa-512x512.png webos-modern/largeIcon.png
+            cp public/pwa-512x512.png webos-universal/largeIcon.png
+          fi
+
+          npx tsx -e '
+            import fs from "node:fs";
+            import path from "node:path";
+            import { generateWebOsAppInfoJson, normalizeWebOsAppId } from "./src/utils/webosConfigGenerator.ts";
+            import {
+              buildUniversalWebOsLauncherAssets,
+              rewriteHtmlForWebOsFileProtocol,
+            } from "./src/utils/webosIpkBuilder.ts";
+            import { packWebOsIpkBinary } from "./src/utils/debianIpkPacker.ts";
+
+            const appId = normalizeWebOsAppId(process.env.WEBOS_APP_ID);
+            const appName = (process.env.APP_NAME || "RiffanTV").trim();
+            const origin = (process.env.PUBLIC_ORIGIN || "https://riffan.ai.studio").replace(/\/+$/, "");
+
+            // 1. Universal ES5 Launcher (webOS 3.0 - 24+)
+            const univAppInfo = generateWebOsAppInfoJson({ appId, appName, version: "1.0.0", targetTier: "universal" });
+            const launcher = buildUniversalWebOsLauncherAssets(appName, origin, "universal");
+            fs.writeFileSync("webos-universal/appinfo.json", univAppInfo, "utf8");
+            fs.writeFileSync("webos-universal/index.html", launcher.indexHtml, "utf8");
+            fs.writeFileSync("webos-universal/app.css", launcher.appCss, "utf8");
+            fs.writeFileSync("webos-universal/main.js", launcher.mainJs, "utf8");
+            fs.writeFileSync("webos-universal/webOSTV.js", launcher.webOsStubJs, "utf8");
+
+            // 2. Modern Offline Bundle (webOS 6.0 / 22 / 23 / 24+)
+            const modernAppInfo = generateWebOsAppInfoJson({ appId, appName, version: "1.0.0", targetTier: "modern" });
+            fs.writeFileSync("webos-modern/appinfo.json", modernAppInfo, "utf8");
+            const modernIndexPath = path.join("webos-modern", "index.html");
+            const rawHtml = fs.readFileSync(modernIndexPath, "utf8");
+            fs.writeFileSync(modernIndexPath, rewriteHtmlForWebOsFileProtocol(rawHtml, origin, "modern"), "utf8");
+
+            // Package both .ipk variants deterministically
+            async function packFolder(dir, outPath) {
+              const collected = [];
+              function walk(cur) {
+                for (const ent of fs.readdirSync(cur, { withFileTypes: true })) {
+                  const full = path.join(cur, ent.name);
+                  if (ent.isDirectory()) walk(full);
+                  else collected.push({ relPath: path.relative(dir, full).replace(/\\/g, "/"), bytes: fs.readFileSync(full) });
+                }
+              }
+              walk(dir);
+              const ipk = await packWebOsIpkBinary({ appId, appName, version: "1.0.0", files: collected });
+              fs.writeFileSync(outPath, ipk);
+            }
+
+            await packFolder("webos-universal", `release-ipk/${appId}_1.0.0_universal_webos3-24.ipk`);
+            await packFolder("webos-modern", `release-ipk/${appId}_1.0.0_modern_offline_webos6-24.ipk`);
+          '
+          ls -lh release-ipk/
+
+      - name: Verify with @webosose/ares-cli (if available)
+        run: |
+          npm install -g @webosose/ares-cli || true
+          if command -v ares-package >/dev/null 2>&1; then
+            ares-package --no-minify webos-universal -o release-ipk || true
+          fi
+          ls -lh release-ipk/
+
+      - name: Upload .ipk Artifacts (Antiguas y Nuevas)
+        uses: actions/upload-artifact@v4
+        with:
+          name: riffantv-lg-webos-ipk
+          path: release-ipk/*.ipk
+          retention-days: 30
+
+      - name: Attach .ipk to GitHub Release on tags
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-ipk/*.ipk

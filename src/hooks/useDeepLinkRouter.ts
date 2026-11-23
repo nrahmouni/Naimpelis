@@ -24,6 +24,8 @@ interface UseDeepLinkRouterOptions {
   setIsAdminPage?: (open: boolean) => void;
   isSamsungPage?: boolean;
   setIsSamsungPage?: (open: boolean) => void;
+  isWebOsPage?: boolean;
+  setIsWebOsPage?: (open: boolean) => void;
   enterWorld: (world: WorldId) => void;
   setForcedOpenGame: React.Dispatch<
     React.SetStateAction<{ gameType: RoomGameInviteType; seq: number } | null>
@@ -48,6 +50,8 @@ export function useDeepLinkRouter({
   setIsAdminPage,
   isSamsungPage = false,
   setIsSamsungPage,
+  isWebOsPage = false,
+  setIsWebOsPage,
   enterWorld,
   setForcedOpenGame,
   setIsInActiveGame,
@@ -72,6 +76,10 @@ export function useDeepLinkRouter({
   isSamsungPageRef.current = isSamsungPage;
   const setIsSamsungPageRef = useRef(setIsSamsungPage);
   setIsSamsungPageRef.current = setIsSamsungPage;
+  const isWebOsPageRef = useRef(isWebOsPage);
+  isWebOsPageRef.current = isWebOsPage;
+  const setIsWebOsPageRef = useRef(setIsWebOsPage);
+  setIsWebOsPageRef.current = setIsWebOsPage;
   const setForcedOpenGameRef = useRef(setForcedOpenGame);
   setForcedOpenGameRef.current = setForcedOpenGame;
   const setIsInActiveGameRef = useRef(setIsInActiveGame);
@@ -107,11 +115,19 @@ export function useDeepLinkRouter({
       if (target.kind === 'system' && target.systemType === 'admin') {
         setIsAdminPageRef.current?.(true);
         setIsSamsungPageRef.current?.(false);
+        setIsWebOsPageRef.current?.(false);
         return;
       }
       if (target.kind === 'system' && target.systemType === 'samsung') {
         setIsSamsungPageRef.current?.(true);
         setIsAdminPageRef.current?.(false);
+        setIsWebOsPageRef.current?.(false);
+        return;
+      }
+      if (target.kind === 'system' && target.systemType === 'webos') {
+        setIsWebOsPageRef.current?.(true);
+        setIsAdminPageRef.current?.(false);
+        setIsSamsungPageRef.current?.(false);
         return;
       }
       if (isAdminPageRef.current) {
@@ -119,6 +135,9 @@ export function useDeepLinkRouter({
       }
       if (isSamsungPageRef.current) {
         setIsSamsungPageRef.current?.(false);
+      }
+      if (isWebOsPageRef.current) {
+        setIsWebOsPageRef.current?.(false);
       }
       if (target.kind === 'home' || target.kind === 'system' || target.kind === 'room') {
         return;
@@ -341,7 +360,7 @@ export function useDeepLinkRouter({
   useEffect(() => {
     if (typeof window === 'undefined') return;
     if (sessionMode !== 'solo' || !hasEnteredApp) return;
-    if (isTvMode || isTvPairLobby || isAdsPageOpen || isAdminPage || isSamsungPage || deepLinkResolving) return;
+    if (isTvMode || isTvPairLobby || isAdsPageOpen || isAdminPage || isSamsungPage || isWebOsPage || deepLinkResolving) return;
     if (requestedMovieModal || requestedSeriesModal || requestedMatchSlug) return;
 
     let nextRoute = '/';
@@ -425,6 +444,7 @@ export function useDeepLinkRouter({
     isAdsPageOpen,
     isAdminPage,
     isSamsungPage,
+    isWebOsPage,
     deepLinkResolving,
     requestedMovieModal,
     requestedSeriesModal,
