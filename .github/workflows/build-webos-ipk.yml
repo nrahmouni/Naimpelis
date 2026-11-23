@@ -85,43 +85,50 @@ jobs:
             } from "./src/utils/webosIpkBuilder.ts";
             import { packWebOsIpkBinary } from "./src/utils/debianIpkPacker.ts";
 
-            const appId = normalizeWebOsAppId(process.env.WEBOS_APP_ID);
-            const appName = (process.env.APP_NAME || "RiffanTV").trim();
-            const origin = (process.env.PUBLIC_ORIGIN || "https://riffan.ai.studio").replace(/\/+$/, "");
+            async function run() {
+              const appId = normalizeWebOsAppId(process.env.WEBOS_APP_ID);
+              const appName = (process.env.APP_NAME || "RiffanTV").trim();
+              const origin = (process.env.PUBLIC_ORIGIN || "https://riffan.ai.studio").replace(/\/+$/, "");
 
-            // 1. Universal ES5 Launcher (webOS 3.0 - 24+)
-            const univAppInfo = generateWebOsAppInfoJson({ appId, appName, version: "1.0.0", targetTier: "universal" });
-            const launcher = buildUniversalWebOsLauncherAssets(appName, origin, "universal");
-            fs.writeFileSync("webos-universal/appinfo.json", univAppInfo, "utf8");
-            fs.writeFileSync("webos-universal/index.html", launcher.indexHtml, "utf8");
-            fs.writeFileSync("webos-universal/app.css", launcher.appCss, "utf8");
-            fs.writeFileSync("webos-universal/main.js", launcher.mainJs, "utf8");
-            fs.writeFileSync("webos-universal/webOSTV.js", launcher.webOsStubJs, "utf8");
+              // 1. Universal ES5 Launcher (webOS 3.0 - 24+)
+              const univAppInfo = generateWebOsAppInfoJson({ appId, appName, version: "1.0.0", targetTier: "universal" });
+              const launcher = buildUniversalWebOsLauncherAssets(appName, origin, "universal");
+              fs.writeFileSync("webos-universal/appinfo.json", univAppInfo, "utf8");
+              fs.writeFileSync("webos-universal/index.html", launcher.indexHtml, "utf8");
+              fs.writeFileSync("webos-universal/app.css", launcher.appCss, "utf8");
+              fs.writeFileSync("webos-universal/main.js", launcher.mainJs, "utf8");
+              fs.writeFileSync("webos-universal/webOSTV.js", launcher.webOsStubJs, "utf8");
 
-            // 2. Modern Offline Bundle (webOS 6.0 / 22 / 23 / 24+)
-            const modernAppInfo = generateWebOsAppInfoJson({ appId, appName, version: "1.0.0", targetTier: "modern" });
-            fs.writeFileSync("webos-modern/appinfo.json", modernAppInfo, "utf8");
-            const modernIndexPath = path.join("webos-modern", "index.html");
-            const rawHtml = fs.readFileSync(modernIndexPath, "utf8");
-            fs.writeFileSync(modernIndexPath, rewriteHtmlForWebOsFileProtocol(rawHtml, origin, "modern"), "utf8");
+              // 2. Modern Offline Bundle (webOS 6.0 / 22 / 23 / 24+)
+              const modernAppInfo = generateWebOsAppInfoJson({ appId, appName, version: "1.0.0", targetTier: "modern" });
+              fs.writeFileSync("webos-modern/appinfo.json", modernAppInfo, "utf8");
+              const modernIndexPath = path.join("webos-modern", "index.html");
+              const rawHtml = fs.readFileSync(modernIndexPath, "utf8");
+              fs.writeFileSync(modernIndexPath, rewriteHtmlForWebOsFileProtocol(rawHtml, origin, "modern"), "utf8");
 
-            // Package both .ipk variants deterministically
-            async function packFolder(dir, outPath) {
-              const collected = [];
-              function walk(cur) {
-                for (const ent of fs.readdirSync(cur, { withFileTypes: true })) {
-                  const full = path.join(cur, ent.name);
-                  if (ent.isDirectory()) walk(full);
-                  else collected.push({ relPath: path.relative(dir, full).replace(/\\/g, "/"), bytes: fs.readFileSync(full) });
+              // Package both .ipk variants deterministically
+              async function packFolder(dir: string, outPath: string) {
+                const collected: Array<{ relPath: string; bytes: Uint8Array }> = [];
+                function walk(cur: string) {
+                  for (const ent of fs.readdirSync(cur, { withFileTypes: true })) {
+                    const full = path.join(cur, ent.name);
+                    if (ent.isDirectory()) walk(full);
+                    else collected.push({ relPath: path.relative(dir, full).replace(/\\/g, "/"), bytes: fs.readFileSync(full) });
+                  }
                 }
+                walk(dir);
+                const ipk = await packWebOsIpkBinary({ appId, appName, version: "1.0.0", files: collected });
+                fs.writeFileSync(outPath, ipk);
               }
-              walk(dir);
-              const ipk = await packWebOsIpkBinary({ appId, appName, version: "1.0.0", files: collected });
-              fs.writeFileSync(outPath, ipk);
+
+              await packFolder("webos-universal", `release-ipk/${appId}_1.0.0_universal_webos3-24.ipk`);
+              await packFolder("webos-modern", `release-ipk/${appId}_1.0.0_modern_offline_webos6-24.ipk`);
             }
 
-            await packFolder("webos-universal", `release-ipk/${appId}_1.0.0_universal_webos3-24.ipk`);
-            await packFolder("webos-modern", `release-ipk/${appId}_1.0.0_modern_offline_webos6-24.ipk`);
+            run().catch((err) => {
+              console.error(err);
+              process.exit(1);
+            });
           '
           ls -lh release-ipk/
 

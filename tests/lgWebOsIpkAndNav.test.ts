@@ -269,6 +269,8 @@ describe('LG webOS Smart TV (.ipk) Architecture, Legacy/Modern Tiers, Navigation
     const workflowPath = path.join(ROOT, '.github', 'workflows', 'build-webos-ipk.yml');
     expect(fs.existsSync(workflowPath)).toBe(true);
     const yml = fs.readFileSync(workflowPath, 'utf8');
+    expect(yml).toContain('async function run()');
+    expect(yml).toContain('run().catch(');
     expect(yml).toContain('@webosose/ares-cli');
     expect(yml).toContain('ares-package');
     expect(yml).toContain('webos3-24');
