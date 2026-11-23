@@ -18,11 +18,15 @@ var localTracks = [];
 var localTrackIdx = 0;
 var activeLiveChannel = null;
 var activeLiveTrackIdx = 0;
-var activeLiveFilter = 'all';
+var activeLiveFilter = 'es_priority';
 var activeAdrarCountry = 'all';
 var activeLiveSearch = '';
 var activeLiveVisibleLimit = 60;
 var lastHubFocusedEl = null;
+
+var liveExtractCache = {};
+var tvPrewarmInFlight = {};
+var tvPrewarmTimer = null;
 
 var pairingWs = null;
 var roomWs = null;
@@ -40,6 +44,8 @@ var hubPairCodeEl = document.getElementById('hub-pair-code');
 var pairingScreen = document.getElementById('pairing-screen');
 var playerScreen = document.getElementById('player-screen');
 var standbyOverlay = document.getElementById('standby-overlay');
+var standbyChannelBadge = document.getElementById('standby-channel-badge');
+var standbyLogoImg = document.getElementById('standby-logo-img');
 var standbySpinner = document.getElementById('standby-spinner');
 var standbyRoomPill = document.getElementById('standby-room-pill');
 var standbyTitleText = document.getElementById('standby-title-text');
@@ -85,7 +91,7 @@ var aspectModeIndex = 0;
 var activeHubTab = 'home';
 var autoFailoverLock = false;
 
-// Google TV Hub Catalog + Live EPG Store
+// Smart TV Hub Catalog + Live EPG Store
 var catalogData = {
   loaded: false,
   cinemaReleases: [],

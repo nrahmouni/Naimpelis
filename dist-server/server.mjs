@@ -557,9 +557,13 @@ ${docClone.outerHTML}`,
         const extraAssets = [
           "tv-receiver.html",
           "tv/tv-base.css",
-          "tv/tv-state-i18n.js",
-          "tv/tv-hub-pairing.js",
-          "tv/tv-player-engine.js",
+          "tv/tv-modals.css",
+          "tv/tv-player.css",
+          "tv/tv-i18n.js",
+          "tv/tv-state.js",
+          "tv/tv-player-core.js",
+          "tv/tv-player-modes.js",
+          "tv/tv-hub.js",
           "tv/tv-nav-voice.js",
           "vendor/hls.min.js"
         ];
@@ -659,7 +663,7 @@ var ENV = {
   appUrl: (process.env.APP_URL || "").replace(/\/+$/, ""),
   spotifyClientId: (process.env.SPOTIFY_CLIENT_ID || "").trim(),
   spotifyClientSecret: (process.env.SPOTIFY_CLIENT_SECRET || "").trim(),
-  appVersionName: process.env.NAIM_APP_VERSION || "3.2.0",
+  appVersionName: process.env.NAIM_APP_VERSION || "3.3.0",
   appVersionCodeMobile: Number(process.env.NAIM_MOBILE_VERSION_CODE) || 302,
   appVersionCodeTv: Number(process.env.NAIM_TV_VERSION_CODE) || 302,
   appVersionCodeMusic: Number(process.env.NAIM_MUSIC_VERSION_CODE) || 302,
@@ -6535,7 +6539,7 @@ var ChannelHealthMonitor = class {
       const src = String(track.sourceUrl || "");
       const q = String(track.quality || "").toLowerCase();
       const qualityTier = /576p|480p|360p/.test(q) || /azotosolutions\.com/i.test(src) ? 3 : /720p/.test(q) ? 2 : /90\.163\.85\.113:8093\/stream\/6[4568]\//i.test(src) ? 1 : 0;
-      const transportPenalty = src.includes("90.163.85.113:8093") ? 400 : /interactvty\.pro/i.test(src) ? 1500 : 0;
+      const transportPenalty = src.includes("90.163.85.113:8093") ? 1200 : /interactvty\.pro/i.test(src) ? 1500 : 0;
       const penaltyMs = (health?.qoeFailures || 0) * 1500 + (health?.qoeRebuffers || 0) * 250 + transportPenalty;
       const effectiveLatency = (health?.latencyMs ?? (health?.status === "unknown" ? 1200 : 800)) + penaltyMs;
       return {
@@ -66431,9 +66435,13 @@ function registerTizenRoutes(app2, rootDir) {
       "icon.svg",
       "tv-receiver.html",
       "tv/tv-base.css",
-      "tv/tv-state-i18n.js",
-      "tv/tv-hub-pairing.js",
-      "tv/tv-player-engine.js",
+      "tv/tv-modals.css",
+      "tv/tv-player.css",
+      "tv/tv-i18n.js",
+      "tv/tv-state.js",
+      "tv/tv-player-core.js",
+      "tv/tv-player-modes.js",
+      "tv/tv-hub.js",
       "tv/tv-nav-voice.js"
     ];
     for (const rel of candidatePublic) {

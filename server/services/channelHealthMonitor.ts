@@ -452,13 +452,21 @@ export class ChannelHealthMonitor {
       const health = this.getTrackHealth(track.sourceUrl) ?? track.health;
       const src = String(track.sourceUrl || '');
       const q = String(track.quality || '').toLowerCase();
-      const qualityTier = /576p|480p|360p/.test(q) || /azotosolutions\.com/i.test(src) ? 3 : /720p/.test(q) ? 2 : /90\.163\.85\.113:8093\/stream\/6[4568]\//i.test(src) ? 1 : 0;
+      const isUhdHevc = /90\.163\.85\.113:8093\/stream\/6[4568]\//i.test(src);
+      const qualityTier = isUhdHevc
+        ? 4
+        : /576p|480p|360p/.test(q) || /azotosolutions\.com/i.test(src)
+        ? 3
+        : /720p/.test(q)
+        ? 2
+        : 0;
       const transportPenalty = src.includes('90.163.85.113:8093') ? 1200 : /interactvty\.pro/i.test(src) ? 1500 : 0;
       const penaltyMs = (health?.qoeFailures || 0) * 1500 + (health?.qoeRebuffers || 0) * 250 + transportPenalty;
       const effectiveLatency = (health?.latencyMs ?? (health?.status === 'unknown' ? 1200 : 800)) + penaltyMs;
       return {
         track: health ? { ...track, health } : { ...track },
         originalIndex,
+        isUhdHevc,
         status: health?.status ?? ('unknown' as ChannelHealthStatus),
         qualityTier,
         latencyBucket: Math.floor(effectiveLatency / 750),
@@ -466,6 +474,9 @@ export class ChannelHealthMonitor {
     });
 
     indexed.sort((a, b) => {
+      if (a.status !== 'down' && b.status !== 'down' && a.isUhdHevc !== b.isUhdHevc) {
+        return a.isUhdHevc ? 1 : -1;
+      }
       const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
       if (rankDiff !== 0) return rankDiff;
       if (a.status !== 'unknown') {

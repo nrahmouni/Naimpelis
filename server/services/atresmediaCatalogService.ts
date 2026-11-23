@@ -7,6 +7,8 @@ import {
 } from '../extractors/httpHelpers.ts';
 import { resolveDailymotionVideoToM3u8 } from '../extractors/dailymotionExtractor.ts';
 import { SPANISH_TDT_CHANNELS } from '../data/tdtChannels.ts';
+import { applySyncedStreamsToChannels } from './iptvPlaylistService.ts';
+import { channelHealthMonitor } from './channelHealthMonitor.ts';
 import { loadSpanishEpgSchedule } from './epgService.ts';
 import { fetchTmdbItemsByIds, resolveTmdbIdByTitle } from './tmdbCatalogHelpers.ts';
 import { resolveOfficialChannelLogoUrl } from '../../src/shared/channelLogos.ts';
@@ -475,8 +477,11 @@ export async function getAtresmediaHome(): Promise<{
     }
   }
 
+  const syncedChannels = channelHealthMonitor.prioritizeChannels(
+    applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS)
+  );
   const liveChannels: AtresmediaLiveChannelItem[] = ATRESMEDIA_TDT_IDS.map((tdtId) => {
-    const tdtCh = SPANISH_TDT_CHANNELS.find((c) => c.id === tdtId)!;
+    const tdtCh = syncedChannels.find((c) => c.id === tdtId) || SPANISH_TDT_CHANNELS.find((c) => c.id === tdtId)!;
     const apiLive = liveByTdtId.get(tdtId);
     const events: any[] = epgStore.get(tdtId) || [];
     let nowIdx = events.findIndex((e) => e.startMs <= now && e.stopMs > now);

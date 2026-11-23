@@ -1,5 +1,5 @@
 // ===================================================================
-// PLAYER ENGINES (HLS.JS / MP4 / YOUTUBE / WEB EMBED + FAILOVER)
+// PLAYER ENGINES (HLS.JS / MP4 / YOUTUBE / WEB EMBED + FAST ZAP)
 // ===================================================================
 function ensureYouTubeApi(cb) {
   if (window.YT && window.YT.Player) {
@@ -123,7 +123,7 @@ if (videoEl) {
         }, true);
         return;
       }
-      showStandbyError(hudTitle.textContent || 'NAIMCINE', tvT('signalTempUnavail') + ' (LG/TV Decode Error).');
+      showStandbyError(hudTitle.textContent || 'RIFFAN TV', tvT('signalTempUnavail') + ' (Smart TV Decode Error).');
       return;
     }
     triggerPlaybackFailover('Video decode error');
@@ -182,7 +182,7 @@ function triggerPlaybackFailover(reasonText) {
       }, true);
       return;
     }
-    showStandbyError(hudTitle.textContent || 'NAIMCINE', tvT('signalTempUnavail') + (reasonText ? ' (' + reasonText + ')' : '') + '.');
+    showStandbyError(hudTitle.textContent || 'RIFFAN TV', tvT('signalTempUnavail') + (reasonText ? ' (' + reasonText + ')' : '') + '.');
     return;
   }
   autoFailoverLock = true;
@@ -197,7 +197,7 @@ function triggerPlaybackFailover(reasonText) {
       setTimeout(function () {
         autoFailoverLock = false;
         playTdtChannelOnTv(ch, activeLiveTrackIdx + 1);
-      }, 250);
+      }, 150);
       return;
     }
     if (ch.id && currentUrl.indexOf('/api/iptv/live/') === -1) {
@@ -210,13 +210,14 @@ function triggerPlaybackFailover(reasonText) {
             url: '/api/iptv/live/' + encodeURIComponent(ch.id) + '.m3u8',
             title: ch.name,
             subtitle: (ch.network || 'TDT / TV') + ' · IPTV',
+            logoUrl: ch.logoUrl || '',
             isPlaying: true,
             isLive: true,
             currentTime: 0
           },
           true
         );
-      }, 250);
+      }, 150);
       return;
     }
     showStandbyError(ch.name, tvT('signalTempUnavail') + (reasonText ? ' (' + reasonText + ')' : '') + '.');
@@ -229,11 +230,11 @@ function triggerPlaybackFailover(reasonText) {
     setTimeout(function () {
       autoFailoverLock = false;
       switchToLocalTrack(localTrackIdx + 1, !currentIsLive ? (videoEl.currentTime || 0) : 0);
-    }, 250);
+    }, 200);
     return;
   }
 
-  showStandbyError(hudTitle.textContent || 'NAIMCINE', tvT('noServerAvail'));
+  showStandbyError(hudTitle.textContent || 'RIFFAN TV', tvT('noServerAvail'));
 }
 
 function showStandbyError(titleStr, msgStr) {
@@ -251,7 +252,7 @@ function showStandbyError(titleStr, msgStr) {
   }
   standbyOverlay.style.display = 'flex';
   standbyRoomPill.textContent = tvT('signalUnavailable');
-  standbyTitleText.textContent = titleStr || 'NAIMCINE';
+  standbyTitleText.textContent = titleStr || 'RIFFAN TV';
   standbySubText.textContent = msgStr || tvT('standbySubFallback');
   setTimeout(function () {
     var exitB = document.getElementById('btn-standby-exit');
@@ -267,15 +268,23 @@ function applyVideoState(vs, forceReload) {
   var isLive = Boolean(vs.isLive);
   var targetSec = !isLive && vs.currentTime > 0 ? Number(vs.currentTime) : 0;
 
-  hudTitle.textContent = vs.title || 'NAIMCINE';
-  hudSub.textContent = vs.subtitle || (isPaired ? 'Sala ' + currentRoomId.toUpperCase() + ' · 1080p' : 'Google TV HD');
+  hudTitle.textContent = vs.title || 'RIFFAN TV';
+  hudSub.textContent = vs.subtitle || (isPaired ? 'Sala ' + currentRoomId.toUpperCase() + ' · 1080p' : 'Smart TV 1080p');
+  var chLogo = vs.logoUrl || (activeLiveChannel && activeLiveChannel.logoUrl) || '';
   if (hudLogoWrap && hudLogoImg) {
-    var chLogo = vs.logoUrl || (activeLiveChannel && activeLiveChannel.logoUrl) || '';
     if (chLogo) {
       hudLogoImg.src = chLogo;
       hudLogoWrap.style.display = 'flex';
     } else {
       hudLogoWrap.style.display = 'none';
+    }
+  }
+  if (standbyChannelBadge && standbyLogoImg) {
+    if (chLogo) {
+      standbyLogoImg.src = chLogo;
+      standbyChannelBadge.style.display = 'flex';
+    } else {
+      standbyChannelBadge.style.display = 'none';
     }
   }
   syncPlayerDockMode(isLive);
@@ -346,7 +355,7 @@ function applyVideoState(vs, forceReload) {
     return;
   }
 
-  // Mode 2: Web Embed (vidlink.pro / vidfast.pro / 111movies / ok.ru / etc.)
+  // Mode 2: Web Embed
   if (nextMode === 'embed' || nextMode === 'cloud') {
     destroyHls();
     try {
@@ -371,7 +380,7 @@ function applyVideoState(vs, forceReload) {
         if (currentMode === 'embed' || currentMode === 'cloud') {
           standbyOverlay.style.display = 'none';
         }
-      }, 2600);
+      }, 2400);
     }
     return;
   }
@@ -393,7 +402,7 @@ function applyVideoState(vs, forceReload) {
     if (!videoEl.videoWidth || videoEl.videoWidth === 0 || videoEl.readyState < 2) {
       triggerPlaybackFailover('Tiempo de carga agotado');
     }
-  }, 18500);
+  }, isLive ? 11500 : 18500);
 
   if (nextMode === 'direct') {
     videoEl.src = nextUrl;
@@ -426,28 +435,29 @@ function applyVideoState(vs, forceReload) {
     var hls = new window.Hls({
       enableWorker: !isSmartTvUa,
       lowLatencyMode: false,
+      startFragPrefetch: true,
       startPosition: isLive ? -1 : targetSec,
-      liveSyncDurationCount: 3,
-      liveMaxLatencyDurationCount: 10,
+      liveSyncDurationCount: isLive ? 2 : 3,
+      liveMaxLatencyDurationCount: isLive ? 7 : 10,
       maxLiveSyncPlaybackRate: 1,
-      backBufferLength: isLive ? 18 : 30,
-      maxBufferLength: isLive ? 32 : 40,
-      maxMaxBufferLength: isLive ? 60 : 80,
+      backBufferLength: isLive ? 14 : 30,
+      maxBufferLength: isLive ? 22 : 40,
+      maxMaxBufferLength: isLive ? 45 : 80,
       maxBufferHole: isLive ? 0.35 : 0.5,
       highBufferWatchdogPeriod: 2,
       nudgeOffset: isLive ? 0.08 : 0.12,
       nudgeMaxRetry: 8,
       maxAudioFramesDrift: isLive ? 2 : 4,
-      abrEwmaDefaultEstimate: 6500000,
-      manifestLoadingTimeOut: 15000,
-      manifestLoadingMaxRetry: 5,
-      manifestLoadingRetryDelay: 700,
-      levelLoadingTimeOut: 15000,
-      levelLoadingMaxRetry: 5,
-      levelLoadingRetryDelay: 700,
-      fragLoadingTimeOut: 18000,
-      fragLoadingMaxRetry: 6,
-      fragLoadingRetryDelay: 600
+      abrEwmaDefaultEstimate: isLive ? 2800000 : 5500000,
+      manifestLoadingTimeOut: 12000,
+      manifestLoadingMaxRetry: 4,
+      manifestLoadingRetryDelay: 350,
+      levelLoadingTimeOut: 12000,
+      levelLoadingMaxRetry: 4,
+      levelLoadingRetryDelay: 350,
+      fragLoadingTimeOut: 15000,
+      fragLoadingMaxRetry: 5,
+      fragLoadingRetryDelay: 350
     });
     hlsInstance = hls;
     hls.loadSource(nextUrl);
@@ -476,7 +486,7 @@ function applyVideoState(vs, forceReload) {
         if (netErrorCount <= 2) {
           setTimeout(function () {
             if (hlsInstance === hls) hls.startLoad();
-          }, 500);
+          }, 350);
         } else {
           triggerPlaybackFailover('Señal de red interrumpida');
         }

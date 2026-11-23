@@ -1,4 +1,4 @@
-export const CLIENT_APP_VERSION = '3.2.0';
+export const CLIENT_APP_VERSION = '3.3.0';
 export const CLIENT_APK_VERSION_CODE = 302;
 
 const VERSION_STORAGE_KEY = 'naim_cine_client_version_v1';

@@ -34,7 +34,7 @@ function ensureFocusVisibleInContainer(el) {
       if (parent.className && (parent.className.indexOf('tv-rail') !== -1 || parent.className.indexOf('hub-nav-pills') !== -1)) {
         var pRect = parent.getBoundingClientRect();
         var eRect = el.getBoundingClientRect();
-        if (eRect.right > pRect.right - 24 || eRect.left < pRect.left + 24) {
+        if (eRect.right > pRect.right - 28 || eRect.left < pRect.left + 28) {
           parent.scrollLeft += (eRect.left + eRect.width / 2) - (pRect.left + pRect.width / 2);
         }
       }
@@ -43,10 +43,10 @@ function ensureFocusVisibleInContainer(el) {
     if (hubScrollBody && hubDynamicContent && hubDynamicContent.contains(el)) {
       var sRect = hubScrollBody.getBoundingClientRect();
       var elRect = el.getBoundingClientRect();
-      if (elRect.bottom > sRect.bottom - 24) {
-        hubScrollBody.scrollTop += (elRect.bottom - sRect.bottom) + 40;
-      } else if (elRect.top < sRect.top + 18) {
-        hubScrollBody.scrollTop -= (sRect.top - elRect.top) + 32;
+      if (elRect.bottom > sRect.bottom - 28) {
+        hubScrollBody.scrollTop += (elRect.bottom - sRect.bottom) + 46;
+      } else if (elRect.top < sRect.top + 20) {
+        hubScrollBody.scrollTop -= (sRect.top - elRect.top) + 38;
       }
     } else if (el.scrollIntoView) {
       el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
@@ -131,7 +131,7 @@ function moveFocusDirection(dir) {
 }
 
 // ===================================================================
-// UI WIRE-UP & GOOGLE TV VOICE ASSISTANT (ES5)
+// UI WIRE-UP & SMART TV VOICE ASSISTANT (ES5)
 // ===================================================================
 var tabBtns = document.querySelectorAll('#hub-nav-tabs .hub-tab-btn');
 for (var t = 0; t < tabBtns.length; t++) {
@@ -218,7 +218,7 @@ function submitTvVoiceQuery(qStr) {
   xhrJson(
     'POST',
     '/api/ai/voice-assistant',
-    { query: cleanQ, userName: 'Google TV', lang: activeTvLang, previousItems: tvVoicePrevItems },
+    { query: cleanQ, userName: 'Smart TV', lang: activeTvLang, previousItems: tvVoicePrevItems },
     function (err, data) {
       if (err || !data) {
         if (tvVoiceReplyEl) tvVoiceReplyEl.textContent = 'No pude conectar con el asistente.';
@@ -288,7 +288,7 @@ if (tvVoiceBtn) {
     if (voiceModal) voiceModal.style.display = 'block';
     if (tvVoiceResultsEl) tvVoiceResultsEl.innerHTML = '';
     tvVoicePrevItems = [];
-    var greet = '¡Holaa! ¿Qué quieres ver hoy?';
+    var greet = '¡Hola! ¿Qué canal o película quieres ver?';
     if (tvVoiceReplyEl) tvVoiceReplyEl.textContent = greet;
     speakTvText(greet);
     setTimeout(function () {
@@ -447,14 +447,14 @@ document.addEventListener('keydown', function (e) {
   var activeEl = document.activeElement;
   var targetTag = activeEl && activeEl.tagName ? String(activeEl.tagName).toUpperCase() : '';
 
-  if (keyName === 'ChannelUp' || code === 166) {
+  if (keyName === 'ChannelUp' || code === 166 || code === 427) {
     if (activeScreen === 'player' && activeLiveChannel) {
       if (e.preventDefault) e.preventDefault();
       zapLiveChannel(1);
       return;
     }
   }
-  if (keyName === 'ChannelDown' || code === 167) {
+  if (keyName === 'ChannelDown' || code === 167 || code === 428) {
     if (activeScreen === 'player' && activeLiveChannel) {
       if (e.preventDefault) e.preventDefault();
       zapLiveChannel(-1);
@@ -529,10 +529,15 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  if (targetTag === 'INPUT' && code !== 27) return;
+  if (targetTag === 'INPUT' && code !== 27 && code !== 10009) return;
 
   // Back / Escape / Tizen Return (10009) / LG webOS Back (461) / Android Back (4)
   if (code === 27 || code === 8 || code === 4 || code === 10009 || code === 461) {
+    if (targetTag === 'INPUT') {
+      if (e.preventDefault) e.preventDefault();
+      activeEl.blur();
+      return;
+    }
     if (voiceModal && voiceModal.style.display === 'block') {
       if (e.preventDefault) e.preventDefault();
       voiceModal.style.display = 'none';
@@ -645,6 +650,7 @@ var pairMatch = searchStr.match(/[?&]pair=1\b/);
 requestPairingCode(false);
 connectPairingWs();
 loadTvCatalog();
+if (catalogData.loaded) renderHubContent();
 
 if (roomMatch && roomMatch[1]) {
   enterRoomReceiver(roomMatch[1], tvT('roomPrefix') + roomMatch[1].toUpperCase(), '', tvT('directLinkLabel'));

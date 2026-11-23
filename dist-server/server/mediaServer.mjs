@@ -22,7 +22,7 @@ var ENV = {
   appUrl: (process.env.APP_URL || "").replace(/\/+$/, ""),
   spotifyClientId: (process.env.SPOTIFY_CLIENT_ID || "").trim(),
   spotifyClientSecret: (process.env.SPOTIFY_CLIENT_SECRET || "").trim(),
-  appVersionName: process.env.NAIM_APP_VERSION || "3.2.0",
+  appVersionName: process.env.NAIM_APP_VERSION || "3.3.0",
   appVersionCodeMobile: Number(process.env.NAIM_MOBILE_VERSION_CODE) || 302,
   appVersionCodeTv: Number(process.env.NAIM_TV_VERSION_CODE) || 302,
   appVersionCodeMusic: Number(process.env.NAIM_MUSIC_VERSION_CODE) || 302,

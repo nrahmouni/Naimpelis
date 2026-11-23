@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Riffan TV Google TV — Hub & Receptor 1080p</title>
+    <title>Riffan TV — Smart TV 1080p (Google TV & Samsung Tizen)</title>
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
@@ -17,28 +17,28 @@
     <div class="ambient-glow"></div>
 
     <!-- =================================================================== -->
-    <!-- SCREEN 0: GOOGLE TV 10-FOOT CUSTOM HUB (FULL D-PAD NAVIGATION)      -->
+    <!-- SCREEN 0: APPLE TV / NETFLIX 10-FOOT SMART TV HUB (D-PAD READY)     -->
     <!-- =================================================================== -->
     <div id="tv-hub-screen">
       <div class="hub-topbar">
         <div class="hub-left-cluster">
           <div class="hub-brand">
             <div class="brand-logo-box">
-              <img src="/icon.svg" alt="Riffan TV" width="28" height="28" class="brand-logo-img" style="width:28px;height:28px;object-fit:contain;pointer-events:none;" />
+              <img src="/icon.svg" alt="Riffan TV" width="32" height="32" class="brand-logo-img" />
             </div>
             <div>
               <div class="brand-title">
                 RIFFAN <span class="accent">TV</span>
                 <span class="tag">Google TV</span>
               </div>
-              <div class="brand-sub" id="hub-version-label">Google TV · Control D-Pad</div>
+              <div class="brand-sub" id="hub-version-label">Smart TV Pro · TDT · DAZN · Movistar+</div>
             </div>
           </div>
 
           <div class="hub-nav-pills" id="hub-nav-tabs">
             <button type="button" class="hub-tab-btn search-left-btn" data-tab="search" tabindex="0">🔍 Buscar</button>
             <button type="button" class="hub-tab-btn active" data-tab="home" tabindex="0">Inicio</button>
-            <button type="button" class="hub-tab-btn" data-tab="tdt" tabindex="0">TDT Directo</button>
+            <button type="button" class="hub-tab-btn" data-tab="tdt" tabindex="0">TDT · DAZN · M+</button>
             <button type="button" class="hub-tab-btn" data-tab="releases" tabindex="0">Estrenos</button>
             <button type="button" class="hub-tab-btn" data-tab="movies" tabindex="0">Cine</button>
             <button type="button" class="hub-tab-btn" data-tab="series" tabindex="0">Series</button>
@@ -47,7 +47,7 @@
         </div>
 
         <div class="hub-right-actions">
-          <button type="button" id="btn-hub-voice" class="tv-btn-primary" style="height:40px;padding:0 14px;font-size:13px;" tabindex="0" aria-label="Asistente por Voz">🎤 Voz AI</button>
+          <button type="button" id="btn-hub-voice" class="tv-btn-primary hub-action-voice" tabindex="0" aria-label="Asistente por Voz">🎤 Voz AI</button>
           <button type="button" id="btn-hub-lang" class="tv-btn" tabindex="0" aria-label="Idioma">🌐 ES</button>
           <button type="button" id="btn-go-pairing" class="pair-pill-btn" tabindex="0">
             <span id="hub-pair-label">📺 Móvil · </span><strong id="hub-pair-code">••••</strong>
@@ -60,8 +60,9 @@
 
       <div class="hub-scroll-body" id="hub-scroll-body">
         <div id="hub-dynamic-content">
-          <div id="hub-initial-loading" style="padding: 80px 20px; text-align: center; color: #adadb8; font-size: 18px; font-weight: 700;">
-            Cargando cartelera, series, anime y canales en directo...
+          <div id="hub-initial-loading" class="hub-loading-state">
+            <div class="tv-spinner"></div>
+            <div>Cargando TDT España, DAZN, Movistar+ y cartelera 1080p...</div>
           </div>
         </div>
       </div>
@@ -76,9 +77,9 @@
           <div class="series-modal-info">
             <img id="sm-poster" class="series-modal-poster" src="/icon.svg" alt="" />
             <div>
-              <div class="eyebrow" id="sm-badge" style="margin-bottom: 4px;">SERIE HD</div>
-              <h2 id="sm-title" style="font-size: 28px; font-weight: 800; color: #ffffff; margin-bottom: 8px;">Cargando...</h2>
-              <p id="sm-overview" style="font-size: 14px; color: #b4b4c0; line-height: 1.45; max-width: 680px;"></p>
+              <div class="eyebrow" id="sm-badge" style="margin-bottom: 6px;">SERIE HD</div>
+              <h2 id="sm-title" class="sm-modal-heading">Cargando...</h2>
+              <p id="sm-overview" class="sm-modal-overview"></p>
             </div>
           </div>
           <button type="button" id="btn-close-series-modal" class="tv-btn" tabindex="0">
@@ -99,43 +100,43 @@
     </div>
 
     <!-- =================================================================== -->
-    <!-- GOOGLE TV VOICE ASSISTANT MODAL (10-FOOT D-PAD + MIC)               -->
+    <!-- SMART TV VOICE ASSISTANT MODAL (10-FOOT D-PAD + MIC)                -->
     <!-- =================================================================== -->
     <div id="tv-voice-modal">
       <div class="voice-modal-card">
         <div class="voice-modal-head">
           <div>
-            <div class="eyebrow" style="margin-bottom:4px;">ASISTENTE POR VOZ AI · RIFFANTV</div>
-            <h2 style="font-size:24px;font-weight:800;color:#ffffff;">Dime qué quieres ver hoy</h2>
+            <div class="eyebrow" style="margin-bottom:4px;">ASISTENTE POR VOZ · RIFFAN TV</div>
+            <h2 class="voice-modal-heading">Dime qué canal o película quieres ver</h2>
           </div>
-          <div style="display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;">
-            <button type="button" id="btn-tv-voice-mic" class="tv-btn-primary" style="margin-right:10px;" tabindex="0">🎤 Hablar</button>
+          <div class="voice-head-actions">
+            <button type="button" id="btn-tv-voice-mic" class="tv-btn-primary" tabindex="0">🎤 Hablar</button>
             <button type="button" id="btn-close-voice-modal" class="tv-btn" tabindex="0">✕ Volver</button>
           </div>
         </div>
-        <div class="voice-reply-banner" id="tv-voice-reply">¡Holaa! ¿Qué quieres ver hoy?</div>
+        <div class="voice-reply-banner" id="tv-voice-reply">¡Hola! Pídeme DAZN LaLiga, La 1, Movistar Plus+ o cualquier película.</div>
         <form id="tv-voice-form" class="tv-search-row">
-          <input type="text" id="tv-voice-input" class="tv-search-input" placeholder="Ej: Quiero ver DAZN LaLiga / Las mejores 3 pelis de terror de este mes" tabindex="0" />
-          <button type="submit" class="tv-btn-primary" tabindex="0">Enviar</button>
+          <input type="text" id="tv-voice-input" class="tv-search-input" placeholder="Ej: Pon DAZN LaLiga / Pon Movistar LaLiga / Películas de estreno" tabindex="0" />
+          <button type="submit" class="tv-btn-primary" tabindex="0">Buscar</button>
         </form>
-        <div class="tv-chips-row" style="margin-bottom:14px;">
-          <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Quiero ver DAZN LaLiga" tabindex="0">Quiero ver DAZN LaLiga</button>
-          <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Las mejores 3 pelis de terror de este mes" tabindex="0">Mejores 3 pelis terror este mes</button>
-          <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Ponme National Geographic" tabindex="0">National Geographic</button>
-          <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Canales de Marruecos" tabindex="0">Canales de Marruecos</button>
+        <div class="tv-chips-row">
+          <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Quiero ver DAZN LaLiga" tabindex="0">DAZN LaLiga</button>
+          <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Ponme Movistar Plus" tabindex="0">Movistar Plus+</button>
+          <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Ponme La 1" tabindex="0">La 1 HD</button>
+          <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Las mejores 3 pelis de este mes" tabindex="0">Estrenos del mes</button>
         </div>
         <div class="tv-grid" id="tv-voice-results"></div>
       </div>
     </div>
 
     <!-- =================================================================== -->
-    <!-- SCREEN 1: 4-DIGIT SAMSUNG / LG / ANDROID SMART TV PAIRING           -->
+    <!-- SCREEN 1: 4-DIGIT SAMSUNG / LG / GOOGLE TV PAIRING                  -->
     <!-- =================================================================== -->
     <div id="pairing-screen">
       <div class="tv-header">
         <div class="brand-row">
           <div class="brand-logo-box">
-            <img src="/icon.svg" alt="Riffan TV" width="32" height="32" class="brand-logo-img" style="width:32px;height:32px;object-fit:contain;pointer-events:none;" />
+            <img src="/icon.svg" alt="Riffan TV" width="34" height="34" class="brand-logo-img" />
           </div>
           <div>
             <div class="brand-title">
@@ -151,7 +152,7 @@
         <div class="status-row">
           <div id="conn-badge" class="status-badge connecting">Conectando...</div>
           <button type="button" id="btn-pairing-lang" class="tv-btn" tabindex="0" aria-label="Idioma">🌐 ES</button>
-          <button type="button" id="btn-back-to-hub" class="tv-btn-primary" style="height: 42px; font-size: 14px;" tabindex="0">
+          <button type="button" id="btn-back-to-hub" class="tv-btn-primary" tabindex="0">
             ← Volver al Menú TV
           </button>
           <button type="button" id="btn-web-mode" class="tv-btn" tabindex="0">
@@ -194,7 +195,7 @@
             <span class="direct-room-label" id="direct-room-label">
               ¿Prefieres entrar directo con código de sala?
             </span>
-            <div style="display: -webkit-flex; display: flex; -webkit-align-items: center; align-items: center;">
+            <div class="direct-room-inputs">
               <input
                 type="text"
                 id="direct-room-input"
@@ -263,17 +264,20 @@
       </div>
 
       <div id="standby-overlay">
+        <div class="standby-channel-badge" id="standby-channel-badge">
+          <img id="standby-logo-img" class="standby-logo-img" src="/icon.svg" alt="" referrerpolicy="no-referrer" />
+        </div>
         <div class="tv-spinner" id="standby-spinner"></div>
         <div class="room-live-pill" id="standby-room-pill">Conectando señal HD...</div>
         <h2 class="standby-title" id="standby-title-text">Preparando reproducción en 1080p</h2>
         <p class="standby-sub" id="standby-sub-text">
-          Cargando servidor de emisión directo para Google TV...
+          Sintonizando señal directa para Smart TV...
         </p>
-        <div style="display: -webkit-flex; display: flex; -webkit-flex-wrap: wrap; flex-wrap: wrap; -webkit-justify-content: center; justify-content: center;">
-          <button type="button" id="btn-standby-retry" class="tv-btn-primary" style="display: none; margin: 6px 8px;" tabindex="0">
-            ↻ Probar otro servidor
+        <div class="standby-btn-row">
+          <button type="button" id="btn-standby-retry" class="tv-btn-primary" style="display: none;" tabindex="0">
+            ↻ Probar otra señal
           </button>
-          <button type="button" id="btn-standby-exit" class="tv-btn" style="margin: 6px 8px;" tabindex="0">
+          <button type="button" id="btn-standby-exit" class="tv-btn" tabindex="0">
             ← Volver al Menú TV
           </button>
         </div>
@@ -288,7 +292,7 @@
             <img id="hud-logo-img" class="hud-logo-img" src="/icon.svg" alt="" referrerpolicy="no-referrer" />
           </div>
           <div style="min-width: 0;">
-            <div class="hud-meta-title" id="hud-title">Riffan TV Google TV</div>
+            <div class="hud-meta-title" id="hud-title">Riffan TV Smart TV</div>
             <div class="hud-meta-sub" id="hud-sub">Reproducción HD</div>
           </div>
         </div>
@@ -344,7 +348,7 @@
 
     <div id="ota-update-banner">
       <span id="ota-update-text">Nueva versión APK disponible</span>
-      <button type="button" id="btn-ota-install" class="tv-btn-primary" style="height: 38px; font-size: 13px; padding: 0 16px;" tabindex="0">
+      <button type="button" id="btn-ota-install" class="tv-btn-primary" tabindex="0">
         Actualizar APK
       </button>
     </div>

@@ -596,9 +596,13 @@ export async function buildTizenWgtArchive(
         const extraAssets = [
           'tv-receiver.html',
           'tv/tv-base.css',
-          'tv/tv-state-i18n.js',
-          'tv/tv-hub-pairing.js',
-          'tv/tv-player-engine.js',
+          'tv/tv-modals.css',
+          'tv/tv-player.css',
+          'tv/tv-i18n.js',
+          'tv/tv-state.js',
+          'tv/tv-player-core.js',
+          'tv/tv-player-modes.js',
+          'tv/tv-hub.js',
           'tv/tv-nav-voice.js',
           'vendor/hls.min.js',
         ];

@@ -209,8 +209,8 @@ try {
 } catch {
   // ignore cleanup permission errors
 }
-const MAX_LIVE_DVB_SESSIONS = 4;
-const DVB_SESSION_IDLE_MS = 45_000;
+const MAX_LIVE_DVB_SESSIONS = 6;
+const DVB_SESSION_IDLE_MS = 90_000;
 const liveDvbSessions = new Map<string, LiveDvbRelaySession>();
 const dvbSessionUpstreamMeta = new LruTtlCache<
   string,
@@ -368,7 +368,7 @@ export async function ensureLiveDvbCleanHlsSession(
     ? "yadif=0:-1:1,scale='min(1280,iw)':-2,format=yuv420p"
     : "yadif=0:-1:1,scale='min(1920,iw)':-2,format=yuv420p";
 
-  const useUltrafast = isUhd4kStream || isFastProfile || liveDvbSessions.size >= 2;
+  const useUltrafast = true;
   ffArgs.push(
     '-reconnect',
     '1',
@@ -388,9 +388,6 @@ export async function ensureLiveDvbCleanHlsSession(
     '+genpts+discardcorrupt',
     '-avoid_negative_ts',
     'make_zero',
-    ...(isUhd4kStream
-      ? []
-      : ['-err_detect', '+crccheck+bitstream', '-ec', 'favor_inter+deblock']),
     '-i',
     cleanUpstream,
     '-map',
@@ -411,11 +408,11 @@ export async function ensureLiveDvbCleanHlsSession(
     '-pix_fmt',
     'yuv420p',
     '-crf',
-    isFastProfile ? '21' : '18',
+    isFastProfile ? '21' : '19',
     '-maxrate',
-    isFastProfile ? '2600k' : '6500k',
+    isFastProfile ? '2600k' : '6000k',
     '-bufsize',
-    isFastProfile ? '5200k' : '13000k',
+    isFastProfile ? '5200k' : '12000k',
     '-r',
     '25',
     '-g',
@@ -427,7 +424,7 @@ export async function ensureLiveDvbCleanHlsSession(
     '-force_key_frames',
     'expr:gte(t,n_forced*2)',
     '-threads',
-    '2',
+    '0',
     '-c:a',
     'aac',
     '-ac',

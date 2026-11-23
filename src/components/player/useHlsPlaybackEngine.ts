@@ -224,23 +224,24 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
 
     const attachHlsJs = () => {
       if (!Hls.isSupported() || cancelled) return false;
+      const isDvbLiveUrl = /\/api\/dvb-live\//i.test(videoState.url);
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
         startPosition: targetResumeSec > 3 ? targetResumeSec : -1,
-        liveSyncDurationCount: 3,
+        liveSyncDurationCount: isDvbLiveUrl ? 2 : 3,
         liveMaxLatencyDurationCount: 10,
         maxLiveSyncPlaybackRate: 1,
         backBufferLength: 20,
         maxBufferLength: 35,
         maxMaxBufferLength: 75,
-        maxBufferHole: videoState.isLive ? 0.3 : 0.5,
+        maxBufferHole: videoState.isLive ? (isDvbLiveUrl ? 0.65 : 0.4) : 0.5,
         maxFragLookUpTolerance: 0.25,
         highBufferWatchdogPeriod: 2,
-        nudgeOffset: videoState.isLive ? 0.05 : 0.1,
-        nudgeMaxRetry: videoState.isLive ? 5 : 10,
+        nudgeOffset: videoState.isLive ? 0.1 : 0.1,
+        nudgeMaxRetry: videoState.isLive ? 8 : 10,
         stretchShortVideoTrack: !videoState.isLive,
-        maxAudioFramesDrift: videoState.isLive ? 2 : 4,
+        maxAudioFramesDrift: videoState.isLive ? 3 : 4,
         abrEwmaDefaultEstimate: 7_500_000,
         manifestLoadingTimeOut: 20000,
         manifestLoadingMaxRetry: 8,

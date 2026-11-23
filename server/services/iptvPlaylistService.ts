@@ -100,7 +100,7 @@ const KNOWN_TDT_ALIASES: Record<string, string[]> = {
   'tdt-24h': ['24h', 'canal 24 horas', '24 horas'],
   'tdt-teledeporte': ['teledeporte', 'tdp'],
   'tdt-clan': ['clan', 'clan tv'],
-  'tdt-antena3': ['antena 3'],
+  'tdt-antena3': ['antena 3', 'antena 3 hd', 'antena3'],
   'tdt-cuatro': ['cuatro'],
   'tdt-telecinco': ['telecinco'],
   'tdt-lasexta': ['lasexta', 'la sexta'],
