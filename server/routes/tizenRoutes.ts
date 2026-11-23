@@ -130,7 +130,7 @@ export function registerTizenRoutes(app: express.Express, rootDir: string): void
       const distDir = path.resolve(rootDir, 'dist');
       const distIndex = path.join(distDir, 'index.html');
 
-      if (fs.existsSync(distIndex) && req.query.mode !== 'hosted') {
+      if (fs.existsSync(distIndex) && req.query.mode === 'bundle') {
         const files: string[] = [];
         walkSafeDistFiles(distDir, distDir, files);
         for (const rel of files) {
@@ -152,41 +152,11 @@ export function registerTizenRoutes(app: express.Express, rootDir: string): void
           }
         }
       } else {
-        const launcherHtml = `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>${appName} — Samsung Smart TV</title>
-  <script>(function(){if(window.location.protocol==="file:"){window.__RIFFAN_TIZEN_WIDGET__=true;window.__RIFFAN_API_ORIGIN__=${JSON.stringify(targetOrigin)};if(typeof window.fetch==="function"){var origFetch=window.fetch;window.fetch=function(input,init){if(typeof input==="string"&&input.charAt(0)==="/"){input=${JSON.stringify(targetOrigin)}+input;}return origFetch.call(this,input,init);};}}try{if(window.tizen&&window.tizen.tvinputdevice&&window.tizen.tvinputdevice.registerKeyBatch){window.tizen.tvinputdevice.registerKeyBatch(["MediaPlayPause","MediaPlay","MediaPause","MediaStop","MediaRewind","MediaFastForward","ChannelUp","ChannelDown"]);}}catch(e){}})();</script>
-  <style>
-    html, body { margin:0; padding:0; width:100%; height:100%; background:#000; color:#fff; font-family:Arial,sans-serif; overflow:hidden; }
-    .wrap { display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; text-align:center; padding:48px; }
-    .mark { width:96px; height:96px; border-radius:24px; background:#7C3AED; display:flex; align-items:center; justify-content:center; font-size:46px; font-weight:900; margin-bottom:28px; }
-    h1 { font-size:40px; margin:0 0 12px; }
-    p { font-size:20px; color:#a1a1aa; margin:0 0 36px; }
-    button { min-width:260px; height:64px; font-size:20px; font-weight:700; border-radius:16px; border:2px solid rgba(255,255,255,0.2); background:#7C3AED; color:#fff; cursor:pointer; }
-    button:focus { outline:3px solid #fff; transform:scale(1.04); }
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="mark">R</div>
-    <h1>${appName}</h1>
-    <p>Conectando con tu servidor Samsung Smart TV...</p>
-    <button id="btn" autofocus>Abrir RiffanTV</button>
-  </div>
-  <script>
-    (function(){
-      var url = "${targetOrigin}/?tizen=1&tv=1";
-      var btn = document.getElementById("btn");
-      if(btn){ btn.onclick=function(){ window.location.replace(url); }; }
-      setTimeout(function(){ window.location.replace(url); }, 800);
-    })();
-  </script>
-</body>
-</html>`;
-        zip.file('index.html', launcherHtml);
+        const { buildHostedTizenLauncherAssets } = await import('../../src/utils/tizenWgtBuilder.ts');
+        const launcherAssets = buildHostedTizenLauncherAssets(appName, targetOrigin);
+        zip.file('index.html', launcherAssets.indexHtml);
+        zip.file('app.css', launcherAssets.appCss);
+        zip.file('main.js', launcherAssets.mainJs);
       }
 
       const buf = await zip.generateAsync({

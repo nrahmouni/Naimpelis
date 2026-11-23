@@ -546,7 +546,15 @@ document.addEventListener('keydown', function (e) {
       return;
     }
     if (activeScreen === 'player') {
-      if (isBrowserInFullscreen()) return;
+      if (isBrowserInFullscreen()) {
+        if (e.preventDefault) e.preventDefault();
+        try {
+          if (document.exitFullscreen) document.exitFullscreen();
+          else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+        } catch (fsErr) {}
+        setTimeout(syncFullscreenButtons, 120);
+        return;
+      }
       if (e.preventDefault) e.preventDefault();
       exitPlayerToHubOrPairing();
       return;
@@ -554,6 +562,17 @@ document.addEventListener('keydown', function (e) {
     if (activeScreen === 'pairing') {
       if (e.preventDefault) e.preventDefault();
       switchTvScreen('hub');
+      return;
+    }
+    if (activeScreen === 'hub' && code === 10009 && window.tizen && window.tizen.application) {
+      if (e.preventDefault) e.preventDefault();
+      var nowTs = Date.now();
+      if (window.__riffanBackExitTs && nowTs - window.__riffanBackExitTs < 2600) {
+        try { window.tizen.application.getCurrentApplication().exit(); } catch (exitErr) {}
+      } else {
+        window.__riffanBackExitTs = nowTs;
+        showToast('Pulsa Volver otra vez para salir de RiffanTV');
+      }
       return;
     }
   }
@@ -591,6 +610,12 @@ document.addEventListener('keydown', function (e) {
 
 // Register Samsung Tizen TV hardware remote keys + screensaver protection (ES5-safe)
 try {
+  if (/Tizen/i.test(uaStr)) {
+    var brandTags = document.querySelectorAll('.hub-brand .tag');
+    for (var bt = 0; bt < brandTags.length; bt++) {
+      brandTags[bt].textContent = 'Samsung TV';
+    }
+  }
   if (window.tizen && window.tizen.tvinputdevice && window.tizen.tvinputdevice.registerKeyBatch) {
     window.tizen.tvinputdevice.registerKeyBatch([
       'MediaPlayPause', 'MediaPlay', 'MediaPause', 'MediaStop',
@@ -627,4 +652,8 @@ if (roomMatch && roomMatch[1]) {
   switchTvScreen('pairing');
 } else {
   switchTvScreen('hub');
+  setTimeout(function () {
+    var activeTabEl = document.querySelector('#hub-nav-tabs .hub-tab-btn.active');
+    if (activeTabEl && activeTabEl.focus) activeTabEl.focus();
+  }, 80);
 }

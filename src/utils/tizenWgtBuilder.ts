@@ -138,8 +138,8 @@ export function buildHostedTizenLauncherHtml(appName: string, targetOrigin: stri
     `    <h1>${escapedName}</h1>`,
     '    <p id="status-msg">Conectando con tu servidor Samsung Smart TV...</p>',
     '    <div class="actions">',
-    '      <button id="btn-app" class="primary" tabindex="0">Abrir RiffanTV (10-Foot)</button>',
-    '      <button id="btn-tv" tabindex="0">Abrir Receptor Directo (/tv)</button>',
+    '      <button id="btn-tv" class="primary" tabindex="0">Abrir RiffanTV Smart TV (/tv)</button>',
+    '      <button id="btn-app" tabindex="0">Abrir App Web Completa</button>',
     '    </div>',
     '  </div>',
     '  <script>',
@@ -148,24 +148,214 @@ export function buildHostedTizenLauncherHtml(appName: string, targetOrigin: stri
     `      var tvUrl = ${JSON.stringify(tvReceiverUrl)};`,
     '      var btnApp = document.getElementById("btn-app");',
     '      var btnTv = document.getElementById("btn-tv");',
-    '      if (btnApp) { btnApp.onclick = function(){ window.location.replace(appUrl); }; }',
     '      if (btnTv) { btnTv.onclick = function(){ window.location.replace(tvUrl); }; }',
-    '      if (btnApp && btnApp.focus) { btnApp.focus(); }',
+    '      if (btnApp) { btnApp.onclick = function(){ window.location.replace(appUrl); }; }',
+    '      if (btnTv && btnTv.focus) { btnTv.focus(); }',
     '      document.addEventListener("keydown", function(e){',
     '        var code = e.keyCode || e.which;',
     '        if (code === 10009) {',
     '          try { window.tizen && window.tizen.application && window.tizen.application.getCurrentApplication().exit(); } catch (err) {}',
     '        } else if (code === 37 || code === 39) {',
-    '          if (document.activeElement === btnApp && btnTv) btnTv.focus();',
-    '          else if (btnApp) btnApp.focus();',
+    '          if (document.activeElement === btnTv && btnApp) btnApp.focus();',
+    '          else if (btnTv) btnTv.focus();',
     '        }',
     '      });',
-    '      setTimeout(function(){ window.location.replace(appUrl); }, 900);',
+    '      setTimeout(function(){ window.location.replace(tvUrl); }, 450);',
     '    })();',
     '  </script>',
     '</body>',
     '</html>',
   ].join('\n');
+}
+
+export interface HostedTizenLauncherAssets {
+  indexHtml: string;
+  appCss: string;
+  mainJs: string;
+}
+
+/**
+ * Splits the Samsung Tizen launcher into external `app.css` and `main.js` files
+ * because Tizen 4/5 WRT ignores inline <style>/<script> in file:// widgets.
+ * Includes automatic Wi-Fi wake-up retries and clean history-free redirect.
+ */
+export function buildHostedTizenLauncherAssets(
+  appName: string,
+  targetOrigin: string
+): HostedTizenLauncherAssets {
+  const safeOrigin = String(targetOrigin || 'https://riffan.ai.studio').replace(/\/+$/, '');
+  const tvReceiverUrl = `${safeOrigin}/tv`;
+  const healthUrl = `${safeOrigin}/api/health`;
+  const escapedName = appName.replace(/[<>&"]/g, '');
+
+  const appCss = [
+    'html, body {',
+    '  margin: 0;',
+    '  padding: 0;',
+    '  width: 100%;',
+    '  height: 100%;',
+    '  background-color: #000000;',
+    '  color: #ffffff;',
+    '  font-family: Arial, Helvetica, sans-serif;',
+    '  overflow: hidden;',
+    '}',
+    '.wrap {',
+    '  display: -webkit-flex;',
+    '  display: flex;',
+    '  -webkit-flex-direction: column;',
+    '  flex-direction: column;',
+    '  -webkit-align-items: center;',
+    '  align-items: center;',
+    '  -webkit-justify-content: center;',
+    '  justify-content: center;',
+    '  width: 100%;',
+    '  height: 100%;',
+    '  text-align: center;',
+    '  padding: 48px;',
+    '  box-sizing: border-box;',
+    '  background: radial-gradient(circle at 50% 35%, rgba(124, 58, 237, 0.24) 0%, #000000 65%);',
+    '}',
+    '.mark {',
+    '  width: 108px;',
+    '  height: 108px;',
+    '  line-height: 108px;',
+    '  border-radius: 26px;',
+    '  background-color: #7C3AED;',
+    '  color: #ffffff;',
+    '  font-size: 54px;',
+    '  font-weight: 900;',
+    '  margin-bottom: 24px;',
+    '  box-shadow: 0 20px 60px rgba(124, 58, 237, 0.5);',
+    '}',
+    'h1 {',
+    '  font-size: 42px;',
+    '  margin: 0 0 12px 0;',
+    '  color: #ffffff;',
+    '}',
+    '#status-msg {',
+    '  font-size: 22px;',
+    '  color: #c4b5fd;',
+    '  margin: 0 0 28px 0;',
+    '  max-width: 760px;',
+    '}',
+    'button {',
+    '  min-width: 280px;',
+    '  height: 64px;',
+    '  padding: 0 32px;',
+    '  font-size: 22px;',
+    '  font-weight: 700;',
+    '  border-radius: 14px;',
+    '  border: 2px solid rgba(255, 255, 255, 0.25);',
+    '  background-color: #7C3AED;',
+    '  color: #ffffff;',
+    '  cursor: pointer;',
+    '}',
+    'button:focus {',
+    '  outline: 3px solid #ffffff;',
+    '  background-color: #8B5CF6;',
+    '}',
+  ].join('\n');
+
+  const mainJs = [
+    'window.onload = function () {',
+    `  var targetUrl = ${JSON.stringify(tvReceiverUrl)};`,
+    `  var healthUrl = ${JSON.stringify(healthUrl)};`,
+    '  var statusEl = document.getElementById("status-msg");',
+    '  var btn = document.getElementById("btn-open");',
+    '  var attempts = 0;',
+    '  var maxAttempts = 4;',
+    '  var launched = false;',
+    '',
+    '  function goNow() {',
+    '    if (launched) return;',
+    '    launched = true;',
+    '    window.location.replace(targetUrl);',
+    '  }',
+    '',
+    '  try {',
+    '    if (window.tizen && window.tizen.tvinputdevice && window.tizen.tvinputdevice.registerKeyBatch) {',
+    '      window.tizen.tvinputdevice.registerKeyBatch([',
+    '        "MediaPlayPause","MediaPlay","MediaPause","MediaStop",',
+    '        "MediaRewind","MediaFastForward","ChannelUp","ChannelDown"',
+    '      ]);',
+    '    }',
+    '  } catch (e) {}',
+    '',
+    '  if (btn) {',
+    '    btn.onclick = goNow;',
+    '    if (btn.focus) btn.focus();',
+    '  }',
+    '',
+    '  document.addEventListener("keydown", function (e) {',
+    '    var code = e.keyCode || e.which;',
+    '    if (code === 13 || code === 23) {',
+    '      goNow();',
+    '    } else if (code === 10009) {',
+    '      try { window.tizen && window.tizen.application && window.tizen.application.getCurrentApplication().exit(); } catch (err) {}',
+    '    }',
+    '  });',
+    '',
+    '  function probeServer() {',
+    '    if (launched) return;',
+    '    attempts += 1;',
+    '    if (statusEl) {',
+    '      statusEl.textContent = attempts === 1 ? "Conectando con RiffanTV..." : "Reconectando Wi-Fi TV (" + attempts + "/" + maxAttempts + ")...";',
+    '    }',
+    '    try {',
+    '      var xhr = new XMLHttpRequest();',
+    '      xhr.open("GET", healthUrl + "?_=" + Date.now(), true);',
+    '      xhr.timeout = 6000;',
+    '      xhr.onreadystatechange = function () {',
+    '        if (xhr.readyState !== 4 || launched) return;',
+    '        if (xhr.status >= 200 && xhr.status < 400) {',
+    '          if (statusEl) statusEl.textContent = "Conectado. Abriendo RiffanTV...";',
+    '          setTimeout(goNow, 220);',
+    '        } else if (attempts < maxAttempts) {',
+    '          setTimeout(probeServer, 1400);',
+    '        } else {',
+    '          if (statusEl) statusEl.textContent = "Pulsa OK para abrir RiffanTV (HTTP " + xhr.status + ").";',
+    '        }',
+    '      };',
+    '      xhr.onerror = function () {',
+    '        if (attempts < maxAttempts) setTimeout(probeServer, 1400);',
+    '        else if (statusEl) statusEl.textContent = "Sin conexion de red. Revisa el Wi-Fi de tu TV y pulsa OK.";',
+    '      };',
+    '      xhr.ontimeout = function () {',
+    '        if (attempts < maxAttempts) setTimeout(probeServer, 1200);',
+    '        else goNow();',
+    '      };',
+    '      xhr.send();',
+    '    } catch (err) {',
+    '      goNow();',
+    '    }',
+    '  }',
+    '',
+    '  probeServer();',
+    '};',
+  ].join('\n');
+
+  const indexHtml = [
+    '<!DOCTYPE html>',
+    '<html lang="es">',
+    '<head>',
+    '  <meta charset="UTF-8" />',
+    '  <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
+    `  <title>${escapedName}</title>`,
+    '  <link rel="stylesheet" href="app.css" />',
+    '  <script src="main.js"></script>',
+    '</head>',
+    '<body bgcolor="#000000" text="#FFFFFF">',
+    '  <div class="wrap">',
+    '    <div class="mark">R</div>',
+    `    <h1>${escapedName}</h1>`,
+    '    <p id="status-msg">Iniciando Smart TV...</p>',
+    '    <button id="btn-open" autofocus>Abrir RiffanTV</button>',
+    '  </div>',
+    '</body>',
+    '</html>',
+  ].join('\n');
+
+  return { indexHtml, appCss, mainJs };
 }
 
 // Fallback minimal valid 1x1 dark purple PNG (base64 decoded cleanly without Canvas/DOM if running in Node)
@@ -305,9 +495,12 @@ export async function buildTizenWgtArchive(
   let sourceKind: BuildTizenWgtResult['sourceKind'] = 'hosted-launcher';
 
   if (mode === 'hosted_launcher') {
-    onProgress?.('Generando lanzador ligero 10-Foot...', 65);
-    zip.file('index.html', buildHostedTizenLauncherHtml(appName, targetOrigin));
-    fileCount += 1;
+    onProgress?.('Generando lanzador estable Tizen (app.css + main.js)...', 65);
+    const launcherAssets = buildHostedTizenLauncherAssets(appName, targetOrigin);
+    zip.file('index.html', launcherAssets.indexHtml);
+    zip.file('app.css', launcherAssets.appCss);
+    zip.file('main.js', launcherAssets.mainJs);
+    fileCount += 3;
     sourceKind = 'hosted-launcher';
   } else {
     let bundledFromDist = false;

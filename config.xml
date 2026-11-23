@@ -7,7 +7,6 @@
     <feature name="http://tizen.org/feature/screen.size.normal.1080.1920"/>
     <feature name="http://tizen.org/feature/screen.size.all"/>
     <icon src="icon.png"/>
-    <tizen:metadata key="http://samsung.com/tv/metadata/prelaunch.support" value="true"/>
     <tizen:metadata key="http://tizen.org/metadata/app/screensaver" value="disable"/>
     <name>RiffanTV</name>
     <tizen:privilege name="http://tizen.org/privilege/internet"/>

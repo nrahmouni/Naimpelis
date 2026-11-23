@@ -73,18 +73,26 @@ describe('Samsung Smart TV (Tizen .wgt) Architecture, Navigation & Packager', ()
     const parsedZip = await JSZip.loadAsync(archive.bytes);
     const configEntry = parsedZip.file('config.xml');
     const indexEntry = parsedZip.file('index.html');
+    const cssEntry = parsedZip.file('app.css');
+    const jsEntry = parsedZip.file('main.js');
     const iconEntry = parsedZip.file('icon.png');
 
     expect(configEntry).not.toBeNull();
     expect(indexEntry).not.toBeNull();
+    expect(cssEntry).not.toBeNull();
+    expect(jsEntry).not.toBeNull();
     expect(iconEntry).not.toBeNull();
 
     const extractedXml = await configEntry!.async('string');
     const extractedHtml = await indexEntry!.async('string');
+    const extractedJs = await jsEntry!.async('string');
     const extractedPng = await iconEntry!.async('uint8array');
 
     expect(extractedXml).toContain('TizenTst01.RiffanTV');
     expect(extractedHtml).toContain('RiffanTV Test');
+    expect(extractedHtml).toContain('href="app.css"');
+    expect(extractedHtml).toContain('src="main.js"');
+    expect(extractedJs).toContain('https://riffan.ai.studio/tv');
     expect(hasPngSignature(extractedPng)).toBe(true);
   });
 

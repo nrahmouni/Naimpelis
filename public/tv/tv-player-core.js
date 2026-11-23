@@ -407,6 +407,7 @@ function applyVideoState(vs, forceReload) {
     var directCorsRetried = false;
     var fallbackNativeTried = false;
     var netErrorCount = 0;
+    var mediaErrorCount = 0;
 
     var switchToNativeHls = function () {
       if (fallbackNativeTried) {
@@ -468,7 +469,14 @@ function applyVideoState(vs, forceReload) {
           triggerPlaybackFailover('Señal de red interrumpida');
         }
       } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
-        hls.recoverMediaError();
+        mediaErrorCount++;
+        if (mediaErrorCount <= 2) {
+          hls.recoverMediaError();
+        } else if (videoEl.canPlayType && videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+          switchToNativeHls();
+        } else {
+          triggerPlaybackFailover('Error de códec de vídeo');
+        }
       } else {
         if (videoEl.canPlayType && videoEl.canPlayType('application/vnd.apple.mpegurl')) {
           switchToNativeHls();

@@ -90,7 +90,6 @@ export function generateTizenConfigXml(options: TizenConfigOptions = {}): string
     `    <feature name="http://tizen.org/feature/screen.size.normal.1080.1920"/>`,
     `    <feature name="http://tizen.org/feature/screen.size.all"/>`,
     `    <icon src="${escapeXml(iconSrc)}"/>`,
-    `    <tizen:metadata key="http://samsung.com/tv/metadata/prelaunch.support" value="true"/>`,
   ];
 
   if (disableScreenSaver) {

@@ -558,45 +558,87 @@ function loadLiveEpg() {
   });
 }
 
+var tvCatalogRetryCount = 0;
 function loadTvCatalog() {
   var pending = 6;
+  var anySuccess = false;
   function checkDone() {
     pending--;
     if (pending <= 0) {
       mergeTvLiveCatalog();
-      catalogData.loaded = true;
-      renderHubContent();
+      var hasAnyItems =
+        catalogData.cinemaReleases.length > 0 ||
+        catalogData.movies.length > 0 ||
+        catalogData.series.length > 0 ||
+        catalogData.tdt.length > 0;
+      if (anySuccess || hasAnyItems) {
+        catalogData.loaded = true;
+        renderHubContent();
+      } else if (tvCatalogRetryCount < 3) {
+        tvCatalogRetryCount += 1;
+        setTimeout(loadTvCatalog, 3000);
+      } else {
+        catalogData.loaded = true;
+        renderHubContent();
+      }
     }
   }
-  xhrJson('GET', '/api/catalog/latest-releases?lang=' + encodeURIComponent(activeTvLang), null, function (_e, d) {
-    if (d) {
+  xhrJson('GET', '/api/catalog/latest-releases?lang=' + encodeURIComponent(activeTvLang), null, function (err, d) {
+    if (!err && d) {
+      anySuccess = true;
       if (Array.isArray(d.cinemaReleases)) catalogData.cinemaReleases = d.cinemaReleases;
       if (Array.isArray(d.newSeasons)) catalogData.newSeasons = d.newSeasons;
     }
     checkDone();
   });
-  xhrJson('GET', '/api/catalog/movies?category=trending&page=1&lang=' + encodeURIComponent(activeTvLang), null, function (_e, d) {
-    if (d && Array.isArray(d.movies)) catalogData.movies = d.movies;
+  xhrJson('GET', '/api/catalog/movies?category=trending&page=1&lang=' + encodeURIComponent(activeTvLang), null, function (err, d) {
+    if (!err && d && Array.isArray(d.movies)) {
+      anySuccess = true;
+      catalogData.movies = d.movies;
+    }
     checkDone();
   });
-  xhrJson('GET', '/api/catalog/series?category=trending&page=1&lang=' + encodeURIComponent(activeTvLang), null, function (_e, d) {
-    if (d && Array.isArray(d.series)) catalogData.series = d.series;
+  xhrJson('GET', '/api/catalog/series?category=trending&page=1&lang=' + encodeURIComponent(activeTvLang), null, function (err, d) {
+    if (!err && d && Array.isArray(d.series)) {
+      anySuccess = true;
+      catalogData.series = d.series;
+    }
     checkDone();
   });
-  xhrJson('GET', '/api/catalog/series?provider=crunchyroll&category=trending&page=1&lang=' + encodeURIComponent(activeTvLang), null, function (_e, d) {
-    if (d && Array.isArray(d.series)) catalogData.anime = d.series;
+  xhrJson('GET', '/api/catalog/series?provider=crunchyroll&category=trending&page=1&lang=' + encodeURIComponent(activeTvLang), null, function (err, d) {
+    if (!err && d && Array.isArray(d.series)) {
+      anySuccess = true;
+      catalogData.anime = d.series;
+    }
     checkDone();
   });
-  xhrJson('GET', '/api/catalog/tdt', null, function (_e, d) {
-    if (d && Array.isArray(d.channels)) catalogData.tdtBase = d.channels;
+  xhrJson('GET', '/api/catalog/tdt', null, function (err, d) {
+    if (!err && d && Array.isArray(d.channels)) {
+      anySuccess = true;
+      catalogData.tdtBase = d.channels;
+    }
     mergeTvLiveCatalog();
     checkDone();
   });
-  xhrJson('GET', '/api/catalog/world-tv', null, function (_e, d) {
-    if (d && Array.isArray(d.channels)) catalogData.worldTv = d.channels;
+  xhrJson('GET', '/api/catalog/world-tv', null, function (err, d) {
+    if (!err && d && Array.isArray(d.channels)) {
+      anySuccess = true;
+      catalogData.worldTv = d.channels;
+    }
     mergeTvLiveCatalog();
     checkDone();
   });
   loadLiveEpg();
-  setInterval(loadLiveEpg, 3 * 60 * 1000);
+}
+setInterval(loadLiveEpg, 3 * 60 * 1000);
+if (window.addEventListener) {
+  window.addEventListener('online', function () {
+    if (!catalogData.loaded || (catalogData.movies.length === 0 && catalogData.tdt.length === 0)) {
+      tvCatalogRetryCount = 0;
+      loadTvCatalog();
+    }
+    if (typeof requestPairingCode === 'function' && !isPaired) {
+      requestPairingCode(false);
+    }
+  });
 }

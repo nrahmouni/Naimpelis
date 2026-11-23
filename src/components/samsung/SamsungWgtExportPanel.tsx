@@ -34,7 +34,7 @@ export const SamsungWgtExportPanel: React.FC<SamsungWgtExportPanelProps> = ({
   const [packageId, setPackageId] = useState('RiffanTv01');
   const [version, setVersion] = useState('1.0.0');
   const [targetOrigin, setTargetOrigin] = useState(defaultOrigin);
-  const [packageMode, setPackageMode] = useState<TizenPackageMode>('full_bundle');
+  const [packageMode, setPackageMode] = useState<TizenPackageMode>('hosted_launcher');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const [building, setBuilding] = useState(false);
@@ -115,12 +115,12 @@ export const SamsungWgtExportPanel: React.FC<SamsungWgtExportPanelProps> = ({
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-bold text-white flex items-center gap-2">
               <FileArchive className="w-4 h-4 text-[#A78BFA] shrink-0" />
-              <span>App Completa (.wgt)</span>
+              <span>Paquete Offline (.wgt)</span>
             </span>
             {packageMode === 'full_bundle' && <Check className="w-4 h-4 text-[#00F593] shrink-0" />}
           </div>
           <p className="text-xs text-zinc-400 mt-1 leading-snug">
-            Incluye HTML, CSS/JS, config.xml e icon.png dentro del paquete.
+            Incluye dist/, config.xml e icon.png (solo TVs Tizen 6.5+ modernas).
           </p>
         </button>
 
@@ -140,12 +140,12 @@ export const SamsungWgtExportPanel: React.FC<SamsungWgtExportPanelProps> = ({
           <div className="flex items-center justify-between gap-2">
             <span className="text-sm font-bold text-white flex items-center gap-2">
               <Tv className="w-4 h-4 text-[#60A5FA] shrink-0" />
-              <span>Lanzador Directo (~80 KB)</span>
+              <span>Recomendado TV Real (~60 KB)</span>
             </span>
             {packageMode === 'hosted_launcher' && <Check className="w-4 h-4 text-[#00F593] shrink-0" />}
           </div>
           <p className="text-xs text-zinc-400 mt-1 leading-snug">
-            Cliente ligero Tizen que apunta directo a tu servidor desplegado.
+            Compatible Tizen 4.0–8.0 sin bloqueos de módulos locales.
           </p>
         </button>
       </div>
