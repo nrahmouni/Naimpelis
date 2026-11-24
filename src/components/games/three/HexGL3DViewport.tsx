@@ -9,6 +9,7 @@ import {
   detectSoftwareGl,
   getMaxSafeAnisotropy,
   initRoomEnvironment,
+  observeHostResize,
 } from '../arcade/threeProHelpers';
 import {
   applyFresnelRimShader,
@@ -213,92 +214,25 @@ function createHoverCraftGroup(): {
   return { group, flameL, flameR, shieldDome, disposables };
 }
 
-export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPointerX }) => {
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const onPointerXRef = useRef(onPointerX);
-  onPointerXRef.current = onPointerX;
+export interface HexGL3DMountOptions {
+  getState: () => HexGL3DSnapshot;
+  onPointerX?: (norm01: number) => void;
+}
 
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
+export function mountHexGl3D(
+  host: HTMLElement,
+  opts: HexGL3DMountOptions
+): { dispose: () => void } | null {
+  const isSoftwareGl = detectSoftwareGl();
+  const renderer = createResilientWebGlRenderer(isSoftwareGl, { exposure: 1.15 });
+  if (!renderer) return null;
 
-    const isSoftwareGl = detectSoftwareGl();
-    const renderer = createResilientWebGlRenderer(isSoftwareGl, { exposure: 1.15 });
-    if (!renderer) {
-      const fbCanvas = document.createElement('canvas');
-      fbCanvas.width = 960;
-      fbCanvas.height = 540;
-      fbCanvas.className = 'w-full h-full block touch-none cursor-crosshair';
-      host.innerHTML = '';
-      host.appendChild(fbCanvas);
-
-      const handleFbPointer = (e: PointerEvent) => {
-        const rect = fbCanvas.getBoundingClientRect();
-        if (!rect.width) return;
-        onPointerXRef.current(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
-      };
-      fbCanvas.addEventListener('pointermove', handleFbPointer);
-      fbCanvas.addEventListener('pointerdown', handleFbPointer);
-
-      let fbRaf = 0;
-      const drawFb = () => {
-        const ctx = fbCanvas.getContext('2d');
-        if (ctx) {
-          const st = simRef.current;
-          const W = fbCanvas.width;
-          const H = fbCanvas.height;
-          ctx.fillStyle = '#040714';
-          ctx.fillRect(0, 0, W, H);
-          const horizonY = H * 0.42;
-          ctx.strokeStyle = 'rgba(34, 211, 238, 0.35)';
-          ctx.lineWidth = 2;
-          for (let lane = -2; lane <= 2; lane += 1) {
-            ctx.beginPath();
-            ctx.moveTo(W * 0.5 + lane * 48, horizonY);
-            ctx.lineTo(W * 0.5 + lane * 185, H);
-            ctx.stroke();
-          }
-          for (let i = 0; i < st.entities.length; i += 1) {
-            const ent = st.entities[i];
-            if (ent.hit && ent.kind !== 'wall') continue;
-            const depth = Math.max(0.03, Math.min(1, 1 - ent.z / 1000));
-            const sy = horizonY + depth * (H - horizonY);
-            const sx = W * 0.5 + ent.lane * (70 + depth * 290);
-            ctx.fillStyle = ent.kind === 'pad' ? '#22d3ee' : ent.kind === 'heal' ? '#34d399' : '#f43f5e';
-            ctx.fillRect(sx - 18 * depth, sy - 10 * depth, 36 * depth, 16 * depth);
-          }
-          if (!st.dead) {
-            const shipPx = W * 0.5 + st.shipX * 310;
-            const shipPy = H * 0.84;
-            ctx.save();
-            ctx.translate(shipPx, shipPy);
-            ctx.rotate(st.bank * 0.35);
-            ctx.fillStyle = st.boost ? '#facc15' : '#38bdf8';
-            ctx.beginPath();
-            ctx.moveTo(0, -24);
-            ctx.lineTo(22, 16);
-            ctx.lineTo(0, 8);
-            ctx.lineTo(-22, 16);
-            ctx.closePath();
-            ctx.fill();
-            ctx.restore();
-          }
-        }
-        fbRaf = requestAnimationFrame(drawFb);
-      };
-      fbRaf = requestAnimationFrame(drawFb);
-
-      return () => {
-        cancelAnimationFrame(fbRaf);
-        fbCanvas.removeEventListener('pointermove', handleFbPointer);
-        fbCanvas.removeEventListener('pointerdown', handleFbPointer);
-        if (fbCanvas.parentNode === host) host.removeChild(fbCanvas);
-      };
-    }
-
-    renderer.domElement.className = 'w-full h-full block touch-none cursor-crosshair';
-    host.innerHTML = '';
-    host.appendChild(renderer.domElement);
+  renderer.domElement.className = 'w-full h-full block touch-none cursor-crosshair';
+  renderer.domElement.style.width = '100%';
+  renderer.domElement.style.height = '100%';
+  renderer.domElement.style.display = 'block';
+  host.innerHTML = '';
+  host.appendChild(renderer.domElement);
 
     const cyberSkyTex = createSkyDomeTexture({
       topHex: '#040614',
@@ -507,8 +441,8 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
 
     const burstSystem = create3dParticleBurstSystem(scene, 110);
 
-    const initW = Math.max(320, host.clientWidth || 960);
-    const initH = Math.max(200, host.clientHeight || Math.round((initW * 9) / 16));
+    const initW = Math.max(160, host.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 960));
+    const initH = Math.max(120, host.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 540));
     const composer = createProPostComposer(renderer, scene, camera, {
       width: initW,
       height: initH,
@@ -520,28 +454,24 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
     const drs = createDrsController(renderer, {
       isSoftwareGl,
       onScaleChange: () => {
-        const w = Math.max(320, host.clientWidth || 960);
-        const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+        const w = Math.max(160, host.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 960));
+        const h = Math.max(120, host.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 540));
         composer?.setSize(w, h);
       },
     });
 
-    const updateSize = () => {
-      const w = Math.max(320, host.clientWidth || 960);
-      const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+    const stopResize = observeHostResize(host, (w, h) => {
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       composer?.setSize(w, h);
-    };
-    updateSize();
-    const ro = new ResizeObserver(updateSize);
-    ro.observe(host);
+    });
 
     const handlePointer = (e: PointerEvent) => {
+      if (!opts.onPointerX) return;
       const rect = renderer.domElement.getBoundingClientRect();
       if (!rect.width) return;
-      onPointerXRef.current(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
+      opts.onPointerX(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
     };
     renderer.domElement.addEventListener('pointermove', handlePointer);
     renderer.domElement.addEventListener('pointerdown', handlePointer);
@@ -558,7 +488,7 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
       lastTime = now;
       elapsed += dt;
 
-      const st = simRef.current;
+      const st = opts.getState();
       const worldX = st.shipX * 4.25;
 
       // Track scrolling texture & overhead cyber arches
@@ -680,18 +610,109 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
 
     pacer.schedule(tick);
 
+    return {
+      dispose: () => {
+        pacer.cancel();
+        stopResize();
+        renderer.domElement.removeEventListener('pointermove', handlePointer);
+        renderer.domElement.removeEventListener('pointerdown', handlePointer);
+        burstSystem.dispose();
+        roomEnv.dispose();
+        hdri.dispose();
+        composer?.dispose();
+        disposables.forEach((d) => d.dispose());
+        renderer.dispose();
+        if (renderer.domElement.parentNode === host) host.removeChild(renderer.domElement);
+      },
+    };
+}
+
+export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPointerX }) => {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const onPointerXRef = useRef(onPointerX);
+  onPointerXRef.current = onPointerX;
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const handle = mountHexGl3D(host, {
+      getState: () => simRef.current,
+      onPointerX: (n) => onPointerXRef.current(n),
+    });
+    if (handle) {
+      return () => {
+        handle.dispose();
+      };
+    }
+
+    const fbCanvas = document.createElement('canvas');
+    fbCanvas.width = 960;
+    fbCanvas.height = 540;
+    fbCanvas.className = 'w-full h-full block touch-none cursor-crosshair';
+    host.innerHTML = '';
+    host.appendChild(fbCanvas);
+
+    const handleFbPointer = (e: PointerEvent) => {
+      const rect = fbCanvas.getBoundingClientRect();
+      if (!rect.width) return;
+      onPointerXRef.current(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
+    };
+    fbCanvas.addEventListener('pointermove', handleFbPointer);
+    fbCanvas.addEventListener('pointerdown', handleFbPointer);
+
+    let fbRaf = 0;
+    const drawFb = () => {
+      const ctx = fbCanvas.getContext('2d');
+      if (ctx) {
+        const st = simRef.current;
+        const W = fbCanvas.width;
+        const H = fbCanvas.height;
+        ctx.fillStyle = '#040714';
+        ctx.fillRect(0, 0, W, H);
+        const horizonY = H * 0.42;
+        ctx.strokeStyle = 'rgba(34, 211, 238, 0.35)';
+        ctx.lineWidth = 2;
+        for (let lane = -2; lane <= 2; lane += 1) {
+          ctx.beginPath();
+          ctx.moveTo(W * 0.5 + lane * 48, horizonY);
+          ctx.lineTo(W * 0.5 + lane * 185, H);
+          ctx.stroke();
+        }
+        for (let i = 0; i < st.entities.length; i += 1) {
+          const ent = st.entities[i];
+          if (ent.hit && ent.kind !== 'wall') continue;
+          const depth = Math.max(0.03, Math.min(1, 1 - ent.z / 1000));
+          const sy = horizonY + depth * (H - horizonY);
+          const sx = W * 0.5 + ent.lane * (70 + depth * 290);
+          ctx.fillStyle = ent.kind === 'pad' ? '#22d3ee' : ent.kind === 'heal' ? '#34d399' : '#f43f5e';
+          ctx.fillRect(sx - 18 * depth, sy - 10 * depth, 36 * depth, 16 * depth);
+        }
+        if (!st.dead) {
+          const shipPx = W * 0.5 + st.shipX * 310;
+          const shipPy = H * 0.84;
+          ctx.save();
+          ctx.translate(shipPx, shipPy);
+          ctx.rotate(st.bank * 0.35);
+          ctx.fillStyle = st.boost ? '#facc15' : '#38bdf8';
+          ctx.beginPath();
+          ctx.moveTo(0, -24);
+          ctx.lineTo(22, 16);
+          ctx.lineTo(0, 8);
+          ctx.lineTo(-22, 16);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+      fbRaf = requestAnimationFrame(drawFb);
+    };
+    fbRaf = requestAnimationFrame(drawFb);
+
     return () => {
-      pacer.cancel();
-      ro.disconnect();
-      renderer.domElement.removeEventListener('pointermove', handlePointer);
-      renderer.domElement.removeEventListener('pointerdown', handlePointer);
-      burstSystem.dispose();
-      roomEnv.dispose();
-      hdri.dispose();
-      composer?.dispose();
-      disposables.forEach((d) => d.dispose());
-      renderer.dispose();
-      if (renderer.domElement.parentNode === host) host.removeChild(renderer.domElement);
+      cancelAnimationFrame(fbRaf);
+      fbCanvas.removeEventListener('pointermove', handleFbPointer);
+      fbCanvas.removeEventListener('pointerdown', handleFbPointer);
+      if (fbCanvas.parentNode === host) host.removeChild(fbCanvas);
     };
   }, [simRef]);
 

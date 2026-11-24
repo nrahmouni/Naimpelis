@@ -188,6 +188,13 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
     action: false,
     alt: false,
   });
+  const labDragTiltRef = useRef<{ active: boolean; startX: number; startY: number; ax: number; ay: number }>({
+    active: false,
+    startX: 0,
+    startY: 0,
+    ax: 0,
+    ay: 0,
+  });
 
   // Bowling UI Controls State & Smooth Power Ref
   const [bowlSpinUi, setBowlSpinUi] = useState(0);
@@ -892,21 +899,56 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
     loadLevel(0);
 
     const stepSphere = (b: typeof ball1, ax: number, ay: number, dt: number, slot: 1 | 2) => {
-      b.vx = (b.vx + ax * 15 * dt) * Math.pow(0.24, dt);
-      b.vy = (b.vy + ay * 15 * dt) * Math.pow(0.24, dt);
-      const nx = b.x + b.vx * dt;
-      const ny = b.y + b.vy * dt;
-      const r = 0.33;
-      const isWallAt = (wx: number, wy: number) => {
-        const c = Math.floor(wx);
-        const rw = Math.floor(wy);
-        if (rw < 0 || rw >= ROWS || c < 0 || c >= COLS) return true;
-        return grid[rw][c] === '#';
-      };
-      if (!isWallAt(nx - r, b.y) && !isWallAt(nx + r, b.y)) b.x = nx;
-      else b.vx *= -0.45;
-      if (!isWallAt(b.x, ny - r) && !isWallAt(b.x, ny + r)) b.y = ny;
-      else b.vy *= -0.45;
+      b.vx = (b.vx + ax * 16.5 * dt) * Math.pow(0.28, dt);
+      b.vy = (b.vy + ay * 16.5 * dt) * Math.pow(0.28, dt);
+      const maxSpd = 7.4;
+      const sp = Math.hypot(b.vx, b.vy);
+      if (sp > maxSpd) {
+        b.vx = (b.vx / sp) * maxSpd;
+        b.vy = (b.vy / sp) * maxSpd;
+      }
+
+      const subSteps = 2;
+      const subDt = dt / subSteps;
+      const r = 0.28;
+      for (let stepIdx = 0; stepIdx < subSteps; stepIdx += 1) {
+        b.x += b.vx * subDt;
+        b.y += b.vy * subDt;
+        const cMin = Math.max(0, Math.floor(b.x) - 1);
+        const cMax = Math.min(COLS - 1, Math.floor(b.x) + 1);
+        const rMin = Math.max(0, Math.floor(b.y) - 1);
+        const rMax = Math.min(ROWS - 1, Math.floor(b.y) + 1);
+        for (let rr = rMin; rr <= rMax; rr += 1) {
+          for (let cc = cMin; cc <= cMax; cc += 1) {
+            if (grid[rr][cc] !== '#') continue;
+            const closestX = Math.max(cc, Math.min(b.x, cc + 1));
+            const closestY = Math.max(rr, Math.min(b.y, rr + 1));
+            const dx = b.x - closestX;
+            const dy = b.y - closestY;
+            const distSq = dx * dx + dy * dy;
+            if (distSq < r * r) {
+              const dist = Math.sqrt(distSq);
+              if (dist > 0.0001) {
+                const nx = dx / dist;
+                const ny = dy / dist;
+                const pen = r - dist;
+                b.x += nx * pen;
+                b.y += ny * pen;
+                const vn = b.vx * nx + b.vy * ny;
+                if (vn < 0) {
+                  b.vx -= 1.25 * vn * nx;
+                  b.vy -= 1.25 * vn * ny;
+                }
+              } else {
+                b.x -= b.vx * subDt;
+                b.y -= b.vy * subDt;
+                b.vx *= -0.3;
+                b.vy *= -0.3;
+              }
+            }
+          }
+        }
+      }
 
       const gc = Math.floor(b.x);
       const gr = Math.floor(b.y);
@@ -919,13 +961,16 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
         playArcadeSfx(760, 0.12, 'triangle', 0.08, mutedRef.current);
         pushScoreTelemetry(totalStarsAllLevels, Math.ceil(timerLeft), 'pingpong_hit', 45);
       } else if (cell === 'O') {
-        labSimRef.current.fallSeq += 1;
-        b.x = 1.5;
-        b.y = 1.5;
-        b.vx = 0;
-        b.vy = 0;
-        playArcadeSfx(160, 0.2, 'sawtooth', 0.08, mutedRef.current);
-        pushScoreTelemetry(totalStarsAllLevels, Math.ceil(timerLeft), undefined, 95);
+        const holeDist = Math.hypot(b.x - (gc + 0.5), b.y - (gr + 0.5));
+        if (holeDist < 0.36) {
+          labSimRef.current.fallSeq += 1;
+          b.x = 1.5;
+          b.y = 1.5;
+          b.vx = 0;
+          b.vy = 0;
+          playArcadeSfx(160, 0.2, 'sawtooth', 0.08, mutedRef.current);
+          pushScoreTelemetry(totalStarsAllLevels, Math.ceil(timerLeft), undefined, 95);
+        }
       } else if (cell === 'E') {
         labSimRef.current.winSeq += 1;
         playArcadeSfx(920, 0.3, 'triangle', 0.1, mutedRef.current);
@@ -961,8 +1006,23 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
         }
         const g1 = gyroP1Ref.current;
         const p1Fresh = g1.expiresAt > Date.now();
-        const ax1 = p1Fresh ? g1.steer : (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0);
-        const ay1 = p1Fresh ? -g1.pitch : (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0);
+        const keyAx = (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0);
+        const keyAy = (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0);
+        const dragTilt = labDragTiltRef.current;
+        const ax1 = dragTilt.active
+          ? dragTilt.ax
+          : p1Fresh
+          ? Math.abs(keyAx) > 0
+            ? keyAx
+            : g1.steer
+          : keyAx;
+        const ay1 = dragTilt.active
+          ? dragTilt.ay
+          : p1Fresh
+          ? Math.abs(keyAy) > 0
+            ? keyAy
+            : -g1.pitch
+          : keyAy;
         labSimRef.current.tiltX = ax1;
         labSimRef.current.tiltZ = ay1;
 
@@ -1082,7 +1142,39 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
       </div>
 
       {/* True Three.js 3D WebGL Viewport for All 3 Sports/Motion Games */}
-      <div className="relative rounded-3xl overflow-hidden bg-[#050811] border border-white/12 shadow-2xl">
+      <div
+        onPointerDown={(e) => {
+          if (gameId !== 'gyrolab') return;
+          e.currentTarget.setPointerCapture?.(e.pointerId);
+          labDragTiltRef.current = {
+            active: true,
+            startX: e.clientX,
+            startY: e.clientY,
+            ax: 0,
+            ay: 0,
+          };
+        }}
+        onPointerMove={(e) => {
+          if (gameId !== 'gyrolab' || !labDragTiltRef.current.active) return;
+          const dx = e.clientX - labDragTiltRef.current.startX;
+          const dy = e.clientY - labDragTiltRef.current.startY;
+          labDragTiltRef.current.ax = Math.max(-1, Math.min(1, dx / 52));
+          labDragTiltRef.current.ay = Math.max(-1, Math.min(1, dy / 52));
+        }}
+        onPointerUp={() => {
+          labDragTiltRef.current.active = false;
+          labDragTiltRef.current.ax = 0;
+          labDragTiltRef.current.ay = 0;
+        }}
+        onPointerCancel={() => {
+          labDragTiltRef.current.active = false;
+          labDragTiltRef.current.ax = 0;
+          labDragTiltRef.current.ay = 0;
+        }}
+        className={`relative rounded-3xl overflow-hidden bg-[#050811] border border-white/12 shadow-2xl ${
+          gameId === 'gyrolab' ? 'touch-none' : ''
+        }`}
+      >
         {gameId === 'gyrobowling' ? (
           <Bowling3DViewport simRef={bowlingSimRef} />
         ) : gameId === 'gyrotennis' ? (
@@ -1260,25 +1352,11 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
         </div>
       )}
 
-      {/* Mobile Touch Strip for Direct Solo Play */}
-      <div className="flex items-center justify-between gap-2 sm:hidden">
-        <button
-          type="button"
-          onContextMenu={(e) => e.preventDefault()}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            e.currentTarget.setPointerCapture?.(e.pointerId);
-            keysRef.current.left = true;
-          }}
-          onPointerUp={() => { keysRef.current.left = false; }}
-          onPointerCancel={() => { keysRef.current.left = false; }}
-          onLostPointerCapture={() => { keysRef.current.left = false; }}
-          className="game-touch-btn flex-1 min-h-12 rounded-2xl bg-[#111525] border border-white/15 font-black text-white"
-        >
-          ◀ IZQ
-        </button>
-        {gameId === 'gyrolab' ? (
-          <>
+      {/* Mobile Controls: T-Cross D-Pad for Labyrinth, Action Strip for Sports */}
+      {gameId === 'gyrolab' ? (
+        <div className="sm:hidden flex flex-col items-center gap-2 pt-1">
+          <div className="grid grid-cols-3 gap-2 w-56">
+            <div />
             <button
               type="button"
               onContextMenu={(e) => e.preventDefault()}
@@ -1290,9 +1368,25 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
               onPointerUp={() => { keysRef.current.up = false; }}
               onPointerCancel={() => { keysRef.current.up = false; }}
               onLostPointerCapture={() => { keysRef.current.up = false; }}
-              className="game-touch-btn flex-1 min-h-12 rounded-2xl bg-[#111525] border border-white/15 font-black text-white"
+              className="game-touch-btn h-14 rounded-2xl bg-[#11172a] border-2 border-cyan-400/35 font-black text-white text-lg"
             >
-              ▲ SUBIR
+              ▲
+            </button>
+            <div />
+            <button
+              type="button"
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.currentTarget.setPointerCapture?.(e.pointerId);
+                keysRef.current.left = true;
+              }}
+              onPointerUp={() => { keysRef.current.left = false; }}
+              onPointerCancel={() => { keysRef.current.left = false; }}
+              onLostPointerCapture={() => { keysRef.current.left = false; }}
+              className="game-touch-btn h-14 rounded-2xl bg-[#11172a] border-2 border-cyan-400/35 font-black text-white text-lg"
+            >
+              ◀
             </button>
             <button
               type="button"
@@ -1305,12 +1399,47 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
               onPointerUp={() => { keysRef.current.down = false; }}
               onPointerCancel={() => { keysRef.current.down = false; }}
               onLostPointerCapture={() => { keysRef.current.down = false; }}
-              className="game-touch-btn flex-1 min-h-12 rounded-2xl bg-[#111525] border border-white/15 font-black text-white"
+              className="game-touch-btn h-14 rounded-2xl bg-[#11172a] border-2 border-cyan-400/35 font-black text-white text-lg"
             >
-              ▼ BAJAR
+              ▼
             </button>
-          </>
-        ) : (
+            <button
+              type="button"
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.currentTarget.setPointerCapture?.(e.pointerId);
+                keysRef.current.right = true;
+              }}
+              onPointerUp={() => { keysRef.current.right = false; }}
+              onPointerCancel={() => { keysRef.current.right = false; }}
+              onLostPointerCapture={() => { keysRef.current.right = false; }}
+              className="game-touch-btn h-14 rounded-2xl bg-[#11172a] border-2 border-cyan-400/35 font-black text-white text-lg"
+            >
+              ▶
+            </button>
+          </div>
+          <p className="text-[11px] font-semibold text-zinc-400">
+            Desliza sobre el tablero o usa la cruceta / giroscopio
+          </p>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-2 sm:hidden">
+          <button
+            type="button"
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+              keysRef.current.left = true;
+            }}
+            onPointerUp={() => { keysRef.current.left = false; }}
+            onPointerCancel={() => { keysRef.current.left = false; }}
+            onLostPointerCapture={() => { keysRef.current.left = false; }}
+            className="game-touch-btn flex-1 min-h-12 rounded-2xl bg-[#111525] border border-white/15 font-black text-white"
+          >
+            ◀ IZQ
+          </button>
           <button
             type="button"
             onContextMenu={(e) => e.preventDefault()}
@@ -1327,23 +1456,23 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
           >
             {gameId === 'gyrobowling' ? '🎳 LANZAR' : '🎾 GOLPEAR'}
           </button>
-        )}
-        <button
-          type="button"
-          onContextMenu={(e) => e.preventDefault()}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            e.currentTarget.setPointerCapture?.(e.pointerId);
-            keysRef.current.right = true;
-          }}
-          onPointerUp={() => { keysRef.current.right = false; }}
-          onPointerCancel={() => { keysRef.current.right = false; }}
-          onLostPointerCapture={() => { keysRef.current.right = false; }}
-          className="game-touch-btn flex-1 min-h-12 rounded-2xl bg-[#111525] border border-white/15 font-black text-white"
-        >
-          DER ▶
-        </button>
-      </div>
+          <button
+            type="button"
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+              keysRef.current.right = true;
+            }}
+            onPointerUp={() => { keysRef.current.right = false; }}
+            onPointerCancel={() => { keysRef.current.right = false; }}
+            onLostPointerCapture={() => { keysRef.current.right = false; }}
+            className="game-touch-btn flex-1 min-h-12 rounded-2xl bg-[#111525] border border-white/15 font-black text-white"
+          >
+            DER ▶
+          </button>
+        </div>
+      )}
 
       {showQrModal && (
         <DualGyroQrPanel

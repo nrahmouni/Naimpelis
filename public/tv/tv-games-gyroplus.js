@@ -10,12 +10,36 @@
   var pad2 = { steer: 0, pitch: 0, roll: 0, swing: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 };
   var hasCtrl = false;
   var twoHumans = false;
+  var active3dHandle = null;
+
+  function dispose3d() {
+    if (active3dHandle && active3dHandle.dispose) {
+      try { active3dHandle.dispose(); } catch (e0) {}
+    }
+    active3dHandle = null;
+  }
+
+  function mount3dStage(arenaEl, canvasEl, fnName, opts) {
+    dispose3d();
+    if (!arenaEl || !window.RiffanTvGames || typeof window.RiffanTvGames[fnName] !== 'function') return null;
+    var stEl = document.createElement('div');
+    stEl.className = 'tv-3d-stage';
+    arenaEl.insertBefore(stEl, arenaEl.firstChild);
+    try { active3dHandle = window.RiffanTvGames[fnName](stEl, opts); } catch (eM) { active3dHandle = null; }
+    if (active3dHandle) {
+      if (canvasEl) canvasEl.style.display = 'none';
+      return active3dHandle;
+    }
+    if (stEl.parentNode) stEl.parentNode.removeChild(stEl);
+    return null;
+  }
 
   function spr(c, p, x, y, w, h, r) { return typeof window.drawTvSprite === 'function' ? window.drawTvSprite(c, p, x, y, w, h, r) : false; }
   function sprRect(c, p, x, y, w, h) { return typeof window.drawTvSpriteRect === 'function' ? window.drawTvSpriteRect(c, p, x, y, w, h) : false; }
   function beep(f, d, t, g) { if (typeof window.playTvGameBeep === 'function') window.playTvGameBeep(f, d, t, g); }
 
   function closeTvGyroPlusGame() {
+    dispose3d();
     if (plusWs) { plusWs.onclose = null; try { plusWs.close(); } catch (e) {} plusWs = null; }
     hasCtrl = false; twoHumans = false;
     pad1 = { steer: 0, pitch: 0, roll: 0, swing: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 };
@@ -137,9 +161,14 @@
       }
       return out;
     }
-    var st = { frame: 1, roll: 1, turn: 1, s1: 0, s2: 0, aimX: 0, spin: 0, phase: 'aim', settleT: 0, banner: '', bannerT: 0, ball: { x: 0, y: 0.06, vx: 0, vy: 0, curve: 0, rot: 0 }, pins: makePins(), sparks: [] };
+    var st = { frame: 1, roll: 1, turn: 1, s1: 0, s2: 0, aimX: 0, spin: 0, phase: 'aim', settleT: 0, banner: '', bannerT: 0, ball: { x: 0, y: 0.06, vx: 0, vy: 0, curve: 0, rot: 0 }, pins: makePins(), sparks: [], outcomeSeq: 0, outcomeKind: 'none' };
+    var use3dBw = Boolean(mount3dStage(document.getElementById('bw-arena'), canvas, 'mountBowling3D', {
+      getState: function () {
+        return { phase: st.phase, turnPlayer: st.turn === 2 ? 2 : 1, aimX: st.aimX, spin: st.spin, ball: { x: st.ball.x, y: st.ball.y, rot: st.ball.rot }, pins: st.pins, outcomeSeq: st.outcomeSeq, outcomeKind: st.outcomeKind };
+      }
+    }));
     function resetBowl() {
-      st.frame = 1; st.roll = 1; st.turn = 1; st.s1 = 0; st.s2 = 0; st.phase = 'aim'; st.pins = makePins(); st.banner = ''; st.bannerT = 0; st.sparks = [];
+      st.frame = 1; st.roll = 1; st.turn = 1; st.s1 = 0; st.s2 = 0; st.phase = 'aim'; st.pins = makePins(); st.banner = ''; st.bannerT = 0; st.sparks = []; st.outcomeKind = 'none';
       ov.style.display = 'none'; p1El.textContent = 'FRAME 1/5 · J1 0'; p2El.textContent = 'TIRO 1 · 10 BOLOS';
     }
     document.getElementById('bw-replay').onclick = resetBowl;
@@ -209,10 +238,12 @@
             var down = 0; for (var j = 0; j < st.pins.length; j++) if (!st.pins[j].up) down++;
             if (down === 10 && st.roll === 1) {
               st.banner = '⚡ ¡STRIKE PERFECTO! (+20)'; st.bannerT = 1.3;
+              st.outcomeSeq += 1; st.outcomeKind = 'strike';
               if (st.turn === 1) st.s1 += 20; else st.s2 += 20;
               beep(880, 0.25, 'triangle', 0.1); pushPlusTel(roomId, st.s1, st.s2, 'bowling_strike', 120);
             } else {
               if (st.turn === 1) st.s1 += down + (down === 10 ? 2 : 0); else st.s2 += down + (down === 10 ? 2 : 0);
+              st.outcomeSeq += 1; st.outcomeKind = down === 10 ? 'spare' : (down > 0 ? 'hit' : 'none');
               st.banner = down === 10 ? '✨ ¡SPARE! (+12)' : (down + ' BOLOS DERRIBADOS'); st.bannerT = 1.0;
               pushPlusTel(roomId, st.s1, st.s2, 'bowling_roll', 40);
             }
@@ -241,6 +272,7 @@
         }
       }
 
+      if (use3dBw) { window.TV_GAME_RAF = requestAnimationFrame(frame); return; }
       if (!sprRect(ctx, 'assets/games/arenas/bowling_alley.jpg', 0, 0, W, H)) { ctx.fillStyle = '#090d1b'; ctx.fillRect(0, 0, W, H); }
       ctx.fillStyle = 'rgba(5, 8, 20, 0.22)'; ctx.fillRect(0, 0, W, H);
       ctx.fillStyle = 'rgba(180, 108, 42, 0.42)';
@@ -298,7 +330,10 @@
     connectPlusWs(roomId, 'gyrotennis', document.getElementById('tn-gyro-pill'), lobby);
 
     var W = 920, H = 520, keys = { left: false, right: false, fire: false };
-    var st = { s1: 0, s2: 0, over: false, pauseT: 0.7, p1: { x: 0, swingT: 0 }, p2: { x: 0, swingT: 0 }, ball: { x: 0, y: 0, z: 0.3, vx: 0.25, vy: 1.05, vz: 0.4 }, banner: '¡SAQUE INICIAL!' };
+    var st = { s1: 0, s2: 0, over: false, pauseT: 0.7, p1: { x: 0, y: 0.86, swingT: 0 }, p2: { x: 0, y: -0.86, swingT: 0 }, ball: { x: 0, y: 0, z: 0.3, vx: 0.25, vy: 1.05, vz: 0.4 }, banner: '¡SAQUE INICIAL!', surface: 'grass', hitSeq: 0, pointSeq: 0, lastScorer: 1 };
+    var use3dTn = Boolean(mount3dStage(document.getElementById('tn-arena'), canvas, 'mountTennis3D', {
+      getState: function () { return st; }
+    }));
     function resetPt(dy) { st.ball = { x: (Math.random() - 0.5) * 0.4, y: 0, z: 0.32, vx: (Math.random() - 0.5) * 0.55, vy: dy * 1.15, vz: 0.45 }; st.pauseT = 0.65; }
     function resetMatch() { st.s1 = 0; st.s2 = 0; st.over = false; ov.style.display = 'none'; resetPt(1); p1El.textContent = 'J1 0 - 0 ' + (twoHumans ? 'J2' : 'CPU'); }
     document.getElementById('tn-replay').onclick = resetMatch;
@@ -347,23 +382,24 @@
           if (b.vy > 0 && b.y >= 0.72 && b.y <= 0.98 && Math.abs(b.x - st.p1.x) < 0.28) {
             var sm1 = st.p1.swingT > 0 ? 1.38 : 1.04;
             b.vy = -Math.min(2.3, Math.abs(b.vy) * sm1 + 0.14); b.vx = (b.x - st.p1.x) * 2.2; b.vz = (f1 && pad1.handbrake) ? 0.95 : 0.56;
-            beep(sm1 > 1.2 ? 640 : 480, 0.08, 'triangle', 0.08); pushPlusTel(roomId, st.s1, st.s2, 'tennis_hit', sm1 > 1.2 ? 75 : 35);
+            st.hitSeq += 1; beep(sm1 > 1.2 ? 640 : 480, 0.08, 'triangle', 0.08); pushPlusTel(roomId, st.s1, st.s2, 'tennis_hit', sm1 > 1.2 ? 75 : 35);
           }
           if (b.vy < 0 && b.y <= -0.72 && b.y >= -0.98 && Math.abs(b.x - st.p2.x) < 0.26) {
             var sm2 = st.p2.swingT > 0 ? 1.35 : 1.04;
-            b.vy = Math.min(2.2, Math.abs(b.vy) * sm2 + 0.12); b.vx = (b.x - st.p2.x) * 2.1; b.vz = 0.55; beep(420, 0.08, 'triangle', 0.07);
+            b.vy = Math.min(2.2, Math.abs(b.vy) * sm2 + 0.12); b.vx = (b.x - st.p2.x) * 2.1; b.vz = 0.55; st.hitSeq += 1; beep(420, 0.08, 'triangle', 0.07);
           }
           if (b.y > 1.18) {
-            st.s2 += 1; st.banner = twoHumans ? '🎾 ¡PUNTO J2!' : '🎾 ¡PUNTO CPU!'; beep(240, 0.2, 'sawtooth', 0.08);
+            st.s2 += 1; st.pointSeq += 1; st.lastScorer = 2; st.banner = twoHumans ? '🎾 ¡PUNTO J2!' : '🎾 ¡PUNTO CPU!'; beep(240, 0.2, 'sawtooth', 0.08);
             if (st.s2 >= 7) { st.over = true; ftEl.textContent = twoHumans ? '🏆 VICTORIA JUGADOR 2' : '🎾 VICTORIA CPU'; fsEl.textContent = st.s1 + ' - ' + st.s2; ov.style.display = 'flex'; } else resetPt(-1);
           } else if (b.y < -1.18) {
-            st.s1 += 1; st.banner = '🏆 ¡PUNTO JUGADOR 1!'; beep(740, 0.2, 'triangle', 0.09);
+            st.s1 += 1; st.pointSeq += 1; st.lastScorer = 1; st.banner = '🏆 ¡PUNTO JUGADOR 1!'; beep(740, 0.2, 'triangle', 0.09);
             if (st.s1 >= 7) { st.over = true; ftEl.textContent = '🏆 ¡CAMPEÓN GRAND SLAM J1!'; fsEl.textContent = st.s1 + ' - ' + st.s2; ov.style.display = 'flex'; } else resetPt(1);
           }
           p1El.textContent = 'J1 ' + st.s1 + ' - ' + st.s2 + (twoHumans ? ' J2' : ' CPU');
         }
       }
 
+      if (use3dTn) { window.TV_GAME_RAF = requestAnimationFrame(frame); return; }
       if (!sprRect(ctx, 'assets/games/arenas/tennis_court.jpg', 0, 0, W, H)) { ctx.fillStyle = '#14532d'; ctx.fillRect(0, 0, W, H); }
       var p2s = proj(st.p2.x, -0.82), p1s = proj(st.p1.x, 0.82), bs = proj(st.ball.x, st.ball.y), lift = st.ball.z * 78 * bs.sc;
       var af = (Math.floor(now * 0.008) % 3) + 1;
@@ -414,6 +450,7 @@
     ];
     var grid = [], starsT = 0, starsC = 0, tLeft = 60, over = false, keys = { l: false, r: false, u: false, d: false };
     var b1 = { x: 1.5, y: 1.5, vx: 0, vy: 0 }, b2 = { x: 1.5, y: 1.5, vx: 0, vy: 0 };
+    var lbTiltX = 0, lbTiltZ = 0, collectSeq = 0, fallSeq = 0, winSeq = 0;
 
     function initLab() {
       grid = []; starsT = 0; starsC = 0; tLeft = 60; over = false; b1 = { x: 1.5, y: 1.5, vx: 0, vy: 0 }; b2 = { x: 1.5, y: 1.5, vx: 0, vy: 0 };
@@ -425,6 +462,11 @@
       ov.style.display = 'none'; p1El.textContent = 'ESTRELLAS 0/' + starsT; p2El.textContent = 'TIEMPO 60s';
     }
     initLab();
+    var use3dLb = Boolean(mount3dStage(document.getElementById('lb-arena'), canvas, 'mountLabyrinth3D', {
+      getState: function () {
+        return { level: 1, cols: COLS, rows: ROWS, grid: grid, tiltX: lbTiltX, tiltZ: lbTiltZ, twoHumans: twoHumans, ball1: b1, ball2: twoHumans ? b2 : null, collectSeq: collectSeq, fallSeq: fallSeq, winSeq: winSeq };
+      }
+    }));
     document.getElementById('lb-replay').onclick = initLab;
 
     window.tvGameKeyHandler = function (e, code) {
@@ -443,20 +485,35 @@
       return false;
     };
 
-    function isWall(wx, wy) {
-      var c = Math.floor(wx), r = Math.floor(wy);
-      return r < 0 || r >= ROWS || c < 0 || c >= COLS || grid[r][c] === '#';
-    }
     function stepBall(b, ax, ay, dt, slot) {
-      b.vx = (b.vx + ax * 14 * dt) * Math.pow(0.25, dt); b.vy = (b.vy + ay * 14 * dt) * Math.pow(0.25, dt);
-      var nx = b.x + b.vx * dt, ny = b.y + b.vy * dt, r = 0.34;
-      if (!isWall(nx - r, b.y) && !isWall(nx + r, b.y)) b.x = nx; else b.vx *= -0.45;
-      if (!isWall(b.x, ny - r) && !isWall(b.x, ny + r)) b.y = ny; else b.vy *= -0.45;
+      var rad = 0.33, sub = 2, sdt = dt / sub, damp = Math.pow(0.28, sdt);
+      for (var s = 0; s < sub; s++) {
+        b.vx = (b.vx + ax * 15.5 * sdt) * damp;
+        b.vy = (b.vy + ay * 15.5 * sdt) * damp;
+        b.x += b.vx * sdt; b.y += b.vy * sdt;
+        var cr = Math.floor(b.y), cc = Math.floor(b.x);
+        for (var rr = cr - 1; rr <= cr + 1; rr++) {
+          for (var cc2 = cc - 1; cc2 <= cc + 1; cc2++) {
+            var wall = rr < 0 || rr >= ROWS || cc2 < 0 || cc2 >= COLS || grid[rr][cc2] === '#';
+            if (!wall) continue;
+            var clX = Math.max(cc2, Math.min(b.x, cc2 + 1)), clY = Math.max(rr, Math.min(b.y, rr + 1));
+            var dx = b.x - clX, dy = b.y - clY, d2 = dx * dx + dy * dy;
+            if (d2 < rad * rad) {
+              var d = Math.sqrt(d2) || 0.0001;
+              var nx = dx / d, ny = dy / d, pen = rad - d;
+              b.x += nx * pen; b.y += ny * pen;
+              var vn = b.vx * nx + b.vy * ny;
+              if (vn < 0) { b.vx -= nx * vn * 1.22; b.vy -= ny * vn * 1.22; }
+            }
+          }
+        }
+      }
       var gc = Math.floor(b.x), gr = Math.floor(b.y), ch = grid[gr] && grid[gr][gc];
-      if (ch === '*') { grid[gr][gc] = '.'; starsC++; beep(760, 0.12, 'triangle', 0.08); pushPlusTel(roomId, starsC, Math.ceil(tLeft), 'pingpong_hit', 45); }
-      else if (ch === 'O') { b.x = 1.5; b.y = 1.5; b.vx = 0; b.vy = 0; beep(160, 0.2, 'sawtooth', 0.08); pushPlusTel(roomId, starsC, Math.ceil(tLeft), 'trap', 95); }
-      else if (ch === 'E') {
-        over = true; beep(920, 0.28, 'triangle', 0.1); pushPlusTel(roomId, starsC, Math.ceil(tLeft), 'lab_win', 130);
+      if (ch === '*') { grid[gr][gc] = '.'; starsC++; collectSeq++; beep(760, 0.12, 'triangle', 0.08); pushPlusTel(roomId, starsC, Math.ceil(tLeft), 'pingpong_hit', 45); }
+      else if (ch === 'O' && Math.hypot(b.x - (gc + 0.5), b.y - (gr + 0.5)) < 0.34) {
+        b.x = 1.5; b.y = 1.5; b.vx = 0; b.vy = 0; fallSeq++; beep(160, 0.2, 'sawtooth', 0.08); pushPlusTel(roomId, starsC, Math.ceil(tLeft), 'trap', 95);
+      } else if (ch === 'E') {
+        over = true; winSeq++; beep(920, 0.28, 'triangle', 0.1); pushPlusTel(roomId, starsC, Math.ceil(tLeft), 'lab_win', 130);
         ftEl.textContent = '🏆 ¡SALIDA ALCANZADA (J' + slot + ')!'; fsEl.textContent = starsC + '/' + starsT + ' estrellas · ' + Math.ceil(tLeft) + 's sobrantes';
         ov.style.display = 'flex';
       }
@@ -470,11 +527,15 @@
         tLeft = Math.max(0, tLeft - dt);
         if (tLeft <= 0) { over = true; ftEl.textContent = '⏱️ TIEMPO AGOTADO'; fsEl.textContent = starsC + '/' + starsT + ' estrellas'; ov.style.display = 'flex'; }
         var f1 = pad1.expiresAt > Date.now();
-        stepBall(b1, f1 ? pad1.steer : ((keys.r ? 1 : 0) - (keys.l ? 1 : 0)), f1 ? -pad1.pitch : ((keys.d ? 1 : 0) - (keys.u ? 1 : 0)), dt, 1);
+        var ax1 = f1 ? pad1.steer : ((keys.r ? 1 : 0) - (keys.l ? 1 : 0));
+        var ay1 = f1 ? -pad1.pitch : ((keys.d ? 1 : 0) - (keys.u ? 1 : 0));
+        lbTiltX = ay1 * 0.08; lbTiltZ = -ax1 * 0.08;
+        stepBall(b1, ax1, ay1, dt, 1);
         if (twoHumans) { var f2 = pad2.expiresAt > Date.now(); stepBall(b2, f2 ? pad2.steer : 0, f2 ? -pad2.pitch : 0, dt, 2); }
         p1El.textContent = 'ESTRELLAS ' + starsC + '/' + starsT; p2El.textContent = 'TIEMPO ' + Math.ceil(tLeft) + 's';
       }
 
+      if (use3dLb) { window.TV_GAME_RAF = requestAnimationFrame(frame); return; }
       if (!sprRect(ctx, 'assets/games/arenas/labyrinth_board.jpg', 0, 0, W, H)) { ctx.fillStyle = '#0f172a'; ctx.fillRect(0, 0, W, H); }
       ctx.fillStyle = 'rgba(4,7,16,0.34)'; ctx.fillRect(0, 0, W, H);
       for (var r = 0; r < ROWS; r++) for (var c = 0; c < COLS; c++) {

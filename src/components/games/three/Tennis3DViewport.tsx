@@ -15,6 +15,7 @@ import {
   getMaxSafeAnisotropy,
   initRoomEnvironment,
   loadCachedPbrTexture,
+  observeHostResize,
   spawnRigged3dActor,
 } from '../arcade/threeProHelpers';
 import {
@@ -106,20 +107,24 @@ function createUmpireHighChairGroup(): { group: THREE.Group; disposables: Array<
   };
 }
 
-export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) => {
-  const hostRef = useRef<HTMLDivElement | null>(null);
+export interface Tennis3DMountOptions {
+  getState: () => TennisSimSnapshot;
+}
 
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
+export function mountTennis3D(
+  host: HTMLElement,
+  opts: Tennis3DMountOptions
+): { dispose: () => void } | null {
+  const isSoftwareGl = detectSoftwareGl();
+  const renderer = createResilientWebGlRenderer(isSoftwareGl, { exposure: 1.08 });
+  if (!renderer) return null;
 
-    const isSoftwareGl = detectSoftwareGl();
-    const renderer = createResilientWebGlRenderer(isSoftwareGl, { exposure: 1.08 });
-    if (!renderer) return;
-
-    renderer.domElement.className = 'w-full h-full block touch-none';
-    host.innerHTML = '';
-    host.appendChild(renderer.domElement);
+  renderer.domElement.className = 'w-full h-full block touch-none';
+  renderer.domElement.style.width = '100%';
+  renderer.domElement.style.height = '100%';
+  renderer.domElement.style.display = 'block';
+  host.innerHTML = '';
+  host.appendChild(renderer.domElement);
 
     const grassSkyTex = createSkyDomeTexture({
       topHex: '#1d4ed8',
@@ -405,8 +410,8 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
 
     const burstSystem = create3dParticleBurstSystem(scene, 96);
 
-    const initW = Math.max(320, host.clientWidth || 920);
-    const initH = Math.max(200, host.clientHeight || Math.round((initW * 9) / 16));
+    const initW = Math.max(160, host.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 920));
+    const initH = Math.max(120, host.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 520));
     const composer = createProPostComposer(renderer, scene, camera, {
       width: initW,
       height: initH,
@@ -418,22 +423,17 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
     const drs = createDrsController(renderer, {
       isSoftwareGl,
       onScaleChange: () => {
-        const w = Math.max(320, host.clientWidth || 920);
-        const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+        const w = Math.max(160, host.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 920));
+        const h = Math.max(120, host.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 520));
         composer?.setSize(w, h);
       },
     });
 
-    const updateSize = () => {
-      const w = Math.max(320, host.clientWidth || 920);
-      const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+    const stopResize = observeHostResize(host, (w, h) => {
       renderer.setSize(w, h, false);
       applyResponsiveCameraFov(camera, w / h, 42, 42, 64);
       composer?.setSize(w, h);
-    };
-    updateSize();
-    const ro = new ResizeObserver(updateSize);
-    ro.observe(host);
+    });
 
     let prevP1X = 0;
     let prevP2X = 0;
@@ -441,8 +441,9 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
     let bounceAlpha = 0;
     let crowdExcite = 0.2;
     let lastSurface: string = 'grass';
-    let lastHitSeq = simRef.current.hitSeq;
-    let lastPointSeq = simRef.current.pointSeq;
+    const initSim = opts.getState();
+    let lastHitSeq = initSim.hitSeq;
+    let lastPointSeq = initSim.pointSeq;
     let lastTime = performance.now();
     let elapsed = 0;
     const pacer = createThreeFramePacer(renderer, isSoftwareGl);
@@ -454,7 +455,7 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
       elapsed += dt;
       crowdExcite = Math.max(0.2, crowdExcite - dt * 0.4);
 
-      const sim = simRef.current;
+      const sim = opts.getState();
 
       // Live Court Surface Color Switch (Grass / Clay / Hard)
       const surf = sim.surface || 'grass';
@@ -560,20 +561,36 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
 
     pacer.schedule(tick);
 
+    return {
+      dispose: () => {
+        pacer.cancel();
+        stopResize();
+        p1Actor.dispose();
+        p2Actor.dispose();
+        burstSystem.dispose();
+        roomEnv.dispose();
+        hdri.dispose();
+        composer?.dispose();
+        disposables.forEach((d) => d.dispose());
+        renderer.dispose();
+        if (renderer.domElement.parentNode === host) {
+          host.removeChild(renderer.domElement);
+        }
+      },
+    };
+}
+
+export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) => {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const handle = mountTennis3D(host, {
+      getState: () => simRef.current,
+    });
     return () => {
-      pacer.cancel();
-      ro.disconnect();
-      p1Actor.dispose();
-      p2Actor.dispose();
-      burstSystem.dispose();
-      roomEnv.dispose();
-      hdri.dispose();
-      composer?.dispose();
-      disposables.forEach((d) => d.dispose());
-      renderer.dispose();
-      if (renderer.domElement.parentNode === host) {
-        host.removeChild(renderer.domElement);
-      }
+      handle?.dispose();
     };
   }, [simRef]);
 

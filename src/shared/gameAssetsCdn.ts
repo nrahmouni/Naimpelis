@@ -1,22 +1,52 @@
 const KENNEY_CDN = 'https://raw.githubusercontent.com/shorepine/kenney/main';
+const KENNEY_CITY_STARTER_CDN = 'https://cdn.jsdelivr.net/gh/KenneyNL/Starter-Kit-City-Builder@main/models';
+const COLLECT_CARS_CDN = 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main';
 const THREE_GLTF_CDN = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r170/examples/models/gltf';
 const POLYHAVEN_HDR_CDN = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k';
 const POLYHAVEN_TEX_CDN = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k';
 
 export const GAME_ASSET_CDN_MAP: Readonly<Record<string, string>> = {
-  // ===== 3D GLB Models (Real Supercars / Endurance / Motorsport + Kenney Props + Three.js Actors) =====
+  // ===== 3D GLB Models (Real Supercars / Endurance / Motorsport + Kenney Props + City Kits) =====
   'models/ferrari.glb': `${THREE_GLTF_CDN}/ferrari.glb`,
   'models/ferrari_ao.png': `${THREE_GLTF_CDN}/ferrari_ao.png`,
-  'models/endurance.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/endurance.glb',
-  'models/hypercar.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/hypercar.glb',
-  'models/rally.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/rally.glb',
-  'models/wedge.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/wedge.glb',
+  'models/endurance.glb': `${COLLECT_CARS_CDN}/models/endurance.glb`,
+  'models/hypercar.glb': `${COLLECT_CARS_CDN}/models/hypercar.glb`,
+  'models/rally.glb': `${COLLECT_CARS_CDN}/models/rally.glb`,
+  'models/wedge.glb': `${COLLECT_CARS_CDN}/models/wedge.glb`,
+  'models/streamliner.glb': `${COLLECT_CARS_CDN}/models/streamliner.glb`,
+  'cars/endurance-thumb.jpg': `${COLLECT_CARS_CDN}/images/endurance-thumb.jpg`,
+  'cars/hypercar-thumb.jpg': `${COLLECT_CARS_CDN}/images/hypercar-thumb.jpg`,
+  'cars/rally-thumb.jpg': `${COLLECT_CARS_CDN}/images/rally-thumb.jpg`,
+  'cars/wedge-thumb.jpg': `${COLLECT_CARS_CDN}/images/wedge-thumb.jpg`,
+  'cars/streamliner-thumb.jpg': `${COLLECT_CARS_CDN}/images/streamliner-thumb.jpg`,
   'models/race-future.glb': `${KENNEY_CDN}/3d/car/race-future.glb`,
   'models/race.glb': `${KENNEY_CDN}/3d/car/race.glb`,
   'models/sedan-sports.glb': `${KENNEY_CDN}/3d/car/sedan-sports.glb`,
   'models/hatchback-sports.glb': `${KENNEY_CDN}/3d/car/hatchback-sports.glb`,
   'models/suv-luxury.glb': `${KENNEY_CDN}/3d/car/suv-luxury.glb`,
   'models/police.glb': `${KENNEY_CDN}/3d/car/police.glb`,
+  'models/city/building-a.glb': `${KENNEY_CDN}/3d/city-commercial/building-a.glb`,
+  'models/city/building-b.glb': `${KENNEY_CDN}/3d/city-commercial/building-b.glb`,
+  'models/city/building-c.glb': `${KENNEY_CDN}/3d/city-commercial/building-c.glb`,
+  'models/city/building-d.glb': `${KENNEY_CDN}/3d/city-commercial/building-d.glb`,
+  'models/city/building-e.glb': `${KENNEY_CDN}/3d/city-commercial/building-e.glb`,
+  'models/city/building-f.glb': `${KENNEY_CDN}/3d/city-commercial/building-f.glb`,
+  'models/city/building-skyscraper-a.glb': `${KENNEY_CDN}/3d/city-commercial/building-skyscraper-a.glb`,
+  'models/city/building-skyscraper-b.glb': `${KENNEY_CDN}/3d/city-commercial/building-skyscraper-b.glb`,
+  'models/city/building-skyscraper-c.glb': `${KENNEY_CDN}/3d/city-commercial/building-skyscraper-c.glb`,
+  'models/city/building-skyscraper-d.glb': `${KENNEY_CDN}/3d/city-commercial/building-skyscraper-d.glb`,
+  'models/city/building-skyscraper-e.glb': `${KENNEY_CDN}/3d/city-commercial/building-skyscraper-e.glb`,
+  'models/city/low-detail-building-a.glb': `${KENNEY_CDN}/3d/city-commercial/low-detail-building-a.glb`,
+  'models/city/low-detail-building-b.glb': `${KENNEY_CDN}/3d/city-commercial/low-detail-building-b.glb`,
+  'models/city/low-detail-building-c.glb': `${KENNEY_CDN}/3d/city-commercial/low-detail-building-c.glb`,
+  'models/city/low-detail-building-d.glb': `${KENNEY_CDN}/3d/city-commercial/low-detail-building-d.glb`,
+  'models/city-builder/building-small-a.glb': `${KENNEY_CITY_STARTER_CDN}/building-small-a.glb`,
+  'models/city-builder/building-small-b.glb': `${KENNEY_CITY_STARTER_CDN}/building-small-b.glb`,
+  'models/city-builder/building-small-c.glb': `${KENNEY_CITY_STARTER_CDN}/building-small-c.glb`,
+  'models/city-builder/building-small-d.glb': `${KENNEY_CITY_STARTER_CDN}/building-small-d.glb`,
+  'models/city-builder/building-garage.glb': `${KENNEY_CITY_STARTER_CDN}/building-garage.glb`,
+  'models/city-builder/pavement-fountain.glb': `${KENNEY_CITY_STARTER_CDN}/pavement-fountain.glb`,
+  'models/city-builder/road-straight-lightposts.glb': `${KENNEY_CITY_STARTER_CDN}/road-straight-lightposts.glb`,
   'models/grandStandCovered.glb': `${KENNEY_CDN}/3d/racing/grandStandCovered.glb`,
   'models/grandStandCoveredRound.glb': `${KENNEY_CDN}/3d/racing/grandStandCoveredRound.glb`,
   'models/overheadLights.glb': `${KENNEY_CDN}/3d/racing/overheadLights.glb`,

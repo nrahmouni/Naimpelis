@@ -96,6 +96,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
   mutedOverride = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const swipeStartRef = useRef<{ x: number; y: number } | null>(null);
   const pixiFxRef = useRef<PixiGameFxHandle | null>(null);
   const [localMuted, setLocalMuted] = useState(mutedOverride);
   const mutedRef = useRef(localMuted || mutedOverride);
@@ -348,7 +349,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
 
         if (!dead) {
           if (frightTimer > 0) frightTimer = Math.max(0, frightTimer - dt);
-          const speed = 5.6 + Math.min(2.0, (level - 1) * 0.35);
+          const speed = 5.8 + Math.min(1.8, (level - 1) * 0.3);
           const step = dt * speed;
 
           // Instant 180 reversal on the current corridor
@@ -357,21 +358,29 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
             pac.dy = pac.ndy;
           }
 
+          // Smooth corner turning around cell centers with wider buffered turn window
           const rx = Math.round(pac.x);
           const ry = Math.round(pac.y);
+          const turnWindow = Math.max(0.32, step * 1.6);
           const nx = pac.x + pac.dx * step;
           const ny = pac.y + pac.dy * step;
           const crossedX = (pac.x <= rx && nx >= rx) || (pac.x >= rx && nx <= rx);
           const crossedY = (pac.y <= ry && ny >= ry) || (pac.y >= ry && ny <= ry);
-          const nearCenter = Math.abs(pac.x - rx) <= Math.max(0.22, step) && Math.abs(pac.y - ry) <= Math.max(0.22, step);
+          const nearCenterX = Math.abs(pac.x - rx) <= turnWindow;
+          const nearCenterY = Math.abs(pac.y - ry) <= turnWindow;
 
-          if ((pac.dx === 0 && pac.dy === 0) || nearCenter || (pac.dx !== 0 && crossedX) || (pac.dy !== 0 && crossedY)) {
+          if (
+            (pac.dx === 0 && pac.dy === 0) ||
+            (nearCenterX && nearCenterY) ||
+            (pac.dx !== 0 && crossedX && nearCenterY) ||
+            (pac.dy !== 0 && crossedY && nearCenterX)
+          ) {
             if ((pac.ndx !== pac.dx || pac.ndy !== pac.dy) && !isWall(rx + pac.ndx, ry + pac.ndy)) {
               pac.x = rx;
               pac.y = ry;
               pac.dx = pac.ndx;
               pac.dy = pac.ndy;
-            } else if (isWall(rx + pac.dx, ry + pac.dy)) {
+            } else if (isWall(rx + pac.dx, ry + pac.dy) && nearCenterX && nearCenterY) {
               pac.x = rx;
               pac.y = ry;
               pac.dx = 0;
@@ -379,16 +388,20 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
             }
           }
 
-          const tryNextX = pac.x + pac.dx * step;
-          const tryNextY = pac.y + pac.dy * step;
-          if (!isWall(Math.round(tryNextX + pac.dx * 0.45), Math.round(tryNextY + pac.dy * 0.45))) {
-            pac.x = tryNextX;
-            pac.y = tryNextY;
-          } else {
-            pac.x = Math.round(pac.x);
-            pac.y = Math.round(pac.y);
-            pac.dx = 0;
-            pac.dy = 0;
+          if (pac.dx !== 0 || pac.dy !== 0) {
+            const tryNextX = pac.x + pac.dx * step;
+            const tryNextY = pac.y + pac.dy * step;
+            const checkTileX = Math.floor(tryNextX + 0.5 + pac.dx * 0.48);
+            const checkTileY = Math.floor(tryNextY + 0.5 + pac.dy * 0.48);
+            if (!isWall(checkTileX, checkTileY)) {
+              pac.x = tryNextX;
+              pac.y = tryNextY;
+            } else {
+              pac.x = Math.round(pac.x);
+              pac.y = Math.round(pac.y);
+              pac.dx = 0;
+              pac.dy = 0;
+            }
           }
           if (pac.x < -0.45) pac.x = COLS - 0.55;
           if (pac.x > COLS - 0.45) pac.x = -0.45;
@@ -416,7 +429,8 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
             if (dotsLeft <= 0) { level += 1; curScore += 500; initMap(true); }
           }
 
-          const gStep = frightTimer > 0 ? step * 0.62 : step * 0.82;
+          const ghostSpeedMult = Math.min(0.84, 0.7 + (level - 1) * 0.04);
+          const gStep = frightTimer > 0 ? step * 0.56 : step * ghostSpeedMult;
           for (const g of ghosts) {
             const grx = Math.round(g.x);
             const gry = Math.round(g.y);
@@ -1123,9 +1137,28 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
             if (gameId === 'flappy') {
               e.preventDefault();
               actionsRef.current.primary();
+              return;
+            }
+            swipeStartRef.current = { x: e.clientX, y: e.clientY };
+          }}
+          onPointerMove={(e) => {
+            if (gameId === 'flappy' || !swipeStartRef.current) return;
+            const dx = e.clientX - swipeStartRef.current.x;
+            const dy = e.clientY - swipeStartRef.current.y;
+            if (Math.hypot(dx, dy) < 18) return;
+            swipeStartRef.current = { x: e.clientX, y: e.clientY };
+            triggerHaptic('light');
+            if (Math.abs(dx) >= Math.abs(dy)) {
+              if (dx > 0) actionsRef.current.right();
+              else actionsRef.current.left();
+            } else {
+              if (dy > 0) actionsRef.current.down();
+              else actionsRef.current.up();
             }
           }}
-          className="game-touch-btn w-full h-auto block cursor-pointer"
+          onPointerUp={() => { swipeStartRef.current = null; }}
+          onPointerCancel={() => { swipeStartRef.current = null; }}
+          className="game-touch-btn w-full h-auto block cursor-pointer touch-none"
         />
         <CrtOverlayLayer enabled={crtEnabled} />
         <PixiGameFxLayer ref={pixiFxRef} />
@@ -1147,7 +1180,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-2">
+      <div className="flex flex-col items-center gap-2">
         {gameId === 'flappy' ? (
           <button
             type="button"
@@ -1157,64 +1190,68 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
               triggerHaptic('light');
               actionsRef.current.primary();
             }}
-            className="game-touch-btn min-h-11 px-8 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white whitespace-nowrap cursor-pointer"
+            className="game-touch-btn min-h-12 px-8 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white whitespace-nowrap cursor-pointer"
           >
             {pickLang(lang, { es: 'Aletear (Toca, Agita o Espacio)', ca: 'Aletejar (Toca, Agita o Espai)', en: 'Flap (Tap, Shake or Space)' })}
           </button>
         ) : (
-          <>
-            <button
-              type="button"
-              onContextMenu={(e) => e.preventDefault()}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                triggerHaptic('light');
-                actionsRef.current.left();
-              }}
-              className="game-touch-btn min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
-              aria-label="Izquierda"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <button
-              type="button"
-              onContextMenu={(e) => e.preventDefault()}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                triggerHaptic('light');
-                actionsRef.current.up();
-              }}
-              className="game-touch-btn min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
-              aria-label="Arriba"
-            >
-              <ArrowUp className="w-5 h-5" />
-            </button>
-            <button
-              type="button"
-              onContextMenu={(e) => e.preventDefault()}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                triggerHaptic('light');
-                actionsRef.current.down();
-              }}
-              className="game-touch-btn min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
-              aria-label="Abajo"
-            >
-              <ArrowDown className="w-5 h-5" />
-            </button>
-            <button
-              type="button"
-              onContextMenu={(e) => e.preventDefault()}
-              onPointerDown={(e) => {
-                e.preventDefault();
-                triggerHaptic('light');
-                actionsRef.current.right();
-              }}
-              className="game-touch-btn min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
-              aria-label="Derecha"
-            >
-              <ArrowRight className="w-5 h-5" />
-            </button>
+          <div className="flex items-center justify-center gap-5 w-full">
+            <div className="grid grid-cols-3 gap-2 w-52">
+              <div />
+              <button
+                type="button"
+                onContextMenu={(e) => e.preventDefault()}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  triggerHaptic('light');
+                  actionsRef.current.up();
+                }}
+                className="game-touch-btn h-13 rounded-2xl bg-[#11172a] border-2 border-cyan-400/35 hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
+                aria-label="Arriba"
+              >
+                <ArrowUp className="w-6 h-6" />
+              </button>
+              <div />
+              <button
+                type="button"
+                onContextMenu={(e) => e.preventDefault()}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  triggerHaptic('light');
+                  actionsRef.current.left();
+                }}
+                className="game-touch-btn h-13 rounded-2xl bg-[#11172a] border-2 border-cyan-400/35 hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
+                aria-label="Izquierda"
+              >
+                <ArrowLeft className="w-6 h-6" />
+              </button>
+              <button
+                type="button"
+                onContextMenu={(e) => e.preventDefault()}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  triggerHaptic('light');
+                  actionsRef.current.down();
+                }}
+                className="game-touch-btn h-13 rounded-2xl bg-[#11172a] border-2 border-cyan-400/35 hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
+                aria-label="Abajo"
+              >
+                <ArrowDown className="w-6 h-6" />
+              </button>
+              <button
+                type="button"
+                onContextMenu={(e) => e.preventDefault()}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  triggerHaptic('light');
+                  actionsRef.current.right();
+                }}
+                className="game-touch-btn h-13 rounded-2xl bg-[#11172a] border-2 border-cyan-400/35 hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
+                aria-label="Derecha"
+              >
+                <ArrowRight className="w-6 h-6" />
+              </button>
+            </div>
             {gameId === 'bomberman' && (
               <button
                 type="button"
@@ -1224,12 +1261,18 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
                   triggerHaptic('medium');
                   actionsRef.current.primary();
                 }}
-                className="game-touch-btn min-h-11 px-5 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-black text-white inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                className="game-touch-btn w-20 h-20 rounded-full bg-rose-600 hover:bg-rose-500 border-2 border-rose-300/60 text-xs font-black text-white flex flex-col items-center justify-center gap-1 cursor-pointer shadow-xl"
               >
-                <Bomb className="w-4 h-4" /> Poner Bomba
+                <Bomb className="w-6 h-6" />
+                <span>BOMBA</span>
               </button>
             )}
-          </>
+          </div>
+        )}
+        {gameId !== 'flappy' && (
+          <p className="text-[11px] font-semibold text-zinc-400 sm:hidden">
+            Desliza sobre la pantalla o usa la cruceta
+          </p>
         )}
       </div>
 

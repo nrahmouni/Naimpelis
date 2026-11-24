@@ -16,6 +16,7 @@ import {
   getMaxSafeAnisotropy,
   initRoomEnvironment,
   loadCachedPbrTexture,
+  observeHostResize,
   spawnRigged3dActor,
 } from '../arcade/threeProHelpers';
 import {
@@ -85,30 +86,29 @@ function createKeeperGloves(trimHex: string): { left: THREE.Group; right: THREE.
   return { left: buildOne(-1), right: buildOne(1) };
 }
 
-export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
-  stateRef,
-  p1Country,
-  p2Country,
-  matchMode,
-  onGoalClick,
-}) => {
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const countriesRef = useRef({ p1: p1Country, p2: p2Country, matchMode });
-  countriesRef.current = { p1: p1Country, p2: p2Country, matchMode };
-  const onGoalClickRef = useRef(onGoalClick);
-  onGoalClickRef.current = onGoalClick;
+export interface Penalty3DMountOptions {
+  getState: () => Penalty3DStateSnapshot;
+  getContext: () => { p1: PenaltyCountry; p2: PenaltyCountry; matchMode: 'cpu' | '2p' };
+  onGoalClick?: (aimX: number, aimY: number) => void;
+}
 
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
+export function mountPenalty3D(
+  host: HTMLElement,
+  opts: Penalty3DMountOptions
+): { dispose: () => void } | null {
+  const isSoftwareGl = detectSoftwareGl();
+  const renderer = createResilientWebGlRenderer(isSoftwareGl, { exposure: 1.12 });
+  if (!renderer) return null;
 
-    const isSoftwareGl = detectSoftwareGl();
-    const renderer = createResilientWebGlRenderer(isSoftwareGl, { exposure: 1.12 });
-    if (!renderer) return;
-
-    renderer.domElement.className = 'w-full h-full block cursor-crosshair touch-none';
-    host.innerHTML = '';
-    host.appendChild(renderer.domElement);
+  renderer.domElement.className = 'w-full h-full block cursor-crosshair touch-none';
+  renderer.domElement.style.width = '100%';
+  renderer.domElement.style.height = '100%';
+  renderer.domElement.style.display = 'block';
+  host.innerHTML = '';
+  host.appendChild(renderer.domElement);
+  const initCtx = opts.getContext();
+  const p1Country = initCtx.p1;
+  const p2Country = initCtx.p2;
 
     const scene = new THREE.Scene();
     const skyDomeTex = createSkyDomeTexture({
@@ -485,8 +485,8 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
     const burstSystem = create3dParticleBurstSystem(scene, 110);
 
     // Optional Post-Processing (MSAA + SMAA + Bloom + Goal Bokeh DoF) + DRS
-    const initW = Math.max(320, host.clientWidth || 960);
-    const initH = Math.max(200, host.clientHeight || Math.round((initW * 9) / 16));
+    const initW = Math.max(160, host.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 960));
+    const initH = Math.max(120, host.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 540));
     const composer = createProPostComposer(renderer, scene, camera, {
       width: initW,
       height: initH,
@@ -498,26 +498,22 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
     const drs = createDrsController(renderer, {
       isSoftwareGl,
       onScaleChange: () => {
-        const w = Math.max(320, host.clientWidth || 960);
-        const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+        const w = Math.max(160, host.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 960));
+        const h = Math.max(120, host.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 540));
         composer?.setSize(w, h);
       },
     });
 
-    const updateSize = () => {
-      const w = Math.max(320, host.clientWidth || 960);
-      const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+    const stopResize = observeHostResize(host, (w, h) => {
       renderer.setSize(w, h, false);
       applyResponsiveCameraFov(camera, w / h, 46, 46, 68);
       composer?.setSize(w, h);
-    };
-    updateSize();
-    const ro = new ResizeObserver(updateSize);
-    ro.observe(host);
+    });
 
     const raycaster = new THREE.Raycaster();
     const pointerNdc = new THREE.Vector2();
     const onPointerDown = (e: PointerEvent) => {
+      if (!opts.onGoalClick) return;
       const rect = renderer.domElement.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
       pointerNdc.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
@@ -528,7 +524,7 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
         const pt = hits[0].point;
         const aimX = Math.max(-0.96, Math.min(0.96, pt.x / GOAL_HALF_W));
         const aimY = Math.max(0.1, Math.min(0.96, pt.y / GOAL_H));
-        onGoalClickRef.current(aimX, aimY);
+        opts.onGoalClick(aimX, aimY);
       }
     };
     renderer.domElement.addEventListener('pointerdown', onPointerDown);
@@ -550,8 +546,8 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
       elapsed += dt;
       crowdExcitement = Math.max(0.22, crowdExcitement - dt * 0.45);
 
-      const st = stateRef.current;
-      const { p1, p2, matchMode: mode } = countriesRef.current;
+      const st = opts.getState();
+      const { p1, p2, matchMode: mode } = opts.getContext();
 
       if (st.attacker !== prevAttacker) {
         prevAttacker = st.attacker;
@@ -708,21 +704,49 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
 
     pacer.schedule(tick);
 
+    return {
+      dispose: () => {
+        pacer.cancel();
+        stopResize();
+        renderer.domElement.removeEventListener('pointerdown', onPointerDown);
+        keeperActor.dispose();
+        strikerActor.dispose();
+        burstSystem.dispose();
+        roomEnv.dispose();
+        hdri.dispose();
+        composer?.dispose();
+        disposables.forEach((d) => d.dispose());
+        renderer.dispose();
+        if (renderer.domElement.parentNode === host) {
+          host.removeChild(renderer.domElement);
+        }
+      },
+    };
+}
+
+export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
+  stateRef,
+  p1Country,
+  p2Country,
+  matchMode,
+  onGoalClick,
+}) => {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const countriesRef = useRef({ p1: p1Country, p2: p2Country, matchMode });
+  countriesRef.current = { p1: p1Country, p2: p2Country, matchMode };
+  const onGoalClickRef = useRef(onGoalClick);
+  onGoalClickRef.current = onGoalClick;
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const handle = mountPenalty3D(host, {
+      getState: () => stateRef.current,
+      getContext: () => countriesRef.current,
+      onGoalClick: (ax, ay) => onGoalClickRef.current(ax, ay),
+    });
     return () => {
-      pacer.cancel();
-      ro.disconnect();
-      renderer.domElement.removeEventListener('pointerdown', onPointerDown);
-      keeperActor.dispose();
-      strikerActor.dispose();
-      burstSystem.dispose();
-      roomEnv.dispose();
-      hdri.dispose();
-      composer?.dispose();
-      disposables.forEach((d) => d.dispose());
-      renderer.dispose();
-      if (renderer.domElement.parentNode === host) {
-        host.removeChild(renderer.domElement);
-      }
+      handle?.dispose();
     };
   }, [stateRef]);
 

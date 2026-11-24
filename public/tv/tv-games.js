@@ -142,6 +142,9 @@ function closeTvGame() {
   if (TV_GAME_ACTIVE === 'tvtrivia' && typeof window.closeTvTriviaGame === 'function') {
     window.closeTvTriviaGame();
   }
+  if (typeof window.closeTvRetroGame === 'function') {
+    window.closeTvRetroGame();
+  }
   if (typeof window.closeTvGyroBridge === 'function') {
     window.closeTvGyroBridge();
   }

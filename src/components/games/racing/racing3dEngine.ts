@@ -1,6 +1,13 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { applyPolyHavenHdri, createSkyDomeTexture, createThreeFramePacer } from '../arcade/threeProHelpers';
+import {
+  applyPolyHavenHdri,
+  createSkyDomeTexture,
+  createThreeFramePacer,
+  detectSoftwareGl as sharedDetectSoftwareGl,
+  isConstrainedTvDevice,
+  observeHostResize,
+} from '../arcade/threeProHelpers';
 import {
   createDrsController,
   createProPostComposer,
@@ -11,13 +18,17 @@ import { buildGpCircuitScene } from './racingTrackBuilder';
 import { RacingSoundEngine } from './racingAudio';
 import { createRacing2dFallbackEngine } from './racing2dFallback';
 import {
+  RACING_CAR_CATALOG,
   RIVAL_LIVERIES,
   TOTAL_RACE_LAPS,
   TRACK_BARRIER_HALF_WIDTH,
   TRACK_HALF_WIDTH,
+  getRacingCarSpec,
   type RacingCameraMode,
+  type RacingCarId,
   type RacingEngineCallbacks,
   type RacingEngineHandle,
+  type RacingEngineOptions,
   type RacingGyroControlState,
 } from './racingTypes';
 
@@ -58,23 +69,12 @@ const _qDesired = new THREE.Quaternion();
 const _mRot = new THREE.Matrix4();
 const _vUp = new THREE.Vector3(0, 1, 0);
 
-function detectSoftwareGl(renderer: THREE.WebGLRenderer): boolean {
-  try {
-    const gl = renderer.getContext();
-    const ext = gl.getExtension('WEBGL_debug_renderer_info');
-    if (!ext) return false;
-    const rendererStr = String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '');
-    return /SwiftShader|llvmpipe|softpipe/i.test(rendererStr);
-  } catch {
-    return false;
-  }
-}
-
-function createResilientWebGlRenderer(): THREE.WebGLRenderer | null {
+function createResilientWebGlRenderer(tvConstrained: boolean, isSwGl: boolean): THREE.WebGLRenderer | null {
   try {
     return new THREE.WebGLRenderer({
-      antialias: true,
-      powerPreference: 'high-performance',
+      antialias: !tvConstrained && !isSwGl,
+      powerPreference: tvConstrained || isSwGl ? 'default' : 'high-performance',
+      failIfMajorPerformanceCaveat: false,
     });
   } catch {
     try {
@@ -91,15 +91,17 @@ function createResilientWebGlRenderer(): THREE.WebGLRenderer | null {
 
 export function createRacing3dEngine(
   container: HTMLElement,
-  callbacks: RacingEngineCallbacks = {}
+  callbacks: RacingEngineCallbacks = {},
+  options: RacingEngineOptions = {}
 ): RacingEngineHandle {
-  const maybeRenderer = createResilientWebGlRenderer();
+  const tvConstrained = isConstrainedTvDevice();
+  const isSoftwareGl = sharedDetectSoftwareGl();
+  const maybeRenderer = createResilientWebGlRenderer(tvConstrained, isSoftwareGl);
   if (!maybeRenderer) {
     return createRacing2dFallbackEngine(container, callbacks);
   }
   const renderer = maybeRenderer;
-  const isSoftwareGl = detectSoftwareGl(renderer);
-  const dpr = Math.min(window.devicePixelRatio || 1, isSoftwareGl ? 1 : 2);
+  const dpr = isSoftwareGl || tvConstrained ? 1 : Math.min(window.devicePixelRatio || 1, 2);
   renderer.setPixelRatio(dpr);
   renderer.setSize(
     Math.max(1, container.clientWidth || window.innerWidth || 1280),
@@ -107,10 +109,10 @@ export function createRacing3dEngine(
   );
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.88;
+  renderer.toneMappingExposure = 0.94;
   if (!isSoftwareGl) {
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = tvConstrained ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
   }
 
   renderer.domElement.style.display = 'block';
@@ -173,7 +175,8 @@ export function createRacing3dEngine(
   keyLight.position.set(110, 140, 80);
   if (!isSoftwareGl) {
     keyLight.castShadow = true;
-    keyLight.shadow.mapSize.set(1024, 1024);
+    const shadowSize = tvConstrained ? 512 : 1024;
+    keyLight.shadow.mapSize.set(shadowSize, shadowSize);
     keyLight.shadow.camera.near = 20;
     keyLight.shadow.camera.far = 420;
     keyLight.shadow.camera.left = -220;
@@ -188,7 +191,7 @@ export function createRacing3dEngine(
   const circuit = buildGpCircuitScene(scene, isSoftwareGl);
   const audio = new RacingSoundEngine();
 
-  // GPU Post-Processing (MSAA + SMAA + SpeedRadial + Finish Bokeh + restrained HDR Bloom) + Dynamic Resolution Scaling
+  // GPU Post-Processing (skipped cleanly on constrained Smart TVs via createProPostComposer) + DRS
   const w0 = Math.max(1, container.clientWidth || window.innerWidth || 1280);
   const h0 = Math.max(1, container.clientHeight || window.innerHeight || 720);
   const composer: ProPostComposerHandle | null = createProPostComposer(renderer, scene, camera, {
@@ -203,7 +206,7 @@ export function createRacing3dEngine(
   const drs = createDrsController(renderer, {
     minRatio: 0.75,
     maxRatio: dpr,
-    isSoftwareGl,
+    isSoftwareGl: isSoftwareGl || tvConstrained,
     onScaleChange: () => {
       const cw = Math.max(1, container.clientWidth || window.innerWidth || 1280);
       const ch = Math.max(1, container.clientHeight || window.innerHeight || 720);
@@ -211,10 +214,13 @@ export function createRacing3dEngine(
     },
   });
 
-  // Player + 3 AI Rivals
-  const playerCar = buildFormulaGtCar(RIVAL_LIVERIES[0].primary, RIVAL_LIVERIES[0].accent, {
+  // Selectable Player Car + 3 AI Rivals
+  let activeCarSpec = getRacingCarSpec(options.initialCarId);
+  let autoGasEnabled = Boolean(options.initialAutoGas);
+  const playerCar = buildFormulaGtCar(activeCarSpec.primaryHex, activeCarSpec.accentHex, {
     castShadow: !isSoftwareGl,
     isPlayer: true,
+    carId: activeCarSpec.id,
   });
   scene.add(playerCar.root);
 
@@ -311,6 +317,9 @@ export function createRacing3dEngine(
   let bestLapMs = 0;
   let lastCycleCameraToggle = false;
   let lastHornToggle = false;
+  let lastCarSelectCmd: string | undefined;
+  let lastAutoGasToggleCmd = false;
+  let smoothedSteerCmd = 0;
 
   // Player 2 (slot 2 phone) physics driving rivals[0]
   let p2Connected = false;
@@ -453,21 +462,31 @@ export function createRacing3dEngine(
       raceElapsedMs += dt * 1000;
     }
 
-    // 2. Merge keyboard + active gyro inputs
+    // 2. Merge keyboard + active gyro + optional Auto-Gas cruise
     const gyroActive = nowMs < gyroState.expiresAt;
-    let steerInput = (keysState.left ? 1 : 0) - (keysState.right ? 1 : 0);
+    const rawKeySteer = (keysState.left ? 1 : 0) - (keysState.right ? 1 : 0);
+    // Smooth digital key steering so TV remote taps feel precise and predictable
+    smoothedSteerCmd = THREE.MathUtils.damp(smoothedSteerCmd, rawKeySteer, 13, dt);
+    let steerInput = Math.abs(rawKeySteer) > 0 ? smoothedSteerCmd : 0;
     let throttleInput = keysState.up ? 1 : 0;
-    let brakeInput = keysState.down ? 1 : 0;
+    const brakeInputRaw = keysState.down ? 1 : 0;
+    let brakeInput = brakeInputRaw;
+    if (autoGasEnabled && brakeInputRaw < 0.1) {
+      throttleInput = Math.max(throttleInput, 0.92);
+    }
     let nitroWanted = keysState.nitro;
     let handbrakeWanted = keysState.handbrake;
 
     if (gyroActive) {
-      // gyroState.steer: -1 left, +1 right -> positive yaw turns left (+heading in Three.js XZ right-handed)
       const gyroSteer = -gyroState.steer;
-      if (Math.abs(gyroSteer) > 0.01 || steerInput === 0) {
-        steerInput = Math.max(-1, Math.min(1, gyroSteer + steerInput * 0.5));
+      if (Math.abs(gyroSteer) > 0.01 || rawKeySteer === 0) {
+        steerInput = Math.max(-1, Math.min(1, gyroSteer + steerInput * 0.45));
       }
-      throttleInput = Math.max(throttleInput, gyroState.throttle);
+      if (autoGasEnabled && gyroState.brake < 0.1) {
+        throttleInput = Math.max(throttleInput, gyroState.throttle, 0.92);
+      } else {
+        throttleInput = Math.max(throttleInput, gyroState.throttle);
+      }
       brakeInput = Math.max(brakeInput, gyroState.brake);
       nitroWanted = nitroWanted || gyroState.nitro;
       handbrakeWanted = handbrakeWanted || gyroState.handbrake;
@@ -478,7 +497,7 @@ export function createRacing3dEngine(
       brakeInput = 0;
       nitroWanted = false;
     } else if (raceState === 'finished') {
-      throttleInput = 0.25; // Victory cruise
+      throttleInput = 0.25;
       brakeInput = 0;
       nitroWanted = false;
     }
@@ -489,6 +508,13 @@ export function createRacing3dEngine(
     const proj = projected.proj;
     const absLat = Math.abs(proj.distFromCenter);
     const offroad = absLat > TRACK_HALF_WIDTH;
+
+    // Gentle lane centering / cornering assist when steering is neutral or holding auto-gas
+    if (raceState === 'racing' && Math.abs(steerInput) < 0.08 && speedMps > 10) {
+      const trackYaw = Math.atan2(proj.tangentX, proj.tangentZ);
+      const yawErr = Math.atan2(Math.sin(trackYaw - heading), Math.cos(trackYaw - heading));
+      heading += yawErr * Math.min(0.45, dt * (autoGasEnabled ? 1.4 : 0.45));
+    }
 
     // Check nitro boost pads
     for (const pad of circuit.boostPads) {
@@ -502,15 +528,19 @@ export function createRacing3dEngine(
     padBoostTimer = Math.max(0, padBoostTimer - dt);
     const nitroUsing = raceState === 'racing' && nitroWanted && nitroPct > 2;
     if (nitroUsing) {
-      nitroPct = Math.max(0, nitroPct - 28 * dt);
+      nitroPct = Math.max(0, nitroPct - activeCarSpec.nitroBurn * dt);
     } else {
       nitroPct = Math.min(100, nitroPct + (offroad ? 4 : 9.5) * dt);
     }
     const boosting = nitroUsing || padBoostTimer > 0;
 
-    // 4. Longitudinal & lateral vehicle dynamics
-    const topSpeed = offroad ? 46 : boosting ? 96 : 78; // ~280-345 km/h scale
-    const accel = boosting ? 54 : 34;
+    // 4. Longitudinal & lateral vehicle dynamics driven by active car spec
+    const topSpeed = offroad
+      ? activeCarSpec.offroadSpeed
+      : boosting
+      ? activeCarSpec.boostTopSpeed
+      : activeCarSpec.topSpeed;
+    const accel = boosting ? activeCarSpec.accel * 1.58 : activeCarSpec.accel;
     if (throttleInput > 0) {
       speedMps += throttleInput * accel * dt;
     }
@@ -519,7 +549,6 @@ export function createRacing3dEngine(
       else speedMps -= brakeInput * 18 * dt;
     }
 
-    // Aerodynamic drag + rolling resistance
     const dragFactor = offroad ? 2.1 : 0.48;
     speedMps -= speedMps * dragFactor * dt;
     if (throttleInput === 0 && brakeInput === 0 && Math.abs(speedMps) < 0.6) {
@@ -527,11 +556,10 @@ export function createRacing3dEngine(
     }
     speedMps = Math.max(-18, Math.min(topSpeed, speedMps));
 
-    // Steering angular velocity scaled smoothly by speed
     const speedRatio = Math.min(1, Math.abs(speedMps) / 22);
     const driftMultiplier = handbrakeWanted ? 1.48 : 1.0;
     const dirSign = speedMps >= -0.5 ? 1 : -1;
-    const steerRate = 2.05 * driftMultiplier * (0.28 + 0.72 * speedRatio);
+    const steerRate = activeCarSpec.steerRate * driftMultiplier * (0.34 + 0.66 * speedRatio);
     heading += steerInput * steerRate * dirSign * dt;
 
     const fwdX = Math.sin(heading);
@@ -975,6 +1003,8 @@ export function createRacing3dEngine(
         totalTimeMs: Math.round(raceElapsedMs),
         cameraMode,
         wrongWay: dotHeading < -0.35 && speedKmh > 25,
+        carId: activeCarSpec.id,
+        autoGas: autoGasEnabled,
         splitScreenActive,
         p2SpeedKmh: p2Driving ? Math.max(0, Math.round(Math.abs(speedMps2) * 3.6)) : undefined,
         p2Lap: p2Driving && rivals[0] ? rivals[0].lap : undefined,
@@ -1068,24 +1098,33 @@ export function createRacing3dEngine(
     const h = Math.max(1, container.clientHeight || window.innerHeight || 720);
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
+    cameraP2.aspect = splitScreenActive ? Math.max(1, Math.floor(w / 2)) / h : w / h;
+    cameraP2.updateProjectionMatrix();
     renderer.setSize(w, h);
     composer?.setSize(w, h);
   };
   if (typeof requestAnimationFrame === 'function') {
     requestAnimationFrame(() => handleResize());
   }
-  const resizeObserver =
-    typeof ResizeObserver !== 'undefined' ? new ResizeObserver(handleResize) : null;
-  resizeObserver?.observe(container);
-  window.addEventListener('resize', handleResize);
+  const cleanupResizeObserver = observeHostResize(container, handleResize);
 
+  let contextLostTimer: ReturnType<typeof setTimeout> | null = null;
   const onContextLost = (ev: Event) => {
     ev.preventDefault();
     contextLost = true;
-    callbacks.onContextLost?.();
+    if (contextLostTimer) clearTimeout(contextLostTimer);
+    contextLostTimer = setTimeout(() => {
+      if (!destroyed && contextLost) {
+        callbacks.onContextLost?.();
+      }
+    }, 650);
   };
   const onContextRestored = () => {
     contextLost = false;
+    if (contextLostTimer) {
+      clearTimeout(contextLostTimer);
+      contextLostTimer = null;
+    }
     clock.getDelta();
   };
   renderer.domElement.addEventListener('webglcontextlost', onContextLost);
@@ -1094,6 +1133,13 @@ export function createRacing3dEngine(
   const unlockAudioHandler = () => audio.unlock();
   window.addEventListener('pointerdown', unlockAudioHandler, { passive: true });
   window.addEventListener('keydown', unlockAudioHandler, { passive: true });
+
+  const applyPlayerCar = (carId: RacingCarId): RacingCarId => {
+    const nextSpec = getRacingCarSpec(carId);
+    activeCarSpec = nextSpec;
+    playerCar.setCarModel(nextSpec.id);
+    return nextSpec.id;
+  };
 
   return {
     setGyroInput: (input, expiresInMs = 950, playerSlot) => {
@@ -1124,6 +1170,23 @@ export function createRacing3dEngine(
           cameraMode = order[(order.indexOf(cameraMode) + 1) % order.length];
         }
         lastCycleCameraToggle = Boolean(input.cameraCycle);
+        if (input.carSelect && input.carSelect !== lastCarSelectCmd) {
+          lastCarSelectCmd = input.carSelect;
+          if (input.carSelect === 'next' || input.carSelect === 'prev') {
+            const idx = RACING_CAR_CATALOG.findIndex((c) => c.id === activeCarSpec.id);
+            const delta = input.carSelect === 'prev' ? -1 : 1;
+            const targetCar = RACING_CAR_CATALOG[(idx + delta + RACING_CAR_CATALOG.length) % RACING_CAR_CATALOG.length];
+            applyPlayerCar(targetCar.id);
+          } else {
+            applyPlayerCar(input.carSelect);
+          }
+        } else if (!input.carSelect) {
+          lastCarSelectCmd = undefined;
+        }
+        if (input.autoGasToggle && !lastAutoGasToggleCmd) {
+          autoGasEnabled = !autoGasEnabled;
+        }
+        lastAutoGasToggleCmd = Boolean(input.autoGasToggle);
       }
       if (input.horn && !lastHornToggle) {
         audio.playHorn();
@@ -1147,6 +1210,16 @@ export function createRacing3dEngine(
       if (typeof keys.nitro === 'boolean') keysState.nitro = keys.nitro;
       if (typeof keys.handbrake === 'boolean') keysState.handbrake = keys.handbrake;
     },
+    setPlayerCar: (carId: RacingCarId) => {
+      audio.unlock();
+      return applyPlayerCar(carId);
+    },
+    getPlayerCar: () => activeCarSpec.id,
+    setAutoGas: (enabled: boolean) => {
+      autoGasEnabled = Boolean(enabled);
+      return autoGasEnabled;
+    },
+    getAutoGas: () => autoGasEnabled,
     cycleCamera: () => {
       audio.unlock();
       const order: RacingCameraMode[] = ['chase', 'hood', 'far'];
@@ -1166,9 +1239,9 @@ export function createRacing3dEngine(
     },
     destroy: () => {
       destroyed = true;
+      if (contextLostTimer) clearTimeout(contextLostTimer);
       framePacer.cancel();
-      resizeObserver?.disconnect();
-      window.removeEventListener('resize', handleResize);
+      cleanupResizeObserver();
       window.removeEventListener('pointerdown', unlockAudioHandler);
       window.removeEventListener('keydown', unlockAudioHandler);
       renderer.domElement.removeEventListener('webglcontextlost', onContextLost);

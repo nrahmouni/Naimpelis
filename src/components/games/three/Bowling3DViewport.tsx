@@ -14,7 +14,9 @@ import {
   detectSoftwareGl,
   getMaxSafeAnisotropy,
   initRoomEnvironment,
+  isConstrainedTvDevice,
   loadCachedPbrTexture,
+  observeHostResize,
   spawnRigged3dActor,
 } from '../arcade/threeProHelpers';
 import {
@@ -52,20 +54,24 @@ function laneToWorld(lx: number, ly: number): { x: number; z: number } {
   };
 }
 
-export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) => {
-  const hostRef = useRef<HTMLDivElement | null>(null);
+export interface Bowling3DMountOptions {
+  getState: () => BowlingSimSnapshot;
+}
 
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
+export function mountBowling3D(
+  host: HTMLElement,
+  opts: Bowling3DMountOptions
+): { dispose: () => void } | null {
+  const isSoftwareGl = detectSoftwareGl();
+  const renderer = createResilientWebGlRenderer(isSoftwareGl, { exposure: 1.08 });
+  if (!renderer) return null;
 
-    const isSoftwareGl = detectSoftwareGl();
-    const renderer = createResilientWebGlRenderer(isSoftwareGl, { exposure: 1.08 });
-    if (!renderer) return;
-
-    renderer.domElement.className = 'w-full h-full block touch-none';
-    host.innerHTML = '';
-    host.appendChild(renderer.domElement);
+  renderer.domElement.className = 'w-full h-full block touch-none';
+  renderer.domElement.style.width = '100%';
+  renderer.domElement.style.height = '100%';
+  renderer.domElement.style.display = 'block';
+  host.innerHTML = '';
+  host.appendChild(renderer.domElement);
 
     const alleySkyTex = createSkyDomeTexture({
       topHex: '#070918',
@@ -128,7 +134,7 @@ export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) 
     disposables.push(laneWoodTex);
 
     let laneReflector: Reflector | null = null;
-    if (!isSoftwareGl) {
+    if (!isSoftwareGl && !isConstrainedTvDevice()) {
       try {
         const refGeo = new THREE.PlaneGeometry(LANE_HALF_W * 2, 22.5);
         laneReflector = new Reflector(refGeo, {
@@ -339,8 +345,8 @@ export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) 
 
     const burstSystem = create3dParticleBurstSystem(scene, 96);
 
-    const initW = Math.max(320, host.clientWidth || 920);
-    const initH = Math.max(200, host.clientHeight || Math.round((initW * 9) / 16));
+    const initW = Math.max(160, host.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 920));
+    const initH = Math.max(120, host.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 520));
     const composer = createProPostComposer(renderer, scene, camera, {
       width: initW,
       height: initH,
@@ -352,25 +358,21 @@ export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) 
     const drs = createDrsController(renderer, {
       isSoftwareGl,
       onScaleChange: () => {
-        const w = Math.max(320, host.clientWidth || 920);
-        const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+        const w = Math.max(160, host.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 920));
+        const h = Math.max(120, host.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 520));
         composer?.setSize(w, h);
       },
     });
 
-    const updateSize = () => {
-      const w = Math.max(320, host.clientWidth || 920);
-      const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+    const stopResize = observeHostResize(host, (w, h) => {
       renderer.setSize(w, h, false);
       applyResponsiveCameraFov(camera, w / h, 44, 44, 64);
       composer?.setSize(w, h);
-    };
-    updateSize();
-    const ro = new ResizeObserver(updateSize);
-    ro.observe(host);
+    });
 
-    let lastOutcomeSeq = simRef.current.outcomeSeq;
-    let prevPhase: BowlingSimSnapshot['phase'] = simRef.current.phase;
+    const initSim = opts.getState();
+    let lastOutcomeSeq = initSim.outcomeSeq;
+    let prevPhase: BowlingSimSnapshot['phase'] = initSim.phase;
     let lastTime = performance.now();
     const pacer = createThreeFramePacer(renderer, isSoftwareGl);
 
@@ -379,7 +381,7 @@ export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) 
       const dt = Math.min(0.05, Math.max(0.004, (now - lastTime) / 1000));
       lastTime = now;
 
-      const sim = simRef.current;
+      const sim = opts.getState();
 
       if (prevPhase === 'aim' && sim.phase === 'roll') {
         bowlerActor.playClip(['Punch', 'Run'], 0.12, { loopOnce: true, returnTo: ['Idle'] });
@@ -486,19 +488,35 @@ export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) 
 
     pacer.schedule(tick);
 
+    return {
+      dispose: () => {
+        pacer.cancel();
+        stopResize();
+        bowlerActor.dispose();
+        burstSystem.dispose();
+        roomEnv.dispose();
+        hdri.dispose();
+        composer?.dispose();
+        disposables.forEach((d) => d.dispose());
+        renderer.dispose();
+        if (renderer.domElement.parentNode === host) {
+          host.removeChild(renderer.domElement);
+        }
+      },
+    };
+}
+
+export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) => {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const handle = mountBowling3D(host, {
+      getState: () => simRef.current,
+    });
     return () => {
-      pacer.cancel();
-      ro.disconnect();
-      bowlerActor.dispose();
-      burstSystem.dispose();
-      roomEnv.dispose();
-      hdri.dispose();
-      composer?.dispose();
-      disposables.forEach((d) => d.dispose());
-      renderer.dispose();
-      if (renderer.domElement.parentNode === host) {
-        host.removeChild(renderer.domElement);
-      }
+      handle?.dispose();
     };
   }, [simRef]);
 

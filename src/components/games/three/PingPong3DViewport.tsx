@@ -12,6 +12,7 @@ import {
   detectSoftwareGl,
   getMaxSafeAnisotropy,
   initRoomEnvironment,
+  observeHostResize,
 } from '../arcade/threeProHelpers';
 import {
   applyFresnelRimShader,
@@ -95,27 +96,27 @@ function createTableTennisRacket(rubberHex: string, rimHex: string): {
   return { group: g, disposables };
 }
 
-export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
-  simRef,
-  onPointerMoveX,
-  onPointerLeave,
-  onSmashChange,
-}) => {
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const cbRef = useRef({ onPointerMoveX, onPointerLeave, onSmashChange });
-  cbRef.current = { onPointerMoveX, onPointerLeave, onSmashChange };
+export interface PingPong3DMountOptions {
+  getState: () => PingPong3DSnapshot;
+  onPointerMoveX?: (nx: number) => void;
+  onPointerLeave?: () => void;
+  onSmashChange?: (active: boolean) => void;
+}
 
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
+export function mountPingPong3D(
+  host: HTMLElement,
+  opts: PingPong3DMountOptions
+): { dispose: () => void } | null {
+  const isSoftwareGl = detectSoftwareGl();
+  const renderer = createResilientWebGlRenderer(isSoftwareGl, { exposure: 1.08 });
+  if (!renderer) return null;
 
-    const isSoftwareGl = detectSoftwareGl();
-    const renderer = createResilientWebGlRenderer(isSoftwareGl, { exposure: 1.08 });
-    if (!renderer) return;
-
-    renderer.domElement.className = 'w-full h-full block touch-none cursor-crosshair';
-    host.innerHTML = '';
-    host.appendChild(renderer.domElement);
+  renderer.domElement.className = 'w-full h-full block touch-none cursor-crosshair';
+  renderer.domElement.style.width = '100%';
+  renderer.domElement.style.height = '100%';
+  renderer.domElement.style.display = 'block';
+  host.innerHTML = '';
+  host.appendChild(renderer.domElement);
 
     const arenaSkyTex = createSkyDomeTexture({
       topHex: '#040814',
@@ -361,8 +362,8 @@ export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
 
     const burstSystem = create3dParticleBurstSystem(scene, 84);
 
-    const initW = Math.max(320, host.clientWidth || 920);
-    const initH = Math.max(200, host.clientHeight || Math.round((initW * 9) / 16));
+    const initW = Math.max(160, host.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 920));
+    const initH = Math.max(120, host.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 520));
     const composer = createProPostComposer(renderer, scene, camera, {
       width: initW,
       height: initH,
@@ -374,35 +375,36 @@ export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
     const drs = createDrsController(renderer, {
       isSoftwareGl,
       onScaleChange: () => {
-        const w = Math.max(320, host.clientWidth || 920);
-        const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+        const w = Math.max(160, host.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 920));
+        const h = Math.max(120, host.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 520));
         composer?.setSize(w, h);
       },
     });
 
-    const updateSize = () => {
-      const w = Math.max(320, host.clientWidth || 920);
-      const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+    const stopResize = observeHostResize(host, (w, h) => {
       renderer.setSize(w, h, false);
       applyResponsiveCameraFov(camera, w / h, 44, 44, 65);
       composer?.setSize(w, h);
-    };
-    updateSize();
-    const ro = new ResizeObserver(updateSize);
-    ro.observe(host);
+    });
 
     const handleMove = (e: PointerEvent) => {
+      if (!opts.onPointerMoveX) return;
       const rect = renderer.domElement.getBoundingClientRect();
       if (!rect.width) return;
       const nx = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-      cbRef.current.onPointerMoveX(Math.max(-1.05, Math.min(1.05, nx * 1.35)));
+      opts.onPointerMoveX(Math.max(-1.05, Math.min(1.05, nx * 1.35)));
     };
-    const handleLeave = () => cbRef.current.onPointerLeave();
+    const handleLeave = () => {
+      opts.onPointerLeave?.();
+    };
     const handleDown = (e: PointerEvent) => {
+      if (!opts.onSmashChange) return;
       e.preventDefault();
-      cbRef.current.onSmashChange(true);
+      opts.onSmashChange(true);
     };
-    const handleUp = () => cbRef.current.onSmashChange(false);
+    const handleUp = () => {
+      opts.onSmashChange?.(false);
+    };
 
     renderer.domElement.addEventListener('pointermove', handleMove);
     renderer.domElement.addEventListener('pointerleave', handleLeave);
@@ -419,7 +421,7 @@ export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
       const dt = Math.min(0.05, Math.max(0.004, (now - lastTime) / 1000));
       lastTime = now;
 
-      const st = simRef.current;
+      const st = opts.getState();
 
       // Update P1 & P2 Rackets
       const p1Punch = st.p1.smashT > 0 ? -0.26 : 0;
@@ -492,21 +494,47 @@ export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
 
     pacer.schedule(tick);
 
+    return {
+      dispose: () => {
+        pacer.cancel();
+        stopResize();
+        renderer.domElement.removeEventListener('pointermove', handleMove);
+        renderer.domElement.removeEventListener('pointerleave', handleLeave);
+        renderer.domElement.removeEventListener('pointerdown', handleDown);
+        renderer.domElement.removeEventListener('pointerup', handleUp);
+        renderer.domElement.removeEventListener('pointercancel', handleUp);
+        burstSystem.dispose();
+        roomEnv.dispose();
+        hdri.dispose();
+        composer?.dispose();
+        disposables.forEach((d) => d.dispose());
+        renderer.dispose();
+        if (renderer.domElement.parentNode === host) host.removeChild(renderer.domElement);
+      },
+    };
+}
+
+export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
+  simRef,
+  onPointerMoveX,
+  onPointerLeave,
+  onSmashChange,
+}) => {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const cbRef = useRef({ onPointerMoveX, onPointerLeave, onSmashChange });
+  cbRef.current = { onPointerMoveX, onPointerLeave, onSmashChange };
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const handle = mountPingPong3D(host, {
+      getState: () => simRef.current,
+      onPointerMoveX: (nx) => cbRef.current.onPointerMoveX(nx),
+      onPointerLeave: () => cbRef.current.onPointerLeave(),
+      onSmashChange: (active) => cbRef.current.onSmashChange(active),
+    });
     return () => {
-      pacer.cancel();
-      ro.disconnect();
-      renderer.domElement.removeEventListener('pointermove', handleMove);
-      renderer.domElement.removeEventListener('pointerleave', handleLeave);
-      renderer.domElement.removeEventListener('pointerdown', handleDown);
-      renderer.domElement.removeEventListener('pointerup', handleUp);
-      renderer.domElement.removeEventListener('pointercancel', handleUp);
-      burstSystem.dispose();
-      roomEnv.dispose();
-      hdri.dispose();
-      composer?.dispose();
-      disposables.forEach((d) => d.dispose());
-      renderer.dispose();
-      if (renderer.domElement.parentNode === host) host.removeChild(renderer.domElement);
+      handle?.dispose();
     };
   }, [simRef]);
 

@@ -133,6 +133,8 @@ export interface GyroInputPayload {
   handbrake?: boolean;
   cameraCycle?: boolean;
   horn?: boolean;
+  carSelect?: string;
+  autoGasToggle?: boolean;
   seq: number;
   ts: number;
 }
@@ -157,6 +159,8 @@ export interface RacingTelemetryPayload {
   scoreP1?: number;
   scoreP2?: number;
   eventTag?: string;
+  carId?: string;
+  autoGas?: boolean;
 }
 
 export interface RoomGameInvite {

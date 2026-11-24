@@ -40,6 +40,7 @@
     'models/hypercar.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/hypercar.glb',
     'models/rally.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/rally.glb',
     'models/wedge.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/wedge.glb',
+    'models/streamliner.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/streamliner.glb',
     'models/RobotExpressive.glb': THREE_CDN + 'RobotExpressive/RobotExpressive.glb',
     'models/Soldier.glb': THREE_CDN + 'Soldier.glb',
     'models/Xbot.glb': THREE_CDN + 'Xbot.glb',
@@ -107,6 +108,9 @@
     if (raw.indexOf('http://') === 0 || raw.indexOf('https://') === 0 || raw.indexOf('data:') === 0) return raw;
     var clean = raw.replace(/^(\.\/|\/)+/, '').replace(/^assets\/games\//, '');
     if (CDN_EXACT[clean]) return CDN_EXACT[clean];
+    if (clean.indexOf('models/city/') === 0) return KENNEY_CDN + '3d/city-commercial/' + clean.slice(12);
+    if (clean.indexOf('models/city-builder/') === 0) return 'https://cdn.jsdelivr.net/gh/KenneyNL/Starter-Kit-City-Builder@main/models/' + clean.slice(20);
+    if (clean.indexOf('cars/') === 0) return 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/images/' + clean.slice(5);
     var slash = clean.indexOf('/');
     var folder = slash > 0 ? clean.slice(0, slash) : '';
     var file = slash > 0 ? clean.slice(slash + 1) : clean;

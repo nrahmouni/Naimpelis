@@ -6,6 +6,11 @@ import {
   applyFresnelRimToGroup,
   attachSafeMeshDecoders,
 } from '../arcade/threePostFxHelpers';
+import {
+  getRacingCarSpec,
+  type RacingCarId,
+  type RacingCarSpec,
+} from './racingTypes';
 
 export interface RealWheelSpinNode {
   obj: THREE.Object3D;
@@ -22,6 +27,7 @@ export interface BuiltCarRig {
   realFrontSteerNodes: Array<{ obj: THREE.Object3D; baseRotZ: number }>;
   brakeLightMaterial: THREE.MeshStandardMaterial;
   nitroFlames: [THREE.Mesh, THREE.Mesh];
+  setCarModel: (carId: RacingCarId) => void;
   dispose: () => void;
 }
 
@@ -43,11 +49,7 @@ function loadCachedRaceModel(relUrl: string): Promise<THREE.Group | null> {
       resolvedUrl,
       (gltf) => {
         const scene = gltf?.scene;
-        if (!scene) {
-          resolve(null);
-          return;
-        }
-        resolve(scene);
+        resolve(scene || null);
       },
       undefined,
       () => resolve(null)
@@ -77,7 +79,7 @@ function loadCachedAoShadow(relUrl: string): Promise<THREE.Texture | null> {
 export function buildFormulaGtCar(
   primaryHex: number,
   accentHex: number,
-  options?: { castShadow?: boolean; isPlayer?: boolean; rivalIndex?: number }
+  options?: { castShadow?: boolean; isPlayer?: boolean; rivalIndex?: number; carId?: RacingCarId }
 ): BuiltCarRig {
   const castShadow = Boolean(options?.castShadow);
   const root = new THREE.Group();
@@ -87,6 +89,8 @@ export function buildFormulaGtCar(
   root.add(bodyGroup);
   let disposed = false;
   let glbClone: THREE.Group | null = null;
+  let glbBrakeBar: THREE.Mesh | null = null;
+  let loadGeneration = 0;
 
   const geometries: THREE.BufferGeometry[] = [];
   const materials: THREE.Material[] = [];
@@ -178,7 +182,6 @@ export function buildFormulaGtCar(
     })
   );
 
-  // Sleek fallback chassis shown only during async GLB decode (<400ms)
   const floorMesh = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.92, 0.14, 4.35)), carbonMat);
   floorMesh.position.set(0, 0.28, 0);
   floorMesh.castShadow = castShadow;
@@ -287,106 +290,145 @@ export function buildFormulaGtCar(
   shadowPlane.position.y = 0.028;
   root.add(shadowPlane);
 
+  const underglowMat = trackMat(
+    new THREE.MeshBasicMaterial({
+      color: accentHex,
+      transparent: true,
+      opacity: options?.isPlayer ? 0.24 : 0.16,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+  );
   const underglowMesh = new THREE.Mesh(
     trackGeo(new THREE.PlaneGeometry(1.75, 3.6)),
-    trackMat(
-      new THREE.MeshBasicMaterial({
-        color: accentHex,
-        transparent: true,
-        opacity: options?.isPlayer ? 0.24 : 0.16,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-      })
-    )
+    underglowMat
   );
   underglowMesh.rotation.x = -Math.PI / 2;
   underglowMesh.position.y = 0.036;
   root.add(underglowMesh);
 
-  // Real online 3D Motorsport Models:
-  // - ferrari.glb natively faces -Z forward (yawOffset = 0)
-  // - endurance.glb / hypercar.glb / rally.glb natively face +Z forward (yawOffset = Math.PI)
+  const glbBrakeBarGeo = trackGeo(new THREE.BoxGeometry(1.22, 0.075, 0.07));
+
   const rivalPool: Array<{ path: string; yawOffset: number }> = [
     { path: 'assets/games/models/endurance.glb', yawOffset: Math.PI },
     { path: 'assets/games/models/hypercar.glb', yawOffset: Math.PI },
     { path: 'assets/games/models/rally.glb', yawOffset: Math.PI },
   ];
-  const selected = options?.isPlayer
-    ? { path: 'assets/games/models/ferrari.glb', yawOffset: 0 }
-    : rivalPool[((options?.rivalIndex ?? 1) - 1 + rivalPool.length) % rivalPool.length];
 
-  if (options?.isPlayer) {
-    void loadCachedAoShadow('assets/games/models/ferrari_ao.png').then((aoTex) => {
-      if (!aoTex || disposed) return;
-      shadowMat.map = aoTex;
-      shadowMat.color.setHex(0xffffff);
-      shadowMat.opacity = 0.92;
-      shadowMat.needsUpdate = true;
-    });
-  }
-
-  void loadCachedRaceModel(selected.path).then((source) => {
-    if (!source || disposed) return;
-    const clone = source.clone(true);
-    clone.rotation.y = selected.yawOffset;
-    clone.updateMatrixWorld(true);
-
-    const box = new THREE.Box3().setFromObject(clone);
-    const size = new THREE.Vector3();
-    const center = new THREE.Vector3();
-    box.getSize(size);
-    box.getCenter(center);
-
-    const scale = 4.5 / Math.max(0.5, size.z);
-    clone.scale.setScalar(scale);
-    clone.position.set(-center.x * scale, -box.min.y * scale + 0.02, -center.z * scale);
-
-    clone.traverse((node) => {
-      const mesh = node as THREE.Mesh;
-      if (mesh.isMesh) {
-        mesh.castShadow = castShadow;
-        mesh.receiveShadow = castShadow;
-        const matName = String((mesh.material as THREE.Material | undefined)?.name || '');
-        if (options?.isPlayer && (mesh.name === 'body' || /^Paint_/i.test(matName))) {
-          mesh.material = paintMat;
-        } else if (!options?.isPlayer && /^Paint_/i.test(matName)) {
-          mesh.material = paintMat;
-        }
-      }
-      if (/^wheel_(fl|fr|rl|rr)$/i.test(node.name)) {
-        realWheelSpins.push({
-          obj: node,
-          baseRotX: node.rotation.x,
-          baseRotZ: node.rotation.z,
-        });
-        if (/^wheel_f[lr]$/i.test(node.name)) {
-          realFrontSteerNodes.push({ obj: node, baseRotZ: node.rotation.z });
-        }
-      }
-    });
-
-    if (selected.yawOffset === 0) {
-      applyFresnelRimToGroup(clone, {
-        colorHex: accentHex,
-        power: 3.4,
-        intensity: 0.16,
-      });
+  const loadModelSpec = (
+    path: string,
+    yawOffset: number,
+    aoPath?: string,
+    tintPrimary?: number,
+    tintAccent?: number
+  ) => {
+    const gen = ++loadGeneration;
+    if (typeof tintPrimary === 'number') paintMat.color.setHex(tintPrimary);
+    if (typeof tintAccent === 'number') {
+      accentMat.color.setHex(tintAccent);
+      accentMat.emissive.setHex(tintAccent);
+      underglowMat.color.setHex(tintAccent);
     }
 
-    const glbBrakeBar = new THREE.Mesh(
-      trackGeo(new THREE.BoxGeometry(1.22, 0.075, 0.07)),
-      brakeLightMaterial
-    );
-    glbBrakeBar.position.set(0, 0.68, 2.15);
+    if (glbClone && glbClone.parent) {
+      glbClone.parent.remove(glbClone);
+      glbClone = null;
+    }
+    if (glbBrakeBar && glbBrakeBar.parent) {
+      glbBrakeBar.parent.remove(glbBrakeBar);
+      glbBrakeBar = null;
+    }
+    realWheelSpins.length = 0;
+    realFrontSteerNodes.length = 0;
+    proceduralBody.visible = true;
+    frontLeftPivot.visible = true;
+    frontRightPivot.visible = true;
+    rearLeftPivot.visible = true;
+    rearRightPivot.visible = true;
 
-    glbClone = clone;
-    bodyGroup.add(clone, glbBrakeBar);
-    proceduralBody.visible = false;
-    frontLeftPivot.visible = false;
-    frontRightPivot.visible = false;
-    rearLeftPivot.visible = false;
-    rearRightPivot.visible = false;
-  });
+    if (aoPath) {
+      void loadCachedAoShadow(aoPath).then((aoTex) => {
+        if (!aoTex || disposed || gen !== loadGeneration) return;
+        shadowMat.map = aoTex;
+        shadowMat.color.setHex(0xffffff);
+        shadowMat.opacity = 0.92;
+        shadowMat.needsUpdate = true;
+      });
+    } else {
+      shadowMat.map = null;
+      shadowMat.color.setHex(0x000000);
+      shadowMat.opacity = 0.48;
+      shadowMat.needsUpdate = true;
+    }
+
+    void loadCachedRaceModel(path).then((source) => {
+      if (!source || disposed || gen !== loadGeneration) return;
+      const clone = source.clone(true);
+      clone.rotation.y = yawOffset;
+      clone.updateMatrixWorld(true);
+
+      const box = new THREE.Box3().setFromObject(clone);
+      const size = new THREE.Vector3();
+      const center = new THREE.Vector3();
+      box.getSize(size);
+      box.getCenter(center);
+
+      const scale = 4.5 / Math.max(0.5, size.z);
+      clone.scale.setScalar(scale);
+      clone.position.set(-center.x * scale, -box.min.y * scale + 0.02, -center.z * scale);
+
+      clone.traverse((node) => {
+        const mesh = node as THREE.Mesh;
+        if (mesh.isMesh) {
+          mesh.castShadow = castShadow;
+          mesh.receiveShadow = castShadow;
+          const matName = String((mesh.material as THREE.Material | undefined)?.name || '');
+          if (options?.isPlayer && (mesh.name === 'body' || /^Paint_/i.test(matName))) {
+            mesh.material = paintMat;
+          } else if (!options?.isPlayer && /^Paint_/i.test(matName)) {
+            mesh.material = paintMat;
+          }
+        }
+        if (/^wheel_(fl|fr|rl|rr)$/i.test(node.name)) {
+          realWheelSpins.push({
+            obj: node,
+            baseRotX: node.rotation.x,
+            baseRotZ: node.rotation.z,
+          });
+          if (/^wheel_f[lr]$/i.test(node.name)) {
+            realFrontSteerNodes.push({ obj: node, baseRotZ: node.rotation.z });
+          }
+        }
+      });
+
+      if (yawOffset === 0) {
+        applyFresnelRimToGroup(clone, {
+          colorHex: tintAccent ?? accentHex,
+          power: 3.4,
+          intensity: 0.16,
+        });
+      }
+
+      glbBrakeBar = new THREE.Mesh(glbBrakeBarGeo, brakeLightMaterial);
+      glbBrakeBar.position.set(0, 0.68, 2.15);
+
+      glbClone = clone;
+      bodyGroup.add(clone, glbBrakeBar);
+      proceduralBody.visible = false;
+      frontLeftPivot.visible = false;
+      frontRightPivot.visible = false;
+      rearLeftPivot.visible = false;
+      rearRightPivot.visible = false;
+    });
+  };
+
+  if (options?.isPlayer) {
+    const spec: RacingCarSpec = getRacingCarSpec(options?.carId);
+    loadModelSpec(spec.glbPath, spec.yawOffset, spec.aoPath, spec.primaryHex, spec.accentHex);
+  } else {
+    const chosen = rivalPool[((options?.rivalIndex ?? 1) - 1 + rivalPool.length) % rivalPool.length];
+    loadModelSpec(chosen.path, chosen.yawOffset);
+  }
 
   return {
     root,
@@ -397,6 +439,11 @@ export function buildFormulaGtCar(
     realFrontSteerNodes,
     brakeLightMaterial,
     nitroFlames: [flameL, flameR],
+    setCarModel: (carId: RacingCarId) => {
+      if (disposed) return;
+      const spec = getRacingCarSpec(carId);
+      loadModelSpec(spec.glbPath, spec.yawOffset, spec.aoPath, spec.primaryHex, spec.accentHex);
+    },
     dispose: () => {
       disposed = true;
       geometries.forEach((g) => g.dispose());
@@ -405,6 +452,10 @@ export function buildFormulaGtCar(
         glbClone.parent.remove(glbClone);
       }
       glbClone = null;
+      if (glbBrakeBar && glbBrakeBar.parent) {
+        glbBrakeBar.parent.remove(glbBrakeBar);
+      }
+      glbBrakeBar = null;
     },
   };
 }

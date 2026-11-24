@@ -33,6 +33,28 @@ function ensureHeadSoccerAssets(): void {
   ]);
 }
 
+function roundRectPath(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number
+): void {
+  const radius = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.lineTo(x + w - radius, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + radius);
+  ctx.lineTo(x + w, y + h - radius);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - radius, y + h);
+  ctx.lineTo(x + radius, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - radius);
+  ctx.lineTo(x, y + radius);
+  ctx.quadraticCurveTo(x, y, x + radius, y);
+  ctx.closePath();
+}
+
 export interface ConfettiDot {
   x: number;
   y: number;
@@ -172,8 +194,7 @@ export function drawStadiumAndField(
   ctx.fillStyle = '#070b18';
   ctx.strokeStyle = '#38bdf8';
   ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.roundRect(HS_ARENA_W / 2 - 96, 114, 192, 50, 8);
+  roundRectPath(ctx, HS_ARENA_W / 2 - 96, 114, 192, 50, 8);
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = goalCelebration ? '#facc15' : '#e0f2fe';
@@ -347,8 +368,7 @@ export function drawCaricaturePlayer(
   ctx.fillStyle = '#0f172a';
   ctx.strokeStyle = skin.boot;
   ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.roundRect(-8, -2, 22, 12, 5);
+  roundRectPath(ctx, -8, -2, 22, 12, 5);
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = '#e2e8f0';
@@ -361,8 +381,7 @@ export function drawCaricaturePlayer(
   ctx.fillStyle = skin.primary;
   ctx.strokeStyle = skin.secondary;
   ctx.lineWidth = 2.5;
-  ctx.beginPath();
-  ctx.roundRect(x - 14, y + HS_HEAD_RADIUS - 12, 28, 16, 7);
+  roundRectPath(ctx, x - 14, y + HS_HEAD_RADIUS - 12, 28, 16, 7);
   ctx.fill();
   ctx.stroke();
   ctx.fillStyle = skin.boot;

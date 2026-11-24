@@ -551,7 +551,12 @@ export function createProPostComposer(
   camera: THREE.PerspectiveCamera,
   opts: ProPostComposerOptions
 ): ProPostComposerHandle | null {
-  if (opts.isSoftwareGl || typeof window === 'undefined') return null;
+  const isTvDevice =
+    typeof navigator !== 'undefined' &&
+    /Tizen|SMART-TV|SmartTV|Web0S|webOS|NetCast|BRAVIA|AFT|HbbTV|Viera/i.test(
+      navigator.userAgent || ''
+    );
+  if (opts.isSoftwareGl || isTvDevice || typeof window === 'undefined') return null;
 
   const w = Math.max(160, Math.round(opts.width));
   const h = Math.max(120, Math.round(opts.height));

@@ -12,6 +12,7 @@ import {
   getMaxSafeAnisotropy,
   initRoomEnvironment,
   loadCachedPbrTexture,
+  observeHostResize,
 } from '../arcade/threeProHelpers';
 import {
   applyFresnelRimShader,
@@ -40,20 +41,24 @@ interface Labyrinth3DViewportProps {
 
 const CELL_SIZE = 0.82;
 
-export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef }) => {
-  const hostRef = useRef<HTMLDivElement | null>(null);
+export interface Labyrinth3DMountOptions {
+  getState: () => Labyrinth3DSnapshot;
+}
 
-  useEffect(() => {
-    const host = hostRef.current;
-    if (!host) return;
+export function mountLabyrinth3D(
+  host: HTMLElement,
+  opts: Labyrinth3DMountOptions
+): { dispose: () => void } | null {
+  const isSoftwareGl = detectSoftwareGl();
+  const renderer = createResilientWebGlRenderer(isSoftwareGl, { exposure: 1.08 });
+  if (!renderer) return null;
 
-    const isSoftwareGl = detectSoftwareGl();
-    const renderer = createResilientWebGlRenderer(isSoftwareGl, { exposure: 1.08 });
-    if (!renderer) return;
-
-    renderer.domElement.className = 'w-full h-full block touch-none';
-    host.innerHTML = '';
-    host.appendChild(renderer.domElement);
+  renderer.domElement.className = 'w-full h-full block touch-none';
+  renderer.domElement.style.width = '100%';
+  renderer.domElement.style.height = '100%';
+  renderer.domElement.style.display = 'block';
+  host.innerHTML = '';
+  host.appendChild(renderer.domElement);
 
     const labSkyTex = createSkyDomeTexture({
       topHex: '#070b1a',
@@ -113,8 +118,9 @@ export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef
     const boardGroup = new THREE.Group();
     scene.add(boardGroup);
 
-    const cols = simRef.current.cols || 19;
-    const rows = simRef.current.rows || 11;
+    const initSnap = opts.getState();
+    const cols = initSnap.cols || 19;
+    const rows = initSnap.rows || 11;
     const boardW = cols * CELL_SIZE;
     const boardD = rows * CELL_SIZE;
 
@@ -296,7 +302,7 @@ export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef
         }
       }
     };
-    rebuildMaze(simRef.current);
+    rebuildMaze(initSnap);
 
     // Chrome Reflective Spheres (P1 Steel Blue & P2 Ruby) + Shadows
     const sphereGeo = new THREE.SphereGeometry(0.27, 24, 18);
@@ -341,8 +347,8 @@ export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef
 
     const burstSystem = create3dParticleBurstSystem(boardGroup, 96);
 
-    const initW = Math.max(320, host.clientWidth || 920);
-    const initH = Math.max(200, host.clientHeight || Math.round((initW * 9) / 16));
+    const initW = Math.max(160, host.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 920));
+    const initH = Math.max(120, host.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 520));
     const composer = createProPostComposer(renderer, scene, camera, {
       width: initW,
       height: initH,
@@ -354,26 +360,21 @@ export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef
     const drs = createDrsController(renderer, {
       isSoftwareGl,
       onScaleChange: () => {
-        const w = Math.max(320, host.clientWidth || 920);
-        const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+        const w = Math.max(160, host.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 920));
+        const h = Math.max(120, host.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 520));
         composer?.setSize(w, h);
       },
     });
 
-    const updateSize = () => {
-      const w = Math.max(320, host.clientWidth || 920);
-      const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+    const stopResize = observeHostResize(host, (w, h) => {
       renderer.setSize(w, h, false);
       applyResponsiveCameraFov(camera, w / h, 42, 42, 66);
       composer?.setSize(w, h);
-    };
-    updateSize();
-    const ro = new ResizeObserver(updateSize);
-    ro.observe(host);
+    });
 
-    let lastCollectSeq = simRef.current.collectSeq;
-    let lastFallSeq = simRef.current.fallSeq;
-    let lastWinSeq = simRef.current.winSeq;
+    let lastCollectSeq = initSnap.collectSeq;
+    let lastFallSeq = initSnap.fallSeq;
+    let lastWinSeq = initSnap.winSeq;
     let elapsed = 0;
     let lastTime = performance.now();
     const pacer = createThreeFramePacer(renderer, isSoftwareGl);
@@ -384,7 +385,7 @@ export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef
       lastTime = now;
       elapsed += dt;
 
-      const snap = simRef.current;
+      const snap = opts.getState();
       if (snap.level !== builtLevel) {
         rebuildMaze(snap);
       }
@@ -452,18 +453,34 @@ export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef
 
     pacer.schedule(tick);
 
+    return {
+      dispose: () => {
+        pacer.cancel();
+        stopResize();
+        burstSystem.dispose();
+        roomEnv.dispose();
+        hdri.dispose();
+        composer?.dispose();
+        disposables.forEach((d) => d.dispose());
+        renderer.dispose();
+        if (renderer.domElement.parentNode === host) {
+          host.removeChild(renderer.domElement);
+        }
+      },
+    };
+}
+
+export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef }) => {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const handle = mountLabyrinth3D(host, {
+      getState: () => simRef.current,
+    });
     return () => {
-      pacer.cancel();
-      ro.disconnect();
-      burstSystem.dispose();
-      roomEnv.dispose();
-      hdri.dispose();
-      composer?.dispose();
-      disposables.forEach((d) => d.dispose());
-      renderer.dispose();
-      if (renderer.domElement.parentNode === host) {
-        host.removeChild(renderer.domElement);
-      }
+      handle?.dispose();
     };
   }, [simRef]);
 

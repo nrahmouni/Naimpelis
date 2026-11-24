@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Camera,
+  CarFront,
   Compass,
   Flame,
+  Gauge,
   QrCode,
   RotateCcw,
   Smartphone,
@@ -12,19 +14,37 @@ import {
   X,
 } from 'lucide-react';
 import type { AppLanguage } from '../../../types';
+import { resolveGameAssetUrl } from '../../../shared/gameAssetsCdn';
 import { socketService } from '../../../services/socket';
 import { useDirectDeviceGyro } from '../../../hooks/useDirectDeviceGyro';
 import { pickLang } from '../../../utils/i18n';
 import { triggerHaptic } from '../../../utils/haptics';
 import { createRacing3dEngine } from './racing3dEngine';
 import { DualGyroQrPanel } from './DualGyroQrPanel';
-import type { RacingCarTelemetry, RacingEngineHandle } from './racingTypes';
+import {
+  RACING_CAR_CATALOG,
+  getRacingCarSpec,
+  type RacingCarId,
+  type RacingCarTelemetry,
+  type RacingEngineHandle,
+} from './racingTypes';
 
 interface Racing3DStageProps {
   lang: AppLanguage;
   roomId: string;
   userName: string;
   onClose: () => void;
+}
+
+const STORAGE_CAR_KEY = 'riffan_racing_car_v1';
+
+function readSavedCarId(): RacingCarId {
+  try {
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_CAR_KEY) : null;
+    return getRacingCarSpec(raw).id;
+  } catch {
+    return 'ferrari';
+  }
 }
 
 function formatLapMs(ms: number): string {
@@ -47,6 +67,11 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
   const pressedKeysRef = useRef<Set<string>>(new Set());
   const lastTelemetrySendRef = useRef(0);
 
+  const [selectedCarId, setSelectedCarId] = useState<RacingCarId>(() => readSavedCarId());
+  const [showGarage, setShowGarage] = useState(false);
+  const [autoGas, setAutoGas] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 768 : false
+  );
   const [muted, setMuted] = useState(false);
   const [showQrModal, setShowQrModal] = useState(false);
   const [contextLost, setContextLost] = useState(false);
@@ -71,6 +96,8 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
     totalTimeMs: 0,
     cameraMode: 'chase',
     wrongWay: false,
+    carId: selectedCarId,
+    autoGas,
   });
   const [finishSummary, setFinishSummary] = useState<{
     position: number;
@@ -78,6 +105,8 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
     bestLapMs: number;
     winnerSlot?: 1 | 2;
   } | null>(null);
+
+  const selectedCarSpec = useMemo(() => getRacingCarSpec(selectedCarId), [selectedCarId]);
 
   const effectiveRoomId = useMemo(
     () => (roomId || socketService.getActiveRoomId() || 'race-local').trim().toLowerCase(),
@@ -111,70 +140,104 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
     return () => window.clearInterval(id);
   }, [directGyro.active, directGyro.gyroRef]);
 
+  const handleSelectCar = useCallback((carId: RacingCarId) => {
+    triggerHaptic('medium');
+    setSelectedCarId(carId);
+    engineRef.current?.setPlayerCar?.(carId);
+    try {
+      window.localStorage.setItem(STORAGE_CAR_KEY, carId);
+    } catch {
+      // ignore storage failure
+    }
+    setShowGarage(false);
+  }, []);
+
+  const handleToggleAutoGas = useCallback(() => {
+    triggerHaptic('light');
+    setAutoGas((prev) => {
+      const next = !prev;
+      engineRef.current?.setAutoGas?.(next);
+      return next;
+    });
+  }, []);
+
   // Mount Three.js PBR 3D Engine
   useEffect(() => {
     const el = stageRef.current;
     if (!el) return;
 
-    const handle = createRacing3dEngine(el, {
-      onTelemetry: (t) => {
-        setTelemetry(t);
-        const now = performance.now();
-        if (
-          socketService.isConnected() &&
-          socketService.getActiveRoomId() &&
-          now - lastTelemetrySendRef.current >= 95
-        ) {
-          lastTelemetrySendRef.current = now;
-          socketService.sendRacingTelemetry(
-            {
-              roomId: socketService.getActiveRoomId() || effectiveRoomId,
-              speedKmh: t.speedKmh,
-              rpmPct: t.rpmPct,
-              gear: t.gear,
-              lap: t.lap,
-              totalLaps: t.totalLaps,
-              position: t.position,
-              totalCars: t.totalCars,
-              nitroPct: t.nitroPct,
-              collisionImpact: t.collisionImpact,
-              offroad: t.offroad,
-              raceState: t.raceState,
-              lapTimeMs: t.lapTimeMs,
-              bestLapMs: t.bestLapMs,
-              targetSlot: 1,
-            },
-            socketService.getActiveRoomId()
-          );
-          if (t.splitScreenActive && typeof t.p2SpeedKmh === 'number') {
+    const handle = createRacing3dEngine(
+      el,
+      {
+        onTelemetry: (t) => {
+          setTelemetry(t);
+          if (t.carId && t.carId !== selectedCarId) {
+            setSelectedCarId(t.carId);
+          }
+          if (typeof t.autoGas === 'boolean') {
+            setAutoGas(t.autoGas);
+          }
+          const now = performance.now();
+          if (
+            socketService.isConnected() &&
+            socketService.getActiveRoomId() &&
+            now - lastTelemetrySendRef.current >= 95
+          ) {
+            lastTelemetrySendRef.current = now;
             socketService.sendRacingTelemetry(
               {
                 roomId: socketService.getActiveRoomId() || effectiveRoomId,
-                speedKmh: t.p2SpeedKmh,
-                rpmPct: Math.min(99, 18 + Math.round((t.p2SpeedKmh % 60) * 1.3)),
-                gear: Math.min(7, Math.max(1, Math.floor(t.p2SpeedKmh / 48) + 1)),
-                lap: t.p2Lap || 1,
+                speedKmh: t.speedKmh,
+                rpmPct: t.rpmPct,
+                gear: t.gear,
+                lap: t.lap,
                 totalLaps: t.totalLaps,
-                position: t.p2Position || 2,
+                position: t.position,
                 totalCars: t.totalCars,
-                nitroPct: t.p2NitroPct ?? 100,
-                collisionImpact: t.p2CollisionImpact || 0,
-                offroad: false,
+                nitroPct: t.nitroPct,
+                collisionImpact: t.collisionImpact,
+                offroad: t.offroad,
                 raceState: t.raceState,
-                targetSlot: 2,
+                lapTimeMs: t.lapTimeMs,
+                bestLapMs: t.bestLapMs,
+                targetSlot: 1,
               },
               socketService.getActiveRoomId()
             );
+            if (t.splitScreenActive && typeof t.p2SpeedKmh === 'number') {
+              socketService.sendRacingTelemetry(
+                {
+                  roomId: socketService.getActiveRoomId() || effectiveRoomId,
+                  speedKmh: t.p2SpeedKmh,
+                  rpmPct: Math.min(99, 18 + Math.round((t.p2SpeedKmh % 60) * 1.3)),
+                  gear: Math.min(7, Math.max(1, Math.floor(t.p2SpeedKmh / 48) + 1)),
+                  lap: t.p2Lap || 1,
+                  totalLaps: t.totalLaps,
+                  position: t.p2Position || 2,
+                  totalCars: t.totalCars,
+                  nitroPct: t.p2NitroPct ?? 100,
+                  collisionImpact: t.p2CollisionImpact || 0,
+                  offroad: false,
+                  raceState: t.raceState,
+                  targetSlot: 2,
+                },
+                socketService.getActiveRoomId()
+              );
+            }
           }
-        }
+        },
+        onFinish: (summary) => {
+          setFinishSummary(summary);
+        },
+        onContextLost: () => {
+          setContextLost(true);
+        },
       },
-      onFinish: (summary) => {
-        setFinishSummary(summary);
-      },
-      onContextLost: () => {
-        setContextLost(true);
-      },
-    });
+      {
+        initialCarId: selectedCarId,
+        initialAutoGas: autoGas,
+      }
+    );
     engineRef.current = handle;
 
     return () => {
@@ -226,6 +289,8 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
             handbrake: Boolean(ev.payload.handbrake),
             cameraCycle: Boolean(ev.payload.cameraCycle),
             horn: Boolean(ev.payload.horn),
+            carSelect: ev.payload.carSelect as RacingCarId | 'next' | undefined,
+            autoGasToggle: Boolean(ev.payload.autoGasToggle),
           },
           950,
           slot
@@ -262,6 +327,21 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
         engineRef.current?.cycleCamera();
         return;
       }
+      if (e.code === 'KeyG') {
+        setShowGarage((v) => !v);
+        return;
+      }
+      if (e.code === 'KeyT') {
+        handleToggleAutoGas();
+        return;
+      }
+      if (e.code.startsWith('Digit')) {
+        const idx = Number(e.code.replace('Digit', '')) - 1;
+        if (idx >= 0 && idx < RACING_CAR_CATALOG.length) {
+          handleSelectCar(RACING_CAR_CATALOG[idx].id);
+          return;
+        }
+      }
       if (e.code === 'KeyR') {
         setFinishSummary(null);
         engineRef.current?.resetRace();
@@ -281,18 +361,18 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [syncKeysToEngine]);
+  }, [handleSelectCar, handleToggleAutoGas, syncKeysToEngine]);
 
   return (
     <div
       onContextMenu={(e) => e.preventDefault()}
       className="game-touch-surface relative w-full h-[520px] sm:h-[640px] rounded-3xl overflow-hidden bg-[#070a14] border border-white/10 select-none"
     >
-      {/* Three.js WebGL Mount */}
+      {/* Three.js PBR Urban GP 3D Engine */}
       <div ref={stageRef} className="w-full h-full" />
 
-      {/* Non-obstructive Top Left Race Telemetry */}
-      <div className="pointer-events-none absolute top-3 left-3 flex flex-wrap items-center gap-2">
+      {/* Top Left Telemetry & Car Badge */}
+      <div className="pointer-events-none absolute top-3 left-3 flex flex-wrap items-center gap-2 max-w-[60%]">
         <div className="px-3 py-1.5 rounded-xl bg-[#090c16]/90 border border-white/15 flex items-center gap-3 text-xs font-black">
           <span className="text-amber-300">
             POS {telemetry.position}/{telemetry.totalCars}
@@ -301,6 +381,14 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
             VUELTA {telemetry.lap}/{telemetry.totalLaps}
           </span>
           <span className="font-mono text-cyan-300">{formatLapMs(telemetry.lapTimeMs)}</span>
+        </div>
+
+        <div className="hidden md:flex px-2.5 py-1.5 rounded-xl bg-[#090c16]/85 border border-white/15 items-center gap-1.5 text-[11px] font-bold text-zinc-200">
+          <span
+            className="w-2.5 h-2.5 rounded-full shrink-0"
+            style={{ backgroundColor: selectedCarSpec.cssColor }}
+          />
+          <span>{selectedCarSpec.name}</span>
         </div>
 
         {connectedControllers.map((ctrl, idx) => {
@@ -332,7 +420,38 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
       )}
 
       {/* Top Right Toolbar */}
-      <div className="absolute top-3 right-3 flex items-center gap-1.5">
+      <div className="absolute top-3 right-3 flex items-center gap-1.5 flex-wrap justify-end">
+        <button
+          type="button"
+          onClick={() => {
+            triggerHaptic('light');
+            setShowGarage((v) => !v);
+          }}
+          className={`game-touch-btn min-h-10 px-2.5 sm:px-3 rounded-xl border text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-lg ${
+            showGarage
+              ? 'bg-amber-500/30 border-amber-400 text-amber-100'
+              : 'bg-[#090c16]/90 border-amber-400/40 text-amber-200 hover:bg-[#14192b]'
+          }`}
+          title="Elegir coche (G)"
+        >
+          <CarFront className="w-4 h-4" />
+          <span className="hidden sm:inline">Coches</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={handleToggleAutoGas}
+          className={`game-touch-btn min-h-10 px-2.5 rounded-xl border text-xs font-extrabold flex items-center gap-1 cursor-pointer shadow-lg ${
+            autoGas
+              ? 'bg-emerald-600/30 border-emerald-400 text-emerald-100'
+              : 'bg-[#090c16]/90 border-white/15 text-zinc-300 hover:bg-[#14192b]'
+          }`}
+          title="Auto-Acelerador (T)"
+        >
+          <Gauge className="w-4 h-4" />
+          <span className="hidden sm:inline">{autoGas ? 'Auto-Gas' : 'Manual'}</span>
+        </button>
+
         {directGyro.supported && (
           <button
             type="button"
@@ -354,10 +473,12 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
             triggerHaptic('light');
             setShowQrModal((v) => !v);
           }}
-          className="game-touch-btn min-h-10 px-3 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-lg"
+          className="game-touch-btn min-h-10 px-2.5 sm:px-3 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-lg"
         >
           <QrCode className="w-4 h-4" />
-          <span>{pickLang(lang, { es: 'Volante Móvil', ca: 'Volant Mòbil', en: 'Phone Gyro' })}</span>
+          <span className="hidden sm:inline">
+            {pickLang(lang, { es: 'Volante Móvil', ca: 'Volant Mòbil', en: 'Phone Gyro' })}
+          </span>
         </button>
 
         <button
@@ -404,6 +525,95 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
         </button>
       </div>
 
+      {/* Garage Car Selector Overlay */}
+      {showGarage && (
+        <div className="absolute inset-0 bg-[#050711]/92 z-25 p-4 sm:p-6 flex flex-col justify-between overflow-y-auto">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <h3 className="text-base sm:text-xl font-black text-white flex items-center gap-2">
+                <CarFront className="w-5 h-5 text-amber-400" />
+                Garaje Metropolis GP
+              </h3>
+              <p className="text-xs text-zinc-400">
+                Elige tu coche con físicas y rendimiento propio (también teclas 1-6)
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowGarage(false)}
+              className="min-h-10 px-4 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-black text-white cursor-pointer"
+            >
+              Cerrar
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 my-auto">
+            {RACING_CAR_CATALOG.map((car, index) => {
+              const active = car.id === selectedCarId;
+              return (
+                <button
+                  key={car.id}
+                  type="button"
+                  onClick={() => handleSelectCar(car.id)}
+                  className={`text-left rounded-2xl border p-3 transition-all cursor-pointer flex flex-col gap-2 ${
+                    active
+                      ? 'bg-[#181f38] border-cyan-400 shadow-[0_0_24px_rgba(34,211,238,0.28)]'
+                      : 'bg-[#0e1324] border-white/10 hover:border-white/30'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div
+                      className="w-16 h-11 rounded-xl overflow-hidden shrink-0 border border-white/15 flex items-center justify-center relative"
+                      style={{
+                        background: `linear-gradient(135deg, ${car.cssColor}44, #090c18)`,
+                      }}
+                    >
+                      {car.previewPath ? (
+                        <img
+                          src={resolveGameAssetUrl(car.previewPath)}
+                          alt={car.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <CarFront className="w-6 h-6" style={{ color: car.cssAccent }} />
+                      )}
+                      <span className="absolute top-0.5 left-1 text-[9px] font-mono font-black text-white/90 bg-black/60 px-1 rounded">
+                        {index + 1}
+                      </span>
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-black text-white truncate">{car.name}</div>
+                      <div className="text-[10px] font-bold text-cyan-300">{car.category}</div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1 text-[10px] font-bold text-zinc-300">
+                    <div className="flex items-center gap-2">
+                      <span className="w-12 text-zinc-400">VEL</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                        <div className="h-full bg-cyan-400" style={{ width: `${car.stats.speed}%` }} />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-12 text-zinc-400">ACEL</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                        <div className="h-full bg-amber-400" style={{ width: `${car.stats.accel}%` }} />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="w-12 text-zinc-400">GIRO</span>
+                      <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                        <div className="h-full bg-emerald-400" style={{ width: `${car.stats.handling}%` }} />
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* Countdown Lights */}
       {telemetry.raceState === 'countdown' && telemetry.countdownValue > 0 && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -420,7 +630,7 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
       )}
 
       {/* Bottom Right Digital Speedometer & Nitro */}
-      <div className="pointer-events-none absolute bottom-3 right-3 px-3.5 py-2.5 rounded-2xl bg-[#090c16]/92 border border-white/15 flex items-center gap-4">
+      <div className="pointer-events-none absolute bottom-16 sm:bottom-3 right-3 px-3.5 py-2.5 rounded-2xl bg-[#090c16]/92 border border-white/15 flex items-center gap-4">
         <div className="text-right">
           <div className="text-2xl sm:text-3xl font-mono font-black text-cyan-300 tabular-nums leading-none">
             {telemetry.speedKmh}
@@ -446,92 +656,114 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
         </div>
       </div>
 
-      {/* Bottom Left Compact Touch / Keyboard Guide */}
-      <div className="absolute bottom-3 left-3 flex items-center gap-1.5 sm:hidden">
-        <button
-          type="button"
-          onContextMenu={(e) => e.preventDefault()}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            e.currentTarget.setPointerCapture?.(e.pointerId);
-            engineRef.current?.setKeyboardState({ left: true });
-          }}
-          onPointerUp={() => engineRef.current?.setKeyboardState({ left: false })}
-          onPointerCancel={() => engineRef.current?.setKeyboardState({ left: false })}
-          onLostPointerCapture={() => engineRef.current?.setKeyboardState({ left: false })}
-          className="game-touch-btn w-12 h-12 rounded-xl bg-[#090c16]/90 border border-white/20 text-white font-black"
-        >
-          ◀
-        </button>
-        <button
-          type="button"
-          onContextMenu={(e) => e.preventDefault()}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            e.currentTarget.setPointerCapture?.(e.pointerId);
-            engineRef.current?.setKeyboardState({ right: true });
-          }}
-          onPointerUp={() => engineRef.current?.setKeyboardState({ right: false })}
-          onPointerCancel={() => engineRef.current?.setKeyboardState({ right: false })}
-          onLostPointerCapture={() => engineRef.current?.setKeyboardState({ right: false })}
-          className="game-touch-btn w-12 h-12 rounded-xl bg-[#090c16]/90 border border-white/20 text-white font-black"
-        >
-          ▶
-        </button>
-        <button
-          type="button"
-          onContextMenu={(e) => e.preventDefault()}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            e.currentTarget.setPointerCapture?.(e.pointerId);
-            pressedKeysRef.current.add('TouchUp');
-            engineRef.current?.setKeyboardState({ up: true });
-          }}
-          onPointerUp={() => {
-            pressedKeysRef.current.delete('TouchUp');
-            engineRef.current?.setKeyboardState({ up: false });
-          }}
-          onPointerCancel={() => {
-            pressedKeysRef.current.delete('TouchUp');
-            engineRef.current?.setKeyboardState({ up: false });
-          }}
-          onLostPointerCapture={() => {
-            pressedKeysRef.current.delete('TouchUp');
-            engineRef.current?.setKeyboardState({ up: false });
-          }}
-          className="game-touch-btn px-4 h-12 rounded-xl bg-emerald-600/90 text-white text-xs font-black"
-        >
-          GAS
-        </button>
-        <button
-          type="button"
-          onContextMenu={(e) => e.preventDefault()}
-          onPointerDown={(e) => {
-            e.preventDefault();
-            e.currentTarget.setPointerCapture?.(e.pointerId);
-            pressedKeysRef.current.add('TouchNitro');
-            engineRef.current?.setKeyboardState({ nitro: true });
-          }}
-          onPointerUp={() => {
-            pressedKeysRef.current.delete('TouchNitro');
-            engineRef.current?.setKeyboardState({ nitro: false });
-          }}
-          onPointerCancel={() => {
-            pressedKeysRef.current.delete('TouchNitro');
-            engineRef.current?.setKeyboardState({ nitro: false });
-          }}
-          onLostPointerCapture={() => {
-            pressedKeysRef.current.delete('TouchNitro');
-            engineRef.current?.setKeyboardState({ nitro: false });
-          }}
-          className="game-touch-btn px-3 h-12 rounded-xl bg-cyan-500/90 text-slate-950 text-xs font-black inline-flex items-center gap-1"
-        >
-          <Flame className="w-3.5 h-3.5" /> NITRO
-        </button>
+      {/* Bottom Left & Right Ergonomic Mobile Controls */}
+      <div className="absolute inset-x-3 bottom-3 flex items-center justify-between gap-2 sm:hidden">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+              engineRef.current?.setKeyboardState({ left: true });
+            }}
+            onPointerUp={() => engineRef.current?.setKeyboardState({ left: false })}
+            onPointerCancel={() => engineRef.current?.setKeyboardState({ left: false })}
+            onLostPointerCapture={() => engineRef.current?.setKeyboardState({ left: false })}
+            className="game-touch-btn w-14 h-12 rounded-2xl bg-[#090c16]/92 border-2 border-white/25 text-white text-lg font-black"
+          >
+            ◀
+          </button>
+          <button
+            type="button"
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+              engineRef.current?.setKeyboardState({ right: true });
+            }}
+            onPointerUp={() => engineRef.current?.setKeyboardState({ right: false })}
+            onPointerCancel={() => engineRef.current?.setKeyboardState({ right: false })}
+            onLostPointerCapture={() => engineRef.current?.setKeyboardState({ right: false })}
+            className="game-touch-btn w-14 h-12 rounded-2xl bg-[#090c16]/92 border-2 border-white/25 text-white text-lg font-black"
+          >
+            ▶
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+              engineRef.current?.setKeyboardState({ down: true });
+            }}
+            onPointerUp={() => engineRef.current?.setKeyboardState({ down: false })}
+            onPointerCancel={() => engineRef.current?.setKeyboardState({ down: false })}
+            onLostPointerCapture={() => engineRef.current?.setKeyboardState({ down: false })}
+            className="game-touch-btn px-3 h-12 rounded-2xl bg-rose-600/90 text-white text-xs font-black"
+          >
+            FRENO
+          </button>
+          {!autoGas && (
+            <button
+              type="button"
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.currentTarget.setPointerCapture?.(e.pointerId);
+                pressedKeysRef.current.add('TouchUp');
+                engineRef.current?.setKeyboardState({ up: true });
+              }}
+              onPointerUp={() => {
+                pressedKeysRef.current.delete('TouchUp');
+                engineRef.current?.setKeyboardState({ up: false });
+              }}
+              onPointerCancel={() => {
+                pressedKeysRef.current.delete('TouchUp');
+                engineRef.current?.setKeyboardState({ up: false });
+              }}
+              onLostPointerCapture={() => {
+                pressedKeysRef.current.delete('TouchUp');
+                engineRef.current?.setKeyboardState({ up: false });
+              }}
+              className="game-touch-btn px-3.5 h-12 rounded-2xl bg-emerald-600/95 text-white text-xs font-black"
+            >
+              GAS
+            </button>
+          )}
+          <button
+            type="button"
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+              pressedKeysRef.current.add('TouchNitro');
+              engineRef.current?.setKeyboardState({ nitro: true });
+            }}
+            onPointerUp={() => {
+              pressedKeysRef.current.delete('TouchNitro');
+              engineRef.current?.setKeyboardState({ nitro: false });
+            }}
+            onPointerCancel={() => {
+              pressedKeysRef.current.delete('TouchNitro');
+              engineRef.current?.setKeyboardState({ nitro: false });
+            }}
+            onLostPointerCapture={() => {
+              pressedKeysRef.current.delete('TouchNitro');
+              engineRef.current?.setKeyboardState({ nitro: false });
+            }}
+            className="game-touch-btn px-3 h-12 rounded-2xl bg-cyan-500/95 text-slate-950 text-xs font-black inline-flex items-center gap-1"
+          >
+            <Flame className="w-3.5 h-3.5" /> NITRO
+          </button>
+        </div>
       </div>
 
       <div className="pointer-events-none hidden sm:flex absolute bottom-3 left-3 px-3 py-1.5 rounded-xl bg-[#090c16]/85 border border-white/10 text-[11px] font-semibold text-zinc-300">
-        WASD / Flechas · Shift: Nitro · Espacio: Drift · C: Cámara
+        WASD / Flechas · Shift: Nitro · G: Garaje · T: Auto-Gas · C: Cámara
       </div>
 
       {showQrModal && (
@@ -611,3 +843,4 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
     </div>
   );
 };
+

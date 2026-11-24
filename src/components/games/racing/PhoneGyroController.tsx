@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  CarFront,
   Compass,
   Flame,
   Gauge,
@@ -17,6 +18,7 @@ import { socketService } from '../../../services/socket';
 import { pickLang } from '../../../utils/i18n';
 import { triggerHaptic } from '../../../utils/haptics';
 import { RiffanBackIcon } from '../../ui/RiffanIcons';
+import { RACING_CAR_CATALOG, type RacingCarId } from './racingTypes';
 
 interface PhoneGyroControllerProps {
   lang: AppLanguage;
@@ -261,6 +263,11 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
   const l2Ref = useRef(false);
   const r1Ref = useRef(false);
   const r2Ref = useRef(false);
+  const [selectedCarId, setSelectedCarId] = useState<RacingCarId>('ferrari');
+  const selectedCarRef = useRef<RacingCarId>('ferrari');
+  const carSelectHoldRef = useRef<RacingCarId | undefined>(undefined);
+  const autoGasToggleHoldRef = useRef(false);
+  const [phoneAutoGas, setPhoneAutoGas] = useState(false);
 
   const seqRef = useRef(0);
   const lastLapRef = useRef(1);
@@ -653,6 +660,8 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
         brake: l2Ref.current ? 1 : 0,
         nitro: r1Ref.current,
         handbrake: l1Ref.current,
+        carSelect: carSelectHoldRef.current,
+        autoGasToggle: autoGasToggleHoldRef.current,
         seq: seqRef.current,
         ts: Date.now(),
       },
@@ -1098,6 +1107,62 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
           </span>
         )}
       </div>
+
+      {gyroGameMode === 'racing3d' && (
+        <div className="my-1 flex items-center gap-1.5 overflow-x-auto pb-0.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setPhoneAutoGas((v) => !v);
+              autoGasToggleHoldRef.current = true;
+              sendCurrentFrame();
+              window.setTimeout(() => {
+                autoGasToggleHoldRef.current = false;
+              }, 160);
+            }}
+            className={`h-8 px-2.5 rounded-xl border text-[11px] font-black shrink-0 flex items-center gap-1 cursor-pointer ${
+              phoneAutoGas
+                ? 'bg-emerald-500/30 border-emerald-400 text-emerald-100'
+                : 'bg-[#0f1320] border-white/15 text-zinc-300'
+            }`}
+          >
+            <Gauge className="w-3.5 h-3.5" />
+            <span>{phoneAutoGas ? 'Auto-Gas ON' : 'Auto-Gas'}</span>
+          </button>
+          {RACING_CAR_CATALOG.map((car) => {
+            const active = car.id === selectedCarId;
+            return (
+              <button
+                key={car.id}
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  setSelectedCarId(car.id);
+                  selectedCarRef.current = car.id;
+                  carSelectHoldRef.current = car.id;
+                  sendCurrentFrame();
+                  window.setTimeout(() => {
+                    carSelectHoldRef.current = undefined;
+                  }, 180);
+                }}
+                className={`h-8 px-2.5 rounded-xl border text-[10px] font-black shrink-0 flex items-center gap-1.5 cursor-pointer ${
+                  active
+                    ? 'bg-cyan-500/25 border-cyan-400 text-white'
+                    : 'bg-[#0f1320] border-white/10 text-zinc-400'
+                }`}
+              >
+                <span
+                  className="w-2 h-2 rounded-full shrink-0"
+                  style={{ backgroundColor: car.cssColor }}
+                />
+                <CarFront className="w-3 h-3 shrink-0" />
+                <span>{car.name.split(' ')[0]}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {gyroState === 'idle' && (
         <div className="my-1 rounded-xl bg-[#7C3AED]/20 border border-[#7C3AED]/60 px-3 py-1.5 flex items-center justify-between gap-2 shrink-0">

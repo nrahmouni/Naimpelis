@@ -17,6 +17,13 @@
     'assets/games/explosion/groundExplosion06.png', 'assets/games/explosion/groundExplosion07.png',
     'assets/games/explosion/groundExplosion08.png'
   ];
+  var hex3dHandle = null;
+  window.closeTvRetroGame = function () {
+    if (hex3dHandle && hex3dHandle.dispose) {
+      try { hex3dHandle.dispose(); } catch (e0) {}
+    }
+    hex3dHandle = null;
+  };
   function preloadAll(arr) {
     if (typeof window.preloadTvGameSprites === 'function') window.preloadTvGameSprites(arr);
   }
@@ -497,10 +504,27 @@
 
     var shipX = 0, steerDir = 0, speed = 520, boostOn = false, brakeOn = false;
     var shield = 100, dist = 0, trackZ = 0, entities = [], booms = [], gameOver = false;
+    var bankVal = 0, hitFlash = 0, pickupSeq = 0, pickupEvent = null;
+    if (window.RiffanTvGames && typeof window.RiffanTvGames.mountHexGl3D === 'function') {
+      var hArena = document.getElementById('hgl-arena');
+      var hStage = document.createElement('div');
+      hStage.className = 'tv-3d-stage';
+      if (hArena) hArena.insertBefore(hStage, hArena.firstChild);
+      try {
+        hex3dHandle = window.RiffanTvGames.mountHexGl3D(hStage, {
+          getState: function () {
+            return { shipX: shipX, bank: bankVal, speed: speed, boost: boostOn, shield: shield, trackZ: trackZ, hitFlash: hitFlash, pickupEvent: pickupEvent, dead: gameOver, entities: entities };
+          },
+          onPointerX: function (nx) { shipX = Math.max(-1.05, Math.min(1.05, (nx - 0.5) * 2.1)); }
+        });
+      } catch (eHex) { hex3dHandle = null; }
+      if (hex3dHandle && canvas) canvas.style.display = 'none';
+      else if (hStage.parentNode) hStage.parentNode.removeChild(hStage);
+    }
 
     function resetGame() {
       shipX = 0; speed = 540; shield = 100; dist = 0; trackZ = 0; entities = []; booms = [];
-      boostOn = false; brakeOn = false; gameOver = false; ov.style.display = 'none';
+      boostOn = false; brakeOn = false; gameOver = false; bankVal = 0; hitFlash = 0; ov.style.display = 'none';
       scoreEl.textContent = '0 m'; subEl.textContent = 'ESCUDO 100% · 540 KM/H';
     }
     document.getElementById('hgl-replay').onclick = resetGame;
@@ -537,6 +561,8 @@
         }
         var targetSpd = effBoost ? 980 : effBrake ? 380 : 640 + Math.min(260, dist * 0.04);
         speed += (targetSpd - speed) * Math.min(1, dt * 4);
+        bankVal += (effSteer * 0.36 - bankVal) * Math.min(1, dt * 10);
+        hitFlash = Math.max(0, hitFlash - dt * 2.5);
         shipX = Math.max(-1.05, Math.min(1.05, shipX + effSteer * dt * 1.95));
         var dz = speed * dt; trackZ += dz; dist += Math.round(dz * 0.14); spawnZ += dz;
         if (spawnZ > 240) {
@@ -548,10 +574,11 @@
           var ent = entities[i]; ent.z -= dz * 1.35;
           if (ent.z <= 85 && ent.z >= 10 && !ent.hit && Math.abs(ent.lane - shipX) < 0.34) {
             ent.hit = true;
+            pickupSeq += 1; pickupEvent = { seq: pickupSeq, kind: ent.kind, x: shipX };
             if (ent.kind === 'pad') { speed = 1120; dist += 50; playSfx(820, 0.12, 'triangle', 0.08); }
             else if (ent.kind === 'heal') { shield = Math.min(100, shield + 25); playSfx(640, 0.12, 'sine', 0.08); }
             else {
-              shield = Math.max(0, shield - 34); speed = 340;
+              shield = Math.max(0, shield - 34); speed = 340; hitFlash = 1;
               booms.push({ x: 480 + shipX * 260, y: 448, s: 86, t: 0 });
               playSfx(120, 0.2, 'sawtooth', 0.1);
               if (shield <= 0) {
@@ -568,6 +595,7 @@
         subEl.textContent = 'ESCUDO ' + Math.round(shield) + '% · ' + Math.round(speed) + ' KM/H';
         if (dist > best) { best = dist; saveBest(BEST_KEY, best); bestEl.textContent = 'Récord: ' + best + ' m'; }
       }
+      if (hex3dHandle) { window.TV_GAME_RAF = requestAnimationFrame(frame); return; }
       var sky = ctx.createLinearGradient(0, 0, 0, 260);
       sky.addColorStop(0, '#040212'); sky.addColorStop(1, '#26104E');
       ctx.fillStyle = sky; ctx.fillRect(0, 0, 960, 260);

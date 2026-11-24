@@ -7,8 +7,13 @@ var tvPpHasP1 = false;
 var tvPpHasP2 = false;
 var tvPpGyro1 = { steer: 0, pitch: 0, nitro: false, handbrake: false, swing: 0, expiresAt: 0 };
 var tvPpGyro2 = { steer: 0, pitch: 0, nitro: false, handbrake: false, swing: 0, expiresAt: 0 };
+var tvPp3dHandle = null;
 
 function closeTvPingPongGame() {
+  if (tvPp3dHandle && tvPp3dHandle.dispose) {
+    try { tvPp3dHandle.dispose(); } catch (e0) {}
+  }
+  tvPp3dHandle = null;
   if (tvPpWs) {
     tvPpWs.onclose = null;
     try { tvPpWs.close(); } catch (e) {}
@@ -151,13 +156,33 @@ function startTvPingPongGame(scr) {
 
   var W = 920, H = 520, TOP_W = 370, BOT_W = 690, T_TOP = 64, T_BOT = H - 56, T_H = T_BOT - T_TOP;
   var keys = { left: false, right: false, up: false, down: false, smash: false };
+  var hitSeq = 0;
   var st = {
     s1: 0, s2: 0, rally: 0, over: false, pauseT: 0.75, banner: 'SACA J1', bannerCol: '#22D3EE',
     p1: { x: 0, y: 0.88, vx: 0, smashT: 0 },
     p2: { x: 0, y: -0.88, vx: 0, smashT: 0 },
     ball: { x: 0, y: 0.65, z: 0.25, vx: 0, vy: 0, vz: 0, spin: 0, lastHit: 1 },
-    rings: [], trail: []
+    rings: [], trail: [], hitEvent: { seq: 0, x: 0, y: 0, z: 0, smash: false }
   };
+
+  if (arenaEl && window.RiffanTvGames && typeof window.RiffanTvGames.mountPingPong3D === 'function') {
+    var ppStage = document.createElement('div');
+    ppStage.className = 'tv-3d-stage';
+    arenaEl.insertBefore(ppStage, arenaEl.firstChild);
+    try {
+      tvPp3dHandle = window.RiffanTvGames.mountPingPong3D(ppStage, {
+        getState: function () { return st; },
+        onPointerMoveX: function (nx) { st.p1.x = Math.max(-1.05, Math.min(1.05, nx)); },
+        onPointerLeave: function () {},
+        onSmashChange: function (active) { keys.smash = Boolean(active); if (active) st.p1.smashT = 0.24; }
+      });
+    } catch (ePp) { tvPp3dHandle = null; }
+    if (tvPp3dHandle) {
+      if (canvas) canvas.style.display = 'none';
+    } else if (ppStage.parentNode) {
+      ppStage.parentNode.removeChild(ppStage);
+    }
+  }
 
   function proj(nx, ny, z) {
     var t = (ny + 1) * 0.5;
@@ -306,6 +331,7 @@ function startTvPingPongGame(scr) {
             b.y = st.p1.y - 0.11; b.vy = -(sm1 ? 2.28 : 1.65) - Math.min(0.45, st.rally * 0.03);
             b.vx = off1 * 1.45 + st.p1.vx * 0.28; b.vz = sm1 ? 0.92 : 1.08;
             b.spin = (-st.p1.vx * 0.45 + off1 * 0.8) * sp1; b.lastHit = 1; st.rally += 1;
+            hitSeq += 1; st.hitEvent = { seq: hitSeq, x: b.x, y: b.y, z: b.z, smash: sm1 };
             playTvGameBeep(sm1 ? 660 : 540, 0.045, 'triangle', 0.08);
             pushTvPingPongTelemetry(roomId, 1, sm1 ? 65 : 32, 'pingpong_hit', st.s1, st.s2, Math.abs(b.vy) * 85, false);
           }
@@ -316,6 +342,7 @@ function startTvPingPongGame(scr) {
             b.y = st.p2.y + 0.11; b.vy = (sm2 ? 2.28 : 1.65) + Math.min(0.45, st.rally * 0.03);
             b.vx = off2 * 1.45 + st.p2.vx * 0.28; b.vz = sm2 ? 0.92 : 1.08;
             b.spin = (-st.p2.vx * 0.45 + off2 * 0.8) * sp2; b.lastHit = 2; st.rally += 1;
+            hitSeq += 1; st.hitEvent = { seq: hitSeq, x: b.x, y: b.y, z: b.z, smash: sm2 };
             playTvGameBeep(sm2 ? 620 : 480, 0.045, 'triangle', 0.08);
             if (useG2) pushTvPingPongTelemetry(roomId, 2, sm2 ? 65 : 32, 'pingpong_hit', st.s1, st.s2, Math.abs(b.vy) * 85, false);
           }
@@ -326,6 +353,11 @@ function startTvPingPongGame(scr) {
         if (st.trail.length > 12) st.trail.shift();
       }
       syncHud(useG2);
+    }
+
+    if (tvPp3dHandle) {
+      TV_GAME_RAF = requestAnimationFrame(frame);
+      return;
     }
 
     var bg = ctx.createLinearGradient(0, 0, 0, H);

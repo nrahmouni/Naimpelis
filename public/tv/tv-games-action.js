@@ -142,15 +142,19 @@
             pac.x = rx; pac.y = ry; pac.dx = pac.ndx; pac.dy = pac.ndy;
           }
         }
-        if (pac.dx !== 0 || pac.dy !== 0) {
+        var cxG = Math.round(pac.x), cyG = Math.round(pac.y);
+        var turnWin = Math.max(0.28, moveStep * 1.5);
+        var hasBuffered = (pac.ndx !== 0 || pac.ndy !== 0) && (pac.ndx !== pac.dx || pac.ndy !== pac.dy);
+        if (hasBuffered && Math.abs(pac.x - cxG) <= turnWin && Math.abs(pac.y - cyG) <= turnWin && !isWall(cxG + pac.ndx, cyG + pac.ndy)) {
+          pac.x = cxG; pac.y = cyG; pac.dx = pac.ndx; pac.dy = pac.ndy;
+        } else if (pac.dx !== 0 || pac.dy !== 0) {
           var prevX = pac.x, prevY = pac.y;
           var nextX = prevX + pac.dx * moveStep, nextY = prevY + pac.dy * moveStep;
-          var cxG = Math.round(prevX), cyG = Math.round(prevY);
-          var crossX = pac.dx > 0 ? (prevX <= cxG + 0.001 && nextX >= cxG) : pac.dx < 0 ? (prevX >= cxG - 0.001 && nextX <= cxG) : Math.abs(prevX - cxG) < 0.1;
-          var crossY = pac.dy > 0 ? (prevY <= cyG + 0.001 && nextY >= cyG) : pac.dy < 0 ? (prevY >= cyG - 0.001 && nextY <= cyG) : Math.abs(prevY - cyG) < 0.1;
+          var crossX = pac.dx > 0 ? (prevX <= cxG + 0.001 && nextX >= cxG) : pac.dx < 0 ? (prevX >= cxG - 0.001 && nextX <= cxG) : Math.abs(prevX - cxG) < 0.14;
+          var crossY = pac.dy > 0 ? (prevY <= cyG + 0.001 && nextY >= cyG) : pac.dy < 0 ? (prevY >= cyG - 0.001 && nextY <= cyG) : Math.abs(prevY - cyG) < 0.14;
           if (crossX && crossY) {
             var rem = Math.max(Math.abs(nextX - cxG), Math.abs(nextY - cyG));
-            if ((pac.ndx !== pac.dx || pac.ndy !== pac.dy) && (pac.ndx !== 0 || pac.ndy !== 0) && !isWall(cxG + pac.ndx, cyG + pac.ndy)) {
+            if (hasBuffered && !isWall(cxG + pac.ndx, cyG + pac.ndy)) {
               pac.x = cxG; pac.y = cyG; pac.dx = pac.ndx; pac.dy = pac.ndy;
               if (!isWall(cxG + pac.dx, cyG + pac.dy)) { pac.x += pac.dx * rem; pac.y += pac.dy * rem; }
             } else if (isWall(cxG + pac.dx, cyG + pac.dy)) {
@@ -173,7 +177,7 @@
           syncHud();
           if (dotsLeft <= 0) { level++; score += 500; playSfx(880, 0.25, 'triangle', 0.1); initMap(true); }
         }
-        var gSpeed = frightTimer > 0 ? moveStep * 0.65 : moveStep * 0.85;
+        var gSpeed = frightTimer > 0 ? moveStep * 0.62 : moveStep * 0.72;
         for (var gi = 0; gi < ghosts.length; gi++) {
           var g = ghosts[gi], gPrevX = g.x, gPrevY = g.y, grx = Math.round(g.x), gry = Math.round(g.y);
           var gNextX = gPrevX + g.dx * gSpeed, gNextY = gPrevY + g.dy * gSpeed;

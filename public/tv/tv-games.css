@@ -389,11 +389,12 @@
   display: block;
   width: 100%;
   height: 100%;
-  max-width: 1280px;
-  max-height: 720px;
-  object-fit: contain;
+  max-width: none;
+  max-height: none;
+  object-fit: fill;
 }
 
+.tv-3d-stage,
 .tv-racing-stage {
   position: absolute;
   top: 0;
@@ -403,6 +404,71 @@
   width: 100%;
   height: 100%;
   background: #050811;
+  z-index: 1;
+}
+
+.tv-3d-stage canvas,
+.tv-racing-stage canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.tv-race-garage-bar {
+  position: absolute;
+  top: 14px;
+  left: 20px;
+  right: 20px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: #0b1020;
+  border: 2px solid #22d3ee;
+  z-index: 9;
+  display: none;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  -webkit-align-items: center;
+  align-items: center;
+  gap: 8px;
+}
+
+.tv-race-garage-title {
+  font-size: 13px;
+  font-weight: 900;
+  color: #38bdf8;
+  margin-right: 6px;
+  white-space: nowrap;
+}
+
+.tv-race-car-pill {
+  display: -webkit-inline-flex;
+  display: inline-flex;
+  -webkit-align-items: center;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 11px;
+  background: #141c33;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.tv-race-car-pill.active,
+.tv-race-car-pill:focus {
+  background: #23184d;
+  border-color: #22d3ee;
+  color: #ffffff;
+}
+
+.tv-race-car-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  display: inline-block;
+  border: 1px solid #ffffff;
 }
 
 .tv-game-qr-card {

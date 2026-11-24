@@ -26,10 +26,48 @@ export function getMaxSafeAnisotropy(
   }
 }
 
+export function isConstrainedTvDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Tizen|SMART-TV|SmartTV|Web0S|webOS|NetCast|BRAVIA|AFT|HbbTV|Viera/i.test(
+    navigator.userAgent || ''
+  );
+}
+
+export function observeHostResize(
+  host: HTMLElement,
+  onResize: (w: number, h: number) => void
+): () => void {
+  const fire = () => {
+    const w = Math.max(160, host.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : 960));
+    const h = Math.max(120, host.clientHeight || (typeof window !== 'undefined' ? window.innerHeight : 540));
+    onResize(w, h);
+  };
+  let ro: ResizeObserver | null = null;
+  if (typeof ResizeObserver !== 'undefined') {
+    ro = new ResizeObserver(fire);
+    ro.observe(host);
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', fire);
+  }
+  const raf = typeof requestAnimationFrame === 'function' ? requestAnimationFrame(fire) : 0;
+  return () => {
+    if (raf && typeof cancelAnimationFrame === 'function') cancelAnimationFrame(raf);
+    ro?.disconnect();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', fire);
+    }
+  };
+}
+
 export function detectSoftwareGl(): boolean {
   if (typeof document === 'undefined') return true;
   try {
-    const gl = document.createElement('canvas').getContext('webgl2');
+    const c = document.createElement('canvas');
+    const gl =
+      (c.getContext('webgl2') as WebGL2RenderingContext | null) ||
+      (c.getContext('webgl') as WebGLRenderingContext | null) ||
+      (c.getContext('experimental-webgl') as WebGLRenderingContext | null);
     if (!gl) return true;
     const ext = gl.getExtension('WEBGL_debug_renderer_info');
     const param = ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER;
@@ -45,19 +83,22 @@ export function createResilientWebGlRenderer(
   isSoftwareGl: boolean,
   opts?: { alpha?: boolean; exposure?: number }
 ): THREE.WebGLRenderer | null {
+  const tvConstrained = isConstrainedTvDevice();
   try {
     const renderer = new THREE.WebGLRenderer({
       alpha: Boolean(opts?.alpha),
-      antialias: !isSoftwareGl,
-      powerPreference: isSoftwareGl ? 'low-power' : 'high-performance',
+      antialias: !isSoftwareGl && !tvConstrained,
+      powerPreference: isSoftwareGl || tvConstrained ? 'default' : 'high-performance',
       failIfMajorPerformanceCaveat: false,
     });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = opts?.exposure ?? 1.1;
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setPixelRatio(
+      isSoftwareGl || tvConstrained ? 1 : Math.min(window.devicePixelRatio || 1, 2)
+    );
     renderer.shadowMap.enabled = !isSoftwareGl;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = tvConstrained ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
     return renderer;
   } catch {
     return null;

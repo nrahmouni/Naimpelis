@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { resolveGameAssetUrl } from '../../../shared/gameAssetsCdn';
 import {
+  isConstrainedTvDevice,
   loadCachedPbrTexture,
   spawnRigged3dActor,
   type RiggedActorHandle,
@@ -32,8 +33,8 @@ function loadCachedTrackProp(relPath: string): Promise<THREE.Group | null> {
 }
 
 export interface TrackSample {
-  s: number; // normalized [0..1)
-  dist: number; // arc distance from start
+  s: number;
+  dist: number;
   point: THREE.Vector3;
   tangent: THREE.Vector3;
   normal: THREE.Vector3;
@@ -78,19 +79,17 @@ function createAsphaltTexture(): THREE.CanvasTexture {
   canvas.height = 512;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = '#1b1f2a';
+  ctx.fillStyle = '#181d29';
   ctx.fillRect(0, 0, 512, 512);
 
-  // Subtle asphalt grain
   for (let i = 0; i < 4200; i += 1) {
     const x = Math.random() * 512;
     const y = Math.random() * 512;
-    const shade = 20 + Math.floor(Math.random() * 24);
-    ctx.fillStyle = `rgb(${shade},${shade + 3},${shade + 9})`;
+    const shade = 18 + Math.floor(Math.random() * 24);
+    ctx.fillStyle = `rgb(${shade},${shade + 4},${shade + 10})`;
     ctx.fillRect(x, y, 2, 2);
   }
 
-  // Subtle darker rubber racing groove in middle lanes
   const grooveGrad = ctx.createLinearGradient(0, 0, 512, 0);
   grooveGrad.addColorStop(0.0, 'rgba(0,0,0,0)');
   grooveGrad.addColorStop(0.28, 'rgba(5,7,12,0.34)');
@@ -100,13 +99,11 @@ function createAsphaltTexture(): THREE.CanvasTexture {
   ctx.fillStyle = grooveGrad;
   ctx.fillRect(0, 0, 512, 512);
 
-  // Crisp off-white boundary lines (avoid HDR bloom glare)
-  ctx.fillStyle = '#cbd5e1';
-  ctx.fillRect(18, 0, 12, 512);
-  ctx.fillRect(482, 0, 12, 512);
+  ctx.fillStyle = '#e2e8f0';
+  ctx.fillRect(16, 0, 12, 512);
+  ctx.fillRect(484, 0, 12, 512);
 
-  // Dashed center line
-  ctx.fillStyle = 'rgba(226, 232, 240, 0.64)';
+  ctx.fillStyle = 'rgba(250, 204, 21, 0.72)';
   for (let y = 16; y < 512; y += 64) {
     ctx.fillRect(251, y, 10, 34);
   }
@@ -139,13 +136,96 @@ function createStartCheckeredTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+function createCityPavementTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#182132';
+  ctx.fillRect(0, 0, 512, 512);
+
+  // Subtle city grid avenues & plaza sidewalks
+  ctx.fillStyle = '#1f2b40';
+  for (let y = 0; y < 512; y += 128) {
+    for (let x = 0; x < 512; x += 128) {
+      ctx.fillRect(x + 8, y + 8, 112, 112);
+    }
+  }
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+  ctx.lineWidth = 3;
+  for (let i = 0; i <= 512; i += 64) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i, 512);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, i);
+    ctx.lineTo(512, i);
+    ctx.stroke();
+  }
+  for (let i = 0; i < 2400; i += 1) {
+    const shade = 22 + ((i * 19) % 20);
+    ctx.fillStyle = `rgb(${shade},${shade + 6},${shade + 14})`;
+    ctx.fillRect((i * 73) % 512, (i * 137) % 512, 2, 2);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(32, 32);
+  return tex;
+}
+
+function createSkyscraperFacadeTexture(accentHex: string, tintHex: string): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 256;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = tintHex;
+  ctx.fillRect(0, 0, 256, 512);
+
+  // Floor mullions
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.48)';
+  for (let y = 0; y < 512; y += 24) {
+    ctx.fillRect(0, y, 256, 5);
+  }
+
+  // Lit architectural windows
+  const cols = 8;
+  const rows = 20;
+  for (let r = 0; r < rows; r += 1) {
+    for (let c = 0; c < cols; c += 1) {
+      const hash = (r * 31 + c * 17) % 11;
+      if (hash === 0 || hash === 3 || hash === 6 || hash === 9) {
+        ctx.fillStyle = hash === 9 ? accentHex : hash === 3 ? '#fef08a' : '#bae6fd';
+      } else {
+        ctx.fillStyle = 'rgba(30, 41, 59, 0.85)';
+      }
+      ctx.fillRect(10 + c * 30, 10 + r * 24, 18, 13);
+    }
+  }
+
+  // Ground-floor illuminated retail storefront band
+  ctx.fillStyle = accentHex;
+  ctx.fillRect(0, 476, 256, 36);
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
+  ctx.fillRect(14, 482, 228, 22);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  return tex;
+}
+
 export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): BuiltCircuit {
   const disposables: Array<{ dispose: () => void }> = [];
+  const tvConstrained = isConstrainedTvDevice();
+  const castPropShadow = !isSoftwareGl && !tvConstrained;
   let circuitDisposed = false;
   const sceneryGroup = new THREE.Group();
   scene.add(sceneryGroup);
 
-  // Sweeping Grand Prix Circuit Waypoints (~820m lap length)
   const waypoints = [
     new THREE.Vector3(0, 0, 120),
     new THREE.Vector3(0, 0, 20),
@@ -183,41 +263,49 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     });
   }
 
-  const grassCanvas = document.createElement('canvas');
-  grassCanvas.width = 256;
-  grassCanvas.height = 256;
-  const gCtx = grassCanvas.getContext('2d')!;
-  gCtx.fillStyle = '#1f4228';
-  gCtx.fillRect(0, 0, 256, 256);
-  gCtx.fillStyle = '#275132';
-  gCtx.fillRect(0, 0, 128, 256);
-  for (let i = 0; i < 1800; i += 1) {
-    const gx = Math.random() * 256;
-    const gy = Math.random() * 256;
-    const v = 35 + Math.floor(Math.random() * 28);
-    gCtx.fillStyle = `rgb(${Math.round(v * 0.68)},${v + 24},${Math.round(v * 0.55)})`;
-    gCtx.fillRect(gx, gy, 2, 2);
+  function isClearOfTrack(wx: number, wz: number, extraMargin: number): boolean {
+    const minDistSq = (TRACK_BARRIER_HALF_WIDTH + extraMargin) * (TRACK_BARRIER_HALF_WIDTH + extraMargin);
+    for (let i = 0; i < SAMPLE_COUNT; i += 2) {
+      const p = samples[i].point;
+      const dx = wx - p.x;
+      const dz = wz - p.z;
+      if (dx * dx + dz * dz < minDistSq) return false;
+    }
+    return true;
   }
-  const grassFallbackTex = new THREE.CanvasTexture(grassCanvas);
-  grassFallbackTex.colorSpace = THREE.SRGBColorSpace;
-  grassFallbackTex.wrapS = THREE.RepeatWrapping;
-  grassFallbackTex.wrapT = THREE.RepeatWrapping;
-  grassFallbackTex.repeat.set(42, 42);
 
-  // Stadium Grass Turf Ground Plane (textured immediately on Frame 0)
+  // City Urban Ground Plane (asphalt plaza grid textured on Frame 0)
+  const cityPaveTex = createCityPavementTexture();
+  cityPaveTex.anisotropy = isSoftwareGl ? 1 : 4;
   const groundGeo = new THREE.PlaneGeometry(1400, 1400);
   const groundMat = new THREE.MeshStandardMaterial({
-    map: grassFallbackTex,
+    map: cityPaveTex,
     color: 0xffffff,
-    roughness: 0.94,
-    metalness: 0.02,
+    roughness: 0.88,
+    metalness: 0.08,
   });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(85, -0.08, 10);
   ground.receiveShadow = !isSoftwareGl;
   scene.add(ground);
-  disposables.push(groundGeo, groundMat, grassFallbackTex);
+  disposables.push(groundGeo, groundMat, cityPaveTex);
+
+  // Inner city central park / stadium island pocket
+  const parkGeo = new THREE.CircleGeometry(46, 28);
+  const parkMat = new THREE.MeshStandardMaterial({ color: 0x164e2e, roughness: 0.9 });
+  const parkMesh = new THREE.Mesh(parkGeo, parkMat);
+  parkMesh.rotation.x = -Math.PI / 2;
+  parkMesh.position.set(95, -0.055, -108);
+  parkMesh.receiveShadow = !isSoftwareGl;
+  scene.add(parkMesh);
+  disposables.push(parkGeo, parkMat);
+
+  // Urban Raised Concrete Sidewalk Verges flanking both edges of the street circuit
+  const sidewalkGeo = new THREE.BoxGeometry(3.2, 0.16, totalLength / SAMPLE_COUNT + 0.5);
+  const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.85, metalness: 0.1 });
+  const sidewalkInst = new THREE.InstancedMesh(sidewalkGeo, sidewalkMat, SAMPLE_COUNT * 2);
+  disposables.push(sidewalkGeo, sidewalkMat);
 
   // Procedural Ribbon Asphalt Geometry + Red/White Curbs + Guardrails
   const roadPos: number[] = [];
@@ -226,12 +314,13 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
 
   const curbGeo = new THREE.BoxGeometry(1.15, 0.14, totalLength / SAMPLE_COUNT + 0.35);
   const curbRedMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.78 });
-  const curbWhiteMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.8 });
+  const curbWhiteMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.8 });
   disposables.push(curbGeo, curbRedMat, curbWhiteMat);
 
   const redMatrices: THREE.Matrix4[] = [];
   const whiteMatrices: THREE.Matrix4[] = [];
   const dummy = new THREE.Object3D();
+  let swIdx = 0;
 
   for (let i = 0; i <= SAMPLE_COUNT; i += 1) {
     const smp = samples[i % SAMPLE_COUNT];
@@ -248,7 +337,6 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
       const base = i * 2;
       roadIdx.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
 
-      // Alternating curbstones on every segment
       const yaw = Math.atan2(smp.tangent.x, smp.tangent.z);
       [-1, 1].forEach((side) => {
         const offset = side * (TRACK_HALF_WIDTH + 0.52);
@@ -261,9 +349,22 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
         dummy.updateMatrix();
         if (i % 2 === 0) redMatrices.push(dummy.matrix.clone());
         else whiteMatrices.push(dummy.matrix.clone());
+
+        if (swIdx < SAMPLE_COUNT * 2) {
+          dummy.position.set(
+            smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 1.5),
+            0.04,
+            smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 1.5)
+          );
+          dummy.updateMatrix();
+          sidewalkInst.setMatrixAt(swIdx, dummy.matrix);
+          swIdx += 1;
+        }
       });
     }
   }
+  sidewalkInst.instanceMatrix.needsUpdate = true;
+  scene.add(sidewalkInst);
 
   const roadGeo = new THREE.BufferGeometry();
   roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(roadPos, 3));
@@ -283,7 +384,42 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   scene.add(roadMesh);
   disposables.push(roadGeo, asphaltTex, roadMat);
 
-  // Wet Reflective Asphalt Puddles at key apex zones
+  if (!isSoftwareGl && !tvConstrained) {
+    void loadCachedPbrTexture('assets/games/pbr/concrete_worn_diff.jpg', {
+      srgb: true,
+      repeatX: 28,
+      repeatY: 28,
+      anisotropy: 4,
+    }).then((tex) => {
+      if (!tex || circuitDisposed) return;
+      groundMat.map = tex;
+      groundMat.color.setHex(0x3a475c);
+      groundMat.needsUpdate = true;
+    });
+    void loadCachedPbrTexture('assets/games/pbr/asphalt_nor.jpg', {
+      srgb: false,
+      repeatX: 1,
+      repeatY: 72,
+      anisotropy: 8,
+    }).then((nor) => {
+      if (!nor || circuitDisposed) return;
+      roadMat.normalMap = nor;
+      roadMat.normalScale.set(0.65, 0.65);
+      roadMat.needsUpdate = true;
+    });
+    void loadCachedPbrTexture('assets/games/pbr/asphalt_rough.jpg', {
+      srgb: false,
+      repeatX: 1,
+      repeatY: 72,
+      anisotropy: 8,
+    }).then((rough) => {
+      if (!rough || circuitDisposed) return;
+      roadMat.roughnessMap = rough;
+      roadMat.needsUpdate = true;
+    });
+  }
+
+  // Wet Reflective Asphalt Puddles at apex zones
   const puddleGeo = new THREE.CircleGeometry(3.4, 22);
   const puddleMat = new THREE.MeshPhysicalMaterial({
     color: 0x091326,
@@ -313,7 +449,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   });
   disposables.push(puddleGeo, puddleMat);
 
-  // Persistent Tire Skidmark Instanced Ring Buffer
+  // Persistent Tire Skidmark Pool
   const SKID_POOL = 240;
   const skidGeo = new THREE.PlaneGeometry(0.42, 1.35);
   skidGeo.rotateX(-Math.PI / 2);
@@ -340,56 +476,20 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   disposables.push(skidGeo, skidMat);
   let skidCursor = 0;
 
-  if (!isSoftwareGl) {
-    void loadCachedPbrTexture('assets/games/pbr/grass_diff.jpg', {
-      srgb: true,
-      repeatX: 34,
-      repeatY: 34,
-      anisotropy: 8,
-    }).then((tex) => {
-      if (!tex || circuitDisposed) return;
-      groundMat.map = tex;
-      groundMat.color.setHex(0x9fb88f);
-      groundMat.needsUpdate = true;
-    });
-    void loadCachedPbrTexture('assets/games/pbr/asphalt_nor.jpg', {
-      srgb: false,
-      repeatX: 1,
-      repeatY: 72,
-      anisotropy: 8,
-    }).then((nor) => {
-      if (!nor || circuitDisposed) return;
-      roadMat.normalMap = nor;
-      roadMat.normalScale.set(0.65, 0.65);
-      roadMat.needsUpdate = true;
-    });
-    void loadCachedPbrTexture('assets/games/pbr/asphalt_rough.jpg', {
-      srgb: false,
-      repeatX: 1,
-      repeatY: 72,
-      anisotropy: 8,
-    }).then((rough) => {
-      if (!rough || circuitDisposed) return;
-      roadMat.roughnessMap = rough;
-      roadMat.needsUpdate = true;
-    });
-  }
-
-  // Instanced Red & White Curbs (2 draw calls total)
   const redCurbs = new THREE.InstancedMesh(curbGeo, curbRedMat, redMatrices.length);
   redMatrices.forEach((m, idx) => redCurbs.setMatrixAt(idx, m));
   const whiteCurbs = new THREE.InstancedMesh(curbGeo, curbWhiteMat, whiteMatrices.length);
   whiteMatrices.forEach((m, idx) => whiteCurbs.setMatrixAt(idx, m));
   scene.add(redCurbs, whiteCurbs);
 
-  // Outer Glowing Neon Barrier Posts (InstancedMesh)
-  const postStep = 6;
+  // Outer Illuminated Street Barrier Walls
+  const postStep = 4;
   const postCount = Math.floor(SAMPLE_COUNT / postStep) * 2;
-  const postGeo = new THREE.BoxGeometry(0.45, 0.95, 2.2);
+  const postGeo = new THREE.BoxGeometry(0.48, 1.0, 2.4);
   const postMat = new THREE.MeshStandardMaterial({
     color: 0x1e293b,
-    emissive: 0x7c3aed,
-    emissiveIntensity: 0.45,
+    emissive: 0x38bdf8,
+    emissiveIntensity: 0.35,
     roughness: 0.4,
     metalness: 0.6,
   });
@@ -402,7 +502,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
       if (pIdx >= postCount) break;
       dummy.position.set(
         smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 0.4),
-        0.48,
+        0.5,
         smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 0.4)
       );
       dummy.rotation.set(0, yaw, 0);
@@ -414,7 +514,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   scene.add(barrierPosts);
   disposables.push(postGeo, postMat);
 
-  // Start / Finish Checkered Strip & Illuminated Gantry Arch
+  // Start / Finish Checkered Strip & Lit Steel Gantry
   const startSmp = samples[0];
   const startYaw = Math.atan2(startSmp.tangent.x, startSmp.tangent.z);
   const checkeredTex = createStartCheckeredTexture();
@@ -448,27 +548,106 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   scene.add(gantryGroup);
   disposables.push(pillarGeo, pillarMat, neonBannerGeo, neonBannerMat);
 
-  // Stadium Floodlight Towers along circuit perimeter
-  const towerPoleGeo = new THREE.CylinderGeometry(0.32, 0.48, 19, 8);
-  const towerHeadGeo = new THREE.BoxGeometry(3.6, 1.2, 1.2);
-  const towerHeadMat = new THREE.MeshBasicMaterial({ color: 0xe0f2fe });
-  for (let i = 15; i < SAMPLE_COUNT; i += 45) {
-    const smp = samples[i];
-    const side = i % 90 === 15 ? 1 : -1;
-    const pole = new THREE.Mesh(towerPoleGeo, pillarMat);
-    pole.position.set(
-      smp.point.x + smp.normal.x * side * 19,
-      9.5,
-      smp.point.z + smp.normal.z * side * 19
-    );
-    const head = new THREE.Mesh(towerHeadGeo, towerHeadMat);
-    head.position.set(pole.position.x, 19, pole.position.z);
-    head.lookAt(smp.point.x, 2, smp.point.z);
-    scene.add(pole, head);
-  }
-  disposables.push(towerPoleGeo, towerHeadGeo, towerHeadMat);
+  // Urban Skyscraper & Mid-Rise District (Rendered immediately on Frame 0 so city looks full!)
+  const facadeTexA = createSkyscraperFacadeTexture('#38bdf8', '#141e30');
+  const facadeTexB = createSkyscraperFacadeTexture('#f59e0b', '#1b2234');
+  const facadeTexC = createSkyscraperFacadeTexture('#a855f7', '#17192d');
+  const bldgMats = [
+    new THREE.MeshStandardMaterial({ map: facadeTexA, roughness: 0.45, metalness: 0.4, emissive: 0x0b1628, emissiveIntensity: 0.45 }),
+    new THREE.MeshStandardMaterial({ map: facadeTexB, roughness: 0.5, metalness: 0.32, emissive: 0x18141c, emissiveIntensity: 0.4 }),
+    new THREE.MeshStandardMaterial({ map: facadeTexC, roughness: 0.42, metalness: 0.48, emissive: 0x160f28, emissiveIntensity: 0.45 }),
+  ];
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.72, metalness: 0.5 });
+  const beaconMat = new THREE.MeshBasicMaterial({ color: 0xf43f5e });
+  const roofBoxGeo = new THREE.BoxGeometry(1, 1, 1);
+  disposables.push(facadeTexA, facadeTexB, facadeTexC, ...bldgMats, roofMat, beaconMat, roofBoxGeo);
 
-  // Glowing Cyan Nitro Boost Pads placed on key straights
+  const cityLots: Array<{ x: number; z: number; yaw: number; w: number; d: number; h: number; variant: number }> = [];
+  for (let i = 0; i < SAMPLE_COUNT; i += 7) {
+    const smp = samples[i];
+    const yaw = Math.atan2(smp.tangent.x, smp.tangent.z);
+    const sides = i % 14 === 0 ? [1, -1] : [i % 2 === 0 ? 1 : -1];
+    for (const side of sides) {
+      const distOut = TRACK_BARRIER_HALF_WIDTH + 16 + ((i * 11) % 24);
+      const bx = smp.point.x + smp.normal.x * side * distOut;
+      const bz = smp.point.z + smp.normal.z * side * distOut;
+      const w = 11 + ((i * 7) % 10);
+      const d = 11 + ((i * 13) % 10);
+      const halfSpan = Math.max(w, d) * 0.65;
+      if (!isClearOfTrack(bx, bz, halfSpan + 4.5)) continue;
+      const h = 16 + ((i * 19 + (side > 0 ? 7 : 3)) % 44);
+      cityLots.push({ x: bx, z: bz, yaw, w, d, h, variant: (i + (side > 0 ? 1 : 2)) % 3 });
+    }
+  }
+  // Outer city skyline towers for horizon density
+  const outerRingAnchors = [
+    [-65, -140, 68], [-70, 0, 56], [-62, 130, 64], [110, -275, 76], [235, -245, 72],
+    [285, -90, 66], [275, 85, 70], [285, 225, 62], [115, 305, 74], [-35, 255, 58],
+    [95, -95, 54], [95, -125, 42],
+  ];
+  outerRingAnchors.forEach(([ox, oz, oh], idx) => {
+    if (isClearOfTrack(ox, oz, 14)) {
+      cityLots.push({ x: ox, z: oz, yaw: idx * 0.4, w: 18, d: 18, h: oh, variant: idx % 3 });
+    }
+  });
+
+  cityLots.forEach((lot, idx) => {
+    const bGroup = new THREE.Group();
+    bGroup.position.set(lot.x, 0, lot.z);
+    bGroup.rotation.y = lot.yaw;
+    const baseMesh = new THREE.Mesh(roofBoxGeo, bldgMats[lot.variant]);
+    baseMesh.scale.set(lot.w, lot.h, lot.d);
+    baseMesh.position.y = lot.h * 0.5;
+    baseMesh.castShadow = castPropShadow;
+    baseMesh.receiveShadow = !isSoftwareGl;
+    bGroup.add(baseMesh);
+
+    if (lot.h > 32) {
+      const crown = new THREE.Mesh(roofBoxGeo, bldgMats[(lot.variant + 1) % 3]);
+      crown.scale.set(lot.w * 0.68, lot.h * 0.28, lot.d * 0.68);
+      crown.position.y = lot.h + lot.h * 0.14;
+      const spire = new THREE.Mesh(roofBoxGeo, roofMat);
+      spire.scale.set(0.45, 8, 0.45);
+      spire.position.y = lot.h * 1.28 + 4;
+      const beacon = new THREE.Mesh(roofBoxGeo, beaconMat);
+      beacon.scale.set(0.85, 0.85, 0.85);
+      beacon.position.y = lot.h * 1.28 + 8.3;
+      bGroup.add(crown, spire, beacon);
+    } else if (idx % 2 === 0) {
+      const cap = new THREE.Mesh(roofBoxGeo, roofMat);
+      cap.scale.set(lot.w * 0.52, 2.2, lot.d * 0.52);
+      cap.position.y = lot.h + 1.1;
+      bGroup.add(cap);
+    }
+    sceneryGroup.add(bGroup);
+  });
+
+  // Illuminated Streetlamps flanking the circuit every 18 samples
+  const towerPoleGeo = new THREE.CylinderGeometry(0.24, 0.34, 12.5, 8);
+  const towerArmGeo = new THREE.BoxGeometry(0.24, 0.24, 2.8);
+  const towerHeadGeo = new THREE.BoxGeometry(1.4, 0.32, 0.7);
+  const towerHeadMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
+  for (let i = 10; i < SAMPLE_COUNT; i += 20) {
+    const smp = samples[i];
+    const side = i % 40 === 10 ? 1 : -1;
+    const yaw = Math.atan2(smp.tangent.x, smp.tangent.z);
+    const lx = smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 3.2);
+    const lz = smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 3.2);
+    const lamp = new THREE.Group();
+    lamp.position.set(lx, 0, lz);
+    lamp.rotation.y = yaw + (side > 0 ? Math.PI / 2 : -Math.PI / 2);
+    const pole = new THREE.Mesh(towerPoleGeo, pillarMat);
+    pole.position.y = 6.25;
+    const arm = new THREE.Mesh(towerArmGeo, pillarMat);
+    arm.position.set(0, 12.3, 1.3);
+    const head = new THREE.Mesh(towerHeadGeo, towerHeadMat);
+    head.position.set(0, 12.1, 2.4);
+    lamp.add(pole, arm, head);
+    sceneryGroup.add(lamp);
+  }
+  disposables.push(towerPoleGeo, towerArmGeo, towerHeadGeo, towerHeadMat);
+
+  // Glowing Cyan Nitro Boost Pads
   const boostPads: BoostPadZone[] = [
     { s: 0.14, lateralOffset: -2.2 },
     { s: 0.42, lateralOffset: 2.0 },
@@ -497,27 +676,26 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   });
   disposables.push(padGeo, padMat);
 
-  // Trackside Stylized Pine Trees & Deformable Tire Stacks (InstancedMesh, ES2015-safe)
-  const treeCount = 72;
-  const trunkGeo = new THREE.CylinderGeometry(0.32, 0.48, 3.2, 6);
+  // Urban Avenue Trees & Tire Barriers
+  const treeCount = 44;
+  const trunkGeo = new THREE.CylinderGeometry(0.28, 0.42, 2.8, 6);
   const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a2f1b, roughness: 0.9 });
-  const crownGeo = new THREE.ConeGeometry(2.3, 6.2, 7);
-  const crownMat = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.8 });
+  const crownGeo = new THREE.SphereGeometry(2.1, 8, 7);
+  const crownMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 });
   const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
   const crowns = new THREE.InstancedMesh(crownGeo, crownMat, treeCount);
   const tDummy = new THREE.Object3D();
   for (let i = 0; i < treeCount; i += 1) {
-    const smp = samples[(i * 5) % SAMPLE_COUNT];
+    const smp = samples[(i * 8 + 2) % SAMPLE_COUNT];
     const side = i % 2 === 0 ? 1 : -1;
-    const distOut = TRACK_BARRIER_HALF_WIDTH + 9 + ((i * 7) % 16);
-    const tx = smp.point.x + smp.normal.x * side * distOut;
-    const tz = smp.point.z + smp.normal.z * side * distOut;
-    const scl = 0.85 + ((i * 11) % 6) * 0.14;
-    tDummy.position.set(tx, 1.5 * scl, tz);
+    const tx = smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 6.5);
+    const tz = smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 6.5);
+    const scl = 0.8 + ((i * 5) % 5) * 0.12;
+    tDummy.position.set(tx, 1.4 * scl, tz);
     tDummy.scale.setScalar(scl);
     tDummy.updateMatrix();
     trunks.setMatrixAt(i, tDummy.matrix);
-    tDummy.position.set(tx, 5.2 * scl, tz);
+    tDummy.position.set(tx, 3.8 * scl, tz);
     tDummy.updateMatrix();
     crowns.setMatrixAt(i, tDummy.matrix);
   }
@@ -545,15 +723,14 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   scene.add(tireInst);
   disposables.push(trunkGeo, trunkMat, crownGeo, crownMat, tireGeo, tireMat);
 
-  // Twilight Starfield Sky Points (lightweight single Points draw call)
   if (!isSoftwareGl) {
-    const starCount = 450;
+    const starCount = 380;
     const starPositions = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount; i += 1) {
       const ang = Math.random() * Math.PI * 2;
       const rad = 280 + Math.random() * 240;
       starPositions[i * 3] = 90 + Math.cos(ang) * rad;
-      starPositions[i * 3 + 1] = 35 + Math.random() * 140;
+      starPositions[i * 3 + 1] = 45 + Math.random() * 140;
       starPositions[i * 3 + 2] = Math.sin(ang) * rad;
     }
     const starGeo = new THREE.BufferGeometry();
@@ -563,7 +740,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     disposables.push(starGeo, starMat);
   }
 
-  // Asynchronous Online Kenney 3D Racing Scenery (zero startup blocking, zero local assets)
+  // Asynchronous Verified CC0 3D City Architecture & Racing Kits
   const placePropNormalized = (
     source: THREE.Group,
     targetWidth: number,
@@ -575,9 +752,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     const clone = source.clone(true);
     const box = new THREE.Box3().setFromObject(clone);
     const size = new THREE.Vector3();
-    const center = new THREE.Vector3();
     box.getSize(size);
-    box.getCenter(center);
     const maxDim = Math.max(0.1, size.x, size.z);
     const scale = targetWidth / maxDim;
     clone.scale.setScalar(scale);
@@ -585,43 +760,90 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     clone.rotation.y = rotY;
     clone.traverse((child) => {
       if ((child as THREE.Mesh).isMesh) {
-        child.castShadow = !isSoftwareGl;
+        child.castShadow = castPropShadow;
         child.receiveShadow = !isSoftwareGl;
       }
     });
     sceneryGroup.add(clone);
   };
 
+  // Load verified Kenney City Commercial skyscrapers & buildings into open urban lots
+  const citySkyscraperAssets = [
+    'assets/games/models/city/building-skyscraper-a.glb',
+    'assets/games/models/city/building-skyscraper-b.glb',
+    'assets/games/models/city/building-skyscraper-c.glb',
+    'assets/games/models/city/building-skyscraper-d.glb',
+    'assets/games/models/city/building-skyscraper-e.glb',
+  ];
+  const cityCommercialAssets = [
+    'assets/games/models/city/building-a.glb',
+    'assets/games/models/city/building-b.glb',
+    'assets/games/models/city/building-c.glb',
+    'assets/games/models/city/building-d.glb',
+    'assets/games/models/city-builder/building-small-a.glb',
+    'assets/games/models/city-builder/building-small-c.glb',
+    'assets/games/models/city-builder/building-garage.glb',
+  ];
+
+  citySkyscraperAssets.forEach((asset, assetIdx) => {
+    void loadCachedTrackProp(asset).then((src) => {
+      if (!src || circuitDisposed) return;
+      for (let i = assetIdx * 24; i < SAMPLE_COUNT; i += 108) {
+        const smp = samples[i % SAMPLE_COUNT];
+        const side = assetIdx % 2 === 0 ? 1 : -1;
+        const bx = smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 22);
+        const bz = smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 22);
+        if (!isClearOfTrack(bx, bz, 12)) continue;
+        const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
+        placePropNormalized(src, 16, bx, 0, bz, yaw);
+      }
+    });
+  });
+
+  cityCommercialAssets.forEach((asset, assetIdx) => {
+    void loadCachedTrackProp(asset).then((src) => {
+      if (!src || circuitDisposed) return;
+      for (let i = 10 + assetIdx * 17; i < SAMPLE_COUNT; i += 84) {
+        const smp = samples[i % SAMPLE_COUNT];
+        const side = assetIdx % 2 === 0 ? -1 : 1;
+        const bx = smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 13.5);
+        const bz = smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 13.5);
+        if (!isClearOfTrack(bx, bz, 7.5)) continue;
+        const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
+        placePropNormalized(src, 12, bx, 0, bz, yaw);
+      }
+    });
+  });
+
+  void loadCachedTrackProp('assets/games/models/city-builder/pavement-fountain.glb').then((src) => {
+    if (!src || circuitDisposed) return;
+    if (isClearOfTrack(95, -108, 10)) {
+      placePropNormalized(src, 18, 95, 0, -108, 0);
+    }
+  });
+
   void loadCachedTrackProp('assets/games/models/grandStandCovered.glb').then((src) => {
     if (!src || circuitDisposed) return;
-    [8, 32, 110, 190, 275, 330].forEach((idx, n) => {
+    [8, 110, 275].forEach((idx, n) => {
       const smp = samples[idx % SAMPLE_COUNT];
       const side = n % 2 === 0 ? 1 : -1;
+      const bx = smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 11);
+      const bz = smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 11);
+      if (!isClearOfTrack(bx, bz, 8)) return;
       const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
-      placePropNormalized(
-        src,
-        24,
-        smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 14),
-        0,
-        smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 14),
-        yaw
-      );
+      placePropNormalized(src, 22, bx, 0, bz, yaw);
     });
   });
 
   void loadCachedTrackProp('assets/games/models/pitsGarage.glb').then((src) => {
     if (!src || circuitDisposed) return;
-    [348, 354, 6, 14].forEach((idx) => {
+    [350, 6].forEach((idx) => {
       const smp = samples[idx % SAMPLE_COUNT];
+      const bx = smp.point.x - smp.normal.x * (TRACK_BARRIER_HALF_WIDTH + 10.5);
+      const bz = smp.point.z - smp.normal.z * (TRACK_BARRIER_HALF_WIDTH + 10.5);
+      if (!isClearOfTrack(bx, bz, 7.5)) return;
       const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + Math.PI / 2;
-      placePropNormalized(
-        src,
-        16,
-        smp.point.x - smp.normal.x * (TRACK_BARRIER_HALF_WIDTH + 11),
-        0,
-        smp.point.z - smp.normal.z * (TRACK_BARRIER_HALF_WIDTH + 11),
-        yaw
-      );
+      placePropNormalized(src, 15, bx, 0, bz, yaw);
     });
   });
 
@@ -639,24 +861,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     });
   });
 
-  if (!isSoftwareGl) {
-    void loadCachedTrackProp('assets/games/models/lightPostLarge.glb').then((src) => {
-      if (!src || circuitDisposed) return;
-      for (let i = 20; i < SAMPLE_COUNT; i += 30) {
-        const smp = samples[i];
-        const side = i % 60 === 20 ? 1 : -1;
-        const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
-        placePropNormalized(
-          src,
-          7.5,
-          smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 3.5),
-          0,
-          smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 3.5),
-          yaw
-        );
-      }
-    });
-
+  if (!isSoftwareGl && !tvConstrained) {
     void loadCachedTrackProp('assets/games/models/billboard.glb').then((src) => {
       if (!src || circuitDisposed) return;
       [42, 130, 218, 305].forEach((idx, n) => {
@@ -673,28 +878,11 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
         );
       });
     });
-
-    void loadCachedTrackProp('assets/games/models/bannerTowerRed.glb').then((src) => {
-      if (!src || circuitDisposed) return;
-      [18, 175].forEach((idx, n) => {
-        const smp = samples[idx % SAMPLE_COUNT];
-        const side = n === 0 ? 1 : -1;
-        const yaw = Math.atan2(smp.tangent.x, smp.tangent.z);
-        placePropNormalized(
-          src,
-          6.2,
-          smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 4.2),
-          0,
-          smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 4.2),
-          yaw
-        );
-      });
-    });
   }
 
-  // Animated 3D Rigged Flag Marshals / Crew at Start-Finish & Pit Stand
+  // Animated 3D Crew at Start-Finish
   const actors: RiggedActorHandle[] = [];
-  if (!isSoftwareGl) {
+  if (!isSoftwareGl && !tvConstrained) {
     const marshalRobot = spawnRigged3dActor(sceneryGroup, 'assets/games/models/RobotExpressive.glb', {
       position: [
         startSmp.point.x + startSmp.normal.x * (TRACK_HALF_WIDTH + 3.4),
@@ -717,20 +905,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
       defaultClips: ['idle', 'walk', 'run'],
       castShadow: true,
     });
-    const marshalSoldier = spawnRigged3dActor(sceneryGroup, 'assets/games/models/Soldier.glb', {
-      position: [
-        startSmp.point.x + startSmp.normal.x * (TRACK_HALF_WIDTH + 5.6) + startSmp.tangent.x * 6.0,
-        0,
-        startSmp.point.z + startSmp.normal.z * (TRACK_HALF_WIDTH + 5.6) + startSmp.tangent.z * 6.0,
-      ],
-      rotationY: startYaw - Math.PI * 0.65,
-      targetHeight: 2.55,
-      defaultClips: ['Idle', 'Walk'],
-      castShadow: true,
-      primaryHex: '#f59e0b',
-      secondaryHex: '#0f172a',
-    });
-    actors.push(marshalRobot, marshalXbot, marshalSoldier);
+    actors.push(marshalRobot, marshalXbot);
   }
   let celebratingState = false;
 
@@ -770,7 +945,6 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
       }
     }
 
-    // Fallback global scan if far away or unhinted
     if (bestDistSq > 900) {
       for (let idx = 0; idx < SAMPLE_COUNT; idx += 1) {
         const p = samples[idx].point;
@@ -824,7 +998,6 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
       celebratingState = celebrating;
       if (actors[0]) actors[0].playClip(celebrating ? ['Dance', 'Jump', 'Wave'] : ['Wave', 'Idle']);
       if (actors[1]) actors[1].playClip(celebrating ? ['run', 'walk', 'idle'] : ['idle', 'walk']);
-      if (actors[2]) actors[2].playClip(celebrating ? ['Run', 'Walk'] : ['Idle']);
     },
     addSkidMark: (x: number, z: number, yaw: number, intensity = 1) => {
       if (circuitDisposed) return;

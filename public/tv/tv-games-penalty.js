@@ -21,8 +21,17 @@ var tvPenHasP2 = false;
 var tvPenGyro1 = { steer: 0, pitch: 0, roll: 0, swing: 0, nitro: false, throttle: 0, handbrake: false, brake: 0, expiresAt: 0 };
 var tvPenGyro2 = { steer: 0, pitch: 0, roll: 0, swing: 0, nitro: false, throttle: 0, handbrake: false, brake: 0, expiresAt: 0 };
 var tvPenStadiumImg = null;
+var tvPen3dHandle = null;
+
+function disposeTvPen3d() {
+  if (tvPen3dHandle && tvPen3dHandle.dispose) {
+    try { tvPen3dHandle.dispose(); } catch (e0) {}
+  }
+  tvPen3dHandle = null;
+}
 
 function closeTvPenaltyGame() {
+  disposeTvPen3d();
   if (tvPenWs) {
     tvPenWs.onclose = null;
     try { tvPenWs.close(); } catch (e) {}
@@ -138,9 +147,79 @@ function startPenaltyGame(scr) {
     targetX: 480, targetY: 190, curveDx: 0,
     keeperX: 480, keeperTargetX: 480, keeperDiveY: 0, keeperSecretX: null,
     strikerRun: 0, kickingRun: false, shake: 0, netWave: 0,
-    turnTime: 8.0, resultTimer: 0,
+    turnTime: 8.0, resultTimer: 0, lastOutcome: 'goal',
     bannerMsg: 'APUNTA Y CHUTA ANTES DE QUE ACABE EL TIEMPO', bannerColor: '#FDE047'
   };
+
+  function getPenalty3dSnap() {
+    var ay = Math.max(0.08, Math.min(0.96, 1 - (state.aimY - goalTop) / (goalBottom - goalTop)));
+    var ty = Math.max(0.08, Math.min(0.96, 1 - (state.targetY - goalTop) / (goalBottom - goalTop)));
+    return {
+      aimX: (state.aimX - 480) / 260,
+      aimY: ay,
+      curve: state.curve,
+      shotStyle: 'placed',
+      keeperX: (state.keeperX - 480) / 260,
+      keeperDiveY: state.keeperDiveY < 0 ? 0.65 : (Math.abs(state.keeperX - 480) > 60 ? 0.35 : 0),
+      strikerRunT: state.strikerRun,
+      strikerKicking: state.kickingRun,
+      netRipple: state.netWave,
+      netImpactX: (state.targetX - 480) / 260,
+      cameraShake: state.shake,
+      attacker: state.attacker,
+      winner: state.phase === 'finished' ? (state.s1 > state.s2 ? 1 : 2) : null,
+      ball: {
+        active: state.phase === 'flight' || state.phase === 'result',
+        t: state.phase === 'result' ? 1 : state.flightT,
+        endX: (state.targetX - 480) / 260,
+        endY: ty,
+        curve: state.curve,
+        outcome: state.lastOutcome || 'goal',
+        resolved: state.phase === 'result',
+        spinAngle: state.flightT * 12
+      }
+    };
+  }
+
+  function remountPenalty3d() {
+    disposeTvPen3d();
+    if (!arenaEl || !window.RiffanTvGames || typeof window.RiffanTvGames.mountPenalty3D !== 'function') {
+      if (canvas) canvas.style.display = 'block';
+      return;
+    }
+    var stage = arenaEl.querySelector('.tv-3d-stage');
+    if (!stage) {
+      stage = document.createElement('div');
+      stage.className = 'tv-3d-stage';
+      arenaEl.insertBefore(stage, arenaEl.firstChild);
+    }
+    try {
+      tvPen3dHandle = window.RiffanTvGames.mountPenalty3D(stage, {
+        getState: getPenalty3dSnap,
+        getContext: function () {
+          var c1 = getC1(), c2 = getC2();
+          return {
+            p1: { id: c1.id, name: c1.name, flag: c1.flag || '⚽', code: c1.code, jersey: c1.jersey, trim: c1.trim, shorts: c1.shorts, gkJersey: c1.gkJersey, gkTrim: c1.gkTrim },
+            p2: { id: c2.id, name: c2.name, flag: c2.flag || '⚽', code: c2.code, jersey: c2.jersey, trim: c2.trim, shorts: c2.shorts, gkJersey: c2.gkJersey, gkTrim: c2.gkTrim },
+            matchMode: state.mode2p ? '2p' : 'cpu'
+          };
+        },
+        onGoalClick: function (ax, ay) {
+          if (state.phase === 'aim') {
+            state.aimX = 480 + ax * 260;
+            state.aimY = goalTop + (1 - Math.max(0.08, Math.min(0.96, ay))) * (goalBottom - goalTop);
+            launchKick();
+          }
+        }
+      });
+    } catch (ePen) { tvPen3dHandle = null; }
+    if (tvPen3dHandle) {
+      if (canvas) canvas.style.display = 'none';
+    } else {
+      if (stage && stage.parentNode) stage.parentNode.removeChild(stage);
+      if (canvas) canvas.style.display = 'block';
+    }
+  }
 
   function connectPenWs() {
     if (!window.WebSocket || typeof getTvRacingWsUrl !== 'function') return;
@@ -220,9 +299,9 @@ function startPenaltyGame(scr) {
     playTvGameBeep(2650, 0.14, 'sine', 0.08);
   }
   document.getElementById('btn-pen-replay').onclick = resetPenaltyMatch;
-  btnC1.onclick = function () { state.c1Idx = (state.c1Idx + 1) % TV_PENALTY_COUNTRIES.length; syncHud(); };
-  btnC2.onclick = function () { state.c2Idx = (state.c2Idx + 1) % TV_PENALTY_COUNTRIES.length; syncHud(); };
-  btnMode.onclick = function () { state.mode2p = !state.mode2p; resetPenaltyMatch(); };
+  btnC1.onclick = function () { state.c1Idx = (state.c1Idx + 1) % TV_PENALTY_COUNTRIES.length; syncHud(); remountPenalty3d(); };
+  btnC2.onclick = function () { state.c2Idx = (state.c2Idx + 1) % TV_PENALTY_COUNTRIES.length; syncHud(); remountPenalty3d(); };
+  btnMode.onclick = function () { state.mode2p = !state.mode2p; resetPenaltyMatch(); remountPenalty3d(); };
 
   function isMatchDecided() {
     if (state.round <= 5) {
@@ -338,6 +417,7 @@ function startPenaltyGame(scr) {
       state.bannerMsg = '❌ ¡FUERA DE PORTERÍA!'; state.bannerColor = '#FB7185';
       playTvGameBeep(130, 0.22, 'sawtooth', 0.09);
     }
+    state.lastOutcome = scored ? 'goal' : hitPost ? 'post' : saved ? 'saved' : 'miss';
     state.phase = 'result'; state.resultTimer = 1.65; syncHud();
   }
 
@@ -415,7 +495,7 @@ function startPenaltyGame(scr) {
       if (state.resultTimer <= 0) nextTurn();
     }
 
-    drawStadiumScene();
+    if (!tvPen3dHandle) drawStadiumScene();
     TV_GAME_RAF = requestAnimationFrame(frame);
   }
 
@@ -581,6 +661,7 @@ function startPenaltyGame(scr) {
   }
 
   resetPenaltyMatch();
+  remountPenalty3d();
   TV_GAME_RAF = requestAnimationFrame(frame);
 }
 window.startPenaltyGame = startPenaltyGame;

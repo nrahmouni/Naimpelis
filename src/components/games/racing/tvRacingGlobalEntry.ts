@@ -1,10 +1,19 @@
 import { createRacing3dEngine } from './racing3dEngine';
 import { createRacing2dFallbackEngine } from './racing2dFallback';
-import type {
-  RacingCarTelemetry,
-  RacingEngineHandle,
-  RacingGyroControlState,
+import {
+  RACING_CAR_CATALOG,
+  type RacingCarId,
+  type RacingCarTelemetry,
+  type RacingEngineHandle,
+  type RacingEngineOptions,
+  type RacingGyroControlState,
 } from './racingTypes';
+import { mountPenalty3D } from '../three/Penalty3DViewport';
+import { mountPingPong3D } from '../three/PingPong3DViewport';
+import { mountBowling3D } from '../three/Bowling3DViewport';
+import { mountTennis3D } from '../three/Tennis3DViewport';
+import { mountLabyrinth3D } from '../three/Labyrinth3DViewport';
+import { mountHexGl3D } from '../three/HexGL3DViewport';
 
 let activeEngine: RacingEngineHandle | null = null;
 
@@ -12,13 +21,14 @@ export function mount(
   container: HTMLElement,
   callbacks?: {
     onTelemetry?: (t: RacingCarTelemetry) => void;
-    onFinish?: (s: { position: number; totalTimeMs: number; bestLapMs: number }) => void;
+    onFinish?: (s: { position: number; totalTimeMs: number; bestLapMs: number; winnerSlot?: 1 | 2 }) => void;
     onContextLost?: () => void;
-  }
+  },
+  options?: RacingEngineOptions
 ): void {
   unmount();
   try {
-    activeEngine = createRacing3dEngine(container, callbacks || {});
+    activeEngine = createRacing3dEngine(container, callbacks || {}, options);
   } catch {
     activeEngine = createRacing2dFallbackEngine(container, callbacks || {});
   }
@@ -45,6 +55,22 @@ export function setRemoteKey(keys: {
   handbrake?: boolean;
 }): void {
   activeEngine?.setKeyboardState(keys);
+}
+
+export function setPlayerCar(carId: RacingCarId): void {
+  activeEngine?.setPlayerCar?.(carId);
+}
+
+export function getPlayerCar(): RacingCarId {
+  return activeEngine?.getPlayerCar?.() || 'ferrari';
+}
+
+export function setAutoGas(enabled: boolean): void {
+  activeEngine?.setAutoGas?.(enabled);
+}
+
+export function getAutoGas(): boolean {
+  return activeEngine?.getAutoGas?.() ?? true;
 }
 
 export function cycleCamera(): string {
@@ -76,10 +102,24 @@ if (typeof window !== 'undefined') {
     setGyroInput,
     setPlayer2Connected,
     setRemoteKey,
+    setPlayerCar,
+    getPlayerCar,
+    setAutoGas,
+    getAutoGas,
+    carCatalog: RACING_CAR_CATALOG,
     cycleCamera,
     resetRace,
     setMuted,
     triggerHorn,
     unmount,
   };
+  (window as unknown as Record<string, unknown>).RiffanTvGames = {
+    mountPenalty3D,
+    mountPingPong3D,
+    mountBowling3D,
+    mountTennis3D,
+    mountLabyrinth3D,
+    mountHexGl3D,
+  };
 }
+

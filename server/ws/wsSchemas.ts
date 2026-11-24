@@ -481,6 +481,8 @@ export const wsGyroInputSchema = z.object({
   handbrake: z.boolean().optional(),
   cameraCycle: z.boolean().optional(),
   horn: z.boolean().optional(),
+  carSelect: z.string().trim().max(32).optional(),
+  autoGasToggle: z.boolean().optional(),
   seq: z.number().int().min(0).max(1_000_000_000),
   ts: z.number().min(0),
 });
@@ -505,6 +507,8 @@ export const wsRacingTelemetrySchema = z.object({
   scoreP1: z.number().int().min(0).max(999).optional(),
   scoreP2: z.number().int().min(0).max(999).optional(),
   eventTag: z.string().trim().max(32).optional(),
+  carId: z.string().trim().max(32).optional(),
+  autoGas: z.boolean().optional(),
 });
 
 export const wsEnvelopeSchema = z.object({
