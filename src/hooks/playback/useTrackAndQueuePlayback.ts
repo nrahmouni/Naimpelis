@@ -582,10 +582,15 @@ export function createTrackAndQueuePlaybackHandlers(
 
     const isPrimaryNative = videoState.mode === 'hls' || videoState.mode === 'direct';
 
+    const isSameTitleAsPrimary =
+      Boolean(optsArg.title && videoState.title) &&
+      optsArg.title.trim().toLowerCase() === videoState.title.trim().toLowerCase();
+
     if (
       isPrimaryNative &&
       videoState.rawSourceUrl &&
-      allUrls.includes(videoState.rawSourceUrl)
+      allUrls.includes(videoState.rawSourceUrl) &&
+      (!optsArg.matchId || isSameTitleAsPrimary)
     ) {
       setActiveAudioSlot(0);
       scrollDesktopToPlayer();
@@ -593,11 +598,12 @@ export function createTrackAndQueuePlaybackHandlers(
     }
 
     if (isPrimaryNative) {
-      const existingSecIdx = secondaryStreams.findIndex(
-        (s) =>
-          (s.rawSourceUrl && allUrls.includes(s.rawSourceUrl)) ||
-          (optsArg.matchId && s.matchId && s.matchId === optsArg.matchId)
-      );
+      const existingSecIdx = secondaryStreams.findIndex((s) => {
+        if (optsArg.matchId && s.matchId) {
+          return s.matchId === optsArg.matchId;
+        }
+        return Boolean(s.rawSourceUrl && allUrls.includes(s.rawSourceUrl));
+      });
       if (existingSecIdx >= 0 && secondaryStreams[existingSecIdx]?.status !== 'error') {
         setActiveAudioSlot(existingSecIdx + 1);
         scrollDesktopToPlayer();

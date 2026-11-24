@@ -8,6 +8,7 @@ import {
   upsertSecondaryStreamList,
 } from '../src/hooks/playback/multiScreenHelpers';
 import { parseAppRoute } from '../src/shared/dedicatedRoutes';
+import { buildFootballMatchChannels } from '../server/routes/sportsHelpers/footballTeamMatcher';
 import type { SecondaryStreamState } from '../src/types';
 
 const ROOT = process.cwd();
@@ -102,7 +103,57 @@ describe('Champions World, Multi-Partido (up to 4 screens) & Smart TV ES5 integr
     expect(code).toContain('tv-multi-grid');
     expect(code).toContain('MAX_TV_MULTI = 4');
     expect(code).toContain('renderTvChampionsInto');
+    expect(code).toContain('rerenderChampionsPreservingFocus');
+    expect(code).toContain('data-tv-focus-key');
+    expect(code).toContain('pickerFilter');
     expect(code).toContain('stopTvMultiPlayback');
     expect(code).toContain('isTvMultiActive');
+  });
+
+  it('never maps M+ Liga de Campeones 2-19 or TNT Sports 2-19 onto Channel 1 (Real Madrid vs PSV) streams', () => {
+    const uclLeague = { slug: 'uefa.champions', name: 'UEFA Champions League', country: 'EU' } as any;
+
+    const arsenalTracks = buildFootballMatchChannels({
+      matchId: 'ars-dor',
+      homeTeam: 'Arsenal',
+      awayTeam: 'Borussia Dortmund',
+      statusState: 'live',
+      league: uclLeague,
+      scrapedMatches: [
+        {
+          title: 'Arsenal vs Dortmund',
+          is247Channel: false,
+          channels: [{ label: 'ESPN 3', lang: 'LIVE', quality: '1080p', sourceUrl: 'https://streamxhd.sbs/live1.php?stream=espn3', resolverType: 'sports_channel' }],
+        },
+      ],
+      verifiedSchedule: {
+        checked: true,
+        esBroadcasterNames: ['M+ Liga de Campeones 3', 'M+ Liga de Campeones 4'],
+        enBroadcasterNames: ['TNT Sports 5'],
+        zhBroadcasterNames: [],
+        epgMatches: [],
+      },
+    });
+    expect(arsenalTracks.some((t) => t.sourceUrl.includes('mligacampeones'))).toBe(false);
+    expect(arsenalTracks.some((t) => t.sourceUrl.includes('tntsports'))).toBe(false);
+    expect(arsenalTracks[0]?.sourceUrl).toContain('espn3');
+
+    const madridTracks = buildFootballMatchChannels({
+      matchId: 'rma-psv',
+      homeTeam: 'Real Madrid',
+      awayTeam: 'PSV',
+      statusState: 'live',
+      league: uclLeague,
+      scrapedMatches: [],
+      verifiedSchedule: {
+        checked: true,
+        esBroadcasterNames: ['Movistar Plus+', 'M+ Liga de Campeones'],
+        enBroadcasterNames: ['TNT Sports 1'],
+        zhBroadcasterNames: [],
+        epgMatches: [],
+      },
+    });
+    expect(madridTracks.some((t) => t.sourceUrl.includes('mligacampeones'))).toBe(true);
+    expect(madridTracks.some((t) => t.sourceUrl.includes('tntsports'))).toBe(true);
   });
 });

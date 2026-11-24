@@ -474,7 +474,7 @@ function mapConfirmedSpanishBroadcasterToTracks(
     return;
   }
 
-  if (/\bm\+\s*laliga|movistar\s*laliga/.test(b)) {
+  if (/m\+\s*laliga|movistar\s*laliga/.test(b) && !/(?:m\+\s*laliga|movistar\s*laliga)\s*(?:[2-9]|1\d)\b/.test(b)) {
     pushTrack({
       id: `${matchId}-es-mlaliga`,
       label: 'M+ LaLiga HD (Español)',
@@ -551,7 +551,10 @@ function mapConfirmedSpanishBroadcasterToTracks(
     return;
   }
 
-  if (/m\+\s*liga\s*de\s*campeones|movistar.*campeones|m\+\s*campeones/.test(b)) {
+  if (
+    /m\+\s*liga\s*de\s*campeones|movistar.*campeones|m\+\s*campeones/.test(b) &&
+    !/(?:liga\s*de\s*campeones|campeones)\s*(?:[2-9]|1\d)\b/.test(b)
+  ) {
     pushTrack({
       id: `${matchId}-es-mucl`,
       label: 'M+ Liga de Campeones HD (Español)',
@@ -694,7 +697,7 @@ function mapConfirmedEnglishBroadcasterToTracks(
     return;
   }
 
-  if (/tnt sports/.test(b)) {
+  if (/tnt sports/.test(b) && !/tnt\s*sports\s*(?:[2-9]|1\d)\b/.test(b)) {
     pushTrack({
       id: `${matchId}-en-tnt`,
       label: 'TNT Sports UK HD',

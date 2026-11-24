@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import type { PointerEventHandler } from 'react';
-import { Columns2, ListVideo, Lock, PictureInPicture2, Volume2, X } from 'lucide-react';
+import { Columns2, ListVideo, Lock, PictureInPicture2, Plus, Tv, Volume2, X } from 'lucide-react';
 import type {
   AppLanguage,
   CatalogMovie,
@@ -8,6 +8,7 @@ import type {
   CloudBrowserState,
   FloatingReaction,
   LanguageNoticePopup,
+  MultiScreenSourceInput,
   OnlineAppUser,
   Participant,
   SavedFriend,
@@ -32,6 +33,9 @@ import { useHalftimeChiringuitoBreak } from '../hooks/useHalftimeChiringuitoBrea
 
 const NativeCinemaPlayer = lazyWithRetry(() =>
   import('./NativeCinemaPlayer').then((m) => ({ default: m.NativeCinemaPlayer }))
+);
+const QuickAddMatchSheet = lazyWithRetry(() =>
+  import('./sports/QuickAddMatchSheet').then((m) => ({ default: m.QuickAddMatchSheet }))
 );
 
 interface PlayerStageContainerProps {
@@ -75,6 +79,7 @@ interface PlayerStageContainerProps {
   onRetrySecondarySlot?: (slotIdx: number) => void;
   onCloseSecondaryStream: (slotIdx?: number) => void;
   onCloseAllSecondaryStreams?: () => void;
+  onAddSecondaryStream?: (source: MultiScreenSourceInput) => void;
   canControlRoom: boolean;
   hasConnectedSmartTv: boolean;
   participants: Participant[];
@@ -171,6 +176,7 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
   onRetrySecondarySlot,
   onCloseSecondaryStream,
   onCloseAllSecondaryStreams,
+  onAddSecondaryStream,
   canControlRoom,
   hasConnectedSmartTv,
   participants,
@@ -225,6 +231,8 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
   onStopRoomPlayback,
   onClearExtractionError,
 }) => {
+  const [quickAddMatchOpen, setQuickAddMatchOpen] = useState(false);
+
   const halftimeBreak = useHalftimeChiringuitoBreak({
     videoState: effectiveVideoState,
     activeSportsMatch,
@@ -425,10 +433,56 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
                 : secondaryStream
                 ? [secondaryStream]
                 : [];
-            if (!isPlayerActive || isDockedMini || isExtracting || activeExtra.length === 0) {
+            const isNativeSingleSports =
+              activeExtra.length === 0 &&
+              Boolean(activeSportsMatch) &&
+              (effectiveVideoState.mode === 'hls' || effectiveVideoState.mode === 'direct') &&
+              Boolean(onAddSecondaryStream);
+
+            if (
+              !isPlayerActive ||
+              isDockedMini ||
+              isExtracting ||
+              (activeExtra.length === 0 && !isNativeSingleSports)
+            ) {
               return null;
             }
             const totalCount = 1 + activeExtra.length;
+
+            if (activeExtra.length === 0) {
+              return (
+                <div className="px-3 sm:px-4 py-2 bg-[#0D0D12] border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Tv className="w-4 h-4 text-[#A78BFA] shrink-0" />
+                    <span className="text-xs font-semibold text-zinc-300 truncate">
+                      {pickLang(lang, {
+                        es: 'Multi-Partido · 1/4 pantallas',
+                        ca: 'Multi-Partit · 1/4 pantalles',
+                        en: 'Multi-Match · 1/4 screens',
+                      })}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setQuickAddMatchOpen(true);
+                    }}
+                    className="min-h-9 px-3.5 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-extrabold text-white inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all shadow-[0_6px_18px_rgba(124,58,237,0.35)]"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>
+                      {pickLang(lang, {
+                        es: 'Añadir otro partido',
+                        ca: 'Afegir un altre partit',
+                        en: 'Add another match',
+                      })}
+                    </span>
+                  </button>
+                </div>
+              );
+            }
+
             return (
               <div className="px-3 sm:px-4 py-2 bg-[#0D0D12] border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2">
                 <div className="flex flex-wrap items-center gap-1.5 min-w-0">
@@ -493,7 +547,26 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
                   })}
                 </div>
 
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                  {totalCount < 4 && onAddSecondaryStream && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setQuickAddMatchOpen(true);
+                      }}
+                      className="min-h-8 px-3 rounded-lg bg-[#7C3AED] hover:bg-[#8B5CF6] text-[11px] font-extrabold text-white inline-flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>
+                        {pickLang(lang, {
+                          es: `Añadir partido (${totalCount}/4)`,
+                          ca: `Afegir partit (${totalCount}/4)`,
+                          en: `Add match (${totalCount}/4)`,
+                        })}
+                      </span>
+                    </button>
+                  )}
                   {totalCount === 2 && (
                     <button
                       type="button"
@@ -536,6 +609,22 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
           })()}
         </div>
       </div>
+
+      {quickAddMatchOpen && onAddSecondaryStream && (
+        <React.Suspense fallback={null}>
+          <QuickAddMatchSheet
+            isOpen={quickAddMatchOpen}
+            onClose={() => setQuickAddMatchOpen(false)}
+            lang={lang}
+            currentPrimaryTitle={effectiveVideoState.title}
+            currentPrimaryMatchId={activeSportsMatch?.eventId || activeSportsMatch?.fotmobMatchId || ''}
+            secondaryStreams={secondaryStreams}
+            activeAudioSlot={activeAudioSlot}
+            onAddMatch={onAddSecondaryStream}
+            onFocusSlot={(slot) => onSetMultiAudioSlot?.(slot)}
+          />
+        </React.Suspense>
+      )}
 
       {lockNoticeToast && (
         <div className="fixed top-17 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-2xl bg-[#0D0D12]/95 backdrop-blur-md border border-white/[0.08] text-zinc-100 text-xs font-semibold shadow-2xl flex items-center gap-2 pointer-events-none animate-fade-in">

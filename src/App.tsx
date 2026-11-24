@@ -477,6 +477,7 @@ export function App() {
                 onRetrySecondarySlot={playback.handleRetrySecondarySlot}
                 onCloseSecondaryStream={playback.handleCloseSecondaryStream}
                 onCloseAllSecondaryStreams={playback.handleCloseAllSecondaryStreams}
+                onAddSecondaryStream={playback.handlePlaySecondaryChannel}
                 canControlRoom={canControlRoom}
                 hasConnectedSmartTv={hasConnectedSmartTv}
                 participants={roomState.participants}

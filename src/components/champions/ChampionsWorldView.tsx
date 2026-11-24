@@ -10,7 +10,6 @@ import {
   RefreshCw,
   Trash2,
   Trophy,
-  Tv,
   X,
 } from 'lucide-react';
 import {
@@ -319,14 +318,15 @@ export const ChampionsWorldView: React.FC<ChampionsWorldViewProps> = ({
   const presetTriple = useMemo(() => presetCandidatePool.slice(0, 3), [presetCandidatePool]);
   const presetQuad = useMemo(() => presetCandidatePool.slice(0, 4), [presetCandidatePool]);
 
+  const isSameBuilderSource = (a: MultiScreenSourceInput, b: MultiScreenSourceInput): boolean => {
+    if (a.matchId && b.matchId) return a.matchId === b.matchId;
+    return Boolean(a.sourceUrl && b.sourceUrl && a.sourceUrl === b.sourceUrl);
+  };
+
   const isSourceInBuilder = useCallback(
     (src: MultiScreenSourceInput | null): number => {
       if (!src) return -1;
-      return selectedSources.findIndex(
-        (s) =>
-          s.sourceUrl === src.sourceUrl ||
-          (src.matchId && s.matchId && s.matchId === src.matchId)
-      );
+      return selectedSources.findIndex((s) => isSameBuilderSource(s, src));
     },
     [selectedSources]
   );
@@ -334,11 +334,7 @@ export const ChampionsWorldView: React.FC<ChampionsWorldViewProps> = ({
   const toggleBuilderSource = useCallback((src: MultiScreenSourceInput) => {
     setSlotWarning('');
     setSelectedSources((prev) => {
-      const existingIdx = prev.findIndex(
-        (s) =>
-          s.sourceUrl === src.sourceUrl ||
-          (src.matchId && s.matchId && s.matchId === src.matchId)
-      );
+      const existingIdx = prev.findIndex((s) => isSameBuilderSource(s, src));
       if (existingIdx !== -1) {
         triggerHaptic('light');
         return prev.filter((_, i) => i !== existingIdx);
@@ -483,7 +479,7 @@ export const ChampionsWorldView: React.FC<ChampionsWorldViewProps> = ({
       {/* SUB-TABS */}
       <SegmentedControl<ChampionsSubTab>
         layoutId="champions-world-tabs"
-        value={activeTab}
+        value={activeTab === 'multipartido' ? 'multichampions' : activeTab}
         onChange={(tab) => {
           triggerHaptic('light');
           setActiveTab(tab);
@@ -492,17 +488,9 @@ export const ChampionsWorldView: React.FC<ChampionsWorldViewProps> = ({
           {
             id: 'multichampions',
             label: pickLang(lang, {
-              es: 'MultiChampions',
-              ca: 'MultiChampions',
-              en: 'MultiChampions',
-            }),
-          },
-          {
-            id: 'multipartido',
-            label: pickLang(lang, {
-              es: 'Multi-Partido (1–4)',
-              ca: 'Multi-Partit (1–4)',
-              en: 'Multi-Match (1–4)',
+              es: 'MultiChampions (Elegir 2–4)',
+              ca: 'MultiChampions (Triar 2–4)',
+              en: 'MultiChampions (Pick 2–4)',
             }),
           },
           {
@@ -533,297 +521,31 @@ export const ChampionsWorldView: React.FC<ChampionsWorldViewProps> = ({
             {pickLang(lang, { es: 'Reintentar', ca: 'Reintentar', en: 'Retry' })}
           </button>
         </div>
-      ) : activeTab === 'multichampions' ? (
-        <div className="space-y-5">
-          {/* 1-CLICK MULTICHAMPIONS PRESETS (~3/4 SCREEN) */}
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-2 px-1">
-              <h3 className="font-display font-bold text-sm sm:text-base text-white">
-                {pickLang(lang, {
-                  es: 'Lanzamiento rápido (~3/4 de pantalla)',
-                  ca: 'Llançament ràpid (~3/4 de pantalla)',
-                  en: 'Quick Launch (~3/4 screen split)',
-                })}
-              </h3>
-              <button
-                type="button"
-                onClick={() => setActiveTab('multipartido')}
-                className="text-xs font-bold text-sky-300 hover:text-sky-200 cursor-pointer"
-              >
-                {pickLang(lang, {
-                  es: 'Personalizar 1–4 →',
-                  ca: 'Personalitzar 1–4 →',
-                  en: 'Customize 1–4 →',
-                })}
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {[
-                {
-                  id: 'dual',
-                  title: pickLang(lang, {
-                    es: 'MultiChampions Dual',
-                    ca: 'MultiChampions Dual',
-                    en: 'MultiChampions Dual',
-                  }),
-                  badge: '2 PANTALLAS · 3/4',
-                  desc: pickLang(lang, {
-                    es: 'Dos partidos o señales en paralelo ocupando 3/4 de pantalla.',
-                    ca: 'Dos partits o senyals en paral·lel ocupant 3/4 de pantalla.',
-                    en: 'Two side-by-side feeds spanning 3/4 viewport height.',
-                  }),
-                  icon: <Columns2 className="w-5 h-5 text-sky-300" />,
-                  sources: presetDual,
-                  accent: 'border-sky-400/35 hover:border-sky-300/70 bg-gradient-to-br from-sky-500/[0.14] via-[#0B1224] to-[#0D0D12]',
-                },
-                {
-                  id: 'triple',
-                  title: pickLang(lang, {
-                    es: 'MultiChampions Triple',
-                    ca: 'MultiChampions Triple',
-                    en: 'MultiChampions Triple',
-                  }),
-                  badge: '3 PANTALLAS',
-                  desc: pickLang(lang, {
-                    es: 'Partido principal grande a la izquierda y 2 partidos al lado.',
-                    ca: 'Partit principal gran a l’esquerra i 2 partits al costat.',
-                    en: 'Featured primary match + 2 side matches at once.',
-                  }),
-                  icon: <LayoutGrid className="w-5 h-5 text-indigo-300" />,
-                  sources: presetTriple,
-                  accent: 'border-indigo-400/35 hover:border-indigo-300/70 bg-gradient-to-br from-indigo-500/[0.14] via-[#0D1022] to-[#0D0D12]',
-                },
-                {
-                  id: 'quad',
-                  title: pickLang(lang, {
-                    es: 'Noche Europea Quad',
-                    ca: 'Nit Europea Quad',
-                    en: 'European Night Quad',
-                  }),
-                  badge: '4 PANTALLAS · 2×2',
-                  desc: pickLang(lang, {
-                    es: 'Cuadrícula 2×2 con hasta 4 partidos simultáneos y selector de audio.',
-                    ca: 'Graella 2×2 amb fins a 4 partits simultanis i selector d’àudio.',
-                    en: '2×2 quad wall with up to 4 simultaneous matches & audio focus.',
-                  }),
-                  icon: <Grid2x2 className="w-5 h-5 text-emerald-300" />,
-                  sources: presetQuad,
-                  accent: 'border-emerald-400/35 hover:border-emerald-300/70 bg-gradient-to-br from-emerald-500/[0.12] via-[#0A171C] to-[#0D0D12]',
-                },
-              ].map((preset) => {
-                const isReady = preset.sources.length >= 2;
-                return (
-                  <div
-                    key={preset.id}
-                    className={`rounded-2xl p-4 border transition-all flex flex-col justify-between gap-3 ${preset.accent}`}
-                  >
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="w-10 h-10 rounded-xl bg-white/[0.07] border border-white/[0.1] flex items-center justify-center shrink-0">
-                          {preset.icon}
-                        </span>
-                        <span className="text-[11px] font-extrabold tracking-wider text-sky-200 tabular-nums">
-                          {preset.badge}
-                        </span>
-                      </div>
-                      <div>
-                        <h4 className="font-display font-bold text-base text-white">
-                          {preset.title}
-                        </h4>
-                        <p className="text-xs text-zinc-300 leading-snug mt-0.5">{preset.desc}</p>
-                      </div>
-                      {preset.sources.length > 0 && (
-                        <ul className="space-y-1 pt-1">
-                          {preset.sources.map((s, sIdx) => (
-                            <li
-                              key={`${preset.id}-${s.sourceUrl}-${sIdx}`}
-                              className="text-[11px] text-zinc-300 truncate flex items-center gap-1.5"
-                            >
-                              <span className="w-4 h-4 rounded bg-white/10 text-[10px] font-bold text-white inline-flex items-center justify-center shrink-0">
-                                P{sIdx + 1}
-                              </span>
-                              <span className="truncate">{s.title}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={!isReady || Boolean(loadingItemId)}
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        onLaunchMultiMatchPreset(preset.sources);
-                      }}
-                      className="w-full min-h-11 px-4 rounded-xl bg-sky-500 hover:bg-sky-400 disabled:opacity-45 disabled:cursor-not-allowed text-white text-xs font-extrabold inline-flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all shadow-[0_8px_22px_rgba(14,165,233,0.3)]"
-                    >
-                      <Play className="w-3.5 h-3.5 fill-current shrink-0" />
-                      <span>
-                        {isReady
-                          ? pickLang(lang, {
-                              es: `Ver ${preset.sources.length} pantallas ahora`,
-                              ca: `Veure ${preset.sources.length} pantalles ara`,
-                              en: `Watch ${preset.sources.length} screens now`,
-                            })
-                          : pickLang(lang, {
-                              es: 'Cargando señales...',
-                              ca: 'Carregant senyals...',
-                              en: 'Loading feeds...',
-                            })}
-                      </span>
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          {/* OFFICIAL MULTICHAMPIONS & SPORTS CHANNELS */}
-          <section className="space-y-3">
-            <h3 className="font-display font-bold text-sm sm:text-base text-white px-1">
-              {pickLang(lang, {
-                es: 'Canales MultiChampions y Europa en directo',
-                ca: 'Canals MultiChampions i Europa en directe',
-                en: 'Live MultiChampions & European Channels',
-              })}
-            </h3>
-
-            {loading && multiplexChannels.length === 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <div key={i} className="h-28 rounded-2xl bg-[#0D0D12] border border-white/[0.08] skeleton-shimmer" />
-                ))}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {filteredMultiplexChannels.map((ch) => {
-                  const primarySrc = buildSourceFromMultiplex(ch, 0);
-                  const isPlayingPrimary = Boolean(
-                    activeVideoRawUrl && ch.channels.some((t) => t.sourceUrl === activeVideoRawUrl)
-                  );
-                  const isInMulti = Boolean(
-                    ch.channels.some((t) => t.sourceUrl && activeMultiUrls.includes(t.sourceUrl))
-                  );
-                  return (
-                    <div
-                      key={ch.id}
-                      className={`rounded-2xl p-4 border transition-all space-y-3 ${
-                        isPlayingPrimary
-                          ? 'bg-sky-500/[0.15] border-sky-400'
-                          : 'bg-[#0D0D12] border-white/[0.08] hover:border-sky-400/45'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3 min-w-0">
-                          <span className="w-11 h-11 rounded-xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-300 font-display font-extrabold text-xs shrink-0">
-                            {ch.shortMark.slice(0, 5)}
-                          </span>
-                          <div className="min-w-0">
-                            <h4 className="font-display font-bold text-sm sm:text-[15px] text-white truncate">
-                              {ch.name}
-                            </h4>
-                            <p className="text-xs text-zinc-400 truncate">
-                              {ch.network} · {ch.quality}
-                            </p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            type="button"
-                            disabled={!primarySrc || Boolean(loadingItemId)}
-                            onClick={() => {
-                              triggerHaptic('medium');
-                              onPlaySportsMatch(
-                                {
-                                  id: ch.id,
-                                  title: ch.name,
-                                  competition: ch.network,
-                                  sport: 'soccer',
-                                  time: 'EN VIVO',
-                                  isLive: true,
-                                  is247Channel: true,
-                                  channels: ch.channels,
-                                },
-                                0
-                              );
-                            }}
-                            className="min-h-10 px-3.5 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] disabled:opacity-45 text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
-                          >
-                            <Play className="w-3.5 h-3.5 fill-current" />
-                            <span>{pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })}</span>
-                          </button>
-
-                          {primarySrc && (
-                            <button
-                              type="button"
-                              disabled={Boolean(loadingItemId)}
-                              onClick={() => {
-                                triggerHaptic('light');
-                                onPlaySecondaryChannel(primarySrc);
-                              }}
-                              className={`min-h-10 px-3 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all border ${
-                                isInMulti
-                                  ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
-                                  : 'bg-sky-500/[0.14] hover:bg-sky-500/25 border-sky-400/40 text-sky-200 hover:text-white'
-                              }`}
-                            >
-                              {isInMulti ? (
-                                <Check className="w-3.5 h-3.5" />
-                              ) : (
-                                <Columns2 className="w-3.5 h-3.5" />
-                              )}
-                              <span>{isInMulti ? 'En Multi' : '+ Multi'}</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {ch.channels.length > 1 && (
-                        <div className="flex flex-wrap gap-1.5 pt-0.5">
-                          {ch.channels.slice(0, 4).map((track, tIdx) => (
-                            <button
-                              key={`${ch.id}-t-${tIdx}`}
-                              type="button"
-                              disabled={Boolean(loadingItemId)}
-                              onClick={() => {
-                                triggerHaptic('light');
-                                const src = buildSourceFromMultiplex(ch, tIdx);
-                                if (src) onPlaySecondaryChannel(src);
-                              }}
-                              className="min-h-8 px-2.5 rounded-lg bg-white/[0.05] hover:bg-sky-500/20 border border-white/[0.08] text-[11px] font-semibold text-zinc-200 cursor-pointer transition-colors"
-                            >
-                              + Multi · {track.label || `Señal ${tIdx + 1}`}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
-        </div>
-      ) : activeTab === 'multipartido' ? (
-        <div className="space-y-5">
-          {/* BUILDER SLOTS (1-4 SCREENS) */}
-          <section className="rounded-2xl bg-[#0A1020] border border-sky-400/25 p-4 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+      ) : activeTab !== 'clasificacion' ? (
+        <div className="space-y-5 pb-20 sm:pb-24">
+          {/* PASO 1: TUS PANTALLAS ELEGIDAS (P1 - P4) */}
+          <section className="rounded-3xl bg-gradient-to-br from-[#0A1329] via-[#0B1020] to-[#0D0D12] border border-sky-400/30 p-4 sm:p-5 space-y-4 shadow-[0_18px_44px_rgba(3,10,30,0.55)]">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="font-display font-bold text-base text-white">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2 py-0.5 rounded-md bg-sky-500/20 border border-sky-400/35 text-[10px] font-extrabold uppercase tracking-wider text-sky-200">
+                    {pickLang(lang, { es: 'Paso 1 · Tus pantallas', ca: 'Pas 1 · Les teves pantalles', en: 'Step 1 · Your screens' })}
+                  </span>
+                  <span className="text-xs font-bold text-emerald-300 tabular-nums">
+                    {selectedSources.length}/4 {pickLang(lang, { es: 'elegidos', ca: 'triats', en: 'selected' })}
+                  </span>
+                </div>
+                <h3 className="font-display font-extrabold text-base sm:text-lg text-white mt-1">
                   {pickLang(lang, {
-                    es: 'Tu mosaico Multi-Partido (1–4 pantallas)',
-                    ca: 'El teu mosaic Multi-Partit (1–4 pantalles)',
-                    en: 'Your Multi-Match Mosaic (1–4 screens)',
+                    es: 'Elige los partidos que quieres ver a la vez',
+                    ca: 'Tria els partits que vols veure alhora',
+                    en: 'Pick the matches you want to watch together',
                   })}
                 </h3>
-                <p className="text-xs text-sky-200/80 mt-0.5">{builderLayoutHint}</p>
+                <p className="text-xs text-zinc-300 mt-0.5">{builderLayoutHint}</p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 {selectedSources.length > 0 && (
                   <button
                     type="button"
@@ -832,7 +554,7 @@ export const ChampionsWorldView: React.FC<ChampionsWorldViewProps> = ({
                       setSelectedSources([]);
                       setSlotWarning('');
                     }}
-                    className="min-h-10 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.09] text-xs font-semibold text-zinc-300 inline-flex items-center gap-1.5 cursor-pointer"
+                    className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-zinc-300 inline-flex items-center gap-1.5 cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>{pickLang(lang, { es: 'Limpiar', ca: 'Netejar', en: 'Clear' })}</span>
@@ -842,25 +564,55 @@ export const ChampionsWorldView: React.FC<ChampionsWorldViewProps> = ({
                 <button
                   type="button"
                   disabled={selectedSources.length === 0 || Boolean(loadingItemId)}
-                  onClick={() => onLaunchMultiMatchPreset(selectedSources)}
-                  className="min-h-10 px-4 rounded-xl bg-sky-500 hover:bg-sky-400 disabled:opacity-45 disabled:cursor-not-allowed text-white text-xs font-extrabold inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-[0_8px_22px_rgba(14,165,233,0.35)]"
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    onLaunchMultiMatchPreset(selectedSources);
+                  }}
+                  className="min-h-11 px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-45 disabled:cursor-not-allowed text-[#04130d] text-xs sm:text-sm font-extrabold inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all shadow-[0_8px_24px_rgba(16,185,129,0.35)]"
                 >
-                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <Play className="w-4 h-4 fill-current shrink-0" />
                   <span>
                     {selectedSources.length >= 2
                       ? pickLang(lang, {
-                          es: `Lanzar ${selectedSources.length} pantallas (3/4)`,
-                          ca: `Llançar ${selectedSources.length} pantalles (3/4)`,
-                          en: `Launch ${selectedSources.length} screens (3/4)`,
+                          es: `Ver ${selectedSources.length} partidos ahora (3/4)`,
+                          ca: `Veure ${selectedSources.length} partits ara (3/4)`,
+                          en: `Watch ${selectedSources.length} matches now (3/4)`,
                         })
                       : pickLang(lang, {
-                          es: 'Ver seleccionado',
-                          ca: 'Veure seleccionat',
-                          en: 'Watch selected',
+                          es: 'Ver partido elegido',
+                          ca: 'Veure partit triat',
+                          en: 'Watch selected match',
                         })}
                   </span>
                 </button>
               </div>
+            </div>
+
+            {/* Auto-fill quick buttons */}
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[11px] font-bold text-zinc-400 mr-1">
+                {pickLang(lang, { es: 'Relleno rápido:', ca: 'Omplir ràpid:', en: 'Quick fill:' })}
+              </span>
+              {[
+                { label: '2 Dual', sources: presetDual, icon: <Columns2 className="w-3.5 h-3.5" /> },
+                { label: '3 Triple', sources: presetTriple, icon: <LayoutGrid className="w-3.5 h-3.5" /> },
+                { label: '4 Quad', sources: presetQuad, icon: <Grid2x2 className="w-3.5 h-3.5" /> },
+              ].map((quick) => (
+                <button
+                  key={quick.label}
+                  type="button"
+                  disabled={quick.sources.length < 2}
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setSlotWarning('');
+                    setSelectedSources(quick.sources);
+                  }}
+                  className="min-h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-sky-500/25 border border-white/[0.1] hover:border-sky-400/50 disabled:opacity-40 text-xs font-bold text-sky-100 inline-flex items-center gap-1.5 cursor-pointer transition-all"
+                >
+                  {quick.icon}
+                  <span>{quick.label}</span>
+                </button>
+              ))}
             </div>
 
             {slotWarning && (
@@ -875,14 +627,18 @@ export const ChampionsWorldView: React.FC<ChampionsWorldViewProps> = ({
                 return (
                   <div
                     key={`builder-slot-${slotIdx}`}
-                    className={`rounded-xl p-3 border min-h-[82px] flex flex-col justify-between gap-2 ${
+                    className={`rounded-2xl p-3 border min-h-[82px] flex flex-col justify-between gap-2 transition-all ${
                       item
-                        ? 'bg-sky-500/[0.12] border-sky-400/45'
-                        : 'bg-white/[0.02] border-dashed border-white/[0.12]'
+                        ? 'bg-emerald-500/[0.1] border-emerald-400/50'
+                        : 'bg-white/[0.02] border-dashed border-white/[0.14]'
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-extrabold text-sky-300 tabular-nums">
+                      <span
+                        className={`text-[11px] font-extrabold tabular-nums ${
+                          item ? 'text-emerald-300' : 'text-zinc-500'
+                        }`}
+                      >
                         {slotIdx === 0 ? 'P1 · Principal' : `Pantalla ${slotIdx + 1}`}
                       </span>
                       {item && (
@@ -920,9 +676,9 @@ export const ChampionsWorldView: React.FC<ChampionsWorldViewProps> = ({
                     ) : (
                       <p className="text-[11px] text-zinc-500">
                         {pickLang(lang, {
-                          es: 'Elige un partido o canal abajo',
-                          ca: 'Tria un partit o canal a sota',
-                          en: 'Pick a match or channel below',
+                          es: 'Toca un partido abajo para ponerlo aquí',
+                          ca: 'Toca un partit a sota per posar-lo aquí',
+                          en: 'Tap a match below to add here',
                         })}
                       </p>
                     )}
@@ -932,176 +688,291 @@ export const ChampionsWorldView: React.FC<ChampionsWorldViewProps> = ({
             </div>
           </section>
 
-          {/* PICKER FILTERS */}
-          <div className="flex flex-wrap items-center gap-2">
-            {(
-              [
-                { id: 'all', label: pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' }) },
-                { id: 'champions', label: 'Champions League' },
-                { id: 'live', label: pickLang(lang, { es: 'En Directo', ca: 'En Directe', en: 'Live' }) },
-                { id: 'channels', label: pickLang(lang, { es: 'Canales Multi', ca: 'Canals Multi', en: 'Multi Channels' }) },
-              ] as const
-            ).map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setPickerFilter(f.id);
-                }}
-                className={`min-h-9 px-3.5 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer transition-all ${
-                  pickerFilter === f.id
-                    ? 'bg-sky-500 text-white shadow-[0_6px_16px_rgba(14,165,233,0.32)]'
-                    : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300'
-                }`}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
+          {/* PASO 2: TOCA LOS PARTIDOS QUE QUIERAS VER */}
+          <section className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <div>
+                <h3 className="font-display font-bold text-sm sm:text-base text-white">
+                  {pickLang(lang, {
+                    es: 'Paso 2 · Toca los partidos o canales que quieras añadir',
+                    ca: 'Pas 2 · Toca els partits o canals que vulguis afegir',
+                    en: 'Step 2 · Tap matches or channels to select',
+                  })}
+                </h3>
+                <p className="text-xs text-zinc-400">
+                  {pickLang(lang, {
+                    es: 'Pulsa cualquier tarjeta para seleccionarla (hasta 4). Puedes quitar o cambiar el orden arriba.',
+                    ca: 'Prem qualsevol targeta per seleccionar-la (fins a 4).',
+                    en: 'Tap any card to toggle it into your multi-screen lineup (up to 4).',
+                  })}
+                </p>
+              </div>
+            </div>
 
-          {/* MATCH & CHANNEL PICKER LIST */}
-          <div className="space-y-3">
-            {(pickerFilter === 'all' || pickerFilter === 'channels') &&
-              filteredMultiplexChannels.map((ch) => {
-                const src = buildSourceFromMultiplex(ch, 0);
-                if (!src) return null;
-                const slotIdx = isSourceInBuilder(src);
-                const selected = slotIdx !== -1;
-                return (
-                  <div
-                    key={`pick-mux-${ch.id}`}
-                    className={`rounded-2xl p-3.5 border flex items-center justify-between gap-3 transition-all ${
-                      selected
-                        ? 'bg-sky-500/[0.14] border-sky-400'
-                        : 'bg-[#0D0D12] border-white/[0.08] hover:border-white/20'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-300 shrink-0">
-                        <Tv className="w-4 h-4" />
-                      </span>
-                      <div className="min-w-0">
-                        <p className="text-sm font-bold text-white truncate">{ch.name}</p>
-                        <p className="text-xs text-zinc-400 truncate">
-                          {ch.network} · {ch.quality}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => toggleBuilderSource(src)}
-                        className={`min-h-10 px-3.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all border whitespace-nowrap ${
-                          selected
-                            ? 'bg-sky-500 border-sky-400 text-white'
-                            : 'bg-white/[0.06] hover:bg-sky-500/20 border-white/[0.1] text-zinc-100'
-                        }`}
-                      >
-                        {selected ? (
-                          <>
-                            <Check className="w-3.5 h-3.5" />
-                            <span>P{slotIdx + 1}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>{pickLang(lang, { es: 'Añadir', ca: 'Afegir', en: 'Add' })}</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-
-            {filteredPickerMatches.map((m) => {
-              const src = buildSourceFromMatch(m, lang);
-              const slotIdx = isSourceInBuilder(src);
-              const selected = slotIdx !== -1;
-              const showScore = hasValidScore(m.homeScore, m.awayScore);
-              return (
-                <div
-                  key={`pick-m-${m.id}`}
-                  className={`rounded-2xl p-3.5 border flex items-center justify-between gap-3 transition-all ${
-                    selected
-                      ? 'bg-sky-500/[0.14] border-sky-400'
-                      : 'bg-[#0D0D12] border-white/[0.08] hover:border-white/20'
+            {/* PICKER FILTERS */}
+            <div className="flex flex-wrap items-center gap-2">
+              {(
+                [
+                  { id: 'all', label: pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' }) },
+                  { id: 'champions', label: 'Champions League' },
+                  { id: 'live', label: pickLang(lang, { es: 'En Directo', ca: 'En Directe', en: 'Live' }) },
+                  { id: 'channels', label: pickLang(lang, { es: 'Canales Multi', ca: 'Canals Multi', en: 'Multi Channels' }) },
+                ] as const
+              ).map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setPickerFilter(f.id);
+                  }}
+                  className={`min-h-9 px-3.5 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer transition-all ${
+                    pickerFilter === f.id
+                      ? 'bg-sky-500 text-white shadow-[0_6px_16px_rgba(14,165,233,0.32)]'
+                      : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300'
                   }`}
                 >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <div className="flex -space-x-2 shrink-0">
-                      <TeamCrestImg src={m.homeLogo} shortCode={m.homeShort} alt={m.homeTeam} />
-                      <TeamCrestImg src={m.awayLogo} shortCode={m.awayShort} alt={m.awayTeam} />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-bold text-white truncate">
-                        {m.homeTeam}
-                        {showScore ? ` ${m.homeScore}–${m.awayScore} ` : ' vs '}
-                        {m.awayTeam}
-                      </p>
-                      <p className="text-xs text-zinc-400 truncate">
-                        {m.statusState === 'live'
-                          ? `EN VIVO · ${m.statusLabel || 'Directo'}`
-                          : `${m.kickoffDateLabel || 'Hoy'} · ${m.kickoffTime}`}{' '}
-                        · {m.leagueName || m.groupTitle}
-                      </p>
-                    </div>
-                  </div>
+                  {f.label}
+                </button>
+              ))}
+            </div>
 
-                  {src ? (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
+            {loading && filteredPickerMatches.length === 0 && filteredMultiplexChannels.length === 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="h-24 rounded-2xl bg-[#0D0D12] border border-white/[0.08] skeleton-shimmer" />
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {/* Matches with playable feeds first */}
+                {filteredPickerMatches.map((m) => {
+                  const src = buildSourceFromMatch(m, lang);
+                  const slotIdx = isSourceInBuilder(src);
+                  const selected = slotIdx !== -1;
+                  const showScore = hasValidScore(m.homeScore, m.awayScore);
+                  return (
+                    <div
+                      key={`pick-m-${m.id}`}
+                      role={src ? 'button' : undefined}
+                      tabIndex={src ? 0 : undefined}
+                      onClick={() => {
+                        if (src) toggleBuilderSource(src);
+                      }}
+                      onKeyDown={(e) => {
+                        if (src && (e.key === 'Enter' || e.key === ' ')) {
+                          e.preventDefault();
+                          toggleBuilderSource(src);
+                        }
+                      }}
+                      className={`rounded-2xl p-3.5 border flex items-center justify-between gap-3 transition-all text-left ${
+                        src ? 'cursor-pointer active:scale-[0.99]' : 'opacity-65'
+                      } ${
+                        selected
+                          ? 'bg-emerald-500/[0.14] border-emerald-400 shadow-[0_0_24px_rgba(16,185,129,0.18)]'
+                          : 'bg-[#0D0D12] border-white/[0.08] hover:border-sky-400/50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <div className="flex -space-x-2 shrink-0">
+                          <TeamCrestImg src={m.homeLogo} shortCode={m.homeShort} alt={m.homeTeam} />
+                          <TeamCrestImg src={m.awayLogo} shortCode={m.awayShort} alt={m.awayTeam} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {m.statusState === 'live' && (
+                              <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-[10px] font-extrabold text-rose-300">
+                                EN VIVO
+                              </span>
+                            )}
+                            <span className="text-[11px] font-semibold text-sky-300/90 truncate">
+                              {m.leagueName || m.groupTitle}
+                            </span>
+                          </div>
+                          <p className="text-sm font-bold text-white truncate mt-0.5">
+                            {m.homeTeam}
+                            {showScore ? ` ${m.homeScore}–${m.awayScore} ` : ' vs '}
+                            {m.awayTeam}
+                          </p>
+                          <p className="text-[11px] text-zinc-400 truncate">
+                            {m.statusState === 'live'
+                              ? m.statusLabel || 'Directo'
+                              : `${m.kickoffDateLabel || 'Hoy'} · ${m.kickoffTime}`}
+                          </p>
+                        </div>
+                      </div>
+
+                      {src ? (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span
+                            className={`min-h-10 px-3.5 rounded-xl text-xs font-extrabold inline-flex items-center gap-1.5 border whitespace-nowrap ${
+                              selected
+                                ? 'bg-emerald-500 border-emerald-300 text-[#04130d]'
+                                : 'bg-white/[0.07] border-white/[0.12] text-zinc-100'
+                            }`}
+                          >
+                            {selected ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>P{slotIdx + 1}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>{pickLang(lang, { es: 'Elegir', ca: 'Triar', en: 'Pick' })}</span>
+                              </>
+                            )}
+                          </span>
+
+                          <button
+                            type="button"
+                            disabled={Boolean(loadingItemId)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerHaptic('medium');
+                              onPlaySportsMatch(toSportsMatch(m, lang), 0);
+                            }}
+                            title={pickLang(lang, { es: 'Ver solo este partido', ca: 'Veure només aquest partit', en: 'Watch only this match' })}
+                            aria-label={pickLang(lang, { es: 'Ver solo', ca: 'Veure sol', en: 'Watch single' })}
+                            className="min-h-10 min-w-10 rounded-xl bg-white/[0.05] hover:bg-[#7C3AED] border border-white/[0.1] text-zinc-200 hover:text-white inline-flex items-center justify-center cursor-pointer transition-colors"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-current" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] font-semibold text-zinc-500 shrink-0">
+                          {m.statusState === 'finished'
+                            ? pickLang(lang, { es: 'Finalizado', ca: 'Finalitzat', en: 'Full time' })
+                            : pickLang(lang, { es: 'Sin señal aún', ca: 'Sense senyal encara', en: 'Feed TBA' })}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Official MultiChampions & European channels */}
+                {(pickerFilter === 'all' || pickerFilter === 'channels') &&
+                  filteredMultiplexChannels.map((ch) => {
+                    const src = buildSourceFromMultiplex(ch, 0);
+                    if (!src) return null;
+                    const slotIdx = isSourceInBuilder(src);
+                    const selected = slotIdx !== -1;
+                    return (
+                      <div
+                        key={`pick-mux-${ch.id}`}
+                        role="button"
+                        tabIndex={0}
                         onClick={() => toggleBuilderSource(src)}
-                        className={`min-h-10 px-3.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all border whitespace-nowrap ${
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            toggleBuilderSource(src);
+                          }
+                        }}
+                        className={`rounded-2xl p-3.5 border flex items-center justify-between gap-3 transition-all cursor-pointer active:scale-[0.99] text-left ${
                           selected
-                            ? 'bg-sky-500 border-sky-400 text-white'
-                            : 'bg-white/[0.06] hover:bg-sky-500/20 border-white/[0.1] text-zinc-100'
+                            ? 'bg-emerald-500/[0.14] border-emerald-400 shadow-[0_0_24px_rgba(16,185,129,0.18)]'
+                            : 'bg-[#0D0D12] border-white/[0.08] hover:border-sky-400/50'
                         }`}
                       >
-                        {selected ? (
-                          <>
-                            <Check className="w-3.5 h-3.5" />
-                            <span>P{slotIdx + 1}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Plus className="w-3.5 h-3.5" />
-                            <span>{pickLang(lang, { es: 'Añadir', ca: 'Afegir', en: 'Add' })}</span>
-                          </>
-                        )}
-                      </button>
+                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                          <span className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-300 font-display font-extrabold text-[11px] shrink-0">
+                            {ch.shortMark.slice(0, 5)}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-white truncate">{ch.name}</p>
+                            <p className="text-[11px] text-zinc-400 truncate">
+                              {ch.network} · {ch.quality}
+                            </p>
+                          </div>
+                        </div>
 
-                      <button
-                        type="button"
-                        disabled={Boolean(loadingItemId)}
-                        onClick={() => {
-                          triggerHaptic('light');
-                          onPlaySecondaryChannel(src);
-                        }}
-                        title={pickLang(lang, {
-                          es: 'Enviar directo al reproductor Multi',
-                          ca: 'Enviar directe al reproductor Multi',
-                          en: 'Send directly to Multi player',
-                        })}
-                        className="min-h-10 px-2.5 rounded-xl bg-white/[0.05] hover:bg-emerald-500/20 border border-white/[0.09] text-[11px] font-bold text-emerald-200 cursor-pointer whitespace-nowrap"
-                      >
-                        + Multi
-                      </button>
-                    </div>
-                  ) : (
-                    <span className="text-[11px] font-semibold text-zinc-500 shrink-0">
-                      {m.statusState === 'finished'
-                        ? pickLang(lang, { es: 'Finalizado', ca: 'Finalitzat', en: 'Full time' })
-                        : pickLang(lang, { es: 'Sin señal aún', ca: 'Sense senyal encara', en: 'Feed TBA' })}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span
+                            className={`min-h-10 px-3.5 rounded-xl text-xs font-extrabold inline-flex items-center gap-1.5 border whitespace-nowrap ${
+                              selected
+                                ? 'bg-emerald-500 border-emerald-300 text-[#04130d]'
+                                : 'bg-white/[0.07] border-white/[0.12] text-zinc-100'
+                            }`}
+                          >
+                            {selected ? (
+                              <>
+                                <Check className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>P{slotIdx + 1}</span>
+                              </>
+                            ) : (
+                              <>
+                                <Plus className="w-3.5 h-3.5" />
+                                <span>{pickLang(lang, { es: 'Elegir', ca: 'Triar', en: 'Pick' })}</span>
+                              </>
+                            )}
+                          </span>
+
+                          <button
+                            type="button"
+                            disabled={Boolean(loadingItemId)}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerHaptic('medium');
+                              onPlaySportsMatch(
+                                {
+                                  id: ch.id,
+                                  title: ch.name,
+                                  competition: ch.network,
+                                  sport: 'soccer',
+                                  time: 'EN VIVO',
+                                  isLive: true,
+                                  is247Channel: true,
+                                  channels: ch.channels,
+                                },
+                                0
+                              );
+                            }}
+                            title={pickLang(lang, { es: 'Ver solo este canal', ca: 'Veure només aquest canal', en: 'Watch only this channel' })}
+                            aria-label={pickLang(lang, { es: 'Ver solo', ca: 'Veure sol', en: 'Watch single' })}
+                            className="min-h-10 min-w-10 rounded-xl bg-white/[0.05] hover:bg-[#7C3AED] border border-white/[0.1] text-zinc-200 hover:text-white inline-flex items-center justify-center cursor-pointer transition-colors"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-current" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </section>
+
+          {/* STICKY FLOATING LAUNCH BAR WHEN 2+ MATCHES ARE SELECTED */}
+          {selectedSources.length >= 2 && (
+            <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40 w-[calc(100%-24px)] max-w-2xl rounded-2xl bg-[#071324]/95 backdrop-blur-xl border border-emerald-400/50 p-3 shadow-[0_16px_48px_rgba(0,0,0,0.85)] flex items-center justify-between gap-3">
+              <div className="min-w-0 flex items-center gap-2">
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 border border-emerald-400/40 text-xs font-extrabold text-emerald-300 tabular-nums shrink-0">
+                  {selectedSources.length}/4
+                </span>
+                <p className="text-xs font-bold text-white truncate">
+                  {selectedSources.map((s) => s.title).join(' · ')}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={Boolean(loadingItemId)}
+                onClick={() => {
+                  triggerHaptic('medium');
+                  onLaunchMultiMatchPreset(selectedSources);
+                }}
+                className="min-h-10 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-[#04130d] text-xs font-extrabold inline-flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>
+                  {pickLang(lang, {
+                    es: `Ver ${selectedSources.length} ahora`,
+                    ca: `Veure ${selectedSources.length} ara`,
+                    en: `Watch ${selectedSources.length} now`,
+                  })}
+                </span>
+              </button>
+            </div>
+          )}
         </div>
       ) : (
         /* TAB 3: PARTIDOS CHAMPIONS + CLASIFICACIÓN */

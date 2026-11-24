@@ -1200,7 +1200,7 @@
   border-radius: 16px;
   padding: 16px;
   background: #101422;
-  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.12);
   display: -webkit-flex;
   display: flex;
   -webkit-flex-direction: column;
@@ -1208,6 +1208,23 @@
   -webkit-justify-content: space-between;
   justify-content: space-between;
   min-height: 158px;
+}
+.tv-ucl-match-card.selected {
+  background: #0c2220;
+  border-color: #34d399;
+  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.25);
+}
+.tv-ucl-filter-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  -webkit-align-items: center;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.tv-ucl-filter-row > * {
+  margin: 0 10px 8px 0;
 }
 .tv-ucl-match-meta {
   display: -webkit-flex;

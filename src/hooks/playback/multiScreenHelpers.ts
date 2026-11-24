@@ -105,11 +105,12 @@ export function upsertSecondaryStreamList(
     activeAudioSlot?: number;
   }
 ): { list: SecondaryStreamState[]; assignedSlot: number; duplicateFound: boolean } {
-  const existingIdx = prev.findIndex(
-    (s) =>
-      (s.rawSourceUrl && s.rawSourceUrl === nextStream.rawSourceUrl) ||
-      (s.matchId && nextStream.matchId && s.matchId === nextStream.matchId)
-  );
+  const existingIdx = prev.findIndex((s) => {
+    if (s.matchId && nextStream.matchId) {
+      return s.matchId === nextStream.matchId;
+    }
+    return Boolean(s.rawSourceUrl && nextStream.rawSourceUrl && s.rawSourceUrl === nextStream.rawSourceUrl);
+  });
 
   if (existingIdx >= 0) {
     const updated = prev.map((item, idx) =>

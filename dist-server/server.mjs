@@ -998,8 +998,11 @@ function applyPublicCacheHeaders(res, maxAgeSec = 300, staleWhileRevalidateSec =
 function createSlidingWindowRateLimiter(options) {
   const buckets = /* @__PURE__ */ new Map();
   const { maxRequests, windowMs, keyPrefix = "api" } = options;
+  const maxRequestsHeader = String(maxRequests);
+  let lastPrunedAt = 0;
   const pruneExpired = (now) => {
-    if (buckets.size < 2500) return;
+    if (buckets.size < 4e3 || now - lastPrunedAt < 3e4) return;
+    lastPrunedAt = now;
     for (const [k, v] of buckets.entries()) {
       if (now >= v.resetAt) buckets.delete(k);
     }
@@ -1007,19 +1010,24 @@ function createSlidingWindowRateLimiter(options) {
   return function rateLimitMiddleware(req, res, next) {
     const now = Date.now();
     pruneExpired(now);
-    const forwarded = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
-    const clientIp = forwarded || req.ip || "unknown";
+    const xff = req.headers["x-forwarded-for"];
+    let clientIp = req.ip || "unknown";
+    if (typeof xff === "string" && xff.length > 0) {
+      const commaIdx = xff.indexOf(",");
+      clientIp = (commaIdx === -1 ? xff : xff.slice(0, commaIdx)).trim() || clientIp;
+    }
     const key = `${keyPrefix}:${clientIp}`;
     let bucket = buckets.get(key);
     if (!bucket || now >= bucket.resetAt) {
-      bucket = { count: 0, resetAt: now + windowMs };
+      const resetAt = now + windowMs;
+      bucket = { count: 0, resetAt, resetHeader: String(Math.ceil(resetAt / 1e3)) };
       buckets.set(key, bucket);
     }
     bucket.count += 1;
-    const remaining = Math.max(0, maxRequests - bucket.count);
-    res.setHeader("X-RateLimit-Limit", String(maxRequests));
+    const remaining = maxRequests > bucket.count ? maxRequests - bucket.count : 0;
+    res.setHeader("X-RateLimit-Limit", maxRequestsHeader);
     res.setHeader("X-RateLimit-Remaining", String(remaining));
-    res.setHeader("X-RateLimit-Reset", String(Math.ceil(bucket.resetAt / 1e3)));
+    res.setHeader("X-RateLimit-Reset", bucket.resetHeader);
     if (bucket.count > maxRequests) {
       const retryAfterSec = Math.max(1, Math.ceil((bucket.resetAt - now) / 1e3));
       res.setHeader("Retry-After", String(retryAfterSec));
@@ -9033,6 +9041,24 @@ var MAX_QOE_SAMPLES = 250;
 var appReleaseCache = new LruTtlCache(10, 6e4);
 var refreshCooldownByIp = new LruTtlCache(500, 45e3);
 var qoeRateByIp = new LruTtlCache(1e3, 6e4);
+var VALID_CLIENT_PLATFORMS = /* @__PURE__ */ new Set([
+  "web",
+  "pwa",
+  "android-mobile",
+  "android-tv",
+  "smart-tv",
+  "music-app"
+]);
+var VALID_CLIENT_VERTICALS = /* @__PURE__ */ new Set([
+  "cine",
+  "futbol",
+  "tv",
+  "iptv",
+  "music",
+  "kids",
+  "juegos",
+  "admin"
+]);
 function getClientIp(req) {
   const fwd = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
   return fwd || req.ip || "unknown";
@@ -9350,24 +9376,6 @@ function registerOperationalRoutes(app2, deps) {
       bucket && now < bucket.resetAt ? { count: bucket.count + 1, resetAt: bucket.resetAt } : { count: 1, resetAt: now + 6e4 }
     );
     const body = req.body || {};
-    const validPlatforms = /* @__PURE__ */ new Set([
-      "web",
-      "pwa",
-      "android-mobile",
-      "android-tv",
-      "smart-tv",
-      "music-app"
-    ]);
-    const validVerticals = /* @__PURE__ */ new Set([
-      "cine",
-      "futbol",
-      "tv",
-      "iptv",
-      "music",
-      "kids",
-      "juegos",
-      "admin"
-    ]);
     const rawPlatform = String(body.platform || "web");
     const rawVertical = String(body.vertical || "tv");
     const clampMs = (v, max = 12e4) => {
@@ -9375,8 +9383,8 @@ function registerOperationalRoutes(app2, deps) {
       return Number.isFinite(n) && n >= 0 ? Math.min(max, Math.round(n)) : void 0;
     };
     const recorded = runtimeMetrics.recordClientVitals({
-      platform: validPlatforms.has(rawPlatform) ? rawPlatform : "web",
-      vertical: validVerticals.has(rawVertical) ? rawVertical : "tv",
+      platform: VALID_CLIENT_PLATFORMS.has(rawPlatform) ? rawPlatform : "web",
+      vertical: VALID_CLIENT_VERTICALS.has(rawVertical) ? rawVertical : "tv",
       ttfbMs: clampMs(body.ttfbMs),
       fcpMs: clampMs(body.fcpMs),
       domInteractiveMs: clampMs(body.domInteractiveMs),
@@ -21069,7 +21077,7 @@ var EPG_CHANNEL_MAPPING = {
   "mplus-vamos": { xmltv: ["M+ Vamos HD", "M+ Vamos 2"], tdtJson: [] },
   "mplus-laliga": { xmltv: ["M+ LaLiga HD", "M+ LaLiga HDR", "M+ LaLiga 2 HD"], tdtJson: [] },
   "mplus-hypermotion": { xmltv: ["LaLiga TV Hypermotion HD", "LaLiga TV Hypermotion 2"], tdtJson: [] },
-  "mplus-champions": { xmltv: ["M+ Liga de Campeones HD", "M+ Liga de Campeones 2 HD"], tdtJson: [] },
+  "mplus-champions": { xmltv: ["M+ Liga de Campeones HD"], tdtJson: [] },
   "mplus-deportes": { xmltv: ["M+ Deportes HD", "M+ Baloncesto"], tdtJson: [] },
   "mplus-deportes2": { xmltv: ["M+ Deportes 2 HD", "M+ Deportes 3"], tdtJson: [] },
   "mplus-golf": { xmltv: ["M+ Golf HD", "M+ Golf 2 HD"], tdtJson: [] },
@@ -21117,7 +21125,7 @@ var EPG_CHANNEL_MAPPING = {
   "cat-324-live": { xmltv: ["3CatInfo", "3CatInfo Catalunya"], tdtJson: ["324.TV"] },
   "cat-c33": { xmltv: ["El 33 Catalunya"], tdtJson: ["C33.TV"] },
   "tnt-vivo": { xmltv: ["Warner TV HD", "Warner TV"], tdtJson: [] },
-  "tnt-sports": { xmltv: ["UK | TNT Sports 1", "UK | TNT Sports 2"], tdtJson: [] },
+  "tnt-sports": { xmltv: ["UK | TNT Sports 1"], tdtJson: [] },
   "dsports-1": { xmltv: ["DSPORTS"], tdtJson: [] },
   "dsports-2": { xmltv: ["DSPORTS 2"], tdtJson: [] },
   "dsports-plus": { xmltv: ["DSPORTS+"], tdtJson: [] },
@@ -22169,7 +22177,7 @@ function mapConfirmedSpanishBroadcasterToTracks(matchId, broadcasterName, pushTr
     });
     return;
   }
-  if (/\bm\+\s*laliga|movistar\s*laliga/.test(b)) {
+  if (/m\+\s*laliga|movistar\s*laliga/.test(b) && !/(?:m\+\s*laliga|movistar\s*laliga)\s*(?:[2-9]|1\d)\b/.test(b)) {
     pushTrack({
       id: `${matchId}-es-mlaliga`,
       label: "M+ LaLiga HD (Espa\xF1ol)",
@@ -22243,7 +22251,7 @@ function mapConfirmedSpanishBroadcasterToTracks(matchId, broadcasterName, pushTr
     });
     return;
   }
-  if (/m\+\s*liga\s*de\s*campeones|movistar.*campeones|m\+\s*campeones/.test(b)) {
+  if (/m\+\s*liga\s*de\s*campeones|movistar.*campeones|m\+\s*campeones/.test(b) && !/(?:liga\s*de\s*campeones|campeones)\s*(?:[2-9]|1\d)\b/.test(b)) {
     pushTrack({
       id: `${matchId}-es-mucl`,
       label: "M+ Liga de Campeones HD (Espa\xF1ol)",
@@ -22371,7 +22379,7 @@ function mapConfirmedEnglishBroadcasterToTracks(matchId, broadcasterName, pushTr
     });
     return;
   }
-  if (/tnt sports/.test(b)) {
+  if (/tnt sports/.test(b) && !/tnt\s*sports\s*(?:[2-9]|1\d)\b/.test(b)) {
     pushTrack({
       id: `${matchId}-en-tnt`,
       label: "TNT Sports UK HD",
@@ -23179,6 +23187,840 @@ async function fetchExtendedFootballCalendar(scope, scrapedMatches) {
   }
   return list;
 }
+
+// server/data/tdtDaznSportsChannels.ts
+var TDT_DAZN_AND_MOVISTAR_SPORTS_CHANNELS = [
+  // ==========================================================================
+  // DAZN ESPAÑA EN VIVO (PRIORITARIO EN LALIGA, CHAMPIONS Y PREMIER LEAGUE)
+  // ==========================================================================
+  {
+    id: "dazn-laliga",
+    dial: 55,
+    name: "DAZN LaLiga",
+    shortMark: "DAZN LL",
+    brandTone: "#F59E0B",
+    network: "DAZN Espa\xF1a",
+    category: "dazn",
+    quality: "1080p HD",
+    description: "Partidos exclusivos de LaLiga EA Sports en directo, previas a pie de campo y El Post",
+    channels: [
+      {
+        id: "daznll-1",
+        label: "Se\xF1al Principal DAZN LaLiga Sat 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/84",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "daznll-sxhd",
+        label: "Se\xF1al 2 DAZN LaLiga Directo HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://streamxhd.sbs/live1.php?stream=daznlaliga",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "daznll-sxhd2",
+        label: "Se\xF1al 3 DAZN LaLiga Alternativa HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://streamxhd.sbs/live2.php?stream=daznlaliga",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "daznll-tvtodo",
+        label: "Se\xF1al 4 DAZN LaLiga Web HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://footunder.online/tvtodo/daznlaliga.php",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "dazn-1",
+    dial: 70,
+    name: "DAZN 1",
+    shortMark: "DAZN 1",
+    brandTone: "#F4F4F5",
+    network: "DAZN Espa\xF1a",
+    category: "dazn",
+    quality: "1080p HD",
+    description: "Premier League, Champions, MotoGP, Serie A, Bundesliga, Liga F y boxeo mundial en directo",
+    channels: [
+      {
+        id: "dazn1-sat",
+        label: "Se\xF1al Principal DAZN 1 HD 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/445",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "dazn1-sxhd",
+        label: "Se\xF1al 2 DAZN 1 Directo HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://streamxhd.sbs/live1.php?stream=dazn1",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "dazn1-tvtodo",
+        label: "Se\xF1al 3 DAZN 1 Web HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://footunder.online/tvtodo/dazn1.php",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "dazn-2",
+    dial: 71,
+    name: "DAZN 2",
+    shortMark: "DAZN 2",
+    brandTone: "#E4E4E7",
+    network: "DAZN Espa\xF1a",
+    category: "dazn",
+    quality: "1080p HD",
+    description: "Segundo canal lineal DAZN Espa\xF1a: Premier League, Champions, Moto2/Moto3 y ciclismo",
+    channels: [
+      {
+        id: "dazn2-sat",
+        label: "Se\xF1al Principal DAZN 2 HD 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/446",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "dazn2-sxhd",
+        label: "Se\xF1al 2 DAZN 2 Directo HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://streamxhd.sbs/live1.php?stream=dazn2",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "dazn2-tvtodo",
+        label: "Se\xF1al 3 DAZN 2 Web HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://footunder.online/tvtodo/dazn2.php",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "dazn-3",
+    dial: 196,
+    name: "DAZN 3",
+    shortMark: "DAZN 3",
+    brandTone: "#D4D4D8",
+    network: "DAZN Espa\xF1a",
+    category: "dazn",
+    quality: "1080p HD",
+    description: "Canal multievento DAZN 3 para jornadas simult\xE1neas de f\xFAtbol europeo y motor",
+    channels: [
+      {
+        id: "dazn3-sat",
+        label: "Se\xF1al Principal DAZN 3 Sat HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/447",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "dazn3-sxhd",
+        label: "Se\xF1al 2 DAZN 3 Directo HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://streamxhd.sbs/live1.php?stream=dazn3",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "dazn3-tvtodo",
+        label: "Se\xF1al 3 DAZN 3 Web HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://footunder.online/tvtodo/dazn3.php",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "dazn-4",
+    dial: 197,
+    name: "DAZN 4",
+    shortMark: "DAZN 4",
+    brandTone: "#A1A1AA",
+    network: "DAZN Espa\xF1a",
+    category: "dazn",
+    quality: "1080p HD",
+    description: "Cuarto canal lineal DAZN Espa\xF1a para retransmisiones simult\xE1neas en alta definici\xF3n",
+    channels: [
+      {
+        id: "dazn4-sat",
+        label: "Se\xF1al Principal DAZN 4 HD 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/448",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "dazn4-sxhd",
+        label: "Se\xF1al 2 DAZN 4 Directo HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://streamxhd.sbs/live1.php?stream=dazn4",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "dazn4-tvtodo",
+        label: "Se\xF1al 3 DAZN 4 Web HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://footunder.online/tvtodo/dazn4.php",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "dazn-f1",
+    dial: 69,
+    name: "DAZN F1",
+    shortMark: "DAZN F1",
+    brandTone: "#EF4444",
+    network: "DAZN Espa\xF1a",
+    category: "dazn",
+    quality: "1080p HD",
+    description: "Mundial de F\xF3rmula 1 24/7: libres, clasificaci\xF3n, sprint, carreras y c\xE1maras onboard",
+    channels: [
+      {
+        id: "daznf1-2",
+        label: "Se\xF1al Principal DAZN F1 1080p (ES)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://footunder.online/tvtodo/daznf1.php",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "daznf1-sxhd1",
+        label: "Se\xF1al 2 DAZN F1 Directo HD (ES)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://streamxhd.sbs/live1.php?stream=daznf1",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "daznf1-sxhd2",
+        label: "Se\xF1al 3 DAZN F1 Alternativa HD (ES)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://streamxhd.sbs/live2.php?stream=daznf1",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "daznf1-sat",
+        label: "Se\xF1al 4 DAZN F1 Sat\xE9lite HD (ES)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/436",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "dazn-combat",
+    dial: 198,
+    name: "DAZN Combat & Boxeo",
+    shortMark: "DAZN BOX",
+    brandTone: "#DC2626",
+    network: "DAZN Global",
+    category: "dazn",
+    quality: "1080p HD",
+    description: "Canal oficial DAZN de boxeo mundial, MMA, veladas hist\xF3ricas y combates 24/7",
+    channels: [
+      {
+        id: "dazn-combat-1",
+        label: "Se\xF1al Oficial DAZN Combat HD",
+        lang: "EN",
+        quality: "1080p",
+        sourceUrl: "https://jmp2.uk/plu-64d626ac9b414d000820e2fc.m3u8",
+        resolverType: "tdt_hls"
+      }
+    ]
+  }
+];
+
+// server/data/tdtNationalAndPayChannels.ts
+var TDT_NATIONAL_AND_PAY_CHANNELS = [
+  {
+    id: "tdt-la1",
+    dial: 1,
+    name: "La 1",
+    shortMark: "1",
+    brandTone: "#2563EB",
+    network: "RTVE",
+    category: "generalistas",
+    quality: "1080p HD",
+    description: "Telediario, cine, entretenimiento, selecci\xF3n espa\xF1ola y grandes eventos en directo",
+    channels: [
+      {
+        id: "la1-ottera",
+        label: "Se\xF1al Oficial FHD 1080p (La 1)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://lge-lgla1.otteravision.com/lge/lgla1/lgla1.m3u8",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "la1-ottera-ads",
+        label: "Se\xF1al Alternativa FHD 1080p (La 1)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://stream.ads.ottera.tv/playlist.m3u8?network_id=15619",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "la1-dvb-hd",
+        label: "Se\xF1al Directa TDT FHD 1080p (La 1 HD)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/45/index.m3u8",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "la1-rtve",
+        label: "Se\xF1al Oficial RTVE HD (Espa\xF1a)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://rtvelivestream.rtve.es/rtvesec/la1/la1_main.m3u8",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "la1-belix-fhd",
+        label: "Se\xF1al Belix FHD (La 1)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "/api/belix/stream/743037.m3u8",
+        resolverType: "direct_hls"
+      }
+    ]
+  },
+  {
+    id: "tdt-la2",
+    dial: 2,
+    name: "La 2",
+    shortMark: "2",
+    brandTone: "#0EA5E9",
+    network: "RTVE",
+    category: "generalistas",
+    quality: "1080p HD",
+    description: "Documentales, cultura, cine cl\xE1sico e independiente y Saber y Ganar",
+    channels: [
+      {
+        id: "la2-ottera",
+        label: "Se\xF1al Oficial FHD 1080p (La 2)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://lge-lgla2.otteravision.com/lge/lgla2/lgla2.m3u8",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "la2-rtve",
+        label: "Se\xF1al Oficial RTVE HD (La 2)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://rtvelivestream.rtve.es/rtvesec/la2/la2_main.m3u8",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "la2-ottera-ads",
+        label: "Se\xF1al Alternativa FHD 1080p (La 2)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://stream.ads.ottera.tv/playlist.m3u8?network_id=15618",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "la2-dvb-hd",
+        label: "Se\xF1al Directa TDT FHD 1080p (La 2 HD)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/48/index.m3u8",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "la2-belix-fhd",
+        label: "Se\xF1al Belix FHD (La 2)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "/api/belix/stream/743036.m3u8",
+        resolverType: "direct_hls"
+      }
+    ]
+  },
+  {
+    id: "tdt-antena3",
+    dial: 3,
+    name: "Antena 3",
+    shortMark: "A3",
+    brandTone: "#F97316",
+    network: "Atresmedia",
+    category: "generalistas",
+    quality: "1080p HD",
+    description: "El Hormiguero, Pasapalabra, Antena 3 Noticias y series estelares",
+    channels: [
+      {
+        id: "a3-belix-intl",
+        label: "Se\xF1al Principal FHD \xB7 Edge 2 (Antena 3)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "/api/belix/stream/531071.m3u8",
+        resolverType: "direct_hls"
+      },
+      {
+        id: "a3-dvb-hd",
+        label: "Se\xF1al Directa Espa\xF1a 1080p HD (Antena 3)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/20/index.m3u8",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "a3-belix-hd",
+        label: "Se\xF1al Respaldo Belix HD AAC (Antena 3)",
+        lang: "ES",
+        quality: "720p",
+        sourceUrl: "/api/belix/stream/743056.m3u8",
+        resolverType: "direct_hls"
+      },
+      {
+        id: "a3-uhd",
+        label: "Se\xF1al Respaldo Belix FHD AAC (Antena 3)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "/api/belix/stream/743023.m3u8",
+        resolverType: "direct_hls"
+      },
+      {
+        id: "a3-dvb-fast",
+        label: "Se\xF1al Espa\xF1a Estabilidad 720p (Antena 3)",
+        lang: "ES",
+        quality: "720p",
+        sourceUrl: "http://90.163.85.113:8093/stream/20/index.m3u8?profile=fast",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "a3-hls-remux",
+        label: "Se\xF1al Directa Passthrough AAC 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "/api/hls-proxy?url=http%3A%2F%2F90.163.85.113%3A8093%2Fstream%2F20%2Findex.m3u8&aac=1",
+        resolverType: "direct_hls"
+      }
+    ]
+  },
+  {
+    id: "tdt-cuatro",
+    dial: 4,
+    name: "Cuatro",
+    shortMark: "4",
+    brandTone: "#EF4444",
+    network: "Mediaset",
+    category: "generalistas",
+    quality: "1080p HD",
+    description: "First Dates, Horizonte, Cuarto Milenio, actualidad y cine de acci\xF3n",
+    channels: [
+      {
+        id: "cuatro-dvb-hd",
+        label: "Se\xF1al Directa Espa\xF1a 1080p HD (Cuatro)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/42/index.m3u8",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "cuatro-dvb",
+        label: "Se\xF1al Respaldo Belix FHD (Cuatro)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "/api/belix/stream/743022.m3u8",
+        resolverType: "direct_hls"
+      }
+    ]
+  },
+  {
+    id: "tdt-telecinco",
+    dial: 5,
+    name: "Telecinco",
+    shortMark: "5",
+    brandTone: "#0284C7",
+    network: "Mediaset",
+    category: "generalistas",
+    quality: "1080p HD",
+    description: "Realities en directo, Informativos Telecinco, entretenimiento y cine",
+    channels: [
+      {
+        id: "t5-dvb-hd",
+        label: "Se\xF1al Directa Espa\xF1a 1080p HD (Telecinco)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/41/index.m3u8",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "t5-belix-hd",
+        label: "Se\xF1al Respaldo Belix HD (Telecinco)",
+        lang: "ES",
+        quality: "720p",
+        sourceUrl: "/api/belix/stream/743054.m3u8",
+        resolverType: "direct_hls"
+      },
+      {
+        id: "t5-dvb",
+        label: "Se\xF1al Respaldo Belix FHD (Telecinco)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "/api/belix/stream/743021.m3u8",
+        resolverType: "direct_hls"
+      }
+    ]
+  },
+  {
+    id: "tdt-lasexta",
+    dial: 6,
+    name: "laSexta",
+    shortMark: "6",
+    brandTone: "#16A34A",
+    network: "Atresmedia",
+    category: "generalistas",
+    quality: "1080p HD",
+    description: "Al Rojo Vivo, El Intermedio, Zapeando, Equipo de Investigaci\xF3n y cine",
+    channels: [
+      {
+        id: "lasexta-dvb-hd",
+        label: "Se\xF1al Directa Espa\xF1a 1080p HD (laSexta)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/21/index.m3u8",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "lasexta-dvb-fast",
+        label: "Se\xF1al Espa\xF1a Estabilidad 720p (laSexta)",
+        lang: "ES",
+        quality: "720p",
+        sourceUrl: "http://90.163.85.113:8093/stream/21/index.m3u8?profile=fast",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "lasexta-hls-remux",
+        label: "Se\xF1al Directa Passthrough AAC 1080p",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "/api/hls-proxy?url=http%3A%2F%2F90.163.85.113%3A8093%2Fstream%2F21%2Findex.m3u8&aac=1",
+        resolverType: "direct_hls"
+      },
+      {
+        id: "lasexta-dvb",
+        label: "Se\xF1al Respaldo Belix FHD (laSexta)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "/api/belix/stream/743035.m3u8",
+        resolverType: "direct_hls"
+      },
+      {
+        id: "lasexta-belix-sd",
+        label: "Se\xF1al Respaldo Estable Audio AAC (laSexta)",
+        lang: "ES",
+        quality: "576p",
+        sourceUrl: "/api/belix/stream/742989.m3u8",
+        resolverType: "direct_hls"
+      }
+    ]
+  },
+  ...TDT_DAZN_AND_MOVISTAR_SPORTS_CHANNELS,
+  // ==========================================================================
+  // MOVISTAR PLUS+ EN VIVO
+  // ==========================================================================
+  {
+    id: "mplus-canal",
+    dial: 7,
+    name: "Movistar Plus+",
+    shortMark: "M+",
+    brandTone: "#00A9E0",
+    network: "Movistar Plus+",
+    category: "movistar",
+    quality: "1080p HD",
+    description: "Canal principal de Movistar Plus+ (#0): partido de la jornada, cine, series y programas propios",
+    channels: [
+      {
+        id: "mplus-sat-5",
+        label: "Se\xF1al Principal M+ (#0) HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/537",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "mplus-ev-0",
+        label: "Se\xF1al 2 M+ Directo HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://footunder.online/tvtodo/movistarplus.php",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "mplus-vamos",
+    dial: 8,
+    name: "Movistar Vamos",
+    shortMark: "VAMOS",
+    brandTone: "#10B981",
+    network: "Movistar Plus+",
+    category: "movistar",
+    quality: "1080p HD",
+    description: "El D\xEDa Despu\xE9s, El Tercer Tiempo, noticias deportivas 24h y grandes citas en directo",
+    channels: [
+      {
+        id: "mvamos-1",
+        label: "Se\xF1al Principal Vamos HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/526",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "mvamos-2",
+        label: "Se\xF1al 2 M+ Deportes HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/438",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "mvamos-3",
+        label: "Se\xF1al 3 Vamos HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/529",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "mplus-laliga",
+    dial: 54,
+    name: "Movistar LaLiga TV",
+    shortMark: "M+LIGA",
+    brandTone: "#00A9E0",
+    network: "Movistar Plus+",
+    category: "movistar",
+    quality: "1080p HD",
+    description: "LaLiga EA Sports en directo, previas, postpartidos y res\xFAmenes oficiales 24/7",
+    channels: [
+      {
+        id: "mlaliga-1",
+        label: "Se\xF1al Principal M+ LaLiga HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://streamxhd.sbs/live1.php?stream=mlaliga",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "mlaliga-sxhd2",
+        label: "Se\xF1al 2 M+ LaLiga StreamXHD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://streamxhd.sbs/live2.php?stream=mlaliga",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "mlaliga-tvtodo",
+        label: "Se\xF1al 3 M+ LaLiga Directo HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://footunder.online/tvtodo/mlaliga.php",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "mplus-hypermotion",
+    dial: 56,
+    name: "LaLiga TV Hypermotion",
+    shortMark: "LIGA2",
+    brandTone: "#0284C7",
+    network: "Movistar Plus+",
+    category: "movistar",
+    quality: "1080p HD",
+    description: "Toda LaLiga Hypermotion, Copa del Rey y f\xFAtbol espa\xF1ol en directo 24/7",
+    channels: [
+      {
+        id: "mhyper-1",
+        label: "Se\xF1al Principal Hypermotion HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/522",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "mhyper-ev",
+        label: "Se\xF1al 2 Hypermotion HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://footunder.online/tvtodo/laliga2.php",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "mplus-champions",
+    dial: 60,
+    name: "M+ Liga de Campeones",
+    shortMark: "M+UCL",
+    brandTone: "#16A34A",
+    network: "Movistar Plus+",
+    category: "movistar",
+    quality: "1080p HD",
+    description: "UEFA Champions League, Europa League, Conference League y f\xFAtbol europeo en vivo",
+    channels: [
+      {
+        id: "mucl-sxhd",
+        label: "Se\xF1al Principal M+ Liga de Campeones HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://streamxhd.sbs/live1.php?stream=mligacampeones",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "mucl-sxhd2",
+        label: "Se\xF1al 2 M+ Campeones StreamXHD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://streamxhd.sbs/live2.php?stream=mligacampeones",
+        resolverType: "sports_channel"
+      },
+      {
+        id: "mucl-1",
+        label: "Se\xF1al 3 M+ Campeones Sat HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/435",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "mplus-deportes",
+    dial: 63,
+    name: "Movistar Deportes",
+    shortMark: "M+DEP",
+    brandTone: "#00A9E0",
+    network: "Movistar Plus+",
+    category: "movistar",
+    quality: "1080p HD",
+    description: "Liga Endesa ACB, Euroliga, NBA, ATP Masters 1000, Wimbledon, Rugby y NFL en directo",
+    channels: [
+      {
+        id: "mdep1-sat",
+        label: "Se\xF1al Movistar Deportes HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/438",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "mplus-deportes2",
+    dial: 64,
+    name: "Movistar Deportes 2",
+    shortMark: "M+DEP2",
+    brandTone: "#0EA5E9",
+    network: "Movistar Plus+",
+    category: "movistar",
+    quality: "1080p HD",
+    description: "Multideporte en directo: baloncesto ACB/Euroliga, tenis Grand Slam y atletismo",
+    channels: [
+      {
+        id: "mdep2-sat",
+        label: "Se\xF1al Movistar Deportes 2 HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/527",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "mplus-golf",
+    dial: 67,
+    name: "Movistar Golf",
+    shortMark: "M+GOLF",
+    brandTone: "#059669",
+    network: "Movistar Plus+",
+    category: "movistar",
+    quality: "1080p HD",
+    description: "PGA Tour, DP World Tour, Ryder Cup, Masters de Augusta y LIV Golf 24 horas en vivo",
+    channels: [
+      {
+        id: "mgolf-1",
+        label: "Se\xF1al Movistar Golf HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/528",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "mplus-eurosport1",
+    dial: 72,
+    name: "Eurosport 1",
+    shortMark: "EURO1",
+    brandTone: "#2563EB",
+    network: "Movistar+ \xB7 DAZN",
+    category: "movistar",
+    quality: "1080p HD",
+    description: "Roland Garros, Open de Australia, Tour de Francia, La Vuelta, UFC y JJ.OO.",
+    channels: [
+      {
+        id: "euro1-1",
+        label: "Se\xF1al Eurosport 1 HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/231",
+        resolverType: "sports_channel"
+      }
+    ]
+  },
+  {
+    id: "mplus-eurosport2",
+    dial: 73,
+    name: "Eurosport 2",
+    shortMark: "EURO2",
+    brandTone: "#E11D48",
+    network: "Movistar+ \xB7 DAZN",
+    category: "movistar",
+    quality: "1080p HD",
+    description: "Ciclismo mundial, WEC 24h Le Mans, tenis, snooker y deportes de invierno en vivo",
+    channels: [
+      {
+        id: "euro2-1",
+        label: "Se\xF1al Eurosport 2 HD",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://pig.footunder.online/stream/232",
+        resolverType: "sports_channel"
+      }
+    ]
+  }
+];
 
 // server/services/chiringuitoLiveService.ts
 var CHROME_UA4 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -24092,6 +24934,7 @@ async function sniffStreamWithHeadless(rawUrl) {
 }
 
 // server/routes/sports.ts
+var championsHubCache = /* @__PURE__ */ new Map();
 var cachedSportsSchedule = null;
 var liveScoresCache = null;
 var cachedFootballBoard = null;
@@ -24612,6 +25455,81 @@ function registerSportsRoutes(app2) {
       forceRefresh: req.query.refresh === "1"
     });
     return res.json({ success: true, ...result });
+  });
+  app2.get("/api/sports/champions-hub", async (req, res) => {
+    const rawLang = typeof req.query.lang === "string" ? req.query.lang.trim().toUpperCase() : "ES";
+    const langKey = rawLang === "EN" || rawLang === "ZH" ? rawLang : "ES";
+    const forceRefresh = req.query.refresh === "1";
+    const cached = championsHubCache.get(langKey);
+    if (!forceRefresh && cached && Date.now() - cached.ts < 20 * 1e3) {
+      return res.json({ success: true, ...cached.payload });
+    }
+    try {
+      const [boardSettled, standingsSettled] = await Promise.allSettled([
+        getFootballBoardMatches({ calendar: "champions", lang: langKey, forceRefresh }),
+        fetchLeagueStandings({
+          leagueSlug: "uefa.champions",
+          tournamentName: "UEFA Champions League"
+        })
+      ]);
+      const board = boardSettled.status === "fulfilled" ? boardSettled.value : { dateKey: "", matches: [] };
+      const standings = standingsSettled.status === "fulfilled" ? standingsSettled.value : null;
+      const mplusChampions = TDT_NATIONAL_AND_PAY_CHANNELS.find((c) => c.id === "mplus-champions");
+      const daznChannels = TDT_DAZN_AND_MOVISTAR_SPORTS_CHANNELS.filter(
+        (c) => ["dazn-1", "dazn-2", "dazn-3", "dazn-4"].includes(c.id)
+      );
+      const permanentMux = getPermanent247SportsMatches().filter(
+        (m) => ["mux-champions", "mux-uk-sports"].includes(m.id)
+      );
+      const multiplexChannels = [
+        ...mplusChampions ? [
+          {
+            id: mplusChampions.id,
+            name: mplusChampions.name,
+            shortMark: mplusChampions.shortMark,
+            network: mplusChampions.network,
+            quality: mplusChampions.quality,
+            description: mplusChampions.description,
+            channels: orderBoardChannels(mplusChampions.channels, "uefa.champions", langKey)
+          }
+        ] : [],
+        ...permanentMux.map((mux) => ({
+          id: mux.id,
+          name: mux.title,
+          shortMark: mux.id === "mux-champions" ? "MULTI UCL" : "UK SPORT",
+          network: mux.competition,
+          quality: "1080p HD",
+          description: mux.competition,
+          channels: orderBoardChannels(mux.channels || [], "uefa.champions", langKey)
+        })),
+        ...daznChannels.map((ch) => ({
+          id: ch.id,
+          name: ch.name,
+          shortMark: ch.shortMark,
+          network: ch.network,
+          quality: ch.quality,
+          description: ch.description,
+          channels: orderBoardChannels(ch.channels, "uefa.champions", langKey)
+        }))
+      ];
+      const payload = {
+        dateKey: board.dateKey || "",
+        matches: Array.isArray(board.matches) ? board.matches : [],
+        standings,
+        multiplexChannels
+      };
+      championsHubCache.set(langKey, { payload, ts: Date.now() });
+      return res.json({ success: true, ...payload });
+    } catch (err) {
+      logger.warn({ err }, "champions_hub_fetch_error");
+      return res.json({
+        success: true,
+        dateKey: "",
+        matches: [],
+        standings: null,
+        multiplexChannels: []
+      });
+    }
   });
   app2.get("/api/sports/match-details", async (req, res) => {
     const eventId = String(req.query.eventId || "").trim();
@@ -25740,840 +26658,6 @@ async function handleTvDetailsRequest(req, res) {
     return res.status(500).json({ success: false });
   }
 }
-
-// server/data/tdtDaznSportsChannels.ts
-var TDT_DAZN_AND_MOVISTAR_SPORTS_CHANNELS = [
-  // ==========================================================================
-  // DAZN ESPAÑA EN VIVO (PRIORITARIO EN LALIGA, CHAMPIONS Y PREMIER LEAGUE)
-  // ==========================================================================
-  {
-    id: "dazn-laliga",
-    dial: 55,
-    name: "DAZN LaLiga",
-    shortMark: "DAZN LL",
-    brandTone: "#F59E0B",
-    network: "DAZN Espa\xF1a",
-    category: "dazn",
-    quality: "1080p HD",
-    description: "Partidos exclusivos de LaLiga EA Sports en directo, previas a pie de campo y El Post",
-    channels: [
-      {
-        id: "daznll-1",
-        label: "Se\xF1al Principal DAZN LaLiga Sat 1080p",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/84",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "daznll-sxhd",
-        label: "Se\xF1al 2 DAZN LaLiga Directo HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://streamxhd.sbs/live1.php?stream=daznlaliga",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "daznll-sxhd2",
-        label: "Se\xF1al 3 DAZN LaLiga Alternativa HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://streamxhd.sbs/live2.php?stream=daznlaliga",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "daznll-tvtodo",
-        label: "Se\xF1al 4 DAZN LaLiga Web HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://footunder.online/tvtodo/daznlaliga.php",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "dazn-1",
-    dial: 70,
-    name: "DAZN 1",
-    shortMark: "DAZN 1",
-    brandTone: "#F4F4F5",
-    network: "DAZN Espa\xF1a",
-    category: "dazn",
-    quality: "1080p HD",
-    description: "Premier League, Champions, MotoGP, Serie A, Bundesliga, Liga F y boxeo mundial en directo",
-    channels: [
-      {
-        id: "dazn1-sat",
-        label: "Se\xF1al Principal DAZN 1 HD 1080p",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/445",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "dazn1-sxhd",
-        label: "Se\xF1al 2 DAZN 1 Directo HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://streamxhd.sbs/live1.php?stream=dazn1",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "dazn1-tvtodo",
-        label: "Se\xF1al 3 DAZN 1 Web HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://footunder.online/tvtodo/dazn1.php",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "dazn-2",
-    dial: 71,
-    name: "DAZN 2",
-    shortMark: "DAZN 2",
-    brandTone: "#E4E4E7",
-    network: "DAZN Espa\xF1a",
-    category: "dazn",
-    quality: "1080p HD",
-    description: "Segundo canal lineal DAZN Espa\xF1a: Premier League, Champions, Moto2/Moto3 y ciclismo",
-    channels: [
-      {
-        id: "dazn2-sat",
-        label: "Se\xF1al Principal DAZN 2 HD 1080p",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/446",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "dazn2-sxhd",
-        label: "Se\xF1al 2 DAZN 2 Directo HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://streamxhd.sbs/live1.php?stream=dazn2",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "dazn2-tvtodo",
-        label: "Se\xF1al 3 DAZN 2 Web HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://footunder.online/tvtodo/dazn2.php",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "dazn-3",
-    dial: 196,
-    name: "DAZN 3",
-    shortMark: "DAZN 3",
-    brandTone: "#D4D4D8",
-    network: "DAZN Espa\xF1a",
-    category: "dazn",
-    quality: "1080p HD",
-    description: "Canal multievento DAZN 3 para jornadas simult\xE1neas de f\xFAtbol europeo y motor",
-    channels: [
-      {
-        id: "dazn3-sat",
-        label: "Se\xF1al Principal DAZN 3 Sat HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/447",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "dazn3-sxhd",
-        label: "Se\xF1al 2 DAZN 3 Directo HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://streamxhd.sbs/live1.php?stream=dazn3",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "dazn3-tvtodo",
-        label: "Se\xF1al 3 DAZN 3 Web HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://footunder.online/tvtodo/dazn3.php",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "dazn-4",
-    dial: 197,
-    name: "DAZN 4",
-    shortMark: "DAZN 4",
-    brandTone: "#A1A1AA",
-    network: "DAZN Espa\xF1a",
-    category: "dazn",
-    quality: "1080p HD",
-    description: "Cuarto canal lineal DAZN Espa\xF1a para retransmisiones simult\xE1neas en alta definici\xF3n",
-    channels: [
-      {
-        id: "dazn4-sat",
-        label: "Se\xF1al Principal DAZN 4 HD 1080p",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/448",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "dazn4-sxhd",
-        label: "Se\xF1al 2 DAZN 4 Directo HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://streamxhd.sbs/live1.php?stream=dazn4",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "dazn4-tvtodo",
-        label: "Se\xF1al 3 DAZN 4 Web HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://footunder.online/tvtodo/dazn4.php",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "dazn-f1",
-    dial: 69,
-    name: "DAZN F1",
-    shortMark: "DAZN F1",
-    brandTone: "#EF4444",
-    network: "DAZN Espa\xF1a",
-    category: "dazn",
-    quality: "1080p HD",
-    description: "Mundial de F\xF3rmula 1 24/7: libres, clasificaci\xF3n, sprint, carreras y c\xE1maras onboard",
-    channels: [
-      {
-        id: "daznf1-2",
-        label: "Se\xF1al Principal DAZN F1 1080p (ES)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://footunder.online/tvtodo/daznf1.php",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "daznf1-sxhd1",
-        label: "Se\xF1al 2 DAZN F1 Directo HD (ES)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://streamxhd.sbs/live1.php?stream=daznf1",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "daznf1-sxhd2",
-        label: "Se\xF1al 3 DAZN F1 Alternativa HD (ES)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://streamxhd.sbs/live2.php?stream=daznf1",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "daznf1-sat",
-        label: "Se\xF1al 4 DAZN F1 Sat\xE9lite HD (ES)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/436",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "dazn-combat",
-    dial: 198,
-    name: "DAZN Combat & Boxeo",
-    shortMark: "DAZN BOX",
-    brandTone: "#DC2626",
-    network: "DAZN Global",
-    category: "dazn",
-    quality: "1080p HD",
-    description: "Canal oficial DAZN de boxeo mundial, MMA, veladas hist\xF3ricas y combates 24/7",
-    channels: [
-      {
-        id: "dazn-combat-1",
-        label: "Se\xF1al Oficial DAZN Combat HD",
-        lang: "EN",
-        quality: "1080p",
-        sourceUrl: "https://jmp2.uk/plu-64d626ac9b414d000820e2fc.m3u8",
-        resolverType: "tdt_hls"
-      }
-    ]
-  }
-];
-
-// server/data/tdtNationalAndPayChannels.ts
-var TDT_NATIONAL_AND_PAY_CHANNELS = [
-  {
-    id: "tdt-la1",
-    dial: 1,
-    name: "La 1",
-    shortMark: "1",
-    brandTone: "#2563EB",
-    network: "RTVE",
-    category: "generalistas",
-    quality: "1080p HD",
-    description: "Telediario, cine, entretenimiento, selecci\xF3n espa\xF1ola y grandes eventos en directo",
-    channels: [
-      {
-        id: "la1-ottera",
-        label: "Se\xF1al Oficial FHD 1080p (La 1)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://lge-lgla1.otteravision.com/lge/lgla1/lgla1.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
-        id: "la1-ottera-ads",
-        label: "Se\xF1al Alternativa FHD 1080p (La 1)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://stream.ads.ottera.tv/playlist.m3u8?network_id=15619",
-        resolverType: "tdt_hls"
-      },
-      {
-        id: "la1-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p (La 1 HD)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/45/index.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
-        id: "la1-rtve",
-        label: "Se\xF1al Oficial RTVE HD (Espa\xF1a)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://rtvelivestream.rtve.es/rtvesec/la1/la1_main.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
-        id: "la1-belix-fhd",
-        label: "Se\xF1al Belix FHD (La 1)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "/api/belix/stream/743037.m3u8",
-        resolverType: "direct_hls"
-      }
-    ]
-  },
-  {
-    id: "tdt-la2",
-    dial: 2,
-    name: "La 2",
-    shortMark: "2",
-    brandTone: "#0EA5E9",
-    network: "RTVE",
-    category: "generalistas",
-    quality: "1080p HD",
-    description: "Documentales, cultura, cine cl\xE1sico e independiente y Saber y Ganar",
-    channels: [
-      {
-        id: "la2-ottera",
-        label: "Se\xF1al Oficial FHD 1080p (La 2)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://lge-lgla2.otteravision.com/lge/lgla2/lgla2.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
-        id: "la2-rtve",
-        label: "Se\xF1al Oficial RTVE HD (La 2)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://rtvelivestream.rtve.es/rtvesec/la2/la2_main.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
-        id: "la2-ottera-ads",
-        label: "Se\xF1al Alternativa FHD 1080p (La 2)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://stream.ads.ottera.tv/playlist.m3u8?network_id=15618",
-        resolverType: "tdt_hls"
-      },
-      {
-        id: "la2-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p (La 2 HD)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/48/index.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
-        id: "la2-belix-fhd",
-        label: "Se\xF1al Belix FHD (La 2)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "/api/belix/stream/743036.m3u8",
-        resolverType: "direct_hls"
-      }
-    ]
-  },
-  {
-    id: "tdt-antena3",
-    dial: 3,
-    name: "Antena 3",
-    shortMark: "A3",
-    brandTone: "#F97316",
-    network: "Atresmedia",
-    category: "generalistas",
-    quality: "1080p HD",
-    description: "El Hormiguero, Pasapalabra, Antena 3 Noticias y series estelares",
-    channels: [
-      {
-        id: "a3-belix-intl",
-        label: "Se\xF1al Principal FHD \xB7 Edge 2 (Antena 3)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "/api/belix/stream/531071.m3u8",
-        resolverType: "direct_hls"
-      },
-      {
-        id: "a3-dvb-hd",
-        label: "Se\xF1al Directa Espa\xF1a 1080p HD (Antena 3)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/20/index.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
-        id: "a3-belix-hd",
-        label: "Se\xF1al Respaldo Belix HD AAC (Antena 3)",
-        lang: "ES",
-        quality: "720p",
-        sourceUrl: "/api/belix/stream/743056.m3u8",
-        resolverType: "direct_hls"
-      },
-      {
-        id: "a3-uhd",
-        label: "Se\xF1al Respaldo Belix FHD AAC (Antena 3)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "/api/belix/stream/743023.m3u8",
-        resolverType: "direct_hls"
-      },
-      {
-        id: "a3-dvb-fast",
-        label: "Se\xF1al Espa\xF1a Estabilidad 720p (Antena 3)",
-        lang: "ES",
-        quality: "720p",
-        sourceUrl: "http://90.163.85.113:8093/stream/20/index.m3u8?profile=fast",
-        resolverType: "tdt_hls"
-      },
-      {
-        id: "a3-hls-remux",
-        label: "Se\xF1al Directa Passthrough AAC 1080p",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "/api/hls-proxy?url=http%3A%2F%2F90.163.85.113%3A8093%2Fstream%2F20%2Findex.m3u8&aac=1",
-        resolverType: "direct_hls"
-      }
-    ]
-  },
-  {
-    id: "tdt-cuatro",
-    dial: 4,
-    name: "Cuatro",
-    shortMark: "4",
-    brandTone: "#EF4444",
-    network: "Mediaset",
-    category: "generalistas",
-    quality: "1080p HD",
-    description: "First Dates, Horizonte, Cuarto Milenio, actualidad y cine de acci\xF3n",
-    channels: [
-      {
-        id: "cuatro-dvb-hd",
-        label: "Se\xF1al Directa Espa\xF1a 1080p HD (Cuatro)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/42/index.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
-        id: "cuatro-dvb",
-        label: "Se\xF1al Respaldo Belix FHD (Cuatro)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "/api/belix/stream/743022.m3u8",
-        resolverType: "direct_hls"
-      }
-    ]
-  },
-  {
-    id: "tdt-telecinco",
-    dial: 5,
-    name: "Telecinco",
-    shortMark: "5",
-    brandTone: "#0284C7",
-    network: "Mediaset",
-    category: "generalistas",
-    quality: "1080p HD",
-    description: "Realities en directo, Informativos Telecinco, entretenimiento y cine",
-    channels: [
-      {
-        id: "t5-dvb-hd",
-        label: "Se\xF1al Directa Espa\xF1a 1080p HD (Telecinco)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/41/index.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
-        id: "t5-belix-hd",
-        label: "Se\xF1al Respaldo Belix HD (Telecinco)",
-        lang: "ES",
-        quality: "720p",
-        sourceUrl: "/api/belix/stream/743054.m3u8",
-        resolverType: "direct_hls"
-      },
-      {
-        id: "t5-dvb",
-        label: "Se\xF1al Respaldo Belix FHD (Telecinco)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "/api/belix/stream/743021.m3u8",
-        resolverType: "direct_hls"
-      }
-    ]
-  },
-  {
-    id: "tdt-lasexta",
-    dial: 6,
-    name: "laSexta",
-    shortMark: "6",
-    brandTone: "#16A34A",
-    network: "Atresmedia",
-    category: "generalistas",
-    quality: "1080p HD",
-    description: "Al Rojo Vivo, El Intermedio, Zapeando, Equipo de Investigaci\xF3n y cine",
-    channels: [
-      {
-        id: "lasexta-dvb-hd",
-        label: "Se\xF1al Directa Espa\xF1a 1080p HD (laSexta)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/21/index.m3u8",
-        resolverType: "tdt_hls"
-      },
-      {
-        id: "lasexta-dvb-fast",
-        label: "Se\xF1al Espa\xF1a Estabilidad 720p (laSexta)",
-        lang: "ES",
-        quality: "720p",
-        sourceUrl: "http://90.163.85.113:8093/stream/21/index.m3u8?profile=fast",
-        resolverType: "tdt_hls"
-      },
-      {
-        id: "lasexta-hls-remux",
-        label: "Se\xF1al Directa Passthrough AAC 1080p",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "/api/hls-proxy?url=http%3A%2F%2F90.163.85.113%3A8093%2Fstream%2F21%2Findex.m3u8&aac=1",
-        resolverType: "direct_hls"
-      },
-      {
-        id: "lasexta-dvb",
-        label: "Se\xF1al Respaldo Belix FHD (laSexta)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "/api/belix/stream/743035.m3u8",
-        resolverType: "direct_hls"
-      },
-      {
-        id: "lasexta-belix-sd",
-        label: "Se\xF1al Respaldo Estable Audio AAC (laSexta)",
-        lang: "ES",
-        quality: "576p",
-        sourceUrl: "/api/belix/stream/742989.m3u8",
-        resolverType: "direct_hls"
-      }
-    ]
-  },
-  ...TDT_DAZN_AND_MOVISTAR_SPORTS_CHANNELS,
-  // ==========================================================================
-  // MOVISTAR PLUS+ EN VIVO
-  // ==========================================================================
-  {
-    id: "mplus-canal",
-    dial: 7,
-    name: "Movistar Plus+",
-    shortMark: "M+",
-    brandTone: "#00A9E0",
-    network: "Movistar Plus+",
-    category: "movistar",
-    quality: "1080p HD",
-    description: "Canal principal de Movistar Plus+ (#0): partido de la jornada, cine, series y programas propios",
-    channels: [
-      {
-        id: "mplus-sat-5",
-        label: "Se\xF1al Principal M+ (#0) HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/537",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "mplus-ev-0",
-        label: "Se\xF1al 2 M+ Directo HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://footunder.online/tvtodo/movistarplus.php",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "mplus-vamos",
-    dial: 8,
-    name: "Movistar Vamos",
-    shortMark: "VAMOS",
-    brandTone: "#10B981",
-    network: "Movistar Plus+",
-    category: "movistar",
-    quality: "1080p HD",
-    description: "El D\xEDa Despu\xE9s, El Tercer Tiempo, noticias deportivas 24h y grandes citas en directo",
-    channels: [
-      {
-        id: "mvamos-1",
-        label: "Se\xF1al Principal Vamos HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/526",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "mvamos-2",
-        label: "Se\xF1al 2 M+ Deportes HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/438",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "mvamos-3",
-        label: "Se\xF1al 3 Vamos HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/529",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "mplus-laliga",
-    dial: 54,
-    name: "Movistar LaLiga TV",
-    shortMark: "M+LIGA",
-    brandTone: "#00A9E0",
-    network: "Movistar Plus+",
-    category: "movistar",
-    quality: "1080p HD",
-    description: "LaLiga EA Sports en directo, previas, postpartidos y res\xFAmenes oficiales 24/7",
-    channels: [
-      {
-        id: "mlaliga-1",
-        label: "Se\xF1al Principal M+ LaLiga HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://streamxhd.sbs/live1.php?stream=mlaliga",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "mlaliga-sxhd2",
-        label: "Se\xF1al 2 M+ LaLiga StreamXHD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://streamxhd.sbs/live2.php?stream=mlaliga",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "mlaliga-tvtodo",
-        label: "Se\xF1al 3 M+ LaLiga Directo HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://footunder.online/tvtodo/mlaliga.php",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "mplus-hypermotion",
-    dial: 56,
-    name: "LaLiga TV Hypermotion",
-    shortMark: "LIGA2",
-    brandTone: "#0284C7",
-    network: "Movistar Plus+",
-    category: "movistar",
-    quality: "1080p HD",
-    description: "Toda LaLiga Hypermotion, Copa del Rey y f\xFAtbol espa\xF1ol en directo 24/7",
-    channels: [
-      {
-        id: "mhyper-1",
-        label: "Se\xF1al Principal Hypermotion HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/522",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "mhyper-ev",
-        label: "Se\xF1al 2 Hypermotion HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://footunder.online/tvtodo/laliga2.php",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "mplus-champions",
-    dial: 60,
-    name: "M+ Liga de Campeones",
-    shortMark: "M+UCL",
-    brandTone: "#16A34A",
-    network: "Movistar Plus+",
-    category: "movistar",
-    quality: "1080p HD",
-    description: "UEFA Champions League, Europa League, Conference League y f\xFAtbol europeo en vivo",
-    channels: [
-      {
-        id: "mucl-sxhd",
-        label: "Se\xF1al Principal M+ Liga de Campeones HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://streamxhd.sbs/live1.php?stream=mligacampeones",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "mucl-sxhd2",
-        label: "Se\xF1al 2 M+ Campeones StreamXHD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://streamxhd.sbs/live2.php?stream=mligacampeones",
-        resolverType: "sports_channel"
-      },
-      {
-        id: "mucl-1",
-        label: "Se\xF1al 3 M+ Campeones Sat HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/435",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "mplus-deportes",
-    dial: 63,
-    name: "Movistar Deportes",
-    shortMark: "M+DEP",
-    brandTone: "#00A9E0",
-    network: "Movistar Plus+",
-    category: "movistar",
-    quality: "1080p HD",
-    description: "Liga Endesa ACB, Euroliga, NBA, ATP Masters 1000, Wimbledon, Rugby y NFL en directo",
-    channels: [
-      {
-        id: "mdep1-sat",
-        label: "Se\xF1al Movistar Deportes HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/438",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "mplus-deportes2",
-    dial: 64,
-    name: "Movistar Deportes 2",
-    shortMark: "M+DEP2",
-    brandTone: "#0EA5E9",
-    network: "Movistar Plus+",
-    category: "movistar",
-    quality: "1080p HD",
-    description: "Multideporte en directo: baloncesto ACB/Euroliga, tenis Grand Slam y atletismo",
-    channels: [
-      {
-        id: "mdep2-sat",
-        label: "Se\xF1al Movistar Deportes 2 HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/527",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "mplus-golf",
-    dial: 67,
-    name: "Movistar Golf",
-    shortMark: "M+GOLF",
-    brandTone: "#059669",
-    network: "Movistar Plus+",
-    category: "movistar",
-    quality: "1080p HD",
-    description: "PGA Tour, DP World Tour, Ryder Cup, Masters de Augusta y LIV Golf 24 horas en vivo",
-    channels: [
-      {
-        id: "mgolf-1",
-        label: "Se\xF1al Movistar Golf HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/528",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "mplus-eurosport1",
-    dial: 72,
-    name: "Eurosport 1",
-    shortMark: "EURO1",
-    brandTone: "#2563EB",
-    network: "Movistar+ \xB7 DAZN",
-    category: "movistar",
-    quality: "1080p HD",
-    description: "Roland Garros, Open de Australia, Tour de Francia, La Vuelta, UFC y JJ.OO.",
-    channels: [
-      {
-        id: "euro1-1",
-        label: "Se\xF1al Eurosport 1 HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/231",
-        resolverType: "sports_channel"
-      }
-    ]
-  },
-  {
-    id: "mplus-eurosport2",
-    dial: 73,
-    name: "Eurosport 2",
-    shortMark: "EURO2",
-    brandTone: "#E11D48",
-    network: "Movistar+ \xB7 DAZN",
-    category: "movistar",
-    quality: "1080p HD",
-    description: "Ciclismo mundial, WEC 24h Le Mans, tenis, snooker y deportes de invierno en vivo",
-    channels: [
-      {
-        id: "euro2-1",
-        label: "Se\xF1al Eurosport 2 HD",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "https://pig.footunder.online/stream/232",
-        resolverType: "sports_channel"
-      }
-    ]
-  }
-];
 
 // server/data/tdtBeinSportsChannels.ts
 var TDT_BEIN_SPORTS_CHANNELS = [
@@ -33598,6 +33682,9 @@ var GAME_SLUG_TO_ID = {
   pingpong: "pingpong",
   "ping-pong": "pingpong",
   tenis: "pingpong",
+  soccerpong: "soccerpong",
+  "futbol-pong": "soccerpong",
+  "soccer-pong": "soccerpong",
   bomberman: "bomberman",
   "bomberman-party": "bomberman",
   pacman: "pacman",
@@ -33637,6 +33724,7 @@ var GAME_ID_TO_SLUG = {
   gyrotennis: "tenis-gyro",
   gyrolab: "laberinto-gyro",
   pingpong: "ping-pong",
+  soccerpong: "futbol-pong",
   bomberman: "bomberman",
   pacman: "pacman",
   tetris: "tetris",
@@ -33668,6 +33756,7 @@ var GAME_TITLES = {
   gyrotennis: { es: "Tenis Slam Pro 2P", ca: "Tennis Slam Pro 2P", en: "Tennis Slam Pro 2P" },
   gyrolab: { es: "Laberinto Esfera 3D", ca: "Laberint Esfera 3D", en: "Sphere Labyrinth 3D" },
   pingpong: { es: "Ping Pong Pro 2P \xB7 Raqueta M\xF3vil", ca: "Ping Pong Pro 2P \xB7 Raqueta M\xF2bil", en: "Ping Pong Pro 2P \xB7 Mobile Racket" },
+  soccerpong: { es: "F\xFAtbol Pong 3D \xB7 1P / 2P", ca: "Futbol Pong 3D \xB7 1P / 2P", en: "Soccer Pong 3D \xB7 1P / 2P" },
   bomberman: { es: "Bomberman Party Arena", ca: "Bomberman Party Arena", en: "Bomberman Party Arena" },
   pacman: { es: "Pac-Man Arcade HD", ca: "Pac-Man Arcade HD", en: "Pac-Man Arcade HD" },
   tetris: { es: "Tetris Sprint TV", ca: "Tetris Sprint TV", en: "Tetris Sprint TV" },
@@ -33698,6 +33787,8 @@ var DEDICATED_WORLD_ROUTES = /* @__PURE__ */ new Set([
   "atresplayer",
   "movistar-dazn",
   "dazn-movistar",
+  "champions",
+  "multichampions",
   "musica",
   "music"
 ]);
@@ -33973,6 +34064,9 @@ function parseAppRoute(pathname, search = "") {
   if (seg0 === "movistar-dazn" || seg0 === "dazn-movistar") {
     return { kind: "world", world: "movistardazn", roomId: queryRoomId };
   }
+  if (seg0 === "champions" || seg0 === "multichampions") {
+    return { kind: "world", world: "champions", roomId: queryRoomId };
+  }
   if (seg0 === "musica" || seg0 === "music") {
     return {
       kind: "world",
@@ -34026,6 +34120,8 @@ function buildCanonicalRoute(input, opts) {
         basePath = input.cineCategory ? `${root}/${slugify(input.cineCategory)}` : root;
       } else if (input.world === "futbol") {
         basePath = input.futbolTab === "channels" ? "/futbol/canales" : "/futbol";
+      } else if (input.world === "champions") {
+        basePath = "/champions";
       } else if (input.world === "tv") {
         basePath = "/directo";
       } else if (input.world === "juegos") {
@@ -34570,6 +34666,7 @@ async function resolveDeepLinkTarget(pathOrUrl, origin = PUBLIC_PRODUCTION_ORIGI
       const worldLabels = {
         cine: target.cineTab === "series" ? "Cat\xE1logo de Series HD" : "Cat\xE1logo de Cine y Estrenos 4K",
         futbol: "F\xFAtbol en Directo y Marcadores",
+        champions: "UEFA Champions League \xB7 MultiChampions & Multi-Partido HD",
         tv: "Canales de TV y TDT en Directo",
         juegos: "Riffan Play \u2014 Sal\xF3n de Juegos Multijugador",
         youtube: "YouTube en Sala Sincronizada",
@@ -58497,6 +58594,7 @@ var wsGameInviteRespondSchema = z.object({
     "gyrotennis",
     "gyrolab",
     "pingpong",
+    "soccerpong",
     "bomberman",
     "pacman",
     "tetris",
@@ -58533,6 +58631,7 @@ var wsGameSwitchSchema = z.object({
     "gyrotennis",
     "gyrolab",
     "pingpong",
+    "soccerpong",
     "bomberman",
     "pacman",
     "tetris",
@@ -58697,6 +58796,9 @@ var wsGyroInputSchema = z.object({
   handbrake: z.boolean().optional(),
   cameraCycle: z.boolean().optional(),
   horn: z.boolean().optional(),
+  carSelect: z.string().trim().max(32).optional(),
+  trackSelect: z.string().trim().max(32).optional(),
+  autoGasToggle: z.boolean().optional(),
   seq: z.number().int().min(0).max(1e9),
   ts: z.number().min(0)
 });
@@ -58719,7 +58821,10 @@ var wsRacingTelemetrySchema = z.object({
   hapticPulseMs: z.number().int().min(0).max(500).optional(),
   scoreP1: z.number().int().min(0).max(999).optional(),
   scoreP2: z.number().int().min(0).max(999).optional(),
-  eventTag: z.string().trim().max(32).optional()
+  eventTag: z.string().trim().max(32).optional(),
+  carId: z.string().trim().max(32).optional(),
+  trackId: z.string().trim().max(32).optional(),
+  autoGas: z.boolean().optional()
 });
 var wsEnvelopeSchema = z.object({
   type: z.string().trim().min(1).max(48),
@@ -66919,6 +67024,7 @@ var handleCasinoAndVoiceMessage = (type, payload, ws, ctx) => {
       gyrotennis: "Tenis Slam Pro 2P",
       gyrolab: "Laberinto Esfera 3D",
       pingpong: "Ping Pong Pro 2P",
+      soccerpong: "F\xFAtbol Pong 3D",
       bomberman: "Bomberman Party Arena",
       pacman: "Pac-Man Arcade HD",
       tetris: "Tetris Sprint TV",
@@ -67241,7 +67347,45 @@ function createRoomHub(app2, wss2) {
     1e3,
     2 * 60 * 60 * 1e3
   );
-  const clients = /* @__PURE__ */ new Map();
+  const roomSockets = /* @__PURE__ */ new Map();
+  const addSocketToRoomIndex = (ws, roomId) => {
+    if (!roomId) return;
+    let set = roomSockets.get(roomId);
+    if (!set) {
+      set = /* @__PURE__ */ new Set();
+      roomSockets.set(roomId, set);
+    }
+    set.add(ws);
+  };
+  const removeSocketFromRoomIndex = (ws, roomId) => {
+    if (!roomId) return;
+    const set = roomSockets.get(roomId);
+    if (!set) return;
+    set.delete(ws);
+    if (set.size === 0) roomSockets.delete(roomId);
+  };
+  class IndexedClientMap extends Map {
+    set(ws, meta) {
+      const prev = super.get(ws);
+      if (prev && prev.roomId !== meta.roomId) {
+        removeSocketFromRoomIndex(ws, prev.roomId);
+      }
+      addSocketToRoomIndex(ws, meta.roomId);
+      return super.set(ws, meta);
+    }
+    delete(ws) {
+      const prev = super.get(ws);
+      if (prev?.roomId) {
+        removeSocketFromRoomIndex(ws, prev.roomId);
+      }
+      return super.delete(ws);
+    }
+    clear() {
+      roomSockets.clear();
+      super.clear();
+    }
+  }
+  const clients = new IndexedClientMap();
   const pendingDirectInvites = new LruTtlCache(500, 12e4);
   const rateLimiter = new WsRateLimiter();
   loadRoomsSnapshotFromDisk((item) => {
@@ -67332,12 +67476,14 @@ function createRoomHub(app2, wss2) {
     return map ? Array.from(map.values()) : [];
   }
   function broadcastToRoom(roomId, message, excludeWs) {
+    const targets = roomSockets.get(roomId);
+    if (!targets || targets.size === 0) return;
     const serialized = JSON.stringify(message);
-    clients.forEach((meta, clientWs) => {
-      if (meta.roomId === roomId && clientWs.readyState === WebSocket6.OPEN && clientWs !== excludeWs) {
+    for (const clientWs of targets) {
+      if (clientWs.readyState === WebSocket6.OPEN && clientWs !== excludeWs) {
         clientWs.send(serialized);
       }
-    });
+    }
   }
   function removeVoicePeer(roomId, userId) {
     const map = roomVoicePeers.get(roomId);
@@ -67358,19 +67504,22 @@ function createRoomHub(app2, wss2) {
     return serializeRoomForClient(room, viewerUserId, getVoicePeersForRoom(room.id));
   }
   function broadcastPokerState(room, message) {
-    clients.forEach((meta, clientWs) => {
-      if (meta.roomId === room.id && clientWs.readyState === WebSocket6.OPEN) {
+    const targets = roomSockets.get(room.id);
+    if (!targets || targets.size === 0) return;
+    for (const clientWs of targets) {
+      if (clientWs.readyState === WebSocket6.OPEN) {
+        const meta = clients.get(clientWs);
         clientWs.send(
           JSON.stringify({
             type: "POKER_STATE_UPDATED",
             payload: {
-              pokerGameState: redactPokerStateForUser(room.pokerGameState ?? null, meta.userId || ""),
+              pokerGameState: redactPokerStateForUser(room.pokerGameState ?? null, meta?.userId || ""),
               message: message ?? null
             }
           })
         );
       }
-    });
+    }
   }
   function broadcastBlackjackState(room, message) {
     broadcastToRoom(room.id, {
@@ -67382,22 +67531,25 @@ function createRoomHub(app2, wss2) {
     });
   }
   function broadcastPinturilloState(room, message) {
-    clients.forEach((meta, clientWs) => {
-      if (meta.roomId === room.id && clientWs.readyState === WebSocket6.OPEN) {
+    const targets = roomSockets.get(room.id);
+    if (!targets || targets.size === 0) return;
+    for (const clientWs of targets) {
+      if (clientWs.readyState === WebSocket6.OPEN) {
+        const meta = clients.get(clientWs);
         clientWs.send(
           JSON.stringify({
             type: "PINTURILLO_STATE_UPDATED",
             payload: {
               pinturilloState: redactPinturilloForUser(
                 room.pinturilloState ?? null,
-                meta.userId || ""
+                meta?.userId || ""
               ),
               message: message ?? null
             }
           })
         );
       }
-    });
+    }
   }
   function clearMatchResponses(room, onlyGameType) {
     if (!room.matchResponses) return;
@@ -68582,13 +68734,20 @@ function mountSpaFrontend(app2, deps) {
   }
   const distDir = path14.resolve(rootDir, "dist");
   const distIndex = path14.join(distDir, "index.html");
+  let cachedDistIndexHtml = null;
   if (fs15.existsSync(distDir)) {
     app2.use(
       express2.static(distDir, {
-        maxAge: "7d",
+        maxAge: "30d",
+        etag: true,
+        lastModified: true,
         setHeaders: (res, filePath) => {
           if (filePath.endsWith(".html") || filePath.endsWith("sw.js") || filePath.includes(`${path14.sep}tv${path14.sep}`)) {
             res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+            return;
+          }
+          if (filePath.includes(`${path14.sep}assets${path14.sep}`) && /\.[a-zA-Z0-9_-]{6,}\.(js|css|woff2|svg|png|webp|jpg|wasm)$/i.test(filePath)) {
+            res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
           }
         }
       })
@@ -68605,11 +68764,11 @@ function mountSpaFrontend(app2, deps) {
       const isMusicReq = isMusicAppPath(req.path);
       if (isMusicReq || shouldInjectDeepLinkOg(req.path)) {
         try {
-          const [rawHtml, ogMeta] = await Promise.all([
-            fs15.promises.readFile(distIndex, "utf8"),
-            shouldInjectDeepLinkOg(req.path) ? resolveOpenGraphMetaForRequest(req.originalUrl, getPublicOrigin2(req)) : Promise.resolve(null)
-          ]);
-          let finalHtml = ogMeta ? injectDynamicOgMeta(rawHtml, ogMeta) : rawHtml;
+          if (cachedDistIndexHtml === null) {
+            cachedDistIndexHtml = await fs15.promises.readFile(distIndex, "utf8");
+          }
+          const ogMeta = shouldInjectDeepLinkOg(req.path) ? await resolveOpenGraphMetaForRequest(req.originalUrl, getPublicOrigin2(req)) : null;
+          let finalHtml = ogMeta ? injectDynamicOgMeta(cachedDistIndexHtml, ogMeta) : cachedDistIndexHtml;
           if (isMusicReq) {
             finalHtml = injectMusicPwaMeta(finalHtml, getPublicOrigin2(req));
           }
@@ -69515,6 +69674,7 @@ function registerTizenRoutes(app2, rootDir) {
       "tv/tv-player-core.js",
       "tv/tv-player-modes.js",
       "tv/tv-hub.js",
+      "tv/tv-champions-multi.js",
       "tv/tv-game-sprites.js",
       "tv/tv-games.js",
       "tv/tv-games-soccer.js",
@@ -70281,6 +70441,7 @@ function registerWebOsRoutes(app2, rootDir) {
       "tv/tv-player-core.js",
       "tv/tv-player-modes.js",
       "tv/tv-hub.js",
+      "tv/tv-champions-multi.js",
       "tv/tv-game-sprites.js",
       "tv/tv-games.js",
       "tv/tv-games-soccer.js",
@@ -70469,11 +70630,16 @@ function getPublicOrigin(req) {
 var app = express3();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
+app.set("etag", "strong");
 var httpServer = createServer(app);
+httpServer.keepAliveTimeout = 65e3;
+httpServer.headersTimeout = 66e3;
+httpServer.requestTimeout = 3e4;
+httpServer.maxRequestsPerSocket = 0;
 var wss = new WebSocketServer3({
   noServer: true,
   perMessageDeflate: {
-    zlibDeflateOptions: { level: 6 },
+    zlibDeflateOptions: { level: 4 },
     threshold: 1024
   }
 });
@@ -70492,6 +70658,8 @@ httpServer.on("upgrade", (req, socket, head) => {
 });
 app.use(
   compression({
+    threshold: 1024,
+    level: 4,
     filter: (req, res) => {
       const p = (req.path || "").toLowerCase();
       if (p.endsWith(".m3u") || p.endsWith(".m3u8") || p.endsWith(".ts") || p.startsWith("/api/iptv/") || p.startsWith("/api/ts-proxy") || p.startsWith("/api/hls-proxy") || p.startsWith("/api/dvb-live/") || p.startsWith("/api/belix/stream") || p.startsWith("/api/belix/sub") || p.startsWith("/api/belix/seg") || p.startsWith("/api/music/stream-proxy")) {
@@ -70649,6 +70817,8 @@ app.get("/music-manifest.webmanifest", (_req, res) => {
   }
   return res.status(404).json({ error: "Music manifest not found" });
 });
+var cachedTvHtmlSig = "";
+var cachedTvHtmlBody = "";
 function sendSmartTvReceiverHtml(res) {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
@@ -70663,11 +70833,14 @@ function sendSmartTvReceiverHtml(res) {
   }
   try {
     const sig = getTvBuildSignature(__dirname3);
-    let html = fs20.readFileSync(target, "utf8");
-    const buildMetaTag = `<script>window.__RIFFAN_TV_BUILD__=${JSON.stringify(sig)};window.__RIFFAN_TV_AUTO_UPDATE__=true;</script>`;
-    html = html.replace("<head>", `<head>
+    if (!cachedTvHtmlBody || cachedTvHtmlSig !== sig) {
+      const raw = fs20.readFileSync(target, "utf8");
+      const buildMetaTag = `<script>window.__RIFFAN_TV_BUILD__=${JSON.stringify(sig)};window.__RIFFAN_TV_AUTO_UPDATE__=true;</script>`;
+      cachedTvHtmlBody = raw.replace("<head>", `<head>
     ${buildMetaTag}`).replace(/((?:href|src)=["'])(\/tv\/[^"'?]+\.(?:css|js))(["'])/gi, `$1$2?v=${sig}$3`).replace(/((?:href|src)=["'])(\/vendor\/[^"'?]+\.js)(["'])/gi, `$1$2?v=${sig}$3`);
-    res.status(200).type("html").send(html);
+      cachedTvHtmlSig = sig;
+    }
+    res.status(200).type("html").send(cachedTvHtmlBody);
   } catch {
     res.sendFile(target);
   }

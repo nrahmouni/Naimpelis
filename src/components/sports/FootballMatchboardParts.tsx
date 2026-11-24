@@ -111,18 +111,19 @@ export function hasValidScore(homeScore?: string, awayScore?: string): boolean {
 
 export const TeamCrestImg: React.FC<{
   src?: string;
-  shortCode: string;
+  shortCode?: string;
   alt: string;
-}> = ({ src, shortCode, alt }) => {
+}> = ({ src, shortCode = '', alt }) => {
   const [failed, setFailed] = useState(false);
 
   if (!src || failed) {
+    const abbr = String(shortCode || alt || '').trim().slice(0, 2).toUpperCase();
     return (
       <span
         aria-hidden="true"
         className="w-6 h-6 rounded-full bg-white/[0.08] border border-white/[0.12] flex items-center justify-center text-[10px] font-bold text-zinc-200 shrink-0"
       >
-        {shortCode.slice(0, 2) || <Shield className="w-3.5 h-3.5 text-zinc-400" />}
+        {abbr || <Shield className="w-3.5 h-3.5 text-zinc-400" />}
       </span>
     );
   }

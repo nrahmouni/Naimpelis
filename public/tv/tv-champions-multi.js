@@ -15,6 +15,7 @@
     multiplexChannels: [],
     standings: null,
     selectedSources: [],
+    pickerFilter: 'all',
     multiActive: false,
     generation: 0,
     audioSlot: 0,
@@ -214,10 +215,58 @@
     for (var i = 0; i < tvChampState.selectedSources.length; i++) {
       var cur = tvChampState.selectedSources[i];
       if (!cur) continue;
+      if (src.matchId && cur.matchId) {
+        if (cur.matchId === src.matchId) return i;
+        continue;
+      }
       if (cur.sourceUrl === src.sourceUrl) return i;
-      if (src.matchId && cur.matchId && cur.matchId === src.matchId) return i;
     }
     return -1;
+  }
+
+  function rerenderChampionsPreservingFocus(fallbackFocusKey) {
+    if (typeof activeHubTab !== 'string' || activeHubTab !== 'champions' || typeof renderHubContent !== 'function') {
+      return;
+    }
+    var activeKey = fallbackFocusKey || '';
+    try {
+      var ae = document.activeElement;
+      if (ae && ae.getAttribute) {
+        var k = ae.getAttribute('data-tv-focus-key');
+        if (k) activeKey = k;
+      }
+    } catch (e) {}
+
+    renderHubContent();
+
+    if (activeKey) {
+      setTimeout(function () {
+        var root = document.getElementById('hub-dynamic-content');
+        if (!root) return;
+        var btns = root.querySelectorAll('[data-tv-focus-key]');
+        var matched = null;
+        for (var i = 0; i < btns.length; i++) {
+          if (btns[i].getAttribute('data-tv-focus-key') === activeKey) {
+            matched = btns[i];
+            break;
+          }
+        }
+        if (!matched && fallbackFocusKey && fallbackFocusKey !== activeKey) {
+          for (var j = 0; j < btns.length; j++) {
+            if (btns[j].getAttribute('data-tv-focus-key') === fallbackFocusKey) {
+              matched = btns[j];
+              break;
+            }
+          }
+        }
+        if (!matched) {
+          matched = document.getElementById('btn-tv-ucl-launch');
+        }
+        if (matched && matched.focus) {
+          try { matched.focus(); } catch (err) {}
+        }
+      }, 0);
+    }
   }
 
   function toggleBuilderSource(src) {
@@ -238,18 +287,14 @@
       }
       tvChampState.selectedSources.push(src);
     }
-    if (typeof activeHubTab === 'string' && activeHubTab === 'champions' && typeof renderHubContent === 'function') {
-      renderHubContent();
-    }
+    rerenderChampionsPreservingFocus('launch');
   }
 
   function promoteBuilderSlotToFirst(idx) {
     if (idx <= 0 || idx >= tvChampState.selectedSources.length) return;
     var chosen = tvChampState.selectedSources.splice(idx, 1)[0];
     tvChampState.selectedSources.unshift(chosen);
-    if (typeof activeHubTab === 'string' && activeHubTab === 'champions' && typeof renderHubContent === 'function') {
-      renderHubContent();
-    }
+    rerenderChampionsPreservingFocus('slot-p1:0');
   }
 
   function playSingleMatchOrChannel(title, subtitle, tracks) {
@@ -659,9 +704,19 @@
     startTvMultiPlayback(remaining);
   }
 
-  function renderMultiControlBar() {
+  function renderMultiControlBar(focusBarKey) {
     var bar = document.getElementById('tv-multi-bar');
     if (!bar) return;
+    var activeKey = focusBarKey || '';
+    if (!activeKey) {
+      try {
+        var ae = document.activeElement;
+        if (ae && ae.parentNode === bar && ae.getAttribute) {
+          activeKey = ae.getAttribute('data-tv-bar-key') || '';
+        }
+      } catch (e) {}
+    }
+
     bar.innerHTML = '';
     var total = tvChampState.slotStates.length;
 
@@ -673,6 +728,7 @@
         aBtn.type = 'button';
         aBtn.className = isAudio ? 'tv-btn-primary' : 'tv-btn';
         aBtn.tabIndex = 0;
+        aBtn.setAttribute('data-tv-bar-key', 'audio:' + idx);
         aBtn.textContent = (isAudio ? '🔊 Audio P' : '🔇 Oír P') + (idx + 1) + ' · ' + ((st && st.source && st.source.title) || '').slice(0, 18);
         aBtn.onclick = function () {
           setMultiAudioSlot(idx);
@@ -685,6 +741,7 @@
     retryAllBtn.type = 'button';
     retryAllBtn.className = 'tv-btn';
     retryAllBtn.tabIndex = 0;
+    retryAllBtn.setAttribute('data-tv-bar-key', 'retry');
     retryAllBtn.textContent = champTxt('Reintentar caídas', 'Reintentar caigudes', 'Retry failed');
     retryAllBtn.onclick = function () {
       var retriedAny = false;
@@ -707,6 +764,7 @@
       fsBtn.type = 'button';
       fsBtn.className = 'tv-btn-fullscreen';
       fsBtn.tabIndex = 0;
+      fsBtn.setAttribute('data-tv-bar-key', 'fs');
       fsBtn.textContent = typeof tvT === 'function' ? tvT('fsBtn') : 'Pantalla';
       fsBtn.onclick = function () {
         toggleFullscreen();
@@ -718,11 +776,22 @@
     exitBtn.type = 'button';
     exitBtn.className = 'tv-btn';
     exitBtn.tabIndex = 0;
-    exitBtn.textContent = champTxt('Salir Multi', 'Sortir Multi', 'Exit Multi');
+    exitBtn.setAttribute('data-tv-bar-key', 'exit');
+    exitBtn.textContent = champTxt('Cambiar partidos / Salir', 'Canviar partits / Sortir', 'Change matches / Exit');
     exitBtn.onclick = function () {
       stopTvMultiPlaybackInternal(false);
     };
     bar.appendChild(exitBtn);
+
+    if (activeKey) {
+      var btns = bar.querySelectorAll('[data-tv-bar-key]');
+      for (var b = 0; b < btns.length; b++) {
+        if (btns[b].getAttribute('data-tv-bar-key') === activeKey && btns[b].focus) {
+          try { btns[b].focus(); } catch (err) {}
+          break;
+        }
+      }
+    }
   }
 
   function startTvMultiPlayback(rawSources) {
@@ -931,70 +1000,79 @@
     var presetTriple = pool.slice(0, 3);
     var presetQuad = pool.slice(0, 4);
 
-    // 1. Hero Banner + 1-Click MultiChampions Presets
+    // 1. Hero Banner + Quick Fill / Launch Shortcuts
+    var selected = tvChampState.selectedSources;
     var hero = document.createElement('div');
     hero.className = 'tv-ucl-hero';
     hero.innerHTML =
       '<div class="tv-ucl-eyebrow">UEFA CHAMPIONS LEAGUE · MULTI-PARTIDO 1080P</div>' +
       '<div class="tv-ucl-title">' + escapeHtml(champTxt(
-        'MultiChampions y Multi-Partido (hasta 4 pantallas)',
-        'MultiChampions i Multi-Partit (fins a 4 pantalles)',
-        'MultiChampions & Multi-Match (up to 4 screens)'
+        'MultiChampions: elige 2, 3 o 4 partidos para ver a la vez',
+        'MultiChampions: tria 2, 3 o 4 partits per veure alhora',
+        'MultiChampions: pick 2, 3, or 4 matches to watch at once'
       )) + '</div>' +
       '<div class="tv-ucl-sub">' + escapeHtml(champTxt(
-        'Visualiza 2, 3 o 4 partidos simultáneamente ocupando 3/4 de pantalla con cambio rápido de audio P1–P4 desde tu mando.',
-        'Visualitza 2, 3 o 4 partits alhora ocupant 3/4 de pantalla amb canvi ràpid d’àudio P1–P4 amb el comandament.',
-        'Watch 2, 3, or 4 matches at once across 3/4 screen height with instant P1–P4 remote audio switching.'
+        'Baja a cualquier partido y pulsa Elegir (OK en tu mando). Luego pulsa Ver ahora para abrir hasta 4 pantallas con audio rápido P1–P4.',
+        'Baixa a qualsevol partit i prem Triar (OK al comandament). Després prem Veure ara per obrir fins a 4 pantalles.',
+        'Scroll to any match and press Pick (OK on remote), then press Watch now for up to 4 screens with P1–P4 audio switching.'
       )) + '</div>' +
       '<div class="tv-ucl-preset-row">' +
-      '<button type="button" class="tv-btn-primary" id="btn-tv-ucl-dual" tabindex="0">Dual (2 · 3/4)</button>' +
-      '<button type="button" class="tv-btn-primary" id="btn-tv-ucl-triple" tabindex="0">Triple (3 pantallas)</button>' +
-      '<button type="button" class="tv-btn-primary" id="btn-tv-ucl-quad" tabindex="0">Quad (4 · 2×2)</button>' +
-      '<button type="button" class="tv-btn" id="btn-tv-ucl-refresh" tabindex="0">' + escapeHtml(champTxt('Actualizar', 'Actualitzar', 'Refresh')) + '</button>' +
+      '<button type="button" class="tv-btn-primary" id="btn-tv-ucl-launch-hero" data-tv-focus-key="launch-hero" tabindex="0">' +
+        escapeHtml(selected.length >= 2
+          ? champTxt('Ver mis ' + selected.length + ' partidos ahora', 'Veure els meus ' + selected.length + ' partits ara', 'Watch my ' + selected.length + ' matches now')
+          : champTxt('Ver Dual rápido (2 · 3/4)', 'Veure Dual ràpid (2 · 3/4)', 'Quick Watch Dual (2 · 3/4)')) +
+      '</button>' +
+      '<button type="button" class="tv-btn" id="btn-tv-ucl-dual" data-tv-focus-key="quick-2" tabindex="0">Auto 2 (Dual)</button>' +
+      '<button type="button" class="tv-btn" id="btn-tv-ucl-triple" data-tv-focus-key="quick-3" tabindex="0">Auto 3 (Triple)</button>' +
+      '<button type="button" class="tv-btn" id="btn-tv-ucl-quad" data-tv-focus-key="quick-4" tabindex="0">Auto 4 (Quad)</button>' +
+      '<button type="button" class="tv-btn" id="btn-tv-ucl-refresh" data-tv-focus-key="refresh" tabindex="0">' + escapeHtml(champTxt('Actualizar', 'Actualitzar', 'Refresh')) + '</button>' +
       '</div>';
     container.appendChild(hero);
 
     setTimeout(function () {
+      var bLaunchH = document.getElementById('btn-tv-ucl-launch-hero');
       var bDual = document.getElementById('btn-tv-ucl-dual');
       var bTriple = document.getElementById('btn-tv-ucl-triple');
       var bQuad = document.getElementById('btn-tv-ucl-quad');
       var bRef = document.getElementById('btn-tv-ucl-refresh');
-      if (bDual) bDual.onclick = function () { startTvMultiPlayback(presetDual); };
-      if (bTriple) bTriple.onclick = function () { startTvMultiPlayback(presetTriple); };
-      if (bQuad) bQuad.onclick = function () { startTvMultiPlayback(presetQuad); };
+      if (bLaunchH) bLaunchH.onclick = function () { startTvMultiPlayback(selected.length >= 2 ? selected : presetDual); };
+      if (bDual) bDual.onclick = function () { tvChampState.selectedSources = presetDual.slice(); rerenderChampionsPreservingFocus('quick-2'); };
+      if (bTriple) bTriple.onclick = function () { tvChampState.selectedSources = presetTriple.slice(); rerenderChampionsPreservingFocus('quick-3'); };
+      if (bQuad) bQuad.onclick = function () { tvChampState.selectedSources = presetQuad.slice(); rerenderChampionsPreservingFocus('quick-4'); };
       if (bRef) bRef.onclick = function () { fetchChampionsHubData(true); };
     }, 0);
 
     // 2. Multi-Partido 4-Slot Builder
     var builder = document.createElement('div');
     builder.className = 'tv-ucl-builder-panel';
-    var selected = tvChampState.selectedSources;
 
     var bHead = document.createElement('div');
     bHead.className = 'tv-ucl-builder-head';
     var bTitleWrap = document.createElement('div');
     bTitleWrap.innerHTML =
       '<div class="tv-ucl-builder-title">' + escapeHtml(champTxt(
-        'Constructor Multi-Partido (' + selected.length + '/4 pantallas)',
-        'Constructor Multi-Partit (' + selected.length + '/4 pantalles)',
-        'Multi-Match Builder (' + selected.length + '/4 screens)'
+        'Tus partidos elegidos (' + selected.length + '/4 pantallas)',
+        'Els teus partits triats (' + selected.length + '/4 pantalles)',
+        'Your Selected Matches (' + selected.length + '/4 screens)'
       )) + '</div>' +
       '<div class="tv-ucl-builder-sub">' + escapeHtml(champTxt(
-        'Añade hasta 4 señales abajo y pulsa Lanzar Multi-Partido.',
-        'Afegeix fins a 4 senyals a sota i prem Llançar Multi-Partit.',
-        'Add up to 4 feeds below and press Launch Multi-Match.'
+        'Usa las flechas y pulsa + Elegir en los partidos de abajo.',
+        'Fes servir les fletxes i prem + Triar als partits de sota.',
+        'Use remote arrows and press + Pick on matches below.'
       )) + '</div>';
     var bActions = document.createElement('div');
     bActions.style.cssText = 'display:flex;align-items:center;';
     var launchBtn = document.createElement('button');
     launchBtn.type = 'button';
+    launchBtn.id = 'btn-tv-ucl-launch';
     launchBtn.className = 'tv-btn-primary';
     launchBtn.style.marginRight = '10px';
     launchBtn.tabIndex = 0;
+    launchBtn.setAttribute('data-tv-focus-key', 'launch');
     launchBtn.textContent = champTxt(
-      'Lanzar Multi-Partido (' + selected.length + ')',
-      'Llançar Multi-Partit (' + selected.length + ')',
-      'Launch Multi-Match (' + selected.length + ')'
+      selected.length >= 2 ? ('Ver ' + selected.length + ' pantallas ahora') : ('Lanzar (' + selected.length + ')'),
+      selected.length >= 2 ? ('Veure ' + selected.length + ' pantalles ara') : ('Llançar (' + selected.length + ')'),
+      selected.length >= 2 ? ('Watch ' + selected.length + ' screens now') : ('Launch (' + selected.length + ')')
     );
     launchBtn.onclick = function () { startTvMultiPlayback(selected); };
     bActions.appendChild(launchBtn);
@@ -1004,10 +1082,11 @@
       clearBtn.type = 'button';
       clearBtn.className = 'tv-btn';
       clearBtn.tabIndex = 0;
+      clearBtn.setAttribute('data-tv-focus-key', 'clear');
       clearBtn.textContent = champTxt('Limpiar', 'Netejar', 'Clear');
       clearBtn.onclick = function () {
         tvChampState.selectedSources = [];
-        renderHubContent();
+        rerenderChampionsPreservingFocus('launch');
       };
       bActions.appendChild(clearBtn);
     }
@@ -1040,6 +1119,7 @@
             p1Btn.type = 'button';
             p1Btn.className = 'tv-ucl-mini-btn active';
             p1Btn.tabIndex = 0;
+            p1Btn.setAttribute('data-tv-focus-key', 'slot-p1:' + slotIdx);
             p1Btn.textContent = 'P1';
             p1Btn.onclick = function () { promoteBuilderSlotToFirst(slotIdx); };
             acts.appendChild(p1Btn);
@@ -1048,6 +1128,7 @@
           delBtn.type = 'button';
           delBtn.className = 'tv-ucl-mini-btn danger';
           delBtn.tabIndex = 0;
+          delBtn.setAttribute('data-tv-focus-key', 'slot-del:' + slotIdx);
           delBtn.textContent = champTxt('Quitar', 'Treure', 'Remove');
           delBtn.onclick = function () { toggleBuilderSource(item); };
           acts.appendChild(delBtn);
@@ -1070,88 +1151,75 @@
       return;
     }
 
-    // 3. MultiChampions & Sports Channels
-    if (tvChampState.multiplexChannels.length > 0) {
-      var muxSec = document.createElement('div');
-      muxSec.className = 'tv-section';
-      muxSec.innerHTML =
-        '<div class="tv-section-head">' +
-        '<div class="tv-section-title">' + escapeHtml(champTxt('Canales MultiChampions y Deportes', 'Canals MultiChampions i Esports', 'MultiChampions & Sports Channels')) + '</div>' +
-        '<div class="tv-section-sub">' + escapeHtml(champTxt('Señales 24/7 M+ Liga de Campeones, MultiChampions y DAZN', 'Senyals 24/7 M+ Liga de Campeones, MultiChampions i DAZN', '24/7 M+ Champions, MultiChampions & DAZN streams')) + '</div>' +
-        '</div>';
-      var muxGrid = document.createElement('div');
-      muxGrid.className = 'tv-ucl-matches-grid';
-      for (var c = 0; c < tvChampState.multiplexChannels.length; c++) {
-        (function (ch) {
-          var src = buildSourceFromMultiplex(ch, 0);
-          var inMulti = findSourceInBuilder(src) !== -1;
-          var wrap = document.createElement('div');
-          wrap.className = 'tv-ucl-match-wrap';
-          var card = document.createElement('div');
-          card.className = 'tv-ucl-match-card';
-          card.innerHTML =
-            '<div>' +
-            '<div class="tv-ucl-match-meta"><span>' + escapeHtml(ch.network || 'HD') + '</span><span class="tv-ucl-live-badge">LIVE</span></div>' +
-            '<div class="tv-ucl-teams">' + escapeHtml(ch.name) + '</div>' +
-            '<div class="tv-ucl-score">' + escapeHtml((ch.channels ? ch.channels.length : 0) + ' señales · ' + (ch.quality || '1080p HD')) + '</div>' +
-            '</div>';
-          var btns = document.createElement('div');
-          btns.className = 'tv-ucl-match-btns';
+    // Filter row for TV remote
+    var activeF = tvChampState.pickerFilter || 'all';
+    var fRow = document.createElement('div');
+    fRow.className = 'tv-ucl-filter-row';
+    var filterOpts = [
+      { id: 'all', label: champTxt('Todos', 'Tots', 'All') },
+      { id: 'champions', label: 'Champions League' },
+      { id: 'live', label: champTxt('En Directo', 'En Directe', 'Live') },
+      { id: 'channels', label: champTxt('Canales Multi', 'Canals Multi', 'Multi Channels') }
+    ];
+    for (var fi = 0; fi < filterOpts.length; fi++) {
+      (function (fOpt) {
+        var fBtn = document.createElement('button');
+        fBtn.type = 'button';
+        fBtn.className = 'tv-ucl-mini-btn' + (activeF === fOpt.id ? ' active' : '');
+        fBtn.tabIndex = 0;
+        fBtn.setAttribute('data-tv-focus-key', 'filter:' + fOpt.id);
+        fBtn.textContent = fOpt.label;
+        fBtn.onclick = function () {
+          tvChampState.pickerFilter = fOpt.id;
+          rerenderChampionsPreservingFocus('filter:' + fOpt.id);
+        };
+        fRow.appendChild(fBtn);
+      })(filterOpts[fi]);
+    }
+    container.appendChild(fRow);
 
-          var playB = document.createElement('button');
-          playB.type = 'button';
-          playB.className = 'tv-ucl-mini-btn active';
-          playB.tabIndex = 0;
-          playB.textContent = champTxt('Ver', 'Veure', 'Watch');
-          playB.onclick = function () {
-            playSingleMatchOrChannel(ch.name, ch.network, ch.channels);
-          };
-          btns.appendChild(playB);
-
-          if (src) {
-            var addB = document.createElement('button');
-            addB.type = 'button';
-            addB.className = 'tv-ucl-mini-btn' + (inMulti ? ' danger' : '');
-            addB.tabIndex = 0;
-            addB.textContent = inMulti ? champTxt('En Multi ✓', 'A Multi ✓', 'In Multi ✓') : '+ Multi';
-            addB.onclick = function () { toggleBuilderSource(src); };
-            btns.appendChild(addB);
-          }
-
-          card.appendChild(btns);
-          wrap.appendChild(card);
-          muxGrid.appendChild(wrap);
-        })(tvChampState.multiplexChannels[c]);
+    // 3. Champions & Today Matches (placed right below builder so TV D-Pad reaches matches immediately!)
+    var allMatchesRaw = getCombinedMatches();
+    var allMatches = [];
+    if (activeF !== 'channels') {
+      for (var ai = 0; ai < allMatchesRaw.length; ai++) {
+        var candM = allMatchesRaw[ai];
+        if (!candM) continue;
+        if (activeF === 'champions') {
+          var hay = ((candM.leagueSlug || '') + ' ' + (candM.leagueName || '') + ' ' + (candM.groupTitle || '')).toLowerCase();
+          if (!/champions|uefa\.champions/.test(hay)) continue;
+        } else if (activeF === 'live' && candM.statusState !== 'live') {
+          continue;
+        }
+        allMatches.push(candM);
       }
-      muxSec.appendChild(muxGrid);
-      container.appendChild(muxSec);
     }
 
-    // 4. Champions & Today Matches
-    var allMatches = getCombinedMatches();
     if (allMatches.length > 0) {
       var mSec = document.createElement('div');
       mSec.className = 'tv-section';
       mSec.innerHTML =
         '<div class="tv-section-head">' +
-        '<div class="tv-section-title">' + escapeHtml(champTxt('Partidos Champions y Directos de Hoy', 'Partits Champions i Directes d’Avui', 'Champions & Live Matches Today')) + '</div>' +
-        '<div class="tv-section-sub">' + escapeHtml(champTxt('Pulsa Ver para pantalla completa o + Multi para añadir al mosaico (hasta 4)', 'Prem Veure o + Multi per afegir al mosaic (fins a 4)', 'Press Watch for full screen or + Multi to add to 4-screen grid')) + '</div>' +
+        '<div class="tv-section-title">' + escapeHtml(champTxt('Elige partidos de Champions y Directos de Hoy', 'Tria partits de Champions i Directes d’Avui', 'Pick Champions & Live Matches Today')) + '</div>' +
+        '<div class="tv-section-sub">' + escapeHtml(champTxt('Pulsa + Elegir en 2, 3 o 4 partidos y luego Ver pantallas arriba', 'Prem + Triar en 2, 3 o 4 partits i després Veure pantalles a dalt', 'Press + Pick on 2–4 matches then Watch above')) + '</div>' +
         '</div>';
       var mGrid = document.createElement('div');
       mGrid.className = 'tv-ucl-matches-grid';
-      var maxMatches = Math.min(18, allMatches.length);
+      var maxMatches = Math.min(20, allMatches.length);
       for (var mi = 0; mi < maxMatches; mi++) {
-        (function (m) {
+        (function (m, mIdx) {
           var src = buildSourceFromMatch(m);
-          var inMulti = findSourceInBuilder(src) !== -1;
+          var slotPos = findSourceInBuilder(src);
+          var inMulti = slotPos !== -1;
           var isLiveM = m.statusState === 'live';
           var scoreStr = m.homeScore !== undefined && m.awayScore !== undefined && m.homeScore !== '' && m.awayScore !== ''
             ? (m.homeScore + ' - ' + m.awayScore)
             : (m.kickoffTime || 'Hoy');
+          var mKey = String(m.id || mIdx);
           var wrap = document.createElement('div');
           wrap.className = 'tv-ucl-match-wrap';
           var card = document.createElement('div');
-          card.className = 'tv-ucl-match-card';
+          card.className = 'tv-ucl-match-card' + (inMulti ? ' selected' : '');
           card.innerHTML =
             '<div>' +
             '<div class="tv-ucl-match-meta"><span>' + escapeHtml(m.leagueName || m.groupTitle || 'Fútbol') + '</span>' +
@@ -1163,33 +1231,100 @@
           var btns = document.createElement('div');
           btns.className = 'tv-ucl-match-btns';
 
+          if (src) {
+            var addB = document.createElement('button');
+            addB.type = 'button';
+            addB.className = 'tv-ucl-mini-btn' + (inMulti ? ' active' : '');
+            addB.tabIndex = 0;
+            addB.setAttribute('data-tv-focus-key', 'toggle-m:' + mKey);
+            addB.textContent = inMulti
+              ? champTxt('✓ P' + (slotPos + 1) + ' (Elegido)', '✓ P' + (slotPos + 1) + ' (Triat)', '✓ P' + (slotPos + 1) + ' (Picked)')
+              : champTxt('+ Elegir para Multi', '+ Triar per Multi', '+ Pick for Multi');
+            addB.onclick = function () { toggleBuilderSource(src); };
+            btns.appendChild(addB);
+          }
+
           var playB = document.createElement('button');
           playB.type = 'button';
-          playB.className = 'tv-ucl-mini-btn active';
+          playB.className = 'tv-ucl-mini-btn';
           playB.tabIndex = 0;
-          playB.textContent = m.channels && m.channels.length ? champTxt('Ver', 'Veure', 'Watch') : champTxt('Sin señal', 'Sense senyal', 'No feed');
+          playB.setAttribute('data-tv-focus-key', 'play-m:' + mKey);
+          playB.textContent = m.channels && m.channels.length ? champTxt('Ver solo', 'Veure sol', 'Watch') : champTxt('Sin señal', 'Sense senyal', 'No feed');
           playB.onclick = function () {
             playSingleMatchOrChannel((m.homeTeam || '') + ' vs ' + (m.awayTeam || ''), m.leagueName || 'UEFA Champions League', m.channels);
           };
           btns.appendChild(playB);
 
+          card.appendChild(btns);
+          wrap.appendChild(card);
+          mGrid.appendChild(wrap);
+        })(allMatches[mi], mi);
+      }
+      mSec.appendChild(mGrid);
+      container.appendChild(mSec);
+    }
+
+    // 4. MultiChampions & Sports Channels
+    if ((activeF === 'all' || activeF === 'channels') && tvChampState.multiplexChannels.length > 0) {
+      var muxSec = document.createElement('div');
+      muxSec.className = 'tv-section';
+      muxSec.innerHTML =
+        '<div class="tv-section-head">' +
+        '<div class="tv-section-title">' + escapeHtml(champTxt('Canales MultiChampions y Deportes', 'Canals MultiChampions i Esports', 'MultiChampions & Sports Channels')) + '</div>' +
+        '<div class="tv-section-sub">' + escapeHtml(champTxt('Señales 24/7 M+ Liga de Campeones, MultiChampions y DAZN', 'Senyals 24/7 M+ Liga de Campeones, MultiChampions i DAZN', '24/7 M+ Champions, MultiChampions & DAZN streams')) + '</div>' +
+        '</div>';
+      var muxGrid = document.createElement('div');
+      muxGrid.className = 'tv-ucl-matches-grid';
+      for (var c = 0; c < tvChampState.multiplexChannels.length; c++) {
+        (function (ch, cIdx) {
+          var src = buildSourceFromMultiplex(ch, 0);
+          var slotPos = findSourceInBuilder(src);
+          var inMulti = slotPos !== -1;
+          var cKey = String(ch.id || cIdx);
+          var wrap = document.createElement('div');
+          wrap.className = 'tv-ucl-match-wrap';
+          var card = document.createElement('div');
+          card.className = 'tv-ucl-match-card' + (inMulti ? ' selected' : '');
+          card.innerHTML =
+            '<div>' +
+            '<div class="tv-ucl-match-meta"><span>' + escapeHtml(ch.network || 'HD') + '</span><span class="tv-ucl-live-badge">LIVE</span></div>' +
+            '<div class="tv-ucl-teams">' + escapeHtml(ch.name) + '</div>' +
+            '<div class="tv-ucl-score">' + escapeHtml((ch.channels ? ch.channels.length : 0) + ' señales · ' + (ch.quality || '1080p HD')) + '</div>' +
+            '</div>';
+          var btns = document.createElement('div');
+          btns.className = 'tv-ucl-match-btns';
+
           if (src) {
             var addB = document.createElement('button');
             addB.type = 'button';
-            addB.className = 'tv-ucl-mini-btn' + (inMulti ? ' danger' : '');
+            addB.className = 'tv-ucl-mini-btn' + (inMulti ? ' active' : '');
             addB.tabIndex = 0;
-            addB.textContent = inMulti ? champTxt('En Multi ✓', 'A Multi ✓', 'In Multi ✓') : '+ Multi';
+            addB.setAttribute('data-tv-focus-key', 'toggle-ch:' + cKey);
+            addB.textContent = inMulti
+              ? champTxt('✓ P' + (slotPos + 1) + ' (Elegido)', '✓ P' + (slotPos + 1) + ' (Triat)', '✓ P' + (slotPos + 1) + ' (Picked)')
+              : champTxt('+ Elegir para Multi', '+ Triar per Multi', '+ Pick for Multi');
             addB.onclick = function () { toggleBuilderSource(src); };
             btns.appendChild(addB);
           }
 
+          var playB = document.createElement('button');
+          playB.type = 'button';
+          playB.className = 'tv-ucl-mini-btn';
+          playB.tabIndex = 0;
+          playB.setAttribute('data-tv-focus-key', 'play-ch:' + cKey);
+          playB.textContent = champTxt('Ver solo', 'Veure sol', 'Watch');
+          playB.onclick = function () {
+            playSingleMatchOrChannel(ch.name, ch.network, ch.channels);
+          };
+          btns.appendChild(playB);
+
           card.appendChild(btns);
           wrap.appendChild(card);
-          mGrid.appendChild(wrap);
-        })(allMatches[mi]);
+          muxGrid.appendChild(wrap);
+        })(tvChampState.multiplexChannels[c], c);
       }
-      mSec.appendChild(mGrid);
-      container.appendChild(mSec);
+      muxSec.appendChild(muxGrid);
+      container.appendChild(muxSec);
     }
 
     // 5. UEFA Champions League Standings Table
