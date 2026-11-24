@@ -615,6 +615,11 @@ function switchTvScreen(mode) {
     }, 50);
   } else if (mode === 'player') {
     setTimeout(function () {
+      if (typeof window.isTvMultiActive === 'function' && window.isTvMultiActive()) {
+        var multiBtn = document.querySelector('#tv-multi-bar button');
+        if (multiBtn && multiBtn.focus) multiBtn.focus();
+        return;
+      }
       var target = standbyOverlay.style.display !== 'none'
         ? document.getElementById('btn-standby-exit')
         : document.getElementById('btn-hud-playpause');

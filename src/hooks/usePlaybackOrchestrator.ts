@@ -57,7 +57,28 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
   const langNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const extractionReqSeqRef = useRef<number>(0);
   const extractionAbortRef = useRef<AbortController | null>(null);
+  const multiPresetAbortRef = useRef<AbortController | null>(null);
+  const secondaryExtractAbortRef = useRef<AbortController | null>(null);
   const preExtractionSnapshotRef = useRef<PreExtractionSnapshot | null>(null);
+
+  const abortMultiExtractions = useCallback(() => {
+    if (multiPresetAbortRef.current) {
+      try {
+        multiPresetAbortRef.current.abort();
+      } catch {
+        // ignore
+      }
+      multiPresetAbortRef.current = null;
+    }
+    if (secondaryExtractAbortRef.current) {
+      try {
+        secondaryExtractAbortRef.current.abort();
+      } catch {
+        // ignore
+      }
+      secondaryExtractAbortRef.current = null;
+    }
+  }, []);
 
   const showLanguageNotice = useCallback((popup: Omit<LanguageNoticePopup, 'id'>) => {
     if (langNoticeTimerRef.current) clearTimeout(langNoticeTimerRef.current);
@@ -97,6 +118,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     if (isPlayerClosedLocallyRef.current) {
       setIsPlayerClosedLocally(false);
     }
+    abortMultiExtractions();
     if (extractionAbortRef.current) {
       try {
         extractionAbortRef.current.abort();
@@ -121,6 +143,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
   ]);
 
   const handleCancelMediaExtraction = useCallback(() => {
+    abortMultiExtractions();
     if (extractionAbortRef.current) {
       try {
         extractionAbortRef.current.abort();
@@ -190,6 +213,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
   const handleClosePlayer = useCallback(() => {
     const o = optsRef.current;
     triggerHaptic('light');
+    abortMultiExtractions();
     clearExtractionSnapshot();
     o.setIsPlayerMinimized(false);
     o.setCinemaModePersist(false);
@@ -214,7 +238,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
       o.setIsPlayerClosedLocally(true);
     }
     o.onRestorePlaybackOrigin?.({ reason: 'close' });
-  }, [clearExtractionSnapshot, commitVideoStateSync]);
+  }, [abortMultiExtractions, clearExtractionSnapshot, commitVideoStateSync]);
 
   const handleStopRoomPlaybackForEveryone = useCallback(() => {
     const o = optsRef.current;
@@ -224,6 +248,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
       return;
     }
     triggerHaptic('medium');
+    abortMultiExtractions();
     clearExtractionSnapshot();
     o.setIsPlayerMinimized(false);
     o.setIsPlayerClosedLocally(false);
@@ -241,7 +266,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     o.setVideoState(idleNext);
     commitVideoStateSync('change_url', idleNext);
     o.onRestorePlaybackOrigin?.({ reason: 'close' });
-  }, [clearExtractionSnapshot, commitVideoStateSync]);
+  }, [abortMultiExtractions, clearExtractionSnapshot, commitVideoStateSync]);
 
   const handleSyncPlayerAction = useCallback(
     (action: 'play' | 'pause' | 'seek' | 'change_url', patch: Partial<VideoState>) => {
@@ -278,6 +303,8 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     opts,
     extractionReqSeqRef,
     activeHistoryIdRef,
+    multiPresetAbortRef,
+    secondaryExtractAbortRef,
     beginMediaExtraction,
     clearExtractionSnapshot,
     showLanguageNotice,

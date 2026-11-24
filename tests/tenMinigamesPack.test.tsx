@@ -16,6 +16,7 @@ import { ArcadeRetroStage } from '../src/components/games/arcade/ArcadeRetroStag
 import { TvTriviaStage } from '../src/components/games/arcade/TvTriviaStage';
 import { SoccerPongStage } from '../src/components/games/SoccerPongStage';
 import { GAME_ASSET_CDN_MAP, resolveGameAssetUrl } from '../src/shared/gameAssetsCdn';
+import { socketService } from '../src/services/socket';
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -77,6 +78,9 @@ describe('10-Minigame Arcade & Quiz Pack (Smart TV ES5 + Web/Mobile React)', () 
     } as unknown as CanvasRenderingContext2D;
 
     HTMLCanvasElement.prototype.getContext = vi.fn(() => mockCtx) as unknown as typeof HTMLCanvasElement.prototype.getContext;
+    vi.spyOn(socketService, 'connect').mockImplementation(() => {});
+    vi.spyOn(socketService, 'joinGyroChannel').mockImplementation(() => {});
+    vi.spyOn(socketService, 'subscribe').mockImplementation(() => () => {});
   });
 
   afterEach(() => {

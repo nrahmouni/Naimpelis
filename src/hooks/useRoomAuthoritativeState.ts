@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useCallback, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import type {
   BlackjackGameState,
   BoardGameState,
@@ -76,8 +76,8 @@ export function useRoomAuthoritativeState(params: {
   const [activeAudioSlot, setActiveAudioSlot] = useState<number>(0);
 
   const secondaryStream: SecondaryStreamState | null = secondaryStreams[0] ?? null;
-  const setSecondaryStream: React.Dispatch<React.SetStateAction<SecondaryStreamState | null>> =
-    React.useCallback((updater) => {
+  const setSecondaryStream: Dispatch<SetStateAction<SecondaryStreamState | null>> =
+    useCallback((updater) => {
       setSecondaryStreams((prev) => {
         const currentFirst = prev[0] ?? null;
         const nextFirst = typeof updater === 'function' ? updater(currentFirst) : updater;

@@ -75,6 +75,8 @@ export interface PlaybackCoreContext {
   opts: UsePlaybackOrchestratorOptions;
   extractionReqSeqRef: React.MutableRefObject<number>;
   activeHistoryIdRef: React.MutableRefObject<string | null>;
+  multiPresetAbortRef: React.MutableRefObject<AbortController | null>;
+  secondaryExtractAbortRef: React.MutableRefObject<AbortController | null>;
   beginMediaExtraction: () => { reqSeq: number; signal: AbortSignal };
   clearExtractionSnapshot: () => void;
   showLanguageNotice: (popup: Omit<LanguageNoticePopup, 'id'>) => void;

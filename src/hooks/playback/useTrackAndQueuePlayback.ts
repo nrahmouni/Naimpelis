@@ -52,6 +52,8 @@ export function createTrackAndQueuePlaybackHandlers(
   const {
     opts,
     extractionReqSeqRef,
+    multiPresetAbortRef,
+    secondaryExtractAbortRef,
     beginMediaExtraction,
     clearExtractionSnapshot,
     showLanguageNotice,
@@ -86,8 +88,6 @@ export function createTrackAndQueuePlaybackHandlers(
     showHostLockNotice,
     scrollDesktopToPlayer,
   } = opts;
-
-  let activeMultiPresetAbort: AbortController | null = null;
 
   const resolveTrackPlaybackMode = (
     track: StreamTrack,
@@ -571,12 +571,19 @@ export function createTrackAndQueuePlaybackHandlers(
     const cleanSourceUrl = String(optsArg.sourceUrl || '').trim();
     if (!cleanSourceUrl) return;
 
+    if (!canChangeMedia) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
+
     const allUrls = Array.from(
       new Set([cleanSourceUrl, ...(optsArg.fallbackUrls || [])].map((u) => String(u || '').trim()).filter(Boolean))
     );
 
+    const isPrimaryNative = videoState.mode === 'hls' || videoState.mode === 'direct';
+
     if (
-      videoState.mode !== 'idle' &&
+      isPrimaryNative &&
       videoState.rawSourceUrl &&
       allUrls.includes(videoState.rawSourceUrl)
     ) {
@@ -585,11 +592,20 @@ export function createTrackAndQueuePlaybackHandlers(
       return;
     }
 
-    if (videoState.mode === 'idle') {
-      if (!canChangeMedia) {
-        showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+    if (isPrimaryNative) {
+      const existingSecIdx = secondaryStreams.findIndex(
+        (s) =>
+          (s.rawSourceUrl && allUrls.includes(s.rawSourceUrl)) ||
+          (optsArg.matchId && s.matchId && s.matchId === optsArg.matchId)
+      );
+      if (existingSecIdx >= 0 && secondaryStreams[existingSecIdx]?.status !== 'error') {
+        setActiveAudioSlot(existingSecIdx + 1);
+        scrollDesktopToPlayer();
         return;
       }
+    }
+
+    if (!isPrimaryNative) {
       const tracks: StreamTrack[] = allUrls.map((u, idx) => ({
         id: `mv-ch-${idx}`,
         label: idx === 0 ? optsArg.title : `${optsArg.title} · Señal ${idx + 1}`,
@@ -612,6 +628,16 @@ export function createTrackAndQueuePlaybackHandlers(
       return;
     }
 
+    if (secondaryExtractAbortRef.current) {
+      try {
+        secondaryExtractAbortRef.current.abort();
+      } catch {
+        // ignore
+      }
+    }
+    const secCtrl = new AbortController();
+    secondaryExtractAbortRef.current = secCtrl;
+
     setIsPlayerClosedLocally(false);
     setIsPlayerMinimized(false);
     scrollDesktopToPlayer();
@@ -623,7 +649,10 @@ export function createTrackAndQueuePlaybackHandlers(
         sourceUrl: cleanSourceUrl,
         fallbackUrls: optsArg.fallbackUrls,
         title: optsArg.title,
+        signal: secCtrl.signal,
       });
+
+      if (secCtrl.signal.aborted) return;
 
       const desiredLayout: 'split' | 'corner' = optsArg.forceLayout || 'split';
       const nextItem: SecondaryStreamState = {
@@ -634,7 +663,7 @@ export function createTrackAndQueuePlaybackHandlers(
         subtitle: optsArg.subtitle,
         mode: resolved.mode,
         layout: desiredLayout,
-        fallbackUrls: optsArg.fallbackUrls,
+        fallbackUrls: allUrls.filter((u) => u !== resolved.rawSourceUrl),
         matchId: optsArg.matchId,
         status: 'ready',
       };
@@ -648,12 +677,15 @@ export function createTrackAndQueuePlaybackHandlers(
       });
       playCinemaSound('play');
     } catch (err: unknown) {
-      if (isAbortError(err)) return;
+      if (isAbortError(err) || secCtrl.signal.aborted) return;
       const errMsg = err instanceof Error && err.message ? err.message : '';
       setExtractionError(
         errMsg || 'Esta señal secundaria no está emitiendo en este momento.'
       );
     } finally {
+      if (secondaryExtractAbortRef.current === secCtrl) {
+        secondaryExtractAbortRef.current = null;
+      }
       setLoadingItemId(null);
     }
   };
@@ -674,15 +706,15 @@ export function createTrackAndQueuePlaybackHandlers(
       return;
     }
 
-    if (activeMultiPresetAbort) {
+    if (multiPresetAbortRef.current) {
       try {
-        activeMultiPresetAbort.abort();
+        multiPresetAbortRef.current.abort();
       } catch {
         // ignore
       }
     }
     const ctrl = new AbortController();
-    activeMultiPresetAbort = ctrl;
+    multiPresetAbortRef.current = ctrl;
 
     triggerHaptic('medium');
     setIsPlayerClosedLocally(false);
@@ -804,8 +836,8 @@ export function createTrackAndQueuePlaybackHandlers(
       if (isAbortError(err) || ctrl.signal.aborted) return;
       setExtractionError('No se pudo iniciar la sesión Multi-Partido.');
     } finally {
-      if (activeMultiPresetAbort === ctrl) {
-        activeMultiPresetAbort = null;
+      if (multiPresetAbortRef.current === ctrl) {
+        multiPresetAbortRef.current = null;
       }
       isExtractingRef.current = false;
       setIsExtracting(false);
@@ -818,14 +850,24 @@ export function createTrackAndQueuePlaybackHandlers(
     const target = secondaryStreams[slotIdx];
     if (!target) return;
 
+    const dedupPool = Array.from(
+      new Set([target.rawSourceUrl, ...(target.fallbackUrls || [])].map((u) => String(u || '').trim()).filter(Boolean))
+    );
+    const rotated =
+      dedupPool.length > 1
+        ? [...dedupPool.slice(1), dedupPool[0]]
+        : dedupPool;
+    const retryPrimary = rotated[0] || target.rawSourceUrl;
+    const retryFallbacks = rotated.slice(1);
+
     setSecondaryStreams((prev) =>
       prev.map((item, i) => (i === slotIdx ? { ...item, status: 'loading' } : item))
     );
 
     try {
       const resolved = await extractLiveStreamWithFallbacks({
-        sourceUrl: target.rawSourceUrl,
-        fallbackUrls: target.fallbackUrls,
+        sourceUrl: retryPrimary,
+        fallbackUrls: retryFallbacks,
         title: target.title,
       });
       setSecondaryStreams((prev) =>
@@ -835,6 +877,7 @@ export function createTrackAndQueuePlaybackHandlers(
                 ...item,
                 url: resolved.url,
                 rawSourceUrl: resolved.rawSourceUrl,
+                fallbackUrls: dedupPool.filter((u) => u !== resolved.rawSourceUrl),
                 mode: resolved.mode,
                 status: 'ready',
               }
@@ -867,6 +910,22 @@ export function createTrackAndQueuePlaybackHandlers(
     triggerHaptic('medium');
 
     const prevMain = videoState;
+    const promotedTrackUrls = Array.from(
+      new Set(
+        [targetSec.rawSourceUrl, ...(targetSec.fallbackUrls || [])]
+          .map((u) => String(u || '').trim())
+          .filter(Boolean)
+      )
+    );
+    const promotedTracks: StreamTrack[] = promotedTrackUrls.map((u, idx) => ({
+      id: `p1-swap-${idx}`,
+      label: idx === 0 ? targetSec.title : `${targetSec.title} · Señal ${idx + 1}`,
+      lang: 'ES',
+      sourceUrl: u,
+      resolverType: inferResolverType(u),
+      resolvedStreamUrl: u === targetSec.rawSourceUrl ? targetSec.url : undefined,
+    }));
+
     const promotedMain: VideoState = {
       mode: targetSec.mode,
       url: targetSec.url,
@@ -876,8 +935,11 @@ export function createTrackAndQueuePlaybackHandlers(
       currentTime: 0,
       isPlaying: true,
       isLive: true,
-      tracks: [],
-      activeTrackIndex: 0,
+      tracks: promotedTracks,
+      activeTrackIndex: Math.max(
+        0,
+        promotedTracks.findIndex((t) => t.sourceUrl === targetSec.rawSourceUrl)
+      ),
       seriesMeta: undefined,
       lastUpdated: Date.now(),
       updatedBy: profileName,
@@ -885,7 +947,7 @@ export function createTrackAndQueuePlaybackHandlers(
 
     if (prevMain.mode === 'hls' || prevMain.mode === 'direct') {
       const demoted: SecondaryStreamState = {
-        id: targetSec.id,
+        id: `sec-swap-${Date.now()}-${slotIdx}`,
         url: prevMain.url,
         rawSourceUrl: prevMain.rawSourceUrl,
         title: prevMain.title,

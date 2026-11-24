@@ -48,10 +48,18 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
   const secVideoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const recoveryCountRef = useRef<number>(0);
+  const autoBackupTriedRef = useRef<number>(0);
+  const onRetryStreamRef = useRef(onRetryStream);
+  onRetryStreamRef.current = onRetryStream;
+  const fallbackCount = secondaryStream.fallbackUrls?.length || 0;
   const [buffering, setBuffering] = useState(true);
   const [streamFailed, setStreamFailed] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [cornerIndex, setCornerIndex] = useState<0 | 1 | 2 | 3>(0);
+
+  useEffect(() => {
+    autoBackupTriedRef.current = 0;
+  }, [secondaryStream.id]);
 
   const cornerClasses = [
     'top-12 right-2.5 sm:top-14 sm:right-4',
@@ -97,6 +105,22 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
     setBuffering(true);
     video.muted = !isAudioActive;
 
+    const triggerBackupOrFail = () => {
+      if (
+        onRetryStreamRef.current &&
+        fallbackCount > 0 &&
+        autoBackupTriedRef.current < Math.min(2, fallbackCount)
+      ) {
+        autoBackupTriedRef.current += 1;
+        setBuffering(true);
+        setStreamFailed(false);
+        onRetryStreamRef.current();
+        return;
+      }
+      setBuffering(false);
+      setStreamFailed(true);
+    };
+
     const handleLoadedMeta = () => {
       setBuffering(false);
       setStreamFailed(false);
@@ -104,8 +128,7 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
     };
 
     const handleVideoError = () => {
-      setBuffering(false);
-      setStreamFailed(true);
+      triggerBackupOrFail();
     };
 
     if (secondaryStream.mode === 'hls') {
@@ -139,16 +162,14 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
           }
           hls.destroy();
           hlsRef.current = null;
-          setBuffering(false);
-          setStreamFailed(true);
+          triggerBackupOrFail();
         });
       } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = secondaryStream.url;
         video.addEventListener('loadedmetadata', handleLoadedMeta, { once: true });
         video.addEventListener('error', handleVideoError, { once: true });
       } else {
-        setBuffering(false);
-        setStreamFailed(true);
+        triggerBackupOrFail();
       }
     } else {
       video.src = secondaryStream.url;

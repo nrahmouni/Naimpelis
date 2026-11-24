@@ -64,7 +64,7 @@ export interface ResolvedDeepLinkResult {
   match?: any;
   game?: { gameId: string; gameSlug: string; title: string };
   world?: {
-    world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music';
+    world: 'cine' | 'futbol' | 'champions' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music';
     cineTab?: 'movies' | 'series';
     cineCategory?: string;
     futbolTab?: 'matches' | 'channels';
@@ -608,6 +608,7 @@ export async function resolveDeepLinkTarget(
       const worldLabels: Record<string, string> = {
         cine: target.cineTab === 'series' ? 'Catálogo de Series HD' : 'Catálogo de Cine y Estrenos 4K',
         futbol: 'Fútbol en Directo y Marcadores',
+        champions: 'UEFA Champions League · MultiChampions & Multi-Partido HD',
         tv: 'Canales de TV y TDT en Directo',
         juegos: 'Riffan Play — Salón de Juegos Multijugador',
         youtube: 'YouTube en Sala Sincronizada',

@@ -227,6 +227,7 @@ function buildCardButton(item, kind) {
       '</div>';
 
     btn.onfocus = function () {
+      if (item.id === 'tdt-antena3') return;
       if (tvPrewarmTimer) clearTimeout(tvPrewarmTimer);
       tvPrewarmTimer = setTimeout(function () {
         if (typeof prewarmTdtChannelOnTv === 'function') {
@@ -879,33 +880,9 @@ function updateTdtEpgCardsInPlace() {
 }
 
 function prewarmFlagshipChannels() {
-  if (typeof prewarmTdtChannelOnTv !== 'function' || !catalogData.tdt || !catalogData.tdt.length) return;
-  var targets = [
-    'tdt-la1',
-    'tdt-la2',
-    'tdt-antena3',
-    'tdt-cuatro',
-    'tdt-telecinco',
-    'tdt-lasexta',
-    'dazn-laliga',
-    'mplus-laliga'
-  ];
-  var matched = [];
-  for (var t = 0; t < targets.length; t++) {
-    for (var i = 0; i < catalogData.tdt.length; i++) {
-      if (catalogData.tdt[i] && catalogData.tdt[i].id === targets[t]) {
-        matched.push(catalogData.tdt[i]);
-        break;
-      }
-    }
-  }
-  for (var m = 0; m < matched.length; m++) {
-    (function (chItem, delayMs) {
-      setTimeout(function () {
-        if (activeScreen === 'hub') prewarmTdtChannelOnTv(chItem, 0);
-      }, delayMs);
-    })(matched[m], 150 + m * 180);
-  }
+  // Disabled auto-extraction of Antena 3 / flagship third-party channels at TV startup
+  // so TV boots quietly and only tunes live streams when explicitly selected by the user.
+  return;
 }
 
 function loadLiveEpg() {
@@ -983,7 +960,6 @@ function loadTvCatalog() {
     }
     mergeTvLiveCatalog();
     checkDone();
-    prewarmFlagshipChannels();
   });
   xhrJson('GET', '/api/catalog/latest-releases?lang=' + encodeURIComponent(activeTvLang), null, function (err, d) {
     if (!err && d) {

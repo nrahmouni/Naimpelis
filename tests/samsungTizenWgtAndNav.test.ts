@@ -128,7 +128,7 @@ describe('Samsung Smart TV (Tizen .wgt) Architecture, Navigation & Packager', ()
     expect(mapKeyboardEventToTvAction({ key: '', keyCode: 428 })).toBe('CH_DOWN');
   });
 
-  it('auto-launches Antena 3 (Edge 2 first) on Samsung Tizen /tv boot and fails over cleanly within the same channel', async () => {
+  it('boots Samsung Tizen /tv cleanly into Hub without auto-launching Antena 3 and validates Champions multi-screen ES5 runtime', async () => {
     const vm = await import('node:vm');
     const tvScripts = [
       'tv-i18n.js',
@@ -136,6 +136,7 @@ describe('Samsung Smart TV (Tizen .wgt) Architecture, Navigation & Packager', ()
       'tv-player-core.js',
       'tv-player-modes.js',
       'tv-hub.js',
+      'tv-champions-multi.js',
       'tv-nav-voice.js',
     ].map((name) => fs.readFileSync(path.join(ROOT, 'public/tv', name), 'utf8'));
 
@@ -145,9 +146,10 @@ describe('Samsung Smart TV (Tizen .wgt) Architecture, Navigation & Packager', ()
 
     const combined = tvScripts.join('\n');
     expect(combined).toContain('isTizenDevice');
-    expect(combined).toContain('maybeAutoLaunchTizenAntena3');
-    expect(combined).toContain("id: 'tdt-antena3'");
-    expect(combined).toContain('/api/belix/stream/531071.m3u8');
+    expect(combined).not.toContain('maybeAutoLaunchTizenAntena3');
+    expect(combined).toContain('renderTvChampionsInto');
+    expect(combined).toContain('stopTvMultiPlayback');
+    expect(combined).toContain('isTvMultiActive');
     expect(combined).toContain('startLiveStallMonitor');
     expect(combined).toContain('extractTvTrackHostKey');
     expect(combined).toContain('activeLiveFailedHostKeys');

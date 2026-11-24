@@ -9,6 +9,10 @@ function getFocusableRoot() {
   if (voiceModal && voiceModal.style.display === 'block') return voiceModal;
   if (seriesModal && seriesModal.style.display === 'block') return seriesModal;
   if (fsPromptBanner && fsPromptBanner.style.display === 'block') return fsPromptBanner;
+  if (activeScreen === 'player' && typeof window.isTvMultiActive === 'function' && window.isTvMultiActive()) {
+    var mw = document.getElementById('tv-multi-wrap');
+    if (mw) return mw;
+  }
   if (activeScreen === 'player' && isMiniGuideOpen && miniGuideDrawer) return miniGuideDrawer;
   if (activeScreen === 'player') return playerScreen;
   if (activeScreen === 'pairing') return pairingScreen;
@@ -598,33 +602,34 @@ document.addEventListener('keydown', function (e) {
     }
   }
 
+  var multiNowActive = activeScreen === 'player' && typeof window.isTvMultiActive === 'function' && window.isTvMultiActive();
   if (code === 37 || code === 21) {
     if (targetTag === 'INPUT' && activeEl.selectionStart > 0) return;
     if (e.preventDefault) e.preventDefault();
-    if (activeScreen === 'player' && !isMiniGuideOpen) revealHud();
+    if (activeScreen === 'player' && !isMiniGuideOpen && !multiNowActive) revealHud();
     moveFocusDirection('left');
     return;
   }
   if (code === 38 || code === 19) {
     if (keyName === 'MediaPause') {
-      if (activeScreen === 'player' && videoEl && !videoEl.paused) videoEl.pause();
+      if (activeScreen === 'player' && !multiNowActive && videoEl && !videoEl.paused) videoEl.pause();
       return;
     }
     if (e.preventDefault) e.preventDefault();
-    if (activeScreen === 'player' && !isMiniGuideOpen) revealHud();
+    if (activeScreen === 'player' && !isMiniGuideOpen && !multiNowActive) revealHud();
     moveFocusDirection('up');
     return;
   }
   if (code === 39 || code === 22) {
     if (targetTag === 'INPUT' && activeEl.selectionEnd < (activeEl.value || '').length) return;
     if (e.preventDefault) e.preventDefault();
-    if (activeScreen === 'player' && !isMiniGuideOpen) revealHud();
+    if (activeScreen === 'player' && !isMiniGuideOpen && !multiNowActive) revealHud();
     moveFocusDirection('right');
     return;
   }
   if (code === 40 || code === 20) {
     if (e.preventDefault) e.preventDefault();
-    if (activeScreen === 'player' && !isMiniGuideOpen) revealHud();
+    if (activeScreen === 'player' && !isMiniGuideOpen && !multiNowActive) revealHud();
     moveFocusDirection('down');
     return;
   }
@@ -713,6 +718,7 @@ document.addEventListener('keydown', function (e) {
   }
 
   if (activeScreen !== 'player') return;
+  if (typeof window.isTvMultiActive === 'function' && window.isTvMultiActive()) return;
   revealHud();
   if (code === 32 && (currentMode === 'hls' || currentMode === 'direct')) {
     if (e.preventDefault) e.preventDefault();
