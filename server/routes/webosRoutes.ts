@@ -102,6 +102,9 @@ export function registerWebOsRoutes(app: express.Express, rootDir: string): void
       'tv/tv-nav-voice.js',
       'vendor/hls.min.js',
       'vendor/riffan-racing-3d.iife.js',
+      'draco/gltf/draco_decoder.js',
+      'draco/gltf/draco_decoder.wasm',
+      'draco/gltf/draco_wasm_wrapper.js',
     ];
     for (const rel of candidatePublic) {
       if (fs.existsSync(path.join(publicDir, rel))) {

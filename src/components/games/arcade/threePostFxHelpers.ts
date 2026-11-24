@@ -12,7 +12,12 @@ import { KTX2Loader } from 'three/examples/jsm/loaders/KTX2Loader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 import type { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
-const DRACO_CDN_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.6/';
+function getLocalDracoPath(): string {
+  if (typeof window !== 'undefined' && window.location?.protocol === 'file:') {
+    return './draco/gltf/';
+  }
+  return '/draco/gltf/';
+}
 const BASIS_CDN_PATH = 'https://cdn.jsdelivr.net/npm/three@0.187.0/examples/jsm/libs/basis/';
 
 let sharedDracoLoader: DRACOLoader | null = null;
@@ -28,9 +33,9 @@ export function attachSafeMeshDecoders(
 ): void {
   if (typeof window === 'undefined') return;
   try {
-    if (!sharedDracoLoader && typeof Worker !== 'undefined') {
+    if (!sharedDracoLoader) {
       sharedDracoLoader = new DRACOLoader();
-      sharedDracoLoader.setDecoderPath(DRACO_CDN_PATH);
+      sharedDracoLoader.setDecoderPath(getLocalDracoPath());
     }
     if (sharedDracoLoader) {
       loader.setDRACOLoader(sharedDracoLoader);

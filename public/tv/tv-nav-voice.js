@@ -2,6 +2,10 @@
 // ROW-AWARE SPATIAL 10-FOOT D-PAD, MINI-GUIDE & TIZEN REMOTE (ES5)
 // ===================================================================
 function getFocusableRoot() {
+  if (typeof window.isTvGameActive === 'function' && window.isTvGameActive()) {
+    var gs = document.getElementById('tv-games-screen');
+    if (gs) return gs;
+  }
   if (voiceModal && voiceModal.style.display === 'block') return voiceModal;
   if (seriesModal && seriesModal.style.display === 'block') return seriesModal;
   if (fsPromptBanner && fsPromptBanner.style.display === 'block') return fsPromptBanner;

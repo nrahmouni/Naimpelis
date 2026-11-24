@@ -4,7 +4,13 @@ const POLYHAVEN_HDR_CDN = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k'
 const POLYHAVEN_TEX_CDN = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k';
 
 export const GAME_ASSET_CDN_MAP: Readonly<Record<string, string>> = {
-  // ===== 3D GLB Models (Kenney Car & Racing Kits + Three.js Rigged Animated Characters) =====
+  // ===== 3D GLB Models (Real Supercars / Endurance / Motorsport + Kenney Props + Three.js Actors) =====
+  'models/ferrari.glb': `${THREE_GLTF_CDN}/ferrari.glb`,
+  'models/ferrari_ao.png': `${THREE_GLTF_CDN}/ferrari_ao.png`,
+  'models/endurance.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/endurance.glb',
+  'models/hypercar.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/hypercar.glb',
+  'models/rally.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/rally.glb',
+  'models/wedge.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/wedge.glb',
   'models/race-future.glb': `${KENNEY_CDN}/3d/car/race-future.glb`,
   'models/race.glb': `${KENNEY_CDN}/3d/car/race.glb`,
   'models/sedan-sports.glb': `${KENNEY_CDN}/3d/car/sedan-sports.glb`,
@@ -18,7 +24,13 @@ export const GAME_ASSET_CDN_MAP: Readonly<Record<string, string>> = {
   'models/pitsGarage.glb': `${KENNEY_CDN}/3d/racing/pitsGarage.glb`,
   'models/barrierRed.glb': `${KENNEY_CDN}/3d/racing/barrierRed.glb`,
   'models/barrierWhite.glb': `${KENNEY_CDN}/3d/racing/barrierWhite.glb`,
+  'models/barrierWall.glb': `${KENNEY_CDN}/3d/racing/barrierWall.glb`,
+  'models/billboard.glb': `${KENNEY_CDN}/3d/racing/billboard.glb`,
+  'models/bannerTowerRed.glb': `${KENNEY_CDN}/3d/racing/bannerTowerRed.glb`,
+  'models/bannerTowerGreen.glb': `${KENNEY_CDN}/3d/racing/bannerTowerGreen.glb`,
   'models/flagCheckers.glb': `${KENNEY_CDN}/3d/racing/flagCheckers.glb`,
+  'models/treeLarge.glb': `${KENNEY_CDN}/3d/racing/treeLarge.glb`,
+  'models/treeSmall.glb': `${KENNEY_CDN}/3d/racing/treeSmall.glb`,
   'models/RobotExpressive.glb': `${THREE_GLTF_CDN}/RobotExpressive/RobotExpressive.glb`,
   'models/Soldier.glb': `${THREE_GLTF_CDN}/Soldier.glb`,
   'models/Xbot.glb': `${THREE_GLTF_CDN}/Xbot.glb`,
@@ -52,9 +64,9 @@ export const GAME_ASSET_CDN_MAP: Readonly<Record<string, string>> = {
   'pbr/oak_rough.jpg': `${POLYHAVEN_TEX_CDN}/oak_veneer_01/oak_veneer_01_rough_1k.jpg`,
   'pbr/wood_floor_diff.jpg': `${POLYHAVEN_TEX_CDN}/wood_floor_deck/wood_floor_deck_diff_1k.jpg`,
   'pbr/wood_floor_nor.jpg': `${POLYHAVEN_TEX_CDN}/wood_floor_deck/wood_floor_deck_nor_gl_1k.jpg`,
-  'pbr/asphalt_diff.jpg': `${POLYHAVEN_TEX_CDN}/asphalt_02/asphalt_02_diff_1k.jpg`,
-  'pbr/asphalt_nor.jpg': `${POLYHAVEN_TEX_CDN}/asphalt_02/asphalt_02_nor_gl_1k.jpg`,
-  'pbr/asphalt_rough.jpg': `${POLYHAVEN_TEX_CDN}/asphalt_02/asphalt_02_rough_1k.jpg`,
+  'pbr/asphalt_diff.jpg': `${POLYHAVEN_TEX_CDN}/asphalt_track/asphalt_track_diff_1k.jpg`,
+  'pbr/asphalt_nor.jpg': `${POLYHAVEN_TEX_CDN}/asphalt_track/asphalt_track_nor_gl_1k.jpg`,
+  'pbr/asphalt_rough.jpg': `${POLYHAVEN_TEX_CDN}/asphalt_track/asphalt_track_rough_1k.jpg`,
   'pbr/concrete_worn_diff.jpg': `${POLYHAVEN_TEX_CDN}/concrete_floor_worn_001/concrete_floor_worn_001_diff_1k.jpg`,
   'pbr/grass_diff.jpg': `${POLYHAVEN_TEX_CDN}/aerial_grass_rock/aerial_grass_rock_diff_1k.jpg`,
   'pbr/forrest_ground_diff.jpg': `${POLYHAVEN_TEX_CDN}/forrest_ground_01/forrest_ground_01_diff_1k.jpg`,

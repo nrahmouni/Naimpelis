@@ -183,19 +183,41 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     });
   }
 
-  // Stadium Twilight Ground Plane
+  const grassCanvas = document.createElement('canvas');
+  grassCanvas.width = 256;
+  grassCanvas.height = 256;
+  const gCtx = grassCanvas.getContext('2d')!;
+  gCtx.fillStyle = '#1f4228';
+  gCtx.fillRect(0, 0, 256, 256);
+  gCtx.fillStyle = '#275132';
+  gCtx.fillRect(0, 0, 128, 256);
+  for (let i = 0; i < 1800; i += 1) {
+    const gx = Math.random() * 256;
+    const gy = Math.random() * 256;
+    const v = 35 + Math.floor(Math.random() * 28);
+    gCtx.fillStyle = `rgb(${Math.round(v * 0.68)},${v + 24},${Math.round(v * 0.55)})`;
+    gCtx.fillRect(gx, gy, 2, 2);
+  }
+  const grassFallbackTex = new THREE.CanvasTexture(grassCanvas);
+  grassFallbackTex.colorSpace = THREE.SRGBColorSpace;
+  grassFallbackTex.wrapS = THREE.RepeatWrapping;
+  grassFallbackTex.wrapT = THREE.RepeatWrapping;
+  grassFallbackTex.repeat.set(42, 42);
+
+  // Stadium Grass Turf Ground Plane (textured immediately on Frame 0)
   const groundGeo = new THREE.PlaneGeometry(1400, 1400);
   const groundMat = new THREE.MeshStandardMaterial({
-    color: 0x0b151e,
-    roughness: 0.96,
-    metalness: 0.05,
+    map: grassFallbackTex,
+    color: 0xffffff,
+    roughness: 0.94,
+    metalness: 0.02,
   });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
   ground.position.set(85, -0.08, 10);
   ground.receiveShadow = !isSoftwareGl;
   scene.add(ground);
-  disposables.push(groundGeo, groundMat);
+  disposables.push(groundGeo, groundMat, grassFallbackTex);
 
   // Procedural Ribbon Asphalt Geometry + Red/White Curbs + Guardrails
   const roadPos: number[] = [];
@@ -319,15 +341,15 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   let skidCursor = 0;
 
   if (!isSoftwareGl) {
-    void loadCachedPbrTexture('assets/games/pbr/forrest_ground_diff.jpg', {
+    void loadCachedPbrTexture('assets/games/pbr/grass_diff.jpg', {
       srgb: true,
-      repeatX: 28,
-      repeatY: 28,
+      repeatX: 34,
+      repeatY: 34,
       anisotropy: 8,
     }).then((tex) => {
       if (!tex || circuitDisposed) return;
       groundMat.map = tex;
-      groundMat.color.setHex(0x6c877c);
+      groundMat.color.setHex(0x9fb88f);
       groundMat.needsUpdate = true;
     });
     void loadCachedPbrTexture('assets/games/pbr/asphalt_nor.jpg', {
@@ -633,6 +655,40 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
           yaw
         );
       }
+    });
+
+    void loadCachedTrackProp('assets/games/models/billboard.glb').then((src) => {
+      if (!src || circuitDisposed) return;
+      [42, 130, 218, 305].forEach((idx, n) => {
+        const smp = samples[idx % SAMPLE_COUNT];
+        const side = n % 2 === 0 ? 1 : -1;
+        const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
+        placePropNormalized(
+          src,
+          10.5,
+          smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 4.8),
+          0,
+          smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 4.8),
+          yaw
+        );
+      });
+    });
+
+    void loadCachedTrackProp('assets/games/models/bannerTowerRed.glb').then((src) => {
+      if (!src || circuitDisposed) return;
+      [18, 175].forEach((idx, n) => {
+        const smp = samples[idx % SAMPLE_COUNT];
+        const side = n === 0 ? 1 : -1;
+        const yaw = Math.atan2(smp.tangent.x, smp.tangent.z);
+        placePropNormalized(
+          src,
+          6.2,
+          smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 4.2),
+          0,
+          smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 4.2),
+          yaw
+        );
+      });
     });
   }
 

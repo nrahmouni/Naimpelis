@@ -493,24 +493,43 @@ function startTvRacingGame(scr) {
     '</div></div></div></div>' +
     '<div class="tv-game-controls-hint">' +
     '<span>Mando TV: ▲ Acelerar · ▼ Freno · ◀ ▶ Girar · OK Nitro</span>' +
-    '<span>Móvil: Escanea el QR para conducir inclinando tu smartphone (Giroscopio 30Hz + Vibración)</span>' +
+    '<span>Móvil: Escanea el QR para volante giroscópico (1P / 2P)</span>' +
     '</div>';
 
+  var tvRemoteAutoGas = false;
+  var tvNitroTapTimer = null;
+  function syncRemoteKeys() {
+    if (tvRacingEngineHandle && tvRacingEngineHandle.setRemoteKey) tvRacingEngineHandle.setRemoteKey(tvRacingRemoteKeys);
+    else if (window.RiffanRacing3D && window.RiffanRacing3D.setRemoteKey) window.RiffanRacing3D.setRemoteKey(tvRacingRemoteKeys);
+  }
+  function focusRaceArena() {
+    var ar = document.getElementById('race-arena');
+    if (ar) { ar.tabIndex = -1; try { ar.focus(); } catch (e) {} }
+  }
   document.getElementById('btn-game-back').onclick = closeTvGame;
   document.getElementById('btn-race-exit').onclick = closeTvGame;
   document.getElementById('btn-race-cam').onclick = function () {
     if (tvRacingEngineHandle && tvRacingEngineHandle.cycleCamera) tvRacingEngineHandle.cycleCamera();
     else if (window.RiffanRacing3D && window.RiffanRacing3D.cycleCamera) window.RiffanRacing3D.cycleCamera();
+    focusRaceArena();
   };
-  function restartRace() {
+  function restartRace(startMode) {
     tvRacingFinished = false;
     var ov = document.getElementById('race-finish-ov');
     if (ov) ov.style.display = 'none';
+    tvRemoteAutoGas = (startMode === 'solo' || (startMode === 'start' && !tvRacingHasController));
+    tvRacingRemoteKeys.up = tvRemoteAutoGas;
+    tvRacingRemoteKeys.down = false;
+    tvRacingRemoteKeys.left = false;
+    tvRacingRemoteKeys.right = false;
+    tvRacingRemoteKeys.nitro = false;
+    syncRemoteKeys();
     if (tvRacingEngineHandle && tvRacingEngineHandle.resetRace) tvRacingEngineHandle.resetRace();
     else if (window.RiffanRacing3D && window.RiffanRacing3D.resetRace) window.RiffanRacing3D.resetRace();
+    focusRaceArena();
   }
-  document.getElementById('btn-race-restart').onclick = restartRace;
-  document.getElementById('btn-race-replay').onclick = restartRace;
+  document.getElementById('btn-race-restart').onclick = function () { restartRace(tvRemoteAutoGas ? 'solo' : 'auto'); };
+  document.getElementById('btn-race-replay').onclick = function () { restartRace(tvRemoteAutoGas ? 'solo' : 'auto'); };
 
   var stageEl = document.getElementById('tv-racing-stage');
   var statusPill = document.getElementById('race-gyro-pill');
@@ -643,31 +662,36 @@ function startTvRacingGame(scr) {
     : null;
   connectTvRacingGyroWs(raceRoom, statusPill, raceLobby);
 
-  function syncRemoteKeys() {
-    if (tvRacingEngineHandle && tvRacingEngineHandle.setRemoteKey) tvRacingEngineHandle.setRemoteKey(tvRacingRemoteKeys);
-    else if (window.RiffanRacing3D && window.RiffanRacing3D.setRemoteKey) window.RiffanRacing3D.setRemoteKey(tvRacingRemoteKeys);
-  }
   tvGameKeyHandler = function (e, code) {
-    if (tvRacingFinished && (code === 13 || code === 23 || code === 66 || code === 32)) { if (e.preventDefault) e.preventDefault(); restartRace(); return true; }
+    if (raceLobby && !raceLobby.isReady()) return false;
+    if (tvRacingFinished && (code === 13 || code === 23 || code === 66 || code === 32)) { if (e.preventDefault) e.preventDefault(); restartRace('solo'); return true; }
     if (code === 37 || code === 21) { tvRacingRemoteKeys.left = true; syncRemoteKeys(); if (e.preventDefault) e.preventDefault(); return true; }
     if (code === 39 || code === 22) { tvRacingRemoteKeys.right = true; syncRemoteKeys(); if (e.preventDefault) e.preventDefault(); return true; }
-    if (code === 38 || code === 19) { tvRacingRemoteKeys.up = true; syncRemoteKeys(); if (e.preventDefault) e.preventDefault(); return true; }
-    if (code === 40 || code === 20) { tvRacingRemoteKeys.down = true; syncRemoteKeys(); if (e.preventDefault) e.preventDefault(); return true; }
-    if (code === 13 || code === 23 || code === 66 || code === 32) { tvRacingRemoteKeys.nitro = true; syncRemoteKeys(); if (e.preventDefault) e.preventDefault(); return true; }
+    if (code === 38 || code === 19) { tvRemoteAutoGas = true; tvRacingRemoteKeys.up = true; tvRacingRemoteKeys.down = false; syncRemoteKeys(); if (e.preventDefault) e.preventDefault(); return true; }
+    if (code === 40 || code === 20) { tvRemoteAutoGas = false; tvRacingRemoteKeys.up = false; tvRacingRemoteKeys.down = true; syncRemoteKeys(); if (e.preventDefault) e.preventDefault(); return true; }
+    if (code === 13 || code === 23 || code === 66 || code === 32) {
+      if (tvNitroTapTimer) { clearTimeout(tvNitroTapTimer); tvNitroTapTimer = null; }
+      tvRacingRemoteKeys.nitro = true; syncRemoteKeys();
+      if (e.preventDefault) e.preventDefault(); return true;
+    }
     if (code === 67 || code === 166 || code === 427) {
       if (tvRacingEngineHandle && tvRacingEngineHandle.cycleCamera) tvRacingEngineHandle.cycleCamera();
       else if (window.RiffanRacing3D && window.RiffanRacing3D.cycleCamera) window.RiffanRacing3D.cycleCamera();
       if (e.preventDefault) e.preventDefault(); return true;
     }
-    if (code === 82) { restartRace(); if (e.preventDefault) e.preventDefault(); return true; }
+    if (code === 82) { restartRace(tvRemoteAutoGas ? 'solo' : 'auto'); if (e.preventDefault) e.preventDefault(); return true; }
     return false;
   };
   tvGameKeyUpHandler = function (_e, code) {
     if (code === 37 || code === 21) { tvRacingRemoteKeys.left = false; syncRemoteKeys(); return true; }
     if (code === 39 || code === 22) { tvRacingRemoteKeys.right = false; syncRemoteKeys(); return true; }
-    if (code === 38 || code === 19) { tvRacingRemoteKeys.up = false; syncRemoteKeys(); return true; }
+    if (code === 38 || code === 19) { if (!tvRemoteAutoGas) { tvRacingRemoteKeys.up = false; syncRemoteKeys(); } return true; }
     if (code === 40 || code === 20) { tvRacingRemoteKeys.down = false; syncRemoteKeys(); return true; }
-    if (code === 13 || code === 23 || code === 66 || code === 32) { tvRacingRemoteKeys.nitro = false; syncRemoteKeys(); return true; }
+    if (code === 13 || code === 23 || code === 66 || code === 32) {
+      if (tvNitroTapTimer) clearTimeout(tvNitroTapTimer);
+      tvNitroTapTimer = setTimeout(function () { tvRacingRemoteKeys.nitro = false; syncRemoteKeys(); tvNitroTapTimer = null; }, 380);
+      return true;
+    }
     return false;
   };
 }

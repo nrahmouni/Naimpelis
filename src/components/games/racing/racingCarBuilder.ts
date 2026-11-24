@@ -7,20 +7,31 @@ import {
   attachSafeMeshDecoders,
 } from '../arcade/threePostFxHelpers';
 
+export interface RealWheelSpinNode {
+  obj: THREE.Object3D;
+  baseRotX: number;
+  baseRotZ: number;
+}
+
 export interface BuiltCarRig {
   root: THREE.Group;
   bodyGroup: THREE.Group;
   frontWheelPivots: [THREE.Group, THREE.Group];
   wheelSpinGroups: THREE.Group[];
+  realWheelSpins: RealWheelSpinNode[];
+  realFrontSteerNodes: Array<{ obj: THREE.Object3D; baseRotZ: number }>;
   brakeLightMaterial: THREE.MeshStandardMaterial;
   nitroFlames: [THREE.Mesh, THREE.Mesh];
   dispose: () => void;
 }
 
 const GLB_CACHE = new Map<string, Promise<THREE.Group | null>>();
+const AO_TEX_CACHE = new Map<string, Promise<THREE.Texture | null>>();
 const sharedGltfLoader = new GLTFLoader();
 sharedGltfLoader.setCrossOrigin('anonymous');
 attachSafeMeshDecoders(sharedGltfLoader);
+const sharedAoTexLoader = new THREE.TextureLoader();
+sharedAoTexLoader.setCrossOrigin('anonymous');
 
 function loadCachedRaceModel(relUrl: string): Promise<THREE.Group | null> {
   if (typeof window === 'undefined' || typeof fetch === 'undefined') return Promise.resolve(null);
@@ -46,6 +57,23 @@ function loadCachedRaceModel(relUrl: string): Promise<THREE.Group | null> {
   return p;
 }
 
+function loadCachedAoShadow(relUrl: string): Promise<THREE.Texture | null> {
+  if (typeof window === 'undefined' || typeof Image === 'undefined') return Promise.resolve(null);
+  const resolvedUrl = resolveGameAssetUrl(relUrl);
+  const existing = AO_TEX_CACHE.get(resolvedUrl);
+  if (existing) return existing;
+  const p = new Promise<THREE.Texture | null>((resolve) => {
+    sharedAoTexLoader.load(
+      resolvedUrl,
+      (tex) => resolve(tex || null),
+      undefined,
+      () => resolve(null)
+    );
+  });
+  AO_TEX_CACHE.set(resolvedUrl, p);
+  return p;
+}
+
 export function buildFormulaGtCar(
   primaryHex: number,
   accentHex: number,
@@ -62,6 +90,8 @@ export function buildFormulaGtCar(
 
   const geometries: THREE.BufferGeometry[] = [];
   const materials: THREE.Material[] = [];
+  const realWheelSpins: RealWheelSpinNode[] = [];
+  const realFrontSteerNodes: Array<{ obj: THREE.Object3D; baseRotZ: number }> = [];
 
   const trackGeo = <T extends THREE.BufferGeometry>(g: T): T => {
     geometries.push(g);
@@ -75,16 +105,16 @@ export function buildFormulaGtCar(
   const paintMat = trackMat(
     new THREE.MeshPhysicalMaterial({
       color: primaryHex,
-      metalness: 0.38,
-      roughness: 0.28,
-      clearcoat: 0.65,
-      clearcoatRoughness: 0.16,
+      metalness: 0.42,
+      roughness: 0.24,
+      clearcoat: 0.72,
+      clearcoatRoughness: 0.14,
     })
   );
   applyFresnelRimShader(paintMat, {
     colorHex: accentHex,
     power: 3.4,
-    intensity: options?.isPlayer ? 0.24 : 0.18,
+    intensity: options?.isPlayer ? 0.22 : 0.16,
   });
 
   const accentMat = trackMat(
@@ -134,7 +164,7 @@ export function buildFormulaGtCar(
     new THREE.MeshStandardMaterial({
       color: 0xffffff,
       emissive: 0xd8f3ff,
-      emissiveIntensity: 2.2,
+      emissiveIntensity: 2.0,
       roughness: 0.1,
     })
   );
@@ -148,76 +178,38 @@ export function buildFormulaGtCar(
     })
   );
 
-  // Underfloor / Carbon Splitter
+  // Sleek fallback chassis shown only during async GLB decode (<400ms)
   const floorMesh = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.92, 0.14, 4.35)), carbonMat);
   floorMesh.position.set(0, 0.28, 0);
   floorMesh.castShadow = castShadow;
   proceduralBody.add(floorMesh);
 
-  // Main Sculpted Chassis
   const chassisMesh = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.74, 0.42, 3.65)), paintMat);
   chassisMesh.position.set(0, 0.54, 0.08);
   chassisMesh.castShadow = castShadow;
   proceduralBody.add(chassisMesh);
 
-  // Tapered Nose Cone (pointing -Z forward)
   const noseMesh = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.04, 0.26, 1.15)), paintMat);
   noseMesh.position.set(0, 0.46, -1.92);
   noseMesh.rotation.x = 0.08;
   noseMesh.castShadow = castShadow;
   proceduralBody.add(noseMesh);
 
-  // Racing Livery Spine Stripe
   const stripeMesh = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.32, 0.44, 3.72)), accentMat);
   stripeMesh.position.set(0, 0.56, 0.02);
   proceduralBody.add(stripeMesh);
 
-  // Aerodynamic Canopy / Cockpit
   const cockpitMesh = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.06, 0.38, 1.55)), glassMat);
   cockpitMesh.position.set(0, 0.88, 0.16);
   cockpitMesh.castShadow = castShadow;
   proceduralBody.add(cockpitMesh);
 
-  // Side Air Intakes
-  const intakeGeo = trackGeo(new THREE.BoxGeometry(0.24, 0.26, 1.45));
-  [-0.92, 0.92].forEach((x) => {
-    const pod = new THREE.Mesh(intakeGeo, paintMat);
-    pod.position.set(x, 0.52, 0.32);
-    pod.castShadow = castShadow;
-    proceduralBody.add(pod);
-  });
-
-  // Front Aero Wing + Endplates
-  const frontWing = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.14, 0.07, 0.46)), carbonMat);
-  frontWing.position.set(0, 0.26, -2.28);
-  proceduralBody.add(frontWing);
-
-  const frontLip = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.16, 0.04, 0.12)), accentMat);
-  frontLip.position.set(0, 0.26, -2.47);
-  proceduralBody.add(frontLip);
-
-  // Rear GT Wing + Struts
-  const strutGeo = trackGeo(new THREE.BoxGeometry(0.08, 0.46, 0.24));
-  [-0.48, 0.48].forEach((x) => {
-    const strut = new THREE.Mesh(strutGeo, carbonMat);
-    strut.position.set(x, 0.92, 1.72);
-    proceduralBody.add(strut);
-  });
-
   const rearWing = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.1, 0.08, 0.44)), carbonMat);
-  rearWing.position.set(0, 1.15, 1.78);
+  rearWing.position.set(0, 1.12, 1.78);
   rearWing.rotation.x = -0.14;
   rearWing.castShadow = castShadow;
   proceduralBody.add(rearWing);
 
-  const endPlateGeo = trackGeo(new THREE.BoxGeometry(0.06, 0.34, 0.5));
-  [-1.06, 1.06].forEach((x) => {
-    const plate = new THREE.Mesh(endPlateGeo, accentMat);
-    plate.position.set(x, 1.12, 1.78);
-    proceduralBody.add(plate);
-  });
-
-  // Front Headlights
   const headGeo = trackGeo(new THREE.BoxGeometry(0.32, 0.09, 0.1));
   [-0.58, 0.58].forEach((x) => {
     const hl = new THREE.Mesh(headGeo, headlightMat);
@@ -225,7 +217,6 @@ export function buildFormulaGtCar(
     proceduralBody.add(hl);
   });
 
-  // Rear Brake Light Bar + Diffuser
   const tailGeo = trackGeo(new THREE.BoxGeometry(0.42, 0.1, 0.08));
   [-0.56, 0.56].forEach((x) => {
     const tl = new THREE.Mesh(tailGeo, brakeLightMaterial);
@@ -233,7 +224,6 @@ export function buildFormulaGtCar(
     proceduralBody.add(tl);
   });
 
-  // Dynamic Nitro Exhaust Cones
   const flameGeo = trackGeo(new THREE.ConeGeometry(0.16, 0.85, 10));
   flameGeo.rotateX(Math.PI / 2);
   const flameMat = trackMat(
@@ -246,14 +236,13 @@ export function buildFormulaGtCar(
     })
   );
   const flameL = new THREE.Mesh(flameGeo, flameMat);
-  flameL.position.set(-0.26, 0.42, 2.32);
+  flameL.position.set(-0.26, 0.4, 2.28);
   flameL.visible = false;
   const flameR = new THREE.Mesh(flameGeo, flameMat);
-  flameR.position.set(0.26, 0.42, 2.32);
+  flameR.position.set(0.26, 0.4, 2.28);
   flameR.visible = false;
   bodyGroup.add(flameL, flameR);
 
-  // Wheels (4 independent spin groups, front 2 wrapped in steering pivots)
   const tireGeo = trackGeo(new THREE.CylinderGeometry(0.38, 0.38, 0.32, 18));
   tireGeo.rotateZ(Math.PI / 2);
   const rimGeo = trackGeo(new THREE.CylinderGeometry(0.24, 0.24, 0.34, 12));
@@ -285,78 +274,111 @@ export function buildFormulaGtCar(
   const rearLeftPivot = createWheel(-1.02, 1.38);
   const rearRightPivot = createWheel(1.02, 1.38);
 
-  // Soft Ground Contact Shadow Plane (zero GPU cost)
-  const shadowPlane = new THREE.Mesh(
-    trackGeo(new THREE.PlaneGeometry(2.5, 4.9)),
-    trackMat(
-      new THREE.MeshBasicMaterial({
-        color: 0x000000,
-        transparent: true,
-        opacity: 0.48,
-        depthWrite: false,
-      })
-    )
+  const shadowMat = trackMat(
+    new THREE.MeshBasicMaterial({
+      color: 0x000000,
+      transparent: true,
+      opacity: 0.48,
+      depthWrite: false,
+    })
   );
+  const shadowPlane = new THREE.Mesh(trackGeo(new THREE.PlaneGeometry(2.65, 5.2)), shadowMat);
   shadowPlane.rotation.x = -Math.PI / 2;
-  shadowPlane.position.y = 0.03;
+  shadowPlane.position.y = 0.028;
   root.add(shadowPlane);
 
-  // Neon Team Underglow Strip (helps identify P1 / P2 / Rivals on both Web & TV)
   const underglowMesh = new THREE.Mesh(
     trackGeo(new THREE.PlaneGeometry(1.75, 3.6)),
     trackMat(
       new THREE.MeshBasicMaterial({
         color: accentHex,
         transparent: true,
-        opacity: options?.isPlayer ? 0.34 : 0.22,
+        opacity: options?.isPlayer ? 0.24 : 0.16,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       })
     )
   );
   underglowMesh.rotation.x = -Math.PI / 2;
-  underglowMesh.position.y = 0.04;
+  underglowMesh.position.y = 0.036;
   root.add(underglowMesh);
 
-  const rivalModels = [
-    'assets/games/models/race.glb',
-    'assets/games/models/sedan-sports.glb',
-    'assets/games/models/hatchback-sports.glb',
+  // Real online 3D Motorsport Models:
+  // - ferrari.glb natively faces -Z forward (yawOffset = 0)
+  // - endurance.glb / hypercar.glb / rally.glb natively face +Z forward (yawOffset = Math.PI)
+  const rivalPool: Array<{ path: string; yawOffset: number }> = [
+    { path: 'assets/games/models/endurance.glb', yawOffset: Math.PI },
+    { path: 'assets/games/models/hypercar.glb', yawOffset: Math.PI },
+    { path: 'assets/games/models/rally.glb', yawOffset: Math.PI },
   ];
-  const modelPath = options?.isPlayer
-    ? 'assets/games/models/race-future.glb'
-    : rivalModels[((options?.rivalIndex ?? 1) - 1 + rivalModels.length) % rivalModels.length];
+  const selected = options?.isPlayer
+    ? { path: 'assets/games/models/ferrari.glb', yawOffset: 0 }
+    : rivalPool[((options?.rivalIndex ?? 1) - 1 + rivalPool.length) % rivalPool.length];
 
-  void loadCachedRaceModel(modelPath).then((source) => {
+  if (options?.isPlayer) {
+    void loadCachedAoShadow('assets/games/models/ferrari_ao.png').then((aoTex) => {
+      if (!aoTex || disposed) return;
+      shadowMat.map = aoTex;
+      shadowMat.color.setHex(0xffffff);
+      shadowMat.opacity = 0.92;
+      shadowMat.needsUpdate = true;
+    });
+  }
+
+  void loadCachedRaceModel(selected.path).then((source) => {
     if (!source || disposed) return;
     const clone = source.clone(true);
-    // Kenney Car Kit GLBs face +Z forward; rotate 180 deg so car faces -Z track forward
-    clone.rotation.y = Math.PI;
+    clone.rotation.y = selected.yawOffset;
+    clone.updateMatrixWorld(true);
+
     const box = new THREE.Box3().setFromObject(clone);
     const size = new THREE.Vector3();
     const center = new THREE.Vector3();
     box.getSize(size);
     box.getCenter(center);
-    const scale = 4.35 / Math.max(0.5, size.z);
+
+    const scale = 4.5 / Math.max(0.5, size.z);
     clone.scale.setScalar(scale);
-    clone.position.set(-center.x * scale, -box.min.y * scale + 0.03, -center.z * scale);
+    clone.position.set(-center.x * scale, -box.min.y * scale + 0.02, -center.z * scale);
+
     clone.traverse((node) => {
-      if ((node as THREE.Mesh).isMesh) {
-        (node as THREE.Mesh).castShadow = castShadow;
+      const mesh = node as THREE.Mesh;
+      if (mesh.isMesh) {
+        mesh.castShadow = castShadow;
+        mesh.receiveShadow = castShadow;
+        const matName = String((mesh.material as THREE.Material | undefined)?.name || '');
+        if (options?.isPlayer && (mesh.name === 'body' || /^Paint_/i.test(matName))) {
+          mesh.material = paintMat;
+        } else if (!options?.isPlayer && /^Paint_/i.test(matName)) {
+          mesh.material = paintMat;
+        }
+      }
+      if (/^wheel_(fl|fr|rl|rr)$/i.test(node.name)) {
+        realWheelSpins.push({
+          obj: node,
+          baseRotX: node.rotation.x,
+          baseRotZ: node.rotation.z,
+        });
+        if (/^wheel_f[lr]$/i.test(node.name)) {
+          realFrontSteerNodes.push({ obj: node, baseRotZ: node.rotation.z });
+        }
       }
     });
-    // Add rear brake light bar aligned behind the GLB bumper
+
+    if (selected.yawOffset === 0) {
+      applyFresnelRimToGroup(clone, {
+        colorHex: accentHex,
+        power: 3.4,
+        intensity: 0.16,
+      });
+    }
+
     const glbBrakeBar = new THREE.Mesh(
-      trackGeo(new THREE.BoxGeometry(1.25, 0.09, 0.08)),
+      trackGeo(new THREE.BoxGeometry(1.22, 0.075, 0.07)),
       brakeLightMaterial
     );
-    glbBrakeBar.position.set(0, 0.56, 2.08);
-    clone.rotation.y = Math.PI;
-    applyFresnelRimToGroup(clone, {
-      colorHex: accentHex,
-      power: 3.1,
-      intensity: options?.isPlayer ? 0.45 : 0.3,
-    });
+    glbBrakeBar.position.set(0, 0.68, 2.15);
+
     glbClone = clone;
     bodyGroup.add(clone, glbBrakeBar);
     proceduralBody.visible = false;
@@ -371,6 +393,8 @@ export function buildFormulaGtCar(
     bodyGroup,
     frontWheelPivots: [frontLeftPivot, frontRightPivot],
     wheelSpinGroups,
+    realWheelSpins,
+    realFrontSteerNodes,
     brakeLightMaterial,
     nitroFlames: [flameL, flameR],
     dispose: () => {

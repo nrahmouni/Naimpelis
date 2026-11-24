@@ -167,9 +167,9 @@ export function createRacing3dEngine(
     800
   );
 
-  // Lighting rig (balanced dusk contrast without blown-out highlights)
-  const hemiLight = new THREE.HemisphereLight(0xa5b4fc, 0x0f172a, 0.44);
-  const keyLight = new THREE.DirectionalLight(0xfff1d6, 1.32);
+  // Lighting rig (balanced twilight motorsport contrast with natural green turf)
+  const hemiLight = new THREE.HemisphereLight(0xdbeafe, 0x1a2e1a, 0.54);
+  const keyLight = new THREE.DirectionalLight(0xfff4dc, 1.42);
   keyLight.position.set(110, 140, 80);
   if (!isSoftwareGl) {
     keyLight.castShadow = true;
@@ -181,7 +181,7 @@ export function createRacing3dEngine(
     keyLight.shadow.camera.top = 220;
     keyLight.shadow.camera.bottom = -220;
   }
-  const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.45);
+  const rimLight = new THREE.DirectionalLight(0x93c5fd, 0.34);
   rimLight.position.set(-90, 45, -110);
   scene.add(hemiLight, keyLight, rimLight);
 
@@ -607,6 +607,12 @@ export function createRacing3dEngine(
     for (const w of playerCar.wheelSpinGroups) {
       w.rotation.x = wheelSpinAngle;
     }
+    for (const rw of playerCar.realWheelSpins) {
+      rw.obj.rotation.x = rw.baseRotX + wheelSpinAngle;
+    }
+    for (const rfs of playerCar.realFrontSteerNodes) {
+      rfs.obj.rotation.z = rfs.baseRotZ - steerVisual * 0.65;
+    }
 
     playerCar.brakeLightMaterial.emissiveIntensity = brakeInput > 0.1 ? 3.2 : 0.9;
     const showFlames = boosting && speedMps > 8;
@@ -757,6 +763,8 @@ export function createRacing3dEngine(
       r0.rig.frontWheelPivots[1].rotation.y = steerVisual2;
       wheelSpinAngle2 -= speedMps2 * dt * 2.4;
       for (const w of r0.rig.wheelSpinGroups) w.rotation.x = wheelSpinAngle2;
+      for (const rw of r0.rig.realWheelSpins) rw.obj.rotation.x = rw.baseRotX + wheelSpinAngle2;
+      for (const rfs of r0.rig.realFrontSteerNodes) rfs.obj.rotation.z = rfs.baseRotZ - steerVisual2 * 0.65;
       r0.rig.brakeLightMaterial.emissiveIntensity = p2Brake > 0.1 ? 3.2 : 0.9;
       const showFlames2 = boosting2 && speedMps2 > 8;
       r0.rig.nitroFlames[0].visible = showFlames2;
@@ -819,6 +827,9 @@ export function createRacing3dEngine(
       r.wheelAngle -= r.speedMps * dt * 2.4;
       for (const w of r.rig.wheelSpinGroups) {
         w.rotation.x = r.wheelAngle;
+      }
+      for (const rw of r.rig.realWheelSpins) {
+        rw.obj.rotation.x = rw.baseRotX + r.wheelAngle;
       }
 
       if (i === 0) {
@@ -1060,6 +1071,9 @@ export function createRacing3dEngine(
     renderer.setSize(w, h);
     composer?.setSize(w, h);
   };
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => handleResize());
+  }
   const resizeObserver =
     typeof ResizeObserver !== 'undefined' ? new ResizeObserver(handleResize) : null;
   resizeObserver?.observe(container);

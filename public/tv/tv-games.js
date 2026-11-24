@@ -33,6 +33,23 @@ function isTvGameActive() {
 }
 window.isTvGameActive = isTvGameActive;
 
+function getVisibleOverlayButtons(scr) {
+  if (!scr) return null;
+  var ovs = scr.querySelectorAll('.tv-dual-qr-overlay, .tv-game-finish-overlay');
+  for (var i = 0; i < ovs.length; i++) {
+    var ov = ovs[i];
+    if (ov.style.display !== 'none' && ov.offsetWidth > 0 && ov.offsetHeight > 0) {
+      var raw = ov.querySelectorAll('button');
+      var vis = [];
+      for (var j = 0; j < raw.length; j++) {
+        if (!raw[j].disabled && raw[j].offsetWidth > 0 && raw[j].offsetHeight > 0) vis.push(raw[j]);
+      }
+      if (vis.length) return vis;
+    }
+  }
+  return null;
+}
+
 function handleTvGameKeyDown(e) {
   if (!TV_GAME_ACTIVE) return false;
   var code = e.keyCode || e.which;
@@ -40,6 +57,49 @@ function handleTvGameKeyDown(e) {
     if (e.preventDefault) e.preventDefault();
     closeTvGame();
     return true;
+  }
+  var scr = document.getElementById('tv-games-screen');
+  var ovBtns = getVisibleOverlayButtons(scr);
+  var activeEl = document.activeElement;
+  if (ovBtns) {
+    var idx = -1;
+    for (var k = 0; k < ovBtns.length; k++) {
+      if (ovBtns[k] === activeEl) { idx = k; break; }
+    }
+    if (code === 37 || code === 21 || code === 38 || code === 19) {
+      if (e.preventDefault) e.preventDefault();
+      var prevBtn = idx > 0 ? ovBtns[idx - 1] : ovBtns[ovBtns.length - 1];
+      if (prevBtn && prevBtn.focus) prevBtn.focus();
+      return true;
+    }
+    if (code === 39 || code === 22 || code === 40 || code === 20) {
+      if (e.preventDefault) e.preventDefault();
+      var nextBtn = (idx >= 0 && idx + 1 < ovBtns.length) ? ovBtns[idx + 1] : ovBtns[0];
+      if (nextBtn && nextBtn.focus) nextBtn.focus();
+      return true;
+    }
+    if (code === 13 || code === 23 || code === 66 || code === 32) {
+      if (e.preventDefault) e.preventDefault();
+      var targetBtn = idx >= 0 ? ovBtns[idx] : (scr.querySelector('#tv-dqr-solo') || ovBtns[0]);
+      if (targetBtn && targetBtn.click) targetBtn.click();
+      return true;
+    }
+    return true;
+  }
+  var topbar = scr ? scr.querySelector('.tv-game-topbar') : null;
+  if (topbar && activeEl && topbar.contains(activeEl)) {
+    if (code === 13 || code === 23 || code === 66) {
+      if (e.preventDefault) e.preventDefault();
+      if (activeEl.click) activeEl.click();
+      return true;
+    }
+    if (code === 40 || code === 20) {
+      if (e.preventDefault) e.preventDefault();
+      if (activeEl.blur) activeEl.blur();
+      var arena = scr.querySelector('.tv-game-arena');
+      if (arena) { arena.tabIndex = -1; if (arena.focus) arena.focus(); }
+      return true;
+    }
   }
   if (tvGameKeyHandler) return tvGameKeyHandler(e, code);
   return false;

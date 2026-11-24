@@ -27,13 +27,19 @@
     'pbr/oak_rough.jpg': POLYHAVEN_TEX_CDN + 'oak_veneer_01/oak_veneer_01_rough_1k.jpg',
     'pbr/wood_floor_diff.jpg': POLYHAVEN_TEX_CDN + 'wood_floor_deck/wood_floor_deck_diff_1k.jpg',
     'pbr/wood_floor_nor.jpg': POLYHAVEN_TEX_CDN + 'wood_floor_deck/wood_floor_deck_nor_gl_1k.jpg',
-    'pbr/asphalt_diff.jpg': POLYHAVEN_TEX_CDN + 'asphalt_02/asphalt_02_diff_1k.jpg',
-    'pbr/asphalt_nor.jpg': POLYHAVEN_TEX_CDN + 'asphalt_02/asphalt_02_nor_gl_1k.jpg',
-    'pbr/asphalt_rough.jpg': POLYHAVEN_TEX_CDN + 'asphalt_02/asphalt_02_rough_1k.jpg',
+    'pbr/asphalt_diff.jpg': POLYHAVEN_TEX_CDN + 'asphalt_track/asphalt_track_diff_1k.jpg',
+    'pbr/asphalt_nor.jpg': POLYHAVEN_TEX_CDN + 'asphalt_track/asphalt_track_nor_gl_1k.jpg',
+    'pbr/asphalt_rough.jpg': POLYHAVEN_TEX_CDN + 'asphalt_track/asphalt_track_rough_1k.jpg',
     'pbr/concrete_worn_diff.jpg': POLYHAVEN_TEX_CDN + 'concrete_floor_worn_001/concrete_floor_worn_001_diff_1k.jpg',
     'pbr/grass_diff.jpg': POLYHAVEN_TEX_CDN + 'aerial_grass_rock/aerial_grass_rock_diff_1k.jpg',
     'pbr/forrest_ground_diff.jpg': POLYHAVEN_TEX_CDN + 'forrest_ground_01/forrest_ground_01_diff_1k.jpg',
     'pbr/rubber_tiles_diff.jpg': POLYHAVEN_TEX_CDN + 'rubber_tiles/rubber_tiles_diff_1k.jpg',
+    'models/ferrari.glb': THREE_CDN + 'ferrari.glb',
+    'models/ferrari_ao.png': THREE_CDN + 'ferrari_ao.png',
+    'models/endurance.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/endurance.glb',
+    'models/hypercar.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/hypercar.glb',
+    'models/rally.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/rally.glb',
+    'models/wedge.glb': 'https://cdn.jsdelivr.net/gh/drcollect/collect-cars@main/models/wedge.glb',
     'models/RobotExpressive.glb': THREE_CDN + 'RobotExpressive/RobotExpressive.glb',
     'models/Soldier.glb': THREE_CDN + 'Soldier.glb',
     'models/Xbot.glb': THREE_CDN + 'Xbot.glb',
@@ -53,7 +59,13 @@
     'models/pitsGarage.glb': KENNEY_CDN + '3d/racing/pitsGarage.glb',
     'models/barrierRed.glb': KENNEY_CDN + '3d/racing/barrierRed.glb',
     'models/barrierWhite.glb': KENNEY_CDN + '3d/racing/barrierWhite.glb',
+    'models/barrierWall.glb': KENNEY_CDN + '3d/racing/barrierWall.glb',
+    'models/billboard.glb': KENNEY_CDN + '3d/racing/billboard.glb',
+    'models/bannerTowerRed.glb': KENNEY_CDN + '3d/racing/bannerTowerRed.glb',
+    'models/bannerTowerGreen.glb': KENNEY_CDN + '3d/racing/bannerTowerGreen.glb',
     'models/flagCheckers.glb': KENNEY_CDN + '3d/racing/flagCheckers.glb',
+    'models/treeLarge.glb': KENNEY_CDN + '3d/racing/treeLarge.glb',
+    'models/treeSmall.glb': KENNEY_CDN + '3d/racing/treeSmall.glb',
     'toon/male_idle.png': KENNEY_CDN + '2d/Toon%20Characters/Male%20person/Poses%20HD/character_malePerson_idle.png',
     'toon/male_run0.png': KENNEY_CDN + '2d/Toon%20Characters/Male%20person/Poses%20HD/character_malePerson_run0.png',
     'toon/male_run1.png': KENNEY_CDN + '2d/Toon%20Characters/Male%20person/Poses%20HD/character_malePerson_run1.png',
@@ -242,12 +254,16 @@
       }
     }
 
-    function markReady() {
+    function markReady(mode) {
       if (ready) return;
       ready = true;
       clearWaitTimer();
       if (overlay) overlay.style.display = 'none';
-      if (typeof cfg.onStartReady === 'function') cfg.onStartReady();
+      if (arenaEl) {
+        arenaEl.tabIndex = -1;
+        try { arenaEl.focus(); } catch (e) {}
+      }
+      if (typeof cfg.onStartReady === 'function') cfg.onStartReady(mode || 'auto');
     }
 
     if (arenaEl && typeof document !== 'undefined') {
@@ -287,8 +303,8 @@
       statusEl = overlay.querySelector('#tv-dqr-status');
       btnStart = overlay.querySelector('#tv-dqr-start');
       btnSolo = overlay.querySelector('#tv-dqr-solo');
-      if (btnStart) btnStart.onclick = markReady;
-      if (btnSolo) btnSolo.onclick = markReady;
+      if (btnStart) btnStart.onclick = function () { markReady('start'); };
+      if (btnSolo) btnSolo.onclick = function () { markReady('solo'); };
       if (btnSolo && btnSolo.focus) {
         setTimeout(function () { if (!ready && btnSolo && btnSolo.focus) btnSolo.focus(); }, 60);
       }
@@ -309,13 +325,13 @@
 
       if (p1Ready && p2Ready) {
         if (statusEl) statusEl.textContent = '¡2 Móviles conectados! Empezando partida...';
-        markReady();
+        markReady('auto');
       } else if ((p1Ready || p2Ready) && !ready && !waitTimer) {
         var left = 2;
         if (statusEl) statusEl.textContent = '✓ Mando conectado · Esperando J2 (' + left + 's) o pulsa Empezar...';
         waitTimer = setInterval(function () {
           left -= 1;
-          if (left <= 0) markReady();
+          if (left <= 0) markReady('auto');
           else if (statusEl) statusEl.textContent = '✓ Mando conectado · Arrancando en ' + left + 's...';
         }, 1000);
       }
@@ -324,11 +340,12 @@
     return {
       isReady: function () { return ready; },
       onStatus: onStatus,
-      onRemoteBypass: markReady,
+      onRemoteBypass: function () { markReady('solo'); },
       forceShow: function () {
         ready = false;
         clearWaitTimer();
         if (overlay) overlay.style.display = 'flex';
+        if (btnSolo && btnSolo.focus) setTimeout(function () { btnSolo.focus(); }, 40);
       },
       destroy: function () {
         clearWaitTimer();

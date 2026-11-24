@@ -299,8 +299,8 @@
 }
 
 .tv-game-topbar {
-  height: 64px;
-  padding: 0 22px;
+  min-height: 62px;
+  padding: 6px 28px;
   background: #0b0f1c;
   border-bottom: 1px solid rgba(255, 255, 255, 0.12);
   display: -webkit-flex;
@@ -311,6 +311,9 @@
   justify-content: space-between;
   -webkit-flex-shrink: 0;
   flex-shrink: 0;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .tv-game-top-left,
@@ -319,28 +322,39 @@
   display: flex;
   -webkit-align-items: center;
   align-items: center;
+  min-width: 0;
 }
 
 .tv-game-top-left > *,
 .tv-game-top-right > * {
-  margin-right: 12px;
+  margin-right: 10px;
+}
+
+.tv-game-top-left > *:last-child,
+.tv-game-top-right > *:last-child {
+  margin-right: 0;
 }
 
 .tv-game-top-title {
-  font-size: 20px;
+  font-size: 19px;
   font-weight: 900;
   color: #ffffff;
+  white-space: nowrap;
 }
 
 .tv-game-hud-pill {
-  padding: 7px 14px;
+  padding: 6px 12px;
   border-radius: 10px;
   background: #141b2e;
   border: 1px solid rgba(255, 255, 255, 0.16);
   color: #f1f5f9;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .tv-game-hud-pill.accent-green {
@@ -359,6 +373,7 @@
   position: relative;
   -webkit-flex: 1;
   flex: 1;
+  min-height: 0;
   width: 100%;
   overflow: hidden;
   display: -webkit-flex;
@@ -380,7 +395,11 @@
 }
 
 .tv-racing-stage {
-  position: relative;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
   width: 100%;
   height: 100%;
   background: #050811;
@@ -430,11 +449,12 @@
 
 .tv-racing-telemetry-bar {
   position: absolute;
-  left: 20px;
-  bottom: 20px;
-  padding: 12px 18px;
+  left: 26px;
+  bottom: 18px;
+  max-width: calc(100% - 52px);
+  padding: 10px 16px;
   border-radius: 16px;
-  background: rgba(8, 12, 22, 0.92);
+  background: rgba(8, 12, 22, 0.9);
   border: 1.5px solid rgba(255, 255, 255, 0.18);
   display: -webkit-flex;
   display: flex;
@@ -444,7 +464,7 @@
 }
 
 .tv-racing-stat {
-  margin-right: 22px;
+  margin-right: 18px;
 }
 
 .tv-racing-stat-lbl {
@@ -456,26 +476,32 @@
 }
 
 .tv-racing-stat-val {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 900;
   color: #ffffff;
   font-variant-numeric: tabular-nums;
 }
 
 .tv-game-controls-hint {
-  height: 44px;
-  padding: 0 22px;
+  min-height: 40px;
+  padding: 6px 28px;
   background: #0b0f1c;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   color: #cbd5e1;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   display: -webkit-flex;
   display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
   -webkit-align-items: center;
   align-items: center;
   -webkit-justify-content: space-between;
   justify-content: space-between;
+  gap: 4px 16px;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 .tv-game-finish-overlay {
@@ -534,7 +560,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(5, 8, 17, 0.9);
+  background: rgba(5, 8, 17, 0.56);
   display: -webkit-flex;
   display: flex;
   -webkit-align-items: center;
@@ -545,18 +571,18 @@
 }
 
 .tv-dual-qr-card {
-  width: 92%;
-  max-width: 740px;
-  padding: 20px 24px;
-  border-radius: 22px;
-  background: #0d1324;
+  width: 90%;
+  max-width: 660px;
+  padding: 16px 20px;
+  border-radius: 20px;
+  background: rgba(13, 19, 36, 0.94);
   border: 2px solid #8b5cf6;
   color: #f8fafc;
   text-align: center;
 }
 
 .tv-dual-qr-head {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 900;
   color: #ffffff;
   margin-bottom: 4px;
@@ -566,7 +592,7 @@
   font-size: 13px;
   font-weight: 700;
   color: #cbd5e1;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .tv-dual-qr-grid {
@@ -574,13 +600,13 @@
   display: flex;
   -webkit-justify-content: center;
   justify-content: center;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .tv-dual-qr-slot {
-  width: 246px;
+  width: 230px;
   margin: 0 10px;
-  padding: 12px;
+  padding: 10px;
   border-radius: 16px;
   background: #141c33;
   border: 2px solid rgba(56, 189, 248, 0.45);
@@ -597,8 +623,8 @@
 }
 
 .tv-dual-qr-box {
-  width: 136px;
-  height: 136px;
+  width: 118px;
+  height: 118px;
   margin: 8px auto;
   padding: 6px;
   border-radius: 10px;
