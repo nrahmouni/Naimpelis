@@ -53,7 +53,13 @@ export type GyroControllerGame =
   | 'headsoccer'
   | 'gyrobowling'
   | 'gyrotennis'
-  | 'gyrolab';
+  | 'gyrolab'
+  | 'hexgl'
+  | 'arkanoid'
+  | 'invaders'
+  | 'pacman'
+  | 'bomberman'
+  | 'flappy';
 
 const GYRO_MODE_ORDER: GyroControllerGame[] = [
   'racing3d',
@@ -65,6 +71,12 @@ const GYRO_MODE_ORDER: GyroControllerGame[] = [
   'gyrohockey',
   'gyrospace',
   'headsoccer',
+  'hexgl',
+  'arkanoid',
+  'invaders',
+  'pacman',
+  'bomberman',
+  'flappy',
 ];
 
 function parseGyroControllerGameFromRaw(rawVal?: string | null): GyroControllerGame | null {
@@ -82,6 +94,12 @@ function parseGyroControllerGameFromRaw(rawVal?: string | null): GyroControllerG
     return 'gyrotennis';
   }
   if (raw === 'gyrolab' || raw === 'laberinto-gyro' || raw === 'esfera-gyro') return 'gyrolab';
+  if (raw === 'hexgl' || raw === 'hex-gl' || raw === 'hover-3d') return 'hexgl';
+  if (raw === 'arkanoid' || raw === 'brickit' || raw === 'brick-it') return 'arkanoid';
+  if (raw === 'invaders' || raw === 'space-invaders') return 'invaders';
+  if (raw === 'pacman' || raw === 'pac-man') return 'pacman';
+  if (raw === 'bomberman' || raw === 'bomberman-arena') return 'bomberman';
+  if (raw === 'flappy' || raw === 'clumsy-bird' || raw === 'flappy-bird') return 'flappy';
   if (raw === 'racing3d' || raw === 'nitro-gp' || raw === 'coches-3d') return 'racing3d';
   return null;
 }
@@ -652,7 +670,8 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
   const wheelDragStartXRef = useRef<number | null>(null);
   const wheelDragStartYRef = useRef<number | null>(null);
   const handleWheelPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
     wheelDragStartXRef.current = e.clientX;
     wheelDragStartYRef.current = e.clientY;
     touchSteerRef.current = 0;
@@ -778,6 +797,84 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
           dialTitle: 'PENALTIS',
           accent: '#10b981',
         };
+      case 'hexgl':
+        return {
+          l1Title: 'ESTAB.',
+          l1Sub: 'PRECISIÓN',
+          l2Title: 'FRENO',
+          l2Sub: 'REDUCIR',
+          r1Title: '🔥 HIPER-TURBO',
+          r1Sub: 'MANTENER',
+          r2Title: '⚡ TURBO',
+          r2Sub: 'ACELERAR',
+          dialTitle: 'HEXGL 3D',
+          accent: '#22d3ee',
+        };
+      case 'arkanoid':
+        return {
+          l1Title: 'SOLO IZQ',
+          l1Sub: 'PRECISIÓN',
+          l2Title: 'REINICIAR',
+          l2Sub: 'PARTIDA',
+          r1Title: '🔴 LÁSER PRO',
+          r1Sub: 'RÁFAGA',
+          r2Title: '🔫 DISPARAR',
+          r2Sub: 'CAÑÓN PALA',
+          dialTitle: 'ARKANOID',
+          accent: '#3b82f6',
+        };
+      case 'invaders':
+        return {
+          l1Title: 'ESCUDO',
+          l1Sub: 'CUBRIR',
+          l2Title: 'REINICIAR',
+          l2Sub: 'OLEADA',
+          r1Title: '⚡ FUEGO RÁPIDO',
+          r1Sub: 'MANTENER',
+          r2Title: '🔫 LÁSER',
+          r2Sub: 'DISPARAR',
+          dialTitle: 'INVADERS',
+          accent: '#10b981',
+        };
+      case 'pacman':
+        return {
+          l1Title: 'GIRO ◀',
+          l1Sub: 'IZQUIERDA',
+          l2Title: 'GIRO ▼',
+          l2Sub: 'ABAJO',
+          r1Title: 'GIRO ▲',
+          r1Sub: 'ARRIBA',
+          r2Title: 'GIRO ▶',
+          r2Sub: 'DERECHA',
+          dialTitle: 'PAC-MAN',
+          accent: '#facc15',
+        };
+      case 'bomberman':
+        return {
+          l1Title: 'PASO ◀',
+          l1Sub: 'IZQUIERDA',
+          l2Title: 'REINICIAR',
+          l2Sub: 'ARENA',
+          r1Title: '💣 BOMBA',
+          r1Sub: 'COLOCAR',
+          r2Title: '💣 BOMBA EX',
+          r2Sub: 'PULSAR',
+          dialTitle: 'BOMBER',
+          accent: '#f97316',
+        };
+      case 'flappy':
+        return {
+          l1Title: 'ALETEAR',
+          l1Sub: 'SALTO SUAVE',
+          l2Title: 'REINICIAR',
+          l2Sub: 'VUELO',
+          r1Title: '🐦 IMPULSO',
+          r1Sub: 'AGITA O TOCA',
+          r2Title: '🐦 ALETEAR',
+          r2Sub: 'TOCAR / AGITAR',
+          dialTitle: 'CLUMSY',
+          accent: '#38bdf8',
+        };
       default:
         return {
           l1Title: 'DRIFT',
@@ -861,13 +958,28 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
       : gyroGameMode === 'gyrohockey'
       ? '🏒 Hockey'
       : gyroGameMode === 'gyrospace'
-      ? '🚀 Nave'
+      ? '🚀 Galaxia'
       : gyroGameMode === 'headsoccer'
       ? '🥅 Fútbol'
+      : gyroGameMode === 'hexgl'
+      ? '🛸 HexGL 3D'
+      : gyroGameMode === 'arkanoid'
+      ? '🧱 Arkanoid'
+      : gyroGameMode === 'invaders'
+      ? '👾 Invaders'
+      : gyroGameMode === 'pacman'
+      ? '🟡 Pac-Man'
+      : gyroGameMode === 'bomberman'
+      ? '💣 Bomberman'
+      : gyroGameMode === 'flappy'
+      ? '🐦 Clumsy'
       : '🏎️ GP3D';
 
   return (
-    <div className="h-[100dvh] w-full max-w-md mx-auto bg-[#06080f] text-white flex flex-col justify-between p-3 select-none touch-none overflow-hidden">
+    <div
+      onContextMenu={(e) => e.preventDefault()}
+      className="game-touch-surface h-[100dvh] w-full max-w-md mx-auto bg-[#06080f] text-white flex flex-col justify-between p-3 select-none touch-none overflow-hidden"
+    >
       {/* Compact Vertical Top Bar */}
       <header className="flex items-center justify-between gap-1.5 rounded-2xl bg-[#0f1320] border border-white/10 px-2.5 py-1.5 shrink-0">
         <div className="flex items-center gap-1.5 min-w-0">
@@ -1010,7 +1122,9 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
           onPointerMove={handleWheelPointerMove}
           onPointerUp={handleWheelPointerUp}
           onPointerCancel={handleWheelPointerUp}
-          className="relative w-56 h-56 sm:w-64 sm:h-64 rounded-3xl bg-[#0b101d] border border-white/10 flex items-center justify-center cursor-grab active:cursor-grabbing shadow-inner overflow-hidden"
+          onLostPointerCapture={handleWheelPointerUp}
+          onContextMenu={(e) => e.preventDefault()}
+          className="game-touch-btn relative w-56 h-56 sm:w-64 sm:h-64 rounded-3xl bg-[#0b101d] border border-white/10 flex items-center justify-center cursor-grab active:cursor-grabbing shadow-inner overflow-hidden"
         >
           {gyroGameMode === 'gyrobowling' ? (
             <svg viewBox="0 0 200 200" className="w-full h-full">
@@ -1133,6 +1247,23 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
               />
               <polygon points="100,147 109,154 106,165 94,165 91,154" fill="#18181b" />
             </svg>
+          ) : gyroGameMode === 'pacman' || gyroGameMode === 'bomberman' ? (
+            <svg viewBox="0 0 200 200" className="w-full h-full">
+              <circle cx="100" cy="100" r="72" fill="#0f172a" stroke={buttonConfig.accent} strokeWidth="3" />
+              <line x1="100" y1="36" x2="100" y2="164" stroke="rgba(255,255,255,0.12)" strokeWidth="2" />
+              <line x1="36" y1="100" x2="164" y2="100" stroke="rgba(255,255,255,0.12)" strokeWidth="2" />
+              <circle
+                cx={100 + visualSteer * 48}
+                cy={100 - visualPitch * 48}
+                r="18"
+                fill={buttonConfig.accent}
+                stroke="#ffffff"
+                strokeWidth="3"
+              />
+              <text x="100" y="188" textAnchor="middle" fill="#cbd5e1" fontSize="10" fontWeight="900" fontFamily="monospace">
+                INCLINA EN 4 DIRECCIONES
+              </text>
+            </svg>
           ) : (
             <svg
               viewBox="0 0 200 200"
@@ -1182,10 +1313,12 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
         <div className="flex items-center gap-1.5 text-[11px] font-bold text-zinc-400 text-center">
           <Gauge className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
           <span className="truncate">
-            {gyroGameMode === 'gyrolab'
-              ? 'Inclina el móvil en 2 ejes (X/Y) para rodar la esfera'
+            {gyroGameMode === 'gyrolab' || gyroGameMode === 'pacman' || gyroGameMode === 'bomberman'
+              ? 'Inclina el móvil en 2 ejes (X/Y) o desliza en el visor'
               : gyroGameMode === 'gyrobowling'
               ? 'Inclina lateralmente para apuntar y agita o pulsa Lanzar'
+              : gyroGameMode === 'flappy'
+              ? 'Agita el móvil o pulsa Aletear para volar'
               : gyroGameMode === 'gyrotennis' || gyroGameMode === 'pingpong'
               ? 'Mueve el móvil en vertical o agita para rematar'
               : pickLang(lang, {
@@ -1202,7 +1335,10 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
         <button
           type="button"
           data-side="left-1"
-          onPointerDown={() => {
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture?.(e.pointerId);
             l1Ref.current = true;
             setL1Pressed(true);
             triggerHaptic('light');
@@ -1217,7 +1353,11 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
             l1Ref.current = false;
             setL1Pressed(false);
           }}
-          className={`min-h-14 py-2.5 px-3 rounded-2xl border-2 font-black text-xs tracking-wide flex flex-col items-center justify-center transition-transform cursor-pointer ${
+          onLostPointerCapture={() => {
+            l1Ref.current = false;
+            setL1Pressed(false);
+          }}
+          className={`game-touch-btn min-h-14 py-2.5 px-3 rounded-2xl border-2 font-black text-xs tracking-wide flex flex-col items-center justify-center transition-transform cursor-pointer ${
             l1Pressed
               ? 'bg-amber-500/35 border-amber-400 text-amber-100 scale-95'
               : 'bg-[#121625] border-white/15 text-amber-300'
@@ -1230,7 +1370,10 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
         <button
           type="button"
           data-side="right-1"
-          onPointerDown={() => {
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture?.(e.pointerId);
             r1Ref.current = true;
             setR1Pressed(true);
             triggerHaptic('success');
@@ -1245,7 +1388,11 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
             r1Ref.current = false;
             setR1Pressed(false);
           }}
-          className={`min-h-14 py-2.5 px-3 rounded-2xl border-2 font-black text-xs tracking-wide flex flex-col items-center justify-center transition-transform cursor-pointer ${
+          onLostPointerCapture={() => {
+            r1Ref.current = false;
+            setR1Pressed(false);
+          }}
+          className={`game-touch-btn min-h-14 py-2.5 px-3 rounded-2xl border-2 font-black text-xs tracking-wide flex flex-col items-center justify-center transition-transform cursor-pointer ${
             r1Pressed
               ? 'bg-cyan-500/40 border-cyan-300 text-white scale-95'
               : 'bg-[#0d1926] border-cyan-500/45 text-cyan-200'
@@ -1261,7 +1408,10 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
         <button
           type="button"
           data-side="left-2"
-          onPointerDown={() => {
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture?.(e.pointerId);
             l2Ref.current = true;
             setL2Pressed(true);
             triggerHaptic('medium');
@@ -1276,7 +1426,11 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
             l2Ref.current = false;
             setL2Pressed(false);
           }}
-          className={`min-h-16 py-3 px-3 rounded-3xl border-2 font-black text-sm tracking-wider flex flex-col items-center justify-center transition-transform cursor-pointer ${
+          onLostPointerCapture={() => {
+            l2Ref.current = false;
+            setL2Pressed(false);
+          }}
+          className={`game-touch-btn min-h-16 py-3 px-3 rounded-3xl border-2 font-black text-sm tracking-wider flex flex-col items-center justify-center transition-transform cursor-pointer ${
             l2Pressed
               ? 'bg-rose-600/45 border-rose-400 text-white scale-95'
               : 'bg-[#15101b] border-rose-500/45 text-rose-200'
@@ -1289,7 +1443,10 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
         <button
           type="button"
           data-side="right-2"
-          onPointerDown={() => {
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture?.(e.pointerId);
             r2Ref.current = true;
             setR2Pressed(true);
             triggerHaptic('light');
@@ -1304,7 +1461,11 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
             r2Ref.current = false;
             setR2Pressed(false);
           }}
-          className={`min-h-16 py-3 px-3 rounded-3xl border-2 font-black text-sm tracking-wider flex flex-col items-center justify-center transition-transform cursor-pointer ${
+          onLostPointerCapture={() => {
+            r2Ref.current = false;
+            setR2Pressed(false);
+          }}
+          className={`game-touch-btn min-h-16 py-3 px-3 rounded-3xl border-2 font-black text-sm tracking-wider flex flex-col items-center justify-center transition-transform cursor-pointer ${
             r2Pressed
               ? 'bg-emerald-500/45 border-emerald-300 text-white scale-95'
               : 'bg-[#0c1b18] border-emerald-500/50 text-emerald-200'

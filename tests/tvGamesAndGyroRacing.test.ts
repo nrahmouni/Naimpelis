@@ -23,6 +23,7 @@ import {
   stepHeadSoccerFrame,
 } from '../src/shared/headSoccer.ts';
 import { PENALTY_COUNTRIES } from '../src/shared/penaltyCountries.ts';
+import { resolveGameAssetUrl } from '../src/shared/gameAssetsCdn.ts';
 
 const ROOT = process.cwd();
 
@@ -339,15 +340,11 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
     expect(fs.existsSync(bundlePath)).toBe(true);
     expect(fs.statSync(bundlePath).size).toBeGreaterThan(50_000);
 
-    const colormapPath = path.join(ROOT, 'public/assets/games/models/Textures/colormap.png');
-    expect(fs.existsSync(colormapPath)).toBe(true);
-    const stadiumBackdropPath = path.join(ROOT, 'public/assets/games/penalty/stadium_backdrop.jpg');
-    expect(fs.existsSync(stadiumBackdropPath)).toBe(true);
-    expect(fs.statSync(stadiumBackdropPath).size).toBeGreaterThan(20_000);
+    expect(resolveGameAssetUrl('assets/games/models/race-future.glb')).toMatch(/^https:\/\//);
+    expect(resolveGameAssetUrl('assets/games/models/grandStandCovered.glb')).toMatch(/^https:\/\//);
+    expect(resolveGameAssetUrl('assets/games/penalty/stadium_backdrop.jpg')).toMatch(/^https:\/\//);
     for (const arena of ['bowling_alley.jpg', 'tennis_court.jpg', 'labyrinth_board.jpg', 'soccer_stadium.jpg']) {
-      const p = path.join(ROOT, 'public/assets/games/arenas', arena);
-      expect(fs.existsSync(p)).toBe(true);
-      expect(fs.statSync(p).size).toBeGreaterThan(15_000);
+      expect(resolveGameAssetUrl(`assets/games/arenas/${arena}`)).toMatch(/^https:\/\//);
     }
 
     const tvGamesCss = fs.readFileSync(path.join(ROOT, 'public/tv/tv-games.css'), 'utf8');
@@ -397,12 +394,29 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
       expect(lines).toBeLessThanOrEqual(700);
     }
 
-    for (const strictEs5File of ['public/tv/tv-game-sprites.js', 'public/tv/tv-games-gyroplus.js']) {
+    for (const strictEs5File of [
+      'public/tv/tv-game-sprites.js',
+      'public/tv/tv-games-gyroplus.js',
+      'public/tv/tv-games-retro.js',
+      'public/tv/tv-games-action.js',
+    ]) {
       const src = fs.readFileSync(path.join(ROOT, strictEs5File), 'utf8');
       expect(src).not.toMatch(/(?:^|\s)(?:let|const)\s+[a-zA-Z_$]/m);
       expect(src).not.toContain('=>');
       expect(src).not.toContain('`');
       expect(src).not.toContain('roundRect');
+    }
+
+    const indexCss = fs.readFileSync(path.join(ROOT, 'src/index.css'), 'utf8');
+    expect(indexCss).toContain('.game-touch-surface');
+    expect(indexCss).toContain('-webkit-touch-callout: none');
+
+    const gyroControllerSrc = fs.readFileSync(
+      path.join(ROOT, 'src/components/games/racing/PhoneGyroController.tsx'),
+      'utf8'
+    );
+    for (const newGyroGame of ['hexgl', 'arkanoid', 'invaders', 'pacman', 'bomberman', 'flappy']) {
+      expect(gyroControllerSrc).toContain(`'${newGyroGame}'`);
     }
 
     const mockWin: Record<string, unknown> = {};
@@ -427,11 +441,18 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
     };
     vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'public/tv/tv-game-sprites.js'), 'utf8'), tvSandbox);
     vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'public/tv/tv-games-gyroplus.js'), 'utf8'), tvSandbox);
+    vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'public/tv/tv-games-retro.js'), 'utf8'), tvSandbox);
+    vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'public/tv/tv-games-action.js'), 'utf8'), tvSandbox);
     expect(typeof mockWin.createTvDualQrLobby).toBe('function');
+    expect(typeof mockWin.connectTvGyroBridge).toBe('function');
+    expect(typeof mockWin.closeTvGyroBridge).toBe('function');
     expect(typeof mockWin.buildTvVolanteUrl).toBe('function');
     expect(typeof mockWin.startGyroBowlingGame).toBe('function');
     expect(typeof mockWin.startGyroTennisGame).toBe('function');
     expect(typeof mockWin.startGyroLabGame).toBe('function');
+    expect(typeof mockWin.startArkanoidGame).toBe('function');
+    expect(typeof mockWin.startPacmanGame).toBe('function');
+    expect(typeof mockWin.startFlappyGame).toBe('function');
   });
 
   it('scores goals cleanly on both left & right goals in Head Soccer physics & TV script', () => {

@@ -54,8 +54,9 @@
       '<div class="tv-game-top-title">' + title + '</div></div><div class="tv-game-top-right">' +
       '<div class="tv-game-hud-pill accent-purple" id="' + prefix + '-score">PUNTOS: 0</div>' +
       '<div class="tv-game-hud-pill accent-green" id="' + prefix + '-sub">VIDAS: 3</div>' +
-      '<div class="tv-game-hud-pill" id="' + prefix + '-best">Récord: ' + best + '</div></div></div>' +
-      '<div class="tv-game-arena">' +
+      '<div class="tv-game-hud-pill" id="' + prefix + '-best">Récord: ' + best + '</div>' +
+      '<button type="button" id="' + prefix + '-qr" class="tv-btn" tabindex="0">📱 QR Gyro</button></div></div>' +
+      '<div class="tv-game-arena" id="' + prefix + '-arena">' +
       '<canvas id="' + prefix + '-canvas" class="tv-game-canvas" width="960" height="540"></canvas>' +
       '<div class="tv-game-finish-overlay" id="' + prefix + '-ov"><div class="tv-game-finish-card">' +
       '<div class="tv-game-finish-title" id="' + prefix + '-fin-title">FIN</div>' +
@@ -87,9 +88,12 @@
     var scoreEl = document.getElementById('ark-score'), subEl = document.getElementById('ark-sub');
     var bestEl = document.getElementById('ark-best'), ov = document.getElementById('ark-ov');
     var finTitle = document.getElementById('ark-fin-title'), finSub = document.getElementById('ark-fin-sub');
+    var gyro = typeof window.connectTvGyroBridge === 'function'
+      ? window.connectTvGyroBridge('arkanoid', { arenaEl: document.getElementById('ark-arena'), btnEl: document.getElementById('ark-qr'), title: '🧱 Arkanoid · QR Móvil Gyro' })
+      : null;
 
     var BRICK_COLS = ['#F43F5E', '#FACC15', '#22C55E', '#38BDF8', '#A855F7', '#94A3B8'];
-    var padX = 480, padW = 132, laserTimer = 0, moveDir = 0;
+    var padX = 480, padW = 132, laserTimer = 0, laserCd = 0, moveDir = 0;
     var balls = [], bricks = [], capsules = [], lasers = [], booms = [];
     var score = 0, lives = 3, level = 1, gameOver = false;
 
@@ -145,7 +149,18 @@
       if (window.TV_GAME_ACTIVE !== 'arkanoid') return;
       var dt = Math.min(0.05, (now - last) / 1000); last = now;
       if (!gameOver) {
-        padX = Math.max(padW / 2 + 12, Math.min(948 - padW / 2, padX + moveDir * 560 * dt));
+        if (laserCd > 0) laserCd -= dt;
+        if (gyro && gyro.isActive()) {
+          var gp = gyro.getPad();
+          var gTarget = Math.max(padW / 2 + 12, Math.min(948 - padW / 2, 480 + gp.steer * 440));
+          padX += (gTarget - padX) * Math.min(1, dt * 16);
+          if (laserTimer > 0 && (gp.nitro || gp.throttle > 0.4) && laserCd <= 0) {
+            lasers.push({ x: padX - padW / 2 + 12, y: 482 }); lasers.push({ x: padX + padW / 2 - 12, y: 482 });
+            laserCd = 0.24; playSfx(860, 0.04, 'square', 0.04);
+          }
+        } else {
+          padX = Math.max(padW / 2 + 12, Math.min(948 - padW / 2, padX + moveDir * 560 * dt));
+        }
         if (laserTimer > 0) laserTimer = Math.max(0, laserTimer - dt);
         for (var li = lasers.length - 1; li >= 0; li--) {
           lasers[li].y -= 620 * dt;
@@ -262,6 +277,9 @@
     var scoreEl = document.getElementById('inv-score'), subEl = document.getElementById('inv-sub');
     var bestEl = document.getElementById('inv-best'), ov = document.getElementById('inv-ov');
     var finTitle = document.getElementById('inv-fin-title'), finSub = document.getElementById('inv-fin-sub');
+    var gyro = typeof window.connectTvGyroBridge === 'function'
+      ? window.connectTvGyroBridge('invaders', { arenaEl: document.getElementById('inv-arena'), btnEl: document.getElementById('inv-qr'), title: '👾 Space Invaders · QR Móvil Gyro' })
+      : null;
 
     var px = 480, moveDir = 0, pBullets = [], aBullets = [], aliens = [], bunkers = [], booms = [];
     var ufo = { active: false, x: 0, vx: 180, timer: 9 };
@@ -316,7 +334,13 @@
       var dt = Math.min(0.05, (now - last) / 1000); last = now;
       if (shootCd > 0) shootCd -= dt;
       if (!gameOver) {
-        px = Math.max(46, Math.min(914, px + moveDir * 440 * dt));
+        var invDir = moveDir;
+        if (gyro && gyro.isActive()) {
+          var gp2 = gyro.getPad();
+          invDir = Math.abs(gp2.steer) > 0.05 ? gp2.steer * 1.15 : moveDir;
+          if (gp2.nitro || gp2.throttle > 0.35 || gp2.swing > 1.0) fireLaser();
+        }
+        px = Math.max(46, Math.min(914, px + invDir * 440 * dt));
         if (!ufo.active) {
           ufo.timer -= dt;
           if (ufo.timer <= 0) { ufo.active = true; ufo.x = Math.random() < 0.5 ? -40 : 1000; ufo.vx = ufo.x < 0 ? 190 : -190; }
@@ -457,6 +481,9 @@
     var scoreEl = document.getElementById('hgl-score'), subEl = document.getElementById('hgl-sub');
     var bestEl = document.getElementById('hgl-best'), ov = document.getElementById('hgl-ov');
     var finTitle = document.getElementById('hgl-fin-title'), finSub = document.getElementById('hgl-fin-sub');
+    var gyro = typeof window.connectTvGyroBridge === 'function'
+      ? window.connectTvGyroBridge('hexgl', { arenaEl: document.getElementById('hgl-arena'), btnEl: document.getElementById('hgl-qr'), title: '🚀 HexGL 3D · QR Móvil Gyro' })
+      : null;
 
     var shipX = 0, steerDir = 0, speed = 520, boostOn = false, brakeOn = false;
     var shield = 100, dist = 0, trackZ = 0, entities = [], booms = [], gameOver = false;
@@ -491,9 +518,16 @@
       if (window.TV_GAME_ACTIVE !== 'hexgl') return;
       var dt = Math.min(0.05, (now - last) / 1000); last = now;
       if (!gameOver) {
-        var targetSpd = boostOn ? 980 : brakeOn ? 380 : 640 + Math.min(260, dist * 0.04);
+        var effSteer = steerDir, effBoost = boostOn, effBrake = brakeOn;
+        if (gyro && gyro.isActive()) {
+          var gp3 = gyro.getPad();
+          if (Math.abs(gp3.steer) > 0.04) effSteer = gp3.steer;
+          effBoost = boostOn || gp3.nitro || gp3.throttle > 0.45;
+          effBrake = brakeOn || gp3.brake > 0.35;
+        }
+        var targetSpd = effBoost ? 980 : effBrake ? 380 : 640 + Math.min(260, dist * 0.04);
         speed += (targetSpd - speed) * Math.min(1, dt * 4);
-        shipX = Math.max(-1.05, Math.min(1.05, shipX + steerDir * dt * 1.95));
+        shipX = Math.max(-1.05, Math.min(1.05, shipX + effSteer * dt * 1.95));
         var dz = speed * dt; trackZ += dz; dist += Math.round(dz * 0.14); spawnZ += dz;
         if (spawnZ > 240) {
           spawnZ = 0;

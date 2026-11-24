@@ -615,7 +615,8 @@ function startTvRacingGame(scr) {
 
     try {
       var sEl = document.createElement('script');
-      sEl.src = '/vendor/riffan-racing-3d.iife.js?_upd=' + Date.now();
+      var isFileProto = window.location && window.location.protocol === 'file:';
+      sEl.src = (isFileProto ? './vendor/riffan-racing-3d.iife.js' : '/vendor/riffan-racing-3d.iife.js') + '?_upd=' + Date.now();
       sEl.async = true;
       sEl.onload = function () {
         if (mountedOnce || TV_GAME_ACTIVE !== 'racing3d') return;

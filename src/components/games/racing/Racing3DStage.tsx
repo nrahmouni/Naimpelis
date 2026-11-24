@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Camera,
+  Compass,
   Flame,
   QrCode,
   RotateCcw,
@@ -12,6 +13,7 @@ import {
 } from 'lucide-react';
 import type { AppLanguage } from '../../../types';
 import { socketService } from '../../../services/socket';
+import { useDirectDeviceGyro } from '../../../hooks/useDirectDeviceGyro';
 import { pickLang } from '../../../utils/i18n';
 import { triggerHaptic } from '../../../utils/haptics';
 import { createRacing3dEngine } from './racing3dEngine';
@@ -81,6 +83,33 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
     () => (roomId || socketService.getActiveRoomId() || 'race-local').trim().toLowerCase(),
     [roomId]
   );
+
+  const directGyro = useDirectDeviceGyro({ maxDeg: 28, deadzoneDeg: 2.6 });
+
+  useEffect(() => {
+    if (!directGyro.active) return;
+    const id = window.setInterval(() => {
+      const g = directGyro.gyroRef.current;
+      if (!g.active) return;
+      const throttle = pressedKeysRef.current.has('TouchUp') || g.pitch >= -0.35 ? 1 : 0;
+      const brake = g.pitch < -0.45 ? Math.min(1, (-g.pitch - 0.45) * 1.8) : 0;
+      engineRef.current?.setGyroInput(
+        {
+          playerSlot: 1,
+          steer: g.steer,
+          throttle,
+          brake,
+          nitro: g.swing > 1.2 || pressedKeysRef.current.has('TouchNitro'),
+          handbrake: false,
+          cameraCycle: false,
+          horn: false,
+        },
+        220,
+        1
+      );
+    }, 40);
+    return () => window.clearInterval(id);
+  }, [directGyro.active, directGyro.gyroRef]);
 
   // Mount Three.js PBR 3D Engine
   useEffect(() => {
@@ -255,7 +284,10 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
   }, [syncKeysToEngine]);
 
   return (
-    <div className="relative w-full h-[520px] sm:h-[640px] rounded-3xl overflow-hidden bg-[#070a14] border border-white/10 select-none">
+    <div
+      onContextMenu={(e) => e.preventDefault()}
+      className="game-touch-surface relative w-full h-[520px] sm:h-[640px] rounded-3xl overflow-hidden bg-[#070a14] border border-white/10 select-none"
+    >
       {/* Three.js WebGL Mount */}
       <div ref={stageRef} className="w-full h-full" />
 
@@ -301,13 +333,28 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
 
       {/* Top Right Toolbar */}
       <div className="absolute top-3 right-3 flex items-center gap-1.5">
+        {directGyro.supported && (
+          <button
+            type="button"
+            onClick={() => void directGyro.toggle()}
+            className={`game-touch-btn min-h-10 px-2.5 rounded-xl border text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-lg ${
+              directGyro.active
+                ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200'
+                : 'bg-[#090c16]/90 border-white/15 text-zinc-200 hover:bg-[#14192b]'
+            }`}
+          >
+            <Compass className="w-4 h-4" />
+            <span className="hidden sm:inline">{directGyro.active ? 'Gyro ON' : 'Giroscopio'}</span>
+          </button>
+        )}
+
         <button
           type="button"
           onClick={() => {
             triggerHaptic('light');
             setShowQrModal((v) => !v);
           }}
-          className="min-h-10 px-3 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-lg"
+          className="game-touch-btn min-h-10 px-3 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-lg"
         >
           <QrCode className="w-4 h-4" />
           <span>{pickLang(lang, { es: 'Volante Móvil', ca: 'Volant Mòbil', en: 'Phone Gyro' })}</span>
@@ -403,28 +450,56 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
       <div className="absolute bottom-3 left-3 flex items-center gap-1.5 sm:hidden">
         <button
           type="button"
-          onPointerDown={() => engineRef.current?.setKeyboardState({ left: true })}
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+            engineRef.current?.setKeyboardState({ left: true });
+          }}
           onPointerUp={() => engineRef.current?.setKeyboardState({ left: false })}
           onPointerCancel={() => engineRef.current?.setKeyboardState({ left: false })}
-          className="w-12 h-12 rounded-xl bg-[#090c16]/90 border border-white/20 text-white font-black"
+          onLostPointerCapture={() => engineRef.current?.setKeyboardState({ left: false })}
+          className="game-touch-btn w-12 h-12 rounded-xl bg-[#090c16]/90 border border-white/20 text-white font-black"
         >
           ◀
         </button>
         <button
           type="button"
-          onPointerDown={() => engineRef.current?.setKeyboardState({ right: true })}
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+            engineRef.current?.setKeyboardState({ right: true });
+          }}
           onPointerUp={() => engineRef.current?.setKeyboardState({ right: false })}
           onPointerCancel={() => engineRef.current?.setKeyboardState({ right: false })}
-          className="w-12 h-12 rounded-xl bg-[#090c16]/90 border border-white/20 text-white font-black"
+          onLostPointerCapture={() => engineRef.current?.setKeyboardState({ right: false })}
+          className="game-touch-btn w-12 h-12 rounded-xl bg-[#090c16]/90 border border-white/20 text-white font-black"
         >
           ▶
         </button>
         <button
           type="button"
-          onPointerDown={() => engineRef.current?.setKeyboardState({ up: true })}
-          onPointerUp={() => engineRef.current?.setKeyboardState({ up: false })}
-          onPointerCancel={() => engineRef.current?.setKeyboardState({ up: false })}
-          className="px-4 h-12 rounded-xl bg-emerald-600/90 text-white text-xs font-black"
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+            pressedKeysRef.current.add('TouchUp');
+            engineRef.current?.setKeyboardState({ up: true });
+          }}
+          onPointerUp={() => {
+            pressedKeysRef.current.delete('TouchUp');
+            engineRef.current?.setKeyboardState({ up: false });
+          }}
+          onPointerCancel={() => {
+            pressedKeysRef.current.delete('TouchUp');
+            engineRef.current?.setKeyboardState({ up: false });
+          }}
+          onLostPointerCapture={() => {
+            pressedKeysRef.current.delete('TouchUp');
+            engineRef.current?.setKeyboardState({ up: false });
+          }}
+          className="game-touch-btn px-4 h-12 rounded-xl bg-emerald-600/90 text-white text-xs font-black"
         >
           GAS
         </button>

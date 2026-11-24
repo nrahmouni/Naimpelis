@@ -5,23 +5,110 @@
 (function () {
   var CACHE = {};
 
+  var KENNEY_CDN = 'https://raw.githubusercontent.com/shorepine/kenney/main/';
+  var THREE_CDN = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r170/examples/models/gltf/';
+  var CDN_EXACT = {
+    'penalty/stadium_backdrop.jpg': 'https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9c/NotreDameStadiumNight.jpg/1280px-NotreDameStadiumNight.jpg',
+    'arenas/soccer_stadium.jpg': 'https://thumb.wikimedia.org/wikipedia/commons/thumb/f/fc/Camp_Nou_aerial_%28cropped%29.jpg/1280px-Camp_Nou_aerial_%28cropped%29.jpg',
+    'arenas/bowling_alley.jpg': 'https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Sunset_Lanes_bowling_alley_-_Beaverton%2C_OR_%282015%29.jpg/1280px-Sunset_Lanes_bowling_alley_-_Beaverton%2C_OR_%282015%29.jpg',
+    'arenas/tennis_court.jpg': 'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/00/Wimbledon_Centre_Court_2017_cropped.jpg/1280px-Wimbledon_Centre_Court_2017_cropped.jpg',
+    'arenas/labyrinth_board.jpg': 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/oak_veneer_01/oak_veneer_01_diff_1k.jpg',
+    'models/RobotExpressive.glb': THREE_CDN + 'RobotExpressive/RobotExpressive.glb',
+    'models/Soldier.glb': THREE_CDN + 'Soldier.glb',
+    'models/race-future.glb': KENNEY_CDN + '3d/car/race-future.glb',
+    'models/race.glb': KENNEY_CDN + '3d/car/race.glb',
+    'models/sedan-sports.glb': KENNEY_CDN + '3d/car/sedan-sports.glb',
+    'models/hatchback-sports.glb': KENNEY_CDN + '3d/car/hatchback-sports.glb',
+    'models/suv-luxury.glb': KENNEY_CDN + '3d/car/suv-luxury.glb',
+    'models/grandStandCovered.glb': KENNEY_CDN + '3d/racing/grandStandCovered.glb',
+    'models/grandStandCoveredRound.glb': KENNEY_CDN + '3d/racing/grandStandCoveredRound.glb',
+    'models/overheadLights.glb': KENNEY_CDN + '3d/racing/overheadLights.glb',
+    'models/lightPostLarge.glb': KENNEY_CDN + '3d/racing/lightPostLarge.glb',
+    'models/pitsGarage.glb': KENNEY_CDN + '3d/racing/pitsGarage.glb',
+    'models/barrierRed.glb': KENNEY_CDN + '3d/racing/barrierRed.glb',
+    'models/barrierWhite.glb': KENNEY_CDN + '3d/racing/barrierWhite.glb',
+    'models/flagCheckers.glb': KENNEY_CDN + '3d/racing/flagCheckers.glb',
+    'toon/male_idle.png': KENNEY_CDN + '2d/Toon%20Characters/Male%20person/Poses%20HD/character_malePerson_idle.png',
+    'toon/male_run0.png': KENNEY_CDN + '2d/Toon%20Characters/Male%20person/Poses%20HD/character_malePerson_run0.png',
+    'toon/male_run1.png': KENNEY_CDN + '2d/Toon%20Characters/Male%20person/Poses%20HD/character_malePerson_run1.png',
+    'toon/male_run2.png': KENNEY_CDN + '2d/Toon%20Characters/Male%20person/Poses%20HD/character_malePerson_run2.png',
+    'toon/male_kick.png': KENNEY_CDN + '2d/Toon%20Characters/Male%20person/Poses%20HD/character_malePerson_kick.png',
+    'toon/male_cheer0.png': KENNEY_CDN + '2d/Toon%20Characters/Male%20person/Poses%20HD/character_malePerson_cheer0.png',
+    'toon/robot_idle.png': KENNEY_CDN + '2d/Toon%20Characters/Robot/Poses%20HD/character_robot_idle.png',
+    'toon/robot_cheer0.png': KENNEY_CDN + '2d/Toon%20Characters/Robot/Poses%20HD/character_robot_cheer0.png',
+    'space/blue.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Backgrounds/blue.png',
+    'space/darkPurple.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Backgrounds/darkPurple.png',
+    'space/playerShip1_blue.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/playerShip1_blue.png',
+    'space/playerShip2_orange.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/playerShip2_orange.png',
+    'space/playerShip3_red.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/playerShip3_red.png',
+    'space/ufoRed.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/ufoRed.png',
+    'space/enemyBlue1.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Enemies/enemyBlue1.png',
+    'space/enemyGreen2.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Enemies/enemyGreen2.png',
+    'space/enemyRed3.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Enemies/enemyRed3.png',
+    'space/laserBlue01.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Lasers/laserBlue01.png',
+    'space/laserRed01.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Lasers/laserRed01.png',
+    'space/meteorBrown_big1.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Meteors/meteorBrown_big1.png',
+    'space/meteorGrey_big1.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Meteors/meteorGrey_big1.png',
+    'space/fire00.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Effects/fire00.png',
+    'space/fire01.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Effects/fire01.png',
+    'space/shield3.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Effects/shield3.png',
+    'space/pill_blue.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Power-ups/pill_blue.png',
+    'space/pill_green.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Power-ups/pill_green.png',
+    'space/pill_red.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Power-ups/pill_red.png',
+    'space/powerupBlue_bolt.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Power-ups/powerupBlue_bolt.png',
+    'space/powerupBlue_shield.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Power-ups/powerupBlue_shield.png'
+  };
+
   function resolveSpriteUrl(relPath) {
-    var clean = String(relPath || '').replace(/^\/+/, '');
-    if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
-      return './' + clean;
+    var raw = String(relPath || '');
+    if (!raw) return '';
+    if (raw.indexOf('http://') === 0 || raw.indexOf('https://') === 0 || raw.indexOf('data:') === 0) return raw;
+    var clean = raw.replace(/^(\.\/|\/)+/, '').replace(/^assets\/games\//, '');
+    if (CDN_EXACT[clean]) return CDN_EXACT[clean];
+    var slash = clean.indexOf('/');
+    var folder = slash > 0 ? clean.slice(0, slash) : '';
+    var file = slash > 0 ? clean.slice(slash + 1) : clean;
+    if (folder === 'explosion') return KENNEY_CDN + '2d/Explosion%20Pack/Ground%20explosion/' + file;
+    if (folder === 'puzzle') return KENNEY_CDN + '2d/Puzzle%20Pack%201/Double/' + file;
+    if (folder === 'rolling') return KENNEY_CDN + '2d/Rolling%20Ball%20Assets/Retina/' + file;
+    if (folder === 'particles') return KENNEY_CDN + '2d/Particle%20Pack/PNG%20(Transparent)/' + file;
+    if (folder === 'medals') return KENNEY_CDN + '2d/Tappy%20Plane/UI/' + file;
+    if (folder === 'tappy') {
+      if (file.indexOf('plane') === 0) return KENNEY_CDN + '2d/Tappy%20Plane/Planes/' + file;
+      return KENNEY_CDN + '2d/Tappy%20Plane/' + file;
     }
-    return '/' + clean;
+    if (folder === 'bomberman') {
+      if (file.indexOf('player_') === 0) return KENNEY_CDN + '2d/Sokoban%20Pack/Retina/Player/' + file;
+      if (file.indexOf('ground_') === 0) return KENNEY_CDN + '2d/Sokoban%20Pack/Retina/Ground/' + file;
+      if (file.indexOf('block_') === 0) return KENNEY_CDN + '2d/Sokoban%20Pack/Retina/Blocks/' + file;
+      if (file.indexOf('crate_') === 0) return KENNEY_CDN + '2d/Sokoban%20Pack/Retina/Crates/' + file;
+    }
+    if (folder === 'sports') {
+      if (file.indexOf('character_blue_') === 0) {
+        return KENNEY_CDN + '2d/Sports%20Pack/Blue/' + encodeURIComponent('characterBlue (' + file.replace('character_blue_', '').replace('.png', '') + ').png');
+      }
+      if (file.indexOf('character_red_') === 0) {
+        return KENNEY_CDN + '2d/Sports%20Pack/Red/' + encodeURIComponent('characterRed (' + file.replace('character_red_', '').replace('.png', '') + ').png');
+      }
+      return KENNEY_CDN + '2d/Sports%20Pack/Equipment/' + file;
+    }
+    if (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') {
+      return './assets/games/' + clean;
+    }
+    return '/assets/games/' + clean;
   }
 
   function getTvGameSprite(relPath) {
     if (!relPath) return null;
-    var entry = CACHE[relPath];
+    var key = String(relPath).replace(/^(\.\/|\/)+/, '');
+    var entry = CACHE[key];
     if (!entry) {
       var img = new Image();
+      img.crossOrigin = 'anonymous';
       entry = { img: img, failed: false };
       img.onerror = function () { entry.failed = true; };
-      img.src = resolveSpriteUrl(relPath);
-      CACHE[relPath] = entry;
+      img.src = resolveSpriteUrl(key);
+      CACHE[key] = entry;
       return null;
     }
     if (entry.failed) return null;
@@ -220,6 +307,112 @@
     };
   }
 
+  var ACTIVE_BRIDGE_WS = null;
+  var ACTIVE_BRIDGE_LOBBY = null;
+  var ACTIVE_BRIDGE_GAME = '';
+
+  function closeTvGyroBridge() {
+    ACTIVE_BRIDGE_GAME = '';
+    if (ACTIVE_BRIDGE_WS) {
+      ACTIVE_BRIDGE_WS.onclose = null;
+      try { ACTIVE_BRIDGE_WS.close(); } catch (e) {}
+      ACTIVE_BRIDGE_WS = null;
+    }
+    if (ACTIVE_BRIDGE_LOBBY && typeof ACTIVE_BRIDGE_LOBBY.destroy === 'function') {
+      ACTIVE_BRIDGE_LOBBY.destroy();
+    }
+    ACTIVE_BRIDGE_LOBBY = null;
+  }
+
+  function connectTvGyroBridge(gameId, opts) {
+    closeTvGyroBridge();
+    ACTIVE_BRIDGE_GAME = String(gameId || '');
+    var cfg = opts || {};
+    var roomId = (typeof window.currentRoomId === 'string' && window.currentRoomId)
+      ? window.currentRoomId
+      : (ACTIVE_BRIDGE_GAME.slice(0, 3) + '-' + Math.floor(1000 + Math.random() * 9000));
+    var pad = { steer: 0, pitch: 0, roll: 0, swing: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 };
+    var hasCtrl = false;
+    var lobby = null;
+    var btnEl = cfg.btnEl || null;
+
+    function updateBtn() {
+      if (!btnEl) return;
+      btnEl.textContent = hasCtrl ? '📱 Móvil OK' : '📱 QR Gyro';
+    }
+
+    function openQr() {
+      if (!cfg.arenaEl) return;
+      if (!lobby) {
+        lobby = createTvDualQrLobby(cfg.arenaEl, {
+          roomId: roomId,
+          gameId: ACTIVE_BRIDGE_GAME,
+          title: cfg.title || '📱 MANDO GIROSCOPIO QR',
+          onStartReady: function () {}
+        });
+        ACTIVE_BRIDGE_LOBBY = lobby;
+      } else if (typeof lobby.forceShow === 'function') {
+        lobby.forceShow();
+      }
+    }
+    if (btnEl) btnEl.onclick = openQr;
+
+    function openWs() {
+      if (!window.WebSocket || typeof window.getTvRacingWsUrl !== 'function') return;
+      try {
+        var ws = new WebSocket(window.getTvRacingWsUrl());
+        ACTIVE_BRIDGE_WS = ws;
+        ws.onopen = function () {
+          if (ACTIVE_BRIDGE_WS !== ws) return;
+          ws.send(JSON.stringify({
+            type: 'JOIN_ROOM',
+            payload: { roomId: roomId, roomName: ACTIVE_BRIDGE_GAME.toUpperCase(), user: { id: 'tv-gb-' + roomId, name: 'Smart TV', avatar: '🎮', color: '#22D3EE', isHost: true } }
+          }));
+          ws.send(JSON.stringify({
+            type: 'GYRO_CONTROLLER_JOIN',
+            payload: { roomId: roomId, role: 'display', deviceName: 'Smart TV Gyro', gameId: ACTIVE_BRIDGE_GAME }
+          }));
+        };
+        ws.onmessage = function (ev) {
+          if (ACTIVE_BRIDGE_WS !== ws) return;
+          try {
+            var msg = JSON.parse(ev.data);
+            if (msg.type === 'GYRO_PEER_STATUS' && msg.payload) {
+              hasCtrl = Boolean(msg.payload.hasController);
+              updateBtn();
+              if (lobby) lobby.onStatus(msg.payload.controllers || []);
+            } else if (msg.type === 'GYRO_INPUT_RELAY' && msg.payload && msg.payload.playerSlot !== 2) {
+              var p = msg.payload;
+              pad.steer = typeof p.steer === 'number' ? p.steer : 0;
+              pad.pitch = typeof p.pitch === 'number' ? p.pitch : 0;
+              pad.roll = typeof p.roll === 'number' ? p.roll : 0;
+              pad.swing = typeof p.swing === 'number' ? p.swing : 0;
+              pad.throttle = typeof p.throttle === 'number' ? p.throttle : 0;
+              pad.brake = typeof p.brake === 'number' ? p.brake : 0;
+              pad.nitro = Boolean(p.nitro);
+              pad.handbrake = Boolean(p.handbrake);
+              pad.expiresAt = Date.now() + 1400;
+            }
+          } catch (e) {}
+        };
+        ws.onclose = function () {
+          if (ACTIVE_BRIDGE_WS === ws && window.TV_GAME_ACTIVE === ACTIVE_BRIDGE_GAME) {
+            setTimeout(function () { if (window.TV_GAME_ACTIVE === ACTIVE_BRIDGE_GAME) openWs(); }, 2500);
+          }
+        };
+      } catch (e) {}
+    }
+    openWs();
+
+    return {
+      isActive: function () { return Date.now() < pad.expiresAt; },
+      getPad: function () { return pad; },
+      showQr: openQr,
+      close: closeTvGyroBridge
+    };
+  }
+
+  window.resolveTvGameAssetUrl = resolveSpriteUrl;
   window.getTvGameSprite = getTvGameSprite;
   window.preloadTvGameSprites = preloadTvGameSprites;
   window.drawTvSprite = drawTvSprite;
@@ -228,4 +421,6 @@
   window.playTvZzfxPreset = playTvZzfxPreset;
   window.buildTvVolanteUrl = buildTvVolanteUrl;
   window.createTvDualQrLobby = createTvDualQrLobby;
+  window.connectTvGyroBridge = connectTvGyroBridge;
+  window.closeTvGyroBridge = closeTvGyroBridge;
 })();

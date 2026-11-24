@@ -24,8 +24,9 @@
       '<div class="tv-game-top-title">' + title + '</div></div><div class="tv-game-top-right">' +
       '<div class="tv-game-hud-pill accent-purple" id="' + prefix + '-score">PUNTOS: 0</div>' +
       '<div class="tv-game-hud-pill accent-green" id="' + prefix + '-sub">VIDAS: 3</div>' +
-      '<div class="tv-game-hud-pill" id="' + prefix + '-best">Récord: ' + best + '</div></div></div>' +
-      '<div class="tv-game-arena">' +
+      '<div class="tv-game-hud-pill" id="' + prefix + '-best">Récord: ' + best + '</div>' +
+      '<button type="button" id="' + prefix + '-qr" class="tv-btn" tabindex="0">📱 QR Gyro</button></div></div>' +
+      '<div class="tv-game-arena" id="' + prefix + '-arena">' +
       '<canvas id="' + prefix + '-canvas" class="tv-game-canvas" width="960" height="540"></canvas>' +
       '<div class="tv-game-finish-overlay" id="' + prefix + '-ov"><div class="tv-game-finish-card">' +
       '<div class="tv-game-finish-title" id="' + prefix + '-fin-title">FIN</div>' +
@@ -57,6 +58,9 @@
     var scoreEl = document.getElementById('pac-score'), subEl = document.getElementById('pac-sub');
     var bestEl = document.getElementById('pac-best'), ov = document.getElementById('pac-ov');
     var finTitle = document.getElementById('pac-fin-title'), finSub = document.getElementById('pac-fin-sub');
+    var gyro = typeof window.connectTvGyroBridge === 'function'
+      ? window.connectTvGyroBridge('pacman', { arenaEl: document.getElementById('pac-arena'), btnEl: document.getElementById('pac-qr'), title: '🟡 Pac-Man · QR Móvil Gyro' })
+      : null;
 
     var MAP_TPL = [
       '###################', '#O.......#.......O#', '#.##.###.#.###.##.#', '#.................#',
@@ -119,6 +123,14 @@
       if (window.TV_GAME_ACTIVE !== 'pacman') return;
       var dt = Math.min(0.04, (now - last) / 1000); last = now; pac.mouth += dt * 12;
       if (!gameOver) {
+        if (gyro && gyro.isActive()) {
+          var gp = gyro.getPad();
+          var ax = gp.steer, ay = -gp.pitch;
+          if (Math.abs(ax) > 0.28 || Math.abs(ay) > 0.28) {
+            if (Math.abs(ax) >= Math.abs(ay)) { pac.ndx = ax > 0 ? 1 : -1; pac.ndy = 0; }
+            else { pac.ndx = 0; pac.ndy = ay > 0 ? 1 : -1; }
+          }
+        }
         if (frightTimer > 0) frightTimer = Math.max(0, frightTimer - dt);
         var speed = 5.6 + Math.min(2.2, (level - 1) * 0.35), moveStep = dt * speed;
         if (pac.ndx === -pac.dx && pac.ndy === -pac.dy && (pac.ndx !== 0 || pac.ndy !== 0)) {
@@ -265,6 +277,10 @@
     var scoreEl = document.getElementById('bomb-score'), subEl = document.getElementById('bomb-sub');
     var bestEl = document.getElementById('bomb-best'), ov = document.getElementById('bomb-ov');
     var finTitle = document.getElementById('bomb-fin-title'), finSub = document.getElementById('bomb-fin-sub');
+    var gyro = typeof window.connectTvGyroBridge === 'function'
+      ? window.connectTvGyroBridge('bomberman', { arenaEl: document.getElementById('bomb-arena'), btnEl: document.getElementById('bomb-qr'), title: '💣 Bomberman · QR Móvil Gyro' })
+      : null;
+    var gyroCd = 0, prevBombBtn = false;
 
     var COLS = 13, ROWS = 11, CELL = 44;
     var OX = Math.floor((960 - COLS * CELL) / 2), OY = Math.floor((540 - ROWS * CELL) / 2);
@@ -352,6 +368,19 @@
       if (window.TV_GAME_ACTIVE !== 'bomberman') return;
       var dt = Math.min(0.05, (now - last) / 1000); last = now;
       if (!roundOver) {
+        if (gyroCd > 0) gyroCd -= dt;
+        if (gyro && gyro.isActive()) {
+          var gp2 = gyro.getPad();
+          var bx = gp2.steer, by = -gp2.pitch;
+          if (gyroCd <= 0 && (Math.abs(bx) > 0.34 || Math.abs(by) > 0.34)) {
+            if (Math.abs(bx) >= Math.abs(by)) tryMove(actors[0], bx > 0 ? 1 : -1, 0);
+            else tryMove(actors[0], 0, by > 0 ? 1 : -1);
+            gyroCd = 0.16;
+          }
+          var bTrig = gp2.nitro || gp2.throttle > 0.65 || gp2.swing > 1.1;
+          if (bTrig && !prevBombBtn) dropBomb(actors[0]);
+          prevBombBtn = bTrig;
+        } else { prevBombBtn = false; }
         for (var bi = bombs.length - 1; bi >= 0; bi--) { bombs[bi].timer -= dt; if (bombs[bi].timer <= 0) detonate(bombs.splice(bi, 1)[0]); }
         for (var fi = flames.length - 1; fi >= 0; fi--) {
           flames[fi].timer -= dt;
@@ -452,6 +481,10 @@
     var scoreEl = document.getElementById('flap-score'), subEl = document.getElementById('flap-sub');
     var bestEl = document.getElementById('flap-best'), ov = document.getElementById('flap-ov');
     var finTitle = document.getElementById('flap-fin-title'), finSub = document.getElementById('flap-fin-sub');
+    var gyro = typeof window.connectTvGyroBridge === 'function'
+      ? window.connectTvGyroBridge('flappy', { arenaEl: document.getElementById('flap-arena'), btnEl: document.getElementById('flap-qr'), title: '🐦 Clumsy Bird · QR Móvil Gyro' })
+      : null;
+    var prevFlapTrig = false;
 
     var bird = { y: 240, vy: 0 }, pipes = [], puffs = [], score = 0, started = false, dead = false, scroll = 0;
     function resetGame() {
@@ -478,6 +511,12 @@
     function frame(now) {
       if (window.TV_GAME_ACTIVE !== 'flappy') return;
       var dt = Math.min(0.05, (now - last) / 1000); last = now;
+      if (!dead && gyro && gyro.isActive()) {
+        var gp3 = gyro.getPad();
+        var fTrig = gp3.nitro || gp3.throttle > 0.45 || gp3.swing > 0.9 || gp3.pitch > 0.42;
+        if (fTrig && !prevFlapTrig) flap();
+        prevFlapTrig = fTrig;
+      } else { prevFlapTrig = false; }
       for (var pfi = puffs.length - 1; pfi >= 0; pfi--) {
         puffs[pfi].x -= 140 * dt; puffs[pfi].life -= dt; if (puffs[pfi].life <= 0) puffs.splice(pfi, 1);
       }

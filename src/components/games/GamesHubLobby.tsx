@@ -7,6 +7,7 @@ import { RiffanGamesIcon } from '../ui/RiffanIcons';
 import { GameLogoArtwork, type UnifiedGameId } from './GameLogos';
 import { animateStaggerCards } from './arcade/arcadeAnimations';
 import { RobotMascot3DBadge } from './arcade/RobotMascot3DBadge';
+import { RiveInteractiveBadge } from './arcade/RiveInteractiveBadge';
 
 export type GameCategoryFilter = 'all' | 'arcade' | 'party' | 'board';
 
@@ -89,6 +90,45 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
       playersHint: 'GYRO',
       accentBorder: 'hover:border-purple-400/75',
       backdropClass: 'from-[#2A114F] via-[#121636] to-[#0B0D14]',
+    },
+    {
+      id: 'gyrobowling',
+      category: 'arcade',
+      title: pickLang(lang, { es: 'Bolos Pro 3D Gyro', ca: 'Bitlles Pro 3D Gyro', en: 'Pro 3D Gyro Bowling' }),
+      meta: pickLang(lang, {
+        es: 'Bolos 3D · Giroscopio móvil 2P',
+        ca: 'Bitlles 3D · Giroscopi mòbil 2P',
+        en: '3D Bowling · 2P Phone gyro',
+      }),
+      playersHint: 'GYRO',
+      accentBorder: 'hover:border-amber-400/75',
+      backdropClass: 'from-[#3D220A] via-[#1B122E] to-[#0B0D14]',
+    },
+    {
+      id: 'gyrotennis',
+      category: 'arcade',
+      title: pickLang(lang, { es: 'Tenis Slam Pro 2P', ca: 'Tennis Slam Pro 2P', en: 'Tennis Slam Pro 2P' }),
+      meta: pickLang(lang, {
+        es: 'Raqueta Wii Gyro · 1P/2P',
+        ca: 'Raqueta Wii Gyro · 1P/2P',
+        en: 'Wii Gyro Racket · 1P/2P',
+      }),
+      playersHint: '2P',
+      accentBorder: 'hover:border-lime-400/75',
+      backdropClass: 'from-[#0D381F] via-[#102138] to-[#0B0D14]',
+    },
+    {
+      id: 'gyrolab',
+      category: 'arcade',
+      title: pickLang(lang, { es: 'Laberinto Esfera 3D', ca: 'Laberint Esfera 3D', en: 'Sphere Labyrinth 3D' }),
+      meta: pickLang(lang, {
+        es: 'Inclina tablero · Estrellas · Gyro',
+        ca: 'Inclina tauler · Estrelles · Gyro',
+        en: 'Tilt board · Stars · Phone gyro',
+      }),
+      playersHint: 'GYRO',
+      accentBorder: 'hover:border-cyan-400/75',
+      backdropClass: 'from-[#2C1810] via-[#131D36] to-[#0B0D14]',
     },
     {
       id: 'pingpong',
@@ -228,8 +268,8 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
       id: 'pacman',
       category: 'arcade',
       title: 'Pac-Man Arcade HD',
-      meta: pickLang(lang, { es: 'Laberinto · Fantasmas · 3 vidas', ca: 'Laberint · Fantasmes · 3 vides', en: 'Maze · Ghosts · 3 lives' }),
-      playersHint: '1P',
+      meta: pickLang(lang, { es: 'Laberinto · Fantasmas · Giroscopio', ca: 'Laberint · Fantasmes · Giroscopi', en: 'Maze · Ghosts · Phone gyro' }),
+      playersHint: 'GYRO',
       accentBorder: 'hover:border-yellow-400/70',
       backdropClass: 'from-[#261D07] via-[#13182E] to-[#0B0D14]',
     },
@@ -237,8 +277,8 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
       id: 'bomberman',
       category: 'party',
       title: 'Bomberman Party Arena',
-      meta: pickLang(lang, { es: 'Bombas · Mejoras · 3 bots IA', ca: 'Bombes · Millores · 3 bots IA', en: 'Bombs · Power-ups · 3 AI bots' }),
-      playersHint: '4P',
+      meta: pickLang(lang, { es: 'Bombas · 3 bots IA · Giroscopio', ca: 'Bombes · 3 bots IA · Giroscopi', en: 'Bombs · 3 AI bots · Gyro' }),
+      playersHint: 'GYRO',
       accentBorder: 'hover:border-orange-400/70',
       backdropClass: 'from-[#12331E] via-[#27160B] to-[#0B0D14]',
     },
@@ -255,8 +295,8 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
       id: 'hexgl',
       category: 'arcade',
       title: 'HexGL Hover 3D',
-      meta: pickLang(lang, { es: 'Velocidad 3D · Turbo · Escudos', ca: 'Velocitat 3D · Turbo · Escuts', en: '3D Speed · Turbo · Shields' }),
-      playersHint: '3D',
+      meta: pickLang(lang, { es: 'Nave 3D · Turbo · Giroscopio', ca: 'Nau 3D · Turbo · Giroscopi', en: '3D Hover · Turbo · Phone gyro' }),
+      playersHint: 'GYRO',
       accentBorder: 'hover:border-cyan-400/70',
       backdropClass: 'from-[#092940] via-[#141736] to-[#0B0D14]',
     },
@@ -282,8 +322,8 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
       id: 'flappy',
       category: 'arcade',
       title: 'Clumsy Bird TV',
-      meta: pickLang(lang, { es: 'Un botón · Medallas Platino', ca: 'Un botó · Medalles Platí', en: 'One button · Platinum medals' }),
-      playersHint: '1P',
+      meta: pickLang(lang, { es: 'Agita/inclina · Giroscopio móvil', ca: 'Agita/inclina · Giroscopi mòbil', en: 'Shake/tilt · Phone gyro' }),
+      playersHint: 'GYRO',
       accentBorder: 'hover:border-sky-400/70',
       backdropClass: 'from-[#0C3B59] via-[#102238] to-[#0B0D14]',
     },
@@ -291,8 +331,8 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
       id: 'arkanoid',
       category: 'arcade',
       title: 'BrickIt Arkanoid',
-      meta: pickLang(lang, { es: 'Ladrillos · Multibola · Láser', ca: 'Maons · Multibola · Làser', en: 'Bricks · Multiball · Laser' }),
-      playersHint: '1P',
+      meta: pickLang(lang, { es: 'Ladrillos · Láser · Giroscopio', ca: 'Maons · Làser · Giroscopi', en: 'Bricks · Laser · Phone gyro' }),
+      playersHint: 'GYRO',
       accentBorder: 'hover:border-blue-400/70',
       backdropClass: 'from-[#10264F] via-[#13152B] to-[#0B0D14]',
     },
@@ -300,8 +340,8 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
       id: 'invaders',
       category: 'arcade',
       title: 'Space Invaders Retro',
-      meta: pickLang(lang, { es: 'Oleadas 5×11 · Búnkeres · OVNI', ca: 'Onades 5×11 · Búnquers · OVNI', en: '5×11 Waves · Bunkers · UFO' }),
-      playersHint: '1P',
+      meta: pickLang(lang, { es: 'Oleadas 5×11 · OVNI · Giroscopio', ca: 'Onades 5×11 · OVNI · Giroscopi', en: '5×11 Waves · UFO · Phone gyro' }),
+      playersHint: 'GYRO',
       accentBorder: 'hover:border-emerald-400/70',
       backdropClass: 'from-[#0A2B1D] via-[#0E182B] to-[#0B0D14]',
     },
@@ -334,9 +374,9 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
             <p className="text-xs text-zinc-400 mt-0.5 tabular-nums leading-snug">
               {hubMode === 'online'
                 ? pickLang(lang, {
-                    es: `Sala en directo · ${participants.length} conectado${participants.length === 1 ? '' : 's'} · 26 juegos`,
-                    ca: `Sala en directe · ${participants.length} connectat${participants.length === 1 ? '' : 's'} · 26 jocs`,
-                    en: `Live room · ${participants.length} connected · 26 games`,
+                    es: `Sala en directo · ${participants.length} conectado${participants.length === 1 ? '' : 's'} · 29 juegos`,
+                    ca: `Sala en directe · ${participants.length} connectat${participants.length === 1 ? '' : 's'} · 29 jocs`,
+                    en: `Live room · ${participants.length} connected · 29 games`,
                   })
                 : pickLang(lang, {
                     es: 'Modo entrenamiento offline contra IA · Sin esperas',
@@ -486,8 +526,14 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
               gameId={featuredGame.id}
               className="w-full h-full group-hover:scale-[1.03] transition-transform duration-300"
             />
+            <div className="pointer-events-none absolute bottom-1.5 left-1.5 w-12 h-12 opacity-90">
+              <RiveInteractiveBadge
+                theme={featuredGame.id === 'racing3d' ? 'vehicles' : 'skills'}
+                className="w-full h-full"
+              />
+            </div>
             <div className="pointer-events-none absolute -bottom-1 right-1 w-24 h-24">
-              <RobotMascot3DBadge clip="Dance" className="w-full h-full" />
+              <RobotMascot3DBadge clip="Dance" character="robot" className="w-full h-full" />
             </div>
           </div>
         </div>

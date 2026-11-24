@@ -1,17 +1,22 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
+  Compass,
   Crosshair,
   Flame,
+  QrCode,
   RotateCcw,
   Trophy,
   Volume2,
   VolumeX,
 } from 'lucide-react';
 import type { AppLanguage } from '../../../types';
+import { socketService } from '../../../services/socket';
+import { useDirectDeviceGyro } from '../../../hooks/useDirectDeviceGyro';
 import { pickLang } from '../../../utils/i18n';
 import { triggerHaptic } from '../../../utils/haptics';
+import { DualGyroQrPanel, type DualGyroControllerPeer } from '../racing/DualGyroQrPanel';
 import { loadArcadeBest, playArcadeSfx, saveArcadeBest } from './arcadeAudio';
 import {
   EXPLOSION_FRAMES,
@@ -61,12 +66,16 @@ export type RetroArcadeId = 'arkanoid' | 'invaders' | 'hexgl';
 interface ArcadeRetroStageProps {
   gameId: RetroArcadeId;
   lang: AppLanguage;
+  roomId?: string;
+  userName?: string;
   mutedOverride?: boolean;
 }
 
 export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
   gameId,
   lang,
+  roomId = '',
+  userName = 'Jugador',
   mutedOverride = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -80,6 +89,24 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
   const [bestScore, setBestScore] = useState(() => loadArcadeBest(bestKey));
   const [gameOver, setGameOver] = useState(false);
   const [gameOverMsg, setGameOverMsg] = useState('');
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [controllers, setControllers] = useState<DualGyroControllerPeer[]>([]);
+
+  const effectiveRoomId = useMemo(
+    () => (roomId || socketService.getActiveRoomId() || `${gameId}-local`).trim().toLowerCase(),
+    [gameId, roomId]
+  );
+
+  const wsGyroRef = useRef({
+    steer: 0,
+    pitch: 0,
+    throttle: 0,
+    brake: 0,
+    nitro: false,
+    handbrake: false,
+    swing: 0,
+    expiresAt: 0,
+  });
 
   const ctrlRef = useRef<{
     dir: number;
@@ -94,6 +121,63 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
     pointerX: () => {},
     reset: () => {},
   });
+
+  const directGyro = useDirectDeviceGyro({
+    maxDeg: 26,
+    pitchMaxDeg: 22,
+    onSwing: () => {
+      if (gameId !== 'hexgl') ctrlRef.current.fire();
+    },
+  });
+
+  useEffect(() => {
+    const alreadyConnected = socketService.isConnected() && socketService.getActiveRoomId();
+    if (!alreadyConnected) {
+      socketService.connect(
+        effectiveRoomId,
+        {
+          id: `tv-retro-${effectiveRoomId}`,
+          name: `${userName || 'Jugador'} (${gameId})`,
+          avatar: '🕹️',
+          color: '#38bdf8',
+          role: 'host',
+          isHost: true,
+          joinedAt: Date.now(),
+        },
+        `Sala ${effectiveRoomId.toUpperCase()}`
+      );
+    } else {
+      socketService.joinGyroChannel('display', `${userName || 'Jugador'} (${gameId})`, effectiveRoomId, {
+        gameId,
+      });
+    }
+
+    const unsub = socketService.subscribe((ev) => {
+      if (ev.type === 'GYRO_PEER_STATUS') {
+        const list = Array.isArray(ev.payload.controllers)
+          ? (ev.payload.controllers as DualGyroControllerPeer[])
+          : [];
+        setControllers(list);
+      } else if (ev.type === 'GYRO_INPUT_RELAY') {
+        wsGyroRef.current = {
+          steer: Number(ev.payload.steer || 0),
+          pitch: Number(ev.payload.pitch || 0),
+          throttle: Number(ev.payload.throttle || 0),
+          brake: Number(ev.payload.brake || 0),
+          nitro: Boolean(ev.payload.nitro),
+          handbrake: Boolean(ev.payload.handbrake),
+          swing: Number(ev.payload.swing || 0),
+          expiresAt: Date.now() + 1400,
+        };
+      } else if (ev.type === 'ROOM_STATE') {
+        socketService.joinGyroChannel('display', `${userName || 'Jugador'} (${gameId})`, effectiveRoomId, {
+          gameId,
+        });
+      }
+    });
+
+    return () => unsub();
+  }, [effectiveRoomId, gameId, userName]);
 
   const commitScore = useCallback(
     (nextScore: number) => {
@@ -192,12 +276,29 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
       reset();
 
       let last = performance.now();
+      let prevFire = false;
+      let prevReset = false;
       const loop = (now: number) => {
         if (!alive) return;
         const dt = Math.min(0.05, (now - last) / 1000);
         last = now;
+        const ws = wsGyroRef.current;
+        const wsActive = Date.now() < ws.expiresAt;
+        const dg = directGyro.gyroRef.current;
+        const gyroDir = wsActive && Math.abs(ws.steer) > 0.06
+          ? ws.steer * 1.45
+          : dg.active && Math.abs(dg.steer) > 0.06
+          ? dg.steer * 1.55
+          : 0;
+        const wsFire = wsActive && (ws.nitro || ws.throttle > 0.5);
+        if (wsFire && !prevFire) ctrlRef.current.fire();
+        prevFire = wsFire;
+        const wsReset = wsActive && ws.brake > 0.5;
+        if (wsReset && !prevReset && dead) reset();
+        prevReset = wsReset;
+        const effectiveDir = Math.abs(ctrlRef.current.dir) > 0 ? ctrlRef.current.dir : gyroDir;
         if (!dead) {
-          padX = Math.max(padW / 2 + 12, Math.min(948 - padW / 2, padX + ctrlRef.current.dir * 560 * dt));
+          padX = Math.max(padW / 2 + 12, Math.min(948 - padW / 2, padX + effectiveDir * 560 * dt));
           if (laserTimer > 0) laserTimer = Math.max(0, laserTimer - dt);
           for (let li = lasers.length - 1; li >= 0; li -= 1) {
             lasers[li].y -= 620 * dt;
@@ -400,8 +501,20 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
         const dt = Math.min(0.05, (now - last) / 1000);
         last = now;
         if (shootCd > 0) shootCd -= dt;
+        const ws = wsGyroRef.current;
+        const wsActive = Date.now() < ws.expiresAt;
+        const dg = directGyro.gyroRef.current;
+        const gyroDir = wsActive && Math.abs(ws.steer) > 0.06
+          ? ws.steer * 1.35
+          : dg.active && Math.abs(dg.steer) > 0.06
+          ? dg.steer * 1.45
+          : 0;
+        const effectiveDir = Math.abs(ctrlRef.current.dir) > 0 ? ctrlRef.current.dir : gyroDir;
+        if (wsActive && (ws.nitro || ws.throttle > 0.5) && !dead) {
+          ctrlRef.current.fire();
+        }
         if (!dead) {
-          px = Math.max(46, Math.min(914, px + ctrlRef.current.dir * 440 * dt));
+          px = Math.max(46, Math.min(914, px + effectiveDir * 440 * dt));
           if (!ufo.active) {
             ufo.timer -= dt;
             if (ufo.timer <= 0) { ufo.active = true; ufo.x = Math.random() < 0.5 ? -40 : 1000; ufo.vx = ufo.x < 0 ? 190 : -190; }
@@ -546,10 +659,24 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
         if (!alive) return;
         const dt = Math.min(0.05, (now - last) / 1000);
         last = now;
+        const ws = wsGyroRef.current;
+        const wsActive = Date.now() < ws.expiresAt;
+        const dg = directGyro.gyroRef.current;
+        const gyroDir = wsActive && Math.abs(ws.steer) > 0.05
+          ? ws.steer * 1.35
+          : dg.active && Math.abs(dg.steer) > 0.05
+          ? dg.steer * 1.45
+          : 0;
+        const effectiveDir = Math.abs(ctrlRef.current.dir) > 0 ? ctrlRef.current.dir : gyroDir;
+        const isBoost =
+          ctrlRef.current.boost ||
+          (wsActive && (ws.nitro || ws.throttle > 0.5)) ||
+          (dg.active && dg.pitch > 0.35);
+        const isBrake = (wsActive && ws.brake > 0.5) || (dg.active && dg.pitch < -0.38);
         if (!dead) {
-          const targetSpd = ctrlRef.current.boost ? 980 : 640 + Math.min(260, dist * 0.04);
+          const targetSpd = isBoost ? 980 : isBrake ? 380 : 640 + Math.min(260, dist * 0.04);
           speed += (targetSpd - speed) * Math.min(1, dt * 4);
-          shipX = Math.max(-1.05, Math.min(1.05, shipX + ctrlRef.current.dir * dt * 1.95));
+          shipX = Math.max(-1.05, Math.min(1.05, shipX + effectiveDir * dt * 1.95));
           const dz = speed * dt;
           trackZ += dz;
           dist += Math.round(dz * 0.14);
@@ -687,7 +814,10 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-3 select-none">
+    <div
+      onContextMenu={(e) => e.preventDefault()}
+      className="game-touch-surface w-full max-w-4xl mx-auto space-y-3 select-none"
+    >
       <div className="rounded-2xl bg-[#0d1220] border border-white/10 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 text-xs font-bold text-zinc-300 tabular-nums">
           <span className="text-sm font-black text-white">
@@ -695,11 +825,40 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
           </span>
           <span aria-hidden="true" className="text-zinc-600">·</span>
           <span className="text-cyan-300">{subLabel}</span>
+          {controllers.length > 0 && (
+            <>
+              <span aria-hidden="true" className="text-zinc-600">·</span>
+              <span className="text-emerald-300">Móvil QR activo</span>
+            </>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-bold text-amber-300 flex items-center gap-1 tabular-nums">
             <Trophy className="w-3.5 h-3.5" /> {bestScore}{gameId === 'hexgl' ? ' m' : ''}
           </span>
+          {directGyro.supported && (
+            <button
+              type="button"
+              onClick={() => void directGyro.toggle()}
+              className={`min-h-9 px-3 rounded-xl border text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                directGyro.active
+                  ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-200'
+                  : 'bg-white/[0.06] hover:bg-white/[0.14] border-white/10 text-zinc-200'
+              }`}
+              title={pickLang(lang, { es: 'Activar giroscopio del móvil', ca: 'Activar giroscopi del mòbil', en: 'Toggle phone gyroscope' })}
+            >
+              <Compass className="w-3.5 h-3.5" />
+              <span>{directGyro.active ? 'Gyro ON' : 'Giroscopio'}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => { triggerHaptic('light'); setShowQrModal(true); }}
+            className="min-h-9 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50 text-xs font-bold text-cyan-200 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            <span>Mando QR</span>
+          </button>
           <button
             type="button"
             onClick={() => setLocalMuted((m) => !m)}
@@ -724,9 +883,10 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
           ref={canvasRef}
           width={960}
           height={540}
+          onContextMenu={(e) => e.preventDefault()}
           onPointerMove={handlePointerMove}
           onPointerDown={handlePointerMove}
-          className="w-full h-auto block touch-none cursor-crosshair"
+          className="game-touch-btn w-full h-auto block touch-none cursor-crosshair"
         />
         {gameOver && (
           <div className="absolute inset-0 bg-[#050812]/90 flex flex-col items-center justify-center gap-3 p-6 text-center">
@@ -749,36 +909,68 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
       <div className="flex flex-wrap items-center justify-center gap-2">
         <button
           type="button"
-          onPointerDown={() => { ctrlRef.current.dir = -1; }}
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+            ctrlRef.current.dir = -1;
+          }}
           onPointerUp={() => { if (ctrlRef.current.dir < 0) ctrlRef.current.dir = 0; }}
-          onPointerLeave={() => { if (ctrlRef.current.dir < 0) ctrlRef.current.dir = 0; }}
-          className="min-h-11 px-5 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white inline-flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+          onPointerCancel={() => { if (ctrlRef.current.dir < 0) ctrlRef.current.dir = 0; }}
+          onLostPointerCapture={() => { if (ctrlRef.current.dir < 0) ctrlRef.current.dir = 0; }}
+          className="game-touch-btn min-h-11 px-5 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white inline-flex items-center gap-1.5 text-xs font-bold cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" /> Izquierda
         </button>
         <button
           type="button"
-          onPointerDown={() => {
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture?.(e.pointerId);
             triggerHaptic('light');
             if (gameId === 'hexgl') ctrlRef.current.boost = true;
             else ctrlRef.current.fire();
           }}
           onPointerUp={() => { if (gameId === 'hexgl') ctrlRef.current.boost = false; }}
-          onPointerLeave={() => { if (gameId === 'hexgl') ctrlRef.current.boost = false; }}
-          className="min-h-11 px-6 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+          onPointerCancel={() => { if (gameId === 'hexgl') ctrlRef.current.boost = false; }}
+          onLostPointerCapture={() => { if (gameId === 'hexgl') ctrlRef.current.boost = false; }}
+          className="game-touch-btn min-h-11 px-6 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
         >
           {gameId === 'hexgl' ? <><Flame className="w-4 h-4" /> Turbo</> : <><Crosshair className="w-4 h-4" /> Disparar</>}
         </button>
         <button
           type="button"
-          onPointerDown={() => { ctrlRef.current.dir = 1; }}
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+            ctrlRef.current.dir = 1;
+          }}
           onPointerUp={() => { if (ctrlRef.current.dir > 0) ctrlRef.current.dir = 0; }}
-          onPointerLeave={() => { if (ctrlRef.current.dir > 0) ctrlRef.current.dir = 0; }}
-          className="min-h-11 px-5 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white inline-flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+          onPointerCancel={() => { if (ctrlRef.current.dir > 0) ctrlRef.current.dir = 0; }}
+          onLostPointerCapture={() => { if (ctrlRef.current.dir > 0) ctrlRef.current.dir = 0; }}
+          className="game-touch-btn min-h-11 px-5 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white inline-flex items-center gap-1.5 text-xs font-bold cursor-pointer"
         >
           Derecha <ArrowRight className="w-4 h-4" />
         </button>
       </div>
+
+      {showQrModal && (
+        <DualGyroQrPanel
+          roomId={effectiveRoomId}
+          gameId={gameId}
+          title={
+            gameId === 'hexgl'
+              ? 'HexGL Hover 3D · Volante Gyro'
+              : gameId === 'arkanoid'
+              ? 'BrickIt Arkanoid · Control Gyro'
+              : 'Space Invaders · Control Gyro'
+          }
+          controllers={controllers}
+          onClose={() => setShowQrModal(false)}
+        />
+      )}
     </div>
   );
 };

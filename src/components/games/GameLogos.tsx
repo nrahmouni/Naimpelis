@@ -12,6 +12,9 @@ export type UnifiedGameId =
   | 'pingpong'
   | 'gyrohockey'
   | 'gyrospace'
+  | 'gyrobowling'
+  | 'gyrotennis'
+  | 'gyrolab'
   | 'bomberman'
   | 'pacman'
   | 'tetris'
@@ -765,6 +768,48 @@ export const GameLogoArtwork: React.FC<GameLogoArtworkProps> = ({
               />
             );
           })}
+        </svg>
+      );
+
+    case 'gyrobowling':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#0B1124" />
+          <polygon points="78,34 162,34 216,140 24,140" fill="#B45309" opacity="0.82" />
+          <polygon points="90,34 150,34 190,140 50,140" fill="#D97706" opacity="0.72" />
+          <g fill="#F8FAFC" stroke="#DC2626" strokeWidth="1.8">
+            <rect x="115" y="20" width="10" height="22" rx="4" />
+            <rect x="103" y="26" width="10" height="22" rx="4" />
+            <rect x="127" y="26" width="10" height="22" rx="4" />
+          </g>
+          <circle cx="120" cy="100" r="21" fill="#06B6D4" stroke="#E0F2FE" strokeWidth="2.4" />
+          <circle cx="114" cy="94" r="2.6" fill="#0F172A" />
+          <circle cx="122" cy="92" r="2.6" fill="#0F172A" />
+          <circle cx="119" cy="101" r="2.6" fill="#0F172A" />
+        </svg>
+      );
+
+    case 'gyrotennis':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#0F3B26" />
+          <polygon points="50,24 190,24 220,132 20,132" fill="#15803D" stroke="#FFFFFF" strokeWidth="2.5" />
+          <line x1="36" y1="74" x2="204" y2="74" stroke="#E2E8F0" strokeWidth="3.5" />
+          <line x1="120" y1="24" x2="120" y2="132" stroke="rgba(255,255,255,0.65)" strokeWidth="1.6" />
+          <ellipse cx="78" cy="102" rx="18" ry="22" transform="rotate(-24 78 102)" fill="none" stroke="#38BDF8" strokeWidth="4" />
+          <ellipse cx="162" cy="48" rx="14" ry="18" transform="rotate(20 162 48)" fill="none" stroke="#F43F5E" strokeWidth="3.5" />
+          <circle cx="124" cy="64" r="9.5" fill="#BEF264" stroke="#14532D" strokeWidth="1.8" />
+        </svg>
+      );
+
+    case 'gyrolab':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          <rect width="240" height="140" fill="#1C100B" />
+          <rect x="26" y="16" width="188" height="108" rx="12" fill="#78350F" stroke="#F59E0B" strokeWidth="2.5" />
+          <path d="M52 44 H140 V86 H84 M164 40 V100 H188" fill="none" stroke="#FEF3C7" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round" />
+          <circle cx="182" cy="100" r="10" fill="#10B981" stroke="#A7F3D0" strokeWidth="2" />
+          <circle cx="72" cy="66" r="13" fill="#38BDF8" stroke="#FFFFFF" strokeWidth="2" />
         </svg>
       );
   }

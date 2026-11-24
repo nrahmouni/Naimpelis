@@ -14,6 +14,7 @@ import { ArcadePuzzleStage } from '../src/components/games/arcade/ArcadePuzzleSt
 import { ArcadeActionStage } from '../src/components/games/arcade/ArcadeActionStage';
 import { ArcadeRetroStage } from '../src/components/games/arcade/ArcadeRetroStage';
 import { TvTriviaStage } from '../src/components/games/arcade/TvTriviaStage';
+import { GAME_ASSET_CDN_MAP, resolveGameAssetUrl } from '../src/shared/gameAssetsCdn';
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -259,29 +260,18 @@ describe('10-Minigame Arcade & Quiz Pack (Smart TV ES5 + Web/Mobile React)', () 
     expect(container.textContent).toContain('1/10');
   });
 
-  it('stores verified CC0 PNG, JPG and GLB game assets on disk with valid headers and zero broken references', () => {
-    const assetsRoot = path.join(ROOT, 'public/assets/games');
-    expect(fs.existsSync(assetsRoot)).toBe(true);
-    const collected: string[] = [];
-    const walk = (dir: string) => {
-      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-        const abs = path.join(dir, entry.name);
-        if (entry.isDirectory()) walk(abs);
-        else collected.push(abs);
-      }
-    };
-    walk(assetsRoot);
-    expect(collected.length).toBeGreaterThanOrEqual(80);
-    for (const f of collected) {
-      const buf = fs.readFileSync(f);
-      expect(buf.length).toBeGreaterThan(64);
-      if (f.endsWith('.png')) {
-        expect(buf[0]).toBe(0x89);
-        expect(buf.slice(1, 4).toString('ascii')).toBe('PNG');
-      } else if (f.endsWith('.glb')) {
-        expect(buf.slice(0, 4).toString('ascii')).toBe('glTF');
-      }
+  it('resolves all CC0 PNG, JPG and GLB game assets to verified HTTPS CDN URLs with zero repo bloat', () => {
+    expect(Object.keys(GAME_ASSET_CDN_MAP).length).toBeGreaterThanOrEqual(80);
+    for (const url of Object.values(GAME_ASSET_CDN_MAP)) {
+      expect(url).toMatch(/^https:\/\//);
     }
+
+    const spritesScript = fs.readFileSync(path.join(ROOT, 'public/tv/tv-game-sprites.js'), 'utf8');
+    const tvWin: Record<string, unknown> = { location: { protocol: 'https:', host: 'localhost' } };
+    const tvCtx = vm.createContext({ window: tvWin, document: undefined, Image: undefined });
+    vm.runInContext(spritesScript, tvCtx);
+    const resolveTv = tvWin.resolveTvGameAssetUrl as (p: string) => string;
+    expect(typeof resolveTv).toBe('function');
 
     const codeFiles: string[] = [];
     const walkCode = (dir: string) => {
@@ -297,7 +287,8 @@ describe('10-Minigame Arcade & Quiz Pack (Smart TV ES5 + Web/Mobile React)', () 
       const content = fs.readFileSync(file, 'utf8');
       const matches = content.match(/assets\/games\/[a-zA-Z0-9_/-]+\.(?:png|jpg|glb)/g) || [];
       for (const relAsset of matches) {
-        expect(fs.existsSync(path.join(ROOT, 'public', relAsset))).toBe(true);
+        expect(resolveGameAssetUrl(relAsset)).toMatch(/^https:\/\//);
+        expect(resolveTv(relAsset)).toMatch(/^https:\/\//);
       }
     }
   });

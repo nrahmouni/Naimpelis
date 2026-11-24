@@ -33583,6 +33583,21 @@ var GAME_SLUG_TO_ID = {
   "space-gyro": "gyrospace",
   "nave-3d": "gyrospace",
   gyrospace: "gyrospace",
+  "bolos-gyro": "gyrobowling",
+  "bowling-gyro": "gyrobowling",
+  bolos: "gyrobowling",
+  bowling: "gyrobowling",
+  gyrobowling: "gyrobowling",
+  "tenis-gyro": "gyrotennis",
+  "tennis-gyro": "gyrotennis",
+  gyrotennis: "gyrotennis",
+  "laberinto-gyro": "gyrolab",
+  "labyrinth-gyro": "gyrolab",
+  "esfera-gyro": "gyrolab",
+  gyrolab: "gyrolab",
+  pingpong: "pingpong",
+  "ping-pong": "pingpong",
+  tenis: "pingpong",
   bomberman: "bomberman",
   "bomberman-party": "bomberman",
   pacman: "pacman",
@@ -33618,6 +33633,10 @@ var GAME_ID_TO_SLUG = {
   racing3d: "coches-3d",
   gyrohockey: "air-hockey",
   gyrospace: "galaxia-gyro",
+  gyrobowling: "bolos-gyro",
+  gyrotennis: "tenis-gyro",
+  gyrolab: "laberinto-gyro",
+  pingpong: "ping-pong",
   bomberman: "bomberman",
   pacman: "pacman",
   tetris: "tetris",
@@ -33645,6 +33664,10 @@ var GAME_TITLES = {
   racing3d: { es: "Nitro GP 3D \xB7 Volante M\xF3vil", ca: "Nitro GP 3D \xB7 Volant M\xF2bil", en: "Nitro GP 3D \xB7 Phone Wheel" },
   gyrohockey: { es: "Neon Air Hockey Gyro", ca: "Neon Air Hockey Gyro", en: "Neon Air Hockey Gyro" },
   gyrospace: { es: "Galaxia Interceptor Gyro", ca: "Gal\xE0xia Interceptor Gyro", en: "Galaxy Interceptor Gyro" },
+  gyrobowling: { es: "Bolos Pro 3D Gyro", ca: "Bitlles Pro 3D Gyro", en: "Pro 3D Gyro Bowling" },
+  gyrotennis: { es: "Tenis Slam Pro 2P", ca: "Tennis Slam Pro 2P", en: "Tennis Slam Pro 2P" },
+  gyrolab: { es: "Laberinto Esfera 3D", ca: "Laberint Esfera 3D", en: "Sphere Labyrinth 3D" },
+  pingpong: { es: "Ping Pong Pro 2P \xB7 Raqueta M\xF3vil", ca: "Ping Pong Pro 2P \xB7 Raqueta M\xF2bil", en: "Ping Pong Pro 2P \xB7 Mobile Racket" },
   bomberman: { es: "Bomberman Party Arena", ca: "Bomberman Party Arena", en: "Bomberman Party Arena" },
   pacman: { es: "Pac-Man Arcade HD", ca: "Pac-Man Arcade HD", en: "Pac-Man Arcade HD" },
   tetris: { es: "Tetris Sprint TV", ca: "Tetris Sprint TV", en: "Tetris Sprint TV" },
@@ -58470,6 +58493,10 @@ var wsGameInviteRespondSchema = z.object({
     "racing3d",
     "gyrohockey",
     "gyrospace",
+    "gyrobowling",
+    "gyrotennis",
+    "gyrolab",
+    "pingpong",
     "bomberman",
     "pacman",
     "tetris",
@@ -58502,6 +58529,10 @@ var wsGameSwitchSchema = z.object({
     "racing3d",
     "gyrohockey",
     "gyrospace",
+    "gyrobowling",
+    "gyrotennis",
+    "gyrolab",
+    "pingpong",
     "bomberman",
     "pacman",
     "tetris",
@@ -58648,13 +58679,20 @@ var wsCinema3dInteractSchema = z.object({
 var wsGyroJoinSchema = z.object({
   roomId: roomIdSchema,
   deviceName: z.string().trim().max(40).optional(),
-  role: z.enum(["controller", "display"])
+  role: z.enum(["controller", "display"]),
+  preferredSlot: z.union([z.literal(1), z.literal(2)]).optional(),
+  gameId: z.string().trim().max(32).optional()
 });
 var wsGyroInputSchema = z.object({
   roomId: roomIdSchema,
+  playerSlot: z.union([z.literal(1), z.literal(2)]).optional(),
   steer: z.number().min(-1).max(1),
   throttle: z.number().min(0).max(1),
   brake: z.number().min(0).max(1),
+  pitch: z.number().min(-1).max(1).optional(),
+  swing: z.number().min(0).max(3).optional(),
+  roll: z.number().min(-1).max(1).optional(),
+  gameMode: z.string().trim().max(32).optional(),
   nitro: z.boolean().optional(),
   handbrake: z.boolean().optional(),
   cameraCycle: z.boolean().optional(),
@@ -58676,7 +58714,12 @@ var wsRacingTelemetrySchema = z.object({
   offroad: z.boolean().optional(),
   raceState: z.enum(["countdown", "racing", "finished"]),
   lapTimeMs: z.number().min(0).max(36e5).optional(),
-  bestLapMs: z.number().min(0).max(36e5).optional()
+  bestLapMs: z.number().min(0).max(36e5).optional(),
+  targetSlot: z.union([z.literal(1), z.literal(2)]).optional(),
+  hapticPulseMs: z.number().int().min(0).max(500).optional(),
+  scoreP1: z.number().int().min(0).max(999).optional(),
+  scoreP2: z.number().int().min(0).max(999).optional(),
+  eventTag: z.string().trim().max(32).optional()
 });
 var wsEnvelopeSchema = z.object({
   type: z.string().trim().min(1).max(48),
@@ -63267,11 +63310,30 @@ import { WebSocket as WebSocket3 } from "ws";
 // server/ws/handlers/racingGyroHandlers.ts
 import { WebSocket as WebSocket2 } from "ws";
 var gyroPeersByRoom = /* @__PURE__ */ new Map();
+var gyroRoomMeta = /* @__PURE__ */ new Map();
+function resolveAvailableControllerSlot(peerMap, excludeWs, preferredSlot) {
+  let slot1Busy = false;
+  let slot2Busy = false;
+  for (const [peerWs, info] of peerMap.entries()) {
+    if (peerWs === excludeWs || info.role !== "controller") continue;
+    if (peerWs.readyState !== WebSocket2.OPEN) continue;
+    if (info.slot === 1) slot1Busy = true;
+    else if (info.slot === 2) slot2Busy = true;
+  }
+  if (preferredSlot === 1 && !slot1Busy) return 1;
+  if (preferredSlot === 2 && !slot2Busy) return 2;
+  if (!slot1Busy) return 1;
+  if (!slot2Busy) return 2;
+  return preferredSlot || 2;
+}
 function pruneAndSummarizeGyroPeers(roomId, ctx) {
   const peerMap = gyroPeersByRoom.get(roomId);
+  const metaRec = gyroRoomMeta.get(roomId);
   if (!peerMap) {
+    gyroRoomMeta.delete(roomId);
     return {
       roomId,
+      gameId: metaRec?.gameId || "racing3d",
       controllers: [],
       displays: 0,
       hasController: false
@@ -63280,26 +63342,59 @@ function pruneAndSummarizeGyroPeers(roomId, ctx) {
   const controllers = [];
   let displays = 0;
   for (const [peerWs, info] of peerMap.entries()) {
-    const meta = ctx.clients.get(peerWs);
-    if (peerWs.readyState !== WebSocket2.OPEN || meta?.roomId !== roomId) {
+    const meta = ctx?.clients.get(peerWs);
+    if (peerWs.readyState !== WebSocket2.OPEN || ctx && meta?.roomId !== roomId) {
       peerMap.delete(peerWs);
       continue;
     }
     if (info.role === "controller") {
-      controllers.push({ userId: info.userId, deviceName: info.deviceName });
+      const slot = info.slot === 2 ? 2 : 1;
+      info.slot = slot;
+      controllers.push({ userId: info.userId, deviceName: info.deviceName, slot });
     } else {
       displays += 1;
     }
   }
+  controllers.sort((a, b) => a.slot - b.slot);
   if (peerMap.size === 0) {
     gyroPeersByRoom.delete(roomId);
+    gyroRoomMeta.delete(roomId);
   }
   return {
     roomId,
+    gameId: gyroRoomMeta.get(roomId)?.gameId || "racing3d",
     controllers,
     displays,
     hasController: controllers.length > 0
   };
+}
+function getLatestActiveGyroRoom(validRoomIds) {
+  const candidates = [];
+  for (const roomId of Array.from(gyroPeersByRoom.keys())) {
+    if (validRoomIds && !validRoomIds.has(roomId)) continue;
+    const summary = pruneAndSummarizeGyroPeers(roomId);
+    if (summary.displays <= 0) continue;
+    const metaRec = gyroRoomMeta.get(roomId);
+    const hasP1 = summary.controllers.some((c) => c.slot === 1);
+    const hasP2 = summary.controllers.some((c) => c.slot === 2);
+    candidates.push({
+      roomId,
+      gameId: summary.gameId || metaRec?.gameId || "racing3d",
+      controllersCount: summary.controllers.length,
+      hasP1,
+      hasP2,
+      displays: summary.displays,
+      updatedAt: metaRec?.updatedAt || 0
+    });
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => {
+    const aNeedsCtrl = a.controllersCount < 2 ? 1 : 0;
+    const bNeedsCtrl = b.controllersCount < 2 ? 1 : 0;
+    if (aNeedsCtrl !== bNeedsCtrl) return bNeedsCtrl - aNeedsCtrl;
+    return b.updatedAt - a.updatedAt;
+  });
+  return candidates[0];
 }
 function cleanupRacingGyroPeer(ws, ctx) {
   for (const [roomId, peerMap] of gyroPeersByRoom.entries()) {
@@ -63317,7 +63412,7 @@ var handleRacingGyroMessage = (type, payload, ws, ctx) => {
   if (type === "GYRO_CONTROLLER_JOIN") {
     const parsed = wsGyroJoinSchema.safeParse(payload);
     if (!parsed.success) return true;
-    const { roomId, role, deviceName } = parsed.data;
+    const { roomId, role, deviceName, preferredSlot, gameId } = parsed.data;
     const meta = clients.get(ws);
     if (!meta || meta.roomId !== roomId || !rooms.has(roomId)) {
       return true;
@@ -63327,11 +63422,30 @@ var handleRacingGyroMessage = (type, payload, ws, ctx) => {
       peerMap = /* @__PURE__ */ new Map();
       gyroPeersByRoom.set(roomId, peerMap);
     }
+    const existing = peerMap.get(ws);
+    const assignedSlot = role === "controller" ? existing?.role === "controller" && existing.slot && !preferredSlot ? existing.slot : resolveAvailableControllerSlot(peerMap, ws, preferredSlot) : void 0;
+    if (role === "display" || gameId) {
+      const prevMeta = gyroRoomMeta.get(roomId);
+      gyroRoomMeta.set(roomId, {
+        gameId: gameId || prevMeta?.gameId || "racing3d",
+        updatedAt: Date.now()
+      });
+    } else if (!gyroRoomMeta.has(roomId)) {
+      gyroRoomMeta.set(roomId, {
+        gameId: "racing3d",
+        updatedAt: Date.now()
+      });
+    } else {
+      const prevMeta = gyroRoomMeta.get(roomId);
+      prevMeta.updatedAt = Date.now();
+    }
     peerMap.set(ws, {
       role,
-      deviceName: deviceName || (role === "controller" ? "Volante M\xF3vil" : "Pantalla TV"),
+      deviceName: deviceName || (role === "controller" ? "Mando M\xF3vil" : "Pantalla TV"),
       userId: meta.userId || "guest",
-      joinedAt: Date.now()
+      slot: assignedSlot,
+      joinedAt: existing?.joinedAt || Date.now(),
+      gameId: gameId || existing?.gameId
     });
     const summary = pruneAndSummarizeGyroPeers(roomId, ctx);
     broadcastToRoom(roomId, {
@@ -63348,6 +63462,9 @@ var handleRacingGyroMessage = (type, payload, ws, ctx) => {
     if (!meta || meta.roomId !== roomId || !rooms.has(roomId)) {
       return true;
     }
+    const peerMap = gyroPeersByRoom.get(roomId);
+    const peerEntry = peerMap?.get(ws);
+    const resolvedSlot = peerEntry?.slot || input.playerSlot || 1;
     broadcastToRoom(
       roomId,
       {
@@ -63355,6 +63472,7 @@ var handleRacingGyroMessage = (type, payload, ws, ctx) => {
         payload: {
           roomId,
           senderId: meta.userId || "controller",
+          playerSlot: resolvedSlot,
           ...input
         }
       },
@@ -66797,6 +66915,10 @@ var handleCasinoAndVoiceMessage = (type, payload, ws, ctx) => {
       racing3d: "Nitro GP 3D",
       gyrohockey: "Neon Air Hockey Gyro",
       gyrospace: "Galaxia Interceptor Gyro",
+      gyrobowling: "Bolos Pro 3D Gyro",
+      gyrotennis: "Tenis Slam Pro 2P",
+      gyrolab: "Laberinto Esfera 3D",
+      pingpong: "Ping Pong Pro 2P",
       bomberman: "Bomberman Party Arena",
       pacman: "Pac-Man Arcade HD",
       tetris: "Tetris Sprint TV",
@@ -69398,6 +69520,9 @@ function registerTizenRoutes(app2, rootDir) {
       "tv/tv-games-soccer.js",
       "tv/tv-games-racing.js",
       "tv/tv-games-gyro.js",
+      "tv/tv-games-gyroplus.js",
+      "tv/tv-games-pingpong.js",
+      "tv/tv-games-penalty.js",
       "tv/tv-games-puzzle.js",
       "tv/tv-games-action.js",
       "tv/tv-games-retro.js",
@@ -70158,6 +70283,9 @@ function registerWebOsRoutes(app2, rootDir) {
       "tv/tv-games-soccer.js",
       "tv/tv-games-racing.js",
       "tv/tv-games-gyro.js",
+      "tv/tv-games-gyroplus.js",
+      "tv/tv-games-pingpong.js",
+      "tv/tv-games-penalty.js",
       "tv/tv-games-puzzle.js",
       "tv/tv-games-action.js",
       "tv/tv-games-retro.js",
@@ -70627,6 +70755,10 @@ app.get("/api/audit/100-improvements", (_req, res) => {
 app.get("/api/audit/improvements-summary", (_req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   return res.json({ ok: true, ...getImprovementsSummary() });
+});
+app.get("/api/gyro/active-room", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+  return res.json({ ok: true, active: getLatestActiveGyroRoom() });
 });
 app.get(["/sw.js", "/service-worker.js"], (_req, res) => {
   const distSw = path18.resolve(__dirname3, "dist", "sw.js");

@@ -31,6 +31,7 @@ import { BlackjackStage } from '../BlackjackStage';
 import { PenaltyShootoutStage } from './PenaltyShootoutStage';
 import { PingPongStage } from './PingPongStage';
 import { GyroArcadeStage } from './GyroArcadeStage';
+import { GyroMotionPackStage } from './GyroMotionPackStage';
 import { ArcadePuzzleStage } from './arcade/ArcadePuzzleStage';
 import { ArcadeActionStage } from './arcade/ArcadeActionStage';
 import { ArcadeRetroStage } from './arcade/ArcadeRetroStage';
@@ -198,16 +199,44 @@ export const GamesHubSecondaryStages: React.FC<GamesHubSecondaryStagesProps> = (
     );
   }
 
+  if (selectedGame === 'gyrobowling' || selectedGame === 'gyrotennis' || selectedGame === 'gyrolab') {
+    return (
+      <GyroMotionPackStage
+        gameId={selectedGame}
+        lang={lang}
+        roomId={roomId}
+        userName={currentUser.name}
+        onClose={handleBackToGames}
+      />
+    );
+  }
+
   if (selectedGame === 'tetris' || selectedGame === 'hextris' || selectedGame === 'game2048') {
     return <ArcadePuzzleStage gameId={selectedGame} lang={lang} mutedOverride={muted} />;
   }
 
   if (selectedGame === 'pacman' || selectedGame === 'bomberman' || selectedGame === 'flappy') {
-    return <ArcadeActionStage gameId={selectedGame} lang={lang} mutedOverride={muted} />;
+    return (
+      <ArcadeActionStage
+        gameId={selectedGame}
+        lang={lang}
+        roomId={roomId}
+        userName={currentUser.name}
+        mutedOverride={muted}
+      />
+    );
   }
 
   if (selectedGame === 'arkanoid' || selectedGame === 'invaders' || selectedGame === 'hexgl') {
-    return <ArcadeRetroStage gameId={selectedGame} lang={lang} mutedOverride={muted} />;
+    return (
+      <ArcadeRetroStage
+        gameId={selectedGame}
+        lang={lang}
+        roomId={roomId}
+        userName={currentUser.name}
+        mutedOverride={muted}
+      />
+    );
   }
 
   if (selectedGame === 'tvtrivia') {

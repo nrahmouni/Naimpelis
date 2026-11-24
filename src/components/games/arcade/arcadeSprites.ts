@@ -1,24 +1,24 @@
+import { resolveGameAssetUrl } from '../../../shared/gameAssetsCdn';
+
 const SPRITE_CACHE = new Map<string, { img: HTMLImageElement; failed: boolean }>();
 
 function normalizeAssetUrl(relPath: string): string {
-  const clean = relPath.replace(/^\/+/, '');
-  if (typeof window !== 'undefined' && window.location?.protocol === 'file:') {
-    return `./${clean}`;
-  }
-  return `/${clean}`;
+  return resolveGameAssetUrl(relPath);
 }
 
 export function getArcadeSprite(relPath: string): HTMLImageElement | null {
   if (!relPath || typeof Image === 'undefined') return null;
-  let entry = SPRITE_CACHE.get(relPath);
+  const key = relPath.replace(/^(\.\/|\/)+/, '');
+  const entry = SPRITE_CACHE.get(key);
   if (!entry) {
     const img = new Image();
+    img.crossOrigin = 'anonymous';
     const record = { img, failed: false };
     img.onerror = () => {
       record.failed = true;
     };
-    img.src = normalizeAssetUrl(relPath);
-    SPRITE_CACHE.set(relPath, record);
+    img.src = normalizeAssetUrl(key);
+    SPRITE_CACHE.set(key, record);
     return null;
   }
   if (entry.failed) return null;
@@ -42,7 +42,8 @@ export function drawArcadeSprite(
   w: number,
   h: number,
   rot = 0,
-  alpha = 1
+  alpha = 1,
+  flipX = false
 ): boolean {
   const img = getArcadeSprite(relPath);
   if (!img) return false;
@@ -50,6 +51,7 @@ export function drawArcadeSprite(
   if (alpha < 1) ctx.globalAlpha = alpha;
   ctx.translate(cx, cy);
   if (rot) ctx.rotate(rot);
+  if (flipX) ctx.scale(-1, 1);
   ctx.drawImage(img, -w / 2, -h / 2, w, h);
   ctx.restore();
   return true;

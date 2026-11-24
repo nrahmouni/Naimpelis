@@ -59,12 +59,17 @@ export const PoolShotDock: React.FC<PoolShotDockProps> = ({
   onForfeitOnline,
 }) => {
   return (
-    <div className="px-2 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.09] flex items-center justify-between gap-2 shrink-0">
+    <div
+      onContextMenu={(e) => e.preventDefault()}
+      className="game-touch-surface px-2 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.09] flex items-center justify-between gap-2 shrink-0"
+    >
       {/* 1. Compact Cue-Ball Spin Contact Selector */}
       <div className="flex items-center gap-1.5 shrink-0">
         <div
           ref={spinPadRef}
+          onContextMenu={(e) => e.preventDefault()}
           onPointerDown={(e) => {
+            e.preventDefault();
             unlockPoolAudio();
             spinDragActiveRef.current = true;
             e.currentTarget.setPointerCapture(e.pointerId);
@@ -79,6 +84,12 @@ export const PoolShotDock: React.FC<PoolShotDockProps> = ({
               e.currentTarget.releasePointerCapture(e.pointerId);
             }
           }}
+          onPointerCancel={() => {
+            spinDragActiveRef.current = false;
+          }}
+          onLostPointerCapture={() => {
+            spinDragActiveRef.current = false;
+          }}
           onDoubleClick={() => {
             setSpinX(0);
             setSpinY(0);
@@ -88,7 +99,7 @@ export const PoolShotDock: React.FC<PoolShotDockProps> = ({
             ca: 'Efecte de bola blanca',
             en: 'Cue ball spin (double-click to center)',
           })}
-          className="relative w-11 h-11 rounded-full bg-gradient-to-br from-[#FFFDF7] to-[#D4CFC3] border border-white/60 shadow-inner touch-none cursor-pointer shrink-0"
+          className="game-touch-btn relative w-11 h-11 rounded-full bg-gradient-to-br from-[#FFFDF7] to-[#D4CFC3] border border-white/60 shadow-inner touch-none cursor-pointer shrink-0"
         >
           <span className="pointer-events-none absolute inset-x-2 top-1/2 h-px bg-zinc-400/50" />
           <span className="pointer-events-none absolute inset-y-2 left-1/2 w-px bg-zinc-400/50" />
@@ -134,16 +145,21 @@ export const PoolShotDock: React.FC<PoolShotDockProps> = ({
 
         <div
           ref={powerSliderRef}
-          onPointerDown={onPowerPointerDown}
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            onPowerPointerDown(e);
+          }}
           onPointerMove={onPowerPointerMove}
           onPointerUp={onPowerPointerUp}
           onPointerCancel={onPowerPointerCancel}
+          onLostPointerCapture={onPowerPointerCancel}
           role="slider"
           aria-label={pickLang(lang, { es: 'Potencia de tiro', ca: 'Potència de tir', en: 'Shot power' })}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(pullPower * 100)}
-          className={`relative h-9 rounded-xl border overflow-hidden touch-none flex items-center ${
+          className={`game-touch-btn relative h-9 rounded-xl border overflow-hidden touch-none flex items-center ${
             isMyTurn && !isSimulatingUI
               ? 'bg-[#0B0D14] border-white/15 cursor-ew-resize'
               : 'bg-[#090A10]/60 border-white/[0.06] opacity-50 cursor-not-allowed'

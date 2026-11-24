@@ -839,14 +839,18 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
         </div>
       </div>
 
-      <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#070b14] shadow-2xl">
+      <div
+        onContextMenu={(e) => e.preventDefault()}
+        className="game-touch-surface relative rounded-3xl overflow-hidden border border-white/10 bg-[#070b14] shadow-2xl"
+      >
         <canvas
           ref={canvasRef}
           width={960}
           height={540}
+          onContextMenu={(e) => e.preventDefault()}
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
-          className="w-full h-auto block touch-none"
+          className="game-touch-btn w-full h-auto block touch-none"
         />
         {gameOver && (
           <div className="absolute inset-0 bg-[#050812]/90 flex flex-col items-center justify-center gap-3 p-6 text-center">
@@ -858,7 +862,7 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
             <button
               type="button"
               onClick={() => { triggerHaptic('medium'); actionsRef.current.reset(); }}
-              className="min-h-11 px-6 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white whitespace-nowrap cursor-pointer"
+              className="game-touch-btn min-h-11 px-6 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white whitespace-nowrap cursor-pointer"
             >
               {pickLang(lang, { es: 'Jugar otra vez', ca: 'Jugar altra vegada', en: 'Play Again' })}
             </button>
@@ -866,11 +870,15 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
         )}
       </div>
 
-      <div className="flex flex-wrap items-center justify-center gap-2">
+      <div
+        onContextMenu={(e) => e.preventDefault()}
+        className="game-touch-surface flex flex-wrap items-center justify-center gap-2"
+      >
         <button
           type="button"
-          onClick={() => { triggerHaptic('light'); actionsRef.current.left(); }}
-          className="min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => { e.preventDefault(); triggerHaptic('light'); actionsRef.current.left(); }}
+          className="game-touch-btn min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
           aria-label="Izquierda"
         >
           <ArrowLeft className="w-5 h-5" />
@@ -878,8 +886,9 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
         {gameId !== 'hextris' && (
           <button
             type="button"
-            onClick={() => { triggerHaptic('light'); actionsRef.current.up(); }}
-            className="min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerDown={(e) => { e.preventDefault(); triggerHaptic('light'); actionsRef.current.up(); }}
+            className="game-touch-btn min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
             aria-label={gameId === 'tetris' ? 'Rotar' : 'Arriba'}
           >
             {gameId === 'tetris' ? <RotateCw className="w-5 h-5" /> : <ArrowUp className="w-5 h-5" />}
@@ -887,16 +896,18 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
         )}
         <button
           type="button"
-          onClick={() => { triggerHaptic('light'); actionsRef.current.down(); }}
-          className="min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => { e.preventDefault(); triggerHaptic('light'); actionsRef.current.down(); }}
+          className="game-touch-btn min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
           aria-label="Abajo"
         >
           <ArrowDown className="w-5 h-5" />
         </button>
         <button
           type="button"
-          onClick={() => { triggerHaptic('light'); actionsRef.current.right(); }}
-          className="min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => { e.preventDefault(); triggerHaptic('light'); actionsRef.current.right(); }}
+          className="game-touch-btn min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
           aria-label="Derecha"
         >
           <ArrowRight className="w-5 h-5" />
@@ -904,8 +915,9 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
         {gameId !== 'hextris' && (
           <button
             type="button"
-            onClick={() => { triggerHaptic('medium'); actionsRef.current.primary(); }}
-            className="min-h-11 px-4 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerDown={(e) => { e.preventDefault(); triggerHaptic('medium'); actionsRef.current.primary(); }}
+            className="game-touch-btn min-h-11 px-4 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
           >
             {gameId === 'tetris' ? 'Caída rápida' : <><Undo2 className="w-4 h-4" /> Deshacer</>}
           </button>

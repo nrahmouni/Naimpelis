@@ -14,6 +14,7 @@ import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { socketService } from '../../services/socket';
 import { animateModalEntrance, fireVictoryConfetti } from './arcade/arcadeAnimations';
+import { RobotMascot3DBadge } from './arcade/RobotMascot3DBadge';
 import type { AppLanguage, Participant } from '../../types';
 
 export type GameSfxKind =
@@ -373,30 +374,14 @@ export const VictoryCelebrationOverlay: React.FC<{
         }`}
       >
         <div className="rounded-[15px] bg-gradient-to-b from-[#181622] via-[#0f1118] to-[#070b14] px-5 py-5 flex flex-col items-center gap-2.5">
-          {/* Centered 3D Badge with Glint */}
-          <div
-            className={`w-14 h-14 rounded-2xl p-[1px] shadow-xl relative ${
-              isDefeat
-                ? 'bg-gradient-to-br from-zinc-500 to-zinc-800'
-                : isDraw
-                ? 'bg-gradient-to-br from-slate-200 to-slate-600'
-                : 'bg-gradient-to-br from-amber-300 via-amber-500 to-amber-700'
-            }`}
-          >
-            <div className="w-full h-full rounded-[15px] bg-[#12141e] flex items-center justify-center relative overflow-hidden">
-              {isDefeat ? (
-                <Shield className="w-7 h-7 text-zinc-400" />
-              ) : isDraw ? (
-                <Crown className="w-7 h-7 text-slate-300" />
-              ) : (
-                <>
-                  <Trophy className="w-7 h-7 text-amber-300 drop-shadow-[0_2px_8px_rgba(250,204,21,0.6)]" />
-                  <span className="absolute top-1.5 right-1.5 w-2 h-2 text-amber-200 nc-crown-sparkle">
-                    <Sparkles className="w-2.5 h-2.5" />
-                  </span>
-                </>
-              )}
-            </div>
+          {/* Rigged 3D Animated Character Celebration Badge */}
+          <div className="w-24 h-24 rounded-2xl bg-[#12141e]/80 border border-white/10 flex items-center justify-center relative overflow-hidden shadow-inner">
+            <RobotMascot3DBadge
+              clip={isDefeat ? 'Wave' : isDraw ? 'ThumbsUp' : 'Dance'}
+              character={isDefeat ? 'robot' : isDraw ? 'xbot' : 'robot'}
+              className="w-24 h-24"
+              label={title}
+            />
           </div>
 
           <div

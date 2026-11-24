@@ -34,6 +34,8 @@ import {
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { socketService } from '../services/socket';
+import { drawArcadeSprite } from './games/arcade/arcadeSprites';
+import { fireVictoryConfetti } from './games/arcade/arcadeAnimations';
 
 export interface HeadSoccerStageProps {
   lang: AppLanguage;
@@ -360,6 +362,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
         if (events.goalScoredBy !== undefined) {
           playGameSfx('chapas_goal', muted);
           triggerHaptic('success');
+          fireVictoryConfetti('goal');
           const gx = events.goalScoredBy === 0 ? HS_ARENA_W - HS_GOAL_W : HS_GOAL_W;
           const colors = ['#FACC15', '#9146FF', '#22C55E', '#38BDF8', '#FFFFFF'];
           for (let c = 0; c < 36; c += 1) {
@@ -379,6 +382,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
 
         if (events.matchEnded) {
           const won = sim.winnerSide === 0;
+          if (won) fireVictoryConfetti('gold');
           playGameSfx(won ? 'victory' : 'defeat', muted);
         }
 
@@ -451,11 +455,21 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
           drawSoccerBall(ctx, sim.ball);
           drawGoals(ctx);
 
-          // Confetti
-          for (const d of confettiRef.current) {
-            ctx.globalAlpha = Math.max(0, Math.min(1, d.life));
-            ctx.fillStyle = d.color;
-            ctx.fillRect(d.x, d.y, d.size, d.size * 1.3);
+          // Confetti (Kenney Particle Pack stars + ribbons)
+          for (let ci = 0; ci < confettiRef.current.length; ci += 1) {
+            const d = confettiRef.current[ci];
+            const alpha = Math.max(0, Math.min(1, d.life));
+            if (ci % 3 === 0) {
+              if (!drawArcadeSprite(ctx, 'assets/games/particles/star_07.png', d.x, d.y, 18, 18, d.life * 5, alpha)) {
+                ctx.globalAlpha = alpha;
+                ctx.fillStyle = d.color;
+                ctx.fillRect(d.x, d.y, d.size, d.size * 1.3);
+              }
+            } else {
+              ctx.globalAlpha = alpha;
+              ctx.fillStyle = d.color;
+              ctx.fillRect(d.x, d.y, d.size, d.size * 1.3);
+            }
           }
           ctx.globalAlpha = 1;
 

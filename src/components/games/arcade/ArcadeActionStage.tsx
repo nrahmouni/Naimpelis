@@ -1,18 +1,23 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown,
   ArrowLeft,
   ArrowRight,
   ArrowUp,
   Bomb,
+  Compass,
+  QrCode,
   RotateCcw,
   Trophy,
   Volume2,
   VolumeX,
 } from 'lucide-react';
 import type { AppLanguage } from '../../../types';
+import { socketService } from '../../../services/socket';
+import { useDirectDeviceGyro } from '../../../hooks/useDirectDeviceGyro';
 import { pickLang } from '../../../utils/i18n';
 import { triggerHaptic } from '../../../utils/haptics';
+import { DualGyroQrPanel, type DualGyroControllerPeer } from '../racing/DualGyroQrPanel';
 import { loadArcadeBest, playArcadeSfx, saveArcadeBest } from './arcadeAudio';
 import {
   EXPLOSION_FRAMES,
@@ -51,6 +56,8 @@ export type ActionArcadeId = 'pacman' | 'bomberman' | 'flappy';
 interface ArcadeActionStageProps {
   gameId: ActionArcadeId;
   lang: AppLanguage;
+  roomId?: string;
+  userName?: string;
   mutedOverride?: boolean;
 }
 
@@ -75,6 +82,8 @@ const PAC_MAP = [
 export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
   gameId,
   lang,
+  roomId = '',
+  userName = 'Jugador',
   mutedOverride = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -88,6 +97,24 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
   const [bestScore, setBestScore] = useState(() => loadArcadeBest(bestKey));
   const [gameOver, setGameOver] = useState(false);
   const [gameOverMsg, setGameOverMsg] = useState('');
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [controllers, setControllers] = useState<DualGyroControllerPeer[]>([]);
+
+  const effectiveRoomId = useMemo(
+    () => (roomId || socketService.getActiveRoomId() || `${gameId}-local`).trim().toLowerCase(),
+    [gameId, roomId]
+  );
+
+  const wsGyroRef = useRef({
+    steer: 0,
+    pitch: 0,
+    throttle: 0,
+    brake: 0,
+    nitro: false,
+    handbrake: false,
+    swing: 0,
+    expiresAt: 0,
+  });
 
   const actionsRef = useRef<{
     left: () => void;
@@ -104,6 +131,115 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
     primary: () => {},
     reset: () => {},
   });
+
+  const directGyro = useDirectDeviceGyro({
+    maxDeg: 24,
+    pitchMaxDeg: 22,
+    onSwing: (strength) => {
+      if (gameId === 'flappy' && strength > 0.8) actionsRef.current.primary();
+      else if (gameId === 'bomberman' && strength > 1.35) actionsRef.current.primary();
+    },
+  });
+
+  useEffect(() => {
+    const alreadyConnected = socketService.isConnected() && socketService.getActiveRoomId();
+    if (!alreadyConnected) {
+      socketService.connect(
+        effectiveRoomId,
+        {
+          id: `tv-act-${effectiveRoomId}`,
+          name: `${userName || 'Jugador'} (${gameId})`,
+          avatar: '🎮',
+          color: '#facc15',
+          role: 'host',
+          isHost: true,
+          joinedAt: Date.now(),
+        },
+        `Sala ${effectiveRoomId.toUpperCase()}`
+      );
+    } else {
+      socketService.joinGyroChannel('display', `${userName || 'Jugador'} (${gameId})`, effectiveRoomId, {
+        gameId,
+      });
+    }
+
+    const unsub = socketService.subscribe((ev) => {
+      if (ev.type === 'GYRO_PEER_STATUS') {
+        const list = Array.isArray(ev.payload.controllers)
+          ? (ev.payload.controllers as DualGyroControllerPeer[])
+          : [];
+        setControllers(list);
+      } else if (ev.type === 'GYRO_INPUT_RELAY') {
+        wsGyroRef.current = {
+          steer: Number(ev.payload.steer || 0),
+          pitch: Number(ev.payload.pitch || 0),
+          throttle: Number(ev.payload.throttle || 0),
+          brake: Number(ev.payload.brake || 0),
+          nitro: Boolean(ev.payload.nitro),
+          handbrake: Boolean(ev.payload.handbrake),
+          swing: Number(ev.payload.swing || 0),
+          expiresAt: Date.now() + 1400,
+        };
+      } else if (ev.type === 'ROOM_STATE') {
+        socketService.joinGyroChannel('display', `${userName || 'Jugador'} (${gameId})`, effectiveRoomId, {
+          gameId,
+        });
+      }
+    });
+
+    return () => unsub();
+  }, [effectiveRoomId, gameId, userName]);
+
+  // Translate continuous 2-axis tilt & shake/button gyro into discrete arcade actions
+  useEffect(() => {
+    let lastDir = '';
+    let lastStepAt = 0;
+    let prevFlapTrig = false;
+    let prevBombTrig = false;
+    const id = window.setInterval(() => {
+      const ws = wsGyroRef.current;
+      const wsOn = Date.now() < ws.expiresAt;
+      const dg = directGyro.gyroRef.current;
+      if (!wsOn && !dg.active) return;
+
+      const steer = wsOn ? ws.steer : dg.steer;
+      const pitch = wsOn ? ws.pitch : dg.pitch;
+      const swing = wsOn ? ws.swing : dg.swing;
+      const now = Date.now();
+
+      if (gameId === 'flappy') {
+        const trig = (wsOn && (ws.nitro || ws.throttle > 0.5 || ws.handbrake)) || swing > 0.85 || (dg.active && pitch > 0.45);
+        if (trig && !prevFlapTrig) actionsRef.current.primary();
+        prevFlapTrig = trig;
+        if (wsOn && ws.brake > 0.5 && gameOver) actionsRef.current.reset();
+        return;
+      }
+
+      if (gameId === 'bomberman') {
+        const bombTrig = wsOn && (ws.nitro || ws.throttle > 0.5);
+        if (bombTrig && !prevBombTrig) actionsRef.current.primary();
+        prevBombTrig = bombTrig;
+        if (wsOn && ws.brake > 0.5 && gameOver) actionsRef.current.reset();
+      }
+
+      let nextDir = '';
+      if (Math.abs(steer) > 0.34 || Math.abs(pitch) > 0.34) {
+        if (Math.abs(steer) >= Math.abs(pitch)) nextDir = steer > 0 ? 'R' : 'L';
+        else nextDir = pitch > 0 ? 'U' : 'D';
+      }
+      if (nextDir && (nextDir !== lastDir || (gameId === 'bomberman' && now - lastStepAt > 190))) {
+        lastDir = nextDir;
+        lastStepAt = now;
+        if (nextDir === 'L') actionsRef.current.left();
+        else if (nextDir === 'R') actionsRef.current.right();
+        else if (nextDir === 'U') actionsRef.current.up();
+        else if (nextDir === 'D') actionsRef.current.down();
+      } else if (!nextDir) {
+        lastDir = '';
+      }
+    }, 55);
+    return () => window.clearInterval(id);
+  }, [gameId, gameOver, directGyro.gyroRef]);
 
   const commitScore = useCallback(
     (nextScore: number) => {
@@ -709,7 +845,10 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
   }, [gameOver]);
 
   return (
-    <div className="w-full max-w-4xl mx-auto space-y-3 select-none">
+    <div
+      onContextMenu={(e) => e.preventDefault()}
+      className="game-touch-surface w-full max-w-4xl mx-auto space-y-3 select-none"
+    >
       <div className="rounded-2xl bg-[#0d1220] border border-white/10 px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3 text-xs font-bold text-zinc-300 tabular-nums">
           <span className="text-sm font-black text-white">
@@ -717,11 +856,40 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           </span>
           <span aria-hidden="true" className="text-zinc-600">·</span>
           <span className="text-cyan-300">{subLabel}</span>
+          {controllers.length > 0 && (
+            <>
+              <span aria-hidden="true" className="text-zinc-600">·</span>
+              <span className="text-emerald-300">Móvil QR activo</span>
+            </>
+          )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-bold text-amber-300 flex items-center gap-1 tabular-nums">
             <Trophy className="w-3.5 h-3.5" /> {bestScore}
           </span>
+          {directGyro.supported && (
+            <button
+              type="button"
+              onClick={() => void directGyro.toggle()}
+              className={`min-h-9 px-3 rounded-xl border text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                directGyro.active
+                  ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-200'
+                  : 'bg-white/[0.06] hover:bg-white/[0.14] border-white/10 text-zinc-200'
+              }`}
+              title={pickLang(lang, { es: 'Activar giroscopio del móvil', ca: 'Activar giroscopi del mòbil', en: 'Toggle phone gyroscope' })}
+            >
+              <Compass className="w-3.5 h-3.5" />
+              <span>{directGyro.active ? 'Gyro ON' : 'Giroscopio'}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => { triggerHaptic('light'); setShowQrModal(true); }}
+            className="min-h-9 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50 text-xs font-bold text-cyan-200 inline-flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+          >
+            <QrCode className="w-3.5 h-3.5" />
+            <span>Mando QR</span>
+          </button>
           <button
             type="button"
             onClick={() => setLocalMuted((m) => !m)}
@@ -746,8 +914,14 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           ref={canvasRef}
           width={960}
           height={540}
-          onClick={() => { if (gameId === 'flappy') actionsRef.current.primary(); }}
-          className="w-full h-auto block cursor-pointer"
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            if (gameId === 'flappy') {
+              e.preventDefault();
+              actionsRef.current.primary();
+            }
+          }}
+          className="game-touch-btn w-full h-auto block cursor-pointer"
         />
         {gameOver && (
           <div className="absolute inset-0 bg-[#050812]/90 flex flex-col items-center justify-center gap-3 p-6 text-center">
@@ -771,41 +945,66 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
         {gameId === 'flappy' ? (
           <button
             type="button"
-            onPointerDown={() => { triggerHaptic('light'); actionsRef.current.primary(); }}
-            className="min-h-11 px-8 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white whitespace-nowrap cursor-pointer"
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              triggerHaptic('light');
+              actionsRef.current.primary();
+            }}
+            className="game-touch-btn min-h-11 px-8 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white whitespace-nowrap cursor-pointer"
           >
-            {pickLang(lang, { es: 'Aletear (Toca o Espacio)', ca: 'Aletejar (Toca o Espai)', en: 'Flap (Tap or Space)' })}
+            {pickLang(lang, { es: 'Aletear (Toca, Agita o Espacio)', ca: 'Aletejar (Toca, Agita o Espai)', en: 'Flap (Tap, Shake or Space)' })}
           </button>
         ) : (
           <>
             <button
               type="button"
-              onClick={() => { triggerHaptic('light'); actionsRef.current.left(); }}
-              className="min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                triggerHaptic('light');
+                actionsRef.current.left();
+              }}
+              className="game-touch-btn min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
               aria-label="Izquierda"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
             <button
               type="button"
-              onClick={() => { triggerHaptic('light'); actionsRef.current.up(); }}
-              className="min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                triggerHaptic('light');
+                actionsRef.current.up();
+              }}
+              className="game-touch-btn min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
               aria-label="Arriba"
             >
               <ArrowUp className="w-5 h-5" />
             </button>
             <button
               type="button"
-              onClick={() => { triggerHaptic('light'); actionsRef.current.down(); }}
-              className="min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                triggerHaptic('light');
+                actionsRef.current.down();
+              }}
+              className="game-touch-btn min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
               aria-label="Abajo"
             >
               <ArrowDown className="w-5 h-5" />
             </button>
             <button
               type="button"
-              onClick={() => { triggerHaptic('light'); actionsRef.current.right(); }}
-              className="min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                triggerHaptic('light');
+                actionsRef.current.right();
+              }}
+              className="game-touch-btn min-h-11 min-w-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer"
               aria-label="Derecha"
             >
               <ArrowRight className="w-5 h-5" />
@@ -813,8 +1012,13 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
             {gameId === 'bomberman' && (
               <button
                 type="button"
-                onClick={() => { triggerHaptic('medium'); actionsRef.current.primary(); }}
-                className="min-h-11 px-5 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-black text-white inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                onContextMenu={(e) => e.preventDefault()}
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  triggerHaptic('medium');
+                  actionsRef.current.primary();
+                }}
+                className="game-touch-btn min-h-11 px-5 rounded-xl bg-rose-600 hover:bg-rose-500 text-xs font-black text-white inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
               >
                 <Bomb className="w-4 h-4" /> Poner Bomba
               </button>
@@ -822,6 +1026,22 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           </>
         )}
       </div>
+
+      {showQrModal && (
+        <DualGyroQrPanel
+          roomId={effectiveRoomId}
+          gameId={gameId}
+          title={
+            gameId === 'pacman'
+              ? 'Pac-Man Arcade HD · Control Gyro'
+              : gameId === 'bomberman'
+              ? 'Bomberman Party · Control Gyro'
+              : 'Clumsy Bird · Control Gyro'
+          }
+          controllers={controllers}
+          onClose={() => setShowQrModal(false)}
+        />
+      )}
     </div>
   );
 };

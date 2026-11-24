@@ -17,6 +17,10 @@ import { triggerHaptic } from '../../utils/haptics';
 import { PENALTY_COUNTRIES, type PenaltyCountry } from '../../shared/penaltyCountries';
 import { VictoryCelebrationOverlay } from './GameEffects';
 import { DualGyroQrPanel } from './racing/DualGyroQrPanel';
+import { resolveGameAssetUrl } from '../../shared/gameAssetsCdn';
+import { drawArcadeSprite } from './arcade/arcadeSprites';
+import { fireVictoryConfetti, preloadOnlineGameAssets } from './arcade/arcadeAnimations';
+import { PixiGameFxLayer, type PixiGameFxHandle } from './arcade/PixiGameFxLayer';
 
 export interface PenaltyShootoutStageProps {
   lang: AppLanguage;
@@ -158,6 +162,7 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const stadiumImgRef = useRef<HTMLImageElement | null>(null);
+  const pixiFxRef = useRef<PixiGameFxHandle | null>(null);
 
   const [muted, setMuted] = useState(false);
   const mutedRef = useRef(false);
@@ -255,7 +260,8 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
     preloadOnlineGameAssets();
     if (typeof Image === 'undefined') return;
     const img = new Image();
-    img.src = '/assets/games/penalty/stadium_backdrop.jpg';
+    img.crossOrigin = 'anonymous';
+    img.src = resolveGameAssetUrl('assets/games/penalty/stadium_backdrop.jpg');
     img.onload = () => {
       stadiumImgRef.current = img;
     };
@@ -528,6 +534,11 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
         resetMatch();
         return;
       }
+      if (st.winner && (e.code === 'Enter' || e.code === 'Space')) {
+        e.preventDefault();
+        resetMatch();
+        return;
+      }
       if (st.winner || st.ball.active || st.waitingNext || st.strikerKicking) return;
 
       const isCpuTurnToKick = matchModeRef.current === 'cpu' && st.attacker === 2;
@@ -733,16 +744,35 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
             st.netRipple = 1;
             st.netImpactX = st.ball.endX;
             spawnTurfDust(480 + st.ball.endX * 260, 290 - st.ball.endY * 185, '#facc15', 24);
+            pixiFxRef.current?.emitBurst(
+              0.5 + st.ball.endX * 0.27,
+              Math.max(0.18, 0.54 - st.ball.endY * 0.34),
+              'goal',
+              22
+            );
+            fireVictoryConfetti('goal');
             playPenaltySound('goal', mutedRef.current);
             sendControllerHaptic(st.attacker, 140, 'goal');
             sendControllerHaptic(defenderSlot, 70, 'penalty_save');
           } else if (st.ball.outcome === 'post') {
             st.cameraShake = 1;
             spawnTurfDust(480 + st.ball.endX * 260, 290 - st.ball.endY * 185, '#38bdf8', 18);
+            pixiFxRef.current?.emitBurst(
+              0.5 + st.ball.endX * 0.27,
+              Math.max(0.18, 0.54 - st.ball.endY * 0.34),
+              'spark',
+              16
+            );
             playPenaltySound('post', mutedRef.current);
             sendControllerHaptic(st.attacker, 110, 'penalty_post');
           } else {
             spawnTurfDust(480 + st.ball.endX * 260, 290 - st.ball.endY * 185, '#22d3ee', 14);
+            pixiFxRef.current?.emitBurst(
+              0.5 + st.ball.endX * 0.27,
+              Math.max(0.2, 0.54 - st.ball.endY * 0.34),
+              'hit',
+              14
+            );
             playPenaltySound('save', mutedRef.current);
             sendControllerHaptic(defenderSlot, 130, 'penalty_save');
           }
@@ -802,6 +832,7 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
 
             if (cur.winner) {
               setWinner(cur.winner);
+              fireVictoryConfetti('gold');
               if (cur.winner === 1) {
                 setBestStreak((prev) => {
                   const next = Math.max(prev, cur.p1Score);
@@ -1209,7 +1240,10 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
   const p2PhoneOnline = controllers.some((c) => c.slot === 2);
 
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-3 select-none">
+    <div
+      onContextMenu={(e) => e.preventDefault()}
+      className="game-touch-surface w-full max-w-5xl mx-auto space-y-3 select-none"
+    >
       {/* World Cup Scoreboard & Mode Bar */}
       <div className="rounded-2xl bg-[#0d1220] border border-white/10 px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex flex-wrap items-center gap-2">
@@ -1406,15 +1440,17 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
         </div>
       </div>
 
-      {/* Realistic Stadium Canvas */}
+      {/* Realistic Stadium Canvas + PixiJS v8 GPU FX */}
       <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#070b16] shadow-2xl">
         <canvas
           ref={canvasRef}
           width={960}
           height={540}
+          onContextMenu={(e) => e.preventDefault()}
           onClick={handleCanvasClick}
-          className="w-full h-auto block cursor-crosshair"
+          className="game-touch-btn w-full h-auto block cursor-crosshair touch-none"
         />
+        <PixiGameFxLayer ref={pixiFxRef} />
 
         {banner && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -1443,22 +1479,25 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
           <div className="flex flex-wrap items-center justify-center gap-2 w-full">
             <button
               type="button"
-              onClick={() => lockKeeperDive(-1, true)}
-              className="min-h-11 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-xs font-black text-white flex items-center gap-1.5 cursor-pointer"
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => { e.preventDefault(); lockKeeperDive(-1, true); }}
+              className="game-touch-btn min-h-11 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-xs font-black text-white flex items-center gap-1.5 cursor-pointer"
             >
               <Shield className="w-4 h-4" /> Izquierda (◀)
             </button>
             <button
               type="button"
-              onClick={() => lockKeeperDive(0, true)}
-              className="min-h-11 px-4 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white cursor-pointer"
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => { e.preventDefault(); lockKeeperDive(0, true); }}
+              className="game-touch-btn min-h-11 px-4 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white cursor-pointer"
             >
               Centro (▲)
             </button>
             <button
               type="button"
-              onClick={() => lockKeeperDive(1, true)}
-              className="min-h-11 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-xs font-black text-white flex items-center gap-1.5 cursor-pointer"
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => { e.preventDefault(); lockKeeperDive(1, true); }}
+              className="game-touch-btn min-h-11 px-4 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-xs font-black text-white flex items-center gap-1.5 cursor-pointer"
             >
               Derecha (▶) <Shield className="w-4 h-4" />
             </button>
@@ -1469,8 +1508,9 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
               <span className="text-[11px] font-bold text-zinc-400">Rosca / Efecto:</span>
               <button
                 type="button"
-                onClick={() => adjustCurve(-0.35)}
-                className={`h-9 px-3 rounded-lg border text-xs font-black cursor-pointer ${
+                onContextMenu={(e) => e.preventDefault()}
+                onPointerDown={(e) => { e.preventDefault(); adjustCurve(-0.35); }}
+                className={`game-touch-btn h-9 px-3 rounded-lg border text-xs font-black cursor-pointer ${
                   curveUi < -0.15
                     ? 'bg-amber-500/30 border-amber-400 text-amber-200'
                     : 'bg-white/[0.06] border-white/10 text-zinc-200'
@@ -1480,18 +1520,21 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => {
+                onContextMenu={(e) => e.preventDefault()}
+                onPointerDown={(e) => {
+                  e.preventDefault();
                   stateRef.current.curve = 0;
                   setCurveUi(0);
                 }}
-                className="h-9 px-2.5 rounded-lg bg-white/[0.06] border border-white/10 text-xs font-bold text-zinc-300 cursor-pointer"
+                className="game-touch-btn h-9 px-2.5 rounded-lg bg-white/[0.06] border border-white/10 text-xs font-bold text-zinc-300 cursor-pointer"
               >
                 {curveUi === 0 ? 'Recto' : `${curveUi > 0 ? '+' : ''}${Math.round(curveUi * 100)}%`}
               </button>
               <button
                 type="button"
-                onClick={() => adjustCurve(0.35)}
-                className={`h-9 px-3 rounded-lg border text-xs font-black cursor-pointer ${
+                onContextMenu={(e) => e.preventDefault()}
+                onPointerDown={(e) => { e.preventDefault(); adjustCurve(0.35); }}
+                className={`game-touch-btn h-9 px-3 rounded-lg border text-xs font-black cursor-pointer ${
                   curveUi > 0.15
                     ? 'bg-amber-500/30 border-amber-400 text-amber-200'
                     : 'bg-white/[0.06] border-white/10 text-zinc-200'
@@ -1507,22 +1550,25 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
                   <span>Portero (J/K/L):</span>
                   <button
                     type="button"
-                    onClick={() => lockKeeperDive(-1, false)}
-                    className="h-9 px-2.5 rounded-lg bg-white/[0.06] hover:bg-cyan-500/20 border border-white/10 font-bold text-white cursor-pointer"
+                    onContextMenu={(e) => e.preventDefault()}
+                    onPointerDown={(e) => { e.preventDefault(); lockKeeperDive(-1, false); }}
+                    className="game-touch-btn h-9 px-2.5 rounded-lg bg-white/[0.06] hover:bg-cyan-500/20 border border-white/10 font-bold text-white cursor-pointer"
                   >
                     ◀
                   </button>
                   <button
                     type="button"
-                    onClick={() => lockKeeperDive(0, false)}
-                    className="h-9 px-2.5 rounded-lg bg-white/[0.06] hover:bg-cyan-500/20 border border-white/10 font-bold text-white cursor-pointer"
+                    onContextMenu={(e) => e.preventDefault()}
+                    onPointerDown={(e) => { e.preventDefault(); lockKeeperDive(0, false); }}
+                    className="game-touch-btn h-9 px-2.5 rounded-lg bg-white/[0.06] hover:bg-cyan-500/20 border border-white/10 font-bold text-white cursor-pointer"
                   >
                     ●
                   </button>
                   <button
                     type="button"
-                    onClick={() => lockKeeperDive(1, false)}
-                    className="h-9 px-2.5 rounded-lg bg-white/[0.06] hover:bg-cyan-500/20 border border-white/10 font-bold text-white cursor-pointer"
+                    onContextMenu={(e) => e.preventDefault()}
+                    onPointerDown={(e) => { e.preventDefault(); lockKeeperDive(1, false); }}
+                    className="game-touch-btn h-9 px-2.5 rounded-lg bg-white/[0.06] hover:bg-cyan-500/20 border border-white/10 font-bold text-white cursor-pointer"
                   >
                     ▶
                   </button>
@@ -1531,8 +1577,9 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
 
               <button
                 type="button"
-                onClick={() => executeKickWithRunup()}
-                className="min-h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-black text-white cursor-pointer"
+                onContextMenu={(e) => e.preventDefault()}
+                onPointerDown={(e) => { e.preventDefault(); executeKickWithRunup(); }}
+                className="game-touch-btn min-h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-black text-white cursor-pointer"
               >
                 ⚽ CHUTAR (Enter)
               </button>

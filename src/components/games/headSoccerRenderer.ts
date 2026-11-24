@@ -12,6 +12,22 @@ import {
   type HeadSoccerSimulation,
   type HeadSoccerSkinId,
 } from '../../shared/headSoccer';
+import {
+  drawArcadeSprite,
+  drawArcadeSpriteRect,
+  preloadArcadeSprites,
+} from './arcade/arcadeSprites';
+
+let preloadedHeadSoccer = false;
+function ensureHeadSoccerAssets(): void {
+  if (preloadedHeadSoccer) return;
+  preloadedHeadSoccer = true;
+  preloadArcadeSprites([
+    'assets/games/arenas/soccer_stadium.jpg',
+    'assets/games/sports/ball_soccer1.png',
+    'assets/games/particles/star_07.png',
+  ]);
+}
 
 export interface ConfettiDot {
   x: number;
@@ -24,51 +40,69 @@ export interface ConfettiDot {
 }
 
 export function drawStadiumAndField(ctx: CanvasRenderingContext2D, timeSec: number) {
-  const skyGrad = ctx.createLinearGradient(0, 0, 0, HS_GROUND_Y);
-  skyGrad.addColorStop(0, '#090b1a');
-  skyGrad.addColorStop(0.55, '#131836');
-  skyGrad.addColorStop(1, '#1e293b');
-  ctx.fillStyle = skyGrad;
-  ctx.fillRect(0, 0, HS_ARENA_W, HS_GROUND_Y);
-
-  for (const fx of [140, 450, 760]) {
-    const beam = ctx.createRadialGradient(fx, 26, 8, fx, 140, 290);
-    beam.addColorStop(0, 'rgba(255, 255, 235, 0.25)');
-    beam.addColorStop(0.5, 'rgba(148, 163, 255, 0.08)');
-    beam.addColorStop(1, 'rgba(15, 23, 42, 0)');
-    ctx.fillStyle = beam;
+  ensureHeadSoccerAssets();
+  const drewPhoto = drawArcadeSpriteRect(
+    ctx,
+    'assets/games/arenas/soccer_stadium.jpg',
+    0,
+    0,
+    HS_ARENA_W,
+    HS_GROUND_Y + 14
+  );
+  if (drewPhoto) {
+    const fog = ctx.createLinearGradient(0, 0, 0, HS_GROUND_Y);
+    fog.addColorStop(0, 'rgba(7, 11, 24, 0.36)');
+    fog.addColorStop(0.7, 'rgba(9, 14, 28, 0.18)');
+    fog.addColorStop(1, 'rgba(10, 42, 22, 0.42)');
+    ctx.fillStyle = fog;
+    ctx.fillRect(0, 0, HS_ARENA_W, HS_GROUND_Y);
+  } else {
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, HS_GROUND_Y);
+    skyGrad.addColorStop(0, '#090b1a');
+    skyGrad.addColorStop(0.55, '#131836');
+    skyGrad.addColorStop(1, '#1e293b');
+    ctx.fillStyle = skyGrad;
     ctx.fillRect(0, 0, HS_ARENA_W, HS_GROUND_Y);
 
-    ctx.fillStyle = '#e2e8f0';
-    ctx.fillRect(fx - 26, 12, 52, 10);
-    ctx.fillStyle = '#fef08a';
-    for (let i = -20; i <= 20; i += 10) {
-      ctx.beginPath();
-      ctx.arc(fx + i, 22, 3.2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
+    for (const fx of [140, 450, 760]) {
+      const beam = ctx.createRadialGradient(fx, 26, 8, fx, 140, 290);
+      beam.addColorStop(0, 'rgba(255, 255, 235, 0.25)');
+      beam.addColorStop(0.5, 'rgba(148, 163, 255, 0.08)');
+      beam.addColorStop(1, 'rgba(15, 23, 42, 0)');
+      ctx.fillStyle = beam;
+      ctx.fillRect(0, 0, HS_ARENA_W, HS_GROUND_Y);
 
-  ctx.fillStyle = '#0f172a';
-  ctx.fillRect(0, 255, HS_ARENA_W, HS_GROUND_Y - 255);
-  ctx.fillStyle = '#1e293b';
-  ctx.fillRect(0, 295, HS_ARENA_W, 10);
-  ctx.fillRect(0, 345, HS_ARENA_W, 10);
-
-  const crowdColors = ['#9146FF', '#FACC15', '#38BDF8', '#EF4444', '#10B981', '#F8FAFC'];
-  for (let row = 0; row < 3; row += 1) {
-    const baseY = 278 + row * 38;
-    for (let i = 0; i < 42; i += 1) {
-      const cx = 14 + i * 21.5 + (row % 2) * 10;
-      const bounce = Math.sin(timeSec * 3.4 + i * 0.9 + row) * 2.1;
-      ctx.fillStyle = crowdColors[(i + row * 2) % crowdColors.length];
-      ctx.globalAlpha = 0.55;
-      ctx.beginPath();
-      ctx.arc(cx, baseY + bounce, 5.5, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fillStyle = '#e2e8f0';
+      ctx.fillRect(fx - 26, 12, 52, 10);
+      ctx.fillStyle = '#fef08a';
+      for (let i = -20; i <= 20; i += 10) {
+        ctx.beginPath();
+        ctx.arc(fx + i, 22, 3.2, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
+
+    ctx.fillStyle = '#0f172a';
+    ctx.fillRect(0, 255, HS_ARENA_W, HS_GROUND_Y - 255);
+    ctx.fillStyle = '#1e293b';
+    ctx.fillRect(0, 295, HS_ARENA_W, 10);
+    ctx.fillRect(0, 345, HS_ARENA_W, 10);
+
+    const crowdColors = ['#9146FF', '#FACC15', '#38BDF8', '#EF4444', '#10B981', '#F8FAFC'];
+    for (let row = 0; row < 3; row += 1) {
+      const baseY = 278 + row * 38;
+      for (let i = 0; i < 42; i += 1) {
+        const cx = 14 + i * 21.5 + (row % 2) * 10;
+        const bounce = Math.sin(timeSec * 3.4 + i * 0.9 + row) * 2.1;
+        ctx.fillStyle = crowdColors[(i + row * 2) % crowdColors.length];
+        ctx.globalAlpha = 0.55;
+        ctx.beginPath();
+        ctx.arc(cx, baseY + bounce, 5.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1;
   }
-  ctx.globalAlpha = 1;
 
   ctx.fillStyle = '#090d16';
   ctx.fillRect(0, HS_GROUND_Y - 26, HS_ARENA_W, 26);
@@ -318,6 +352,20 @@ export function drawSoccerBall(ctx: CanvasRenderingContext2D, ball: HeadSoccerSi
   ctx.beginPath();
   ctx.ellipse(ball.x, HS_GROUND_Y + 4, HS_BALL_RADIUS * scale, 5 * scale, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  if (
+    drawArcadeSprite(
+      ctx,
+      'assets/games/sports/ball_soccer1.png',
+      ball.x,
+      ball.y,
+      HS_BALL_RADIUS * 2.18,
+      HS_BALL_RADIUS * 2.18,
+      ball.angle
+    )
+  ) {
+    return;
+  }
 
   ctx.save();
   ctx.translate(ball.x, ball.y);

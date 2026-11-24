@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { QrCode, RotateCcw, Smartphone, Trophy, Volume2, VolumeX, X } from 'lucide-react';
+import { Compass, QrCode, RotateCcw, Smartphone, Trophy, Volume2, VolumeX, X } from 'lucide-react';
 import type { AppLanguage } from '../../types';
 import { socketService } from '../../services/socket';
+import { useDirectDeviceGyro } from '../../hooks/useDirectDeviceGyro';
 import { triggerHaptic } from '../../utils/haptics';
 import { DualGyroQrPanel, type DualGyroControllerPeer } from './racing/DualGyroQrPanel';
 import { playArcadeSfx } from './arcade/arcadeAudio';
@@ -16,6 +17,7 @@ import {
   drawArcadeSprite,
   drawArcadeSpriteRect,
 } from './arcade/arcadeSprites';
+import { resolveGameAssetUrl } from '../../shared/gameAssetsCdn';
 
 export type GyroMotionGameId = 'gyrobowling' | 'gyrotennis' | 'gyrolab';
 
@@ -54,7 +56,8 @@ const EMPTY_PAD: GyroPadInput = {
 function loadBackdrop(src: string, onLoad: (img: HTMLImageElement) => void): void {
   if (typeof Image === 'undefined') return;
   const img = new Image();
-  img.src = src;
+  img.crossOrigin = 'anonymous';
+  img.src = resolveGameAssetUrl(src);
   img.onload = () => onLoad(img);
 }
 
@@ -107,6 +110,28 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
     () => (roomId || socketService.getActiveRoomId() || `${gameId}-local`).trim().toLowerCase(),
     [gameId, roomId]
   );
+
+  const directGyro = useDirectDeviceGyro({ maxDeg: 26, pitchMaxDeg: 22, deadzoneDeg: 2.5 });
+
+  useEffect(() => {
+    if (!directGyro.active) return;
+    const id = window.setInterval(() => {
+      const g = directGyro.gyroRef.current;
+      if (!g.active) return;
+      gyroP1Ref.current = {
+        steer: g.steer,
+        pitch: g.pitch,
+        roll: g.steer * 0.65,
+        swing: g.swing,
+        throttle: Math.max(0, g.pitch),
+        brake: Math.max(0, -g.pitch),
+        nitro: keysRef.current.action || g.swing > 1.15,
+        handbrake: false,
+        expiresAt: Date.now() + 240,
+      };
+    }, 40);
+    return () => window.clearInterval(id);
+  }, [directGyro.active, directGyro.gyroRef]);
 
   const finishCardRef = useRef<HTMLDivElement | null>(null);
 
@@ -193,6 +218,7 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
         keysRef.current.action = true;
         e.preventDefault();
       } else if (k === 'Shift') keysRef.current.alt = true;
+      else if (k === 'r' || k === 'R') setResetNonce((n) => n + 1);
     };
     const onUp = (e: KeyboardEvent) => {
       const k = e.key;
@@ -982,7 +1008,10 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
       : '🧿 Laberinto Esfera 3D';
 
   return (
-    <div className="w-full max-w-5xl mx-auto space-y-3 select-none">
+    <div
+      onContextMenu={(e) => e.preventDefault()}
+      className="game-touch-surface w-full max-w-5xl mx-auto space-y-3 select-none"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-2xl bg-[#0e1222] border border-white/10">
         <div className="flex items-center gap-2 min-w-0">
           <span className="text-sm sm:text-base font-black text-white truncate">{titleText}</span>
@@ -1009,13 +1038,27 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
           <span className="px-3 py-1.5 rounded-xl bg-[#7C3AED]/20 border border-[#7C3AED]/45 text-xs font-black text-purple-200 tabular-nums">
             {hud.rightText}
           </span>
+          {directGyro.supported && (
+            <button
+              type="button"
+              onClick={() => void directGyro.toggle()}
+              className={`game-touch-btn min-h-10 px-3 rounded-xl border text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer ${
+                directGyro.active
+                  ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200'
+                  : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/15 text-zinc-200'
+              }`}
+            >
+              <Compass className="w-4 h-4" />
+              <span>{directGyro.active ? 'Gyro ON' : 'Giroscopio'}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
               triggerHaptic('light');
               setShowQrModal(true);
             }}
-            className="min-h-10 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50 text-xs font-bold text-cyan-200 inline-flex items-center gap-1.5 cursor-pointer"
+            className="game-touch-btn min-h-10 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50 text-xs font-bold text-cyan-200 inline-flex items-center gap-1.5 cursor-pointer"
           >
             <QrCode className="w-4 h-4" />
             <span>QR J1 / J2</span>
@@ -1070,6 +1113,90 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
             </div>
           </div>
         )}
+      </div>
+
+      {/* Mobile Touch Strip for Direct Solo Play */}
+      <div className="flex items-center justify-between gap-2 sm:hidden">
+        <button
+          type="button"
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+            keysRef.current.left = true;
+          }}
+          onPointerUp={() => { keysRef.current.left = false; }}
+          onPointerCancel={() => { keysRef.current.left = false; }}
+          onLostPointerCapture={() => { keysRef.current.left = false; }}
+          className="game-touch-btn flex-1 min-h-12 rounded-2xl bg-[#111525] border border-white/15 font-black text-white"
+        >
+          ◀ IZQ
+        </button>
+        {gameId === 'gyrolab' ? (
+          <>
+            <button
+              type="button"
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.currentTarget.setPointerCapture?.(e.pointerId);
+                keysRef.current.up = true;
+              }}
+              onPointerUp={() => { keysRef.current.up = false; }}
+              onPointerCancel={() => { keysRef.current.up = false; }}
+              onLostPointerCapture={() => { keysRef.current.up = false; }}
+              className="game-touch-btn flex-1 min-h-12 rounded-2xl bg-[#111525] border border-white/15 font-black text-white"
+            >
+              ▲ SUBIR
+            </button>
+            <button
+              type="button"
+              onContextMenu={(e) => e.preventDefault()}
+              onPointerDown={(e) => {
+                e.preventDefault();
+                e.currentTarget.setPointerCapture?.(e.pointerId);
+                keysRef.current.down = true;
+              }}
+              onPointerUp={() => { keysRef.current.down = false; }}
+              onPointerCancel={() => { keysRef.current.down = false; }}
+              onLostPointerCapture={() => { keysRef.current.down = false; }}
+              className="game-touch-btn flex-1 min-h-12 rounded-2xl bg-[#111525] border border-white/15 font-black text-white"
+            >
+              ▼ BAJAR
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+              keysRef.current.action = true;
+            }}
+            onPointerUp={() => { keysRef.current.action = false; }}
+            onPointerCancel={() => { keysRef.current.action = false; }}
+            onLostPointerCapture={() => { keysRef.current.action = false; }}
+            className="game-touch-btn flex-1 min-h-12 rounded-2xl bg-[#7C3AED] font-black text-white"
+          >
+            {gameId === 'gyrobowling' ? '🎳 LANZAR' : '🎾 GOLPEAR'}
+          </button>
+        )}
+        <button
+          type="button"
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+            keysRef.current.right = true;
+          }}
+          onPointerUp={() => { keysRef.current.right = false; }}
+          onPointerCancel={() => { keysRef.current.right = false; }}
+          onLostPointerCapture={() => { keysRef.current.right = false; }}
+          className="game-touch-btn flex-1 min-h-12 rounded-2xl bg-[#111525] border border-white/15 font-black text-white"
+        >
+          DER ▶
+        </button>
       </div>
 
       {showQrModal && (

@@ -473,6 +473,9 @@ export function useGamesHubController({
       gt === 'pingpong' ||
       gt === 'gyrohockey' ||
       gt === 'gyrospace' ||
+      gt === 'gyrobowling' ||
+      gt === 'gyrotennis' ||
+      gt === 'gyrolab' ||
       gt === 'bomberman' ||
       gt === 'pacman' ||
       gt === 'tetris' ||

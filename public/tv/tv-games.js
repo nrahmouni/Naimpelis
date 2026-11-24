@@ -82,6 +82,9 @@ function closeTvGame() {
   if (TV_GAME_ACTIVE === 'tvtrivia' && typeof window.closeTvTriviaGame === 'function') {
     window.closeTvTriviaGame();
   }
+  if (typeof window.closeTvGyroBridge === 'function') {
+    window.closeTvGyroBridge();
+  }
   TV_GAME_ACTIVE = '';
   var scr = document.getElementById('tv-games-screen');
   if (scr) { scr.style.display = 'none'; scr.innerHTML = ''; }
@@ -134,16 +137,18 @@ function getTvCardSvg(gameId) {
   }
   if (gameId === 'gyrobowling' || gameId === 'gyrotennis' || gameId === 'gyrolab' || gameId === 'headsoccer' || gameId === 'penalty') {
     var imgName = gameId === 'gyrobowling'
-      ? 'arenas/bowling_alley.jpg'
+      ? 'assets/games/arenas/bowling_alley.jpg'
       : gameId === 'gyrotennis'
-      ? 'arenas/tennis_court.jpg'
+      ? 'assets/games/arenas/tennis_court.jpg'
       : gameId === 'gyrolab'
-      ? 'arenas/labyrinth_board.jpg'
+      ? 'assets/games/arenas/labyrinth_board.jpg'
       : gameId === 'penalty'
-      ? 'penalty/stadium_backdrop.jpg'
-      : 'arenas/soccer_stadium.jpg';
-    var base = (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') ? './assets/games/' : '/assets/games/';
-    return '<img src="' + base + imgName + '" alt="" />';
+      ? 'assets/games/penalty/stadium_backdrop.jpg'
+      : 'assets/games/arenas/soccer_stadium.jpg';
+    var resolvedSrc = typeof window.resolveTvGameAssetUrl === 'function'
+      ? window.resolveTvGameAssetUrl(imgName)
+      : ('/' + imgName);
+    return '<img src="' + resolvedSrc + '" alt="" crossorigin="anonymous" />';
   }
   if (gameId === 'tetris') {
     return '<svg viewBox="0 0 240 92" aria-hidden="true">' +
@@ -310,15 +315,15 @@ function renderTvGamesCatalogInto(container) {
       desc: 'Estadio HD real, goles limpios, balón con efecto y soporte para 2 móviles o mando TV.',
       cta: 'Saltar al Campo'
     },
-    { id: 'bomberman', cls: 'bomberman', badge: 'Arena 4 Jugadores · vs Bots', title: 'Bomberman Party Arena', desc: 'Laberinto con cajas destructibles, mejoras de llama y 3 bots rivales inteligentes.', cta: 'Jugar Bomberman' },
-    { id: 'pacman', cls: 'pacman', badge: 'Laberinto HD · Fantasmas IA', title: 'Pac-Man Arcade HD', desc: 'Laberinto clásico, píldoras de poder para cazar fantasmas y giros suaves con el mando.', cta: 'Jugar Pac-Man' },
+    { id: 'bomberman', cls: 'bomberman', badge: '4 Jug. · Bots · Móvil Gyro', title: 'Bomberman Party Arena', desc: 'Laberinto con cajas destructibles, mejoras de llama, 3 bots rivales y soporte Móvil Gyro.', cta: 'Jugar Bomberman' },
+    { id: 'pacman', cls: 'pacman', badge: 'Laberinto HD · Móvil Gyro', title: 'Pac-Man Arcade HD', desc: 'Laberinto clásico, píldoras de poder para cazar fantasmas y giroscopio desde el móvil.', cta: 'Jugar Pac-Man' },
     { id: 'tetris', cls: 'tetris', badge: 'Arcade Clásico · 7-Bag', title: 'Tetris Sprint TV', desc: 'Pieza fantasma, caída instantánea con OK y niveles de velocidad crecientes.', cta: 'Jugar Tetris' },
     { id: 'hextris', cls: 'hextris', badge: 'Puzzle Neon · Combos', title: 'Hextris Neon TV', desc: 'Gira el hexágono con ◀ ▶ y combina 3 colores iguales antes de desbordar.', cta: 'Jugar Hextris' },
     { id: 'game2048', cls: 'game2048', badge: 'Lógica · Con Deshacer OK', title: '2048 TV Edition', desc: 'Desliza fichas por el tablero 4×4, fusiona números hasta 2048 y supera tu récord.', cta: 'Jugar 2048' },
-    { id: 'flappy', cls: 'flappy', badge: '1 Botón · Toda la Familia', title: 'Clumsy Bird TV', desc: 'Vuela entre tuberías pulsando solo OK / ▲ y consigue medallas de Platino.', cta: 'Volar Ahora' },
-    { id: 'hexgl', cls: 'hexgl', badge: '3D Alta Velocidad · Turbo', title: 'HexGL Hover 3D', desc: 'Pilota tu deslizador anti-gravedad a más de 1000 km/h esquivando barreras.', cta: 'Pilotar Nave' },
-    { id: 'arkanoid', cls: 'arkanoid', badge: 'Multibola & Láser', title: 'BrickIt / Arkanoid Neon', desc: 'Destruye muros de neón recogiendo cápsulas de pala ancha, multibola y láser.', cta: 'Jugar Arkanoid' },
-    { id: 'invaders', cls: 'invaders', badge: 'Retro 1978 · Oleadas + OVNI', title: 'Space Invaders Retro', desc: 'Escudos destructibles, formación alienígena y OVNIs misteriosos con el mando.', cta: 'Defender Tierra' },
+    { id: 'flappy', cls: 'flappy', badge: '1 Botón · Móvil Gyro', title: 'Clumsy Bird TV', desc: 'Vuela entre tuberías pulsando OK o agitando el móvil en modo Giroscopio.', cta: 'Volar Ahora' },
+    { id: 'hexgl', cls: 'hexgl', badge: '3D Alta Velocidad · Móvil Gyro', title: 'HexGL Hover 3D', desc: 'Pilota tu deslizador anti-gravedad inclinando el móvil o el mando TV.', cta: 'Pilotar Nave' },
+    { id: 'arkanoid', cls: 'arkanoid', badge: 'Multibola & Láser · Móvil Gyro', title: 'BrickIt / Arkanoid Neon', desc: 'Destruye muros de neón controlando la pala con el giroscopio del móvil o mando TV.', cta: 'Jugar Arkanoid' },
+    { id: 'invaders', cls: 'invaders', badge: 'Retro 1978 · Móvil Gyro', title: 'Space Invaders Retro', desc: 'Escudos destructibles, formación alienígena y OVNIs con mando TV o giroscopio móvil.', cta: 'Defender Tierra' },
     { id: 'tvtrivia', cls: 'tvtrivia', badge: 'Concurso Sofá · 1-4 Jug.', title: 'Riffan TV Quiz Show', desc: 'Preguntas en español de Cine, Fútbol, Música y Ciencia con comodín 50/50.', cta: 'Abrir Concurso' }
   ];
 

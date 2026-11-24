@@ -175,6 +175,36 @@ const GAME_INVITE_META: Record<RoomGameInviteType, GameInviteMeta> = {
       en: 'Starfighter steered with phone gyroscope tilt',
     },
   },
+  gyrobowling: {
+    emoji: '🎳',
+    accent: '#F59E0B',
+    title: { es: 'Bolos Pro 3D Gyro', ca: 'Bitlles Pro 3D Gyro', en: 'Pro 3D Gyro Bowling' },
+    subtitle: {
+      es: 'Lanza con giroscopio móvil y logra strikes en pista 3D',
+      ca: 'Llança amb giroscopi mòbil i aconsegueix strikes',
+      en: 'Throw with mobile gyro swing and bowl strikes',
+    },
+  },
+  gyrotennis: {
+    emoji: '🎾',
+    accent: '#84CC16',
+    title: { es: 'Tenis Slam Pro 2P', ca: 'Tennis Slam Pro 2P', en: 'Tennis Slam Pro 2P' },
+    subtitle: {
+      es: 'Agita tu móvil como raqueta para golpear con efecto',
+      ca: 'Agita el teu mòbil com una raqueta per colpejar',
+      en: 'Swing your phone like a racket in 1P or 2P duel',
+    },
+  },
+  gyrolab: {
+    emoji: '🧿',
+    accent: '#06B6D4',
+    title: { es: 'Laberinto Esfera 3D', ca: 'Laberint Esfera 3D', en: 'Sphere Labyrinth 3D' },
+    subtitle: {
+      es: 'Inclina el tablero de madera para recoger estrellas',
+      ca: 'Inclina el tauler de fusta per recollir estrelles',
+      en: 'Tilt the wooden board to collect stars before time runs out',
+    },
+  },
   bomberman: {
     emoji: '💣',
     accent: '#F97316',

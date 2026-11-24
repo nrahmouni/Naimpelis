@@ -187,7 +187,10 @@ export const HeadSoccerWaitingLobby: React.FC<HeadSoccerWaitingLobbyProps> = ({
 export const HeadSoccerTouchControls: React.FC<{
   updateTouchPointer: (pointerId: number, action: keyof HeadSoccerInput | null) => void;
 }> = ({ updateTouchPointer }) => (
-  <div className="flex items-center justify-between gap-3 pt-1 px-1 touch-none">
+  <div
+    onContextMenu={(e) => e.preventDefault()}
+    className="game-touch-surface flex items-center justify-between gap-3 pt-1 px-1 touch-none"
+  >
     <div className="flex items-center gap-2.5">
       {([
         { action: 'left' as const, label: '◀', aria: 'Mover izquierda' },
@@ -197,6 +200,7 @@ export const HeadSoccerTouchControls: React.FC<{
           key={btn.action}
           type="button"
           aria-label={btn.aria}
+          onContextMenu={(e) => e.preventDefault()}
           onPointerDown={(e) => {
             e.preventDefault();
             e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -204,7 +208,8 @@ export const HeadSoccerTouchControls: React.FC<{
           }}
           onPointerUp={(e) => updateTouchPointer(e.pointerId, null)}
           onPointerCancel={(e) => updateTouchPointer(e.pointerId, null)}
-          className="min-w-16 min-h-14 sm:min-w-20 sm:min-h-14 rounded-2xl bg-white/[0.08] active:bg-[#9146FF] border border-white/15 text-xl font-black text-white flex items-center justify-center shadow-lg touch-none cursor-pointer transition-colors"
+          onLostPointerCapture={(e) => updateTouchPointer(e.pointerId, null)}
+          className="game-touch-btn min-w-16 min-h-14 sm:min-w-20 sm:min-h-14 rounded-2xl bg-white/[0.08] active:bg-[#9146FF] border border-white/15 text-xl font-black text-white flex items-center justify-center shadow-lg touch-none cursor-pointer transition-colors"
         >
           {btn.label}
         </button>
@@ -227,6 +232,7 @@ export const HeadSoccerTouchControls: React.FC<{
       <button
         type="button"
         aria-label="Saltar"
+        onContextMenu={(e) => e.preventDefault()}
         onPointerDown={(e) => {
           e.preventDefault();
           e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -234,13 +240,15 @@ export const HeadSoccerTouchControls: React.FC<{
         }}
         onPointerUp={(e) => updateTouchPointer(e.pointerId, null)}
         onPointerCancel={(e) => updateTouchPointer(e.pointerId, null)}
-        className="min-w-16 min-h-14 sm:min-w-20 sm:min-h-14 px-3 rounded-2xl bg-sky-500/25 active:bg-sky-500 border border-sky-400/40 text-xs sm:text-sm font-black text-sky-100 flex items-center justify-center shadow-lg touch-none cursor-pointer transition-colors"
+        onLostPointerCapture={(e) => updateTouchPointer(e.pointerId, null)}
+        className="game-touch-btn min-w-16 min-h-14 sm:min-w-20 sm:min-h-14 px-3 rounded-2xl bg-sky-500/25 active:bg-sky-500 border border-sky-400/40 text-xs sm:text-sm font-black text-sky-100 flex items-center justify-center shadow-lg touch-none cursor-pointer transition-colors"
       >
         ⬆ Saltar
       </button>
       <button
         type="button"
         aria-label="Chutar"
+        onContextMenu={(e) => e.preventDefault()}
         onPointerDown={(e) => {
           e.preventDefault();
           e.currentTarget.setPointerCapture?.(e.pointerId);
@@ -248,7 +256,8 @@ export const HeadSoccerTouchControls: React.FC<{
         }}
         onPointerUp={(e) => updateTouchPointer(e.pointerId, null)}
         onPointerCancel={(e) => updateTouchPointer(e.pointerId, null)}
-        className="min-w-18 min-h-14 sm:min-w-24 sm:min-h-14 px-3.5 rounded-2xl bg-amber-500/25 active:bg-amber-500 border border-amber-400/45 text-xs sm:text-sm font-black text-amber-100 flex items-center justify-center shadow-lg touch-none cursor-pointer transition-colors"
+        onLostPointerCapture={(e) => updateTouchPointer(e.pointerId, null)}
+        className="game-touch-btn min-w-18 min-h-14 sm:min-w-24 sm:min-h-14 px-3.5 rounded-2xl bg-amber-500/25 active:bg-amber-500 border border-amber-400/45 text-xs sm:text-sm font-black text-amber-100 flex items-center justify-center shadow-lg touch-none cursor-pointer transition-colors"
       >
         ⚡ Chutar
       </button>

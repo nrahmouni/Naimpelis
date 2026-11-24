@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { resolveGameAssetUrl } from '../../../shared/gameAssetsCdn';
 
 export interface BuiltCarRig {
   root: THREE.Group;
@@ -13,15 +14,16 @@ export interface BuiltCarRig {
 
 const GLB_CACHE = new Map<string, Promise<THREE.Group | null>>();
 const sharedGltfLoader = new GLTFLoader();
+sharedGltfLoader.setCrossOrigin('anonymous');
 
 function loadCachedRaceModel(relUrl: string): Promise<THREE.Group | null> {
   if (typeof window === 'undefined' || typeof fetch === 'undefined') return Promise.resolve(null);
-  if (window.location?.protocol === 'file:') return Promise.resolve(null);
-  const existing = GLB_CACHE.get(relUrl);
+  const resolvedUrl = resolveGameAssetUrl(relUrl);
+  const existing = GLB_CACHE.get(resolvedUrl);
   if (existing) return existing;
   const p = new Promise<THREE.Group | null>((resolve) => {
     sharedGltfLoader.load(
-      relUrl,
+      resolvedUrl,
       (gltf) => {
         const scene = gltf?.scene;
         if (!scene) {
@@ -34,14 +36,14 @@ function loadCachedRaceModel(relUrl: string): Promise<THREE.Group | null> {
       () => resolve(null)
     );
   });
-  GLB_CACHE.set(relUrl, p);
+  GLB_CACHE.set(resolvedUrl, p);
   return p;
 }
 
 export function buildFormulaGtCar(
   primaryHex: number,
   accentHex: number,
-  options?: { castShadow?: boolean; isPlayer?: boolean }
+  options?: { castShadow?: boolean; isPlayer?: boolean; rivalIndex?: number }
 ): BuiltCarRig {
   const castShadow = Boolean(options?.castShadow);
   const root = new THREE.Group();
@@ -288,9 +290,31 @@ export function buildFormulaGtCar(
   shadowPlane.position.y = 0.03;
   root.add(shadowPlane);
 
+  // Neon Team Underglow Strip (helps identify P1 / P2 / Rivals on both Web & TV)
+  const underglowMesh = new THREE.Mesh(
+    trackGeo(new THREE.PlaneGeometry(1.75, 3.6)),
+    trackMat(
+      new THREE.MeshBasicMaterial({
+        color: accentHex,
+        transparent: true,
+        opacity: options?.isPlayer ? 0.34 : 0.22,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      })
+    )
+  );
+  underglowMesh.rotation.x = -Math.PI / 2;
+  underglowMesh.position.y = 0.04;
+  root.add(underglowMesh);
+
+  const rivalModels = [
+    'assets/games/models/race.glb',
+    'assets/games/models/sedan-sports.glb',
+    'assets/games/models/hatchback-sports.glb',
+  ];
   const modelPath = options?.isPlayer
-    ? '/assets/games/models/race-future.glb'
-    : '/assets/games/models/race.glb';
+    ? 'assets/games/models/race-future.glb'
+    : rivalModels[((options?.rivalIndex ?? 1) - 1 + rivalModels.length) % rivalModels.length];
 
   void loadCachedRaceModel(modelPath).then((source) => {
     if (!source || disposed) return;
@@ -302,16 +326,23 @@ export function buildFormulaGtCar(
     const center = new THREE.Vector3();
     box.getSize(size);
     box.getCenter(center);
-    const scale = 4.3 / Math.max(0.5, size.z);
+    const scale = 4.35 / Math.max(0.5, size.z);
     clone.scale.setScalar(scale);
-    clone.position.set(-center.x * scale, -box.min.y * scale + 0.04, -center.z * scale);
+    clone.position.set(-center.x * scale, -box.min.y * scale + 0.03, -center.z * scale);
     clone.traverse((node) => {
       if ((node as THREE.Mesh).isMesh) {
-        node.castShadow = castShadow;
+        (node as THREE.Mesh).castShadow = castShadow;
       }
     });
+    // Add rear brake light bar aligned behind the GLB bumper
+    const glbBrakeBar = new THREE.Mesh(
+      trackGeo(new THREE.BoxGeometry(1.25, 0.09, 0.08)),
+      brakeLightMaterial
+    );
+    glbBrakeBar.position.set(0, 0.56, 2.08);
+    clone.rotation.y = Math.PI;
     glbClone = clone;
-    bodyGroup.add(clone);
+    bodyGroup.add(clone, glbBrakeBar);
     proceduralBody.visible = false;
     frontLeftPivot.visible = false;
     frontRightPivot.visible = false;

@@ -72,7 +72,10 @@ function startPenaltyGame(scr) {
     window.preloadTvGameSprites(['assets/games/penalty/stadium_backdrop.jpg', 'assets/games/sports/ball_soccer1.png', 'assets/games/toon/male_idle.png', 'assets/games/toon/male_run0.png', 'assets/games/toon/male_run1.png', 'assets/games/toon/male_run2.png', 'assets/games/toon/male_kick.png', 'assets/games/particles/star_07.png', 'assets/games/particles/spark_01.png']);
   } else if (!tvPenStadiumImg && typeof Image !== 'undefined') {
     var img = new Image();
-    img.src = (window.location && window.location.protocol === 'file:') ? './assets/games/penalty/stadium_backdrop.jpg' : '/assets/games/penalty/stadium_backdrop.jpg';
+    img.crossOrigin = 'anonymous';
+    img.src = typeof window.resolveTvGameAssetUrl === 'function'
+      ? window.resolveTvGameAssetUrl('assets/games/penalty/stadium_backdrop.jpg')
+      : '/assets/games/penalty/stadium_backdrop.jpg';
     img.onload = function () { tvPenStadiumImg = img; };
   }
 

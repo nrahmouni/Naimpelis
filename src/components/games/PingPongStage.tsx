@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { QrCode, RotateCcw, Users, Volume2, VolumeX, X } from 'lucide-react';
+import { Compass, QrCode, RotateCcw, Users, Volume2, VolumeX, X } from 'lucide-react';
 import type { AppLanguage } from '../../types';
 import { socketService } from '../../services/socket';
+import { useDirectDeviceGyro } from '../../hooks/useDirectDeviceGyro';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { VictoryCelebrationOverlay, playGameSfx } from './GameEffects';
@@ -85,6 +86,27 @@ export const PingPongStage: React.FC<PingPongStageProps> = ({
     () => (roomId || socketService.getActiveRoomId() || 'pp-local').trim().toLowerCase(),
     [roomId]
   );
+
+  const directGyro = useDirectDeviceGyro({ maxDeg: 26, pitchMaxDeg: 22, deadzoneDeg: 2.4 });
+
+  useEffect(() => {
+    if (!directGyro.active) return;
+    const id = window.setInterval(() => {
+      const g = directGyro.gyroRef.current;
+      if (!g.active) return;
+      gyroP1Ref.current = {
+        steer: g.steer,
+        pitch: g.pitch,
+        throttle: Math.max(0, g.pitch),
+        brake: Math.max(0, -g.pitch),
+        nitro: keysRef.current.p1Smash || g.swing > 1.0,
+        handbrake: false,
+        swing: g.swing,
+        expiresAt: Date.now() + 240,
+      };
+    }, 40);
+    return () => window.clearInterval(id);
+  }, [directGyro.active, directGyro.gyroRef]);
 
   useEffect(() => {
     const alreadyConnected = socketService.isConnected() && socketService.getActiveRoomId();
@@ -630,7 +652,10 @@ export const PingPongStage: React.FC<PingPongStageProps> = ({
   const j2Connected = controllers.some((c, i) => c.slot === 2 || (!c.slot && i === 1));
 
   return (
-    <div className="w-full max-w-5xl mx-auto flex flex-col gap-3">
+    <div
+      onContextMenu={(e) => e.preventDefault()}
+      className="game-touch-surface w-full max-w-5xl mx-auto flex flex-col gap-3"
+    >
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-[#0D0E17] border border-white/10 px-3.5 py-2.5">
         <div className="flex items-center gap-2.5">
           <span className="text-lg">🏓</span>
@@ -662,13 +687,27 @@ export const PingPongStage: React.FC<PingPongStageProps> = ({
             <Users className="w-3.5 h-3.5 text-emerald-300" />
             Rally {hud.rally}
           </span>
+          {directGyro.supported && (
+            <button
+              type="button"
+              onClick={() => void directGyro.toggle()}
+              className={`game-touch-btn min-h-10 px-3 rounded-xl border text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer ${
+                directGyro.active
+                  ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200'
+                  : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/15 text-zinc-200'
+              }`}
+            >
+              <Compass className="w-4 h-4" />
+              <span>{directGyro.active ? 'Gyro ON' : 'Giroscopio'}</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
               triggerHaptic('light');
               setShowQrModal(true);
             }}
-            className="min-h-10 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50 text-xs font-bold text-cyan-200 inline-flex items-center gap-1.5 cursor-pointer"
+            className="game-touch-btn min-h-10 px-3 rounded-xl bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/50 text-xs font-bold text-cyan-200 inline-flex items-center gap-1.5 cursor-pointer"
           >
             <QrCode className="w-4 h-4" />
             <span>Mando Móvil 2P QR</span>
@@ -707,6 +746,7 @@ export const PingPongStage: React.FC<PingPongStageProps> = ({
           ref={canvasRef}
           width={920}
           height={520}
+          onContextMenu={(e) => e.preventDefault()}
           onPointerMove={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const nx = ((e.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
@@ -715,13 +755,17 @@ export const PingPongStage: React.FC<PingPongStageProps> = ({
           onPointerLeave={() => {
             pointerXRef.current = null;
           }}
-          onPointerDown={() => {
+          onPointerDown={(e) => {
+            e.preventDefault();
             keysRef.current.p1Smash = true;
           }}
           onPointerUp={() => {
             keysRef.current.p1Smash = false;
           }}
-          className="w-full h-auto block touch-none"
+          onPointerCancel={() => {
+            keysRef.current.p1Smash = false;
+          }}
+          className="game-touch-btn w-full h-auto block touch-none"
         />
 
         {finishSummary && (

@@ -700,3 +700,22 @@ html:is(.is-google-tv, .tv-dpad-active) :is(button, a, [role="button"]) { scroll
 /* Touch Targets & Contrast */
 .rtv-touch-optimized :is(button, [role="button"], a) { min-height: 44px; min-width: 44px; }
 .rtv-contrast-boost { color: var(--nc-text-primary, #f4f5f8); }
+
+/* Game Controller & Touch Button Isolation (blocks long-press context menus & iOS callouts) */
+.game-touch-surface,
+.game-touch-surface *:not(input):not(textarea) {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-user-drag: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.game-touch-btn {
+  touch-action: none !important;
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+  -webkit-user-drag: none;
+  -webkit-tap-highlight-color: transparent;
+}
+

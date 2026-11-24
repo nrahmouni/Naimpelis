@@ -1,5 +1,33 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { resolveGameAssetUrl } from '../../../shared/gameAssetsCdn';
+import {
+  loadCachedPbrTexture,
+  spawnRigged3dActor,
+  type RiggedActorHandle,
+} from '../arcade/threeProHelpers';
 import { TRACK_BARRIER_HALF_WIDTH, TRACK_HALF_WIDTH } from './racingTypes';
+
+const TRACK_GLB_CACHE = new Map<string, Promise<THREE.Group | null>>();
+const trackGltfLoader = new GLTFLoader();
+trackGltfLoader.setCrossOrigin('anonymous');
+
+function loadCachedTrackProp(relPath: string): Promise<THREE.Group | null> {
+  if (typeof window === 'undefined' || typeof fetch === 'undefined') return Promise.resolve(null);
+  const url = resolveGameAssetUrl(relPath);
+  const existing = TRACK_GLB_CACHE.get(url);
+  if (existing) return existing;
+  const p = new Promise<THREE.Group | null>((resolve) => {
+    trackGltfLoader.load(
+      url,
+      (gltf) => resolve(gltf?.scene || null),
+      undefined,
+      () => resolve(null)
+    );
+  });
+  TRACK_GLB_CACHE.set(url, p);
+  return p;
+}
 
 export interface TrackSample {
   s: number; // normalized [0..1)
@@ -36,6 +64,8 @@ export interface BuiltCircuit {
     sampleIndex: number;
   };
   sampleAtS: (s: number, outPos: THREE.Vector3, outTan: THREE.Vector3, outNorm: THREE.Vector3) => void;
+  updateActors: (dt: number) => void;
+  setCelebration: (celebrating: boolean) => void;
   dispose: () => void;
 }
 
@@ -108,6 +138,9 @@ function createStartCheckeredTexture(): THREE.CanvasTexture {
 
 export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): BuiltCircuit {
   const disposables: Array<{ dispose: () => void }> = [];
+  let circuitDisposed = false;
+  const sceneryGroup = new THREE.Group();
+  scene.add(sceneryGroup);
 
   // Sweeping Grand Prix Circuit Waypoints (~820m lap length)
   const waypoints = [
@@ -224,6 +257,41 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   roadMesh.receiveShadow = !isSoftwareGl;
   scene.add(roadMesh);
   disposables.push(roadGeo, asphaltTex, roadMat);
+
+  if (!isSoftwareGl) {
+    void loadCachedPbrTexture('assets/games/pbr/forrest_ground_diff.jpg', {
+      srgb: true,
+      repeatX: 28,
+      repeatY: 28,
+      anisotropy: 4,
+    }).then((tex) => {
+      if (!tex || circuitDisposed) return;
+      groundMat.map = tex;
+      groundMat.color.setHex(0x6c877c);
+      groundMat.needsUpdate = true;
+    });
+    void loadCachedPbrTexture('assets/games/pbr/asphalt_nor.jpg', {
+      srgb: false,
+      repeatX: 1,
+      repeatY: 72,
+      anisotropy: 4,
+    }).then((nor) => {
+      if (!nor || circuitDisposed) return;
+      roadMat.normalMap = nor;
+      roadMat.normalScale.set(0.65, 0.65);
+      roadMat.needsUpdate = true;
+    });
+    void loadCachedPbrTexture('assets/games/pbr/asphalt_rough.jpg', {
+      srgb: false,
+      repeatX: 1,
+      repeatY: 72,
+      anisotropy: 4,
+    }).then((rough) => {
+      if (!rough || circuitDisposed) return;
+      roadMat.roughnessMap = rough;
+      roadMat.needsUpdate = true;
+    });
+  }
 
   // Instanced Red & White Curbs (2 draw calls total)
   const redCurbs = new THREE.InstancedMesh(curbGeo, curbRedMat, redMatrices.length);
@@ -365,6 +433,130 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     disposables.push(starGeo, starMat);
   }
 
+  // Asynchronous Online Kenney 3D Racing Scenery (zero startup blocking, zero local assets)
+  const placePropNormalized = (
+    source: THREE.Group,
+    targetWidth: number,
+    px: number,
+    py: number,
+    pz: number,
+    rotY: number
+  ) => {
+    const clone = source.clone(true);
+    const box = new THREE.Box3().setFromObject(clone);
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+    const maxDim = Math.max(0.1, size.x, size.z);
+    const scale = targetWidth / maxDim;
+    clone.scale.setScalar(scale);
+    clone.position.set(px, py - box.min.y * scale, pz);
+    clone.rotation.y = rotY;
+    clone.traverse((child) => {
+      if ((child as THREE.Mesh).isMesh) {
+        child.castShadow = !isSoftwareGl;
+        child.receiveShadow = !isSoftwareGl;
+      }
+    });
+    sceneryGroup.add(clone);
+  };
+
+  void loadCachedTrackProp('assets/games/models/grandStandCovered.glb').then((src) => {
+    if (!src || circuitDisposed) return;
+    [8, 32, 110, 190, 275, 330].forEach((idx, n) => {
+      const smp = samples[idx % SAMPLE_COUNT];
+      const side = n % 2 === 0 ? 1 : -1;
+      const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
+      placePropNormalized(
+        src,
+        24,
+        smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 14),
+        0,
+        smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 14),
+        yaw
+      );
+    });
+  });
+
+  void loadCachedTrackProp('assets/games/models/pitsGarage.glb').then((src) => {
+    if (!src || circuitDisposed) return;
+    [348, 354, 6, 14].forEach((idx) => {
+      const smp = samples[idx % SAMPLE_COUNT];
+      const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + Math.PI / 2;
+      placePropNormalized(
+        src,
+        16,
+        smp.point.x - smp.normal.x * (TRACK_BARRIER_HALF_WIDTH + 11),
+        0,
+        smp.point.z - smp.normal.z * (TRACK_BARRIER_HALF_WIDTH + 11),
+        yaw
+      );
+    });
+  });
+
+  void loadCachedTrackProp('assets/games/models/flagCheckers.glb').then((src) => {
+    if (!src || circuitDisposed) return;
+    [-1, 1].forEach((side) => {
+      placePropNormalized(
+        src,
+        5.5,
+        startSmp.point.x + startSmp.normal.x * side * (TRACK_HALF_WIDTH + 3.2),
+        0,
+        startSmp.point.z + startSmp.normal.z * side * (TRACK_HALF_WIDTH + 3.2),
+        startYaw
+      );
+    });
+  });
+
+  if (!isSoftwareGl) {
+    void loadCachedTrackProp('assets/games/models/lightPostLarge.glb').then((src) => {
+      if (!src || circuitDisposed) return;
+      for (let i = 20; i < SAMPLE_COUNT; i += 30) {
+        const smp = samples[i];
+        const side = i % 60 === 20 ? 1 : -1;
+        const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
+        placePropNormalized(
+          src,
+          7.5,
+          smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 3.5),
+          0,
+          smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 3.5),
+          yaw
+        );
+      }
+    });
+  }
+
+  // Animated 3D Rigged Flag Marshals / Crew at Start-Finish & Pit Stand
+  const actors: RiggedActorHandle[] = [];
+  if (!isSoftwareGl) {
+    const marshalRobot = spawnRigged3dActor(sceneryGroup, 'assets/games/models/RobotExpressive.glb', {
+      position: [
+        startSmp.point.x + startSmp.normal.x * (TRACK_HALF_WIDTH + 3.4),
+        0,
+        startSmp.point.z + startSmp.normal.z * (TRACK_HALF_WIDTH + 3.4),
+      ],
+      rotationY: startYaw - Math.PI * 0.45,
+      targetHeight: 2.8,
+      defaultClips: ['Wave', 'Dance', 'Idle'],
+      castShadow: true,
+    });
+    const marshalXbot = spawnRigged3dActor(sceneryGroup, 'assets/games/models/Xbot.glb', {
+      position: [
+        startSmp.point.x - startSmp.normal.x * (TRACK_HALF_WIDTH + 3.6),
+        0,
+        startSmp.point.z - startSmp.normal.z * (TRACK_HALF_WIDTH + 3.6),
+      ],
+      rotationY: startYaw + Math.PI * 0.5,
+      targetHeight: 2.5,
+      defaultClips: ['idle', 'walk', 'run'],
+      castShadow: true,
+    });
+    actors.push(marshalRobot, marshalXbot);
+  }
+  let celebratingState = false;
+
   function sampleAtS(
     sRaw: number,
     outPos: THREE.Vector3,
@@ -445,7 +637,21 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     boostPads,
     projectOntoTrack,
     sampleAtS,
+    updateActors: (dt: number) => {
+      for (let i = 0; i < actors.length; i += 1) {
+        actors[i].update(dt);
+      }
+    },
+    setCelebration: (celebrating: boolean) => {
+      if (celebrating === celebratingState) return;
+      celebratingState = celebrating;
+      if (actors[0]) actors[0].playClip(celebrating ? ['Dance', 'Jump', 'Wave'] : ['Wave', 'Idle']);
+      if (actors[1]) actors[1].playClip(celebrating ? ['run', 'walk', 'idle'] : ['idle', 'walk']);
+    },
     dispose: () => {
+      circuitDisposed = true;
+      actors.forEach((a) => a.dispose());
+      if (sceneryGroup.parent) sceneryGroup.parent.remove(sceneryGroup);
       disposables.forEach((d) => d.dispose());
     },
   };

@@ -1,5 +1,10 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { applyPolyHavenHdri } from '../arcade/threeProHelpers';
 import { buildFormulaGtCar, type BuiltCarRig } from './racingCarBuilder';
 import { buildGpCircuitScene } from './racingTrackBuilder';
 import { RacingSoundEngine } from './racingAudio';
@@ -132,6 +137,15 @@ export function createRacing3dEngine(
     pmrem = null;
   }
 
+  // Upgrade to photorealistic Poly Haven 1K twilight HDRI reflections asynchronously on GPU devices
+  const hdriHandle = applyPolyHavenHdri(
+    scene,
+    renderer,
+    'assets/games/hdri/moonless_golf_1k.hdr',
+    isSoftwareGl,
+    { envIntensity: 1.0 }
+  );
+
   const camera = new THREE.PerspectiveCamera(
     60,
     Math.max(1, container.clientWidth) / Math.max(1, container.clientHeight),
@@ -166,6 +180,25 @@ export function createRacing3dEngine(
   const circuit = buildGpCircuitScene(scene, isSoftwareGl);
   const audio = new RacingSoundEngine();
 
+  // GPU Post-Processing (subtle bloom on headlights, brake lights, nitro cones & boost pads)
+  let composer: EffectComposer | null = null;
+  let bloomPass: UnrealBloomPass | null = null;
+  if (!isSoftwareGl) {
+    try {
+      const w0 = Math.max(1, container.clientWidth || window.innerWidth || 1280);
+      const h0 = Math.max(1, container.clientHeight || window.innerHeight || 720);
+      composer = new EffectComposer(renderer);
+      composer.addPass(new RenderPass(scene, camera));
+      bloomPass = new UnrealBloomPass(new THREE.Vector2(w0, h0), 0.28, 0.35, 0.94);
+      composer.addPass(bloomPass);
+      composer.addPass(new OutputPass());
+    } catch {
+      composer?.dispose();
+      composer = null;
+      bloomPass = null;
+    }
+  }
+
   // Player + 3 AI Rivals
   const playerCar = buildFormulaGtCar(RIVAL_LIVERIES[0].primary, RIVAL_LIVERIES[0].accent, {
     castShadow: !isSoftwareGl,
@@ -178,6 +211,7 @@ export function createRacing3dEngine(
     const rig = buildFormulaGtCar(livery.primary, livery.accent, {
       castShadow: !isSoftwareGl,
       isPlayer: false,
+      rivalIndex: idx,
     });
     scene.add(rig.root);
     return {
@@ -946,6 +980,8 @@ export function createRacing3dEngine(
     if (contextLost) return;
     const dt = Math.min(clock.getDelta(), 0.05);
     stepSimulation(dt, performance.now());
+    circuit.setCelebration(raceState === 'finished');
+    circuit.updateActors(dt);
 
     const w = Math.max(1, container.clientWidth || window.innerWidth || 1280);
     const h = Math.max(1, container.clientHeight || window.innerHeight || 720);
@@ -979,7 +1015,11 @@ export function createRacing3dEngine(
         camera.updateProjectionMatrix();
       }
       renderer.setViewport(0, 0, w, h);
-      renderer.render(scene, camera);
+      if (composer) {
+        composer.render();
+      } else {
+        renderer.render(scene, camera);
+      }
     }
   }
 
@@ -992,6 +1032,10 @@ export function createRacing3dEngine(
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
+    if (composer) {
+      composer.setSize(w, h);
+      bloomPass?.resolution.set(w, h);
+    }
   };
   const resizeObserver =
     typeof ResizeObserver !== 'undefined' ? new ResizeObserver(handleResize) : null;
@@ -1097,6 +1141,9 @@ export function createRacing3dEngine(
       circuit.dispose();
       particleGeo.dispose();
       particleMat.dispose();
+      hdriHandle.dispose();
+      composer?.dispose();
+      bloomPass?.dispose();
       envTarget?.dispose();
       pmrem?.dispose();
       audio.destroy();
