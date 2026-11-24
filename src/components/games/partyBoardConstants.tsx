@@ -142,14 +142,17 @@ const DICE_PIP_POSITIONS: Record<number, number[]> = {
   6: [0, 2, 3, 5, 6, 8],
 };
 
-export const DiceFacePips: React.FC<{ value: number; className?: string }> = ({
+export const DiceFacePips: React.FC<{ value: number; className?: string; foil?: boolean }> = ({
   value,
   className = '',
+  foil = false,
 }) => {
   const active = DICE_PIP_POSITIONS[value] || DICE_PIP_POSITIONS[1];
   return (
     <div
-      className={`grid grid-cols-3 grid-rows-3 gap-[3px] p-2 w-full h-full rounded-[11px] bg-gradient-to-br from-[#FFFDF7] via-[#F2E9D5] to-[#D4C5A3] border border-white/85 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9),inset_0_-2px_4px_rgba(0,0,0,0.22)] ${className}`}
+      className={`grid grid-cols-3 grid-rows-3 gap-[3px] p-2 w-full h-full rounded-[11px] bg-gradient-to-br from-[#FFFDF7] via-[#F2E9D5] to-[#D4C5A3] border border-white/85 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9),inset_0_-2px_4px_rgba(0,0,0,0.22)] ${
+        foil ? 'card-foil-shimmer' : ''
+      } ${className}`}
     >
       {Array.from({ length: 9 }).map((_, i) => (
         <span key={i} className="flex items-center justify-center">
@@ -217,7 +220,7 @@ export const Interactive3DDice: React.FC<{
       )}
       <div className={`nc-dice-cube ${tumbling ? 'nc-dice-tumbling' : ''}`}>
         <div className="absolute inset-0" style={{ transform: 'translateZ(24px)' }}>
-          <DiceFacePips value={faceVal} />
+          <DiceFacePips value={faceVal} foil={canRoll || isSix} />
         </div>
         <div
           className="absolute inset-0 opacity-75"

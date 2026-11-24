@@ -454,6 +454,7 @@ function startHeadSoccerGame(scr) {
       skyGrad.addColorStop(0, '#070a18'); skyGrad.addColorStop(0.6, '#121b38'); skyGrad.addColorStop(1, '#1e293b');
       ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GY);
     }
+    if (typeof window.drawTvCameraFlashes === 'function') window.drawTvCameraFlashes(ctx, W, 20, GY - 34, tSec, match.goalPause > 0);
     ctx.fillStyle = '#090d16'; ctx.fillRect(0, GY - 22, W, 22);
     ctx.strokeStyle = 'rgba(139, 92, 246, 0.72)'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(0, GY - 22); ctx.lineTo(W, GY - 22); ctx.stroke();
@@ -499,6 +500,8 @@ function startHeadSoccerGame(scr) {
       ctx.beginPath(); ctx.arc(0, 0, BR, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
+    if (typeof window.drawTvDirectionalBall === 'function') window.drawTvDirectionalBall(ctx, match.ball.x, match.ball.y, BR, W * 0.5, 24, 0.7);
+    if (Math.hypot(match.ball.vx, match.ball.vy) > 520 && typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, match.ball.x, match.ball.y, BR * 2.3, '56,189,248', 0.42);
 
     // 3D Goals drawn AFTER ball so net frames over goal mouth cleanly
     drawSingleGoal('left', netRippleL, tSec);

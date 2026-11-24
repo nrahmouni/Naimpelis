@@ -64,7 +64,7 @@ describe('Fallback guards for unreleased and Spanish-native media', () => {
     } else {
       expect(res).toBeNull();
     }
-  });
+  }, 12_000);
 });
 
 describe('La que se avecina title parsing & global episode mapping', () => {

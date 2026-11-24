@@ -246,6 +246,7 @@
             if (piece.y + r1 >= 0) drawCell(BOARD_X + (piece.x + c1) * CELL, BOARD_Y + (piece.y + r1) * CELL, piece.type, 1);
           }
         }
+        if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, BOARD_X + (piece.x + 1.5) * CELL, BOARD_Y + (piece.y + 1.5) * CELL, 48, '56,189,248', 0.25);
       }
 
       ctx.fillStyle = '#0d1326'; ctx.fillRect(640, 30, 190, 150);
@@ -267,6 +268,7 @@
       ctx.fillText('LÍNEAS: ' + lines, 152, 108);
       ctx.fillText('PUNTOS: ' + score, 152, 144);
       ctx.fillStyle = '#FACC15'; ctx.fillText('RÉCORD: ' + best, 152, 180);
+      if (typeof window.drawTvCrtOverlay === 'function') window.drawTvCrtOverlay(ctx, 960, 540, 0.14);
 
       window.TV_GAME_RAF = requestAnimationFrame(frame);
     }
@@ -418,10 +420,12 @@
       if (tiledBg(ctx, 'assets/games/space/darkPurple.png', 960, 540, now * 0.008, now * 0.005)) {
         ctx.fillStyle = 'rgba(7, 10, 21, 0.72)'; ctx.fillRect(0, 0, 960, 540);
       }
+      if (typeof window.drawTvNebulaLayer === 'function') window.drawTvNebulaLayer(ctx, 960, 540, now * 0.001, 'cyber');
       for (var spi = sparks.length - 1; spi >= 0; spi--) {
         var spk = sparks[spi]; spk.x += spk.vx * dt; spk.y += spk.vy * dt; spk.life -= dt;
         if (spk.life <= 0) { sparks.splice(spi, 1); continue; }
         ctx.globalAlpha = Math.min(1, spk.life * 2);
+        if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, spk.x, spk.y, 18, '56,189,248', 0.42);
         spr(ctx, 'assets/games/puzzle/particleStar.png', spk.x, spk.y, 18, 18, spk.life * 6);
         ctx.globalAlpha = 1;
       }
@@ -483,6 +487,7 @@
         if (k === 0) ctx.moveTo(kx, ky); else ctx.lineTo(kx, ky);
       }
       ctx.closePath(); ctx.fill(); ctx.stroke();
+      if (combo >= 2 && typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, cx, cy, HEX_R * 1.6, '168,85,247', 0.35);
 
       ctx.fillStyle = '#fff'; ctx.font = '900 19px sans-serif'; ctx.textAlign = 'center';
       ctx.fillText(String(score), cx, cy + 7);
@@ -645,6 +650,7 @@
           var v = grid[r][c];
           var colPair = TILE_COLORS[v] || ['#38BDF8', '#FFFFFF'];
           var tx = bx + pad + c * (tsize + pad), ty = by + pad + r * (tsize + pad);
+          if (v >= 128 && typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, tx + tsize / 2, ty + tsize / 2, tsize * 0.72, v >= 1024 ? '34,197,94' : '250,204,21', 0.34);
           drawRoundRect(tx, ty, tsize, tsize, 14, colPair[0]);
           if (v > 0) {
             drawRoundRect(tx + 3, ty + 3, tsize - 6, tsize * 0.42, 10, 'rgba(255,255,255,0.16)');

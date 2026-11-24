@@ -642,3 +642,54 @@
   margin: 0 8px;
 }
 
+.tv-crt-scanlines {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0) 0px,
+    rgba(255, 255, 255, 0) 2px,
+    rgba(0, 0, 0, 0.16) 3px,
+    rgba(0, 0, 0, 0.16) 4px
+  );
+  opacity: 0.55;
+}
+
+@-webkit-keyframes tvFoilSheen {
+  0% { -webkit-transform: translateX(-140%) skewX(-18deg); transform: translateX(-140%) skewX(-18deg); }
+  55%, 100% { -webkit-transform: translateX(240%) skewX(-18deg); transform: translateX(240%) skewX(-18deg); }
+}
+
+@keyframes tvFoilSheen {
+  0% { -webkit-transform: translateX(-140%) skewX(-18deg); transform: translateX(-140%) skewX(-18deg); }
+  55%, 100% { -webkit-transform: translateX(240%) skewX(-18deg); transform: translateX(240%) skewX(-18deg); }
+}
+
+.tv-card-foil {
+  position: relative;
+  overflow: hidden;
+}
+
+.tv-card-foil::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 48%;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.14) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  -webkit-animation: tvFoilSheen 4.4s ease-in-out infinite;
+  animation: tvFoilSheen 4.4s ease-in-out infinite;
+}
+
+

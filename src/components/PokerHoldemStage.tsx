@@ -85,11 +85,14 @@ const PlayingCardView: React.FC<{
   const cardKey = `${rankLabel}-${card.suit}`;
   const svgUrl = getPlayingCardSvgUrl(rankLabel, card.suit);
   const useFallback = failedCardKey === cardKey;
+  const showFoil = highlighted || card.rank >= 11;
 
   if (!useFallback) {
     return (
       <div
-        className={`${sizeCls} bg-white border overflow-hidden select-none shrink-0 transition-all ${
+        className={`${sizeCls} relative bg-white border overflow-hidden select-none shrink-0 transition-all ${
+          showFoil ? 'card-foil-shimmer ' : ''
+        }${
           highlighted
             ? 'border-amber-400 ring-2 ring-amber-400/90 -translate-y-1 shadow-[0_8px_22px_rgba(250,204,21,0.55)]'
             : 'border-zinc-300/90 shadow-[0_6px_14px_rgba(0,0,0,0.5)]'
@@ -108,7 +111,9 @@ const PlayingCardView: React.FC<{
 
   return (
     <div
-      className={`${sizeCls} bg-gradient-to-b from-white to-zinc-100 border ${
+      className={`${sizeCls} relative overflow-hidden bg-gradient-to-b from-white to-zinc-100 border ${
+        showFoil ? 'card-foil-shimmer ' : ''
+      }${
         highlighted
           ? 'border-amber-400 ring-2 ring-amber-400/80 -translate-y-1 shadow-[0_8px_20px_rgba(250,204,21,0.45)]'
           : 'border-zinc-300 shadow-[0_4px_12px_rgba(0,0,0,0.45)]'

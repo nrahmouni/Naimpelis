@@ -687,15 +687,46 @@ html:is(.is-google-tv, .tv-dpad-active) :is(button, a, [role="button"]) { scroll
   will-change: transform, opacity;
 }
 
+@keyframes rtv-foil-sheen {
+  0%, 14% { transform: translateX(-160%) skewX(-24deg); opacity: 0; }
+  26% { opacity: 0.72; }
+  48%, 100% { transform: translateX(220%) skewX(-24deg); opacity: 0; }
+}
+.card-foil-shimmer {
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(251, 191, 36, 0.36);
+}
+.card-foil-shimmer::after {
+  content: '';
+  pointer-events: none;
+  position: absolute;
+  inset: -12% -45%;
+  width: 65%;
+  background: linear-gradient(
+    105deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(253, 224, 71, 0.16) 28%,
+    rgba(255, 255, 255, 0.48) 50%,
+    rgba(192, 132, 252, 0.22) 72%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: rtv-foil-sheen 4.4s cubic-bezier(0.35, 0, 0.2, 1) infinite;
+  will-change: transform, opacity;
+}
+:root[data-lite="true"] .card-foil-shimmer::after {
+  display: none;
+}
+
 /* Unified Reduced Motion Accessibility */
 @media (prefers-reduced-motion: reduce) {
   .smooth-scroll-area { scroll-behavior: auto; }
   *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
-  :is(.rtv-ico *, .rtv-we *, .rtv-intro-r-play *, .card-4k-border-beam::before, .btn-4k-animated::after, .btn-4k-active, .rtv-signal-sweep) { animation: none !important; }
-  .rtv-intro-sheen, .rtv-we-sheen { display: none; }
+  :is(.rtv-ico *, .rtv-we *, .rtv-intro-r-play *, .card-4k-border-beam::before, .btn-4k-animated::after, .btn-4k-active, .rtv-signal-sweep, .card-foil-shimmer::after) { animation: none !important; }
+  .rtv-intro-sheen, .rtv-we-sheen, .card-foil-shimmer::after { display: none; }
 }
 :root[data-reduced-motion="true"] :is(*, *::before, *::after) { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
-:root[data-reduced-motion="true"] :is(.rtv-ico *, .rtv-we *, .rtv-intro-r-play *, .rtv-signal-sweep) { animation: none !important; }
+:root[data-reduced-motion="true"] :is(.rtv-ico *, .rtv-we *, .rtv-intro-r-play *, .rtv-signal-sweep, .card-foil-shimmer::after) { animation: none !important; }
 
 /* Touch Targets & Contrast */
 .rtv-touch-optimized :is(button, [role="button"], a) { min-height: 44px; min-width: 44px; }

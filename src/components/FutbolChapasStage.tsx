@@ -31,6 +31,7 @@ import {
   drawChapasStadiumBackdrop,
   drawFlagEmblem,
   getChapasFlagImage,
+  traceBottleCapCrownPath,
   type ImpactParticle,
 } from './games/chapasRenderer';
 import { PixiGameFxLayer, type PixiGameFxHandle } from './games/arcade/PixiGameFxLayer';
@@ -429,19 +430,18 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         ctx.arc(2.2, 3.6, r + 1.2, 0, Math.PI * 2);
         ctx.fill();
 
-        // Smooth brushed silver/chrome outer bezel ring
+        // Brushed silver/chrome scalloped bottle-cap crown outer bezel ring
         const bezelGrad = ctx.createLinearGradient(-r, -r, r, r);
         bezelGrad.addColorStop(0, '#FFFFFF');
         bezelGrad.addColorStop(0.35, '#E2E8F0');
         bezelGrad.addColorStop(0.7, '#94A3B8');
         bezelGrad.addColorStop(1, '#475569');
         ctx.fillStyle = bezelGrad;
-        ctx.beginPath();
-        ctx.arc(0, 0, r + 0.6, 0, Math.PI * 2);
+        traceBottleCapCrownPath(ctx, r + 0.85, 21, 0.85);
         ctx.fill();
 
-        // Subtle scalloped micro-rim accent
-        ctx.strokeStyle = 'rgba(15, 23, 42, 0.55)';
+        // Scalloped metallic crown edge stroke
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.62)';
         ctx.lineWidth = 1;
         ctx.stroke();
 

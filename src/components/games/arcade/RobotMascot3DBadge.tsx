@@ -9,6 +9,7 @@ import {
   initRoomEnvironment,
   loadCachedGltf,
 } from './threeProHelpers';
+import { applyFresnelRimToGroup } from './threePostFxHelpers';
 
 export type RobotAnimationClip =
   | 'Dance'
@@ -136,6 +137,11 @@ export const RobotMascot3DBadge: React.FC<RobotMascot3DBadgeProps> = ({
       if (character === 'soldier') {
         cloned.rotation.y = Math.PI;
       }
+      applyFresnelRimToGroup(cloned, {
+        colorHex: '#38bdf8',
+        power: 3.1,
+        intensity: 0.48,
+      });
       modelRoot = cloned;
       scene.add(modelRoot);
       if (gltf.animations && gltf.animations.length > 0) {

@@ -264,6 +264,8 @@
       if (!spr(ctx, st.turn === 2 ? 'assets/games/sports/ball_bowling2.png' : 'assets/games/sports/ball_bowling1.png', bp.sx, bp.sy, br * 2, br * 2, st.ball.rot)) {
         ctx.fillStyle = '#0284C7'; ctx.beginPath(); ctx.arc(bp.sx, bp.sy, br, 0, Math.PI * 2); ctx.fill();
       }
+      if (typeof window.drawTvDirectionalBall === 'function') window.drawTvDirectionalBall(ctx, bp.sx, bp.sy, br, W * 0.5, 40, 0.75);
+      if (st.phase === 'roll' && typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, bp.sx, bp.sy, br * 1.9, st.turn === 2 ? '244,63,94' : '56,189,248', 0.36);
       for (var s2 = 0; s2 < st.sparks.length; s2++) spr(ctx, s2 % 2 === 0 ? 'assets/games/particles/star_07.png' : 'assets/games/particles/spark_01.png', st.sparks[s2].x, st.sparks[s2].y, 26, 26, st.sparks[s2].life * 6);
       if (st.bannerT > 0 && st.banner) {
         ctx.fillStyle = 'rgba(8,12,24,0.85)'; ctx.fillRect(W / 2 - 210, 52, 420, 56);
@@ -369,11 +371,15 @@
       spr(ctx, 'assets/games/sports/racket_wood.png', p2s.x + 24 * p2s.sc, p2s.y, 44 * p2s.sc, 44 * p2s.sc, 1.3 + (st.p2.swingT > 0 ? 0.5 : 0));
       spr(ctx, 'assets/games/sports/character_blue_' + af + '.png', p1s.x, p1s.y + 18 * p1s.sc, 50 * p1s.sc, 50 * p1s.sc, 0);
       spr(ctx, 'assets/games/sports/racket_metal.png', p1s.x + 28 * p1s.sc, p1s.y - 6 * p1s.sc, 52 * p1s.sc, 52 * p1s.sc, -0.55 - (st.p1.swingT > 0 ? 0.85 : 0));
-      if (st.p1.swingT > 0.16) spr(ctx, 'assets/games/particles/slash_01.png', p1s.x, p1s.y - 18, 70, 70, now * 0.02);
+      if (st.p1.swingT > 0.16) {
+        if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, p1s.x, p1s.y - 14, 52, '250,204,21', 0.45);
+        spr(ctx, 'assets/games/particles/slash_01.png', p1s.x, p1s.y - 18, 70, 70, now * 0.02);
+      }
       ctx.fillStyle = 'rgba(0,0,0,0.42)'; ctx.beginPath(); ctx.ellipse(bs.x, bs.y + 4, 11 * bs.sc, 5 * bs.sc, 0, 0, Math.PI * 2); ctx.fill();
       if (!spr(ctx, 'assets/games/sports/ball_tennis1.png', bs.x, bs.y - lift, 24 * bs.sc, 24 * bs.sc, now * 0.012)) {
         ctx.fillStyle = '#BEF264'; ctx.beginPath(); ctx.arc(bs.x, bs.y - lift, 11 * bs.sc, 0, Math.PI * 2); ctx.fill();
       }
+      if (typeof window.drawTvDirectionalBall === 'function') window.drawTvDirectionalBall(ctx, bs.x, bs.y - lift, 11 * bs.sc, W * 0.5, 40, 0.68);
       if (st.banner) { ctx.fillStyle = 'rgba(6,12,22,0.8)'; ctx.fillRect(W / 2 - 170, 44, 340, 44); ctx.font = 'bold 20px sans-serif'; ctx.fillStyle = '#BEF264'; ctx.textAlign = 'center'; ctx.fillText(st.banner, W / 2, 72); }
       window.TV_GAME_RAF = requestAnimationFrame(frame);
     }
@@ -475,11 +481,15 @@
         var ch = grid[r][c], x = OX + c * CELL, y = OY + r * CELL;
         if (ch === '#') sprRect(ctx, 'assets/games/rolling/block_corner_large.png', x + 1, y + 1, CELL - 2, CELL - 2);
         else if (ch === 'O') spr(ctx, 'assets/games/rolling/hole_large.png', x + CELL / 2, y + CELL / 2, 34, 34, 0);
-        else if (ch === '*') spr(ctx, 'assets/games/particles/star_04.png', x + CELL / 2, y + CELL / 2, 32, 32, now * 0.004);
-        else if (ch === 'E') { spr(ctx, 'assets/games/particles/circle_02.png', x + CELL / 2, y + CELL / 2, 42, 42, -now * 0.003); spr(ctx, 'assets/games/rolling/hole_large_end.png', x + CELL / 2, y + CELL / 2, 36, 36, 0); }
+        else if (ch === '*') { if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, x + CELL / 2, y + CELL / 2, 24, '250,204,21', 0.42); spr(ctx, 'assets/games/particles/star_04.png', x + CELL / 2, y + CELL / 2, 32, 32, now * 0.004); }
+        else if (ch === 'E') { if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, x + CELL / 2, y + CELL / 2, 34, '34,197,94', 0.46); spr(ctx, 'assets/games/particles/circle_02.png', x + CELL / 2, y + CELL / 2, 42, 42, -now * 0.003); spr(ctx, 'assets/games/rolling/hole_large_end.png', x + CELL / 2, y + CELL / 2, 36, 36, 0); }
       }
       spr(ctx, 'assets/games/rolling/ball_blue_large.png', OX + b1.x * CELL, OY + b1.y * CELL, 30, 30, b1.x * 2.5);
-      if (twoHumans) spr(ctx, 'assets/games/rolling/ball_red_large.png', OX + b2.x * CELL, OY + b2.y * CELL, 30, 30, b2.x * 2.5);
+      if (typeof window.drawTvDirectionalBall === 'function') window.drawTvDirectionalBall(ctx, OX + b1.x * CELL, OY + b1.y * CELL, 14, W * 0.5, 40, 0.7);
+      if (twoHumans) {
+        spr(ctx, 'assets/games/rolling/ball_red_large.png', OX + b2.x * CELL, OY + b2.y * CELL, 30, 30, b2.x * 2.5);
+        if (typeof window.drawTvDirectionalBall === 'function') window.drawTvDirectionalBall(ctx, OX + b2.x * CELL, OY + b2.y * CELL, 14, W * 0.5, 40, 0.7);
+      }
       window.TV_GAME_RAF = requestAnimationFrame(frame);
     }
     window.TV_GAME_RAF = requestAnimationFrame(frame);

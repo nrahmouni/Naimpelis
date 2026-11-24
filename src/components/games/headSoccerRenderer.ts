@@ -16,6 +16,12 @@ import {
   drawArcadeSprite,
   preloadArcadeSprites,
 } from './arcade/arcadeSprites';
+import {
+  computeSquashStretch,
+  drawDynamicPointLight,
+  drawMotionSmearTrail,
+  drawStadiumCameraFlashes,
+} from './arcade/canvas2dFxHelpers';
 
 let preloadedHeadSoccer = false;
 function ensureHeadSoccerAssets(): void {
@@ -160,6 +166,7 @@ export function drawStadiumAndField(
     }
   }
   ctx.globalAlpha = 1;
+  drawStadiumCameraFlashes(ctx, HS_ARENA_W, 180, HS_GROUND_Y - 32, timeSec, goalCelebration ? 0.95 : 0.3);
 
   // 5. Center Stadium Jumbotron Screen
   ctx.fillStyle = '#070b18';
@@ -366,6 +373,12 @@ export function drawCaricaturePlayer(
   ctx.translate(x, y);
   const tilt = Math.max(-0.14, Math.min(0.14, player.vx * 0.00035));
   ctx.rotate(tilt);
+  const headSq = computeSquashStretch(
+    kickTimer > 0 ? Math.min(1, kickTimer * 3.2) : 0,
+    player.vy,
+    0.22
+  );
+  ctx.scale(headSq.scaleX, headSq.scaleY);
 
   // Dynamic cleat arc trail when kicking
   if (kickTimer > 0) {
@@ -478,7 +491,11 @@ export function drawCaricaturePlayer(
   ctx.restore();
 }
 
-export function drawSoccerBall(ctx: CanvasRenderingContext2D, ball: HeadSoccerSimulation['ball']) {
+export function drawSoccerBall(
+  ctx: CanvasRenderingContext2D,
+  ball: HeadSoccerSimulation['ball'],
+  ballTrail?: ReadonlyArray<{ x: number; y: number }>
+) {
   const height = Math.max(0, HS_GROUND_Y - HS_BALL_RADIUS - ball.y);
   const scale = Math.max(0.35, 1 - height / 280);
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -486,9 +503,18 @@ export function drawSoccerBall(ctx: CanvasRenderingContext2D, ball: HeadSoccerSi
   ctx.ellipse(ball.x, HS_GROUND_Y + 4, HS_BALL_RADIUS * scale, 5 * scale, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Super Shot Comet Trail
   const superTrail = ball.superTrail ?? 0;
+  if (ballTrail && ballTrail.length >= 2) {
+    drawMotionSmearTrail(
+      ctx,
+      ballTrail,
+      HS_BALL_RADIUS * 0.85,
+      superTrail > 0.05 ? '250, 204, 21' : '226, 232, 240',
+      superTrail > 0.05 ? 0.45 : 0.22
+    );
+  }
   if (superTrail > 0.05) {
+    drawDynamicPointLight(ctx, ball.x, ball.y, HS_BALL_RADIUS * 2.4, '250, 204, 21', superTrail * 0.5);
     const spd = Math.max(1, Math.hypot(ball.vx, ball.vy));
     const ux = -ball.vx / spd;
     const uy = -ball.vy / spd;

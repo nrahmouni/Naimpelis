@@ -1,9 +1,5 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import {
   applyPolyHavenHdri,
   applyResponsiveCameraFov,
@@ -16,10 +12,19 @@ import {
   createThreeFramePacer,
   createWovenNetTexture,
   detectSoftwareGl,
+  getMaxSafeAnisotropy,
   initRoomEnvironment,
   loadCachedPbrTexture,
   spawnRigged3dActor,
 } from '../arcade/threeProHelpers';
+import {
+  applyFresnelRimShader,
+  applyFresnelRimToGroup,
+  create3dRibbonTrail,
+  createDrsController,
+  createInstancedGrassField,
+  createProPostComposer,
+} from '../arcade/threePostFxHelpers';
 
 export interface TennisSimSnapshot {
   p1: { x: number; y: number; swingT: number };
@@ -181,8 +186,9 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
     scene.add(surround);
     disposables.push(surroundGeo, surroundMat);
 
-    // Grass / Clay / Hard Court Surface
-    const courtTex = createMowedPitchTexture(isSoftwareGl ? 1 : 4);
+    // Grass / Clay / Hard Court Surface + Instanced Wind-Swaying Perimeter Grass
+    const maxAniso = getMaxSafeAnisotropy(renderer, isSoftwareGl);
+    const courtTex = createMowedPitchTexture(maxAniso);
     courtTex.repeat.set(2, 3);
     disposables.push(courtTex);
     const courtMat = new THREE.MeshStandardMaterial({
@@ -196,6 +202,15 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
     courtMesh.receiveShadow = true;
     scene.add(courtMesh);
     disposables.push(courtGeo, courtMat);
+
+    const grassField = createInstancedGrassField(scene, {
+      count: isSoftwareGl ? 220 : 620,
+      innerHalfW: COURT_HALF_W + 1.4,
+      innerHalfZ: COURT_HALF_L + 1.5,
+      outerPad: 5.0,
+      bladeHeight: 0.26,
+    });
+    disposables.push(grassField);
 
     void loadCachedPbrTexture('assets/games/pbr/grass_diff.jpg', {
       srgb: true,
@@ -322,6 +337,7 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
     });
     const p1RacketPivot = new THREE.Group();
     const p1Racket = createCompositeRacketGroup('#22d3ee');
+    applyFresnelRimToGroup(p1Racket, { colorHex: '#22d3ee', power: 2.9, intensity: 0.45 });
     p1Racket.scale.setScalar(0.92);
     p1Racket.rotation.set(Math.PI * 0.42, 0, -0.25);
     p1RacketPivot.add(p1Racket);
@@ -338,12 +354,13 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
     });
     const p2RacketPivot = new THREE.Group();
     const p2Racket = createCompositeRacketGroup('#fb7185');
+    applyFresnelRimToGroup(p2Racket, { colorHex: '#fb7185', power: 2.9, intensity: 0.45 });
     p2Racket.scale.setScalar(0.92);
     p2Racket.rotation.set(Math.PI * 0.42, 0, -0.25);
     p2RacketPivot.add(p2Racket);
     p2Actor.attachToBone(['righthand', 'hand_r', 'mixamorigrighthand'], p2RacketPivot);
 
-    // Optic-Yellow Tennis Ball + Contact Shadow + Bounce Ring + Speed Trail
+    // Optic-Yellow Tennis Ball + Fresnel Rim + Contact Shadow + Bounce Ring + Volumetric Ribbon Trail
     const ballGeo = new THREE.SphereGeometry(0.16, 20, 16);
     const ballMat = new THREE.MeshStandardMaterial({
       color: '#bef264',
@@ -351,6 +368,7 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
       emissiveIntensity: 0.42,
       roughness: 0.62,
     });
+    applyFresnelRimShader(ballMat, { colorHex: '#fef08a', power: 2.5, intensity: 0.55 });
     const ballMesh = new THREE.Mesh(ballGeo, ballMat);
     ballMesh.castShadow = !isSoftwareGl;
     scene.add(ballMesh);
@@ -380,36 +398,38 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
     bounceRing.position.y = 0.02;
     scene.add(bounceRing);
 
-    const trailCount = 12;
-    const trailPts: THREE.Vector3[] = [];
-    const trailPos = new Float32Array(trailCount * 3);
-    const trailGeo = new THREE.BufferGeometry();
-    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPos, 3));
-    const trailMat = new THREE.LineBasicMaterial({ color: '#bef264', transparent: true, opacity: 0.72 });
-    const trailLine = new THREE.Line(trailGeo, trailMat);
-    scene.add(trailLine);
+    const ballRibbon = create3dRibbonTrail(16, '#bef264', 0.24, { opacity: 0.78 });
+    scene.add(ballRibbon.mesh);
 
-    disposables.push(ballGeo, ballMat, shadowGeo, shadowMat, bounceRingGeo, bounceRingMat, trailGeo, trailMat);
+    disposables.push(ballGeo, ballMat, shadowGeo, shadowMat, bounceRingGeo, bounceRingMat, ballRibbon);
 
     const burstSystem = create3dParticleBurstSystem(scene, 96);
 
-    let composer: EffectComposer | null = null;
-    let bloomPass: UnrealBloomPass | null = null;
-    if (!isSoftwareGl) {
-      composer = new EffectComposer(renderer);
-      composer.addPass(new RenderPass(scene, camera));
-      bloomPass = new UnrealBloomPass(new THREE.Vector2(920, 520), 0.28, 0.4, 0.9);
-      composer.addPass(bloomPass);
-      composer.addPass(new OutputPass());
-    }
+    const initW = Math.max(320, host.clientWidth || 920);
+    const initH = Math.max(200, host.clientHeight || Math.round((initW * 9) / 16));
+    const composer = createProPostComposer(renderer, scene, camera, {
+      width: initW,
+      height: initH,
+      isSoftwareGl,
+      bloom: { strength: 0.28, radius: 0.4, threshold: 0.9 },
+      ssao: true,
+      smaa: true,
+    });
+    const drs = createDrsController(renderer, {
+      isSoftwareGl,
+      onScaleChange: () => {
+        const w = Math.max(320, host.clientWidth || 920);
+        const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+        composer?.setSize(w, h);
+      },
+    });
 
     const updateSize = () => {
       const w = Math.max(320, host.clientWidth || 920);
       const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
       renderer.setSize(w, h, false);
       applyResponsiveCameraFov(camera, w / h, 42, 42, 64);
-      if (composer) composer.setSize(w, h);
-      if (bloomPass) bloomPass.resolution.set(w, h);
+      composer?.setSize(w, h);
     };
     updateSize();
     const ro = new ResizeObserver(updateSize);
@@ -440,6 +460,7 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
       const surf = sim.surface || 'grass';
       if (surf !== lastSurface) {
         lastSurface = surf;
+        grassField.setVisible(surf === 'grass');
         if (surf === 'clay') {
           courtMat.color.set('#e06834');
           surroundMat.color.set('#7c2d12');
@@ -491,19 +512,9 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
       ballShadow.position.set(bx, 0.015, bz);
       ballShadow.scale.setScalar(Math.max(0.45, 1.15 - sim.ball.z * 0.6));
 
-      trailPts.unshift(new THREE.Vector3(bx, by, bz));
-      if (trailPts.length > trailCount) trailPts.pop();
-      if (trailPts.length >= 2) {
-        const attr = trailGeo.attributes.position as THREE.BufferAttribute;
-        for (let i = 0; i < trailCount; i += 1) {
-          const p = trailPts[Math.min(i, trailPts.length - 1)];
-          attr.setXYZ(i, p.x, p.y, p.z);
-        }
-        attr.needsUpdate = true;
-        trailMat.color.set(
-          sim.shotTag === 'smash' ? '#f97316' : sim.shotTag === 'lob' ? '#38bdf8' : '#bef264'
-        );
-      }
+      const ribbonCol =
+        sim.shotTag === 'smash' ? '#f97316' : sim.shotTag === 'lob' ? '#38bdf8' : '#bef264';
+      ballRibbon.push(bx, by, bz, camera.position, ribbonCol);
 
       if (prevBallZ > 0.06 && sim.ball.z <= 0.06) {
         bounceRing.position.set(bx, 0.02, bz);
@@ -534,6 +545,8 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
       camera.position.x += (bx * 0.24 - camera.position.x) * Math.min(1, dt * 4);
       camera.lookAt(bx * 0.1, 0.62, -0.3);
 
+      drs.sample(dt);
+      grassField.update(elapsed);
       northStands.updateCrowd(elapsed, crowdExcite);
       westStands.updateCrowd(elapsed + 1.1, crowdExcite * 0.8);
       eastStands.updateCrowd(elapsed + 2.2, crowdExcite * 0.8);

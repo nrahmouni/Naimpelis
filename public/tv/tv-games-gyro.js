@@ -342,11 +342,9 @@ function startGyroHockeyGame(scr) {
     var tableGrad = ctx.createRadialGradient(W / 2, H / 2, 40, W / 2, H / 2, W * 0.65);
     tableGrad.addColorStop(0, '#0f1b38'); tableGrad.addColorStop(1, '#080e1f');
     ctx.fillStyle = tableGrad; ctx.fillRect(pad, pad, W - pad * 2, H - pad * 2);
-
     ctx.strokeStyle = 'rgba(56, 189, 248, 0.1)'; ctx.lineWidth = 1;
     for (var gx = pad + 40; gx < W - pad; gx += 48) { ctx.beginPath(); ctx.moveTo(gx, pad); ctx.lineTo(gx, H - pad); ctx.stroke(); }
     for (var gy = pad + 40; gy < H - pad; gy += 48) { ctx.beginPath(); ctx.moveTo(pad, gy); ctx.lineTo(W - pad, gy); ctx.stroke(); }
-
     ctx.strokeStyle = 'rgba(56, 189, 248, 0.38)'; ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(pad, H / 2); ctx.lineTo(W - pad, H / 2); ctx.stroke();
     ctx.beginPath(); ctx.arc(W / 2, H / 2, 70, 0, Math.PI * 2); ctx.stroke();
@@ -370,7 +368,8 @@ function startGyroHockeyGame(scr) {
       ctx.fillStyle = '#FDE047'; ctx.beginPath(); ctx.arc(st.puck.x, st.puck.y, PR, 0, Math.PI * 2); ctx.fill();
       ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2.5; ctx.stroke();
     }
-
+    if (typeof window.drawTvDirectionalBall === 'function') window.drawTvDirectionalBall(ctx, st.puck.x, st.puck.y, PR, W * 0.5, 40, 0.7);
+    if (typeof window.drawTvGlowLight === 'function') { window.drawTvGlowLight(ctx, st.puck.x, st.puck.y, PR * 2.2, '250,204,21', 0.36); window.drawTvGlowLight(ctx, st.me.x, st.me.y, MR * 1.6, '34,211,238', 0.28); }
     drawMallet(st.me.x, st.me.y, '#7C3AED', '#22D3EE');
     drawMallet(st.cpu.x, st.cpu.y, '#E11D48', '#FDA4AF');
 
@@ -617,7 +616,7 @@ function startGyroSpaceGame(scr) {
     bg.addColorStop(0, '#040611'); bg.addColorStop(0.55, '#0b1026'); bg.addColorStop(1, '#180c2e');
     ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
     gyroTiled(ctx, 'assets/games/space/darkPurple.png', W, H, 0, sp.bgScroll);
-
+    if (typeof window.drawTvNebulaLayer === 'function') window.drawTvNebulaLayer(ctx, W, H, now * 0.001, 'space');
     for (var s2 = 0; s2 < stars.length; s2++) {
       var sr = stars[s2]; ctx.fillStyle = sr.z > 1.3 ? '#BAE6FD' : '#64748B';
       ctx.fillRect(sr.x, sr.y, sr.z * 2, sr.z * 2.5);
@@ -676,6 +675,7 @@ function startGyroSpaceGame(scr) {
         ctx.globalAlpha = 1;
       }
       ctx.restore();
+      if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, sp.x, sp.y + 18, 42, '56,189,248', 0.42);
       if (useG2Sp) {
         ctx.save(); ctx.translate(sp.x2, sp.y2); ctx.rotate(sp.bank2);
         gyroSpr(ctx, 'assets/games/space/fire00.png', -12, 24, 12, 22, 0); gyroSpr(ctx, 'assets/games/space/fire00.png', 12, 24, 12, 22, 0);

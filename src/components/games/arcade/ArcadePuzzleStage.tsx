@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  Monitor,
   RotateCcw,
   RotateCw,
   Trophy,
@@ -22,6 +23,11 @@ import {
   preloadArcadeSprites,
 } from './arcadeSprites';
 import { PixiGameFxLayer, type PixiGameFxHandle } from './PixiGameFxLayer';
+import {
+  CrtOverlayLayer,
+  drawDynamicPointLight,
+  drawProceduralNebulaBackdrop,
+} from './canvas2dFxHelpers';
 
 export type PuzzleArcadeId = 'tetris' | 'hextris' | 'game2048';
 
@@ -85,6 +91,7 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
   const [bestScore, setBestScore] = useState(() => loadArcadeBest(bestKey));
   const [gameOver, setGameOver] = useState(false);
   const [gameOverMsg, setGameOverMsg] = useState('');
+  const [crtEnabled, setCrtEnabled] = useState(true);
   const touchStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const actionsRef = useRef<{
@@ -165,6 +172,7 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
       let level = 1;
       let dead = false;
       let dropAcc = 0;
+      let clearFlash = 0;
 
       const refillBag = () => {
         const list = [1, 2, 3, 4, 5, 6, 7];
@@ -221,6 +229,7 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
           }
         }
         if (cleared > 0) {
+          clearFlash = 1;
           curScore += ([0, 100, 300, 500, 800][cleared] || 800) * level;
           lines += cleared;
           level = 1 + Math.floor(lines / 10);
@@ -336,6 +345,7 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
         if (!alive) return;
         const dt = Math.min(0.05, (now - last) / 1000);
         last = now;
+        if (clearFlash > 0) clearFlash = Math.max(0, clearFlash - dt * 2.8);
         if (!dead) {
           dropAcc += dt;
           const interval = Math.max(0.11, 0.72 - (level - 1) * 0.065);
@@ -350,6 +360,9 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
         if (drawArcadeTiledBg(ctx, 'assets/games/space/blue.png', 960, 540, now * 0.006, now * 0.01)) {
           ctx.fillStyle = 'rgba(6, 9, 19, 0.72)';
           ctx.fillRect(0, 0, 960, 540);
+        }
+        if (clearFlash > 0.01) {
+          drawDynamicPointLight(ctx, BX + 120, BY + 240, 260, '56, 189, 248', clearFlash * 0.45);
         }
         ctx.save();
         ctx.fillStyle = '#0b1124';
@@ -537,6 +550,7 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
           ctx.fillStyle = 'rgba(7, 10, 21, 0.72)';
           ctx.fillRect(0, 0, 960, 540);
         }
+        drawProceduralNebulaBackdrop(ctx, 960, 540, now * 0.001, 'cyber');
         for (let si = sparks.length - 1; si >= 0; si -= 1) {
           const sp = sparks[si];
           sp.x += sp.vx * dt;
@@ -552,11 +566,7 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
         const cy = 270;
         // Atmospheric radial pulse backdrop reacting to combo
         const auraR = 235 + Math.sin(now * 0.004) * 14 + combo * 6;
-        const aura = ctx.createRadialGradient(cx, cy, HEX_R * 0.7, cx, cy, auraR);
-        aura.addColorStop(0, combo >= 3 ? 'rgba(168, 85, 247, 0.25)' : 'rgba(56, 189, 248, 0.16)');
-        aura.addColorStop(1, 'rgba(7, 10, 21, 0)');
-        ctx.fillStyle = aura;
-        ctx.beginPath(); ctx.arc(cx, cy, auraR, 0, Math.PI * 2); ctx.fill();
+        drawDynamicPointLight(ctx, cx, cy, auraR, combo >= 3 ? '168, 85, 247' : '56, 189, 248', Math.min(0.45, 0.14 + combo * 0.04));
 
         const maxLen = Math.max(...stacks.map((s) => s.length));
         ctx.strokeStyle = maxLen >= MAX_STACK - 1 ? `rgba(244,63,94,${0.45 + 0.35 * Math.sin(now * 0.015)})` : 'rgba(244,63,94,0.32)';
@@ -792,6 +802,9 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
             const tx = bx + pad + c * (tsize + pad);
             const ty = by + pad + r * (tsize + pad);
             if (v > 0) {
+              if (v >= 128) {
+                drawDynamicPointLight(ctx, tx + tsize * 0.5, ty + tsize * 0.5, tsize * 0.85, v >= 1024 ? '168, 85, 247' : '250, 204, 21', 0.28);
+              }
               ctx.save();
               ctx.shadowColor = v >= 128 ? pair[0] : 'rgba(0,0,0,0.45)';
               ctx.shadowBlur = v >= 128 ? 14 : 8;
@@ -889,6 +902,20 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
           </span>
           <button
             type="button"
+            onClick={() => setCrtEnabled((v) => !v)}
+            aria-label="CRT"
+            title="Filtro CRT retro"
+            className={`min-h-9 px-2.5 rounded-xl border text-xs font-bold inline-flex items-center gap-1 cursor-pointer ${
+              crtEnabled
+                ? 'bg-violet-500/20 border-violet-400/50 text-violet-200'
+                : 'bg-white/[0.06] hover:bg-white/[0.14] border-white/10 text-zinc-300'
+            }`}
+          >
+            <Monitor className="w-3.5 h-3.5" />
+            <span>CRT</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setLocalMuted((m) => !m)}
             aria-label={pickLang(lang, { es: 'Silenciar sonido', ca: 'Silenciar so', en: 'Mute sound' })}
             className="w-9 h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.14] flex items-center justify-center cursor-pointer"
@@ -919,6 +946,7 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
           onTouchEnd={handleTouchEnd}
           className="game-touch-btn w-full h-auto block touch-none"
         />
+        <CrtOverlayLayer enabled={crtEnabled} />
         <PixiGameFxLayer ref={pixiFxRef} />
         {gameOver && (
           <div className="absolute inset-0 bg-[#050812]/90 flex flex-col items-center justify-center gap-3 p-6 text-center">

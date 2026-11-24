@@ -1,9 +1,5 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import type { PenaltyCountry } from '../../../shared/penaltyCountries';
 import {
   applyPolyHavenHdri,
@@ -17,10 +13,19 @@ import {
   createThreeFramePacer,
   createWovenNetTexture,
   detectSoftwareGl,
+  getMaxSafeAnisotropy,
   initRoomEnvironment,
   loadCachedPbrTexture,
   spawnRigged3dActor,
 } from '../arcade/threeProHelpers';
+import {
+  applyFresnelRimShader,
+  create3dRibbonTrail,
+  createDrsController,
+  createInstancedGrassField,
+  createProPostComposer,
+  createVolumetricBeamMaterial,
+} from '../arcade/threePostFxHelpers';
 
 export interface Penalty3DStateSnapshot {
   aimX: number;
@@ -153,8 +158,9 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
 
     const disposables: Array<{ dispose: () => void }> = [skyDomeTex];
 
-    // Ground Pitch + Mowed Grass + Chalk Lines
-    const pitchTex = createMowedPitchTexture(isSoftwareGl ? 1 : 4);
+    // Ground Pitch + Mowed Grass + Chalk Lines + GPU-Instanced Perimeter Grass Blades
+    const maxAniso = getMaxSafeAnisotropy(renderer, isSoftwareGl);
+    const pitchTex = createMowedPitchTexture(maxAniso);
     pitchTex.repeat.set(3, 3);
     disposables.push(pitchTex);
 
@@ -169,6 +175,15 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
     pitchMesh.receiveShadow = true;
     scene.add(pitchMesh);
     disposables.push(pitchGeo, pitchMat);
+
+    const grassField = createInstancedGrassField(scene, {
+      count: isSoftwareGl ? 280 : 840,
+      innerHalfW: 20.5,
+      innerHalfZ: 17,
+      outerPad: 8.5,
+      bladeHeight: 0.36,
+    });
+    disposables.push(grassField);
 
     void loadCachedPbrTexture('assets/games/pbr/grass_diff.jpg', {
       srgb: true,
@@ -280,14 +295,7 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
       emissiveIntensity: 2.3,
     });
     const beamConeGeo = new THREE.ConeGeometry(7.2, 26, 16, 1, true);
-    const beamConeMat = new THREE.MeshBasicMaterial({
-      color: '#e0f2fe',
-      transparent: true,
-      opacity: 0.045,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-      side: THREE.DoubleSide,
-    });
+    const beamConeMat = createVolumetricBeamMaterial('#e0f2fe', 0.16);
     disposables.push(towerPoleGeo, towerPoleMat, floodHeadGeo, floodHeadMat, beamConeGeo, beamConeMat);
 
     [-19, -8, 8, 19].forEach((tx) => {
@@ -419,8 +427,8 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
       secondaryHex: p1Country.shorts,
     });
 
-    // Football 3D Sphere + Contact Shadow + Shot Trail Ribbons
-    const ballTex = createFootballTexture(isSoftwareGl ? 1 : 4);
+    // Football 3D Sphere + Fresnel Rim + Contact Shadow + Volumetric Shot Ribbon Trail
+    const ballTex = createFootballTexture(maxAniso);
     const ballGeo = new THREE.SphereGeometry(0.22, 24, 18);
     const ballMat = new THREE.MeshPhysicalMaterial({
       map: ballTex,
@@ -429,6 +437,7 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
       clearcoat: 0.6,
       clearcoatRoughness: 0.2,
     });
+    applyFresnelRimShader(ballMat, { colorHex: '#38bdf8', power: 2.8, intensity: 0.48 });
     const ballMesh = new THREE.Mesh(ballGeo, ballMat);
     ballMesh.castShadow = !isSoftwareGl;
     ballMesh.position.set(0, 0.22, SPOT_Z);
@@ -446,20 +455,9 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
     ballShadow.position.set(0, 0.019, SPOT_Z);
     scene.add(ballShadow);
 
-    const trailCount = 14;
-    const trailPoints: THREE.Vector3[] = [];
-    const trailPositions = new Float32Array(trailCount * 3);
-    const trailGeo = new THREE.BufferGeometry();
-    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
-    const trailMat = new THREE.LineBasicMaterial({
-      color: '#38bdf8',
-      transparent: true,
-      opacity: 0.72,
-    });
-    const trailLine = new THREE.Line(trailGeo, trailMat);
-    trailLine.visible = false;
-    scene.add(trailLine);
-    disposables.push(ballTex, ballGeo, ballMat, ballShadowGeo, ballShadowMat, trailGeo, trailMat);
+    const ballRibbon = create3dRibbonTrail(18, '#38bdf8', 0.34, { opacity: 0.85 });
+    scene.add(ballRibbon.mesh);
+    disposables.push(ballTex, ballGeo, ballMat, ballShadowGeo, ballShadowMat, ballRibbon);
 
     // 3D Aim Reticle + Curve Trajectory Arc
     const reticleGroup = new THREE.Group();
@@ -486,24 +484,32 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
 
     const burstSystem = create3dParticleBurstSystem(scene, 110);
 
-    // Optional Post-Processing Bloom on hardware WebGL
-    let composer: EffectComposer | null = null;
-    let bloomPass: UnrealBloomPass | null = null;
-    if (!isSoftwareGl) {
-      composer = new EffectComposer(renderer);
-      composer.addPass(new RenderPass(scene, camera));
-      bloomPass = new UnrealBloomPass(new THREE.Vector2(960, 540), 0.34, 0.45, 0.88);
-      composer.addPass(bloomPass);
-      composer.addPass(new OutputPass());
-    }
+    // Optional Post-Processing (MSAA + SMAA + Bloom + Goal Bokeh DoF) + DRS
+    const initW = Math.max(320, host.clientWidth || 960);
+    const initH = Math.max(200, host.clientHeight || Math.round((initW * 9) / 16));
+    const composer = createProPostComposer(renderer, scene, camera, {
+      width: initW,
+      height: initH,
+      isSoftwareGl,
+      bloom: { strength: 0.34, radius: 0.45, threshold: 0.88 },
+      bokeh: true,
+      smaa: true,
+    });
+    const drs = createDrsController(renderer, {
+      isSoftwareGl,
+      onScaleChange: () => {
+        const w = Math.max(320, host.clientWidth || 960);
+        const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+        composer?.setSize(w, h);
+      },
+    });
 
     const updateSize = () => {
       const w = Math.max(320, host.clientWidth || 960);
       const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
       renderer.setSize(w, h, false);
       applyResponsiveCameraFov(camera, w / h, 46, 46, 68);
-      if (composer) composer.setSize(w, h);
-      if (bloomPass) bloomPass.resolution.set(w, h);
+      composer?.setSize(w, h);
     };
     updateSize();
     const ro = new ResizeObserver(updateSize);
@@ -584,7 +590,7 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
 
       if (st.ball.active && !prevActive) {
         burstSystem.emit(0, 0.18, SPOT_Z, 0xa3e635, 16, 2.8);
-        trailPoints.length = 0;
+        ballRibbon.reset();
       }
       prevActive = st.ball.active;
 
@@ -611,18 +617,9 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
         ballShadow.scale.setScalar(shadowScale);
         ballShadowMat.opacity = Math.max(0.14, 0.44 - by * 0.09);
 
-        trailPoints.unshift(new THREE.Vector3(bx, by, bz));
-        if (trailPoints.length > trailCount) trailPoints.pop();
-        if (trailPoints.length >= 2) {
-          trailLine.visible = true;
-          const attr = trailGeo.attributes.position as THREE.BufferAttribute;
-          for (let i = 0; i < trailCount; i += 1) {
-            const p = trailPoints[Math.min(i, trailPoints.length - 1)];
-            attr.setXYZ(i, p.x, p.y, p.z);
-          }
-          attr.needsUpdate = true;
-          trailMat.color.set(st.shotStyle === 'power' ? '#facc15' : st.shotStyle === 'panenka' ? '#e879f9' : '#38bdf8');
-        }
+        const ribbonCol =
+          st.shotStyle === 'power' ? '#facc15' : st.shotStyle === 'panenka' ? '#e879f9' : '#38bdf8';
+        ballRibbon.push(bx, by, bz, camera.position, ribbonCol);
 
         if (st.ball.resolved && !prevResolved) {
           crowdExcitement = st.ball.outcome === 'goal' ? 1.0 : 0.65;
@@ -637,8 +634,7 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
         prevResolved = st.ball.resolved;
       } else {
         prevResolved = false;
-        trailLine.visible = false;
-        trailPoints.length = 0;
+        ballRibbon.reset();
         ballMesh.position.set(0, 0.22, SPOT_Z);
         ballMesh.rotation.set(0, 0, 0);
         ballShadow.position.set(0, 0.019, SPOT_Z);
@@ -695,12 +691,15 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
       );
       camera.lookAt(baseCamLook);
 
+      drs.sample(dt);
+      grassField.update(elapsed);
       mainStands.updateCrowd(elapsed, crowdExcitement);
       leftStands.updateCrowd(elapsed + 1.2, crowdExcitement * 0.8);
       rightStands.updateCrowd(elapsed + 2.4, crowdExcitement * 0.8);
       keeperActor.update(dt);
       strikerActor.update(dt);
       burstSystem.update(dt);
+      composer?.setDofActive(Boolean(st.winner || (st.ball.active && st.ball.resolved && st.ball.outcome === 'goal')), 12.5);
       if (composer) composer.render();
       else renderer.render(scene, camera);
 

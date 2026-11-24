@@ -439,6 +439,7 @@ function startPenaltyGame(scr) {
       skyGrad.addColorStop(0, '#050918'); skyGrad.addColorStop(1, '#132046');
       ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, 960, 290);
     }
+    if (typeof window.drawTvCameraFlashes === 'function') window.drawTvCameraFlashes(ctx, 960, 18, 250, state.powerPhase, state.phase === 'result');
 
     ctx.fillStyle = 'rgba(7,11,24,0.92)'; ctx.fillRect(0, 266, 960, 26);
     ctx.strokeStyle = kKit.jersey; ctx.lineWidth = 2; ctx.strokeRect(0, 266, 960, 26);
@@ -552,6 +553,8 @@ function startPenaltyGame(scr) {
     if (!(typeof window.drawTvSprite === 'function' && window.drawTvSprite(ctx, 'assets/games/sports/ball_soccer1.png', bx, by, r * 2.15, r * 2.15, state.flightT * (10 + Math.abs(state.curve) * 14)))) {
       ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
     }
+    if (typeof window.drawTvDirectionalBall === 'function') window.drawTvDirectionalBall(ctx, bx, by, r, 480, 40, 0.72);
+    if (state.phase === 'flight' && Math.abs(state.curve) > 0.3 && typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, bx, by, r * 2.4, '250,204,21', 0.44);
 
     for (var s2 = 0; s2 < sparks.length; s2++) {
       ctx.globalAlpha = Math.max(0, sparks[s2].l);

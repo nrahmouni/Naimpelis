@@ -4,13 +4,27 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { resolveGameAssetUrl } from '../../../shared/gameAssetsCdn';
+import { applyFresnelRimToGroup, attachSafeMeshDecoders } from './threePostFxHelpers';
 
 const GLTF_CACHE = new Map<string, Promise<GLTF | null>>();
 const TEXTURE_CACHE = new Map<string, Promise<THREE.Texture | null>>();
 const sharedGltfLoader = new GLTFLoader();
 sharedGltfLoader.setCrossOrigin('anonymous');
+attachSafeMeshDecoders(sharedGltfLoader);
 const sharedTextureLoader = new THREE.TextureLoader();
 sharedTextureLoader.setCrossOrigin('anonymous');
+
+export function getMaxSafeAnisotropy(
+  renderer: THREE.WebGLRenderer | null | undefined,
+  isSoftwareGl: boolean
+): number {
+  if (isSoftwareGl || !renderer) return 1;
+  try {
+    return Math.max(4, Math.min(16, renderer.capabilities.getMaxAnisotropy()));
+  } catch {
+    return 4;
+  }
+}
 
 export function detectSoftwareGl(): boolean {
   if (typeof document === 'undefined') return true;
@@ -182,6 +196,8 @@ export function loadCachedPbrTexture(
         }
         if (opts?.anisotropy) {
           tex.anisotropy = opts.anisotropy;
+        } else {
+          tex.anisotropy = 8;
         }
         tex.needsUpdate = true;
         resolve(tex);
@@ -548,6 +564,11 @@ export function spawnRigged3dActor(
     if (opts.primaryHex) {
       tintKit(opts.primaryHex, opts.secondaryHex);
     }
+    applyFresnelRimToGroup(cloned, {
+      colorHex: opts.primaryHex || '#38bdf8',
+      power: 3.2,
+      intensity: 0.42,
+    });
 
     if (pendingAttachments.length > 0) {
       const queue = pendingAttachments.splice(0, pendingAttachments.length);

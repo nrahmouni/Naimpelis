@@ -265,14 +265,8 @@ function mountEs5RacingFallback(stageEl, opts) {
     var playerY = camModeIdx === 1 ? H - 36 : camModeIdx === 2 ? H - 56 : H - 72;
     drawFallbackCar(W / 2, playerY, camModeIdx === 1 ? 1.35 : 1.12, '#7c3aed', '#22d3ee', steerIn * 0.14, nitroActive);
 
-    if (nitroActive) {
-      ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
-      ctx.lineWidth = 3;
-      for (var sl = 0; sl < 8; sl++) {
-        var sx = (sl % 2 === 0 ? 40 : W - 40) + (Math.random() - 0.5) * 90;
-        var sy = 90 + Math.random() * 320;
-        ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx, sy + 70); ctx.stroke();
-      }
+    if (typeof window.drawTvSpeedlines === 'function' && (nitroActive || car.speed > 105)) {
+      window.drawTvSpeedlines(ctx, W, H, nitroActive ? 0.92 : (car.speed - 105) / 110, now * 0.001, nitroActive ? '#22D3EE' : '#38BDF8');
     }
 
     if (countingDown && countdownSec > 0) {
@@ -339,6 +333,7 @@ function mountEs5RacingFallback(stageEl, opts) {
     ctx.fillRect(-32, -3, 14, 7);
     ctx.fillRect(18, -3, 14, 7);
     if (nitroOn) {
+      if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, 0, 12, 36, '34,211,238', 0.68);
       ctx.fillStyle = '#22d3ee';
       ctx.beginPath(); ctx.arc(-16, 12, 7 + Math.random() * 5, 0, Math.PI * 2); ctx.fill();
       ctx.beginPath(); ctx.arc(16, 12, 7 + Math.random() * 5, 0, Math.PI * 2); ctx.fill();

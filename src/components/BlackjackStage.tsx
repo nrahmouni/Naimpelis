@@ -59,9 +59,10 @@ const CHIP_VALUES = [
   { amount: 500, bg: 'from-violet-600 to-indigo-900 border-violet-200/70' },
 ] as const;
 
-const BjCardVisual: React.FC<{ card?: BjCard | null; faceDown?: boolean }> = ({
+const BjCardVisual: React.FC<{ card?: BjCard | null; faceDown?: boolean; foil?: boolean }> = ({
   card,
   faceDown = false,
+  foil = false,
 }) => {
   const [failedCardKey, setFailedCardKey] = useState<string | null>(null);
 
@@ -88,7 +89,11 @@ const BjCardVisual: React.FC<{ card?: BjCard | null; faceDown?: boolean }> = ({
 
   if (failedCardKey !== cardKey) {
     return (
-      <div className="w-12 h-[68px] sm:w-14 sm:h-20 rounded-xl bg-white border border-zinc-300/90 shadow-[0_8px_18px_rgba(0,0,0,0.52)] overflow-hidden select-none shrink-0">
+      <div
+        className={`relative w-12 h-[68px] sm:w-14 sm:h-20 rounded-xl bg-white border border-zinc-300/90 shadow-[0_8px_18px_rgba(0,0,0,0.52)] overflow-hidden select-none shrink-0 ${
+          foil ? 'card-foil-shimmer' : ''
+        }`}
+      >
         <img
           src={svgUrl}
           alt={`${rank} ${card.suit}`}
@@ -101,7 +106,11 @@ const BjCardVisual: React.FC<{ card?: BjCard | null; faceDown?: boolean }> = ({
   }
 
   return (
-    <div className="w-12 h-[68px] sm:w-14 sm:h-20 rounded-xl bg-gradient-to-b from-white to-zinc-100 border border-zinc-300 shadow-[0_6px_16px_rgba(0,0,0,0.45)] flex flex-col justify-between p-1.5 select-none shrink-0">
+    <div
+      className={`relative w-12 h-[68px] sm:w-14 sm:h-20 rounded-xl bg-gradient-to-b from-white to-zinc-100 border border-zinc-300 shadow-[0_6px_16px_rgba(0,0,0,0.45)] overflow-hidden flex flex-col justify-between p-1.5 select-none shrink-0 ${
+        foil ? 'card-foil-shimmer' : ''
+      }`}
+    >
       <div
         className={`text-xs font-black leading-none flex items-center gap-0.5 ${
           isRed ? 'text-rose-600' : 'text-zinc-900'
@@ -235,8 +244,8 @@ export const BlackjackStage: React.FC<BlackjackStageProps> = ({
     return (
       <div className="w-full max-w-3xl mx-auto rounded-2xl bg-[#07211a] border border-emerald-400/25 p-5 flex flex-col items-center text-center gap-4 shadow-2xl">
         <div className="flex items-center gap-2">
-          <BjCardVisual card={{ id: 'bj-1', rank: 1, suit: 'spades' }} />
-          <BjCardVisual card={{ id: 'bj-2', rank: 11, suit: 'hearts' }} />
+          <BjCardVisual card={{ id: 'bj-1', rank: 1, suit: 'spades' }} foil />
+          <BjCardVisual card={{ id: 'bj-2', rank: 11, suit: 'hearts' }} foil />
         </div>
         <div>
           <h3 className="font-display font-black text-xl text-white">Blackjack 21</h3>
@@ -360,7 +369,7 @@ export const BlackjackStage: React.FC<BlackjackStageProps> = ({
             ) : (
               <>
                 {state.dealerCards.map((c, idx) => (
-                  <BjCardVisual key={c.id || idx} card={c} />
+                  <BjCardVisual key={c.id || idx} card={c} foil={c.rank === 1 || c.rank >= 11} />
                 ))}
                 {!state.dealerHoleRevealed && <BjCardVisual faceDown />}
               </>
@@ -442,7 +451,16 @@ export const BlackjackStage: React.FC<BlackjackStageProps> = ({
                         >
                           <div className="flex items-center gap-1.5">
                             {hand.cards.map((c, cIdx) => (
-                              <BjCardVisual key={c.id || cIdx} card={c} />
+                              <BjCardVisual
+                                key={c.id || cIdx}
+                                card={c}
+                                foil={
+                                  c.rank === 1 ||
+                                  c.rank >= 11 ||
+                                  hand.outcome === 'blackjack' ||
+                                  hand.outcome === 'win'
+                                }
+                              />
                             ))}
                           </div>
 

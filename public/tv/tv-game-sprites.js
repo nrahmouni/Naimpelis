@@ -7,21 +7,45 @@
 
   var KENNEY_CDN = 'https://raw.githubusercontent.com/shorepine/kenney/main/';
   var THREE_CDN = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r170/examples/models/gltf/';
+  var POLYHAVEN_HDR_CDN = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/1k/';
+  var POLYHAVEN_TEX_CDN = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/';
   var CDN_EXACT = {
     'penalty/stadium_backdrop.jpg': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/NotreDameStadiumNight.jpg/1280px-NotreDameStadiumNight.jpg',
     'arenas/soccer_stadium.jpg': 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/fc/Camp_Nou_aerial_%28cropped%29.jpg/1280px-Camp_Nou_aerial_%28cropped%29.jpg',
     'arenas/bowling_alley.jpg': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Sunset_Lanes_bowling_alley_-_Beaverton%2C_OR_%282015%29.jpg/1280px-Sunset_Lanes_bowling_alley_-_Beaverton%2C_OR_%282015%29.jpg',
     'arenas/tennis_court.jpg': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/Wimbledon_Centre_Court_2017_cropped.jpg/1280px-Wimbledon_Centre_Court_2017_cropped.jpg',
-    'arenas/labyrinth_board.jpg': 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/oak_veneer_01/oak_veneer_01_diff_1k.jpg',
+    'arenas/labyrinth_board.jpg': POLYHAVEN_TEX_CDN + 'oak_veneer_01/oak_veneer_01_diff_1k.jpg',
+    'hdri/moonless_golf_1k.hdr': POLYHAVEN_HDR_CDN + 'moonless_golf_1k.hdr',
+    'hdri/puresky_1k.hdr': POLYHAVEN_HDR_CDN + 'kloofendal_48d_partly_cloudy_puresky_1k.hdr',
+    'hdri/studio_small_09_1k.hdr': POLYHAVEN_HDR_CDN + 'studio_small_09_1k.hdr',
+    'hdri/venice_sunset_1k.hdr': POLYHAVEN_HDR_CDN + 'venice_sunset_1k.hdr',
+    'hdri/evening_road_01_1k.hdr': POLYHAVEN_HDR_CDN + 'evening_road_01_1k.hdr',
+    'hdri/lebombo_1k.hdr': POLYHAVEN_HDR_CDN + 'lebombo_1k.hdr',
+    'rive/skills.riv': 'https://cdn.rive.app/animations/vehicles.riv',
+    'rive/vehicles.riv': 'https://cdn.rive.app/animations/vehicles.riv',
+    'pbr/oak_diff.jpg': POLYHAVEN_TEX_CDN + 'oak_veneer_01/oak_veneer_01_diff_1k.jpg',
+    'pbr/oak_rough.jpg': POLYHAVEN_TEX_CDN + 'oak_veneer_01/oak_veneer_01_rough_1k.jpg',
+    'pbr/wood_floor_diff.jpg': POLYHAVEN_TEX_CDN + 'wood_floor_deck/wood_floor_deck_diff_1k.jpg',
+    'pbr/wood_floor_nor.jpg': POLYHAVEN_TEX_CDN + 'wood_floor_deck/wood_floor_deck_nor_gl_1k.jpg',
+    'pbr/asphalt_diff.jpg': POLYHAVEN_TEX_CDN + 'asphalt_02/asphalt_02_diff_1k.jpg',
+    'pbr/asphalt_nor.jpg': POLYHAVEN_TEX_CDN + 'asphalt_02/asphalt_02_nor_gl_1k.jpg',
+    'pbr/asphalt_rough.jpg': POLYHAVEN_TEX_CDN + 'asphalt_02/asphalt_02_rough_1k.jpg',
+    'pbr/concrete_worn_diff.jpg': POLYHAVEN_TEX_CDN + 'concrete_floor_worn_001/concrete_floor_worn_001_diff_1k.jpg',
+    'pbr/grass_diff.jpg': POLYHAVEN_TEX_CDN + 'aerial_grass_rock/aerial_grass_rock_diff_1k.jpg',
+    'pbr/forrest_ground_diff.jpg': POLYHAVEN_TEX_CDN + 'forrest_ground_01/forrest_ground_01_diff_1k.jpg',
+    'pbr/rubber_tiles_diff.jpg': POLYHAVEN_TEX_CDN + 'rubber_tiles/rubber_tiles_diff_1k.jpg',
     'models/RobotExpressive.glb': THREE_CDN + 'RobotExpressive/RobotExpressive.glb',
     'models/Soldier.glb': THREE_CDN + 'Soldier.glb',
     'models/Xbot.glb': THREE_CDN + 'Xbot.glb',
     'models/Michelle.glb': THREE_CDN + 'Michelle.glb',
+    'models/CesiumMan.glb': 'https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Assets@main/Models/CesiumMan/glTF-Binary/CesiumMan.glb',
+    'models/Fox.glb': 'https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Assets@main/Models/Fox/glTF-Binary/Fox.glb',
     'models/race-future.glb': KENNEY_CDN + '3d/car/race-future.glb',
     'models/race.glb': KENNEY_CDN + '3d/car/race.glb',
     'models/sedan-sports.glb': KENNEY_CDN + '3d/car/sedan-sports.glb',
     'models/hatchback-sports.glb': KENNEY_CDN + '3d/car/hatchback-sports.glb',
     'models/suv-luxury.glb': KENNEY_CDN + '3d/car/suv-luxury.glb',
+    'models/police.glb': KENNEY_CDN + '3d/car/police.glb',
     'models/grandStandCovered.glb': KENNEY_CDN + '3d/racing/grandStandCovered.glb',
     'models/grandStandCoveredRound.glb': KENNEY_CDN + '3d/racing/grandStandCoveredRound.glb',
     'models/overheadLights.glb': KENNEY_CDN + '3d/racing/overheadLights.glb',
@@ -35,7 +59,11 @@
     'toon/male_run1.png': KENNEY_CDN + '2d/Toon%20Characters/Male%20person/Poses%20HD/character_malePerson_run1.png',
     'toon/male_run2.png': KENNEY_CDN + '2d/Toon%20Characters/Male%20person/Poses%20HD/character_malePerson_run2.png',
     'toon/male_kick.png': KENNEY_CDN + '2d/Toon%20Characters/Male%20person/Poses%20HD/character_malePerson_kick.png',
+    'toon/male_jump.png': KENNEY_CDN + '2d/Toon%20Characters/Male%20person/Poses%20HD/character_malePerson_jump.png',
     'toon/male_cheer0.png': KENNEY_CDN + '2d/Toon%20Characters/Male%20person/Poses%20HD/character_malePerson_cheer0.png',
+    'toon/female_idle.png': KENNEY_CDN + '2d/Toon%20Characters/Female%20person/Poses%20HD/character_femalePerson_idle.png',
+    'toon/female_kick.png': KENNEY_CDN + '2d/Toon%20Characters/Female%20person/Poses%20HD/character_femalePerson_kick.png',
+    'toon/female_cheer0.png': KENNEY_CDN + '2d/Toon%20Characters/Female%20person/Poses%20HD/character_femalePerson_cheer0.png',
     'toon/robot_idle.png': KENNEY_CDN + '2d/Toon%20Characters/Robot/Poses%20HD/character_robot_idle.png',
     'toon/robot_cheer0.png': KENNEY_CDN + '2d/Toon%20Characters/Robot/Poses%20HD/character_robot_cheer0.png',
     'space/blue.png': KENNEY_CDN + '2d/Space%20Shooter%20Remastered/Backgrounds/blue.png',
@@ -414,6 +442,159 @@
     };
   }
 
+  function drawTvCrtOverlay(ctx, w, h, intensity) {
+    if (!ctx || !w || !h) return;
+    var a = typeof intensity === 'number' ? intensity : 0.16;
+    if (a <= 0.01) return;
+    ctx.save();
+    ctx.fillStyle = 'rgba(0,0,0,' + (a * 0.65).toFixed(3) + ')';
+    for (var y = 0; y < h; y += 4) {
+      ctx.fillRect(0, y, w, 1);
+    }
+    var vig = ctx.createRadialGradient(w * 0.5, h * 0.5, Math.min(w, h) * 0.34, w * 0.5, h * 0.5, Math.max(w, h) * 0.72);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(1, 'rgba(0,0,0,' + Math.min(0.45, a * 1.45).toFixed(3) + ')');
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
+
+  function drawTvGlowLight(ctx, x, y, rad, rgb, alpha) {
+    if (!ctx || !rad || rad <= 0) return;
+    var r = rad;
+    var a = typeof alpha === 'number' ? alpha : 0.45;
+    var col = rgb || '56,189,248';
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    var g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(' + col + ',' + Math.min(0.95, a).toFixed(3) + ')');
+    g.addColorStop(0.45, 'rgba(' + col + ',' + (a * 0.38).toFixed(3) + ')');
+    g.addColorStop(1, 'rgba(' + col + ',0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawTvSpeedlines(ctx, w, h, intensity, timeSec, col) {
+    if (!ctx || !w || !h) return;
+    var k = Math.max(0, Math.min(1, typeof intensity === 'number' ? intensity : 0.5));
+    if (k < 0.08) return;
+    var cx = w * 0.5;
+    var cy = h * 0.5;
+    var maxR = Math.max(w, h) * 0.68;
+    var t = (timeSec || 0) * 14;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.strokeStyle = col || '#38BDF8';
+    ctx.lineCap = 'round';
+    var count = 24;
+    for (var i = 0; i < count; i++) {
+      var ang = (i / count) * Math.PI * 2 + Math.sin(i * 7.3) * 0.1;
+      var phase = (t + i * 1.37) % 3;
+      var r0 = maxR * (0.44 + (phase / 3) * 0.14);
+      var r1 = r0 + (45 + k * 135);
+      ctx.globalAlpha = (0.14 + 0.34 * k) * (1 - phase / 3.4);
+      ctx.lineWidth = 1.5 + k * 2.2;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0);
+      ctx.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function drawTvDirectionalBall(ctx, cx, cy, r, lx, ly, alpha) {
+    if (!ctx || !r || r <= 1) return;
+    var dx = (lx || 0) - cx;
+    var dy = (ly || 0) - cy;
+    var len = Math.sqrt(dx * dx + dy * dy) || 1;
+    var nx = dx / len;
+    var ny = dy / len;
+    var a = typeof alpha === 'number' ? alpha : 0.72;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.clip();
+    var sh = ctx.createRadialGradient(cx + nx * r * 0.42, cy + ny * r * 0.42, r * 0.1, cx - nx * r * 0.25, cy - ny * r * 0.25, r * 1.4);
+    sh.addColorStop(0, 'rgba(255,255,255,' + (0.42 * a).toFixed(3) + ')');
+    sh.addColorStop(0.45, 'rgba(255,255,255,0)');
+    sh.addColorStop(1, 'rgba(2,6,23,' + (0.48 * a).toFixed(3) + ')');
+    ctx.fillStyle = sh;
+    ctx.fillRect(cx - r - 1, cy - r - 1, r * 2 + 2, r * 2 + 2);
+    ctx.beginPath();
+    ctx.arc(cx + nx * r * 0.38, cy + ny * r * 0.38, Math.max(1.5, r * 0.24), 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.62 * a).toFixed(3) + ')';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function drawTvCameraFlashes(ctx, w, topY, botY, timeSec, excite) {
+    if (!ctx || !w) return;
+    var span = Math.max(12, (botY || 120) - (topY || 0));
+    var t = timeSec || 0;
+    var n = excite ? 18 : 10;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (var i = 0; i < n; i++) {
+      var bucket = Math.floor(t * (excite ? 6 : 3) + i * 2.13);
+      var h = Math.sin(bucket * 12.9898 + i * 78.233) * 43758.5453;
+      var frac = h - Math.floor(h);
+      if (frac > (excite ? 0.42 : 0.22)) continue;
+      var fx = ((Math.sin(bucket * 4.1 + i * 19.7) * 0.5 + 0.5) * (w - 40)) + 20;
+      var fy = (topY || 0) + ((Math.cos(bucket * 3.3 + i * 11.1) * 0.5 + 0.5) * span);
+      var rad = (excite ? 16 : 10) + frac * 14;
+      var g = ctx.createRadialGradient(fx, fy, 0, fx, fy, rad);
+      g.addColorStop(0, 'rgba(255,255,255,0.85)');
+      g.addColorStop(0.35, 'rgba(186,230,253,0.35)');
+      g.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(fx, fy, rad, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawTvNebulaLayer(ctx, w, h, timeSec, theme) {
+    if (!ctx || !w || !h) return;
+    var t = timeSec || 0;
+    ctx.save();
+    if (theme === 'sky') {
+      ctx.fillStyle = 'rgba(255,255,255,0.14)';
+      for (var c = 0; c < 4; c++) {
+        var cx = ((w + 260) - ((t * (18 + c * 7) + c * 280) % (w + 260))) - 80;
+        var cy = 58 + c * 42 + Math.sin(t + c) * 8;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 34 + (c % 2) * 10, 0, Math.PI * 2);
+        ctx.arc(cx + 32, cy - 10, 28, 0, Math.PI * 2);
+        ctx.arc(cx + 62, cy + 2, 24, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      return;
+    }
+    ctx.globalCompositeOperation = 'lighter';
+    var cols = theme === 'cyber'
+      ? ['56,189,248', '168,85,247', '34,211,238']
+      : ['99,102,241', '236,72,153', '14,165,233'];
+    for (var i = 0; i < 3; i++) {
+      var bx = w * (0.25 + i * 0.25) + Math.sin(t * (0.22 + i * 0.08) + i * 2) * (w * 0.09);
+      var by = h * (0.3 + (i % 2) * 0.35) + Math.cos(t * (0.19 + i * 0.06) + i) * (h * 0.08);
+      var rr = Math.min(w, h) * (0.34 + (i % 2) * 0.1);
+      var ng = ctx.createRadialGradient(bx, by, 0, bx, by, rr);
+      ng.addColorStop(0, 'rgba(' + cols[i] + ',0.13)');
+      ng.addColorStop(0.55, 'rgba(' + cols[i] + ',0.04)');
+      ng.addColorStop(1, 'rgba(' + cols[i] + ',0)');
+      ctx.fillStyle = ng;
+      ctx.beginPath();
+      ctx.arc(bx, by, rr, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   window.resolveTvGameAssetUrl = resolveSpriteUrl;
   window.getTvGameSprite = getTvGameSprite;
   window.preloadTvGameSprites = preloadTvGameSprites;
@@ -425,4 +606,11 @@
   window.createTvDualQrLobby = createTvDualQrLobby;
   window.connectTvGyroBridge = connectTvGyroBridge;
   window.closeTvGyroBridge = closeTvGyroBridge;
+  window.drawTvCrtOverlay = drawTvCrtOverlay;
+  window.drawTvGlowLight = drawTvGlowLight;
+  window.drawTvSpeedlines = drawTvSpeedlines;
+  window.drawTvDirectionalBall = drawTvDirectionalBall;
+  window.drawTvCameraFlashes = drawTvCameraFlashes;
+  window.drawTvNebulaLayer = drawTvNebulaLayer;
 })();
+

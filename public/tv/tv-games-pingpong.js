@@ -361,7 +361,10 @@ function startTvPingPongGame(scr) {
     function drawPaddle(nx, ny, mainCol, rimCol, woodCol, handleDown, smashT, big) {
       var sh = proj(nx, ny, 0), p = proj(nx, ny, 0.08), rx = (big ? 50 : 44) * p.scale, ry = (big ? 22 : 19) * p.scale;
       ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.beginPath(); ctx.ellipse(sh.x, sh.y + 4, rx * 0.9, ry * 0.65, 0, 0, Math.PI * 2); ctx.fill();
-      if (smashT > 0) { ctx.strokeStyle = 'rgba(250,204,21,0.55)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(p.x, p.y, rx + 7, ry + 5, 0, 0, Math.PI * 2); ctx.stroke(); }
+      if (smashT > 0) {
+        if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, p.x, p.y, rx * 1.35, '250,204,21', 0.46);
+        ctx.strokeStyle = 'rgba(250,204,21,0.55)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(p.x, p.y, rx + 7, ry + 5, 0, 0, Math.PI * 2); ctx.stroke();
+      }
       ctx.fillStyle = woodCol; ctx.fillRect(p.x - 6 * p.scale, handleDown ? p.y + ry * 0.72 : p.y - ry * 1.55, 12 * p.scale, 18 * p.scale);
       var rGrad = ctx.createRadialGradient(p.x - rx * 0.3, p.y - ry * 0.35, 3, p.x, p.y, rx);
       rGrad.addColorStop(0, rimCol); rGrad.addColorStop(0.65, mainCol); rGrad.addColorStop(1, '#0F172A');
@@ -393,6 +396,7 @@ function startTvPingPongGame(scr) {
     ballGrad.addColorStop(0, '#FFFFFF'); ballGrad.addColorStop(0.55, '#FEF08A'); ballGrad.addColorStop(1, '#EA580C');
     ctx.fillStyle = ballGrad; ctx.beginPath(); ctx.arc(bPos.x, bPos.y, bR, 0, Math.PI * 2); ctx.fill();
     ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.2; ctx.stroke();
+    if (typeof window.drawTvDirectionalBall === 'function') window.drawTvDirectionalBall(ctx, bPos.x, bPos.y, bR, W * 0.5, 40, 0.65);
 
     drawPaddle(st.p1.x, st.p1.y, '#0891B2', '#67E8F9', '#92400E', true, st.p1.smashT, true);
 

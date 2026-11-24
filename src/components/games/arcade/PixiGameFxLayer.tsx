@@ -21,6 +21,18 @@ export interface PixiGameFxHandle {
   emitBurst: (normX: number, normY: number, preset?: PixiFxPreset, count?: number) => void;
 }
 
+const EXPLOSION_FLIPBOOK = [
+  'assets/games/explosion/groundExplosion00.png',
+  'assets/games/explosion/groundExplosion01.png',
+  'assets/games/explosion/groundExplosion02.png',
+  'assets/games/explosion/groundExplosion03.png',
+  'assets/games/explosion/groundExplosion04.png',
+  'assets/games/explosion/groundExplosion05.png',
+  'assets/games/explosion/groundExplosion06.png',
+  'assets/games/explosion/groundExplosion07.png',
+  'assets/games/explosion/groundExplosion08.png',
+] as const;
+
 const FX_SPRITES: Record<PixiFxPreset, readonly string[]> = {
   goal: [
     'assets/games/particles/star_07.png',
@@ -120,6 +132,9 @@ interface ActivePixiParticle {
   maxLife: number;
   baseScale: number;
   growFactor: number;
+  flipbook?: readonly string[];
+  tumbleFreq?: number;
+  alignVelocity?: boolean;
 }
 
 interface ActivePixiRing {
@@ -169,7 +184,9 @@ export const PixiGameFxLayer = React.forwardRef<
     const app = new Application();
     const particleContainer = new Container();
 
-    const uniquePaths = Array.from(new Set(Object.values(FX_SPRITES).flat()));
+    const uniquePaths = Array.from(
+      new Set([...Object.values(FX_SPRITES).flat(), ...EXPLOSION_FLIPBOOK])
+    );
 
     void (async () => {
       try {
@@ -233,11 +250,31 @@ export const PixiGameFxLayer = React.forwardRef<
             p.sprite.y += p.vy * dt;
             p.vx *= 0.96;
             p.vy = p.vy * 0.96 + 90 * dt;
-            p.sprite.rotation += p.vr * dt;
             const norm = p.life / p.maxLife;
+            if (p.flipbook && p.flipbook.length > 0) {
+              const fIdx = Math.min(
+                p.flipbook.length - 1,
+                Math.max(0, Math.floor((1 - norm) * p.flipbook.length))
+              );
+              const nextTex = texturesRef.current.get(p.flipbook[fIdx]);
+              if (nextTex && p.sprite.texture !== nextTex) {
+                p.sprite.texture = nextTex;
+              }
+            }
             p.sprite.alpha = Math.min(1, norm * 1.35);
             const sc = p.baseScale * (1 + (1 - norm) * p.growFactor);
-            p.sprite.scale.set(sc);
+            if (p.alignVelocity) {
+              p.sprite.rotation = Math.atan2(p.vy, p.vx);
+              p.sprite.scale.set(sc * 1.45, sc * 0.65);
+            } else if (p.tumbleFreq) {
+              p.sprite.rotation += p.vr * dt;
+              const spin = Math.cos((1 - norm) * p.tumbleFreq);
+              const clampedSpin = Math.abs(spin) < 0.16 ? 0.16 * Math.sign(spin || 1) : spin;
+              p.sprite.scale.set(sc * clampedSpin, sc);
+            } else {
+              p.sprite.rotation += p.vr * dt;
+              p.sprite.scale.set(sc);
+            }
           }
 
           const ringList = ringsRef.current;
@@ -319,6 +356,39 @@ export const PixiGameFxLayer = React.forwardRef<
           });
         }
 
+        if (preset === 'explosion') {
+          const firstTex = texturesRef.current.get(EXPLOSION_FLIPBOOK[0]);
+          if (firstTex) {
+            const boomCount = count > 16 ? 2 : 1;
+            for (let b = 0; b < boomCount; b += 1) {
+              const bSpr = new Sprite(firstTex);
+              bSpr.anchor.set(0.5);
+              bSpr.position.set(cx + (b - 0.5) * 14, cy + (b - 0.5) * 10);
+              if (useAdditiveRef.current) bSpr.blendMode = 'add';
+              bSpr.tint = tints[b % tints.length];
+              const bScale = (82 / Math.max(32, firstTex.width || 128)) * (0.9 + b * 0.2);
+              bSpr.scale.set(bScale);
+              container.addChild(bSpr);
+              particlesRef.current.push({
+                sprite: bSpr,
+                vx: (b - 0.5) * 28,
+                vy: -22,
+                vr: (Math.random() - 0.5) * 1.4,
+                life: 0.48,
+                maxLife: 0.48,
+                baseScale: bScale,
+                growFactor: 0.85,
+                flipbook: EXPLOSION_FLIPBOOK,
+              });
+            }
+          }
+        }
+
+        const isVelocitySpark =
+          preset === 'spark' || preset === 'hit' || preset === 'smash' || preset === 'boost' || preset === 'explosion';
+        const isConfettiTumble =
+          preset === 'goal' || preset === 'victory' || preset === 'strike';
+
         for (let i = 0; i < count; i += 1) {
           const relPath = paths[i % paths.length];
           const tex = texturesRef.current.get(relPath);
@@ -348,6 +418,8 @@ export const PixiGameFxLayer = React.forwardRef<
             maxLife: preset === 'victory' || preset === 'strike' ? 0.85 : 0.55,
             baseScale,
             growFactor: preset === 'explosion' ? 0.9 : 0.45,
+            alignVelocity: isVelocitySpark,
+            tumbleFreq: isConfettiTumble ? 9 + Math.random() * 7 : undefined,
           });
         }
       },

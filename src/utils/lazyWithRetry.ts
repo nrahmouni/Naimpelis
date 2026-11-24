@@ -32,7 +32,7 @@ function errorMessage(err: Error): string {
  */
 export function lazyWithRetry<T extends ComponentType<any>>(
   factory: () => Promise<{ default: T }>,
-  retries = 3
+  retries = 4
 ): React.LazyExoticComponent<T> {
   return React.lazy(async () => {
     let lastErr: unknown;
@@ -42,7 +42,7 @@ export function lazyWithRetry<T extends ComponentType<any>>(
       } catch (err) {
         lastErr = err;
         if (attempt < retries) {
-          await delay(250 * (attempt + 1));
+          await delay(350 * (attempt + 1));
         }
       }
     }

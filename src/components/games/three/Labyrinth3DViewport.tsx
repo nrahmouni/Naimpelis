@@ -1,9 +1,5 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import {
   applyPolyHavenHdri,
   applyResponsiveCameraFov,
@@ -13,9 +9,15 @@ import {
   createThreeFramePacer,
   createWoodPlankTexture,
   detectSoftwareGl,
+  getMaxSafeAnisotropy,
   initRoomEnvironment,
   loadCachedPbrTexture,
 } from '../arcade/threeProHelpers';
+import {
+  applyFresnelRimShader,
+  createDrsController,
+  createProPostComposer,
+} from '../arcade/threePostFxHelpers';
 
 export interface Labyrinth3DSnapshot {
   level: number;
@@ -116,7 +118,8 @@ export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef
     const boardW = cols * CELL_SIZE;
     const boardD = rows * CELL_SIZE;
 
-    const boardWoodTex = createWoodPlankTexture('#cb8e51', '#b4763c', isSoftwareGl ? 1 : 4);
+    const maxAniso = getMaxSafeAnisotropy(renderer, isSoftwareGl);
+    const boardWoodTex = createWoodPlankTexture('#cb8e51', '#b4763c', maxAniso);
     boardWoodTex.repeat.set(2, 2);
     disposables.push(boardWoodTex);
 
@@ -309,6 +312,9 @@ export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef
       roughness: 0.08,
       clearcoat: 1.0,
     });
+    applyFresnelRimShader(ball1Mat, { colorHex: '#38bdf8', power: 2.6, intensity: 0.55 });
+    applyFresnelRimShader(ball2Mat, { colorHex: '#fb7185', power: 2.6, intensity: 0.55 });
+    applyFresnelRimShader(exitRingMat, { colorHex: '#6ee7b7', power: 2.4, intensity: 0.5 });
     const shadowGeo = new THREE.CircleGeometry(0.28, 16);
     const shadowMat = new THREE.MeshBasicMaterial({
       color: '#000000',
@@ -335,23 +341,31 @@ export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef
 
     const burstSystem = create3dParticleBurstSystem(boardGroup, 96);
 
-    let composer: EffectComposer | null = null;
-    let bloomPass: UnrealBloomPass | null = null;
-    if (!isSoftwareGl) {
-      composer = new EffectComposer(renderer);
-      composer.addPass(new RenderPass(scene, camera));
-      bloomPass = new UnrealBloomPass(new THREE.Vector2(920, 520), 0.34, 0.45, 0.85);
-      composer.addPass(bloomPass);
-      composer.addPass(new OutputPass());
-    }
+    const initW = Math.max(320, host.clientWidth || 920);
+    const initH = Math.max(200, host.clientHeight || Math.round((initW * 9) / 16));
+    const composer = createProPostComposer(renderer, scene, camera, {
+      width: initW,
+      height: initH,
+      isSoftwareGl,
+      bloom: { strength: 0.34, radius: 0.45, threshold: 0.85 },
+      ssao: true,
+      smaa: true,
+    });
+    const drs = createDrsController(renderer, {
+      isSoftwareGl,
+      onScaleChange: () => {
+        const w = Math.max(320, host.clientWidth || 920);
+        const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+        composer?.setSize(w, h);
+      },
+    });
 
     const updateSize = () => {
       const w = Math.max(320, host.clientWidth || 920);
       const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
       renderer.setSize(w, h, false);
       applyResponsiveCameraFov(camera, w / h, 42, 42, 66);
-      if (composer) composer.setSize(w, h);
-      if (bloomPass) bloomPass.resolution.set(w, h);
+      composer?.setSize(w, h);
     };
     updateSize();
     const ro = new ResizeObserver(updateSize);
@@ -428,6 +442,7 @@ export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef
         burstSystem.emit(b1p.x, 0.5, b1p.z, 0x10b981, 40, 6.0);
       }
 
+      drs.sample(dt);
       burstSystem.update(dt);
       if (composer) composer.render();
       else renderer.render(scene, camera);

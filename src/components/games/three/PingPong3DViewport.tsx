@@ -1,9 +1,5 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import {
   applyPolyHavenHdri,
   applyResponsiveCameraFov,
@@ -14,8 +10,16 @@ import {
   createWoodPlankTexture,
   createWovenNetTexture,
   detectSoftwareGl,
+  getMaxSafeAnisotropy,
   initRoomEnvironment,
 } from '../arcade/threeProHelpers';
+import {
+  applyFresnelRimShader,
+  applyFresnelRimToGroup,
+  create3dRibbonTrail,
+  createDrsController,
+  createProPostComposer,
+} from '../arcade/threePostFxHelpers';
 
 export interface PingPong3DSnapshot {
   p1: { x: number; y: number; vx: number; smashT: number };
@@ -161,7 +165,8 @@ export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
     const disposables: Array<{ dispose: () => void }> = [arenaSkyTex];
 
     // Gym Parquet Arena Floor + Tournament Court Barriers
-    const gymWoodTex = createWoodPlankTexture('#1f2d47', '#18243a', isSoftwareGl ? 1 : 4);
+    const maxAniso = getMaxSafeAnisotropy(renderer, isSoftwareGl);
+    const gymWoodTex = createWoodPlankTexture('#1f2d47', '#18243a', maxAniso);
     gymWoodTex.repeat.set(8, 8);
     disposables.push(gymWoodTex);
     const floorGeo = new THREE.PlaneGeometry(36, 36);
@@ -295,13 +300,15 @@ export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
     scene.add(postL, postR);
     disposables.push(netTex, netMat, netGeo, tapeGeo, postGeo);
 
-    // Composite 3D Rackets (P1 Cyan vs P2 Coral)
+    // Composite 3D Rackets (P1 Cyan vs P2 Coral) + Fresnel Rim Glow
     const racket1 = createTableTennisRacket('#06b6d4', '#22d3ee');
     const racket2 = createTableTennisRacket('#e11d48', '#fda4af');
+    applyFresnelRimToGroup(racket1.group, { colorHex: '#22d3ee', power: 2.8, intensity: 0.48 });
+    applyFresnelRimToGroup(racket2.group, { colorHex: '#fb7185', power: 2.8, intensity: 0.48 });
     scene.add(racket1.group, racket2.group);
     disposables.push(...racket1.disposables, ...racket2.disposables);
 
-    // 3-Star Ping Pong Ball + Contact Shadow + Flight Trail
+    // 3-Star Ping Pong Ball + Fresnel + Contact Shadow + Volumetric Flight Ribbon
     const ballGeo = new THREE.SphereGeometry(0.068, 18, 14);
     const ballMat = new THREE.MeshPhysicalMaterial({
       color: '#fb923c',
@@ -310,6 +317,7 @@ export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
       roughness: 0.28,
       clearcoat: 0.8,
     });
+    applyFresnelRimShader(ballMat, { colorHex: '#fde047', power: 2.6, intensity: 0.5 });
     const ballMesh = new THREE.Mesh(ballGeo, ballMat);
     ballMesh.castShadow = !isSoftwareGl;
     scene.add(ballMesh);
@@ -325,19 +333,9 @@ export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
     ballShadow.rotation.x = -Math.PI / 2;
     scene.add(ballShadow);
 
-    const TRAIL_N = 14;
-    const trailPos = new Float32Array(TRAIL_N * 3);
-    const trailGeo = new THREE.BufferGeometry();
-    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPos, 3));
-    const trailMat = new THREE.LineBasicMaterial({
-      color: '#22d3ee',
-      transparent: true,
-      opacity: 0.72,
-    });
-    const trailLine = new THREE.Line(trailGeo, trailMat);
-    scene.add(trailLine);
-    const trailHistory: Array<[number, number, number]> = [];
-    disposables.push(ballGeo, ballMat, bShadowGeo, bShadowMat, trailGeo, trailMat);
+    const ballRibbon = create3dRibbonTrail(16, '#22d3ee', 0.14, { opacity: 0.8 });
+    scene.add(ballRibbon.mesh);
+    disposables.push(ballGeo, ballMat, bShadowGeo, bShadowMat, ballRibbon);
 
     // Pooled Bounce Ripple Rings
     const RING_POOL = 8;
@@ -363,23 +361,31 @@ export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
 
     const burstSystem = create3dParticleBurstSystem(scene, 84);
 
-    let composer: EffectComposer | null = null;
-    let bloomPass: UnrealBloomPass | null = null;
-    if (!isSoftwareGl) {
-      composer = new EffectComposer(renderer);
-      composer.addPass(new RenderPass(scene, camera));
-      bloomPass = new UnrealBloomPass(new THREE.Vector2(920, 520), 0.36, 0.42, 0.85);
-      composer.addPass(bloomPass);
-      composer.addPass(new OutputPass());
-    }
+    const initW = Math.max(320, host.clientWidth || 920);
+    const initH = Math.max(200, host.clientHeight || Math.round((initW * 9) / 16));
+    const composer = createProPostComposer(renderer, scene, camera, {
+      width: initW,
+      height: initH,
+      isSoftwareGl,
+      bloom: { strength: 0.36, radius: 0.42, threshold: 0.85 },
+      ssao: true,
+      smaa: true,
+    });
+    const drs = createDrsController(renderer, {
+      isSoftwareGl,
+      onScaleChange: () => {
+        const w = Math.max(320, host.clientWidth || 920);
+        const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+        composer?.setSize(w, h);
+      },
+    });
 
     const updateSize = () => {
       const w = Math.max(320, host.clientWidth || 920);
       const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
       renderer.setSize(w, h, false);
       applyResponsiveCameraFov(camera, w / h, 44, 44, 65);
-      if (composer) composer.setSize(w, h);
-      if (bloomPass) bloomPass.resolution.set(w, h);
+      composer?.setSize(w, h);
     };
     updateSize();
     const ro = new ResizeObserver(updateSize);
@@ -441,16 +447,8 @@ export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
       ballShadow.scale.setScalar(sScale);
       bShadowMat.opacity = Math.max(0.12, 0.38 - Math.max(0, st.ball.z) * 0.15);
 
-      // Trail Ribbon
-      trailHistory.unshift([bx, by, bz]);
-      if (trailHistory.length > TRAIL_N) trailHistory.pop();
-      const attr = trailGeo.attributes.position as THREE.BufferAttribute;
-      for (let i = 0; i < TRAIL_N; i += 1) {
-        const pt = trailHistory[Math.min(i, trailHistory.length - 1)] || [bx, by, bz];
-        attr.setXYZ(i, pt[0], pt[1], pt[2]);
-      }
-      attr.needsUpdate = true;
-      trailMat.color.set(st.ball.lastHit === 1 ? '#22d3ee' : '#fb7185');
+      // Volumetric Ball Ribbon Trail
+      ballRibbon.push(bx, by, bz, camera.position, st.ball.lastHit === 1 ? '#22d3ee' : '#fb7185');
 
       // Bounce Rings
       for (let i = 0; i < RING_POOL; i += 1) {
@@ -485,6 +483,7 @@ export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
       camera.position.x = THREE.MathUtils.damp(camera.position.x, targetCamX, 6, dt);
       camera.lookAt(bx * 0.12, TABLE_Y + 0.16, -0.25);
 
+      drs.sample(dt);
       burstSystem.update(dt);
       if (composer) composer.render();
       else renderer.render(scene, camera);

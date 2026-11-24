@@ -8,10 +8,16 @@ import type {
 import {
   POOL_BALL_R,
   POOL_POCKETS,
+  POOL_TABLE_H,
+  POOL_TABLE_W,
   computeAimPrediction,
   getBallGroup,
   isOnEightBall,
 } from '../../shared/pool8Ball';
+import {
+  drawDynamicBallShadowAndSpec,
+  drawDynamicPointLight,
+} from './arcade/canvas2dFxHelpers';
 export {
   RAIL_PAD,
   createFeltNoisePattern,
@@ -254,6 +260,14 @@ export function drawPoolBall(
   if (alphaOverride < 1) ctx.globalAlpha = alphaOverride;
   ctx.translate(ball.x, ball.y);
 
+  const lampX = ball.x < POOL_TABLE_W * 0.5 ? POOL_TABLE_W * 0.28 : POOL_TABLE_W * 0.72;
+  const lampY = POOL_TABLE_H * 0.5;
+  const lampFx = drawDynamicBallShadowAndSpec(ctx, 0, 0, r, lampX - ball.x, lampY - ball.y, 0.28);
+  ctx.save();
+  ctx.globalAlpha *= 0.42;
+  lampFx.drawShadow();
+  ctx.restore();
+
   if (shadowSprite) {
     ctx.drawImage(shadowSprite, -r * 1.15 + 2.2, -r * 1.15 + 3.0, r * 2.3, r * 2.3);
   } else {
@@ -325,6 +339,7 @@ export function drawPoolBall(
   if (shadeSprite) {
     ctx.drawImage(shadeSprite, -r, -r, r * 2, r * 2);
   }
+  lampFx.drawSpecular();
 
   ctx.strokeStyle = ball.id === 8 ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.28)';
   ctx.lineWidth = Math.max(0.6, 1 / Math.max(0.5, scale));
@@ -435,6 +450,7 @@ export function drawPoolDynamicOverlay(p: PoolDynamicDrawParams): void {
         ctx.beginPath();
         ctx.arc(pf.x, pf.y, pf.r + ease * 10, 0, Math.PI * 2);
         ctx.stroke();
+        drawDynamicPointLight(ctx, pf.x, pf.y, pf.r * 2.3, '16, 185, 129', (1 - ease) * 0.55);
       }
     }
     pocketFlashesRef.current = nextFlashes;

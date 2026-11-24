@@ -115,6 +115,8 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
   const gyroP2Ref = useRef<{ steer: number; jump: boolean; kick: boolean; expiresAt: number }>({ steer: 0, jump: false, kick: false, expiresAt: 0 });
   const activePointersRef = useRef<Map<number, keyof HeadSoccerInput>>(new Map());
   const confettiRef = useRef<ConfettiDot[]>([]);
+  const ballTrailRef = useRef<Array<{ x: number; y: number }>>([]);
+  const hitStopUntilRef = useRef(0);
   const lastSyncSentAtRef = useRef(0);
   const lastInputSentJsonRef = useRef('');
   const lastSeqAppliedRef = useRef(-1);
@@ -164,6 +166,8 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
       const fresh = createHeadSoccerSimulation(s0, s1);
       simRef.current = fresh;
       confettiRef.current = [];
+      ballTrailRef.current = [];
+      hitStopUntilRef.current = 0;
       lastSeqAppliedRef.current = -1;
       setHudSnapshot({
         scores: fresh.scores,
@@ -338,7 +342,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
         ? sim.phase !== 'finished'
         : effectiveState?.status === 'playing' && sim.phase !== 'finished';
 
-      if (matchActive && isSimAuthority) {
+      if (matchActive && isSimAuthority && now >= hitStopUntilRef.current) {
         const tNowHs = Date.now();
         const useG1Hs = tNowHs < gyroP1Ref.current.expiresAt;
         const useG2Hs = tNowHs < gyroP2Ref.current.expiresAt;
@@ -367,6 +371,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
         if (events.superShot) {
           playGameSfx('chapas_goal', muted);
           triggerHaptic('success');
+          hitStopUntilRef.current = now + 28;
           pixiFxRef.current?.emitBurst(
             Math.max(0.05, Math.min(0.95, sim.ball.x / HS_ARENA_W)),
             Math.max(0.1, Math.min(0.9, sim.ball.y / HS_ARENA_H)),
@@ -380,6 +385,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
           playGameSfx('board_move', muted);
         } else if (events.postHit) {
           playGameSfx('chapas_bounce', muted);
+          hitStopUntilRef.current = now + 28;
           pixiFxRef.current?.emitBurst(
             Math.max(0.05, Math.min(0.95, sim.ball.x / HS_ARENA_W)),
             Math.max(0.1, Math.min(0.9, sim.ball.y / HS_ARENA_H)),
@@ -392,6 +398,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
           playGameSfx('chapas_goal', muted);
           triggerHaptic('success');
           fireVictoryConfetti('goal');
+          ballTrailRef.current = [];
           pixiFxRef.current?.emitBurst(events.goalScoredBy === 0 ? 0.92 : 0.08, 0.58, 'goal', 24);
           const gx = events.goalScoredBy === 0 ? HS_ARENA_W - HS_GOAL_W : HS_GOAL_W;
           const colors = ['#FACC15', '#9146FF', '#22C55E', '#38BDF8', '#FFFFFF'];
@@ -408,6 +415,11 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
               life: 1.5,
             });
           }
+        } else if (Math.hypot(sim.ball.vx, sim.ball.vy) > 160 || (sim.ball.superTrail ?? 0) > 0.05) {
+          ballTrailRef.current.push({ x: sim.ball.x, y: sim.ball.y });
+          if (ballTrailRef.current.length > 8) ballTrailRef.current.shift();
+        } else if (ballTrailRef.current.length > 0) {
+          ballTrailRef.current.shift();
         }
 
         if (events.matchEnded) {
@@ -486,7 +498,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
             effectiveState?.players[1]?.skinId || 'furia',
             sim.superCharge?.[1] ?? 0
           );
-          drawSoccerBall(ctx, sim.ball);
+          drawSoccerBall(ctx, sim.ball, ballTrailRef.current);
           drawGoals(ctx, sim.netRipple ?? 0, sim.goalBannerSide, now / 1000);
 
           // Confetti (Kenney Particle Pack stars + ribbons)
@@ -554,6 +566,8 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
     const fresh = createHeadSoccerSimulation(chosen, rival);
     simRef.current = fresh;
     confettiRef.current = [];
+    ballTrailRef.current = [];
+    hitStopUntilRef.current = 0;
     setOfflineSim(fresh);
     setHudSnapshot({
       scores: fresh.scores,

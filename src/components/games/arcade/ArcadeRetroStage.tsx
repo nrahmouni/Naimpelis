@@ -5,6 +5,7 @@ import {
   Compass,
   Crosshair,
   Flame,
+  Monitor,
   QrCode,
   RotateCcw,
   Trophy,
@@ -27,6 +28,13 @@ import {
 } from './arcadeSprites';
 import { PixiGameFxLayer, type PixiGameFxHandle } from './PixiGameFxLayer';
 import { HexGL3DViewport, type HexGL3DSnapshot } from '../three/HexGL3DViewport';
+import {
+  CrtOverlayLayer,
+  computeSquashStretch,
+  drawDynamicPointLight,
+  drawMotionSmearTrail,
+  drawProceduralNebulaBackdrop,
+} from './canvas2dFxHelpers';
 
 const BRICK_SPRITES = [
   'assets/games/puzzle/element_red_rectangle_glossy.png',
@@ -94,6 +102,7 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
   const [gameOverMsg, setGameOverMsg] = useState('');
   const [showQrModal, setShowQrModal] = useState(false);
   const [controllers, setControllers] = useState<DualGyroControllerPeer[]>([]);
+  const [crtEnabled, setCrtEnabled] = useState(true);
 
   const effectiveRoomId = useMemo(
     () => (roomId || socketService.getActiveRoomId() || `${gameId}-local`).trim().toLowerCase(),
@@ -252,6 +261,7 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
       const COLS = ['#F43F5E', '#FACC15', '#22C55E', '#38BDF8', '#A855F7', '#94A3B8'];
       let padX = 480;
       let padW = 132;
+      let padImpactTimer = 0;
       let laserTimer = 0;
       let balls: Array<{ x: number; y: number; vx: number; vy: number; trail?: Array<{ x: number; y: number }> }> = [];
       let bricks: Array<{ x: number; y: number; w: number; h: number; hp: number; col: string; spriteIdx: number }> = [];
@@ -320,6 +330,7 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
         if (wsReset && !prevReset && dead) reset();
         prevReset = wsReset;
         const effectiveDir = Math.abs(ctrlRef.current.dir) > 0 ? ctrlRef.current.dir : gyroDir;
+        if (padImpactTimer > 0) padImpactTimer = Math.max(0, padImpactTimer - dt * 6);
         if (!dead) {
           padX = Math.max(padW / 2 + 12, Math.min(948 - padW / 2, padX + effectiveDir * 560 * dt));
           if (laserTimer > 0) laserTimer = Math.max(0, laserTimer - dt);
@@ -369,6 +380,7 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
               bl.vx = hit * spd * 0.85;
               bl.vy = -Math.sqrt(Math.max(14000, spd * spd - bl.vx * bl.vx));
               bl.y = 483;
+              padImpactTimer = 1;
               playArcadeSfx(440, 0.04, 'triangle', 0.05, mutedRef.current);
             }
             for (let j = bricks.length - 1; j >= 0; j -= 1) {
@@ -432,11 +444,7 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
           }
         });
         caps.forEach((cp) => {
-          const glow = ctx.createRadialGradient(cp.x, cp.y, 2, cp.x, cp.y, 20);
-          glow.addColorStop(0, cp.kind === 'M' ? 'rgba(34,197,94,0.45)' : cp.kind === 'L' ? 'rgba(244,63,94,0.45)' : 'rgba(56,189,248,0.45)');
-          glow.addColorStop(1, 'rgba(0,0,0,0)');
-          ctx.fillStyle = glow;
-          ctx.beginPath(); ctx.arc(cp.x, cp.y, 20, 0, Math.PI * 2); ctx.fill();
+          drawDynamicPointLight(ctx, cp.x, cp.y, 26, cp.kind === 'M' ? '34, 197, 94' : cp.kind === 'L' ? '244, 63, 94' : '56, 189, 248', 0.45);
           const pill = cp.kind === 'M' ? 'assets/games/space/pill_green.png' : cp.kind === 'L' ? 'assets/games/space/pill_red.png' : 'assets/games/space/pill_blue.png';
           if (!drawArcadeSprite(ctx, pill, cp.x, cp.y, 28, 22)) {
             ctx.fillStyle = cp.kind === 'M' ? '#22C55E' : cp.kind === 'L' ? '#F43F5E' : '#38BDF8';
@@ -448,32 +456,29 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
           ctx.fillText(cp.kind, cp.x, cp.y + 4);
         });
         lasers.forEach((l) => {
+          drawDynamicPointLight(ctx, l.x, l.y, 20, '244, 63, 94', 0.55);
           if (!drawArcadeSprite(ctx, 'assets/games/space/laserRed01.png', l.x, l.y, 8, 24)) {
             ctx.fillStyle = '#F43F5E';
             ctx.fillRect(l.x - 2, l.y - 12, 4, 16);
           }
         });
+        const padSquash = computeSquashStretch(padImpactTimer, 0, 0.24);
         ctx.save();
+        ctx.translate(padX, 497);
+        ctx.scale(padSquash.scaleX, padSquash.scaleY);
         ctx.shadowColor = laserTimer > 0 ? '#F43F5E' : '#38BDF8';
         ctx.shadowBlur = 14;
         const padSprite = laserTimer > 0 ? 'assets/games/puzzle/paddleRed.png' : 'assets/games/puzzle/paddleBlu.png';
-        if (!drawArcadeSpriteRect(ctx, padSprite, padX - padW / 2, 486, padW, 22)) {
+        if (!drawArcadeSpriteRect(ctx, padSprite, -padW / 2, -11, padW, 22)) {
           ctx.fillStyle = laserTimer > 0 ? '#F43F5E' : '#7C3AED';
-          ctx.fillRect(padX - padW / 2, 490, padW, 16);
+          ctx.fillRect(-padW / 2, -7, padW, 16);
         }
         ctx.restore();
         balls.forEach((b) => {
-          if (b.trail) {
-            for (let ti = 0; ti < b.trail.length; ti += 1) {
-              const tp = b.trail[ti];
-              ctx.globalAlpha = ((ti + 1) / b.trail.length) * 0.28;
-              ctx.fillStyle = '#38BDF8';
-              ctx.beginPath();
-              ctx.arc(tp.x, tp.y, 7 * ((ti + 1) / b.trail.length), 0, Math.PI * 2);
-              ctx.fill();
-            }
-            ctx.globalAlpha = 1;
+          if (b.trail && b.trail.length >= 2) {
+            drawMotionSmearTrail(ctx, [...b.trail, { x: b.x, y: b.y }], 6.5, '56, 189, 248', 0.36);
           }
+          drawDynamicPointLight(ctx, b.x, b.y, 20, '56, 189, 248', 0.34);
           if (!drawArcadeSprite(ctx, 'assets/games/puzzle/ballBlue.png', b.x, b.y, 18, 18)) {
             ctx.fillStyle = '#FDE047';
             ctx.beginPath();
@@ -639,6 +644,7 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
         ctx.fillStyle = '#04060d';
         ctx.fillRect(0, 0, 960, 540);
         drawArcadeTiledBg(ctx, 'assets/games/space/darkPurple.png', 960, 540, 0, now * 0.025);
+        drawProceduralNebulaBackdrop(ctx, 960, 540, now * 0.001, 'space');
 
         // Parallax starfield streaks
         for (let si = 0; si < 38; si += 1) {
@@ -649,11 +655,7 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
         }
 
         if (ufo.active) {
-          const ufoGlow = ctx.createRadialGradient(ufo.x, 34, 4, ufo.x, 34, 34);
-          ufoGlow.addColorStop(0, 'rgba(244, 63, 94, 0.55)');
-          ufoGlow.addColorStop(1, 'rgba(244, 63, 94, 0)');
-          ctx.fillStyle = ufoGlow;
-          ctx.beginPath(); ctx.arc(ufo.x, 34, 34, 0, Math.PI * 2); ctx.fill();
+          drawDynamicPointLight(ctx, ufo.x, 34, 42, '244, 63, 94', 0.55);
           if (!drawArcadeSprite(ctx, 'assets/games/space/ufoRed.png', ufo.x, 34, 46, 46, Math.sin(now * 0.005) * 0.15)) {
             ctx.fillStyle = '#EF4444'; ctx.fillRect(ufo.x - 24, 24, 48, 16);
           }
@@ -675,6 +677,7 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
           ctx.fillRect(bk.x, bk.y, 11, 2.5);
         });
         drawArcadeSprite(ctx, 'assets/games/space/fire00.png', px, 514, 12, 18 + Math.random() * 6);
+        drawDynamicPointLight(ctx, px, 495, 36, '56, 189, 248', 0.3);
         ctx.save();
         ctx.shadowColor = '#38BDF8';
         ctx.shadowBlur = 12;
@@ -684,11 +687,13 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
         }
         ctx.restore();
         pBullets.forEach((b) => {
+          drawDynamicPointLight(ctx, b.x, b.y, 22, '56, 189, 248', 0.48);
           if (!drawArcadeSprite(ctx, 'assets/games/space/laserBlue01.png', b.x, b.y, 7, 22)) {
             ctx.fillStyle = '#FACC15'; ctx.fillRect(b.x - 2, b.y - 10, 4, 14);
           }
         });
         aBullets.forEach((b) => {
+          drawDynamicPointLight(ctx, b.x, b.y, 22, '244, 63, 94', 0.48);
           if (!drawArcadeSprite(ctx, 'assets/games/space/laserRed01.png', b.x, b.y, 7, 22)) {
             ctx.fillStyle = '#FB7185'; ctx.fillRect(b.x - 2, b.y, 5, 13);
           }
@@ -933,6 +938,22 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
             <QrCode className="w-3.5 h-3.5" />
             <span>Mando QR</span>
           </button>
+          {gameId !== 'hexgl' && (
+            <button
+              type="button"
+              onClick={() => setCrtEnabled((v) => !v)}
+              aria-label="CRT"
+              title="Filtro CRT retro"
+              className={`min-h-9 px-2.5 rounded-xl border text-xs font-bold inline-flex items-center gap-1 cursor-pointer ${
+                crtEnabled
+                  ? 'bg-violet-500/20 border-violet-400/50 text-violet-200'
+                  : 'bg-white/[0.06] hover:bg-white/[0.14] border-white/10 text-zinc-300'
+              }`}
+            >
+              <Monitor className="w-3.5 h-3.5" />
+              <span>CRT</span>
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setLocalMuted((m) => !m)}
@@ -969,6 +990,7 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
             className="game-touch-btn w-full h-auto block touch-none cursor-crosshair"
           />
         )}
+        <CrtOverlayLayer enabled={crtEnabled && gameId !== 'hexgl'} />
         <PixiGameFxLayer ref={pixiFxRef} />
         {gameOver && (
           <div className="absolute inset-0 bg-[#050812]/90 flex flex-col items-center justify-center gap-3 p-6 text-center">

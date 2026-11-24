@@ -91,6 +91,7 @@ export const PingPongStage: React.FC<PingPongStageProps> = ({
     p2Human: false,
     banner: 'SACA J1',
     bannerCol: '#22D3EE',
+    smashFlash: false,
   });
   const [finishSummary, setFinishSummary] = useState<{
     title: string;
@@ -479,6 +480,8 @@ export const PingPongStage: React.FC<PingPongStageProps> = ({
 
       if (now - lastHudPush > 90) {
         lastHudPush = now;
+        const lastHitEvent = simRef.current.hitEvent;
+        const isSmashRecent = Boolean(lastHitEvent?.smash) && (st.p1.smashT > 0.02 || st.p2.smashT > 0.02);
         setHud({
           s1: st.s1,
           s2: st.s2,
@@ -487,6 +490,7 @@ export const PingPongStage: React.FC<PingPongStageProps> = ({
           p2Human,
           banner: st.banner,
           bannerCol: st.bannerCol,
+          smashFlash: isSmashRecent,
         });
       }
 
@@ -529,7 +533,7 @@ export const PingPongStage: React.FC<PingPongStageProps> = ({
         </div>
 
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-3 text-xs font-black tabular-nums">
+          <div className={`flex items-center gap-3 text-xs font-black tabular-nums transition-all duration-150 rounded-xl px-2.5 py-1 ${hud.smashFlash ? 'bg-amber-500/20 shadow-[0_0_16px_rgba(250,204,21,0.55)] ring-1 ring-amber-400/60' : ''}`}>
             <span className="text-cyan-300">
               J1 {hud.s1} — {hud.s2} {hud.p2Human ? 'J2' : 'CPU'}
             </span>

@@ -382,7 +382,7 @@ export const ParchisBoardView: React.FC<ParchisBoardViewProps> = ({
                 : isStartGreen
                 ? 'bg-emerald-500/45'
                 : isSafe
-                ? 'bg-amber-400/20 border-amber-300/40'
+                ? 'bg-amber-400/20 border-amber-300/40 shadow-[inset_0_0_8px_rgba(251,191,36,0.35)]'
                 : 'bg-white/[0.03]';
 
               return (
@@ -556,6 +556,8 @@ export const ParchisBoardView: React.FC<ParchisBoardViewProps> = ({
                   aria-label={`${item.color} #${item.id + 1}`}
                   className={`absolute z-10 rounded-full border border-white/85 flex items-center justify-center text-[8px] font-black text-white drop-shadow transition-[top,left,width,height] duration-100 ${
                     item.hopping ? 'nc-parchis-hop z-30' : ''
+                  } ${
+                    item.progress === 71 ? 'card-foil-shimmer ring-2 ring-amber-300/90' : ''
                   } ${
                     item.legal ? 'ring-2 ring-white cursor-pointer hover:scale-125 z-20' : 'cursor-default'
                   }`}

@@ -1,9 +1,5 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import {
   applyPolyHavenHdri,
   create3dParticleBurstSystem,
@@ -11,8 +7,16 @@ import {
   createSkyDomeTexture,
   createThreeFramePacer,
   detectSoftwareGl,
+  getMaxSafeAnisotropy,
   initRoomEnvironment,
 } from '../arcade/threeProHelpers';
+import {
+  applyFresnelRimShader,
+  applyFresnelRimToGroup,
+  create3dRibbonTrail,
+  createDrsController,
+  createProPostComposer,
+} from '../arcade/threePostFxHelpers';
 
 export interface HexGL3DEntity {
   lane: number;
@@ -220,7 +224,77 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
 
     const isSoftwareGl = detectSoftwareGl();
     const renderer = createResilientWebGlRenderer(isSoftwareGl, { exposure: 1.15 });
-    if (!renderer) return;
+    if (!renderer) {
+      const fbCanvas = document.createElement('canvas');
+      fbCanvas.width = 960;
+      fbCanvas.height = 540;
+      fbCanvas.className = 'w-full h-full block touch-none cursor-crosshair';
+      host.innerHTML = '';
+      host.appendChild(fbCanvas);
+
+      const handleFbPointer = (e: PointerEvent) => {
+        const rect = fbCanvas.getBoundingClientRect();
+        if (!rect.width) return;
+        onPointerXRef.current(Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)));
+      };
+      fbCanvas.addEventListener('pointermove', handleFbPointer);
+      fbCanvas.addEventListener('pointerdown', handleFbPointer);
+
+      let fbRaf = 0;
+      const drawFb = () => {
+        const ctx = fbCanvas.getContext('2d');
+        if (ctx) {
+          const st = simRef.current;
+          const W = fbCanvas.width;
+          const H = fbCanvas.height;
+          ctx.fillStyle = '#040714';
+          ctx.fillRect(0, 0, W, H);
+          const horizonY = H * 0.42;
+          ctx.strokeStyle = 'rgba(34, 211, 238, 0.35)';
+          ctx.lineWidth = 2;
+          for (let lane = -2; lane <= 2; lane += 1) {
+            ctx.beginPath();
+            ctx.moveTo(W * 0.5 + lane * 48, horizonY);
+            ctx.lineTo(W * 0.5 + lane * 185, H);
+            ctx.stroke();
+          }
+          for (let i = 0; i < st.entities.length; i += 1) {
+            const ent = st.entities[i];
+            if (ent.hit && ent.kind !== 'wall') continue;
+            const depth = Math.max(0.03, Math.min(1, 1 - ent.z / 1000));
+            const sy = horizonY + depth * (H - horizonY);
+            const sx = W * 0.5 + ent.lane * (70 + depth * 290);
+            ctx.fillStyle = ent.kind === 'pad' ? '#22d3ee' : ent.kind === 'heal' ? '#34d399' : '#f43f5e';
+            ctx.fillRect(sx - 18 * depth, sy - 10 * depth, 36 * depth, 16 * depth);
+          }
+          if (!st.dead) {
+            const shipPx = W * 0.5 + st.shipX * 310;
+            const shipPy = H * 0.84;
+            ctx.save();
+            ctx.translate(shipPx, shipPy);
+            ctx.rotate(st.bank * 0.35);
+            ctx.fillStyle = st.boost ? '#facc15' : '#38bdf8';
+            ctx.beginPath();
+            ctx.moveTo(0, -24);
+            ctx.lineTo(22, 16);
+            ctx.lineTo(0, 8);
+            ctx.lineTo(-22, 16);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+          }
+        }
+        fbRaf = requestAnimationFrame(drawFb);
+      };
+      fbRaf = requestAnimationFrame(drawFb);
+
+      return () => {
+        cancelAnimationFrame(fbRaf);
+        fbCanvas.removeEventListener('pointermove', handleFbPointer);
+        fbCanvas.removeEventListener('pointerdown', handleFbPointer);
+        if (fbCanvas.parentNode === host) host.removeChild(fbCanvas);
+      };
+    }
 
     renderer.domElement.className = 'w-full h-full block touch-none cursor-crosshair';
     host.innerHTML = '';
@@ -272,7 +346,7 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
     const disposables: Array<{ dispose: () => void }> = [cyberSkyTex];
 
     // Scrolling Neon Highway Deck (width 11.2 units covering lane [-1.05..1.05] * 4.2)
-    const trackTex = createCyberTrackTexture(isSoftwareGl ? 1 : 4);
+    const trackTex = createCyberTrackTexture(getMaxSafeAnisotropy(renderer, isSoftwareGl));
     const trackGeo = new THREE.PlaneGeometry(11.6, 150);
     const trackMat = new THREE.MeshStandardMaterial({
       map: trackTex,
@@ -360,10 +434,16 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
     scene.add(skylineInst);
     disposables.push(towerGeo, towerMat);
 
-    // Hovercraft Ship + Contact Shadow
+    // Hovercraft Ship + Fresnel Silhouette + Twin Thruster Ribbons + Contact Shadow
     const craft = createHoverCraftGroup();
+    applyFresnelRimToGroup(craft.group, { colorHex: '#22d3ee', power: 2.9, intensity: 0.55 });
     scene.add(craft.group);
     disposables.push(...craft.disposables);
+
+    const ribbonL = create3dRibbonTrail(14, '#22d3ee', 0.24, { opacity: 0.78 });
+    const ribbonR = create3dRibbonTrail(14, '#22d3ee', 0.24, { opacity: 0.78 });
+    scene.add(ribbonL.mesh, ribbonR.mesh);
+    disposables.push(ribbonL, ribbonR);
 
     const shadowGeo = new THREE.CircleGeometry(1.15, 18);
     const shadowMat = new THREE.MeshBasicMaterial({
@@ -402,6 +482,7 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
       roughness: 0.25,
       metalness: 0.4,
     });
+    applyFresnelRimShader(wallMat, { colorHex: '#fda4af', power: 2.6, intensity: 0.45 });
     disposables.push(padGeo, padMat, healGeo, healMat, wallGeo, wallMat);
 
     const padPool = Array.from({ length: POOL_SIZE }, () => {
@@ -426,15 +507,24 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
 
     const burstSystem = create3dParticleBurstSystem(scene, 110);
 
-    let composer: EffectComposer | null = null;
-    let bloomPass: UnrealBloomPass | null = null;
-    if (!isSoftwareGl) {
-      composer = new EffectComposer(renderer);
-      composer.addPass(new RenderPass(scene, camera));
-      bloomPass = new UnrealBloomPass(new THREE.Vector2(960, 540), 0.52, 0.45, 0.78);
-      composer.addPass(bloomPass);
-      composer.addPass(new OutputPass());
-    }
+    const initW = Math.max(320, host.clientWidth || 960);
+    const initH = Math.max(200, host.clientHeight || Math.round((initW * 9) / 16));
+    const composer = createProPostComposer(renderer, scene, camera, {
+      width: initW,
+      height: initH,
+      isSoftwareGl,
+      bloom: { strength: 0.52, radius: 0.45, threshold: 0.78 },
+      speedRadial: true,
+      smaa: true,
+    });
+    const drs = createDrsController(renderer, {
+      isSoftwareGl,
+      onScaleChange: () => {
+        const w = Math.max(320, host.clientWidth || 960);
+        const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+        composer?.setSize(w, h);
+      },
+    });
 
     const updateSize = () => {
       const w = Math.max(320, host.clientWidth || 960);
@@ -442,8 +532,7 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
       renderer.setSize(w, h, false);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
-      if (composer) composer.setSize(w, h);
-      if (bloomPass) bloomPass.resolution.set(w, h);
+      composer?.setSize(w, h);
     };
     updateSize();
     const ro = new ResizeObserver(updateSize);
@@ -493,6 +582,28 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
       craft.flameL.scale.set(1, flameScale, 1);
       craft.flameR.scale.set(1, flameScale, 1);
       (craft.flameL.material as THREE.MeshBasicMaterial).color.set(st.boost ? '#facc15' : '#38bdf8');
+      if (!st.dead) {
+        const ribCol = st.boost ? '#facc15' : '#22d3ee';
+        const cosB = Math.cos(craft.group.rotation.z);
+        const sinB = Math.sin(craft.group.rotation.z);
+        ribbonL.push(
+          craft.group.position.x - 0.34 * cosB,
+          craft.group.position.y + 0.27 - 0.34 * sinB,
+          1.45,
+          camera.position,
+          ribCol
+        );
+        ribbonR.push(
+          craft.group.position.x + 0.34 * cosB,
+          craft.group.position.y + 0.27 + 0.34 * sinB,
+          1.45,
+          camera.position,
+          ribCol
+        );
+      } else {
+        ribbonL.reset();
+        ribbonR.reset();
+      }
 
       if (st.pickupEvent && st.pickupEvent.seq !== lastEventSeq) {
         lastEventSeq = st.pickupEvent.seq;
@@ -554,6 +665,13 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
       camera.position.z = 5.75;
       camera.lookAt(worldX * 0.28, 0.75, -18);
 
+      drs.sample(dt);
+      composer?.setSpeedFx(
+        Math.max(0, Math.min(1, (st.speed - 450) / 700)),
+        st.boost ? 1 : 0,
+        st.hitFlash,
+        elapsed
+      );
       burstSystem.update(dt);
       if (composer) composer.render();
       else renderer.render(scene, camera);

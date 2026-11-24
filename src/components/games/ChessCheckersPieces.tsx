@@ -200,7 +200,7 @@ export const CheckersToken3D: React.FC<{
           isWhite
             ? 'border-white/80 bg-gradient-to-t from-[#E2D4B6] to-[#FFFFFF]'
             : 'border-rose-300/40 bg-gradient-to-t from-[#9F1239] to-[#F43F5E]'
-        }`}
+        } ${isKing ? 'ring-2 ring-amber-300/75 shadow-[0_0_12px_rgba(251,191,36,0.45)]' : ''}`}
       >
         {isKing && (
           <div className="relative w-full h-full flex items-center justify-center">

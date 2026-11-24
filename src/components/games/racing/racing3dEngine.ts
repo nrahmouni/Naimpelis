@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { applyPolyHavenHdri, createSkyDomeTexture, createThreeFramePacer } from '../arcade/threeProHelpers';
+import {
+  createDrsController,
+  createProPostComposer,
+  type ProPostComposerHandle,
+} from '../arcade/threePostFxHelpers';
 import { buildFormulaGtCar, type BuiltCarRig } from './racingCarBuilder';
 import { buildGpCircuitScene } from './racingTrackBuilder';
 import { RacingSoundEngine } from './racingAudio';
@@ -187,24 +188,28 @@ export function createRacing3dEngine(
   const circuit = buildGpCircuitScene(scene, isSoftwareGl);
   const audio = new RacingSoundEngine();
 
-  // GPU Post-Processing (subtle bloom on headlights, brake lights, nitro cones & boost pads)
-  let composer: EffectComposer | null = null;
-  let bloomPass: UnrealBloomPass | null = null;
-  if (!isSoftwareGl) {
-    try {
-      const w0 = Math.max(1, container.clientWidth || window.innerWidth || 1280);
-      const h0 = Math.max(1, container.clientHeight || window.innerHeight || 720);
-      composer = new EffectComposer(renderer);
-      composer.addPass(new RenderPass(scene, camera));
-      bloomPass = new UnrealBloomPass(new THREE.Vector2(w0, h0), 0.28, 0.35, 0.94);
-      composer.addPass(bloomPass);
-      composer.addPass(new OutputPass());
-    } catch {
-      composer?.dispose();
-      composer = null;
-      bloomPass = null;
-    }
-  }
+  // GPU Post-Processing (MSAA + SMAA + SpeedRadial + Finish Bokeh + Bloom) + Dynamic Resolution Scaling
+  const w0 = Math.max(1, container.clientWidth || window.innerWidth || 1280);
+  const h0 = Math.max(1, container.clientHeight || window.innerHeight || 720);
+  const composer: ProPostComposerHandle | null = createProPostComposer(renderer, scene, camera, {
+    width: w0,
+    height: h0,
+    isSoftwareGl,
+    bloom: { strength: 0.3, radius: 0.35, threshold: 0.92 },
+    speedRadial: true,
+    bokeh: true,
+    smaa: true,
+  });
+  const drs = createDrsController(renderer, {
+    minRatio: 0.75,
+    maxRatio: dpr,
+    isSoftwareGl,
+    onScaleChange: () => {
+      const cw = Math.max(1, container.clientWidth || window.innerWidth || 1280);
+      const ch = Math.max(1, container.clientHeight || window.innerHeight || 720);
+      composer?.setSize(cw, ch);
+    },
+  });
 
   // Player + 3 AI Rivals
   const playerCar = buildFormulaGtCar(RIVAL_LIVERIES[0].primary, RIVAL_LIVERIES[0].accent, {
@@ -613,11 +618,17 @@ export function createRacing3dEngine(
       playerCar.nitroFlames[1].scale.set(1, 1, flicker);
     }
 
-    // Emit drift smoke / nitro sparks
+    // Emit drift smoke / nitro sparks & persistent asphalt tire skidmarks
     const driftIntensity =
       Math.abs(speedMps) > 22
         ? Math.min(1, Math.abs(steerInput) * (handbrakeWanted ? 1.0 : 0.45))
         : 0;
+    if ((driftIntensity > 0.32 || brakeInput > 0.65) && !offroad && Math.abs(speedMps) > 16) {
+      const sideX = Math.cos(heading);
+      const sideZ = -Math.sin(heading);
+      circuit.addSkidMark(px - fwdX * 1.4 - sideX * 0.9, pz - fwdZ * 1.4 - sideZ * 0.9, heading, 0.85);
+      circuit.addSkidMark(px - fwdX * 1.4 + sideX * 0.9, pz - fwdZ * 1.4 + sideZ * 0.9, heading, 0.85);
+    }
     if ((driftIntensity > 0.35 || offroad) && Math.abs(speedMps) > 12 && Math.random() < 0.65) {
       spawnParticle(
         px - fwdX * 1.6 + (Math.random() - 0.5) * 1.4,
@@ -988,9 +999,15 @@ export function createRacing3dEngine(
     framePacer.schedule(animate);
     if (contextLost) return;
     const dt = Math.min(clock.getDelta(), 0.05);
+    drs.sample(dt);
     stepSimulation(dt, performance.now());
     circuit.setCelebration(raceState === 'finished');
     circuit.updateActors(dt);
+
+    const speedNorm = Math.max(0, Math.min(1, (Math.abs(speedMps) - 36) / 56));
+    const boostingVisual = (raceState === 'racing' && nitroPct > 2 && keysState.nitro) || padBoostTimer > 0;
+    composer?.setSpeedFx(speedNorm, boostingVisual ? 1 : 0, collisionFlash, raceElapsedMs / 1000);
+    composer?.setDofActive(raceState === 'finished', 10.5);
 
     const w = Math.max(1, container.clientWidth || window.innerWidth || 1280);
     const h = Math.max(1, container.clientHeight || window.innerHeight || 720);
@@ -1041,10 +1058,7 @@ export function createRacing3dEngine(
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setSize(w, h);
-    if (composer) {
-      composer.setSize(w, h);
-      bloomPass?.resolution.set(w, h);
-    }
+    composer?.setSize(w, h);
   };
   const resizeObserver =
     typeof ResizeObserver !== 'undefined' ? new ResizeObserver(handleResize) : null;
@@ -1153,7 +1167,6 @@ export function createRacing3dEngine(
       skyDomeTex.dispose();
       hdriHandle.dispose();
       composer?.dispose();
-      bloomPass?.dispose();
       envTarget?.dispose();
       pmrem?.dispose();
       audio.destroy();

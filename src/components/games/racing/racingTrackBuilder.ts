@@ -6,11 +6,13 @@ import {
   spawnRigged3dActor,
   type RiggedActorHandle,
 } from '../arcade/threeProHelpers';
+import { attachSafeMeshDecoders } from '../arcade/threePostFxHelpers';
 import { TRACK_BARRIER_HALF_WIDTH, TRACK_HALF_WIDTH } from './racingTypes';
 
 const TRACK_GLB_CACHE = new Map<string, Promise<THREE.Group | null>>();
 const trackGltfLoader = new GLTFLoader();
 trackGltfLoader.setCrossOrigin('anonymous');
+attachSafeMeshDecoders(trackGltfLoader);
 
 function loadCachedTrackProp(relPath: string): Promise<THREE.Group | null> {
   if (typeof window === 'undefined' || typeof fetch === 'undefined') return Promise.resolve(null);
@@ -66,6 +68,7 @@ export interface BuiltCircuit {
   sampleAtS: (s: number, outPos: THREE.Vector3, outTan: THREE.Vector3, outNorm: THREE.Vector3) => void;
   updateActors: (dt: number) => void;
   setCelebration: (celebrating: boolean) => void;
+  addSkidMark: (x: number, z: number, yaw: number, intensity?: number) => void;
   dispose: () => void;
 }
 
@@ -247,7 +250,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   roadGeo.computeVertexNormals();
 
   const asphaltTex = createAsphaltTexture();
-  asphaltTex.anisotropy = isSoftwareGl ? 2 : 8;
+  asphaltTex.anisotropy = isSoftwareGl ? 1 : 8;
   const roadMat = new THREE.MeshStandardMaterial({
     map: asphaltTex,
     roughness: 0.78,
@@ -258,12 +261,69 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   scene.add(roadMesh);
   disposables.push(roadGeo, asphaltTex, roadMat);
 
+  // Wet Reflective Asphalt Puddles at key apex zones
+  const puddleGeo = new THREE.CircleGeometry(3.4, 22);
+  const puddleMat = new THREE.MeshPhysicalMaterial({
+    color: 0x091326,
+    roughness: 0.06,
+    metalness: 0.35,
+    clearcoat: 1.0,
+    clearcoatRoughness: 0.04,
+    transparent: true,
+    opacity: 0.46,
+    polygonOffset: true,
+    polygonOffsetFactor: -1,
+    polygonOffsetUnits: -1,
+  });
+  [0.08, 0.26, 0.48, 0.68, 0.84].forEach((sVal, idx) => {
+    const smp = samples[Math.floor(sVal * SAMPLE_COUNT) % SAMPLE_COUNT];
+    const side = idx % 2 === 0 ? -2.8 : 2.6;
+    const pud = new THREE.Mesh(puddleGeo, puddleMat);
+    pud.rotation.x = -Math.PI / 2;
+    pud.scale.set(1.35, 2.2, 1);
+    pud.rotation.z = Math.atan2(smp.tangent.x, smp.tangent.z);
+    pud.position.set(
+      smp.point.x + smp.normal.x * side,
+      0.018,
+      smp.point.z + smp.normal.z * side
+    );
+    scene.add(pud);
+  });
+  disposables.push(puddleGeo, puddleMat);
+
+  // Persistent Tire Skidmark Instanced Ring Buffer
+  const SKID_POOL = 240;
+  const skidGeo = new THREE.PlaneGeometry(0.42, 1.35);
+  skidGeo.rotateX(-Math.PI / 2);
+  const skidMat = new THREE.MeshBasicMaterial({
+    color: 0x05070c,
+    transparent: true,
+    opacity: 0.48,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  });
+  const skidInst = new THREE.InstancedMesh(skidGeo, skidMat, SKID_POOL);
+  skidInst.frustumCulled = false;
+  const skidDummy = new THREE.Object3D();
+  for (let i = 0; i < SKID_POOL; i += 1) {
+    skidDummy.position.set(0, -50, 0);
+    skidDummy.scale.setScalar(0.001);
+    skidDummy.updateMatrix();
+    skidInst.setMatrixAt(i, skidDummy.matrix);
+  }
+  skidInst.instanceMatrix.needsUpdate = true;
+  scene.add(skidInst);
+  disposables.push(skidGeo, skidMat);
+  let skidCursor = 0;
+
   if (!isSoftwareGl) {
     void loadCachedPbrTexture('assets/games/pbr/forrest_ground_diff.jpg', {
       srgb: true,
       repeatX: 28,
       repeatY: 28,
-      anisotropy: 4,
+      anisotropy: 8,
     }).then((tex) => {
       if (!tex || circuitDisposed) return;
       groundMat.map = tex;
@@ -274,7 +334,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
       srgb: false,
       repeatX: 1,
       repeatY: 72,
-      anisotropy: 4,
+      anisotropy: 8,
     }).then((nor) => {
       if (!nor || circuitDisposed) return;
       roadMat.normalMap = nor;
@@ -285,7 +345,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
       srgb: false,
       repeatX: 1,
       repeatY: 72,
-      anisotropy: 4,
+      anisotropy: 8,
     }).then((rough) => {
       if (!rough || circuitDisposed) return;
       roadMat.roughnessMap = rough;
@@ -709,6 +769,17 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
       if (actors[0]) actors[0].playClip(celebrating ? ['Dance', 'Jump', 'Wave'] : ['Wave', 'Idle']);
       if (actors[1]) actors[1].playClip(celebrating ? ['run', 'walk', 'idle'] : ['idle', 'walk']);
       if (actors[2]) actors[2].playClip(celebrating ? ['Run', 'Walk'] : ['Idle']);
+    },
+    addSkidMark: (x: number, z: number, yaw: number, intensity = 1) => {
+      if (circuitDisposed) return;
+      skidDummy.position.set(x, 0.022, z);
+      skidDummy.rotation.set(0, yaw, 0);
+      const scl = Math.max(0.5, Math.min(1.3, intensity));
+      skidDummy.scale.set(scl, 1, scl);
+      skidDummy.updateMatrix();
+      skidInst.setMatrixAt(skidCursor, skidDummy.matrix);
+      skidInst.instanceMatrix.needsUpdate = true;
+      skidCursor = (skidCursor + 1) % SKID_POOL;
     },
     dispose: () => {
       circuitDisposed = true;

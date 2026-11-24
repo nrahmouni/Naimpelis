@@ -25,6 +25,16 @@ export const RiveInteractiveBadge: React.FC<RiveInteractiveBadgeProps> = ({
     stateMachineNames?: string[];
   } | null>(null);
   const [fallback, setFallback] = useState(false);
+  const [burstActive, setBurstActive] = useState(false);
+  const burstTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (burstTimerRef.current !== null) {
+        window.clearTimeout(burstTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -78,7 +88,12 @@ export const RiveInteractiveBadge: React.FC<RiveInteractiveBadgeProps> = ({
   }, [theme]);
 
   const handleInteract = () => {
-    if (!interactive || !riveRef.current) return;
+    if (!interactive) return;
+    setBurstActive(true);
+    if (burstTimerRef.current !== null) window.clearTimeout(burstTimerRef.current);
+    burstTimerRef.current = window.setTimeout(() => setBurstActive(false), 320);
+
+    if (!riveRef.current) return;
     try {
       const machines = riveRef.current.stateMachineNames || [];
       if (machines.length > 0 && riveRef.current.stateMachineInputs) {
@@ -98,7 +113,9 @@ export const RiveInteractiveBadge: React.FC<RiveInteractiveBadgeProps> = ({
   if (fallback) {
     return (
       <div
-        className={`relative flex items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/20 to-violet-500/20 border border-white/10 ${className}`}
+        onClick={interactive ? handleInteract : undefined}
+        onPointerEnter={interactive ? handleInteract : undefined}
+        className={`relative flex items-center justify-center rounded-xl bg-gradient-to-br from-cyan-500/20 to-violet-500/20 border border-white/10 transition-transform duration-200 ${interactive ? 'cursor-pointer' : ''} ${burstActive ? 'scale-105 drop-shadow-[0_0_14px_rgba(56,189,248,0.85)]' : ''} ${className}`}
         aria-label={label}
       >
         <img
@@ -124,7 +141,7 @@ export const RiveInteractiveBadge: React.FC<RiveInteractiveBadgeProps> = ({
       aria-label={label}
       onClick={interactive ? handleInteract : undefined}
       onPointerEnter={interactive ? handleInteract : undefined}
-      className={`block ${interactive ? 'cursor-pointer' : ''} ${className}`}
+      className={`block transition-transform duration-200 ${interactive ? 'cursor-pointer' : ''} ${burstActive ? 'scale-105 drop-shadow-[0_0_14px_rgba(56,189,248,0.85)]' : ''} ${className}`}
     />
   );
 };

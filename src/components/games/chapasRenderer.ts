@@ -17,6 +17,11 @@ import {
   CHAPAS_PITCH_TOP,
   CHAPAS_PITCH_W,
 } from '../../shared/futbolChapas';
+import {
+  drawDynamicBallShadowAndSpec,
+  drawMotionSmearTrail,
+  drawStadiumCameraFlashes,
+} from './arcade/canvas2dFxHelpers';
 
 export interface ImpactParticle {
   x: number;
@@ -146,6 +151,25 @@ function buildGrandstandCrowd(): CrowdSpectator[] {
 }
 
 export const GRANDSTAND_CROWD = buildGrandstandCrowd();
+
+export function traceBottleCapCrownPath(
+  ctx: CanvasRenderingContext2D,
+  outerRadius: number,
+  flutes = 21,
+  notchDepth = 0.9
+): void {
+  const steps = flutes * 2;
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i += 1) {
+    const a = (i / steps) * Math.PI * 2;
+    const rad = i % 2 === 0 ? outerRadius : outerRadius - notchDepth;
+    const x = Math.cos(a) * rad;
+    const y = Math.sin(a) * rad;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+}
 
 export function drawFlagEmblem(
   ctx: CanvasRenderingContext2D,
@@ -365,6 +389,7 @@ export function drawChapasStadiumBackdrop(
     ctx.arc(sp.x, sy - 1.2, 1.35, 0, Math.PI * 2);
     ctx.fill();
   }
+  drawStadiumCameraFlashes(ctx, CHAPAS_ARENA_W, 95, CHAPAS_ARENA_H - 95, ts * 0.001, crowdExcite ? 0.95 : 0.25);
 
   // Alternating mowed green grass stripes inside pitch + organic grain
   ctx.save();
@@ -696,24 +721,22 @@ export function drawChapasBallAndParticles(
   particles: ImpactParticle[]
 ): void {
   if (ballTrail && ballTrail.length > 1) {
-    for (let i = 0; i < ballTrail.length; i += 1) {
-      const pt = ballTrail[i];
-      const frac = (i + 1) / ballTrail.length;
-      ctx.fillStyle = `rgba(255, 255, 255, ${frac * 0.2})`;
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, CHAPAS_BALL_RADIUS * (0.45 + frac * 0.4), 0, Math.PI * 2);
-      ctx.fill();
-    }
+    drawMotionSmearTrail(ctx, ballTrail, CHAPAS_BALL_RADIUS * 0.85, '255, 255, 255', 0.3);
   }
 
   ctx.save();
   ctx.translate(renderBall.x, renderBall.y);
   const br = CHAPAS_BALL_RADIUS;
-
-  ctx.fillStyle = 'rgba(0,0,0,0.44)';
-  ctx.beginPath();
-  ctx.arc(2.2, 3.2, br + 0.6, 0, Math.PI * 2);
-  ctx.fill();
+  const lampFx = drawDynamicBallShadowAndSpec(
+    ctx,
+    0,
+    0,
+    br,
+    CHAPAS_ARENA_W * 0.5 - renderBall.x,
+    CHAPAS_ARENA_H * 0.5 - renderBall.y,
+    0.42
+  );
+  lampFx.drawShadow();
 
   const ballGrad = ctx.createRadialGradient(-br * 0.35, -br * 0.35, 1, 0, 0, br);
   ballGrad.addColorStop(0, '#FFFFFF');
@@ -749,6 +772,8 @@ export function drawChapasBallAndParticles(
     ctx.fill();
   }
   ctx.restore();
+
+  lampFx.drawSpecular();
 
   ctx.strokeStyle = 'rgba(15,23,42,0.55)';
   ctx.lineWidth = 1;

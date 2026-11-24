@@ -231,6 +231,7 @@
           ctx.fillStyle = '#FDE68A'; ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 3.6, 0, Math.PI * 2); ctx.fill();
         } else if (cell === 'O') {
           var pr = 20 + Math.sin(pac.mouth * 0.7) * 3.5;
+          if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, x + CELL / 2, y + CELL / 2, 22, '250,204,21', 0.46);
           if (!spr(ctx, 'assets/games/puzzle/particleStar.png', x + CELL / 2, y + CELL / 2, pr, pr, now * 0.004)) {
             ctx.fillStyle = '#FACC15'; ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 7.5, 0, Math.PI * 2); ctx.fill();
           }
@@ -243,13 +244,16 @@
       pGrad.addColorStop(0, '#FEF08A'); pGrad.addColorStop(0.7, '#FACC15'); pGrad.addColorStop(1, '#CA8A04');
       ctx.fillStyle = pGrad; ctx.beginPath(); ctx.moveTo(px, py);
       ctx.arc(px, py, CELL * 0.45, ang + jaw, ang + Math.PI * 2 - jaw); ctx.closePath(); ctx.fill();
+      if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, px, py, 28, '250,204,21', 0.36);
       for (var j = 0; j < ghosts.length; j++) {
         var gh = ghosts[j], gx = OX + (gh.x + 0.5) * CELL, gy = OY + (gh.y + 0.5) * CELL;
+        if (frightTimer > 0 && typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, gx, gy, 24, '56,189,248', 0.45);
         ctx.fillStyle = frightTimer > 0 ? (frightTimer < 2 && Math.floor(frightTimer * 8) % 2 === 0 ? '#FFFFFF' : '#2563EB') : gh.col;
         ctx.beginPath(); ctx.arc(gx, gy - 2, CELL * 0.41, Math.PI, 0); ctx.lineTo(gx + CELL * 0.41, gy + CELL * 0.41); ctx.lineTo(gx - CELL * 0.41, gy + CELL * 0.41); ctx.closePath(); ctx.fill();
         ctx.fillStyle = '#FFF'; ctx.beginPath(); ctx.arc(gx - 4.5, gy - 3, 3.6, 0, Math.PI * 2); ctx.arc(gx + 4.5, gy - 3, 3.6, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = '#0F172A'; ctx.beginPath(); ctx.arc(gx - 4.5 + gh.dx * 1.5, gy - 3 + gh.dy * 1.5, 1.8, 0, Math.PI * 2); ctx.arc(gx + 4.5 + gh.dx * 1.5, gy - 3 + gh.dy * 1.5, 1.8, 0, Math.PI * 2); ctx.fill();
       }
+      if (typeof window.drawTvCrtOverlay === 'function') window.drawTvCrtOverlay(ctx, 960, 540, 0.15);
       window.TV_GAME_RAF = requestAnimationFrame(frame);
     }
     initMap(false);
@@ -436,12 +440,14 @@
       }
       for (var bi2 = 0; bi2 < bombs.length; bi2++) {
         var bm = bombs[bi2], bpx = OX + (bm.x + 0.5) * CELL, bpy = OY + (bm.y + 0.5) * CELL;
+        if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, bpx, bpy, 28, '250,204,21', 0.4);
         ctx.fillStyle = '#0F172A'; ctx.beginPath(); ctx.arc(bpx, bpy, 13 + Math.sin(bm.timer * 14) * 2.4, 0, Math.PI * 2); ctx.fill();
         ctx.strokeStyle = '#38BDF8'; ctx.lineWidth = 2; ctx.stroke();
         ctx.fillStyle = '#FACC15'; ctx.beginPath(); ctx.arc(bpx + 5, bpy - 8, 4.5, 0, Math.PI * 2); ctx.fill();
       }
       for (var fi2 = 0; fi2 < flames.length; fi2++) {
         var fl = flames[fi2], fx = OX + (fl.x + 0.5) * CELL, fy = OY + (fl.y + 0.5) * CELL;
+        if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, fx, fy, CELL * 0.85, '249,115,22', 0.48);
         var fIdx = Math.min(EXPL_SPRITES.length - 1, Math.max(0, Math.floor((1 - fl.timer / 0.48) * EXPL_SPRITES.length)));
         if (!spr(ctx, EXPL_SPRITES[fIdx], fx, fy, CELL * 1.15, CELL * 0.95, 0)) {
           ctx.fillStyle = 'rgba(249,115,22,0.85)'; ctx.fillRect(OX + fl.x * CELL + 2, OY + fl.y * CELL + 2, CELL - 4, CELL - 4);
@@ -547,6 +553,7 @@
       sky.addColorStop(0, '#0C4A6E'); sky.addColorStop(1, '#38BDF8');
       ctx.fillStyle = sky; ctx.fillRect(0, 0, 960, 490);
       tiledBg(ctx, 'assets/games/tappy/background.png', 960, 480, -scroll * 0.35, 0);
+      if (typeof window.drawTvNebulaLayer === 'function') window.drawTvNebulaLayer(ctx, 960, 540, now * 0.001, 'sky');
 
       for (var pi = 0; pi < pipes.length; pi++) {
         var pp = pipes[pi], topH = pp.gapY - pp.gapH / 2, botY = pp.gapY + pp.gapH / 2;

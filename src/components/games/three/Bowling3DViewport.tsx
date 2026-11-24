@@ -1,9 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
-import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { Reflector } from 'three/examples/jsm/objects/Reflector.js';
 import {
   applyPolyHavenHdri,
   applyResponsiveCameraFov,
@@ -15,10 +12,18 @@ import {
   createThreeFramePacer,
   createWoodPlankTexture,
   detectSoftwareGl,
+  getMaxSafeAnisotropy,
   initRoomEnvironment,
   loadCachedPbrTexture,
   spawnRigged3dActor,
 } from '../arcade/threeProHelpers';
+import {
+  applyFresnelRimShader,
+  applyFresnelRimToGroup,
+  create3dRibbonTrail,
+  createDrsController,
+  createProPostComposer,
+} from '../arcade/threePostFxHelpers';
 
 export interface BowlingSimSnapshot {
   phase: 'aim' | 'roll' | 'settle' | 'over';
@@ -117,17 +122,39 @@ export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) 
     scene.add(surroundMesh);
     disposables.push(surroundGeo, surroundMat);
 
-    const laneWoodTex = createWoodPlankTexture('#c88848', '#ad6c31', isSoftwareGl ? 1 : 4);
+    const maxAniso = getMaxSafeAnisotropy(renderer, isSoftwareGl);
+    const laneWoodTex = createWoodPlankTexture('#c88848', '#ad6c31', maxAniso);
     laneWoodTex.repeat.set(1, 5);
     disposables.push(laneWoodTex);
+
+    let laneReflector: Reflector | null = null;
+    if (!isSoftwareGl) {
+      try {
+        const refGeo = new THREE.PlaneGeometry(LANE_HALF_W * 2, 22.5);
+        laneReflector = new Reflector(refGeo, {
+          clipBias: 0.003,
+          textureWidth: 512,
+          textureHeight: 512,
+          color: 0x3b4861,
+        });
+        laneReflector.rotation.x = -Math.PI / 2;
+        laneReflector.position.set(0, -0.004, 0.2);
+        scene.add(laneReflector);
+        disposables.push(refGeo, laneReflector);
+      } catch {
+        laneReflector = null;
+      }
+    }
 
     const laneMat = new THREE.MeshPhysicalMaterial({
       map: laneWoodTex,
       color: '#f7dec2',
-      roughness: 0.2,
-      metalness: 0.05,
-      clearcoat: 0.92,
-      clearcoatRoughness: 0.1,
+      roughness: 0.16,
+      metalness: 0.06,
+      clearcoat: 0.96,
+      clearcoatRoughness: 0.08,
+      transparent: Boolean(laneReflector),
+      opacity: laneReflector ? 0.78 : 1,
     });
     const laneGeo = new THREE.BoxGeometry(LANE_HALF_W * 2, 0.12, 22.5);
     const laneMesh = new THREE.Mesh(laneGeo, laneMat);
@@ -246,14 +273,15 @@ export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) 
     scene.add(hood, archBar, sweepBar);
     disposables.push(hoodGeo, hoodMat, archBarGeo, archBarMat, sweepGeo, sweepMat);
 
-    // 10 USBC 3D Bowling Pins
+    // 10 USBC 3D Bowling Pins + Fresnel Rim Separation
     const pinMeshes = Array.from({ length: 10 }, () => {
       const p = createBowlingPinGroup();
+      applyFresnelRimToGroup(p, { colorHex: '#e0f2fe', power: 3.2, intensity: 0.35 });
       scene.add(p);
       return p;
     });
 
-    // PBR Marbled Bowling Ball (P1 Cyan / P2 Crimson swirl) + Shadow
+    // PBR Marbled Bowling Ball (P1 Cyan / P2 Crimson swirl) + Fresnel + Ribbon + Shadow
     const ballTexP1 = createMarbledBallTexture('#0284c7', '#bae6fd', '#082f49');
     const ballTexP2 = createMarbledBallTexture('#e11d48', '#fecdd3', '#4c0519');
     disposables.push(ballTexP1, ballTexP2);
@@ -266,9 +294,14 @@ export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) 
       clearcoat: 1.0,
       clearcoatRoughness: 0.06,
     });
+    applyFresnelRimShader(ballMat, { colorHex: '#38bdf8', power: 2.8, intensity: 0.5 });
     const ballMesh = new THREE.Mesh(ballGeo, ballMat);
     ballMesh.castShadow = !isSoftwareGl;
     scene.add(ballMesh);
+
+    const ballRibbon = create3dRibbonTrail(18, '#38bdf8', 0.28, { opacity: 0.72 });
+    scene.add(ballRibbon.mesh);
+    disposables.push(ballRibbon);
 
     const ballShadowGeo = new THREE.CircleGeometry(0.27, 16);
     const ballShadowMat = new THREE.MeshBasicMaterial({
@@ -306,23 +339,31 @@ export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) 
 
     const burstSystem = create3dParticleBurstSystem(scene, 96);
 
-    let composer: EffectComposer | null = null;
-    let bloomPass: UnrealBloomPass | null = null;
-    if (!isSoftwareGl) {
-      composer = new EffectComposer(renderer);
-      composer.addPass(new RenderPass(scene, camera));
-      bloomPass = new UnrealBloomPass(new THREE.Vector2(920, 520), 0.3, 0.45, 0.88);
-      composer.addPass(bloomPass);
-      composer.addPass(new OutputPass());
-    }
+    const initW = Math.max(320, host.clientWidth || 920);
+    const initH = Math.max(200, host.clientHeight || Math.round((initW * 9) / 16));
+    const composer = createProPostComposer(renderer, scene, camera, {
+      width: initW,
+      height: initH,
+      isSoftwareGl,
+      bloom: { strength: 0.3, radius: 0.45, threshold: 0.88 },
+      bokeh: true,
+      smaa: true,
+    });
+    const drs = createDrsController(renderer, {
+      isSoftwareGl,
+      onScaleChange: () => {
+        const w = Math.max(320, host.clientWidth || 920);
+        const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
+        composer?.setSize(w, h);
+      },
+    });
 
     const updateSize = () => {
       const w = Math.max(320, host.clientWidth || 920);
       const h = Math.max(200, host.clientHeight || Math.round((w * 9) / 16));
       renderer.setSize(w, h, false);
       applyResponsiveCameraFov(camera, w / h, 44, 44, 64);
-      if (composer) composer.setSize(w, h);
-      if (bloomPass) bloomPass.resolution.set(w, h);
+      composer?.setSize(w, h);
     };
     updateSize();
     const ro = new ResizeObserver(updateSize);
@@ -357,10 +398,16 @@ export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) 
           ? laneToWorld(sim.aimX, 0.06)
           : laneToWorld(sim.ball.x, sim.ball.y);
       const inGutter = sim.phase === 'roll' && Math.abs(sim.ball.x) > 0.86;
-      ballMesh.position.set(bw.x, inGutter ? 0.16 : 0.24, bw.z);
+      const by = inGutter ? 0.16 : 0.24;
+      ballMesh.position.set(bw.x, by, bw.z);
       ballMesh.rotation.x -= sim.phase === 'roll' ? dt * 16 : 0;
       ballMesh.rotation.z = sim.ball.rot * 0.25;
       ballShadow.position.set(bw.x, 0.01, bw.z);
+      if (sim.phase === 'roll') {
+        ballRibbon.push(bw.x, by, bw.z, camera.position, sim.turnPlayer === 2 ? '#fb7185' : '#38bdf8');
+      } else {
+        ballRibbon.reset();
+      }
 
       // Smooth Pinsetter Sweep Bar during settle
       const sweepTargetY = sim.phase === 'settle' ? 0.22 : 1.55;
@@ -427,8 +474,10 @@ export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) 
       camera.position.z = THREE.MathUtils.damp(camera.position.z, 13.6 - followZ * 7.2, 6, dt);
       camera.lookAt(0, 0.58, -3.5 - followZ * 4.5);
 
+      drs.sample(dt);
       bowlerActor.update(dt);
       burstSystem.update(dt);
+      composer?.setDofActive(sim.phase === 'settle' && (sim.outcomeKind === 'strike' || sim.outcomeKind === 'spare'), 11.5);
       if (composer) composer.render();
       else renderer.render(scene, camera);
 

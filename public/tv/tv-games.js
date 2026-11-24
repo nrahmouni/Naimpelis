@@ -334,7 +334,7 @@ function renderTvGamesCatalogInto(container) {
     (function (g) {
       var btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'tv-game-card';
+      btn.className = 'tv-game-card' + (i < 4 ? ' tv-card-foil' : '');
       btn.tabIndex = 0;
       btn.setAttribute('data-tv-game', g.id);
       btn.innerHTML =

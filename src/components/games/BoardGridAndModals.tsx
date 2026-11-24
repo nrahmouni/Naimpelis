@@ -136,7 +136,7 @@ export const BoardGridAndModals: React.FC<BoardGridAndModalsProps> = ({
                                 : 'bg-gradient-to-b from-[#FDA4AF] via-[#E11D48] to-[#881337] border border-rose-200/90 shadow-[0_3px_8px_rgba(0,0,0,0.7),inset_0_2px_3px_rgba(255,255,255,0.65),inset_0_-3px_5px_rgba(76,5,25,0.75)]'
                             } ${
                               isWinDisc
-                                ? 'ring-2 ring-white ring-offset-1 ring-offset-amber-400 brightness-110 shadow-[0_0_16px_rgba(250,204,21,0.9)] animate-pulse'
+                                ? 'relative overflow-hidden card-foil-shimmer ring-2 ring-white ring-offset-1 ring-offset-amber-400 brightness-110 shadow-[0_0_16px_rgba(250,204,21,0.9)] animate-pulse'
                                 : ''
                             }`}
                           >

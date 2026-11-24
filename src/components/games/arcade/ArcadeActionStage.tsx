@@ -6,6 +6,7 @@ import {
   ArrowUp,
   Bomb,
   Compass,
+  Monitor,
   QrCode,
   RotateCcw,
   Trophy,
@@ -27,6 +28,13 @@ import {
   preloadArcadeSprites,
 } from './arcadeSprites';
 import { PixiGameFxLayer, type PixiGameFxHandle } from './PixiGameFxLayer';
+import {
+  CrtOverlayLayer,
+  computeSquashStretch,
+  drawDynamicPointLight,
+  drawMotionSmearTrail,
+  drawProceduralNebulaBackdrop,
+} from './canvas2dFxHelpers';
 
 const ACTION_SPRITE_LIST = [
   ...EXPLOSION_FRAMES,
@@ -101,6 +109,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
   const [gameOverMsg, setGameOverMsg] = useState('');
   const [showQrModal, setShowQrModal] = useState(false);
   const [controllers, setControllers] = useState<DualGyroControllerPeer[]>([]);
+  const [crtEnabled, setCrtEnabled] = useState(() => gameId !== 'flappy');
 
   const effectiveRoomId = useMemo(
     () => (roomId || socketService.getActiveRoomId() || `${gameId}-local`).trim().toLowerCase(),
@@ -493,11 +502,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
               ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 3.4, 0, Math.PI * 2); ctx.fill();
             } else if (grid[r][c] === 'O') {
               const pr = 19 + Math.sin(pac.mouth * 0.7) * 3.5;
-              const halo = ctx.createRadialGradient(x + CELL / 2, y + CELL / 2, 2, x + CELL / 2, y + CELL / 2, 16);
-              halo.addColorStop(0, 'rgba(250, 204, 21, 0.55)');
-              halo.addColorStop(1, 'rgba(250, 204, 21, 0)');
-              ctx.fillStyle = halo;
-              ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 16, 0, Math.PI * 2); ctx.fill();
+              drawDynamicPointLight(ctx, x + CELL / 2, y + CELL / 2, 24, '253, 224, 71', 0.55);
               if (!drawArcadeSprite(ctx, 'assets/games/puzzle/particleStar.png', x + CELL / 2, y + CELL / 2, pr, pr, now * 0.004)) {
                 ctx.fillStyle = '#FACC15';
                 ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 7.5, 0, Math.PI * 2); ctx.fill();
@@ -507,6 +512,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
         }
         const px = OX + (pac.x + 0.5) * CELL;
         const py = OY + (pac.y + 0.5) * CELL;
+        drawDynamicPointLight(ctx, px, py, 36, '250, 204, 21', 0.35);
         const ang = pac.dx < 0 ? Math.PI : pac.dy > 0 ? Math.PI / 2 : pac.dy < 0 ? -Math.PI / 2 : 0;
         const jaw = 0.15 + Math.abs(Math.sin(pac.mouth)) * 0.45;
         ctx.save();
@@ -525,6 +531,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           const r = CELL * 0.4;
           const flashWhite = frightTimer > 0 && frightTimer < 2 && Math.floor(now / 150) % 2 === 0;
           const bodyCol = frightTimer > 0 ? (flashWhite ? '#E2E8F0' : '#2563EB') : gh.col;
+          if (frightTimer > 0) drawDynamicPointLight(ctx, gx, gy, 28, '56, 189, 248', 0.34);
           ctx.save();
           ctx.shadowColor = bodyCol;
           ctx.shadowBlur = 12;
@@ -770,6 +777,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           const bpy = OY + (b.y + 0.5) * CELL;
           const pulse = 13 + Math.sin(b.timer * 15) * 2.6;
           const urgent = b.timer < 0.8;
+          drawDynamicPointLight(ctx, bpx, bpy, urgent ? 38 : 28, urgent ? '244, 63, 94' : '250, 204, 21', urgent ? 0.52 : 0.34);
           // Bomb shadow & danger pulse
           ctx.fillStyle = urgent ? 'rgba(244, 63, 94, 0.25)' : 'rgba(0,0,0,0.42)';
           ctx.beginPath(); ctx.arc(bpx, bpy + 4, pulse + 2, 0, Math.PI * 2); ctx.fill();
@@ -789,6 +797,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
         flames.forEach((f) => {
           const fx = OX + (f.x + 0.5) * CELL;
           const fy = OY + (f.y + 0.5) * CELL;
+          drawDynamicPointLight(ctx, fx, fy, 38, '249, 115, 22', Math.min(0.6, f.timer * 1.1));
           const frameIdx = Math.min(EXPLOSION_FRAMES.length - 1, Math.max(0, Math.floor((1 - f.timer / 0.48) * EXPLOSION_FRAMES.length)));
           if (!drawArcadeSprite(ctx, EXPLOSION_FRAMES[frameIdx], fx, fy, CELL * 1.15, CELL * 0.95)) {
             ctx.fillStyle = 'rgba(249,115,22,0.88)';
@@ -819,6 +828,8 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
     // ---------------------------------------------------------------
     else {
       let bird = { y: 240, vy: 0 };
+      let flapImpulse = 0;
+      let planeTrail: Array<{ x: number; y: number }> = [];
       let pipes: Array<{ x: number; gapY: number; gapH: number; passed: boolean }> = [];
       let coins: Array<{ x: number; y: number; collected: boolean }> = [];
       let puffs: Array<{ x: number; y: number; life: number }> = [];
@@ -829,7 +840,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
       let scroll = 0;
 
       const reset = () => {
-        bird = { y: 240, vy: 0 }; pipes = []; coins = []; puffs = []; curScore = 0;
+        bird = { y: 240, vy: 0 }; flapImpulse = 0; planeTrail = []; pipes = []; coins = []; puffs = []; curScore = 0;
         started = false; dead = false; spawnX = 0; scroll = 0;
         setGameOver(false); commitScore(0); setSubLabel('Pulsa para volar');
       };
@@ -837,6 +848,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
         if (dead) return;
         started = true;
         bird.vy = -345;
+        flapImpulse = 1;
         puffs.push({ x: 215, y: bird.y + 4, life: 0.45 });
         setSubLabel('En vuelo');
         playArcadeSfx(520, 0.05, 'triangle', 0.06, mutedRef.current);
@@ -850,6 +862,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
         if (!alive) return;
         const dt = Math.min(0.05, (now - last) / 1000);
         last = now;
+        if (flapImpulse > 0) flapImpulse = Math.max(0, flapImpulse - dt * 5);
         for (let pi = puffs.length - 1; pi >= 0; pi -= 1) {
           puffs[pi].x -= 140 * dt; puffs[pi].life -= dt;
           if (puffs[pi].life <= 0) puffs.splice(pi, 1);
@@ -858,6 +871,9 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           scroll += 235 * dt;
           bird.vy += 980 * dt;
           bird.y += bird.vy * dt;
+          planeTrail.forEach((pt) => { pt.x -= 235 * dt; });
+          planeTrail.push({ x: 224, y: bird.y });
+          if (planeTrail.length > 7) planeTrail.shift();
           spawnX += 235 * dt;
           if (spawnX >= 270) {
             spawnX = 0;
@@ -909,6 +925,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
         sky.addColorStop(0, '#0284C7'); sky.addColorStop(0.55, '#38BDF8'); sky.addColorStop(1, '#BAE6FD');
         ctx.fillStyle = sky; ctx.fillRect(0, 0, 960, 490);
         drawArcadeTiledBg(ctx, 'assets/games/tappy/background.png', 960, 480, -scroll * 0.35, 0);
+        drawProceduralNebulaBackdrop(ctx, 960, 490, now * 0.001, 'sky');
 
         // Distant parallax scenic hills silhouette
         ctx.save();
@@ -948,11 +965,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
         // Spinning collectible bonus coins
         coins.forEach((cn) => {
           const spinW = Math.max(4, Math.abs(Math.cos(now * 0.006)) * 14);
-          const halo = ctx.createRadialGradient(cn.x, cn.y, 2, cn.x, cn.y, 22);
-          halo.addColorStop(0, 'rgba(250, 204, 21, 0.55)');
-          halo.addColorStop(1, 'rgba(250, 204, 21, 0)');
-          ctx.fillStyle = halo;
-          ctx.beginPath(); ctx.arc(cn.x, cn.y, 22, 0, Math.PI * 2); ctx.fill();
+          drawDynamicPointLight(ctx, cn.x, cn.y, 26, '250, 204, 21', 0.45);
           ctx.fillStyle = '#FACC15';
           ctx.strokeStyle = '#92400E';
           ctx.lineWidth = 2;
@@ -976,13 +989,22 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           ctx.restore();
         }
 
+        if (planeTrail.length >= 2) {
+          drawMotionSmearTrail(ctx, planeTrail, 5, '255, 255, 255', 0.35);
+        }
         const planeFrames = ['assets/games/tappy/planeYellow1.png', 'assets/games/tappy/planeYellow2.png', 'assets/games/tappy/planeYellow3.png'] as const;
         const frameIdx = Math.floor(now / 75) % 3;
         const rot = Math.max(-0.45, Math.min(0.95, bird.vy * 0.0018));
-        if (!drawArcadeSprite(ctx, planeFrames[frameIdx], 240, bird.y, 52, 43, rot)) {
+        const planeSq = computeSquashStretch(flapImpulse, bird.vy, 0.28);
+        ctx.save();
+        ctx.translate(240, bird.y);
+        ctx.rotate(rot);
+        ctx.scale(planeSq.scaleX, planeSq.scaleY);
+        if (!drawArcadeSprite(ctx, planeFrames[frameIdx], 0, 0, 52, 43, 0)) {
           ctx.fillStyle = '#FACC15';
-          ctx.beginPath(); ctx.ellipse(240, bird.y, 19, 15, rot, 0, Math.PI * 2); ctx.fill();
+          ctx.beginPath(); ctx.ellipse(0, 0, 19, 15, 0, 0, Math.PI * 2); ctx.fill();
         }
+        ctx.restore();
         rafId = window.requestAnimationFrame(loop);
       };
       rafId = window.requestAnimationFrame(loop);
@@ -1060,6 +1082,20 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           </button>
           <button
             type="button"
+            onClick={() => setCrtEnabled((v) => !v)}
+            aria-label="CRT"
+            title="Filtro CRT retro"
+            className={`min-h-9 px-2.5 rounded-xl border text-xs font-bold inline-flex items-center gap-1 cursor-pointer ${
+              crtEnabled
+                ? 'bg-violet-500/20 border-violet-400/50 text-violet-200'
+                : 'bg-white/[0.06] hover:bg-white/[0.14] border-white/10 text-zinc-300'
+            }`}
+          >
+            <Monitor className="w-3.5 h-3.5" />
+            <span>CRT</span>
+          </button>
+          <button
+            type="button"
             onClick={() => setLocalMuted((m) => !m)}
             aria-label={pickLang(lang, { es: 'Silenciar', ca: 'Silenciar', en: 'Mute' })}
             className="w-9 h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.14] flex items-center justify-center cursor-pointer"
@@ -1091,6 +1127,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           }}
           className="game-touch-btn w-full h-auto block cursor-pointer"
         />
+        <CrtOverlayLayer enabled={crtEnabled} />
         <PixiGameFxLayer ref={pixiFxRef} />
         {gameOver && (
           <div className="absolute inset-0 bg-[#050812]/90 flex flex-col items-center justify-center gap-3 p-6 text-center">

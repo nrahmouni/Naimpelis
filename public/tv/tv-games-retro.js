@@ -231,6 +231,7 @@
       }
       for (var ci2 = 0; ci2 < capsules.length; ci2++) {
         var cp = capsules[ci2], pUrl = cp.kind === 'M' ? 'assets/games/space/pill_green.png' : cp.kind === 'L' ? 'assets/games/space/pill_red.png' : 'assets/games/space/pill_blue.png';
+        if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, cp.x, cp.y, 26, '56,189,248', 0.4);
         if (!spr(ctx, pUrl, cp.x, cp.y, 28, 22, 0)) {
           ctx.fillStyle = cp.kind === 'M' ? '#22C55E' : cp.kind === 'L' ? '#F43F5E' : '#38BDF8';
           ctx.fillRect(cp.x - 16, cp.y - 9, 32, 18);
@@ -238,6 +239,7 @@
         ctx.fillStyle = '#FFF'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(cp.kind, cp.x, cp.y + 4);
       }
       for (var li2 = 0; li2 < lasers.length; li2++) {
+        if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, lasers[li2].x, lasers[li2].y, 20, '244,63,94', 0.46);
         if (!spr(ctx, 'assets/games/space/laserRed01.png', lasers[li2].x, lasers[li2].y, 8, 24, 0)) {
           ctx.fillStyle = '#F43F5E'; ctx.fillRect(lasers[li2].x - 2, lasers[li2].y - 12, 4, 16);
         }
@@ -247,11 +249,13 @@
         ctx.fillStyle = laserTimer > 0 ? '#F43F5E' : '#7C3AED'; ctx.fillRect(padX - padW / 2, 490, padW, 16);
       }
       for (var k2 = 0; k2 < balls.length; k2++) {
+        if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, balls[k2].x, balls[k2].y, 22, '250,204,21', 0.42);
         if (!spr(ctx, 'assets/games/puzzle/ballBlue.png', balls[k2].x, balls[k2].y, 18, 18, 0)) {
           ctx.fillStyle = '#FDE047'; ctx.beginPath(); ctx.arc(balls[k2].x, balls[k2].y, 8, 0, Math.PI * 2); ctx.fill();
         }
       }
       stepBooms(ctx, booms, dt);
+      if (typeof window.drawTvCrtOverlay === 'function') window.drawTvCrtOverlay(ctx, 960, 540, 0.16);
       window.TV_GAME_RAF = requestAnimationFrame(frame);
     }
     resetGame();
@@ -429,6 +433,8 @@
       }
       ctx.fillStyle = '#04060d'; ctx.fillRect(0, 0, 960, 540);
       tiledBg(ctx, 'assets/games/space/darkPurple.png', 960, 540, 0, now * 0.025);
+      if (typeof window.drawTvNebulaLayer === 'function') window.drawTvNebulaLayer(ctx, 960, 540, now * 0.001, 'space');
+      if (ufo.active && typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, ufo.x, 34, 42, '244,63,94', 0.45);
       if (ufo.active && !spr(ctx, 'assets/games/space/ufoRed.png', ufo.x, 34, 46, 46, Math.sin(now * 0.005) * 0.15)) {
         ctx.fillStyle = '#EF4444'; ctx.fillRect(ufo.x - 24, 24, 48, 16);
       }
@@ -443,20 +449,24 @@
       ctx.fillStyle = '#22C55E';
       for (var bk2 = 0; bk2 < bunkers.length; bk2++) if (bunkers[bk2].alive) ctx.fillRect(bunkers[bk2].x, bunkers[bk2].y, 11, 9);
       spr(ctx, 'assets/games/space/fire00.png', px, 514, 12, 18 + Math.random() * 6, 0);
+      if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, px, 496, 36, '56,189,248', 0.36);
       if (!spr(ctx, 'assets/games/space/playerShip1_blue.png', px, 492, 52, 40, 0)) {
         ctx.fillStyle = '#38BDF8'; ctx.fillRect(px - 24, 488, 48, 16);
       }
       for (var pbi = 0; pbi < pBullets.length; pbi++) {
+        if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, pBullets[pbi].x, pBullets[pbi].y, 18, '56,189,248', 0.45);
         if (!spr(ctx, 'assets/games/space/laserBlue01.png', pBullets[pbi].x, pBullets[pbi].y, 7, 22, 0)) {
           ctx.fillStyle = '#FACC15'; ctx.fillRect(pBullets[pbi].x - 2, pBullets[pbi].y - 10, 4, 14);
         }
       }
       for (var abi = 0; abi < aBullets.length; abi++) {
+        if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, aBullets[abi].x, aBullets[abi].y, 18, '251,113,133', 0.45);
         if (!spr(ctx, 'assets/games/space/laserRed01.png', aBullets[abi].x, aBullets[abi].y, 7, 22, 0)) {
           ctx.fillStyle = '#FB7185'; ctx.fillRect(aBullets[abi].x - 2, aBullets[abi].y, 5, 13);
         }
       }
       stepBooms(ctx, booms, dt);
+      if (typeof window.drawTvCrtOverlay === 'function') window.drawTvCrtOverlay(ctx, 960, 540, 0.16);
       window.TV_GAME_RAF = requestAnimationFrame(frame);
     }
     resetGame();
@@ -586,10 +596,12 @@
         var frac = 1 - e2.z / 1000, ey = 260 + Math.pow(frac, 1.7) * 280, hw = 44 + (ey - 260) * 1.48;
         var ex = horizonX + e2.lane * hw * 0.78, sc = 0.18 + frac * 1.05;
         if (e2.kind === 'pad') {
+          if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, ex, ey - 16 * sc, 28 * sc, '34,211,238', 0.48);
           if (!spr(ctx, 'assets/games/space/powerupBlue_bolt.png', ex, ey - 16 * sc, 34 * sc, 34 * sc, 0)) {
             ctx.fillStyle = '#22D3EE'; ctx.fillRect(ex - 28 * sc, ey - 8 * sc, 56 * sc, 12 * sc);
           }
         } else if (e2.kind === 'heal') {
+          if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, ex, ey - 18 * sc, 28 * sc, '34,197,94', 0.45);
           if (!spr(ctx, 'assets/games/space/powerupBlue_shield.png', ex, ey - 18 * sc, 34 * sc, 34 * sc, 0)) {
             ctx.fillStyle = '#22C55E'; ctx.beginPath(); ctx.arc(ex, ey - 18 * sc, 16 * sc, 0, Math.PI * 2); ctx.fill();
           }
@@ -607,6 +619,8 @@
         ctx.closePath(); ctx.fill();
       }
       ctx.restore();
+      if (typeof window.drawTvGlowLight === 'function') window.drawTvGlowLight(ctx, 480 + shipX * 260, 496, boostOn ? 46 : 30, '34,211,238', boostOn ? 0.65 : 0.38);
+      if (typeof window.drawTvSpeedlines === 'function' && (boostOn || speed > 680)) window.drawTvSpeedlines(ctx, 960, 540, boostOn ? 0.88 : (speed - 680) / 380, now * 0.001, '#22D3EE');
       stepBooms(ctx, booms, dt);
       window.TV_GAME_RAF = requestAnimationFrame(frame);
     }

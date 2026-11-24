@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { resolveGameAssetUrl } from '../../../shared/gameAssetsCdn';
+import {
+  applyFresnelRimShader,
+  applyFresnelRimToGroup,
+  attachSafeMeshDecoders,
+} from '../arcade/threePostFxHelpers';
 
 export interface BuiltCarRig {
   root: THREE.Group;
@@ -15,6 +20,7 @@ export interface BuiltCarRig {
 const GLB_CACHE = new Map<string, Promise<THREE.Group | null>>();
 const sharedGltfLoader = new GLTFLoader();
 sharedGltfLoader.setCrossOrigin('anonymous');
+attachSafeMeshDecoders(sharedGltfLoader);
 
 function loadCachedRaceModel(relUrl: string): Promise<THREE.Group | null> {
   if (typeof window === 'undefined' || typeof fetch === 'undefined') return Promise.resolve(null);
@@ -75,6 +81,11 @@ export function buildFormulaGtCar(
       clearcoatRoughness: 0.08,
     })
   );
+  applyFresnelRimShader(paintMat, {
+    colorHex: accentHex,
+    power: 3.0,
+    intensity: options?.isPlayer ? 0.52 : 0.36,
+  });
 
   const accentMat = trackMat(
     new THREE.MeshStandardMaterial({
@@ -341,6 +352,11 @@ export function buildFormulaGtCar(
     );
     glbBrakeBar.position.set(0, 0.56, 2.08);
     clone.rotation.y = Math.PI;
+    applyFresnelRimToGroup(clone, {
+      colorHex: accentHex,
+      power: 3.1,
+      intensity: options?.isPlayer ? 0.45 : 0.3,
+    });
     glbClone = clone;
     bodyGroup.add(clone, glbBrakeBar);
     proceduralBody.visible = false;

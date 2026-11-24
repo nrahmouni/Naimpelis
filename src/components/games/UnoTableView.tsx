@@ -339,7 +339,14 @@ export const UnoTableView: React.FC<UnoTableViewProps> = ({
               <div
                 key={`${topDiscard.id}-${uState.discardPile.length}`}
                 style={{ '--uno-rot': `${discardRotDeg}deg` } as React.CSSProperties}
-                className="nc-uno-arc relative w-full h-full drop-shadow-[0_14px_26px_rgba(0,0,0,0.82)]"
+                className={`nc-uno-arc relative w-full h-full rounded-xl overflow-hidden drop-shadow-[0_14px_26px_rgba(0,0,0,0.82)] ${
+                  topDiscard.color === 'wild' ||
+                  topDiscard.value === 'draw2' ||
+                  topDiscard.value === 'skip' ||
+                  topDiscard.value === 'reverse'
+                    ? 'card-foil-shimmer'
+                    : ''
+                }`}
               >
                 <img
                   src={getUnoCardSvgSrc(topDiscard.color, topDiscard.value)}
@@ -588,18 +595,30 @@ export const UnoTableView: React.FC<UnoTableViewProps> = ({
                       : 'opacity-45 grayscale-[70%] cursor-not-allowed brightness-65'
                   }`}
                 >
-                  <img
-                    src={getUnoCardSvgSrc(card.color, card.value)}
-                    alt={`${card.color} ${card.value}`}
-                    className={`w-full h-full object-contain rounded-xl pointer-events-none select-none ${
-                      playable
-                        ? card.color === 'wild'
-                          ? 'ring-2 ring-amber-300 shadow-[0_0_18px_rgba(251,191,36,0.65)]'
-                          : 'ring-2 ring-white/95 shadow-md'
+                  <div
+                    className={`relative w-full h-full rounded-xl overflow-hidden ${
+                      playable &&
+                      (card.color === 'wild' ||
+                        card.value === 'draw2' ||
+                        card.value === 'skip' ||
+                        card.value === 'reverse')
+                        ? 'card-foil-shimmer'
                         : ''
                     }`}
-                    draggable={false}
-                  />
+                  >
+                    <img
+                      src={getUnoCardSvgSrc(card.color, card.value)}
+                      alt={`${card.color} ${card.value}`}
+                      className={`w-full h-full object-contain rounded-xl pointer-events-none select-none ${
+                        playable
+                          ? card.color === 'wild'
+                            ? 'ring-2 ring-amber-300 shadow-[0_0_18px_rgba(251,191,36,0.65)]'
+                            : 'ring-2 ring-white/95 shadow-md'
+                          : ''
+                      }`}
+                      draggable={false}
+                    />
+                  </div>
                 </button>
               );
             })}
