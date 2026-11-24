@@ -4,7 +4,7 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { applyPolyHavenHdri } from '../arcade/threeProHelpers';
+import { applyPolyHavenHdri, createSkyDomeTexture, createThreeFramePacer } from '../arcade/threeProHelpers';
 import { buildFormulaGtCar, type BuiltCarRig } from './racingCarBuilder';
 import { buildGpCircuitScene } from './racingTrackBuilder';
 import { RacingSoundEngine } from './racingAudio';
@@ -117,9 +117,16 @@ export function createRacing3dEngine(
   renderer.domElement.style.height = '100%';
   container.appendChild(renderer.domElement);
 
+  const skyDomeTex = createSkyDomeTexture({
+    topHex: '#070e22',
+    midHex: '#18305b',
+    horizonHex: '#c26d38',
+    sunGlowHex: 'rgba(251, 191, 36, 0.45)',
+    stars: true,
+  });
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x070a14);
-  scene.fog = new THREE.FogExp2(0x070a14, 0.0028);
+  scene.background = skyDomeTex;
+  scene.fog = new THREE.FogExp2(0x0b152a, 0.0024);
 
   let pmrem: THREE.PMREMGenerator | null = null;
   let envTarget: THREE.WebGLRenderTarget | null = null;
@@ -137,13 +144,13 @@ export function createRacing3dEngine(
     pmrem = null;
   }
 
-  // Upgrade to photorealistic Poly Haven 1K twilight HDRI reflections asynchronously on GPU devices
+  // Upgrade to photorealistic Poly Haven 1K dusk HDRI reflections asynchronously on GPU devices
   const hdriHandle = applyPolyHavenHdri(
     scene,
     renderer,
-    'assets/games/hdri/moonless_golf_1k.hdr',
+    'assets/games/hdri/evening_road_01_1k.hdr',
     isSoftwareGl,
-    { envIntensity: 1.0 }
+    { setBackground: true, backgroundBlur: 0.05, envIntensity: 1.05 }
   );
 
   const camera = new THREE.PerspectiveCamera(
@@ -271,7 +278,6 @@ export function createRacing3dEngine(
   // Mutable simulation state
   let destroyed = false;
   let contextLost = false;
-  let rafId = 0;
   let cameraMode: RacingCameraMode = 'chase';
   let lastTelemetryEmitMs = 0;
 
@@ -909,7 +915,8 @@ export function createRacing3dEngine(
     camera.quaternion.slerp(_qDesired, cameraMode === 'hood' ? 0.55 : 0.22);
 
     const speedKmh = Math.max(0, Math.round(Math.abs(speedMps) * 3.6));
-    const targetFov = 58 + Math.min(20, (speedKmh / 330) * 18) + (boosting ? 4 : 0);
+    const narrowPad = camera.aspect < 1.25 ? Math.min(12, (1.25 - camera.aspect) * 18) : 0;
+    const targetFov = 58 + Math.min(20, (speedKmh / 330) * 18) + (boosting ? 4 : 0) + narrowPad;
     if (Math.abs(camera.fov - targetFov) > 0.1) {
       camera.fov = THREE.MathUtils.damp(camera.fov, targetFov, 6, dt);
       camera.updateProjectionMatrix();
@@ -974,9 +981,11 @@ export function createRacing3dEngine(
     return rank;
   }
 
+  const framePacer = createThreeFramePacer(renderer, isSoftwareGl);
+
   function animate() {
     if (destroyed) return;
-    rafId = window.requestAnimationFrame(animate);
+    framePacer.schedule(animate);
     if (contextLost) return;
     const dt = Math.min(clock.getDelta(), 0.05);
     stepSimulation(dt, performance.now());
@@ -1023,7 +1032,7 @@ export function createRacing3dEngine(
     }
   }
 
-  rafId = window.requestAnimationFrame(animate);
+  framePacer.schedule(animate);
 
   const handleResize = () => {
     if (destroyed) return;
@@ -1129,7 +1138,7 @@ export function createRacing3dEngine(
     },
     destroy: () => {
       destroyed = true;
-      window.cancelAnimationFrame(rafId);
+      framePacer.cancel();
       resizeObserver?.disconnect();
       window.removeEventListener('resize', handleResize);
       window.removeEventListener('pointerdown', unlockAudioHandler);
@@ -1141,6 +1150,7 @@ export function createRacing3dEngine(
       circuit.dispose();
       particleGeo.dispose();
       particleMat.dispose();
+      skyDomeTex.dispose();
       hdriHandle.dispose();
       composer?.dispose();
       bloomPass?.dispose();

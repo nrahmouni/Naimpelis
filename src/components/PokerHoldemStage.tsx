@@ -25,6 +25,7 @@ import { VoiceSpeakerIndicator } from './games/GameVoiceBar';
 import { playGameSfx, useGameSoundMute } from './games/GameEffects';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
+import { getDiceBearAvatarUrl, getPlayingCardSvgUrl } from '../shared/gameAssetsCdn';
 
 export interface PokerHoldemStageProps {
   lang: AppLanguage;
@@ -56,6 +57,7 @@ const PlayingCardView: React.FC<{
   highlighted?: boolean;
   compact?: boolean;
 }> = ({ card, faceDown = false, highlighted = false, compact = false }) => {
+  const [failedCardKey, setFailedCardKey] = useState<string | null>(null);
   const sizeCls = compact
     ? 'w-8 h-11 rounded-md text-[10px]'
     : 'w-11 h-16 sm:w-13 sm:h-18 rounded-lg text-xs';
@@ -63,16 +65,16 @@ const PlayingCardView: React.FC<{
   if (faceDown || !card) {
     return (
       <div
-        className={`${sizeCls} bg-gradient-to-br from-[#4c1d95] via-[#311068] to-[#1e0b42] border border-violet-300/35 shadow-md flex items-center justify-center relative overflow-hidden shrink-0`}
+        className={`${sizeCls} bg-gradient-to-br from-[#4c1d95] via-[#311068] to-[#1e0b42] border border-amber-300/45 shadow-[0_4px_12px_rgba(0,0,0,0.55)] flex items-center justify-center relative overflow-hidden shrink-0`}
       >
         <div
-          className="absolute inset-1 rounded-[4px] border border-violet-300/25 opacity-60"
+          className="absolute inset-1 rounded-[4px] border border-amber-200/30 opacity-75"
           style={{
             backgroundImage:
-              'repeating-linear-gradient(45deg, rgba(191,148,255,0.12) 0 4px, transparent 4px 8px)',
+              'repeating-linear-gradient(45deg, rgba(250,204,21,0.14) 0 4px, transparent 4px 8px)',
           }}
         />
-        <span className="text-violet-200/80 font-black text-[10px] relative z-10">✦</span>
+        <span className="text-amber-200/90 font-black text-[10px] relative z-10">✦</span>
       </div>
     );
   }
@@ -80,6 +82,29 @@ const PlayingCardView: React.FC<{
   const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
   const rankLabel = formatPokerRank(card.rank);
   const suitChar = SUIT_GLYPH[card.suit];
+  const cardKey = `${rankLabel}-${card.suit}`;
+  const svgUrl = getPlayingCardSvgUrl(rankLabel, card.suit);
+  const useFallback = failedCardKey === cardKey;
+
+  if (!useFallback) {
+    return (
+      <div
+        className={`${sizeCls} bg-white border overflow-hidden select-none shrink-0 transition-all ${
+          highlighted
+            ? 'border-amber-400 ring-2 ring-amber-400/90 -translate-y-1 shadow-[0_8px_22px_rgba(250,204,21,0.55)]'
+            : 'border-zinc-300/90 shadow-[0_6px_14px_rgba(0,0,0,0.5)]'
+        }`}
+      >
+        <img
+          src={svgUrl}
+          alt={`${rankLabel} ${card.suit}`}
+          onError={() => setFailedCardKey(cardKey)}
+          className="w-full h-full object-contain p-[1px] pointer-events-none select-none"
+          draggable={false}
+        />
+      </div>
+    );
+  }
 
   return (
     <div
@@ -332,8 +357,19 @@ export const PokerHoldemStage: React.FC<PokerHoldemStageProps> = ({
         }`}
       >
         <div className="flex items-center gap-2 min-w-0">
-          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center text-sm shrink-0">
-            {seat.isBot ? '🤖' : seat.avatar}
+          <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-white/10 border border-white/15 flex items-center justify-center text-sm shrink-0 overflow-hidden">
+            {seat.isBot ? (
+              <img
+                src={getDiceBearAvatarUrl(seat.name, 'bottts-neutral')}
+                alt={seat.name}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  e.currentTarget.style.display = 'none';
+                }}
+              />
+            ) : (
+              seat.avatar
+            )}
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1 min-w-0">
@@ -478,9 +514,16 @@ export const PokerHoldemStage: React.FC<PokerHoldemStageProps> = ({
         </div>
       )}
 
-      {/* Sleek Dark/Purple Felt Poker Table Center */}
-      <div className="relative rounded-[36px] bg-gradient-to-b from-[#2b154d] via-[#1c0e36] to-[#110824] border-4 border-[#3b2069] shadow-[inset_0_0_50px_rgba(0,0,0,0.65),0_18px_40px_rgba(0,0,0,0.65)] px-4 py-5 flex flex-col items-center justify-center gap-3.5">
-        <div className="absolute inset-2 rounded-[28px] border border-violet-300/15 pointer-events-none" />
+      {/* VIP Casino Felt Poker Table Center */}
+      <div className="relative rounded-[36px] bg-gradient-to-b from-[#2b154d] via-[#1b0e35] to-[#0f0720] border-[5px] border-[#432476] shadow-[inset_0_0_60px_rgba(0,0,0,0.72),0_20px_46px_rgba(0,0,0,0.7)] px-4 py-5 flex flex-col items-center justify-center gap-3.5 overflow-hidden">
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(ellipse at 50% 35%, rgba(191,148,255,0.16) 0%, rgba(145,70,255,0.06) 45%, transparent 72%)',
+          }}
+        />
+        <div className="absolute inset-2 rounded-[28px] border border-amber-300/20 shadow-[inset_0_0_24px_rgba(0,0,0,0.35)] pointer-events-none" />
 
         {/* Pot & Blinds Pill */}
         <div className="relative z-10 flex items-center gap-3">

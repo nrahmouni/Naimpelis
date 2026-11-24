@@ -6,6 +6,7 @@ import type {
   FutbolChapasState,
 } from '../../types';
 import { CHAPAS_TEAM_PRESETS } from '../../shared/futbolChapas';
+import { getCircleFlagCdnUrl } from '../../shared/gameAssetsCdn';
 import type { GameVoiceChatState } from '../../hooks/useGameVoiceChat';
 import { VoiceSpeakerIndicator } from './GameVoiceBar';
 import { pickLang } from '../../utils/i18n';
@@ -151,26 +152,34 @@ export const ChapasWaitingLobbyBar: React.FC<ChapasWaitingLobbyBarProps> = ({
   onJoinSeat,
   onStartMatch,
 }) => (
-  <div className="absolute inset-x-2.5 bottom-2.5 z-20 rounded-2xl bg-[#0D1310]/92 backdrop-blur-md border border-emerald-400/30 p-2.5 flex flex-wrap items-center justify-between gap-2 shadow-2xl">
+  <div className="absolute inset-x-2.5 bottom-2.5 z-20 rounded-2xl bg-[#0D1310]/94 backdrop-blur-md border border-emerald-400/35 p-2.5 flex flex-wrap items-center justify-between gap-2 shadow-2xl">
     <div className="flex items-center gap-1.5 flex-wrap">
       <button
         type="button"
         disabled={!canConfigureLobby}
         onClick={() => onCycleTeamFlag('A')}
-        className="min-h-9 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] disabled:opacity-65 border border-white/15 text-[11px] font-extrabold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+        className="min-h-9 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-65 border border-white/20 text-[11px] font-extrabold text-white flex items-center gap-2 whitespace-nowrap cursor-pointer shadow-sm"
       >
-        <span className="w-3 h-3 rounded-full border border-white/70" style={{ backgroundColor: flagA.primary }} />
-        <span>Eq.1: {flagA.short}</span>
+        <img
+          src={getCircleFlagCdnUrl(flagA.id)}
+          alt={flagA.name}
+          className="w-5 h-5 rounded-full border-2 border-slate-200 shadow-inner object-cover"
+        />
+        <span>Eq.1 · {flagA.short}</span>
       </button>
 
       <button
         type="button"
         disabled={!canConfigureLobby}
         onClick={() => onCycleTeamFlag('B')}
-        className="min-h-9 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] disabled:opacity-65 border border-white/15 text-[11px] font-extrabold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+        className="min-h-9 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-65 border border-white/20 text-[11px] font-extrabold text-white flex items-center gap-2 whitespace-nowrap cursor-pointer shadow-sm"
       >
-        <span className="w-3 h-3 rounded-full border border-white/70" style={{ backgroundColor: flagB.primary }} />
-        <span>Eq.2: {flagB.short}</span>
+        <img
+          src={getCircleFlagCdnUrl(flagB.id)}
+          alt={flagB.name}
+          className="w-5 h-5 rounded-full border-2 border-slate-200 shadow-inner object-cover"
+        />
+        <span>Eq.2 · {flagB.short}</span>
       </button>
 
       {canConfigureLobby && (

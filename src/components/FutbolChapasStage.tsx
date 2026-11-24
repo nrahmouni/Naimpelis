@@ -30,8 +30,10 @@ import {
   drawChapasBallAndParticles,
   drawChapasStadiumBackdrop,
   drawFlagEmblem,
+  getChapasFlagImage,
   type ImpactParticle,
 } from './games/chapasRenderer';
+import { PixiGameFxLayer, type PixiGameFxHandle } from './games/arcade/PixiGameFxLayer';
 import {
   ChapasEmojiReactionDock,
   ChapasWaitingLobbyBar,
@@ -73,27 +75,6 @@ export interface FutbolChapasStageProps {
   onRematchOnline?: () => void;
 }
 
-/**
- * Draws a classic 21-tooth crimped metallic bottle-cap ("chapa") outer crown path.
- */
-function traceBottleCapCrownPath(
-  ctx: CanvasRenderingContext2D,
-  outerR: number,
-  innerR: number,
-  teeth = 21
-): void {
-  const steps = teeth * 2;
-  ctx.beginPath();
-  for (let i = 0; i <= steps; i += 1) {
-    const angle = (i * Math.PI) / teeth;
-    const rad = i % 2 === 0 ? outerR : innerR;
-    const px = Math.cos(angle) * rad;
-    const py = Math.sin(angle) * rad;
-    if (i === 0) ctx.moveTo(px, py);
-    else ctx.lineTo(px, py);
-  }
-  ctx.closePath();
-}
 
 export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
   lang,
@@ -139,6 +120,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const pixiFxRef = useRef<PixiGameFxHandle | null>(null);
   const playbackRef = useRef<ActiveChapasPlayback | null>(null);
   const aimDragRef = useRef<ChapasAimDragState | null>(null);
   const particlesRef = useRef<ImpactParticle[]>([]);
@@ -299,6 +281,12 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
           pb.goalBannerShown = true;
           playGameSfx('parchis_goal', mutedRef.current);
           triggerHaptic('success');
+          pixiFxRef.current?.emitBurst(
+            0.5,
+            step.goalScoredBy === 'B' ? 0.14 : 0.86,
+            'goal',
+            26
+          );
           spawnBurst(
             CHAPAS_ARENA_W / 2,
             step.goalScoredBy === 'B' ? CHAPAS_PITCH_TOP : CHAPAS_PITCH_BOTTOM,
@@ -391,8 +379,10 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       }
 
       // ================================================================
-      // SCALLOPED 21-TOOTH BOTTLE CAPS (CHAPAS #1..#6) + NATIONAL FLAGS
+      // GLOSSY CHROME-BEZEL GLASS-DOMED TOKENS + CIRCLE-FLAGS SVG
       // ================================================================
+      getChapasFlagImage(st.teamFlags.A);
+      getChapasFlagImage(st.teamFlags.B);
       const activeTeamPulse = 0.65 + 0.35 * Math.sin(ts * 0.007);
       const seatIsHumanTurn = Boolean(
         st.status === 'playing' &&
@@ -412,71 +402,83 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
           ctx.rotate(Math.PI);
         }
 
-        // Pulsing outer ring halo around active team's chapas
+        // Warm glowing orange aura ring around active movable tokens (Plato signature)
         if (isMovable) {
-          const haloColor =
-            cap.team === 'A'
-              ? `rgba(251, 146, 60, ${0.46 * activeTeamPulse})`
-              : `rgba(56, 189, 248, ${0.48 * activeTeamPulse})`;
-          ctx.strokeStyle = haloColor;
-          ctx.lineWidth = seatIsHumanTurn ? 6.5 : 4.5;
+          const glowGrad = ctx.createRadialGradient(0, 0, r * 0.72, 0, 0, r + 9);
+          glowGrad.addColorStop(0, 'rgba(251, 146, 60, 0)');
+          glowGrad.addColorStop(0.55, `rgba(251, 146, 60, ${0.52 * activeTeamPulse})`);
+          glowGrad.addColorStop(0.85, `rgba(249, 115, 22, ${0.72 * activeTeamPulse})`);
+          glowGrad.addColorStop(1, 'rgba(249, 115, 22, 0)');
+          ctx.fillStyle = glowGrad;
           ctx.beginPath();
-          ctx.arc(0, 0, r + 5.2, 0, Math.PI * 2);
+          ctx.arc(0, 0, r + 9, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.strokeStyle = seatIsHumanTurn
+            ? `rgba(255, 214, 153, ${0.88 * activeTeamPulse})`
+            : `rgba(251, 146, 60, ${0.5 * activeTeamPulse})`;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(0, 0, r + 4.2, 0, Math.PI * 2);
           ctx.stroke();
         }
 
         // Soft cast drop shadow on grass
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
         ctx.beginPath();
-        ctx.arc(2.5, 4.2, r + 1.5, 0, Math.PI * 2);
+        ctx.arc(2.2, 3.6, r + 1.2, 0, Math.PI * 2);
         ctx.fill();
 
-        // 21-tooth crimped metallic bottle-cap silhouette
-        const crownGrad = ctx.createLinearGradient(-r, -r, r, r);
-        crownGrad.addColorStop(0, '#FFFFFF');
-        crownGrad.addColorStop(0.45, '#CBD5E1');
-        crownGrad.addColorStop(1, '#475569');
-        ctx.fillStyle = crownGrad;
-        traceBottleCapCrownPath(ctx, r + 2.1, r - 0.8, 21);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(15, 23, 42, 0.65)';
-        ctx.lineWidth = 0.9;
-        ctx.stroke();
-
-        // Brushed inner metallic bezel
-        ctx.fillStyle = '#1E293B';
+        // Smooth brushed silver/chrome outer bezel ring
+        const bezelGrad = ctx.createLinearGradient(-r, -r, r, r);
+        bezelGrad.addColorStop(0, '#FFFFFF');
+        bezelGrad.addColorStop(0.35, '#E2E8F0');
+        bezelGrad.addColorStop(0.7, '#94A3B8');
+        bezelGrad.addColorStop(1, '#475569');
+        ctx.fillStyle = bezelGrad;
         ctx.beginPath();
-        ctx.arc(0, 0, r - 2.6, 0, Math.PI * 2);
+        ctx.arc(0, 0, r + 0.6, 0, Math.PI * 2);
         ctx.fill();
 
-        // Enamel National Flag Emblem
-        drawFlagEmblem(ctx, flag, r - 4.1);
-
-        // Curved glass dome reflection highlight
-        const sheen = ctx.createRadialGradient(-r * 0.32, -r * 0.38, 1, 0, 0, r);
-        sheen.addColorStop(0, 'rgba(255,255,255,0.48)');
-        sheen.addColorStop(0.42, 'rgba(255,255,255,0.08)');
-        sheen.addColorStop(1, 'rgba(0,0,0,0.24)');
-        ctx.fillStyle = sheen;
-        ctx.beginPath();
-        ctx.arc(0, 0, r - 4.1, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Crisp jersey number badge (#1..#6) at bottom center
-        const badgeY = r * 0.78;
-        ctx.fillStyle = '#0F172A';
-        ctx.beginPath();
-        ctx.arc(0, badgeY, 8.2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        // Subtle scalloped micro-rim accent
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.55)';
         ctx.lineWidth = 1;
         ctx.stroke();
 
+        // Recessed metallic inner lip
+        ctx.fillStyle = '#334155';
+        ctx.beginPath();
+        ctx.arc(0, 0, r - 2.3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // High-DPI SVG Circle Flag Emblem
+        drawFlagEmblem(ctx, flag, r - 3.2);
+
+        // Curved glass dome reflection & soft lower rim vignette
+        const sheen = ctx.createRadialGradient(-r * 0.34, -r * 0.38, 0.8, 0, 0, r);
+        sheen.addColorStop(0, 'rgba(255,255,255,0.52)');
+        sheen.addColorStop(0.38, 'rgba(255,255,255,0.12)');
+        sheen.addColorStop(0.75, 'rgba(0,0,0,0.02)');
+        sheen.addColorStop(1, 'rgba(0,0,0,0.22)');
+        ctx.fillStyle = sheen;
+        ctx.beginPath();
+        ctx.arc(0, 0, r - 3.2, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Subtle number pill tucked cleanly on lower-right edge without covering flag center
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+        ctx.beginPath();
+        ctx.arc(r * 0.62, r * 0.62, 6.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+        ctx.lineWidth = 0.8;
+        ctx.stroke();
+
         ctx.fillStyle = '#FFFFFF';
-        ctx.font = '800 10.5px Plus Jakarta Sans, system-ui, sans-serif';
+        ctx.font = '800 8.5px Plus Jakarta Sans, system-ui, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText(String(cap.number), 0, badgeY + 0.5);
+        ctx.fillText(String(cap.number), r * 0.62, r * 0.64);
 
         ctx.restore();
       }
@@ -617,6 +619,25 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
             isMyTurn ? 'cursor-grab active:cursor-grabbing' : 'cursor-default'
           }`}
         />
+        <PixiGameFxLayer ref={pixiFxRef} />
+
+        {/* Subtle First-Shot Gloved-Hand Flick Hint */}
+        {activeState.status === 'playing' &&
+          isMyTurn &&
+          activeState.passesUsed === 0 &&
+          activeState.scores.A === 0 &&
+          activeState.scores.B === 0 && (
+            <div className="pointer-events-none absolute bottom-12 left-1/2 -translate-x-1/2 z-10 px-3 py-1 rounded-full bg-black/75 border border-amber-300/45 text-[11px] font-bold text-amber-100 flex items-center gap-1.5 shadow-lg animate-pulse whitespace-nowrap">
+              <span>👆</span>
+              <span>
+                {pickLang(lang, {
+                  es: 'Arrastra cualquier chapa iluminada para disparar',
+                  ca: 'Arrossega qualsevol xapa il·luminada per xutar',
+                  en: 'Drag any glowing cap back & release to flick',
+                })}
+              </span>
+            </div>
+          )}
 
         <ChapasEmojiReactionDock
           lang={lang}

@@ -26,6 +26,7 @@ import { VoiceSpeakerIndicator } from './games/GameVoiceBar';
 import { playGameSfx, useGameSoundMute } from './games/GameEffects';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
+import { getPlayingCardSvgUrl } from '../shared/gameAssetsCdn';
 
 export interface BlackjackStageProps {
   lang: AppLanguage;
@@ -62,17 +63,19 @@ const BjCardVisual: React.FC<{ card?: BjCard | null; faceDown?: boolean }> = ({
   card,
   faceDown = false,
 }) => {
+  const [failedCardKey, setFailedCardKey] = useState<string | null>(null);
+
   if (faceDown || !card) {
     return (
-      <div className="w-12 h-[68px] sm:w-14 sm:h-20 rounded-xl bg-gradient-to-br from-emerald-900 via-[#0d2d25] to-[#061814] border-2 border-amber-300/40 shadow-lg flex items-center justify-center relative overflow-hidden shrink-0">
+      <div className="w-12 h-[68px] sm:w-14 sm:h-20 rounded-xl bg-gradient-to-br from-emerald-900 via-[#0d2d25] to-[#061814] border-2 border-amber-300/45 shadow-[0_8px_18px_rgba(0,0,0,0.55)] flex items-center justify-center relative overflow-hidden shrink-0">
         <div
-          className="absolute inset-1 rounded-lg border border-amber-200/20"
+          className="absolute inset-1 rounded-lg border border-amber-200/25"
           style={{
             backgroundImage:
-              'repeating-linear-gradient(45deg, rgba(250,204,21,0.12) 0 4px, transparent 4px 8px)',
+              'repeating-linear-gradient(45deg, rgba(250,204,21,0.14) 0 4px, transparent 4px 8px)',
           }}
         />
-        <span className="text-amber-300/80 font-black text-xs relative z-10">21</span>
+        <span className="text-amber-300/90 font-black text-xs relative z-10">21</span>
       </div>
     );
   }
@@ -80,6 +83,22 @@ const BjCardVisual: React.FC<{ card?: BjCard | null; faceDown?: boolean }> = ({
   const isRed = card.suit === 'hearts' || card.suit === 'diamonds';
   const rank = formatBjRank(card.rank);
   const suit = SUIT_SYMBOL[card.suit];
+  const cardKey = `${rank}-${card.suit}`;
+  const svgUrl = getPlayingCardSvgUrl(rank, card.suit);
+
+  if (failedCardKey !== cardKey) {
+    return (
+      <div className="w-12 h-[68px] sm:w-14 sm:h-20 rounded-xl bg-white border border-zinc-300/90 shadow-[0_8px_18px_rgba(0,0,0,0.52)] overflow-hidden select-none shrink-0">
+        <img
+          src={svgUrl}
+          alt={`${rank} ${card.suit}`}
+          onError={() => setFailedCardKey(cardKey)}
+          className="w-full h-full object-contain p-[1px] pointer-events-none select-none"
+          draggable={false}
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="w-12 h-[68px] sm:w-14 sm:h-20 rounded-xl bg-gradient-to-b from-white to-zinc-100 border border-zinc-300 shadow-[0_6px_16px_rgba(0,0,0,0.45)] flex flex-col justify-between p-1.5 select-none shrink-0">
@@ -301,8 +320,16 @@ export const BlackjackStage: React.FC<BlackjackStageProps> = ({
       </div>
 
       {/* Main Casino Emerald Felt Table */}
-      <div className="relative rounded-[32px] bg-gradient-to-b from-[#0f3d2e] via-[#0a2b21] to-[#061813] border-4 border-[#1b5442] shadow-[inset_0_0_55px_rgba(0,0,0,0.6),0_18px_40px_rgba(0,0,0,0.65)] p-4 sm:p-5 flex flex-col gap-5">
-        <div className="text-center text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300/65">
+      <div className="relative rounded-[32px] bg-gradient-to-b from-[#0f3d2e] via-[#0a2b21] to-[#061813] border-[5px] border-[#1b5442] shadow-[inset_0_0_60px_rgba(0,0,0,0.65),0_20px_44px_rgba(0,0,0,0.7)] p-4 sm:p-5 flex flex-col gap-5 overflow-hidden">
+        <div
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(ellipse at 50% 25%, rgba(52,211,153,0.14) 0%, transparent 65%)',
+          }}
+        />
+        <div className="pointer-events-none absolute inset-2.5 rounded-[24px] border border-amber-300/20" />
+        <div className="relative z-10 text-center text-[10px] font-bold uppercase tracking-[0.2em] text-amber-300/75">
           BLACKJACK PAGA 3 A 2 · CRUPIER SE PLANTA EN 17
         </div>
 
@@ -479,7 +506,7 @@ export const BlackjackStage: React.FC<BlackjackStageProps> = ({
                 type="button"
                 disabled={mySeat.bankroll < chip.amount}
                 onClick={() => handleBet({ kind: 'add', amount: chip.amount })}
-                className={`w-12 h-12 rounded-full bg-gradient-to-b ${chip.bg} border-2 border-dashed font-mono text-xs font-black text-white shadow-lg flex items-center justify-center cursor-pointer active:scale-90 disabled:opacity-35 transition-transform`}
+                className={`w-12 h-12 rounded-full bg-gradient-to-b ${chip.bg} border-2 border-dashed font-mono text-xs font-black text-white shadow-[0_6px_14px_rgba(0,0,0,0.6),inset_0_2px_3px_rgba(255,255,255,0.45)] flex items-center justify-center cursor-pointer active:scale-90 disabled:opacity-35 transition-transform`}
               >
                 ${chip.amount}
               </button>

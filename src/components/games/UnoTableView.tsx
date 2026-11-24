@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   AlertTriangle,
   Bot,
@@ -30,6 +30,7 @@ import {
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { PARTY_COLOR_STYLES, type PartyOnlineAction } from './partyBoardConstants';
+import { PixiGameFxLayer, type PixiGameFxHandle } from './arcade/PixiGameFxLayer';
 
 interface UnoTableViewProps {
   lang: AppLanguage;
@@ -109,6 +110,22 @@ export const UnoTableView: React.FC<UnoTableViewProps> = ({
     uState.vulnerableUnoSeat !== null &&
     uState.vulnerableUnoSeat !== undefined &&
     uState.vulnerableUnoSeat !== mySeatIndex;
+
+  const pixiFxRef = useRef<PixiGameFxHandle | null>(null);
+  const prevStatusRef = useRef(uState.status);
+
+  useEffect(() => {
+    if (unoWaveKey > 0) {
+      pixiFxRef.current?.emitBurst(0.54, 0.5, 'magic', 16);
+    }
+  }, [unoWaveKey]);
+
+  useEffect(() => {
+    if (prevStatusRef.current !== 'finished' && uState.status === 'finished') {
+      pixiFxRef.current?.emitBurst(0.5, 0.45, 'victory', 26);
+    }
+    prevStatusRef.current = uState.status;
+  }, [uState.status]);
 
   const discardRotDeg = ((uState.discardPile.length * 13) % 15) - 7;
   const handLen = myHand.length;
@@ -227,11 +244,13 @@ export const UnoTableView: React.FC<UnoTableViewProps> = ({
 
       {/* Matte Slate UNO Felt Tabletop */}
       <div
-        className="relative p-3 sm:p-4 rounded-2xl nc-tabletop-slate border border-white/[0.12] flex flex-col items-center justify-center gap-2.5 flex-1 min-h-0 overflow-hidden"
+        className="relative p-3 sm:p-4 rounded-2xl nc-tabletop-slate border border-white/[0.14] flex flex-col items-center justify-center gap-2.5 flex-1 min-h-0 overflow-hidden"
         style={{
-          boxShadow: `inset 0 0 38px ${activeCs.hex}22, inset 0 1px 0 rgba(255,255,255,0.08)`,
+          backgroundImage: `radial-gradient(circle at 50% 44%, ${activeCs.hex}2b 0%, rgba(15,17,28,0.45) 56%, rgba(8,9,16,0.85) 100%)`,
+          boxShadow: `inset 0 0 46px ${activeCs.hex}2e, inset 0 1px 0 rgba(255,255,255,0.1)`,
         }}
       >
+        <PixiGameFxLayer ref={pixiFxRef} />
         {unoWaveColor && unoWaveKey > 0 && (
           <div
             key={`wave-${unoWaveKey}`}
@@ -573,7 +592,11 @@ export const UnoTableView: React.FC<UnoTableViewProps> = ({
                     src={getUnoCardSvgSrc(card.color, card.value)}
                     alt={`${card.color} ${card.value}`}
                     className={`w-full h-full object-contain rounded-xl pointer-events-none select-none ${
-                      playable ? 'ring-2 ring-white/95 shadow-md' : ''
+                      playable
+                        ? card.color === 'wild'
+                          ? 'ring-2 ring-amber-300 shadow-[0_0_18px_rgba(251,191,36,0.65)]'
+                          : 'ring-2 ring-white/95 shadow-md'
+                        : ''
                     }`}
                     draggable={false}
                   />

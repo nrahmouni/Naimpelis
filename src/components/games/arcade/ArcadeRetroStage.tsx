@@ -25,6 +25,8 @@ import {
   drawArcadeTiledBg,
   preloadArcadeSprites,
 } from './arcadeSprites';
+import { PixiGameFxLayer, type PixiGameFxHandle } from './PixiGameFxLayer';
+import { HexGL3DViewport, type HexGL3DSnapshot } from '../three/HexGL3DViewport';
 
 const BRICK_SPRITES = [
   'assets/games/puzzle/element_red_rectangle_glossy.png',
@@ -79,6 +81,7 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
   mutedOverride = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pixiFxRef = useRef<PixiGameFxHandle | null>(null);
   const [localMuted, setLocalMuted] = useState(mutedOverride);
   const mutedRef = useRef(localMuted || mutedOverride);
   mutedRef.current = localMuted || mutedOverride;
@@ -106,6 +109,18 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
     handbrake: false,
     swing: 0,
     expiresAt: 0,
+  });
+
+  const hexSimRef = useRef<HexGL3DSnapshot>({
+    shipX: 0,
+    bank: 0,
+    speed: 540,
+    boost: false,
+    shield: 100,
+    trackZ: 0,
+    hitFlash: 0,
+    dead: false,
+    entities: [],
   });
 
   const ctrlRef = useRef<{
@@ -201,15 +216,23 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
     setGameOverMsg('');
 
     const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
+    const ctx = canvas ? canvas.getContext('2d') : null;
+    if (gameId !== 'hexgl' && (!canvas || !ctx)) return;
 
     let rafId = 0;
     let alive = true;
     const booms: Array<{ x: number; y: number; size: number; t: number }> = [];
-    const spawnBoom = (x: number, y: number, size = 56) => booms.push({ x, y, size, t: 0 });
+    const spawnBoom = (x: number, y: number, size = 56, preset: 'explosion' | 'spark' = 'explosion') => {
+      booms.push({ x, y, size, t: 0 });
+      pixiFxRef.current?.emitBurst(
+        Math.max(0.05, Math.min(0.95, x / 960)),
+        Math.max(0.05, Math.min(0.95, y / 540)),
+        preset,
+        preset === 'explosion' ? 16 : 12
+      );
+    };
     const stepAndDrawBooms = (dt: number) => {
+      if (!ctx) return;
       for (let i = booms.length - 1; i >= 0; i -= 1) {
         const bm = booms[i];
         bm.t += dt * 22;
@@ -225,12 +248,12 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
     // ---------------------------------------------------------------
     // ENGINE 1: ARKANOID NEON (BRICKIT)
     // ---------------------------------------------------------------
-    if (gameId === 'arkanoid') {
+    if (gameId === 'arkanoid' && ctx) {
       const COLS = ['#F43F5E', '#FACC15', '#22C55E', '#38BDF8', '#A855F7', '#94A3B8'];
       let padX = 480;
       let padW = 132;
       let laserTimer = 0;
-      let balls: Array<{ x: number; y: number; vx: number; vy: number }> = [];
+      let balls: Array<{ x: number; y: number; vx: number; vy: number; trail?: Array<{ x: number; y: number }> }> = [];
       let bricks: Array<{ x: number; y: number; w: number; h: number; hp: number; col: string; spriteIdx: number }> = [];
       let caps: Array<{ x: number; y: number; kind: 'W' | 'M' | 'L' }> = [];
       let lasers: Array<{ x: number; y: number }> = [];
@@ -309,7 +332,7 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
                 br.hp -= 1;
                 curScore += 30;
                 if (br.hp <= 0) {
-                  spawnBoom(br.x + br.w / 2, br.y + br.h / 2, 46);
+                  spawnBoom(br.x + br.w / 2, br.y + br.h / 2, 46, 'spark');
                   bricks.splice(bi, 1);
                 }
                 lasers.splice(li, 1);
@@ -332,6 +355,9 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
           }
           for (let k = balls.length - 1; k >= 0; k -= 1) {
             const bl = balls[k];
+            if (!bl.trail) bl.trail = [];
+            bl.trail.push({ x: bl.x, y: bl.y });
+            if (bl.trail.length > 7) bl.trail.shift();
             bl.x += bl.vx * dt;
             bl.y += bl.vy * dt;
             if (bl.x < 12) { bl.x = 12; bl.vx = Math.abs(bl.vx); }
@@ -352,7 +378,7 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
                 bk.hp -= 1;
                 curScore += 50;
                 if (bk.hp <= 0) {
-                  spawnBoom(bk.x + bk.w / 2, bk.y + bk.h / 2, 46);
+                  spawnBoom(bk.x + bk.w / 2, bk.y + bk.h / 2, 46, 'spark');
                   bricks.splice(j, 1);
                   if (Math.random() < 0.22) caps.push({ x: bk.x + bk.w / 2, y: bk.y + 10, kind: (['W', 'M', 'L'] as const)[Math.floor(Math.random() * 3)] });
                 }
@@ -386,22 +412,31 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
         ctx.fillStyle = '#060914';
         ctx.fillRect(0, 0, 960, 540);
         ctx.save();
-        ctx.globalAlpha = 0.25;
+        ctx.globalAlpha = 0.28;
         drawArcadeTiledBg(ctx, 'assets/games/space/blue.png', 960, 540, 0, now * 0.015);
         ctx.restore();
 
         bricks.forEach((b) => {
+          ctx.fillStyle = 'rgba(0,0,0,0.35)';
+          ctx.fillRect(b.x + 2, b.y + 4, b.w, b.h);
           if (!drawArcadeSpriteRect(ctx, BRICK_SPRITES[b.spriteIdx] || BRICK_SPRITES[0], b.x, b.y, b.w, b.h)) {
             ctx.fillStyle = b.col;
             ctx.fillRect(b.x, b.y, b.w, b.h);
           }
+          ctx.fillStyle = 'rgba(255,255,255,0.2)';
+          ctx.fillRect(b.x + 2, b.y + 2, b.w - 4, 3);
           if (b.hp > 1) {
-            ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+            ctx.strokeStyle = 'rgba(255,255,255,0.75)';
             ctx.lineWidth = 2;
             ctx.strokeRect(b.x + 2, b.y + 2, b.w - 4, b.h - 4);
           }
         });
         caps.forEach((cp) => {
+          const glow = ctx.createRadialGradient(cp.x, cp.y, 2, cp.x, cp.y, 20);
+          glow.addColorStop(0, cp.kind === 'M' ? 'rgba(34,197,94,0.45)' : cp.kind === 'L' ? 'rgba(244,63,94,0.45)' : 'rgba(56,189,248,0.45)');
+          glow.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = glow;
+          ctx.beginPath(); ctx.arc(cp.x, cp.y, 20, 0, Math.PI * 2); ctx.fill();
           const pill = cp.kind === 'M' ? 'assets/games/space/pill_green.png' : cp.kind === 'L' ? 'assets/games/space/pill_red.png' : 'assets/games/space/pill_blue.png';
           if (!drawArcadeSprite(ctx, pill, cp.x, cp.y, 28, 22)) {
             ctx.fillStyle = cp.kind === 'M' ? '#22C55E' : cp.kind === 'L' ? '#F43F5E' : '#38BDF8';
@@ -418,12 +453,27 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
             ctx.fillRect(l.x - 2, l.y - 12, 4, 16);
           }
         });
+        ctx.save();
+        ctx.shadowColor = laserTimer > 0 ? '#F43F5E' : '#38BDF8';
+        ctx.shadowBlur = 14;
         const padSprite = laserTimer > 0 ? 'assets/games/puzzle/paddleRed.png' : 'assets/games/puzzle/paddleBlu.png';
         if (!drawArcadeSpriteRect(ctx, padSprite, padX - padW / 2, 486, padW, 22)) {
           ctx.fillStyle = laserTimer > 0 ? '#F43F5E' : '#7C3AED';
           ctx.fillRect(padX - padW / 2, 490, padW, 16);
         }
+        ctx.restore();
         balls.forEach((b) => {
+          if (b.trail) {
+            for (let ti = 0; ti < b.trail.length; ti += 1) {
+              const tp = b.trail[ti];
+              ctx.globalAlpha = ((ti + 1) / b.trail.length) * 0.28;
+              ctx.fillStyle = '#38BDF8';
+              ctx.beginPath();
+              ctx.arc(tp.x, tp.y, 7 * ((ti + 1) / b.trail.length), 0, Math.PI * 2);
+              ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+          }
           if (!drawArcadeSprite(ctx, 'assets/games/puzzle/ballBlue.png', b.x, b.y, 18, 18)) {
             ctx.fillStyle = '#FDE047';
             ctx.beginPath();
@@ -440,7 +490,7 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
     // ---------------------------------------------------------------
     // ENGINE 2: SPACE INVADERS RETRO
     // ---------------------------------------------------------------
-    else if (gameId === 'invaders') {
+    else if (gameId === 'invaders' && ctx) {
       let px = 480;
       let pBullets: Array<{ x: number; y: number }> = [];
       let aBullets: Array<{ x: number; y: number }> = [];
@@ -590,8 +640,23 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
         ctx.fillRect(0, 0, 960, 540);
         drawArcadeTiledBg(ctx, 'assets/games/space/darkPurple.png', 960, 540, 0, now * 0.025);
 
-        if (ufo.active && !drawArcadeSprite(ctx, 'assets/games/space/ufoRed.png', ufo.x, 34, 46, 46, Math.sin(now * 0.005) * 0.15)) {
-          ctx.fillStyle = '#EF4444'; ctx.fillRect(ufo.x - 24, 24, 48, 16);
+        // Parallax starfield streaks
+        for (let si = 0; si < 38; si += 1) {
+          const sx = (si * 179 + 37) % 960;
+          const sy = ((si * 97 + now * (0.04 + (si % 3) * 0.025)) % 540);
+          ctx.fillStyle = si % 3 === 0 ? 'rgba(186, 230, 253, 0.55)' : 'rgba(148, 163, 184, 0.35)';
+          ctx.fillRect(sx, sy, 2, si % 3 === 0 ? 4 : 2);
+        }
+
+        if (ufo.active) {
+          const ufoGlow = ctx.createRadialGradient(ufo.x, 34, 4, ufo.x, 34, 34);
+          ufoGlow.addColorStop(0, 'rgba(244, 63, 94, 0.55)');
+          ufoGlow.addColorStop(1, 'rgba(244, 63, 94, 0)');
+          ctx.fillStyle = ufoGlow;
+          ctx.beginPath(); ctx.arc(ufo.x, 34, 34, 0, Math.PI * 2); ctx.fill();
+          if (!drawArcadeSprite(ctx, 'assets/games/space/ufoRed.png', ufo.x, 34, 46, 46, Math.sin(now * 0.005) * 0.15)) {
+            ctx.fillStyle = '#EF4444'; ctx.fillRect(ufo.x - 24, 24, 48, 16);
+          }
         }
         const bob = Math.sin(now * 0.006) * 2.5;
         aliens.forEach((al) => {
@@ -602,13 +667,22 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
             ctx.fillRect(al.x - 15, al.y - 10, 30, 18);
           }
         });
-        ctx.fillStyle = '#22C55E';
-        bunkers.forEach((bk) => { if (bk.alive) ctx.fillRect(bk.x, bk.y, 11, 9); });
+        bunkers.forEach((bk) => {
+          if (!bk.alive) return;
+          ctx.fillStyle = '#15803D';
+          ctx.fillRect(bk.x, bk.y, 11, 9);
+          ctx.fillStyle = '#4ADE80';
+          ctx.fillRect(bk.x, bk.y, 11, 2.5);
+        });
         drawArcadeSprite(ctx, 'assets/games/space/fire00.png', px, 514, 12, 18 + Math.random() * 6);
+        ctx.save();
+        ctx.shadowColor = '#38BDF8';
+        ctx.shadowBlur = 12;
         if (!drawArcadeSprite(ctx, 'assets/games/space/playerShip1_blue.png', px, 492, 52, 40)) {
           ctx.fillStyle = '#38BDF8';
           ctx.fillRect(px - 24, 488, 48, 16); ctx.fillRect(px - 6, 476, 12, 14);
         }
+        ctx.restore();
         pBullets.forEach((b) => {
           if (!drawArcadeSprite(ctx, 'assets/games/space/laserBlue01.png', b.x, b.y, 7, 22)) {
             ctx.fillStyle = '#FACC15'; ctx.fillRect(b.x - 2, b.y - 10, 4, 14);
@@ -626,30 +700,53 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
     }
 
     // ---------------------------------------------------------------
-    // ENGINE 3: HEXGL HOVER 3D
+    // ENGINE 3: HEXGL HOVER 3D (Three.js WebGL Viewport)
     // ---------------------------------------------------------------
     else {
       let shipX = 0;
-      let speed = 540;
+      let bank = 0;
+      let speed = 560;
       let shield = 100;
       let dist = 0;
       let trackZ = 0;
       let spawnZ = 0;
+      let hitFlash = 0;
+      let eventSeq = 0;
       let entities: Array<{ lane: number; z: number; kind: 'pad' | 'heal' | 'wall'; hit: boolean }> = [];
       let dead = false;
 
       const reset = () => {
-        shipX = 0; speed = 540; shield = 100; dist = 0; trackZ = 0; spawnZ = 0; entities = []; dead = false;
+        shipX = 0;
+        bank = 0;
+        speed = 560;
+        shield = 100;
+        dist = 0;
+        trackZ = 0;
+        spawnZ = 0;
+        hitFlash = 0;
+        entities = [];
+        dead = false;
         setGameOver(false);
         commitScore(0);
-        setSubLabel('Escudo 100% · 540 km/h');
+        setSubLabel('Escudo 100% · 560 km/h');
+        hexSimRef.current = {
+          shipX: 0,
+          bank: 0,
+          speed: 560,
+          boost: false,
+          shield: 100,
+          trackZ: 0,
+          hitFlash: 0,
+          dead: false,
+          entities: [],
+        };
       };
 
       ctrlRef.current = {
         dir: 0,
         boost: false,
         fire: () => { ctrlRef.current.boost = !ctrlRef.current.boost; },
-        pointerX: (nx: number) => { shipX = Math.max(-1.05, Math.min(1.05, (nx - 480) / 260)); },
+        pointerX: (nx: number) => { shipX = Math.max(-1.05, Math.min(1.05, (nx - 480) / 360)); },
         reset,
       };
       reset();
@@ -659,6 +756,8 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
         if (!alive) return;
         const dt = Math.min(0.05, (now - last) / 1000);
         last = now;
+        hitFlash = Math.max(0, hitFlash - dt * 2.4);
+
         const ws = wsGyroRef.current;
         const wsActive = Date.now() < ws.expiresAt;
         const dg = directGyro.gyroRef.current;
@@ -673,30 +772,52 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
           (wsActive && (ws.nitro || ws.throttle > 0.5)) ||
           (dg.active && dg.pitch > 0.35);
         const isBrake = (wsActive && ws.brake > 0.5) || (dg.active && dg.pitch < -0.38);
+
         if (!dead) {
-          const targetSpd = isBoost ? 980 : isBrake ? 380 : 640 + Math.min(260, dist * 0.04);
-          speed += (targetSpd - speed) * Math.min(1, dt * 4);
-          shipX = Math.max(-1.05, Math.min(1.05, shipX + effectiveDir * dt * 1.95));
+          const targetSpd = isBoost ? 1040 : isBrake ? 380 : 660 + Math.min(300, dist * 0.045);
+          speed += (targetSpd - speed) * Math.min(1, dt * 4.2);
+          const prevX = shipX;
+          shipX = Math.max(-1.05, Math.min(1.05, shipX + effectiveDir * dt * 2.05));
+          const lateralVel = (shipX - prevX) / Math.max(0.008, dt);
+          bank += (Math.max(-1, Math.min(1, lateralVel * 0.45 + effectiveDir * 0.45)) - bank) * Math.min(1, dt * 12);
+
           const dz = speed * dt;
           trackZ += dz;
           dist += Math.round(dz * 0.14);
           spawnZ += dz;
-          if (spawnZ > 240) {
+          if (spawnZ > 220) {
             spawnZ = 0;
             const r = Math.random();
-            entities.push({ lane: (Math.random() - 0.5) * 1.65, z: 1000, kind: r < 0.28 ? 'pad' : r < 0.42 ? 'heal' : 'wall', hit: false });
+            entities.push({
+              lane: (Math.random() - 0.5) * 1.7,
+              z: 1000,
+              kind: r < 0.28 ? 'pad' : r < 0.42 ? 'heal' : 'wall',
+              hit: false,
+            });
           }
           for (let i = entities.length - 1; i >= 0; i -= 1) {
             const ent = entities[i];
-            ent.z -= dz * 1.35;
-            if (ent.z <= 85 && ent.z >= 10 && !ent.hit && Math.abs(ent.lane - shipX) < 0.34) {
+            ent.z -= dz * 1.25;
+            if (ent.z <= 45 && ent.z >= -12 && !ent.hit && Math.abs(ent.lane - shipX) < 0.34) {
               ent.hit = true;
-              if (ent.kind === 'pad') { speed = 1120; dist += 50; playArcadeSfx(820, 0.1, 'triangle', 0.07, mutedRef.current); }
-              else if (ent.kind === 'heal') { shield = Math.min(100, shield + 25); playArcadeSfx(640, 0.1, 'sine', 0.07, mutedRef.current); }
-              else {
+              eventSeq += 1;
+              if (ent.kind === 'pad') {
+                speed = 1180;
+                dist += 60;
+                hexSimRef.current.pickupEvent = { seq: eventSeq, kind: 'pad', x: shipX };
+                pixiFxRef.current?.emitBurst(Math.max(0.1, Math.min(0.9, 0.5 + shipX * 0.27)), 0.78, 'boost', 14);
+                playArcadeSfx(820, 0.1, 'triangle', 0.07, mutedRef.current);
+              } else if (ent.kind === 'heal') {
+                shield = Math.min(100, shield + 25);
+                hexSimRef.current.pickupEvent = { seq: eventSeq, kind: 'heal', x: shipX };
+                pixiFxRef.current?.emitBurst(Math.max(0.1, Math.min(0.9, 0.5 + shipX * 0.27)), 0.78, 'coin', 14);
+                playArcadeSfx(640, 0.1, 'sine', 0.07, mutedRef.current);
+              } else {
                 shield = Math.max(0, shield - 34);
-                speed = 340;
-                spawnBoom(480 + shipX * 260, 448, 86);
+                speed = 320;
+                hitFlash = 1;
+                hexSimRef.current.pickupEvent = { seq: eventSeq, kind: 'wall', x: shipX };
+                pixiFxRef.current?.emitBurst(Math.max(0.1, Math.min(0.9, 0.5 + shipX * 0.27)), 0.78, 'explosion', 20);
                 playArcadeSfx(120, 0.2, 'sawtooth', 0.09, mutedRef.current);
                 if (shield <= 0) {
                   dead = true;
@@ -705,69 +826,22 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
                 }
               }
             }
-            if (ent.z < -20) entities.splice(i, 1);
+            if (ent.z < -25) entities.splice(i, 1);
           }
           commitScore(dist);
           setSubLabel(`Escudo ${Math.round(shield)}% · ${Math.round(speed)} km/h`);
         }
 
-        const sky = ctx.createLinearGradient(0, 0, 0, 260);
-        sky.addColorStop(0, '#040212');
-        sky.addColorStop(1, '#26104E');
-        ctx.fillStyle = sky;
-        ctx.fillRect(0, 0, 960, 260);
-        ctx.save();
-        ctx.beginPath(); ctx.rect(0, 0, 960, 260); ctx.clip();
-        drawArcadeTiledBg(ctx, 'assets/games/space/darkPurple.png', 960, 260, -shipX * 60, now * 0.02);
-        ctx.restore();
+        hexSimRef.current.shipX = shipX;
+        hexSimRef.current.bank = bank;
+        hexSimRef.current.speed = speed;
+        hexSimRef.current.boost = isBoost;
+        hexSimRef.current.shield = shield;
+        hexSimRef.current.trackZ = trackZ;
+        hexSimRef.current.hitFlash = hitFlash;
+        hexSimRef.current.dead = dead;
+        hexSimRef.current.entities = entities;
 
-        ctx.fillStyle = '#070918';
-        ctx.fillRect(0, 260, 960, 280);
-        const hx = 480 - shipX * 90;
-        ctx.fillStyle = '#131632';
-        ctx.beginPath();
-        ctx.moveTo(hx - 44, 260); ctx.lineTo(hx + 44, 260); ctx.lineTo(940, 540); ctx.lineTo(20, 540);
-        ctx.closePath(); ctx.fill();
-        for (let g = 0; g < 12; g += 1) {
-          const pz = ((g * 85 - (trackZ % 85) + 85) % 1020) / 1020;
-          const pY = 260 + Math.pow(pz, 1.7) * 280;
-          const hw = 44 + (pY - 260) * 1.48;
-          ctx.strokeStyle = `rgba(56,189,248,${0.14 + pz * 0.4})`;
-          ctx.lineWidth = 1.5;
-          ctx.beginPath(); ctx.moveTo(hx - hw, pY); ctx.lineTo(hx + hw, pY); ctx.stroke();
-        }
-        entities.sort((a, b) => b.z - a.z).forEach((e2) => {
-          if (e2.z <= 0) return;
-          const frac = 1 - e2.z / 1000;
-          const ey = 260 + Math.pow(frac, 1.7) * 280;
-          const hw = 44 + (ey - 260) * 1.48;
-          const ex = hx + e2.lane * hw * 0.78;
-          const sc = 0.18 + frac * 1.05;
-          if (e2.kind === 'pad') {
-            if (!drawArcadeSprite(ctx, 'assets/games/space/powerupBlue_bolt.png', ex, ey - 16 * sc, 34 * sc, 34 * sc)) {
-              ctx.fillStyle = '#22D3EE'; ctx.fillRect(ex - 28 * sc, ey - 8 * sc, 56 * sc, 12 * sc);
-            }
-          } else if (e2.kind === 'heal') {
-            if (!drawArcadeSprite(ctx, 'assets/games/space/powerupBlue_shield.png', ex, ey - 18 * sc, 34 * sc, 34 * sc)) {
-              ctx.fillStyle = '#22C55E'; ctx.beginPath(); ctx.arc(ex, ey - 18 * sc, 16 * sc, 0, Math.PI * 2); ctx.fill();
-            }
-          } else if (!drawArcadeSprite(ctx, 'assets/games/space/meteorGrey_big1.png', ex, ey - 24 * sc, 60 * sc, 50 * sc, now * 0.003)) {
-            ctx.fillStyle = '#F43F5E'; ctx.fillRect(ex - 26 * sc, ey - 46 * sc, 52 * sc, 46 * sc);
-          }
-        });
-        ctx.save();
-        ctx.translate(480 + shipX * 260, 468);
-        ctx.rotate(ctrlRef.current.dir * 0.24);
-        drawArcadeSprite(ctx, ctrlRef.current.boost ? 'assets/games/space/fire01.png' : 'assets/games/space/fire00.png', -14, 28, 12, ctrlRef.current.boost ? 28 : 18, Math.PI);
-        drawArcadeSprite(ctx, ctrlRef.current.boost ? 'assets/games/space/fire01.png' : 'assets/games/space/fire00.png', 14, 28, 12, ctrlRef.current.boost ? 28 : 18, Math.PI);
-        if (!drawArcadeSprite(ctx, 'assets/games/space/playerShip3_red.png', 0, 0, 82, 62)) {
-          ctx.fillStyle = '#22D3EE';
-          ctx.beginPath();
-          ctx.moveTo(0, -34); ctx.lineTo(42, 22); ctx.lineTo(14, 14); ctx.lineTo(0, 26); ctx.lineTo(-14, 14); ctx.lineTo(-42, 22);
-          ctx.closePath(); ctx.fill();
-        }
-        ctx.restore();
-        stepAndDrawBooms(dt);
         rafId = window.requestAnimationFrame(loop);
       };
       rafId = window.requestAnimationFrame(loop);
@@ -879,15 +953,23 @@ export const ArcadeRetroStage: React.FC<ArcadeRetroStageProps> = ({
       </div>
 
       <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#050812] shadow-2xl">
-        <canvas
-          ref={canvasRef}
-          width={960}
-          height={540}
-          onContextMenu={(e) => e.preventDefault()}
-          onPointerMove={handlePointerMove}
-          onPointerDown={handlePointerMove}
-          className="game-touch-btn w-full h-auto block touch-none cursor-crosshair"
-        />
+        {gameId === 'hexgl' ? (
+          <HexGL3DViewport
+            simRef={hexSimRef}
+            onPointerX={(norm01) => ctrlRef.current.pointerX(norm01 * 960)}
+          />
+        ) : (
+          <canvas
+            ref={canvasRef}
+            width={960}
+            height={540}
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerMove={handlePointerMove}
+            onPointerDown={handlePointerMove}
+            className="game-touch-btn w-full h-auto block touch-none cursor-crosshair"
+          />
+        )}
+        <PixiGameFxLayer ref={pixiFxRef} />
         {gameOver && (
           <div className="absolute inset-0 bg-[#050812]/90 flex flex-col items-center justify-center gap-3 p-6 text-center">
             <Trophy className="w-11 h-11 text-amber-400" />

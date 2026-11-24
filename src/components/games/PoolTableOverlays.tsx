@@ -143,6 +143,16 @@ export const PoolTableCanvasOverlays: React.FC<{
       </div>
     )}
 
+    {activeState.status === 'playing' && isMyTurn && activeState.isBreakShot && activeState.phase !== 'BALL_IN_HAND' && (
+      <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 z-10 px-3 py-1 rounded-full bg-black/65 border border-white/15 text-zinc-100 text-[11px] font-bold whitespace-nowrap shadow-md">
+        {pickLang(lang, {
+          es: 'Arrastra para apuntar y suelta para tirar',
+          ca: 'Arrossega per apuntar i deixa anar per tirar',
+          en: 'Drag to aim and release to shoot',
+        })}
+      </div>
+    )}
+
     {activeState.status === 'playing' && isMyTurn && activeState.phase === 'BALL_IN_HAND' && (
       <div className="pointer-events-none absolute top-2 left-1/2 -translate-x-1/2 z-10 px-3 py-1 rounded-full bg-emerald-500/90 text-zinc-950 text-[11px] font-extrabold whitespace-nowrap shadow-md">
         {pickLang(lang, {

@@ -314,28 +314,48 @@ export const ParchisBoardView: React.FC<ParchisBoardViewProps> = ({
       {/* 19x19 Interactive Spanish 68-Square Parchís Tabletop */}
       <div className="flex-1 min-h-0 flex items-center justify-center">
         <div
-          className={`relative mx-auto rounded-2xl p-2 nc-tabletop-slate border border-white/[0.14] select-none touch-manipulation ${boardSizeClass}`}
+          className={`relative mx-auto rounded-2xl p-2 sm:p-2.5 bg-gradient-to-b from-[#3A271B] via-[#261810] to-[#1A100B] border-2 border-[#6B4A33] shadow-[0_14px_34px_rgba(0,0,0,0.75),inset_0_1px_1px_rgba(255,255,255,0.18)] select-none touch-manipulation ${boardSizeClass}`}
         >
-          <div className="relative w-full h-full rounded-xl overflow-hidden bg-[#12141c] border border-white/15">
-            {/* 4 Corner Casa Quadrants */}
+          <div className="relative w-full h-full rounded-xl overflow-hidden bg-[#12141c] border border-amber-950/60 shadow-inner">
+            {/* 4 Corner Casa Quadrants with Recessed Token Pads */}
             <div className="absolute top-0 left-0 w-[42.105%] h-[42.105%] bg-red-600/20 border-r border-b border-white/15 p-1.5">
-              <div className="w-full h-full rounded-xl bg-[#0e1017]/90 border border-red-400/45 flex items-end justify-start p-1.5">
-                <span className="text-[9px] font-black uppercase text-red-300/85">Rojo</span>
+              <div className="relative w-full h-full rounded-xl bg-[#0e1017]/92 border border-red-400/45 flex items-end justify-start p-1.5 shadow-inner">
+                <div className="pointer-events-none absolute inset-3 grid grid-cols-2 grid-rows-2 gap-2 place-items-center opacity-50">
+                  {[0, 1, 2, 3].map((p) => (
+                    <span key={p} className="w-4 h-4 rounded-full border border-red-400/50 bg-red-500/10 shadow-inner" />
+                  ))}
+                </div>
+                <span className="relative z-10 text-[9px] font-black uppercase text-red-300/90">Rojo</span>
               </div>
             </div>
             <div className="absolute top-0 right-0 w-[42.105%] h-[42.105%] bg-blue-600/20 border-l border-b border-white/15 p-1.5">
-              <div className="w-full h-full rounded-xl bg-[#0e1017]/90 border border-blue-400/45 flex items-end justify-end p-1.5">
-                <span className="text-[9px] font-black uppercase text-blue-300/85">Azul</span>
+              <div className="relative w-full h-full rounded-xl bg-[#0e1017]/92 border border-blue-400/45 flex items-end justify-end p-1.5 shadow-inner">
+                <div className="pointer-events-none absolute inset-3 grid grid-cols-2 grid-rows-2 gap-2 place-items-center opacity-50">
+                  {[0, 1, 2, 3].map((p) => (
+                    <span key={p} className="w-4 h-4 rounded-full border border-blue-400/50 bg-blue-500/10 shadow-inner" />
+                  ))}
+                </div>
+                <span className="relative z-10 text-[9px] font-black uppercase text-blue-300/90">Azul</span>
               </div>
             </div>
             <div className="absolute bottom-0 right-0 w-[42.105%] h-[42.105%] bg-yellow-500/20 border-l border-t border-white/15 p-1.5">
-              <div className="w-full h-full rounded-xl bg-[#0e1017]/90 border border-yellow-400/45 flex items-start justify-end p-1.5">
-                <span className="text-[9px] font-black uppercase text-yellow-300/85">Amarillo</span>
+              <div className="relative w-full h-full rounded-xl bg-[#0e1017]/92 border border-yellow-400/45 flex items-start justify-end p-1.5 shadow-inner">
+                <div className="pointer-events-none absolute inset-3 grid grid-cols-2 grid-rows-2 gap-2 place-items-center opacity-50">
+                  {[0, 1, 2, 3].map((p) => (
+                    <span key={p} className="w-4 h-4 rounded-full border border-yellow-400/50 bg-yellow-500/10 shadow-inner" />
+                  ))}
+                </div>
+                <span className="relative z-10 text-[9px] font-black uppercase text-yellow-300/90">Amarillo</span>
               </div>
             </div>
             <div className="absolute bottom-0 left-0 w-[42.105%] h-[42.105%] bg-emerald-600/20 border-r border-t border-white/15 p-1.5">
-              <div className="w-full h-full rounded-xl bg-[#0e1017]/90 border border-emerald-400/45 flex items-start justify-start p-1.5">
-                <span className="text-[9px] font-black uppercase text-emerald-300/85">Verde</span>
+              <div className="relative w-full h-full rounded-xl bg-[#0e1017]/92 border border-emerald-400/45 flex items-start justify-start p-1.5 shadow-inner">
+                <div className="pointer-events-none absolute inset-3 grid grid-cols-2 grid-rows-2 gap-2 place-items-center opacity-50">
+                  {[0, 1, 2, 3].map((p) => (
+                    <span key={p} className="w-4 h-4 rounded-full border border-emerald-400/50 bg-emerald-500/10 shadow-inner" />
+                  ))}
+                </div>
+                <span className="relative z-10 text-[9px] font-black uppercase text-emerald-300/90">Verde</span>
               </div>
             </div>
 

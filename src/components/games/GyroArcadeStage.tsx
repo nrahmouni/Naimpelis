@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Compass, QrCode, RotateCcw, Trophy, Volume2, VolumeX, X } from 'lucide-react';
+import { Compass, QrCode, RotateCcw, Volume2, VolumeX, X } from 'lucide-react';
 import type { AppLanguage } from '../../types';
 import { socketService } from '../../services/socket';
 import { useDirectDeviceGyro } from '../../hooks/useDirectDeviceGyro';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
-import { playGameSfx } from './GameEffects';
+import { VictoryCelebrationOverlay, playGameSfx } from './GameEffects';
 import { DualGyroQrPanel } from './racing/DualGyroQrPanel';
 import {
   drawArcadeSprite,
@@ -13,6 +13,7 @@ import {
   EXPLOSION_FRAMES,
   preloadArcadeSprites,
 } from './arcade/arcadeSprites';
+import { PixiGameFxLayer, type PixiGameFxHandle } from './arcade/PixiGameFxLayer';
 
 export type GyroArcadeGameId = 'gyrohockey' | 'gyrospace';
 
@@ -34,7 +35,9 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
   onClose,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pixiFxRef = useRef<PixiGameFxHandle | null>(null);
   const keysRef = useRef({ left: false, right: false, up: false, down: false, action: false });
+  const pointerTargetRef = useRef<{ x: number; y: number } | null>(null);
   const gyroP1Ref = useRef({ steer: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 });
   const gyroP2Ref = useRef({ steer: 0, throttle: 0, brake: 0, nitro: false, handbrake: false, expiresAt: 0 });
   const lastTelemRef = useRef(0);
@@ -167,6 +170,7 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
       'assets/games/space/laserBlue01.png',
       'assets/games/space/laserRed01.png',
       'assets/games/puzzle/ballGrey.png',
+      'assets/games/sports/ball_puck.png',
       'assets/games/puzzle/particleStar.png',
       ...EXPLOSION_FRAMES,
     ]);
@@ -250,6 +254,12 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
         pk.vy = ny * spd + m.vy * 0.35;
         st.impactFlash = 0.7;
         spawnSparks(pk.x - nx * PR, pk.y - ny * PR, smashPower > 120 ? '#FACC15' : '#38BDF8', 12);
+        pixiFxRef.current?.emitBurst(
+          Math.max(0.05, Math.min(0.95, pk.x / W)),
+          Math.max(0.05, Math.min(0.95, pk.y / H)),
+          smashPower > 120 ? 'smash' : 'hit',
+          smashPower > 120 ? 14 : 8
+        );
         playGameSfx('chapas_kick', mutedRef.current);
         pushTelemetry(spd * 0.32, st.sMe, st.sCpu, st.smashCharge, 0.85, st.over, slot, smashPower > 120 ? 70 : 35);
       };
@@ -296,15 +306,20 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
               if (useGyro && Math.abs(gyroP1Ref.current.steer) > 0.03) {
                 const targetX = W / 2 + gyroP1Ref.current.steer * (W / 2 - pad - MR - 12);
                 st.me.x += (targetX - st.me.x) * Math.min(1, sDt * 24);
+                let dirY = (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0);
+                if (dirY === 0) {
+                  dirY = gyroP1Ref.current.throttle > 0.3 ? -1 : gyroP1Ref.current.brake > 0.3 ? 1 : 0;
+                }
+                st.me.y += dirY * 460 * sDt;
+              } else if (pointerTargetRef.current) {
+                st.me.x += (pointerTargetRef.current.x - st.me.x) * Math.min(1, sDt * 22);
+                st.me.y += (pointerTargetRef.current.y - st.me.y) * Math.min(1, sDt * 22);
               } else {
                 const dirX = (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0);
+                const dirY = (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0);
                 st.me.x += dirX * 580 * sDt;
+                st.me.y += dirY * 460 * sDt;
               }
-              let dirY = (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0);
-              if (dirY === 0 && useGyro) {
-                dirY = gyroP1Ref.current.throttle > 0.3 ? -1 : gyroP1Ref.current.brake > 0.3 ? 1 : 0;
-              }
-              st.me.y += dirY * 460 * sDt;
               st.me.x = Math.max(pad + MR, Math.min(W - pad - MR, st.me.x));
               st.me.y = Math.max(H / 2 + MR + 6, Math.min(H - pad - MR, st.me.y));
               st.me.vx = (st.me.x - prevMx) / sDt;
@@ -343,11 +358,13 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
               } else if (st.puck.y < pad - 6) {
                 st.sMe += 1; st.pauseT = 1.2; st.banner = '⚡ ¡GOLAZO J1!'; st.bannerCol = '#4ADE80';
                 spawnSparks(st.puck.x, pad, '#4ADE80', 26); playGameSfx('chapas_goal', mutedRef.current);
+                pixiFxRef.current?.emitBurst(Math.max(0.1, Math.min(0.9, st.puck.x / W)), 0.08, 'goal', 22);
                 pushTelemetry(0, st.sMe, st.sCpu, st.smashCharge, 1, st.over, 1, 90);
                 break;
               } else if (st.puck.y > H - pad + 6) {
                 st.sCpu += 1; st.pauseT = 1.2; st.banner = useGyroP2 ? '💥 ¡GOLAZO J2!' : '💥 ¡PUNTO CPU!'; st.bannerCol = '#FB7185';
                 spawnSparks(st.puck.x, H - pad, '#FB7185', 22); playGameSfx('board_capture', mutedRef.current);
+                pixiFxRef.current?.emitBurst(Math.max(0.1, Math.min(0.9, st.puck.x / W)), 0.92, 'goal', 22);
                 if (useGyroP2) pushTelemetry(0, st.sMe, st.sCpu, st.smashCharge, 1, st.over, 2, 90);
                 break;
               }
@@ -374,13 +391,36 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
 
         ctx.fillStyle = '#050814'; ctx.fillRect(0, 0, W, H);
         const grad = ctx.createRadialGradient(W / 2, H / 2, 40, W / 2, H / 2, W * 0.65);
-        grad.addColorStop(0, '#0f1b38'); grad.addColorStop(1, '#080e1f');
+        grad.addColorStop(0, '#13254c'); grad.addColorStop(0.65, '#0b1630'); grad.addColorStop(1, '#060c1c');
         ctx.fillStyle = grad; ctx.fillRect(pad, pad, W - pad * 2, H - pad * 2);
 
-        ctx.strokeStyle = 'rgba(56, 189, 248, 0.38)'; ctx.lineWidth = 3;
+        // Perforated air-hockey table micro-jets
+        ctx.fillStyle = 'rgba(148, 163, 184, 0.1)';
+        for (let gx = pad + 26; gx < W - pad - 18; gx += 32) {
+          for (let gy = pad + 24; gy < H - pad - 18; gy += 32) {
+            ctx.fillRect(gx, gy, 1.5, 1.5);
+          }
+        }
+
+        // Brushed acrylic diagonal sheen
+        const sheen = ctx.createLinearGradient(pad, pad, W - pad, H - pad);
+        sheen.addColorStop(0, 'rgba(255,255,255,0.06)');
+        sheen.addColorStop(0.45, 'rgba(255,255,255,0)');
+        sheen.addColorStop(1, 'rgba(56,189,248,0.04)');
+        ctx.fillStyle = sheen;
+        ctx.fillRect(pad, pad, W - pad * 2, H - pad * 2);
+
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.42)'; ctx.lineWidth = 3;
         ctx.beginPath(); ctx.moveTo(pad, H / 2); ctx.lineTo(W - pad, H / 2); ctx.stroke();
         ctx.beginPath(); ctx.arc(W / 2, H / 2, 70, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(W / 2, H / 2, 16, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(W / 2, pad, goalHalfW, 0, Math.PI); ctx.stroke();
+        ctx.beginPath(); ctx.arc(W / 2, H - pad, goalHalfW, Math.PI, Math.PI * 2); ctx.stroke();
+        ctx.save();
+        ctx.shadowColor = st.impactFlash > 0.1 ? '#38BDF8' : '#7C3AED';
+        ctx.shadowBlur = 14 + st.impactFlash * 12;
         ctx.strokeStyle = '#7C3AED'; ctx.lineWidth = 6; ctx.strokeRect(pad, pad, W - pad * 2, H - pad * 2);
+        ctx.restore();
 
         ctx.fillStyle = '#04060e';
         ctx.fillRect(goalLeft, pad - 10, goalHalfW * 2, 16);
@@ -393,19 +433,34 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
           ctx.beginPath(); ctx.arc(puckTrail[i].x, puckTrail[i].y, PR * (0.45 + 0.5 * (i / puckTrail.length)), 0, Math.PI * 2); ctx.fill();
         }
         ctx.globalAlpha = 1;
-        if (!drawArcadeSprite(ctx, 'assets/games/puzzle/ballGrey.png', st.puck.x, st.puck.y, PR * 2.15, PR * 2.15)) {
-          ctx.fillStyle = '#FDE047'; ctx.beginPath(); ctx.arc(st.puck.x, st.puck.y, PR, 0, Math.PI * 2); ctx.fill();
-          ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2.5; ctx.stroke();
+        ctx.fillStyle = 'rgba(0,0,0,0.45)';
+        ctx.beginPath(); ctx.arc(st.puck.x + 2, st.puck.y + 4, PR, 0, Math.PI * 2); ctx.fill();
+        if (!drawArcadeSprite(ctx, 'assets/games/sports/ball_puck.png', st.puck.x, st.puck.y, PR * 2.25, PR * 2.25)) {
+          if (!drawArcadeSprite(ctx, 'assets/games/puzzle/ballGrey.png', st.puck.x, st.puck.y, PR * 2.15, PR * 2.15)) {
+            ctx.fillStyle = '#FDE047'; ctx.beginPath(); ctx.arc(st.puck.x, st.puck.y, PR, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2.5; ctx.stroke();
+          }
         }
 
-        const drawM = (x: number, y: number, fill: string, ring: string) => {
-          ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(x, y, MR, 0, Math.PI * 2); ctx.fill();
+        const drawM = (x: number, y: number, fill: string, ring: string, smashReady = false) => {
+          ctx.fillStyle = 'rgba(0,0,0,0.48)';
+          ctx.beginPath(); ctx.arc(x + 2, y + 5, MR, 0, Math.PI * 2); ctx.fill();
+          if (smashReady) {
+            ctx.strokeStyle = 'rgba(250, 204, 21, 0.45)';
+            ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.arc(x, y, MR + 6, 0, Math.PI * 2); ctx.stroke();
+          }
+          const mGrad = ctx.createRadialGradient(x - 8, y - 8, 3, x, y, MR);
+          mGrad.addColorStop(0, '#FFFFFF');
+          mGrad.addColorStop(0.28, fill);
+          mGrad.addColorStop(1, '#0F172A');
+          ctx.fillStyle = mGrad; ctx.beginPath(); ctx.arc(x, y, MR, 0, Math.PI * 2); ctx.fill();
           ctx.strokeStyle = ring; ctx.lineWidth = 4; ctx.stroke();
           ctx.fillStyle = '#0F172A'; ctx.beginPath(); ctx.arc(x, y, 11, 0, Math.PI * 2); ctx.fill();
           ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2; ctx.stroke();
         };
-        drawM(st.me.x, st.me.y, '#7C3AED', '#22D3EE');
-        drawM(st.cpu.x, st.cpu.y, '#E11D48', '#FDA4AF');
+        drawM(st.me.x, st.me.y, '#7C3AED', '#22D3EE', st.smashCharge >= 95);
+        drawM(st.cpu.x, st.cpu.y, '#E11D48', '#FDA4AF', false);
 
         for (const sp of sparks) {
           if (!drawArcadeSprite(ctx, 'assets/games/puzzle/particleStar.png', sp.x, sp.y, 12, 12, sp.life * 8, Math.max(0, sp.life * 2.2))) {
@@ -481,8 +536,14 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
         const fireOn = keysRef.current.action || (useGyro && (gyroP1Ref.current.throttle > 0.2 || gyroP1Ref.current.nitro));
         sp.shieldOn = keysRef.current.up || (useGyro && gyroP1Ref.current.handbrake);
 
-        sp.x = Math.max(40, Math.min(W - 40, sp.x + moveIn * 520 * dt));
-        sp.bank += (moveIn * 0.42 - sp.bank) * Math.min(1, dt * 14);
+        if (!useGyro && pointerTargetRef.current && moveIn === 0) {
+          const prevX = sp.x;
+          sp.x += (Math.max(40, Math.min(W - 40, pointerTargetRef.current.x)) - sp.x) * Math.min(1, dt * 18);
+          sp.bank += (Math.max(-0.42, Math.min(0.42, (sp.x - prevX) * 0.04)) - sp.bank) * Math.min(1, dt * 14);
+        } else {
+          sp.x = Math.max(40, Math.min(W - 40, sp.x + moveIn * 520 * dt));
+          sp.bank += (moveIn * 0.42 - sp.bank) * Math.min(1, dt * 14);
+        }
         sp.score += dt * 12;
         sp.wave = 1 + Math.floor(sp.score / 250);
 
@@ -540,6 +601,12 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
                 sp.score += (en.kind === 'alien' ? 45 : 25) * sp.combo;
                 sp.combo = Math.min(8, sp.combo + 1);
                 boom(en.x, en.y, en.kind === 'alien' ? '#F43F5E' : '#38BDF8', 14);
+                pixiFxRef.current?.emitBurst(
+                  Math.max(0.05, Math.min(0.95, en.x / W)),
+                  Math.max(0.05, Math.min(0.95, en.y / H)),
+                  'explosion',
+                  14
+                );
                 playGameSfx('board_move', mutedRef.current);
                 sp.enemies.splice(i, 1); destroyed = true; break;
               }
@@ -552,6 +619,12 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
           if (hitP1 || hitP2) {
             sp.hp -= (hitP2 ? sp.p2ShieldOn : sp.shieldOn) ? 14 : 34; sp.combo = 1; sp.shieldFlash = 1; impact = 0.9;
             boom(en.x, en.y, '#FB7185', 18); playGameSfx('board_capture', mutedRef.current);
+            pixiFxRef.current?.emitBurst(
+              Math.max(0.05, Math.min(0.95, en.x / W)),
+              Math.max(0.05, Math.min(0.95, en.y / H)),
+              'explosion',
+              20
+            );
             pushTelemetry(210, sp.wave, sp.combo, sp.hp, 1, sp.over, hitP2 ? 2 : 1, 75);
             sp.enemies.splice(i, 1);
             if (sp.hp <= 0) {
@@ -575,7 +648,19 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
       ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
       drawArcadeTiledBg(ctx, 'assets/games/space/darkPurple.png', W, H, 0, sp.bgScroll);
 
-      for (const s of stars) { ctx.fillStyle = s.z > 1.3 ? '#BAE6FD' : '#64748B'; ctx.fillRect(s.x, s.y, s.z * 2, s.z * 2.5); }
+      // Soft scrolling nebula haze
+      const nebY = ((sp.bgScroll * 0.45) % (H + 280)) - 140;
+      const neb = ctx.createRadialGradient(W * 0.35, nebY, 18, W * 0.35, nebY, 240);
+      neb.addColorStop(0, 'rgba(139, 92, 246, 0.16)');
+      neb.addColorStop(0.5, 'rgba(56, 189, 248, 0.08)');
+      neb.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = neb;
+      ctx.fillRect(0, 0, W, H);
+
+      for (const s of stars) {
+        ctx.fillStyle = s.z > 1.3 ? '#BAE6FD' : '#64748B';
+        ctx.fillRect(s.x, s.y, s.z * 2, s.z * (2.6 + s.z * 1.4));
+      }
       for (const bl of sp.bullets) {
         const lasPath = bl.p2 ? 'assets/games/space/laserRed01.png' : 'assets/games/space/laserBlue01.png';
         if (!drawArcadeSprite(ctx, lasPath, bl.x, bl.y, 10, 30)) {
@@ -666,13 +751,12 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-400/40 text-xs font-black text-emerald-200 tabular-nums">
-            {hud.leftText}
-          </span>
-          <span className="px-3 py-1.5 rounded-xl bg-[#7C3AED]/20 border border-[#7C3AED]/45 text-xs font-black text-purple-200 tabular-nums">
-            {hud.rightText}
-          </span>
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2.5 text-xs font-black tabular-nums">
+            <span className="text-emerald-300">{hud.leftText}</span>
+            <span aria-hidden="true" className="text-zinc-600">·</span>
+            <span className="text-purple-200">{hud.rightText}</span>
+          </div>
           {directGyro.supported && (
             <button
               type="button"
@@ -725,24 +809,52 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
       </div>
 
       <div className="relative rounded-3xl overflow-hidden bg-[#050811] border border-white/12 shadow-2xl">
-        <canvas ref={canvasRef} width={920} height={520} className="w-full h-auto block" />
+        <canvas
+          ref={canvasRef}
+          width={920}
+          height={520}
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerMove={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            if (!rect.width || !rect.height) return;
+            pointerTargetRef.current = {
+              x: ((e.clientX - rect.left) / rect.width) * 920,
+              y: ((e.clientY - rect.top) / rect.height) * 520,
+            };
+          }}
+          onPointerLeave={() => {
+            pointerTargetRef.current = null;
+          }}
+          onPointerDown={(e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            if (rect.width && rect.height) {
+              pointerTargetRef.current = {
+                x: ((e.clientX - rect.left) / rect.width) * 920,
+                y: ((e.clientY - rect.top) / rect.height) * 520,
+              };
+            }
+            keysRef.current.action = true;
+          }}
+          onPointerUp={() => {
+            keysRef.current.action = false;
+          }}
+          onPointerCancel={() => {
+            keysRef.current.action = false;
+          }}
+          className="w-full h-auto block touch-none cursor-crosshair"
+        />
+        <PixiGameFxLayer ref={pixiFxRef} />
         {finishSummary && (
-          <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4">
-            <div className="w-full max-w-sm rounded-3xl bg-[#101322] border-2 border-[#7C3AED] p-6 text-center space-y-4">
-              <Trophy className="w-10 h-10 text-amber-400 mx-auto" />
-              <h4 className="text-xl font-black text-white">{finishSummary.title}</h4>
-              <p className="text-sm font-semibold text-zinc-300">{finishSummary.sub}</p>
-              <div className="flex items-center justify-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setResetNonce((n) => n + 1)}
-                  className="min-h-11 px-5 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white cursor-pointer"
-                >
-                  Jugar de nuevo
-                </button>
-              </div>
-            </div>
-          </div>
+          <VictoryCelebrationOverlay
+            lang={lang}
+            title={finishSummary.title}
+            subtitle={finishSummary.sub}
+            outcome={finishSummary.title.includes('CAMPEÓN') ? 'win' : 'defeat'}
+            scoreBadge={hud.leftText}
+            onPrimaryAction={() => setResetNonce((n) => n + 1)}
+            secondaryLabel={onClose ? pickLang(lang, { es: 'Salir', ca: 'Sortir', en: 'Exit' }) : undefined}
+            onSecondaryAction={onClose}
+          />
         )}
       </div>
 
@@ -754,6 +866,7 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
           onPointerDown={(e) => {
             e.preventDefault();
             e.currentTarget.setPointerCapture?.(e.pointerId);
+            pointerTargetRef.current = null;
             keysRef.current.left = true;
           }}
           onPointerUp={() => { keysRef.current.left = false; }}
@@ -763,6 +876,23 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
         >
           ◀ IZQ
         </button>
+        {gameId === 'gyrospace' && (
+          <button
+            type="button"
+            onContextMenu={(e) => e.preventDefault()}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              e.currentTarget.setPointerCapture?.(e.pointerId);
+              keysRef.current.up = true;
+            }}
+            onPointerUp={() => { keysRef.current.up = false; }}
+            onPointerCancel={() => { keysRef.current.up = false; }}
+            onLostPointerCapture={() => { keysRef.current.up = false; }}
+            className="game-touch-btn px-3 min-h-12 rounded-2xl bg-sky-600/80 font-black text-xs text-white"
+          >
+            🛡 ESCUDO
+          </button>
+        )}
         <button
           type="button"
           onContextMenu={(e) => e.preventDefault()}
@@ -784,6 +914,7 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
           onPointerDown={(e) => {
             e.preventDefault();
             e.currentTarget.setPointerCapture?.(e.pointerId);
+            pointerTargetRef.current = null;
             keysRef.current.right = true;
           }}
           onPointerUp={() => { keysRef.current.right = false; }}

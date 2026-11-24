@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { HelpCircle, RotateCcw, Trophy, Users } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { HelpCircle, RotateCcw, Sparkles, Trophy, Tv, Users } from 'lucide-react';
 import type { AppLanguage } from '../../../types';
 import { pickLang } from '../../../utils/i18n';
 import { triggerHaptic } from '../../../utils/haptics';
 import { loadArcadeBest, playArcadeSfx, saveArcadeBest } from './arcadeAudio';
+import { PixiGameFxLayer, type PixiGameFxHandle } from './PixiGameFxLayer';
 
 interface QuizItem {
   cat: 'cine' | 'futbol' | 'musica' | 'ciencia' | 'cultura';
@@ -70,6 +71,7 @@ export const TvTriviaStage: React.FC<TvTriviaStageProps> = ({ lang, mutedOverrid
   const [chosenIdx, setChosenIdx] = useState<number | null>(null);
   const [hiddenOpts, setHiddenOpts] = useState<Record<number, boolean>>({});
   const [bestScore, setBestScore] = useState(() => loadArcadeBest(BEST_KEY));
+  const pixiFxRef = useRef<PixiGameFxHandle | null>(null);
 
   const beginMatch = () => {
     triggerHaptic('medium');
@@ -111,8 +113,12 @@ export const TvTriviaStage: React.FC<TvTriviaStageProps> = ({ lang, mutedOverrid
           return { ...pl, streak, score: total };
         })
       );
-      if (correct) playArcadeSfx(660, 0.14, 'triangle', 0.08, mutedOverride);
-      else playArcadeSfx(160, 0.2, 'sawtooth', 0.07, mutedOverride);
+      if (correct) {
+        playArcadeSfx(660, 0.14, 'triangle', 0.08, mutedOverride);
+        pixiFxRef.current?.emitBurst(0.5, 0.55, 'goal', 20);
+      } else {
+        playArcadeSfx(160, 0.2, 'sawtooth', 0.07, mutedOverride);
+      }
 
       window.setTimeout(() => {
         if (qIdx + 1 >= deck.length) {
@@ -155,17 +161,22 @@ export const TvTriviaStage: React.FC<TvTriviaStageProps> = ({ lang, mutedOverrid
 
   if (phase === 'setup') {
     return (
-      <div className="w-full max-w-2xl mx-auto rounded-3xl bg-[#0d1220] border border-white/10 p-6 space-y-6">
+      <div className="w-full max-w-2xl mx-auto rounded-3xl bg-[radial-gradient(ellipse_at_top,rgba(56,189,248,0.16),rgba(13,18,32,0.98)_65%)] border border-cyan-400/20 shadow-[0_20px_54px_rgba(0,0,0,0.75)] p-6 space-y-6">
         <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="font-display text-2xl font-black text-white">Riffan TV Quiz Show</h3>
-            <p className="text-xs sm:text-sm text-zinc-400 mt-1">
-              {pickLang(lang, {
-                es: 'Concurso de preguntas para 1 jugador o hasta 4 turnos en el mismo dispositivo.',
-                ca: 'Concurs de preguntes per a 1 jugador o fins a 4 torns al mateix dispositiu.',
-                en: 'Spanish TV Trivia show for 1 player or up to 4 pass-and-play turns.',
-              })}
-            </p>
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500/30 via-violet-500/25 to-amber-400/20 border border-cyan-300/40 shadow-[0_0_24px_rgba(34,211,238,0.28)] flex items-center justify-center shrink-0">
+              <Tv className="w-6 h-6 text-cyan-300" />
+            </div>
+            <div>
+              <h3 className="font-display text-2xl font-black text-white">Riffan TV Quiz Show</h3>
+              <p className="text-xs sm:text-sm text-zinc-400 mt-1">
+                {pickLang(lang, {
+                  es: 'Concurso de preguntas para 1 jugador o hasta 4 turnos en el mismo dispositivo.',
+                  ca: 'Concurs de preguntes per a 1 jugador o fins a 4 torns al mateix dispositiu.',
+                  en: 'Spanish TV Trivia show for 1 player or up to 4 pass-and-play turns.',
+                })}
+              </p>
+            </div>
           </div>
           <span className="text-xs font-bold text-amber-300 flex items-center gap-1 tabular-nums shrink-0">
             <Trophy className="w-4 h-4" /> {bestScore}
@@ -228,8 +239,13 @@ export const TvTriviaStage: React.FC<TvTriviaStageProps> = ({ lang, mutedOverrid
   if (phase === 'podium') {
     const sorted = [...players].sort((a, b) => b.score - a.score);
     return (
-      <div className="w-full max-w-xl mx-auto rounded-3xl bg-[#0d1220] border border-white/10 p-6 space-y-5 text-center">
-        <Trophy className="w-12 h-12 text-amber-400 mx-auto" />
+      <div className="w-full max-w-xl mx-auto rounded-3xl bg-[radial-gradient(ellipse_at_top,rgba(250,204,21,0.16),rgba(13,18,32,0.98)_65%)] border border-amber-400/25 shadow-[0_20px_54px_rgba(0,0,0,0.75)] p-6 space-y-5 text-center">
+        <div className="flex items-center justify-center gap-3">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400/25 to-cyan-500/20 border border-amber-300/45 flex items-center justify-center shadow-[0_0_24px_rgba(250,204,21,0.3)] shrink-0">
+            <Sparkles className="w-6 h-6 text-amber-300" />
+          </div>
+          <Trophy className="w-11 h-11 text-amber-400 drop-shadow-[0_0_12px_rgba(250,204,21,0.65)]" />
+        </div>
         <h3 className="font-display text-2xl font-black text-white">Clasificación Final</h3>
         <div className="space-y-2">
           {sorted.map((pl, idx) => (
@@ -258,7 +274,8 @@ export const TvTriviaStage: React.FC<TvTriviaStageProps> = ({ lang, mutedOverrid
   const pct = Math.max(0, (timeLeft / 15) * 100);
 
   return (
-    <div className="w-full max-w-3xl mx-auto rounded-3xl bg-[#0d1220] border border-white/10 p-4 sm:p-6 space-y-5">
+    <div className="relative overflow-hidden w-full max-w-3xl mx-auto rounded-3xl bg-[radial-gradient(ellipse_at_top,rgba(56,189,248,0.14),rgba(13,18,32,0.98)_65%)] border border-cyan-400/20 shadow-[0_20px_54px_rgba(0,0,0,0.75)] p-4 sm:p-6 space-y-5">
+      <PixiGameFxLayer ref={pixiFxRef} />
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-bold">
         <div className="flex flex-wrap items-center gap-2 tabular-nums">
           {players.map((pl, idx) => (
@@ -306,10 +323,15 @@ export const TvTriviaStage: React.FC<TvTriviaStageProps> = ({ lang, mutedOverrid
               const hidden = Boolean(hiddenOpts[idx]);
               const isAns = idx === q.ans;
               const isChosen = chosenIdx === idx;
-              let btnStyle = 'bg-white/[0.05] hover:bg-white/[0.11] border-white/12 text-white';
+              let btnStyle =
+                'bg-gradient-to-b from-white/[0.08] to-white/[0.03] hover:from-cyan-500/20 hover:to-violet-500/15 border-white/15 border-b-2 border-b-white/25 text-white shadow-md';
               if (chosenIdx !== null) {
-                if (isAns) btnStyle = 'bg-emerald-700/80 border-emerald-400 text-white';
-                else if (isChosen) btnStyle = 'bg-rose-800/80 border-rose-400 text-white';
+                if (isAns)
+                  btnStyle =
+                    'bg-gradient-to-b from-emerald-600/90 to-emerald-800/90 border-emerald-300 text-white shadow-[0_0_24px_rgba(16,185,129,0.5)]';
+                else if (isChosen)
+                  btnStyle =
+                    'bg-gradient-to-b from-rose-700/90 to-rose-900/90 border-rose-400 text-white shadow-[0_0_18px_rgba(244,63,94,0.45)]';
               }
               return (
                 <button
@@ -317,10 +339,12 @@ export const TvTriviaStage: React.FC<TvTriviaStageProps> = ({ lang, mutedOverrid
                   type="button"
                   disabled={hidden || chosenIdx !== null}
                   onClick={() => handleAnswer(idx)}
-                  className={`min-h-14 px-4 py-3 rounded-2xl border text-left text-sm font-bold transition-colors cursor-pointer disabled:opacity-20 ${btnStyle}`}
+                  className={`min-h-14 px-4 py-3 rounded-2xl border text-left text-sm font-bold transition-all active:scale-[0.98] cursor-pointer disabled:opacity-20 flex items-center gap-3 ${btnStyle}`}
                 >
-                  <span className="text-violet-300 mr-2">{['A', 'B', 'C', 'D'][idx]}.</span>
-                  {opt}
+                  <span className="w-7 h-7 rounded-lg bg-white/10 border border-white/20 flex items-center justify-center text-xs font-black text-cyan-200 shrink-0">
+                    {['A', 'B', 'C', 'D'][idx]}
+                  </span>
+                  <span className="leading-snug">{opt}</span>
                 </button>
               );
             })}

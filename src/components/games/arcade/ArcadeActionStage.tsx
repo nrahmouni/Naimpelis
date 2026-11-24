@@ -26,6 +26,7 @@ import {
   drawArcadeTiledBg,
   preloadArcadeSprites,
 } from './arcadeSprites';
+import { PixiGameFxLayer, type PixiGameFxHandle } from './PixiGameFxLayer';
 
 const ACTION_SPRITE_LIST = [
   ...EXPLOSION_FRAMES,
@@ -87,6 +88,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
   mutedOverride = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pixiFxRef = useRef<PixiGameFxHandle | null>(null);
   const [localMuted, setLocalMuted] = useState(mutedOverride);
   const mutedRef = useRef(localMuted || mutedOverride);
   mutedRef.current = localMuted || mutedOverride;
@@ -389,8 +391,18 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
             grid[cy][cx] = ' ';
             dotsLeft -= 1;
             curScore += pwr ? 50 : 10;
-            if (pwr) { frightTimer = 7; playArcadeSfx(740, 0.14, 'triangle', 0.08, mutedRef.current); }
-            else playArcadeSfx(420, 0.03, 'sine', 0.03, mutedRef.current);
+            if (pwr) {
+              frightTimer = 7;
+              pixiFxRef.current?.emitBurst(
+                Math.max(0.05, Math.min(0.95, (OX + (cx + 0.5) * CELL) / 960)),
+                Math.max(0.05, Math.min(0.95, (OY + (cy + 0.5) * CELL) / 540)),
+                'coin',
+                16
+              );
+              playArcadeSfx(740, 0.14, 'triangle', 0.08, mutedRef.current);
+            } else {
+              playArcadeSfx(420, 0.03, 'sine', 0.03, mutedRef.current);
+            }
             commitScore(curScore);
             if (dotsLeft <= 0) { level += 1; curScore += 500; initMap(true); }
           }
@@ -418,9 +430,21 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
             if (g.x > COLS - 0.45) g.x = -0.45;
             if (Math.hypot(g.x - pac.x, g.y - pac.y) < 0.65) {
               if (frightTimer > 0) {
+                pixiFxRef.current?.emitBurst(
+                  Math.max(0.05, Math.min(0.95, (OX + (g.x + 0.5) * CELL) / 960)),
+                  Math.max(0.05, Math.min(0.95, (OY + (g.y + 0.5) * CELL) / 540)),
+                  'spark',
+                  18
+                );
                 curScore += 200; commitScore(curScore); g.x = 9; g.y = 7;
                 playArcadeSfx(860, 0.12, 'square', 0.08, mutedRef.current);
               } else {
+                pixiFxRef.current?.emitBurst(
+                  Math.max(0.05, Math.min(0.95, (OX + (pac.x + 0.5) * CELL) / 960)),
+                  Math.max(0.05, Math.min(0.95, (OY + (pac.y + 0.5) * CELL) / 540)),
+                  'explosion',
+                  18
+                );
                 lives -= 1; setSubLabel(`Vidas ${lives} · Nivel ${level}`);
                 playArcadeSfx(140, 0.22, 'sawtooth', 0.09, mutedRef.current);
                 if (lives <= 0) { dead = true; setGameOver(true); setGameOverMsg(`${curScore} puntos · Nivel ${level}`); }
@@ -438,6 +462,15 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           ctx.fillStyle = 'rgba(4, 7, 18, 0.72)';
           ctx.fillRect(0, 0, 960, 540);
         }
+        // Subtle neon maze arena frame
+        ctx.save();
+        ctx.strokeStyle = frightTimer > 0 ? 'rgba(56, 189, 248, 0.55)' : 'rgba(59, 130, 246, 0.45)';
+        ctx.lineWidth = 4;
+        ctx.shadowColor = frightTimer > 0 ? '#38BDF8' : '#2563EB';
+        ctx.shadowBlur = 16;
+        ctx.strokeRect(OX - 6, OY - 6, COLS * CELL + 12, ROWS * CELL + 12);
+        ctx.restore();
+
         for (let r = 0; r < ROWS; r += 1) {
           for (let c = 0; c < COLS; c += 1) {
             const x = OX + c * CELL;
@@ -447,14 +480,24 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
                 ctx.fillStyle = '#1D4ED8';
                 ctx.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
               }
+              ctx.strokeStyle = 'rgba(147, 197, 253, 0.25)';
+              ctx.lineWidth = 1;
+              ctx.strokeRect(x + 2, y + 2, CELL - 4, CELL - 4);
             } else if (grid[r][c] === '-') {
-              ctx.fillStyle = '#EC4899';
-              ctx.fillRect(x + 2, y + CELL / 2 - 2, CELL - 4, 4);
+              ctx.fillStyle = '#F472B6';
+              ctx.fillRect(x + 2, y + CELL / 2 - 2.5, CELL - 4, 5);
             } else if (grid[r][c] === '.') {
-              ctx.fillStyle = '#FDE68A';
-              ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 3.6, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = 'rgba(253, 224, 71, 0.2)';
+              ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 6, 0, Math.PI * 2); ctx.fill();
+              ctx.fillStyle = '#FEF08A';
+              ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 3.4, 0, Math.PI * 2); ctx.fill();
             } else if (grid[r][c] === 'O') {
-              const pr = 18 + Math.sin(pac.mouth * 0.7) * 3;
+              const pr = 19 + Math.sin(pac.mouth * 0.7) * 3.5;
+              const halo = ctx.createRadialGradient(x + CELL / 2, y + CELL / 2, 2, x + CELL / 2, y + CELL / 2, 16);
+              halo.addColorStop(0, 'rgba(250, 204, 21, 0.55)');
+              halo.addColorStop(1, 'rgba(250, 204, 21, 0)');
+              ctx.fillStyle = halo;
+              ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 16, 0, Math.PI * 2); ctx.fill();
               if (!drawArcadeSprite(ctx, 'assets/games/puzzle/particleStar.png', x + CELL / 2, y + CELL / 2, pr, pr, now * 0.004)) {
                 ctx.fillStyle = '#FACC15';
                 ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 7.5, 0, Math.PI * 2); ctx.fill();
@@ -466,13 +509,38 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
         const py = OY + (pac.y + 0.5) * CELL;
         const ang = pac.dx < 0 ? Math.PI : pac.dy > 0 ? Math.PI / 2 : pac.dy < 0 ? -Math.PI / 2 : 0;
         const jaw = 0.15 + Math.abs(Math.sin(pac.mouth)) * 0.45;
-        ctx.fillStyle = '#FACC15';
+        ctx.save();
+        ctx.shadowColor = 'rgba(250, 204, 21, 0.55)';
+        ctx.shadowBlur = 12;
+        const pacGrad = ctx.createRadialGradient(px - 4, py - 5, 2, px, py, CELL * 0.48);
+        pacGrad.addColorStop(0, '#FEF08A');
+        pacGrad.addColorStop(0.65, '#FACC15');
+        pacGrad.addColorStop(1, '#CA8A04');
+        ctx.fillStyle = pacGrad;
         ctx.beginPath(); ctx.moveTo(px, py); ctx.arc(px, py, CELL * 0.44, ang + jaw, ang + Math.PI * 2 - jaw); ctx.closePath(); ctx.fill();
+        ctx.restore();
         for (const gh of ghosts) {
           const gx = OX + (gh.x + 0.5) * CELL;
           const gy = OY + (gh.y + 0.5) * CELL;
-          ctx.fillStyle = frightTimer > 0 ? '#2563EB' : gh.col;
-          ctx.beginPath(); ctx.arc(gx, gy - 2, CELL * 0.4, Math.PI, 0); ctx.lineTo(gx + CELL * 0.4, gy + CELL * 0.4); ctx.lineTo(gx - CELL * 0.4, gy + CELL * 0.4); ctx.closePath(); ctx.fill();
+          const r = CELL * 0.4;
+          const flashWhite = frightTimer > 0 && frightTimer < 2 && Math.floor(now / 150) % 2 === 0;
+          const bodyCol = frightTimer > 0 ? (flashWhite ? '#E2E8F0' : '#2563EB') : gh.col;
+          ctx.save();
+          ctx.shadowColor = bodyCol;
+          ctx.shadowBlur = 12;
+          ctx.fillStyle = bodyCol;
+          ctx.beginPath();
+          ctx.arc(gx, gy - 2, r, Math.PI, 0);
+          ctx.lineTo(gx + r, gy + r);
+          const wave = Math.sin(now * 0.015) * 2.2;
+          ctx.lineTo(gx + r * 0.55, gy + r - 3.5 + wave);
+          ctx.lineTo(gx + r * 0.18, gy + r);
+          ctx.lineTo(gx - r * 0.18, gy + r - 3.5 - wave);
+          ctx.lineTo(gx - r * 0.55, gy + r);
+          ctx.lineTo(gx - r, gy + r - 2.5 + wave);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
           ctx.fillStyle = '#FFF';
           ctx.beginPath(); ctx.arc(gx - 4, gy - 3, 3.3, 0, Math.PI * 2); ctx.arc(gx + 4, gy - 3, 3.3, 0, Math.PI * 2); ctx.fill();
           ctx.fillStyle = '#0F172A';
@@ -530,6 +598,12 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
             if (items[i].kind === 'flame') ac.range = Math.min(6, ac.range + 1);
             else ac.maxBombs = Math.min(4, ac.maxBombs + 1);
             items.splice(i, 1);
+            pixiFxRef.current?.emitBurst(
+              Math.max(0.05, Math.min(0.95, (OX + (nx + 0.5) * CELL) / 960)),
+              Math.max(0.05, Math.min(0.95, (OY + (ny + 0.5) * CELL) / 540)),
+              'coin',
+              12
+            );
             playArcadeSfx(720, 0.08, 'triangle', 0.07, mutedRef.current);
             syncStatus();
           }
@@ -544,6 +618,12 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
       };
       const detonate = (b: { x: number; y: number; range: number; owner: Actor }) => {
         b.owner.active = Math.max(0, b.owner.active - 1);
+        pixiFxRef.current?.emitBurst(
+          Math.max(0.05, Math.min(0.95, (OX + (b.x + 0.5) * CELL) / 960)),
+          Math.max(0.05, Math.min(0.95, (OY + (b.y + 0.5) * CELL) / 540)),
+          'explosion',
+          22
+        );
         playArcadeSfx(110, 0.2, 'sawtooth', 0.09, mutedRef.current);
         flames.push({ x: b.x, y: b.y, timer: 0.48 });
         for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
@@ -641,6 +721,13 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
 
         ctx.fillStyle = '#070b15';
         ctx.fillRect(0, 0, 960, 540);
+        // Subtle arena outer frame glow
+        ctx.save();
+        ctx.strokeStyle = 'rgba(56, 189, 248, 0.25)';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(OX - 4, OY - 4, COLS * CELL + 8, ROWS * CELL + 8);
+        ctx.restore();
+
         for (let r = 0; r < ROWS; r += 1) {
           for (let c = 0; c < COLS; c += 1) {
             const tx = OX + c * CELL;
@@ -650,10 +737,14 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
               ctx.fillRect(tx, ty, CELL, CELL);
             }
             if (board[r][c] === 1) {
+              ctx.fillStyle = 'rgba(0,0,0,0.34)';
+              ctx.fillRect(tx + 3, ty + 4, CELL - 2, CELL - 2);
               if (!drawArcadeSpriteRect(ctx, 'assets/games/bomberman/block_01.png', tx, ty, CELL, CELL)) {
                 ctx.fillStyle = '#334155'; ctx.fillRect(tx + 2, ty + 2, CELL - 4, CELL - 4);
               }
             } else if (board[r][c] === 2) {
+              ctx.fillStyle = 'rgba(0,0,0,0.32)';
+              ctx.fillRect(tx + 3, ty + 4, CELL - 3, CELL - 3);
               if (!drawArcadeSpriteRect(ctx, 'assets/games/bomberman/crate_01.png', tx + 1, ty + 1, CELL - 2, CELL - 2)) {
                 ctx.fillStyle = '#B45309'; ctx.fillRect(tx + 3, ty + 3, CELL - 6, CELL - 6);
               }
@@ -662,7 +753,12 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
         }
         items.forEach((it) => {
           const ix = OX + (it.x + 0.5) * CELL;
-          const iy = OY + (it.y + 0.5) * CELL;
+          const iy = OY + (it.y + 0.5) * CELL + Math.sin(now * 0.007) * 2.2;
+          const glow = ctx.createRadialGradient(ix, iy, 2, ix, iy, 20);
+          glow.addColorStop(0, it.kind === 'flame' ? 'rgba(56, 189, 248, 0.45)' : 'rgba(244, 63, 94, 0.45)');
+          glow.addColorStop(1, 'rgba(0,0,0,0)');
+          ctx.fillStyle = glow;
+          ctx.beginPath(); ctx.arc(ix, iy, 20, 0, Math.PI * 2); ctx.fill();
           const pUrl = it.kind === 'flame' ? 'assets/games/space/powerupBlue_bolt.png' : 'assets/games/space/pill_red.png';
           if (!drawArcadeSprite(ctx, pUrl, ix, iy, 28, 28)) {
             ctx.fillStyle = it.kind === 'flame' ? '#F97316' : '#38BDF8';
@@ -672,10 +768,23 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
         bombs.forEach((b) => {
           const bpx = OX + (b.x + 0.5) * CELL;
           const bpy = OY + (b.y + 0.5) * CELL;
-          const pulse = 13 + Math.sin(b.timer * 14) * 2.4;
-          ctx.fillStyle = '#0F172A'; ctx.beginPath(); ctx.arc(bpx, bpy, pulse, 0, Math.PI * 2); ctx.fill();
-          ctx.strokeStyle = '#38BDF8'; ctx.lineWidth = 2; ctx.stroke();
-          ctx.fillStyle = '#FACC15'; ctx.beginPath(); ctx.arc(bpx + 5, bpy - 8, 4.5, 0, Math.PI * 2); ctx.fill();
+          const pulse = 13 + Math.sin(b.timer * 15) * 2.6;
+          const urgent = b.timer < 0.8;
+          // Bomb shadow & danger pulse
+          ctx.fillStyle = urgent ? 'rgba(244, 63, 94, 0.25)' : 'rgba(0,0,0,0.42)';
+          ctx.beginPath(); ctx.arc(bpx, bpy + 4, pulse + 2, 0, Math.PI * 2); ctx.fill();
+          const bGrad = ctx.createRadialGradient(bpx - 4, bpy - 4, 2, bpx, bpy, pulse);
+          bGrad.addColorStop(0, '#475569');
+          bGrad.addColorStop(0.65, '#0F172A');
+          bGrad.addColorStop(1, '#020617');
+          ctx.fillStyle = bGrad;
+          ctx.beginPath(); ctx.arc(bpx, bpy, pulse, 0, Math.PI * 2); ctx.fill();
+          ctx.strokeStyle = urgent ? '#F43F5E' : '#38BDF8';
+          ctx.lineWidth = 2; ctx.stroke();
+          // Fuse ember spark
+          const sparkR = 4 + Math.sin(now * 0.04) * 1.8;
+          ctx.fillStyle = '#FACC15';
+          ctx.beginPath(); ctx.arc(bpx + 5, bpy - 8, sparkR, 0, Math.PI * 2); ctx.fill();
         });
         flames.forEach((f) => {
           const fx = OX + (f.x + 0.5) * CELL;
@@ -690,6 +799,9 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           if (!a.alive) return;
           const ax = OX + (a.x + 0.5) * CELL;
           const ay = OY + (a.y + 0.5) * CELL;
+          // Ground shadow + player halo ring
+          ctx.fillStyle = 'rgba(0,0,0,0.42)';
+          ctx.beginPath(); ctx.ellipse(ax, ay + 12, 14, 7, 0, 0, Math.PI * 2); ctx.fill();
           ctx.strokeStyle = a.col;
           ctx.lineWidth = 3;
           ctx.beginPath(); ctx.arc(ax, ay + 8, 16, 0, Math.PI * 2); ctx.stroke();
@@ -708,6 +820,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
     else {
       let bird = { y: 240, vy: 0 };
       let pipes: Array<{ x: number; gapY: number; gapH: number; passed: boolean }> = [];
+      let coins: Array<{ x: number; y: number; collected: boolean }> = [];
       let puffs: Array<{ x: number; y: number; life: number }> = [];
       let curScore = 0;
       let started = false;
@@ -716,7 +829,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
       let scroll = 0;
 
       const reset = () => {
-        bird = { y: 240, vy: 0 }; pipes = []; puffs = []; curScore = 0;
+        bird = { y: 240, vy: 0 }; pipes = []; coins = []; puffs = []; curScore = 0;
         started = false; dead = false; spawnX = 0; scroll = 0;
         setGameOver(false); commitScore(0); setSubLabel('Pulsa para volar');
       };
@@ -748,13 +861,30 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           spawnX += 235 * dt;
           if (spawnX >= 270) {
             spawnX = 0;
-            pipes.push({ x: 980, gapY: 130 + Math.random() * 200, gapH: 156, passed: false });
+            const gapY = 130 + Math.random() * 200;
+            pipes.push({ x: 980, gapY, gapH: 156, passed: false });
+            if (Math.random() < 0.72) {
+              coins.push({ x: 1014, y: gapY + (Math.random() - 0.5) * 44, collected: false });
+            }
+          }
+          for (let ci = coins.length - 1; ci >= 0; ci -= 1) {
+            const cn = coins[ci];
+            cn.x -= 235 * dt;
+            if (!cn.collected && Math.hypot(cn.x - 240, cn.y - bird.y) < 30) {
+              cn.collected = true;
+              curScore += 3;
+              commitScore(curScore);
+              pixiFxRef.current?.emitBurst(240 / 960, Math.max(0.1, Math.min(0.9, bird.y / 540)), 'coin', 14);
+              playArcadeSfx(960, 0.07, 'triangle', 0.06, mutedRef.current);
+            }
+            if (cn.collected || cn.x < -50) coins.splice(ci, 1);
           }
           for (let i = pipes.length - 1; i >= 0; i -= 1) {
             const p = pipes[i];
             p.x -= 235 * dt;
             if (!p.passed && p.x + 68 < 240) {
               p.passed = true; curScore += 1; commitScore(curScore);
+              pixiFxRef.current?.emitBurst(240 / 960, Math.max(0.1, Math.min(0.9, bird.y / 540)), 'coin', 10);
               playArcadeSfx(740, 0.06, 'sine', 0.06, mutedRef.current);
             }
             if (p.x + 64 > 224 && p.x + 6 < 258) {
@@ -765,6 +895,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           if (bird.y > 474 || bird.y < 14) dead = true;
           if (dead) {
             setGameOver(true);
+            pixiFxRef.current?.emitBurst(240 / 960, Math.max(0.1, Math.min(0.9, bird.y / 540)), 'explosion', 24);
             const medal = curScore >= 30 ? 'Platino' : curScore >= 15 ? 'Oro' : curScore >= 7 ? 'Plata' : 'Bronce';
             setGameOverMsg(`${curScore} puntos · Medalla ${medal}`);
             playArcadeSfx(135, 0.24, 'sawtooth', 0.09, mutedRef.current);
@@ -775,9 +906,29 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
         }
 
         const sky = ctx.createLinearGradient(0, 0, 0, 490);
-        sky.addColorStop(0, '#0C4A6E'); sky.addColorStop(1, '#38BDF8');
+        sky.addColorStop(0, '#0284C7'); sky.addColorStop(0.55, '#38BDF8'); sky.addColorStop(1, '#BAE6FD');
         ctx.fillStyle = sky; ctx.fillRect(0, 0, 960, 490);
         drawArcadeTiledBg(ctx, 'assets/games/tappy/background.png', 960, 480, -scroll * 0.35, 0);
+
+        // Distant parallax scenic hills silhouette
+        ctx.save();
+        ctx.fillStyle = 'rgba(14, 116, 144, 0.26)';
+        ctx.beginPath();
+        ctx.moveTo(0, 490);
+        for (let hx = 0; hx <= 960; hx += 48) {
+          const hy = 380 + Math.sin((hx + scroll * 0.22) * 0.008) * 34 + Math.cos((hx + scroll * 0.22) * 0.015) * 18;
+          ctx.lineTo(hx, hy);
+        }
+        ctx.lineTo(960, 490);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        for (let ci = 0; ci < 3; ci += 1) {
+          const cxCloud = ((960 - ((scroll * (0.18 + ci * 0.06) + ci * 340) % 1120)) + 1120) % 1120 - 80;
+          const cyCloud = 68 + ci * 52;
+          drawArcadeSprite(ctx, 'assets/games/tappy/puffLarge.png', cxCloud, cyCloud, 92 - ci * 10, 56 - ci * 6, 0, 0.55);
+        }
 
         pipes.forEach((pp) => {
           const topH = pp.gapY - pp.gapH / 2;
@@ -792,6 +943,23 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           if (!drawArcadeSpriteRect(ctx, 'assets/games/tappy/rockGrass.png', pp.x - 10, botY, 88, hBot)) {
             ctx.fillStyle = '#22C55E'; ctx.fillRect(pp.x, botY, 68, 490 - botY);
           }
+        });
+
+        // Spinning collectible bonus coins
+        coins.forEach((cn) => {
+          const spinW = Math.max(4, Math.abs(Math.cos(now * 0.006)) * 14);
+          const halo = ctx.createRadialGradient(cn.x, cn.y, 2, cn.x, cn.y, 22);
+          halo.addColorStop(0, 'rgba(250, 204, 21, 0.55)');
+          halo.addColorStop(1, 'rgba(250, 204, 21, 0)');
+          ctx.fillStyle = halo;
+          ctx.beginPath(); ctx.arc(cn.x, cn.y, 22, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#FACC15';
+          ctx.strokeStyle = '#92400E';
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.ellipse(cn.x, cn.y, spinW, 14, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
         });
 
         puffs.forEach((pf) => {
@@ -923,6 +1091,7 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           }}
           className="game-touch-btn w-full h-auto block cursor-pointer"
         />
+        <PixiGameFxLayer ref={pixiFxRef} />
         {gameOver && (
           <div className="absolute inset-0 bg-[#050812]/90 flex flex-col items-center justify-center gap-3 p-6 text-center">
             <Trophy className="w-11 h-11 text-amber-400" />

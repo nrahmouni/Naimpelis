@@ -23,31 +23,39 @@ export const GAME_ASSET_CDN_MAP: Readonly<Record<string, string>> = {
   'models/Soldier.glb': `${THREE_GLTF_CDN}/Soldier.glb`,
   'models/Xbot.glb': `${THREE_GLTF_CDN}/Xbot.glb`,
   'models/Michelle.glb': `${THREE_GLTF_CDN}/Michelle.glb`,
+  'models/CesiumMan.glb': 'https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Assets@main/Models/CesiumMan/glTF-Binary/CesiumMan.glb',
+  'models/Fox.glb': 'https://cdn.jsdelivr.net/gh/KhronosGroup/glTF-Sample-Assets@main/Models/Fox/glTF-Binary/Fox.glb',
 
   // ===== Poly Haven CC0 1K HDRI Environments (Zero-key direct CDN, CORS *) =====
   'hdri/moonless_golf_1k.hdr': `${POLYHAVEN_HDR_CDN}/moonless_golf_1k.hdr`,
   'hdri/puresky_1k.hdr': `${POLYHAVEN_HDR_CDN}/kloofendal_48d_partly_cloudy_puresky_1k.hdr`,
   'hdri/studio_small_09_1k.hdr': `${POLYHAVEN_HDR_CDN}/studio_small_09_1k.hdr`,
   'hdri/venice_sunset_1k.hdr': `${POLYHAVEN_HDR_CDN}/venice_sunset_1k.hdr`,
+  'hdri/evening_road_01_1k.hdr': `${POLYHAVEN_HDR_CDN}/evening_road_01_1k.hdr`,
+  'hdri/lebombo_1k.hdr': `${POLYHAVEN_HDR_CDN}/lebombo_1k.hdr`,
 
-  // ===== Rive Interactive Vector Animations CDN =====
-  'rive/skills.riv': 'https://cdn.rive.app/animations/skills.riv',
+  // ===== Rive Interactive Vector Animations CDN (CORS * verified) =====
+  'rive/skills.riv': 'https://cdn.rive.app/animations/vehicles.riv',
   'rive/vehicles.riv': 'https://cdn.rive.app/animations/vehicles.riv',
 
   // ===== HD Photorealistic Arena Backdrops & Poly Haven PBR Textures (CC0, CORS *) =====
   'penalty/stadium_backdrop.jpg':
-    'https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9c/NotreDameStadiumNight.jpg/1280px-NotreDameStadiumNight.jpg',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/NotreDameStadiumNight.jpg/1280px-NotreDameStadiumNight.jpg',
   'arenas/soccer_stadium.jpg':
-    'https://thumb.wikimedia.org/wikipedia/commons/thumb/f/fc/Camp_Nou_aerial_%28cropped%29.jpg/1280px-Camp_Nou_aerial_%28cropped%29.jpg',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/f/fc/Camp_Nou_aerial_%28cropped%29.jpg/1280px-Camp_Nou_aerial_%28cropped%29.jpg',
   'arenas/bowling_alley.jpg':
-    'https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Sunset_Lanes_bowling_alley_-_Beaverton%2C_OR_%282015%29.jpg/1280px-Sunset_Lanes_bowling_alley_-_Beaverton%2C_OR_%282015%29.jpg',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Sunset_Lanes_bowling_alley_-_Beaverton%2C_OR_%282015%29.jpg/1280px-Sunset_Lanes_bowling_alley_-_Beaverton%2C_OR_%282015%29.jpg',
   'arenas/tennis_court.jpg':
-    'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/00/Wimbledon_Centre_Court_2017_cropped.jpg/1280px-Wimbledon_Centre_Court_2017_cropped.jpg',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/Wimbledon_Centre_Court_2017_cropped.jpg/1280px-Wimbledon_Centre_Court_2017_cropped.jpg',
   'arenas/labyrinth_board.jpg': `${POLYHAVEN_TEX_CDN}/oak_veneer_01/oak_veneer_01_diff_1k.jpg`,
+  'pbr/oak_diff.jpg': `${POLYHAVEN_TEX_CDN}/oak_veneer_01/oak_veneer_01_diff_1k.jpg`,
   'pbr/oak_rough.jpg': `${POLYHAVEN_TEX_CDN}/oak_veneer_01/oak_veneer_01_rough_1k.jpg`,
+  'pbr/wood_floor_diff.jpg': `${POLYHAVEN_TEX_CDN}/wood_floor_deck/wood_floor_deck_diff_1k.jpg`,
+  'pbr/wood_floor_nor.jpg': `${POLYHAVEN_TEX_CDN}/wood_floor_deck/wood_floor_deck_nor_gl_1k.jpg`,
   'pbr/asphalt_diff.jpg': `${POLYHAVEN_TEX_CDN}/asphalt_02/asphalt_02_diff_1k.jpg`,
   'pbr/asphalt_nor.jpg': `${POLYHAVEN_TEX_CDN}/asphalt_02/asphalt_02_nor_gl_1k.jpg`,
   'pbr/asphalt_rough.jpg': `${POLYHAVEN_TEX_CDN}/asphalt_02/asphalt_02_rough_1k.jpg`,
+  'pbr/concrete_worn_diff.jpg': `${POLYHAVEN_TEX_CDN}/concrete_floor_worn_001/concrete_floor_worn_001_diff_1k.jpg`,
   'pbr/grass_diff.jpg': `${POLYHAVEN_TEX_CDN}/aerial_grass_rock/aerial_grass_rock_diff_1k.jpg`,
   'pbr/forrest_ground_diff.jpg': `${POLYHAVEN_TEX_CDN}/forrest_ground_01/forrest_ground_01_diff_1k.jpg`,
   'pbr/rubber_tiles_diff.jpg': `${POLYHAVEN_TEX_CDN}/rubber_tiles/rubber_tiles_diff_1k.jpg`,
@@ -186,6 +194,76 @@ export const GAME_ASSET_CDN_MAP: Readonly<Record<string, string>> = {
   'toon/robot_idle.png': `${KENNEY_CDN}/2d/Toon%20Characters/Robot/Poses%20HD/character_robot_idle.png`,
   'toon/robot_cheer0.png': `${KENNEY_CDN}/2d/Toon%20Characters/Robot/Poses%20HD/character_robot_cheer0.png`,
 };
+
+const CIRCLE_FLAG_ALIAS: Readonly<Record<string, string>> = {
+  en: 'gb-eng',
+  uk: 'gb',
+  gb: 'gb',
+  wal: 'gb-wls',
+  sco: 'gb-sct',
+  cat: 'es-ct',
+  spain: 'es',
+  brazil: 'br',
+  argentina: 'ar',
+  france: 'fr',
+  germany: 'de',
+  belgium: 'be',
+  portugal: 'pt',
+  italy: 'it',
+  netherlands: 'nl',
+  england: 'gb-eng',
+  switzerland: 'ch',
+  croatia: 'hr',
+  morocco: 'ma',
+  japan: 'jp',
+  colombia: 'co',
+  mexico: 'mx',
+  usa: 'us',
+  uruguay: 'uy',
+};
+
+export function getCircleFlagCdnUrl(codeOrTeamId: string): string {
+  const clean = String(codeOrTeamId || 'es').trim().toLowerCase();
+  const mapped = CIRCLE_FLAG_ALIAS[clean] || clean.replace(/[^a-z-]/g, '') || 'es';
+  return `https://hatscripts.github.io/circle-flags/flags/${mapped}.svg`;
+}
+
+export function getPlayingCardSvgUrl(rank: string, suit: string): string {
+  const rRaw = String(rank || '').trim().toUpperCase();
+  const sRaw = String(suit || '').trim().toLowerCase();
+  const rankMap: Record<string, string> = {
+    A: 'ace',
+    '1': 'ace',
+    K: 'king',
+    Q: 'queen',
+    J: 'jack',
+    T: '10',
+  };
+  const suitMap: Record<string, string> = {
+    spades: 'spades',
+    s: 'spades',
+    '♠': 'spades',
+    hearts: 'hearts',
+    h: 'hearts',
+    '♥': 'hearts',
+    diamonds: 'diamonds',
+    d: 'diamonds',
+    '♦': 'diamonds',
+    clubs: 'clubs',
+    c: 'clubs',
+    '♣': 'clubs',
+  };
+  const rName = rankMap[rRaw] || rRaw.toLowerCase();
+  const sName = suitMap[sRaw] || 'spades';
+  return `https://cdn.jsdelivr.net/gh/hayeah/playing-cards-assets@master/svg/${rName}_of_${sName}.svg`;
+}
+
+export function getDiceBearAvatarUrl(
+  seed: string,
+  style: 'bottts-neutral' | 'avataaars-neutral' | 'fun-emoji' = 'bottts-neutral'
+): string {
+  return `https://api.dicebear.com/9.x/${style}/svg?seed=${encodeURIComponent(seed || 'player')}`;
+}
 
 export function resolveGameAssetUrl(relPath: string): string {
   const raw = String(relPath || '').trim();

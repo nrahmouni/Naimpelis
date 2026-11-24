@@ -1,23 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Compass, QrCode, RotateCcw, Smartphone, Trophy, Volume2, VolumeX, X } from 'lucide-react';
+import { Compass, QrCode, RotateCcw, Smartphone, Volume2, VolumeX, X } from 'lucide-react';
 import type { AppLanguage } from '../../types';
 import { socketService } from '../../services/socket';
 import { useDirectDeviceGyro } from '../../hooks/useDirectDeviceGyro';
 import { triggerHaptic } from '../../utils/haptics';
 import { DualGyroQrPanel, type DualGyroControllerPeer } from './racing/DualGyroQrPanel';
 import { playArcadeSfx } from './arcade/arcadeAudio';
-import {
-  animateModalEntrance,
-  fireVictoryConfetti,
-  GameSpriteVfxPool,
-  preloadOnlineGameAssets,
-} from './arcade/arcadeAnimations';
-import { RobotMascot3DBadge } from './arcade/RobotMascot3DBadge';
-import {
-  drawArcadeSprite,
-  drawArcadeSpriteRect,
-} from './arcade/arcadeSprites';
-import { resolveGameAssetUrl } from '../../shared/gameAssetsCdn';
+import { fireVictoryConfetti, preloadOnlineGameAssets } from './arcade/arcadeAnimations';
+import { VictoryCelebrationOverlay } from './GameEffects';
+import { Bowling3DViewport, type BowlingSimSnapshot } from './three/Bowling3DViewport';
+import { Tennis3DViewport, type TennisSimSnapshot } from './three/Tennis3DViewport';
+import { Labyrinth3DViewport, type Labyrinth3DSnapshot } from './three/Labyrinth3DViewport';
 
 export type GyroMotionGameId = 'gyrobowling' | 'gyrotennis' | 'gyrolab';
 
@@ -53,22 +46,138 @@ const EMPTY_PAD: GyroPadInput = {
   expiresAt: 0,
 };
 
-function loadBackdrop(src: string, onLoad: (img: HTMLImageElement) => void): void {
-  if (typeof Image === 'undefined') return;
-  const img = new Image();
-  img.crossOrigin = 'anonymous';
-  img.src = resolveGameAssetUrl(src);
-  img.onload = () => onLoad(img);
+// USBC Frame Score Calculator (supports 6 frames cleanly)
+function computeUsbcFrames(
+  frames: Array<{ r1: number | null; r2: number | null }>,
+  maxFrames: number
+): Array<{ r1: number | null; r2: number | null; cumul: number | null }> {
+  const flatRolls: number[] = [];
+  const frameRollStart: number[] = [];
+  for (let i = 0; i < maxFrames; i += 1) {
+    const f = frames[i];
+    if (!f || f.r1 === null) {
+      frameRollStart.push(-1);
+      continue;
+    }
+    frameRollStart.push(flatRolls.length);
+    flatRolls.push(f.r1);
+    if (f.r1 < 10 && f.r2 !== null) {
+      flatRolls.push(f.r2);
+    }
+  }
+
+  let running = 0;
+  return Array.from({ length: maxFrames }, (_, i) => {
+    const f = frames[i] || { r1: null, r2: null };
+    const idx = frameRollStart[i];
+    if (idx < 0 || f.r1 === null) return { r1: f.r1, r2: f.r2, cumul: null };
+
+    if (f.r1 === 10) {
+      // Strike: 10 + next 2 rolls (if available, or use current accumulated rolls)
+      const b1 = flatRolls[idx + 1] ?? 0;
+      const b2 = flatRolls[idx + 2] ?? 0;
+      running += 10 + b1 + b2;
+      return { r1: f.r1, r2: f.r2, cumul: running };
+    }
+    if (f.r2 === null) {
+      return { r1: f.r1, r2: null, cumul: null };
+    }
+    const base = f.r1 + f.r2;
+    if (base === 10) {
+      const b1 = flatRolls[idx + 2] ?? 0;
+      running += 10 + b1;
+      return { r1: f.r1, r2: f.r2, cumul: running };
+    }
+    running += base;
+    return { r1: f.r1, r2: f.r2, cumul: running };
+  });
 }
+
+const LAB_LEVELS: string[][] = [
+  [
+    '###################',
+    '#S..*...#.....O..*#',
+    '###.###.#.#####.###',
+    '#...#...*...#.....#',
+    '#.O.#.#####.#.###.#',
+    '#...#.....#...#..*#',
+    '#.#######.###.#.###',
+    '#*......#...O.#...#',
+    '###.###.#.#####.#.#',
+    '#...*.....#...O..E#',
+    '###################',
+  ],
+  [
+    '###################',
+    '#S..#.*.....O...*.#',
+    '#.#.#.#####.###.#.#',
+    '#.#...#...#...#.#.#',
+    '#.###.#.O.###.#.#.#',
+    '#.*.#.....#.*...#.#',
+    '#.#######.#####.#.#',
+    '#...O...#.....#...#',
+    '###.###.#.###.###.#',
+    '#*....#...O.....*E#',
+    '###################',
+  ],
+  [
+    '###################',
+    '#S.O..*...#.*...O*#',
+    '#.#.#####.#.###.#.#',
+    '#.#.#...#...#...#.#',
+    '#...#.O.###.#.###.#',
+    '###.#.....#.#...*E#',
+    '#.*.#.###.#.#####.#',
+    '#.#...#...O.....#.#',
+    '#.#####.#######.#.#',
+    '#...*.....O...*...#',
+    '###################',
+  ],
+];
 
 export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
   gameId,
+  lang,
   roomId,
   userName,
   onClose,
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const backdropRef = useRef<HTMLImageElement | null>(null);
+  const bowlingSimRef = useRef<BowlingSimSnapshot>({
+    phase: 'aim',
+    turnPlayer: 1,
+    aimX: 0,
+    spin: 0,
+    ball: { x: 0, y: 0.06, rot: 0 },
+    pins: [],
+    outcomeSeq: 0,
+    outcomeKind: 'none',
+  });
+  const tennisSimRef = useRef<TennisSimSnapshot>({
+    p1: { x: 0, y: 0.85, swingT: 0 },
+    p2: { x: 0, y: -0.85, swingT: 0 },
+    ball: { x: 0, y: 0, z: 0.25, vx: 0.25, vy: 1.05 },
+    surface: 'grass',
+    shotTag: 'normal',
+    over: false,
+    hitSeq: 0,
+    pointSeq: 0,
+    lastScorer: 1,
+  });
+  const labSimRef = useRef<Labyrinth3DSnapshot>({
+    level: 1,
+    cols: 19,
+    rows: 11,
+    grid: LAB_LEVELS[0].map((r) => r.split('')),
+    tiltX: 0,
+    tiltZ: 0,
+    twoHumans: false,
+    ball1: { x: 1.5, y: 1.5, vx: 0, vy: 0 },
+    ball2: null,
+    collectSeq: 0,
+    fallSeq: 0,
+    winSeq: 0,
+  });
+
   const gyroP1Ref = useRef<GyroPadInput>({ ...EMPTY_PAD });
   const gyroP2Ref = useRef<GyroPadInput>({ ...EMPTY_PAD });
   const keysRef = useRef({
@@ -79,6 +188,23 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
     action: false,
     alt: false,
   });
+
+  // Bowling UI Controls State & Smooth Power Ref
+  const [bowlSpinUi, setBowlSpinUi] = useState(0);
+  const [bowlFramesUi, setBowlFramesUi] = useState<
+    Array<{ r1: number | null; r2: number | null; cumul: number | null }>
+  >(() => Array.from({ length: 6 }, () => ({ r1: null, r2: null, cumul: null })));
+  const bowlPowerFillRef = useRef<HTMLDivElement | null>(null);
+  const bowlPowerTextRef = useRef<HTMLSpanElement | null>(null);
+  const bowlManualActionRef = useRef(false);
+  const bowlSteerOffsetRef = useRef(0);
+  const bowlSpinOverrideRef = useRef(0);
+
+  // Tennis UI State
+  const [tennisSurface, setTennisSurface] = useState<'grass' | 'clay' | 'hard'>('grass');
+  const [tennisShotMode, setTennisShotMode] = useState<'normal' | 'smash' | 'lob'>('normal');
+  const tennisShotModeRef = useRef<'normal' | 'smash' | 'lob'>('normal');
+  tennisShotModeRef.current = tennisShotMode;
 
   const [muted, setMuted] = useState(false);
   const mutedRef = useRef(false);
@@ -92,18 +218,19 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
   const [hud, setHud] = useState({
     leftText:
       gameId === 'gyrobowling'
-        ? 'FRAME 1/5 · J1 0'
+        ? 'FRAME 1/6 · J1 0'
         : gameId === 'gyrotennis'
         ? 'J1 0 - 0 CPU'
-        : 'ESTRELLAS 0/5',
+        : 'ESTRELLAS 0/6',
     rightText:
       gameId === 'gyrobowling'
         ? 'TIRO 1 · 10 BOLOS'
         : gameId === 'gyrotennis'
-        ? 'A 7 PUNTOS'
-        : 'NIVEL 1 · 60s',
+        ? 'A 7 PUNTOS · HIERBA'
+        : 'NIVEL 1/3 · 65s',
   });
   const [finishSummary, setFinishSummary] = useState<{ title: string; sub: string } | null>(null);
+  const [arenaBanner, setArenaBanner] = useState<string>('');
   const [resetNonce, setResetNonce] = useState(0);
 
   const effectiveRoomId = useMemo(
@@ -133,24 +260,12 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
     return () => window.clearInterval(id);
   }, [directGyro.active, directGyro.gyroRef]);
 
-  const finishCardRef = useRef<HTMLDivElement | null>(null);
-
   useEffect(() => {
-    const bgSrc =
-      gameId === 'gyrobowling'
-        ? '/assets/games/arenas/bowling_alley.jpg'
-        : gameId === 'gyrotennis'
-        ? '/assets/games/arenas/tennis_court.jpg'
-        : '/assets/games/arenas/labyrinth_board.jpg';
-    loadBackdrop(bgSrc, (img) => {
-      backdropRef.current = img;
-    });
     preloadOnlineGameAssets();
-  }, [gameId]);
+  }, []);
 
   useEffect(() => {
     if (!finishSummary) return;
-    animateModalEntrance(finishCardRef.current);
     fireVictoryConfetti(
       gameId === 'gyrobowling' ? 'strike' : gameId === 'gyrotennis' ? 'gold' : 'arcade'
     );
@@ -219,6 +334,19 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
         e.preventDefault();
       } else if (k === 'Shift') keysRef.current.alt = true;
       else if (k === 'r' || k === 'R') setResetNonce((n) => n + 1);
+      else if (gameId === 'gyrobowling' && (k === 'q' || k === 'Q')) {
+        bowlSpinOverrideRef.current = Math.max(-1, Number((bowlSpinOverrideRef.current - 0.35).toFixed(2)));
+        setBowlSpinUi(bowlSpinOverrideRef.current);
+      } else if (gameId === 'gyrobowling' && (k === 'e' || k === 'E')) {
+        bowlSpinOverrideRef.current = Math.min(1, Number((bowlSpinOverrideRef.current + 0.35).toFixed(2)));
+        setBowlSpinUi(bowlSpinOverrideRef.current);
+      } else if (gameId === 'gyrotennis' && k === '1') {
+        setTennisShotMode('normal');
+      } else if (gameId === 'gyrotennis' && k === '2') {
+        setTennisShotMode('smash');
+      } else if (gameId === 'gyrotennis' && k === '3') {
+        setTennisShotMode('lob');
+      }
     };
     const onUp = (e: KeyboardEvent) => {
       const k = e.key;
@@ -235,21 +363,14 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
       window.removeEventListener('keydown', onDown);
       window.removeEventListener('keyup', onUp);
     };
-  }, []);
+  }, [gameId]);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    const W = 920;
-    const H = 520;
     let rafId = 0;
     let alive = true;
     let lastTs = performance.now();
-    const vfx = new GameSpriteVfxPool();
     setFinishSummary(null);
+    setArenaBanner('');
 
     const pushScoreTelemetry = (s1: number, s2: number, tag?: string, pulse?: number) => {
       if (!socketService.isConnected()) return;
@@ -260,7 +381,7 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
           rpmPct: 60,
           gear: 1,
           lap: 1,
-          totalLaps: 5,
+          totalLaps: 6,
           position: 1,
           totalCars: 2,
           nitroPct: 100,
@@ -275,13 +396,13 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
     };
 
     // -----------------------------------------------------------------
-    // 1. GYRO BOWLING 3D PRO
+    // 1. GYRO BOWLING 3D PRO (USBC 6-Frame Scoring + Hook & Power Meter)
     // -----------------------------------------------------------------
     if (gameId === 'gyrobowling') {
+      const MAX_FRAMES = 6;
       const makePins = () => {
         const out: Array<{ x: number; y: number; vx: number; vy: number; up: boolean; rot: number }> = [];
-        const rows = 4;
-        for (let r = 0; r < rows; r += 1) {
+        for (let r = 0; r < 4; r += 1) {
           for (let c = 0; c <= r; c += 1) {
             out.push({
               x: (c - r * 0.5) * 0.24,
@@ -296,37 +417,43 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
         return out;
       };
 
+      const blankFrames = () =>
+        Array.from({ length: MAX_FRAMES }, () => ({ r1: null as number | null, r2: null as number | null }));
+
       const st = {
         frame: 1,
-        maxFrames: 5,
-        rollNum: 1,
+        rollNum: 1 as 1 | 2,
         turnPlayer: 1 as 1 | 2,
-        scores: [0, 0],
+        p1Frames: blankFrames(),
+        p2Frames: blankFrames(),
+        standingBeforeRoll: 10,
         aimX: 0,
         spin: 0,
+        powerPct: 78,
+        powerDir: 1,
         phase: 'aim' as 'aim' | 'roll' | 'settle' | 'over',
         ball: { x: 0, y: 0.06, vx: 0, vy: 0, curve: 0, rot: 0 },
         pins: makePins(),
         settleT: 0,
         banner: '',
         bannerT: 0,
-        sparks: [] as Array<{ x: number; y: number; vx: number; vy: number; life: number }>,
       };
 
       const prevThrow = { p1: false, p2: false };
+      bowlSteerOffsetRef.current = 0;
+      bowlSpinOverrideRef.current = 0;
+      setBowlSpinUi(0);
+      setBowlFramesUi(computeUsbcFrames(st.p1Frames, MAX_FRAMES));
+      setHud({ leftText: 'FRAME 1/6 · J1 0', rightText: 'TIRO 1 · 10 BOLOS' });
 
-      const resetBowl = () => {
-        st.frame = 1;
-        st.rollNum = 1;
-        st.turnPlayer = 1;
-        st.scores = [0, 0];
-        st.phase = 'aim';
-        st.pins = makePins();
-        st.banner = '';
-        st.bannerT = 0;
-        setHud({ leftText: 'FRAME 1/5 · J1 0', rightText: 'TIRO 1 · 10 BOLOS' });
+      const getLatestScore = (frames: Array<{ r1: number | null; r2: number | null }>) => {
+        const calc = computeUsbcFrames(frames, MAX_FRAMES);
+        let best = 0;
+        calc.forEach((c) => {
+          if (c.cumul !== null) best = c.cumul;
+        });
+        return best;
       };
-      resetBowl();
 
       const frameLoop = (now: number) => {
         if (!alive) return;
@@ -336,40 +463,59 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
         const twoHumans = controllersRef.current.length >= 2 || controllersRef.current.some((c) => c.slot === 2);
         const pad = st.turnPlayer === 2 && twoHumans ? gyroP2Ref.current : gyroP1Ref.current;
         const padFresh = pad.expiresAt > Date.now();
-        const steer = padFresh
-          ? pad.steer
-          : (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0);
-        const hookInput = padFresh ? pad.roll : 0;
-        const swingNow = padFresh ? pad.swing > 1.05 || pad.nitro || pad.throttle > 0.5 : keysRef.current.action;
+        const keySteer = (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0);
+        if (keySteer !== 0) {
+          bowlSteerOffsetRef.current = Math.max(-0.82, Math.min(0.82, bowlSteerOffsetRef.current + keySteer * dt * 1.15));
+        }
+
+        const effectiveAimX = padFresh ? Math.max(-0.82, Math.min(0.82, pad.steer * 0.85)) : bowlSteerOffsetRef.current;
+        const hookInput = padFresh ? pad.roll : bowlSpinOverrideRef.current;
+        const swingNow =
+          bowlManualActionRef.current ||
+          (padFresh ? pad.swing > 1.05 || pad.nitro || pad.throttle > 0.5 : keysRef.current.action);
+        bowlManualActionRef.current = false;
+
         const pKey = st.turnPlayer === 2 && twoHumans ? 'p2' : 'p1';
         const triggered = swingNow && !prevThrow[pKey];
         prevThrow[pKey] = swingNow;
 
         if (st.bannerT > 0) st.bannerT = Math.max(0, st.bannerT - dt);
-        for (let i = st.sparks.length - 1; i >= 0; i -= 1) {
-          const sp = st.sparks[i];
-          sp.x += sp.vx * dt;
-          sp.y += sp.vy * dt;
-          sp.life -= dt;
-          if (sp.life <= 0) st.sparks.splice(i, 1);
-        }
 
         if (st.phase === 'aim') {
-          st.aimX = Math.max(-0.82, Math.min(0.82, steer * 0.85));
+          st.aimX = effectiveAimX;
           st.spin = hookInput;
+          st.powerPct += st.powerDir * 68 * dt;
+          if (st.powerPct >= 100) {
+            st.powerPct = 100;
+            st.powerDir = -1;
+          } else if (st.powerPct <= 52) {
+            st.powerPct = 52;
+            st.powerDir = 1;
+          }
+          if (bowlPowerFillRef.current) {
+            bowlPowerFillRef.current.style.width = `${Math.round(st.powerPct)}%`;
+            bowlPowerFillRef.current.style.backgroundColor = st.powerPct >= 82 ? '#facc15' : '#38bdf8';
+          }
+          if (bowlPowerTextRef.current) {
+            bowlPowerTextRef.current.textContent = `${Math.round(st.powerPct)}%`;
+          }
+
           if (triggered) {
             st.phase = 'roll';
-            const speedMult = padFresh ? Math.min(1.45, Math.max(0.95, 0.95 + pad.swing * 0.25)) : 1.15;
+            st.standingBeforeRoll = st.pins.filter((p) => p.up).length;
+            const powerMult = padFresh
+              ? Math.min(1.48, Math.max(0.95, 0.95 + pad.swing * 0.25))
+              : 0.72 + (st.powerPct / 100) * 0.65;
             st.ball = {
               x: st.aimX,
               y: 0.06,
-              vx: steer * 0.16,
-              vy: 0.85 * speedMult,
-              curve: hookInput * 0.52,
+              vx: effectiveAimX * 0.14,
+              vy: 0.85 * powerMult,
+              curve: hookInput * 0.55,
               rot: 0,
             };
             playArcadeSfx(240, 0.12, 'triangle', 0.08, mutedRef.current);
-            pushScoreTelemetry(st.scores[0], st.scores[1], 'bowling_roll', 45);
+            pushScoreTelemetry(getLatestScore(st.p1Frames), getLatestScore(st.p2Frames), 'bowling_roll', 45);
           }
         } else if (st.phase === 'roll') {
           const b = st.ball;
@@ -384,32 +530,13 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
             if (!pin.up) continue;
             const dx = pin.x - b.x;
             const dy = pin.y - b.y;
-            if (Math.hypot(dx, dy) < 0.14 && !inGutter) {
+            if (Math.hypot(dx, dy) < 0.145 && !inGutter) {
               pin.up = false;
-              pin.vx = dx * 9 + b.vx * 1.4 + (Math.random() - 0.5) * 0.8;
-              pin.vy = dy * 6 + 0.9;
+              pin.vx = dx * 9.5 + b.vx * 1.45 + (Math.random() - 0.5) * 0.8;
+              pin.vy = dy * 6.5 + 0.95;
               playArcadeSfx(620 + Math.random() * 140, 0.07, 'square', 0.07, mutedRef.current);
-              for (let k = 0; k < 5; k += 1) {
-                st.sparks.push({
-                  x: 460 + pin.x * 165,
-                  y: 165 + (1 - pin.y) * 290,
-                  vx: (Math.random() - 0.5) * 220,
-                  vy: -80 - Math.random() * 140,
-                  life: 0.45,
-                });
-              }
-              vfx.emitBurst(
-                460 + pin.x * 165,
-                165 + (1 - pin.y) * 290,
-                ['assets/games/particles/spark_01.png', 'assets/games/particles/star_07.png', 'assets/games/particles/flare_01.png'],
-                4,
-                190,
-                32,
-                0.42
-              );
             }
           }
-          // Pin-to-pin domino chain
           for (const pA of st.pins) {
             if (pA.up) continue;
             pA.x += pA.vx * dt;
@@ -417,10 +544,10 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
             pA.rot += dt * 9;
             for (const pB of st.pins) {
               if (!pB.up) continue;
-              if (Math.hypot(pA.x - pB.x, pA.y - pB.y) < 0.22) {
+              if (Math.hypot(pA.x - pB.x, pA.y - pB.y) < 0.225) {
                 pB.up = false;
-                pB.vx = (pB.x - pA.x) * 4 + (Math.random() - 0.5) * 0.6;
-                pB.vy = 0.7;
+                pB.vx = (pB.x - pA.x) * 4.2 + (Math.random() - 0.5) * 0.6;
+                pB.vy = 0.72;
                 playArcadeSfx(540, 0.06, 'triangle', 0.05, mutedRef.current);
               }
             }
@@ -429,29 +556,50 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
           if (b.y >= 1.12) {
             st.phase = 'settle';
             st.settleT = 1.05;
-            const knockedTotal = st.pins.filter((p) => !p.up).length;
-            if (knockedTotal === 10 && st.rollNum === 1) {
-              st.banner = '⚡ ¡STRIKE PERFECTO! (+20)';
+            const upNow = st.pins.filter((p) => p.up).length;
+            const pinsThisRoll = Math.max(0, st.standingBeforeRoll - upNow);
+            const activeFrames = st.turnPlayer === 1 ? st.p1Frames : st.p2Frames;
+            const fObj = activeFrames[st.frame - 1];
+            if (st.rollNum === 1) fObj.r1 = pinsThisRoll;
+            else fObj.r2 = pinsThisRoll;
+
+            const s1 = getLatestScore(st.p1Frames);
+            const s2 = getLatestScore(st.p2Frames);
+            if (st.turnPlayer === 1 || !twoHumans) {
+              setBowlFramesUi(computeUsbcFrames(st.p1Frames, MAX_FRAMES));
+            }
+
+            if (pinsThisRoll === 10 && st.rollNum === 1) {
+              st.banner = '⚡ ¡STRIKE PERFECTO! (X)';
               st.bannerT = 1.3;
-              st.scores[st.turnPlayer - 1] += 20;
+              bowlingSimRef.current.outcomeSeq += 1;
+              bowlingSimRef.current.outcomeKind = 'strike';
+              setArenaBanner(st.banner);
               playArcadeSfx(880, 0.28, 'triangle', 0.1, mutedRef.current);
-              pushScoreTelemetry(st.scores[0], st.scores[1], 'bowling_strike', 120);
+              pushScoreTelemetry(s1, s2, 'bowling_strike', 120);
+            } else if (upNow === 0 && st.rollNum === 2) {
+              st.banner = '✨ ¡SPARE! (/)';
+              st.bannerT = 1.1;
+              bowlingSimRef.current.outcomeSeq += 1;
+              bowlingSimRef.current.outcomeKind = 'spare';
+              setArenaBanner(st.banner);
+              playArcadeSfx(740, 0.2, 'triangle', 0.09, mutedRef.current);
+              pushScoreTelemetry(s1, s2, undefined, 70);
             } else {
-              const pts = knockedTotal;
-              st.scores[st.turnPlayer - 1] += st.rollNum === 1 ? pts : Math.max(0, pts - 0);
-              if (knockedTotal === 10) {
-                st.banner = '✨ ¡SPARE! (+12)';
-                st.scores[st.turnPlayer - 1] += 2;
-              } else {
-                st.banner = `${knockedTotal} BOLOS DERRIBADOS`;
+              st.banner = pinsThisRoll === 0 ? 'Canaleta (0)' : `${pinsThisRoll} BOLOS DERRIBADOS`;
+              st.bannerT = 0.95;
+              if (pinsThisRoll > 0) {
+                bowlingSimRef.current.outcomeSeq += 1;
+                bowlingSimRef.current.outcomeKind = 'hit';
               }
-              st.bannerT = 1.0;
-              pushScoreTelemetry(st.scores[0], st.scores[1], undefined, 40);
+              setArenaBanner(st.banner);
+              pushScoreTelemetry(s1, s2, undefined, 35);
             }
           }
         } else if (st.phase === 'settle') {
           st.settleT -= dt;
           if (st.settleT <= 0) {
+            setArenaBanner('');
             const upLeft = st.pins.filter((p) => p.up).length;
             if (st.rollNum === 1 && upLeft > 0) {
               st.rollNum = 2;
@@ -464,16 +612,18 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
                 st.turnPlayer = 1;
                 st.frame += 1;
               }
-              if (st.frame > st.maxFrames) {
+              if (st.frame > MAX_FRAMES) {
                 st.phase = 'over';
+                const s1 = getLatestScore(st.p1Frames);
+                const s2 = getLatestScore(st.p2Frames);
                 const winTitle = twoHumans
-                  ? st.scores[0] >= st.scores[1]
-                    ? `🏆 Gana Jugador 1 (${st.scores[0]} pts)`
-                    : `🏆 Gana Jugador 2 (${st.scores[1]} pts)`
-                  : `🏆 Partida completada · ${st.scores[0]} pts`;
+                  ? s1 >= s2
+                    ? `🏆 Gana Jugador 1 (${s1} pts)`
+                    : `🏆 Gana Jugador 2 (${s2} pts)`
+                  : `🏆 Partida USBC completada · ${s1} pts`;
                 setFinishSummary({
                   title: winTitle,
-                  sub: twoHumans ? `J1 ${st.scores[0]} - ${st.scores[1]} J2` : `${st.frame - 1} rondas jugadas`,
+                  sub: twoHumans ? `J1 ${s1} - ${s2} J2` : `Puntuación oficial en ${MAX_FRAMES} frames`,
                 });
               } else {
                 st.pins = makePins();
@@ -481,130 +631,26 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
               }
             }
             const upCount = st.pins.filter((p) => p.up).length;
+            const s1 = getLatestScore(st.p1Frames);
+            const s2 = getLatestScore(st.p2Frames);
             setHud({
-              leftText: `FRAME ${Math.min(st.frame, st.maxFrames)}/${st.maxFrames} · J1 ${st.scores[0]}${twoHumans ? ' / J2 ' + st.scores[1] : ''}`,
+              leftText: `FRAME ${Math.min(st.frame, MAX_FRAMES)}/${MAX_FRAMES} · J1 ${s1}${twoHumans ? ` / J2 ${s2}` : ''}`,
               rightText: `TURNO J${st.turnPlayer} · TIRO ${st.rollNum} · ${upCount} BOLOS`,
             });
           }
         }
 
-        // DRAW BOWLING ARENA
-        ctx.clearRect(0, 0, W, H);
-        if (backdropRef.current) {
-          ctx.drawImage(backdropRef.current, 0, 0, W, H);
-          ctx.fillStyle = 'rgba(5, 8, 20, 0.24)';
-          ctx.fillRect(0, 0, W, H);
-        } else {
-          ctx.fillStyle = '#090d1b';
-          ctx.fillRect(0, 0, W, H);
-        }
-
-        // Perspective hardwood lane overlay for ultra clear pin & ball alignment
-        const topW = 240;
-        const botW = 540;
-        const laneTopY = 148;
-        const laneBotY = H - 12;
-        ctx.fillStyle = 'rgba(180, 108, 42, 0.42)';
-        ctx.beginPath();
-        ctx.moveTo(W / 2 - topW / 2, laneTopY);
-        ctx.lineTo(W / 2 + topW / 2, laneTopY);
-        ctx.lineTo(W / 2 + botW / 2, laneBotY);
-        ctx.lineTo(W / 2 - botW / 2, laneBotY);
-        ctx.closePath();
-        ctx.fill();
-        ctx.strokeStyle = '#38bdf8';
-        ctx.lineWidth = 3;
-        ctx.stroke();
-
-        const projectLane = (lx: number, ly: number) => {
-          const depth = Math.max(0, Math.min(1.15, ly));
-          const halfW = (botW * 0.5) * (1 - depth * 0.54);
-          return {
-            sx: W / 2 + lx * halfW,
-            sy: laneBotY - depth * (laneBotY - laneTopY),
-            scale: 1 - depth * 0.48,
-          };
-        };
-
-        // Aim arrow + curve preview when aiming
-        if (st.phase === 'aim') {
-          const p0 = projectLane(st.aimX, 0.08);
-          const p1 = projectLane(st.aimX + st.spin * 0.3, 0.88);
-          ctx.strokeStyle = st.turnPlayer === 2 ? 'rgba(244,63,94,0.85)' : 'rgba(56,189,248,0.85)';
-          ctx.setLineDash([8, 6]);
-          ctx.lineWidth = 3;
-          ctx.beginPath();
-          ctx.moveTo(p0.sx, p0.sy);
-          ctx.quadraticCurveTo(p0.sx - st.spin * 60, (p0.sy + p1.sy) * 0.5, p1.sx, p1.sy);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
-
-        // Draw Pins back-to-front
-        for (const pin of st.pins) {
-          const pp = projectLane(pin.x, pin.y);
-          ctx.save();
-          ctx.translate(pp.sx, pp.sy);
-          ctx.rotate(pin.rot);
-          ctx.scale(pp.scale, pp.scale);
-          ctx.fillStyle = 'rgba(0,0,0,0.4)';
-          ctx.beginPath();
-          ctx.ellipse(0, 6, 12, 5, 0, 0, Math.PI * 2);
-          ctx.fill();
-          const pg = ctx.createLinearGradient(-10, -42, 10, 6);
-          pg.addColorStop(0, '#ffffff');
-          pg.addColorStop(1, '#cbd5e1');
-          ctx.fillStyle = pg;
-          ctx.beginPath();
-          ctx.ellipse(0, -14, 10, 22, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(0, -34, 7, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = '#dc2626';
-          ctx.fillRect(-7, -26, 14, 4);
-          ctx.restore();
-        }
-
-        // Draw Bowling Ball sprite (Kenney Sports Pack)
-        const ballPos = st.phase === 'aim' ? projectLane(st.aimX, 0.06) : projectLane(st.ball.x, st.ball.y);
-        const br = 26 * ballPos.scale;
-        ctx.fillStyle = 'rgba(0,0,0,0.45)';
-        ctx.beginPath();
-        ctx.ellipse(ballPos.sx, ballPos.sy + br * 0.5, br * 0.9, br * 0.3, 0, 0, Math.PI * 2);
-        ctx.fill();
-        if (
-          !drawArcadeSprite(
-            ctx,
-            st.turnPlayer === 2 ? 'assets/games/sports/ball_bowling2.png' : 'assets/games/sports/ball_bowling1.png',
-            ballPos.sx,
-            ballPos.sy,
-            br * 2,
-            br * 2,
-            st.ball.rot
-          )
-        ) {
-          ctx.fillStyle = st.turnPlayer === 2 ? '#e11d48' : '#0284c7';
-          ctx.beginPath();
-          ctx.arc(ballPos.sx, ballPos.sy, br, 0, Math.PI * 2);
-          ctx.fill();
-        }
-
-        for (const sp of st.sparks) {
-          drawArcadeSprite(ctx, 'assets/games/particles/star_07.png', sp.x, sp.y, 24, 24, sp.life * 6);
-        }
-        vfx.stepAndDraw(ctx, dt);
-
-        if (st.bannerT > 0 && st.banner) {
-          ctx.fillStyle = 'rgba(8, 12, 24, 0.85)';
-          ctx.fillRect(W / 2 - 210, 52, 420, 56);
-          ctx.strokeStyle = '#facc15';
-          ctx.lineWidth = 2.5;
-          ctx.strokeRect(W / 2 - 210, 52, 420, 56);
-          ctx.font = 'bold 24px sans-serif';
-          ctx.fillStyle = '#fef08a';
-          ctx.textAlign = 'center';
-          ctx.fillText(st.banner, W / 2, 88);
+        const snap = bowlingSimRef.current;
+        snap.phase = st.phase;
+        snap.turnPlayer = st.turnPlayer;
+        snap.aimX = st.aimX;
+        snap.spin = st.spin;
+        snap.powerPct = st.powerPct;
+        snap.ball = { x: st.ball.x, y: st.ball.y, rot: st.ball.rot };
+        snap.pins = st.pins;
+        if (st.bannerT <= 0 && st.banner) {
+          st.banner = '';
+          setArenaBanner('');
         }
 
         rafId = requestAnimationFrame(frameLoop);
@@ -617,7 +663,7 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
     }
 
     // -----------------------------------------------------------------
-    // 2. GYRO TENNIS SLAM PRO 2P
+    // 2. GYRO TENNIS SLAM PRO 2P (1-Bounce, Net Faults, OUT Lines, Shot Styles, Surfaces)
     // -----------------------------------------------------------------
     if (gameId === 'gyrotennis') {
       const WIN_PTS = 7;
@@ -626,25 +672,54 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
         s2: 0,
         over: false,
         pauseT: 0.7,
-        p1: { x: 0, y: 0.85, swingT: 0 },
-        p2: { x: 0, y: -0.85, swingT: 0 },
-        ball: { x: 0, y: 0, z: 0.25, vx: 0.25, vy: 1.05, vz: 0.4, lastHit: 0 },
+        p1: { x: 0, y: 0.86, swingT: 0 },
+        p2: { x: 0, y: -0.86, swingT: 0 },
+        ball: {
+          x: 0,
+          y: 0,
+          z: 0.35,
+          vx: 0.2,
+          vy: 1.05,
+          vz: 0.35,
+          lastHitter: 1 as 1 | 2,
+          bouncesOnSide: 0,
+        },
         banner: '¡SAQUE INICIAL!',
       };
 
-      const resetPoint = (dirY: number) => {
-        st.ball = {
-          x: (Math.random() - 0.5) * 0.4,
-          y: 0,
-          z: 0.32,
-          vx: (Math.random() - 0.5) * 0.55,
-          vy: dirY * 1.15,
-          vz: 0.45,
-          lastHit: 0,
-        };
-        st.pauseT = 0.65;
+      const awardPoint = (winner: 1 | 2, reason: string) => {
+        if (winner === 1) st.s1 += 1;
+        else st.s2 += 1;
+        st.banner = `${reason} · Punto J${winner}`;
+        setArenaBanner(st.banner);
+        tennisSimRef.current.pointSeq += 1;
+        tennisSimRef.current.lastScorer = winner;
+        playArcadeSfx(winner === 1 ? 740 : 240, 0.2, winner === 1 ? 'triangle' : 'sawtooth', 0.08, mutedRef.current);
+        pushScoreTelemetry(st.s1, st.s2, 'pingpong_point', 90);
+
+        const twoH = controllersRef.current.length >= 2 || controllersRef.current.some((c) => c.slot === 2);
+        if (st.s1 >= WIN_PTS) {
+          st.over = true;
+          setFinishSummary({ title: '🏆 ¡Campeón Grand Slam J1!', sub: `${st.s1} - ${st.s2}` });
+        } else if (st.s2 >= WIN_PTS) {
+          st.over = true;
+          setFinishSummary({ title: twoH ? '🏆 Victoria Jugador 2' : '🎾 Victoria de la CPU', sub: `${st.s1} - ${st.s2}` });
+        } else {
+          // Reset serve to loser/next server
+          const dirY = winner === 1 ? 1 : -1;
+          st.ball = {
+            x: (Math.random() - 0.5) * 0.3,
+            y: dirY * -0.45,
+            z: 0.42,
+            vx: (Math.random() - 0.5) * 0.35,
+            vy: dirY * 1.15,
+            vz: 0.35,
+            lastHitter: winner === 1 ? 2 : 1,
+            bouncesOnSide: 0,
+          };
+          st.pauseT = 0.72;
+        }
       };
-      resetPoint(1);
 
       const frameLoop = (now: number) => {
         if (!alive) return;
@@ -654,165 +729,126 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
         const twoHumans = controllersRef.current.length >= 2 || controllersRef.current.some((c) => c.slot === 2);
         const g1 = gyroP1Ref.current;
         const g2 = gyroP2Ref.current;
+        const surf = tennisSimRef.current.surface || 'grass';
+        const bounceRestitution = surf === 'clay' ? 0.8 : surf === 'hard' ? 0.74 : 0.66;
+        const speedSurfaceMult = surf === 'clay' ? 0.92 : surf === 'hard' ? 1.02 : 1.12;
 
         if (!st.over) {
           const p1Fresh = g1.expiresAt > Date.now();
           const p1TargetX = p1Fresh
-            ? Math.max(-1, Math.min(1, g1.steer * 1.15))
-            : Math.max(-1, Math.min(1, st.p1.x + ((keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0)) * dt * 1.9));
+            ? Math.max(-0.96, Math.min(0.96, g1.steer * 1.1))
+            : Math.max(-0.96, Math.min(0.96, st.p1.x + ((keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0)) * dt * 1.95));
           st.p1.x += (p1TargetX - st.p1.x) * Math.min(1, dt * 14);
+          const p1DepthTarget = (keysRef.current.up ? -0.18 : 0) + (keysRef.current.down ? 0.08 : 0) + 0.84;
+          st.p1.y += (Math.max(0.55, Math.min(0.95, p1DepthTarget)) - st.p1.y) * Math.min(1, dt * 8);
+
           if ((p1Fresh && (g1.swing > 1 || g1.nitro)) || keysRef.current.action) {
-            st.p1.swingT = 0.25;
+            st.p1.swingT = 0.26;
           }
           st.p1.swingT = Math.max(0, st.p1.swingT - dt);
 
           if (twoHumans && g2.expiresAt > Date.now()) {
-            const p2TargetX = Math.max(-1, Math.min(1, g2.steer * 1.15));
+            const p2TargetX = Math.max(-0.96, Math.min(0.96, g2.steer * 1.1));
             st.p2.x += (p2TargetX - st.p2.x) * Math.min(1, dt * 14);
-            if (g2.swing > 1 || g2.nitro) st.p2.swingT = 0.25;
+            if (g2.swing > 1 || g2.nitro) st.p2.swingT = 0.26;
           } else {
-            const diffX = st.ball.x - st.p2.x;
-            st.p2.x += Math.max(-dt * 1.15, Math.min(dt * 1.15, diffX * 3));
+            // Predictive CPU intercepting cross-court trajectory
+            const predictX = st.ball.vy < 0 ? st.ball.x + st.ball.vx * 0.25 : 0;
+            const targetCpuX = Math.max(-0.88, Math.min(0.88, predictX));
+            const diffX = targetCpuX - st.p2.x;
+            st.p2.x += Math.max(-dt * 1.35, Math.min(dt * 1.35, diffX * 3.8));
           }
           st.p2.swingT = Math.max(0, st.p2.swingT - dt);
 
           if (st.pauseT > 0) {
             st.pauseT -= dt;
           } else {
-            st.banner = '';
-            const b = st.ball;
-            b.x += b.vx * dt;
-            b.y += b.vy * dt;
-            b.vz -= 2.4 * dt;
-            b.z += b.vz * dt;
-            if (b.z <= 0) {
-              b.z = 0;
-              b.vz = Math.max(0.45, Math.abs(b.vz) * 0.72);
+            if (st.banner) {
+              st.banner = '';
+              setArenaBanner('');
             }
-            if (b.x < -1.02 || b.x > 1.02) {
-              b.vx *= -0.9;
-              b.x = Math.max(-1.02, Math.min(1.02, b.x));
+            const b = st.ball;
+            const prevY = b.y;
+            b.x += b.vx * dt * speedSurfaceMult;
+            b.y += b.vy * dt * speedSurfaceMult;
+            b.vz -= 2.3 * dt;
+            b.z += b.vz * dt;
+
+            // Net Cord Check at y = 0 (net height approx z < 0.16)
+            if ((prevY > 0 && b.y <= 0) || (prevY < 0 && b.y >= 0)) {
+              if (b.z < 0.14) {
+                awardPoint(b.lastHitter === 1 ? 2 : 1, '🌐 ¡A LA RED!');
+              }
             }
 
-            // P1 bottom court return
-            if (b.vy > 0 && b.y >= 0.72 && b.y <= 0.98 && Math.abs(b.x - st.p1.x) < 0.28) {
-              const smashBoost = st.p1.swingT > 0 ? 1.38 : 1.04;
-              const lob = p1Fresh && g1.handbrake ? 0.95 : 0.56;
-              b.vy = -Math.min(2.3, Math.abs(b.vy) * smashBoost + 0.14);
-              b.vx = (b.x - st.p1.x) * 2.2 + (p1Fresh ? g1.steer * 0.5 : 0);
-              b.vz = lob;
-              playArcadeSfx(smashBoost > 1.2 ? 640 : 480, 0.08, 'triangle', 0.08, mutedRef.current);
-              pushScoreTelemetry(st.s1, st.s2, 'tennis_hit', smashBoost > 1.2 ? 75 : 35);
+            // Ground Bounce & 1-Bounce + OUT Rule
+            if (!st.over && b.z <= 0) {
+              b.z = 0;
+              const isOutX = Math.abs(b.x) > 0.94;
+              const isOutY = Math.abs(b.y) > 0.99;
+              if (b.bouncesOnSide === 0 && (isOutX || isOutY)) {
+                awardPoint(b.lastHitter === 1 ? 2 : 1, '🚫 ¡FUERA (OUT)!');
+              } else {
+                b.bouncesOnSide += 1;
+                if (b.bouncesOnSide >= 2) {
+                  awardPoint(b.lastHitter, '🎾 ¡DOBLE BOTE!');
+                } else {
+                  b.vz = Math.max(0.42, Math.abs(b.vz) * bounceRestitution);
+                }
+              }
             }
-            // P2 top court return
-            if (b.vy < 0 && b.y <= -0.72 && b.y >= -0.98 && Math.abs(b.x - st.p2.x) < 0.26) {
-              const smashBoost = st.p2.swingT > 0 ? 1.35 : 1.04;
-              b.vy = Math.min(2.2, Math.abs(b.vy) * smashBoost + 0.12);
-              b.vx = (b.x - st.p2.x) * 2.1;
-              b.vz = 0.55;
+
+            // P1 bottom return
+            if (!st.over && b.vy > 0 && b.y >= st.p1.y - 0.14 && b.y <= st.p1.y + 0.16 && Math.abs(b.x - st.p1.x) < 0.28) {
+              const mode = tennisShotModeRef.current;
+              const isSmash = mode === 'smash' || st.p1.swingT > 0;
+              const isLob = mode === 'lob' || (p1Fresh && g1.handbrake);
+              tennisSimRef.current.shotTag = isLob ? 'lob' : isSmash ? 'smash' : 'topspin';
+              const spd = isSmash ? 1.44 : isLob ? 0.85 : 1.08;
+              b.vy = -Math.min(2.25, Math.max(1.05, Math.abs(b.vy) * spd + 0.12));
+              b.vx = Math.max(-0.75, Math.min(0.75, (b.x - st.p1.x) * 2.1 + (p1Fresh ? g1.steer * 0.45 : 0)));
+              b.vz = isLob ? 1.05 : isSmash ? 0.36 : 0.62;
+              b.lastHitter = 1;
+              b.bouncesOnSide = 0;
+              tennisSimRef.current.hitSeq += 1;
+              playArcadeSfx(isSmash ? 660 : 490, 0.08, 'triangle', 0.08, mutedRef.current);
+              pushScoreTelemetry(st.s1, st.s2, 'tennis_hit', isSmash ? 75 : 35);
+            }
+
+            // P2 top return
+            if (!st.over && b.vy < 0 && b.y <= st.p2.y + 0.14 && b.y >= st.p2.y - 0.16 && Math.abs(b.x - st.p2.x) < 0.27) {
+              const smashBoost = st.p2.swingT > 0 ? 1.32 : 1.05;
+              tennisSimRef.current.shotTag = st.p2.swingT > 0 ? 'smash' : 'normal';
+              b.vy = Math.min(2.15, Math.max(1.0, Math.abs(b.vy) * smashBoost + 0.1));
+              b.vx = Math.max(-0.72, Math.min(0.72, (b.x - st.p2.x) * 2.0 + (Math.random() - 0.5) * 0.2));
+              b.vz = 0.56;
+              b.lastHitter = 2;
+              b.bouncesOnSide = 0;
+              tennisSimRef.current.hitSeq += 1;
               playArcadeSfx(420, 0.08, 'triangle', 0.07, mutedRef.current);
             }
 
-            if (b.y > 1.18) {
-              st.s2 += 1;
-              st.banner = twoHumans ? '🎾 ¡PUNTO J2!' : '🎾 ¡PUNTO CPU!';
-              playArcadeSfx(240, 0.2, 'sawtooth', 0.08, mutedRef.current);
-              pushScoreTelemetry(st.s1, st.s2, 'pingpong_point', 90);
-              if (st.s2 >= WIN_PTS) {
-                st.over = true;
-                setFinishSummary({ title: twoHumans ? '🏆 Victoria Jugador 2' : '🎾 Victoria de la CPU', sub: `${st.s1} - ${st.s2}` });
-              } else resetPoint(-1);
-            } else if (b.y < -1.18) {
-              st.s1 += 1;
-              st.banner = '🏆 ¡PUNTO JUGADOR 1!';
-              playArcadeSfx(740, 0.2, 'triangle', 0.09, mutedRef.current);
-              pushScoreTelemetry(st.s1, st.s2, 'pingpong_point', 90);
-              if (st.s1 >= WIN_PTS) {
-                st.over = true;
-                setFinishSummary({ title: '🏆 ¡Campeón Grand Slam J1!', sub: `${st.s1} - ${st.s2}` });
-              } else resetPoint(1);
+            // Ball sailed deep past baseline without bouncing in bounds
+            if (!st.over && b.y > 1.24) {
+              awardPoint(2, b.bouncesOnSide === 0 ? '🚫 ¡PASADA DE FONDO!' : '🔥 ¡WINNER J2!');
+            } else if (!st.over && b.y < -1.24) {
+              awardPoint(1, b.bouncesOnSide === 0 ? '🚫 ¡PASADA DE FONDO!' : '🔥 ¡WINNER J1!');
             }
-            setHud({ leftText: `J1 ${st.s1} - ${st.s2} ${twoHumans ? 'J2' : 'CPU'}`, rightText: `A ${WIN_PTS} PUNTOS` });
           }
         }
 
-        // DRAW WIMBLEDON STADIUM TENNIS
-        ctx.clearRect(0, 0, W, H);
-        if (backdropRef.current) {
-          ctx.drawImage(backdropRef.current, 0, 0, W, H);
-          ctx.fillStyle = 'rgba(4, 16, 8, 0.18)';
-          ctx.fillRect(0, 0, W, H);
-        } else {
-          ctx.fillStyle = '#14532d';
-          ctx.fillRect(0, 0, W, H);
-        }
+        const surfLabel = surf === 'clay' ? 'TIERRA' : surf === 'hard' ? 'PISTA DURA' : 'HIERBA';
+        setHud({
+          leftText: `J1 ${st.s1} - ${st.s2} ${twoHumans ? 'J2' : 'CPU'}`,
+          rightText: `A ${WIN_PTS} PUNTOS · ${surfLabel}`,
+        });
 
-        const projCourt = (cx: number, cy: number) => {
-          const t = (cy + 1) * 0.5; // 0 = far top (-1), 1 = near bottom (+1)
-          const halfW = 140 + t * 185;
-          const sy = 152 + t * 318;
-          return { x: W / 2 + cx * halfW, y: sy, sc: 0.58 + t * 0.6 };
-        };
+        const tSnap = tennisSimRef.current;
+        tSnap.p1 = { x: st.p1.x, y: st.p1.y, swingT: st.p1.swingT };
+        tSnap.p2 = { x: st.p2.x, y: st.p2.y, swingT: st.p2.swingT };
+        tSnap.ball = { x: st.ball.x, y: st.ball.y, z: st.ball.z, vx: st.ball.vx, vy: st.ball.vy };
+        tSnap.over = st.over;
 
-        // Top Player (P2) + Bottom Player (P1) with animated Kenney Sports Pack characters & rackets
-        const p2s = projCourt(st.p2.x, -0.82);
-        const p2AnimFrame = Math.floor(now * 0.008) % 3 + 1;
-        drawArcadeSprite(
-          ctx,
-          `assets/games/sports/character_red_${p2AnimFrame}.png`,
-          p2s.x,
-          p2s.y - 14 * p2s.sc,
-          44 * p2s.sc,
-          44 * p2s.sc,
-          Math.PI
-        );
-        if (!drawArcadeSprite(ctx, 'assets/games/sports/racket_wood.png', p2s.x + 24 * p2s.sc, p2s.y, 44 * p2s.sc, 44 * p2s.sc, 1.3 + (st.p2.swingT > 0 ? 0.5 : 0))) {
-          ctx.fillStyle = '#e11d48';
-          ctx.fillRect(p2s.x - 35, p2s.y - 8, 70, 16);
-        }
-
-        const p1s = projCourt(st.p1.x, 0.82);
-        const p1AnimFrame = Math.floor(now * 0.009) % 3 + 1;
-        drawArcadeSprite(
-          ctx,
-          `assets/games/sports/character_blue_${p1AnimFrame}.png`,
-          p1s.x,
-          p1s.y + 18 * p1s.sc,
-          50 * p1s.sc,
-          50 * p1s.sc,
-          0
-        );
-        if (!drawArcadeSprite(ctx, 'assets/games/sports/racket_metal.png', p1s.x + 28 * p1s.sc, p1s.y - 6 * p1s.sc, 52 * p1s.sc, 52 * p1s.sc, -0.55 - (st.p1.swingT > 0 ? 0.85 : 0))) {
-          ctx.fillStyle = '#0284c7';
-          ctx.fillRect(p1s.x - 45, p1s.y - 10, 90, 20);
-        }
-        if (st.p1.swingT > 0.21) {
-          vfx.emitHitRing(p1s.x, p1s.y - 18, 'assets/games/particles/slash_01.png', 78);
-        }
-
-        // Tennis Ball (Kenney Sports Pack) + dynamic elevation shadow
-        const bs = projCourt(st.ball.x, st.ball.y);
-        const lift = st.ball.z * 78 * bs.sc;
-        ctx.fillStyle = 'rgba(0,0,0,0.42)';
-        ctx.beginPath();
-        ctx.ellipse(bs.x, bs.y + 4, 11 * bs.sc, 5 * bs.sc, 0, 0, Math.PI * 2);
-        ctx.fill();
-        if (!drawArcadeSprite(ctx, 'assets/games/sports/ball_tennis1.png', bs.x, bs.y - lift, 24 * bs.sc, 24 * bs.sc, now * 0.012)) {
-          ctx.fillStyle = '#bef264';
-          ctx.beginPath();
-          ctx.arc(bs.x, bs.y - lift, 11 * bs.sc, 0, Math.PI * 2);
-          ctx.fill();
-        }
-        vfx.stepAndDraw(ctx, dt);
-
-        if (st.banner) {
-          ctx.fillStyle = 'rgba(6, 12, 22, 0.8)';
-          ctx.fillRect(W / 2 - 170, 44, 340, 44);
-          ctx.font = 'bold 20px sans-serif';
-          ctx.fillStyle = '#bef264';
-          ctx.textAlign = 'center';
-          ctx.fillText(st.banner, W / 2, 72);
-        }
         rafId = requestAnimationFrame(frameLoop);
       };
       rafId = requestAnimationFrame(frameLoop);
@@ -823,53 +859,44 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
     }
 
     // -----------------------------------------------------------------
-    // 3. GYRO LABYRINTH SPHERE 3D (2-AXIS TILT STEER + PITCH)
+    // 3. GYRO LABYRINTH 3D PRO (Real 3D Tiltable Board + 3 Levels)
     // -----------------------------------------------------------------
     const COLS = 19;
     const ROWS = 11;
-    const CELL = 44;
-    const OX = Math.floor((W - COLS * CELL) / 2);
-    const OY = Math.floor((H - ROWS * CELL) / 2);
-    const LAB_TPL = [
-      '###################',
-      '#S..*...#.....O..*#',
-      '###.###.#.#####.###',
-      '#...#...*...#.....#',
-      '#.O.#.#####.#.###.#',
-      '#...#.....#...#..*#',
-      '#.#######.###.#.###',
-      '#*......#...O.#...#',
-      '###.###.#.#####.#.#',
-      '#...*.....#...O..E#',
-      '###################',
-    ];
+    let levelIdx = 0;
     let grid: string[][] = [];
     let starsTotal = 0;
     let starsCollected = 0;
-    let timerLeft = 60;
+    let totalStarsAllLevels = 0;
+    let timerLeft = 65;
     let labOver = false;
-    let ball1 = { x: 1.5, y: 1.5, vx: 0, vy: 0, rot: 0 };
-    let ball2 = { x: 1.5, y: 1.5, vx: 0, vy: 0, rot: 0 };
+    let ball1 = { x: 1.5, y: 1.5, vx: 0, vy: 0 };
+    let ball2 = { x: 1.5, y: 1.5, vx: 0, vy: 0 };
 
-    const initLab = () => {
-      grid = LAB_TPL.map((row) => row.split(''));
+    const loadLevel = (idx: number) => {
+      levelIdx = idx;
+      grid = LAB_LEVELS[idx].map((r) => r.split(''));
       starsTotal = 0;
       starsCollected = 0;
-      timerLeft = 60;
-      labOver = false;
-      ball1 = { x: 1.5, y: 1.5, vx: 0, vy: 0, rot: 0 };
-      ball2 = { x: 1.5, y: 1.5, vx: 0, vy: 0, rot: 0 };
+      timerLeft = 65;
+      ball1 = { x: 1.5, y: 1.5, vx: 0, vy: 0 };
+      ball2 = { x: 1.5, y: 1.5, vx: 0, vy: 0 };
       grid.forEach((row) => row.forEach((c) => { if (c === '*') starsTotal += 1; }));
-      setHud({ leftText: `ESTRELLAS 0/${starsTotal}`, rightText: `TIEMPO 60s` });
+      labSimRef.current.level = idx + 1;
+      labSimRef.current.grid = grid;
+      setHud({
+        leftText: `ESTRELLAS 0/${starsTotal}`,
+        rightText: `NIVEL ${idx + 1}/${LAB_LEVELS.length} · ${Math.ceil(timerLeft)}s`,
+      });
     };
-    initLab();
+    loadLevel(0);
 
     const stepSphere = (b: typeof ball1, ax: number, ay: number, dt: number, slot: 1 | 2) => {
-      b.vx = (b.vx + ax * 14 * dt) * Math.pow(0.25, dt);
-      b.vy = (b.vy + ay * 14 * dt) * Math.pow(0.25, dt);
+      b.vx = (b.vx + ax * 15 * dt) * Math.pow(0.24, dt);
+      b.vy = (b.vy + ay * 15 * dt) * Math.pow(0.24, dt);
       const nx = b.x + b.vx * dt;
       const ny = b.y + b.vy * dt;
-      const r = 0.34;
+      const r = 0.33;
       const isWallAt = (wx: number, wy: number) => {
         const c = Math.floor(wx);
         const rw = Math.floor(wy);
@@ -887,23 +914,33 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
       if (cell === '*') {
         grid[gr][gc] = '.';
         starsCollected += 1;
+        totalStarsAllLevels += 1;
+        labSimRef.current.collectSeq += 1;
         playArcadeSfx(760, 0.12, 'triangle', 0.08, mutedRef.current);
-        pushScoreTelemetry(starsCollected, timerLeft, 'pingpong_hit', 45);
+        pushScoreTelemetry(totalStarsAllLevels, Math.ceil(timerLeft), 'pingpong_hit', 45);
       } else if (cell === 'O') {
+        labSimRef.current.fallSeq += 1;
         b.x = 1.5;
         b.y = 1.5;
         b.vx = 0;
         b.vy = 0;
         playArcadeSfx(160, 0.2, 'sawtooth', 0.08, mutedRef.current);
-        pushScoreTelemetry(starsCollected, timerLeft, undefined, 95);
+        pushScoreTelemetry(totalStarsAllLevels, Math.ceil(timerLeft), undefined, 95);
       } else if (cell === 'E') {
-        labOver = true;
+        labSimRef.current.winSeq += 1;
         playArcadeSfx(920, 0.3, 'triangle', 0.1, mutedRef.current);
-        pushScoreTelemetry(starsCollected, Math.ceil(timerLeft), 'lab_win', 130);
-        setFinishSummary({
-          title: `🏆 ¡Salida Alcanzada (Jugador ${slot})!`,
-          sub: `${starsCollected}/${starsTotal} estrellas · ${Math.ceil(timerLeft)}s sobrantes`,
-        });
+        pushScoreTelemetry(totalStarsAllLevels, Math.ceil(timerLeft), 'lab_win', 130);
+        if (levelIdx + 1 < LAB_LEVELS.length) {
+          setArenaBanner(`✨ ¡Nivel ${levelIdx + 1} superado! Siguiente laberinto...`);
+          window.setTimeout(() => setArenaBanner(''), 1400);
+          loadLevel(levelIdx + 1);
+        } else {
+          labOver = true;
+          setFinishSummary({
+            title: `🏆 ¡Laberinto 3D Completado (J${slot})!`,
+            sub: `${totalStarsAllLevels} estrellas totales · ${Math.ceil(timerLeft)}s sobrantes`,
+          });
+        }
       }
     };
 
@@ -917,12 +954,18 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
         timerLeft = Math.max(0, timerLeft - dt);
         if (timerLeft <= 0) {
           labOver = true;
-          setFinishSummary({ title: '⏱️ Tiempo agotado', sub: `${starsCollected}/${starsTotal} estrellas` });
+          setFinishSummary({
+            title: '⏱️ Tiempo agotado',
+            sub: `Nivel ${levelIdx + 1}/${LAB_LEVELS.length} · ${starsCollected}/${starsTotal} estrellas`,
+          });
         }
         const g1 = gyroP1Ref.current;
         const p1Fresh = g1.expiresAt > Date.now();
         const ax1 = p1Fresh ? g1.steer : (keysRef.current.right ? 1 : 0) - (keysRef.current.left ? 1 : 0);
         const ay1 = p1Fresh ? -g1.pitch : (keysRef.current.down ? 1 : 0) - (keysRef.current.up ? 1 : 0);
+        labSimRef.current.tiltX = ax1;
+        labSimRef.current.tiltZ = ay1;
+
         stepSphere(ball1, ax1, ay1, dt, 1);
 
         if (twoHumans) {
@@ -930,66 +973,16 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
           const p2Fresh = g2.expiresAt > Date.now();
           stepSphere(ball2, p2Fresh ? g2.steer : 0, p2Fresh ? -g2.pitch : 0, dt, 2);
         }
+
+        labSimRef.current.twoHumans = twoHumans;
+        labSimRef.current.ball1 = { ...ball1 };
+        labSimRef.current.ball2 = twoHumans ? { ...ball2 } : null;
+
         setHud({
           leftText: `ESTRELLAS ${starsCollected}/${starsTotal}`,
-          rightText: `TIEMPO ${Math.ceil(timerLeft)}s`,
+          rightText: `NIVEL ${levelIdx + 1}/${LAB_LEVELS.length} · ${Math.ceil(timerLeft)}s`,
         });
       }
-
-      ctx.clearRect(0, 0, W, H);
-      if (backdropRef.current) {
-        ctx.drawImage(backdropRef.current, 0, 0, W, H);
-        ctx.fillStyle = 'rgba(4, 7, 16, 0.36)';
-        ctx.fillRect(0, 0, W, H);
-      }
-
-      for (let r = 0; r < ROWS; r += 1) {
-        for (let c = 0; c < COLS; c += 1) {
-          const ch = grid[r][c];
-          const x = OX + c * CELL;
-          const y = OY + r * CELL;
-          if (ch === '#') {
-            if (!drawArcadeSpriteRect(ctx, 'assets/games/rolling/block_corner_large.png', x + 1, y + 1, CELL - 2, CELL - 2)) {
-              ctx.fillStyle = '#334155';
-              ctx.fillRect(x + 1, y + 1, CELL - 2, CELL - 2);
-            }
-          } else if (ch === 'O') {
-            if (!drawArcadeSprite(ctx, 'assets/games/rolling/hole_large.png', x + CELL / 2, y + CELL / 2, 34, 34)) {
-              ctx.fillStyle = '#020617';
-              ctx.beginPath();
-              ctx.arc(x + CELL / 2, y + CELL / 2, 15, 0, Math.PI * 2);
-              ctx.fill();
-            }
-          } else if (ch === '*') {
-            drawArcadeSprite(ctx, 'assets/games/particles/star_04.png', x + CELL / 2, y + CELL / 2, 32, 32, now * 0.004);
-          } else if (ch === 'E') {
-            drawArcadeSprite(ctx, 'assets/games/particles/circle_02.png', x + CELL / 2, y + CELL / 2, 42, 42, -now * 0.003);
-            drawArcadeSprite(ctx, 'assets/games/rolling/hole_large_end.png', x + CELL / 2, y + CELL / 2, 36, 36);
-          }
-        }
-      }
-
-      drawArcadeSprite(
-        ctx,
-        'assets/games/rolling/ball_blue_large.png',
-        OX + ball1.x * CELL,
-        OY + ball1.y * CELL,
-        30,
-        30,
-        ball1.x * 2.5
-      );
-      if (twoHumans) {
-        drawArcadeSprite(
-          ctx,
-          'assets/games/rolling/ball_red_large.png',
-          OX + ball2.x * CELL,
-          OY + ball2.y * CELL,
-          30,
-          30,
-          ball2.x * 2.5
-        );
-      }
-      vfx.stepAndDraw(ctx, dt);
 
       rafId = requestAnimationFrame(frameLoop);
     };
@@ -1012,32 +1005,28 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
       onContextMenu={(e) => e.preventDefault()}
       className="game-touch-surface w-full max-w-5xl mx-auto space-y-3 select-none"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-2xl bg-[#0e1222] border border-white/10">
-        <div className="flex items-center gap-2 min-w-0">
+      {/* Top Bar Header (Zero-Pill clean unboxed metadata) */}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-[#0e1222] border border-white/10">
+        <div className="flex items-center gap-2.5 min-w-0">
           <span className="text-sm sm:text-base font-black text-white truncate">{titleText}</span>
-          <span
-            className={`px-2.5 py-1 rounded-xl text-[11px] font-bold inline-flex items-center gap-1 ${
-              controllers.length > 0
-                ? 'bg-emerald-500/15 border border-emerald-400/50 text-emerald-300'
-                : 'bg-[#7C3AED]/20 border border-[#7C3AED]/45 text-purple-200'
-            }`}
-          >
-            <Smartphone className="w-3.5 h-3.5" />
+          <span className="text-zinc-600 hidden sm:inline">·</span>
+          <span className="text-xs font-semibold text-zinc-300 inline-flex items-center gap-1 whitespace-nowrap">
+            <Smartphone className={`w-3.5 h-3.5 ${controllers.length > 0 ? 'text-emerald-400' : 'text-purple-400'}`} />
             {controllers.length >= 2
-              ? '2 Móviles (J1+J2)'
+              ? '2 Móviles'
               : controllers.length === 1
-              ? '1 Móvil Conectado'
-              : 'Mando Vertical Listo'}
+              ? '1 Móvil'
+              : 'Mando listo'}
           </span>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-400/40 text-xs font-black text-emerald-200 tabular-nums">
-            {hud.leftText}
-          </span>
-          <span className="px-3 py-1.5 rounded-xl bg-[#7C3AED]/20 border border-[#7C3AED]/45 text-xs font-black text-purple-200 tabular-nums">
-            {hud.rightText}
-          </span>
+        <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="text-xs font-bold text-zinc-200 flex items-center gap-2 tabular-nums">
+            <span className="text-emerald-300">{hud.leftText}</span>
+            <span className="text-zinc-600">/</span>
+            <span className="text-purple-300">{hud.rightText}</span>
+          </div>
+
           {directGyro.supported && (
             <button
               type="button"
@@ -1092,28 +1081,184 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
         </div>
       </div>
 
+      {/* True Three.js 3D WebGL Viewport for All 3 Sports/Motion Games */}
       <div className="relative rounded-3xl overflow-hidden bg-[#050811] border border-white/12 shadow-2xl">
-        <canvas ref={canvasRef} width={920} height={520} className="w-full h-auto block" />
-        {finishSummary && (
-          <div className="absolute inset-0 bg-black/80 flex items-center justify-center p-4">
-            <div ref={finishCardRef} className="w-full max-w-sm rounded-3xl bg-[#101322] border-2 border-[#7C3AED] p-6 text-center space-y-4 shadow-2xl">
-              <div className="w-24 h-24 mx-auto">
-                <RobotMascot3DBadge clip="ThumbsUp" className="w-full h-full" />
-              </div>
-              <h4 className="text-xl font-black text-white">{finishSummary.title}</h4>
-              <p className="text-sm font-semibold text-zinc-300">{finishSummary.sub}</p>
-              <button
-                type="button"
-                onClick={() => setResetNonce((n) => n + 1)}
-                className="min-h-11 px-5 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white cursor-pointer inline-flex items-center gap-2 mx-auto"
-              >
-                <Trophy className="w-4 h-4 text-amber-300" />
-                <span>Jugar de nuevo</span>
-              </button>
-            </div>
+        {gameId === 'gyrobowling' ? (
+          <Bowling3DViewport simRef={bowlingSimRef} />
+        ) : gameId === 'gyrotennis' ? (
+          <Tennis3DViewport simRef={tennisSimRef} />
+        ) : (
+          <Labyrinth3DViewport simRef={labSimRef} />
+        )}
+
+        {arenaBanner && !finishSummary && (
+          <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 px-5 py-2 rounded-2xl bg-[#090d1a]/92 border-2 border-amber-400/75 text-sm sm:text-lg font-black text-amber-200 shadow-2xl text-center">
+            {arenaBanner}
           </div>
         )}
+
+        {finishSummary && (
+          <VictoryCelebrationOverlay
+            lang={lang}
+            title={finishSummary.title}
+            subtitle={finishSummary.sub}
+            outcome={
+              finishSummary.title.includes('CPU') || finishSummary.title.includes('agotado')
+                ? 'defeat'
+                : 'win'
+            }
+            primaryLabel="Jugar de nuevo"
+            onPrimaryAction={() => setResetNonce((n) => n + 1)}
+          />
+        )}
       </div>
+
+      {/* Bowling USBC 6-Frame Scoreboard & Hook/Power Dock */}
+      {gameId === 'gyrobowling' && (
+        <div className="rounded-2xl bg-[#0e1222] border border-white/10 p-3 space-y-2.5">
+          <div className="grid grid-cols-6 gap-1.5">
+            {bowlFramesUi.map((f, idx) => (
+              <div
+                key={idx}
+                className="rounded-xl bg-black/45 border border-white/10 overflow-hidden text-center"
+              >
+                <div className="text-[10px] font-bold text-zinc-400 bg-white/[0.04] py-0.5">F{idx + 1}</div>
+                <div className="flex items-center justify-center gap-1.5 text-[11px] font-mono text-zinc-200 py-0.5 tabular-nums">
+                  <span>{f.r1 === 10 ? 'X' : f.r1 ?? '-'}</span>
+                  <span className="text-zinc-600">|</span>
+                  <span>
+                    {f.r1 === 10
+                      ? ''
+                      : f.r2 !== null && f.r1 !== null && f.r1 + f.r2 === 10
+                      ? '/'
+                      : f.r2 ?? '-'}
+                  </span>
+                </div>
+                <div className="text-xs font-black text-amber-300 pb-1 tabular-nums">
+                  {f.cumul !== null ? f.cumul : '·'}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] font-bold text-zinc-400">Efecto (Q/E):</span>
+              <button
+                type="button"
+                onClick={() => {
+                  bowlSpinOverrideRef.current = Math.max(-1, Number((bowlSpinOverrideRef.current - 0.35).toFixed(2)));
+                  setBowlSpinUi(bowlSpinOverrideRef.current);
+                }}
+                className="game-touch-btn min-h-10 px-2.5 rounded-xl bg-white/[0.06] border border-white/10 text-xs font-bold text-zinc-200 cursor-pointer"
+              >
+                ↶ Izq
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  bowlSpinOverrideRef.current = 0;
+                  setBowlSpinUi(0);
+                }}
+                className="game-touch-btn min-h-10 px-2.5 rounded-xl bg-white/[0.06] border border-white/10 text-xs font-bold text-zinc-300 cursor-pointer tabular-nums"
+              >
+                {bowlSpinUi === 0 ? 'Recto' : `${bowlSpinUi > 0 ? '+' : ''}${Math.round(bowlSpinUi * 100)}%`}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  bowlSpinOverrideRef.current = Math.min(1, Number((bowlSpinOverrideRef.current + 0.35).toFixed(2)));
+                  setBowlSpinUi(bowlSpinOverrideRef.current);
+                }}
+                className="game-touch-btn min-h-10 px-2.5 rounded-xl bg-white/[0.06] border border-white/10 text-xs font-bold text-zinc-200 cursor-pointer"
+              >
+                Der ↷
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 flex-1 min-w-[140px] max-w-xs">
+              <span className="text-[11px] font-bold text-zinc-400">Fuerza</span>
+              <div className="flex-1 h-2.5 rounded-full bg-white/10 overflow-hidden">
+                <div ref={bowlPowerFillRef} className="h-full rounded-full" style={{ width: '78%', backgroundColor: '#38bdf8' }} />
+              </div>
+              <span ref={bowlPowerTextRef} className="text-[11px] font-mono font-bold text-zinc-200 w-8 text-right tabular-nums">
+                78%
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                bowlManualActionRef.current = true;
+              }}
+              className="game-touch-btn min-h-11 px-5 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-black text-white cursor-pointer"
+            >
+              🎳 LANZAR
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tennis Court Surface & Shot Style Controls */}
+      {gameId === 'gyrotennis' && (
+        <div className="rounded-2xl bg-[#0e1222] border border-white/10 p-2.5 flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-bold text-zinc-400">Pista:</span>
+            {(
+              [
+                { id: 'grass', label: '🌿 Hierba' },
+                { id: 'clay', label: '🧱 Tierra' },
+                { id: 'hard', label: '🏟️ Dura' },
+              ] as const
+            ).map((s) => (
+              <button
+                key={s.id}
+                type="button"
+                onClick={() => {
+                  setTennisSurface(s.id);
+                  tennisSimRef.current.surface = s.id;
+                  triggerHaptic('light');
+                }}
+                className={`game-touch-btn min-h-10 px-2.5 rounded-xl border text-xs font-bold cursor-pointer ${
+                  tennisSurface === s.id
+                    ? 'bg-emerald-600 border-emerald-400 text-white'
+                    : 'bg-white/[0.05] border-white/10 text-zinc-300 hover:bg-white/[0.1]'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-[11px] font-bold text-zinc-400">Golpe (1/2/3):</span>
+            {(
+              [
+                { id: 'normal', label: '🎾 Topspin' },
+                { id: 'smash', label: '🔥 Smash' },
+                { id: 'lob', label: '✨ Globo' },
+              ] as const
+            ).map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => {
+                  setTennisShotMode(m.id);
+                  triggerHaptic('light');
+                }}
+                className={`game-touch-btn min-h-10 px-2.5 rounded-xl border text-xs font-bold cursor-pointer ${
+                  tennisShotMode === m.id
+                    ? 'bg-[#7C3AED] border-purple-400 text-white'
+                    : 'bg-white/[0.05] border-white/10 text-zinc-300 hover:bg-white/[0.1]'
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Mobile Touch Strip for Direct Solo Play */}
       <div className="flex items-center justify-between gap-2 sm:hidden">
@@ -1173,6 +1318,7 @@ export const GyroMotionPackStage: React.FC<GyroMotionPackStageProps> = ({
               e.preventDefault();
               e.currentTarget.setPointerCapture?.(e.pointerId);
               keysRef.current.action = true;
+              if (gameId === 'gyrobowling') bowlManualActionRef.current = true;
             }}
             onPointerUp={() => { keysRef.current.action = false; }}
             onPointerCancel={() => { keysRef.current.action = false; }}

@@ -21,6 +21,7 @@ import {
   drawArcadeTiledBg,
   preloadArcadeSprites,
 } from './arcadeSprites';
+import { PixiGameFxLayer, type PixiGameFxHandle } from './PixiGameFxLayer';
 
 export type PuzzleArcadeId = 'tetris' | 'hextris' | 'game2048';
 
@@ -73,6 +74,7 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
   mutedOverride = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pixiFxRef = useRef<PixiGameFxHandle | null>(null);
   const [localMuted, setLocalMuted] = useState(mutedOverride);
   const mutedRef = useRef(localMuted || mutedOverride);
   mutedRef.current = localMuted || mutedOverride;
@@ -222,6 +224,7 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
           curScore += ([0, 100, 300, 500, 800][cleared] || 800) * level;
           lines += cleared;
           level = 1 + Math.floor(lines / 10);
+          pixiFxRef.current?.emitBurst(0.5, 0.55, 'lineClear', cleared >= 3 ? 28 : 16);
           playArcadeSfx(cleared >= 4 ? 880 : 620, 0.14, 'triangle', 0.08, mutedRef.current);
         } else {
           playArcadeSfx(210, 0.04, 'square', 0.04, mutedRef.current);
@@ -288,21 +291,44 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
 
       reset();
       let last = performance.now();
-      const drawCell = (x: number, y: number, type: number, alpha = 1, size = CELL - 2) => {
+      const drawCell = (x: number, y: number, type: number, alpha = 1, size = CELL - 2, isGhost = false) => {
+        if (isGhost) {
+          ctx.save();
+          ctx.strokeStyle = TET_COLS[type];
+          ctx.globalAlpha = 0.72;
+          ctx.lineWidth = 1.8;
+          ctx.setLineDash([4, 3]);
+          ctx.strokeRect(x + 2, y + 2, size - 2, size - 2);
+          ctx.setLineDash([]);
+          ctx.fillStyle = TET_COLS[type];
+          ctx.globalAlpha = 0.14;
+          ctx.fillRect(x + 2, y + 2, size - 2, size - 2);
+          ctx.restore();
+          return;
+        }
         const spr = TET_SPRITES[type];
         if (type === 3) {
           ctx.globalAlpha = alpha;
           ctx.fillStyle = TET_COLS[3];
           ctx.fillRect(x + 1, y + 1, size, size);
           drawArcadeSpriteRect(ctx, spr, x + 1, y + 1, size, size, alpha * 0.45);
+          ctx.fillStyle = 'rgba(255,255,255,0.28)';
+          ctx.fillRect(x + 2, y + 2, size - 2, 4);
           ctx.globalAlpha = 1;
           return;
         }
-        if (spr && drawArcadeSpriteRect(ctx, spr, x + 1, y + 1, size, size, alpha)) return;
+        if (spr && drawArcadeSpriteRect(ctx, spr, x + 1, y + 1, size, size, alpha)) {
+          ctx.save();
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = 'rgba(255,255,255,0.22)';
+          ctx.fillRect(x + 2, y + 2, size - 2, 3);
+          ctx.restore();
+          return;
+        }
         ctx.globalAlpha = alpha;
         ctx.fillStyle = TET_COLS[type];
         ctx.fillRect(x + 1, y + 1, size, size);
-        ctx.fillStyle = 'rgba(255,255,255,0.22)';
+        ctx.fillStyle = 'rgba(255,255,255,0.28)';
         ctx.fillRect(x + 2, y + 2, size - 2, 4);
         ctx.globalAlpha = 1;
       };
@@ -325,14 +351,18 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
           ctx.fillStyle = 'rgba(6, 9, 19, 0.72)';
           ctx.fillRect(0, 0, 960, 540);
         }
-        ctx.fillStyle = '#0d1326';
+        ctx.save();
+        ctx.fillStyle = '#0b1124';
+        ctx.shadowColor = 'rgba(124, 58, 237, 0.45)';
+        ctx.shadowBlur = 22;
         ctx.fillRect(BX - 4, BY - 4, COLS * CELL + 8, ROWS * CELL + 8);
-        ctx.strokeStyle = '#7C3AED';
+        ctx.restore();
+        ctx.strokeStyle = level >= 4 ? '#22D3EE' : '#7C3AED';
         ctx.lineWidth = 3;
         ctx.strokeRect(BX - 4, BY - 4, COLS * CELL + 8, ROWS * CELL + 8);
         for (let r = 0; r < ROWS; r += 1) {
           for (let c = 0; c < COLS; c += 1) {
-            ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+            ctx.strokeStyle = 'rgba(255,255,255,0.045)';
             ctx.lineWidth = 1;
             ctx.strokeRect(BX + c * CELL, BY + r * CELL, CELL, CELL);
             if (board[r][c]) drawCell(BX + c * CELL, BY + r * CELL, board[r][c]);
@@ -344,7 +374,7 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
           for (let r = 0; r < piece.m.length; r += 1) {
             for (let c = 0; c < piece.m[r].length; c += 1) {
               if (!piece.m[r][c]) continue;
-              if (gy + r >= 0) drawCell(BX + (piece.x + c) * CELL, BY + (gy + r) * CELL, piece.type, 0.22);
+              if (gy + r >= 0) drawCell(BX + (piece.x + c) * CELL, BY + (gy + r) * CELL, piece.type, 1, CELL - 2, true);
               if (piece.y + r >= 0) drawCell(BX + (piece.x + c) * CELL, BY + (piece.y + r) * CELL, piece.type, 1);
             }
           }
@@ -428,6 +458,7 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
             sparks.push({ x: 480, y: 270, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd, life: 0.55 });
           }
           playArcadeSfx(540 + combo * 55, 0.12, 'triangle', 0.08, mutedRef.current);
+          pixiFxRef.current?.emitBurst(0.5, 0.5, 'spark', 18);
           commitScore(curScore);
         } else {
           combo = 1;
@@ -519,8 +550,17 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
         }
         const cx = 480;
         const cy = 270;
-        ctx.strokeStyle = 'rgba(244,63,94,0.3)';
-        ctx.lineWidth = 3;
+        // Atmospheric radial pulse backdrop reacting to combo
+        const auraR = 235 + Math.sin(now * 0.004) * 14 + combo * 6;
+        const aura = ctx.createRadialGradient(cx, cy, HEX_R * 0.7, cx, cy, auraR);
+        aura.addColorStop(0, combo >= 3 ? 'rgba(168, 85, 247, 0.25)' : 'rgba(56, 189, 248, 0.16)');
+        aura.addColorStop(1, 'rgba(7, 10, 21, 0)');
+        ctx.fillStyle = aura;
+        ctx.beginPath(); ctx.arc(cx, cy, auraR, 0, Math.PI * 2); ctx.fill();
+
+        const maxLen = Math.max(...stacks.map((s) => s.length));
+        ctx.strokeStyle = maxLen >= MAX_STACK - 1 ? `rgba(244,63,94,${0.45 + 0.35 * Math.sin(now * 0.015)})` : 'rgba(244,63,94,0.32)';
+        ctx.lineWidth = maxLen >= MAX_STACK - 1 ? 4 : 3;
         ctx.beginPath();
         for (let i = 0; i < 6; i += 1) {
           const oa = visualAngle + i * (Math.PI / 3);
@@ -546,6 +586,14 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
           ctx.closePath();
           ctx.fill();
           ctx.stroke();
+
+          // Glossy outer bevel highlight
+          ctx.strokeStyle = 'rgba(255,255,255,0.32)';
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          ctx.moveTo(cx + Math.cos(a0) * (rOut - 1.5), cy + Math.sin(a0) * (rOut - 1.5));
+          ctx.lineTo(cx + Math.cos(a1) * (rOut - 1.5), cy + Math.sin(a1) * (rOut - 1.5));
+          ctx.stroke();
         };
 
         for (let s = 0; s < 6; s += 1) {
@@ -557,6 +605,9 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
         for (const fb of falling) {
           drawTrap(fb.lane * (Math.PI / 3), fb.r - 10, fb.r + 10, HEX_PALETTE[fb.col]);
         }
+        ctx.save();
+        ctx.shadowColor = 'rgba(167, 139, 250, 0.5)';
+        ctx.shadowBlur = 16;
         ctx.fillStyle = '#141b33';
         ctx.strokeStyle = '#A78BFA';
         ctx.lineWidth = 3;
@@ -571,6 +622,7 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
+        ctx.restore();
         ctx.fillStyle = '#FFF';
         ctx.font = '900 18px sans-serif';
         ctx.textAlign = 'center';
@@ -624,6 +676,9 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
             const v = nz[i] * 2;
             out.push(v);
             curScore += v;
+            if (v >= 64) {
+              pixiFxRef.current?.emitBurst(0.5, 0.5, 'merge', v >= 256 ? 24 : 16);
+            }
             i += 1;
           } else {
             out.push(nz[i]);
@@ -722,6 +777,11 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
         const bsize = 460;
         const pad = 14;
         const tsize = (bsize - pad * 5) / 4;
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,0.65)';
+        ctx.shadowBlur = 24;
+        drawRR(bx - 6, by - 6, bsize + 12, bsize + 12, 26, '#1a243d');
+        ctx.restore();
         drawRR(bx, by, bsize, bsize, 22, '#0e1629');
         let bestTile = 2;
         for (let r = 0; r < 4; r += 1) {
@@ -731,13 +791,20 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
             const pair = TILE_STYLE[v] || ['#38BDF8', '#FFFFFF'];
             const tx = bx + pad + c * (tsize + pad);
             const ty = by + pad + r * (tsize + pad);
-            drawRR(tx, ty, tsize, tsize, 14, pair[0]);
             if (v > 0) {
-              drawRR(tx + 3, ty + 3, tsize - 6, tsize * 0.42, 10, 'rgba(255,255,255,0.16)');
+              ctx.save();
+              ctx.shadowColor = v >= 128 ? pair[0] : 'rgba(0,0,0,0.45)';
+              ctx.shadowBlur = v >= 128 ? 14 : 8;
+              ctx.shadowOffsetY = 3;
+              drawRR(tx, ty, tsize, tsize, 14, pair[0]);
+              ctx.restore();
+              drawRR(tx + 3, ty + 3, tsize - 6, tsize * 0.42, 10, 'rgba(255,255,255,0.22)');
               ctx.fillStyle = pair[1];
               ctx.font = `900 ${v >= 1024 ? 30 : v >= 100 ? 36 : 42}px sans-serif`;
               ctx.textAlign = 'center';
               ctx.fillText(String(v), tx + tsize / 2, ty + tsize / 2 + 13);
+            } else {
+              drawRR(tx, ty, tsize, tsize, 14, pair[0]);
             }
           }
         }
@@ -852,6 +919,7 @@ export const ArcadePuzzleStage: React.FC<ArcadePuzzleStageProps> = ({
           onTouchEnd={handleTouchEnd}
           className="game-touch-btn w-full h-auto block touch-none"
         />
+        <PixiGameFxLayer ref={pixiFxRef} />
         {gameOver && (
           <div className="absolute inset-0 bg-[#050812]/90 flex flex-col items-center justify-center gap-3 p-6 text-center">
             <Trophy className="w-11 h-11 text-amber-400" />

@@ -100,30 +100,50 @@ export function createBallShadeSprite(): HTMLCanvasElement | null {
   ctx.clip();
 
   const shadeGrad = ctx.createRadialGradient(
-    half - half * 0.32,
-    half - half * 0.35,
-    half * 0.08,
+    half - half * 0.34,
+    half - half * 0.36,
+    half * 0.06,
     half,
     half,
-    half * 1.05
+    half * 1.06
   );
-  shadeGrad.addColorStop(0, 'rgba(255,255,255,0.26)');
-  shadeGrad.addColorStop(0.55, 'rgba(0,0,0,0)');
-  shadeGrad.addColorStop(1, 'rgba(0,0,0,0.48)');
+  shadeGrad.addColorStop(0, 'rgba(255,255,255,0.34)');
+  shadeGrad.addColorStop(0.5, 'rgba(0,0,0,0)');
+  shadeGrad.addColorStop(0.84, 'rgba(0,0,0,0.34)');
+  shadeGrad.addColorStop(1, 'rgba(0,0,0,0.56)');
   ctx.fillStyle = shadeGrad;
   ctx.fillRect(0, 0, size, size);
 
-  ctx.fillStyle = 'rgba(255,255,255,0.68)';
+  // Subtle green felt bounce highlight on bottom-right rim
+  const bounceGrad = ctx.createRadialGradient(
+    half + half * 0.35,
+    half + half * 0.4,
+    half * 0.05,
+    half + half * 0.35,
+    half + half * 0.4,
+    half * 0.65
+  );
+  bounceGrad.addColorStop(0, 'rgba(52, 211, 153, 0.16)');
+  bounceGrad.addColorStop(1, 'rgba(52, 211, 153, 0)');
+  ctx.fillStyle = bounceGrad;
+  ctx.fillRect(0, 0, size, size);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.82)';
   ctx.beginPath();
   ctx.ellipse(
-    half - half * 0.34,
-    half - half * 0.34,
-    half * 0.28,
-    half * 0.16,
+    half - half * 0.35,
+    half - half * 0.35,
+    half * 0.25,
+    half * 0.14,
     -Math.PI / 4,
     0,
     Math.PI * 2
   );
+  ctx.fill();
+
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.beginPath();
+  ctx.arc(half - half * 0.42, half - half * 0.42, half * 0.075, 0, Math.PI * 2);
   ctx.fill();
   return off;
 }
@@ -137,9 +157,9 @@ export function createBallShadowSprite(): HTMLCanvasElement | null {
   off.height = size;
   const ctx = off.getContext('2d');
   if (!ctx) return null;
-  const grad = ctx.createRadialGradient(half, half, half * 0.35, half, half, half);
-  grad.addColorStop(0, 'rgba(0,0,0,0.48)');
-  grad.addColorStop(0.7, 'rgba(0,0,0,0.28)');
+  const grad = ctx.createRadialGradient(half, half, half * 0.32, half, half, half);
+  grad.addColorStop(0, 'rgba(0,0,0,0.56)');
+  grad.addColorStop(0.68, 'rgba(0,0,0,0.3)');
   grad.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
@@ -159,36 +179,57 @@ export function drawCueStick(
   ctx.translate(cx, cy);
   ctx.rotate(angle + Math.PI);
 
-  const cueLen = 280;
+  const cueLen = 290;
 
-  ctx.fillStyle = 'rgba(0,0,0,0.34)';
+  ctx.fillStyle = 'rgba(0,0,0,0.38)';
   ctx.beginPath();
   ctx.moveTo(pullDist, -0.2);
   ctx.lineTo(pullDist + cueLen, -3.2);
-  ctx.lineTo(pullDist + cueLen, 7.6);
-  ctx.lineTo(pullDist, 4.2);
+  ctx.lineTo(pullDist + cueLen, 8.4);
+  ctx.lineTo(pullDist, 4.6);
   ctx.closePath();
   ctx.fill();
 
-  ctx.fillStyle = '#38BDF8';
-  ctx.fillRect(pullDist, -2.1, 4, 4.2);
+  // Blue chalked tip
+  ctx.fillStyle = '#0EA5E9';
+  ctx.beginPath();
+  ctx.roundRect(pullDist, -2.1, 4.5, 4.2, 1.2);
+  ctx.fill();
 
+  // Ivory ferrule
   ctx.fillStyle = '#F8FAFC';
-  ctx.fillRect(pullDist + 4, -2.3, 8, 4.6);
+  ctx.fillRect(pullDist + 4, -2.3, 9, 4.6);
 
-  const shaftGrad = ctx.createLinearGradient(pullDist + 12, 0, pullDist + cueLen, 0);
-  shaftGrad.addColorStop(0, '#F3DEC0');
-  shaftGrad.addColorStop(0.58, '#E0B984');
-  shaftGrad.addColorStop(0.59, '#2B1810');
-  shaftGrad.addColorStop(0.88, '#5C2218');
+  // Maple shaft -> brass joint -> walnut butt & linen wrap
+  const shaftGrad = ctx.createLinearGradient(pullDist + 13, 0, pullDist + cueLen, 0);
+  shaftGrad.addColorStop(0, '#F5E3C8');
+  shaftGrad.addColorStop(0.46, '#DFB47C');
+  shaftGrad.addColorStop(0.47, '#D4AF37');
+  shaftGrad.addColorStop(0.49, '#B4882D');
+  shaftGrad.addColorStop(0.5, '#3E1C14');
+  shaftGrad.addColorStop(0.65, '#682B1E');
+  shaftGrad.addColorStop(0.66, '#1E1B1A');
+  shaftGrad.addColorStop(0.86, '#272424');
+  shaftGrad.addColorStop(0.87, '#512116');
+  shaftGrad.addColorStop(0.97, '#2A120D');
   shaftGrad.addColorStop(1, '#111827');
 
   ctx.fillStyle = shaftGrad;
   ctx.beginPath();
-  ctx.moveTo(pullDist + 12, -2.4);
-  ctx.lineTo(pullDist + cueLen, -5.2);
-  ctx.lineTo(pullDist + cueLen, 5.2);
-  ctx.lineTo(pullDist + 12, 2.4);
+  ctx.moveTo(pullDist + 13, -2.4);
+  ctx.lineTo(pullDist + cueLen, -5.4);
+  ctx.lineTo(pullDist + cueLen, 5.4);
+  ctx.lineTo(pullDist + 13, 2.4);
+  ctx.closePath();
+  ctx.fill();
+
+  // Subtle top lacquer sheen along the stick
+  ctx.fillStyle = 'rgba(255,255,255,0.22)';
+  ctx.beginPath();
+  ctx.moveTo(pullDist + 13, -1.6);
+  ctx.lineTo(pullDist + cueLen - 4, -3.6);
+  ctx.lineTo(pullDist + cueLen - 4, -1.9);
+  ctx.lineTo(pullDist + 13, -0.7);
   ctx.closePath();
   ctx.fill();
 

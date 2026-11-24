@@ -17,10 +17,31 @@ import { triggerHaptic } from '../../utils/haptics';
 import { PENALTY_COUNTRIES, type PenaltyCountry } from '../../shared/penaltyCountries';
 import { VictoryCelebrationOverlay } from './GameEffects';
 import { DualGyroQrPanel } from './racing/DualGyroQrPanel';
-import { resolveGameAssetUrl } from '../../shared/gameAssetsCdn';
-import { drawArcadeSprite } from './arcade/arcadeSprites';
-import { fireVictoryConfetti, preloadOnlineGameAssets } from './arcade/arcadeAnimations';
-import { PixiGameFxLayer, type PixiGameFxHandle } from './arcade/PixiGameFxLayer';
+import { fireVictoryConfetti } from './arcade/arcadeAnimations';
+import { Penalty3DViewport } from './three/Penalty3DViewport';
+import { getCircleFlagCdnUrl } from '../../shared/gameAssetsCdn';
+
+const FlagBadge: React.FC<{ code: string; fallback: string; size?: number }> = ({
+  code,
+  fallback,
+  size = 18,
+}) => (
+  <img
+    src={getCircleFlagCdnUrl(code)}
+    alt={code}
+    width={size}
+    height={size}
+    loading="lazy"
+    onError={(e) => {
+      const el = e.currentTarget;
+      el.style.display = 'none';
+      const next = el.nextElementSibling as HTMLElement | null;
+      if (next) next.style.display = 'inline';
+    }}
+    className="rounded-full object-cover shrink-0 ring-1 ring-white/25 bg-slate-900"
+    style={{ width: size, height: size }}
+  />
+);
 
 export interface PenaltyShootoutStageProps {
   lang: AppLanguage;
@@ -160,9 +181,6 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
   roomId = '',
   userName = 'Jugador',
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const stadiumImgRef = useRef<HTMLImageElement | null>(null);
-  const pixiFxRef = useRef<PixiGameFxHandle | null>(null);
 
   const [muted, setMuted] = useState(false);
   const mutedRef = useRef(false);
@@ -192,10 +210,14 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
   const [p1History, setP1History] = useState<Array<'goal' | 'miss'>>([]);
   const [p2History, setP2History] = useState<Array<'goal' | 'miss'>>([]);
   const [curveUi, setCurveUi] = useState(0);
+  const [shotStyleUi, setShotStyleUi] = useState<'placed' | 'power' | 'panenka'>('placed');
   const [timeLeftUi, setTimeLeftUi] = useState(TURN_SECONDS);
   const [keeperLockedUi, setKeeperLockedUi] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
   const [winner, setWinner] = useState<TurnAttacker | null>(null);
+  const [hasKickedOnce, setHasKickedOnce] = useState(false);
+  const powerFillRef = useRef<HTMLDivElement | null>(null);
+  const powerLabelRef = useRef<HTMLSpanElement | null>(null);
   const [bestStreak, setBestStreak] = useState<number>(() => {
     try {
       return Number(localStorage.getItem(BEST_SCORE_KEY) || 0) || 0;
@@ -220,6 +242,7 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
     aimX: 0,
     aimY: 0.48,
     curve: 0, // -1 .. +1
+    shotStyle: 'placed' as 'placed' | 'power' | 'panenka',
     powerPct: 72,
     powerDir: 1,
     keeperSecretDive: null as number | null, // -0.82 .. +0.82 hidden during 2P until shot!
@@ -254,18 +277,6 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
       spinAngle: 0,
     } as BallFlight,
   });
-
-  // Preload realistic stadium photo backdrop & online CC0 sprite packs
-  useEffect(() => {
-    preloadOnlineGameAssets();
-    if (typeof Image === 'undefined') return;
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.src = resolveGameAssetUrl('assets/games/penalty/stadium_backdrop.jpg');
-    img.onload = () => {
-      stadiumImgRef.current = img;
-    };
-  }, []);
 
   // Connect WebSocket for 1P/2P phone pairing
   useEffect(() => {
@@ -415,6 +426,7 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
       const st = stateRef.current;
       if (st.winner || st.ball.active || st.waitingNext || st.strikerKicking) return;
 
+      setHasKickedOnce(true);
       st.strikerKicking = true;
       st.strikerRunT = 0;
 
@@ -433,23 +445,31 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
         sendControllerHaptic(cur.attacker, 65, 'penalty_kick');
 
         if (matchModeRef.current === 'cpu' && cur.attacker === 2) {
-          // CPU shoots at P1 keeper
-          const cpuEndX = [-0.84, -0.45, 0.04, 0.46, 0.84][Math.floor(Math.random() * 5)];
-          const cpuEndY = 0.2 + Math.random() * 0.68;
-          const cpuCurve = (Math.random() - 0.5) * 1.1;
+          // CPU shoots at P1 keeper with varied styles & 2D reach check
+          const styles: Array<'placed' | 'power' | 'panenka'> = ['placed', 'placed', 'power', 'panenka'];
+          const cpuStyle = styles[Math.floor(Math.random() * styles.length)];
+          cur.shotStyle = cpuStyle;
+          const cpuEndX =
+            cpuStyle === 'panenka'
+              ? (Math.random() - 0.5) * 0.28
+              : [-0.86, -0.5, 0.04, 0.5, 0.86][Math.floor(Math.random() * 5)];
+          const cpuEndY = cpuStyle === 'panenka' ? 0.62 + Math.random() * 0.16 : 0.18 + Math.random() * 0.72;
+          const cpuCurve = cpuStyle === 'panenka' ? 0 : (Math.random() - 0.5) * 1.1;
           const p1Dive = cur.keeperSecretDive !== null ? cur.keeperSecretDive : 0;
           cur.keeperTargetX = p1Dive;
-          cur.keeperDiveY = Math.abs(p1Dive) > 0.2 ? 0.16 : -0.1;
+          cur.keeperDiveY = Math.abs(p1Dive) > 0.2 ? 0.28 : 0.12;
 
-          const saved =
-            Math.abs(cpuEndX - p1Dive) < 0.42 &&
-            (Math.abs(p1Dive) > 0.15 || cpuEndY < 0.72);
+          const keeperReachX = p1Dive * 0.96;
+          const keeperReachY = Math.abs(p1Dive) > 0.2 ? 0.54 : 0.44;
+          const diveDist = Math.hypot((cpuEndX - keeperReachX) * 1.08, (cpuEndY - keeperReachY) * 1.32);
+          const panenkaFakesKeeper = cpuStyle === 'panenka' && Math.abs(p1Dive) > 0.45;
+          const saved = !panenkaFakesKeeper && diveDist < (cpuStyle === 'power' ? 0.36 : 0.44);
           const outcome: KickOutcome = saved ? 'saved' : 'goal';
 
           cur.ball = {
             active: true,
             t: 0,
-            duration: 0.54,
+            duration: cpuStyle === 'power' ? 0.39 : cpuStyle === 'panenka' ? 0.76 : 0.54,
             endX: cpuEndX,
             endY: cpuEndY,
             curve: cpuCurve,
@@ -459,6 +479,7 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
           };
         } else {
           // Human kick (P1 always, or P2 in 2P mode)
+          const style = cur.shotStyle;
           const keeperPick =
             matchModeRef.current === '2p'
               ? cur.keeperSecretDive !== null
@@ -467,19 +488,24 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
               : [-0.84, 0, 0.84][Math.floor(Math.random() * 3)];
 
           cur.keeperTargetX = keeperPick;
-          cur.keeperDiveY = Math.abs(keeperPick) > 0.2 ? 0.16 : -0.1;
+          cur.keeperDiveY = Math.abs(keeperPick) > 0.2 ? 0.28 : 0.12;
 
-          // Final ball placement includes realistic Magnus bend contribution
-          const effectiveEndX = Math.max(-1.12, Math.min(1.12, shotAimX + shotCurve * 0.22));
-          const overPower = cur.powerPct > 96 || shotAimY > 1.01;
+          const curveScale = style === 'power' ? 0.12 : style === 'panenka' ? 0.08 : 0.22;
+          const baseEndX = style === 'panenka' ? shotAimX * 0.45 : shotAimX;
+          const effectiveEndX = Math.max(-1.14, Math.min(1.14, baseEndX + shotCurve * curveScale));
+
+          const sweetSpot = cur.powerPct >= 75 && cur.powerPct <= 92;
+          const overPowerLimit = style === 'power' ? 96.5 : 98.5;
+          const overPower = cur.powerPct > overPowerLimit || shotAimY > 1.02;
           const hitPost = !overPower && Math.abs(effectiveEndX) > 0.91 && Math.abs(effectiveEndX) < 1.04;
           const wideMiss = !overPower && Math.abs(effectiveEndX) >= 1.04;
-          const savedByKeeper =
-            !overPower &&
-            !hitPost &&
-            !wideMiss &&
-            Math.abs(effectiveEndX - keeperPick) < 0.37 &&
-            shotAimY < 0.88;
+
+          const keeperReachX = keeperPick * 0.96;
+          const keeperReachY = Math.abs(keeperPick) > 0.2 ? 0.54 : 0.44;
+          const diveDist = Math.hypot((effectiveEndX - keeperReachX) * 1.08, (shotAimY - keeperReachY) * 1.32);
+          const panenkaBeatsDive = style === 'panenka' && Math.abs(keeperPick) > 0.45;
+          const saveRadius = style === 'power' && sweetSpot ? 0.31 : style === 'power' ? 0.37 : sweetSpot ? 0.35 : 0.41;
+          const savedByKeeper = !overPower && !hitPost && !wideMiss && !panenkaBeatsDive && diveDist < saveRadius;
 
           let outcome: KickOutcome = 'goal';
           if (overPower || wideMiss) outcome = 'miss';
@@ -489,10 +515,10 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
           cur.ball = {
             active: true,
             t: 0,
-            duration: 0.54,
+            duration: style === 'power' ? 0.39 : style === 'panenka' ? 0.76 : 0.54,
             endX: overPower ? effectiveEndX * 1.08 : effectiveEndX,
             endY: overPower ? 1.24 : shotAimY,
-            curve: shotCurve,
+            curve: style === 'panenka' ? shotCurve * 0.25 : shotCurve,
             outcome,
             resolved: false,
             spinAngle: 0,
@@ -596,6 +622,15 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
       } else if (e.code === 'KeyE') {
         e.preventDefault();
         adjustCurve(0.35);
+      } else if (e.code === 'Digit1') {
+        st.shotStyle = 'placed';
+        setShotStyleUi('placed');
+      } else if (e.code === 'Digit2') {
+        st.shotStyle = 'power';
+        setShotStyleUi('power');
+      } else if (e.code === 'Digit3') {
+        st.shotStyle = 'panenka';
+        setShotStyleUi('panenka');
       } else if (e.code === 'Enter' || e.code === 'Space') {
         e.preventDefault();
         executeKickWithRunup();
@@ -606,13 +641,8 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [adjustCurve, executeKickWithRunup, lockKeeperDive, resetMatch]);
 
-  // 60FPS Simulation & Canvas Render Loop
+  // 60FPS Simulation Loop (3D WebGL viewport renders from stateRef)
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
     let rafId = 0;
     let prevTs = performance.now();
 
@@ -702,13 +732,21 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
         }
 
         // Oscillate power meter
-        st.powerPct += st.powerDir * 66 * dt;
+        st.powerPct += st.powerDir * 64 * dt;
         if (st.powerPct >= 99) {
           st.powerPct = 99;
           st.powerDir = -1;
         } else if (st.powerPct <= 46) {
           st.powerPct = 46;
           st.powerDir = 1;
+        }
+        if (powerFillRef.current) {
+          powerFillRef.current.style.width = `${Math.round(st.powerPct)}%`;
+          powerFillRef.current.style.backgroundColor =
+            st.powerPct > 95 ? '#f43f5e' : st.powerPct >= 75 ? '#10b981' : '#38bdf8';
+        }
+        if (powerLabelRef.current) {
+          powerLabelRef.current.textContent = `${Math.round(st.powerPct)}%`;
         }
       }
 
@@ -744,12 +782,6 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
             st.netRipple = 1;
             st.netImpactX = st.ball.endX;
             spawnTurfDust(480 + st.ball.endX * 260, 290 - st.ball.endY * 185, '#facc15', 24);
-            pixiFxRef.current?.emitBurst(
-              0.5 + st.ball.endX * 0.27,
-              Math.max(0.18, 0.54 - st.ball.endY * 0.34),
-              'goal',
-              22
-            );
             fireVictoryConfetti('goal');
             playPenaltySound('goal', mutedRef.current);
             sendControllerHaptic(st.attacker, 140, 'goal');
@@ -757,22 +789,10 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
           } else if (st.ball.outcome === 'post') {
             st.cameraShake = 1;
             spawnTurfDust(480 + st.ball.endX * 260, 290 - st.ball.endY * 185, '#38bdf8', 18);
-            pixiFxRef.current?.emitBurst(
-              0.5 + st.ball.endX * 0.27,
-              Math.max(0.18, 0.54 - st.ball.endY * 0.34),
-              'spark',
-              16
-            );
             playPenaltySound('post', mutedRef.current);
             sendControllerHaptic(st.attacker, 110, 'penalty_post');
           } else {
             spawnTurfDust(480 + st.ball.endX * 260, 290 - st.ball.endY * 185, '#22d3ee', 14);
-            pixiFxRef.current?.emitBurst(
-              0.5 + st.ball.endX * 0.27,
-              Math.max(0.2, 0.54 - st.ball.endY * 0.34),
-              'hit',
-              14
-            );
             playPenaltySound('save', mutedRef.current);
             sendControllerHaptic(defenderSlot, 130, 'penalty_save');
           }
@@ -859,380 +879,23 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
           }, 1350);
         }
       }
-
-      // ================= RENDER REALISTIC STADIUM SCENE =================
-      const w = canvas.width;
-      const h = canvas.height;
-      ctx.save();
-      if (st.cameraShake > 0) {
-        const mag = st.cameraShake * 7;
-        ctx.translate((Math.random() - 0.5) * mag, (Math.random() - 0.5) * mag);
-      }
-      ctx.clearRect(0, 0, w, h);
-
-      const turfY = h * 0.55;
-      if (stadiumImgRef.current) {
-        ctx.drawImage(stadiumImgRef.current, 0, 0, w, turfY + 60);
-        // Subtle vignette to frame goal
-        const fog = ctx.createLinearGradient(0, 0, 0, turfY + 30);
-        fog.addColorStop(0, 'rgba(5,9,20,0.42)');
-        fog.addColorStop(0.7, 'rgba(9,16,32,0.18)');
-        fog.addColorStop(1, 'rgba(10,48,24,0.45)');
-        ctx.fillStyle = fog;
-        ctx.fillRect(0, 0, w, turfY + 30);
-      } else {
-        const sky = ctx.createLinearGradient(0, 0, 0, turfY);
-        sky.addColorStop(0, '#050814');
-        sky.addColorStop(1, '#122142');
-        ctx.fillStyle = sky;
-        ctx.fillRect(0, 0, w, turfY);
-      }
-
-      // Perimeter World Cup LED Ad Board
-      const kKit = st.attacker === 1 ? p1CountryRef.current : p2CountryRef.current;
-      const dKit = st.attacker === 1 ? p2CountryRef.current : p1CountryRef.current;
-
-      ctx.fillStyle = 'rgba(7, 11, 24, 0.92)';
-      ctx.fillRect(0, turfY - 26, w, 26);
-      ctx.strokeStyle = kKit.jersey;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(0, turfY - 26, w, 26);
-      ctx.font = 'bold 12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#e2e8f0';
-      ctx.fillText(
-        `${p1CountryRef.current.flag} ${p1CountryRef.current.code}  vs  ${p2CountryRef.current.code} ${p2CountryRef.current.flag}   ·   MUNDIAL PENALTY ARENA HD`,
-        w * 0.5,
-        turfY - 9
-      );
-
-      // Mowed Perspective Pitch Turf
-      const turfGrad = ctx.createLinearGradient(0, turfY, 0, h);
-      turfGrad.addColorStop(0, '#146b33');
-      turfGrad.addColorStop(0.5, '#15803d');
-      turfGrad.addColorStop(1, '#0c4a22');
-      ctx.fillStyle = turfGrad;
-      ctx.fillRect(0, turfY, w, h - turfY);
-
-      // Alternating mowed bands
-      ctx.fillStyle = 'rgba(255,255,255,0.045)';
-      for (let s = 0; s < 5; s += 1) {
-        const yTop = turfY + s * 48;
-        ctx.fillRect(0, yTop, w, 22);
-      }
-
-      // Chalk Penalty Box + 6-yard Box + Penalty Arc
-      ctx.strokeStyle = 'rgba(255,255,255,0.72)';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(w * 0.08, h * 0.74);
-      ctx.lineTo(w * 0.92, h * 0.74);
-      ctx.lineTo(w * 0.99, h);
-      ctx.moveTo(w * 0.08, h * 0.74);
-      ctx.lineTo(w * 0.01, h);
-      ctx.stroke();
-
-      // 6-yard goal box
-      ctx.beginPath();
-      ctx.moveTo(w * 0.21, turfY + 12);
-      ctx.lineTo(w * 0.79, turfY + 12);
-      ctx.lineTo(w * 0.84, turfY + 52);
-      ctx.lineTo(w * 0.16, turfY + 52);
-      ctx.closePath();
-      ctx.stroke();
-
-      const spotX = w * 0.5;
-      const spotY = h * 0.86;
-      ctx.fillStyle = '#ffffff';
-      ctx.beginPath();
-      ctx.ellipse(spotX, spotY + 14, 11, 4.5, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // 3D Goal Geometry
-      const gLeft = w * 0.22;
-      const gRight = w * 0.78;
-      const gTop = h * 0.19;
-      const gBottom = turfY + 10;
-      const gW = gRight - gLeft;
-      const gH = gBottom - gTop;
-
-      // Back depth posts (stanchions)
-      const backLeft = gLeft + 26;
-      const backRight = gRight - 26;
-      const backTop = gTop + 20;
-      const backBottom = gBottom - 16;
-
-      ctx.fillStyle = 'rgba(15, 23, 42, 0.36)';
-      ctx.fillRect(backLeft, backTop, backRight - backLeft, backBottom - backTop);
-
-      // Side depth net triangles
-      ctx.strokeStyle = 'rgba(226, 232, 240, 0.34)';
-      ctx.lineWidth = 1.4;
-      for (let i = 0; i <= 18; i += 1) {
-        const u = i / 18;
-        const fx = gLeft + gW * u;
-        const bx = backLeft + (backRight - backLeft) * u;
-        const localImpact = Math.max(0, 1 - Math.abs(u * 2 - 1 - st.netImpactX) * 2.2);
-        const ripple = Math.sin(ts * 0.032 + u * 8) * 14 * st.netRipple * (0.4 + localImpact);
-        ctx.beginPath();
-        ctx.moveTo(fx, gTop);
-        ctx.quadraticCurveTo(bx + ripple, (backTop + backBottom) * 0.5, bx, backBottom);
-        ctx.stroke();
-      }
-      for (let j = 0; j <= 8; j += 1) {
-        const v = j / 8;
-        const yFront = gTop + gH * v;
-        const yBack = backTop + (backBottom - backTop) * v;
-        const rippleH = Math.sin(ts * 0.034 + v * 6) * 9 * st.netRipple;
-        ctx.beginPath();
-        ctx.moveTo(gLeft, yFront);
-        ctx.lineTo(backLeft, yBack);
-        ctx.quadraticCurveTo(w * 0.5, yBack + rippleH, backRight, yBack);
-        ctx.lineTo(gRight, yFront);
-        ctx.stroke();
-      }
-
-      // Metallic shaded Goalposts + Crossbar
-      ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-      ctx.lineWidth = 13;
-      ctx.beginPath();
-      ctx.moveTo(gLeft + 3, gBottom + 2);
-      ctx.lineTo(gLeft + 3, gTop + 3);
-      ctx.lineTo(gRight + 3, gTop + 3);
-      ctx.lineTo(gRight + 3, gBottom + 2);
-      ctx.stroke();
-
-      ctx.strokeStyle = '#f8fafc';
-      ctx.lineWidth = 9.5;
-      ctx.lineJoin = 'round';
-      ctx.beginPath();
-      ctx.moveTo(gLeft, gBottom);
-      ctx.lineTo(gLeft, gTop);
-      ctx.lineTo(gRight, gTop);
-      ctx.lineTo(gRight, gBottom);
-      ctx.stroke();
-
-      // Articulated Diving Goalkeeper in Defending Nation Kit
-      const gkCenterX = gLeft + gW * 0.5 + st.keeperX * (gW * 0.42);
-      const gkTilt = st.keeperX * 0.72;
-      const gkY = gBottom - 54 + Math.abs(st.keeperX) * 20 + st.keeperDiveY * 26;
-
-      ctx.save();
-      ctx.translate(gkCenterX, gkY);
-      // Ground shadow under keeper
-      ctx.fillStyle = 'rgba(0,0,0,0.36)';
-      ctx.beginPath();
-      ctx.ellipse(0, 52 - Math.abs(st.keeperX) * 14, 28, 7, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.rotate(gkTilt);
-      // Legs + socks + boots
-      ctx.fillStyle = '#0f172a';
-      ctx.fillRect(-13, 18, 10, 22);
-      ctx.fillRect(3, 18, 10, 22);
-      ctx.fillStyle = dKit.gkTrim;
-      ctx.fillRect(-14, 34, 11, 7);
-      ctx.fillRect(3, 34, 11, 7);
-
-      // Goalkeeper Jersey Torso
-      ctx.fillStyle = dKit.gkJersey;
-      ctx.beginPath();
-      ctx.roundRect(-18, -22, 36, 44, 6);
-      ctx.fill();
-      ctx.fillStyle = dKit.gkTrim;
-      ctx.fillRect(-18, -8, 36, 6);
-
-      // Outstretched Arms
-      ctx.strokeStyle = dKit.gkJersey;
-      ctx.lineWidth = 9;
-      ctx.lineCap = 'round';
-      ctx.beginPath();
-      ctx.moveTo(-16, -12);
-      ctx.lineTo(-39, -22);
-      ctx.moveTo(16, -12);
-      ctx.lineTo(39, -22);
-      ctx.stroke();
-
-      // Padded Goalkeeper Gloves
-      ctx.fillStyle = '#f8fafc';
-      ctx.strokeStyle = dKit.gkTrim;
-      ctx.lineWidth = 2.5;
-      ctx.beginPath();
-      ctx.arc(-41, -24, 9.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(41, -24, 9.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-
-      // Head + Hair
-      ctx.fillStyle = '#fed7aa';
-      ctx.beginPath();
-      ctx.arc(0, -34, 12.5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#1e293b';
-      ctx.beginPath();
-      ctx.arc(0, -39, 12, Math.PI, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
-
-      // Aim Reticle & Curve Arc Preview (hidden if CPU shoots at P1!)
-      const showAim = !(matchModeRef.current === 'cpu' && st.attacker === 2);
-      if (showAim && !st.ball.active && !st.winner) {
-        const rx = gLeft + gW * 0.5 + (st.aimX + st.curve * 0.22) * (gW * 0.48);
-        const ry = gBottom - st.aimY * gH;
-        const ctrlX = (spotX + rx) * 0.5 - st.curve * 110;
-        const ctrlY = Math.min(spotY, ry) - 42;
-
-        ctx.strokeStyle = 'rgba(250, 204, 21, 0.65)';
-        ctx.lineWidth = 2.5;
-        ctx.setLineDash([7, 5]);
-        ctx.beginPath();
-        ctx.moveTo(spotX, spotY);
-        ctx.quadraticCurveTo(ctrlX, ctrlY, rx, ry);
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        ctx.strokeStyle = st.attacker === 1 ? '#22d3ee' : '#fb7185';
-        ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.arc(rx, ry, 20, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(rx - 26, ry);
-        ctx.lineTo(rx + 26, ry);
-        ctx.moveTo(rx, ry - 26);
-        ctx.lineTo(rx, ry + 26);
-        ctx.stroke();
-      }
-
-      // Compute & Draw Geodesic Realistic Match Ball + Trail
-      let bx = spotX;
-      let by = spotY;
-      let bRadius = 21;
-      if (st.ball.active) {
-        const t = Math.min(1, st.ball.t);
-        const inv = 1 - t;
-        const endPx = gLeft + gW * 0.5 + st.ball.endX * (gW * 0.48);
-        const endPy = gBottom - st.ball.endY * gH;
-        const ctrlPx = (spotX + endPx) * 0.5 - st.ball.curve * 135;
-        const ctrlPy = Math.min(spotY, endPy) - 52;
-        bx = inv * inv * spotX + 2 * inv * t * ctrlPx + t * t * endPx;
-        by = inv * inv * spotY + 2 * inv * t * ctrlPy + t * t * endPy;
-        bRadius = 21 - t * 10;
-        st.trail.push({ x: bx, y: by });
-        if (st.trail.length > 10) st.trail.shift();
-      }
-
-      if (st.trail.length > 1) {
-        for (let tr = 0; tr < st.trail.length - 1; tr += 1) {
-          ctx.strokeStyle = `rgba(250, 204, 21, ${(tr / st.trail.length) * 0.45})`;
-          ctx.lineWidth = 3 + (tr / st.trail.length) * 6;
-          ctx.beginPath();
-          ctx.moveTo(st.trail[tr].x, st.trail[tr].y);
-          ctx.lineTo(st.trail[tr + 1].x, st.trail[tr + 1].y);
-          ctx.stroke();
-        }
-      }
-
-      // Ball turf shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.44)';
-      ctx.beginPath();
-      ctx.ellipse(bx, by + bRadius + 5, bRadius * 1.15, bRadius * 0.4, 0, 0, Math.PI * 2);
-      ctx.fill();
-
-      // 3D Shaded Football (Kenney Sports Pack sprite with procedural fallback)
-      if (!drawArcadeSprite(ctx, 'assets/games/sports/ball_soccer1.png', bx, by, bRadius * 2.15, bRadius * 2.15, st.ball.spinAngle)) {
-        ctx.save();
-        ctx.translate(bx, by);
-        const ballGrad = ctx.createRadialGradient(-bRadius * 0.35, -bRadius * 0.35, bRadius * 0.15, 0, 0, bRadius);
-        ballGrad.addColorStop(0, '#ffffff');
-        ballGrad.addColorStop(0.7, '#e2e8f0');
-        ballGrad.addColorStop(1, '#64748b');
-        ctx.fillStyle = ballGrad;
-        ctx.beginPath();
-        ctx.arc(0, 0, bRadius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-
-      // Running Striker Figure (Kenney Toon animated run/kick pose + nation badge)
-      if (!st.ball.active || st.ball.t < 0.35) {
-        const runP = st.strikerKicking ? st.strikerRunT : 0;
-        const sx = w * 0.39 + runP * (spotX - 36 - w * 0.39);
-        const sy = h * 0.95 - runP * 36;
-        const strikerPose = !st.strikerKicking
-          ? 'assets/games/toon/male_idle.png'
-          : runP > 0.72
-          ? 'assets/games/toon/male_kick.png'
-          : `assets/games/toon/male_run${Math.floor(runP * 9) % 3}.png`;
-
-        ctx.save();
-        ctx.translate(sx, sy);
-        ctx.fillStyle = 'rgba(0,0,0,0.38)';
-        ctx.beginPath();
-        ctx.ellipse(0, 26, 20, 6, 0, 0, Math.PI * 2);
-        ctx.fill();
-        if (!drawArcadeSprite(ctx, strikerPose, 0, -14, 72, 86, 0)) {
-          ctx.fillStyle = kKit.jersey;
-          ctx.fillRect(-15, -30, 30, 34);
-        }
-        ctx.fillStyle = kKit.jersey;
-        ctx.fillRect(-11, 14, 22, 6);
-        ctx.restore();
-      }
-
-      // Turf dust & goal sparks (Kenney Particle Pack)
-      for (let pi = 0; pi < st.particles.length; pi += 1) {
-        const pt = st.particles[pi];
-        const alpha = Math.max(0, Math.min(1, pt.life * 1.4));
-        const pSprite = pi % 2 === 0 ? 'assets/games/particles/star_07.png' : 'assets/games/particles/spark_01.png';
-        if (!drawArcadeSprite(ctx, pSprite, pt.x, pt.y, pt.size * 3.4, pt.size * 3.4, pt.life * 6, alpha)) {
-          ctx.globalAlpha = alpha;
-          ctx.fillStyle = pt.color;
-          ctx.fillRect(pt.x - pt.size * 0.5, pt.y - pt.size * 0.5, pt.size, pt.size);
-        }
-      }
-      ctx.globalAlpha = 1;
-
-      // On-canvas Countdown Timer Bar + Power Bar
-      if (!st.ball.active && !st.winner && !st.waitingNext) {
-        const pct = Math.max(0, Math.min(1, st.turnTimeLeft / TURN_SECONDS));
-        ctx.fillStyle = 'rgba(8, 12, 24, 0.85)';
-        ctx.fillRect(w * 0.5 - 120, 16, 240, 24);
-        ctx.fillStyle = pct < 0.35 ? '#ef4444' : pct < 0.6 ? '#f59e0b' : '#10b981';
-        ctx.fillRect(w * 0.5 - 118, 18, 236 * pct, 20);
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(w * 0.5 - 120, 16, 240, 24);
-        ctx.font = 'bold 12px monospace';
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#ffffff';
-        ctx.fillText(`⏱ ${st.turnTimeLeft.toFixed(1)}s`, w * 0.5, 32);
-      }
-
-      ctx.restore();
     };
 
     rafId = window.requestAnimationFrame(frame);
     return () => window.cancelAnimationFrame(rafId);
   }, [executeKickWithRunup, lockKeeperDive, sendControllerHaptic]);
 
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
-    const st = stateRef.current;
-    if (!canvas || st.ball.active || st.winner || st.waitingNext || st.strikerKicking) return;
-    if (matchModeRef.current === 'cpu' && st.attacker === 2) return;
-    const rect = canvas.getBoundingClientRect();
-    const nx = (e.clientX - rect.left) / rect.width;
-    const ny = (e.clientY - rect.top) / rect.height;
-    const aimX = Math.max(-0.96, Math.min(0.96, (nx - 0.5) / 0.28));
-    const aimY = Math.max(0.1, Math.min(0.96, (0.56 - ny) / 0.36));
-    st.aimX = aimX;
-    st.aimY = aimY;
-    executeKickWithRunup(aimX, aimY, st.curve);
-  };
+  const handleGoalClick = useCallback(
+    (aimX: number, aimY: number) => {
+      const st = stateRef.current;
+      if (st.ball.active || st.winner || st.waitingNext || st.strikerKicking) return;
+      if (matchModeRef.current === 'cpu' && st.attacker === 2) return;
+      st.aimX = aimX;
+      st.aimY = aimY;
+      executeKickWithRunup(aimX, aimY, st.curve);
+    },
+    [executeKickWithRunup]
+  );
 
   const attackerCountry = attacker === 1 ? p1Country : p2Country;
   const defenderCountry = attacker === 1 ? p2Country : p1Country;
@@ -1253,7 +916,8 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
             className="px-3 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/15 text-xs font-black text-white flex items-center gap-1.5 cursor-pointer"
             title="Elegir selección J1"
           >
-            <span>{p1Country.flag}</span>
+            <FlagBadge code={p1Country.code} fallback={p1Country.flag} size={18} />
+            <span className="hidden">{p1Country.flag}</span>
             <span>{p1Country.code}</span>
           </button>
 
@@ -1268,7 +932,8 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
             title="Elegir selección J2"
           >
             <span>{p2Country.code}</span>
-            <span>{p2Country.flag}</span>
+            <FlagBadge code={p2Country.code} fallback={p2Country.flag} size={18} />
+            <span className="hidden">{p2Country.flag}</span>
           </button>
 
           <span className="text-xs font-bold text-zinc-300 hidden sm:inline">
@@ -1276,7 +941,7 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
             <span className="text-cyan-300">
               {matchMode === 'cpu' && attacker === 2
                 ? pickLang(lang, { es: 'Para el penalti', ca: 'Atura el penal', en: 'Save Kick' })
-                : `Chuta ${attackerCountry.flag} J${attacker} · Para ${defenderCountry.flag}`}
+                : `Chuta J${attacker} (${attackerCountry.code}) · Para ${defenderCountry.code}`}
             </span>
           </span>
         </div>
@@ -1376,7 +1041,8 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
                       : 'bg-white/[0.04] hover:bg-white/[0.1] border-white/10 text-zinc-200'
                   }`}
                 >
-                  <span className="text-base">{c.flag}</span>
+                  <FlagBadge code={c.code} fallback={c.flag} size={20} />
+                  <span className="hidden text-base">{c.flag}</span>
                   <span className="truncate">{c.name}</span>
                 </button>
               );
@@ -1408,7 +1074,7 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
           })}
         </div>
 
-        <div className="flex items-center gap-2 text-[11px] font-mono text-amber-300">
+        <div className="flex items-center gap-2 text-[11px] font-mono text-amber-300 tabular-nums">
           <Clock className="w-3.5 h-3.5" />
           <span>{timeLeftUi.toFixed(1)}s</span>
           {matchMode === '2p' && keeperLockedUi && (
@@ -1440,17 +1106,27 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
         </div>
       </div>
 
-      {/* Realistic Stadium Canvas + PixiJS v8 GPU FX */}
-      <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#070b16] shadow-2xl">
-        <canvas
-          ref={canvasRef}
-          width={960}
-          height={540}
-          onContextMenu={(e) => e.preventDefault()}
-          onClick={handleCanvasClick}
-          className="game-touch-btn w-full h-auto block cursor-crosshair touch-none"
+      {/* Three.js 3D WebGL Stadium Arena + Animated GLB Athletes */}
+      <div className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#060b16] shadow-2xl">
+        <Penalty3DViewport
+          stateRef={stateRef}
+          p1Country={p1Country}
+          p2Country={p2Country}
+          matchMode={matchMode}
+          onGoalClick={handleGoalClick}
         />
-        <PixiGameFxLayer ref={pixiFxRef} />
+
+        {!hasKickedOnce && !banner && !winner && !(matchMode === 'cpu' && attacker === 2) && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center px-3">
+            <div className="px-3.5 py-1.5 rounded-full bg-[#090d1a]/88 border border-cyan-400/50 text-[11px] font-bold text-cyan-100 shadow-lg">
+              {pickLang(lang, {
+                es: 'Toca cualquier rincón de la portería para chutar',
+                ca: 'Toca qualsevol racó de la porteria per xutar',
+                en: 'Tap any corner of the goal to shoot',
+              })}
+            </div>
+          </div>
+        )}
 
         {banner && (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
@@ -1463,7 +1139,7 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
         {winner && (
           <VictoryCelebrationOverlay
             lang={lang}
-            title={`🏆 ${winner === 1 ? `${p1Country.flag} ${p1Country.name}` : `${p2Country.flag} ${p2Country.name}`} Campeón`}
+            title={`🏆 ${winner === 1 ? p1Country.name : p2Country.name} Campeón`}
             subtitle={`Marcador final: ${p1Country.code} ${p1Score} — ${p2Score} ${p2Country.code}`}
             outcome={matchMode === 'cpu' && winner === 2 ? 'defeat' : 'win'}
             scoreBadge={`${p1Score} - ${p2Score}`}
@@ -1473,8 +1149,8 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
         )}
       </div>
 
-      {/* Curve (Rosca) + Kick / Keeper Controls */}
-      <div className="rounded-2xl bg-[#0d1220] border border-white/10 p-2.5 flex flex-wrap items-center justify-between gap-2">
+      {/* Shot Style + Curve (Rosca) + Sweet-Spot Power + Kick / Keeper Controls */}
+      <div className="rounded-2xl bg-[#0d1220] border border-white/10 p-3 space-y-2.5">
         {matchMode === 'cpu' && attacker === 2 ? (
           <div className="flex flex-wrap items-center justify-center gap-2 w-full">
             <button
@@ -1504,85 +1180,139 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-bold text-zinc-400">Rosca / Efecto:</span>
-              <button
-                type="button"
-                onContextMenu={(e) => e.preventDefault()}
-                onPointerDown={(e) => { e.preventDefault(); adjustCurve(-0.35); }}
-                className={`game-touch-btn h-9 px-3 rounded-lg border text-xs font-black cursor-pointer ${
-                  curveUi < -0.15
-                    ? 'bg-amber-500/30 border-amber-400 text-amber-200'
-                    : 'bg-white/[0.06] border-white/10 text-zinc-200'
-                }`}
-              >
-                ↶ Izq (Q)
-              </button>
-              <button
-                type="button"
-                onContextMenu={(e) => e.preventDefault()}
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  stateRef.current.curve = 0;
-                  setCurveUi(0);
-                }}
-                className="game-touch-btn h-9 px-2.5 rounded-lg bg-white/[0.06] border border-white/10 text-xs font-bold text-zinc-300 cursor-pointer"
-              >
-                {curveUi === 0 ? 'Recto' : `${curveUi > 0 ? '+' : ''}${Math.round(curveUi * 100)}%`}
-              </button>
-              <button
-                type="button"
-                onContextMenu={(e) => e.preventDefault()}
-                onPointerDown={(e) => { e.preventDefault(); adjustCurve(0.35); }}
-                className={`game-touch-btn h-9 px-3 rounded-lg border text-xs font-black cursor-pointer ${
-                  curveUi > 0.15
-                    ? 'bg-amber-500/30 border-amber-400 text-amber-200'
-                    : 'bg-white/[0.06] border-white/10 text-zinc-200'
-                }`}
-              >
-                Der ↷ (E)
-              </button>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {/* Shot Style Selector */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-zinc-400 hidden sm:inline">Estilo:</span>
+                {(
+                  [
+                    { id: 'placed', label: '🎯 Colocado' },
+                    { id: 'power', label: '🔥 Potente' },
+                    { id: 'panenka', label: '✨ Panenka' },
+                  ] as const
+                ).map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    onContextMenu={(e) => e.preventDefault()}
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      stateRef.current.shotStyle = s.id;
+                      setShotStyleUi(s.id);
+                      triggerHaptic('light');
+                    }}
+                    className={`game-touch-btn min-h-10 px-2.5 rounded-xl border text-[11px] font-black cursor-pointer transition-colors ${
+                      shotStyleUi === s.id
+                        ? 'bg-[#7C3AED] border-purple-400 text-white'
+                        : 'bg-white/[0.05] border-white/10 text-zinc-300 hover:bg-white/[0.1]'
+                    }`}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Sweet-Spot Power Bar */}
+              <div className="flex items-center gap-2 flex-1 min-w-[160px] max-w-xs">
+                <span className="text-[11px] font-bold text-zinc-400">Potencia</span>
+                <div className="relative flex-1 h-3 rounded-full bg-white/10 overflow-hidden border border-white/10">
+                  <div
+                    className="absolute inset-y-0 left-[75%] right-[8%] bg-emerald-400/20 pointer-events-none"
+                    title="Zona dulce (75-92%)"
+                  />
+                  <div
+                    ref={powerFillRef}
+                    className="h-full rounded-full transition-none"
+                    style={{ width: '72%', backgroundColor: '#38bdf8' }}
+                  />
+                </div>
+                <span ref={powerLabelRef} className="text-[11px] font-mono font-bold text-zinc-200 w-8 text-right tabular-nums">
+                  72%
+                </span>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              {matchMode === '2p' && (
-                <div className="flex items-center gap-1 text-[11px] text-zinc-400">
-                  <span>Portero (J/K/L):</span>
-                  <button
-                    type="button"
-                    onContextMenu={(e) => e.preventDefault()}
-                    onPointerDown={(e) => { e.preventDefault(); lockKeeperDive(-1, false); }}
-                    className="game-touch-btn h-9 px-2.5 rounded-lg bg-white/[0.06] hover:bg-cyan-500/20 border border-white/10 font-bold text-white cursor-pointer"
-                  >
-                    ◀
-                  </button>
-                  <button
-                    type="button"
-                    onContextMenu={(e) => e.preventDefault()}
-                    onPointerDown={(e) => { e.preventDefault(); lockKeeperDive(0, false); }}
-                    className="game-touch-btn h-9 px-2.5 rounded-lg bg-white/[0.06] hover:bg-cyan-500/20 border border-white/10 font-bold text-white cursor-pointer"
-                  >
-                    ●
-                  </button>
-                  <button
-                    type="button"
-                    onContextMenu={(e) => e.preventDefault()}
-                    onPointerDown={(e) => { e.preventDefault(); lockKeeperDive(1, false); }}
-                    className="game-touch-btn h-9 px-2.5 rounded-lg bg-white/[0.06] hover:bg-cyan-500/20 border border-white/10 font-bold text-white cursor-pointer"
-                  >
-                    ▶
-                  </button>
-                </div>
-              )}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-zinc-400">Rosca:</span>
+                <button
+                  type="button"
+                  onContextMenu={(e) => e.preventDefault()}
+                  onPointerDown={(e) => { e.preventDefault(); adjustCurve(-0.35); }}
+                  className={`game-touch-btn min-h-10 px-3 rounded-xl border text-xs font-black cursor-pointer ${
+                    curveUi < -0.15
+                      ? 'bg-amber-500/30 border-amber-400 text-amber-200'
+                      : 'bg-white/[0.06] border-white/10 text-zinc-200'
+                  }`}
+                >
+                  ↶ Izq (Q)
+                </button>
+                <button
+                  type="button"
+                  onContextMenu={(e) => e.preventDefault()}
+                  onPointerDown={(e) => {
+                    e.preventDefault();
+                    stateRef.current.curve = 0;
+                    setCurveUi(0);
+                  }}
+                  className="game-touch-btn min-h-10 px-2.5 rounded-xl bg-white/[0.06] border border-white/10 text-xs font-bold text-zinc-300 cursor-pointer tabular-nums"
+                >
+                  {curveUi === 0 ? 'Recto' : `${curveUi > 0 ? '+' : ''}${Math.round(curveUi * 100)}%`}
+                </button>
+                <button
+                  type="button"
+                  onContextMenu={(e) => e.preventDefault()}
+                  onPointerDown={(e) => { e.preventDefault(); adjustCurve(0.35); }}
+                  className={`game-touch-btn min-h-10 px-3 rounded-xl border text-xs font-black cursor-pointer ${
+                    curveUi > 0.15
+                      ? 'bg-amber-500/30 border-amber-400 text-amber-200'
+                      : 'bg-white/[0.06] border-white/10 text-zinc-200'
+                  }`}
+                >
+                  Der ↷ (E)
+                </button>
+              </div>
 
-              <button
-                type="button"
-                onContextMenu={(e) => e.preventDefault()}
-                onPointerDown={(e) => { e.preventDefault(); executeKickWithRunup(); }}
-                className="game-touch-btn min-h-10 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-black text-white cursor-pointer"
-              >
-                ⚽ CHUTAR (Enter)
-              </button>
+              <div className="flex items-center gap-2">
+                {matchMode === '2p' && (
+                  <div className="flex items-center gap-1 text-[11px] text-zinc-400">
+                    <span>Portero (J/K/L):</span>
+                    <button
+                      type="button"
+                      onContextMenu={(e) => e.preventDefault()}
+                      onPointerDown={(e) => { e.preventDefault(); lockKeeperDive(-1, false); }}
+                      className="game-touch-btn min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-cyan-500/20 border border-white/10 font-bold text-white cursor-pointer"
+                    >
+                      ◀
+                    </button>
+                    <button
+                      type="button"
+                      onContextMenu={(e) => e.preventDefault()}
+                      onPointerDown={(e) => { e.preventDefault(); lockKeeperDive(0, false); }}
+                      className="game-touch-btn min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-cyan-500/20 border border-white/10 font-bold text-white cursor-pointer"
+                    >
+                      ●
+                    </button>
+                    <button
+                      type="button"
+                      onContextMenu={(e) => e.preventDefault()}
+                      onPointerDown={(e) => { e.preventDefault(); lockKeeperDive(1, false); }}
+                      className="game-touch-btn min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-cyan-500/20 border border-white/10 font-bold text-white cursor-pointer"
+                    >
+                      ▶
+                    </button>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onContextMenu={(e) => e.preventDefault()}
+                  onPointerDown={(e) => { e.preventDefault(); executeKickWithRunup(); }}
+                  className="game-touch-btn min-h-11 px-5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-black text-white cursor-pointer"
+                >
+                  ⚽ CHUTAR (Enter)
+                </button>
+              </div>
             </div>
           </>
         )}

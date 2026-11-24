@@ -1,9 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 import { resolveGameAssetUrl } from '../../../shared/gameAssetsCdn';
-import { loadCachedGltf } from './threeProHelpers';
+import {
+  createResilientWebGlRenderer,
+  createThreeFramePacer,
+  detectSoftwareGl,
+  initRoomEnvironment,
+  loadCachedGltf,
+} from './threeProHelpers';
 
 export type RobotAnimationClip =
   | 'Dance'
@@ -47,35 +52,16 @@ export const RobotMascot3DBadge: React.FC<RobotMascot3DBadgeProps> = ({
       return;
     }
 
-    let renderer: THREE.WebGLRenderer | null = null;
-    let isSoftwareGl = false;
-    try {
-      const testCanvas = document.createElement('canvas');
-      const gl = testCanvas.getContext('webgl2') || testCanvas.getContext('webgl');
-      if (!gl) {
-        setFallbackActive(true);
-        return;
-      }
-      const ext = gl.getExtension('WEBGL_debug_renderer_info');
-      const gpu = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '') : '';
-      isSoftwareGl = /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
-      renderer = new THREE.WebGLRenderer({
-        alpha: true,
-        antialias: !isSoftwareGl,
-        powerPreference: 'low-power',
-      });
-    } catch {
+    const isSoftwareGl = detectSoftwareGl();
+    const renderer = createResilientWebGlRenderer(isSoftwareGl, { alpha: true, exposure: 1.15 });
+    if (!renderer) {
       setFallbackActive(true);
       return;
     }
 
     const w = Math.max(88, host.clientWidth || 112);
     const h = Math.max(88, host.clientHeight || 112);
-    renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(2, window.devicePixelRatio || 1));
     renderer.setSize(w, h);
-    renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.15;
     host.innerHTML = '';
     host.appendChild(renderer.domElement);
 
@@ -86,18 +72,7 @@ export const RobotMascot3DBadge: React.FC<RobotMascot3DBadgeProps> = ({
     renderer.domElement.addEventListener('webglcontextlost', onContextLost);
 
     const scene = new THREE.Scene();
-    let envRt: THREE.WebGLRenderTarget | null = null;
-    try {
-      const pmrem = new THREE.PMREMGenerator(renderer);
-      const envScene = new RoomEnvironment();
-      envRt = pmrem.fromScene(envScene, 0.04);
-      scene.environment = envRt.texture;
-      envScene.dispose();
-      pmrem.dispose();
-    } catch {
-      envRt?.dispose();
-      envRt = null;
-    }
+    const roomEnv = initRoomEnvironment(scene, renderer);
 
     const camera = new THREE.PerspectiveCamera(34, w / h, 0.1, 40);
     camera.position.set(0, 1.85, 5.2);
@@ -126,9 +101,8 @@ export const RobotMascot3DBadge: React.FC<RobotMascot3DBadgeProps> = ({
     let mixer: THREE.AnimationMixer | null = null;
     let modelRoot: THREE.Object3D | null = null;
     let alive = true;
-    let rafId = 0;
-    let timeoutId = 0;
     const clock = new THREE.Clock();
+    const pacer = createThreeFramePacer(renderer, isSoftwareGl);
 
     const glbPath = MASCOT_MODEL_PATHS[character] || MASCOT_MODEL_PATHS.robot;
 
@@ -138,16 +112,31 @@ export const RobotMascot3DBadge: React.FC<RobotMascot3DBadgeProps> = ({
         setFallbackActive(true);
         return;
       }
-      modelRoot = cloneSkinned(gltf.scene);
-      const box = new THREE.Box3().setFromObject(modelRoot);
+      const cloned = cloneSkinned(gltf.scene) as THREE.Group;
+      cloned.position.set(0, 0, 0);
+      cloned.rotation.set(0, 0, 0);
+      cloned.scale.setScalar(1);
+      cloned.updateMatrixWorld(true);
+      cloned.traverse((node) => {
+        const sm = node as THREE.SkinnedMesh;
+        if (sm.isSkinnedMesh && sm.skeleton) {
+          sm.skeleton.pose();
+          sm.skeleton.update();
+          sm.computeBoundingBox();
+        }
+      });
+      cloned.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(cloned);
       const size = new THREE.Vector3();
       box.getSize(size);
-      const scale = 2.05 / Math.max(0.25, size.y);
-      modelRoot.scale.setScalar(scale);
-      modelRoot.position.y = -box.min.y * scale;
+      const measuredH = Number.isFinite(size.y) && size.y > 0.45 && size.y < 220 ? size.y : 1.85;
+      const scale = Math.max(0.01, Math.min(2.2, 2.05 / measuredH));
+      cloned.scale.setScalar(scale);
+      cloned.position.y = -box.min.y * scale;
       if (character === 'soldier') {
-        modelRoot.rotation.y = Math.PI;
+        cloned.rotation.y = Math.PI;
       }
+      modelRoot = cloned;
       scene.add(modelRoot);
       if (gltf.animations && gltf.animations.length > 0) {
         mixer = new THREE.AnimationMixer(modelRoot);
@@ -162,7 +151,7 @@ export const RobotMascot3DBadge: React.FC<RobotMascot3DBadgeProps> = ({
     });
 
     const tick = () => {
-      if (!alive || !renderer) return;
+      if (!alive) return;
       const dt = Math.min(0.05, clock.getDelta());
       if (mixer) mixer.update(dt);
       if (modelRoot) {
@@ -170,25 +159,19 @@ export const RobotMascot3DBadge: React.FC<RobotMascot3DBadgeProps> = ({
         modelRoot.rotation.y = baseYaw + Math.sin(clock.elapsedTime * 0.9) * 0.42;
       }
       renderer.render(scene, camera);
-      if (isSoftwareGl) {
-        timeoutId = window.setTimeout(tick, 90);
-      } else {
-        rafId = requestAnimationFrame(tick);
-      }
+      pacer.schedule(tick);
     };
-    rafId = requestAnimationFrame(tick);
+    const startRaf = requestAnimationFrame(tick);
 
     return () => {
       alive = false;
-      cancelAnimationFrame(rafId);
-      clearTimeout(timeoutId);
+      cancelAnimationFrame(startRaf);
+      pacer.cancel();
       shadowGeo.dispose();
       shadowMat.dispose();
-      envRt?.dispose();
-      if (renderer) {
-        renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
-        renderer.dispose();
-      }
+      roomEnv.dispose();
+      renderer.domElement.removeEventListener('webglcontextlost', onContextLost);
+      renderer.dispose();
       host.innerHTML = '';
     };
   }, [character, clip]);

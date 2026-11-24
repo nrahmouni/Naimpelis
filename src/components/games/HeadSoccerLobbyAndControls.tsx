@@ -186,12 +186,13 @@ export const HeadSoccerWaitingLobby: React.FC<HeadSoccerWaitingLobbyProps> = ({
 
 export const HeadSoccerTouchControls: React.FC<{
   updateTouchPointer: (pointerId: number, action: keyof HeadSoccerInput | null) => void;
-}> = ({ updateTouchPointer }) => (
+  superReady?: boolean;
+}> = ({ updateTouchPointer, superReady = false }) => (
   <div
     onContextMenu={(e) => e.preventDefault()}
-    className="game-touch-surface flex items-center justify-between gap-3 pt-1 px-1 touch-none"
+    className="game-touch-surface flex items-center justify-between gap-2 pt-1 px-1 touch-none"
   >
-    <div className="flex items-center gap-2.5">
+    <div className="flex items-center gap-2">
       {([
         { action: 'left' as const, label: '◀', aria: 'Mover izquierda' },
         { action: 'right' as const, label: '▶', aria: 'Mover derecha' },
@@ -209,7 +210,7 @@ export const HeadSoccerTouchControls: React.FC<{
           onPointerUp={(e) => updateTouchPointer(e.pointerId, null)}
           onPointerCancel={(e) => updateTouchPointer(e.pointerId, null)}
           onLostPointerCapture={(e) => updateTouchPointer(e.pointerId, null)}
-          className="game-touch-btn min-w-16 min-h-14 sm:min-w-20 sm:min-h-14 rounded-2xl bg-white/[0.08] active:bg-[#9146FF] border border-white/15 text-xl font-black text-white flex items-center justify-center shadow-lg touch-none cursor-pointer transition-colors"
+          className="game-touch-btn min-w-14 min-h-14 sm:min-w-20 sm:min-h-14 rounded-2xl bg-white/[0.08] active:bg-[#9146FF] border border-white/15 text-xl font-black text-white flex items-center justify-center shadow-lg touch-none cursor-pointer transition-colors"
         >
           {btn.label}
         </button>
@@ -224,11 +225,11 @@ export const HeadSoccerTouchControls: React.FC<{
         W / ▲ Saltar
       </span>
       <span className="px-2 py-1 rounded-lg bg-white/[0.05] border border-white/10 font-mono">
-        Espacio Chutar
+        Espacio Chutar · E Súper
       </span>
     </div>
 
-    <div className="flex items-center gap-2.5">
+    <div className="flex items-center gap-2">
       <button
         type="button"
         aria-label="Saltar"
@@ -241,7 +242,7 @@ export const HeadSoccerTouchControls: React.FC<{
         onPointerUp={(e) => updateTouchPointer(e.pointerId, null)}
         onPointerCancel={(e) => updateTouchPointer(e.pointerId, null)}
         onLostPointerCapture={(e) => updateTouchPointer(e.pointerId, null)}
-        className="game-touch-btn min-w-16 min-h-14 sm:min-w-20 sm:min-h-14 px-3 rounded-2xl bg-sky-500/25 active:bg-sky-500 border border-sky-400/40 text-xs sm:text-sm font-black text-sky-100 flex items-center justify-center shadow-lg touch-none cursor-pointer transition-colors"
+        className="game-touch-btn min-w-14 min-h-14 sm:min-w-20 sm:min-h-14 px-2.5 rounded-2xl bg-sky-500/25 active:bg-sky-500 border border-sky-400/40 text-xs sm:text-sm font-black text-sky-100 flex items-center justify-center shadow-lg touch-none cursor-pointer transition-colors"
       >
         ⬆ Saltar
       </button>
@@ -257,9 +258,29 @@ export const HeadSoccerTouchControls: React.FC<{
         onPointerUp={(e) => updateTouchPointer(e.pointerId, null)}
         onPointerCancel={(e) => updateTouchPointer(e.pointerId, null)}
         onLostPointerCapture={(e) => updateTouchPointer(e.pointerId, null)}
-        className="game-touch-btn min-w-18 min-h-14 sm:min-w-24 sm:min-h-14 px-3.5 rounded-2xl bg-amber-500/25 active:bg-amber-500 border border-amber-400/45 text-xs sm:text-sm font-black text-amber-100 flex items-center justify-center shadow-lg touch-none cursor-pointer transition-colors"
+        className="game-touch-btn min-w-16 min-h-14 sm:min-w-22 sm:min-h-14 px-3 rounded-2xl bg-amber-500/25 active:bg-amber-500 border border-amber-400/45 text-xs sm:text-sm font-black text-amber-100 flex items-center justify-center shadow-lg touch-none cursor-pointer transition-colors"
       >
-        ⚡ Chutar
+        ⚽ Chut
+      </button>
+      <button
+        type="button"
+        aria-label="Super Tiro"
+        onContextMenu={(e) => e.preventDefault()}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          e.currentTarget.setPointerCapture?.(e.pointerId);
+          updateTouchPointer(e.pointerId, 'superKick');
+        }}
+        onPointerUp={(e) => updateTouchPointer(e.pointerId, null)}
+        onPointerCancel={(e) => updateTouchPointer(e.pointerId, null)}
+        onLostPointerCapture={(e) => updateTouchPointer(e.pointerId, null)}
+        className={`game-touch-btn min-w-16 min-h-14 sm:min-w-22 sm:min-h-14 px-3 rounded-2xl border text-xs sm:text-sm font-black flex items-center justify-center shadow-lg touch-none cursor-pointer transition-colors ${
+          superReady
+            ? 'bg-gradient-to-br from-amber-400 to-orange-500 border-amber-200 text-slate-950'
+            : 'bg-white/[0.04] border-white/10 text-zinc-500'
+        }`}
+      >
+        🔥 Súper
       </button>
     </div>
   </div>

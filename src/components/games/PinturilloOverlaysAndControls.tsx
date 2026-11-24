@@ -284,8 +284,10 @@ export const PinturilloBottomBar: React.FC<PinturilloBottomBarProps> = ({
               type="button"
               aria-label={`Size ${sz}`}
               onClick={() => setBrushSize(sz)}
-              className={`w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer ${
-                brushSize === sz ? 'bg-[#9146FF] text-white' : 'bg-white/[0.06] text-zinc-300'
+              className={`w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer transition-all ${
+                brushSize === sz
+                  ? 'bg-[#9146FF] text-white ring-1 ring-white/70 shadow-[0_0_10px_rgba(145,70,255,0.6)] scale-105'
+                  : 'bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 border border-white/[0.06]'
               }`}
             >
               <span
@@ -299,8 +301,10 @@ export const PinturilloBottomBar: React.FC<PinturilloBottomBarProps> = ({
             type="button"
             aria-label="Eraser"
             onClick={() => setIsEraser((v) => !v)}
-            className={`w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer ${
-              isEraser ? 'bg-rose-500 text-white' : 'bg-white/[0.06] text-zinc-300 hover:bg-white/[0.12]'
+            className={`w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer transition-all ${
+              isEraser
+                ? 'bg-rose-500 text-white ring-1 ring-white/70 shadow-[0_0_10px_rgba(244,63,94,0.6)]'
+                : 'bg-white/[0.06] text-zinc-300 hover:bg-white/[0.12] border border-white/[0.06]'
             }`}
           >
             <Eraser className="w-3.5 h-3.5" />
@@ -309,7 +313,7 @@ export const PinturilloBottomBar: React.FC<PinturilloBottomBarProps> = ({
             type="button"
             aria-label="Undo"
             onClick={onUndo}
-            className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 flex items-center justify-center cursor-pointer"
+            className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.14] border border-white/[0.06] text-zinc-200 flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
           >
             <Undo2 className="w-3.5 h-3.5" />
           </button>
@@ -317,7 +321,7 @@ export const PinturilloBottomBar: React.FC<PinturilloBottomBarProps> = ({
             type="button"
             aria-label="Clear"
             onClick={onClear}
-            className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-rose-500/25 text-zinc-200 hover:text-rose-200 flex items-center justify-center cursor-pointer"
+            className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-rose-500/25 border border-white/[0.06] text-zinc-200 hover:text-rose-200 flex items-center justify-center cursor-pointer active:scale-95 transition-transform"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>

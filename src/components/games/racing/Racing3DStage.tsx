@@ -503,6 +503,31 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
         >
           GAS
         </button>
+        <button
+          type="button"
+          onContextMenu={(e) => e.preventDefault()}
+          onPointerDown={(e) => {
+            e.preventDefault();
+            e.currentTarget.setPointerCapture?.(e.pointerId);
+            pressedKeysRef.current.add('TouchNitro');
+            engineRef.current?.setKeyboardState({ nitro: true });
+          }}
+          onPointerUp={() => {
+            pressedKeysRef.current.delete('TouchNitro');
+            engineRef.current?.setKeyboardState({ nitro: false });
+          }}
+          onPointerCancel={() => {
+            pressedKeysRef.current.delete('TouchNitro');
+            engineRef.current?.setKeyboardState({ nitro: false });
+          }}
+          onLostPointerCapture={() => {
+            pressedKeysRef.current.delete('TouchNitro');
+            engineRef.current?.setKeyboardState({ nitro: false });
+          }}
+          className="game-touch-btn px-3 h-12 rounded-xl bg-cyan-500/90 text-slate-950 text-xs font-black inline-flex items-center gap-1"
+        >
+          <Flame className="w-3.5 h-3.5" /> NITRO
+        </button>
       </div>
 
       <div className="pointer-events-none hidden sm:flex absolute bottom-3 left-3 px-3 py-1.5 rounded-xl bg-[#090c16]/85 border border-white/10 text-[11px] font-semibold text-zinc-300">

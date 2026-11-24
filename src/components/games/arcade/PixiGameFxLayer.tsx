@@ -1,11 +1,23 @@
 import React, { useEffect, useImperativeHandle, useRef } from 'react';
-import { Application, Assets, Container, Sprite, type Texture } from 'pixi.js';
+import { Application, Assets, Container, Graphics, Sprite, type Texture } from 'pixi.js';
 import { resolveGameAssetUrl } from '../../../shared/gameAssetsCdn';
 
-export type PixiFxPreset = 'goal' | 'hit' | 'explosion' | 'spark' | 'magic' | 'victory';
+export type PixiFxPreset =
+  | 'goal'
+  | 'hit'
+  | 'explosion'
+  | 'spark'
+  | 'magic'
+  | 'victory'
+  | 'strike'
+  | 'lineClear'
+  | 'coin'
+  | 'smash'
+  | 'boost'
+  | 'merge';
 
 export interface PixiGameFxHandle {
-  /** Emit GPU-accelerated additive Kenney particle burst at normalized [0..1] viewport coordinates */
+  /** Emit additive/composited Kenney particle burst at normalized [0..1] viewport coordinates */
   emitBurst: (normX: number, normY: number, preset?: PixiFxPreset, count?: number) => void;
 }
 
@@ -42,6 +54,36 @@ const FX_SPRITES: Record<PixiFxPreset, readonly string[]> = {
     'assets/games/particles/flare_01.png',
     'assets/games/particles/star_01.png',
   ],
+  strike: [
+    'assets/games/particles/star_07.png',
+    'assets/games/particles/spark_02.png',
+    'assets/games/particles/flare_01.png',
+  ],
+  lineClear: [
+    'assets/games/particles/light_01.png',
+    'assets/games/particles/spark_03.png',
+    'assets/games/particles/star_04.png',
+  ],
+  coin: [
+    'assets/games/particles/star_04.png',
+    'assets/games/particles/spark_01.png',
+    'assets/games/particles/flare_01.png',
+  ],
+  smash: [
+    'assets/games/particles/slash_01.png',
+    'assets/games/particles/spark_02.png',
+    'assets/games/particles/star_07.png',
+  ],
+  boost: [
+    'assets/games/particles/twirl_01.png',
+    'assets/games/particles/spark_03.png',
+    'assets/games/particles/light_01.png',
+  ],
+  merge: [
+    'assets/games/particles/magic_04.png',
+    'assets/games/particles/star_01.png',
+    'assets/games/particles/flare_01.png',
+  ],
 };
 
 const FX_TINTS: Record<PixiFxPreset, readonly number[]> = {
@@ -51,7 +93,23 @@ const FX_TINTS: Record<PixiFxPreset, readonly number[]> = {
   spark: [0x22d3ee, 0xfde047, 0xa855f7],
   magic: [0xa855f7, 0x38bdf8, 0xec4899],
   victory: [0xfacc15, 0x38bdf8, 0xf43f5e, 0x22c55e],
+  strike: [0xfacc15, 0x38bdf8, 0xf97316],
+  lineClear: [0x38bdf8, 0xa855f7, 0xffffff],
+  coin: [0xfacc15, 0xfde047, 0x22d3ee],
+  smash: [0xf43f5e, 0xfacc15, 0x22d3ee],
+  boost: [0x22d3ee, 0x38bdf8, 0x7c3aed],
+  merge: [0xf59e0b, 0xfacc15, 0x38bdf8],
 };
+
+const SHOCKWAVE_PRESETS = new Set<PixiFxPreset>([
+  'goal',
+  'explosion',
+  'smash',
+  'strike',
+  'lineClear',
+  'victory',
+  'merge',
+]);
 
 interface ActivePixiParticle {
   sprite: Sprite;
@@ -62,6 +120,13 @@ interface ActivePixiParticle {
   maxLife: number;
   baseScale: number;
   growFactor: number;
+}
+
+interface ActivePixiRing {
+  gfx: Graphics;
+  life: number;
+  maxLife: number;
+  maxScale: number;
 }
 
 function prefersReducedMotion(): boolean {
@@ -75,9 +140,11 @@ export const PixiGameFxLayer = React.forwardRef<
 >(({ className = '', enabled = true }, ref) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const particlesRef = useRef<ActivePixiParticle[]>([]);
+  const ringsRef = useRef<ActivePixiRing[]>([]);
   const stageRef = useRef<Container | null>(null);
   const texturesRef = useRef<Map<string, Texture>>(new Map());
   const readyRef = useRef(false);
+  const useAdditiveRef = useRef(true);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -90,15 +157,14 @@ export const PixiGameFxLayer = React.forwardRef<
       if (gl) {
         const ext = gl.getExtension('WEBGL_debug_renderer_info');
         const gpu = ext ? String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) || '') : '';
-        // Allow GPU WebGL; skip heavy extra WebGL context on SwiftShader headless software renderers
-        glSupported = !/SwiftShader|llvmpipe|softpipe/i.test(gpu);
+        glSupported = !/SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
         gl.getExtension('WEBGL_lose_context')?.loseContext();
       }
     } catch {
       glSupported = false;
     }
-    if (!glSupported) return;
 
+    useAdditiveRef.current = glSupported;
     let disposed = false;
     const app = new Application();
     const particleContainer = new Container();
@@ -110,9 +176,9 @@ export const PixiGameFxLayer = React.forwardRef<
         await app.init({
           backgroundAlpha: 0,
           antialias: false,
-          preference: 'webgl',
+          preference: glSupported ? 'webgl' : 'canvas',
           powerPreference: 'low-power',
-          resolution: Math.min(1.5, window.devicePixelRatio || 1),
+          resolution: glSupported ? Math.min(1.5, window.devicePixelRatio || 1) : 1,
           autoDensity: true,
           resizeTo: host,
         });
@@ -132,7 +198,7 @@ export const PixiGameFxLayer = React.forwardRef<
         stageRef.current = particleContainer;
         readyRef.current = true;
 
-        // Preload Kenney particle textures on GPU cleanly in background
+        // Preload Kenney particle textures asynchronously
         await Promise.all(
           uniquePaths.map(async (relPath) => {
             if (disposed) return;
@@ -173,6 +239,22 @@ export const PixiGameFxLayer = React.forwardRef<
             const sc = p.baseScale * (1 + (1 - norm) * p.growFactor);
             p.sprite.scale.set(sc);
           }
+
+          const ringList = ringsRef.current;
+          for (let i = ringList.length - 1; i >= 0; i -= 1) {
+            const r = ringList[i];
+            r.life -= dt;
+            if (r.life <= 0) {
+              r.gfx.parent?.removeChild(r.gfx);
+              r.gfx.destroy();
+              ringList.splice(i, 1);
+              continue;
+            }
+            const progress = 1 - r.life / r.maxLife;
+            const eased = 1 - Math.pow(1 - progress, 2.2);
+            r.gfx.scale.set(0.25 + eased * r.maxScale);
+            r.gfx.alpha = Math.max(0, (1 - progress) * 0.85);
+          }
         });
       } catch {
         readyRef.current = false;
@@ -187,6 +269,10 @@ export const PixiGameFxLayer = React.forwardRef<
         p.sprite.destroy();
       }
       particlesRef.current = [];
+      for (const r of ringsRef.current) {
+        r.gfx.destroy();
+      }
+      ringsRef.current = [];
       try {
         app.destroy(true);
       } catch {
@@ -210,7 +296,21 @@ export const PixiGameFxLayer = React.forwardRef<
         const paths = FX_SPRITES[preset] || FX_SPRITES.spark;
         const tints = FX_TINTS[preset] || FX_TINTS.spark;
 
-        // Cap live particles to keep 60fps smooth on mobile & Smart TVs
+        if (SHOCKWAVE_PRESETS.has(preset) && ringsRef.current.length < 10) {
+          const gfx = new Graphics();
+          gfx.circle(0, 0, 28).stroke({ width: 3.5, color: tints[0], alpha: 0.9 });
+          gfx.position.set(cx, cy);
+          gfx.scale.set(0.25);
+          if (useAdditiveRef.current) gfx.blendMode = 'add';
+          container.addChild(gfx);
+          ringsRef.current.push({
+            gfx,
+            life: preset === 'victory' || preset === 'goal' ? 0.55 : 0.36,
+            maxLife: preset === 'victory' || preset === 'goal' ? 0.55 : 0.36,
+            maxScale: preset === 'victory' || preset === 'goal' ? 3.8 : 2.5,
+          });
+        }
+
         if (particlesRef.current.length > 140) {
           const drop = particlesRef.current.splice(0, 32);
           drop.forEach((d) => {
@@ -226,11 +326,16 @@ export const PixiGameFxLayer = React.forwardRef<
           const spr = new Sprite(tex);
           spr.anchor.set(0.5);
           spr.position.set(cx, cy);
-          spr.blendMode = 'add';
+          if (useAdditiveRef.current) {
+            spr.blendMode = 'add';
+          }
           spr.tint = tints[i % tints.length];
           const angle = (Math.PI * 2 * i) / Math.max(1, count) + (Math.random() - 0.5) * 0.5;
-          const speed = (preset === 'explosion' ? 240 : 190) * (0.45 + Math.random() * 0.85);
-          const baseScale = ((preset === 'goal' || preset === 'victory' ? 54 : 42) / Math.max(32, tex.width || 128)) * (0.7 + Math.random() * 0.6);
+          const speed = (preset === 'explosion' || preset === 'smash' ? 240 : 190) * (0.45 + Math.random() * 0.85);
+          const baseScale =
+            ((preset === 'goal' || preset === 'victory' || preset === 'strike' ? 54 : 42) /
+              Math.max(32, tex.width || 128)) *
+            (0.7 + Math.random() * 0.6);
           spr.scale.set(baseScale);
           container.addChild(spr);
 
@@ -239,8 +344,8 @@ export const PixiGameFxLayer = React.forwardRef<
             vx: Math.cos(angle) * speed,
             vy: Math.sin(angle) * speed - 55,
             vr: (Math.random() - 0.5) * 6,
-            life: preset === 'victory' ? 0.85 : 0.55,
-            maxLife: preset === 'victory' ? 0.85 : 0.55,
+            life: preset === 'victory' || preset === 'strike' ? 0.85 : 0.55,
+            maxLife: preset === 'victory' || preset === 'strike' ? 0.85 : 0.55,
             baseScale,
             growFactor: preset === 'explosion' ? 0.9 : 0.45,
           });

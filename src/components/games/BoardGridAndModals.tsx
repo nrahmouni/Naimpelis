@@ -103,6 +103,9 @@ export const BoardGridAndModals: React.FC<BoardGridAndModalsProps> = ({
                       connect4WinningLine?.some((wCoord) => wCoord.r === r && wCoord.c === c)
                     );
 
+                    const isHoveredCol =
+                      hoverCol === c && canInteractCurrentTurn && nextDropRow !== null;
+
                     return (
                       <button
                         key={`c4-${r}-${c}`}
@@ -111,7 +114,11 @@ export const BoardGridAndModals: React.FC<BoardGridAndModalsProps> = ({
                         onMouseLeave={() => setHoverCol((curr) => (curr === c ? null : curr))}
                         onClick={() => handleSquareClick(r, c)}
                         aria-label={`Columna ${c + 1} Fila ${r + 1}`}
-                        className="relative w-full h-full rounded-full cursor-pointer flex items-center justify-center bg-[#070B14] border border-blue-950/90 shadow-[inset_0_4px_8px_rgba(0,0,0,0.95),inset_0_-1px_2px_rgba(147,197,253,0.25)] transition-transform active:scale-95"
+                        className={`relative w-full h-full rounded-full cursor-pointer flex items-center justify-center border shadow-[inset_0_4px_8px_rgba(0,0,0,0.95),inset_0_-1px_2px_rgba(147,197,253,0.25)] transition-all active:scale-95 ${
+                          isHoveredCol
+                            ? 'bg-[#0C172B] border-sky-400/55 ring-1 ring-sky-400/30'
+                            : 'bg-[#070B14] border-blue-950/90'
+                        }`}
                       >
                         {cell ? (
                           <div
@@ -217,7 +224,11 @@ export const BoardGridAndModals: React.FC<BoardGridAndModalsProps> = ({
           </div>
         ) : (
           <div
-            className={`relative mx-auto rounded-2xl p-2 sm:p-2.5 nc-tabletop-slate border border-white/[0.12] select-none touch-manipulation ${
+            className={`relative mx-auto rounded-2xl p-2 sm:p-2.5 select-none touch-manipulation shadow-[0_14px_34px_rgba(0,0,0,0.75)] ${
+              chessTheme === 'neon' && gameState.gameType === 'chess'
+                ? 'nc-tabletop-slate border border-cyan-500/30'
+                : 'bg-gradient-to-b from-[#3E271A] via-[#2A1910] to-[#1A0F09] border-2 border-[#6A4730]'
+            } ${
               fullScreenMode ? 'w-[min(88vw,50dvh)] max-w-[430px] aspect-square' : 'w-full aspect-square'
             }`}
           >
@@ -225,7 +236,9 @@ export const BoardGridAndModals: React.FC<BoardGridAndModalsProps> = ({
               className={`grid grid-cols-8 grid-rows-8 w-full h-full rounded-xl overflow-hidden shadow-inner ${
                 gameState.gameType === 'checkers'
                   ? 'border-2 border-[#180E0A] ring-1 ring-amber-900/30'
-                  : 'border border-white/15'
+                  : chessTheme === 'neon'
+                  ? 'border border-cyan-500/25'
+                  : 'border-2 border-[#1B100A]'
               }`}
             >
               {displayRows.map((r, dispR) =>
@@ -272,17 +285,17 @@ export const BoardGridAndModals: React.FC<BoardGridAndModalsProps> = ({
                     }
                   } else {
                     if (isKingInCheck) {
-                      squareBg = 'bg-rose-700/85 nc-check-aura';
+                      squareBg = 'bg-rose-700/90 nc-check-aura';
                     } else if (isSelected) {
-                      squareBg = 'bg-[#9146FF]/65';
+                      squareBg = 'bg-amber-500/75 shadow-[inset_0_0_12px_rgba(245,158,11,0.9)]';
                     } else if (isLastTo) {
-                      squareBg = isDark ? 'bg-[#4f3b7d]' : 'bg-[#7962aa]';
+                      squareBg = isDark ? 'bg-[#8F7A3E]' : 'bg-[#CDD26A]';
                     } else if (isLastFrom) {
-                      squareBg = isDark ? 'bg-[#3c2f5c]' : 'bg-[#63528a]';
+                      squareBg = isDark ? 'bg-[#7A6836]' : 'bg-[#BFC460]';
                     } else if (isDark) {
-                      squareBg = 'bg-[#28303E]';
+                      squareBg = 'bg-[#946B49]';
                     } else {
-                      squareBg = 'bg-[#7C879D]';
+                      squareBg = 'bg-[#EBD9B7]';
                     }
                   }
 
@@ -345,12 +358,24 @@ export const BoardGridAndModals: React.FC<BoardGridAndModalsProps> = ({
                       className={`relative w-full h-full flex items-center justify-center cursor-pointer transition-colors ${squareBg}`}
                     >
                       {showRank && (
-                        <span className="absolute top-0.5 left-0.5 text-[8px] font-mono leading-none opacity-60 text-white pointer-events-none">
+                        <span
+                          className={`absolute top-0.5 left-0.5 text-[8px] font-mono font-bold leading-none pointer-events-none ${
+                            chessTheme !== 'neon' && !isDark
+                              ? 'text-[#5C3D28]/80'
+                              : 'text-white/75'
+                          }`}
+                        >
                           {8 - r}
                         </span>
                       )}
                       {showFile && (
-                        <span className="absolute bottom-0.5 right-0.5 text-[8px] font-mono leading-none opacity-60 text-white pointer-events-none">
+                        <span
+                          className={`absolute bottom-0.5 right-0.5 text-[8px] font-mono font-bold leading-none pointer-events-none ${
+                            chessTheme !== 'neon' && !isDark
+                              ? 'text-[#5C3D28]/80'
+                              : 'text-white/75'
+                          }`}
+                        >
                           {BOARD_FILES[c]}
                         </span>
                       )}

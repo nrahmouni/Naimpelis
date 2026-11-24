@@ -36,6 +36,7 @@ import { triggerHaptic } from '../utils/haptics';
 import { socketService } from '../services/socket';
 import { drawArcadeSprite } from './games/arcade/arcadeSprites';
 import { fireVictoryConfetti } from './games/arcade/arcadeAnimations';
+import { PixiGameFxLayer, type PixiGameFxHandle } from './games/arcade/PixiGameFxLayer';
 
 export interface HeadSoccerStageProps {
   lang: AppLanguage;
@@ -57,7 +58,7 @@ export interface HeadSoccerStageProps {
   onRematchOnline?: () => void;
 }
 
-const EMPTY_INPUT: HeadSoccerInput = { left: false, right: false, jump: false, kick: false };
+const EMPTY_INPUT: HeadSoccerInput = { left: false, right: false, jump: false, kick: false, superKick: false };
 
 export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
   lang,
@@ -86,6 +87,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
   );
   const [hudSnapshot, setHudSnapshot] = useState<{
     scores: [number, number];
+    superCharge: [number, number];
     timeLeftSec: number;
     isGoldenGoal: boolean;
     phase: HeadSoccerSimulation['phase'];
@@ -93,14 +95,17 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
     winnerSide: 0 | 1 | null;
   }>({
     scores: [0, 0],
+    superCharge: [30, 30],
     timeLeftSec: HS_MATCH_DURATION_SEC,
     isGoldenGoal: false,
     phase: 'playing',
     goalBannerSide: null,
     winnerSide: null,
   });
+  const [showControlHint, setShowControlHint] = useState(true);
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pixiFxRef = useRef<PixiGameFxHandle | null>(null);
   const simRef = useRef<HeadSoccerSimulation>(createHeadSoccerSimulation('striker', 'furia'));
   const localInputRef = useRef<HeadSoccerInput>({ ...EMPTY_INPUT });
   const touchButtonsRef = useRef<HeadSoccerInput>({ ...EMPTY_INPUT });
@@ -162,6 +167,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
       lastSeqAppliedRef.current = -1;
       setHudSnapshot({
         scores: fresh.scores,
+        superCharge: fresh.superCharge ?? [30, 30],
         timeLeftSec: fresh.timeLeftSec,
         isGoldenGoal: fresh.isGoldenGoal,
         phase: fresh.phase,
@@ -195,6 +201,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
     }
     setHudSnapshot({
       scores: latestSyncSnapshot.sim.scores,
+      superCharge: latestSyncSnapshot.sim.superCharge ?? [0, 0],
       timeLeftSec: latestSyncSnapshot.sim.timeLeftSec,
       isGoldenGoal: latestSyncSnapshot.sim.isGoldenGoal,
       phase: latestSyncSnapshot.sim.phase,
@@ -211,11 +218,12 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
       right: k.right || t.right,
       jump: k.jump || t.jump,
       kick: k.kick || t.kick,
+      superKick: Boolean(k.superKick || t.superKick),
     };
     localInputRef.current = merged;
 
     if (!isOffline && mySeatSide !== null && mySeatSide === 1 && effectiveState?.status === 'playing') {
-      const json = `${merged.left ? 1 : 0}${merged.right ? 1 : 0}${merged.jump ? 1 : 0}${merged.kick ? 1 : 0}`;
+      const json = `${merged.left ? 1 : 0}${merged.right ? 1 : 0}${merged.jump ? 1 : 0}${merged.kick ? 1 : 0}${merged.superKick ? 1 : 0}`;
       if (json !== lastInputSentJsonRef.current) {
         lastInputSentJsonRef.current = json;
         onSendInputOnline?.(mySeatSide, merged);
@@ -223,7 +231,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
     }
   }, [isOffline, mySeatSide, effectiveState?.status, onSendInputOnline]);
 
-  // Keyboard bindings (WASD + Arrows + Space)
+  // Keyboard bindings (WASD + Arrows + Space + E/Shift for Super Shot)
   useEffect(() => {
     const mapKey = (e: KeyboardEvent): keyof HeadSoccerInput | null => {
       switch (e.code) {
@@ -240,6 +248,10 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
         case 'KeyJ':
         case 'Enter':
           return 'kick';
+        case 'KeyE':
+        case 'ShiftLeft':
+        case 'ShiftRight':
+          return 'superKick';
         default:
           return null;
       }
@@ -251,6 +263,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
       const action = mapKey(e);
       if (!action) return;
       if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
+      setShowControlHint(false);
       if (!keyButtonsRef.current[action]) {
         keyButtonsRef.current[action] = true;
         syncMergedInput();
@@ -286,6 +299,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
   // Recompute touch buttons from active multi-touch pointers
   const updateTouchPointer = useCallback(
     (pointerId: number, action: keyof HeadSoccerInput | null) => {
+      if (action !== null) setShowControlHint(false);
       if (action === null) {
         activePointersRef.current.delete(pointerId);
       } else {
@@ -350,19 +364,35 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
           : remoteInputRef.current;
         const events = stepHeadSoccerFrame(sim, [leftInp, rightInp], dt);
 
-        if (events.kicked) {
+        if (events.superShot) {
+          playGameSfx('chapas_goal', muted);
+          triggerHaptic('success');
+          pixiFxRef.current?.emitBurst(
+            Math.max(0.05, Math.min(0.95, sim.ball.x / HS_ARENA_W)),
+            Math.max(0.1, Math.min(0.9, sim.ball.y / HS_ARENA_H)),
+            'smash',
+            26
+          );
+        } else if (events.kicked) {
           playGameSfx('chapas_kick', muted);
           triggerHaptic('light');
         } else if (events.headed) {
           playGameSfx('board_move', muted);
         } else if (events.postHit) {
           playGameSfx('chapas_bounce', muted);
+          pixiFxRef.current?.emitBurst(
+            Math.max(0.05, Math.min(0.95, sim.ball.x / HS_ARENA_W)),
+            Math.max(0.1, Math.min(0.9, sim.ball.y / HS_ARENA_H)),
+            'spark',
+            12
+          );
         }
 
         if (events.goalScoredBy !== undefined) {
           playGameSfx('chapas_goal', muted);
           triggerHaptic('success');
           fireVictoryConfetti('goal');
+          pixiFxRef.current?.emitBurst(events.goalScoredBy === 0 ? 0.92 : 0.08, 0.58, 'goal', 24);
           const gx = events.goalScoredBy === 0 ? HS_ARENA_W - HS_GOAL_W : HS_GOAL_W;
           const colors = ['#FACC15', '#9146FF', '#22C55E', '#38BDF8', '#FFFFFF'];
           for (let c = 0; c < 36; c += 1) {
@@ -400,8 +430,10 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
       // Sync lightweight HUD state at ~15fps or immediately on phase changes
       if (now - lastHudUpdate > 65 || sim.phase !== hudSnapshot.phase || sim.scores[0] !== hudSnapshot.scores[0] || sim.scores[1] !== hudSnapshot.scores[1]) {
         lastHudUpdate = now;
+        const sc = sim.superCharge ?? [0, 0];
         setHudSnapshot({
           scores: [sim.scores[0], sim.scores[1]],
+          superCharge: [sc[0], sc[1]],
           timeLeftSec: sim.timeLeftSec,
           isGoldenGoal: sim.isGoldenGoal,
           phase: sim.phase,
@@ -437,23 +469,25 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
           ctx.save();
           ctx.scale(dpr, dpr);
 
-          drawStadiumAndField(ctx, now / 1000);
+          drawStadiumAndField(ctx, now / 1000, sim.phase === 'goal');
           drawCaricaturePlayer(
             ctx,
             sim.players[0],
             sim.ball.x,
             sim.ball.y,
-            effectiveState?.players[0]?.skinId || offlineSkin
+            effectiveState?.players[0]?.skinId || offlineSkin,
+            sim.superCharge?.[0] ?? 0
           );
           drawCaricaturePlayer(
             ctx,
             sim.players[1],
             sim.ball.x,
             sim.ball.y,
-            effectiveState?.players[1]?.skinId || 'furia'
+            effectiveState?.players[1]?.skinId || 'furia',
+            sim.superCharge?.[1] ?? 0
           );
           drawSoccerBall(ctx, sim.ball);
-          drawGoals(ctx);
+          drawGoals(ctx, sim.netRipple ?? 0, sim.goalBannerSide, now / 1000);
 
           // Confetti (Kenney Particle Pack stars + ribbons)
           for (let ci = 0; ci < confettiRef.current.length; ci += 1) {
@@ -523,6 +557,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
     setOfflineSim(fresh);
     setHudSnapshot({
       scores: fresh.scores,
+      superCharge: fresh.superCharge ?? [30, 30],
       timeLeftSec: fresh.timeLeftSec,
       isGoldenGoal: fresh.isGoldenGoal,
       phase: fresh.phase,
@@ -568,6 +603,8 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
   const myWon =
     mySeatSide !== null && hudSnapshot.winnerSide === mySeatSide;
   const secondsDisplay = Math.ceil(hudSnapshot.timeLeftSec);
+  const mySideIndex = mySeatSide === 1 ? 1 : 0;
+  const mySuperReady = hudSnapshot.superCharge[mySideIndex] >= 100;
 
   return (
     <div className="w-full max-w-4xl mx-auto flex flex-col gap-2 select-none">
@@ -580,7 +617,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
           >
             {isOffline ? currentUser.avatar || '⚽' : effectiveState?.players[0]?.avatar || '⚽'}
           </div>
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1 max-w-[140px]">
             <div className="text-xs font-bold text-white truncate flex items-center gap-1">
               <span>{leftPlayerName}</span>
               {!isOffline && effectiveState?.players[0] && voiceChat && (() => {
@@ -600,7 +637,20 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
                 );
               })()}
             </div>
-            <div className="text-[10px] text-zinc-400">{leftSkin.name}</div>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${Math.min(100, hudSnapshot.superCharge[0])}%`,
+                    backgroundColor: hudSnapshot.superCharge[0] >= 100 ? '#facc15' : '#38bdf8',
+                  }}
+                />
+              </div>
+              <span className="text-[9px] font-bold text-zinc-400 tabular-nums">
+                {hudSnapshot.superCharge[0] >= 100 ? '🔥' : `${Math.round(hudSnapshot.superCharge[0])}%`}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -618,7 +668,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
             ) : (
               <span
                 className={`font-mono text-xs font-black tabular-nums ${
-                  secondsDisplay <= 10 ? 'text-rose-400 animate-pulse' : 'text-emerald-300'
+                  secondsDisplay <= 10 ? 'text-rose-400' : 'text-emerald-300'
                 }`}
               >
                 {secondsDisplay}s
@@ -631,7 +681,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
         </div>
 
         <div className="flex items-center justify-end gap-2 min-w-0 flex-1 text-right">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1 max-w-[140px]">
             <div className="text-xs font-bold text-white truncate flex items-center justify-end gap-1">
               {!isOffline && effectiveState?.players[1] && voiceChat && (() => {
                 const uId = effectiveState.players[1]!.userId;
@@ -651,11 +701,22 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
               })()}
               <span>{rightPlayerName}</span>
             </div>
-            <div className="text-[10px] text-zinc-400 flex items-center justify-end gap-1">
+            <div className="flex items-center justify-end gap-1.5 mt-0.5">
+              <span className="text-[9px] font-bold text-zinc-400 tabular-nums">
+                {hudSnapshot.superCharge[1] >= 100 ? '🔥' : `${Math.round(hudSnapshot.superCharge[1])}%`}
+              </span>
+              <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${Math.min(100, hudSnapshot.superCharge[1])}%`,
+                    backgroundColor: hudSnapshot.superCharge[1] >= 100 ? '#facc15' : '#fb7185',
+                  }}
+                />
+              </div>
               {(isOffline || effectiveState?.players[1]?.isBot) && (
-                <Bot className="w-3 h-3 text-amber-300" />
+                <Bot className="w-3 h-3 text-amber-300 shrink-0" />
               )}
-              <span>{rightSkin.name}</span>
             </div>
           </div>
           <div
@@ -708,8 +769,23 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
       <div className="relative w-full aspect-[900/520] rounded-2xl overflow-hidden border border-white/15 bg-[#090b1a] shadow-[0_18px_45px_rgba(0,0,0,0.65)]">
         <canvas
           ref={canvasRef}
+          width={HS_ARENA_W}
+          height={HS_ARENA_H}
           className="w-full h-full block touch-none"
         />
+        <PixiGameFxLayer ref={pixiFxRef} />
+
+        {showControlHint && !isFinished && hudSnapshot.phase === 'playing' && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-2.5 flex justify-center px-3">
+            <div className="px-3.5 py-1 rounded-full bg-[#090b1a]/88 border border-white/20 text-[11px] font-bold text-slate-200 shadow-lg">
+              {pickLang(lang, {
+                es: 'Muévete con ◀ ▶, salta ▲ y chuta con ⚽',
+                ca: 'Mou-te amb ◀ ▶, salta ▲ i xuta amb ⚽',
+                en: 'Move with ◀ ▶, jump ▲ and shoot with ⚽',
+              })}
+            </div>
+          </div>
+        )}
 
         {isFinished && (
           <VictoryCelebrationOverlay
@@ -749,7 +825,7 @@ export const HeadSoccerStage: React.FC<HeadSoccerStageProps> = ({
       </div>
 
       {(isOffline || mySeatSide !== null) && (
-        <HeadSoccerTouchControls updateTouchPointer={updateTouchPointer} />
+        <HeadSoccerTouchControls updateTouchPointer={updateTouchPointer} superReady={mySuperReady} />
       )}
     </div>
   );

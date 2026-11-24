@@ -415,6 +415,54 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   });
   disposables.push(padGeo, padMat);
 
+  // Trackside Stylized Pine Trees & Deformable Tire Stacks (InstancedMesh, ES2015-safe)
+  const treeCount = 72;
+  const trunkGeo = new THREE.CylinderGeometry(0.32, 0.48, 3.2, 6);
+  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a2f1b, roughness: 0.9 });
+  const crownGeo = new THREE.ConeGeometry(2.3, 6.2, 7);
+  const crownMat = new THREE.MeshStandardMaterial({ color: 0x166534, roughness: 0.8 });
+  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
+  const crowns = new THREE.InstancedMesh(crownGeo, crownMat, treeCount);
+  const tDummy = new THREE.Object3D();
+  for (let i = 0; i < treeCount; i += 1) {
+    const smp = samples[(i * 5) % SAMPLE_COUNT];
+    const side = i % 2 === 0 ? 1 : -1;
+    const distOut = TRACK_BARRIER_HALF_WIDTH + 9 + ((i * 7) % 16);
+    const tx = smp.point.x + smp.normal.x * side * distOut;
+    const tz = smp.point.z + smp.normal.z * side * distOut;
+    const scl = 0.85 + ((i * 11) % 6) * 0.14;
+    tDummy.position.set(tx, 1.5 * scl, tz);
+    tDummy.scale.setScalar(scl);
+    tDummy.updateMatrix();
+    trunks.setMatrixAt(i, tDummy.matrix);
+    tDummy.position.set(tx, 5.2 * scl, tz);
+    tDummy.updateMatrix();
+    crowns.setMatrixAt(i, tDummy.matrix);
+  }
+  trunks.instanceMatrix.needsUpdate = true;
+  crowns.instanceMatrix.needsUpdate = true;
+  scene.add(trunks, crowns);
+
+  const tireGeo = new THREE.CylinderGeometry(0.55, 0.55, 1.25, 10);
+  const tireMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.82 });
+  const tireCount = 36;
+  const tireInst = new THREE.InstancedMesh(tireGeo, tireMat, tireCount);
+  for (let i = 0; i < tireCount; i += 1) {
+    const smp = samples[(i * 10 + 3) % SAMPLE_COUNT];
+    const side = i % 2 === 0 ? 1 : -1;
+    tDummy.position.set(
+      smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 1.4),
+      0.62,
+      smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 1.4)
+    );
+    tDummy.scale.setScalar(1);
+    tDummy.updateMatrix();
+    tireInst.setMatrixAt(i, tDummy.matrix);
+  }
+  tireInst.instanceMatrix.needsUpdate = true;
+  scene.add(tireInst);
+  disposables.push(trunkGeo, trunkMat, crownGeo, crownMat, tireGeo, tireMat);
+
   // Twilight Starfield Sky Points (lightweight single Points draw call)
   if (!isSoftwareGl) {
     const starCount = 450;
@@ -553,7 +601,20 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
       defaultClips: ['idle', 'walk', 'run'],
       castShadow: true,
     });
-    actors.push(marshalRobot, marshalXbot);
+    const marshalSoldier = spawnRigged3dActor(sceneryGroup, 'assets/games/models/Soldier.glb', {
+      position: [
+        startSmp.point.x + startSmp.normal.x * (TRACK_HALF_WIDTH + 5.6) + startSmp.tangent.x * 6.0,
+        0,
+        startSmp.point.z + startSmp.normal.z * (TRACK_HALF_WIDTH + 5.6) + startSmp.tangent.z * 6.0,
+      ],
+      rotationY: startYaw - Math.PI * 0.65,
+      targetHeight: 2.55,
+      defaultClips: ['Idle', 'Walk'],
+      castShadow: true,
+      primaryHex: '#f59e0b',
+      secondaryHex: '#0f172a',
+    });
+    actors.push(marshalRobot, marshalXbot, marshalSoldier);
   }
   let celebratingState = false;
 
@@ -647,6 +708,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
       celebratingState = celebrating;
       if (actors[0]) actors[0].playClip(celebrating ? ['Dance', 'Jump', 'Wave'] : ['Wave', 'Idle']);
       if (actors[1]) actors[1].playClip(celebrating ? ['run', 'walk', 'idle'] : ['idle', 'walk']);
+      if (actors[2]) actors[2].playClip(celebrating ? ['Run', 'Walk'] : ['Idle']);
     },
     dispose: () => {
       circuitDisposed = true;

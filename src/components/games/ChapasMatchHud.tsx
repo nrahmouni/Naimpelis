@@ -7,6 +7,7 @@ import type {
   FutbolChapasState,
 } from '../../types';
 import { CHAPAS_TEAM_PRESETS } from '../../shared/futbolChapas';
+import { getCircleFlagCdnUrl } from '../../shared/gameAssetsCdn';
 import type { GameVoiceChatState } from '../../hooks/useGameVoiceChat';
 import { ChapasSeatSlot } from './ChapasLobbyAndHud';
 import { pickLang } from '../../utils/i18n';
@@ -38,7 +39,7 @@ export const ChapasScoreboardBar: React.FC<ChapasScoreboardBarProps> = ({
   voicePeerMap,
   onJoinSeat,
 }) => (
-  <div className="px-2 py-1 rounded-xl bg-gradient-to-b from-[#2E551A] via-[#244414] to-[#1A330E] border border-emerald-400/25 flex items-center justify-between gap-1 shrink-0 shadow-md">
+  <div className="px-2 py-1 rounded-xl bg-gradient-to-b from-[#335C1D] via-[#264615] to-[#1A330E] border border-emerald-300/25 flex items-center justify-between gap-1 shrink-0 shadow-md">
     <div className="flex items-center gap-1 min-w-0">
       {([0, 1] as const).map((seatIdx) => (
         <ChapasSeatSlot
@@ -58,18 +59,18 @@ export const ChapasScoreboardBar: React.FC<ChapasScoreboardBarProps> = ({
 
     <div className="flex flex-col items-center justify-center px-1.5 shrink-0">
       <div className="flex items-center gap-1.5">
-        <span
-          className="w-3 h-3 rounded-full border border-white/70 shrink-0"
-          style={{ backgroundColor: flagA.primary }}
-          title={flagA.name}
+        <img
+          src={getCircleFlagCdnUrl(flagA.id)}
+          alt={flagA.name}
+          className="w-5 h-5 rounded-full border border-white/80 shadow-sm shrink-0 object-cover"
         />
         <span className="text-base sm:text-xl font-black font-mono tabular-nums text-white tracking-tight drop-shadow">
           {activeState.scores.A} - {activeState.scores.B}
         </span>
-        <span
-          className="w-3 h-3 rounded-full border border-white/70 shrink-0"
-          style={{ backgroundColor: flagB.primary }}
-          title={flagB.name}
+        <img
+          src={getCircleFlagCdnUrl(flagB.id)}
+          alt={flagB.name}
+          className="w-5 h-5 rounded-full border border-white/80 shadow-sm shrink-0 object-cover"
         />
       </div>
       <span className="text-[9px] sm:text-[10px] font-semibold text-emerald-100/85 truncate max-w-[125px] sm:max-w-[200px]">
@@ -111,6 +112,11 @@ export const ChapasGoalBannerOverlay: React.FC<{
         ⚽ ¡GOOOL!
       </div>
       <div className="px-4 py-1.5 rounded-full bg-black/85 border border-amber-400/80 shadow-lg text-xs sm:text-sm font-extrabold text-white flex items-center gap-2">
+        <img
+          src={getCircleFlagCdnUrl(goalBanner.flag)}
+          alt={goalBanner.flag}
+          className="w-5 h-5 rounded-full border border-white/70 object-cover"
+        />
         <span>{CHAPAS_TEAM_PRESETS.find((f) => f.id === goalBanner.flag)?.name || ''}</span>
         <span className="text-amber-300 font-mono font-bold">
           ({scores.A} - {scores.B})

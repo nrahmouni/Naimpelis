@@ -8,13 +8,15 @@
   var KENNEY_CDN = 'https://raw.githubusercontent.com/shorepine/kenney/main/';
   var THREE_CDN = 'https://cdn.jsdelivr.net/gh/mrdoob/three.js@r170/examples/models/gltf/';
   var CDN_EXACT = {
-    'penalty/stadium_backdrop.jpg': 'https://thumb.wikimedia.org/wikipedia/commons/thumb/9/9c/NotreDameStadiumNight.jpg/1280px-NotreDameStadiumNight.jpg',
-    'arenas/soccer_stadium.jpg': 'https://thumb.wikimedia.org/wikipedia/commons/thumb/f/fc/Camp_Nou_aerial_%28cropped%29.jpg/1280px-Camp_Nou_aerial_%28cropped%29.jpg',
-    'arenas/bowling_alley.jpg': 'https://thumb.wikimedia.org/wikipedia/commons/thumb/9/90/Sunset_Lanes_bowling_alley_-_Beaverton%2C_OR_%282015%29.jpg/1280px-Sunset_Lanes_bowling_alley_-_Beaverton%2C_OR_%282015%29.jpg',
-    'arenas/tennis_court.jpg': 'https://thumb.wikimedia.org/wikipedia/commons/thumb/0/00/Wimbledon_Centre_Court_2017_cropped.jpg/1280px-Wimbledon_Centre_Court_2017_cropped.jpg',
+    'penalty/stadium_backdrop.jpg': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9c/NotreDameStadiumNight.jpg/1280px-NotreDameStadiumNight.jpg',
+    'arenas/soccer_stadium.jpg': 'https://upload.wikimedia.org/wikipedia/commons/thumb/f/fc/Camp_Nou_aerial_%28cropped%29.jpg/1280px-Camp_Nou_aerial_%28cropped%29.jpg',
+    'arenas/bowling_alley.jpg': 'https://upload.wikimedia.org/wikipedia/commons/thumb/9/90/Sunset_Lanes_bowling_alley_-_Beaverton%2C_OR_%282015%29.jpg/1280px-Sunset_Lanes_bowling_alley_-_Beaverton%2C_OR_%282015%29.jpg',
+    'arenas/tennis_court.jpg': 'https://upload.wikimedia.org/wikipedia/commons/thumb/0/00/Wimbledon_Centre_Court_2017_cropped.jpg/1280px-Wimbledon_Centre_Court_2017_cropped.jpg',
     'arenas/labyrinth_board.jpg': 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/oak_veneer_01/oak_veneer_01_diff_1k.jpg',
     'models/RobotExpressive.glb': THREE_CDN + 'RobotExpressive/RobotExpressive.glb',
     'models/Soldier.glb': THREE_CDN + 'Soldier.glb',
+    'models/Xbot.glb': THREE_CDN + 'Xbot.glb',
+    'models/Michelle.glb': THREE_CDN + 'Michelle.glb',
     'models/race-future.glb': KENNEY_CDN + '3d/car/race-future.glb',
     'models/race.glb': KENNEY_CDN + '3d/car/race.glb',
     'models/sedan-sports.glb': KENNEY_CDN + '3d/car/sedan-sports.glb',

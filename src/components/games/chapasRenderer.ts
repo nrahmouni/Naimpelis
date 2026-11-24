@@ -1,4 +1,5 @@
 import type { ChapasCap, ChapasFlagId } from '../../types';
+import { getCircleFlagCdnUrl } from '../../shared/gameAssetsCdn';
 import {
   type ChapasBall,
   CHAPAS_ARENA_H,
@@ -33,6 +34,7 @@ export interface CrowdSpectator {
   x: number;
   y: number;
   color: string;
+  skin: string;
   phase: number;
 }
 
@@ -52,12 +54,69 @@ const CROWD_PALETTE = [
   '#FACC15',
   '#3B82F6',
   '#E5E7EB',
+  '#FB923C',
 ];
+
+const CROWD_SKINS = ['#F5CBA7', '#E0AC69', '#C68642', '#8D5524', '#FDEBD0'];
+
+const FLAG_SVG_CACHE = new Map<string, { img: HTMLImageElement; loaded: boolean; failed: boolean }>();
+
+export function getChapasFlagImage(flag: ChapasFlagId): HTMLImageElement | null {
+  if (typeof Image === 'undefined') return null;
+  const cached = FLAG_SVG_CACHE.get(flag);
+  if (!cached) {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    const entry = { img, loaded: false, failed: false };
+    img.onload = () => {
+      entry.loaded = true;
+    };
+    img.onerror = () => {
+      entry.failed = true;
+    };
+    img.src = getCircleFlagCdnUrl(flag);
+    FLAG_SVG_CACHE.set(flag, entry);
+    return null;
+  }
+  if (!cached.failed && cached.loaded && cached.img.complete && cached.img.naturalWidth > 0) {
+    return cached.img;
+  }
+  return null;
+}
+
+let CACHED_TURF_PATTERN: CanvasPattern | null = null;
+let CACHED_TURF_CTX: CanvasRenderingContext2D | null = null;
+
+function getTurfGrainPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
+  if (typeof document === 'undefined') return null;
+  if (CACHED_TURF_PATTERN && CACHED_TURF_CTX === ctx) return CACHED_TURF_PATTERN;
+  const tile = document.createElement('canvas');
+  tile.width = 160;
+  tile.height = 160;
+  const tctx = tile.getContext('2d');
+  if (!tctx) return null;
+
+  let seed = 9001;
+  const rnd = () => {
+    seed = (seed * 1664525 + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  for (let i = 0; i < 2600; i += 1) {
+    const x = rnd() * 160;
+    const y = rnd() * 160;
+    const bright = rnd() > 0.5;
+    tctx.fillStyle = bright ? 'rgba(217, 249, 157, 0.14)' : 'rgba(15, 36, 10, 0.17)';
+    tctx.fillRect(x, y, 1.5, 2.2);
+  }
+  CACHED_TURF_PATTERN = ctx.createPattern(tile, 'repeat');
+  CACHED_TURF_CTX = ctx;
+  return CACHED_TURF_PATTERN;
+}
 
 function buildGrandstandCrowd(): CrowdSpectator[] {
   const specs: CrowdSpectator[] = [];
-  const rows = 4;
-  const cols = 44;
+  const rows = 5;
+  const cols = 54;
   let seed = 1337;
   const rand = () => {
     seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -67,16 +126,17 @@ function buildGrandstandCrowd(): CrowdSpectator[] {
   for (let side = 0; side < 2; side += 1) {
     for (let r = 0; r < rows; r += 1) {
       for (let c = 0; c < cols; c += 1) {
-        const baseX = side === 0 ? 11 + r * 8.4 : CHAPAS_ARENA_W - 11 - r * 8.4;
+        const baseX = side === 0 ? 7 + r * 6.8 : CHAPAS_ARENA_W - 7 - r * 6.8;
         const t = c / (cols - 1);
-        const yMin = 122 + r * 4;
-        const yMax = CHAPAS_ARENA_H - 122 - r * 4;
-        const y = yMin + t * (yMax - yMin) + (rand() - 0.5) * 3.2;
-        const x = baseX + (rand() - 0.5) * 2.4;
+        const yMin = 104 + r * 3.5;
+        const yMax = CHAPAS_ARENA_H - 104 - r * 3.5;
+        const y = yMin + t * (yMax - yMin) + (rand() - 0.5) * 2.2;
+        const x = baseX + (rand() - 0.5) * 1.8;
         specs.push({
           x,
           y,
           color: CROWD_PALETTE[Math.floor(rand() * CROWD_PALETTE.length)],
+          skin: CROWD_SKINS[Math.floor(rand() * CROWD_SKINS.length)],
           phase: rand() * Math.PI * 2,
         });
       }
@@ -96,6 +156,13 @@ export function drawFlagEmblem(
   ctx.beginPath();
   ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.clip();
+
+  const cdnFlag = getChapasFlagImage(flag);
+  if (cdnFlag) {
+    ctx.drawImage(cdnFlag, -r, -r, r * 2, r * 2);
+    ctx.restore();
+    return;
+  }
 
   if (flag === 'ar') {
     ctx.fillStyle = '#6FAEE3';
@@ -195,57 +262,55 @@ export function drawFlagEmblem(
 export function drawBleacherWing(ctx: CanvasRenderingContext2D, side: 'left' | 'right'): void {
   ctx.save();
   const isL = side === 'left';
-  const outerX = isL ? 3 : CHAPAS_ARENA_W - 3;
-  const innerX = isL ? 47 : CHAPAS_ARENA_W - 47;
+  const outerX = isL ? 2 : CHAPAS_ARENA_W - 2;
+  const innerX = isL ? 44 : CHAPAS_ARENA_W - 44;
 
-  ctx.fillStyle = 'rgba(0,0,0,0.38)';
+  // Cast shadow on outer grass
+  ctx.fillStyle = 'rgba(0,0,0,0.34)';
   ctx.beginPath();
-  ctx.moveTo(outerX, 108);
-  ctx.lineTo(innerX + (isL ? 4 : -4), 134);
-  ctx.lineTo(innerX + (isL ? 4 : -4), CHAPAS_ARENA_H - 134);
-  ctx.lineTo(outerX, CHAPAS_ARENA_H - 108);
+  ctx.moveTo(outerX, 98);
+  ctx.lineTo(innerX + (isL ? 5 : -5), 118);
+  ctx.lineTo(innerX + (isL ? 5 : -5), CHAPAS_ARENA_H - 118);
+  ctx.lineTo(outerX, CHAPAS_ARENA_H - 98);
   ctx.closePath();
   ctx.fill();
 
   const wingGrad = ctx.createLinearGradient(outerX, 0, innerX, 0);
-  wingGrad.addColorStop(0, '#1E293B');
-  wingGrad.addColorStop(0.45, '#334155');
-  wingGrad.addColorStop(1, '#0F172A');
+  wingGrad.addColorStop(0, '#334155');
+  wingGrad.addColorStop(0.55, '#475569');
+  wingGrad.addColorStop(1, '#1E293B');
   ctx.fillStyle = wingGrad;
   ctx.beginPath();
-  ctx.moveTo(outerX, 104);
-  ctx.lineTo(innerX, 126);
-  ctx.lineTo(innerX, CHAPAS_ARENA_H - 126);
-  ctx.lineTo(outerX, CHAPAS_ARENA_H - 104);
+  ctx.moveTo(outerX, 94);
+  ctx.lineTo(innerX, 114);
+  ctx.lineTo(innerX, CHAPAS_ARENA_H - 114);
+  ctx.lineTo(outerX, CHAPAS_ARENA_H - 94);
   ctx.closePath();
   ctx.fill();
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.14)';
-  ctx.lineWidth = 1;
-  for (let r = 1; r <= 3; r += 1) {
-    const rx = outerX + (innerX - outerX) * (r / 4);
-    const pad = r * 5.2;
+  // Outer trim edge
+  ctx.strokeStyle = '#94A3B8';
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  // Tier steps
+  ctx.strokeStyle = 'rgba(15,23,42,0.55)';
+  ctx.lineWidth = 1.2;
+  for (let r = 1; r <= 4; r += 1) {
+    const rx = outerX + (innerX - outerX) * (r / 5);
+    const pad = r * 4;
     ctx.beginPath();
-    ctx.moveTo(rx, 106 + pad);
-    ctx.lineTo(rx, CHAPAS_ARENA_H - 106 - pad);
+    ctx.moveTo(rx, 94 + pad);
+    ctx.lineTo(rx, CHAPAS_ARENA_H - 94 - pad);
     ctx.stroke();
   }
 
-  const boardX = isL ? innerX - 4 : innerX;
-  ctx.fillStyle = '#090D16';
-  ctx.fillRect(boardX, 155, 4, CHAPAS_ARENA_H - 310);
-  ctx.fillStyle = isL ? '#9146FF' : '#10B981';
-  ctx.fillRect(boardX + 0.8, 220, 2.4, 96);
-  ctx.fillStyle = '#F59E0B';
-  ctx.fillRect(boardX + 0.8, 360, 2.4, 70);
-  ctx.fillStyle = isL ? '#38BDF8' : '#E11D48';
-  ctx.fillRect(boardX + 0.8, 470, 2.4, 96);
-
-  ctx.strokeStyle = '#CBD5E1';
-  ctx.lineWidth = 2.4;
+  // Brushed metallic front guardrail
+  ctx.strokeStyle = '#E2E8F0';
+  ctx.lineWidth = 2.6;
   ctx.beginPath();
-  ctx.moveTo(innerX, 126);
-  ctx.lineTo(innerX, CHAPAS_ARENA_H - 126);
+  ctx.moveTo(innerX, 114);
+  ctx.lineTo(innerX, CHAPAS_ARENA_H - 114);
   ctx.stroke();
   ctx.restore();
 }
@@ -256,19 +321,29 @@ export function drawChapasStadiumBackdrop(
   crowdExcite: boolean,
   netRipple: number
 ): void {
+  const turfPattern = getTurfGrainPattern(ctx);
+
+  // Seamless textured grass apron surrounding the arena
   const apronGrad = ctx.createRadialGradient(
     CHAPAS_ARENA_W / 2,
     CHAPAS_ARENA_H / 2,
     75,
     CHAPAS_ARENA_W / 2,
     CHAPAS_ARENA_H / 2,
-    460
+    480
   );
-  apronGrad.addColorStop(0, 'rgba(132, 204, 22, 0.22)');
-  apronGrad.addColorStop(0.65, 'rgba(54, 95, 30, 0.08)');
-  apronGrad.addColorStop(1, 'rgba(15, 23, 42, 0.35)');
+  apronGrad.addColorStop(0, '#5A8B2E');
+  apronGrad.addColorStop(0.65, '#4B7825');
+  apronGrad.addColorStop(1, '#3D621D');
   ctx.fillStyle = apronGrad;
   ctx.fillRect(0, 0, CHAPAS_ARENA_W, CHAPAS_ARENA_H);
+  if (turfPattern) {
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = turfPattern;
+    ctx.fillRect(0, 0, CHAPAS_ARENA_W, CHAPAS_ARENA_H);
+    ctx.restore();
+  }
 
   drawBleacherWing(ctx, 'left');
   drawBleacherWing(ctx, 'right');
@@ -280,13 +355,18 @@ export function drawChapasStadiumBackdrop(
       : wave > 0.92
       ? 1.2
       : 0;
+    const sy = sp.y - bounce;
     ctx.fillStyle = sp.color;
     ctx.beginPath();
-    ctx.arc(sp.x, sp.y - bounce, 2.6, 0, Math.PI * 2);
+    ctx.arc(sp.x, sy, 2.7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = sp.skin;
+    ctx.beginPath();
+    ctx.arc(sp.x, sy - 1.2, 1.35, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  // Alternating mowed green grass stripes inside pitch
+  // Alternating mowed green grass stripes inside pitch + organic grain
   ctx.save();
   ctx.beginPath();
   ctx.rect(CHAPAS_PITCH_LEFT, CHAPAS_PITCH_TOP, CHAPAS_PITCH_W, CHAPAS_PITCH_H);
@@ -295,13 +375,19 @@ export function drawChapasStadiumBackdrop(
   const stripeCount = 10;
   const stripeH = CHAPAS_PITCH_H / stripeCount;
   for (let i = 0; i < stripeCount; i += 1) {
-    ctx.fillStyle = i % 2 === 0 ? '#5B9633' : '#4F852A';
+    ctx.fillStyle = i % 2 === 0 ? '#69A83B' : '#58942E';
     ctx.fillRect(
       CHAPAS_PITCH_LEFT,
       CHAPAS_PITCH_TOP + i * stripeH,
       CHAPAS_PITCH_W,
       stripeH + 0.5
     );
+  }
+  if (turfPattern) {
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle = turfPattern;
+    ctx.fillRect(CHAPAS_PITCH_LEFT, CHAPAS_PITCH_TOP, CHAPAS_PITCH_W, CHAPAS_PITCH_H);
+    ctx.globalAlpha = 1;
   }
 
   const turfGlow = ctx.createRadialGradient(
@@ -317,7 +403,7 @@ export function drawChapasStadiumBackdrop(
   ctx.fillStyle = turfGlow;
   ctx.fillRect(CHAPAS_PITCH_LEFT, CHAPAS_PITCH_TOP, CHAPAS_PITCH_W, CHAPAS_PITCH_H);
 
-  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.92)';
   ctx.lineWidth = 2.6;
   const midX = CHAPAS_ARENA_W / 2;
   const midY = (CHAPAS_PITCH_TOP + CHAPAS_PITCH_BOTTOM) / 2;
@@ -379,14 +465,19 @@ export function drawChapasStadiumBackdrop(
   }
   ctx.restore();
 
-  // Brushed metallic perimeter pitch rails + fluttering corner flags
-  const railW = 7;
+  // Silver Beveled Stadium Perimeter Rails + Corner Flags
+  const railW = 9;
   const railGrad = ctx.createLinearGradient(CHAPAS_PITCH_LEFT, 0, CHAPAS_PITCH_RIGHT, 0);
-  railGrad.addColorStop(0, '#94A3B8');
-  railGrad.addColorStop(0.5, '#E2E8F0');
-  railGrad.addColorStop(1, '#94A3B8');
+  railGrad.addColorStop(0, '#CBD5E1');
+  railGrad.addColorStop(0.5, '#F8FAFC');
+  railGrad.addColorStop(1, '#CBD5E1');
   ctx.fillStyle = railGrad;
 
+  // Cast outer shadow under perimeter rail
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.fillRect(CHAPAS_PITCH_LEFT - railW - 2, CHAPAS_PITCH_TOP - railW + 2, CHAPAS_PITCH_W + railW * 2 + 4, CHAPAS_PITCH_H + railW * 2 + 2);
+
+  ctx.fillStyle = railGrad;
   ctx.fillRect(CHAPAS_PITCH_LEFT - railW, CHAPAS_PITCH_TOP - railW, railW, CHAPAS_PITCH_H + railW * 2);
   ctx.fillRect(CHAPAS_PITCH_RIGHT, CHAPAS_PITCH_TOP - railW, railW, CHAPAS_PITCH_H + railW * 2);
   ctx.fillRect(CHAPAS_PITCH_LEFT, CHAPAS_PITCH_TOP - railW, CHAPAS_GOAL_LEFT - CHAPAS_PITCH_LEFT, railW);
@@ -394,8 +485,20 @@ export function drawChapasStadiumBackdrop(
   ctx.fillRect(CHAPAS_PITCH_LEFT, CHAPAS_PITCH_BOTTOM, CHAPAS_GOAL_LEFT - CHAPAS_PITCH_LEFT, railW);
   ctx.fillRect(CHAPAS_GOAL_RIGHT, CHAPAS_PITCH_BOTTOM, CHAPAS_PITCH_RIGHT - CHAPAS_GOAL_RIGHT, railW);
 
-  ctx.strokeStyle = '#334155';
-  ctx.lineWidth = 1.1;
+  // Joint notches along the silver rail for physical modular look
+  ctx.strokeStyle = 'rgba(71, 85, 105, 0.55)';
+  ctx.lineWidth = 1.2;
+  for (let y = CHAPAS_PITCH_TOP + 54; y < CHAPAS_PITCH_BOTTOM; y += 64) {
+    ctx.beginPath();
+    ctx.moveTo(CHAPAS_PITCH_LEFT - railW, y);
+    ctx.lineTo(CHAPAS_PITCH_LEFT, y);
+    ctx.moveTo(CHAPAS_PITCH_RIGHT, y);
+    ctx.lineTo(CHAPAS_PITCH_RIGHT + railW, y);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = '#475569';
+  ctx.lineWidth = 1.2;
   ctx.strokeRect(
     CHAPAS_PITCH_LEFT - railW,
     CHAPAS_PITCH_TOP - railW,
@@ -436,7 +539,7 @@ export function drawChapasStadiumBackdrop(
     const gx1 = CHAPAS_GOAL_RIGHT;
 
     ctx.save();
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.38)';
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.34)';
     ctx.beginPath();
     ctx.moveTo(gx0, yMouth);
     ctx.lineTo(gx0 + 6, yBack);
@@ -445,9 +548,9 @@ export function drawChapasStadiumBackdrop(
     ctx.closePath();
     ctx.fill();
 
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.58)';
-    ctx.lineWidth = 1;
-    const cols = 12;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+    ctx.lineWidth = 1.2;
+    const cols = 13;
     for (let i = 0; i <= cols; i += 1) {
       const frac = i / cols;
       const xM = gx0 + (gx1 - gx0) * frac;
@@ -468,7 +571,7 @@ export function drawChapasStadiumBackdrop(
     }
 
     ctx.strokeStyle = '#F8FAFC';
-    ctx.lineWidth = 4.2;
+    ctx.lineWidth = 4.6;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.beginPath();
@@ -479,7 +582,7 @@ export function drawChapasStadiumBackdrop(
     ctx.stroke();
 
     ctx.strokeStyle = '#CBD5E1';
-    ctx.lineWidth = 2.4;
+    ctx.lineWidth = 2.6;
     ctx.beginPath();
     ctx.moveTo(gx0, yMouth);
     ctx.lineTo(gx1, yMouth);
@@ -488,10 +591,10 @@ export function drawChapasStadiumBackdrop(
     for (const px of [gx0, gx1]) {
       ctx.fillStyle = '#FFFFFF';
       ctx.beginPath();
-      ctx.arc(px, yMouth, 6, 0, Math.PI * 2);
+      ctx.arc(px, yMouth, 6.2, 0, Math.PI * 2);
       ctx.fill();
-      ctx.strokeStyle = '#64748B';
-      ctx.lineWidth = 1.3;
+      ctx.strokeStyle = '#475569';
+      ctx.lineWidth = 1.4;
       ctx.stroke();
     }
     ctx.restore();

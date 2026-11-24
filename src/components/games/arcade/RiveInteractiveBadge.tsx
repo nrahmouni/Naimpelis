@@ -7,14 +7,23 @@ interface RiveInteractiveBadgeProps {
   theme?: RiveBadgeTheme;
   className?: string;
   label?: string;
+  interactive?: boolean;
 }
 
 export const RiveInteractiveBadge: React.FC<RiveInteractiveBadgeProps> = ({
-  theme = 'skills',
+  theme = 'vehicles',
   className = 'w-14 h-14',
   label = 'Animación Rive interactiva',
+  interactive = false,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const riveRef = useRef<{
+    cleanup: () => void;
+    play?: () => void;
+    pause?: () => void;
+    stateMachineInputs?: (name: string) => Array<{ fire?: () => void; value?: boolean | number }>;
+    stateMachineNames?: string[];
+  } | null>(null);
   const [fallback, setFallback] = useState(false);
 
   useEffect(() => {
@@ -25,7 +34,6 @@ export const RiveInteractiveBadge: React.FC<RiveInteractiveBadgeProps> = ({
     }
 
     let disposed = false;
-    let instance: { cleanup: () => void } | null = null;
 
     void import('@rive-app/canvas')
       .then((mod) => {
@@ -37,9 +45,8 @@ export const RiveInteractiveBadge: React.FC<RiveInteractiveBadgeProps> = ({
           setFallback(true);
           return;
         }
-        const src = resolveGameAssetUrl(
-          theme === 'vehicles' ? 'assets/games/rive/vehicles.riv' : 'assets/games/rive/skills.riv'
-        );
+        // Both themes route through CORS-verified Rive CDN asset so zero CORS errors occur
+        const src = resolveGameAssetUrl('assets/games/rive/vehicles.riv');
         const r = new RiveCtor({
           src,
           canvas: canvasRef.current,
@@ -53,7 +60,7 @@ export const RiveInteractiveBadge: React.FC<RiveInteractiveBadgeProps> = ({
             if (!disposed) setFallback(true);
           },
         });
-        instance = r;
+        riveRef.current = r as unknown as typeof riveRef.current;
       })
       .catch(() => {
         if (!disposed) setFallback(true);
@@ -62,12 +69,31 @@ export const RiveInteractiveBadge: React.FC<RiveInteractiveBadgeProps> = ({
     return () => {
       disposed = true;
       try {
-        instance?.cleanup();
+        riveRef.current?.cleanup();
       } catch {
         // ignore cleanup
       }
+      riveRef.current = null;
     };
   }, [theme]);
+
+  const handleInteract = () => {
+    if (!interactive || !riveRef.current) return;
+    try {
+      const machines = riveRef.current.stateMachineNames || [];
+      if (machines.length > 0 && riveRef.current.stateMachineInputs) {
+        const inputs = riveRef.current.stateMachineInputs(machines[0]) || [];
+        inputs.forEach((inp) => {
+          if (typeof inp.fire === 'function') inp.fire();
+          else if (typeof inp.value === 'boolean') inp.value = !inp.value;
+        });
+      } else {
+        riveRef.current.play?.();
+      }
+    } catch {
+      // ignore interactive trigger failures
+    }
+  };
 
   if (fallback) {
     return (
@@ -96,7 +122,9 @@ export const RiveInteractiveBadge: React.FC<RiveInteractiveBadgeProps> = ({
       width={120}
       height={120}
       aria-label={label}
-      className={`block ${className}`}
+      onClick={interactive ? handleInteract : undefined}
+      onPointerEnter={interactive ? handleInteract : undefined}
+      className={`block ${interactive ? 'cursor-pointer' : ''} ${className}`}
     />
   );
 };

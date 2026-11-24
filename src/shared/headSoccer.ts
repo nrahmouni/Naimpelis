@@ -112,6 +112,7 @@ export interface HeadSoccerInput {
   right: boolean;
   jump: boolean;
   kick: boolean;
+  superKick?: boolean;
 }
 
 export interface HeadSoccerSimPlayer {
@@ -135,6 +136,7 @@ export interface HeadSoccerSimBall {
   angle: number;
   angularVel: number;
   lastTouchSide: 0 | 1 | null;
+  superTrail?: number;
 }
 
 export interface HeadSoccerSimulation {
@@ -142,6 +144,8 @@ export interface HeadSoccerSimulation {
   players: [HeadSoccerSimPlayer, HeadSoccerSimPlayer];
   ball: HeadSoccerSimBall;
   scores: [number, number];
+  superCharge?: [number, number];
+  netRipple?: number;
   timeLeftSec: number;
   isGoldenGoal: boolean;
   goalBannerSide: 0 | 1 | null;
@@ -212,8 +216,11 @@ export function createHeadSoccerSimulation(
       angle: 0,
       angularVel: 0,
       lastTouchSide: null,
+      superTrail: 0,
     },
     scores: [0, 0],
+    superCharge: [30, 30],
+    netRipple: 0,
     timeLeftSec: HS_MATCH_DURATION_SEC,
     isGoldenGoal: false,
     goalBannerSide: null,
@@ -224,14 +231,14 @@ export function createHeadSoccerSimulation(
 }
 
 function resetPositionsForKickoff(sim: HeadSoccerSimulation) {
-  sim.players[0].x = 210;
+  sim.players[0].x = 225;
   sim.players[0].y = HS_GROUND_Y - HS_HEAD_RADIUS;
   sim.players[0].vx = 0;
   sim.players[0].vy = 0;
   sim.players[0].onGround = true;
   sim.players[0].kickTimer = 0;
 
-  sim.players[1].x = HS_ARENA_W - 210;
+  sim.players[1].x = HS_ARENA_W - 225;
   sim.players[1].y = HS_GROUND_Y - HS_HEAD_RADIUS;
   sim.players[1].vx = 0;
   sim.players[1].vy = 0;
@@ -243,6 +250,8 @@ function resetPositionsForKickoff(sim: HeadSoccerSimulation) {
   sim.ball.vx = 0;
   sim.ball.vy = 0;
   sim.ball.angularVel = 0;
+  sim.ball.superTrail = 0;
+  sim.netRipple = 0;
 }
 
 function collideCircleCircle(
@@ -303,6 +312,7 @@ function collideCircleCircle(
 
 export interface HeadSoccerStepEvents {
   kicked?: boolean;
+  superShot?: boolean;
   headed?: boolean;
   postHit?: boolean;
   goalScoredBy?: 0 | 1;
@@ -316,11 +326,13 @@ export function stepHeadSoccerFrame(
 ): HeadSoccerStepEvents {
   const dt = Math.min(0.033, Math.max(0.001, rawDt));
   const events: HeadSoccerStepEvents = {};
+  if (!sim.superCharge) sim.superCharge = [0, 0];
 
   if (sim.phase === 'finished') return events;
 
   if (sim.phase === 'goal') {
     sim.goalPauseTimer -= dt;
+    sim.netRipple = Math.max(0, (sim.netRipple ?? 0) - dt * 0.75);
     if (sim.goalPauseTimer <= 0) {
       if (sim.isGoldenGoal) {
         sim.phase = 'finished';
@@ -336,6 +348,9 @@ export function stepHeadSoccerFrame(
   }
 
   sim.tick += 1;
+  if (sim.ball.superTrail && sim.ball.superTrail > 0) {
+    sim.ball.superTrail = Math.max(0, sim.ball.superTrail - dt * 0.85);
+  }
 
   if (!sim.isGoldenGoal) {
     sim.timeLeftSec = Math.max(0, sim.timeLeftSec - dt);
@@ -354,9 +369,9 @@ export function stepHeadSoccerFrame(
   const subSteps = 2;
   const subDt = dt / subSteps;
 
-  const PLAYER_SPEED = 365;
+  const PLAYER_SPEED = 375;
   const PLAYER_GRAVITY = 1750;
-  const JUMP_VEL = -690;
+  const JUMP_VEL = -700;
   const BALL_GRAVITY = 1280;
 
   for (let step = 0; step < subSteps; step += 1) {
@@ -378,8 +393,8 @@ export function stepHeadSoccerFrame(
 
       if (p.kickCooldown > 0) p.kickCooldown = Math.max(0, p.kickCooldown - subDt);
       if (p.kickTimer > 0) p.kickTimer = Math.max(0, p.kickTimer - subDt);
-      if (inp.kick && p.kickCooldown <= 0) {
-        p.kickTimer = 0.2;
+      if ((inp.kick || inp.superKick) && p.kickCooldown <= 0) {
+        p.kickTimer = 0.22;
         p.kickCooldown = 0.34;
       }
 
@@ -396,19 +411,19 @@ export function stepHeadSoccerFrame(
         p.onGround = false;
       }
 
-      // Arena walls (keep slightly inside goals so you can still scoop balls out)
-      const minX = 24 + HS_HEAD_RADIUS;
-      const maxX = HS_ARENA_W - 24 - HS_HEAD_RADIUS;
+      // Clamp cleanly outside goal interior so heads never jam inside side nets/posts
+      const minX = HS_GOAL_W + 4;
+      const maxX = HS_ARENA_W - HS_GOAL_W - 4;
       if (p.x < minX) {
         p.x = minX;
-        p.vx = 0;
+        if (p.vx < 0) p.vx = 0;
       } else if (p.x > maxX) {
         p.x = maxX;
-        p.vx = 0;
+        if (p.vx > 0) p.vx = 0;
       }
     }
 
-    // 2. Player vs Player bump
+    // 2. Player vs Player bump + anti-head-stacking escape
     const pvp = collideCircleCircle(
       sim.players[0].x,
       sim.players[0].y,
@@ -421,7 +436,7 @@ export function stepHeadSoccerFrame(
       sim.players[1].vy,
       HS_HEAD_RADIUS,
       1,
-      0.35
+      0.38
     );
     if (pvp.hit) {
       sim.players[0].x = pvp.ax;
@@ -432,6 +447,29 @@ export function stepHeadSoccerFrame(
       sim.players[1].y = pvp.by;
       sim.players[1].vx = pvp.bvx;
       sim.players[1].vy = pvp.bvy;
+
+      // Prevent vertical head-riding stack inside corners or midfield
+      const horizGap = Math.abs(sim.players[1].x - sim.players[0].x);
+      const vertGap = Math.abs(sim.players[1].y - sim.players[0].y);
+      if (horizGap < HS_HEAD_RADIUS * 1.15 && vertGap > 12) {
+        const pushDir = sim.players[0].x <= sim.players[1].x ? -1 : 1;
+        sim.players[0].x += pushDir * 8;
+        sim.players[1].x -= pushDir * 8;
+        sim.players[0].vx += pushDir * 145;
+        sim.players[1].vx -= pushDir * 145;
+        if (sim.players[0].y < sim.players[1].y) {
+          sim.players[0].vy = Math.min(sim.players[0].vy, -190);
+        } else {
+          sim.players[1].vy = Math.min(sim.players[1].vy, -190);
+        }
+      }
+
+      // Enforce goal bounds after PvP separation
+      for (let i = 0; i < 2; i += 1) {
+        const minX = HS_GOAL_W + 4;
+        const maxX = HS_ARENA_W - HS_GOAL_W - 4;
+        sim.players[i].x = Math.max(minX, Math.min(maxX, sim.players[i].x));
+      }
     }
 
     // 3. Ball physics
@@ -544,20 +582,21 @@ export function stepHeadSoccerFrame(
       if (hitHead.hit) {
         b.x = hitHead.bx;
         b.y = hitHead.by;
-        b.vx = hitHead.bvx + p.vx * 0.32;
-        b.vy = hitHead.bvy - (p.vy < -40 ? 90 : 35);
+        b.vx = hitHead.bvx + p.vx * 0.34;
+        b.vy = hitHead.bvy - (p.vy < -40 ? 95 : 40);
         b.lastTouchSide = i as 0 | 1;
+        sim.superCharge[i] = Math.min(100, sim.superCharge[i] + 16);
         events.headed = true;
       }
 
-      // Articulated Boot Kick
+      // Articulated Boot Kick + Super Tiro ⚡
       const bootDir = p.facing;
-      const swingProgress = p.kickTimer > 0 ? 1 - p.kickTimer / 0.2 : 0;
+      const swingProgress = p.kickTimer > 0 ? 1 - p.kickTimer / 0.22 : 0;
       const bootOffsetX = bootDir * (14 + Math.sin(swingProgress * Math.PI) * 24);
       const bootOffsetY = HS_HEAD_RADIUS - 2 - Math.sin(swingProgress * Math.PI) * 14;
       const bootX = p.x + bootOffsetX;
       const bootY = p.y + bootOffsetY;
-      const bootR = p.kickTimer > 0 ? 20 : 13;
+      const bootR = p.kickTimer > 0 ? 22 : 14;
 
       const dx = b.x - bootX;
       const dy = b.y - bootY;
@@ -569,9 +608,20 @@ export function stepHeadSoccerFrame(
         b.x = bootX + nx * (minD + 1);
         b.y = bootY + ny * (minD + 1);
         if (p.kickTimer > 0) {
-          b.vx = bootDir * 680 + p.vx * 0.45;
-          b.vy = -440 + Math.min(0, p.vy * 0.25);
-          b.angularVel = bootDir * 14;
+          const isSuper = Boolean(inputs[i].superKick) && sim.superCharge[i] >= 100;
+          if (isSuper) {
+            sim.superCharge[i] = 0;
+            b.vx = bootDir * 960;
+            b.vy = -210 + Math.min(0, p.vy * 0.15);
+            b.angularVel = bootDir * 28;
+            b.superTrail = 1.0;
+            events.superShot = true;
+          } else {
+            b.vx = bootDir * 695 + p.vx * 0.45;
+            b.vy = -445 + Math.min(0, p.vy * 0.25);
+            b.angularVel = bootDir * 14;
+            sim.superCharge[i] = Math.min(100, sim.superCharge[i] + 26);
+          }
           p.kickTimer = 0.04;
           b.lastTouchSide = i as 0 | 1;
           events.kicked = true;
@@ -585,8 +635,8 @@ export function stepHeadSoccerFrame(
 
     // Clamp max ball speed for stability
     const speed = Math.hypot(b.vx, b.vy);
-    if (speed > 1050) {
-      const k = 1050 / speed;
+    if (speed > 1120) {
+      const k = 1120 / speed;
       b.vx *= k;
       b.vy *= k;
     }
@@ -598,6 +648,7 @@ export function stepHeadSoccerFrame(
         sim.phase = 'goal';
         sim.goalBannerSide = 1;
         sim.goalPauseTimer = 1.6;
+        sim.netRipple = 1;
         events.goalScoredBy = 1;
         return events;
       }
@@ -606,6 +657,7 @@ export function stepHeadSoccerFrame(
         sim.phase = 'goal';
         sim.goalBannerSide = 0;
         sim.goalPauseTimer = 1.6;
+        sim.netRipple = 1;
         events.goalScoredBy = 0;
         return events;
       }
@@ -620,25 +672,29 @@ export function chooseHeadSoccerAiInput(
   side: 0 | 1 = 1
 ): HeadSoccerInput {
   const ai = sim.players[side];
+  const opp = sim.players[side === 0 ? 1 : 0];
   const b = sim.ball;
   const myGoalX = side === 0 ? HS_GOAL_W : HS_ARENA_W - HS_GOAL_W;
   const attackDir = side === 0 ? 1 : -1;
 
   // Target point behind the ball from our attacking side
-  const behindOffset = -attackDir * 24;
+  const behindOffset = -attackDir * 28;
   const desiredX =
     side === 1
-      ? Math.max(HS_GOAL_W + 45, Math.min(HS_ARENA_W - HS_GOAL_W - 20, b.x + behindOffset))
-      : Math.min(HS_ARENA_W - HS_GOAL_W - 45, Math.max(HS_GOAL_W + 20, b.x + behindOffset));
+      ? Math.max(HS_GOAL_W + 48, Math.min(HS_ARENA_W - HS_GOAL_W - 22, b.x + behindOffset))
+      : Math.min(HS_ARENA_W - HS_GOAL_W - 48, Math.max(HS_GOAL_W + 22, b.x + behindOffset));
 
-  // If ball threatens our goal, sprint back defensively
+  // If ball threatens our goal or drops into penalty box, sprint back to defend outside goal mouth
   const ballThreat =
-    side === 1 ? b.x > HS_ARENA_W - 220 && ai.x < b.x : b.x < 220 && ai.x > b.x;
+    side === 1 ? b.x > HS_ARENA_W - 230 && ai.x < b.x : b.x < 230 && ai.x > b.x;
 
   let left = false;
   let right = false;
   if (ballThreat) {
-    const defX = side === 1 ? Math.min(HS_ARENA_W - 85, b.x + 36) : Math.max(85, b.x - 36);
+    const defX =
+      side === 1
+        ? Math.max(HS_GOAL_W + 24, Math.min(HS_ARENA_W - HS_GOAL_W - 10, b.x + 36))
+        : Math.min(HS_ARENA_W - HS_GOAL_W - 24, Math.max(HS_GOAL_W + 10, b.x - 36));
     if (ai.x < defX - 10) right = true;
     else if (ai.x > defX + 10) left = true;
   } else {
@@ -647,19 +703,24 @@ export function chooseHeadSoccerAiInput(
   }
 
   const distToBall = Math.hypot(b.x - ai.x, b.y - ai.y);
-  const ballAbove = b.y < ai.y - 24 && Math.abs(b.x - ai.x) < 88 && b.y > 160;
-  const jump = ballAbove && ai.onGround && Math.abs(myGoalX - ai.x) > 40;
+  const oppBlocking = Math.abs(opp.x - ai.x) < HS_HEAD_RADIUS * 1.6 && opp.y <= ai.y;
+  const ballAbove = b.y < ai.y - 24 && Math.abs(b.x - ai.x) < 88 && b.y > 155;
+  const jump = ballAbove && !oppBlocking && ai.onGround && Math.abs(myGoalX - ai.x) > 28;
 
   const ballInKickZone =
-    distToBall < 66 &&
-    (side === 1 ? b.x <= ai.x + 8 : b.x >= ai.x - 8) &&
+    distToBall < 68 &&
+    (side === 1 ? b.x <= ai.x + 12 : b.x >= ai.x - 12) &&
     b.y > HS_GROUND_Y - 125;
+
+  const superReady = (sim.superCharge?.[side] ?? 0) >= 100;
+  const goodSuperAngle = side === 1 ? ai.x > 160 && ai.x < HS_ARENA_W - 140 : ai.x < HS_ARENA_W - 160;
 
   return {
     left,
     right,
     jump,
     kick: ballInKickZone,
+    superKick: ballInKickZone && superReady && goodSuperAngle,
   };
 }
 
