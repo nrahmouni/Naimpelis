@@ -89,11 +89,11 @@ export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) 
       renderer,
       'assets/games/hdri/studio_small_09_1k.hdr',
       isSoftwareGl,
-      { envIntensity: 1.0 }
+      { envIntensity: 0.52 }
     );
 
-    scene.add(new THREE.HemisphereLight('#c7d2fe', '#1e1b4b', 0.85));
-    const pinSpot = new THREE.SpotLight('#fef3c7', 3.6, 36, Math.PI / 4, 0.45, 1);
+    scene.add(new THREE.HemisphereLight('#c7d2fe', '#1e1b4b', 0.56));
+    const pinSpot = new THREE.SpotLight('#fef3c7', 2.2, 36, Math.PI / 4, 0.45, 1);
     pinSpot.position.set(0, 9.5, -5.5);
     pinSpot.target.position.set(0, 0.4, -8.5);
     if (!isSoftwareGl) {
@@ -102,7 +102,7 @@ export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) 
     }
     scene.add(pinSpot, pinSpot.target);
 
-    const approachLight = new THREE.DirectionalLight('#60a5fa', 1.3);
+    const approachLight = new THREE.DirectionalLight('#60a5fa', 0.85);
     approachLight.position.set(6, 8, 12);
     scene.add(approachLight);
 
@@ -345,7 +345,7 @@ export const Bowling3DViewport: React.FC<Bowling3DViewportProps> = ({ simRef }) 
       width: initW,
       height: initH,
       isSoftwareGl,
-      bloom: { strength: 0.3, radius: 0.45, threshold: 0.88 },
+      bloom: { strength: 0.16, radius: 0.24, threshold: 1.24 },
       bokeh: true,
       smaa: true,
     });

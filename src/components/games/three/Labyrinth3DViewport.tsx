@@ -75,11 +75,11 @@ export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef
       renderer,
       'assets/games/hdri/studio_small_09_1k.hdr',
       isSoftwareGl,
-      { envIntensity: 1.05 }
+      { envIntensity: 0.55 }
     );
 
-    scene.add(new THREE.HemisphereLight('#e0f2fe', '#1e1b4b', 0.88));
-    const keyLight = new THREE.DirectionalLight('#fffbeb', 2.28);
+    scene.add(new THREE.HemisphereLight('#e0f2fe', '#1e1b4b', 0.56));
+    const keyLight = new THREE.DirectionalLight('#fffbeb', 1.48);
     keyLight.position.set(7, 15, 9);
     if (!isSoftwareGl) {
       keyLight.castShadow = true;
@@ -94,7 +94,7 @@ export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef
     }
     scene.add(keyLight);
 
-    const rimLight = new THREE.DirectionalLight('#38bdf8', 0.95);
+    const rimLight = new THREE.DirectionalLight('#38bdf8', 0.58);
     rimLight.position.set(-9, 6, -8);
     scene.add(rimLight);
 
@@ -347,7 +347,7 @@ export const Labyrinth3DViewport: React.FC<Labyrinth3DViewportProps> = ({ simRef
       width: initW,
       height: initH,
       isSoftwareGl,
-      bloom: { strength: 0.34, radius: 0.45, threshold: 0.85 },
+      bloom: { strength: 0.14, radius: 0.22, threshold: 1.24 },
       ssao: true,
       smaa: true,
     });

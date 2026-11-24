@@ -107,7 +107,7 @@ export function createRacing3dEngine(
   );
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.12;
+  renderer.toneMappingExposure = 0.88;
   if (!isSoftwareGl) {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -145,13 +145,13 @@ export function createRacing3dEngine(
     pmrem = null;
   }
 
-  // Upgrade to photorealistic Poly Haven 1K dusk HDRI reflections asynchronously on GPU devices
+  // Upgrade to photorealistic Poly Haven 1K dusk HDRI reflections (keep crisp skyDomeTex as background to avoid white HDR sky bloom)
   const hdriHandle = applyPolyHavenHdri(
     scene,
     renderer,
     'assets/games/hdri/evening_road_01_1k.hdr',
     isSoftwareGl,
-    { setBackground: true, backgroundBlur: 0.05, envIntensity: 1.05 }
+    { setBackground: false, envIntensity: 0.42 }
   );
 
   const camera = new THREE.PerspectiveCamera(
@@ -167,9 +167,9 @@ export function createRacing3dEngine(
     800
   );
 
-  // Lighting rig
-  const hemiLight = new THREE.HemisphereLight(0xa5b4fc, 0x0f172a, 0.72);
-  const keyLight = new THREE.DirectionalLight(0xfff1d6, 2.2);
+  // Lighting rig (balanced dusk contrast without blown-out highlights)
+  const hemiLight = new THREE.HemisphereLight(0xa5b4fc, 0x0f172a, 0.44);
+  const keyLight = new THREE.DirectionalLight(0xfff1d6, 1.32);
   keyLight.position.set(110, 140, 80);
   if (!isSoftwareGl) {
     keyLight.castShadow = true;
@@ -181,21 +181,21 @@ export function createRacing3dEngine(
     keyLight.shadow.camera.top = 220;
     keyLight.shadow.camera.bottom = -220;
   }
-  const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.9);
+  const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.45);
   rimLight.position.set(-90, 45, -110);
   scene.add(hemiLight, keyLight, rimLight);
 
   const circuit = buildGpCircuitScene(scene, isSoftwareGl);
   const audio = new RacingSoundEngine();
 
-  // GPU Post-Processing (MSAA + SMAA + SpeedRadial + Finish Bokeh + Bloom) + Dynamic Resolution Scaling
+  // GPU Post-Processing (MSAA + SMAA + SpeedRadial + Finish Bokeh + restrained HDR Bloom) + Dynamic Resolution Scaling
   const w0 = Math.max(1, container.clientWidth || window.innerWidth || 1280);
   const h0 = Math.max(1, container.clientHeight || window.innerHeight || 720);
   const composer: ProPostComposerHandle | null = createProPostComposer(renderer, scene, camera, {
     width: w0,
     height: h0,
     isSoftwareGl,
-    bloom: { strength: 0.3, radius: 0.35, threshold: 0.92 },
+    bloom: { strength: 0.14, radius: 0.22, threshold: 1.28 },
     speedRadial: true,
     bokeh: true,
     smaa: true,

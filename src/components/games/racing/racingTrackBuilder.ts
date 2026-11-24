@@ -100,13 +100,13 @@ function createAsphaltTexture(): THREE.CanvasTexture {
   ctx.fillStyle = grooveGrad;
   ctx.fillRect(0, 0, 512, 512);
 
-  // White boundary lines
-  ctx.fillStyle = '#e2e8f0';
+  // Crisp off-white boundary lines (avoid HDR bloom glare)
+  ctx.fillStyle = '#cbd5e1';
   ctx.fillRect(18, 0, 12, 512);
   ctx.fillRect(482, 0, 12, 512);
 
   // Dashed center line
-  ctx.fillStyle = 'rgba(248, 250, 252, 0.72)';
+  ctx.fillStyle = 'rgba(226, 232, 240, 0.64)';
   for (let y = 16; y < 512; y += 64) {
     ctx.fillRect(251, y, 10, 34);
   }
@@ -203,8 +203,8 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   const roadIdx: number[] = [];
 
   const curbGeo = new THREE.BoxGeometry(1.15, 0.14, totalLength / SAMPLE_COUNT + 0.35);
-  const curbRedMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.65 });
-  const curbWhiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.65 });
+  const curbRedMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.78 });
+  const curbWhiteMat = new THREE.MeshStandardMaterial({ color: 0xcbd5e1, roughness: 0.8 });
   disposables.push(curbGeo, curbRedMat, curbWhiteMat);
 
   const redMatrices: THREE.Matrix4[] = [];

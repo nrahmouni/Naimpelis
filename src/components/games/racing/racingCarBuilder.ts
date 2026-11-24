@@ -75,25 +75,25 @@ export function buildFormulaGtCar(
   const paintMat = trackMat(
     new THREE.MeshPhysicalMaterial({
       color: primaryHex,
-      metalness: 0.45,
-      roughness: 0.22,
-      clearcoat: 1.0,
-      clearcoatRoughness: 0.08,
+      metalness: 0.38,
+      roughness: 0.28,
+      clearcoat: 0.65,
+      clearcoatRoughness: 0.16,
     })
   );
   applyFresnelRimShader(paintMat, {
     colorHex: accentHex,
-    power: 3.0,
-    intensity: options?.isPlayer ? 0.52 : 0.36,
+    power: 3.4,
+    intensity: options?.isPlayer ? 0.24 : 0.18,
   });
 
   const accentMat = trackMat(
     new THREE.MeshStandardMaterial({
       color: accentHex,
       emissive: accentHex,
-      emissiveIntensity: options?.isPlayer ? 0.38 : 0.2,
+      emissiveIntensity: options?.isPlayer ? 0.22 : 0.12,
       metalness: 0.35,
-      roughness: 0.3,
+      roughness: 0.35,
     })
   );
 

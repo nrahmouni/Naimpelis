@@ -155,11 +155,11 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
       renderer,
       'assets/games/hdri/puresky_1k.hdr',
       isSoftwareGl,
-      { setBackground: true, backgroundBlur: 0.05, envIntensity: 0.92 }
+      { setBackground: false, envIntensity: 0.45 }
     );
 
-    scene.add(new THREE.HemisphereLight('#e0f2fe', '#14532d', 0.92));
-    const sun = new THREE.DirectionalLight('#fffbeb', 2.25);
+    scene.add(new THREE.HemisphereLight('#e0f2fe', '#14532d', 0.52));
+    const sun = new THREE.DirectionalLight('#fffbeb', 1.45);
     sun.position.set(11, 19, 13);
     if (!isSoftwareGl) {
       sun.castShadow = true;
@@ -411,7 +411,7 @@ export const Tennis3DViewport: React.FC<Tennis3DViewportProps> = ({ simRef }) =>
       width: initW,
       height: initH,
       isSoftwareGl,
-      bloom: { strength: 0.28, radius: 0.4, threshold: 0.9 },
+      bloom: { strength: 0.12, radius: 0.2, threshold: 1.28 },
       ssao: true,
       smaa: true,
     });

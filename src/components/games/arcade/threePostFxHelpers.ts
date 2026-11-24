@@ -503,7 +503,7 @@ export const SpeedRadialShader = {
         float streak = sin(ang * 42.0 + uTime * 22.0) * sin(ang * 19.0 - uTime * 15.0);
         float lineMask = smoothstep(0.68, 0.96, streak) * smoothstep(0.36, 0.74, dist);
         vec3 streakCol = mix(vec3(0.22, 0.74, 0.98), vec3(0.98, 0.8, 0.14), uBoost);
-        col += streakCol * lineMask * speedActive * 0.36;
+        col += streakCol * lineMask * speedActive * 0.18;
       }
 
       if (uHitFlash > 0.01) {
@@ -590,8 +590,11 @@ export function createProPostComposer(
       }
     }
 
-    const bloomCfg = opts.bloom ?? { strength: 0.34, radius: 0.42, threshold: 0.86 };
-    bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), bloomCfg.strength, bloomCfg.radius, bloomCfg.threshold);
+    const bloomCfg = opts.bloom ?? { strength: 0.14, radius: 0.22, threshold: 1.25 };
+    const safeStrength = Math.min(bloomCfg.strength, 0.22);
+    const safeRadius = Math.min(bloomCfg.radius, 0.28);
+    const safeThreshold = Math.max(bloomCfg.threshold, 1.18);
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), safeStrength, safeRadius, safeThreshold);
     composer.addPass(bloomPass);
 
     if (opts.speedRadial) {

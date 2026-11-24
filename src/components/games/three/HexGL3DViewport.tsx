@@ -321,11 +321,11 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
       renderer,
       'assets/games/hdri/moonless_golf_1k.hdr',
       isSoftwareGl,
-      { envIntensity: 0.95 }
+      { envIntensity: 0.5 }
     );
-    scene.add(new THREE.HemisphereLight('#38bdf8', '#1e1b4b', 0.9));
+    scene.add(new THREE.HemisphereLight('#38bdf8', '#1e1b4b', 0.58));
 
-    const keyLight = new THREE.DirectionalLight('#e0f2fe', 1.9);
+    const keyLight = new THREE.DirectionalLight('#e0f2fe', 1.25);
     keyLight.position.set(8, 16, 10);
     if (!isSoftwareGl) {
       keyLight.castShadow = true;
@@ -339,7 +339,7 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
     }
     scene.add(keyLight);
 
-    const rimLight = new THREE.DirectionalLight('#a855f7', 1.4);
+    const rimLight = new THREE.DirectionalLight('#a855f7', 0.9);
     rimLight.position.set(-10, 6, -24);
     scene.add(rimLight);
 
@@ -513,7 +513,7 @@ export const HexGL3DViewport: React.FC<HexGL3DViewportProps> = ({ simRef, onPoin
       width: initW,
       height: initH,
       isSoftwareGl,
-      bloom: { strength: 0.52, radius: 0.45, threshold: 0.78 },
+      bloom: { strength: 0.22, radius: 0.26, threshold: 1.18 },
       speedRadial: true,
       smaa: true,
     });

@@ -133,11 +133,11 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
       renderer,
       'assets/games/hdri/evening_road_01_1k.hdr',
       isSoftwareGl,
-      { setBackground: true, backgroundBlur: 0.08, envIntensity: 0.95 }
+      { setBackground: false, envIntensity: 0.45 }
     );
 
-    scene.add(new THREE.HemisphereLight('#bae6fd', '#14532d', 0.85));
-    const keyLight = new THREE.DirectionalLight('#fff7ed', 2.35);
+    scene.add(new THREE.HemisphereLight('#bae6fd', '#14532d', 0.5));
+    const keyLight = new THREE.DirectionalLight('#fff7ed', 1.45);
     keyLight.position.set(11, 16, 13);
     if (!isSoftwareGl) {
       keyLight.castShadow = true;
@@ -152,7 +152,7 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
     }
     scene.add(keyLight);
 
-    const rimLight = new THREE.DirectionalLight('#38bdf8', 1.28);
+    const rimLight = new THREE.DirectionalLight('#38bdf8', 0.65);
     rimLight.position.set(-12, 9, -10);
     scene.add(rimLight);
 
@@ -491,7 +491,7 @@ export const Penalty3DViewport: React.FC<Penalty3DViewportProps> = ({
       width: initW,
       height: initH,
       isSoftwareGl,
-      bloom: { strength: 0.34, radius: 0.45, threshold: 0.88 },
+      bloom: { strength: 0.14, radius: 0.22, threshold: 1.28 },
       bokeh: true,
       smaa: true,
     });

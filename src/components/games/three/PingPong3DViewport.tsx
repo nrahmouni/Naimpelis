@@ -137,11 +137,11 @@ export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
       renderer,
       'assets/games/hdri/studio_small_09_1k.hdr',
       isSoftwareGl,
-      { envIntensity: 0.95 }
+      { envIntensity: 0.52 }
     );
-    scene.add(new THREE.HemisphereLight('#7dd3fc', '#0f172a', 0.85));
+    scene.add(new THREE.HemisphereLight('#7dd3fc', '#0f172a', 0.55));
 
-    const overheadKey = new THREE.DirectionalLight('#ffffff', 2.3);
+    const overheadKey = new THREE.DirectionalLight('#ffffff', 1.48);
     overheadKey.position.set(3.5, 8.5, 4.2);
     if (!isSoftwareGl) {
       overheadKey.castShadow = true;
@@ -156,9 +156,9 @@ export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
     }
     scene.add(overheadKey);
 
-    const cyanRim = new THREE.DirectionalLight('#22d3ee', 1.18);
+    const cyanRim = new THREE.DirectionalLight('#22d3ee', 0.68);
     cyanRim.position.set(-5, 3, -4);
-    const roseRim = new THREE.DirectionalLight('#fb7185', 1.18);
+    const roseRim = new THREE.DirectionalLight('#fb7185', 0.68);
     roseRim.position.set(5, 3, 4);
     scene.add(cyanRim, roseRim);
 
@@ -367,7 +367,7 @@ export const PingPong3DViewport: React.FC<PingPong3DViewportProps> = ({
       width: initW,
       height: initH,
       isSoftwareGl,
-      bloom: { strength: 0.36, radius: 0.42, threshold: 0.85 },
+      bloom: { strength: 0.16, radius: 0.24, threshold: 1.24 },
       ssao: true,
       smaa: true,
     });
