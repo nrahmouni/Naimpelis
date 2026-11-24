@@ -34,6 +34,8 @@ const ACTION_SPRITE_LIST = [
   'assets/games/bomberman/player_01.png',
   'assets/games/bomberman/player_11.png',
   'assets/games/bomberman/player_17.png',
+  'assets/games/puzzle/element_blue_square_glossy.png',
+  'assets/games/space/darkPurple.png',
   'assets/games/tappy/background.png',
   'assets/games/tappy/groundGrass.png',
   'assets/games/tappy/rockGrass.png',
@@ -172,11 +174,12 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
         commitScore(curScore);
         setSubLabel(`Vidas ${lives} · Nivel ${level}`);
       };
-      const isWall = (gx: number, gy: number) => {
+      const isWall = (gx: number, gy: number, allowGate = false) => {
         const tx = ((Math.round(gx) % COLS) + COLS) % COLS;
         const ty = Math.round(gy);
         if (ty < 0 || ty >= ROWS) return true;
-        return grid[ty][tx] === '#';
+        const ch = grid[ty][tx];
+        return ch === '#' || (!allowGate && ch === '-');
       };
 
       actionsRef.current = {
@@ -192,27 +195,56 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
       let last = performance.now();
       const loop = (now: number) => {
         if (!alive) return;
-        const dt = Math.min(0.05, (now - last) / 1000);
+        const dt = Math.min(0.04, (now - last) / 1000);
         last = now;
         pac.mouth += dt * 12;
 
         if (!dead) {
           if (frightTimer > 0) frightTimer = Math.max(0, frightTimer - dt);
-          const speed = 5.8 + Math.min(2.2, (level - 1) * 0.35);
+          const speed = 5.6 + Math.min(2.0, (level - 1) * 0.35);
           const step = dt * speed;
+
+          // Instant 180 reversal on the current corridor
+          if ((pac.ndx !== 0 && pac.ndx === -pac.dx) || (pac.ndy !== 0 && pac.ndy === -pac.dy)) {
+            pac.dx = pac.ndx;
+            pac.dy = pac.ndy;
+          }
+
           const rx = Math.round(pac.x);
           const ry = Math.round(pac.y);
-          if (Math.abs(pac.x - rx) < 0.14 && Math.abs(pac.y - ry) < 0.14) {
-            if (!isWall(rx + pac.ndx, ry + pac.ndy)) {
-              pac.x = rx; pac.y = ry; pac.dx = pac.ndx; pac.dy = pac.ndy;
+          const nx = pac.x + pac.dx * step;
+          const ny = pac.y + pac.dy * step;
+          const crossedX = (pac.x <= rx && nx >= rx) || (pac.x >= rx && nx <= rx);
+          const crossedY = (pac.y <= ry && ny >= ry) || (pac.y >= ry && ny <= ry);
+          const nearCenter = Math.abs(pac.x - rx) <= Math.max(0.22, step) && Math.abs(pac.y - ry) <= Math.max(0.22, step);
+
+          if ((pac.dx === 0 && pac.dy === 0) || nearCenter || (pac.dx !== 0 && crossedX) || (pac.dy !== 0 && crossedY)) {
+            if ((pac.ndx !== pac.dx || pac.ndy !== pac.dy) && !isWall(rx + pac.ndx, ry + pac.ndy)) {
+              pac.x = rx;
+              pac.y = ry;
+              pac.dx = pac.ndx;
+              pac.dy = pac.ndy;
             } else if (isWall(rx + pac.dx, ry + pac.dy)) {
-              pac.x = rx; pac.y = ry; pac.dx = 0; pac.dy = 0;
+              pac.x = rx;
+              pac.y = ry;
+              pac.dx = 0;
+              pac.dy = 0;
             }
           }
-          pac.x += pac.dx * step;
-          pac.y += pac.dy * step;
-          if (pac.x < -0.5) pac.x = COLS - 0.5;
-          if (pac.x > COLS - 0.5) pac.x = -0.5;
+
+          const tryNextX = pac.x + pac.dx * step;
+          const tryNextY = pac.y + pac.dy * step;
+          if (!isWall(Math.round(tryNextX + pac.dx * 0.45), Math.round(tryNextY + pac.dy * 0.45))) {
+            pac.x = tryNextX;
+            pac.y = tryNextY;
+          } else {
+            pac.x = Math.round(pac.x);
+            pac.y = Math.round(pac.y);
+            pac.dx = 0;
+            pac.dy = 0;
+          }
+          if (pac.x < -0.45) pac.x = COLS - 0.55;
+          if (pac.x > COLS - 0.45) pac.x = -0.45;
 
           const cx = ((Math.round(pac.x) % COLS) + COLS) % COLS;
           const cy = Math.round(pac.y);
@@ -227,14 +259,14 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
             if (dotsLeft <= 0) { level += 1; curScore += 500; initMap(true); }
           }
 
-          const gStep = frightTimer > 0 ? step * 0.65 : step * 0.85;
+          const gStep = frightTimer > 0 ? step * 0.62 : step * 0.82;
           for (const g of ghosts) {
             const grx = Math.round(g.x);
             const gry = Math.round(g.y);
-            if (Math.abs(g.x - grx) < 0.15 && Math.abs(g.y - gry) < 0.15) {
+            if (Math.abs(g.x - grx) <= Math.max(0.22, gStep) && Math.abs(g.y - gry) <= Math.max(0.22, gStep)) {
               g.x = grx; g.y = gry;
               const dirs: Array<[number, number]> = [[1, 0], [-1, 0], [0, 1], [0, -1]];
-              const valid = dirs.filter(([dx, dy]) => !(dx === -g.dx && dy === -g.dy) && !isWall(grx + dx, gry + dy));
+              const valid = dirs.filter(([dx, dy]) => !(dx === -g.dx && dy === -g.dy) && !isWall(grx + dx, gry + dy, true));
               if (!valid.length) valid.push([-g.dx, -g.dy]);
               valid.sort((a, b) => {
                 const da = (grx + a[0] - pac.x) ** 2 + (gry + a[1] - pac.y) ** 2;
@@ -246,8 +278,8 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
             }
             g.x += g.dx * gStep;
             g.y += g.dy * gStep;
-            if (g.x < -0.5) g.x = COLS - 0.5;
-            if (g.x > COLS - 0.5) g.x = -0.5;
+            if (g.x < -0.45) g.x = COLS - 0.55;
+            if (g.x > COLS - 0.45) g.x = -0.45;
             if (Math.hypot(g.x - pac.x, g.y - pac.y) < 0.65) {
               if (frightTimer > 0) {
                 curScore += 200; commitScore(curScore); g.x = 9; g.y = 7;
@@ -263,22 +295,30 @@ export const ArcadeActionStage: React.FC<ArcadeActionStageProps> = ({
           }
         }
 
-        ctx.fillStyle = '#050812';
-        ctx.fillRect(0, 0, 960, 540);
+        if (!drawArcadeTiledBg(ctx, 'assets/games/space/darkPurple.png', 960, 540, 0, 0)) {
+          ctx.fillStyle = '#050812';
+          ctx.fillRect(0, 0, 960, 540);
+        } else {
+          ctx.fillStyle = 'rgba(4, 7, 18, 0.72)';
+          ctx.fillRect(0, 0, 960, 540);
+        }
         for (let r = 0; r < ROWS; r += 1) {
           for (let c = 0; c < COLS; c += 1) {
             const x = OX + c * CELL;
             const y = OY + r * CELL;
             if (grid[r][c] === '#') {
-              ctx.fillStyle = '#1D4ED8';
-              ctx.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
-              ctx.fillStyle = '#0B1738';
-              ctx.fillRect(x + 5, y + 5, CELL - 10, CELL - 10);
+              if (!drawArcadeSpriteRect(ctx, 'assets/games/puzzle/element_blue_square_glossy.png', x + 1, y + 1, CELL - 2, CELL - 2)) {
+                ctx.fillStyle = '#1D4ED8';
+                ctx.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
+              }
+            } else if (grid[r][c] === '-') {
+              ctx.fillStyle = '#EC4899';
+              ctx.fillRect(x + 2, y + CELL / 2 - 2, CELL - 4, 4);
             } else if (grid[r][c] === '.') {
               ctx.fillStyle = '#FDE68A';
-              ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 3.2, 0, Math.PI * 2); ctx.fill();
+              ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 3.6, 0, Math.PI * 2); ctx.fill();
             } else if (grid[r][c] === 'O') {
-              const pr = 16 + Math.sin(pac.mouth * 0.7) * 3;
+              const pr = 18 + Math.sin(pac.mouth * 0.7) * 3;
               if (!drawArcadeSprite(ctx, 'assets/games/puzzle/particleStar.png', x + CELL / 2, y + CELL / 2, pr, pr, now * 0.004)) {
                 ctx.fillStyle = '#FACC15';
                 ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 7.5, 0, Math.PI * 2); ctx.fill();

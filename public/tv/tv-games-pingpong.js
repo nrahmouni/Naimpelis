@@ -54,25 +54,15 @@ function startTvPingPongGame(scr) {
   var roomId = (typeof currentRoomId === 'string' && currentRoomId)
     ? currentRoomId
     : ('pp-' + (typeof pairingCode === 'string' && pairingCode ? pairingCode : ('tv' + Math.floor(1000 + Math.random() * 9000))));
-  var origin = (typeof getTvRacingPublicOrigin === 'function')
-    ? getTvRacingPublicOrigin()
-    : (window.location.origin || ('https://' + (window.location.host || 'localhost')));
-  var ctrlUrl = origin + '/volante?room=' + encodeURIComponent(roomId) + '&game=pingpong';
-  var qrMarkup = typeof buildQrSvgMarkup === 'function' ? buildQrSvgMarkup(ctrlUrl) : '';
-
   scr.innerHTML =
     '<div class="tv-game-topbar"><div class="tv-game-top-left">' +
     '<button type="button" id="btn-game-back" class="tv-btn" tabindex="0">Volver (Return)</button>' +
     '<div class="tv-game-top-title">🏓 Ping Pong Pro 2P · Raqueta Móvil</div></div><div class="tv-game-top-right">' +
-    '<div class="tv-game-hud-pill accent-purple" id="pp-gyro-pill">📱 Escanea QR (1 o 2 Móviles)</div>' +
+    '<div class="tv-game-hud-pill accent-purple" id="pp-gyro-pill">📱 Esperando Móviles</div>' +
     '<div class="tv-game-hud-pill accent-green" id="pp-score-pill">J1 0 - 0 CPU</div>' +
     '<div class="tv-game-hud-pill" id="pp-rally-pill">RALLY: 0</div></div></div>' +
-    '<div class="tv-game-arena">' +
+    '<div class="tv-game-arena" id="pp-arena">' +
     '<canvas id="tv-pp-canvas" class="tv-game-canvas" width="920" height="520"></canvas>' +
-    '<div class="tv-game-qr-card" style="width:170px;padding:9px;top:12px;right:12px;">' +
-    '<div class="tv-game-qr-title" style="font-size:11px;">RAQUETA MÓVIL 2P</div>' +
-    '<div class="tv-game-qr-box" style="width:106px;height:106px;margin:5px auto;">' + qrMarkup + '</div>' +
-    '<div class="tv-game-qr-code" style="font-size:11px;">Sala: ' + escapeHtml(roomId) + '</div></div>' +
     '<div class="tv-game-finish-overlay" id="pp-finish-ov"><div class="tv-game-finish-card">' +
     '<div class="tv-game-finish-title" id="pp-fin-title">🏆 ¡VICTORIA!</div>' +
     '<div class="tv-game-finish-sub" id="pp-fin-sub">Marcador final</div>' +
@@ -81,7 +71,7 @@ function startTvPingPongGame(scr) {
     '<button type="button" id="btn-pp-exit" class="tv-btn" tabindex="0">Salir al Menú</button>' +
     '</div></div></div></div>' +
     '<div class="tv-game-controls-hint">' +
-    '<span>Móvil (Horizontal): Mueve muñeca ◀ ▶ + Golpe Smash · 2 Móviles = Duelo J1 vs J2</span>' +
+    '<span>Móvil (Vertical): Mueve muñeca ◀ ▶ + Golpe Smash · 2 Móviles = Duelo J1 vs J2</span>' +
     '<span>Mando TV: ◀ ▶ Mover pala · ▲/▼ Profundidad · OK Smash · Primero a 11 puntos</span></div>';
 
   document.getElementById('btn-game-back').onclick = closeTvGame;
@@ -89,12 +79,16 @@ function startTvPingPongGame(scr) {
 
   var canvas = document.getElementById('tv-pp-canvas');
   var ctx = canvas.getContext('2d');
+  var arenaEl = document.getElementById('pp-arena');
   var scorePill = document.getElementById('pp-score-pill');
   var rallyPill = document.getElementById('pp-rally-pill');
   var gyroPill = document.getElementById('pp-gyro-pill');
   var finOv = document.getElementById('pp-finish-ov');
   var finTitle = document.getElementById('pp-fin-title');
   var finSub = document.getElementById('pp-fin-sub');
+  var ppLobby = typeof window.createTvDualQrLobby === 'function'
+    ? window.createTvDualQrLobby(arenaEl, { roomId: roomId, gameId: 'pingpong', title: '🏓 Ping Pong Pro 2P · QR J1 y J2' })
+    : null;
 
   function connectPpWs() {
     if (!window.WebSocket || typeof getTvRacingWsUrl !== 'function') return;
@@ -118,6 +112,7 @@ function startTvPingPongGame(scr) {
           var msg = JSON.parse(ev.data);
           if (msg.type === 'GYRO_PEER_STATUS' && msg.payload) {
             var list = msg.payload.controllers || [];
+            if (ppLobby) ppLobby.onStatus(list);
             tvPpHasP1 = false;
             tvPpHasP2 = false;
             for (var ci = 0; ci < list.length; ci++) {
@@ -130,7 +125,7 @@ function startTvPingPongGame(scr) {
                 gyroPill.textContent = tvPpHasP2 ? '📱 2 Móviles (J1 vs J2)' : '📱 J1 Móvil Conectado';
               } else {
                 gyroPill.className = 'tv-game-hud-pill accent-purple';
-                gyroPill.textContent = '📱 Escanea QR (1 o 2 Móviles)';
+                gyroPill.textContent = '📱 Esperando Móviles';
               }
             }
           } else if (msg.type === 'GYRO_INPUT_RELAY' && msg.payload) {
@@ -249,7 +244,7 @@ function startTvPingPongGame(scr) {
       if (st.rings[ri].life <= 0) st.rings.splice(ri, 1);
     }
 
-    if (!st.over) {
+    if (!st.over && (!ppLobby || ppLobby.isReady())) {
       var prevP1x = st.p1.x;
       if (useG1) {
         var tx1 = Math.max(-1.05, Math.min(1.05, tvPpGyro1.steer * 1.15));
@@ -336,16 +331,24 @@ function startTvPingPongGame(scr) {
     var bg = ctx.createLinearGradient(0, 0, 0, H);
     bg.addColorStop(0, '#040814'); bg.addColorStop(0.55, '#0b1530'); bg.addColorStop(1, '#050812');
     ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    var spot = ctx.createRadialGradient(W * 0.5, H * 0.42, 40, W * 0.5, H * 0.46, W * 0.55);
+    spot.addColorStop(0, 'rgba(34, 211, 238, 0.14)'); spot.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = spot; ctx.fillRect(0, 0, W, H);
+
     var tl = proj(-1, -1), tr = proj(1, -1), bl = proj(-1, 1), br = proj(1, 1);
-    ctx.fillStyle = '#0c2340';
-    ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(br.x, br.y); ctx.lineTo(br.x, br.y + 18); ctx.lineTo(bl.x, bl.y + 18); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath(); ctx.moveTo(bl.x + 14, bl.y + 20); ctx.lineTo(br.x - 14, br.y + 20); ctx.lineTo(br.x - 24, br.y + 42); ctx.lineTo(bl.x + 24, bl.y + 42); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#0F2942';
+    ctx.beginPath(); ctx.moveTo(bl.x, bl.y); ctx.lineTo(br.x, br.y); ctx.lineTo(br.x, br.y + 20); ctx.lineTo(bl.x, bl.y + 20); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#334155'; ctx.lineWidth = 2; ctx.stroke();
+
     var tGrad = ctx.createLinearGradient(0, T_TOP, 0, T_BOT);
-    tGrad.addColorStop(0, '#09436b'); tGrad.addColorStop(0.5, '#0d5b8f'); tGrad.addColorStop(1, '#083a5e');
+    tGrad.addColorStop(0, '#09436b'); tGrad.addColorStop(0.5, '#0e669e'); tGrad.addColorStop(1, '#083a5e');
     ctx.fillStyle = tGrad;
     ctx.beginPath(); ctx.moveTo(tl.x, tl.y); ctx.lineTo(tr.x, tr.y); ctx.lineTo(br.x, br.y); ctx.lineTo(bl.x, bl.y); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 4; ctx.stroke();
+    ctx.strokeStyle = '#F8FAFC'; ctx.lineWidth = 4; ctx.stroke();
     var mT = proj(0, -1), mB = proj(0, 1);
-    ctx.strokeStyle = 'rgba(255,255,255,0.48)'; ctx.lineWidth = 2.5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.52)'; ctx.lineWidth = 2.5;
     ctx.beginPath(); ctx.moveTo(mT.x, mT.y); ctx.lineTo(mB.x, mB.y); ctx.stroke();
 
     for (var r2 = 0; r2 < st.rings.length; r2++) {
@@ -355,12 +358,24 @@ function startTvPingPongGame(scr) {
     }
     ctx.globalAlpha = 1;
 
-    var p2P = proj(st.p2.x, st.p2.y, 0.08);
-    ctx.fillStyle = '#E11D48'; ctx.strokeStyle = st.p2.smashT > 0 ? '#FACC15' : '#FDA4AF'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.ellipse(p2P.x, p2P.y, 44 * p2P.scale, 19 * p2P.scale, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    function drawPaddle(nx, ny, mainCol, rimCol, woodCol, handleDown, smashT, big) {
+      var sh = proj(nx, ny, 0), p = proj(nx, ny, 0.08), rx = (big ? 50 : 44) * p.scale, ry = (big ? 22 : 19) * p.scale;
+      ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.beginPath(); ctx.ellipse(sh.x, sh.y + 4, rx * 0.9, ry * 0.65, 0, 0, Math.PI * 2); ctx.fill();
+      if (smashT > 0) { ctx.strokeStyle = 'rgba(250,204,21,0.55)'; ctx.lineWidth = 5; ctx.beginPath(); ctx.ellipse(p.x, p.y, rx + 7, ry + 5, 0, 0, Math.PI * 2); ctx.stroke(); }
+      ctx.fillStyle = woodCol; ctx.fillRect(p.x - 6 * p.scale, handleDown ? p.y + ry * 0.72 : p.y - ry * 1.55, 12 * p.scale, 18 * p.scale);
+      var rGrad = ctx.createRadialGradient(p.x - rx * 0.3, p.y - ry * 0.35, 3, p.x, p.y, rx);
+      rGrad.addColorStop(0, rimCol); rGrad.addColorStop(0.65, mainCol); rGrad.addColorStop(1, '#0F172A');
+      ctx.fillStyle = rGrad; ctx.strokeStyle = smashT > 0 ? '#FACC15' : rimCol; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, rx, ry, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    drawPaddle(st.p2.x, st.p2.y, '#E11D48', '#FDA4AF', '#92400E', false, st.p2.smashT, false);
 
     var netL = proj(-1.04, 0, 0), netR = proj(1.04, 0, 0);
-    ctx.fillStyle = 'rgba(226,232,240,0.22)'; ctx.fillRect(netL.x, netL.y - 26, netR.x - netL.x, 26);
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.35)'; ctx.fillRect(netL.x, netL.y - 26, netR.x - netL.x, 26);
+    ctx.strokeStyle = 'rgba(226, 232, 240, 0.35)'; ctx.lineWidth = 1;
+    for (var nxG = netL.x; nxG <= netR.x; nxG += 16) { ctx.beginPath(); ctx.moveTo(nxG, netL.y - 26); ctx.lineTo(nxG, netL.y); ctx.stroke(); }
+    for (var nyG = netL.y - 20; nyG < netL.y; nyG += 7) { ctx.beginPath(); ctx.moveTo(netL.x, nyG); ctx.lineTo(netR.x, nyG); ctx.stroke(); }
+    ctx.fillStyle = '#475569'; ctx.fillRect(netL.x - 4, netL.y - 28, 7, 30); ctx.fillRect(netR.x - 3, netR.y - 28, 7, 30);
     ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(netL.x, netL.y - 26); ctx.lineTo(netR.x, netR.y - 26); ctx.stroke();
 
     for (var ti = 0; ti < st.trail.length; ti++) {
@@ -371,16 +386,15 @@ function startTvPingPongGame(scr) {
     ctx.globalAlpha = 1;
 
     var bSh = proj(st.ball.x, st.ball.y, 0), sSc = Math.max(0.35, 1 - st.ball.z * 0.45);
-    ctx.fillStyle = 'rgba(0,0,0,0.36)'; ctx.beginPath();
+    ctx.fillStyle = 'rgba(0,0,0,0.4)'; ctx.beginPath();
     ctx.ellipse(bSh.x, bSh.y, 12 * bSh.scale * sSc, 5.5 * bSh.scale * sSc, 0, 0, Math.PI * 2); ctx.fill();
     var bPos = proj(st.ball.x, st.ball.y, Math.max(0, st.ball.z)), bR = 11 * bPos.scale;
-    ctx.fillStyle = '#FDE047'; ctx.beginPath(); ctx.arc(bPos.x, bPos.y, bR, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 1.5; ctx.stroke();
+    var ballGrad = ctx.createRadialGradient(bPos.x - bR * 0.35, bPos.y - bR * 0.35, bR * 0.15, bPos.x, bPos.y, bR);
+    ballGrad.addColorStop(0, '#FFFFFF'); ballGrad.addColorStop(0.55, '#FEF08A'); ballGrad.addColorStop(1, '#EA580C');
+    ctx.fillStyle = ballGrad; ctx.beginPath(); ctx.arc(bPos.x, bPos.y, bR, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)'; ctx.lineWidth = 1.2; ctx.stroke();
 
-    var p1P = proj(st.p1.x, st.p1.y, 0.08);
-    ctx.fillStyle = '#0891B2'; ctx.strokeStyle = st.p1.smashT > 0 ? '#FACC15' : '#67E8F9'; ctx.lineWidth = 3.5;
-    ctx.beginPath(); ctx.ellipse(p1P.x, p1P.y, 50 * p1P.scale, 22 * p1P.scale, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#0F172A'; ctx.fillRect(p1P.x - 6 * p1P.scale, p1P.y + 16 * p1P.scale, 12 * p1P.scale, 20 * p1P.scale);
+    drawPaddle(st.p1.x, st.p1.y, '#0891B2', '#67E8F9', '#92400E', true, st.p1.smashT, true);
 
     if (st.banner) {
       ctx.fillStyle = 'rgba(5, 8, 18, 0.84)'; ctx.fillRect(W / 2 - 210, H / 2 - 34, 420, 68);

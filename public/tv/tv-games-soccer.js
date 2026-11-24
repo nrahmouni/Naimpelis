@@ -22,11 +22,9 @@ function startHeadSoccerGame(scr) {
   var soccerRoom = (typeof currentRoomId === 'string' && currentRoomId)
     ? currentRoomId
     : ('hs-' + (typeof pairingCode === 'string' && pairingCode ? pairingCode : ('tv' + Math.floor(1000 + Math.random() * 9000))));
-  var origin = (typeof getTvRacingPublicOrigin === 'function')
-    ? getTvRacingPublicOrigin()
-    : (window.location.origin || ('https://' + (window.location.host || 'localhost')));
-  var ctrlUrl = origin + '/volante?room=' + encodeURIComponent(soccerRoom) + '&game=headsoccer';
-  var qrMarkup = typeof buildQrSvgMarkup === 'function' ? buildQrSvgMarkup(ctrlUrl) : '';
+  if (typeof window.preloadTvGameSprites === 'function') {
+    window.preloadTvGameSprites(['assets/games/arenas/soccer_stadium.jpg', 'assets/games/sports/ball_soccer1.png', 'assets/games/particles/star_07.png']);
+  }
 
   scr.innerHTML =
     '<div class="tv-game-topbar">' +
@@ -35,17 +33,12 @@ function startHeadSoccerGame(scr) {
     '<div class="tv-game-top-title">🥅 Fútbol Cabezones Stadium TV</div>' +
     '</div>' +
     '<div class="tv-game-top-right">' +
-    '<div class="tv-game-hud-pill accent-purple" id="hs-gyro-pill">📱 QR Mando Móvil</div>' +
+    '<div class="tv-game-hud-pill accent-purple" id="hs-gyro-pill">📱 Esperando Móviles</div>' +
     '<div class="tv-game-hud-pill accent-green" id="hs-score-pill">TÚ 0 - 0 CPU</div>' +
     '<div class="tv-game-hud-pill accent-purple" id="hs-clock-pill">60s</div>' +
     '</div></div>' +
-    '<div class="tv-game-arena">' +
+    '<div class="tv-game-arena" id="hs-arena">' +
     '<canvas id="tv-hs-canvas" class="tv-game-canvas" width="920" height="460"></canvas>' +
-    '<div class="tv-game-qr-card" id="hs-qr-card" style="width:168px;padding:9px;top:12px;right:12px;">' +
-    '<div class="tv-game-qr-title" style="font-size:11px;">MANDO MÓVIL GYRO</div>' +
-    '<div class="tv-game-qr-box" style="width:104px;height:104px;margin:6px auto;">' + qrMarkup + '</div>' +
-    '<div class="tv-game-qr-code" style="font-size:11px;">Sala: ' + escapeHtml(soccerRoom) + '</div>' +
-    '</div>' +
     '<div class="tv-game-finish-overlay" id="hs-finish-ov">' +
     '<div class="tv-game-finish-card">' +
     '<div class="tv-game-finish-title" id="hs-fin-title">¡FINAL DEL PARTIDO!</div>' +
@@ -56,7 +49,7 @@ function startHeadSoccerGame(scr) {
     '</div></div></div></div>' +
     '<div class="tv-game-controls-hint">' +
     '<span>Mover: ◀ Izquierda / ▶ Derecha · Saltar: ▲ Arriba · Chutar / Remate aéreo: OK (Enter)</span>' +
-    '<span>Gol de Oro si hay empate · Escanea el QR para jugar inclinando tu smartphone</span>' +
+    '<span>Gol de Oro si hay empate · Escanea J1/J2 en vertical sin escribir código</span>' +
     '</div>';
 
   document.getElementById('btn-game-back').onclick = closeTvGame;
@@ -64,14 +57,18 @@ function startHeadSoccerGame(scr) {
 
   var canvas = document.getElementById('tv-hs-canvas');
   var ctx = canvas.getContext('2d');
+  var arenaEl = document.getElementById('hs-arena');
   var scorePill = document.getElementById('hs-score-pill');
   var clockPill = document.getElementById('hs-clock-pill');
   var gyroPill = document.getElementById('hs-gyro-pill');
   var finOv = document.getElementById('hs-finish-ov');
   var finTitle = document.getElementById('hs-fin-title');
   var finSub = document.getElementById('hs-fin-sub');
+  var lobby = typeof window.createTvDualQrLobby === 'function'
+    ? window.createTvDualQrLobby(arenaEl, { roomId: soccerRoom, gameId: 'headsoccer', title: '🥅 Fútbol Cabezones · QR J1 y J2' })
+    : null;
 
-  // Connect optional Mobile Gyro WS for Head Soccer
+  // Connect Mobile Gyro WS for Head Soccer
   if (window.WebSocket && typeof getTvRacingWsUrl === 'function') {
     try {
       var ws = new WebSocket(getTvRacingWsUrl());
@@ -95,14 +92,17 @@ function startHeadSoccerGame(scr) {
         if (tvSoccerWs !== ws) return;
         try {
           var msg = JSON.parse(ev.data);
-          if (msg.type === 'GYRO_PEER_STATUS' && msg.payload && gyroPill) {
+          if (msg.type === 'GYRO_PEER_STATUS' && msg.payload) {
             var cList = msg.payload.controllers || [];
-            if (msg.payload.hasController) {
-              gyroPill.className = 'tv-game-hud-pill accent-green';
-              gyroPill.textContent = cList.length >= 2 ? '📱 2 Móviles Activos (J1 vs J2)' : '📱 Mando Móvil Activo';
-            } else {
-              gyroPill.className = 'tv-game-hud-pill accent-purple';
-              gyroPill.textContent = '📱 QR Mando Móvil';
+            if (lobby) lobby.onStatus(cList);
+            if (gyroPill) {
+              if (msg.payload.hasController) {
+                gyroPill.className = 'tv-game-hud-pill accent-green';
+                gyroPill.textContent = cList.length >= 2 ? '📱 2 Móviles Activos (J1 vs J2)' : '📱 Mando Móvil Activo';
+              } else {
+                gyroPill.className = 'tv-game-hud-pill accent-purple';
+                gyroPill.textContent = '📱 Esperando Móviles';
+              }
             }
           } else if (msg.type === 'GYRO_INPUT_RELAY' && msg.payload) {
             var p = msg.payload;
@@ -113,7 +113,7 @@ function startHeadSoccerGame(scr) {
             tgt.handbrake = Boolean(p.handbrake);
             tgt.nitro = Boolean(p.nitro);
             tgt.expiresAt = Date.now() + 1200;
-            if (tgt.nitro && plr.kickCd <= 0 && !match.over) {
+            if (tgt.nitro && plr.kickCd <= 0 && !match.over && (!lobby || lobby.isReady())) {
               plr.kickT = 0.22;
               plr.kickCd = 0.32;
             }
@@ -297,7 +297,7 @@ function startHeadSoccerGame(scr) {
       if (cf.life <= 0) confetti.splice(ci, 1);
     }
 
-    if (!match.over) {
+    if (!match.over && (!lobby || lobby.isReady())) {
       if (match.goalPause > 0) {
         match.goalPause -= dt;
         // Let ball settle gently inside the net during celebration
@@ -446,62 +446,19 @@ function startHeadSoccerGame(scr) {
   }
 
   function drawStadiumScene(tSec) {
-    var skyGrad = ctx.createLinearGradient(0, 0, 0, GY);
-    skyGrad.addColorStop(0, '#070a18');
-    skyGrad.addColorStop(0.6, '#121b38');
-    skyGrad.addColorStop(1, '#1e293b');
-    ctx.fillStyle = skyGrad;
-    ctx.fillRect(0, 0, W, GY);
-
-    // Floodlight towers + glowing cones
-    var lights = [150, 460, 770];
-    for (var li = 0; li < lights.length; li++) {
-      var fx = lights[li];
-      var beam = ctx.createRadialGradient(fx, 24, 6, fx, 130, 270);
-      beam.addColorStop(0, 'rgba(255, 255, 224, 0.24)');
-      beam.addColorStop(0.5, 'rgba(139, 92, 246, 0.08)');
-      beam.addColorStop(1, 'rgba(15, 23, 42, 0)');
-      ctx.fillStyle = beam;
+    if (typeof window.drawTvSpriteRect === 'function' && window.drawTvSpriteRect(ctx, 'assets/games/arenas/soccer_stadium.jpg', 0, 0, W, GY + 14)) {
+      ctx.fillStyle = 'rgba(7, 11, 24, 0.28)';
       ctx.fillRect(0, 0, W, GY);
-      ctx.fillStyle = '#e2e8f0';
-      ctx.fillRect(fx - 26, 10, 52, 9);
-      ctx.fillStyle = '#fef08a';
-      for (var lb = -18; lb <= 18; lb += 9) {
-        ctx.beginPath(); ctx.arc(fx + lb, 20, 3, 0, Math.PI * 2); ctx.fill();
-      }
+    } else {
+      var skyGrad = ctx.createLinearGradient(0, 0, 0, GY);
+      skyGrad.addColorStop(0, '#070a18'); skyGrad.addColorStop(0.6, '#121b38'); skyGrad.addColorStop(1, '#1e293b');
+      ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, W, GY);
     }
-
-    // Grandstand tiers + animated cheering crowd
-    ctx.fillStyle = '#0f172a';
-    ctx.fillRect(0, 215, W, GY - 215);
-    ctx.fillStyle = '#1e293b';
-    ctx.fillRect(0, 256, W, 9);
-    ctx.fillRect(0, 304, W, 9);
-    var crowdColors = ['#8B5CF6', '#FACC15', '#38BDF8', '#F43F5E', '#10B981', '#F8FAFC'];
-    for (var row = 0; row < 3; row++) {
-      var baseY = 240 + row * 38;
-      for (var ci = 0; ci < 42; ci++) {
-        var cx = 14 + ci * 22 + (row % 2) * 10;
-        var bounce = Math.sin(tSec * 3.6 + ci * 0.8 + row) * 2.2;
-        ctx.fillStyle = crowdColors[(ci + row * 2) % crowdColors.length];
-        ctx.globalAlpha = 0.56;
-        ctx.beginPath(); ctx.arc(cx, baseY + bounce, 5.2, 0, Math.PI * 2); ctx.fill();
-      }
-    }
-    ctx.globalAlpha = 1;
-
-    // LED ad perimeter board
-    ctx.fillStyle = '#090d16';
-    ctx.fillRect(0, GY - 25, W, 25);
-    ctx.strokeStyle = 'rgba(139, 92, 246, 0.65)';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0, GY - 25); ctx.lineTo(W, GY - 25); ctx.stroke();
-    ctx.fillStyle = '#c4b5fd';
-    ctx.font = 'bold 11px sans-serif';
-    ctx.textAlign = 'center';
-    for (var bx = 115; bx < W; bx += 230) {
-      ctx.fillText('RIFFAN TV · COPA CABEZONES PRO', bx, GY - 8);
-    }
+    ctx.fillStyle = '#090d16'; ctx.fillRect(0, GY - 22, W, 22);
+    ctx.strokeStyle = 'rgba(139, 92, 246, 0.72)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, GY - 22); ctx.lineTo(W, GY - 22); ctx.stroke();
+    ctx.fillStyle = '#c4b5fd'; ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+    for (var bx = 115; bx < W; bx += 230) ctx.fillText('RIFFAN TV · COPA CABEZONES PRO', bx, GY - 7);
 
     // Striped grass pitch + markings
     var stripeW = W / 10;
@@ -534,36 +491,29 @@ function startHeadSoccerGame(scr) {
     ctx.fillStyle = 'rgba(0,0,0,0.36)';
     ctx.beginPath(); ctx.ellipse(match.ball.x, GY + 2, BR * 1.15 * groundRatio, 5 * groundRatio, 0, 0, Math.PI * 2); ctx.fill();
 
-    ctx.save();
-    ctx.translate(match.ball.x, match.ball.y);
-    ctx.rotate(match.ball.angle);
-    var bGrad = ctx.createRadialGradient(-4, -5, 2, 0, 0, BR);
-    bGrad.addColorStop(0, '#FFFFFF');
-    bGrad.addColorStop(0.75, '#E2E8F0');
-    bGrad.addColorStop(1, '#94A3B8');
-    ctx.fillStyle = bGrad;
-    ctx.beginPath(); ctx.arc(0, 0, BR, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#0F172A'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.fillStyle = '#0F172A';
-    ctx.beginPath();
-    for (var pg = 0; pg < 5; pg++) {
-      var a = (pg / 5) * Math.PI * 2 - Math.PI / 2;
-      if (pg === 0) ctx.moveTo(Math.cos(a) * 6, Math.sin(a) * 6);
-      else ctx.lineTo(Math.cos(a) * 6, Math.sin(a) * 6);
+    if (!(typeof window.drawTvSprite === 'function' && window.drawTvSprite(ctx, 'assets/games/sports/ball_soccer1.png', match.ball.x, match.ball.y, BR * 2.15, BR * 2.15, match.ball.angle))) {
+      ctx.save();
+      ctx.translate(match.ball.x, match.ball.y);
+      ctx.rotate(match.ball.angle);
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath(); ctx.arc(0, 0, BR, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
     }
-    ctx.closePath(); ctx.fill();
-    ctx.restore();
 
     // 3D Goals drawn AFTER ball so net frames over goal mouth cleanly
     drawSingleGoal('left', netRippleL, tSec);
     drawSingleGoal('right', netRippleR, tSec);
 
-    // Confetti burst
+    // Confetti burst (Kenney Particle Pack stars + ribbons)
     for (var cfi = 0; cfi < confetti.length; cfi++) {
       var c = confetti[cfi];
       ctx.globalAlpha = Math.max(0, Math.min(1, c.life));
-      ctx.fillStyle = c.color;
-      ctx.fillRect(c.x, c.y, c.size, c.size * 1.4);
+      if (cfi % 3 === 0 && typeof window.drawTvSprite === 'function') {
+        window.drawTvSprite(ctx, 'assets/games/particles/star_07.png', c.x, c.y, 18, 18, c.life * 5);
+      } else {
+        ctx.fillStyle = c.color;
+        ctx.fillRect(c.x, c.y, c.size, c.size * 1.4);
+      }
     }
     ctx.globalAlpha = 1;
 

@@ -13,6 +13,7 @@ import {
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { socketService } from '../../services/socket';
+import { animateModalEntrance, fireVictoryConfetti } from './arcade/arcadeAnimations';
 import type { AppLanguage, Participant } from '../../types';
 
 export type GameSfxKind =
@@ -315,6 +316,14 @@ export const VictoryCelebrationOverlay: React.FC<{
 }) => {
   const isDefeat = outcome === 'defeat';
   const isDraw = outcome === 'draw';
+  const cardRef = React.useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    animateModalEntrance(cardRef.current);
+    if (!isDefeat && !isDraw) {
+      fireVictoryConfetti('gold');
+    }
+  }, [isDefeat, isDraw]);
 
   return (
     <div className="absolute inset-0 z-30 rounded-2xl bg-black/85 backdrop-blur-md flex flex-col items-center justify-center gap-3.5 p-4 text-center overflow-hidden">
@@ -354,6 +363,7 @@ export const VictoryCelebrationOverlay: React.FC<{
 
       {/* Luxury Metallic Card Frame */}
       <div
+        ref={cardRef}
         className={`relative z-10 w-full max-w-[330px] rounded-2xl p-[1px] ${
           isDefeat
             ? 'bg-gradient-to-br from-zinc-700 via-zinc-800 to-zinc-950 shadow-[0_18px_50px_rgba(0,0,0,0.85)]'

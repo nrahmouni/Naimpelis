@@ -43,7 +43,12 @@
   // 1. PAC-MAN ARCADE HD
   // =================================================================
   function startPacmanGame(scr) {
-    preloadAll(['assets/games/puzzle/particleStar.png']);
+    preloadAll([
+      'assets/games/puzzle/particleStar.png',
+      'assets/games/puzzle/element_blue_square_glossy.png',
+      'assets/games/space/darkPurple.png',
+      'assets/games/space/pill_red.png'
+    ]);
     var BEST_KEY = 'naim_tv_pacman_best_v1', best = loadBest(BEST_KEY);
     mountShell(scr, 'pac', '🟡 Pac-Man Arcade HD', best,
       '◀ ▲ ▶ ▼ Mover por el laberinto', 'Come las estrellas de poder para cazar fantasmas');
@@ -91,7 +96,8 @@
     function isWall(gx, gy) {
       var tx = ((Math.round(gx) % COLS) + COLS) % COLS, ty = Math.round(gy);
       if (ty < 0 || ty >= ROWS) return true;
-      return grid[ty][tx] === '#';
+      var ch = grid[ty][tx];
+      return ch === '#' || ch === '-';
     }
     function resetAll() { gameOver = false; ov.style.display = 'none'; initMap(false); }
     document.getElementById('pac-replay').onclick = resetAll;
@@ -111,16 +117,42 @@
     var last = performance.now();
     function frame(now) {
       if (window.TV_GAME_ACTIVE !== 'pacman') return;
-      var dt = Math.min(0.05, (now - last) / 1000); last = now; pac.mouth += dt * 12;
+      var dt = Math.min(0.04, (now - last) / 1000); last = now; pac.mouth += dt * 12;
       if (!gameOver) {
         if (frightTimer > 0) frightTimer = Math.max(0, frightTimer - dt);
-        var speed = 5.8 + Math.min(2.2, (level - 1) * 0.35), moveStep = dt * speed;
-        var rx = Math.round(pac.x), ry = Math.round(pac.y);
-        if (Math.abs(pac.x - rx) < 0.14 && Math.abs(pac.y - ry) < 0.14) {
-          if (!isWall(rx + pac.ndx, ry + pac.ndy)) { pac.x = rx; pac.y = ry; pac.dx = pac.ndx; pac.dy = pac.ndy; }
-          else if (isWall(rx + pac.dx, ry + pac.dy)) { pac.x = rx; pac.y = ry; pac.dx = 0; pac.dy = 0; }
+        var speed = 5.6 + Math.min(2.2, (level - 1) * 0.35), moveStep = dt * speed;
+        if (pac.ndx === -pac.dx && pac.ndy === -pac.dy && (pac.ndx !== 0 || pac.ndy !== 0)) {
+          pac.dx = pac.ndx; pac.dy = pac.ndy;
         }
-        pac.x += pac.dx * moveStep; pac.y += pac.dy * moveStep;
+        var rx = Math.round(pac.x), ry = Math.round(pac.y);
+        if (pac.dx === 0 && pac.dy === 0) {
+          if ((pac.ndx !== 0 || pac.ndy !== 0) && !isWall(rx + pac.ndx, ry + pac.ndy)) {
+            pac.x = rx; pac.y = ry; pac.dx = pac.ndx; pac.dy = pac.ndy;
+          }
+        }
+        if (pac.dx !== 0 || pac.dy !== 0) {
+          var prevX = pac.x, prevY = pac.y;
+          var nextX = prevX + pac.dx * moveStep, nextY = prevY + pac.dy * moveStep;
+          var cxG = Math.round(prevX), cyG = Math.round(prevY);
+          var crossX = pac.dx > 0 ? (prevX <= cxG + 0.001 && nextX >= cxG) : pac.dx < 0 ? (prevX >= cxG - 0.001 && nextX <= cxG) : Math.abs(prevX - cxG) < 0.1;
+          var crossY = pac.dy > 0 ? (prevY <= cyG + 0.001 && nextY >= cyG) : pac.dy < 0 ? (prevY >= cyG - 0.001 && nextY <= cyG) : Math.abs(prevY - cyG) < 0.1;
+          if (crossX && crossY) {
+            var rem = Math.max(Math.abs(nextX - cxG), Math.abs(nextY - cyG));
+            if ((pac.ndx !== pac.dx || pac.ndy !== pac.dy) && (pac.ndx !== 0 || pac.ndy !== 0) && !isWall(cxG + pac.ndx, cyG + pac.ndy)) {
+              pac.x = cxG; pac.y = cyG; pac.dx = pac.ndx; pac.dy = pac.ndy;
+              if (!isWall(cxG + pac.dx, cyG + pac.dy)) { pac.x += pac.dx * rem; pac.y += pac.dy * rem; }
+            } else if (isWall(cxG + pac.dx, cyG + pac.dy)) {
+              pac.x = cxG; pac.y = cyG; pac.dx = 0; pac.dy = 0;
+            } else {
+              pac.x = nextX; pac.y = nextY;
+            }
+          } else {
+            pac.x = nextX; pac.y = nextY;
+          }
+          if (isWall(Math.round(pac.x), Math.round(pac.y))) {
+            pac.x = cxG; pac.y = cyG; pac.dx = 0; pac.dy = 0;
+          }
+        }
         if (pac.x < -0.5) pac.x = COLS - 0.5; if (pac.x > COLS - 0.5) pac.x = -0.5;
         var cx = ((Math.round(pac.x) % COLS) + COLS) % COLS, cy = Math.round(pac.y);
         if (cy >= 0 && cy < ROWS && (grid[cy][cx] === '.' || grid[cy][cx] === 'O')) {
@@ -131,8 +163,11 @@
         }
         var gSpeed = frightTimer > 0 ? moveStep * 0.65 : moveStep * 0.85;
         for (var gi = 0; gi < ghosts.length; gi++) {
-          var g = ghosts[gi], grx = Math.round(g.x), gry = Math.round(g.y);
-          if (Math.abs(g.x - grx) < 0.15 && Math.abs(g.y - gry) < 0.15) {
+          var g = ghosts[gi], gPrevX = g.x, gPrevY = g.y, grx = Math.round(g.x), gry = Math.round(g.y);
+          var gNextX = gPrevX + g.dx * gSpeed, gNextY = gPrevY + g.dy * gSpeed;
+          var gCrossX = g.dx > 0 ? (gPrevX <= grx + 0.001 && gNextX >= grx) : g.dx < 0 ? (gPrevX >= grx - 0.001 && gNextX <= grx) : Math.abs(gPrevX - grx) < 0.12;
+          var gCrossY = g.dy > 0 ? (gPrevY <= gry + 0.001 && gNextY >= gry) : g.dy < 0 ? (gPrevY >= gry - 0.001 && gNextY <= gry) : Math.abs(gPrevY - gry) < 0.12;
+          if (gCrossX && gCrossY) {
             g.x = grx; g.y = gry;
             var dirs = [[1,0],[-1,0],[0,1],[0,-1]], valid = [];
             for (var d = 0; d < 4; d++) {
@@ -147,8 +182,10 @@
             });
             var pick = (Math.random() < 0.72 || valid.length === 1) ? valid[0] : valid[Math.floor(Math.random() * valid.length)];
             g.dx = pick[0]; g.dy = pick[1];
+            g.x += g.dx * gSpeed * 0.5; g.y += g.dy * gSpeed * 0.5;
+          } else {
+            g.x = gNextX; g.y = gNextY;
           }
-          g.x += g.dx * gSpeed; g.y += g.dy * gSpeed;
           if (g.x < -0.5) g.x = COLS - 0.5; if (g.x > COLS - 0.5) g.x = -0.5;
           if (Math.hypot(g.x - pac.x, g.y - pac.y) < 0.65) {
             if (frightTimer > 0) { score += 200; syncHud(); g.x = 9; g.y = 7; playSfx(860, 0.14, 'square', 0.08); }
@@ -165,15 +202,23 @@
         }
       }
       ctx.fillStyle = '#050812'; ctx.fillRect(0, 0, 960, 540);
+      tiledBg(ctx, 'assets/games/space/darkPurple.png', 960, 540, 0, 0);
+      ctx.fillStyle = 'rgba(4, 7, 18, 0.72)'; ctx.fillRect(0, 0, 960, 540);
       for (var r = 0; r < ROWS; r++) for (var c = 0; c < COLS; c++) {
         var cell = grid[r][c], x = OX + c * CELL, y = OY + r * CELL;
         if (cell === '#') {
-          ctx.fillStyle = '#1D4ED8'; ctx.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
-          ctx.fillStyle = '#0B1738'; ctx.fillRect(x + 5, y + 5, CELL - 10, CELL - 10);
+          if (!sprRect(ctx, 'assets/games/puzzle/element_blue_square_glossy.png', x + 1, y + 1, CELL - 2, CELL - 2)) {
+            ctx.fillStyle = '#1D4ED8'; ctx.fillRect(x + 2, y + 2, CELL - 4, CELL - 4);
+            ctx.fillStyle = '#0B1738'; ctx.fillRect(x + 5, y + 5, CELL - 10, CELL - 10);
+          }
+        } else if (cell === '-') {
+          if (!sprRect(ctx, 'assets/games/space/pill_red.png', x + 4, y + 11, CELL - 8, 10)) {
+            ctx.fillStyle = '#F43F5E'; ctx.fillRect(x + 2, y + 13, CELL - 4, 6);
+          }
         } else if (cell === '.') {
-          ctx.fillStyle = '#FDE68A'; ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 3.2, 0, Math.PI * 2); ctx.fill();
+          ctx.fillStyle = '#FDE68A'; ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 3.6, 0, Math.PI * 2); ctx.fill();
         } else if (cell === 'O') {
-          var pr = 16 + Math.sin(pac.mouth * 0.7) * 3;
+          var pr = 20 + Math.sin(pac.mouth * 0.7) * 3.5;
           if (!spr(ctx, 'assets/games/puzzle/particleStar.png', x + CELL / 2, y + CELL / 2, pr, pr, now * 0.004)) {
             ctx.fillStyle = '#FACC15'; ctx.beginPath(); ctx.arc(x + CELL / 2, y + CELL / 2, 7.5, 0, Math.PI * 2); ctx.fill();
           }
@@ -182,14 +227,16 @@
       var px = OX + (pac.x + 0.5) * CELL, py = OY + (pac.y + 0.5) * CELL;
       var ang = pac.dx < 0 ? Math.PI : pac.dy > 0 ? Math.PI / 2 : pac.dy < 0 ? -Math.PI / 2 : 0;
       var jaw = 0.15 + Math.abs(Math.sin(pac.mouth)) * 0.48;
-      ctx.fillStyle = '#FACC15'; ctx.beginPath(); ctx.moveTo(px, py);
-      ctx.arc(px, py, CELL * 0.44, ang + jaw, ang + Math.PI * 2 - jaw); ctx.closePath(); ctx.fill();
+      var pGrad = ctx.createRadialGradient(px - 4, py - 4, 2, px, py, CELL * 0.46);
+      pGrad.addColorStop(0, '#FEF08A'); pGrad.addColorStop(0.7, '#FACC15'); pGrad.addColorStop(1, '#CA8A04');
+      ctx.fillStyle = pGrad; ctx.beginPath(); ctx.moveTo(px, py);
+      ctx.arc(px, py, CELL * 0.45, ang + jaw, ang + Math.PI * 2 - jaw); ctx.closePath(); ctx.fill();
       for (var j = 0; j < ghosts.length; j++) {
         var gh = ghosts[j], gx = OX + (gh.x + 0.5) * CELL, gy = OY + (gh.y + 0.5) * CELL;
         ctx.fillStyle = frightTimer > 0 ? (frightTimer < 2 && Math.floor(frightTimer * 8) % 2 === 0 ? '#FFFFFF' : '#2563EB') : gh.col;
-        ctx.beginPath(); ctx.arc(gx, gy - 2, CELL * 0.4, Math.PI, 0); ctx.lineTo(gx + CELL * 0.4, gy + CELL * 0.4); ctx.lineTo(gx - CELL * 0.4, gy + CELL * 0.4); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = '#FFF'; ctx.beginPath(); ctx.arc(gx - 4, gy - 3, 3.3, 0, Math.PI * 2); ctx.arc(gx + 4, gy - 3, 3.3, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#0F172A'; ctx.beginPath(); ctx.arc(gx - 4 + gh.dx * 1.4, gy - 3 + gh.dy * 1.4, 1.7, 0, Math.PI * 2); ctx.arc(gx + 4 + gh.dx * 1.4, gy - 3 + gh.dy * 1.4, 1.7, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(gx, gy - 2, CELL * 0.41, Math.PI, 0); ctx.lineTo(gx + CELL * 0.41, gy + CELL * 0.41); ctx.lineTo(gx - CELL * 0.41, gy + CELL * 0.41); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#FFF'; ctx.beginPath(); ctx.arc(gx - 4.5, gy - 3, 3.6, 0, Math.PI * 2); ctx.arc(gx + 4.5, gy - 3, 3.6, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#0F172A'; ctx.beginPath(); ctx.arc(gx - 4.5 + gh.dx * 1.5, gy - 3 + gh.dy * 1.5, 1.8, 0, Math.PI * 2); ctx.arc(gx + 4.5 + gh.dx * 1.5, gy - 3 + gh.dy * 1.5, 1.8, 0, Math.PI * 2); ctx.fill();
       }
       window.TV_GAME_RAF = requestAnimationFrame(frame);
     }

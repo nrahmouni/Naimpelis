@@ -23,7 +23,8 @@ function preloadGyroSpr() {
       'assets/games/space/darkPurple.png', 'assets/games/space/playerShip1_blue.png', 'assets/games/space/playerShip2_orange.png',
       'assets/games/space/fire00.png', 'assets/games/space/shield3.png', 'assets/games/space/enemyRed3.png',
       'assets/games/space/meteorBrown_big1.png', 'assets/games/space/laserBlue01.png', 'assets/games/space/laserRed01.png',
-      'assets/games/puzzle/ballGrey.png', 'assets/games/puzzle/particleStar.png'
+      'assets/games/puzzle/ballGrey.png', 'assets/games/puzzle/particleStar.png',
+      'assets/games/puzzle/paddleBlu.png', 'assets/games/puzzle/paddleRed.png'
     ].concat(GYRO_BOOM_FRAMES));
   }
 }
@@ -43,7 +44,7 @@ function buildGyroVolanteUrl(roomId, gameId) {
   return origin + '/volante?room=' + encodeURIComponent(roomId) + '&game=' + encodeURIComponent(gameId);
 }
 
-function connectGyroArcadeWs(roomId, gameId, statusPillEl) {
+function connectGyroArcadeWs(roomId, gameId, statusPillEl, lobby) {
   if (!window.WebSocket || typeof getTvRacingWsUrl !== 'function') return;
   try {
     var ws = new WebSocket(getTvRacingWsUrl());
@@ -56,7 +57,7 @@ function connectGyroArcadeWs(roomId, gameId, statusPillEl) {
       }));
       ws.send(JSON.stringify({
         type: 'GYRO_CONTROLLER_JOIN',
-        payload: { roomId: roomId, role: 'display', deviceName: 'Smart TV Arcade' }
+        payload: { roomId: roomId, role: 'display', deviceName: 'Smart TV Arcade', gameId: gameId }
       }));
     };
     ws.onmessage = function (ev) {
@@ -65,14 +66,15 @@ function connectGyroArcadeWs(roomId, gameId, statusPillEl) {
         var msg = JSON.parse(ev.data);
         if (msg.type === 'GYRO_PEER_STATUS' && msg.payload) {
           tvGyroHasController = Boolean(msg.payload.hasController);
+          var list = msg.payload.controllers || [];
+          if (lobby) lobby.onStatus(list);
           if (statusPillEl) {
-            var list = msg.payload.controllers || [];
             if (tvGyroHasController) {
               statusPillEl.className = 'tv-game-hud-pill accent-green';
               statusPillEl.textContent = list.length >= 2 ? '📱 2 Móviles Activos (J1 + J2)' : ('📱 Gyro conectado (' + (list[0] && list[0].deviceName ? list[0].deviceName : 'Móvil') + ')');
             } else {
               statusPillEl.className = 'tv-game-hud-pill accent-purple';
-              statusPillEl.textContent = '📱 Escanea el QR para Giroscopio';
+              statusPillEl.textContent = '📱 Esperando Móviles';
             }
           }
         } else if (msg.type === 'GYRO_INPUT_RELAY' && msg.payload) {
@@ -90,7 +92,7 @@ function connectGyroArcadeWs(roomId, gameId, statusPillEl) {
     ws.onclose = function () {
       if (tvGyroArcadeWs === ws && (TV_GAME_ACTIVE === 'gyrohockey' || TV_GAME_ACTIVE === 'gyrospace')) {
         setTimeout(function () {
-          if (TV_GAME_ACTIVE === gameId) connectGyroArcadeWs(roomId, gameId, statusPillEl);
+          if (TV_GAME_ACTIVE === gameId) connectGyroArcadeWs(roomId, gameId, statusPillEl, lobby);
         }, 2500);
       }
     };
@@ -126,22 +128,16 @@ function startGyroHockeyGame(scr) {
   var roomId = (typeof currentRoomId === 'string' && currentRoomId)
     ? currentRoomId
     : ('ah-' + (typeof pairingCode === 'string' && pairingCode ? pairingCode : ('tv' + Math.floor(1000 + Math.random() * 9000))));
-  var ctrlUrl = buildGyroVolanteUrl(roomId, 'gyrohockey');
-  var qrMarkup = typeof buildQrSvgMarkup === 'function' ? buildQrSvgMarkup(ctrlUrl) : '';
 
   scr.innerHTML =
     '<div class="tv-game-topbar"><div class="tv-game-top-left">' +
     '<button type="button" id="btn-game-back" class="tv-btn" tabindex="0">Volver (Return)</button>' +
     '<div class="tv-game-top-title">🏒 Neon Air Hockey Gyro</div></div><div class="tv-game-top-right">' +
-    '<div class="tv-game-hud-pill accent-purple" id="ah-gyro-pill">📱 Escanea el QR para Giroscopio</div>' +
+    '<div class="tv-game-hud-pill accent-purple" id="ah-gyro-pill">📱 Esperando Móviles</div>' +
     '<div class="tv-game-hud-pill accent-green" id="ah-score-pill">TÚ 0 - 0 CPU</div>' +
     '<div class="tv-game-hud-pill" id="ah-smash-pill">SMASH 100%</div></div></div>' +
-    '<div class="tv-game-arena">' +
+    '<div class="tv-game-arena" id="ah-arena">' +
     '<canvas id="tv-ah-canvas" class="tv-game-canvas" width="920" height="520"></canvas>' +
-    '<div class="tv-game-qr-card" style="width:172px;padding:9px;top:12px;right:12px;">' +
-    '<div class="tv-game-qr-title" style="font-size:11px;">PALA GIROSCÓPICA</div>' +
-    '<div class="tv-game-qr-box" style="width:108px;height:108px;margin:5px auto;">' + qrMarkup + '</div>' +
-    '<div class="tv-game-qr-code" style="font-size:11px;">Sala: ' + escapeHtml(roomId) + '</div></div>' +
     '<div class="tv-game-finish-overlay" id="ah-finish-ov"><div class="tv-game-finish-card">' +
     '<div class="tv-game-finish-title" id="ah-fin-title">🏆 ¡CAMPEÓN NEON!</div>' +
     '<div class="tv-game-finish-sub" id="ah-fin-sub">Marcador final</div>' +
@@ -158,6 +154,7 @@ function startGyroHockeyGame(scr) {
 
   var canvas = document.getElementById('tv-ah-canvas');
   var ctx = canvas.getContext('2d');
+  var arenaEl = document.getElementById('ah-arena');
   var scorePill = document.getElementById('ah-score-pill');
   var smashPill = document.getElementById('ah-smash-pill');
   var finOv = document.getElementById('ah-finish-ov');
@@ -165,7 +162,10 @@ function startGyroHockeyGame(scr) {
   var finSub = document.getElementById('ah-fin-sub');
 
   preloadGyroSpr();
-  connectGyroArcadeWs(roomId, 'gyrohockey', document.getElementById('ah-gyro-pill'));
+  var ahLobby = typeof window.createTvDualQrLobby === 'function'
+    ? window.createTvDualQrLobby(arenaEl, { roomId: roomId, gameId: 'gyrohockey', title: '🏒 Neon Air Hockey · QR J1 y J2' })
+    : null;
+  connectGyroArcadeWs(roomId, 'gyrohockey', document.getElementById('ah-gyro-pill'), ahLobby);
 
   var W = 920, H = 520, pad = 28, goalHalfW = 114;
   var goalLeft = W / 2 - goalHalfW, goalRight = W / 2 + goalHalfW, MR = 29, PR = 17;
@@ -252,7 +252,7 @@ function startGyroHockeyGame(scr) {
       if (sparks[si].life <= 0) sparks.splice(si, 1);
     }
 
-    if (!st.over) {
+    if (!st.over && (!ahLobby || ahLobby.isReady())) {
       if (st.pauseT > 0) {
         st.pauseT -= dt;
         if (st.pauseT <= 0) { st.banner = ''; servePuck(st.sMe > st.sCpu ? -1 : 1); }
@@ -413,22 +413,16 @@ function startGyroSpaceGame(scr) {
   var roomId = (typeof currentRoomId === 'string' && currentRoomId)
     ? currentRoomId
     : ('sp-' + (typeof pairingCode === 'string' && pairingCode ? pairingCode : ('tv' + Math.floor(1000 + Math.random() * 9000))));
-  var ctrlUrl = buildGyroVolanteUrl(roomId, 'gyrospace');
-  var qrMarkup = typeof buildQrSvgMarkup === 'function' ? buildQrSvgMarkup(ctrlUrl) : '';
 
   scr.innerHTML =
     '<div class="tv-game-topbar"><div class="tv-game-top-left">' +
     '<button type="button" id="btn-game-back" class="tv-btn" tabindex="0">Volver (Return)</button>' +
     '<div class="tv-game-top-title">🚀 Galaxia Interceptor Gyro</div></div><div class="tv-game-top-right">' +
-    '<div class="tv-game-hud-pill accent-purple" id="sp-gyro-pill">📱 Escanea el QR para Giroscopio</div>' +
+    '<div class="tv-game-hud-pill accent-purple" id="sp-gyro-pill">📱 Esperando Móviles</div>' +
     '<div class="tv-game-hud-pill accent-green" id="sp-score-pill">PUNTOS: 0</div>' +
     '<div class="tv-game-hud-pill" id="sp-hp-pill">ESCUDO: 100% · RÉCORD: ' + best + '</div></div></div>' +
-    '<div class="tv-game-arena">' +
+    '<div class="tv-game-arena" id="sp-arena">' +
     '<canvas id="tv-sp-canvas" class="tv-game-canvas" width="920" height="520"></canvas>' +
-    '<div class="tv-game-qr-card" style="width:172px;padding:9px;top:12px;right:12px;">' +
-    '<div class="tv-game-qr-title" style="font-size:11px;">TIMÓN ESPACIAL GYRO</div>' +
-    '<div class="tv-game-qr-box" style="width:108px;height:108px;margin:5px auto;">' + qrMarkup + '</div>' +
-    '<div class="tv-game-qr-code" style="font-size:11px;">Sala: ' + escapeHtml(roomId) + '</div></div>' +
     '<div class="tv-game-finish-overlay" id="sp-finish-ov"><div class="tv-game-finish-card">' +
     '<div class="tv-game-finish-title" id="sp-fin-title">💥 NAVE DESTRUIDA</div>' +
     '<div class="tv-game-finish-sub" id="sp-fin-sub">Puntuación final</div>' +
@@ -445,13 +439,17 @@ function startGyroSpaceGame(scr) {
 
   var canvas = document.getElementById('tv-sp-canvas');
   var ctx = canvas.getContext('2d');
+  var arenaEl = document.getElementById('sp-arena');
   var scorePill = document.getElementById('sp-score-pill');
   var hpPill = document.getElementById('sp-hp-pill');
   var finOv = document.getElementById('sp-finish-ov');
   var finSub = document.getElementById('sp-fin-sub');
 
   preloadGyroSpr();
-  connectGyroArcadeWs(roomId, 'gyrospace', document.getElementById('sp-gyro-pill'));
+  var spLobby = typeof window.createTvDualQrLobby === 'function'
+    ? window.createTvDualQrLobby(arenaEl, { roomId: roomId, gameId: 'gyrospace', title: '🚀 Galaxia Interceptor · QR J1 y J2' })
+    : null;
+  connectGyroArcadeWs(roomId, 'gyrospace', document.getElementById('sp-gyro-pill'), spLobby);
 
   var W = 920, H = 520, keys = { left: false, right: false, up: false, fire: false };
   var stars = [];
@@ -521,7 +519,7 @@ function startGyroSpaceGame(scr) {
 
     var tNowS = Date.now();
     var useG2Sp = tNowS < tvGyroInputP2.expiresAt;
-    if (!sp.over) {
+    if (!sp.over && (!spLobby || spLobby.isReady())) {
       var useGyro = tNowS < tvGyroInputP1.expiresAt;
       var moveIn = useGyro ? tvGyroInputP1.steer : ((keys.right ? 1 : 0) - (keys.left ? 1 : 0));
       var fireOn = keys.fire || (useGyro && (tvGyroInputP1.throttle > 0.2 || tvGyroInputP1.nitro));

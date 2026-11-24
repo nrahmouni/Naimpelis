@@ -378,7 +378,7 @@ function mountEs5RacingFallback(stageEl, opts) {
   };
 }
 
-function connectTvRacingGyroWs(roomId, statusBadgeEl) {
+function connectTvRacingGyroWs(roomId, statusBadgeEl, lobby) {
   if (!window.WebSocket) return;
   try {
     var ws = new WebSocket(getTvRacingWsUrl());
@@ -391,7 +391,7 @@ function connectTvRacingGyroWs(roomId, statusBadgeEl) {
       }));
       ws.send(JSON.stringify({
         type: 'GYRO_CONTROLLER_JOIN',
-        payload: { roomId: roomId, role: 'display', deviceName: isTizenDevice ? 'Samsung Tizen 3D' : 'Smart TV 3D' }
+        payload: { roomId: roomId, role: 'display', deviceName: isTizenDevice ? 'Samsung Tizen 3D' : 'Smart TV 3D', gameId: 'racing3d' }
       }));
     };
     ws.onmessage = function (ev) {
@@ -401,6 +401,7 @@ function connectTvRacingGyroWs(roomId, statusBadgeEl) {
         if (msg.type === 'GYRO_PEER_STATUS' && msg.payload) {
           tvRacingHasController = Boolean(msg.payload.hasController);
           var cList = msg.payload.controllers || [];
+          if (lobby) lobby.onStatus(cList);
           var hasP2 = cList.length >= 2;
           for (var ci = 0; ci < cList.length; ci++) {
             if (cList[ci] && cList[ci].slot === 2) hasP2 = true;
@@ -417,7 +418,7 @@ function connectTvRacingGyroWs(roomId, statusBadgeEl) {
                 : '📱 Volante conectado (' + dev + ')';
             } else {
               statusBadgeEl.className = 'tv-game-hud-pill accent-purple';
-              statusBadgeEl.textContent = '📱 Escanea el QR con 1 o 2 móviles';
+              statusBadgeEl.textContent = '📱 Esperando Móviles (J1 / J2)';
             }
           }
         } else if (msg.type === 'GYRO_INPUT_RELAY' && msg.payload) {
@@ -451,7 +452,7 @@ function connectTvRacingGyroWs(roomId, statusBadgeEl) {
     ws.onclose = function () {
       if (tvRacingWs === ws && TV_GAME_ACTIVE === 'racing3d') {
         setTimeout(function () {
-          if (TV_GAME_ACTIVE === 'racing3d') connectTvRacingGyroWs(roomId, statusBadgeEl);
+          if (TV_GAME_ACTIVE === 'racing3d') connectTvRacingGyroWs(roomId, statusBadgeEl, lobby);
         }, 2500);
       }
     };
@@ -467,9 +468,6 @@ function startTvRacingGame(scr) {
   tvRacingHasController = false;
   tvRacingUsingFallback = false;
 
-  var volanteUrl = getTvRacingPublicOrigin() + '/volante?room=' + encodeURIComponent(raceRoom) + '&game=racing3d';
-  var qrMarkup = typeof buildQrSvgMarkup === 'function' ? buildQrSvgMarkup(volanteUrl) : '';
-
   scr.innerHTML =
     '<div class="tv-game-topbar">' +
     '<div class="tv-game-top-left">' +
@@ -477,18 +475,12 @@ function startTvRacingGame(scr) {
     '<div class="tv-game-top-title">🏎️ Nitro GP 3D</div>' +
     '</div>' +
     '<div class="tv-game-top-right">' +
-    '<div class="tv-game-hud-pill accent-purple" id="race-gyro-pill">📱 Escanea el QR con tu móvil</div>' +
+    '<div class="tv-game-hud-pill accent-purple" id="race-gyro-pill">📱 Esperando Móviles</div>' +
     '<button type="button" id="btn-race-cam" class="tv-btn" tabindex="0">Cámara</button>' +
     '<button type="button" id="btn-race-restart" class="tv-btn" tabindex="0">Reiniciar</button>' +
     '</div></div>' +
-    '<div class="tv-game-arena">' +
+    '<div class="tv-game-arena" id="race-arena">' +
     '<div id="tv-racing-stage" class="tv-racing-stage"></div>' +
-    '<div class="tv-game-qr-card" id="race-qr-card">' +
-    '<div class="tv-game-qr-title">VOLANTE GIROSCÓPICO</div>' +
-    '<div class="tv-game-qr-box" id="race-qr-box">' + qrMarkup + '</div>' +
-    '<div style="font-size:11px;color:#cbd5e1;font-weight:700;">Abre en tu teléfono o ve a /volante</div>' +
-    '<div class="tv-game-qr-code">Sala: ' + escapeHtml(raceRoom) + '</div>' +
-    '</div>' +
     '<div class="tv-racing-telemetry-bar">' +
     '<div class="tv-racing-stat"><div class="tv-racing-stat-lbl">VELOCIDAD</div><div class="tv-racing-stat-val" id="race-hud-kmh">0 KM/H</div></div>' +
     '<div class="tv-racing-stat"><div class="tv-racing-stat-lbl">MARCHA</div><div class="tv-racing-stat-val" id="race-hud-gear">1</div></div>' +
@@ -645,7 +637,15 @@ function startTvRacingGame(scr) {
     }
   }
 
-  connectTvRacingGyroWs(raceRoom, statusPill);
+  var raceLobby = typeof window.createTvDualQrLobby === 'function'
+    ? window.createTvDualQrLobby(document.getElementById('race-arena'), {
+        roomId: raceRoom,
+        gameId: 'racing3d',
+        title: '🏎️ Nitro GP 3D · QR J1 y J2',
+        onStartReady: restartRace
+      })
+    : null;
+  connectTvRacingGyroWs(raceRoom, statusPill, raceLobby);
 
   function syncRemoteKeys() {
     if (tvRacingEngineHandle && tvRacingEngineHandle.setRemoteKey) tvRacingEngineHandle.setRemoteKey(tvRacingRemoteKeys);

@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { QrCode, RotateCcw, Smartphone, Users, Volume2, VolumeX, X } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
+import { QrCode, RotateCcw, Users, Volume2, VolumeX, X } from 'lucide-react';
 import type { AppLanguage } from '../../types';
 import { socketService } from '../../services/socket';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
-import { resolvePublicLinkOrigin } from '../../utils/shortLink';
 import { VictoryCelebrationOverlay, playGameSfx } from './GameEffects';
+import { DualGyroQrPanel } from './racing/DualGyroQrPanel';
 
 export interface PingPongStageProps {
   lang: AppLanguage;
@@ -87,16 +86,23 @@ export const PingPongStage: React.FC<PingPongStageProps> = ({
     [roomId]
   );
 
-  const controllerUrl = useMemo(() => {
-    const base =
-      typeof window !== 'undefined' && window.location.origin
-        ? window.location.origin
-        : resolvePublicLinkOrigin();
-    return `${base}/volante?room=${encodeURIComponent(effectiveRoomId)}&game=pingpong`;
-  }, [effectiveRoomId]);
-
   useEffect(() => {
-    if (socketService.isConnected() && socketService.getActiveRoomId()) {
+    const alreadyConnected = socketService.isConnected() && socketService.getActiveRoomId();
+    if (!alreadyConnected) {
+      socketService.connect(
+        effectiveRoomId,
+        {
+          id: `tv-pp-${effectiveRoomId}`,
+          name: `${userName || 'TV'} (PingPong)`,
+          avatar: '🏓',
+          color: '#f43f5e',
+          role: 'host',
+          isHost: true,
+          joinedAt: Date.now(),
+        },
+        `Sala ${effectiveRoomId.toUpperCase()}`
+      );
+    } else {
       socketService.joinGyroChannel('display', `${userName || 'TV'} (PingPong)`, effectiveRoomId, {
         gameId: 'pingpong',
       });
@@ -124,7 +130,7 @@ export const PingPongStage: React.FC<PingPongStageProps> = ({
           swing: Number(ev.payload.swing || 0),
           expiresAt: Date.now() + 1400,
         };
-      } else if (ev.type === 'ROOM_STATE' && socketService.getActiveRoomId()) {
+      } else if (ev.type === 'ROOM_STATE') {
         socketService.joinGyroChannel('display', `${userName || 'TV'} (PingPong)`, effectiveRoomId, {
           gameId: 'pingpong',
         });
@@ -733,35 +739,13 @@ export const PingPongStage: React.FC<PingPongStageProps> = ({
       </div>
 
       {showQrModal && (
-        <div
-          className="fixed inset-0 z-[210] bg-black/80 flex items-center justify-center p-4"
-          onClick={() => setShowQrModal(false)}
-        >
-          <div
-            className="w-full max-w-sm rounded-3xl bg-[#101322] border border-cyan-400/50 p-6 text-center space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-black text-white flex items-center gap-2">
-                <Smartphone className="w-4 h-4 text-cyan-400" /> Raqueta Móvil 2P
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowQrModal(false)}
-                className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-white cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="inline-block p-3 rounded-2xl bg-white">
-              <QRCodeSVG value={controllerUrl} size={184} />
-            </div>
-            <p className="text-xs text-zinc-300 leading-relaxed">
-              Escanea con 1 móvil para jugar vs CPU o con 2 móviles para duelo 1v1 (J1 Azul vs J2 Rojo). Mueve o golpea con la muñeca en horizontal.
-            </p>
-            <p className="text-[11px] font-mono text-cyan-300 break-all">{controllerUrl}</p>
-          </div>
-        </div>
+        <DualGyroQrPanel
+          roomId={effectiveRoomId}
+          gameId="pingpong"
+          title="Raqueta Móvil Ping Pong Pro 2P"
+          controllers={controllers}
+          onClose={() => setShowQrModal(false)}
+        />
       )}
     </div>
   );

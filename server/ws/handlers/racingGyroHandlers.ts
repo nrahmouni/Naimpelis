@@ -12,9 +12,26 @@ interface GyroPeerEntry {
   userId: string;
   slot?: 1 | 2;
   joinedAt: number;
+  gameId?: string;
+}
+
+interface GyroRoomMeta {
+  gameId: string;
+  updatedAt: number;
+}
+
+export interface ActiveGyroRoomSummary {
+  roomId: string;
+  gameId: string;
+  controllersCount: number;
+  hasP1: boolean;
+  hasP2: boolean;
+  displays: number;
+  updatedAt: number;
 }
 
 const gyroPeersByRoom = new Map<string, Map<WebSocket, GyroPeerEntry>>();
+const gyroRoomMeta = new Map<string, GyroRoomMeta>();
 
 function resolveAvailableControllerSlot(
   peerMap: Map<WebSocket, GyroPeerEntry>,
@@ -36,11 +53,14 @@ function resolveAvailableControllerSlot(
   return preferredSlot || 2;
 }
 
-function pruneAndSummarizeGyroPeers(roomId: string, ctx: RoomHubContext) {
+function pruneAndSummarizeGyroPeers(roomId: string, ctx?: RoomHubContext) {
   const peerMap = gyroPeersByRoom.get(roomId);
+  const metaRec = gyroRoomMeta.get(roomId);
   if (!peerMap) {
+    gyroRoomMeta.delete(roomId);
     return {
       roomId,
+      gameId: metaRec?.gameId || 'racing3d',
       controllers: [] as Array<{ userId: string; deviceName: string; slot: 1 | 2 }>,
       displays: 0,
       hasController: false,
@@ -50,8 +70,8 @@ function pruneAndSummarizeGyroPeers(roomId: string, ctx: RoomHubContext) {
   let displays = 0;
 
   for (const [peerWs, info] of peerMap.entries()) {
-    const meta = ctx.clients.get(peerWs);
-    if (peerWs.readyState !== WebSocket.OPEN || meta?.roomId !== roomId) {
+    const meta = ctx?.clients.get(peerWs);
+    if (peerWs.readyState !== WebSocket.OPEN || (ctx && meta?.roomId !== roomId)) {
       peerMap.delete(peerWs);
       continue;
     }
@@ -68,14 +88,49 @@ function pruneAndSummarizeGyroPeers(roomId: string, ctx: RoomHubContext) {
 
   if (peerMap.size === 0) {
     gyroPeersByRoom.delete(roomId);
+    gyroRoomMeta.delete(roomId);
   }
 
   return {
     roomId,
+    gameId: gyroRoomMeta.get(roomId)?.gameId || 'racing3d',
     controllers,
     displays,
     hasController: controllers.length > 0,
   };
+}
+
+export function getLatestActiveGyroRoom(validRoomIds?: Set<string>): ActiveGyroRoomSummary | null {
+  const candidates: ActiveGyroRoomSummary[] = [];
+
+  for (const roomId of Array.from(gyroPeersByRoom.keys())) {
+    if (validRoomIds && !validRoomIds.has(roomId)) continue;
+    const summary = pruneAndSummarizeGyroPeers(roomId);
+    if (summary.displays <= 0) continue;
+    const metaRec = gyroRoomMeta.get(roomId);
+    const hasP1 = summary.controllers.some((c) => c.slot === 1);
+    const hasP2 = summary.controllers.some((c) => c.slot === 2);
+    candidates.push({
+      roomId,
+      gameId: summary.gameId || metaRec?.gameId || 'racing3d',
+      controllersCount: summary.controllers.length,
+      hasP1,
+      hasP2,
+      displays: summary.displays,
+      updatedAt: metaRec?.updatedAt || 0,
+    });
+  }
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    const aNeedsCtrl = a.controllersCount < 2 ? 1 : 0;
+    const bNeedsCtrl = b.controllersCount < 2 ? 1 : 0;
+    if (aNeedsCtrl !== bNeedsCtrl) return bNeedsCtrl - aNeedsCtrl;
+    return b.updatedAt - a.updatedAt;
+  });
+
+  return candidates[0];
 }
 
 export function cleanupRacingGyroPeer(ws: WebSocket, ctx: RoomHubContext): void {
@@ -97,7 +152,7 @@ export const handleRacingGyroMessage: WsMessageHandler = (type, payload, ws, ctx
     const parsed = wsGyroJoinSchema.safeParse(payload);
     if (!parsed.success) return true;
 
-    const { roomId, role, deviceName, preferredSlot } = parsed.data;
+    const { roomId, role, deviceName, preferredSlot, gameId } = parsed.data;
     const meta = clients.get(ws);
     if (!meta || meta.roomId !== roomId || !rooms.has(roomId)) {
       return true;
@@ -117,12 +172,29 @@ export const handleRacingGyroMessage: WsMessageHandler = (type, payload, ws, ctx
           : resolveAvailableControllerSlot(peerMap, ws, preferredSlot)
         : undefined;
 
+    if (role === 'display' || gameId) {
+      const prevMeta = gyroRoomMeta.get(roomId);
+      gyroRoomMeta.set(roomId, {
+        gameId: gameId || prevMeta?.gameId || 'racing3d',
+        updatedAt: Date.now(),
+      });
+    } else if (!gyroRoomMeta.has(roomId)) {
+      gyroRoomMeta.set(roomId, {
+        gameId: 'racing3d',
+        updatedAt: Date.now(),
+      });
+    } else {
+      const prevMeta = gyroRoomMeta.get(roomId)!;
+      prevMeta.updatedAt = Date.now();
+    }
+
     peerMap.set(ws, {
       role,
       deviceName: deviceName || (role === 'controller' ? 'Mando Móvil' : 'Pantalla TV'),
       userId: meta.userId || 'guest',
       slot: assignedSlot,
       joinedAt: existing?.joinedAt || Date.now(),
+      gameId: gameId || existing?.gameId,
     });
 
     const summary = pruneAndSummarizeGyroPeers(roomId, ctx);

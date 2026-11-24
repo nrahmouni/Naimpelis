@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Bot, Check, ChevronRight, Play, Share2, Users } from 'lucide-react';
 import type { AppLanguage, Participant } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { RiffanGamesIcon } from '../ui/RiffanIcons';
 import { GameLogoArtwork, type UnifiedGameId } from './GameLogos';
+import { animateStaggerCards } from './arcade/arcadeAnimations';
+import { RobotMascot3DBadge } from './arcade/RobotMascot3DBadge';
 
 export type GameCategoryFilter = 'all' | 'arcade' | 'party' | 'board';
 
@@ -42,6 +44,11 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
   inviteCopied,
 }) => {
   const [activeCategory, setActiveCategory] = useState<GameCategoryFilter>('all');
+  const gridRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    animateStaggerCards(gridRef.current, '.nc-game-card');
+  }, [activeCategory]);
 
   const gameCatalog: GameCatalogEntry[] = [
     {
@@ -474,17 +481,20 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
             </div>
           </div>
 
-          <div className="w-full h-36 sm:h-40 rounded-2xl bg-black/40 border border-white/[0.1] overflow-hidden shrink-0">
+          <div className="relative w-full h-36 sm:h-40 rounded-2xl bg-black/40 border border-white/[0.1] overflow-hidden shrink-0">
             <GameLogoArtwork
               gameId={featuredGame.id}
               className="w-full h-full group-hover:scale-[1.03] transition-transform duration-300"
             />
+            <div className="pointer-events-none absolute -bottom-1 right-1 w-24 h-24">
+              <RobotMascot3DBadge clip="Dance" className="w-full h-full" />
+            </div>
           </div>
         </div>
       )}
 
-      {/* 4. RESPONSIVE BESPOKE SVG GAME CARDS GRID */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+      {/* 4. RESPONSIVE GAME CARDS GRID */}
+      <div ref={gridRef} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
         {filteredGames.map((game) => {
           const live = isLiveGame(game.id);
           return (
@@ -492,7 +502,7 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
               key={game.id}
               type="button"
               onClick={() => onOpenGame(game.id)}
-              className={`group rounded-2xl sm:rounded-3xl bg-[#0D0D12] border border-white/[0.08] ${game.accentBorder} overflow-hidden text-left flex flex-col cursor-pointer active:scale-95 transition-all shadow-[0_12px_28px_rgba(0,0,0,0.42)] hover:shadow-[0_16px_34px_rgba(124,58,237,0.22)]`}
+              className={`nc-game-card group rounded-2xl sm:rounded-3xl bg-[#0D0D12] border border-white/[0.08] ${game.accentBorder} overflow-hidden text-left flex flex-col cursor-pointer active:scale-95 transition-all shadow-[0_12px_28px_rgba(0,0,0,0.42)] hover:shadow-[0_16px_34px_rgba(124,58,237,0.22)]`}
             >
               <div
                 className={`relative w-full aspect-[16/10] bg-gradient-to-br ${game.backdropClass} border-b border-white/[0.06] overflow-hidden`}

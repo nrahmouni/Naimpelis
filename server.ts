@@ -101,6 +101,7 @@ import { registerAdminRoutes } from './server/routes/adminRoutes.ts';
 import { registerTizenRoutes } from './server/routes/tizenRoutes.ts';
 import { registerWebOsRoutes } from './server/routes/webosRoutes.ts';
 import { getTvBuildSignature } from './server/utils/tvBuildSignature.ts';
+import { getLatestActiveGyroRoom } from './server/ws/handlers/racingGyroHandlers.ts';
 
 // Prefer IPv4 to avoid transient container IPv6 socket resets with upstream CDNs
 dns.setDefaultResultOrder('ipv4first');
@@ -482,6 +483,11 @@ app.get('/api/audit/100-improvements', (_req, res) => {
 app.get('/api/audit/improvements-summary', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   return res.json({ ok: true, ...getImprovementsSummary() });
+});
+
+app.get('/api/gyro/active-room', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
+  return res.json({ ok: true, active: getLatestActiveGyroRoom() });
 });
 
 // ============================================================================

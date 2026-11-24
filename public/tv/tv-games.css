@@ -196,6 +196,18 @@
   background: linear-gradient(135deg, #6d28d9 0%, #1e3a8a 58%, #090e1c 100%);
 }
 
+.tv-game-card-stage.bowling {
+  background: linear-gradient(135deg, #0c1938 0%, #1e1b4b 60%, #050814 100%);
+}
+
+.tv-game-card-stage.tennis {
+  background: linear-gradient(135deg, #064e3b 0%, #0f172a 60%, #042f2e 100%);
+}
+
+.tv-game-card-stage.labyrinth {
+  background: linear-gradient(135deg, #451a03 0%, #78350f 55%, #090d16 100%);
+}
+
 .tv-game-badge-row {
   display: -webkit-flex;
   display: flex;
@@ -229,10 +241,16 @@
   justify-content: flex-end;
 }
 
-.tv-game-icon-big svg {
+.tv-game-icon-big svg,
+.tv-game-icon-big img {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.tv-game-icon-big img {
+  object-fit: cover;
+  border-radius: 10px;
 }
 
 .tv-game-card-body {
@@ -509,3 +527,118 @@
 .tv-game-finish-btns > * {
   margin: 0 8px;
 }
+
+.tv-dual-qr-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(5, 8, 17, 0.9);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.tv-dual-qr-card {
+  width: 92%;
+  max-width: 740px;
+  padding: 20px 24px;
+  border-radius: 22px;
+  background: #0d1324;
+  border: 2px solid #8b5cf6;
+  color: #f8fafc;
+  text-align: center;
+}
+
+.tv-dual-qr-head {
+  font-size: 24px;
+  font-weight: 900;
+  color: #ffffff;
+  margin-bottom: 4px;
+}
+
+.tv-dual-qr-sub {
+  font-size: 13px;
+  font-weight: 700;
+  color: #cbd5e1;
+  margin-bottom: 14px;
+}
+
+.tv-dual-qr-grid {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-justify-content: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.tv-dual-qr-slot {
+  width: 246px;
+  margin: 0 10px;
+  padding: 12px;
+  border-radius: 16px;
+  background: #141c33;
+  border: 2px solid rgba(56, 189, 248, 0.45);
+  text-align: center;
+}
+
+.tv-dual-qr-slot.j2 {
+  border-color: rgba(244, 63, 94, 0.45);
+}
+
+.tv-dual-qr-slot.connected {
+  border-color: #22c55e;
+  background: #0f241f;
+}
+
+.tv-dual-qr-box {
+  width: 136px;
+  height: 136px;
+  margin: 8px auto;
+  padding: 6px;
+  border-radius: 10px;
+  background: #ffffff;
+}
+
+.tv-dual-qr-box svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.tv-dual-qr-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #1e293b;
+  color: #38bdf8;
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.tv-dual-qr-slot.j2 .tv-dual-qr-pill {
+  color: #fb7185;
+}
+
+.tv-dual-qr-slot.connected .tv-dual-qr-pill {
+  background: #14532d;
+  color: #4ade80;
+}
+
+.tv-dual-qr-actions {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-justify-content: center;
+  justify-content: center;
+}
+
+.tv-dual-qr-actions > * {
+  margin: 0 8px;
+}
+

@@ -192,7 +192,7 @@ describe('10-Minigame Arcade & Quiz Pack (Smart TV ES5 + Web/Mobile React)', () 
     }
   });
 
-  it('renders 26 games in GamesHubLobby and mounts all Web/Mobile arcade stages without errors', () => {
+  it('renders 29 games in GamesHubLobby and mounts all Web/Mobile arcade stages without errors', () => {
     const onOpen = vi.fn();
     act(() => {
       root.render(
@@ -209,10 +209,20 @@ describe('10-Minigame Arcade & Quiz Pack (Smart TV ES5 + Web/Mobile React)', () 
       );
     });
 
-    for (const gid of ['Tetris Sprint TV', 'Pac-Man Arcade HD', 'Bomberman Party Arena', 'Riffan TV Quiz Show', 'HexGL Hover 3D', 'Ping Pong Pro 2P']) {
+    for (const gid of [
+      'Tetris Sprint TV',
+      'Pac-Man Arcade HD',
+      'Bomberman Party Arena',
+      'Riffan TV Quiz Show',
+      'HexGL Hover 3D',
+      'Ping Pong Pro 2P',
+      'Bolos Pro 3D Gyro',
+      'Tenis Slam Pro 2P',
+      'Laberinto Esfera 3D',
+    ]) {
       expect(container.textContent).toContain(gid);
     }
-    expect(container.textContent).toContain('(26)');
+    expect(container.textContent).toContain('(29)');
 
     for (const pid of ['tetris', 'hextris', 'game2048'] as const) {
       act(() => {
@@ -249,7 +259,7 @@ describe('10-Minigame Arcade & Quiz Pack (Smart TV ES5 + Web/Mobile React)', () 
     expect(container.textContent).toContain('1/10');
   });
 
-  it('stores verified CC0 PNG and GLB game assets on disk with valid headers and zero broken references', () => {
+  it('stores verified CC0 PNG, JPG and GLB game assets on disk with valid headers and zero broken references', () => {
     const assetsRoot = path.join(ROOT, 'public/assets/games');
     expect(fs.existsSync(assetsRoot)).toBe(true);
     const collected: string[] = [];
@@ -285,7 +295,7 @@ describe('10-Minigame Arcade & Quiz Pack (Smart TV ES5 + Web/Mobile React)', () 
     walkCode(path.join(ROOT, 'public/tv'));
     for (const file of codeFiles) {
       const content = fs.readFileSync(file, 'utf8');
-      const matches = content.match(/assets\/games\/[a-zA-Z0-9_/-]+\.(?:png|glb)/g) || [];
+      const matches = content.match(/assets\/games\/[a-zA-Z0-9_/-]+\.(?:png|jpg|glb)/g) || [];
       for (const relAsset of matches) {
         expect(fs.existsSync(path.join(ROOT, 'public', relAsset))).toBe(true);
       }

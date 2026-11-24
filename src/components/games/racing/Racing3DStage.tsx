@@ -10,13 +10,12 @@ import {
   VolumeX,
   X,
 } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
 import type { AppLanguage } from '../../../types';
 import { socketService } from '../../../services/socket';
 import { pickLang } from '../../../utils/i18n';
 import { triggerHaptic } from '../../../utils/haptics';
-import { resolvePublicLinkOrigin } from '../../../utils/shortLink';
 import { createRacing3dEngine } from './racing3dEngine';
+import { DualGyroQrPanel } from './DualGyroQrPanel';
 import type { RacingCarTelemetry, RacingEngineHandle } from './racingTypes';
 
 interface Racing3DStageProps {
@@ -82,14 +81,6 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
     () => (roomId || socketService.getActiveRoomId() || 'race-local').trim().toLowerCase(),
     [roomId]
   );
-
-  const controllerUrl = useMemo(() => {
-    const base =
-      typeof window !== 'undefined' && window.location.origin
-        ? window.location.origin
-        : resolvePublicLinkOrigin();
-    return `${base}/volante?room=${encodeURIComponent(effectiveRoomId)}`;
-  }, [effectiveRoomId]);
 
   // Mount Three.js PBR 3D Engine
   useEffect(() => {
@@ -165,8 +156,25 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
 
   // Join WS gyro display channel + relay incoming phone gyro inputs
   useEffect(() => {
-    if (socketService.isConnected() && socketService.getActiveRoomId()) {
-      socketService.joinGyroChannel('display', `${userName || 'Pantalla'} (3D)`);
+    const alreadyConnected = socketService.isConnected() && socketService.getActiveRoomId();
+    if (!alreadyConnected) {
+      socketService.connect(
+        effectiveRoomId,
+        {
+          id: `tv-r3d-${effectiveRoomId}`,
+          name: `${userName || 'Pantalla'} (3D)`,
+          avatar: '🏎️',
+          color: '#22d3ee',
+          role: 'host',
+          isHost: true,
+          joinedAt: Date.now(),
+        },
+        `Sala ${effectiveRoomId.toUpperCase()}`
+      );
+    } else {
+      socketService.joinGyroChannel('display', `${userName || 'Pantalla'} (3D)`, effectiveRoomId, {
+        gameId: 'racing3d',
+      });
     }
 
     const unsub = socketService.subscribe((ev) => {
@@ -193,13 +201,15 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
           950,
           slot
         );
-      } else if (ev.type === 'ROOM_STATE' && socketService.getActiveRoomId()) {
-        socketService.joinGyroChannel('display', `${userName || 'Pantalla'} (3D)`);
+      } else if (ev.type === 'ROOM_STATE') {
+        socketService.joinGyroChannel('display', `${userName || 'Pantalla'} (3D)`, effectiveRoomId, {
+          gameId: 'racing3d',
+        });
       }
     });
 
     return () => unsub();
-  }, [userName]);
+  }, [effectiveRoomId, userName]);
 
   // Keyboard & Remote Control bindings
   const syncKeysToEngine = useCallback(() => {
@@ -424,40 +434,14 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
         WASD / Flechas · Shift: Nitro · Espacio: Drift · C: Cámara
       </div>
 
-      {/* QR Pairing Drawer for Phone Gyroscope */}
       {showQrModal && (
-        <div className="absolute inset-0 bg-[#05070e]/92 flex items-center justify-center p-4 z-20">
-          <div className="w-full max-w-sm rounded-3xl bg-[#101422] border border-white/15 p-5 space-y-4 text-center shadow-2xl">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-black flex items-center gap-2">
-                <Smartphone className="w-4 h-4 text-cyan-300" />
-                Volante Móvil (Giroscopio)
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowQrModal(false)}
-                className="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            <div className="inline-block p-3 rounded-2xl bg-white">
-              <QRCodeSVG value={controllerUrl} size={156} level="M" includeMargin={false} />
-            </div>
-
-            <div className="text-xs text-zinc-300 leading-relaxed">
-              Escanea el código con la cámara de tu móvil o abre{' '}
-              <span className="font-mono text-cyan-300 break-all">{controllerUrl}</span>
-            </div>
-
-            {!socketService.getActiveRoomId() && (
-              <div className="text-[11px] text-amber-300 bg-amber-500/10 border border-amber-400/30 rounded-xl px-3 py-2">
-                Entra en una sala o juega en la Smart TV (/tv) para sincronizar el móvil en tiempo real.
-              </div>
-            )}
-          </div>
-        </div>
+        <DualGyroQrPanel
+          roomId={effectiveRoomId}
+          gameId="racing3d"
+          title="Volante Móvil Nitro GP 3D (J1 y J2)"
+          controllers={connectedControllers}
+          onClose={() => setShowQrModal(false)}
+        />
       )}
 
       {/* Race Finished Overlay */}

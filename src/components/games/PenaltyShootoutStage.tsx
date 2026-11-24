@@ -4,21 +4,19 @@ import {
   QrCode,
   RotateCcw,
   Shield,
-  Smartphone,
   Trophy,
   Users,
   Volume2,
   VolumeX,
   X,
 } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
 import type { AppLanguage } from '../../types';
 import { socketService } from '../../services/socket';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
-import { resolvePublicLinkOrigin } from '../../utils/shortLink';
 import { PENALTY_COUNTRIES, type PenaltyCountry } from '../../shared/penaltyCountries';
 import { VictoryCelebrationOverlay } from './GameEffects';
+import { DualGyroQrPanel } from './racing/DualGyroQrPanel';
 
 export interface PenaltyShootoutStageProps {
   lang: AppLanguage;
@@ -213,14 +211,6 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
     return `pen-${Math.floor(1000 + Math.random() * 9000)}`;
   }, [roomId]);
 
-  const controllerUrl = useMemo(() => {
-    const base =
-      typeof window !== 'undefined' && window.location.origin
-        ? window.location.origin
-        : resolvePublicLinkOrigin();
-    return `${base}/volante?room=${encodeURIComponent(effectiveRoomId)}&game=penalty`;
-  }, [effectiveRoomId]);
-
   const stateRef = useRef({
     aimX: 0,
     aimY: 0.48,
@@ -260,8 +250,9 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
     } as BallFlight,
   });
 
-  // Preload realistic stadium photo backdrop
+  // Preload realistic stadium photo backdrop & online CC0 sprite packs
   useEffect(() => {
+    preloadOnlineGameAssets();
     if (typeof Image === 'undefined') return;
     const img = new Image();
     img.src = '/assets/games/penalty/stadium_backdrop.jpg';
@@ -1120,48 +1111,31 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
       ctx.ellipse(bx, by + bRadius + 5, bRadius * 1.15, bRadius * 0.4, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // 3D Shaded Football
-      ctx.save();
-      ctx.translate(bx, by);
-      const ballGrad = ctx.createRadialGradient(-bRadius * 0.35, -bRadius * 0.35, bRadius * 0.15, 0, 0, bRadius);
-      ballGrad.addColorStop(0, '#ffffff');
-      ballGrad.addColorStop(0.7, '#e2e8f0');
-      ballGrad.addColorStop(1, '#64748b');
-      ctx.fillStyle = ballGrad;
-      ctx.beginPath();
-      ctx.arc(0, 0, bRadius, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.rotate(st.ball.spinAngle);
-      ctx.fillStyle = '#0f172a';
-      ctx.beginPath();
-      for (let p = 0; p < 5; p += 1) {
-        const a = (p / 5) * Math.PI * 2 - Math.PI / 2;
-        const px = Math.cos(a) * bRadius * 0.42;
-        const py = Math.sin(a) * bRadius * 0.42;
-        if (p === 0) ctx.moveTo(px, py);
-        else ctx.lineTo(px, py);
-      }
-      ctx.closePath();
-      ctx.fill();
-
-      ctx.strokeStyle = 'rgba(15,23,42,0.75)';
-      ctx.lineWidth = 1.6;
-      for (let p = 0; p < 5; p += 1) {
-        const a = (p / 5) * Math.PI * 2 - Math.PI / 2;
+      // 3D Shaded Football (Kenney Sports Pack sprite with procedural fallback)
+      if (!drawArcadeSprite(ctx, 'assets/games/sports/ball_soccer1.png', bx, by, bRadius * 2.15, bRadius * 2.15, st.ball.spinAngle)) {
+        ctx.save();
+        ctx.translate(bx, by);
+        const ballGrad = ctx.createRadialGradient(-bRadius * 0.35, -bRadius * 0.35, bRadius * 0.15, 0, 0, bRadius);
+        ballGrad.addColorStop(0, '#ffffff');
+        ballGrad.addColorStop(0.7, '#e2e8f0');
+        ballGrad.addColorStop(1, '#64748b');
+        ctx.fillStyle = ballGrad;
         ctx.beginPath();
-        ctx.moveTo(Math.cos(a) * bRadius * 0.42, Math.sin(a) * bRadius * 0.42);
-        ctx.lineTo(Math.cos(a) * bRadius * 0.94, Math.sin(a) * bRadius * 0.94);
-        ctx.stroke();
+        ctx.arc(0, 0, bRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
       }
-      ctx.restore();
 
-      // Running Striker Figure in Attacking Nation Kit (runs from bottom-left into spot!)
+      // Running Striker Figure (Kenney Toon animated run/kick pose + nation badge)
       if (!st.ball.active || st.ball.t < 0.35) {
         const runP = st.strikerKicking ? st.strikerRunT : 0;
         const sx = w * 0.39 + runP * (spotX - 36 - w * 0.39);
         const sy = h * 0.95 - runP * 36;
-        const stride = Math.sin(runP * 14) * 9;
+        const strikerPose = !st.strikerKicking
+          ? 'assets/games/toon/male_idle.png'
+          : runP > 0.72
+          ? 'assets/games/toon/male_kick.png'
+          : `assets/games/toon/male_run${Math.floor(runP * 9) % 3}.png`;
 
         ctx.save();
         ctx.translate(sx, sy);
@@ -1169,31 +1143,25 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
         ctx.beginPath();
         ctx.ellipse(0, 26, 20, 6, 0, 0, Math.PI * 2);
         ctx.fill();
-        // Shorts
-        ctx.fillStyle = kKit.shorts;
-        ctx.fillRect(-11, 2, 10, 14);
-        ctx.fillRect(1, 2 + stride * 0.4, 10, 14);
-        // Jersey
+        if (!drawArcadeSprite(ctx, strikerPose, 0, -14, 72, 86, 0)) {
+          ctx.fillStyle = kKit.jersey;
+          ctx.fillRect(-15, -30, 30, 34);
+        }
         ctx.fillStyle = kKit.jersey;
-        ctx.beginPath();
-        ctx.roundRect(-15, -30, 30, 34, 6);
-        ctx.fill();
-        ctx.fillStyle = kKit.trim;
-        ctx.fillRect(-15, -18, 30, 5);
-        // Head
-        ctx.fillStyle = '#fed7aa';
-        ctx.beginPath();
-        ctx.arc(0, -40, 10, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.fillRect(-11, 14, 22, 6);
         ctx.restore();
       }
 
-      // Turf dust & goal sparks
+      // Turf dust & goal sparks (Kenney Particle Pack)
       for (let pi = 0; pi < st.particles.length; pi += 1) {
         const pt = st.particles[pi];
-        ctx.globalAlpha = Math.max(0, pt.life * 1.4);
-        ctx.fillStyle = pt.color;
-        ctx.fillRect(pt.x - pt.size * 0.5, pt.y - pt.size * 0.5, pt.size, pt.size);
+        const alpha = Math.max(0, Math.min(1, pt.life * 1.4));
+        const pSprite = pi % 2 === 0 ? 'assets/games/particles/star_07.png' : 'assets/games/particles/spark_01.png';
+        if (!drawArcadeSprite(ctx, pSprite, pt.x, pt.y, pt.size * 3.4, pt.size * 3.4, pt.life * 6, alpha)) {
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = pt.color;
+          ctx.fillRect(pt.x - pt.size * 0.5, pt.y - pt.size * 0.5, pt.size, pt.size);
+        }
       }
       ctx.globalAlpha = 1;
 
@@ -1573,36 +1541,15 @@ export const PenaltyShootoutStage: React.FC<PenaltyShootoutStageProps> = ({
         )}
       </div>
 
-      {/* QR Pairing Modal */}
       {showQrModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-3xl bg-[#0e1324] border border-white/15 p-6 space-y-4 text-center shadow-2xl">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-sm font-black text-white">
-                <Smartphone className="w-4 h-4 text-cyan-400" />
-                <span>Penaltis con Móvil 1P / 2P</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowQrModal(false)}
-                className="w-8 h-8 rounded-lg bg-white/[0.06] hover:bg-white/[0.14] flex items-center justify-center cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="inline-block p-3.5 rounded-2xl bg-white">
-              <QRCodeSVG value={controllerUrl} size={184} />
-            </div>
-            <p className="text-xs text-zinc-300 leading-relaxed">
-              Escanea con 1 o 2 móviles en horizontal. Inclina para apuntar, usa{' '}
-              <strong className="text-amber-300">ROSCA ↶/↷</strong> para dar efecto y pulsa{' '}
-              <strong className="text-emerald-300">CHUTAR / PARAR</strong> (o agita el móvil).
-            </p>
-            <div className="text-[11px] font-mono text-cyan-300 bg-black/40 rounded-xl px-3 py-2 break-all">
-              {controllerUrl}
-            </div>
-          </div>
-        </div>
+        <DualGyroQrPanel
+          roomId={effectiveRoomId}
+          gameId="penalty"
+          title="Penaltis Mundial Pro · J1 y J2"
+          subtitle="Escanea en vertical con 1 o 2 móviles · Inclina para apuntar, rosca y chuta o para"
+          controllers={controllers}
+          onClose={() => setShowQrModal(false)}
+        />
       )}
     </div>
   );

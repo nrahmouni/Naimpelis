@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { QrCode, RotateCcw, Smartphone, Trophy, Volume2, VolumeX, X } from 'lucide-react';
-import { QRCodeSVG } from 'qrcode.react';
+import { QrCode, RotateCcw, Trophy, Volume2, VolumeX, X } from 'lucide-react';
 import type { AppLanguage } from '../../types';
 import { socketService } from '../../services/socket';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
-import { resolvePublicLinkOrigin } from '../../utils/shortLink';
 import { playGameSfx } from './GameEffects';
+import { DualGyroQrPanel } from './racing/DualGyroQrPanel';
 import {
   drawArcadeSprite,
   drawArcadeTiledBg,
@@ -57,16 +56,23 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
     [gameId, roomId]
   );
 
-  const controllerUrl = useMemo(() => {
-    const base =
-      typeof window !== 'undefined' && window.location.origin
-        ? window.location.origin
-        : resolvePublicLinkOrigin();
-    return `${base}/volante?room=${encodeURIComponent(effectiveRoomId)}&game=${encodeURIComponent(gameId)}`;
-  }, [effectiveRoomId, gameId]);
-
   useEffect(() => {
-    if (socketService.isConnected() && socketService.getActiveRoomId()) {
+    const alreadyConnected = socketService.isConnected() && socketService.getActiveRoomId();
+    if (!alreadyConnected) {
+      socketService.connect(
+        effectiveRoomId,
+        {
+          id: `tv-ga-${effectiveRoomId}`,
+          name: `${userName || 'Jugador'} (${gameId})`,
+          avatar: '🎮',
+          color: '#22d3ee',
+          role: 'host',
+          isHost: true,
+          joinedAt: Date.now(),
+        },
+        `Sala ${effectiveRoomId.toUpperCase()}`
+      );
+    } else {
       socketService.joinGyroChannel('display', `${userName || 'Jugador'} (${gameId})`, effectiveRoomId, { gameId });
     }
     const unsub = socketService.subscribe((ev) => {
@@ -86,7 +92,7 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
           handbrake: Boolean(ev.payload.handbrake),
           expiresAt: Date.now() + 1400,
         };
-      } else if (ev.type === 'ROOM_STATE' && socketService.getActiveRoomId()) {
+      } else if (ev.type === 'ROOM_STATE') {
         socketService.joinGyroChannel('display', `${userName || 'Jugador'} (${gameId})`, effectiveRoomId, { gameId });
       }
     });
@@ -735,35 +741,17 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
       </div>
 
       {showQrModal && (
-        <div
-          className="fixed inset-0 z-[210] bg-black/80 flex items-center justify-center p-4"
-          onClick={() => setShowQrModal(false)}
-        >
-          <div
-            className="w-full max-w-sm rounded-3xl bg-[#101322] border border-cyan-400/50 p-6 text-center space-y-4"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-black text-white flex items-center gap-2">
-                <Smartphone className="w-4 h-4 text-cyan-400" /> Mando Giroscopio Móvil
-              </span>
-              <button
-                type="button"
-                onClick={() => setShowQrModal(false)}
-                className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center text-white cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            <div className="inline-block p-3 rounded-2xl bg-white">
-              <QRCodeSVG value={controllerUrl} size={184} />
-            </div>
-            <p className="text-xs text-zinc-300 leading-relaxed">
-              Escanea el QR con tu móvil para controlar inclinando el teléfono en tiempo real.
-            </p>
-            <p className="text-[11px] font-mono text-cyan-300 break-all">{controllerUrl}</p>
-          </div>
-        </div>
+        <DualGyroQrPanel
+          roomId={effectiveRoomId}
+          gameId={gameId}
+          title={
+            gameId === 'gyrohockey'
+              ? 'Neon Air Hockey Gyro · J1 y J2'
+              : 'Galaxia Interceptor Gyro · J1 y J2'
+          }
+          controllers={connectedControllers}
+          onClose={() => setShowQrModal(false)}
+        />
       )}
     </div>
   );

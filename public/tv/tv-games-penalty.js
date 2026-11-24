@@ -68,21 +68,17 @@ function startPenaltyGame(scr) {
   var bestScore = 0;
   try { bestScore = Number(localStorage.getItem(TV_PENALTY_BEST_KEY) || '0') || 0; } catch (e) {}
 
-  if (!tvPenStadiumImg && typeof Image !== 'undefined') {
+  if (typeof window.preloadTvGameSprites === 'function') {
+    window.preloadTvGameSprites(['assets/games/penalty/stadium_backdrop.jpg', 'assets/games/sports/ball_soccer1.png', 'assets/games/toon/male_idle.png', 'assets/games/toon/male_run0.png', 'assets/games/toon/male_run1.png', 'assets/games/toon/male_run2.png', 'assets/games/toon/male_kick.png', 'assets/games/particles/star_07.png', 'assets/games/particles/spark_01.png']);
+  } else if (!tvPenStadiumImg && typeof Image !== 'undefined') {
     var img = new Image();
-    img.src = 'assets/games/penalty/stadium_backdrop.jpg';
+    img.src = (window.location && window.location.protocol === 'file:') ? './assets/games/penalty/stadium_backdrop.jpg' : '/assets/games/penalty/stadium_backdrop.jpg';
     img.onload = function () { tvPenStadiumImg = img; };
   }
 
   var roomId = (typeof currentRoomId === 'string' && currentRoomId)
     ? currentRoomId
     : ('pen-' + (typeof pairingCode === 'string' && pairingCode ? pairingCode : ('tv' + Math.floor(1000 + Math.random() * 9000))));
-  var origin = (typeof getTvRacingPublicOrigin === 'function')
-    ? getTvRacingPublicOrigin()
-    : (window.location.origin || ('https://' + (window.location.host || 'localhost')));
-  var ctrlUrl = origin + '/volante?room=' + encodeURIComponent(roomId) + '&game=penalty';
-  var qrMarkup = typeof buildQrSvgMarkup === 'function' ? buildQrSvgMarkup(ctrlUrl) : '';
-
   scr.innerHTML =
     '<div class="tv-game-topbar"><div class="tv-game-top-left">' +
     '<button type="button" id="btn-game-back" class="tv-btn" tabindex="0">Volver</button>' +
@@ -91,16 +87,12 @@ function startPenaltyGame(scr) {
     '<button type="button" id="btn-pen-c2" class="tv-btn" tabindex="0">J2: ARG</button>' +
     '<button type="button" id="btn-pen-mode" class="tv-btn" tabindex="0">Modo: 1vIA</button>' +
     '</div><div class="tv-game-top-right">' +
-    '<div class="tv-game-hud-pill accent-purple" id="pen-gyro-pill">📱 QR Móvil</div>' +
+    '<div class="tv-game-hud-pill accent-purple" id="pen-gyro-pill">📱 Esperando Móviles</div>' +
     '<div class="tv-game-hud-pill accent-green" id="pen-score-pill">ESP 0 - 0 ARG</div>' +
     '<div class="tv-game-hud-pill" id="pen-round-pill">RONDA 1/5 · 8.0s</div>' +
     '<div class="tv-game-hud-pill" id="pen-best-pill">Récord: ' + bestScore + '</div></div></div>' +
-    '<div class="tv-game-arena">' +
+    '<div class="tv-game-arena" id="pen-arena">' +
     '<canvas id="tv-penalty-canvas" class="tv-game-canvas" width="960" height="540"></canvas>' +
-    '<div class="tv-game-qr-card" id="pen-qr-card" style="width:166px;padding:9px;top:12px;right:12px;">' +
-    '<div class="tv-game-qr-title" style="font-size:11px;">CHUTA DESDE MÓVIL</div>' +
-    '<div class="tv-game-qr-box" style="width:102px;height:102px;margin:5px auto;">' + qrMarkup + '</div>' +
-    '<div class="tv-game-qr-code" style="font-size:11px;">Sala: ' + escapeHtml(roomId) + '</div></div>' +
     '<div class="tv-game-finish-overlay" id="pen-finish-ov"><div class="tv-game-finish-card">' +
     '<div class="tv-game-finish-title" id="pen-fin-title">¡CAMPEÓN!</div>' +
     '<div class="tv-game-finish-sub" id="pen-fin-sub">Resultado final</div>' +
@@ -109,7 +101,7 @@ function startPenaltyGame(scr) {
     '<button type="button" id="btn-pen-exit" class="tv-btn" tabindex="0">Salir al Menú</button>' +
     '</div></div></div></div>' +
     '<div class="tv-game-controls-hint">' +
-    '<span>Móvil Horizontal (1P/2P): Apunta inclinando · Mantén ROSCA ↶/↷ + CHUTAR (o agita) · Portero J2 secreto</span>' +
+    '<span>Móvil Vertical (1P/2P): Apunta inclinando · Mantén ROSCA ↶/↷ + CHUTAR · Portero J2 secreto</span>' +
     '<span>Mando TV: Flechas apuntan · CH-/CH+ o Q/E Rosca · OK Chuta / Para · Tiempo límite 8s por tiro</span></div>';
 
   document.getElementById('btn-game-back').onclick = closeTvGame;
@@ -117,17 +109,20 @@ function startPenaltyGame(scr) {
 
   var canvas = document.getElementById('tv-penalty-canvas');
   var ctx = canvas.getContext('2d');
+  var arenaEl = document.getElementById('pen-arena');
   var scorePill = document.getElementById('pen-score-pill');
   var roundPill = document.getElementById('pen-round-pill');
   var bestPill = document.getElementById('pen-best-pill');
   var gyroPill = document.getElementById('pen-gyro-pill');
-  var qrCard = document.getElementById('pen-qr-card');
   var btnC1 = document.getElementById('btn-pen-c1');
   var btnC2 = document.getElementById('btn-pen-c2');
   var btnMode = document.getElementById('btn-pen-mode');
   var finOv = document.getElementById('pen-finish-ov');
   var finTitle = document.getElementById('pen-fin-title');
   var finSub = document.getElementById('pen-fin-sub');
+  var penLobby = typeof window.createTvDualQrLobby === 'function'
+    ? window.createTvDualQrLobby(arenaEl, { roomId: roomId, gameId: 'penalty', title: '⚽ Penaltis Mundial · QR J1 y J2' })
+    : null;
 
   var goalLeft = 220, goalRight = 740, goalTop = 104, goalBottom = 304, spotX = 480, spotY = 466;
   var sparks = [], trail = [];
@@ -155,7 +150,7 @@ function startPenaltyGame(scr) {
           type: 'JOIN_ROOM',
           payload: { roomId: roomId, roomName: 'PENALTY', user: { id: 'tv-pen-' + roomId, name: 'Smart TV', avatar: '⚽', color: '#10B981', isHost: true } }
         }));
-        ws.send(JSON.stringify({ type: 'GYRO_CONTROLLER_JOIN', payload: { roomId: roomId, role: 'display', deviceName: 'Smart TV Penaltis' } }));
+        ws.send(JSON.stringify({ type: 'GYRO_CONTROLLER_JOIN', payload: { roomId: roomId, role: 'display', deviceName: 'Smart TV Penaltis', gameId: 'penalty' } }));
       };
       ws.onmessage = function (ev) {
         if (tvPenWs !== ws) return;
@@ -163,6 +158,7 @@ function startPenaltyGame(scr) {
           var msg = JSON.parse(ev.data);
           if (msg.type === 'GYRO_PEER_STATUS' && msg.payload) {
             var list = msg.payload.controllers || [];
+            if (penLobby) penLobby.onStatus(list);
             tvPenHasP1 = list.length >= 1;
             tvPenHasP2 = list.length >= 2;
             if (tvPenHasP2 && !state.mode2p) {
@@ -172,9 +168,8 @@ function startPenaltyGame(scr) {
             }
             if (gyroPill) {
               gyroPill.className = tvPenHasP1 ? 'tv-game-hud-pill accent-green' : 'tv-game-hud-pill accent-purple';
-              gyroPill.textContent = tvPenHasP2 ? '📱 2 Móviles (J1 vs J2)' : tvPenHasP1 ? '📱 J1 Conectado' : '📱 QR Móvil';
+              gyroPill.textContent = tvPenHasP2 ? '📱 2 Móviles (J1 vs J2)' : tvPenHasP1 ? '📱 J1 Conectado' : '📱 Esperando Móviles';
             }
-            if (qrCard && tvPenHasP2) qrCard.style.display = 'none';
           } else if (msg.type === 'GYRO_INPUT_RELAY' && msg.payload) {
             var p = msg.payload;
             var tgt = p.playerSlot === 2 ? tvPenGyro2 : tvPenGyro1;
@@ -383,7 +378,7 @@ function startPenaltyGame(scr) {
       if (sparks[sIdx].l <= 0) sparks.splice(sIdx, 1);
     }
 
-    if (state.phase === 'aim' || state.phase === 'wait_save') {
+    if ((state.phase === 'aim' || state.phase === 'wait_save') && (!penLobby || penLobby.isReady())) {
       state.turnTime = Math.max(0, state.turnTime - dt);
       var cSec = Math.ceil(state.turnTime);
       if (state.turnTime <= 3.0 && cSec > 0 && cSec !== lastBeepSec) { lastBeepSec = cSec; playTvGameBeep(880, 0.05, 'sine', 0.05); }
@@ -427,65 +422,81 @@ function startPenaltyGame(scr) {
     ctx.save();
     if (state.shake > 0) ctx.translate((Math.random() - 0.5) * state.shake * 10, (Math.random() - 0.5) * state.shake * 10);
 
-    if (tvPenStadiumImg && tvPenStadiumImg.complete && tvPenStadiumImg.naturalWidth > 0) {
-      ctx.drawImage(tvPenStadiumImg, 0, 0, 960, 320);
-      ctx.fillStyle = 'rgba(5,9,20,0.34)'; ctx.fillRect(0, 0, 960, 300);
+    var drewPhoto = (typeof window.drawTvSpriteRect === 'function') && window.drawTvSpriteRect(ctx, 'assets/games/penalty/stadium_backdrop.jpg', 0, 0, 960, 326);
+    if (!drewPhoto && tvPenStadiumImg && tvPenStadiumImg.complete && tvPenStadiumImg.naturalWidth > 0) {
+      ctx.drawImage(tvPenStadiumImg, 0, 0, 960, 326);
+      drewPhoto = true;
+    }
+    if (drewPhoto) {
+      var fog = ctx.createLinearGradient(0, 0, 0, 305);
+      fog.addColorStop(0, 'rgba(5,9,20,0.42)'); fog.addColorStop(0.7, 'rgba(9,16,32,0.16)'); fog.addColorStop(1, 'rgba(10,48,24,0.45)');
+      ctx.fillStyle = fog; ctx.fillRect(0, 0, 960, 305);
     } else {
       var skyGrad = ctx.createLinearGradient(0, 0, 0, 290);
       skyGrad.addColorStop(0, '#050918'); skyGrad.addColorStop(1, '#132046');
       ctx.fillStyle = skyGrad; ctx.fillRect(0, 0, 960, 290);
     }
 
-    ctx.fillStyle = 'rgba(9,13,28,0.92)'; ctx.fillRect(0, 266, 960, 24);
-    ctx.strokeStyle = kKit.jersey; ctx.lineWidth = 2; ctx.strokeRect(0, 266, 960, 24);
-    ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#38BDF8';
-    ctx.fillText(c1.code + '  vs  ' + c2.code + '  ·  COPA MUNDIAL PRO  ·  RIFFAN STADIUM HD', 480, 282);
+    ctx.fillStyle = 'rgba(7,11,24,0.92)'; ctx.fillRect(0, 266, 960, 26);
+    ctx.strokeStyle = kKit.jersey; ctx.lineWidth = 2; ctx.strokeRect(0, 266, 960, 26);
+    ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = '#E2E8F0';
+    ctx.fillText(c1.code + '  vs  ' + c2.code + '   ·   MUNDIAL PENALTY ARENA HD   ·   RIFFAN TV', 480, 283);
 
-    var turf = ctx.createLinearGradient(0, 290, 0, 540);
-    turf.addColorStop(0, '#0f6d34'); turf.addColorStop(1, '#168740');
-    ctx.fillStyle = turf; ctx.fillRect(0, 290, 960, 250);
-    ctx.fillStyle = 'rgba(255,255,255,0.05)';
-    ctx.fillRect(0, 326, 960, 34); ctx.fillRect(0, 400, 960, 42); ctx.fillRect(0, 480, 960, 46);
+    var turf = ctx.createLinearGradient(0, 292, 0, 540);
+    turf.addColorStop(0, '#146B33'); turf.addColorStop(0.5, '#15803D'); turf.addColorStop(1, '#0C4A22');
+    ctx.fillStyle = turf; ctx.fillRect(0, 292, 960, 248);
+    ctx.fillStyle = 'rgba(255,255,255,0.045)';
+    for (var sBand = 0; sBand < 5; sBand++) ctx.fillRect(0, 294 + sBand * 48, 960, 22);
 
     ctx.strokeStyle = 'rgba(255,255,255,0.72)'; ctx.lineWidth = 3;
-    ctx.strokeRect(120, 296, 720, 200);
-    ctx.beginPath(); ctx.arc(spotX, 342, 74, 0.25, Math.PI - 0.25); ctx.stroke();
-    ctx.beginPath(); ctx.arc(spotX, spotY, 6, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(76, 400); ctx.lineTo(884, 400); ctx.lineTo(950, 540); ctx.moveTo(76, 400); ctx.lineTo(10, 540); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(202, 304); ctx.lineTo(758, 304); ctx.lineTo(806, 344); ctx.lineTo(154, 344); ctx.closePath(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(spotX, 346, 68, 0.22, Math.PI - 0.22); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(spotX, spotY + 12, 11, 4.5, 0, 0, Math.PI * 2); ctx.fillStyle = '#FFFFFF'; ctx.fill();
 
-    // 3D Back Net
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.35)';
-    ctx.fillRect(goalLeft + 22, goalTop + 14, goalRight - goalLeft - 44, goalBottom - goalTop - 22);
-    ctx.strokeStyle = 'rgba(255,255,255,0.32)'; ctx.lineWidth = 1.4;
-    for (var gx = goalLeft; gx <= goalRight; gx += 24) {
-      var wave = state.netWave > 0 ? Math.sin(gx * 0.08 + state.powerPhase * 18) * state.netWave * 14 : 0;
-      ctx.beginPath(); ctx.moveTo(gx, goalTop); ctx.quadraticCurveTo(gx + wave, (goalTop + goalBottom) / 2, gx, goalBottom); ctx.stroke();
+    // 3D Stanchion Goal Net
+    var bL = goalLeft + 26, bR = goalRight - 26, bT = goalTop + 20, bB = goalBottom - 16;
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.36)'; ctx.fillRect(bL, bT, bR - bL, bB - bT);
+    ctx.strokeStyle = 'rgba(226, 232, 240, 0.34)'; ctx.lineWidth = 1.4;
+    for (var gIdx = 0; gIdx <= 18; gIdx++) {
+      var u = gIdx / 18, fx = goalLeft + (goalRight - goalLeft) * u, bxN = bL + (bR - bL) * u;
+      var wave = state.netWave > 0 ? Math.sin(u * 8 + state.powerPhase * 18) * state.netWave * 14 : 0;
+      ctx.beginPath(); ctx.moveTo(fx, goalTop); ctx.quadraticCurveTo(bxN + wave, (bT + bB) * 0.5, bxN, bB); ctx.stroke();
     }
-    for (var gy = goalTop; gy <= goalBottom; gy += 20) {
-      var hWave = state.netWave > 0 ? Math.sin(gy * 0.1 + state.powerPhase * 20) * state.netWave * 11 : 0;
-      ctx.beginPath(); ctx.moveTo(goalLeft, gy); ctx.quadraticCurveTo(480, gy + hWave, goalRight, gy); ctx.stroke();
+    for (var gy = 0; gy <= 8; gy++) {
+      var v = gy / 8, yF = goalTop + (goalBottom - goalTop) * v, yB = bT + (bB - bT) * v;
+      var hWave = state.netWave > 0 ? Math.sin(v * 6 + state.powerPhase * 20) * state.netWave * 9 : 0;
+      ctx.beginPath(); ctx.moveTo(goalLeft, yF); ctx.lineTo(bL, yB); ctx.quadraticCurveTo(480, yB + hWave, bR, yB); ctx.lineTo(goalRight, yF); ctx.stroke();
     }
 
-    ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 9; ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 13;
+    ctx.beginPath(); ctx.moveTo(goalLeft + 3, goalBottom + 2); ctx.lineTo(goalLeft + 3, goalTop + 3); ctx.lineTo(goalRight + 3, goalTop + 3); ctx.lineTo(goalRight + 3, goalBottom + 2); ctx.stroke();
+    ctx.strokeStyle = '#F8FAFC'; ctx.lineWidth = 9.5; ctx.lineJoin = 'round';
     ctx.beginPath(); ctx.moveTo(goalLeft, goalBottom); ctx.lineTo(goalLeft, goalTop); ctx.lineTo(goalRight, goalTop); ctx.lineTo(goalRight, goalBottom); ctx.stroke();
 
-    // Diving Goalkeeper in Defending Nation Kit
-    var kx = state.keeperX, ky = 250 + state.keeperDiveY, diveTilt = (kx - 480) * 0.0024;
-    ctx.save(); ctx.translate(kx, ky); ctx.rotate(diveTilt);
-    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.beginPath(); ctx.ellipse(0, 38, 26, 7, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = dKit.gkJersey; ctx.fillRect(-19, -24, 38, 46);
-    ctx.fillStyle = dKit.gkTrim; ctx.fillRect(-19, -8, 38, 6);
-    ctx.fillStyle = '#0F172A'; ctx.fillRect(-15, 22, 12, 18); ctx.fillRect(3, 22, 12, 18);
-    ctx.fillStyle = '#FDBA74'; ctx.beginPath(); ctx.arc(0, -37, 14, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = dKit.gkTrim; ctx.lineWidth = 2.5;
-    ctx.beginPath(); ctx.arc(-36, -14, 10, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    ctx.beginPath(); ctx.arc(36, -14, 10, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    // Articulated Diving Goalkeeper in Defending Nation Kit
+    var kx = state.keeperX, ky = 250 + state.keeperDiveY, diveTilt = (kx - 480) * 0.0026;
+    ctx.save(); ctx.translate(kx, ky);
+    ctx.fillStyle = 'rgba(0,0,0,0.36)'; ctx.beginPath(); ctx.ellipse(0, 50, 28, 7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.rotate(diveTilt);
+    ctx.fillStyle = '#0F172A'; ctx.fillRect(-13, 18, 10, 22); ctx.fillRect(3, 18, 10, 22);
+    ctx.fillStyle = dKit.gkTrim; ctx.fillRect(-14, 34, 11, 7); ctx.fillRect(3, 34, 11, 7);
+    ctx.fillStyle = dKit.gkJersey; ctx.fillRect(-18, -22, 36, 42);
+    ctx.fillStyle = dKit.gkTrim; ctx.fillRect(-18, -8, 36, 6);
+    ctx.strokeStyle = dKit.gkJersey; ctx.lineWidth = 9; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-16, -12); ctx.lineTo(-39, -22); ctx.moveTo(16, -12); ctx.lineTo(39, -22); ctx.stroke();
+    ctx.fillStyle = '#F8FAFC'; ctx.strokeStyle = dKit.gkTrim; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(-41, -24, 9.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(41, -24, 9.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#FED7AA'; ctx.beginPath(); ctx.arc(0, -34, 12.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1E293B'; ctx.beginPath(); ctx.arc(0, -39, 12, Math.PI, Math.PI * 2); ctx.fill();
     ctx.restore();
 
     // Aim & Curve Preview
     if (state.phase === 'aim') {
       var previewX = state.aimX + state.curve * 68;
       var ctrlAx = (spotX + previewX) / 2 - state.curve * 120;
-      ctx.strokeStyle = 'rgba(250, 204, 21, 0.6)'; ctx.lineWidth = 2.4; ctx.setLineDash([7, 5]);
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.65)'; ctx.lineWidth = 2.5; ctx.setLineDash([7, 5]);
       ctx.beginPath(); ctx.moveTo(spotX, spotY); ctx.quadraticCurveTo(ctrlAx, Math.min(spotY, state.aimY) - 48, previewX, state.aimY); ctx.stroke();
       ctx.setLineDash([]);
       ctx.strokeStyle = state.attacker === 1 ? '#22D3EE' : '#FB7185'; ctx.lineWidth = 3;
@@ -504,19 +515,21 @@ function startPenaltyGame(scr) {
       ctx.fillText('⏱ ' + state.turnTime.toFixed(1) + 's', 480, 27);
     }
 
-    // Running Striker Figure
-    if (state.phase !== 'flight' || state.flightT < 0.3) {
+    // Running Striker Figure (Kenney Toon animated run/kick sprites)
+    if (state.phase !== 'flight' || state.flightT < 0.35) {
       var rp = state.kickingRun ? state.strikerRun : 0;
-      var sx = 375 + rp * (spotX - 36 - 375), sy = 510 - rp * 34;
+      var sx = 372 + rp * (spotX - 38 - 372), sy = 508 - rp * 34;
+      var pose = !state.kickingRun ? 'assets/games/toon/male_idle.png' : (rp > 0.72 ? 'assets/games/toon/male_kick.png' : ('assets/games/toon/male_run' + (Math.floor(rp * 9) % 3) + '.png'));
       ctx.save(); ctx.translate(sx, sy);
-      ctx.fillStyle = kKit.shorts; ctx.fillRect(-10, 2, 9, 14); ctx.fillRect(1, 2, 9, 14);
-      ctx.fillStyle = kKit.jersey; ctx.fillRect(-14, -28, 28, 32);
-      ctx.fillStyle = kKit.trim; ctx.fillRect(-14, -16, 28, 5);
-      ctx.fillStyle = '#FDBA74'; ctx.beginPath(); ctx.arc(0, -37, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(0,0,0,0.34)'; ctx.beginPath(); ctx.ellipse(0, 24, 18, 5, 0, 0, Math.PI * 2); ctx.fill();
+      if (!(typeof window.drawTvSprite === 'function' && window.drawTvSprite(ctx, pose, 0, -14, 70, 84, 0))) {
+        ctx.fillStyle = kKit.jersey; ctx.fillRect(-14, -28, 28, 32);
+      }
+      ctx.fillStyle = kKit.jersey; ctx.fillRect(-11, 14, 22, 6);
       ctx.restore();
     }
 
-    // Spinning Ball + Curve Trail
+    // 3D Shaded Geodesic Spinning Ball (Kenney Sports Pack) + Curve Trail
     var bx = spotX, by = spotY, bScale = 1;
     if (state.phase === 'flight' || state.phase === 'result') {
       var t = state.phase === 'result' ? 1 : state.flightT, inv = 1 - t;
@@ -532,16 +545,16 @@ function startPenaltyGame(scr) {
       ctx.beginPath(); ctx.moveTo(trail[ti].x, trail[ti].y); ctx.lineTo(trail[ti + 1].x, trail[ti + 1].y); ctx.stroke();
     }
     var r = 18 * bScale;
-    ctx.fillStyle = 'rgba(0,0,0,0.42)'; ctx.beginPath(); ctx.ellipse(bx, by + r + 5, r * 1.1, r * 0.42, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.save(); ctx.translate(bx, by); ctx.rotate(state.flightT * (10 + Math.abs(state.curve) * 14));
-    ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#0F172A'; ctx.lineWidth = 2; ctx.stroke();
-    ctx.fillStyle = '#18181B'; ctx.beginPath(); ctx.arc(0, 0, r * 0.36, 0, Math.PI * 2); ctx.fill();
-    ctx.restore();
+    ctx.fillStyle = 'rgba(0,0,0,0.42)'; ctx.beginPath(); ctx.ellipse(bx, by + r + 5, r * 1.15, r * 0.42, 0, 0, Math.PI * 2); ctx.fill();
+    if (!(typeof window.drawTvSprite === 'function' && window.drawTvSprite(ctx, 'assets/games/sports/ball_soccer1.png', bx, by, r * 2.15, r * 2.15, state.flightT * (10 + Math.abs(state.curve) * 14)))) {
+      ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
+    }
 
     for (var s2 = 0; s2 < sparks.length; s2++) {
-      ctx.globalAlpha = Math.max(0, sparks[s2].l); ctx.fillStyle = sparks[s2].c;
-      ctx.fillRect(sparks[s2].x - 3, sparks[s2].y - 3, 6, 6);
+      ctx.globalAlpha = Math.max(0, sparks[s2].l);
+      if (!(typeof window.drawTvSprite === 'function' && window.drawTvSprite(ctx, s2 % 2 === 0 ? 'assets/games/particles/star_07.png' : 'assets/games/particles/spark_01.png', sparks[s2].x, sparks[s2].y, 20, 20, sparks[s2].l * 6))) {
+        ctx.fillStyle = sparks[s2].c; ctx.fillRect(sparks[s2].x - 3, sparks[s2].y - 3, 6, 6);
+      }
     }
     ctx.globalAlpha = 1;
 

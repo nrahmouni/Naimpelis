@@ -1,6 +1,6 @@
 // ===================================================================
 // SMART TV ARCADE HUB CATALOG & DISPATCHER (STRICT ES5, <= 700 LOC)
-// Renders 16 HD Smart TV & Mobile 1P/2P Gyro Games
+// Renders 19 HD Smart TV & Mobile 1P/2P Gyro Games
 // ===================================================================
 var TV_GAME_ACTIVE = '';
 var TV_GAME_RAF = null;
@@ -70,6 +70,9 @@ function closeTvGame() {
   if ((TV_GAME_ACTIVE === 'gyrohockey' || TV_GAME_ACTIVE === 'gyrospace') && typeof window.closeTvGyroArcadeGame === 'function') {
     window.closeTvGyroArcadeGame();
   }
+  if ((TV_GAME_ACTIVE === 'gyrobowling' || TV_GAME_ACTIVE === 'gyrotennis' || TV_GAME_ACTIVE === 'gyrolab') && typeof window.closeTvGyroPlusGame === 'function') {
+    window.closeTvGyroPlusGame();
+  }
   if (TV_GAME_ACTIVE === 'pingpong' && typeof window.closeTvPingPongGame === 'function') {
     window.closeTvPingPongGame();
   }
@@ -129,15 +132,18 @@ function getTvCardSvg(gameId) {
       '<polygon points="158,20 186,74 166,65 158,76 150,65 130,74" fill="#EA580C" stroke="#FDBA74" stroke-width="2"/>' +
       '<rect x="92" y="4" width="4" height="16" rx="2" fill="#38BDF8"/><rect x="156" y="8" width="4" height="16" rx="2" fill="#FB7185"/></svg>';
   }
-  if (gameId === 'headsoccer') {
-    return '<svg viewBox="0 0 240 92" aria-hidden="true">' +
-      '<rect x="0" y="68" width="240" height="24" fill="#14532D"/><rect x="0" y="68" width="240" height="3" fill="#4ADE80"/>' +
-      '<circle cx="70" cy="46" r="19" fill="#0284C7" stroke="#0B0B0F" stroke-width="2.5"/>' +
-      '<rect x="54" y="34" width="32" height="6" rx="2" fill="#FFF"/>' +
-      '<circle cx="170" cy="46" r="19" fill="#E11D48" stroke="#0B0B0F" stroke-width="2.5"/>' +
-      '<rect x="154" y="34" width="32" height="6" rx="2" fill="#FACC15"/>' +
-      '<circle cx="120" cy="36" r="13" fill="#FFFFFF" stroke="#0F172A" stroke-width="2.5"/>' +
-      '<polygon points="120,29 126,34 124,41 116,41 114,34" fill="#18181B"/></svg>';
+  if (gameId === 'gyrobowling' || gameId === 'gyrotennis' || gameId === 'gyrolab' || gameId === 'headsoccer' || gameId === 'penalty') {
+    var imgName = gameId === 'gyrobowling'
+      ? 'arenas/bowling_alley.jpg'
+      : gameId === 'gyrotennis'
+      ? 'arenas/tennis_court.jpg'
+      : gameId === 'gyrolab'
+      ? 'arenas/labyrinth_board.jpg'
+      : gameId === 'penalty'
+      ? 'penalty/stadium_backdrop.jpg'
+      : 'arenas/soccer_stadium.jpg';
+    var base = (typeof window !== 'undefined' && window.location && window.location.protocol === 'file:') ? './assets/games/' : '/assets/games/';
+    return '<img src="' + base + imgName + '" alt="" />';
   }
   if (gameId === 'tetris') {
     return '<svg viewBox="0 0 240 92" aria-hidden="true">' +
@@ -234,9 +240,9 @@ function renderTvGamesCatalogInto(container) {
   hero.className = 'tv-games-hero';
   hero.innerHTML =
     '<div>' +
-    '<div class="tv-game-badge" style="margin-bottom:8px;background:#4c1d95;">ARCADE SMART TV · 1P / 2P MÓVIL HORIZONTAL</div>' +
+    '<div class="tv-game-badge" style="margin-bottom:8px;background:#4c1d95;">ARCADE SMART TV · 1P / 2P MÓVIL VERTICAL</div>' +
     '<div class="tv-games-hero-title">Juegos Interactivos HD en Pantalla Grande</div>' +
-    '<div class="tv-games-hero-sub">Escanea el QR con 1 o 2 móviles en horizontal (máximo 2 botones por lateral) o juega con el mando de tu Smart TV.</div>' +
+    '<div class="tv-games-hero-sub">Escanea el QR de Jugador 1 o Jugador 2 con tu móvil en vertical (entra directo sin código) o juega con el mando de tu Smart TV.</div>' +
     '</div>';
   container.appendChild(hero);
 
@@ -277,10 +283,31 @@ function renderTvGamesCatalogInto(container) {
       cta: 'Despegar Nave'
     },
     {
+      id: 'gyrobowling', cls: 'bowling',
+      badge: 'Nuevo 1P/2P · Giroscopio Real',
+      title: 'Bolos Pro 3D Gyro',
+      desc: 'Apunta inclinando tu móvil en vertical y lanza la bola con efecto hacia los 10 bolos en neón.',
+      cta: 'Jugar a los Bolos'
+    },
+    {
+      id: 'gyrotennis', cls: 'tennis',
+      badge: 'Nuevo 2P · Raqueta Móvil',
+      title: 'Tenis Slam Pro 2P',
+      desc: 'Partido en estadio Grand Slam para 1 o 2 móviles simultáneos con globo y remate smash.',
+      cta: 'Saltar a la Pista'
+    },
+    {
+      id: 'gyrolab', cls: 'labyrinth',
+      badge: 'Nuevo · Inclinación 2 Ejes',
+      title: 'Laberinto Esfera 3D',
+      desc: 'Inclina tu móvil en 2 ejes para rodar la esfera recogiendo estrellas sin caer en trampas.',
+      cta: 'Resolver Laberinto'
+    },
+    {
       id: 'headsoccer', cls: 'soccer',
       badge: 'Estadio 2P · Mando + Móvil',
       title: 'Fútbol Cabezones Stadium TV',
-      desc: 'Goles limpios, público animado, balón con efecto y soporte para 2 móviles horizontales o mando TV.',
+      desc: 'Estadio HD real, goles limpios, balón con efecto y soporte para 2 móviles o mando TV.',
       cta: 'Saltar al Campo'
     },
     { id: 'bomberman', cls: 'bomberman', badge: 'Arena 4 Jugadores · vs Bots', title: 'Bomberman Party Arena', desc: 'Laberinto con cajas destructibles, mejoras de llama y 3 bots rivales inteligentes.', cta: 'Jugar Bomberman' },
@@ -343,6 +370,15 @@ function openTvGame(gameId) {
   }
   if (gameId === 'gyrospace' && typeof window.startGyroSpaceGame === 'function') {
     window.startGyroSpaceGame(scr); return;
+  }
+  if (gameId === 'gyrobowling' && typeof window.startGyroBowlingGame === 'function') {
+    window.startGyroBowlingGame(scr); return;
+  }
+  if (gameId === 'gyrotennis' && typeof window.startGyroTennisGame === 'function') {
+    window.startGyroTennisGame(scr); return;
+  }
+  if (gameId === 'gyrolab' && typeof window.startGyroLabGame === 'function') {
+    window.startGyroLabGame(scr); return;
   }
   if (gameId === 'penalty' && typeof window.startPenaltyGame === 'function') {
     window.startPenaltyGame(scr); return;
