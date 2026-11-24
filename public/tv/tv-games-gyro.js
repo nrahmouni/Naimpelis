@@ -170,10 +170,12 @@ function startGyroHockeyGame(scr) {
   var W = 920, H = 520, pad = 28, goalHalfW = 114;
   var goalLeft = W / 2 - goalHalfW, goalRight = W / 2 + goalHalfW, MR = 29, PR = 17;
   var keys = { left: false, right: false, up: false, down: false, smash: false };
+  var cornerCut = 42;
   var sparks = [], puckTrail = [];
   var st = {
     sMe: 0, sCpu: 0, over: false, pauseT: 0, banner: '', bannerCol: '#38BDF8',
     smashCharge: 100, impactFlash: 0,
+    lastSparkAt: 0, lastMeHitAt: 0, lastCpuHitAt: 0, cornerStallT: 0,
     me: { x: W / 2, y: H - 78, vx: 0, vy: 0 },
     cpu: { x: W / 2, y: 78, vx: 0, vy: 0 },
     puck: { x: W / 2, y: H / 2, vx: 0, vy: 0 }
@@ -184,6 +186,7 @@ function startGyroHockeyGame(scr) {
     st.cpu.x = W / 2; st.cpu.y = 78; st.cpu.vx = 0; st.cpu.vy = 0;
     st.puck.x = W / 2; st.puck.y = H / 2;
     st.puck.vx = (Math.random() - 0.5) * 260; st.puck.vy = dirY * 260;
+    st.cornerStallT = 0;
     puckTrail = [];
   }
 
@@ -198,11 +201,14 @@ function startGyroHockeyGame(scr) {
     smashPill.textContent = 'SMASH ' + Math.round(st.smashCharge) + '%';
   }
 
-  function spawnSparks(x, y, col, count) {
+  function spawnSparks(x, y, col, count, nowMs, force) {
+    if (!force && nowMs - st.lastSparkAt < 85) return;
+    st.lastSparkAt = nowMs;
     for (var i = 0; i < count; i++) {
       var a = Math.random() * Math.PI * 2, v = 120 + Math.random() * 340;
-      sparks.push({ x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.45, color: col });
+      sparks.push({ x: x, y: y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.42, color: col });
     }
+    while (sparks.length > 48) sparks.shift();
   }
 
   tvGameKeyHandler = function (e, code) {
@@ -226,14 +232,94 @@ function startGyroHockeyGame(scr) {
     return false;
   };
 
-  function hitMallet(m, smashPower, slot) {
+  function clampMallet(m, isTopHalf) {
+    m.x = Math.max(pad + MR, Math.min(W - pad - MR, m.x));
+    if (isTopHalf) {
+      m.y = Math.max(pad + MR, Math.min(H / 2 - MR - 6, m.y));
+    } else {
+      m.y = Math.max(H / 2 + MR + 6, Math.min(H - pad - MR, m.y));
+    }
+  }
+
+  function clampPuckWallsAndCorners(nowMs) {
+    var pk = st.puck;
+    var speedBefore = Math.hypot(pk.vx, pk.vy);
+    if (pk.x < pad + PR) { pk.x = pad + PR; pk.vx = Math.abs(pk.vx) * 0.92; if (speedBefore > 70) spawnSparks(pad, pk.y, '#22D3EE', 5, nowMs); }
+    if (pk.x > W - pad - PR) { pk.x = W - pad - PR; pk.vx = -Math.abs(pk.vx) * 0.92; if (speedBefore > 70) spawnSparks(W - pad, pk.y, '#22D3EE', 5, nowMs); }
+
+    var inGoalMouth = pk.x > goalLeft + PR * 0.5 && pk.x < goalRight - PR * 0.5;
+    if (!inGoalMouth) {
+      if (pk.y < pad + PR) { pk.y = pad + PR; pk.vy = Math.abs(pk.vy) * 0.92; if (speedBefore > 70) spawnSparks(pk.x, pad, '#F43F5E', 5, nowMs); }
+      if (pk.y > H - pad - PR) { pk.y = H - pad - PR; pk.vy = -Math.abs(pk.vy) * 0.92; if (speedBefore > 70) spawnSparks(pk.x, H - pad, '#8B5CF6', 5, nowMs); }
+    } else if (pk.y < pad - 6) {
+      return 'goal_me';
+    } else if (pk.y > H - pad + 6) {
+      return 'goal_cpu';
+    }
+
+    var invS2 = 0.70710678;
+    var corners = [
+      { px: pad + cornerCut, py: pad + cornerCut, nx: invS2, ny: invS2, inQuad: pk.x < pad + cornerCut && pk.y < pad + cornerCut },
+      { px: W - pad - cornerCut, py: pad + cornerCut, nx: -invS2, ny: invS2, inQuad: pk.x > W - pad - cornerCut && pk.y < pad + cornerCut },
+      { px: pad + cornerCut, py: H - pad - cornerCut, nx: invS2, ny: -invS2, inQuad: pk.x < pad + cornerCut && pk.y > H - pad - cornerCut },
+      { px: W - pad - cornerCut, py: H - pad - cornerCut, nx: -invS2, ny: -invS2, inQuad: pk.x > W - pad - cornerCut && pk.y > H - pad - cornerCut }
+    ];
+    var minCornerDist = PR + 4;
+    for (var ci = 0; ci < corners.length; ci++) {
+      var c = corners[ci];
+      if (!c.inQuad) continue;
+      var dist = (pk.x - c.px) * c.nx + (pk.y - c.py) * c.ny;
+      if (dist < minCornerDist) {
+        var push = minCornerDist - dist;
+        pk.x += c.nx * push;
+        pk.y += c.ny * push;
+        var vn = pk.vx * c.nx + pk.vy * c.ny;
+        if (vn < 0) {
+          pk.vx -= 1.92 * vn * c.nx;
+          pk.vy -= 1.92 * vn * c.ny;
+          if (speedBefore > 70) spawnSparks(pk.x, pk.y, '#38BDF8', 5, nowMs);
+        }
+      }
+    }
+    return 'none';
+  }
+
+  function hitMallet(m, smashPower, slot, nowMs) {
     var pk = st.puck, dx = pk.x - m.x, dy = pk.y - m.y, minD = MR + PR, dSq = dx * dx + dy * dy;
-    if (dSq >= minD * minD || dSq < 0.001) return false;
-    var d = Math.sqrt(dSq), nx = dx / d, ny = dy / d;
-    pk.x = m.x + nx * (minD + 1.5); pk.y = m.y + ny * (minD + 1.5);
+    if (dSq >= minD * minD) return false;
+    var nx, ny;
+    if (dSq < 0.001) {
+      var tcx = W / 2 - m.x, tcy = H / 2 - m.y, tcl = Math.hypot(tcx, tcy) || 1;
+      nx = tcx / tcl; ny = tcy / tcl;
+    } else {
+      var d = Math.sqrt(dSq);
+      nx = dx / d; ny = dy / d;
+    }
+    pk.x = m.x + nx * (minD + 2); pk.y = m.y + ny * (minD + 2);
+    clampPuckWallsAndCorners(nowMs);
+    dx = pk.x - m.x; dy = pk.y - m.y; dSq = dx * dx + dy * dy;
+    if (dSq < minD * minD) {
+      var d2 = Math.sqrt(dSq) || 1;
+      var sx = dSq < 0.001 ? nx : dx / d2;
+      var sy = dSq < 0.001 ? ny : dy / d2;
+      m.x = pk.x - sx * (minD + 2.5);
+      m.y = pk.y - sy * (minD + 2.5);
+      clampMallet(m, slot === 2);
+    }
+
     var spd = Math.min(1150, Math.max(460, Math.hypot(pk.vx, pk.vy) * 1.06 + smashPower));
     pk.vx = nx * spd + m.vx * 0.35; pk.vy = ny * spd + m.vy * 0.35;
-    spawnSparks(pk.x - nx * PR, pk.y - ny * PR, smashPower > 120 ? '#FACC15' : '#38BDF8', 12);
+    if (pk.x <= pad + PR + 3 && pk.vx < 160) pk.vx = Math.max(220, Math.abs(pk.vx));
+    if (pk.x >= W - pad - PR - 3 && pk.vx > -160) pk.vx = -Math.max(220, Math.abs(pk.vx));
+    if (pk.y <= pad + PR + 3 && pk.vy < 160) pk.vy = Math.max(220, Math.abs(pk.vy));
+    if (pk.y >= H - pad - PR - 3 && pk.vy > -160) pk.vy = -Math.max(220, Math.abs(pk.vy));
+
+    var lastHit = slot === 1 ? st.lastMeHitAt : st.lastCpuHitAt;
+    if (nowMs - lastHit < 90) return true;
+    if (slot === 1) st.lastMeHitAt = nowMs;
+    else st.lastCpuHitAt = nowMs;
+
+    spawnSparks(pk.x - nx * PR, pk.y - ny * PR, smashPower > 120 ? '#FACC15' : '#38BDF8', 10, nowMs, true);
     st.impactFlash = 0.7;
     playTvGameBeep(smashPower > 120 ? 520 : 340, 0.07, 'triangle', 0.08);
     pushGyroArcadeTelemetry(roomId, spd * 0.32, st.sMe, st.sCpu, st.smashCharge, 0.85, st.over ? 'finished' : 'racing', slot, smashPower > 120 ? 70 : 35);
@@ -276,8 +362,7 @@ function startGyroHockeyGame(scr) {
           var dirY = (keys.down ? 1 : 0) - (keys.up ? 1 : 0);
           if (dirY === 0 && useGyro) dirY = tvGyroInputP1.throttle > 0.3 ? -1 : tvGyroInputP1.brake > 0.3 ? 1 : 0;
           st.me.y += dirY * 460 * sDt;
-          st.me.x = Math.max(pad + MR, Math.min(W - pad - MR, st.me.x));
-          st.me.y = Math.max(H / 2 + MR + 6, Math.min(H - pad - MR, st.me.y));
+          clampMallet(st.me, false);
           st.me.vx = (st.me.x - prevMx) / sDt; st.me.vy = (st.me.y - prevMy) / sDt;
 
           var prevCx = st.cpu.x, prevCy = st.cpu.y;
@@ -287,39 +372,55 @@ function startGyroHockeyGame(scr) {
             var dirY2 = tvGyroInputP2.throttle > 0.3 ? 1 : tvGyroInputP2.brake > 0.3 ? -1 : 0;
             st.cpu.y += dirY2 * 460 * sDt;
           } else {
-            var aiGoalX = st.puck.y < H * 0.56 ? Math.max(pad + MR + 30, Math.min(W - pad - MR - 30, st.puck.x)) : W / 2;
-            var aiGoalY = st.puck.y < H * 0.45 && st.puck.vy >= -40 ? Math.min(H / 2 - MR - 12, st.puck.y - 16) : 82;
+            var puckInTopCorner = st.puck.y < pad + MR + PR + 26 && (st.puck.x < pad + 120 || st.puck.x > W - pad - 120);
+            var puckBehindCpu = st.puck.y < st.cpu.y + 8;
+            var aiGoalX = puckInTopCorner
+              ? (st.puck.x < W / 2 ? pad + 145 : W - pad - 145)
+              : (st.puck.y < H * 0.56 ? Math.max(pad + MR + 36, Math.min(W - pad - MR - 36, st.puck.x)) : W / 2);
+            var aiGoalY = (puckInTopCorner || puckBehindCpu)
+              ? 84
+              : (st.puck.y < H * 0.45 && st.puck.vy >= -40 ? Math.min(H / 2 - MR - 14, st.puck.y - 18) : 84);
             st.cpu.x += Math.max(-440 * sDt, Math.min(440 * sDt, aiGoalX - st.cpu.x));
             st.cpu.y += Math.max(-340 * sDt, Math.min(340 * sDt, aiGoalY - st.cpu.y));
           }
-          st.cpu.x = Math.max(pad + MR, Math.min(W - pad - MR, st.cpu.x));
-          st.cpu.y = Math.max(pad + MR, Math.min(H / 2 - MR - 6, st.cpu.y));
+          clampMallet(st.cpu, true);
           st.cpu.vx = (st.cpu.x - prevCx) / sDt; st.cpu.vy = (st.cpu.y - prevCy) / sDt;
 
           st.puck.x += st.puck.vx * sDt; st.puck.y += st.puck.vy * sDt;
           st.puck.vx *= Math.pow(0.996, sDt * 60); st.puck.vy *= Math.pow(0.996, sDt * 60);
 
-          if (st.puck.x < pad + PR) { st.puck.x = pad + PR; st.puck.vx = Math.abs(st.puck.vx) * 0.92; spawnSparks(pad, st.puck.y, '#22D3EE', 5); }
-          if (st.puck.x > W - pad - PR) { st.puck.x = W - pad - PR; st.puck.vx = -Math.abs(st.puck.vx) * 0.92; spawnSparks(W - pad, st.puck.y, '#22D3EE', 5); }
-
-          var inGoalMouth = st.puck.x > goalLeft + PR * 0.5 && st.puck.x < goalRight - PR * 0.5;
-          if (!inGoalMouth) {
-            if (st.puck.y < pad + PR) { st.puck.y = pad + PR; st.puck.vy = Math.abs(st.puck.vy) * 0.92; spawnSparks(st.puck.x, pad, '#F43F5E', 5); }
-            if (st.puck.y > H - pad - PR) { st.puck.y = H - pad - PR; st.puck.vy = -Math.abs(st.puck.vy) * 0.92; spawnSparks(st.puck.x, H - pad, '#8B5CF6', 5); }
-          } else {
-            if (st.puck.y < pad - 6) {
-              st.sMe += 1; st.pauseT = 1.2; st.banner = '⚡ ¡GOLAZO J1!'; st.bannerCol = '#4ADE80';
-              spawnSparks(st.puck.x, pad, '#4ADE80', 28); playTvGameBeep(620, 0.24, 'triangle', 0.12);
-              pushGyroArcadeTelemetry(roomId, 0, st.sMe, st.sCpu, st.smashCharge, 1, st.over ? 'finished' : 'racing', 1, 90); break;
-            } else if (st.puck.y > H - pad + 6) {
-              st.sCpu += 1; st.pauseT = 1.2; st.banner = useGyro2 ? '💥 ¡GOLAZO J2!' : '💥 ¡PUNTO CPU!'; st.bannerCol = '#FB7185';
-              spawnSparks(st.puck.x, H - pad, '#FB7185', 24); playTvGameBeep(200, 0.24, 'sawtooth', 0.1);
-              if (useGyro2) pushGyroArcadeTelemetry(roomId, 0, st.sMe, st.sCpu, st.smashCharge, 1, st.over ? 'finished' : 'racing', 2, 90);
-              break;
-            }
+          var wallState = clampPuckWallsAndCorners(now);
+          if (wallState === 'goal_me') {
+            st.sMe += 1; st.pauseT = 1.2; st.banner = '⚡ ¡GOLAZO J1!'; st.bannerCol = '#4ADE80';
+            spawnSparks(st.puck.x, pad, '#4ADE80', 26, now, true); playTvGameBeep(620, 0.24, 'triangle', 0.12);
+            pushGyroArcadeTelemetry(roomId, 0, st.sMe, st.sCpu, st.smashCharge, 1, st.over ? 'finished' : 'racing', 1, 90); break;
+          } else if (wallState === 'goal_cpu') {
+            st.sCpu += 1; st.pauseT = 1.2; st.banner = useGyro2 ? '💥 ¡GOLAZO J2!' : '💥 ¡PUNTO CPU!'; st.bannerCol = '#FB7185';
+            spawnSparks(st.puck.x, H - pad, '#FB7185', 22, now, true); playTvGameBeep(200, 0.24, 'sawtooth', 0.1);
+            if (useGyro2) pushGyroArcadeTelemetry(roomId, 0, st.sMe, st.sCpu, st.smashCharge, 1, st.over ? 'finished' : 'racing', 2, 90);
+            break;
           }
-          hitMallet(st.me, smashOn ? 240 : 60, 1);
-          hitMallet(st.cpu, smash2On ? 220 : 40, 2);
+          hitMallet(st.me, smashOn ? 240 : 60, 1, now);
+          hitMallet(st.cpu, smash2On ? 220 : 40, 2, now);
+          clampPuckWallsAndCorners(now);
+        }
+
+        var curSpd = Math.hypot(st.puck.vx, st.puck.vy);
+        var nearCorner = (st.puck.x < pad + 68 || st.puck.x > W - pad - 68) && (st.puck.y < pad + 68 || st.puck.y > H - pad - 68);
+        if (nearCorner || curSpd < 85) {
+          st.cornerStallT += dt;
+          if (st.cornerStallT > 0.42) {
+            var toCx = W / 2 - st.puck.x, toCy = H / 2 - st.puck.y, toCl = Math.hypot(toCx, toCy) || 1;
+            st.puck.vx = (toCx / toCl) * 440;
+            st.puck.vy = (toCy / toCl) * 440;
+            st.cornerStallT = 0;
+          }
+        } else {
+          st.cornerStallT = 0;
+        }
+        if (curSpd > 2 && curSpd < 120) {
+          var boost = 120 / curSpd;
+          st.puck.vx *= boost; st.puck.vy *= boost;
         }
 
         puckTrail.push({ x: st.puck.x, y: st.puck.y });
@@ -352,6 +453,13 @@ function startGyroHockeyGame(scr) {
     ctx.beginPath(); ctx.arc(W / 2, H - pad, 76, Math.PI, Math.PI * 2); ctx.stroke();
 
     ctx.strokeStyle = '#7C3AED'; ctx.lineWidth = 6; ctx.strokeRect(pad, pad, W - pad * 2, H - pad * 2);
+    ctx.strokeStyle = '#38BDF8'; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(pad, pad + cornerCut); ctx.lineTo(pad + cornerCut, pad);
+    ctx.moveTo(W - pad - cornerCut, pad); ctx.lineTo(W - pad, pad + cornerCut);
+    ctx.moveTo(pad, H - pad - cornerCut); ctx.lineTo(pad + cornerCut, H - pad);
+    ctx.moveTo(W - pad - cornerCut, H - pad); ctx.lineTo(W - pad, H - pad - cornerCut);
+    ctx.stroke();
 
     ctx.fillStyle = '#04060e';
     ctx.fillRect(goalLeft, pad - 10, goalHalfW * 2, 16);

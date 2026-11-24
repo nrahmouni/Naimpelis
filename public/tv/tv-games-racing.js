@@ -12,14 +12,21 @@ var tvRacingEngineHandle = null;
 var tvRacingUsingFallback = false;
 var tvRacingContextLostTimer = null;
 var TV_RACING_CAR_KEY = 'naim_tv_racing_car_v1';
+var TV_RACING_TRACK_KEY = 'naim_tv_racing_track_v1';
 var TV_RACING_GAS_KEY = 'naim_tv_racing_autogas_v1';
 var TV_RACING_CARS_FALLBACK = [
-  { id: 'ferrari', name: 'Scuderia F400 GT', cssColor: '#7c3aed' },
-  { id: 'hypercar', name: 'Apex Hyperion V12', cssColor: '#e11d48' },
+  { id: 'ferrari', name: 'Scuderia F400 GT', cssColor: '#dc2626' },
+  { id: 'hypercar', name: 'Apex Hyperion V12', cssColor: '#7c3aed' },
   { id: 'endurance', name: 'LeMans Prototype 9X', cssColor: '#0284c7' },
   { id: 'rally', name: 'Urbano RS Turbo', cssColor: '#10b981' },
-  { id: 'wedge', name: 'Cyber Wedge 88', cssColor: '#f59e0b' },
-  { id: 'streamliner', name: 'Silver Arrow GP', cssColor: '#6366f1' }
+  { id: 'streamliner', name: 'Silver Arrow GP', cssColor: '#f59e0b' }
+];
+var TV_RACING_TRACKS_FALLBACK = [
+  { id: 'metropolis', shortName: 'Metropolis GP', name: 'Metropolis Nocturna GP', cssAccent: '#7c3aed' },
+  { id: 'coast', shortName: 'Costa Azul', name: 'Costa Azul Riviera', cssAccent: '#06b6d4' },
+  { id: 'alpine', shortName: 'Alpes Nieve', name: 'Cumbres Alpinas', cssAccent: '#38bdf8' },
+  { id: 'neotokyo', shortName: 'Neo Tokyo', name: 'Neo Tokyo Neon', cssAccent: '#ec4899' },
+  { id: 'desert', shortName: 'Cañón Rojo', name: 'Cañón del Atardecer', cssAccent: '#f97316' }
 ];
 var tvRacingRemoteKeys = { left: false, right: false, up: false, down: false, nitro: false, handbrake: false };
 
@@ -327,12 +334,13 @@ function startTvRacingGame(scr) {
     '<button type="button" id="btn-game-back" class="tv-btn" tabindex="0">Volver (Return)</button>' +
     '<div class="tv-game-top-title">🏎️ Nitro GP 3D</div></div><div class="tv-game-top-right">' +
     '<div class="tv-game-hud-pill accent-purple" id="race-gyro-pill">📱 Esperando Móviles</div>' +
+    '<button type="button" id="btn-race-track" class="tv-btn" tabindex="0">🗺️ Circuito (M)</button>' +
     '<button type="button" id="btn-race-garage" class="tv-btn" tabindex="0">🚗 Garaje (G)</button>' +
     '<button type="button" id="btn-race-autogas" class="tv-btn" tabindex="0">⚡ Auto-Gas: ON</button>' +
     '<button type="button" id="btn-race-cam" class="tv-btn" tabindex="0">Cámara</button>' +
     '<button type="button" id="btn-race-restart" class="tv-btn" tabindex="0">Reiniciar</button>' +
     '</div></div><div class="tv-game-arena" id="race-arena">' +
-    '<div id="tv-racing-stage" class="tv-racing-stage"></div><div id="race-garage-bar" class="tv-race-garage-bar"></div>' +
+    '<div id="tv-racing-stage" class="tv-racing-stage" style="width:100%;height:100%;min-height:460px;"></div><div id="race-garage-bar" class="tv-race-garage-bar"></div>' +
     '<div class="tv-racing-telemetry-bar">' +
     '<div class="tv-racing-stat"><div class="tv-racing-stat-lbl">VELOCIDAD</div><div class="tv-racing-stat-val" id="race-hud-kmh">0 KM/H</div></div>' +
     '<div class="tv-racing-stat"><div class="tv-racing-stat-lbl">MARCHA</div><div class="tv-racing-stat-val" id="race-hud-gear">1</div></div>' +
@@ -343,19 +351,25 @@ function startTvRacingGame(scr) {
     '<div class="tv-game-finish-title" id="race-fin-title">🏁 ¡META ALCANZADA!</div><div class="tv-game-finish-sub" id="race-fin-sub">Posición final</div>' +
     '<div class="tv-game-finish-btns"><button type="button" id="btn-race-replay" class="tv-btn-primary" tabindex="0">Correr otra vez (OK)</button>' +
     '<button type="button" id="btn-race-exit" class="tv-btn" tabindex="0">Salir al Menú</button></div></div></div></div>' +
-    '<div class="tv-game-controls-hint"><span>Mando TV: ◀ ▶ Girar · ▲ Gas / ▼ Freno · OK Nitro · G Garaje · A Auto-Gas</span>' +
+    '<div class="tv-game-controls-hint"><span>Mando TV: ◀ ▶ Girar · ▲ Gas / ▼ Freno · OK Nitro · M Circuito · G Garaje · A Auto-Gas</span>' +
     '<span>Móvil: Escanea el QR para volante giroscópico 3D (1P / 2P)</span></div>';
 
-  var selectedCarId = 'ferrari', tvRemoteAutoGas = true, garageOpen = false, tvNitroTapTimer = null;
+  var selectedCarId = 'ferrari', selectedTrackId = 'metropolis', tvRemoteAutoGas = true, garageOpen = false, trackOpen = false, tvNitroTapTimer = null;
   try {
     var savedCar = localStorage.getItem(TV_RACING_CAR_KEY);
     if (savedCar) selectedCarId = savedCar;
+    var savedTrack = localStorage.getItem(TV_RACING_TRACK_KEY);
+    if (savedTrack) selectedTrackId = savedTrack;
     if (localStorage.getItem(TV_RACING_GAS_KEY) === '0') tvRemoteAutoGas = false;
   } catch (eLs) {}
 
   function getCarList() {
     return (window.RiffanRacing3D && window.RiffanRacing3D.carCatalog && window.RiffanRacing3D.carCatalog.length)
       ? window.RiffanRacing3D.carCatalog : TV_RACING_CARS_FALLBACK;
+  }
+  function getTrackList() {
+    return (window.RiffanRacing3D && window.RiffanRacing3D.trackCatalog && window.RiffanRacing3D.trackCatalog.length)
+      ? window.RiffanRacing3D.trackCatalog : TV_RACING_TRACKS_FALLBACK;
   }
   function updateGasBtn() {
     var gb = document.getElementById('btn-race-autogas');
@@ -365,18 +379,43 @@ function startTvRacingGame(scr) {
     selectedCarId = carId || 'ferrari';
     try { localStorage.setItem(TV_RACING_CAR_KEY, selectedCarId); } catch (eS) {}
     if (window.RiffanRacing3D && window.RiffanRacing3D.setPlayerCar) window.RiffanRacing3D.setPlayerCar(selectedCarId);
-    renderGarageBar();
+    renderSelectorBar();
+  }
+  function selectTrack(trackId) {
+    selectedTrackId = trackId || 'metropolis';
+    try { localStorage.setItem(TV_RACING_TRACK_KEY, selectedTrackId); } catch (eT) {}
+    if (window.RiffanRacing3D && window.RiffanRacing3D.setTrack) selectedTrackId = window.RiffanRacing3D.setTrack(selectedTrackId);
+    renderSelectorBar();
   }
   function cycleCarStep(dir) {
     var list = getCarList(), idx = 0;
     for (var i = 0; i < list.length; i++) { if (list[i].id === selectedCarId) { idx = i; break; } }
     selectCar(list[(idx + dir + list.length) % list.length].id);
   }
-  function renderGarageBar() {
+  function cycleTrackStep(dir) {
+    var list = getTrackList(), idx = 0;
+    for (var i = 0; i < list.length; i++) { if (list[i].id === selectedTrackId) { idx = i; break; } }
+    selectTrack(list[(idx + dir + list.length) % list.length].id);
+  }
+  function renderSelectorBar() {
     var bar = document.getElementById('race-garage-bar');
     if (!bar) return;
-    bar.style.display = garageOpen ? 'flex' : 'none';
-    if (!garageOpen) return;
+    if (!garageOpen && !trackOpen) { bar.style.display = 'none'; return; }
+    bar.style.display = 'flex';
+    if (trackOpen) {
+      var tracks = getTrackList();
+      bar.innerHTML = '<span class="tv-race-garage-title">🗺️ CIRCUITO (◀ ▶ elegir · OK cerrar):</span>';
+      for (var tIdx = 0; tIdx < tracks.length; tIdx++) {
+        (function (tr) {
+          var b = document.createElement('button');
+          b.type = 'button'; b.className = 'tv-race-car-pill' + (tr.id === selectedTrackId ? ' active' : '');
+          b.innerHTML = '<span class="tv-race-car-dot" style="background:' + (tr.cssAccent || '#38bdf8') + '"></span><span>' + (tr.shortName || tr.name) + '</span>';
+          b.onclick = function () { selectTrack(tr.id); };
+          bar.appendChild(b);
+        })(tracks[tIdx]);
+      }
+      return;
+    }
     var list = getCarList();
     bar.innerHTML = '<span class="tv-race-garage-title">🚗 GARAJE (◀ ▶ elegir · OK cerrar):</span>';
     for (var i = 0; i < list.length; i++) {
@@ -410,7 +449,8 @@ function startTvRacingGame(scr) {
   }
   document.getElementById('btn-game-back').onclick = closeTvGame;
   document.getElementById('btn-race-exit').onclick = closeTvGame;
-  document.getElementById('btn-race-garage').onclick = function () { garageOpen = !garageOpen; renderGarageBar(); focusRaceArena(); };
+  document.getElementById('btn-race-track').onclick = function () { trackOpen = !trackOpen; if (trackOpen) garageOpen = false; renderSelectorBar(); focusRaceArena(); };
+  document.getElementById('btn-race-garage').onclick = function () { garageOpen = !garageOpen; if (garageOpen) trackOpen = false; renderSelectorBar(); focusRaceArena(); };
   document.getElementById('btn-race-autogas').onclick = function () {
     tvRemoteAutoGas = !tvRemoteAutoGas;
     try { localStorage.setItem(TV_RACING_GAS_KEY, tvRemoteAutoGas ? '1' : '0'); } catch (eG) {}
@@ -452,7 +492,7 @@ function startTvRacingGame(scr) {
       if (lapEl) lapEl.textContent = String(t.lap || 1) + '/' + String(t.totalLaps || 3);
       if (posEl) posEl.textContent = String(t.position || 1) + '/' + String(t.totalCars || 4);
       if (nitroEl) nitroEl.textContent = Math.round(t.nitroPct || 0) + '%';
-      if (t.carId && t.carId !== selectedCarId) { selectedCarId = t.carId; if (garageOpen) renderGarageBar(); }
+      if (t.carId && t.carId !== selectedCarId) { selectedCarId = t.carId; if (garageOpen) renderSelectorBar(); }
       if (typeof t.autoGas === 'boolean' && t.autoGas !== tvRemoteAutoGas) { tvRemoteAutoGas = t.autoGas; updateGasBtn(); }
       var nowMs = Date.now();
       if (tvRacingWs && tvRacingWs.readyState === 1 && tvRacingHasController && nowMs - tvRacingTelemetryPushAt >= 65) {
@@ -500,7 +540,18 @@ function startTvRacingGame(scr) {
   function bootRacingEngineOrFallback() {
     if (TV_GAME_ACTIVE !== 'racing3d' || !stageEl) return;
     if (window.RiffanRacing3D && window.RiffanRacing3D.mount) {
-      try { window.RiffanRacing3D.mount(stageEl, racingHooks, { initialCarId: selectedCarId, initialAutoGas: tvRemoteAutoGas }); return; } catch (mountErr) {}
+      try {
+        window.RiffanRacing3D.mount(stageEl, racingHooks, {
+          initialCarId: selectedCarId,
+          initialTrackId: selectedTrackId,
+          initialAutoGas: tvRemoteAutoGas
+        });
+        return;
+      } catch (mountErr) {
+        if (typeof console !== 'undefined' && console.warn) {
+          console.warn('[TV Racing] Error mounting 3D engine:', mountErr);
+        }
+      }
     }
     tvRacingUsingFallback = true;
     tvRacingEngineHandle = mountEs5RacingFallback(stageEl, racingHooks);
@@ -535,17 +586,23 @@ function startTvRacingGame(scr) {
 
   tvGameKeyHandler = function (e, code) {
     if (raceLobby && !raceLobby.isReady()) return false;
-    if (code === 71) { garageOpen = !garageOpen; renderGarageBar(); if (e.preventDefault) e.preventDefault(); return true; }
+    if (code === 77) { trackOpen = !trackOpen; if (trackOpen) garageOpen = false; renderSelectorBar(); if (e.preventDefault) e.preventDefault(); return true; }
+    if (code === 71) { garageOpen = !garageOpen; if (garageOpen) trackOpen = false; renderSelectorBar(); if (e.preventDefault) e.preventDefault(); return true; }
     if (code === 65) {
       tvRemoteAutoGas = !tvRemoteAutoGas;
       try { localStorage.setItem(TV_RACING_GAS_KEY, tvRemoteAutoGas ? '1' : '0'); } catch (eG) {}
       if (window.RiffanRacing3D && window.RiffanRacing3D.setAutoGas) window.RiffanRacing3D.setAutoGas(tvRemoteAutoGas);
       updateGasBtn(); if (e.preventDefault) e.preventDefault(); return true;
     }
+    if (trackOpen) {
+      if (code === 37 || code === 21) { cycleTrackStep(-1); if (e.preventDefault) e.preventDefault(); return true; }
+      if (code === 39 || code === 22) { cycleTrackStep(1); if (e.preventDefault) e.preventDefault(); return true; }
+      if (code === 13 || code === 23 || code === 66 || code === 32) { trackOpen = false; renderSelectorBar(); if (e.preventDefault) e.preventDefault(); return true; }
+    }
     if (garageOpen) {
       if (code === 37 || code === 21) { cycleCarStep(-1); if (e.preventDefault) e.preventDefault(); return true; }
       if (code === 39 || code === 22) { cycleCarStep(1); if (e.preventDefault) e.preventDefault(); return true; }
-      if (code === 13 || code === 23 || code === 66 || code === 32) { garageOpen = false; renderGarageBar(); if (e.preventDefault) e.preventDefault(); return true; }
+      if (code === 13 || code === 23 || code === 66 || code === 32) { garageOpen = false; renderSelectorBar(); if (e.preventDefault) e.preventDefault(); return true; }
     }
     if (tvRacingFinished && (code === 13 || code === 23 || code === 66 || code === 32)) { if (e.preventDefault) e.preventDefault(); restartRace('solo'); return true; }
     if (code === 37 || code === 21) { tvRacingRemoteKeys.left = true; syncRemoteKeys(); if (e.preventDefault) e.preventDefault(); return true; }

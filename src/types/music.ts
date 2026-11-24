@@ -324,6 +324,8 @@ export interface MusicHomePayload {
   flamencoAcousticMix: MusicTrack[];
   soundtrackMix: MusicTrack[];
   classicsMix: MusicTrack[];
+  workoutMix?: MusicTrack[];
+  jazzSoulMix?: MusicTrack[];
   audiusTrending: MusicTrack[];
   topAlbums: MusicAlbumRef[];
   newReleases: MusicAlbumRef[];

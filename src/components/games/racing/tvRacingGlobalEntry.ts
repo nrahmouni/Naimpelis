@@ -32,7 +32,10 @@ export function mount(
   unmount();
   try {
     activeEngine = createRacing3dEngine(container, callbacks || {}, options);
-  } catch {
+  } catch (err) {
+    if (typeof console !== 'undefined' && console.warn) {
+      console.warn('[RiffanRacing3D] WebGL 3D mount fallback:', err);
+    }
     activeEngine = createRacing2dFallbackEngine(container, callbacks || {}, options);
   }
 }

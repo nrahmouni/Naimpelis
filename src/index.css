@@ -215,7 +215,7 @@
   .world-tint-atresplayer { background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(255, 94, 26, 0.16), rgba(245, 158, 11, 0.08) 55%, transparent 75%); }
   .world-tint-movistardazn { background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(212, 255, 0, 0.11), rgba(0, 169, 224, 0.14) 48%, transparent 75%); }
   .world-tint-champions { background-image: radial-gradient(ellipse 80% 48% at 50% -10%, rgba(56, 189, 248, 0.18), rgba(37, 99, 235, 0.14) 45%, transparent 76%); }
-  .world-tint-music { background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(37, 99, 235, 0.2), rgba(96, 165, 250, 0.08) 48%, transparent 75%); }
+  .world-tint-music { background-image: radial-gradient(ellipse 85% 42% at 50% -10%, rgba(6, 182, 212, 0.18), rgba(16, 185, 129, 0.08) 46%, transparent 76%); }
 
   .nc-specular-surface {
     background: color-mix(in srgb, var(--nc-bg-elevated) 92%, transparent);

@@ -1425,36 +1425,38 @@ async function runSettledConcurrency(
 
 export async function getMusicHome() {
   void getSoundCloudClientId(true);
-  const cached = homeCache.get('home_v5');
+  const cached = homeCache.get('home_v6');
   if (cached) return cached;
 
   const settled = await runSettledConcurrency([
-    () => fetchJsonSafe<any>('https://api.deezer.com/chart/0?limit=35', 6000), // 0: globalChart
-    () => fetchRegionMix('Quevedo Aitana Saiko', '37i9dQZEVXbNFJfN1Vw8d9', 'Top 50 España', 28, 'ES'), // 1: spainHits
-    () => fetchJsonSafe<any>('https://api.deezer.com/chart/116/tracks?limit=25', 6000), // 2: urbano
-    () => fetchJsonSafe<any>('https://api.deezer.com/chart/132/tracks?limit=25', 6000), // 3: pop
-    () => fetchJsonSafe<any>('https://api.deezer.com/chart/113/tracks?limit=25', 6000), // 4: electronic
-    () => fetchJsonSafe<any>('https://api.deezer.com/chart/152/tracks?limit=24', 6000), // 5: rock
-    () => fetchRegionMix('Bad Bunny Karol G Feid', '37i9dQZF1DX10zKzsJ2jva', 'Viva Latino', 28, 'US'), // 6: latin
-    () => fetchJsonSafe<any>('https://api.deezer.com/chart/165/tracks?limit=24', 6000), // 7: rnb/soul
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/0?limit=50', 6000), // 0: globalChart
+    () => fetchRegionMix('Quevedo Aitana Saiko Bad Bunny', '37i9dQZEVXbNFJfN1Vw8d9', 'Top 50 España', 32, 'ES'), // 1: spainHits
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/116/tracks?limit=32', 6000), // 2: urbano
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/132/tracks?limit=32', 6000), // 3: pop
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/113/tracks?limit=32', 6000), // 4: electronic
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/152/tracks?limit=30', 6000), // 5: rock
+    () => fetchRegionMix('Bad Bunny Karol G Feid Rauw Alejandro', '37i9dQZF1DX10zKzsJ2jva', 'Viva Latino', 32, 'US'), // 6: latin
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/165/tracks?limit=30', 6000), // 7: rnb/soul
     () => searchYouTubeMusic('lofi hip hop chill study beats jazz'), // 8: chill
-    () => searchYouTubeMusic('flamenco camaron paco de lucia'), // 9: flamenco
-    () => fetchJsonSafe<any>('https://api.deezer.com/chart/173/tracks?limit=22', 6000), // 10: soundtracks
-    () => searchYouTubeMusic('Queen Michael Jackson Daft Punk classics hits'), // 11: classics
-    () => fetchJsonSafe<any>('https://api.deezer.com/editorial/0/releases?limit=20', 6000), // 12: new releases
+    () => searchYouTubeMusic('flamenco camaron paco de lucia rosalia'), // 9: flamenco
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/173/tracks?limit=28', 6000), // 10: soundtracks
+    () => searchYouTubeMusic('Queen Michael Jackson Daft Punk classics 80s 90s hits'), // 11: classics
+    () => fetchJsonSafe<any>('https://api.deezer.com/editorial/0/releases?limit=30', 6000), // 12: new releases
     () => fetchJsonSafe<any>('https://api.deezer.com/genre', 6000), // 13: genres
-    () => fetchJsonSafe<any>('https://discoveryprovider.audius.co/v1/tracks/trending?app_name=RIFFAN&limit=16', 5000), // 14: audius
+    () => fetchJsonSafe<any>('https://discoveryprovider.audius.co/v1/tracks/trending?app_name=RIFFAN&limit=24', 5000), // 14: audius
     () => getMusicRadios('ALL'), // 15: worldwide radios
     () => fetchYouTubeMusicExploreAndCharts(), // 16: YouTube Music sync
     () => fetchSpotifyChartsAndAlbums(), // 17: Spotify sync
-    () => fetchRegionMix('ElGrandeToto Saad Lamjarred Manal Dystinct', '37i9dQZEVXbJU9eQpX8gPT', 'Top 50 Morocco', 28, 'MA'), // 18: Morocco
-    () => fetchRegionMix('Amr Diab Nancy Ajram Tamer Hosny Wegz', undefined, 'Arab Hits', 26, 'EG'), // 19: Arab
-    () => fetchRegionMix('Burna Boy Wizkid Tyla Rema Ayra Starr', '37i9dQZF1DWYkaDif7Ztbp', 'African Heat', 28, 'NG'), // 20: Africa
+    () => fetchRegionMix('ElGrandeToto Saad Lamjarred Manal Dystinct', '37i9dQZEVXbJU9eQpX8gPT', 'Top 50 Morocco', 30, 'MA'), // 18: Morocco
+    () => fetchRegionMix('Amr Diab Nancy Ajram Tamer Hosny Wegz', undefined, 'Arab Hits', 28, 'EG'), // 19: Arab
+    () => fetchRegionMix('Burna Boy Wizkid Tyla Rema Ayra Starr', '37i9dQZF1DWYkaDif7Ztbp', 'African Heat', 30, 'NG'), // 20: Africa
     () => fetchRegionMix('Macan Anna Asti Miyagi Jony Zivert', '37i9dQZF1DX8FwnYE6PRvL', 'Russia Top Hits', 28, 'RU'), // 21: Russia
-    () => fetchRegionMix("Inna Carla's Dreams Smiley Delia Theo Rose", undefined, 'Romania Hits', 26, 'RO'), // 22: Romania
-    () => fetchRegionMix('Jay Chou GEM Eason Chan JJ Lin Jackson Wang', undefined, 'China C-Pop', 26, 'CN'), // 23: China
-    () => fetchRegionMix('Kendrick Lamar SZA Sabrina Carpenter Billie Eilish', '37i9dQZEVXbLRQDuF5jeBp', 'USA Top 50', 28, 'US'), // 24: USA
-    () => fetchRegionMix('Stromae Angele Damso Hamza Lost Frequencies Charlotte de Witte', '37i9dQZEVXbJNSeeHswcKB', 'Top 50 Belgium', 28, 'BE'), // 25: Belgium
+    () => fetchRegionMix("Inna Carla's Dreams Smiley Delia Theo Rose", undefined, 'Romania Hits', 28, 'RO'), // 22: Romania
+    () => fetchRegionMix('Jay Chou GEM Eason Chan JJ Lin Jackson Wang', undefined, 'China C-Pop', 28, 'CN'), // 23: China
+    () => fetchRegionMix('Kendrick Lamar SZA Sabrina Carpenter Billie Eilish', '37i9dQZEVXbLRQDuF5jeBp', 'USA Top 50', 30, 'US'), // 24: USA
+    () => fetchRegionMix('Stromae Angele Damso Hamza Lost Frequencies Charlotte de Witte', '37i9dQZEVXbJNSeeHswcKB', 'Top 50 Belgium', 30, 'BE'), // 25: Belgium
+    () => fetchRegionMix('gym workout training hype phonk edm fitness', '37i9dQZF1DX76Wlfdnj7AP', 'Beast Mode', 26, 'US'), // 26: Workout
+    () => fetchJsonSafe<any>('https://api.deezer.com/chart/129/tracks?limit=24', 6000), // 27: Jazz chart
   ], 4);
 
   const val = <T>(idx: number): T | null =>
@@ -1482,14 +1484,14 @@ export async function getMusicHome() {
 
   const audiusRaw = val<any>(14);
   const audiusTrending: MusicTrack[] = Array.isArray(audiusRaw?.data)
-    ? audiusRaw.data.slice(0, 16).map((t: any) => mapAudiusTrack(t))
+    ? audiusRaw.data.slice(0, 24).map((t: any) => mapAudiusTrack(t))
     : [];
 
   const genresRaw = val<any>(13);
   const rawGenres = Array.isArray(genresRaw?.data) ? genresRaw.data : [];
   const genres: MusicGenre[] = rawGenres
     .filter((g: any) => Number(g?.id) > 0)
-    .slice(0, 22)
+    .slice(0, 26)
     .map((g: any, idx: number) => {
       const name = String(g?.name || 'Música');
       return {
@@ -1509,7 +1511,7 @@ export async function getMusicHome() {
     youtubeMusicHits: ytmData.tracks,
     youtubeMusicAlbums: ytmData.albums,
     spotifyHits: spData.tracks,
-    spotifyAlbums: spData.albums.length > 0 ? spData.albums : ytmData.albums.slice(0, 14),
+    spotifyAlbums: spData.albums.length > 0 ? spData.albums : ytmData.albums.slice(0, 18),
     spainHits: val<MusicTrack[]>(1) || [],
     belgiumMix: val<MusicTrack[]>(25) || [],
     moroccoMix: val<MusicTrack[]>(18) || [],
@@ -1529,6 +1531,8 @@ export async function getMusicHome() {
     flamencoAcousticMix: flamencoSearch?.tracks || [],
     soundtrackMix: mapDeezerTracksSafe(val<any>(10)?.data),
     classicsMix: classicsSearch?.tracks || [],
+    workoutMix: val<MusicTrack[]>(26) || [],
+    jazzSoulMix: mapDeezerTracksSafe(val<any>(27)?.data),
     audiusTrending,
     topAlbums: topAlbums.length > 0 ? topAlbums : ytmData.albums,
     newReleases: newReleases.length > 0 ? newReleases : ytmData.albums,
@@ -1544,7 +1548,7 @@ export async function getMusicHome() {
     payload.latinSalsaMix.length > 0 &&
     (ytmData.tracks.length > 0 || payload.moroccoMix.length > 0 || spData.tracks.length > 0)
   ) {
-    homeCache.set('home_v5', payload);
+    homeCache.set('home_v6', payload);
   }
   return payload;
 }

@@ -626,6 +626,11 @@ export async function buildTizenWgtArchive(
           'tv/tv-player-modes.js',
           'tv/tv-hub.js',
           'tv/tv-nav-voice.js',
+          'tv/tv-games.css',
+          'tv/tv-games.js',
+          'tv/tv-games-racing.js',
+          'tv/tv-games-gyro.js',
+          'vendor/riffan-racing-3d.iife.js',
           'vendor/hls.min.js',
         ];
         for (const rel of extraAssets) {
