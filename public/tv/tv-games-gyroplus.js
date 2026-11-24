@@ -443,28 +443,31 @@
     connectPlusWs(roomId, 'gyrolab', document.getElementById('lb-gyro-pill'), lobby);
 
     var W = 920, H = 520, COLS = 19, ROWS = 11, CELL = 44, OX = Math.floor((W - COLS * CELL) / 2), OY = Math.floor((H - ROWS * CELL) / 2);
-    var TPL = [
-      '###################', '#S..*...#.....O..*#', '###.###.#.#####.###', '#...#...*...#.....#',
-      '#.O.#.#####.#.###.#', '#...#.....#...#..*#', '#.#######.###.#.###', '#*......#...O.#...#',
-      '###.###.#.#####.#.#', '#...*.....#...O..E#', '###################'
+    var LAB_LEVELS = [
+      ['###################', '#S...*..#.....*...#', '###.###.#.#####.#.#', '#...#.*.......#.#.#', '#.O.#.###.###.#.#.#', '#...#...#.#...#...#', '#.#####.#.#.#####.#', '#*..#...#...#O..*.#', '###.#.#####.#.###.#', '#...*.......#....E#', '###################'],
+      ['###################', '#S..#.*.......#..*#', '#.#.#.#####.#.#.#.#', '#.#...#...#.#...#.#', '#.###.#.O.#.###.#.#', '#.*.#.......#*..#.#', '#.#######.###.###.#', '#...O...#...#..*..#', '#.#####.#.#.#.###.#', '#.*.......#..O...E#', '###################'],
+      ['###################', '#S...*....#.*.....#', '#.##.####.#.###.#.#', '#.#O.#..#...#...#.#', '#....#..###.#.###.#', '####.#....#...*..E#', '#.*..####.#####.#.#', '#.#..#..O.......#.#', '#.#.##.########.#.#', '#...*.......*O..*.#', '###################']
     ];
-    var grid = [], starsT = 0, starsC = 0, tLeft = 60, over = false, keys = { l: false, r: false, u: false, d: false };
+    var grid = [], lvlIdx = 0, starsT = 0, starsC = 0, starsAll = 0, tLeft = 65, over = false, keys = { l: false, r: false, u: false, d: false };
     var b1 = { x: 1.5, y: 1.5, vx: 0, vy: 0 }, b2 = { x: 1.5, y: 1.5, vx: 0, vy: 0 };
     var lbTiltX = 0, lbTiltZ = 0, collectSeq = 0, fallSeq = 0, winSeq = 0;
 
-    function initLab() {
-      grid = []; starsT = 0; starsC = 0; tLeft = 60; over = false; b1 = { x: 1.5, y: 1.5, vx: 0, vy: 0 }; b2 = { x: 1.5, y: 1.5, vx: 0, vy: 0 };
+    function loadLabLevel(idx) {
+      lvlIdx = idx; grid = []; starsT = 0; starsC = 0; tLeft = 65; over = false;
+      b1 = { x: 1.5, y: 1.5, vx: 0, vy: 0 }; b2 = { x: 1.5, y: 1.5, vx: 0, vy: 0 };
+      var tpl = LAB_LEVELS[idx] || LAB_LEVELS[0];
       for (var r = 0; r < ROWS; r++) {
         var row = [];
-        for (var c = 0; c < COLS; c++) { var ch = TPL[r].charAt(c); if (ch === '*') starsT++; row.push(ch); }
+        for (var c = 0; c < COLS; c++) { var ch = tpl[r].charAt(c); if (ch === '*') starsT++; row.push(ch); }
         grid.push(row);
       }
-      ov.style.display = 'none'; p1El.textContent = 'ESTRELLAS 0/' + starsT; p2El.textContent = 'TIEMPO 60s';
+      ov.style.display = 'none'; p1El.textContent = 'ESTRELLAS 0/' + starsT; p2El.textContent = 'NIVEL ' + (lvlIdx + 1) + '/3 · 65s';
     }
+    function initLab() { starsAll = 0; loadLabLevel(0); }
     initLab();
     var use3dLb = Boolean(mount3dStage(document.getElementById('lb-arena'), canvas, 'mountLabyrinth3D', {
       getState: function () {
-        return { level: 1, cols: COLS, rows: ROWS, grid: grid, tiltX: lbTiltX, tiltZ: lbTiltZ, twoHumans: twoHumans, ball1: b1, ball2: twoHumans ? b2 : null, collectSeq: collectSeq, fallSeq: fallSeq, winSeq: winSeq };
+        return { level: lvlIdx + 1, cols: COLS, rows: ROWS, grid: grid, tiltX: lbTiltX, tiltZ: lbTiltZ, twoHumans: twoHumans, ball1: b1, ball2: twoHumans ? b2 : null, collectSeq: collectSeq, fallSeq: fallSeq, winSeq: winSeq };
       }
     }));
     document.getElementById('lb-replay').onclick = initLab;
@@ -509,13 +512,18 @@
         }
       }
       var gc = Math.floor(b.x), gr = Math.floor(b.y), ch = grid[gr] && grid[gr][gc];
-      if (ch === '*') { grid[gr][gc] = '.'; starsC++; collectSeq++; beep(760, 0.12, 'triangle', 0.08); pushPlusTel(roomId, starsC, Math.ceil(tLeft), 'pingpong_hit', 45); }
+      if (ch === '*') { grid[gr][gc] = '.'; starsC++; starsAll++; collectSeq++; beep(760, 0.12, 'triangle', 0.08); pushPlusTel(roomId, starsAll, Math.ceil(tLeft), 'pingpong_hit', 45); }
       else if (ch === 'O' && Math.hypot(b.x - (gc + 0.5), b.y - (gr + 0.5)) < 0.34) {
-        b.x = 1.5; b.y = 1.5; b.vx = 0; b.vy = 0; fallSeq++; beep(160, 0.2, 'sawtooth', 0.08); pushPlusTel(roomId, starsC, Math.ceil(tLeft), 'trap', 95);
+        b.x = 1.5; b.y = 1.5; b.vx = 0; b.vy = 0; fallSeq++; beep(160, 0.2, 'sawtooth', 0.08); pushPlusTel(roomId, starsAll, Math.ceil(tLeft), 'trap', 95);
       } else if (ch === 'E') {
-        over = true; winSeq++; beep(920, 0.28, 'triangle', 0.1); pushPlusTel(roomId, starsC, Math.ceil(tLeft), 'lab_win', 130);
-        ftEl.textContent = '🏆 ¡SALIDA ALCANZADA (J' + slot + ')!'; fsEl.textContent = starsC + '/' + starsT + ' estrellas · ' + Math.ceil(tLeft) + 's sobrantes';
-        ov.style.display = 'flex';
+        winSeq++; beep(920, 0.28, 'triangle', 0.1); pushPlusTel(roomId, starsAll, Math.ceil(tLeft), 'lab_win', 130);
+        if (lvlIdx + 1 < LAB_LEVELS.length) { loadLabLevel(lvlIdx + 1); }
+        else {
+          over = true;
+          ftEl.textContent = '🏆 ¡LABERINTO 3D COMPLETADO (J' + slot + ')!';
+          fsEl.textContent = starsAll + ' estrellas totales · ' + Math.ceil(tLeft) + 's sobrantes';
+          ov.style.display = 'flex';
+        }
       }
     }
 

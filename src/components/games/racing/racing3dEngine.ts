@@ -19,17 +19,20 @@ import { RacingSoundEngine } from './racingAudio';
 import { createRacing2dFallbackEngine } from './racing2dFallback';
 import {
   RACING_CAR_CATALOG,
+  RACING_TRACK_CATALOG,
   RIVAL_LIVERIES,
   TOTAL_RACE_LAPS,
   TRACK_BARRIER_HALF_WIDTH,
   TRACK_HALF_WIDTH,
   getRacingCarSpec,
+  getRacingTrackSpec,
   type RacingCameraMode,
   type RacingCarId,
   type RacingEngineCallbacks,
   type RacingEngineHandle,
   type RacingEngineOptions,
   type RacingGyroControlState,
+  type RacingTrackId,
 } from './racingTypes';
 
 interface ParticleSlot {
@@ -120,16 +123,17 @@ export function createRacing3dEngine(
   renderer.domElement.style.height = '100%';
   container.appendChild(renderer.domElement);
 
-  const skyDomeTex = createSkyDomeTexture({
-    topHex: '#070e22',
-    midHex: '#18305b',
-    horizonHex: '#c26d38',
-    sunGlowHex: 'rgba(251, 191, 36, 0.45)',
-    stars: true,
+  let activeTrackSpec = getRacingTrackSpec(options.initialTrackId);
+  let skyDomeTex = createSkyDomeTexture({
+    topHex: activeTrackSpec.skyTop,
+    midHex: activeTrackSpec.skyMid,
+    horizonHex: activeTrackSpec.skyHorizon,
+    sunGlowHex: activeTrackSpec.sunGlow,
+    stars: activeTrackSpec.stars,
   });
   const scene = new THREE.Scene();
   scene.background = skyDomeTex;
-  scene.fog = new THREE.FogExp2(0x0b152a, 0.0024);
+  scene.fog = new THREE.FogExp2(activeTrackSpec.fogHex, activeTrackSpec.fogDensity);
 
   let pmrem: THREE.PMREMGenerator | null = null;
   let envTarget: THREE.WebGLRenderTarget | null = null;
@@ -147,11 +151,10 @@ export function createRacing3dEngine(
     pmrem = null;
   }
 
-  // Upgrade to photorealistic Poly Haven 1K dusk HDRI reflections (keep crisp skyDomeTex as background to avoid white HDR sky bloom)
-  const hdriHandle = applyPolyHavenHdri(
+  let hdriHandle = applyPolyHavenHdri(
     scene,
     renderer,
-    'assets/games/hdri/evening_road_01_1k.hdr',
+    activeTrackSpec.hdriPath,
     isSoftwareGl,
     { setBackground: false, envIntensity: 0.42 }
   );
@@ -169,9 +172,16 @@ export function createRacing3dEngine(
     800
   );
 
-  // Lighting rig (balanced twilight motorsport contrast with natural green turf)
-  const hemiLight = new THREE.HemisphereLight(0xdbeafe, 0x1a2e1a, 0.54);
-  const keyLight = new THREE.DirectionalLight(0xfff4dc, 1.42);
+  // Lighting rig tailored per circuit theme
+  const hemiLight = new THREE.HemisphereLight(
+    activeTrackSpec.hemiSkyHex,
+    activeTrackSpec.hemiGroundHex,
+    activeTrackSpec.hemiIntensity
+  );
+  const keyLight = new THREE.DirectionalLight(
+    activeTrackSpec.keyColorHex,
+    activeTrackSpec.keyIntensity
+  );
   keyLight.position.set(110, 140, 80);
   if (!isSoftwareGl) {
     keyLight.castShadow = true;
@@ -184,11 +194,11 @@ export function createRacing3dEngine(
     keyLight.shadow.camera.top = 220;
     keyLight.shadow.camera.bottom = -220;
   }
-  const rimLight = new THREE.DirectionalLight(0x93c5fd, 0.34);
+  const rimLight = new THREE.DirectionalLight(activeTrackSpec.rimColorHex, 0.34);
   rimLight.position.set(-90, 45, -110);
   scene.add(hemiLight, keyLight, rimLight);
 
-  const circuit = buildGpCircuitScene(scene, isSoftwareGl);
+  let circuit = buildGpCircuitScene(scene, isSoftwareGl, activeTrackSpec.id);
   const audio = new RacingSoundEngine();
 
   // GPU Post-Processing (skipped cleanly on constrained Smart TVs via createProPostComposer) + DRS
@@ -318,6 +328,7 @@ export function createRacing3dEngine(
   let lastCycleCameraToggle = false;
   let lastHornToggle = false;
   let lastCarSelectCmd: string | undefined;
+  let lastTrackSelectCmd: string | undefined;
   let lastAutoGasToggleCmd = false;
   let smoothedSteerCmd = 0;
 
@@ -1004,6 +1015,7 @@ export function createRacing3dEngine(
         cameraMode,
         wrongWay: dotHeading < -0.35 && speedKmh > 25,
         carId: activeCarSpec.id,
+        trackId: activeTrackSpec.id,
         autoGas: autoGasEnabled,
         splitScreenActive,
         p2SpeedKmh: p2Driving ? Math.max(0, Math.round(Math.abs(speedMps2) * 3.6)) : undefined,
@@ -1141,6 +1153,40 @@ export function createRacing3dEngine(
     return nextSpec.id;
   };
 
+  const applyTrack = (trackId: RacingTrackId): RacingTrackId => {
+    const nextSpec = getRacingTrackSpec(trackId);
+    if (nextSpec.id === activeTrackSpec.id) {
+      placeGridStart();
+      return nextSpec.id;
+    }
+    activeTrackSpec = nextSpec;
+    circuit.dispose();
+    skyDomeTex.dispose();
+    hdriHandle.dispose();
+    skyDomeTex = createSkyDomeTexture({
+      topHex: nextSpec.skyTop,
+      midHex: nextSpec.skyMid,
+      horizonHex: nextSpec.skyHorizon,
+      sunGlowHex: nextSpec.sunGlow,
+      stars: nextSpec.stars,
+    });
+    scene.background = skyDomeTex;
+    scene.fog = new THREE.FogExp2(nextSpec.fogHex, nextSpec.fogDensity);
+    hemiLight.color.setHex(nextSpec.hemiSkyHex);
+    hemiLight.groundColor.setHex(nextSpec.hemiGroundHex);
+    hemiLight.intensity = nextSpec.hemiIntensity;
+    keyLight.color.setHex(nextSpec.keyColorHex);
+    keyLight.intensity = nextSpec.keyIntensity;
+    rimLight.color.setHex(nextSpec.rimColorHex);
+    hdriHandle = applyPolyHavenHdri(scene, renderer, nextSpec.hdriPath, isSoftwareGl, {
+      setBackground: false,
+      envIntensity: 0.42,
+    });
+    circuit = buildGpCircuitScene(scene, isSoftwareGl, nextSpec.id);
+    placeGridStart();
+    return nextSpec.id;
+  };
+
   return {
     setGyroInput: (input, expiresInMs = 950, playerSlot) => {
       audio.unlock();
@@ -1183,6 +1229,19 @@ export function createRacing3dEngine(
         } else if (!input.carSelect) {
           lastCarSelectCmd = undefined;
         }
+        if (input.trackSelect && input.trackSelect !== lastTrackSelectCmd) {
+          lastTrackSelectCmd = input.trackSelect;
+          if (input.trackSelect === 'next' || input.trackSelect === 'prev') {
+            const tidx = RACING_TRACK_CATALOG.findIndex((t) => t.id === activeTrackSpec.id);
+            const delta = input.trackSelect === 'prev' ? -1 : 1;
+            const targetTrack = RACING_TRACK_CATALOG[(tidx + delta + RACING_TRACK_CATALOG.length) % RACING_TRACK_CATALOG.length];
+            applyTrack(targetTrack.id);
+          } else {
+            applyTrack(input.trackSelect);
+          }
+        } else if (!input.trackSelect) {
+          lastTrackSelectCmd = undefined;
+        }
         if (input.autoGasToggle && !lastAutoGasToggleCmd) {
           autoGasEnabled = !autoGasEnabled;
         }
@@ -1215,6 +1274,11 @@ export function createRacing3dEngine(
       return applyPlayerCar(carId);
     },
     getPlayerCar: () => activeCarSpec.id,
+    setTrack: (trackId: RacingTrackId) => {
+      audio.unlock();
+      return applyTrack(trackId);
+    },
+    getTrack: () => activeTrackSpec.id,
     setAutoGas: (enabled: boolean) => {
       autoGasEnabled = Boolean(enabled);
       return autoGasEnabled;

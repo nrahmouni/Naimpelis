@@ -50,6 +50,7 @@ export type GyroControllerGame =
   | 'racing3d'
   | 'penalty'
   | 'pingpong'
+  | 'soccerpong'
   | 'gyrohockey'
   | 'gyrospace'
   | 'headsoccer'
@@ -67,6 +68,7 @@ const GYRO_MODE_ORDER: GyroControllerGame[] = [
   'racing3d',
   'penalty',
   'pingpong',
+  'soccerpong',
   'gyrobowling',
   'gyrotennis',
   'gyrolab',
@@ -87,6 +89,7 @@ function parseGyroControllerGameFromRaw(rawVal?: string | null): GyroControllerG
   if (raw === 'gyrohockey' || raw === 'air-hockey' || raw === 'hockey-gyro') return 'gyrohockey';
   if (raw === 'gyrospace' || raw === 'galaxia-gyro' || raw === 'space-gyro') return 'gyrospace';
   if (raw === 'pingpong' || raw === 'ping-pong') return 'pingpong';
+  if (raw === 'soccerpong' || raw === 'futbol-pong' || raw === 'soccer-pong') return 'soccerpong';
   if (raw === 'headsoccer' || raw === 'head-soccer' || raw === 'cabezones') return 'headsoccer';
   if (raw === 'penalty' || raw === 'penaltis' || raw === 'penalties') return 'penalty';
   if (raw === 'gyrobowling' || raw === 'bolos-gyro' || raw === 'bolos' || raw === 'bowling') {
@@ -754,6 +757,19 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
           dialTitle: 'PING PONG',
           accent: '#f43f5e',
         };
+      case 'soccerpong':
+        return {
+          l1Title: 'SUBIR ▲',
+          l1Sub: 'ARRIBA',
+          l2Title: 'BAJAR ▼',
+          l2Sub: 'ABAJO',
+          r1Title: '⚡ POWER',
+          r1Sub: 'TIRO FUERTE',
+          r2Title: '⚽ BLOQUEO',
+          r2Sub: 'DEFENSA',
+          dialTitle: 'FÚTBOL PONG',
+          accent: '#22c55e',
+        };
       case 'gyrohockey':
         return {
           l1Title: 'FRENO',
@@ -958,6 +974,8 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
       ? '⚽ Penaltis'
       : gyroGameMode === 'pingpong'
       ? '🏓 Ping Pong'
+      : gyroGameMode === 'soccerpong'
+      ? '⚽ Fútbol Pong'
       : gyroGameMode === 'gyrobowling'
       ? '🎳 Bolos'
       : gyroGameMode === 'gyrotennis'
@@ -1227,6 +1245,26 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
                 APUNTA INCLINANDO · AGITA PARA LANZAR
               </text>
             </svg>
+          ) : gyroGameMode === 'soccerpong' ? (
+            <svg viewBox="0 0 200 200" className="w-full h-full">
+              <rect x="24" y="20" width="152" height="160" rx="10" fill="#4f9d29" stroke="#cbd5e1" strokeWidth="5" />
+              <line x1="100" y1="20" x2="100" y2="180" stroke="rgba(255,255,255,0.55)" strokeWidth="2.5" />
+              <circle cx="100" cy="100" r="24" fill="none" stroke="rgba(255,255,255,0.55)" strokeWidth="2.5" />
+              <rect
+                x={mySlot === 2 ? 148 : 38}
+                y={80 - visualPitch * 46 + visualSteer * 32}
+                width="14"
+                height="40"
+                rx="4"
+                fill={mySlot === 2 ? '#ef4444' : '#2563eb'}
+                stroke="#f8fafc"
+                strokeWidth="2.5"
+              />
+              <circle cx="100" cy="100" r="10" fill="#f8fafc" stroke="#0f172a" strokeWidth="2" />
+              <text x="100" y="194" textAnchor="middle" fill="#bbf7d0" fontSize="10" fontWeight="900" fontFamily="monospace">
+                INCLINA ARRIBA/ABAJO · PALA J{mySlot}
+              </text>
+            </svg>
           ) : gyroGameMode === 'gyrotennis' || gyroGameMode === 'pingpong' ? (
             <svg viewBox="0 0 200 200" className="w-full h-full">
               {gyroGameMode === 'gyrotennis' && (
@@ -1386,6 +1424,8 @@ export const PhoneGyroController: React.FC<PhoneGyroControllerProps> = ({
               ? 'Agita el móvil o pulsa Aletear para volar'
               : gyroGameMode === 'gyrotennis' || gyroGameMode === 'pingpong'
               ? 'Mueve el móvil en vertical o agita para rematar'
+              : gyroGameMode === 'soccerpong'
+              ? 'Inclina el móvil o desliza arriba/abajo para mover tu pala'
               : pickLang(lang, {
                   es: 'Inclina el móvil en vertical o desliza en el visor',
                   ca: 'Inclina el mòbil en vertical o llisca al visor',

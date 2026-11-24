@@ -257,6 +257,7 @@ export const wsGameInviteRespondSchema = z.object({
     'gyrotennis',
     'gyrolab',
     'pingpong',
+    'soccerpong',
     'bomberman',
     'pacman',
     'tetris',
@@ -294,6 +295,7 @@ export const wsGameSwitchSchema = z.object({
     'gyrotennis',
     'gyrolab',
     'pingpong',
+    'soccerpong',
     'bomberman',
     'pacman',
     'tetris',
@@ -482,6 +484,7 @@ export const wsGyroInputSchema = z.object({
   cameraCycle: z.boolean().optional(),
   horn: z.boolean().optional(),
   carSelect: z.string().trim().max(32).optional(),
+  trackSelect: z.string().trim().max(32).optional(),
   autoGasToggle: z.boolean().optional(),
   seq: z.number().int().min(0).max(1_000_000_000),
   ts: z.number().min(0),
@@ -508,6 +511,7 @@ export const wsRacingTelemetrySchema = z.object({
   scoreP2: z.number().int().min(0).max(999).optional(),
   eventTag: z.string().trim().max(32).optional(),
   carId: z.string().trim().max(32).optional(),
+  trackId: z.string().trim().max(32).optional(),
   autoGas: z.boolean().optional(),
 });
 

@@ -213,6 +213,40 @@ export function buildFormulaGtCar(
   rearWing.castShadow = castShadow;
   proceduralBody.add(rearWing);
 
+  // Silhouette-specific aero attachments (updated instantly when selecting any of the 5 models)
+  const frontSplitter = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.18, 0.08, 0.52)), accentMat);
+  frontSplitter.position.set(0, 0.27, -2.18);
+  const dorsalFin = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.1, 0.52, 1.55)), paintMat);
+  dorsalFin.position.set(0, 1.06, 0.95);
+  const roofScoop = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.68, 0.22, 0.88)), accentMat);
+  roofScoop.position.set(0, 1.14, 0.08);
+  const rallyRoofBar = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.16, 0.12, 0.18)), headlightMat);
+  rallyRoofBar.position.set(0, 1.14, -0.52);
+  const haloRing = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.16, 0.22, 0.9)), carbonMat);
+  haloRing.position.set(0, 0.98, -0.32);
+  proceduralBody.add(frontSplitter, dorsalFin, roofScoop, rallyRoofBar, haloRing);
+
+  const applyProceduralVariant = (variant: 'gt' | 'hyper' | 'lmp' | 'rally' | 'formula') => {
+    chassisMesh.scale.set(
+      variant === 'formula' ? 0.78 : variant === 'rally' ? 1.06 : 1.0,
+      variant === 'rally' ? 1.24 : variant === 'lmp' ? 0.88 : 1.0,
+      1.0
+    );
+    noseMesh.scale.set(
+      variant === 'formula' ? 0.62 : 1.0,
+      1.0,
+      variant === 'formula' ? 1.28 : 1.0
+    );
+    rearWing.scale.set(variant === 'rally' ? 0.76 : 1.05, 1, variant === 'hyper' ? 1.35 : 1);
+    rearWing.position.y = variant === 'rally' ? 1.18 : variant === 'formula' ? 1.08 : 1.12;
+    frontSplitter.visible = variant === 'formula' || variant === 'hyper';
+    frontSplitter.scale.x = variant === 'formula' ? 1.12 : 0.96;
+    dorsalFin.visible = variant === 'lmp' || variant === 'hyper';
+    roofScoop.visible = variant === 'rally' || variant === 'lmp';
+    rallyRoofBar.visible = variant === 'rally';
+    haloRing.visible = variant === 'formula';
+  };
+
   const headGeo = trackGeo(new THREE.BoxGeometry(0.32, 0.09, 0.1));
   [-0.58, 0.58].forEach((x) => {
     const hl = new THREE.Mesh(headGeo, headlightMat);
@@ -309,10 +343,11 @@ export function buildFormulaGtCar(
 
   const glbBrakeBarGeo = trackGeo(new THREE.BoxGeometry(1.22, 0.075, 0.07));
 
-  const rivalPool: Array<{ path: string; yawOffset: number }> = [
-    { path: 'assets/games/models/endurance.glb', yawOffset: Math.PI },
-    { path: 'assets/games/models/hypercar.glb', yawOffset: Math.PI },
-    { path: 'assets/games/models/rally.glb', yawOffset: Math.PI },
+  const rivalPool: Array<{ path: string; yawOffset: number; variant: 'hyper' | 'lmp' | 'rally' | 'formula' }> = [
+    { path: 'assets/games/models/endurance.glb', yawOffset: Math.PI, variant: 'lmp' },
+    { path: 'assets/games/models/hypercar.glb', yawOffset: Math.PI, variant: 'hyper' },
+    { path: 'assets/games/models/rally.glb', yawOffset: Math.PI, variant: 'rally' },
+    { path: 'assets/games/models/streamliner.glb', yawOffset: Math.PI, variant: 'formula' },
   ];
 
   const loadModelSpec = (
@@ -320,9 +355,11 @@ export function buildFormulaGtCar(
     yawOffset: number,
     aoPath?: string,
     tintPrimary?: number,
-    tintAccent?: number
+    tintAccent?: number,
+    variant: 'gt' | 'hyper' | 'lmp' | 'rally' | 'formula' = 'gt'
   ) => {
     const gen = ++loadGeneration;
+    applyProceduralVariant(variant);
     if (typeof tintPrimary === 'number') paintMat.color.setHex(tintPrimary);
     if (typeof tintAccent === 'number') {
       accentMat.color.setHex(tintAccent);
@@ -424,10 +461,10 @@ export function buildFormulaGtCar(
 
   if (options?.isPlayer) {
     const spec: RacingCarSpec = getRacingCarSpec(options?.carId);
-    loadModelSpec(spec.glbPath, spec.yawOffset, spec.aoPath, spec.primaryHex, spec.accentHex);
+    loadModelSpec(spec.glbPath, spec.yawOffset, spec.aoPath, spec.primaryHex, spec.accentHex, spec.shapeVariant);
   } else {
     const chosen = rivalPool[((options?.rivalIndex ?? 1) - 1 + rivalPool.length) % rivalPool.length];
-    loadModelSpec(chosen.path, chosen.yawOffset);
+    loadModelSpec(chosen.path, chosen.yawOffset, undefined, undefined, undefined, chosen.variant);
   }
 
   return {
@@ -442,7 +479,7 @@ export function buildFormulaGtCar(
     setCarModel: (carId: RacingCarId) => {
       if (disposed) return;
       const spec = getRacingCarSpec(carId);
-      loadModelSpec(spec.glbPath, spec.yawOffset, spec.aoPath, spec.primaryHex, spec.accentHex);
+      loadModelSpec(spec.glbPath, spec.yawOffset, spec.aoPath, spec.primaryHex, spec.accentHex, spec.shapeVariant);
     },
     dispose: () => {
       disposed = true;

@@ -155,6 +155,16 @@ const GAME_INVITE_META: Record<RoomGameInviteType, GameInviteMeta> = {
       en: '1P or 2P table tennis duel with phone racket',
     },
   },
+  soccerpong: {
+    emoji: '⚽',
+    accent: '#22C55E',
+    title: { es: 'Fútbol Pong 3D', ca: 'Futbol Pong 3D', en: 'Soccer Pong 3D' },
+    subtitle: {
+      es: 'Estadio 3D · Duelo 1P/2P con móvil o mando',
+      ca: 'Estadi 3D · Duel 1P/2P amb mòbil o comandament',
+      en: '3D stadium · 1P/2P duel with phone or remote',
+    },
+  },
   gyrohockey: {
     emoji: '🏒',
     accent: '#22D3EE',

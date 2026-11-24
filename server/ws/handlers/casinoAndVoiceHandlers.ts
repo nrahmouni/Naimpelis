@@ -123,6 +123,7 @@ export const handleCasinoAndVoiceMessage: WsMessageHandler = (
       gyrotennis: 'Tenis Slam Pro 2P',
       gyrolab: 'Laberinto Esfera 3D',
       pingpong: 'Ping Pong Pro 2P',
+      soccerpong: 'Fútbol Pong 3D',
       bomberman: 'Bomberman Party Arena',
       pacman: 'Pac-Man Arcade HD',
       tetris: 'Tetris Sprint TV',

@@ -30,6 +30,7 @@ import { PokerHoldemStage } from '../PokerHoldemStage';
 import { BlackjackStage } from '../BlackjackStage';
 import { PenaltyShootoutStage } from './PenaltyShootoutStage';
 import { PingPongStage } from './PingPongStage';
+import { SoccerPongStage } from './SoccerPongStage';
 import { GyroArcadeStage } from './GyroArcadeStage';
 import { GyroMotionPackStage } from './GyroMotionPackStage';
 import { ArcadePuzzleStage } from './arcade/ArcadePuzzleStage';
@@ -179,6 +180,17 @@ export const GamesHubSecondaryStages: React.FC<GamesHubSecondaryStagesProps> = (
   if (selectedGame === 'pingpong') {
     return (
       <PingPongStage
+        lang={lang}
+        roomId={roomId}
+        userName={currentUser.name}
+        onClose={handleBackToGames}
+      />
+    );
+  }
+
+  if (selectedGame === 'soccerpong') {
+    return (
+      <SoccerPongStage
         lang={lang}
         roomId={roomId}
         userName={currentUser.name}

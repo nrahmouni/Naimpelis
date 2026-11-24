@@ -2,14 +2,17 @@ import { createRacing3dEngine } from './racing3dEngine';
 import { createRacing2dFallbackEngine } from './racing2dFallback';
 import {
   RACING_CAR_CATALOG,
+  RACING_TRACK_CATALOG,
   type RacingCarId,
   type RacingCarTelemetry,
   type RacingEngineHandle,
   type RacingEngineOptions,
   type RacingGyroControlState,
+  type RacingTrackId,
 } from './racingTypes';
 import { mountPenalty3D } from '../three/Penalty3DViewport';
 import { mountPingPong3D } from '../three/PingPong3DViewport';
+import { mountSoccerPong3D } from '../three/SoccerPong3DViewport';
 import { mountBowling3D } from '../three/Bowling3DViewport';
 import { mountTennis3D } from '../three/Tennis3DViewport';
 import { mountLabyrinth3D } from '../three/Labyrinth3DViewport';
@@ -30,7 +33,7 @@ export function mount(
   try {
     activeEngine = createRacing3dEngine(container, callbacks || {}, options);
   } catch {
-    activeEngine = createRacing2dFallbackEngine(container, callbacks || {});
+    activeEngine = createRacing2dFallbackEngine(container, callbacks || {}, options);
   }
 }
 
@@ -63,6 +66,14 @@ export function setPlayerCar(carId: RacingCarId): void {
 
 export function getPlayerCar(): RacingCarId {
   return activeEngine?.getPlayerCar?.() || 'ferrari';
+}
+
+export function setTrack(trackId: RacingTrackId): RacingTrackId {
+  return activeEngine?.setTrack?.(trackId) || 'metropolis';
+}
+
+export function getTrack(): RacingTrackId {
+  return activeEngine?.getTrack?.() || 'metropolis';
 }
 
 export function setAutoGas(enabled: boolean): void {
@@ -104,9 +115,12 @@ if (typeof window !== 'undefined') {
     setRemoteKey,
     setPlayerCar,
     getPlayerCar,
+    setTrack,
+    getTrack,
     setAutoGas,
     getAutoGas,
     carCatalog: RACING_CAR_CATALOG,
+    trackCatalog: RACING_TRACK_CATALOG,
     cycleCamera,
     resetRace,
     setMuted,
@@ -116,6 +130,7 @@ if (typeof window !== 'undefined') {
   (window as unknown as Record<string, unknown>).RiffanTvGames = {
     mountPenalty3D,
     mountPingPong3D,
+    mountSoccerPong3D,
     mountBowling3D,
     mountTennis3D,
     mountLabyrinth3D,

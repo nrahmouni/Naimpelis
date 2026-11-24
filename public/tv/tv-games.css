@@ -152,6 +152,10 @@
   background: linear-gradient(135deg, #083344 0%, #0e7490 52%, #050814 100%);
 }
 
+.tv-game-card-stage.soccerpong {
+  background: linear-gradient(135deg, #15803d 0%, #065f46 58%, #0f172a 100%);
+}
+
 .tv-game-card-stage.space {
   background: linear-gradient(135deg, #312e81 0%, #701a75 52%, #050713 100%);
 }

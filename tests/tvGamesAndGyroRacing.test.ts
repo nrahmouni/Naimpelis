@@ -361,6 +361,7 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
       'public/tv/tv-games-soccer.js',
       'public/tv/tv-games-penalty.js',
       'public/tv/tv-games-pingpong.js',
+      'public/tv/tv-games-soccerpong.js',
       'public/tv/tv-games-racing.js',
       'public/tv/tv-games-gyro.js',
       'public/tv/tv-games-gyroplus.js',
@@ -381,6 +382,7 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
       'public/tv/tv-games-soccer.js',
       'public/tv/tv-games-penalty.js',
       'public/tv/tv-games-pingpong.js',
+      'public/tv/tv-games-soccerpong.js',
       'public/tv/tv-games-racing.js',
       'public/tv/tv-games-gyro.js',
       'public/tv/tv-games-gyroplus.js',
@@ -399,6 +401,7 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
       'public/tv/tv-games-gyroplus.js',
       'public/tv/tv-games-retro.js',
       'public/tv/tv-games-action.js',
+      'public/tv/tv-games-soccerpong.js',
     ]) {
       const src = fs.readFileSync(path.join(ROOT, strictEs5File), 'utf8');
       expect(src).not.toMatch(/(?:^|\s)(?:let|const)\s+[a-zA-Z_$]/m);
@@ -415,7 +418,7 @@ describe('Smart TV Games, Mobile Gyro 3D Racing & Spanish Kids Hub', () => {
       path.join(ROOT, 'src/components/games/racing/PhoneGyroController.tsx'),
       'utf8'
     );
-    for (const newGyroGame of ['hexgl', 'arkanoid', 'invaders', 'pacman', 'bomberman', 'flappy']) {
+    for (const newGyroGame of ['soccerpong', 'hexgl', 'arkanoid', 'invaders', 'pacman', 'bomberman', 'flappy']) {
       expect(gyroControllerSrc).toContain(`'${newGyroGame}'`);
     }
 

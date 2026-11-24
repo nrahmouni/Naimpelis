@@ -2,10 +2,15 @@ import { RacingSoundEngine } from './racingAudio';
 import {
   RIVAL_LIVERIES,
   TOTAL_RACE_LAPS,
+  getRacingCarSpec,
+  getRacingTrackSpec,
   type RacingCameraMode,
+  type RacingCarId,
   type RacingEngineCallbacks,
   type RacingEngineHandle,
+  type RacingEngineOptions,
   type RacingGyroControlState,
+  type RacingTrackId,
 } from './racingTypes';
 
 interface FallbackRival {
@@ -62,8 +67,12 @@ function sampleTrackCurveAt(s: number): number {
  */
 export function createRacing2dFallbackEngine(
   container: HTMLElement,
-  callbacks: RacingEngineCallbacks = {}
+  callbacks: RacingEngineCallbacks = {},
+  options: RacingEngineOptions = {}
 ): RacingEngineHandle {
+  let activeCarSpec = getRacingCarSpec(options.initialCarId);
+  let activeTrackSpec = getRacingTrackSpec(options.initialTrackId);
+  let autoGasEnabled = Boolean(options.initialAutoGas);
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(640, container.clientWidth || 1280);
   canvas.height = Math.max(360, container.clientHeight || 720);
@@ -255,26 +264,47 @@ export function createRacing2dFallbackEngine(
     const h = canvas.height;
     const horizon = Math.round(h * (cameraMode === 'far' ? 0.39 : 0.43));
 
-    // Sky + stadium night gradient
+    // Sky + stadium horizon gradient per active circuit
     const sky = c.createLinearGradient(0, 0, 0, horizon);
-    sky.addColorStop(0, '#050814');
-    sky.addColorStop(0.65, '#131b38');
-    sky.addColorStop(1, '#1e1b4b');
+    sky.addColorStop(0, activeTrackSpec.skyTop);
+    sky.addColorStop(0.65, activeTrackSpec.skyMid);
+    sky.addColorStop(1, activeTrackSpec.skyHorizon);
     c.fillStyle = sky;
     c.fillRect(0, 0, w, horizon);
 
-    // Distant skyline + stadium lights
+    // Distant silhouette per active circuit
     const parallax = (-playerS * 900) % w;
-    c.fillStyle = '#090d1f';
+    c.fillStyle =
+      activeTrackSpec.id === 'desert'
+        ? '#78350f'
+        : activeTrackSpec.id === 'alpine'
+        ? '#1e293b'
+        : '#090d1f';
     for (let x = parallax - w; x < w * 2; x += 92) {
       const bh = 28 + ((Math.abs(Math.round(x * 13)) % 5) * 14);
       c.fillRect(x, horizon - bh, 64, bh);
     }
 
-    // Turf ground
+    // Terrain ground per active circuit
+    const grassTop =
+      activeTrackSpec.id === 'desert'
+        ? '#b45309'
+        : activeTrackSpec.id === 'coast'
+        ? '#c29b61'
+        : activeTrackSpec.id === 'neotokyo'
+        ? '#0f172a'
+        : '#064e3b';
+    const grassBot =
+      activeTrackSpec.id === 'desert'
+        ? '#78350f'
+        : activeTrackSpec.id === 'coast'
+        ? '#0e7490'
+        : activeTrackSpec.id === 'neotokyo'
+        ? '#020617'
+        : '#022c22';
     const grass = c.createLinearGradient(0, horizon, 0, h);
-    grass.addColorStop(0, '#064e3b');
-    grass.addColorStop(1, '#022c22');
+    grass.addColorStop(0, grassTop);
+    grass.addColorStop(1, grassBot);
     c.fillStyle = grass;
     c.fillRect(0, horizon, w, h - horizon);
 
@@ -302,7 +332,7 @@ export function createRacing2dFallbackEngine(
       const alt = Math.floor(i + phase) % 2 === 0;
 
       // Curbs
-      c.fillStyle = alt ? '#ef4444' : '#f8fafc';
+      c.fillStyle = alt ? hexCss(activeTrackSpec.curbPrimaryHex) : hexCss(activeTrackSpec.curbSecondaryHex);
       c.beginPath();
       c.moveTo(cx0 - hw0 * 1.12, y0);
       c.lineTo(cx0 + hw0 * 1.12, y0);
@@ -363,8 +393,8 @@ export function createRacing2dFallbackEngine(
         w * 0.5 + headingOffset * 28,
         h * 0.82,
         carScale,
-        hexCss(RIVAL_LIVERIES[0].primary),
-        hexCss(RIVAL_LIVERIES[0].accent),
+        activeCarSpec.cssColor,
+        activeCarSpec.cssAccent,
         -steerInput,
         boosting,
         brakeInput > 0.1
@@ -374,8 +404,8 @@ export function createRacing2dFallbackEngine(
     // Subtle TV WebGL-fallback badge & countdown banner
     c.font = '700 13px sans-serif';
     c.textAlign = 'left';
-    c.fillStyle = 'rgba(203, 213, 225, 0.75)';
-    c.fillText('GP HD COMPATIBLE · 60 FPS', 20, 28);
+    c.fillStyle = 'rgba(203, 213, 225, 0.82)';
+    c.fillText(`${activeTrackSpec.shortName.toUpperCase()} · ${activeCarSpec.name}`, 20, 28);
 
     if (raceState === 'countdown') {
       const countNum = Math.max(1, Math.ceil(countdownTimer));
@@ -436,12 +466,19 @@ export function createRacing2dFallbackEngine(
     }
 
     const offroad = Math.abs(lateral) > 0.96;
+    if (autoGasEnabled && brakeInput < 0.1 && raceState === 'racing') {
+      throttleInput = Math.max(throttleInput, 0.92);
+    }
     const nitroUsing = raceState === 'racing' && nitroWanted && nitroPct > 2;
-    if (nitroUsing) nitroPct = Math.max(0, nitroPct - 28 * dt);
+    if (nitroUsing) nitroPct = Math.max(0, nitroPct - activeCarSpec.nitroBurn * dt);
     else nitroPct = Math.min(100, nitroPct + (offroad ? 4 : 9.5) * dt);
 
-    const topSpeed = offroad ? 46 : nitroUsing ? 94 : 76;
-    const accel = nitroUsing ? 52 : 34;
+    const topSpeed = offroad
+      ? activeCarSpec.offroadSpeed
+      : nitroUsing
+      ? activeCarSpec.boostTopSpeed
+      : activeCarSpec.topSpeed;
+    const accel = nitroUsing ? activeCarSpec.accel * 1.55 : activeCarSpec.accel;
     if (throttleInput > 0) speedMps += throttleInput * accel * dt;
     if (brakeInput > 0) speedMps -= brakeInput * (speedMps > 2 ? 48 : 18) * dt;
     speedMps -= speedMps * (offroad ? 2.1 : 0.48) * dt;
@@ -537,6 +574,9 @@ export function createRacing2dFallbackEngine(
         totalTimeMs: Math.round(raceElapsedMs),
         cameraMode,
         wrongWay: speedMps < -3,
+        carId: activeCarSpec.id,
+        trackId: activeTrackSpec.id,
+        autoGas: autoGasEnabled,
       });
     }
   }
@@ -574,6 +614,13 @@ export function createRacing2dFallbackEngine(
         const order: RacingCameraMode[] = ['chase', 'hood', 'far'];
         cameraMode = order[(order.indexOf(cameraMode) + 1) % order.length];
       }
+      if (targetSlot === 1 && input.carSelect && input.carSelect !== 'next' && input.carSelect !== 'prev') {
+        activeCarSpec = getRacingCarSpec(input.carSelect);
+      }
+      if (targetSlot === 1 && input.trackSelect && input.trackSelect !== 'next' && input.trackSelect !== 'prev') {
+        activeTrackSpec = getRacingTrackSpec(input.trackSelect);
+        resetGrid();
+      }
       if (targetSlot === 1) lastCycleCameraToggle = Boolean(input.cameraCycle);
       if (input.horn && !lastHornToggle) audio.playHorn();
       lastHornToggle = Boolean(input.horn);
@@ -588,6 +635,21 @@ export function createRacing2dFallbackEngine(
       if (typeof keys.nitro === 'boolean') keysState.nitro = keys.nitro;
       if (typeof keys.handbrake === 'boolean') keysState.handbrake = keys.handbrake;
     },
+    setPlayerCar: (carId: RacingCarId) => {
+      activeCarSpec = getRacingCarSpec(carId);
+    },
+    getPlayerCar: () => activeCarSpec.id,
+    setTrack: (trackId: RacingTrackId) => {
+      activeTrackSpec = getRacingTrackSpec(trackId);
+      resetGrid();
+      return activeTrackSpec.id;
+    },
+    getTrack: () => activeTrackSpec.id,
+    setAutoGas: (enabled: boolean) => {
+      autoGasEnabled = Boolean(enabled);
+      return autoGasEnabled;
+    },
+    getAutoGas: () => autoGasEnabled,
     cycleCamera: () => {
       audio.unlock();
       const order: RacingCameraMode[] = ['chase', 'hood', 'far'];

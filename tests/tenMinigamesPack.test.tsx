@@ -14,6 +14,7 @@ import { ArcadePuzzleStage } from '../src/components/games/arcade/ArcadePuzzleSt
 import { ArcadeActionStage } from '../src/components/games/arcade/ArcadeActionStage';
 import { ArcadeRetroStage } from '../src/components/games/arcade/ArcadeRetroStage';
 import { TvTriviaStage } from '../src/components/games/arcade/TvTriviaStage';
+import { SoccerPongStage } from '../src/components/games/SoccerPongStage';
 import { GAME_ASSET_CDN_MAP, resolveGameAssetUrl } from '../src/shared/gameAssetsCdn';
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -193,7 +194,7 @@ describe('10-Minigame Arcade & Quiz Pack (Smart TV ES5 + Web/Mobile React)', () 
     }
   });
 
-  it('renders 29 games in GamesHubLobby and mounts all Web/Mobile arcade stages without errors', () => {
+  it('renders 30 games in GamesHubLobby and mounts all Web/Mobile arcade stages without errors', () => {
     const onOpen = vi.fn();
     act(() => {
       root.render(
@@ -217,13 +218,14 @@ describe('10-Minigame Arcade & Quiz Pack (Smart TV ES5 + Web/Mobile React)', () 
       'Riffan TV Quiz Show',
       'HexGL Hover 3D',
       'Ping Pong Pro 2P',
+      'Fútbol Pong 3D',
       'Bolos Pro 3D Gyro',
       'Tenis Slam Pro 2P',
       'Laberinto Esfera 3D',
     ]) {
       expect(container.textContent).toContain(gid);
     }
-    expect(container.textContent).toContain('(29)');
+    expect(container.textContent).toContain('(30)');
 
     for (const pid of ['tetris', 'hextris', 'game2048'] as const) {
       act(() => {
@@ -258,6 +260,13 @@ describe('10-Minigame Arcade & Quiz Pack (Smart TV ES5 + Web/Mobile React)', () 
       startBtn?.click();
     });
     expect(container.textContent).toContain('1/10');
+
+    act(() => {
+      root.render(<SoccerPongStage lang="es" roomId="sp-test" userName="Naim" />);
+    });
+    expect(container.textContent).toContain('Primero a 7 goles');
+    expect(resolveGameAssetUrl('models/soccer_pong/cliff_block_stone.glb')).toMatch(/^https:\/\//);
+    expect(resolveGameAssetUrl('pbr/stone_wall_diff.jpg')).toMatch(/^https:\/\//);
   });
 
   it('resolves all CC0 PNG, JPG and GLB game assets to verified HTTPS CDN URLs with zero repo bloat', () => {

@@ -214,6 +214,7 @@ describe('20 Graphics Improvements — Smart TV ES5 Parity & Line Caps', () => {
     'public/tv/tv-games-soccer.js',
     'public/tv/tv-games-penalty.js',
     'public/tv/tv-games-pingpong.js',
+    'public/tv/tv-games-soccerpong.js',
     'public/tv/tv-games-puzzle.js',
     'public/tv/tv-games-action.js',
     'public/tv/tv-games-retro.js',

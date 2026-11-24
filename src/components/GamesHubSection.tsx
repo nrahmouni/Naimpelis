@@ -204,6 +204,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       !isPoker &&
       !isBlackjack &&
       selectedGame !== 'pingpong' &&
+      selectedGame !== 'soccerpong' &&
       selectedGame !== 'gyrohockey' &&
       selectedGame !== 'gyrospace' &&
       selectedGame !== 'gyrobowling' &&

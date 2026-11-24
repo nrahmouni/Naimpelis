@@ -144,6 +144,19 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
       backdropClass: 'from-[#063829] via-[#0F1B33] to-[#0B0D14]',
     },
     {
+      id: 'soccerpong',
+      category: 'arcade',
+      title: pickLang(lang, { es: 'Fútbol Pong 3D', ca: 'Futbol Pong 3D', en: 'Soccer Pong 3D' }),
+      meta: pickLang(lang, {
+        es: 'Estadio 3D · 1P / 2P Móvil',
+        ca: 'Estadi 3D · 1P / 2P Mòbil',
+        en: '3D Pitch · 1P / 2P Mobile',
+      }),
+      playersHint: '1P/2P',
+      accentBorder: 'hover:border-emerald-400/75',
+      backdropClass: 'from-[#166534] via-[#1E293B] to-[#0B0D14]',
+    },
+    {
       id: 'penalty',
       category: 'arcade',
       title: pickLang(lang, { es: 'Penaltis Mundial Pro', ca: 'Penals Mundial Pro', en: 'World Cup Penalties' }),

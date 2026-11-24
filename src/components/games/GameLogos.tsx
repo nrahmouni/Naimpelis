@@ -10,6 +10,7 @@ export type UnifiedGameId =
   | 'penalty'
   | 'racing3d'
   | 'pingpong'
+  | 'soccerpong'
   | 'gyrohockey'
   | 'gyrospace'
   | 'gyrobowling'
@@ -173,6 +174,48 @@ export const GameLogoArtwork: React.FC<GameLogoArtworkProps> = ({
           <rect x="168" y="20" width="8" height="14" rx="3" fill="#B45309" />
           <path d="M74 96 Q120 52 170 48" fill="none" stroke="#FDE047" strokeWidth="2.4" strokeDasharray="4 4" />
           <circle cx="124" cy="60" r="8.5" fill="#FACC15" stroke="#FFFFFF" strokeWidth="1.5" />
+        </svg>
+      );
+
+    case 'soccerpong':
+      return (
+        <svg viewBox="0 0 240 140" className={className} aria-hidden="true">
+          {/* Cream meadow outer surround */}
+          <rect width="240" height="140" fill="#DDD2AF" />
+          {/* Striped mowed grass pitch */}
+          <rect x="22" y="22" width="196" height="96" fill="#63B836" />
+          <rect x="22" y="34" width="196" height="12" fill="#529E2A" />
+          <rect x="22" y="58" width="196" height="12" fill="#529E2A" />
+          <rect x="22" y="82" width="196" height="12" fill="#529E2A" />
+          <rect x="22" y="106" width="196" height="12" fill="#529E2A" />
+          {/* White markings */}
+          <rect x="26" y="26" width="188" height="88" fill="none" stroke="rgba(255,255,255,0.68)" strokeWidth="2" />
+          <line x1="120" y1="26" x2="120" y2="114" stroke="rgba(255,255,255,0.68)" strokeWidth="2" />
+          <circle cx="120" cy="70" r="18" fill="none" stroke="rgba(255,255,255,0.68)" strokeWidth="2" />
+          {/* Pale ice-slate stone blocks top & bottom */}
+          <rect x="26" y="12" width="35" height="14" rx="3" fill="#CBD5E1" stroke="#94A3B8" strokeWidth="1.5" />
+          <rect x="65" y="12" width="35" height="14" rx="3" fill="#E2E8F0" stroke="#94A3B8" strokeWidth="1.5" />
+          <rect x="103" y="12" width="35" height="14" rx="3" fill="#CBD5E1" stroke="#94A3B8" strokeWidth="1.5" />
+          <rect x="141" y="12" width="35" height="14" rx="3" fill="#E2E8F0" stroke="#94A3B8" strokeWidth="1.5" />
+          <rect x="179" y="12" width="35" height="14" rx="3" fill="#CBD5E1" stroke="#94A3B8" strokeWidth="1.5" />
+          <rect x="26" y="114" width="35" height="14" rx="3" fill="#CBD5E1" stroke="#94A3B8" strokeWidth="1.5" />
+          <rect x="65" y="114" width="35" height="14" rx="3" fill="#E2E8F0" stroke="#94A3B8" strokeWidth="1.5" />
+          <rect x="103" y="114" width="35" height="14" rx="3" fill="#CBD5E1" stroke="#94A3B8" strokeWidth="1.5" />
+          <rect x="141" y="114" width="35" height="14" rx="3" fill="#E2E8F0" stroke="#94A3B8" strokeWidth="1.5" />
+          <rect x="179" y="114" width="35" height="14" rx="3" fill="#CBD5E1" stroke="#94A3B8" strokeWidth="1.5" />
+          {/* Wooden goal bars + white score plaques */}
+          <rect x="15" y="18" width="9" height="104" rx="3" fill="#78350F" stroke="#451A03" strokeWidth="1.5" />
+          <rect x="216" y="18" width="9" height="104" rx="3" fill="#78350F" stroke="#451A03" strokeWidth="1.5" />
+          <rect x="6" y="57" width="18" height="24" rx="3" fill="#F8FAFC" stroke="#78350F" strokeWidth="2" />
+          <text x="15" y="74" textAnchor="middle" fontSize="14" fontWeight="900" fill="#1E293B">6</text>
+          <rect x="216" y="57" width="18" height="24" rx="3" fill="#F8FAFC" stroke="#78350F" strokeWidth="2" />
+          <text x="225" y="74" textAnchor="middle" fontSize="14" fontWeight="900" fill="#1E293B">4</text>
+          {/* Chunky Blue P1 & Red P2 3D paddles */}
+          <rect x="38" y="48" width="14" height="38" rx="4" fill="#2563EB" stroke="#1D4ED8" strokeWidth="2" />
+          <rect x="188" y="56" width="14" height="38" rx="4" fill="#EF4444" stroke="#B91C1C" strokeWidth="2" />
+          {/* Classic black & white soccer ball */}
+          <circle cx="138" cy="70" r="10.5" fill="#F8FAFC" stroke="#0F172A" strokeWidth="2" />
+          <polygon points="138,64 143,68 141,74 135,74 133,68" fill="#1E293B" />
         </svg>
       );
 

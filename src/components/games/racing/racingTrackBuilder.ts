@@ -8,7 +8,12 @@ import {
   type RiggedActorHandle,
 } from '../arcade/threeProHelpers';
 import { attachSafeMeshDecoders } from '../arcade/threePostFxHelpers';
-import { TRACK_BARRIER_HALF_WIDTH, TRACK_HALF_WIDTH } from './racingTypes';
+import {
+  TRACK_BARRIER_HALF_WIDTH,
+  TRACK_HALF_WIDTH,
+  getRacingTrackSpec,
+  type RacingTrackId,
+} from './racingTypes';
 
 const TRACK_GLB_CACHE = new Map<string, Promise<THREE.Group | null>>();
 const trackGltfLoader = new GLTFLoader();
@@ -58,6 +63,7 @@ export interface BoostPadZone {
 }
 
 export interface BuiltCircuit {
+  trackId: RacingTrackId;
   curve: THREE.CatmullRomCurve3;
   totalLength: number;
   samples: TrackSample[];
@@ -73,37 +79,137 @@ export interface BuiltCircuit {
   dispose: () => void;
 }
 
-function createAsphaltTexture(): THREE.CanvasTexture {
+function getTrackWaypoints(trackId: RacingTrackId): THREE.Vector3[] {
+  switch (trackId) {
+    case 'coast':
+      return [
+        new THREE.Vector3(-30, 0, 145),
+        new THREE.Vector3(-30, 0, 20),
+        new THREE.Vector3(-24, 0, -110),
+        new THREE.Vector3(24, 0, -195),
+        new THREE.Vector3(110, 0, -215),
+        new THREE.Vector3(215, 0, -170),
+        new THREE.Vector3(245, 0, -68),
+        new THREE.Vector3(195, 0, 12),
+        new THREE.Vector3(222, 0, 108),
+        new THREE.Vector3(190, 0, 204),
+        new THREE.Vector3(96, 0, 232),
+        new THREE.Vector3(12, 0, 204),
+      ];
+    case 'alpine':
+      return [
+        new THREE.Vector3(0, 0, 130),
+        new THREE.Vector3(-18, 0, 28),
+        new THREE.Vector3(38, 0, -56),
+        new THREE.Vector3(-12, 0, -148),
+        new THREE.Vector3(64, 0, -222),
+        new THREE.Vector3(156, 0, -196),
+        new THREE.Vector3(198, 0, -108),
+        new THREE.Vector3(128, 0, -40),
+        new THREE.Vector3(198, 0, 44),
+        new THREE.Vector3(216, 0, 146),
+        new THREE.Vector3(148, 0, 224),
+        new THREE.Vector3(58, 0, 208),
+      ];
+    case 'neotokyo':
+      return [
+        new THREE.Vector3(0, 0, 140),
+        new THREE.Vector3(0, 0, 0),
+        new THREE.Vector3(0, 0, -140),
+        new THREE.Vector3(36, 0, -205),
+        new THREE.Vector3(124, 0, -212),
+        new THREE.Vector3(198, 0, -162),
+        new THREE.Vector3(204, 0, -64),
+        new THREE.Vector3(138, 0, -18),
+        new THREE.Vector3(138, 0, 56),
+        new THREE.Vector3(208, 0, 114),
+        new THREE.Vector3(192, 0, 205),
+        new THREE.Vector3(96, 0, 226),
+        new THREE.Vector3(24, 0, 198),
+      ];
+    case 'desert':
+      return [
+        new THREE.Vector3(-10, 0, 150),
+        new THREE.Vector3(-10, 0, 15),
+        new THREE.Vector3(-10, 0, -125),
+        new THREE.Vector3(35, 0, -210),
+        new THREE.Vector3(135, 0, -230),
+        new THREE.Vector3(236, 0, -172),
+        new THREE.Vector3(248, 0, -62),
+        new THREE.Vector3(178, 0, 6),
+        new THREE.Vector3(144, 0, 74),
+        new THREE.Vector3(196, 0, 168),
+        new THREE.Vector3(136, 0, 236),
+        new THREE.Vector3(44, 0, 224),
+      ];
+    case 'metropolis':
+    default:
+      return [
+        new THREE.Vector3(0, 0, 120),
+        new THREE.Vector3(0, 0, 20),
+        new THREE.Vector3(0, 0, -90),
+        new THREE.Vector3(24, 0, -175),
+        new THREE.Vector3(95, 0, -210),
+        new THREE.Vector3(175, 0, -180),
+        new THREE.Vector3(215, 0, -105),
+        new THREE.Vector3(180, 0, -28),
+        new THREE.Vector3(132, 0, 18),
+        new THREE.Vector3(165, 0, 92),
+        new THREE.Vector3(225, 0, 152),
+        new THREE.Vector3(185, 0, 224),
+        new THREE.Vector3(96, 0, 232),
+        new THREE.Vector3(34, 0, 186),
+      ];
+  }
+}
+
+function createAsphaltTexture(trackId: RacingTrackId): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 512;
   const ctx = canvas.getContext('2d')!;
 
-  ctx.fillStyle = '#181d29';
+  const baseBg =
+    trackId === 'neotokyo'
+      ? '#111324'
+      : trackId === 'desert'
+      ? '#2b2623'
+      : trackId === 'alpine'
+      ? '#1f262d'
+      : '#181d29';
+  ctx.fillStyle = baseBg;
   ctx.fillRect(0, 0, 512, 512);
 
-  for (let i = 0; i < 4200; i += 1) {
+  for (let i = 0; i < 4000; i += 1) {
     const x = Math.random() * 512;
     const y = Math.random() * 512;
-    const shade = 18 + Math.floor(Math.random() * 24);
-    ctx.fillStyle = `rgb(${shade},${shade + 4},${shade + 10})`;
+    const shade = 20 + Math.floor(Math.random() * 24);
+    ctx.fillStyle =
+      trackId === 'desert'
+        ? `rgb(${shade + 12},${shade + 6},${shade})`
+        : `rgb(${shade},${shade + 4},${shade + 10})`;
     ctx.fillRect(x, y, 2, 2);
   }
 
   const grooveGrad = ctx.createLinearGradient(0, 0, 512, 0);
   grooveGrad.addColorStop(0.0, 'rgba(0,0,0,0)');
-  grooveGrad.addColorStop(0.28, 'rgba(5,7,12,0.34)');
-  grooveGrad.addColorStop(0.5, 'rgba(5,7,12,0.12)');
-  grooveGrad.addColorStop(0.72, 'rgba(5,7,12,0.34)');
+  grooveGrad.addColorStop(0.28, 'rgba(5,7,12,0.32)');
+  grooveGrad.addColorStop(0.5, 'rgba(5,7,12,0.1)');
+  grooveGrad.addColorStop(0.72, 'rgba(5,7,12,0.32)');
   grooveGrad.addColorStop(1.0, 'rgba(0,0,0,0)');
   ctx.fillStyle = grooveGrad;
   ctx.fillRect(0, 0, 512, 512);
 
-  ctx.fillStyle = '#e2e8f0';
+  ctx.fillStyle = trackId === 'neotokyo' ? '#22d3ee' : '#e2e8f0';
   ctx.fillRect(16, 0, 12, 512);
   ctx.fillRect(484, 0, 12, 512);
 
-  ctx.fillStyle = 'rgba(250, 204, 21, 0.72)';
+  ctx.fillStyle =
+    trackId === 'neotokyo'
+      ? 'rgba(236, 72, 153, 0.85)'
+      : trackId === 'coast'
+      ? 'rgba(56, 189, 248, 0.82)'
+      : 'rgba(250, 204, 21, 0.78)';
   for (let y = 16; y < 512; y += 64) {
     ctx.fillRect(251, y, 10, 34);
   }
@@ -136,38 +242,75 @@ function createStartCheckeredTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-function createCityPavementTexture(): THREE.CanvasTexture {
+function createGroundPatternTexture(trackId: RacingTrackId): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 512;
   canvas.height = 512;
   const ctx = canvas.getContext('2d')!;
-  ctx.fillStyle = '#182132';
-  ctx.fillRect(0, 0, 512, 512);
 
-  // Subtle city grid avenues & plaza sidewalks
-  ctx.fillStyle = '#1f2b40';
-  for (let y = 0; y < 512; y += 128) {
-    for (let x = 0; x < 512; x += 128) {
-      ctx.fillRect(x + 8, y + 8, 112, 112);
+  if (trackId === 'coast') {
+    ctx.fillStyle = '#c89d66';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 3000; i += 1) {
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(245, 222, 179, 0.28)' : 'rgba(161, 114, 58, 0.2)';
+      ctx.fillRect((i * 79) % 512, (i * 149) % 512, 3, 2);
+    }
+  } else if (trackId === 'alpine') {
+    ctx.fillStyle = '#1b4328';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 3200; i += 1) {
+      ctx.fillStyle = i % 3 === 0 ? 'rgba(52, 211, 153, 0.16)' : 'rgba(15, 45, 24, 0.34)';
+      ctx.fillRect((i * 67) % 512, (i * 131) % 512, 3, 3);
+    }
+  } else if (trackId === 'desert') {
+    ctx.fillStyle = '#c27835';
+    ctx.fillRect(0, 0, 512, 512);
+    ctx.strokeStyle = 'rgba(253, 224, 71, 0.12)';
+    ctx.lineWidth = 4;
+    for (let y = 0; y < 512; y += 32) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.bezierCurveTo(170, y + 14, 340, y - 14, 512, y);
+      ctx.stroke();
+    }
+  } else if (trackId === 'neotokyo') {
+    ctx.fillStyle = '#090916';
+    ctx.fillRect(0, 0, 512, 512);
+    ctx.strokeStyle = 'rgba(236, 72, 153, 0.18)';
+    ctx.lineWidth = 2;
+    for (let i = 0; i <= 512; i += 64) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i, 512);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, i);
+      ctx.lineTo(512, i);
+      ctx.stroke();
+    }
+  } else {
+    ctx.fillStyle = '#182132';
+    ctx.fillRect(0, 0, 512, 512);
+    ctx.fillStyle = '#1f2b40';
+    for (let y = 0; y < 512; y += 128) {
+      for (let x = 0; x < 512; x += 128) {
+        ctx.fillRect(x + 8, y + 8, 112, 112);
+      }
+    }
+    ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
+    ctx.lineWidth = 3;
+    for (let i = 0; i <= 512; i += 64) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i, 512);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, i);
+      ctx.lineTo(512, i);
+      ctx.stroke();
     }
   }
-  ctx.strokeStyle = 'rgba(148, 163, 184, 0.14)';
-  ctx.lineWidth = 3;
-  for (let i = 0; i <= 512; i += 64) {
-    ctx.beginPath();
-    ctx.moveTo(i, 0);
-    ctx.lineTo(i, 512);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.moveTo(0, i);
-    ctx.lineTo(512, i);
-    ctx.stroke();
-  }
-  for (let i = 0; i < 2400; i += 1) {
-    const shade = 22 + ((i * 19) % 20);
-    ctx.fillStyle = `rgb(${shade},${shade + 6},${shade + 14})`;
-    ctx.fillRect((i * 73) % 512, (i * 137) % 512, 2, 2);
-  }
+
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = THREE.RepeatWrapping;
@@ -184,13 +327,11 @@ function createSkyscraperFacadeTexture(accentHex: string, tintHex: string): THRE
   ctx.fillStyle = tintHex;
   ctx.fillRect(0, 0, 256, 512);
 
-  // Floor mullions
   ctx.fillStyle = 'rgba(15, 23, 42, 0.48)';
   for (let y = 0; y < 512; y += 24) {
     ctx.fillRect(0, y, 256, 5);
   }
 
-  // Lit architectural windows
   const cols = 8;
   const rows = 20;
   for (let r = 0; r < rows; r += 1) {
@@ -205,7 +346,6 @@ function createSkyscraperFacadeTexture(accentHex: string, tintHex: string): THRE
     }
   }
 
-  // Ground-floor illuminated retail storefront band
   ctx.fillStyle = accentHex;
   ctx.fillRect(0, 476, 256, 36);
   ctx.fillStyle = 'rgba(15, 23, 42, 0.55)';
@@ -218,31 +358,23 @@ function createSkyscraperFacadeTexture(accentHex: string, tintHex: string): THRE
   return tex;
 }
 
-export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): BuiltCircuit {
+export function buildGpCircuitScene(
+  scene: THREE.Scene,
+  isSoftwareGl: boolean,
+  trackIdInput: RacingTrackId = 'metropolis'
+): BuiltCircuit {
+  const trackSpec = getRacingTrackSpec(trackIdInput);
+  const trackId = trackSpec.id;
   const disposables: Array<{ dispose: () => void }> = [];
   const tvConstrained = isConstrainedTvDevice();
   const castPropShadow = !isSoftwareGl && !tvConstrained;
   let circuitDisposed = false;
-  const sceneryGroup = new THREE.Group();
-  scene.add(sceneryGroup);
 
-  const waypoints = [
-    new THREE.Vector3(0, 0, 120),
-    new THREE.Vector3(0, 0, 20),
-    new THREE.Vector3(0, 0, -90),
-    new THREE.Vector3(24, 0, -175),
-    new THREE.Vector3(95, 0, -210),
-    new THREE.Vector3(175, 0, -180),
-    new THREE.Vector3(215, 0, -105),
-    new THREE.Vector3(180, 0, -28),
-    new THREE.Vector3(132, 0, 18),
-    new THREE.Vector3(165, 0, 92),
-    new THREE.Vector3(225, 0, 152),
-    new THREE.Vector3(185, 0, 224),
-    new THREE.Vector3(96, 0, 232),
-    new THREE.Vector3(34, 0, 186),
-  ];
+  // All circuit meshes live inside circuitRoot so switching tracks disposes 100% cleanly on Tizen
+  const circuitRoot = new THREE.Group();
+  scene.add(circuitRoot);
 
+  const waypoints = getTrackWaypoints(trackId);
   const curve = new THREE.CatmullRomCurve3(waypoints, true, 'catmullrom', 0.48);
   const totalLength = curve.getLength();
   const SAMPLE_COUNT = 360;
@@ -264,7 +396,8 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   }
 
   function isClearOfTrack(wx: number, wz: number, extraMargin: number): boolean {
-    const minDistSq = (TRACK_BARRIER_HALF_WIDTH + extraMargin) * (TRACK_BARRIER_HALF_WIDTH + extraMargin);
+    const minDistSq =
+      (TRACK_BARRIER_HALF_WIDTH + extraMargin) * (TRACK_BARRIER_HALF_WIDTH + extraMargin);
     for (let i = 0; i < SAMPLE_COUNT; i += 2) {
       const p = samples[i].point;
       const dx = wx - p.x;
@@ -274,47 +407,83 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     return true;
   }
 
-  // City Urban Ground Plane (asphalt plaza grid textured on Frame 0)
-  const cityPaveTex = createCityPavementTexture();
-  cityPaveTex.anisotropy = isSoftwareGl ? 1 : 4;
-  const groundGeo = new THREE.PlaneGeometry(1400, 1400);
+  // Terrain Ground Plane tailored per circuit
+  const groundTex = createGroundPatternTexture(trackId);
+  groundTex.anisotropy = isSoftwareGl ? 1 : 4;
+  const groundGeo = new THREE.PlaneGeometry(1450, 1450);
   const groundMat = new THREE.MeshStandardMaterial({
-    map: cityPaveTex,
+    map: groundTex,
     color: 0xffffff,
-    roughness: 0.88,
-    metalness: 0.08,
+    roughness: trackId === 'neotokyo' ? 0.48 : 0.88,
+    metalness: trackId === 'neotokyo' ? 0.25 : 0.06,
   });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
-  ground.position.set(85, -0.08, 10);
+  ground.position.set(100, -0.08, 10);
   ground.receiveShadow = !isSoftwareGl;
-  scene.add(ground);
-  disposables.push(groundGeo, groundMat, cityPaveTex);
+  circuitRoot.add(ground);
+  disposables.push(groundGeo, groundMat, groundTex);
 
-  // Inner city central park / stadium island pocket
-  const parkGeo = new THREE.CircleGeometry(46, 28);
-  const parkMat = new THREE.MeshStandardMaterial({ color: 0x164e2e, roughness: 0.9 });
-  const parkMesh = new THREE.Mesh(parkGeo, parkMat);
-  parkMesh.rotation.x = -Math.PI / 2;
-  parkMesh.position.set(95, -0.055, -108);
-  parkMesh.receiveShadow = !isSoftwareGl;
-  scene.add(parkMesh);
-  disposables.push(parkGeo, parkMat);
+  // Coast Sunset: Sparkling Mediterranean Sea Plane along West/South Coastline
+  if (trackId === 'coast') {
+    const oceanGeo = new THREE.PlaneGeometry(720, 1450);
+    const oceanMat = new THREE.MeshStandardMaterial({
+      color: 0x0284c7,
+      emissive: 0x0c4a6e,
+      emissiveIntensity: 0.35,
+      roughness: 0.14,
+      metalness: 0.55,
+    });
+    const ocean = new THREE.Mesh(oceanGeo, oceanMat);
+    ocean.rotation.x = -Math.PI / 2;
+    ocean.position.set(-415, -0.04, 0);
+    circuitRoot.add(ocean);
+    disposables.push(oceanGeo, oceanMat);
+  } else if (trackId === 'metropolis') {
+    const parkGeo = new THREE.CircleGeometry(46, 28);
+    const parkMat = new THREE.MeshStandardMaterial({ color: 0x164e2e, roughness: 0.9 });
+    const parkMesh = new THREE.Mesh(parkGeo, parkMat);
+    parkMesh.rotation.x = -Math.PI / 2;
+    parkMesh.position.set(95, -0.055, -108);
+    parkMesh.receiveShadow = !isSoftwareGl;
+    circuitRoot.add(parkMesh);
+    disposables.push(parkGeo, parkMat);
+  }
 
-  // Urban Raised Concrete Sidewalk Verges flanking both edges of the street circuit
-  const sidewalkGeo = new THREE.BoxGeometry(3.2, 0.16, totalLength / SAMPLE_COUNT + 0.5);
-  const sidewalkMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.85, metalness: 0.1 });
+  // Sidewalk / Shoulder Verges
+  const vergeColor =
+    trackId === 'desert'
+      ? 0xb45309
+      : trackId === 'alpine'
+      ? 0x3f6212
+      : trackId === 'coast'
+      ? 0xd6b078
+      : trackId === 'neotokyo'
+      ? 0x1e1b4b
+      : 0x334155;
+  const sidewalkGeo = new THREE.BoxGeometry(3.2, 0.14, totalLength / SAMPLE_COUNT + 0.5);
+  const sidewalkMat = new THREE.MeshStandardMaterial({ color: vergeColor, roughness: 0.85, metalness: 0.1 });
   const sidewalkInst = new THREE.InstancedMesh(sidewalkGeo, sidewalkMat, SAMPLE_COUNT * 2);
   disposables.push(sidewalkGeo, sidewalkMat);
 
-  // Procedural Ribbon Asphalt Geometry + Red/White Curbs + Guardrails
+  // Asphalt Ribbon Geometry + Curbs + Guardrails
   const roadPos: number[] = [];
   const roadUv: number[] = [];
   const roadIdx: number[] = [];
 
   const curbGeo = new THREE.BoxGeometry(1.15, 0.14, totalLength / SAMPLE_COUNT + 0.35);
-  const curbRedMat = new THREE.MeshStandardMaterial({ color: 0xdc2626, roughness: 0.78 });
-  const curbWhiteMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.8 });
+  const curbRedMat = new THREE.MeshStandardMaterial({
+    color: trackSpec.curbPrimaryHex,
+    emissive: trackId === 'neotokyo' ? trackSpec.curbPrimaryHex : 0x000000,
+    emissiveIntensity: trackId === 'neotokyo' ? 0.55 : 0,
+    roughness: 0.72,
+  });
+  const curbWhiteMat = new THREE.MeshStandardMaterial({
+    color: trackSpec.curbSecondaryHex,
+    emissive: trackId === 'neotokyo' ? trackSpec.curbSecondaryHex : 0x000000,
+    emissiveIntensity: trackId === 'neotokyo' ? 0.45 : 0,
+    roughness: 0.75,
+  });
   disposables.push(curbGeo, curbRedMat, curbWhiteMat);
 
   const redMatrices: THREE.Matrix4[] = [];
@@ -364,7 +533,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     }
   }
   sidewalkInst.instanceMatrix.needsUpdate = true;
-  scene.add(sidewalkInst);
+  circuitRoot.add(sidewalkInst);
 
   const roadGeo = new THREE.BufferGeometry();
   roadGeo.setAttribute('position', new THREE.Float32BufferAttribute(roadPos, 3));
@@ -372,30 +541,40 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   roadGeo.setIndex(roadIdx);
   roadGeo.computeVertexNormals();
 
-  const asphaltTex = createAsphaltTexture();
+  const asphaltTex = createAsphaltTexture(trackId);
   asphaltTex.anisotropy = isSoftwareGl ? 1 : 8;
   const roadMat = new THREE.MeshStandardMaterial({
     map: asphaltTex,
-    roughness: 0.78,
-    metalness: 0.08,
+    roughness: trackId === 'neotokyo' ? 0.42 : 0.78,
+    metalness: trackId === 'neotokyo' ? 0.24 : 0.08,
   });
   const roadMesh = new THREE.Mesh(roadGeo, roadMat);
   roadMesh.receiveShadow = !isSoftwareGl;
-  scene.add(roadMesh);
+  circuitRoot.add(roadMesh);
   disposables.push(roadGeo, asphaltTex, roadMat);
 
   if (!isSoftwareGl && !tvConstrained) {
-    void loadCachedPbrTexture('assets/games/pbr/concrete_worn_diff.jpg', {
-      srgb: true,
-      repeatX: 28,
-      repeatY: 28,
-      anisotropy: 4,
-    }).then((tex) => {
-      if (!tex || circuitDisposed) return;
-      groundMat.map = tex;
-      groundMat.color.setHex(0x3a475c);
-      groundMat.needsUpdate = true;
-    });
+    const pbrGroundPath =
+      trackId === 'alpine'
+        ? 'assets/games/pbr/forrest_ground_diff.jpg'
+        : trackId === 'metropolis' || trackId === 'neotokyo'
+        ? 'assets/games/pbr/concrete_worn_diff.jpg'
+        : null;
+    if (pbrGroundPath) {
+      void loadCachedPbrTexture(pbrGroundPath, {
+        srgb: true,
+        repeatX: 28,
+        repeatY: 28,
+        anisotropy: 4,
+      }).then((tex) => {
+        if (!tex || circuitDisposed) return;
+        groundMat.map = tex;
+        groundMat.color.setHex(
+          trackId === 'neotokyo' ? 0x1e293b : trackId === 'alpine' ? 0x6ee7b7 : 0x3a475c
+        );
+        groundMat.needsUpdate = true;
+      });
+    }
     void loadCachedPbrTexture('assets/games/pbr/asphalt_nor.jpg', {
       srgb: false,
       repeatX: 1,
@@ -407,50 +586,42 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
       roadMat.normalScale.set(0.65, 0.65);
       roadMat.needsUpdate = true;
     });
-    void loadCachedPbrTexture('assets/games/pbr/asphalt_rough.jpg', {
-      srgb: false,
-      repeatX: 1,
-      repeatY: 72,
-      anisotropy: 8,
-    }).then((rough) => {
-      if (!rough || circuitDisposed) return;
-      roadMat.roughnessMap = rough;
-      roadMat.needsUpdate = true;
-    });
   }
 
-  // Wet Reflective Asphalt Puddles at apex zones
-  const puddleGeo = new THREE.CircleGeometry(3.4, 22);
-  const puddleMat = new THREE.MeshPhysicalMaterial({
-    color: 0x091326,
-    roughness: 0.06,
-    metalness: 0.35,
-    clearcoat: 1.0,
-    clearcoatRoughness: 0.04,
-    transparent: true,
-    opacity: 0.46,
-    polygonOffset: true,
-    polygonOffsetFactor: -1,
-    polygonOffsetUnits: -1,
-  });
-  [0.08, 0.26, 0.48, 0.68, 0.84].forEach((sVal, idx) => {
-    const smp = samples[Math.floor(sVal * SAMPLE_COUNT) % SAMPLE_COUNT];
-    const side = idx % 2 === 0 ? -2.8 : 2.6;
-    const pud = new THREE.Mesh(puddleGeo, puddleMat);
-    pud.rotation.x = -Math.PI / 2;
-    pud.scale.set(1.35, 2.2, 1);
-    pud.rotation.z = Math.atan2(smp.tangent.x, smp.tangent.z);
-    pud.position.set(
-      smp.point.x + smp.normal.x * side,
-      0.018,
-      smp.point.z + smp.normal.z * side
-    );
-    scene.add(pud);
-  });
-  disposables.push(puddleGeo, puddleMat);
+  // Wet Reflective Puddles on Metropolis & Neo-Tokyo
+  if (trackId === 'metropolis' || trackId === 'neotokyo') {
+    const puddleGeo = new THREE.CircleGeometry(3.4, 20);
+    const puddleMat = new THREE.MeshPhysicalMaterial({
+      color: trackId === 'neotokyo' ? 0x1e1b4b : 0x091326,
+      roughness: 0.06,
+      metalness: 0.35,
+      clearcoat: 1.0,
+      clearcoatRoughness: 0.04,
+      transparent: true,
+      opacity: 0.45,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    });
+    [0.08, 0.26, 0.48, 0.68, 0.84].forEach((sVal, idx) => {
+      const smp = samples[Math.floor(sVal * SAMPLE_COUNT) % SAMPLE_COUNT];
+      const side = idx % 2 === 0 ? -2.8 : 2.6;
+      const pud = new THREE.Mesh(puddleGeo, puddleMat);
+      pud.rotation.x = -Math.PI / 2;
+      pud.scale.set(1.35, 2.2, 1);
+      pud.rotation.z = Math.atan2(smp.tangent.x, smp.tangent.z);
+      pud.position.set(
+        smp.point.x + smp.normal.x * side,
+        0.018,
+        smp.point.z + smp.normal.z * side
+      );
+      circuitRoot.add(pud);
+    });
+    disposables.push(puddleGeo, puddleMat);
+  }
 
   // Persistent Tire Skidmark Pool
-  const SKID_POOL = 240;
+  const SKID_POOL = 220;
   const skidGeo = new THREE.PlaneGeometry(0.42, 1.35);
   skidGeo.rotateX(-Math.PI / 2);
   const skidMat = new THREE.MeshBasicMaterial({
@@ -472,7 +643,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     skidInst.setMatrixAt(i, skidDummy.matrix);
   }
   skidInst.instanceMatrix.needsUpdate = true;
-  scene.add(skidInst);
+  circuitRoot.add(skidInst);
   disposables.push(skidGeo, skidMat);
   let skidCursor = 0;
 
@@ -480,18 +651,18 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   redMatrices.forEach((m, idx) => redCurbs.setMatrixAt(idx, m));
   const whiteCurbs = new THREE.InstancedMesh(curbGeo, curbWhiteMat, whiteMatrices.length);
   whiteMatrices.forEach((m, idx) => whiteCurbs.setMatrixAt(idx, m));
-  scene.add(redCurbs, whiteCurbs);
+  circuitRoot.add(redCurbs, whiteCurbs);
 
-  // Outer Illuminated Street Barrier Walls
+  // Guardrail Barriers (colored per theme)
   const postStep = 4;
   const postCount = Math.floor(SAMPLE_COUNT / postStep) * 2;
   const postGeo = new THREE.BoxGeometry(0.48, 1.0, 2.4);
   const postMat = new THREE.MeshStandardMaterial({
-    color: 0x1e293b,
-    emissive: 0x38bdf8,
-    emissiveIntensity: 0.35,
-    roughness: 0.4,
-    metalness: 0.6,
+    color: trackId === 'desert' ? 0x92400e : trackId === 'alpine' ? 0x451a03 : 0x1e293b,
+    emissive: trackSpec.padColorHex,
+    emissiveIntensity: trackId === 'neotokyo' ? 0.65 : trackId === 'metropolis' ? 0.35 : 0.14,
+    roughness: 0.45,
+    metalness: 0.55,
   });
   const barrierPosts = new THREE.InstancedMesh(postGeo, postMat, postCount);
   let pIdx = 0;
@@ -511,10 +682,10 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
       pIdx += 1;
     }
   }
-  scene.add(barrierPosts);
+  circuitRoot.add(barrierPosts);
   disposables.push(postGeo, postMat);
 
-  // Start / Finish Checkered Strip & Lit Steel Gantry
+  // Start / Finish Checkered Strip & Lit Gantry
   const startSmp = samples[0];
   const startYaw = Math.atan2(startSmp.tangent.x, startSmp.tangent.z);
   const checkeredTex = createStartCheckeredTexture();
@@ -523,7 +694,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   const startLine = new THREE.Mesh(startLineGeo, startLineMat);
   startLine.position.set(startSmp.point.x, 0.025, startSmp.point.z);
   startLine.rotation.set(-Math.PI / 2, 0, startYaw);
-  scene.add(startLine);
+  circuitRoot.add(startLine);
   disposables.push(checkeredTex, startLineMat, startLineGeo);
 
   const gantryGroup = new THREE.Group();
@@ -533,9 +704,9 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   const pillarMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.7, roughness: 0.3 });
   const neonBannerGeo = new THREE.BoxGeometry(TRACK_HALF_WIDTH * 2 + 2.4, 1.8, 0.8);
   const neonBannerMat = new THREE.MeshStandardMaterial({
-    color: 0x7c3aed,
-    emissive: 0x8b5cf6,
-    emissiveIntensity: 1.4,
+    color: trackSpec.curbPrimaryHex,
+    emissive: trackSpec.padColorHex,
+    emissiveIntensity: 1.35,
     roughness: 0.2,
   });
   const leftPillar = new THREE.Mesh(pillarGeo, pillarMat);
@@ -545,120 +716,187 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   const topBanner = new THREE.Mesh(neonBannerGeo, neonBannerMat);
   topBanner.position.set(0, 7.6, 0);
   gantryGroup.add(leftPillar, rightPillar, topBanner);
-  scene.add(gantryGroup);
+  circuitRoot.add(gantryGroup);
   disposables.push(pillarGeo, pillarMat, neonBannerGeo, neonBannerMat);
 
-  // Urban Skyscraper & Mid-Rise District (Rendered immediately on Frame 0 so city looks full!)
-  const facadeTexA = createSkyscraperFacadeTexture('#38bdf8', '#141e30');
-  const facadeTexB = createSkyscraperFacadeTexture('#f59e0b', '#1b2234');
-  const facadeTexC = createSkyscraperFacadeTexture('#a855f7', '#17192d');
-  const bldgMats = [
-    new THREE.MeshStandardMaterial({ map: facadeTexA, roughness: 0.45, metalness: 0.4, emissive: 0x0b1628, emissiveIntensity: 0.45 }),
-    new THREE.MeshStandardMaterial({ map: facadeTexB, roughness: 0.5, metalness: 0.32, emissive: 0x18141c, emissiveIntensity: 0.4 }),
-    new THREE.MeshStandardMaterial({ map: facadeTexC, roughness: 0.42, metalness: 0.48, emissive: 0x160f28, emissiveIntensity: 0.45 }),
-  ];
-  const roofMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.72, metalness: 0.5 });
-  const beaconMat = new THREE.MeshBasicMaterial({ color: 0xf43f5e });
-  const roofBoxGeo = new THREE.BoxGeometry(1, 1, 1);
-  disposables.push(facadeTexA, facadeTexB, facadeTexC, ...bldgMats, roofMat, beaconMat, roofBoxGeo);
+  // Scenery Specific to Each of the 5 Circuits (Frame 0 Instant + Async CC0 GLBs)
+  const buildCityDistrict = (accentPalette: [string, string, string], towerHeightBoost = 0) => {
+    const facadeTexA = createSkyscraperFacadeTexture(accentPalette[0], '#141e30');
+    const facadeTexB = createSkyscraperFacadeTexture(accentPalette[1], '#1b2234');
+    const facadeTexC = createSkyscraperFacadeTexture(accentPalette[2], '#17192d');
+    const bldgMats = [
+      new THREE.MeshStandardMaterial({ map: facadeTexA, roughness: 0.45, metalness: 0.4, emissive: 0x0b1628, emissiveIntensity: 0.48 }),
+      new THREE.MeshStandardMaterial({ map: facadeTexB, roughness: 0.5, metalness: 0.32, emissive: 0x18141c, emissiveIntensity: 0.44 }),
+      new THREE.MeshStandardMaterial({ map: facadeTexC, roughness: 0.42, metalness: 0.48, emissive: 0x160f28, emissiveIntensity: 0.48 }),
+    ];
+    const roofMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.72, metalness: 0.5 });
+    const beaconMat = new THREE.MeshBasicMaterial({ color: trackId === 'neotokyo' ? 0x22d3ee : 0xf43f5e });
+    const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+    disposables.push(facadeTexA, facadeTexB, facadeTexC, ...bldgMats, roofMat, beaconMat, boxGeo);
 
-  const cityLots: Array<{ x: number; z: number; yaw: number; w: number; d: number; h: number; variant: number }> = [];
-  for (let i = 0; i < SAMPLE_COUNT; i += 7) {
-    const smp = samples[i];
-    const yaw = Math.atan2(smp.tangent.x, smp.tangent.z);
-    const sides = i % 14 === 0 ? [1, -1] : [i % 2 === 0 ? 1 : -1];
-    for (const side of sides) {
-      const distOut = TRACK_BARRIER_HALF_WIDTH + 16 + ((i * 11) % 24);
-      const bx = smp.point.x + smp.normal.x * side * distOut;
-      const bz = smp.point.z + smp.normal.z * side * distOut;
-      const w = 11 + ((i * 7) % 10);
-      const d = 11 + ((i * 13) % 10);
-      const halfSpan = Math.max(w, d) * 0.65;
-      if (!isClearOfTrack(bx, bz, halfSpan + 4.5)) continue;
-      const h = 16 + ((i * 19 + (side > 0 ? 7 : 3)) % 44);
-      cityLots.push({ x: bx, z: bz, yaw, w, d, h, variant: (i + (side > 0 ? 1 : 2)) % 3 });
+    for (let i = 0; i < SAMPLE_COUNT; i += 8) {
+      const smp = samples[i];
+      const yaw = Math.atan2(smp.tangent.x, smp.tangent.z);
+      const sides = i % 16 === 0 ? [1, -1] : [i % 2 === 0 ? 1 : -1];
+      for (const side of sides) {
+        const distOut = TRACK_BARRIER_HALF_WIDTH + 16 + ((i * 11) % 24);
+        const bx = smp.point.x + smp.normal.x * side * distOut;
+        const bz = smp.point.z + smp.normal.z * side * distOut;
+        const w = 11 + ((i * 7) % 10);
+        const d = 11 + ((i * 13) % 10);
+        if (!isClearOfTrack(bx, bz, Math.max(w, d) * 0.65 + 4.5)) continue;
+        const h = 16 + towerHeightBoost + ((i * 19 + (side > 0 ? 7 : 3)) % 42);
+        const bGroup = new THREE.Group();
+        bGroup.position.set(bx, 0, bz);
+        bGroup.rotation.y = yaw;
+        const baseMesh = new THREE.Mesh(boxGeo, bldgMats[(i + (side > 0 ? 1 : 2)) % 3]);
+        baseMesh.scale.set(w, h, d);
+        baseMesh.position.y = h * 0.5;
+        baseMesh.castShadow = castPropShadow;
+        baseMesh.receiveShadow = !isSoftwareGl;
+        bGroup.add(baseMesh);
+        if (h > 34) {
+          const crown = new THREE.Mesh(boxGeo, bldgMats[(i + 1) % 3]);
+          crown.scale.set(w * 0.66, h * 0.25, d * 0.66);
+          crown.position.y = h + h * 0.125;
+          const beacon = new THREE.Mesh(boxGeo, beaconMat);
+          beacon.scale.set(0.95, 0.95, 0.95);
+          beacon.position.y = h * 1.25 + 1.5;
+          bGroup.add(crown, beacon);
+        }
+        circuitRoot.add(bGroup);
+      }
     }
+  };
+
+  if (trackId === 'metropolis') {
+    buildCityDistrict(['#38bdf8', '#f59e0b', '#a855f7'], 0);
+  } else if (trackId === 'neotokyo') {
+    buildCityDistrict(['#ec4899', '#22d3ee', '#a855f7'], 10);
+    // Glowing Cyber Neon Arches over corners
+    const archGeo = new THREE.TorusGeometry(TRACK_HALF_WIDTH + 2.2, 0.42, 8, 22, Math.PI);
+    const archMatA = new THREE.MeshBasicMaterial({ color: 0xec4899 });
+    const archMatB = new THREE.MeshBasicMaterial({ color: 0x22d3ee });
+    [0.12, 0.28, 0.46, 0.65, 0.82, 0.94].forEach((sVal, idx) => {
+      const smp = samples[Math.floor(sVal * SAMPLE_COUNT) % SAMPLE_COUNT];
+      const arch = new THREE.Mesh(archGeo, idx % 2 === 0 ? archMatA : archMatB);
+      arch.position.set(smp.point.x, 0.1, smp.point.z);
+      arch.rotation.y = Math.atan2(smp.tangent.x, smp.tangent.z);
+      circuitRoot.add(arch);
+    });
+    disposables.push(archGeo, archMatA, archMatB);
+  } else if (trackId === 'alpine') {
+    // Jagged Alpine Peaks & Mountain Pines
+    const peakGeo = new THREE.ConeGeometry(22, 52, 6);
+    const peakMat = new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.92, flatShading: true });
+    const snowGeo = new THREE.ConeGeometry(9.5, 16, 6);
+    const snowMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.72, flatShading: true });
+    for (let i = 0; i < 20; i += 1) {
+      const ang = (i / 20) * Math.PI * 2;
+      const dist = 290 + (i % 3) * 45;
+      const mx = 90 + Math.cos(ang) * dist;
+      const mz = 10 + Math.sin(ang) * dist;
+      const scl = 0.85 + (i % 4) * 0.28;
+      const peak = new THREE.Mesh(peakGeo, peakMat);
+      peak.position.set(mx, 24 * scl, mz);
+      peak.scale.set(scl, scl * 1.15, scl);
+      const cap = new THREE.Mesh(snowGeo, snowMat);
+      cap.position.set(mx, 44 * scl, mz);
+      cap.scale.set(scl, scl, scl);
+      circuitRoot.add(peak, cap);
+    }
+    disposables.push(peakGeo, peakMat, snowGeo, snowMat);
+  } else if (trackId === 'desert') {
+    // Sandstone Mesa Buttes & Terracotta Canyon Monoliths
+    const mesaGeo = new THREE.CylinderGeometry(16, 24, 34, 7);
+    const mesaMat = new THREE.MeshStandardMaterial({ color: 0xb45309, roughness: 0.9, flatShading: true });
+    const topMesaGeo = new THREE.CylinderGeometry(10, 14, 14, 7);
+    const topMesaMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.85, flatShading: true });
+    for (let i = 0; i < 18; i += 1) {
+      const ang = (i / 18) * Math.PI * 2;
+      const dist = 160 + (i % 4) * 58;
+      const mx = 105 + Math.cos(ang) * dist;
+      const mz = 5 + Math.sin(ang) * dist;
+      if (!isClearOfTrack(mx, mz, 28)) continue;
+      const m = new THREE.Mesh(mesaGeo, mesaMat);
+      m.position.set(mx, 17, mz);
+      const cap = new THREE.Mesh(topMesaGeo, topMesaMat);
+      cap.position.set(mx, 40, mz);
+      circuitRoot.add(m, cap);
+    }
+    disposables.push(mesaGeo, mesaMat, topMesaGeo, topMesaMat);
+  } else if (trackId === 'coast') {
+    // Coastal Resort Pavilions & Beach Lighthouse Towers
+    const villaGeo = new THREE.BoxGeometry(12, 8, 12);
+    const villaMat = new THREE.MeshStandardMaterial({ color: 0xfef3c7, roughness: 0.65 });
+    const roofVillaGeo = new THREE.ConeGeometry(9.5, 4.5, 4);
+    const roofVillaMat = new THREE.MeshStandardMaterial({ color: 0xea580c, roughness: 0.72 });
+    for (let i = 10; i < SAMPLE_COUNT; i += 24) {
+      const smp = samples[i];
+      const bx = smp.point.x + smp.normal.x * (TRACK_BARRIER_HALF_WIDTH + 18);
+      const bz = smp.point.z + smp.normal.z * (TRACK_BARRIER_HALF_WIDTH + 18);
+      if (bx < -80 || !isClearOfTrack(bx, bz, 12)) continue;
+      const v = new THREE.Mesh(villaGeo, villaMat);
+      v.position.set(bx, 4, bz);
+      const r = new THREE.Mesh(roofVillaGeo, roofVillaMat);
+      r.position.set(bx, 10.2, bz);
+      r.rotation.y = Math.PI / 4;
+      circuitRoot.add(v, r);
+    }
+    disposables.push(villaGeo, villaMat, roofVillaGeo, roofVillaMat);
   }
-  // Outer city skyline towers for horizon density
-  const outerRingAnchors = [
-    [-65, -140, 68], [-70, 0, 56], [-62, 130, 64], [110, -275, 76], [235, -245, 72],
-    [285, -90, 66], [275, 85, 70], [285, 225, 62], [115, 305, 74], [-35, 255, 58],
-    [95, -95, 54], [95, -125, 42],
-  ];
-  outerRingAnchors.forEach(([ox, oz, oh], idx) => {
-    if (isClearOfTrack(ox, oz, 14)) {
-      cityLots.push({ x: ox, z: oz, yaw: idx * 0.4, w: 18, d: 18, h: oh, variant: idx % 3 });
+
+  // Streetlamps (Metropolis / Coast / Neo-Tokyo)
+  if (trackId === 'metropolis' || trackId === 'coast' || trackId === 'neotokyo') {
+    const towerPoleGeo = new THREE.CylinderGeometry(0.24, 0.34, 12.5, 8);
+    const towerArmGeo = new THREE.BoxGeometry(0.24, 0.24, 2.8);
+    const towerHeadGeo = new THREE.BoxGeometry(1.4, 0.32, 0.7);
+    const towerHeadMat = new THREE.MeshBasicMaterial({
+      color: trackId === 'neotokyo' ? 0x22d3ee : 0xfef08a,
+    });
+    for (let i = 10; i < SAMPLE_COUNT; i += 22) {
+      const smp = samples[i];
+      const side = i % 44 === 10 ? 1 : -1;
+      const yaw = Math.atan2(smp.tangent.x, smp.tangent.z);
+      const lx = smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 3.2);
+      const lz = smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 3.2);
+      const lamp = new THREE.Group();
+      lamp.position.set(lx, 0, lz);
+      lamp.rotation.y = yaw + (side > 0 ? Math.PI / 2 : -Math.PI / 2);
+      const pole = new THREE.Mesh(towerPoleGeo, pillarMat);
+      pole.position.y = 6.25;
+      const arm = new THREE.Mesh(towerArmGeo, pillarMat);
+      arm.position.set(0, 12.3, 1.3);
+      const head = new THREE.Mesh(towerHeadGeo, towerHeadMat);
+      head.position.set(0, 12.1, 2.4);
+      lamp.add(pole, arm, head);
+      circuitRoot.add(lamp);
     }
-  });
-
-  cityLots.forEach((lot, idx) => {
-    const bGroup = new THREE.Group();
-    bGroup.position.set(lot.x, 0, lot.z);
-    bGroup.rotation.y = lot.yaw;
-    const baseMesh = new THREE.Mesh(roofBoxGeo, bldgMats[lot.variant]);
-    baseMesh.scale.set(lot.w, lot.h, lot.d);
-    baseMesh.position.y = lot.h * 0.5;
-    baseMesh.castShadow = castPropShadow;
-    baseMesh.receiveShadow = !isSoftwareGl;
-    bGroup.add(baseMesh);
-
-    if (lot.h > 32) {
-      const crown = new THREE.Mesh(roofBoxGeo, bldgMats[(lot.variant + 1) % 3]);
-      crown.scale.set(lot.w * 0.68, lot.h * 0.28, lot.d * 0.68);
-      crown.position.y = lot.h + lot.h * 0.14;
-      const spire = new THREE.Mesh(roofBoxGeo, roofMat);
-      spire.scale.set(0.45, 8, 0.45);
-      spire.position.y = lot.h * 1.28 + 4;
-      const beacon = new THREE.Mesh(roofBoxGeo, beaconMat);
-      beacon.scale.set(0.85, 0.85, 0.85);
-      beacon.position.y = lot.h * 1.28 + 8.3;
-      bGroup.add(crown, spire, beacon);
-    } else if (idx % 2 === 0) {
-      const cap = new THREE.Mesh(roofBoxGeo, roofMat);
-      cap.scale.set(lot.w * 0.52, 2.2, lot.d * 0.52);
-      cap.position.y = lot.h + 1.1;
-      bGroup.add(cap);
-    }
-    sceneryGroup.add(bGroup);
-  });
-
-  // Illuminated Streetlamps flanking the circuit every 18 samples
-  const towerPoleGeo = new THREE.CylinderGeometry(0.24, 0.34, 12.5, 8);
-  const towerArmGeo = new THREE.BoxGeometry(0.24, 0.24, 2.8);
-  const towerHeadGeo = new THREE.BoxGeometry(1.4, 0.32, 0.7);
-  const towerHeadMat = new THREE.MeshBasicMaterial({ color: 0xfef08a });
-  for (let i = 10; i < SAMPLE_COUNT; i += 20) {
-    const smp = samples[i];
-    const side = i % 40 === 10 ? 1 : -1;
-    const yaw = Math.atan2(smp.tangent.x, smp.tangent.z);
-    const lx = smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 3.2);
-    const lz = smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 3.2);
-    const lamp = new THREE.Group();
-    lamp.position.set(lx, 0, lz);
-    lamp.rotation.y = yaw + (side > 0 ? Math.PI / 2 : -Math.PI / 2);
-    const pole = new THREE.Mesh(towerPoleGeo, pillarMat);
-    pole.position.y = 6.25;
-    const arm = new THREE.Mesh(towerArmGeo, pillarMat);
-    arm.position.set(0, 12.3, 1.3);
-    const head = new THREE.Mesh(towerHeadGeo, towerHeadMat);
-    head.position.set(0, 12.1, 2.4);
-    lamp.add(pole, arm, head);
-    sceneryGroup.add(lamp);
+    disposables.push(towerPoleGeo, towerArmGeo, towerHeadGeo, towerHeadMat);
   }
-  disposables.push(towerPoleGeo, towerArmGeo, towerHeadGeo, towerHeadMat);
 
-  // Glowing Cyan Nitro Boost Pads
-  const boostPads: BoostPadZone[] = [
-    { s: 0.14, lateralOffset: -2.2 },
-    { s: 0.42, lateralOffset: 2.0 },
-    { s: 0.72, lateralOffset: -1.8 },
-    { s: 0.89, lateralOffset: 1.8 },
-  ];
+  // Nitro Boost Pads
+  const boostPads: BoostPadZone[] =
+    trackId === 'neotokyo'
+      ? [
+          { s: 0.12, lateralOffset: -2.0 },
+          { s: 0.24, lateralOffset: 2.0 },
+          { s: 0.42, lateralOffset: 0 },
+          { s: 0.58, lateralOffset: -2.2 },
+          { s: 0.74, lateralOffset: 2.0 },
+          { s: 0.9, lateralOffset: 0 },
+        ]
+      : [
+          { s: 0.14, lateralOffset: -2.2 },
+          { s: 0.42, lateralOffset: 2.0 },
+          { s: 0.72, lateralOffset: -1.8 },
+          { s: 0.89, lateralOffset: 1.8 },
+        ];
   const padGeo = new THREE.PlaneGeometry(3.4, 7.5);
   const padMat = new THREE.MeshBasicMaterial({
-    color: 0x06b6d4,
+    color: trackSpec.padColorHex,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.88,
   });
   boostPads.forEach((pad) => {
     const idx = Math.floor(pad.s * SAMPLE_COUNT) % SAMPLE_COUNT;
@@ -672,40 +910,61 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     padMesh.rotation.order = 'YXZ';
     padMesh.rotation.y = Math.atan2(smp.tangent.x, smp.tangent.z);
     padMesh.rotation.x = -Math.PI / 2;
-    scene.add(padMesh);
+    circuitRoot.add(padMesh);
   });
   disposables.push(padGeo, padMat);
 
-  // Urban Avenue Trees & Tire Barriers
-  const treeCount = 44;
-  const trunkGeo = new THREE.CylinderGeometry(0.28, 0.42, 2.8, 6);
-  const trunkMat = new THREE.MeshStandardMaterial({ color: 0x4a2f1b, roughness: 0.9 });
-  const crownGeo = new THREE.SphereGeometry(2.1, 8, 7);
-  const crownMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 });
-  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
-  const crowns = new THREE.InstancedMesh(crownGeo, crownMat, treeCount);
+  // Foliage / Desert Cacti / Pines per circuit (InstancedMesh)
+  const propCount = trackId === 'alpine' ? 68 : 44;
+  const trunkGeo = new THREE.CylinderGeometry(
+    trackId === 'desert' ? 0.45 : 0.28,
+    trackId === 'desert' ? 0.5 : 0.42,
+    trackId === 'coast' ? 4.4 : 2.8,
+    6
+  );
+  const trunkMat = new THREE.MeshStandardMaterial({
+    color: trackId === 'desert' ? 0x15803d : 0x4a2f1b,
+    roughness: 0.88,
+  });
+  const crownGeo =
+    trackId === 'alpine'
+      ? new THREE.ConeGeometry(2.3, 6.2, 7)
+      : trackId === 'desert'
+      ? new THREE.CylinderGeometry(0.32, 0.32, 2.2, 6)
+      : new THREE.SphereGeometry(2.1, 8, 7);
+  const crownMat = new THREE.MeshStandardMaterial({
+    color: trackId === 'alpine' ? 0x065f46 : trackId === 'coast' ? 0x22c55e : 0x15803d,
+    roughness: 0.8,
+  });
+  const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, propCount);
+  const crowns = new THREE.InstancedMesh(crownGeo, crownMat, propCount);
   const tDummy = new THREE.Object3D();
-  for (let i = 0; i < treeCount; i += 1) {
-    const smp = samples[(i * 8 + 2) % SAMPLE_COUNT];
+  for (let i = 0; i < propCount; i += 1) {
+    const smp = samples[(i * 5 + 2) % SAMPLE_COUNT];
     const side = i % 2 === 0 ? 1 : -1;
-    const tx = smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 6.5);
-    const tz = smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 6.5);
-    const scl = 0.8 + ((i * 5) % 5) * 0.12;
-    tDummy.position.set(tx, 1.4 * scl, tz);
+    const dist = TRACK_BARRIER_HALF_WIDTH + 6.5 + ((i * 3) % 8);
+    const tx = smp.point.x + smp.normal.x * side * dist;
+    const tz = smp.point.z + smp.normal.z * side * dist;
+    const scl = 0.82 + ((i * 5) % 5) * 0.14;
+    tDummy.position.set(tx, (trackId === 'coast' ? 2.2 : 1.4) * scl, tz);
     tDummy.scale.setScalar(scl);
     tDummy.updateMatrix();
     trunks.setMatrixAt(i, tDummy.matrix);
-    tDummy.position.set(tx, 3.8 * scl, tz);
+    tDummy.position.set(
+      tx,
+      (trackId === 'coast' ? 4.8 : trackId === 'alpine' ? 4.4 : 3.2) * scl,
+      tz
+    );
     tDummy.updateMatrix();
     crowns.setMatrixAt(i, tDummy.matrix);
   }
   trunks.instanceMatrix.needsUpdate = true;
   crowns.instanceMatrix.needsUpdate = true;
-  scene.add(trunks, crowns);
+  circuitRoot.add(trunks, crowns);
 
   const tireGeo = new THREE.CylinderGeometry(0.55, 0.55, 1.25, 10);
   const tireMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.82 });
-  const tireCount = 36;
+  const tireCount = 34;
   const tireInst = new THREE.InstancedMesh(tireGeo, tireMat, tireCount);
   for (let i = 0; i < tireCount; i += 1) {
     const smp = samples[(i * 10 + 3) % SAMPLE_COUNT];
@@ -720,11 +979,12 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     tireInst.setMatrixAt(i, tDummy.matrix);
   }
   tireInst.instanceMatrix.needsUpdate = true;
-  scene.add(tireInst);
+  circuitRoot.add(tireInst);
   disposables.push(trunkGeo, trunkMat, crownGeo, crownMat, tireGeo, tireMat);
 
-  if (!isSoftwareGl) {
-    const starCount = 380;
+  // Night Sky Starfield on Metropolis & Neo-Tokyo
+  if (!isSoftwareGl && trackSpec.stars) {
+    const starCount = 340;
     const starPositions = new Float32Array(starCount * 3);
     for (let i = 0; i < starCount; i += 1) {
       const ang = Math.random() * Math.PI * 2;
@@ -736,11 +996,11 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     const starGeo = new THREE.BufferGeometry();
     starGeo.setAttribute('position', new THREE.BufferAttribute(starPositions, 3));
     const starMat = new THREE.PointsMaterial({ color: 0xcbd5e1, size: 1.4, sizeAttenuation: true });
-    scene.add(new THREE.Points(starGeo, starMat));
+    circuitRoot.add(new THREE.Points(starGeo, starMat));
     disposables.push(starGeo, starMat);
   }
 
-  // Asynchronous Verified CC0 3D City Architecture & Racing Kits
+  // Async Verified CC0 3D Props tailored per circuit
   const placePropNormalized = (
     source: THREE.Group,
     targetWidth: number,
@@ -764,63 +1024,56 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
         child.receiveShadow = !isSoftwareGl;
       }
     });
-    sceneryGroup.add(clone);
+    circuitRoot.add(clone);
   };
 
-  // Load verified Kenney City Commercial skyscrapers & buildings into open urban lots
-  const citySkyscraperAssets = [
-    'assets/games/models/city/building-skyscraper-a.glb',
-    'assets/games/models/city/building-skyscraper-b.glb',
-    'assets/games/models/city/building-skyscraper-c.glb',
-    'assets/games/models/city/building-skyscraper-d.glb',
-    'assets/games/models/city/building-skyscraper-e.glb',
-  ];
-  const cityCommercialAssets = [
-    'assets/games/models/city/building-a.glb',
-    'assets/games/models/city/building-b.glb',
-    'assets/games/models/city/building-c.glb',
-    'assets/games/models/city/building-d.glb',
-    'assets/games/models/city-builder/building-small-a.glb',
-    'assets/games/models/city-builder/building-small-c.glb',
-    'assets/games/models/city-builder/building-garage.glb',
-  ];
-
-  citySkyscraperAssets.forEach((asset, assetIdx) => {
-    void loadCachedTrackProp(asset).then((src) => {
+  if (trackId === 'metropolis' || trackId === 'neotokyo') {
+    [
+      'assets/games/models/city/building-skyscraper-a.glb',
+      'assets/games/models/city/building-skyscraper-b.glb',
+      'assets/games/models/city/building-skyscraper-c.glb',
+    ].forEach((asset, assetIdx) => {
+      void loadCachedTrackProp(asset).then((src) => {
+        if (!src || circuitDisposed) return;
+        for (let i = assetIdx * 24; i < SAMPLE_COUNT; i += 108) {
+          const smp = samples[i % SAMPLE_COUNT];
+          const side = assetIdx % 2 === 0 ? 1 : -1;
+          const bx = smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 22);
+          const bz = smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 22);
+          if (!isClearOfTrack(bx, bz, 12)) continue;
+          const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
+          placePropNormalized(src, 16, bx, 0, bz, yaw);
+        }
+      });
+    });
+  } else if (trackId === 'alpine') {
+    ['assets/games/models/soccer_pong/cliff_block_stone.glb', 'assets/games/models/treeLarge.glb'].forEach(
+      (asset, assetIdx) => {
+        void loadCachedTrackProp(asset).then((src) => {
+          if (!src || circuitDisposed) return;
+          for (let i = assetIdx * 18; i < SAMPLE_COUNT; i += 44) {
+            const smp = samples[i % SAMPLE_COUNT];
+            const side = i % 2 === 0 ? 1 : -1;
+            const bx = smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 12);
+            const bz = smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 12);
+            if (!isClearOfTrack(bx, bz, 9)) continue;
+            placePropNormalized(src, assetIdx === 0 ? 14 : 9, bx, 0, bz, i * 0.4);
+          }
+        });
+      }
+    );
+  } else if (trackId === 'coast') {
+    void loadCachedTrackProp('assets/games/models/treeLarge.glb').then((src) => {
       if (!src || circuitDisposed) return;
-      for (let i = assetIdx * 24; i < SAMPLE_COUNT; i += 108) {
+      for (let i = 6; i < SAMPLE_COUNT; i += 24) {
         const smp = samples[i % SAMPLE_COUNT];
-        const side = assetIdx % 2 === 0 ? 1 : -1;
-        const bx = smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 22);
-        const bz = smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 22);
-        if (!isClearOfTrack(bx, bz, 12)) continue;
-        const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
-        placePropNormalized(src, 16, bx, 0, bz, yaw);
+        const bx = smp.point.x + smp.normal.x * (TRACK_BARRIER_HALF_WIDTH + 9);
+        const bz = smp.point.z + smp.normal.z * (TRACK_BARRIER_HALF_WIDTH + 9);
+        if (!isClearOfTrack(bx, bz, 6)) continue;
+        placePropNormalized(src, 8.5, bx, 0, bz, i * 0.5);
       }
     });
-  });
-
-  cityCommercialAssets.forEach((asset, assetIdx) => {
-    void loadCachedTrackProp(asset).then((src) => {
-      if (!src || circuitDisposed) return;
-      for (let i = 10 + assetIdx * 17; i < SAMPLE_COUNT; i += 84) {
-        const smp = samples[i % SAMPLE_COUNT];
-        const side = assetIdx % 2 === 0 ? -1 : 1;
-        const bx = smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 13.5);
-        const bz = smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 13.5);
-        if (!isClearOfTrack(bx, bz, 7.5)) continue;
-        const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
-        placePropNormalized(src, 12, bx, 0, bz, yaw);
-      }
-    });
-  });
-
-  void loadCachedTrackProp('assets/games/models/city-builder/pavement-fountain.glb').then((src) => {
-    if (!src || circuitDisposed) return;
-    if (isClearOfTrack(95, -108, 10)) {
-      placePropNormalized(src, 18, 95, 0, -108, 0);
-    }
-  });
+  }
 
   void loadCachedTrackProp('assets/games/models/grandStandCovered.glb').then((src) => {
     if (!src || circuitDisposed) return;
@@ -832,18 +1085,6 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
       if (!isClearOfTrack(bx, bz, 8)) return;
       const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
       placePropNormalized(src, 22, bx, 0, bz, yaw);
-    });
-  });
-
-  void loadCachedTrackProp('assets/games/models/pitsGarage.glb').then((src) => {
-    if (!src || circuitDisposed) return;
-    [350, 6].forEach((idx) => {
-      const smp = samples[idx % SAMPLE_COUNT];
-      const bx = smp.point.x - smp.normal.x * (TRACK_BARRIER_HALF_WIDTH + 10.5);
-      const bz = smp.point.z - smp.normal.z * (TRACK_BARRIER_HALF_WIDTH + 10.5);
-      if (!isClearOfTrack(bx, bz, 7.5)) return;
-      const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + Math.PI / 2;
-      placePropNormalized(src, 15, bx, 0, bz, yaw);
     });
   });
 
@@ -861,29 +1102,10 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     });
   });
 
-  if (!isSoftwareGl && !tvConstrained) {
-    void loadCachedTrackProp('assets/games/models/billboard.glb').then((src) => {
-      if (!src || circuitDisposed) return;
-      [42, 130, 218, 305].forEach((idx, n) => {
-        const smp = samples[idx % SAMPLE_COUNT];
-        const side = n % 2 === 0 ? 1 : -1;
-        const yaw = Math.atan2(smp.tangent.x, smp.tangent.z) + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
-        placePropNormalized(
-          src,
-          10.5,
-          smp.point.x + smp.normal.x * side * (TRACK_BARRIER_HALF_WIDTH + 4.8),
-          0,
-          smp.point.z + smp.normal.z * side * (TRACK_BARRIER_HALF_WIDTH + 4.8),
-          yaw
-        );
-      });
-    });
-  }
-
-  // Animated 3D Crew at Start-Finish
+  // Animated 3D Crew at Start-Finish (Desktop/Mobile GPU)
   const actors: RiggedActorHandle[] = [];
   if (!isSoftwareGl && !tvConstrained) {
-    const marshalRobot = spawnRigged3dActor(sceneryGroup, 'assets/games/models/RobotExpressive.glb', {
+    const marshalRobot = spawnRigged3dActor(circuitRoot, 'assets/games/models/RobotExpressive.glb', {
       position: [
         startSmp.point.x + startSmp.normal.x * (TRACK_HALF_WIDTH + 3.4),
         0,
@@ -894,7 +1116,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
       defaultClips: ['Wave', 'Dance', 'Idle'],
       castShadow: true,
     });
-    const marshalXbot = spawnRigged3dActor(sceneryGroup, 'assets/games/models/Xbot.glb', {
+    const marshalXbot = spawnRigged3dActor(circuitRoot, 'assets/games/models/Xbot.glb', {
       position: [
         startSmp.point.x - startSmp.normal.x * (TRACK_HALF_WIDTH + 3.6),
         0,
@@ -982,6 +1204,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
   }
 
   return {
+    trackId,
     curve,
     totalLength,
     samples,
@@ -1013,7 +1236,7 @@ export function buildGpCircuitScene(scene: THREE.Scene, isSoftwareGl: boolean): 
     dispose: () => {
       circuitDisposed = true;
       actors.forEach((a) => a.dispose());
-      if (sceneryGroup.parent) sceneryGroup.parent.remove(sceneryGroup);
+      if (circuitRoot.parent) circuitRoot.parent.remove(circuitRoot);
       disposables.forEach((d) => d.dispose());
     },
   };

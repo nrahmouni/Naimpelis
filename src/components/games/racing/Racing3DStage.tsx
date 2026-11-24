@@ -5,6 +5,7 @@ import {
   Compass,
   Flame,
   Gauge,
+  Map as MapIcon,
   QrCode,
   RotateCcw,
   Smartphone,
@@ -23,10 +24,13 @@ import { createRacing3dEngine } from './racing3dEngine';
 import { DualGyroQrPanel } from './DualGyroQrPanel';
 import {
   RACING_CAR_CATALOG,
+  RACING_TRACK_CATALOG,
   getRacingCarSpec,
+  getRacingTrackSpec,
   type RacingCarId,
   type RacingCarTelemetry,
   type RacingEngineHandle,
+  type RacingTrackId,
 } from './racingTypes';
 
 interface Racing3DStageProps {
@@ -37,6 +41,7 @@ interface Racing3DStageProps {
 }
 
 const STORAGE_CAR_KEY = 'riffan_racing_car_v1';
+const STORAGE_TRACK_KEY = 'riffan_racing_track_v1';
 
 function readSavedCarId(): RacingCarId {
   try {
@@ -44,6 +49,15 @@ function readSavedCarId(): RacingCarId {
     return getRacingCarSpec(raw).id;
   } catch {
     return 'ferrari';
+  }
+}
+
+function readSavedTrackId(): RacingTrackId {
+  try {
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem(STORAGE_TRACK_KEY) : null;
+    return getRacingTrackSpec(raw).id;
+  } catch {
+    return 'metropolis';
   }
 }
 
@@ -68,7 +82,9 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
   const lastTelemetrySendRef = useRef(0);
 
   const [selectedCarId, setSelectedCarId] = useState<RacingCarId>(() => readSavedCarId());
+  const [selectedTrackId, setSelectedTrackId] = useState<RacingTrackId>(() => readSavedTrackId());
   const [showGarage, setShowGarage] = useState(false);
+  const [showTracks, setShowTracks] = useState(false);
   const [autoGas, setAutoGas] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerWidth < 768 : false
   );
@@ -97,6 +113,7 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
     cameraMode: 'chase',
     wrongWay: false,
     carId: selectedCarId,
+    trackId: selectedTrackId,
     autoGas,
   });
   const [finishSummary, setFinishSummary] = useState<{
@@ -107,6 +124,7 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
   } | null>(null);
 
   const selectedCarSpec = useMemo(() => getRacingCarSpec(selectedCarId), [selectedCarId]);
+  const selectedTrackSpec = useMemo(() => getRacingTrackSpec(selectedTrackId), [selectedTrackId]);
 
   const effectiveRoomId = useMemo(
     () => (roomId || socketService.getActiveRoomId() || 'race-local').trim().toLowerCase(),
@@ -152,6 +170,19 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
     setShowGarage(false);
   }, []);
 
+  const handleSelectTrack = useCallback((trackId: RacingTrackId) => {
+    triggerHaptic('medium');
+    const resolved = engineRef.current?.setTrack?.(trackId) || getRacingTrackSpec(trackId).id;
+    setSelectedTrackId(resolved);
+    setFinishSummary(null);
+    try {
+      window.localStorage.setItem(STORAGE_TRACK_KEY, resolved);
+    } catch {
+      // ignore storage failure
+    }
+    setShowTracks(false);
+  }, []);
+
   const handleToggleAutoGas = useCallback(() => {
     triggerHaptic('light');
     setAutoGas((prev) => {
@@ -171,9 +202,8 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
       {
         onTelemetry: (t) => {
           setTelemetry(t);
-          if (t.carId && t.carId !== selectedCarId) {
-            setSelectedCarId(t.carId);
-          }
+          if (t.carId) setSelectedCarId(t.carId);
+          if (t.trackId) setSelectedTrackId(t.trackId);
           if (typeof t.autoGas === 'boolean') {
             setAutoGas(t.autoGas);
           }
@@ -200,6 +230,8 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
                 raceState: t.raceState,
                 lapTimeMs: t.lapTimeMs,
                 bestLapMs: t.bestLapMs,
+                carId: t.carId,
+                trackId: t.trackId,
                 targetSlot: 1,
               },
               socketService.getActiveRoomId()
@@ -235,6 +267,7 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
       },
       {
         initialCarId: selectedCarId,
+        initialTrackId: selectedTrackId,
         initialAutoGas: autoGas,
       }
     );
@@ -290,6 +323,7 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
             cameraCycle: Boolean(ev.payload.cameraCycle),
             horn: Boolean(ev.payload.horn),
             carSelect: ev.payload.carSelect as RacingCarId | 'next' | undefined,
+            trackSelect: ev.payload.trackSelect as RacingTrackId | 'next' | 'prev' | undefined,
             autoGasToggle: Boolean(ev.payload.autoGasToggle),
           },
           950,
@@ -328,7 +362,13 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
         return;
       }
       if (e.code === 'KeyG') {
+        setShowTracks(false);
         setShowGarage((v) => !v);
+        return;
+      }
+      if (e.code === 'KeyM') {
+        setShowGarage(false);
+        setShowTracks((v) => !v);
         return;
       }
       if (e.code === 'KeyT') {
@@ -337,6 +377,10 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
       }
       if (e.code.startsWith('Digit')) {
         const idx = Number(e.code.replace('Digit', '')) - 1;
+        if (showTracks && idx >= 0 && idx < RACING_TRACK_CATALOG.length) {
+          handleSelectTrack(RACING_TRACK_CATALOG[idx].id);
+          return;
+        }
         if (idx >= 0 && idx < RACING_CAR_CATALOG.length) {
           handleSelectCar(RACING_CAR_CATALOG[idx].id);
           return;
@@ -361,7 +405,7 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
       window.removeEventListener('keydown', onKeyDown);
       window.removeEventListener('keyup', onKeyUp);
     };
-  }, [handleSelectCar, handleToggleAutoGas, syncKeysToEngine]);
+  }, [handleSelectCar, handleSelectTrack, handleToggleAutoGas, showTracks, syncKeysToEngine]);
 
   return (
     <div
@@ -383,12 +427,14 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
           <span className="font-mono text-cyan-300">{formatLapMs(telemetry.lapTimeMs)}</span>
         </div>
 
-        <div className="hidden md:flex px-2.5 py-1.5 rounded-xl bg-[#090c16]/85 border border-white/15 items-center gap-1.5 text-[11px] font-bold text-zinc-200">
+        <div className="hidden md:flex px-2.5 py-1.5 rounded-xl bg-[#090c16]/85 border border-white/15 items-center gap-2 text-[11px] font-bold text-zinc-200">
           <span
             className="w-2.5 h-2.5 rounded-full shrink-0"
             style={{ backgroundColor: selectedCarSpec.cssColor }}
           />
           <span>{selectedCarSpec.name}</span>
+          <span className="text-zinc-500">·</span>
+          <span style={{ color: selectedTrackSpec.cssAccent }}>{selectedTrackSpec.shortName}</span>
         </div>
 
         {connectedControllers.map((ctrl, idx) => {
@@ -425,6 +471,25 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
           type="button"
           onClick={() => {
             triggerHaptic('light');
+            setShowGarage(false);
+            setShowTracks((v) => !v);
+          }}
+          className={`game-touch-btn min-h-10 px-2.5 sm:px-3 rounded-xl border text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-lg ${
+            showTracks
+              ? 'bg-cyan-500/30 border-cyan-400 text-cyan-100'
+              : 'bg-[#090c16]/90 border-cyan-400/40 text-cyan-200 hover:bg-[#14192b]'
+          }`}
+          title="Elegir circuito (M)"
+        >
+          <MapIcon className="w-4 h-4" />
+          <span className="hidden sm:inline">Circuitos</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => {
+            triggerHaptic('light');
+            setShowTracks(false);
             setShowGarage((v) => !v);
           }}
           className={`game-touch-btn min-h-10 px-2.5 sm:px-3 rounded-xl border text-xs font-extrabold flex items-center gap-1.5 cursor-pointer shadow-lg ${
@@ -435,7 +500,7 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
           title="Elegir coche (G)"
         >
           <CarFront className="w-4 h-4" />
-          <span className="hidden sm:inline">Coches</span>
+          <span className="hidden sm:inline">Coches (5)</span>
         </button>
 
         <button
@@ -525,17 +590,17 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
         </button>
       </div>
 
-      {/* Garage Car Selector Overlay */}
+      {/* Garage Car Selector Overlay (5 Modelos) */}
       {showGarage && (
-        <div className="absolute inset-0 bg-[#050711]/92 z-25 p-4 sm:p-6 flex flex-col justify-between overflow-y-auto">
+        <div className="absolute inset-0 bg-[#050711]/95 z-25 p-4 sm:p-6 flex flex-col justify-between overflow-y-auto">
           <div className="flex items-center justify-between gap-3 mb-3">
             <div>
               <h3 className="text-base sm:text-xl font-black text-white flex items-center gap-2">
                 <CarFront className="w-5 h-5 text-amber-400" />
-                Garaje Metropolis GP
+                Garaje GP · 5 Modelos
               </h3>
               <p className="text-xs text-zinc-400">
-                Elige tu coche con físicas y rendimiento propio (también teclas 1-6)
+                Cada vehículo tiene geometría 3D, aceleración, giro y velocidad punta propias (teclas 1-5)
               </p>
             </div>
             <button
@@ -575,7 +640,16 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
                           className="w-full h-full object-cover"
                         />
                       ) : (
-                        <CarFront className="w-6 h-6" style={{ color: car.cssAccent }} />
+                        <svg viewBox="0 0 80 42" className="w-13 h-8" aria-hidden="true">
+                          <path
+                            d="M12 28 L16 17 L30 14 L52 14 L64 20 L68 28 Z"
+                            fill={car.cssColor}
+                            stroke={car.cssAccent}
+                            strokeWidth="2"
+                          />
+                          <circle cx="24" cy="29" r="5" fill="#0f172a" stroke="#e2e8f0" strokeWidth="1.8" />
+                          <circle cx="56" cy="29" r="5" fill="#0f172a" stroke="#e2e8f0" strokeWidth="1.8" />
+                        </svg>
                       )}
                       <span className="absolute top-0.5 left-1 text-[9px] font-mono font-black text-white/90 bg-black/60 px-1 rounded">
                         {index + 1}
@@ -584,6 +658,7 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
                     <div className="min-w-0 flex-1">
                       <div className="text-xs font-black text-white truncate">{car.name}</div>
                       <div className="text-[10px] font-bold text-cyan-300">{car.category}</div>
+                      <div className="text-[10px] text-zinc-400 truncate">{car.tagline}</div>
                     </div>
                   </div>
 
@@ -605,6 +680,86 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
                       <div className="flex-1 h-1.5 rounded-full bg-white/10 overflow-hidden">
                         <div className="h-full bg-emerald-400" style={{ width: `${car.stats.handling}%` }} />
                       </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Circuit Selector Overlay (5 Circuitos 3D) */}
+      {showTracks && (
+        <div className="absolute inset-0 bg-[#050711]/95 z-25 p-4 sm:p-6 flex flex-col justify-between overflow-y-auto">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div>
+              <h3 className="text-base sm:text-xl font-black text-white flex items-center gap-2">
+                <MapIcon className="w-5 h-5 text-cyan-400" />
+                Campeonato · 5 Circuitos 3D
+              </h3>
+              <p className="text-xs text-zinc-400">
+                Cada circuito cambia trazado, bioma 3D, iluminación HDRI y velocidad de curvas (teclas 1-5)
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowTracks(false)}
+              className="min-h-10 px-4 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-black text-white cursor-pointer"
+            >
+              Cerrar
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 my-auto">
+            {RACING_TRACK_CATALOG.map((track, index) => {
+              const active = track.id === selectedTrackId;
+              return (
+                <button
+                  key={track.id}
+                  type="button"
+                  onClick={() => handleSelectTrack(track.id)}
+                  className={`text-left rounded-2xl border p-3 transition-all cursor-pointer flex items-center gap-3 ${
+                    active
+                      ? 'bg-[#181f38] border-cyan-400 shadow-[0_0_24px_rgba(34,211,238,0.28)]'
+                      : 'bg-[#0e1324] border-white/10 hover:border-white/30'
+                  }`}
+                >
+                  <div
+                    className="w-16 h-16 rounded-xl shrink-0 border border-white/15 flex items-center justify-center relative"
+                    style={{
+                      background: `linear-gradient(155deg, ${track.skyTop}, ${track.skyHorizon})`,
+                    }}
+                  >
+                    <svg viewBox="0 0 100 100" className="w-13 h-13" aria-hidden="true">
+                      <path
+                        d={track.svgPath}
+                        fill="none"
+                        stroke="#090c16"
+                        strokeWidth="12"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <path
+                        d={track.svgPath}
+                        fill="none"
+                        stroke={track.cssAccent}
+                        strokeWidth="6"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                    </svg>
+                    <span className="absolute top-0.5 left-1 text-[9px] font-mono font-black text-white/90 bg-black/60 px-1 rounded">
+                      {index + 1}
+                    </span>
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="text-xs font-black text-white truncate">{track.name}</div>
+                    <div className="text-[10px] font-bold" style={{ color: track.cssAccent }}>
+                      {track.environment} · {track.difficulty}
+                    </div>
+                    <div className="text-[10px] text-zinc-400 line-clamp-2 leading-snug">
+                      {track.description}
                     </div>
                   </div>
                 </button>
@@ -763,7 +918,7 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
       </div>
 
       <div className="pointer-events-none hidden sm:flex absolute bottom-3 left-3 px-3 py-1.5 rounded-xl bg-[#090c16]/85 border border-white/10 text-[11px] font-semibold text-zinc-300">
-        WASD / Flechas · Shift: Nitro · G: Garaje · T: Auto-Gas · C: Cámara
+        WASD / Flechas · Shift: Nitro · G: Coches · M: Circuitos · T: Auto-Gas · C: Cámara
       </div>
 
       {showQrModal && (

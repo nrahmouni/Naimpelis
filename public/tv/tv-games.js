@@ -136,6 +136,9 @@ function closeTvGame() {
   if (TV_GAME_ACTIVE === 'pingpong' && typeof window.closeTvPingPongGame === 'function') {
     window.closeTvPingPongGame();
   }
+  if (TV_GAME_ACTIVE === 'soccerpong' && typeof window.closeTvSoccerPongGame === 'function') {
+    window.closeTvSoccerPongGame();
+  }
   if (TV_GAME_ACTIVE === 'penalty' && typeof window.closeTvPenaltyGame === 'function') {
     window.closeTvPenaltyGame();
   }
@@ -181,6 +184,28 @@ function getTvCardSvg(gameId) {
       '<ellipse cx="70" cy="64" rx="18" ry="14" fill="#0284C7" stroke="#E0F2FE" stroke-width="2"/>' +
       '<ellipse cx="172" cy="30" rx="15" ry="11" fill="#E11D48" stroke="#FFE4E6" stroke-width="2"/>' +
       '<circle cx="122" cy="40" r="7" fill="#FACC15" stroke="#FFF" stroke-width="1.5"/></svg>';
+  }
+  if (gameId === 'soccerpong') {
+    return '<svg viewBox="0 0 240 92" aria-hidden="true">' +
+      '<rect width="240" height="92" fill="#DDD2AF"/>' +
+      '<rect x="22" y="14" width="196" height="64" fill="#63B836"/>' +
+      '<rect x="22" y="27" width="196" height="12" fill="#529E2A"/><rect x="22" y="52" width="196" height="12" fill="#529E2A"/>' +
+      '<rect x="26" y="18" width="188" height="56" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"/>' +
+      '<line x1="120" y1="18" x2="120" y2="74" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"/>' +
+      '<circle cx="120" cy="46" r="13" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.5"/>' +
+      '<rect x="26" y="7" width="44" height="9" rx="2" fill="#CBD5E1" stroke="#94A3B8" stroke-width="1"/>' +
+      '<rect x="74" y="7" width="44" height="9" rx="2" fill="#E2E8F0" stroke="#94A3B8" stroke-width="1"/>' +
+      '<rect x="122" y="7" width="44" height="9" rx="2" fill="#CBD5E1" stroke="#94A3B8" stroke-width="1"/>' +
+      '<rect x="170" y="7" width="44" height="9" rx="2" fill="#E2E8F0" stroke="#94A3B8" stroke-width="1"/>' +
+      '<rect x="26" y="76" width="44" height="9" rx="2" fill="#CBD5E1" stroke="#94A3B8" stroke-width="1"/>' +
+      '<rect x="74" y="76" width="44" height="9" rx="2" fill="#E2E8F0" stroke="#94A3B8" stroke-width="1"/>' +
+      '<rect x="122" y="76" width="44" height="9" rx="2" fill="#CBD5E1" stroke="#94A3B8" stroke-width="1"/>' +
+      '<rect x="170" y="76" width="44" height="9" rx="2" fill="#E2E8F0" stroke="#94A3B8" stroke-width="1"/>' +
+      '<rect x="16" y="12" width="7" height="68" rx="2" fill="#78350F"/><rect x="217" y="12" width="7" height="68" rx="2" fill="#78350F"/>' +
+      '<rect x="7" y="37" width="16" height="18" rx="2" fill="#F8FAFC" stroke="#78350F" stroke-width="1.5"/><text x="15" y="50" text-anchor="middle" font-size="11" font-weight="900" fill="#1E293B">6</text>' +
+      '<rect x="217" y="37" width="16" height="18" rx="2" fill="#F8FAFC" stroke="#78350F" stroke-width="1.5"/><text x="225" y="50" text-anchor="middle" font-size="11" font-weight="900" fill="#1E293B">4</text>' +
+      '<rect x="38" y="32" width="12" height="28" rx="3" fill="#2563EB"/><rect x="190" y="35" width="12" height="28" rx="3" fill="#EF4444"/>' +
+      '<circle cx="136" cy="46" r="7.5" fill="#F8FAFC" stroke="#0F172A" stroke-width="1.5"/></svg>';
   }
   if (gameId === 'gyrohockey') {
     return '<svg viewBox="0 0 240 92" aria-hidden="true">' +
@@ -330,6 +355,13 @@ function renderTvGamesCatalogInto(container) {
       cta: 'Jugar Ping Pong 2P'
     },
     {
+      id: 'soccerpong', cls: 'soccerpong',
+      badge: 'Estadio 3D · 1P / 2P Móvil',
+      title: 'Fútbol Pong 3D · 1P / 2P',
+      desc: 'Césped 3D con bloques de piedra, porterías de madera con marcador vivo, palas Azul vs Rojo y control desde el móvil o mando.',
+      cta: 'Jugar Fútbol Pong 3D'
+    },
+    {
       id: 'penalty', cls: 'penalty',
       badge: 'Mundial 2P · 10 Países + Rosca',
       title: 'Penaltis Mundial Pro',
@@ -432,6 +464,9 @@ function openTvGame(gameId) {
   }
   if (gameId === 'pingpong' && typeof window.startTvPingPongGame === 'function') {
     window.startTvPingPongGame(scr); return;
+  }
+  if (gameId === 'soccerpong' && typeof window.startTvSoccerPongGame === 'function') {
+    window.startTvSoccerPongGame(scr); return;
   }
   if (gameId === 'gyrohockey' && typeof window.startGyroHockeyGame === 'function') {
     window.startGyroHockeyGame(scr); return;

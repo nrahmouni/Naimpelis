@@ -100,6 +100,7 @@ export type RoomGameInviteType =
   | 'gyrotennis'
   | 'gyrolab'
   | 'pingpong'
+  | 'soccerpong'
   | 'bomberman'
   | 'pacman'
   | 'tetris'
@@ -134,6 +135,7 @@ export interface GyroInputPayload {
   cameraCycle?: boolean;
   horn?: boolean;
   carSelect?: string;
+  trackSelect?: string;
   autoGasToggle?: boolean;
   seq: number;
   ts: number;
@@ -160,6 +162,7 @@ export interface RacingTelemetryPayload {
   scoreP2?: number;
   eventTag?: string;
   carId?: string;
+  trackId?: string;
   autoGas?: boolean;
 }
 
