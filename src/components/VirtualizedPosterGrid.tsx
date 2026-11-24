@@ -226,16 +226,12 @@ export function VirtualizedPosterGrid<T>({
     ro.observe(el);
     if (parent && parent !== document.documentElement) {
       ro.observe(parent);
-      parent.addEventListener('scroll', scheduleMetrics, { passive: true });
     }
     window.addEventListener('resize', scheduleMetrics);
 
     return () => {
       if (rafId !== null) window.cancelAnimationFrame(rafId);
       ro.disconnect();
-      if (parent && parent !== document.documentElement) {
-        parent.removeEventListener('scroll', scheduleMetrics);
-      }
       window.removeEventListener('resize', scheduleMetrics);
     };
   }, []);

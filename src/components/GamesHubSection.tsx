@@ -14,9 +14,17 @@ import {
   Shuffle,
   Users,
 } from 'lucide-react';
-import { PinturilloStage } from './PinturilloStage';
-import { Pool8BallStage } from './Pool8BallStage';
-import { FutbolChapasStage } from './FutbolChapasStage';
+import { lazyWithRetry } from '../utils/lazyWithRetry';
+
+const PinturilloStage = lazyWithRetry(() =>
+  import('./PinturilloStage').then((m) => ({ default: m.PinturilloStage }))
+);
+const Pool8BallStage = lazyWithRetry(() =>
+  import('./Pool8BallStage').then((m) => ({ default: m.Pool8BallStage }))
+);
+const FutbolChapasStage = lazyWithRetry(() =>
+  import('./FutbolChapasStage').then((m) => ({ default: m.FutbolChapasStage }))
+);
 import {
   GameFloatingReactionToast,
   GameMuteButton,
@@ -554,123 +562,132 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             )}
 
           <div className="flex-1 min-h-0 flex flex-col overflow-y-auto touch-pan-y custom-scrollbar">
-            {isChapas ? (
-              <FutbolChapasStage
-                key={`chapas-${hubMode}`}
-                lang={lang}
-                currentUser={currentUser}
-                participants={participants}
-                chapasState={hubMode === 'offline' ? null : roomChapasGame}
-                isOffline={hubMode === 'offline'}
-                isHost={isHost}
-                voiceChat={voiceChat}
-                mutedOverride={muted}
-                onStartOnline={() => onStartRoomChapas?.()}
-                onJoinSeatOnline={onChapasJoinSeat}
-                onUpdateTeamOnline={onChapasUpdateTeam}
-                onToggleBotsOnline={onChapasToggleBots}
-                onStartMatchOnline={onChapasStartMatch}
-                onShootOnline={onChapasShoot}
-                onForfeitOnline={onChapasForfeit}
-                onRematchOnline={onChapasRematch}
-              />
-            ) : isPool ? (
-              <Pool8BallStage
-                key={`pool-${hubMode}`}
-                lang={lang}
-                currentUser={currentUser}
-                participants={participants}
-                poolState={hubMode === 'offline' ? null : roomPoolGame}
-                isOffline={hubMode === 'offline'}
-                isHost={isHost}
-                voiceChat={voiceChat}
-                mutedOverride={muted}
-                onStartOnline={onStartRoomPool}
-                onStartMatchOnline={onStartPoolMatch}
-                onJoinSeatOnline={onPoolJoinSeat}
-                onPlaceCueOnline={onPoolPlaceCue}
-                onCallPocketOnline={onPoolCallPocket}
-                onTakeShotOnline={onPoolTakeShot}
-                onForfeitOnline={onPoolForfeit}
-                onRematchOnline={onPoolRematch}
-                onSyncChecksumOnline={onPoolSyncChecksum}
-              />
-            ) : isPinturillo ? (
-              <PinturilloStage
-                key={`pinturillo-${hubMode}`}
-                lang={lang}
-                currentUser={currentUser}
-                participants={participants}
-                pinturilloState={hubMode === 'offline' ? null : roomPinturilloGame}
-                isOffline={hubMode === 'offline'}
-                isHost={isHost}
-                voiceChat={voiceChat}
-                mutedOverride={muted}
-                onStartOnline={onStartRoomPinturillo}
-                onStartMatchOnline={onStartPinturilloMatch}
-                onPickWordOnline={onPinturilloPickWord}
-                onSendStrokeOnline={onPinturilloStroke}
-                onUndoOnline={onPinturilloUndo}
-                onClearOnline={onPinturilloClear}
-                onSendGuessOnline={onPinturilloGuess}
-                onRematchOnline={onPinturilloRematch}
-              />
-            ) : (
-              <GamesHubSecondaryStages
-                selectedGame={selectedGame}
-                hubMode={hubMode}
-                lang={lang}
-                roomId={roomId}
-                currentUser={currentUser}
-                participants={participants}
-                isHost={isHost}
-                muted={muted}
-                toggleMute={toggleMute}
-                voiceChat={voiceChat}
-                roomHeadSoccerGame={roomHeadSoccerGame}
-                headSoccerSyncSnapshot={headSoccerSyncSnapshot}
-                headSoccerPeerInput={headSoccerPeerInput}
-                roomPokerGame={roomPokerGame}
-                roomBlackjackGame={roomBlackjackGame}
-                roomPartyGame={roomPartyGame}
-                activeBoardState={activeBoardState}
-                localBoardGame={localBoardGame}
-                setLocalBoardGame={setLocalBoardGame}
-                localMoveErr={localMoveErr}
-                setLocalMoveErr={setLocalMoveErr}
-                gameMoveError={gameMoveError}
-                makeOfflineBoardState={makeOfflineBoardState}
-                handleJoinOfflineBoardSeat={handleJoinOfflineBoardSeat}
-                handleBackToGames={handleBackToGames}
-                onStartRoomHeadSoccer={onStartRoomHeadSoccer}
-                onHeadSoccerJoinSeat={onHeadSoccerJoinSeat}
-                onHeadSoccerSelectSkin={onHeadSoccerSelectSkin}
-                onHeadSoccerStartMatch={onHeadSoccerStartMatch}
-                onHeadSoccerInput={onHeadSoccerInput}
-                onHeadSoccerSyncState={onHeadSoccerSyncState}
-                onHeadSoccerRematch={onHeadSoccerRematch}
-                onStartRoomPoker={onStartRoomPoker}
-                onPokerJoinSeat={onPokerJoinSeat}
-                onPokerToggleBots={onPokerToggleBots}
-                onPokerStartMatch={onPokerStartMatch}
-                onPokerAction={onPokerAction}
-                onPokerRebuy={onPokerRebuy}
-                onStartRoomBlackjack={onStartRoomBlackjack}
-                onBlackjackJoinSeat={onBlackjackJoinSeat}
-                onBlackjackBet={onBlackjackBet}
-                onBlackjackDeal={onBlackjackDeal}
-                onBlackjackAction={onBlackjackAction}
-                onBlackjackNewRound={onBlackjackNewRound}
-                onStartRoomPartyGame={onStartRoomPartyGame}
-                onRoomPartyAction={onRoomPartyAction}
-                onStartRoomBoardGame={onStartRoomBoardGame}
-                onJoinBoardSeat={onJoinBoardSeat}
-                onStartBoardMatch={onStartBoardMatch}
-                onMoveBoardGame={onMoveBoardGame}
-                onResignBoardGame={onResignBoardGame}
-                onResetBoardGame={onResetBoardGame}
-              />
-            )}
+            <React.Suspense
+              fallback={
+                <div className="w-full h-[420px] rounded-3xl bg-[#070B14] border border-white/10 flex items-center justify-center gap-2 text-xs font-bold text-zinc-300">
+                  <Loader2 className="w-4 h-4 animate-spin text-[#9146FF]" />
+                  <span>Cargando arena de juego...</span>
+                </div>
+              }
+            >
+              {isChapas ? (
+                <FutbolChapasStage
+                  key={`chapas-${hubMode}`}
+                  lang={lang}
+                  currentUser={currentUser}
+                  participants={participants}
+                  chapasState={hubMode === 'offline' ? null : roomChapasGame}
+                  isOffline={hubMode === 'offline'}
+                  isHost={isHost}
+                  voiceChat={voiceChat}
+                  mutedOverride={muted}
+                  onStartOnline={() => onStartRoomChapas?.()}
+                  onJoinSeatOnline={onChapasJoinSeat}
+                  onUpdateTeamOnline={onChapasUpdateTeam}
+                  onToggleBotsOnline={onChapasToggleBots}
+                  onStartMatchOnline={onChapasStartMatch}
+                  onShootOnline={onChapasShoot}
+                  onForfeitOnline={onChapasForfeit}
+                  onRematchOnline={onChapasRematch}
+                />
+              ) : isPool ? (
+                <Pool8BallStage
+                  key={`pool-${hubMode}`}
+                  lang={lang}
+                  currentUser={currentUser}
+                  participants={participants}
+                  poolState={hubMode === 'offline' ? null : roomPoolGame}
+                  isOffline={hubMode === 'offline'}
+                  isHost={isHost}
+                  voiceChat={voiceChat}
+                  mutedOverride={muted}
+                  onStartOnline={onStartRoomPool}
+                  onStartMatchOnline={onStartPoolMatch}
+                  onJoinSeatOnline={onPoolJoinSeat}
+                  onPlaceCueOnline={onPoolPlaceCue}
+                  onCallPocketOnline={onPoolCallPocket}
+                  onTakeShotOnline={onPoolTakeShot}
+                  onForfeitOnline={onPoolForfeit}
+                  onRematchOnline={onPoolRematch}
+                  onSyncChecksumOnline={onPoolSyncChecksum}
+                />
+              ) : isPinturillo ? (
+                <PinturilloStage
+                  key={`pinturillo-${hubMode}`}
+                  lang={lang}
+                  currentUser={currentUser}
+                  participants={participants}
+                  pinturilloState={hubMode === 'offline' ? null : roomPinturilloGame}
+                  isOffline={hubMode === 'offline'}
+                  isHost={isHost}
+                  voiceChat={voiceChat}
+                  mutedOverride={muted}
+                  onStartOnline={onStartRoomPinturillo}
+                  onStartMatchOnline={onStartPinturilloMatch}
+                  onPickWordOnline={onPinturilloPickWord}
+                  onSendStrokeOnline={onPinturilloStroke}
+                  onUndoOnline={onPinturilloUndo}
+                  onClearOnline={onPinturilloClear}
+                  onSendGuessOnline={onPinturilloGuess}
+                  onRematchOnline={onPinturilloRematch}
+                />
+              ) : (
+                <GamesHubSecondaryStages
+                  selectedGame={selectedGame}
+                  hubMode={hubMode}
+                  lang={lang}
+                  roomId={roomId}
+                  currentUser={currentUser}
+                  participants={participants}
+                  isHost={isHost}
+                  muted={muted}
+                  toggleMute={toggleMute}
+                  voiceChat={voiceChat}
+                  roomHeadSoccerGame={roomHeadSoccerGame}
+                  headSoccerSyncSnapshot={headSoccerSyncSnapshot}
+                  headSoccerPeerInput={headSoccerPeerInput}
+                  roomPokerGame={roomPokerGame}
+                  roomBlackjackGame={roomBlackjackGame}
+                  roomPartyGame={roomPartyGame}
+                  activeBoardState={activeBoardState}
+                  localBoardGame={localBoardGame}
+                  setLocalBoardGame={setLocalBoardGame}
+                  localMoveErr={localMoveErr}
+                  setLocalMoveErr={setLocalMoveErr}
+                  gameMoveError={gameMoveError}
+                  makeOfflineBoardState={makeOfflineBoardState}
+                  handleJoinOfflineBoardSeat={handleJoinOfflineBoardSeat}
+                  handleBackToGames={handleBackToGames}
+                  onStartRoomHeadSoccer={onStartRoomHeadSoccer}
+                  onHeadSoccerJoinSeat={onHeadSoccerJoinSeat}
+                  onHeadSoccerSelectSkin={onHeadSoccerSelectSkin}
+                  onHeadSoccerStartMatch={onHeadSoccerStartMatch}
+                  onHeadSoccerInput={onHeadSoccerInput}
+                  onHeadSoccerSyncState={onHeadSoccerSyncState}
+                  onHeadSoccerRematch={onHeadSoccerRematch}
+                  onStartRoomPoker={onStartRoomPoker}
+                  onPokerJoinSeat={onPokerJoinSeat}
+                  onPokerToggleBots={onPokerToggleBots}
+                  onPokerStartMatch={onPokerStartMatch}
+                  onPokerAction={onPokerAction}
+                  onPokerRebuy={onPokerRebuy}
+                  onStartRoomBlackjack={onStartRoomBlackjack}
+                  onBlackjackJoinSeat={onBlackjackJoinSeat}
+                  onBlackjackBet={onBlackjackBet}
+                  onBlackjackDeal={onBlackjackDeal}
+                  onBlackjackAction={onBlackjackAction}
+                  onBlackjackNewRound={onBlackjackNewRound}
+                  onStartRoomPartyGame={onStartRoomPartyGame}
+                  onRoomPartyAction={onRoomPartyAction}
+                  onStartRoomBoardGame={onStartRoomBoardGame}
+                  onJoinBoardSeat={onJoinBoardSeat}
+                  onStartBoardMatch={onStartBoardMatch}
+                  onMoveBoardGame={onMoveBoardGame}
+                  onResignBoardGame={onResignBoardGame}
+                  onResetBoardGame={onResetBoardGame}
+                />
+              )}
+            </React.Suspense>
           </div>
         </div>
 

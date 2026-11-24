@@ -110,10 +110,14 @@ export function mountSpaFrontend(app: express.Express, deps: SpaFrontendMountDep
 
   const distDir = path.resolve(rootDir, 'dist');
   const distIndex = path.join(distDir, 'index.html');
+  let cachedDistIndexHtml: string | null = null;
+
   if (fs.existsSync(distDir)) {
     app.use(
       express.static(distDir, {
-        maxAge: '7d',
+        maxAge: '30d',
+        etag: true,
+        lastModified: true,
         setHeaders: (res, filePath) => {
           if (
             filePath.endsWith('.html') ||
@@ -121,6 +125,13 @@ export function mountSpaFrontend(app: express.Express, deps: SpaFrontendMountDep
             filePath.includes(`${path.sep}tv${path.sep}`)
           ) {
             res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+            return;
+          }
+          if (
+            filePath.includes(`${path.sep}assets${path.sep}`) &&
+            /\.[a-zA-Z0-9_-]{6,}\.(js|css|woff2|svg|png|webp|jpg|wasm)$/i.test(filePath)
+          ) {
+            res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
           }
         },
       })
@@ -138,13 +149,13 @@ export function mountSpaFrontend(app: express.Express, deps: SpaFrontendMountDep
       const isMusicReq = isMusicAppPath(req.path);
       if (isMusicReq || shouldInjectDeepLinkOg(req.path)) {
         try {
-          const [rawHtml, ogMeta] = await Promise.all([
-            fs.promises.readFile(distIndex, 'utf8'),
-            shouldInjectDeepLinkOg(req.path)
-              ? resolveOpenGraphMetaForRequest(req.originalUrl, getPublicOrigin(req))
-              : Promise.resolve(null),
-          ]);
-          let finalHtml = ogMeta ? injectDynamicOgMeta(rawHtml, ogMeta) : rawHtml;
+          if (cachedDistIndexHtml === null) {
+            cachedDistIndexHtml = await fs.promises.readFile(distIndex, 'utf8');
+          }
+          const ogMeta = shouldInjectDeepLinkOg(req.path)
+            ? await resolveOpenGraphMetaForRequest(req.originalUrl, getPublicOrigin(req))
+            : null;
+          let finalHtml = ogMeta ? injectDynamicOgMeta(cachedDistIndexHtml, ogMeta) : cachedDistIndexHtml;
           if (isMusicReq) {
             finalHtml = injectMusicPwaMeta(finalHtml, getPublicOrigin(req));
           }

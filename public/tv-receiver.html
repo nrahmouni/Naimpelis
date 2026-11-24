@@ -54,6 +54,13 @@
             <span class="rail-label" data-i18n-tab="tdt">TV en Directo</span>
           </button>
 
+          <button type="button" class="hub-tab-btn rail-item" data-tab="champions" tabindex="0">
+            <span class="rail-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polygon points="12 6.8 16.5 10.1 14.8 15.4 9.2 15.4 7.5 10.1 12 6.8"/></svg>
+            </span>
+            <span class="rail-label" data-i18n-tab="champions">Champions</span>
+          </button>
+
           <button type="button" class="hub-tab-btn rail-item" data-tab="releases" tabindex="0">
             <span class="rail-icon" aria-hidden="true">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.1 8.3 22 9.3 17 14.1 18.2 21 12 17.7 5.8 21 7 14.1 2 9.3 8.9 8.3 12 2"/></svg>
@@ -375,6 +382,12 @@
         ></iframe>
       </div>
 
+      <!-- Multi-Champions & Multi-Partido Stage (2-4 screens · ~3/4 screen height) -->
+      <div id="tv-multi-wrap" style="display: none;">
+        <div id="tv-multi-grid" class="mv-count-2"></div>
+        <div id="tv-multi-bar"></div>
+      </div>
+
       <!-- In-player translucent-free Obsidian Slide-Out Mini-Guide Drawer -->
       <aside id="tv-miniguide-drawer" aria-label="Guía rápida de canales">
         <div class="mg-head">
@@ -518,6 +531,7 @@
     <script src="/tv/tv-player-core.js"></script>
     <script src="/tv/tv-player-modes.js"></script>
     <script src="/tv/tv-hub.js"></script>
+    <script src="/tv/tv-champions-multi.js"></script>
     <script src="/vendor/riffan-racing-3d.iife.js?v=20261124d"></script>
     <script src="/tv/tv-game-sprites.js?v=20261124d"></script>
     <script src="/tv/tv-games.js?v=20261124d"></script>

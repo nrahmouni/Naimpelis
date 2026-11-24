@@ -49,7 +49,7 @@ var isTizenDevice =
   (isTizenUa ||
     storedTizenFlag ||
     (typeof window !== 'undefined' && (Boolean(window.tizen) || Boolean(window.__RIFFAN_TIZEN_WIDGET__))) ||
-    /[?&](?:tizen=1|platform=tizen|autoplay=antena3)\b/i.test(searchStr));
+    /[?&](?:tizen=1|platform=tizen)\b/i.test(searchStr));
 try {
   if (isTizenDevice) localStorage.setItem('naim_is_tizen_tv', '1');
 } catch (e) {}
@@ -95,6 +95,7 @@ var TV_I18N = {
     tabSearch: 'Buscar',
     tabHome: 'Inicio',
     tabTdt: 'TV en Directo',
+    tabChampions: 'Champions',
     tabReleases: 'Estrenos',
     tabMovies: 'Cine',
     tabSeries: 'Series',
@@ -198,6 +199,7 @@ var TV_I18N = {
     quickResumePre: 'Seguir viendo · ',
     quickTdtBtn: 'Toda la TDT España',
     quickSportsBtn: 'DAZN y Movistar+',
+    quickChampionsBtn: 'Champions · Multi (1–4)',
     quickKidsBtn: 'Niños · Español',
     quickGamesBtn: 'Juegos TV',
     quickSearchBtn: 'Buscar canal o película',
@@ -302,6 +304,7 @@ var TV_I18N = {
     tabSearch: 'Cercar',
     tabHome: 'Inici',
     tabTdt: 'TV en Directe',
+    tabChampions: 'Champions',
     tabReleases: 'Estrenes',
     tabMovies: 'Cinema',
     tabSeries: 'Sèries',
@@ -405,6 +408,7 @@ var TV_I18N = {
     quickResumePre: 'Seguir veient · ',
     quickTdtBtn: 'Tota la TDT Espanya',
     quickSportsBtn: 'DAZN i Movistar+',
+    quickChampionsBtn: 'Champions · Multi (1–4)',
     quickKidsBtn: 'Niños · Español',
     quickGamesBtn: 'Jocs TV',
     quickSearchBtn: 'Cercar canal o pel·lícula',
@@ -509,6 +513,7 @@ var TV_I18N = {
     tabSearch: 'Search',
     tabHome: 'Home',
     tabTdt: 'Live TV',
+    tabChampions: 'Champions',
     tabReleases: 'Releases',
     tabMovies: 'Movies',
     tabSeries: 'Series',
@@ -612,6 +617,7 @@ var TV_I18N = {
     quickResumePre: 'Continue watching · ',
     quickTdtBtn: 'All Spain DTT',
     quickSportsBtn: 'DAZN & Movistar+',
+    quickChampionsBtn: 'Champions · Multi (1–4)',
     quickKidsBtn: 'Niños · Español',
     quickGamesBtn: 'TV Games',
     quickSearchBtn: 'Search Channel or Movie',
@@ -749,6 +755,7 @@ function applyTvLanguage(nextLang) {
     search: 'tabSearch',
     home: 'tabHome',
     tdt: 'tabTdt',
+    champions: 'tabChampions',
     releases: 'tabReleases',
     movies: 'tabMovies',
     series: 'tabSeries',

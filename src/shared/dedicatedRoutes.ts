@@ -649,6 +649,8 @@ export const DEDICATED_WORLD_ROUTES = new Set([
   'atresplayer',
   'movistar-dazn',
   'dazn-movistar',
+  'champions',
+  'multichampions',
   'musica',
   'music',
 ]);
@@ -709,7 +711,7 @@ export type AppRouteTarget =
   | { kind: 'room'; roomId: string; gameType?: string; isTvMode?: boolean }
   | {
       kind: 'world';
-      world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music';
+      world: 'cine' | 'futbol' | 'champions' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music';
       cineTab?: 'movies' | 'series';
       cineCastellano?: boolean;
       cineCategory?: string;
@@ -998,6 +1000,10 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
     return { kind: 'world', world: 'movistardazn', roomId: queryRoomId };
   }
 
+  if (seg0 === 'champions' || seg0 === 'multichampions') {
+    return { kind: 'world', world: 'champions', roomId: queryRoomId };
+  }
+
   if (seg0 === 'musica' || seg0 === 'music') {
     return {
       kind: 'world',
@@ -1046,7 +1052,7 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
 
 export type CanonicalLinkInput =
   | { kind: 'home' }
-  | { kind: 'world'; world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music'; cineTab?: 'movies' | 'series'; cineCategory?: string; futbolTab?: 'matches' | 'channels' }
+  | { kind: 'world'; world: 'cine' | 'futbol' | 'champions' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music'; cineTab?: 'movies' | 'series'; cineCategory?: string; futbolTab?: 'matches' | 'channels' }
   | { kind: 'movie'; tmdbId?: number; id?: string; title?: string }
   | { kind: 'series'; tmdbId?: number; id?: string; title?: string; season?: number; episode?: number }
   | { kind: 'channel'; id: string; name?: string }
@@ -1072,6 +1078,8 @@ export function buildCanonicalRoute(
         basePath = input.cineCategory ? `${root}/${slugify(input.cineCategory)}` : root;
       } else if (input.world === 'futbol') {
         basePath = input.futbolTab === 'channels' ? '/futbol/canales' : '/futbol';
+      } else if (input.world === 'champions') {
+        basePath = '/champions';
       } else if (input.world === 'tv') {
         basePath = '/directo';
       } else if (input.world === 'juegos') {

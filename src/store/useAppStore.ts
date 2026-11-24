@@ -19,6 +19,7 @@ export type ShellNavSection = 'home' | 'search' | 'rooms' | 'my_list' | 'profile
 export type PrimaryWorldId =
   | 'cine'
   | 'futbol'
+  | 'champions'
   | 'tv'
   | 'juegos'
   | 'sala'
@@ -84,6 +85,7 @@ export interface PlaybackReturnContext {
 const PRIMARY_WORLDS: PrimaryWorldId[] = [
   'cine',
   'futbol',
+  'champions',
   'tv',
   'juegos',
   'sala',

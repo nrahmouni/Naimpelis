@@ -469,9 +469,14 @@ export function App() {
                 isCinemaMode={isCinemaMode}
                 onToggleCinemaMode={handleToggleCinemaMode}
                 secondaryStream={roomState.secondaryStream}
+                secondaryStreams={roomState.secondaryStreams}
+                activeAudioSlot={roomState.activeAudioSlot}
+                onSetMultiAudioSlot={playback.handleSetMultiAudioSlot}
                 onSwapSecondaryStream={playback.handleSwapSecondaryStream}
                 onToggleSecondaryLayout={playback.handleToggleSecondaryLayout}
+                onRetrySecondarySlot={playback.handleRetrySecondarySlot}
                 onCloseSecondaryStream={playback.handleCloseSecondaryStream}
+                onCloseAllSecondaryStreams={playback.handleCloseAllSecondaryStreams}
                 canControlRoom={canControlRoom}
                 hasConnectedSmartTv={hasConnectedSmartTv}
                 participants={roomState.participants}

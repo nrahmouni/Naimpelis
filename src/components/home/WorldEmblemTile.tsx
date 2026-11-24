@@ -1,7 +1,7 @@
 import React, { useId } from 'react';
 import type { AppLanguage } from '../../types';
 
-export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music';
+export type WorldPortalKind = 'cine' | 'futbol' | 'champions' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music';
 
 export interface WorldSpec {
   accent: string;
@@ -95,6 +95,27 @@ export const WORLD_SPECS: Record<WorldPortalKind, WorldSpec> = {
       en: 'Live fixtures · HD match feeds',
       rif: 'Timdyazin srid · HD',
       zh: '顶级赛事高清直播',
+    },
+  },
+  champions: {
+    accent: '#38BDF8',
+    secondary: '#2563EB',
+    glowRgb: '56,189,248',
+    ambient:
+      'radial-gradient(ellipse 68% 54% at 50% 47%, rgba(56,189,248,0.24) 0%, rgba(37,99,235,0.16) 44%, rgba(5,8,18,0) 76%)',
+    title: {
+      es: 'Champions League',
+      ca: 'Champions League',
+      en: 'Champions League',
+      rif: 'Champions League',
+      zh: '欧洲冠军联赛',
+    },
+    subtitle: {
+      es: 'MultiChampions y hasta 4 partidos a la vez',
+      ca: 'MultiChampions i fins a 4 partits alhora',
+      en: 'MultiChampions & up to 4 live matches at once',
+      rif: 'MultiChampions · 4 timdyazin srid',
+      zh: '多路欧冠 · 最多四屏同看',
     },
   },
   tv: {
@@ -875,6 +896,38 @@ export const WorldEmblemTile: React.FC<{
             strokeLinecap="round"
             fill="none"
           />
+        </g>
+      )}
+
+      {kind === 'champions' && (
+        <g filter={`url(#${ids.drop})`}>
+          <circle
+            cx="60"
+            cy="60"
+            r="27"
+            fill={`url(#${ids.accentSoft})`}
+            stroke={`url(#${ids.accent})`}
+            strokeWidth="2.1"
+          />
+          <circle
+            cx="60"
+            cy="60"
+            r="20.5"
+            stroke="#E0F2FE"
+            strokeOpacity="0.45"
+            strokeWidth="1.2"
+            strokeDasharray="6 5"
+            className="rtv-we-center rtv-we-orbit"
+          />
+          <path
+            d="M 46 38 H 74 L 69 57 C 68 64 64 68 60 68 C 56 68 52 64 51 57 Z"
+            fill={`url(#${ids.platinum})`}
+          />
+          <path d="M 46 42 C 37 42 36 53 45 56" stroke={spec.accent} strokeWidth="2.6" strokeLinecap="round" fill="none" />
+          <path d="M 74 42 C 83 42 84 53 75 56" stroke={spec.accent} strokeWidth="2.6" strokeLinecap="round" fill="none" />
+          <rect x="57" y="68" width="6" height="8" rx="1.5" fill={`url(#${ids.platinum})`} />
+          <rect x="49" y="76" width="22" height="5" rx="2.5" fill={`url(#${ids.accent})`} />
+          <path d="M 60 44 L 62.2 49 L 67.5 49.4 L 63.4 52.9 L 64.7 58 L 60 55.2 L 55.3 58 L 56.6 52.9 L 52.5 49.4 L 57.8 49 Z" fill="#0A1224" />
         </g>
       )}
 

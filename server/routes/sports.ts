@@ -38,9 +38,14 @@ import {
   translateFootballStatusLabel,
 } from './sportsHelpers/upcomingCalendarHelper.ts';
 import { ensureEpgScheduleReady, extractEspnCompBroadcastNames, runWithConcurrency, verifySingleFixtureTvSchedule } from '../services/tvScheduleVerifier.ts';
+import { fetchLeagueStandings } from '../services/footballHelpers/standingsParser.ts';
+import { TDT_DAZN_AND_MOVISTAR_SPORTS_CHANNELS } from '../data/tdtDaznSportsChannels.ts';
+import { TDT_NATIONAL_AND_PAY_CHANNELS } from '../data/tdtNationalAndPayChannels.ts';
 import { registerChiringuitoRoutes } from './chiringuitoRoutes.ts';
 import { extractLiveSportsHlsDirect } from '../extractors/sportsExtractor.ts';
 import { livePushHub } from '../services/livePushHub.ts';
+
+const championsHubCache = new Map<string, { payload: any; ts: number }>();
 
 let cachedSportsSchedule: { matches: any[]; ts: number } | null = null;
 let liveScoresCache: { matches: any[]; ts: number } | null = null;
@@ -676,6 +681,93 @@ export function registerSportsRoutes(app: Express): void {
       forceRefresh: req.query.refresh === '1',
     });
     return res.json({ success: true, ...result });
+  });
+
+  app.get('/api/sports/champions-hub', async (req, res) => {
+    const rawLang = typeof req.query.lang === 'string' ? req.query.lang.trim().toUpperCase() : 'ES';
+    const langKey = rawLang === 'EN' || rawLang === 'ZH' ? rawLang : 'ES';
+    const forceRefresh = req.query.refresh === '1';
+
+    const cached = championsHubCache.get(langKey);
+    if (!forceRefresh && cached && Date.now() - cached.ts < 20 * 1000) {
+      return res.json({ success: true, ...cached.payload });
+    }
+
+    try {
+      const [boardSettled, standingsSettled] = await Promise.allSettled([
+        getFootballBoardMatches({ calendar: 'champions', lang: langKey, forceRefresh }),
+        fetchLeagueStandings({
+          leagueSlug: 'uefa.champions',
+          tournamentName: 'UEFA Champions League',
+        }),
+      ]);
+
+      const board =
+        boardSettled.status === 'fulfilled'
+          ? boardSettled.value
+          : { dateKey: '', matches: [] };
+      const standings = standingsSettled.status === 'fulfilled' ? standingsSettled.value : null;
+
+      const mplusChampions = TDT_NATIONAL_AND_PAY_CHANNELS.find((c) => c.id === 'mplus-champions');
+      const daznChannels = TDT_DAZN_AND_MOVISTAR_SPORTS_CHANNELS.filter((c) =>
+        ['dazn-1', 'dazn-2', 'dazn-3', 'dazn-4'].includes(c.id)
+      );
+      const permanentMux = getPermanent247SportsMatches().filter((m) =>
+        ['mux-champions', 'mux-uk-sports'].includes(m.id)
+      );
+
+      const multiplexChannels = [
+        ...(mplusChampions
+          ? [
+              {
+                id: mplusChampions.id,
+                name: mplusChampions.name,
+                shortMark: mplusChampions.shortMark,
+                network: mplusChampions.network,
+                quality: mplusChampions.quality,
+                description: mplusChampions.description,
+                channels: orderBoardChannels(mplusChampions.channels, 'uefa.champions', langKey),
+              },
+            ]
+          : []),
+        ...permanentMux.map((mux) => ({
+          id: mux.id,
+          name: mux.title,
+          shortMark: mux.id === 'mux-champions' ? 'MULTI UCL' : 'UK SPORT',
+          network: mux.competition,
+          quality: '1080p HD',
+          description: mux.competition,
+          channels: orderBoardChannels(mux.channels || [], 'uefa.champions', langKey),
+        })),
+        ...daznChannels.map((ch) => ({
+          id: ch.id,
+          name: ch.name,
+          shortMark: ch.shortMark,
+          network: ch.network,
+          quality: ch.quality,
+          description: ch.description,
+          channels: orderBoardChannels(ch.channels, 'uefa.champions', langKey),
+        })),
+      ];
+
+      const payload = {
+        dateKey: board.dateKey || '',
+        matches: Array.isArray(board.matches) ? board.matches : [],
+        standings,
+        multiplexChannels,
+      };
+      championsHubCache.set(langKey, { payload, ts: Date.now() });
+      return res.json({ success: true, ...payload });
+    } catch (err) {
+      logger.warn({ err }, 'champions_hub_fetch_error');
+      return res.json({
+        success: true,
+        dateKey: '',
+        matches: [],
+        standings: null,
+        multiplexChannels: [],
+      });
+    }
   });
 
   app.get('/api/sports/match-details', async (req, res) => {

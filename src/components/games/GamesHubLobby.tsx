@@ -5,9 +5,14 @@ import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { RiffanGamesIcon } from '../ui/RiffanIcons';
 import { GameLogoArtwork, type UnifiedGameId } from './GameLogos';
-import { animateStaggerCards } from './arcade/arcadeAnimations';
-import { RobotMascot3DBadge } from './arcade/RobotMascot3DBadge';
-import { RiveInteractiveBadge } from './arcade/RiveInteractiveBadge';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
+
+const RobotMascot3DBadge = lazyWithRetry(() =>
+  import('./arcade/RobotMascot3DBadge').then((m) => ({ default: m.RobotMascot3DBadge }))
+);
+const RiveInteractiveBadge = lazyWithRetry(() =>
+  import('./arcade/RiveInteractiveBadge').then((m) => ({ default: m.RiveInteractiveBadge }))
+);
 
 export type GameCategoryFilter = 'all' | 'arcade' | 'party' | 'board';
 
@@ -48,7 +53,13 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
   const gridRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    animateStaggerCards(gridRef.current, '.nc-game-card');
+    let cancelled = false;
+    void import('./arcade/arcadeAnimations').then(({ animateStaggerCards }) => {
+      if (!cancelled) animateStaggerCards(gridRef.current, '.nc-game-card');
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [activeCategory]);
 
   const gameCatalog: GameCatalogEntry[] = [
@@ -539,15 +550,17 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
               gameId={featuredGame.id}
               className="w-full h-full group-hover:scale-[1.03] transition-transform duration-300"
             />
-            <div className="pointer-events-none absolute bottom-1.5 left-1.5 w-12 h-12 opacity-90">
-              <RiveInteractiveBadge
-                theme={featuredGame.id === 'racing3d' ? 'vehicles' : 'skills'}
-                className="w-full h-full"
-              />
-            </div>
-            <div className="pointer-events-none absolute -bottom-1 right-1 w-24 h-24">
-              <RobotMascot3DBadge clip="Dance" character="robot" className="w-full h-full" />
-            </div>
+            <React.Suspense fallback={null}>
+              <div className="pointer-events-none absolute bottom-1.5 left-1.5 w-12 h-12 opacity-90">
+                <RiveInteractiveBadge
+                  theme={featuredGame.id === 'racing3d' ? 'vehicles' : 'skills'}
+                  className="w-full h-full"
+                />
+              </div>
+              <div className="pointer-events-none absolute -bottom-1 right-1 w-24 h-24">
+                <RobotMascot3DBadge clip="Dance" character="robot" className="w-full h-full" />
+              </div>
+            </React.Suspense>
           </div>
         </div>
       )}

@@ -3,6 +3,7 @@ import { Loader2, SlidersHorizontal, Star } from 'lucide-react';
 import type {
   AppLanguage,
   FavoriteChannelItem,
+  MultiScreenSourceInput,
   SpanishTdtChannel,
   SportsMatch,
 } from '../../types';
@@ -45,6 +46,7 @@ interface FootballWorldViewProps {
   sportsSearch: string;
   setSportsSearch: (val: string) => void;
   activeVideoRawUrl: string;
+  activeMultiUrls?: string[];
   loadingItemId: string | null;
   loadingTdt: boolean;
   footballSectionLiveChannels: SpanishTdtChannel[];
@@ -52,11 +54,7 @@ interface FootballWorldViewProps {
   isChannelFavorited: (favId: string) => boolean;
   onToggleChannelFavorite: (entry: Omit<FavoriteChannelItem, 'addedAt'>) => void;
   onPlaySportsMatch: (match: SportsMatch, channelIndex: number) => void;
-  onPlaySecondaryChannel?: (opts: {
-    sourceUrl: string;
-    title: string;
-    subtitle?: string;
-  }) => void;
+  onPlaySecondaryChannel?: (opts: MultiScreenSourceInput) => void;
   onPlayTdtChannel: (
     channel: SpanishTdtChannel,
     signalIndex?: number,
@@ -81,6 +79,7 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
   sportsSearch,
   setSportsSearch,
   activeVideoRawUrl,
+  activeMultiUrls = [],
   loadingItemId,
   loadingTdt,
   footballSectionLiveChannels,
@@ -303,18 +302,28 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
               setFutbolFavOnly(false);
             }}
             activeVideoRawUrl={activeVideoRawUrl}
+            activeMultiUrls={activeMultiUrls}
             loadingItemId={loadingItemId}
             onPlaySportsMatch={onPlaySportsMatch}
             onPlaySecondaryChannel={
               onPlaySecondaryChannel
-                ? (m, idx) =>
+                ? (m, idx) => {
+                    const chosen = m.channels[idx] || m.channels[0];
+                    if (!chosen?.sourceUrl) return;
+                    const fallbackUrls = m.channels
+                      .map((c) => c.sourceUrl)
+                      .filter((u) => Boolean(u && u !== chosen.sourceUrl));
                     onPlaySecondaryChannel({
-                      sourceUrl: m.channels[idx]?.sourceUrl || '',
+                      sourceUrl: chosen.sourceUrl,
+                      fallbackUrls,
                       title: m.title,
                       subtitle: m.competition,
-                    })
+                      matchId: m.id,
+                    });
+                  }
                 : undefined
             }
+            onAddToMultiScreen={onPlaySecondaryChannel}
             isChannelFavorited={isChannelFavorited}
             onToggleChannelFavorite={onToggleChannelFavorite}
           />

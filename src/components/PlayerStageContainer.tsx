@@ -1,6 +1,6 @@
 import React from 'react';
 import type { PointerEventHandler } from 'react';
-import { ListVideo, Lock } from 'lucide-react';
+import { Columns2, ListVideo, Lock, PictureInPicture2, Volume2, X } from 'lucide-react';
 import type {
   AppLanguage,
   CatalogMovie,
@@ -67,9 +67,14 @@ interface PlayerStageContainerProps {
   isCinemaMode: boolean;
   onToggleCinemaMode: () => void;
   secondaryStream: SecondaryStreamState | null;
-  onSwapSecondaryStream: () => void;
+  secondaryStreams?: SecondaryStreamState[];
+  activeAudioSlot?: number;
+  onSetMultiAudioSlot?: (slot: number) => void;
+  onSwapSecondaryStream: (slotIdx?: number) => void;
   onToggleSecondaryLayout: () => void;
-  onCloseSecondaryStream: () => void;
+  onRetrySecondarySlot?: (slotIdx: number) => void;
+  onCloseSecondaryStream: (slotIdx?: number) => void;
+  onCloseAllSecondaryStreams?: () => void;
   canControlRoom: boolean;
   hasConnectedSmartTv: boolean;
   participants: Participant[];
@@ -158,9 +163,14 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
   isCinemaMode,
   onToggleCinemaMode,
   secondaryStream,
+  secondaryStreams = [],
+  activeAudioSlot = 0,
+  onSetMultiAudioSlot,
   onSwapSecondaryStream,
   onToggleSecondaryLayout,
+  onRetrySecondarySlot,
   onCloseSecondaryStream,
+  onCloseAllSecondaryStreams,
   canControlRoom,
   hasConnectedSmartTv,
   participants,
@@ -345,9 +355,14 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
               isCinemaMode={isCinemaMode}
               onToggleCinemaMode={onToggleCinemaMode}
               secondaryStream={secondaryStream}
+              secondaryStreams={secondaryStreams}
+              activeAudioSlot={activeAudioSlot}
+              onSetMultiAudioSlot={onSetMultiAudioSlot}
               onSwapSecondaryStream={onSwapSecondaryStream}
               onToggleSecondaryLayout={onToggleSecondaryLayout}
+              onRetrySecondarySlot={onRetrySecondarySlot}
               onCloseSecondaryStream={onCloseSecondaryStream}
+              onCloseAllSecondaryStreams={onCloseAllSecondaryStreams}
               canControlRoom={canControlRoom}
               isMinimized={isDockedMini}
               isCompressed={isScrollCompressed}
@@ -403,23 +418,122 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
             />
           </React.Suspense>
 
-          {isPlayerActive && !isDockedMini && !isExtracting && secondaryStream && (
-            <div className="px-4 py-2 bg-[#0D0D12] border-t border-white/[0.08] flex items-center justify-between gap-2">
-              <span className="text-[11px] font-semibold text-white break-words">
-                📺 2ª Pantalla Activa: {secondaryStream.title}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  onCloseSecondaryStream();
-                }}
-                className="min-h-8 px-3 rounded-full bg-[#7C3AED]/20 border border-[#8B5CF6]/45 text-[11px] font-bold text-[#A78BFA] whitespace-nowrap cursor-pointer hover:bg-[#7C3AED]/35 active:scale-95 transition-all"
-              >
-                Cerrar 2ª Pantalla
-              </button>
-            </div>
-          )}
+          {(() => {
+            const activeExtra =
+              secondaryStreams.length > 0
+                ? secondaryStreams
+                : secondaryStream
+                ? [secondaryStream]
+                : [];
+            if (!isPlayerActive || isDockedMini || isExtracting || activeExtra.length === 0) {
+              return null;
+            }
+            const totalCount = 1 + activeExtra.length;
+            return (
+              <div className="px-3 sm:px-4 py-2 bg-[#0D0D12] border-t border-white/[0.08] flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      onSetMultiAudioSlot?.(0);
+                    }}
+                    className={`min-h-8 px-2.5 rounded-lg text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer transition-all max-w-[180px] ${
+                      activeAudioSlot === 0
+                        ? 'bg-emerald-500/20 border border-emerald-400/60 text-emerald-300'
+                        : 'bg-white/[0.05] border border-white/[0.08] text-zinc-300 hover:bg-white/[0.1]'
+                    }`}
+                  >
+                    {activeAudioSlot === 0 && <Volume2 className="w-3 h-3 shrink-0" />}
+                    <span className="truncate">P1 · {effectiveVideoState.title}</span>
+                  </button>
+
+                  {activeExtra.map((st, sIdx) => {
+                    const slotNum = sIdx + 1;
+                    const audioHere = activeAudioSlot === slotNum;
+                    return (
+                      <div
+                        key={st.id || `${st.rawSourceUrl}-${sIdx}`}
+                        className={`inline-flex items-center rounded-lg border overflow-hidden max-w-[200px] ${
+                          audioHere
+                            ? 'bg-emerald-500/20 border-emerald-400/60 text-emerald-200'
+                            : 'bg-white/[0.05] border-white/[0.08] text-zinc-200'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            onSetMultiAudioSlot?.(slotNum);
+                          }}
+                          className="min-h-8 px-2.5 text-[11px] font-semibold inline-flex items-center gap-1.5 cursor-pointer hover:bg-white/[0.06] min-w-0"
+                        >
+                          {audioHere && <Volume2 className="w-3 h-3 shrink-0" />}
+                          <span className="truncate">
+                            P{slotNum + 1} · {st.title}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            onCloseSecondaryStream(sIdx);
+                          }}
+                          aria-label={pickLang(lang, {
+                            es: `Cerrar Pantalla ${slotNum + 1}`,
+                            ca: `Tancar Pantalla ${slotNum + 1}`,
+                            en: `Close Screen ${slotNum + 1}`,
+                          })}
+                          className="min-h-8 px-1.5 text-zinc-400 hover:text-white hover:bg-rose-600/80 cursor-pointer transition-colors shrink-0"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {totalCount === 2 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        onToggleSecondaryLayout();
+                      }}
+                      className="min-h-8 px-3 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-[11px] font-bold text-zinc-200 inline-flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all"
+                    >
+                      {activeExtra[0]?.layout === 'split' ? (
+                        <PictureInPicture2 className="w-3.5 h-3.5" />
+                      ) : (
+                        <Columns2 className="w-3.5 h-3.5" />
+                      )}
+                      <span>
+                        {activeExtra[0]?.layout === 'split'
+                          ? pickLang(lang, { es: 'Esquina PiP', ca: 'Cantonada PiP', en: 'Corner PiP' })
+                          : pickLang(lang, { es: 'Dividir 3/4', ca: 'Dividir 3/4', en: 'Split 3/4' })}
+                      </span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      if (onCloseAllSecondaryStreams) onCloseAllSecondaryStreams();
+                      else onCloseSecondaryStream();
+                    }}
+                    className="min-h-8 px-3 rounded-lg bg-[#7C3AED]/20 border border-[#8B5CF6]/45 text-[11px] font-bold text-[#C4B5FD] whitespace-nowrap cursor-pointer hover:bg-[#7C3AED]/35 active:scale-95 transition-all"
+                  >
+                    {pickLang(lang, {
+                      es: `Cerrar Multi (${totalCount})`,
+                      ca: `Tancar Multi (${totalCount})`,
+                      en: `Close Multi (${totalCount})`,
+                    })}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       </div>
 

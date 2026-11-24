@@ -72,7 +72,21 @@ export function useRoomAuthoritativeState(params: {
   const [pinnedMessage, setPinnedMessage] = useState<ChatMessage | null>(null);
   const [roomQueue, setRoomQueue] = useState<RoomQueueItem[]>([]);
   const [videoState, setVideoState] = useState<VideoState>(INITIAL_VIDEO_STATE);
-  const [secondaryStream, setSecondaryStream] = useState<SecondaryStreamState | null>(null);
+  const [secondaryStreams, setSecondaryStreams] = useState<SecondaryStreamState[]>([]);
+  const [activeAudioSlot, setActiveAudioSlot] = useState<number>(0);
+
+  const secondaryStream: SecondaryStreamState | null = secondaryStreams[0] ?? null;
+  const setSecondaryStream: React.Dispatch<React.SetStateAction<SecondaryStreamState | null>> =
+    React.useCallback((updater) => {
+      setSecondaryStreams((prev) => {
+        const currentFirst = prev[0] ?? null;
+        const nextFirst = typeof updater === 'function' ? updater(currentFirst) : updater;
+        if (!nextFirst) {
+          return prev.slice(1);
+        }
+        return [nextFirst, ...prev.slice(1)].slice(0, 3);
+      });
+    }, []);
   const [lockNoticeToast, setLockNoticeToast] = useState<string | null>(null);
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
   const [cloudFrame, setCloudFrame] = useState<string | null>(null);
@@ -188,6 +202,10 @@ export function useRoomAuthoritativeState(params: {
     setVideoState,
     secondaryStream,
     setSecondaryStream,
+    secondaryStreams,
+    setSecondaryStreams,
+    activeAudioSlot,
+    setActiveAudioSlot,
     lockNoticeToast,
     setLockNoticeToast,
     floatingReactions,

@@ -23,24 +23,54 @@ import {
 } from '../../shared/boardGames';
 import type { PartyColor, PartyGameState, PartyGameType } from '../../shared/partyGames';
 import type { GameVoiceChatState } from '../../hooks/useGameVoiceChat';
-import { RoomBoardGamePanel } from '../RoomBoardGamePanel';
-import { PartyGamesStage, type PartyOnlineAction } from '../PartyGamesStage';
-import { HeadSoccerStage } from '../HeadSoccerStage';
-import { PokerHoldemStage } from '../PokerHoldemStage';
-import { BlackjackStage } from '../BlackjackStage';
-import { PenaltyShootoutStage } from './PenaltyShootoutStage';
-import { PingPongStage } from './PingPongStage';
-import { SoccerPongStage } from './SoccerPongStage';
-import { GyroArcadeStage } from './GyroArcadeStage';
-import { GyroMotionPackStage } from './GyroMotionPackStage';
-import { ArcadePuzzleStage } from './arcade/ArcadePuzzleStage';
-import { ArcadeActionStage } from './arcade/ArcadeActionStage';
-import { ArcadeRetroStage } from './arcade/ArcadeRetroStage';
-import { TvTriviaStage } from './arcade/TvTriviaStage';
+import type { PartyOnlineAction } from '../PartyGamesStage';
 import type { UnifiedGameId } from './GameLogos';
 import { isPartyGame } from './useGamesHubController';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 
-const Racing3DStage = React.lazy(() =>
+const RoomBoardGamePanel = lazyWithRetry(() =>
+  import('../RoomBoardGamePanel').then((m) => ({ default: m.RoomBoardGamePanel }))
+);
+const PartyGamesStage = lazyWithRetry(() =>
+  import('../PartyGamesStage').then((m) => ({ default: m.PartyGamesStage }))
+);
+const HeadSoccerStage = lazyWithRetry(() =>
+  import('../HeadSoccerStage').then((m) => ({ default: m.HeadSoccerStage }))
+);
+const PokerHoldemStage = lazyWithRetry(() =>
+  import('../PokerHoldemStage').then((m) => ({ default: m.PokerHoldemStage }))
+);
+const BlackjackStage = lazyWithRetry(() =>
+  import('../BlackjackStage').then((m) => ({ default: m.BlackjackStage }))
+);
+const PenaltyShootoutStage = lazyWithRetry(() =>
+  import('./PenaltyShootoutStage').then((m) => ({ default: m.PenaltyShootoutStage }))
+);
+const PingPongStage = lazyWithRetry(() =>
+  import('./PingPongStage').then((m) => ({ default: m.PingPongStage }))
+);
+const SoccerPongStage = lazyWithRetry(() =>
+  import('./SoccerPongStage').then((m) => ({ default: m.SoccerPongStage }))
+);
+const GyroArcadeStage = lazyWithRetry(() =>
+  import('./GyroArcadeStage').then((m) => ({ default: m.GyroArcadeStage }))
+);
+const GyroMotionPackStage = lazyWithRetry(() =>
+  import('./GyroMotionPackStage').then((m) => ({ default: m.GyroMotionPackStage }))
+);
+const ArcadePuzzleStage = lazyWithRetry(() =>
+  import('./arcade/ArcadePuzzleStage').then((m) => ({ default: m.ArcadePuzzleStage }))
+);
+const ArcadeActionStage = lazyWithRetry(() =>
+  import('./arcade/ArcadeActionStage').then((m) => ({ default: m.ArcadeActionStage }))
+);
+const ArcadeRetroStage = lazyWithRetry(() =>
+  import('./arcade/ArcadeRetroStage').then((m) => ({ default: m.ArcadeRetroStage }))
+);
+const TvTriviaStage = lazyWithRetry(() =>
+  import('./arcade/TvTriviaStage').then((m) => ({ default: m.TvTriviaStage }))
+);
+const Racing3DStage = lazyWithRetry(() =>
   import('./racing/Racing3DStage').then((m) => ({ default: m.Racing3DStage }))
 );
 

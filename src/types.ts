@@ -172,13 +172,29 @@ export interface VideoState {
   updatedBy?: string;
 }
 
+export const MAX_MULTI_SCREENS = 4;
+
 export interface SecondaryStreamState {
+  id: string;
   url: string;
   rawSourceUrl: string;
   title: string;
   subtitle?: string;
   mode: 'hls' | 'direct';
   layout: 'corner' | 'split';
+  fallbackUrls?: string[];
+  matchId?: string;
+  status?: 'loading' | 'ready' | 'error';
+}
+
+export interface MultiScreenSourceInput {
+  sourceUrl: string;
+  title: string;
+  subtitle?: string;
+  preferredSlotIndex?: number;
+  fallbackUrls?: string[];
+  matchId?: string;
+  forceLayout?: 'split' | 'corner';
 }
 
 export interface SubtitleTrackItem {

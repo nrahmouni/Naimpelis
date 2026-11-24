@@ -119,9 +119,6 @@ var activeHubTab = 'home';
 var autoFailoverLock = false;
 var activeLiveFailedTrackIdxs = {};
 var activeLiveFailedHostKeys = {};
-var pendingTizenAutoLaunchAntena3 = false;
-var tizenAutoLaunchTriggered = false;
-var tizenAutoLaunchFallbackTimer = null;
 
 // Clean _upd cache-buster parameter once loaded
 try {

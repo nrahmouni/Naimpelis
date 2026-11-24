@@ -1,9 +1,10 @@
 import React from 'react';
-import { ChevronRight, Loader2, Play, Star } from 'lucide-react';
+import { Check, ChevronRight, Columns2, Loader2, Play, Star } from 'lucide-react';
 import type {
   AppLanguage,
   FavoriteChannelItem,
   FootballMatchboardItem,
+  MultiScreenSourceInput,
   StreamTrack,
 } from '../../types';
 import { triggerHaptic } from '../../utils/haptics';
@@ -24,11 +25,13 @@ interface FootballMatchRowProps {
   showLeagueBadge?: boolean;
   showZhIndicator?: boolean;
   activeVideoRawUrl?: string;
+  activeMultiUrls?: string[];
   loadingItemId?: string | null;
   isChannelFavorited: (favId: string) => boolean;
   onToggleChannelFavorite: (entry: Omit<FavoriteChannelItem, 'addedAt'>) => void;
   onOpenMatchSheet: (item: FootballMatchboardItem) => void;
   onQuickWatch: (e: React.MouseEvent, item: FootballMatchboardItem, channelIndex: number) => void;
+  onAddToMultiScreen?: (source: MultiScreenSourceInput) => void;
 }
 
 function formatQuickChannelLabel(ch: StreamTrack, lang: AppLanguage): string {
@@ -74,11 +77,13 @@ export const FootballMatchRow = React.memo<FootballMatchRowProps>(({
   showLeagueBadge = false,
   showZhIndicator = false,
   activeVideoRawUrl,
+  activeMultiUrls = [],
   loadingItemId,
   isChannelFavorited,
   onToggleChannelFavorite,
   onOpenMatchSheet,
   onQuickWatch,
+  onAddToMultiScreen,
 }) => {
   const recommendedSportsLang = showZhIndicator ? 'ZH' : resolveRecommendedSportsLang(lang);
   const preferredIdx = React.useMemo(
@@ -94,6 +99,9 @@ export const FootballMatchRow = React.memo<FootballMatchRowProps>(({
   const isSaved = isChannelFavorited(favId);
   const isPlayingThisMatch = item.channels.some(
     (c) => activeVideoRawUrl && c.sourceUrl === activeVideoRawUrl
+  );
+  const isInMultiScreen = item.channels.some(
+    (c) => c.sourceUrl && activeMultiUrls.includes(c.sourceUrl)
   );
   const isExtracting = Boolean(loadingItemId?.startsWith(item.id));
   const showNumericScore = hasValidScore(item.homeScore, item.awayScore);
@@ -327,6 +335,48 @@ export const FootballMatchRow = React.memo<FootballMatchRowProps>(({
                 </button>
               );
             })}
+
+            {onAddToMultiScreen && primaryCh?.sourceUrl && (
+              <button
+                type="button"
+                disabled={Boolean(loadingItemId)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerHaptic('light');
+                  const fallbackUrls = orderedFeedEntries
+                    .map(({ ch }) => ch.sourceUrl)
+                    .filter((u): u is string => Boolean(u && u !== primaryCh.sourceUrl));
+                  onAddToMultiScreen({
+                    sourceUrl: primaryCh.sourceUrl,
+                    fallbackUrls,
+                    title: `${item.homeTeam} vs ${item.awayTeam}`,
+                    subtitle: item.leagueName || item.groupTitle || 'Multi-Partido HD',
+                    matchId: item.id,
+                  });
+                }}
+                aria-label={pickLang(lang, {
+                  es: 'Añadir a Multi-Partido',
+                  ca: 'Afegir a Multi-Partit',
+                  en: 'Add to Multi-View',
+                })}
+                className={`min-h-[38px] px-3 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 border whitespace-nowrap shrink-0 ${
+                  isInMultiScreen
+                    ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                    : 'bg-sky-500/[0.12] hover:bg-sky-500/25 border-sky-400/35 text-sky-200 hover:text-white'
+                }`}
+              >
+                {isInMultiScreen ? (
+                  <Check className="w-3.5 h-3.5 shrink-0" />
+                ) : (
+                  <Columns2 className="w-3.5 h-3.5 shrink-0" />
+                )}
+                <span>
+                  {isInMultiScreen
+                    ? pickLang(lang, { es: 'En Multi', ca: 'En Multi', en: 'In Multi' })
+                    : '+ Multi'}
+                </span>
+              </button>
+            )}
 
             <button
               type="button"

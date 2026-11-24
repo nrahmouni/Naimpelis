@@ -11,6 +11,7 @@ import type {
   CatalaSeriesDetails,
   CatalogMovie,
   FavoriteChannelItem,
+  MultiScreenSourceInput,
   Participant,
   RoomQueueItem,
   SpanishTdtChannel,
@@ -62,6 +63,7 @@ interface MediaCatalogHubProps {
   lang: AppLanguage;
   userName: string;
   activeVideoRawUrl: string;
+  activeMultiUrls?: string[];
   loadingItemId: string | null;
   roomQueue: RoomQueueItem[];
   watchHistory: WatchHistoryItem[];
@@ -98,11 +100,7 @@ interface MediaCatalogHubProps {
   onRemoveFromQueue: (itemId: string) => void;
   onPlayQueueItem: (item: RoomQueueItem) => void;
   onStartPollFromQueue?: () => void;
-  onPlaySecondaryChannel?: (opts: {
-    sourceUrl: string;
-    title: string;
-    subtitle?: string;
-  }) => void;
+  onPlaySecondaryChannel?: (opts: MultiScreenSourceInput) => void;
   hasConnectedSmartTv?: boolean;
   activeMediaTitle?: string;
   onCreateNewRoom?: (customRoomName?: string) => void;
@@ -129,6 +127,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   activeSection,
   lang,
   activeVideoRawUrl,
+  activeMultiUrls = [],
   loadingItemId,
   watchlist,
   favoriteChannels,
@@ -471,6 +470,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             sportsSearch={liveTv.sportsSearch}
             setSportsSearch={liveTv.setSportsSearch}
             activeVideoRawUrl={activeVideoRawUrl}
+            activeMultiUrls={activeMultiUrls}
             loadingItemId={loadingItemId}
             loadingTdt={liveTv.loadingTdt}
             footballSectionLiveChannels={liveTv.footballSectionLiveChannels}

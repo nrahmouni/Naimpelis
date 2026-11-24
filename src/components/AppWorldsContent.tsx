@@ -45,6 +45,11 @@ const RiffanMusicWorldView = lazyWithRetry(() =>
     default: m.RiffanMusicWorldView,
   }))
 );
+const ChampionsWorldView = lazyWithRetry(() =>
+  import('./champions/ChampionsWorldView').then((m) => ({
+    default: m.ChampionsWorldView,
+  }))
+);
 
 interface AppWorldsContentProps {
   controller: ReturnType<typeof useAppController>;
@@ -147,6 +152,29 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
 
   const shareRoomId = sessionMode !== 'solo' && roomId ? roomId : undefined;
 
+  const favoriteChannelIdSet = React.useMemo(
+    () => new Set(favoriteChannels.map((c) => c.favId)),
+    [favoriteChannels]
+  );
+  const isChannelFavorited = React.useCallback(
+    (favId: string) => favoriteChannelIdSet.has(favId),
+    [favoriteChannelIdSet]
+  );
+
+  const activeMultiUrls = React.useMemo(() => {
+    const urls: string[] = [];
+    if (roomState.videoState.mode !== 'idle' && roomState.videoState.rawSourceUrl) {
+      urls.push(roomState.videoState.rawSourceUrl);
+    }
+    for (const s of roomState.secondaryStreams || []) {
+      if (s.rawSourceUrl) urls.push(s.rawSourceUrl);
+    }
+    return urls;
+  }, [roomState.videoState.mode, roomState.videoState.rawSourceUrl, roomState.secondaryStreams]);
+
+  const activeMultiCount =
+    roomState.videoState.mode !== 'idle' ? 1 + (roomState.secondaryStreams?.length || 0) : 0;
+
   const handleShareActiveWorld = () => {
     const store = useAppStore.getState();
     let target: CanonicalLinkInput = { kind: 'home' };
@@ -216,6 +244,9 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     } else if (activeWorld === 'music') {
       target = { kind: 'world', world: 'music' };
       title = 'Riffan Music · Toda la música y radios 24/7';
+    } else if (activeWorld === 'champions') {
+      target = { kind: 'world', world: 'champions' };
+      title = 'RiffanTV · Champions League & Multi-Partido';
     }
 
     void shareDedicatedLink({ target, roomId: shareRoomId, title });
@@ -262,7 +293,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
                 world === 'belix' ||
                 world === 'atresplayer' ||
                 world === 'movistardazn' ||
-                world === 'music',
+                world === 'music' ||
+                world === 'champions',
               originRect,
             })
           }
@@ -643,6 +675,54 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     );
   }
 
+  if (activeWorld === 'champions') {
+    return (
+      <WorldShell
+        world="champions"
+        title="Champions League"
+        lang={lang}
+        sessionMode={sessionMode}
+        onUpgradeSoloToParty={() =>
+          void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
+        }
+        onShareWorld={handleShareActiveWorld}
+        onBack={goBackWorld}
+        onGoHome={goHome}
+        onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+        searchValue={worldSearchQuery}
+        onSearchChange={setWorldSearchQuery}
+        searchPlaceholder={pickLang(lang, {
+          es: 'Buscar equipo, partido o canal Champions...',
+          ca: 'Cercar equip, partit o canal Champions...',
+          en: 'Search Champions team, match or channel...',
+        })}
+        className={portalLandingActive ? 'rtv-world-touchdown' : ''}
+      >
+        <ChampionsWorldView
+          lang={lang}
+          shareRoomId={shareRoomId}
+          externalSearchQuery={worldSearchQuery}
+          activeVideoRawUrl={roomState.videoState.rawSourceUrl}
+          activeMultiUrls={activeMultiUrls}
+          activeMultiCount={activeMultiCount}
+          loadingItemId={playback.loadingItemId}
+          isChannelFavorited={isChannelFavorited}
+          onToggleChannelFavorite={socialActions.handleToggleChannelFavorite}
+          onPlaySportsMatch={(match, idx) => {
+            void playback.handlePlaySportsMatch(match, idx);
+          }}
+          onPlaySecondaryChannel={(src) => {
+            void playback.handlePlaySecondaryChannel(src);
+          }}
+          onLaunchMultiMatchPreset={(sources) => {
+            void playback.handleLaunchMultiMatchPreset(sources);
+          }}
+          onCloseAllMultiScreens={playback.handleCloseAllSecondaryStreams}
+        />
+      </WorldShell>
+    );
+  }
+
   return (
     <WorldShell
       world={activeWorld}
@@ -776,6 +856,7 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
         lang={lang}
         userName={currentUser.name}
         activeVideoRawUrl={roomState.videoState.rawSourceUrl}
+        activeMultiUrls={activeMultiUrls}
         activeMediaTitle={
           roomState.videoState.mode !== 'idle' ? roomState.videoState.title : ''
         }

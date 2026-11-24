@@ -377,6 +377,9 @@ function showStandbyError(titleStr, msgStr) {
 
 function applyVideoState(vs, forceReload) {
   if (!vs) return;
+  if (!vs.preserveMulti && typeof stopTvMultiPlayback === 'function') {
+    stopTvMultiPlayback(true);
+  }
   var nextMode = vs.mode || 'idle';
   var nextUrl = vs.url || '';
   var shouldPlay = Boolean(vs.isPlaying);

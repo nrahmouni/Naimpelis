@@ -5,6 +5,7 @@ import type {
   FavoriteChannelItem,
   FootballMatchDetails,
   FootballMatchboardItem,
+  MultiScreenSourceInput,
   SportsMatch,
 } from '../types';
 import { useAppStore } from '../store/useAppStore';
@@ -46,9 +47,11 @@ interface FootballMatchboardProps {
   onClearCalendarScope?: () => void;
   onResetFilters?: () => void;
   activeVideoRawUrl?: string;
+  activeMultiUrls?: string[];
   loadingItemId?: string | null;
   onPlaySportsMatch: (match: SportsMatch, channelIndex: number) => void;
   onPlaySecondaryChannel?: (match: SportsMatch, channelIndex: number) => void;
+  onAddToMultiScreen?: (source: MultiScreenSourceInput) => void;
   isChannelFavorited: (favId: string) => boolean;
   onToggleChannelFavorite: (item: Omit<FavoriteChannelItem, 'addedAt'>) => void;
 }
@@ -68,9 +71,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   onClearCalendarScope,
   onResetFilters,
   activeVideoRawUrl,
+  activeMultiUrls = [],
   loadingItemId,
   onPlaySportsMatch,
   onPlaySecondaryChannel,
+  onAddToMultiScreen,
   isChannelFavorited,
   onToggleChannelFavorite,
 }) => {
@@ -909,11 +914,13 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                       showLeagueBadge={isTeamCalendarScope}
                       showZhIndicator={langFilter === 'ZH' || brandFilter === 'china_football'}
                       activeVideoRawUrl={activeVideoRawUrl}
+                      activeMultiUrls={activeMultiUrls}
                       loadingItemId={loadingItemId}
                       isChannelFavorited={isChannelFavorited}
                       onToggleChannelFavorite={onToggleChannelFavorite}
                       onOpenMatchSheet={(m) => handleOpenMatchSheet(m, 'signals')}
                       onQuickWatch={handleQuickWatch}
+                      onAddToMultiScreen={onAddToMultiScreen}
                     />
                   ))}
                 </div>

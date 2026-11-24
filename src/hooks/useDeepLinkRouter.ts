@@ -415,6 +415,8 @@ export function useDeepLinkRouter({
       nextRoute = '/atresplayer';
     } else if (activeWorld === 'movistardazn') {
       nextRoute = '/movistar-dazn';
+    } else if (activeWorld === 'champions') {
+      nextRoute = '/champions';
     } else if (activeWorld === 'music') {
       nextRoute = '/musica';
     } else {

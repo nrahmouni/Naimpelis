@@ -4,8 +4,10 @@ import { sanitizeItemKey } from '../../utils/storage';
 import { isAbortError } from '../../utils/appSessionHelpers';
 import type {
   CatalogMovie,
+  MultiScreenSourceInput,
   PlaybackEngineMode,
   RoomQueueItem,
+  SecondaryStreamState,
   SportsMatch,
   StreamTrack,
   VideoState,
@@ -15,6 +17,13 @@ import type {
 import type { PlaybackCoreContext } from './playbackTypes';
 import { pickBestCleanSatelliteTrackIndex } from '../../components/player/hlsHealthWatchdog';
 import { extractTrackHostKey } from '../../utils/customTdtSources';
+import {
+  extractLiveStreamWithFallbacks,
+  inferResolverType,
+  MAX_SECONDARY_STREAMS,
+  removeSecondaryStreamAt,
+  upsertSecondaryStreamList,
+} from './multiScreenHelpers';
 
 const failedRuntimeUrlsByStream = new Map<string, Map<string, number>>();
 const LIVE_TRACK_FAILURE_COOLDOWN_MS = 45_000;
@@ -68,11 +77,17 @@ export function createTrackAndQueuePlaybackHandlers(
     setActiveSportsMatch,
     setActiveMatchDetails,
     setActiveMovieContext,
-    secondaryStream,
-    setSecondaryStream,
+    secondaryStreams,
+    setSecondaryStreams,
+    activeAudioSlot,
+    setActiveAudioSlot,
+    setIsPlayerClosedLocally,
+    setIsPlayerMinimized,
     showHostLockNotice,
     scrollDesktopToPlayer,
   } = opts;
+
+  let activeMultiPresetAbort: AbortController | null = null;
 
   const resolveTrackPlaybackMode = (
     track: StreamTrack,
@@ -552,81 +567,299 @@ export function createTrackAndQueuePlaybackHandlers(
     }
   };
 
-  const handlePlaySecondaryChannel = async (optsArg: {
-    sourceUrl: string;
-    title: string;
-    subtitle?: string;
-  }) => {
-    const mvResolver: StreamTrack['resolverType'] = /\.m3u8(\?|$)/i.test(optsArg.sourceUrl)
-      ? 'tdt_hls'
-      : 'sports_channel';
+  const handlePlaySecondaryChannel = async (optsArg: MultiScreenSourceInput) => {
+    const cleanSourceUrl = String(optsArg.sourceUrl || '').trim();
+    if (!cleanSourceUrl) return;
+
+    const allUrls = Array.from(
+      new Set([cleanSourceUrl, ...(optsArg.fallbackUrls || [])].map((u) => String(u || '').trim()).filter(Boolean))
+    );
+
+    if (
+      videoState.mode !== 'idle' &&
+      videoState.rawSourceUrl &&
+      allUrls.includes(videoState.rawSourceUrl)
+    ) {
+      setActiveAudioSlot(0);
+      scrollDesktopToPlayer();
+      return;
+    }
 
     if (videoState.mode === 'idle') {
       if (!canChangeMedia) {
         showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
         return;
       }
+      const tracks: StreamTrack[] = allUrls.map((u, idx) => ({
+        id: `mv-ch-${idx}`,
+        label: idx === 0 ? optsArg.title : `${optsArg.title} · Señal ${idx + 1}`,
+        lang: 'ES',
+        sourceUrl: u,
+        resolverType: inferResolverType(u),
+      }));
       await deps.handlePlaySportsMatch(
         {
-          id: `mv-init-${Date.now()}`,
+          id: optsArg.matchId || `mv-init-${Date.now()}`,
           time: 'EN VIVO',
           sport: 'soccer',
           isLive: true,
-          competition: optsArg.subtitle || 'Multicanal HD',
+          competition: optsArg.subtitle || 'Multi-Partido HD',
           title: optsArg.title,
-          channels: [
-            {
-              id: 'mv-ch-0',
-              label: optsArg.title,
-              lang: 'ES',
-              sourceUrl: optsArg.sourceUrl,
-              resolverType: mvResolver,
-            },
-          ],
+          channels: tracks,
         },
         0
       );
       return;
     }
 
+    setIsPlayerClosedLocally(false);
+    setIsPlayerMinimized(false);
     scrollDesktopToPlayer();
-    setLoadingItemId(`mv-${optsArg.sourceUrl}`);
+    setLoadingItemId(`mv-${cleanSourceUrl}`);
     setExtractionError(null);
 
     try {
-      const params = new URLSearchParams({
-        url: optsArg.sourceUrl,
-        resolverType: mvResolver,
+      const resolved = await extractLiveStreamWithFallbacks({
+        sourceUrl: cleanSourceUrl,
+        fallbackUrls: optsArg.fallbackUrls,
         title: optsArg.title,
       });
-      const res = await fetch(`/api/extract/stream?${params.toString()}`);
-      const data = await res.json();
 
-      if (!res.ok || !data?.success || !data?.streamUrl) {
-        setExtractionError(
-          data?.error || 'Esta señal secundaria no está emitiendo en este momento.'
-        );
-        return;
-      }
-
-      setSecondaryStream((prev) => ({
-        url: data.streamUrl,
-        rawSourceUrl: optsArg.sourceUrl,
+      const desiredLayout: 'split' | 'corner' = optsArg.forceLayout || 'split';
+      const nextItem: SecondaryStreamState = {
+        id: `sec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        url: resolved.url,
+        rawSourceUrl: resolved.rawSourceUrl,
         title: optsArg.title,
         subtitle: optsArg.subtitle,
-        mode: data.mode === 'direct' ? 'direct' : 'hls',
-        layout: prev?.layout || 'corner',
-      }));
+        mode: resolved.mode,
+        layout: desiredLayout,
+        fallbackUrls: optsArg.fallbackUrls,
+        matchId: optsArg.matchId,
+        status: 'ready',
+      };
+
+      setSecondaryStreams((prev) => {
+        const { list } = upsertSecondaryStreamList(prev, nextItem, {
+          preferredSlotIndex: optsArg.preferredSlotIndex,
+          activeAudioSlot,
+        });
+        return list;
+      });
       playCinemaSound('play');
-    } catch {
-      setExtractionError('Error al conectar la 2ª pantalla Multiview.');
+    } catch (err: unknown) {
+      if (isAbortError(err)) return;
+      const errMsg = err instanceof Error && err.message ? err.message : '';
+      setExtractionError(
+        errMsg || 'Esta señal secundaria no está emitiendo en este momento.'
+      );
     } finally {
       setLoadingItemId(null);
     }
   };
 
-  const handleSwapSecondaryStream = () => {
-    if (!secondaryStream) return;
+  const handleLaunchMultiMatchPreset = async (sources: MultiScreenSourceInput[]) => {
+    const cleanSources = (sources || [])
+      .filter((s) => Boolean(s?.sourceUrl?.trim()))
+      .slice(0, MAX_SECONDARY_STREAMS + 1);
+    if (cleanSources.length === 0) return;
+
+    if (!canChangeMedia) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
+
+    if (cleanSources.length === 1) {
+      await handlePlaySecondaryChannel(cleanSources[0]);
+      return;
+    }
+
+    if (activeMultiPresetAbort) {
+      try {
+        activeMultiPresetAbort.abort();
+      } catch {
+        // ignore
+      }
+    }
+    const ctrl = new AbortController();
+    activeMultiPresetAbort = ctrl;
+
+    triggerHaptic('medium');
+    setIsPlayerClosedLocally(false);
+    setIsPlayerMinimized(false);
+    scrollDesktopToPlayer();
+    setExtractionError(null);
+    setLoadingItemId('multi-preset');
+    setIsExtracting(true);
+    isExtractingRef.current = true;
+    setExtractionLabel(
+      `Conectando Multi-Partido (${cleanSources.length} pantallas simultáneas)...`
+    );
+
+    try {
+      const settled = await Promise.allSettled(
+        cleanSources.map((src) =>
+          extractLiveStreamWithFallbacks({
+            sourceUrl: src.sourceUrl,
+            fallbackUrls: src.fallbackUrls,
+            title: src.title,
+            signal: ctrl.signal,
+          })
+        )
+      );
+
+      if (ctrl.signal.aborted) return;
+
+      const firstSuccessIdx = settled.findIndex((r) => r.status === 'fulfilled');
+      if (firstSuccessIdx === -1) {
+        setExtractionError(
+          'Ninguna de las señales seleccionadas está respondiendo en este momento. Prueba otro partido o señal alternativa.'
+        );
+        return;
+      }
+
+      const primarySource = cleanSources[firstSuccessIdx];
+      const primaryResolved = (
+        settled[firstSuccessIdx] as PromiseFulfilledResult<{
+          url: string;
+          rawSourceUrl: string;
+          mode: 'hls' | 'direct';
+        }>
+      ).value;
+
+      const primaryTracks: StreamTrack[] = Array.from(
+        new Set([primarySource.sourceUrl, ...(primarySource.fallbackUrls || [])].filter(Boolean))
+      ).map((u, idx) => ({
+        id: `mp-0-${idx}`,
+        label: idx === 0 ? primarySource.title : `${primarySource.title} · Señal ${idx + 1}`,
+        lang: 'ES',
+        sourceUrl: u,
+        resolverType: inferResolverType(u),
+        resolvedStreamUrl: u === primaryResolved.rawSourceUrl ? primaryResolved.url : undefined,
+      }));
+
+      const nextMainState: VideoState = {
+        mode: primaryResolved.mode,
+        url: primaryResolved.url,
+        rawSourceUrl: primaryResolved.rawSourceUrl,
+        title: primarySource.title,
+        subtitle: primarySource.subtitle || `Multi-Partido (${cleanSources.length} pantallas)`,
+        currentTime: 0,
+        isPlaying: true,
+        isLive: true,
+        tracks: primaryTracks,
+        activeTrackIndex: Math.max(
+          0,
+          primaryTracks.findIndex((t) => t.sourceUrl === primaryResolved.rawSourceUrl)
+        ),
+        seriesMeta: undefined,
+        lastUpdated: Date.now(),
+        updatedBy: profileName,
+      };
+
+      const nextSecondary: SecondaryStreamState[] = [];
+      cleanSources.forEach((src, idx) => {
+        if (idx === firstSuccessIdx) return;
+        const result = settled[idx];
+        if (result.status === 'fulfilled') {
+          nextSecondary.push({
+            id: `sec-preset-${idx}-${Date.now()}`,
+            url: result.value.url,
+            rawSourceUrl: result.value.rawSourceUrl,
+            title: src.title,
+            subtitle: src.subtitle,
+            mode: result.value.mode,
+            layout: 'split',
+            fallbackUrls: src.fallbackUrls,
+            matchId: src.matchId,
+            status: 'ready',
+          });
+        } else {
+          nextSecondary.push({
+            id: `sec-preset-${idx}-${Date.now()}`,
+            url: '',
+            rawSourceUrl: src.sourceUrl,
+            title: src.title,
+            subtitle: src.subtitle,
+            mode: 'hls',
+            layout: 'split',
+            fallbackUrls: src.fallbackUrls,
+            matchId: src.matchId,
+            status: 'error',
+          });
+        }
+      });
+
+      clearExtractionSnapshot();
+      setActiveSportsMatch(null);
+      setActiveMatchDetails(null);
+      setActiveMovieContext(null);
+      videoStateUrlRef.current = nextMainState.url;
+      setVideoState(nextMainState);
+      setSecondaryStreams(nextSecondary.slice(0, MAX_SECONDARY_STREAMS));
+      setActiveAudioSlot(0);
+      commitVideoStateSync('change_url', nextMainState);
+      playCinemaSound('play');
+    } catch (err: unknown) {
+      if (isAbortError(err) || ctrl.signal.aborted) return;
+      setExtractionError('No se pudo iniciar la sesión Multi-Partido.');
+    } finally {
+      if (activeMultiPresetAbort === ctrl) {
+        activeMultiPresetAbort = null;
+      }
+      isExtractingRef.current = false;
+      setIsExtracting(false);
+      setLoadingItemId(null);
+      setExtractionLabel('');
+    }
+  };
+
+  const handleRetrySecondarySlot = async (slotIdx: number) => {
+    const target = secondaryStreams[slotIdx];
+    if (!target) return;
+
+    setSecondaryStreams((prev) =>
+      prev.map((item, i) => (i === slotIdx ? { ...item, status: 'loading' } : item))
+    );
+
+    try {
+      const resolved = await extractLiveStreamWithFallbacks({
+        sourceUrl: target.rawSourceUrl,
+        fallbackUrls: target.fallbackUrls,
+        title: target.title,
+      });
+      setSecondaryStreams((prev) =>
+        prev.map((item, i) =>
+          i === slotIdx
+            ? {
+                ...item,
+                url: resolved.url,
+                rawSourceUrl: resolved.rawSourceUrl,
+                mode: resolved.mode,
+                status: 'ready',
+              }
+            : item
+        )
+      );
+    } catch {
+      setSecondaryStreams((prev) =>
+        prev.map((item, i) => (i === slotIdx ? { ...item, status: 'error' } : item))
+      );
+    }
+  };
+
+  const handleSetMultiAudioSlot = (slot: number) => {
+    triggerHaptic('light');
+    if (slot < 0 || slot > secondaryStreams.length) {
+      setActiveAudioSlot(0);
+      return;
+    }
+    setActiveAudioSlot(slot);
+  };
+
+  const handleSwapSecondaryStream = (slotIdx = 0) => {
+    const targetSec = secondaryStreams[slotIdx];
+    if (!targetSec) return;
     if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
@@ -634,14 +867,12 @@ export function createTrackAndQueuePlaybackHandlers(
     triggerHaptic('medium');
 
     const prevMain = videoState;
-    const prevSec = secondaryStream;
-
     const promotedMain: VideoState = {
-      mode: prevSec.mode,
-      url: prevSec.url,
-      rawSourceUrl: prevSec.rawSourceUrl,
-      title: prevSec.title,
-      subtitle: prevSec.subtitle || 'Multiview · Señal Principal',
+      mode: targetSec.mode,
+      url: targetSec.url,
+      rawSourceUrl: targetSec.rawSourceUrl,
+      title: targetSec.title,
+      subtitle: targetSec.subtitle || 'Multi-Partido · Pantalla Principal',
       currentTime: 0,
       isPlaying: true,
       isLive: true,
@@ -653,37 +884,57 @@ export function createTrackAndQueuePlaybackHandlers(
     };
 
     if (prevMain.mode === 'hls' || prevMain.mode === 'direct') {
-      setSecondaryStream({
+      const demoted: SecondaryStreamState = {
+        id: targetSec.id,
         url: prevMain.url,
         rawSourceUrl: prevMain.rawSourceUrl,
         title: prevMain.title,
         subtitle: prevMain.subtitle,
         mode: prevMain.mode,
-        layout: prevSec.layout,
-      });
+        layout: secondaryStreams.length >= 2 ? 'split' : targetSec.layout,
+        fallbackUrls: (prevMain.tracks || []).map((t) => t.sourceUrl).filter(Boolean),
+        status: 'ready',
+      };
+      setSecondaryStreams((prev) =>
+        prev.map((item, i) => (i === slotIdx ? demoted : item))
+      );
     } else {
-      setSecondaryStream(null);
+      setSecondaryStreams((prev) => prev.filter((_, i) => i !== slotIdx));
     }
 
+    setActiveAudioSlot(0);
+    videoStateUrlRef.current = promotedMain.url;
     setVideoState(promotedMain);
     commitVideoStateSync('change_url', promotedMain);
   };
 
   const handleToggleSecondaryLayout = () => {
     triggerHaptic('light');
-    setSecondaryStream((prev) =>
-      prev
-        ? {
-            ...prev,
-            layout: prev.layout === 'split' ? 'corner' : 'split',
-          }
-        : null
-    );
+    setSecondaryStreams((prev) => {
+      if (prev.length === 0) return prev;
+      if (prev.length >= 2) {
+        return prev.map((s) => ({ ...s, layout: 'split' }));
+      }
+      const nextLayout = prev[0].layout === 'split' ? 'corner' : 'split';
+      return prev.map((s) => ({ ...s, layout: nextLayout }));
+    });
   };
 
-  const handleCloseSecondaryStream = () => {
+  const handleCloseSecondaryStream = (slotIdx?: number) => {
     triggerHaptic('light');
-    setSecondaryStream(null);
+    const { list, nextAudioSlot } = removeSecondaryStreamAt(
+      secondaryStreams,
+      slotIdx,
+      activeAudioSlot
+    );
+    setSecondaryStreams(list);
+    setActiveAudioSlot(nextAudioSlot);
+  };
+
+  const handleCloseAllSecondaryStreams = () => {
+    triggerHaptic('light');
+    setSecondaryStreams([]);
+    setActiveAudioSlot(0);
   };
 
   const handlePromoteCloudStreamToNative = (proxiedStreamUrl: string) => {
@@ -721,9 +972,13 @@ export function createTrackAndQueuePlaybackHandlers(
     handlePlayCustomUrl,
     handlePlayQueueItem,
     handlePlaySecondaryChannel,
+    handleLaunchMultiMatchPreset,
+    handleRetrySecondarySlot,
+    handleSetMultiAudioSlot,
     handleSwapSecondaryStream,
     handleToggleSecondaryLayout,
     handleCloseSecondaryStream,
+    handleCloseAllSecondaryStreams,
     handlePromoteCloudStreamToNative,
   };
 }

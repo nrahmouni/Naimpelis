@@ -185,9 +185,14 @@ export interface NativeCinemaPlayerProps {
   isCinemaMode?: boolean;
   onToggleCinemaMode?: () => void;
   secondaryStream?: SecondaryStreamState | null;
-  onSwapSecondaryStream?: () => void;
+  secondaryStreams?: SecondaryStreamState[];
+  activeAudioSlot?: number;
+  onSetMultiAudioSlot?: (slot: number) => void;
+  onSwapSecondaryStream?: (slotIdx?: number) => void;
   onToggleSecondaryLayout?: () => void;
-  onCloseSecondaryStream?: () => void;
+  onRetrySecondarySlot?: (slotIdx: number) => void;
+  onCloseSecondaryStream?: (slotIdx?: number) => void;
+  onCloseAllSecondaryStreams?: () => void;
   canControlRoom?: boolean;
   isMinimized?: boolean;
   isCompressed?: boolean;

@@ -1,4 +1,5 @@
 import React from 'react';
+import { Volume2, VolumeX } from 'lucide-react';
 import { SecondaryHlsStage } from '../SecondaryHlsStage';
 import type {
   AppLanguage,
@@ -12,6 +13,7 @@ import type {
 } from '../../types';
 import type { ParsedSubtitleCue } from '../../utils/subtitles';
 import { triggerHaptic } from '../../utils/haptics';
+import { pickLang } from '../../utils/i18n';
 import type { NativeCinemaPlayerProps, StreamRefreshPhase } from './playerTypes';
 import { CloudBrowserOverlay } from './CloudBrowserOverlay';
 import { EmbedStagePanel } from './EmbedStagePanel';
@@ -73,6 +75,8 @@ export interface PlayerViewportContentProps {
   participantCount: number;
   tvAspectMode: 'contain' | 'cover' | 'fill';
   secondaryStream: SecondaryStreamState | null;
+  secondaryStreams?: SecondaryStreamState[];
+  activeAudioSlot?: number;
   activeSubId: string;
   parsedCues: ParsedSubtitleCue[];
   subtitleOffsetSec: number;
@@ -127,9 +131,11 @@ export interface PlayerViewportContentProps {
   onNextEpisode?: () => void;
   onSelectTrack: (trackIndex: number, currentTimeSec: number) => void;
   onPromoteCloudStreamToNative: (url: string) => void;
-  onSwapSecondaryStream?: () => void;
+  onSetMultiAudioSlot?: (slot: number) => void;
+  onSwapSecondaryStream?: (slotIdx?: number) => void;
   onToggleSecondaryLayout?: () => void;
-  onCloseSecondaryStream?: () => void;
+  onRetrySecondarySlot?: (slotIdx: number) => void;
+  onCloseSecondaryStream?: (slotIdx?: number) => void;
   onOpenInCloudBrowser?: (url: string) => void;
   handleDirectCastToTv: (e?: React.MouseEvent) => void | Promise<void>;
   handleTogglePiP: () => void;
@@ -172,6 +178,30 @@ export interface PlayerViewportContentProps {
 }
 
 export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) => {
+  const activeSecondaryStreams: SecondaryStreamState[] =
+    p.secondaryStreams && p.secondaryStreams.length > 0
+      ? p.secondaryStreams.slice(0, 3)
+      : p.secondaryStream
+      ? [p.secondaryStream]
+      : [];
+  const isNativePlayable = p.videoState.mode === 'hls' || p.videoState.mode === 'direct';
+  const hasSecondary = !p.isMinimized && isNativePlayable && activeSecondaryStreams.length > 0;
+  const isMultiGrid =
+    hasSecondary &&
+    (activeSecondaryStreams.length >= 2 || activeSecondaryStreams[0].layout === 'split');
+  const isCornerPiP = hasSecondary && !isMultiGrid;
+  const totalScreens = isMultiGrid ? 1 + activeSecondaryStreams.length : hasSecondary ? 2 : 1;
+  const audioSlot = p.activeAudioSlot ?? 0;
+
+  const gridContainerClass =
+    totalScreens >= 4
+      ? 'grid grid-cols-2 grid-rows-2 gap-1 bg-[#06070B]'
+      : totalScreens === 3
+      ? 'grid grid-cols-1 md:grid-cols-2 grid-rows-3 md:grid-rows-2 gap-1 bg-[#06070B]'
+      : isMultiGrid
+      ? 'grid grid-cols-1 md:grid-cols-2 grid-rows-2 md:grid-rows-1 gap-1 bg-[#06070B]'
+      : 'block';
+
   return (
     <div
       style={
@@ -242,43 +272,108 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
       )}
 
       <div
-        onClick={p.isTouchLocked ? () => p.revealControls() : p.handleVideoSurfaceTap}
-        className={`w-full h-full ${
-          p.videoState.mode === 'hls' || p.videoState.mode === 'direct'
-            ? p.secondaryStream && !p.isMinimized
-              ? 'flex items-stretch'
-              : 'block'
-            : 'hidden'
-        }`}
+        onClick={
+          isMultiGrid
+            ? undefined
+            : p.isTouchLocked
+            ? () => p.revealControls()
+            : p.handleVideoSurfaceTap
+        }
+        className={`w-full h-full ${isNativePlayable ? gridContainerClass : 'hidden'}`}
       >
-        <video
-          ref={p.videoRef}
-          playsInline
-          x-webkit-airplay="allow"
-          onClick={p.isTouchLocked ? () => p.revealControls() : p.handleVideoSurfaceTap}
-          onLoadedMetadata={p.videoCallbacks.onLoadedMetadata}
-          onEnded={p.videoCallbacks.onEnded}
-          onTimeUpdate={p.videoCallbacks.onTimeUpdate}
-          onDurationChange={(e) => p.setDuration(e.currentTarget.duration || 0)}
-          onCanPlay={p.clearBufferingIndicator}
-          onCanPlayThrough={p.clearBufferingIndicator}
-          onWaiting={p.videoCallbacks.onWaiting}
-          onStalled={p.videoCallbacks.onStalled}
-          onPlaying={p.videoCallbacks.onPlaying}
-          onPause={p.videoCallbacks.onPause}
-          onVolumeChange={p.videoCallbacks.onVolumeChange}
-          className={`${
-            p.secondaryStream && !p.isMinimized && p.secondaryStream.layout === 'split'
-              ? 'w-1/2'
-              : 'w-full'
-          } h-full ${
-            p.tvAspectMode === 'cover'
-              ? 'object-cover'
-              : p.tvAspectMode === 'fill'
-              ? 'object-fill'
-              : 'object-contain'
-          } bg-black cursor-pointer [transform:translateZ(0)]`}
-        />
+        <div
+          className={
+            isMultiGrid
+              ? `relative w-full h-full min-h-0 bg-black overflow-hidden ${
+                  totalScreens === 3 ? 'md:row-span-2' : ''
+                } ${
+                  audioSlot === 0
+                    ? 'ring-2 ring-inset ring-emerald-400/80'
+                    : 'border border-white/[0.08]'
+                }`
+              : 'w-full h-full'
+          }
+        >
+          <video
+            ref={p.videoRef}
+            playsInline
+            x-webkit-airplay="allow"
+            onClick={(e) => {
+              if (isMultiGrid && p.onSetMultiAudioSlot && audioSlot !== 0) {
+                e.stopPropagation();
+                triggerHaptic('light');
+                p.onSetMultiAudioSlot(0);
+                return;
+              }
+              if (p.isTouchLocked) {
+                p.revealControls();
+              } else {
+                p.handleVideoSurfaceTap(e);
+              }
+            }}
+            onLoadedMetadata={p.videoCallbacks.onLoadedMetadata}
+            onEnded={p.videoCallbacks.onEnded}
+            onTimeUpdate={p.videoCallbacks.onTimeUpdate}
+            onDurationChange={(e) => p.setDuration(e.currentTarget.duration || 0)}
+            onCanPlay={p.clearBufferingIndicator}
+            onCanPlayThrough={p.clearBufferingIndicator}
+            onWaiting={p.videoCallbacks.onWaiting}
+            onStalled={p.videoCallbacks.onStalled}
+            onPlaying={p.videoCallbacks.onPlaying}
+            onPause={p.videoCallbacks.onPause}
+            onVolumeChange={p.videoCallbacks.onVolumeChange}
+            className={`w-full h-full ${
+              p.tvAspectMode === 'cover'
+                ? 'object-cover'
+                : p.tvAspectMode === 'fill'
+                ? 'object-fill'
+                : 'object-contain'
+            } bg-black cursor-pointer [transform:translateZ(0)]`}
+          />
+
+          {isMultiGrid && (
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="absolute top-0 inset-x-0 px-2 sm:px-2.5 py-1.5 bg-gradient-to-b from-black/92 via-black/60 to-transparent flex items-center justify-between gap-1.5 pointer-events-auto z-20"
+            >
+              <div className="min-w-0 flex items-center gap-1.5 text-[11px] font-semibold text-zinc-100 truncate">
+                <span
+                  className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold tabular-nums shrink-0 ${
+                    audioSlot === 0 ? 'bg-emerald-500 text-black' : 'bg-white/15 text-white'
+                  }`}
+                >
+                  P1
+                </span>
+                <span className="truncate">{p.videoState.title}</span>
+              </div>
+              {p.onSetMultiAudioSlot && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    p.onSetMultiAudioSlot?.(0);
+                  }}
+                  className={`h-7 px-2 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors shrink-0 ${
+                    audioSlot === 0
+                      ? 'bg-emerald-500 text-black'
+                      : 'bg-black/75 hover:bg-white/20 text-zinc-200 border border-white/15'
+                  }`}
+                >
+                  {audioSlot === 0 ? (
+                    <Volume2 className="w-3 h-3 shrink-0" />
+                  ) : (
+                    <VolumeX className="w-3 h-3 shrink-0" />
+                  )}
+                  <span className="hidden sm:inline">
+                    {audioSlot === 0
+                      ? pickLang(p.lang, { es: 'Audio', ca: 'Àudio', en: 'Audio' })
+                      : pickLang(p.lang, { es: 'Oír P1', ca: 'Sentir P1', en: 'Listen P1' })}
+                  </span>
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
         <video
           ref={p.castBridgeVideoRef}
@@ -289,35 +384,50 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
           className="fixed bottom-0 right-0 w-[2px] h-[2px] opacity-[0.01] pointer-events-none -z-10"
         />
 
-        {p.secondaryStream &&
-          !p.isMinimized &&
-          p.secondaryStream.layout === 'split' &&
+        {isMultiGrid &&
           p.onSwapSecondaryStream &&
-          p.onToggleSecondaryLayout &&
-          p.onCloseSecondaryStream && (
+          p.onCloseSecondaryStream &&
+          activeSecondaryStreams.map((secStream, slotIdx) => (
             <SecondaryHlsStage
-              secondaryStream={p.secondaryStream}
+              key={secStream.id || `${secStream.rawSourceUrl}-${slotIdx}`}
+              secondaryStream={secStream}
+              slotIndex={slotIdx}
+              totalScreens={totalScreens}
+              isAudioActive={audioSlot === slotIdx + 1}
               lang={p.lang}
-              onSwapWithPrimary={p.onSwapSecondaryStream}
-              onToggleLayout={p.onToggleSecondaryLayout}
-              onCloseSecondary={p.onCloseSecondaryStream}
+              onFocusAudio={
+                p.onSetMultiAudioSlot ? () => p.onSetMultiAudioSlot?.(slotIdx + 1) : undefined
+              }
+              onSwapWithPrimary={() => p.onSwapSecondaryStream?.(slotIdx)}
+              onToggleLayout={totalScreens === 2 ? p.onToggleSecondaryLayout : undefined}
+              onRetryStream={
+                p.onRetrySecondarySlot ? () => p.onRetrySecondarySlot?.(slotIdx) : undefined
+              }
+              onCloseSecondary={() => p.onCloseSecondaryStream?.(slotIdx)}
             />
-          )}
+          ))}
       </div>
 
-      {p.secondaryStream &&
-        !p.isMinimized &&
-        p.secondaryStream.layout === 'corner' &&
-        (p.videoState.mode === 'hls' || p.videoState.mode === 'direct') &&
+      {isCornerPiP &&
+        activeSecondaryStreams[0] &&
         p.onSwapSecondaryStream &&
         p.onToggleSecondaryLayout &&
         p.onCloseSecondaryStream && (
           <SecondaryHlsStage
-            secondaryStream={p.secondaryStream}
+            key={activeSecondaryStreams[0].id || activeSecondaryStreams[0].rawSourceUrl}
+            secondaryStream={activeSecondaryStreams[0]}
+            slotIndex={0}
+            totalScreens={2}
+            isAudioActive={audioSlot === 1}
+            isCornerPiP
             lang={p.lang}
-            onSwapWithPrimary={p.onSwapSecondaryStream}
+            onFocusAudio={p.onSetMultiAudioSlot ? () => p.onSetMultiAudioSlot?.(1) : undefined}
+            onSwapWithPrimary={() => p.onSwapSecondaryStream?.(0)}
             onToggleLayout={p.onToggleSecondaryLayout}
-            onCloseSecondary={p.onCloseSecondaryStream}
+            onRetryStream={
+              p.onRetrySecondarySlot ? () => p.onRetrySecondarySlot?.(0) : undefined
+            }
+            onCloseSecondary={() => p.onCloseSecondaryStream?.(0)}
           />
         )}
 

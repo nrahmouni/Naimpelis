@@ -51,6 +51,8 @@ interface UseRoomLifecycleActionsParams {
   setIsPlayerMinimized: Dispatch<SetStateAction<boolean>>;
   setIsPlayerClosedLocally: Dispatch<SetStateAction<boolean>>;
   setSecondaryStream: Dispatch<SetStateAction<SecondaryStreamState | null>>;
+  setSecondaryStreams: Dispatch<SetStateAction<SecondaryStreamState[]>>;
+  setActiveAudioSlot: Dispatch<SetStateAction<number>>;
   setCatalogSection: Dispatch<SetStateAction<CatalogSection>>;
   setMobileTab: Dispatch<SetStateAction<MobileNavTab>>;
   setActiveWorld: (w: WorldId) => void;
@@ -119,7 +121,8 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
     p.setShowGuestPopup(false);
     p.setIsPlayerMinimized(false);
     p.setIsPlayerClosedLocally(false);
-    p.setSecondaryStream(null);
+    p.setSecondaryStreams([]);
+    p.setActiveAudioSlot(0);
     const deepLinkGame =
       typeof window !== 'undefined'
         ? normalizeDeepLinkGameType(parseRoomFromWindow().gameType)
@@ -190,7 +193,8 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
     cur.setShowGuestPopup(false);
     cur.setIsPlayerMinimized(false);
     cur.setIsPlayerClosedLocally(false);
-    cur.setSecondaryStream(null);
+    cur.setSecondaryStreams([]);
+    cur.setActiveAudioSlot(0);
     cur.setAvatarMenuOpen(false);
     cur.setIsFloatingRoomOpen(false);
     cur.setRoomId('');
@@ -287,7 +291,8 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
     cur.setIsPlayerMinimized(false);
     cur.setIsPlayerClosedLocally(false);
     cur.setCinemaModePersist(false);
-    cur.setSecondaryStream(null);
+    cur.setSecondaryStreams([]);
+    cur.setActiveAudioSlot(0);
     cur.setActivePoll(null);
     cur.setRoomGameState(null);
     cur.setPartyGameState(null);

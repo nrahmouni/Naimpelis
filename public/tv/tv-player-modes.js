@@ -339,11 +339,7 @@ function pollRoomStateHttp() {
 
 function exitPlayerToHubOrPairing() {
   var wasPaired = isPaired;
-  pendingTizenAutoLaunchAntena3 = false;
-  if (tizenAutoLaunchFallbackTimer) {
-    clearTimeout(tizenAutoLaunchFallbackTimer);
-    tizenAutoLaunchFallbackTimer = null;
-  }
+  if (typeof stopTvMultiPlayback === 'function') stopTvMultiPlayback(true);
   isPaired = false;
   isLocalPlayback = false;
   activeLiveChannel = null;
@@ -466,11 +462,7 @@ function switchToLocalTrack(trackIdx, resumeSec) {
 }
 
 function playLocalStream(itemTitle, itemSub, extractQueryUrl) {
-  pendingTizenAutoLaunchAntena3 = false;
-  if (tizenAutoLaunchFallbackTimer) {
-    clearTimeout(tizenAutoLaunchFallbackTimer);
-    tizenAutoLaunchFallbackTimer = null;
-  }
+  if (typeof stopTvMultiPlayback === 'function') stopTvMultiPlayback(true);
   isLocalPlayback = true;
   isPaired = false;
   activeLiveChannel = null;
@@ -530,11 +522,7 @@ function playLocalStream(itemTitle, itemSub, extractQueryUrl) {
 
 function playTdtChannelOnTv(ch, trackIndex, isFailoverAttempt) {
   if (!ch || !ch.channels || !ch.channels.length) return;
-  pendingTizenAutoLaunchAntena3 = false;
-  if (tizenAutoLaunchFallbackTimer) {
-    clearTimeout(tizenAutoLaunchFallbackTimer);
-    tizenAutoLaunchFallbackTimer = null;
-  }
+  if (typeof stopTvMultiPlayback === 'function') stopTvMultiPlayback(true);
   if (!isFailoverAttempt) {
     activeLiveFailedTrackIdxs = {};
     activeLiveFailedHostKeys = {};

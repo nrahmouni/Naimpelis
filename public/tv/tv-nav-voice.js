@@ -566,7 +566,9 @@ document.addEventListener('keydown', function (e) {
     }
   }
 
-  if (activeScreen === 'player' && !isMiniGuideOpen && currentMode !== 'idle' && !isHudVisible() && standbyOverlay.style.display === 'none') {
+  if (activeScreen === 'player' && typeof window.isTvMultiActive === 'function' && window.isTvMultiActive()) {
+    // Allow D-pad navigation cleanly inside #tv-multi-grid and #tv-multi-bar
+  } else if (activeScreen === 'player' && !isMiniGuideOpen && currentMode !== 'idle' && !isHudVisible() && standbyOverlay.style.display === 'none') {
     if (code === 23 || code === 66 || code === 13 || code === 32) {
       if (e.preventDefault) e.preventDefault();
       revealHud();
@@ -786,13 +788,9 @@ try {
 applyTvLanguage(activeTvLang);
 syncFullscreenButtons();
 
-// Boot sequence
+// Boot sequence — opens directly into Smart TV Hub without auto-playing any channel
 var roomMatch = searchStr.match(/[?&]room=([a-zA-Z0-9-_]+)/);
 var pairMatch = searchStr.match(/[?&]pair=1\b/);
-var skipTizenAutoplay = /[?&]hub=1\b/i.test(searchStr);
-if (isTizenDevice && !roomMatch && !pairMatch && !skipTizenAutoplay) {
-  pendingTizenAutoLaunchAntena3 = true;
-}
 
 requestPairingCode(false);
 connectPairingWs();
@@ -800,19 +798,13 @@ loadTvCatalog();
 if (catalogData.loaded) renderHubContent();
 
 if (roomMatch && roomMatch[1]) {
-  pendingTizenAutoLaunchAntena3 = false;
   enterRoomReceiver(roomMatch[1], tvT('roomPrefix') + roomMatch[1].toUpperCase(), '', tvT('directLinkLabel'));
 } else if (pairMatch) {
-  pendingTizenAutoLaunchAntena3 = false;
   switchTvScreen('pairing');
 } else {
   switchTvScreen('hub');
-  if (pendingTizenAutoLaunchAntena3 && typeof maybeAutoLaunchTizenAntena3 === 'function') {
-    maybeAutoLaunchTizenAntena3(false);
-  } else {
-    setTimeout(function () {
-      var activeTabEl = document.querySelector('#hub-nav-tabs .hub-tab-btn.active');
-      if (activeTabEl && activeTabEl.focus) activeTabEl.focus();
-    }, 80);
-  }
+  setTimeout(function () {
+    var activeTabEl = document.querySelector('#hub-nav-tabs .hub-tab-btn.active');
+    if (activeTabEl && activeTabEl.focus) activeTabEl.focus();
+  }, 80);
 }

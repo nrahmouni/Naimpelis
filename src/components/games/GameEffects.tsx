@@ -9,10 +9,15 @@ import {
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { socketService } from '../../services/socket';
-import { animateModalEntrance, fireVictoryConfetti } from './arcade/arcadeAnimations';
-import { RobotMascot3DBadge } from './arcade/RobotMascot3DBadge';
-import { RiveInteractiveBadge } from './arcade/RiveInteractiveBadge';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
 import type { AppLanguage, Participant } from '../../types';
+
+const RobotMascot3DBadge = lazyWithRetry(() =>
+  import('./arcade/RobotMascot3DBadge').then((m) => ({ default: m.RobotMascot3DBadge }))
+);
+const RiveInteractiveBadge = lazyWithRetry(() =>
+  import('./arcade/RiveInteractiveBadge').then((m) => ({ default: m.RiveInteractiveBadge }))
+);
 
 export type GameSfxKind =
   | 'card_play'
@@ -317,10 +322,17 @@ export const VictoryCelebrationOverlay: React.FC<{
   const cardRef = React.useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    animateModalEntrance(cardRef.current);
-    if (!isDefeat && !isDraw) {
-      fireVictoryConfetti('gold');
-    }
+    let cancelled = false;
+    void import('./arcade/arcadeAnimations').then(({ animateModalEntrance, fireVictoryConfetti }) => {
+      if (cancelled) return;
+      animateModalEntrance(cardRef.current);
+      if (!isDefeat && !isDraw) {
+        fireVictoryConfetti('gold');
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [isDefeat, isDraw]);
 
   return (
@@ -372,21 +384,23 @@ export const VictoryCelebrationOverlay: React.FC<{
       >
         <div className="rounded-[15px] bg-gradient-to-b from-[#181622] via-[#0f1118] to-[#070b14] px-5 py-5 flex flex-col items-center gap-2.5">
           {/* Rigged 3D Animated Character + Rive Celebration Badges */}
-          <div className="flex items-center justify-center gap-3">
-            <div className="w-24 h-24 rounded-2xl bg-[#12141e]/80 border border-white/10 flex items-center justify-center relative overflow-hidden shadow-inner">
-              <RobotMascot3DBadge
-                clip={isDefeat ? 'Wave' : isDraw ? 'ThumbsUp' : 'Dance'}
-                character={isDefeat ? 'robot' : isDraw ? 'xbot' : 'robot'}
-                className="w-24 h-24"
-                label={title}
-              />
-            </div>
-            {!isDefeat && (
-              <div className="w-14 h-14 rounded-2xl bg-[#12141e]/80 border border-white/10 overflow-hidden shrink-0">
-                <RiveInteractiveBadge theme="vehicles" interactive className="w-full h-full" />
+          <React.Suspense fallback={<div className="h-24 w-24" />}>
+            <div className="flex items-center justify-center gap-3">
+              <div className="w-24 h-24 rounded-2xl bg-[#12141e]/80 border border-white/10 flex items-center justify-center relative overflow-hidden shadow-inner">
+                <RobotMascot3DBadge
+                  clip={isDefeat ? 'Wave' : isDraw ? 'ThumbsUp' : 'Dance'}
+                  character={isDefeat ? 'robot' : isDraw ? 'xbot' : 'robot'}
+                  className="w-24 h-24"
+                  label={title}
+                />
               </div>
-            )}
-          </div>
+              {!isDefeat && (
+                <div className="w-14 h-14 rounded-2xl bg-[#12141e]/80 border border-white/10 overflow-hidden shrink-0">
+                  <RiveInteractiveBadge theme="vehicles" interactive className="w-full h-full" />
+                </div>
+              )}
+            </div>
+          </React.Suspense>
 
           <div
             className={`font-display text-lg font-black tracking-tight text-balance ${

@@ -91,7 +91,47 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
     2 * 60 * 60 * 1000
   );
 
-  const clients = new Map<WebSocket, ClientMeta>();
+  const roomSockets = new Map<string, Set<WebSocket>>();
+  const addSocketToRoomIndex = (ws: WebSocket, roomId?: string) => {
+    if (!roomId) return;
+    let set = roomSockets.get(roomId);
+    if (!set) {
+      set = new Set<WebSocket>();
+      roomSockets.set(roomId, set);
+    }
+    set.add(ws);
+  };
+  const removeSocketFromRoomIndex = (ws: WebSocket, roomId?: string) => {
+    if (!roomId) return;
+    const set = roomSockets.get(roomId);
+    if (!set) return;
+    set.delete(ws);
+    if (set.size === 0) roomSockets.delete(roomId);
+  };
+
+  class IndexedClientMap extends Map<WebSocket, ClientMeta> {
+    override set(ws: WebSocket, meta: ClientMeta): this {
+      const prev = super.get(ws);
+      if (prev && prev.roomId !== meta.roomId) {
+        removeSocketFromRoomIndex(ws, prev.roomId);
+      }
+      addSocketToRoomIndex(ws, meta.roomId);
+      return super.set(ws, meta);
+    }
+    override delete(ws: WebSocket): boolean {
+      const prev = super.get(ws);
+      if (prev?.roomId) {
+        removeSocketFromRoomIndex(ws, prev.roomId);
+      }
+      return super.delete(ws);
+    }
+    override clear(): void {
+      roomSockets.clear();
+      super.clear();
+    }
+  }
+
+  const clients: Map<WebSocket, ClientMeta> = new IndexedClientMap();
   const pendingDirectInvites = new LruTtlCache<string, unknown[]>(500, 120_000);
   const rateLimiter = new WsRateLimiter();
 
@@ -192,12 +232,14 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
   }
 
   function broadcastToRoom(roomId: string, message: unknown, excludeWs?: WebSocket) {
+    const targets = roomSockets.get(roomId);
+    if (!targets || targets.size === 0) return;
     const serialized = JSON.stringify(message);
-    clients.forEach((meta, clientWs) => {
-      if (meta.roomId === roomId && clientWs.readyState === WebSocket.OPEN && clientWs !== excludeWs) {
+    for (const clientWs of targets) {
+      if (clientWs.readyState === WebSocket.OPEN && clientWs !== excludeWs) {
         clientWs.send(serialized);
       }
-    });
+    }
   }
 
   function removeVoicePeer(roomId: string, userId: string): void {
@@ -221,19 +263,22 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
   }
 
   function broadcastPokerState(room: RoomRecord, message?: RoomChatMessageRecord | null) {
-    clients.forEach((meta, clientWs) => {
-      if (meta.roomId === room.id && clientWs.readyState === WebSocket.OPEN) {
+    const targets = roomSockets.get(room.id);
+    if (!targets || targets.size === 0) return;
+    for (const clientWs of targets) {
+      if (clientWs.readyState === WebSocket.OPEN) {
+        const meta = clients.get(clientWs);
         clientWs.send(
           JSON.stringify({
             type: 'POKER_STATE_UPDATED',
             payload: {
-              pokerGameState: redactPokerStateForUser(room.pokerGameState ?? null, meta.userId || ''),
+              pokerGameState: redactPokerStateForUser(room.pokerGameState ?? null, meta?.userId || ''),
               message: message ?? null,
             },
           })
         );
       }
-    });
+    }
   }
 
   function broadcastBlackjackState(room: RoomRecord, message?: RoomChatMessageRecord | null) {
@@ -247,22 +292,25 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
   }
 
   function broadcastPinturilloState(room: RoomRecord, message?: RoomChatMessageRecord | null) {
-    clients.forEach((meta, clientWs) => {
-      if (meta.roomId === room.id && clientWs.readyState === WebSocket.OPEN) {
+    const targets = roomSockets.get(room.id);
+    if (!targets || targets.size === 0) return;
+    for (const clientWs of targets) {
+      if (clientWs.readyState === WebSocket.OPEN) {
+        const meta = clients.get(clientWs);
         clientWs.send(
           JSON.stringify({
             type: 'PINTURILLO_STATE_UPDATED',
             payload: {
               pinturilloState: redactPinturilloForUser(
                 room.pinturilloState ?? null,
-                meta.userId || ''
+                meta?.userId || ''
               ),
               message: message ?? null,
             },
           })
         );
       }
-    });
+    }
   }
 
   function clearMatchResponses(room: RoomRecord, onlyGameType?: RoomGameInviteType) {

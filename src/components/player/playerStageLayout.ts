@@ -82,6 +82,7 @@ export function usePlayerStagePrefs(opts: {
   videoMode: string;
   isStageFullscreen: boolean;
   isMinimized: boolean;
+  forcePrimaryMuted?: boolean;
 }) {
   const [batterySaverTvMode, setBatterySaverTvMode] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(() =>
@@ -111,9 +112,10 @@ export function usePlayerStagePrefs(opts: {
   useEffect(() => {
     const vid = opts.videoRef.current;
     if (!vid) return;
+    const effectiveMuted = Boolean(opts.forcePrimaryMuted) || isMuted;
     if (Math.abs(vid.volume - volume) > 0.01) vid.volume = volume;
-    if (vid.muted !== isMuted) vid.muted = isMuted;
-  }, [opts.videoRef, opts.videoUrl, opts.videoMode, volume, isMuted]);
+    if (vid.muted !== effectiveMuted) vid.muted = effectiveMuted;
+  }, [opts.videoRef, opts.videoUrl, opts.videoMode, opts.forcePrimaryMuted, volume, isMuted]);
 
   useEffect(() => {
     if (!opts.isStageFullscreen || opts.isMinimized || opts.videoMode === 'idle') {
@@ -173,7 +175,14 @@ export function getStageWrapperClass(opts: {
   isCompressed: boolean;
   isMinimized: boolean;
   isCinemaMode: boolean;
+  multiScreenCount?: number;
+  multiScreenLayout?: 'corner' | 'split';
 }): string {
+  const isMultiSplitActive =
+    !opts.isMinimized &&
+    (opts.multiScreenCount ?? 1) >= 2 &&
+    (opts.multiScreenLayout === 'split' || (opts.multiScreenCount ?? 1) >= 3);
+
   const heightCls =
     opts.isTvMode || opts.isStageFullscreen
       ? 'h-full'
@@ -181,6 +190,8 @@ export function getStageWrapperClass(opts: {
       ? 'h-[122px] sm:aspect-video'
       : opts.isCompressed && !opts.isMinimized
       ? 'h-[136px] sm:h-[210px] lg:h-[238px]'
+      : isMultiSplitActive
+      ? 'h-[72dvh] sm:h-[75dvh] min-h-[380px] max-h-[82vh]'
       : 'aspect-video';
 
   const cinemaRingCls =

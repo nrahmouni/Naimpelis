@@ -184,6 +184,20 @@ export default defineConfig(() => {
               },
             },
             {
+              urlPattern: /^\/(?:assets\/games|draco|vendor)\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'riffan-game-engines-cache',
+                expiration: {
+                  maxEntries: 120,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
               urlPattern: /^https:\/\/fonts\.gstatic\.com\/.*/i,
               handler: 'CacheFirst',
               options: {
@@ -207,15 +221,23 @@ export default defineConfig(() => {
     ],
     build: {
       target: ['es2018', 'chrome69'],
+      minify: 'esbuild',
       cssCodeSplit: true,
+      cssMinify: true,
+      sourcemap: false,
+      reportCompressedSize: false,
+      assetsInlineLimit: 4096,
       chunkSizeWarningLimit: 900,
       rollupOptions: {
+        treeshake: {
+          preset: 'recommended',
+        },
         output: {
           manualChunks(id) {
             if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
               return 'vendor-react';
             }
-            if (id.includes('node_modules/@tanstack/react-query/')) {
+            if (id.includes('node_modules/@tanstack/')) {
               return 'vendor-tanstack';
             }
             if (id.includes('node_modules/zod/')) {
@@ -230,11 +252,30 @@ export default defineConfig(() => {
             if (id.includes('node_modules/jszip/')) {
               return 'vendor-zip';
             }
+            if (id.includes('node_modules/three/') || id.includes('/three/build/')) {
+              return 'vendor-three';
+            }
+            if (id.includes('node_modules/gsap/')) {
+              return 'vendor-gsap';
+            }
+            if (id.includes('node_modules/pixi.js/') || id.includes('node_modules/@pixi/')) {
+              return 'vendor-pixi';
+            }
+            if (id.includes('node_modules/@rive-app/')) {
+              return 'vendor-rive';
+            }
             if (id.includes('node_modules/lucide-react/')) {
               return 'vendor-icons';
             }
             if (id.includes('node_modules/motion/')) {
               return 'vendor-motion';
+            }
+            if (
+              id.includes('node_modules/zustand/') ||
+              id.includes('node_modules/qrcode.react/') ||
+              id.includes('node_modules/canvas-confetti/')
+            ) {
+              return 'vendor-state';
             }
             if (id.includes('/src/components/kids/') || id.includes('/src/store/useKidsStore')) {
               return 'feature-kids';
@@ -245,7 +286,12 @@ export default defineConfig(() => {
             if (id.includes('/src/components/liveMatch/') || id.includes('FootballWorldView')) {
               return 'feature-sports';
             }
-            if (id.includes('/src/components/games/') || id.includes('GamesHubSection')) {
+            if (
+              id.includes('/src/components/GamesHubSection') ||
+              id.includes('/src/components/games/GamesHubLobby') ||
+              id.includes('/src/components/games/GameSwitcherModal') ||
+              id.includes('/src/components/games/useGamesHubController')
+            ) {
               return 'feature-games';
             }
             if (id.includes('/src/components/admin/')) {

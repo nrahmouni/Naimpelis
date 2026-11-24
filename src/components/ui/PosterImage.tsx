@@ -23,7 +23,7 @@ const ASPECT_CLASSES: Record<NonNullable<PosterImageProps['aspect']>, string> = 
  * Fixed-aspect progressive artwork frame preventing Cumulative Layout Shift (CLS = 0)
  * with a subtle shimmer skeleton until loaded and clean broken-image fallback.
  */
-export const PosterImage: React.FC<PosterImageProps> = ({
+export const PosterImage: React.FC<PosterImageProps> = React.memo(({
   src,
   alt,
   aspect = 'poster',
@@ -70,6 +70,7 @@ export const PosterImage: React.FC<PosterImageProps> = ({
           alt={alt}
           loading={priority ? 'eager' : 'lazy'}
           decoding="async"
+          fetchPriority={priority ? 'high' : 'low'}
           referrerPolicy="no-referrer"
           onLoad={() => setStatus((prev) => (prev === 'loaded' ? prev : 'loaded'))}
           onError={() => setStatus((prev) => (prev === 'error' ? prev : 'error'))}
@@ -91,4 +92,5 @@ export const PosterImage: React.FC<PosterImageProps> = ({
       )}
     </div>
   );
-};
+});
+PosterImage.displayName = 'PosterImage';

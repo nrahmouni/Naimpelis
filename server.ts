@@ -130,11 +130,17 @@ function getPublicOrigin(req: express.Request): string {
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
+app.set('etag', 'strong');
 const httpServer = createServer(app);
+httpServer.keepAliveTimeout = 65_000;
+httpServer.headersTimeout = 66_000;
+httpServer.requestTimeout = 30_000;
+httpServer.maxRequestsPerSocket = 0;
+
 const wss = new WebSocketServer({
   noServer: true,
   perMessageDeflate: {
-    zlibDeflateOptions: { level: 6 },
+    zlibDeflateOptions: { level: 4 },
     threshold: 1024,
   },
 });
@@ -156,6 +162,8 @@ httpServer.on('upgrade', (req, socket, head) => {
 
 app.use(
   compression({
+    threshold: 1024,
+    level: 4,
     filter: (req, res) => {
       const p = (req.path || '').toLowerCase();
       if (
@@ -348,6 +356,9 @@ app.get('/music-manifest.webmanifest', (_req, res) => {
   return res.status(404).json({ error: 'Music manifest not found' });
 });
 
+let cachedTvHtmlSig = '';
+let cachedTvHtmlBody = '';
+
 function sendSmartTvReceiverHtml(res: express.Response) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
@@ -362,13 +373,16 @@ function sendSmartTvReceiverHtml(res: express.Response) {
   }
   try {
     const sig = getTvBuildSignature(__dirname);
-    let html = fs.readFileSync(target, 'utf8');
-    const buildMetaTag = `<script>window.__RIFFAN_TV_BUILD__=${JSON.stringify(sig)};window.__RIFFAN_TV_AUTO_UPDATE__=true;</script>`;
-    html = html
-      .replace('<head>', `<head>\n    ${buildMetaTag}`)
-      .replace(/((?:href|src)=["'])(\/tv\/[^"'?]+\.(?:css|js))(["'])/gi, `$1$2?v=${sig}$3`)
-      .replace(/((?:href|src)=["'])(\/vendor\/[^"'?]+\.js)(["'])/gi, `$1$2?v=${sig}$3`);
-    res.status(200).type('html').send(html);
+    if (!cachedTvHtmlBody || cachedTvHtmlSig !== sig) {
+      const raw = fs.readFileSync(target, 'utf8');
+      const buildMetaTag = `<script>window.__RIFFAN_TV_BUILD__=${JSON.stringify(sig)};window.__RIFFAN_TV_AUTO_UPDATE__=true;</script>`;
+      cachedTvHtmlBody = raw
+        .replace('<head>', `<head>\n    ${buildMetaTag}`)
+        .replace(/((?:href|src)=["'])(\/tv\/[^"'?]+\.(?:css|js))(["'])/gi, `$1$2?v=${sig}$3`)
+        .replace(/((?:href|src)=["'])(\/vendor\/[^"'?]+\.js)(["'])/gi, `$1$2?v=${sig}$3`);
+      cachedTvHtmlSig = sig;
+    }
+    res.status(200).type('html').send(cachedTvHtmlBody);
   } catch {
     res.sendFile(target);
   }

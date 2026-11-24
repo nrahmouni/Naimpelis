@@ -146,6 +146,24 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
           : undefined,
     },
     {
+      id: 'champions',
+      title: 'Champions League',
+      subtitle: pickLang(lang, {
+        es: 'MultiChampions y Multi-Partido (1–4)',
+        ca: 'MultiChampions i Multi-Partit (1–4)',
+        en: 'MultiChampions & Multi-Match (1–4)',
+        rif: 'MultiChampions d 4 timdyazin',
+        zh: '欧冠多路 · 最多4屏同看',
+      }),
+      icon: (
+        <span className="w-11 h-11 rounded-xl bg-sky-500/18 border border-sky-400/35 flex items-center justify-center text-sky-300 shrink-0">
+          <Trophy className="w-5 h-5" />
+        </span>
+      ),
+      accentBorder: 'hover:border-sky-400/65 border-sky-500/25',
+      highlightBadge: 'MULTI 4x',
+    },
+    {
       id: 'sala',
       title: pickLang(lang, { es: 'Sala con Amigos', ca: 'Sala amb Amics', en: 'Watch Party' }),
       subtitle:

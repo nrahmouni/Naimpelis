@@ -39,6 +39,24 @@ const MAX_QOE_SAMPLES = 250;
 const appReleaseCache = new LruTtlCache<string, Record<string, unknown>>(10, 60_000);
 const refreshCooldownByIp = new LruTtlCache<string, number>(500, 45_000);
 const qoeRateByIp = new LruTtlCache<string, { count: number; resetAt: number }>(1000, 60_000);
+const VALID_CLIENT_PLATFORMS = new Set<AppPlatformVertical>([
+  'web',
+  'pwa',
+  'android-mobile',
+  'android-tv',
+  'smart-tv',
+  'music-app',
+]);
+const VALID_CLIENT_VERTICALS = new Set<AppFeatureVertical>([
+  'cine',
+  'futbol',
+  'tv',
+  'iptv',
+  'music',
+  'kids',
+  'juegos',
+  'admin',
+]);
 
 function getClientIp(req: express.Request): string {
   const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
@@ -411,25 +429,6 @@ export function registerOperationalRoutes(
     );
 
     const body = (req.body || {}) as Record<string, unknown>;
-    const validPlatforms = new Set<AppPlatformVertical>([
-      'web',
-      'pwa',
-      'android-mobile',
-      'android-tv',
-      'smart-tv',
-      'music-app',
-    ]);
-    const validVerticals = new Set<AppFeatureVertical>([
-      'cine',
-      'futbol',
-      'tv',
-      'iptv',
-      'music',
-      'kids',
-      'juegos',
-      'admin',
-    ]);
-
     const rawPlatform = String(body.platform || 'web') as AppPlatformVertical;
     const rawVertical = String(body.vertical || 'tv') as AppFeatureVertical;
     const clampMs = (v: unknown, max = 120_000): number | undefined => {
@@ -438,8 +437,8 @@ export function registerOperationalRoutes(
     };
 
     const recorded = runtimeMetrics.recordClientVitals({
-      platform: validPlatforms.has(rawPlatform) ? rawPlatform : 'web',
-      vertical: validVerticals.has(rawVertical) ? rawVertical : 'tv',
+      platform: VALID_CLIENT_PLATFORMS.has(rawPlatform) ? rawPlatform : 'web',
+      vertical: VALID_CLIENT_VERTICALS.has(rawVertical) ? rawVertical : 'tv',
       ttfbMs: clampMs(body.ttfbMs),
       fcpMs: clampMs(body.fcpMs),
       domInteractiveMs: clampMs(body.domInteractiveMs),

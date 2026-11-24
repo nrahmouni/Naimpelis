@@ -1022,3 +1022,410 @@
   .tv-card.channel-card { width: 256px; }
   #tv-zap-osd { min-width: 0; left: 16px; right: 16px; bottom: 20px; }
 }
+
+/* =================================================================== */
+/* TV CHAMPIONS LEAGUE HUB & 1–4 SCREEN MULTI-PARTIDO STAGE (~75VH)    */
+/* =================================================================== */
+.tv-ucl-hero {
+  position: relative;
+  border-radius: 20px;
+  padding: 24px 28px;
+  margin-bottom: 22px;
+  background: linear-gradient(135deg, #0b1636 0%, #172554 48%, #090b12 100%);
+  border: 1.5px solid rgba(96, 165, 250, 0.35);
+  overflow: hidden;
+}
+.tv-ucl-eyebrow {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #93c5fd;
+  margin-bottom: 6px;
+}
+.tv-ucl-title {
+  font-size: 30px;
+  font-weight: 900;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+  margin-bottom: 6px;
+}
+.tv-ucl-sub {
+  font-size: 15px;
+  color: #cbd5e1;
+  margin-bottom: 18px;
+  max-width: 780px;
+  line-height: 1.4;
+}
+.tv-ucl-preset-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  -webkit-align-items: center;
+  align-items: center;
+}
+.tv-ucl-preset-row > * {
+  margin: 0 12px 10px 0;
+}
+
+.tv-ucl-builder-panel {
+  border-radius: 18px;
+  padding: 18px 22px;
+  margin-bottom: 24px;
+  background: #0d101b;
+  border: 1.5px solid rgba(255, 255, 255, 0.12);
+}
+.tv-ucl-builder-head {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.tv-ucl-builder-title {
+  font-size: 19px;
+  font-weight: 900;
+  color: #ffffff;
+}
+.tv-ucl-builder-sub {
+  font-size: 13px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+.tv-ucl-slots-grid {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  margin: 0 -6px 12px -6px;
+}
+.tv-ucl-slot-card {
+  width: 25%;
+  padding: 0 6px;
+  margin-bottom: 10px;
+}
+.tv-ucl-slot-inner {
+  border-radius: 14px;
+  padding: 12px 14px;
+  min-height: 104px;
+  background: #141827;
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+}
+.tv-ucl-slot-inner.filled {
+  border-color: rgba(52, 211, 153, 0.55);
+  background: #10202b;
+}
+.tv-ucl-slot-badge {
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #6ee7b7;
+  margin-bottom: 4px;
+}
+.tv-ucl-slot-inner.empty .tv-ucl-slot-badge {
+  color: #64748b;
+}
+.tv-ucl-slot-name {
+  font-size: 14px;
+  font-weight: 800;
+  color: #ffffff;
+  margin-bottom: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tv-ucl-slot-actions {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+}
+.tv-ucl-mini-btn {
+  height: 34px;
+  padding: 0 11px;
+  margin-right: 6px;
+  border-radius: 9px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #1e2438;
+  color: #f8fafc;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.tv-ucl-mini-btn.active {
+  background: #10b981;
+  border-color: #6ee7b7;
+  color: #06120e;
+}
+.tv-ucl-mini-btn.danger {
+  background: #3b1219;
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #fecaca;
+}
+.tv-ucl-mini-btn:focus,
+.tv-ucl-mini-btn:hover {
+  background: #ffffff;
+  color: #06070b;
+  border-color: #ffffff;
+}
+
+.tv-ucl-matches-grid {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  margin: 0 -8px;
+}
+.tv-ucl-match-wrap {
+  width: 33.333%;
+  padding: 0 8px;
+  margin-bottom: 16px;
+}
+@media (max-width: 1180px) {
+  .tv-ucl-match-wrap { width: 50%; }
+  .tv-ucl-slot-card { width: 50%; }
+}
+.tv-ucl-match-card {
+  border-radius: 16px;
+  padding: 16px;
+  background: #101422;
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  min-height: 158px;
+}
+.tv-ucl-match-meta {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 800;
+  color: #93c5fd;
+  margin-bottom: 10px;
+}
+.tv-ucl-live-badge {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #991b1b;
+  color: #fecaca;
+}
+.tv-ucl-teams {
+  font-size: 16px;
+  font-weight: 900;
+  color: #ffffff;
+  margin-bottom: 6px;
+  line-height: 1.25;
+}
+.tv-ucl-score {
+  font-size: 14px;
+  font-weight: 800;
+  color: #34d399;
+  margin-bottom: 12px;
+}
+.tv-ucl-match-btns {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+}
+
+.tv-ucl-table-wrap {
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  background: #0d101b;
+  margin-bottom: 28px;
+}
+.tv-ucl-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.tv-ucl-table th,
+.tv-ucl-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.tv-ucl-table th {
+  font-size: 12px;
+  font-weight: 800;
+  color: #94a3b8;
+  text-transform: uppercase;
+  background: #121627;
+}
+.tv-ucl-table td {
+  color: #e2e8f0;
+  font-weight: 700;
+}
+.tv-ucl-table .num {
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Multi-Screen Wrapper inside #player-screen (~3/4 screen viewport height) */
+#tv-multi-wrap {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: #04050a;
+  z-index: 36;
+  padding: 18px 28px 14px 28px;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+}
+#tv-multi-grid {
+  position: relative;
+  width: 100%;
+  height: 75vh;
+  max-height: 78vh;
+  min-height: 360px;
+  background: #05070e;
+  border-radius: 14px;
+  overflow: hidden;
+  margin-bottom: 14px;
+}
+.tv-mv-tile {
+  position: absolute;
+  background: #000000;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.tv-mv-tile.audio-active {
+  border-color: #34d399;
+  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.4);
+}
+#tv-multi-grid.mv-count-2 .tv-mv-slot-0 { left: 0; top: 0; width: 49.5%; height: 100%; }
+#tv-multi-grid.mv-count-2 .tv-mv-slot-1 { left: 50.5%; top: 0; width: 49.5%; height: 100%; }
+
+#tv-multi-grid.mv-count-3 .tv-mv-slot-0 { left: 0; top: 0; width: 58%; height: 100%; }
+#tv-multi-grid.mv-count-3 .tv-mv-slot-1 { left: 59%; top: 0; width: 41%; height: 49%; }
+#tv-multi-grid.mv-count-3 .tv-mv-slot-2 { left: 59%; top: 51%; width: 41%; height: 49%; }
+
+#tv-multi-grid.mv-count-4 .tv-mv-slot-0 { left: 0; top: 0; width: 49.5%; height: 49%; }
+#tv-multi-grid.mv-count-4 .tv-mv-slot-1 { left: 50.5%; top: 0; width: 49.5%; height: 49%; }
+#tv-multi-grid.mv-count-4 .tv-mv-slot-2 { left: 0; top: 51%; width: 49.5%; height: 49%; }
+#tv-multi-grid.mv-count-4 .tv-mv-slot-3 { left: 50.5%; top: 51%; width: 49.5%; height: 49%; }
+
+.tv-mv-video {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background: #000000;
+}
+.tv-mv-hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 8px 12px;
+  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0) 100%);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  z-index: 4;
+}
+.tv-mv-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 8px;
+}
+.tv-mv-slot-pill {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 6px;
+  margin-right: 6px;
+  font-size: 11px;
+  font-weight: 900;
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+}
+.tv-mv-tile.audio-active .tv-mv-slot-pill {
+  background: #34d399;
+  color: #051610;
+}
+.tv-mv-status-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(5, 7, 14, 0.85);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  text-align: center;
+  padding: 16px;
+  z-index: 5;
+}
+.tv-mv-status-text {
+  font-size: 14px;
+  font-weight: 800;
+  color: #e2e8f0;
+  margin-bottom: 10px;
+}
+.tv-mv-status-btns {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  -webkit-justify-content: center;
+  justify-content: center;
+}
+.tv-mv-status-btns > * {
+  margin: 4px;
+}
+#tv-multi-bar {
+  width: 100%;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+}
+#tv-multi-bar > * {
+  margin: 4px 6px;
+}
+

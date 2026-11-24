@@ -41,8 +41,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   cloudFrame, cloudState, floatingReactions, onSyncAction, onSelectTrack,
   onAutoSwitchBackupTrack, onPromoteCloudStreamToNative, onOpenCatalogSection,
   onPrevEpisode, onNextEpisode, onProgressUpdate, isCinemaMode = false,
-  onToggleCinemaMode, secondaryStream = null, onSwapSecondaryStream,
-  onToggleSecondaryLayout, onCloseSecondaryStream, canControlRoom = true,
+  onToggleCinemaMode, secondaryStream = null, secondaryStreams = [], activeAudioSlot = 0,
+  onSetMultiAudioSlot, onSwapSecondaryStream,
+  onToggleSecondaryLayout, onRetrySecondarySlot, onCloseSecondaryStream, canControlRoom = true,
   isMinimized = false, isCompressed = false, onExpandCompressed,
   onToggleMinimize, onClosePlayer, onCancelExtraction, isTvMode = false,
   roomCode, roomDisplayName, participantCount = 1, onExitTvMode,
@@ -142,6 +143,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     videoMode: videoState.mode,
     isStageFullscreen: isTvMode || isFullscreenLike,
     isMinimized,
+    forcePrimaryMuted:
+      activeAudioSlot > 0 &&
+      ((secondaryStreams && secondaryStreams.length > 0) || Boolean(secondaryStream)),
   });
 
   const [autoNextCountdown, setAutoNextCountdown] = useState<number | null>(null);
@@ -555,6 +559,15 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     onChangeQuality: handleChangeQuality,
   });
 
+  const effectiveMultiCount =
+    (videoState.mode === 'hls' || videoState.mode === 'direct') && !isMinimized
+      ? 1 + (secondaryStreams.length > 0 ? secondaryStreams.length : secondaryStream ? 1 : 0)
+      : 1;
+  const effectiveMultiLayout: 'corner' | 'split' =
+    effectiveMultiCount >= 3
+      ? 'split'
+      : secondaryStreams[0]?.layout || secondaryStream?.layout || 'corner';
+
   return (
     <section className={getPlayerSectionClass({ isTvMode, isMinimized, isCinemaMode })}>
       <div
@@ -562,7 +575,14 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {...stagePointerHandlers}
         style={getStageWrapperStyle(isStageFullscreen)}
         className={getStageWrapperClass({
-          isTvMode, isStageFullscreen, compactVideoForMobileKeyboard, isCompressed, isMinimized, isCinemaMode,
+          isTvMode,
+          isStageFullscreen,
+          compactVideoForMobileKeyboard,
+          isCompressed,
+          isMinimized,
+          isCinemaMode,
+          multiScreenCount: effectiveMultiCount,
+          multiScreenLayout: effectiveMultiLayout,
         })}
       >
         <PlayerViewportContent
@@ -583,7 +603,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           showProMenu={showProMenu} isCinemaMode={isCinemaMode} isInPiP={isInPiP}
           vocalBoostEnabled={vocalBoostEnabled} canUseNativePiPOrCast={canUseNativePiPOrCast}
           roomCode={roomCode} roomDisplayName={roomDisplayName} participantCount={participantCount}
-          tvAspectMode={tvAspectMode} secondaryStream={secondaryStream} activeSubId={activeSubId}
+          tvAspectMode={tvAspectMode} secondaryStream={secondaryStream}
+          secondaryStreams={secondaryStreams} activeAudioSlot={activeAudioSlot}
+          activeSubId={activeSubId}
           parsedCues={parsedCues} subtitleOffsetSec={subtitleOffsetSec} subtitleSize={subtitleSize}
           subtitleStyle={subtitleStyle} subtitleFileInputRef={subtitleFileInputRef}
           autoNextCountdown={autoNextCountdown} autoNextTriggeredUrlRef={autoNextTriggeredUrlRef}
@@ -608,7 +630,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           onClosePlayer={onClosePlayer} onExitTvMode={onExitTvMode} onToggleCinemaMode={onToggleCinemaMode}
           onOpenCatalogSection={onOpenCatalogSection} onPrevEpisode={onPrevEpisode} onNextEpisode={onNextEpisode}
           onSelectTrack={onSelectTrack} onPromoteCloudStreamToNative={onPromoteCloudStreamToNative}
+          onSetMultiAudioSlot={onSetMultiAudioSlot}
           onSwapSecondaryStream={onSwapSecondaryStream} onToggleSecondaryLayout={onToggleSecondaryLayout}
+          onRetrySecondarySlot={onRetrySecondarySlot}
           onCloseSecondaryStream={onCloseSecondaryStream} onOpenInCloudBrowser={onOpenInCloudBrowser}
           handleDirectCastToTv={handleDirectCastToTv} handleTogglePiP={handleTogglePiP}
           handleToggleFullscreen={handleToggleFullscreen}

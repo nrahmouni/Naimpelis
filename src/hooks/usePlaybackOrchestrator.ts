@@ -193,7 +193,8 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     clearExtractionSnapshot();
     o.setIsPlayerMinimized(false);
     o.setCinemaModePersist(false);
-    o.setSecondaryStream(null);
+    o.setSecondaryStreams([]);
+    o.setActiveAudioSlot(0);
     o.setActiveSportsMatch(null);
     o.setActiveMatchDetails(null);
     o.setActiveMovieContext(null);
@@ -227,7 +228,8 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     o.setIsPlayerMinimized(false);
     o.setIsPlayerClosedLocally(false);
     o.setCinemaModePersist(false);
-    o.setSecondaryStream(null);
+    o.setSecondaryStreams([]);
+    o.setActiveAudioSlot(0);
     o.setActiveSportsMatch(null);
     o.setActiveMatchDetails(null);
     o.setActiveMovieContext(null);
@@ -361,6 +363,35 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
       combinedHandlersRef.current.handlePlaySecondaryChannel(...args),
     []
   );
+  const stableLaunchMultiMatchPreset = useCallback(
+    (...args: Parameters<typeof liveHandlers.handleLaunchMultiMatchPreset>) =>
+      combinedHandlersRef.current.handleLaunchMultiMatchPreset(...args),
+    []
+  );
+  const stableRetrySecondarySlot = useCallback(
+    (...args: Parameters<typeof liveHandlers.handleRetrySecondarySlot>) =>
+      combinedHandlersRef.current.handleRetrySecondarySlot(...args),
+    []
+  );
+  const stableSetMultiAudioSlot = useCallback(
+    (...args: Parameters<typeof liveHandlers.handleSetMultiAudioSlot>) =>
+      combinedHandlersRef.current.handleSetMultiAudioSlot(...args),
+    []
+  );
+  const stableSwapSecondaryStream = useCallback(
+    (...args: Parameters<typeof liveHandlers.handleSwapSecondaryStream>) =>
+      combinedHandlersRef.current.handleSwapSecondaryStream(...args),
+    []
+  );
+  const stableCloseSecondaryStream = useCallback(
+    (...args: Parameters<typeof liveHandlers.handleCloseSecondaryStream>) =>
+      combinedHandlersRef.current.handleCloseSecondaryStream(...args),
+    []
+  );
+  const stableCloseAllSecondaryStreams = useCallback(
+    () => combinedHandlersRef.current.handleCloseAllSecondaryStreams(),
+    []
+  );
   const stablePlayClipboxMedia = useCallback(
     (...args: Parameters<typeof vodHandlers.handlePlayClipboxMedia>) =>
       combinedHandlersRef.current.handlePlayClipboxMedia(...args),
@@ -400,6 +431,12 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     handlePlayQueueItem: stablePlayQueueItem,
     handlePlayCustomUrl: stablePlayCustomUrl,
     handlePlaySecondaryChannel: stablePlaySecondaryChannel,
+    handleLaunchMultiMatchPreset: stableLaunchMultiMatchPreset,
+    handleRetrySecondarySlot: stableRetrySecondarySlot,
+    handleSetMultiAudioSlot: stableSetMultiAudioSlot,
+    handleSwapSecondaryStream: stableSwapSecondaryStream,
+    handleCloseSecondaryStream: stableCloseSecondaryStream,
+    handleCloseAllSecondaryStreams: stableCloseAllSecondaryStreams,
     handlePlayClipboxMedia: stablePlayClipboxMedia,
   };
 }

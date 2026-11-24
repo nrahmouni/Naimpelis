@@ -50,6 +50,10 @@ export interface UsePlaybackOrchestratorOptions {
   setActiveMovieContext: React.Dispatch<React.SetStateAction<ActiveMovieContext | null>>;
   secondaryStream: SecondaryStreamState | null;
   setSecondaryStream: React.Dispatch<React.SetStateAction<SecondaryStreamState | null>>;
+  secondaryStreams: SecondaryStreamState[];
+  setSecondaryStreams: React.Dispatch<React.SetStateAction<SecondaryStreamState[]>>;
+  activeAudioSlot: number;
+  setActiveAudioSlot: React.Dispatch<React.SetStateAction<number>>;
   setCatalogSection: React.Dispatch<React.SetStateAction<CatalogSection>>;
   setMobileTab: React.Dispatch<React.SetStateAction<MobileNavTab>>;
   showHostLockNotice: (hostDisplayName?: string, reason?: string) => void;

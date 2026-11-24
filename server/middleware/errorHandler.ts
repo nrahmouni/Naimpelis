@@ -53,6 +53,7 @@ export function applyEdgeCacheHeaders(
 interface RateBucket {
   count: number;
   resetAt: number;
+  resetHeader: string;
 }
 
 export interface SlidingRateLimiterOptions {
@@ -64,9 +65,12 @@ export interface SlidingRateLimiterOptions {
 export function createSlidingWindowRateLimiter(options: SlidingRateLimiterOptions) {
   const buckets = new Map<string, RateBucket>();
   const { maxRequests, windowMs, keyPrefix = 'api' } = options;
+  const maxRequestsHeader = String(maxRequests);
+  let lastPrunedAt = 0;
 
   const pruneExpired = (now: number) => {
-    if (buckets.size < 2500) return;
+    if (buckets.size < 4000 || now - lastPrunedAt < 30_000) return;
+    lastPrunedAt = now;
     for (const [k, v] of buckets.entries()) {
       if (now >= v.resetAt) buckets.delete(k);
     }
@@ -80,21 +84,26 @@ export function createSlidingWindowRateLimiter(options: SlidingRateLimiterOption
     const now = Date.now();
     pruneExpired(now);
 
-    const forwarded = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
-    const clientIp = forwarded || req.ip || 'unknown';
+    const xff = req.headers['x-forwarded-for'];
+    let clientIp = req.ip || 'unknown';
+    if (typeof xff === 'string' && xff.length > 0) {
+      const commaIdx = xff.indexOf(',');
+      clientIp = (commaIdx === -1 ? xff : xff.slice(0, commaIdx)).trim() || clientIp;
+    }
     const key = `${keyPrefix}:${clientIp}`;
     let bucket = buckets.get(key);
 
     if (!bucket || now >= bucket.resetAt) {
-      bucket = { count: 0, resetAt: now + windowMs };
+      const resetAt = now + windowMs;
+      bucket = { count: 0, resetAt, resetHeader: String(Math.ceil(resetAt / 1000)) };
       buckets.set(key, bucket);
     }
 
     bucket.count += 1;
-    const remaining = Math.max(0, maxRequests - bucket.count);
-    res.setHeader('X-RateLimit-Limit', String(maxRequests));
+    const remaining = maxRequests > bucket.count ? maxRequests - bucket.count : 0;
+    res.setHeader('X-RateLimit-Limit', maxRequestsHeader);
     res.setHeader('X-RateLimit-Remaining', String(remaining));
-    res.setHeader('X-RateLimit-Reset', String(Math.ceil(bucket.resetAt / 1000)));
+    res.setHeader('X-RateLimit-Reset', bucket.resetHeader);
 
     if (bucket.count > maxRequests) {
       const retryAfterSec = Math.max(1, Math.ceil((bucket.resetAt - now) / 1000));
