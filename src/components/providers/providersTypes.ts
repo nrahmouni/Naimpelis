@@ -41,6 +41,10 @@ export interface ProviderCatalogItemPublic {
   year?: string;
   plot?: string;
   containerExtension?: string;
+  lang?: string;
+  langLabel?: string;
+  quality?: string;
+  qualityTier?: number;
   streamUrl: string;
 }
 

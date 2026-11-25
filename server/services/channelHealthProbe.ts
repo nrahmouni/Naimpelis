@@ -121,7 +121,7 @@ export function normalizeTrackUrl(sourceUrl: string): string {
 
 export function unwrapProxyTargetUrl(sourceUrl: string): string {
   const clean = normalizeTrackUrl(sourceUrl);
-  if (clean.startsWith('/api/hls-proxy')) {
+  if (clean.startsWith('/api/hls-proxy') || clean.startsWith('/api/dvb-live')) {
     try {
       const inner = new URL(clean, 'http://localhost').searchParams.get('url');
       if (inner) return normalizeTrackUrl(inner);

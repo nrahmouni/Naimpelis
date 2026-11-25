@@ -57,6 +57,14 @@ function getProviderBadgeStyle(providerId?: string): string {
       return 'bg-amber-500/15 text-amber-300 border-amber-500/30';
     case '2m2h':
       return 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30';
+    case '2m2h-alt':
+      return 'bg-sky-500/15 text-sky-200 border-sky-400/30';
+    case 'adtupac':
+      return 'bg-emerald-500/15 text-emerald-200 border-emerald-400/30';
+    case 'ultra-vip':
+      return 'bg-amber-500/15 text-amber-200 border-amber-400/30';
+    case 'sult-vo':
+      return 'bg-pink-500/15 text-pink-300 border-pink-500/30';
     default:
       return 'bg-rose-500/15 text-rose-300 border-rose-500/30';
   }

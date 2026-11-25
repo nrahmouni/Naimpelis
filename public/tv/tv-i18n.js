@@ -102,6 +102,7 @@ var TV_I18N = {
     tabAnime: 'Anime',
     tabKids: 'Niños',
     tabGames: 'Juegos',
+    tabServers: 'Servidores',
     railVoice: 'Voz IA',
     railPair: 'Conectar Móvil',
     railLang: 'Idioma · ES',
@@ -343,6 +344,7 @@ var TV_I18N = {
     tabAnime: 'Anime',
     tabKids: 'Niños · ES',
     tabGames: 'Jocs',
+    tabServers: 'Servidors',
     railVoice: 'Veu IA',
     railPair: 'Connectar Mòbil',
     railLang: 'Idioma · CA',
@@ -584,6 +586,7 @@ var TV_I18N = {
     tabAnime: 'Anime',
     tabKids: 'Niños (ES)',
     tabGames: 'Games',
+    tabServers: 'Servers',
     railVoice: 'Voice AI',
     railPair: 'Pair Phone',
     railLang: 'Lang · EN',
@@ -857,7 +860,8 @@ function applyTvLanguage(nextLang) {
     series: 'tabSeries',
     anime: 'tabAnime',
     kids: 'tabKids',
-    games: 'tabGames'
+    games: 'tabGames',
+    servers: 'tabServers'
   };
   var tabLabels = document.querySelectorAll('#hub-nav-tabs .rail-label[data-i18n-tab]');
   for (var i = 0; i < tabLabels.length; i++) {

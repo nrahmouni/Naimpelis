@@ -319,7 +319,7 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
             }}
             options={[
               { id: 'all', label: pickLang(lang, { es: 'Todo', ca: 'Tot', en: 'All' }) },
-              { id: 'es', label: pickLang(lang, { es: 'España Dana 4K', ca: 'Espanya Dana 4K', en: 'Spain Dana 4K' }) },
+              { id: 'es', label: pickLang(lang, { es: 'España · 4K', ca: 'Espanya · 4K', en: 'Spain · 4K' }) },
               { id: 'football', label: pickLang(lang, { es: 'Fútbol', ca: 'Futbol', en: 'Football' }) },
               { id: 'favs', label: pickLang(lang, { es: 'Favoritos', ca: 'Favorits', en: 'Favorites' }) },
             ]}

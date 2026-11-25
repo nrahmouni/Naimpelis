@@ -64,6 +64,8 @@ export function registerProviderRoutes(app: express.Express, deps: ProviderRoute
     const kind: ProviderMediaKind | 'all' =
       rawKind === 'live' || rawKind === 'movie' || rawKind === 'series' ? rawKind : 'all';
     const categoryId = String(req.query.categoryId || '').trim();
+    const lang = String(req.query.lang || '').trim();
+    const quality = String(req.query.quality || '').trim();
     const q = String(req.query.q || '').trim();
     const offset = Number(req.query.offset || 0);
     const limit = Number(req.query.limit || 60);
@@ -72,6 +74,8 @@ export function registerProviderRoutes(app: express.Express, deps: ProviderRoute
       scope,
       kind,
       categoryId,
+      lang,
+      quality,
       q,
       offset,
       limit,

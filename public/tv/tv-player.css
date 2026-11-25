@@ -555,10 +555,10 @@
 #tv-zap-osd {
   display: none;
   position: absolute;
-  left: 44px;
-  bottom: 34px;
-  max-width: 700px;
-  min-width: 440px;
+  left: 56px;
+  bottom: 42px;
+  max-width: calc(100% - 112px);
+  min-width: 420px;
   padding: 16px 20px;
   border-radius: 18px;
   background: #0E1018;
@@ -788,7 +788,7 @@
   top: 0;
   left: 0;
   right: 0;
-  padding: 24px 44px 42px 44px;
+  padding: 28px 54px 42px 54px;
   background: linear-gradient(to bottom, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0) 100%);
   display: -webkit-flex;
   display: flex;
@@ -846,7 +846,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  padding: 36px 44px 24px 44px;
+  padding: 36px 54px 36px 54px;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.72) 68%, rgba(0, 0, 0, 0) 100%);
   display: -webkit-flex;
   display: flex;
@@ -1537,6 +1537,8 @@
     font-size: 52px;
   }
   #tv-zap-osd {
+    left: 64px;
+    bottom: 48px;
     max-width: 860px;
     min-width: 540px;
     padding: 22px 28px;
@@ -1573,7 +1575,7 @@
     padding: 10px 20px;
   }
   #player-hud {
-    padding: 30px 56px 48px 56px;
+    padding: 34px 64px 48px 64px;
   }
   .hud-meta-title {
     font-size: 28px;
@@ -1585,7 +1587,7 @@
     font-size: 26px;
   }
   #player-bottom-dock {
-    padding: 40px 56px 30px 56px;
+    padding: 40px 64px 44px 64px;
   }
   .dock-time-label {
     font-size: 18px;

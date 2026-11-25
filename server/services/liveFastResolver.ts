@@ -19,6 +19,7 @@ import { isElahmadUrl, resolveElahmadChannelToHls } from '../extractors/elahmadE
 import { resolveMediasetLiveHlsUrl } from './mediasetLiveService.ts';
 import { isAnyBelixConnected, resolveBelixManifest } from './belix/belixXtreamClient.ts';
 import { fetchProxiedXtreamManifest } from './xtreamService.ts';
+import { resolveProviderLiveManifest } from './providers/xtreamProvidersService.ts';
 import { channelHealthMonitor } from './channelHealthMonitor.ts';
 import { inferStreamQualityTag, normalizeLiveTrackLang } from '../../src/utils/channelQualityRanker.ts';
 
@@ -61,8 +62,18 @@ export interface FastLiveResolveResult {
 const fastLiveWinnerCache = new LruTtlCache<string, FastLiveResolveResult>(250, 35_000);
 const inflightPrewarms = new Map<string, Promise<FastLiveResolveResult>>();
 
-function parseXtreamSource(sourceUrl: string): { streamId: string; providerId: string } | null {
-  if (!/^\/api\/(?:xtream\/stream\/|stream\b)/i.test(sourceUrl)) return null;
+function parseXtreamSource(
+  sourceUrl: string
+): { streamId: string; providerId: string; isProvidersRoute?: boolean } | null {
+  if (!/^\/api\/(?:xtream\/stream\/|providers\/stream\/|stream\b)/i.test(sourceUrl)) return null;
+  const provRouteMatch = sourceUrl.match(/^\/api\/providers\/stream\/([^/]+)\/live\/([^.?/]+)(?:\.[^?]*)?(?:\?.*)?$/i);
+  if (provRouteMatch) {
+    return {
+      providerId: decodeURIComponent(provRouteMatch[1]),
+      streamId: decodeURIComponent(provRouteMatch[2]),
+      isProvidersRoute: true,
+    };
+  }
   if (sourceUrl.startsWith('/api/xtream/stream/')) {
     const rawId = sourceUrl.split('/').pop()?.split('?')[0]?.replace(/\.m3u8.*$/i, '') || '';
     let providerId = 'primary';
@@ -111,12 +122,14 @@ export async function defaultProbeSingleLiveTrack(
     };
   }
 
-  // 1. Xtream provider stream (/api/stream or /api/xtream/stream) -> populates RAM manifest cache too!
+  // 1. Xtream provider stream (/api/stream, /api/xtream/stream, or /api/providers/stream) -> populates RAM cache too!
   const xtreamRef = parseXtreamSource(sourceUrl);
   if (xtreamRef) {
     try {
       const manifest = await Promise.race([
-        fetchProxiedXtreamManifest(xtreamRef.streamId, '', xtreamRef.providerId),
+        xtreamRef.isProvidersRoute
+          ? resolveProviderLiveManifest(xtreamRef.providerId, xtreamRef.streamId, '')
+          : fetchProxiedXtreamManifest(xtreamRef.streamId, '', xtreamRef.providerId),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), opts.timeoutMs)),
       ]);
       const lat = Math.max(1, Date.now() - startedAt);
@@ -277,11 +290,13 @@ export function orderCandidatesForFastResolve(
       ? 3
       : 4;
     const isEmbed = track.resolverType === 'web_embed';
+    const isResidentialDvb = /90\.163\.85\.113(?:%3A|:)8093/i.test(String(track.sourceUrl || ''));
     const q = inferStreamQualityTag(track.quality, track.label, track.sourceUrl);
     const lat = typeof liveHealth?.latencyMs === 'number' ? Math.min(9999, liveHealth.latencyMs) : 1200;
     const score =
       statusRank * 1000000 +
       (isEmbed ? 500000 : 0) +
+      (isResidentialDvb ? 150000 : 0) +
       langRank * 10000 +
       Math.round(q.tier * 1000) +
       Math.round(lat / 10);
@@ -336,12 +351,12 @@ export async function raceFastLiveTracks(
   const ordered = orderCandidatesForFastResolve(safeTracks, {
     preferLang,
     preferQualityFirst: qualityFirst,
-  }).slice(0, 5);
+  }).slice(0, 6);
 
   const probeImpl = opts.probeImpl || defaultProbeSingleLiveTrack;
-  const timeoutMs = opts.timeoutMs ?? 2_400;
-  const hedgeDelay1 = opts.hedgeDelayMs ?? 220;
-  const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 520;
+  const timeoutMs = opts.timeoutMs ?? 2_600;
+  const hedgeDelay1 = opts.hedgeDelayMs ?? 120;
+  const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 300;
   const publicOrigin = opts.publicOrigin || '';
   const belixSessionKey = opts.belixSessionKey || 'default';
 

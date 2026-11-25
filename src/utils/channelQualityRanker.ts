@@ -229,7 +229,7 @@ export function inferStreamQualityTag(
   if (/\b(?:720p?|hd)\b/.test(text)) {
     return { label: 'HD', tier: isHevc ? 3.2 : 2 };
   }
-  if (/^\/api\/(xtream\/stream|stream|belix\/stream)/i.test(String(sourceUrl || ''))) {
+  if (/^\/api\/(xtream\/stream|providers\/stream|stream|belix\/stream)/i.test(String(sourceUrl || ''))) {
     return { label: '1080p FHD', tier: 1.5 };
   }
   return { label: 'HD', tier: 2 };
@@ -286,10 +286,13 @@ function liveTrackSortScore(tr: StreamTrack, preferSpanish: boolean): number {
     preferSpanish && status !== 'down' && lang === 'ES' && isDanaDirectTrack(tr) && q.tier < 2.5
       ? -2400
       : 0;
-  const directApiBonus = /^\/api\/stream\?/i.test(String(tr.sourceUrl || '')) ? -40 : 0;
+  const srcStr = String(tr.sourceUrl || '');
+  const isResidentialDvb = srcStr.includes('90.163.85.113:8093');
+  const directApiBonus = /^\/api\/(?:stream\?|providers\/stream\/)/i.test(srcStr) ? -40 : 0;
   const latMs = typeof tr.health?.latencyMs === 'number' ? Math.min(9999, tr.health.latencyMs) : 1400;
   return (
     statusRank * 100000 +
+    (isResidentialDvb ? 65000 : 0) +
     langRank * 10000 +
     Math.round(q.tier * 1000) +
     upBonus +
@@ -311,6 +314,10 @@ function normalizeUrlForMerge(url: string): string {
       const prov = (provMatch?.[1] || 'primary').toLowerCase();
       return `xtream-direct:${prov}:${decodeURIComponent(idMatch[1])}`;
     }
+  }
+  const provStreamMatch = clean.match(/^\/api\/providers\/stream\/([^/]+)\/live\/([^.?/]+)(?:\.[^?]*)?(?:\?.*)?$/i);
+  if (provStreamMatch) {
+    return `xtream-direct:${decodeURIComponent(provStreamMatch[1]).toLowerCase()}:${decodeURIComponent(provStreamMatch[2])}`;
   }
   const xtreamMatch = clean.match(/^\/api\/xtream\/stream\/([^.?/]+)(?:\.m3u8)?(?:\?(.*))?$/i);
   if (xtreamMatch) {

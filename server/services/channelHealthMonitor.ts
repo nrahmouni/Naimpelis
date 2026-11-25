@@ -111,7 +111,7 @@ export class ChannelHealthMonitor {
       const isHttpsCdn = /^https:\/\//i.test(unwrapped) && !isResidentialDvb;
       const isPreferredEdge2 = /\/api\/belix\/stream\/531071(?:\.m3u8|\b)/i.test(src);
       const isBelix = src.startsWith('/api/belix/stream/');
-      const isXtreamProxy = /^\/api\/(?:xtream\/stream|stream)\b/i.test(src);
+      const isXtreamProxy = /^\/api\/(?:xtream\/stream|providers\/stream|stream)\b/i.test(src);
       const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(q);
       const isFhdOr1080 = !isHevc && /\b(?:fhd|1080p?|full\s*hd)\b/.test(q);
       const is4kNonResidential = !isUhdHevc && !isHevc && /(?:4k|uhd|2160p?|⁴ᴷ)/i.test(q);
@@ -130,12 +130,15 @@ export class ChannelHealthMonitor {
         : 3;
       const transportPenalty = /interactvty\.pro/i.test(src)
         ? 1500
+        : isResidentialDvb
+        ? 900
         : isPreferredEdge2 || isXtreamProxy
         ? 0
         : isBelix
         ? 250
         : 0;
-      const penaltyMs = (health?.qoeFailures || 0) * 1500 + (health?.qoeRebuffers || 0) * 250 + transportPenalty;
+      const penaltyMs =
+        (health?.qoeFailures || 0) * 1800 + (health?.qoeRebuffers || 0) * 600 + transportPenalty;
       const effectiveLatency = Math.max(
         1,
         (health?.latencyMs ?? (health?.status === 'unknown' ? 1200 : 800)) + penaltyMs
@@ -164,6 +167,11 @@ export class ChannelHealthMonitor {
       const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
       if (rankDiff !== 0) return rankDiff;
 
+      // Keep single-socket residential DVB strictly behind verified HTTPS CDNs & Xtream signals
+      if (a.status !== 'down' && b.status !== 'down' && a.isResidentialDvb !== b.isResidentialDvb) {
+        return a.isResidentialDvb ? 1 : -1;
+      }
+
       // Verified fast Xtream 4K/FHD non-HEVC Spanish signals beat Belix edge2 when probed 'up'
       const aFastXtream = a.isXtreamProxy && a.status === 'up' && a.qualityTier <= 2;
       const bFastXtream = b.isXtreamProxy && b.status === 'up' && b.qualityTier <= 2;
@@ -189,7 +197,7 @@ export class ChannelHealthMonitor {
           return a.isHttpsCdn ? -1 : 1;
         }
         if (a.isResidentialDvb !== b.isResidentialDvb) {
-          return a.isResidentialDvb ? -1 : 1;
+          return a.isResidentialDvb ? 1 : -1;
         }
       }
       if (a.isBelix && b.isBelix && a.status === b.status) {

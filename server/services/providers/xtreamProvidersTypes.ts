@@ -42,6 +42,10 @@ export interface ProviderCatalogItemPublic {
   name: string;
   categoryId: string;
   categoryName: string;
+  lang?: string;
+  langLabel?: string;
+  quality?: string;
+  qualityTier?: number;
   poster?: string;
   rating?: string;
   year?: string;
@@ -95,6 +99,8 @@ export interface ProvidersStatusSummaryPublic {
 export interface ProviderCatalogQueryResult {
   scope: string;
   kind: ProviderMediaKind | 'all';
+  lang?: string;
+  quality?: string;
   total: number;
   offset: number;
   limit: number;

@@ -74,7 +74,19 @@ interface CachedProbeResult {
 
 const PROBE_CACHE_TTL_MS = 10 * 60 * 1000;
 const probeResultCache = new Map<string, CachedProbeResult>();
-const PROVIDER_PRIORITY_ORDER = ['dana4k', 'octopus', 'primary', 'vod4k', '24tv', '2m2h', 'activecdns'];
+const PROVIDER_PRIORITY_ORDER = [
+  'dana4k',
+  'octopus',
+  'primary',
+  'vod4k',
+  'sult-vo',
+  'ultra-vip',
+  'adtupac',
+  '2m2h-alt',
+  '24tv',
+  '2m2h',
+  'activecdns',
+];
 
 const SPANISH_TDT_BY_ID = new Map(SPANISH_TDT_CHANNELS.map((c) => [c.id, c]));
 
@@ -150,7 +162,7 @@ export function isSpanishLiveChannelEntry(streamName: string, categoryName: stri
   }
 
   const hasSpainCat =
-    /\b(?:spain|espa[ñn]a|tdt|tivify|tivfiy|movistar|atresmedia|mediaset|rtve|autonomicas|auton[oó]micas|laliga|hypermotion|rakuten\s*tv)\b|أسبانيا|^(?:\[?\s*(?:vip\s*)?(?:es|esp)\s*\]?\s*[|:/-])/i.test(
+    /\b(?:spain|espa[ñn]a|castellano|tdt|tivify|tivfiy|movistar|atresmedia|mediaset|rtve|autonomicas|auton[oó]micas|laliga|hypermotion|rakuten\s*tv)\b|أسبانيا|^(?:\[?\s*(?:vip\s*)?(?:es|esp|cast)\s*\]?\s*[|:/-])/i.test(
       cat
     );
 
@@ -161,7 +173,8 @@ export function isSpanishLiveChannelEntry(streamName: string, categoryName: stri
 
   if (hasForeignCatPrefix && !hasSpainCat) return false;
 
-  const hasSpainStreamPrefix = /^(?:tivif?y\s*es\s*[:|]|vip\s*es\s*[:|]|\[?\s*(?:es|esp)\s*\]?\s*[|:/-])/i.test(name);
+  const hasSpainStreamPrefix =
+    /^(?:tivif?y\s*es\s*[:|]|vip\s*es\s*[:|]|\[?\s*(?:es|esp|cast|spain)\s*\]?\s*[|:/-])/i.test(name);
   return hasSpainCat || hasSpainStreamPrefix;
 }
 

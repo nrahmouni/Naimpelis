@@ -102,6 +102,27 @@ function clearVideoWatchdog() {
   }
 }
 
+function reportTvQoeMetric(sourceUrl, opts) {
+  try {
+    if (!sourceUrl) return;
+    var payload = {
+      platform: 'smart-tv',
+      startupMs: opts && typeof opts.startupMs === 'number' ? opts.startupMs : 0,
+      rebufferCount: opts && typeof opts.rebufferCount === 'number' ? opts.rebufferCount : 0,
+      rebufferMs: opts && typeof opts.rebufferMs === 'number' ? opts.rebufferMs : 0,
+      stallFailoverUsed: Boolean(opts && opts.stallFailoverUsed),
+      failed: Boolean(opts && opts.failed),
+      sourceUrl: String(sourceUrl).slice(0, 550)
+    };
+    xhrJson('POST', '/api/metrics/qoe', payload, function () {});
+  } catch (e) {}
+}
+
+var tvStreamLoadStartMs = 0;
+var tvRebufferCount = 0;
+var tvCorruptFrameChecks = 0;
+var tvLastCorruptCount = 0;
+
 function stopLiveStallMonitor() {
   if (videoStallWatchInterval) {
     clearInterval(videoStallWatchInterval);
@@ -109,6 +130,8 @@ function stopLiveStallMonitor() {
   }
   videoLastProgressTime = -1;
   videoStallStartedAt = 0;
+  tvCorruptFrameChecks = 0;
+  tvLastCorruptCount = 0;
 }
 
 function startLiveStallMonitor() {
@@ -125,6 +148,22 @@ function startLiveStallMonitor() {
       videoStallStartedAt = 0;
       return;
     }
+    if (videoEl.readyState >= 2 && videoEl.currentTime > 1.2 && (!videoEl.videoWidth || videoEl.videoWidth === 0)) {
+      tvCorruptFrameChecks++;
+      if (tvCorruptFrameChecks >= 3) {
+        tvCorruptFrameChecks = 0;
+        triggerPlaybackFailover('Sin imagen de vídeo');
+        return;
+      }
+    } else if (videoEl.getVideoPlaybackQuality) {
+      var qInfo = videoEl.getVideoPlaybackQuality();
+      var curCorrupt = qInfo && typeof qInfo.corruptedVideoFrames === 'number' ? qInfo.corruptedVideoFrames : 0;
+      if (curCorrupt - tvLastCorruptCount >= 8) {
+        tvLastCorruptCount = curCorrupt;
+        triggerPlaybackFailover('Macrobloques detectados');
+        return;
+      }
+    }
     if (videoEl.readyState < 2 || !videoEl.videoWidth || videoEl.videoWidth === 0) {
       return;
     }
@@ -137,9 +176,10 @@ function startLiveStallMonitor() {
     var nowMs = Date.now();
     if (!videoStallStartedAt) {
       videoStallStartedAt = nowMs;
+      tvRebufferCount++;
       return;
     }
-    if (nowMs - videoStallStartedAt >= 6500) {
+    if (nowMs - videoStallStartedAt >= 5500) {
       videoStallStartedAt = 0;
       triggerPlaybackFailover('Señal congelada');
     }
@@ -152,6 +192,11 @@ function markVideoFrameActive() {
   if (videoEl) {
     videoLastProgressTime = Number(videoEl.currentTime || 0);
     videoStallStartedAt = 0;
+  }
+  if (tvStreamLoadStartMs > 0 && currentUrl) {
+    var elapsedStartup = Date.now() - tvStreamLoadStartMs;
+    tvStreamLoadStartMs = 0;
+    reportTvQoeMetric(currentUrl, { startupMs: elapsedStartup, rebufferCount: tvRebufferCount, failed: false });
   }
   if (standbyOverlay && standbyOverlay.style.display !== 'none') {
     standbyOverlay.style.display = 'none';
@@ -275,6 +320,12 @@ function triggerPlaybackFailover(reasonText) {
     activeLiveFailedTrackIdxs[activeLiveTrackIdx] = true;
     var curTrackObj = ch.channels && ch.channels[activeLiveTrackIdx] ? ch.channels[activeLiveTrackIdx] : null;
     var curTrackUrl = curTrackObj ? (curTrackObj.sourceUrl || curTrackObj.resolvedStreamUrl || '') : (currentUrl || '');
+    reportTvQoeMetric(curTrackUrl || currentUrl, {
+      startupMs: tvStreamLoadStartMs > 0 ? (Date.now() - tvStreamLoadStartMs) : 4000,
+      rebufferCount: Math.max(1, tvRebufferCount),
+      stallFailoverUsed: true,
+      failed: true
+    });
     var deadHostKey = extractTvTrackHostKey(curTrackUrl);
     if (deadHostKey) {
       activeLiveFailedHostKeys[deadHostKey] = true;
@@ -453,6 +504,8 @@ function applyVideoState(vs, forceReload) {
   currentMode = nextMode;
   currentUrl = nextUrl;
   currentIsLive = isLive;
+  tvStreamLoadStartMs = Date.now();
+  tvRebufferCount = 0;
   autoFailoverLock = false;
   clearVideoWatchdog();
   if (!isLive) {
@@ -506,7 +559,7 @@ function applyVideoState(vs, forceReload) {
     return;
   }
 
-  // Mode 3 & 4: Native MP4 (`direct`) or HLS (`hls`)
+  // Mode 3 & 4: Native MP4 (direct) or HLS (hls)
   if (ytPlayer && ytPlayer.stopVideo) {
     try { ytPlayer.stopVideo(); } catch (e) {}
   }
@@ -564,27 +617,27 @@ function applyVideoState(vs, forceReload) {
       lowLatencyMode: false,
       startFragPrefetch: true,
       startPosition: isLive ? -1 : targetSec,
-      liveSyncDurationCount: isLive ? (isDvbLive ? 1 : 2) : 3,
-      liveMaxLatencyDurationCount: isLive ? (isDvbLive ? 7 : 9) : 12,
+      liveSyncDurationCount: isLive ? 3 : 3,
+      liveMaxLatencyDurationCount: isLive ? 10 : 12,
       maxLiveSyncPlaybackRate: 1,
-      backBufferLength: isLive ? 18 : 30,
-      maxBufferLength: isLive ? 28 : 40,
-      maxMaxBufferLength: isLive ? 60 : 80,
-      maxBufferHole: isLive ? 0.5 : 0.5,
+      backBufferLength: isLive ? 20 : 30,
+      maxBufferLength: isLive ? 36 : 42,
+      maxMaxBufferLength: isLive ? 72 : 90,
+      maxBufferHole: isLive ? 0.8 : 0.6,
       highBufferWatchdogPeriod: 2,
-      nudgeOffset: isLive ? 0.1 : 0.1,
-      nudgeMaxRetry: 10,
+      nudgeOffset: isLive ? 0.15 : 0.1,
+      nudgeMaxRetry: 12,
       capLevelToPlayerSize: true,
       maxAudioFramesDrift: isLive ? 3 : 4,
       abrEwmaDefaultEstimate: isLive ? 4500000 : 5500000,
-      manifestLoadingTimeOut: isDvbLive ? 9000 : 12000,
-      manifestLoadingMaxRetry: 4,
+      manifestLoadingTimeOut: isDvbLive ? 10000 : 12000,
+      manifestLoadingMaxRetry: 5,
       manifestLoadingRetryDelay: 250,
-      levelLoadingTimeOut: 11000,
-      levelLoadingMaxRetry: 4,
+      levelLoadingTimeOut: 12000,
+      levelLoadingMaxRetry: 5,
       levelLoadingRetryDelay: 250,
-      fragLoadingTimeOut: 14000,
-      fragLoadingMaxRetry: 6,
+      fragLoadingTimeOut: 16000,
+      fragLoadingMaxRetry: 8,
       fragLoadingRetryDelay: 300
     });
     hlsInstance = hls;
@@ -628,9 +681,13 @@ function applyVideoState(vs, forceReload) {
         ) {
           nonFatalMediaErrors++;
           var nowMs = Date.now();
+          if (nonFatalMediaErrors >= 5) {
+            nonFatalMediaErrors = 0;
+            triggerPlaybackFailover('Trama de vídeo corrupta');
+            return;
+          }
           if (nonFatalMediaErrors >= 3 && nowMs - lastNonFatalMediaAt > 12000) {
             lastNonFatalMediaAt = nowMs;
-            nonFatalMediaErrors = 0;
             try { hls.recoverMediaError(); } catch (e) {}
           }
         }

@@ -58,6 +58,7 @@ import { registerProviderRoutes } from './server/routes/providerRoutes.ts';
 import { getMovistarDaznHome } from './server/services/movistarDaznCatalogService.ts';
 import { initBelixFromEnv } from './server/services/belix/belixXtreamClient.ts';
 import { initDefaultProviders } from './server/services/providers/xtreamProvidersService.ts';
+import { raceFastLiveTracks } from './server/services/liveFastResolver.ts';
 import { SPANISH_TDT_CHANNELS } from './server/data/tdtChannels.ts';
 import { CATALA_LIVE_CHANNELS } from './server/data/catalaRegistry.ts';
 import {
@@ -556,7 +557,33 @@ async function startServer() {
             void initBelixFromEnv().catch((err) => logger.warn({ err }, 'prewarm_belix_failed'));
           }, 1350).unref?.();
           setTimeout(() => {
-            void initDefaultProviders().catch((err) => logger.warn({ err }, 'prewarm_providers_failed'));
+            void initDefaultProviders()
+              .catch((err) => logger.warn({ err }, 'prewarm_providers_failed'))
+              .finally(() => {
+                const flagshipIds = new Set([
+                  'tdt-la1',
+                  'tdt-la2',
+                  'tdt-antena3',
+                  'tdt-cuatro',
+                  'tdt-telecinco',
+                  'tdt-lasexta',
+                  'dazn-laliga',
+                  'mplus-laliga',
+                ]);
+                const targets = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS).filter((ch) =>
+                  flagshipIds.has(ch.id)
+                );
+                void Promise.allSettled(
+                  targets.map((ch) =>
+                    raceFastLiveTracks(ch.channels, {
+                      channelId: ch.id,
+                      titleHint: ch.name,
+                      preferLang: 'ES',
+                      timeoutMs: 2400,
+                    }).catch(() => undefined)
+                  )
+                );
+              });
           }, 2200).unref?.();
           channelHealthMonitor.startScheduler(
             () => [

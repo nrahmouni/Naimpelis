@@ -44,10 +44,21 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
     activeVideoRawUrl && ch.channels.some((s) => s.sourceUrl === activeVideoRawUrl)
   );
   const leadTrack = ch.channels[0];
-  const isDanaLead =
-    leadTrack?.providerId === 'dana4k' ||
-    /provider=dana4k/i.test(leadTrack?.sourceUrl || '') ||
-    /dana\s*4k/i.test(leadTrack?.providerName || leadTrack?.label || '');
+  const leadServerLabel =
+    leadTrack?.providerName ||
+    (leadTrack?.providerId === 'dana4k' || /provider=dana4k/i.test(leadTrack?.sourceUrl || '')
+      ? 'Dana 4K Pro'
+      : leadTrack?.providerId === 'octopus'
+      ? 'Octopus TV'
+      : leadTrack?.providerId === 'ultra-vip'
+      ? 'Ultra VIP'
+      : leadTrack?.providerId === 'sult-vo'
+      ? 'Sult-Vo'
+      : leadTrack?.providerId === 'adtupac'
+      ? 'Adtupac'
+      : leadTrack?.providerId === 'activecdns'
+      ? 'Active CDNS'
+      : '');
   const qualityTag = inferStreamQualityTag(
     leadTrack?.quality || ch.quality,
     leadTrack?.label,
@@ -88,10 +99,10 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
             <span>{regMeta.langTag}</span>
             <span aria-hidden="true">·</span>
             <span>Dial {ch.dial}</span>
-            {isDanaLead && (
+            {leadServerLabel && (
               <>
                 <span aria-hidden="true">·</span>
-                <span className="text-amber-300">Dana 4K</span>
+                <span className="text-amber-300">{leadServerLabel}</span>
               </>
             )}
             <span aria-hidden="true">·</span>

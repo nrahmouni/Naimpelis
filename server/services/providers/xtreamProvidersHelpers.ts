@@ -461,15 +461,98 @@ export async function fetchProviderOpaqueSegment(
   return null;
 }
 
+export function detectProviderItemLangAndQuality(
+  rawName: string,
+  categoryName = '',
+  kind: 'live' | 'movie' | 'series' = 'live',
+  containerExt = ''
+): { lang: string; langLabel: string; quality: string; qualityTier: number } {
+  const name = String(rawName || '')
+    .replace(/⁴ᴷ|⁴ᵏ/g, ' 4K ')
+    .replace(/ᶠᴴᴰ/gi, ' FHD ')
+    .replace(/ᴴᴰ/gi, ' HD ')
+    .trim();
+  const cat = String(categoryName || '').trim();
+  const hay = `${name} ${cat} ${containerExt}`.toLowerCase();
+
+  let lang = 'INTL';
+  let langLabel = 'Internacional';
+  if (/[\u0600-\u06FF]/.test(`${name} ${cat}`) || /^(?:\[?\s*(?:AR|ARB)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:arabic|arabia|egypt|maroc|morocco|aflam|bein)\b/i.test(cat)) {
+    lang = 'AR';
+    langLabel = 'Árabe (AR)';
+  } else if (/^(?:\[?\s*(?:CAT)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:catal[aà]|3cat|tv3)\b/i.test(hay)) {
+    lang = 'CAT';
+    langLabel = 'Català';
+  } else if (/\b(?:vose|subtitulad[ao]s?|sub\s*es|sub\s*esp)\b/i.test(hay)) {
+    lang = 'VOSE';
+    langLabel = 'VOSE';
+  } else if (/^(?:\[?\s*(?:LAT|LA|MX)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:latino|latam|audio\s*latino|es-mx|m[eé]xico|argentina|colombia)\b/i.test(hay)) {
+    lang = 'LAT';
+    langLabel = 'Latino';
+  } else if (
+    /^(?:\[?\s*(?:VIP\s*)?(?:ES|ESP|SPAIN|ESPA[ÑN]A|CAST)\s*\]?\s*[|:/-])/i.test(name) ||
+    /^(?:\[?\s*(?:VIP\s*)?(?:ES|ESP|SPAIN|ESPA[ÑN]A)\s*\]?\s*[|:/-])/i.test(cat) ||
+    /\b(?:castellano|espa[ñn]a|spain|tdt|tivify|movistar|dazn\s*(?:la\s*liga|1|2|3|4|f1)|laliga\s*hypermotion|cine\s*es|pel[ií]culas|estrenos|atresmedia|mediaset|rtve)\b/i.test(
+      hay
+    )
+  ) {
+    lang = 'ES';
+    langLabel = 'Castellano';
+  } else if (/^(?:\[?\s*(?:FR|VF|VOSTFR)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:french|fran[çc]ais|france|vostfr)\b/i.test(hay)) {
+    lang = 'FR';
+    langLabel = 'Francés';
+  } else if (/^(?:\[?\s*(?:PT|BR)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:portugu[eê]s|portugal|brasil)\b/i.test(hay)) {
+    lang = 'PT';
+    langLabel = 'Portugués';
+  } else if (/^(?:\[?\s*(?:IT)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:italiano|italy|italia)\b/i.test(hay)) {
+    lang = 'IT';
+    langLabel = 'Italiano';
+  } else if (/^(?:\[?\s*(?:DE|GER)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:german|deutsch)\b/i.test(hay)) {
+    lang = 'DE';
+    langLabel = 'Alemán';
+  } else if (/^(?:\[?\s*(?:EN|ENG|UK|US|USA)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:english|ingl[eé]s|uk|usa)\b/i.test(hay)) {
+    lang = 'EN';
+    langLabel = 'Inglés';
+  }
+
+  const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(hay);
+  let quality = kind === 'live' ? 'HD' : '1080p FHD';
+  let qualityTier = kind === 'live' ? 2 : 1;
+
+  if (/\b(?:4k|uhd|2160p?|dolby\s*vision|hdr10?\+?|remux)\b/.test(hay)) {
+    quality = isHevc ? '4K HEVC' : '4K UHD';
+    qualityTier = isHevc ? 2.5 : 0;
+  } else if (/\b(?:fhd|1080p?|full\s*hd|blu-?ray|bdrip)\b/.test(hay)) {
+    quality = isHevc ? '1080p HEVC' : '1080p FHD';
+    qualityTier = isHevc ? 2.8 : 1;
+  } else if (/\b(?:576p?|480p?|360p?|sd|lq|dvdrip)\b/.test(hay)) {
+    quality = 'SD';
+    qualityTier = 4;
+  } else if (/\b(?:720p?|hd|hdtv|web-?dl|webrip)\b/.test(hay)) {
+    quality = 'HD';
+    qualityTier = isHevc ? 3 : 2;
+  }
+
+  return { lang, langLabel, quality, qualityTier };
+}
+
 export function sortCatalogItemsForDisplay(items: ProviderCatalogItemPublic[]): ProviderCatalogItemPublic[] {
+  const langScore = (item: ProviderCatalogItemPublic): number => {
+    if (item.lang === 'ES') return 0;
+    if (item.lang === 'CAT') return 1;
+    if (item.lang === 'LAT') return 2;
+    if (item.lang === 'VOSE') return 3;
+    if (item.lang === 'EN') return 4;
+    return 5;
+  };
   return items.sort((a, b) => {
-    const score = (item: ProviderCatalogItemPublic): number => {
-      const text = `${item.categoryName} ${item.name}`.toLowerCase();
-      if (/\b(es|esp|spain|espa[ñn]a|castellano|tdt|movistar|dazn)\b/i.test(text)) return 0;
-      if (/\b(cine|estreno|pel[ií]cula|4k|uhd|netflix|hbo|disney|prime)\b/i.test(text)) return 1;
-      if (/\b(deport|sport|f[uú]tbol|futbol|laliga|champions)\b/i.test(text)) return 2;
-      return 3;
-    };
-    return score(a) - score(b);
+    const lDiff = langScore(a) - langScore(b);
+    if (lDiff !== 0) return lDiff;
+    const qa = typeof a.qualityTier === 'number' ? a.qualityTier : 2;
+    const qb = typeof b.qualityTier === 'number' ? b.qualityTier : 2;
+    if (qa !== qb) return qa - qb;
+    const aEsBoost = /\b(tdt|movistar|dazn|laliga|champions|estreno)\b/i.test(`${a.categoryName} ${a.name}`) ? 0 : 1;
+    const bEsBoost = /\b(tdt|movistar|dazn|laliga|champions|estreno)\b/i.test(`${b.categoryName} ${b.name}`) ? 0 : 1;
+    return aEsBoost - bEsBoost;
   });
 }

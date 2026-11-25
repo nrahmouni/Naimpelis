@@ -10,10 +10,11 @@ import {
   buildXtreamMediaUrl,
   buildXtreamPlayerApiUrl,
   normalizeXtreamOrigin,
-  providersConfig,
+  providersConfig as serverDefaultProvidersConfig,
   type XtreamAccountCredential,
   type XtreamProviderConfig,
 } from '../../config/defaultProviders.ts';
+import { getAllXtreamProviders } from '../providersConfig.ts';
 import { assertSafeProxyUrl } from '../../utils/ssrfGuard.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
 import { logger } from '../../utils/logger.ts';
@@ -24,6 +25,7 @@ import {
 import { applyProxyCorsHeaders, getOrCreateRequestId } from '../../routes/proxies/proxyUtils.ts';
 import {
   buildProviderStreamUrl,
+  detectProviderItemLangAndQuality,
   extractYearHint,
   fetchProviderJsonWithFallback,
   fetchProviderPlaylistText,
@@ -61,6 +63,42 @@ interface ProviderRuntimeState {
   connectPromise?: Promise<ProviderStatusPublic>;
 }
 
+const DEFAULT_PROVIDER_ACCENTS: Record<string, string> = {
+  primary: '#E50914',
+  vod4k: '#7C3AED',
+  '24tv': '#06B6D4',
+  '2m2h': '#0EA5E9',
+  '2m2h-alt': '#38BDF8',
+  dana4k: '#F59E0B',
+  activecdns: '#10B981',
+  octopus: '#3B82F6',
+  adtupac: '#10B981',
+  'ultra-vip': '#F97316',
+  'sult-vo': '#F43F5E',
+};
+
+function getUnifiedProviderConfigs(): XtreamProviderConfig[] {
+  const accentById = new Map<string, string>(Object.entries(DEFAULT_PROVIDER_ACCENTS));
+  for (const cfg of serverDefaultProvidersConfig) {
+    if (cfg.accentColor) accentById.set(cfg.id, cfg.accentColor);
+  }
+  const unified: XtreamProviderConfig[] = [];
+  const seen = new Set<string>();
+  for (const def of getAllXtreamProviders()) {
+    if (!def.serverUrl || def.accounts.length === 0 || seen.has(def.id)) continue;
+    seen.add(def.id);
+    unified.push({
+      id: def.id,
+      name: def.name,
+      serverUrl: def.serverUrl,
+      autoConnect: true,
+      accentColor: accentById.get(def.id) || '#38BDF8',
+      accounts: def.accounts.map((a) => ({ username: a.username, password: a.password })),
+    });
+  }
+  return unified;
+}
+
 const runtimeStates = new Map<string, ProviderRuntimeState>();
 
 function ensureRuntimeState(config: XtreamProviderConfig): ProviderRuntimeState {
@@ -81,11 +119,13 @@ function ensureRuntimeState(config: XtreamProviderConfig): ProviderRuntimeState 
       error: undefined,
     };
     runtimeStates.set(config.id, st);
+  } else {
+    st.config = config;
   }
   return st;
 }
 
-for (const cfg of providersConfig) {
+for (const cfg of getUnifiedProviderConfigs()) {
   ensureRuntimeState(cfg);
 }
 
@@ -263,6 +303,7 @@ async function fetchFullCatalogForAccount(
       const categoryId = String(row?.category_id ?? 'general').trim() || 'general';
       const categoryName = rawLiveCatMap.get(categoryId) || 'TV en Directo';
       if (!streamId || !name || isDisallowedAdultItem(categoryName, name)) continue;
+      const meta = detectProviderItemLangAndQuality(name, categoryName, 'live');
       liveItems.push({
         id: `${provider.id}:live:${streamId}`,
         providerId: provider.id,
@@ -272,6 +313,10 @@ async function fetchFullCatalogForAccount(
         name,
         categoryId,
         categoryName,
+        lang: meta.lang,
+        langLabel: meta.langLabel,
+        quality: meta.quality,
+        qualityTier: meta.qualityTier,
         poster: sanitizePublicImageUrl(row?.stream_icon),
         containerExtension: 'm3u8',
         streamUrl: buildProviderStreamUrl(provider.id, 'live', streamId, 'm3u8'),
@@ -288,6 +333,7 @@ async function fetchFullCatalogForAccount(
       const categoryName = rawVodCatMap.get(categoryId) || 'Películas';
       if (!streamId || !name || isDisallowedAdultItem(categoryName, name)) continue;
       const ext = sanitizeExtension(row?.container_extension, 'mp4');
+      const meta = detectProviderItemLangAndQuality(name, categoryName, 'movie', ext);
       movieItems.push({
         id: `${provider.id}:movie:${streamId}`,
         providerId: provider.id,
@@ -297,6 +343,10 @@ async function fetchFullCatalogForAccount(
         name,
         categoryId,
         categoryName,
+        lang: meta.lang,
+        langLabel: meta.langLabel,
+        quality: meta.quality,
+        qualityTier: meta.qualityTier,
         poster: sanitizePublicImageUrl(row?.stream_icon),
         rating: row?.rating ? String(row.rating).trim() : undefined,
         year: extractYearHint(name, row?.added),
@@ -314,6 +364,7 @@ async function fetchFullCatalogForAccount(
       const categoryId = String(row?.category_id ?? 'general').trim() || 'general';
       const categoryName = rawSeriesCatMap.get(categoryId) || 'Series';
       if (!seriesId || !name || isDisallowedAdultItem(categoryName, name)) continue;
+      const meta = detectProviderItemLangAndQuality(name, categoryName, 'series');
       seriesItems.push({
         id: `${provider.id}:series:${seriesId}`,
         providerId: provider.id,
@@ -323,6 +374,10 @@ async function fetchFullCatalogForAccount(
         name,
         categoryId,
         categoryName,
+        lang: meta.lang,
+        langLabel: meta.langLabel,
+        quality: meta.quality,
+        qualityTier: meta.qualityTier,
         poster: sanitizePublicImageUrl(row?.cover),
         rating: row?.rating ? String(row.rating).trim() : undefined,
         year: extractYearHint(name, row?.releaseDate || row?.last_modified),
@@ -345,33 +400,47 @@ async function fetchFullCatalogForAccount(
         const text = await m3uRes.text();
         if (text.includes('#EXTM3U')) {
           const parsed = parseM3uPlusIntoCatalog(text);
-          liveItems = parsed.live.map((item) => ({
-            id: `${provider.id}:live:${item.streamId}`,
-            providerId: provider.id,
-            providerName: provider.name,
-            kind: 'live',
-            streamId: item.streamId,
-            name: item.name,
-            categoryId: item.categoryId,
-            categoryName: item.categoryName,
-            poster: item.poster,
-            containerExtension: 'm3u8',
-            streamUrl: buildProviderStreamUrl(provider.id, 'live', item.streamId, 'm3u8'),
-          }));
-          movieItems = parsed.movies.map((item) => ({
-            id: `${provider.id}:movie:${item.streamId}`,
-            providerId: provider.id,
-            providerName: provider.name,
-            kind: 'movie',
-            streamId: item.streamId,
-            name: item.name,
-            categoryId: item.categoryId,
-            categoryName: item.categoryName,
-            poster: item.poster,
-            year: extractYearHint(item.name),
-            containerExtension: item.ext,
-            streamUrl: buildProviderStreamUrl(provider.id, 'movie', item.streamId, item.ext),
-          }));
+          liveItems = parsed.live.map((item) => {
+            const meta = detectProviderItemLangAndQuality(item.name, item.categoryName, 'live');
+            return {
+              id: `${provider.id}:live:${item.streamId}`,
+              providerId: provider.id,
+              providerName: provider.name,
+              kind: 'live',
+              streamId: item.streamId,
+              name: item.name,
+              categoryId: item.categoryId,
+              categoryName: item.categoryName,
+              lang: meta.lang,
+              langLabel: meta.langLabel,
+              quality: meta.quality,
+              qualityTier: meta.qualityTier,
+              poster: item.poster,
+              containerExtension: 'm3u8',
+              streamUrl: buildProviderStreamUrl(provider.id, 'live', item.streamId, 'm3u8'),
+            };
+          });
+          movieItems = parsed.movies.map((item) => {
+            const meta = detectProviderItemLangAndQuality(item.name, item.categoryName, 'movie', item.ext);
+            return {
+              id: `${provider.id}:movie:${item.streamId}`,
+              providerId: provider.id,
+              providerName: provider.name,
+              kind: 'movie',
+              streamId: item.streamId,
+              name: item.name,
+              categoryId: item.categoryId,
+              categoryName: item.categoryName,
+              lang: meta.lang,
+              langLabel: meta.langLabel,
+              quality: meta.quality,
+              qualityTier: meta.qualityTier,
+              poster: item.poster,
+              year: extractYearHint(item.name),
+              containerExtension: item.ext,
+              streamUrl: buildProviderStreamUrl(provider.id, 'movie', item.streamId, item.ext),
+            };
+          });
         }
       }
     } catch {
@@ -401,7 +470,8 @@ export async function connectProviderWithRotation(
   providerId: string,
   opts?: { force?: boolean; startOffset?: number }
 ): Promise<ProviderStatusPublic> {
-  const provider = providersConfig.find((p) => p.id === providerId);
+  const configs = getUnifiedProviderConfigs();
+  const provider = configs.find((p) => p.id === providerId);
   if (!provider) {
     throw new Error(`Unknown provider: ${providerId}`);
   }
@@ -516,10 +586,10 @@ export async function connectProviderWithRotation(
 }
 
 export async function initDefaultProviders(opts?: { force?: boolean }): Promise<ProviderStatusPublic[]> {
-  const targets = providersConfig.filter((p) => p.autoConnect);
+  const targets = getUnifiedProviderConfigs().filter((p) => p.autoConnect);
   const results: ProviderStatusPublic[] = [];
   let cursor = 0;
-  const workerCount = Math.min(2, targets.length);
+  const workerCount = Math.min(5, targets.length);
 
   const workers = Array.from({ length: workerCount }, async () => {
     while (cursor < targets.length) {
@@ -548,7 +618,8 @@ export function rotateProviderAccount(providerId: string, failedIndex?: number):
 }
 
 export function getProvidersStatusSummary(): ProvidersStatusSummaryPublic {
-  const providers = providersConfig.map((cfg) => toPublicStatus(ensureRuntimeState(cfg)));
+  const configs = getUnifiedProviderConfigs();
+  const providers = configs.map((cfg) => toPublicStatus(ensureRuntimeState(cfg)));
   let liveCount = 0;
   let movieCount = 0;
   let seriesCount = 0;
@@ -576,6 +647,8 @@ export function queryProvidersCatalog(params: {
   scope?: string;
   kind?: ProviderMediaKind | 'all';
   categoryId?: string;
+  lang?: string;
+  quality?: string;
   q?: string;
   offset?: number;
   limit?: number;
@@ -586,13 +659,16 @@ export function queryProvidersCatalog(params: {
       ? params.kind
       : 'all';
   const categoryId = String(params.categoryId || '').trim();
+  const langFilter = String(params.lang || 'all').trim().toUpperCase();
+  const qualityFilter = String(params.quality || 'all').trim().toUpperCase();
   const q = String(params.q || '').trim().toLowerCase();
   const offset = Math.max(0, Number(params.offset) || 0);
   const limit = Math.min(200, Math.max(1, Number(params.limit) || 60));
 
+  const configs = getUnifiedProviderConfigs();
   const states =
     scope === 'total'
-      ? providersConfig.map((cfg) => ensureRuntimeState(cfg))
+      ? configs.map((cfg) => ensureRuntimeState(cfg))
       : runtimeStates.has(scope)
       ? [runtimeStates.get(scope)!]
       : [];
@@ -604,21 +680,41 @@ export function queryProvidersCatalog(params: {
     if (kind === 'all' || kind === 'series') items.push(...st.seriesItems);
   }
 
+  if (scope === 'total') {
+    sortCatalogItemsForDisplay(items);
+  }
+
   if (categoryId && categoryId !== 'all') {
     items = items.filter((item) => item.categoryId === categoryId);
+  }
+  if (langFilter && langFilter !== 'ALL') {
+    items = items.filter((item) => (item.lang || 'INTL').toUpperCase() === langFilter);
+  }
+  if (qualityFilter && qualityFilter !== 'ALL') {
+    items = items.filter((item) => {
+      const qLabel = String(item.quality || '').toUpperCase();
+      if (qualityFilter === '4K') return qLabel.includes('4K') || qLabel.includes('UHD');
+      if (qualityFilter === '1080P' || qualityFilter === 'FHD') return qLabel.includes('1080') || qLabel.includes('FHD');
+      if (qualityFilter === 'HD') return qLabel === 'HD' || qLabel.includes('720');
+      if (qualityFilter === 'SD') return qLabel === 'SD';
+      return true;
+    });
   }
   if (q) {
     items = items.filter(
       (item) =>
         item.name.toLowerCase().includes(q) ||
         item.categoryName.toLowerCase().includes(q) ||
-        item.providerName.toLowerCase().includes(q)
+        item.providerName.toLowerCase().includes(q) ||
+        (item.langLabel || '').toLowerCase().includes(q)
     );
   }
 
   return {
     scope,
     kind,
+    lang: langFilter !== 'ALL' ? langFilter : undefined,
+    quality: qualityFilter !== 'ALL' ? qualityFilter : undefined,
     total: items.length,
     offset,
     limit,

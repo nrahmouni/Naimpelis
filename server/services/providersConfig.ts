@@ -11,6 +11,7 @@ import {
   getDefaultProvidersForServer,
   type DefaultProviderEntry,
 } from '../../src/config/defaultProviders.ts';
+import { providersConfig as serverDefaultProvidersConfig } from '../config/defaultProviders.ts';
 
 export interface XtreamAccountCredential {
   username: string;
@@ -343,19 +344,38 @@ export function parseXtreamAccountsJson(rawJson: string): XtreamAccountCredentia
 
 export function getVod4kConfig(): XtreamProviderDefinition {
   const def = getDefaultProviderByIdFromRegistry('vod4k');
+  const srvDef = serverDefaultProvidersConfig.find((p) => p.id === 'vod4k');
   const serverUrl = normalizeXtreamServerInput(
-    readEnvOrVault('VOD4K_SERVER_URL') || def?.serverUrl || 'http://vod4k.cc:80'
+    readEnvOrVault('VOD4K_SERVER_URL') || srvDef?.serverUrl || def?.serverUrl || 'http://vod4k.cc:80'
   );
   const username = readEnvOrVault('VOD4K_USERNAME');
   const password = readEnvOrVault('VOD4K_PASSWORD');
   const explicitAccounts: XtreamAccountCredential[] =
     username.trim() && password.trim() ? [{ username, password, label: 'VOD 4K' }] : [];
 
+  const mergedDefaultAccounts: XtreamAccountCredential[] = [];
+  const seenUserPass = new Set<string>();
+  const pushUnique = (u: string, p: string, label?: string) => {
+    const cleanU = u.trim();
+    const cleanP = p.trim();
+    if (!cleanU || !cleanP) return;
+    const key = `${cleanU}:${cleanP}`;
+    if (seenUserPass.has(key)) return;
+    seenUserPass.add(key);
+    mergedDefaultAccounts.push({ username: u, password: p, label });
+  };
+  for (const a of srvDef?.accounts || []) {
+    pushUnique(a.username, a.password, 'VOD 4K');
+  }
+  for (const a of def?.accounts || []) {
+    pushUnique(a.user, a.pass, a.label);
+  }
+
   return {
     id: 'vod4k',
     name: 'VOD 4K',
     serverUrl,
-    accounts: explicitAccounts.length > 0 ? explicitAccounts : toAccountCredentials(def),
+    accounts: explicitAccounts.length > 0 ? explicitAccounts : mergedDefaultAccounts,
     defaultMediaFocus: 'vod',
   };
 }
@@ -544,12 +564,32 @@ export function getAllXtreamProviders(): XtreamProviderDefinition[] {
     defaultMediaFocus: 'live',
   };
 
+  const serverOnlyProviders: XtreamProviderDefinition[] =
+    typeof process !== 'undefined' && process.env?.XTREAM_DISABLE_DEFAULTS === '1'
+      ? []
+      : serverDefaultProvidersConfig
+          .filter((p) => p.id !== 'vod4k')
+          .map((p) => ({
+            id: p.id,
+            name: p.name,
+            serverUrl: normalizeXtreamServerInput(p.serverUrl),
+            accounts: p.accounts
+              .filter((a) => a.username.trim() && a.password.trim())
+              .map((a, idx) => ({
+                username: a.username,
+                password: a.password,
+                label: `${p.name} #${idx + 1}`,
+              })),
+            defaultMediaFocus: 'live' as const,
+          }));
+
   const baseList = [
     primary,
     getVod4kConfig(),
     ...getExtraXtreamProviders(),
     ...getDanaActiveConfigs(),
     getOctopusTvConfig(),
+    ...serverOnlyProviders,
   ];
 
   const existingIds = new Set(baseList.map((p) => p.id));

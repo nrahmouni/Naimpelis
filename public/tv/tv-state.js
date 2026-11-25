@@ -19,11 +19,21 @@ var localTrackIdx = 0;
 var activeLiveChannel = null;
 var activeLiveTrackIdx = 0;
 var activeLiveNavMode = 'topic';
-var activeLiveFilter = 'es_dana';
+var activeLiveFilter = 'es_priority';
 var activeAdrarCountry = 'all';
 var activeLiveSearch = '';
 var activeLiveVisibleLimit = 36;
 var lastHubFocusedEl = null;
+
+var activeSrvProvider = 'total';
+var activeSrvKind = 'all';
+var activeSrvLang = 'ES';
+var activeSrvQuality = 'all';
+var activeSrvQuery = '';
+var tvServersStatus = null;
+var tvServersItems = [];
+var tvServersTotal = 0;
+var tvServersLoading = false;
 
 var currentTvBuildSig = typeof window.__RIFFAN_TV_BUILD__ === 'string' ? window.__RIFFAN_TV_BUILD__ : '';
 var pendingTvAutoUpdateBuild = '';

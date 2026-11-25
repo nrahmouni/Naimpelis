@@ -2123,8 +2123,9 @@ function buildDvbLiveFfmpegArgs(options) {
   const isUhd4kStream = /\/stream\/6[4568]\//i.test(cleanUpstream) || (probe ? probe.width >= 3e3 || probe.height >= 1800 : false);
   const isInterlaced = Boolean(probe && /^(tt|bb|tb|bt)$/i.test(probe.fieldOrder));
   const isHighFps = Boolean(probe && probe.fps > 31);
+  const isCleanHlsInput = !isPipeInput && /\.m3u8(\?|$)/i.test(cleanUpstream);
   const canCopyVideo = Boolean(
-    probe && probe.videoCodec === "h264" && (!probe.pixFmt || /^yuvj?420p$/i.test(probe.pixFmt)) && !isInterlaced && !isUhd4kStream && !isFastProfile
+    isCleanHlsInput && probe && probe.videoCodec === "h264" && (!probe.pixFmt || /^yuvj?420p$/i.test(probe.pixFmt)) && !isInterlaced && !isUhd4kStream && !isFastProfile
   );
   const canCopyAudio = Boolean(
     canCopyVideo && probe?.hasAudio && probe.audioCodec === "aac" && (!probe.audioProfile || /^(lc|main)$/i.test(probe.audioProfile))
@@ -2212,8 +2213,8 @@ function buildDvbLiveFfmpegArgs(options) {
     "400000",
     "-fflags",
     "+genpts+discardcorrupt",
-    "-err_detect",
-    "ignore_err",
+    "-flags",
+    "+discardcorrupt",
     "-avoid_negative_ts",
     "make_zero",
     "-i",
@@ -3077,7 +3078,7 @@ async function startOrReuseLiveDvbCleanHlsSession(rawUpstreamUrl, cleanUpstream,
         if (segMatches && segMatches.length >= 1) {
           const firstSegPath = path2.join(sessionDir, segMatches[0]);
           const st = await fs2.promises.stat(firstSegPath);
-          if (st.size > 1024) {
+          if (st.size > 8192) {
             clearInterval(poll);
             resolve(true);
             return;

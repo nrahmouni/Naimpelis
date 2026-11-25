@@ -14,7 +14,18 @@ export interface DefaultProviderAccount {
 }
 
 export interface DefaultProviderEntry {
-  id: 'primary' | 'vod4k' | '24tv' | '2m2h' | 'dana4k' | 'activecdns' | 'octopus';
+  id:
+    | 'primary'
+    | 'vod4k'
+    | '24tv'
+    | '2m2h'
+    | '2m2h-alt'
+    | 'dana4k'
+    | 'activecdns'
+    | 'octopus'
+    | 'adtupac'
+    | 'ultra-vip'
+    | 'sult-vo';
   name: string;
   serverUrl: string;
   accounts: DefaultProviderAccount[];
@@ -26,9 +37,13 @@ export type XtreamServerWorldId =
   | 'vod4k'
   | 'srv24tv'
   | 'srv2m2h'
+  | 'srv2m2halt'
   | 'dana4k'
   | 'activecdns'
-  | 'octopus';
+  | 'octopus'
+  | 'adtupac'
+  | 'ultravip'
+  | 'sultvo';
 
 export interface XtreamProviderUiSpec {
   providerId: DefaultProviderEntry['id'];
@@ -132,6 +147,54 @@ export const XTREAM_PROVIDER_UI_SPECS: readonly XtreamProviderUiSpec[] = [
     tagline: 'Parrilla completa en directo, películas y series',
     defaultMediaFocus: 'live',
   },
+  {
+    providerId: '2m2h-alt',
+    worldId: 'srv2m2halt',
+    slug: '2m2h-alt',
+    name: '2M2H Alt',
+    shortLabel: '2M2H Alt',
+    accent: '#38BDF8',
+    secondary: '#7DD3FC',
+    glowRgb: '56,189,248',
+    tagline: 'Espejo alternativo multi-idioma en directo, cine y series',
+    defaultMediaFocus: 'live',
+  },
+  {
+    providerId: 'adtupac',
+    worldId: 'adtupac',
+    slug: 'adtupac',
+    name: 'Adtupac',
+    shortLabel: 'Adtupac',
+    accent: '#10B981',
+    secondary: '#6EE7B7',
+    glowRgb: '16,185,129',
+    tagline: 'Canales España, cine castellano y deportes HD',
+    defaultMediaFocus: 'live',
+  },
+  {
+    providerId: 'ultra-vip',
+    worldId: 'ultravip',
+    slug: 'ultra-vip',
+    name: 'Ultra VIP',
+    shortLabel: 'Ultra VIP',
+    accent: '#F59E0B',
+    secondary: '#FDE68A',
+    glowRgb: '245,158,11',
+    tagline: 'Emisiones VIP de alta tasa de bits, fútbol 4K y VOD',
+    defaultMediaFocus: 'live',
+  },
+  {
+    providerId: 'sult-vo',
+    worldId: 'sultvo',
+    slug: 'sult-vo',
+    name: 'Sult-Vo',
+    shortLabel: 'Sult-Vo',
+    accent: '#EC4899',
+    secondary: '#F9A8D4',
+    glowRgb: '236,72,153',
+    tagline: 'Triple cuenta en rotación para directos, cine y series 4K',
+    defaultMediaFocus: 'live',
+  },
 ] as const;
 
 export const XTREAM_WORLD_TO_PROVIDER_ID: Record<
@@ -142,9 +205,13 @@ export const XTREAM_WORLD_TO_PROVIDER_ID: Record<
   vod4k: 'vod4k',
   srv24tv: '24tv',
   srv2m2h: '2m2h',
+  srv2m2halt: '2m2h-alt',
   dana4k: 'dana4k',
   activecdns: 'activecdns',
   octopus: 'octopus',
+  adtupac: 'adtupac',
+  ultravip: 'ultra-vip',
+  sultvo: 'sult-vo',
 };
 
 export const PROVIDER_ID_TO_XTREAM_WORLD: Record<
@@ -155,9 +222,13 @@ export const PROVIDER_ID_TO_XTREAM_WORLD: Record<
   vod4k: 'vod4k',
   '24tv': 'srv24tv',
   '2m2h': 'srv2m2h',
+  '2m2h-alt': 'srv2m2halt',
   dana4k: 'dana4k',
   activecdns: 'activecdns',
   octopus: 'octopus',
+  adtupac: 'adtupac',
+  'ultra-vip': 'ultravip',
+  'sult-vo': 'sultvo',
 };
 
 export function isXtreamServerWorldId(world: string): world is XtreamServerWorldId {

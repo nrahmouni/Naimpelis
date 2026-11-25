@@ -63,6 +63,8 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
   const [refreshing, setRefreshing] = useState(false);
 
   const [categoryId, setCategoryId] = useState<string>('all');
+  const [langFilter, setLangFilter] = useState<'ES' | 'all' | 'LAT' | 'VOSE'>('ES');
+  const [qualityFilter, setQualityFilter] = useState<'all' | '4K' | '1080p' | 'HD'>('all');
   const [items, setItems] = useState<ProviderCatalogItemPublic[]>([]);
   const [totalItems, setTotalItems] = useState(0);
   const [loadingCatalog, setLoadingCatalog] = useState(true);
@@ -127,6 +129,12 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
         if (categoryId && categoryId !== 'all') {
           params.set('categoryId', categoryId);
         }
+        if (langFilter && langFilter !== 'all') {
+          params.set('lang', langFilter);
+        }
+        if (qualityFilter && qualityFilter !== 'all') {
+          params.set('quality', qualityFilter);
+        }
         if (externalSearchQuery.trim()) {
           params.set('q', externalSearchQuery.trim());
         }
@@ -158,7 +166,7 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
         setLoadingMore(false);
       }
     },
-    [scope, activeKind, categoryId, externalSearchQuery, lang]
+    [scope, activeKind, categoryId, langFilter, qualityFilter, externalSearchQuery, lang]
   );
 
   useEffect(() => {
@@ -249,6 +257,8 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
 
   const handlePlayItem = (item: ProviderCatalogItemPublic) => {
     triggerHaptic('medium');
+    const resolvedQuality = item.quality || 'HD';
+    const resolvedLang = item.lang || 'ES';
     if (item.kind === 'live') {
       const ch: SpanishTdtChannel = {
         id: item.id,
@@ -258,15 +268,17 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
         brandTone: '#7C3AED',
         network: `${item.providerName} · ${item.categoryName}`,
         category: 'belix_live',
-        quality: 'HD',
+        quality: resolvedQuality,
         logoUrl: item.poster,
         description: `${item.providerName} · ${item.categoryName}`,
         channels: [
           {
             id: `${item.id}-stream`,
-            label: `${item.providerName} HD`,
-            lang: 'ES',
-            quality: 'HD',
+            label: `${item.providerName} · ${resolvedQuality}`,
+            lang: resolvedLang,
+            quality: resolvedQuality,
+            providerId: item.providerId,
+            providerName: item.providerName,
             sourceUrl: item.streamUrl,
             resolverType: 'direct_hls',
           },
@@ -279,7 +291,9 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
     if (item.kind === 'movie') {
       onPlayCustomUrl(item.streamUrl, {
         title: item.name,
-        subtitle: [item.providerName, item.categoryName, item.year].filter(Boolean).join(' · '),
+        subtitle: [item.providerName, item.langLabel || resolvedLang, resolvedQuality, item.year]
+          .filter(Boolean)
+          .join(' · '),
         poster: item.poster,
       });
       return;
@@ -307,7 +321,7 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
 
   const providersList = statusData?.providers || [];
   const connectedCount = statusData?.totals.connectedCount ?? 0;
-  const totalProviders = statusData?.totals.totalProviders ?? 5;
+  const totalProviders = statusData?.totals.totalProviders ?? 11;
 
   return (
     <div className="w-full space-y-4">
@@ -490,6 +504,63 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
           })}
         </div>
 
+        {/* LANGUAGE & QUALITY PRIORITY FILTERS */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pt-1">
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Idioma">
+            {(
+              [
+                { id: 'ES', label: pickLang(lang, { es: 'Castellano (ES)', ca: 'Castellà (ES)', en: 'Castellano (ES)' }) },
+                { id: 'all', label: pickLang(lang, { es: 'Todos los idiomas', ca: 'Tots els idiomes', en: 'All languages' }) },
+                { id: 'LAT', label: 'Latino' },
+                { id: 'VOSE', label: 'VOSE / Sub' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setLangFilter(opt.id);
+                }}
+                className={`min-h-10 px-3 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+                  langFilter === opt.id
+                    ? 'bg-[#7C3AED]/25 border-[#7C3AED] text-white'
+                    : 'bg-[#14141C] border-white/[0.07] text-zinc-300 hover:text-white'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="Calidad">
+            {(
+              [
+                { id: 'all', label: pickLang(lang, { es: 'Mejor calidad', ca: 'Millor qualitat', en: 'Best quality' }) },
+                { id: '4K', label: '4K UHD' },
+                { id: '1080p', label: '1080p FHD' },
+                { id: 'HD', label: 'HD' },
+              ] as const
+            ).map((opt) => (
+              <button
+                key={opt.id}
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setQualityFilter(opt.id);
+                }}
+                className={`min-h-10 px-3 rounded-xl border text-xs font-semibold transition-colors cursor-pointer ${
+                  qualityFilter === opt.id
+                    ? 'bg-emerald-500/20 border-emerald-400/70 text-emerald-100'
+                    : 'bg-[#14141C] border-white/[0.07] text-zinc-300 hover:text-white'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* CATEGORY FILTER WHEN VIEWING SPECIFIC SERVER & KIND */}
         {availableCategories.length > 0 && (
           <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
@@ -633,6 +704,8 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
                     <p className="text-[11px] text-zinc-400 truncate tabular-nums">
                       {[
                         item.providerName,
+                        item.langLabel || item.lang,
+                        item.quality,
                         item.kind === 'live'
                           ? 'Directo'
                           : item.kind === 'series'

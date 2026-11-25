@@ -495,7 +495,7 @@ async function startOrReuseLiveDvbCleanHlsSession(
         if (segMatches && segMatches.length >= 1) {
           const firstSegPath = path.join(sessionDir, segMatches[0]);
           const st = await fs.promises.stat(firstSegPath);
-          if (st.size > 1024) {
+          if (st.size > 8192) {
             clearInterval(poll);
             resolve(true);
             return;

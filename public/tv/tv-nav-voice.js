@@ -153,6 +153,26 @@ function moveFocusDirection(dir) {
     }
   }
 
+  var cornerSearchBtn = document.getElementById('btn-corner-search');
+  if (root === hubScreen && active && active === cornerSearchBtn) {
+    if (dir === 'left' && tvSideRail) {
+      var railFb = tvSideRail.querySelector('.hub-tab-btn.active') || tvSideRail.querySelector('.rail-item');
+      if (railFb && railFb.focus) railFb.focus();
+      return;
+    }
+    if (dir === 'down' && hubDynamicContent) {
+      var downItems = collectVisibleFocusablesIn(hubDynamicContent);
+      if (downItems.length > 0) {
+        var downRows = bucketElementsIntoRows(downItems);
+        var downTarget = downRows[0] && downRows[0].items.length ? downRows[0].items[downRows[0].items.length - 1].el : downItems[0].el;
+        downTarget.focus();
+        ensureFocusVisibleInContainer(downTarget);
+      }
+      return;
+    }
+    return;
+  }
+
   var scopeEl = (root === hubScreen && hubDynamicContent) ? hubDynamicContent : root;
   var list = collectVisibleFocusablesIn(scopeEl);
   if (!list.length) {
@@ -200,6 +220,8 @@ function moveFocusDirection(dir) {
   } else if (dir === 'up') {
     if (curRowIdx > 0) {
       chosen = pickClosestXInRow(rows[curRowIdx - 1].items, curItem.cx);
+    } else if (root === hubScreen && cornerSearchBtn && cornerSearchBtn.offsetWidth > 0) {
+      chosen = cornerSearchBtn;
     }
   } else if (dir === 'down') {
     if (curRowIdx + 1 < rows.length) {
@@ -230,19 +252,19 @@ if (tvSideRail && tvSideRail.addEventListener) {
 // ===================================================================
 // UI WIRE-UP & SMART TV VOICE ASSISTANT (ES5)
 // ===================================================================
+var cornerSearchEl = document.getElementById('btn-corner-search');
+if (cornerSearchEl) {
+  cornerSearchEl.onclick = function () {
+    lastHubFocusedEl = cornerSearchEl;
+    selectHubTabProgrammatic('search');
+  };
+}
 var tabBtns = document.querySelectorAll('#hub-nav-tabs .hub-tab-btn');
 for (var t = 0; t < tabBtns.length; t++) {
   (function (tb) {
     tb.onclick = function () {
-      for (var k = 0; k < tabBtns.length; k++) {
-        var dk = tabBtns[k].getAttribute('data-tab');
-        tabBtns[k].className = dk === 'search' ? 'hub-tab-btn rail-item search-left-btn' : 'hub-tab-btn rail-item';
-      }
       var curTab = tb.getAttribute('data-tab') || 'home';
-      tb.className = (curTab === 'search' ? 'hub-tab-btn rail-item search-left-btn active' : 'hub-tab-btn rail-item active');
-      activeHubTab = curTab;
-      if (hubScrollBody) hubScrollBody.scrollTop = 0;
-      renderHubContent();
+      selectHubTabProgrammatic(curTab);
     };
   })(tabBtns[t]);
 }

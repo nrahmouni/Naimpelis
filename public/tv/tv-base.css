@@ -166,11 +166,13 @@ input:focus,
   position: relative;
   z-index: 2;
   width: 100%;
+  max-width: 100%;
   height: 100%;
   display: -webkit-flex;
   display: flex;
   -webkit-flex-direction: row;
   flex-direction: row;
+  overflow: hidden;
   background: #06070B;
 }
 
@@ -399,6 +401,10 @@ input:focus,
 }
 .stage-heading-group {
   min-width: 0;
+  overflow: hidden;
+  -webkit-flex: 1;
+  flex: 1;
+  padding-right: 16px;
 }
 .stage-title {
   font-size: 38px;
@@ -406,12 +412,18 @@ input:focus,
   letter-spacing: -0.02em;
   color: #FFFFFF;
   line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .stage-meta-line {
   font-size: 19px;
   font-weight: 700;
   color: #C4CBDF;
   margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .stage-status-right {
   display: -webkit-flex;
@@ -422,7 +434,36 @@ input:focus,
   flex-shrink: 0;
 }
 .stage-status-right > * {
-  margin-left: 14px;
+  margin-left: 12px;
+}
+.stage-corner-search-btn {
+  width: 48px;
+  height: 48px;
+  border-radius: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  background: #141724;
+  color: #F4F5FA;
+  display: -webkit-inline-flex;
+  display: inline-flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+.stage-corner-search-btn svg {
+  width: 22px;
+  height: 22px;
+  display: block;
+}
+.stage-corner-search-btn:hover,
+.stage-corner-search-btn:focus,
+.stage-corner-search-btn.active {
+  background: #FFFFFF;
+  color: #06070B;
+  border-color: #FFFFFF;
 }
 .stage-pair-readout {
   height: 48px;
@@ -775,11 +816,29 @@ html.is-smart-tv .tv-chip-btn:focus {
   transform: none !important;
 }
 
+html.is-smart-tv .tv-side-rail {
+  width: 108px;
+  padding-left: 22px;
+}
+html.is-smart-tv .tv-side-rail.expanded {
+  width: 344px;
+}
+html.is-smart-tv .tv-main-stage {
+  padding: 22px 46px 0 32px;
+}
+html.is-smart-tv .hub-scroll-body {
+  padding-bottom: 68px;
+}
+
 /* Full 1080p Samsung Tizen / Smart TV 10-Foot Scale */
 @media (min-width: 1480px) {
   .tv-side-rail {
     width: 112px;
     padding: 24px 16px 22px 16px;
+  }
+  html.is-smart-tv .tv-side-rail {
+    width: 124px;
+    padding: 26px 16px 24px 26px;
   }
   .tv-side-rail.expanded,
   .tv-side-rail:hover {
@@ -824,6 +883,9 @@ html.is-smart-tv .tv-chip-btn:focus {
   .tv-main-stage {
     padding: 22px 44px 0 38px;
   }
+  html.is-smart-tv .tv-main-stage {
+    padding: 26px 56px 0 38px;
+  }
   .stage-topbar {
     padding-bottom: 16px;
     margin-bottom: 14px;
@@ -839,6 +901,14 @@ html.is-smart-tv .tv-chip-btn:focus {
     height: 56px;
     padding: 0 22px;
     font-size: 21px;
+  }
+  .stage-corner-search-btn {
+    width: 56px;
+    height: 56px;
+  }
+  .stage-corner-search-btn svg {
+    width: 26px;
+    height: 26px;
   }
   .stage-pair-readout strong {
     font-size: 24px;
