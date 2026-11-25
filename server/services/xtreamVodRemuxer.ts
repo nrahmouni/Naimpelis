@@ -81,9 +81,11 @@ export async function probeUpstreamVodCodecs(
         '-headers',
         'User-Agent: IPTVSmartersPlayer\r\n',
         '-analyzeduration',
-        '2000000',
+        '300000',
         '-probesize',
-        '2000000',
+        '500000',
+        '-rw_timeout',
+        '1800000',
         '-i',
         upstreamUrl,
       ],
@@ -97,7 +99,7 @@ export async function probeUpstreamVodCodecs(
         // ignore
       }
       finish('unknown', 'unknown');
-    }, 4000);
+    }, 1300);
 
     proc.stdout?.on('data', (chunk: Buffer) => {
       stdout += chunk.toString('utf8');
@@ -146,11 +148,13 @@ export async function streamVodRemuxedAsMp4(
     return true;
   }
 
-  const probe = opts.forceFullTranscode
-    ? { videoCodec: 'transcode', audioCodec: 'transcode' }
-    : await probeUpstreamVodCodecs(opts.upstreamUrl, opts.cacheKey);
+  const probe = await probeUpstreamVodCodecs(opts.upstreamUrl, opts.cacheKey);
 
-  const canCopyVideo = !opts.forceFullTranscode && probe.videoCodec === 'h264';
+  const audioNeedsTranscodeOnly =
+    probe.audioCodec !== 'aac' && probe.audioCodec !== 'mp3' && probe.audioCodec !== 'unknown';
+  const canCopyVideo =
+    (probe.videoCodec === 'h264' || probe.videoCodec === 'unknown') &&
+    (!opts.forceFullTranscode || audioNeedsTranscodeOnly);
   const canCopyAudio = !opts.forceFullTranscode && probe.audioCodec === 'aac';
 
   const args: string[] = [
@@ -159,6 +163,10 @@ export async function streamVodRemuxedAsMp4(
     'error',
     '-headers',
     'User-Agent: IPTVSmartersPlayer\r\n',
+    '-analyzeduration',
+    '300000',
+    '-probesize',
+    '500000',
     '-reconnect',
     '1',
     '-reconnect_streamed',
@@ -166,7 +174,7 @@ export async function streamVodRemuxedAsMp4(
     '-reconnect_delay_max',
     '3',
     '-rw_timeout',
-    '15000000',
+    '12000000',
   ];
 
   if (typeof opts.startSec === 'number' && Number.isFinite(opts.startSec) && opts.startSec > 0) {
@@ -232,7 +240,7 @@ export async function streamVodRemuxedAsMp4(
           resolve(false);
         }
       }
-    }, 18_000);
+    }, 12_000);
 
     proc.stderr?.on('data', (chunk: Buffer) => {
       stderrTail = (stderrTail + chunk.toString('utf8')).slice(-400);

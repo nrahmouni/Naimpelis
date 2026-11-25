@@ -42,6 +42,7 @@ import {
 } from '../services/xtreamService.ts';
 import { getCuratedRbtvChannels } from '../services/rbtv/rbtvLiveCurator.ts';
 import { getVerifiedSpainXtreamChannels } from '../services/octopusSpainLiveService.ts';
+import { findXtreamLiveChannelMatches } from '../services/xtreamVodMatcher.ts';
 import {
   ensureLiveDvbCleanHlsSession,
   getActiveDvbSessionPath,
@@ -384,7 +385,10 @@ export function registerIptvAndTdtRoutes(
 
   app.get('/api/iptv/live/:channelId', async (req, res) => {
     const rawId = String(req.params.channelId || '').replace(/\.m3u8$/i, '');
-    const channel = getIptvChannelById(rawId);
+    const channel =
+      getIptvChannelById(rawId) ||
+      getIptvChannelById(`live-sports-${rawId}`) ||
+      (rawId === 'mux-champions' ? getIptvChannelById('mplus-champions') : undefined);
     if (!channel) {
       return res.status(404).send('Channel not found');
     }
@@ -612,9 +616,46 @@ export function registerIptvAndTdtRoutes(
             }
             triedDvbUrls.add(cleanUrl);
             const activeDvbPath = getActiveDvbSessionPath(cleanUrl);
-            const dvbPlaylist =
-              (activeDvbPath && readLiveDvbPlaylistForIptv(activeDvbPath, publicOrigin)) ||
-              (await resolveDvbIptvPlaylistText(cleanUrl, referer, publicOrigin));
+            if (activeDvbPath) {
+              const warmPl = readLiveDvbPlaylistForIptv(activeDvbPath, publicOrigin);
+              if (warmPl) {
+                iptvChannelResolveCache.set(channel.id, {
+                  rawM3u8Url: cleanUrl,
+                  referer,
+                  forceAac: false,
+                  isPublicCorsCdn: false,
+                  isDvb: true,
+                  ts: Date.now(),
+                });
+                return warmPl;
+              }
+            }
+            if (/\.m3u8(\?|$)/i.test(cleanUrl)) {
+              const probeManifest = await fetchUpstreamManifestText(cleanUrl, referer, true);
+              if (probeManifest) {
+                const unwrappedProbe = await unwrapMasterPlaylistForIptv(probeManifest, referer, true);
+                if (unwrappedProbe) {
+                  const trimmedFallback = trimLiveDvrManifestForIptv(unwrappedProbe.text, 6);
+                  iptvChannelResolveCache.set(channel.id, {
+                    rawM3u8Url: unwrappedProbe.finalUrl,
+                    referer,
+                    forceAac: true,
+                    isPublicCorsCdn: false,
+                    isDvb: false,
+                    ts: Date.now(),
+                  });
+                  return rewriteManifestForSamsungIptv(
+                    trimmedFallback,
+                    unwrappedProbe.finalUrl,
+                    referer,
+                    true,
+                    false,
+                    publicOrigin
+                  );
+                }
+              }
+            }
+            const dvbPlaylist = await resolveDvbIptvPlaylistText(cleanUrl, referer, publicOrigin);
             if (dvbPlaylist) {
               iptvChannelResolveCache.set(channel.id, {
                 rawM3u8Url: cleanUrl,
@@ -626,20 +667,8 @@ export function registerIptvAndTdtRoutes(
               });
               return dvbPlaylist;
             }
-            const probeManifest = await fetchUpstreamManifestText(cleanUrl, referer, true);
-            if (!probeManifest) {
-              markTrackDown(sourceUrl, 502);
-              return null;
-            }
-            const trimmedFallback = trimLiveDvrManifestForIptv(probeManifest.text, 6);
-            return rewriteManifestForSamsungIptv(
-              trimmedFallback,
-              probeManifest.finalUrl,
-              referer,
-              true,
-              false,
-              publicOrigin
-            );
+            markTrackDown(sourceUrl, 502);
+            return null;
           }
 
           const manifestObj = await fetchUpstreamManifestText(cleanUrl, referer, forceAac);
@@ -754,6 +783,27 @@ export function registerIptvAndTdtRoutes(
       const playlist = await resolveSingleIptvTrack(track);
       if (playlist) {
         return sendIptvM3u8Response(res, playlist);
+      }
+    }
+
+    // Xtream live catalog fallback for sports/TDT channels when listed tracks fail
+    if (channel.name) {
+      const xtreamMatches = await findXtreamLiveChannelMatches({
+        channelHints: [channel.name, rawId.replace(/[-_]+/g, ' ')],
+        preferLang: 'ES',
+        limit: 4,
+      }).catch(() => []);
+      if (xtreamMatches.length > 0) {
+        const xtreamWinner = await Promise.any(
+          xtreamMatches.map(async (xm) => {
+            const playlist = await resolveSingleIptvTrack(xm);
+            if (!playlist) throw new Error('xtream_failed');
+            return playlist;
+          })
+        ).catch(() => null);
+        if (xtreamWinner) {
+          return sendIptvM3u8Response(res, xtreamWinner);
+        }
       }
     }
 

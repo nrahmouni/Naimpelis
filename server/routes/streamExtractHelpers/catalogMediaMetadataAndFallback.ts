@@ -457,27 +457,41 @@ export async function buildFallbackCatalogResult(opts: {
         : fallbackBaseTitle
       : 'RiffanTV HD');
 
+  const withFallbackTimeout = <T>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
+    Promise.race([
+      p.catch(() => fallback),
+      new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+    ]);
+
   const [ytFallback, embedFallbackTracks] = await Promise.all([
     preferLang === 'ES' || !resolvedTmdbId
-      ? searchYouTubeFullFallback({
-          fallbackBaseTitle,
-          episodeTitleHint,
-          preferLang,
-          effectiveMediaType,
-          effectiveSeason,
-          effectiveEpisode,
-        }).catch(() => null)
+      ? withFallbackTimeout(
+          searchYouTubeFullFallback({
+            fallbackBaseTitle,
+            episodeTitleHint,
+            preferLang,
+            effectiveMediaType,
+            effectiveSeason,
+            effectiveEpisode,
+          }),
+          2000,
+          null
+        )
       : Promise.resolve(null),
     isSpanishNativeRequest
       ? Promise.resolve([] as TrackRecord[])
-      : buildWebEmbedTracks({
-          resolvedTmdbId,
-          effectiveMediaType,
-          effectiveSeason,
-          effectiveEpisode,
-          rawInput,
-          isSandboxedFrame,
-        }),
+      : withFallbackTimeout(
+          buildWebEmbedTracks({
+            resolvedTmdbId,
+            effectiveMediaType,
+            effectiveSeason,
+            effectiveEpisode,
+            rawInput,
+            isSandboxedFrame,
+          }),
+          2000,
+          [] as TrackRecord[]
+        ),
   ]);
 
   const safeYtFallback =

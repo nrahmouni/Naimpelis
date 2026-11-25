@@ -67,7 +67,7 @@ function setCachedClientExtract(
 
 function isInstantDirectTdtStream(sourceUrl: string, resolverType: string): boolean {
   if (!sourceUrl) return false;
-  if (/^\/api\/(?:hls-proxy|iptv\/live|dvb-live|vod-manifest|providers\/stream)/i.test(sourceUrl)) {
+  if (/^\/api\/(?:hls-proxy|iptv\/live|vod-manifest|providers\/stream|belix\/stream)/i.test(sourceUrl)) {
     return true;
   }
   if (
@@ -183,27 +183,120 @@ export function useLiveAndQueuePlayback(
         error?: string;
       } | null = null;
       let resOk = false;
+      let activeChannelIndex = channelIndex;
+      let activeChannel = channel;
 
-      if (channel.resolvedStreamUrl) {
-        data = { success: true, streamUrl: channel.resolvedStreamUrl, mode: 'hls' };
-        resOk = true;
-      } else {
-        const cachedSports = getCachedClientExtract(sportsResolver, channel.sourceUrl);
-        if (cachedSports) {
-          data = { success: true, streamUrl: cachedSports.streamUrl, mode: cachedSports.mode || 'hls' };
+      if (
+        channelIndex === 0 &&
+        failedIndices.size === 0 &&
+        match.channels.length > 1 &&
+        !channel.resolvedStreamUrl
+      ) {
+        const fastCtrl = new AbortController();
+        const onFastAbort = () => fastCtrl.abort();
+        if (signal.aborted) {
+          fastCtrl.abort();
+        } else {
+          signal.addEventListener('abort', onFastAbort, { once: true });
+        }
+        const fastTimeout = setTimeout(() => fastCtrl.abort(), 4600);
+        try {
+          const fastRes = await fetch('/api/live/fast-resolve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: fastCtrl.signal,
+            body: JSON.stringify({
+              channelId: match.id,
+              titleHint: match.title,
+              preferLang: 'ES',
+              tracks: match.channels.slice(0, 8).map((ch) => ({
+                id: ch.id,
+                label: ch.label,
+                lang: ch.lang || 'ES',
+                quality: ch.quality,
+                providerId: ch.providerId,
+                providerName: ch.providerName,
+                sourceUrl: ch.sourceUrl,
+                referer: (ch as { referer?: string }).referer,
+                resolverType: ch.resolverType || 'sports_channel',
+                health: ch.health,
+              })),
+            }),
+          });
+          if (fastRes.ok) {
+            const fastJson = (await fastRes.json().catch(() => null)) as {
+              ok?: boolean;
+              winningIndex?: number;
+              streamUrl?: string;
+              mode?: VideoState['mode'];
+            } | null;
+            if (fastJson?.ok && fastJson.streamUrl) {
+              const winIdx =
+                typeof fastJson.winningIndex === 'number' &&
+                fastJson.winningIndex >= 0 &&
+                fastJson.winningIndex < match.channels.length
+                  ? fastJson.winningIndex
+                  : 0;
+              activeChannelIndex = winIdx;
+              activeChannel = match.channels[winIdx] || channel;
+              resOk = true;
+              data = {
+                success: true,
+                streamUrl: fastJson.streamUrl,
+                mode: fastJson.mode || 'hls',
+              };
+            }
+          }
+        } catch {
+          // fall back seamlessly to single-signal resolver below
+        } finally {
+          clearTimeout(fastTimeout);
+          signal.removeEventListener('abort', onFastAbort);
+        }
+      }
+
+      if (!data) {
+        if (activeChannel.resolvedStreamUrl) {
+          data = { success: true, streamUrl: activeChannel.resolvedStreamUrl, mode: 'hls' };
           resOk = true;
         } else {
-          const params = new URLSearchParams({
-            url: channel.sourceUrl,
-            resolverType: sportsResolver,
-            title: match.title,
-            channelLabel: channel.label || '',
-          });
-          const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
-          resOk = res.ok;
-          data = await res.json().catch(() => null);
-          if (resOk && data?.success && data.streamUrl && data.mode !== 'cloud' && data.mode !== 'embed') {
-            setCachedClientExtract(sportsResolver, channel.sourceUrl, data.streamUrl, data.mode);
+          const cachedSports = getCachedClientExtract(sportsResolver, activeChannel.sourceUrl);
+          if (cachedSports) {
+            data = { success: true, streamUrl: cachedSports.streamUrl, mode: cachedSports.mode || 'hls' };
+            resOk = true;
+          } else {
+            const params = new URLSearchParams({
+              url: activeChannel.sourceUrl,
+              resolverType: activeChannel.resolverType || sportsResolver,
+              title: match.title,
+              channelLabel: activeChannel.label || '',
+            });
+            const reqCtrl = new AbortController();
+            const onParentAbort = () => reqCtrl.abort();
+            if (signal.aborted) {
+              reqCtrl.abort();
+            } else {
+              signal.addEventListener('abort', onParentAbort, { once: true });
+            }
+            const reqTimeout = setTimeout(() => reqCtrl.abort(), 7500);
+            try {
+              const res = await fetch(`/api/extract/stream?${params.toString()}`, {
+                signal: reqCtrl.signal,
+              });
+              resOk = res.ok;
+              data = await res.json().catch(() => null);
+              if (resOk && data?.success && data.streamUrl && data.mode !== 'cloud' && data.mode !== 'embed') {
+                setCachedClientExtract(
+                  activeChannel.resolverType || sportsResolver,
+                  activeChannel.sourceUrl,
+                  data.streamUrl,
+                  data.mode
+                );
+              }
+            } finally {
+              clearTimeout(reqTimeout);
+              signal.removeEventListener('abort', onParentAbort);
+            }
           }
         }
       }
@@ -211,7 +304,7 @@ export function useLiveAndQueuePlayback(
 
       const isDeadSportsEmbed =
         data?.mode === 'embed' &&
-        sportsResolver === 'sports_channel' &&
+        (activeChannel.resolverType || sportsResolver) === 'sports_channel' &&
         allowSameMatchMirrorFallback &&
         match.channels.length > failedIndices.size + 1;
 
@@ -268,19 +361,19 @@ export function useLiveAndQueuePlayback(
       }
 
       const healthyChannels = match.channels
-        .map((c, idx) => (idx === channelIndex ? { ...c, resolvedStreamUrl: data.streamUrl } : c))
+        .map((c, idx) => (idx === activeChannelIndex ? { ...c, resolvedStreamUrl: data.streamUrl } : c))
         .filter((_, idx) => !failedIndices.has(idx));
       const activeIdxInHealthy = Math.max(
         0,
-        healthyChannels.findIndex((c) => c.id === channel.id)
+        healthyChannels.findIndex((c) => c.id === activeChannel.id)
       );
 
       const nextState: VideoState = {
         mode: data.mode || 'hls',
         url: data.streamUrl,
-        rawSourceUrl: channel.sourceUrl,
+        rawSourceUrl: activeChannel.sourceUrl,
         title: match.title,
-        subtitle: `${match.competition} · ${channel.label}`,
+        subtitle: `${match.competition} · ${activeChannel.label}`,
         currentTime: 0,
         isPlaying: true,
         isLive: true,
@@ -398,7 +491,7 @@ export function useLiveAndQueuePlayback(
         } else {
           signal.addEventListener('abort', onFastAbort, { once: true });
         }
-        const fastTimeout = setTimeout(() => fastCtrl.abort(), 2800);
+        const fastTimeout = setTimeout(() => fastCtrl.abort(), 4600);
         try {
           const fastRes = await fetch('/api/live/fast-resolve', {
             method: 'POST',
@@ -489,7 +582,7 @@ export function useLiveAndQueuePlayback(
         } else {
           signal.addEventListener('abort', onParentAbort, { once: true });
         }
-        const timeoutId = setTimeout(() => ctrl.abort(), 12_000);
+        const timeoutId = setTimeout(() => ctrl.abort(), 7500);
         try {
           const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal: ctrl.signal });
           resOk = res.ok;

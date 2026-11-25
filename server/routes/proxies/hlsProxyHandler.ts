@@ -23,6 +23,11 @@ import {
   type RollingDvbSeg,
 } from './dvbTranscoder.ts';
 import { vodHlsManifestCache } from './vodManifestManager.ts';
+import {
+  getCachedLiveManifest,
+  prefetchLiveTsSegment,
+  setCachedLiveManifest,
+} from './liveSegmentCache.ts';
 import { runtimeMetrics } from '../../services/runtimeMetricsCollector.ts';
 import { evaluateDirectPlayEligibility } from '../../services/mediaPlaneRouter.ts';
 
@@ -85,8 +90,13 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
 
       let baseUrl = targetUrl;
       let manifestText = '';
+      const cachedLive =
+        !forceAac && !isDvbHeadendStream(targetUrl) ? getCachedLiveManifest(targetUrl) : null;
 
-      if (shouldBypassNodeFetch(targetUrl)) {
+      if (cachedLive) {
+        baseUrl = cachedLive.baseUrl || targetUrl;
+        manifestText = cachedLive.text;
+      } else if (shouldBypassNodeFetch(targetUrl)) {
         let fallback = await curlGetText(targetUrl, headers, 7);
         if (!fallback.text || !fallback.text.includes('#EXTM3U')) {
           const plainTxt = await curlPlainGetText(targetUrl, 7).catch(() => '');
@@ -102,12 +112,12 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
         runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(manifestText));
       } else {
         const hdrCtrl = new AbortController();
-        const hdrTimer = setTimeout(() => hdrCtrl.abort(), 4800);
+        const hdrTimer = setTimeout(() => hdrCtrl.abort(), 4200);
         try {
           const upstream = await streamingFetch(targetUrl, {
             headers,
             signal: hdrCtrl.signal,
-            timeoutMs: 4800,
+            timeoutMs: 4200,
           });
           clearTimeout(hdrTimer);
           if (!upstream.ok) {
@@ -122,13 +132,13 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
         } catch {
           clearTimeout(hdrTimer);
           markHostNeedsCurlFallback(targetUrl);
-          let fallback = await curlGetText(targetUrl, headers, 7);
+          let fallback = await curlGetText(targetUrl, headers, 6);
           if (
             !fallback.text ||
             !fallback.text.includes('#EXTM3U') ||
             /nosignal/i.test(fallback.text)
           ) {
-            const plainTxt = await curlPlainGetText(targetUrl, 7).catch(() => '');
+            const plainTxt = await curlPlainGetText(targetUrl, 6).catch(() => '');
             if (plainTxt && plainTxt.includes('#EXTM3U') && !/nosignal/i.test(plainTxt)) {
               fallback = { text: plainTxt, effectiveUrl: targetUrl };
             } else {
@@ -167,6 +177,7 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
       const lines = manifestText.split(/\r?\n/);
       let nextLineIsVariantPlaylist = false;
       const discoveredTsUrls: string[] = [];
+      const livePrefetchTargets: string[] = [];
 
       const rewritten = lines.map((line) => {
         const trimmed = line.trim();
@@ -204,8 +215,12 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
             resolvedUrl.includes('stream_tv=');
           nextLineIsVariantPlaylist = false;
 
-          if (!isPlaylist && forceAac) {
-            discoveredTsUrls.push(resolvedUrl);
+          if (!isPlaylist) {
+            if (forceAac) {
+              discoveredTsUrls.push(resolvedUrl);
+            } else {
+              livePrefetchTargets.push(resolvedUrl);
+            }
           }
 
           return isPlaylist
@@ -301,6 +316,21 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
         (!manifestText.includes('#EXT-X-MEDIA-SEQUENCE') && targetUrl.includes('ibra.lat'));
       if (!forceAac && isStaticVodManifest) {
         vodHlsManifestCache.set(vodCacheKey, finalManifest);
+      } else if (
+        !forceAac &&
+        !isStaticVodManifest &&
+        !isDvbHeadendStream(targetUrl) &&
+        !manifestText.includes('#EXT-X-STREAM-INF')
+      ) {
+        if (!cachedLive) {
+          setCachedLiveManifest(targetUrl, manifestText, baseUrl);
+        }
+        if (livePrefetchTargets.length > 0 && req.method !== 'HEAD') {
+          const upstreamUa = getPreferredUpstreamUa(targetUrl);
+          for (const segUrl of livePrefetchTargets.slice(-2)) {
+            prefetchLiveTsSegment(segUrl, effectiveReferer, upstreamUa).catch(() => {});
+          }
+        }
       }
 
       applyProxyCorsHeaders(res, reqId);

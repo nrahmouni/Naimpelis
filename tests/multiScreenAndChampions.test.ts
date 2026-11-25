@@ -1,14 +1,25 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  extractLiveStreamWithFallbacks,
   isInstantDirectMultiStream,
+  prioritizeFastMultiCandidates,
   removeSecondaryStreamAt,
   upsertSecondaryStreamList,
 } from '../src/hooks/playback/multiScreenHelpers';
 import { parseAppRoute } from '../src/shared/dedicatedRoutes';
-import { buildFootballMatchChannels } from '../server/routes/sportsHelpers/footballTeamMatcher';
+import {
+  buildFootballMatchChannels,
+  sortTracksWithDaznPriority,
+} from '../server/routes/sportsHelpers/footballTeamMatcher';
+import {
+  getCachedLiveManifest,
+  getCachedLiveTsSegment,
+  setCachedLiveManifest,
+  setCachedLiveTsSegment,
+} from '../server/routes/proxies/liveSegmentCache';
 import type { SecondaryStreamState } from '../src/types';
 
 const ROOT = process.cwd();
@@ -155,5 +166,87 @@ describe('Champions World, Multi-Partido (up to 4 screens) & Smart TV ES5 integr
     });
     expect(madridTracks.some((t) => t.sourceUrl.includes('mligacampeones'))).toBe(true);
     expect(madridTracks.some((t) => t.sourceUrl.includes('tntsports'))).toBe(true);
+  });
+
+  it('orders fast streamxhd feeds ahead of slow pig.footunder feeds within the same broadcaster tier while preserving DAZN priority', () => {
+    const sorted = sortTracksWithDaznPriority(
+      [
+        {
+          label: 'Movistar Plus+ HD (Español)',
+          lang: 'ES',
+          sourceUrl: 'https://pig.footunder.online/stream/537',
+        },
+        {
+          label: 'M+ Liga de Campeones HD (Español)',
+          lang: 'ES',
+          sourceUrl: 'https://streamxhd.sbs/live1.php?stream=mligacampeones',
+        },
+        {
+          label: 'DAZN LaLiga HD (Español)',
+          lang: 'ES',
+          sourceUrl: 'https://pig.footunder.online/stream/84',
+        },
+      ],
+      'uefa.champions',
+      'ES'
+    );
+
+    expect(sorted[0].label).toContain('DAZN');
+    expect(sorted[1].sourceUrl).toContain('streamxhd.sbs');
+    expect(sorted[2].sourceUrl).toContain('pig.footunder.online/stream/537');
+
+    const orderedCandidates = prioritizeFastMultiCandidates([
+      'https://pig.footunder.online/stream/537',
+      'https://streamxhd.sbs/live1.php?stream=mligacampeones',
+      '/api/iptv/live/la1.m3u8',
+    ]);
+    expect(orderedCandidates).toEqual([
+      '/api/iptv/live/la1.m3u8',
+      'https://streamxhd.sbs/live1.php?stream=mligacampeones',
+      'https://pig.footunder.online/stream/537',
+    ]);
+  });
+
+  it('stores and serves RAM-cached live manifests & TS segments and hedges stalled fallback extractions', async () => {
+    const manifestUrl = 'https://cdn.example.com/live/ch1.m3u8';
+    setCachedLiveManifest(manifestUrl, '#EXTM3U\n#EXTINF:4,\nseg1.ts\n', manifestUrl);
+    expect(getCachedLiveManifest(manifestUrl)?.text).toContain('seg1.ts');
+
+    const segUrl = 'https://cdn.example.com/live/seg1.ts';
+    const tsBuf = Buffer.alloc(376, 0x47);
+    setCachedLiveTsSegment(segUrl, tsBuf, 'video/mp2t');
+    expect(getCachedLiveTsSegment(segUrl)?.buf.length).toBe(376);
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('slow-primary')) {
+        return await new Promise<Response>((resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+          setTimeout(() => {
+            resolve(
+              new Response(JSON.stringify({ success: true, streamUrl: '/api/hls-proxy?url=slow', mode: 'hls' }), {
+                status: 200,
+              })
+            );
+          }, 500);
+        });
+      }
+      return new Response(JSON.stringify({ success: true, streamUrl: '/api/hls-proxy?url=fast', mode: 'hls' }), {
+        status: 200,
+      });
+    }) as typeof fetch;
+
+    try {
+      const res = await extractLiveStreamWithFallbacks({
+        sourceUrl: 'https://slow-primary.example.com/live/1',
+        fallbackUrls: ['https://fast-backup.example.com/live/2'],
+        title: 'Test Match',
+        hedgeDelayMs: 25,
+      });
+      expect(res.url).toBe('/api/hls-proxy?url=fast');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
   });
 });

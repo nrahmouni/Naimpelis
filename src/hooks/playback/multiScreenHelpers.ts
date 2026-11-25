@@ -4,7 +4,7 @@ export const MAX_SECONDARY_STREAMS = MAX_MULTI_SCREENS - 1; // 3 secondary + 1 p
 
 export function isInstantDirectMultiStream(sourceUrl: string, resolverType: string): boolean {
   if (!sourceUrl) return false;
-  if (/^\/api\/(?:hls-proxy|iptv\/live|dvb-live|vod-manifest)/i.test(sourceUrl)) {
+  if (/^\/api\/(?:hls-proxy|iptv\/live|dvb-live|vod-manifest|providers\/stream|belix\/stream)/i.test(sourceUrl)) {
     return true;
   }
   if (
@@ -24,69 +24,229 @@ export function inferResolverType(sourceUrl: string): StreamTrack['resolverType'
   return 'sports_channel';
 }
 
-export async function extractLiveStreamWithFallbacks(opts: {
-  sourceUrl: string;
-  fallbackUrls?: string[];
+const multiExtractCache = new Map<
+  string,
+  { url: string; rawSourceUrl: string; mode: 'hls' | 'direct'; expiresAt: number }
+>();
+
+export function prioritizeFastMultiCandidates(urls: string[]): string[] {
+  const unique = Array.from(new Set(urls.map((u) => String(u || '').trim()).filter(Boolean)));
+  const rankUrl = (u: string): number => {
+    const resolver = inferResolverType(u);
+    if (isInstantDirectMultiStream(u, resolver)) return 0;
+    if (/\.m3u8(\?|$)/i.test(u)) return 1;
+    if (/streamxhd\.|futlivehd\./i.test(u)) return 2;
+    if (/footunder\.online|tilinhd\./i.test(u)) return 4;
+    return 3;
+  };
+  return unique
+    .map((u, idx) => ({ u, idx, rank: rankUrl(u) }))
+    .sort((a, b) => a.rank - b.rank || a.idx - b.idx)
+    .map((x) => x.u);
+}
+
+async function attemptExtractCandidate(opts: {
+  candidateUrl: string;
   title: string;
   signal?: AbortSignal;
+  timeoutMs?: number;
 }): Promise<{
   url: string;
   rawSourceUrl: string;
   mode: 'hls' | 'direct';
 }> {
-  const candidates = Array.from(
-    new Set([opts.sourceUrl, ...(opts.fallbackUrls || [])].map((u) => String(u || '').trim()).filter(Boolean))
-  );
+  const { candidateUrl, title, signal, timeoutMs = 6200 } = opts;
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
 
-  let lastError = 'No hay señal activa para esta retransmisión.';
+  const resolver = inferResolverType(candidateUrl);
+  if (isInstantDirectMultiStream(candidateUrl, resolver)) {
+    return {
+      url: candidateUrl,
+      rawSourceUrl: candidateUrl,
+      mode: resolver === 'direct_mp4' ? 'direct' : 'hls',
+    };
+  }
 
-  for (const candidateUrl of candidates) {
-    if (opts.signal?.aborted) {
-      throw new DOMException('Aborted', 'AbortError');
-    }
+  const cached = multiExtractCache.get(candidateUrl);
+  if (cached && cached.expiresAt > Date.now() && cached.url) {
+    return {
+      url: cached.url,
+      rawSourceUrl: cached.rawSourceUrl,
+      mode: cached.mode,
+    };
+  }
 
-    const resolver = inferResolverType(candidateUrl);
-    if (isInstantDirectMultiStream(candidateUrl, resolver)) {
+  const perAttemptCtrl = new AbortController();
+  const timeoutId = setTimeout(() => perAttemptCtrl.abort(), timeoutMs);
+  const onParentAbort = () => perAttemptCtrl.abort();
+  signal?.addEventListener('abort', onParentAbort, { once: true });
+
+  try {
+    const params = new URLSearchParams({
+      url: candidateUrl,
+      resolverType: resolver,
+      title,
+    });
+    const res = await fetch(`/api/extract/stream?${params.toString()}`, {
+      signal: perAttemptCtrl.signal,
+    });
+    const data = await res.json().catch(() => null);
+    if (res.ok && data?.success && data?.streamUrl) {
+      const mode: 'hls' | 'direct' = data.mode === 'direct' ? 'direct' : 'hls';
+      if (data.mode !== 'cloud') {
+        if (multiExtractCache.size > 120) multiExtractCache.clear();
+        multiExtractCache.set(candidateUrl, {
+          url: String(data.streamUrl),
+          rawSourceUrl: candidateUrl,
+          mode,
+          expiresAt: Date.now() + 90_000,
+        });
+      }
       return {
-        url: candidateUrl,
+        url: String(data.streamUrl),
         rawSourceUrl: candidateUrl,
-        mode: resolver === 'direct_mp4' ? 'direct' : 'hls',
+        mode,
       };
     }
+    throw new Error(String(data?.error || 'No hay señal activa para esta retransmisión.'));
+  } finally {
+    clearTimeout(timeoutId);
+    signal?.removeEventListener('abort', onParentAbort);
+  }
+}
 
-    const perAttemptCtrl = new AbortController();
-    const timeoutId = setTimeout(() => perAttemptCtrl.abort(), 10_000);
-    const onParentAbort = () => perAttemptCtrl.abort();
+export async function extractLiveStreamWithFallbacks(opts: {
+  sourceUrl: string;
+  fallbackUrls?: string[];
+  title: string;
+  signal?: AbortSignal;
+  hedgeDelayMs?: number;
+}): Promise<{
+  url: string;
+  rawSourceUrl: string;
+  mode: 'hls' | 'direct';
+}> {
+  const candidates = prioritizeFastMultiCandidates([opts.sourceUrl, ...(opts.fallbackUrls || [])]);
+  if (candidates.length === 0) {
+    throw new Error('No hay señal activa para esta retransmisión.');
+  }
+
+  const hedgeDelayMs = opts.hedgeDelayMs ?? 1400;
+  let lastError = 'No hay señal activa para esta retransmisión.';
+
+  if (candidates.length >= 2) {
+    const hedgeCtrl = new AbortController();
+    const onParentAbort = () => hedgeCtrl.abort();
     opts.signal?.addEventListener('abort', onParentAbort, { once: true });
 
     try {
-      const params = new URLSearchParams({
-        url: candidateUrl,
-        resolverType: resolver,
+      const p0 = attemptExtractCandidate({
+        candidateUrl: candidates[0],
         title: opts.title,
+        signal: hedgeCtrl.signal,
       });
-      const res = await fetch(`/api/extract/stream?${params.toString()}`, {
-        signal: perAttemptCtrl.signal,
+
+      const quickWin = await new Promise<
+        | { kind: 'win'; value: { url: string; rawSourceUrl: string; mode: 'hls' | 'direct' } }
+        | { kind: 'hedge'; p0Settled: boolean; p0Err?: unknown }
+      >((resolve) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            resolve({ kind: 'hedge', p0Settled: false });
+          }
+        }, hedgeDelayMs);
+
+        p0.then(
+          (value) => {
+            clearTimeout(timer);
+            if (!settled) {
+              settled = true;
+              resolve({ kind: 'win', value });
+            }
+          },
+          (err) => {
+            clearTimeout(timer);
+            if (!settled) {
+              settled = true;
+              resolve({ kind: 'hedge', p0Settled: true, p0Err: err });
+            }
+          }
+        );
       });
-      const data = await res.json().catch(() => null);
-      if (res.ok && data?.success && data?.streamUrl) {
-        return {
-          url: String(data.streamUrl),
-          rawSourceUrl: candidateUrl,
-          mode: data.mode === 'direct' ? 'direct' : 'hls',
-        };
+
+      if (quickWin.kind === 'win') {
+        hedgeCtrl.abort();
+        return quickWin.value;
       }
-      if (data?.error) lastError = String(data.error);
-    } catch (err: unknown) {
+
       if (opts.signal?.aborted) {
-        throw err;
+        throw new DOMException('Aborted', 'AbortError');
       }
-      if (err instanceof Error && err.name !== 'AbortError') {
-        lastError = err.message || lastError;
+
+      if (quickWin.p0Err instanceof Error && quickWin.p0Err.message) {
+        lastError = quickWin.p0Err.message;
+      }
+
+      const p1 = attemptExtractCandidate({
+        candidateUrl: candidates[1],
+        title: opts.title,
+        signal: hedgeCtrl.signal,
+      });
+
+      const racers = quickWin.p0Settled ? [p1] : [p0, p1];
+      try {
+        const winner = await Promise.any(racers);
+        hedgeCtrl.abort();
+        return winner;
+      } catch (aggErr: unknown) {
+        if (opts.signal?.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+        const firstErr =
+          aggErr instanceof AggregateError && aggErr.errors.length > 0
+            ? aggErr.errors[aggErr.errors.length - 1]
+            : aggErr;
+        if (firstErr instanceof Error && firstErr.message && firstErr.name !== 'AbortError') {
+          lastError = firstErr.message;
+        }
       }
     } finally {
-      clearTimeout(timeoutId);
       opts.signal?.removeEventListener('abort', onParentAbort);
+    }
+  } else {
+    try {
+      return await attemptExtractCandidate({
+        candidateUrl: candidates[0],
+        title: opts.title,
+        signal: opts.signal,
+      });
+    } catch (err: unknown) {
+      if (opts.signal?.aborted) throw err;
+      if (err instanceof Error && err.message && err.name !== 'AbortError') {
+        lastError = err.message;
+      }
+    }
+  }
+
+  for (const candidateUrl of candidates.slice(2)) {
+    if (opts.signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+    try {
+      return await attemptExtractCandidate({
+        candidateUrl,
+        title: opts.title,
+        signal: opts.signal,
+      });
+    } catch (err: unknown) {
+      if (opts.signal?.aborted) throw err;
+      if (err instanceof Error && err.message && err.name !== 'AbortError') {
+        lastError = err.message;
+      }
     }
   }
 

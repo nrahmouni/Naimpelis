@@ -151,8 +151,77 @@ export async function resolveOrderedCandidateTracks(opts: {
 
   const allWebEmbedCandidates: { idx: number; track: TrackRecord; url: string }[] = [];
 
+  const resolveSingleNativeCandidate = async (
+    idx: number,
+    candidate: TrackRecord
+  ): Promise<{ streamUrl: string; mode: 'hls' | 'direct'; track: TrackRecord } | null> => {
+    if (candidate.resolverType === 'movidy_embed') {
+      const resolvedMv = await withExtractTimeout(
+        resolveMovidyEmbedTrack(candidate.sourceUrl),
+        2400,
+        null
+      );
+      if (resolvedMv?.mode === 'hls') {
+        orderedTracks[idx] = { ...candidate, resolvedStreamUrl: resolvedMv.proxyUrl };
+        return { streamUrl: resolvedMv.proxyUrl, mode: 'hls', track: orderedTracks[idx] };
+      }
+      if (!directOnly && resolvedMv?.mode === 'embed') {
+        orderedTracks[idx] = {
+          ...candidate,
+          resolverType: 'web_embed',
+          sourceUrl: resolvedMv.embedUrl,
+        };
+        allWebEmbedCandidates.push({
+          idx,
+          track: orderedTracks[idx],
+          url: resolvedMv.embedUrl,
+        });
+        return null;
+      }
+      deadTrackIndices.add(idx);
+      return null;
+    }
+
+    if (candidate.resolverType === 'vidhide_hls') {
+      const unpacked = await withExtractTimeout(unpackVidhideToHls(candidate.sourceUrl), 2500, null);
+      if (unpacked) {
+        orderedTracks[idx] = { ...candidate, resolvedStreamUrl: unpacked.proxyUrl };
+        return { streamUrl: unpacked.proxyUrl, mode: 'hls', track: orderedTracks[idx] };
+      }
+      deadTrackIndices.add(idx);
+      return null;
+    }
+
+    if (candidate.resolverType === 'embed_sniff') {
+      const sniffed = await withExtractTimeout(
+        sniffStreamWithHeadless(candidate.sourceUrl),
+        3000,
+        null
+      );
+      if (sniffed) {
+        const proxiedUrl = sniffed.isDirectMp4
+          ? buildTsProxyUrl(sniffed.streamUrl, sniffed.referer)
+          : buildHlsProxyUrl(sniffed.streamUrl, sniffed.referer);
+        orderedTracks[idx] = { ...candidate, resolvedStreamUrl: proxiedUrl };
+        return {
+          streamUrl: proxiedUrl,
+          mode: sniffed.isDirectMp4 ? 'direct' : 'hls',
+          track: orderedTracks[idx],
+        };
+      }
+      deadTrackIndices.add(idx);
+      return null;
+    }
+
+    return null;
+  };
+
+  const NATIVE_PROBE_WAVE_SIZE = 5;
+
   // Pass 1: Exhaust ALL native HLS/MP4 tracks across every language tier BEFORE ever accepting a web_embed
   for (const tierScore of tierScores) {
+    const unresolvedNativeIndices: number[] = [];
+
     for (let i = 0; i < orderedTracks.length; i++) {
       if (getLangScore(orderedTracks[i].lang) !== tierScore) continue;
       const candidate = orderedTracks[i];
@@ -167,71 +236,33 @@ export async function resolveOrderedCandidateTracks(opts: {
       }
 
       if (candidate.resolvedStreamUrl) {
-        primaryStreamUrl = candidate.resolvedStreamUrl;
-        primaryMode = candidate.resolverType === 'direct_mp4' ? 'direct' : 'hls';
-        resolvedTrack = candidate;
-        break;
+        if (!primaryStreamUrl) {
+          primaryStreamUrl = candidate.resolvedStreamUrl;
+          primaryMode = candidate.resolverType === 'direct_mp4' ? 'direct' : 'hls';
+          resolvedTrack = candidate;
+        }
+        continue;
       }
 
-      if (candidate.resolverType === 'movidy_embed') {
-        const resolvedMv = await withExtractTimeout(
-          resolveMovidyEmbedTrack(candidate.sourceUrl),
-          3800,
-          null
-        );
-        if (resolvedMv?.mode === 'hls') {
-          orderedTracks[i] = { ...candidate, resolvedStreamUrl: resolvedMv.proxyUrl };
-          primaryStreamUrl = resolvedMv.proxyUrl;
-          primaryMode = 'hls';
-          resolvedTrack = orderedTracks[i];
-          break;
-        } else if (!directOnly && resolvedMv?.mode === 'embed') {
-          orderedTracks[i] = {
-            ...candidate,
-            resolverType: 'web_embed',
-            sourceUrl: resolvedMv.embedUrl,
-          };
-          allWebEmbedCandidates.push({
-            idx: i,
-            track: orderedTracks[i],
-            url: resolvedMv.embedUrl,
-          });
-        } else {
-          deadTrackIndices.add(i);
-        }
-      } else if (candidate.resolverType === 'vidhide_hls') {
-        const unpacked = await withExtractTimeout(
-          unpackVidhideToHls(candidate.sourceUrl),
-          4200,
-          null
-        );
-        if (unpacked) {
-          orderedTracks[i] = { ...candidate, resolvedStreamUrl: unpacked.proxyUrl };
-          primaryStreamUrl = unpacked.proxyUrl;
-          primaryMode = 'hls';
-          resolvedTrack = orderedTracks[i];
-          break;
-        } else {
-          deadTrackIndices.add(i);
-        }
-      } else if (candidate.resolverType === 'embed_sniff') {
-        const sniffed = await withExtractTimeout(
-          sniffStreamWithHeadless(candidate.sourceUrl),
-          5500,
-          null
-        );
-        if (sniffed) {
-          const proxiedUrl = sniffed.isDirectMp4
-            ? buildTsProxyUrl(sniffed.streamUrl, sniffed.referer)
-            : buildHlsProxyUrl(sniffed.streamUrl, sniffed.referer);
-          orderedTracks[i] = { ...candidate, resolvedStreamUrl: proxiedUrl };
-          primaryStreamUrl = proxiedUrl;
-          primaryMode = sniffed.isDirectMp4 ? 'direct' : 'hls';
-          resolvedTrack = orderedTracks[i];
-          break;
-        } else {
-          deadTrackIndices.add(i);
-        }
+      unresolvedNativeIndices.push(i);
+    }
+
+    if (primaryStreamUrl) break;
+
+    for (let w = 0; w < unresolvedNativeIndices.length; w += NATIVE_PROBE_WAVE_SIZE) {
+      const wave = unresolvedNativeIndices.slice(w, w + NATIVE_PROBE_WAVE_SIZE);
+      const waveResults = await Promise.all(
+        wave.map((idx) => resolveSingleNativeCandidate(idx, orderedTracks[idx]))
+      );
+      const firstWinner = waveResults.find(
+        (res): res is { streamUrl: string; mode: 'hls' | 'direct'; track: TrackRecord } =>
+          Boolean(res && res.streamUrl)
+      );
+      if (firstWinner) {
+        primaryStreamUrl = firstWinner.streamUrl;
+        primaryMode = firstWinner.mode;
+        resolvedTrack = firstWinner.track;
+        break;
       }
     }
 

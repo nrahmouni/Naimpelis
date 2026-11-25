@@ -10,16 +10,24 @@ import { LruTtlCache } from '../utils/lruCache.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
 import {
   buildHlsProxyUrl,
+  buildTsProxyUrl,
+  getPreferredUpstreamUa,
   isDvbHeadendStream,
   maybeSignEasyBroadcastUrl,
   resolveKnownUpstreamReferer,
   type TrackRecord,
 } from '../extractors/httpHelpers.ts';
 import { isElahmadUrl, resolveElahmadChannelToHls } from '../extractors/elahmadExtractor.ts';
+import { extractLiveSportsHlsDirect } from '../extractors/sportsExtractor.ts';
 import { resolveMediasetLiveHlsUrl } from './mediasetLiveService.ts';
 import { isAnyBelixConnected, resolveBelixManifest } from './belix/belixXtreamClient.ts';
 import { fetchProxiedXtreamManifest } from './xtreamService.ts';
 import { resolveProviderLiveManifest } from './providers/xtreamProvidersService.ts';
+import { getActiveDvbSessionPath, isDvbUpstreamCoolingDown } from '../routes/proxies/dvbTranscoder.ts';
+import {
+  extractXtreamLiveHintsFromSportsRequest,
+  findXtreamLiveChannelMatches,
+} from './xtreamVodMatcher.ts';
 import { channelHealthMonitor } from './channelHealthMonitor.ts';
 import { inferStreamQualityTag, normalizeLiveTrackLang } from '../../src/utils/channelQualityRanker.ts';
 
@@ -205,6 +213,23 @@ export async function defaultProbeSingleLiveTrack(
     return { ok: false, streamUrl: '', mode: 'hls', latencyMs: lat, statusCode: 502 };
   }
 
+  // 4B. Dynamic external sports_channel mirrors (footunder, streamxhd, tilinhd, etc.)
+  if (rt === 'sports_channel' || /footunder\.online|streamxhd\.|tilinhd\./i.test(sourceUrl)) {
+    const fullTarget = /^https?:\/\//i.test(sourceUrl) ? sourceUrl : `https://${sourceUrl}`;
+    const directSports = await Promise.race([
+      extractLiveSportsHlsDirect(fullTarget),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), opts.timeoutMs)),
+    ]).catch(() => null);
+    const lat = Math.max(1, Date.now() - startedAt);
+    if (directSports && directSports.streamUrl && !directSports.isBrokenGreenFeed) {
+      const proxiedUrl = directSports.isDirectMp4
+        ? buildTsProxyUrl(directSports.streamUrl, directSports.referer)
+        : buildHlsProxyUrl(directSports.streamUrl, directSports.referer);
+      return { ok: true, streamUrl: proxiedUrl, mode: 'hls', latencyMs: lat, statusCode: 200 };
+    }
+    return { ok: false, streamUrl: '', mode: 'hls', latencyMs: lat, statusCode: 502 };
+  }
+
   // 5. Local proxied streams: unwrap /api/hls-proxy?url=... to verify upstream health instead of blind-passing dead streams
   if (sourceUrl.startsWith('/api/hls-proxy')) {
     try {
@@ -216,7 +241,7 @@ export async function defaultProbeSingleLiveTrack(
         const res = await streamingFetch(cleanInner, {
           method: 'GET',
           headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
+            'User-Agent': getPreferredUpstreamUa(cleanInner),
             Referer: referer,
             Accept: '*/*',
           },
@@ -245,6 +270,9 @@ export async function defaultProbeSingleLiveTrack(
   }
 
   if (sourceUrl.startsWith('/api/')) {
+    if (sourceUrl.startsWith('/api/dvb-live/playlist.m3u8')) {
+      return { ok: false, streamUrl: '', mode: 'hls', latencyMs: 1, statusCode: 404 };
+    }
     return {
       ok: true,
       streamUrl: sourceUrl,
@@ -258,24 +286,38 @@ export async function defaultProbeSingleLiveTrack(
     const cleanUrl = await maybeSignEasyBroadcastUrl(
       sourceUrl.replace(/[?&]profile=(hd|fast)\b/gi, '')
     );
-    if (isDvbHeadendStream(cleanUrl)) {
-      return {
-        ok: true,
-        streamUrl: `/api/dvb-live/playlist.m3u8?url=${encodeURIComponent(cleanUrl)}`,
-        mode: 'hls',
-        latencyMs: Math.max(1, Date.now() - startedAt),
-      };
+    const isDvb = isDvbHeadendStream(cleanUrl);
+    if (isDvb) {
+      const warmDvbPath = getActiveDvbSessionPath(cleanUrl, 'hd');
+      if (warmDvbPath) {
+        return {
+          ok: true,
+          streamUrl: warmDvbPath,
+          mode: 'hls',
+          latencyMs: Math.max(1, Date.now() - startedAt),
+          statusCode: 200,
+        };
+      }
+      if (isDvbUpstreamCoolingDown(cleanUrl)) {
+        return {
+          ok: false,
+          streamUrl: '',
+          mode: 'hls',
+          latencyMs: Math.max(1, Date.now() - startedAt),
+          statusCode: 503,
+        };
+      }
     }
     const referer = resolveKnownUpstreamReferer(cleanUrl, track.referer) || `${new URL(cleanUrl).origin}/`;
     try {
       const res = await streamingFetch(cleanUrl, {
         method: 'GET',
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
+          'User-Agent': getPreferredUpstreamUa(cleanUrl),
           Referer: referer,
           Accept: '*/*',
         },
-        timeoutMs: opts.timeoutMs,
+        timeoutMs: Math.min(opts.timeoutMs, isDvb ? 2400 : opts.timeoutMs),
       });
       const lat = Math.max(1, Date.now() - startedAt);
       if (!res.ok) {
@@ -283,8 +325,8 @@ export async function defaultProbeSingleLiveTrack(
         return { ok: false, streamUrl: '', mode: 'hls', latencyMs: lat, statusCode: res.status };
       }
       const txt = await res.text();
-      if (txt.includes('#EXTM3U') && !/nosignal/i.test(txt)) {
-        const proxyUrl = buildHlsProxyUrl(res.url || cleanUrl, referer);
+      if (txt.includes('#EXTM3U') && (txt.includes('#EXTINF') || txt.includes('#EXT-X-STREAM-INF')) && !/nosignal/i.test(txt)) {
+        const proxyUrl = buildHlsProxyUrl(res.url || cleanUrl, referer, isDvb);
         return { ok: true, streamUrl: proxyUrl, mode: 'hls', latencyMs: lat, statusCode: 200 };
       }
       return { ok: false, streamUrl: '', mode: 'hls', latencyMs: lat, statusCode: 404 };
@@ -397,20 +439,29 @@ export async function raceFastLiveTracks(
   }).slice(0, 8);
 
   const probeImpl = opts.probeImpl || defaultProbeSingleLiveTrack;
-  const timeoutMs = opts.timeoutMs ?? 2_600;
-  const hedgeDelay1 = opts.hedgeDelayMs ?? 120;
-  const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 300;
+  const timeoutMs = opts.timeoutMs ?? 3_800;
+  const hedgeDelay1 = opts.hedgeDelayMs ?? 100;
+  const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 260;
   const publicOrigin = opts.publicOrigin || '';
   const belixSessionKey = opts.belixSessionKey || 'default';
 
+  const hasSportsTracks =
+    !opts.probeImpl &&
+    ordered.some(
+      (c) =>
+        c.track.resolverType === 'sports_channel' ||
+        /footunder\.online|streamxhd\.|tilinhd\./i.test(String(c.track.sourceUrl || ''))
+    );
+
   const runRace = async (): Promise<FastLiveResolveResult> => {
     const startedAt = Date.now();
+    const deadlineAt = startedAt + timeoutMs + 200;
     let settled = false;
     let checkedCount = 0;
 
     return new Promise<FastLiveResolveResult>((resolve) => {
       const timers: ReturnType<typeof setTimeout>[] = [];
-      let pendingCount = ordered.length;
+      let pendingCount = ordered.length + (hasSportsTracks ? 1 : 0);
       let embedFallback: { originalIndex: number; track: FastLiveTrackCandidate; out: FastLiveProbeOutcome } | null = null;
 
       const finish = (res: FastLiveResolveResult) => {
@@ -423,9 +474,63 @@ export async function raceFastLiveTracks(
         resolve(res);
       };
 
+      const hardDeadlineTimer = setTimeout(() => {
+        if (settled) return;
+        if (embedFallback) {
+          finish({
+            ok: true,
+            winningIndex: embedFallback.originalIndex,
+            winningTrack: embedFallback.track,
+            streamUrl: embedFallback.out.streamUrl,
+            mode: 'embed',
+            latencyMs: Math.max(1, Date.now() - startedAt),
+            checkedCount,
+          });
+          return;
+        }
+        finish({
+          ok: false,
+          winningIndex: 0,
+          winningTrack: ordered[0]?.track || safeTracks[0],
+          streamUrl: ordered[0]?.track.sourceUrl || safeTracks[0].sourceUrl,
+          mode: 'hls',
+          latencyMs: Math.max(1, Date.now() - startedAt),
+          checkedCount,
+        });
+      }, timeoutMs + 200);
+      timers.push(hardDeadlineTimer);
+
+      const checkAllDone = () => {
+        if (!settled && pendingCount <= 0) {
+          if (embedFallback) {
+            finish({
+              ok: true,
+              winningIndex: embedFallback.originalIndex,
+              winningTrack: embedFallback.track,
+              streamUrl: embedFallback.out.streamUrl,
+              mode: 'embed',
+              latencyMs: embedFallback.out.latencyMs,
+              checkedCount,
+            });
+            return;
+          }
+          finish({
+            ok: false,
+            winningIndex: 0,
+            winningTrack: ordered[0]?.track || safeTracks[0],
+            streamUrl: ordered[0]?.track.sourceUrl || safeTracks[0].sourceUrl,
+            mode: 'hls',
+            latencyMs: Math.max(1, Date.now() - startedAt),
+            checkedCount,
+          });
+        }
+      };
+
       const launchCandidate = (cand: { originalIndex: number; track: FastLiveTrackCandidate }) => {
-        if (settled) {
+        const remainingMs = deadlineAt - Date.now();
+        if (settled || remainingMs < 250) {
           pendingCount -= 1;
+          checkAllDone();
           return;
         }
         checkedCount += 1;
@@ -433,7 +538,7 @@ export async function raceFastLiveTracks(
           publicOrigin,
           belixSessionKey,
           titleHint: opts.titleHint,
-          timeoutMs,
+          timeoutMs: Math.min(timeoutMs, remainingMs),
         })
           .then((out) => {
             if (out.ok && out.streamUrl) {
@@ -478,34 +583,71 @@ export async function raceFastLiveTracks(
           })
           .finally(() => {
             pendingCount -= 1;
-            if (!settled && pendingCount <= 0) {
-              if (embedFallback) {
-                finish({
-                  ok: true,
-                  winningIndex: embedFallback.originalIndex,
-                  winningTrack: embedFallback.track,
-                  streamUrl: embedFallback.out.streamUrl,
-                  mode: 'embed',
-                  latencyMs: embedFallback.out.latencyMs,
-                  checkedCount,
-                });
-                return;
-              }
-              finish({
-                ok: false,
-                winningIndex: 0,
-                winningTrack: ordered[0]?.track || safeTracks[0],
-                streamUrl: ordered[0]?.track.sourceUrl || safeTracks[0].sourceUrl,
-                mode: 'hls',
-                latencyMs: Math.max(1, Date.now() - startedAt),
-                checkedCount,
-              });
-            }
+            checkAllDone();
           });
       };
 
       // Wave 1 (t=0): Top candidate immediately
       launchCandidate(ordered[0]);
+
+      // Concurrent Xtream live backup lookup for sports_channel races
+      if (hasSportsTracks) {
+        const hintPool = new Set<string>();
+        for (const c of ordered) {
+          for (const h of extractXtreamLiveHintsFromSportsRequest(
+            c.track.sourceUrl,
+            c.track.label,
+            opts.titleHint
+          )) {
+            hintPool.add(h);
+          }
+        }
+        const hints = Array.from(hintPool);
+        if (hints.length === 0) {
+          pendingCount -= 1;
+        } else {
+          Promise.race([
+            findXtreamLiveChannelMatches({
+              channelHints: hints,
+              preferLang,
+              limit: 4,
+            }),
+            new Promise<TrackRecord[]>((resolve) => setTimeout(() => resolve([]), 1600)),
+          ])
+            .then((matches) => {
+              if (settled || matches.length === 0) {
+                pendingCount -= 1;
+                checkAllDone();
+                return;
+              }
+              const existingUrls = new Set(ordered.map((o) => o.track.sourceUrl));
+              const extras = matches.filter((m) => m.sourceUrl && !existingUrls.has(m.sourceUrl)).slice(0, 3);
+              if (extras.length === 0) {
+                pendingCount -= 1;
+                checkAllDone();
+                return;
+              }
+              pendingCount += extras.length - 1;
+              for (const extra of extras) {
+                launchCandidate({
+                  originalIndex: 0,
+                  track: {
+                    id: extra.id,
+                    label: extra.label,
+                    lang: extra.lang,
+                    quality: extra.quality,
+                    sourceUrl: extra.sourceUrl,
+                    resolverType: extra.resolverType || 'direct_hls',
+                  },
+                });
+              }
+            })
+            .catch(() => {
+              pendingCount -= 1;
+              checkAllDone();
+            });
+        }
+      }
 
       // Wave 2 (t=+hedgeDelay1): Hedge candidates 1 & 2 if top candidate hasn't succeeded yet
       if (ordered.length > 1) {

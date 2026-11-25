@@ -338,16 +338,18 @@ async function startOrReuseLiveDvbCleanHlsSession(
   // 2) Skip duplicate pre-probe GET so only 1 upstream socket is opened.
   if (isXtreamLive) {
     const targetHost = getDvbHostKey(cleanUpstream);
-    let evicted = false;
+    const sameHostSessions: Array<{ key: string; lastAccessAt: number }> = [];
     for (const [k, s] of liveDvbSessions.entries()) {
       if (k !== sessionKey && getDvbHostKey(s.upstreamUrl) === targetHost) {
-        destroyLiveDvbSession(k);
-        evicted = true;
+        sameHostSessions.push({ key: k, lastAccessAt: s.lastAccessAt });
       }
     }
-    if (evicted) {
-      // Wait cleanly so Xtream edge releases previous max_connections socket before opening next channel
-      await new Promise((r) => setTimeout(r, 180));
+    if (sameHostSessions.length >= 2) {
+      sameHostSessions.sort((a, b) => a.lastAccessAt - b.lastAccessAt);
+      for (const old of sameHostSessions.slice(0, sameHostSessions.length - 1)) {
+        destroyLiveDvbSession(old.key);
+      }
+      await new Promise((r) => setTimeout(r, 120));
     }
   } else if (isM3u8Input && !probe) {
     const reachable = await probeDvbUpstreamReachable(cleanUpstream, referer, 1600);
@@ -473,7 +475,7 @@ async function startOrReuseLiveDvbCleanHlsSession(
   });
 
   session.readyPromise = new Promise<boolean>((resolve) => {
-    const deadline = Date.now() + (isXtreamLive ? 6_500 : 12_000);
+    const deadline = Date.now() + (isXtreamLive ? 5_200 : 6_500);
     let inTick = false;
     const poll = setInterval(async () => {
       if (session.dead) {
@@ -495,7 +497,7 @@ async function startOrReuseLiveDvbCleanHlsSession(
         if (segMatches && segMatches.length >= 1) {
           const firstSegPath = path.join(sessionDir, segMatches[0]);
           const st = await fs.promises.stat(firstSegPath);
-          if (st.size > 8192) {
+          if (st.size > 4096) {
             clearInterval(poll);
             resolve(true);
             return;

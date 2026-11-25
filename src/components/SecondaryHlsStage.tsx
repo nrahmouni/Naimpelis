@@ -15,6 +15,7 @@ import {
 import type { AppLanguage, SecondaryStreamState } from '../types';
 import { triggerHaptic } from '../utils/haptics';
 import { pickLang } from '../utils/i18n';
+import { createLivePlaybackHealthMonitor } from './player/hlsHealthWatchdog';
 
 interface SecondaryHlsStageProps {
   secondaryStream: SecondaryStreamState;
@@ -49,6 +50,7 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
   const hlsRef = useRef<Hls | null>(null);
   const recoveryCountRef = useRef<number>(0);
   const autoBackupTriedRef = useRef<number>(0);
+  const waitSpinnerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onRetryStreamRef = useRef(onRetryStream);
   onRetryStreamRef.current = onRetryStream;
   const fallbackCount = secondaryStream.fallbackUrls?.length || 0;
@@ -56,6 +58,24 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
   const [streamFailed, setStreamFailed] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
   const [cornerIndex, setCornerIndex] = useState<0 | 1 | 2 | 3>(0);
+
+  const clearWaitSpinner = () => {
+    if (waitSpinnerTimerRef.current) {
+      clearTimeout(waitSpinnerTimerRef.current);
+      waitSpinnerTimerRef.current = null;
+    }
+    setBuffering(false);
+  };
+
+  const scheduleWaitSpinner = (delayMs = 750) => {
+    if (waitSpinnerTimerRef.current) return;
+    waitSpinnerTimerRef.current = setTimeout(() => {
+      waitSpinnerTimerRef.current = null;
+      const v = secVideoRef.current;
+      if (v && !v.paused && v.readyState >= 3) return;
+      setBuffering(true);
+    }, delayMs);
+  };
 
   useEffect(() => {
     autoBackupTriedRef.current = 0;
@@ -102,10 +122,16 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
     }
 
     setStreamFailed(false);
+    clearWaitSpinner();
     setBuffering(true);
     video.muted = !isAudioActive;
 
+    let cancelled = false;
+    let healthInterval: ReturnType<typeof setInterval> | null = null;
+    const healthMonitor = createLivePlaybackHealthMonitor();
+
     const triggerBackupOrFail = () => {
+      clearWaitSpinner();
       if (
         onRetryStreamRef.current &&
         fallbackCount > 0 &&
@@ -122,7 +148,7 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
     };
 
     const handleLoadedMeta = () => {
-      setBuffering(false);
+      clearWaitSpinner();
       setStreamFailed(false);
       video.play().catch(() => {});
     };
@@ -133,26 +159,113 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
 
     if (secondaryStream.mode === 'hls') {
       if (Hls.isSupported()) {
+        const isMultiHeavy = totalScreens >= 3;
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          maxBufferLength: 20,
-          maxMaxBufferLength: 36,
+          startFragPrefetch: true,
+          liveSyncDurationCount: 2,
+          liveMaxLatencyDurationCount: 6,
+          maxLiveSyncPlaybackRate: 1.04,
+          backBufferLength: 6,
+          maxBufferLength: isMultiHeavy ? 10 : 16,
+          maxMaxBufferLength: isMultiHeavy ? 18 : 26,
+          maxBufferHole: 0.4,
+          nudgeOffset: 0.1,
+          nudgeMaxRetry: 8,
+          abrEwmaDefaultEstimate: 5_000_000,
+          manifestLoadingTimeOut: 9500,
+          manifestLoadingMaxRetry: 4,
+          manifestLoadingRetryDelay: 200,
+          levelLoadingTimeOut: 8500,
+          levelLoadingMaxRetry: 4,
+          levelLoadingRetryDelay: 200,
+          fragLoadingTimeOut: 12000,
+          fragLoadingMaxRetry: 5,
+          fragLoadingRetryDelay: 250,
         });
         hlsRef.current = hls;
         hls.loadSource(secondaryStream.url);
         hls.attachMedia(video);
+        hls.on(Hls.Events.FRAG_BUFFERED, () => {
+          if (cancelled) return;
+          clearWaitSpinner();
+          setStreamFailed(false);
+        });
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          setBuffering(false);
+          if (cancelled) return;
+          clearWaitSpinner();
           setStreamFailed(false);
           video.play().catch(() => {});
+
+          if (healthInterval) clearInterval(healthInterval);
+          healthMonitor.reset();
+          let lastSoftReconnectAt = 0;
+          healthInterval = setInterval(() => {
+            if (cancelled || !video || video.paused || hlsRef.current !== hls) return;
+            const res = healthMonitor.check(video, Date.now());
+            if (res.action === 'healthy' && !res.isStalled && video.readyState >= 3) {
+              clearWaitSpinner();
+            }
+            let bufferedAhead = 0;
+            try {
+              for (let i = 0; i < video.buffered.length; i++) {
+                const bStart = video.buffered.start(i);
+                const bEnd = video.buffered.end(i);
+                if (video.currentTime >= bStart - 0.15 && video.currentTime <= bEnd) {
+                  bufferedAhead = Math.max(bufferedAhead, bEnd - video.currentTime);
+                }
+              }
+            } catch {
+              // ignore
+            }
+            if (res.action === 'recover_signal') {
+              try {
+                let nudged = false;
+                for (let i = 0; i < video.buffered.length; i++) {
+                  const bStart = video.buffered.start(i);
+                  const bEnd = video.buffered.end(i);
+                  if (bStart > video.currentTime + 0.08 && bStart - video.currentTime <= 4 && bEnd - bStart >= 0.3) {
+                    video.currentTime = bStart + 0.05;
+                    video.play().catch(() => {});
+                    nudged = true;
+                    break;
+                  }
+                }
+                if (!nudged && bufferedAhead < 1.2) hls.startLoad(-1);
+              } catch {
+                // ignore
+              }
+            } else if (res.action === 'recover_media') {
+              try {
+                hls.recoverMediaError();
+              } catch {
+                // ignore
+              }
+            } else if (res.action === 'soft_reconnect') {
+              const nowMs = Date.now();
+              try {
+                if (bufferedAhead < 0.4 && nowMs - lastSoftReconnectAt >= 12_000) {
+                  lastSoftReconnectAt = nowMs;
+                  hls.stopLoad();
+                  hls.loadSource(secondaryStream.url);
+                }
+                hls.startLoad(-1);
+                video.play().catch(() => {});
+              } catch {
+                // ignore
+              }
+            } else if (res.action === 'switch_backup') {
+              triggerBackupOrFail();
+            }
+          }, 1000);
         });
         hls.on(Hls.Events.ERROR, (_e, data) => {
           if (!data.fatal) return;
           if (recoveryCountRef.current < MAX_HLS_RECOVERIES) {
             recoveryCountRef.current += 1;
             if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-              hls.startLoad();
+              hls.startLoad(-1);
               return;
             }
             if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
@@ -178,6 +291,9 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
     }
 
     return () => {
+      cancelled = true;
+      if (healthInterval) clearInterval(healthInterval);
+      clearWaitSpinner();
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -188,7 +304,7 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
       video.removeAttribute('src');
       video.load();
     };
-  }, [secondaryStream.url, secondaryStream.mode, secondaryStream.status, retryNonce]);
+  }, [secondaryStream.url, secondaryStream.mode, secondaryStream.status, retryNonce, totalScreens]);
 
   const humanSlot = slotIndex + 2;
   const isCorner = isCornerPiP || (totalScreens <= 2 && secondaryStream.layout === 'corner');
@@ -214,11 +330,25 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
         muted={!isAudioActive}
         playsInline
         onWaiting={() => {
-          if (!showErrorState) setBuffering(true);
+          if (!showErrorState) scheduleWaitSpinner(750);
+        }}
+        onLoadedData={() => {
+          clearWaitSpinner();
+          setStreamFailed(false);
+        }}
+        onCanPlay={() => {
+          clearWaitSpinner();
+          setStreamFailed(false);
         }}
         onPlaying={() => {
-          setBuffering(false);
+          clearWaitSpinner();
           setStreamFailed(false);
+        }}
+        onTimeUpdate={(e) => {
+          const v = e.currentTarget;
+          if (buffering && v.readyState >= 3 && v.currentTime > 0) {
+            clearWaitSpinner();
+          }
         }}
         onClick={() => {
           if (onFocusAudio) {

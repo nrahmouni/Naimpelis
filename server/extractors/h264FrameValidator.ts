@@ -1,6 +1,7 @@
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
 import { CHROME_UA, curlGetText } from './httpHelpers.ts';
+import { setCachedLiveManifest } from '../routes/proxies/liveSegmentCache.ts';
 
 const FRAME_W = 160;
 const FRAME_H = 90;
@@ -143,18 +144,29 @@ async function fetchManifestSnippet(
   try {
     const res = await streamingFetch(url, {
       headers: { Referer: referer, 'User-Agent': CHROME_UA, Accept: '*/*' },
-      timeoutMs: 2800,
+      timeoutMs: 2000,
     });
     if (res.ok) {
-      return { text: await res.text(), finalUrl: res.url || url };
+      const text = await res.text();
+      const finalUrl = res.url || url;
+      if (text.includes('#EXTM3U')) {
+        setCachedLiveManifest(url, text, finalUrl);
+        setCachedLiveManifest(finalUrl, text, finalUrl);
+      }
+      return { text, finalUrl };
     }
   } catch {
     // fallback to curl
   }
-  const fb = await curlGetText(url, { Referer: referer, 'User-Agent': CHROME_UA }, 4).catch(
+  const fb = await curlGetText(url, { Referer: referer, 'User-Agent': CHROME_UA }, 3).catch(
     () => ({ text: '', effectiveUrl: url })
   );
-  return { text: fb.text, finalUrl: fb.effectiveUrl || url };
+  const finalUrl = fb.effectiveUrl || url;
+  if (fb.text && fb.text.includes('#EXTM3U')) {
+    setCachedLiveManifest(url, fb.text, finalUrl);
+    setCachedLiveManifest(finalUrl, fb.text, finalUrl);
+  }
+  return { text: fb.text, finalUrl };
 }
 
 /**
@@ -222,7 +234,7 @@ export async function verifyM3u8HasCleanVideoFrame(
     }
 
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 1800);
+    const timer = setTimeout(() => ctrl.abort(), 950);
     const chunks: Buffer[] = [];
     let totalBytes = 0;
     let httpStatus = 0;
@@ -234,10 +246,10 @@ export async function verifyM3u8HasCleanVideoFrame(
           Referer: referer,
           'User-Agent': CHROME_UA,
           Accept: '*/*',
-          Range: 'bytes=0-24575',
+          Range: 'bytes=0-12287',
         },
         signal: ctrl.signal,
-        timeoutMs: 1800,
+        timeoutMs: 950,
       });
       httpStatus = resp.status;
       if (!resp.ok || !resp.body) {
@@ -251,7 +263,7 @@ export async function verifyM3u8HasCleanVideoFrame(
       }
 
       const reader = resp.body.getReader();
-      while (totalBytes < 16_384) {
+      while (totalBytes < 8_192) {
         const { done, value } = await reader.read();
         if (done || !value) break;
         chunks.push(Buffer.from(value));

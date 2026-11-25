@@ -20,7 +20,8 @@
     generation: 0,
     audioSlot: 0,
     slotStates: [],
-    slotHlsInstances: []
+    slotHlsInstances: [],
+    slotStartupTimers: []
   };
 
   function champLang() {
@@ -388,7 +389,16 @@
   // ===================================================================
   // MULTI-SCREEN PLAYER ENGINE (2–4 SIMULTANEOUS STREAMS AT ~75VH)
   // ===================================================================
+  function clearSlotStartupTimer(slotIdx) {
+    var tm = tvChampState.slotStartupTimers[slotIdx];
+    if (tm) {
+      clearTimeout(tm);
+      tvChampState.slotStartupTimers[slotIdx] = null;
+    }
+  }
+
   function destroySlotHls(slotIdx) {
+    clearSlotStartupTimer(slotIdx);
     var inst = tvChampState.slotHlsInstances[slotIdx];
     if (inst) {
       try { inst.destroy(); } catch (e) {}
@@ -402,7 +412,11 @@
     for (var i = 0; i < tvChampState.slotHlsInstances.length; i++) {
       destroySlotHls(i);
     }
+    for (var j = 0; j < tvChampState.slotStartupTimers.length; j++) {
+      clearSlotStartupTimer(j);
+    }
     tvChampState.slotHlsInstances = [];
+    tvChampState.slotStartupTimers = [];
     if (grid) {
       var vids = grid.querySelectorAll('video');
       for (var v = 0; v < vids.length; v++) {
@@ -530,15 +544,30 @@
 
     vid.onplaying = function () {
       if (!tvChampState.multiActive || myGen !== tvChampState.generation) return;
+      clearSlotStartupTimer(slotIdx);
+      slotObj.status = 'playing';
+      updateTileOverlay(slotIdx, '', false);
+    };
+    vid.oncanplay = function () {
+      if (!tvChampState.multiActive || myGen !== tvChampState.generation) return;
+      clearSlotStartupTimer(slotIdx);
       slotObj.status = 'playing';
       updateTileOverlay(slotIdx, '', false);
     };
     vid.onloadeddata = function () {
       if (vid.videoWidth > 0) {
+        clearSlotStartupTimer(slotIdx);
         slotObj.status = 'playing';
         updateTileOverlay(slotIdx, '', false);
       }
     };
+
+    tvChampState.slotStartupTimers[slotIdx] = setTimeout(function () {
+      if (!tvChampState.multiActive || myGen !== tvChampState.generation) return;
+      if (!vid || !vid.videoWidth || vid.videoWidth === 0 || vid.readyState < 2) {
+        advanceOrFail('Tiempo de conexión agotado en P' + (slotIdx + 1));
+      }
+    }, 6500);
 
     if (mode === 'direct' || !(window.Hls && window.Hls.isSupported())) {
       vid.src = resolvedUrl;
@@ -561,12 +590,12 @@
       maxBufferLength: 18,
       maxMaxBufferLength: 34,
       capLevelToPlayerSize: true,
-      manifestLoadingTimeOut: 11000,
-      manifestLoadingMaxRetry: 3,
-      levelLoadingTimeOut: 10000,
-      levelLoadingMaxRetry: 3,
-      fragLoadingTimeOut: 12000,
-      fragLoadingMaxRetry: 4
+      manifestLoadingTimeOut: 5000,
+      manifestLoadingMaxRetry: 2,
+      levelLoadingTimeOut: 5500,
+      levelLoadingMaxRetry: 2,
+      fragLoadingTimeOut: 6500,
+      fragLoadingMaxRetry: 2
     });
     tvChampState.slotHlsInstances[slotIdx] = hls;
     hls.loadSource(resolvedUrl);
@@ -574,15 +603,23 @@
     hls.on(window.Hls.Events.MANIFEST_PARSED, function () {
       playTileSafe();
     });
+    hls.on(window.Hls.Events.FRAG_BUFFERED, function () {
+      if (!tvChampState.multiActive || myGen !== tvChampState.generation) return;
+      if (vid && vid.videoWidth > 0 && vid.readyState >= 2) {
+        clearSlotStartupTimer(slotIdx);
+        slotObj.status = 'playing';
+        updateTileOverlay(slotIdx, '', false);
+      }
+    });
     hls.on(window.Hls.Events.ERROR, function (_ev, data) {
       if (!data || !data.fatal) return;
       if (!tvChampState.multiActive || myGen !== tvChampState.generation) return;
-      if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR && netRecoveries < 2) {
+      if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR && netRecoveries < 1) {
         netRecoveries += 1;
         hls.startLoad();
         return;
       }
-      if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 2) {
+      if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 1) {
         mediaRecoveries += 1;
         hls.recoverMediaError();
         return;
@@ -652,7 +689,7 @@
           if (multiFastDone) return;
           multiFastDone = true;
           runMultiSequentialFallback();
-        }, 2500);
+        }, 4200);
         xhrJson('POST', '/api/live/fast-resolve', {
           channelId: 'tv-multi-' + slotIdx,
           title: (slotObj.source && slotObj.source.title) || ('P' + (slotIdx + 1)),

@@ -112,7 +112,10 @@ export async function upsertCloudSavedRoom(params: {
         return;
       } catch (error) {
         if (isNotFoundError(error)) knownSavedRoomDocIds.delete(docId);
-        else handleFirestoreError(error, OperationType.UPDATE, path);
+        else {
+          if (isTransientFirestoreError(error)) return;
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
       }
     }
 
@@ -140,7 +143,10 @@ export async function upsertCloudSavedRoom(params: {
         return;
       } catch (error) {
         if (isNotFoundError(error)) knownSavedRoomDocIds.delete(docId);
-        else handleFirestoreError(error, OperationType.UPDATE, path);
+        else {
+          if (isTransientFirestoreError(error)) return;
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
       }
     }
 
@@ -171,6 +177,7 @@ export async function upsertCloudSavedRoom(params: {
       } catch {
         // Fall through
       }
+      if (isTransientFirestoreError(createError)) return;
       handleFirestoreError(createError, OperationType.CREATE, path);
     }
   });
@@ -195,6 +202,11 @@ export async function deleteCloudSavedRoom(rawRoomCode: string): Promise<void> {
       await deleteDoc(doc(db, 'savedRooms', docId));
       knownSavedRoomDocIds.delete(docId);
     } catch (error) {
+      if (isNotFoundError(error)) {
+        knownSavedRoomDocIds.delete(docId);
+        return;
+      }
+      if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.DELETE, path);
     }
   });
@@ -237,7 +249,10 @@ export async function upsertCloudFriend(friend: SavedFriend): Promise<void> {
         return;
       } catch (error) {
         if (isNotFoundError(error)) knownFriendDocIds.delete(docId);
-        else handleFirestoreError(error, OperationType.UPDATE, path);
+        else {
+          if (isTransientFirestoreError(error)) return;
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
       }
     }
 
@@ -257,7 +272,10 @@ export async function upsertCloudFriend(friend: SavedFriend): Promise<void> {
         return;
       } catch (error) {
         if (isNotFoundError(error)) knownFriendDocIds.delete(docId);
-        else handleFirestoreError(error, OperationType.UPDATE, path);
+        else {
+          if (isTransientFirestoreError(error)) return;
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
       }
     }
 
@@ -286,6 +304,7 @@ export async function upsertCloudFriend(friend: SavedFriend): Promise<void> {
       } catch {
         // Fall through
       }
+      if (isTransientFirestoreError(createError)) return;
       handleFirestoreError(createError, OperationType.CREATE, path);
     }
   });
@@ -306,6 +325,11 @@ export async function deleteCloudFriend(rawFriendId: string): Promise<void> {
       await deleteDoc(doc(db, 'friends', docId));
       knownFriendDocIds.delete(docId);
     } catch (error) {
+      if (isNotFoundError(error)) {
+        knownFriendDocIds.delete(docId);
+        return;
+      }
+      if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.DELETE, path);
     }
   });

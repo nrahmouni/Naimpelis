@@ -731,7 +731,7 @@ function playTdtChannelOnTv(ch, trackIndex, isFailoverAttempt) {
         if (fastDone) return;
         fastDone = true;
         runSequentialFallback();
-      }, 3400);
+      }, 4600);
 
       xhrJson('POST', '/api/live/fast-resolve', {
         channelId: ch.id,

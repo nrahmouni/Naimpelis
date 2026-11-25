@@ -20,8 +20,10 @@ import { streamingFetch } from '../../utils/tlsFetch.ts';
 import { logger } from '../../utils/logger.ts';
 import {
   ensureLiveDvbCleanHlsSession,
+  getActiveDvbSessionPath,
   readLiveDvbPlaylistForIptv,
 } from '../../routes/proxies/dvbTranscoder.ts';
+import { needsBrowserVodRemux, streamVodRemuxedAsMp4 } from '../xtreamVodRemuxer.ts';
 import { applyProxyCorsHeaders, getOrCreateRequestId } from '../../routes/proxies/proxyUtils.ts';
 import {
   buildProviderStreamUrl,
@@ -906,9 +908,19 @@ export async function resolveProviderLiveManifest(
   const candidates = getOrderedAccountCandidates(provider.accounts, st.activeAccountIndex);
 
   for (const candidate of candidates) {
+    const tsUrl = buildXtreamMediaUrl(provider.serverUrl, candidate.account, 'live', streamId, 'ts');
+    const warmPath = getActiveDvbSessionPath(tsUrl, 'hd');
+    if (warmPath) {
+      const warmPl = readLiveDvbPlaylistForIptv(warmPath, originPrefix);
+      if (warmPl) {
+        st.activeAccountIndex = candidate.index;
+        return warmPl;
+      }
+    }
+
     const m3u8Url = buildXtreamMediaUrl(provider.serverUrl, candidate.account, 'live', streamId, 'm3u8');
-    const loaded = await fetchProviderPlaylistText(m3u8Url, referer, 3500).catch(() => null);
-    if (loaded) {
+    const loaded = await fetchProviderPlaylistText(m3u8Url, referer, 1700).catch(() => null);
+    if (loaded && (loaded.text.includes('#EXTINF') || loaded.text.includes('#EXT-X-STREAM-INF'))) {
       st.activeAccountIndex = candidate.index;
       return rewriteProviderPlaylistWithOpaqueTokens(
         loaded.text,
@@ -918,7 +930,6 @@ export async function resolveProviderLiveManifest(
       );
     }
 
-    const tsUrl = buildXtreamMediaUrl(provider.serverUrl, candidate.account, 'live', streamId, 'ts');
     try {
       await assertSafeProxyUrl(tsUrl);
       const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, 'hd', referer).catch(() => null);
@@ -961,6 +972,41 @@ export async function streamProviderVodOrSeries(
   const candidates = getOrderedAccountCandidates(provider.accounts, st.activeAccountIndex);
   const rangeHeader = typeof req.headers.range === 'string' ? req.headers.range : '';
   const cleanExt = sanitizeExtension(ext, 'mp4');
+  const forceTranscode = req.query.transcode === '1' || req.query.remux === 'mp4';
+  const rawStart = Number(req.query.start);
+  const startSec = Number.isFinite(rawStart) && rawStart > 0 ? rawStart : undefined;
+
+  if (needsBrowserVodRemux(cleanExt, forceTranscode)) {
+    for (const candidate of candidates) {
+      const upstreamUrl = buildXtreamMediaUrl(
+        provider.serverUrl,
+        candidate.account,
+        kind,
+        streamId,
+        cleanExt
+      );
+      try {
+        await assertSafeProxyUrl(upstreamUrl);
+        applyProxyCorsHeaders(res, reqId);
+        const started = await streamVodRemuxedAsMp4(req, res, {
+          upstreamUrl,
+          cacheKey: `provider:${providerId}:${kind}:${streamId}`,
+          startSec,
+          forceFullTranscode: forceTranscode,
+        });
+        if (started) {
+          st.activeAccountIndex = candidate.index;
+          return;
+        }
+      } catch {
+        // rotate to next account
+      }
+      if (provider.accounts.length > 1) {
+        rotateProviderAccount(providerId, candidate.index);
+      }
+      if (res.headersSent) return;
+    }
+  }
 
   for (const candidate of candidates) {
     const upstreamUrl = buildXtreamMediaUrl(
@@ -970,6 +1016,10 @@ export async function streamProviderVodOrSeries(
       streamId,
       cleanExt
     );
+    const controller = new AbortController();
+    const onClose = () => controller.abort();
+    req.once('close', onClose);
+    let piped = false;
     try {
       await assertSafeProxyUrl(upstreamUrl);
       const headers: Record<string, string> = {
@@ -979,16 +1029,19 @@ export async function streamProviderVodOrSeries(
       };
       if (rangeHeader) headers['Range'] = rangeHeader;
 
-      const controller = new AbortController();
-      const onClose = () => controller.abort();
-      req.once('close', onClose);
+      const connectTimer = setTimeout(() => controller.abort(), 10_000);
 
-      const upstream = await fetch(upstreamUrl, {
-        method: req.method === 'HEAD' ? 'HEAD' : 'GET',
-        headers,
-        redirect: 'follow',
-        signal: controller.signal,
-      });
+      let upstream: Response;
+      try {
+        upstream = await fetch(upstreamUrl, {
+          method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+          headers,
+          redirect: 'follow',
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(connectTimer);
+      }
 
       if (upstream.url) {
         await assertSafeProxyUrl(upstream.url);
@@ -1023,14 +1076,18 @@ export async function streamProviderVodOrSeries(
           nodeStream.destroy();
           controller.abort();
         });
+        piped = true;
         nodeStream.pipe(res);
         return;
       }
 
       await upstream.body?.cancel?.().catch(() => {});
-      req.off('close', onClose);
     } catch {
       // rotate to next account on connection/auth failure
+    } finally {
+      if (!piped) {
+        req.off('close', onClose);
+      }
     }
 
     if (provider.accounts.length > 1) {

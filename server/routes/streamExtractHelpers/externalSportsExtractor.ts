@@ -62,7 +62,11 @@ export function formatExtractResponseForClient(
 }
 
 type SniffedExtractResult = NonNullable<Awaited<ReturnType<typeof extractLiveSportsHlsDirect>>>;
-const inFlightExternalExtracts = new Map<string, Promise<SniffedExtractResult | null>>();
+interface InFlightExternalExtractOutcome {
+  sniffed: SniffedExtractResult | null;
+  xtreamWinner: ExtractedStreamResult | null;
+}
+const inFlightExternalExtracts = new Map<string, Promise<InFlightExternalExtractOutcome>>();
 
 export async function handleExternalSportsExtract(params: {
   rawInput: string;
@@ -88,17 +92,86 @@ export async function handleExternalSportsExtract(params: {
   } = params;
 
   const fullTargetUrl = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
+  const isKnownDirectMirror = /footunder\.online|tilinhd\.|streamxhd\./i.test(fullTargetUrl);
+
+  const liveHints =
+    resolverType === 'sports_channel'
+      ? extractXtreamLiveHintsFromSportsRequest(fullTargetUrl, channelLabel, titleHint)
+      : [];
+  const xtreamMatchesPromise =
+    resolverType === 'sports_channel' && liveHints.length > 0
+      ? findXtreamLiveChannelMatches({
+          channelHints: liveHints,
+          preferLang,
+          limit: 6,
+        }).catch(() => [])
+      : Promise.resolve([]);
+
+  const tryXtreamSportsRace = async (): Promise<ExtractedStreamResult | null> => {
+    if (resolverType !== 'sports_channel' || liveHints.length === 0) return null;
+    const xtreamLiveMatches = await xtreamMatchesPromise;
+    if (xtreamLiveMatches.length === 0) return null;
+    const raced = await raceFastLiveTracks(
+      xtreamLiveMatches.map((tr) => ({
+        id: tr.id,
+        label: tr.label,
+        lang: tr.lang,
+        quality: tr.quality,
+        sourceUrl: tr.sourceUrl,
+        resolverType: tr.resolverType || 'direct_hls',
+      })),
+      {
+        channelId: `sports-xtream-${liveHints[0]}`,
+        titleHint: channelLabel || titleHint,
+        preferLang,
+        timeoutMs: 2800,
+      }
+    ).catch(() => null);
+    if (raced?.ok && raced.streamUrl && raced.mode === 'hls') {
+      return {
+        success: true,
+        mode: 'hls',
+        streamUrl: raced.streamUrl,
+        rawStreamUrl: raced.streamUrl,
+        title: raced.winningTrack?.label || channelLabel || titleHint || 'Directo HD',
+        requestedLang: preferLang || 'ES',
+        resolvedLang: raced.winningTrack?.lang || preferLang || 'ES',
+        expiresAt: Date.now() + 2 * 60 * 1000,
+      };
+    }
+    return null;
+  };
+
   const dedupKey = `${resolverType}:${fullTargetUrl}`;
   let inflight = inFlightExternalExtracts.get(dedupKey);
   if (!inflight) {
-    inflight = (async (): Promise<SniffedExtractResult | null> => {
-      const directSports = await extractLiveSportsHlsDirect(fullTargetUrl);
-      if (directSports) return directSports;
-      const isKnownDirectMirror = /footunder\.online|tilinhd\.|streamxhd\./i.test(fullTargetUrl);
-      if (resolverType === 'sports_channel' && isKnownDirectMirror) {
-        return null;
+    inflight = (async (): Promise<InFlightExternalExtractOutcome> => {
+      const directPromise = extractLiveSportsHlsDirect(fullTargetUrl).catch(() => null);
+      if (resolverType === 'sports_channel') {
+        const xtreamPromise = tryXtreamSportsRace().catch(() => null);
+        // Give directSports 1400ms head-start; if it stalls/fails and Xtream is already ready, return Xtream immediately!
+        const directQuick = await Promise.race([
+          directPromise,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 1400)),
+        ]);
+        if (directQuick && (directQuick.streamUrl || directQuick.isBrokenGreenFeed)) {
+          return { sniffed: directQuick, xtreamWinner: null };
+        }
+        const xtreamEarly = await xtreamPromise;
+        if (xtreamEarly) {
+          return { sniffed: null, xtreamWinner: xtreamEarly };
+        }
+        const directFinal = await directPromise;
+        if (directFinal) return { sniffed: directFinal, xtreamWinner: null };
+        if (isKnownDirectMirror) return { sniffed: null, xtreamWinner: null };
+      } else {
+        const directSports = await directPromise;
+        if (directSports) return { sniffed: directSports, xtreamWinner: null };
       }
-      return (await sniffStreamWithHeadless(fullTargetUrl)) as SniffedExtractResult | null;
+      const sniffedHeadless = (await sniffStreamWithHeadless(
+        fullTargetUrl
+      )) as SniffedExtractResult | null;
+      return { sniffed: sniffedHeadless, xtreamWinner: null };
     })().finally(() => {
       if (inFlightExternalExtracts.get(dedupKey) === inflight) {
         inFlightExternalExtracts.delete(dedupKey);
@@ -107,7 +180,12 @@ export async function handleExternalSportsExtract(params: {
     inFlightExternalExtracts.set(dedupKey, inflight);
   }
 
-  const resolvedSniff = await inflight;
+  const { sniffed: resolvedSniff, xtreamWinner } = await inflight;
+
+  if (xtreamWinner) {
+    setCache(cacheKey, xtreamWinner);
+    return sendOk(xtreamWinner);
+  }
 
   if (resolvedSniff?.isBrokenGreenFeed) {
     channelHealthMonitor.setTrackHealth(fullTargetUrl, {
@@ -125,13 +203,17 @@ export async function handleExternalSportsExtract(params: {
     });
   }
 
-  const isKnownDirectMirror = /footunder\.online|tilinhd\.|streamxhd\./i.test(fullTargetUrl);
   if (!resolvedSniff && resolverType === 'sports_channel' && isKnownDirectMirror) {
+    const xtreamFallback = await tryXtreamSportsRace();
+    if (xtreamFallback) {
+      setCache(cacheKey, xtreamFallback);
+      return sendOk(xtreamFallback);
+    }
     channelHealthMonitor.recordPlaybackFeedback(fullTargetUrl, { failed: true });
     return sendJsonStatus(404, {
       success: false,
       canUseCloudBrowser: false,
-      error: 'Esta señal no está activa en este instante. Elige otra señal o canal.',
+      error: 'Señal no está activa en este instante. Elige otra señal o canal.',
     });
   }
 
@@ -182,49 +264,10 @@ export async function handleExternalSportsExtract(params: {
 
   // Try matching connected Xtream live channels (84k+ channels) for failed sports_channel streams
   if (resolverType === 'sports_channel') {
-    const liveHints = extractXtreamLiveHintsFromSportsRequest(
-      fullTargetUrl,
-      channelLabel,
-      titleHint
-    );
-    if (liveHints.length > 0) {
-      const xtreamLiveMatches = await findXtreamLiveChannelMatches({
-        channelHints: liveHints,
-        preferLang,
-        limit: 6,
-      }).catch(() => []);
-      if (xtreamLiveMatches.length > 0) {
-        const raced = await raceFastLiveTracks(
-          xtreamLiveMatches.map((tr) => ({
-            id: tr.id,
-            label: tr.label,
-            lang: tr.lang,
-            quality: tr.quality,
-            sourceUrl: tr.sourceUrl,
-            resolverType: tr.resolverType || 'direct_hls',
-          })),
-          {
-            channelId: `sports-xtream-${liveHints[0]}`,
-            titleHint: channelLabel || titleHint,
-            preferLang,
-            timeoutMs: 2800,
-          }
-        ).catch(() => null);
-        if (raced?.ok && raced.streamUrl && raced.mode === 'hls') {
-          const result: ExtractedStreamResult = {
-            success: true,
-            mode: 'hls',
-            streamUrl: raced.streamUrl,
-            rawStreamUrl: raced.streamUrl,
-            title: raced.winningTrack?.label || channelLabel || titleHint || 'Directo HD',
-            requestedLang: preferLang || 'ES',
-            resolvedLang: raced.winningTrack?.lang || preferLang || 'ES',
-            expiresAt: Date.now() + 2 * 60 * 1000,
-          };
-          setCache(cacheKey, result);
-          return sendOk(result);
-        }
-      }
+    const xtreamFallback = await tryXtreamSportsRace();
+    if (xtreamFallback) {
+      setCache(cacheKey, xtreamFallback);
+      return sendOk(xtreamFallback);
     }
 
     // Never wrap dead third-party sports HTML pages into a broken embed-proxy iframe;

@@ -259,7 +259,9 @@ export function isFeaturedSpanishClubMatch(homeTeam: string, awayTeam: string): 
   );
 }
 
-export function sortTracksWithDaznPriority<T extends { label?: string; lang?: string }>(
+export function sortTracksWithDaznPriority<
+  T extends { label?: string; lang?: string; sourceUrl?: string }
+>(
   tracks: T[],
   leagueSlug?: string,
   preferredLang: PreferredSportsTrackLang = 'ES'
@@ -271,6 +273,7 @@ export function sortTracksWithDaznPriority<T extends { label?: string; lang?: st
   return tracks
     .map((tr, idx) => {
       const lbl = String(tr.label || '').toLowerCase();
+      const url = String(tr.sourceUrl || '').toLowerCase();
       const trLang = String(tr.lang || '').toUpperCase();
       const isZh = trLang === 'ZH' || /中文|cctv|风云|广东|btv/.test(lbl);
       const isEn =
@@ -316,9 +319,18 @@ export function sortTracksWithDaznPriority<T extends { label?: string; lang?: st
         }
       }
 
-      return { tr, tier, idx };
+      const speedRank =
+        /\.m3u8(\?|$)|rtvelivestream|3catdirectes|eitb\.eus|akamaized/.test(url)
+          ? 0
+          : /streamxhd\./.test(url)
+            ? 1
+            : /footunder\.online/.test(url)
+              ? 3
+              : 2;
+
+      return { tr, tier, speedRank, idx };
     })
-    .sort((a, b) => a.tier - b.tier || a.idx - b.idx)
+    .sort((a, b) => a.tier - b.tier || a.speedRank - b.speedRank || a.idx - b.idx)
     .map((x) => x.tr);
 }
 

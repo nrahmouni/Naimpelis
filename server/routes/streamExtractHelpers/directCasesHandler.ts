@@ -197,14 +197,12 @@ export async function handleDirectExtractCases(params: {
     const mapped = ATRES_DIRECTO_MAP[slug] || ATRES_DIRECTO_MAP.antena3;
     const dvbReferer = 'http://90.163.85.113:8093/';
     if (process.env.NODE_ENV !== 'test' && !isDvbUpstreamCoolingDown(mapped.dvbUrl)) {
-      const activeDvb =
-        getActiveDvbSessionPath(mapped.dvbUrl, 'hd') ||
-        (await ensureLiveDvbCleanHlsSession(mapped.dvbUrl, 'hd', dvbReferer).catch(() => null));
-      if (activeDvb) {
+      const existingAtresDvb = getActiveDvbSessionPath(mapped.dvbUrl, 'hd');
+      if (existingAtresDvb) {
         const dvbResult: ExtractedStreamResult = {
           success: true,
           mode: 'hls',
-          streamUrl: activeDvb,
+          streamUrl: existingAtresDvb,
           rawStreamUrl: mapped.dvbUrl,
           referer: dvbReferer,
           title: titleHint || mapped.title,
@@ -214,6 +212,32 @@ export async function handleDirectExtractCases(params: {
         };
         setCache(cacheKey, dvbResult);
         return sendOk(dvbResult);
+      }
+      try {
+        const chkAtres = await fetch(mapped.dvbUrl, {
+          headers: { 'User-Agent': getPreferredUpstreamUa(mapped.dvbUrl), Referer: dvbReferer, Accept: '*/*' },
+          signal: AbortSignal.timeout(1800),
+        });
+        if (chkAtres.ok) {
+          const txtAtres = await chkAtres.text();
+          if (txtAtres.includes('#EXTM3U') && !/nosignal/i.test(txtAtres)) {
+            const fastAtresResult: ExtractedStreamResult = {
+              success: true,
+              mode: 'hls',
+              streamUrl: buildHlsProxyUrl(mapped.dvbUrl, dvbReferer, true),
+              rawStreamUrl: mapped.dvbUrl,
+              referer: dvbReferer,
+              title: titleHint || mapped.title,
+              requestedLang: 'ES',
+              resolvedLang: 'ES',
+              expiresAt: Date.now() + 60_000,
+            };
+            setCache(cacheKey, fastAtresResult);
+            return sendOk(fastAtresResult);
+          }
+        }
+      } catch {
+        // fallback below
       }
     }
     const mappedBelixId = mapped.streamUrl.match(/\/api\/belix\/stream\/([a-zA-Z0-9_-]+)/i)?.[1];
@@ -272,27 +296,6 @@ export async function handleDirectExtractCases(params: {
         setCache(cacheKey, fastResult);
         return sendOk(fastResult);
       }
-
-      const dvbLiveUrl = await ensureLiveDvbCleanHlsSession(
-        cleanCheckUrl,
-        dvbProfile,
-        originRef
-      ).catch(() => null);
-      if (dvbLiveUrl) {
-        const dvbResult: ExtractedStreamResult = {
-          success: true,
-          mode: 'hls',
-          streamUrl: dvbLiveUrl,
-          rawStreamUrl: cleanCheckUrl,
-          referer: originRef,
-          title: titleHint || 'TV España en Directo',
-          requestedLang: 'ES',
-          resolvedLang: 'ES',
-          expiresAt: Date.now() + 30 * 1000,
-        };
-        setCache(cacheKey, dvbResult);
-        return sendOk(dvbResult);
-      }
       if (isDvbUpstreamCoolingDown(cleanCheckUrl)) {
         return sendErr(404, 'Señal TDT directa temporalmente no accesible desde servidor.');
       }
@@ -325,7 +328,7 @@ export async function handleDirectExtractCases(params: {
     try {
       const chk = await fetch(cleanCheckUrl, {
         headers: checkHeaders,
-        signal: AbortSignal.timeout(isDvb ? 6000 : 2500),
+        signal: AbortSignal.timeout(isDvb ? 2400 : 2200),
       });
       if (chk.ok) {
         const txt = await chk.text();
@@ -337,13 +340,35 @@ export async function handleDirectExtractCases(params: {
     } catch {
       // fallback to curl below
     }
-    if (!isAlive) {
-      const fb = await curlGetText(cleanCheckUrl, checkHeaders, isCnStream || isDvb ? 5 : 3, isCnStream).catch(() => ({
+    if (!isAlive && !isDvb) {
+      const fb = await curlGetText(cleanCheckUrl, checkHeaders, isCnStream ? 4 : 3, isCnStream).catch(() => ({
         text: '',
       }));
       if (fb.text && fb.text.includes('#EXTM3U') && !/nosignal/i.test(fb.text)) {
         isAlive = true;
         manifestText = fb.text;
+      }
+    }
+    if (!isAlive && isDvb && !/\.m3u8(\?|$)/i.test(cleanCheckUrl)) {
+      const dvbLiveUrl = await ensureLiveDvbCleanHlsSession(
+        cleanCheckUrl,
+        dvbProfile,
+        originRef
+      ).catch(() => null);
+      if (dvbLiveUrl) {
+        const dvbResult: ExtractedStreamResult = {
+          success: true,
+          mode: 'hls',
+          streamUrl: dvbLiveUrl,
+          rawStreamUrl: cleanCheckUrl,
+          referer: originRef,
+          title: titleHint || 'TV España en Directo',
+          requestedLang: 'ES',
+          resolvedLang: 'ES',
+          expiresAt: Date.now() + 30 * 1000,
+        };
+        setCache(cacheKey, dvbResult);
+        return sendOk(dvbResult);
       }
     }
     if (!isAlive && isCnStream) {

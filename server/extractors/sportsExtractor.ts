@@ -2,6 +2,10 @@ import { sniffStreamViaHttp } from '../services/streamSnifferService.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
 import { CHROME_UA, curlGetText, isBlockedAdUrl } from './httpHelpers.ts';
 import {
+  prefetchLiveTsSegment,
+  setCachedLiveManifest,
+} from '../routes/proxies/liveSegmentCache.ts';
+import {
   analyzeDecodedRgbFrame,
   isFatalH264Stderr,
   validateH264StreamBuffer,
@@ -88,6 +92,8 @@ const inFlightSportsDirect = new Map<
     verifiedClean?: boolean;
   } | null>
 >();
+const failedSportsDirectCache = new Map<string, number>();
+const FAILED_SPORTS_DIRECT_TTL_MS = 35_000;
 
 async function verifyCleanFrameCached(m3u: string, m3uUrl: string, referer: string): Promise<boolean> {
   const now = Date.now();
@@ -101,10 +107,66 @@ async function verifyCleanFrameCached(m3u: string, m3uUrl: string, referer: stri
   return ok;
 }
 
+async function resolveAndWarmLiveMediaPlaylist(
+  initialM3uText: string,
+  initialM3uUrl: string,
+  referer: string
+): Promise<{ resolvedM3uUrl: string; mediaText: string; frameOk: boolean }> {
+  let targetUrl = initialM3uUrl;
+  let targetText = initialM3uText;
+
+  if (targetText.includes('#EXT-X-STREAM-INF')) {
+    const variantLines = targetText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'));
+    if (variantLines.length === 1) {
+      try {
+        const directMediaUrl = new URL(variantLines[0], targetUrl).href;
+        const { text: subText, finalUrl: subFinalUrl } = await fetchSportsHtmlHopWithUrl(
+          directMediaUrl,
+          referer
+        );
+        if (subText.includes('#EXTM3U') && !subText.includes('#EXT-X-STREAM-INF')) {
+          targetUrl = subFinalUrl || directMediaUrl;
+          targetText = subText;
+        }
+      } catch {
+        // keep master URL on error
+      }
+    }
+  }
+
+  if (targetText.includes('#EXTM3U') && !targetText.includes('#EXT-X-STREAM-INF')) {
+    setCachedLiveManifest(targetUrl, targetText, targetUrl);
+    const segUrls: string[] = [];
+    for (const rawLine of targetText.split(/\r?\n/)) {
+      const trimmed = rawLine.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      try {
+        const absSeg = new URL(trimmed, targetUrl).href;
+        if (!/\.m3u8(\?|$)/i.test(absSeg)) {
+          segUrls.push(absSeg);
+        }
+      } catch {
+        // ignore invalid segment line
+      }
+    }
+    for (const segUrl of segUrls.slice(-2)) {
+      prefetchLiveTsSegment(segUrl, referer, CHROME_UA).catch(() => {});
+    }
+  }
+
+  const frameOk = await verifyCleanFrameCached(targetText, targetUrl, referer);
+  return { resolvedM3uUrl: targetUrl, mediaText: targetText, frameOk };
+}
+
 export async function fetchSportsHtmlHopWithUrl(
   url: string,
   referer: string
 ): Promise<{ text: string; finalUrl: string }> {
+  let httpStatus = 0;
+  let shouldSkipCurlFallback = false;
   try {
     const res = await streamingFetch(url, {
       headers: {
@@ -112,13 +174,26 @@ export async function fetchSportsHtmlHopWithUrl(
         'User-Agent': CHROME_UA,
         Accept: 'text/html,application/xhtml+xml,*/*;q=0.9',
       },
-      timeoutMs: 2600,
+      timeoutMs: 1800,
     });
+    httpStatus = res.status;
     if (res.ok) return { text: await res.text(), finalUrl: res.url || url };
-  } catch {
-    // fallback to HTTP/2 helper
+    if (httpStatus === 404 || httpStatus >= 500) {
+      return { text: '', finalUrl: url };
+    }
+  } catch (err: any) {
+    const msg = String(err?.message || err?.code || '').toLowerCase();
+    if (
+      err?.name === 'AbortError' ||
+      /timeout|timed out|aborted|enotfound|econnrefused|ehostunreach|enetunreach/.test(msg)
+    ) {
+      shouldSkipCurlFallback = true;
+    }
   }
-  const fb = await curlGetText(url, { Referer: referer, 'User-Agent': CHROME_UA }, 3).catch(
+  if (shouldSkipCurlFallback) {
+    return { text: '', finalUrl: url };
+  }
+  const fb = await curlGetText(url, { Referer: referer, 'User-Agent': CHROME_UA }, 2, true).catch(
     () => ({ text: '', effectiveUrl: url })
   );
   return { text: fb.text, finalUrl: fb.effectiveUrl || url };
@@ -141,16 +216,24 @@ export async function extractLiveSportsHlsDirect(
   const normalizedInitial = healUpstreamSportsDomain(initialUrl);
   const now = Date.now();
   const cachedDirect = resolvedSportsDirectCache.get(normalizedInitial);
-  if (cachedDirect && now - cachedDirect.ts < 45_000) {
+  if (cachedDirect && now - cachedDirect.ts < 90_000) {
     return cachedDirect.result;
+  }
+  const failedAt = failedSportsDirectCache.get(normalizedInitial);
+  if (failedAt && now - failedAt < FAILED_SPORTS_DIRECT_TTL_MS) {
+    return null;
   }
   const inflight = inFlightSportsDirect.get(normalizedInitial);
   if (inflight) return inflight;
 
   const job = extractLiveSportsHlsDirectUncached(normalizedInitial).then((res) => {
     if (res && res.streamUrl) {
+      failedSportsDirectCache.delete(normalizedInitial);
       if (resolvedSportsDirectCache.size > 120) resolvedSportsDirectCache.clear();
       resolvedSportsDirectCache.set(normalizedInitial, { result: res, ts: Date.now() });
+    } else if (!res?.isBrokenGreenFeed) {
+      if (failedSportsDirectCache.size > 200) failedSportsDirectCache.clear();
+      failedSportsDirectCache.set(normalizedInitial, Date.now());
     }
     return res;
   }).finally(() => {
@@ -176,8 +259,10 @@ async function extractLiveSportsHlsDirectUncached(
   } catch {
     // keep default referer
   }
+  const startedAt = Date.now();
 
-  for (let hop = 0; hop < 7; hop++) {
+  for (let hop = 0; hop < 5; hop++) {
+    if (Date.now() - startedAt > 4200) break;
     currentUrl = healUpstreamSportsDomain(currentUrl);
     const { text: html, finalUrl: resolvedHtmlUrl } = await fetchSportsHtmlHopWithUrl(
       currentUrl,
@@ -196,8 +281,8 @@ async function extractLiveSportsHlsDirectUncached(
         );
         const resolvedM3u = finalM3uUrl || streamXhdM3u;
         if (checkM3u.includes('#EXTM3U')) {
-          const frameOk = await verifyCleanFrameCached(checkM3u, resolvedM3u, refOrigin);
-          if (!frameOk) {
+          const warmed = await resolveAndWarmLiveMediaPlaylist(checkM3u, resolvedM3u, refOrigin);
+          if (!warmed.frameOk) {
             return {
               streamUrl: '',
               referer: refOrigin,
@@ -206,7 +291,7 @@ async function extractLiveSportsHlsDirectUncached(
             };
           }
           return {
-            streamUrl: resolvedM3u,
+            streamUrl: warmed.resolvedM3uUrl,
             referer: refOrigin,
             isDirectMp4: false,
             verifiedClean: true,
@@ -258,13 +343,13 @@ async function extractLiveSportsHlsDirectUncached(
             );
             const resolvedCand = finalCandUrl || cand.url;
             if (!checkM3u.includes('#EXTM3U')) return null;
-            const frameOk = await verifyCleanFrameCached(checkM3u, resolvedCand, cand.ref);
-            if (!frameOk) {
+            const warmed = await resolveAndWarmLiveMediaPlaylist(checkM3u, resolvedCand, cand.ref);
+            if (!warmed.frameOk) {
               sawM3uButScrambled = true;
               return null;
             }
             return {
-              streamUrl: resolvedCand,
+              streamUrl: warmed.resolvedM3uUrl,
               referer: cand.ref,
               isDirectMp4: false,
               verifiedClean: true,
@@ -297,11 +382,11 @@ async function extractLiveSportsHlsDirectUncached(
         m3uCandidate,
         currentUrl
       );
-      const resolvedM3u = finalM3uUrl || m3uCandidate;
+      let resolvedM3u = finalM3uUrl || m3uCandidate;
       let verifiedClean = false;
       if (checkM3u.includes('#EXTM3U')) {
-        const frameOk = await verifyCleanFrameCached(checkM3u, resolvedM3u, currentUrl);
-        if (!frameOk) {
+        const warmed = await resolveAndWarmLiveMediaPlaylist(checkM3u, resolvedM3u, currentUrl);
+        if (!warmed.frameOk) {
           return {
             streamUrl: '',
             referer: currentUrl,
@@ -309,6 +394,7 @@ async function extractLiveSportsHlsDirectUncached(
             isBrokenGreenFeed: true,
           };
         }
+        resolvedM3u = warmed.resolvedM3uUrl;
         verifiedClean = true;
       }
       return {

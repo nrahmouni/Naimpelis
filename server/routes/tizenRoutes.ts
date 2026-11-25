@@ -69,6 +69,7 @@ export function registerTizenRoutes(app: express.Express, rootDir: string): void
       'tv/tv-player-modes.js',
       'tv/tv-hub.js',
       'tv/tv-football.js',
+      'tv/tv-champions-multi.js',
       'tv/tv-game-sprites.js',
       'tv/tv-games.js',
       'tv/tv-games-soccer.js',

@@ -97,7 +97,7 @@ export async function probeDvbStreamFromBuffer(
       '-f',
       'mpegts',
       '-analyzeduration',
-      '450000',
+      '180000',
       '-probesize',
       String(preamble.length),
       '-show_streams',
@@ -120,7 +120,7 @@ export async function probeDvbStreamFromBuffer(
         // ignore
       }
       finish(null);
-    }, 1500);
+    }, 750);
 
     proc.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
     proc.on('error', () => finish(null));
@@ -157,11 +157,11 @@ export async function probeDvbStreamCodec(
   }
   probeArgs.push(
     '-rw_timeout',
-    '2600000',
+    '1800000',
     '-analyzeduration',
-    '450000',
+    '300000',
     '-probesize',
-    '450000',
+    '300000',
     '-show_streams',
     '-of',
     'json',
@@ -188,7 +188,7 @@ export async function probeDvbStreamCodec(
         // ignore
       }
       finish(null);
-    }, 2600);
+    }, 1800);
 
     proc.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
     proc.stderr?.on('data', (chunk: Buffer) => {
@@ -305,7 +305,8 @@ export function buildDvbLiveFfmpegArgs(options: {
       'libx264',
       '-preset',
       isFastProfile ? 'ultrafast' : 'veryfast',
-      ...(isFastProfile ? ['-tune', 'zerolatency'] : []),
+      '-tune',
+      'zerolatency',
       '-profile:v',
       'high',
       '-level:v',
@@ -350,9 +351,9 @@ export function buildDvbLiveFfmpegArgs(options: {
           ...(/\.m3u8(\?|$)/i.test(cleanUpstream) ? ['-live_start_index', '-3'] : []),
         ]),
     '-analyzeduration',
-    '400000',
+    '180000',
     '-probesize',
-    '400000',
+    '200000',
     '-fflags',
     '+genpts+discardcorrupt',
     '-avoid_negative_ts',
@@ -441,7 +442,7 @@ export async function openSingleSocketMpegTsStream(options: {
     const reader = resp.body.getReader();
     const chunks: Buffer[] = [];
     let totalBytes = 0;
-    const targetPreamble = cachedProbe ? 48_000 : 220_000;
+    const targetPreamble = cachedProbe ? 24_000 : 64_000;
     while (totalBytes < targetPreamble) {
       const { done, value } = await reader.read();
       if (done) break;

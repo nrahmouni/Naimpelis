@@ -796,8 +796,9 @@ const LIVE_BROADCASTER_ALIASES: Array<{ re: RegExp; patterns: string[] }> = [
   { re: /\bd\s*sports\b|\bdirectv\s*sports?\b/i, patterns: ['dsports', 'directv sports', 'directv sport', 'd sports'] },
   { re: /\btudn\b/i, patterns: ['tudn', 'tudn mx', 'tudn usa'] },
   { re: /\bdazn\s*laliga\b/i, patterns: ['dazn laliga', 'dazn la liga'] },
-  { re: /\bm\+\s*laliga\b|\bmovistar\s*laliga\b/i, patterns: ['m+ laliga', 'movistar laliga', 'm laliga', 'laliga tv'] },
-  { re: /\bcampeones\b|\bucl\b/i, patterns: ['liga de campeones', 'm campeones', 'm+ campeones', 'movistar campeones'] },
+  { re: /\bm\+\s*laliga\b|\bmovistar\s*laliga\b|\blaliga\s*tv\b/i, patterns: ['m+ laliga', 'movistar laliga', 'm laliga', 'laliga tv', 'laliga'] },
+  { re: /campeones|champions|\bucl\b|mligacampeones/i, patterns: ['liga de campeones', 'm campeones', 'm+ campeones', 'movistar campeones', 'm+ liga de campeones', 'champions'] },
+  { re: /hypermotion/i, patterns: ['laliga hypermotion', 'hypermotion', 'laliga tv hypermotion'] },
   { re: /\bmovistar\s*plus\b|\bm\+\s*plus\b/i, patterns: ['movistar plus', 'm+ plus', 'movistar+'] },
   { re: /\btyc\s*sports?\b/i, patterns: ['tyc sports', 'tyc sport'] },
   { re: /\btnt\s*sports?\b/i, patterns: ['tnt sports', 'tnt sport'] },
@@ -833,7 +834,12 @@ export function extractXtreamLiveHintsFromSportsRequest(
   } catch {
     // ignore URL parse error
   }
-  if (titleHint && /dsports|tudn|dazn|movistar|espn|tyc|fox|tnt|sky|bein|gol/i.test(titleHint)) {
+  if (
+    titleHint &&
+    /dsports|tudn|dazn|movistar|m\+|campeones|champions|laliga|hypermotion|espn|tyc|fox|tnt|sky|bein|gol/i.test(
+      titleHint
+    )
+  ) {
     add(titleHint);
   }
   return hints;

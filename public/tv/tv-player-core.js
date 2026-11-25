@@ -95,11 +95,36 @@ function extractTvTrackHostKey(rawUrl) {
   return s.split('#')[0].split('?')[0].toLowerCase();
 }
 
+var tvDirectTranscodeRetried = false;
+var tvDirectTranscodeTimer = null;
+
 function clearVideoWatchdog() {
   if (videoWatchdogTimer) {
     clearTimeout(videoWatchdogTimer);
     videoWatchdogTimer = null;
   }
+  if (tvDirectTranscodeTimer) {
+    clearTimeout(tvDirectTranscodeTimer);
+    tvDirectTranscodeTimer = null;
+  }
+}
+
+function tryTvDirectTranscodeRetry() {
+  if (tvDirectTranscodeRetried || !videoEl || currentMode !== 'direct' || !currentUrl) return false;
+  if (!/^\/api\/(?:stream|xtream\/vod\/|providers\/stream\/)/i.test(currentUrl)) return false;
+  tvDirectTranscodeRetried = true;
+  if (tvDirectTranscodeTimer) {
+    clearTimeout(tvDirectTranscodeTimer);
+    tvDirectTranscodeTimer = null;
+  }
+  var sep = currentUrl.indexOf('?') === -1 ? '?' : '&';
+  var transcodedUrl = currentUrl + sep + 'transcode=1';
+  currentUrl = transcodedUrl;
+  try {
+    videoEl.src = transcodedUrl;
+    videoEl.load();
+  } catch (e) {}
+  return true;
 }
 
 function reportTvQoeMetric(sourceUrl, opts) {
@@ -122,6 +147,7 @@ var tvStreamLoadStartMs = 0;
 var tvRebufferCount = 0;
 var tvCorruptFrameChecks = 0;
 var tvLastCorruptCount = 0;
+var videoZeroStartupAt = 0;
 
 function stopLiveStallMonitor() {
   if (videoStallWatchInterval) {
@@ -130,6 +156,7 @@ function stopLiveStallMonitor() {
   }
   videoLastProgressTime = -1;
   videoStallStartedAt = 0;
+  videoZeroStartupAt = 0;
   tvCorruptFrameChecks = 0;
   tvLastCorruptCount = 0;
 }
@@ -146,6 +173,7 @@ function startLiveStallMonitor() {
       (currentMode !== 'hls' && currentMode !== 'direct')
     ) {
       videoStallStartedAt = 0;
+      videoZeroStartupAt = 0;
       return;
     }
     if (videoEl.readyState >= 2 && videoEl.currentTime > 1.2 && (!videoEl.videoWidth || videoEl.videoWidth === 0)) {
@@ -165,8 +193,18 @@ function startLiveStallMonitor() {
       }
     }
     if (videoEl.readyState < 2 || !videoEl.videoWidth || videoEl.videoWidth === 0) {
+      if (videoLastProgressTime < 0) {
+        var zeroNowMs = Date.now();
+        if (!videoZeroStartupAt) {
+          videoZeroStartupAt = zeroNowMs;
+        } else if (zeroNowMs - videoZeroStartupAt >= 5200) {
+          videoZeroStartupAt = 0;
+          triggerPlaybackFailover('Tiempo de arranque agotado');
+        }
+      }
       return;
     }
+    videoZeroStartupAt = 0;
     var curT = Number(videoEl.currentTime || 0);
     if (videoLastProgressTime < 0 || Math.abs(curT - videoLastProgressTime) >= 0.05) {
       videoLastProgressTime = curT;
@@ -179,16 +217,17 @@ function startLiveStallMonitor() {
       tvRebufferCount++;
       return;
     }
-    if (nowMs - videoStallStartedAt >= 5500) {
+    if (nowMs - videoStallStartedAt >= 5200) {
       videoStallStartedAt = 0;
       triggerPlaybackFailover('Señal congelada');
     }
-  }, 1500);
+  }, 1000);
 }
 
 function markVideoFrameActive() {
   clearVideoWatchdog();
   autoFailoverLock = false;
+  videoZeroStartupAt = 0;
   if (videoEl) {
     videoLastProgressTime = Number(videoEl.currentTime || 0);
     videoStallStartedAt = 0;
@@ -222,6 +261,7 @@ if (videoEl) {
   });
   videoEl.addEventListener('error', function () {
     if (currentMode === 'idle' || currentMode === 'embed' || currentMode === 'youtube') return;
+    if (currentMode === 'direct' && tryTvDirectTranscodeRetry()) return;
     if (!isLocalPlayback) {
       if (currentMode === 'hls' && currentUrl && currentUrl.indexOf('/api/hls-proxy') !== -1 && currentUrl.indexOf('abs=1') === -1) {
         var absUrl = currentUrl + (currentUrl.indexOf('?') === -1 ? '?' : '&') + 'abs=1';
@@ -571,18 +611,31 @@ function applyVideoState(vs, forceReload) {
   standbyOverlay.style.display = 'flex';
   destroyHls();
 
+  tvDirectTranscodeRetried = /[?&](?:transcode=1|remux=mp4)\b/i.test(nextUrl);
+
   videoWatchdogTimer = setTimeout(function () {
     if (currentMode !== nextMode || currentUrl !== nextUrl) return;
     if (!videoEl.videoWidth || videoEl.videoWidth === 0 || videoEl.readyState < 2) {
       triggerPlaybackFailover('Tiempo de carga agotado');
     }
-  }, isLive ? 6500 : 16000);
+  }, isLive ? 5500 : 8000);
   if (isLive) startLiveStallMonitor();
   else stopLiveStallMonitor();
 
   if (nextMode === 'direct') {
+    if (/^\/api\/(?:stream|xtream\/vod\/|providers\/stream\/)/i.test(nextUrl) && !tvDirectTranscodeRetried) {
+      tvDirectTranscodeTimer = setTimeout(function () {
+        if (currentMode === 'direct' && currentUrl === nextUrl && videoEl && videoEl.readyState === 0) {
+          tryTvDirectTranscodeRetry();
+        }
+      }, 5500);
+    }
     videoEl.src = nextUrl;
     videoEl.onloadedmetadata = function () {
+      if (tvDirectTranscodeTimer) {
+        clearTimeout(tvDirectTranscodeTimer);
+        tvDirectTranscodeTimer = null;
+      }
       playVideoSafely(targetSec, shouldPlay);
     };
     return;
@@ -610,16 +663,20 @@ function applyVideoState(vs, forceReload) {
 
     var isDvbLive =
       nextUrl.indexOf('/api/dvb-live/') !== -1 ||
-      nextUrl.indexOf('/api/belix/stream/') !== -1;
+      nextUrl.indexOf('/api/belix/stream/') !== -1 ||
+      nextUrl.indexOf('/api/providers/stream/') !== -1 ||
+      nextUrl.indexOf('/api/xtream/stream/') !== -1 ||
+      nextUrl.indexOf('/api/iptv/live/') !== -1 ||
+      nextUrl.indexOf('/api/stream') !== -1;
 
     var hls = new window.Hls({
       enableWorker: !isSmartTvUa,
       lowLatencyMode: false,
       startFragPrefetch: true,
       startPosition: isLive ? -1 : targetSec,
-      liveSyncDurationCount: isLive ? 3 : 3,
-      liveMaxLatencyDurationCount: isLive ? 10 : 12,
-      maxLiveSyncPlaybackRate: 1,
+      liveSyncDurationCount: isLive ? 2 : 3,
+      liveMaxLatencyDurationCount: isLive ? 8 : 12,
+      maxLiveSyncPlaybackRate: isLive ? 1.04 : 1,
       backBufferLength: isLive ? 20 : 30,
       maxBufferLength: isLive ? 36 : 42,
       maxMaxBufferLength: isLive ? 72 : 90,
@@ -630,15 +687,15 @@ function applyVideoState(vs, forceReload) {
       capLevelToPlayerSize: true,
       maxAudioFramesDrift: isLive ? 3 : 4,
       abrEwmaDefaultEstimate: isLive ? 4500000 : 5500000,
-      manifestLoadingTimeOut: isDvbLive ? 10000 : 12000,
-      manifestLoadingMaxRetry: 5,
-      manifestLoadingRetryDelay: 250,
-      levelLoadingTimeOut: 12000,
-      levelLoadingMaxRetry: 5,
-      levelLoadingRetryDelay: 250,
-      fragLoadingTimeOut: 16000,
-      fragLoadingMaxRetry: 8,
-      fragLoadingRetryDelay: 300
+      manifestLoadingTimeOut: isDvbLive ? 5000 : 6000,
+      manifestLoadingMaxRetry: 2,
+      manifestLoadingRetryDelay: 200,
+      levelLoadingTimeOut: 5500,
+      levelLoadingMaxRetry: 2,
+      levelLoadingRetryDelay: 200,
+      fragLoadingTimeOut: 7000,
+      fragLoadingMaxRetry: 3,
+      fragLoadingRetryDelay: 250
     });
     hlsInstance = hls;
     hls.loadSource(nextUrl);
@@ -652,6 +709,9 @@ function applyVideoState(vs, forceReload) {
     hls.on(window.Hls.Events.FRAG_BUFFERED, function () {
       nonFatalMediaErrors = 0;
       nonFatalNetErrors = 0;
+      if (videoEl && videoEl.videoWidth > 0 && videoEl.readyState >= 2) {
+        markVideoFrameActive();
+      }
     });
     hls.on(window.Hls.Events.ERROR, function (_ev, data) {
       if (!data) return;
@@ -668,7 +728,7 @@ function applyVideoState(vs, forceReload) {
             data.details === window.Hls.ErrorDetails.MANIFEST_LOAD_ERROR)
         ) {
           nonFatalNetErrors++;
-          if (nonFatalNetErrors >= 3) {
+          if (nonFatalNetErrors >= 3 && (!videoEl || videoEl.readyState < 3 || !videoEl.videoWidth)) {
             nonFatalNetErrors = 0;
             triggerPlaybackFailover('Corte en la señal');
             return;
@@ -709,10 +769,10 @@ function applyVideoState(vs, forceReload) {
           hls.loadSource(absProxied);
           return;
         }
-        if (netErrorCount <= 2) {
+        if (netErrorCount <= 1) {
           setTimeout(function () {
             if (hlsInstance === hls) hls.startLoad();
-          }, 350);
+          }, 250);
         } else {
           triggerPlaybackFailover('Señal de red interrumpida');
         }

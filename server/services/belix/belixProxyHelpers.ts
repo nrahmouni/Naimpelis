@@ -178,35 +178,20 @@ export async function resolveBelixManifestForSession(
     if (warmManifest) return warmManifest;
   }
 
-  // In live runtime, Xtream .ts streams push a pre-buffered MPEG-TS burst in ~0.5-2.4s and allow
-  // clean 2-second monotonic HLS segments with a single portal connection (while .m3u8 edges often
-  // stall or return static MEDIA-SEQUENCE:0 10s chunks). Keep .m3u8 first in Vitest unit tests.
+  // Try native upstream HLS manifest first (sub-second, zero CPU encoding); skip curl double-wait on timeout.
+  const targetUrl = `${session.origin}/live/${u}/${p}/${idEnc}.m3u8`;
+  const loaded = await fetchBelixPlaylistText(targetUrl, referer, 1600, true).catch(() => null);
+  if (loaded && (loaded.text.includes('#EXTINF') || loaded.text.includes('#EXT-X-STREAM-INF'))) {
+    return rewritePlaylistWithOpaqueTokens(loaded.text, loaded.baseUrl, referer, originPrefix);
+  }
+
+  // Fallback to single-socket MPEG-TS FFmpeg relay when .m3u8 edge stalls or returns empty
   const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
-  const preferTsRelay = !isTestEnv;
-  if (preferTsRelay) {
+  if (!isTestEnv) {
     const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, 'hd', referer).catch(() => null);
     if (dvbPath) {
       const tsManifest = readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
       if (tsManifest) return tsManifest;
-    }
-  }
-
-  // Native upstream HLS manifest fallback (or primary in mocked unit tests)
-  const targetUrl = `${session.origin}/live/${u}/${p}/${idEnc}.m3u8`;
-  const loaded = await fetchBelixPlaylistText(
-    targetUrl,
-    referer,
-    preferTsRelay ? 1600 : 2400,
-    preferTsRelay
-  ).catch(() => null);
-  if (loaded) {
-    return rewritePlaylistWithOpaqueTokens(loaded.text, loaded.baseUrl, referer, originPrefix);
-  }
-
-  if (!preferTsRelay) {
-    const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, 'hd', referer).catch(() => null);
-    if (dvbPath) {
-      return readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
     }
   }
   return null;
