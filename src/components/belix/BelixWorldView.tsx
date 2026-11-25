@@ -114,9 +114,9 @@ export const BelixWorldView: React.FC<BelixWorldViewProps> = ({
             </h1>
             <p className="text-xs sm:text-[13px] text-zinc-400">
               {pickLang(lang, {
-                es: 'Panel Xtream Shark Pro (1.sharkpro.ink:80), licencias IBO Player y arquitectura Smali/nativa ordenada.',
-                ca: 'Panell Xtream Shark Pro (1.sharkpro.ink:80), llicències IBO Player i arquitectura Smali/nativa ordenada.',
-                en: 'Shark Pro Xtream host (1.sharkpro.ink:80), IBO Player licensing domains, and ordered Smali/native map.',
+                es: 'Panel Xtream multi-servidor, licencias IBO Player y arquitectura Smali/nativa ordenada.',
+                ca: 'Panell Xtream multi-servidor, llicències IBO Player i arquitectura Smali/nativa ordenada.',
+                en: 'Multi-server Xtream panel, IBO Player licensing domains, and ordered Smali/native map.',
               })}
             </p>
           </div>

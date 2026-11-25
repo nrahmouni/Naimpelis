@@ -1,4 +1,4 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { Check } from 'lucide-react';
 import { MotionConfig } from 'motion/react';
 import { RiffanBackIcon, RiffanLoaderR } from './components/ui/RiffanIcons';
@@ -19,6 +19,7 @@ import { useAppController } from './hooks/useAppController';
 import { lazyWithRetry } from './utils/lazyWithRetry';
 import { GlobalMusicLayer } from './components/music/GlobalMusicLayer';
 import { useMusicStore } from './store/useMusicStore';
+import { prewarmXtreamClientCatalogOnStartup } from './services/xtreamClientService';
 
 const PartySidebar = lazyWithRetry(() =>
   import('./components/PartySidebar').then((m) => ({ default: m.PartySidebar }))
@@ -70,6 +71,10 @@ export function App() {
   } = c;
 
   const hasActiveMusicBar = useMusicStore((s) => Boolean(s.currentTrack || s.activeRadio));
+
+  useEffect(() => {
+    prewarmXtreamClientCatalogOnStartup();
+  }, []);
 
   const handleDismissLanguageNotice = useCallback(() => {
     playback.setLanguageNotice(null);

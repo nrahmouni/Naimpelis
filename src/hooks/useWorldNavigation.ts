@@ -7,6 +7,7 @@ import type { MobileNavTab } from '../utils/appSessionHelpers';
 import { playWorldPortalSound } from '../utils/haptics';
 import { runWithViewTransition } from '../lib/viewTransition';
 import type { RoomGameInviteType } from '../shared/protocol';
+import { isXtreamServerWorldId } from '../config/defaultProviders';
 
 interface UseWorldNavigationParams {
   sessionMode: SessionMode;
@@ -147,6 +148,8 @@ export function useWorldNavigation({
       void import('../components/rbtv/RbtvWorldView').catch(noop);
     } else if (world === 'belix') {
       void import('../components/belix/BelixWorldView').catch(noop);
+    } else if (world === 'danaactive') {
+      void import('../components/dana/DanaActiveWorldView').catch(noop);
     } else if (world === 'atresplayer') {
       void import('../components/atresplayer/AtresplayerWorldView').catch(noop);
     } else if (world === 'movistardazn') {
@@ -155,6 +158,8 @@ export function useWorldNavigation({
       void import('../components/champions/ChampionsWorldView').catch(noop);
     } else if (world === 'music') {
       void import('../components/music/RiffanMusicWorldView').catch(noop);
+    } else if (isXtreamServerWorldId(world)) {
+      void import('../components/belix/XtreamServerWorldView').catch(noop);
     }
   }, []);
 
@@ -219,10 +224,12 @@ export function useWorldNavigation({
           nextWorld === 'clipbox' ||
           nextWorld === 'rbtv' ||
           nextWorld === 'belix' ||
+          nextWorld === 'danaactive' ||
           nextWorld === 'atresplayer' ||
           nextWorld === 'movistardazn' ||
           nextWorld === 'champions' ||
-          nextWorld === 'music')
+          nextWorld === 'music' ||
+          isXtreamServerWorldId(nextWorld))
       ) {
         if (nextWorld !== 'sala') preloadWorld(nextWorld);
         playWorldPortalSound(nextWorld);

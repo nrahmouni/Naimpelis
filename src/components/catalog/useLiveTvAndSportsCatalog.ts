@@ -11,6 +11,9 @@ import { useAppStore } from '../../store/useAppStore';
 import { buildChannelFavId, sanitizeItemKey } from '../../utils/storage';
 import { getChannelRegionMeta, type TvRegionId } from '../ui/ChannelLogoBadge';
 import type { CatalogSection } from './catalogConstants';
+import { ensureVaultSyncedWithBackend } from '../../services/xtreamVaultConfig';
+import { readCachedXtreamCatalog } from '../../services/xtreamClientService';
+import { buildLiveTdtChannel } from '../belix/XtreamMediaHelpers';
 
 export type FootballBrandFilter =
   | 'all'
@@ -108,6 +111,7 @@ export function useLiveTvAndSportsCatalog({
   const fetchTdtCatalog = useCallback(async () => {
     setLoadingTdt(true);
     try {
+      await ensureVaultSyncedWithBackend(false).catch(() => false);
       const [tdtSettled, worldSettled, rbtvSettled, belixSettled] = await Promise.allSettled([
         fetch('/api/catalog/tdt').then((r) => r.json()),
         fetch('/api/catalog/world-tv').then((r) => r.json()),
@@ -130,10 +134,35 @@ export function useLiveTvAndSportsCatalog({
         belixSettled.status === 'fulfilled' && Array.isArray(belixSettled.value?.channels)
           ? belixSettled.value.channels
           : [];
-      if (baseList.length > 0 || worldList.length > 0 || rbtvList.length > 0 || belixList.length > 0) {
+      const cachedXtream = readCachedXtreamCatalog('all');
+      const cachedXtreamChannels: SpanishTdtChannel[] = [];
+      if (cachedXtream?.liveStreams?.length) {
+        const catMap = new Map<string, string>();
+        for (const cat of cachedXtream.liveCategories) {
+          catMap.set(`${cat.providerId || 'primary'}:${cat.id}`, cat.name);
+        }
+        for (const stream of cachedXtream.liveStreams) {
+          const catName =
+            catMap.get(`${stream.providerId || 'primary'}:${stream.categoryId}`) || 'TV en Vivo';
+          cachedXtreamChannels.push(buildLiveTdtChannel(stream, catName));
+        }
+      }
+      if (
+        baseList.length > 0 ||
+        worldList.length > 0 ||
+        rbtvList.length > 0 ||
+        belixList.length > 0 ||
+        cachedXtreamChannels.length > 0
+      ) {
         const seenIds = new Set<string>();
         const merged: SpanishTdtChannel[] = [];
-        for (const ch of [...baseList, ...rbtvList, ...belixList, ...worldList]) {
+        for (const ch of [
+          ...baseList,
+          ...rbtvList,
+          ...belixList,
+          ...cachedXtreamChannels,
+          ...worldList,
+        ]) {
           if (!ch?.id || seenIds.has(ch.id)) continue;
           seenIds.add(ch.id);
           merged.push(ch);

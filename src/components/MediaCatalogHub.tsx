@@ -441,6 +441,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           onOpenCloudBrowser={onOpenCloudBrowser}
           onSearchWithAi={onSearchWithAi}
           onOpenSurpriseMe={onOpenSurpriseMe}
+          onPlayTdtChannel={onPlayTdtChannel}
         />
       )}
 

@@ -64,7 +64,7 @@ export interface ResolvedDeepLinkResult {
   match?: any;
   game?: { gameId: string; gameSlug: string; title: string };
   world?: {
-    world: 'cine' | 'futbol' | 'champions' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music';
+    world: 'cine' | 'futbol' | 'champions' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'danaactive' | 'atresplayer' | 'movistardazn' | 'music' | 'sharkpro' | 'vod4k' | 'srv24tv' | 'srv2m2h' | 'dana4k' | 'activecdns' | 'octopus';
     cineTab?: 'movies' | 'series';
     cineCategory?: string;
     futbolTab?: 'matches' | 'channels';
@@ -615,9 +615,17 @@ export async function resolveDeepLinkTarget(
         clipbox: 'ClipBox Vault — Motores, Búsqueda y Descifrado',
         rbtv: 'RBTV+ — Cluster Deportivo, DoH y Arquitectura P2P',
         belix: 'Belix TV — Motor Xtream Codes y Rutas com.ibopro.ultra',
+        danaactive: 'Dana & Active — Catálogo Multi-Proveedor Dana 4K y Active CDNS',
         atresplayer: 'Atresmedia — Directos 1080p, Pasapalabra, Programas y Series',
         movistardazn: 'DAZN & Movistar+ — Fútbol, F1, MotoGP, Deportes HD y Series Originales',
         music: 'Riffan Music — Canciones, Letras Sincronizadas, Videoclips HD y Radios 24/7',
+        sharkpro: 'Shark Pro — TV en Vivo, Películas y Series',
+        vod4k: 'VOD 4K — Estrenos 4K UHD, Cine y Series',
+        srv24tv: '24TV — Canales Internacionales 24/7, Deportes y Cine',
+        srv2m2h: '2M2H — Emisión Continua Multi-Región, VOD y Series',
+        dana4k: 'Dana 4K Pro — Directos HD/4K, Cine y Series',
+        activecdns: 'Active CDNS — Directos Estables, VOD y Series',
+        octopus: 'Octopus TV — Parrilla Completa en Directo, Películas y Series',
       };
       const title = `${worldLabels[target.world] || 'RiffanTV'} — RiffanTV`;
       result = {

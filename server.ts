@@ -50,6 +50,7 @@ import { registerStreamExtractRoute } from './server/routes/streamExtractRoutes.
 import { registerClipboxRoutes } from './server/routes/clipboxRoutes.ts';
 import { registerRbtvRoutes } from './server/routes/rbtvRoutes.ts';
 import { registerBelixRoutes } from './server/routes/belixRoutes.ts';
+import { registerXtreamRoutes } from './server/routes/xtreamRoutes.ts';
 import { registerAtresplayerRoutes } from './server/routes/atresplayerRoutes.ts';
 import { registerMovistarDaznRoutes } from './server/routes/movistarDaznRoutes.ts';
 import { registerMusicRoutes } from './server/routes/musicRoutes.ts';
@@ -57,6 +58,7 @@ import { registerVpnGatewayRoutes } from './server/routes/vpnGatewayRoutes.ts';
 import { registerOpenGamesRoutes } from './server/routes/openGamesRoutes.ts';
 import { getMovistarDaznHome } from './server/services/movistarDaznCatalogService.ts';
 import { initBelixFromEnv } from './server/services/belix/belixXtreamClient.ts';
+import { initXtreamEnvFromEnv } from './server/services/xtreamService.ts';
 import { SPANISH_TDT_CHANNELS } from './server/data/tdtChannels.ts';
 import { CATALA_LIVE_CHANNELS } from './server/data/catalaRegistry.ts';
 import {
@@ -178,6 +180,9 @@ app.use(
         p.startsWith('/api/belix/stream') ||
         p.startsWith('/api/belix/sub') ||
         p.startsWith('/api/belix/seg') ||
+        p.startsWith('/api/xtream/stream') ||
+        p.startsWith('/api/xtream/seg') ||
+        p === '/api/stream' ||
         p.startsWith('/api/music/stream-proxy')
       ) {
         return false;
@@ -240,10 +245,18 @@ const musicMatchRateLimit = createSlidingWindowRateLimiter({
   keyPrefix: 'music-match',
 });
 
+const xtreamApiRateLimit = createSlidingWindowRateLimiter({
+  maxRequests: 120,
+  windowMs: 60_000,
+  keyPrefix: 'xtream-api',
+});
+
 app.use('/api/extract/stream', extractStreamRateLimit);
 app.use('/api/hls-proxy', hlsProxyRateLimit);
 app.use('/api/admin', adminRateLimit);
 app.use('/api/music/match-tracks', musicMatchRateLimit);
+app.use('/api/xtream', xtreamApiRateLimit);
+app.use('/api/stream', xtreamApiRateLimit);
 
 registerOperationalRoutes(app, {
   getStats: () => ({
@@ -285,6 +298,7 @@ registerYouTubeCatalogRoutes(app);
 registerClipboxRoutes(app);
 registerRbtvRoutes(app);
 registerBelixRoutes(app, { getPublicOrigin });
+registerXtreamRoutes(app, { getPublicOrigin });
 registerAtresplayerRoutes(app);
 registerMovistarDaznRoutes(app);
 registerMusicRoutes(app);
@@ -565,6 +579,7 @@ async function startServer() {
           setTimeout(() => {
             void getMovistarDaznHome().catch((err) => logger.warn({ err }, 'prewarm_dazn_failed'));
             void initBelixFromEnv().catch((err) => logger.warn({ err }, 'prewarm_belix_failed'));
+            void initXtreamEnvFromEnv().catch((err) => logger.warn({ err }, 'prewarm_xtream_failed'));
           }, 1350).unref?.();
           channelHealthMonitor.startScheduler(
             () => [

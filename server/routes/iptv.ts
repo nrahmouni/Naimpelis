@@ -33,6 +33,11 @@ import {
   isAnyBelixConnected,
   resolveBelixManifest,
 } from '../services/belix/belixXtreamClient.ts';
+import {
+  getCachedXtreamLiveTdtChannels,
+  isXtreamEnvConfigured,
+  syncFullCatalog as syncXtreamEnvCatalog,
+} from '../services/xtreamService.ts';
 import { getCuratedRbtvChannels } from '../services/rbtv/rbtvLiveCurator.ts';
 import {
   ensureLiveDvbCleanHlsSession,
@@ -123,9 +128,21 @@ export function registerIptvAndTdtRoutes(
       (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
       'default';
     const belixActive = isAnyBelixConnected(belixSessionKey);
+    if (isXtreamEnvConfigured() && getCachedXtreamLiveTdtChannels().length === 0) {
+      await Promise.race([
+        syncXtreamEnvCatalog(false, 'all').catch(() => undefined),
+        new Promise<void>((resolve) => setTimeout(resolve, 1800)),
+      ]);
+    }
+    const belixChannels = getBelixLiveChannels({ sessionKey: belixSessionKey });
+    const belixStreamIds = new Set(belixChannels.map((c) => c.streamId));
+    const xtreamEnvChannels = getCachedXtreamLiveTdtChannels().filter(
+      (c) => !belixStreamIds.has(c.streamId)
+    );
     const merged = [
       ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, belixActive),
-      ...getBelixLiveChannels({ sessionKey: belixSessionKey }),
+      ...belixChannels,
+      ...xtreamEnvChannels,
       ...getCuratedRbtvChannels(),
     ];
     res.json({

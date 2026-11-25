@@ -280,7 +280,7 @@ function playNaimcineIntroSound(): boolean {
 
 export const playRiffanIntroSound = playNaimcineIntroSound;
 
-export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'champions' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music') {
+export function playWorldPortalSound(portal: import('../store/useAppStore').PrimaryWorldId) {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;

@@ -7,7 +7,7 @@
 import React, { useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { Link2, Play, X } from 'lucide-react';
-import type { AppLanguage, CatalaCatalogItem, CatalogMovie } from '../../types';
+import type { AppLanguage, CatalaCatalogItem, CatalogMovie, SpanishTdtChannel } from '../../types';
 import type { CatalogGenreItem } from '../ExpandedDiscoverySection';
 import { UI_COPY, pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
@@ -35,6 +35,7 @@ import {
   SERIES_SORT_OPTIONS,
 } from './catalogConstants';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
+import { XtreamVodSeriesShelf } from './XtreamVodSeriesShelf';
 
 const ExpandedDiscoverySection = lazyWithRetry(() =>
   import('../ExpandedDiscoverySection').then((m) => ({ default: m.ExpandedDiscoverySection }))
@@ -104,6 +105,7 @@ export interface CineWorldViewProps {
   onOpenCloudBrowser: (url: string) => void;
   onSearchWithAi?: (query: string, mediaType?: 'all' | 'movie' | 'tv') => void;
   onOpenSurpriseMe?: () => void;
+  onPlayTdtChannel?: (channel: SpanishTdtChannel, signalIndex?: number) => void;
 }
 
 export const CineWorldView: React.FC<CineWorldViewProps> = ({
@@ -166,6 +168,7 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
   onOpenCloudBrowser,
   onSearchWithAi,
   onOpenSurpriseMe,
+  onPlayTdtChannel,
 }) => {
   const t = UI_COPY[lang];
 
@@ -487,22 +490,32 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
 
       {/* Search / Catala / Filtered Grid / Editorial Home View */}
       {showUnifiedSearch ? (
-        <CineUnifiedSearchResults
-          lang={lang}
-          trimmedSearch={trimmedSearch}
-          isSeriesTab={isSeriesTab}
-          loadingHomeSearch={loadingHomeSearch}
-          homeMovieResults={homeMovieResults}
-          homeSeriesResults={homeSeriesResults}
-          isBookmarked={isBookmarked}
-          onToggleBookmark={onToggleBookmark}
-          onOpenPosterItem={openPosterItem}
-          onSwitchTab={(tab) => {
-            onChangeCineSpecialPortal('none');
-            onChangeCineTab(tab);
-          }}
-          onSearchWithAi={onSearchWithAi}
-        />
+        <div className="space-y-6">
+          <CineUnifiedSearchResults
+            lang={lang}
+            trimmedSearch={trimmedSearch}
+            isSeriesTab={isSeriesTab}
+            loadingHomeSearch={loadingHomeSearch}
+            homeMovieResults={homeMovieResults}
+            homeSeriesResults={homeSeriesResults}
+            isBookmarked={isBookmarked}
+            onToggleBookmark={onToggleBookmark}
+            onOpenPosterItem={openPosterItem}
+            onSwitchTab={(tab) => {
+              onChangeCineSpecialPortal('none');
+              onChangeCineTab(tab);
+            }}
+            onSearchWithAi={onSearchWithAi}
+          />
+          {onPlayTdtChannel && (
+            <XtreamVodSeriesShelf
+              lang={lang}
+              mode={isSeriesTab ? 'series' : 'movies'}
+              trimmedSearch={trimmedSearch}
+              onPlayTdtChannel={onPlayTdtChannel}
+            />
+          )}
+        </div>
       ) : cineSpecialPortal === 'catala' ? (
         <CineCatalaPortalView
           lang={lang}
@@ -626,6 +639,14 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
               />
             </React.Suspense>
           </motion.div>
+
+          {onPlayTdtChannel && (
+            <XtreamVodSeriesShelf
+              lang={lang}
+              mode={isSeriesTab ? 'series' : 'movies'}
+              onPlayTdtChannel={onPlayTdtChannel}
+            />
+          )}
         </motion.div>
       )}
 

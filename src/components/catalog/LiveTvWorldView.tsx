@@ -27,9 +27,15 @@ import {
 import { LiveTvFilterSheet } from './LiveTvFilterSheet';
 import { LiveTvChannelRow } from './LiveTvChannelRow';
 import { useBackInterceptor } from '../../lib/backInterceptor';
+import { useAppStore } from '../../store/useAppStore';
+import {
+  readCachedXtreamCatalog,
+  type XtreamFullCatalogPayload,
+} from '../../services/xtreamClientService';
+import { XtreamCatalogSummaryBar } from '../belix/XtreamCatalogSummaryBar';
 
 const RECENT_TV_STORAGE_KEY = 'riffan_recent_tv_v1';
-const CHANNELS_BATCH_SIZE = 60;
+const CHANNELS_BATCH_SIZE = 40;
 
 interface PullRefreshHandlers {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -99,6 +105,9 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
 }) => {
   const [inlineQuery, setInlineQuery] = useState('');
   const [visibleLimit, setVisibleLimit] = useState(CHANNELS_BATCH_SIZE);
+  const [xtreamCatalog, setXtreamCatalog] = useState<XtreamFullCatalogPayload | null>(() =>
+    readCachedXtreamCatalog('all')
+  );
   const [recentIds, setRecentIds] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(RECENT_TV_STORAGE_KEY);
@@ -108,6 +117,12 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
       return [];
     }
   });
+
+  useEffect(() => {
+    const onSynced = () => setXtreamCatalog(readCachedXtreamCatalog('all'));
+    window.addEventListener('belix-channels-synced', onSynced);
+    return () => window.removeEventListener('belix-channels-synced', onSynced);
+  }, []);
 
   useEffect(() => {
     setVisibleLimit(CHANNELS_BATCH_SIZE);
@@ -271,6 +286,14 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
               })}
         </div>
       )}
+
+      {/* MULTI-SERVER LIVE SYNC SUMMARY */}
+      <XtreamCatalogSummaryBar
+        lang={lang}
+        catalog={xtreamCatalog}
+        mode="live"
+        onOpenServerWorld={(w) => useAppStore.getState().setActiveWorld(w)}
+      />
 
       {/* CLEAN SINGLE TOOLBAR: [Todos | España | Favoritos] + [Regiones y filtros] */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">

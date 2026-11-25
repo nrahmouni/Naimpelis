@@ -8,6 +8,7 @@ import type {
   SubtitleStyleSettings,
   TvSeriesDetails,
 } from '../types';
+import type { XtreamServerWorldId } from '../config/defaultProviders';
 
 const SUBTITLE_STYLE_KEY = 'naimcine_subtitle_style_v2';
 const SCHEDULED_ROOMS_KEY = 'naimcine_scheduled_rooms_v1';
@@ -26,9 +27,11 @@ export type PrimaryWorldId =
   | 'clipbox'
   | 'rbtv'
   | 'belix'
+  | 'danaactive'
   | 'atresplayer'
   | 'movistardazn'
-  | 'music';
+  | 'music'
+  | XtreamServerWorldId;
 export type WorldId = 'entry' | PrimaryWorldId | 'youtube';
 export type CineSubTab = 'movies' | 'series';
 export type FutbolSubTab = 'matches' | 'channels';
@@ -92,9 +95,17 @@ const PRIMARY_WORLDS: PrimaryWorldId[] = [
   'clipbox',
   'rbtv',
   'belix',
+  'danaactive',
   'atresplayer',
   'movistardazn',
   'music',
+  'sharkpro',
+  'vod4k',
+  'srv24tv',
+  'srv2m2h',
+  'dana4k',
+  'activecdns',
+  'octopus',
 ];
 
 function loadLastUsedWorld(): PrimaryWorldId | null {

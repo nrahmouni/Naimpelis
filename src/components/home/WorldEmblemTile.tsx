@@ -1,7 +1,12 @@
 import React, { useId } from 'react';
 import type { AppLanguage } from '../../types';
+import {
+  XTREAM_PROVIDER_UI_SPECS,
+  isXtreamServerWorldId,
+  type XtreamServerWorldId,
+} from '../../config/defaultProviders';
 
-export type WorldPortalKind = 'cine' | 'futbol' | 'champions' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music';
+export type WorldPortalKind = 'cine' | 'futbol' | 'champions' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'danaactive' | 'atresplayer' | 'movistardazn' | 'music' | XtreamServerWorldId;
 
 export interface WorldSpec {
   accent: string;
@@ -202,6 +207,27 @@ export const WORLD_SPECS: Record<WorldPortalKind, WorldSpec> = {
       zh: '15 Xtream 接口 · 48 链接 · 21 域名',
     },
   },
+  danaactive: {
+    accent: '#0EA5E9',
+    secondary: '#10B981',
+    glowRgb: '14,165,233',
+    ambient:
+      'radial-gradient(ellipse 68% 54% at 50% 47%, rgba(14,165,233,0.22) 0%, rgba(16,185,129,0.11) 42%, rgba(6,7,12,0) 74%)',
+    title: {
+      es: 'Dana & Active',
+      ca: 'Dana & Active',
+      en: 'Dana & Active',
+      rif: 'Dana & Active',
+      zh: 'Dana & Active',
+    },
+    subtitle: {
+      es: 'Dana 4K & Active CDNS · Directo, Cine y Series',
+      ca: 'Dana 4K & Active CDNS · Directe, Cinema i Sèries',
+      en: 'Dana 4K & Active CDNS · Live TV, Movies & Series',
+      rif: 'Dana 4K & Active CDNS · Direkt d Sini',
+      zh: 'Dana 4K 与 Active CDNS · 直播与影视',
+    },
+  },
   atresplayer: {
     accent: '#FF5E1A',
     secondary: '#F59E0B',
@@ -265,6 +291,31 @@ export const WORLD_SPECS: Record<WorldPortalKind, WorldSpec> = {
       zh: '海量曲库 · 实时歌词、MV 与全天候电台',
     },
   },
+  ...(Object.fromEntries(
+    XTREAM_PROVIDER_UI_SPECS.map((srv) => [
+      srv.worldId,
+      {
+        accent: srv.accent,
+        secondary: srv.secondary,
+        glowRgb: srv.glowRgb,
+        ambient: `radial-gradient(ellipse 68% 54% at 50% 47%, rgba(${srv.glowRgb},0.24) 0%, rgba(15,23,42,0.12) 44%, rgba(6,7,12,0) 76%)`,
+        title: {
+          es: srv.name,
+          ca: srv.name,
+          en: srv.name,
+          rif: srv.name,
+          zh: srv.name,
+        },
+        subtitle: {
+          es: srv.tagline,
+          ca: srv.tagline,
+          en: srv.tagline,
+          rif: srv.tagline,
+          zh: srv.tagline,
+        },
+      } satisfies WorldSpec,
+    ])
+  ) as Record<XtreamServerWorldId, WorldSpec>),
 };
 
 export const WorldEmblemTile: React.FC<{
@@ -773,6 +824,40 @@ export const WorldEmblemTile: React.FC<{
         </g>
       )}
 
+      {kind === 'danaactive' && (
+        <g filter={`url(#${ids.drop})`}>
+          <rect
+            x="27"
+            y="30"
+            width="66"
+            height="58"
+            rx="16"
+            fill={`url(#${ids.accentSoft})`}
+            stroke={`url(#${ids.accent})`}
+            strokeWidth="2.2"
+          />
+          <rect
+            x="33"
+            y="36"
+            width="54"
+            height="46"
+            rx="11"
+            fill="#070B13"
+            stroke="#FFFFFF"
+            strokeOpacity="0.12"
+            strokeWidth="1"
+          />
+          <circle cx="48" cy="59" r="9.5" stroke={`url(#${ids.accent})`} strokeWidth="2.6" fill="none" />
+          <path
+            d="M 63 48 L 76 59 L 63 70"
+            stroke={`url(#${ids.platinum})`}
+            strokeWidth="3.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </g>
+      )}
+
       {kind === 'atresplayer' && (
         <g filter={`url(#${ids.drop})`}>
           <circle
@@ -928,6 +1013,36 @@ export const WorldEmblemTile: React.FC<{
           <rect x="57" y="68" width="6" height="8" rx="1.5" fill={`url(#${ids.platinum})`} />
           <rect x="49" y="76" width="22" height="5" rx="2.5" fill={`url(#${ids.accent})`} />
           <path d="M 60 44 L 62.2 49 L 67.5 49.4 L 63.4 52.9 L 64.7 58 L 60 55.2 L 55.3 58 L 56.6 52.9 L 52.5 49.4 L 57.8 49 Z" fill="#0A1224" />
+        </g>
+      )}
+
+      {isXtreamServerWorldId(kind) && (
+        <g filter={`url(#${ids.drop})`}>
+          <rect
+            x="27"
+            y="29"
+            width="66"
+            height="19"
+            rx="6"
+            fill={`url(#${ids.accentSoft})`}
+            stroke={`url(#${ids.accent})`}
+            strokeWidth="1.9"
+          />
+          <rect
+            x="27"
+            y="53"
+            width="66"
+            height="19"
+            rx="6"
+            fill={`url(#${ids.accentSoft})`}
+            stroke={`url(#${ids.accent})`}
+            strokeWidth="1.9"
+          />
+          <circle cx="38" cy="38.5" r="3" fill={`url(#${ids.platinum})`} />
+          <circle cx="38" cy="62.5" r="3" fill={`url(#${ids.platinum})`} />
+          <rect x="46" y="37" width="36" height="3" rx="1.5" fill={`url(#${ids.platinum})`} opacity="0.85" />
+          <rect x="46" y="61" width="24" height="3" rx="1.5" fill={`url(#${ids.platinum})`} opacity="0.85" />
+          <path d="M 52 80 L 60 88 L 68 80" stroke={`url(#${ids.accent})`} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
         </g>
       )}
 

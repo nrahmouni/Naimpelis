@@ -13,6 +13,7 @@ import { showAppShareToast } from '../utils/shareDedicatedLink';
 import { getLastBackPopHandledAt } from '../lib/backInterceptor';
 import type { RoomGameInviteType } from '../shared/protocol';
 import type { CatalogMovie, SpanishTdtChannel, SportsMatch, TvSeriesDetails } from '../types';
+import { getXtreamProviderUiSpecByWorld } from '../config/defaultProviders';
 
 interface UseDeepLinkRouterOptions {
   sessionMode: SessionMode;
@@ -411,6 +412,8 @@ export function useDeepLinkRouter({
       nextRoute = '/rbtv';
     } else if (activeWorld === 'belix') {
       nextRoute = '/belix';
+    } else if (activeWorld === 'danaactive') {
+      nextRoute = '/dana-active';
     } else if (activeWorld === 'atresplayer') {
       nextRoute = '/atresplayer';
     } else if (activeWorld === 'movistardazn') {
@@ -420,9 +423,10 @@ export function useDeepLinkRouter({
     } else if (activeWorld === 'music') {
       nextRoute = '/musica';
     } else {
+      const xtSpec = getXtreamProviderUiSpecByWorld(activeWorld);
       // On entry home, preserve active deep-linked channel/series path only if navigating back explicitly from home?
       // When user explicitly returns to Entry Home in Solo mode, update URL cleanly to '/'
-      nextRoute = '/';
+      nextRoute = xtSpec ? `/${xtSpec.slug}` : '/';
     }
 
     const currentFull = `${window.location.pathname}${window.location.search}`;

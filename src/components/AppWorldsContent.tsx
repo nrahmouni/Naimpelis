@@ -19,6 +19,11 @@ import { MediaCatalogHub } from './MediaCatalogHub';
 import type { useAppController } from '../hooks/useAppController';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { useBackInterceptor } from '../lib/backInterceptor';
+import {
+  XTREAM_WORLD_TO_PROVIDER_ID,
+  getXtreamProviderUiSpecByWorld,
+  isXtreamServerWorldId,
+} from '../config/defaultProviders';
 
 const GamesHubSection = lazyWithRetry(() =>
   import('./GamesHubSection').then((m) => ({ default: m.GamesHubSection }))
@@ -31,6 +36,9 @@ const RbtvWorldView = lazyWithRetry(() =>
 );
 const BelixWorldView = lazyWithRetry(() =>
   import('./belix/BelixWorldView').then((m) => ({ default: m.BelixWorldView }))
+);
+const DanaActiveWorldView = lazyWithRetry(() =>
+  import('./dana/DanaActiveWorldView').then((m) => ({ default: m.DanaActiveWorldView }))
 );
 const AtresplayerWorldView = lazyWithRetry(() =>
   import('./atresplayer/AtresplayerWorldView').then((m) => ({ default: m.AtresplayerWorldView }))
@@ -48,6 +56,11 @@ const RiffanMusicWorldView = lazyWithRetry(() =>
 const ChampionsWorldView = lazyWithRetry(() =>
   import('./champions/ChampionsWorldView').then((m) => ({
     default: m.ChampionsWorldView,
+  }))
+);
+const XtreamServerWorldView = lazyWithRetry(() =>
+  import('./belix/XtreamServerWorldView').then((m) => ({
+    default: m.XtreamServerWorldView,
   }))
 );
 
@@ -235,6 +248,9 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     } else if (activeWorld === 'belix') {
       target = { kind: 'world', world: 'belix' };
       title = 'RiffanTV · Belix TV Xtream';
+    } else if (activeWorld === 'danaactive') {
+      target = { kind: 'world', world: 'danaactive' };
+      title = 'RiffanTV · Dana & Active';
     } else if (activeWorld === 'atresplayer') {
       target = { kind: 'world', world: 'atresplayer' };
       title = 'RiffanTV · Atresmedia en Directo y Programas';
@@ -247,6 +263,10 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     } else if (activeWorld === 'champions') {
       target = { kind: 'world', world: 'champions' };
       title = 'RiffanTV · Champions League & Multi-Partido';
+    } else if (isXtreamServerWorldId(activeWorld)) {
+      const spec = getXtreamProviderUiSpecByWorld(activeWorld);
+      target = { kind: 'world', world: activeWorld };
+      title = `RiffanTV · ${spec?.name || 'Servidor'}`;
     }
 
     void shareDedicatedLink({ target, roomId: shareRoomId, title });
@@ -291,10 +311,12 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
                 world === 'clipbox' ||
                 world === 'rbtv' ||
                 world === 'belix' ||
+                world === 'danaactive' ||
                 world === 'atresplayer' ||
                 world === 'movistardazn' ||
                 world === 'music' ||
-                world === 'champions',
+                world === 'champions' ||
+                isXtreamServerWorldId(world),
               originRect,
             })
           }
@@ -543,6 +565,40 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     );
   }
 
+  if (activeWorld === 'danaactive') {
+    return (
+      <WorldShell
+        world="danaactive"
+        title="Dana & Active"
+        lang={lang}
+        sessionMode={sessionMode}
+        onUpgradeSoloToParty={() =>
+          void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
+        }
+        onShareWorld={handleShareActiveWorld}
+        onBack={goBackWorld}
+        onGoHome={goHome}
+        onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+        searchValue={worldSearchQuery}
+        onSearchChange={setWorldSearchQuery}
+        searchPlaceholder={pickLang(lang, {
+          es: 'Buscar canal, película o serie en Dana & Active...',
+          ca: 'Cercar canal, pel·lícula o sèrie a Dana & Active...',
+          en: 'Search channel, movie or series in Dana & Active...',
+        })}
+        className={portalLandingActive ? 'rtv-world-touchdown' : ''}
+      >
+        <DanaActiveWorldView
+          lang={lang}
+          externalSearchQuery={worldSearchQuery}
+          onPlayTdtChannel={(ch, idx) => {
+            void playback.handlePlayTdtChannel(ch, idx);
+          }}
+        />
+      </WorldShell>
+    );
+  }
+
   if (activeWorld === 'atresplayer') {
     return (
       <WorldShell
@@ -718,6 +774,42 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
             void playback.handleLaunchMultiMatchPreset(sources);
           }}
           onCloseAllMultiScreens={playback.handleCloseAllSecondaryStreams}
+        />
+      </WorldShell>
+    );
+  }
+
+  if (isXtreamServerWorldId(activeWorld)) {
+    const serverSpec = getXtreamProviderUiSpecByWorld(activeWorld);
+    const providerId = XTREAM_WORLD_TO_PROVIDER_ID[activeWorld];
+    return (
+      <WorldShell
+        world={activeWorld}
+        title={serverSpec?.name || 'Servidor'}
+        lang={lang}
+        sessionMode={sessionMode}
+        onUpgradeSoloToParty={() =>
+          void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
+        }
+        onShareWorld={handleShareActiveWorld}
+        onBack={goBackWorld}
+        onGoHome={goHome}
+        onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+        searchValue={worldSearchQuery}
+        onSearchChange={setWorldSearchQuery}
+        searchPlaceholder={`Buscar canal, película o serie en ${serverSpec?.name || 'este servidor'}...`}
+        className={portalLandingActive ? 'rtv-world-touchdown' : ''}
+      >
+        <XtreamServerWorldView
+          providerId={providerId}
+          lang={lang}
+          externalSearchQuery={worldSearchQuery}
+          onPlayTdtChannel={(ch, idx) => {
+            void playback.handlePlayTdtChannel(ch, idx);
+          }}
+          onSwitchServerWorld={(nextWorldId) =>
+            enterWorld(nextWorldId, { withPortal: false })
+          }
         />
       </WorldShell>
     );

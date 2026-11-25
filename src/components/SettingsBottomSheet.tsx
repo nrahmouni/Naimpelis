@@ -17,6 +17,7 @@ import {
   Disc3,
   Globe,
   Radio,
+  Activity,
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { AppLanguage } from '../types';
@@ -40,6 +41,12 @@ const LgWebOsExportModal = lazyWithRetry(() =>
 );
 const SpainVpnGatewayModal = lazyWithRetry(() =>
   import('./settings/SpainVpnGatewayModal').then((m) => ({ default: m.SpainVpnGatewayModal }))
+);
+const XtreamDiagnosticsModal = lazyWithRetry(() =>
+  import('./settings/XtreamDiagnosticsModal').then((m) => ({ default: m.XtreamDiagnosticsModal }))
+);
+const XtreamPrivateVaultModal = lazyWithRetry(() =>
+  import('./settings/XtreamPrivateVaultModal').then((m) => ({ default: m.XtreamPrivateVaultModal }))
 );
 
 interface SettingsBottomSheetProps {
@@ -91,6 +98,8 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
   const [samsungExportOpen, setSamsungExportOpen] = useState(false);
   const [webOsExportOpen, setWebOsExportOpen] = useState(false);
   const [vpnGatewayOpen, setVpnGatewayOpen] = useState(false);
+  const [xtreamDiagnosticsOpen, setXtreamDiagnosticsOpen] = useState(false);
+  const [xtreamVaultOpen, setXtreamVaultOpen] = useState(false);
   const [tvAdvancedOpen, setTvAdvancedOpen] = useState(false);
   const [tvCode, setTvCode] = useState('');
   const authNotice = useAppStore((s) => s.authNotice);
@@ -691,6 +700,66 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
               <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
             </button>
 
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setXtreamDiagnosticsOpen(true);
+              }}
+              className={`${rowClass} cursor-pointer active:scale-95`}
+            >
+              <span className="flex items-center gap-3 min-w-0">
+                <Activity className="w-5 h-5 text-emerald-400 shrink-0" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold text-white">
+                    {pickLang(lang, {
+                      es: 'Panel de Resumen y Auditoría · Xtream',
+                      ca: 'Panell de Resum i Auditoria · Xtream',
+                      en: 'Summary & Audit Panel · Xtream',
+                    })}
+                  </span>
+                  <span className="block text-xs text-zinc-400">
+                    {pickLang(lang, {
+                      es: 'Verifica servidores activos, rotación y conteo exacto Live/VOD/Series',
+                      ca: 'Verifica servidors actius, rotació i recompte exacte Live/VOD/Series',
+                      en: 'Checks active providers, rotation & exact Live/VOD/Series catalog counts',
+                    })}
+                  </span>
+                </span>
+              </span>
+              <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setXtreamVaultOpen(true);
+              }}
+              className={`${rowClass} cursor-pointer active:scale-95`}
+            >
+              <span className="flex items-center gap-3 min-w-0">
+                <KeyRound className="w-5 h-5 text-amber-400 shrink-0" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-bold text-white">
+                    {pickLang(lang, {
+                      es: 'Configurar Claves Privadas',
+                      ca: 'Configurar Claus Privades',
+                      en: 'Configure Private Keys',
+                    })}
+                  </span>
+                  <span className="block text-xs text-zinc-400">
+                    {pickLang(lang, {
+                      es: 'Bóveda Base64 oculta para activar todos los servidores sin exponer claves',
+                      ca: 'Volta Base64 oculta per activar tots els servidors sense exposar claus',
+                      en: 'Hidden Base64 vault to activate all providers without exposing keys',
+                    })}
+                  </span>
+                </span>
+              </span>
+              <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
+            </button>
+
             {onOpenDesignSystem && (
               <button
                 type="button"
@@ -831,6 +900,26 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                   }
                 : undefined
             }
+          />
+        </React.Suspense>
+      )}
+
+      {xtreamDiagnosticsOpen && (
+        <React.Suspense fallback={null}>
+          <XtreamDiagnosticsModal
+            isOpen={xtreamDiagnosticsOpen}
+            onClose={() => setXtreamDiagnosticsOpen(false)}
+            lang={lang}
+          />
+        </React.Suspense>
+      )}
+
+      {xtreamVaultOpen && (
+        <React.Suspense fallback={null}>
+          <XtreamPrivateVaultModal
+            isOpen={xtreamVaultOpen}
+            onClose={() => setXtreamVaultOpen(false)}
+            lang={lang}
           />
         </React.Suspense>
       )}

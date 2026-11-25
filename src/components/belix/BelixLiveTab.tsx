@@ -24,6 +24,7 @@ import type {
   BelixLiveOverviewResponse,
   BelixReverseEngineeringUpdate,
 } from './belixTypes';
+import { XtreamEnvClientPanel } from './XtreamEnvClientPanel';
 
 interface BelixLiveTabProps {
   lang: AppLanguage;
@@ -340,6 +341,9 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
           </span>
         </button>
       </div>
+
+      {/* ENV-BASED PROTECTED XTREAM FAILOVER PANEL */}
+      <XtreamEnvClientPanel lang={lang} onPlayTdtChannel={onPlayTdtChannel} />
 
       {/* SECTION A: XTREAM CODES SESSION (CREDENTIAL-FREE OPAQUE PROXY) */}
       <section className="rounded-[24px] bg-[#0D0D12] border border-white/[0.08] p-4 sm:p-5 space-y-4">
