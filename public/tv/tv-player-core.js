@@ -364,7 +364,7 @@ function triggerPlaybackFailover(reasonText) {
       }, 150);
       return;
     }
-    if (ch.id && currentUrl.indexOf('/api/iptv/live/') === -1) {
+    if (ch.id && !ch._isSportsMatch && String(ch.id).indexOf('tv-ucl-') !== 0 && currentUrl.indexOf('/api/iptv/live/') === -1) {
       showToast(tvT('connectingIptv'));
       setTimeout(function () {
         autoFailoverLock = false;

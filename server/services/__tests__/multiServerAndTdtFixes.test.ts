@@ -436,4 +436,25 @@ describe('Unified 11-Server Architecture, Castellano/4K Ranking, Anti-Buffering 
     expect(liveTvViewSrc).not.toContain('España · 4K');
     expect(liveTvViewSrc).not.toContain('Por Temática');
   });
+
+  it('keeps Smart TV (/tv) and Chromecast Direct Cast synchronized with multi-server Xtream, Movidy, and sports failover fixes', () => {
+    const root = process.cwd();
+    const tvHub = fs.readFileSync(path.join(root, 'public/tv/tv-hub.js'), 'utf8');
+    const tvModes = fs.readFileSync(path.join(root, 'public/tv/tv-player-modes.js'), 'utf8');
+    const tvCore = fs.readFileSync(path.join(root, 'public/tv/tv-player-core.js'), 'utf8');
+    const tvFootball = fs.readFileSync(path.join(root, 'public/tv/tv-football.js'), 'utf8');
+    const tvChampions = fs.readFileSync(path.join(root, 'public/tv/tv-champions-multi.js'), 'utf8');
+    const directCast = fs.readFileSync(path.join(root, 'src/components/player/useDirectCast.ts'), 'utf8');
+
+    expect(tvHub).toContain('res.detail || res.series');
+    expect(tvModes).toContain('&channelLabel=');
+    expect(tvModes).toContain('gnulaUrl');
+    expect(tvModes).toContain('isDeadSportsEmbed');
+    expect(tvFootball).toContain('_isSportsMatch: true');
+    expect(tvCore).toContain('!ch._isSportsMatch');
+    expect(tvChampions).toContain('providers\\/stream|belix\\/stream');
+    expect(tvChampions).toContain('&channelLabel=');
+    expect(directCast).toContain("parsed.pathname.startsWith('/api/providers/stream/')");
+    expect(directCast).toContain("parsed.pathname.startsWith('/api/dvb-live/')");
+  });
 });

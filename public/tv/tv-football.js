@@ -216,6 +216,7 @@ function playFootballMatchChannelOnTv(match, trackIndex) {
   unlockAudio();
   var adaptedChannel = {
     id: match.id || ('fb-' + (match.eventId || 'match')),
+    _isSportsMatch: true,
     name: (match.homeTeam || 'Local') + ' vs ' + (match.awayTeam || 'Visitante'),
     network: match.leagueName || match.groupTitle || 'Fútbol HD',
     logoUrl: match.homeLogo || match.leagueLogoUrl || '',

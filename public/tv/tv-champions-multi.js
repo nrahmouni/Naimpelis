@@ -80,7 +80,7 @@
   function isInstantMultiUrl(urlStr, resolverType) {
     var s = String(urlStr || '');
     if (!s) return false;
-    if (/^\/api\/(?:hls-proxy|iptv\/live|dvb-live|vod-manifest)/i.test(s)) {
+    if (/^\/api\/(?:hls-proxy|iptv\/live|dvb-live|vod-manifest|providers\/stream|belix\/stream)/i.test(s)) {
       return true;
     }
     if (
@@ -313,6 +313,7 @@
       playTdtChannelOnTv(
         {
           id: 'tv-ucl-' + Date.now(),
+          _isSportsMatch: true,
           name: title || 'Champions HD',
           network: subtitle || 'UEFA Champions League',
           quality: '1080p HD',
@@ -636,7 +637,8 @@
             attachMultiSlotStream(slotIdx, rawUrl, 'hls', candidates, 0, myGen);
             return;
           }
-          var qFb = 'resolverType=' + encodeURIComponent(rType) + '&url=' + encodeURIComponent(rawUrl) + '&title=' + encodeURIComponent(slotObj.source.title || ('P' + (slotIdx + 1)));
+          var slotLblFb = (slotObj.source && (slotObj.source.channelLabel || slotObj.source.subtitle || slotObj.source.title)) || '';
+          var qFb = 'resolverType=' + encodeURIComponent(rType) + '&url=' + encodeURIComponent(rawUrl) + '&title=' + encodeURIComponent(slotObj.source.title || ('P' + (slotIdx + 1))) + (slotLblFb ? '&channelLabel=' + encodeURIComponent(slotLblFb) : '');
           xhrJson('GET', '/api/extract/stream?' + qFb, null, function (e2, d2) {
             if (!tvChampState.multiActive || myGen !== tvChampState.generation) return;
             if (!e2 && d2 && d2.success && d2.streamUrl) {
@@ -695,10 +697,12 @@
       }
     }
 
+    var slotLbl = (slotObj.source && (slotObj.source.channelLabel || slotObj.source.subtitle || slotObj.source.title)) || '';
     var q =
       'resolverType=' + encodeURIComponent(rType) +
       '&url=' + encodeURIComponent(rawUrl) +
-      '&title=' + encodeURIComponent(slotObj.source.title || ('P' + (slotIdx + 1)));
+      '&title=' + encodeURIComponent(slotObj.source.title || ('P' + (slotIdx + 1))) +
+      (slotLbl ? '&channelLabel=' + encodeURIComponent(slotLbl) : '');
 
     xhrJson('GET', '/api/extract/stream?' + q, null, function (err, data) {
       if (!tvChampState.multiActive || myGen !== tvChampState.generation) return;

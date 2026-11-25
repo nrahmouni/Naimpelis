@@ -814,11 +814,11 @@ function openProviderSeriesModalOnTv(item) {
   seriesModal.style.display = 'block';
 
   xhrJson('GET', '/api/providers/' + encodeURIComponent(item.providerId) + '/series/' + encodeURIComponent(item.streamId), null, function (err, res) {
-    if (err || !res || !res.series) {
+    var detail = res && (res.detail || res.series);
+    if (err || !res || !detail) {
       smEpisodes.innerHTML = '<div style="color:#fda4af;font-size:16px;">' + escapeHtml(tvT('episodesLoadErr')) + '</div>';
       return;
     }
-    var detail = res.series;
     if (detail.plot) smOverview.textContent = detail.plot;
     var seasons = Array.isArray(detail.seasons) ? detail.seasons : [];
     if (!seasons.length) {
