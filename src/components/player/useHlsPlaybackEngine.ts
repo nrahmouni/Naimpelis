@@ -728,7 +728,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
           if (!cancelled && video.readyState === 0) {
             tryTranscodeRetry();
           }
-        }, 5_500);
+        }, 16_000);
       }
 
       cleanupDirectListeners = () => {

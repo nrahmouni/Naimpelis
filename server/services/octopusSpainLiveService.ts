@@ -314,11 +314,16 @@ async function ensureProviderCatalogsHydrated(maxWaitMs = 2000): Promise<XtreamF
     const syncTasks = Promise.allSettled(
       missingImportant.map((p) => syncFullCatalog(false, p.id).catch(() => null))
     );
-    await Promise.race([
-      syncTasks,
-      new Promise<void>((resolve) => setTimeout(resolve, maxWaitMs)),
-    ]);
-    catalogs = getCachedXtreamProviderCatalogs();
+    // If working catalogs are already hydrated or caller wants instant return, refresh in background
+    if (maxWaitMs > 0 && catalogs.length < 3) {
+      await Promise.race([
+        syncTasks,
+        new Promise<void>((resolve) => setTimeout(resolve, maxWaitMs)),
+      ]);
+      catalogs = getCachedXtreamProviderCatalogs();
+    } else {
+      void syncTasks;
+    }
   }
 
   return catalogs;
@@ -496,7 +501,9 @@ async function runBenchmarkBatch(
     byProvider.set(tr.providerId, arr);
   }
 
-  const providerJobs = Array.from(byProvider.entries()).map(async ([, list]) => {
+  const providerJobs = Array.from(byProvider.entries()).map(async ([providerId, list]) => {
+    const isStrictSingleConn = providerId === 'dana4k' || providerId === '2m2h-alt';
+    const concurrency = isStrictSingleConn ? 1 : Math.min(2, perProviderConcurrency);
     let idx = 0;
     const worker = async () => {
       while (idx < list.length) {
@@ -519,10 +526,13 @@ async function runBenchmarkBatch(
           failCount: res.ok ? 0 : 1,
           checkedAt: now,
         });
+        if (isStrictSingleConn && idx < list.length) {
+          await new Promise((r) => setTimeout(r, 90));
+        }
       }
     };
     const workers = Array.from(
-      { length: Math.min(perProviderConcurrency, list.length) },
+      { length: Math.min(concurrency, list.length) },
       () => worker()
     );
     await Promise.allSettled(workers);
@@ -600,7 +610,9 @@ export async function getVerifiedSpainXtreamChannels(opts?: {
 }): Promise<VerifiedSpainChannelEntry[]> {
   if (!isXtreamEnvConfigured()) return [];
 
-  const catalogs = await ensureProviderCatalogsHydrated(opts?.waitWarmupMs ?? 1800);
+  const hadCachedCatalogs = getCachedXtreamProviderCatalogs().length > 0;
+  const effectiveWait = opts?.waitWarmupMs ?? (hadCachedCatalogs ? 0 : 1200);
+  const catalogs = await ensureProviderCatalogsHydrated(effectiveWait);
   if (catalogs.length === 0) return [];
 
   if (opts?.forceReprobe) {

@@ -125,7 +125,7 @@ export function getAllIptvChannels(): any[] {
           category: cat,
           quality: tr.quality || '1080p HD',
           description: `${tr.label} - Señal oficial en directo`,
-          channels: [tr, ...curatedTracks.filter((other) => other.id !== tr.id)],
+          channels: [tr],
         });
       }
     });

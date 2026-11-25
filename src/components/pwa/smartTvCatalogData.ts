@@ -117,4 +117,5 @@ export const STATIC_CHANNELS_CATALOG: SmartTvChannelInfo[] = [
   { id: 'intl-alarabiya', dial: 744, name: 'Al Arabiya News HD (العربية)', category: 'noticias_intl', groupTitle: 'Noticias Internacionales (Al Jazeera · Al Arabiya)', quality: '1080p FHD', shortMark: 'ARAB', brandTone: '#7C3AED' },
   { id: 'intl-alhadath', dial: 746, name: 'Al Hadath HD (الحدث)', category: 'noticias_intl', groupTitle: 'Noticias Internacionales (Al Jazeera · Al Arabiya)', quality: '1080p FHD', shortMark: 'HDTH', brandTone: '#DC2626' },
   { id: 'intl-skynews-arabia', dial: 747, name: 'Sky News Arabia HD (سكاي نيوز)', category: 'noticias_intl', groupTitle: 'Noticias Internacionales (Al Jazeera · Al Arabiya)', quality: '1080p FHD', shortMark: 'SKY_AR', brandTone: '#DC2626' },
+  { id: 'news-cgtn-es', dial: 411, name: 'CGTN Noticias (Español)', category: 'noticias_intl', groupTitle: 'Noticias Internacionales (Al Jazeera · Al Arabiya)', quality: '1080p FHD', shortMark: 'CGTN ES', brandTone: '#DC2626' },
 ];

@@ -362,7 +362,9 @@ export function registerXtreamRoutes(
       !rawCt || /octet-stream/i.test(rawCt)
         ? ext === 'webm'
           ? 'video/webm'
-          : 'video/mp4'
+          : ext === 'mkv'
+            ? 'video/x-matroska'
+            : 'video/mp4'
         : rawCt;
     const cl = upstreamRes.headers.get('content-length');
     const cr = upstreamRes.headers.get('content-range');
@@ -546,7 +548,9 @@ export function registerXtreamRoutes(
         !rawCt || /octet-stream/i.test(rawCt)
           ? ext === 'webm'
             ? 'video/webm'
-            : 'video/mp4'
+            : ext === 'mkv'
+              ? 'video/x-matroska'
+              : 'video/mp4'
           : rawCt;
       const cl = upstreamRes.headers.get('content-length');
       const cr = upstreamRes.headers.get('content-range');

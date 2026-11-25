@@ -317,6 +317,7 @@ export interface SportsMatch {
     kickoffIso?: string;
     kickoffTime?: string;
     spanishBroadcaster?: FootballMatchboardItem['spanishBroadcaster'];
+    verifiedTvGuide?: FootballMatchboardItem['verifiedTvGuide'];
   };
 }
 

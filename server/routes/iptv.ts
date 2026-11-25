@@ -15,6 +15,8 @@ import {
 import { extractLiveSportsHlsDirect, sniffStreamWithHeadless, verifyM3u8HasCleanVideoFrame } from '../extractors/sportsExtractor.ts';
 import { isElahmadUrl, resolveElahmadChannelToHls } from '../extractors/elahmadExtractor.ts';
 import { SPANISH_TDT_CHANNELS } from '../data/tdtChannels.ts';
+import { INTERNATIONAL_TV_CHANNELS } from '../data/internationalChannels.ts';
+import { resolveCanonicalChannelKey } from '../../src/utils/channelQualityRanker.ts';
 import {
   applySyncedStreamsToChannels,
   getIptvSyncMeta,
@@ -84,6 +86,10 @@ const iptvChannelResolveCache = new LruTtlCache<
 >(150, 20 * 60 * 1000);
 
 const epgXmlResponseCache = new LruTtlCache<string, string>(6, 5 * 60 * 1000);
+const tdtCatalogJsonCache = new LruTtlCache<
+  string,
+  { success: true; iptvMeta: ReturnType<typeof getIptvSyncMeta>; channels: unknown[] }
+>(4, 30_000);
 
 async function resolveDvbIptvPlaylistText(
   cleanUrl: string,
@@ -122,6 +128,15 @@ export function registerIptvAndTdtRoutes(
       (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
       'default';
     const belixActive = isAnyBelixConnected(belixSessionKey);
+    const hasWarmXtream = getCachedXtreamLiveTdtChannels().length > 0;
+    const tdtCacheKey = `${belixActive ? 'b1' : 'b0'}:${hasWarmXtream ? 'xw1' : 'xw0'}`;
+
+    if (!forceRefresh) {
+      const cachedPayload = tdtCatalogJsonCache.get(tdtCacheKey);
+      if (cachedPayload) {
+        return res.json(cachedPayload);
+      }
+    }
 
     const warmupTasks: Promise<unknown>[] = [];
     if (forceRefresh) {
@@ -136,46 +151,72 @@ export function registerIptvAndTdtRoutes(
       void refreshLiveIptvRegistry(false).catch(() => undefined);
     }
 
-    if (isXtreamEnvConfigured() && (forceRefresh || getCachedXtreamLiveTdtChannels().length === 0)) {
-      warmupTasks.push(syncXtreamEnvCatalog(forceRefresh, 'all').catch(() => undefined));
+    if (isXtreamEnvConfigured() && (forceRefresh || !hasWarmXtream)) {
+      const xtreamTask = syncXtreamEnvCatalog(forceRefresh, 'all').catch(() => undefined);
+      if (forceRefresh) warmupTasks.push(xtreamTask);
+      else void xtreamTask;
     }
 
+    const warmupBudgetMs = forceRefresh ? 2200 : hasWarmXtream ? 0 : 400;
     const spainWarmupPromise = getVerifiedSpainXtreamChannels({
-      waitWarmupMs: forceRefresh ? 3500 : 1400,
+      waitWarmupMs: warmupBudgetMs,
       forceReprobe: forceRefresh,
     }).catch(() => []);
-    warmupTasks.push(spainWarmupPromise);
-
-    await Promise.race([
-      Promise.allSettled(warmupTasks),
-      new Promise<void>((resolve) => setTimeout(resolve, forceRefresh ? 4500 : 1800)),
-    ]);
+    if (warmupBudgetMs > 0) {
+      warmupTasks.push(spainWarmupPromise);
+      await Promise.race([
+        Promise.allSettled(warmupTasks),
+        new Promise<void>((resolve) => setTimeout(resolve, warmupBudgetMs)),
+      ]);
+    } else if (warmupTasks.length > 0) {
+      await Promise.race([
+        Promise.allSettled(warmupTasks),
+        new Promise<void>((resolve) => setTimeout(resolve, 250)),
+      ]);
+    }
 
     const belixChannels = getBelixLiveChannels({ sessionKey: belixSessionKey });
     const belixStreamIds = new Set(belixChannels.map((c) => c.streamId));
     const verifiedSpainChannels = await Promise.race([
       spainWarmupPromise,
-      new Promise<Awaited<typeof spainWarmupPromise>>((resolve) => setTimeout(() => resolve([]), 50)),
+      new Promise<Awaited<typeof spainWarmupPromise>>((resolve) => setTimeout(() => resolve([]), 40)),
     ]);
     const verifiedSpainStreamIds = new Set(verifiedSpainChannels.map((c) => c.streamId));
-    const xtreamEnvChannels = getCachedXtreamLiveTdtChannels().filter(
-      (c) => !belixStreamIds.has(c.streamId) && !verifiedSpainStreamIds.has(c.streamId)
-    );
+    const curatedRbtv = getCuratedRbtvChannels();
+    const baseTdtChannels = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, belixActive);
+
+    const knownCanonicalKeys = new Set<string>();
+    for (const ch of [...baseTdtChannels, ...INTERNATIONAL_TV_CHANNELS, ...verifiedSpainChannels]) {
+      knownCanonicalKeys.add(resolveCanonicalChannelKey(ch));
+    }
+
+    // Enrich Spanish, Movistar, DAZN, and known curated/international channels with cross-provider signals without bloating JSON with 75k unrelated foreign feeds
+    const xtreamEnvChannels = getCachedXtreamLiveTdtChannels().filter((c) => {
+      if (belixStreamIds.has(c.streamId) || verifiedSpainStreamIds.has(c.streamId)) return false;
+      if (c.countryCode === 'ES' || c.category === 'movistar' || c.category === 'dazn') return true;
+      return knownCanonicalKeys.has(resolveCanonicalChannelKey(c));
+    });
+
     const merged = [
       ...verifiedSpainChannels,
-      ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, belixActive),
+      ...baseTdtChannels,
+      ...INTERNATIONAL_TV_CHANNELS,
       ...belixChannels,
       ...xtreamEnvChannels,
-      ...getCuratedRbtvChannels(),
+      ...curatedRbtv,
     ];
-    res.json({
-      success: true,
+    const responsePayload = {
+      success: true as const,
       iptvMeta: getIptvSyncMeta(),
       channels: buildUnifiedPrioritizedChannels(merged).map((ch) => ({
         ...ch,
         logoUrl: resolveOfficialChannelLogoUrl(ch) || undefined,
       })),
-    });
+    };
+    if (responsePayload.channels.length > 0) {
+      tdtCatalogJsonCache.set(`${belixActive ? 'b1' : 'b0'}:${hasWarmXtream || verifiedSpainChannels.length > 0 ? 'xw1' : 'xw0'}`, responsePayload);
+    }
+    res.json(responsePayload);
   });
 
   app.get(

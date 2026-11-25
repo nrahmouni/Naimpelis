@@ -9,8 +9,11 @@ import {
   memoryLocalCache,
   persistentLocalCache,
   persistentMultipleTabManager,
+  setLogLevel,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
+
+setLogLevel('silent');
 
 const app = initializeApp(firebaseConfig);
 
@@ -23,8 +26,7 @@ function createFirestoreDb(): Firestore {
     return initializeFirestore(
       app,
       {
-        experimentalForceLongPolling: true,
-        experimentalLongPollingOptions: { timeoutSeconds: 20 },
+        experimentalAutoDetectLongPolling: true,
         localCache: canUseIndexedDb
           ? persistentLocalCache({ tabManager: persistentMultipleTabManager() })
           : memoryLocalCache(),
@@ -47,6 +49,9 @@ let connectionTested = false;
 async function testConnection() {
   if (connectionTested) return;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return;
+  }
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
     return;
   }
   connectionTested = true;
@@ -72,7 +77,7 @@ if (typeof window !== 'undefined') {
   } else {
     setTimeout(() => {
       void testConnection();
-    }, 600);
+    }, 1200);
   }
 }
 

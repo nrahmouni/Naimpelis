@@ -94,7 +94,10 @@ export async function handleDirectExtractCases(params: {
   }
 
   // CASE -1: Internal proxy / Belix / Provider live & VOD stream URLs must never pass through external host resolvers
-  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play|providers\/stream)\//i.test(rawInput) || rawInput.startsWith('/api/hls-proxy?')) {
+  if (
+    /^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play|providers\/stream|xtream\/stream|xtream\/vod)\//i.test(rawInput) ||
+    /^\/api\/(?:hls-proxy|stream)\?/i.test(rawInput)
+  ) {
     const belixStreamMatch = rawInput.match(/^\/api\/belix\/stream\/([a-zA-Z0-9_-]+)(?:\.m3u8)?/i);
     if (/^\/api\/belix\/(?:stream|xtream\/play)\//i.test(rawInput) && !isAnyBelixConnected(belixSessionKey)) {
       return sendErr(
@@ -126,13 +129,16 @@ export async function handleDirectExtractCases(params: {
         // ignore parse error
       }
     }
-    const isDirectFile = /\.(mp4|mkv|webm|avi|mov|m4v)(\?|$)/i.test(rawInput) || /^\/api\/providers\/stream\/[^/]+\/(?:movie|series)\//i.test(rawInput);
+    const isDirectFile =
+      /\.(mp4|mkv|webm|avi|mov|m4v)(\?|$)/i.test(rawInput) ||
+      /^\/api\/(?:providers\/stream\/[^/]+\/(?:movie|series)\/|xtream\/vod\/)/i.test(rawInput) ||
+      /[?&]type=(?:vod|series)(?:&|$)/i.test(rawInput);
     const result: ExtractedStreamResult = {
       success: true,
       mode: isDirectFile ? 'direct' : 'hls',
       streamUrl: rawInput,
       rawStreamUrl: rawInput,
-      title: titleHint || 'Stream en Directo',
+      title: titleHint || (isDirectFile ? 'Reproducción VOD' : 'Stream en Directo'),
       requestedLang: preferLang || 'ES',
       resolvedLang: preferLang || 'ES',
       expiresAt: Date.now() + (belixStreamMatch ? 8_000 : 15 * 60 * 1000),
@@ -667,8 +673,14 @@ export async function handleDirectExtractCases(params: {
   }
 
   // CASE 3: Direct .m3u8, .mp4, or internal proxy URL
-  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/xtream\/play|providers\/stream)\//i.test(rawInput)) {
-    const isDirectFile = /\.(mp4|mkv|webm|avi|mov|m4v)(\?|$)/i.test(rawInput) || /^\/api\/providers\/stream\/[^/]+\/(?:movie|series)\//i.test(rawInput);
+  if (
+    /^\/api\/(?:vod-manifest|hls-proxy|belix\/xtream\/play|providers\/stream|xtream\/stream|xtream\/vod)\//i.test(rawInput) ||
+    /^\/api\/stream\?/i.test(rawInput)
+  ) {
+    const isDirectFile =
+      /\.(mp4|mkv|webm|avi|mov|m4v)(\?|$)/i.test(rawInput) ||
+      /^\/api\/(?:providers\/stream\/[^/]+\/(?:movie|series)\/|xtream\/vod\/)/i.test(rawInput) ||
+      /[?&]type=(?:vod|series)(?:&|$)/i.test(rawInput);
     const result: ExtractedStreamResult = {
       success: true,
       mode: isDirectFile ? 'direct' : 'hls',

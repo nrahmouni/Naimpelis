@@ -11,6 +11,12 @@ import { LruTtlCache } from '../utils/lruCache.ts';
 import { assertSafeProxyUrl } from '../utils/ssrfGuard.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
 import {
+  ensureLiveDvbCleanHlsSession,
+  getActiveDvbSessionPath,
+  isDvbUpstreamCoolingDown,
+  readLiveDvbPlaylistForIptv,
+} from '../routes/proxies/dvbTranscoder.ts';
+import {
   getAllXtreamProviders,
   getXtreamProviderById,
   normalizeXtreamServerInput,
@@ -402,9 +408,9 @@ export function buildUpstreamStreamUrl(
   serverOrigin: string,
   account: XtreamAccountCredential,
   streamId: string,
-  variant: 'root' | 'live' = 'root'
+  variant: 'root' | 'live' | 'ts' | 'root-ts' = 'root'
 ): string {
-  const cleanId = String(streamId || '').replace(/\.m3u8$/i, '').trim();
+  const cleanId = String(streamId || '').replace(/\.(?:m3u8|ts)$/i, '').trim();
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanId)) {
     throw new Error('Identificador de canal inválido.');
   }
@@ -412,6 +418,8 @@ export function buildUpstreamStreamUrl(
   const u = encodeURIComponent(account.username);
   const p = encodeURIComponent(account.password);
   const id = encodeURIComponent(cleanId);
+  if (variant === 'ts') return `${origin}/live/${u}/${p}/${id}.ts`;
+  if (variant === 'root-ts') return `${origin}/${u}/${p}/${id}.ts`;
   return variant === 'live'
     ? `${origin}/live/${u}/${p}/${id}.m3u8`
     : `${origin}/${u}/${p}/${id}.m3u8`;
@@ -1352,7 +1360,17 @@ export async function syncFullCatalog(
       return { ok: false, status, error: status.error };
     }
     const settled = await Promise.all(
-      providers.map((p) => syncFullCatalog(forceRefresh, p.id))
+      providers.map((p) =>
+        Promise.race([
+          syncFullCatalog(forceRefresh, p.id),
+          new Promise<{ ok: false; error: string }>((resolve) =>
+            setTimeout(
+              () => resolve({ ok: false, error: `Tiempo agotado sincronizando ${p.name}` }),
+              20_000
+            )
+          ),
+        ])
+      )
     );
     const okCatalogs = settled
       .filter((r): r is { ok: true; catalog: XtreamFullCatalogPayload } => Boolean(r.ok && r.catalog))
@@ -1990,86 +2008,151 @@ function rewriteManifestLines(
   return out.join('\n');
 }
 
-const providerPreferredLiveVariant = new Map<string, 'live' | 'root'>();
+const providerPreferredLiveVariant = new Map<string, 'live' | 'root' | 'ts' | 'root-ts'>();
 
 export async function fetchProxiedXtreamManifest(
   streamId: string,
   originPrefix = '',
   providerId = 'primary'
 ): Promise<string | null> {
-  const cleanId = String(streamId || '').replace(/\.m3u8$/i, '').trim();
+  const cleanId = String(streamId || '').replace(/\.(?:m3u8|ts)$/i, '').trim();
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanId)) return null;
 
-  const manifestCacheKey = `${providerId}:${cleanId}:${originPrefix}`;
+  const manifestCacheKey = `${providerId}:${cleanId}:${originPrefix || 'rel'}`;
   const cachedManifest = liveManifestRamCache.get(manifestCacheKey);
   if (cachedManifest) {
     return cachedManifest;
   }
 
   const knownPreferred = providerPreferredLiveVariant.get(providerId);
-  const variants: Array<'live' | 'root'> =
+  const m3u8Variants: Array<'live' | 'root'> =
     knownPreferred === 'root' ? ['root', 'live'] : ['live', 'root'];
+  const tsVariants: Array<'ts' | 'root-ts'> =
+    knownPreferred === 'root-ts' ? ['root-ts', 'ts'] : ['ts', 'root-ts'];
 
-  const probeVariant = async (
+  const probeM3u8Variant = async (
     serverOrigin: string,
     account: XtreamAccountCredential,
     variant: 'live' | 'root'
   ): Promise<string | null> => {
     const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, variant);
-    try {
-      const res = await streamingFetch(targetUrl, {
-        method: 'GET',
-        headers: {
-          'User-Agent': 'IPTVSmartersPlayer',
-          Accept: '*/*',
-        },
-        timeoutMs: 2_600,
-      });
-      if (!res.ok) {
-        if (res.body) void res.body.cancel().catch(() => undefined);
+    const uaList = ['IPTVSmartersPlayer', 'VLC/3.0.20 LibVLC/3.0.20'];
+    for (let uIdx = 0; uIdx < uaList.length; uIdx++) {
+      try {
+        const res = await streamingFetch(targetUrl, {
+          method: 'GET',
+          headers: {
+            'User-Agent': uaList[uIdx],
+            Accept: '*/*',
+          },
+          timeoutMs: 2_400,
+        });
+        if (!res.ok) {
+          if (res.body) void res.body.cancel().catch(() => undefined);
+          // Retry with VLC UA only when portal returns 406/403 against default UA
+          if ((res.status === 406 || res.status === 403) && uIdx === 0) continue;
+          return null;
+        }
+        const ct = String(res.headers.get('content-type') || '').toLowerCase();
+        if (ct.startsWith('text/html') || ct.includes('video/mp2t') || ct.includes('octet-stream')) {
+          if (res.body) void res.body.cancel().catch(() => undefined);
+          return null;
+        }
+        const text = await res.text();
+        if (text.includes('#EXTM3U')) {
+          providerPreferredLiveVariant.set(providerId, variant);
+          return rewriteManifestLines(text, res.url || targetUrl, serverOrigin, originPrefix);
+        }
+        return null;
+      } catch {
         return null;
       }
-      const ct = String(res.headers.get('content-type') || '').toLowerCase();
-      if (ct.startsWith('text/html') || ct.includes('video/mp2t') || ct.includes('octet-stream')) {
-        if (res.body) void res.body.cancel().catch(() => undefined);
-        return null;
+    }
+    return null;
+  };
+
+  const probeTsRelay = async (
+    serverOrigin: string,
+    account: XtreamAccountCredential
+  ): Promise<string | null> => {
+    for (const tsVariant of tsVariants) {
+      const tsUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, tsVariant);
+      const warmPath = getActiveDvbSessionPath(tsUrl, 'hd');
+      if (warmPath) {
+        const warmPl = readLiveDvbPlaylistForIptv(warmPath, originPrefix);
+        if (warmPl) {
+          providerPreferredLiveVariant.set(providerId, tsVariant);
+          return warmPl;
+        }
       }
-      const text = await res.text();
-      if (text.includes('#EXTM3U')) {
-        providerPreferredLiveVariant.set(providerId, variant);
-        return rewriteManifestLines(text, res.url || targetUrl, serverOrigin, originPrefix);
+      if (isDvbUpstreamCoolingDown(tsUrl)) continue;
+      try {
+        await assertSafeProxyUrl(tsUrl);
+        const dvbPath = await ensureLiveDvbCleanHlsSession(
+          tsUrl,
+          'hd',
+          `${serverOrigin.replace(/\/+$/, '')}/`
+        ).catch(() => null);
+        if (dvbPath) {
+          const playlist = readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
+          if (playlist) {
+            providerPreferredLiveVariant.set(providerId, tsVariant);
+            return playlist;
+          }
+        }
+      } catch {
+        // try next variant
       }
-    } catch {
-      // ignore variant error
     }
     return null;
   };
 
   const result = await runWithAccountFailover(providerId, async ({ serverOrigin, account }) => {
-    if (!knownPreferred) {
-      // Uncached provider variant: probe both 'live' and 'root' concurrently to cut startup latency in half
-      try {
-        const winner = await Promise.any(
-          variants.map(async (v) => {
-            const rewritten = await probeVariant(serverOrigin, account, v);
-            if (!rewritten) throw new Error('variant_miss');
-            return rewritten;
-          })
-        );
-        liveManifestRamCache.set(manifestCacheKey, winner);
-        return { ok: true, value: winner };
-      } catch {
-        return { ok: false, shouldRotate: true };
+    // 1) Fast path if a warm MPEG-TS DVB relay session already exists (never serve stale rolling playlist from RAM cache)
+    for (const tsVariant of tsVariants) {
+      const tsUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, tsVariant);
+      const warmPath = getActiveDvbSessionPath(tsUrl, 'hd');
+      if (warmPath) {
+        const warmPl = readLiveDvbPlaylistForIptv(warmPath, originPrefix);
+        if (warmPl) {
+          return { ok: true, value: warmPl };
+        }
       }
     }
 
-    for (const variant of variants) {
-      const rewritten = await probeVariant(serverOrigin, account, variant);
-      if (rewritten) {
-        liveManifestRamCache.set(manifestCacheKey, rewritten);
-        return { ok: true, value: rewritten };
+    // 2) If provider is NOT known to require .ts relay, try direct upstream HLS (.m3u8) first
+    if (knownPreferred !== 'ts' && knownPreferred !== 'root-ts') {
+      if (!knownPreferred) {
+        try {
+          const winner = await Promise.any(
+            m3u8Variants.map(async (v) => {
+              const rewritten = await probeM3u8Variant(serverOrigin, account, v);
+              if (!rewritten) throw new Error('variant_miss');
+              return rewritten;
+            })
+          );
+          liveManifestRamCache.set(manifestCacheKey, winner);
+          return { ok: true, value: winner };
+        } catch {
+          // fall through to MPEG-TS DVB relay
+        }
+      } else {
+        for (const variant of m3u8Variants) {
+          const rewritten = await probeM3u8Variant(serverOrigin, account, variant);
+          if (rewritten) {
+            liveManifestRamCache.set(manifestCacheKey, rewritten);
+            return { ok: true, value: rewritten };
+          }
+        }
       }
     }
+
+    // 3) Fallback (or primary for .ts-only providers like Shark Pro / Octopus / VOD4K / 24TV / Ultra VIP): MPEG-TS -> clean HLS relay
+    const dvbPlaylist = await probeTsRelay(serverOrigin, account);
+    if (dvbPlaylist) {
+      return { ok: true, value: dvbPlaylist };
+    }
+
     return { ok: false, shouldRotate: true };
   });
 
@@ -2083,53 +2166,116 @@ export async function probeXtreamLiveStreamLatency(
 ): Promise<{
   ok: boolean;
   latencyMs: number;
-  variant?: 'live' | 'root';
+  variant?: 'live' | 'root' | 'ts' | 'root-ts';
   lineCount: number;
 }> {
-  const cleanId = String(streamId || '').replace(/\.m3u8$/i, '').trim();
+  const cleanId = String(streamId || '').replace(/\.(?:m3u8|ts)$/i, '').trim();
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanId)) {
     return { ok: false, latencyMs: timeoutMs, lineCount: 0 };
   }
   const preferred = providerPreferredLiveVariant.get(providerId) || 'live';
-  const variants: Array<'live' | 'root'> =
-    preferred === 'live' ? ['live', 'root'] : ['root', 'live'];
+  const m3u8Variants: Array<'live' | 'root'> =
+    preferred === 'root' ? ['root', 'live'] : ['live', 'root'];
+  const tsVariants: Array<'ts' | 'root-ts'> =
+    preferred === 'root-ts' ? ['root-ts', 'ts'] : ['ts', 'root-ts'];
 
   const startedAt = Date.now();
-  const result = await runWithAccountFailover(providerId, async ({ serverOrigin, account }) => {
-    for (const variant of variants) {
-      const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, variant);
+  const result = await runWithAccountFailover<{
+    ok: boolean;
+    latencyMs: number;
+    variant?: 'live' | 'root' | 'root-ts' | 'ts';
+    lineCount: number;
+  }>(providerId, async ({ serverOrigin, account }) => {
+    if (preferred !== 'ts' && preferred !== 'root-ts') {
+      for (const variant of m3u8Variants) {
+        const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, variant);
+        try {
+          const t0 = Date.now();
+          const res = await streamingFetch(targetUrl, {
+            method: 'GET',
+            headers: {
+              'User-Agent': 'IPTVSmartersPlayer',
+              Accept: '*/*',
+            },
+            timeoutMs: Math.min(timeoutMs, 2_200),
+          });
+          if (!res.ok) {
+            if (res.body) void res.body.cancel().catch(() => undefined);
+            continue;
+          }
+          const ct = String(res.headers.get('content-type') || '').toLowerCase();
+          if (ct.startsWith('text/html') || ct.includes('video/mp2t') || ct.includes('octet-stream')) {
+            if (res.body) void res.body.cancel().catch(() => undefined);
+            continue;
+          }
+          const text = await res.text();
+          if (text.includes('#EXTM3U')) {
+            providerPreferredLiveVariant.set(providerId, variant);
+            const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+            const hasSeg = lines.some((l) => !l.startsWith('#'));
+            if (!hasSeg && !text.includes('#EXT-X-STREAM-INF')) continue;
+            return {
+              ok: true,
+              value: {
+                ok: true,
+                latencyMs: Math.max(1, Date.now() - t0),
+                variant,
+                lineCount: lines.length,
+              },
+            };
+          }
+        } catch {
+          // try next variant
+        }
+      }
+    }
+
+    // Lightweight single-socket MPEG-TS byte probe (no FFmpeg spawn during probes)
+    for (const tsVariant of tsVariants) {
+      const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, tsVariant);
+      const t0 = Date.now();
       try {
-        const t0 = Date.now();
         const res = await streamingFetch(targetUrl, {
           method: 'GET',
           headers: {
             'User-Agent': 'IPTVSmartersPlayer',
             Accept: '*/*',
           },
-          timeoutMs,
+          headersTimeoutOnly: true,
+          timeoutMs: Math.min(timeoutMs, 2_600),
         });
-        if (!res.ok) {
-          if (res.body) void res.body.cancel().catch(() => undefined);
-          continue;
-        }
         const ct = String(res.headers.get('content-type') || '').toLowerCase();
-        if (ct.startsWith('text/html') || ct.includes('video/mp2t') || ct.includes('octet-stream')) {
+        if ((!res.ok && res.status !== 206) || ct.startsWith('text/html')) {
           if (res.body) void res.body.cancel().catch(() => undefined);
           continue;
         }
-        const text = await res.text();
-        if (text.includes('#EXTM3U')) {
-          providerPreferredLiveVariant.set(providerId, variant);
-          const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-          const hasSeg = lines.some((l) => !l.startsWith('#'));
-          if (!hasSeg && !text.includes('#EXT-X-STREAM-INF')) continue;
+        const body = res.body as ReadableStream<Uint8Array> | null;
+        if (!body) continue;
+        const reader = body.getReader();
+        let bytesRead = 0;
+        try {
+          const chunkPromise = Promise.race([
+            reader.read(),
+            new Promise<{ done: true; value: undefined }>((resolve) =>
+              setTimeout(() => resolve({ done: true, value: undefined }), 1_600)
+            ),
+          ]);
+          const first = await chunkPromise;
+          if (!first.done && first.value) {
+            bytesRead = first.value.byteLength;
+          }
+        } finally {
+          void reader.cancel().catch(() => undefined);
+        }
+        if (bytesRead >= 188) {
+          providerPreferredLiveVariant.set(providerId, tsVariant);
           return {
             ok: true,
             value: {
               ok: true,
               latencyMs: Math.max(1, Date.now() - t0),
-              variant,
-              lineCount: lines.length,
+              variant: tsVariant,
+              lineCount: 1,
             },
           };
         }
@@ -2137,6 +2283,7 @@ export async function probeXtreamLiveStreamLatency(
         // try next variant
       }
     }
+
     return { ok: false, shouldRotate: false };
   });
 

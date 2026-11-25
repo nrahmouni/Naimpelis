@@ -55,11 +55,13 @@ import { registerMovistarDaznRoutes } from './server/routes/movistarDaznRoutes.t
 import { registerMusicRoutes } from './server/routes/musicRoutes.ts';
 import { registerVpnGatewayRoutes } from './server/routes/vpnGatewayRoutes.ts';
 import { registerProviderRoutes } from './server/routes/providerRoutes.ts';
+import { registerXtreamRoutes } from './server/routes/xtreamRoutes.ts';
 import { registerMovieReelsRoutes } from './server/routes/movieReelsRoutes.ts';
 import { prewarmMovieReels } from './server/services/movieReelsService.ts';
 import { getMovistarDaznHome } from './server/services/movistarDaznCatalogService.ts';
 import { initBelixFromEnv } from './server/services/belix/belixXtreamClient.ts';
 import { initDefaultProviders } from './server/services/providers/xtreamProvidersService.ts';
+import { syncFullCatalog } from './server/services/xtreamService.ts';
 import { raceFastLiveTracks } from './server/services/liveFastResolver.ts';
 import { SPANISH_TDT_CHANNELS } from './server/data/tdtChannels.ts';
 import { CATALA_LIVE_CHANNELS } from './server/data/catalaRegistry.ts';
@@ -176,6 +178,8 @@ app.use(
         p.startsWith('/api/belix/seg') ||
         p.startsWith('/api/providers/stream') ||
         p.startsWith('/api/providers/hls-') ||
+        p.startsWith('/api/xtream/') ||
+        p.startsWith('/api/stream') ||
         p.startsWith('/api/music/stream-proxy')
       ) {
         return false;
@@ -284,6 +288,7 @@ registerClipboxRoutes(app);
 registerRbtvRoutes(app);
 registerBelixRoutes(app, { getPublicOrigin });
 registerProviderRoutes(app, { getPublicOrigin });
+registerXtreamRoutes(app, { getPublicOrigin });
 registerAtresplayerRoutes(app);
 registerMovistarDaznRoutes(app);
 registerMusicRoutes(app);
@@ -561,34 +566,36 @@ async function startServer() {
             void initBelixFromEnv().catch((err) => logger.warn({ err }, 'prewarm_belix_failed'));
           }, 1350).unref?.();
           setTimeout(() => {
-            void initDefaultProviders()
-              .catch((err) => logger.warn({ err }, 'prewarm_providers_failed'))
-              .finally(() => {
-                const flagshipIds = new Set([
-                  'tdt-la1',
-                  'tdt-la2',
-                  'tdt-antena3',
-                  'tdt-cuatro',
-                  'tdt-telecinco',
-                  'tdt-lasexta',
-                  'dazn-laliga',
-                  'mplus-laliga',
-                ]);
-                const targets = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS).filter((ch) =>
-                  flagshipIds.has(ch.id)
-                );
-                void Promise.allSettled(
-                  targets.map((ch) =>
-                    raceFastLiveTracks(ch.channels, {
-                      channelId: ch.id,
-                      titleHint: ch.name,
-                      preferLang: 'ES',
-                      timeoutMs: 2400,
-                    }).catch(() => undefined)
-                  )
-                );
-              });
-          }, 2200).unref?.();
+            void Promise.allSettled([
+              initDefaultProviders().catch((err) => logger.warn({ err }, 'prewarm_providers_failed')),
+              syncFullCatalog(false, 'all').catch((err) => logger.warn({ err }, 'prewarm_xtream_all_failed')),
+            ]).finally(() => {
+              const flagshipIds = new Set([
+                'tdt-la1',
+                'tdt-la2',
+                'tdt-antena3',
+                'tdt-cuatro',
+                'tdt-telecinco',
+                'tdt-lasexta',
+                'dazn-laliga',
+                'mplus-laliga',
+                'mplus-champions',
+              ]);
+              const targets = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS).filter((ch) =>
+                flagshipIds.has(ch.id)
+              );
+              void Promise.allSettled(
+                targets.map((ch) =>
+                  raceFastLiveTracks(ch.channels, {
+                    channelId: ch.id,
+                    titleHint: ch.name,
+                    preferLang: 'ES',
+                    timeoutMs: 3200,
+                  }).catch(() => undefined)
+                )
+              );
+            });
+          }, 1800).unref?.();
           channelHealthMonitor.startScheduler(
             () => [
               ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),

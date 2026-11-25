@@ -65,6 +65,9 @@ export function registerStreamExtractRoute(
       const body = (req.body || {}) as {
         channelId?: string;
         title?: string;
+        titleHint?: string;
+        broadcasters?: string[];
+        competition?: string;
         preferLang?: string;
         preferQualityFirst?: boolean;
         tracks?: FastLiveTrackCandidate[];
@@ -73,9 +76,12 @@ export function registerStreamExtractRoute(
       if (tracks.length === 0) {
         return res.status(400).json({ success: false, ok: false, error: 'Sin señales para resolver.' });
       }
+      const resolvedTitleHint = String(body.title || body.titleHint || '').trim() || undefined;
       const outcome = await raceFastLiveTracks(tracks, {
         channelId: body.channelId ? String(body.channelId) : undefined,
-        titleHint: body.title ? String(body.title) : undefined,
+        titleHint: resolvedTitleHint,
+        broadcasters: Array.isArray(body.broadcasters) ? body.broadcasters : undefined,
+        competition: body.competition ? String(body.competition) : undefined,
         preferLang: body.preferLang ? String(body.preferLang) : 'ES',
         preferQualityFirst: Boolean(body.preferQualityFirst),
         publicOrigin: deps.getPublicOrigin(req),
@@ -96,15 +102,17 @@ export function registerStreamExtractRoute(
       const body = (req.body || {}) as {
         channelId?: string;
         title?: string;
+        titleHint?: string;
         preferLang?: string;
         preferQualityFirst?: boolean;
         tracks?: FastLiveTrackCandidate[];
       };
       const tracks = Array.isArray(body.tracks) ? body.tracks.slice(0, 3) : [];
       if (tracks.length > 0) {
+        const resolvedTitleHint = String(body.title || body.titleHint || '').trim() || undefined;
         void raceFastLiveTracks(tracks, {
           channelId: body.channelId ? String(body.channelId) : undefined,
-          titleHint: body.title ? String(body.title) : undefined,
+          titleHint: resolvedTitleHint,
           preferLang: body.preferLang ? String(body.preferLang) : 'ES',
           preferQualityFirst: Boolean(body.preferQualityFirst),
           publicOrigin: deps.getPublicOrigin(req),

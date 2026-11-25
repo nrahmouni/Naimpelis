@@ -149,6 +149,7 @@ export function useFootballBoardQuery(enabled = true, lang = 'es') {
           kickoffIso: item.kickoffIso,
           kickoffTime: item.kickoffTime,
           spanishBroadcaster: item.spanishBroadcaster,
+          verifiedTvGuide: item.verifiedTvGuide,
         },
       }));
     },

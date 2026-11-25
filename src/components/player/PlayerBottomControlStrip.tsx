@@ -194,7 +194,10 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
             })()}
           </div>
         ) : videoState.isLive && videoState.tracks.length > 1 ? (
-          <div className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-2xl border border-white/[0.08] max-w-full overflow-x-auto no-scrollbar">
+          <div className="flex items-center gap-1.5 bg-white/[0.04] p-1 rounded-2xl border border-white/[0.08] max-w-full overflow-x-auto no-scrollbar">
+            <span className="px-2 py-1 text-[11px] font-bold text-zinc-400 whitespace-nowrap shrink-0 tabular-nums">
+              {pickLang(lang, { es: 'Señales', ca: 'Senyals', en: 'Feeds' })} ({videoState.tracks.length})
+            </span>
             {videoState.tracks.map((tr, idx) => {
               const active = idx === videoState.activeTrackIndex;
               const hasZh = String(tr.lang || '').toUpperCase() === 'ZH' || /中文/.test(tr.label || '');

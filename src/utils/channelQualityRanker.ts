@@ -112,6 +112,7 @@ const CANONICAL_ALIAS_RULES: Array<[RegExp, string]> = [
   [/^espn\s*2$/i, 'intl-espn2'],
   [/^tnt\s*sports?\s*1$/i, 'intl-tntsports1'],
   [/^sky\s*sports?\s*main\s*event$/i, 'intl-skysports-main'],
+  [/^cgtn(?:\s*(?:noticias|espanol|es))?$/i, 'news-cgtn-es'],
 ];
 
 const NOISY_PREFIX_RE =
@@ -171,9 +172,8 @@ export function resolveCanonicalChannelKey(
           canonicalId.startsWith('doc-') ||
           canonicalId === 'tdt-la1' ||
           canonicalId === 'tdt-ten') &&
-        /\b(?:uk|pt|portugal|de|germany|it|italy|fr|france|us|usa|ar|arabic|br|lat)\b/i.test(
-          ch.name
-        ) &&
+        (/\b(?:UK|PT|DE|GER|IT|FR|US|USA|AR|BR|LAT)\b/.test(ch.name) ||
+          /\b(?:portugal|germany|deutsch|italy|italia|france|french|arabic)\b/i.test(ch.name)) &&
         !looksSpanish
       ) {
         continue;
@@ -188,21 +188,22 @@ export function resolveCanonicalChannelKey(
     .replace(/^-+|-+$/g, '');
   if (!slug) return id || 'unknown';
 
-  const langHint = /\b(?:uk|en|us|usa)\b/i.test(ch.name)
-    ? ':en'
-    : /\b(?:ar|arabic|arb)\b/i.test(ch.name)
-    ? ':ar'
-    : /\b(?:fr|france)\b/i.test(ch.name)
-    ? ':fr'
-    : /\b(?:pt|br|portugal)\b/i.test(ch.name)
-    ? ':pt'
-    : /\b(?:it|italy)\b/i.test(ch.name)
-    ? ':it'
-    : /\b(?:de|ger|germany)\b/i.test(ch.name)
-    ? ':de'
-    : /\b(?:lat|latino|mx|arg)\b/i.test(ch.name)
-    ? ':lat'
-    : '';
+  const langHint =
+    /\b(?:UK|US|USA|EN|ENG)\b/.test(ch.name) || /\b(?:english|united\s*states)\b/i.test(ch.name)
+      ? ':en'
+      : /\b(?:AR|ARB)\b/.test(ch.name) || /\b(?:arabic|arabia)\b/i.test(ch.name)
+      ? ':ar'
+      : /\b(?:FR|VF)\b/.test(ch.name) || /\b(?:france|french)\b/i.test(ch.name)
+      ? ':fr'
+      : /\b(?:PT|BR)\b/.test(ch.name) || /\b(?:portugal|brasil)\b/i.test(ch.name)
+      ? ':pt'
+      : /\b(?:IT|ITA)\b/.test(ch.name) || /\b(?:italy|italia)\b/i.test(ch.name)
+      ? ':it'
+      : /\b(?:DE|GER)\b/.test(ch.name) || /\b(?:germany|deutsch)\b/i.test(ch.name)
+      ? ':de'
+      : /\b(?:LAT|MX|ARG)\b/.test(ch.name) || /\b(?:latino|latam)\b/i.test(ch.name)
+      ? ':lat'
+      : '';
   return `norm:${slug}${langHint}`;
 }
 
@@ -266,7 +267,7 @@ function isDanaDirectTrack(tr: StreamTrack): boolean {
 
 function liveTrackSortScore(tr: StreamTrack, preferSpanish: boolean): number {
   const status = tr.health?.status ?? 'unknown';
-  const statusRank = status === 'down' ? 3 : status === 'degraded' ? 2 : 0;
+  const statusRank = status === 'up' ? 0 : status === 'unknown' ? 1 : status === 'degraded' ? 2 : 3;
   const upBonus = status === 'up' ? -600 : 0;
   const lang = normalizeLiveTrackLang(tr.lang, tr.label);
   const langRank = preferSpanish
@@ -281,10 +282,10 @@ function liveTrackSortScore(tr: StreamTrack, preferSpanish: boolean): number {
       : 4
     : 0;
   const q = inferStreamQualityTag(tr.quality, tr.label, tr.sourceUrl);
-  // On Spanish channels, promote non-HEVC direct Dana 4K Pro tracks right to #1 ahead of mirrors
+  // Modest preference within the same health status tier so unprobed channels never outrank verified UP mirrors
   const danaDirectBonus =
     preferSpanish && status !== 'down' && lang === 'ES' && isDanaDirectTrack(tr) && q.tier < 2.5
-      ? -2400
+      ? -350
       : 0;
   const srcStr = String(tr.sourceUrl || '');
   const isResidentialDvb = srcStr.includes('90.163.85.113:8093');
@@ -473,7 +474,28 @@ export function mergeAndDeduplicateChannels<T extends GenericRankableChannel>(
       continue;
     }
 
+    const targetNameLower = String(existing.channel.name || '').toLowerCase();
+    const isTargetDedicatedSports =
+      existing.channel.id.startsWith('mplus-') ||
+      existing.channel.id.startsWith('dazn-') ||
+      /\b(?:movistar|m\+|laliga|campeones|hypermotion|dazn|eurosport)\b/i.test(targetNameLower);
+    const conflictingSportsBroadcasters: Array<{ targetRe: RegExp; trackRe: RegExp }> = [
+      { targetRe: /\btnt\b/i, trackRe: /\btnt\s*sports?\b/i },
+      { targetRe: /\bespn\b/i, trackRe: /\bespn\b/i },
+      { targetRe: /\bdsports\b|\bdirectv\b/i, trackRe: /\b(?:dsports|directv\s*sports?)\b/i },
+      { targetRe: /\bdazn\b/i, trackRe: /\bdazn\b/i },
+      { targetRe: /\beurosport\b/i, trackRe: /\beurosport\b/i },
+      { targetRe: /\bgol\b/i, trackRe: /\bgol\s*(?:play|tv|mundial)\b/i },
+    ];
+
     for (const tr of normalizedTracks) {
+      if (isTargetDedicatedSports) {
+        const lbl = String(tr.label || '').toLowerCase();
+        const hasConflict = conflictingSportsBroadcasters.some(
+          (rule) => rule.trackRe.test(lbl) && !rule.targetRe.test(targetNameLower)
+        );
+        if (hasConflict) continue;
+      }
       const uKey = normalizeUrlForMerge(tr.sourceUrl);
       if (!uKey || existing.trackUrls.has(uKey)) continue;
       existing.trackUrls.add(uKey);

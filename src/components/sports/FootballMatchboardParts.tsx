@@ -98,6 +98,7 @@ export function toSportsMatch(item: FootballMatchboardItem, lang: AppLanguage): 
       kickoffIso: item.kickoffIso,
       kickoffTime: item.kickoffTime,
       spanishBroadcaster: item.spanishBroadcaster,
+      verifiedTvGuide: item.verifiedTvGuide,
     },
   };
 }

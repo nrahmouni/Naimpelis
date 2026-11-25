@@ -65,6 +65,7 @@ export interface FastLiveResolveResult {
   latencyMs: number;
   fromCache?: boolean;
   checkedCount: number;
+  extraTracks?: FastLiveTrackCandidate[];
 }
 
 const fastLiveWinnerCache = new LruTtlCache<string, FastLiveResolveResult>(250, 35_000);
@@ -397,6 +398,8 @@ export async function raceFastLiveTracks(
   opts: {
     channelId?: string;
     titleHint?: string;
+    broadcasters?: string[];
+    competition?: string;
     preferLang?: string;
     preferQualityFirst?: boolean;
     publicOrigin?: string;
@@ -433,25 +436,170 @@ export async function raceFastLiveTracks(
     return existingInflight;
   }
 
-  const ordered = orderCandidatesForFastResolve(safeTracks, {
-    preferLang,
-    preferQualityFirst: qualityFirst,
-  }).slice(0, 8);
+  const getCandidateProviderBucket = (tr: FastLiveTrackCandidate): string => {
+    const pid = String(tr.providerId || '').trim().toLowerCase();
+    if (pid) return pid;
+    const src = String(tr.sourceUrl || '').trim();
+    const xRef = parseXtreamSource(src);
+    if (xRef) return `xtream:${xRef.providerId.toLowerCase()}`;
+    if (src.startsWith('/api/belix/')) return 'belix';
+    try {
+      const inner = src.startsWith('/api/hls-proxy')
+        ? new URL(src, 'http://localhost').searchParams.get('url') || src
+        : src;
+      if (/^https?:\/\//i.test(inner)) {
+        return new URL(inner).hostname.toLowerCase();
+      }
+    } catch {
+      // ignore
+    }
+    return src.slice(0, 48);
+  };
+
+  const selectProviderDiversePool = (
+    ranked: Array<{ originalIndex: number; track: FastLiveTrackCandidate }>,
+    limit = 14
+  ): Array<{ originalIndex: number; track: FastLiveTrackCandidate }> => {
+    const picked: Array<{ originalIndex: number; track: FastLiveTrackCandidate }> = [];
+    const seenIdx = new Set<number>();
+    const seenProviders = new Set<string>();
+    // Pass 1: ensure at least 1 signal from every distinct provider/host
+    for (const item of ranked) {
+      const bucket = getCandidateProviderBucket(item.track);
+      if (seenProviders.has(bucket)) continue;
+      seenProviders.add(bucket);
+      seenIdx.add(item.originalIndex);
+      picked.push(item);
+      if (picked.length >= limit) return picked;
+    }
+    // Pass 2: fill remaining race slots with next highest-priority backups
+    for (const item of ranked) {
+      if (seenIdx.has(item.originalIndex)) continue;
+      seenIdx.add(item.originalIndex);
+      picked.push(item);
+      if (picked.length >= limit) break;
+    }
+    return picked;
+  };
+
+  const isVodOrSeries =
+    String(opts.channelId || '').startsWith('xtream-vod-') ||
+    String(opts.channelId || '').startsWith('xtream-ser-') ||
+    safeTracks.some(
+      (t) =>
+        /[?&]type=(?:vod|series)(?:&|$)/i.test(String(t.sourceUrl || '')) ||
+        /^\/api\/(?:providers\/stream\/[^/]+\/(?:movie|series)\/|xtream\/vod\/)/i.test(
+          String(t.sourceUrl || '')
+        ) ||
+        /\.(mp4|mkv|webm|avi)(\?|$)/i.test(String(t.sourceUrl || ''))
+    );
+
+  let discoveredExtraTracks: FastLiveTrackCandidate[] = [];
+  if (!opts.probeImpl && !isVodOrSeries) {
+    const hintPool = new Set<string>();
+    if (opts.channelId === 'mux-champions' || /liga\s*de\s*campeones/i.test(String(opts.titleHint || ''))) {
+      hintPool.add('M+ Liga de Campeones');
+      hintPool.add('Liga de Campeones');
+    }
+    if (Array.isArray(opts.broadcasters)) {
+      for (const b of opts.broadcasters) {
+        const cleanB = String(b || '').trim();
+        if (cleanB.length >= 3) hintPool.add(cleanB);
+      }
+    }
+    if (opts.competition && hintPool.size === 0) {
+      const compLower = String(opts.competition).toLowerCase();
+      if (/champions|ucl|europa league|conference league/i.test(compLower)) {
+        hintPool.add('M+ Liga de Campeones');
+        hintPool.add('Liga de Campeones');
+        hintPool.add('TNT Sports');
+      } else if (/laliga|la liga|primera divisi|copa del rey/i.test(compLower)) {
+        hintPool.add('M+ LaLiga');
+        hintPool.add('DAZN LaLiga');
+        hintPool.add('LaLiga TV');
+      } else if (/premier league|epl/i.test(compLower)) {
+        hintPool.add('DAZN 1');
+        hintPool.add('DAZN 2');
+        hintPool.add('Sky Sports Premier League');
+      } else if (/serie a|bundesliga|ligue 1/i.test(compLower)) {
+        hintPool.add('M+ Liga de Campeones');
+        hintPool.add('Eurosport');
+        hintPool.add('DAZN 1');
+      } else if (/f1|formula\s*1|motogp/i.test(compLower)) {
+        hintPool.add('DAZN F1');
+      } else if (/nba|euroliga|acb/i.test(compLower)) {
+        hintPool.add('M+ Deportes');
+      }
+    }
+    if (opts.titleHint) {
+      const cleanTitle = String(opts.titleHint || '')
+        .replace(/\b(?:hd|fhd|uhd|4k|1080p|720p|sd|tv|oficial|directo)\b/gi, ' ')
+        .replace(/[|·•\-()[\]]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const isVsMatchTitle = /\s+(?:vs\.?|v)\s+/i.test(cleanTitle);
+      if (cleanTitle.length >= 2 && (!isVsMatchTitle || hintPool.size === 0)) {
+        hintPool.add(cleanTitle);
+      }
+    }
+    if (opts.channelId) {
+      const idSlug = String(opts.channelId)
+        .replace(/^(?:tdt-|mux-|mplus-|dazn-|intl-|sport-ch-|rbtv-|news-|eu-|uk-|espn-|dsports-|belix-|xtream-[a-z0-9-]+-)/i, '')
+        .replace(/[-_]+/g, ' ')
+        .trim();
+      if (idSlug.length >= 3 && !/^\d+$/.test(idSlug) && idSlug.toLowerCase() !== 'champions') {
+        hintPool.add(idSlug);
+      }
+    }
+    for (const tr of safeTracks) {
+      for (const h of extractXtreamLiveHintsFromSportsRequest(tr.sourceUrl, tr.label, opts.titleHint)) {
+        hintPool.add(h);
+      }
+    }
+    const hints = Array.from(hintPool);
+    if (hints.length > 0) {
+      const xtreamMatches = await Promise.race([
+        findXtreamLiveChannelMatches({
+          channelHints: hints,
+          preferLang,
+          limit: 24,
+        }).catch(() => []),
+        new Promise<TrackRecord[]>((resolve) => setTimeout(() => resolve([]), 1_200)),
+      ]);
+      const existingUrls = new Set(safeTracks.map((t) => String(t.sourceUrl || '').trim()));
+      for (const m of xtreamMatches) {
+        if (!m.sourceUrl || existingUrls.has(m.sourceUrl)) continue;
+        existingUrls.add(m.sourceUrl);
+        const mAny = m as TrackRecord & { providerId?: string; providerName?: string };
+        discoveredExtraTracks.push({
+          id: m.id,
+          label: m.label,
+          lang: m.lang,
+          quality: m.quality,
+          providerId: mAny.providerId,
+          providerName: mAny.providerName,
+          sourceUrl: m.sourceUrl,
+          resolverType: m.resolverType || 'direct_hls',
+        });
+      }
+    }
+  }
+
+  const combinedPool: FastLiveTrackCandidate[] = [...safeTracks, ...discoveredExtraTracks];
+  const ordered = selectProviderDiversePool(
+    orderCandidatesForFastResolve(combinedPool, {
+      preferLang,
+      preferQualityFirst: qualityFirst,
+    }),
+    14
+  );
 
   const probeImpl = opts.probeImpl || defaultProbeSingleLiveTrack;
-  const timeoutMs = opts.timeoutMs ?? 3_800;
-  const hedgeDelay1 = opts.hedgeDelayMs ?? 100;
-  const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 260;
+  const timeoutMs = opts.timeoutMs ?? 6_500;
+  const hedgeDelay1 = opts.hedgeDelayMs ?? 90;
+  const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 220;
   const publicOrigin = opts.publicOrigin || '';
   const belixSessionKey = opts.belixSessionKey || 'default';
-
-  const hasSportsTracks =
-    !opts.probeImpl &&
-    ordered.some(
-      (c) =>
-        c.track.resolverType === 'sports_channel' ||
-        /footunder\.online|streamxhd\.|tilinhd\./i.test(String(c.track.sourceUrl || ''))
-    );
 
   const runRace = async (): Promise<FastLiveResolveResult> => {
     const startedAt = Date.now();
@@ -461,17 +609,21 @@ export async function raceFastLiveTracks(
 
     return new Promise<FastLiveResolveResult>((resolve) => {
       const timers: ReturnType<typeof setTimeout>[] = [];
-      let pendingCount = ordered.length + (hasSportsTracks ? 1 : 0);
+      let pendingCount = ordered.length;
       let embedFallback: { originalIndex: number; track: FastLiveTrackCandidate; out: FastLiveProbeOutcome } | null = null;
 
       const finish = (res: FastLiveResolveResult) => {
         if (settled) return;
         settled = true;
         for (const t of timers) clearTimeout(t);
-        if (res.ok) {
-          fastLiveWinnerCache.set(cacheKey, res);
+        const finalRes: FastLiveResolveResult =
+          discoveredExtraTracks.length > 0
+            ? { ...res, extraTracks: discoveredExtraTracks }
+            : res;
+        if (finalRes.ok && (isVodOrSeries || discoveredExtraTracks.length > 0)) {
+          fastLiveWinnerCache.set(cacheKey, finalRes);
         }
-        resolve(res);
+        resolve(finalRes);
       };
 
       const hardDeadlineTimer = setTimeout(() => {
@@ -587,84 +739,28 @@ export async function raceFastLiveTracks(
           });
       };
 
-      // Wave 1 (t=0): Top candidate immediately
+      // Wave 1 (t=0): Launch top 2 distinct provider candidates immediately
       launchCandidate(ordered[0]);
-
-      // Concurrent Xtream live backup lookup for sports_channel races
-      if (hasSportsTracks) {
-        const hintPool = new Set<string>();
-        for (const c of ordered) {
-          for (const h of extractXtreamLiveHintsFromSportsRequest(
-            c.track.sourceUrl,
-            c.track.label,
-            opts.titleHint
-          )) {
-            hintPool.add(h);
-          }
-        }
-        const hints = Array.from(hintPool);
-        if (hints.length === 0) {
-          pendingCount -= 1;
-        } else {
-          Promise.race([
-            findXtreamLiveChannelMatches({
-              channelHints: hints,
-              preferLang,
-              limit: 4,
-            }),
-            new Promise<TrackRecord[]>((resolve) => setTimeout(() => resolve([]), 1600)),
-          ])
-            .then((matches) => {
-              if (settled || matches.length === 0) {
-                pendingCount -= 1;
-                checkAllDone();
-                return;
-              }
-              const existingUrls = new Set(ordered.map((o) => o.track.sourceUrl));
-              const extras = matches.filter((m) => m.sourceUrl && !existingUrls.has(m.sourceUrl)).slice(0, 3);
-              if (extras.length === 0) {
-                pendingCount -= 1;
-                checkAllDone();
-                return;
-              }
-              pendingCount += extras.length - 1;
-              for (const extra of extras) {
-                launchCandidate({
-                  originalIndex: 0,
-                  track: {
-                    id: extra.id,
-                    label: extra.label,
-                    lang: extra.lang,
-                    quality: extra.quality,
-                    sourceUrl: extra.sourceUrl,
-                    resolverType: extra.resolverType || 'direct_hls',
-                  },
-                });
-              }
-            })
-            .catch(() => {
-              pendingCount -= 1;
-              checkAllDone();
-            });
-        }
+      if (ordered.length > 1) {
+        launchCandidate(ordered[1]);
       }
 
-      // Wave 2 (t=+hedgeDelay1): Hedge candidates 1 & 2 if top candidate hasn't succeeded yet
-      if (ordered.length > 1) {
+      // Wave 2 (t=+hedgeDelay1): Hedge candidates 2..5
+      if (ordered.length > 2) {
         const wave2 = setTimeout(() => {
           if (settled) return;
-          for (const c of ordered.slice(1, 3)) {
+          for (const c of ordered.slice(2, 6)) {
             launchCandidate(c);
           }
         }, hedgeDelay1);
         timers.push(wave2);
       }
 
-      // Wave 3 (t=+hedgeDelay2): Hedge remaining candidates 3 & 4
-      if (ordered.length > 3) {
+      // Wave 3 (t=+hedgeDelay2): Hedge remaining provider candidates
+      if (ordered.length > 6) {
         const wave3 = setTimeout(() => {
           if (settled) return;
-          for (const c of ordered.slice(3)) {
+          for (const c of ordered.slice(6)) {
             launchCandidate(c);
           }
         }, hedgeDelay2);

@@ -79,7 +79,6 @@ export function getCuratedRbtvChannels() {
       const urlKey = String(tr.sourceUrl || '').trim();
       if (!urlKey || seenUrls.has(urlKey)) continue;
       seenUrls.add(urlKey);
-      const backups = cleanTracks.filter((other) => other.sourceUrl !== urlKey).slice(0, 3);
       curated.push({
         id: `rbtv-${tr.id || curated.length + 1}`,
         dial: 900 + curated.length,
@@ -91,7 +90,7 @@ export function getCuratedRbtvChannels() {
         sourceHub: 'rbtv',
         quality: tr.quality || '1080p HD',
         description: `RBTV+ Estable · ${mux.competition || 'Deportes en Directo'}`,
-        channels: [tr, ...backups],
+        channels: [tr],
       });
     }
   }

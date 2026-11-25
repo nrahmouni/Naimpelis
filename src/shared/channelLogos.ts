@@ -218,6 +218,7 @@ export const OFFICIAL_CHANNEL_LOGO_URLS: Record<string, string> = {
   'news-alaraby-2': 'https://i.imgur.com/YMqWEe4.png',
   'news-cnbc-arabia': `${TV_LOGOS_BASE}countries/world-middle-east/cnbc-arabiya-mea.png`,
   'news-cnbc-eu': `${TV_LOGOS_BASE}countries/world-europe/cnbc-eu.png`,
+  'news-cgtn-es': `${FAN_LOGOS_BASE}tv/CGTN%E8%A5%BF%E8%AF%AD.png`,
 };
 
 const GENERIC_FLAG_OR_PLACEHOLDER_LOGO_RX =

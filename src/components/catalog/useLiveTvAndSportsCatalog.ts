@@ -12,8 +12,6 @@ import { buildChannelFavId, sanitizeItemKey } from '../../utils/storage';
 import { getChannelRegionMeta, type TvRegionId } from '../ui/ChannelLogoBadge';
 import type { CatalogSection } from './catalogConstants';
 import { ensureVaultSyncedWithBackend } from '../../services/xtreamVaultConfig';
-import { readCachedXtreamCatalog } from '../../services/xtreamClientService';
-import { buildLiveTdtChannel } from '../belix/XtreamMediaHelpers';
 import { rankClientChannels } from '../../utils/channelQualityRanker';
 import { STATIC_CHANNELS_CATALOG } from '../pwa/smartTvCatalogData';
 import { resolveOfficialChannelLogoUrl } from '../../shared/channelLogos';
@@ -183,7 +181,7 @@ export function useLiveTvAndSportsCatalog({
   const fetchTdtCatalog = useCallback(async () => {
     setLoadingTdt(true);
     setTdtFetchError(false);
-    const fetchWithTimeout = async (url: string, timeoutMs = 10_000) => {
+    const fetchWithTimeout = async (url: string, timeoutMs = 8_000) => {
       const ctrl = new AbortController();
       const tid = setTimeout(() => ctrl.abort(), timeoutMs);
       try {
@@ -195,56 +193,71 @@ export function useLiveTvAndSportsCatalog({
       }
     };
     try {
-      await ensureVaultSyncedWithBackend(false).catch(() => false);
-      const [tdtSettled, worldSettled, rbtvSettled, belixSettled] = await Promise.allSettled([
-        fetchWithTimeout('/api/catalog/tdt', 14_000),
-        fetchWithTimeout('/api/catalog/world-tv', 9_000),
-        fetchWithTimeout('/api/rbtv/channels', 8_000),
-        fetchWithTimeout('/api/belix/channels?includeAll=1', 9_000),
-      ]);
-      const baseList: SpanishTdtChannel[] =
-        tdtSettled.status === 'fulfilled' && Array.isArray(tdtSettled.value?.channels)
-          ? tdtSettled.value.channels
-          : [];
-      const worldList: SpanishTdtChannel[] =
-        worldSettled.status === 'fulfilled' && Array.isArray(worldSettled.value?.channels)
-          ? worldSettled.value.channels
-          : [];
-      const rbtvList: SpanishTdtChannel[] =
-        rbtvSettled.status === 'fulfilled' && Array.isArray(rbtvSettled.value?.channels)
-          ? rbtvSettled.value.channels
-          : [];
-      const belixList: SpanishTdtChannel[] =
-        belixSettled.status === 'fulfilled' && Array.isArray(belixSettled.value?.channels)
-          ? belixSettled.value.channels
-          : [];
-      const cachedXtream = readCachedXtreamCatalog('all');
-      const cachedXtreamChannels: SpanishTdtChannel[] = [];
-      if (cachedXtream?.liveStreams?.length) {
-        const catMap = new Map<string, string>();
-        for (const cat of cachedXtream.liveCategories) {
-          catMap.set(`${cat.providerId || 'primary'}:${cat.id}`, cat.name);
+      void ensureVaultSyncedWithBackend(false).catch(() => false);
+      let baseList: SpanishTdtChannel[] = [];
+      let worldList: SpanishTdtChannel[] = [];
+      let rbtvList: SpanishTdtChannel[] = [];
+      let belixList: SpanishTdtChannel[] = [];
+
+      const publishMerged = () => {
+        const effectiveBaseList = baseList.length > 0 ? baseList : buildStaticTdtFallback();
+        const ranked = rankClientChannels([
+          ...effectiveBaseList,
+          ...rbtvList,
+          ...belixList,
+          ...worldList,
+        ]);
+        setTdtChannels(ranked);
+        if (baseList.length > 0) {
+          writeCachedTdtCatalog(ranked);
+          setTdtFetchError(false);
         }
-        for (const stream of cachedXtream.liveStreams) {
-          const catName =
-            catMap.get(`${stream.providerId || 'primary'}:${stream.categoryId}`) || 'TV en Vivo';
-          cachedXtreamChannels.push(buildLiveTdtChannel(stream, catName));
-        }
-      }
-      const effectiveBaseList = baseList.length > 0 ? baseList : buildStaticTdtFallback();
-      const ranked = rankClientChannels([
-        ...effectiveBaseList,
-        ...rbtvList,
-        ...belixList,
-        ...cachedXtreamChannels,
-        ...worldList,
-      ]);
-      setTdtChannels(ranked);
-      if (baseList.length > 0) {
-        writeCachedTdtCatalog(ranked);
-        setTdtFetchError(false);
-      } else {
-        setTdtFetchError(worldList.length === 0 && rbtvList.length === 0 && belixList.length === 0);
+      };
+
+      const tdtP = fetchWithTimeout('/api/catalog/tdt', 10_000)
+        .then((res) => {
+          if (Array.isArray(res?.channels)) {
+            baseList = res.channels;
+            publishMerged();
+            setLoadingTdt(false);
+          }
+          return res;
+        })
+        .catch(() => null);
+
+      const worldP = fetchWithTimeout('/api/catalog/world-tv', 7_500)
+        .then((res) => {
+          if (Array.isArray(res?.channels)) {
+            worldList = res.channels;
+            publishMerged();
+          }
+          return res;
+        })
+        .catch(() => null);
+
+      const rbtvP = fetchWithTimeout('/api/rbtv/channels', 6_500)
+        .then((res) => {
+          if (Array.isArray(res?.channels)) {
+            rbtvList = res.channels;
+            publishMerged();
+          }
+          return res;
+        })
+        .catch(() => null);
+
+      const belixP = fetchWithTimeout('/api/belix/channels?includeAll=1', 7_500)
+        .then((res) => {
+          if (Array.isArray(res?.channels)) {
+            belixList = res.channels;
+            publishMerged();
+          }
+          return res;
+        })
+        .catch(() => null);
+
+      await Promise.allSettled([tdtP, worldP, rbtvP, belixP]);
+      if (baseList.length === 0 && worldList.length === 0 && rbtvList.length === 0 && belixList.length === 0) {
+        setTdtFetchError(true);
       }
     } catch {
       setTdtChannels((prev) => (prev.length > 0 ? prev : buildStaticTdtFallback()));
@@ -314,16 +327,18 @@ export function useLiveTvAndSportsCatalog({
     return () => window.removeEventListener('belix-channels-synced', onBelixSynced);
   }, [fetchTdtCatalog]);
 
+  const hasSyncedBackendTdtRef = useRef(false);
   useEffect(() => {
-    if (
-      (worldMode === 'tv' ||
-        worldMode === 'futbol' ||
-        activeSection === 'home' ||
-        activeSection === 'tdt' ||
-        activeSection === 'sports') &&
-      tdtChannels.length === 0
-    ) {
-      fetchTdtCatalog();
+    const wantsLiveCatalog =
+      worldMode === 'tv' ||
+      worldMode === 'futbol' ||
+      activeSection === 'home' ||
+      activeSection === 'tdt' ||
+      activeSection === 'sports';
+    if (!wantsLiveCatalog) return;
+    if (tdtChannels.length === 0 || !hasSyncedBackendTdtRef.current) {
+      hasSyncedBackendTdtRef.current = true;
+      void fetchTdtCatalog();
     }
   }, [worldMode, activeSection, tdtChannels.length, fetchTdtCatalog]);
 
