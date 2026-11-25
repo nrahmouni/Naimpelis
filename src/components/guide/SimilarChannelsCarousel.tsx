@@ -96,8 +96,9 @@ export const SimilarChannelsCarousel: React.FC<SimilarChannelsCarouselProps> = (
             <button
               key={ch.id}
               type="button"
+              data-tv-focusable="true"
               onClick={() => onZapChannel(ch)}
-              className="scroll-snap-item group w-[264px] sm:w-[284px] shrink-0 rounded-2xl bg-[#161822] hover:bg-[#1D2030] border border-white/[0.08] hover:border-[#9146FF]/65 overflow-hidden text-left active:scale-[0.97] transition-all cursor-pointer shadow-md flex flex-col justify-between"
+              className="scroll-snap-item group w-[264px] sm:w-[284px] shrink-0 rounded-2xl bg-[#161822] hover:bg-[#1D2030] border border-white/[0.08] hover:border-[#9146FF]/65 overflow-hidden text-left active:scale-[0.97] transition-all cursor-pointer shadow-md flex flex-col justify-between tv-focus-ring"
             >
               <div
                 className="relative min-h-[82px] px-3.5 py-2.5 flex items-center justify-between gap-2.5 border-b border-white/[0.06]"
@@ -111,7 +112,6 @@ export const SimilarChannelsCarousel: React.FC<SimilarChannelsCarouselProps> = (
                   <ChannelLogoBadge channel={ch} size="md" />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="w-1.5 h-1.5 rounded-full bg-[#EB0400] animate-pulse shrink-0" />
                       <span className="text-[10px] font-mono font-bold text-zinc-300 tabular-nums">
                         Dial {ch.dial}
                       </span>

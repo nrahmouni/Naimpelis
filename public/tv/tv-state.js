@@ -18,7 +18,8 @@ var localTracks = [];
 var localTrackIdx = 0;
 var activeLiveChannel = null;
 var activeLiveTrackIdx = 0;
-var activeLiveFilter = 'es_priority';
+var activeLiveNavMode = 'topic';
+var activeLiveFilter = 'es_dana';
 var activeAdrarCountry = 'all';
 var activeLiveSearch = '';
 var activeLiveVisibleLimit = 36;
@@ -152,6 +153,7 @@ var catalogData = {
 var activeSeriesItem = null;
 var activeSeriesDetails = null;
 var activeSeriesLang = 'ES';
+var activeSeriesQualityFirst = false;
 var activeSeriesSeason = 1;
 
 function updateTvClocks() {

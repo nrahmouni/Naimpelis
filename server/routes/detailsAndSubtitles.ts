@@ -26,6 +26,36 @@ import {
   type NormalizedSubtitleTrack,
 } from '../services/subtitleAggregator.ts';
 import { extractClipboxDirectStreams } from '../extractors/clipboxDirectExtractor.ts';
+import {
+  findXtreamMovieMatches,
+  findXtreamSeriesMatches,
+  type XtreamMatchedMediaOption,
+} from '../services/xtreamVodMatcher.ts';
+
+function summarizeXtreamAlternatives(options: XtreamMatchedMediaOption[]) {
+  const bestOption = options.reduce<XtreamMatchedMediaOption | null>(
+    (best, cur) => (!best || cur.qualityTier < best.qualityTier ? cur : best),
+    null
+  );
+  const coreLangs = new Set(['ES', 'LAT', 'VOSE', 'EN']);
+  const extendedLanguages = Array.from(
+    new Set(options.map((o) => o.lang).filter((l) => !coreLangs.has(l)))
+  );
+  const serverAlternatives = options.slice(0, 12).map((o) => ({
+    id: o.id,
+    providerId: o.providerId,
+    providerName: o.providerName,
+    lang: o.lang,
+    langLabel: o.langLabel,
+    quality: o.quality,
+    qualityTier: o.qualityTier,
+  }));
+  return {
+    bestQuality: bestOption?.quality,
+    extendedLanguages,
+    serverAlternatives,
+  };
+}
 
 const subtitleSearchCache = new LruTtlCache<string, { tracks: NormalizedSubtitleTrack[]; ts: number }>(
   250,
@@ -187,7 +217,7 @@ export function registerDetailsAndSubtitlesRoutes(
       if (!cleanId || cleanId === '0') return res.status(400).json({ success: false });
 
       const langParam = String(req.query.lang || 'es').toLowerCase() === 'en' ? 'en-US' : 'es-ES';
-      const cacheKey = `v7|${effectiveMediaType}|${cleanId}|${langParam}|${movidyUrlHint}|${gnulaUrlHint}`;
+      const cacheKey = `v8|${effectiveMediaType}|${cleanId}|${langParam}|${movidyUrlHint}|${gnulaUrlHint}`;
       const cached = !force ? richDetailsCache.get(cacheKey) : undefined;
       if (cached && Date.now() - cached.ts < 10 * 60 * 1000) {
         return res.json({ success: true, details: cached.details });
@@ -281,7 +311,7 @@ export function registerDetailsAndSubtitlesRoutes(
         new Set([primaryTitle, originalTitle, titleHint, ...altLocalizedTitles].filter(Boolean))
       );
 
-      const [allVideosResolved, probedLanguages, titleLogoUrl] = await Promise.all([
+      const [allVideosResolved, probedLanguages, titleLogoUrl, xtreamMatchedOptions] = await Promise.all([
         (async () => {
           let vids: any[] = Array.isArray(data?.videos?.results) ? data.videos.results : [];
           if (vids.length === 0 && langParam !== 'en-US') {
@@ -310,7 +340,24 @@ export function registerDetailsAndSubtitlesRoutes(
           force,
         }),
         fetchTmdbTitleLogo(Number(cleanId), effectiveMediaType, req.query.lang === 'en' ? 'en' : 'es'),
+        Promise.race([
+          (effectiveMediaType === 'tv'
+            ? findXtreamSeriesMatches({
+                titleHints: allTitleHints,
+                yearHint: tmdbYear || undefined,
+                limit: 12,
+              })
+            : findXtreamMovieMatches({
+                titleHints: allTitleHints,
+                yearHint: tmdbYear || undefined,
+                limit: 12,
+              }).then((r) => r.options)
+          ).catch(() => [] as XtreamMatchedMediaOption[]),
+          new Promise<XtreamMatchedMediaOption[]>((resolve) => setTimeout(() => resolve([]), 2200)),
+        ]),
       ]);
+
+      const xtreamSummary = summarizeXtreamAlternatives(xtreamMatchedOptions);
 
       const origLang = String(data?.original_language || '').toLowerCase();
       const origCountries: string[] = Array.isArray(data?.origin_country)
@@ -383,6 +430,9 @@ export function registerDetailsAndSubtitlesRoutes(
             languages: ['Español', 'VOSE'],
           })),
         availableLanguages,
+        extendedLanguages: xtreamSummary.extendedLanguages,
+        bestQuality: xtreamSummary.bestQuality,
+        serverAlternatives: xtreamSummary.serverAlternatives,
         watchProviders,
       };
 

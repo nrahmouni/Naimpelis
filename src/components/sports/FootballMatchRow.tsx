@@ -204,9 +204,29 @@ export const FootballMatchRow = React.memo<FootballMatchRowProps>(({
             </span>
           ) : (
             <span className="font-bold tabular-nums text-[#A78BFA]">
-              {item.kickoffDateLabel && item.kickoffDateLabel !== 'Hoy'
-                ? `${item.kickoffDateLabel} · ${item.kickoffTime}`
-                : `${pickLang(lang, { es: 'Hoy', ca: 'Avui', en: 'Today', zh: '今天', rif: 'Assa' })} · ${item.kickoffTime}`}
+              {(() => {
+                if (item.kickoffDateLabel && item.kickoffDateLabel !== 'Hoy') {
+                  if (item.kickoffDateLabel === 'Mañana') {
+                    return `${pickLang(lang, { es: 'Mañana', ca: 'Demà', en: 'Tomorrow', zh: '明天', rif: 'Tiwečča' })} · ${item.kickoffTime}`;
+                  }
+                  return `${item.kickoffDateLabel} · ${item.kickoffTime}`;
+                }
+                if (!item.kickoffDateLabel && item.kickoffIso) {
+                  const madridTodayIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(new Date());
+                  const d = new Date(item.kickoffIso);
+                  if (!Number.isNaN(d.getTime())) {
+                    const itemIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(d);
+                    if (itemIso !== madridTodayIso) {
+                      const shortLbl = new Intl.DateTimeFormat(
+                        lang === 'ca' ? 'ca-ES' : lang === 'en' ? 'en-US' : 'es-ES',
+                        { timeZone: 'Europe/Madrid', day: '2-digit', month: 'short' }
+                      ).format(d);
+                      return `${shortLbl} · ${item.kickoffTime}`;
+                    }
+                  }
+                }
+                return `${pickLang(lang, { es: 'Hoy', ca: 'Avui', en: 'Today', zh: '今天', rif: 'Assa' })} · ${item.kickoffTime}`;
+              })()}
             </span>
           )}
 

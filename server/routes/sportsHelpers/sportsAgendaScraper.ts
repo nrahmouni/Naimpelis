@@ -1,11 +1,42 @@
 import crypto from 'crypto';
 import { CHROME_UA, type TrackRecord } from '../../extractors/httpHelpers.ts';
 
+const MADRID_TIME_FMT = new Intl.DateTimeFormat('es-ES', {
+  timeZone: 'Europe/Madrid',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+const MADRID_DATE_KEY_FMT = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Europe/Madrid',
+});
+
+export function parseStreamXhdKickoffMs(rawTime: string): number {
+  const s = String(rawTime || '').trim();
+  if (!s) return 0;
+  // ISO string with explicit timezone offset or Z
+  if (/T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})$/i.test(s)) {
+    const parsed = Date.parse(s);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  // Unzoned 'YYYY-MM-DD HH:mm' on StreamXHD is in US/Eastern (-05:00)
+  const dateTimeM = s.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::(\d{2}))?$/);
+  if (dateTimeM) {
+    const parsed = Date.parse(`${dateTimeM[1]}T${dateTimeM[2]}:${dateTimeM[3] || '00'}-05:00`);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
 export function detectSportKind(text: string): 'soccer' | 'motor' | 'basketball' | 'tennis' | 'other' {
   const lower = text.toLowerCase();
   if (/baloncesto|basket|nba|eurocup|euroliga|acb|ncaa/.test(lower)) return 'basketball';
   if (/tenis|tennis|atp|wta|roland|wimbledon/.test(lower)) return 'tennis';
   if (/f1|formula|fórmula|motogp|motor|nascar|rally|indy/.test(lower)) return 'motor';
+  if (/\b(hockey|ice\s*hockey|nhl|khl|nfl|american\s*football|mlb|baseball|beisbol|béisbol|ufc|mma|boxeo|boxing|wwe|rugby|ciclismo|cycling|padel|pádel|handball|balonmano|volleyball|voleibol|golf)\b/.test(lower)) {
+    return 'other';
+  }
   return 'soccer';
 }
 
@@ -34,6 +65,8 @@ export async function fetchLiveSportsAgendaFeeds(): Promise<{
   inFlightLiveAgendaPromise = (async () => {
     const liveGrouped = new Map<string, any>();
     const streamXhdFootball: any[] = [];
+    const nowMs = Date.now();
+    const todayMadridKey = MADRID_DATE_KEY_FMT.format(new Date(nowMs)).replace(/-/g, '');
 
     await Promise.all([
       (async () => {
@@ -47,8 +80,10 @@ export async function fetchLiveSportsAgendaFeeds(): Promise<{
             const evJson: any = await evRes.json();
             for (const sp of evJson?.sports || []) {
               const sportId = String(sp?.id || '').toLowerCase();
+              const sportName = String(sp?.name || '');
               const mappedSport: 'soccer' | 'motor' | 'basketball' | 'tennis' | 'other' =
-                sportId === 'football' || sportId === 'soccer'
+                (sportId === 'football' || sportId === 'soccer') &&
+                !/american|nfl|rugby|hockey|nhl/i.test(sportName)
                   ? 'soccer'
                   : sportId === 'basketball'
                   ? 'basketball'
@@ -56,10 +91,13 @@ export async function fetchLiveSportsAgendaFeeds(): Promise<{
                   ? 'tennis'
                   : sportId === 'motorsport' || sportId === 'f1'
                   ? 'motor'
-                  : detectSportKind(String(sp?.name || ''));
+                  : detectSportKind(`${sportId} ${sportName}`);
 
               for (const lg of sp?.leagues || []) {
                 const leagueName = String(lg?.name || 'En Directo').trim();
+                const effectiveSport =
+                  mappedSport === 'soccer' ? detectSportKind(`${leagueName} ${sportName}`) : mappedSport;
+
                 for (const ev of lg?.events || []) {
                   const servers: any[] = Array.isArray(ev?.servers) ? ev.servers : [];
                   const validTracks: TrackRecord[] = [];
@@ -85,8 +123,27 @@ export async function fetchLiveSportsAgendaFeeds(): Promise<{
                       ? `${homeTeam} vs ${awayTeam}`
                       : String(ev?.title || 'Evento en Vivo').trim();
                   const rawTime = String(ev?.time || '').trim();
+                  const kickoffMs = parseStreamXhdKickoffMs(rawTime);
+                  // Drop stale agenda entries that ended hours ago (e.g. yesterday's finished schedule)
+                  if (kickoffMs > 0 && nowMs - kickoffMs > 3.5 * 60 * 60 * 1000) {
+                    continue;
+                  }
+
                   const timeMatch = rawTime.match(/(\d{1,2}:\d{2})/);
-                  const timeStr = timeMatch ? timeMatch[1] : 'EN VIVO';
+                  const timeStr =
+                    kickoffMs > 0
+                      ? MADRID_TIME_FMT.format(new Date(kickoffMs))
+                      : timeMatch
+                      ? timeMatch[1]
+                      : 'EN VIVO';
+                  const kickoffDateKey =
+                    kickoffMs > 0
+                      ? MADRID_DATE_KEY_FMT.format(new Date(kickoffMs)).replace(/-/g, '')
+                      : todayMadridKey;
+                  const isLiveNow =
+                    kickoffMs > 0
+                      ? nowMs >= kickoffMs - 5 * 60_000 && nowMs - kickoffMs <= 3 * 60 * 60 * 1000
+                      : true;
 
                   const key = `sxhd-${leagueName}-${timeStr}-${matchTitle}`;
                   liveGrouped.set(key, {
@@ -95,14 +152,15 @@ export async function fetchLiveSportsAgendaFeeds(): Promise<{
                     homeTeam,
                     awayTeam,
                     competition: leagueName,
-                    sport: mappedSport,
+                    sport: effectiveSport,
                     time: timeStr,
-                    isLive: true,
+                    kickoffMs: kickoffMs || undefined,
+                    isLive: isLiveNow,
                     is247Channel: false,
                     channels: validTracks,
                   });
 
-                  if (mappedSport === 'soccer' && homeTeam && awayTeam) {
+                  if (effectiveSport === 'soccer' && homeTeam && awayTeam) {
                     streamXhdFootball.push({
                       homeTeam,
                       awayTeam,
@@ -112,6 +170,8 @@ export async function fetchLiveSportsAgendaFeeds(): Promise<{
                       code: String(ev?.code || '').trim(),
                       rawTime,
                       timeStr,
+                      kickoffMs,
+                      kickoffDateKey,
                       channels: validTracks,
                     });
                   }

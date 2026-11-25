@@ -199,28 +199,48 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
               const active = idx === videoState.activeTrackIndex;
               const hasZh = String(tr.lang || '').toUpperCase() === 'ZH' || /中文/.test(tr.label || '');
               const rawLbl = String(tr.label || '');
-              const shortTag = /edge\s*2/i.test(rawLbl)
-                ? 'Edge 2'
-                : /passthrough/i.test(rawLbl)
-                  ? 'AAC'
-                  : /720p|estabilidad/i.test(`${rawLbl} ${tr.quality || ''}`)
+              const provName = tr.providerName
+                ? tr.providerName.replace(/\s*Pro$/i, '')
+                : tr.providerId === 'dana4k'
+                  ? 'Dana 4K'
+                  : tr.providerId === 'octopus'
+                    ? 'Octopus'
+                    : /dana\s*4k/i.test(rawLbl)
+                      ? 'Dana 4K'
+                      : /octopus/i.test(rawLbl)
+                        ? 'Octopus'
+                        : /belix/i.test(rawLbl)
+                          ? 'Belix'
+                          : /edge\s*2/i.test(rawLbl)
+                            ? 'Edge 2'
+                            : '';
+              const qShort = /4k|2160|uhd/i.test(`${rawLbl} ${tr.quality || ''}`)
+                ? '4K'
+                : /1080|fhd/i.test(`${rawLbl} ${tr.quality || ''}`)
+                  ? 'FHD'
+                  : /720|estabilidad/i.test(`${rawLbl} ${tr.quality || ''}`)
                     ? '720p'
-                    : /belix/i.test(rawLbl)
-                      ? 'Belix'
-                      : /1080p|directa|españa/i.test(`${rawLbl} ${tr.quality || ''}`)
-                        ? 'HD'
-                        : '';
-              const signalText = `${pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} ${idx + 1}${shortTag ? ` · ${shortTag}` : ''}`;
+                    : /hd/i.test(`${rawLbl} ${tr.quality || ''}`)
+                      ? 'HD'
+                      : '';
+              const langCode = String(tr.lang || '').toUpperCase();
+              const parts: string[] = [];
+              if (provName) parts.push(provName);
+              else parts.push(`${pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} ${idx + 1}`);
+              if (langCode && langCode !== 'ZH' && langCode !== 'INT') parts.push(langCode);
+              if (qShort) parts.push(qShort);
+              const signalText = parts.join(' · ');
               return (
                 <button
                   key={tr.id || idx}
                   type="button"
+                  data-tv-focusable="true"
                   title={tr.label}
                   onClick={() => {
                     triggerHaptic('light');
                     onSelectTrack(idx, 0);
                   }}
-                  className={`min-h-[38px] px-2.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer active:scale-95 transition-all inline-flex items-center gap-1.5 ${
+                  className={`min-h-[38px] px-2.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer active:scale-95 transition-all inline-flex items-center gap-1.5 tv-focus-ring ${
                     active
                       ? 'bg-[#7C3AED] text-white shadow-[0_4px_14px_rgba(124,58,237,0.4)]'
                       : 'text-zinc-300 hover:bg-white/10'

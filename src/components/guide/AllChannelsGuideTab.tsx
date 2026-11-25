@@ -95,12 +95,13 @@ export const AllChannelsGuideTab: React.FC<AllChannelsGuideTabProps> = ({
             <button
               key={reg.id}
               type="button"
+              data-tv-focusable="true"
               onClick={() => {
                 triggerHaptic('light');
                 onChangeRegion(reg.id);
                 onChangeCategory('all');
               }}
-              className={`min-h-8 px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all active:scale-95 border shrink-0 inline-flex items-center gap-1.5 ${
+              className={`min-h-8 px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all active:scale-95 border shrink-0 inline-flex items-center gap-1.5 tv-focus-ring ${
                 active
                   ? 'bg-[#7C3AED] border-[#8B5CF6] text-white shadow-[0_3px_12px_rgba(124,58,237,0.35)]'
                   : 'bg-[#0D0D12] hover:bg-[#14141C] border-white/[0.08] text-zinc-300'
@@ -120,11 +121,12 @@ export const AllChannelsGuideTab: React.FC<AllChannelsGuideTabProps> = ({
             <button
               key={cat.id}
               type="button"
+              data-tv-focusable="true"
               onClick={() => {
                 triggerHaptic('light');
                 onChangeCategory(cat.id);
               }}
-              className={`min-h-8 px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all active:scale-95 border shrink-0 ${
+              className={`min-h-8 px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all active:scale-95 border shrink-0 tv-focus-ring ${
                 isSelected
                   ? 'bg-[#7C3AED] border-[#8B5CF6] text-white shadow-[0_3px_12px_rgba(124,58,237,0.35)]'
                   : 'bg-[#0D0D12] hover:bg-[#14141C] border-white/[0.08] text-zinc-300'
@@ -163,8 +165,9 @@ export const AllChannelsGuideTab: React.FC<AllChannelsGuideTabProps> = ({
                 >
                   <button
                     type="button"
+                    data-tv-focusable="true"
                     onClick={() => onZapChannel(ch)}
-                    className="flex items-start sm:items-center gap-3 min-w-0 flex-1 text-left cursor-pointer group"
+                    className="flex items-start sm:items-center gap-3 min-w-0 flex-1 text-left cursor-pointer group rounded-xl tv-focus-ring"
                   >
                     <div className="relative shrink-0">
                       <ChannelLogoBadge channel={ch} size="md" />
@@ -228,6 +231,7 @@ export const AllChannelsGuideTab: React.FC<AllChannelsGuideTabProps> = ({
                     {snap && snap.upcoming.length > 0 && (
                       <button
                         type="button"
+                        data-tv-focusable="true"
                         onClick={() => {
                           triggerHaptic('light');
                           onInspectChannel(ch.id);
@@ -237,15 +241,16 @@ export const AllChannelsGuideTab: React.FC<AllChannelsGuideTabProps> = ({
                           ca: 'Veure programació completa',
                           en: 'View full schedule',
                         })}
-                        className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs font-semibold text-zinc-200 cursor-pointer active:scale-95 transition-all"
+                        className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs font-semibold text-zinc-200 cursor-pointer active:scale-95 transition-all tv-focus-ring"
                       >
                         {pickLang(lang, { es: 'Guía', ca: 'Guia', en: 'Guide' })}
                       </button>
                     )}
                     <button
                       type="button"
+                      data-tv-focusable="true"
                       onClick={() => onZapChannel(ch)}
-                      className={`min-h-10 px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                      className={`min-h-10 px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all tv-focus-ring ${
                         isCurrentlyPlaying
                           ? 'bg-[#7C3AED] text-white'
                           : 'bg-[#7C3AED]/20 hover:bg-[#7C3AED] text-[#A78BFA] hover:text-white border border-[#8B5CF6]/40'

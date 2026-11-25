@@ -393,15 +393,76 @@ export function useLiveAndQueuePlayback(
         mode?: VideoState['mode'];
         error?: string;
       } | null = null;
+      let activeSignalIdx = signalIndex;
 
-      if (isInstantDirectTdtStream(chosenSignal.sourceUrl, signalResolver)) {
+      if (
+        !isXtreamVodOrSeries &&
+        signalIndex === 0 &&
+        failedSignals.size === 0 &&
+        effectiveTdtCh.channels.length > 1
+      ) {
+        const fastCtrl = new AbortController();
+        const onParentAbortFast = () => fastCtrl.abort();
+        if (signal.aborted) {
+          fastCtrl.abort();
+        } else {
+          signal.addEventListener('abort', onParentAbortFast, { once: true });
+        }
+        const fastTimeout = setTimeout(() => fastCtrl.abort(), 2600);
+        try {
+          const fastRes = await fetch('/api/live/fast-resolve', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: fastCtrl.signal,
+            body: JSON.stringify({
+              channelId: effectiveTdtCh.id,
+              title: effectiveTdtCh.name,
+              preferLang: 'ES',
+              tracks: effectiveTdtCh.channels.slice(0, 6).map((sig) => ({
+                id: sig.id,
+                label: sig.label,
+                sourceUrl: sig.sourceUrl,
+                resolverType: sig.resolverType || 'tdt_hls',
+                quality: sig.quality,
+                lang: sig.lang,
+                providerId: sig.providerId,
+                providerName: sig.providerName,
+                health: sig.health,
+              })),
+            }),
+          });
+          const fastData = await fastRes.json().catch(() => null);
+          if (fastRes.ok && fastData?.success && fastData?.streamUrl) {
+            resOk = true;
+            data = {
+              success: true,
+              streamUrl: fastData.streamUrl,
+              mode: fastData.mode || 'hls',
+            };
+            if (
+              typeof fastData.winningTrackIndex === 'number' &&
+              fastData.winningTrackIndex >= 0 &&
+              fastData.winningTrackIndex < effectiveTdtCh.channels.length
+            ) {
+              activeSignalIdx = fastData.winningTrackIndex;
+            }
+          }
+        } catch {
+          // Fall back gracefully to direct/sequential extraction below
+        } finally {
+          clearTimeout(fastTimeout);
+          signal.removeEventListener('abort', onParentAbortFast);
+        }
+      }
+
+      if (!data && isInstantDirectTdtStream(chosenSignal.sourceUrl, signalResolver)) {
         resOk = true;
         data = {
           success: true,
           streamUrl: chosenSignal.sourceUrl,
           mode: isDirectVodFile ? 'direct' : 'hls',
         };
-      } else {
+      } else if (!data) {
         const cachedTdt = getCachedClientExtract(signalResolver, chosenSignal.sourceUrl);
         if (cachedTdt) {
           resOk = true;
@@ -464,25 +525,25 @@ export function useLiveAndQueuePlayback(
         return;
       }
 
+      const activeChosenSignal = effectiveTdtCh.channels[activeSignalIdx] || chosenSignal;
       const mappedTracks: StreamTrack[] = effectiveTdtCh.channels.map((sig, idx) => ({
         id: sig.id,
-        label: `${effectiveTdtCh.name} · ${sig.label}`,
-        lang: 'ES',
+        label: sig.label || `${effectiveTdtCh.name} · ${sig.providerName || `Señal ${idx + 1}`}`,
+        lang: sig.lang || 'ES',
+        langLabel: sig.langLabel,
         quality: sig.quality,
+        providerId: sig.providerId,
+        providerName: sig.providerName,
+        health: sig.health,
         sourceUrl: sig.sourceUrl,
         resolverType: sig.resolverType || 'tdt_hls',
-        resolvedStreamUrl: idx === signalIndex ? data.streamUrl : undefined,
+        resolvedStreamUrl: idx === activeSignalIdx ? data.streamUrl : undefined,
       }));
-
-      const isXtreamVodOrSeries =
-        effectiveTdtCh.id.startsWith('xtream-vod-') ||
-        effectiveTdtCh.id.startsWith('xtream-series-') ||
-        isDirectVodFile;
 
       const nextState: VideoState = {
         mode: data.mode || (isDirectVodFile ? 'direct' : 'hls'),
         url: data.streamUrl,
-        rawSourceUrl: chosenSignal.sourceUrl,
+        rawSourceUrl: activeChosenSignal.sourceUrl,
         title: effectiveTdtCh.name,
         subtitle: liveProgramHint
           ? `En emisión: ${liveProgramHint} · ${effectiveTdtCh.network}`
@@ -490,13 +551,13 @@ export function useLiveAndQueuePlayback(
           ? `Serie IPTV · ${effectiveTdtCh.network}`
           : effectiveTdtCh.id.startsWith('xtream-vod-') || isDirectVodFile
           ? `Película VOD · ${effectiveTdtCh.network}`
-          : `TV en Directo · ${effectiveTdtCh.network} · ${chosenSignal.label}`,
+          : `TV en Directo · ${effectiveTdtCh.network} · ${activeChosenSignal.label}`,
         ...(effectiveTdtCh.logoUrl ? { poster: effectiveTdtCh.logoUrl } : {}),
         currentTime: 0,
         isPlaying: true,
         isLive: !isXtreamVodOrSeries,
         tracks: mappedTracks,
-        activeTrackIndex: signalIndex,
+        activeTrackIndex: activeSignalIdx,
         seriesMeta: undefined,
         lastUpdated: Date.now(),
         updatedBy: profileName,

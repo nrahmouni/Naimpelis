@@ -30,6 +30,10 @@ import {
 } from '../../services/vestMirrorService.ts';
 import { channelHealthMonitor } from '../../services/channelHealthMonitor.ts';
 import {
+  extractXtreamSeriesEpisodeTracks,
+  findXtreamMovieMatches,
+} from '../../services/xtreamVodMatcher.ts';
+import {
   buildFallbackCatalogResult,
   resolveCatalogMediaMetadata,
 } from './catalogMediaMetadataAndFallback.ts';
@@ -50,6 +54,7 @@ export interface CatalogMediaExtractParams {
   vestUrlParam: string;
   resolverType: string;
   preferLang: string;
+  preferQualityFirst?: boolean;
   titleHint: string;
   origTitleHint: string;
   yearParam: string;
@@ -78,6 +83,7 @@ export async function handleCatalogMediaExtract(
     vestUrlParam,
     resolverType,
     preferLang,
+    preferQualityFirst = false,
     titleHint,
     origTitleHint,
     yearParam,
@@ -224,6 +230,7 @@ export async function handleCatalogMediaExtract(
     subtitles: [],
   };
   let esTracks: TrackRecord[] = [];
+  let xtreamTracks: TrackRecord[] = [];
   let vidRockTracks: TrackRecord[] = [];
   let bingetrixEnTracks: TrackRecord[] = [];
   let twoEmbedEnTracks: TrackRecord[] = [];
@@ -512,7 +519,33 @@ export async function handleCatalogMediaExtract(
       })
     : Promise.resolve();
 
+  const xtreamMultiServerP =
+    combinedTitleHints.length > 0
+      ? withExtractTimeout(
+          effectiveMediaType === 'tv'
+            ? extractXtreamSeriesEpisodeTracks({
+                titleHints: combinedTitleHints,
+                yearHint: effectiveYearForExtract,
+                season: effectiveSeason || 1,
+                episode: effectiveEpisode || 1,
+                preferLang: preferQualityFirst ? 'ES' : preferLang,
+              })
+            : findXtreamMovieMatches({
+                titleHints: combinedTitleHints,
+                yearHint: effectiveYearForExtract,
+                preferLang: preferQualityFirst ? 'ES' : preferLang,
+                limit: 16,
+              }).then((r) => r.tracks),
+          3200,
+          [] as TrackRecord[]
+        ).then((res) => {
+          xtreamTracks = res;
+          signalFastDirectEsIfReady(res);
+        })
+      : Promise.resolve();
+
   const primaryAllPromise = Promise.all([
+    xtreamMultiServerP,
     movidyP,
     gnulaP,
     dmP,
@@ -544,6 +577,7 @@ export async function handleCatalogMediaExtract(
     const primaryHasPreferredSpanish =
       prefersSpanishTier &&
       [
+        ...xtreamTracks,
         ...movidyTracks,
         ...gnulaTracks,
         ...dailymotionTracks,
@@ -589,6 +623,7 @@ export async function handleCatalogMediaExtract(
   const rawDiscovered: TrackRecord[] = isVestLink
     ? [
         ...vestTracks,
+        ...xtreamTracks,
         ...movidyTracks,
         ...gnulaTracks,
         ...montepinarTracks,
@@ -600,6 +635,7 @@ export async function handleCatalogMediaExtract(
       ]
     : !hasExplicitMovidyUrl && hasExplicitGnulaUrl
     ? [
+        ...xtreamTracks,
         ...gnulaTracks,
         ...montepinarTracks,
         ...dailymotionTracks,
@@ -611,6 +647,7 @@ export async function handleCatalogMediaExtract(
         ...vestTracks,
       ]
     : [
+        ...xtreamTracks,
         ...movidyTracks,
         ...gnulaTracks,
         ...montepinarTracks,
@@ -636,6 +673,7 @@ export async function handleCatalogMediaExtract(
   const { orderedTracks, getLangScore, sourcePriority, getTrackHealthScore } = rankCandidateTracks({
     allDiscovered,
     preferLang,
+    preferQualityFirst,
     isVestLink,
     hasExplicitMovidyUrl,
     hasExplicitGnulaUrl,

@@ -29,8 +29,11 @@ export function formatOffsetDateKey(dayOffset: number): {
   labelCa: string;
   labelEn: string;
 } {
-  const d = new Date();
-  d.setDate(d.getDate() + dayOffset);
+  const madridTodayIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(new Date());
+  const baseNoonUtc = Date.parse(`${madridTodayIso}T12:00:00Z`);
+  const d = Number.isNaN(baseNoonUtc)
+    ? new Date(Date.now() + dayOffset * 86_400_000)
+    : new Date(baseNoonUtc + dayOffset * 86_400_000);
   const isoDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(d);
   const dateKey = isoDate.replace(/-/g, '');
   if (dayOffset === 0) return { dateKey, isoDate, labelEs: 'Hoy', labelCa: 'Avui', labelEn: 'Today' };

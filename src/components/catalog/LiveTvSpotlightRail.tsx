@@ -19,14 +19,14 @@ interface LiveTvSpotlightRailProps {
 }
 
 const SPAIN_TDT_SPOTLIGHT_IDS = [
-  'tdt-la1',
   'tdt-antena3',
   'tdt-lasexta',
+  'tdt-atreseries',
+  'tdt-la1',
   'tdt-cuatro',
   'tdt-telecinco',
   'tdt-la2',
   'tdt-teledeporte',
-  'tdt-24h',
 ];
 
 const FOOTBALL_SPOTLIGHT_IDS = [
@@ -144,6 +144,10 @@ export const LiveTvSpotlightRail: React.FC<LiveTvSpotlightRailProps> = ({
             activeVideoRawUrl && ch.channels.some((s) => s.sourceUrl === activeVideoRawUrl)
           );
           const leadTrack = ch.channels[0];
+          const isDanaLead =
+            leadTrack?.providerId === 'dana4k' ||
+            /provider=dana4k/i.test(leadTrack?.sourceUrl || '') ||
+            /dana\s*4k/i.test(leadTrack?.providerName || leadTrack?.label || '');
           const qualityInfo = inferStreamQualityTag(
             leadTrack?.quality || ch.quality,
             leadTrack?.label,
@@ -162,8 +166,9 @@ export const LiveTvSpotlightRail: React.FC<LiveTvSpotlightRailProps> = ({
             <button
               key={`spotlight-${ch.id}`}
               type="button"
+              data-tv-focusable="true"
               onClick={() => onPlayChannel(ch, chEpg?.now?.title)}
-              className={`group relative overflow-hidden rounded-2xl border p-4 text-left flex flex-col justify-between gap-3 min-h-[144px] cursor-pointer active:scale-[0.98] transition-all ${
+              className={`group relative overflow-hidden rounded-2xl border p-4 text-left flex flex-col justify-between gap-3 min-h-[144px] cursor-pointer active:scale-[0.98] transition-all tv-focus-ring ${
                 isPlaying
                   ? 'border-[#7C3AED] bg-[#7C3AED]/[0.18] shadow-[0_10px_28px_rgba(124,58,237,0.28)]'
                   : 'border-white/[0.09] bg-[#0D0D12] hover:border-white/25 hover:bg-[#14141E]'
@@ -182,7 +187,7 @@ export const LiveTvSpotlightRail: React.FC<LiveTvSpotlightRailProps> = ({
                       {ch.name}
                     </div>
                     <div className="text-[11px] text-zinc-400 font-mono tabular-nums mt-0.5">
-                      Dial {ch.dial} · {qualityInfo.label}
+                      Dial {ch.dial}{isDanaLead ? ' · Dana 4K' : ''} · {qualityInfo.label}
                     </div>
                   </div>
                 </div>

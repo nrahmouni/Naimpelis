@@ -135,8 +135,13 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
         if (!cancelled && data?.success && data?.details) {
           const nextDetails: MediaRichDetails = data.details;
           setDetails(nextDetails);
-          const avail = nextDetails.availableLanguages;
-          if (Array.isArray(avail) && avail.length > 0) {
+          const avail = Array.isArray(nextDetails.availableLanguages)
+            ? nextDetails.availableLanguages.filter(
+                (l): l is MovieAudioLangPreference =>
+                  l === 'ES' || l === 'LAT' || l === 'VOSE' || l === 'EN'
+              )
+            : [];
+          if (avail.length > 0) {
             setSelectedAudioLang((prev) =>
               avail.includes(defaultAudioLang)
                 ? defaultAudioLang

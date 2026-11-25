@@ -17,14 +17,37 @@ const KNOWN_HOST_LABELS: Array<[RegExp, string]> = [
   [/mega\.nz/i, 'Mega'],
 ];
 
+function compactQualityBadge(rawQuality?: string, rawLabel?: string): string {
+  const hay = `${rawQuality || ''} ${rawLabel || ''}`.toUpperCase();
+  if (/\b(?:4K|UHD|2160P?)\b/.test(hay)) return '4K';
+  if (/\b(?:1080P?|FHD)\b/.test(hay)) return '1080p';
+  if (/\b(?:720P?|HD)\b/.test(hay)) return 'HD';
+  if (/\b(?:480P?|SD)\b/.test(hay)) return 'SD';
+  return '';
+}
+
 export function extractDistinguishingTrackName(
-  track: { label?: string; sourceUrl?: string; resolvedStreamUrl?: string; resolverType?: string },
+  track: {
+    label?: string;
+    sourceUrl?: string;
+    resolvedStreamUrl?: string;
+    resolverType?: string;
+    providerName?: string;
+    quality?: string;
+  },
   idx: number,
   lang: AppLanguage
 ): string {
   if (track.resolverType === 'youtube') {
     const cleaned = (track.label || '').replace(/\s*\([^)]*\)/g, '').trim();
     if (cleaned) return cleaned;
+  }
+
+  const qTag = compactQualityBadge(track.quality, track.label);
+  const explicitProvider = String(track.providerName || '').trim();
+  if (explicitProvider) {
+    const cleanProv = explicitProvider.length > 14 ? explicitProvider.slice(0, 14) : explicitProvider;
+    return qTag ? `${cleanProv} · ${qTag}` : cleanProv;
   }
 
   const rawLabel = (track.label || '').trim();
@@ -34,7 +57,7 @@ export function extractDistinguishingTrackName(
     .filter(Boolean);
 
   const genericFirst =
-    /^(servidor\s*web|embed|web|stream|mirror|enlace|opci[oó]n|castellano|latino|english|vose|es|lat|en)$/i;
+    /^(servidor\s*web|embed|web|stream|mirror|enlace|opci[oó]n|castellano|latino|english|vose|es|lat|en|fr|pt|it|de|ar|cat)$/i;
   let candidate = '';
   if (parts.length >= 2) {
     candidate = genericFirst.test(parts[0]) ? parts.slice(1).join(' · ') : parts[0];
@@ -75,14 +98,26 @@ export function extractDistinguishingTrackName(
         : lang === 'en'
         ? 'Server'
         : 'Servidor';
-    candidate = `${prefix} ${idx + 1}`;
+    candidate = qTag ? `${prefix} ${idx + 1} · ${qTag}` : `${prefix} ${idx + 1}`;
+  } else if (qTag && !candidate.toUpperCase().includes(qTag.toUpperCase())) {
+    const combined = `${candidate} · ${qTag}`;
+    if (combined.length <= 22) {
+      candidate = combined;
+    }
   }
 
-  return candidate.length > 18 ? `${candidate.slice(0, 17)}…` : candidate;
+  return candidate.length > 22 ? `${candidate.slice(0, 21)}…` : candidate;
 }
 
 export function formatUniqueTrackChipLabels(
-  tracks: Array<{ label?: string; sourceUrl?: string; resolvedStreamUrl?: string; resolverType?: string }>,
+  tracks: Array<{
+    label?: string;
+    sourceUrl?: string;
+    resolvedStreamUrl?: string;
+    resolverType?: string;
+    providerName?: string;
+    quality?: string;
+  }>,
   lang: AppLanguage
 ): string[] {
   const raw = tracks.map((tr, idx) => extractDistinguishingTrackName(tr, idx, lang));
@@ -96,11 +131,21 @@ export function formatUniqueTrackChipLabels(
     if (count <= 1) return name;
     const nextIdx = (seen.get(name) || 0) + 1;
     seen.set(name, nextIdx);
-    return `${name} ${nextIdx}`;
+    return `${name} #${nextIdx}`;
   });
 }
 
-export type CanonicalTrackLang = 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT';
+export type CanonicalTrackLang =
+  | 'ES'
+  | 'CAT'
+  | 'LAT'
+  | 'VOSE'
+  | 'EN'
+  | 'FR'
+  | 'PT'
+  | 'IT'
+  | 'DE'
+  | 'AR';
 
 export function resolveTrackLang(
   tr?: StreamTrack | null,
@@ -111,7 +156,7 @@ export function resolveTrackLang(
   if (raw === 'CAT' || raw === 'CA' || raw.includes('CATAL') || raw.includes('VALENCI')) {
     return 'CAT';
   }
-  const label = `${tr?.label || ''} ${contextMeta?.subtitle || ''} ${contextMeta?.title || ''}`.toLowerCase();
+  const label = `${tr?.label || ''} ${tr?.langLabel || ''} ${contextMeta?.subtitle || ''} ${contextMeta?.title || ''}`.toLowerCase();
   if (
     label.includes('català') ||
     label.includes('catala') ||
@@ -138,6 +183,21 @@ export function resolveTrackLang(
     label.includes('ingles')
   ) {
     return 'EN';
+  }
+  if (raw === 'FR' || label.includes('français') || label.includes('francés') || label.includes('french')) {
+    return 'FR';
+  }
+  if (raw === 'PT' || raw === 'BR' || label.includes('portugu') || label.includes('brasil')) {
+    return 'PT';
+  }
+  if (raw === 'IT' || label.includes('italiano') || label.includes('italian')) {
+    return 'IT';
+  }
+  if (raw === 'DE' || raw === 'GER' || label.includes('deutsch') || label.includes('alemán')) {
+    return 'DE';
+  }
+  if (raw === 'AR' || raw === 'ARB' || label.includes('árabe') || label.includes('arabic')) {
+    return 'AR';
   }
   return 'ES';
 }

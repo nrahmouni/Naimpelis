@@ -22,7 +22,6 @@ import {
   type XtreamSeriesItem,
   type XtreamVodStreamItem,
 } from '../../services/xtreamClientService';
-import { XtreamCatalogSummaryBar } from '../belix/XtreamCatalogSummaryBar';
 import {
   XtreamPosterMedia,
   buildVodTdtChannel,
@@ -321,13 +320,6 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
           </button>
         )}
       </div>
-
-      <XtreamCatalogSummaryBar
-        lang={lang}
-        catalog={catalog}
-        mode={mode === 'movies' ? 'vod' : 'series'}
-        onOpenServerWorld={(w) => useAppStore.getState().setActiveWorld(w)}
-      />
 
       {/* ALL 7 CONNECTED SERVERS SELECTOR */}
       <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">

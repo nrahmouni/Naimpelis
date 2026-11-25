@@ -44,6 +44,10 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
     activeVideoRawUrl && ch.channels.some((s) => s.sourceUrl === activeVideoRawUrl)
   );
   const leadTrack = ch.channels[0];
+  const isDanaLead =
+    leadTrack?.providerId === 'dana4k' ||
+    /provider=dana4k/i.test(leadTrack?.sourceUrl || '') ||
+    /dana\s*4k/i.test(leadTrack?.providerName || leadTrack?.label || '');
   const qualityTag = inferStreamQualityTag(
     leadTrack?.quality || ch.quality,
     leadTrack?.label,
@@ -67,9 +71,10 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
     >
       <button
         type="button"
+        data-tv-focusable="true"
         onClick={() => onPlayChannel(ch, chEpg?.now?.title)}
         aria-label={`${pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })} ${ch.name}`}
-        className="absolute inset-0 z-0 rounded-2xl cursor-pointer"
+        className="absolute inset-0 z-0 rounded-2xl cursor-pointer tv-focus-ring"
       />
 
       <div className="relative z-10 flex-1 min-w-0 flex items-center gap-3 pointer-events-none">
@@ -83,6 +88,12 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
             <span>{regMeta.langTag}</span>
             <span aria-hidden="true">·</span>
             <span>Dial {ch.dial}</span>
+            {isDanaLead && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-amber-300">Dana 4K</span>
+              </>
+            )}
             <span aria-hidden="true">·</span>
             <span className="text-zinc-200">{qualityTag}</span>
             {signalCount > 1 && (
@@ -137,6 +148,7 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
       <div className="relative z-10 flex items-center gap-1 shrink-0">
         <button
           type="button"
+          data-tv-focusable="true"
           onClick={(e) => {
             e.stopPropagation();
             triggerHaptic('light');
@@ -147,13 +159,14 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
             ca: `Guia EPG de ${ch.name}`,
             en: `EPG guide for ${ch.name}`,
           })}
-          className="min-w-11 min-h-11 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08] flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+          className="min-w-11 min-h-11 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08] flex items-center justify-center cursor-pointer active:scale-95 transition-all tv-focus-ring"
         >
           <Info className="w-4 h-4" />
         </button>
 
         <button
           type="button"
+          data-tv-focusable="true"
           onClick={(e) => {
             e.stopPropagation();
             triggerHaptic('light');
@@ -171,7 +184,7 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
           }}
           aria-pressed={faved}
           aria-label={pickLang(lang, { es: 'Favorito', ca: 'Favorit', en: 'Favorite' })}
-          className={`min-w-11 min-h-11 rounded-xl flex items-center justify-center cursor-pointer active:scale-95 transition-all ${
+          className={`min-w-11 min-h-11 rounded-xl flex items-center justify-center cursor-pointer active:scale-95 transition-all tv-focus-ring ${
             faved
               ? 'text-[#A78BFA] bg-[#7C3AED]/20'
               : 'text-zinc-400 hover:text-white hover:bg-white/[0.08]'

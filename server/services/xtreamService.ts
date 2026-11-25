@@ -269,11 +269,13 @@ interface OpaqueSegmentEntry {
   kind: 'sub' | 'seg';
 }
 
-const SESSION_CACHE_TTL_MS = 120_000;
+const SESSION_CACHE_TTL_MS = 15 * 60_000;
+const SESSION_STALE_REFRESH_MS = 10 * 60_000;
 export const XTREAM_CATALOG_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
-const REQUEST_TIMEOUT_MS = 9_000;
+const REQUEST_TIMEOUT_MS = 4_500;
 
 const providerSessionCaches = new Map<string, ActiveSessionCache>();
+const backgroundSessionRefreshes = new Set<string>();
 const providerCatalogCaches = new Map<string, CatalogRamCache>();
 const inflightCatalogSyncs = new Map<
   string,
@@ -289,6 +291,7 @@ const opaqueTokenCache = new LruTtlCache<string, OpaqueSegmentEntry>(4_000, 10 *
 const urlToOpaqueTokenCache = new LruTtlCache<string, string>(4_000, 10 * 60_000);
 const opaqueIconCache = new LruTtlCache<string, string>(12_000, 12 * 60 * 60_000);
 const urlToOpaqueIconTokenCache = new LruTtlCache<string, string>(12_000, 12 * 60 * 60_000);
+const liveManifestRamCache = new LruTtlCache<string, string>(350, 7_500);
 
 function maskSensitive(_value: string): string {
   return '********';
@@ -344,12 +347,14 @@ export function parseXtreamAccountsFromEnv(
 
 export function clearXtreamSessionCache(): void {
   providerSessionCaches.clear();
+  backgroundSessionRefreshes.clear();
   providerCatalogCaches.clear();
   inflightCatalogSyncs.clear();
   opaqueTokenCache.clear();
   urlToOpaqueTokenCache.clear();
   opaqueIconCache.clear();
   urlToOpaqueIconTokenCache.clear();
+  liveManifestRamCache.clear();
 }
 
 export function listXtreamProviderSummaries(): XtreamProviderPublicSummary[] {
@@ -758,6 +763,30 @@ export async function resolveActiveXtreamSession(opts?: {
   ) {
     const cachedAccount = provider.accounts[cached.accountIndex];
     if (cachedAccount) {
+      if (
+        Date.now() - cached.validatedAt > SESSION_STALE_REFRESH_MS &&
+        !backgroundSessionRefreshes.has(provider.id)
+      ) {
+        backgroundSessionRefreshes.add(provider.id);
+        void validateAccountStatus(serverOrigin, cachedAccount)
+          .then((freshCheck) => {
+            if (freshCheck.active) {
+              providerSessionCaches.set(provider.id, {
+                ...cached,
+                userStatus: freshCheck.userStatus,
+                activeConnections: freshCheck.activeConnections,
+                maxConnections: freshCheck.maxConnections,
+                expDate: freshCheck.expDate,
+                expDateReadable: freshCheck.expDateReadable,
+                validatedAt: Date.now(),
+              });
+            }
+          })
+          .catch(() => undefined)
+          .finally(() => {
+            backgroundSessionRefreshes.delete(provider.id);
+          });
+      }
       const accountNumber = cached.accountIndex + 1;
       const accountLabel =
         provider.id === 'vod4k'
@@ -872,32 +901,40 @@ export async function resolveActiveXtreamSession(opts?: {
     };
   };
 
-  for (const idx of order) {
-    const acc = provider.accounts[idx];
-    const check = await validateAccountStatus(serverOrigin, acc);
-    const accountNumber = idx + 1;
-    if (check.active) {
+  for (let bStart = 0; bStart < order.length; bStart += 3) {
+    const batchIndices = order.slice(bStart, bStart + 3);
+    const checks = await Promise.all(
+      batchIndices.map(async (idx) => ({
+        idx,
+        check: await validateAccountStatus(serverOrigin, provider.accounts[idx]),
+      }))
+    );
+
+    for (const { idx, check } of checks) {
+      const accountNumber = idx + 1;
+      if (check.active) {
+        attempts.push({
+          accountNumber,
+          status: 'active',
+          detail: check.detail,
+        });
+        const activeCons = Number(check.activeConnections);
+        const maxCons = Number(check.maxConnections);
+        const isCongested =
+          Number.isFinite(maxCons) && maxCons > 0 && Number.isFinite(activeCons) && activeCons >= maxCons;
+        if (isCongested && total > 1 && idx !== order[order.length - 1]) {
+          if (!fallbackActive) fallbackActive = { idx, check };
+          continue;
+        }
+        return activateAccount(idx, check);
+      }
+
       attempts.push({
         accountNumber,
-        status: 'active',
+        status: check.statusLabel === 'Error' ? 'error' : 'inactive',
         detail: check.detail,
       });
-      const activeCons = Number(check.activeConnections);
-      const maxCons = Number(check.maxConnections);
-      const isCongested =
-        Number.isFinite(maxCons) && maxCons > 0 && Number.isFinite(activeCons) && activeCons >= maxCons;
-      if (isCongested && total > 1 && idx !== order[order.length - 1]) {
-        if (!fallbackActive) fallbackActive = { idx, check };
-        continue;
-      }
-      return activateAccount(idx, check);
     }
-
-    attempts.push({
-      accountNumber,
-      status: check.statusLabel === 'Error' ? 'error' : 'inactive',
-      detail: check.detail,
-    });
   }
 
   if (fallbackActive) {
@@ -1963,39 +2000,74 @@ export async function fetchProxiedXtreamManifest(
   const cleanId = String(streamId || '').replace(/\.m3u8$/i, '').trim();
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanId)) return null;
 
-  const preferred = providerPreferredLiveVariant.get(providerId) || 'live';
+  const manifestCacheKey = `${providerId}:${cleanId}:${originPrefix}`;
+  const cachedManifest = liveManifestRamCache.get(manifestCacheKey);
+  if (cachedManifest) {
+    return cachedManifest;
+  }
+
+  const knownPreferred = providerPreferredLiveVariant.get(providerId);
   const variants: Array<'live' | 'root'> =
-    preferred === 'live' ? ['live', 'root'] : ['root', 'live'];
+    knownPreferred === 'root' ? ['root', 'live'] : ['live', 'root'];
+
+  const probeVariant = async (
+    serverOrigin: string,
+    account: XtreamAccountCredential,
+    variant: 'live' | 'root'
+  ): Promise<string | null> => {
+    const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, variant);
+    try {
+      const res = await streamingFetch(targetUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'IPTVSmartersPlayer',
+          Accept: '*/*',
+        },
+        timeoutMs: 2_600,
+      });
+      if (!res.ok) {
+        if (res.body) void res.body.cancel().catch(() => undefined);
+        return null;
+      }
+      const ct = String(res.headers.get('content-type') || '').toLowerCase();
+      if (ct.startsWith('text/html') || ct.includes('video/mp2t') || ct.includes('octet-stream')) {
+        if (res.body) void res.body.cancel().catch(() => undefined);
+        return null;
+      }
+      const text = await res.text();
+      if (text.includes('#EXTM3U')) {
+        providerPreferredLiveVariant.set(providerId, variant);
+        return rewriteManifestLines(text, res.url || targetUrl, serverOrigin, originPrefix);
+      }
+    } catch {
+      // ignore variant error
+    }
+    return null;
+  };
 
   const result = await runWithAccountFailover(providerId, async ({ serverOrigin, account }) => {
-    for (const variant of variants) {
-      const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, variant);
+    if (!knownPreferred) {
+      // Uncached provider variant: probe both 'live' and 'root' concurrently to cut startup latency in half
       try {
-        const res = await streamingFetch(targetUrl, {
-          method: 'GET',
-          headers: {
-            'User-Agent': 'IPTVSmartersPlayer',
-            Accept: '*/*',
-          },
-          timeoutMs: 3_600,
-        });
-        if (!res.ok) {
-          if (res.body) void res.body.cancel().catch(() => undefined);
-          continue;
-        }
-        const ct = String(res.headers.get('content-type') || '').toLowerCase();
-        if (ct.startsWith('text/html') || ct.includes('video/mp2t') || ct.includes('octet-stream')) {
-          if (res.body) void res.body.cancel().catch(() => undefined);
-          continue;
-        }
-        const text = await res.text();
-        if (text.includes('#EXTM3U')) {
-          providerPreferredLiveVariant.set(providerId, variant);
-          const rewritten = rewriteManifestLines(text, res.url || targetUrl, serverOrigin, originPrefix);
-          return { ok: true, value: rewritten };
-        }
+        const winner = await Promise.any(
+          variants.map(async (v) => {
+            const rewritten = await probeVariant(serverOrigin, account, v);
+            if (!rewritten) throw new Error('variant_miss');
+            return rewritten;
+          })
+        );
+        liveManifestRamCache.set(manifestCacheKey, winner);
+        return { ok: true, value: winner };
       } catch {
-        // try next variant or failover account
+        return { ok: false, shouldRotate: true };
+      }
+    }
+
+    for (const variant of variants) {
+      const rewritten = await probeVariant(serverOrigin, account, variant);
+      if (rewritten) {
+        liveManifestRamCache.set(manifestCacheKey, rewritten);
+        return { ok: true, value: rewritten };
       }
     }
     return { ok: false, shouldRotate: true };
@@ -2276,7 +2348,7 @@ export async function openXtreamOpaqueSegmentStream(
       method: 'GET',
       headers,
       headersTimeoutOnly: !isSubManifest,
-      timeoutMs: isSubManifest ? 6_000 : 10_000,
+      timeoutMs: isSubManifest ? 3_500 : 10_000,
       signal,
     });
     if (!res.ok && res.status !== 206) {
@@ -2388,7 +2460,24 @@ export interface XtreamIntegratedTdtChannel {
   shortMark: string;
   brandTone: string;
   network: string;
-  category: 'belix_live';
+  category:
+    | 'movistar'
+    | 'dazn'
+    | 'uk_sports'
+    | 'beinsports'
+    | 'bein_arabic'
+    | 'documentales'
+    | 'usa_tv'
+    | 'europa_tv'
+    | 'noticias_intl'
+    | 'espn'
+    | 'dsports'
+    | 'generalistas'
+    | 'cine_series'
+    | 'entretenimiento'
+    | 'noticias_deportes'
+    | 'infantil_autonomicas'
+    | 'belix_live';
   quality: string;
   countryCode?: string;
   logoUrl?: string;
@@ -2398,18 +2487,108 @@ export interface XtreamIntegratedTdtChannel {
     id: string;
     label: string;
     lang: string;
+    langLabel?: string;
     quality: string;
+    providerId?: string;
+    providerName?: string;
     sourceUrl: string;
     resolverType: 'direct_hls';
   }>;
 }
 
 function inferLiveQualityLabel(rawName: string, catName: string): string {
-  const hay = `${rawName} ${catName}`.toLowerCase();
-  if (/(?:\b4k\b|\buhd\b|\b2160p?\b|⁴ᴷ)/i.test(hay)) return '4K UHD';
+  const hay = `${rawName} ${catName}`
+    .replace(/⁴ᴷ|⁴ᵏ/g, ' 4K ')
+    .replace(/ᶠᴴᴰ/gi, ' FHD ')
+    .replace(/ᴴᴰ/gi, ' HD ')
+    .toLowerCase();
+  if (/(?:\b4k\b|\buhd\b|\b2160p?\b)/i.test(hay)) return '4K UHD';
   if (/\b(?:fhd|1080p?|full\s*hd)\b/i.test(hay)) return '1080p FHD';
   if (/\b(?:576p?|480p?|360p?|sd)\b/i.test(hay)) return 'SD';
   return 'HD';
+}
+
+function inferLiveLangAndCountry(rawName: string, catName: string): {
+  lang: string;
+  langLabel: string;
+  countryCode?: string;
+} {
+  const name = String(rawName || '').trim();
+  const cat = String(catName || '').trim();
+  const combined = `${cat} ${name}`;
+  if (
+    /^(?:\[?\s*(?:UK|US|USA|FR|DE|GER|IT|ITA|PT|POR|AR|ARB|LAT|LA|MX|ARG|NL|PL|RO|GR|BG|RS|MK|TR|IR|RU|FI|NO|SE|DK|BE|AT|CH|AL|IND)\s*\]?\s*[|:/-·•▎┃│◈])/i.test(
+      name
+    ) ||
+    /^[┃│▎◈•]/.test(name)
+  ) {
+    // Let explicit foreign prefix below classify its real language/country
+  } else if (
+    /\b(?:spain|espa[ñn]a|tdt|tivify|tivfiy|movistar|atresmedia|mediaset|rtve|laliga|hypermotion)\b|أسبانيا|^(?:tivif?y\s*es\s*[:|]|vip\s*es\s*[:|]|\[?\s*(?:es|esp)\s*\]?\s*[|:/-])/i.test(
+      combined
+    ) &&
+    !/^(?:\[?\s*(?:UK|US|USA|FR|DE|GER|IT|PT|AR|ARB|LAT|MX|NL|PL|RO|GR|TR|FI|NO|SE|DK|BE|AT|AL|IND)\s*\]?\s*[|:/-])/i.test(cat)
+  ) {
+    return { lang: 'ES', langLabel: 'Castellano', countryCode: 'ES' };
+  }
+  if (/[\u0600-\u06FF]|^(?:\[?\s*(?:AR|ARB)\s*\]?\s*[|:/-])|\b(?:arabic|arabia|egypt|maroc|morocco|mbc|rotana|al\s*jazeera|nile)\b/i.test(combined)) {
+    return { lang: 'AR', langLabel: 'Árabe', countryCode: 'AR' };
+  }
+  if (/^(?:\[?\s*CAT\s*\]?\s*[|:/-])|\b(?:catal[aà]|tv3|3cat|esport3|sx3)\b/i.test(combined)) {
+    return { lang: 'CAT', langLabel: 'Català', countryCode: 'ES' };
+  }
+  if (/^(?:\|?\s*(?:LAT|LA|MX|ARG|COL|CHL|PER|PE)\s*\]?\s*[|:/-])|\b(?:latino|latam|m[eé]xico|argentina|colombia|chile|dsports)\b/i.test(combined)) {
+    return { lang: 'LAT', langLabel: 'Latino', countryCode: 'LAT' };
+  }
+  if (/^(?:\[?\s*(?:FR|VF)\s*\]?\s*[|:/-])|\b(?:france|french|fran[çc]ais|canal\+|tf1|rmc\s*sport|m6)\b/i.test(combined)) {
+    return { lang: 'FR', langLabel: 'Francés', countryCode: 'FR' };
+  }
+  if (/^(?:\[?\s*(?:PT|BR)\s*\]?\s*[|:/-])|\b(?:portugal|sport\s*tv|tvi|sic|rtp|brasil|globo)\b/i.test(combined)) {
+    return { lang: 'PT', langLabel: 'Portugués', countryCode: 'PT' };
+  }
+  if (/^(?:\[?\s*IT\s*\]?\s*[|:/-])|\b(?:italy|italia|italiano|rai|mediaset\s*italia|sky\s*italia|serie\s*a)\b/i.test(combined)) {
+    return { lang: 'IT', langLabel: 'Italiano', countryCode: 'IT' };
+  }
+  if (/^(?:\[?\s*(?:DE|GER|AT|CH)\s*\]?\s*[|:/-])|\b(?:germany|deutsch|zdf|ard|rtl|sky\s*sport\s*de|bundesliga)\b/i.test(combined)) {
+    return { lang: 'DE', langLabel: 'Alemán', countryCode: 'DE' };
+  }
+  if (/^(?:\[?\s*(?:UK|US|USA|EN|ENG|CA|AU)\s*\]?\s*[|:/-])|\b(?:uk|usa|united\s*states|english|sky\s*sports|tnt\s*sports|bbc|itv|nbc|cbs|abc|fox|espn|premier\s*league)\b/i.test(combined)) {
+    return {
+      lang: 'EN',
+      langLabel: 'Inglés',
+      countryCode: /\b(?:us|usa|nba|nfl|mlb|espn|cbs|nbc|abc|fox)\b/i.test(combined) ? 'US' : 'GB',
+    };
+  }
+  const euroMatch = combined.match(/^(?:\[?\s*|┃)(NL|PL|RO|GR|BG|RS|MK|TR|IR|RU|FI|NO|SE|DK|BE|AL|IND)\b/i);
+  if (euroMatch) {
+    const cc = euroMatch[1].toUpperCase();
+    return { lang: cc, langLabel: cc, countryCode: cc };
+  }
+  return { lang: 'INT', langLabel: 'Internacional' };
+}
+
+function inferLiveChannelCategory(
+  name: string,
+  catName: string,
+  lang: string
+): XtreamIntegratedTdtChannel['category'] {
+  const hay = `${name} ${catName}`.toLowerCase();
+  if (/\bdazn\b/.test(hay)) return 'dazn';
+  if (/\b(?:movistar|m\+|laliga|hypermotion|campeones|vamos)\b/.test(hay)) return 'movistar';
+  if (/\bbein\b/.test(hay) && (lang === 'AR' || /[\u0600-\u06FF]|arab|max/i.test(hay))) return 'bein_arabic';
+  if (/\bbein\b/.test(hay)) return 'beinsports';
+  if (/\bespn\b/.test(hay)) return 'espn';
+  if (/\bdsports\b/.test(hay)) return 'dsports';
+  if (/\b(?:sky\s*sports|tnt\s*sports|premier\s*sports|bt\s*sport)\b/.test(hay)) return 'uk_sports';
+  if (/\b(?:eurosport|deporte|sport|futbol|football|nba|f1|motor|golf|tennis)\b/.test(hay)) return 'noticias_deportes';
+  if (/\b(?:cine|movies?|cinema|peliculas|series|axn|warner|amc|hbo|fox|hollywood|tcm|calle\s*13|syfy)\b/.test(hay)) return 'cine_series';
+  if (/\b(?:doc|discovery|nat\s*geo|national\s*geo|historia|history|odisea|dmax|animal)\b/.test(hay)) return 'documentales';
+  if (/\b(?:news|noticias|24\s*h|cnn|bbc\s*world|al\s*jazeera|euronews|bloomberg)\b/.test(hay)) return 'noticias_intl';
+  if (/\b(?:kids|infantil|clan|boing|disney|nick|cartoon)\b/.test(hay)) return 'infantil_autonomicas';
+  if (lang === 'EN' && /\b(?:us|usa)\b/i.test(hay)) return 'usa_tv';
+  if (['FR', 'PT', 'IT', 'DE'].includes(lang)) return 'europa_tv';
+  if (lang === 'ES') return 'entretenimiento';
+  return 'belix_live';
 }
 
 export function getCachedXtreamProviderCatalogs(): XtreamFullCatalogPayload[] {
@@ -2441,9 +2620,8 @@ export function getCachedXtreamLiveTdtChannels(): XtreamIntegratedTdtChannel[] {
 
       const catName = catNameById.get(item.categoryId) || p.name;
       const inferredQuality = inferLiveQualityLabel(item.name, catName);
-      const isSpain =
-        /\b(?:spain|espa[ñn]a|tdt)\b|أسبانيا|^(?:es|esp)\s*[|:/-]/i.test(`${catName} ${item.name}`) &&
-        !/^yes$/i.test(catName.trim());
+      const { lang, langLabel, countryCode } = inferLiveLangAndCountry(item.name, catName);
+      const category = inferLiveChannelCategory(item.name, catName, lang);
       const shortMark =
         item.name
           .normalize('NFD')
@@ -2458,20 +2636,23 @@ export function getCachedXtreamLiveTdtChannels(): XtreamIntegratedTdtChannel[] {
         dial: item.num || 1000 + out.length,
         name: item.name,
         shortMark,
-        brandTone: '#10B981',
+        brandTone: lang === 'ES' ? '#10B981' : '#38BDF8',
         network: p.id === 'primary' ? catName : `${p.name} · ${catName}`,
-        category: 'belix_live',
+        category,
         quality: inferredQuality,
-        ...(isSpain ? { countryCode: 'ES' } : {}),
+        ...(countryCode ? { countryCode } : {}),
         logoUrl: item.streamIcon,
-        description: `${p.name} · ${catName} · Canal #${item.num}`,
+        description: `${p.name} · ${catName} · ${langLabel} · ${inferredQuality}`,
         epgChannelId: item.epgChannelId,
         channels: [
           {
             id: `xtream-trk-${p.id}-${item.streamId}`,
-            label: `${p.name} · ${item.name} · ${inferredQuality}`,
-            lang: isSpain ? 'ES' : 'ES',
+            label: `${p.name} · ${langLabel} · ${inferredQuality}`,
+            lang,
+            langLabel,
             quality: inferredQuality,
+            providerId: p.id,
+            providerName: p.name,
             sourceUrl: item.playbackUrl,
             resolverType: 'direct_hls',
           },

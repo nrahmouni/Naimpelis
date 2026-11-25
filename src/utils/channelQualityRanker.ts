@@ -34,7 +34,7 @@ export interface GenericRankableChannel {
 }
 
 const CANONICAL_ALIAS_RULES: Array<[RegExp, string]> = [
-  // Spanish National TDT
+  // Spanish National TDT & Atresmedia / Mediaset / RTVE
   [/^(?:tve\s*)?la\s*1(?:\s*tve)?$/i, 'tdt-la1'],
   [/^tve\s*1$/i, 'tdt-la1'],
   [/^(?:tve\s*)?la\s*2(?:\s*tve)?$/i, 'tdt-la2'],
@@ -59,43 +59,63 @@ const CANONICAL_ALIAS_RULES: Array<[RegExp, string]> = [
   [/^dkiss$/i, 'tdt-dkiss'],
   [/^ten$/i, 'tdt-ten'],
   [/^trece(?:\s*tv)?$|^13\s*tv$/i, 'tdt-trece'],
-  [/^(?:tve\s*)?24\s*h(?:oras)?$|^canal\s*24\s*horas$/i, 'tdt-24h'],
+  [/^(?:tve\s*)?24\s*h(?:oras)?$|^canal\s*24\s*horas$|^24\s*horas$/i, 'tdt-24h'],
   [/^(?:tve\s*)?teledeporte$|^tdp$/i, 'tdt-teledeporte'],
-  [/^real\s*madrid\s*tv$|^rmtv$/i, 'tdt-rmtv'],
-  [/^clan(?:\s*rtve|\s*tve)?$/i, 'tdt-clan'],
+  [/^real\s*madrid(?:\s*tv)?$|^rmtv$/i, 'tdt-rmtv'],
+  [/^clan(?:\s*tv|\s*rtve|\s*tve)?$/i, 'tdt-clan'],
   [/^boing$/i, 'tdt-boing'],
   [/^canal\s*sur(?:\s*tv|\s*andalucia)?$/i, 'tdt-canalsur'],
   [/^tv\s*3(?:\s*cat)?$|^3cat$/i, 'tdt-3cat'],
+  [/^telemadrid$|^tele\s*madrid$/i, 'tdt-telemadrid'],
   [/^etb\s*1$/i, 'tdt-etb1'],
   [/^etb\s*2$/i, 'tdt-etb2'],
   [/^tv\s*canaria$|^television\s*canaria$/i, 'tdt-tvcanaria'],
-  [/^tvg(?:\s*galicia)?$/i, 'tdt-tvg'],
+  [/^tvg(?:\s*galicia)?$|^tv\s*galicia$/i, 'tdt-tvg'],
 
   // Spanish Football & Sports (DAZN / Movistar+)
-  [/^dazn\s*laliga(?:\s*1)?$/i, 'dazn-laliga'],
+  [/^dazn\s*la\s*liga(?:\s*1)?$/i, 'dazn-laliga'],
   [/^dazn\s*1$/i, 'dazn-1'],
   [/^dazn\s*2$/i, 'dazn-2'],
   [/^dazn\s*3$/i, 'dazn-3'],
   [/^dazn\s*4$/i, 'dazn-4'],
-  [/^dazn\s*f1$/i, 'dazn-f1'],
-  [/^(?:movistar|m\+)\s*plus\+?$/i, 'mplus-canal'],
-  [/^movistar\+$/i, 'mplus-canal'],
-  [/^(?:movistar|m\+)\s*vamos$/i, 'mplus-vamos'],
-  [/^vamos(?:\s*por\s*m\+)?$/i, 'mplus-vamos'],
-  [/^(?:movistar|m\+)\s*laliga(?:\s*tv)?$/i, 'mplus-laliga'],
-  [/^laliga\s*tv\s*por\s*m\+$/i, 'mplus-laliga'],
-  [/^laliga\s*(?:tv\s*)?hypermotion$/i, 'mplus-hypermotion'],
-  [/^(?:movistar|m\+)\s*liga\s*de\s*campeones$/i, 'mplus-champions'],
-  [/^liga\s*de\s*campeones(?:\s*por\s*m\+)?$/i, 'mplus-champions'],
-  [/^(?:movistar|m\+)\s*deportes(?:\s*1)?$/i, 'mplus-deportes'],
-  [/^(?:movistar|m\+)\s*deportes\s*2$/i, 'mplus-deportes2'],
-  [/^(?:movistar|m\+)\s*golf$/i, 'mplus-golf'],
-  [/^eurosport\s*1(?:\s*es)?$/i, 'mplus-eurosport1'],
-  [/^eurosport\s*2(?:\s*es)?$/i, 'mplus-eurosport2'],
+  [/^dazn\s*(?:m\.?\s*)?f(?:ormula\s*)?1$/i, 'dazn-f1'],
+  [/^(?:movistar|m[+.]?)\s*plus\+?(?:\s*1)?$|^#0$/i, 'mplus-canal'],
+  [/^(?:movistar|m[+.]?)\s*vamos$|^vamos(?:\s*por\s*m\+)?$/i, 'mplus-vamos'],
+  [/^(?:movistar|m[+.]?)\s*la\s*liga(?:\s*tv)?$|^la\s*liga\s*tv\s*por\s*m\+$|^la\s*liga\s*por\s*m\+$/i, 'mplus-laliga'],
+  [/^la\s*liga\s*(?:tv\s*)?hypermotion(?:\s*1)?$/i, 'mplus-hypermotion'],
+  [/^(?:movistar|m[+.]?)\s*(?:liga\s*(?:de\s*)?campeones|l\.?\s*campeones)$|^liga\s*de\s*campeones(?:\s*por\s*m\+)?$/i, 'mplus-champions'],
+  [/^(?:movistar|m[+.]?)\s*deportes(?:\s*1)?$/i, 'mplus-deportes'],
+  [/^(?:movistar|m[+.]?)\s*deportes\s*2$/i, 'mplus-deportes2'],
+  [/^(?:movistar|m[+.]?)\s*golf$/i, 'mplus-golf'],
+  [/^(?:dazn\s*)?eurosport\s*1(?:\s*es)?$/i, 'mplus-eurosport1'],
+  [/^(?:dazn\s*)?eurosport\s*2(?:\s*es)?$/i, 'mplus-eurosport2'],
+
+  // Spanish & International Cinema, Docs & Sports cross-server aliases
+  [/^axn(?:\s*es)?$/i, 'cine-axn'],
+  [/^axn\s*(?:movies?|white)$/i, 'cine-axn-movies'],
+  [/^warner(?:\s*tv)?$/i, 'cine-warner'],
+  [/^amc(?:\s*es)?$/i, 'cine-amc'],
+  [/^calle\s*13$/i, 'cine-calle13'],
+  [/^star(?:\s*channel)?$|^fox(?:\s*es)?$/i, 'cine-star'],
+  [/^hollywood$|^canal\s*hollywood$/i, 'cine-hollywood'],
+  [/^tcm$/i, 'cine-tcm'],
+  [/^syfy$/i, 'cine-syfy'],
+  [/^comedy\s*central$/i, 'cine-comedy-central'],
+  [/^nat(?:l|ional)?\s*geographic$|^nat\s*geo$/i, 'doc-natgeo'],
+  [/^nat\s*geo\s*wild$/i, 'doc-natgeo-wild'],
+  [/^discovery(?:\s*channel)?$/i, 'doc-discovery'],
+  [/^historia$|^canal\s*historia$/i, 'doc-historia'],
+  [/^bein\s*sports?\s*1$/i, 'intl-bein1'],
+  [/^bein\s*sports?\s*2$/i, 'intl-bein2'],
+  [/^bein\s*sports?\s*3$/i, 'intl-bein3'],
+  [/^espn\s*1$|^espn$/i, 'intl-espn1'],
+  [/^espn\s*2$/i, 'intl-espn2'],
+  [/^tnt\s*sports?\s*1$/i, 'intl-tntsports1'],
+  [/^sky\s*sports?\s*main\s*event$/i, 'intl-skysports-main'],
 ];
 
 const NOISY_PREFIX_RE =
-  /^(?:\[?\s*(?:ES|ESP|SPAIN|ESPAÑA|LAT|MX|AR|UK|US|USA|FR|DE|IT|PT|EU|NL|VIP|RAW|BACKUP)\s*\]?\s*[:|\-/·]+\s*)+/i;
+  /^(?:\[?\s*(?:ES|ESP|SPAIN|ESPAÑA|LAT|MX|AR|ARB|UK|US|USA|FR|DE|GER|IT|ITA|PT|POR|EU|NL|CAT|VIP|RAW|BACKUP)\s*\]?\s*[:|\-/·•]+\s*)+/i;
 const NOISY_SUFFIX_RE =
   /(?:\s*(?:\(|\[)?\b(?:4K|UHD|FHD|HD|SD|HEVC|H\.?265|H\.?264|AVC|RAW|VIP|60FPS|50FPS|1080P?|720P?|576P?|480P?|BACKUP|RESPALDO|OPCION\s*\d*|OPT\s*\d*|SERVER\s*\d*)\b(?:\)|\])?)+$/gi;
 
@@ -147,9 +167,11 @@ export function resolveCanonicalChannelKey(
       if (
         (canonicalId.startsWith('dazn-') ||
           canonicalId.startsWith('mplus-') ||
+          canonicalId.startsWith('cine-') ||
+          canonicalId.startsWith('doc-') ||
           canonicalId === 'tdt-la1' ||
           canonicalId === 'tdt-ten') &&
-        /\b(?:uk|pt|portugal|de|germany|it|italy|fr|france|us|usa|ar|arabic|br)\b/i.test(
+        /\b(?:uk|pt|portugal|de|germany|it|italy|fr|france|us|usa|ar|arabic|br|lat)\b/i.test(
           ch.name
         ) &&
         !looksSpanish
@@ -166,12 +188,20 @@ export function resolveCanonicalChannelKey(
     .replace(/^-+|-+$/g, '');
   if (!slug) return id || 'unknown';
 
-  const langHint = /\b(?:uk|en|us)\b/i.test(ch.name)
+  const langHint = /\b(?:uk|en|us|usa)\b/i.test(ch.name)
     ? ':en'
-    : /\b(?:ar|arabic)\b/i.test(ch.name)
+    : /\b(?:ar|arabic|arb)\b/i.test(ch.name)
     ? ':ar'
-    : /\b(?:fr)\b/i.test(ch.name)
+    : /\b(?:fr|france)\b/i.test(ch.name)
     ? ':fr'
+    : /\b(?:pt|br|portugal)\b/i.test(ch.name)
+    ? ':pt'
+    : /\b(?:it|italy)\b/i.test(ch.name)
+    ? ':it'
+    : /\b(?:de|ger|germany)\b/i.test(ch.name)
+    ? ':de'
+    : /\b(?:lat|latino|mx|arg)\b/i.test(ch.name)
+    ? ':lat'
     : '';
   return `norm:${slug}${langHint}`;
 }
@@ -183,30 +213,113 @@ export function inferStreamQualityTag(
 ): { label: string; tier: number } {
   const text = `${explicitQuality || ''} ${label || ''} ${sourceUrl || ''}`
     .replace(/⁴ᴷ|⁴ᵏ/g, ' 4K ')
+    .replace(/ᶠᴴᴰ/gi, ' FHD ')
+    .replace(/ᴴᴰ/gi, ' HD ')
     .toLowerCase();
   const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(text);
   if (/\b(?:4k|uhd|2160p?)\b/.test(text)) {
-    return { label: '4K UHD', tier: isHevc ? 3 : 0 };
+    return { label: '4K UHD', tier: isHevc ? 2.5 : 0 };
   }
   if (/\b(?:fhd|1080p?|full\s*hd)\b/.test(text)) {
-    return { label: '1080p FHD', tier: isHevc ? 3 : 1 };
+    return { label: '1080p FHD', tier: isHevc ? 2.8 : 1 };
   }
   if (/\b(?:576p?|480p?|360p?|sd|lq)\b/.test(text)) {
     return { label: 'SD', tier: 4 };
   }
   if (/\b(?:720p?|hd)\b/.test(text)) {
-    return { label: 'HD', tier: isHevc ? 3 : 2 };
+    return { label: 'HD', tier: isHevc ? 3.2 : 2 };
   }
   if (/^\/api\/(xtream\/stream|stream|belix\/stream)/i.test(String(sourceUrl || ''))) {
-    return { label: 'HD Live', tier: 2 };
+    return { label: '1080p FHD', tier: 1.5 };
   }
   return { label: 'HD', tier: 2 };
 }
 
+export function normalizeLiveTrackLang(rawLang?: string, label?: string, countryCode?: string): string {
+  const raw = String(rawLang || '').trim().toUpperCase();
+  const hay = `${label || ''}`.toLowerCase();
+  if (raw === 'ES' || raw === 'ESP' || raw === 'CAST') return 'ES';
+  if (raw === 'LAT' || raw === 'LA' || raw === 'MX') return 'LAT';
+  if (raw === 'EN' || raw === 'ENG' || raw === 'UK' || raw === 'US') return 'EN';
+  if (raw === 'CAT' || raw === 'CA') return 'CAT';
+  if (raw === 'AR' || raw === 'ARB') return 'AR';
+  if (raw === 'FR') return 'FR';
+  if (raw === 'PT' || raw === 'BR') return 'PT';
+  if (raw === 'IT') return 'IT';
+  if (raw === 'DE' || raw === 'GER') return 'DE';
+  if (raw === 'VOSE') return 'VOSE';
+  if (/\b(?:es|esp|spain|espana|castellano)\b/.test(hay)) return 'ES';
+  if (/\b(?:lat|latino)\b/.test(hay)) return 'LAT';
+  if (/\b(?:uk|us|usa|eng|english)\b/.test(hay)) return 'EN';
+  if (String(countryCode || '').toUpperCase() === 'ES') return 'ES';
+  return raw || 'ES';
+}
+
+function isDanaDirectTrack(tr: StreamTrack): boolean {
+  const pid = String((tr as { providerId?: string }).providerId || '').toLowerCase();
+  if (pid === 'dana4k') return true;
+  const u = String(tr.sourceUrl || '').toLowerCase();
+  if (u.indexOf('provider=dana4k') !== -1) return true;
+  const lbl = String(tr.label || '').toLowerCase();
+  return lbl.indexOf('dana 4k') !== -1;
+}
+
+function liveTrackSortScore(tr: StreamTrack, preferSpanish: boolean): number {
+  const status = tr.health?.status ?? 'unknown';
+  const statusRank = status === 'down' ? 3 : status === 'degraded' ? 2 : 0;
+  const upBonus = status === 'up' ? -600 : 0;
+  const lang = normalizeLiveTrackLang(tr.lang, tr.label);
+  const langRank = preferSpanish
+    ? lang === 'ES'
+      ? 0
+      : lang === 'CAT'
+      ? 1
+      : lang === 'LAT'
+      ? 2
+      : lang === 'EN'
+      ? 3
+      : 4
+    : 0;
+  const q = inferStreamQualityTag(tr.quality, tr.label, tr.sourceUrl);
+  // On Spanish channels, promote non-HEVC direct Dana 4K Pro tracks right to #1 ahead of mirrors
+  const danaDirectBonus =
+    preferSpanish && status !== 'down' && lang === 'ES' && isDanaDirectTrack(tr) && q.tier < 2.5
+      ? -2400
+      : 0;
+  const directApiBonus = /^\/api\/stream\?/i.test(String(tr.sourceUrl || '')) ? -40 : 0;
+  const latMs = typeof tr.health?.latencyMs === 'number' ? Math.min(9999, tr.health.latencyMs) : 1400;
+  return (
+    statusRank * 100000 +
+    langRank * 10000 +
+    Math.round(q.tier * 1000) +
+    upBonus +
+    danaDirectBonus +
+    directApiBonus +
+    Math.round(latMs / 10)
+  );
+}
+
 function normalizeUrlForMerge(url: string): string {
-  return String(url || '')
+  const clean = String(url || '')
     .trim()
     .replace(/[?&]profile=(hd|fast)\b/gi, '');
+  if (/^\/api\/stream\?/i.test(clean)) {
+    const q = clean.split('?')[1] || '';
+    const provMatch = q.match(/(?:^|&)provider=([^&]+)/i);
+    const idMatch = q.match(/(?:^|&)id=([^&]+)/i);
+    if (idMatch && idMatch[1]) {
+      const prov = (provMatch?.[1] || 'primary').toLowerCase();
+      return `xtream-direct:${prov}:${decodeURIComponent(idMatch[1])}`;
+    }
+  }
+  const xtreamMatch = clean.match(/^\/api\/xtream\/stream\/([^.?/]+)(?:\.m3u8)?(?:\?(.*))?$/i);
+  if (xtreamMatch) {
+    const q = xtreamMatch[2] || '';
+    const provMatch = q.match(/(?:^|&)provider=([^&]+)/i);
+    const prov = (provMatch?.[1] || 'primary').toLowerCase();
+    return `xtream-direct:${prov}:${xtreamMatch[1]}`;
+  }
+  return clean;
 }
 
 const FLAGSHIP_PRIORITY: Record<string, number> = {
@@ -259,23 +372,29 @@ export function getTvBrowsePriorityRank(ch: GenericRankableChannel): number {
 
   const cat = String(ch.category || '').toLowerCase();
   const hay = `${ch.name || ''} ${ch.network || ''}`.toLowerCase();
-  const isEs = String(ch.countryCode || '').toUpperCase() === 'ES';
+  const isEs =
+    String(ch.countryCode || '').toUpperCase() === 'ES' ||
+    (ch.channels || []).some((tr) => normalizeLiveTrackLang(tr.lang, tr.label) === 'ES');
   const statusBonus =
     ch.healthSummary?.bestStatus === 'up'
-      ? -15
+      ? -18
       : ch.healthSummary?.bestStatus === 'down'
-      ? 200
+      ? 220
       : 0;
-  const esBonus = isEs ? -10 : 0;
+  const esBonus = isEs ? -14 : 0;
+  const bestQ = inferStreamQualityTag(ch.quality, ch.channels?.[0]?.quality, ch.channels?.[0]?.sourceUrl);
+  const qualityBonus = bestQ.tier === 0 ? -12 : bestQ.tier <= 1 ? -6 : bestQ.tier >= 4 ? 12 : 0;
+  const mirrorBonus = (ch.channels?.length || 0) >= 3 ? -4 : 0;
+  const totalBonus = statusBonus + esBonus + qualityBonus + mirrorBonus;
 
-  if (cat === 'generalistas') return 45 + (ch.dial || 30) + statusBonus + esBonus;
-  if (cat === 'dazn') return 80 + (ch.dial || 30) + statusBonus + esBonus;
-  if (cat === 'movistar') return 110 + (ch.dial || 30) + statusBonus + esBonus;
-  if (cat === 'noticias_deportes') return 160 + (ch.dial || 30) + statusBonus + esBonus;
-  if (cat === 'entretenimiento') return 200 + (ch.dial || 30) + statusBonus + esBonus;
-  if (cat === 'cine_series') return 240 + (ch.dial || 30) + statusBonus + esBonus;
-  if (cat === 'documentales') return 280 + (ch.dial || 30) + statusBonus + esBonus;
-  if (cat === 'infantil_autonomicas') return 320 + (ch.dial || 30) + statusBonus + esBonus;
+  if (cat === 'generalistas') return 45 + (ch.dial || 30) + totalBonus;
+  if (cat === 'dazn') return 80 + (ch.dial || 30) + totalBonus;
+  if (cat === 'movistar') return 110 + (ch.dial || 30) + totalBonus;
+  if (cat === 'noticias_deportes') return 160 + (ch.dial || 30) + totalBonus;
+  if (cat === 'entretenimiento') return 200 + (ch.dial || 30) + totalBonus;
+  if (cat === 'cine_series') return 240 + (ch.dial || 30) + totalBonus;
+  if (cat === 'documentales') return 280 + (ch.dial || 30) + totalBonus;
+  if (cat === 'infantil_autonomicas') return 320 + (ch.dial || 30) + totalBonus;
 
   if (cat === 'belix_live') {
     const isFootballOrSpain =
@@ -283,21 +402,21 @@ export function getTvBrowsePriorityRank(ch: GenericRankableChannel): number {
       /\b(?:espana|espaa|spain|tdt|laliga|movistar|m\+|dazn|champions|campeones|futbol|deporte|hypermotion|vamos)\b/i.test(
         hay
       );
-    if (isFootballOrSpain) return 360 + statusBonus + esBonus;
-    return 520 + statusBonus + Math.min(90, ch.dial || 50);
+    if (isFootballOrSpain) return 340 + totalBonus;
+    return 510 + statusBonus + qualityBonus + Math.min(90, ch.dial || 50);
   }
 
   if (cat === 'rbtv_sports' || cat === 'uk_sports' || cat === 'beinsports') {
-    return 430 + statusBonus;
+    return 410 + totalBonus;
   }
   if (cat === 'espn' || cat === 'dsports' || cat === 'tnt_space') {
-    return 470 + statusBonus;
+    return 450 + totalBonus;
   }
   if (cat === 'bein_arabic' || cat === 'china_football') {
-    return 500 + statusBonus;
+    return 490 + statusBonus + qualityBonus;
   }
 
-  return 620 + statusBonus + Math.min(200, ch.dial || 100);
+  return 600 + statusBonus + esBonus + qualityBonus + Math.min(200, ch.dial || 100);
 }
 
 export function mergeAndDeduplicateChannels<T extends GenericRankableChannel>(
@@ -319,8 +438,10 @@ export function mergeAndDeduplicateChannels<T extends GenericRankableChannel>(
 
     const normalizedTracks = (ch.channels || []).map((tr) => {
       const inferred = inferStreamQualityTag(tr.quality, `${tr.label} ${ch.name}`, tr.sourceUrl);
+      const normLang = normalizeLiveTrackLang(tr.lang, `${tr.label} ${ch.name}`, ch.countryCode);
       return {
         ...tr,
+        lang: normLang,
         quality: tr.quality && tr.quality !== 'HD' ? tr.quality : inferred.label,
       };
     });
@@ -352,12 +473,14 @@ export function mergeAndDeduplicateChannels<T extends GenericRankableChannel>(
       existing.tracks.push(tr);
     }
 
-    // Prefer better logoUrl or EPG ID if base lacked them
     if (!existing.channel.logoUrl && ch.logoUrl) {
       existing.channel = { ...existing.channel, logoUrl: ch.logoUrl };
     }
     if (!existing.channel.epgChannelId && ch.epgChannelId) {
       existing.channel = { ...existing.channel, epgChannelId: ch.epgChannelId };
+    }
+    if (!existing.channel.countryCode && ch.countryCode) {
+      existing.channel = { ...existing.channel, countryCode: ch.countryCode };
     }
     existing.channel = {
       ...existing.channel,
@@ -365,7 +488,26 @@ export function mergeAndDeduplicateChannels<T extends GenericRankableChannel>(
     };
   }
 
-  return Array.from(byKey.values()).map((entry) => entry.channel);
+  const result: T[] = [];
+  for (const entry of byKey.values()) {
+    const hasEs =
+      String(entry.channel.countryCode || '').toUpperCase() === 'ES' ||
+      entry.tracks.some((tr) => normalizeLiveTrackLang(tr.lang, tr.label) === 'ES');
+    const sortedTracks = [...entry.tracks].sort(
+      (a, b) => liveTrackSortScore(a, hasEs) - liveTrackSortScore(b, hasEs)
+    );
+    const bestPlayableTrack = sortedTracks.find((t) => t.health?.status !== 'down') || sortedTracks[0];
+    const bestQualityLabel = bestPlayableTrack
+      ? inferStreamQualityTag(bestPlayableTrack.quality, bestPlayableTrack.label, bestPlayableTrack.sourceUrl).label
+      : entry.channel.quality || 'HD';
+    result.push({
+      ...entry.channel,
+      quality: bestQualityLabel,
+      channels: sortedTracks,
+    });
+  }
+
+  return result;
 }
 
 export function rankClientChannels<T extends SpanishTdtChannel>(channels: T[]): T[] {

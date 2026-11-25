@@ -263,7 +263,7 @@ export interface WatchHistoryItem {
   season?: number;
   episode?: number;
   episodeTitle?: string;
-  preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT';
+  preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT' | 'FR' | 'PT' | 'IT' | 'DE' | 'AR' | 'QUALITY';
   bingetrixUrl?: string;
   movidyUrl?: string;
   gnulaUrl?: string;

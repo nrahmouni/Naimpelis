@@ -30,8 +30,6 @@ import {
   type XtreamSeriesItem,
   type XtreamVodStreamItem,
 } from '../../services/xtreamClientService';
-import { useAppStore } from '../../store/useAppStore';
-import { XtreamCatalogSummaryBar } from '../belix/XtreamCatalogSummaryBar';
 import { XtreamPosterMedia, buildLiveTdtChannel, buildVodTdtChannel } from '../belix/XtreamMediaHelpers';
 import { XtreamVodDetailModal } from '../belix/XtreamVodDetailModal';
 import { XtreamSeriesEpisodesModal } from '../belix/XtreamSeriesEpisodesModal';
@@ -488,14 +486,6 @@ export const DanaActiveWorldView: React.FC<DanaActiveWorldViewProps> = ({
         {/* Catalog Browser */}
         {status?.connected && catalog && (
           <div className="space-y-3 pt-1">
-            <XtreamCatalogSummaryBar
-              lang={lang}
-              catalog={catalog}
-              scopeProviderIds={['dana4k', 'activecdns']}
-              onOpenServerWorld={(worldId) => {
-                useAppStore.getState().setActiveWorld(worldId);
-              }}
-            />
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
               <div className="inline-flex rounded-xl bg-black/60 border border-white/[0.08] p-1 self-start">
                 <button

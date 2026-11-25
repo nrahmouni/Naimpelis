@@ -32,6 +32,12 @@ import {
 import {
   hasGhostflixVidboltStreamFast,
 } from './bingetrixHelpers/ghostflixVidboltExtractor.ts';
+import {
+  findXtreamMovieMatches,
+  findXtreamSeriesMatches,
+  mergeXtreamOptionsIntoAvailableLanguages,
+  type XtreamMatchedMediaOption,
+} from '../services/xtreamVodMatcher.ts';
 
 export * from './bingetrixHelpers/englishStreamExtractors.ts';
 export * from './bingetrixHelpers/movidyScraper.ts';
@@ -237,7 +243,22 @@ export async function probeAvailableLanguages(opts: {
       new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
     ]);
 
-  const [mvTracks, gnTracks, esTracks, hasEn, vidboltProbe] = await Promise.all([
+  const xtreamProbePromise: Promise<XtreamMatchedMediaOption[]> =
+    hints.length > 0
+      ? opts.mediaType === 'tv'
+        ? findXtreamSeriesMatches({
+            titleHints: hints,
+            yearHint: opts.yearHint,
+            limit: 12,
+          })
+        : findXtreamMovieMatches({
+            titleHints: hints,
+            yearHint: opts.yearHint,
+            limit: 12,
+          }).then((r) => r.options)
+      : Promise.resolve([]);
+
+  const [mvTracks, gnTracks, esTracks, hasEn, vidboltProbe, xtreamOptions] = await Promise.all([
     withProbeTimeout(movidyPromise, 5500, [] as TrackRecord[]),
     withProbeTimeout(gnulaPromise, 5500, [] as TrackRecord[]),
     withProbeTimeout(embedPromise, opts.force ? 8500 : 6500, [] as TrackRecord[]),
@@ -254,6 +275,7 @@ export async function probeAvailableLanguages(opts: {
           { ok: false, langs: [] as ('ES' | 'LAT' | 'VOSE' | 'EN')[] }
         )
       : Promise.resolve({ ok: false, langs: [] as ('ES' | 'LAT' | 'VOSE' | 'EN')[] }),
+    withProbeTimeout(xtreamProbePromise, 2200, [] as XtreamMatchedMediaOption[]),
   ]);
   const foundSet = new Set<'ES' | 'LAT' | 'VOSE' | 'EN'>();
 
@@ -289,9 +311,10 @@ export async function probeAvailableLanguages(opts: {
     foundSet.add('VOSE');
   }
 
-  const ordered = (['ES', 'LAT', 'VOSE', 'EN'] as const).filter((code) =>
+  const baseOrdered = (['ES', 'LAT', 'VOSE', 'EN'] as const).filter((code) =>
     foundSet.has(code)
   );
+  const ordered = mergeXtreamOptionsIntoAvailableLanguages(baseOrdered, xtreamOptions);
 
   // Only cache positive multi-language results or confirmed probes (never poison cache with lone EN timeout fallback)
   if (ordered.length > 0 && !(ordered.length === 1 && ordered[0] === 'EN')) {

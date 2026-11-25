@@ -38,10 +38,10 @@ function ensureFocusVisibleInContainer(el) {
   try {
     var parent = el.parentNode;
     while (parent && parent !== document.body) {
-      if (parent.className && (parent.className.indexOf('tv-rail') !== -1 || parent.className.indexOf('mg-channel-list') !== -1)) {
+      if (parent.className && (parent.className.indexOf('tv-rail') !== -1 || parent.className.indexOf('tv-filter-row') !== -1 || parent.className.indexOf('mg-channel-list') !== -1)) {
         var pRect = parent.getBoundingClientRect();
         var eRect = el.getBoundingClientRect();
-        if (parent.className.indexOf('tv-rail') !== -1) {
+        if (parent.className.indexOf('tv-rail') !== -1 || parent.className.indexOf('tv-filter-row') !== -1) {
           if (eRect.right > pRect.right - 28 || eRect.left < pRect.left + 28) {
             parent.scrollLeft += (eRect.left + eRect.width / 2) - (pRect.left + pRect.width / 2);
           }
@@ -191,7 +191,14 @@ var langBtns = document.querySelectorAll('#sm-lang-row .series-pill-btn');
 for (var l = 0; l < langBtns.length; l++) {
   (function (lb) {
     lb.onclick = function () {
+      if (lb.getAttribute('data-quality-toggle') === '1') {
+        activeSeriesQualityFirst = !activeSeriesQualityFirst;
+        lb.className = 'series-pill-btn' + (activeSeriesQualityFirst ? ' active' : '');
+        showToast(activeSeriesQualityFirst ? tvT('qualityToastOn') : tvT('qualityToastOff'));
+        return;
+      }
       for (var k = 0; k < langBtns.length; k++) {
+        if (langBtns[k].getAttribute('data-quality-toggle') === '1') continue;
         langBtns[k].className = 'series-pill-btn';
       }
       lb.className = 'series-pill-btn active';

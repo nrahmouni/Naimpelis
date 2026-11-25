@@ -192,11 +192,16 @@ export const CinemaPlaybackDocks: React.FC<CinemaPlaybackDocksProps> = ({
               }
             }
             lang={lang}
-            preferLang={resolveTrackLang(videoState.tracks[videoState.activeTrackIndex], {
-              subtitle: videoState.subtitle,
-              title: videoState.title,
-              fallbackLang: activeMovieContext?.preferLang,
-            })}
+            preferLang={(() => {
+              const resolved = resolveTrackLang(videoState.tracks[videoState.activeTrackIndex], {
+                subtitle: videoState.subtitle,
+                title: videoState.title,
+                fallbackLang: activeMovieContext?.preferLang,
+              });
+              return resolved === 'LAT' || resolved === 'VOSE' || resolved === 'EN' || resolved === 'CAT'
+                ? resolved
+                : 'ES';
+            })()}
             loadingItemId={loadingItemId}
             onSelectMovie={(movieItem, pLang) => {
               onSelectMovie(movieItem, pLang);

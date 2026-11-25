@@ -25,8 +25,78 @@ function setCachedLiveExtract(rType, streamUrl, data) {
   };
 }
 
+var tvLivePrewarmAt = {};
+
 function isDirectCorsPublicStream(urlStr) {
   return /^https:\/\/([^/]*\.)?(rtvelivestream\.rtve\.es|3catdirectes\.cat|eitb\.eus)\//i.test(String(urlStr || ''));
+}
+
+function getTvTrackLangTag(tr) {
+  if (!tr) return 'ES';
+  var raw = String(tr.lang || tr.langCode || '').toUpperCase();
+  if (raw === 'CAT' || raw === 'CA') return 'CAT';
+  if (raw === 'LAT' || raw === 'VOSE' || raw === 'EN' || raw === 'FR' || raw === 'PT' || raw === 'IT' || raw === 'DE' || raw === 'AR' || raw === 'ZH') {
+    return raw;
+  }
+  var hay = String((tr.label || '') + ' ' + (tr.langLabel || '')).toLowerCase();
+  if (hay.indexOf('catal') !== -1 || hay.indexOf('3cat') !== -1) return 'CAT';
+  if (hay.indexOf('latino') !== -1) return 'LAT';
+  if (hay.indexOf('vose') !== -1) return 'VOSE';
+  if (hay.indexOf('english') !== -1 || hay.indexOf('ingl') !== -1) return 'EN';
+  return 'ES';
+}
+
+function compactTvTrackQuality(tr) {
+  var hay = String((tr && tr.quality ? tr.quality : '') + ' ' + (tr && tr.label ? tr.label : '')).toUpperCase();
+  if (/\b(4K|UHD|2160P?)\b/.test(hay)) return '4K UHD';
+  if (/\b(1080P?|FHD)\b/.test(hay)) return '1080p FHD';
+  if (/\b(720P?|HD)\b/.test(hay)) return 'HD';
+  if (/\b(480P?|576P?|SD)\b/.test(hay)) return 'SD';
+  return '';
+}
+
+function formatTvTrackChipLabel(tr, idx) {
+  if (!tr) return 'Señal ' + ((idx || 0) + 1);
+  var qTag = compactTvTrackQuality(tr);
+  var prov = tr.providerName ? String(tr.providerName).replace(/^\s+|\s+$/g, '') : '';
+  if (!prov && tr.label) {
+    var parts = String(tr.label).split('·');
+    if (parts.length > 0 && parts[0]) {
+      var first = parts[0].replace(/^\s+|\s+$/g, '');
+      if (first && !/^(castellano|espa[nñ]ol|es|hd|fhd|4k|live)$/i.test(first)) {
+        prov = first;
+      }
+    }
+  }
+  if (!prov) prov = 'Señal ' + ((idx || 0) + 1);
+  if (prov.length > 18) prov = prov.slice(0, 17) + '…';
+  var lTag = getTvTrackLangTag(tr);
+  var out = prov;
+  if (qTag && out.toUpperCase().indexOf(qTag.toUpperCase()) === -1) out += ' · ' + qTag;
+  if (lTag && lTag !== 'ES') out += ' · ' + lTag;
+  return out;
+}
+
+function buildTvFastResolveTracks(tracks, limit) {
+  var out = [];
+  var list = Array.isArray(tracks) ? tracks : [];
+  var maxLen = typeof limit === 'number' && limit > 0 ? limit : 6;
+  for (var i = 0; i < list.length && out.length < maxLen; i++) {
+    var tr = list[i];
+    if (!tr || !tr.sourceUrl) continue;
+    out.push({
+      id: tr.id || ('tr-' + i),
+      label: tr.label || ('Señal ' + (i + 1)),
+      lang: tr.lang || 'ES',
+      quality: tr.quality || 'HD',
+      providerId: tr.providerId,
+      providerName: tr.providerName,
+      sourceUrl: tr.sourceUrl,
+      resolverType: tr.resolverType || 'tdt_hls',
+      health: tr.health ? { status: tr.health.status, latencyMs: tr.health.latencyMs } : undefined
+    });
+  }
+  return out;
 }
 
 function prewarmTdtChannelOnTv(ch, trackIndex) {
@@ -35,26 +105,25 @@ function prewarmTdtChannelOnTv(ch, trackIndex) {
   var track = ch.channels[idx];
   if (!track) return;
   var streamUrl = track.resolvedStreamUrl || track.sourceUrl || track.url || '';
-  if (!streamUrl || streamUrl.indexOf('/api/') === 0 || isDirectCorsPublicStream(streamUrl)) return;
+  if (!streamUrl || isDirectCorsPublicStream(streamUrl)) return;
+
+  var prewarmKey = String(ch.id || streamUrl) + '|ES';
+  var lastPw = tvLivePrewarmAt[prewarmKey] || 0;
+  if (Date.now() - lastPw < 25000) return;
 
   var rType = track.resolverType || 'tdt_hls';
-  if (getCachedLiveExtract(rType, streamUrl)) return;
+  if (streamUrl.indexOf('/api/') !== 0 && getCachedLiveExtract(rType, streamUrl)) return;
 
-  var k = getLiveExtractCacheKey(rType, streamUrl);
-  if (tvPrewarmInFlight[k]) return;
-  tvPrewarmInFlight[k] = true;
+  var payloadTracks = buildTvFastResolveTracks(ch.channels, 4);
+  if (!payloadTracks.length) return;
+  tvLivePrewarmAt[prewarmKey] = Date.now();
 
-  var q =
-    'resolverType=' + encodeURIComponent(rType) +
-    '&url=' + encodeURIComponent(streamUrl) +
-    '&title=' + encodeURIComponent(ch.name || 'Live TV');
-
-  xhrJson('GET', '/api/extract/stream?' + q, null, function (err, data) {
-    delete tvPrewarmInFlight[k];
-    if (!err && data && data.success && data.streamUrl) {
-      setCachedLiveExtract(rType, streamUrl, data);
-    }
-  });
+  xhrJson('POST', '/api/live/prewarm', {
+    channelId: ch.id,
+    title: ch.name || 'Live TV',
+    preferLang: 'ES',
+    tracks: payloadTracks
+  }, function (_err, _data) {});
 }
 
 function scheduleNextChannelPrewarm(currentCh) {
@@ -100,7 +169,7 @@ function showLiveZapOsd(ch, trackIdx) {
 
   var tr = ch.channels && ch.channels[trackIdx] ? ch.channels[trackIdx] : null;
   if (sigMeta) {
-    sigMeta.textContent = tr ? (tr.label || (tr.quality || 'HD')) : (ch.network || 'HD');
+    sigMeta.textContent = tr ? formatTvTrackChipLabel(tr, trackIdx) : (ch.network || 'HD');
   }
 
   var chEpg = catalogData.epg ? catalogData.epg[ch.id] : null;
@@ -551,10 +620,11 @@ function playTdtChannelOnTv(ch, trackIndex, isFailoverAttempt) {
   hideHudImmediately();
   showLiveZapOsd(ch, idx);
 
+  var trackLabelPretty = formatTvTrackChipLabel(track, idx);
   if (btnDockAudio) {
     if (ch.channels.length > 1) {
       btnDockAudio.style.display = 'inline-flex';
-      btnDockAudio.textContent = track.label || 'Señal ' + (idx + 1);
+      btnDockAudio.textContent = trackLabelPretty;
     } else {
       btnDockAudio.style.display = 'none';
     }
@@ -564,7 +634,11 @@ function playTdtChannelOnTv(ch, trackIndex, isFailoverAttempt) {
   var epgLabel = chEpg && chEpg.now ? chEpg.now.title : (ch.description || ch.network || tvT('liveBadge'));
   var rType = track.resolverType || 'tdt_hls';
   var titleFull = ch.name + (ch.dial ? ' · ' + tvT('dialPrefix') + ch.dial : '');
-  var subFull = (chEpg && chEpg.now ? tvT('nowPrefix') + chEpg.now.title : (ch.network || tvT('broadcast247'))) + ' · ' + (track.quality || 'HD');
+  var buildSubForTrack = function (t, i) {
+    var baseTxt = chEpg && chEpg.now ? tvT('nowPrefix') + chEpg.now.title : (ch.network || tvT('broadcast247'));
+    return baseTxt + ' · ' + formatTvTrackChipLabel(t, i);
+  };
+  var subFull = buildSubForTrack(track, idx);
 
   if (standbyChannelBadge && standbyLogoImg) {
     if (ch.logoUrl) {
@@ -582,13 +656,20 @@ function playTdtChannelOnTv(ch, trackIndex, isFailoverAttempt) {
   standbySubText.textContent = epgLabel;
   syncPlayerDockMode(true);
 
-  if (streamUrl.indexOf('/api/') === 0 || (rType === 'tdt_hls' && isDirectCorsPublicStream(streamUrl))) {
+  var launchSingleTrackDirect = function (tObj, tIdx, tUrl, tMode) {
+    if (!isLocalPlayback || activeLiveChannel !== ch) return;
+    activeLiveTrackIdx = tIdx;
+    localTrackIdx = tIdx;
+    showLiveZapOsd(ch, tIdx);
+    if (btnDockAudio && ch.channels.length > 1) {
+      btnDockAudio.textContent = formatTvTrackChipLabel(tObj, tIdx);
+    }
     applyVideoState(
       {
-        mode: /\.(mp4|mkv|webm)(\?|$)/i.test(streamUrl) ? 'direct' : 'hls',
-        url: streamUrl,
+        mode: tMode || (/\.(mp4|mkv|webm)(\?|$)/i.test(tUrl) ? 'direct' : 'hls'),
+        url: tUrl,
         title: titleFull,
-        subtitle: subFull,
+        subtitle: buildSubForTrack(tObj, tIdx),
         logoUrl: ch.logoUrl || '',
         isPlaying: true,
         isLive: true,
@@ -597,25 +678,94 @@ function playTdtChannelOnTv(ch, trackIndex, isFailoverAttempt) {
       true
     );
     scheduleNextChannelPrewarm(ch);
+  };
+
+  if (rType === 'tdt_hls' && isDirectCorsPublicStream(streamUrl) && (idx > 0 || ch.channels.length === 1)) {
+    launchSingleTrackDirect(track, idx, streamUrl, 'hls');
+    return;
+  }
+
+  // Parallel server race across multi-server mirrors on initial channel tune (sub-second connection)
+  if (idx === 0 && !isFailoverAttempt && ch.channels.length > 1 && !isDirectCorsPublicStream(streamUrl)) {
+    var fastPayload = buildTvFastResolveTracks(ch.channels, 6);
+    if (fastPayload.length > 1) {
+      var fastDone = false;
+      var runSequentialFallback = function () {
+        if (!isLocalPlayback || activeLiveChannel !== ch) return;
+        if (streamUrl.indexOf('/api/') === 0) {
+          launchSingleTrackDirect(track, idx, streamUrl, /\.(mp4|mkv|webm)(\?|$)/i.test(streamUrl) ? 'direct' : 'hls');
+          return;
+        }
+        var cachedFastFallback = getCachedLiveExtract(rType, streamUrl);
+        if (cachedFastFallback) {
+          launchSingleTrackDirect(track, idx, cachedFastFallback.streamUrl, cachedFastFallback.mode || 'hls');
+          return;
+        }
+        var qFallback =
+          'resolverType=' + encodeURIComponent(rType) +
+          '&url=' + encodeURIComponent(streamUrl) +
+          '&title=' + encodeURIComponent(ch.name || 'Live TV');
+        xhrJson('GET', '/api/extract/stream?' + qFallback, null, function (err2, data2) {
+          if (!isLocalPlayback || activeLiveChannel !== ch) return;
+          if (!err2 && data2 && data2.success && data2.streamUrl) {
+            setCachedLiveExtract(rType, streamUrl, data2);
+            launchSingleTrackDirect(track, idx, data2.streamUrl, data2.mode || 'hls');
+            return;
+          }
+          if (typeof triggerPlaybackFailover === 'function') {
+            triggerPlaybackFailover('Error al conectar señal');
+          } else {
+            showStandbyError(ch.name, tvT('noBroadcast'));
+          }
+        });
+      };
+
+      var fastGuard = setTimeout(function () {
+        if (fastDone) return;
+        fastDone = true;
+        runSequentialFallback();
+      }, 2600);
+
+      xhrJson('POST', '/api/live/fast-resolve', {
+        channelId: ch.id,
+        title: ch.name || 'Live TV',
+        preferLang: 'ES',
+        tracks: fastPayload
+      }, function (err, data) {
+        if (fastDone) return;
+        fastDone = true;
+        clearTimeout(fastGuard);
+        if (!isLocalPlayback || activeLiveChannel !== ch) return;
+        if (!err && data && data.ok && data.streamUrl) {
+          var winIdx = (typeof data.winningIndex === 'number' && data.winningIndex >= 0 && ch.channels[data.winningIndex])
+            ? data.winningIndex
+            : 0;
+          var winTrack = ch.channels[winIdx] || track;
+          var winResolver = winTrack.resolverType || rType;
+          if (winTrack.sourceUrl) {
+            setCachedLiveExtract(winResolver, winTrack.sourceUrl, {
+              success: true,
+              streamUrl: data.streamUrl,
+              mode: data.mode || 'hls'
+            });
+          }
+          launchSingleTrackDirect(winTrack, winIdx, data.streamUrl, data.mode || 'hls');
+          return;
+        }
+        runSequentialFallback();
+      });
+      return;
+    }
+  }
+
+  if (streamUrl.indexOf('/api/') === 0 || (rType === 'tdt_hls' && isDirectCorsPublicStream(streamUrl))) {
+    launchSingleTrackDirect(track, idx, streamUrl, /\.(mp4|mkv|webm)(\?|$)/i.test(streamUrl) ? 'direct' : 'hls');
     return;
   }
 
   var cachedExtract = getCachedLiveExtract(rType, streamUrl);
   if (cachedExtract) {
-    applyVideoState(
-      {
-        mode: cachedExtract.mode || 'hls',
-        url: cachedExtract.streamUrl,
-        title: titleFull,
-        subtitle: subFull,
-        logoUrl: ch.logoUrl || '',
-        isPlaying: true,
-        isLive: true,
-        currentTime: 0
-      },
-      true
-    );
-    scheduleNextChannelPrewarm(ch);
+    launchSingleTrackDirect(track, idx, cachedExtract.streamUrl, cachedExtract.mode || 'hls');
     return;
   }
 
@@ -628,20 +778,7 @@ function playTdtChannelOnTv(ch, trackIndex, isFailoverAttempt) {
     if (!isLocalPlayback || activeLiveChannel !== ch) return;
     if (!err && data && data.success && data.streamUrl) {
       setCachedLiveExtract(rType, streamUrl, data);
-      applyVideoState(
-        {
-          mode: data.mode || 'hls',
-          url: data.streamUrl,
-          title: titleFull,
-          subtitle: subFull,
-          logoUrl: ch.logoUrl || '',
-          isPlaying: true,
-          isLive: true,
-          currentTime: 0
-        },
-        true
-      );
-      scheduleNextChannelPrewarm(ch);
+      launchSingleTrackDirect(track, idx, data.streamUrl, data.mode || 'hls');
       return;
     }
     if (typeof triggerPlaybackFailover === 'function') {
@@ -694,10 +831,13 @@ function playMovieOnTv(movie) {
     'preferLang=ES',
     'title=' + encodeURIComponent(movie.title || '')
   ];
+  if (movie.originalTitle) parts.push('origTitle=' + encodeURIComponent(movie.originalTitle));
+  if (movie.year && /^\d{4}$/.test(String(movie.year))) parts.push('year=' + encodeURIComponent(String(movie.year)));
   if (movie.tmdbId) parts.push('tmdbId=' + encodeURIComponent(String(movie.tmdbId)));
   if (movie.movidyUrl) parts.push('movidyUrl=' + encodeURIComponent(movie.movidyUrl));
   if (movie.vestUrl) parts.push('vestUrl=' + encodeURIComponent(movie.vestUrl));
-  playLocalStream(movie.title, (movie.year || 'HD') + ' · ' + tvT('movieLabel'), parts.join('&'));
+  if (activeSeriesQualityFirst || movie._qualityFirst) parts.push('qualityFirst=1');
+  playLocalStream(movie.title, (movie.year || '4K / HD') + ' · ' + tvT('movieLabel'), parts.join('&'));
 }
 
 function openSeriesModalOnTv(item) {
@@ -708,6 +848,7 @@ function openSeriesModalOnTv(item) {
     activeSeriesLang = 'ES';
     var langPills = document.querySelectorAll('#sm-lang-row .series-pill-btn');
     for (var lp = 0; lp < langPills.length; lp++) {
+      if (langPills[lp].getAttribute('data-quality-toggle') === '1') continue;
       var dl = langPills[lp].getAttribute('data-lang');
       langPills[lp].className = 'series-pill-btn' + (dl === 'ES' ? ' active' : '');
     }
@@ -739,6 +880,7 @@ function openSeriesModalOnTv(item) {
 }
 
 function loadTvSeriesSeason(tmdbId, seasonNum) {
+  var smBadge = document.getElementById('sm-badge');
   var smSeasons = document.getElementById('sm-seasons-row');
   var smEpisodes = document.getElementById('sm-episodes-grid');
   smEpisodes.innerHTML = '<div style="color:#adadb8;font-size:16px;padding:14px;">' + escapeHtml(tvT('loadingSeasonNum') + seasonNum) + '...</div>';
@@ -753,6 +895,14 @@ function loadTvSeriesSeason(tmdbId, seasonNum) {
     activeSeriesDetails = details;
     if (details.overview) {
       document.getElementById('sm-overview').textContent = details.overview;
+    }
+    if (smBadge) {
+      var badgeParts = [details.bestQuality ? ('SERIE · ' + details.bestQuality) : tvT('smBadge')];
+      if (Array.isArray(details.serverAlternatives) && details.serverAlternatives.length > 0) {
+        badgeParts.push(details.serverAlternatives.length + ' servidores');
+      }
+      if (details.year && details.year !== 'TV') badgeParts.push(details.year);
+      smBadge.textContent = badgeParts.join(' · ');
     }
     var seasons = Array.isArray(details.seasons) ? details.seasons : [];
     smSeasons.innerHTML = '';
@@ -790,7 +940,7 @@ function loadTvSeriesSeason(tmdbId, seasonNum) {
         eb.onclick = function () {
           unlockAudio();
           seriesModal.style.display = 'none';
-          var q = [
+          var qParts = [
             'mediaType=tv',
             'tmdbId=' + encodeURIComponent(String(details.tmdbId || tmdbId)),
             'season=' + encodeURIComponent(String(ep.seasonNumber)),
@@ -798,10 +948,14 @@ function loadTvSeriesSeason(tmdbId, seasonNum) {
             'preferLang=' + encodeURIComponent(activeSeriesLang),
             'title=' + encodeURIComponent(details.title || activeSeriesItem.title || ''),
             'episodeTitle=' + encodeURIComponent(ep.title || '')
-          ].join('&');
+          ];
+          if (details.originalTitle) qParts.push('origTitle=' + encodeURIComponent(details.originalTitle));
+          if (details.year && /^\d{4}$/.test(String(details.year))) qParts.push('year=' + encodeURIComponent(String(details.year)));
+          if (activeSeriesQualityFirst) qParts.push('qualityFirst=1');
+          var q = qParts.join('&');
           playLocalStream(
             (details.title || activeSeriesItem.title) + ' (' + ep.seasonNumber + 'x' + epNumStr + ')',
-            (ep.title || tvT('episodeFallback')) + ' · ' + activeSeriesLang,
+            (ep.title || tvT('episodeFallback')) + ' · ' + activeSeriesLang + (activeSeriesQualityFirst ? ' · 4K' : ''),
             q
           );
         };

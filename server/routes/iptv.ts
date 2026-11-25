@@ -436,26 +436,32 @@ export function registerIptvAndTdtRoutes(
     const rawTracks: TrackRecord[] = Array.isArray(channel.channels) ? channel.channels : [];
     const tracks = channelHealthMonitor.prioritizeTracks(rawTracks);
     const triedDvbUrls = new Set<string>();
-    for (const track of tracks) {
+    const belixSidMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)belix_sid=([^;]+)/);
+    const belixSessionKey =
+      String(req.headers['x-belix-session'] || '').trim() ||
+      (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
+      'default';
+
+    const resolveSingleIptvTrack = async (track: TrackRecord): Promise<string | null> => {
       try {
         const sourceUrl = String(track?.sourceUrl || '').trim();
-        if (!sourceUrl) continue;
+        if (!sourceUrl) return null;
 
         const isElahmad = track.resolverType === 'elahmad_live' || isElahmadUrl(sourceUrl);
         if (isElahmad) {
           const elResolved = await resolveElahmadChannelToHls(sourceUrl);
-          if (!elResolved || elResolved.isYoutube) continue;
+          if (!elResolved || elResolved.isYoutube) return null;
           const signedElUrl = await maybeSignEasyBroadcastUrl(elResolved.streamUrl);
           const manifestObj = await fetchUpstreamManifestText(signedElUrl, elResolved.referer, forceAacOverride);
-          if (!manifestObj) continue;
+          if (!manifestObj) return null;
           const unwrapped = await unwrapMasterPlaylistForIptv(manifestObj, elResolved.referer, forceAacOverride);
-          if (!unwrapped) continue;
+          if (!unwrapped) return null;
           const segOk = await verifyIptvMediaManifestSegments(
             unwrapped.text,
             unwrapped.finalUrl,
             elResolved.referer
           );
-          if (!segOk) continue;
+          if (!segOk) return null;
           const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
           iptvChannelResolveCache.set(channel.id, {
             rawM3u8Url: unwrapped.finalUrl,
@@ -465,7 +471,7 @@ export function registerIptvAndTdtRoutes(
             isDvb: false,
             ts: Date.now(),
           });
-          const rewritten = rewriteManifestForSamsungIptv(
+          return rewriteManifestForSamsungIptv(
             trimmedText,
             unwrapped.finalUrl,
             elResolved.referer,
@@ -473,14 +479,13 @@ export function registerIptvAndTdtRoutes(
             false,
             publicOrigin
           );
-          return sendIptvM3u8Response(res, rewritten);
         }
 
         if (track.resolverType === 'mediaset_live') {
           const msResolved = await resolveMediasetLiveHlsUrl(sourceUrl);
           if (!msResolved?.streamUrl) {
             markTrackDown(sourceUrl, 403);
-            continue;
+            return null;
           }
           const manifestObj = await fetchUpstreamManifestText(
             msResolved.streamUrl,
@@ -489,7 +494,7 @@ export function registerIptvAndTdtRoutes(
           );
           if (!manifestObj) {
             markTrackDown(sourceUrl, 502);
-            continue;
+            return null;
           }
           const unwrapped = await unwrapMasterPlaylistForIptv(
             manifestObj,
@@ -498,7 +503,7 @@ export function registerIptvAndTdtRoutes(
           );
           if (!unwrapped) {
             markTrackDown(sourceUrl, 404);
-            continue;
+            return null;
           }
           const segOk = await verifyIptvMediaManifestSegments(
             unwrapped.text,
@@ -507,7 +512,7 @@ export function registerIptvAndTdtRoutes(
           );
           if (!segOk) {
             markTrackDown(sourceUrl, 403);
-            continue;
+            return null;
           }
           const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
           iptvChannelResolveCache.set(channel.id, {
@@ -518,7 +523,7 @@ export function registerIptvAndTdtRoutes(
             isDvb: false,
             ts: Date.now(),
           });
-          const rewritten = rewriteManifestForSamsungIptv(
+          return rewriteManifestForSamsungIptv(
             trimmedText,
             unwrapped.finalUrl,
             msResolved.referer,
@@ -526,7 +531,6 @@ export function registerIptvAndTdtRoutes(
             false,
             publicOrigin
           );
-          return sendIptvM3u8Response(res, rewritten);
         }
 
         const isDirectHls =
@@ -535,14 +539,9 @@ export function registerIptvAndTdtRoutes(
           /\.m3u8(\?|$)/i.test(sourceUrl);
 
         if (sourceUrl.startsWith('/api/belix/stream/')) {
-          const belixSidMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)belix_sid=([^;]+)/);
-          const belixSessionKey =
-            String(req.headers['x-belix-session'] || '').trim() ||
-            (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
-            'default';
           if (!isAnyBelixConnected(belixSessionKey)) {
             markTrackDown(sourceUrl, 503);
-            continue;
+            return null;
           }
           const belixStreamId = sourceUrl.split('/').pop()?.replace(/\.m3u8.*$/i, '') || '';
           const belixManifest = await resolveBelixManifest(
@@ -553,9 +552,9 @@ export function registerIptvAndTdtRoutes(
           );
           if (!belixManifest) {
             markTrackDown(sourceUrl, 503);
-            continue;
+            return null;
           }
-          return sendIptvM3u8Response(res, belixManifest);
+          return belixManifest;
         }
 
         if (/^\/api\/(?:xtream\/stream\/|stream\b)/i.test(sourceUrl)) {
@@ -579,11 +578,11 @@ export function registerIptvAndTdtRoutes(
               xtreamProvider
             );
             if (xtreamManifest) {
-              return sendIptvM3u8Response(res, xtreamManifest);
+              return xtreamManifest;
             }
           }
           markTrackDown(sourceUrl, 503);
-          continue;
+          return null;
         }
 
         if (isDirectHls) {
@@ -596,7 +595,7 @@ export function registerIptvAndTdtRoutes(
 
           if (isDvbHeadendStream(cleanUrl)) {
             if (triedDvbUrls.has(cleanUrl)) {
-              continue;
+              return null;
             }
             triedDvbUrls.add(cleanUrl);
             const activeDvbPath = getActiveDvbSessionPath(cleanUrl);
@@ -612,15 +611,15 @@ export function registerIptvAndTdtRoutes(
                 isDvb: true,
                 ts: Date.now(),
               });
-              return sendIptvM3u8Response(res, dvbPlaylist);
+              return dvbPlaylist;
             }
             const probeManifest = await fetchUpstreamManifestText(cleanUrl, referer, true);
             if (!probeManifest) {
               markTrackDown(sourceUrl, 502);
-              continue;
+              return null;
             }
             const trimmedFallback = trimLiveDvrManifestForIptv(probeManifest.text, 6);
-            const rewrittenFallback = rewriteManifestForSamsungIptv(
+            return rewriteManifestForSamsungIptv(
               trimmedFallback,
               probeManifest.finalUrl,
               referer,
@@ -628,19 +627,18 @@ export function registerIptvAndTdtRoutes(
               false,
               publicOrigin
             );
-            return sendIptvM3u8Response(res, rewrittenFallback);
           }
 
           const manifestObj = await fetchUpstreamManifestText(cleanUrl, referer, forceAac);
           if (!manifestObj) {
             markTrackDown(sourceUrl, 502);
-            continue;
+            return null;
           }
 
           const unwrapped = await unwrapMasterPlaylistForIptv(manifestObj, referer, forceAac);
           if (!unwrapped) {
             markTrackDown(sourceUrl, 404);
-            continue;
+            return null;
           }
 
           const segOk = await verifyIptvMediaManifestSegments(
@@ -650,7 +648,7 @@ export function registerIptvAndTdtRoutes(
           );
           if (!segOk) {
             markTrackDown(sourceUrl, 403);
-            continue;
+            return null;
           }
 
           const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
@@ -664,7 +662,7 @@ export function registerIptvAndTdtRoutes(
             ts: Date.now(),
           });
 
-          const rewritten = rewriteManifestForSamsungIptv(
+          return rewriteManifestForSamsungIptv(
             trimmedText,
             unwrapped.finalUrl,
             referer,
@@ -672,35 +670,34 @@ export function registerIptvAndTdtRoutes(
             false,
             publicOrigin
           );
-          return sendIptvM3u8Response(res, rewritten);
         }
 
         const fullTarget = /^https?:\/\//i.test(sourceUrl) ? sourceUrl : `https://${sourceUrl}`;
         let directSports = await extractLiveSportsHlsDirect(fullTarget);
-        if (directSports?.isBrokenGreenFeed) continue;
+        if (directSports?.isBrokenGreenFeed) return null;
 
         const isKnownDirectMirror = /footunder\.online|tilinhd\.|streamxhd\./i.test(fullTarget);
         if (!directSports && !isKnownDirectMirror) {
           directSports = await sniffStreamWithHeadless(fullTarget);
         }
-        if (!directSports || !directSports.streamUrl || directSports.isDirectMp4) continue;
+        if (!directSports || !directSports.streamUrl || directSports.isDirectMp4) return null;
 
         const manifestObj = await fetchUpstreamManifestText(
           directSports.streamUrl,
           directSports.referer,
           false
         );
-        if (!manifestObj) continue;
+        if (!manifestObj) return null;
 
         const unwrapped = await unwrapMasterPlaylistForIptv(manifestObj, directSports.referer, false);
-        if (!unwrapped) continue;
+        if (!unwrapped) return null;
 
         const clean = await verifyM3u8HasCleanVideoFrame(
           unwrapped.text,
           unwrapped.finalUrl,
           directSports.referer
         );
-        if (!clean) continue;
+        if (!clean) return null;
 
         const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
 
@@ -713,7 +710,7 @@ export function registerIptvAndTdtRoutes(
           ts: Date.now(),
         });
 
-        const rewritten = rewriteManifestForSamsungIptv(
+        return rewriteManifestForSamsungIptv(
           trimmedText,
           unwrapped.finalUrl,
           directSports.referer,
@@ -721,9 +718,29 @@ export function registerIptvAndTdtRoutes(
           false,
           publicOrigin
         );
-        return sendIptvM3u8Response(res, rewritten);
       } catch {
-        // try next backup track
+        return null;
+      }
+    };
+
+    const topFastBatch = tracks.slice(0, 3);
+    if (topFastBatch.length > 0) {
+      const fastWinner = await Promise.any(
+        topFastBatch.map(async (track) => {
+          const playlist = await resolveSingleIptvTrack(track);
+          if (!playlist) throw new Error('track_failed');
+          return playlist;
+        })
+      ).catch(() => null);
+      if (fastWinner) {
+        return sendIptvM3u8Response(res, fastWinner);
+      }
+    }
+
+    for (const track of tracks.slice(3)) {
+      const playlist = await resolveSingleIptvTrack(track);
+      if (playlist) {
+        return sendIptvM3u8Response(res, playlist);
       }
     }
 

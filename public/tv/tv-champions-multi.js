@@ -614,6 +614,67 @@
       false
     );
 
+    if (tryIdx === 0 && candidates.length > 1 && !isInstantMultiUrl(rawUrl, rType)) {
+      var raceTracks = [];
+      for (var ci = 0; ci < candidates.length && raceTracks.length < 6; ci++) {
+        var cUrl = candidates[ci];
+        if (!cUrl) continue;
+        raceTracks.push({
+          id: 'multi-' + slotIdx + '-' + ci,
+          label: (slotObj.source && slotObj.source.title ? slotObj.source.title : 'P' + (slotIdx + 1)) + ' #' + (ci + 1),
+          lang: 'ES',
+          quality: 'HD',
+          sourceUrl: cUrl,
+          resolverType: inferMultiResolver(cUrl)
+        });
+      }
+      if (raceTracks.length > 1) {
+        var multiFastDone = false;
+        var runMultiSequentialFallback = function () {
+          if (!tvChampState.multiActive || myGen !== tvChampState.generation) return;
+          if (rawUrl.indexOf('/api/') === 0) {
+            attachMultiSlotStream(slotIdx, rawUrl, 'hls', candidates, 0, myGen);
+            return;
+          }
+          var qFb = 'resolverType=' + encodeURIComponent(rType) + '&url=' + encodeURIComponent(rawUrl) + '&title=' + encodeURIComponent(slotObj.source.title || ('P' + (slotIdx + 1)));
+          xhrJson('GET', '/api/extract/stream?' + qFb, null, function (e2, d2) {
+            if (!tvChampState.multiActive || myGen !== tvChampState.generation) return;
+            if (!e2 && d2 && d2.success && d2.streamUrl) {
+              attachMultiSlotStream(slotIdx, d2.streamUrl, d2.mode || 'hls', candidates, 0, myGen);
+              return;
+            }
+            resolveMultiSlotAtIndex(slotIdx, 1, myGen);
+          });
+        };
+        var multiGuard = setTimeout(function () {
+          if (multiFastDone) return;
+          multiFastDone = true;
+          runMultiSequentialFallback();
+        }, 2500);
+        xhrJson('POST', '/api/live/fast-resolve', {
+          channelId: 'tv-multi-' + slotIdx,
+          title: (slotObj.source && slotObj.source.title) || ('P' + (slotIdx + 1)),
+          preferLang: 'ES',
+          tracks: raceTracks
+        }, function (err, data) {
+          if (multiFastDone) return;
+          multiFastDone = true;
+          clearTimeout(multiGuard);
+          if (!tvChampState.multiActive || myGen !== tvChampState.generation) return;
+          if (!err && data && data.ok && data.streamUrl) {
+            var winIdx = (typeof data.winningIndex === 'number' && data.winningIndex >= 0 && data.winningIndex < candidates.length) ? data.winningIndex : 0;
+            if (typeof setCachedLiveExtract === 'function') {
+              setCachedLiveExtract(inferMultiResolver(candidates[winIdx]), candidates[winIdx], data);
+            }
+            attachMultiSlotStream(slotIdx, data.streamUrl, data.mode || 'hls', candidates, winIdx, myGen);
+            return;
+          }
+          runMultiSequentialFallback();
+        });
+        return;
+      }
+    }
+
     if (isInstantMultiUrl(rawUrl, rType)) {
       attachMultiSlotStream(
         slotIdx,

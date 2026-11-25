@@ -74,7 +74,7 @@ interface CachedProbeResult {
 
 const PROBE_CACHE_TTL_MS = 10 * 60 * 1000;
 const probeResultCache = new Map<string, CachedProbeResult>();
-const PROVIDER_PRIORITY_ORDER = ['octopus', 'dana4k', 'primary', 'vod4k', '24tv', '2m2h', 'activecdns'];
+const PROVIDER_PRIORITY_ORDER = ['dana4k', 'octopus', 'primary', 'vod4k', '24tv', '2m2h', 'activecdns'];
 
 const SPANISH_TDT_BY_ID = new Map(SPANISH_TDT_CHANNELS.map((c) => [c.id, c]));
 
@@ -141,26 +141,27 @@ export function isSpanishLiveChannelEntry(streamName: string, categoryName: stri
 
   // Reject explicit foreign channel prefixes inside mixed categories
   if (
-    /^(?:\[?\s*(?:UK|US|USA|FR|DE|GER|IT|ITA|PT|POR|AR|ARB|BR|BRA|NL|PL|TR|RO|RU|IN|LAT|MX|ARG|COL|CHL|PER|PE)\s*\]?\s*[|:/-])/i.test(
+    /^(?:\[?\s*(?:UK|US|USA|FR|DE|GER|IT|ITA|PT|POR|AR|ARB|BR|BRA|NL|PL|TR|RO|RU|IN|LAT|LA|MX|ARG|COL|CHL|PER|PE|GR|BG|RS|MK|IR|AL|BE|AT|CH|FI|NO|SE|DK)\s*\]?\s*[|:/-·•▎┃│◈])/i.test(
       name
-    )
+    ) ||
+    /^[┃│▎◈•]/.test(name)
   ) {
     return false;
   }
 
   const hasSpainCat =
-    /\b(?:spain|espa[ñn]a|tdt|tivify|movistar|atresmedia|mediaset|rtve|autonomicas|auton[oó]micas|laliga|hypermotion|rakuten\s*tv)\b|أسبانيا|^(?:\[?\s*(?:es|esp)\s*\]?\s*[|:/-])/i.test(
+    /\b(?:spain|espa[ñn]a|tdt|tivify|tivfiy|movistar|atresmedia|mediaset|rtve|autonomicas|auton[oó]micas|laliga|hypermotion|rakuten\s*tv)\b|أسبانيا|^(?:\[?\s*(?:vip\s*)?(?:es|esp)\s*\]?\s*[|:/-])/i.test(
       cat
     );
 
   const hasForeignCatPrefix =
-    /^(?:\[?\s*(?:UK|US|USA|FR|DE|IT|PT|AR|BR|NL|PL|TR|RO|LAT|MX|ARABIC|PHILIPPINES)\s*\]?\s*[|:/-])/i.test(
+    /^(?:\[?\s*(?:UK|US|USA|FR|DE|IT|PT|AR|BR|NL|PL|TR|RO|LA|LAT|MX|GR|BG|RS|FI|NO|SE|DK|BE|AT|AL|IND|ARABIC|PHILIPPINES)\s*\]?\s*[|:/-l])/i.test(
       cat
     );
 
   if (hasForeignCatPrefix && !hasSpainCat) return false;
 
-  const hasSpainStreamPrefix = /^(?:\[?\s*(?:es|esp)\s*\]?\s*[|:/-])/i.test(name);
+  const hasSpainStreamPrefix = /^(?:tivif?y\s*es\s*[:|]|vip\s*es\s*[:|]|\[?\s*(?:es|esp)\s*\]?\s*[|:/-])/i.test(name);
   return hasSpainCat || hasSpainStreamPrefix;
 }
 
@@ -285,11 +286,8 @@ function getProviderBrandTone(category: SpainChannelCategory): string {
 
 async function ensureProviderCatalogsHydrated(maxWaitMs = 2000): Promise<XtreamFullCatalogPayload[]> {
   let catalogs = getCachedXtreamProviderCatalogs();
-  const configuredProviders = getAllXtreamProviders().filter(
-    (p) =>
-      p.id !== '2m2h' &&
-      p.id !== 'activecdns' &&
-      Boolean(normalizeXtreamServerInput(p.serverUrl) && p.accounts.length > 0)
+  const configuredProviders = getAllXtreamProviders().filter((p) =>
+    Boolean(normalizeXtreamServerInput(p.serverUrl) && p.accounts.length > 0)
   );
   const loadedIds = new Set(catalogs.map((c) => c.providerId));
   const missingImportant = configuredProviders.filter((p) => !loadedIds.has(p.id));
@@ -324,7 +322,11 @@ function sortTracksByQualityAndSpeed(tracks: VerifiedSpainTrackRecord[]): Verifi
     // 2. Non-HEVC high quality (4K=0, FHD=1, HD=2) beats HEVC (3) & SD (4)
     if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
 
-    // 3. Octopus TV / provider priority when latency difference is negligible (< 250ms), else faster stream wins
+    // 3. Prefer Dana 4K Pro / top provider priority unless another live mirror is strictly verified much faster
+    const aDanaPriority = a.providerId === 'dana4k' && a.probedOk !== false ? 0 : 1;
+    const bDanaPriority = b.providerId === 'dana4k' && b.probedOk !== false ? 0 : 1;
+    if (aDanaPriority !== bDanaPriority) return aDanaPriority - bDanaPriority;
+
     const aLat = typeof a.latencyMs === 'number' ? a.latencyMs : 2500;
     const bLat = typeof b.latencyMs === 'number' ? b.latencyMs : 2500;
     if (Math.abs(aLat - bLat) >= 250) {
@@ -342,7 +344,7 @@ function extractRawSpanishGrouped(catalogs: XtreamFullCatalogPayload[]): Verifie
   const byKey = new Map<string, VerifiedSpainChannelEntry>();
   const seenSourceUrls = new Set<string>();
 
-  // Order catalogs with Octopus first, then Dana 4K Pro, Shark Pro, VOD 4K, 24TV
+  // Order catalogs with Octopus first, then Dana 4K Pro, Shark Pro, VOD 4K, 24TV, 2M2H, Active CDNS
   const orderedCatalogs = [...catalogs].sort((a, b) => {
     const ia = PROVIDER_PRIORITY_ORDER.indexOf(a.providerId);
     const ib = PROVIDER_PRIORITY_ORDER.indexOf(b.providerId);
@@ -390,7 +392,7 @@ function extractRawSpanishGrouped(catalogs: XtreamFullCatalogPayload[]): Verifie
 
       const trackRecord: VerifiedSpainTrackRecord = {
         id: `xtream-es-${catPayload.providerId}-${stream.streamId}`,
-        label: `${catPayload.providerName} · ${qMeta.quality}${qMeta.isHevc ? ' HEVC' : ''}`,
+        label: `${catPayload.providerName} · Castellano · ${qMeta.quality}${qMeta.isHevc ? ' HEVC' : ''}`,
         lang: 'ES',
         quality: qMeta.quality,
         sourceUrl,
@@ -431,7 +433,7 @@ function extractRawSpanishGrouped(catalogs: XtreamFullCatalogPayload[]): Verifie
           countryCode: 'ES',
           logoUrl: tdtMeta?.logoUrl || stream.streamIcon,
           description: tdtMeta?.description || `${cleanName} · Señal España en Directo (${catPayload.providerName})`,
-          epgChannelId: tdtMeta?.epgChannelId || stream.epgChannelId,
+          epgChannelId: (tdtMeta as { epgChannelId?: string } | undefined)?.epgChannelId || stream.epgChannelId,
           channels: [trackRecord],
         });
       } else {
