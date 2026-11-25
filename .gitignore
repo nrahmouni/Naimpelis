@@ -1,11 +1,14 @@
 node_modules/
 build/
 dist/
+dist-server/
 dev-dist/
 coverage/
 playwright-report/
 test-results/
 sbom.json
+*.tsbuildinfo
+public/vendor/riffan-racing-3d.iife.js
 .DS_Store
 *.log
 *.apk
@@ -20,3 +23,4 @@ android/.gradle/
 android/app/build/
 android/local.properties
 public/assets/aistudio/
+

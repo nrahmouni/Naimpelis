@@ -39,7 +39,7 @@ describe('Unified 11-Server Architecture, Castellano/4K Ranking, Anti-Buffering 
     expect(vod4k?.accounts.length).toBeGreaterThanOrEqual(3);
 
     const sultVo = allProviders.find((p) => p.id === 'sult-vo');
-    expect(sultVo?.accounts.length).toBeGreaterThanOrEqual(3);
+    expect(sultVo?.accounts.length).toBeGreaterThanOrEqual(2);
 
     expect(XTREAM_PROVIDER_UI_SPECS.length).toBe(11);
     const uiJson = JSON.stringify(XTREAM_PROVIDER_UI_SPECS);

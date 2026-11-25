@@ -100,6 +100,8 @@ function getUnifiedProviderConfigs(): XtreamProviderConfig[] {
 }
 
 const runtimeStates = new Map<string, ProviderRuntimeState>();
+const deadAccountCooldownUntil = new Map<string, number>();
+const DEAD_ACCOUNT_COOLDOWN_MS = 30 * 60 * 1000;
 
 function ensureRuntimeState(config: XtreamProviderConfig): ProviderRuntimeState {
   let st = runtimeStates.get(config.id);
@@ -492,13 +494,19 @@ export async function connectProviderWithRotation(
         typeof opts?.startOffset === 'number'
           ? (st.activeAccountIndex + opts.startOffset) % provider.accounts.length
           : st.activeAccountIndex;
-      const candidates = getOrderedAccountCandidates(provider.accounts, startIndex);
+      const rawCandidates = getOrderedAccountCandidates(provider.accounts, startIndex);
+      const nowMs = Date.now();
+      const healthyCandidates = rawCandidates.filter(
+        (c) => (deadAccountCooldownUntil.get(`${provider.id}:${c.account.username}`) || 0) <= nowMs
+      );
+      const candidates = healthyCandidates.length > 0 ? healthyCandidates : rawCandidates;
 
       let chosen: { index: number; account: XtreamAccountCredential } | null = null;
       let fallbackAuthorized: { index: number; account: XtreamAccountCredential } | null = null;
       let lastReason = 'connection_failed';
 
       for (const candidate of candidates) {
+        const slotKey = `${provider.id}:${candidate.account.username}`;
         const authUrl = buildXtreamPlayerApiUrl(provider.serverUrl, candidate.account);
         let authRes = await fetchProviderJsonWithFallback(authUrl, 10_000).catch(() => ({
           ok: false,
@@ -515,7 +523,10 @@ export async function connectProviderWithRotation(
         }
         if (!authRes.ok || !authRes.data) {
           lastReason = `http_${authRes.status || 502}`;
-          logger.info(
+          if (authRes.status === 401 || authRes.status === 404) {
+            deadAccountCooldownUntil.set(slotKey, Date.now() + DEAD_ACCOUNT_COOLDOWN_MS);
+          }
+          logger.debug(
             { providerId: provider.id, accountSlot: candidate.index + 1, status: authRes.status },
             'provider_account_probe_failed_rotating'
           );
@@ -524,12 +535,14 @@ export async function connectProviderWithRotation(
         const check = isAuthorizedUserInfo(authRes.data?.user_info);
         if (!check.authorized) {
           lastReason = check.reason || 'unauthorized';
-          logger.info(
+          deadAccountCooldownUntil.set(slotKey, Date.now() + DEAD_ACCOUNT_COOLDOWN_MS);
+          logger.debug(
             { providerId: provider.id, accountSlot: candidate.index + 1, reason: lastReason },
             'provider_account_rejected_rotating'
           );
           continue;
         }
+        deadAccountCooldownUntil.delete(slotKey);
         if (check.hasFreeSlot) {
           chosen = candidate;
           break;

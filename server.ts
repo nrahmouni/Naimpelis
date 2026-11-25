@@ -55,6 +55,8 @@ import { registerMovistarDaznRoutes } from './server/routes/movistarDaznRoutes.t
 import { registerMusicRoutes } from './server/routes/musicRoutes.ts';
 import { registerVpnGatewayRoutes } from './server/routes/vpnGatewayRoutes.ts';
 import { registerProviderRoutes } from './server/routes/providerRoutes.ts';
+import { registerMovieReelsRoutes } from './server/routes/movieReelsRoutes.ts';
+import { prewarmMovieReels } from './server/services/movieReelsService.ts';
 import { getMovistarDaznHome } from './server/services/movistarDaznCatalogService.ts';
 import { initBelixFromEnv } from './server/services/belix/belixXtreamClient.ts';
 import { initDefaultProviders } from './server/services/providers/xtreamProvidersService.ts';
@@ -292,6 +294,7 @@ registerVoiceAssistantRoutes(app, {
   getSportsMatches: getLiveVoiceMatches,
 });
 registerAiMediaRoutes(app);
+registerMovieReelsRoutes(app);
 geminiLiveBridge = setupGeminiLiveWebSocket(httpServer, {
   getChannels: getLiveVoiceChannels,
   getSportsMatches: getLiveVoiceMatches,
@@ -553,6 +556,7 @@ async function startServer() {
             void prewarmTodayFootballBoard().catch((err) => logger.warn({ err }, 'prewarm_football_failed'));
           }, 950).unref?.();
           setTimeout(() => {
+            void prewarmMovieReels().catch((err) => logger.warn({ err }, 'prewarm_reels_failed'));
             void getMovistarDaznHome().catch((err) => logger.warn({ err }, 'prewarm_dazn_failed'));
             void initBelixFromEnv().catch((err) => logger.warn({ err }, 'prewarm_belix_failed'));
           }, 1350).unref?.();

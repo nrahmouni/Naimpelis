@@ -90,10 +90,6 @@ export const providersConfig: XtreamProviderConfig[] = [
         username: '2225190801115579',
         password: '2225190801115579',
       },
-      {
-        username: '4453758394245202',
-        password: '4453758394245202',
-      },
     ],
   },
 ];

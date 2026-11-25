@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'motion/react';
 import {
   ChevronRight,
+  Clapperboard,
   Database,
   Layers,
   Pause,
@@ -77,6 +78,22 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
         </span>
       ),
       accentBorder: 'hover:border-[#7C3AED]/60',
+    },
+    {
+      id: 'reels',
+      title: pickLang(lang, { es: 'CineTok · Clips', ca: 'CineTok · Clips', en: 'CineTok · Reels' }),
+      subtitle: pickLang(lang, {
+        es: 'Tráilers, escenas pro y voz por gustos',
+        ca: 'Tràilers, escenes pro i veu per gustos',
+        en: 'Trailers, pro scenes & taste host',
+      }),
+      icon: (
+        <span className="w-11 h-11 rounded-xl bg-[#FF2E63]/15 border border-[#FF2E63]/35 flex items-center justify-center text-[#FF5C8D] shrink-0">
+          <Clapperboard className="w-5 h-5" />
+        </span>
+      ),
+      accentBorder: 'hover:border-[#FF2E63]/65 border-[#FF2E63]/25',
+      highlightBadge: 'IA',
     },
     {
       id: 'music',

@@ -649,6 +649,9 @@ export const DEDICATED_WORLD_ROUTES = new Set([
   'catalogo-total',
   'proveedores',
   'providers',
+  'clips',
+  'reels',
+  'cinetok',
 ]);
 
 export const SYSTEM_RESERVED_SLUGS = new Set([
@@ -707,7 +710,7 @@ export type AppRouteTarget =
   | { kind: 'room'; roomId: string; gameType?: string; isTvMode?: boolean }
   | {
       kind: 'world';
-      world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music' | 'providers';
+      world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music' | 'providers' | 'reels';
       cineTab?: 'movies' | 'series';
       cineCastellano?: boolean;
       cineCategory?: string;
@@ -1000,6 +1003,10 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
     return { kind: 'world', world: 'providers', roomId: queryRoomId };
   }
 
+  if (seg0 === 'clips' || seg0 === 'reels' || seg0 === 'cinetok') {
+    return { kind: 'world', world: 'reels', roomId: queryRoomId };
+  }
+
   if (seg0 === 'musica' || seg0 === 'music') {
     return {
       kind: 'world',
@@ -1048,7 +1055,7 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
 
 export type CanonicalLinkInput =
   | { kind: 'home' }
-  | { kind: 'world'; world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music' | 'providers'; cineTab?: 'movies' | 'series'; cineCategory?: string; futbolTab?: 'matches' | 'channels' }
+  | { kind: 'world'; world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music' | 'providers' | 'reels'; cineTab?: 'movies' | 'series'; cineCategory?: string; futbolTab?: 'matches' | 'channels' }
   | { kind: 'movie'; tmdbId?: number; id?: string; title?: string }
   | { kind: 'series'; tmdbId?: number; id?: string; title?: string; season?: number; episode?: number }
   | { kind: 'channel'; id: string; name?: string }
@@ -1094,6 +1101,8 @@ export function buildCanonicalRoute(
         basePath = '/musica';
       } else if (input.world === 'providers') {
         basePath = '/catalogo-total';
+      } else if (input.world === 'reels') {
+        basePath = '/clips';
       }
       break;
     case 'movie': {

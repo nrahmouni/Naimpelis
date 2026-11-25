@@ -29,7 +29,8 @@ export type PrimaryWorldId =
   | 'atresplayer'
   | 'movistardazn'
   | 'music'
-  | 'providers';
+  | 'providers'
+  | 'reels';
 export type WorldId =
   | 'entry'
   | PrimaryWorldId
@@ -102,6 +103,7 @@ const PRIMARY_WORLDS: PrimaryWorldId[] = [
   'movistardazn',
   'music',
   'providers',
+  'reels',
 ];
 
 function loadLastUsedWorld(): PrimaryWorldId | null {

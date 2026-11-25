@@ -155,6 +155,8 @@ export function useWorldNavigation({
       void import('../components/music/RiffanMusicWorldView').catch(noop);
     } else if (world === 'providers') {
       void import('../components/providers/ProvidersWorldView').catch(noop);
+    } else if (world === 'reels') {
+      void import('../components/reels/CineReelsWorldView').catch(noop);
     }
   }, []);
 
@@ -222,7 +224,8 @@ export function useWorldNavigation({
           nextWorld === 'atresplayer' ||
           nextWorld === 'movistardazn' ||
           nextWorld === 'music' ||
-          nextWorld === 'providers')
+          nextWorld === 'providers' ||
+          nextWorld === 'reels')
       ) {
         if (nextWorld !== 'sala') preloadWorld(nextWorld);
         playWorldPortalSound(nextWorld);

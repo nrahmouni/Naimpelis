@@ -1,7 +1,7 @@
 import React, { useId } from 'react';
 import type { AppLanguage } from '../../types';
 
-export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music' | 'providers';
+export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music' | 'providers' | 'reels';
 
 export interface WorldSpec {
   accent: string;
@@ -263,6 +263,27 @@ export const WORLD_SPECS: Record<WorldPortalKind, WorldSpec> = {
       en: 'VOD 4K · 2M2H · Adtupac · Ultra VIP · Sult-Vo',
       rif: 'VOD 4K · 2M2H · Adtupac · Ultra VIP · Sult-Vo',
       zh: 'VOD 4K · 2M2H · Adtupac · Ultra VIP · Sult-Vo',
+    },
+  },
+  reels: {
+    accent: '#FF2E63',
+    secondary: '#9146FF',
+    glowRgb: '255,46,99',
+    ambient:
+      'radial-gradient(ellipse 68% 54% at 50% 47%, rgba(255,46,99,0.24) 0%, rgba(145,70,255,0.12) 44%, rgba(6,7,12,0) 76%)',
+    title: {
+      es: 'CineTok · Clips',
+      ca: 'CineTok · Clips',
+      en: 'CineTok · Reels',
+      rif: 'CineTok · Clips',
+      zh: '影视短视频',
+    },
+    subtitle: {
+      es: 'Tráilers, escenas pro y presentador por tus gustos',
+      ca: 'Tràilers, escenes pro i presentador pels teus gustos',
+      en: 'Trailers, pro scenes & taste-driven AI host',
+      rif: 'Tráilers d escenas pro',
+      zh: '预告片与高能片段推荐',
     },
   },
 };
@@ -937,6 +958,25 @@ export const WorldEmblemTile: React.FC<{
           <line x1="47" y1="37" x2="82" y2="37" stroke={`url(#${ids.platinum})`} strokeWidth="2.4" strokeLinecap="round" />
           <line x1="47" y1="60" x2="82" y2="60" stroke={`url(#${ids.platinum})`} strokeWidth="2.4" strokeLinecap="round" />
           <line x1="47" y1="83" x2="82" y2="83" stroke={`url(#${ids.platinum})`} strokeWidth="2.4" strokeLinecap="round" />
+        </g>
+      )}
+
+      {kind === 'reels' && (
+        <g filter={`url(#${ids.drop})`}>
+          <rect
+            x="38"
+            y="24"
+            width="44"
+            height="72"
+            rx="11"
+            fill={`url(#${ids.accentSoft})`}
+            stroke={`url(#${ids.accent})`}
+            strokeWidth="2.2"
+          />
+          <polygon
+            points="53,48 53,72 73,60"
+            fill={`url(#${ids.platinum})`}
+          />
         </g>
       )}
 

@@ -463,11 +463,9 @@ export const WorldShell: React.FC<WorldShellProps> = ({
         className={
           isMusicWorld
             ? 'w-full max-w-none flex-1 min-w-0 px-0 pt-0 pb-0 focus:outline-none'
-            : `w-full max-w-6xl mx-auto focus:outline-none ${
-                fullHeight
-                  ? 'flex-1 min-h-0 flex flex-col overflow-hidden'
-                  : 'px-3 sm:px-5 pt-3 pb-4'
-              }`
+            : fullHeight
+            ? 'w-full max-w-none flex-1 min-h-0 flex flex-col overflow-hidden focus:outline-none'
+            : 'w-full max-w-6xl mx-auto px-3 sm:px-5 pt-3 pb-4 focus:outline-none'
         }
       >
         <AppErrorBoundary resetKey={world}>

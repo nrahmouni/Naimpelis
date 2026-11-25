@@ -50,6 +50,11 @@ const ProvidersWorldView = lazyWithRetry(() =>
     default: m.ProvidersWorldView,
   }))
 );
+const CineReelsWorldView = lazyWithRetry(() =>
+  import('./reels/CineReelsWorldView').then((m) => ({
+    default: m.CineReelsWorldView,
+  }))
+);
 
 interface AppWorldsContentProps {
   controller: ReturnType<typeof useAppController>;
@@ -224,6 +229,9 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     } else if (activeWorld === 'providers') {
       target = { kind: 'world', world: 'providers' };
       title = 'RiffanTV · Catálogo Total';
+    } else if (activeWorld === 'reels') {
+      target = { kind: 'world', world: 'reels' };
+      title = 'RiffanTV · CineTok Clips';
     }
 
     void shareDedicatedLink({ target, roomId: shareRoomId, title });
@@ -271,7 +279,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
                 world === 'atresplayer' ||
                 world === 'movistardazn' ||
                 world === 'music' ||
-                world === 'providers',
+                world === 'providers' ||
+                world === 'reels',
               originRect,
             })
           }
@@ -686,6 +695,62 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
             void playback.handlePlayTdtChannel(ch, idx);
           }}
           onPlayCustomUrl={playback.handlePlayCustomUrl}
+        />
+      </WorldShell>
+    );
+  }
+
+  if (activeWorld === 'reels') {
+    return (
+      <WorldShell
+        world="reels"
+        fullHeight
+        title={pickLang(lang, {
+          es: 'CineTok · Clips',
+          ca: 'CineTok · Clips',
+          en: 'CineTok · Reels',
+        })}
+        lang={lang}
+        sessionMode={sessionMode}
+        onUpgradeSoloToParty={() =>
+          void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
+        }
+        onShareWorld={handleShareActiveWorld}
+        onBack={goBackWorld}
+        onGoHome={goHome}
+        onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+        className={portalLandingActive ? 'rtv-world-touchdown' : ''}
+      >
+        <CineReelsWorldView
+          lang={lang}
+          watchlist={watchlist}
+          watchHistory={watchHistory}
+          onPlayMovie={(movie) => {
+            void playback.handlePlayMovie(movie);
+          }}
+          onOpenMovieModal={(movie) => {
+            const store = useAppStore.getState();
+            store.setRequestedSeriesModal(null);
+            store.setRequestedMovieModal(movie);
+          }}
+          onOpenSeriesPage={(seriesItem) => {
+            const store = useAppStore.getState();
+            store.setRequestedMovieModal(null);
+            store.setRequestedSeriesModal({
+              series: { ...seriesItem, mediaType: 'tv' },
+              season: 1,
+            });
+          }}
+          onToggleCatalogFavorite={socialActions.handleToggleCatalogFavorite}
+          onAddToQueue={(movie) =>
+            lifecycle.handleAddToQueue({
+              kind: movie.mediaType === 'tv' ? 'tv' : 'movie',
+              title: movie.title,
+              subtitle: `${movie.year} · ${(movie.genres || []).slice(0, 2).join(' · ') || 'HD'}`,
+              poster: movie.poster,
+              tmdbId: movie.tmdbId,
+            })
+          }
         />
       </WorldShell>
     );
