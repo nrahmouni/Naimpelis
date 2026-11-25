@@ -12,6 +12,7 @@ export interface CinePosterCardProps {
   rankIndex?: number;
   subtitleOverride?: string;
   isBookmarked?: boolean;
+  priority?: boolean;
   fallbackIcon?: React.ReactNode;
   onSelect: (item: CatalogMovie) => void;
   onToggleBookmark?: (item: CatalogMovie, e: React.MouseEvent) => void;
@@ -25,6 +26,7 @@ export const CinePosterCard: React.FC<CinePosterCardProps> = ({
   rankIndex,
   subtitleOverride,
   isBookmarked = false,
+  priority = false,
   fallbackIcon,
   onSelect,
   onToggleBookmark,
@@ -66,6 +68,7 @@ export const CinePosterCard: React.FC<CinePosterCardProps> = ({
                 src={normalized.poster || normalized.backdrop}
                 alt={normalized.title}
                 aspect="poster"
+                priority={priority}
                 imgClassName="sm:group-hover:scale-105 transition-transform duration-300"
                 fallbackTitle={normalized.title}
                 fallbackIcon={fallbackIcon}

@@ -906,8 +906,10 @@ export async function resolveProviderLiveManifest(
   const origin = normalizeXtreamOrigin(provider.serverUrl);
   const referer = `${origin}/`;
   const candidates = getOrderedAccountCandidates(provider.accounts, st.activeAccountIndex);
+  const deadlineAt = Date.now() + 15_000;
 
   for (const candidate of candidates) {
+    if (Date.now() >= deadlineAt) break;
     const tsUrl = buildXtreamMediaUrl(provider.serverUrl, candidate.account, 'live', streamId, 'ts');
     const warmPath = getActiveDvbSessionPath(tsUrl, 'hd');
     if (warmPath) {
@@ -919,7 +921,8 @@ export async function resolveProviderLiveManifest(
     }
 
     const m3u8Url = buildXtreamMediaUrl(provider.serverUrl, candidate.account, 'live', streamId, 'm3u8');
-    const loaded = await fetchProviderPlaylistText(m3u8Url, referer, 1700).catch(() => null);
+    const probeBudget = Math.min(4_500, Math.max(400, deadlineAt - Date.now()));
+    const loaded = await fetchProviderPlaylistText(m3u8Url, referer, probeBudget).catch(() => null);
     if (loaded && (loaded.text.includes('#EXTINF') || loaded.text.includes('#EXT-X-STREAM-INF'))) {
       st.activeAccountIndex = candidate.index;
       return rewriteProviderPlaylistWithOpaqueTokens(
@@ -930,6 +933,7 @@ export async function resolveProviderLiveManifest(
       );
     }
 
+    if (Date.now() >= deadlineAt) break;
     try {
       await assertSafeProxyUrl(tsUrl);
       const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, 'hd', referer).catch(() => null);

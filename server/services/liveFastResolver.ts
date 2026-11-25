@@ -30,6 +30,12 @@ import {
 } from './xtreamVodMatcher.ts';
 import { channelHealthMonitor } from './channelHealthMonitor.ts';
 import { inferStreamQualityTag, normalizeLiveTrackLang } from '../../src/utils/channelQualityRanker.ts';
+import {
+  extractProviderBucket,
+  getProviderSteeringPenaltyMs,
+  isProviderCircuitOpen,
+  recordProviderOutcome,
+} from './providerCircuitBreaker.ts';
 
 export interface FastLiveTrackCandidate {
   id?: string;
@@ -68,7 +74,10 @@ export interface FastLiveResolveResult {
   extraTracks?: FastLiveTrackCandidate[];
 }
 
-const fastLiveWinnerCache = new LruTtlCache<string, FastLiveResolveResult>(250, 35_000);
+const fastLiveWinnerCache = new LruTtlCache<string, FastLiveResolveResult & { cachedAt?: number }>(
+  300,
+  90_000
+);
 const inflightPrewarms = new Map<string, Promise<FastLiveResolveResult>>();
 
 function parseXtreamSource(
@@ -216,10 +225,13 @@ export async function defaultProbeSingleLiveTrack(
 
   // 4B. Dynamic external sports_channel mirrors (footunder, streamxhd, tilinhd, etc.)
   if (rt === 'sports_channel' || /footunder\.online|streamxhd\.|tilinhd\./i.test(sourceUrl)) {
+    if (isProviderCircuitOpen(sourceUrl, track.providerId)) {
+      return { ok: false, streamUrl: '', mode: 'hls', latencyMs: 1, statusCode: 503 };
+    }
     const fullTarget = /^https?:\/\//i.test(sourceUrl) ? sourceUrl : `https://${sourceUrl}`;
     const directSports = await Promise.race([
       extractLiveSportsHlsDirect(fullTarget),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), opts.timeoutMs)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), Math.min(opts.timeoutMs, 14_000))),
     ]).catch(() => null);
     const lat = Math.max(1, Date.now() - startedAt);
     if (directSports && directSports.streamUrl && !directSports.isBrokenGreenFeed) {
@@ -318,7 +330,7 @@ export async function defaultProbeSingleLiveTrack(
           Referer: referer,
           Accept: '*/*',
         },
-        timeoutMs: Math.min(opts.timeoutMs, isDvb ? 2400 : opts.timeoutMs),
+        timeoutMs: Math.min(opts.timeoutMs, isDvb ? 12_000 : opts.timeoutMs),
       });
       const lat = Math.max(1, Date.now() - startedAt);
       if (!res.ok) {
@@ -362,7 +374,17 @@ export function orderCandidatesForFastResolve(
   const indexed = tracks.map((track, originalIndex) => {
     const liveHealth = healthMap[String(track.sourceUrl || '').trim()] || track.health;
     const status = liveHealth?.status ?? 'unknown';
-    const statusRank = status === 'up' ? 0 : status === 'unknown' ? 1 : status === 'degraded' ? 2 : 3;
+    const circuitOpen = isProviderCircuitOpen(track.sourceUrl, track.providerId);
+    const statusRank =
+      status === 'up'
+        ? 0
+        : circuitOpen
+        ? 3
+        : status === 'unknown'
+        ? 1
+        : status === 'degraded'
+        ? 2
+        : 4;
     const normLang = normalizeLiveTrackLang(track.lang, track.label);
     const langRank = qualityFirst
       ? 0
@@ -376,13 +398,21 @@ export function orderCandidatesForFastResolve(
       ? 3
       : 4;
     const isEmbed = track.resolverType === 'web_embed';
-    const isResidentialDvb = /90\.163\.85\.113(?:%3A|:)8093/i.test(String(track.sourceUrl || ''));
-    const q = inferStreamQualityTag(track.quality, track.label, track.sourceUrl);
-    const lat = typeof liveHealth?.latencyMs === 'number' ? Math.min(9999, liveHealth.latencyMs) : 1200;
+    const src = String(track.sourceUrl || '');
+    const isResidentialDvb = /90\.163\.85\.113(?:%3A|:)8093/i.test(src);
+    const isSportsScraper =
+      track.resolverType === 'sports_channel' || /footunder\.online|streamxhd\.|tilinhd\./i.test(src);
+    const q = inferStreamQualityTag(track.quality, track.label, src);
+    const steeringPenalty = getProviderSteeringPenaltyMs(src, track.providerId);
+    const lat =
+      typeof liveHealth?.latencyMs === 'number'
+        ? Math.min(9999, Math.round(liveHealth.latencyMs * 0.7 + steeringPenalty * 0.3))
+        : steeringPenalty;
     const score =
       statusRank * 1000000 +
       (isEmbed ? 500000 : 0) +
-      (isResidentialDvb ? 150000 : 0) +
+      (isSportsScraper ? 220000 : 0) +
+      (isResidentialDvb ? 180000 : 0) +
       langRank * 10000 +
       Math.round(q.tier * 1000) +
       Math.round(lat / 10);
@@ -428,6 +458,12 @@ export async function raceFastLiveTracks(
   const cacheKey = `${opts.channelId || safeTracks[0].sourceUrl}|${preferLang}|${qualityFirst ? 'q1' : 'q0'}`;
   const cachedWinner = fastLiveWinnerCache.get(cacheKey);
   if (cachedWinner && cachedWinner.ok) {
+    const ageMs = Date.now() - (cachedWinner.cachedAt || 0);
+    if (ageMs > 45_000 && !inflightPrewarms.has(cacheKey)) {
+      // Stale-while-revalidate refresh in background without blocking playback
+      fastLiveWinnerCache.delete(cacheKey);
+      void raceFastLiveTracks(safeTracks, opts).catch(() => undefined);
+    }
     return { ...cachedWinner, fromCache: true };
   }
 
@@ -494,8 +530,16 @@ export async function raceFastLiveTracks(
         /\.(mp4|mkv|webm|avi)(\?|$)/i.test(String(t.sourceUrl || ''))
     );
 
+  // Only do synchronous Xtream discovery if the caller supplied fewer than 4 distinct healthy providers
+  const initialDistinctHealthyProviders = new Set<string>();
+  for (const tr of safeTracks) {
+    if (tr.health?.status === 'down' || isProviderCircuitOpen(tr.sourceUrl, tr.providerId)) continue;
+    if (tr.resolverType === 'sports_channel' && /footunder\.online|streamxhd\.|tilinhd\./i.test(tr.sourceUrl)) continue;
+    initialDistinctHealthyProviders.add(getCandidateProviderBucket(tr));
+  }
+
   let discoveredExtraTracks: FastLiveTrackCandidate[] = [];
-  if (!opts.probeImpl && !isVodOrSeries) {
+  if (!opts.probeImpl && !isVodOrSeries && initialDistinctHealthyProviders.size < 4) {
     const hintPool = new Set<string>();
     if (opts.channelId === 'mux-champions' || /liga\s*de\s*campeones/i.test(String(opts.titleHint || ''))) {
       hintPool.add('M+ Liga de Campeones');
@@ -564,7 +608,7 @@ export async function raceFastLiveTracks(
           preferLang,
           limit: 24,
         }).catch(() => []),
-        new Promise<TrackRecord[]>((resolve) => setTimeout(() => resolve([]), 1_200)),
+        new Promise<TrackRecord[]>((resolve) => setTimeout(() => resolve([]), 380)),
       ]);
       const existingUrls = new Set(safeTracks.map((t) => String(t.sourceUrl || '').trim()));
       for (const m of xtreamMatches) {
@@ -595,15 +639,15 @@ export async function raceFastLiveTracks(
   );
 
   const probeImpl = opts.probeImpl || defaultProbeSingleLiveTrack;
-  const timeoutMs = opts.timeoutMs ?? 6_500;
-  const hedgeDelay1 = opts.hedgeDelayMs ?? 90;
-  const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 220;
+  const timeoutMs = Math.min(15_000, opts.timeoutMs ?? 15_000);
+  const hedgeDelay1 = opts.hedgeDelayMs ?? 150;
+  const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 420;
   const publicOrigin = opts.publicOrigin || '';
   const belixSessionKey = opts.belixSessionKey || 'default';
 
   const runRace = async (): Promise<FastLiveResolveResult> => {
     const startedAt = Date.now();
-    const deadlineAt = startedAt + timeoutMs + 200;
+    const deadlineAt = startedAt + timeoutMs + 120;
     let settled = false;
     let checkedCount = 0;
 
@@ -620,8 +664,8 @@ export async function raceFastLiveTracks(
           discoveredExtraTracks.length > 0
             ? { ...res, extraTracks: discoveredExtraTracks }
             : res;
-        if (finalRes.ok && (isVodOrSeries || discoveredExtraTracks.length > 0)) {
-          fastLiveWinnerCache.set(cacheKey, finalRes);
+        if (finalRes.ok && (isVodOrSeries || finalRes.mode === 'hls' || discoveredExtraTracks.length > 0)) {
+          fastLiveWinnerCache.set(cacheKey, { ...finalRes, cachedAt: Date.now() });
         }
         resolve(finalRes);
       };
@@ -680,19 +724,21 @@ export async function raceFastLiveTracks(
 
       const launchCandidate = (cand: { originalIndex: number; track: FastLiveTrackCandidate }) => {
         const remainingMs = deadlineAt - Date.now();
-        if (settled || remainingMs < 250) {
+        if (settled || remainingMs < 200) {
           pendingCount -= 1;
           checkAllDone();
           return;
         }
         checkedCount += 1;
+        const bucket = extractProviderBucket(cand.track.sourceUrl, cand.track.providerId);
         probeImpl(cand.track, {
           publicOrigin,
           belixSessionKey,
           titleHint: opts.titleHint,
-          timeoutMs: Math.min(timeoutMs, remainingMs),
+          timeoutMs: Math.max(400, Math.min(14_800, remainingMs)),
         })
           .then((out) => {
+            recordProviderOutcome(bucket, { ok: out.ok, latencyMs: out.latencyMs });
             if (out.ok && out.streamUrl) {
               if (out.mode === 'hls') {
                 channelHealthMonitor.setTrackHealth(cand.track.sourceUrl, {
@@ -727,6 +773,7 @@ export async function raceFastLiveTracks(
             }
           })
           .catch(() => {
+            recordProviderOutcome(bucket, { ok: false });
             channelHealthMonitor.setTrackHealth(cand.track.sourceUrl, {
               status: 'down',
               failCount: 1,
@@ -739,17 +786,16 @@ export async function raceFastLiveTracks(
           });
       };
 
-      // Wave 1 (t=0): Launch top 2 distinct provider candidates immediately
-      launchCandidate(ordered[0]);
-      if (ordered.length > 1) {
-        launchCandidate(ordered[1]);
+      // Wave 1 (t=0): Launch top 3 distinct healthy provider candidates immediately
+      for (const c of ordered.slice(0, 3)) {
+        launchCandidate(c);
       }
 
-      // Wave 2 (t=+hedgeDelay1): Hedge candidates 2..5
-      if (ordered.length > 2) {
+      // Wave 2 (t=+hedgeDelay1): Hedge candidates 3..7
+      if (ordered.length > 3) {
         const wave2 = setTimeout(() => {
           if (settled) return;
-          for (const c of ordered.slice(2, 6)) {
+          for (const c of ordered.slice(3, 7)) {
             launchCandidate(c);
           }
         }, hedgeDelay1);
@@ -757,10 +803,10 @@ export async function raceFastLiveTracks(
       }
 
       // Wave 3 (t=+hedgeDelay2): Hedge remaining provider candidates
-      if (ordered.length > 6) {
+      if (ordered.length > 7) {
         const wave3 = setTimeout(() => {
           if (settled) return;
-          for (const c of ordered.slice(6)) {
+          for (const c of ordered.slice(7)) {
             launchCandidate(c);
           }
         }, hedgeDelay2);

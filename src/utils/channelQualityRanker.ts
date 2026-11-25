@@ -74,16 +74,16 @@ const CANONICAL_ALIAS_RULES: Array<[RegExp, string]> = [
 
   // Spanish Football & Sports (DAZN / Movistar+)
   [/^dazn\s*la\s*liga(?:\s*1)?$/i, 'dazn-laliga'],
-  [/^dazn\s*1$/i, 'dazn-1'],
-  [/^dazn\s*2$/i, 'dazn-2'],
-  [/^dazn\s*3$/i, 'dazn-3'],
-  [/^dazn\s*4$/i, 'dazn-4'],
-  [/^dazn\s*(?:m\.?\s*)?f(?:ormula\s*)?1$/i, 'dazn-f1'],
+  [/^dazn\s*1(?:\s*es)?$/i, 'dazn-1'],
+  [/^dazn\s*2(?:\s*es)?$/i, 'dazn-2'],
+  [/^dazn\s*3(?:\s*es)?$/i, 'dazn-3'],
+  [/^dazn\s*4(?:\s*es)?$/i, 'dazn-4'],
+  [/^dazn\s*(?:m\.?\s*)?f(?:ormula\s*)?1(?:\s*es)?$/i, 'dazn-f1'],
   [/^(?:movistar|m[+.]?)\s*plus\+?(?:\s*1)?$|^#0$/i, 'mplus-canal'],
-  [/^(?:movistar|m[+.]?)\s*vamos$|^vamos(?:\s*por\s*m\+)?$/i, 'mplus-vamos'],
-  [/^(?:movistar|m[+.]?)\s*la\s*liga(?:\s*tv)?$|^la\s*liga\s*tv\s*por\s*m\+$|^la\s*liga\s*por\s*m\+$/i, 'mplus-laliga'],
-  [/^la\s*liga\s*(?:tv\s*)?hypermotion(?:\s*1)?$/i, 'mplus-hypermotion'],
-  [/^(?:movistar|m[+.]?)\s*(?:liga\s*(?:de\s*)?campeones|l\.?\s*campeones)$|^liga\s*de\s*campeones(?:\s*por\s*m\+)?$/i, 'mplus-champions'],
+  [/^(?:movistar|m[+.]?)\s*vamos(?:\s*por\s*m\+?)?$|^vamos(?:\s*por\s*m\+)?$/i, 'mplus-vamos'],
+  [/^(?:movistar|m[+.]?)\s*la\s*liga(?:\s*tv)?(?:\s*por\s*m\+?)?$|^la\s*liga\s*tv\s*(?:por\s*)?m\+?$|^la\s*liga\s*por\s*m\+$/i, 'mplus-laliga'],
+  [/^(?:m\.?\s*)?la\s*liga\s*(?:tv\s*)?hypermotion(?:\s*1)?$/i, 'mplus-hypermotion'],
+  [/^(?:movistar|m[+.]?)\s*(?:liga\s*(?:de\s*)?campeones|l\.?\s*campeones)(?:\s*1)?$|^liga\s*de\s*campeones(?:\s*por\s*m\+)?$/i, 'mplus-champions'],
   [/^(?:movistar|m[+.]?)\s*deportes(?:\s*1)?$/i, 'mplus-deportes'],
   [/^(?:movistar|m[+.]?)\s*deportes\s*2$/i, 'mplus-deportes2'],
   [/^(?:movistar|m[+.]?)\s*golf$/i, 'mplus-golf'],
@@ -256,19 +256,60 @@ export function normalizeLiveTrackLang(rawLang?: string, label?: string, country
   return raw || 'ES';
 }
 
-function isDanaDirectTrack(tr: StreamTrack): boolean {
-  const pid = String((tr as { providerId?: string }).providerId || '').toLowerCase();
-  if (pid === 'dana4k') return true;
-  const u = String(tr.sourceUrl || '').toLowerCase();
-  if (u.indexOf('provider=dana4k') !== -1) return true;
-  const lbl = String(tr.label || '').toLowerCase();
-  return lbl.indexOf('dana 4k') !== -1;
+function getTrackProviderBucketForSort(tr: StreamTrack): string {
+  const pid = String((tr as { providerId?: string }).providerId || '').trim().toLowerCase();
+  if (pid) return pid;
+  const src = String(tr.sourceUrl || '').trim();
+  const provStream = src.match(/^\/api\/providers\/stream\/([^/]+)\//i);
+  if (provStream?.[1]) return provStream[1].toLowerCase();
+  const qProv = src.match(/[?&]provider=([^&]+)/i);
+  if (qProv?.[1]) return decodeURIComponent(qProv[1]).toLowerCase();
+  if (src.startsWith('/api/belix/')) return 'belix';
+  if (src.includes('90.163.85.113')) return 'dvb';
+  if (/ottera\.tv|rtve/i.test(src)) return 'ottera';
+  if (/footunder\.online|streamxhd\.|tilinhd\./i.test(src)) return 'sports_scraper';
+  try {
+    if (/^https?:\/\//i.test(src)) return new URL(src).hostname.toLowerCase();
+  } catch {
+    // ignore
+  }
+  return src.slice(0, 32) || 'unknown';
+}
+
+function getProviderBaselinePenalty(bucket: string): number {
+  switch (bucket) {
+    case 'ottera':
+      return -220;
+    case 'ultra-vip':
+      return -180;
+    case '24tv':
+      return -110;
+    case 'vod4k':
+      return -95;
+    case 'octopus':
+    case 'primary':
+    case 'belix':
+      return -70;
+    case 'dana4k':
+    case '2m2h':
+    case '2m2h-alt':
+    case 'adtupac':
+    case 'sult-vo':
+    case 'activecdns':
+      return 350;
+    case 'sports_scraper':
+      return 45000;
+    case 'dvb':
+      return 65000;
+    default:
+      return 0;
+  }
 }
 
 function liveTrackSortScore(tr: StreamTrack, preferSpanish: boolean): number {
   const status = tr.health?.status ?? 'unknown';
   const statusRank = status === 'up' ? 0 : status === 'unknown' ? 1 : status === 'degraded' ? 2 : 3;
-  const upBonus = status === 'up' ? -600 : 0;
+  const upBonus = status === 'up' ? -900 : 0;
   const lang = normalizeLiveTrackLang(tr.lang, tr.label);
   const langRank = preferSpanish
     ? lang === 'ES'
@@ -282,25 +323,45 @@ function liveTrackSortScore(tr: StreamTrack, preferSpanish: boolean): number {
       : 4
     : 0;
   const q = inferStreamQualityTag(tr.quality, tr.label, tr.sourceUrl);
-  // Modest preference within the same health status tier so unprobed channels never outrank verified UP mirrors
-  const danaDirectBonus =
-    preferSpanish && status !== 'down' && lang === 'ES' && isDanaDirectTrack(tr) && q.tier < 2.5
-      ? -350
-      : 0;
   const srcStr = String(tr.sourceUrl || '');
-  const isResidentialDvb = srcStr.includes('90.163.85.113:8093');
+  const bucket = getTrackProviderBucketForSort(tr);
+  const providerPenalty = getProviderBaselinePenalty(bucket);
   const directApiBonus = /^\/api\/(?:stream\?|providers\/stream\/)/i.test(srcStr) ? -40 : 0;
   const latMs = typeof tr.health?.latencyMs === 'number' ? Math.min(9999, tr.health.latencyMs) : 1400;
   return (
     statusRank * 100000 +
-    (isResidentialDvb ? 65000 : 0) +
+    (providerPenalty > 1000 ? providerPenalty : 0) +
     langRank * 10000 +
     Math.round(q.tier * 1000) +
     upBonus +
-    danaDirectBonus +
+    (providerPenalty <= 1000 ? providerPenalty : 0) +
     directApiBonus +
     Math.round(latMs / 10)
   );
+}
+
+export function prioritizeDiverseTopAlternatives<T extends StreamTrack>(
+  sortedTracks: T[],
+  targetDiverseCount = 4
+): T[] {
+  if (sortedTracks.length <= 1) return sortedTracks;
+  const top: T[] = [];
+  const rest: T[] = [];
+  const usedBuckets = new Set<string>();
+
+  // Pass 1: select up to `targetDiverseCount` tracks from distinct healthy (non-down) providers first
+  for (const tr of sortedTracks) {
+    if (top.length < targetDiverseCount && tr.health?.status !== 'down') {
+      const bucket = getTrackProviderBucketForSort(tr);
+      if (!usedBuckets.has(bucket)) {
+        usedBuckets.add(bucket);
+        top.push(tr);
+        continue;
+      }
+    }
+    rest.push(tr);
+  }
+  return [...top, ...rest];
 }
 
 function normalizeUrlForMerge(url: string): string {
@@ -533,8 +594,11 @@ export function mergeAndDeduplicateChannels<T extends GenericRankableChannel>(
     const hasEs =
       String(entry.channel.countryCode || '').toUpperCase() === 'ES' ||
       entry.tracks.some((tr) => normalizeLiveTrackLang(tr.lang, tr.label) === 'ES');
-    const sortedTracks = [...entry.tracks].sort(
-      (a, b) => liveTrackSortScore(a, hasEs) - liveTrackSortScore(b, hasEs)
+    const sortedTracks = prioritizeDiverseTopAlternatives(
+      [...entry.tracks].sort(
+        (a, b) => liveTrackSortScore(a, hasEs) - liveTrackSortScore(b, hasEs)
+      ),
+      4
     );
     const bestPlayableTrack = sortedTracks.find((t) => t.health?.status !== 'down') || sortedTracks[0];
     const bestQualityLabel = bestPlayableTrack

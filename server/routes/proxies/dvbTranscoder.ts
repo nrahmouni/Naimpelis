@@ -83,7 +83,7 @@ function markDvbUpstreamDown(rawUrl: string, reason: string, ttlMs = 45_000): vo
 async function probeDvbUpstreamReachable(
   cleanUpstream: string,
   referer: string,
-  timeoutMs = 2600
+  timeoutMs = 8_000
 ): Promise<boolean> {
   const streamKey = getDvbCooldownKey(cleanUpstream);
   if (isDvbUpstreamCoolingDown(cleanUpstream)) return false;
@@ -352,7 +352,7 @@ async function startOrReuseLiveDvbCleanHlsSession(
       await new Promise((r) => setTimeout(r, 120));
     }
   } else if (isM3u8Input && !probe) {
-    const reachable = await probeDvbUpstreamReachable(cleanUpstream, referer, 1600);
+    const reachable = await probeDvbUpstreamReachable(cleanUpstream, referer, 8_000);
     if (!reachable) {
       return null;
     }
@@ -475,7 +475,7 @@ async function startOrReuseLiveDvbCleanHlsSession(
   });
 
   session.readyPromise = new Promise<boolean>((resolve) => {
-    const deadline = Date.now() + (isXtreamLive ? 5_200 : 6_500);
+    const deadline = Date.now() + 14_000;
     let inTick = false;
     const poll = setInterval(async () => {
       if (session.dead) {
@@ -524,7 +524,7 @@ async function startOrReuseLiveDvbCleanHlsSession(
     attempt === 0 &&
     !hadNetworkFailure &&
     !isDvbUpstreamCoolingDown(cleanUpstream) &&
-    elapsed < 7_000
+    elapsed < 6_000
   ) {
     return startOrReuseLiveDvbCleanHlsSession(
       rawUpstreamUrl,

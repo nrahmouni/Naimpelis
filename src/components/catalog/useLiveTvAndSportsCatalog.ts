@@ -13,6 +13,17 @@ import { getChannelRegionMeta, type TvRegionId } from '../ui/ChannelLogoBadge';
 import type { CatalogSection } from './catalogConstants';
 import { ensureVaultSyncedWithBackend } from '../../services/xtreamVaultConfig';
 import { rankClientChannels } from '../../utils/channelQualityRanker';
+import {
+  filterTvChannelsOffThread,
+  mergeAndRankChannelsOffThread,
+} from '../../utils/catalogWorkerClient';
+import {
+  catalogQueryKeys,
+  fetchTdtBaseCatalogData,
+  queryClient,
+} from '../../hooks/useCatalogQueries';
+import { prefetchImageUrls } from '../../utils/imageUrl';
+import type { TvFilterWorkerEntry } from '../../workers/catalogWorker';
 import { STATIC_CHANNELS_CATALOG } from '../pwa/smartTvCatalogData';
 import { resolveOfficialChannelLogoUrl } from '../../shared/channelLogos';
 
@@ -158,6 +169,15 @@ export function useLiveTvAndSportsCatalog({
   const setFutbolLeagueFilter = useAppStore((s) => s.setFutbolLeagueFilter);
   const [tvFiltersOpen, setTvFiltersOpen] = useState(false);
   const prevExternalSearchRef = useRef<string | undefined>(undefined);
+  const mergeSeqRef = useRef(0);
+  const filterSeqRef = useRef(0);
+  const mountedRef = useRef(true);
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (externalSearchQuery === undefined) return;
@@ -200,28 +220,37 @@ export function useLiveTvAndSportsCatalog({
       let belixList: SpanishTdtChannel[] = [];
 
       const publishMerged = () => {
+        const seq = ++mergeSeqRef.current;
         const effectiveBaseList = baseList.length > 0 ? baseList : buildStaticTdtFallback();
-        const ranked = rankClientChannels([
+        const combined = [
           ...effectiveBaseList,
           ...rbtvList,
           ...belixList,
           ...worldList,
-        ]);
-        setTdtChannels(ranked);
-        if (baseList.length > 0) {
-          writeCachedTdtCatalog(ranked);
-          setTdtFetchError(false);
-        }
+        ];
+        void mergeAndRankChannelsOffThread(combined).then((ranked) => {
+          if (!mountedRef.current || seq !== mergeSeqRef.current) return;
+          setTdtChannels(ranked);
+          if (baseList.length > 0) {
+            writeCachedTdtCatalog(ranked);
+            setTdtFetchError(false);
+          }
+        });
       };
 
-      const tdtP = fetchWithTimeout('/api/catalog/tdt', 10_000)
-        .then((res) => {
-          if (Array.isArray(res?.channels)) {
-            baseList = res.channels;
+      const tdtP = queryClient
+        .fetchQuery({
+          queryKey: catalogQueryKeys.tdtBase(),
+          staleTime: 3 * 60_000,
+          queryFn: fetchTdtBaseCatalogData,
+        })
+        .then((channels) => {
+          if (Array.isArray(channels) && channels.length > 0) {
+            baseList = channels;
             publishMerged();
-            setLoadingTdt(false);
+            if (mountedRef.current) setLoadingTdt(false);
           }
-          return res;
+          return channels;
         })
         .catch(() => null);
 
@@ -257,21 +286,34 @@ export function useLiveTvAndSportsCatalog({
 
       await Promise.allSettled([tdtP, worldP, rbtvP, belixP]);
       if (baseList.length === 0 && worldList.length === 0 && rbtvList.length === 0 && belixList.length === 0) {
-        setTdtFetchError(true);
+        if (mountedRef.current) setTdtFetchError(true);
       }
     } catch {
-      setTdtChannels((prev) => (prev.length > 0 ? prev : buildStaticTdtFallback()));
-      setTdtFetchError(true);
+      if (mountedRef.current) {
+        setTdtChannels((prev) => (prev.length > 0 ? prev : buildStaticTdtFallback()));
+        setTdtFetchError(true);
+      }
     } finally {
-      setLoadingTdt(false);
+      if (mountedRef.current) setLoadingTdt(false);
     }
   }, []);
 
   const fetchLiveEpg = useCallback(async (forceRefresh = false) => {
     setLoadingEpg(true);
     try {
-      const res = await fetch(forceRefresh ? '/api/epg/live?refresh=1' : '/api/epg/live');
-      const data = await res.json();
+      const data = await queryClient.fetchQuery<{
+        epg?: Record<string, ChannelLiveEpg>;
+        madridTimeLabel?: string;
+      }>({
+        queryKey: catalogQueryKeys.epgLive(),
+        staleTime: forceRefresh ? 0 : 2 * 60_000,
+        queryFn: async () => {
+          const res = await fetch(forceRefresh ? '/api/epg/live?refresh=1' : '/api/epg/live');
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        },
+      });
+      if (!mountedRef.current) return;
       if (data?.epg && typeof data.epg === 'object') {
         setEpgMap(data.epg);
       }
@@ -282,7 +324,7 @@ export function useLiveTvAndSportsCatalog({
     } catch {
       // Keep previous EPG snapshot
     } finally {
-      setLoadingEpg(false);
+      if (mountedRef.current) setLoadingEpg(false);
     }
   }, []);
 
@@ -477,8 +519,21 @@ export function useLiveTvAndSportsCatalog({
 
   const trimmedTdtSearch = tdtSearch.trim();
   const needsEpgForFilter = epgFilter !== 'all' || trimmedTdtSearch.length > 0;
+  const hasActiveTvFilters =
+    tvFavOnly ||
+    tvRegion !== 'all' ||
+    tdtCategory !== 'all' ||
+    epgFilter !== 'all' ||
+    trimmedTdtSearch.length > 0;
+  const useWorkerTvFilter = hasActiveTvFilters && indexedTdtChannels.length >= 160;
+  const [workerFilteredChannels, setWorkerFilteredChannels] = useState<SpanishTdtChannel[] | null>(
+    null
+  );
 
-  const filteredTdtChannels = useMemo(() => {
+  const syncFilteredTdtChannels = useMemo(() => {
+    if (useWorkerTvFilter) return null;
+    if (!hasActiveTvFilters) return tdtChannels;
+
     const nonTdtCats = new Set([
       'movistar',
       'dazn',
@@ -590,6 +645,9 @@ export function useLiveTvAndSportsCatalog({
     }
     return out;
   }, [
+    useWorkerTvFilter,
+    hasActiveTvFilters,
+    tdtChannels,
     indexedTdtChannels,
     tvFavOnly,
     favoriteKeySet,
@@ -601,6 +659,79 @@ export function useLiveTvAndSportsCatalog({
     epgFilter,
     trimmedTdtSearch,
   ]);
+
+  useEffect(() => {
+    if (!useWorkerTvFilter) {
+      setWorkerFilteredChannels(null);
+      return;
+    }
+    const seq = ++filterSeqRef.current;
+    const entries: TvFilterWorkerEntry[] = indexedTdtChannels.map((item, idx) => {
+      let epgHaystack = '';
+      if (needsEpgForFilter) {
+        const chEpg = getChannelLiveEpg(item.ch.id);
+        if (chEpg) {
+          epgHaystack = `${chEpg.now?.title || ''} ${chEpg.now?.category || ''} ${
+            chEpg.now?.description || ''
+          } ${chEpg.next?.title || ''}`;
+        }
+      }
+      return {
+        idx,
+        id: item.ch.id,
+        category: item.ch.category,
+        countryCode: item.ch.countryCode,
+        favIdKey: item.favIdKey,
+        region: item.region,
+        searchText: item.normFullKey,
+        epgHaystack,
+      };
+    });
+
+    void filterTvChannelsOffThread(entries, {
+      query: trimmedTdtSearch,
+      tdtCategory,
+      tvRegion,
+      adrarCountryFilter,
+      tvFavOnly,
+      epgFilter,
+      favoriteFavKeys: tvFavOnly ? Array.from(favoriteKeySet) : [],
+    }).then((indices) => {
+      if (!mountedRef.current || seq !== filterSeqRef.current) return;
+      setWorkerFilteredChannels(
+        indices.map((i) => indexedTdtChannels[i]?.ch).filter(Boolean) as SpanishTdtChannel[]
+      );
+    });
+  }, [
+    useWorkerTvFilter,
+    indexedTdtChannels,
+    needsEpgForFilter,
+    getChannelLiveEpg,
+    trimmedTdtSearch,
+    tdtCategory,
+    tvRegion,
+    adrarCountryFilter,
+    tvFavOnly,
+    epgFilter,
+    favoriteKeySet,
+  ]);
+
+  const filteredTdtChannels = useMemo(
+    () =>
+      useWorkerTvFilter
+        ? workerFilteredChannels ?? tdtChannels
+        : syncFilteredTdtChannels ?? tdtChannels,
+    [useWorkerTvFilter, workerFilteredChannels, syncFilteredTdtChannels, tdtChannels]
+  );
+
+  useEffect(() => {
+    if (worldMode !== 'tv' && activeSection !== 'tdt') return;
+    if (filteredTdtChannels.length === 0) return;
+    prefetchImageUrls(
+      filteredTdtChannels.slice(0, 16).map((c) => c.logoUrl),
+      { limit: 16, kind: 'square' }
+    );
+  }, [worldMode, activeSection, filteredTdtChannels]);
 
   const tvCategoryCounts = useMemo(() => {
     const perCategory: Record<string, number> = {};

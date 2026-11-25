@@ -302,7 +302,17 @@ export function registerXtreamRoutes(
     const streamId = String(req.params.streamId || '').replace(/\.m3u8$/i, '').trim();
     const originPrefix = resolveOriginPrefix(req, deps?.getPublicOrigin);
     const providerId = getProviderParam(req);
-    const manifest = await fetchProxiedXtreamManifest(streamId, originPrefix, providerId);
+    const reqAbort = new AbortController();
+    res.on('close', () => {
+      if (!res.writableEnded && !reqAbort.signal.aborted) reqAbort.abort();
+    });
+    const manifest = await fetchProxiedXtreamManifest(
+      streamId,
+      originPrefix,
+      providerId,
+      reqAbort.signal
+    );
+    if (res.writableEnded || reqAbort.signal.aborted) return undefined;
     if (!manifest) {
       return res.status(503).send('Xtream stream unavailable');
     }
@@ -419,6 +429,13 @@ export function registerXtreamRoutes(
     if (!resource) {
       if (!res.headersSent) return res.status(502).send('Xtream segment unavailable');
       return undefined;
+    }
+
+    if (resource.kind === 'error') {
+      streamFinished = true;
+      return res
+        .status(resource.status)
+        .send(resource.status === 410 ? 'Xtream segment token expired' : 'Xtream segment unavailable');
     }
 
     res.status(resource.status);
@@ -583,7 +600,17 @@ export function registerXtreamRoutes(
     }
 
     const originPrefix = resolveOriginPrefix(req, deps?.getPublicOrigin);
-    const manifest = await fetchProxiedXtreamManifest(streamId, originPrefix, providerId);
+    const reqAbort = new AbortController();
+    res.on('close', () => {
+      if (!res.writableEnded && !reqAbort.signal.aborted) reqAbort.abort();
+    });
+    const manifest = await fetchProxiedXtreamManifest(
+      streamId,
+      originPrefix,
+      providerId,
+      reqAbort.signal
+    );
+    if (res.writableEnded || reqAbort.signal.aborted) return undefined;
     if (!manifest) {
       return res.status(503).send('Xtream stream unavailable');
     }

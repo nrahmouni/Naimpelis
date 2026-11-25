@@ -1,5 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Film } from 'lucide-react';
+import {
+  buildBackdropSrcSet,
+  buildPosterSrcSet,
+  optimizeArtworkUrl,
+} from '../../utils/imageUrl';
 
 export interface PosterImageProps {
   src?: string | null;
@@ -8,6 +13,9 @@ export interface PosterImageProps {
   className?: string;
   imgClassName?: string;
   priority?: boolean;
+  sizes?: string;
+  width?: number;
+  height?: number;
   fallbackTitle?: string;
   fallbackIcon?: React.ReactNode;
 }
@@ -19,9 +27,19 @@ const ASPECT_CLASSES: Record<NonNullable<PosterImageProps['aspect']>, string> = 
   none: '',
 };
 
+const INTRINSIC_DIMS: Record<
+  NonNullable<PosterImageProps['aspect']>,
+  { width: number; height: number }
+> = {
+  poster: { width: 342, height: 513 },
+  video: { width: 780, height: 439 },
+  square: { width: 300, height: 300 },
+  none: { width: 342, height: 513 },
+};
+
 /**
  * Fixed-aspect progressive artwork frame preventing Cumulative Layout Shift (CLS = 0)
- * with a subtle shimmer skeleton until loaded and clean broken-image fallback.
+ * with responsive TMDB srcSet/sizes, async decoding, shimmer skeleton, and clean fallback.
  */
 export const PosterImage: React.FC<PosterImageProps> = React.memo(({
   src,
@@ -30,10 +48,26 @@ export const PosterImage: React.FC<PosterImageProps> = React.memo(({
   className = '',
   imgClassName = 'object-cover',
   priority = false,
+  sizes,
+  width,
+  height,
   fallbackTitle,
   fallbackIcon,
 }) => {
-  const cleanSrc = typeof src === 'string' ? src.trim() : '';
+  const rawSrc = typeof src === 'string' ? src.trim() : '';
+  const artworkKind = aspect === 'video' ? 'backdrop' : aspect === 'square' ? 'square' : 'poster';
+  const cleanSrc = rawSrc ? optimizeArtworkUrl(rawSrc, artworkKind) : '';
+  const srcSet =
+    aspect === 'video' ? buildBackdropSrcSet(rawSrc) : buildPosterSrcSet(rawSrc);
+  const resolvedSizes =
+    sizes ||
+    (aspect === 'video'
+      ? '(max-width: 640px) 100vw, 640px'
+      : '(max-width: 640px) 160px, 220px');
+  const dims = INTRINSIC_DIMS[aspect];
+  const resolvedWidth = width ?? dims.width;
+  const resolvedHeight = height ?? dims.height;
+
   const [status, setStatus] = useState<'loading' | 'loaded' | 'error'>(
     cleanSrc ? 'loading' : 'error'
   );
@@ -67,6 +101,10 @@ export const PosterImage: React.FC<PosterImageProps> = React.memo(({
         <img
           ref={imgRef}
           src={cleanSrc}
+          srcSet={srcSet}
+          sizes={srcSet ? resolvedSizes : undefined}
+          width={resolvedWidth}
+          height={resolvedHeight}
           alt={alt}
           loading={priority ? 'eager' : 'lazy'}
           decoding="async"

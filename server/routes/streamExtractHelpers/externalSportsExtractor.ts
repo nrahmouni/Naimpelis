@@ -124,7 +124,7 @@ export async function handleExternalSportsExtract(params: {
         channelId: `sports-xtream-${liveHints[0]}`,
         titleHint: channelLabel || titleHint,
         preferLang,
-        timeoutMs: 2800,
+        timeoutMs: 12_000,
       }
     ).catch(() => null);
     if (raced?.ok && raced.streamUrl && raced.mode === 'hls') {

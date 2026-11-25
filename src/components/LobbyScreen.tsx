@@ -24,16 +24,31 @@ import { usePWAInstall } from '../utils/usePWAInstall';
 import { NaimBrandLogo } from './NaimBrandLogo';
 import { FlagBadgeSvg, type FlagCode } from './ui/LanguageBadge';
 import { EffectiveViewMode, getMonogramInitials } from './MobileViewportGuard';
-import { SettingsBottomSheet } from './SettingsBottomSheet';
-import { PWAInstallOptionsSheet } from './PWAInstallPrompt';
-import { CinematicNebulaCanvas } from './lobby/CinematicNebulaCanvas';
 import { useAppStore } from '../store/useAppStore';
+import { useMusicStore } from '../store/useMusicStore';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { useBackInterceptor } from '../lib/backInterceptor';
 
+const SettingsBottomSheet = lazyWithRetry(() =>
+  import('./SettingsBottomSheet').then((m) => ({ default: m.SettingsBottomSheet }))
+);
+const PWAInstallOptionsSheet = lazyWithRetry(() =>
+  import('./PWAInstallPrompt').then((m) => ({ default: m.PWAInstallOptionsSheet }))
+);
+const CinematicNebulaCanvas = lazyWithRetry(() =>
+  import('./lobby/CinematicNebulaCanvas').then((m) => ({ default: m.CinematicNebulaCanvas }))
+);
 const SpotifyYtmImportModal = lazyWithRetry(() =>
   import('./music/SpotifyYtmImportModal').then((m) => ({ default: m.SpotifyYtmImportModal }))
 );
+
+function useStickyMount(open: boolean): boolean {
+  const [mounted, setMounted] = useState(open);
+  useEffect(() => {
+    if (open) setMounted(true);
+  }, [open]);
+  return mounted || open;
+}
 
 interface LobbyScreenProps {
   initialProfile: StoredProfile;
@@ -118,6 +133,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const [showInstallSheet, setShowInstallSheet] = useState(false);
 
   const authNotice = useAppStore((s) => s.authNotice);
+  const showMusicImportModal = useMusicStore((s) => s.showImportModal);
+  const settingsLatch = useStickyMount(showSettingsSheet);
+  const installLatch = useStickyMount(showInstallSheet);
+  const musicImportLatch = useStickyMount(showMusicImportModal);
   const { isIOS, isAndroid } = usePWAInstall();
   const langMenuRef = useRef<HTMLDivElement | null>(null);
   const joinInputRef = useRef<HTMLInputElement | null>(null);
@@ -222,7 +241,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   return (
     <div className="h-dvh w-full bg-black text-white overflow-hidden relative flex flex-col select-none">
       {/* Custom 60fps Volumetric OLED Aurora & Prism Starlight Canvas */}
-      <CinematicNebulaCanvas />
+      <React.Suspense fallback={null}>
+        <CinematicNebulaCanvas />
+      </React.Suspense>
 
       <div
         className={`relative z-10 h-full w-full flex flex-col pt-safe pb-safe ${
@@ -689,33 +710,35 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           </motion.section>
         </main>
 
-        {/* Shared Settings Bottom Sheet */}
-        <SettingsBottomSheet
-          isOpen={showSettingsSheet}
-          onClose={() => setShowSettingsSheet(false)}
-          lang={lang}
-          onChangeLang={onChangeLang}
-          effectiveView={effectiveView}
-          onToggleViewMode={onToggleViewMode}
-          authUser={authUser}
-          authLoading={authLoading}
-          onSignIn={onSignIn}
-          onSignOut={onSignOut}
-          onOpenTvPairLobby={onOpenTvPairLobby}
-          onOpenLinkDevice={onOpenLinkDevice}
-        />
-
-        {/* Shared PWA & Smart TV Install Sheet */}
-        <PWAInstallOptionsSheet
-          isOpen={showInstallSheet}
-          onClose={() => setShowInstallSheet(false)}
-          lang={lang}
-          isIOS={isIOS}
-          isAndroid={isAndroid}
-        />
-
         <React.Suspense fallback={null}>
-          <SpotifyYtmImportModal />
+          {settingsLatch && (
+            <SettingsBottomSheet
+              isOpen={showSettingsSheet}
+              onClose={() => setShowSettingsSheet(false)}
+              lang={lang}
+              onChangeLang={onChangeLang}
+              effectiveView={effectiveView}
+              onToggleViewMode={onToggleViewMode}
+              authUser={authUser}
+              authLoading={authLoading}
+              onSignIn={onSignIn}
+              onSignOut={onSignOut}
+              onOpenTvPairLobby={onOpenTvPairLobby}
+              onOpenLinkDevice={onOpenLinkDevice}
+            />
+          )}
+
+          {installLatch && (
+            <PWAInstallOptionsSheet
+              isOpen={showInstallSheet}
+              onClose={() => setShowInstallSheet(false)}
+              lang={lang}
+              isIOS={isIOS}
+              isAndroid={isAndroid}
+            />
+          )}
+
+          {musicImportLatch && <SpotifyYtmImportModal />}
         </React.Suspense>
       </div>
     </div>

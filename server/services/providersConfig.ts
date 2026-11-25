@@ -371,11 +371,20 @@ export function getVod4kConfig(): XtreamProviderDefinition {
     pushUnique(a.user, a.pass, a.label);
   }
 
+  const combinedAccounts: XtreamAccountCredential[] = [];
+  const combinedKeys = new Set<string>();
+  for (const acc of [...explicitAccounts, ...mergedDefaultAccounts]) {
+    const key = `${acc.username.trim()}:${acc.password.trim()}`;
+    if (!key || combinedKeys.has(key)) continue;
+    combinedKeys.add(key);
+    combinedAccounts.push(acc);
+  }
+
   return {
     id: 'vod4k',
     name: 'VOD 4K',
     serverUrl,
-    accounts: explicitAccounts.length > 0 ? explicitAccounts : mergedDefaultAccounts,
+    accounts: combinedAccounts,
     defaultMediaFocus: 'vod',
   };
 }

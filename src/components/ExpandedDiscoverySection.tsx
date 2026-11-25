@@ -2,6 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronRight, Loader2, Sparkles } from 'lucide-react';
 import type { AppLanguage, CatalogMovie, RoomQueueItem } from '../types';
 import { pickLang } from '../utils/i18n';
+import { prefetchImageUrls } from '../utils/imageUrl';
+import {
+  catalogQueryKeys,
+  queryClient,
+  useEditorialCollectionsQuery,
+} from '../hooks/useCatalogQueries';
 import { CinePosterCard } from './catalog/CinePosterCard';
 import { VirtualizedPosterGrid } from './VirtualizedPosterGrid';
 
@@ -79,8 +85,10 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
   isBookmarked,
   onToggleBookmark,
 }) => {
-  const [collections, setCollections] = useState<EditorialCollection[]>([]);
-  const [loadingCollections, setLoadingCollections] = useState(true);
+  const { data: collectionsData, isLoading: loadingCollectionsQuery } =
+    useEditorialCollectionsQuery(lang, true);
+  const collections: EditorialCollection[] = collectionsData?.collections ?? [];
+  const loadingCollections = loadingCollectionsQuery && collections.length === 0;
   const onGenresLoadedRef = useRef(onGenresLoaded);
   onGenresLoadedRef.current = onGenresLoaded;
 
@@ -99,30 +107,22 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
     activeSort !== 'popularity.desc';
 
   useEffect(() => {
-    let active = true;
-    setLoadingCollections(true);
-    fetch(`/api/catalog/collections?lang=${encodeURIComponent(lang)}`)
-      .then((r) => r.json())
-      .then((colData) => {
-        if (!active) return;
-        if (Array.isArray(colData?.collections)) {
-          setCollections(colData.collections);
-        }
-        if (Array.isArray(colData?.genres)) {
-          onGenresLoadedRef.current?.(colData.genres);
-        }
-      })
-      .catch(() => {
-        // Silent fallback if upstream TMDB is momentarily busy
-      })
-      .finally(() => {
-        if (active) setLoadingCollections(false);
-      });
+    if (Array.isArray(collectionsData?.genres) && collectionsData.genres.length > 0) {
+      onGenresLoadedRef.current?.(collectionsData.genres);
+    }
+  }, [collectionsData]);
 
-    return () => {
-      active = false;
-    };
-  }, [lang]);
+  useEffect(() => {
+    if (collections.length === 0) return;
+    const firstItems = collections
+      .filter((col) => activeMediaFilter === 'all' || col.mediaType === activeMediaFilter)
+      .slice(0, 2)
+      .flatMap((col) => col.items.slice(0, 8));
+    prefetchImageUrls(
+      firstItems.map((it) => it.poster || it.backdrop),
+      { limit: 16, kind: 'poster' }
+    );
+  }, [collections, activeMediaFilter]);
 
   const discoverMediaType: 'movie' | 'tv' = activeMediaFilter === 'tv' ? 'tv' : 'movie';
 
@@ -135,16 +135,30 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
           discoverMediaType === 'tv' && activeSort === 'primary_release_date.desc'
             ? 'first_air_date.desc'
             : activeSort;
-        const params = new URLSearchParams({
-          mediaType: discoverMediaType,
-          genreId: String(activeGenreId || 28),
-          provider: activeProvider,
-          sort: effectiveSort,
-          lang,
-          page: String(pageNum),
+        const genreVal = activeGenreId || 28;
+        const data = await queryClient.fetchQuery({
+          queryKey: catalogQueryKeys.discover({
+            mediaType: discoverMediaType,
+            genreId: genreVal,
+            provider: activeProvider,
+            sort: effectiveSort,
+            lang,
+            page: pageNum,
+          }),
+          staleTime: 5 * 60_000,
+          queryFn: async () => {
+            const params = new URLSearchParams({
+              mediaType: discoverMediaType,
+              genreId: String(genreVal),
+              provider: activeProvider,
+              sort: effectiveSort,
+              lang,
+              page: String(pageNum),
+            });
+            const resp = await fetch(`/api/catalog/discover?${params.toString()}`);
+            return resp.json();
+          },
         });
-        const resp = await fetch(`/api/catalog/discover?${params.toString()}`);
-        const data = await resp.json();
         if (Array.isArray(data?.items)) {
           setDiscoverItems((prev) => (append ? [...prev, ...data.items] : data.items));
           setHasMoreDiscover(Boolean(data.hasMore));

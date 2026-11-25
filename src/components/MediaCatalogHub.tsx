@@ -32,12 +32,14 @@ import {
   type CatalogSection,
   type TvFilterGroup,
 } from './catalog/catalogConstants';
-import { CineWorldView } from './catalog/CineWorldView';
 import { useVodCatalogState } from './catalog/useVodCatalogState';
 import { useLiveTvAndSportsCatalog } from './catalog/useLiveTvAndSportsCatalog';
 import { RiffanLoaderR } from './ui/RiffanIcons';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 
+const CineWorldView = lazyWithRetry(() =>
+  import('./catalog/CineWorldView').then((m) => ({ default: m.CineWorldView }))
+);
 const CatalaEpisodePickerModal = lazyWithRetry(() =>
   import('./catalog/CatalaEpisodePickerModal').then((m) => ({ default: m.CatalaEpisodePickerModal }))
 );
@@ -381,68 +383,76 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
       {/* WORLD 1: CINE */}
       {(worldMode === 'cine' || (!worldMode && activeSection === 'home')) && (
-        <CineWorldView
-          lang={lang}
-          effectiveCineTab={effectiveCineTab}
-          onChangeCineTab={setEffectiveCineTab}
-          effectiveCineCastellano={effectiveCineCastellano}
-          onChangeCineCastellano={setEffectiveCineCastellano}
-          cineAudioOverride={vod.cineAudioOverride}
-          onChangeCineAudioOverride={vod.setCineAudioOverride}
-          onChangeSeriesLangMode={vod.setSeriesLangMode}
-          cineSpecialPortal={vod.cineSpecialPortal}
-          onChangeCineSpecialPortal={vod.setCineSpecialPortal}
-          cineFiltersOpen={vod.cineFiltersOpen}
-          onChangeCineFiltersOpen={vod.setCineFiltersOpen}
-          externalSearchQuery={externalSearchQuery}
-          homeQuery={vod.homeQuery}
-          onClearExternalSearch={onExternalSearchChange ? handleClearExternalSearch : undefined}
-          homeShowcaseMovies={vod.homeShowcaseMovies}
-          homeShowcaseSeries={vod.homeShowcaseSeries}
-          movies={vod.movies}
-          seriesList={vod.seriesList}
-          movieSort={vod.movieSort}
-          onChangeMovieSort={vod.setMovieSort}
-          movieGenre={vod.movieGenre}
-          onChangeMovieGenre={vod.setMovieGenre}
-          onResetMoviePage={handleResetMoviePage}
-          onNextMoviePage={handleNextMoviePage}
-          hasMoreMovies={vod.hasMoreMovies}
-          loadingMovies={vod.loadingMovies}
-          loadingMoreMovies={vod.loadingMoreMovies}
-          seriesSort={vod.seriesSort}
-          onChangeSeriesSort={vod.setSeriesSort}
-          seriesGenre={vod.seriesGenre}
-          onChangeSeriesGenre={vod.setSeriesGenre}
-          onResetSeriesPage={handleResetSeriesPage}
-          onNextSeriesPage={handleNextSeriesPage}
-          hasMoreSeries={vod.hasMoreSeries}
-          loadingSeries={vod.loadingSeries}
-          loadingMoreSeries={vod.loadingMoreSeries}
-          loadingHomeSearch={vod.loadingHomeSearch}
-          homeMovieResults={vod.homeMovieResults}
-          homeSeriesResults={vod.homeSeriesResults}
-          catalaItems={vod.catalaItems}
-          loadingCatala={vod.loadingCatala}
-          heroSlideIndex={vod.heroSlideIndex}
-          onChangeHeroSlideIndex={vod.setHeroSlideIndex}
-          onHeroHoverChange={vod.setIsHeroHovered}
-          homeGenreId={vod.homeGenreId}
-          homeProvider={vod.homeProvider}
-          homeSortBy={vod.homeSortBy}
-          onDiscoveryGenresLoaded={handleDiscoveryGenresLoaded}
-          isBookmarked={isBookmarked}
-          onToggleBookmark={handleToggleBookmark}
-          onOpenPreviewItem={handleOpenPreviewItem}
-          onOpenSeriesDetails={handleOpenSeriesDetails}
-          onOpenCatalaSeriesDetails={vod.openCatalaSeriesDetails}
-          onPlayMovie={onPlayMovie}
-          onPlayCustomUrl={onPlayCustomUrl}
-          onOpenCloudBrowser={onOpenCloudBrowser}
-          onSearchWithAi={onSearchWithAi}
-          onOpenSurpriseMe={onOpenSurpriseMe}
-          onPlayTdtChannel={onPlayTdtChannel}
-        />
+        <React.Suspense
+          fallback={
+            <div className="py-12 flex items-center justify-center">
+              <RiffanLoaderR size={36} />
+            </div>
+          }
+        >
+          <CineWorldView
+            lang={lang}
+            effectiveCineTab={effectiveCineTab}
+            onChangeCineTab={setEffectiveCineTab}
+            effectiveCineCastellano={effectiveCineCastellano}
+            onChangeCineCastellano={setEffectiveCineCastellano}
+            cineAudioOverride={vod.cineAudioOverride}
+            onChangeCineAudioOverride={vod.setCineAudioOverride}
+            onChangeSeriesLangMode={vod.setSeriesLangMode}
+            cineSpecialPortal={vod.cineSpecialPortal}
+            onChangeCineSpecialPortal={vod.setCineSpecialPortal}
+            cineFiltersOpen={vod.cineFiltersOpen}
+            onChangeCineFiltersOpen={vod.setCineFiltersOpen}
+            externalSearchQuery={externalSearchQuery}
+            homeQuery={vod.homeQuery}
+            onClearExternalSearch={onExternalSearchChange ? handleClearExternalSearch : undefined}
+            homeShowcaseMovies={vod.homeShowcaseMovies}
+            homeShowcaseSeries={vod.homeShowcaseSeries}
+            movies={vod.movies}
+            seriesList={vod.seriesList}
+            movieSort={vod.movieSort}
+            onChangeMovieSort={vod.setMovieSort}
+            movieGenre={vod.movieGenre}
+            onChangeMovieGenre={vod.setMovieGenre}
+            onResetMoviePage={handleResetMoviePage}
+            onNextMoviePage={handleNextMoviePage}
+            hasMoreMovies={vod.hasMoreMovies}
+            loadingMovies={vod.loadingMovies}
+            loadingMoreMovies={vod.loadingMoreMovies}
+            seriesSort={vod.seriesSort}
+            onChangeSeriesSort={vod.setSeriesSort}
+            seriesGenre={vod.seriesGenre}
+            onChangeSeriesGenre={vod.setSeriesGenre}
+            onResetSeriesPage={handleResetSeriesPage}
+            onNextSeriesPage={handleNextSeriesPage}
+            hasMoreSeries={vod.hasMoreSeries}
+            loadingSeries={vod.loadingSeries}
+            loadingMoreSeries={vod.loadingMoreSeries}
+            loadingHomeSearch={vod.loadingHomeSearch}
+            homeMovieResults={vod.homeMovieResults}
+            homeSeriesResults={vod.homeSeriesResults}
+            catalaItems={vod.catalaItems}
+            loadingCatala={vod.loadingCatala}
+            heroSlideIndex={vod.heroSlideIndex}
+            onChangeHeroSlideIndex={vod.setHeroSlideIndex}
+            onHeroHoverChange={vod.setIsHeroHovered}
+            homeGenreId={vod.homeGenreId}
+            homeProvider={vod.homeProvider}
+            homeSortBy={vod.homeSortBy}
+            onDiscoveryGenresLoaded={handleDiscoveryGenresLoaded}
+            isBookmarked={isBookmarked}
+            onToggleBookmark={handleToggleBookmark}
+            onOpenPreviewItem={handleOpenPreviewItem}
+            onOpenSeriesDetails={handleOpenSeriesDetails}
+            onOpenCatalaSeriesDetails={vod.openCatalaSeriesDetails}
+            onPlayMovie={onPlayMovie}
+            onPlayCustomUrl={onPlayCustomUrl}
+            onOpenCloudBrowser={onOpenCloudBrowser}
+            onSearchWithAi={onSearchWithAi}
+            onOpenSurpriseMe={onOpenSurpriseMe}
+            onPlayTdtChannel={onPlayTdtChannel}
+          />
+        </React.Suspense>
       )}
 
       {/* WORLD 2: FÚTBOL */}

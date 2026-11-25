@@ -97,9 +97,9 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
         baseUrl = cachedLive.baseUrl || targetUrl;
         manifestText = cachedLive.text;
       } else if (shouldBypassNodeFetch(targetUrl)) {
-        let fallback = await curlGetText(targetUrl, headers, 7);
+        let fallback = await curlGetText(targetUrl, headers, 12);
         if (!fallback.text || !fallback.text.includes('#EXTM3U')) {
-          const plainTxt = await curlPlainGetText(targetUrl, 7).catch(() => '');
+          const plainTxt = await curlPlainGetText(targetUrl, 12).catch(() => '');
           if (plainTxt && plainTxt.includes('#EXTM3U')) {
             fallback = { text: plainTxt, effectiveUrl: targetUrl };
           } else {
@@ -112,12 +112,12 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
         runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(manifestText));
       } else {
         const hdrCtrl = new AbortController();
-        const hdrTimer = setTimeout(() => hdrCtrl.abort(), 4200);
+        const hdrTimer = setTimeout(() => hdrCtrl.abort(), 12_000);
         try {
           const upstream = await streamingFetch(targetUrl, {
             headers,
             signal: hdrCtrl.signal,
-            timeoutMs: 4200,
+            timeoutMs: 12_000,
           });
           clearTimeout(hdrTimer);
           if (!upstream.ok) {
@@ -132,13 +132,13 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
         } catch {
           clearTimeout(hdrTimer);
           markHostNeedsCurlFallback(targetUrl);
-          let fallback = await curlGetText(targetUrl, headers, 6);
+          let fallback = await curlGetText(targetUrl, headers, 12);
           if (
             !fallback.text ||
             !fallback.text.includes('#EXTM3U') ||
             /nosignal/i.test(fallback.text)
           ) {
-            const plainTxt = await curlPlainGetText(targetUrl, 6).catch(() => '');
+            const plainTxt = await curlPlainGetText(targetUrl, 12).catch(() => '');
             if (plainTxt && plainTxt.includes('#EXTM3U') && !/nosignal/i.test(plainTxt)) {
               fallback = { text: plainTxt, effectiveUrl: targetUrl };
             } else {

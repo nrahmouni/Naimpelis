@@ -18,8 +18,14 @@ import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { isSameCatalogItem } from '../../utils/storage';
 import { useAppStore, type PlaybackReturnContext } from '../../store/useAppStore';
-import { MediaDetailsModal } from '../MediaDetailsModal';
-import { SeriesEpisodePickerModal } from './SeriesEpisodePickerModal';
+import { lazyWithRetry } from '../../utils/lazyWithRetry';
+
+const MediaDetailsModal = lazyWithRetry(() =>
+  import('../MediaDetailsModal').then((m) => ({ default: m.MediaDetailsModal }))
+);
+const SeriesEpisodePickerModal = lazyWithRetry(() =>
+  import('./SeriesEpisodePickerModal').then((m) => ({ default: m.SeriesEpisodePickerModal }))
+);
 
 interface GlobalVodModalsProps {
   lang: AppLanguage;
@@ -326,122 +332,130 @@ export const GlobalVodModals: React.FC<GlobalVodModalsProps> = ({
 
   return (
     <>
-      <MediaDetailsModal
-        item={requestedMovieModal}
-        lang={lang}
-        shareRoomId={shareRoomId}
-        defaultAudioLang={effectiveCineCastellano ? 'ES' : 'VOSE'}
-        isBookmarked={requestedMovieModal ? isBookmarked(requestedMovieModal) : false}
-        onClose={() => {
-          setRequestedMovieModal(null);
-        }}
-        onPlayMovie={(m, pLang, opts) => {
-          setRequestedMovieModal(null);
-          captureOriginContext({ movieModal: m });
-          onPlayMovie(m, pLang, opts);
-        }}
-        onOpenSeriesEpisodes={(tmdbId, forceSpanish) => {
-          const seed = requestedMovieModal || undefined;
-          setRequestedMovieModal(null);
-          setRequestedSeriesModal({
-            series: seed
-              ? { ...seed, tmdbId, mediaType: 'tv' }
-              : {
-                  id: `tv-${tmdbId}`,
-                  tmdbId,
-                  mediaType: 'tv',
-                  title: '',
-                  poster: '',
-                  backdrop: '',
-                  year: '',
-                  rating: '',
-                  overview: '',
-                  languages: [],
-                },
-            season: seed?.seasonNumber || 1,
-            forceSpanish: Boolean(forceSpanish),
-            fromPreviewItem: seed || null,
-          });
-        }}
-        onToggleBookmark={(m) => onToggleCatalogFavorite(m)}
-        onAddToQueue={onAddToQueue}
-        onSelectSimilar={(sim) => {
-          const resolvedId = Number(sim.tmdbId || String(sim.id || '').replace(/[^\d]/g, '') || 0);
-          if (sim.mediaType === 'tv' && resolvedId > 0) {
-            setRequestedMovieModal(null);
-            setRequestedSeriesModal({
-              series: { ...sim, tmdbId: resolvedId, mediaType: 'tv' },
-              season: sim.seasonNumber || 1,
-            });
-            return;
-          }
-          setRequestedMovieModal(sim);
-        }}
-      />
+      {requestedMovieModal && (
+        <React.Suspense fallback={null}>
+          <MediaDetailsModal
+            item={requestedMovieModal}
+            lang={lang}
+            shareRoomId={shareRoomId}
+            defaultAudioLang={effectiveCineCastellano ? 'ES' : 'VOSE'}
+            isBookmarked={isBookmarked(requestedMovieModal)}
+            onClose={() => {
+              setRequestedMovieModal(null);
+            }}
+            onPlayMovie={(m, pLang, opts) => {
+              setRequestedMovieModal(null);
+              captureOriginContext({ movieModal: m });
+              onPlayMovie(m, pLang, opts);
+            }}
+            onOpenSeriesEpisodes={(tmdbId, forceSpanish) => {
+              const seed = requestedMovieModal || undefined;
+              setRequestedMovieModal(null);
+              setRequestedSeriesModal({
+                series: seed
+                  ? { ...seed, tmdbId, mediaType: 'tv' }
+                  : {
+                      id: `tv-${tmdbId}`,
+                      tmdbId,
+                      mediaType: 'tv',
+                      title: '',
+                      poster: '',
+                      backdrop: '',
+                      year: '',
+                      rating: '',
+                      overview: '',
+                      languages: [],
+                    },
+                season: seed?.seasonNumber || 1,
+                forceSpanish: Boolean(forceSpanish),
+                fromPreviewItem: seed || null,
+              });
+            }}
+            onToggleBookmark={(m) => onToggleCatalogFavorite(m)}
+            onAddToQueue={onAddToQueue}
+            onSelectSimilar={(sim) => {
+              const resolvedId = Number(sim.tmdbId || String(sim.id || '').replace(/[^\d]/g, '') || 0);
+              if (sim.mediaType === 'tv' && resolvedId > 0) {
+                setRequestedMovieModal(null);
+                setRequestedSeriesModal({
+                  series: { ...sim, tmdbId: resolvedId, mediaType: 'tv' },
+                  season: sim.seasonNumber || 1,
+                });
+                return;
+              }
+              setRequestedMovieModal(sim);
+            }}
+          />
+        </React.Suspense>
+      )}
 
-      <SeriesEpisodePickerModal
-        lang={lang}
-        selectedSeries={selectedSeries}
-        highlightedEpisodeNumber={highlightedEpisodeNumber}
-        initialScrollTop={initialSeriesScrollTop}
-        shareRoomId={shareRoomId}
-        seriesModalLang={seriesModalLang}
-        forceSpanishSeriesActive={forceSpanishSeriesActive}
-        loadingSeriesDetails={loadingSeriesDetails}
-        probingSeriesLangs={probingSeriesLangs}
-        loadingItemId={loadingItemId}
-        watchHistory={watchHistory}
-        isBookmarked={isBookmarked}
-        onBack={() => {
-          const returnPreview = detailsReturnPreviewRef.current;
-          clearSeriesUiOnly();
-          if (returnPreview) {
-            setRequestedMovieModal(returnPreview);
-          }
-        }}
-        onCloseAll={() => {
-          clearSeriesUiOnly();
-          setRequestedMovieModal(null);
-        }}
-        onSeriesModalLangChange={setSeriesModalLang}
-        onOpenSeriesDetails={openSeriesDetails}
-        onToggleBookmark={handleToggleBookmark}
-        onReplayHistoryItem={(histItem, forceRestart, scrollTop) => {
-          const returnPreview = detailsReturnPreviewRef.current;
-          if (selectedSeries) {
-            captureOriginContext({
-              seriesModal: {
-                series: selectedSeries,
-                season: histItem.season || selectedSeries.activeSeason,
-                episode: histItem.episode || null,
-                lang: seriesModalLang,
-                forceSpanish: forceSpanishSeriesActive,
-                fromPreviewItem: returnPreview,
-                pageScrollTop: scrollTop,
-              },
-            });
-          }
-          clearSeriesUiOnly();
-          onReplayHistoryItem(histItem, forceRestart);
-        }}
-        onPlaySeriesEpisode={(series, ep, pLang, opts) => {
-          const returnPreview = detailsReturnPreviewRef.current;
-          captureOriginContext({
-            seriesModal: {
-              series,
-              season: series.activeSeason,
-              episode: ep.episodeNumber,
-              lang: pLang,
-              forceSpanish: Boolean(opts?.forceSpanish ?? forceSpanishSeriesActive),
-              fromPreviewItem: returnPreview,
-              pageScrollTop: opts?.scrollTop,
-            },
-          });
-          clearSeriesUiOnly();
-          onPlaySeriesEpisode(series, ep, pLang, opts);
-        }}
-        onAddToQueue={onAddToQueue}
-      />
+      {selectedSeries && (
+        <React.Suspense fallback={null}>
+          <SeriesEpisodePickerModal
+            lang={lang}
+            selectedSeries={selectedSeries}
+            highlightedEpisodeNumber={highlightedEpisodeNumber}
+            initialScrollTop={initialSeriesScrollTop}
+            shareRoomId={shareRoomId}
+            seriesModalLang={seriesModalLang}
+            forceSpanishSeriesActive={forceSpanishSeriesActive}
+            loadingSeriesDetails={loadingSeriesDetails}
+            probingSeriesLangs={probingSeriesLangs}
+            loadingItemId={loadingItemId}
+            watchHistory={watchHistory}
+            isBookmarked={isBookmarked}
+            onBack={() => {
+              const returnPreview = detailsReturnPreviewRef.current;
+              clearSeriesUiOnly();
+              if (returnPreview) {
+                setRequestedMovieModal(returnPreview);
+              }
+            }}
+            onCloseAll={() => {
+              clearSeriesUiOnly();
+              setRequestedMovieModal(null);
+            }}
+            onSeriesModalLangChange={setSeriesModalLang}
+            onOpenSeriesDetails={openSeriesDetails}
+            onToggleBookmark={handleToggleBookmark}
+            onReplayHistoryItem={(histItem, forceRestart, scrollTop) => {
+              const returnPreview = detailsReturnPreviewRef.current;
+              if (selectedSeries) {
+                captureOriginContext({
+                  seriesModal: {
+                    series: selectedSeries,
+                    season: histItem.season || selectedSeries.activeSeason,
+                    episode: histItem.episode || null,
+                    lang: seriesModalLang,
+                    forceSpanish: forceSpanishSeriesActive,
+                    fromPreviewItem: returnPreview,
+                    pageScrollTop: scrollTop,
+                  },
+                });
+              }
+              clearSeriesUiOnly();
+              onReplayHistoryItem(histItem, forceRestart);
+            }}
+            onPlaySeriesEpisode={(series, ep, pLang, opts) => {
+              const returnPreview = detailsReturnPreviewRef.current;
+              captureOriginContext({
+                seriesModal: {
+                  series,
+                  season: series.activeSeason,
+                  episode: ep.episodeNumber,
+                  lang: pLang,
+                  forceSpanish: Boolean(opts?.forceSpanish ?? forceSpanishSeriesActive),
+                  fromPreviewItem: returnPreview,
+                  pageScrollTop: opts?.scrollTop,
+                },
+              });
+              clearSeriesUiOnly();
+              onPlaySeriesEpisode(series, ep, pLang, opts);
+            }}
+            onAddToQueue={onAddToQueue}
+          />
+        </React.Suspense>
+      )}
     </>
   );
 };

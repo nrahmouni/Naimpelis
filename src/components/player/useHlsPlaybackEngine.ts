@@ -137,9 +137,11 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
 
     let cancelled = false;
     let videoWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+    let liveStartupSlaTimer: ReturnType<typeof setTimeout> | null = null;
     let frameHealthInterval: ReturnType<typeof setInterval> | null = null;
     let liveAutoReconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let didTriggerBackupSwitch = false;
+    let firstFrameBuffered = false;
     let lastBackupSwitchAt = 0;
     const isAndroidChrome = isAndroidChromeBrowser();
     const liveHealthMonitor = createLivePlaybackHealthMonitor();
@@ -252,17 +254,26 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         stretchShortVideoTrack: !videoState.isLive,
         maxAudioFramesDrift: videoState.isLive ? 3 : 4,
         abrEwmaDefaultEstimate: 7_500_000,
-        manifestLoadingTimeOut: isFastLocalLiveUrl ? 5000 : 6000,
-        manifestLoadingMaxRetry: 2,
+        manifestLoadingTimeOut: videoState.isLive ? 15_000 : isFastLocalLiveUrl ? 10_000 : 8_000,
+        manifestLoadingMaxRetry: videoState.isLive ? 1 : 2,
         manifestLoadingRetryDelay: 150,
-        levelLoadingTimeOut: 5500,
-        levelLoadingMaxRetry: 2,
+        levelLoadingTimeOut: videoState.isLive ? 15_000 : 8_000,
+        levelLoadingMaxRetry: videoState.isLive ? 1 : 2,
         levelLoadingRetryDelay: 150,
-        fragLoadingTimeOut: 7000,
-        fragLoadingMaxRetry: 3,
-        fragLoadingRetryDelay: 200,
+        fragLoadingTimeOut: videoState.isLive ? 15_000 : 10_000,
+        fragLoadingMaxRetry: videoState.isLive ? 1 : 3,
+        fragLoadingRetryDelay: 150,
       });
       hlsRef.current = hls;
+
+      if (videoState.isLive) {
+        liveStartupSlaTimer = setTimeout(() => {
+          if (cancelled || firstFrameBuffered || hlsRef.current !== hls) return;
+          if (video.readyState < 2 || video.videoWidth === 0) {
+            triggerBackupSwitch('live_startup_sla_exceeded');
+          }
+        }, 15_000);
+      }
 
       hls.loadSource(videoState.url);
       hls.attachMedia(video);
@@ -490,6 +501,11 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
 
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
         if (video.videoWidth > 0 && video.readyState >= 2) {
+          firstFrameBuffered = true;
+          if (liveStartupSlaTimer) {
+            clearTimeout(liveStartupSlaTimer);
+            liveStartupSlaTimer = null;
+          }
           networkRecoveries = 0;
           singleTrackLiveRetries = 0;
           parsingBurstErrors = 0;
@@ -520,7 +536,9 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
             }
             if (liveNetworkStallBurst >= 3 && Date.now() - lastNonFatalRecoverAt > 3500) {
               lastNonFatalRecoverAt = Date.now();
-              if (!triggerBackupSwitch(`live_${data.details}`)) {
+              const stillInStartupWindow =
+                !firstFrameBuffered && Date.now() - streamLoadStartRef.current < 15_000;
+              if (stillInStartupWindow || !triggerBackupSwitch(`live_${data.details}`)) {
                 try {
                   hls.startLoad(-1);
                 } catch {
@@ -750,6 +768,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
       cancelled = true;
       cleanupDirectListeners?.();
       if (videoWatchdogTimer) clearTimeout(videoWatchdogTimer);
+      if (liveStartupSlaTimer) clearTimeout(liveStartupSlaTimer);
       if (frameHealthInterval) clearInterval(frameHealthInterval);
       if (liveAutoReconnectTimer) clearTimeout(liveAutoReconnectTimer);
       setStreamRefreshPhase('idle');

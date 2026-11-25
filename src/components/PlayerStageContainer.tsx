@@ -340,91 +340,93 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
                 className="hidden sm:block absolute -inset-6 w-[calc(100%+3rem)] h-[calc(100%+3rem)] object-cover blur-3xl opacity-30 scale-105 pointer-events-none select-none -z-10"
               />
             )}
-          <React.Suspense fallback={null}>
-            <NativeCinemaPlayer
-              videoState={effectiveVideoState}
-              lang={lang}
-              userName={userName}
-              isExtracting={isExtracting}
-              extractionLabel={extractionLabel}
-              extractionError={extractionError}
-              languageNotice={languageNotice}
-              onDismissLanguageNotice={onDismissLanguageNotice}
-              cloudFrame={cloudFrame}
-              cloudState={cloudState}
-              floatingReactions={floatingReactions}
-              onSyncAction={onSyncAction}
-              onSelectTrack={onSelectTrack}
-              onAutoSwitchBackupTrack={onAutoSwitchBackupTrack}
-              onPromoteCloudStreamToNative={onPromoteCloudStreamToNative}
-              onPrevEpisode={onPrevEpisode}
-              onNextEpisode={onNextEpisode}
-              onProgressUpdate={onProgressUpdate}
-              isCinemaMode={isCinemaMode}
-              onToggleCinemaMode={onToggleCinemaMode}
-              secondaryStream={secondaryStream}
-              secondaryStreams={secondaryStreams}
-              activeAudioSlot={activeAudioSlot}
-              onSetMultiAudioSlot={onSetMultiAudioSlot}
-              onSwapSecondaryStream={onSwapSecondaryStream}
-              onToggleSecondaryLayout={onToggleSecondaryLayout}
-              onRetrySecondarySlot={onRetrySecondarySlot}
-              onCloseSecondaryStream={onCloseSecondaryStream}
-              onCloseAllSecondaryStreams={onCloseAllSecondaryStreams}
-              canControlRoom={canControlRoom}
-              isMinimized={isDockedMini}
-              isCompressed={isScrollCompressed}
-              onExpandCompressed={onExpandCompressed}
-              onToggleMinimize={onToggleMinimize}
-              onClosePlayer={onClosePlayer}
-              onCancelExtraction={onCancelExtraction}
-              onOpenSmartTvModal={onOpenSmartTvModal}
-              hasConnectedSmartTv={hasConnectedSmartTv}
-              onSendTvRemoteCommand={onSendTvRemoteCommand}
-              roomCode={roomId}
-              roomDisplayName={roomDisplayName}
-              participantCount={participants.length}
-              participants={participants}
-              savedFriends={savedFriends}
-              onlineUsers={onlineUsers}
-              onOpenFriendsModal={onOpenFriendsModal}
-              onSendDirectRoomInvite={onSendDirectRoomInvite}
-              messages={messages}
-              currentUserId={currentUserId}
-              onSendMessage={onSendMessage}
-              onSendReaction={onSendReaction}
-              onOpenInCloudBrowser={onOpenInCloudBrowser}
-              floatingChatOpen={floatingChatOpen}
-              unreadChatCount={unreadChatCount}
-              onToggleFloatingChat={onToggleFloatingChat}
-              voiceChat={voiceChat}
-              compactVideoForMobileKeyboard={
-                !isDesktopLayout && isMobileKeyboardOpen && activeWorld === 'sala'
-              }
-              onOpenCatalogSection={onOpenCatalogSection}
-              sessionMode={sessionMode}
-              onUpgradeSoloToParty={onUpgradeSoloToParty}
-              onShareCurrentMedia={handleShareCurrentMedia}
-              matchContext={
-                activeSportsMatch
-                  ? {
-                      homeTeam: activeMatchDetails?.homeTeam || activeSportsMatch.homeTeam,
-                      awayTeam: activeMatchDetails?.awayTeam || activeSportsMatch.awayTeam,
-                      homeShort: activeSportsMatch.homeShort,
-                      awayShort: activeSportsMatch.awayShort,
-                      homeLogo: activeMatchDetails?.homeLogo || activeSportsMatch.homeLogo,
-                      awayLogo: activeMatchDetails?.awayLogo || activeSportsMatch.awayLogo,
-                      homeScore: activeMatchDetails?.homeScore ?? activeSportsMatch.homeScore,
-                      awayScore: activeMatchDetails?.awayScore ?? activeSportsMatch.awayScore,
-                      statusLabel: activeMatchDetails?.statusLabel ?? activeSportsMatch.statusLabel,
-                      competition: activeMatchDetails?.tournamentName || activeSportsMatch.competition,
-                      details: activeMatchDetails,
-                    }
-                  : null
-              }
-              halftimeBreak={halftimeBreak}
-            />
-          </React.Suspense>
+          {(isPlayerActive || isExtracting || Boolean(extractionError)) && (
+            <React.Suspense fallback={null}>
+              <NativeCinemaPlayer
+                videoState={effectiveVideoState}
+                lang={lang}
+                userName={userName}
+                isExtracting={isExtracting}
+                extractionLabel={extractionLabel}
+                extractionError={extractionError}
+                languageNotice={languageNotice}
+                onDismissLanguageNotice={onDismissLanguageNotice}
+                cloudFrame={cloudFrame}
+                cloudState={cloudState}
+                floatingReactions={floatingReactions}
+                onSyncAction={onSyncAction}
+                onSelectTrack={onSelectTrack}
+                onAutoSwitchBackupTrack={onAutoSwitchBackupTrack}
+                onPromoteCloudStreamToNative={onPromoteCloudStreamToNative}
+                onPrevEpisode={onPrevEpisode}
+                onNextEpisode={onNextEpisode}
+                onProgressUpdate={onProgressUpdate}
+                isCinemaMode={isCinemaMode}
+                onToggleCinemaMode={onToggleCinemaMode}
+                secondaryStream={secondaryStream}
+                secondaryStreams={secondaryStreams}
+                activeAudioSlot={activeAudioSlot}
+                onSetMultiAudioSlot={onSetMultiAudioSlot}
+                onSwapSecondaryStream={onSwapSecondaryStream}
+                onToggleSecondaryLayout={onToggleSecondaryLayout}
+                onRetrySecondarySlot={onRetrySecondarySlot}
+                onCloseSecondaryStream={onCloseSecondaryStream}
+                onCloseAllSecondaryStreams={onCloseAllSecondaryStreams}
+                canControlRoom={canControlRoom}
+                isMinimized={isDockedMini}
+                isCompressed={isScrollCompressed}
+                onExpandCompressed={onExpandCompressed}
+                onToggleMinimize={onToggleMinimize}
+                onClosePlayer={onClosePlayer}
+                onCancelExtraction={onCancelExtraction}
+                onOpenSmartTvModal={onOpenSmartTvModal}
+                hasConnectedSmartTv={hasConnectedSmartTv}
+                onSendTvRemoteCommand={onSendTvRemoteCommand}
+                roomCode={roomId}
+                roomDisplayName={roomDisplayName}
+                participantCount={participants.length}
+                participants={participants}
+                savedFriends={savedFriends}
+                onlineUsers={onlineUsers}
+                onOpenFriendsModal={onOpenFriendsModal}
+                onSendDirectRoomInvite={onSendDirectRoomInvite}
+                messages={messages}
+                currentUserId={currentUserId}
+                onSendMessage={onSendMessage}
+                onSendReaction={onSendReaction}
+                onOpenInCloudBrowser={onOpenInCloudBrowser}
+                floatingChatOpen={floatingChatOpen}
+                unreadChatCount={unreadChatCount}
+                onToggleFloatingChat={onToggleFloatingChat}
+                voiceChat={voiceChat}
+                compactVideoForMobileKeyboard={
+                  !isDesktopLayout && isMobileKeyboardOpen && activeWorld === 'sala'
+                }
+                onOpenCatalogSection={onOpenCatalogSection}
+                sessionMode={sessionMode}
+                onUpgradeSoloToParty={onUpgradeSoloToParty}
+                onShareCurrentMedia={handleShareCurrentMedia}
+                matchContext={
+                  activeSportsMatch
+                    ? {
+                        homeTeam: activeMatchDetails?.homeTeam || activeSportsMatch.homeTeam,
+                        awayTeam: activeMatchDetails?.awayTeam || activeSportsMatch.awayTeam,
+                        homeShort: activeSportsMatch.homeShort,
+                        awayShort: activeSportsMatch.awayShort,
+                        homeLogo: activeMatchDetails?.homeLogo || activeSportsMatch.homeLogo,
+                        awayLogo: activeMatchDetails?.awayLogo || activeSportsMatch.awayLogo,
+                        homeScore: activeMatchDetails?.homeScore ?? activeSportsMatch.homeScore,
+                        awayScore: activeMatchDetails?.awayScore ?? activeSportsMatch.awayScore,
+                        statusLabel: activeMatchDetails?.statusLabel ?? activeSportsMatch.statusLabel,
+                        competition: activeMatchDetails?.tournamentName || activeSportsMatch.competition,
+                        details: activeMatchDetails,
+                      }
+                    : null
+                }
+                halftimeBreak={halftimeBreak}
+              />
+            </React.Suspense>
+          )}
 
           {(() => {
             const activeExtra =

@@ -185,7 +185,7 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
   }
 
   const hdrCtrl = new AbortController();
-  const liveFetchTimeoutMs = isLiveSportsStreamHost ? 4200 : 6500;
+  const liveFetchTimeoutMs = isLiveSportsStreamHost ? 12_000 : 14_000;
   const hdrTimer = setTimeout(() => hdrCtrl.abort(), liveFetchTimeoutMs);
   req.on('close', () => {
     if (!res.writableEnded) hdrCtrl.abort();
@@ -212,7 +212,7 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
       const retryResp = await streamingFetch(targetUrl, {
         headers: noOriginHeaders,
         signal: hdrCtrl.signal,
-        timeoutMs: 9000,
+        timeoutMs: 12_000,
       }).catch(() => null);
       if (retryResp && retryResp.ok && retryResp.body) {
         upstream = retryResp;
@@ -223,7 +223,7 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
         const retryResp = await streamingFetch(targetUrl, {
           headers,
           signal: hdrCtrl.signal,
-          timeoutMs: 9000,
+          timeoutMs: 12_000,
         }).catch(() => null);
         if (retryResp && retryResp.ok && retryResp.body) {
           upstream = retryResp;

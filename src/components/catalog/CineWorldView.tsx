@@ -4,13 +4,14 @@
  * SegmentedControl, ES/LAT/VOSE/EN/CAT language selector, 4K Ultra HD mode,
  * dual-scrim Cinema Hero Spotlight, unified search, and modular Filter sheet.
  */
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { Link2, Play, X } from 'lucide-react';
 import type { AppLanguage, CatalaCatalogItem, CatalogMovie, SpanishTdtChannel } from '../../types';
 import type { CatalogGenreItem } from '../ExpandedDiscoverySection';
 import { UI_COPY, pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
+import { prefetchImageUrls } from '../../utils/imageUrl';
 import { useBackInterceptor } from '../../lib/backInterceptor';
 import { SegmentedControl } from '../ui/DesignSystem';
 import {
@@ -193,6 +194,16 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
     ? homeShowcaseMovies
     : movies;
   const heroSlides = heroPool.filter((m) => m.backdrop || m.poster).slice(0, 6);
+
+  useEffect(() => {
+    if (showUnifiedSearch || cineSpecialPortal !== 'none') return;
+    const railItems = (isSeriesTab ? seriesList : movies).slice(0, 14);
+    const urls = [
+      ...heroSlides.map((h) => h.backdrop || h.poster),
+      ...railItems.map((m) => m.poster || m.backdrop),
+    ];
+    prefetchImageUrls(urls, { limit: 16, kind: 'poster' });
+  }, [showUnifiedSearch, cineSpecialPortal, isSeriesTab, heroSlides, seriesList, movies]);
 
   const currentSort = isSeriesTab ? seriesSort : movieSort;
   const currentGenre = isSeriesTab ? seriesGenre : movieGenre;
@@ -608,11 +619,12 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
               </span>
             </div>
             <div className="scroll-snap-x flex items-stretch gap-3 sm:gap-4 overflow-x-auto no-scrollbar pb-1">
-              {(isSeriesTab ? seriesList : movies).slice(0, 14).map((item) => (
+              {(isSeriesTab ? seriesList : movies).slice(0, 14).map((item, idx) => (
                 <CinePosterCard
                   key={item.id}
                   item={item}
                   forcedKind={isSeriesTab ? 'tv' : 'movie'}
+                  priority={idx < 4}
                   isBookmarked={isBookmarked(item)}
                   onToggleBookmark={onToggleBookmark}
                   onSelect={openPosterItem}

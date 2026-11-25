@@ -16,6 +16,11 @@ import {
   type TrackHealthInfo,
   unwrapProxyTargetUrl,
 } from './channelHealthProbe.ts';
+import {
+  getProviderSteeringPenaltyMs,
+  isProviderCircuitOpen,
+  recordProviderOutcome,
+} from './providerCircuitBreaker.ts';
 
 export {
   type ChannelHealthStatus,
@@ -74,6 +79,11 @@ export class ChannelHealthMonitor {
           ? 'degraded'
           : prev?.status || 'up';
 
+    recordProviderOutcome(sourceUrl, {
+      ok: !feedback.failed,
+      latencyMs: feedback.startupMs,
+    });
+
     this.trackHealth.set(key, {
       status: nextStatus,
       latencyMs: feedback.startupMs ?? prev?.latencyMs,
@@ -95,6 +105,8 @@ export class ChannelHealthMonitor {
         track.health;
       const isCoolingDvb =
         unwrapped.includes('90.163.85.113:8093') && isDvbUpstreamCoolingDown(unwrapped);
+      const trackPid = String((track as { providerId?: string }).providerId || '');
+      const circuitOpen = isProviderCircuitOpen(track.sourceUrl, trackPid);
       const health: TrackHealthInfo | undefined = isCoolingDvb
         ? {
             status: 'down',
@@ -108,7 +120,8 @@ export class ChannelHealthMonitor {
       const q = `${track.quality || ''} ${track.label || ''}`.toLowerCase();
       const isUhdHevc = /90\.163\.85\.113:8093\/stream\/6[4568]\//i.test(unwrapped);
       const isResidentialDvb = unwrapped.includes('90.163.85.113:8093');
-      const isHttpsCdn = /^https:\/\//i.test(unwrapped) && !isResidentialDvb;
+      const isSportsScraper = /footunder\.online|streamxhd\.|tilinhd\./i.test(unwrapped);
+      const isHttpsCdn = /^https:\/\//i.test(unwrapped) && !isResidentialDvb && !isSportsScraper;
       const isPreferredEdge2 = /\/api\/belix\/stream\/531071(?:\.m3u8|\b)/i.test(src);
       const isBelix = src.startsWith('/api/belix/stream/');
       const isXtreamProxy = /^\/api\/(?:xtream\/stream|providers\/stream|stream)\b/i.test(src);
@@ -130,30 +143,39 @@ export class ChannelHealthMonitor {
         : 3;
       const transportPenalty = /interactvty\.pro/i.test(src)
         ? 1500
+        : isSportsScraper
+        ? 2400
         : isResidentialDvb
-        ? 900
+        ? 1200
         : isPreferredEdge2 || isXtreamProxy
         ? 0
         : isBelix
         ? 250
         : 0;
+      const steeringMs = getProviderSteeringPenaltyMs(track.sourceUrl, trackPid);
       const penaltyMs =
-        (health?.qoeFailures || 0) * 1800 + (health?.qoeRebuffers || 0) * 600 + transportPenalty;
+        (health?.qoeFailures || 0) * 1800 +
+        (health?.qoeRebuffers || 0) * 600 +
+        transportPenalty +
+        (circuitOpen ? 50_000 : 0);
       const effectiveLatency = Math.max(
         1,
-        (health?.latencyMs ?? (health?.status === 'unknown' ? 1200 : 800)) + penaltyMs
+        (health?.latencyMs ?? steeringMs) + penaltyMs
       );
+      const effectiveStatus: ChannelHealthStatus =
+        circuitOpen && health?.status !== 'up' ? 'down' : health?.status ?? 'unknown';
       return {
         track: health ? { ...track, health } : { ...track },
         originalIndex,
         isUhdHevc,
         isHevc,
         isResidentialDvb,
+        isSportsScraper,
         isHttpsCdn,
         isPreferredEdge2,
         isBelix,
         isXtreamProxy,
-        status: health?.status ?? ('unknown' as ChannelHealthStatus),
+        status: effectiveStatus,
         qualityTier,
         latencyBucket: Math.floor(effectiveLatency / 750),
         rawLatency: effectiveLatency,

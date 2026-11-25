@@ -303,7 +303,7 @@ export function useLiveAndQueuePlayback(
         } else {
           signal.addEventListener('abort', onFastAbort, { once: true });
         }
-        const fastTimeout = setTimeout(() => fastCtrl.abort(), 8500);
+        const fastTimeout = setTimeout(() => fastCtrl.abort(), 15_000);
         try {
           const fastRes = await fetch('/api/live/fast-resolve', {
             method: 'POST',
@@ -399,7 +399,7 @@ export function useLiveAndQueuePlayback(
             } else {
               signal.addEventListener('abort', onParentAbort, { once: true });
             }
-            const reqTimeout = setTimeout(() => reqCtrl.abort(), 7500);
+            const reqTimeout = setTimeout(() => reqCtrl.abort(), 15_000);
             try {
               const res = await fetch(`/api/extract/stream?${params.toString()}`, {
                 signal: reqCtrl.signal,
@@ -565,7 +565,7 @@ export function useLiveAndQueuePlayback(
       commitVideoStateSync('change_url', nextState);
       playCinemaSound('play');
 
-      if (healthyChannels.length <= 2) {
+      if (healthyChannels.length < 4) {
         enrichLiveTracksInBackground({
           playedUrl: nextState.url,
           channelId: match.id,
@@ -701,7 +701,7 @@ export function useLiveAndQueuePlayback(
         } else {
           signal.addEventListener('abort', onFastAbort, { once: true });
         }
-        const fastTimeout = setTimeout(() => fastCtrl.abort(), 8500);
+        const fastTimeout = setTimeout(() => fastCtrl.abort(), 15_000);
         try {
           const fastRes = await fetch('/api/live/fast-resolve', {
             method: 'POST',
@@ -812,7 +812,7 @@ export function useLiveAndQueuePlayback(
         } else {
           signal.addEventListener('abort', onParentAbort, { once: true });
         }
-        const timeoutId = setTimeout(() => ctrl.abort(), 7500);
+        const timeoutId = setTimeout(() => ctrl.abort(), 15_000);
         try {
           const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal: ctrl.signal });
           resOk = res.ok;

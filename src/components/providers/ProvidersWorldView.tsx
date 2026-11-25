@@ -16,6 +16,12 @@ import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { useBackInterceptor } from '../../lib/backInterceptor';
 import { useAppStore } from '../../store/useAppStore';
+import {
+  catalogQueryKeys,
+  queryClient,
+  useProvidersStatusQuery,
+} from '../../hooks/useCatalogQueries';
+import { prefetchImageUrls } from '../../utils/imageUrl';
 import { ProvidersSeriesModal } from './ProvidersSeriesModal';
 import type {
   ProviderCatalogItemPublic,
@@ -23,7 +29,6 @@ import type {
   ProviderMediaKind,
   ProviderSeriesDetailPublic,
   ProviderSeriesEpisodePublic,
-  ProvidersStatusSummaryPublic,
 } from './providersTypes';
 
 interface ProvidersWorldViewProps {
@@ -58,8 +63,11 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
   const activeKind = useAppStore((s) => s.providersKind);
   const setActiveKind = useAppStore((s) => s.setProvidersKind);
 
-  const [statusData, setStatusData] = useState<ProvidersStatusSummaryPublic | null>(null);
-  const [loadingStatus, setLoadingStatus] = useState(true);
+  const {
+    data: statusData = null,
+    isLoading: loadingStatus,
+    refetch: refetchStatus,
+  } = useProvidersStatusQuery(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const [categoryId, setCategoryId] = useState<string>('all');
@@ -93,32 +101,37 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
     { priority: 4 }
   );
 
-  const fetchStatus = useCallback(async (): Promise<ProvidersStatusSummaryPublic | null> => {
-    try {
-      const res = await fetch('/api/providers/status');
-      const json = (await res.json().catch(() => null)) as
-        | (ProvidersStatusSummaryPublic & { success?: boolean })
-        | null;
-      if (res.ok && json?.success) {
-        setStatusData(json);
-        return json;
-      }
-    } catch {
-      // ignore transient network failure
-    } finally {
-      setLoadingStatus(false);
-    }
-    return null;
-  }, []);
-
   const fetchCatalogPage = useCallback(
-    async (opts: { offset: number; append: boolean }) => {
-      if (opts.append) {
+    async (opts: { offset: number; append: boolean; forceFresh?: boolean }) => {
+      const trimmedQ = externalSearchQuery.trim();
+      const queryParams = {
+        scope,
+        kind: activeKind,
+        offset: opts.offset,
+        limit: PAGE_SIZE,
+        categoryId: categoryId || 'all',
+        lang: langFilter || 'all',
+        quality: qualityFilter || 'all',
+        q: trimmedQ,
+      };
+      const qKey = catalogQueryKeys.providersCatalog(queryParams);
+      const cached =
+        !opts.append && !opts.forceFresh
+          ? queryClient.getQueryData<{ items: ProviderCatalogItemPublic[]; total: number }>(qKey)
+          : undefined;
+
+      if (cached) {
+        setTotalItems(Number(cached.total || 0));
+        setItems(cached.items || []);
+        setLoadingCatalog(false);
+        setLoadingMore(false);
+      } else if (opts.append) {
         setLoadingMore(true);
       } else {
         setLoadingCatalog(true);
       }
       setCatalogError(null);
+
       try {
         const params = new URLSearchParams({
           scope,
@@ -135,32 +148,55 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
         if (qualityFilter && qualityFilter !== 'all') {
           params.set('quality', qualityFilter);
         }
-        if (externalSearchQuery.trim()) {
-          params.set('q', externalSearchQuery.trim());
+        if (trimmedQ) {
+          params.set('q', trimmedQ);
         }
-        const res = await fetch(`/api/providers/catalog?${params.toString()}`);
-        const json = await res.json().catch(() => null);
-        if (!res.ok || !json?.success) {
-          setCatalogError(
-            pickLang(lang, {
-              es: 'No se pudo consultar el catálogo de servidores.',
-              ca: 'No s’ha pogut consultar el catàleg de servidors.',
-              en: 'Could not query provider catalog.',
-            })
-          );
-          return;
-        }
-        const incoming: ProviderCatalogItemPublic[] = Array.isArray(json.items) ? json.items : [];
-        setTotalItems(Number(json.total || 0));
+
+        const data = await queryClient.fetchQuery<{
+          items: ProviderCatalogItemPublic[];
+          total: number;
+        }>({
+          queryKey: qKey,
+          staleTime: opts.forceFresh ? 0 : 4 * 60_000,
+          queryFn: async () => {
+            const res = await fetch(`/api/providers/catalog?${params.toString()}`);
+            const json = await res.json().catch(() => null);
+            if (!res.ok || !json?.success) {
+              throw new Error('catalog_error');
+            }
+            return {
+              items: Array.isArray(json.items) ? (json.items as ProviderCatalogItemPublic[]) : [],
+              total: Number(json.total || 0),
+            };
+          },
+        });
+
+        const incoming = data.items || [];
+        setTotalItems(data.total);
         setItems((prev) => (opts.append ? [...prev, ...incoming] : incoming));
-      } catch {
-        setCatalogError(
-          pickLang(lang, {
-            es: 'Error de red cargando canales, películas y series.',
-            ca: 'Error de xarxa carregant canals, pel·lícules i sèries.',
-            en: 'Network error loading live TV, movies and series.',
-          })
-        );
+        if (!opts.append && incoming.length > 0) {
+          prefetchImageUrls(
+            incoming.slice(0, 16).map((i) => i.poster),
+            { limit: 16, kind: activeKind === 'live' ? 'square' : 'poster' }
+          );
+        }
+      } catch (err) {
+        if (!cached) {
+          const isQueryErr = err instanceof Error && err.message === 'catalog_error';
+          setCatalogError(
+            isQueryErr
+              ? pickLang(lang, {
+                  es: 'No se pudo consultar el catálogo de servidores.',
+                  ca: 'No s’ha pogut consultar el catàleg de servidors.',
+                  en: 'Could not query provider catalog.',
+                })
+              : pickLang(lang, {
+                  es: 'Error de red cargando canales, películas y series.',
+                  ca: 'Error de xarxa carregant canals, pel·lícules i sèries.',
+                  en: 'Network error loading live TV, movies and series.',
+                })
+          );
+        }
       } finally {
         setLoadingCatalog(false);
         setLoadingMore(false);
@@ -168,25 +204,6 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
     },
     [scope, activeKind, categoryId, langFilter, qualityFilter, externalSearchQuery, lang]
   );
-
-  useEffect(() => {
-    let active = true;
-    let pollTimer: number | null = null;
-    const load = async () => {
-      const data = await fetchStatus();
-      if (!active) return;
-      if (data && data.providers.some((p) => p.connecting)) {
-        pollTimer = window.setTimeout(() => {
-          void load();
-        }, 2000);
-      }
-    };
-    void load();
-    return () => {
-      active = false;
-      if (pollTimer) window.clearTimeout(pollTimer);
-    };
-  }, [fetchStatus]);
 
   useEffect(() => {
     void fetchCatalogPage({ offset: 0, append: false });
@@ -204,11 +221,12 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
       const res = await fetch(url, { method: 'POST' });
       const json = await res.json().catch(() => null);
       if (res.ok && json?.success) {
-        setStatusData(json);
+        queryClient.setQueryData(catalogQueryKeys.providersStatus(), json);
       } else {
-        await fetchStatus();
+        await refetchStatus();
       }
-      await fetchCatalogPage({ offset: 0, append: false });
+      await queryClient.invalidateQueries({ queryKey: ['providers', 'catalog'] });
+      await fetchCatalogPage({ offset: 0, append: false, forceFresh: true });
     } finally {
       setRefreshing(false);
     }
@@ -681,6 +699,7 @@ export const ProvidersWorldView: React.FC<ProvidersWorldViewProps> = ({
                         src={item.poster}
                         alt={item.name}
                         loading="lazy"
+                        decoding="async"
                         className={`w-full h-full ${
                           isLive ? 'object-contain p-3' : 'object-cover'
                         } group-hover:scale-[1.03] transition-transform duration-200`}

@@ -43,7 +43,11 @@ import {
   syncFullCatalog as syncXtreamEnvCatalog,
 } from '../services/xtreamService.ts';
 import { getCuratedRbtvChannels } from '../services/rbtv/rbtvLiveCurator.ts';
-import { getVerifiedSpainXtreamChannels } from '../services/octopusSpainLiveService.ts';
+import {
+  getCachedSpainXtreamChannelsSync,
+  getVerifiedSpainXtreamChannels,
+} from '../services/octopusSpainLiveService.ts';
+import { isProviderCircuitOpen } from '../services/providerCircuitBreaker.ts';
 import { findXtreamLiveChannelMatches } from '../services/xtreamVodMatcher.ts';
 import {
   ensureLiveDvbCleanHlsSession,
@@ -71,6 +75,43 @@ export function getLiveVoiceChannels() {
     ...ch,
     logoUrl: resolveOfficialChannelLogoUrl(ch) || undefined,
   }));
+}
+
+export function getUnifiedLiveTdtChannelsForBackground() {
+  const baseTdtChannels = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, isAnyBelixConnected('default'));
+  const verifiedSpainChannels = getCachedSpainXtreamChannelsSync();
+  const verifiedSpainIds = new Set(verifiedSpainChannels.map((c) => c.streamId));
+  const xtreamEnvChannels = getCachedXtreamLiveTdtChannels().filter(
+    (c) =>
+      !verifiedSpainIds.has(c.streamId) &&
+      (c.countryCode === 'ES' || c.category === 'movistar' || c.category === 'dazn')
+  );
+  return buildUnifiedPrioritizedChannels([
+    ...verifiedSpainChannels,
+    ...baseTdtChannels,
+    ...xtreamEnvChannels,
+  ]);
+}
+
+function curateHealthyAlternatives<T extends { channels?: Array<{ sourceUrl: string; providerId?: string; health?: { status?: string } }> }>(
+  channels: T[]
+): T[] {
+  return channels.map((ch) => {
+    const list = ch.channels || [];
+    if (list.length <= 4) return ch;
+    const healthy = list.filter(
+      (tr) =>
+        tr.health?.status !== 'down' &&
+        !isProviderCircuitOpen(tr.sourceUrl, tr.providerId)
+    );
+    if (healthy.length >= 4) {
+      return {
+        ...ch,
+        channels: healthy,
+      };
+    }
+    return ch;
+  });
 }
 
 const iptvChannelResolveCache = new LruTtlCache<
@@ -179,7 +220,9 @@ export function registerIptvAndTdtRoutes(
     const belixStreamIds = new Set(belixChannels.map((c) => c.streamId));
     const verifiedSpainChannels = await Promise.race([
       spainWarmupPromise,
-      new Promise<Awaited<typeof spainWarmupPromise>>((resolve) => setTimeout(() => resolve([]), 40)),
+      new Promise<Awaited<typeof spainWarmupPromise>>((resolve) =>
+        setTimeout(() => resolve(getCachedSpainXtreamChannelsSync()), 90)
+      ),
     ]);
     const verifiedSpainStreamIds = new Set(verifiedSpainChannels.map((c) => c.streamId));
     const curatedRbtv = getCuratedRbtvChannels();
@@ -205,10 +248,11 @@ export function registerIptvAndTdtRoutes(
       ...xtreamEnvChannels,
       ...curatedRbtv,
     ];
+    const curated = curateHealthyAlternatives(buildUnifiedPrioritizedChannels(merged));
     const responsePayload = {
       success: true as const,
       iptvMeta: getIptvSyncMeta(),
-      channels: buildUnifiedPrioritizedChannels(merged).map((ch) => ({
+      channels: curated.map((ch) => ({
         ...ch,
         logoUrl: resolveOfficialChannelLogoUrl(ch) || undefined,
       })),

@@ -381,6 +381,7 @@ export function useAppController() {
     goHome,
     applyWorldChange,
   } = useWorldNavigation({
+    lang,
     sessionMode,
     roomId,
     reducedMotion,

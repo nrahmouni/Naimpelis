@@ -55,7 +55,7 @@ async function attemptExtractCandidate(opts: {
   rawSourceUrl: string;
   mode: 'hls' | 'direct';
 }> {
-  const { candidateUrl, title, signal, timeoutMs = 6200 } = opts;
+  const { candidateUrl, title, signal, timeoutMs = 15_000 } = opts;
   if (signal?.aborted) {
     throw new DOMException('Aborted', 'AbortError');
   }

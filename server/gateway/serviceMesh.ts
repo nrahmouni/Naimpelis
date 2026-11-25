@@ -136,7 +136,17 @@ export function mapPathToServiceId(pathname: string): MicroserviceId {
     pathname.startsWith('/api/hls-proxy') ||
     pathname.startsWith('/api/ts-proxy') ||
     pathname.startsWith('/api/subtitles') ||
-    pathname.startsWith('/api/img-proxy')
+    pathname.startsWith('/api/img-proxy') ||
+    pathname.startsWith('/api/stream') ||
+    pathname.startsWith('/api/xtream/stream') ||
+    pathname.startsWith('/api/xtream/seg') ||
+    pathname.startsWith('/api/xtream/vod') ||
+    pathname.startsWith('/api/providers/stream') ||
+    pathname.startsWith('/api/providers/hls-') ||
+    pathname.startsWith('/api/dvb-live') ||
+    pathname.startsWith('/api/belix/stream') ||
+    pathname.startsWith('/api/belix/seg') ||
+    pathname.startsWith('/api/belix/sub')
   ) {
     return 'stream-extractor';
   }
@@ -200,14 +210,29 @@ export function serviceMeshGatewayMiddleware(
       fullPath.startsWith('/api/hls-proxy') ||
       fullPath.startsWith('/api/img-proxy') ||
       fullPath.startsWith('/api/embed-proxy') ||
-      fullPath.startsWith('/api/embed-fetch');
+      fullPath.startsWith('/api/embed-fetch') ||
+      fullPath.startsWith('/api/stream') ||
+      fullPath.startsWith('/api/xtream/stream') ||
+      fullPath.startsWith('/api/xtream/seg') ||
+      fullPath.startsWith('/api/xtream/vod') ||
+      fullPath.startsWith('/api/providers/stream') ||
+      fullPath.startsWith('/api/providers/hls-') ||
+      fullPath.startsWith('/api/dvb-live') ||
+      fullPath.startsWith('/api/belix/stream') ||
+      fullPath.startsWith('/api/belix/seg') ||
+      fullPath.startsWith('/api/belix/sub');
 
     const isExpectedUpstreamFailover =
       fullPath === '/api/extract/stream' &&
       !res.getHeader('Retry-After') &&
       (res.statusCode === 502 || res.statusCode === 503 || res.statusCode === 504);
 
-    if ((isExternalProxyPassThrough && (res.statusCode === 502 || res.statusCode === 504)) || isExpectedUpstreamFailover) {
+    if (
+      (isExternalProxyPassThrough &&
+        !res.getHeader('Retry-After') &&
+        (res.statusCode === 502 || res.statusCode === 503 || res.statusCode === 504)) ||
+      isExpectedUpstreamFailover
+    ) {
       logger.debug({ correlationId, serviceId, path: fullPath, status: res.statusCode, elapsed }, 'upstream_proxy_unavailable');
       return;
     }

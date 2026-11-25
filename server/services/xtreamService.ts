@@ -24,6 +24,7 @@ import {
   type XtreamAccountCredential,
   type XtreamProviderDefinition,
 } from './providersConfig.ts';
+import { recordProviderOutcome } from './providerCircuitBreaker.ts';
 
 export type { XtreamAccountCredential, XtreamProviderDefinition };
 
@@ -298,6 +299,41 @@ const urlToOpaqueTokenCache = new LruTtlCache<string, string>(4_000, 10 * 60_000
 const opaqueIconCache = new LruTtlCache<string, string>(12_000, 12 * 60 * 60_000);
 const urlToOpaqueIconTokenCache = new LruTtlCache<string, string>(12_000, 12 * 60 * 60_000);
 const liveManifestRamCache = new LruTtlCache<string, string>(350, 7_500);
+const streamAccountCooldowns = new Map<string, number>();
+const streamAccountFailureCounts = new Map<string, number>();
+const STREAM_ACCOUNT_COOLDOWN_MS = 12 * 60_000;
+
+function streamAccountKey(providerId: string, accountIndex: number): string {
+  return `${providerId}:${accountIndex}`;
+}
+
+function isStreamAccountCoolingDown(providerId: string, accountIndex: number): boolean {
+  const key = streamAccountKey(providerId, accountIndex);
+  const until = streamAccountCooldowns.get(key);
+  if (!until) return false;
+  if (Date.now() < until) return true;
+  streamAccountCooldowns.delete(key);
+  return false;
+}
+
+function noteStreamAccountSuccess(providerId: string, accountIndex: number): void {
+  const key = streamAccountKey(providerId, accountIndex);
+  streamAccountFailureCounts.delete(key);
+  streamAccountCooldowns.delete(key);
+}
+
+function noteStreamAccountFailure(providerId: string, accountIndex: number, forceCooldown = false): void {
+  const key = streamAccountKey(providerId, accountIndex);
+  const nextCount = (streamAccountFailureCounts.get(key) || 0) + 1;
+  streamAccountFailureCounts.set(key, nextCount);
+  if (forceCooldown || nextCount >= 2) {
+    streamAccountCooldowns.set(key, Date.now() + STREAM_ACCOUNT_COOLDOWN_MS);
+    const cached = providerSessionCaches.get(providerId);
+    if (cached && cached.accountIndex === accountIndex) {
+      providerSessionCaches.delete(providerId);
+    }
+  }
+}
 
 function maskSensitive(_value: string): string {
   return '********';
@@ -361,6 +397,8 @@ export function clearXtreamSessionCache(): void {
   opaqueIconCache.clear();
   urlToOpaqueIconTokenCache.clear();
   liveManifestRamCache.clear();
+  streamAccountCooldowns.clear();
+  streamAccountFailureCounts.clear();
 }
 
 export function listXtreamProviderSummaries(): XtreamProviderPublicSummary[] {
@@ -767,7 +805,8 @@ export async function resolveActiveXtreamSession(opts?: {
     opts?.startFromIndex === undefined &&
     cached &&
     cached.envFingerprint === fingerprint &&
-    Date.now() - cached.validatedAt < SESSION_CACHE_TTL_MS
+    Date.now() - cached.validatedAt < SESSION_CACHE_TTL_MS &&
+    !isStreamAccountCoolingDown(provider.id, cached.accountIndex)
   ) {
     const cachedAccount = provider.accounts[cached.accountIndex];
     if (cachedAccount) {
@@ -930,7 +969,8 @@ export async function resolveActiveXtreamSession(opts?: {
         const maxCons = Number(check.maxConnections);
         const isCongested =
           Number.isFinite(maxCons) && maxCons > 0 && Number.isFinite(activeCons) && activeCons >= maxCons;
-        if (isCongested && total > 1 && idx !== order[order.length - 1]) {
+        const isStreamCooled = isStreamAccountCoolingDown(provider.id, idx);
+        if ((isCongested || isStreamCooled) && total > 1 && idx !== order[order.length - 1]) {
           if (!fallbackActive) fallbackActive = { idx, check };
           continue;
         }
@@ -1042,10 +1082,16 @@ async function runWithAccountFailover<T>(
     account: XtreamAccountCredential;
     accountIndex: number;
     accountNumber: number;
-  }) => Promise<{ ok: boolean; value?: T; shouldRotate?: boolean }>
+  }) => Promise<{ ok: boolean; value?: T; shouldRotate?: boolean }>,
+  opts?: { signal?: AbortSignal; deadlineAt?: number }
 ): Promise<{ ok: true; value: T; accountNumber: number } | { ok: false; status: XtreamMaskedStatus }> {
+  const signal = opts?.signal;
+  const deadlineAt = opts?.deadlineAt;
+  const isBudgetExhausted = () =>
+    Boolean(signal?.aborted || (deadlineAt !== undefined && Date.now() >= deadlineAt));
+
   const initial = await resolveActiveXtreamSession({ providerId });
-  if (!initial.ok || !initial.account) {
+  if (!initial.ok || !initial.account || isBudgetExhausted()) {
     return { ok: false, status: initial.status };
   }
 
@@ -1058,10 +1104,11 @@ async function runWithAccountFailover<T>(
     accountNumber: initial.accountIndex + 1,
   });
   if (firstAttempt.ok && firstAttempt.value !== undefined) {
+    noteStreamAccountSuccess(initial.providerId, initial.accountIndex);
     return { ok: true, value: firstAttempt.value, accountNumber: initial.accountIndex + 1 };
   }
 
-  if (!firstAttempt.shouldRotate) {
+  if (!firstAttempt.shouldRotate || isBudgetExhausted()) {
     return {
       ok: false,
       status: {
@@ -1072,6 +1119,8 @@ async function runWithAccountFailover<T>(
     };
   }
 
+  noteStreamAccountFailure(initial.providerId, initial.accountIndex, true);
+
   const resolvedCfg = getProviderOrFailoverNull(initial.providerId);
   if ('missingProvider' in resolvedCfg || 'unconfigured' in resolvedCfg) {
     return { ok: false, status: initial.status };
@@ -1080,10 +1129,11 @@ async function runWithAccountFailover<T>(
   const { provider, fingerprint } = resolvedCfg;
   const total = provider.accounts.length;
   for (let offset = 1; offset < total; offset++) {
+    if (isBudgetExhausted()) break;
     const nextIndex = (initial.accountIndex + offset) % total;
     const candidate = provider.accounts[nextIndex];
     const check = await validateAccountStatus(initial.serverOrigin, candidate);
-    if (!check.active) continue;
+    if (!check.active || isBudgetExhausted()) continue;
 
     const retry = await worker({
       providerId: provider.id,
@@ -1094,6 +1144,7 @@ async function runWithAccountFailover<T>(
       accountNumber: nextIndex + 1,
     });
     if (retry.ok && retry.value !== undefined) {
+      noteStreamAccountSuccess(provider.id, nextIndex);
       providerSessionCaches.set(provider.id, {
         envFingerprint: fingerprint,
         serverOrigin: initial.serverOrigin,
@@ -1108,9 +1159,9 @@ async function runWithAccountFailover<T>(
       });
       return { ok: true, value: retry.value, accountNumber: nextIndex + 1 };
     }
+    noteStreamAccountFailure(provider.id, nextIndex, true);
   }
 
-  providerSessionCaches.delete(provider.id);
   return {
     ok: false,
     status: {
@@ -2009,14 +2060,17 @@ function rewriteManifestLines(
 }
 
 const providerPreferredLiveVariant = new Map<string, 'live' | 'root' | 'ts' | 'root-ts'>();
+const inflightLiveManifestProbes = new Map<string, Promise<string | null>>();
 
 export async function fetchProxiedXtreamManifest(
   streamId: string,
   originPrefix = '',
-  providerId = 'primary'
+  providerId = 'primary',
+  signal?: AbortSignal
 ): Promise<string | null> {
   const cleanId = String(streamId || '').replace(/\.(?:m3u8|ts)$/i, '').trim();
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanId)) return null;
+  if (signal?.aborted) return null;
 
   const manifestCacheKey = `${providerId}:${cleanId}:${originPrefix || 'rel'}`;
   const cachedManifest = liveManifestRamCache.get(manifestCacheKey);
@@ -2024,139 +2078,184 @@ export async function fetchProxiedXtreamManifest(
     return cachedManifest;
   }
 
-  const knownPreferred = providerPreferredLiveVariant.get(providerId);
-  const m3u8Variants: Array<'live' | 'root'> =
-    knownPreferred === 'root' ? ['root', 'live'] : ['live', 'root'];
-  const tsVariants: Array<'ts' | 'root-ts'> =
-    knownPreferred === 'root-ts' ? ['root-ts', 'ts'] : ['ts', 'root-ts'];
+  let sharedPromise = inflightLiveManifestProbes.get(manifestCacheKey);
+  if (!sharedPromise) {
+    const deadlineAt = Date.now() + 15_000;
+    const knownPreferred = providerPreferredLiveVariant.get(providerId);
+    const m3u8Variants: Array<'live' | 'root'> =
+      knownPreferred === 'root' ? ['root', 'live'] : ['live', 'root'];
+    const tsVariants: Array<'ts' | 'root-ts'> =
+      knownPreferred === 'root-ts' ? ['root-ts', 'ts'] : ['ts', 'root-ts'];
 
-  const probeM3u8Variant = async (
-    serverOrigin: string,
-    account: XtreamAccountCredential,
-    variant: 'live' | 'root'
-  ): Promise<string | null> => {
-    const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, variant);
-    const uaList = ['IPTVSmartersPlayer', 'VLC/3.0.20 LibVLC/3.0.20'];
-    for (let uIdx = 0; uIdx < uaList.length; uIdx++) {
-      try {
-        const res = await streamingFetch(targetUrl, {
-          method: 'GET',
-          headers: {
-            'User-Agent': uaList[uIdx],
-            Accept: '*/*',
-          },
-          timeoutMs: 2_400,
-        });
-        if (!res.ok) {
-          if (res.body) void res.body.cancel().catch(() => undefined);
-          // Retry with VLC UA only when portal returns 406/403 against default UA
-          if ((res.status === 406 || res.status === 403) && uIdx === 0) continue;
-          return null;
-        }
-        const ct = String(res.headers.get('content-type') || '').toLowerCase();
-        if (ct.startsWith('text/html') || ct.includes('video/mp2t') || ct.includes('octet-stream')) {
-          if (res.body) void res.body.cancel().catch(() => undefined);
-          return null;
-        }
-        const text = await res.text();
-        if (text.includes('#EXTM3U')) {
-          providerPreferredLiveVariant.set(providerId, variant);
-          return rewriteManifestLines(text, res.url || targetUrl, serverOrigin, originPrefix);
-        }
-        return null;
-      } catch {
-        return null;
-      }
-    }
-    return null;
-  };
-
-  const probeTsRelay = async (
-    serverOrigin: string,
-    account: XtreamAccountCredential
-  ): Promise<string | null> => {
-    for (const tsVariant of tsVariants) {
-      const tsUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, tsVariant);
-      const warmPath = getActiveDvbSessionPath(tsUrl, 'hd');
-      if (warmPath) {
-        const warmPl = readLiveDvbPlaylistForIptv(warmPath, originPrefix);
-        if (warmPl) {
-          providerPreferredLiveVariant.set(providerId, tsVariant);
-          return warmPl;
-        }
-      }
-      if (isDvbUpstreamCoolingDown(tsUrl)) continue;
-      try {
-        await assertSafeProxyUrl(tsUrl);
-        const dvbPath = await ensureLiveDvbCleanHlsSession(
-          tsUrl,
-          'hd',
-          `${serverOrigin.replace(/\/+$/, '')}/`
-        ).catch(() => null);
-        if (dvbPath) {
-          const playlist = readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
-          if (playlist) {
-            providerPreferredLiveVariant.set(providerId, tsVariant);
-            return playlist;
-          }
-        }
-      } catch {
-        // try next variant
-      }
-    }
-    return null;
-  };
-
-  const result = await runWithAccountFailover(providerId, async ({ serverOrigin, account }) => {
-    // 1) Fast path if a warm MPEG-TS DVB relay session already exists (never serve stale rolling playlist from RAM cache)
-    for (const tsVariant of tsVariants) {
-      const tsUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, tsVariant);
-      const warmPath = getActiveDvbSessionPath(tsUrl, 'hd');
-      if (warmPath) {
-        const warmPl = readLiveDvbPlaylistForIptv(warmPath, originPrefix);
-        if (warmPl) {
-          return { ok: true, value: warmPl };
-        }
-      }
-    }
-
-    // 2) If provider is NOT known to require .ts relay, try direct upstream HLS (.m3u8) first
-    if (knownPreferred !== 'ts' && knownPreferred !== 'root-ts') {
-      if (!knownPreferred) {
+    const probeM3u8Variant = async (
+      serverOrigin: string,
+      account: XtreamAccountCredential,
+      variant: 'live' | 'root'
+    ): Promise<string | null> => {
+      if (Date.now() >= deadlineAt) return null;
+      const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, variant);
+      const uaList = ['IPTVSmartersPlayer', 'VLC/3.0.20 LibVLC/3.0.20'];
+      for (let uIdx = 0; uIdx < uaList.length; uIdx++) {
+        if (Date.now() >= deadlineAt) return null;
         try {
-          const winner = await Promise.any(
-            m3u8Variants.map(async (v) => {
-              const rewritten = await probeM3u8Variant(serverOrigin, account, v);
-              if (!rewritten) throw new Error('variant_miss');
-              return rewritten;
-            })
-          );
-          liveManifestRamCache.set(manifestCacheKey, winner);
-          return { ok: true, value: winner };
-        } catch {
-          // fall through to MPEG-TS DVB relay
-        }
-      } else {
-        for (const variant of m3u8Variants) {
-          const rewritten = await probeM3u8Variant(serverOrigin, account, variant);
-          if (rewritten) {
-            liveManifestRamCache.set(manifestCacheKey, rewritten);
-            return { ok: true, value: rewritten };
+          const res = await streamingFetch(targetUrl, {
+            method: 'GET',
+            headers: {
+              'User-Agent': uaList[uIdx],
+              Accept: '*/*',
+            },
+            timeoutMs: Math.min(4_500, Math.max(400, deadlineAt - Date.now())),
+          });
+          if (!res.ok) {
+            if (res.body) void res.body.cancel().catch(() => undefined);
+            if ((res.status === 406 || res.status === 403) && uIdx === 0) continue;
+            return null;
           }
+          const ct = String(res.headers.get('content-type') || '').toLowerCase();
+          if (ct.startsWith('text/html') || ct.includes('video/mp2t') || ct.includes('octet-stream')) {
+            if (res.body) void res.body.cancel().catch(() => undefined);
+            return null;
+          }
+          const text = await res.text();
+          if (text.includes('#EXTM3U')) {
+            providerPreferredLiveVariant.set(providerId, variant);
+            return rewriteManifestLines(text, res.url || targetUrl, serverOrigin, originPrefix);
+          }
+          return null;
+        } catch {
+          return null;
         }
       }
-    }
+      return null;
+    };
 
-    // 3) Fallback (or primary for .ts-only providers like Shark Pro / Octopus / VOD4K / 24TV / Ultra VIP): MPEG-TS -> clean HLS relay
-    const dvbPlaylist = await probeTsRelay(serverOrigin, account);
-    if (dvbPlaylist) {
-      return { ok: true, value: dvbPlaylist };
-    }
+    const probeTsRelay = async (
+      serverOrigin: string,
+      account: XtreamAccountCredential
+    ): Promise<string | null> => {
+      for (const tsVariant of tsVariants) {
+        if (Date.now() >= deadlineAt) break;
+        const tsUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, tsVariant);
+        const warmPath = getActiveDvbSessionPath(tsUrl, 'hd');
+        if (warmPath) {
+          const warmPl = readLiveDvbPlaylistForIptv(warmPath, originPrefix);
+          if (warmPl) {
+            providerPreferredLiveVariant.set(providerId, tsVariant);
+            return warmPl;
+          }
+        }
+        if (isDvbUpstreamCoolingDown(tsUrl)) continue;
+        try {
+          await assertSafeProxyUrl(tsUrl);
+          const dvbPath = await ensureLiveDvbCleanHlsSession(
+            tsUrl,
+            'hd',
+            `${serverOrigin.replace(/\/+$/, '')}/`
+          ).catch(() => null);
+          if (dvbPath) {
+            const playlist = readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
+            if (playlist) {
+              providerPreferredLiveVariant.set(providerId, tsVariant);
+              return playlist;
+            }
+          }
+        } catch {
+          // try next variant
+        }
+      }
+      return null;
+    };
 
-    return { ok: false, shouldRotate: true };
+    sharedPromise = (async () => {
+      const fetchStartedAt = Date.now();
+      const result = await runWithAccountFailover(
+        providerId,
+        async ({ serverOrigin, account }) => {
+          for (const tsVariant of tsVariants) {
+            const tsUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, tsVariant);
+            const warmPath = getActiveDvbSessionPath(tsUrl, 'hd');
+            if (warmPath) {
+              const warmPl = readLiveDvbPlaylistForIptv(warmPath, originPrefix);
+              if (warmPl) {
+                return { ok: true, value: warmPl };
+              }
+            }
+          }
+
+          if (knownPreferred !== 'ts' && knownPreferred !== 'root-ts') {
+            if (!knownPreferred) {
+              try {
+                const winner = await Promise.any(
+                  m3u8Variants.map(async (v) => {
+                    const rewritten = await probeM3u8Variant(serverOrigin, account, v);
+                    if (!rewritten) throw new Error('variant_miss');
+                    return rewritten;
+                  })
+                );
+                liveManifestRamCache.set(manifestCacheKey, winner);
+                return { ok: true, value: winner };
+              } catch {
+                // fall through to MPEG-TS DVB relay
+              }
+            } else {
+              for (const variant of m3u8Variants) {
+                const rewritten = await probeM3u8Variant(serverOrigin, account, variant);
+                if (rewritten) {
+                  liveManifestRamCache.set(manifestCacheKey, rewritten);
+                  return { ok: true, value: rewritten };
+                }
+              }
+            }
+          }
+
+          if (Date.now() < deadlineAt) {
+            const dvbPlaylist = await probeTsRelay(serverOrigin, account);
+            if (dvbPlaylist) {
+              return { ok: true, value: dvbPlaylist };
+            }
+          }
+
+          return { ok: false, shouldRotate: Date.now() < deadlineAt };
+        },
+        { deadlineAt }
+      );
+
+      recordProviderOutcome(providerId, {
+        ok: result.ok,
+        latencyMs: Math.max(1, Date.now() - fetchStartedAt),
+      });
+      return result.ok ? result.value : null;
+    })().finally(() => {
+      if (inflightLiveManifestProbes.get(manifestCacheKey) === sharedPromise) {
+        inflightLiveManifestProbes.delete(manifestCacheKey);
+      }
+    });
+
+    inflightLiveManifestProbes.set(manifestCacheKey, sharedPromise);
+  }
+
+  if (!signal) {
+    return sharedPromise;
+  }
+
+  return new Promise<string | null>((resolve) => {
+    if (signal.aborted) {
+      resolve(null);
+      return;
+    }
+    const onAbort = () => resolve(null);
+    signal.addEventListener('abort', onAbort, { once: true });
+    sharedPromise.then(
+      (val) => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(val);
+      },
+      () => {
+        signal.removeEventListener('abort', onAbort);
+        resolve(null);
+      }
+    );
   });
-
-  return result.ok ? result.value : null;
 }
 
 export async function probeXtreamLiveStreamLatency(
@@ -2284,13 +2383,16 @@ export async function probeXtreamLiveStreamLatency(
       }
     }
 
-    return { ok: false, shouldRotate: false };
+    return { ok: false, shouldRotate: true };
   });
 
+  const elapsed = Math.max(1, Date.now() - startedAt);
   if (result.ok && result.value) {
+    recordProviderOutcome(providerId, { ok: true, latencyMs: result.value.latencyMs });
     return result.value;
   }
-  return { ok: false, latencyMs: Math.max(1, Date.now() - startedAt), lineCount: 0 };
+  recordProviderOutcome(providerId, { ok: false, latencyMs: elapsed });
+  return { ok: false, latencyMs: elapsed, lineCount: 0 };
 }
 
 export async function fetchProxiedXtreamVodStream(
@@ -2471,7 +2573,7 @@ export async function openXtreamOpaqueSegmentStream(
   rangeHeader?: string,
   signal?: AbortSignal
 ): Promise<{
-  kind: 'stream' | 'playlist';
+  kind: 'stream' | 'playlist' | 'error';
   status: number;
   contentType: string;
   contentLength?: string | null;
@@ -2480,7 +2582,13 @@ export async function openXtreamOpaqueSegmentStream(
   buffer?: Buffer;
 } | null> {
   const entry = opaqueTokenCache.get(token);
-  if (!entry) return null;
+  if (!entry) {
+    return {
+      kind: 'error',
+      status: 410,
+      contentType: 'text/plain; charset=utf-8',
+    };
+  }
 
   try {
     const safeUrl = await assertSafeProxyUrl(entry.url);
@@ -2500,6 +2608,13 @@ export async function openXtreamOpaqueSegmentStream(
     });
     if (!res.ok && res.status !== 206) {
       if (res.body) void res.body.cancel().catch(() => undefined);
+      if (res.status === 404 || res.status === 410) {
+        return {
+          kind: 'error',
+          status: res.status,
+          contentType: 'text/plain; charset=utf-8',
+        };
+      }
       return null;
     }
 

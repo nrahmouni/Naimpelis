@@ -369,7 +369,7 @@ export function rewriteProviderPlaylistWithOpaqueTokens(
 export async function fetchProviderPlaylistText(
   targetUrl: string,
   referer: string,
-  timeoutMs = 3000
+  timeoutMs = 4500
 ): Promise<{ text: string; baseUrl: string } | null> {
   await assertSafeProxyUrl(targetUrl);
   const headers: Record<string, string> = {
@@ -391,7 +391,7 @@ export async function fetchProviderPlaylistText(
     // curl fallback
   }
 
-  const fb = await curlGetText(targetUrl, headers, 4, false, true).catch(() => ({
+  const fb = await curlGetText(targetUrl, headers, Math.max(4, Math.ceil(timeoutMs / 1000)), false, true).catch(() => ({
     text: '',
     effectiveUrl: targetUrl,
   }));

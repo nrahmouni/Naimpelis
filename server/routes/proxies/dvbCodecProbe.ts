@@ -120,7 +120,7 @@ export async function probeDvbStreamFromBuffer(
         // ignore
       }
       finish(null);
-    }, 750);
+    }, 520);
 
     proc.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
     proc.on('error', () => finish(null));
@@ -157,7 +157,7 @@ export async function probeDvbStreamCodec(
   }
   probeArgs.push(
     '-rw_timeout',
-    '1800000',
+    '5000000',
     '-analyzeduration',
     '300000',
     '-probesize',
@@ -188,7 +188,7 @@ export async function probeDvbStreamCodec(
         // ignore
       }
       finish(null);
-    }, 1800);
+    }, 5_000);
 
     proc.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
     proc.stderr?.on('data', (chunk: Buffer) => {
@@ -325,7 +325,7 @@ export function buildDvbLiveFfmpegArgs(options: {
       '-sc_threshold',
       '0',
       '-force_key_frames',
-      'expr:gte(t,n_forced*2)',
+      'expr:gte(t,n_forced*1)',
       '-threads',
       '0',
       '-c:a',
@@ -347,13 +347,13 @@ export function buildDvbLiveFfmpegArgs(options: {
             ? []
             : ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '2']),
           '-rw_timeout',
-          isXtreamLive ? '7000000' : '5000000',
+          '12000000',
           ...(/\.m3u8(\?|$)/i.test(cleanUpstream) ? ['-live_start_index', '-3'] : []),
         ]),
     '-analyzeduration',
-    '180000',
+    '140000',
     '-probesize',
-    '200000',
+    '160000',
     '-fflags',
     '+genpts+discardcorrupt',
     '-avoid_negative_ts',
@@ -370,9 +370,9 @@ export function buildDvbLiveFfmpegArgs(options: {
     '-f',
     'hls',
     '-hls_init_time',
-    '1',
+    '0.5',
     '-hls_time',
-    '2',
+    '1.5',
     '-hls_list_size',
     '12',
     '-hls_delete_threshold',
@@ -416,7 +416,7 @@ export async function openSingleSocketMpegTsStream(options: {
     } catch {
       // ignore
     }
-  }, 3_200);
+  }, 10_000);
 
   try {
     const dispatcher = getSpainProxyDispatcherForTarget(cleanUpstream);
@@ -442,7 +442,7 @@ export async function openSingleSocketMpegTsStream(options: {
     const reader = resp.body.getReader();
     const chunks: Buffer[] = [];
     let totalBytes = 0;
-    const targetPreamble = cachedProbe ? 24_000 : 64_000;
+    const targetPreamble = cachedProbe ? 16_000 : 36_000;
     while (totalBytes < targetPreamble) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -481,7 +481,7 @@ export function pumpMpegTsPipeToFfmpeg(options: {
   onStall?: () => void;
   readIdleTimeoutMs?: number;
 }): void {
-  const { pipe, stdin, isDead, onStall, readIdleTimeoutMs = 6_500 } = options;
+  const { pipe, stdin, isDead, onStall, readIdleTimeoutMs = 12_000 } = options;
   stdin.on('error', () => {});
   const waitStdinReady = () =>
     new Promise<boolean>((resDrain) => {

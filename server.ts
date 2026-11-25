@@ -33,7 +33,12 @@ import {
   prewarmTodayFootballBoard,
 } from './server/routes/sports.ts';
 import { registerDeepLinkRoutes } from './server/routes/deepLinkResolver.ts';
-import { registerIptvAndTdtRoutes, getLiveVoiceChannels } from './server/routes/iptv.ts';
+import {
+  registerIptvAndTdtRoutes,
+  getLiveVoiceChannels,
+  getUnifiedLiveTdtChannelsForBackground,
+} from './server/routes/iptv.ts';
+import { getVerifiedSpainXtreamChannels } from './server/services/octopusSpainLiveService.ts';
 import { registerWorldTvRoutes } from './server/routes/worldTvRoutes.ts';
 import { registerEpgRoutes } from './server/services/epgService.ts';
 import { registerCastellanoCatalogRoutes } from './server/routes/castellanoCatalog.ts';
@@ -63,7 +68,6 @@ import { initBelixFromEnv } from './server/services/belix/belixXtreamClient.ts';
 import { initDefaultProviders } from './server/services/providers/xtreamProvidersService.ts';
 import { syncFullCatalog } from './server/services/xtreamService.ts';
 import { raceFastLiveTracks } from './server/services/liveFastResolver.ts';
-import { SPANISH_TDT_CHANNELS } from './server/data/tdtChannels.ts';
 import { CATALA_LIVE_CHANNELS } from './server/data/catalaRegistry.ts';
 import {
   CURATED_4K_MOVIE_IDS,
@@ -71,10 +75,7 @@ import {
   CURATED_4K_SERIES_IDS,
   CURATED_4K_SERIES_SET,
 } from './server/data/vodConstants.ts';
-import {
-  applySyncedStreamsToChannels,
-  refreshLiveIptvRegistry,
-} from './server/services/iptvPlaylistService.ts';
+import { refreshLiveIptvRegistry } from './server/services/iptvPlaylistService.ts';
 import { refreshFamelackAndWorldCatalog } from './server/services/famelackIptvService.ts';
 import { createRoomHub } from './server/ws/roomHub.ts';
 import { resolveActiveGnulaMirrors } from './server/extractors/gnulaHdExtractor.ts';
@@ -257,7 +258,7 @@ registerOperationalRoutes(app, {
   refreshChannelHealth: async (force = true) => {
     const t0 = Date.now();
     const channels = [
-      ...SPANISH_TDT_CHANNELS,
+      ...getUnifiedLiveTdtChannelsForBackground(),
       ...CATALA_LIVE_CHANNELS,
       ...getPermanent247SportsMatches(),
       ...getCachedSportsMatches(),
@@ -565,46 +566,69 @@ async function startServer() {
             void getMovistarDaznHome().catch((err) => logger.warn({ err }, 'prewarm_dazn_failed'));
             void initBelixFromEnv().catch((err) => logger.warn({ err }, 'prewarm_belix_failed'));
           }, 1350).unref?.();
+          const flagshipIds = new Set([
+            'tdt-la1',
+            'tdt-la2',
+            'tdt-antena3',
+            'tdt-cuatro',
+            'tdt-telecinco',
+            'tdt-lasexta',
+            'tdt-teledeporte',
+            'dazn-laliga',
+            'dazn-1',
+            'dazn-2',
+            'dazn-f1',
+            'mplus-laliga',
+            'mplus-champions',
+            'mplus-vamos',
+            'mplus-hypermotion',
+          ]);
+          const prewarmFlagshipChannels = async () => {
+            try {
+              const targets = getUnifiedLiveTdtChannelsForBackground().filter((ch) =>
+                flagshipIds.has(ch.id)
+              );
+              for (let i = 0; i < targets.length; i += 4) {
+                const batch = targets.slice(i, i + 4);
+                await Promise.allSettled(
+                  batch.map((ch) =>
+                    raceFastLiveTracks(ch.channels, {
+                      channelId: ch.id,
+                      titleHint: ch.name,
+                      preferLang: 'ES',
+                      timeoutMs: 3000,
+                    }).catch(() => undefined)
+                  )
+                );
+              }
+            } catch {
+              // ignore prewarm failures
+            }
+          };
+
           setTimeout(() => {
             void Promise.allSettled([
               initDefaultProviders().catch((err) => logger.warn({ err }, 'prewarm_providers_failed')),
               syncFullCatalog(false, 'all').catch((err) => logger.warn({ err }, 'prewarm_xtream_all_failed')),
-            ]).finally(() => {
-              const flagshipIds = new Set([
-                'tdt-la1',
-                'tdt-la2',
-                'tdt-antena3',
-                'tdt-cuatro',
-                'tdt-telecinco',
-                'tdt-lasexta',
-                'dazn-laliga',
-                'mplus-laliga',
-                'mplus-champions',
-              ]);
-              const targets = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS).filter((ch) =>
-                flagshipIds.has(ch.id)
-              );
-              void Promise.allSettled(
-                targets.map((ch) =>
-                  raceFastLiveTracks(ch.channels, {
-                    channelId: ch.id,
-                    titleHint: ch.name,
-                    preferLang: 'ES',
-                    timeoutMs: 3200,
-                  }).catch(() => undefined)
-                )
-              );
-            });
+            ])
+              .then(() => getVerifiedSpainXtreamChannels({ waitWarmupMs: 3_000 }).catch(() => []))
+              .finally(() => {
+                void prewarmFlagshipChannels();
+                const rollingPrewarmTimer = setInterval(() => {
+                  void prewarmFlagshipChannels();
+                }, 60_000);
+                rollingPrewarmTimer.unref?.();
+              });
           }, 1800).unref?.();
           channelHealthMonitor.startScheduler(
             () => [
-              ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),
+              ...getUnifiedLiveTdtChannelsForBackground(),
               ...CATALA_LIVE_CHANNELS,
               ...getPermanent247SportsMatches(),
               ...getCachedSportsMatches(),
             ],
             3 * 60 * 1000,
-            4_500
+            5_500
           );
           startCatalogRefreshScheduler(15 * 60 * 1000);
         } catch (err) {

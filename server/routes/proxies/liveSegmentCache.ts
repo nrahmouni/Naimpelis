@@ -134,7 +134,7 @@ export function prefetchLiveTsSegment(
 
     try {
       if (!shouldBypassNodeFetch(rawUrl)) {
-        const res = await streamingFetch(rawUrl, { headers, timeoutMs: 4200 });
+        const res = await streamingFetch(rawUrl, { headers, timeoutMs: 12_000 });
         if (res.ok && res.body) {
           rawCt = (res.headers.get('content-type') || '').toLowerCase();
           const cl = Number(res.headers.get('content-length') || '0');
@@ -153,7 +153,7 @@ export function prefetchLiveTsSegment(
 
     if (!rawBuf) {
       try {
-        const fb = await curlGetBufferWithStatus(rawUrl, headers, 5);
+        const fb = await curlGetBufferWithStatus(rawUrl, headers, 12);
         if (fb.status >= 200 && fb.status < 400 && fb.buf.length > 0 && fb.buf.length <= MAX_SEGMENT_BYTES) {
           rawBuf = fb.buf;
         }
