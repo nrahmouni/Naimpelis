@@ -1446,3 +1446,177 @@
   margin: 4px 6px;
 }
 
+/* Full 1080p Samsung Tizen / Smart TV Player HUD, Mini-Guide & Pairing Scale */
+@media (min-width: 1480px) {
+  #pairing-screen {
+    padding: 32px 64px;
+  }
+  .pairing-split-stage {
+    max-width: 1520px;
+  }
+  .eyebrow {
+    font-size: 16px;
+  }
+  .main-heading {
+    font-size: 46px;
+  }
+  .sub-heading {
+    font-size: 22px;
+    margin-bottom: 28px;
+  }
+  .qr-card-frame {
+    width: 210px;
+    height: 210px;
+  }
+  .digit-tile {
+    width: 102px;
+    height: 132px;
+    font-size: 68px;
+    border-radius: 20px;
+  }
+  .direct-room-label,
+  .ota-status-sub,
+  .step-text {
+    font-size: 17px;
+  }
+  .ota-status-title,
+  .step-text strong {
+    font-size: 20px;
+  }
+  .direct-room-input {
+    height: 58px;
+    font-size: 22px;
+  }
+  .direct-room-submit {
+    height: 58px;
+    padding: 0 28px;
+    font-size: 19px;
+  }
+  .steps-footer {
+    max-width: 1520px;
+  }
+  #tv-miniguide-drawer {
+    width: 560px;
+    padding: 28px 26px 22px 26px;
+  }
+  .mg-kicker {
+    font-size: 14px;
+  }
+  .mg-title {
+    font-size: 28px;
+  }
+  .mg-close-btn {
+    height: 50px;
+    font-size: 18px;
+  }
+  .mg-filter-btn {
+    height: 48px;
+    padding: 0 16px;
+    font-size: 17px;
+  }
+  .mg-ch-row {
+    padding: 15px 16px;
+  }
+  .mg-ch-dial {
+    width: 46px;
+    font-size: 18px;
+  }
+  .mg-ch-name {
+    font-size: 20px;
+  }
+  .mg-ch-epg {
+    font-size: 16px;
+  }
+  #tv-dial-osd {
+    padding: 16px 28px;
+  }
+  .dial-osd-kicker {
+    font-size: 16px;
+  }
+  #tv-dial-osd-num {
+    font-size: 52px;
+  }
+  #tv-zap-osd {
+    max-width: 860px;
+    min-width: 540px;
+    padding: 22px 28px;
+  }
+  .zap-dial-num {
+    font-size: 38px;
+    min-width: 54px;
+  }
+  .zap-channel-name {
+    font-size: 26px;
+  }
+  .zap-live-tag {
+    font-size: 14px;
+    padding: 3px 10px;
+  }
+  .zap-signal-meta {
+    font-size: 16px;
+  }
+  .zap-now-title {
+    font-size: 20px;
+  }
+  .zap-next-title {
+    font-size: 17px;
+  }
+  .standby-title {
+    font-size: 40px;
+  }
+  .standby-sub {
+    font-size: 22px;
+    max-width: 780px;
+  }
+  .room-live-pill {
+    font-size: 19px;
+    padding: 10px 20px;
+  }
+  #player-hud {
+    padding: 30px 56px 48px 56px;
+  }
+  .hud-meta-title {
+    font-size: 28px;
+  }
+  .hud-meta-sub {
+    font-size: 19px;
+  }
+  .hud-clock {
+    font-size: 26px;
+  }
+  #player-bottom-dock {
+    padding: 40px 56px 30px 56px;
+  }
+  .dock-time-label {
+    font-size: 18px;
+    min-width: 82px;
+  }
+  .dock-progress-track {
+    height: 8px;
+  }
+  #tv-toast {
+    font-size: 22px;
+    padding: 16px 30px;
+  }
+  #ota-update-banner span {
+    font-size: 19px;
+  }
+  #ota-update-banner button {
+    height: 50px;
+    font-size: 18px;
+  }
+  .tv-ucl-title {
+    font-size: 38px;
+  }
+  .tv-ucl-sub {
+    font-size: 20px;
+  }
+  .tv-ucl-teams {
+    font-size: 21px;
+  }
+  .tv-ucl-score {
+    font-size: 18px;
+  }
+}
+
+

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { XtreamServerWorldId } from '../config/defaultProviders';
 import type { TypingUserPayload } from '../shared/protocol';
 import type {
   CatalaSeriesDetails,
@@ -29,7 +30,13 @@ export type PrimaryWorldId =
   | 'movistardazn'
   | 'music'
   | 'providers';
-export type WorldId = 'entry' | PrimaryWorldId | 'youtube';
+export type WorldId =
+  | 'entry'
+  | PrimaryWorldId
+  | 'youtube'
+  | 'danaactive'
+  | 'champions'
+  | XtreamServerWorldId;
 export type CineSubTab = 'movies' | 'series';
 export type FutbolSubTab = 'matches' | 'channels';
 export type HomeSearchCategoryFilter =

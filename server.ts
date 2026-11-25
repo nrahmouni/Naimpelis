@@ -554,8 +554,10 @@ async function startServer() {
           setTimeout(() => {
             void getMovistarDaznHome().catch((err) => logger.warn({ err }, 'prewarm_dazn_failed'));
             void initBelixFromEnv().catch((err) => logger.warn({ err }, 'prewarm_belix_failed'));
-            void initDefaultProviders().catch((err) => logger.warn({ err }, 'prewarm_providers_failed'));
           }, 1350).unref?.();
+          setTimeout(() => {
+            void initDefaultProviders().catch((err) => logger.warn({ err }, 'prewarm_providers_failed'));
+          }, 2200).unref?.();
           channelHealthMonitor.startScheduler(
             () => [
               ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),

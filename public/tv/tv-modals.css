@@ -3,14 +3,14 @@
 /* =================================================================== */
 .tv-card {
   position: relative;
-  width: 216px;
+  width: 244px;
   -webkit-flex-shrink: 0;
   flex-shrink: 0;
-  margin-right: 16px;
-  margin-bottom: 18px;
-  border-radius: 16px;
+  margin-right: 18px;
+  margin-bottom: 20px;
+  border-radius: 18px;
   background: #0E1018;
-  border: 2px solid rgba(255, 255, 255, 0.14);
+  border: 2px solid rgba(255, 255, 255, 0.16);
   overflow: hidden;
   cursor: pointer;
   text-align: left;
@@ -36,7 +36,7 @@ html.is-smart-tv .tv-card:hover {
 .tv-card-poster-wrap {
   position: relative;
   width: 100%;
-  height: 280px;
+  height: 326px;
   background: #141724;
   overflow: hidden;
 }
@@ -50,13 +50,13 @@ html.is-smart-tv .tv-card:hover {
   display: none;
   width: 100%;
   height: 100%;
-  padding: 16px;
+  padding: 18px;
   -webkit-align-items: center;
   align-items: center;
   -webkit-justify-content: center;
   justify-content: center;
   text-align: center;
-  font-size: 16px;
+  font-size: 20px;
   font-weight: 800;
   color: #E2E4EF;
   background: #1B1830;
@@ -71,20 +71,20 @@ html.is-smart-tv .tv-card:hover {
   pointer-events: none;
 }
 .tv-card-body {
-  padding: 13px 16px 16px 16px;
+  padding: 15px 18px 18px 18px;
 }
 .tv-card-title {
-  font-size: 19px;
+  font-size: 22px;
   font-weight: 900;
   color: #FFFFFF;
   line-height: 1.24;
   word-break: break-word;
 }
 .tv-card-meta {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
-  color: #CBD1E4;
-  margin-top: 5px;
+  color: #D2D8EA;
+  margin-top: 6px;
   line-height: 1.3;
 }
 
@@ -92,25 +92,25 @@ html.is-smart-tv .tv-card:hover {
 /* WIDESCREEN 16:9 BROADCAST CHANNEL CARDS (TDT · DAZN · MOVISTAR)     */
 /* =================================================================== */
 .tv-card.channel-card {
-  width: 320px;
-  border-radius: 18px;
+  width: 364px;
+  border-radius: 20px;
   background: #0E1018;
-  border: 2px solid rgba(255, 255, 255, 0.14);
+  border: 2px solid rgba(255, 255, 255, 0.16);
 }
 .tv-grid .tv-card.channel-card {
-  width: 23.5%;
-  min-width: 240px;
-  margin: 0 1.5% 18px 0;
+  width: 31.8%;
+  min-width: 290px;
+  margin: 0 1.5% 22px 0;
 }
 .tv-card.channel-card .tv-card-title {
-  font-size: 21px;
+  font-size: 24px;
   font-weight: 900;
 }
 .tv-channel-stage {
   position: relative;
   width: 100%;
-  height: 156px;
-  padding: 12px 16px;
+  height: 176px;
+  padding: 14px 18px;
   display: -webkit-flex;
   display: flex;
   -webkit-flex-direction: column;
@@ -141,19 +141,19 @@ html.is-smart-tv .tv-card:hover {
 }
 .tv-channel-dial {
   font-variant-numeric: tabular-nums;
-  font-size: 15px;
+  font-size: 18px;
   font-weight: 900;
   color: #FFFFFF;
   letter-spacing: 0.05em;
 }
 .tv-channel-live {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 900;
   color: #FFFFFF;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  padding: 4px 10px;
-  border-radius: 6px;
+  padding: 5px 12px;
+  border-radius: 8px;
   background: #B91C1C;
 }
 .tv-channel-logo-stage {
@@ -172,15 +172,15 @@ html.is-smart-tv .tv-card:hover {
   overflow: hidden;
 }
 .tv-channel-logo-img {
-  max-width: 80%;
-  max-height: 74px;
+  max-width: 82%;
+  max-height: 86px;
   width: auto;
   height: auto;
   object-fit: contain;
   display: block;
 }
 .tv-channel-mark {
-  font-size: 30px;
+  font-size: 36px;
   font-weight: 900;
   letter-spacing: 0.02em;
   color: #FFFFFF;
@@ -189,10 +189,10 @@ html.is-smart-tv .tv-card:hover {
   text-overflow: ellipsis;
 }
 .tv-channel-epg-now {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   color: #DCE1F0;
-  margin-top: 5px;
+  margin-top: 6px;
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
@@ -835,12 +835,152 @@ html.is-smart-tv .tv-card:hover {
   flex-wrap: wrap;
 }
 .tv-fb-event-chip {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 700;
   color: #EDE9FE;
   background: #171B2E;
-  border: 1px solid rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 10px;
-  padding: 8px 14px;
-  margin: 0 10px 10px 0;
+  padding: 10px 16px;
+  margin: 0 12px 12px 0;
+}
+
+/* Full 1080p Samsung Tizen / Smart TV Large Cards & Modals */
+@media (min-width: 1480px) {
+  .tv-card {
+    width: 288px;
+    margin-right: 22px;
+    margin-bottom: 24px;
+    border-radius: 20px;
+  }
+  .tv-card-poster-wrap {
+    height: 384px;
+  }
+  .tv-card-body {
+    padding: 18px 20px 20px 20px;
+  }
+  .tv-card-title {
+    font-size: 25px;
+  }
+  .tv-card-meta {
+    font-size: 20px;
+    margin-top: 7px;
+  }
+  .tv-card.channel-card {
+    width: 424px;
+  }
+  .tv-grid .tv-card.channel-card {
+    width: 31.8%;
+    min-width: 360px;
+    margin: 0 1.5% 24px 0;
+  }
+  .tv-card.channel-card .tv-card-title {
+    font-size: 28px;
+  }
+  .tv-channel-stage {
+    height: 206px;
+    padding: 16px 20px;
+  }
+  .tv-channel-dial {
+    font-size: 21px;
+  }
+  .tv-channel-live {
+    font-size: 17px;
+    padding: 6px 14px;
+  }
+  .tv-channel-logo-img {
+    max-height: 102px;
+  }
+  .tv-channel-mark {
+    font-size: 42px;
+  }
+  .tv-channel-epg-now {
+    font-size: 21px;
+    margin-top: 8px;
+  }
+  .tv-search-input {
+    height: 72px;
+    font-size: 25px;
+  }
+  .tv-chip-btn {
+    height: 58px;
+    padding: 0 24px;
+    font-size: 20px;
+  }
+  .sm-modal-heading {
+    font-size: 38px;
+  }
+  .sm-modal-overview {
+    font-size: 21px;
+  }
+  .series-pill-btn {
+    height: 56px;
+    padding: 0 26px;
+    font-size: 21px;
+  }
+  .ep-tile-num {
+    font-size: 18px;
+  }
+  .ep-tile-title {
+    font-size: 21px;
+  }
+  .tv-fb-cal-banner {
+    font-size: 21px;
+    padding: 16px 22px;
+  }
+  .tv-fb-card {
+    min-height: 248px;
+    padding: 22px 24px;
+  }
+  .tv-fb-card.compact {
+    width: 450px;
+    min-width: 450px;
+    min-height: 236px;
+  }
+  .tv-fb-league {
+    font-size: 20px;
+  }
+  .tv-fb-status {
+    font-size: 18px;
+    padding: 5px 13px;
+  }
+  .tv-fb-crest,
+  .tv-fb-crest-fb {
+    width: 58px;
+    height: 58px;
+  }
+  .tv-fb-team-name {
+    font-size: 25px;
+    max-height: 62px;
+  }
+  .tv-fb-score-box {
+    font-size: 38px;
+  }
+  .tv-fb-tv-badge {
+    font-size: 20px;
+  }
+  .tv-fb-action-hint {
+    font-size: 17px;
+  }
+  .tv-fb-more-title {
+    font-size: 28px;
+  }
+  .tv-fb-more-sub {
+    font-size: 20px;
+  }
+  .tv-fb-modal-meta {
+    font-size: 24px;
+  }
+  .tv-fb-modal-team-name {
+    font-size: 30px;
+  }
+  .tv-fb-modal-score {
+    font-size: 52px;
+  }
+  .tv-fb-modal-status {
+    font-size: 20px;
+  }
+  .tv-fb-modal-sec-title {
+    font-size: 24px;
+  }
 }

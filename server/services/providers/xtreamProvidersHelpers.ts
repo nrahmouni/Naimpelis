@@ -4,6 +4,9 @@
  * for multi-provider Xtream servers. Keeps upstream credentials strictly inside server RAM.
  */
 import crypto from 'crypto';
+import http from 'http';
+import https from 'https';
+import zlib from 'zlib';
 import { LruTtlCache } from '../../utils/lruCache.ts';
 import { assertSafeProxyUrl } from '../../utils/ssrfGuard.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
@@ -56,54 +59,160 @@ export function extractYearHint(rawTitle: string, rawDate?: unknown): string | u
   return titleMatch ? titleMatch[1] : undefined;
 }
 
+function decompressTextBuffer(buf: Buffer, encodingHeader: string | string[] | undefined): string {
+  const enc = String(Array.isArray(encodingHeader) ? encodingHeader[0] : encodingHeader || '')
+    .trim()
+    .toLowerCase();
+  try {
+    if (enc.includes('gzip')) return zlib.gunzipSync(buf).toString('utf8');
+    if (enc.includes('deflate')) return zlib.inflateSync(buf).toString('utf8');
+    if (enc.includes('br')) return zlib.brotliDecompressSync(buf).toString('utf8');
+  } catch {
+    // fallback to raw buffer text if upstream mislabeled encoding
+  }
+  return buf.toString('utf8');
+}
+
+function fetchDirectIpv4Text(
+  targetUrl: string,
+  headers: Record<string, string>,
+  timeoutMs: number,
+  redirectsLeft = 3
+): Promise<{ status: number; text: string }> {
+  return new Promise((resolve, reject) => {
+    let parsed: URL;
+    try {
+      parsed = new URL(targetUrl);
+    } catch (err) {
+      reject(err);
+      return;
+    }
+    const isHttps = parsed.protocol === 'https:';
+    const mod = isHttps ? https : http;
+    const req = mod.request(
+      parsed,
+      {
+        method: 'GET',
+        headers: { 'Accept-Encoding': 'gzip, deflate', ...headers },
+        family: 4,
+        timeout: timeoutMs,
+        ...(isHttps ? { rejectUnauthorized: false } : {}),
+      },
+      (res) => {
+        const status = res.statusCode || 502;
+        if (
+          [301, 302, 303, 307, 308].includes(status) &&
+          res.headers.location &&
+          redirectsLeft > 0
+        ) {
+          res.resume();
+          const nextUrl = new URL(res.headers.location, parsed).toString();
+          assertSafeProxyUrl(nextUrl)
+            .then(() => fetchDirectIpv4Text(nextUrl, headers, timeoutMs, redirectsLeft - 1))
+            .then(resolve)
+            .catch(reject);
+          return;
+        }
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer | string) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        res.on('end', () => {
+          const text = decompressTextBuffer(Buffer.concat(chunks), res.headers['content-encoding']);
+          resolve({ status, text });
+        });
+        res.on('error', reject);
+      }
+    );
+    req.on('timeout', () => {
+      req.destroy(new Error(`Direct IPv4 timeout after ${timeoutMs}ms`));
+    });
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 export async function fetchProviderJsonWithFallback(
   url: string,
-  timeoutMs: number
+  timeoutMs: number,
+  opts?: { largeCatalog?: boolean }
 ): Promise<{ ok: boolean; status: number; data: any }> {
   await assertSafeProxyUrl(url);
-  const headerVariants: Array<Record<string, string>> = [
-    { 'User-Agent': 'IPTVSmartersPlayer', Accept: 'application/json, text/plain, */*' },
-    { 'User-Agent': CHROME_UA, Accept: 'application/json, text/plain, */*' },
-  ];
+  const primaryHeaders = { 'User-Agent': 'IPTVSmartersPlayer', Accept: 'application/json, text/plain, */*' };
+  const chromeHeaders = { 'User-Agent': CHROME_UA, Accept: 'application/json, text/plain, */*' };
 
   let lastStatus = 0;
-  for (const headers of headerVariants) {
+  for (const headers of [primaryHeaders, chromeHeaders]) {
+    let timedOutOrNetworkErr = false;
     try {
-      const res = await streamingFetch(url, { method: 'GET', headers, timeoutMs });
+      const res = await streamingFetch(url, {
+        method: 'GET',
+        headers,
+        timeoutMs: opts?.largeCatalog ? Math.min(timeoutMs, 15_000) : timeoutMs,
+        headersTimeoutOnly: Boolean(opts?.largeCatalog),
+      });
       lastStatus = res.status;
       if (res.ok) {
         const text = await res.text();
         try {
           return { ok: true, status: res.status, data: JSON.parse(text) };
         } catch {
-          // non-JSON response; try next variant
+          // non-JSON response; try alternate header
+          continue;
         }
       }
       if (res.status === 401 || res.status === 404) {
+        return { ok: false, status: res.status, data: null };
+      }
+      if (res.status !== 403 && res.status !== 406) {
         break;
       }
     } catch {
-      // fallback below
+      timedOutOrNetworkErr = true;
+    }
+    if (timedOutOrNetworkErr) {
+      break;
     }
   }
 
+  // Fallback 1: Direct IPv4 Node HTTP/HTTPS (supports >30MB compressed VOD JSONs)
   try {
-    const fb = await curlGetText(
-      url,
-      { 'User-Agent': 'IPTVSmartersPlayer', Accept: '*/*' },
-      Math.max(4, Math.ceil(timeoutMs / 1000)),
-      false,
-      true
-    );
-    if (fb.text) {
+    const direct = await fetchDirectIpv4Text(url, primaryHeaders, timeoutMs);
+    if (direct.status >= 200 && direct.status < 300 && direct.text) {
       try {
-        return { ok: true, status: 200, data: JSON.parse(fb.text) };
+        return { ok: true, status: direct.status, data: JSON.parse(direct.text) };
       } catch {
-        // invalid JSON
+        // fallback to curl below
+      }
+    } else if (direct.status) {
+      lastStatus = direct.status;
+      if (direct.status === 401 || direct.status === 404) {
+        return { ok: false, status: direct.status, data: null };
       }
     }
   } catch {
-    // ignore curl failure
+    // fallback to curl below
+  }
+
+  if (!opts?.largeCatalog) {
+    try {
+      const fb = await curlGetText(
+        url,
+        { 'User-Agent': 'IPTVSmartersPlayer', Accept: '*/*' },
+        Math.max(4, Math.ceil(timeoutMs / 1000)),
+        true,
+        true
+      );
+      if (fb.text) {
+        try {
+          return { ok: true, status: 200, data: JSON.parse(fb.text) };
+        } catch {
+          // invalid JSON
+        }
+      }
+    } catch {
+      // ignore curl failure
+    }
   }
 
   return { ok: false, status: lastStatus || 502, data: null };

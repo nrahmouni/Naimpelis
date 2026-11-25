@@ -788,4 +788,68 @@
   animation: tvFoilSheen 4.4s ease-in-out infinite;
 }
 
+/* Full 1080p Samsung Tizen / Smart TV Games & Kids Scale */
+@media (min-width: 1480px) {
+  .tv-kids-hero-banner {
+    padding: 30px 36px;
+  }
+  .tv-kids-pill {
+    font-size: 15px;
+    padding: 6px 16px;
+  }
+  .tv-kids-title {
+    font-size: 36px;
+  }
+  .tv-kids-sub {
+    font-size: 20px;
+  }
+  .tv-games-hero {
+    padding: 28px 34px;
+  }
+  .tv-games-hero-title {
+    font-size: 34px;
+  }
+  .tv-games-hero-sub {
+    font-size: 20px;
+  }
+  .tv-game-card-stage {
+    height: 196px;
+    padding: 22px;
+  }
+  .tv-game-badge {
+    font-size: 14px;
+    padding: 5px 12px;
+  }
+  .tv-game-card-body {
+    padding: 20px 22px 22px 22px;
+  }
+  .tv-game-card-title {
+    font-size: 24px;
+  }
+  .tv-game-card-desc {
+    font-size: 17px;
+  }
+  .tv-game-card-cta {
+    padding: 8px 18px;
+    font-size: 17px;
+  }
+  .tv-game-topbar {
+    min-height: 76px;
+    padding: 10px 36px;
+  }
+  .tv-game-top-title {
+    font-size: 24px;
+  }
+  .tv-game-hud-pill {
+    padding: 8px 16px;
+    font-size: 17px;
+  }
+  .tv-game-controls-hint {
+    min-height: 50px;
+    padding: 8px 36px;
+    font-size: 16px;
+  }
+}
+
+
 

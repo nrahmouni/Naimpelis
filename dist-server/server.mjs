@@ -579,6 +579,7 @@ ${docClone.outerHTML}`,
           "tv/tv-player-core.js",
           "tv/tv-player-modes.js",
           "tv/tv-hub.js",
+          "tv/tv-football.js",
           "tv/tv-nav-voice.js",
           "tv/tv-games.css",
           "tv/tv-games.js",
@@ -4804,7 +4805,39 @@ function relaxedHttpsRequest(targetUrl, options) {
 async function streamingFetch(rawUrl, init = {}) {
   const parsed = new URL(rawUrl);
   const timeoutMs = init.timeoutMs ?? 12e3;
-  const signal = init.signal ?? AbortSignal.timeout(timeoutMs);
+  const headersTimeoutOnly = Boolean(init.headersTimeoutOnly);
+  let headerTimer = null;
+  let internalController = null;
+  let detachExternalAbort = null;
+  let signal;
+  if (headersTimeoutOnly) {
+    internalController = new AbortController();
+    if (init.signal) {
+      if (init.signal.aborted) {
+        internalController.abort(init.signal.reason);
+      } else {
+        const onExtAbort = () => internalController?.abort(init.signal?.reason);
+        init.signal.addEventListener("abort", onExtAbort, { once: true });
+        detachExternalAbort = () => init.signal?.removeEventListener("abort", onExtAbort);
+      }
+    }
+    headerTimer = setTimeout(() => {
+      internalController?.abort(new DOMException(`Headers timeout after ${timeoutMs}ms`, "TimeoutError"));
+    }, timeoutMs);
+    signal = internalController.signal;
+  } else {
+    signal = init.signal ?? AbortSignal.timeout(timeoutMs);
+  }
+  const clearHeaderWait = () => {
+    if (headerTimer) {
+      clearTimeout(headerTimer);
+      headerTimer = null;
+    }
+    if (detachExternalAbort) {
+      detachExternalAbort();
+      detachExternalAbort = null;
+    }
+  };
   const normalizeHeaders = () => {
     const out = {};
     if (!init.headers) return out;
@@ -4822,41 +4855,65 @@ async function streamingFetch(rawUrl, init = {}) {
   const allowFallback = init.allowTlsFallback !== false && parsed.protocol === "https:" && !STRICT_TLS_ONLY_HOSTS.some((rx) => rx.test(parsed.hostname));
   const spainDispatcher = getSpainProxyDispatcherForTarget(parsed.toString());
   if (spainDispatcher) {
-    const proxiedRes = await undiciFetch2(parsed.toString(), {
-      ...init,
-      dispatcher: spainDispatcher,
-      signal
-    });
-    return proxiedRes;
+    try {
+      const proxiedRes = await undiciFetch2(parsed.toString(), {
+        ...init,
+        dispatcher: spainDispatcher,
+        signal
+      });
+      clearHeaderWait();
+      return proxiedRes;
+    } catch (err) {
+      clearHeaderWait();
+      throw err;
+    }
   }
   if (shouldUseDirectIpv4Http(parsed.hostname)) {
-    return relaxedHttpsRequest(parsed, {
-      method: init.method || "GET",
-      headers: normalizeHeaders(),
-      body: typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : void 0,
-      timeoutMs,
-      signal,
-      rejectUnauthorized: !shouldRelaxStreamingTls(parsed.hostname)
-    });
+    try {
+      const res = await relaxedHttpsRequest(parsed, {
+        method: init.method || "GET",
+        headers: normalizeHeaders(),
+        body: typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : void 0,
+        timeoutMs: headersTimeoutOnly ? Math.max(timeoutMs, 12e4) : timeoutMs,
+        signal,
+        rejectUnauthorized: !shouldRelaxStreamingTls(parsed.hostname)
+      });
+      clearHeaderWait();
+      return res;
+    } catch (err) {
+      clearHeaderWait();
+      throw err;
+    }
   }
   try {
-    return await fetch(parsed.toString(), { ...init, signal });
+    const res = await fetch(parsed.toString(), { ...init, signal });
+    clearHeaderWait();
+    return res;
   } catch (err) {
     if (init.signal?.aborted) {
+      clearHeaderWait();
       throw err;
     }
     if (allowFallback && (shouldRelaxStreamingTls(parsed.hostname) || isTlsCertificateError(err) || isUndiciTimeoutOrConnectError(err))) {
       DIRECT_IPV4_HTTPS_HOSTS.set(parsed.hostname.toLowerCase().replace(/\.$/, ""), true);
       logger.debug({ host: parsed.hostname }, "streaming_tls_relaxed_fallback");
-      return relaxedHttpsRequest(parsed, {
-        method: init.method || "GET",
-        headers: normalizeHeaders(),
-        body: typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : void 0,
-        timeoutMs,
-        signal,
-        rejectUnauthorized: false
-      });
+      try {
+        const res = await relaxedHttpsRequest(parsed, {
+          method: init.method || "GET",
+          headers: normalizeHeaders(),
+          body: typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : void 0,
+          timeoutMs: headersTimeoutOnly ? Math.max(timeoutMs, 12e4) : timeoutMs,
+          signal,
+          rejectUnauthorized: false
+        });
+        clearHeaderWait();
+        return res;
+      } catch (fallbackErr) {
+        clearHeaderWait();
+        throw fallbackErr;
+      }
     }
+    clearHeaderWait();
     throw err;
   }
 }
@@ -8404,6 +8461,1569 @@ async function resolveBelixManifestInternal(streamId, originPrefix, sessionKey, 
   return null;
 }
 
+// server/services/xtreamService.ts
+import crypto7 from "node:crypto";
+
+// src/config/defaultProviders.ts
+var DEFAULT_PROVIDERS = [
+  {
+    id: "primary",
+    name: "Shark Pro",
+    serverUrl: "http://1.sharkpro.ink:80",
+    defaultMediaFocus: "live",
+    accounts: [
+      { user: "17518770", pass: "98488775", label: "Cuenta 1" },
+      { user: "2C6B3523", pass: "2377241482", label: "Cuenta 2" },
+      { user: "8996754342", pass: "4228202130", label: "Cuenta 3" },
+      { user: "7561512170", pass: "5952254616", label: "Cuenta 4" }
+    ]
+  },
+  {
+    id: "vod4k",
+    name: "VOD 4K",
+    serverUrl: "http://vod4k.cc:80",
+    defaultMediaFocus: "vod",
+    accounts: [{ user: "3143047387607546", pass: "7791912648", label: "VOD 4K" }]
+  },
+  {
+    id: "24tv",
+    name: "24TV",
+    serverUrl: "http://a1.24tv.tn:2052",
+    defaultMediaFocus: "live",
+    accounts: [{ user: "2456431909037474", pass: "8742359848318788", label: "24TV" }]
+  },
+  {
+    id: "2m2h",
+    name: "2M2H",
+    serverUrl: "http://2kzbmq.2m2h.im:80",
+    defaultMediaFocus: "live",
+    accounts: [{ user: "rA591kp61 W", pass: "R50oaYrEk C", label: "2M2H" }]
+  },
+  {
+    id: "dana4k",
+    name: "Dana 4K Pro",
+    serverUrl: "http://dana4kpro.com:8080",
+    defaultMediaFocus: "live",
+    accounts: [
+      { user: "heshamxyo ussefx1", pass: "da945184f", label: "Cuenta 1" },
+      { user: "imane2026", pass: "3b06216cc", label: "Cuenta 2" }
+    ]
+  },
+  {
+    id: "activecdns",
+    name: "Active CDNS",
+    serverUrl: "http://active.cdns.today:80",
+    defaultMediaFocus: "live",
+    accounts: [{ user: "abdoali2024", pass: "abdoali2024", label: "Active CDNS" }]
+  },
+  {
+    id: "octopus",
+    name: "Octopus TV",
+    serverUrl: "http://octopustv.xyz:80",
+    defaultMediaFocus: "live",
+    accounts: [{ user: "C974BC33", pass: "CD7AC7C2", label: "Octopus TV" }]
+  }
+];
+function getDefaultProvidersForServer() {
+  if (typeof process !== "undefined" && process.env?.XTREAM_DISABLE_DEFAULTS === "1") {
+    return [];
+  }
+  return DEFAULT_PROVIDERS.map((entry) => ({
+    ...entry,
+    accounts: entry.accounts.map((acc) => ({ ...acc }))
+  }));
+}
+
+// server/services/providersConfig.ts
+var DEFAULT_EXTRA_XTREAM_PROVIDERS = [
+  {
+    id: "24tv",
+    name: "24TV",
+    serverUrl: "http://a1.24tv.tn:2052",
+    user: "",
+    pass: "",
+    defaultMediaFocus: "live"
+  },
+  {
+    id: "2m2h",
+    name: "2M2H",
+    serverUrl: "http://2kzbmq.2m2h.im:80",
+    user: "",
+    pass: "",
+    defaultMediaFocus: "live"
+  }
+];
+var runtimeUserVaultEnv = {};
+var runtimeViteVaultEnv = {};
+var runtimeExtraCustomProviders = [];
+function getDefaultProviderByIdFromRegistry(id) {
+  return getDefaultProvidersForServer().find((entry) => entry.id === id);
+}
+function toAccountCredentials(entry) {
+  if (!entry) return [];
+  return entry.accounts.filter((a) => a.user.trim() && a.pass.trim()).map((a) => ({ username: a.user, password: a.pass, label: a.label }));
+}
+function readEnvOrVault(key) {
+  const direct = process.env[key];
+  if (typeof direct === "string" && direct.length > 0) return direct;
+  const userVal = runtimeUserVaultEnv[key];
+  if (typeof userVal === "string" && userVal.length > 0) return userVal;
+  const viteServerVal = process.env[`VITE_${key}`];
+  if (typeof viteServerVal === "string" && viteServerVal.length > 0) return viteServerVal;
+  const viteClientVal = runtimeViteVaultEnv[key];
+  if (typeof viteClientVal === "string" && viteClientVal.length > 0) return viteClientVal;
+  return "";
+}
+function normalizeXtreamServerInput(rawUrl) {
+  const trimmed = String(rawUrl || "").trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+}
+function parseXtreamAccountsJson(rawJson) {
+  const raw = String(rawJson || "").trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    const accounts = [];
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") continue;
+      const obj = item;
+      const username = String(obj.username ?? obj.user ?? "");
+      const password = String(obj.password ?? obj.pass ?? "");
+      const label = typeof obj.label === "string" ? obj.label.trim() : void 0;
+      if (username.trim() && password.trim()) {
+        accounts.push({ username, password, label });
+      }
+    }
+    return accounts;
+  } catch {
+    logger.warn({ event: "xtream_accounts_json_invalid" }, "Xtream accounts JSON is invalid");
+    return [];
+  }
+}
+function getVod4kConfig() {
+  const def = getDefaultProviderByIdFromRegistry("vod4k");
+  const serverUrl = normalizeXtreamServerInput(
+    readEnvOrVault("VOD4K_SERVER_URL") || def?.serverUrl || "http://vod4k.cc:80"
+  );
+  const username = readEnvOrVault("VOD4K_USERNAME");
+  const password = readEnvOrVault("VOD4K_PASSWORD");
+  const explicitAccounts = username.trim() && password.trim() ? [{ username, password, label: "VOD 4K" }] : [];
+  return {
+    id: "vod4k",
+    name: "VOD 4K",
+    serverUrl,
+    accounts: explicitAccounts.length > 0 ? explicitAccounts : toAccountCredentials(def),
+    defaultMediaFocus: "vod"
+  };
+}
+function getExtraXtreamProviders(rawExtraJson = readEnvOrVault("EXTRA_PROVIDERS_JSON")) {
+  const mergedSlots = /* @__PURE__ */ new Map();
+  for (const base of DEFAULT_EXTRA_XTREAM_PROVIDERS) {
+    const def = getDefaultProviderByIdFromRegistry(base.id);
+    const baseAccounts = base.user.trim() && base.pass.trim() ? [{ username: base.user, password: base.pass, label: base.name }] : toAccountCredentials(def);
+    mergedSlots.set(base.id, {
+      id: base.id,
+      name: base.name,
+      serverUrl: normalizeXtreamServerInput(def?.serverUrl || base.serverUrl),
+      accounts: baseAccounts,
+      defaultMediaFocus: base.defaultMediaFocus || "live"
+    });
+  }
+  const raw = String(rawExtraJson || "").trim();
+  if (!raw) {
+    return Array.from(mergedSlots.values());
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return Array.from(mergedSlots.values());
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") continue;
+      const obj = item;
+      const rawName = String(obj.name ?? obj.label ?? obj.id ?? "").trim();
+      const rawId = String(obj.id ?? rawName).trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "");
+      if (!rawId) continue;
+      const existing = mergedSlots.get(rawId);
+      const serverUrl = normalizeXtreamServerInput(
+        String(obj.serverUrl ?? obj.url ?? existing?.serverUrl ?? "")
+      );
+      const name = rawName || existing?.name || rawId.toUpperCase();
+      const explicitAccounts = [];
+      if (Array.isArray(obj.accounts)) {
+        for (const acc of obj.accounts) {
+          if (!acc || typeof acc !== "object") continue;
+          const a = acc;
+          const u = String(a.username ?? a.user ?? "");
+          const p = String(a.password ?? a.pass ?? "");
+          if (u.trim() && p.trim()) {
+            explicitAccounts.push({ username: u, password: p });
+          }
+        }
+      }
+      const singleUser = String(obj.username ?? obj.user ?? "");
+      const singlePass = String(obj.password ?? obj.pass ?? "");
+      if (singleUser.trim() && singlePass.trim()) {
+        explicitAccounts.push({ username: singleUser, password: singlePass });
+      }
+      mergedSlots.set(rawId, {
+        id: rawId,
+        name,
+        serverUrl,
+        accounts: explicitAccounts.length > 0 ? explicitAccounts : existing?.accounts || [],
+        defaultMediaFocus: obj.defaultMediaFocus === "vod" || obj.defaultMediaFocus === "series" ? obj.defaultMediaFocus : existing?.defaultMediaFocus || "live"
+      });
+    }
+  } catch {
+    logger.warn({ event: "extra_providers_json_invalid" }, "EXTRA_PROVIDERS_JSON is invalid JSON");
+  }
+  return Array.from(mergedSlots.values());
+}
+var DANA_ACTIVE_DEFAULTS = {
+  dana4k: {
+    id: "dana4k",
+    name: "Dana 4K Pro",
+    defaultServerUrl: "http://dana4kpro.com:8080"
+  },
+  activecdns: {
+    id: "activecdns",
+    name: "Active CDNS",
+    defaultServerUrl: "http://active.cdns.today:80"
+  }
+};
+function getDanaActiveConfigs() {
+  const danaDef = getDefaultProviderByIdFromRegistry("dana4k");
+  const danaServerUrl = normalizeXtreamServerInput(
+    readEnvOrVault("DANA4K_SERVER_URL") || danaDef?.serverUrl || DANA_ACTIVE_DEFAULTS.dana4k.defaultServerUrl
+  );
+  const danaJsonAccounts = parseXtreamAccountsJson(readEnvOrVault("DANA4K_ACCOUNTS_JSON"));
+  const danaUser = readEnvOrVault("DANA4K_USERNAME");
+  const danaPass = readEnvOrVault("DANA4K_PASSWORD");
+  const danaAccounts = danaJsonAccounts.length > 0 ? danaJsonAccounts : danaUser.trim() && danaPass.trim() ? [{ username: danaUser, password: danaPass, label: "Dana 4K Pro" }] : toAccountCredentials(danaDef);
+  const activeDef = getDefaultProviderByIdFromRegistry("activecdns");
+  const activeServerUrl = normalizeXtreamServerInput(
+    readEnvOrVault("ACTIVE_CDNS_SERVER_URL") || activeDef?.serverUrl || DANA_ACTIVE_DEFAULTS.activecdns.defaultServerUrl
+  );
+  const activeUser = readEnvOrVault("ACTIVE_CDNS_USERNAME");
+  const activePass = readEnvOrVault("ACTIVE_CDNS_PASSWORD");
+  const activeAccounts = activeUser.trim() && activePass.trim() ? [{ username: activeUser, password: activePass, label: "Active CDNS" }] : toAccountCredentials(activeDef);
+  return [
+    {
+      id: DANA_ACTIVE_DEFAULTS.dana4k.id,
+      name: DANA_ACTIVE_DEFAULTS.dana4k.name,
+      serverUrl: danaServerUrl,
+      accounts: danaAccounts,
+      defaultMediaFocus: "live"
+    },
+    {
+      id: DANA_ACTIVE_DEFAULTS.activecdns.id,
+      name: DANA_ACTIVE_DEFAULTS.activecdns.name,
+      serverUrl: activeServerUrl,
+      accounts: activeAccounts,
+      defaultMediaFocus: "live"
+    }
+  ];
+}
+function getOctopusTvConfig() {
+  const def = getDefaultProviderByIdFromRegistry("octopus");
+  const serverUrl = normalizeXtreamServerInput(
+    readEnvOrVault("OCTOPUS_SERVER_URL") || def?.serverUrl || "http://octopustv.xyz:80"
+  );
+  const username = readEnvOrVault("OCTOPUS_USERNAME");
+  const password = readEnvOrVault("OCTOPUS_PASSWORD");
+  const explicitAccounts = username.trim() && password.trim() ? [{ username, password, label: "Octopus TV" }] : [];
+  return {
+    id: "octopus",
+    name: "Octopus TV",
+    serverUrl,
+    accounts: explicitAccounts.length > 0 ? explicitAccounts : toAccountCredentials(def),
+    defaultMediaFocus: "live"
+  };
+}
+function getAllXtreamProviders() {
+  const primaryDef = getDefaultProviderByIdFromRegistry("primary");
+  const envPrimaryAccounts = parseXtreamAccountsJson(readEnvOrVault("XTREAM_ACCOUNTS_JSON"));
+  const primary = {
+    id: "primary",
+    name: "Shark Pro",
+    serverUrl: normalizeXtreamServerInput(
+      readEnvOrVault("XTREAM_SERVER_URL") || primaryDef?.serverUrl || ""
+    ),
+    accounts: envPrimaryAccounts.length > 0 ? envPrimaryAccounts : toAccountCredentials(primaryDef),
+    defaultMediaFocus: "live"
+  };
+  const baseList = [
+    primary,
+    getVod4kConfig(),
+    ...getExtraXtreamProviders(),
+    ...getDanaActiveConfigs(),
+    getOctopusTvConfig()
+  ];
+  const existingIds = new Set(baseList.map((p) => p.id));
+  const customExtras = runtimeExtraCustomProviders.filter((p) => !existingIds.has(p.id));
+  return [...baseList, ...customExtras];
+}
+function getXtreamProviderById(providerId = "primary") {
+  const cleanId = String(providerId || "primary").trim().toLowerCase() || "primary";
+  return getAllXtreamProviders().find((p) => p.id === cleanId) || null;
+}
+
+// server/services/xtreamService.ts
+var SESSION_CACHE_TTL_MS = 15 * 6e4;
+var SESSION_STALE_REFRESH_MS = 10 * 6e4;
+var XTREAM_CATALOG_CACHE_TTL_MS = 6 * 60 * 60 * 1e3;
+var REQUEST_TIMEOUT_MS = 4500;
+var providerSessionCaches = /* @__PURE__ */ new Map();
+var backgroundSessionRefreshes = /* @__PURE__ */ new Set();
+var providerCatalogCaches = /* @__PURE__ */ new Map();
+var inflightCatalogSyncs = /* @__PURE__ */ new Map();
+var opaqueTokenCache = new LruTtlCache(4e3, 10 * 6e4);
+var urlToOpaqueTokenCache = new LruTtlCache(4e3, 10 * 6e4);
+var opaqueIconCache = new LruTtlCache(12e3, 12 * 60 * 6e4);
+var urlToOpaqueIconTokenCache = new LruTtlCache(12e3, 12 * 60 * 6e4);
+var liveManifestRamCache = new LruTtlCache(350, 7500);
+function maskSensitive(_value) {
+  return "********";
+}
+function formatXtreamExpDate(rawExpDate) {
+  const raw = String(rawExpDate ?? "").trim();
+  if (!raw || raw === "0" || raw.toLowerCase() === "null" || raw.toLowerCase() === "unlimited") {
+    return "Sin expiraci\xF3n / Ilimitada";
+  }
+  const num = Number(raw);
+  if (Number.isFinite(num) && num > 0) {
+    const ms = num > 1e10 ? num : num * 1e3;
+    const d = new Date(ms);
+    if (!Number.isNaN(d.getTime())) {
+      try {
+        return new Intl.DateTimeFormat("es-ES", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric"
+        }).format(d);
+      } catch {
+        return d.toISOString().slice(0, 10);
+      }
+    }
+  }
+  const parsed = new Date(raw);
+  if (!Number.isNaN(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10);
+  }
+  return raw;
+}
+function getProviderFingerprint(provider) {
+  return crypto7.createHash("sha256").update(
+    `${provider.id}|${provider.serverUrl}|${provider.accounts.map((a) => `${a.username}:${a.password}`).join(",")}`
+  ).digest("hex").slice(0, 16);
+}
+function buildPlayerApiUrl(serverOrigin, account, action, extraParams) {
+  const origin = serverOrigin.replace(/\/+$/, "");
+  const parts = [
+    `username=${encodeURIComponent(account.username)}`,
+    `password=${encodeURIComponent(account.password)}`
+  ];
+  if (action && action !== "account_info") {
+    parts.push(`action=${encodeURIComponent(action)}`);
+  }
+  if (extraParams) {
+    for (const [k, v] of Object.entries(extraParams)) {
+      if (v !== void 0 && v !== "") {
+        parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(v)}`);
+      }
+    }
+  }
+  return `${origin}/player_api.php?${parts.join("&")}`;
+}
+function buildUpstreamStreamUrl(serverOrigin, account, streamId, variant = "root") {
+  const cleanId = String(streamId || "").replace(/\.m3u8$/i, "").trim();
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanId)) {
+    throw new Error("Identificador de canal inv\xE1lido.");
+  }
+  const origin = serverOrigin.replace(/\/+$/, "");
+  const u = encodeURIComponent(account.username);
+  const p = encodeURIComponent(account.password);
+  const id = encodeURIComponent(cleanId);
+  return variant === "live" ? `${origin}/live/${u}/${p}/${id}.m3u8` : `${origin}/${u}/${p}/${id}.m3u8`;
+}
+function getClientProxiedPlaybackUrl(streamId, providerId = "primary") {
+  const cleanId = String(streamId || "").replace(/\.m3u8$/i, "").trim();
+  const cleanProv = encodeURIComponent(providerId || "primary");
+  return providerId && providerId !== "primary" ? `/api/xtream/stream/${encodeURIComponent(cleanId)}.m3u8?provider=${cleanProv}` : `/api/xtream/stream/${encodeURIComponent(cleanId)}.m3u8`;
+}
+function getClientProxiedSeriesEpisodeUrl(episodeId, ext = "mp4", providerId = "primary") {
+  const cleanId = String(episodeId || "").trim();
+  const cleanExt = String(ext || "mp4").replace(/[^a-zA-Z0-9]/g, "").toLowerCase() || "mp4";
+  const cleanProv = encodeURIComponent(providerId || "primary");
+  return `/api/stream?provider=${cleanProv}&id=${encodeURIComponent(cleanId)}&type=series&ext=${cleanExt}`;
+}
+function getClientProxiedVodUrl(streamId, ext = "mp4", providerId = "primary") {
+  const cleanId = String(streamId || "").trim();
+  const cleanExt = String(ext || "mp4").replace(/[^a-zA-Z0-9]/g, "").toLowerCase() || "mp4";
+  const cleanProv = encodeURIComponent(providerId || "primary");
+  return providerId && providerId !== "primary" ? `/api/xtream/vod/${encodeURIComponent(cleanId)}.${cleanExt}?provider=${cleanProv}` : `/api/xtream/vod/${encodeURIComponent(cleanId)}.${cleanExt}`;
+}
+function registerOpaqueIconUrl(absUrl) {
+  const existing = urlToOpaqueIconTokenCache.get(absUrl);
+  if (existing && opaqueIconCache.get(existing)) {
+    return `/api/xtream/icon/${existing}`;
+  }
+  const token = crypto7.createHash("sha256").update(absUrl).digest("hex").slice(0, 24);
+  opaqueIconCache.set(token, absUrl);
+  urlToOpaqueIconTokenCache.set(absUrl, token);
+  return `/api/xtream/icon/${token}`;
+}
+function sanitizeImageUrl(raw) {
+  const val = String(raw || "").trim();
+  if (!val || !/^https?:\/\/[a-z0-9]/i.test(val)) return void 0;
+  try {
+    const parsed = new URL(val);
+    if (parsed.username || parsed.password) return void 0;
+    if (parsed.protocol === "https:") return parsed.toString();
+    if (parsed.protocol === "http:") return registerOpaqueIconUrl(parsed.toString());
+    return void 0;
+  } catch {
+    return void 0;
+  }
+}
+async function fetchXtreamJson(url, timeoutMs = REQUEST_TIMEOUT_MS) {
+  try {
+    const res = await streamingFetch(url, {
+      method: "GET",
+      headers: {
+        "User-Agent": "IPTVSmartersPlayer",
+        Accept: "application/json, text/plain, */*"
+      },
+      timeoutMs
+    });
+    if (!res.ok) {
+      return { ok: false, status: res.status, data: null };
+    }
+    const text2 = await res.text();
+    try {
+      return { ok: true, status: res.status, data: JSON.parse(text2) };
+    } catch {
+      return { ok: false, status: res.status, data: null };
+    }
+  } catch {
+    return { ok: false, status: 502, data: null };
+  }
+}
+async function validateAccountStatus(serverOrigin, account) {
+  const url = buildPlayerApiUrl(serverOrigin, account);
+  const res = await fetchXtreamJson(url, REQUEST_TIMEOUT_MS);
+  if (!res.ok || !res.data || typeof res.data !== "object") {
+    return {
+      active: false,
+      statusLabel: "Error",
+      userStatus: "Unavailable",
+      activeConnections: "0",
+      maxConnections: "0",
+      expDateReadable: "N/D",
+      detail: `Error de conexi\xF3n (HTTP ${res.status || 502})`
+    };
+  }
+  const payload = res.data;
+  const userInfo = payload.user_info;
+  if (!userInfo || Number(userInfo.auth) === 0) {
+    return {
+      active: false,
+      statusLabel: "Inactiva",
+      userStatus: String(userInfo?.status || "AuthFailed"),
+      activeConnections: "0",
+      maxConnections: "0",
+      expDateReadable: "N/D",
+      detail: "Autenticaci\xF3n rechazada"
+    };
+  }
+  const expDate = userInfo.exp_date ? String(userInfo.exp_date) : void 0;
+  const expDateReadable = formatXtreamExpDate(userInfo.exp_date);
+  const rawStatus = String(userInfo.status || "").trim();
+  if (rawStatus !== "Active") {
+    return {
+      active: false,
+      statusLabel: "Inactiva",
+      userStatus: rawStatus || "Inactive",
+      activeConnections: String(userInfo.active_cons ?? "0"),
+      maxConnections: String(userInfo.max_connections ?? "0"),
+      expDate,
+      expDateReadable,
+      detail: `Estado no activo (${rawStatus || "desconocido"})`
+    };
+  }
+  return {
+    active: true,
+    statusLabel: "Activa",
+    userStatus: "Active",
+    activeConnections: String(userInfo.active_cons ?? "0"),
+    maxConnections: String(userInfo.max_connections ?? "1"),
+    expDate,
+    expDateReadable,
+    detail: "Activa"
+  };
+}
+function getProviderOrFailoverNull(providerId = "primary") {
+  const provider = getXtreamProviderById(providerId);
+  if (!provider) {
+    return { missingProvider: true };
+  }
+  const normalizedServer = normalizeXtreamServerInput(provider.serverUrl);
+  if (!normalizedServer || provider.accounts.length === 0) {
+    return { unconfigured: true, provider };
+  }
+  return {
+    provider,
+    normalizedServer,
+    fingerprint: getProviderFingerprint(provider)
+  };
+}
+async function resolveActiveXtreamSession(opts) {
+  const targetProviderId = String(opts?.providerId || "primary").trim().toLowerCase() || "primary";
+  const resolvedCfg = getProviderOrFailoverNull(targetProviderId);
+  if ("missingProvider" in resolvedCfg) {
+    return {
+      ok: false,
+      providerId: targetProviderId,
+      providerName: targetProviderId,
+      serverOrigin: "",
+      accountIndex: -1,
+      status: {
+        providerId: targetProviderId,
+        providerName: targetProviderId,
+        configured: false,
+        connected: false,
+        accountNumber: null,
+        totalAccounts: 0,
+        accountLabel: "Proveedor no encontrado",
+        serverLabel: "Proveedor desconocido",
+        maskedUsername: maskSensitive(""),
+        userStatus: "Unavailable",
+        attempts: [],
+        error: "El proveedor seleccionado no existe en la configuraci\xF3n."
+      }
+    };
+  }
+  if ("unconfigured" in resolvedCfg) {
+    const p = resolvedCfg.provider;
+    const hint = p.id === "primary" ? "Configura XTREAM_SERVER_URL y XTREAM_ACCOUNTS_JSON en las variables de entorno privadas del servidor." : p.id === "vod4k" ? "Configura VOD4K_SERVER_URL, VOD4K_USERNAME y VOD4K_PASSWORD en las variables de entorno privadas." : p.id === "dana4k" ? "Configura DANA4K_SERVER_URL y DANA4K_ACCOUNTS_JSON en las variables de entorno privadas." : p.id === "activecdns" ? "Configura ACTIVE_CDNS_SERVER_URL, ACTIVE_CDNS_USERNAME y ACTIVE_CDNS_PASSWORD en las variables de entorno privadas." : p.id === "octopus" ? "Configura OCTOPUS_SERVER_URL, OCTOPUS_USERNAME y OCTOPUS_PASSWORD en las variables de entorno privadas." : `Configura las credenciales de ${p.name} en EXTRA_PROVIDERS_JSON dentro de las variables de entorno privadas.`;
+    return {
+      ok: false,
+      providerId: p.id,
+      providerName: p.name,
+      serverOrigin: "",
+      accountIndex: -1,
+      status: {
+        providerId: p.id,
+        providerName: p.name,
+        configured: false,
+        connected: false,
+        accountNumber: null,
+        totalAccounts: 0,
+        accountLabel: `${p.name}: Sin configurar`,
+        serverLabel: "Servidor no configurado",
+        maskedUsername: maskSensitive(""),
+        userStatus: "Unconfigured",
+        attempts: [],
+        error: hint
+      }
+    };
+  }
+  const { provider, normalizedServer, fingerprint } = resolvedCfg;
+  let parsedServer;
+  try {
+    parsedServer = await assertSafeProxyUrl(normalizedServer);
+  } catch {
+    return {
+      ok: false,
+      providerId: provider.id,
+      providerName: provider.name,
+      serverOrigin: "",
+      accountIndex: -1,
+      status: {
+        providerId: provider.id,
+        providerName: provider.name,
+        configured: true,
+        connected: false,
+        accountNumber: null,
+        totalAccounts: provider.accounts.length,
+        accountLabel: `${provider.name}: Bloqueado`,
+        serverLabel: "Servidor bloqueado",
+        maskedUsername: maskSensitive(""),
+        userStatus: "Blocked",
+        attempts: [],
+        error: `La URL configurada para ${provider.name} no es v\xE1lida o apunta a una red privada.`
+      }
+    };
+  }
+  const serverOrigin = parsedServer.origin;
+  const cached = providerSessionCaches.get(provider.id);
+  if (!opts?.forceRefresh && opts?.startFromIndex === void 0 && cached && cached.envFingerprint === fingerprint && Date.now() - cached.validatedAt < SESSION_CACHE_TTL_MS) {
+    const cachedAccount = provider.accounts[cached.accountIndex];
+    if (cachedAccount) {
+      if (Date.now() - cached.validatedAt > SESSION_STALE_REFRESH_MS && !backgroundSessionRefreshes.has(provider.id)) {
+        backgroundSessionRefreshes.add(provider.id);
+        void validateAccountStatus(serverOrigin, cachedAccount).then((freshCheck) => {
+          if (freshCheck.active) {
+            providerSessionCaches.set(provider.id, {
+              ...cached,
+              userStatus: freshCheck.userStatus,
+              activeConnections: freshCheck.activeConnections,
+              maxConnections: freshCheck.maxConnections,
+              expDate: freshCheck.expDate,
+              expDateReadable: freshCheck.expDateReadable,
+              validatedAt: Date.now()
+            });
+          }
+        }).catch(() => void 0).finally(() => {
+          backgroundSessionRefreshes.delete(provider.id);
+        });
+      }
+      const accountNumber = cached.accountIndex + 1;
+      const accountLabel = provider.id === "vod4k" ? "VOD 4K: Conectado" : provider.id === "primary" ? `Cuenta ${accountNumber}: Activa` : provider.accounts.length > 1 ? `${provider.name} \xB7 Cuenta ${accountNumber}: Activa` : `${provider.name}: Activo`;
+      return {
+        ok: true,
+        providerId: provider.id,
+        providerName: provider.name,
+        serverOrigin,
+        account: cachedAccount,
+        accountIndex: cached.accountIndex,
+        status: {
+          providerId: provider.id,
+          providerName: provider.name,
+          configured: true,
+          connected: true,
+          accountNumber,
+          totalAccounts: provider.accounts.length,
+          accountLabel,
+          serverLabel: "Servidor Activo",
+          maskedUsername: maskSensitive(cachedAccount.username),
+          userStatus: cached.userStatus,
+          activeConnections: cached.activeConnections,
+          maxConnections: cached.maxConnections,
+          expDate: cached.expDate,
+          expDateReadable: cached.expDateReadable,
+          attempts: cached.attempts
+        }
+      };
+    }
+  }
+  const total = provider.accounts.length;
+  const start = opts?.startFromIndex !== void 0 ? Math.max(0, opts.startFromIndex) : 0;
+  const order = [];
+  for (let i = start; i < total; i++) order.push(i);
+  for (let i = 0; i < start; i++) order.push(i);
+  const attempts = [];
+  let fallbackActive = null;
+  const activateAccount = (idx, check) => {
+    const acc = provider.accounts[idx];
+    const accountNumber = idx + 1;
+    providerSessionCaches.set(provider.id, {
+      envFingerprint: fingerprint,
+      serverOrigin,
+      accountIndex: idx,
+      userStatus: check.userStatus,
+      activeConnections: check.activeConnections,
+      maxConnections: check.maxConnections,
+      expDate: check.expDate,
+      expDateReadable: check.expDateReadable,
+      attempts,
+      validatedAt: Date.now()
+    });
+    logger.info(
+      {
+        event: "xtream_account_selected",
+        providerId: provider.id,
+        accountNumber,
+        totalAccounts: total
+      },
+      "Xtream account activated"
+    );
+    const accountLabel = provider.id === "vod4k" ? "VOD 4K: Conectado" : provider.id === "primary" ? `Cuenta ${accountNumber}: Activa` : provider.accounts.length > 1 ? `${provider.name} \xB7 Cuenta ${accountNumber}: Activa` : `${provider.name}: Activo`;
+    return {
+      ok: true,
+      providerId: provider.id,
+      providerName: provider.name,
+      serverOrigin,
+      account: acc,
+      accountIndex: idx,
+      status: {
+        providerId: provider.id,
+        providerName: provider.name,
+        configured: true,
+        connected: true,
+        accountNumber,
+        totalAccounts: total,
+        accountLabel,
+        serverLabel: "Servidor Activo",
+        maskedUsername: maskSensitive(acc.username),
+        userStatus: check.userStatus,
+        activeConnections: check.activeConnections,
+        maxConnections: check.maxConnections,
+        expDate: check.expDate,
+        expDateReadable: check.expDateReadable,
+        attempts
+      }
+    };
+  };
+  for (let bStart = 0; bStart < order.length; bStart += 3) {
+    const batchIndices = order.slice(bStart, bStart + 3);
+    const checks = await Promise.all(
+      batchIndices.map(async (idx) => ({
+        idx,
+        check: await validateAccountStatus(serverOrigin, provider.accounts[idx])
+      }))
+    );
+    for (const { idx, check } of checks) {
+      const accountNumber = idx + 1;
+      if (check.active) {
+        attempts.push({
+          accountNumber,
+          status: "active",
+          detail: check.detail
+        });
+        const activeCons = Number(check.activeConnections);
+        const maxCons = Number(check.maxConnections);
+        const isCongested = Number.isFinite(maxCons) && maxCons > 0 && Number.isFinite(activeCons) && activeCons >= maxCons;
+        if (isCongested && total > 1 && idx !== order[order.length - 1]) {
+          if (!fallbackActive) fallbackActive = { idx, check };
+          continue;
+        }
+        return activateAccount(idx, check);
+      }
+      attempts.push({
+        accountNumber,
+        status: check.statusLabel === "Error" ? "error" : "inactive",
+        detail: check.detail
+      });
+    }
+  }
+  if (fallbackActive) {
+    return activateAccount(fallbackActive.idx, fallbackActive.check);
+  }
+  providerSessionCaches.delete(provider.id);
+  logger.warn(
+    { event: "xtream_all_accounts_unavailable", providerId: provider.id, totalAccounts: total },
+    "No active Xtream account available after failover rotation"
+  );
+  return {
+    ok: false,
+    providerId: provider.id,
+    providerName: provider.name,
+    serverOrigin,
+    accountIndex: -1,
+    status: {
+      providerId: provider.id,
+      providerName: provider.name,
+      configured: true,
+      connected: false,
+      accountNumber: null,
+      totalAccounts: total,
+      accountLabel: "Ninguna cuenta disponible",
+      serverLabel: "Servidor sin cuenta activa",
+      maskedUsername: maskSensitive(""),
+      userStatus: "Unavailable",
+      attempts,
+      error: `Ninguna cuenta de ${provider.name} est\xE1 en estado Active en este momento.`
+    }
+  };
+}
+async function getXtreamConnectionStatus(forceRefresh = false, providerId = "primary") {
+  if (providerId === "all" || providerId === "dana_active") {
+    const allProviders = getAllXtreamProviders();
+    const providers = providerId === "dana_active" ? allProviders.filter((p) => p.id === "dana4k" || p.id === "activecdns") : allProviders;
+    const groupLabel = providerId === "dana_active" ? "Dana & Active" : "Todos los servidores";
+    const results = await Promise.all(
+      providers.map((p) => resolveActiveXtreamSession({ forceRefresh, providerId: p.id }))
+    );
+    const activeOnes = results.filter((r) => r.ok);
+    const configuredCount = results.filter((r) => r.status.configured).length;
+    if (activeOnes.length > 0) {
+      return {
+        providerId,
+        providerName: groupLabel,
+        configured: true,
+        connected: true,
+        accountNumber: activeOnes.length,
+        totalAccounts: configuredCount,
+        accountLabel: `${activeOnes.length} de ${providers.length} servidores activos`,
+        serverLabel: providerId === "dana_active" ? "Dana & Active Activo" : "Multi-Proveedor Activo",
+        maskedUsername: "********",
+        userStatus: "Active",
+        attempts: []
+      };
+    }
+    return {
+      providerId,
+      providerName: groupLabel,
+      configured: configuredCount > 0,
+      connected: false,
+      accountNumber: null,
+      totalAccounts: configuredCount,
+      accountLabel: configuredCount === 0 ? `${groupLabel}: Sin configurar` : "Ning\xFAn servidor activo",
+      serverLabel: configuredCount === 0 ? "Servidor no configurado" : "Sin proveedores activos",
+      maskedUsername: "********",
+      userStatus: configuredCount === 0 ? "Unconfigured" : "Unavailable",
+      attempts: [],
+      error: configuredCount === 0 ? providerId === "dana_active" ? "Configura DANA4K_* y ACTIVE_CDNS_* en los Secrets privados del entorno." : "Configura las variables de entorno privadas para activar los servidores." : "Ning\xFAn proveedor configurado tiene una cuenta Active disponible."
+    };
+  }
+  const res = await resolveActiveXtreamSession({ forceRefresh, providerId });
+  return res.status;
+}
+async function runWithAccountFailover(providerId, worker) {
+  const initial = await resolveActiveXtreamSession({ providerId });
+  if (!initial.ok || !initial.account) {
+    return { ok: false, status: initial.status };
+  }
+  const firstAttempt = await worker({
+    providerId: initial.providerId,
+    providerName: initial.providerName,
+    serverOrigin: initial.serverOrigin,
+    account: initial.account,
+    accountIndex: initial.accountIndex,
+    accountNumber: initial.accountIndex + 1
+  });
+  if (firstAttempt.ok && firstAttempt.value !== void 0) {
+    return { ok: true, value: firstAttempt.value, accountNumber: initial.accountIndex + 1 };
+  }
+  if (!firstAttempt.shouldRotate) {
+    return {
+      ok: false,
+      status: {
+        ...initial.status,
+        connected: false,
+        error: "El servidor de streaming no respondi\xF3 correctamente."
+      }
+    };
+  }
+  const resolvedCfg = getProviderOrFailoverNull(initial.providerId);
+  if ("missingProvider" in resolvedCfg || "unconfigured" in resolvedCfg) {
+    return { ok: false, status: initial.status };
+  }
+  const { provider, fingerprint } = resolvedCfg;
+  const total = provider.accounts.length;
+  for (let offset = 1; offset < total; offset++) {
+    const nextIndex = (initial.accountIndex + offset) % total;
+    const candidate = provider.accounts[nextIndex];
+    const check = await validateAccountStatus(initial.serverOrigin, candidate);
+    if (!check.active) continue;
+    const retry = await worker({
+      providerId: provider.id,
+      providerName: provider.name,
+      serverOrigin: initial.serverOrigin,
+      account: candidate,
+      accountIndex: nextIndex,
+      accountNumber: nextIndex + 1
+    });
+    if (retry.ok && retry.value !== void 0) {
+      providerSessionCaches.set(provider.id, {
+        envFingerprint: fingerprint,
+        serverOrigin: initial.serverOrigin,
+        accountIndex: nextIndex,
+        userStatus: check.userStatus,
+        activeConnections: check.activeConnections,
+        maxConnections: check.maxConnections,
+        expDate: check.expDate,
+        expDateReadable: check.expDateReadable,
+        attempts: [{ accountNumber: nextIndex + 1, status: "active", detail: "Activa (respaldo)" }],
+        validatedAt: Date.now()
+      });
+      return { ok: true, value: retry.value, accountNumber: nextIndex + 1 };
+    }
+  }
+  providerSessionCaches.delete(provider.id);
+  return {
+    ok: false,
+    status: {
+      ...initial.status,
+      connected: false,
+      accountNumber: null,
+      accountLabel: "Ninguna cuenta disponible",
+      userStatus: "Unavailable",
+      error: "Ninguna cuenta de respaldo pudo completar la petici\xF3n."
+    }
+  };
+}
+function normalizeCategoryList(rawList, type, providerId, providerName) {
+  if (!Array.isArray(rawList)) return [];
+  const categories = [];
+  for (const raw of rawList) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw;
+    const id = String(r.category_id ?? "").trim();
+    const name = String(r.category_name ?? "").trim();
+    if (!id || !name) continue;
+    categories.push({
+      id,
+      name,
+      parentId: r.parent_id !== void 0 ? String(r.parent_id) : void 0,
+      type,
+      providerId,
+      providerName
+    });
+  }
+  return categories;
+}
+function normalizeLiveStreamsList(rawList, providerId, providerName, fallbackCategoryId) {
+  if (!Array.isArray(rawList)) return [];
+  const streams = [];
+  for (let i = 0; i < rawList.length; i++) {
+    const raw = rawList[i];
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw;
+    const streamId = String(r.stream_id ?? "").trim();
+    const name = String(r.name ?? "").trim();
+    if (!streamId || !name || !/^[a-zA-Z0-9_-]{1,64}$/.test(streamId)) continue;
+    const parsedNum = Number(r.num);
+    streams.push({
+      num: Number.isFinite(parsedNum) && parsedNum > 0 ? parsedNum : i + 1,
+      streamId,
+      name,
+      categoryId: String(r.category_id ?? fallbackCategoryId ?? "0").trim(),
+      streamIcon: sanitizeImageUrl(r.stream_icon),
+      epgChannelId: String(r.epg_channel_id ?? "").trim() || void 0,
+      playbackUrl: getClientProxiedPlaybackUrl(streamId, providerId),
+      providerId,
+      providerName
+    });
+  }
+  return streams;
+}
+function normalizeVodStreamsList(rawList, providerId, providerName) {
+  if (!Array.isArray(rawList)) return [];
+  const items = [];
+  for (let i = 0; i < rawList.length; i++) {
+    const raw = rawList[i];
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw;
+    const streamId = String(r.stream_id ?? "").trim();
+    const name = String(r.name ?? "").trim();
+    if (!streamId || !name || !/^[a-zA-Z0-9_-]{1,64}$/.test(streamId)) continue;
+    const parsedNum = Number(r.num);
+    const ext = String(r.container_extension ?? "mp4").replace(/[^a-zA-Z0-9]/g, "").toLowerCase() || "mp4";
+    items.push({
+      num: Number.isFinite(parsedNum) && parsedNum > 0 ? parsedNum : i + 1,
+      streamId,
+      name,
+      categoryId: String(r.category_id ?? "0").trim(),
+      streamIcon: sanitizeImageUrl(r.stream_icon),
+      containerExtension: ext,
+      rating: r.rating !== void 0 ? String(r.rating) : void 0,
+      added: r.added !== void 0 ? String(r.added) : void 0,
+      playbackUrl: getClientProxiedVodUrl(streamId, ext, providerId),
+      providerId,
+      providerName
+    });
+  }
+  return items;
+}
+function normalizeSeriesList(rawList, providerId, providerName) {
+  if (!Array.isArray(rawList)) return [];
+  const items = [];
+  for (let i = 0; i < rawList.length; i++) {
+    const raw = rawList[i];
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw;
+    const seriesId = String(r.series_id ?? "").trim();
+    const name = String(r.name ?? "").trim();
+    if (!seriesId || !name || !/^[a-zA-Z0-9_-]{1,64}$/.test(seriesId)) continue;
+    const parsedNum = Number(r.num);
+    items.push({
+      num: Number.isFinite(parsedNum) && parsedNum > 0 ? parsedNum : i + 1,
+      seriesId,
+      name,
+      categoryId: String(r.category_id ?? "0").trim(),
+      cover: sanitizeImageUrl(r.cover),
+      plot: typeof r.plot === "string" ? r.plot.slice(0, 280) : void 0,
+      genre: typeof r.genre === "string" ? r.genre : void 0,
+      releaseDate: typeof r.releaseDate === "string" ? r.releaseDate : void 0,
+      rating: r.rating !== void 0 ? String(r.rating) : void 0,
+      providerId,
+      providerName
+    });
+  }
+  return items;
+}
+async function syncFullCatalog(forceRefresh = false, providerId = "primary") {
+  const targetId = String(providerId || "primary").trim().toLowerCase() || "primary";
+  if (targetId === "all" || targetId === "dana_active") {
+    const scopeIds = targetId === "dana_active" ? /* @__PURE__ */ new Set(["dana4k", "activecdns"]) : null;
+    const providers = getAllXtreamProviders().filter(
+      (p) => (!scopeIds || scopeIds.has(p.id)) && Boolean(normalizeXtreamServerInput(p.serverUrl) && p.accounts.length > 0)
+    );
+    if (providers.length === 0) {
+      const status = await getXtreamConnectionStatus(false, targetId);
+      return { ok: false, status, error: status.error };
+    }
+    const settled = await Promise.all(
+      providers.map((p) => syncFullCatalog(forceRefresh, p.id))
+    );
+    const okCatalogs = settled.filter((r) => Boolean(r.ok && r.catalog)).map((r) => r.catalog);
+    if (okCatalogs.length === 0) {
+      const firstErr = settled.find((s) => s.error)?.error;
+      return {
+        ok: false,
+        error: firstErr || "Ning\xFAn proveedor configurado pudo sincronizar su cat\xE1logo."
+      };
+    }
+    const liveCategories = okCatalogs.flatMap(
+      (c) => c.liveCategories.map((cat) => ({
+        ...cat,
+        id: `${c.providerId}:${cat.id}`,
+        name: `[${c.providerName}] ${cat.name}`
+      }))
+    );
+    const liveStreams = okCatalogs.flatMap(
+      (c) => c.liveStreams.map((s) => ({ ...s, categoryId: `${c.providerId}:${s.categoryId}` }))
+    );
+    const vodCategories = okCatalogs.flatMap(
+      (c) => c.vodCategories.map((cat) => ({
+        ...cat,
+        id: `${c.providerId}:${cat.id}`,
+        name: `[${c.providerName}] ${cat.name}`
+      }))
+    );
+    const vodStreams = okCatalogs.flatMap(
+      (c) => c.vodStreams.map((s) => ({ ...s, categoryId: `${c.providerId}:${s.categoryId}` }))
+    );
+    const seriesCategories = okCatalogs.flatMap(
+      (c) => c.seriesCategories.map((cat) => ({
+        ...cat,
+        id: `${c.providerId}:${cat.id}`,
+        name: `[${c.providerName}] ${cat.name}`
+      }))
+    );
+    const series = okCatalogs.flatMap(
+      (c) => c.series.map((s) => ({ ...s, categoryId: `${c.providerId}:${s.categoryId}` }))
+    );
+    const syncedAt = Date.now();
+    return {
+      ok: true,
+      catalog: {
+        providerId: targetId,
+        providerName: targetId === "dana_active" ? "Dana & Active" : "Todos los servidores",
+        liveCategories,
+        liveStreams,
+        vodCategories,
+        vodStreams,
+        seriesCategories,
+        series,
+        counts: {
+          liveCategories: liveCategories.length,
+          liveStreams: liveStreams.length,
+          vodCategories: vodCategories.length,
+          vodStreams: vodStreams.length,
+          seriesCategories: seriesCategories.length,
+          series: series.length
+        },
+        accountNumber: okCatalogs.length,
+        syncedAt,
+        expiresAt: syncedAt + XTREAM_CATALOG_CACHE_TTL_MS,
+        fromCache: okCatalogs.every((c) => c.fromCache)
+      }
+    };
+  }
+  const resolvedCfg = getProviderOrFailoverNull(targetId);
+  if ("missingProvider" in resolvedCfg || "unconfigured" in resolvedCfg) {
+    const statusRes = await resolveActiveXtreamSession({ forceRefresh: false, providerId: targetId });
+    return {
+      ok: false,
+      status: statusRes.status,
+      error: statusRes.status.error
+    };
+  }
+  const { provider, fingerprint } = resolvedCfg;
+  const cached = providerCatalogCaches.get(provider.id);
+  if (!forceRefresh && cached && cached.envFingerprint === fingerprint && Date.now() < cached.payload.expiresAt) {
+    return {
+      ok: true,
+      catalog: {
+        ...cached.payload,
+        fromCache: true
+      }
+    };
+  }
+  const existingInflight = inflightCatalogSyncs.get(provider.id);
+  if (!forceRefresh && existingInflight) {
+    return existingInflight;
+  }
+  const runSync = async () => {
+    const result = await runWithAccountFailover(
+      provider.id,
+      async ({ serverOrigin, account, accountNumber, providerId: pid, providerName }) => {
+        const [
+          liveCatRes,
+          liveStreamsRes,
+          vodCatRes,
+          vodStreamsRes,
+          seriesCatRes,
+          seriesRes
+        ] = await Promise.all([
+          fetchXtreamJson(buildPlayerApiUrl(serverOrigin, account, "get_live_categories"), 15e3),
+          fetchXtreamJson(buildPlayerApiUrl(serverOrigin, account, "get_live_streams"), 25e3),
+          fetchXtreamJson(buildPlayerApiUrl(serverOrigin, account, "get_vod_categories"), 15e3),
+          fetchXtreamJson(buildPlayerApiUrl(serverOrigin, account, "get_vod_streams"), 25e3),
+          fetchXtreamJson(buildPlayerApiUrl(serverOrigin, account, "get_series_categories"), 15e3),
+          fetchXtreamJson(buildPlayerApiUrl(serverOrigin, account, "get_series"), 25e3)
+        ]);
+        if (!liveCatRes.ok && !liveStreamsRes.ok && !vodCatRes.ok && !vodStreamsRes.ok && !seriesRes.ok) {
+          return { ok: false, shouldRotate: true };
+        }
+        const liveCategories = normalizeCategoryList(liveCatRes.data, "live", pid, providerName);
+        const liveStreams = normalizeLiveStreamsList(liveStreamsRes.data, pid, providerName);
+        const vodCategories = normalizeCategoryList(vodCatRes.data, "vod", pid, providerName);
+        const vodStreams = normalizeVodStreamsList(vodStreamsRes.data, pid, providerName);
+        const seriesCategories = normalizeCategoryList(seriesCatRes.data, "series", pid, providerName);
+        const series = normalizeSeriesList(seriesRes.data, pid, providerName);
+        const syncedAt = Date.now();
+        const payload = {
+          providerId: pid,
+          providerName,
+          liveCategories,
+          liveStreams,
+          vodCategories,
+          vodStreams,
+          seriesCategories,
+          series,
+          counts: {
+            liveCategories: liveCategories.length,
+            liveStreams: liveStreams.length,
+            vodCategories: vodCategories.length,
+            vodStreams: vodStreams.length,
+            seriesCategories: seriesCategories.length,
+            series: series.length
+          },
+          accountNumber,
+          syncedAt,
+          expiresAt: syncedAt + XTREAM_CATALOG_CACHE_TTL_MS,
+          fromCache: false
+        };
+        return { ok: true, value: payload };
+      }
+    );
+    if (!result.ok) {
+      return {
+        ok: false,
+        status: result.status,
+        error: result.status.error || `No se pudo sincronizar el cat\xE1logo de ${provider.name}.`
+      };
+    }
+    providerCatalogCaches.set(provider.id, {
+      envFingerprint: fingerprint,
+      payload: result.value
+    });
+    return {
+      ok: true,
+      catalog: result.value
+    };
+  };
+  const task = runSync().finally(() => {
+    if (inflightCatalogSyncs.get(provider.id) === task) {
+      inflightCatalogSyncs.delete(provider.id);
+    }
+  });
+  inflightCatalogSyncs.set(provider.id, task);
+  return task;
+}
+async function getSeriesInfo(seriesId, providerId = "primary") {
+  const cleanSeriesId = String(seriesId || "").trim();
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanSeriesId)) {
+    return { ok: false, error: "series_id inv\xE1lido." };
+  }
+  const res = await runWithAccountFailover(
+    providerId,
+    async ({ serverOrigin, account, providerId: pid, providerName }) => {
+      const url = buildPlayerApiUrl(serverOrigin, account, "get_series_info", {
+        series_id: cleanSeriesId
+      });
+      const fetched = await fetchXtreamJson(url, 15e3);
+      if (!fetched.ok || !fetched.data || typeof fetched.data !== "object") {
+        return { ok: false, shouldRotate: true };
+      }
+      const raw = fetched.data;
+      const meta = raw.info || {};
+      const seasonMap = /* @__PURE__ */ new Map();
+      const episodesObj = raw.episodes && typeof raw.episodes === "object" ? raw.episodes : {};
+      for (const [seasonKey, epList] of Object.entries(episodesObj)) {
+        if (!Array.isArray(epList)) continue;
+        const fallbackSeason = Number(seasonKey) || 1;
+        for (let i = 0; i < epList.length; i++) {
+          const ep = epList[i];
+          if (!ep || typeof ep !== "object") continue;
+          const epId = String(ep.id ?? "").trim();
+          if (!epId || !/^[a-zA-Z0-9_-]{1,64}$/.test(epId)) continue;
+          const seasonNum = Number(ep.season ?? fallbackSeason) || fallbackSeason;
+          const episodeNum = Number(ep.episode_num ?? i + 1) || i + 1;
+          const ext = String(ep.container_extension ?? "mp4").replace(/[^a-zA-Z0-9]/g, "").toLowerCase() || "mp4";
+          const epInfo = ep.info && typeof ep.info === "object" ? ep.info : {};
+          const bucket = seasonMap.get(seasonNum) || [];
+          bucket.push({
+            id: epId,
+            episodeNum,
+            seasonNum,
+            title: String(ep.title || `Episodio ${episodeNum}`).trim(),
+            containerExtension: ext,
+            duration: typeof epInfo.duration === "string" ? epInfo.duration : void 0,
+            plot: typeof epInfo.plot === "string" ? epInfo.plot.slice(0, 260) : void 0,
+            cover: sanitizeImageUrl(epInfo.movie_image ?? epInfo.cover),
+            playbackUrl: getClientProxiedSeriesEpisodeUrl(epId, ext, pid),
+            providerId: pid
+          });
+          seasonMap.set(seasonNum, bucket);
+        }
+      }
+      const seasonNames = /* @__PURE__ */ new Map();
+      if (Array.isArray(raw.seasons)) {
+        for (const s of raw.seasons) {
+          if (!s || typeof s !== "object") continue;
+          const num = Number(s.season_number);
+          const nm = String(s.name || "").trim();
+          if (Number.isFinite(num) && nm) seasonNames.set(num, nm);
+        }
+      }
+      const seasons = Array.from(seasonMap.entries()).sort(([a], [b]) => a - b).map(([seasonNumber, eps]) => {
+        const sortedEps = eps.sort((a, b) => a.episodeNum - b.episodeNum);
+        return {
+          seasonNumber,
+          name: seasonNames.get(seasonNumber) || `Temporada ${seasonNumber}`,
+          episodeCount: sortedEps.length,
+          episodes: sortedEps
+        };
+      });
+      const resolvedTitle = String(meta.name || `Serie ${cleanSeriesId}`).trim();
+      return {
+        ok: true,
+        value: {
+          seriesId: cleanSeriesId,
+          providerId: pid,
+          providerName,
+          title: resolvedTitle,
+          name: resolvedTitle,
+          cover: sanitizeImageUrl(meta.cover),
+          plot: typeof meta.plot === "string" ? meta.plot.slice(0, 400) : void 0,
+          genre: typeof meta.genre === "string" ? meta.genre : void 0,
+          cast: typeof meta.cast === "string" ? meta.cast : void 0,
+          director: typeof meta.director === "string" ? meta.director : void 0,
+          releaseDate: typeof meta.releaseDate === "string" ? meta.releaseDate : void 0,
+          rating: meta.rating !== void 0 ? String(meta.rating) : void 0,
+          seasons
+        }
+      };
+    }
+  );
+  if (!res.ok) {
+    return {
+      ok: false,
+      error: res.status.error || "No se pudieron cargar las temporadas y episodios."
+    };
+  }
+  return { ok: true, info: res.value };
+}
+function registerOpaqueToken(absUrl, serverOrigin, kind) {
+  const cacheKey = `${kind}:${absUrl}`;
+  const existing = urlToOpaqueTokenCache.get(cacheKey);
+  if (existing && opaqueTokenCache.get(existing)) return existing;
+  const token = crypto7.randomBytes(14).toString("hex");
+  opaqueTokenCache.set(token, { url: absUrl, serverOrigin, kind });
+  urlToOpaqueTokenCache.set(cacheKey, token);
+  return token;
+}
+function rewriteManifestLines(rawText, baseUrl, serverOrigin, originPrefix) {
+  const lines = rawText.split(/\r?\n/);
+  const out = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      out.push(line);
+      continue;
+    }
+    if (trimmed.startsWith("#")) {
+      out.push(
+        line.replace(/URI="([^"]+)"/gi, (_m, rawUri) => {
+          try {
+            const abs = new URL(rawUri, baseUrl).toString();
+            const token = registerOpaqueToken(abs, serverOrigin, "seg");
+            return `URI="${originPrefix}/api/xtream/seg/${token}"`;
+          } catch {
+            return `URI="${rawUri}"`;
+          }
+        })
+      );
+      continue;
+    }
+    try {
+      const abs = new URL(trimmed, baseUrl).toString();
+      const isPlaylist = /\.m3u8(\?|$|#)/i.test(abs);
+      const token = registerOpaqueToken(abs, serverOrigin, isPlaylist ? "sub" : "seg");
+      out.push(`${originPrefix}/api/xtream/seg/${token}`);
+    } catch {
+      out.push(line);
+    }
+  }
+  return out.join("\n");
+}
+var providerPreferredLiveVariant = /* @__PURE__ */ new Map();
+async function fetchProxiedXtreamManifest(streamId, originPrefix = "", providerId = "primary") {
+  const cleanId = String(streamId || "").replace(/\.m3u8$/i, "").trim();
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanId)) return null;
+  const manifestCacheKey = `${providerId}:${cleanId}:${originPrefix}`;
+  const cachedManifest = liveManifestRamCache.get(manifestCacheKey);
+  if (cachedManifest) {
+    return cachedManifest;
+  }
+  const knownPreferred = providerPreferredLiveVariant.get(providerId);
+  const variants = knownPreferred === "root" ? ["root", "live"] : ["live", "root"];
+  const probeVariant = async (serverOrigin, account, variant) => {
+    const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, variant);
+    try {
+      const res = await streamingFetch(targetUrl, {
+        method: "GET",
+        headers: {
+          "User-Agent": "IPTVSmartersPlayer",
+          Accept: "*/*"
+        },
+        timeoutMs: 2600
+      });
+      if (!res.ok) {
+        if (res.body) void res.body.cancel().catch(() => void 0);
+        return null;
+      }
+      const ct = String(res.headers.get("content-type") || "").toLowerCase();
+      if (ct.startsWith("text/html") || ct.includes("video/mp2t") || ct.includes("octet-stream")) {
+        if (res.body) void res.body.cancel().catch(() => void 0);
+        return null;
+      }
+      const text2 = await res.text();
+      if (text2.includes("#EXTM3U")) {
+        providerPreferredLiveVariant.set(providerId, variant);
+        return rewriteManifestLines(text2, res.url || targetUrl, serverOrigin, originPrefix);
+      }
+    } catch {
+    }
+    return null;
+  };
+  const result = await runWithAccountFailover(providerId, async ({ serverOrigin, account }) => {
+    if (!knownPreferred) {
+      try {
+        const winner = await Promise.any(
+          variants.map(async (v) => {
+            const rewritten = await probeVariant(serverOrigin, account, v);
+            if (!rewritten) throw new Error("variant_miss");
+            return rewritten;
+          })
+        );
+        liveManifestRamCache.set(manifestCacheKey, winner);
+        return { ok: true, value: winner };
+      } catch {
+        return { ok: false, shouldRotate: true };
+      }
+    }
+    for (const variant of variants) {
+      const rewritten = await probeVariant(serverOrigin, account, variant);
+      if (rewritten) {
+        liveManifestRamCache.set(manifestCacheKey, rewritten);
+        return { ok: true, value: rewritten };
+      }
+    }
+    return { ok: false, shouldRotate: true };
+  });
+  return result.ok ? result.value : null;
+}
+async function probeXtreamLiveStreamLatency(streamId, providerId = "primary", timeoutMs = 3e3) {
+  const cleanId = String(streamId || "").replace(/\.m3u8$/i, "").trim();
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanId)) {
+    return { ok: false, latencyMs: timeoutMs, lineCount: 0 };
+  }
+  const preferred = providerPreferredLiveVariant.get(providerId) || "live";
+  const variants = preferred === "live" ? ["live", "root"] : ["root", "live"];
+  const startedAt = Date.now();
+  const result = await runWithAccountFailover(providerId, async ({ serverOrigin, account }) => {
+    for (const variant of variants) {
+      const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, variant);
+      try {
+        const t0 = Date.now();
+        const res = await streamingFetch(targetUrl, {
+          method: "GET",
+          headers: {
+            "User-Agent": "IPTVSmartersPlayer",
+            Accept: "*/*"
+          },
+          timeoutMs
+        });
+        if (!res.ok) {
+          if (res.body) void res.body.cancel().catch(() => void 0);
+          continue;
+        }
+        const ct = String(res.headers.get("content-type") || "").toLowerCase();
+        if (ct.startsWith("text/html") || ct.includes("video/mp2t") || ct.includes("octet-stream")) {
+          if (res.body) void res.body.cancel().catch(() => void 0);
+          continue;
+        }
+        const text2 = await res.text();
+        if (text2.includes("#EXTM3U")) {
+          providerPreferredLiveVariant.set(providerId, variant);
+          const lines = text2.split(/\r?\n/).filter((l) => l.trim().length > 0);
+          const hasSeg = lines.some((l) => !l.startsWith("#"));
+          if (!hasSeg && !text2.includes("#EXT-X-STREAM-INF")) continue;
+          return {
+            ok: true,
+            value: {
+              ok: true,
+              latencyMs: Math.max(1, Date.now() - t0),
+              variant,
+              lineCount: lines.length
+            }
+          };
+        }
+      } catch {
+      }
+    }
+    return { ok: false, shouldRotate: false };
+  });
+  if (result.ok && result.value) {
+    return result.value;
+  }
+  return { ok: false, latencyMs: Math.max(1, Date.now() - startedAt), lineCount: 0 };
+}
+function isXtreamEnvConfigured() {
+  return getAllXtreamProviders().some(
+    (p) => Boolean(normalizeXtreamServerInput(p.serverUrl) && p.accounts.length > 0)
+  );
+}
+function inferLiveQualityLabel(rawName, catName) {
+  const hay = `${rawName} ${catName}`.replace(/⁴ᴷ|⁴ᵏ/g, " 4K ").replace(/ᶠᴴᴰ/gi, " FHD ").replace(/ᴴᴰ/gi, " HD ").toLowerCase();
+  if (/(?:\b4k\b|\buhd\b|\b2160p?\b)/i.test(hay)) return "4K UHD";
+  if (/\b(?:fhd|1080p?|full\s*hd)\b/i.test(hay)) return "1080p FHD";
+  if (/\b(?:576p?|480p?|360p?|sd)\b/i.test(hay)) return "SD";
+  return "HD";
+}
+function inferLiveLangAndCountry(rawName, catName) {
+  const name = String(rawName || "").trim();
+  const cat = String(catName || "").trim();
+  const combined = `${cat} ${name}`;
+  if (/^(?:\[?\s*(?:UK|US|USA|FR|DE|GER|IT|ITA|PT|POR|AR|ARB|LAT|LA|MX|ARG|NL|PL|RO|GR|BG|RS|MK|TR|IR|RU|FI|NO|SE|DK|BE|AT|CH|AL|IND)\s*\]?\s*[|:/-·•▎┃│◈])/i.test(
+    name
+  ) || /^[┃│▎◈•]/.test(name)) {
+  } else if (/\b(?:spain|espa[ñn]a|tdt|tivify|tivfiy|movistar|atresmedia|mediaset|rtve|laliga|hypermotion)\b|أسبانيا|^(?:tivif?y\s*es\s*[:|]|vip\s*es\s*[:|]|\[?\s*(?:es|esp)\s*\]?\s*[|:/-])/i.test(
+    combined
+  ) && !/^(?:\[?\s*(?:UK|US|USA|FR|DE|GER|IT|PT|AR|ARB|LAT|MX|NL|PL|RO|GR|TR|FI|NO|SE|DK|BE|AT|AL|IND)\s*\]?\s*[|:/-])/i.test(cat)) {
+    return { lang: "ES", langLabel: "Castellano", countryCode: "ES" };
+  }
+  if (/[\u0600-\u06FF]|^(?:\[?\s*(?:AR|ARB)\s*\]?\s*[|:/-])|\b(?:arabic|arabia|egypt|maroc|morocco|mbc|rotana|al\s*jazeera|nile)\b/i.test(combined)) {
+    return { lang: "AR", langLabel: "\xC1rabe", countryCode: "AR" };
+  }
+  if (/^(?:\[?\s*CAT\s*\]?\s*[|:/-])|\b(?:catal[aà]|tv3|3cat|esport3|sx3)\b/i.test(combined)) {
+    return { lang: "CAT", langLabel: "Catal\xE0", countryCode: "ES" };
+  }
+  if (/^(?:\|?\s*(?:LAT|LA|MX|ARG|COL|CHL|PER|PE)\s*\]?\s*[|:/-])|\b(?:latino|latam|m[eé]xico|argentina|colombia|chile|dsports)\b/i.test(combined)) {
+    return { lang: "LAT", langLabel: "Latino", countryCode: "LAT" };
+  }
+  if (/^(?:\[?\s*(?:FR|VF)\s*\]?\s*[|:/-])|\b(?:france|french|fran[çc]ais|canal\+|tf1|rmc\s*sport|m6)\b/i.test(combined)) {
+    return { lang: "FR", langLabel: "Franc\xE9s", countryCode: "FR" };
+  }
+  if (/^(?:\[?\s*(?:PT|BR)\s*\]?\s*[|:/-])|\b(?:portugal|sport\s*tv|tvi|sic|rtp|brasil|globo)\b/i.test(combined)) {
+    return { lang: "PT", langLabel: "Portugu\xE9s", countryCode: "PT" };
+  }
+  if (/^(?:\[?\s*IT\s*\]?\s*[|:/-])|\b(?:italy|italia|italiano|rai|mediaset\s*italia|sky\s*italia|serie\s*a)\b/i.test(combined)) {
+    return { lang: "IT", langLabel: "Italiano", countryCode: "IT" };
+  }
+  if (/^(?:\[?\s*(?:DE|GER|AT|CH)\s*\]?\s*[|:/-])|\b(?:germany|deutsch|zdf|ard|rtl|sky\s*sport\s*de|bundesliga)\b/i.test(combined)) {
+    return { lang: "DE", langLabel: "Alem\xE1n", countryCode: "DE" };
+  }
+  if (/^(?:\[?\s*(?:UK|US|USA|EN|ENG|CA|AU)\s*\]?\s*[|:/-])|\b(?:uk|usa|united\s*states|english|sky\s*sports|tnt\s*sports|bbc|itv|nbc|cbs|abc|fox|espn|premier\s*league)\b/i.test(combined)) {
+    return {
+      lang: "EN",
+      langLabel: "Ingl\xE9s",
+      countryCode: /\b(?:us|usa|nba|nfl|mlb|espn|cbs|nbc|abc|fox)\b/i.test(combined) ? "US" : "GB"
+    };
+  }
+  const euroMatch = combined.match(/^(?:\[?\s*|┃)(NL|PL|RO|GR|BG|RS|MK|TR|IR|RU|FI|NO|SE|DK|BE|AL|IND)\b/i);
+  if (euroMatch) {
+    const cc = euroMatch[1].toUpperCase();
+    return { lang: cc, langLabel: cc, countryCode: cc };
+  }
+  return { lang: "INT", langLabel: "Internacional" };
+}
+function inferLiveChannelCategory(name, catName, lang) {
+  const hay = `${name} ${catName}`.toLowerCase();
+  if (/\bdazn\b/.test(hay)) return "dazn";
+  if (/\b(?:movistar|m\+|laliga|hypermotion|campeones|vamos)\b/.test(hay)) return "movistar";
+  if (/\bbein\b/.test(hay) && (lang === "AR" || /[\u0600-\u06FF]|arab|max/i.test(hay))) return "bein_arabic";
+  if (/\bbein\b/.test(hay)) return "beinsports";
+  if (/\bespn\b/.test(hay)) return "espn";
+  if (/\bdsports\b/.test(hay)) return "dsports";
+  if (/\b(?:sky\s*sports|tnt\s*sports|premier\s*sports|bt\s*sport)\b/.test(hay)) return "uk_sports";
+  if (/\b(?:eurosport|deporte|sport|futbol|football|nba|f1|motor|golf|tennis)\b/.test(hay)) return "noticias_deportes";
+  if (/\b(?:cine|movies?|cinema|peliculas|series|axn|warner|amc|hbo|fox|hollywood|tcm|calle\s*13|syfy)\b/.test(hay)) return "cine_series";
+  if (/\b(?:doc|discovery|nat\s*geo|national\s*geo|historia|history|odisea|dmax|animal)\b/.test(hay)) return "documentales";
+  if (/\b(?:news|noticias|24\s*h|cnn|bbc\s*world|al\s*jazeera|euronews|bloomberg)\b/.test(hay)) return "noticias_intl";
+  if (/\b(?:kids|infantil|clan|boing|disney|nick|cartoon)\b/.test(hay)) return "infantil_autonomicas";
+  if (lang === "EN" && /\b(?:us|usa)\b/i.test(hay)) return "usa_tv";
+  if (["FR", "PT", "IT", "DE"].includes(lang)) return "europa_tv";
+  if (lang === "ES") return "entretenimiento";
+  return "belix_live";
+}
+function getCachedXtreamProviderCatalogs() {
+  const providers = getAllXtreamProviders();
+  const out = [];
+  for (const p of providers) {
+    const cache = providerCatalogCaches.get(p.id);
+    if (!cache || cache.envFingerprint !== getProviderFingerprint(p)) continue;
+    out.push(cache.payload);
+  }
+  return out;
+}
+function getCachedXtreamLiveTdtChannels() {
+  const providers = getAllXtreamProviders();
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const p of providers) {
+    const cache = providerCatalogCaches.get(p.id);
+    if (!cache || cache.envFingerprint !== getProviderFingerprint(p)) continue;
+    const catNameById = new Map(cache.payload.liveCategories.map((c) => [c.id, c.name]));
+    for (let idx = 0; idx < cache.payload.liveStreams.length; idx++) {
+      const item = cache.payload.liveStreams[idx];
+      const dedupeKey = `${p.id}:${item.streamId}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      const catName = catNameById.get(item.categoryId) || p.name;
+      const inferredQuality = inferLiveQualityLabel(item.name, catName);
+      const { lang, langLabel, countryCode } = inferLiveLangAndCountry(item.name, catName);
+      const category = inferLiveChannelCategory(item.name, catName, lang);
+      const shortMark = item.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 4) || "XTR";
+      out.push({
+        id: `xtream-${p.id}-${item.streamId}`,
+        streamId: item.streamId,
+        dial: item.num || 1e3 + out.length,
+        name: item.name,
+        shortMark,
+        brandTone: lang === "ES" ? "#10B981" : "#38BDF8",
+        network: p.id === "primary" ? catName : `${p.name} \xB7 ${catName}`,
+        category,
+        quality: inferredQuality,
+        ...countryCode ? { countryCode } : {},
+        logoUrl: item.streamIcon,
+        description: `${p.name} \xB7 ${catName} \xB7 ${langLabel} \xB7 ${inferredQuality}`,
+        epgChannelId: item.epgChannelId,
+        channels: [
+          {
+            id: `xtream-trk-${p.id}-${item.streamId}`,
+            label: `${p.name} \xB7 ${langLabel} \xB7 ${inferredQuality}`,
+            lang,
+            langLabel,
+            quality: inferredQuality,
+            providerId: p.id,
+            providerName: p.name,
+            sourceUrl: item.playbackUrl,
+            resolverType: "direct_hls"
+          }
+        ]
+      });
+    }
+  }
+  return out;
+}
+
 // server/services/channelHealthProbe.ts
 function inspectHlsCodecManifest(manifestText) {
   const text2 = String(manifestText || "");
@@ -8486,6 +10106,9 @@ async function probeChannelTrack(track, options) {
   if (cleanUrl.startsWith("/api/belix/stream/")) {
     const belixReady = options?.belixConnected ?? isAnyBelixConnected();
     return belixReady ? { status: "up", latencyMs: 650, checkedAt: now, failCount: 0 } : { status: "down", statusCode: 503, latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
+  }
+  if (/^\/api\/(?:xtream\/stream\/|stream\b)/i.test(cleanUrl)) {
+    return isXtreamEnvConfigured() ? { status: "up", latencyMs: 520, checkedAt: now, failCount: 0 } : { status: "unknown", checkedAt: now, failCount: prevFails };
   }
   const effectiveTargetUrl = unwrapProxyTargetUrl(cleanUrl);
   if (effectiveTargetUrl.includes("90.163.85.113:8093") && isDvbUpstreamCoolingDown(effectiveTargetUrl)) {
@@ -8748,14 +10371,18 @@ var ChannelHealthMonitor = class {
         checkedAt: Date.now()
       } : rawHealth;
       const src = String(track.sourceUrl || "");
-      const q = String(track.quality || "").toLowerCase();
+      const q = `${track.quality || ""} ${track.label || ""}`.toLowerCase();
       const isUhdHevc = /90\.163\.85\.113:8093\/stream\/6[4568]\//i.test(unwrapped);
       const isResidentialDvb = unwrapped.includes("90.163.85.113:8093");
       const isHttpsCdn = /^https:\/\//i.test(unwrapped) && !isResidentialDvb;
       const isPreferredEdge2 = /\/api\/belix\/stream\/531071(?:\.m3u8|\b)/i.test(src);
       const isBelix = src.startsWith("/api/belix/stream/");
-      const qualityTier = isUhdHevc ? 4 : /576p|480p|360p/.test(q) || /azotosolutions\.com/i.test(src) ? 3 : /720p/.test(q) ? 2 : 0;
-      const transportPenalty = /interactvty\.pro/i.test(src) ? 1500 : isPreferredEdge2 ? 0 : isBelix ? 350 : 0;
+      const isXtreamProxy = /^\/api\/(?:xtream\/stream|stream)\b/i.test(src);
+      const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(q);
+      const isFhdOr1080 = !isHevc && /\b(?:fhd|1080p?|full\s*hd)\b/.test(q);
+      const is4kNonResidential = !isUhdHevc && !isHevc && /(?:4k|uhd|2160p?|⁴ᴷ)/i.test(q);
+      const qualityTier = isUhdHevc ? 5 : /\b(?:576p?|480p?|360p?|sd|lq)\b/.test(q) || /azotosolutions\.com/i.test(src) ? 4 : isHevc ? 3 : is4kNonResidential ? 0 : isFhdOr1080 ? 1 : isXtreamProxy || isHttpsCdn || /\bhd\b/.test(q) ? 2 : 3;
+      const transportPenalty = /interactvty\.pro/i.test(src) ? 1500 : isPreferredEdge2 || isXtreamProxy ? 0 : isBelix ? 250 : 0;
       const penaltyMs = (health?.qoeFailures || 0) * 1500 + (health?.qoeRebuffers || 0) * 250 + transportPenalty;
       const effectiveLatency = Math.max(
         1,
@@ -8765,25 +10392,42 @@ var ChannelHealthMonitor = class {
         track: health ? { ...track, health } : { ...track },
         originalIndex,
         isUhdHevc,
+        isHevc,
         isResidentialDvb,
         isHttpsCdn,
         isPreferredEdge2,
         isBelix,
+        isXtreamProxy,
         status: health?.status ?? "unknown",
         qualityTier,
-        latencyBucket: Math.floor(effectiveLatency / 750)
+        latencyBucket: Math.floor(effectiveLatency / 750),
+        rawLatency: effectiveLatency
       };
     });
     indexed.sort((a, b) => {
       if (a.status !== "down" && b.status !== "down" && a.isUhdHevc !== b.isUhdHevc) {
         return a.isUhdHevc ? 1 : -1;
       }
+      const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
+      if (rankDiff !== 0) return rankDiff;
+      const aFastXtream = a.isXtreamProxy && a.status === "up" && a.qualityTier <= 2;
+      const bFastXtream = b.isXtreamProxy && b.status === "up" && b.qualityTier <= 2;
+      if (aFastXtream !== bFastXtream) {
+        return aFastXtream ? -1 : 1;
+      }
       if (a.isPreferredEdge2 !== b.isPreferredEdge2) {
         if (a.isPreferredEdge2 && a.status !== "down") return -1;
         if (b.isPreferredEdge2 && b.status !== "down") return 1;
       }
-      const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
-      if (rankDiff !== 0) return rankDiff;
+      if (a.status !== "down" && b.status !== "down") {
+        if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
+        if (a.status !== "unknown" && a.rawLatency !== b.rawLatency) {
+          return a.rawLatency - b.rawLatency;
+        }
+        if (a.isXtreamProxy !== b.isXtreamProxy) {
+          return a.isXtreamProxy ? -1 : 1;
+        }
+      }
       if (a.status === "up" && b.status === "up") {
         if (a.isHttpsCdn !== b.isHttpsCdn) {
           return a.isHttpsCdn ? -1 : 1;
@@ -8794,10 +10438,6 @@ var ChannelHealthMonitor = class {
       }
       if (a.isBelix && b.isBelix && a.status === b.status) {
         return a.originalIndex - b.originalIndex;
-      }
-      if (a.status !== "unknown") {
-        if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
-        if (a.latencyBucket !== b.latencyBucket) return a.latencyBucket - b.latencyBucket;
       }
       return a.originalIndex - b.originalIndex;
     });
@@ -9186,7 +10826,7 @@ function getMediaPlaneSnapshot() {
 }
 
 // server/utils/tvBuildSignature.ts
-import crypto7 from "crypto";
+import crypto8 from "crypto";
 import fs7 from "fs";
 import path6 from "path";
 var cachedSignature = "";
@@ -9197,7 +10837,7 @@ function getTvBuildSignature(rootDir) {
   if (cachedSignature && now - cachedAt < CACHE_TTL_MS) {
     return cachedSignature;
   }
-  const hash = crypto7.createHash("sha1");
+  const hash = crypto8.createHash("sha1");
   hash.update(String(ENV.appVersionName || "3.3.0"));
   const candidatePaths = [];
   const publicDir = path6.resolve(rootDir, "public");
@@ -10364,11 +12004,11 @@ function registerExpandedCatalogRoutes(app2) {
 }
 
 // server/routes/proxies/vodManifestManager.ts
-import crypto8 from "crypto";
+import crypto9 from "crypto";
 var vodHlsManifestCache = new LruTtlCache(400, 10 * 60 * 1e3);
 var registeredVodManifestCache = new LruTtlCache(500, 18 * 60 * 1e3);
 function registerVodManifest(m3u8Content) {
-  const id = crypto8.createHash("sha1").update(m3u8Content).digest("hex").slice(0, 18);
+  const id = crypto9.createHash("sha1").update(m3u8Content).digest("hex").slice(0, 18);
   registeredVodManifestCache.set(id, m3u8Content);
   return `/api/vod-manifest/${id}.m3u8`;
 }
@@ -13092,7 +14732,31 @@ var STOPWORDS = /* @__PURE__ */ new Set([
 function normalizeFootballToken(raw) {
   return String(raw || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
 }
+var YOUTH_MARKER_RE = /\b(u\d{2}|sub-?\d{2}|youth|juvenil|academy|primavera)\b/i;
+var WOMEN_MARKER_RE = /(?:\(\s*w\s*\)|\b(?:women|woman|w|femenino|femenina|femeni|fem|feminines|kvinder|damen|frauen|damer|ladies|wchampions|liga\s*f)\b)/i;
+var RESERVE_MARKER_RE = /(?:\b(?:castilla|atletic|promesas|mestalla|fabril|vetusta|reserves?|ii)\b|\b(?:barcelona|real\s*madrid|madrid|sevilla|atletico|villarreal|valencia|betis|sociedad|osasuna|celta|getafe|espanyol|mallorca|bayern|dortmund|psg|inter|milan|ajax|benfica|porto|sporting)\s+(?:b|c|atletico|atletic)\b)/i;
+var ECUADOR_BARCA_RE = /\b(?:barcelona\s*sc|barcelona\s*guayaquil|barcelona\s*sc\s*guayaquil)\b/i;
+function extractTeamCategorySignature(raw) {
+  const norm = normalizeFootballToken(raw);
+  const rawLower = String(raw || "").toLowerCase();
+  return {
+    youth: YOUTH_MARKER_RE.test(norm) || YOUTH_MARKER_RE.test(rawLower),
+    women: WOMEN_MARKER_RE.test(norm) || WOMEN_MARKER_RE.test(rawLower),
+    reserve: RESERVE_MARKER_RE.test(norm) || RESERVE_MARKER_RE.test(rawLower),
+    ecuadorBarca: ECUADOR_BARCA_RE.test(norm) || ECUADOR_BARCA_RE.test(rawLower)
+  };
+}
+function areTeamCategoriesCompatible(aRaw, bRaw) {
+  const sigA = extractTeamCategorySignature(aRaw);
+  const sigB = extractTeamCategorySignature(bRaw);
+  if (sigA.youth !== sigB.youth) return false;
+  if (sigA.women !== sigB.women) return false;
+  if (sigA.reserve !== sigB.reserve) return false;
+  if (sigA.ecuadorBarca !== sigB.ecuadorBarca) return false;
+  return true;
+}
 function doFootballTeamNamesMatch(aRaw, bRaw) {
+  if (!areTeamCategoriesCompatible(aRaw, bRaw)) return false;
   const a = normalizeFootballToken(aRaw);
   const b = normalizeFootballToken(bRaw);
   if (!a || !b) return false;
@@ -13116,10 +14780,27 @@ function doFootballTeamNamesMatch(aRaw, bRaw) {
   const bTokens = b.split(" ").filter((w) => w.length >= 4 && !STOPWORDS.has(w));
   return aTokens.some((tok) => bTokens.includes(tok));
 }
+function areFixturesCompatibleForMerge(a, b) {
+  const sameOrder = doFootballTeamNamesMatch(a.homeTeam, b.homeTeam) && doFootballTeamNamesMatch(a.awayTeam, b.awayTeam);
+  const swappedOrder = doFootballTeamNamesMatch(a.homeTeam, b.awayTeam) && doFootballTeamNamesMatch(a.awayTeam, b.homeTeam);
+  if (!sameOrder && !swappedOrder) return false;
+  const ctxA = `${a.leagueContext || ""} ${a.homeTeam} ${a.awayTeam}`;
+  const ctxB = `${b.leagueContext || ""} ${b.homeTeam} ${b.awayTeam}`;
+  if (!areTeamCategoriesCompatible(ctxA, ctxB)) return false;
+  const aMs = Number(a.kickoffMs || 0);
+  const bMs = Number(b.kickoffMs || 0);
+  if (aMs > 0 && bMs > 0) {
+    if (Math.abs(aMs - bMs) > 2.5 * 60 * 60 * 1e3) {
+      return false;
+    }
+  }
+  return true;
+}
 function getMadridDateKey(dayOffset = 0) {
-  const d = /* @__PURE__ */ new Date();
-  d.setDate(d.getDate() + dayOffset);
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid" }).format(d).replace(/-/g, "");
+  const todayIso = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid" }).format(/* @__PURE__ */ new Date());
+  const baseNoonUtc = Date.parse(`${todayIso}T12:00:00Z`);
+  const shifted = Number.isNaN(baseNoonUtc) ? new Date(Date.now() + dayOffset * 864e5) : new Date(baseNoonUtc + dayOffset * 864e5);
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Madrid" }).format(shifted).replace(/-/g, "");
 }
 async function fetchFotmobDayIndex(dateKeyInput) {
   const madridToday = getMadridDateKey(0);
@@ -13217,7 +14898,7 @@ function getRegionLabelFromCcode(ccode) {
   return CCODE_TO_REGION[ccode.toUpperCase()] || "Internacional";
 }
 async function findMatchingFotmobFixture(params) {
-  const { homeTeam, awayTeam, dateKey } = params;
+  const { homeTeam, awayTeam, dateKey, kickoffMs, leagueSlug } = params;
   if (!homeTeam || !awayTeam) return null;
   const candidateDates = Array.from(
     new Set(
@@ -13228,14 +14909,18 @@ async function findMatchingFotmobFixture(params) {
   );
   for (const dk of candidateDates) {
     const matches = await fetchFotmobDayIndex(dk);
-    const direct = matches.find(
-      (m) => doFootballTeamNamesMatch(homeTeam, m.homeName) && doFootballTeamNamesMatch(awayTeam, m.awayName)
+    const hit = matches.find(
+      (m) => areFixturesCompatibleForMerge(
+        { homeTeam, awayTeam, kickoffMs, leagueContext: leagueSlug },
+        {
+          homeTeam: m.homeName,
+          awayTeam: m.awayName,
+          kickoffMs: m.kickoffMs,
+          leagueContext: `${m.leagueId} ${m.leagueName}`
+        }
+      )
     );
-    if (direct) return direct;
-    const swapped = matches.find(
-      (m) => doFootballTeamNamesMatch(homeTeam, m.awayName) && doFootballTeamNamesMatch(awayTeam, m.homeName)
-    );
-    if (swapped) return swapped;
+    if (hit) return hit;
   }
   return null;
 }
@@ -13987,7 +15672,8 @@ async function fetchRealFootballMatchDetails(params) {
     const matched = await findMatchingFotmobFixture({
       homeTeam: params.homeTeam,
       awayTeam: params.awayTeam,
-      dateKey: params.dateKey
+      dateKey: params.dateKey,
+      leagueSlug: cleanLeagueSlug
     });
     if (matched) fotmobId = matched.fotmobId;
   }
@@ -21105,12 +22791,38 @@ var SOCCER_BOARD_LEAGUES = [
 ];
 
 // server/routes/sportsHelpers/sportsAgendaScraper.ts
-import crypto9 from "crypto";
+import crypto10 from "crypto";
+var MADRID_TIME_FMT = new Intl.DateTimeFormat("es-ES", {
+  timeZone: "Europe/Madrid",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false
+});
+var MADRID_DATE_KEY_FMT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Europe/Madrid"
+});
+function parseStreamXhdKickoffMs(rawTime) {
+  const s = String(rawTime || "").trim();
+  if (!s) return 0;
+  if (/T\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:?\d{2})$/i.test(s)) {
+    const parsed = Date.parse(s);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  const dateTimeM = s.match(/^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2})(?::(\d{2}))?$/);
+  if (dateTimeM) {
+    const parsed = Date.parse(`${dateTimeM[1]}T${dateTimeM[2]}:${dateTimeM[3] || "00"}-05:00`);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
 function detectSportKind(text2) {
   const lower = text2.toLowerCase();
   if (/baloncesto|basket|nba|eurocup|euroliga|acb|ncaa/.test(lower)) return "basketball";
   if (/tenis|tennis|atp|wta|roland|wimbledon/.test(lower)) return "tennis";
   if (/f1|formula|fórmula|motogp|motor|nascar|rally|indy/.test(lower)) return "motor";
+  if (/\b(hockey|ice\s*hockey|nhl|khl|nfl|american\s*football|mlb|baseball|beisbol|béisbol|ufc|mma|boxeo|boxing|wwe|rugby|ciclismo|cycling|padel|pádel|handball|balonmano|volleyball|voleibol|golf)\b/.test(lower)) {
+    return "other";
+  }
   return "soccer";
 }
 var cachedLiveAgendaFeeds = null;
@@ -21126,6 +22838,8 @@ async function fetchLiveSportsAgendaFeeds() {
   inFlightLiveAgendaPromise = (async () => {
     const liveGrouped = /* @__PURE__ */ new Map();
     const streamXhdFootball = [];
+    const nowMs = Date.now();
+    const todayMadridKey = MADRID_DATE_KEY_FMT.format(new Date(nowMs)).replace(/-/g, "");
     await Promise.all([
       (async () => {
         for (const domain of ["https://streamxhd.sbs", "https://streamxhd.st"]) {
@@ -21138,9 +22852,11 @@ async function fetchLiveSportsAgendaFeeds() {
             const evJson = await evRes.json();
             for (const sp of evJson?.sports || []) {
               const sportId = String(sp?.id || "").toLowerCase();
-              const mappedSport = sportId === "football" || sportId === "soccer" ? "soccer" : sportId === "basketball" ? "basketball" : sportId === "tennis" ? "tennis" : sportId === "motorsport" || sportId === "f1" ? "motor" : detectSportKind(String(sp?.name || ""));
+              const sportName = String(sp?.name || "");
+              const mappedSport = (sportId === "football" || sportId === "soccer") && !/american|nfl|rugby|hockey|nhl/i.test(sportName) ? "soccer" : sportId === "basketball" ? "basketball" : sportId === "tennis" ? "tennis" : sportId === "motorsport" || sportId === "f1" ? "motor" : detectSportKind(`${sportId} ${sportName}`);
               for (const lg of sp?.leagues || []) {
                 const leagueName = String(lg?.name || "En Directo").trim();
+                const effectiveSport = mappedSport === "soccer" ? detectSportKind(`${leagueName} ${sportName}`) : mappedSport;
                 for (const ev of lg?.events || []) {
                   const servers = Array.isArray(ev?.servers) ? ev.servers : [];
                   const validTracks = [];
@@ -21162,22 +22878,29 @@ async function fetchLiveSportsAgendaFeeds() {
                   const awayTeam = String(ev?.awayTeam || "").trim();
                   const matchTitle = homeTeam && awayTeam ? `${homeTeam} vs ${awayTeam}` : String(ev?.title || "Evento en Vivo").trim();
                   const rawTime = String(ev?.time || "").trim();
+                  const kickoffMs = parseStreamXhdKickoffMs(rawTime);
+                  if (kickoffMs > 0 && nowMs - kickoffMs > 3.5 * 60 * 60 * 1e3) {
+                    continue;
+                  }
                   const timeMatch = rawTime.match(/(\d{1,2}:\d{2})/);
-                  const timeStr = timeMatch ? timeMatch[1] : "EN VIVO";
+                  const timeStr = kickoffMs > 0 ? MADRID_TIME_FMT.format(new Date(kickoffMs)) : timeMatch ? timeMatch[1] : "EN VIVO";
+                  const kickoffDateKey = kickoffMs > 0 ? MADRID_DATE_KEY_FMT.format(new Date(kickoffMs)).replace(/-/g, "") : todayMadridKey;
+                  const isLiveNow = kickoffMs > 0 ? nowMs >= kickoffMs - 5 * 6e4 && nowMs - kickoffMs <= 3 * 60 * 60 * 1e3 : true;
                   const key = `sxhd-${leagueName}-${timeStr}-${matchTitle}`;
                   liveGrouped.set(key, {
-                    id: `live-${crypto9.createHash("sha1").update(key).digest("base64url").slice(0, 16)}`,
+                    id: `live-${crypto10.createHash("sha1").update(key).digest("base64url").slice(0, 16)}`,
                     title: matchTitle,
                     homeTeam,
                     awayTeam,
                     competition: leagueName,
-                    sport: mappedSport,
+                    sport: effectiveSport,
                     time: timeStr,
-                    isLive: true,
+                    kickoffMs: kickoffMs || void 0,
+                    isLive: isLiveNow,
                     is247Channel: false,
                     channels: validTracks
                   });
-                  if (mappedSport === "soccer" && homeTeam && awayTeam) {
+                  if (effectiveSport === "soccer" && homeTeam && awayTeam) {
                     streamXhdFootball.push({
                       homeTeam,
                       awayTeam,
@@ -21187,6 +22910,8 @@ async function fetchLiveSportsAgendaFeeds() {
                       code: String(ev?.code || "").trim(),
                       rawTime,
                       timeStr,
+                      kickoffMs,
+                      kickoffDateKey,
                       channels: validTracks
                     });
                   }
@@ -21238,7 +22963,7 @@ async function fetchLiveSportsAgendaFeeds() {
           const key = `${timeStr}-${matchTitle}`;
           if (!liveGrouped.has(key)) {
             liveGrouped.set(key, {
-              id: `live-${crypto9.createHash("sha1").update(key).digest("base64url").slice(0, 16)}`,
+              id: `live-${crypto10.createHash("sha1").update(key).digest("base64url").slice(0, 16)}`,
               title: matchTitle,
               competition: compPrefix || "Agenda en Directo",
               sport: detectSportKind(`${compPrefix} ${matchTitle}`),
@@ -21553,13 +23278,15 @@ function extractTokensForEpgMatch(name) {
 function getCachedEpgStore() {
   return cachedEpgStore?.byChannel || null;
 }
-var EPG_NON_LIVE_REPLAY_RE = /\b(resumen|resumenes|highlights|historias|classic|classics|retro|legends|magazine|el dia despues|el tercer tiempo|previa\b|review|interview|xtra time|premier corner)\b/i;
+var EPG_NON_LIVE_REPLAY_RE = /\b(resumen|resumenes|highlights|historias|classic|classics|retro|legends|magazine|el dia despues|el tercer tiempo|previa\b|postpartido|tertulia|analisis|reportaje|un dia de partit|la transmissio|tiempo de juego|carrusel|radioestadio|review|interview|xtra time|premier corner)\b/i;
+var EPG_NON_FIRST_TEAM_CATEGORY_RE = /\b(u19|u21|u20|u17|sub-?\d{2}|juvenil|youth league|femen[ií]|femenin[oa]|women|liga f|baloncesto|basquet|básquet|acb|euroliga|euroleague|futsal|futbol sala|fútbol sala|balonmano|handbol|hockey)\b/i;
 function findEpgVerifiedBroadcastersForFixture(homeTeam, awayTeam, kickoffMs, epgStoreOverride) {
   const store = epgStoreOverride || cachedEpgStore?.byChannel;
   if (!store || store.size === 0) return [];
   const homeTokens = extractTokensForEpgMatch(homeTeam);
   const awayTokens = extractTokensForEpgMatch(awayTeam);
   if (homeTokens.length === 0 || awayTokens.length === 0) return [];
+  const fixtureHasSpecialCategory = EPG_NON_FIRST_TEAM_CATEGORY_RE.test(`${homeTeam} ${awayTeam}`);
   const targetTime = kickoffMs > 0 ? kickoffMs : Date.now();
   const earliestStart = targetTime - 60 * 60 * 1e3;
   const latestStart = targetTime + 35 * 60 * 1e3;
@@ -21593,8 +23320,10 @@ function findEpgVerifiedBroadcastersForFixture(homeTeam, awayTeam, kickoffMs, ep
       if (ev.startMs < earliestStart || ev.startMs > latestStart || ev.stopMs < minStopMs) {
         continue;
       }
-      if (EPG_NON_LIVE_REPLAY_RE.test(ev.title)) continue;
-      const hay = `${ev.title} ${ev.subtitle || ""} ${ev.description || ""}`.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+      const evFullText = `${ev.title} ${ev.subtitle || ""} ${ev.description || ""}`;
+      if (EPG_NON_LIVE_REPLAY_RE.test(evFullText)) continue;
+      if (!fixtureHasSpecialCategory && EPG_NON_FIRST_TEAM_CATEGORY_RE.test(evFullText)) continue;
+      const hay = evFullText.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
       const matchHome = homeTokens.some((tok) => hay.includes(tok));
       const matchAway = awayTokens.some((tok) => hay.includes(tok));
       if (matchHome && matchAway) {
@@ -22179,6 +23908,7 @@ var GENERIC_TEAM_STOPWORDS = /* @__PURE__ */ new Set([
   "del",
   "la",
   "el",
+  "del",
   "los",
   "las",
   "les",
@@ -22198,15 +23928,13 @@ var GENERIC_TEAM_STOPWORDS = /* @__PURE__ */ new Set([
   "u19"
 ]);
 function doesSingleTeamMatchCandidate(boardTeamRaw, candidateSideRaw) {
+  if (!areTeamCategoriesCompatible(boardTeamRaw, candidateSideRaw)) return false;
   const boardSlug = normalizeTeamToken(boardTeamRaw);
   const candSlug = normalizeTeamToken(candidateSideRaw);
   const candSpace = candSlug.replace(/_/g, " ");
   const boardSpace = boardSlug.replace(/_/g, " ");
   if (!boardSpace || !candSpace) return false;
-  if (candSpace === boardSpace || candSpace.includes(boardSpace) || boardSpace.includes(candSpace)) {
-    if (GENERIC_TEAM_STOPWORDS.has(candSpace) || GENERIC_TEAM_STOPWORDS.has(boardSpace)) {
-      return candSpace === boardSpace;
-    }
+  if (candSpace === boardSpace) {
     return true;
   }
   const boardAliases = BILINGUAL_TEAM_ALIASES[boardSlug];
@@ -22217,6 +23945,9 @@ function doesSingleTeamMatchCandidate(boardTeamRaw, candidateSideRaw) {
   if (candAliases && candAliases.some((al) => boardSpace === al || boardSpace.includes(al) || al.includes(boardSpace))) {
     return true;
   }
+  if ((candSpace.includes(boardSpace) || boardSpace.includes(candSpace)) && !GENERIC_TEAM_STOPWORDS.has(candSpace) && !GENERIC_TEAM_STOPWORDS.has(boardSpace)) {
+    return true;
+  }
   const distinctiveTokens = boardSpace.split(" ").filter((w) => w.length >= 4 && !GENERIC_TEAM_STOPWORDS.has(w));
   if (distinctiveTokens.length === 0) return false;
   return distinctiveTokens.some((tok) => {
@@ -22225,6 +23956,10 @@ function doesSingleTeamMatchCandidate(boardTeamRaw, candidateSideRaw) {
   });
 }
 function doesScrapedEventMatchFixture(homeTeam, awayTeam, scrapedEvent) {
+  const scrapedCtx = `${scrapedEvent.competition || ""} ${scrapedEvent.leagueName || ""} ${scrapedEvent.title || ""} ${scrapedEvent.homeTeam || ""} ${scrapedEvent.awayTeam || ""}`;
+  if (!areTeamCategoriesCompatible(`${homeTeam} ${awayTeam}`, scrapedCtx)) {
+    return false;
+  }
   if (scrapedEvent.homeTeam && scrapedEvent.awayTeam) {
     return doesSingleTeamMatchCandidate(homeTeam, scrapedEvent.homeTeam) && doesSingleTeamMatchCandidate(awayTeam, scrapedEvent.awayTeam) || doesSingleTeamMatchCandidate(homeTeam, scrapedEvent.awayTeam) && doesSingleTeamMatchCandidate(awayTeam, scrapedEvent.homeTeam);
   }
@@ -23041,13 +24776,13 @@ async function verifySingleFixtureTvSchedule(params) {
 
 // server/routes/sportsHelpers/upcomingCalendarHelper.ts
 var extendedCalendarCache = new LruTtlCache(40, 5 * 60 * 1e3);
-var MADRID_TIME_FMT = new Intl.DateTimeFormat("es-ES", {
+var MADRID_TIME_FMT2 = new Intl.DateTimeFormat("es-ES", {
   timeZone: "Europe/Madrid",
   hour: "2-digit",
   minute: "2-digit",
   hour12: false
 });
-var MADRID_DATE_KEY_FMT = new Intl.DateTimeFormat("en-CA", {
+var MADRID_DATE_KEY_FMT2 = new Intl.DateTimeFormat("en-CA", {
   timeZone: "Europe/Madrid"
 });
 var MADRID_SHORT_DATE_FMT = new Intl.DateTimeFormat("es-ES", {
@@ -23057,13 +24792,14 @@ var MADRID_SHORT_DATE_FMT = new Intl.DateTimeFormat("es-ES", {
   month: "short"
 });
 function getMadridDateKey2(d = /* @__PURE__ */ new Date()) {
-  return MADRID_DATE_KEY_FMT.format(d).replace(/-/g, "");
+  return MADRID_DATE_KEY_FMT2.format(d).replace(/-/g, "");
 }
 function formatMadridDateLabel(kickoffDate, todayKey = getMadridDateKey2()) {
   if (Number.isNaN(kickoffDate.getTime())) return "";
   const matchKey = getMadridDateKey2(kickoffDate);
   if (matchKey === todayKey) return "Hoy";
-  const tomorrowKey = getMadridDateKey2(new Date(Date.now() + 864e5));
+  const todayNoonUtc = Date.parse(`${todayKey.slice(0, 4)}-${todayKey.slice(4, 6)}-${todayKey.slice(6, 8)}T12:00:00Z`);
+  const tomorrowKey = Number.isNaN(todayNoonUtc) ? getMadridDateKey2(new Date(Date.now() + 864e5)) : getMadridDateKey2(new Date(todayNoonUtc + 864e5));
   if (matchKey === tomorrowKey) return "Ma\xF1ana";
   const raw = MADRID_SHORT_DATE_FMT.format(kickoffDate).replace(/\./g, "");
   return raw.replace(/\s+/g, " ").trim();
@@ -23169,7 +24905,7 @@ function mapEspnEventToBoardItem(ev, leagueDef, scrapedMatches, todayKey, espnLe
   const away = competitors.find((c) => c.homeAway === "away") || competitors[1];
   if (!eventId || !home || !away) return null;
   const kickoffDate = ev?.date ? new Date(ev.date) : /* @__PURE__ */ new Date();
-  const kickoffTime = Number.isNaN(kickoffDate.getTime()) ? "20:45" : MADRID_TIME_FMT.format(kickoffDate);
+  const kickoffTime = Number.isNaN(kickoffDate.getTime()) ? "20:45" : MADRID_TIME_FMT2.format(kickoffDate);
   const kickoffDateLabel = formatMadridDateLabel(kickoffDate, todayKey);
   const stType = comp?.status?.type || ev?.status?.type || {};
   const rawState = String(stType?.state || "").toLowerCase();
@@ -23367,7 +25103,20 @@ async function fetchExtendedFootballCalendar(scope, scrapedMatches) {
       const dk = getMadridDateKey2(new Date(it.kickoffMs || Date.now()));
       const dayMatches = fotmobByDate.get(dk) || [];
       const fm = dayMatches.find(
-        (m) => doFootballTeamNamesMatch(it.homeTeam, m.homeName) && doFootballTeamNamesMatch(it.awayTeam, m.awayName) || doFootballTeamNamesMatch(it.homeTeam, m.awayName) && doFootballTeamNamesMatch(it.awayTeam, m.homeName)
+        (m) => areFixturesCompatibleForMerge(
+          {
+            homeTeam: it.homeTeam,
+            awayTeam: it.awayTeam,
+            kickoffMs: it.kickoffMs,
+            leagueContext: `${it.leagueSlug} ${it.leagueName}`
+          },
+          {
+            homeTeam: m.homeName,
+            awayTeam: m.awayName,
+            kickoffMs: m.kickoffMs,
+            leagueContext: `${m.leagueId} ${m.leagueName}`
+          }
+        )
       );
       if (fm?.fotmobId) {
         it.fotmobMatchId = fm.fotmobId;
@@ -25296,8 +27045,16 @@ async function fetchAndCacheFootballBoard(opts) {
     const items = [];
     const seenEventIds = /* @__PURE__ */ new Set();
     const matchedFotmobIds = /* @__PURE__ */ new Set();
-    const findFotmobMatch = (homeName, awayName) => fotmobMatches.find(
-      (fm) => doFootballTeamNamesMatch(homeName, fm.homeName) && doFootballTeamNamesMatch(awayName, fm.awayName) || doFootballTeamNamesMatch(homeName, fm.awayName) && doFootballTeamNamesMatch(awayName, fm.homeName)
+    const findFotmobMatch = (homeName, awayName, kickoffMs, leagueContext) => fotmobMatches.find(
+      (fm) => areFixturesCompatibleForMerge(
+        { homeTeam: homeName, awayTeam: awayName, kickoffMs, leagueContext },
+        {
+          homeTeam: fm.homeName,
+          awayTeam: fm.awayName,
+          kickoffMs: fm.kickoffMs,
+          leagueContext: `${fm.leagueId} ${fm.leagueName}`
+        }
+      )
     );
     for (const { league, json } of responses) {
       const events = Array.isArray(json?.events) ? json.events : [];
@@ -25327,7 +27084,12 @@ async function fetchAndCacheFootballBoard(opts) {
         const awayTeam = String(
           away.team?.shortDisplayName || away.team?.displayName || "Visitante"
         ).trim();
-        const fm = findFotmobMatch(homeTeam, awayTeam);
+        const fm = findFotmobMatch(
+          homeTeam,
+          awayTeam,
+          kickoffDate.getTime(),
+          `${league.slug} ${league.leagueName}`
+        );
         if (fm) {
           matchedFotmobIds.add(fm.fotmobId);
           if (fm.statusState === "live") {
@@ -25385,10 +27147,24 @@ async function fetchAndCacheFootballBoard(opts) {
       }
     }
     if (isToday && liveFeeds.streamXhdFootball.length > 0) {
+      const nowMs = Date.now();
       for (let idx = 0; idx < liveFeeds.streamXhdFootball.length; idx++) {
         const sx = liveFeeds.streamXhdFootball[idx];
         const existingItem = items.find(
-          (it) => doesScrapedEventMatchFixture(it.homeTeam, it.awayTeam, sx) || doFootballTeamNamesMatch(it.homeTeam, sx.homeTeam) && doFootballTeamNamesMatch(it.awayTeam, sx.awayTeam) || doFootballTeamNamesMatch(it.homeTeam, sx.awayTeam) && doFootballTeamNamesMatch(it.awayTeam, sx.homeTeam)
+          (it) => areFixturesCompatibleForMerge(
+            {
+              homeTeam: it.homeTeam,
+              awayTeam: it.awayTeam,
+              kickoffMs: it.kickoffMs,
+              leagueContext: `${it.leagueSlug} ${it.leagueName}`
+            },
+            {
+              homeTeam: sx.homeTeam,
+              awayTeam: sx.awayTeam,
+              kickoffMs: sx.kickoffMs || 0,
+              leagueContext: sx.leagueName
+            }
+          ) && doesScrapedEventMatchFixture(it.homeTeam, it.awayTeam, sx)
         );
         if (existingItem) {
           if (Array.isArray(sx.channels)) {
@@ -25404,8 +27180,11 @@ async function fetchAndCacheFootballBoard(opts) {
           }
           continue;
         }
-        const fm = findFotmobMatch(sx.homeTeam, sx.awayTeam);
+        const fm = findFotmobMatch(sx.homeTeam, sx.awayTeam, sx.kickoffMs || 0, sx.leagueName);
         if (fm) matchedFotmobIds.add(fm.fotmobId);
+        const realKickoffMs = fm?.kickoffMs || sx.kickoffMs || nowMs;
+        const computedStatusState = fm ? fm.statusState : sx.kickoffMs && sx.kickoffMs > nowMs + 5 * 6e4 ? "upcoming" : sx.kickoffMs && nowMs - sx.kickoffMs > 3 * 60 * 60 * 1e3 ? "finished" : "live";
+        if (computedStatusState === "finished") continue;
         const sxId = `sxhd-${idx + 1}-${normalizeTeamToken(sx.homeTeam).slice(0, 8)}`;
         const codeUpper = String(sx.code || "").toUpperCase();
         const flagIso = codeUpper === "COL" ? "co" : codeUpper === "ARG" ? "ar" : codeUpper === "MEX" ? "mx" : codeUpper === "CHL" || codeUpper === "CHI" ? "cl" : codeUpper === "PER" ? "pe" : codeUpper === "BRA" ? "br" : codeUpper === "URU" ? "uy" : codeUpper === "ECU" ? "ec" : "un";
@@ -25413,6 +27192,8 @@ async function fetchAndCacheFootballBoard(opts) {
           ...ch,
           label: sanitizeScrapedChannelLabel(ch.label, cIdx + 1)
         }));
+        const computedKickoffTime = fm?.kickoffTime || (sx.kickoffMs ? madridTimeFmt.format(new Date(sx.kickoffMs)) : sx.timeStr || "EN VIVO");
+        const computedStatusLabel = fm?.statusLabel || (computedStatusState === "upcoming" ? "Por empezar" : "EN VIVO");
         items.push({
           id: `fb-${sxId}`,
           eventId: fm?.fotmobId || sxId,
@@ -25423,19 +27204,20 @@ async function fetchAndCacheFootballBoard(opts) {
           groupTitle: `${codeUpper || "En Vivo"}: ${fm?.leagueName || sx.leagueName || "F\xFAtbol en Directo"}`,
           regionFlagUrl: fm?.regionFlagUrl || `https://flagcdn.com/w40/${flagIso}.png`,
           priority: 12,
-          kickoffIso: fm?.utcTime || (/* @__PURE__ */ new Date()).toISOString(),
-          kickoffTime: fm?.kickoffTime || sx.timeStr || "EN VIVO",
-          kickoffMs: fm?.kickoffMs || Date.now(),
-          statusState: fm?.statusState || "live",
-          statusLabel: fm?.statusLabel || "EN VIVO",
+          kickoffIso: fm?.utcTime || new Date(realKickoffMs).toISOString(),
+          kickoffTime: computedKickoffTime,
+          kickoffMs: realKickoffMs,
+          kickoffDateLabel: formatMadridDateLabel(new Date(realKickoffMs), madridToday),
+          statusState: computedStatusState,
+          statusLabel: computedStatusLabel,
           homeTeam: fm?.homeName || sx.homeTeam,
           awayTeam: fm?.awayName || sx.awayTeam,
           homeShort: (fm?.homeName || sx.homeTeam).slice(0, 3).toUpperCase(),
           awayShort: (fm?.awayName || sx.awayTeam).slice(0, 3).toUpperCase(),
           homeLogo: fm?.homeLogo || sx.homeLogo,
           awayLogo: fm?.awayLogo || sx.awayLogo,
-          homeScore: fm ? fm.homeScore : "\u2022",
-          awayScore: fm ? fm.awayScore : "\u2022",
+          homeScore: fm ? fm.homeScore : computedStatusState === "upcoming" ? "-" : "\u2022",
+          awayScore: fm ? fm.awayScore : computedStatusState === "upcoming" ? "-" : "\u2022",
           homeRedCards: fm?.homeRedCards || 0,
           awayRedCards: fm?.awayRedCards || 0,
           channels: sanitizedSxChannels
@@ -25444,9 +27226,23 @@ async function fetchAndCacheFootballBoard(opts) {
     }
     for (const fm of fotmobMatches) {
       if (matchedFotmobIds.has(fm.fotmobId)) continue;
-      const alreadyInBoard = items.find(
-        (it) => doFootballTeamNamesMatch(it.homeTeam, fm.homeName) && doFootballTeamNamesMatch(it.awayTeam, fm.awayName) || doFootballTeamNamesMatch(it.homeTeam, fm.awayName) && doFootballTeamNamesMatch(it.awayTeam, fm.homeName)
-      );
+      const alreadyInBoard = items.find((it) => {
+        if (it.fotmobMatchId && it.fotmobMatchId !== fm.fotmobId) return false;
+        return areFixturesCompatibleForMerge(
+          {
+            homeTeam: it.homeTeam,
+            awayTeam: it.awayTeam,
+            kickoffMs: it.kickoffMs,
+            leagueContext: `${it.leagueSlug} ${it.leagueName}`
+          },
+          {
+            homeTeam: fm.homeName,
+            awayTeam: fm.awayName,
+            kickoffMs: fm.kickoffMs,
+            leagueContext: `${fm.leagueId} ${fm.leagueName}`
+          }
+        );
+      });
       if (alreadyInBoard) {
         matchedFotmobIds.add(fm.fotmobId);
         if (!alreadyInBoard.fotmobMatchId) alreadyInBoard.fotmobMatchId = fm.fotmobId;
@@ -25479,9 +27275,10 @@ async function fetchAndCacheFootballBoard(opts) {
         groupTitle: `${pseudoLeague.regionName}: ${fm.leagueName}`,
         regionFlagUrl: fm.regionFlagUrl,
         priority: pseudoLeague.priority,
-        kickoffIso: fm.utcTime || (/* @__PURE__ */ new Date()).toISOString(),
+        kickoffIso: fm.utcTime || new Date(fm.kickoffMs).toISOString(),
         kickoffTime: fm.kickoffTime,
         kickoffMs: fm.kickoffMs,
+        kickoffDateLabel: formatMadridDateLabel(new Date(fm.kickoffMs), madridToday),
         statusState: fm.statusState,
         statusLabel: fm.statusLabel,
         matchdayLabel: fm.leagueName || "F\xFAtbol en Directo",
@@ -26648,6 +28445,401 @@ async function resolveTmdbIdByTitle(title, mediaType, expectedYear) {
   }
 }
 
+// server/services/xtreamVodMatcher.ts
+var seriesInfoCache = new LruTtlCache(200, 25 * 60 * 1e3);
+var LANG_LABEL_MAP = {
+  ES: "Castellano",
+  LAT: "Latino",
+  VOSE: "VOSE",
+  EN: "Ingl\xE9s (EN)",
+  AR: "\xC1rabe (AR)",
+  FR: "Franc\xE9s (FR)",
+  PT: "Portugu\xE9s",
+  IT: "Italiano",
+  DE: "Alem\xE1n",
+  CAT: "Catal\xE0"
+};
+var LEADING_PREFIX_TAG_RE = /^(?:\[?\s*(?:ES|ESP|SPAIN|ESPA[ÑN]A|CAST|CASTELLANO|LAT|LATINO|MX|LA|VOSE|SUB|EN|ENG|ENGLISH|UK|US|USA|AR|ARB|ARABIC|FR|VF|VOSTFR|PT|IT|DE|GER|CAT|4K|UHD|FHD|HD|VIP|TOP|MULTI|DUAL)\s*\]?\s*[:|\-/·•]+\s*)+/i;
+var QUALITY_AND_EXT_TAG_RE = /(?:\(|\[)?\b(?:4K|UHD|2160P?|1080P?|FHD|FULL\s*HD|720P?|HDR10?\+?|DOLBY\s*VISION|REMUX|BLURAY|BLU-RAY|BDRIP|BRRIP|WEB-?DL|WEBRIP|HDTV|HDRIP|DVDRIP|480P?|360P?|HEVC|H\.?265|H\.?264|X265|X264|MULTI|DUAL|VOSE|CASTELLANO|LATINO|SUBTITULAD[AO]|MKV|MP4|AVI)\b(?:\)|\])?/gi;
+function detectXtreamQuality(rawName, categoryName = "", containerExt = "") {
+  const hay = `${rawName} ${categoryName} ${containerExt}`.toLowerCase();
+  if (/\b(?:4k|uhd|2160p?|dolby\s*vision|hdr10?\+?|remux)\b/.test(hay)) {
+    return { quality: "4K UHD", qualityTier: 0 };
+  }
+  if (/\b(?:1080p?|fhd|full\s*hd|blu-?ray|bdrip)\b/.test(hay)) {
+    return { quality: "1080p FHD", qualityTier: 1 };
+  }
+  if (/\b(?:720p?|hdtv|web-?dl|webrip|hdrip|hd)\b/.test(hay)) {
+    return { quality: "HD", qualityTier: 2 };
+  }
+  if (/\b(?:480p?|dvdrip)\b/.test(hay)) {
+    return { quality: "480p", qualityTier: 3 };
+  }
+  if (/\b(?:360p?|sd|cam|ts)\b/.test(hay)) {
+    return { quality: "SD", qualityTier: 4 };
+  }
+  return { quality: "1080p FHD", qualityTier: 1 };
+}
+function detectXtreamLanguage(rawName, categoryName = "") {
+  const name = String(rawName || "").trim();
+  const cat = String(categoryName || "").trim();
+  const combined = `${name} ${cat}`;
+  if (/[\u0600-\u06FF]/.test(combined) || /^(?:AR|ARB)\s*[:|\-/]/i.test(name) || /\b(?:arabic|arabia|egypt|maroc|morocco|aflam)\b/i.test(cat)) {
+    return { lang: "AR", langLabel: LANG_LABEL_MAP.AR };
+  }
+  if (/^(?:CAT)\s*[:|\-/]/i.test(name) || /\b(?:catal[aà]|3cat|tv3)\b/i.test(combined)) {
+    return { lang: "CAT", langLabel: LANG_LABEL_MAP.CAT };
+  }
+  if (/\b(?:vose|subtitulad[ao]s?|sub\s*es|sub\s*esp)\b/i.test(combined)) {
+    return { lang: "VOSE", langLabel: LANG_LABEL_MAP.VOSE };
+  }
+  if (/^(?:LAT|LA|MX)\s*[:|\-/]/i.test(name) || /\b(?:latino|latam|audio\s*latino|es-mx|m[eé]xico|argentina|colombia)\b/i.test(combined)) {
+    return { lang: "LAT", langLabel: LANG_LABEL_MAP.LAT };
+  }
+  if (/^(?:ES|ESP|SPAIN|ESPA[ÑN]A|CAST)\s*[:|\-/]/i.test(name) || /\b(?:castellano|espa[ñn]a|spain|esp|cine\s*es|pel[ií]culas\s*es|series\s*es|estrenos\s*es|multi\s*es)\b/i.test(combined)) {
+    return { lang: "ES", langLabel: LANG_LABEL_MAP.ES };
+  }
+  if (/^(?:FR|VF|VOSTFR)\s*[:|\-/]/i.test(name) || /\b(?:french|fran[çc]ais|france|vostfr)\b/i.test(combined)) {
+    return { lang: "FR", langLabel: LANG_LABEL_MAP.FR };
+  }
+  if (/^(?:PT|BR)\s*[:|\-/]/i.test(name) || /\b(?:portugu[eê]s|portugal|brasil)\b/i.test(combined)) {
+    return { lang: "PT", langLabel: LANG_LABEL_MAP.PT };
+  }
+  if (/^(?:IT)\s*[:|\-/]/i.test(name) || /\b(?:italiano|italy|italia)\b/i.test(combined)) {
+    return { lang: "IT", langLabel: LANG_LABEL_MAP.IT };
+  }
+  if (/^(?:DE|GER)\s*[:|\-/]/i.test(name) || /\b(?:german|deutsch|allemand)\b/i.test(combined)) {
+    return { lang: "DE", langLabel: LANG_LABEL_MAP.DE };
+  }
+  if (/^(?:EN|ENG|UK|US|USA)\s*[:|\-/]/i.test(name) || /\b(?:english|ingl[eé]s|4k\s*movies|en\s*4k|netflix|apple\s*tv|prime\s*video|disney|marvel|animation|horror|action|drama|comedy|thriller|sci-?fi|top\s*imdb)\b/i.test(cat)) {
+    return { lang: "EN", langLabel: LANG_LABEL_MAP.EN };
+  }
+  if (/\b(?:pel[ií]culas|cine|series|estrenos|infantil|animaci[oó]n|acci[oó]n|comedia|terror|suspense|ciencia\s*ficci[oó]n)\b/i.test(cat)) {
+    return { lang: "ES", langLabel: LANG_LABEL_MAP.ES };
+  }
+  return { lang: "EN", langLabel: LANG_LABEL_MAP.EN };
+}
+function parseXtreamVodTitleMeta(rawName, categoryName = "", containerExtension = "") {
+  let work = String(rawName || "").replace(/\s+/g, " ").trim();
+  const yearMatches = Array.from(work.matchAll(/(?:\(|\b)(19\d{2}|20[0-3]\d)(?:\)|\b)/g));
+  const year = yearMatches.length > 0 ? yearMatches[yearMatches.length - 1][1] : void 0;
+  work = work.replace(LEADING_PREFIX_TAG_RE, "").trim();
+  work = work.replace(/\((19\d{2}|20[0-3]\d)\)/g, " ");
+  work = work.replace(/\[(19\d{2}|20[0-3]\d)\]/g, " ");
+  work = work.replace(QUALITY_AND_EXT_TAG_RE, " ");
+  if (year) {
+    work = work.replace(new RegExp(`\\b${year}\\b$`), " ");
+  }
+  work = work.replace(/\[\s*\]|\(\s*\)/g, " ").replace(/^[\s\-–:|•·/]+|[\s\-–:|•·/]+$/g, "").replace(/\s+/g, " ").trim();
+  const { lang, langLabel } = detectXtreamLanguage(rawName, categoryName);
+  const { quality, qualityTier } = detectXtreamQuality(rawName, categoryName, containerExtension);
+  return {
+    cleanTitle: work || String(rawName || "").trim(),
+    year,
+    lang,
+    langLabel,
+    quality,
+    qualityTier
+  };
+}
+function normalizeMatchText(raw, stripLeadingArticle = false) {
+  let norm = String(raw || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/&/g, " and ").replace(/\bpart\s+i\b/g, "part 1").replace(/\bpart\s+ii\b/g, "part 2").replace(/\bpart\s+iii\b/g, "part 3").replace(/\bpart\s+iv\b/g, "part 4").replace(/\bparte\s+i\b/g, "parte 1").replace(/\bparte\s+ii\b/g, "parte 2").replace(/\bparte\s+iii\b/g, "parte 3").replace(/\bparte\s+iv\b/g, "parte 4").replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+  if (stripLeadingArticle) {
+    norm = norm.replace(/^(?:the|a|an|el|la|los|las|un|una|unos|unas|le|les|l|he)\s+/i, "").trim();
+  }
+  return norm;
+}
+var STOP_WORDS = /* @__PURE__ */ new Set(["the", "a", "an", "el", "la", "los", "las", "de", "del", "y", "and", "of", "in", "en", "he"]);
+function tokenizeMeaningful(raw) {
+  return normalizeMatchText(raw, true).split(" ").filter((tok) => tok.length >= 2 && !STOP_WORDS.has(tok));
+}
+function scoreTitleMatchAgainstHints(candidateCleanTitle, candidateYear, normalizedHints, yearHint) {
+  const candExact = normalizeMatchText(candidateCleanTitle, false);
+  const candNoArt = normalizeMatchText(candidateCleanTitle, true);
+  if (!candExact && !candNoArt) return 0;
+  let yearMismatch = false;
+  let yearExact = false;
+  if (yearHint && /^\d{4}$/.test(yearHint) && candidateYear && /^\d{4}$/.test(candidateYear)) {
+    const diff = Math.abs(Number(yearHint) - Number(candidateYear));
+    if (diff === 0) yearExact = true;
+    else if (diff > 1) yearMismatch = true;
+  }
+  if (yearMismatch) return 0;
+  let bestScore = 0;
+  const candTokens = tokenizeMeaningful(candidateCleanTitle);
+  const candTokenSet = new Set(candTokens);
+  for (const hint of normalizedHints) {
+    let baseScore = 0;
+    if (candExact === hint.exact || candNoArt && candNoArt === hint.noArt) {
+      baseScore = 100;
+    } else if (hint.tokens.length >= 2 && candTokens.length >= 2) {
+      let matches = 0;
+      for (const t of hint.tokens) {
+        if (candTokenSet.has(t)) matches++;
+      }
+      const unionSize = (/* @__PURE__ */ new Set([...hint.tokens, ...candTokens])).size;
+      const jaccard = unionSize > 0 ? matches / unionSize : 0;
+      const hintCoverage = matches / hint.tokens.length;
+      const candCoverage = matches / candTokens.length;
+      if (jaccard >= 0.84 && hintCoverage >= 0.85 && candCoverage >= 0.85) {
+        baseScore = Math.round(78 + jaccard * 18);
+      } else if (yearExact && hintCoverage === 1 && Math.abs(candTokens.length - hint.tokens.length) <= 1 && candTokens.length >= 3) {
+        baseScore = 82;
+      }
+    }
+    if (baseScore > 0) {
+      const bonus = (yearExact ? 12 : 0) + (hint.idx === 0 ? 4 : 0);
+      bestScore = Math.max(bestScore, baseScore + bonus);
+    }
+  }
+  return bestScore;
+}
+function buildHintVectors(titleHints) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  titleHints.forEach((raw, idx) => {
+    const clean = String(raw || "").trim();
+    if (!clean) return;
+    const exact = normalizeMatchText(clean, false);
+    const noArt = normalizeMatchText(clean, true);
+    if (!exact || exact.length < 2 || seen.has(exact)) return;
+    seen.add(exact);
+    out.push({
+      exact,
+      noArt: noArt || exact,
+      tokens: tokenizeMeaningful(clean),
+      idx
+    });
+  });
+  return out;
+}
+async function loadUnifiedXtreamCatalogFast(timeoutMs = 2600) {
+  if (!isXtreamEnvConfigured()) return null;
+  try {
+    const res = await Promise.race([
+      syncFullCatalog(false, "all").catch(() => ({ ok: false })),
+      new Promise((resolve) => setTimeout(() => resolve({ ok: false }), timeoutMs))
+    ]);
+    if (res.ok && "catalog" in res && res.catalog) {
+      return res.catalog;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function buildCategoryLookup(cats) {
+  const map = /* @__PURE__ */ new Map();
+  for (const c of cats) {
+    const cleanName = c.name.replace(/^\[[^\]]+\]\s*/, "").trim();
+    map.set(c.id, cleanName);
+    if (c.providerId && !c.id.includes(":")) {
+      map.set(`${c.providerId}:${c.id}`, cleanName);
+    }
+  }
+  return map;
+}
+function toExtractorLang(lang) {
+  return lang;
+}
+function computeOptionSortKey(opt, preferLang) {
+  const normPref = String(preferLang || "ES").toUpperCase();
+  let langRank = 5;
+  if (opt.lang === normPref) langRank = 0;
+  else if (normPref === "ES") {
+    langRank = opt.lang === "ES" ? 0 : opt.lang === "LAT" ? 1 : opt.lang === "VOSE" ? 2 : opt.lang === "EN" ? 3 : 5;
+  } else if (normPref === "LAT") {
+    langRank = opt.lang === "LAT" ? 0 : opt.lang === "ES" ? 1 : opt.lang === "VOSE" ? 2 : opt.lang === "EN" ? 3 : 5;
+  } else if (normPref === "EN") {
+    langRank = opt.lang === "EN" ? 0 : opt.lang === "VOSE" ? 1 : opt.lang === "ES" ? 2 : 5;
+  } else if (normPref === "VOSE") {
+    langRank = opt.lang === "VOSE" ? 0 : opt.lang === "EN" ? 1 : opt.lang === "ES" ? 2 : 5;
+  }
+  return langRank * 1e3 + opt.qualityTier * 100 - Math.min(99, opt.score);
+}
+async function findXtreamMovieMatches(params) {
+  const hints = buildHintVectors(params.titleHints);
+  if (hints.length === 0) return { options: [], tracks: [] };
+  const catalog = await loadUnifiedXtreamCatalogFast(2800);
+  if (!catalog || catalog.vodStreams.length === 0) {
+    return { options: [], tracks: [] };
+  }
+  const catLookup = buildCategoryLookup(catalog.vodCategories);
+  const providerOrder = new Map(getAllXtreamProviders().map((p, idx) => [p.id, idx]));
+  const matches = [];
+  for (const item of catalog.vodStreams) {
+    const pid = item.providerId || "primary";
+    const catName = catLookup.get(item.categoryId) || catLookup.get(`${pid}:${item.categoryId}`) || "VOD";
+    const parsed = parseXtreamVodTitleMeta(item.name, catName, item.containerExtension);
+    const score = scoreTitleMatchAgainstHints(parsed.cleanTitle, parsed.year, hints, params.yearHint);
+    if (score < 76) continue;
+    const ext = (item.containerExtension || "mp4").toLowerCase();
+    const playbackUrl = item.playbackUrl || `/api/stream?provider=${encodeURIComponent(pid)}&id=${encodeURIComponent(item.streamId)}&type=vod&ext=${encodeURIComponent(ext)}`;
+    matches.push({
+      id: `xtream-vod-${pid}-${item.streamId}`,
+      mediaType: "movie",
+      providerId: pid,
+      providerName: item.providerName || pid,
+      streamId: item.streamId,
+      title: item.name,
+      cleanTitle: parsed.cleanTitle,
+      year: parsed.year,
+      categoryName: catName,
+      lang: parsed.lang,
+      langLabel: parsed.langLabel,
+      quality: parsed.quality,
+      qualityTier: parsed.qualityTier,
+      containerExtension: ext,
+      rating: item.rating,
+      poster: item.streamIcon,
+      playbackUrl,
+      score
+    });
+  }
+  matches.sort((a, b) => {
+    const keyDiff = computeOptionSortKey(a, params.preferLang) - computeOptionSortKey(b, params.preferLang);
+    if (keyDiff !== 0) return keyDiff;
+    return (providerOrder.get(a.providerId) ?? 99) - (providerOrder.get(b.providerId) ?? 99);
+  });
+  const seenKey = /* @__PURE__ */ new Set();
+  const deduped = [];
+  for (const m of matches) {
+    const key = `${m.providerId}|${m.lang}|${m.qualityTier}|${m.streamId}`;
+    if (seenKey.has(key)) continue;
+    seenKey.add(key);
+    deduped.push(m);
+    if (deduped.length >= (params.limit ?? 24)) break;
+  }
+  const tracks = deduped.map((opt) => ({
+    id: `xtream-vod-${opt.providerId}-${opt.streamId}`,
+    label: `${opt.providerName} \xB7 ${opt.langLabel} \xB7 ${opt.quality}`,
+    lang: toExtractorLang(opt.lang),
+    quality: opt.quality,
+    sourceUrl: opt.playbackUrl || "",
+    resolvedStreamUrl: opt.playbackUrl || "",
+    resolverType: opt.containerExtension === "m3u8" ? "direct_hls" : "direct_mp4"
+  }));
+  return { options: deduped, tracks };
+}
+async function findXtreamSeriesMatches(params) {
+  const hints = buildHintVectors(params.titleHints);
+  if (hints.length === 0) return [];
+  const catalog = await loadUnifiedXtreamCatalogFast(2800);
+  if (!catalog || catalog.series.length === 0) return [];
+  const catLookup = buildCategoryLookup(catalog.seriesCategories);
+  const providerOrder = new Map(getAllXtreamProviders().map((p, idx) => [p.id, idx]));
+  const matches = [];
+  for (const ser of catalog.series) {
+    const pid = ser.providerId || "primary";
+    const catName = catLookup.get(ser.categoryId) || catLookup.get(`${pid}:${ser.categoryId}`) || "Series";
+    const parsed = parseXtreamVodTitleMeta(ser.name, catName, "");
+    const serYear = parsed.year || (ser.releaseDate ? String(ser.releaseDate).match(/(19\d{2}|20[0-3]\d)/)?.[1] : void 0);
+    const score = scoreTitleMatchAgainstHints(parsed.cleanTitle, serYear, hints, params.yearHint);
+    if (score < 76) continue;
+    matches.push({
+      id: `xtream-ser-${pid}-${ser.seriesId}`,
+      mediaType: "tv",
+      providerId: pid,
+      providerName: ser.providerName || pid,
+      streamId: ser.seriesId,
+      seriesId: ser.seriesId,
+      title: ser.name,
+      cleanTitle: parsed.cleanTitle,
+      year: serYear,
+      categoryName: catName,
+      lang: parsed.lang,
+      langLabel: parsed.langLabel,
+      quality: parsed.quality,
+      qualityTier: parsed.qualityTier,
+      containerExtension: "mp4",
+      rating: ser.rating,
+      poster: ser.cover,
+      score
+    });
+  }
+  matches.sort((a, b) => {
+    const keyDiff = computeOptionSortKey(a, params.preferLang) - computeOptionSortKey(b, params.preferLang);
+    if (keyDiff !== 0) return keyDiff;
+    return (providerOrder.get(a.providerId) ?? 99) - (providerOrder.get(b.providerId) ?? 99);
+  });
+  const seenKey = /* @__PURE__ */ new Set();
+  const deduped = [];
+  for (const m of matches) {
+    const key = `${m.providerId}|${m.lang}|${m.seriesId}`;
+    if (seenKey.has(key)) continue;
+    seenKey.add(key);
+    deduped.push(m);
+    if (deduped.length >= (params.limit ?? 16)) break;
+  }
+  return deduped;
+}
+async function fetchCachedXtreamSeriesInfo(seriesId, providerId) {
+  const key = `${providerId}:${seriesId}`;
+  const cached = seriesInfoCache.get(key);
+  if (cached) return cached;
+  const res = await Promise.race([
+    getSeriesInfo(seriesId, providerId).catch(() => ({ ok: false })),
+    new Promise((resolve) => setTimeout(() => resolve({ ok: false }), 3200))
+  ]);
+  if (res.ok && "info" in res && res.info) {
+    seriesInfoCache.set(key, res.info);
+    return res.info;
+  }
+  return null;
+}
+async function extractXtreamSeriesEpisodeTracks(params) {
+  const seriesOptions = await findXtreamSeriesMatches({
+    titleHints: params.titleHints,
+    yearHint: params.yearHint,
+    preferLang: params.preferLang,
+    limit: 6
+  });
+  if (seriesOptions.length === 0) return [];
+  const infos = await Promise.all(
+    seriesOptions.map(async (opt) => ({
+      opt,
+      info: await fetchCachedXtreamSeriesInfo(opt.seriesId || opt.streamId, opt.providerId)
+    }))
+  );
+  const tracks = [];
+  for (const { opt, info } of infos) {
+    if (!info || !Array.isArray(info.seasons)) continue;
+    const seasonGrp = info.seasons.find((s) => s.seasonNumber === params.season);
+    const ep = seasonGrp?.episodes?.find(
+      (e) => e.episodeNum === params.episode
+    );
+    if (!ep?.playbackUrl) continue;
+    const epParsed = parseXtreamVodTitleMeta(
+      `${opt.title} ${ep.title || ""}`,
+      opt.categoryName,
+      ep.containerExtension
+    );
+    const bestQualityTier = Math.min(opt.qualityTier, epParsed.qualityTier);
+    const bestQualityLabel = bestQualityTier === 0 ? "4K UHD" : bestQualityTier === 1 ? "1080p FHD" : bestQualityTier === 2 ? "HD" : opt.quality;
+    tracks.push({
+      id: `xtream-ser-${opt.providerId}-${ep.id}`,
+      label: `${opt.providerName} \xB7 ${opt.langLabel} \xB7 ${bestQualityLabel}`,
+      lang: toExtractorLang(opt.lang),
+      quality: bestQualityLabel,
+      sourceUrl: ep.playbackUrl,
+      resolvedStreamUrl: ep.playbackUrl,
+      resolverType: ep.containerExtension === "m3u8" ? "direct_hls" : "direct_mp4"
+    });
+  }
+  return tracks;
+}
+function mergeXtreamOptionsIntoAvailableLanguages(existing, options) {
+  const validCoreLangs = /* @__PURE__ */ new Set(["ES", "LAT", "VOSE", "EN"]);
+  const merged = new Set(existing);
+  for (const opt of options) {
+    if (validCoreLangs.has(opt.lang)) {
+      merged.add(opt.lang);
+    }
+  }
+  const order = ["ES", "LAT", "VOSE", "EN"];
+  return order.filter((code) => merged.has(code));
+}
+
 // server/routes/catalog/tvDetailsHandler.ts
 var tvDetailsFastCache = new LruTtlCache(
   350,
@@ -26838,24 +29030,55 @@ async function fetchTvSeriesDetailsPayload(opts) {
   ];
   const showTitle = showJson.name || showJson.original_name || "Serie";
   const origTitle = showJson.original_name || showJson.name || "";
+  const showYear = showJson.first_air_date ? String(showJson.first_air_date).split("-")[0] : "";
+  const xtreamSeriesOptions = await Promise.race([
+    findXtreamSeriesMatches({
+      titleHints: Array.from(new Set([showTitle, origTitle].filter(Boolean))),
+      yearHint: /^\d{4}$/.test(showYear) ? showYear : void 0,
+      limit: 12
+    }).catch(() => []),
+    new Promise((resolve) => setTimeout(() => resolve([]), 1400))
+  ]);
+  const bestOption = xtreamSeriesOptions.reduce(
+    (best, cur) => !best || cur.qualityTier < best.qualityTier ? cur : best,
+    null
+  );
+  const coreLangs = /* @__PURE__ */ new Set(["ES", "LAT", "VOSE", "EN"]);
+  const extendedLanguages = Array.from(
+    new Set(xtreamSeriesOptions.map((o) => o.lang).filter((l) => !coreLangs.has(l)))
+  );
+  const serverAlternatives = xtreamSeriesOptions.slice(0, 12).map((o) => ({
+    id: o.id,
+    providerId: o.providerId,
+    providerName: o.providerName,
+    lang: o.lang,
+    langLabel: o.langLabel,
+    quality: o.quality,
+    qualityTier: o.qualityTier
+  }));
   const detailsPayload = {
     tmdbId: Number(cleanId),
     title: showTitle,
     originalTitle: origTitle,
-    year: showJson.first_air_date ? String(showJson.first_air_date).split("-")[0] : "TV",
+    year: showYear || "TV",
     rating: showJson.vote_average ? Number(showJson.vote_average).toFixed(1) : "",
     overview: showJson.overview || "",
     poster: showJson.poster_path ? `https://image.tmdb.org/t/p/w500${showJson.poster_path}` : "",
     backdrop: showJson.backdrop_path ? `https://image.tmdb.org/t/p/w1280${showJson.backdrop_path}` : "",
     seasons: normalizedSeasons,
     activeSeason: effectiveSeason,
-    episodes
+    episodes,
+    bestQuality: bestOption?.quality,
+    extendedLanguages,
+    serverAlternatives
   };
   tvDetailsFastCache.set(cacheKey, { details: detailsPayload, ts: Date.now() });
   const cachedLangs = !force ? tvLangProbeCache.get(`v2|${cleanId}:${effectiveSeason}:1`) : void 0;
+  const baseLangs = cachedLangs ? cachedLangs.availableLanguages : [];
+  const mergedLangs = xtreamSeriesOptions.length > 0 ? mergeXtreamOptionsIntoAvailableLanguages(baseLangs, xtreamSeriesOptions) : baseLangs;
   return {
     ...detailsPayload,
-    ...cachedLangs ? { availableLanguages: cachedLangs.availableLanguages } : {}
+    ...mergedLangs.length > 0 ? { availableLanguages: mergedLangs } : {}
   };
 }
 async function handleTvDetailsRequest(req, res) {
@@ -33349,6 +35572,811 @@ function getFamelackWorldMeta() {
   };
 }
 
+// src/utils/channelQualityRanker.ts
+var CANONICAL_ALIAS_RULES = [
+  // Spanish National TDT & Atresmedia / Mediaset / RTVE
+  [/^(?:tve\s*)?la\s*1(?:\s*tve)?$/i, "tdt-la1"],
+  [/^tve\s*1$/i, "tdt-la1"],
+  [/^(?:tve\s*)?la\s*2(?:\s*tve)?$/i, "tdt-la2"],
+  [/^tve\s*2$/i, "tdt-la2"],
+  [/^antena\s*3$/i, "tdt-antena3"],
+  [/^a3$/i, "tdt-antena3"],
+  [/^cuatro$/i, "tdt-cuatro"],
+  [/^tele\s*5$|^telecinco$/i, "tdt-telecinco"],
+  [/^la\s*sexta$|^lasexta$/i, "tdt-lasexta"],
+  [/^neox$/i, "tdt-neox"],
+  [/^nova$/i, "tdt-nova"],
+  [/^mega$/i, "tdt-mega"],
+  [/^atres\s*series$|^atreseries$|^a3\s*series$/i, "tdt-atreseries"],
+  [/^fdf$|^factoria\s*de\s*ficcion$/i, "tdt-fdf"],
+  [/^divinity$/i, "tdt-divinity"],
+  [/^energy$/i, "tdt-energy"],
+  [/^be\s*mad$|^bemad$/i, "tdt-bemad"],
+  [/^bom\s*cine$/i, "tdt-bomcine"],
+  [/^squirrel(?:\s*cine)?(?:\s*tv)?$/i, "tdt-squirrel"],
+  [/^veo\s*7(?:\s*cine)?$/i, "tdt-veo7"],
+  [/^dmax$|^discovery\s*max$/i, "tdt-dmax"],
+  [/^dkiss$/i, "tdt-dkiss"],
+  [/^ten$/i, "tdt-ten"],
+  [/^trece(?:\s*tv)?$|^13\s*tv$/i, "tdt-trece"],
+  [/^(?:tve\s*)?24\s*h(?:oras)?$|^canal\s*24\s*horas$|^24\s*horas$/i, "tdt-24h"],
+  [/^(?:tve\s*)?teledeporte$|^tdp$/i, "tdt-teledeporte"],
+  [/^real\s*madrid(?:\s*tv)?$|^rmtv$/i, "tdt-rmtv"],
+  [/^clan(?:\s*tv|\s*rtve|\s*tve)?$/i, "tdt-clan"],
+  [/^boing$/i, "tdt-boing"],
+  [/^canal\s*sur(?:\s*tv|\s*andalucia)?$/i, "tdt-canalsur"],
+  [/^tv\s*3(?:\s*cat)?$|^3cat$/i, "tdt-3cat"],
+  [/^telemadrid$|^tele\s*madrid$/i, "tdt-telemadrid"],
+  [/^etb\s*1$/i, "tdt-etb1"],
+  [/^etb\s*2$/i, "tdt-etb2"],
+  [/^tv\s*canaria$|^television\s*canaria$/i, "tdt-tvcanaria"],
+  [/^tvg(?:\s*galicia)?$|^tv\s*galicia$/i, "tdt-tvg"],
+  // Spanish Football & Sports (DAZN / Movistar+)
+  [/^dazn\s*la\s*liga(?:\s*1)?$/i, "dazn-laliga"],
+  [/^dazn\s*1$/i, "dazn-1"],
+  [/^dazn\s*2$/i, "dazn-2"],
+  [/^dazn\s*3$/i, "dazn-3"],
+  [/^dazn\s*4$/i, "dazn-4"],
+  [/^dazn\s*(?:m\.?\s*)?f(?:ormula\s*)?1$/i, "dazn-f1"],
+  [/^(?:movistar|m[+.]?)\s*plus\+?(?:\s*1)?$|^#0$/i, "mplus-canal"],
+  [/^(?:movistar|m[+.]?)\s*vamos$|^vamos(?:\s*por\s*m\+)?$/i, "mplus-vamos"],
+  [/^(?:movistar|m[+.]?)\s*la\s*liga(?:\s*tv)?$|^la\s*liga\s*tv\s*por\s*m\+$|^la\s*liga\s*por\s*m\+$/i, "mplus-laliga"],
+  [/^la\s*liga\s*(?:tv\s*)?hypermotion(?:\s*1)?$/i, "mplus-hypermotion"],
+  [/^(?:movistar|m[+.]?)\s*(?:liga\s*(?:de\s*)?campeones|l\.?\s*campeones)$|^liga\s*de\s*campeones(?:\s*por\s*m\+)?$/i, "mplus-champions"],
+  [/^(?:movistar|m[+.]?)\s*deportes(?:\s*1)?$/i, "mplus-deportes"],
+  [/^(?:movistar|m[+.]?)\s*deportes\s*2$/i, "mplus-deportes2"],
+  [/^(?:movistar|m[+.]?)\s*golf$/i, "mplus-golf"],
+  [/^(?:dazn\s*)?eurosport\s*1(?:\s*es)?$/i, "mplus-eurosport1"],
+  [/^(?:dazn\s*)?eurosport\s*2(?:\s*es)?$/i, "mplus-eurosport2"],
+  // Spanish & International Cinema, Docs & Sports cross-server aliases
+  [/^axn(?:\s*es)?$/i, "cine-axn"],
+  [/^axn\s*(?:movies?|white)$/i, "cine-axn-movies"],
+  [/^warner(?:\s*tv)?$/i, "cine-warner"],
+  [/^amc(?:\s*es)?$/i, "cine-amc"],
+  [/^calle\s*13$/i, "cine-calle13"],
+  [/^star(?:\s*channel)?$|^fox(?:\s*es)?$/i, "cine-star"],
+  [/^hollywood$|^canal\s*hollywood$/i, "cine-hollywood"],
+  [/^tcm$/i, "cine-tcm"],
+  [/^syfy$/i, "cine-syfy"],
+  [/^comedy\s*central$/i, "cine-comedy-central"],
+  [/^nat(?:l|ional)?\s*geographic$|^nat\s*geo$/i, "doc-natgeo"],
+  [/^nat\s*geo\s*wild$/i, "doc-natgeo-wild"],
+  [/^discovery(?:\s*channel)?$/i, "doc-discovery"],
+  [/^historia$|^canal\s*historia$/i, "doc-historia"],
+  [/^bein\s*sports?\s*1$/i, "intl-bein1"],
+  [/^bein\s*sports?\s*2$/i, "intl-bein2"],
+  [/^bein\s*sports?\s*3$/i, "intl-bein3"],
+  [/^espn\s*1$|^espn$/i, "intl-espn1"],
+  [/^espn\s*2$/i, "intl-espn2"],
+  [/^tnt\s*sports?\s*1$/i, "intl-tntsports1"],
+  [/^sky\s*sports?\s*main\s*event$/i, "intl-skysports-main"]
+];
+var NOISY_PREFIX_RE = /^(?:\[?\s*(?:ES|ESP|SPAIN|ESPAÑA|LAT|MX|AR|ARB|UK|US|USA|FR|DE|GER|IT|ITA|PT|POR|EU|NL|CAT|VIP|RAW|BACKUP)\s*\]?\s*[:|\-/·•]+\s*)+/i;
+var NOISY_SUFFIX_RE = /(?:\s*(?:\(|\[)?\b(?:4K|UHD|FHD|HD|SD|HEVC|H\.?265|H\.?264|AVC|RAW|VIP|60FPS|50FPS|1080P?|720P?|576P?|480P?|BACKUP|RESPALDO|OPCION\s*\d*|OPT\s*\d*|SERVER\s*\d*)\b(?:\)|\])?)+$/gi;
+function stripChannelNoise(rawName) {
+  let clean = String(rawName || "").replace(/⁴ᴷ|⁴ᵏ/g, " 4K ").replace(/ᶠᴴᴰ/gi, " FHD ").replace(/ᴴᴰ/gi, " HD ").replace(/＋/g, "+").normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+  clean = clean.replace(NOISY_PREFIX_RE, "").trim();
+  clean = clean.replace(/[|•·]/g, " ").replace(/\s+/g, " ").trim();
+  clean = clean.replace(NOISY_PREFIX_RE, "").trim();
+  for (let i = 0; i < 3; i++) {
+    const next = clean.replace(NOISY_SUFFIX_RE, "").trim();
+    if (next === clean) break;
+    clean = next;
+  }
+  return clean.replace(/\s+/g, " ").trim();
+}
+function resolveCanonicalChannelKey(ch) {
+  const id = String(ch.id || "").trim();
+  if (id && !id.startsWith("xtream-") && !id.startsWith("octopus-") && !id.startsWith("belix-") && !id.startsWith("rbtv-")) {
+    return id;
+  }
+  const cleaned = stripChannelNoise(ch.name);
+  const netCtx = `${ch.network || ""} ${ch.name || ""}`;
+  const looksSpanish = /\b(?:es|esp|spain|espana|tdt|movistar|dazn|atresmedia|mediaset|rtve|laliga|hypermotion|campeones)\b/i.test(
+    netCtx
+  ) || String(ch.countryCode || "").toLowerCase() === "es";
+  for (const [pattern, canonicalId] of CANONICAL_ALIAS_RULES) {
+    if (pattern.test(cleaned)) {
+      if ((canonicalId.startsWith("dazn-") || canonicalId.startsWith("mplus-") || canonicalId.startsWith("cine-") || canonicalId.startsWith("doc-") || canonicalId === "tdt-la1" || canonicalId === "tdt-ten") && /\b(?:uk|pt|portugal|de|germany|it|italy|fr|france|us|usa|ar|arabic|br|lat)\b/i.test(
+        ch.name
+      ) && !looksSpanish) {
+        continue;
+      }
+      return canonicalId;
+    }
+  }
+  const slug = cleaned.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (!slug) return id || "unknown";
+  const langHint = /\b(?:uk|en|us|usa)\b/i.test(ch.name) ? ":en" : /\b(?:ar|arabic|arb)\b/i.test(ch.name) ? ":ar" : /\b(?:fr|france)\b/i.test(ch.name) ? ":fr" : /\b(?:pt|br|portugal)\b/i.test(ch.name) ? ":pt" : /\b(?:it|italy)\b/i.test(ch.name) ? ":it" : /\b(?:de|ger|germany)\b/i.test(ch.name) ? ":de" : /\b(?:lat|latino|mx|arg)\b/i.test(ch.name) ? ":lat" : "";
+  return `norm:${slug}${langHint}`;
+}
+function inferStreamQualityTag(explicitQuality, label, sourceUrl) {
+  const text2 = `${explicitQuality || ""} ${label || ""} ${sourceUrl || ""}`.replace(/⁴ᴷ|⁴ᵏ/g, " 4K ").replace(/ᶠᴴᴰ/gi, " FHD ").replace(/ᴴᴰ/gi, " HD ").toLowerCase();
+  const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(text2);
+  if (/\b(?:4k|uhd|2160p?)\b/.test(text2)) {
+    return { label: "4K UHD", tier: isHevc ? 2.5 : 0 };
+  }
+  if (/\b(?:fhd|1080p?|full\s*hd)\b/.test(text2)) {
+    return { label: "1080p FHD", tier: isHevc ? 2.8 : 1 };
+  }
+  if (/\b(?:576p?|480p?|360p?|sd|lq)\b/.test(text2)) {
+    return { label: "SD", tier: 4 };
+  }
+  if (/\b(?:720p?|hd)\b/.test(text2)) {
+    return { label: "HD", tier: isHevc ? 3.2 : 2 };
+  }
+  if (/^\/api\/(xtream\/stream|stream|belix\/stream)/i.test(String(sourceUrl || ""))) {
+    return { label: "1080p FHD", tier: 1.5 };
+  }
+  return { label: "HD", tier: 2 };
+}
+function normalizeLiveTrackLang(rawLang, label, countryCode) {
+  const raw = String(rawLang || "").trim().toUpperCase();
+  const hay = `${label || ""}`.toLowerCase();
+  if (raw === "ES" || raw === "ESP" || raw === "CAST") return "ES";
+  if (raw === "LAT" || raw === "LA" || raw === "MX") return "LAT";
+  if (raw === "EN" || raw === "ENG" || raw === "UK" || raw === "US") return "EN";
+  if (raw === "CAT" || raw === "CA") return "CAT";
+  if (raw === "AR" || raw === "ARB") return "AR";
+  if (raw === "FR") return "FR";
+  if (raw === "PT" || raw === "BR") return "PT";
+  if (raw === "IT") return "IT";
+  if (raw === "DE" || raw === "GER") return "DE";
+  if (raw === "VOSE") return "VOSE";
+  if (/\b(?:es|esp|spain|espana|castellano)\b/.test(hay)) return "ES";
+  if (/\b(?:lat|latino)\b/.test(hay)) return "LAT";
+  if (/\b(?:uk|us|usa|eng|english)\b/.test(hay)) return "EN";
+  if (String(countryCode || "").toUpperCase() === "ES") return "ES";
+  return raw || "ES";
+}
+function isDanaDirectTrack(tr) {
+  const pid = String(tr.providerId || "").toLowerCase();
+  if (pid === "dana4k") return true;
+  const u = String(tr.sourceUrl || "").toLowerCase();
+  if (u.indexOf("provider=dana4k") !== -1) return true;
+  const lbl = String(tr.label || "").toLowerCase();
+  return lbl.indexOf("dana 4k") !== -1;
+}
+function liveTrackSortScore(tr, preferSpanish) {
+  const status = tr.health?.status ?? "unknown";
+  const statusRank = status === "down" ? 3 : status === "degraded" ? 2 : 0;
+  const upBonus = status === "up" ? -600 : 0;
+  const lang = normalizeLiveTrackLang(tr.lang, tr.label);
+  const langRank = preferSpanish ? lang === "ES" ? 0 : lang === "CAT" ? 1 : lang === "LAT" ? 2 : lang === "EN" ? 3 : 4 : 0;
+  const q = inferStreamQualityTag(tr.quality, tr.label, tr.sourceUrl);
+  const danaDirectBonus = preferSpanish && status !== "down" && lang === "ES" && isDanaDirectTrack(tr) && q.tier < 2.5 ? -2400 : 0;
+  const directApiBonus = /^\/api\/stream\?/i.test(String(tr.sourceUrl || "")) ? -40 : 0;
+  const latMs = typeof tr.health?.latencyMs === "number" ? Math.min(9999, tr.health.latencyMs) : 1400;
+  return statusRank * 1e5 + langRank * 1e4 + Math.round(q.tier * 1e3) + upBonus + danaDirectBonus + directApiBonus + Math.round(latMs / 10);
+}
+function normalizeUrlForMerge(url) {
+  const clean = String(url || "").trim().replace(/[?&]profile=(hd|fast)\b/gi, "");
+  if (/^\/api\/stream\?/i.test(clean)) {
+    const q = clean.split("?")[1] || "";
+    const provMatch = q.match(/(?:^|&)provider=([^&]+)/i);
+    const idMatch = q.match(/(?:^|&)id=([^&]+)/i);
+    if (idMatch && idMatch[1]) {
+      const prov = (provMatch?.[1] || "primary").toLowerCase();
+      return `xtream-direct:${prov}:${decodeURIComponent(idMatch[1])}`;
+    }
+  }
+  const xtreamMatch = clean.match(/^\/api\/xtream\/stream\/([^.?/]+)(?:\.m3u8)?(?:\?(.*))?$/i);
+  if (xtreamMatch) {
+    const q = xtreamMatch[2] || "";
+    const provMatch = q.match(/(?:^|&)provider=([^&]+)/i);
+    const prov = (provMatch?.[1] || "primary").toLowerCase();
+    return `xtream-direct:${prov}:${xtreamMatch[1]}`;
+  }
+  return clean;
+}
+var FLAGSHIP_PRIORITY = {
+  "tdt-la1": 1,
+  "tdt-la2": 2,
+  "tdt-antena3": 3,
+  "tdt-cuatro": 4,
+  "tdt-telecinco": 5,
+  "tdt-lasexta": 6,
+  "mplus-laliga": 7,
+  "dazn-laliga": 8,
+  "mplus-champions": 9,
+  "mplus-canal": 10,
+  "dazn-f1": 11,
+  "dazn-1": 12,
+  "dazn-2": 13,
+  "mplus-vamos": 14,
+  "mplus-hypermotion": 15,
+  "dazn-3": 16,
+  "dazn-4": 17,
+  "tdt-teledeporte": 18,
+  "tdt-rmtv": 19,
+  "tdt-24h": 20,
+  "tdt-neox": 21,
+  "tdt-nova": 22,
+  "tdt-mega": 23,
+  "tdt-atreseries": 24,
+  "tdt-fdf": 25,
+  "tdt-divinity": 26,
+  "tdt-energy": 27,
+  "tdt-bemad": 28,
+  "tdt-bomcine": 29,
+  "tdt-squirrel": 30,
+  "tdt-veo7": 31,
+  "tdt-dmax": 32,
+  "tdt-dkiss": 33,
+  "tdt-ten": 34,
+  "tdt-trece": 35,
+  "tdt-clan": 36,
+  "tdt-boing": 37,
+  "tdt-canalsur": 38,
+  "tdt-3cat": 39
+};
+function getTvBrowsePriorityRank(ch) {
+  const id = String(ch.id || "").toLowerCase();
+  if (FLAGSHIP_PRIORITY[id]) {
+    return FLAGSHIP_PRIORITY[id];
+  }
+  const cat = String(ch.category || "").toLowerCase();
+  const hay = `${ch.name || ""} ${ch.network || ""}`.toLowerCase();
+  const isEs = String(ch.countryCode || "").toUpperCase() === "ES" || (ch.channels || []).some((tr) => normalizeLiveTrackLang(tr.lang, tr.label) === "ES");
+  const statusBonus = ch.healthSummary?.bestStatus === "up" ? -18 : ch.healthSummary?.bestStatus === "down" ? 220 : 0;
+  const esBonus = isEs ? -14 : 0;
+  const bestQ = inferStreamQualityTag(ch.quality, ch.channels?.[0]?.quality, ch.channels?.[0]?.sourceUrl);
+  const qualityBonus = bestQ.tier === 0 ? -12 : bestQ.tier <= 1 ? -6 : bestQ.tier >= 4 ? 12 : 0;
+  const mirrorBonus = (ch.channels?.length || 0) >= 3 ? -4 : 0;
+  const totalBonus = statusBonus + esBonus + qualityBonus + mirrorBonus;
+  if (cat === "generalistas") return 45 + (ch.dial || 30) + totalBonus;
+  if (cat === "dazn") return 80 + (ch.dial || 30) + totalBonus;
+  if (cat === "movistar") return 110 + (ch.dial || 30) + totalBonus;
+  if (cat === "noticias_deportes") return 160 + (ch.dial || 30) + totalBonus;
+  if (cat === "entretenimiento") return 200 + (ch.dial || 30) + totalBonus;
+  if (cat === "cine_series") return 240 + (ch.dial || 30) + totalBonus;
+  if (cat === "documentales") return 280 + (ch.dial || 30) + totalBonus;
+  if (cat === "infantil_autonomicas") return 320 + (ch.dial || 30) + totalBonus;
+  if (cat === "belix_live") {
+    const isFootballOrSpain = isEs || /\b(?:espana|espaa|spain|tdt|laliga|movistar|m\+|dazn|champions|campeones|futbol|deporte|hypermotion|vamos)\b/i.test(
+      hay
+    );
+    if (isFootballOrSpain) return 340 + totalBonus;
+    return 510 + statusBonus + qualityBonus + Math.min(90, ch.dial || 50);
+  }
+  if (cat === "rbtv_sports" || cat === "uk_sports" || cat === "beinsports") {
+    return 410 + totalBonus;
+  }
+  if (cat === "espn" || cat === "dsports" || cat === "tnt_space") {
+    return 450 + totalBonus;
+  }
+  if (cat === "bein_arabic" || cat === "china_football") {
+    return 490 + statusBonus + qualityBonus;
+  }
+  return 600 + statusBonus + esBonus + qualityBonus + Math.min(200, ch.dial || 100);
+}
+function mergeAndDeduplicateChannels(channels) {
+  const byKey = /* @__PURE__ */ new Map();
+  for (const ch of channels) {
+    if (!ch || !ch.id) continue;
+    const key = resolveCanonicalChannelKey(ch);
+    const existing = byKey.get(key);
+    const normalizedTracks = (ch.channels || []).map((tr) => {
+      const inferred = inferStreamQualityTag(tr.quality, `${tr.label} ${ch.name}`, tr.sourceUrl);
+      const normLang = normalizeLiveTrackLang(tr.lang, `${tr.label} ${ch.name}`, ch.countryCode);
+      return {
+        ...tr,
+        lang: normLang,
+        quality: tr.quality && tr.quality !== "HD" ? tr.quality : inferred.label
+      };
+    });
+    if (!existing) {
+      const urlSet = /* @__PURE__ */ new Set();
+      const uniqueTracks = [];
+      for (const tr of normalizedTracks) {
+        const uKey = normalizeUrlForMerge(tr.sourceUrl);
+        if (!uKey || urlSet.has(uKey)) continue;
+        urlSet.add(uKey);
+        uniqueTracks.push(tr);
+      }
+      byKey.set(key, {
+        channel: {
+          ...ch,
+          channels: uniqueTracks
+        },
+        trackUrls: urlSet,
+        tracks: uniqueTracks
+      });
+      continue;
+    }
+    for (const tr of normalizedTracks) {
+      const uKey = normalizeUrlForMerge(tr.sourceUrl);
+      if (!uKey || existing.trackUrls.has(uKey)) continue;
+      existing.trackUrls.add(uKey);
+      existing.tracks.push(tr);
+    }
+    if (!existing.channel.logoUrl && ch.logoUrl) {
+      existing.channel = { ...existing.channel, logoUrl: ch.logoUrl };
+    }
+    if (!existing.channel.epgChannelId && ch.epgChannelId) {
+      existing.channel = { ...existing.channel, epgChannelId: ch.epgChannelId };
+    }
+    if (!existing.channel.countryCode && ch.countryCode) {
+      existing.channel = { ...existing.channel, countryCode: ch.countryCode };
+    }
+    existing.channel = {
+      ...existing.channel,
+      channels: existing.tracks
+    };
+  }
+  const result = [];
+  for (const entry of byKey.values()) {
+    const hasEs = String(entry.channel.countryCode || "").toUpperCase() === "ES" || entry.tracks.some((tr) => normalizeLiveTrackLang(tr.lang, tr.label) === "ES");
+    const sortedTracks = [...entry.tracks].sort(
+      (a, b) => liveTrackSortScore(a, hasEs) - liveTrackSortScore(b, hasEs)
+    );
+    const bestPlayableTrack = sortedTracks.find((t) => t.health?.status !== "down") || sortedTracks[0];
+    const bestQualityLabel = bestPlayableTrack ? inferStreamQualityTag(bestPlayableTrack.quality, bestPlayableTrack.label, bestPlayableTrack.sourceUrl).label : entry.channel.quality || "HD";
+    result.push({
+      ...entry.channel,
+      quality: bestQualityLabel,
+      channels: sortedTracks
+    });
+  }
+  return result;
+}
+
+// server/services/channelQualityMatcher.ts
+function buildUnifiedPrioritizedChannels(rawChannels) {
+  const merged = mergeAndDeduplicateChannels(rawChannels);
+  const healthRanked = channelHealthMonitor.prioritizeChannels(
+    merged
+  );
+  return [...healthRanked].sort((a, b) => {
+    const rankDiff = getTvBrowsePriorityRank(a) - getTvBrowsePriorityRank(b);
+    if (rankDiff !== 0) return rankDiff;
+    const aLat = a.healthSummary?.bestLatencyMs;
+    const bLat = b.healthSummary?.bestLatencyMs;
+    if (typeof aLat === "number" && typeof bLat === "number" && aLat !== bLat) {
+      return aLat - bLat;
+    }
+    const sigDiff = (b.channels?.length || 0) - (a.channels?.length || 0);
+    if (sigDiff !== 0) return sigDiff;
+    return (a.dial || 9999) - (b.dial || 9999);
+  });
+}
+
+// server/services/octopusSpainLiveService.ts
+var PROBE_CACHE_TTL_MS = 10 * 60 * 1e3;
+var probeResultCache = /* @__PURE__ */ new Map();
+var PROVIDER_PRIORITY_ORDER = ["dana4k", "octopus", "primary", "vod4k", "24tv", "2m2h", "activecdns"];
+var SPANISH_TDT_BY_ID = new Map(SPANISH_TDT_CHANNELS.map((c) => [c.id, c]));
+var FLAGSHIP_KEY_SET = /* @__PURE__ */ new Set([
+  "tdt-la1",
+  "tdt-la2",
+  "tdt-antena3",
+  "tdt-cuatro",
+  "tdt-telecinco",
+  "tdt-lasexta",
+  "tdt-24h",
+  "tdt-teledeporte",
+  "tdt-neox",
+  "tdt-nova",
+  "tdt-mega",
+  "tdt-atreseries",
+  "tdt-fdf",
+  "tdt-divinity",
+  "tdt-energy",
+  "tdt-bemad",
+  "tdt-dmax",
+  "tdt-dkiss",
+  "tdt-ten",
+  "tdt-trece",
+  "tdt-clan",
+  "tdt-boing",
+  "tdt-rmtv",
+  "tdt-canalsur",
+  "tdt-3cat",
+  "mplus-laliga",
+  "dazn-laliga",
+  "mplus-champions",
+  "mplus-canal",
+  "mplus-vamos",
+  "mplus-hypermotion",
+  "mplus-deportes",
+  "dazn-1",
+  "dazn-2",
+  "dazn-3",
+  "dazn-4",
+  "dazn-f1"
+]);
+var warmupPromise = null;
+var lastSyncAttemptAt = 0;
+function normalizeSpainProviderText(raw) {
+  return String(raw || "").replace(/⁴ᴷ|⁴ᵏ/g, " 4K ").replace(/ᶠᴴᴰ/gi, " FHD ").replace(/ᴴᴰ/gi, " HD ").replace(/＋/g, "+").replace(/\s+/g, " ").trim();
+}
+function isSpanishLiveChannelEntry(streamName, categoryName) {
+  const cat = normalizeSpainProviderText(categoryName).trim();
+  const name = normalizeSpainProviderText(streamName).trim();
+  if (!name) return false;
+  if (/^(?:yes|philippines|usa|uk|arabic|ar|fr|france|de|germany|it|italy|pt|portugal)$/i.test(cat)) {
+    return false;
+  }
+  if (/^(?:\[?\s*(?:UK|US|USA|FR|DE|GER|IT|ITA|PT|POR|AR|ARB|BR|BRA|NL|PL|TR|RO|RU|IN|LAT|LA|MX|ARG|COL|CHL|PER|PE|GR|BG|RS|MK|IR|AL|BE|AT|CH|FI|NO|SE|DK)\s*\]?\s*[|:/-·•▎┃│◈])/i.test(
+    name
+  ) || /^[┃│▎◈•]/.test(name)) {
+    return false;
+  }
+  const hasSpainCat = /\b(?:spain|espa[ñn]a|tdt|tivify|tivfiy|movistar|atresmedia|mediaset|rtve|autonomicas|auton[oó]micas|laliga|hypermotion|rakuten\s*tv)\b|أسبانيا|^(?:\[?\s*(?:vip\s*)?(?:es|esp)\s*\]?\s*[|:/-])/i.test(
+    cat
+  );
+  const hasForeignCatPrefix = /^(?:\[?\s*(?:UK|US|USA|FR|DE|IT|PT|AR|BR|NL|PL|TR|RO|LA|LAT|MX|GR|BG|RS|FI|NO|SE|DK|BE|AT|AL|IND|ARABIC|PHILIPPINES)\s*\]?\s*[|:/-l])/i.test(
+    cat
+  );
+  if (hasForeignCatPrefix && !hasSpainCat) return false;
+  const hasSpainStreamPrefix = /^(?:tivif?y\s*es\s*[:|]|vip\s*es\s*[:|]|\[?\s*(?:es|esp)\s*\]?\s*[|:/-])/i.test(name);
+  return hasSpainCat || hasSpainStreamPrefix;
+}
+function inferSpainStreamQualityMeta(streamName, categoryName = "") {
+  const hay = normalizeSpainProviderText(`${streamName} ${categoryName}`).toLowerCase();
+  const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(hay);
+  if (/\b(?:4k|uhd|2160p?)\b/.test(hay)) {
+    return {
+      quality: "4K UHD",
+      qualityTier: isHevc ? 3 : 0,
+      isHevc
+    };
+  }
+  if (/\b(?:fhd|1080p?|full\s*hd)\b/.test(hay)) {
+    return {
+      quality: "1080p FHD",
+      qualityTier: isHevc ? 3 : 1,
+      isHevc
+    };
+  }
+  if (/\b(?:576p?|480p?|360p?|sd|lq)\b/.test(hay)) {
+    return {
+      quality: "SD",
+      qualityTier: 4,
+      isHevc
+    };
+  }
+  return {
+    quality: "HD",
+    qualityTier: isHevc ? 3 : 2,
+    isHevc
+  };
+}
+function classifySpanishChannelCategory(cleanName, catName) {
+  const canonicalExisting = SPANISH_TDT_BY_ID.get(
+    resolveCanonicalChannelKey({ id: `xtream-${cleanName}`, name: cleanName, countryCode: "ES" })
+  );
+  if (canonicalExisting) {
+    return canonicalExisting.category;
+  }
+  const hay = normalizeSpainProviderText(`${cleanName} ${catName}`).toLowerCase();
+  if (/\b(?:dazn)\b/.test(hay)) return "dazn";
+  if (/\b(?:movistar|m\+|vamos|laliga|hypermotion|campeones|liga|futbol|f[uú]tbol|gol\s*play|gol\s*tv)\b/.test(
+    hay
+  )) {
+    return "movistar";
+  }
+  if (/\b(?:teledeporte|tdp|24\s*h|24\s*horas|eurosport|real\s*madrid|barca|sevilla|betis|deportes|golf|caza|iberlia|sport|motor|garage|nba)\b/.test(
+    hay
+  )) {
+    return "noticias_deportes";
+  }
+  if (/\b(?:clan|boing|disney|nick|cartoon|baby|panda|canal\s*sur|tv\s*3|3cat|etb|tvg|telemadrid|apunt|aragon|ib3|rtpa|tpa|canaria|7rm|extremadura|cmm|cyl|super3|esport3|autonomic)\b/.test(
+    hay
+  )) {
+    return "infantil_autonomicas";
+  }
+  if (/\b(?:dmax|nat\s*geo|national\s*geo|discovery|historia|history|odisea|viajar|cocina|decasa|animal|nature|document)\b/.test(
+    hay
+  )) {
+    return "documentales";
+  }
+  if (/\b(?:amc|warner|calle\s*13|axn|star\s*channel|syfy|tnt|tcm|sundance|dark|somos|hollywood|bom|squirrel|veo\s*7|atreseries|fdf|xtrm|paramount|netflix|rakuten|cine|estrenos|pelicula|series|scifi)\b/.test(
+    hay
+  )) {
+    return "cine_series";
+  }
+  if (/\b(?:neox|nova|mega|divinity|energy|be\s*mad|bemad|dkiss|ten|mtv|cosmo|enfamilia)\b/.test(hay)) {
+    return "entretenimiento";
+  }
+  if (/\b(?:la\s*1|la\s*2|tve|antena\s*3|cuatro|telecinco|tele\s*5|la\s*sexta|lasexta|trece|13\s*tv)\b/.test(hay)) {
+    return "generalistas";
+  }
+  return "entretenimiento";
+}
+function formatReadableSpanishName(rawName, canonicalKey) {
+  const known = SPANISH_TDT_BY_ID.get(canonicalKey);
+  if (known) return known.name;
+  const normalized = normalizeSpainProviderText(rawName);
+  const stripped = stripChannelNoise(normalized) || normalized;
+  return stripped.length >= 2 ? stripped : normalized;
+}
+function getProviderBrandTone(category) {
+  switch (category) {
+    case "dazn":
+      return "#0EA5E9";
+    case "movistar":
+      return "#00A9E0";
+    case "noticias_deportes":
+      return "#F59E0B";
+    case "cine_series":
+      return "#9146FF";
+    case "documentales":
+      return "#10B981";
+    case "infantil_autonomicas":
+      return "#EC4899";
+    default:
+      return "#38BDF8";
+  }
+}
+async function ensureProviderCatalogsHydrated(maxWaitMs = 2e3) {
+  let catalogs = getCachedXtreamProviderCatalogs();
+  const configuredProviders = getAllXtreamProviders().filter(
+    (p) => Boolean(normalizeXtreamServerInput(p.serverUrl) && p.accounts.length > 0)
+  );
+  const loadedIds = new Set(catalogs.map((c) => c.providerId));
+  const missingImportant = configuredProviders.filter((p) => !loadedIds.has(p.id));
+  if (missingImportant.length > 0 && Date.now() - lastSyncAttemptAt > 2e4) {
+    lastSyncAttemptAt = Date.now();
+    const syncTasks = Promise.allSettled(
+      missingImportant.map((p) => syncFullCatalog(false, p.id).catch(() => null))
+    );
+    await Promise.race([
+      syncTasks,
+      new Promise((resolve) => setTimeout(resolve, maxWaitMs))
+    ]);
+    catalogs = getCachedXtreamProviderCatalogs();
+  }
+  return catalogs;
+}
+function sortTracksByQualityAndSpeed(tracks) {
+  const providerRank = (pid) => {
+    const idx = PROVIDER_PRIORITY_ORDER.indexOf(pid);
+    return idx === -1 ? 99 : idx;
+  };
+  return [...tracks].sort((a, b) => {
+    const aStatus = a.probedOk === true ? 0 : a.probedOk === false ? 2 : 1;
+    const bStatus = b.probedOk === true ? 0 : b.probedOk === false ? 2 : 1;
+    if (aStatus !== bStatus) return aStatus - bStatus;
+    if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
+    const aDanaPriority = a.providerId === "dana4k" && a.probedOk !== false ? 0 : 1;
+    const bDanaPriority = b.providerId === "dana4k" && b.probedOk !== false ? 0 : 1;
+    if (aDanaPriority !== bDanaPriority) return aDanaPriority - bDanaPriority;
+    const aLat = typeof a.latencyMs === "number" ? a.latencyMs : 2500;
+    const bLat = typeof b.latencyMs === "number" ? b.latencyMs : 2500;
+    if (Math.abs(aLat - bLat) >= 250) {
+      return aLat - bLat;
+    }
+    const pDiff = providerRank(a.providerId) - providerRank(b.providerId);
+    if (pDiff !== 0) return pDiff;
+    return aLat - bLat;
+  });
+}
+function extractRawSpanishGrouped(catalogs) {
+  const byKey = /* @__PURE__ */ new Map();
+  const seenSourceUrls = /* @__PURE__ */ new Set();
+  const orderedCatalogs = [...catalogs].sort((a, b) => {
+    const ia = PROVIDER_PRIORITY_ORDER.indexOf(a.providerId);
+    const ib = PROVIDER_PRIORITY_ORDER.indexOf(b.providerId);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+  for (const catPayload of orderedCatalogs) {
+    const catNameById = new Map(catPayload.liveCategories.map((c) => [c.id, c.name]));
+    for (const stream of catPayload.liveStreams) {
+      const catName = catNameById.get(stream.categoryId) || catPayload.providerName;
+      if (!isSpanishLiveChannelEntry(stream.name, catName)) continue;
+      const normalizedName = normalizeSpainProviderText(stream.name);
+      const canonicalKey = resolveCanonicalChannelKey({
+        id: `xtream-${catPayload.providerId}-${stream.streamId}`,
+        name: normalizedName,
+        network: catName,
+        countryCode: "ES"
+      });
+      const cleanName = formatReadableSpanishName(stream.name, canonicalKey);
+      if (!cleanName || /^[-=_*#|.\s]+$/.test(cleanName)) continue;
+      const qMeta = inferSpainStreamQualityMeta(stream.name, catName);
+      const sourceUrl = `/api/stream?provider=${encodeURIComponent(
+        catPayload.providerId
+      )}&id=${encodeURIComponent(stream.streamId)}`;
+      if (seenSourceUrls.has(sourceUrl)) continue;
+      seenSourceUrls.add(sourceUrl);
+      const probeKey = `${catPayload.providerId}:${stream.streamId}`;
+      const cachedProbe = probeResultCache.get(probeKey);
+      const isFreshProbe = cachedProbe && Date.now() - cachedProbe.checkedAt < PROBE_CACHE_TTL_MS;
+      if (isFreshProbe) {
+        channelHealthMonitor.setTrackHealth(sourceUrl, {
+          status: cachedProbe.ok ? "up" : "down",
+          latencyMs: cachedProbe.latencyMs,
+          failCount: cachedProbe.ok ? 0 : 1,
+          checkedAt: cachedProbe.checkedAt
+        });
+      }
+      const trackRecord = {
+        id: `xtream-es-${catPayload.providerId}-${stream.streamId}`,
+        label: `${catPayload.providerName} \xB7 Castellano \xB7 ${qMeta.quality}${qMeta.isHevc ? " HEVC" : ""}`,
+        lang: "ES",
+        quality: qMeta.quality,
+        sourceUrl,
+        resolverType: "direct_hls",
+        providerId: catPayload.providerId,
+        providerName: catPayload.providerName,
+        streamId: stream.streamId,
+        qualityTier: qMeta.qualityTier,
+        isHevc: qMeta.isHevc,
+        ...isFreshProbe ? { latencyMs: cachedProbe.latencyMs, probedOk: cachedProbe.ok } : {}
+      };
+      const existing = byKey.get(canonicalKey);
+      if (!existing) {
+        const tdtMeta = SPANISH_TDT_BY_ID.get(canonicalKey);
+        const category = classifySpanishChannelCategory(cleanName, catName);
+        const shortMark = tdtMeta?.shortMark || cleanName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 4) || "ES";
+        byKey.set(canonicalKey, {
+          id: tdtMeta ? tdtMeta.id : `xtream-es-${canonicalKey.replace(/^norm:/, "").replace(/[^a-z0-9-]/gi, "-")}`,
+          canonicalKey,
+          streamId: stream.streamId,
+          dial: tdtMeta?.dial || stream.num || 700 + byKey.size,
+          name: cleanName,
+          shortMark,
+          brandTone: tdtMeta?.brandTone || getProviderBrandTone(category),
+          network: tdtMeta?.network || `${catPayload.providerName} \xB7 Espa\xF1a`,
+          category,
+          quality: qMeta.quality,
+          countryCode: "ES",
+          logoUrl: tdtMeta?.logoUrl || stream.streamIcon,
+          description: tdtMeta?.description || `${cleanName} \xB7 Se\xF1al Espa\xF1a en Directo (${catPayload.providerName})`,
+          epgChannelId: tdtMeta?.epgChannelId || stream.epgChannelId,
+          channels: [trackRecord]
+        });
+      } else {
+        existing.channels.push(trackRecord);
+        if (!existing.logoUrl && stream.streamIcon) {
+          existing.logoUrl = stream.streamIcon;
+        }
+      }
+    }
+  }
+  const out = [];
+  for (const ch of byKey.values()) {
+    ch.channels = sortTracksByQualityAndSpeed(ch.channels);
+    if (ch.channels[0]) {
+      ch.quality = ch.channels[0].quality;
+    }
+    out.push(ch);
+  }
+  return out;
+}
+async function runBenchmarkBatch(tracks, perProviderConcurrency = 3, timeoutMs = 2600) {
+  const byProvider = /* @__PURE__ */ new Map();
+  for (const tr of tracks) {
+    const key = `${tr.providerId}:${tr.streamId}`;
+    const existing = probeResultCache.get(key);
+    if (existing && Date.now() - existing.checkedAt < PROBE_CACHE_TTL_MS) continue;
+    const arr = byProvider.get(tr.providerId) || [];
+    arr.push(tr);
+    byProvider.set(tr.providerId, arr);
+  }
+  const providerJobs = Array.from(byProvider.entries()).map(async ([, list]) => {
+    let idx = 0;
+    const worker = async () => {
+      while (idx < list.length) {
+        const cur = list[idx++];
+        const key = `${cur.providerId}:${cur.streamId}`;
+        const cached = probeResultCache.get(key);
+        if (cached && Date.now() - cached.checkedAt < PROBE_CACHE_TTL_MS) continue;
+        const res = await probeXtreamLiveStreamLatency(cur.streamId, cur.providerId, timeoutMs);
+        const now = Date.now();
+        probeResultCache.set(key, {
+          ok: res.ok,
+          latencyMs: res.latencyMs,
+          lineCount: res.lineCount,
+          checkedAt: now
+        });
+        channelHealthMonitor.setTrackHealth(cur.sourceUrl, {
+          status: res.ok ? "up" : "down",
+          latencyMs: res.latencyMs,
+          failCount: res.ok ? 0 : 1,
+          checkedAt: now
+        });
+      }
+    };
+    const workers = Array.from(
+      { length: Math.min(perProviderConcurrency, list.length) },
+      () => worker()
+    );
+    await Promise.allSettled(workers);
+  });
+  await Promise.allSettled(providerJobs);
+}
+async function benchmarkSpainLiveChannels(opts) {
+  const catalogs = await ensureProviderCatalogsHydrated(2200);
+  if (catalogs.length === 0) return;
+  const grouped = extractRawSpanishGrouped(catalogs);
+  const flagshipQueue = [];
+  const generalQueue = [];
+  for (const ch of grouped) {
+    const isFlagship = FLAGSHIP_KEY_SET.has(ch.canonicalKey);
+    const perProvSeen = /* @__PURE__ */ new Map();
+    for (const tr of ch.channels) {
+      if (tr.qualityTier >= 4) continue;
+      const cnt = perProvSeen.get(tr.providerId) || 0;
+      if (cnt >= 2) continue;
+      perProvSeen.set(tr.providerId, cnt + 1);
+      if (isFlagship) {
+        flagshipQueue.push(tr);
+      } else if (opts?.includeAllChannels) {
+        generalQueue.push(tr);
+      }
+    }
+  }
+  const maxPerProv = opts?.maxTracksPerProvider ?? 45;
+  const cappedFlagship = [];
+  const countByProv = /* @__PURE__ */ new Map();
+  for (const tr of flagshipQueue) {
+    const n = countByProv.get(tr.providerId) || 0;
+    if (n >= maxPerProv) continue;
+    countByProv.set(tr.providerId, n + 1);
+    cappedFlagship.push(tr);
+  }
+  await runBenchmarkBatch(cappedFlagship, 3, opts?.timeoutMs ?? 2500);
+  if (opts?.includeAllChannels && generalQueue.length > 0) {
+    const cappedGeneral = [];
+    const genByProv = /* @__PURE__ */ new Map();
+    for (const tr of generalQueue) {
+      const n = genByProv.get(tr.providerId) || 0;
+      if (n >= maxPerProv) continue;
+      genByProv.set(tr.providerId, n + 1);
+      cappedGeneral.push(tr);
+    }
+    await runBenchmarkBatch(cappedGeneral, 2, opts?.timeoutMs ?? 2400);
+  }
+  logger.info(
+    {
+      event: "spain_live_benchmark_complete",
+      flagshipProbed: cappedFlagship.length,
+      channelsGrouped: grouped.length
+    },
+    "Spanish live IPTV benchmark complete"
+  );
+}
+async function getVerifiedSpainXtreamChannels(opts) {
+  if (!isXtreamEnvConfigured()) return [];
+  const catalogs = await ensureProviderCatalogsHydrated(opts?.waitWarmupMs ?? 1800);
+  if (catalogs.length === 0) return [];
+  if (opts?.forceReprobe) {
+    probeResultCache.clear();
+  }
+  if (probeResultCache.size === 0 || opts?.forceReprobe) {
+    if (!warmupPromise) {
+      warmupPromise = benchmarkSpainLiveChannels({
+        includeAllChannels: false,
+        maxTracksPerProvider: 40,
+        timeoutMs: 2400
+      }).catch(() => void 0).finally(() => {
+        warmupPromise = null;
+        void benchmarkSpainLiveChannels({
+          includeAllChannels: true,
+          maxTracksPerProvider: 60,
+          timeoutMs: 2400
+        }).catch(() => void 0);
+      });
+    }
+    const waitMs2 = Math.max(0, opts?.waitWarmupMs ?? 2e3);
+    if (waitMs2 > 0) {
+      await Promise.race([
+        warmupPromise,
+        new Promise((resolve) => setTimeout(resolve, waitMs2))
+      ]);
+    }
+  }
+  return extractRawSpanishGrouped(catalogs);
+}
+function getCachedSpainXtreamChannelsSync() {
+  if (!isXtreamEnvConfigured()) return [];
+  const catalogs = getCachedXtreamProviderCatalogs();
+  if (catalogs.length === 0) return [];
+  return extractRawSpanishGrouped(catalogs);
+}
+
 // server/services/rbtv/rbtvLiveCurator.ts
 var DISALLOWED_HOST_OR_URL_RE = /(?:^|[./])(rbtv77\.com|wv11\.hkkmwtotalwypubook\.cfd|hkkmwtotalwypubook\.cfd|cdn\.stmify\.com|playouts\.now\.amagi\.tv)(?:[/:?]|$)/i;
 function isDisallowedRbtvTrack(track) {
@@ -33576,12 +36604,21 @@ function getAllIptvChannels() {
     seen.add(b.id);
     combined.push(b);
   }
+  for (const s of getCachedSpainXtreamChannelsSync()) {
+    if (!s?.id) continue;
+    combined.push(s);
+  }
+  for (const x of getCachedXtreamLiveTdtChannels()) {
+    if (!x?.id || seen.has(x.id)) continue;
+    seen.add(x.id);
+    combined.push(x);
+  }
   for (const r of getCuratedRbtvChannels()) {
     if (!r?.id || seen.has(r.id)) continue;
     seen.add(r.id);
     combined.push(r);
   }
-  const prioritized = channelHealthMonitor.prioritizeChannels(combined);
+  const prioritized = buildUnifiedPrioritizedChannels(combined);
   const byId = /* @__PURE__ */ new Map();
   for (const ch of prioritized) {
     if (ch?.id) byId.set(ch.id, ch);
@@ -34089,9 +37126,6 @@ var GAME_SLUG_TO_ID = {
   pingpong: "pingpong",
   "ping-pong": "pingpong",
   tenis: "pingpong",
-  soccerpong: "soccerpong",
-  "futbol-pong": "soccerpong",
-  "soccer-pong": "soccerpong",
   bomberman: "bomberman",
   "bomberman-party": "bomberman",
   pacman: "pacman",
@@ -34131,7 +37165,6 @@ var GAME_ID_TO_SLUG = {
   gyrotennis: "tenis-gyro",
   gyrolab: "laberinto-gyro",
   pingpong: "ping-pong",
-  soccerpong: "futbol-pong",
   bomberman: "bomberman",
   pacman: "pacman",
   tetris: "tetris",
@@ -34163,7 +37196,6 @@ var GAME_TITLES = {
   gyrotennis: { es: "Tenis Slam Pro 2P", ca: "Tennis Slam Pro 2P", en: "Tennis Slam Pro 2P" },
   gyrolab: { es: "Laberinto Esfera 3D", ca: "Laberint Esfera 3D", en: "Sphere Labyrinth 3D" },
   pingpong: { es: "Ping Pong Pro 2P \xB7 Raqueta M\xF3vil", ca: "Ping Pong Pro 2P \xB7 Raqueta M\xF2bil", en: "Ping Pong Pro 2P \xB7 Mobile Racket" },
-  soccerpong: { es: "F\xFAtbol Pong 3D \xB7 1P / 2P", ca: "Futbol Pong 3D \xB7 1P / 2P", en: "Soccer Pong 3D \xB7 1P / 2P" },
   bomberman: { es: "Bomberman Party Arena", ca: "Bomberman Party Arena", en: "Bomberman Party Arena" },
   pacman: { es: "Pac-Man Arcade HD", ca: "Pac-Man Arcade HD", en: "Pac-Man Arcade HD" },
   tetris: { es: "Tetris Sprint TV", ca: "Tetris Sprint TV", en: "Tetris Sprint TV" },
@@ -34194,10 +37226,11 @@ var DEDICATED_WORLD_ROUTES = /* @__PURE__ */ new Set([
   "atresplayer",
   "movistar-dazn",
   "dazn-movistar",
-  "champions",
-  "multichampions",
   "musica",
-  "music"
+  "music",
+  "catalogo-total",
+  "proveedores",
+  "providers"
 ]);
 var SYSTEM_RESERVED_SLUGS = /* @__PURE__ */ new Set([
   "api",
@@ -34471,8 +37504,8 @@ function parseAppRoute(pathname, search = "") {
   if (seg0 === "movistar-dazn" || seg0 === "dazn-movistar") {
     return { kind: "world", world: "movistardazn", roomId: queryRoomId };
   }
-  if (seg0 === "champions" || seg0 === "multichampions") {
-    return { kind: "world", world: "champions", roomId: queryRoomId };
+  if (seg0 === "catalogo-total" || seg0 === "proveedores" || seg0 === "providers") {
+    return { kind: "world", world: "providers", roomId: queryRoomId };
   }
   if (seg0 === "musica" || seg0 === "music") {
     return {
@@ -34527,8 +37560,6 @@ function buildCanonicalRoute(input, opts) {
         basePath = input.cineCategory ? `${root}/${slugify(input.cineCategory)}` : root;
       } else if (input.world === "futbol") {
         basePath = input.futbolTab === "channels" ? "/futbol/canales" : "/futbol";
-      } else if (input.world === "champions") {
-        basePath = "/champions";
       } else if (input.world === "tv") {
         basePath = "/directo";
       } else if (input.world === "juegos") {
@@ -34547,6 +37578,8 @@ function buildCanonicalRoute(input, opts) {
         basePath = "/movistar-dazn";
       } else if (input.world === "music") {
         basePath = "/musica";
+      } else if (input.world === "providers") {
+        basePath = "/catalogo-total";
       }
       break;
     case "movie": {
@@ -35073,7 +38106,6 @@ async function resolveDeepLinkTarget(pathOrUrl, origin = PUBLIC_PRODUCTION_ORIGI
       const worldLabels = {
         cine: target.cineTab === "series" ? "Cat\xE1logo de Series HD" : "Cat\xE1logo de Cine y Estrenos 4K",
         futbol: "F\xFAtbol en Directo y Marcadores",
-        champions: "UEFA Champions League \xB7 MultiChampions & Multi-Partido HD",
         tv: "Canales de TV y TDT en Directo",
         juegos: "Riffan Play \u2014 Sal\xF3n de Juegos Multijugador",
         youtube: "YouTube en Sala Sincronizada",
@@ -35082,7 +38114,8 @@ async function resolveDeepLinkTarget(pathOrUrl, origin = PUBLIC_PRODUCTION_ORIGI
         belix: "Belix TV \u2014 Motor Xtream Codes y Rutas com.ibopro.ultra",
         atresplayer: "Atresmedia \u2014 Directos 1080p, Pasapalabra, Programas y Series",
         movistardazn: "DAZN & Movistar+ \u2014 F\xFAtbol, F1, MotoGP, Deportes HD y Series Originales",
-        music: "Riffan Music \u2014 Canciones, Letras Sincronizadas, Videoclips HD y Radios 24/7"
+        music: "Riffan Music \u2014 Canciones, Letras Sincronizadas, Videoclips HD y Radios 24/7",
+        providers: "Cat\xE1logo Total \u2014 Proveedores HD, VOD 4K, 2M2H, Adtupac, Ultra VIP y Sult-Vo"
       };
       const title = `${worldLabels[target.world] || "RiffanTV"} \u2014 RiffanTV`;
       result = {
@@ -35298,7 +38331,7 @@ function registerDeepLinkRoutes(app2, deps) {
 }
 
 // server/extractors/elahmadExtractor.ts
-import crypto10 from "crypto";
+import crypto11 from "crypto";
 var ELAHMAD_MOBILE_UA = "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36";
 var ELAHMAD_AES_KEY = Buffer.from("acf40de1dddb1addf66721d1ecfbc5d7", "utf8");
 var ELAHMAD_AES_IV = Buffer.from("b138591ee8715ee0", "utf8");
@@ -35314,7 +38347,7 @@ function decryptElahmadAesPayload(base64Payload) {
   const clean = String(base64Payload || "").trim();
   if (!clean) return "";
   try {
-    const decipher = crypto10.createDecipheriv("aes-256-cbc", ELAHMAD_AES_KEY, ELAHMAD_AES_IV);
+    const decipher = crypto11.createDecipheriv("aes-256-cbc", ELAHMAD_AES_KEY, ELAHMAD_AES_IV);
     let decrypted = decipher.update(clean, "base64", "utf8");
     decrypted += decipher.final("utf8");
     return decrypted.trim();
@@ -36260,7 +39293,7 @@ function rewriteManifestForSamsungIptv(manifestText, baseUrl, referer, forceAac,
 // server/routes/iptv.ts
 function getLiveVoiceChannels() {
   const merged = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS);
-  return channelHealthMonitor.prioritizeChannels(merged).map((ch) => ({
+  return buildUnifiedPrioritizedChannels(merged).map((ch) => ({
     ...ch,
     logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || void 0
   }));
@@ -36300,15 +39333,33 @@ function registerIptvAndTdtRoutes(app2, deps) {
     const belixSidMatch = String(req.headers.cookie || "").match(/(?:^|;\s*)belix_sid=([^;]+)/);
     const belixSessionKey = String(req.headers["x-belix-session"] || "").trim() || (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : "") || "default";
     const belixActive = isAnyBelixConnected(belixSessionKey);
+    if (isXtreamEnvConfigured() && getCachedXtreamLiveTdtChannels().length === 0) {
+      await Promise.race([
+        syncFullCatalog(false, "all").catch(() => void 0),
+        new Promise((resolve) => setTimeout(resolve, 1800))
+      ]);
+    }
+    const belixChannels = getBelixLiveChannels({ sessionKey: belixSessionKey });
+    const belixStreamIds = new Set(belixChannels.map((c) => c.streamId));
+    const verifiedSpainChannels = await getVerifiedSpainXtreamChannels({
+      waitWarmupMs: req.query.refresh === "1" ? 5e3 : 2e3,
+      forceReprobe: req.query.refresh === "1"
+    }).catch(() => []);
+    const verifiedSpainStreamIds = new Set(verifiedSpainChannels.map((c) => c.streamId));
+    const xtreamEnvChannels = getCachedXtreamLiveTdtChannels().filter(
+      (c) => !belixStreamIds.has(c.streamId) && !verifiedSpainStreamIds.has(c.streamId)
+    );
     const merged = [
+      ...verifiedSpainChannels,
       ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, belixActive),
-      ...getBelixLiveChannels({ sessionKey: belixSessionKey }),
+      ...belixChannels,
+      ...xtreamEnvChannels,
       ...getCuratedRbtvChannels()
     ];
     res.json({
       success: true,
       iptvMeta: getIptvSyncMeta(),
-      channels: channelHealthMonitor.prioritizeChannels(merged).map((ch) => ({
+      channels: buildUnifiedPrioritizedChannels(merged).map((ch) => ({
         ...ch,
         logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || void 0
       }))
@@ -36559,25 +39610,27 @@ function registerIptvAndTdtRoutes(app2, deps) {
     const rawTracks = Array.isArray(channel.channels) ? channel.channels : [];
     const tracks = channelHealthMonitor.prioritizeTracks(rawTracks);
     const triedDvbUrls = /* @__PURE__ */ new Set();
-    for (const track of tracks) {
+    const belixSidMatch = String(req.headers.cookie || "").match(/(?:^|;\s*)belix_sid=([^;]+)/);
+    const belixSessionKey = String(req.headers["x-belix-session"] || "").trim() || (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : "") || "default";
+    const resolveSingleIptvTrack = async (track) => {
       try {
         const sourceUrl = String(track?.sourceUrl || "").trim();
-        if (!sourceUrl) continue;
+        if (!sourceUrl) return null;
         const isElahmad = track.resolverType === "elahmad_live" || isElahmadUrl(sourceUrl);
         if (isElahmad) {
           const elResolved = await resolveElahmadChannelToHls(sourceUrl);
-          if (!elResolved || elResolved.isYoutube) continue;
+          if (!elResolved || elResolved.isYoutube) return null;
           const signedElUrl = await maybeSignEasyBroadcastUrl(elResolved.streamUrl);
           const manifestObj2 = await fetchUpstreamManifestText(signedElUrl, elResolved.referer, forceAacOverride);
-          if (!manifestObj2) continue;
+          if (!manifestObj2) return null;
           const unwrapped2 = await unwrapMasterPlaylistForIptv(manifestObj2, elResolved.referer, forceAacOverride);
-          if (!unwrapped2) continue;
+          if (!unwrapped2) return null;
           const segOk = await verifyIptvMediaManifestSegments(
             unwrapped2.text,
             unwrapped2.finalUrl,
             elResolved.referer
           );
-          if (!segOk) continue;
+          if (!segOk) return null;
           const trimmedText2 = trimLiveDvrManifestForIptv(unwrapped2.text, 6);
           iptvChannelResolveCache.set(channel.id, {
             rawM3u8Url: unwrapped2.finalUrl,
@@ -36587,7 +39640,7 @@ function registerIptvAndTdtRoutes(app2, deps) {
             isDvb: false,
             ts: Date.now()
           });
-          const rewritten2 = rewriteManifestForSamsungIptv(
+          return rewriteManifestForSamsungIptv(
             trimmedText2,
             unwrapped2.finalUrl,
             elResolved.referer,
@@ -36595,13 +39648,12 @@ function registerIptvAndTdtRoutes(app2, deps) {
             false,
             publicOrigin
           );
-          return sendIptvM3u8Response(res, rewritten2);
         }
         if (track.resolverType === "mediaset_live") {
           const msResolved = await resolveMediasetLiveHlsUrl(sourceUrl);
           if (!msResolved?.streamUrl) {
             markTrackDown(sourceUrl, 403);
-            continue;
+            return null;
           }
           const manifestObj2 = await fetchUpstreamManifestText(
             msResolved.streamUrl,
@@ -36610,7 +39662,7 @@ function registerIptvAndTdtRoutes(app2, deps) {
           );
           if (!manifestObj2) {
             markTrackDown(sourceUrl, 502);
-            continue;
+            return null;
           }
           const unwrapped2 = await unwrapMasterPlaylistForIptv(
             manifestObj2,
@@ -36619,7 +39671,7 @@ function registerIptvAndTdtRoutes(app2, deps) {
           );
           if (!unwrapped2) {
             markTrackDown(sourceUrl, 404);
-            continue;
+            return null;
           }
           const segOk = await verifyIptvMediaManifestSegments(
             unwrapped2.text,
@@ -36628,7 +39680,7 @@ function registerIptvAndTdtRoutes(app2, deps) {
           );
           if (!segOk) {
             markTrackDown(sourceUrl, 403);
-            continue;
+            return null;
           }
           const trimmedText2 = trimLiveDvrManifestForIptv(unwrapped2.text, 6);
           iptvChannelResolveCache.set(channel.id, {
@@ -36639,7 +39691,7 @@ function registerIptvAndTdtRoutes(app2, deps) {
             isDvb: false,
             ts: Date.now()
           });
-          const rewritten2 = rewriteManifestForSamsungIptv(
+          return rewriteManifestForSamsungIptv(
             trimmedText2,
             unwrapped2.finalUrl,
             msResolved.referer,
@@ -36647,15 +39699,12 @@ function registerIptvAndTdtRoutes(app2, deps) {
             false,
             publicOrigin
           );
-          return sendIptvM3u8Response(res, rewritten2);
         }
         const isDirectHls = track.resolverType === "tdt_hls" || track.resolverType === "direct_hls" || /\.m3u8(\?|$)/i.test(sourceUrl);
         if (sourceUrl.startsWith("/api/belix/stream/")) {
-          const belixSidMatch = String(req.headers.cookie || "").match(/(?:^|;\s*)belix_sid=([^;]+)/);
-          const belixSessionKey = String(req.headers["x-belix-session"] || "").trim() || (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : "") || "default";
           if (!isAnyBelixConnected(belixSessionKey)) {
             markTrackDown(sourceUrl, 503);
-            continue;
+            return null;
           }
           const belixStreamId = sourceUrl.split("/").pop()?.replace(/\.m3u8.*$/i, "") || "";
           const belixManifest = await resolveBelixManifest(
@@ -36666,9 +39715,36 @@ function registerIptvAndTdtRoutes(app2, deps) {
           );
           if (!belixManifest) {
             markTrackDown(sourceUrl, 503);
-            continue;
+            return null;
           }
-          return sendIptvM3u8Response(res, belixManifest);
+          return belixManifest;
+        }
+        if (/^\/api\/(?:xtream\/stream\/|stream\b)/i.test(sourceUrl)) {
+          let xtreamStreamId = "";
+          let xtreamProvider = "primary";
+          if (sourceUrl.startsWith("/api/xtream/stream/")) {
+            xtreamStreamId = sourceUrl.split("/").pop()?.replace(/\.m3u8.*$/i, "") || "";
+          } else {
+            try {
+              const parsed = new URL(sourceUrl, "http://localhost");
+              xtreamStreamId = (parsed.searchParams.get("id") || "").replace(/\.m3u8$/i, "").trim();
+              xtreamProvider = parsed.searchParams.get("provider") || "primary";
+            } catch {
+              xtreamStreamId = "";
+            }
+          }
+          if (xtreamStreamId) {
+            const xtreamManifest = await fetchProxiedXtreamManifest(
+              xtreamStreamId,
+              publicOrigin,
+              xtreamProvider
+            );
+            if (xtreamManifest) {
+              return xtreamManifest;
+            }
+          }
+          markTrackDown(sourceUrl, 503);
+          return null;
         }
         if (isDirectHls) {
           const cleanUrl = await maybeSignEasyBroadcastUrl(
@@ -36678,7 +39754,7 @@ function registerIptvAndTdtRoutes(app2, deps) {
           const forceAac = forceAacOverride;
           if (isDvbHeadendStream(cleanUrl)) {
             if (triedDvbUrls.has(cleanUrl)) {
-              continue;
+              return null;
             }
             triedDvbUrls.add(cleanUrl);
             const activeDvbPath = getActiveDvbSessionPath(cleanUrl);
@@ -36692,15 +39768,15 @@ function registerIptvAndTdtRoutes(app2, deps) {
                 isDvb: true,
                 ts: Date.now()
               });
-              return sendIptvM3u8Response(res, dvbPlaylist);
+              return dvbPlaylist;
             }
             const probeManifest = await fetchUpstreamManifestText(cleanUrl, referer, true);
             if (!probeManifest) {
               markTrackDown(sourceUrl, 502);
-              continue;
+              return null;
             }
             const trimmedFallback = trimLiveDvrManifestForIptv(probeManifest.text, 6);
-            const rewrittenFallback = rewriteManifestForSamsungIptv(
+            return rewriteManifestForSamsungIptv(
               trimmedFallback,
               probeManifest.finalUrl,
               referer,
@@ -36708,17 +39784,16 @@ function registerIptvAndTdtRoutes(app2, deps) {
               false,
               publicOrigin
             );
-            return sendIptvM3u8Response(res, rewrittenFallback);
           }
           const manifestObj2 = await fetchUpstreamManifestText(cleanUrl, referer, forceAac);
           if (!manifestObj2) {
             markTrackDown(sourceUrl, 502);
-            continue;
+            return null;
           }
           const unwrapped2 = await unwrapMasterPlaylistForIptv(manifestObj2, referer, forceAac);
           if (!unwrapped2) {
             markTrackDown(sourceUrl, 404);
-            continue;
+            return null;
           }
           const segOk = await verifyIptvMediaManifestSegments(
             unwrapped2.text,
@@ -36727,7 +39802,7 @@ function registerIptvAndTdtRoutes(app2, deps) {
           );
           if (!segOk) {
             markTrackDown(sourceUrl, 403);
-            continue;
+            return null;
           }
           const trimmedText2 = trimLiveDvrManifestForIptv(unwrapped2.text, 6);
           iptvChannelResolveCache.set(channel.id, {
@@ -36738,7 +39813,7 @@ function registerIptvAndTdtRoutes(app2, deps) {
             isDvb: false,
             ts: Date.now()
           });
-          const rewritten2 = rewriteManifestForSamsungIptv(
+          return rewriteManifestForSamsungIptv(
             trimmedText2,
             unwrapped2.finalUrl,
             referer,
@@ -36746,30 +39821,29 @@ function registerIptvAndTdtRoutes(app2, deps) {
             false,
             publicOrigin
           );
-          return sendIptvM3u8Response(res, rewritten2);
         }
         const fullTarget = /^https?:\/\//i.test(sourceUrl) ? sourceUrl : `https://${sourceUrl}`;
         let directSports = await extractLiveSportsHlsDirect(fullTarget);
-        if (directSports?.isBrokenGreenFeed) continue;
+        if (directSports?.isBrokenGreenFeed) return null;
         const isKnownDirectMirror = /footunder\.online|tilinhd\.|streamxhd\./i.test(fullTarget);
         if (!directSports && !isKnownDirectMirror) {
           directSports = await sniffStreamWithHeadless(fullTarget);
         }
-        if (!directSports || !directSports.streamUrl || directSports.isDirectMp4) continue;
+        if (!directSports || !directSports.streamUrl || directSports.isDirectMp4) return null;
         const manifestObj = await fetchUpstreamManifestText(
           directSports.streamUrl,
           directSports.referer,
           false
         );
-        if (!manifestObj) continue;
+        if (!manifestObj) return null;
         const unwrapped = await unwrapMasterPlaylistForIptv(manifestObj, directSports.referer, false);
-        if (!unwrapped) continue;
+        if (!unwrapped) return null;
         const clean = await verifyM3u8HasCleanVideoFrame(
           unwrapped.text,
           unwrapped.finalUrl,
           directSports.referer
         );
-        if (!clean) continue;
+        if (!clean) return null;
         const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
         iptvChannelResolveCache.set(channel.id, {
           rawM3u8Url: unwrapped.finalUrl,
@@ -36779,7 +39853,7 @@ function registerIptvAndTdtRoutes(app2, deps) {
           isDvb: false,
           ts: Date.now()
         });
-        const rewritten = rewriteManifestForSamsungIptv(
+        return rewriteManifestForSamsungIptv(
           trimmedText,
           unwrapped.finalUrl,
           directSports.referer,
@@ -36787,8 +39861,27 @@ function registerIptvAndTdtRoutes(app2, deps) {
           false,
           publicOrigin
         );
-        return sendIptvM3u8Response(res, rewritten);
       } catch {
+        return null;
+      }
+    };
+    const topFastBatch = tracks.slice(0, 3);
+    if (topFastBatch.length > 0) {
+      const fastWinner = await Promise.any(
+        topFastBatch.map(async (track) => {
+          const playlist = await resolveSingleIptvTrack(track);
+          if (!playlist) throw new Error("track_failed");
+          return playlist;
+        })
+      ).catch(() => null);
+      if (fastWinner) {
+        return sendIptvM3u8Response(res, fastWinner);
+      }
+    }
+    for (const track of tracks.slice(3)) {
+      const playlist = await resolveSingleIptvTrack(track);
+      if (playlist) {
+        return sendIptvM3u8Response(res, playlist);
       }
     }
     return res.status(503).send("Canal temporalmente sin se\xF1al disponible");
@@ -36944,7 +40037,7 @@ function registerWorldTvRoutes(app2) {
 }
 
 // server/extractors/vidhideHelpers/directHostUnpackers.ts
-import crypto11 from "crypto";
+import crypto12 from "crypto";
 var TMDB_API_KEY2 = ENV.tmdbApiKey;
 async function unpackByseToHls(embedUrl) {
   try {
@@ -36990,7 +40083,7 @@ async function unpackByseToHls(embedUrl) {
     if (payloadBuf.length <= 16) return null;
     const ciphertext = payloadBuf.subarray(0, payloadBuf.length - 16);
     const tag = payloadBuf.subarray(payloadBuf.length - 16);
-    const decipher = crypto11.createDecipheriv("aes-256-gcm", key, iv);
+    const decipher = crypto12.createDecipheriv("aes-256-gcm", key, iv);
     decipher.setAuthTag(tag);
     const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
     const data = JSON.parse(decrypted.toString("utf8"));
@@ -37903,7 +40996,7 @@ async function extractGnulaHdTracks(pageUrl, opts) {
 }
 
 // server/extractors/vidhideHelpers/embed69AndSeriesKao.ts
-import crypto12 from "crypto";
+import crypto13 from "crypto";
 
 // server/extractors/vidhideHelpers/animeAv1Extractor.ts
 var animeAv1SlugCache = new LruTtlCache(400, 30 * 60 * 1e3);
@@ -38583,7 +41676,7 @@ async function fetchEmbed69HtmlWithMirrorAndAnubis(imdbSuffix) {
     let responseHash = "";
     const maxIters = 15e5;
     while (nonce < maxIters) {
-      const hex = crypto12.createHash("sha256").update(randomData + nonce).digest("hex");
+      const hex = crypto13.createHash("sha256").update(randomData + nonce).digest("hex");
       if (hex.startsWith(prefix)) {
         responseHash = hex;
         break;
@@ -38641,7 +41734,7 @@ function parseEmbed69OrMoeTracks(html, tagId) {
         const linkChallengeMatch = html.match(/LINK_CHALLENGE\s*=\s*["']([^"']+)["']/);
         const linkSaltMatch = html.match(/LINK_SALT\s*=\s*["']([^"']+)["']/);
         if (linkChallengeMatch && linkSaltMatch) {
-          aesKey = crypto12.createHash("sha256").update(linkChallengeMatch[1] + linkSaltMatch[1]).digest();
+          aesKey = crypto13.createHash("sha256").update(linkChallengeMatch[1] + linkSaltMatch[1]).digest();
         } else {
           const challengeMatch = html.match(/POW_CHALLENGE\s*=\s*["']([^"']+)["']/);
           const diffMatch = html.match(/POW_DIFFICULTY\s*=\s*(\d+)/);
@@ -38653,11 +41746,11 @@ function parseEmbed69OrMoeTracks(html, tagId) {
             const prefix = "0".repeat(difficulty);
             let nonce = 0;
             while (nonce < 5e5) {
-              const hex = crypto12.createHash("sha256").update(challenge + nonce).digest("hex");
+              const hex = crypto13.createHash("sha256").update(challenge + nonce).digest("hex");
               if (hex.startsWith(prefix)) break;
               nonce++;
             }
-            aesKey = crypto12.createHash("sha256").update(challenge + nonce + salt).digest();
+            aesKey = crypto13.createHash("sha256").update(challenge + nonce + salt).digest();
           }
         }
         if (aesKey) {
@@ -38666,7 +41759,7 @@ function parseEmbed69OrMoeTracks(html, tagId) {
             try {
               const raw = Buffer.from(b64, "base64");
               if (raw.length <= 16) return null;
-              const decipher = crypto12.createDecipheriv(
+              const decipher = crypto13.createDecipheriv(
                 "aes-256-cbc",
                 keyBuf,
                 raw.subarray(0, 16)
@@ -39053,7 +42146,7 @@ async function extractEmbed69SpanishTracks(opts) {
 }
 
 // server/extractors/bingetrixHelpers/vidBuzzAndRockExtractors.ts
-import crypto13 from "crypto";
+import crypto14 from "crypto";
 var vidsrcBuzzEmptyCache = new LruTtlCache(300, 15 * 60 * 1e3);
 var vidRockKey = Buffer.from(
   "7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d7e9f2a5c8b1d4e7f",
@@ -39250,7 +42343,7 @@ function decryptVidRockToken(token) {
     const iv = raw.subarray(0, 12);
     const tag = raw.subarray(raw.length - 16);
     const ciphertext = raw.subarray(12, raw.length - 16);
-    const decipher = crypto13.createDecipheriv("aes-256-gcm", vidRockKey, iv);
+    const decipher = crypto14.createDecipheriv("aes-256-gcm", vidRockKey, iv);
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString("utf8");
   } catch {
@@ -40563,7 +43656,16 @@ async function probeAvailableLanguages(opts) {
     p.catch(() => fallback),
     new Promise((resolve) => setTimeout(() => resolve(fallback), ms))
   ]);
-  const [mvTracks, gnTracks, esTracks, hasEn, vidboltProbe] = await Promise.all([
+  const xtreamProbePromise = hints.length > 0 ? opts.mediaType === "tv" ? findXtreamSeriesMatches({
+    titleHints: hints,
+    yearHint: opts.yearHint,
+    limit: 12
+  }) : findXtreamMovieMatches({
+    titleHints: hints,
+    yearHint: opts.yearHint,
+    limit: 12
+  }).then((r) => r.options) : Promise.resolve([]);
+  const [mvTracks, gnTracks, esTracks, hasEn, vidboltProbe, xtreamOptions] = await Promise.all([
     withProbeTimeout(movidyPromise, 5500, []),
     withProbeTimeout(gnulaPromise, 5500, []),
     withProbeTimeout(embedPromise, opts.force ? 8500 : 6500, []),
@@ -40577,7 +43679,8 @@ async function probeAvailableLanguages(opts) {
       }),
       3600,
       { ok: false, langs: [] }
-    ) : Promise.resolve({ ok: false, langs: [] })
+    ) : Promise.resolve({ ok: false, langs: [] }),
+    withProbeTimeout(xtreamProbePromise, 2200, [])
   ]);
   const foundSet = /* @__PURE__ */ new Set();
   for (const t of [...mvTracks, ...gnTracks, ...esTracks]) {
@@ -40608,9 +43711,10 @@ async function probeAvailableLanguages(opts) {
     foundSet.add("ES");
     foundSet.add("VOSE");
   }
-  const ordered = ["ES", "LAT", "VOSE", "EN"].filter(
+  const baseOrdered = ["ES", "LAT", "VOSE", "EN"].filter(
     (code) => foundSet.has(code)
   );
+  const ordered = mergeXtreamOptionsIntoAvailableLanguages(baseOrdered, xtreamOptions);
   if (ordered.length > 0 && !(ordered.length === 1 && ordered[0] === "EN")) {
     availableLangsCache.set(cacheKey, ordered);
   }
@@ -42866,6 +45970,30 @@ async function extractClipboxDirectStreams(opts) {
 }
 
 // server/routes/detailsAndSubtitles.ts
+function summarizeXtreamAlternatives(options) {
+  const bestOption = options.reduce(
+    (best, cur) => !best || cur.qualityTier < best.qualityTier ? cur : best,
+    null
+  );
+  const coreLangs = /* @__PURE__ */ new Set(["ES", "LAT", "VOSE", "EN"]);
+  const extendedLanguages = Array.from(
+    new Set(options.map((o) => o.lang).filter((l) => !coreLangs.has(l)))
+  );
+  const serverAlternatives = options.slice(0, 12).map((o) => ({
+    id: o.id,
+    providerId: o.providerId,
+    providerName: o.providerName,
+    lang: o.lang,
+    langLabel: o.langLabel,
+    quality: o.quality,
+    qualityTier: o.qualityTier
+  }));
+  return {
+    bestQuality: bestOption?.quality,
+    extendedLanguages,
+    serverAlternatives
+  };
+}
 var subtitleSearchCache = new LruTtlCache(
   250,
   15 * 60 * 1e3
@@ -42991,7 +46119,7 @@ function registerDetailsAndSubtitlesRoutes(app2, deps) {
       }
       if (!cleanId || cleanId === "0") return res.status(400).json({ success: false });
       const langParam = String(req.query.lang || "es").toLowerCase() === "en" ? "en-US" : "es-ES";
-      const cacheKey = `v7|${effectiveMediaType}|${cleanId}|${langParam}|${movidyUrlHint}|${gnulaUrlHint}`;
+      const cacheKey = `v8|${effectiveMediaType}|${cleanId}|${langParam}|${movidyUrlHint}|${gnulaUrlHint}`;
       const cached = !force ? richDetailsCache.get(cacheKey) : void 0;
       if (cached && Date.now() - cached.ts < 10 * 60 * 1e3) {
         return res.json({ success: true, details: cached.details });
@@ -43057,7 +46185,7 @@ function registerDetailsAndSubtitlesRoutes(app2, deps) {
       const allTitleHints = Array.from(
         new Set([primaryTitle, originalTitle, titleHint, ...altLocalizedTitles].filter(Boolean))
       );
-      const [allVideosResolved, probedLanguages, titleLogoUrl] = await Promise.all([
+      const [allVideosResolved, probedLanguages, titleLogoUrl, xtreamMatchedOptions] = await Promise.all([
         (async () => {
           let vids = Array.isArray(data?.videos?.results) ? data.videos.results : [];
           if (vids.length === 0 && langParam !== "en-US") {
@@ -43085,8 +46213,21 @@ function registerDetailsAndSubtitlesRoutes(app2, deps) {
           runtimeMinHint: runtimeMin || void 0,
           force
         }),
-        fetchTmdbTitleLogo(Number(cleanId), effectiveMediaType, req.query.lang === "en" ? "en" : "es")
+        fetchTmdbTitleLogo(Number(cleanId), effectiveMediaType, req.query.lang === "en" ? "en" : "es"),
+        Promise.race([
+          (effectiveMediaType === "tv" ? findXtreamSeriesMatches({
+            titleHints: allTitleHints,
+            yearHint: tmdbYear || void 0,
+            limit: 12
+          }) : findXtreamMovieMatches({
+            titleHints: allTitleHints,
+            yearHint: tmdbYear || void 0,
+            limit: 12
+          }).then((r) => r.options)).catch(() => []),
+          new Promise((resolve) => setTimeout(() => resolve([]), 2200))
+        ])
       ]);
+      const xtreamSummary = summarizeXtreamAlternatives(xtreamMatchedOptions);
       const origLang = String(data?.original_language || "").toLowerCase();
       const origCountries = Array.isArray(data?.origin_country) ? data.origin_country : [];
       const isSpanishNative = origLang === "es" || origCountries.includes("ES");
@@ -43131,6 +46272,9 @@ function registerDetailsAndSubtitlesRoutes(app2, deps) {
           languages: ["Espa\xF1ol", "VOSE"]
         })),
         availableLanguages,
+        extendedLanguages: xtreamSummary.extendedLanguages,
+        bestQuality: xtreamSummary.bestQuality,
+        serverAlternatives: xtreamSummary.serverAlternatives,
         watchProviders
       };
       if (availableLanguages.length > 0) {
@@ -44215,7 +47359,7 @@ async function handleDirectExtractCases(params) {
     setCache(cacheKey, megaResult);
     return sendOk(megaResult);
   }
-  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play)\//i.test(rawInput) || rawInput.startsWith("/api/hls-proxy?")) {
+  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play|providers\/stream)\//i.test(rawInput) || rawInput.startsWith("/api/hls-proxy?")) {
     const belixStreamMatch = rawInput.match(/^\/api\/belix\/stream\/([a-zA-Z0-9_-]+)(?:\.m3u8)?/i);
     if (/^\/api\/belix\/(?:stream|xtream\/play)\//i.test(rawInput) && !isAnyBelixConnected(belixSessionKey)) {
       return sendErr(
@@ -44246,7 +47390,7 @@ async function handleDirectExtractCases(params) {
       } catch {
       }
     }
-    const isDirectFile = /\.(mp4|mkv|webm)(\?|$)/i.test(rawInput);
+    const isDirectFile = /\.(mp4|mkv|webm|avi|mov|m4v)(\?|$)/i.test(rawInput) || /^\/api\/providers\/stream\/[^/]+\/(?:movie|series)\//i.test(rawInput);
     const result = {
       success: true,
       mode: isDirectFile ? "direct" : "hls",
@@ -44708,8 +47852,8 @@ async function handleDirectExtractCases(params) {
     setCache(cacheKey, result);
     return sendOk(result);
   }
-  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/xtream\/play)\//i.test(rawInput)) {
-    const isDirectFile = /\.(mp4|mkv|webm)(\?|$)/i.test(rawInput);
+  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/xtream\/play|providers\/stream)\//i.test(rawInput)) {
+    const isDirectFile = /\.(mp4|mkv|webm|avi|mov|m4v)(\?|$)/i.test(rawInput) || /^\/api\/providers\/stream\/[^/]+\/(?:movie|series)\//i.test(rawInput);
     const result = {
       success: true,
       mode: isDirectFile ? "direct" : "hls",
@@ -46589,6 +49733,7 @@ async function handleCatalogMediaExtract(params) {
     vestUrlParam,
     resolverType,
     preferLang,
+    preferQualityFirst = false,
     titleHint,
     origTitleHint,
     yearParam,
@@ -46702,6 +49847,7 @@ async function handleCatalogMediaExtract(params) {
     subtitles: []
   };
   let esTracks = [];
+  let xtreamTracks = [];
   let vidRockTracks = [];
   let bingetrixEnTracks = [];
   let twoEmbedEnTracks = [];
@@ -46936,7 +50082,27 @@ async function handleCatalogMediaExtract(params) {
   ).then((res) => {
     clipboxDirectExtracted = res;
   }) : Promise.resolve();
+  const xtreamMultiServerP = combinedTitleHints.length > 0 ? withExtractTimeout2(
+    effectiveMediaType === "tv" ? extractXtreamSeriesEpisodeTracks({
+      titleHints: combinedTitleHints,
+      yearHint: effectiveYearForExtract,
+      season: effectiveSeason || 1,
+      episode: effectiveEpisode || 1,
+      preferLang: preferQualityFirst ? "ES" : preferLang
+    }) : findXtreamMovieMatches({
+      titleHints: combinedTitleHints,
+      yearHint: effectiveYearForExtract,
+      preferLang: preferQualityFirst ? "ES" : preferLang,
+      limit: 16
+    }).then((r) => r.tracks),
+    3200,
+    []
+  ).then((res) => {
+    xtreamTracks = res;
+    signalFastDirectEsIfReady(res);
+  }) : Promise.resolve();
   const primaryAllPromise = Promise.all([
+    xtreamMultiServerP,
     movidyP,
     gnulaP,
     dmP,
@@ -46964,6 +50130,7 @@ async function handleCatalogMediaExtract(params) {
   } else {
     await primaryAllPromise;
     const primaryHasPreferredSpanish = prefersSpanishTier && [
+      ...xtreamTracks,
       ...movidyTracks,
       ...gnulaTracks,
       ...dailymotionTracks,
@@ -47002,6 +50169,7 @@ async function handleCatalogMediaExtract(params) {
   const vestDetailMeta = vestExtractedHolder.value?.detail || extractedVestDetail;
   const rawDiscovered = isVestLink ? [
     ...vestTracks,
+    ...xtreamTracks,
     ...movidyTracks,
     ...gnulaTracks,
     ...montepinarTracks,
@@ -47011,6 +50179,7 @@ async function handleCatalogMediaExtract(params) {
     ...enTracks,
     ...esTracks
   ] : !hasExplicitMovidyUrl && hasExplicitGnulaUrl ? [
+    ...xtreamTracks,
     ...gnulaTracks,
     ...montepinarTracks,
     ...dailymotionTracks,
@@ -47021,6 +50190,7 @@ async function handleCatalogMediaExtract(params) {
     ...esTracks,
     ...vestTracks
   ] : [
+    ...xtreamTracks,
     ...movidyTracks,
     ...gnulaTracks,
     ...montepinarTracks,
@@ -47044,6 +50214,7 @@ async function handleCatalogMediaExtract(params) {
   const { orderedTracks, getLangScore, sourcePriority, getTrackHealthScore } = rankCandidateTracks2({
     allDiscovered,
     preferLang,
+    preferQualityFirst,
     isVestLink,
     hasExplicitMovidyUrl,
     hasExplicitGnulaUrl,
@@ -47287,11 +50458,403 @@ async function handleExternalSportsExtract(params) {
   return sendOk(extFallbackResult);
 }
 
+// server/services/liveFastResolver.ts
+var fastLiveWinnerCache = new LruTtlCache(250, 35e3);
+var inflightPrewarms = /* @__PURE__ */ new Map();
+function parseXtreamSource(sourceUrl) {
+  if (!/^\/api\/(?:xtream\/stream\/|stream\b)/i.test(sourceUrl)) return null;
+  if (sourceUrl.startsWith("/api/xtream/stream/")) {
+    const rawId = sourceUrl.split("/").pop()?.split("?")[0]?.replace(/\.m3u8.*$/i, "") || "";
+    let providerId = "primary";
+    try {
+      const parsed = new URL(sourceUrl, "http://localhost");
+      providerId = parsed.searchParams.get("provider") || "primary";
+    } catch {
+    }
+    return rawId ? { streamId: rawId, providerId } : null;
+  }
+  try {
+    const parsed = new URL(sourceUrl, "http://localhost");
+    const type = (parsed.searchParams.get("type") || "live").toLowerCase();
+    if (type !== "live") return null;
+    const streamId = (parsed.searchParams.get("id") || "").replace(/\.m3u8$/i, "").trim();
+    const providerId = parsed.searchParams.get("provider") || "primary";
+    return streamId ? { streamId, providerId } : null;
+  } catch {
+    return null;
+  }
+}
+async function defaultProbeSingleLiveTrack(track, opts) {
+  const startedAt = Date.now();
+  const sourceUrl = String(track.sourceUrl || "").trim();
+  const rt = String(track.resolverType || "tdt_hls");
+  if (!sourceUrl) {
+    return { ok: false, streamUrl: "", mode: "hls", latencyMs: 1, statusCode: 400 };
+  }
+  if (rt === "web_embed") {
+    return {
+      ok: true,
+      streamUrl: sourceUrl,
+      mode: "embed",
+      latencyMs: Math.max(1, Date.now() - startedAt)
+    };
+  }
+  const xtreamRef = parseXtreamSource(sourceUrl);
+  if (xtreamRef) {
+    try {
+      const manifest = await Promise.race([
+        fetchProxiedXtreamManifest(xtreamRef.streamId, "", xtreamRef.providerId),
+        new Promise((resolve) => setTimeout(() => resolve(null), opts.timeoutMs))
+      ]);
+      const lat = Math.max(1, Date.now() - startedAt);
+      if (manifest && manifest.includes("#EXTM3U")) {
+        return {
+          ok: true,
+          streamUrl: sourceUrl,
+          mode: "hls",
+          latencyMs: lat,
+          statusCode: 200
+        };
+      }
+      return { ok: false, streamUrl: "", mode: "hls", latencyMs: lat, statusCode: 503 };
+    } catch {
+      return {
+        ok: false,
+        streamUrl: "",
+        mode: "hls",
+        latencyMs: Math.max(1, Date.now() - startedAt),
+        statusCode: 502
+      };
+    }
+  }
+  if (sourceUrl.startsWith("/api/belix/stream/")) {
+    if (!isAnyBelixConnected(opts.belixSessionKey)) {
+      return { ok: false, streamUrl: "", mode: "hls", latencyMs: 1, statusCode: 503 };
+    }
+    const belixStreamId = sourceUrl.split("/").pop()?.replace(/\.m3u8.*$/i, "") || "";
+    const manifest = await Promise.race([
+      resolveBelixManifest(belixStreamId, opts.publicOrigin, opts.belixSessionKey, opts.titleHint || ""),
+      new Promise((resolve) => setTimeout(() => resolve(null), opts.timeoutMs))
+    ]).catch(() => null);
+    const lat = Math.max(1, Date.now() - startedAt);
+    if (manifest) {
+      return { ok: true, streamUrl: sourceUrl, mode: "hls", latencyMs: lat, statusCode: 200 };
+    }
+    return { ok: false, streamUrl: "", mode: "hls", latencyMs: lat, statusCode: 503 };
+  }
+  if (rt === "mediaset_live") {
+    const resolved = await Promise.race([
+      resolveMediasetLiveHlsUrl(sourceUrl),
+      new Promise((resolve) => setTimeout(() => resolve(null), opts.timeoutMs))
+    ]).catch(() => null);
+    const lat = Math.max(1, Date.now() - startedAt);
+    if (resolved?.streamUrl) {
+      const proxyUrl = buildHlsProxyUrl(resolved.streamUrl, resolved.referer);
+      return { ok: true, streamUrl: proxyUrl, mode: "hls", latencyMs: lat, statusCode: 200 };
+    }
+    return { ok: false, streamUrl: "", mode: "hls", latencyMs: lat, statusCode: 403 };
+  }
+  if (rt === "elahmad_live" || isElahmadUrl(sourceUrl)) {
+    const resolved = await Promise.race([
+      resolveElahmadChannelToHls(sourceUrl),
+      new Promise((resolve) => setTimeout(() => resolve(null), opts.timeoutMs))
+    ]).catch(() => null);
+    const lat = Math.max(1, Date.now() - startedAt);
+    if (resolved?.streamUrl && !resolved.isYoutube) {
+      const signed = await maybeSignEasyBroadcastUrl(resolved.streamUrl);
+      const proxyUrl = buildHlsProxyUrl(signed, resolved.referer);
+      return { ok: true, streamUrl: proxyUrl, mode: "hls", latencyMs: lat, statusCode: 200 };
+    }
+    return { ok: false, streamUrl: "", mode: "hls", latencyMs: lat, statusCode: 502 };
+  }
+  if (sourceUrl.startsWith("/api/")) {
+    return {
+      ok: true,
+      streamUrl: sourceUrl,
+      mode: "hls",
+      latencyMs: Math.max(1, Date.now() - startedAt)
+    };
+  }
+  if (rt === "tdt_hls" || rt === "direct_hls" || /\.m3u8(\?|$)/i.test(sourceUrl)) {
+    const cleanUrl = await maybeSignEasyBroadcastUrl(
+      sourceUrl.replace(/[?&]profile=(hd|fast)\b/gi, "")
+    );
+    if (isDvbHeadendStream(cleanUrl)) {
+      return {
+        ok: true,
+        streamUrl: `/api/dvb-live/playlist.m3u8?url=${encodeURIComponent(cleanUrl)}`,
+        mode: "hls",
+        latencyMs: Math.max(1, Date.now() - startedAt)
+      };
+    }
+    const referer = resolveKnownUpstreamReferer(cleanUrl, track.referer) || `${new URL(cleanUrl).origin}/`;
+    try {
+      const res = await streamingFetch(cleanUrl, {
+        method: "GET",
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36",
+          Referer: referer,
+          Accept: "*/*"
+        },
+        timeoutMs: opts.timeoutMs
+      });
+      const lat = Math.max(1, Date.now() - startedAt);
+      if (!res.ok) {
+        if (res.body) void res.body.cancel().catch(() => void 0);
+        return { ok: false, streamUrl: "", mode: "hls", latencyMs: lat, statusCode: res.status };
+      }
+      const txt = await res.text();
+      if (txt.includes("#EXTM3U") && !/nosignal/i.test(txt)) {
+        const proxyUrl = buildHlsProxyUrl(res.url || cleanUrl, referer);
+        return { ok: true, streamUrl: proxyUrl, mode: "hls", latencyMs: lat, statusCode: 200 };
+      }
+      return { ok: false, streamUrl: "", mode: "hls", latencyMs: lat, statusCode: 404 };
+    } catch {
+      return {
+        ok: false,
+        streamUrl: "",
+        mode: "hls",
+        latencyMs: Math.max(1, Date.now() - startedAt),
+        statusCode: 502
+      };
+    }
+  }
+  return {
+    ok: false,
+    streamUrl: "",
+    mode: "hls",
+    latencyMs: Math.max(1, Date.now() - startedAt),
+    statusCode: 400
+  };
+}
+function orderCandidatesForFastResolve(tracks, opts) {
+  const preferLang = String(opts?.preferLang || "ES").toUpperCase();
+  const qualityFirst = Boolean(opts?.preferQualityFirst) || preferLang === "QUALITY";
+  const healthMap = channelHealthMonitor.getAllTrackStatuses();
+  const indexed = tracks.map((track, originalIndex) => {
+    const liveHealth = healthMap[String(track.sourceUrl || "").trim()] || track.health;
+    const status = liveHealth?.status ?? "unknown";
+    const statusRank = status === "up" ? 0 : status === "unknown" ? 1 : status === "degraded" ? 2 : 3;
+    const normLang = normalizeLiveTrackLang(track.lang, track.label);
+    const langRank = qualityFirst ? 0 : normLang === preferLang ? 0 : normLang === "ES" ? 1 : normLang === "LAT" ? 2 : normLang === "EN" ? 3 : 4;
+    const isEmbed = track.resolverType === "web_embed";
+    const q = inferStreamQualityTag(track.quality, track.label, track.sourceUrl);
+    const lat = typeof liveHealth?.latencyMs === "number" ? Math.min(9999, liveHealth.latencyMs) : 1200;
+    const score = statusRank * 1e6 + (isEmbed ? 5e5 : 0) + langRank * 1e4 + Math.round(q.tier * 1e3) + Math.round(lat / 10);
+    return { originalIndex, track, score };
+  });
+  indexed.sort((a, b) => a.score - b.score || a.originalIndex - b.originalIndex);
+  return indexed.map(({ originalIndex, track }) => ({ originalIndex, track }));
+}
+async function raceFastLiveTracks(tracks, opts = {}) {
+  const safeTracks = Array.isArray(tracks) ? tracks.filter((t) => Boolean(t?.sourceUrl)) : [];
+  if (safeTracks.length === 0) {
+    return {
+      ok: false,
+      winningIndex: -1,
+      winningTrack: null,
+      streamUrl: "",
+      mode: "hls",
+      latencyMs: 0,
+      checkedCount: 0
+    };
+  }
+  const preferLang = String(opts.preferLang || "ES").toUpperCase();
+  const qualityFirst = Boolean(opts.preferQualityFirst);
+  const cacheKey = `${opts.channelId || safeTracks[0].sourceUrl}|${preferLang}|${qualityFirst ? "q1" : "q0"}`;
+  const cachedWinner = fastLiveWinnerCache.get(cacheKey);
+  if (cachedWinner && cachedWinner.ok) {
+    return { ...cachedWinner, fromCache: true };
+  }
+  const existingInflight = inflightPrewarms.get(cacheKey);
+  if (existingInflight) {
+    return existingInflight;
+  }
+  const ordered = orderCandidatesForFastResolve(safeTracks, {
+    preferLang,
+    preferQualityFirst: qualityFirst
+  }).slice(0, 5);
+  const probeImpl = opts.probeImpl || defaultProbeSingleLiveTrack;
+  const timeoutMs = opts.timeoutMs ?? 2400;
+  const hedgeDelay1 = opts.hedgeDelayMs ?? 220;
+  const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 520;
+  const publicOrigin = opts.publicOrigin || "";
+  const belixSessionKey = opts.belixSessionKey || "default";
+  const runRace = async () => {
+    const startedAt = Date.now();
+    let settled = false;
+    let checkedCount = 0;
+    return new Promise((resolve) => {
+      const timers = [];
+      let pendingCount = ordered.length;
+      let embedFallback = null;
+      const finish = (res) => {
+        if (settled) return;
+        settled = true;
+        for (const t of timers) clearTimeout(t);
+        if (res.ok) {
+          fastLiveWinnerCache.set(cacheKey, res);
+        }
+        resolve(res);
+      };
+      const launchCandidate = (cand) => {
+        if (settled) {
+          pendingCount -= 1;
+          return;
+        }
+        checkedCount += 1;
+        probeImpl(cand.track, {
+          publicOrigin,
+          belixSessionKey,
+          titleHint: opts.titleHint,
+          timeoutMs
+        }).then((out) => {
+          if (out.ok && out.streamUrl) {
+            if (out.mode === "hls") {
+              channelHealthMonitor.setTrackHealth(cand.track.sourceUrl, {
+                status: out.latencyMs <= 1800 ? "up" : "degraded",
+                latencyMs: out.latencyMs,
+                failCount: 0,
+                checkedAt: Date.now(),
+                statusCode: out.statusCode ?? 200
+              });
+              finish({
+                ok: true,
+                winningIndex: cand.originalIndex,
+                winningTrack: cand.track,
+                streamUrl: out.streamUrl,
+                mode: "hls",
+                latencyMs: out.latencyMs,
+                checkedCount
+              });
+              return;
+            }
+            if (!embedFallback) {
+              embedFallback = { ...cand, out };
+            }
+          } else {
+            channelHealthMonitor.setTrackHealth(cand.track.sourceUrl, {
+              status: "down",
+              latencyMs: out.latencyMs,
+              failCount: 1,
+              checkedAt: Date.now(),
+              statusCode: out.statusCode ?? 502
+            });
+          }
+        }).catch(() => {
+          channelHealthMonitor.setTrackHealth(cand.track.sourceUrl, {
+            status: "down",
+            failCount: 1,
+            checkedAt: Date.now()
+          });
+        }).finally(() => {
+          pendingCount -= 1;
+          if (!settled && pendingCount <= 0) {
+            if (embedFallback) {
+              finish({
+                ok: true,
+                winningIndex: embedFallback.originalIndex,
+                winningTrack: embedFallback.track,
+                streamUrl: embedFallback.out.streamUrl,
+                mode: "embed",
+                latencyMs: embedFallback.out.latencyMs,
+                checkedCount
+              });
+              return;
+            }
+            finish({
+              ok: false,
+              winningIndex: 0,
+              winningTrack: ordered[0]?.track || safeTracks[0],
+              streamUrl: ordered[0]?.track.sourceUrl || safeTracks[0].sourceUrl,
+              mode: "hls",
+              latencyMs: Math.max(1, Date.now() - startedAt),
+              checkedCount
+            });
+          }
+        });
+      };
+      launchCandidate(ordered[0]);
+      if (ordered.length > 1) {
+        const wave2 = setTimeout(() => {
+          if (settled) return;
+          for (const c of ordered.slice(1, 3)) {
+            launchCandidate(c);
+          }
+        }, hedgeDelay1);
+        timers.push(wave2);
+      }
+      if (ordered.length > 3) {
+        const wave3 = setTimeout(() => {
+          if (settled) return;
+          for (const c of ordered.slice(3)) {
+            launchCandidate(c);
+          }
+        }, hedgeDelay2);
+        timers.push(wave3);
+      }
+    });
+  };
+  const p = runRace().finally(() => {
+    inflightPrewarms.delete(cacheKey);
+  });
+  inflightPrewarms.set(cacheKey, p);
+  return p;
+}
+
 // server/routes/streamExtractRoutes.ts
 var extractionCache = new LruTtlCache(400, 15 * 60 * 1e3);
 var inFlightExtractMap = /* @__PURE__ */ new Map();
 function registerStreamExtractRoute(app2, deps) {
   const formatResp = (req, payload) => formatExtractResponseForClient(req, payload, deps.getPublicOrigin);
+  const resolveBelixSessionKey = (req) => {
+    const belixSidMatch = String(req.headers.cookie || "").match(/(?:^|;\s*)belix_sid=([^;]+)/);
+    return String(req.headers["x-belix-session"] || "").trim() || (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : "") || "default";
+  };
+  app2.post("/api/live/fast-resolve", async (req, res) => {
+    try {
+      const body = req.body || {};
+      const tracks = Array.isArray(body.tracks) ? body.tracks : [];
+      if (tracks.length === 0) {
+        return res.status(400).json({ success: false, ok: false, error: "Sin se\xF1ales para resolver." });
+      }
+      const outcome = await raceFastLiveTracks(tracks, {
+        channelId: body.channelId ? String(body.channelId) : void 0,
+        titleHint: body.title ? String(body.title) : void 0,
+        preferLang: body.preferLang ? String(body.preferLang) : "ES",
+        preferQualityFirst: Boolean(body.preferQualityFirst),
+        publicOrigin: deps.getPublicOrigin(req),
+        belixSessionKey: resolveBelixSessionKey(req)
+      });
+      return res.json({
+        success: outcome.ok,
+        ...outcome
+      });
+    } catch (err) {
+      logger.warn({ err }, "live_fast_resolve_error");
+      return res.status(502).json({ success: false, ok: false, error: "Error resolviendo directo." });
+    }
+  });
+  app2.post("/api/live/prewarm", (req, res) => {
+    try {
+      const body = req.body || {};
+      const tracks = Array.isArray(body.tracks) ? body.tracks.slice(0, 3) : [];
+      if (tracks.length > 0) {
+        void raceFastLiveTracks(tracks, {
+          channelId: body.channelId ? String(body.channelId) : void 0,
+          titleHint: body.title ? String(body.title) : void 0,
+          preferLang: body.preferLang ? String(body.preferLang) : "ES",
+          preferQualityFirst: Boolean(body.preferQualityFirst),
+          publicOrigin: deps.getPublicOrigin(req),
+          belixSessionKey: resolveBelixSessionKey(req),
+          timeoutMs: 2200
+        }).catch(() => void 0);
+      }
+      return res.json({ ok: true });
+    } catch {
+      return res.json({ ok: false });
+    }
+  });
   app2.get("/api/extract/stream", async (req, res) => {
     const rawInput = String(req.query.url || "").trim();
     const movidyUrlParam = String(req.query.movidyUrl || "").trim();
@@ -47299,6 +50862,7 @@ function registerStreamExtractRoute(app2, deps) {
     const vestUrlParam = String(req.query.vestUrl || "").trim();
     const resolverType = String(req.query.resolverType || "").trim();
     const preferLang = String(req.query.preferLang || req.query.lang || "ES").toUpperCase();
+    const preferQualityFirst = String(req.query.qualityFirst || req.query.preferQuality || "").trim() === "1" || preferLang === "QUALITY" || preferLang === "BEST";
     const titleHint = String(req.query.title || "").trim();
     const origTitleHint = String(req.query.origTitle || "").trim();
     const rawYearParam = String(req.query.year || "").trim();
@@ -47314,13 +50878,12 @@ function registerStreamExtractRoute(app2, deps) {
     if (!rawInput && !movidyUrlParam && !gnulaUrlParam && !vestUrlParam && !titleHint && !tmdbIdParam) {
       return res.status(400).json({ success: false, error: "Falta el enlace o t\xEDtulo del contenido." });
     }
-    const cacheKey = `v3|${mediaTypeParam}|${tmdbIdParam}|${yearParam}|${seasonParam || ""}|${episodeParam || ""}|${resolverType}|${preferLang}|${isSandboxedFrame ? "sb1" : "sb0"}|${directOnly ? "do1" : "do0"}|${rawInput}|${movidyUrlParam}|${gnulaUrlParam}|${vestUrlParam}|${titleHint}`;
+    const cacheKey = `v4|${mediaTypeParam}|${tmdbIdParam}|${yearParam}|${seasonParam || ""}|${episodeParam || ""}|${resolverType}|${preferLang}|${preferQualityFirst ? "qf1" : "qf0"}|${isSandboxedFrame ? "sb1" : "sb0"}|${directOnly ? "do1" : "do0"}|${rawInput}|${movidyUrlParam}|${gnulaUrlParam}|${vestUrlParam}|${titleHint}`;
     const cached = !forceExtract ? extractionCache.get(cacheKey) : void 0;
     if (cached && cached.expiresAt > Date.now()) {
       return res.json(formatResp(req, cached));
     }
-    const belixSidMatch = String(req.headers.cookie || "").match(/(?:^|;\s*)belix_sid=([^;]+)/);
-    const belixSessionKey = String(req.headers["x-belix-session"] || "").trim() || (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : "") || "default";
+    const belixSessionKey = resolveBelixSessionKey(req);
     const coalesceKey = `${belixSessionKey}|${cacheKey}`;
     if (!forceExtract) {
       const existingInFlight = inFlightExtractMap.get(coalesceKey);
@@ -47368,6 +50931,7 @@ function registerStreamExtractRoute(app2, deps) {
           vestUrlParam,
           resolverType,
           preferLang,
+          preferQualityFirst,
           titleHint,
           origTitleHint,
           yearParam,
@@ -50524,7 +54088,7 @@ function registerRbtvRoutes(app2) {
 }
 
 // server/routes/belixRoutes.ts
-import crypto14 from "crypto";
+import crypto15 from "crypto";
 
 // server/services/belix/belixParser.ts
 import fs12 from "fs";
@@ -51723,7 +55287,7 @@ function getBelixSessionKey(req, res) {
   const cookieKey = readCookieValue(req, "belix_sid");
   if (/^[a-zA-Z0-9_-]{8,64}$/.test(cookieKey)) return cookieKey;
   if (res) {
-    const newKey = crypto14.randomBytes(16).toString("hex");
+    const newKey = crypto15.randomBytes(16).toString("hex");
     res.setHeader(
       "Set-Cookie",
       `belix_sid=${newKey}; Path=/api; HttpOnly; SameSite=Lax; Max-Age=21600`
@@ -55042,7 +58606,7 @@ import path12 from "node:path";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 
 // server/services/musicOAuthImporter.ts
-import crypto15 from "crypto";
+import crypto16 from "crypto";
 var SPOTIFY_OAUTH_SCOPES = [
   "user-read-private",
   "user-library-read",
@@ -55058,8 +58622,8 @@ var SESSION_TTL_MS = 20 * 60 * 1e3;
 var spotifyPendingStates = /* @__PURE__ */ new Map();
 var spotifySessions = /* @__PURE__ */ new Map();
 function generatePkcePair() {
-  const codeVerifier = crypto15.randomBytes(48).toString("base64url");
-  const codeChallenge = crypto15.createHash("sha256").update(codeVerifier).digest("base64url");
+  const codeVerifier = crypto16.randomBytes(48).toString("base64url");
+  const codeChallenge = crypto16.createHash("sha256").update(codeVerifier).digest("base64url");
   return { codeVerifier, codeChallenge };
 }
 var MAX_OAUTH_MAP_ENTRIES = 500;
@@ -55138,7 +58702,7 @@ function createSpotifyAuthorizeUrl(requestedOrigin) {
   const openerOrigin = resolveSpotifyBaseOrigin(requestedOrigin);
   const redirectOrigin = ENV.appUrl || openerOrigin;
   const redirectUri = `${redirectOrigin}${SPOTIFY_CALLBACK_PATH}`;
-  const state2 = crypto15.randomBytes(24).toString("hex");
+  const state2 = crypto16.randomBytes(24).toString("hex");
   const { codeVerifier, codeChallenge } = generatePkcePair();
   spotifyPendingStates.set(state2, {
     redirectUri,
@@ -55221,7 +58785,7 @@ async function handleSpotifyOAuthCallback(params) {
         error: tokenJson?.error_description || tokenJson?.error || "Spotify rechaz\xF3 el intercambio de token PKCE."
       };
     }
-    const sessionToken = crypto15.randomBytes(32).toString("hex");
+    const sessionToken = crypto16.randomBytes(32).toString("hex");
     spotifySessions.set(sessionToken, {
       accessToken: tokenJson.access_token,
       createdAt: Date.now()
@@ -55717,7 +59281,7 @@ async function importFullYoutubeAccount(googleAccessToken) {
 }
 
 // server/services/podcastExtractorService.ts
-import crypto16 from "node:crypto";
+import crypto17 from "node:crypto";
 var UA = "RiffanMusic-PodcastExtractor/1.0 (+https://riffantv.app)";
 var searchCache3 = new LruTtlCache(120, 20 * 60 * 1e3);
 var episodesCache = new LruTtlCache(180, 15 * 60 * 1e3);
@@ -55772,7 +59336,7 @@ async function searchPodcasts(query, country = "ES", limit = 16) {
       const art = String(item.artworkUrl600 || item.artworkUrl100 || "").trim();
       if (!art) continue;
       shows.push({
-        id: `pod-${item.collectionId || item.trackId || crypto16.createHash("md5").update(feedUrl).digest("hex").slice(0, 8)}`,
+        id: `pod-${item.collectionId || item.trackId || crypto17.createHash("md5").update(feedUrl).digest("hex").slice(0, 8)}`,
         title: String(item.collectionName || item.trackName || "Podcast").trim(),
         author: String(item.artistName || "Podcast Online").trim(),
         artwork: art,
@@ -55867,7 +59431,7 @@ async function fetchPodcastEpisodes(params) {
     const itunesImgTag = channelHead.match(/<itunes:image\b[^>]*>/i)?.[0] || "";
     showCover = extractAttr(itunesImgTag, "href") || extractTag(channelHead, "url");
   }
-  const feedHash = crypto16.createHash("md5").update(check.url.toString()).digest("hex").slice(0, 10);
+  const feedHash = crypto17.createHash("md5").update(check.url.toString()).digest("hex").slice(0, 10);
   const itemMatches = xml.match(/<item\b[\s\S]*?<\/item>/gi) || [];
   const tracks = [];
   for (let i = 0; i < itemMatches.length && tracks.length < limit; i++) {
@@ -55884,7 +59448,7 @@ async function fetchPodcastEpisodes(params) {
     const durationRaw = extractTag(block, "itunes:duration");
     const epImgTag = block.match(/<itunes:image\b[^>]*>/i)?.[0] || "";
     const epCover = extractAttr(epImgTag, "href") || showCover;
-    const epHash = crypto16.createHash("md5").update(`${feedHash}:${enclosureUrl}`).digest("hex").slice(0, 10);
+    const epHash = crypto17.createHash("md5").update(`${feedHash}:${enclosureUrl}`).digest("hex").slice(0, 10);
     tracks.push({
       id: `pod-ep-${feedHash}-${epHash}`,
       title: epTitle,
@@ -57099,254 +60663,1275 @@ function registerVpnGatewayRoutes(app2) {
   });
 }
 
-// server/services/openGamesRepoService.ts
-var REGISTRY_URL = "https://raw.githubusercontent.com/sausi-7/games/main/games/registry.json";
-var PAGES_BASE_URL = "https://sausi-7.github.io/games/";
-var CACHE_TTL_MS2 = 60 * 60 * 1e3;
-var FALLBACK_CATEGORIES = [
-  { id: "3d", label: "3D WebGL", emoji: "\u{1F310}", color: "#8b5cf6" },
-  { id: "racing", label: "Racing", emoji: "\u{1F3CE}\uFE0F", color: "#f59e0b" },
-  { id: "shooter", label: "Shooter", emoji: "\u{1F3AF}", color: "#ef4444" },
-  { id: "platformer", label: "Platformer", emoji: "\u{1F3C3}", color: "#06b6d4" },
-  { id: "sports", label: "Sports", emoji: "\u26BD", color: "#10b981" },
-  { id: "arcade", label: "Arcade", emoji: "\u{1F579}\uFE0F", color: "#ec4899" },
-  { id: "puzzle", label: "Puzzle", emoji: "\u{1F9E9}", color: "#7c3aed" },
-  { id: "casual", label: "Casual", emoji: "\u{1F388}", color: "#f472b6" },
-  { id: "board", label: "Board", emoji: "\u265F\uFE0F", color: "#64748b" },
-  { id: "word-quiz", label: "Word & Quiz", emoji: "\u{1F4DD}", color: "#3b82f6" }
-];
-var FALLBACK_FEATURED_GAMES = [
+// server/services/providers/xtreamProvidersService.ts
+import { Readable as Readable4 } from "stream";
+
+// server/config/defaultProviders.ts
+var providersConfig = [
   {
-    slug: "crossy-road",
-    name: "Crossy Road 3D",
-    category: "arcade",
-    tech: "three",
-    tags: ["3d", "traffic", "endless"],
-    description: "Cross busy roads and rivers in low-poly 3D.",
-    launchUrl: `${PAGES_BASE_URL}games/arcade/crossy-road/index.html`,
-    repo: "sausi-7/games",
-    license: "MIT"
-  },
-  {
-    slug: "level-devil",
-    name: "Level Devil",
-    category: "platformer",
-    tech: "three",
-    tags: ["platformer", "traps"],
-    description: "Platformer packed with surprise traps and sudden twists.",
-    launchUrl: `${PAGES_BASE_URL}games/platformer/level-devil/index.html`,
-    repo: "sausi-7/games",
-    license: "MIT"
-  },
-  {
-    slug: "stack-tower",
-    name: "Stack Tower 3D",
-    category: "3d",
-    tech: "three",
-    tags: ["3d", "timing", "stack"],
-    description: "Drop moving slabs cleanly on top of your rising 3D tower.",
-    launchUrl: `${PAGES_BASE_URL}games/3d/stack-tower/index.html`,
-    repo: "sausi-7/games",
-    license: "MIT"
-  },
-  {
-    slug: "road-fighter",
-    name: "Road Fighter",
-    category: "racing",
-    tech: "phaser",
-    tags: ["cars", "retro", "racing"],
-    description: "High-speed arcade highway racing dodging traffic.",
-    launchUrl: `${PAGES_BASE_URL}games/racing/road-fighter/index.html`,
-    repo: "sausi-7/games",
-    license: "MIT"
-  },
-  {
-    slug: "alien-battle",
-    name: "Alien Battle",
-    category: "shooter",
-    tech: "phaser",
-    tags: ["aliens", "survival"],
-    description: "Top-down alien shooter. Survive the swarm.",
-    launchUrl: `${PAGES_BASE_URL}games/shooter/alien-battle/index.html`,
-    repo: "sausi-7/games",
-    license: "MIT"
-  },
-  {
-    slug: "fighter-jet",
-    name: "Fighter Jet",
-    category: "shooter",
-    tech: "phaser",
-    tags: ["arcade", "jets"],
-    description: "Vertical jet combat through incoming enemy squadrons.",
-    launchUrl: `${PAGES_BASE_URL}games/shooter/fighter-jet/index.html`,
-    repo: "sausi-7/games",
-    license: "MIT"
-  },
-  {
-    slug: "basketball",
-    name: "Basketball Hoops",
-    category: "sports",
-    tech: "phaser",
-    tags: ["hoops", "sports"],
-    description: "Arc the ball cleanly through the hoop under pressure.",
-    launchUrl: `${PAGES_BASE_URL}games/sports/basketball/index.html`,
-    repo: "sausi-7/games",
-    license: "MIT"
-  },
-  {
-    slug: "sudoku",
-    name: "Sudoku 9\xD79",
-    category: "puzzle",
-    tech: "html",
-    tags: ["logic", "numbers"],
-    description: "Classic 9x9 number logic puzzle.",
-    launchUrl: `${PAGES_BASE_URL}games/puzzle/sudoku/index.html`,
-    repo: "sausi-7/games",
-    license: "MIT"
-  },
-  {
-    slug: "doodle-jump",
-    name: "Doodle Jump",
-    category: "platformer",
-    tech: "phaser",
-    tags: ["jump", "endless"],
-    description: "Bounce from platform to platform climbing higher.",
-    launchUrl: `${PAGES_BASE_URL}games/platformer/doodle-jump/index.html`,
-    repo: "sausi-7/games",
-    license: "MIT"
-  },
-  {
-    slug: "cosmic-cleaner",
-    name: "Cosmic Cleaner",
-    category: "3d",
-    tech: "phaser",
-    tags: ["space", "arcade"],
-    description: "Clear orbital debris across deep-space sectors.",
-    launchUrl: `${PAGES_BASE_URL}games/3d/cosmic-cleaner/index.html`,
-    repo: "sausi-7/games",
-    license: "MIT"
-  },
-  {
-    slug: "mario",
-    name: "Mario-Like Platformer",
-    category: "platformer",
-    tech: "phaser",
-    tags: ["retro", "run"],
-    description: "Classic side-scrolling jump-and-run adventure.",
-    launchUrl: `${PAGES_BASE_URL}games/platformer/mario/index.html`,
-    repo: "sausi-7/games",
-    license: "MIT"
-  },
-  {
-    slug: "cricket-123",
-    name: "Cricket 1-2-3",
-    category: "sports",
-    tech: "phaser",
-    tags: ["cricket", "batting"],
-    description: "Quick-reflex arcade cricket batting challenge.",
-    launchUrl: `${PAGES_BASE_URL}games/sports/cricket-123/index.html`,
-    repo: "sausi-7/games",
-    license: "MIT"
-  }
-];
-var cachedCatalog = null;
-var inflightCatalogPromise = null;
-async function getOpenGamesRepoCatalog(force = false) {
-  if (!force && cachedCatalog && Date.now() - cachedCatalog.syncedAt < CACHE_TTL_MS2) {
-    return cachedCatalog;
-  }
-  if (inflightCatalogPromise) return inflightCatalogPromise;
-  inflightCatalogPromise = (async () => {
-    try {
-      const resp = await fetch(REGISTRY_URL, {
-        headers: { "User-Agent": "RiffanGames-Catalog/1.0" },
-        signal: AbortSignal.timeout(7e3)
-      });
-      if (resp.ok) {
-        const raw = await resp.json();
-        const categories = Array.isArray(raw.categories) ? raw.categories.filter((c) => Boolean(c?.id && c?.label)).map((c) => ({
-          id: String(c.id),
-          label: String(c.label),
-          emoji: String(c.emoji || "\u{1F3AE}"),
-          color: String(c.color || "#7c3aed")
-        })) : FALLBACK_CATEGORIES;
-        const games = Array.isArray(raw.games) ? raw.games.filter((g) => Boolean(g?.slug && g?.name && g?.path)).map((g) => {
-          const cleanPath = String(g.path || "").replace(/^\/+/, "");
-          return {
-            slug: String(g.slug),
-            name: String(g.name),
-            category: String(g.category || "arcade"),
-            tech: String(g.tech || "html"),
-            tags: Array.isArray(g.tags) ? g.tags.map(String) : [],
-            description: String(g.description || ""),
-            launchUrl: `${PAGES_BASE_URL}${cleanPath}`,
-            repo: "sausi-7/games",
-            license: "MIT"
-          };
-        }) : FALLBACK_FEATURED_GAMES;
-        if (games.length > 0) {
-          cachedCatalog = {
-            repo: "sausi-7/games",
-            repoUrl: "https://github.com/sausi-7/games",
-            license: "MIT",
-            total: games.length,
-            categories,
-            games,
-            syncedAt: Date.now()
-          };
-          return cachedCatalog;
-        }
+    id: "vod4k",
+    name: "VOD 4K",
+    serverUrl: "http://vod4k.cc:80",
+    autoConnect: true,
+    accentColor: "#7C3AED",
+    accounts: [
+      {
+        username: "4413658251491390",
+        password: "4413658251491390"
+      },
+      {
+        username: "3178886199166690",
+        password: "8242297241"
       }
-    } catch (err) {
-      logger.debug({ err }, "open_games_repo_fetch_fallback");
+    ]
+  },
+  {
+    id: "2m2h-alt",
+    name: "2M2H Alt",
+    serverUrl: "http://3jrg5v.2m2h.im:80",
+    autoConnect: true,
+    accentColor: "#38BDF8",
+    accounts: [
+      {
+        username: "NBA00382",
+        password: "9100177277"
+      }
+    ]
+  },
+  {
+    id: "adtupac",
+    name: "Adtupac",
+    serverUrl: "http://a.adtupac.top:80",
+    autoConnect: true,
+    accentColor: "#10B981",
+    accounts: [
+      {
+        username: "Ricardo-alves@2023@R",
+        password: "7X4EuvXdEdYr2C"
+      }
+    ]
+  },
+  {
+    id: "ultra-vip",
+    name: "Ultra VIP",
+    serverUrl: "http://ultra-vip.net:8080",
+    autoConnect: true,
+    accentColor: "#F59E0B",
+    accounts: [
+      {
+        username: "GzheRdD6J",
+        password: "c78sXxk15"
+      }
+    ]
+  },
+  {
+    id: "sult-vo",
+    name: "Sult-Vo",
+    serverUrl: "http://sult-vo.xyz:80",
+    autoConnect: true,
+    accentColor: "#F43F5E",
+    accounts: [
+      {
+        username: "4426530274896970",
+        password: "4426530274896970"
+      },
+      {
+        username: "2225190801115579",
+        password: "2225190801115579"
+      },
+      {
+        username: "4453758394245202",
+        password: "4453758394245202"
+      }
+    ]
+  }
+];
+function normalizeXtreamOrigin(rawServerUrl) {
+  const clean = String(rawServerUrl || "").trim().replace(/\/+$/, "");
+  if (!clean) return "";
+  const withScheme = /^https?:\/\//i.test(clean) ? clean : `http://${clean}`;
+  try {
+    return new URL(withScheme).origin;
+  } catch {
+    return withScheme;
+  }
+}
+function buildXtreamPlayerApiUrl(serverUrl, account, action, extraParams) {
+  const origin = normalizeXtreamOrigin(serverUrl);
+  const u = encodeURIComponent(account.username);
+  const p = encodeURIComponent(account.password);
+  const parts = [`username=${u}`, `password=${p}`];
+  if (action) {
+    parts.push(`action=${encodeURIComponent(action)}`);
+  }
+  if (extraParams) {
+    for (const [k, v] of Object.entries(extraParams)) {
+      if (v !== void 0 && v !== null && String(v).trim() !== "") {
+        parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`);
+      }
     }
-    return cachedCatalog || {
-      repo: "sausi-7/games",
-      repoUrl: "https://github.com/sausi-7/games",
-      license: "MIT",
-      total: FALLBACK_FEATURED_GAMES.length,
-      categories: FALLBACK_CATEGORIES,
-      games: FALLBACK_FEATURED_GAMES,
-      syncedAt: Date.now()
-    };
-  })().finally(() => {
-    inflightCatalogPromise = null;
-  });
-  return inflightCatalogPromise;
+  }
+  return `${origin}/player_api.php?${parts.join("&")}`;
+}
+function buildXtreamM3uUrl(serverUrl, account) {
+  const origin = normalizeXtreamOrigin(serverUrl);
+  const u = encodeURIComponent(account.username);
+  const p = encodeURIComponent(account.password);
+  return `${origin}/get.php?username=${u}&password=${p}&type=m3u_plus&output=ts`;
+}
+function buildXtreamMediaUrl(serverUrl, account, kind, streamId, extension) {
+  const origin = normalizeXtreamOrigin(serverUrl);
+  const u = encodeURIComponent(account.username);
+  const p = encodeURIComponent(account.password);
+  const id = encodeURIComponent(String(streamId || "").trim());
+  const ext = String(extension || (kind === "live" ? "m3u8" : "mp4")).replace(/^\.+/, "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase() || (kind === "live" ? "m3u8" : "mp4");
+  return `${origin}/${kind}/${u}/${p}/${id}.${ext}`;
 }
 
-// server/routes/openGamesRoutes.ts
-function registerOpenGamesRoutes(app2) {
-  app2.get("/api/games/open-catalog", async (req, res) => {
-    const force = req.query.refresh === "1";
-    const category = String(req.query.category || "").trim().toLowerCase();
-    const q = String(req.query.q || "").trim().toLowerCase();
-    const catalog = await getOpenGamesRepoCatalog(force);
-    let games = catalog.games;
-    if (category && category !== "all") {
-      games = games.filter((g) => g.category.toLowerCase() === category);
+// server/services/providers/xtreamProvidersHelpers.ts
+import crypto18 from "crypto";
+import http3 from "http";
+import https4 from "https";
+var subPlaylistCache = new LruTtlCache(2e3, 15 * 60 * 1e3);
+var segmentCache = new LruTtlCache(6e3, 8 * 60 * 1e3);
+function makeOpaqueToken(rawUrl) {
+  return crypto18.createHash("sha1").update(rawUrl).digest("hex").slice(0, 20);
+}
+function isDisallowedAdultItem(categoryName, itemName) {
+  const text2 = `${categoryName} ${itemName}`.toLowerCase();
+  return /\b(xxx|adult|adults|porn|18\+|for\s*adults|erotic|hentai)\b/i.test(text2);
+}
+function sanitizePublicImageUrl(raw) {
+  const val = String(raw || "").trim();
+  if (!val || !/^https?:\/\/[a-z0-9]/i.test(val)) return void 0;
+  try {
+    const parsed = new URL(val);
+    if (parsed.username || parsed.password) return void 0;
+    return parsed.toString();
+  } catch {
+    return void 0;
+  }
+}
+function sanitizeExtension(raw, fallback) {
+  const clean = String(raw || "").trim().replace(/^\.+/, "").replace(/[^a-zA-Z0-9]/g, "").toLowerCase();
+  return clean || fallback;
+}
+function extractYearHint(rawTitle, rawDate) {
+  const dateStr = String(rawDate || "").trim();
+  const dateMatch = dateStr.match(/\b(19\d{2}|20\d{2})\b/);
+  if (dateMatch) return dateMatch[1];
+  const titleMatch = String(rawTitle || "").match(/\(?(19\d{2}|20\d{2})\)?/);
+  return titleMatch ? titleMatch[1] : void 0;
+}
+function fetchDirectIpv4Text(targetUrl, headers, timeoutMs, redirectsLeft = 3) {
+  return new Promise((resolve, reject) => {
+    let parsed;
+    try {
+      parsed = new URL(targetUrl);
+    } catch (err) {
+      reject(err);
+      return;
     }
-    if (q) {
-      games = games.filter(
-        (g) => g.name.toLowerCase().includes(q) || g.description.toLowerCase().includes(q) || g.tags.some((t) => t.toLowerCase().includes(q))
+    const isHttps = parsed.protocol === "https:";
+    const mod = isHttps ? https4 : http3;
+    const req = mod.request(
+      parsed,
+      {
+        method: "GET",
+        headers,
+        family: 4,
+        timeout: timeoutMs,
+        ...isHttps ? { rejectUnauthorized: false } : {}
+      },
+      (res) => {
+        const status = res.statusCode || 502;
+        if ([301, 302, 303, 307, 308].includes(status) && res.headers.location && redirectsLeft > 0) {
+          res.resume();
+          const nextUrl = new URL(res.headers.location, parsed).toString();
+          assertSafeProxyUrl(nextUrl).then(() => fetchDirectIpv4Text(nextUrl, headers, timeoutMs, redirectsLeft - 1)).then(resolve).catch(reject);
+          return;
+        }
+        const chunks = [];
+        res.on("data", (chunk) => {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        });
+        res.on("end", () => {
+          resolve({ status, text: Buffer.concat(chunks).toString("utf8") });
+        });
+        res.on("error", reject);
+      }
+    );
+    req.on("timeout", () => {
+      req.destroy(new Error(`Direct IPv4 timeout after ${timeoutMs}ms`));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+async function fetchProviderJsonWithFallback(url, timeoutMs) {
+  await assertSafeProxyUrl(url);
+  const headerVariants = [
+    { "User-Agent": "IPTVSmartersPlayer", Accept: "application/json, text/plain, */*" },
+    { "User-Agent": CHROME_UA, Accept: "application/json, text/plain, */*" }
+  ];
+  let lastStatus = 0;
+  for (const headers of headerVariants) {
+    try {
+      const res = await streamingFetch(url, { method: "GET", headers, timeoutMs });
+      lastStatus = res.status;
+      if (res.ok) {
+        const text2 = await res.text();
+        try {
+          return { ok: true, status: res.status, data: JSON.parse(text2) };
+        } catch {
+        }
+      }
+      if (res.status === 401 || res.status === 404) {
+        break;
+      }
+    } catch {
+    }
+  }
+  for (const headers of headerVariants) {
+    try {
+      const direct = await fetchDirectIpv4Text(url, headers, timeoutMs);
+      if (direct.status >= 200 && direct.status < 300 && direct.text) {
+        try {
+          return { ok: true, status: direct.status, data: JSON.parse(direct.text) };
+        } catch {
+        }
+      } else if (direct.status) {
+        lastStatus = direct.status;
+        if (direct.status === 401 || direct.status === 404) {
+          return { ok: false, status: direct.status, data: null };
+        }
+      }
+    } catch {
+    }
+  }
+  try {
+    const fb = await curlGetText(
+      url,
+      { "User-Agent": "IPTVSmartersPlayer", Accept: "*/*" },
+      Math.max(4, Math.ceil(timeoutMs / 1e3)),
+      true,
+      true
+    );
+    if (fb.text) {
+      try {
+        return { ok: true, status: 200, data: JSON.parse(fb.text) };
+      } catch {
+      }
+    }
+  } catch {
+  }
+  return { ok: false, status: lastStatus || 502, data: null };
+}
+function parseM3uPlusIntoCatalog(m3uText) {
+  const lines = String(m3uText || "").split(/\r?\n/);
+  const live = [];
+  const movies = [];
+  const seenLive = /* @__PURE__ */ new Set();
+  const seenMovies = /* @__PURE__ */ new Set();
+  const catIds = /* @__PURE__ */ new Map();
+  let catSeq = 1;
+  let currentName = "";
+  let currentGroup = "General";
+  let currentLogo;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith("#EXTINF:")) {
+      const groupMatch = line.match(/group-title="([^"]*)"/i);
+      const logoMatch = line.match(/tvg-logo="([^"]*)"/i);
+      const commaIdx = line.lastIndexOf(",");
+      currentName = commaIdx >= 0 ? line.slice(commaIdx + 1).trim() : "";
+      currentGroup = (groupMatch?.[1] || "General").trim() || "General";
+      currentLogo = sanitizePublicImageUrl(logoMatch?.[1]);
+      continue;
+    }
+    if (line.startsWith("#")) continue;
+    if (/\/series\//i.test(line)) continue;
+    let categoryId = catIds.get(currentGroup);
+    if (!categoryId) {
+      categoryId = `m3u-${catSeq++}`;
+      catIds.set(currentGroup, categoryId);
+    }
+    const isMovie = /\/movie\//i.test(line);
+    const idMatch = line.match(/\/([a-zA-Z0-9_-]{1,48})(?:\.([a-zA-Z0-9]{2,5}))?(?:\?.*)?$/);
+    const streamId = idMatch?.[1] || "";
+    const ext = sanitizeExtension(idMatch?.[2], isMovie ? "mp4" : "ts");
+    const name = currentName || `Item ${streamId}`;
+    currentName = "";
+    if (!streamId || isDisallowedAdultItem(currentGroup, name)) continue;
+    if (isMovie) {
+      if (seenMovies.has(streamId)) continue;
+      seenMovies.add(streamId);
+      movies.push({ streamId, name, categoryId, categoryName: currentGroup, poster: currentLogo, ext });
+    } else {
+      if (seenLive.has(streamId)) continue;
+      seenLive.add(streamId);
+      live.push({ streamId, name, categoryId, categoryName: currentGroup, poster: currentLogo });
+    }
+  }
+  return { live, movies };
+}
+function buildProviderStreamUrl(providerId, kind, streamId, ext) {
+  const pid = encodeURIComponent(providerId);
+  const sid = encodeURIComponent(streamId);
+  const cleanExt = sanitizeExtension(ext, kind === "live" ? "m3u8" : "mp4");
+  return `/api/providers/stream/${pid}/${kind}/${sid}.${cleanExt}`;
+}
+function rewriteProviderPlaylistWithOpaqueTokens(manifestText, baseUrl, referer, originPrefix = "") {
+  const lines = manifestText.split(/\r?\n/);
+  let nextIsPlaylist = false;
+  const out = [];
+  const absSuffix = originPrefix ? "?abs=1" : "";
+  for (const rawLine of lines) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith("#")) {
+      if (trimmed.startsWith("#EXT-X-STREAM-INF")) nextIsPlaylist = true;
+      if (trimmed.includes('URI="')) {
+        const replaced = rawLine.replace(/URI="([^"]+)"/g, (_m, uriVal) => {
+          try {
+            const absUri = new URL(uriVal, baseUrl).href;
+            const token = makeOpaqueToken(absUri);
+            if (trimmed.startsWith("#EXT-X-MEDIA") || /\.m3u8(\?|$)/i.test(absUri)) {
+              subPlaylistCache.set(token, { rawUrl: absUri, referer });
+              return `URI="${originPrefix}/api/providers/hls-sub/${token}.m3u8${absSuffix}"`;
+            }
+            segmentCache.set(token, { rawUrl: absUri, referer });
+            return `URI="${originPrefix}/api/providers/hls-seg/${token}.bin"`;
+          } catch {
+            return _m;
+          }
+        });
+        out.push(replaced);
+        continue;
+      }
+      out.push(rawLine);
+      continue;
+    }
+    try {
+      const absUrl = new URL(trimmed, baseUrl).href;
+      const isPlaylist = nextIsPlaylist || /\.m3u8(\?|$)/i.test(absUrl);
+      nextIsPlaylist = false;
+      const token = makeOpaqueToken(absUrl);
+      if (isPlaylist) {
+        subPlaylistCache.set(token, { rawUrl: absUrl, referer });
+        out.push(`${originPrefix}/api/providers/hls-sub/${token}.m3u8${absSuffix}`);
+      } else {
+        const extMatch = absUrl.match(/\.(m4s|mp4|aac|ts)(\?|$)/i);
+        const ext = extMatch ? extMatch[1].toLowerCase() : "ts";
+        segmentCache.set(token, { rawUrl: absUrl, referer });
+        out.push(`${originPrefix}/api/providers/hls-seg/${token}.${ext}`);
+      }
+    } catch {
+      nextIsPlaylist = false;
+      out.push(rawLine);
+    }
+  }
+  return out.join("\n") + "\n";
+}
+async function fetchProviderPlaylistText(targetUrl, referer, timeoutMs = 3e3) {
+  await assertSafeProxyUrl(targetUrl);
+  const headers = {
+    "User-Agent": "IPTVSmartersPlayer",
+    Accept: "*/*",
+    Referer: referer
+  };
+  try {
+    const res = await streamingFetch(targetUrl, { headers, timeoutMs });
+    if (res.ok) {
+      const text2 = await res.text();
+      if (text2.includes("#EXTM3U") && !/nosignal|<!doctype|<html/i.test(text2)) {
+        const finalUrl = res.url || targetUrl;
+        await assertSafeProxyUrl(finalUrl);
+        return { text: text2, baseUrl: finalUrl };
+      }
+    }
+  } catch {
+  }
+  const fb = await curlGetText(targetUrl, headers, 4, false, true).catch(() => ({
+    text: "",
+    effectiveUrl: targetUrl
+  }));
+  if (fb.text && fb.text.includes("#EXTM3U") && !/nosignal|<!doctype|<html/i.test(fb.text)) {
+    const finalUrl = fb.effectiveUrl || targetUrl;
+    await assertSafeProxyUrl(finalUrl);
+    return { text: fb.text, baseUrl: finalUrl };
+  }
+  return null;
+}
+async function resolveProviderSubPlaylist(tokenWithExt, originPrefix = "") {
+  const token = String(tokenWithExt || "").replace(/\.m3u8$/i, "").trim();
+  const entry = subPlaylistCache.get(token);
+  if (!entry) return null;
+  const loaded = await fetchProviderPlaylistText(entry.rawUrl, entry.referer).catch(() => null);
+  if (!loaded) return null;
+  return rewriteProviderPlaylistWithOpaqueTokens(loaded.text, loaded.baseUrl, entry.referer, originPrefix);
+}
+async function fetchProviderOpaqueSegment(tokenWithExt, rangeHeader) {
+  const token = String(tokenWithExt || "").replace(/\.[a-z0-9]+$/i, "").trim();
+  const entry = segmentCache.get(token);
+  if (!entry) return null;
+  await assertSafeProxyUrl(entry.rawUrl);
+  const headers = {
+    "User-Agent": "IPTVSmartersPlayer",
+    Accept: "*/*",
+    Referer: entry.referer
+  };
+  if (rangeHeader) headers["Range"] = rangeHeader;
+  try {
+    const res = await streamingFetch(entry.rawUrl, { headers, timeoutMs: 8e3 });
+    if (res.ok || res.status === 206) {
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length > 0) {
+        return {
+          status: res.status,
+          contentType: res.headers.get("content-type") || "video/mp2t",
+          buffer: buf
+        };
+      }
+    }
+  } catch {
+  }
+  const curlRes = await curlGetBufferWithStatus(entry.rawUrl, headers, 8).catch(() => ({
+    buf: Buffer.alloc(0),
+    status: 502
+  }));
+  if (curlRes.buf.length > 0 && curlRes.status >= 200 && curlRes.status < 400) {
+    return {
+      status: curlRes.status,
+      contentType: "video/mp2t",
+      buffer: curlRes.buf
+    };
+  }
+  return null;
+}
+function sortCatalogItemsForDisplay(items) {
+  return items.sort((a, b) => {
+    const score = (item) => {
+      const text2 = `${item.categoryName} ${item.name}`.toLowerCase();
+      if (/\b(es|esp|spain|espa[ñn]a|castellano|tdt|movistar|dazn)\b/i.test(text2)) return 0;
+      if (/\b(cine|estreno|pel[ií]cula|4k|uhd|netflix|hbo|disney|prime)\b/i.test(text2)) return 1;
+      if (/\b(deport|sport|f[uú]tbol|futbol|laliga|champions)\b/i.test(text2)) return 2;
+      return 3;
+    };
+    return score(a) - score(b);
+  });
+}
+
+// server/services/providers/xtreamProvidersService.ts
+var runtimeStates = /* @__PURE__ */ new Map();
+function ensureRuntimeState(config) {
+  let st = runtimeStates.get(config.id);
+  if (!st) {
+    st = {
+      config,
+      connected: false,
+      connecting: false,
+      activeAccountIndex: 0,
+      liveCategories: [],
+      movieCategories: [],
+      seriesCategories: [],
+      liveItems: [],
+      movieItems: [],
+      seriesItems: [],
+      lastSyncedAt: void 0,
+      error: void 0
+    };
+    runtimeStates.set(config.id, st);
+  }
+  return st;
+}
+for (const cfg of providersConfig) {
+  ensureRuntimeState(cfg);
+}
+function getOrderedAccountCandidates(accounts, startIndex = 0) {
+  if (!accounts.length) return [];
+  const safeStart = (startIndex % accounts.length + accounts.length) % accounts.length;
+  const out = [];
+  for (let i = 0; i < accounts.length; i++) {
+    const idx = (safeStart + i) % accounts.length;
+    out.push({ index: idx, account: accounts[idx] });
+  }
+  return out;
+}
+function isAuthorizedUserInfo(userInfo) {
+  if (!userInfo || typeof userInfo !== "object") {
+    return { authorized: false, hasFreeSlot: false, reason: "auth_missing" };
+  }
+  if (Number(userInfo.auth) === 0) {
+    return { authorized: false, hasFreeSlot: false, reason: "auth_rejected" };
+  }
+  const status = String(userInfo.status || "").trim().toLowerCase();
+  if (status && ["expired", "disabled", "banned", "suspended"].includes(status)) {
+    return { authorized: false, hasFreeSlot: false, reason: `status_${status}` };
+  }
+  const active = Number(userInfo.active_cons ?? 0);
+  const max = Number(userInfo.max_connections ?? 1);
+  const hasFreeSlot = !Number.isFinite(max) || max <= 0 ? true : active < max;
+  return { authorized: true, hasFreeSlot };
+}
+function toPublicStatus(st) {
+  return {
+    id: st.config.id,
+    name: st.config.name,
+    accentColor: st.config.accentColor,
+    autoConnect: st.config.autoConnect,
+    connected: st.connected,
+    connecting: st.connecting,
+    accountCount: st.config.accounts.length,
+    activeAccountSlot: st.config.accounts.length > 0 ? st.activeAccountIndex + 1 : 0,
+    liveCount: st.liveItems.length,
+    movieCount: st.movieItems.length,
+    seriesCount: st.seriesItems.length,
+    totalCount: st.liveItems.length + st.movieItems.length + st.seriesItems.length,
+    liveCategories: st.liveCategories,
+    movieCategories: st.movieCategories,
+    seriesCategories: st.seriesCategories,
+    lastSyncedAt: st.lastSyncedAt,
+    error: st.error
+  };
+}
+function buildCategoriesWithCounts(rawCategories, items, kind) {
+  const nameMap = /* @__PURE__ */ new Map();
+  const orderedIds = [];
+  if (Array.isArray(rawCategories)) {
+    for (const row of rawCategories) {
+      const id = String(row?.category_id ?? "").trim();
+      const name = String(row?.category_name ?? "").trim();
+      if (!id || !name || isDisallowedAdultItem(name, "")) continue;
+      if (!nameMap.has(id)) {
+        nameMap.set(id, name);
+        orderedIds.push(id);
+      }
+    }
+  }
+  const counts = /* @__PURE__ */ new Map();
+  for (const item of items) {
+    const cid = item.categoryId || "general";
+    counts.set(cid, (counts.get(cid) || 0) + 1);
+    if (!nameMap.has(cid)) {
+      nameMap.set(cid, item.categoryName || "General");
+      orderedIds.push(cid);
+    }
+  }
+  const cats = [];
+  for (const id of orderedIds) {
+    const count = counts.get(id) || 0;
+    if (count > 0) {
+      cats.push({ id, name: nameMap.get(id) || "General", kind, count });
+    }
+  }
+  return { cats, nameMap };
+}
+async function fetchFullCatalogForAccount(provider, account) {
+  const [liveCatRes, liveRes] = await Promise.all([
+    fetchProviderJsonWithFallback(
+      buildXtreamPlayerApiUrl(provider.serverUrl, account, "get_live_categories"),
+      12e3
+    ).catch(() => ({ ok: false, status: 502, data: null })),
+    fetchProviderJsonWithFallback(
+      buildXtreamPlayerApiUrl(provider.serverUrl, account, "get_live_streams"),
+      24e3
+    ).catch(() => ({ ok: false, status: 502, data: null }))
+  ]);
+  const [vodCatRes, vodRes] = await Promise.all([
+    fetchProviderJsonWithFallback(
+      buildXtreamPlayerApiUrl(provider.serverUrl, account, "get_vod_categories"),
+      12e3
+    ).catch(() => ({ ok: false, status: 502, data: null })),
+    fetchProviderJsonWithFallback(
+      buildXtreamPlayerApiUrl(provider.serverUrl, account, "get_vod_streams"),
+      45e3
+    ).catch(() => ({ ok: false, status: 502, data: null }))
+  ]);
+  const [seriesCatRes, seriesRes] = await Promise.all([
+    fetchProviderJsonWithFallback(
+      buildXtreamPlayerApiUrl(provider.serverUrl, account, "get_series_categories"),
+      12e3
+    ).catch(() => ({ ok: false, status: 502, data: null })),
+    fetchProviderJsonWithFallback(
+      buildXtreamPlayerApiUrl(provider.serverUrl, account, "get_series"),
+      28e3
+    ).catch(() => ({ ok: false, status: 502, data: null }))
+  ]);
+  const rawLiveCatMap = /* @__PURE__ */ new Map();
+  if (Array.isArray(liveCatRes.data)) {
+    for (const c of liveCatRes.data) {
+      const id = String(c?.category_id ?? "").trim();
+      const name = String(c?.category_name ?? "").trim();
+      if (id && name) rawLiveCatMap.set(id, name);
+    }
+  }
+  const rawVodCatMap = /* @__PURE__ */ new Map();
+  if (Array.isArray(vodCatRes.data)) {
+    for (const c of vodCatRes.data) {
+      const id = String(c?.category_id ?? "").trim();
+      const name = String(c?.category_name ?? "").trim();
+      if (id && name) rawVodCatMap.set(id, name);
+    }
+  }
+  const rawSeriesCatMap = /* @__PURE__ */ new Map();
+  if (Array.isArray(seriesCatRes.data)) {
+    for (const c of seriesCatRes.data) {
+      const id = String(c?.category_id ?? "").trim();
+      const name = String(c?.category_name ?? "").trim();
+      if (id && name) rawSeriesCatMap.set(id, name);
+    }
+  }
+  let liveItems = [];
+  if (Array.isArray(liveRes.data)) {
+    for (const row of liveRes.data) {
+      const streamId = String(row?.stream_id ?? "").trim();
+      const name = String(row?.name ?? "").trim();
+      const categoryId = String(row?.category_id ?? "general").trim() || "general";
+      const categoryName = rawLiveCatMap.get(categoryId) || "TV en Directo";
+      if (!streamId || !name || isDisallowedAdultItem(categoryName, name)) continue;
+      liveItems.push({
+        id: `${provider.id}:live:${streamId}`,
+        providerId: provider.id,
+        providerName: provider.name,
+        kind: "live",
+        streamId,
+        name,
+        categoryId,
+        categoryName,
+        poster: sanitizePublicImageUrl(row?.stream_icon),
+        containerExtension: "m3u8",
+        streamUrl: buildProviderStreamUrl(provider.id, "live", streamId, "m3u8")
+      });
+    }
+  }
+  let movieItems = [];
+  if (Array.isArray(vodRes.data)) {
+    for (const row of vodRes.data) {
+      const streamId = String(row?.stream_id ?? "").trim();
+      const name = String(row?.name ?? "").trim();
+      const categoryId = String(row?.category_id ?? "general").trim() || "general";
+      const categoryName = rawVodCatMap.get(categoryId) || "Pel\xEDculas";
+      if (!streamId || !name || isDisallowedAdultItem(categoryName, name)) continue;
+      const ext = sanitizeExtension(row?.container_extension, "mp4");
+      movieItems.push({
+        id: `${provider.id}:movie:${streamId}`,
+        providerId: provider.id,
+        providerName: provider.name,
+        kind: "movie",
+        streamId,
+        name,
+        categoryId,
+        categoryName,
+        poster: sanitizePublicImageUrl(row?.stream_icon),
+        rating: row?.rating ? String(row.rating).trim() : void 0,
+        year: extractYearHint(name, row?.added),
+        containerExtension: ext,
+        streamUrl: buildProviderStreamUrl(provider.id, "movie", streamId, ext)
+      });
+    }
+  }
+  const seriesItems = [];
+  if (Array.isArray(seriesRes.data)) {
+    for (const row of seriesRes.data) {
+      const seriesId = String(row?.series_id ?? "").trim();
+      const name = String(row?.name ?? "").trim();
+      const categoryId = String(row?.category_id ?? "general").trim() || "general";
+      const categoryName = rawSeriesCatMap.get(categoryId) || "Series";
+      if (!seriesId || !name || isDisallowedAdultItem(categoryName, name)) continue;
+      seriesItems.push({
+        id: `${provider.id}:series:${seriesId}`,
+        providerId: provider.id,
+        providerName: provider.name,
+        kind: "series",
+        streamId: seriesId,
+        name,
+        categoryId,
+        categoryName,
+        poster: sanitizePublicImageUrl(row?.cover),
+        rating: row?.rating ? String(row.rating).trim() : void 0,
+        year: extractYearHint(name, row?.releaseDate || row?.last_modified),
+        plot: row?.plot ? String(row.plot).trim().slice(0, 260) : void 0,
+        streamUrl: ""
+      });
+    }
+  }
+  if (liveItems.length === 0 && movieItems.length === 0) {
+    try {
+      const m3uUrl = buildXtreamM3uUrl(provider.serverUrl, account);
+      await assertSafeProxyUrl(m3uUrl);
+      const m3uRes = await streamingFetch(m3uUrl, {
+        headers: { "User-Agent": "IPTVSmartersPlayer", Accept: "*/*" },
+        timeoutMs: 14e3
+      });
+      if (m3uRes.ok) {
+        const text2 = await m3uRes.text();
+        if (text2.includes("#EXTM3U")) {
+          const parsed = parseM3uPlusIntoCatalog(text2);
+          liveItems = parsed.live.map((item) => ({
+            id: `${provider.id}:live:${item.streamId}`,
+            providerId: provider.id,
+            providerName: provider.name,
+            kind: "live",
+            streamId: item.streamId,
+            name: item.name,
+            categoryId: item.categoryId,
+            categoryName: item.categoryName,
+            poster: item.poster,
+            containerExtension: "m3u8",
+            streamUrl: buildProviderStreamUrl(provider.id, "live", item.streamId, "m3u8")
+          }));
+          movieItems = parsed.movies.map((item) => ({
+            id: `${provider.id}:movie:${item.streamId}`,
+            providerId: provider.id,
+            providerName: provider.name,
+            kind: "movie",
+            streamId: item.streamId,
+            name: item.name,
+            categoryId: item.categoryId,
+            categoryName: item.categoryName,
+            poster: item.poster,
+            year: extractYearHint(item.name),
+            containerExtension: item.ext,
+            streamUrl: buildProviderStreamUrl(provider.id, "movie", item.streamId, item.ext)
+          }));
+        }
+      }
+    } catch {
+    }
+  }
+  liveItems = sortCatalogItemsForDisplay(liveItems);
+  movieItems = sortCatalogItemsForDisplay(movieItems);
+  sortCatalogItemsForDisplay(seriesItems);
+  const liveCats = buildCategoriesWithCounts(liveCatRes.data, liveItems, "live").cats;
+  const movieCats = buildCategoriesWithCounts(vodCatRes.data, movieItems, "movie").cats;
+  const seriesCats = buildCategoriesWithCounts(seriesCatRes.data, seriesItems, "series").cats;
+  return {
+    liveItems,
+    movieItems,
+    seriesItems,
+    liveCategories: liveCats,
+    movieCategories: movieCats,
+    seriesCategories: seriesCats
+  };
+}
+async function connectProviderWithRotation(providerId, opts) {
+  const provider = providersConfig.find((p) => p.id === providerId);
+  if (!provider) {
+    throw new Error(`Unknown provider: ${providerId}`);
+  }
+  const st = ensureRuntimeState(provider);
+  if (st.connectPromise && !opts?.force) {
+    return st.connectPromise;
+  }
+  const run = async () => {
+    st.connecting = true;
+    st.error = void 0;
+    try {
+      const origin = normalizeXtreamOrigin(provider.serverUrl);
+      await assertSafeProxyUrl(origin);
+      const startIndex = typeof opts?.startOffset === "number" ? (st.activeAccountIndex + opts.startOffset) % provider.accounts.length : st.activeAccountIndex;
+      const candidates = getOrderedAccountCandidates(provider.accounts, startIndex);
+      let chosen = null;
+      let fallbackAuthorized = null;
+      let lastReason = "connection_failed";
+      for (const candidate of candidates) {
+        const authUrl = buildXtreamPlayerApiUrl(provider.serverUrl, candidate.account);
+        let authRes = await fetchProviderJsonWithFallback(authUrl, 1e4).catch(() => ({
+          ok: false,
+          status: 502,
+          data: null
+        }));
+        if ((!authRes.ok || !authRes.data) && (!authRes.status || authRes.status >= 500)) {
+          await new Promise((r) => setTimeout(r, 120));
+          authRes = await fetchProviderJsonWithFallback(authUrl, 12e3).catch(() => ({
+            ok: false,
+            status: 502,
+            data: null
+          }));
+        }
+        if (!authRes.ok || !authRes.data) {
+          lastReason = `http_${authRes.status || 502}`;
+          logger.info(
+            { providerId: provider.id, accountSlot: candidate.index + 1, status: authRes.status },
+            "provider_account_probe_failed_rotating"
+          );
+          continue;
+        }
+        const check = isAuthorizedUserInfo(authRes.data?.user_info);
+        if (!check.authorized) {
+          lastReason = check.reason || "unauthorized";
+          logger.info(
+            { providerId: provider.id, accountSlot: candidate.index + 1, reason: lastReason },
+            "provider_account_rejected_rotating"
+          );
+          continue;
+        }
+        if (check.hasFreeSlot) {
+          chosen = candidate;
+          break;
+        }
+        if (!fallbackAuthorized) {
+          fallbackAuthorized = candidate;
+        }
+      }
+      const winner = chosen || fallbackAuthorized;
+      if (!winner) {
+        st.connected = false;
+        st.error = `No hay cuentas disponibles (${lastReason})`;
+        logger.warn({ providerId: provider.id, reason: lastReason }, "provider_all_accounts_unavailable");
+        return toPublicStatus(st);
+      }
+      st.activeAccountIndex = winner.index;
+      const catalog = await fetchFullCatalogForAccount(provider, winner.account);
+      st.liveItems = catalog.liveItems;
+      st.movieItems = catalog.movieItems;
+      st.seriesItems = catalog.seriesItems;
+      st.liveCategories = catalog.liveCategories;
+      st.movieCategories = catalog.movieCategories;
+      st.seriesCategories = catalog.seriesCategories;
+      st.connected = true;
+      st.lastSyncedAt = Date.now();
+      st.error = void 0;
+      logger.info(
+        {
+          providerId: provider.id,
+          accountSlot: winner.index + 1,
+          live: st.liveItems.length,
+          movies: st.movieItems.length,
+          series: st.seriesItems.length
+        },
+        "provider_connected_catalog_loaded"
+      );
+      return toPublicStatus(st);
+    } catch (err) {
+      st.connected = false;
+      st.error = err instanceof Error ? err.message : "Error de conexi\xF3n con servidor";
+      logger.warn({ providerId: provider.id, err: st.error }, "provider_connect_error");
+      return toPublicStatus(st);
+    } finally {
+      st.connecting = false;
+      st.connectPromise = void 0;
+    }
+  };
+  st.connectPromise = run();
+  return st.connectPromise;
+}
+async function initDefaultProviders(opts) {
+  const targets = providersConfig.filter((p) => p.autoConnect);
+  const results = [];
+  let cursor = 0;
+  const workerCount = Math.min(2, targets.length);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (cursor < targets.length) {
+      const idx = cursor++;
+      const provider = targets[idx];
+      try {
+        const status = await connectProviderWithRotation(provider.id, { force: opts?.force });
+        results[idx] = status;
+      } catch {
+      }
+    }
+  });
+  await Promise.all(workers);
+  return results.filter(Boolean);
+}
+function rotateProviderAccount(providerId, failedIndex) {
+  const st = runtimeStates.get(providerId);
+  if (!st || st.config.accounts.length <= 1) return 0;
+  const base = typeof failedIndex === "number" ? failedIndex : st.activeAccountIndex;
+  const next = (base + 1) % st.config.accounts.length;
+  st.activeAccountIndex = next;
+  return next;
+}
+function getProvidersStatusSummary() {
+  const providers = providersConfig.map((cfg) => toPublicStatus(ensureRuntimeState(cfg)));
+  let liveCount = 0;
+  let movieCount = 0;
+  let seriesCount = 0;
+  let connectedCount = 0;
+  for (const p of providers) {
+    liveCount += p.liveCount;
+    movieCount += p.movieCount;
+    seriesCount += p.seriesCount;
+    if (p.connected) connectedCount += 1;
+  }
+  return {
+    providers,
+    totals: {
+      liveCount,
+      movieCount,
+      seriesCount,
+      totalCount: liveCount + movieCount + seriesCount,
+      connectedCount,
+      totalProviders: providers.length
+    }
+  };
+}
+function queryProvidersCatalog(params) {
+  const scope = String(params.scope || "total").trim() || "total";
+  const kind = params.kind === "live" || params.kind === "movie" || params.kind === "series" ? params.kind : "all";
+  const categoryId = String(params.categoryId || "").trim();
+  const q = String(params.q || "").trim().toLowerCase();
+  const offset = Math.max(0, Number(params.offset) || 0);
+  const limit = Math.min(200, Math.max(1, Number(params.limit) || 60));
+  const states = scope === "total" ? providersConfig.map((cfg) => ensureRuntimeState(cfg)) : runtimeStates.has(scope) ? [runtimeStates.get(scope)] : [];
+  let items = [];
+  for (const st of states) {
+    if (kind === "all" || kind === "live") items.push(...st.liveItems);
+    if (kind === "all" || kind === "movie") items.push(...st.movieItems);
+    if (kind === "all" || kind === "series") items.push(...st.seriesItems);
+  }
+  if (categoryId && categoryId !== "all") {
+    items = items.filter((item) => item.categoryId === categoryId);
+  }
+  if (q) {
+    items = items.filter(
+      (item) => item.name.toLowerCase().includes(q) || item.categoryName.toLowerCase().includes(q) || item.providerName.toLowerCase().includes(q)
+    );
+  }
+  return {
+    scope,
+    kind,
+    total: items.length,
+    offset,
+    limit,
+    items: items.slice(offset, offset + limit)
+  };
+}
+async function getProviderSeriesDetail(providerId, seriesId) {
+  const st = runtimeStates.get(providerId);
+  if (!st || !seriesId) return null;
+  const provider = st.config;
+  const candidates = getOrderedAccountCandidates(provider.accounts, st.activeAccountIndex);
+  let payload = null;
+  for (const candidate of candidates) {
+    const url = buildXtreamPlayerApiUrl(provider.serverUrl, candidate.account, "get_series_info", {
+      series_id: seriesId
+    });
+    const res = await fetchProviderJsonWithFallback(url, 1e4).catch(() => ({
+      ok: false,
+      status: 502,
+      data: null
+    }));
+    if (res.ok && res.data && (res.data.episodes || res.data.info)) {
+      payload = res.data;
+      st.activeAccountIndex = candidate.index;
+      break;
+    }
+    if (provider.accounts.length > 1) {
+      rotateProviderAccount(providerId, candidate.index);
+    }
+  }
+  if (!payload) return null;
+  const info = payload.info || {};
+  const episodesObj = payload.episodes && typeof payload.episodes === "object" ? payload.episodes : {};
+  const seasonNums = Object.keys(episodesObj).map((k) => Number(k)).filter((n) => Number.isFinite(n) && n >= 0).sort((a, b) => a - b);
+  const seasons = seasonNums.map((seasonNumber) => {
+    const rawList = Array.isArray(episodesObj[String(seasonNumber)]) ? episodesObj[String(seasonNumber)] : [];
+    const episodes = rawList.map((ep, idx) => {
+      const epId = String(ep?.id ?? "").trim();
+      if (!epId) return null;
+      const ext = sanitizeExtension(ep?.container_extension, "mp4");
+      const episodeNum = Number(ep?.episode_num || idx + 1);
+      return {
+        id: epId,
+        season: seasonNumber,
+        episodeNum,
+        title: String(ep?.title || `Episodio ${episodeNum}`).trim(),
+        duration: ep?.info?.duration ? String(ep.info.duration).trim() : void 0,
+        plot: ep?.info?.plot ? String(ep.info.plot).trim().slice(0, 260) : void 0,
+        still: sanitizePublicImageUrl(ep?.info?.movie_image),
+        containerExtension: ext,
+        streamUrl: buildProviderStreamUrl(provider.id, "series", epId, ext)
+      };
+    }).filter((e) => Boolean(e));
+    return {
+      seasonNumber,
+      name: `Temporada ${seasonNumber}`,
+      episodes
+    };
+  });
+  const cachedMeta = st.seriesItems.find((s) => s.streamId === seriesId);
+  const backdropList = Array.isArray(info?.backdrop_path) ? info.backdrop_path : [];
+  return {
+    providerId: provider.id,
+    providerName: provider.name,
+    seriesId,
+    title: String(info?.name || cachedMeta?.name || `Serie ${seriesId}`).trim(),
+    poster: sanitizePublicImageUrl(info?.cover) || cachedMeta?.poster,
+    backdrop: sanitizePublicImageUrl(backdropList[0]),
+    plot: info?.plot ? String(info.plot).trim() : cachedMeta?.plot,
+    genre: info?.genre ? String(info.genre).trim() : void 0,
+    year: extractYearHint(String(info?.name || ""), info?.releaseDate) || cachedMeta?.year,
+    rating: info?.rating ? String(info.rating).trim() : cachedMeta?.rating,
+    seasons
+  };
+}
+async function resolveProviderLiveManifest(providerId, streamId, originPrefix = "") {
+  const st = runtimeStates.get(providerId);
+  if (!st || !streamId) return null;
+  const provider = st.config;
+  const origin = normalizeXtreamOrigin(provider.serverUrl);
+  const referer = `${origin}/`;
+  const candidates = getOrderedAccountCandidates(provider.accounts, st.activeAccountIndex);
+  for (const candidate of candidates) {
+    const m3u8Url = buildXtreamMediaUrl(provider.serverUrl, candidate.account, "live", streamId, "m3u8");
+    const loaded = await fetchProviderPlaylistText(m3u8Url, referer, 3500).catch(() => null);
+    if (loaded) {
+      st.activeAccountIndex = candidate.index;
+      return rewriteProviderPlaylistWithOpaqueTokens(
+        loaded.text,
+        loaded.baseUrl,
+        referer,
+        originPrefix
       );
     }
-    res.setHeader("Cache-Control", "public, max-age=600");
+    const tsUrl = buildXtreamMediaUrl(provider.serverUrl, candidate.account, "live", streamId, "ts");
+    try {
+      await assertSafeProxyUrl(tsUrl);
+      const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, "hd", referer).catch(() => null);
+      if (dvbPath) {
+        const playlist = readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
+        if (playlist) {
+          st.activeAccountIndex = candidate.index;
+          return playlist;
+        }
+      }
+    } catch {
+    }
+    if (provider.accounts.length > 1) {
+      rotateProviderAccount(providerId, candidate.index);
+    }
+  }
+  return null;
+}
+async function streamProviderVodOrSeries(providerId, kind, streamId, ext, req, res) {
+  const reqId = getOrCreateRequestId(req);
+  const st = runtimeStates.get(providerId);
+  if (!st || !streamId) {
+    res.status(404).end();
+    return;
+  }
+  const provider = st.config;
+  const origin = normalizeXtreamOrigin(provider.serverUrl);
+  const candidates = getOrderedAccountCandidates(provider.accounts, st.activeAccountIndex);
+  const rangeHeader = typeof req.headers.range === "string" ? req.headers.range : "";
+  const cleanExt = sanitizeExtension(ext, "mp4");
+  for (const candidate of candidates) {
+    const upstreamUrl = buildXtreamMediaUrl(
+      provider.serverUrl,
+      candidate.account,
+      kind,
+      streamId,
+      cleanExt
+    );
+    try {
+      await assertSafeProxyUrl(upstreamUrl);
+      const headers = {
+        "User-Agent": "IPTVSmartersPlayer",
+        Accept: "*/*",
+        Referer: `${origin}/`
+      };
+      if (rangeHeader) headers["Range"] = rangeHeader;
+      const controller = new AbortController();
+      const onClose = () => controller.abort();
+      req.once("close", onClose);
+      const upstream = await fetch(upstreamUrl, {
+        method: req.method === "HEAD" ? "HEAD" : "GET",
+        headers,
+        redirect: "follow",
+        signal: controller.signal
+      });
+      if (upstream.url) {
+        await assertSafeProxyUrl(upstream.url);
+      }
+      if (upstream.ok || upstream.status === 206) {
+        st.activeAccountIndex = candidate.index;
+        applyProxyCorsHeaders(res, reqId);
+        res.status(upstream.status);
+        const contentType = upstream.headers.get("content-type") || (cleanExt === "mkv" ? "video/x-matroska" : "video/mp4");
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Accept-Ranges", upstream.headers.get("accept-ranges") || "bytes");
+        const contentLength = upstream.headers.get("content-length");
+        if (contentLength) res.setHeader("Content-Length", contentLength);
+        const contentRange = upstream.headers.get("content-range");
+        if (contentRange) res.setHeader("Content-Range", contentRange);
+        if (req.method === "HEAD" || !upstream.body) {
+          req.off("close", onClose);
+          res.end();
+          return;
+        }
+        const nodeStream = Readable4.fromWeb(upstream.body);
+        nodeStream.on("error", () => {
+          if (!res.writableEnded) res.end();
+        });
+        res.on("close", () => {
+          req.off("close", onClose);
+          nodeStream.destroy();
+          controller.abort();
+        });
+        nodeStream.pipe(res);
+        return;
+      }
+      await upstream.body?.cancel?.().catch(() => {
+      });
+      req.off("close", onClose);
+    } catch {
+    }
+    if (provider.accounts.length > 1) {
+      rotateProviderAccount(providerId, candidate.index);
+    }
+  }
+  if (!res.writableEnded) {
+    res.status(502).json({ success: false, error: "Stream temporalmente no disponible." });
+  }
+}
+
+// server/routes/providerRoutes.ts
+function registerProviderRoutes(app2, deps) {
+  const { getPublicOrigin: getPublicOrigin2 } = deps;
+  app2.get("/api/providers/status", (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
     res.json({
       success: true,
-      repo: catalog.repo,
-      repoUrl: catalog.repoUrl,
-      license: catalog.license,
-      total: games.length,
-      fullTotal: catalog.total,
-      categories: catalog.categories,
-      games
+      ...getProvidersStatusSummary()
     });
+  });
+  app2.post("/api/providers/refresh", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const providerId = String(req.query.providerId || req.body?.providerId || "").trim();
+    try {
+      if (providerId) {
+        await connectProviderWithRotation(providerId, { force: true });
+      } else {
+        await initDefaultProviders({ force: true });
+      }
+      res.json({
+        success: true,
+        ...getProvidersStatusSummary()
+      });
+    } catch (err) {
+      res.status(400).json({
+        success: false,
+        error: err instanceof Error ? err.message : "Error reconectando servidores"
+      });
+    }
+  });
+  app2.get("/api/providers/catalog", (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const scope = String(req.query.scope || "total").trim() || "total";
+    const rawKind = String(req.query.kind || "all").trim().toLowerCase();
+    const kind = rawKind === "live" || rawKind === "movie" || rawKind === "series" ? rawKind : "all";
+    const categoryId = String(req.query.categoryId || "").trim();
+    const q = String(req.query.q || "").trim();
+    const offset = Number(req.query.offset || 0);
+    const limit = Number(req.query.limit || 60);
+    const data = queryProvidersCatalog({
+      scope,
+      kind,
+      categoryId,
+      q,
+      offset,
+      limit
+    });
+    res.json({
+      success: true,
+      ...data
+    });
+  });
+  app2.get("/api/providers/:providerId/series/:seriesId", async (req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    const providerId = String(req.params.providerId || "").trim();
+    const seriesId = String(req.params.seriesId || "").trim();
+    const detail = await getProviderSeriesDetail(providerId, seriesId);
+    if (!detail) {
+      res.status(404).json({ success: false, error: "Serie no disponible en este servidor." });
+      return;
+    }
+    res.json({ success: true, detail });
+  });
+  app2.all("/api/providers/stream/:providerId/:kind/:streamFile", async (req, res) => {
+    const reqId = getOrCreateRequestId(req);
+    const providerId = decodeURIComponent(String(req.params.providerId || "")).trim();
+    const rawKind = String(req.params.kind || "").trim().toLowerCase();
+    const streamFile = decodeURIComponent(String(req.params.streamFile || "")).trim();
+    const dotIdx = streamFile.lastIndexOf(".");
+    const streamId = dotIdx > 0 ? streamFile.slice(0, dotIdx) : streamFile;
+    const ext = sanitizeExtension(dotIdx > 0 ? streamFile.slice(dotIdx + 1) : "", rawKind === "live" ? "m3u8" : "mp4");
+    if (req.method === "OPTIONS") {
+      applyProxyCorsHeaders(res, reqId);
+      res.status(204).end();
+      return;
+    }
+    if (rawKind === "live") {
+      const originPrefix = req.query.abs === "1" ? getPublicOrigin2(req) : "";
+      if (req.method === "HEAD") {
+        applyProxyCorsHeaders(res, reqId);
+        res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+        res.status(200).end();
+        return;
+      }
+      const manifest = await resolveProviderLiveManifest(providerId, streamId, originPrefix);
+      if (!manifest) {
+        res.status(404).send("Live provider stream unavailable");
+        return;
+      }
+      applyProxyCorsHeaders(res, reqId);
+      res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.status(200).send(manifest);
+      return;
+    }
+    if (rawKind === "movie" || rawKind === "series") {
+      await streamProviderVodOrSeries(providerId, rawKind, streamId, ext, req, res);
+      return;
+    }
+    res.status(400).send("Invalid provider media kind");
+  });
+  app2.all("/api/providers/hls-sub/:token", async (req, res) => {
+    const reqId = getOrCreateRequestId(req);
+    if (req.method === "OPTIONS") {
+      applyProxyCorsHeaders(res, reqId);
+      res.status(204).end();
+      return;
+    }
+    const token = String(req.params.token || "").trim();
+    const originPrefix = req.query.abs === "1" ? getPublicOrigin2(req) : "";
+    const playlist = await resolveProviderSubPlaylist(token, originPrefix);
+    if (!playlist) {
+      res.status(404).send("Provider sub-playlist expired");
+      return;
+    }
+    applyProxyCorsHeaders(res, reqId);
+    res.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.status(200).send(playlist);
+  });
+  app2.all("/api/providers/hls-seg/:token", async (req, res) => {
+    const reqId = getOrCreateRequestId(req);
+    if (req.method === "OPTIONS") {
+      applyProxyCorsHeaders(res, reqId);
+      res.status(204).end();
+      return;
+    }
+    const token = String(req.params.token || "").trim();
+    const rangeHeader = typeof req.headers.range === "string" ? req.headers.range : void 0;
+    const seg = await fetchProviderOpaqueSegment(token, rangeHeader);
+    if (!seg) {
+      res.status(404).send("Provider segment unavailable");
+      return;
+    }
+    applyProxyCorsHeaders(res, reqId);
+    res.setHeader("Content-Type", seg.contentType);
+    res.setHeader("Cache-Control", "public, max-age=30");
+    res.status(seg.status).send(seg.buffer);
   });
 }
 
 // server/ws/roomHub.ts
-import crypto20 from "crypto";
+import crypto22 from "crypto";
 import { WebSocket as WebSocket6 } from "ws";
 
 // src/shared/pinturillo/typesAndWords.ts
@@ -65072,11 +69657,11 @@ async function handleSocketDisconnect(ws, ctx) {
 }
 
 // server/ws/handlers/roomPresenceAndJoinHandlers.ts
-import crypto18 from "crypto";
+import crypto20 from "crypto";
 import { WebSocket as WebSocket4 } from "ws";
 
 // server/services/firebaseAuthVerify.ts
-import crypto17 from "crypto";
+import crypto19 from "crypto";
 import fs14 from "fs";
 import path13 from "path";
 var GOOGLE_CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
@@ -65120,7 +69705,7 @@ async function fetchGooglePublicCerts() {
 async function verifyFirebaseIdToken(idToken) {
   const token = String(idToken || "").trim();
   if (!token || token.length > 4096) return null;
-  const tokenHash = crypto17.createHash("sha256").update(token).digest("hex");
+  const tokenHash = crypto19.createHash("sha256").update(token).digest("hex");
   const cached = verifiedTokenCache.get(tokenHash);
   if (cached) return cached;
   const parts = token.split(".");
@@ -65149,7 +69734,7 @@ async function verifyFirebaseIdToken(idToken) {
       pem = certs[header.kid];
     }
     if (!pem) return null;
-    const verifier = crypto17.createVerify("RSA-SHA256");
+    const verifier = crypto19.createVerify("RSA-SHA256");
     verifier.update(`${parts[0]}.${parts[1]}`);
     verifier.end();
     const signature = decodeBase64Url(parts[2]);
@@ -65570,7 +70155,7 @@ var handlePresenceAndJoinMessage = async (type, payload, ws, ctx) => {
     const targetRoomId = String(payload?.roomId || senderMeta?.roomId || "").trim().toLowerCase();
     if (!targetRoomId || !fromUserId) return true;
     const { room } = getOrCreateRoom(targetRoomId, payload?.roomName);
-    const inviteAuthToken = crypto18.randomBytes(16).toString("hex");
+    const inviteAuthToken = crypto20.randomBytes(16).toString("hex");
     tvAuthTokens.set(inviteAuthToken, {
       roomId: targetRoomId,
       expiresAt: Date.now() + 2 * 60 * 60 * 1e3
@@ -66007,9 +70592,9 @@ var handleRoomCloudAndPollMessage = async (type, payload, ws, ctx) => {
 };
 
 // server/services/roomPubSubBridge.ts
-import crypto19 from "crypto";
+import crypto21 from "crypto";
 import { EventEmitter } from "events";
-var NODE_ID = crypto19.randomUUID().slice(0, 8);
+var NODE_ID = crypto21.randomUUID().slice(0, 8);
 var RoomPubSubBridge = class extends EventEmitter {
   publishedCount = 0;
   receivedCount = 0;
@@ -68881,7 +73466,7 @@ function createRoomHub(app2, wss2) {
       };
     }
     const { room } = getOrCreateRoom(targetRoomId, params.roomNameHint);
-    const tvAuthToken = crypto20.randomBytes(16).toString("hex");
+    const tvAuthToken = crypto22.randomBytes(16).toString("hex");
     const tokenEntry = {
       roomId: targetRoomId,
       expiresAt: Date.now() + 2 * 60 * 60 * 1e3
@@ -69186,7 +73771,7 @@ function createRoomHub(app2, wss2) {
 }
 
 // server/services/aiMovieRequestService.ts
-import crypto21 from "node:crypto";
+import crypto23 from "node:crypto";
 import { GoogleGenAI as GoogleGenAI4, Type as Type5, ThinkingLevel as ThinkingLevel3 } from "@google/genai";
 
 // server/services/aiMovieSearchHelpers.ts
@@ -69418,7 +74003,7 @@ async function verifyAndBuildCatalogMovie(candidate) {
       ...sourcesFound.length === 0 ? ["Castellano", "Latino", "VOSE"] : []
     ])
   );
-  const itemId = tmdbId ? `tmdb-${mediaType}-${tmdbId}` : `ai-${mediaType}-${crypto21.createHash("md5").update(candidate.title).digest("hex").slice(0, 10)}`;
+  const itemId = tmdbId ? `tmdb-${mediaType}-${tmdbId}` : `ai-${mediaType}-${crypto23.createHash("md5").update(candidate.title).digest("hex").slice(0, 10)}`;
   const item = {
     id: itemId,
     tmdbId,
@@ -69752,7 +74337,7 @@ function startAiMovieRequest(opts) {
   const cleanQuery = String(opts.query || "").trim().slice(0, 180);
   const lang = String(opts.lang || "es").slice(0, 5);
   const preferredType = opts.mediaType === "movie" || opts.mediaType === "tv" ? opts.mediaType : "all";
-  const jobId = crypto21.randomBytes(6).toString("hex");
+  const jobId = crypto23.randomBytes(6).toString("hex");
   const now = Date.now();
   const job = {
     jobId,
@@ -69791,59 +74376,95 @@ function getAiMovieRequestJob(jobId) {
 }
 
 // server/services/trackRankingService.ts
+function normalizeTrackLangCode(raw) {
+  const s = String(raw || "").trim().toUpperCase();
+  if (!s) return "ES";
+  if (s === "CAST" || s === "ESP" || s === "SPA" || s === "ES") return "ES";
+  if (s === "LAT" || s === "LA" || s === "MX" || s.includes("LATIN")) return "LAT";
+  if (s === "VOSE" || s.includes("SUB")) return "VOSE";
+  if (s === "ENG" || s === "EN") return "EN";
+  if (s === "CAT" || s === "CA") return "CAT";
+  if (s === "ARB" || s === "AR") return "AR";
+  if (s === "FRE" || s === "FR") return "FR";
+  if (s === "POR" || s === "BR" || s === "PT") return "PT";
+  if (s === "ITA" || s === "IT") return "IT";
+  if (s === "GER" || s === "DE") return "DE";
+  return s;
+}
+function getStreamQualityRank(q, label) {
+  const s = `${q || ""} ${label || ""}`.replace(/⁴ᴷ|⁴ᵏ/g, " 4k ").toLowerCase();
+  const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(s);
+  if (/\b(?:4k|uhd|2160p?|dolby\s*vision|remux)\b/.test(s)) return isHevc ? 0.5 : 0;
+  if (/\b(?:1080p?|fhd|full\s*hd|blu-?ray|bdrip)\b/.test(s)) return isHevc ? 1.5 : 1;
+  if (/\b(?:720p?|web-?dl|hd)\b/.test(s)) return 2;
+  if (/\b(?:576p?|480p?|dvdrip)\b/.test(s)) return 3;
+  if (/\b(?:380p?|360p?|288p?|sd|lq)\b/.test(s)) return 4;
+  return 2;
+}
 function rankCandidateTracks({
   allDiscovered,
   preferLang,
+  preferQualityFirst = false,
   isVestLink,
   hasExplicitMovidyUrl,
   hasExplicitGnulaUrl,
   healthMap
 }) {
+  const normalizedPref = String(preferLang || "ES").trim().toUpperCase();
+  const qualityOnlyMode = preferQualityFirst || normalizedPref === "QUALITY" || normalizedPref === "BEST";
   const getLangScore = (trackLang) => {
-    const tl = String(trackLang || "").toUpperCase();
-    if (preferLang === "EN") {
+    const tl = normalizeTrackLangCode(trackLang);
+    if (normalizedPref === "QUALITY" || normalizedPref === "BEST") {
+      if (tl === "ES") return 1;
+      if (tl === "LAT") return 2;
+      if (tl === "VOSE") return 3;
+      if (tl === "EN") return 4;
+      if (tl === "CAT") return 5;
+      return 6;
+    }
+    if (normalizedPref === "EN") {
       if (tl === "EN") return 1;
       if (tl === "VOSE") return 2;
       if (tl === "ES") return 3;
       if (tl === "LAT") return 4;
-      return 5;
+      return 6;
     }
-    if (preferLang === "LAT") {
+    if (normalizedPref === "LAT") {
       if (tl === "LAT") return 1;
       if (tl === "ES") return 2;
       if (tl === "VOSE") return 3;
       if (tl === "EN") return 4;
-      return 5;
+      return 6;
     }
-    if (preferLang === "VOSE") {
+    if (normalizedPref === "VOSE") {
       if (tl === "VOSE") return 1;
       if (tl === "EN") return 2;
       if (tl === "ES") return 3;
       if (tl === "LAT") return 4;
-      return 5;
+      return 6;
+    }
+    if (["CAT", "AR", "FR", "PT", "IT", "DE"].includes(normalizedPref)) {
+      if (tl === normalizedPref) return 1;
+      if (tl === "ES") return 2;
+      if (tl === "EN") return 3;
+      if (tl === "VOSE") return 4;
+      return 6;
     }
     if (tl === "ES") return 1;
     if (tl === "LAT") return 2;
     if (tl === "VOSE") return 3;
     if (tl === "EN") return 4;
-    return 5;
+    if (tl === "CAT") return 5;
+    return 6;
   };
-  const qualityRank = (q) => {
-    const s = String(q || "").toLowerCase();
-    if (s.includes("4k") || s.includes("2160")) return 0;
-    if (s.includes("1080")) return 1;
-    if (s.includes("720") || s === "hd") return 2;
-    if (s.includes("480")) return 3;
-    if (s.includes("380") || s.includes("360") || s.includes("288")) return 4;
-    return 2;
-  };
+  const qualityRank = (q, label) => getStreamQualityRank(q, label);
   const resolverPriority = (tr) => {
     const rt = tr.resolverType;
     if (isVestLink && rt === "vest_hls") return 0;
-    if (rt === "direct_mp4" && (tr.id.startsWith("cm-lqsa-") || tr.id.startsWith("ia-") || tr.id.startsWith("archive-"))) {
+    if (rt === "direct_mp4" && (tr.id.startsWith("cm-lqsa-") || tr.id.startsWith("ia-") || tr.id.startsWith("archive-") || tr.id.startsWith("xtream-"))) {
       return 1;
     }
-    if (rt === "direct_hls" && qualityRank(tr.quality) >= 3) {
+    if (rt === "direct_hls" && qualityRank(tr.quality, tr.label) >= 3) {
       return 2;
     }
     if (rt === "vest_hls" || rt === "direct_hls" || rt === "vidhide_hls" || rt === "movidy_embed" || rt === "bingetrix_en") {
@@ -69858,6 +74479,7 @@ function rankCandidateTracks({
     if (isVestLink && tr.resolverType === "vest_hls") return 0;
     if (!hasExplicitMovidyUrl && hasExplicitGnulaUrl && tr.id.startsWith("gnula-")) return 0;
     if (tr.id.startsWith("cm-lqsa-") && tr.resolverType === "direct_mp4") return 0;
+    if (tr.id.startsWith("xtream-")) return 1;
     if (tr.id.startsWith("movidy-") || tr.resolverType === "movidy_embed") return 1;
     if (tr.id.startsWith("gnula-")) return 2;
     if (tr.id.startsWith("ia-")) return 2;
@@ -69893,8 +74515,10 @@ function rankCandidateTracks({
     return statusBase + qoePenalty + latencyScore;
   };
   const orderedTracks = [...allDiscovered].sort((a, b) => {
-    const lDiff = getLangScore(a.lang) - getLangScore(b.lang);
-    if (lDiff !== 0) return lDiff;
+    if (!qualityOnlyMode) {
+      const lDiff = getLangScore(a.lang) - getLangScore(b.lang);
+      if (lDiff !== 0) return lDiff;
+    }
     const aIsWeb = a.resolverType === "web_embed" || a.resolverType === "embed_sniff";
     const bIsWeb = b.resolverType === "web_embed" || b.resolverType === "embed_sniff";
     if (aIsWeb !== bIsWeb) {
@@ -69902,12 +74526,16 @@ function rankCandidateTracks({
     }
     const dDiff = getEffectiveDownPenalty(a) - getEffectiveDownPenalty(b);
     if (dDiff !== 0) return dDiff;
+    const qDiff = qualityRank(a.quality, a.label) - qualityRank(b.quality, b.label);
+    if (qDiff !== 0) return qDiff;
+    if (qualityOnlyMode) {
+      const lDiff = getLangScore(a.lang) - getLangScore(b.lang);
+      if (lDiff !== 0) return lDiff;
+    }
     const rDiff = resolverPriority(a) - resolverPriority(b);
     if (rDiff !== 0) return rDiff;
     const sDiff = sourcePriority(a) - sourcePriority(b);
     if (sDiff !== 0) return sDiff;
-    const qDiff = qualityRank(a.quality) - qualityRank(b.quality);
-    if (qDiff !== 0) return qDiff;
     return getTrackHealthScore(a) - getTrackHealthScore(b);
   });
   return { orderedTracks, getLangScore, sourcePriority, getTrackHealthScore };
@@ -70314,7 +74942,7 @@ var BackgroundWorkerBridge = class {
 var workerBridge = new BackgroundWorkerBridge();
 
 // server/services/adminAuthService.ts
-import crypto22 from "crypto";
+import crypto24 from "crypto";
 import fs17 from "fs";
 import { getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
@@ -70341,7 +74969,7 @@ var DEFAULT_ADMIN_EMAILS = [
 
 // server/services/adminAuthService.ts
 var CLAIMED_ADMIN_PATH = "/tmp/riffan-admin-claim-v1.json";
-var SESSION_SECRET = String(process.env.ADMIN_SESSION_SECRET || "").trim() || crypto22.randomBytes(32).toString("hex");
+var SESSION_SECRET = String(process.env.ADMIN_SESSION_SECRET || "").trim() || crypto24.randomBytes(32).toString("hex");
 var inMemoryClaim = null;
 var claimLoadedFromStore = false;
 function getAllowedAdminEmails() {
@@ -70386,15 +75014,15 @@ async function loadClaimedAdminRecord() {
   return inMemoryClaim;
 }
 function hashPasscodeScrypt(passcode, saltHex) {
-  const salt = saltHex || crypto22.randomBytes(16).toString("hex");
-  const derived = crypto22.scryptSync(passcode, salt, 64).toString("hex");
+  const salt = saltHex || crypto24.randomBytes(16).toString("hex");
+  const derived = crypto24.scryptSync(passcode, salt, 64).toString("hex");
   return { salt, hash: derived };
 }
 function constantTimeStringMatch(a, b) {
   const bufA = Buffer.from(a, "utf8");
   const bufB = Buffer.from(b, "utf8");
   if (bufA.length !== bufB.length) return false;
-  return crypto22.timingSafeEqual(bufA, bufB);
+  return crypto24.timingSafeEqual(bufA, bufB);
 }
 async function getAdminAuthStatus() {
   const envPasscode = String(process.env.ADMIN_PASSCODE || "").trim();
@@ -70515,7 +75143,7 @@ async function verifyFirebaseAdminIdToken(idToken) {
 }
 function signAdminSessionToken(claims) {
   const payloadB64 = Buffer.from(JSON.stringify(claims), "utf8").toString("base64url");
-  const sig = crypto22.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
+  const sig = crypto24.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
   return `${payloadB64}.${sig}`;
 }
 function verifyAdminSessionToken(token) {
@@ -70523,7 +75151,7 @@ function verifyAdminSessionToken(token) {
   if (parts.length !== 2) return null;
   const [payloadB64, sigB64] = parts;
   if (!payloadB64 || !sigB64) return null;
-  const expectedSig = crypto22.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
+  const expectedSig = crypto24.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
   if (!constantTimeStringMatch(sigB64, expectedSig)) return null;
   try {
     const parsed = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
@@ -70935,7 +75563,7 @@ function registerTizenRoutes(app2, rootDir) {
       "tv/tv-player-core.js",
       "tv/tv-player-modes.js",
       "tv/tv-hub.js",
-      "tv/tv-champions-multi.js",
+      "tv/tv-football.js",
       "tv/tv-game-sprites.js",
       "tv/tv-games.js",
       "tv/tv-games-soccer.js",
@@ -71702,7 +76330,7 @@ function registerWebOsRoutes(app2, rootDir) {
       "tv/tv-player-core.js",
       "tv/tv-player-modes.js",
       "tv/tv-hub.js",
-      "tv/tv-champions-multi.js",
+      "tv/tv-football.js",
       "tv/tv-game-sprites.js",
       "tv/tv-games.js",
       "tv/tv-games-soccer.js",
@@ -71891,16 +76519,11 @@ function getPublicOrigin(req) {
 var app = express3();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
-app.set("etag", "strong");
 var httpServer = createServer(app);
-httpServer.keepAliveTimeout = 65e3;
-httpServer.headersTimeout = 66e3;
-httpServer.requestTimeout = 3e4;
-httpServer.maxRequestsPerSocket = 0;
 var wss = new WebSocketServer3({
   noServer: true,
   perMessageDeflate: {
-    zlibDeflateOptions: { level: 4 },
+    zlibDeflateOptions: { level: 6 },
     threshold: 1024
   }
 });
@@ -71919,11 +76542,9 @@ httpServer.on("upgrade", (req, socket, head) => {
 });
 app.use(
   compression({
-    threshold: 1024,
-    level: 4,
     filter: (req, res) => {
       const p = (req.path || "").toLowerCase();
-      if (p.endsWith(".m3u") || p.endsWith(".m3u8") || p.endsWith(".ts") || p.startsWith("/api/iptv/") || p.startsWith("/api/ts-proxy") || p.startsWith("/api/hls-proxy") || p.startsWith("/api/dvb-live/") || p.startsWith("/api/belix/stream") || p.startsWith("/api/belix/sub") || p.startsWith("/api/belix/seg") || p.startsWith("/api/music/stream-proxy")) {
+      if (p.endsWith(".m3u") || p.endsWith(".m3u8") || p.endsWith(".ts") || p.startsWith("/api/iptv/") || p.startsWith("/api/ts-proxy") || p.startsWith("/api/hls-proxy") || p.startsWith("/api/dvb-live/") || p.startsWith("/api/belix/stream") || p.startsWith("/api/belix/sub") || p.startsWith("/api/belix/seg") || p.startsWith("/api/providers/stream") || p.startsWith("/api/providers/hls-") || p.startsWith("/api/music/stream-proxy")) {
         return false;
       }
       return compression.filter(req, res);
@@ -72017,11 +76638,11 @@ registerYouTubeCatalogRoutes(app);
 registerClipboxRoutes(app);
 registerRbtvRoutes(app);
 registerBelixRoutes(app, { getPublicOrigin });
+registerProviderRoutes(app, { getPublicOrigin });
 registerAtresplayerRoutes(app);
 registerMovistarDaznRoutes(app);
 registerMusicRoutes(app);
 registerVpnGatewayRoutes(app);
-registerOpenGamesRoutes(app);
 registerVoiceAssistantRoutes(app, {
   getChannels: getLiveVoiceChannels,
   resolveLogoUrl: resolveOfficialChannelLogoUrl,
@@ -72079,8 +76700,6 @@ app.get("/music-manifest.webmanifest", (_req, res) => {
   }
   return res.status(404).json({ error: "Music manifest not found" });
 });
-var cachedTvHtmlSig = "";
-var cachedTvHtmlBody = "";
 function sendSmartTvReceiverHtml(res) {
   res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0");
   res.setHeader("Pragma", "no-cache");
@@ -72095,14 +76714,11 @@ function sendSmartTvReceiverHtml(res) {
   }
   try {
     const sig = getTvBuildSignature(__dirname3);
-    if (!cachedTvHtmlBody || cachedTvHtmlSig !== sig) {
-      const raw = fs20.readFileSync(target, "utf8");
-      const buildMetaTag = `<script>window.__RIFFAN_TV_BUILD__=${JSON.stringify(sig)};window.__RIFFAN_TV_AUTO_UPDATE__=true;</script>`;
-      cachedTvHtmlBody = raw.replace("<head>", `<head>
+    let html = fs20.readFileSync(target, "utf8");
+    const buildMetaTag = `<script>window.__RIFFAN_TV_BUILD__=${JSON.stringify(sig)};window.__RIFFAN_TV_AUTO_UPDATE__=true;</script>`;
+    html = html.replace("<head>", `<head>
     ${buildMetaTag}`).replace(/((?:href|src)=["'])(\/tv\/[^"'?]+\.(?:css|js))(["'])/gi, `$1$2?v=${sig}$3`).replace(/((?:href|src)=["'])(\/vendor\/[^"'?]+\.js)(["'])/gi, `$1$2?v=${sig}$3`);
-      cachedTvHtmlSig = sig;
-    }
-    res.status(200).type("html").send(cachedTvHtmlBody);
+    res.status(200).type("html").send(html);
   } catch {
     res.sendFile(target);
   }
@@ -72250,6 +76866,9 @@ async function startServer() {
             void getMovistarDaznHome().catch((err) => logger.warn({ err }, "prewarm_dazn_failed"));
             void initBelixFromEnv().catch((err) => logger.warn({ err }, "prewarm_belix_failed"));
           }, 1350).unref?.();
+          setTimeout(() => {
+            void initDefaultProviders().catch((err) => logger.warn({ err }, "prewarm_providers_failed"));
+          }, 2200).unref?.();
           channelHealthMonitor.startScheduler(
             () => [
               ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),

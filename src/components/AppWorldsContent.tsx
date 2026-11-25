@@ -801,7 +801,14 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
       }
     >
       <MediaCatalogHub
-        worldMode={activeWorld}
+        worldMode={
+          activeWorld === 'cine' ||
+          activeWorld === 'futbol' ||
+          activeWorld === 'tv' ||
+          activeWorld === 'youtube'
+            ? activeWorld
+            : 'cine'
+        }
         sessionMode={sessionMode}
         roomId={roomId}
         externalSearchQuery={worldSearchQuery}

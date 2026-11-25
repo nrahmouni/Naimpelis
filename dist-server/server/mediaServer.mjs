@@ -1133,7 +1133,39 @@ function relaxedHttpsRequest(targetUrl, options) {
 async function streamingFetch(rawUrl, init = {}) {
   const parsed = new URL(rawUrl);
   const timeoutMs = init.timeoutMs ?? 12e3;
-  const signal = init.signal ?? AbortSignal.timeout(timeoutMs);
+  const headersTimeoutOnly = Boolean(init.headersTimeoutOnly);
+  let headerTimer = null;
+  let internalController = null;
+  let detachExternalAbort = null;
+  let signal;
+  if (headersTimeoutOnly) {
+    internalController = new AbortController();
+    if (init.signal) {
+      if (init.signal.aborted) {
+        internalController.abort(init.signal.reason);
+      } else {
+        const onExtAbort = () => internalController?.abort(init.signal?.reason);
+        init.signal.addEventListener("abort", onExtAbort, { once: true });
+        detachExternalAbort = () => init.signal?.removeEventListener("abort", onExtAbort);
+      }
+    }
+    headerTimer = setTimeout(() => {
+      internalController?.abort(new DOMException(`Headers timeout after ${timeoutMs}ms`, "TimeoutError"));
+    }, timeoutMs);
+    signal = internalController.signal;
+  } else {
+    signal = init.signal ?? AbortSignal.timeout(timeoutMs);
+  }
+  const clearHeaderWait = () => {
+    if (headerTimer) {
+      clearTimeout(headerTimer);
+      headerTimer = null;
+    }
+    if (detachExternalAbort) {
+      detachExternalAbort();
+      detachExternalAbort = null;
+    }
+  };
   const normalizeHeaders = () => {
     const out = {};
     if (!init.headers) return out;
@@ -1151,41 +1183,65 @@ async function streamingFetch(rawUrl, init = {}) {
   const allowFallback = init.allowTlsFallback !== false && parsed.protocol === "https:" && !STRICT_TLS_ONLY_HOSTS.some((rx) => rx.test(parsed.hostname));
   const spainDispatcher = getSpainProxyDispatcherForTarget(parsed.toString());
   if (spainDispatcher) {
-    const proxiedRes = await undiciFetch2(parsed.toString(), {
-      ...init,
-      dispatcher: spainDispatcher,
-      signal
-    });
-    return proxiedRes;
+    try {
+      const proxiedRes = await undiciFetch2(parsed.toString(), {
+        ...init,
+        dispatcher: spainDispatcher,
+        signal
+      });
+      clearHeaderWait();
+      return proxiedRes;
+    } catch (err) {
+      clearHeaderWait();
+      throw err;
+    }
   }
   if (shouldUseDirectIpv4Http(parsed.hostname)) {
-    return relaxedHttpsRequest(parsed, {
-      method: init.method || "GET",
-      headers: normalizeHeaders(),
-      body: typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : void 0,
-      timeoutMs,
-      signal,
-      rejectUnauthorized: !shouldRelaxStreamingTls(parsed.hostname)
-    });
+    try {
+      const res = await relaxedHttpsRequest(parsed, {
+        method: init.method || "GET",
+        headers: normalizeHeaders(),
+        body: typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : void 0,
+        timeoutMs: headersTimeoutOnly ? Math.max(timeoutMs, 12e4) : timeoutMs,
+        signal,
+        rejectUnauthorized: !shouldRelaxStreamingTls(parsed.hostname)
+      });
+      clearHeaderWait();
+      return res;
+    } catch (err) {
+      clearHeaderWait();
+      throw err;
+    }
   }
   try {
-    return await fetch(parsed.toString(), { ...init, signal });
+    const res = await fetch(parsed.toString(), { ...init, signal });
+    clearHeaderWait();
+    return res;
   } catch (err) {
     if (init.signal?.aborted) {
+      clearHeaderWait();
       throw err;
     }
     if (allowFallback && (shouldRelaxStreamingTls(parsed.hostname) || isTlsCertificateError(err) || isUndiciTimeoutOrConnectError(err))) {
       DIRECT_IPV4_HTTPS_HOSTS.set(parsed.hostname.toLowerCase().replace(/\.$/, ""), true);
       logger.debug({ host: parsed.hostname }, "streaming_tls_relaxed_fallback");
-      return relaxedHttpsRequest(parsed, {
-        method: init.method || "GET",
-        headers: normalizeHeaders(),
-        body: typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : void 0,
-        timeoutMs,
-        signal,
-        rejectUnauthorized: false
-      });
+      try {
+        const res = await relaxedHttpsRequest(parsed, {
+          method: init.method || "GET",
+          headers: normalizeHeaders(),
+          body: typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : void 0,
+          timeoutMs: headersTimeoutOnly ? Math.max(timeoutMs, 12e4) : timeoutMs,
+          signal,
+          rejectUnauthorized: false
+        });
+        clearHeaderWait();
+        return res;
+      } catch (fallbackErr) {
+        clearHeaderWait();
+        throw fallbackErr;
+      }
     }
+    clearHeaderWait();
     throw err;
   }
 }

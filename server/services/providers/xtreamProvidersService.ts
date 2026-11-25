@@ -194,30 +194,39 @@ async function fetchFullCatalogForAccount(
   movieCategories: ProviderCategoryPublic[];
   seriesCategories: ProviderCategoryPublic[];
 }> {
-  const [liveCatRes, liveRes, vodCatRes, vodRes, seriesCatRes, seriesRes] = await Promise.all([
+  const [liveCatRes, liveRes] = await Promise.all([
     fetchProviderJsonWithFallback(
       buildXtreamPlayerApiUrl(provider.serverUrl, account, 'get_live_categories'),
-      9000
+      12_000
     ).catch(() => ({ ok: false, status: 502, data: null })),
     fetchProviderJsonWithFallback(
       buildXtreamPlayerApiUrl(provider.serverUrl, account, 'get_live_streams'),
-      14000
+      24_000,
+      { largeCatalog: true }
     ).catch(() => ({ ok: false, status: 502, data: null })),
+  ]);
+
+  const [vodCatRes, vodRes] = await Promise.all([
     fetchProviderJsonWithFallback(
       buildXtreamPlayerApiUrl(provider.serverUrl, account, 'get_vod_categories'),
-      9000
+      12_000
     ).catch(() => ({ ok: false, status: 502, data: null })),
     fetchProviderJsonWithFallback(
       buildXtreamPlayerApiUrl(provider.serverUrl, account, 'get_vod_streams'),
-      16000
+      45_000,
+      { largeCatalog: true }
     ).catch(() => ({ ok: false, status: 502, data: null })),
+  ]);
+
+  const [seriesCatRes, seriesRes] = await Promise.all([
     fetchProviderJsonWithFallback(
       buildXtreamPlayerApiUrl(provider.serverUrl, account, 'get_series_categories'),
-      9000
+      12_000
     ).catch(() => ({ ok: false, status: 502, data: null })),
     fetchProviderJsonWithFallback(
       buildXtreamPlayerApiUrl(provider.serverUrl, account, 'get_series'),
-      16000
+      28_000,
+      { largeCatalog: true }
     ).catch(() => ({ ok: false, status: 502, data: null })),
   ]);
 
@@ -421,14 +430,22 @@ export async function connectProviderWithRotation(
 
       for (const candidate of candidates) {
         const authUrl = buildXtreamPlayerApiUrl(provider.serverUrl, candidate.account);
-        const authRes = await fetchProviderJsonWithFallback(authUrl, 8000).catch(() => ({
+        let authRes = await fetchProviderJsonWithFallback(authUrl, 10_000).catch(() => ({
           ok: false,
           status: 502,
           data: null,
         }));
+        if ((!authRes.ok || !authRes.data) && (!authRes.status || authRes.status >= 500)) {
+          await new Promise((r) => setTimeout(r, 120));
+          authRes = await fetchProviderJsonWithFallback(authUrl, 12_000).catch(() => ({
+            ok: false,
+            status: 502,
+            data: null,
+          }));
+        }
         if (!authRes.ok || !authRes.data) {
           lastReason = `http_${authRes.status || 502}`;
-          logger.warn(
+          logger.info(
             { providerId: provider.id, accountSlot: candidate.index + 1, status: authRes.status },
             'provider_account_probe_failed_rotating'
           );
@@ -437,7 +454,7 @@ export async function connectProviderWithRotation(
         const check = isAuthorizedUserInfo(authRes.data?.user_info);
         if (!check.authorized) {
           lastReason = check.reason || 'unauthorized';
-          logger.warn(
+          logger.info(
             { providerId: provider.id, accountSlot: candidate.index + 1, reason: lastReason },
             'provider_account_rejected_rotating'
           );
@@ -456,6 +473,7 @@ export async function connectProviderWithRotation(
       if (!winner) {
         st.connected = false;
         st.error = `No hay cuentas disponibles (${lastReason})`;
+        logger.warn({ providerId: provider.id, reason: lastReason }, 'provider_all_accounts_unavailable');
         return toPublicStatus(st);
       }
 
@@ -499,12 +517,25 @@ export async function connectProviderWithRotation(
 
 export async function initDefaultProviders(opts?: { force?: boolean }): Promise<ProviderStatusPublic[]> {
   const targets = providersConfig.filter((p) => p.autoConnect);
-  const settled = await Promise.allSettled(
-    targets.map((p) => connectProviderWithRotation(p.id, { force: opts?.force }))
-  );
-  return settled
-    .filter((r): r is PromiseFulfilledResult<ProviderStatusPublic> => r.status === 'fulfilled')
-    .map((r) => r.value);
+  const results: ProviderStatusPublic[] = [];
+  let cursor = 0;
+  const workerCount = Math.min(2, targets.length);
+
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (cursor < targets.length) {
+      const idx = cursor++;
+      const provider = targets[idx];
+      try {
+        const status = await connectProviderWithRotation(provider.id, { force: opts?.force });
+        results[idx] = status;
+      } catch {
+        // handled cleanly by connectProviderWithRotation
+      }
+    }
+  });
+
+  await Promise.all(workers);
+  return results.filter(Boolean);
 }
 
 export function rotateProviderAccount(providerId: string, failedIndex?: number): number {

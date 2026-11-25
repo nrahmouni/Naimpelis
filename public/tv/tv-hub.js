@@ -968,49 +968,6 @@ function getBuiltInAntena3Channel() {
   };
 }
 
-function findAntena3InCatalog() {
-  var list = catalogData.tdt || [];
-  for (var i = 0; i < list.length; i++) {
-    if (list[i] && list[i].id === 'tdt-antena3' && list[i].channels && list[i].channels.length) {
-      return list[i];
-    }
-  }
-  return null;
-}
-
-function maybeAutoLaunchTizenAntena3(fromFreshCatalog) {
-  if (!isTizenDevice || !pendingTizenAutoLaunchAntena3 || tizenAutoLaunchTriggered) return;
-  if (isPaired || currentRoomId || activeScreen !== 'hub') return;
-
-  var a3Ch = findAntena3InCatalog();
-  var hasEdge2First =
-    a3Ch &&
-    a3Ch.channels &&
-    a3Ch.channels[0] &&
-    String(a3Ch.channels[0].sourceUrl || '').indexOf('/api/belix/stream/531071') !== -1;
-
-  if (fromFreshCatalog || hasEdge2First) {
-    tizenAutoLaunchTriggered = true;
-    pendingTizenAutoLaunchAntena3 = false;
-    if (tizenAutoLaunchFallbackTimer) {
-      clearTimeout(tizenAutoLaunchFallbackTimer);
-      tizenAutoLaunchFallbackTimer = null;
-    }
-    playTdtChannelOnTv(a3Ch || getBuiltInAntena3Channel(), 0, false);
-    return;
-  }
-
-  if (!tizenAutoLaunchFallbackTimer) {
-    tizenAutoLaunchFallbackTimer = setTimeout(function () {
-      tizenAutoLaunchFallbackTimer = null;
-      if (!pendingTizenAutoLaunchAntena3 || tizenAutoLaunchTriggered) return;
-      if (isPaired || currentRoomId || activeScreen !== 'hub') return;
-      tizenAutoLaunchTriggered = true;
-      pendingTizenAutoLaunchAntena3 = false;
-      playTdtChannelOnTv(findAntena3InCatalog() || getBuiltInAntena3Channel(), 0, false);
-    }, 1100);
-  }
-}
 
 var tvCatalogRetryCount = 0;
 function loadTvCatalog() {
@@ -1063,7 +1020,6 @@ function loadTvCatalog() {
     }
     mergeTvLiveCatalog();
     checkDone();
-    maybeAutoLaunchTizenAntena3(true);
     prewarmFlagshipChannels();
   });
   xhrJson('GET', '/api/catalog/latest-releases?lang=' + encodeURIComponent(activeTvLang), null, function (err, d) {
