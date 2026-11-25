@@ -99,6 +99,18 @@ export const XtreamEmptyBadgeIcon: React.FC<{ variant: 'live' | 'vod' | 'series'
   return <Clapperboard className="w-5 h-5" />;
 };
 
+export function formatXtreamRating(raw?: string | number | null): string | null {
+  if (raw === undefined || raw === null) return null;
+  const trimmed = String(raw).trim();
+  if (!trimmed || trimmed === '0' || trimmed === '0.0') return null;
+  const num = Number(trimmed);
+  if (Number.isFinite(num)) {
+    if (num <= 0) return null;
+    return num.toFixed(1);
+  }
+  return trimmed;
+}
+
 export function buildLiveTdtChannel(
   item: XtreamLiveStreamItem,
   categoryName = 'Directo',

@@ -45,6 +45,7 @@ import {
   XtreamPosterMedia,
   buildLiveTdtChannel,
   buildVodTdtChannel,
+  formatXtreamRating,
 } from './XtreamMediaHelpers';
 import { XtreamVodDetailModal } from './XtreamVodDetailModal';
 import { XtreamSeriesEpisodesModal } from './XtreamSeriesEpisodesModal';
@@ -359,7 +360,7 @@ export const XtreamServerWorldView: React.FC<XtreamServerWorldViewProps> = ({
                 }
               }}
               aria-current={active ? 'page' : undefined}
-              className={`min-h-10 px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-2 whitespace-nowrap shrink-0 border cursor-pointer transition-colors ${
+              className={`min-h-11 px-3.5 rounded-xl text-xs font-semibold inline-flex items-center gap-2 whitespace-nowrap shrink-0 border cursor-pointer transition-colors ${
                 active
                   ? 'text-white border-white/25'
                   : 'bg-[#0D0D12] border-white/[0.08] text-zinc-400 hover:text-white hover:bg-white/[0.06]'
@@ -619,7 +620,7 @@ export const XtreamServerWorldView: React.FC<XtreamServerWorldViewProps> = ({
               <button
                 type="button"
                 onClick={() => setSelectedCategoryId('all')}
-                className={`min-h-10 px-3.5 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 border cursor-pointer transition-colors tabular-nums ${
+                className={`min-h-11 px-3.5 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 border cursor-pointer transition-colors tabular-nums ${
                   selectedCategoryId === 'all'
                     ? 'bg-white text-black border-white'
                     : 'bg-white/[0.04] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
@@ -637,7 +638,7 @@ export const XtreamServerWorldView: React.FC<XtreamServerWorldViewProps> = ({
                       triggerHaptic('light');
                       setSelectedCategoryId(cat.id);
                     }}
-                    className={`min-h-10 px-3.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 border cursor-pointer transition-colors ${
+                    className={`min-h-11 px-3.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 border cursor-pointer transition-colors ${
                       active
                         ? 'bg-white text-black border-white font-semibold'
                         : 'bg-white/[0.04] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
@@ -683,7 +684,7 @@ export const XtreamServerWorldView: React.FC<XtreamServerWorldViewProps> = ({
                     <button
                       type="button"
                       onClick={() => handlePlayLive(item)}
-                      className="min-h-10 px-3.5 rounded-xl text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-opacity hover:opacity-90"
+                      className="min-h-11 px-3.5 rounded-xl text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-opacity hover:opacity-90"
                       style={{ backgroundColor: spec.accent }}
                     >
                       <Play className="w-3.5 h-3.5 fill-current" />
@@ -738,7 +739,7 @@ export const XtreamServerWorldView: React.FC<XtreamServerWorldViewProps> = ({
                           type="button"
                           onClick={(e) => handleQuickPlayVod(movie, e)}
                           aria-label={`Reproducir ${movie.name}`}
-                          className="absolute right-2.5 bottom-2.5 w-10 h-10 rounded-full text-white flex items-center justify-center shadow-lg cursor-pointer transition-transform hover:scale-105"
+                          className="absolute right-2.5 bottom-2.5 w-11 h-11 rounded-full text-white flex items-center justify-center shadow-lg cursor-pointer transition-transform hover:scale-105"
                           style={{ backgroundColor: spec.accent }}
                         >
                           <Play className="w-4 h-4 fill-current ml-0.5" />
@@ -750,11 +751,11 @@ export const XtreamServerWorldView: React.FC<XtreamServerWorldViewProps> = ({
                           {movie.name}
                         </p>
                         <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 truncate tabular-nums">
-                          {movie.rating && (
+                          {formatXtreamRating(movie.rating) && (
                             <>
                               <span className="inline-flex items-center gap-0.5 text-amber-300 font-semibold shrink-0">
                                 <Star className="w-3 h-3 fill-current" />
-                                <span>{movie.rating}</span>
+                                <span>{formatXtreamRating(movie.rating)}</span>
                               </span>
                               <span aria-hidden="true">·</span>
                             </>
@@ -782,6 +783,7 @@ export const XtreamServerWorldView: React.FC<XtreamServerWorldViewProps> = ({
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 sm:gap-4">
                 {filteredSeries.slice(0, visibleLimit).map((seriesItem) => {
                   const catName = seriesCategoryNames.get(seriesItem.categoryId) || 'Series';
+                  const cleanRating = formatXtreamRating(seriesItem.rating);
                   return (
                     <button
                       key={`series-${providerId}-${seriesItem.seriesId}`}
@@ -808,11 +810,11 @@ export const XtreamServerWorldView: React.FC<XtreamServerWorldViewProps> = ({
                           {seriesItem.name}
                         </p>
                         <div className="flex items-center gap-1.5 text-[11px] text-zinc-400 truncate tabular-nums">
-                          {seriesItem.rating && (
+                          {cleanRating && (
                             <>
                               <span className="inline-flex items-center gap-0.5 text-amber-300 font-semibold shrink-0">
                                 <Star className="w-3 h-3 fill-current" />
-                                <span>{seriesItem.rating}</span>
+                                <span>{cleanRating}</span>
                               </span>
                               <span aria-hidden="true">·</span>
                             </>

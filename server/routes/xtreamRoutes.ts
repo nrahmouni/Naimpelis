@@ -17,18 +17,27 @@ import {
   fetchProxiedXtreamSeriesStream,
   fetchProxiedXtreamVodStream,
   fetchXtreamOpaqueIcon,
-  fetchXtreamOpaqueResource,
   getLiveCategories,
   getLiveStreams,
   getSeriesInfo,
   getVodCategories,
   getXtreamConnectionStatus,
   listXtreamProviderSummaries,
+  openXtreamOpaqueSegmentStream,
   proxyPlayerApiRequest,
+  resolveUpstreamVodOrSeriesUrl,
   runXtreamConnectionDiagnostics,
   syncFullCatalog,
   type XtreamAllowedProxyAction,
 } from '../services/xtreamService.ts';
+import {
+  getSpainLiveDiagnosticSummary,
+  getVerifiedSpainXtreamChannels,
+} from '../services/octopusSpainLiveService.ts';
+import {
+  needsBrowserVodRemux,
+  streamVodRemuxedAsMp4,
+} from '../services/xtreamVodRemuxer.ts';
 
 function resolveOriginPrefix(req: Request, getPublicOrigin?: (req: Request) => string): string {
   if (req.query.abs !== '1') return '';
@@ -302,26 +311,59 @@ export function registerXtreamRoutes(
     return res.send(manifest);
   });
 
-  // Credential-free VOD streaming proxy with Range support
-  app.get('/api/xtream/vod/:streamFile', async (req, res) => {
+  // Credential-free VOD streaming proxy with automatic MKV->fMP4 remux & Range support
+  app.all('/api/xtream/vod/:streamFile', async (req, res) => {
+    if (req.method === 'OPTIONS') return res.status(204).end();
     const raw = String(req.params.streamFile || '').trim();
     const dotIdx = raw.lastIndexOf('.');
     const streamId = dotIdx > 0 ? raw.slice(0, dotIdx) : raw;
-    const ext = dotIdx > 0 ? raw.slice(dotIdx + 1) : 'mp4';
+    const rawExt = dotIdx > 0 ? raw.slice(dotIdx + 1) : 'mp4';
+    const ext = /^[a-z0-9]{2,5}$/i.test(rawExt) ? rawExt.toLowerCase() : 'mp4';
     const providerId = getProviderParam(req);
+    const forceTranscode = req.query.transcode === '1' || req.query.remux === 'mp4';
+    const startSec = Number(req.query.start || 0);
+
+    if (needsBrowserVodRemux(ext, forceTranscode)) {
+      const resolved = await resolveUpstreamVodOrSeriesUrl(streamId, ext, providerId, 'vod');
+      if (resolved.ok && resolved.url) {
+        const remuxed = await streamVodRemuxedAsMp4(req, res, {
+          upstreamUrl: resolved.url,
+          cacheKey: `${providerId}:vod:${streamId}:${ext}`,
+          startSec: Number.isFinite(startSec) && startSec > 0 ? startSec : undefined,
+          forceFullTranscode: req.query.transcode === '1',
+        });
+        if (remuxed || res.headersSent) return undefined;
+      }
+    }
+
+    const upstreamAbort = new AbortController();
+    let streamFinished = false;
+    res.on('close', () => {
+      if (!streamFinished && !upstreamAbort.signal.aborted) {
+        upstreamAbort.abort();
+      }
+    });
 
     const upstreamRes = await fetchProxiedXtreamVodStream(
       streamId,
       ext,
       typeof req.headers.range === 'string' ? req.headers.range : undefined,
-      providerId
+      providerId,
+      upstreamAbort.signal
     );
     if (!upstreamRes || !upstreamRes.body) {
-      return res.status(503).send('Xtream VOD unavailable');
+      if (!res.headersSent) return res.status(503).send('Xtream VOD unavailable');
+      return undefined;
     }
 
     res.status(upstreamRes.status);
-    const ct = upstreamRes.headers.get('content-type');
+    const rawCt = upstreamRes.headers.get('content-type');
+    const ct =
+      !rawCt || /octet-stream/i.test(rawCt)
+        ? ext === 'webm'
+          ? 'video/webm'
+          : 'video/mp4'
+        : rawCt;
     const cl = upstreamRes.headers.get('content-length');
     const cr = upstreamRes.headers.get('content-range');
     const ar = upstreamRes.headers.get('accept-ranges');
@@ -330,27 +372,105 @@ export function registerXtreamRoutes(
     if (cr) res.setHeader('Content-Range', cr);
     if (ar) res.setHeader('Accept-Ranges', ar);
     res.setHeader('Cache-Control', 'no-store');
+    if (req.method === 'HEAD') {
+      streamFinished = true;
+      void upstreamRes.body.cancel().catch(() => undefined);
+      return res.end();
+    }
 
-    Readable.fromWeb(upstreamRes.body as unknown as Parameters<typeof Readable.fromWeb>[0]).pipe(res);
+    const nodeStream = Readable.fromWeb(
+      upstreamRes.body as unknown as Parameters<typeof Readable.fromWeb>[0]
+    );
+    nodeStream.on('end', () => {
+      streamFinished = true;
+    });
+    nodeStream.on('error', () => {
+      streamFinished = true;
+      if (!res.headersSent) res.status(502);
+      res.end();
+    });
+    res.on('close', () => {
+      if (!nodeStream.destroyed) nodeStream.destroy();
+    });
+    nodeStream.pipe(res);
     return undefined;
   });
 
-  // Opaque HLS sub-playlist & segment proxy
+  // Opaque HLS sub-playlist & zero-buffer streaming segment proxy
   app.all('/api/xtream/seg/:token', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
     if (req.method === 'OPTIONS') return res.status(204).end();
-    const originPrefix = resolveOriginPrefix(req, deps?.getPublicOrigin);
-    const resource = await fetchXtreamOpaqueResource(
-      String(req.params.token || '').trim(),
-      originPrefix,
-      typeof req.headers.range === 'string' ? req.headers.range : undefined
+    const token = String(req.params.token || '').trim();
+    const upstreamAbort = new AbortController();
+    let streamFinished = false;
+    res.on('close', () => {
+      if (!streamFinished && !upstreamAbort.signal.aborted) {
+        upstreamAbort.abort();
+      }
+    });
+
+    const resource = await openXtreamOpaqueSegmentStream(
+      token,
+      typeof req.headers.range === 'string' ? req.headers.range : undefined,
+      upstreamAbort.signal
     );
-    if (!resource) return res.status(502).send('Xtream segment unavailable');
+    if (!resource) {
+      if (!res.headersSent) return res.status(502).send('Xtream segment unavailable');
+      return undefined;
+    }
+
     res.status(resource.status);
     res.setHeader('Content-Type', resource.contentType);
-    res.setHeader('Content-Length', String(resource.body.length));
-    if (req.method === 'HEAD') return res.end();
-    return res.end(resource.body);
+
+    if (resource.kind === 'playlist' && resource.buffer) {
+      streamFinished = true;
+      res.setHeader('Content-Length', String(resource.buffer.length));
+      if (req.method === 'HEAD') return res.end();
+      return res.end(resource.buffer);
+    }
+
+    if (resource.contentLength) res.setHeader('Content-Length', resource.contentLength);
+    if (resource.acceptRanges) res.setHeader('Accept-Ranges', resource.acceptRanges);
+    if (req.method === 'HEAD') {
+      streamFinished = true;
+      if (resource.body) void resource.body.cancel().catch(() => undefined);
+      return res.end();
+    }
+    if (!resource.body) {
+      if (!res.headersSent) return res.status(502).send('Xtream segment body missing');
+      return undefined;
+    }
+
+    const nodeStream = Readable.fromWeb(
+      resource.body as unknown as Parameters<typeof Readable.fromWeb>[0]
+    );
+    nodeStream.on('end', () => {
+      streamFinished = true;
+    });
+    nodeStream.on('error', () => {
+      streamFinished = true;
+      if (!res.headersSent) res.status(502);
+      res.end();
+    });
+    res.on('close', () => {
+      if (!nodeStream.destroyed) nodeStream.destroy();
+    });
+    nodeStream.pipe(res);
+    return undefined;
+  });
+
+  // Credential-free summary of verified probed Spanish channels across Octopus & all providers
+  app.get('/api/xtream/spain-live', async (req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    const forceReprobe = req.query.refresh === '1';
+    await getVerifiedSpainXtreamChannels({
+      waitWarmupMs: forceReprobe ? 6000 : 2500,
+      forceReprobe,
+    });
+    return res.json({
+      success: true,
+      ...getSpainLiveDiagnosticSummary(),
+    });
   });
 
   // Opaque image proxy for upstream HTTP logos/posters (avoids Mixed Content & hides origin host)
@@ -376,19 +496,58 @@ export function registerXtreamRoutes(
     const mediaType = String(req.query.type || 'live').trim().toLowerCase();
 
     if (mediaType === 'vod' || mediaType === 'series') {
-      const ext = String(req.query.ext || 'mp4').trim();
+      const rawExt = String(req.query.ext || 'mp4').trim();
+      const ext = /^[a-z0-9]{2,5}$/i.test(rawExt) ? rawExt.toLowerCase() : 'mp4';
+      const forceTranscode = req.query.transcode === '1' || req.query.remux === 'mp4';
+      const startSec = Number(req.query.start || 0);
+
+      if (needsBrowserVodRemux(ext, forceTranscode)) {
+        const resolved = await resolveUpstreamVodOrSeriesUrl(
+          streamId,
+          ext,
+          providerId,
+          mediaType === 'series' ? 'series' : 'vod'
+        );
+        if (resolved.ok && resolved.url) {
+          const remuxed = await streamVodRemuxedAsMp4(req, res, {
+            upstreamUrl: resolved.url,
+            cacheKey: `${providerId}:${mediaType}:${streamId}:${ext}`,
+            startSec: Number.isFinite(startSec) && startSec > 0 ? startSec : undefined,
+            forceFullTranscode: req.query.transcode === '1',
+          });
+          if (remuxed || res.headersSent) return undefined;
+        }
+      }
+
+      const upstreamAbort = new AbortController();
+      let streamFinished = false;
+      res.on('close', () => {
+        if (!streamFinished && !upstreamAbort.signal.aborted) {
+          upstreamAbort.abort();
+        }
+      });
+
       const rangeHeader = typeof req.headers.range === 'string' ? req.headers.range : undefined;
       const upstreamRes =
         mediaType === 'series'
-          ? await fetchProxiedXtreamSeriesStream(streamId, ext, rangeHeader, providerId)
-          : await fetchProxiedXtreamVodStream(streamId, ext, rangeHeader, providerId);
+          ? await fetchProxiedXtreamSeriesStream(streamId, ext, rangeHeader, providerId, upstreamAbort.signal)
+          : await fetchProxiedXtreamVodStream(streamId, ext, rangeHeader, providerId, upstreamAbort.signal);
       if (!upstreamRes || !upstreamRes.body) {
-        return res
-          .status(503)
-          .send(mediaType === 'series' ? 'Xtream series episode unavailable' : 'Xtream VOD unavailable');
+        if (!res.headersSent) {
+          return res
+            .status(503)
+            .send(mediaType === 'series' ? 'Xtream series episode unavailable' : 'Xtream VOD unavailable');
+        }
+        return undefined;
       }
       res.status(upstreamRes.status);
-      const ct = upstreamRes.headers.get('content-type');
+      const rawCt = upstreamRes.headers.get('content-type');
+      const ct =
+        !rawCt || /octet-stream/i.test(rawCt)
+          ? ext === 'webm'
+            ? 'video/webm'
+            : 'video/mp4'
+          : rawCt;
       const cl = upstreamRes.headers.get('content-length');
       const cr = upstreamRes.headers.get('content-range');
       const ar = upstreamRes.headers.get('accept-ranges');
@@ -396,7 +555,26 @@ export function registerXtreamRoutes(
       if (cl) res.setHeader('Content-Length', cl);
       if (cr) res.setHeader('Content-Range', cr);
       if (ar) res.setHeader('Accept-Ranges', ar);
-      Readable.fromWeb(upstreamRes.body as unknown as Parameters<typeof Readable.fromWeb>[0]).pipe(res);
+      if (req.method === 'HEAD') {
+        streamFinished = true;
+        void upstreamRes.body.cancel().catch(() => undefined);
+        return res.end();
+      }
+      const nodeStream = Readable.fromWeb(
+        upstreamRes.body as unknown as Parameters<typeof Readable.fromWeb>[0]
+      );
+      nodeStream.on('end', () => {
+        streamFinished = true;
+      });
+      nodeStream.on('error', () => {
+        streamFinished = true;
+        if (!res.headersSent) res.status(502);
+        res.end();
+      });
+      res.on('close', () => {
+        if (!nodeStream.destroyed) nodeStream.destroy();
+      });
+      nodeStream.pipe(res);
       return undefined;
     }
 

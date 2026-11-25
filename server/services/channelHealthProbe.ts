@@ -1,5 +1,6 @@
 import { streamingFetch } from '../utils/tlsFetch.ts';
 import { isAnyBelixConnected } from './belix/belixXtreamClient.ts';
+import { isXtreamEnvConfigured } from './xtreamService.ts';
 import { isDvbUpstreamCoolingDown } from '../routes/proxies/dvbTranscoder.ts';
 
 export type ChannelHealthStatus = 'up' | 'degraded' | 'down' | 'unknown';
@@ -172,6 +173,12 @@ export async function probeChannelTrack(
     return belixReady
       ? { status: 'up', latencyMs: 650, checkedAt: now, failCount: 0 }
       : { status: 'down', statusCode: 503, latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
+  }
+
+  if (/^\/api\/(?:xtream\/stream\/|stream\b)/i.test(cleanUrl)) {
+    return isXtreamEnvConfigured()
+      ? { status: 'up', latencyMs: 520, checkedAt: now, failCount: 0 }
+      : { status: 'unknown', checkedAt: now, failCount: prevFails };
   }
 
   const effectiveTargetUrl = unwrapProxyTargetUrl(cleanUrl);

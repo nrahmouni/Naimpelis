@@ -9,9 +9,11 @@ import { INTERNATIONAL_TV_CHANNELS } from '../../data/internationalChannels.ts';
 import { FAST_THEMATIC_CHANNELS } from '../../services/catalogDiscoveryService.ts';
 import { applySyncedStreamsToChannels } from '../../services/iptvPlaylistService.ts';
 import { getCachedFamelackWorldChannels } from '../../services/famelackIptvService.ts';
-import { channelHealthMonitor } from '../../services/channelHealthMonitor.ts';
+import { buildUnifiedPrioritizedChannels } from '../../services/channelQualityMatcher.ts';
 import { getPermanent247SportsMatches } from '../sports.ts';
 import { getBelixLiveChannels } from '../../services/belix/belixXtreamClient.ts';
+import { getCachedXtreamLiveTdtChannels } from '../../services/xtreamService.ts';
+import { getCachedSpainXtreamChannelsSync } from '../../services/octopusSpainLiveService.ts';
 import { curateSportsTracks, getCuratedRbtvChannels } from '../../services/rbtv/rbtvLiveCurator.ts';
 
 interface CachedIptvSnapshot {
@@ -189,13 +191,24 @@ export function getAllIptvChannels(): any[] {
     combined.push(b);
   }
 
+  for (const s of getCachedSpainXtreamChannelsSync()) {
+    if (!s?.id) continue;
+    combined.push(s);
+  }
+
+  for (const x of getCachedXtreamLiveTdtChannels()) {
+    if (!x?.id || seen.has(x.id)) continue;
+    seen.add(x.id);
+    combined.push(x);
+  }
+
   for (const r of getCuratedRbtvChannels()) {
     if (!r?.id || seen.has(r.id)) continue;
     seen.add(r.id);
     combined.push(r);
   }
 
-  const prioritized = channelHealthMonitor.prioritizeChannels(combined);
+  const prioritized = buildUnifiedPrioritizedChannels(combined);
   const byId = new Map<string, any>();
   for (const ch of prioritized) {
     if (ch?.id) byId.set(ch.id, ch);

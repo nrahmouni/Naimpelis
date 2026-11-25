@@ -1,5 +1,5 @@
-import React from 'react';
-import { ArrowUpRight, Film, Music2, Pause, Play, Radio, Tv } from 'lucide-react';
+import React, { useState } from 'react';
+import { ArrowUpRight, Clapperboard, Film, Music2, Pause, Play, Radio, Star, Tv } from 'lucide-react';
 import type {
   AppLanguage,
   CatalogMovie,
@@ -17,6 +17,11 @@ import { useMusicStore } from '../../store/useMusicStore';
 import { CoverArt } from '../music/CoverArt';
 import { formatMusicTime } from '../music/SpotifyPlayerBar';
 import type { HallmarkGameItem, SearchCategoryFilter } from './homeSearchTypes';
+import { getXtreamProviderUiSpecByProviderId } from '../../config/defaultProviders';
+import type { XtreamSeriesItem, XtreamVodStreamItem } from '../../services/xtreamClientService';
+import { XtreamPosterMedia, formatXtreamRating } from '../belix/XtreamMediaHelpers';
+import { XtreamVodDetailModal } from '../belix/XtreamVodDetailModal';
+import { XtreamSeriesEpisodesModal } from '../belix/XtreamSeriesEpisodesModal';
 
 const FOUR_K_FEATURED_TMDB_IDS = [
   693134, 872585, 157336, 361743, 414906, 335984, 569094, 76600, 558449, 155,
@@ -39,6 +44,8 @@ interface UniversalSearchResultsListProps {
   matchedGames: HallmarkGameItem[];
   matchedMovies: CatalogMovie[];
   matchedSeries: CatalogMovie[];
+  matchedXtreamVod?: XtreamVodStreamItem[];
+  matchedXtreamSeries?: XtreamSeriesItem[];
   onDismissSearch: () => void;
   onBeforeDirectPlay?: () => void;
   onOpenMusicWorld?: () => void;
@@ -59,6 +66,8 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
   matchedGames,
   matchedMovies,
   matchedSeries,
+  matchedXtreamVod = [],
+  matchedXtreamSeries = [],
   onDismissSearch,
   onBeforeDirectPlay,
   onOpenMusicWorld,
@@ -71,6 +80,8 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
   const currentTrackId = useMusicStore((s) => s.currentTrack?.id);
   const activeRadioId = useMusicStore((s) => s.activeRadio?.id);
   const isMusicPlaying = useMusicStore((s) => s.isPlaying);
+  const [selectedXtreamVod, setSelectedXtreamVod] = useState<XtreamVodStreamItem | null>(null);
+  const [selectedXtreamSeries, setSelectedXtreamSeries] = useState<XtreamSeriesItem | null>(null);
 
   const hasMusicHits = Boolean(
     matchedMusic &&
@@ -541,6 +552,154 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
             </div>
           </div>
         )}
+      {/* SECTION: PELÍCULAS EN SERVIDORES XTREAM (7 SERVIDORES) */}
+      {(activeCategory === 'all' || activeCategory === 'movies') &&
+        matchedXtreamVod.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-violet-300">
+              <Film className="w-3.5 h-3.5" />
+              <span>
+                {pickLang(lang, {
+                  es: 'Películas en Servidores (Shark Pro · VOD 4K · Dana 4K Pro · ...)',
+                  ca: 'Pel·lícules als 7 Servidors connectats',
+                  en: 'Server Movies (7 connected servers)',
+                })}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
+              {matchedXtreamVod.map((movie) => {
+                const spec = getXtreamProviderUiSpecByProviderId(movie.providerId || 'primary');
+                const cleanRating = formatXtreamRating(movie.rating);
+                const metaLine = [
+                  movie.providerName || spec?.name,
+                  movie.containerExtension?.toUpperCase(),
+                ]
+                  .filter(Boolean)
+                  .join(' · ');
+                return (
+                  <button
+                    key={`uni-xvod-${movie.providerId || 'p'}-${movie.streamId}`}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setSelectedXtreamVod(movie);
+                    }}
+                    className="group rounded-2xl overflow-hidden bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#7C3AED]/60 text-left cursor-pointer transition-all active:scale-95 flex flex-col"
+                  >
+                    <div className="relative aspect-[2/3] w-full bg-[#000000]">
+                      <XtreamPosterMedia
+                        src={movie.streamIcon}
+                        alt={movie.name}
+                        variant="vod"
+                        accentColor={spec?.accent || '#8B5CF6'}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                      />
+                      {cleanRating && (
+                        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-black/80 text-[10px] font-mono font-bold text-amber-300 inline-flex items-center gap-0.5 tabular-nums">
+                          <Star className="w-2.5 h-2.5 fill-current" />
+                          {cleanRating}
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-2.5 min-w-0">
+                      <p className="text-xs font-bold text-white leading-snug line-clamp-2 group-hover:text-[#D8B4FE]">
+                        {movie.name}
+                      </p>
+                      <p className="text-[10px] text-zinc-400 truncate mt-1">{metaLine}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+      {/* SECTION: SERIES EN SERVIDORES XTREAM (7 SERVIDORES) */}
+      {(activeCategory === 'all' || activeCategory === 'series') &&
+        matchedXtreamSeries.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-center gap-1.5 text-xs font-bold text-sky-300">
+              <Clapperboard className="w-3.5 h-3.5" />
+              <span>
+                {pickLang(lang, {
+                  es: 'Series en Servidores (7 servidores conectados)',
+                  ca: 'Sèries als 7 Servidors connectats',
+                  en: 'Server Series (7 connected servers)',
+                })}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-3">
+              {matchedXtreamSeries.map((ser) => {
+                const spec = getXtreamProviderUiSpecByProviderId(ser.providerId || 'primary');
+                const cleanRating = formatXtreamRating(ser.rating);
+                const metaLine = [ser.providerName || spec?.name, ser.genre || 'Serie']
+                  .filter(Boolean)
+                  .join(' · ');
+                return (
+                  <button
+                    key={`uni-xser-${ser.providerId || 'p'}-${ser.seriesId}`}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setSelectedXtreamSeries(ser);
+                    }}
+                    className="group rounded-2xl overflow-hidden bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-sky-400/60 text-left cursor-pointer transition-all active:scale-95 flex flex-col"
+                  >
+                    <div className="relative aspect-[2/3] w-full bg-[#000000]">
+                      <XtreamPosterMedia
+                        src={ser.cover}
+                        alt={ser.name}
+                        variant="series"
+                        accentColor={spec?.accent || '#0EA5E9'}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                      />
+                      {cleanRating && (
+                        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-black/80 text-[10px] font-mono font-bold text-amber-300 inline-flex items-center gap-0.5 tabular-nums">
+                          <Star className="w-2.5 h-2.5 fill-current" />
+                          {cleanRating}
+                        </span>
+                      )}
+                    </div>
+                    <div className="p-2.5 min-w-0">
+                      <p className="text-xs font-bold text-white leading-snug line-clamp-2 group-hover:text-sky-200">
+                        {ser.name}
+                      </p>
+                      <p className="text-[10px] text-zinc-400 truncate mt-1">{metaLine}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+      <XtreamVodDetailModal
+        movie={selectedXtreamVod}
+        categoryName={selectedXtreamVod?.providerName || 'Películas'}
+        accentColor={getXtreamProviderUiSpecByProviderId(selectedXtreamVod?.providerId || 'primary')?.accent}
+        lang={lang}
+        onClose={() => setSelectedXtreamVod(null)}
+        onPlayTdtChannel={(ch) => {
+          onBeforeDirectPlay?.();
+          onDismissSearch();
+          onPlayChannel(ch);
+        }}
+      />
+
+      <XtreamSeriesEpisodesModal
+        series={selectedXtreamSeries}
+        categoryName={selectedXtreamSeries?.providerName || 'Series'}
+        accentColor={getXtreamProviderUiSpecByProviderId(selectedXtreamSeries?.providerId || 'primary')?.accent}
+        lang={lang}
+        onClose={() => setSelectedXtreamSeries(null)}
+        onPlayTdtChannel={(ch) => {
+          onBeforeDirectPlay?.();
+          onDismissSearch();
+          onPlayChannel(ch);
+        }}
+      />
     </div>
   );
 };

@@ -15,7 +15,11 @@ import {
 import { BottomSheet } from '../ui/DesignSystem';
 import { triggerHaptic } from '../../utils/haptics';
 import { pickLang } from '../../utils/i18n';
-import { XtreamPosterMedia, buildSeriesEpisodeTdtChannel } from './XtreamMediaHelpers';
+import {
+  XtreamPosterMedia,
+  buildSeriesEpisodeTdtChannel,
+  formatXtreamRating,
+} from './XtreamMediaHelpers';
 
 interface XtreamSeriesEpisodesModalProps {
   series: XtreamSeriesItem | null;
@@ -118,10 +122,10 @@ export const XtreamSeriesEpisodesModal: React.FC<XtreamSeriesEpisodesModalProps>
 
             <div className="min-w-0 flex-1 space-y-1.5 text-xs">
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-zinc-300 tabular-nums">
-                {(info?.rating || series.rating) && (
+                {formatXtreamRating(info?.rating || series.rating) && (
                   <span className="inline-flex items-center gap-1 font-semibold text-amber-300">
                     <Star className="w-3.5 h-3.5 fill-current" />
-                    <span>{info?.rating || series.rating}</span>
+                    <span>{formatXtreamRating(info?.rating || series.rating)}</span>
                   </span>
                 )}
                 {(info?.releaseDate || series.releaseDate) && (
@@ -175,7 +179,7 @@ export const XtreamSeriesEpisodesModal: React.FC<XtreamSeriesEpisodesModalProps>
                         triggerHaptic('light');
                         setSelectedSeason(season.seasonNumber);
                       }}
-                      className={`min-h-10 px-3.5 rounded-xl text-xs font-bold whitespace-nowrap border cursor-pointer transition-colors tabular-nums shrink-0 ${
+                      className={`min-h-11 px-3.5 rounded-xl text-xs font-bold whitespace-nowrap border cursor-pointer transition-colors tabular-nums shrink-0 ${
                         active
                           ? 'bg-white text-black border-white'
                           : 'bg-white/[0.04] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
@@ -214,7 +218,7 @@ export const XtreamSeriesEpisodesModal: React.FC<XtreamSeriesEpisodesModalProps>
                       <button
                         type="button"
                         onClick={() => handlePlayEpisode(ep)}
-                        className="min-h-10 px-3.5 rounded-xl bg-white/[0.1] hover:bg-white text-white hover:text-black text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
+                        className="min-h-11 px-3.5 rounded-xl bg-white/[0.1] hover:bg-white text-white hover:text-black text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shrink-0 transition-colors"
                       >
                         <Play className="w-3.5 h-3.5 fill-current" />
                         <span>Ver</span>

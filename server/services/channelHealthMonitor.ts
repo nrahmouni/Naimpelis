@@ -105,25 +105,35 @@ export class ChannelHealthMonitor {
           }
         : rawHealth;
       const src = String(track.sourceUrl || '');
-      const q = String(track.quality || '').toLowerCase();
+      const q = `${track.quality || ''} ${track.label || ''}`.toLowerCase();
       const isUhdHevc = /90\.163\.85\.113:8093\/stream\/6[4568]\//i.test(unwrapped);
       const isResidentialDvb = unwrapped.includes('90.163.85.113:8093');
       const isHttpsCdn = /^https:\/\//i.test(unwrapped) && !isResidentialDvb;
       const isPreferredEdge2 = /\/api\/belix\/stream\/531071(?:\.m3u8|\b)/i.test(src);
       const isBelix = src.startsWith('/api/belix/stream/');
+      const isXtreamProxy = /^\/api\/(?:xtream\/stream|stream)\b/i.test(src);
+      const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(q);
+      const isFhdOr1080 = !isHevc && /\b(?:fhd|1080p?|full\s*hd)\b/.test(q);
+      const is4kNonResidential = !isUhdHevc && !isHevc && /(?:4k|uhd|2160p?|⁴ᴷ)/i.test(q);
       const qualityTier = isUhdHevc
+        ? 5
+        : /\b(?:576p?|480p?|360p?|sd|lq)\b/.test(q) || /azotosolutions\.com/i.test(src)
         ? 4
-        : /576p|480p|360p/.test(q) || /azotosolutions\.com/i.test(src)
+        : isHevc
         ? 3
-        : /720p/.test(q)
+        : is4kNonResidential
+        ? 0
+        : isFhdOr1080
+        ? 1
+        : isXtreamProxy || isHttpsCdn || /\bhd\b/.test(q)
         ? 2
-        : 0;
+        : 3;
       const transportPenalty = /interactvty\.pro/i.test(src)
         ? 1500
-        : isPreferredEdge2
+        : isPreferredEdge2 || isXtreamProxy
         ? 0
         : isBelix
-        ? 350
+        ? 250
         : 0;
       const penaltyMs = (health?.qoeFailures || 0) * 1500 + (health?.qoeRebuffers || 0) * 250 + transportPenalty;
       const effectiveLatency = Math.max(
@@ -134,13 +144,16 @@ export class ChannelHealthMonitor {
         track: health ? { ...track, health } : { ...track },
         originalIndex,
         isUhdHevc,
+        isHevc,
         isResidentialDvb,
         isHttpsCdn,
         isPreferredEdge2,
         isBelix,
+        isXtreamProxy,
         status: health?.status ?? ('unknown' as ChannelHealthStatus),
         qualityTier,
         latencyBucket: Math.floor(effectiveLatency / 750),
+        rawLatency: effectiveLatency,
       };
     });
 
@@ -148,12 +161,29 @@ export class ChannelHealthMonitor {
       if (a.status !== 'down' && b.status !== 'down' && a.isUhdHevc !== b.isUhdHevc) {
         return a.isUhdHevc ? 1 : -1;
       }
+      const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
+      if (rankDiff !== 0) return rankDiff;
+
+      // Verified fast Xtream 4K/FHD non-HEVC Spanish signals beat Belix edge2 when probed 'up'
+      const aFastXtream = a.isXtreamProxy && a.status === 'up' && a.qualityTier <= 2;
+      const bFastXtream = b.isXtreamProxy && b.status === 'up' && b.qualityTier <= 2;
+      if (aFastXtream !== bFastXtream) {
+        return aFastXtream ? -1 : 1;
+      }
+
       if (a.isPreferredEdge2 !== b.isPreferredEdge2) {
         if (a.isPreferredEdge2 && a.status !== 'down') return -1;
         if (b.isPreferredEdge2 && b.status !== 'down') return 1;
       }
-      const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
-      if (rankDiff !== 0) return rankDiff;
+      if (a.status !== 'down' && b.status !== 'down') {
+        if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
+        if (a.status !== 'unknown' && a.rawLatency !== b.rawLatency) {
+          return a.rawLatency - b.rawLatency;
+        }
+        if (a.isXtreamProxy !== b.isXtreamProxy) {
+          return a.isXtreamProxy ? -1 : 1;
+        }
+      }
       if (a.status === 'up' && b.status === 'up') {
         if (a.isHttpsCdn !== b.isHttpsCdn) {
           return a.isHttpsCdn ? -1 : 1;
@@ -164,10 +194,6 @@ export class ChannelHealthMonitor {
       }
       if (a.isBelix && b.isBelix && a.status === b.status) {
         return a.originalIndex - b.originalIndex;
-      }
-      if (a.status !== 'unknown') {
-        if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
-        if (a.latencyBucket !== b.latencyBucket) return a.latencyBucket - b.latencyBucket;
       }
       return a.originalIndex - b.originalIndex;
     });

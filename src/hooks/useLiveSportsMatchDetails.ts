@@ -37,8 +37,15 @@ export function useLiveSportsMatchDetails({
       setActiveMatchDetails(null);
       return;
     }
-    if (videoMode !== 'idle' && videoIsLive && !activeSportsMatch) {
+    if (videoMode === 'hls' && videoIsLive && !activeSportsMatch) {
+      const subLower = (videoSubtitle || '').toLowerCase();
+      if (/\b(pel[ií]cula|vod|serie|episodio|temporada|season|episode|cine)\b|\.(?:mkv|mp4|avi|mov|webm)\b/i.test(subLower)) {
+        return;
+      }
       const cleanedTitle = (videoTitle || '').replace(/\s+·\s+.*$/, '').trim();
+      if (/\(\d{4}\)|\bpart\s+\d+\b|\bparte\s+\d+\b|\btemporada\b|\bcap[ií]tulo\b|\bs\d+e\d+\b|\b(?:4k|uhd|hevc|hdr|1080p|mkv|mp4)\b/i.test(cleanedTitle)) {
+        return;
+      }
       const parts = cleanedTitle.split(/\s+(?:vs\.?|v|-)\s+/i);
       const isGenericChannelSuffix = (val: string) =>
         /^(hd|fhd|uhd|4k|sd|live|directo|en vivo|es|en|cat|tv|1|2)$/i.test(val.trim());

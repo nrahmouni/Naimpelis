@@ -224,7 +224,9 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
 
     const attachHlsJs = () => {
       if (!Hls.isSupported() || cancelled) return false;
-      const isDvbLiveUrl = /\/api\/(?:dvb-live|belix\/stream)\//i.test(videoState.url);
+      const isFastLocalLiveUrl = /\/api\/(?:dvb-live|belix\/stream|xtream\/stream|iptv\/live|stream\b)/i.test(
+        videoState.url
+      );
       const isSmartTvUa =
         typeof navigator !== 'undefined' &&
         /Tizen|SMART-TV|Web0S|webOS|BRAVIA|VIDAA|NetCast|AFT[A-Z]/i.test(
@@ -235,13 +237,13 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         lowLatencyMode: false,
         startFragPrefetch: true,
         startPosition: targetResumeSec > 3 ? targetResumeSec : -1,
-        liveSyncDurationCount: videoState.isLive ? (isDvbLiveUrl ? 1 : 2) : 3,
-        liveMaxLatencyDurationCount: isDvbLiveUrl ? 7 : 8,
+        liveSyncDurationCount: videoState.isLive ? (isFastLocalLiveUrl ? 1 : 2) : 3,
+        liveMaxLatencyDurationCount: isFastLocalLiveUrl ? 6 : 8,
         maxLiveSyncPlaybackRate: 1,
-        backBufferLength: 20,
-        maxBufferLength: 35,
-        maxMaxBufferLength: 75,
-        maxBufferHole: videoState.isLive ? (isDvbLiveUrl ? 0.25 : 0.3) : 0.5,
+        backBufferLength: 18,
+        maxBufferLength: videoState.isLive ? 20 : 35,
+        maxMaxBufferLength: videoState.isLive ? 45 : 75,
+        maxBufferHole: videoState.isLive ? (isFastLocalLiveUrl ? 0.25 : 0.3) : 0.5,
         maxFragLookUpTolerance: 0.25,
         highBufferWatchdogPeriod: 2,
         nudgeOffset: videoState.isLive ? 0.05 : 0.1,
@@ -249,15 +251,15 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         stretchShortVideoTrack: !videoState.isLive,
         maxAudioFramesDrift: videoState.isLive ? 3 : 4,
         abrEwmaDefaultEstimate: 7_500_000,
-        manifestLoadingTimeOut: isDvbLiveUrl ? 9000 : 12000,
-        manifestLoadingMaxRetry: isDvbLiveUrl ? 4 : 6,
-        manifestLoadingRetryDelay: 300,
-        levelLoadingTimeOut: 11000,
+        manifestLoadingTimeOut: isFastLocalLiveUrl ? 8500 : 12000,
+        manifestLoadingMaxRetry: isFastLocalLiveUrl ? 4 : 6,
+        manifestLoadingRetryDelay: 150,
+        levelLoadingTimeOut: 9500,
         levelLoadingMaxRetry: 5,
-        levelLoadingRetryDelay: 300,
-        fragLoadingTimeOut: 15000,
+        levelLoadingRetryDelay: 150,
+        fragLoadingTimeOut: 14000,
         fragLoadingMaxRetry: 6,
-        fragLoadingRetryDelay: 350,
+        fragLoadingRetryDelay: 200,
       });
       hlsRef.current = hls;
 
@@ -625,12 +627,35 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         }
       }
     } else if (videoState.mode === 'direct') {
+      let triedTranscodeFallback = /[?&](?:transcode=1|remux=mp4)\b/i.test(videoState.url);
+      let directStartupTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const tryTranscodeRetry = (): boolean => {
+        if (cancelled || triedTranscodeFallback) return false;
+        if (!/^\/api\/(?:stream|xtream\/vod\/)/i.test(videoState.url)) return false;
+        triedTranscodeFallback = true;
+        setIsBuffering(true);
+        const sep = videoState.url.includes('?') ? '&' : '?';
+        video.src = `${videoState.url}${sep}transcode=1`;
+        video.load();
+        return true;
+      };
+
       const onDirectLoaded = () => {
+        if (directStartupTimer) {
+          clearTimeout(directStartupTimer);
+          directStartupTimer = null;
+        }
         setIsBuffering(false);
         startPlaybackSafely();
       };
       const onDirectError = () => {
         if (cancelled) return;
+        if (tryTranscodeRetry()) return;
+        if (directStartupTimer) {
+          clearTimeout(directStartupTimer);
+          directStartupTimer = null;
+        }
         if (triggerBackupSwitch('direct_mp4_error')) {
           setIsBuffering(true);
           return;
@@ -638,18 +663,33 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         setIsBuffering(false);
         setStreamError(
           pickLang(lang, {
-            es: 'Esta señal MP4 directa no responde ahora mismo. Pulsa Reintentar o elige otro servidor debajo.',
-            ca: 'Aquest senyal MP4 directe no respon ara mateix. Prem Reintentar o tria un altre servidor a sota.',
-            en: 'This direct MP4 stream failed to load. Press Retry or choose another server below.',
+            es: 'Esta señal directa no responde ahora mismo. Pulsa Reintentar o elige otro servidor.',
+            ca: 'Aquest senyal directe no respon ara mateix. Prem Reintentar o tria un altre servidor.',
+            en: 'This direct video stream failed to load. Press Retry or choose another server.',
           })
         );
       };
+
+      if (/^\/api\/(?:stream|xtream\/vod\/)/i.test(videoState.url) && !triedTranscodeFallback) {
+        directStartupTimer = setTimeout(() => {
+          if (!cancelled && video.readyState === 0) {
+            tryTranscodeRetry();
+          }
+        }, 12_000);
+      }
+
       cleanupDirectListeners = () => {
+        if (directStartupTimer) {
+          clearTimeout(directStartupTimer);
+          directStartupTimer = null;
+        }
         video.removeEventListener('loadedmetadata', onDirectLoaded);
+        video.removeEventListener('loadeddata', onDirectLoaded);
         video.removeEventListener('error', onDirectError);
       };
       video.addEventListener('loadedmetadata', onDirectLoaded, { once: true });
-      video.addEventListener('error', onDirectError, { once: true });
+      video.addEventListener('loadeddata', onDirectLoaded, { once: true });
+      video.addEventListener('error', onDirectError);
       video.src = videoState.url;
     }
 

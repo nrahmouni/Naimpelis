@@ -208,6 +208,24 @@ export function useRoomSocialActions({
     };
   }, [isAppEntered, quickPoolMoviesLen, quickPoolSeriesLen, loadQuickPool]);
 
+  useEffect(() => {
+    const onSynced = () => {
+      fetch('/api/catalog/tdt')
+        .then((r) => (r.ok ? r.json() : null))
+        .then((tRes) => {
+          if (Array.isArray(tRes?.channels)) {
+            setQuickPool((prev) => ({
+              ...prev,
+              tdt: tRes.channels as SpanishTdtChannel[],
+            }));
+          }
+        })
+        .catch(() => {});
+    };
+    window.addEventListener('belix-channels-synced', onSynced);
+    return () => window.removeEventListener('belix-channels-synced', onSynced);
+  }, [setQuickPool]);
+
   const handleGoogleSignIn = async () => {
     manualLobbyStayRef.current = false;
     useAppStore.getState().setAuthNotice(null);

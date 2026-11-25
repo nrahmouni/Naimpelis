@@ -23,6 +23,13 @@ import {
 } from './homeSearchTypes';
 import { UniversalSearchAiCard } from './UniversalSearchAiCard';
 import { UniversalSearchResultsList } from './UniversalSearchResultsList';
+import {
+  fetchXtreamFullCatalog,
+  readCachedXtreamCatalog,
+  type XtreamFullCatalogPayload,
+  type XtreamSeriesItem,
+  type XtreamVodStreamItem,
+} from '../../services/xtreamClientService';
 
 export type { SearchCategoryFilter };
 
@@ -85,6 +92,19 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   }>({ tracks: [], artists: [], radios: [] });
   const [loadingRemote, setLoadingRemote] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>(readRecentSearches);
+  const [xtreamCatalog, setXtreamCatalog] = useState<XtreamFullCatalogPayload | null>(() =>
+    readCachedXtreamCatalog('all')
+  );
+  const xtreamBootstrapStartedRef = useRef(false);
+
+  useEffect(() => {
+    const onSynced = () => {
+      const latest = readCachedXtreamCatalog('all');
+      if (latest) setXtreamCatalog(latest);
+    };
+    window.addEventListener('belix-channels-synced', onSynced);
+    return () => window.removeEventListener('belix-channels-synced', onSynced);
+  }, []);
 
   const [aiJob, setAiJob] = useState<AiSearchJobState>({
     status: 'idle',
@@ -107,6 +127,16 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   const hasMinQuery = cleanQuery.length >= 2;
   const isSearchActive = cleanQuery.length > 0;
   const showOverlay = isSearchActive && !suppressOverlay && !overlayDismissed;
+
+  useEffect(() => {
+    if (cleanQuery.length < 2 || xtreamCatalog || xtreamBootstrapStartedRef.current) return;
+    xtreamBootstrapStartedRef.current = true;
+    void fetchXtreamFullCatalog(false, 'all')
+      .then((res) => {
+        if (res.ok && res.catalog) setXtreamCatalog(res.catalog);
+      })
+      .catch(() => {});
+  }, [cleanQuery.length, xtreamCatalog]);
 
   useSuppressFloatingBubble(showOverlay);
 
@@ -479,21 +509,54 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     });
   }, [deferredHasMinQuery, deferredNormQuery, queryMatchesFields]);
 
+  const matchedXtreamVod = useMemo<XtreamVodStreamItem[]>(() => {
+    if (!deferredHasMinQuery || !deferredNormQuery || !xtreamCatalog) return [];
+    const tokens = deferredNormQuery.split(' ').filter((t) => t.length >= 2);
+    if (tokens.length === 0) return [];
+    const out: XtreamVodStreamItem[] = [];
+    for (const item of xtreamCatalog.vodStreams) {
+      const hay = norm(`${item.name} ${item.providerName || ''}`);
+      if (tokens.every((tk) => hay.includes(tk))) {
+        out.push(item);
+        if (out.length >= 18) break;
+      }
+    }
+    return out;
+  }, [deferredHasMinQuery, deferredNormQuery, xtreamCatalog, norm]);
+
+  const matchedXtreamSeries = useMemo<XtreamSeriesItem[]>(() => {
+    if (!deferredHasMinQuery || !deferredNormQuery || !xtreamCatalog) return [];
+    const tokens = deferredNormQuery.split(' ').filter((t) => t.length >= 2);
+    if (tokens.length === 0) return [];
+    const out: XtreamSeriesItem[] = [];
+    for (const item of xtreamCatalog.series) {
+      const hay = norm(`${item.name} ${item.providerName || ''} ${item.genre || ''}`);
+      if (tokens.every((tk) => hay.includes(tk))) {
+        out.push(item);
+        if (out.length >= 18) break;
+      }
+    }
+    return out;
+  }, [deferredHasMinQuery, deferredNormQuery, xtreamCatalog, norm]);
+
   const matchedMusicCount =
     remoteMusic.tracks.length + remoteMusic.artists.length + remoteMusic.radios.length;
 
+  const totalMoviesHits = matchedMovies.length + matchedXtreamVod.length;
+  const totalSeriesHits = matchedSeries.length + matchedXtreamSeries.length;
+
   const totalHits =
     matchedMusicCount +
-    matchedMovies.length +
-    matchedSeries.length +
+    totalMoviesHits +
+    totalSeriesHits +
     matchedSports.length +
     matchedTdt.length +
     matchedGames.length;
 
   const visibleCategoryHits = useMemo(() => {
     if (activeCategory === 'music') return matchedMusicCount;
-    if (activeCategory === 'movies') return matchedMovies.length;
-    if (activeCategory === 'series') return matchedSeries.length;
+    if (activeCategory === 'movies') return totalMoviesHits;
+    if (activeCategory === 'series') return totalSeriesHits;
     if (activeCategory === 'sports') return matchedSports.length;
     if (activeCategory === 'tv') return matchedTdt.length;
     if (activeCategory === 'games') return matchedGames.length;
@@ -501,8 +564,8 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   }, [
     activeCategory,
     matchedMusicCount,
-    matchedMovies.length,
-    matchedSeries.length,
+    totalMoviesHits,
+    totalSeriesHits,
     matchedSports.length,
     matchedTdt.length,
     matchedGames.length,
@@ -575,13 +638,13 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     {
       id: 'movies',
       label: pickLang(lang, { es: 'Películas', ca: 'Pel·lícules', en: 'Movies' }),
-      count: matchedMovies.length,
+      count: totalMoviesHits,
       icon: <Film className="w-3.5 h-3.5" />,
     },
     {
       id: 'series',
       label: pickLang(lang, { es: 'Series', ca: 'Sèries', en: 'Series' }),
-      count: matchedSeries.length,
+      count: totalSeriesHits,
       icon: <Tv className="w-3.5 h-3.5" />,
     },
     {
@@ -950,6 +1013,8 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                     matchedGames={matchedGames}
                     matchedMovies={matchedMovies}
                     matchedSeries={matchedSeries}
+                    matchedXtreamVod={matchedXtreamVod}
+                    matchedXtreamSeries={matchedXtreamSeries}
                     onDismissSearch={dismissSearchOverlay}
                     onBeforeDirectPlay={snapshotSearchOriginBeforeDirectPlay}
                     onOpenMusicWorld={onOpenMusicWorld}

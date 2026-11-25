@@ -21,6 +21,7 @@ import {
   refreshLiveIptvRegistry,
 } from '../services/iptvPlaylistService.ts';
 import { channelHealthMonitor } from '../services/channelHealthMonitor.ts';
+import { buildUnifiedPrioritizedChannels } from '../services/channelQualityMatcher.ts';
 import { loadSpanishEpgSchedule } from '../services/epgService.ts';
 import { resolveMediasetLiveHlsUrl } from '../services/mediasetLiveService.ts';
 import { getAllIptvChannels, getIptvChannelById, invalidateIptvChannelCache } from './iptvHelpers/iptvChannelRegistry.ts';
@@ -34,11 +35,13 @@ import {
   resolveBelixManifest,
 } from '../services/belix/belixXtreamClient.ts';
 import {
+  fetchProxiedXtreamManifest,
   getCachedXtreamLiveTdtChannels,
   isXtreamEnvConfigured,
   syncFullCatalog as syncXtreamEnvCatalog,
 } from '../services/xtreamService.ts';
 import { getCuratedRbtvChannels } from '../services/rbtv/rbtvLiveCurator.ts';
+import { getVerifiedSpainXtreamChannels } from '../services/octopusSpainLiveService.ts';
 import {
   ensureLiveDvbCleanHlsSession,
   getActiveDvbSessionPath,
@@ -61,7 +64,7 @@ import {
 
 export function getLiveVoiceChannels() {
   const merged = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS);
-  return channelHealthMonitor.prioritizeChannels(merged).map((ch) => ({
+  return buildUnifiedPrioritizedChannels(merged).map((ch) => ({
     ...ch,
     logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
   }));
@@ -136,10 +139,16 @@ export function registerIptvAndTdtRoutes(
     }
     const belixChannels = getBelixLiveChannels({ sessionKey: belixSessionKey });
     const belixStreamIds = new Set(belixChannels.map((c) => c.streamId));
+    const verifiedSpainChannels = await getVerifiedSpainXtreamChannels({
+      waitWarmupMs: req.query.refresh === '1' ? 5000 : 2000,
+      forceReprobe: req.query.refresh === '1',
+    }).catch(() => []);
+    const verifiedSpainStreamIds = new Set(verifiedSpainChannels.map((c) => c.streamId));
     const xtreamEnvChannels = getCachedXtreamLiveTdtChannels().filter(
-      (c) => !belixStreamIds.has(c.streamId)
+      (c) => !belixStreamIds.has(c.streamId) && !verifiedSpainStreamIds.has(c.streamId)
     );
     const merged = [
+      ...verifiedSpainChannels,
       ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, belixActive),
       ...belixChannels,
       ...xtreamEnvChannels,
@@ -148,7 +157,7 @@ export function registerIptvAndTdtRoutes(
     res.json({
       success: true,
       iptvMeta: getIptvSyncMeta(),
-      channels: channelHealthMonitor.prioritizeChannels(merged).map((ch) => ({
+      channels: buildUnifiedPrioritizedChannels(merged).map((ch) => ({
         ...ch,
         logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
       })),
@@ -547,6 +556,34 @@ export function registerIptvAndTdtRoutes(
             continue;
           }
           return sendIptvM3u8Response(res, belixManifest);
+        }
+
+        if (/^\/api\/(?:xtream\/stream\/|stream\b)/i.test(sourceUrl)) {
+          let xtreamStreamId = '';
+          let xtreamProvider = 'primary';
+          if (sourceUrl.startsWith('/api/xtream/stream/')) {
+            xtreamStreamId = sourceUrl.split('/').pop()?.replace(/\.m3u8.*$/i, '') || '';
+          } else {
+            try {
+              const parsed = new URL(sourceUrl, 'http://localhost');
+              xtreamStreamId = (parsed.searchParams.get('id') || '').replace(/\.m3u8$/i, '').trim();
+              xtreamProvider = parsed.searchParams.get('provider') || 'primary';
+            } catch {
+              xtreamStreamId = '';
+            }
+          }
+          if (xtreamStreamId) {
+            const xtreamManifest = await fetchProxiedXtreamManifest(
+              xtreamStreamId,
+              publicOrigin,
+              xtreamProvider
+            );
+            if (xtreamManifest) {
+              return sendIptvM3u8Response(res, xtreamManifest);
+            }
+          }
+          markTrackDown(sourceUrl, 503);
+          continue;
         }
 
         if (isDirectHls) {

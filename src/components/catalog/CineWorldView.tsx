@@ -526,26 +526,36 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
         />
       ) : (isMoviesTab && (movieGenre !== '' || movieSort !== 'trending')) ||
         (isSeriesTab && (seriesGenre !== '' || seriesSort !== 'trending')) ? (
-        <CineFilteredGridView
-          lang={lang}
-          isSeriesTab={isSeriesTab}
-          currentSort={currentSort}
-          backLabel={filteredBackLabel}
-          items={isSeriesTab ? seriesList : movies}
-          loading={isSeriesTab ? loadingSeries : loadingMovies}
-          hasMore={isSeriesTab ? hasMoreSeries : hasMoreMovies}
-          loadingMore={isSeriesTab ? loadingMoreSeries : loadingMoreMovies}
-          isBookmarked={isBookmarked}
-          onToggleBookmark={onToggleBookmark}
-          onOpenPosterItem={openPosterItem}
-          onNextPage={() => (isSeriesTab ? onNextSeriesPage() : onNextMoviePage())}
-          onClearFilters={() => {
-            onChangeMovieSort('trending');
-            onChangeMovieGenre('');
-            onChangeSeriesSort('trending');
-            onChangeSeriesGenre('');
-          }}
-        />
+        <div className="space-y-7">
+          <CineFilteredGridView
+            lang={lang}
+            isSeriesTab={isSeriesTab}
+            currentSort={currentSort}
+            backLabel={filteredBackLabel}
+            items={isSeriesTab ? seriesList : movies}
+            loading={isSeriesTab ? loadingSeries : loadingMovies}
+            hasMore={isSeriesTab ? hasMoreSeries : hasMoreMovies}
+            loadingMore={isSeriesTab ? loadingMoreSeries : loadingMoreMovies}
+            isBookmarked={isBookmarked}
+            onToggleBookmark={onToggleBookmark}
+            onOpenPosterItem={openPosterItem}
+            onNextPage={() => (isSeriesTab ? onNextSeriesPage() : onNextMoviePage())}
+            onClearFilters={() => {
+              onChangeMovieSort('trending');
+              onChangeMovieGenre('');
+              onChangeSeriesSort('trending');
+              onChangeSeriesGenre('');
+            }}
+          />
+          {onPlayTdtChannel && (
+            <XtreamVodSeriesShelf
+              lang={lang}
+              mode={isSeriesTab ? 'series' : 'movies'}
+              force4kFilter={currentSort === '4k'}
+              onPlayTdtChannel={onPlayTdtChannel}
+            />
+          )}
+        </div>
       ) : (
         <motion.div
           initial={{ opacity: 0 }}
@@ -568,6 +578,14 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
             onOpenSeriesDetails={onOpenSeriesDetails}
             onPlayMovie={onPlayMovie}
           />
+
+          {onPlayTdtChannel && (
+            <XtreamVodSeriesShelf
+              lang={lang}
+              mode={isSeriesTab ? 'series' : 'movies'}
+              onPlayTdtChannel={onPlayTdtChannel}
+            />
+          )}
 
           {/* TRENDING RAIL */}
           <motion.section
@@ -639,14 +657,6 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
               />
             </React.Suspense>
           </motion.div>
-
-          {onPlayTdtChannel && (
-            <XtreamVodSeriesShelf
-              lang={lang}
-              mode={isSeriesTab ? 'series' : 'movies'}
-              onPlayTdtChannel={onPlayTdtChannel}
-            />
-          )}
         </motion.div>
       )}
 

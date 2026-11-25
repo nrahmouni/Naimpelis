@@ -1,11 +1,12 @@
 /**
  * @module src/components/catalog/XtreamVodSeriesShelf
  * @description Materializes synced multi-provider Xtream Movies (VOD) and Series
- * directly inside the main Cine y Series section with server summary breakdown,
- * provider/category filtering, 40-item pagination, and instant detail/playback modals.
+ * directly inside the main Cine y Series section with all 7 connected servers,
+ * inline instant search, provider/category filtering, 40-item pagination, and
+ * detail/playback modals.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { Clapperboard, Film, Loader2, Play, RefreshCw, Star } from 'lucide-react';
+import { Clapperboard, Film, Loader2, Play, RefreshCw, Search, Star, X } from 'lucide-react';
 import type { AppLanguage, SpanishTdtChannel } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
@@ -22,7 +23,11 @@ import {
   type XtreamVodStreamItem,
 } from '../../services/xtreamClientService';
 import { XtreamCatalogSummaryBar } from '../belix/XtreamCatalogSummaryBar';
-import { XtreamPosterMedia, buildVodTdtChannel } from '../belix/XtreamMediaHelpers';
+import {
+  XtreamPosterMedia,
+  buildVodTdtChannel,
+  formatXtreamRating,
+} from '../belix/XtreamMediaHelpers';
 import { XtreamVodDetailModal } from '../belix/XtreamVodDetailModal';
 import { XtreamSeriesEpisodesModal } from '../belix/XtreamSeriesEpisodesModal';
 
@@ -32,6 +37,7 @@ interface XtreamVodSeriesShelfProps {
   lang: AppLanguage;
   mode: 'movies' | 'series';
   trimmedSearch?: string;
+  force4kFilter?: boolean;
   onPlayTdtChannel: (channel: SpanishTdtChannel, signalIndex?: number) => void;
 }
 
@@ -39,6 +45,7 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
   lang,
   mode,
   trimmedSearch = '',
+  force4kFilter = false,
   onPlayTdtChannel,
 }) => {
   const [catalog, setCatalog] = useState<XtreamFullCatalogPayload | null>(() =>
@@ -47,9 +54,14 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
   const [loading, setLoading] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<string>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [localSearch, setLocalSearch] = useState(trimmedSearch);
   const [visibleLimit, setVisibleLimit] = useState(BATCH_SIZE);
   const [selectedVod, setSelectedVod] = useState<XtreamVodStreamItem | null>(null);
   const [selectedSeries, setSelectedSeries] = useState<XtreamSeriesItem | null>(null);
+
+  useEffect(() => {
+    setLocalSearch(trimmedSearch);
+  }, [trimmedSearch]);
 
   useEffect(() => {
     let active = true;
@@ -87,7 +99,7 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
 
   useEffect(() => {
     setVisibleLimit(BATCH_SIZE);
-  }, [selectedCategory, trimmedSearch]);
+  }, [selectedCategory, localSearch, force4kFilter]);
 
   const handleRefresh = async () => {
     triggerHaptic('light');
@@ -120,17 +132,18 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
   };
 
   const availableProviders = useMemo(() => {
-    if (!catalog) return [];
     const counts = new Map<string, number>();
-    const list = mode === 'movies' ? catalog.vodStreams : catalog.series;
-    for (const item of list) {
-      const pid = item.providerId || 'primary';
-      counts.set(pid, (counts.get(pid) || 0) + 1);
+    if (catalog) {
+      const list = mode === 'movies' ? catalog.vodStreams : catalog.series;
+      for (const item of list) {
+        const pid = item.providerId || 'primary';
+        counts.set(pid, (counts.get(pid) || 0) + 1);
+      }
     }
     return XTREAM_PROVIDER_UI_SPECS.map((spec) => ({
       ...spec,
       count: counts.get(spec.providerId) || 0,
-    })).filter((s) => s.count > 0);
+    }));
   }, [catalog, mode]);
 
   const availableCategories = useMemo(() => {
@@ -157,7 +170,7 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
     return out;
   }, [catalog, mode, selectedProvider]);
 
-  const normalizedQuery = trimmedSearch.trim().toLowerCase();
+  const normalizedQuery = localSearch.trim().toLowerCase();
 
   const filteredMovies = useMemo(() => {
     if (mode !== 'movies' || !catalog) return [];
@@ -171,13 +184,17 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
           return false;
         }
       }
-      if (normalizedQuery) {
-        const hay = `${item.name} ${item.providerName || ''} ${resolveCategoryName(pid, item.categoryId)}`.toLowerCase();
-        if (!hay.includes(normalizedQuery)) return false;
+      const catName = resolveCategoryName(pid, item.categoryId);
+      const hay = `${item.name} ${item.providerName || ''} ${catName} ${item.containerExtension || ''}`.toLowerCase();
+      if (force4kFilter && !/\b(4k|uhd|2160p?)\b/i.test(hay)) {
+        return false;
+      }
+      if (normalizedQuery && !hay.includes(normalizedQuery)) {
+        return false;
       }
       return true;
     });
-  }, [mode, catalog, selectedProvider, selectedCategory, normalizedQuery]);
+  }, [mode, catalog, selectedProvider, selectedCategory, normalizedQuery, force4kFilter]);
 
   const filteredSeries = useMemo(() => {
     if (mode !== 'series' || !catalog) return [];
@@ -189,25 +206,27 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
           if (`${pid}:${item.categoryId}` !== selectedCategory) return false;
         } else if (item.categoryId !== selectedCategory) return false;
       }
-      if (normalizedQuery) {
-        const hay = `${item.name} ${item.providerName || ''} ${item.genre || ''} ${resolveCategoryName(pid, item.categoryId)}`.toLowerCase();
-        if (!hay.includes(normalizedQuery)) return false;
+      const catName = resolveCategoryName(pid, item.categoryId);
+      const hay = `${item.name} ${item.providerName || ''} ${item.genre || ''} ${catName}`.toLowerCase();
+      if (force4kFilter && !/\b(4k|uhd|2160p?)\b/i.test(hay)) {
+        return false;
+      }
+      if (normalizedQuery && !hay.includes(normalizedQuery)) {
+        return false;
       }
       return true;
     });
-  }, [mode, catalog, selectedProvider, selectedCategory, normalizedQuery]);
+  }, [mode, catalog, selectedProvider, selectedCategory, normalizedQuery, force4kFilter]);
 
   const totalCount = mode === 'movies' ? filteredMovies.length : filteredSeries.length;
   const visibleMovies = filteredMovies.slice(0, visibleLimit);
   const visibleSeries = filteredSeries.slice(0, visibleLimit);
   const remainingCount = Math.max(0, totalCount - visibleLimit);
-
-  if (!loading && (!catalog || (mode === 'movies' ? catalog.vodStreams.length === 0 : catalog.series.length === 0))) {
-    return null;
-  }
+  const activeSpec =
+    selectedProvider !== 'all' ? getXtreamProviderUiSpecByProviderId(selectedProvider) : undefined;
 
   return (
-    <section className="space-y-4 pt-2 border-t border-white/[0.06]">
+    <section className="space-y-4 pt-3 border-t border-white/[0.06]">
       <div className="flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex items-center gap-2.5 min-w-0">
           {mode === 'movies' ? (
@@ -219,14 +238,26 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
             <h3 className="font-display font-bold text-base sm:text-lg text-white tracking-tight truncate">
               {mode === 'movies'
                 ? pickLang(lang, {
-                    es: 'Catálogo VOD sincronizado (7 servidores)',
-                    ca: 'Catàleg VOD sincronitzat (7 servidors)',
-                    en: 'Synced VOD catalog (7 servers)',
+                    es: force4kFilter
+                      ? 'Películas 4K UHD · 7 servidores conectados'
+                      : 'Catálogo VOD · 7 servidores conectados',
+                    ca: force4kFilter
+                      ? 'Pel·lícules 4K UHD · 7 servidors connectats'
+                      : 'Catàleg VOD · 7 servidors connectats',
+                    en: force4kFilter
+                      ? '4K UHD Movies · 7 connected servers'
+                      : 'VOD Catalog · 7 connected servers',
                   })
                 : pickLang(lang, {
-                    es: 'Catálogo de Series sincronizado (7 servidores)',
-                    ca: 'Catàleg de Sèries sincronitzat (7 servidors)',
-                    en: 'Synced Series catalog (7 servers)',
+                    es: force4kFilter
+                      ? 'Series 4K UHD · 7 servidores conectados'
+                      : 'Catálogo de Series · 7 servidores conectados',
+                    ca: force4kFilter
+                      ? 'Sèries 4K UHD · 7 servidors connectats'
+                      : 'Catàleg de Sèries · 7 servidors connectats',
+                    en: force4kFilter
+                      ? '4K UHD Series · 7 connected servers'
+                      : 'Series Catalog · 7 connected servers',
                   })}
             </h3>
             <p className="text-xs text-zinc-400 tabular-nums">
@@ -242,7 +273,7 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
           type="button"
           onClick={handleRefresh}
           disabled={loading}
-          className="min-h-10 px-3.5 rounded-xl bg-[#0D0D12] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-bold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors"
+          className="min-h-11 px-4 rounded-xl bg-[#0D0D12] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-bold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer disabled:opacity-50 transition-colors"
         >
           {loading ? (
             <Loader2 className="w-3.5 h-3.5 animate-spin text-violet-400" />
@@ -253,6 +284,44 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
         </button>
       </div>
 
+      {/* INLINE SEARCH BAR ACROSS ALL 7 SERVERS */}
+      <div className="relative flex items-center min-h-11 rounded-2xl bg-[#0D0D12] border border-white/[0.1] focus-within:border-[#7C3AED] px-3.5 transition-colors">
+        <Search className="w-4 h-4 text-zinc-400 mr-2.5 shrink-0" />
+        <input
+          type="search"
+          value={localSearch}
+          onChange={(e) => setLocalSearch(e.target.value)}
+          placeholder={pickLang(lang, {
+            es:
+              mode === 'movies'
+                ? 'Buscar películas en Shark Pro, VOD 4K, 24TV, 2M2H, Dana 4K Pro, Active CDNS, Octopus TV...'
+                : 'Buscar series en Shark Pro, VOD 4K, 24TV, 2M2H, Dana 4K Pro, Active CDNS, Octopus TV...',
+            ca:
+              mode === 'movies'
+                ? 'Cercar pel·lícules als 7 servidors connectats...'
+                : 'Cercar sèries als 7 servidors connectats...',
+            en:
+              mode === 'movies'
+                ? 'Search movies across all 7 connected servers...'
+                : 'Search series across all 7 connected servers...',
+          })}
+          className="flex-1 min-w-0 min-h-11 bg-transparent text-xs sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none"
+        />
+        {localSearch && (
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setLocalSearch('');
+            }}
+            aria-label={pickLang(lang, { es: 'Limpiar búsqueda', ca: 'Netejar cerca', en: 'Clear search' })}
+            className="min-w-11 min-h-11 -mr-2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+      </div>
+
       <XtreamCatalogSummaryBar
         lang={lang}
         catalog={catalog}
@@ -260,52 +329,55 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
         onOpenServerWorld={(w) => useAppStore.getState().setActiveWorld(w)}
       />
 
-      {availableProviders.length > 0 && (
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic('light');
-              setSelectedProvider('all');
-            }}
-            className={`min-h-10 px-3.5 rounded-xl border text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-              selectedProvider === 'all'
-                ? 'bg-[#7C3AED] border-[#7C3AED] text-white'
-                : 'bg-[#0D0D12] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
-            }`}
-          >
-            {pickLang(lang, { es: 'Todos los servidores', ca: 'Tots els servidors', en: 'All servers' })}
-          </button>
+      {/* ALL 7 CONNECTED SERVERS SELECTOR */}
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
+        <button
+          type="button"
+          onClick={() => {
+            triggerHaptic('light');
+            setSelectedProvider('all');
+          }}
+          className={`min-h-11 px-3.5 rounded-xl border text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+            selectedProvider === 'all'
+              ? 'bg-[#7C3AED] border-[#7C3AED] text-white'
+              : 'bg-[#0D0D12] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
+          }`}
+        >
+          {pickLang(lang, { es: 'Todos los servidores (7)', ca: 'Tots els servidors (7)', en: 'All servers (7)' })}
+        </button>
 
-          {availableProviders.map((srv) => {
-            const active = selectedProvider === srv.providerId;
-            return (
-              <button
-                key={`cine-srv-${srv.providerId}`}
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setSelectedProvider(srv.providerId);
-                }}
-                className={`min-h-10 px-3.5 rounded-xl border text-xs font-bold whitespace-nowrap shrink-0 inline-flex items-center gap-2 cursor-pointer transition-colors ${
-                  active
-                    ? 'bg-white text-black border-white'
-                    : 'bg-[#0D0D12] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
+        {availableProviders.map((srv) => {
+          const active = selectedProvider === srv.providerId;
+          return (
+            <button
+              key={`cine-srv-${srv.providerId}`}
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setSelectedProvider(srv.providerId);
+              }}
+              className={`min-h-11 px-3.5 rounded-xl border text-xs font-bold whitespace-nowrap shrink-0 inline-flex items-center gap-2 cursor-pointer transition-colors ${
+                active
+                  ? 'bg-white text-black border-white'
+                  : 'bg-[#0D0D12] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
+              }`}
+            >
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: srv.accent }}
+              />
+              <span>{srv.name}</span>
+              <span
+                className={`font-mono text-[11px] tabular-nums ${
+                  active ? 'text-black/75' : srv.count > 0 ? 'text-zinc-400' : 'text-emerald-400'
                 }`}
               >
-                <span
-                  className="w-2 h-2 rounded-full shrink-0"
-                  style={{ backgroundColor: srv.accent }}
-                />
-                <span>{srv.name}</span>
-                <span className="font-mono text-[11px] opacity-75 tabular-nums">
-                  {srv.count.toLocaleString('es-ES')}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      )}
+                {srv.count > 0 ? srv.count.toLocaleString('es-ES') : 'Conectado'}
+              </span>
+            </button>
+          );
+        })}
+      </div>
 
       {availableCategories.length > 0 && (
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
@@ -315,7 +387,7 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
               triggerHaptic('light');
               setSelectedCategory('all');
             }}
-            className={`min-h-9 px-3 rounded-xl border text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+            className={`min-h-11 px-3.5 rounded-xl border text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
               selectedCategory === 'all'
                 ? 'bg-white/15 border-white/30 text-white'
                 : 'bg-black/40 border-white/[0.07] text-zinc-400 hover:text-white'
@@ -334,7 +406,7 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
                   triggerHaptic('light');
                   setSelectedCategory(val);
                 }}
-                className={`min-h-9 px-3 rounded-xl border text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                className={`min-h-11 px-3.5 rounded-xl border text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                   active
                     ? 'bg-white/15 border-white/30 text-white'
                     : 'bg-black/40 border-white/[0.07] text-zinc-400 hover:text-white'
@@ -350,15 +422,33 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
       {loading && totalCount === 0 ? (
         <div className="py-10 flex items-center justify-center gap-2 text-xs text-zinc-400">
           <Loader2 className="w-4 h-4 animate-spin text-violet-400" />
-          <span>{pickLang(lang, { es: 'Cargando catálogo...', ca: 'Carregant catàleg...', en: 'Loading catalog...' })}</span>
+          <span>{pickLang(lang, { es: 'Cargando catálogo de los 7 servidores...', ca: 'Carregant catàleg...', en: 'Loading catalog...' })}</span>
         </div>
       ) : totalCount === 0 ? (
-        <div className="rounded-2xl bg-[#0D0D12] border border-white/[0.08] p-6 text-center text-xs text-zinc-400">
-          {pickLang(lang, {
-            es: 'No hay títulos que coincidan con este filtro o búsqueda.',
-            ca: 'No hi ha títols que coincideixin amb aquest filtre o cerca.',
-            en: 'No titles match this filter or search.',
-          })}
+        <div className="rounded-2xl bg-[#0D0D12] border border-white/[0.08] p-6 text-center space-y-3">
+          <p className="text-xs text-zinc-400">
+            {pickLang(lang, {
+              es: 'No hay títulos que coincidan con este filtro o búsqueda en esta pestaña.',
+              ca: 'No hi ha títols que coincideixin amb aquest filtre o cerca.',
+              en: 'No titles match this filter or search in this tab.',
+            })}
+          </p>
+          {activeSpec && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                useAppStore.getState().setActiveWorld(activeSpec.worldId);
+              }}
+              className="min-h-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-xs font-bold text-white cursor-pointer transition-colors"
+            >
+              {pickLang(lang, {
+                es: `Abrir catálogo completo de ${activeSpec.name}`,
+                ca: `Obrir catàleg complet de ${activeSpec.name}`,
+                en: `Open full ${activeSpec.name} catalog`,
+              })}
+            </button>
+          )}
         </div>
       ) : (
         <>
@@ -367,6 +457,8 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
               ? visibleMovies.map((movie) => {
                   const spec = getXtreamProviderUiSpecByProviderId(movie.providerId || 'primary');
                   const catName = resolveCategoryName(movie.providerId, movie.categoryId);
+                  const cleanRating = formatXtreamRating(movie.rating);
+                  const cleanMeta = [movie.providerName, catName].filter(Boolean).join(' · ');
                   return (
                     <div
                       key={`shelf-vod-${movie.providerId || 'p'}-${movie.streamId}`}
@@ -387,15 +479,10 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
                           accentColor={spec?.accent || '#8B5CF6'}
                           className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
                         />
-                        {movie.providerName && (
-                          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-black/75 border border-white/10 text-[10px] font-bold text-zinc-200 max-w-[75%] truncate">
-                            {movie.providerName}
-                          </span>
-                        )}
-                        {movie.rating && (
-                          <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-black/75 text-[10px] font-bold text-amber-300 inline-flex items-center gap-0.5 tabular-nums">
+                        {cleanRating && (
+                          <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-black/80 text-[10px] font-bold text-amber-300 inline-flex items-center gap-0.5 tabular-nums">
                             <Star className="w-2.5 h-2.5 fill-current" />
-                            {movie.rating}
+                            {cleanRating}
                           </span>
                         )}
                       </button>
@@ -404,7 +491,7 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
                           <p className="text-xs font-bold text-white line-clamp-2 leading-snug">
                             {movie.name}
                           </p>
-                          <p className="text-[11px] text-zinc-400 truncate mt-0.5">{catName}</p>
+                          <p className="text-[11px] text-zinc-400 truncate mt-0.5">{cleanMeta}</p>
                         </div>
                         <button
                           type="button"
@@ -415,9 +502,9 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
                               0
                             );
                           }}
-                          className="min-h-9 w-full rounded-xl bg-white/[0.08] hover:bg-white text-white hover:text-black text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                          className="min-h-11 w-full rounded-xl bg-white/[0.08] hover:bg-white text-white hover:text-black text-xs font-bold inline-flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                         >
-                          <Play className="w-3 h-3 fill-current" />
+                          <Play className="w-3.5 h-3.5 fill-current" />
                           <span>{pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Play' })}</span>
                         </button>
                       </div>
@@ -427,6 +514,8 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
               : visibleSeries.map((ser) => {
                   const spec = getXtreamProviderUiSpecByProviderId(ser.providerId || 'primary');
                   const catName = resolveCategoryName(ser.providerId, ser.categoryId);
+                  const cleanRating = formatXtreamRating(ser.rating);
+                  const cleanMeta = [ser.providerName, catName].filter(Boolean).join(' · ');
                   return (
                     <button
                       key={`shelf-ser-${ser.providerId || 'p'}-${ser.seriesId}`}
@@ -445,15 +534,10 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
                           accentColor={spec?.accent || '#0EA5E9'}
                           className="w-full h-full object-cover group-hover:scale-[1.03] transition-transform duration-300"
                         />
-                        {ser.providerName && (
-                          <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-black/75 border border-white/10 text-[10px] font-bold text-zinc-200 max-w-[75%] truncate">
-                            {ser.providerName}
-                          </span>
-                        )}
-                        {ser.rating && (
-                          <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-black/75 text-[10px] font-bold text-amber-300 inline-flex items-center gap-0.5 tabular-nums">
+                        {cleanRating && (
+                          <span className="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-black/80 text-[10px] font-bold text-amber-300 inline-flex items-center gap-0.5 tabular-nums">
                             <Star className="w-2.5 h-2.5 fill-current" />
-                            {ser.rating}
+                            {cleanRating}
                           </span>
                         )}
                       </div>
@@ -461,7 +545,7 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
                         <p className="text-xs font-bold text-white line-clamp-2 leading-snug">
                           {ser.name}
                         </p>
-                        <p className="text-[11px] text-zinc-400 truncate">{catName}</p>
+                        <p className="text-[11px] text-zinc-400 truncate">{cleanMeta}</p>
                       </div>
                     </button>
                   );

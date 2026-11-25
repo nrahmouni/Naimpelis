@@ -9,7 +9,11 @@ import type { XtreamVodStreamItem } from '../../services/xtreamClientService';
 import { BottomSheet, PrimaryButton } from '../ui/DesignSystem';
 import { triggerHaptic } from '../../utils/haptics';
 import { pickLang } from '../../utils/i18n';
-import { XtreamPosterMedia, buildVodTdtChannel } from './XtreamMediaHelpers';
+import {
+  XtreamPosterMedia,
+  buildVodTdtChannel,
+  formatXtreamRating,
+} from './XtreamMediaHelpers';
 
 interface XtreamVodDetailModalProps {
   movie: XtreamVodStreamItem | null;
@@ -80,10 +84,10 @@ export const XtreamVodDetailModal: React.FC<XtreamVodDetailModalProps> = ({
 
           <div className="min-w-0 flex-1 space-y-2.5 text-xs">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-zinc-300 tabular-nums">
-              {movie.rating && (
+              {formatXtreamRating(movie.rating) && (
                 <span className="inline-flex items-center gap-1 font-semibold text-amber-300">
                   <Star className="w-3.5 h-3.5 fill-current" />
-                  <span>{movie.rating}</span>
+                  <span>{formatXtreamRating(movie.rating)}</span>
                 </span>
               )}
               <span>{categoryName}</span>

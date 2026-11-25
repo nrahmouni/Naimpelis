@@ -69,6 +69,24 @@ function isExcludedKidsChannel(ch) {
   return false;
 }
 
+function getTvChannelQualityScore(ch) {
+  if (!ch) return 1;
+  if (typeof ch.bestQualityRank === 'number' && ch.bestQualityRank > 0) {
+    return ch.bestQualityRank;
+  }
+  var raw = String(ch.quality || '');
+  var tracks = Array.isArray(ch.channels) ? ch.channels : [];
+  for (var i = 0; i < tracks.length; i++) {
+    if (tracks[i] && tracks[i].quality) raw += ' ' + tracks[i].quality;
+    if (tracks[i] && tracks[i].label) raw += ' ' + tracks[i].label;
+  }
+  var upper = raw.toUpperCase();
+  if (/(4K|UHD|2160P)/.test(upper)) return 4;
+  if (/(FHD|1080P)/.test(upper)) return 3;
+  if (/(HD|720P|SAT)/.test(upper)) return 2;
+  return 1;
+}
+
 function getChannelPriorityRank(ch) {
   var id = String(ch.id || '').toLowerCase();
   var cat = String(ch.category || '').toLowerCase();
@@ -115,22 +133,45 @@ function mergeTvLiveCatalog() {
   var base = Array.isArray(catalogData.tdtBase) ? catalogData.tdtBase : [];
   var world = Array.isArray(catalogData.worldTv) ? catalogData.worldTv : [];
   var merged = [];
-  var seen = {};
+  var byId = {};
   var i;
-  for (i = 0; i < base.length; i++) {
-    if (base[i] && base[i].id && !seen[base[i].id] && !isExcludedKidsChannel(base[i])) {
-      seen[base[i].id] = true;
-      merged.push(base[i]);
+  var addOrMerge = function (item) {
+    if (!item || !item.id || isExcludedKidsChannel(item)) return;
+    if (!byId[item.id]) {
+      byId[item.id] = item;
+      merged.push(item);
+      return;
     }
-  }
-  for (i = 0; i < world.length; i++) {
-    if (world[i] && world[i].id && !seen[world[i].id] && !isExcludedKidsChannel(world[i])) {
-      seen[world[i].id] = true;
-      merged.push(world[i]);
+    var existing = byId[item.id];
+    if (Array.isArray(item.channels) && item.channels.length > 0) {
+      var curTracks = Array.isArray(existing.channels) ? existing.channels : [];
+      var urlSeen = {};
+      var t;
+      for (t = 0; t < curTracks.length; t++) {
+        if (curTracks[t] && curTracks[t].sourceUrl) urlSeen[curTracks[t].sourceUrl] = true;
+      }
+      for (t = 0; t < item.channels.length; t++) {
+        if (item.channels[t] && item.channels[t].sourceUrl && !urlSeen[item.channels[t].sourceUrl]) {
+          urlSeen[item.channels[t].sourceUrl] = true;
+          curTracks.push(item.channels[t]);
+        }
+      }
+      existing.channels = curTracks;
     }
-  }
+  };
+  for (i = 0; i < base.length; i++) addOrMerge(base[i]);
+  for (i = 0; i < world.length; i++) addOrMerge(world[i]);
   merged.sort(function (a, b) {
-    return getChannelPriorityRank(a) - getChannelPriorityRank(b);
+    var priDiff = getChannelPriorityRank(a) - getChannelPriorityRank(b);
+    if (priDiff !== 0) return priDiff;
+    var qDiff = getTvChannelQualityScore(b) - getTvChannelQualityScore(a);
+    if (qDiff !== 0) return qDiff;
+    var latA = typeof a.bestLatencyMs === 'number' ? a.bestLatencyMs : 9999;
+    var latB = typeof b.bestLatencyMs === 'number' ? b.bestLatencyMs : 9999;
+    if (latA !== latB) return latA - latB;
+    var sigB = Array.isArray(b.channels) ? b.channels.length : 0;
+    var sigA = Array.isArray(a.channels) ? a.channels.length : 0;
+    return sigB - sigA;
   });
   catalogData.tdt = merged;
 }

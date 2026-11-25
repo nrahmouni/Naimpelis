@@ -14,6 +14,7 @@ import type { CatalogSection } from './catalogConstants';
 import { ensureVaultSyncedWithBackend } from '../../services/xtreamVaultConfig';
 import { readCachedXtreamCatalog } from '../../services/xtreamClientService';
 import { buildLiveTdtChannel } from '../belix/XtreamMediaHelpers';
+import { rankClientChannels } from '../../utils/channelQualityRanker';
 
 export type FootballBrandFilter =
   | 'all'
@@ -154,20 +155,14 @@ export function useLiveTvAndSportsCatalog({
         belixList.length > 0 ||
         cachedXtreamChannels.length > 0
       ) {
-        const seenIds = new Set<string>();
-        const merged: SpanishTdtChannel[] = [];
-        for (const ch of [
+        const ranked = rankClientChannels([
           ...baseList,
           ...rbtvList,
           ...belixList,
           ...cachedXtreamChannels,
           ...worldList,
-        ]) {
-          if (!ch?.id || seenIds.has(ch.id)) continue;
-          seenIds.add(ch.id);
-          merged.push(ch);
-        }
-        setTdtChannels(merged);
+        ]);
+        setTdtChannels(ranked);
       }
     } catch {
       // Keep cached channels

@@ -14,6 +14,7 @@ import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { buildChannelFavId } from '../../utils/storage';
 import { ChannelLogoBadge, getChannelRegionMeta } from '../ui/ChannelLogoBadge';
+import { inferStreamQualityTag } from '../../utils/channelQualityRanker';
 
 interface LiveTvChannelRowProps {
   channel: SpanishTdtChannel;
@@ -42,10 +43,23 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
   const isPlaying = Boolean(
     activeVideoRawUrl && ch.channels.some((s) => s.sourceUrl === activeVideoRawUrl)
   );
+  const leadTrack = ch.channels[0];
+  const qualityTag = inferStreamQualityTag(
+    leadTrack?.quality || ch.quality,
+    leadTrack?.label,
+    leadTrack?.sourceUrl
+  ).label;
+  const signalCount = ch.channels.length;
+  const latencyMs =
+    ch.healthSummary?.bestStatus === 'up' &&
+    typeof ch.healthSummary.bestLatencyMs === 'number' &&
+    ch.healthSummary.bestLatencyMs > 0
+      ? ch.healthSummary.bestLatencyMs
+      : null;
 
   return (
     <div
-      className={`cv-row-auto relative group min-h-[82px] p-3.5 sm:p-4 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
+      className={`cv-row-auto relative group min-h-[86px] p-3.5 sm:p-4 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
         isPlaying
           ? 'border-[#7C3AED] bg-[#7C3AED]/[0.16] shadow-[0_8px_24px_rgba(124,58,237,0.25)]'
           : 'bg-[#0D0D12] border-white/[0.08] hover:border-white/20 hover:bg-[#13131B]'
@@ -61,12 +75,34 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
       <div className="relative z-10 flex-1 min-w-0 flex items-center gap-3 pointer-events-none">
         <ChannelLogoBadge channel={ch} size="md" />
 
-        <div className="min-w-0 flex-1 space-y-1.5">
-          <div className="font-display font-bold text-[15px] text-white leading-snug break-words flex items-baseline flex-wrap gap-x-1.5 gap-y-0.5">
-            <span className="break-words">{ch.name}</span>
-            <span className="text-[11px] font-mono font-semibold text-zinc-400 shrink-0 tabular-nums">
-              · {regMeta.langTag} · Dial {ch.dial}
-            </span>
+        <div className="min-w-0 flex-1 space-y-1">
+          <div className="font-display font-bold text-[15px] text-white leading-snug break-words">
+            {ch.name}
+          </div>
+          <div className="text-[11px] font-mono font-semibold text-zinc-400 tabular-nums flex items-center flex-wrap gap-x-1.5">
+            <span>{regMeta.langTag}</span>
+            <span aria-hidden="true">·</span>
+            <span>Dial {ch.dial}</span>
+            <span aria-hidden="true">·</span>
+            <span className="text-zinc-200">{qualityTag}</span>
+            {signalCount > 1 && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-[#C4B5FD]">
+                  {pickLang(lang, {
+                    es: `${signalCount} señales`,
+                    ca: `${signalCount} senyals`,
+                    en: `${signalCount} signals`,
+                  })}
+                </span>
+              </>
+            )}
+            {latencyMs !== null && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-emerald-300">{latencyMs} ms</span>
+              </>
+            )}
           </div>
           <div className="text-xs text-zinc-400 leading-snug break-words">
             {chEpg?.now ? (
