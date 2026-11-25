@@ -6,31 +6,33 @@ function getFocusableRoot() {
     var gs = document.getElementById('tv-games-screen');
     if (gs) return gs;
   }
+  var fbModal = document.getElementById('tv-football-modal');
+  if (fbModal && fbModal.style.display === 'block') return fbModal;
   if (voiceModal && voiceModal.style.display === 'block') return voiceModal;
   if (seriesModal && seriesModal.style.display === 'block') return seriesModal;
   if (fsPromptBanner && fsPromptBanner.style.display === 'block') return fsPromptBanner;
-  if (activeScreen === 'player' && typeof window.isTvMultiActive === 'function' && window.isTvMultiActive()) {
-    var mw = document.getElementById('tv-multi-wrap');
-    if (mw) return mw;
-  }
   if (activeScreen === 'player' && isMiniGuideOpen && miniGuideDrawer) return miniGuideDrawer;
   if (activeScreen === 'player') return playerScreen;
   if (activeScreen === 'pairing') return pairingScreen;
   return hubScreen;
 }
 
-function getVisibleFocusables() {
-  var root = getFocusableRoot();
-  var all = root.querySelectorAll('button, input, a[href], [tabindex="0"]');
+function collectVisibleFocusablesIn(containerEl) {
+  if (!containerEl) return [];
+  var all = containerEl.querySelectorAll('button, input, a[href], [tabindex="0"]');
   var out = [];
   for (var i = 0; i < all.length; i++) {
     var el = all[i];
-    if (el.disabled || el.offsetWidth <= 0 || el.offsetHeight <= 0) continue;
+    if (el.disabled || el.tabIndex < 0 || el.offsetWidth <= 0 || el.offsetHeight <= 0) continue;
     var rect = el.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) continue;
-    out.push({ el: el, rect: rect });
+    out.push({ el: el, rect: rect, cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 });
   }
   return out;
+}
+
+function getVisibleFocusables() {
+  return collectVisibleFocusablesIn(getFocusableRoot());
 }
 
 function ensureFocusVisibleInContainer(el) {
@@ -38,13 +40,19 @@ function ensureFocusVisibleInContainer(el) {
   try {
     var parent = el.parentNode;
     while (parent && parent !== document.body) {
-      if (parent.className && (parent.className.indexOf('tv-rail') !== -1 || parent.className.indexOf('tv-filter-row') !== -1 || parent.className.indexOf('mg-channel-list') !== -1)) {
+      var cls = String(parent.className || '');
+      if (
+        cls.indexOf('tv-rail') !== -1 ||
+        cls.indexOf('tv-filter-row') !== -1 ||
+        cls.indexOf('tv-fb-controls-row') !== -1 ||
+        cls.indexOf('tv-quick-dock') !== -1
+      ) {
         var pRect = parent.getBoundingClientRect();
         var eRect = el.getBoundingClientRect();
-        if (parent.className.indexOf('tv-rail') !== -1 || parent.className.indexOf('tv-filter-row') !== -1) {
-          if (eRect.right > pRect.right - 28 || eRect.left < pRect.left + 28) {
-            parent.scrollLeft += (eRect.left + eRect.width / 2) - (pRect.left + pRect.width / 2);
-          }
+        if (eRect.right > pRect.right - 24) {
+          parent.scrollLeft += (eRect.right - pRect.right) + 32;
+        } else if (eRect.left < pRect.left + 24) {
+          parent.scrollLeft -= (pRect.left - eRect.left) + 32;
         }
       }
       parent = parent.parentNode;
@@ -52,7 +60,7 @@ function ensureFocusVisibleInContainer(el) {
     if (hubScrollBody && hubDynamicContent && hubDynamicContent.contains(el)) {
       var sRect = hubScrollBody.getBoundingClientRect();
       var elRect = el.getBoundingClientRect();
-      if (elRect.bottom > sRect.bottom - 28) {
+      if (elRect.bottom > sRect.bottom - 24) {
         hubScrollBody.scrollTop += (elRect.bottom - sRect.bottom) + 44;
       } else if (elRect.top < sRect.top + 20) {
         hubScrollBody.scrollTop -= (sRect.top - elRect.top) + 36;
@@ -63,76 +71,142 @@ function ensureFocusVisibleInContainer(el) {
   } catch (e) {}
 }
 
-function moveFocusDirection(dir) {
-  var list = getVisibleFocusables();
-  if (!list.length) return;
-  var active = document.activeElement;
-  var activeRect = null;
-  for (var i = 0; i < list.length; i++) {
-    if (list[i].el === active) {
-      activeRect = list[i].rect;
-      break;
+function bucketElementsIntoRows(items) {
+  var sorted = items.slice().sort(function (a, b) {
+    if (Math.abs(a.cy - b.cy) > 12) return a.cy - b.cy;
+    return a.rect.left - b.rect.left;
+  });
+  var rows = [];
+  for (var i = 0; i < sorted.length; i++) {
+    var it = sorted[i];
+    var placed = false;
+    for (var r = rows.length - 1; r >= 0; r--) {
+      var row = rows[r];
+      var ref = row.items[0];
+      var overlap = Math.min(ref.rect.bottom, it.rect.bottom) - Math.max(ref.rect.top, it.rect.top);
+      var minH = Math.min(ref.rect.height, it.rect.height);
+      if (Math.abs(it.cy - row.avgY) <= Math.max(20, minH * 0.6) || (minH > 0 && overlap / minH >= 0.4)) {
+        row.items.push(it);
+        row.avgY = (row.avgY * (row.items.length - 1) + it.cy) / row.items.length;
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) {
+      rows.push({ avgY: it.cy, items: [it] });
     }
   }
-  if (!activeRect) {
-    list[0].el.focus();
-    ensureFocusVisibleInContainer(list[0].el);
+  for (var j = 0; j < rows.length; j++) {
+    rows[j].items.sort(function (a, b) { return a.rect.left - b.rect.left; });
+  }
+  return rows;
+}
+
+function pickClosestXInRow(rowItems, targetCx) {
+  if (!rowItems || !rowItems.length) return null;
+  var best = rowItems[0];
+  var bestDist = Infinity;
+  for (var i = 0; i < rowItems.length; i++) {
+    var cand = rowItems[i];
+    var dist = 0;
+    if (targetCx < cand.rect.left) dist = cand.rect.left - targetCx;
+    else if (targetCx > cand.rect.right) dist = targetCx - cand.rect.right;
+    else dist = Math.abs(targetCx - cand.cx) * 0.25;
+    if (dist < bestDist) {
+      bestDist = dist;
+      best = cand;
+    }
+  }
+  return best.el;
+}
+
+function moveFocusDirection(dir) {
+  var root = getFocusableRoot();
+  var active = document.activeElement;
+
+  // Dedicated clean transition between Left Sidebar Rail and Main Stage
+  if (root === hubScreen && tvSideRail && hubDynamicContent) {
+    var inRail = active && tvSideRail.contains(active);
+    if (inRail) {
+      var railItems = collectVisibleFocusablesIn(tvSideRail);
+      if (!railItems.length) return;
+      var railIdx = -1;
+      for (var ri = 0; ri < railItems.length; ri++) {
+        if (railItems[ri].el === active) { railIdx = ri; break; }
+      }
+      if (dir === 'up' && railIdx > 0) {
+        railItems[railIdx - 1].el.focus();
+        ensureFocusVisibleInContainer(railItems[railIdx - 1].el);
+      } else if (dir === 'down' && railIdx >= 0 && railIdx + 1 < railItems.length) {
+        railItems[railIdx + 1].el.focus();
+        ensureFocusVisibleInContainer(railItems[railIdx + 1].el);
+      } else if (dir === 'right') {
+        var stageItems = collectVisibleFocusablesIn(hubDynamicContent);
+        if (stageItems.length > 0) {
+          var firstRow = bucketElementsIntoRows(stageItems)[0];
+          var enterEl = firstRow && firstRow.items[0] ? firstRow.items[0].el : stageItems[0].el;
+          enterEl.focus();
+          ensureFocusVisibleInContainer(enterEl);
+        }
+      }
+      return;
+    }
+  }
+
+  var scopeEl = (root === hubScreen && hubDynamicContent) ? hubDynamicContent : root;
+  var list = collectVisibleFocusablesIn(scopeEl);
+  if (!list.length) {
+    if (root === hubScreen && tvSideRail) {
+      var fbRail = tvSideRail.querySelector('.hub-tab-btn.active') || tvSideRail.querySelector('.rail-item');
+      if (fbRail && fbRail.focus) fbRail.focus();
+    }
     return;
   }
 
-  var cx = activeRect.left + activeRect.width / 2;
-  var cy = activeRect.top + activeRect.height / 2;
-  var isHorizontal = dir === 'left' || dir === 'right';
-  var bestSameBand = null;
-  var bestSameBandScore = Infinity;
-  var bestAny = null;
-  var bestAnyScore = Infinity;
-
-  for (var j = 0; j < list.length; j++) {
-    var cand = list[j];
-    if (cand.el === active) continue;
-    var r = cand.rect;
-    var tx = r.left + r.width / 2;
-    var ty = r.top + r.height / 2;
-    var dx = tx - cx;
-    var dy = ty - cy;
-
-    var valid = false;
-    var primary = 0;
-    var secondary = 0;
-    if (dir === 'left' && dx < -6) {
-      valid = true;
-      primary = -dx;
-      secondary = Math.abs(dy) * 2.8;
-    } else if (dir === 'right' && dx > 6) {
-      valid = true;
-      primary = dx;
-      secondary = Math.abs(dy) * 2.8;
-    } else if (dir === 'up' && dy < -6) {
-      valid = true;
-      primary = -dy;
-      secondary = Math.abs(dx) * 1.4;
-    } else if (dir === 'down' && dy > 6) {
-      valid = true;
-      primary = dy;
-      secondary = Math.abs(dx) * 1.4;
-    }
-    if (!valid) continue;
-
-    var score = primary + secondary;
-    if (isHorizontal && Math.abs(dy) < Math.max(activeRect.height, r.height) * 0.75) {
-      if (score < bestSameBandScore) {
-        bestSameBandScore = score;
-        bestSameBand = cand.el;
+  var rows = bucketElementsIntoRows(list);
+  var curRowIdx = -1;
+  var curColIdx = -1;
+  var curItem = null;
+  for (var r = 0; r < rows.length; r++) {
+    for (var c = 0; c < rows[r].items.length; c++) {
+      if (rows[r].items[c].el === active) {
+        curRowIdx = r;
+        curColIdx = c;
+        curItem = rows[r].items[c];
+        break;
       }
     }
-    if (score < bestAnyScore) {
-      bestAnyScore = score;
-      bestAny = cand.el;
+    if (curRowIdx !== -1) break;
+  }
+
+  if (!curItem) {
+    var firstEl = rows[0].items[0].el;
+    firstEl.focus();
+    ensureFocusVisibleInContainer(firstEl);
+    return;
+  }
+
+  var chosen = null;
+  if (dir === 'left') {
+    if (curColIdx > 0) {
+      chosen = rows[curRowIdx].items[curColIdx - 1].el;
+    } else if (root === hubScreen && tvSideRail) {
+      chosen = tvSideRail.querySelector('.hub-tab-btn.active') || tvSideRail.querySelector('.rail-item');
+    }
+  } else if (dir === 'right') {
+    if (curColIdx + 1 < rows[curRowIdx].items.length) {
+      chosen = rows[curRowIdx].items[curColIdx + 1].el;
+    }
+  } else if (dir === 'up') {
+    if (curRowIdx > 0) {
+      chosen = pickClosestXInRow(rows[curRowIdx - 1].items, curItem.cx);
+    }
+  } else if (dir === 'down') {
+    if (curRowIdx + 1 < rows.length) {
+      chosen = pickClosestXInRow(rows[curRowIdx + 1].items, curItem.cx);
     }
   }
 
-  var chosen = bestSameBand || bestAny;
   if (chosen) {
     chosen.focus();
     ensureFocusVisibleInContainer(chosen);
@@ -191,14 +265,7 @@ var langBtns = document.querySelectorAll('#sm-lang-row .series-pill-btn');
 for (var l = 0; l < langBtns.length; l++) {
   (function (lb) {
     lb.onclick = function () {
-      if (lb.getAttribute('data-quality-toggle') === '1') {
-        activeSeriesQualityFirst = !activeSeriesQualityFirst;
-        lb.className = 'series-pill-btn' + (activeSeriesQualityFirst ? ' active' : '');
-        showToast(activeSeriesQualityFirst ? tvT('qualityToastOn') : tvT('qualityToastOff'));
-        return;
-      }
       for (var k = 0; k < langBtns.length; k++) {
-        if (langBtns[k].getAttribute('data-quality-toggle') === '1') continue;
         langBtns[k].className = 'series-pill-btn';
       }
       lb.className = 'series-pill-btn active';
@@ -548,8 +615,14 @@ document.addEventListener('keydown', function (e) {
   var activeEl = document.activeElement;
   var targetTag = activeEl && activeEl.tagName ? String(activeEl.tagName).toUpperCase() : '';
 
-  // 0-9 remote numeric dial zapping (when not typing inside an INPUT)
-  if (targetTag !== 'INPUT' && (!voiceModal || voiceModal.style.display !== 'block') && (!seriesModal || seriesModal.style.display !== 'block')) {
+  // 0-9 remote numeric dial zapping (when not typing inside an INPUT or modal)
+  var fbModalOpenEl = document.getElementById('tv-football-modal');
+  if (
+    targetTag !== 'INPUT' &&
+    (!fbModalOpenEl || fbModalOpenEl.style.display !== 'block') &&
+    (!voiceModal || voiceModal.style.display !== 'block') &&
+    (!seriesModal || seriesModal.style.display !== 'block')
+  ) {
     if (code >= 48 && code <= 57) {
       if (e.preventDefault) e.preventDefault();
       handleDialDigit(String(code - 48));
@@ -577,9 +650,7 @@ document.addEventListener('keydown', function (e) {
     }
   }
 
-  if (activeScreen === 'player' && typeof window.isTvMultiActive === 'function' && window.isTvMultiActive()) {
-    // Allow D-pad navigation cleanly inside #tv-multi-grid and #tv-multi-bar
-  } else if (activeScreen === 'player' && !isMiniGuideOpen && currentMode !== 'idle' && !isHudVisible() && standbyOverlay.style.display === 'none') {
+  if (activeScreen === 'player' && !isMiniGuideOpen && currentMode !== 'idle' && !isHudVisible() && standbyOverlay.style.display === 'none') {
     if (code === 23 || code === 66 || code === 13 || code === 32) {
       if (e.preventDefault) e.preventDefault();
       revealHud();
@@ -609,34 +680,33 @@ document.addEventListener('keydown', function (e) {
     }
   }
 
-  var multiNowActive = activeScreen === 'player' && typeof window.isTvMultiActive === 'function' && window.isTvMultiActive();
   if (code === 37 || code === 21) {
     if (targetTag === 'INPUT' && activeEl.selectionStart > 0) return;
     if (e.preventDefault) e.preventDefault();
-    if (activeScreen === 'player' && !isMiniGuideOpen && !multiNowActive) revealHud();
+    if (activeScreen === 'player' && !isMiniGuideOpen) revealHud();
     moveFocusDirection('left');
     return;
   }
   if (code === 38 || code === 19) {
     if (keyName === 'MediaPause') {
-      if (activeScreen === 'player' && !multiNowActive && videoEl && !videoEl.paused) videoEl.pause();
+      if (activeScreen === 'player' && videoEl && !videoEl.paused) videoEl.pause();
       return;
     }
     if (e.preventDefault) e.preventDefault();
-    if (activeScreen === 'player' && !isMiniGuideOpen && !multiNowActive) revealHud();
+    if (activeScreen === 'player' && !isMiniGuideOpen) revealHud();
     moveFocusDirection('up');
     return;
   }
   if (code === 39 || code === 22) {
     if (targetTag === 'INPUT' && activeEl.selectionEnd < (activeEl.value || '').length) return;
     if (e.preventDefault) e.preventDefault();
-    if (activeScreen === 'player' && !isMiniGuideOpen && !multiNowActive) revealHud();
+    if (activeScreen === 'player' && !isMiniGuideOpen) revealHud();
     moveFocusDirection('right');
     return;
   }
   if (code === 40 || code === 20) {
     if (e.preventDefault) e.preventDefault();
-    if (activeScreen === 'player' && !isMiniGuideOpen && !multiNowActive) revealHud();
+    if (activeScreen === 'player' && !isMiniGuideOpen) revealHud();
     moveFocusDirection('down');
     return;
   }
@@ -666,6 +736,13 @@ document.addEventListener('keydown', function (e) {
       if (e.preventDefault) e.preventDefault();
       voiceModal.style.display = 'none';
       if (lastHubFocusedEl && lastHubFocusedEl.focus) lastHubFocusedEl.focus();
+      return;
+    }
+    var fbModalEl = document.getElementById('tv-football-modal');
+    if (fbModalEl && fbModalEl.style.display === 'block') {
+      if (e.preventDefault) e.preventDefault();
+      if (typeof closeTvFootballModal === 'function') closeTvFootballModal();
+      else fbModalEl.style.display = 'none';
       return;
     }
     if (seriesModal && seriesModal.style.display === 'block') {
@@ -725,7 +802,6 @@ document.addEventListener('keydown', function (e) {
   }
 
   if (activeScreen !== 'player') return;
-  if (typeof window.isTvMultiActive === 'function' && window.isTvMultiActive()) return;
   revealHud();
   if (code === 32 && (currentMode === 'hls' || currentMode === 'direct')) {
     if (e.preventDefault) e.preventDefault();
@@ -801,9 +877,13 @@ try {
 applyTvLanguage(activeTvLang);
 syncFullscreenButtons();
 
-// Boot sequence — opens directly into Smart TV Hub without auto-playing any channel
+// Boot sequence
 var roomMatch = searchStr.match(/[?&]room=([a-zA-Z0-9-_]+)/);
 var pairMatch = searchStr.match(/[?&]pair=1\b/);
+var skipTizenAutoplay = /[?&]hub=1\b/i.test(searchStr);
+if (isTizenDevice && !roomMatch && !pairMatch && !skipTizenAutoplay) {
+  pendingTizenAutoLaunchAntena3 = true;
+}
 
 requestPairingCode(false);
 connectPairingWs();
@@ -811,13 +891,19 @@ loadTvCatalog();
 if (catalogData.loaded) renderHubContent();
 
 if (roomMatch && roomMatch[1]) {
+  pendingTizenAutoLaunchAntena3 = false;
   enterRoomReceiver(roomMatch[1], tvT('roomPrefix') + roomMatch[1].toUpperCase(), '', tvT('directLinkLabel'));
 } else if (pairMatch) {
+  pendingTizenAutoLaunchAntena3 = false;
   switchTvScreen('pairing');
 } else {
   switchTvScreen('hub');
-  setTimeout(function () {
-    var activeTabEl = document.querySelector('#hub-nav-tabs .hub-tab-btn.active');
-    if (activeTabEl && activeTabEl.focus) activeTabEl.focus();
-  }, 80);
+  if (pendingTizenAutoLaunchAntena3 && typeof maybeAutoLaunchTizenAntena3 === 'function') {
+    maybeAutoLaunchTizenAntena3(false);
+  } else {
+    setTimeout(function () {
+      var activeTabEl = document.querySelector('#hub-nav-tabs .hub-tab-btn.active');
+      if (activeTabEl && activeTabEl.focus) activeTabEl.focus();
+    }, 80);
+  }
 }

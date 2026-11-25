@@ -625,6 +625,7 @@ export async function buildTizenWgtArchive(
           'tv/tv-player-core.js',
           'tv/tv-player-modes.js',
           'tv/tv-hub.js',
+          'tv/tv-football.js',
           'tv/tv-nav-voice.js',
           'tv/tv-games.css',
           'tv/tv-games.js',

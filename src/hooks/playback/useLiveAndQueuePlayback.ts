@@ -67,7 +67,7 @@ function setCachedClientExtract(
 
 function isInstantDirectTdtStream(sourceUrl: string, resolverType: string): boolean {
   if (!sourceUrl) return false;
-  if (/^\/api\/(?:hls-proxy|iptv\/live|dvb-live|vod-manifest|xtream\/(?:stream|vod)|stream)/i.test(sourceUrl)) {
+  if (/^\/api\/(?:hls-proxy|iptv\/live|dvb-live|vod-manifest|providers\/stream)/i.test(sourceUrl)) {
     return true;
   }
   if (
@@ -317,43 +317,27 @@ export function useLiveAndQueuePlayback(
     const extraction = activeExtraction || beginMediaExtraction();
     const { reqSeq, signal } = extraction;
 
-    const signalResolver = chosenSignal.resolverType || 'tdt_hls';
-    const isDirectVodFile =
-      signalResolver === 'direct_mp4' ||
-      /[?&](?:type=(?:vod|series)|ext=(?:mp4|mkv|webm|avi|mov|ts|flv|m4v))\b|\.(?:mp4|mkv|webm|avi|mov|ts|flv|m4v)(?:\?|$)/i.test(
-        chosenSignal.sourceUrl
-      );
-    const isXtreamSeries = effectiveTdtCh.id.startsWith('xtream-series-');
-    const isXtreamVodOrSeries =
-      effectiveTdtCh.id.startsWith('xtream-vod-') || isXtreamSeries || isDirectVodFile;
-
     if (allowSameChannelBackup) {
       setActiveMovieContext(null);
       setVideoState((prev) => (prev.seriesMeta ? { ...prev, seriesMeta: undefined } : prev));
-      if (isXtreamVodOrSeries) {
+      const progParts = (liveProgramHint || '')
+        .replace(/\s+·\s+.*$/, '')
+        .split(/\s+(?:vs\.?|v)\s+/i);
+      if (
+        progParts.length === 2 &&
+        progParts[0].trim().length >= 2 &&
+        progParts[1].trim().length >= 2
+      ) {
+        setActiveSportsMatch({
+          homeTeam: progParts[0].trim(),
+          awayTeam: progParts[1].trim(),
+          competition: tdtCh.name,
+        });
+        setActiveMatchDetails(null);
+        setShowLiveMatchDock(true);
+      } else {
         setActiveSportsMatch(null);
         setActiveMatchDetails(null);
-        setShowLiveMatchDock(false);
-      } else {
-        const progParts = (liveProgramHint || '')
-          .replace(/\s+·\s+.*$/, '')
-          .split(/\s+(?:vs\.?|v)\s+/i);
-        if (
-          progParts.length === 2 &&
-          progParts[0].trim().length >= 2 &&
-          progParts[1].trim().length >= 2
-        ) {
-          setActiveSportsMatch({
-            homeTeam: progParts[0].trim(),
-            awayTeam: progParts[1].trim(),
-            competition: tdtCh.name,
-          });
-          setActiveMatchDetails(null);
-          setShowLiveMatchDock(true);
-        } else {
-          setActiveSportsMatch(null);
-          setActiveMatchDetails(null);
-        }
       }
     }
 
@@ -363,14 +347,13 @@ export function useLiveAndQueuePlayback(
     setLoadingItemId(`tdt-${tdtCh.id}-${signalIndex}`);
     setExtractionError(null);
     setExtractionLabel(
-      isXtreamVodOrSeries
-        ? `${effectiveTdtCh.name} · ${isXtreamSeries ? 'Cargando episodio...' : 'Cargando película...'}`
-        : liveProgramHint
+      liveProgramHint
         ? `${effectiveTdtCh.name} · ${liveProgramHint}...`
         : `${effectiveTdtCh.name} · Conectando ${chosenSignal.label}...`
     );
     activeHistoryIdRef.current = null;
 
+    const signalResolver = chosenSignal.resolverType || 'tdt_hls';
     const getNextFailedSet = (curFailed: Set<number>): Set<number> => {
       const nextFailed = new Set(curFailed);
       nextFailed.add(signalIndex);
@@ -393,76 +376,15 @@ export function useLiveAndQueuePlayback(
         mode?: VideoState['mode'];
         error?: string;
       } | null = null;
-      let activeSignalIdx = signalIndex;
 
-      if (
-        !isXtreamVodOrSeries &&
-        signalIndex === 0 &&
-        failedSignals.size === 0 &&
-        effectiveTdtCh.channels.length > 1
-      ) {
-        const fastCtrl = new AbortController();
-        const onParentAbortFast = () => fastCtrl.abort();
-        if (signal.aborted) {
-          fastCtrl.abort();
-        } else {
-          signal.addEventListener('abort', onParentAbortFast, { once: true });
-        }
-        const fastTimeout = setTimeout(() => fastCtrl.abort(), 2600);
-        try {
-          const fastRes = await fetch('/api/live/fast-resolve', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            signal: fastCtrl.signal,
-            body: JSON.stringify({
-              channelId: effectiveTdtCh.id,
-              title: effectiveTdtCh.name,
-              preferLang: 'ES',
-              tracks: effectiveTdtCh.channels.slice(0, 6).map((sig) => ({
-                id: sig.id,
-                label: sig.label,
-                sourceUrl: sig.sourceUrl,
-                resolverType: sig.resolverType || 'tdt_hls',
-                quality: sig.quality,
-                lang: sig.lang,
-                providerId: sig.providerId,
-                providerName: sig.providerName,
-                health: sig.health,
-              })),
-            }),
-          });
-          const fastData = await fastRes.json().catch(() => null);
-          if (fastRes.ok && fastData?.success && fastData?.streamUrl) {
-            resOk = true;
-            data = {
-              success: true,
-              streamUrl: fastData.streamUrl,
-              mode: fastData.mode || 'hls',
-            };
-            if (
-              typeof fastData.winningTrackIndex === 'number' &&
-              fastData.winningTrackIndex >= 0 &&
-              fastData.winningTrackIndex < effectiveTdtCh.channels.length
-            ) {
-              activeSignalIdx = fastData.winningTrackIndex;
-            }
-          }
-        } catch {
-          // Fall back gracefully to direct/sequential extraction below
-        } finally {
-          clearTimeout(fastTimeout);
-          signal.removeEventListener('abort', onParentAbortFast);
-        }
-      }
-
-      if (!data && isInstantDirectTdtStream(chosenSignal.sourceUrl, signalResolver)) {
+      if (isInstantDirectTdtStream(chosenSignal.sourceUrl, signalResolver)) {
         resOk = true;
         data = {
           success: true,
           streamUrl: chosenSignal.sourceUrl,
-          mode: isDirectVodFile ? 'direct' : 'hls',
+          mode: /\.(mp4|mkv|webm)(\?|$)/i.test(chosenSignal.sourceUrl) ? 'direct' : 'hls',
         };
-      } else if (!data) {
+      } else {
         const cachedTdt = getCachedClientExtract(signalResolver, chosenSignal.sourceUrl);
         if (cachedTdt) {
           resOk = true;
@@ -525,39 +447,29 @@ export function useLiveAndQueuePlayback(
         return;
       }
 
-      const activeChosenSignal = effectiveTdtCh.channels[activeSignalIdx] || chosenSignal;
       const mappedTracks: StreamTrack[] = effectiveTdtCh.channels.map((sig, idx) => ({
         id: sig.id,
-        label: sig.label || `${effectiveTdtCh.name} · ${sig.providerName || `Señal ${idx + 1}`}`,
-        lang: sig.lang || 'ES',
-        langLabel: sig.langLabel,
+        label: `${effectiveTdtCh.name} · ${sig.label}`,
+        lang: 'ES',
         quality: sig.quality,
-        providerId: sig.providerId,
-        providerName: sig.providerName,
-        health: sig.health,
         sourceUrl: sig.sourceUrl,
         resolverType: sig.resolverType || 'tdt_hls',
-        resolvedStreamUrl: idx === activeSignalIdx ? data.streamUrl : undefined,
+        resolvedStreamUrl: idx === signalIndex ? data.streamUrl : undefined,
       }));
 
       const nextState: VideoState = {
-        mode: data.mode || (isDirectVodFile ? 'direct' : 'hls'),
+        mode: data.mode || 'hls',
         url: data.streamUrl,
-        rawSourceUrl: activeChosenSignal.sourceUrl,
+        rawSourceUrl: chosenSignal.sourceUrl,
         title: effectiveTdtCh.name,
         subtitle: liveProgramHint
           ? `En emisión: ${liveProgramHint} · ${effectiveTdtCh.network}`
-          : effectiveTdtCh.id.startsWith('xtream-series-')
-          ? `Serie IPTV · ${effectiveTdtCh.network}`
-          : effectiveTdtCh.id.startsWith('xtream-vod-') || isDirectVodFile
-          ? `Película VOD · ${effectiveTdtCh.network}`
-          : `TV en Directo · ${effectiveTdtCh.network} · ${activeChosenSignal.label}`,
-        ...(effectiveTdtCh.logoUrl ? { poster: effectiveTdtCh.logoUrl } : {}),
+          : `TV en Directo · ${effectiveTdtCh.network} · ${chosenSignal.label}`,
         currentTime: 0,
         isPlaying: true,
-        isLive: !isXtreamVodOrSeries,
+        isLive: true,
         tracks: mappedTracks,
-        activeTrackIndex: activeSignalIdx,
+        activeTrackIndex: signalIndex,
         seriesMeta: undefined,
         lastUpdated: Date.now(),
         updatedBy: profileName,

@@ -3,20 +3,19 @@
 /* =================================================================== */
 .tv-card {
   position: relative;
-  width: 204px;
+  width: 216px;
   -webkit-flex-shrink: 0;
   flex-shrink: 0;
   margin-right: 16px;
-  margin-bottom: 16px;
+  margin-bottom: 18px;
   border-radius: 16px;
   background: #0E1018;
-  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.14);
   overflow: hidden;
   cursor: pointer;
   text-align: left;
   padding: 0;
   color: #FFFFFF;
-  contain: layout style paint;
   -webkit-transition: -webkit-transform 0.14s ease, border-color 0.14s ease;
   transition: transform 0.14s ease, border-color 0.14s ease;
 }
@@ -72,20 +71,20 @@ html.is-smart-tv .tv-card:hover {
   pointer-events: none;
 }
 .tv-card-body {
-  padding: 12px 14px 14px 14px;
+  padding: 13px 16px 16px 16px;
 }
 .tv-card-title {
-  font-size: 16px;
-  font-weight: 800;
+  font-size: 19px;
+  font-weight: 900;
   color: #FFFFFF;
   line-height: 1.24;
   word-break: break-word;
 }
 .tv-card-meta {
-  font-size: 13px;
-  font-weight: 600;
-  color: #999FB5;
-  margin-top: 4px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #CBD1E4;
+  margin-top: 5px;
   line-height: 1.3;
 }
 
@@ -93,10 +92,19 @@ html.is-smart-tv .tv-card:hover {
 /* WIDESCREEN 16:9 BROADCAST CHANNEL CARDS (TDT · DAZN · MOVISTAR)     */
 /* =================================================================== */
 .tv-card.channel-card {
-  width: 304px;
+  width: 320px;
   border-radius: 18px;
   background: #0E1018;
-  border: 1.5px solid rgba(255, 255, 255, 0.11);
+  border: 2px solid rgba(255, 255, 255, 0.14);
+}
+.tv-grid .tv-card.channel-card {
+  width: 23.5%;
+  min-width: 240px;
+  margin: 0 1.5% 18px 0;
+}
+.tv-card.channel-card .tv-card-title {
+  font-size: 21px;
+  font-weight: 900;
 }
 .tv-channel-stage {
   position: relative;
@@ -133,20 +141,20 @@ html.is-smart-tv .tv-card:hover {
 }
 .tv-channel-dial {
   font-variant-numeric: tabular-nums;
+  font-size: 15px;
+  font-weight: 900;
+  color: #FFFFFF;
+  letter-spacing: 0.05em;
+}
+.tv-channel-live {
   font-size: 13px;
   font-weight: 900;
   color: #FFFFFF;
-  letter-spacing: 0.06em;
-}
-.tv-channel-live {
-  font-size: 11px;
-  font-weight: 900;
-  color: #FECACA;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  padding: 3px 8px;
+  padding: 4px 10px;
   border-radius: 6px;
-  background: #991B1B;
+  background: #B91C1C;
 }
 .tv-channel-logo-stage {
   position: relative;
@@ -172,7 +180,7 @@ html.is-smart-tv .tv-card:hover {
   display: block;
 }
 .tv-channel-mark {
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 900;
   letter-spacing: 0.02em;
   color: #FFFFFF;
@@ -181,10 +189,10 @@ html.is-smart-tv .tv-card:hover {
   text-overflow: ellipsis;
 }
 .tv-channel-epg-now {
-  font-size: 13px;
-  font-weight: 600;
-  color: #BFC4D6;
-  margin-top: 4px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #DCE1F0;
+  margin-top: 5px;
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
@@ -259,11 +267,15 @@ html.is-smart-tv .tv-card:hover {
 }
 
 .tv-search-panel {
-  padding: 20px 24px;
+  padding: 18px 22px;
   border-radius: 18px;
   background: #0E1018;
-  border: 1.5px solid rgba(255, 255, 255, 0.1);
-  margin-bottom: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.14);
+  margin-bottom: 16px;
+}
+.tv-search-panel.tv-search-compact {
+  padding: 14px 18px;
+  margin-bottom: 14px;
 }
 .tv-search-row {
   display: -webkit-flex;
@@ -275,13 +287,13 @@ html.is-smart-tv .tv-card:hover {
 .tv-search-input {
   -webkit-flex: 1;
   flex: 1;
-  height: 56px;
+  height: 58px;
   padding: 0 22px;
   border-radius: 14px;
-  border: 1.5px solid rgba(255, 255, 255, 0.16);
+  border: 2px solid rgba(255, 255, 255, 0.2);
   background: #06070B;
   color: #FFFFFF;
-  font-size: 19px;
+  font-size: 20px;
   font-weight: 700;
   margin-right: 12px;
 }
@@ -295,14 +307,14 @@ html.is-smart-tv .tv-card:hover {
   flex-wrap: wrap;
 }
 .tv-chip-btn {
-  height: 44px;
-  padding: 0 18px;
+  height: 48px;
+  padding: 0 20px;
   margin: 4px 10px 4px 0;
   border-radius: 12px;
-  border: 1.5px solid rgba(255, 255, 255, 0.13);
+  border: 2px solid rgba(255, 255, 255, 0.16);
   background: #141724;
   color: #FFFFFF;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 800;
   cursor: pointer;
   -webkit-transition: background 0.12s ease, color 0.12s ease, -webkit-transform 0.12s ease;
@@ -366,16 +378,16 @@ html.is-smart-tv .tv-card:hover {
   background: #141724;
 }
 .sm-modal-heading {
-  font-size: 30px;
+  font-size: 32px;
   font-weight: 900;
   color: #FFFFFF;
   margin-bottom: 8px;
 }
 .sm-modal-overview {
-  font-size: 15px;
-  color: #BFC4D6;
+  font-size: 17px;
+  color: #D2D7E8;
   line-height: 1.46;
-  max-width: 720px;
+  max-width: 740px;
 }
 .series-lang-row,
 .series-season-row {
@@ -386,14 +398,14 @@ html.is-smart-tv .tv-card:hover {
   margin-bottom: 12px;
 }
 .series-pill-btn {
-  height: 46px;
-  padding: 0 20px;
+  height: 48px;
+  padding: 0 22px;
   margin: 0 10px 10px 0;
   border-radius: 12px;
-  border: 1.5px solid rgba(255, 255, 255, 0.12);
+  border: 2px solid rgba(255, 255, 255, 0.16);
   background: #141724;
   color: #E2E5F0;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 800;
   cursor: pointer;
 }
@@ -419,9 +431,9 @@ html.is-smart-tv .tv-card:hover {
 .ep-tile-btn {
   width: 31.8%;
   margin: 0 1.5% 12px 0;
-  padding: 15px 17px;
+  padding: 16px 18px;
   border-radius: 14px;
-  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  border: 2px solid rgba(255, 255, 255, 0.14);
   background: #141724;
   color: #FFFFFF;
   text-align: left;
@@ -438,14 +450,397 @@ html.is-smart-tv .tv-card:hover {
   color: #6D28D9;
 }
 .ep-tile-num {
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 900;
   color: #C4B5FD;
   margin-bottom: 4px;
 }
 .ep-tile-title {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 800;
   line-height: 1.3;
   word-break: break-word;
+}
+
+/* =================================================================== */
+/* 10-FOOT FOOTBALL MATCHBOARD, SEASON CALENDAR & SIGNAL PICKER MODAL  */
+/* =================================================================== */
+.tv-fb-controls-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: nowrap;
+  flex-wrap: nowrap;
+  -webkit-align-items: center;
+  align-items: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 2px 10px 2px;
+  margin-bottom: 10px;
+}
+.tv-fb-controls-row::-webkit-scrollbar { display: none; }
+.tv-fb-date-pill {
+  background: #1B1536;
+  border-color: rgba(167, 139, 250, 0.55);
+  color: #EDE9FE;
+}
+.tv-fb-date-pill.active {
+  background: #6D28D9;
+  border-color: #FFFFFF;
+  color: #FFFFFF;
+}
+.tv-fb-cal-banner {
+  padding: 12px 18px;
+  border-radius: 14px;
+  background: #191334;
+  border: 2px solid rgba(167, 139, 250, 0.45);
+  color: #EDE9FE;
+  font-size: 17px;
+  font-weight: 800;
+  margin-bottom: 16px;
+}
+.tv-fb-grid {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  padding: 6px 4px 24px 4px;
+}
+.tv-fb-card {
+  width: 32%;
+  min-width: 320px;
+  margin: 0 1.33% 16px 0;
+  min-height: 186px;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 2px solid rgba(255, 255, 255, 0.15);
+  background: #101320;
+  color: #FFFFFF;
+  text-align: left;
+  cursor: pointer;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+}
+.tv-fb-card.compact {
+  width: 340px;
+  min-width: 340px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+  margin: 0 16px 0 0;
+  min-height: 182px;
+}
+.tv-fb-card:focus,
+.tv-fb-card:hover {
+  background: #1C1638;
+  border-color: #FFFFFF;
+}
+.tv-fb-card-top {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.tv-fb-league {
+  font-size: 15px;
+  font-weight: 800;
+  color: #CBD1E4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 10px;
+  -webkit-flex: 1;
+  flex: 1;
+}
+.tv-fb-status {
+  font-size: 14px;
+  font-weight: 900;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: #1D2235;
+  color: #E2E6F3;
+  white-space: nowrap;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+.tv-fb-status.is-live {
+  background: #DC2626;
+  color: #FFFFFF;
+}
+.tv-fb-status.is-fin {
+  background: #143628;
+  color: #A7F3D0;
+}
+.tv-fb-teams-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.tv-fb-team-col {
+  width: 37%;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-align-items: center;
+  align-items: center;
+  text-align: center;
+}
+.tv-fb-crest {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  display: block;
+  margin-bottom: 6px;
+}
+.tv-fb-crest-fb {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: #1F253A;
+  color: #FFFFFF;
+  font-size: 14px;
+  font-weight: 900;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  margin-bottom: 6px;
+}
+.tv-fb-team-name {
+  font-size: 19px;
+  font-weight: 800;
+  color: #FFFFFF;
+  line-height: 1.2;
+  max-height: 46px;
+  overflow: hidden;
+  word-break: break-word;
+}
+.tv-fb-score-box {
+  width: 24%;
+  text-align: center;
+  font-size: 28px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: #FFFFFF;
+  letter-spacing: -0.01em;
+}
+.tv-fb-card-foot {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.tv-fb-tv-badge {
+  font-size: 15px;
+  font-weight: 800;
+  color: #DDD6FE;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-right: 10px;
+}
+.tv-fb-action-hint {
+  font-size: 14px;
+  font-weight: 900;
+  color: #A7F3D0;
+  background: #112A22;
+  padding: 3px 9px;
+  border-radius: 6px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+.tv-fb-more-card {
+  -webkit-justify-content: center;
+  justify-content: center;
+  -webkit-align-items: center;
+  align-items: center;
+  text-align: center;
+  background: #1B1536;
+  border-color: rgba(167, 139, 250, 0.55);
+}
+.tv-fb-more-title {
+  font-size: 22px;
+  font-weight: 900;
+  color: #FFFFFF;
+  margin-bottom: 8px;
+}
+.tv-fb-more-sub {
+  font-size: 16px;
+  font-weight: 700;
+  color: #DDD6FE;
+}
+.tv-fb-empty-box {
+  padding: 46px 28px;
+  border-radius: 18px;
+  background: #101320;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  text-align: center;
+  margin-bottom: 24px;
+}
+.tv-fb-empty-text {
+  font-size: 21px;
+  font-weight: 800;
+  color: #E2E6F3;
+  margin-bottom: 18px;
+}
+
+#tv-football-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(6, 7, 11, 0.96);
+  z-index: 44;
+  padding: 32px 48px;
+  overflow-y: auto;
+}
+.tv-fb-modal-card {
+  max-width: 1080px;
+  border-color: rgba(167, 139, 250, 0.5);
+}
+.tv-fb-modal-head {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+.tv-fb-modal-meta {
+  font-size: 20px;
+  font-weight: 900;
+  color: #DDD6FE;
+  margin-right: 16px;
+}
+.tv-fb-modal-scoreboard {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  padding: 22px 26px;
+  border-radius: 18px;
+  background: #15192B;
+  border: 1.5px solid rgba(255, 255, 255, 0.14);
+  margin-bottom: 22px;
+}
+.tv-fb-modal-team {
+  width: 36%;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-align-items: center;
+  align-items: center;
+  text-align: center;
+}
+.tv-fb-modal-crest {
+  width: 72px;
+  height: 72px;
+  object-fit: contain;
+  margin-bottom: 10px;
+}
+.tv-fb-modal-crest-fb {
+  width: 72px;
+  height: 72px;
+  border-radius: 16px;
+  background: #232A45;
+  color: #FFFFFF;
+  font-size: 22px;
+  font-weight: 900;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  margin-bottom: 10px;
+}
+.tv-fb-modal-team-name {
+  font-size: 24px;
+  font-weight: 900;
+  color: #FFFFFF;
+  line-height: 1.2;
+}
+.tv-fb-modal-center {
+  width: 26%;
+  text-align: center;
+}
+.tv-fb-modal-score {
+  font-size: 42px;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  color: #FFFFFF;
+  margin-bottom: 6px;
+}
+.tv-fb-modal-status {
+  display: inline-block;
+  font-size: 16px;
+  font-weight: 900;
+  padding: 5px 14px;
+  border-radius: 8px;
+  background: #252B42;
+  color: #FFFFFF;
+}
+.tv-fb-modal-status.is-live {
+  background: #DC2626;
+}
+.tv-fb-modal-sec-title {
+  font-size: 20px;
+  font-weight: 900;
+  color: #FFFFFF;
+  margin-bottom: 12px;
+}
+.tv-fb-modal-signals {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.tv-fb-signal-btn {
+  margin: 0 12px 12px 0;
+}
+.tv-fb-no-signals {
+  width: 100%;
+  font-size: 17px;
+  font-weight: 700;
+  color: #CBD1E4;
+  margin-bottom: 12px;
+}
+.tv-fb-events-list {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+}
+.tv-fb-event-chip {
+  font-size: 16px;
+  font-weight: 700;
+  color: #EDE9FE;
+  background: #171B2E;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 8px 14px;
+  margin: 0 10px 10px 0;
 }

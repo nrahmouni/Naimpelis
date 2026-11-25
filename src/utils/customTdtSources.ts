@@ -129,6 +129,10 @@ export function extractTrackHostKey(sourceUrl: string): string {
       // ignore
     }
   }
+  const provMatch = target.match(/^\/api\/providers\/stream\/([^/]+)\//i);
+  if (provMatch) {
+    return `provider://${provMatch[1].toLowerCase()}`;
+  }
   const belixMatch = target.match(/^\/api\/belix\/stream\/([a-zA-Z0-9_-]+)/i);
   if (belixMatch) {
     return `belix://stream/${belixMatch[1].toLowerCase()}`;

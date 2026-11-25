@@ -50,15 +50,14 @@ import { registerStreamExtractRoute } from './server/routes/streamExtractRoutes.
 import { registerClipboxRoutes } from './server/routes/clipboxRoutes.ts';
 import { registerRbtvRoutes } from './server/routes/rbtvRoutes.ts';
 import { registerBelixRoutes } from './server/routes/belixRoutes.ts';
-import { registerXtreamRoutes } from './server/routes/xtreamRoutes.ts';
 import { registerAtresplayerRoutes } from './server/routes/atresplayerRoutes.ts';
 import { registerMovistarDaznRoutes } from './server/routes/movistarDaznRoutes.ts';
 import { registerMusicRoutes } from './server/routes/musicRoutes.ts';
 import { registerVpnGatewayRoutes } from './server/routes/vpnGatewayRoutes.ts';
-import { registerOpenGamesRoutes } from './server/routes/openGamesRoutes.ts';
+import { registerProviderRoutes } from './server/routes/providerRoutes.ts';
 import { getMovistarDaznHome } from './server/services/movistarDaznCatalogService.ts';
 import { initBelixFromEnv } from './server/services/belix/belixXtreamClient.ts';
-import { initXtreamEnvFromEnv } from './server/services/xtreamService.ts';
+import { initDefaultProviders } from './server/services/providers/xtreamProvidersService.ts';
 import { SPANISH_TDT_CHANNELS } from './server/data/tdtChannels.ts';
 import { CATALA_LIVE_CHANNELS } from './server/data/catalaRegistry.ts';
 import {
@@ -133,17 +132,11 @@ function getPublicOrigin(req: express.Request): string {
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
-app.set('etag', 'strong');
 const httpServer = createServer(app);
-httpServer.keepAliveTimeout = 65_000;
-httpServer.headersTimeout = 66_000;
-httpServer.requestTimeout = 30_000;
-httpServer.maxRequestsPerSocket = 0;
-
 const wss = new WebSocketServer({
   noServer: true,
   perMessageDeflate: {
-    zlibDeflateOptions: { level: 4 },
+    zlibDeflateOptions: { level: 6 },
     threshold: 1024,
   },
 });
@@ -165,8 +158,6 @@ httpServer.on('upgrade', (req, socket, head) => {
 
 app.use(
   compression({
-    threshold: 1024,
-    level: 4,
     filter: (req, res) => {
       const p = (req.path || '').toLowerCase();
       if (
@@ -180,9 +171,8 @@ app.use(
         p.startsWith('/api/belix/stream') ||
         p.startsWith('/api/belix/sub') ||
         p.startsWith('/api/belix/seg') ||
-        p.startsWith('/api/xtream/stream') ||
-        p.startsWith('/api/xtream/seg') ||
-        p === '/api/stream' ||
+        p.startsWith('/api/providers/stream') ||
+        p.startsWith('/api/providers/hls-') ||
         p.startsWith('/api/music/stream-proxy')
       ) {
         return false;
@@ -245,18 +235,10 @@ const musicMatchRateLimit = createSlidingWindowRateLimiter({
   keyPrefix: 'music-match',
 });
 
-const xtreamApiRateLimit = createSlidingWindowRateLimiter({
-  maxRequests: 120,
-  windowMs: 60_000,
-  keyPrefix: 'xtream-api',
-});
-
 app.use('/api/extract/stream', extractStreamRateLimit);
 app.use('/api/hls-proxy', hlsProxyRateLimit);
 app.use('/api/admin', adminRateLimit);
 app.use('/api/music/match-tracks', musicMatchRateLimit);
-app.use('/api/xtream', xtreamApiRateLimit);
-app.use('/api/stream', xtreamApiRateLimit);
 
 registerOperationalRoutes(app, {
   getStats: () => ({
@@ -298,12 +280,11 @@ registerYouTubeCatalogRoutes(app);
 registerClipboxRoutes(app);
 registerRbtvRoutes(app);
 registerBelixRoutes(app, { getPublicOrigin });
-registerXtreamRoutes(app, { getPublicOrigin });
+registerProviderRoutes(app, { getPublicOrigin });
 registerAtresplayerRoutes(app);
 registerMovistarDaznRoutes(app);
 registerMusicRoutes(app);
 registerVpnGatewayRoutes(app);
-registerOpenGamesRoutes(app);
 registerVoiceAssistantRoutes(app, {
   getChannels: getLiveVoiceChannels,
   resolveLogoUrl: resolveOfficialChannelLogoUrl,
@@ -372,9 +353,6 @@ app.get('/music-manifest.webmanifest', (_req, res) => {
   return res.status(404).json({ error: 'Music manifest not found' });
 });
 
-let cachedTvHtmlSig = '';
-let cachedTvHtmlBody = '';
-
 function sendSmartTvReceiverHtml(res: express.Response) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
@@ -389,16 +367,13 @@ function sendSmartTvReceiverHtml(res: express.Response) {
   }
   try {
     const sig = getTvBuildSignature(__dirname);
-    if (!cachedTvHtmlBody || cachedTvHtmlSig !== sig) {
-      const raw = fs.readFileSync(target, 'utf8');
-      const buildMetaTag = `<script>window.__RIFFAN_TV_BUILD__=${JSON.stringify(sig)};window.__RIFFAN_TV_AUTO_UPDATE__=true;</script>`;
-      cachedTvHtmlBody = raw
-        .replace('<head>', `<head>\n    ${buildMetaTag}`)
-        .replace(/((?:href|src)=["'])(\/tv\/[^"'?]+\.(?:css|js))(["'])/gi, `$1$2?v=${sig}$3`)
-        .replace(/((?:href|src)=["'])(\/vendor\/[^"'?]+\.js)(["'])/gi, `$1$2?v=${sig}$3`);
-      cachedTvHtmlSig = sig;
-    }
-    res.status(200).type('html').send(cachedTvHtmlBody);
+    let html = fs.readFileSync(target, 'utf8');
+    const buildMetaTag = `<script>window.__RIFFAN_TV_BUILD__=${JSON.stringify(sig)};window.__RIFFAN_TV_AUTO_UPDATE__=true;</script>`;
+    html = html
+      .replace('<head>', `<head>\n    ${buildMetaTag}`)
+      .replace(/((?:href|src)=["'])(\/tv\/[^"'?]+\.(?:css|js))(["'])/gi, `$1$2?v=${sig}$3`)
+      .replace(/((?:href|src)=["'])(\/vendor\/[^"'?]+\.js)(["'])/gi, `$1$2?v=${sig}$3`);
+    res.status(200).type('html').send(html);
   } catch {
     res.sendFile(target);
   }
@@ -579,7 +554,7 @@ async function startServer() {
           setTimeout(() => {
             void getMovistarDaznHome().catch((err) => logger.warn({ err }, 'prewarm_dazn_failed'));
             void initBelixFromEnv().catch((err) => logger.warn({ err }, 'prewarm_belix_failed'));
-            void initXtreamEnvFromEnv().catch((err) => logger.warn({ err }, 'prewarm_xtream_failed'));
+            void initDefaultProviders().catch((err) => logger.warn({ err }, 'prewarm_providers_failed'));
           }, 1350).unref?.();
           channelHealthMonitor.startScheduler(
             () => [

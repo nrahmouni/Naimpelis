@@ -93,8 +93,8 @@ export async function handleDirectExtractCases(params: {
     return sendOk(megaResult);
   }
 
-  // CASE -1: Internal proxy / Belix live stream URLs must never pass through external host resolvers
-  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play)\//i.test(rawInput) || rawInput.startsWith('/api/hls-proxy?')) {
+  // CASE -1: Internal proxy / Belix / Provider live & VOD stream URLs must never pass through external host resolvers
+  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play|providers\/stream)\//i.test(rawInput) || rawInput.startsWith('/api/hls-proxy?')) {
     const belixStreamMatch = rawInput.match(/^\/api\/belix\/stream\/([a-zA-Z0-9_-]+)(?:\.m3u8)?/i);
     if (/^\/api\/belix\/(?:stream|xtream\/play)\//i.test(rawInput) && !isAnyBelixConnected(belixSessionKey)) {
       return sendErr(
@@ -126,7 +126,7 @@ export async function handleDirectExtractCases(params: {
         // ignore parse error
       }
     }
-    const isDirectFile = /\.(mp4|mkv|webm)(\?|$)/i.test(rawInput);
+    const isDirectFile = /\.(mp4|mkv|webm|avi|mov|m4v)(\?|$)/i.test(rawInput) || /^\/api\/providers\/stream\/[^/]+\/(?:movie|series)\//i.test(rawInput);
     const result: ExtractedStreamResult = {
       success: true,
       mode: isDirectFile ? 'direct' : 'hls',
@@ -642,8 +642,8 @@ export async function handleDirectExtractCases(params: {
   }
 
   // CASE 3: Direct .m3u8, .mp4, or internal proxy URL
-  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/xtream\/play)\//i.test(rawInput)) {
-    const isDirectFile = /\.(mp4|mkv|webm)(\?|$)/i.test(rawInput);
+  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/xtream\/play|providers\/stream)\//i.test(rawInput)) {
+    const isDirectFile = /\.(mp4|mkv|webm|avi|mov|m4v)(\?|$)/i.test(rawInput) || /^\/api\/providers\/stream\/[^/]+\/(?:movie|series)\//i.test(rawInput);
     const result: ExtractedStreamResult = {
       success: true,
       mode: isDirectFile ? 'direct' : 'hls',

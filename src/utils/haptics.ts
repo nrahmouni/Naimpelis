@@ -280,7 +280,7 @@ function playNaimcineIntroSound(): boolean {
 
 export const playRiffanIntroSound = playNaimcineIntroSound;
 
-export function playWorldPortalSound(portal: import('../store/useAppStore').PrimaryWorldId) {
+export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music' | 'providers') {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
@@ -460,22 +460,6 @@ export function playWorldPortalSound(portal: import('../store/useAppStore').Prim
         g.connect(master);
         osc.start(at);
         osc.stop(at + 0.4);
-      });
-    } else if (portal === 'champions') {
-      // European night harmonic anthem swell (D4 -> A4 -> D5 -> F#5)
-      [293.66, 440.0, 587.33, 739.99].forEach((freq, idx) => {
-        const osc = ctx.createOscillator();
-        const g = ctx.createGain();
-        osc.type = idx % 2 === 0 ? 'triangle' : 'sine';
-        const at = now + idx * 0.045;
-        osc.frequency.setValueAtTime(freq, at);
-        g.gain.setValueAtTime(0.001, at);
-        g.gain.linearRampToValueAtTime(0.1, at + 0.025);
-        g.gain.exponentialRampToValueAtTime(0.0008, at + 0.44);
-        osc.connect(g);
-        g.connect(master);
-        osc.start(at);
-        osc.stop(at + 0.46);
       });
     } else if (portal === 'music') {
       [261.63, 329.63, 392.0, 523.25].forEach((freq, idx) => {

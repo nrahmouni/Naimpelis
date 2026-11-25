@@ -541,9 +541,6 @@ export const GAME_SLUG_TO_ID: Record<string, string> = {
   pingpong: 'pingpong',
   'ping-pong': 'pingpong',
   tenis: 'pingpong',
-  soccerpong: 'soccerpong',
-  'futbol-pong': 'soccerpong',
-  'soccer-pong': 'soccerpong',
   bomberman: 'bomberman',
   'bomberman-party': 'bomberman',
   pacman: 'pacman',
@@ -584,7 +581,6 @@ export const GAME_ID_TO_SLUG: Record<string, string> = {
   gyrotennis: 'tenis-gyro',
   gyrolab: 'laberinto-gyro',
   pingpong: 'ping-pong',
-  soccerpong: 'futbol-pong',
   bomberman: 'bomberman',
   pacman: 'pacman',
   tetris: 'tetris',
@@ -617,7 +613,6 @@ export const GAME_TITLES: Record<string, { es: string; ca: string; en: string }>
   gyrotennis: { es: 'Tenis Slam Pro 2P', ca: 'Tennis Slam Pro 2P', en: 'Tennis Slam Pro 2P' },
   gyrolab: { es: 'Laberinto Esfera 3D', ca: 'Laberint Esfera 3D', en: 'Sphere Labyrinth 3D' },
   pingpong: { es: 'Ping Pong Pro 2P · Raqueta Móvil', ca: 'Ping Pong Pro 2P · Raqueta Mòbil', en: 'Ping Pong Pro 2P · Mobile Racket' },
-  soccerpong: { es: 'Fútbol Pong 3D · 1P / 2P', ca: 'Futbol Pong 3D · 1P / 2P', en: 'Soccer Pong 3D · 1P / 2P' },
   bomberman: { es: 'Bomberman Party Arena', ca: 'Bomberman Party Arena', en: 'Bomberman Party Arena' },
   pacman: { es: 'Pac-Man Arcade HD', ca: 'Pac-Man Arcade HD', en: 'Pac-Man Arcade HD' },
   tetris: { es: 'Tetris Sprint TV', ca: 'Tetris Sprint TV', en: 'Tetris Sprint TV' },
@@ -646,22 +641,14 @@ export const DEDICATED_WORLD_ROUTES = new Set([
   'clipbox',
   'rbtv',
   'belix',
-  'dana-active',
-  'danaactive',
   'atresplayer',
   'movistar-dazn',
   'dazn-movistar',
-  'champions',
-  'multichampions',
   'musica',
   'music',
-  'shark-pro',
-  'vod-4k',
-  '24tv',
-  '2m2h',
-  'dana-4k-pro',
-  'active-cdns',
-  'octopus-tv',
+  'catalogo-total',
+  'proveedores',
+  'providers',
 ]);
 
 export const SYSTEM_RESERVED_SLUGS = new Set([
@@ -720,7 +707,7 @@ export type AppRouteTarget =
   | { kind: 'room'; roomId: string; gameType?: string; isTvMode?: boolean }
   | {
       kind: 'world';
-      world: 'cine' | 'futbol' | 'champions' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'danaactive' | 'atresplayer' | 'movistardazn' | 'music' | 'sharkpro' | 'vod4k' | 'srv24tv' | 'srv2m2h' | 'dana4k' | 'activecdns' | 'octopus';
+      world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music' | 'providers';
       cineTab?: 'movies' | 'series';
       cineCastellano?: boolean;
       cineCategory?: string;
@@ -1001,10 +988,6 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
     return { kind: 'world', world: 'belix', roomId: queryRoomId };
   }
 
-  if (seg0 === 'dana-active' || seg0 === 'danaactive') {
-    return { kind: 'world', world: 'danaactive', roomId: queryRoomId };
-  }
-
   if (seg0 === 'atresplayer') {
     return { kind: 'world', world: 'atresplayer', roomId: queryRoomId };
   }
@@ -1013,8 +996,8 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
     return { kind: 'world', world: 'movistardazn', roomId: queryRoomId };
   }
 
-  if (seg0 === 'champions' || seg0 === 'multichampions') {
-    return { kind: 'world', world: 'champions', roomId: queryRoomId };
+  if (seg0 === 'catalogo-total' || seg0 === 'proveedores' || seg0 === 'providers') {
+    return { kind: 'world', world: 'providers', roomId: queryRoomId };
   }
 
   if (seg0 === 'musica' || seg0 === 'music') {
@@ -1026,14 +1009,6 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
       roomId: queryRoomId,
     };
   }
-
-  if (seg0 === 'shark-pro') return { kind: 'world', world: 'sharkpro', roomId: queryRoomId };
-  if (seg0 === 'vod-4k') return { kind: 'world', world: 'vod4k', roomId: queryRoomId };
-  if (seg0 === '24tv') return { kind: 'world', world: 'srv24tv', roomId: queryRoomId };
-  if (seg0 === '2m2h') return { kind: 'world', world: 'srv2m2h', roomId: queryRoomId };
-  if (seg0 === 'dana-4k-pro') return { kind: 'world', world: 'dana4k', roomId: queryRoomId };
-  if (seg0 === 'active-cdns') return { kind: 'world', world: 'activecdns', roomId: queryRoomId };
-  if (seg0 === 'octopus-tv') return { kind: 'world', world: 'octopus', roomId: queryRoomId };
 
   // Single-segment shortcuts (Packs, Top Channels, Top Games, else Room code!)
   if (segments.length === 1) {
@@ -1073,7 +1048,7 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
 
 export type CanonicalLinkInput =
   | { kind: 'home' }
-  | { kind: 'world'; world: 'cine' | 'futbol' | 'champions' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'danaactive' | 'atresplayer' | 'movistardazn' | 'music' | 'sharkpro' | 'vod4k' | 'srv24tv' | 'srv2m2h' | 'dana4k' | 'activecdns' | 'octopus'; cineTab?: 'movies' | 'series'; cineCategory?: string; futbolTab?: 'matches' | 'channels' }
+  | { kind: 'world'; world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music' | 'providers'; cineTab?: 'movies' | 'series'; cineCategory?: string; futbolTab?: 'matches' | 'channels' }
   | { kind: 'movie'; tmdbId?: number; id?: string; title?: string }
   | { kind: 'series'; tmdbId?: number; id?: string; title?: string; season?: number; episode?: number }
   | { kind: 'channel'; id: string; name?: string }
@@ -1099,8 +1074,6 @@ export function buildCanonicalRoute(
         basePath = input.cineCategory ? `${root}/${slugify(input.cineCategory)}` : root;
       } else if (input.world === 'futbol') {
         basePath = input.futbolTab === 'channels' ? '/futbol/canales' : '/futbol';
-      } else if (input.world === 'champions') {
-        basePath = '/champions';
       } else if (input.world === 'tv') {
         basePath = '/directo';
       } else if (input.world === 'juegos') {
@@ -1113,28 +1086,14 @@ export function buildCanonicalRoute(
         basePath = '/rbtv';
       } else if (input.world === 'belix') {
         basePath = '/belix';
-      } else if (input.world === 'danaactive') {
-        basePath = '/dana-active';
       } else if (input.world === 'atresplayer') {
         basePath = '/atresplayer';
       } else if (input.world === 'movistardazn') {
         basePath = '/movistar-dazn';
       } else if (input.world === 'music') {
         basePath = '/musica';
-      } else if (input.world === 'sharkpro') {
-        basePath = '/shark-pro';
-      } else if (input.world === 'vod4k') {
-        basePath = '/vod-4k';
-      } else if (input.world === 'srv24tv') {
-        basePath = '/24tv';
-      } else if (input.world === 'srv2m2h') {
-        basePath = '/2m2h';
-      } else if (input.world === 'dana4k') {
-        basePath = '/dana-4k-pro';
-      } else if (input.world === 'activecdns') {
-        basePath = '/active-cdns';
-      } else if (input.world === 'octopus') {
-        basePath = '/octopus-tv';
+      } else if (input.world === 'providers') {
+        basePath = '/catalogo-total';
       }
       break;
     case 'movie': {

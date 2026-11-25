@@ -8,7 +8,6 @@ import type {
   SubtitleStyleSettings,
   TvSeriesDetails,
 } from '../types';
-import type { XtreamServerWorldId } from '../config/defaultProviders';
 
 const SUBTITLE_STYLE_KEY = 'naimcine_subtitle_style_v2';
 const SCHEDULED_ROOMS_KEY = 'naimcine_scheduled_rooms_v1';
@@ -20,18 +19,16 @@ export type ShellNavSection = 'home' | 'search' | 'rooms' | 'my_list' | 'profile
 export type PrimaryWorldId =
   | 'cine'
   | 'futbol'
-  | 'champions'
   | 'tv'
   | 'juegos'
   | 'sala'
   | 'clipbox'
   | 'rbtv'
   | 'belix'
-  | 'danaactive'
   | 'atresplayer'
   | 'movistardazn'
   | 'music'
-  | XtreamServerWorldId;
+  | 'providers';
 export type WorldId = 'entry' | PrimaryWorldId | 'youtube';
 export type CineSubTab = 'movies' | 'series';
 export type FutbolSubTab = 'matches' | 'channels';
@@ -88,24 +85,16 @@ export interface PlaybackReturnContext {
 const PRIMARY_WORLDS: PrimaryWorldId[] = [
   'cine',
   'futbol',
-  'champions',
   'tv',
   'juegos',
   'sala',
   'clipbox',
   'rbtv',
   'belix',
-  'danaactive',
   'atresplayer',
   'movistardazn',
   'music',
-  'sharkpro',
-  'vod4k',
-  'srv24tv',
-  'srv2m2h',
-  'dana4k',
-  'activecdns',
-  'octopus',
+  'providers',
 ];
 
 function loadLastUsedWorld(): PrimaryWorldId | null {
@@ -183,6 +172,8 @@ interface AppShellState {
   atresplayerCategory: 'all' | 'concursos' | 'entretenimiento' | 'series' | 'actualidad';
   movistarDaznOperator: 'all' | 'movistar' | 'dazn';
   movistarDaznCategory: 'all' | 'futbol' | 'motor' | 'deportes' | 'entretenimiento' | 'series';
+  providersScope: string;
+  providersKind: 'all' | 'live' | 'movie' | 'series';
   isFloatingRoomOpen: boolean;
   floatingBubbleSuppressCount: number;
   showDesignSystem: boolean;
@@ -251,6 +242,8 @@ interface AppShellState {
   setMovistarDaznCategory: (
     cat: 'all' | 'futbol' | 'motor' | 'deportes' | 'entretenimiento' | 'series'
   ) => void;
+  setProvidersScope: (scope: string) => void;
+  setProvidersKind: (kind: 'all' | 'live' | 'movie' | 'series') => void;
   setIsFloatingRoomOpen: (open: boolean) => void;
   pushBubbleSuppression: () => void;
   popBubbleSuppression: () => void;
@@ -359,6 +352,8 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   atresplayerCategory: 'all',
   movistarDaznOperator: 'all',
   movistarDaznCategory: 'all',
+  providersScope: 'total',
+  providersKind: 'all',
   isFloatingRoomOpen: false,
   floatingBubbleSuppressCount: 0,
   showDesignSystem:
@@ -621,6 +616,14 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   setMovistarDaznCategory: (movistarDaznCategory) => {
     if (get().movistarDaznCategory === movistarDaznCategory) return;
     set({ movistarDaznCategory });
+  },
+  setProvidersScope: (providersScope) => {
+    if (get().providersScope === providersScope) return;
+    set({ providersScope });
+  },
+  setProvidersKind: (providersKind) => {
+    if (get().providersKind === providersKind) return;
+    set({ providersKind });
   },
   setIsFloatingRoomOpen: (isFloatingRoomOpen) => {
     if (get().isFloatingRoomOpen === isFloatingRoomOpen) return;

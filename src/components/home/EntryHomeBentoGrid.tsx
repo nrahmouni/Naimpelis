@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import {
   ChevronRight,
   Database,
+  Layers,
   Pause,
   Play,
   Radio,
@@ -24,7 +25,6 @@ import {
 } from '../ui/RiffanIcons';
 import { RiffanMusicLogo } from '../music/RiffanMusicLogo';
 import { CoverArt } from '../music/CoverArt';
-import { XTREAM_PROVIDER_UI_SPECS } from '../../config/defaultProviders';
 
 interface EntryHomeBentoGridProps {
   lang: AppLanguage;
@@ -145,24 +145,6 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
               rif: `${liveMatchesCount} direkt`,
             })
           : undefined,
-    },
-    {
-      id: 'champions',
-      title: 'Champions League',
-      subtitle: pickLang(lang, {
-        es: 'MultiChampions y Multi-Partido (1–4)',
-        ca: 'MultiChampions i Multi-Partit (1–4)',
-        en: 'MultiChampions & Multi-Match (1–4)',
-        rif: 'MultiChampions d 4 timdyazin',
-        zh: '欧冠多路 · 最多4屏同看',
-      }),
-      icon: (
-        <span className="w-11 h-11 rounded-xl bg-sky-500/18 border border-sky-400/35 flex items-center justify-center text-sky-300 shrink-0">
-          <Trophy className="w-5 h-5" />
-        </span>
-      ),
-      accentBorder: 'hover:border-sky-400/65 border-sky-500/25',
-      highlightBadge: 'MULTI 4x',
     },
     {
       id: 'sala',
@@ -286,19 +268,19 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       accentBorder: 'hover:border-rose-400/55',
     },
     {
-      id: 'danaactive',
-      title: 'Dana & Active',
-      subtitle: pickLang(lang, {
-        es: 'Dana 4K & Active CDNS',
-        ca: 'Dana 4K & Active CDNS',
-        en: 'Dana 4K & Active CDNS',
+      id: 'providers',
+      title: pickLang(lang, {
+        es: 'Catálogo Total',
+        ca: 'Catàleg Total',
+        en: 'Full Catalog',
       }),
+      subtitle: 'VOD 4K · 2M2H · Adtupac · Ultra VIP · Sult-Vo',
       icon: (
-        <span className="w-10 h-10 rounded-xl bg-sky-500/15 border border-sky-400/30 flex items-center justify-center text-sky-300 shrink-0">
-          <Server className="w-4.5 h-4.5" />
+        <span className="w-10 h-10 rounded-xl bg-[#7C3AED]/15 border border-[#7C3AED]/30 flex items-center justify-center text-[#A78BFA] shrink-0">
+          <Layers className="w-4.5 h-4.5" />
         </span>
       ),
-      accentBorder: 'hover:border-sky-400/55',
+      accentBorder: 'hover:border-[#7C3AED]/60',
     },
   ];
 
@@ -433,7 +415,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
           })}
         </h2>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
           {platformTiles.map((tile) => (
             <button
               key={tile.id}
@@ -451,51 +433,6 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
                 </p>
                 <p className="text-[11px] text-zinc-400 truncate mt-0.5">{tile.subtitle}</p>
               </div>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {/* SECTION 3: 7 SERVIDORES DEDICADOS (GENERACIÓN DINÁMICA) */}
-      <section aria-label="Servidores Dedicados" className="space-y-2.5">
-        <h2 className="font-display font-semibold text-xs sm:text-sm text-zinc-400 px-0.5">
-          {pickLang(lang, {
-            es: 'Servidores Dedicados',
-            ca: 'Servidors Dedicats',
-            en: 'Dedicated Servers',
-          })}
-        </h2>
-
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2.5">
-          {XTREAM_PROVIDER_UI_SPECS.map((srv) => (
-            <button
-              key={`home-srv-${srv.worldId}`}
-              type="button"
-              data-tv-focusable="true"
-              onPointerEnter={() => onPreloadWorld?.(srv.worldId)}
-              onTouchStart={() => onPreloadWorld?.(srv.worldId)}
-              onClick={(e) => onCardClick(srv.worldId, e)}
-              className="group flex items-center gap-2.5 min-h-[60px] p-2.5 rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.07] hover:border-white/25 text-left cursor-pointer active:scale-97 transition-all tv-focus-ring"
-            >
-              <span
-                className="w-10 h-10 rounded-xl border flex items-center justify-center shrink-0"
-                style={{
-                  backgroundColor: `${srv.accent}1F`,
-                  borderColor: `${srv.accent}4D`,
-                  color: srv.accent,
-                }}
-              >
-                <Server className="w-4.5 h-4.5" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="font-display font-bold text-xs sm:text-[13px] text-white truncate">
-                  {srv.name}
-                </p>
-                <p className="text-[11px] text-emerald-400 font-semibold truncate mt-0.5">
-                  Conectado
-                </p>
-              </div>
-              <ChevronRight className="w-4 h-4 text-zinc-600 group-hover:text-zinc-300 shrink-0 transition-colors" />
             </button>
           ))}
         </div>

@@ -64,7 +64,7 @@ export interface ResolvedDeepLinkResult {
   match?: any;
   game?: { gameId: string; gameSlug: string; title: string };
   world?: {
-    world: 'cine' | 'futbol' | 'champions' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'danaactive' | 'atresplayer' | 'movistardazn' | 'music' | 'sharkpro' | 'vod4k' | 'srv24tv' | 'srv2m2h' | 'dana4k' | 'activecdns' | 'octopus';
+    world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music' | 'providers';
     cineTab?: 'movies' | 'series';
     cineCategory?: string;
     futbolTab?: 'matches' | 'channels';
@@ -608,24 +608,16 @@ export async function resolveDeepLinkTarget(
       const worldLabels: Record<string, string> = {
         cine: target.cineTab === 'series' ? 'Catálogo de Series HD' : 'Catálogo de Cine y Estrenos 4K',
         futbol: 'Fútbol en Directo y Marcadores',
-        champions: 'UEFA Champions League · MultiChampions & Multi-Partido HD',
         tv: 'Canales de TV y TDT en Directo',
         juegos: 'Riffan Play — Salón de Juegos Multijugador',
         youtube: 'YouTube en Sala Sincronizada',
         clipbox: 'ClipBox Vault — Motores, Búsqueda y Descifrado',
         rbtv: 'RBTV+ — Cluster Deportivo, DoH y Arquitectura P2P',
         belix: 'Belix TV — Motor Xtream Codes y Rutas com.ibopro.ultra',
-        danaactive: 'Dana & Active — Catálogo Multi-Proveedor Dana 4K y Active CDNS',
         atresplayer: 'Atresmedia — Directos 1080p, Pasapalabra, Programas y Series',
         movistardazn: 'DAZN & Movistar+ — Fútbol, F1, MotoGP, Deportes HD y Series Originales',
         music: 'Riffan Music — Canciones, Letras Sincronizadas, Videoclips HD y Radios 24/7',
-        sharkpro: 'Shark Pro — TV en Vivo, Películas y Series',
-        vod4k: 'VOD 4K — Estrenos 4K UHD, Cine y Series',
-        srv24tv: '24TV — Canales Internacionales 24/7, Deportes y Cine',
-        srv2m2h: '2M2H — Emisión Continua Multi-Región, VOD y Series',
-        dana4k: 'Dana 4K Pro — Directos HD/4K, Cine y Series',
-        activecdns: 'Active CDNS — Directos Estables, VOD y Series',
-        octopus: 'Octopus TV — Parrilla Completa en Directo, Películas y Series',
+        providers: 'Catálogo Total — Proveedores HD, VOD 4K, 2M2H, Adtupac, Ultra VIP y Sult-Vo',
       };
       const title = `${worldLabels[target.world] || 'RiffanTV'} — RiffanTV`;
       result = {

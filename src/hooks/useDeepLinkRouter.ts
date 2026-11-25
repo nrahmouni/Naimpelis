@@ -422,6 +422,8 @@ export function useDeepLinkRouter({
       nextRoute = '/champions';
     } else if (activeWorld === 'music') {
       nextRoute = '/musica';
+    } else if (activeWorld === 'providers') {
+      nextRoute = '/catalogo-total';
     } else {
       const xtSpec = getXtreamProviderUiSpecByWorld(activeWorld);
       // On entry home, preserve active deep-linked channel/series path only if navigating back explicitly from home?
