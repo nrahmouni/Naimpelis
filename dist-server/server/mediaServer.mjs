@@ -522,6 +522,13 @@ var SPANISH_GEO_ROUTING_PATTERNS = [
   /(?:^|\.)atres\.com$/i,
   /(?:^|\.)a3player\.com$/i,
   /(?:^|\.)mediaset\.es$/i,
+  /(?:^|\.)mediaset\.net$/i,
+  /(?:^|\.)mediaset\.it$/i,
+  /(?:^|\.)mediasetplay\.mediaset\.it$/i,
+  /(?:^|\.)mediasetinfinity\.es$/i,
+  /(?:^|\.)energytv\.es$/i,
+  /(?:^|\.)bemad\.es$/i,
+  /(?:^|\.)divinity\.es$/i,
   /(?:^|\.)mitele\.es$/i,
   /(?:^|\.)telecinco\.es$/i,
   /(?:^|\.)cuatro\.com$/i,
@@ -791,6 +798,9 @@ function shouldRouteThroughSpainProxy(targetUrl) {
     return false;
   }
   if (state.scope === "all_streaming") {
+    return true;
+  }
+  if (/(?:^|\.)(akamaihd|akamaized)\.net$/i.test(host) && /\/(cuatro|telecinco|fdf|bemad|energy|divinity|atres|mediaset|mitele)\b/i.test(parsed.pathname)) {
     return true;
   }
   return SPANISH_GEO_ROUTING_PATTERNS.some((rx) => rx.test(host));
@@ -2167,6 +2177,8 @@ function buildDvbLiveFfmpegArgs(options) {
     "2",
     "-hls_list_size",
     "12",
+    "-hls_delete_threshold",
+    "8",
     "-hls_flags",
     "delete_segments+independent_segments+omit_endlist+temp_file",
     "-hls_segment_filename",

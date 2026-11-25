@@ -14,7 +14,7 @@ export type ClipboxSearchScope = 'all' | 'anime' | 'cinema' | 'movies' | 'series
 
 export interface ClipboxSearchItem {
   id: string;
-  source: 'tmdb' | 'kitsu';
+  source: 'tmdb' | 'kitsu' | 'archive';
   mediaType: 'movie' | 'tv' | 'anime';
   title: string;
   originalTitle?: string;
@@ -26,6 +26,7 @@ export interface ClipboxSearchItem {
   tmdbId?: number;
   kitsuId?: string;
   episodeCount?: number;
+  directMp4Url?: string;
 }
 
 export interface ClipboxPlayerTrack {
@@ -262,12 +263,13 @@ export async function resolveClipboxTitleStreams(params: {
   kitsuId?: string;
   season?: number;
   episode?: number;
+  directMp4Url?: string;
 }): Promise<ClipboxTitleStreamsResult> {
   const season = Math.max(1, params.season || 1);
   const episode = Math.max(1, params.episode || 1);
   let resolvedTmdbId = params.tmdbId;
 
-  if (!resolvedTmdbId && params.title) {
+  if (!resolvedTmdbId && params.title && !params.directMp4Url) {
     try {
       interface TmdbFindRes {
         results?: Array<{ id: number; media_type?: string }>;
@@ -286,6 +288,23 @@ export async function resolveClipboxTitleStreams(params: {
 
   const tracks: ClipboxPlayerTrack[] = [];
   const isSeriesLike = params.mediaType === 'tv' || params.mediaType === 'anime';
+
+  if (
+    params.directMp4Url &&
+    /^https:\/\/archive\.org\/download\/[A-Za-z0-9._-]+\/.+\.mp4$/i.test(params.directMp4Url)
+  ) {
+    tracks.push({
+      id: `cb-archive-mp4-${Buffer.from(params.directMp4Url).toString('hex').slice(0, 10)}`,
+      provider: 'Internet Archive MP4 Directo',
+      label: 'Película Directa MP4 · Dominio Público / Archivo HD',
+      lang: 'EN / VO',
+      quality: 'HD MP4',
+      mode: 'direct',
+      url: params.directMp4Url,
+      rawUrl: params.directMp4Url,
+      note: 'Archivo MP4 directo verificado desde Internet Archive sin bloqueos.',
+    });
+  }
 
   if (resolvedTmdbId || params.title) {
     const extractQs = new URLSearchParams({

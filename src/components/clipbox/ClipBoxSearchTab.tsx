@@ -59,7 +59,28 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
   const [loadingStreams, setLoadingStreams] = useState(false);
   const [streamsData, setStreamsData] = useState<ClipboxTitleStreamsResult | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [onlineTop, setOnlineTop] = useState<{
+    archiveMovies: ClipboxSearchItem[];
+    airingAnime: ClipboxSearchItem[];
+  }>({ archiveMovies: [], airingAnime: [] });
   const searchDebounceRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/clipbox/online-top')
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled || !json?.success) return;
+        setOnlineTop({
+          archiveMovies: Array.isArray(json.archiveMovies) ? json.archiveMovies : [],
+          airingAnime: Array.isArray(json.airingAnime) ? json.airingAnime : [],
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (externalQuery !== query && externalQuery.trim().length > 0) {
@@ -109,6 +130,7 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
           episode: String(e),
           ...(item.tmdbId ? { tmdbId: String(item.tmdbId) } : {}),
           ...(item.kitsuId ? { kitsuId: item.kitsuId } : {}),
+          ...(item.directMp4Url ? { directMp4Url: item.directMp4Url } : {}),
         });
         const res = await fetch(`/api/clipbox/title-streams?${qs.toString()}`);
         const json = (await res.json().catch(() => null)) as
@@ -272,6 +294,87 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
         </div>
       </div>
 
+      {/* Live Online Extractors: Archive.org Direct MP4 + Kitsu Currently Airing Anime */}
+      {!query.trim() && (scope === 'all' || scope === 'movies') && onlineTop.archiveMovies.length > 0 && (
+        <section className="space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-display font-bold text-white">
+              {pickLang(lang, {
+                es: 'Cine y Documentales MP4 Directo (Internet Archive)',
+                ca: 'Cinema i Documentals MP4 Directe (Internet Archive)',
+                en: 'Direct MP4 Cinema & Docs (Internet Archive)',
+              })}
+            </h3>
+            <span className="text-[11px] font-medium text-[#22D3EE]">Reproducción sin bloqueos</span>
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-1 no-scrollbar snap-x">
+            {onlineTop.archiveMovies.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handleOpenItem(item)}
+                className="group shrink-0 w-[136px] sm:w-[154px] text-left rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#22D3EE]/55 overflow-hidden transition-all cursor-pointer snap-start"
+              >
+                <div className="relative aspect-[2/3] w-full overflow-hidden bg-black">
+                  <PosterImage
+                    src={item.poster}
+                    alt={item.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                  <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#0D0D12] to-transparent" />
+                </div>
+                <div className="p-2.5 space-y-0.5">
+                  <p className="text-xs font-bold text-white line-clamp-2 leading-snug">{item.title}</p>
+                  <p className="text-[11px] text-zinc-400 truncate">
+                    Archivo MP4{item.year ? ` · ${item.year}` : ''}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!query.trim() && (scope === 'all' || scope === 'anime') && onlineTop.airingAnime.length > 0 && (
+        <section className="space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="text-sm font-display font-bold text-white">
+              {pickLang(lang, {
+                es: 'Anime en Emisión Ahora (Kitsu Live)',
+                ca: 'Anime en Emissió Ara (Kitsu Live)',
+                en: 'Airing Anime Now (Kitsu Live)',
+              })}
+            </h3>
+            <span className="text-[11px] font-medium text-[#A78BFA]">Kitsu + AniSkip</span>
+          </div>
+          <div className="flex gap-3 overflow-x-auto pb-1 no-scrollbar snap-x">
+            {onlineTop.airingAnime.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => handleOpenItem(item)}
+                className="group shrink-0 w-[136px] sm:w-[154px] text-left rounded-2xl bg-[#0D0D12] hover:bg-[#14141C] border border-white/[0.08] hover:border-[#A78BFA]/55 overflow-hidden transition-all cursor-pointer snap-start"
+              >
+                <div className="relative aspect-[2/3] w-full overflow-hidden bg-black">
+                  <PosterImage
+                    src={item.poster}
+                    alt={item.title}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                  />
+                  <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-[#0D0D12] to-transparent" />
+                </div>
+                <div className="p-2.5 space-y-0.5">
+                  <p className="text-xs font-bold text-white line-clamp-2 leading-snug">{item.title}</p>
+                  <p className="text-[11px] text-zinc-400 truncate tabular-nums">
+                    En emisión{item.rating ? ` · ★ ${item.rating}` : ''}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Results Grid */}
       {loading ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
@@ -321,7 +424,9 @@ export const ClipBoxSearchTab: React.FC<ClipBoxSearchTabProps> = ({
                   {item.title}
                 </h3>
                 <p className="text-[11px] text-zinc-400 tabular-nums">
-                  {item.mediaType === 'anime'
+                  {item.source === 'archive'
+                    ? 'Archivo MP4'
+                    : item.mediaType === 'anime'
                     ? 'Anime · Kitsu'
                     : item.mediaType === 'tv'
                     ? 'Serie · TMDB'

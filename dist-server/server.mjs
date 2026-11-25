@@ -580,6 +580,11 @@ ${docClone.outerHTML}`,
           "tv/tv-player-modes.js",
           "tv/tv-hub.js",
           "tv/tv-nav-voice.js",
+          "tv/tv-games.css",
+          "tv/tv-games.js",
+          "tv/tv-games-racing.js",
+          "tv/tv-games-gyro.js",
+          "vendor/riffan-racing-3d.iife.js",
           "vendor/hls.min.js"
         ];
         for (const rel of extraAssets) {
@@ -3697,6 +3702,13 @@ var SPANISH_GEO_ROUTING_PATTERNS = [
   /(?:^|\.)atres\.com$/i,
   /(?:^|\.)a3player\.com$/i,
   /(?:^|\.)mediaset\.es$/i,
+  /(?:^|\.)mediaset\.net$/i,
+  /(?:^|\.)mediaset\.it$/i,
+  /(?:^|\.)mediasetplay\.mediaset\.it$/i,
+  /(?:^|\.)mediasetinfinity\.es$/i,
+  /(?:^|\.)energytv\.es$/i,
+  /(?:^|\.)bemad\.es$/i,
+  /(?:^|\.)divinity\.es$/i,
   /(?:^|\.)mitele\.es$/i,
   /(?:^|\.)telecinco\.es$/i,
   /(?:^|\.)cuatro\.com$/i,
@@ -4039,6 +4051,9 @@ function shouldRouteThroughSpainProxy(targetUrl) {
   if (state.scope === "all_streaming") {
     return true;
   }
+  if (/(?:^|\.)(akamaihd|akamaized)\.net$/i.test(host) && /\/(cuatro|telecinco|fdf|bemad|energy|divinity|atres|mediaset|mitele)\b/i.test(parsed.pathname)) {
+    return true;
+  }
   return SPANISH_GEO_ROUTING_PATTERNS.some((rx) => rx.test(host));
 }
 function getSpainProxyUrlForTarget(targetUrl) {
@@ -4223,6 +4238,18 @@ async function verifySpanishChannelsDirectAccess() {
       kind: "hls"
     },
     {
+      id: "tdt-energy",
+      name: "Energy HD (Directa DVB Espa\xF1a)",
+      url: "http://90.163.85.113:8093/stream/18/index.m3u8",
+      kind: "hls"
+    },
+    {
+      id: "mediaset-energy",
+      name: "Mediaset Infinity Directo (Energy TV)",
+      url: "https://directos.energytv.es/orilinear03/live/linear03/main/main.isml/main-audio_spa=128000-video=1500000.m3u8",
+      kind: "hls"
+    },
+    {
       id: "atresplayer-guide",
       name: "Atresplayer Gu\xEDa Oficial (Antena 3 & laSexta)",
       url: "https://api.atresplayer.com/client/v1/row/live",
@@ -4301,11 +4328,12 @@ async function getSpainGatewayOverview() {
   const atresDispatcher = getSpainProxyDispatcherForTarget(
     "https://api.atresplayer.com/client/v1/row/live"
   );
-  const [directGeo, tunneledGeo, a3Check, sextaCheck, atresResp] = await Promise.all([
+  const [directGeo, tunneledGeo, a3Check, sextaCheck, energyCheck, atresResp] = await Promise.all([
     probeGeoExitInfo(void 0),
     config.enabled && state.proxyUrl ? probeGeoExitInfo(state.proxyUrl) : Promise.resolve(null),
     checkDvbHeadendHead("http://90.163.85.113:8093/stream/20/index.m3u8"),
     checkDvbHeadendHead("http://90.163.85.113:8093/stream/21/index.m3u8"),
+    checkDvbHeadendHead("http://90.163.85.113:8093/stream/18/index.m3u8"),
     (atresDispatcher ? undiciFetch("https://api.atresplayer.com/client/v1/row/live", {
       dispatcher: atresDispatcher,
       headers: { "User-Agent": "Mozilla/5.0" },
@@ -4327,11 +4355,148 @@ async function getSpainGatewayOverview() {
       host: "90.163.85.113:8093",
       antena3Ready: a3Check.ok,
       lasextaReady: sextaCheck.ok,
-      note: "Cabecera DVB Espa\xF1a 1080p HD directa (Antena 3 / laSexta)"
+      energyReady: energyCheck.ok,
+      note: "Cabecera DVB Espa\xF1a 1080p HD directa (Antena 3 / laSexta / Energy)"
     },
     atresplayerApi: atresResp,
     urbanVpnAudit: getUrbanVpnAuditSummary(),
     spainUrbanGateways: listUrbanVpnGateways({ spainOnly: true })
+  };
+}
+function testTcpConnect(host, port, timeoutMs = 1800) {
+  return new Promise((resolve) => {
+    const sock = net3.createConnection({ host, port, timeout: timeoutMs });
+    let done = false;
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      sock.destroy();
+      resolve(ok);
+    };
+    sock.once("connect", () => finish(true));
+    sock.once("timeout", () => finish(false));
+    sock.once("error", () => finish(false));
+  });
+}
+async function discoverAndConnectWorkingSpainProxy() {
+  const candidates = /* @__PURE__ */ new Set();
+  const feedUrls = [
+    {
+      url: "https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/countries/ES/data.txt",
+      kind: "txt"
+    },
+    {
+      url: "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&country=ES&timeout=3500",
+      kind: "http-txt"
+    },
+    {
+      url: "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks5&country=ES&timeout=3500",
+      kind: "socks5-txt"
+    },
+    {
+      url: "https://proxylist.geonode.com/api/proxy-list?country=ES&limit=20&page=1&sort_by=lastChecked&sort_type=desc",
+      kind: "geonode"
+    }
+  ];
+  await Promise.allSettled(
+    feedUrls.map(async (feed) => {
+      try {
+        const res = await undiciFetch(feed.url, {
+          headers: { "User-Agent": "RiffanTV/3.4" },
+          signal: AbortSignal.timeout(4e3)
+        });
+        if (!res.ok) return;
+        const raw = await res.text();
+        if (feed.kind === "geonode") {
+          const parsed = JSON.parse(raw);
+          for (const row of parsed?.data || []) {
+            if (!row?.ip || !row?.port) continue;
+            const proto = row.protocols?.includes("socks5") ? "socks5" : "http";
+            candidates.add(`${proto}://${row.ip}:${row.port}`);
+          }
+        } else {
+          for (const line of raw.split(/\r?\n/)) {
+            const clean = line.trim();
+            if (!clean) continue;
+            if (/^(https?|socks5h?):\/\//i.test(clean)) {
+              candidates.add(clean);
+            } else if (/^\d{1,3}(?:\.\d{1,3}){3}:\d{2,5}$/.test(clean)) {
+              const prefix = feed.kind === "socks5-txt" ? "socks5://" : "http://";
+              candidates.add(`${prefix}${clean}`);
+            }
+          }
+        }
+      } catch {
+      }
+    })
+  );
+  const list = Array.from(candidates).slice(0, 36);
+  const validated = [];
+  for (const rawUrl of list) {
+    const check = await validateSpainProxyUrl(rawUrl);
+    if (!check.ok) continue;
+    try {
+      const u = new URL(check.normalizedUrl);
+      const port = Number(u.port || (u.protocol.startsWith("socks") ? 1080 : 80));
+      if (port > 0 && port <= 65535) {
+        validated.push({ url: check.normalizedUrl, host: u.hostname, port });
+      }
+    } catch {
+    }
+  }
+  const tcpOpen = [];
+  for (let i = 0; i < validated.length; i += 12) {
+    const batch = validated.slice(i, i + 12);
+    const hits = await Promise.all(
+      batch.map(async (item) => await testTcpConnect(item.host, item.port, 1600) ? item.url : null)
+    );
+    for (const h of hits) {
+      if (h) tcpOpen.push(h);
+    }
+    if (tcpOpen.length >= 10) break;
+  }
+  for (const proxyUrl of tcpOpen.slice(0, 10)) {
+    const geo = await probeGeoExitInfo(proxyUrl);
+    if (!geo.ok || !geo.isSpain) continue;
+    try {
+      const dispatcher = createDispatcherForProxy(proxyUrl);
+      const probeEnergy = await undiciFetch(
+        "https://directos.energytv.es/orilinear03/live/linear03/main/main.isml/main-audio_spa=128000-video=1500000.m3u8",
+        {
+          dispatcher,
+          headers: { "User-Agent": "Mozilla/5.0", Referer: "https://www.mediasetinfinity.es/" },
+          signal: AbortSignal.timeout(4500)
+        }
+      );
+      const txt = probeEnergy.ok ? await probeEnergy.text() : "";
+      const energyOk = probeEnergy.ok && txt.includes("#EXTM3U");
+      const applied = await setRuntimeSpainProxyConfig({
+        proxyUrl,
+        scope: "auto_spanish",
+        enabled: true,
+        skipGeoProbe: true
+      });
+      if (applied.ok) {
+        return {
+          connected: true,
+          testedCount: validated.length,
+          tcpReachableCount: tcpOpen.length,
+          proxyUrl: maskProxyUrl(proxyUrl),
+          geo,
+          energyDirectOk: energyOk,
+          config: applied.config,
+          message: energyOk ? `Nodo Espa\xF1a verificado (${geo.ip} \xB7 ${geo.city || "ES"}) con Mediaset/Energy operativo` : `Proxy Espa\xF1a conectado (${geo.ip} \xB7 ${geo.city || "ES"}) para todos los dispositivos`
+        };
+      }
+    } catch {
+    }
+  }
+  return {
+    connected: false,
+    testedCount: validated.length,
+    tcpReachableCount: tcpOpen.length,
+    config: getSpainGatewayPublicConfig(),
+    message: `Se probaron ${validated.length} nodos p\xFAblicos ES (${tcpOpen.length} TCP abiertos), pero ninguno reenvi\xF3 tr\xE1fico HTTPS espa\xF1ol en vivo. Energy funciona directamente v\xEDa DVB Espa\xF1a HD o conectando tu propio proxy HTTP/SOCKS5 ES o perfil .ovpn de Urban VPN.`
   };
 }
 
@@ -6102,6 +6267,8 @@ function buildDvbLiveFfmpegArgs(options) {
     "2",
     "-hls_list_size",
     "12",
+    "-hls_delete_threshold",
+    "8",
     "-hls_flags",
     "delete_segments+independent_segments+omit_endlist+temp_file",
     "-hls_segment_filename",
@@ -7005,14 +7172,61 @@ function readLiveDvbPlaylistForIptv(sessionPath, publicOrigin = "") {
     const raw = fs6.readFileSync(playlistPath, "utf8");
     if (!raw.includes("#EXTM3U")) return null;
     const prefix = publicOrigin ? publicOrigin.replace(/\/+$/, "") : "";
-    return raw.split(/\r?\n/).map((line) => {
-      const trimmed = line.trim();
-      if (!trimmed) return "";
+    const lines = raw.split(/\r?\n/);
+    const headerLines = [];
+    const segEntries = [];
+    let pendingTags = [];
+    let inSegs = false;
+    for (const rawLine of lines) {
+      const trimmed = rawLine.trim();
+      if (!trimmed) continue;
       if (/^seg_\d+\.ts$/i.test(trimmed)) {
-        return `${prefix}/api/dvb-live/${sessionKey}/${trimmed}`;
+        inSegs = true;
+        segEntries.push({ tags: pendingTags, filename: trimmed });
+        pendingTags = [];
+        continue;
       }
-      return trimmed;
-    }).filter((line) => line.length > 0).join("\n") + "\n";
+      if (trimmed.startsWith("#EXTINF:") || trimmed.startsWith("#EXT-X-DISCONTINUITY") || inSegs) {
+        if (!trimmed.startsWith("#EXT-X-ENDLIST")) {
+          inSegs = true;
+          pendingTags.push(trimmed);
+        }
+        continue;
+      }
+      headerLines.push(trimmed);
+    }
+    const existingSegs = [];
+    let droppedLeadingCount = 0;
+    for (const entry of segEntries) {
+      const segPath = path5.join(sess.dir, entry.filename);
+      try {
+        const st = fs6.statSync(segPath);
+        if (st.size > 512) {
+          existingSegs.push(entry);
+          continue;
+        }
+      } catch {
+      }
+      if (existingSegs.length === 0) {
+        droppedLeadingCount++;
+      }
+    }
+    if (existingSegs.length === 0) {
+      return null;
+    }
+    const finalHeader = headerLines.map((h) => {
+      const seqMatch = h.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/i);
+      if (seqMatch && droppedLeadingCount > 0) {
+        return `#EXT-X-MEDIA-SEQUENCE:${parseInt(seqMatch[1], 10) + droppedLeadingCount}`;
+      }
+      return h;
+    });
+    const out = [...finalHeader];
+    for (const seg of existingSegs) {
+      out.push(...seg.tags);
+      out.push(`${prefix}/api/dvb-live/${sessionKey}/${seg.filename}`);
+    }
+    return out.join("\n") + "\n";
   } catch {
     return null;
   }
@@ -17345,38 +17559,38 @@ async function runSettledConcurrency(tasks, concurrency = 4) {
 }
 async function getMusicHome() {
   void getSoundCloudClientId(true);
-  const cached = homeCache.get("home_v5");
+  const cached = homeCache.get("home_v6");
   if (cached) return cached;
   const settled = await runSettledConcurrency([
-    () => fetchJsonSafe("https://api.deezer.com/chart/0?limit=35", 6e3),
+    () => fetchJsonSafe("https://api.deezer.com/chart/0?limit=50", 6e3),
     // 0: globalChart
-    () => fetchRegionMix("Quevedo Aitana Saiko", "37i9dQZEVXbNFJfN1Vw8d9", "Top 50 Espa\xF1a", 28, "ES"),
+    () => fetchRegionMix("Quevedo Aitana Saiko Bad Bunny", "37i9dQZEVXbNFJfN1Vw8d9", "Top 50 Espa\xF1a", 32, "ES"),
     // 1: spainHits
-    () => fetchJsonSafe("https://api.deezer.com/chart/116/tracks?limit=25", 6e3),
+    () => fetchJsonSafe("https://api.deezer.com/chart/116/tracks?limit=32", 6e3),
     // 2: urbano
-    () => fetchJsonSafe("https://api.deezer.com/chart/132/tracks?limit=25", 6e3),
+    () => fetchJsonSafe("https://api.deezer.com/chart/132/tracks?limit=32", 6e3),
     // 3: pop
-    () => fetchJsonSafe("https://api.deezer.com/chart/113/tracks?limit=25", 6e3),
+    () => fetchJsonSafe("https://api.deezer.com/chart/113/tracks?limit=32", 6e3),
     // 4: electronic
-    () => fetchJsonSafe("https://api.deezer.com/chart/152/tracks?limit=24", 6e3),
+    () => fetchJsonSafe("https://api.deezer.com/chart/152/tracks?limit=30", 6e3),
     // 5: rock
-    () => fetchRegionMix("Bad Bunny Karol G Feid", "37i9dQZF1DX10zKzsJ2jva", "Viva Latino", 28, "US"),
+    () => fetchRegionMix("Bad Bunny Karol G Feid Rauw Alejandro", "37i9dQZF1DX10zKzsJ2jva", "Viva Latino", 32, "US"),
     // 6: latin
-    () => fetchJsonSafe("https://api.deezer.com/chart/165/tracks?limit=24", 6e3),
+    () => fetchJsonSafe("https://api.deezer.com/chart/165/tracks?limit=30", 6e3),
     // 7: rnb/soul
     () => searchYouTubeMusic("lofi hip hop chill study beats jazz"),
     // 8: chill
-    () => searchYouTubeMusic("flamenco camaron paco de lucia"),
+    () => searchYouTubeMusic("flamenco camaron paco de lucia rosalia"),
     // 9: flamenco
-    () => fetchJsonSafe("https://api.deezer.com/chart/173/tracks?limit=22", 6e3),
+    () => fetchJsonSafe("https://api.deezer.com/chart/173/tracks?limit=28", 6e3),
     // 10: soundtracks
-    () => searchYouTubeMusic("Queen Michael Jackson Daft Punk classics hits"),
+    () => searchYouTubeMusic("Queen Michael Jackson Daft Punk classics 80s 90s hits"),
     // 11: classics
-    () => fetchJsonSafe("https://api.deezer.com/editorial/0/releases?limit=20", 6e3),
+    () => fetchJsonSafe("https://api.deezer.com/editorial/0/releases?limit=30", 6e3),
     // 12: new releases
     () => fetchJsonSafe("https://api.deezer.com/genre", 6e3),
     // 13: genres
-    () => fetchJsonSafe("https://discoveryprovider.audius.co/v1/tracks/trending?app_name=RIFFAN&limit=16", 5e3),
+    () => fetchJsonSafe("https://discoveryprovider.audius.co/v1/tracks/trending?app_name=RIFFAN&limit=24", 5e3),
     // 14: audius
     () => getMusicRadios("ALL"),
     // 15: worldwide radios
@@ -17384,22 +17598,26 @@ async function getMusicHome() {
     // 16: YouTube Music sync
     () => fetchSpotifyChartsAndAlbums(),
     // 17: Spotify sync
-    () => fetchRegionMix("ElGrandeToto Saad Lamjarred Manal Dystinct", "37i9dQZEVXbJU9eQpX8gPT", "Top 50 Morocco", 28, "MA"),
+    () => fetchRegionMix("ElGrandeToto Saad Lamjarred Manal Dystinct", "37i9dQZEVXbJU9eQpX8gPT", "Top 50 Morocco", 30, "MA"),
     // 18: Morocco
-    () => fetchRegionMix("Amr Diab Nancy Ajram Tamer Hosny Wegz", void 0, "Arab Hits", 26, "EG"),
+    () => fetchRegionMix("Amr Diab Nancy Ajram Tamer Hosny Wegz", void 0, "Arab Hits", 28, "EG"),
     // 19: Arab
-    () => fetchRegionMix("Burna Boy Wizkid Tyla Rema Ayra Starr", "37i9dQZF1DWYkaDif7Ztbp", "African Heat", 28, "NG"),
+    () => fetchRegionMix("Burna Boy Wizkid Tyla Rema Ayra Starr", "37i9dQZF1DWYkaDif7Ztbp", "African Heat", 30, "NG"),
     // 20: Africa
     () => fetchRegionMix("Macan Anna Asti Miyagi Jony Zivert", "37i9dQZF1DX8FwnYE6PRvL", "Russia Top Hits", 28, "RU"),
     // 21: Russia
-    () => fetchRegionMix("Inna Carla's Dreams Smiley Delia Theo Rose", void 0, "Romania Hits", 26, "RO"),
+    () => fetchRegionMix("Inna Carla's Dreams Smiley Delia Theo Rose", void 0, "Romania Hits", 28, "RO"),
     // 22: Romania
-    () => fetchRegionMix("Jay Chou GEM Eason Chan JJ Lin Jackson Wang", void 0, "China C-Pop", 26, "CN"),
+    () => fetchRegionMix("Jay Chou GEM Eason Chan JJ Lin Jackson Wang", void 0, "China C-Pop", 28, "CN"),
     // 23: China
-    () => fetchRegionMix("Kendrick Lamar SZA Sabrina Carpenter Billie Eilish", "37i9dQZEVXbLRQDuF5jeBp", "USA Top 50", 28, "US"),
+    () => fetchRegionMix("Kendrick Lamar SZA Sabrina Carpenter Billie Eilish", "37i9dQZEVXbLRQDuF5jeBp", "USA Top 50", 30, "US"),
     // 24: USA
-    () => fetchRegionMix("Stromae Angele Damso Hamza Lost Frequencies Charlotte de Witte", "37i9dQZEVXbJNSeeHswcKB", "Top 50 Belgium", 28, "BE")
+    () => fetchRegionMix("Stromae Angele Damso Hamza Lost Frequencies Charlotte de Witte", "37i9dQZEVXbJNSeeHswcKB", "Top 50 Belgium", 30, "BE"),
     // 25: Belgium
+    () => fetchRegionMix("gym workout training hype phonk edm fitness", "37i9dQZF1DX76Wlfdnj7AP", "Beast Mode", 26, "US"),
+    // 26: Workout
+    () => fetchJsonSafe("https://api.deezer.com/chart/129/tracks?limit=24", 6e3)
+    // 27: Jazz chart
   ], 4);
   const val = (idx) => settled[idx]?.status === "fulfilled" ? settled[idx].value ?? null : null;
   const globalChart = val(0);
@@ -17412,10 +17630,10 @@ async function getMusicHome() {
   const newReleasesRaw = val(12);
   const newReleases = Array.isArray(newReleasesRaw?.data) ? newReleasesRaw.data.map((a) => mapDeezerAlbum(a)) : [];
   const audiusRaw = val(14);
-  const audiusTrending = Array.isArray(audiusRaw?.data) ? audiusRaw.data.slice(0, 16).map((t) => mapAudiusTrack(t)) : [];
+  const audiusTrending = Array.isArray(audiusRaw?.data) ? audiusRaw.data.slice(0, 24).map((t) => mapAudiusTrack(t)) : [];
   const genresRaw = val(13);
   const rawGenres = Array.isArray(genresRaw?.data) ? genresRaw.data : [];
-  const genres = rawGenres.filter((g) => Number(g?.id) > 0).slice(0, 22).map((g, idx) => {
+  const genres = rawGenres.filter((g) => Number(g?.id) > 0).slice(0, 26).map((g, idx) => {
     const name = String(g?.name || "M\xFAsica");
     return {
       id: String(g.id),
@@ -17432,7 +17650,7 @@ async function getMusicHome() {
     youtubeMusicHits: ytmData.tracks,
     youtubeMusicAlbums: ytmData.albums,
     spotifyHits: spData.tracks,
-    spotifyAlbums: spData.albums.length > 0 ? spData.albums : ytmData.albums.slice(0, 14),
+    spotifyAlbums: spData.albums.length > 0 ? spData.albums : ytmData.albums.slice(0, 18),
     spainHits: val(1) || [],
     belgiumMix: val(25) || [],
     moroccoMix: val(18) || [],
@@ -17452,6 +17670,8 @@ async function getMusicHome() {
     flamencoAcousticMix: flamencoSearch?.tracks || [],
     soundtrackMix: mapDeezerTracksSafe(val(10)?.data),
     classicsMix: classicsSearch?.tracks || [],
+    workoutMix: val(26) || [],
+    jazzSoulMix: mapDeezerTracksSafe(val(27)?.data),
     audiusTrending,
     topAlbums: topAlbums.length > 0 ? topAlbums : ytmData.albums,
     newReleases: newReleases.length > 0 ? newReleases : ytmData.albums,
@@ -17461,7 +17681,7 @@ async function getMusicHome() {
     radios: val(15) || []
   };
   if (payload.topTracks.length > 0 && payload.spainHits.length > 0 && payload.latinSalsaMix.length > 0 && (ytmData.tracks.length > 0 || payload.moroccoMix.length > 0 || spData.tracks.length > 0)) {
-    homeCache.set("home_v5", payload);
+    homeCache.set("home_v6", payload);
   }
   return payload;
 }
@@ -28007,20 +28227,29 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
     description: "CSI, FBI, Mentes Criminales y las mejores series procedimentales",
     channels: [
       {
+        id: "energy-dvb-hd",
+        label: "Se\xF1al Directa TDT FHD 1080p (Energy)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "http://90.163.85.113:8093/stream/18/index.m3u8",
+        resolverType: "tdt_hls"
+      },
+      {
+        id: "energy-mediaset-es",
+        label: "Mediaset Infinity Directo (V\xEDa VPN Espa\xF1a)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://www.mediasetinfinity.es/directo/energy/",
+        resolverType: "mediaset_live",
+        referer: "https://www.mediasetinfinity.es/"
+      },
+      {
         id: "energy-fhd",
         label: "Se\xF1al Belix FHD (Energy)",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "/api/belix/stream/743019.m3u8",
         resolverType: "direct_hls"
-      },
-      {
-        id: "energy-dvb-hd",
-        label: "Se\xF1al Directa TDT FHD 1080p",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "http://90.163.85.113:8093/stream/18/index.m3u8",
-        resolverType: "tdt_hls"
       }
     ]
   },
@@ -28073,20 +28302,29 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
     description: "Canal 100% cine de Hollywood en alta definici\xF3n",
     channels: [
       {
-        id: "bemad-fhd",
-        label: "Se\xF1al Belix FHD (Be Mad)",
-        lang: "ES",
-        quality: "1080p",
-        sourceUrl: "/api/belix/stream/743018.m3u8",
-        resolverType: "direct_hls"
-      },
-      {
         id: "bemad-dvb-hd",
         label: "Se\xF1al Directa TDT FHD 1080p",
         lang: "ES",
         quality: "1080p",
         sourceUrl: "http://90.163.85.113:8093/stream/25/index.m3u8",
         resolverType: "tdt_hls"
+      },
+      {
+        id: "bemad-mediaset-es",
+        label: "Mediaset Infinity Directo (V\xEDa VPN Espa\xF1a)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://www.mediasetinfinity.es/directo/bemad/",
+        resolverType: "mediaset_live",
+        referer: "https://www.mediasetinfinity.es/"
+      },
+      {
+        id: "bemad-fhd",
+        label: "Se\xF1al Belix FHD (Be Mad)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "/api/belix/stream/743018.m3u8",
+        resolverType: "direct_hls"
       }
     ]
   },
@@ -28108,6 +28346,15 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
         quality: "1080p",
         sourceUrl: "http://90.163.85.113:8093/stream/39/index.m3u8",
         resolverType: "tdt_hls"
+      },
+      {
+        id: "fdf-mediaset-es",
+        label: "Mediaset Infinity Directo (V\xEDa VPN Espa\xF1a)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://www.mediasetinfinity.es/directo/fdf/",
+        resolverType: "mediaset_live",
+        referer: "https://www.mediasetinfinity.es/"
       }
     ]
   },
@@ -28129,6 +28376,15 @@ var TDT_THEMATIC_AND_REGIONAL_CHANNELS = [
         quality: "1080p",
         sourceUrl: "http://90.163.85.113:8093/stream/40/index.m3u8",
         resolverType: "tdt_hls"
+      },
+      {
+        id: "divinity-mediaset-es",
+        label: "Mediaset Infinity Directo (V\xEDa VPN Espa\xF1a)",
+        lang: "ES",
+        quality: "1080p",
+        sourceUrl: "https://www.mediasetinfinity.es/directo/divinity/",
+        resolverType: "mediaset_live",
+        referer: "https://www.mediasetinfinity.es/"
       }
     ]
   },
@@ -32475,6 +32731,19 @@ async function refreshLiveIptvRegistry(force = false) {
     } catch (err) {
       logger.debug({ err }, "iptv_org_sync_skip");
     }
+    try {
+      const freeTvText = await fetchSyncTextSafe(
+        "https://raw.githubusercontent.com/Free-TV/IPTV/master/playlists/playlist_spain.m3u8",
+        8e3
+      );
+      if (freeTvText) {
+        for (const item of parseM3uText(freeTvText)) {
+          registerUrl(item.name, item.url, item.logo);
+        }
+      }
+    } catch (err) {
+      logger.debug({ err }, "freetv_spain_sync_skip");
+    }
     if (nextMap.size > 0) {
       syncedUrlMap = nextMap;
     }
@@ -32696,6 +32965,79 @@ function parseWorldM3uPlaylist(text2, sourceHub, maxItems = 220) {
   }
   return out;
 }
+function parseFastHdM3uPlaylist(text2, opts) {
+  const out = [];
+  const lines = String(text2 || "").split(/\r?\n/);
+  let current = null;
+  const seen = /* @__PURE__ */ new Set();
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith("#EXTINF:")) {
+      const logo = line.match(/tvg-logo="([^"]*)"/i)?.[1] || void 0;
+      const group = line.match(/group-title="([^"]*)"/i)?.[1] || void 0;
+      const comma = line.lastIndexOf(",");
+      const name = (comma >= 0 ? line.slice(comma + 1) : "").replace(/\s*\(\d+p\)|\s*\[[^\]]+\]/gi, "").trim();
+      current = { name, logo, group };
+    } else if (!line.startsWith("#") && current) {
+      const isHttps = /^https:\/\//i.test(line);
+      const isBlockedEmbed = /youtube\.com|youtu\.be|twitch\.tv|dailymotion\.com|vimeo\.com/i.test(line);
+      if (current.name && isHttps && !isBlockedEmbed) {
+        const key = normKey(current.name);
+        if (key && !seen.has(key)) {
+          seen.add(key);
+          const textLower = `${current.group || ""} ${current.name}`.toLowerCase();
+          const isSports = /deporte|sport|futbol|football|barca|barça|racing|motor|golf|fight|tennis|cricket|unbeaten|fifa|beinsport|ufc/i.test(
+            textLower
+          );
+          const isKids = /infantil|ninos|niños|kid|cartoon|bob esponja|spongebob|barbie|baby|dora|teletubbies|pocket/i.test(
+            textLower
+          );
+          const isDocs = /documental|curiosity|viajes|cocina|historia|ciencia|nature|wild|crime|forens|caza|pesca|motor/i.test(
+            textLower
+          );
+          const isNews = /notic|actualidad|news|24h|cbs|cnn|euronews|aljazeera|al jazeera|bloomberg|rtve/i.test(
+            textLower
+          );
+          const isMovie = /cine|movie|film|rakuten|accion|acción|comedia|terror|thriller|romance|western|drama|alma|hollywood/i.test(
+            textLower
+          );
+          const category = isSports ? "world_cricket" : isKids ? "kids_world" : isDocs ? "documentales" : isNews ? "noticias_intl" : isMovie ? "famelack_movies" : "entretenimiento";
+          const slug = key.replace(/\s+/g, "-").slice(0, 30) || "fast";
+          out.push({
+            id: `${opts.sourceHub}-${slug}-${out.length}`,
+            name: current.name,
+            shortMark: current.name.replace(/[^A-Za-z0-9]/g, "").slice(0, 5).toUpperCase() || "FAST",
+            brandTone: isSports ? "#10B981" : isKids ? "#F59E0B" : isDocs ? "#0EA5E9" : isMovie ? "#7C3AED" : "#EC4899",
+            network: `${opts.networkPrefix}${current.group ? ` \xB7 ${current.group}` : ""}`,
+            category,
+            countryCode: opts.countryCode,
+            sourceHub: opts.sourceHub,
+            langCode: opts.defaultLang,
+            quality: "1080p HD",
+            description: `${current.name} \xB7 ${opts.networkPrefix} 24/7`,
+            logoUrl: current.logo,
+            isLiveSynced: true,
+            updatedAt: Date.now(),
+            channels: [
+              {
+                id: `${opts.sourceHub}-${slug}-0`,
+                label: `Se\xF1al ${opts.networkPrefix} HD (${current.name})`,
+                lang: opts.defaultLang,
+                quality: "1080p",
+                sourceUrl: line,
+                resolverType: "tdt_hls"
+              }
+            ]
+          });
+        }
+      }
+      current = null;
+      if (out.length >= opts.maxItems) break;
+    }
+  }
+  return out;
+}
 function mapFamelackItemsToEntries(items, opts) {
   const results = [];
   const seenNames = /* @__PURE__ */ new Set();
@@ -32790,7 +33132,12 @@ async function refreshFamelackAndWorldCatalog(force = false) {
       iptvOrgSportsText,
       iptvOrgMoviesText,
       iptvOrgKidsText,
-      iptvOrgDocsText
+      iptvOrgDocsText,
+      plutoEsText,
+      samsungEsText,
+      plexEsText,
+      rokuAllText,
+      tubiAllText
     ] = await Promise.all([
       fetchJsonSafe3(
         "https://raw.githubusercontent.com/famelack/famelack-data/main/tv/categories/sports.json"
@@ -32814,7 +33161,12 @@ async function refreshFamelackAndWorldCatalog(force = false) {
       fetchM3uText("https://iptv-org.github.io/iptv/categories/sports.m3u"),
       fetchM3uText("https://iptv-org.github.io/iptv/categories/movies.m3u"),
       fetchM3uText("https://iptv-org.github.io/iptv/categories/kids.m3u"),
-      fetchM3uText("https://iptv-org.github.io/iptv/categories/documentary.m3u")
+      fetchM3uText("https://iptv-org.github.io/iptv/categories/documentary.m3u"),
+      fetchM3uText("https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/plutotv_es.m3u"),
+      fetchM3uText("https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/samsungtvplus_es.m3u"),
+      fetchM3uText("https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/plex_es.m3u"),
+      fetchM3uText("https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/roku_all.m3u"),
+      fetchM3uText("https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/tubi_all.m3u")
     ]);
     if (Array.isArray(sportsJson)) {
       appendEntries(
@@ -32918,6 +33270,61 @@ async function refreshFamelackAndWorldCatalog(force = false) {
     }
     if (iptvOrgDocsText) {
       appendEntries(parseWorldM3uPlaylist(iptvOrgDocsText, "iptvorg", 30));
+    }
+    if (plutoEsText) {
+      appendEntries(
+        parseFastHdM3uPlaylist(plutoEsText, {
+          sourceHub: "plutotv",
+          networkPrefix: "Pluto TV Espa\xF1a HD",
+          defaultLang: "ES",
+          countryCode: "es",
+          maxItems: 140
+        })
+      );
+    }
+    if (samsungEsText) {
+      appendEntries(
+        parseFastHdM3uPlaylist(samsungEsText, {
+          sourceHub: "samsungtv",
+          networkPrefix: "Samsung TV Plus / Rakuten HD",
+          defaultLang: "ES",
+          countryCode: "es",
+          maxItems: 160
+        })
+      );
+    }
+    if (plexEsText) {
+      appendEntries(
+        parseFastHdM3uPlaylist(plexEsText, {
+          sourceHub: "plex",
+          networkPrefix: "Plex Live Espa\xF1a HD",
+          defaultLang: "ES",
+          countryCode: "es",
+          maxItems: 150
+        })
+      );
+    }
+    if (rokuAllText) {
+      appendEntries(
+        parseFastHdM3uPlaylist(rokuAllText, {
+          sourceHub: "roku",
+          networkPrefix: "Roku Live HD",
+          defaultLang: "EN",
+          countryCode: "us",
+          maxItems: 65
+        })
+      );
+    }
+    if (tubiAllText) {
+      appendEntries(
+        parseFastHdM3uPlaylist(tubiAllText, {
+          sourceHub: "tubi",
+          networkPrefix: "Tubi Live HD",
+          defaultLang: "EN",
+          countryCode: "us",
+          maxItems: 65
+        })
+      );
     }
     if (collected.length > 0) {
       cachedWorldChannels = collected;
@@ -35068,6 +35475,144 @@ async function fetchElahmadCategoryDirectory(category) {
   }
 }
 
+// server/services/mediasetLiveService.ts
+var MEDIASET_CHANNEL_SPECS = {
+  energy: {
+    slug: "energy",
+    callSign: "EN",
+    pageUrl: "https://www.mediasetinfinity.es/directo/energy/",
+    candidateHlsUrls: [
+      "https://directos.energytv.es/orilinear03/live/linear03/main/main.isml/main-audio_spa=128000-video=1500000.m3u8",
+      "https://directos.energytv.es/orilinear03/live/linear03/main/main.isml/master.m3u8"
+    ]
+  },
+  bemad: {
+    slug: "bemad",
+    callSign: "BM",
+    pageUrl: "https://www.mediasetinfinity.es/directo/bemad/",
+    candidateHlsUrls: [
+      "https://directos.bemad.es/orilinear02/live/linear02/main/main.isml/main-audio_spa=128000-video=1500000.m3u8",
+      "https://directos.bemad.es/orilinear02/live/linear02/main/main.isml/master.m3u8"
+    ]
+  },
+  divinity: {
+    slug: "divinity",
+    callSign: "DV",
+    pageUrl: "https://www.mediasetinfinity.es/directo/divinity/",
+    candidateHlsUrls: [
+      "https://directos.divinity.es/orilinear04/live/linear04/main/main.isml/main-audio_spa=128000-video=1500000.m3u8",
+      "https://directos.divinity.es/orilinear04/live/linear04/main/main.isml/master.m3u8"
+    ]
+  },
+  fdf: {
+    slug: "fdf",
+    callSign: "FDF",
+    pageUrl: "https://www.mediasetinfinity.es/directo/fdf/",
+    candidateHlsUrls: [
+      "https://mdslivehls-i.akamaihd.net/hls/live/571650/fdf/bitrate_1.m3u8",
+      "https://directos.fdf.es/orilinear01/live/linear01/main/main.isml/master.m3u8"
+    ]
+  },
+  telecinco: {
+    slug: "telecinco",
+    callSign: "T5",
+    pageUrl: "https://www.mediasetinfinity.es/directo/telecinco/",
+    candidateHlsUrls: [
+      "https://livehlsdai-i.akamaihd.net/hls/live/571640/telecinco/bitrate_1.m3u8"
+    ]
+  },
+  cuatro: {
+    slug: "cuatro",
+    callSign: "C4",
+    pageUrl: "https://www.mediasetinfinity.es/directo/cuatro/",
+    candidateHlsUrls: [
+      "https://livehlsdai-i.akamaihd.net/hls/live/571643/cuatro/bitrate_1.m3u8"
+    ]
+  }
+};
+function detectMediasetSlug(input) {
+  const low = String(input || "").trim().toLowerCase();
+  for (const spec of Object.values(MEDIASET_CHANNEL_SPECS)) {
+    if (low === spec.slug || low.includes(`mediasetinfinity.es/directo/${spec.slug}`) || low.includes(`directos.${spec.slug}`) || spec.slug === "energy" && low.includes("energytv.es") || low.includes(`/${spec.slug}/`)) {
+      return spec;
+    }
+  }
+  return null;
+}
+async function resolveMediasetLiveHlsUrl(sourceUrlOrSlug) {
+  const spec = detectMediasetSlug(sourceUrlOrSlug);
+  const candidates = spec ? [...spec.candidateHlsUrls] : [];
+  if (/\.m3u8/i.test(sourceUrlOrSlug) && !candidates.includes(sourceUrlOrSlug)) {
+    candidates.unshift(sourceUrlOrSlug);
+  }
+  const referer = spec?.pageUrl || "https://www.mediasetinfinity.es/";
+  for (const cand of candidates) {
+    try {
+      const resp = await streamingFetch(cand, {
+        headers: {
+          "User-Agent": CHROME_UA,
+          Referer: referer,
+          Origin: "https://www.mediasetinfinity.es",
+          Accept: "*/*"
+        },
+        timeoutMs: 4200
+      });
+      if (resp.ok) {
+        const text2 = await resp.text();
+        if (text2.includes("#EXTM3U")) {
+          return { streamUrl: resp.url || cand, referer };
+        }
+      } else {
+        await resp.body?.cancel?.().catch(() => {
+        });
+      }
+    } catch {
+    }
+  }
+  if (spec) {
+    try {
+      const pageResp = await streamingFetch(spec.pageUrl, {
+        headers: {
+          "User-Agent": CHROME_UA,
+          Accept: "text/html,application/xhtml+xml",
+          "Accept-Language": "es-ES,es;q=0.9"
+        },
+        timeoutMs: 4500
+      });
+      if (pageResp.ok) {
+        const html = await pageResp.text();
+        const foundUrls = html.match(/https?:\/\/[^"'\s\\<>]+\.m3u8[^"'\s\\<>]*/gi) || [];
+        for (const u of foundUrls) {
+          const clean = u.replace(/\\u002F/g, "/").replace(/\\/g, "");
+          if (!clean.includes(".m3u8")) continue;
+          try {
+            const probe = await streamingFetch(clean, {
+              headers: {
+                "User-Agent": CHROME_UA,
+                Referer: referer,
+                Origin: "https://www.mediasetinfinity.es"
+              },
+              timeoutMs: 3800
+            });
+            if (probe.ok) {
+              const txt = await probe.text();
+              if (txt.includes("#EXTM3U")) {
+                return { streamUrl: probe.url || clean, referer };
+              }
+            } else {
+              await probe.body?.cancel?.().catch(() => {
+              });
+            }
+          } catch {
+          }
+        }
+      }
+    } catch {
+    }
+  }
+  return null;
+}
+
 // server/routes/iptvHelpers/iptvPngBadge.ts
 import zlib7 from "zlib";
 var iptvPngLogoCache = new LruTtlCache(120, 24 * 60 * 60 * 1e3);
@@ -36046,6 +36591,58 @@ function registerIptvAndTdtRoutes(app2, deps) {
             trimmedText2,
             unwrapped2.finalUrl,
             elResolved.referer,
+            forceAacOverride,
+            false,
+            publicOrigin
+          );
+          return sendIptvM3u8Response(res, rewritten2);
+        }
+        if (track.resolverType === "mediaset_live") {
+          const msResolved = await resolveMediasetLiveHlsUrl(sourceUrl);
+          if (!msResolved?.streamUrl) {
+            markTrackDown(sourceUrl, 403);
+            continue;
+          }
+          const manifestObj2 = await fetchUpstreamManifestText(
+            msResolved.streamUrl,
+            msResolved.referer,
+            forceAacOverride
+          );
+          if (!manifestObj2) {
+            markTrackDown(sourceUrl, 502);
+            continue;
+          }
+          const unwrapped2 = await unwrapMasterPlaylistForIptv(
+            manifestObj2,
+            msResolved.referer,
+            forceAacOverride
+          );
+          if (!unwrapped2) {
+            markTrackDown(sourceUrl, 404);
+            continue;
+          }
+          const segOk = await verifyIptvMediaManifestSegments(
+            unwrapped2.text,
+            unwrapped2.finalUrl,
+            msResolved.referer
+          );
+          if (!segOk) {
+            markTrackDown(sourceUrl, 403);
+            continue;
+          }
+          const trimmedText2 = trimLiveDvrManifestForIptv(unwrapped2.text, 6);
+          iptvChannelResolveCache.set(channel.id, {
+            rawM3u8Url: unwrapped2.finalUrl,
+            referer: msResolved.referer,
+            forceAac: forceAacOverride,
+            isPublicCorsCdn: false,
+            isDvb: false,
+            ts: Date.now()
+          });
+          const rewritten2 = rewriteManifestForSamsungIptv(
+            trimmedText2,
+            unwrapped2.finalUrl,
+            msResolved.referer,
             forceAacOverride,
             false,
             publicOrigin
@@ -48051,7 +48648,7 @@ async function resolveClipboxTitleStreams(params) {
   const season = Math.max(1, params.season || 1);
   const episode = Math.max(1, params.episode || 1);
   let resolvedTmdbId = params.tmdbId;
-  if (!resolvedTmdbId && params.title) {
+  if (!resolvedTmdbId && params.title && !params.directMp4Url) {
     try {
       const sr = await fetchTmdbJson(
         "/search/multi",
@@ -48065,6 +48662,19 @@ async function resolveClipboxTitleStreams(params) {
   }
   const tracks = [];
   const isSeriesLike = params.mediaType === "tv" || params.mediaType === "anime";
+  if (params.directMp4Url && /^https:\/\/archive\.org\/download\/[A-Za-z0-9._-]+\/.+\.mp4$/i.test(params.directMp4Url)) {
+    tracks.push({
+      id: `cb-archive-mp4-${Buffer.from(params.directMp4Url).toString("hex").slice(0, 10)}`,
+      provider: "Internet Archive MP4 Directo",
+      label: "Pel\xEDcula Directa MP4 \xB7 Dominio P\xFAblico / Archivo HD",
+      lang: "EN / VO",
+      quality: "HD MP4",
+      mode: "direct",
+      url: params.directMp4Url,
+      rawUrl: params.directMp4Url,
+      note: "Archivo MP4 directo verificado desde Internet Archive sin bloqueos."
+    });
+  }
   if (resolvedTmdbId || params.title) {
     const extractQs = new URLSearchParams({
       title: params.title,
@@ -48559,6 +49169,141 @@ async function decodeClipboxInput(rawInput, fetchLiveSample = false) {
   };
 }
 
+// server/services/onlineMediaDiscoveryService.ts
+var discoveryCache = new LruTtlCache(4, 30 * 60 * 1e3);
+var NSFW_BLOCKLIST_RX = /\b(sex|porn|xxx|erotic|nude|nudity|adult|fetish|hentai|nsfw|playboy|strip|orgasm|erotica)\b|sex_madness/i;
+function isSafeArchiveDoc(doc) {
+  const desc2 = Array.isArray(doc.description) ? doc.description.join(" ") : String(doc.description || "");
+  const haystack = `${doc.identifier || ""} ${doc.title || ""} ${desc2}`;
+  return !NSFW_BLOCKLIST_RX.test(haystack);
+}
+async function fetchArchiveDirectMovies() {
+  const searchUrl = "https://archive.org/advancedsearch.php?q=mediatype:movies+AND+format:MPEG4+AND+(collection:feature_films+OR+collection:nasa)&fl[]=identifier,title,year,downloads,description&sort[]=downloads+desc&rows=24&output=json";
+  try {
+    const res = await streamingFetch(searchUrl, {
+      headers: { Accept: "application/json", "User-Agent": CHROME_UA },
+      timeoutMs: 6e3
+    });
+    if (!res.ok) return [];
+    const json = await res.json().catch(() => null);
+    const candidates = (json?.response?.docs || []).filter((d) => Boolean(d?.identifier && d?.title) && isSafeArchiveDoc(d)).slice(0, 12);
+    const resolved = await Promise.allSettled(
+      candidates.map(async (doc) => {
+        const id = String(doc.identifier || "").trim();
+        if (!id) return null;
+        try {
+          const metaRes = await streamingFetch(
+            `https://archive.org/metadata/${encodeURIComponent(id)}`,
+            {
+              headers: { Accept: "application/json", "User-Agent": CHROME_UA },
+              timeoutMs: 4500
+            }
+          );
+          if (!metaRes.ok) return null;
+          const meta = await metaRes.json().catch(() => null);
+          const mp4Files = (meta?.files || []).filter((f) => {
+            const name = String(f?.name || "");
+            const size = Number(f?.size || 0);
+            return /\.mp4$/i.test(name) && !/512kb/i.test(name) && (size === 0 || size > 2e6);
+          }).sort((a, b) => {
+            const aHd = /hd|720|1080|h\.264|mpeg4/i.test(String(a.format || a.name || "")) ? 1 : 0;
+            const bHd = /hd|720|1080|h\.264|mpeg4/i.test(String(b.format || b.name || "")) ? 1 : 0;
+            if (aHd !== bHd) return bHd - aHd;
+            return Number(b.size || 0) - Number(a.size || 0);
+          });
+          const chosen = mp4Files[0];
+          if (!chosen?.name) return null;
+          const cleanPath = chosen.name.split("/").map((seg) => encodeURIComponent(seg)).join("/");
+          const directMp4Url = `https://archive.org/download/${encodeURIComponent(id)}/${cleanPath}`;
+          const poster = `https://archive.org/services/img/${encodeURIComponent(id)}`;
+          const rawDesc = Array.isArray(doc.description) ? doc.description.join(" ") : String(doc.description || "");
+          return {
+            id: `archive-${id}`,
+            source: "archive",
+            mediaType: "movie",
+            title: String(doc.title || id).trim(),
+            year: doc.year ? String(doc.year).slice(0, 4) : "",
+            rating: "",
+            overview: rawDesc.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 260),
+            poster,
+            backdrop: poster,
+            directMp4Url
+          };
+        } catch {
+          return null;
+        }
+      })
+    );
+    const out = [];
+    for (const r of resolved) {
+      if (r.status === "fulfilled" && r.value) {
+        out.push(r.value);
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+async function fetchKitsuAiringAnime() {
+  try {
+    const res = await streamingFetch(
+      "https://kitsu.io/api/edge/anime?filter[status]=current&sort=-userCount&page[limit]=12",
+      {
+        headers: {
+          Accept: "application/vnd.api+json",
+          "User-Agent": CHROME_UA
+        },
+        timeoutMs: 5500
+      }
+    );
+    if (!res.ok) return [];
+    const json = await res.json().catch(() => null);
+    const out = [];
+    for (const entry of json?.data || []) {
+      const attr = entry.attributes;
+      if (!attr?.canonicalTitle) continue;
+      const poster = attr.posterImage?.large || attr.posterImage?.medium || "";
+      if (!poster) continue;
+      const rawScore = Number(attr.averageRating || 0);
+      out.push({
+        id: `kitsu-${entry.id}`,
+        source: "kitsu",
+        mediaType: "anime",
+        title: attr.titles?.en || attr.canonicalTitle,
+        originalTitle: attr.titles?.ja_jp || attr.canonicalTitle,
+        year: (attr.startDate || "").slice(0, 4),
+        rating: rawScore > 0 ? (rawScore / 10).toFixed(1) : "",
+        overview: attr.synopsis || "",
+        poster,
+        backdrop: attr.coverImage?.large || attr.coverImage?.original || poster,
+        kitsuId: entry.id,
+        episodeCount: attr.episodeCount || 12
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+async function fetchOnlineTopDiscovery() {
+  const cached = discoveryCache.get("top");
+  if (cached) return cached;
+  const [archiveMovies, airingAnime] = await Promise.all([
+    fetchArchiveDirectMovies(),
+    fetchKitsuAiringAnime()
+  ]);
+  const payload = {
+    archiveMovies,
+    airingAnime,
+    updatedAt: Date.now()
+  };
+  if (archiveMovies.length > 0 || airingAnime.length > 0) {
+    discoveryCache.set("top", payload);
+  }
+  return payload;
+}
+
 // server/routes/clipboxRoutes.ts
 var VALID_CATEGORIES = /* @__PURE__ */ new Set([
   "core",
@@ -48627,6 +49372,19 @@ function registerClipboxRoutes(app2) {
       });
     }
   });
+  app2.get("/api/clipbox/online-top", async (_req, res) => {
+    try {
+      const payload = await fetchOnlineTopDiscovery();
+      res.setHeader("Cache-Control", "public, max-age=300");
+      res.json({ success: true, ...payload });
+    } catch {
+      res.status(502).json({
+        success: false,
+        archiveMovies: [],
+        airingAnime: []
+      });
+    }
+  });
   app2.get("/api/clipbox/title-streams", async (req, res) => {
     const title = String(req.query.title || "").trim();
     if (!title) {
@@ -48636,6 +49394,7 @@ function registerClipboxRoutes(app2) {
     const mediaType = mediaTypeRaw === "tv" || mediaTypeRaw === "anime" ? mediaTypeRaw : "movie";
     const tmdbIdNum = Number(String(req.query.tmdbId || "").replace(/\D/g, "")) || void 0;
     const kitsuId = String(req.query.kitsuId || "").trim() || void 0;
+    const directMp4Url = String(req.query.directMp4Url || "").trim() || void 0;
     const season = Math.max(1, Number(req.query.season || 1) || 1);
     const episode = Math.max(1, Number(req.query.episode || 1) || 1);
     try {
@@ -48644,6 +49403,7 @@ function registerClipboxRoutes(app2) {
         mediaType,
         tmdbId: tmdbIdNum,
         kitsuId,
+        directMp4Url,
         season,
         episode
       });
@@ -54956,6 +55716,201 @@ async function importFullYoutubeAccount(googleAccessToken) {
   };
 }
 
+// server/services/podcastExtractorService.ts
+import crypto16 from "node:crypto";
+var UA = "RiffanMusic-PodcastExtractor/1.0 (+https://riffantv.app)";
+var searchCache3 = new LruTtlCache(120, 20 * 60 * 1e3);
+var episodesCache = new LruTtlCache(180, 15 * 60 * 1e3);
+var homeCache4 = new LruTtlCache(
+  4,
+  30 * 60 * 1e3
+);
+function decodeXmlEntities2(text2) {
+  return String(text2 || "").replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, "$1").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'").replace(/&#(\d+);/g, (_m, n) => String.fromCharCode(Number(n) || 32)).replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+}
+function parseItunesDurationSec(raw) {
+  const clean = String(raw || "").trim();
+  if (!clean) return 1800;
+  if (/^\d+$/.test(clean)) return Math.max(30, Number(clean) || 1800);
+  const parts = clean.split(":").map((p) => Number(p) || 0);
+  if (parts.length === 3) return Math.max(30, parts[0] * 3600 + parts[1] * 60 + parts[2]);
+  if (parts.length === 2) return Math.max(30, parts[0] * 60 + parts[1]);
+  return 1800;
+}
+function extractTag(block, tagName) {
+  const rx = new RegExp(`<${tagName}(?:\\s[^>]*)?>([\\s\\S]*?)</${tagName}>`, "i");
+  const m = block.match(rx);
+  return m?.[1] ? decodeXmlEntities2(m[1]) : "";
+}
+function extractAttr(tagHtml, attrName) {
+  const rx = new RegExp(`${attrName}=["']([^"']+)["']`, "i");
+  const m = tagHtml.match(rx);
+  return m?.[1] ? m[1].trim() : "";
+}
+async function searchPodcasts(query, country = "ES", limit = 16) {
+  const cleanQ = String(query || "").trim();
+  if (!cleanQ) return [];
+  const safeCountry = /^[A-Z]{2}$/i.test(country) ? country.toUpperCase() : "ES";
+  const safeLimit = Math.min(25, Math.max(1, limit));
+  const key = `${safeCountry}:${safeLimit}:${cleanQ.toLowerCase()}`;
+  const cached = searchCache3.get(key);
+  if (cached) return cached;
+  const url = `https://itunes.apple.com/search?media=podcast&entity=podcast&country=${safeCountry}&limit=${safeLimit}&term=${encodeURIComponent(cleanQ)}`;
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: "application/json", "User-Agent": UA },
+      signal: AbortSignal.timeout(5500)
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    const shows = [];
+    const seenFeeds = /* @__PURE__ */ new Set();
+    for (const item of data?.results || []) {
+      const feedUrl = String(item.feedUrl || "").trim();
+      if (!/^https?:\/\//i.test(feedUrl) || seenFeeds.has(feedUrl)) continue;
+      seenFeeds.add(feedUrl);
+      const art = String(item.artworkUrl600 || item.artworkUrl100 || "").trim();
+      if (!art) continue;
+      shows.push({
+        id: `pod-${item.collectionId || item.trackId || crypto16.createHash("md5").update(feedUrl).digest("hex").slice(0, 8)}`,
+        title: String(item.collectionName || item.trackName || "Podcast").trim(),
+        author: String(item.artistName || "Podcast Online").trim(),
+        artwork: art,
+        artworkXl: String(item.artworkUrl600 || art).trim(),
+        feedUrl,
+        genre: String(item.primaryGenreName || "Podcast").trim(),
+        trackCount: Number(item.trackCount || 0),
+        country: String(item.country || safeCountry)
+      });
+    }
+    if (shows.length > 0) {
+      searchCache3.set(key, shows);
+    }
+    return shows;
+  } catch {
+    return [];
+  }
+}
+async function getPodcastHomeSections() {
+  const cached = homeCache4.get("home");
+  if (cached) return cached;
+  const featuredTerms = [
+    "The Wild Project",
+    "Nadie Sabe Nada",
+    "Estirando el chicle",
+    "La Ruina",
+    "El Partidazo de COPE",
+    "Territorio Revival",
+    "XRey",
+    "Hotel Jorge Juan"
+  ];
+  const techTerms = [
+    "Lex Fridman Podcast",
+    "Joe Rogan Experience",
+    "BBC Global News Podcast",
+    "Mixx.io",
+    "Cuonda Tecnologia",
+    "Coffee Break Senal y Ruido"
+  ];
+  const collectFromTerms = async (terms, country) => {
+    const settled = await Promise.allSettled(terms.map((t) => searchPodcasts(t, country, 2)));
+    const out = [];
+    const seen = /* @__PURE__ */ new Set();
+    for (const r of settled) {
+      if (r.status !== "fulfilled") continue;
+      const first = r.value[0];
+      if (!first || seen.has(first.feedUrl)) continue;
+      seen.add(first.feedUrl);
+      out.push(first);
+    }
+    return out;
+  };
+  const [featured, techAndScience] = await Promise.all([
+    collectFromTerms(featuredTerms, "ES"),
+    collectFromTerms(techTerms, "US")
+  ]);
+  const payload = { featured, techAndScience };
+  if (featured.length > 0 || techAndScience.length > 0) {
+    homeCache4.set("home", payload);
+  }
+  return payload;
+}
+async function fetchPodcastEpisodes(params) {
+  const rawFeed = String(params.feedUrl || "").trim();
+  if (!rawFeed) return [];
+  const check = await validateSafeOutboundUrl(rawFeed);
+  if (!check.safe) {
+    throw new Error(check.reason || "Feed RSS bloqueado por seguridad SSRF");
+  }
+  const limit = Math.min(60, Math.max(1, params.limit || 25));
+  const cacheKey = `${check.url.toString()}::${limit}`;
+  const cached = episodesCache.get(cacheKey);
+  if (cached) return cached;
+  const { response } = await safeFetchFollowingRedirects(check.url.toString(), {
+    headers: {
+      "User-Agent": UA,
+      Accept: "application/rss+xml, application/xml, text/xml;q=0.9, */*;q=0.8"
+    },
+    signal: AbortSignal.timeout(7500)
+  });
+  if (!response.ok) {
+    void response.body?.cancel?.().catch(() => {
+    });
+    return [];
+  }
+  const xml = await response.text();
+  const channelHead = xml.split(/<item[\s>]/i)[0] || "";
+  const showTitle = params.showTitle || extractTag(channelHead, "title") || "Podcast Online";
+  const showAuthor = params.author || extractTag(channelHead, "itunes:author") || showTitle;
+  let showCover = params.cover || "";
+  if (!showCover) {
+    const itunesImgTag = channelHead.match(/<itunes:image\b[^>]*>/i)?.[0] || "";
+    showCover = extractAttr(itunesImgTag, "href") || extractTag(channelHead, "url");
+  }
+  const feedHash = crypto16.createHash("md5").update(check.url.toString()).digest("hex").slice(0, 10);
+  const itemMatches = xml.match(/<item\b[\s\S]*?<\/item>/gi) || [];
+  const tracks = [];
+  for (let i = 0; i < itemMatches.length && tracks.length < limit; i++) {
+    const block = itemMatches[i];
+    const encMatch = block.match(/<enclosure\b[^>]*>/i);
+    if (!encMatch) continue;
+    const enclosureUrl = extractAttr(encMatch[0], "url");
+    if (!/^https?:\/\//i.test(enclosureUrl)) continue;
+    const encType = extractAttr(encMatch[0], "type").toLowerCase();
+    if (encType && !encType.startsWith("audio/") && !/\.(mp3|m4a|aac|ogg|opus)(\?|$)/i.test(enclosureUrl)) {
+      continue;
+    }
+    const epTitle = extractTag(block, "title") || `Episodio ${i + 1}`;
+    const durationRaw = extractTag(block, "itunes:duration");
+    const epImgTag = block.match(/<itunes:image\b[^>]*>/i)?.[0] || "";
+    const epCover = extractAttr(epImgTag, "href") || showCover;
+    const epHash = crypto16.createHash("md5").update(`${feedHash}:${enclosureUrl}`).digest("hex").slice(0, 10);
+    tracks.push({
+      id: `pod-ep-${feedHash}-${epHash}`,
+      title: epTitle,
+      artist: {
+        id: `pod-artist-${feedHash}`,
+        name: showAuthor,
+        picture: showCover || epCover || void 0
+      },
+      album: {
+        id: `pod-show-${feedHash}`,
+        title: showTitle,
+        cover: epCover || showCover,
+        coverXl: epCover || showCover
+      },
+      durationSec: parseItunesDurationSec(durationRaw),
+      source: "podcast",
+      streamUrl: enclosureUrl,
+      previewUrl: enclosureUrl
+    });
+  }
+  if (tracks.length > 0) {
+    episodesCache.set(cacheKey, tracks);
+  }
+  return tracks;
+}
+
 // server/routes/musicRoutes.ts
 var cachedFfmpegBin = null;
 function resolveFfmpegBin2() {
@@ -55125,6 +56080,53 @@ function registerMusicRoutes(app2) {
       res.json({ success: true, radios });
     } catch {
       res.status(500).json({ success: false, error: "Failed to load radios" });
+    }
+  });
+  app2.get("/api/music/podcasts/home", async (_req, res) => {
+    try {
+      const sections = await getPodcastHomeSections();
+      res.setHeader("Cache-Control", "public, max-age=600");
+      res.json({ success: true, ...sections });
+    } catch {
+      res.status(500).json({ success: false, featured: [], techAndScience: [] });
+    }
+  });
+  app2.get("/api/music/podcasts/search", async (req, res) => {
+    const q = String(req.query.q || "").trim();
+    const country = String(req.query.country || "ES").trim();
+    if (!q) {
+      res.json({ success: true, podcasts: [] });
+      return;
+    }
+    try {
+      const podcasts = await searchPodcasts(q, country);
+      res.setHeader("Cache-Control", "public, max-age=300");
+      res.json({ success: true, podcasts });
+    } catch {
+      res.status(500).json({ success: false, podcasts: [] });
+    }
+  });
+  app2.get("/api/music/podcasts/episodes", async (req, res) => {
+    const feedUrl = String(req.query.feedUrl || "").trim();
+    if (!feedUrl) {
+      res.status(400).json({ success: false, error: "Missing feedUrl", episodes: [] });
+      return;
+    }
+    try {
+      const episodes = await fetchPodcastEpisodes({
+        feedUrl,
+        showTitle: String(req.query.title || "").trim() || void 0,
+        author: String(req.query.author || "").trim() || void 0,
+        cover: String(req.query.cover || "").trim() || void 0
+      });
+      res.setHeader("Cache-Control", "public, max-age=300");
+      res.json({ success: true, episodes });
+    } catch (err) {
+      res.status(400).json({
+        success: false,
+        error: err instanceof Error ? err.message : "Failed to extract podcast episodes",
+        episodes: []
+      });
     }
   });
   app2.get("/api/music/lyrics", async (req, res) => {
@@ -56077,6 +57079,19 @@ function registerVpnGatewayRoutes(app2) {
       tunneledGeo: updated.tunneledGeo
     });
   });
+  app2.post("/api/vpn/auto-spain", async (_req, res) => {
+    res.setHeader("Cache-Control", "no-store");
+    try {
+      const result = await discoverAndConnectWorkingSpainProxy();
+      return res.json({ success: true, ...result });
+    } catch (err) {
+      return res.status(500).json({
+        success: false,
+        connected: false,
+        error: err instanceof Error ? err.message : "Error buscando nodos proxy Espa\xF1a"
+      });
+    }
+  });
   app2.delete("/api/vpn/config", (_req, res) => {
     res.setHeader("Cache-Control", "no-store");
     const config = clearRuntimeSpainProxyConfig();
@@ -56084,8 +57099,254 @@ function registerVpnGatewayRoutes(app2) {
   });
 }
 
+// server/services/openGamesRepoService.ts
+var REGISTRY_URL = "https://raw.githubusercontent.com/sausi-7/games/main/games/registry.json";
+var PAGES_BASE_URL = "https://sausi-7.github.io/games/";
+var CACHE_TTL_MS2 = 60 * 60 * 1e3;
+var FALLBACK_CATEGORIES = [
+  { id: "3d", label: "3D WebGL", emoji: "\u{1F310}", color: "#8b5cf6" },
+  { id: "racing", label: "Racing", emoji: "\u{1F3CE}\uFE0F", color: "#f59e0b" },
+  { id: "shooter", label: "Shooter", emoji: "\u{1F3AF}", color: "#ef4444" },
+  { id: "platformer", label: "Platformer", emoji: "\u{1F3C3}", color: "#06b6d4" },
+  { id: "sports", label: "Sports", emoji: "\u26BD", color: "#10b981" },
+  { id: "arcade", label: "Arcade", emoji: "\u{1F579}\uFE0F", color: "#ec4899" },
+  { id: "puzzle", label: "Puzzle", emoji: "\u{1F9E9}", color: "#7c3aed" },
+  { id: "casual", label: "Casual", emoji: "\u{1F388}", color: "#f472b6" },
+  { id: "board", label: "Board", emoji: "\u265F\uFE0F", color: "#64748b" },
+  { id: "word-quiz", label: "Word & Quiz", emoji: "\u{1F4DD}", color: "#3b82f6" }
+];
+var FALLBACK_FEATURED_GAMES = [
+  {
+    slug: "crossy-road",
+    name: "Crossy Road 3D",
+    category: "arcade",
+    tech: "three",
+    tags: ["3d", "traffic", "endless"],
+    description: "Cross busy roads and rivers in low-poly 3D.",
+    launchUrl: `${PAGES_BASE_URL}games/arcade/crossy-road/index.html`,
+    repo: "sausi-7/games",
+    license: "MIT"
+  },
+  {
+    slug: "level-devil",
+    name: "Level Devil",
+    category: "platformer",
+    tech: "three",
+    tags: ["platformer", "traps"],
+    description: "Platformer packed with surprise traps and sudden twists.",
+    launchUrl: `${PAGES_BASE_URL}games/platformer/level-devil/index.html`,
+    repo: "sausi-7/games",
+    license: "MIT"
+  },
+  {
+    slug: "stack-tower",
+    name: "Stack Tower 3D",
+    category: "3d",
+    tech: "three",
+    tags: ["3d", "timing", "stack"],
+    description: "Drop moving slabs cleanly on top of your rising 3D tower.",
+    launchUrl: `${PAGES_BASE_URL}games/3d/stack-tower/index.html`,
+    repo: "sausi-7/games",
+    license: "MIT"
+  },
+  {
+    slug: "road-fighter",
+    name: "Road Fighter",
+    category: "racing",
+    tech: "phaser",
+    tags: ["cars", "retro", "racing"],
+    description: "High-speed arcade highway racing dodging traffic.",
+    launchUrl: `${PAGES_BASE_URL}games/racing/road-fighter/index.html`,
+    repo: "sausi-7/games",
+    license: "MIT"
+  },
+  {
+    slug: "alien-battle",
+    name: "Alien Battle",
+    category: "shooter",
+    tech: "phaser",
+    tags: ["aliens", "survival"],
+    description: "Top-down alien shooter. Survive the swarm.",
+    launchUrl: `${PAGES_BASE_URL}games/shooter/alien-battle/index.html`,
+    repo: "sausi-7/games",
+    license: "MIT"
+  },
+  {
+    slug: "fighter-jet",
+    name: "Fighter Jet",
+    category: "shooter",
+    tech: "phaser",
+    tags: ["arcade", "jets"],
+    description: "Vertical jet combat through incoming enemy squadrons.",
+    launchUrl: `${PAGES_BASE_URL}games/shooter/fighter-jet/index.html`,
+    repo: "sausi-7/games",
+    license: "MIT"
+  },
+  {
+    slug: "basketball",
+    name: "Basketball Hoops",
+    category: "sports",
+    tech: "phaser",
+    tags: ["hoops", "sports"],
+    description: "Arc the ball cleanly through the hoop under pressure.",
+    launchUrl: `${PAGES_BASE_URL}games/sports/basketball/index.html`,
+    repo: "sausi-7/games",
+    license: "MIT"
+  },
+  {
+    slug: "sudoku",
+    name: "Sudoku 9\xD79",
+    category: "puzzle",
+    tech: "html",
+    tags: ["logic", "numbers"],
+    description: "Classic 9x9 number logic puzzle.",
+    launchUrl: `${PAGES_BASE_URL}games/puzzle/sudoku/index.html`,
+    repo: "sausi-7/games",
+    license: "MIT"
+  },
+  {
+    slug: "doodle-jump",
+    name: "Doodle Jump",
+    category: "platformer",
+    tech: "phaser",
+    tags: ["jump", "endless"],
+    description: "Bounce from platform to platform climbing higher.",
+    launchUrl: `${PAGES_BASE_URL}games/platformer/doodle-jump/index.html`,
+    repo: "sausi-7/games",
+    license: "MIT"
+  },
+  {
+    slug: "cosmic-cleaner",
+    name: "Cosmic Cleaner",
+    category: "3d",
+    tech: "phaser",
+    tags: ["space", "arcade"],
+    description: "Clear orbital debris across deep-space sectors.",
+    launchUrl: `${PAGES_BASE_URL}games/3d/cosmic-cleaner/index.html`,
+    repo: "sausi-7/games",
+    license: "MIT"
+  },
+  {
+    slug: "mario",
+    name: "Mario-Like Platformer",
+    category: "platformer",
+    tech: "phaser",
+    tags: ["retro", "run"],
+    description: "Classic side-scrolling jump-and-run adventure.",
+    launchUrl: `${PAGES_BASE_URL}games/platformer/mario/index.html`,
+    repo: "sausi-7/games",
+    license: "MIT"
+  },
+  {
+    slug: "cricket-123",
+    name: "Cricket 1-2-3",
+    category: "sports",
+    tech: "phaser",
+    tags: ["cricket", "batting"],
+    description: "Quick-reflex arcade cricket batting challenge.",
+    launchUrl: `${PAGES_BASE_URL}games/sports/cricket-123/index.html`,
+    repo: "sausi-7/games",
+    license: "MIT"
+  }
+];
+var cachedCatalog = null;
+var inflightCatalogPromise = null;
+async function getOpenGamesRepoCatalog(force = false) {
+  if (!force && cachedCatalog && Date.now() - cachedCatalog.syncedAt < CACHE_TTL_MS2) {
+    return cachedCatalog;
+  }
+  if (inflightCatalogPromise) return inflightCatalogPromise;
+  inflightCatalogPromise = (async () => {
+    try {
+      const resp = await fetch(REGISTRY_URL, {
+        headers: { "User-Agent": "RiffanGames-Catalog/1.0" },
+        signal: AbortSignal.timeout(7e3)
+      });
+      if (resp.ok) {
+        const raw = await resp.json();
+        const categories = Array.isArray(raw.categories) ? raw.categories.filter((c) => Boolean(c?.id && c?.label)).map((c) => ({
+          id: String(c.id),
+          label: String(c.label),
+          emoji: String(c.emoji || "\u{1F3AE}"),
+          color: String(c.color || "#7c3aed")
+        })) : FALLBACK_CATEGORIES;
+        const games = Array.isArray(raw.games) ? raw.games.filter((g) => Boolean(g?.slug && g?.name && g?.path)).map((g) => {
+          const cleanPath = String(g.path || "").replace(/^\/+/, "");
+          return {
+            slug: String(g.slug),
+            name: String(g.name),
+            category: String(g.category || "arcade"),
+            tech: String(g.tech || "html"),
+            tags: Array.isArray(g.tags) ? g.tags.map(String) : [],
+            description: String(g.description || ""),
+            launchUrl: `${PAGES_BASE_URL}${cleanPath}`,
+            repo: "sausi-7/games",
+            license: "MIT"
+          };
+        }) : FALLBACK_FEATURED_GAMES;
+        if (games.length > 0) {
+          cachedCatalog = {
+            repo: "sausi-7/games",
+            repoUrl: "https://github.com/sausi-7/games",
+            license: "MIT",
+            total: games.length,
+            categories,
+            games,
+            syncedAt: Date.now()
+          };
+          return cachedCatalog;
+        }
+      }
+    } catch (err) {
+      logger.debug({ err }, "open_games_repo_fetch_fallback");
+    }
+    return cachedCatalog || {
+      repo: "sausi-7/games",
+      repoUrl: "https://github.com/sausi-7/games",
+      license: "MIT",
+      total: FALLBACK_FEATURED_GAMES.length,
+      categories: FALLBACK_CATEGORIES,
+      games: FALLBACK_FEATURED_GAMES,
+      syncedAt: Date.now()
+    };
+  })().finally(() => {
+    inflightCatalogPromise = null;
+  });
+  return inflightCatalogPromise;
+}
+
+// server/routes/openGamesRoutes.ts
+function registerOpenGamesRoutes(app2) {
+  app2.get("/api/games/open-catalog", async (req, res) => {
+    const force = req.query.refresh === "1";
+    const category = String(req.query.category || "").trim().toLowerCase();
+    const q = String(req.query.q || "").trim().toLowerCase();
+    const catalog = await getOpenGamesRepoCatalog(force);
+    let games = catalog.games;
+    if (category && category !== "all") {
+      games = games.filter((g) => g.category.toLowerCase() === category);
+    }
+    if (q) {
+      games = games.filter(
+        (g) => g.name.toLowerCase().includes(q) || g.description.toLowerCase().includes(q) || g.tags.some((t) => t.toLowerCase().includes(q))
+      );
+    }
+    res.setHeader("Cache-Control", "public, max-age=600");
+    res.json({
+      success: true,
+      repo: catalog.repo,
+      repoUrl: catalog.repoUrl,
+      license: catalog.license,
+      total: games.length,
+      fullTotal: catalog.total,
+      categories: catalog.categories,
+      games
+    });
+  });
+}
+
 // server/ws/roomHub.ts
-import crypto19 from "crypto";
+import crypto20 from "crypto";
 import { WebSocket as WebSocket6 } from "ws";
 
 // src/shared/pinturillo/typesAndWords.ts
@@ -63811,11 +65072,11 @@ async function handleSocketDisconnect(ws, ctx) {
 }
 
 // server/ws/handlers/roomPresenceAndJoinHandlers.ts
-import crypto17 from "crypto";
+import crypto18 from "crypto";
 import { WebSocket as WebSocket4 } from "ws";
 
 // server/services/firebaseAuthVerify.ts
-import crypto16 from "crypto";
+import crypto17 from "crypto";
 import fs14 from "fs";
 import path13 from "path";
 var GOOGLE_CERTS_URL = "https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com";
@@ -63859,7 +65120,7 @@ async function fetchGooglePublicCerts() {
 async function verifyFirebaseIdToken(idToken) {
   const token = String(idToken || "").trim();
   if (!token || token.length > 4096) return null;
-  const tokenHash = crypto16.createHash("sha256").update(token).digest("hex");
+  const tokenHash = crypto17.createHash("sha256").update(token).digest("hex");
   const cached = verifiedTokenCache.get(tokenHash);
   if (cached) return cached;
   const parts = token.split(".");
@@ -63888,7 +65149,7 @@ async function verifyFirebaseIdToken(idToken) {
       pem = certs[header.kid];
     }
     if (!pem) return null;
-    const verifier = crypto16.createVerify("RSA-SHA256");
+    const verifier = crypto17.createVerify("RSA-SHA256");
     verifier.update(`${parts[0]}.${parts[1]}`);
     verifier.end();
     const signature = decodeBase64Url(parts[2]);
@@ -64309,7 +65570,7 @@ var handlePresenceAndJoinMessage = async (type, payload, ws, ctx) => {
     const targetRoomId = String(payload?.roomId || senderMeta?.roomId || "").trim().toLowerCase();
     if (!targetRoomId || !fromUserId) return true;
     const { room } = getOrCreateRoom(targetRoomId, payload?.roomName);
-    const inviteAuthToken = crypto17.randomBytes(16).toString("hex");
+    const inviteAuthToken = crypto18.randomBytes(16).toString("hex");
     tvAuthTokens.set(inviteAuthToken, {
       roomId: targetRoomId,
       expiresAt: Date.now() + 2 * 60 * 60 * 1e3
@@ -64746,9 +66007,9 @@ var handleRoomCloudAndPollMessage = async (type, payload, ws, ctx) => {
 };
 
 // server/services/roomPubSubBridge.ts
-import crypto18 from "crypto";
+import crypto19 from "crypto";
 import { EventEmitter } from "events";
-var NODE_ID = crypto18.randomUUID().slice(0, 8);
+var NODE_ID = crypto19.randomUUID().slice(0, 8);
 var RoomPubSubBridge = class extends EventEmitter {
   publishedCount = 0;
   receivedCount = 0;
@@ -67620,7 +68881,7 @@ function createRoomHub(app2, wss2) {
       };
     }
     const { room } = getOrCreateRoom(targetRoomId, params.roomNameHint);
-    const tvAuthToken = crypto19.randomBytes(16).toString("hex");
+    const tvAuthToken = crypto20.randomBytes(16).toString("hex");
     const tokenEntry = {
       roomId: targetRoomId,
       expiresAt: Date.now() + 2 * 60 * 60 * 1e3
@@ -67925,7 +69186,7 @@ function createRoomHub(app2, wss2) {
 }
 
 // server/services/aiMovieRequestService.ts
-import crypto20 from "node:crypto";
+import crypto21 from "node:crypto";
 import { GoogleGenAI as GoogleGenAI4, Type as Type5, ThinkingLevel as ThinkingLevel3 } from "@google/genai";
 
 // server/services/aiMovieSearchHelpers.ts
@@ -68157,7 +69418,7 @@ async function verifyAndBuildCatalogMovie(candidate) {
       ...sourcesFound.length === 0 ? ["Castellano", "Latino", "VOSE"] : []
     ])
   );
-  const itemId = tmdbId ? `tmdb-${mediaType}-${tmdbId}` : `ai-${mediaType}-${crypto20.createHash("md5").update(candidate.title).digest("hex").slice(0, 10)}`;
+  const itemId = tmdbId ? `tmdb-${mediaType}-${tmdbId}` : `ai-${mediaType}-${crypto21.createHash("md5").update(candidate.title).digest("hex").slice(0, 10)}`;
   const item = {
     id: itemId,
     tmdbId,
@@ -68491,7 +69752,7 @@ function startAiMovieRequest(opts) {
   const cleanQuery = String(opts.query || "").trim().slice(0, 180);
   const lang = String(opts.lang || "es").slice(0, 5);
   const preferredType = opts.mediaType === "movie" || opts.mediaType === "tv" ? opts.mediaType : "all";
-  const jobId = crypto20.randomBytes(6).toString("hex");
+  const jobId = crypto21.randomBytes(6).toString("hex");
   const now = Date.now();
   const job = {
     jobId,
@@ -69053,7 +70314,7 @@ var BackgroundWorkerBridge = class {
 var workerBridge = new BackgroundWorkerBridge();
 
 // server/services/adminAuthService.ts
-import crypto21 from "crypto";
+import crypto22 from "crypto";
 import fs17 from "fs";
 import { getApp, getApps, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
@@ -69080,7 +70341,7 @@ var DEFAULT_ADMIN_EMAILS = [
 
 // server/services/adminAuthService.ts
 var CLAIMED_ADMIN_PATH = "/tmp/riffan-admin-claim-v1.json";
-var SESSION_SECRET = String(process.env.ADMIN_SESSION_SECRET || "").trim() || crypto21.randomBytes(32).toString("hex");
+var SESSION_SECRET = String(process.env.ADMIN_SESSION_SECRET || "").trim() || crypto22.randomBytes(32).toString("hex");
 var inMemoryClaim = null;
 var claimLoadedFromStore = false;
 function getAllowedAdminEmails() {
@@ -69125,15 +70386,15 @@ async function loadClaimedAdminRecord() {
   return inMemoryClaim;
 }
 function hashPasscodeScrypt(passcode, saltHex) {
-  const salt = saltHex || crypto21.randomBytes(16).toString("hex");
-  const derived = crypto21.scryptSync(passcode, salt, 64).toString("hex");
+  const salt = saltHex || crypto22.randomBytes(16).toString("hex");
+  const derived = crypto22.scryptSync(passcode, salt, 64).toString("hex");
   return { salt, hash: derived };
 }
 function constantTimeStringMatch(a, b) {
   const bufA = Buffer.from(a, "utf8");
   const bufB = Buffer.from(b, "utf8");
   if (bufA.length !== bufB.length) return false;
-  return crypto21.timingSafeEqual(bufA, bufB);
+  return crypto22.timingSafeEqual(bufA, bufB);
 }
 async function getAdminAuthStatus() {
   const envPasscode = String(process.env.ADMIN_PASSCODE || "").trim();
@@ -69254,7 +70515,7 @@ async function verifyFirebaseAdminIdToken(idToken) {
 }
 function signAdminSessionToken(claims) {
   const payloadB64 = Buffer.from(JSON.stringify(claims), "utf8").toString("base64url");
-  const sig = crypto21.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
+  const sig = crypto22.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
   return `${payloadB64}.${sig}`;
 }
 function verifyAdminSessionToken(token) {
@@ -69262,7 +70523,7 @@ function verifyAdminSessionToken(token) {
   if (parts.length !== 2) return null;
   const [payloadB64, sigB64] = parts;
   if (!payloadB64 || !sigB64) return null;
-  const expectedSig = crypto21.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
+  const expectedSig = crypto22.createHmac("sha256", SESSION_SECRET).update(payloadB64).digest("base64url");
   if (!constantTimeStringMatch(sigB64, expectedSig)) return null;
   try {
     const parsed = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
@@ -70760,6 +72021,7 @@ registerAtresplayerRoutes(app);
 registerMovistarDaznRoutes(app);
 registerMusicRoutes(app);
 registerVpnGatewayRoutes(app);
+registerOpenGamesRoutes(app);
 registerVoiceAssistantRoutes(app, {
   getChannels: getLiveVoiceChannels,
   resolveLogoUrl: resolveOfficialChannelLogoUrl,

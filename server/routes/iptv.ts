@@ -22,6 +22,7 @@ import {
 } from '../services/iptvPlaylistService.ts';
 import { channelHealthMonitor } from '../services/channelHealthMonitor.ts';
 import { loadSpanishEpgSchedule } from '../services/epgService.ts';
+import { resolveMediasetLiveHlsUrl } from '../services/mediasetLiveService.ts';
 import { getAllIptvChannels, getIptvChannelById, invalidateIptvChannelCache } from './iptvHelpers/iptvChannelRegistry.ts';
 import {
   getCachedFamelackWorldChannels,
@@ -442,6 +443,59 @@ export function registerIptvAndTdtRoutes(
             trimmedText,
             unwrapped.finalUrl,
             elResolved.referer,
+            forceAacOverride,
+            false,
+            publicOrigin
+          );
+          return sendIptvM3u8Response(res, rewritten);
+        }
+
+        if (track.resolverType === 'mediaset_live') {
+          const msResolved = await resolveMediasetLiveHlsUrl(sourceUrl);
+          if (!msResolved?.streamUrl) {
+            markTrackDown(sourceUrl, 403);
+            continue;
+          }
+          const manifestObj = await fetchUpstreamManifestText(
+            msResolved.streamUrl,
+            msResolved.referer,
+            forceAacOverride
+          );
+          if (!manifestObj) {
+            markTrackDown(sourceUrl, 502);
+            continue;
+          }
+          const unwrapped = await unwrapMasterPlaylistForIptv(
+            manifestObj,
+            msResolved.referer,
+            forceAacOverride
+          );
+          if (!unwrapped) {
+            markTrackDown(sourceUrl, 404);
+            continue;
+          }
+          const segOk = await verifyIptvMediaManifestSegments(
+            unwrapped.text,
+            unwrapped.finalUrl,
+            msResolved.referer
+          );
+          if (!segOk) {
+            markTrackDown(sourceUrl, 403);
+            continue;
+          }
+          const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
+          iptvChannelResolveCache.set(channel.id, {
+            rawM3u8Url: unwrapped.finalUrl,
+            referer: msResolved.referer,
+            forceAac: forceAacOverride,
+            isPublicCorsCdn: false,
+            isDvb: false,
+            ts: Date.now(),
+          });
+          const rewritten = rewriteManifestForSamsungIptv(
+            trimmedText,
+            unwrapped.finalUrl,
+            msResolved.referer,
             forceAacOverride,
             false,
             publicOrigin

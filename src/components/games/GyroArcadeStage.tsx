@@ -232,14 +232,14 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
       const st = {
         sMe: 0, sCpu: 0, over: false, pauseT: 0, banner: '', bannerCol: '#38BDF8',
         smashCharge: 100, impactFlash: 0, puckSquash: 0,
-        lastSparkAt: 0, lastMeHitAt: 0, lastCpuHitAt: 0, cornerStallT: 0,
+        lastSparkAt: 0, lastPixiBurstAt: 0, lastMeHitAt: 0, lastCpuHitAt: 0, cornerStallT: 0,
         me: { x: W / 2, y: H - 78, vx: 0, vy: 0 },
         cpu: { x: W / 2, y: 78, vx: 0, vy: 0 },
         puck: { x: W / 2, y: H / 2, vx: (Math.random() - 0.5) * 260, vy: 260 },
       };
 
       const spawnSparks = (x: number, y: number, color: string, count: number, nowMs: number, force = false) => {
-        if (!force && nowMs - st.lastSparkAt < 85) return;
+        if (!force && nowMs - st.lastSparkAt < 95) return;
         st.lastSparkAt = nowMs;
         for (let i = 0; i < count; i += 1) {
           const a = Math.random() * Math.PI * 2;
@@ -374,19 +374,22 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
         if (pk.y >= H - pad - PR - 3 && pk.vy > -160) pk.vy = -Math.max(220, Math.abs(pk.vy));
 
         const lastHit = slot === 1 ? st.lastMeHitAt : st.lastCpuHitAt;
-        if (nowMs - lastHit < 90) return;
+        if (nowMs - lastHit < 120) return;
         if (slot === 1) st.lastMeHitAt = nowMs;
         else st.lastCpuHitAt = nowMs;
 
         st.impactFlash = 0.7;
         st.puckSquash = 1;
         spawnSparks(pk.x - nx * PR, pk.y - ny * PR, smashPower > 120 ? '#FACC15' : '#38BDF8', 10, nowMs, true);
-        pixiFxRef.current?.emitBurst(
-          Math.max(0.05, Math.min(0.95, pk.x / W)),
-          Math.max(0.05, Math.min(0.95, pk.y / H)),
-          smashPower > 120 ? 'smash' : 'hit',
-          smashPower > 120 ? 12 : 7
-        );
+        if (nowMs - st.lastPixiBurstAt >= 260) {
+          st.lastPixiBurstAt = nowMs;
+          pixiFxRef.current?.emitBurst(
+            Math.max(0.05, Math.min(0.95, pk.x / W)),
+            Math.max(0.05, Math.min(0.95, pk.y / H)),
+            smashPower > 120 ? 'smash' : 'hit',
+            smashPower > 120 ? 10 : 6
+          );
+        }
         playGameSfx('chapas_kick', mutedRef.current);
         pushTelemetry(spd * 0.32, st.sMe, st.sCpu, st.smashCharge, 0.85, st.over, slot, smashPower > 120 ? 70 : 35);
       };
@@ -462,19 +465,18 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
                 st.cpu.y += dirY2 * 460 * sDt;
               } else {
                 const puckInTopCorner =
-                  st.puck.y < pad + MR + PR + 26 &&
-                  (st.puck.x < pad + 120 || st.puck.x > W - pad - 120);
+                  st.puck.y < pad + MR + PR + 54 &&
+                  (st.puck.x < pad + 150 || st.puck.x > W - pad - 150);
                 const puckBehindCpu = st.puck.y < st.cpu.y + 8;
-                const aiX = puckInTopCorner
-                  ? st.puck.x < W / 2
-                    ? pad + 145
-                    : W - pad - 145
-                  : st.puck.y < H * 0.56
-                  ? Math.max(pad + MR + 36, Math.min(W - pad - MR - 36, st.puck.x))
-                  : W / 2;
+                const aiX =
+                  puckInTopCorner || puckBehindCpu
+                    ? W * 0.5
+                    : st.puck.y < H * 0.56
+                    ? Math.max(pad + MR + 36, Math.min(W - pad - MR - 36, st.puck.x))
+                    : W / 2;
                 const aiY =
                   puckInTopCorner || puckBehindCpu
-                    ? 84
+                    ? 82
                     : st.puck.y < H * 0.45 && st.puck.vy >= -40
                     ? Math.min(H / 2 - MR - 14, st.puck.y - 18)
                     : 84;
@@ -512,16 +514,18 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
             // Anti-corner-stall watchdog + subtle minimum glide speed
             const curSpd = Math.hypot(st.puck.vx, st.puck.vy);
             const nearCorner =
-              (st.puck.x < pad + 68 || st.puck.x > W - pad - 68) &&
-              (st.puck.y < pad + 68 || st.puck.y > H - pad - 68);
+              (st.puck.x < pad + 76 || st.puck.x > W - pad - 76) &&
+              (st.puck.y < pad + 76 || st.puck.y > H - pad - 76);
             if (nearCorner || curSpd < 85) {
               st.cornerStallT += dt;
-              if (st.cornerStallT > 0.42) {
+              if (st.cornerStallT > 0.35) {
                 const cx = W / 2 - st.puck.x;
-                const cy = H / 2 - st.puck.y;
+                const cy = H * 0.45 - st.puck.y;
                 const cl = Math.hypot(cx, cy) || 1;
-                st.puck.vx = (cx / cl) * 440;
-                st.puck.vy = (cy / cl) * 440;
+                st.puck.x += (cx / cl) * 18;
+                st.puck.y += (cy / cl) * 18;
+                st.puck.vx = (cx / cl) * 460;
+                st.puck.vy = (cy / cl) * 460;
                 st.cornerStallT = 0;
               }
             } else {

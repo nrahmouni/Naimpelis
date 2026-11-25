@@ -15,6 +15,7 @@ import {
   Users,
 } from 'lucide-react';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
+import type { OpenRepoGameItem } from './games/arcade/OpenGamesRepoStage';
 
 const PinturilloStage = lazyWithRetry(() =>
   import('./PinturilloStage').then((m) => ({ default: m.PinturilloStage }))
@@ -24,6 +25,9 @@ const Pool8BallStage = lazyWithRetry(() =>
 );
 const FutbolChapasStage = lazyWithRetry(() =>
   import('./FutbolChapasStage').then((m) => ({ default: m.FutbolChapasStage }))
+);
+const OpenGamesRepoStage = lazyWithRetry(() =>
+  import('./games/arcade/OpenGamesRepoStage').then((m) => ({ default: m.OpenGamesRepoStage }))
 );
 import {
   GameFloatingReactionToast,
@@ -134,6 +138,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   onCloseRoomBlackjack,
 }) => {
   const [hubMode, setHubMode] = useState<'offline' | 'online'>('online');
+  const [selectedOpenRepoGame, setSelectedOpenRepoGame] = useState<OpenRepoGameItem | null>(null);
   const [muted, toggleMute] = useGameSoundMute();
   const { floatingReaction, sendReaction } = useGameFloatingReaction(hubMode === 'offline');
 
@@ -190,6 +195,24 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
     onStartRoomBlackjack,
     onCloseRoomBlackjack,
   });
+
+  if (selectedOpenRepoGame) {
+    return (
+      <React.Suspense
+        fallback={
+          <div className="w-full h-[520px] flex items-center justify-center text-xs font-bold text-zinc-300">
+            Cargando juego Open Source...
+          </div>
+        }
+      >
+        <OpenGamesRepoStage
+          game={selectedOpenRepoGame}
+          lang={lang}
+          onClose={() => setSelectedOpenRepoGame(null)}
+        />
+      </React.Suspense>
+    );
+  }
 
   if (selectedGame) {
     const isParty = isPartyGame(selectedGame);
@@ -714,6 +737,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       onChangeHubMode={setHubMode}
       isLiveGame={isLiveGame}
       onOpenGame={openGameCard}
+      onOpenRepoGame={setSelectedOpenRepoGame}
       onInviteGame={handleInviteGame}
       inviteCopied={inviteCopied}
     />

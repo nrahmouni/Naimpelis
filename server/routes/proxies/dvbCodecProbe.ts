@@ -375,6 +375,8 @@ export function buildDvbLiveFfmpegArgs(options: {
     '2',
     '-hls_list_size',
     '12',
+    '-hls_delete_threshold',
+    '8',
     '-hls_flags',
     'delete_segments+independent_segments+omit_endlist+temp_file',
     '-hls_segment_filename',

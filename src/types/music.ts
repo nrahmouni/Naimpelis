@@ -33,12 +33,24 @@ export interface MusicTrack {
   previewUrl?: string;
   isrc?: string;
   rank?: number;
-  source?: 'deezer' | 'audius' | 'soundcloud' | 'youtube_music' | 'spotify' | 'jamendo' | 'radio';
+  source?: 'deezer' | 'audius' | 'soundcloud' | 'youtube_music' | 'spotify' | 'jamendo' | 'radio' | 'podcast';
   audiusId?: string;
   soundcloudId?: string;
   youtubeVideoId?: string;
   spotifyId?: string;
   streamUrl?: string;
+}
+
+export interface PodcastShow {
+  id: string;
+  title: string;
+  author: string;
+  artwork: string;
+  artworkXl: string;
+  feedUrl: string;
+  genre: string;
+  trackCount: number;
+  country: string;
 }
 
 export interface MusicPlaylist {

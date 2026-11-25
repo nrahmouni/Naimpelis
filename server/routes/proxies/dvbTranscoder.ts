@@ -552,20 +552,67 @@ export function readLiveDvbPlaylistForIptv(
     const raw = fs.readFileSync(playlistPath, 'utf8');
     if (!raw.includes('#EXTM3U')) return null;
     const prefix = publicOrigin ? publicOrigin.replace(/\/+$/, '') : '';
-    return (
-      raw
-        .split(/\r?\n/)
-        .map((line) => {
-          const trimmed = line.trim();
-          if (!trimmed) return '';
-          if (/^seg_\d+\.ts$/i.test(trimmed)) {
-            return `${prefix}/api/dvb-live/${sessionKey}/${trimmed}`;
-          }
-          return trimmed;
-        })
-        .filter((line) => line.length > 0)
-        .join('\n') + '\n'
-    );
+    const lines = raw.split(/\r?\n/);
+    const headerLines: string[] = [];
+    const segEntries: Array<{ tags: string[]; filename: string }> = [];
+    let pendingTags: string[] = [];
+    let inSegs = false;
+
+    for (const rawLine of lines) {
+      const trimmed = rawLine.trim();
+      if (!trimmed) continue;
+      if (/^seg_\d+\.ts$/i.test(trimmed)) {
+        inSegs = true;
+        segEntries.push({ tags: pendingTags, filename: trimmed });
+        pendingTags = [];
+        continue;
+      }
+      if (trimmed.startsWith('#EXTINF:') || trimmed.startsWith('#EXT-X-DISCONTINUITY') || inSegs) {
+        if (!trimmed.startsWith('#EXT-X-ENDLIST')) {
+          inSegs = true;
+          pendingTags.push(trimmed);
+        }
+        continue;
+      }
+      headerLines.push(trimmed);
+    }
+
+    const existingSegs: Array<{ tags: string[]; filename: string }> = [];
+    let droppedLeadingCount = 0;
+    for (const entry of segEntries) {
+      const segPath = path.join(sess.dir, entry.filename);
+      try {
+        const st = fs.statSync(segPath);
+        if (st.size > 512) {
+          existingSegs.push(entry);
+          continue;
+        }
+      } catch {
+        // file deleted or not flushed yet
+      }
+      if (existingSegs.length === 0) {
+        droppedLeadingCount++;
+      }
+    }
+
+    if (existingSegs.length === 0) {
+      return null;
+    }
+
+    const finalHeader = headerLines.map((h) => {
+      const seqMatch = h.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/i);
+      if (seqMatch && droppedLeadingCount > 0) {
+        return `#EXT-X-MEDIA-SEQUENCE:${parseInt(seqMatch[1], 10) + droppedLeadingCount}`;
+      }
+      return h;
+    });
+
+    const out: string[] = [...finalHeader];
+    for (const seg of existingSegs) {
+      out.push(...seg.tags);
+      out.push(`${prefix}/api/dvb-live/${sessionKey}/${seg.filename}`);
+    }
+    return out.join('\n') + '\n';
   } catch {
     return null;
   }

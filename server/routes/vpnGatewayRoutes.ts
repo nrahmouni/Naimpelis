@@ -8,6 +8,7 @@
 import type { Express } from 'express';
 import {
   clearRuntimeSpainProxyConfig,
+  discoverAndConnectWorkingSpainProxy,
   getSpainGatewayOverview,
   getSpainGatewayPublicConfig,
   probeGeoExitInfo,
@@ -154,6 +155,20 @@ export function registerVpnGatewayRoutes(app: Express): void {
       config: updated.config,
       tunneledGeo: updated.tunneledGeo,
     });
+  });
+
+  app.post('/api/vpn/auto-spain', async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    try {
+      const result = await discoverAndConnectWorkingSpainProxy();
+      return res.json({ success: true, ...result });
+    } catch (err) {
+      return res.status(500).json({
+        success: false,
+        connected: false,
+        error: err instanceof Error ? err.message : 'Error buscando nodos proxy España',
+      });
+    }
   });
 
   app.delete('/api/vpn/config', (_req, res) => {

@@ -415,58 +415,55 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
       {/* Three.js PBR Urban GP 3D Engine */}
       <div ref={stageRef} className="w-full h-full" />
 
-      {/* Top Left Telemetry & Car Badge */}
-      <div className="pointer-events-none absolute top-3 left-3 flex flex-wrap items-center gap-2 max-w-[60%]">
-        <div className="px-3 py-1.5 rounded-xl bg-[#090c16]/90 border border-white/15 flex items-center gap-3 text-xs font-black">
-          <span className="text-amber-300">
-            POS {telemetry.position}/{telemetry.totalCars}
-          </span>
-          <span className="text-white">
-            VUELTA {telemetry.lap}/{telemetry.totalLaps}
-          </span>
-          <span className="font-mono text-cyan-300">{formatLapMs(telemetry.lapTimeMs)}</span>
-        </div>
-
-        <div className="hidden md:flex px-2.5 py-1.5 rounded-xl bg-[#090c16]/85 border border-white/15 items-center gap-2 text-[11px] font-bold text-zinc-200">
-          <span
-            className="w-2.5 h-2.5 rounded-full shrink-0"
-            style={{ backgroundColor: selectedCarSpec.cssColor }}
-          />
-          <span>{selectedCarSpec.name}</span>
-          <span className="text-zinc-500">·</span>
-          <span style={{ color: selectedTrackSpec.cssAccent }}>{selectedTrackSpec.shortName}</span>
-        </div>
-
-        {connectedControllers.map((ctrl, idx) => {
-          const slot = ctrl.slot || (idx === 0 ? 1 : 2);
-          return (
-            <div
-              key={`${ctrl.userId}-${slot}`}
-              className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold text-white flex items-center gap-1.5 ${
-                slot === 2
-                  ? 'bg-rose-600/85 border-rose-400/50'
-                  : 'bg-emerald-600/85 border-emerald-400/50'
-              }`}
-            >
-              <Smartphone className="w-3.5 h-3.5" />
-              <span>J{slot}: {ctrl.deviceName}</span>
-            </div>
-          );
-        })}
-
-        {telemetry.splitScreenActive && (
-          <div className="px-2.5 py-1.5 rounded-xl bg-rose-600/90 border border-rose-300/50 text-[11px] font-black text-white">
-            SPLIT 2P · J2: {telemetry.p2SpeedKmh || 0} KM/H · POS #{telemetry.p2Position || 2}
+      {/* Unified Top HUD Container (non-overlapping on mobile & desktop) */}
+      <div className="pointer-events-none absolute inset-x-2.5 sm:inset-x-3 top-2.5 sm:top-3 z-20 flex flex-wrap items-start justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 min-w-0">
+          <div className="px-2.5 sm:px-3 py-1 sm:py-1.5 rounded-xl bg-[#090c16]/90 border border-white/15 flex items-center gap-2 sm:gap-3 text-[11px] sm:text-xs font-black">
+            <span className="text-amber-300">
+              POS {telemetry.position}/{telemetry.totalCars}
+            </span>
+            <span className="text-white">
+              VUELTA {telemetry.lap}/{telemetry.totalLaps}
+            </span>
+            <span className="font-mono text-cyan-300">{formatLapMs(telemetry.lapTimeMs)}</span>
           </div>
-        )}
-      </div>
 
-      {telemetry.splitScreenActive && (
-        <div className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 w-[3px] bg-gradient-to-b from-cyan-400 via-white/80 to-rose-500 shadow-[0_0_16px_rgba(34,211,238,0.8)] z-10" />
-      )}
+          <div className="hidden md:flex px-2.5 py-1.5 rounded-xl bg-[#090c16]/85 border border-white/15 items-center gap-2 text-[11px] font-bold text-zinc-200">
+            <span
+              className="w-2.5 h-2.5 rounded-full shrink-0"
+              style={{ backgroundColor: selectedCarSpec.cssColor }}
+            />
+            <span>{selectedCarSpec.name}</span>
+            <span className="text-zinc-500">·</span>
+            <span style={{ color: selectedTrackSpec.cssAccent }}>{selectedTrackSpec.shortName}</span>
+          </div>
 
-      {/* Top Right Toolbar */}
-      <div className="absolute top-3 right-3 flex items-center gap-1.5 flex-wrap justify-end">
+          {connectedControllers.map((ctrl, idx) => {
+            const slot = ctrl.slot || (idx === 0 ? 1 : 2);
+            return (
+              <div
+                key={`${ctrl.userId}-${slot}`}
+                className={`px-2.5 py-1 rounded-xl border text-[11px] font-bold text-white flex items-center gap-1.5 ${
+                  slot === 2
+                    ? 'bg-rose-600/85 border-rose-400/50'
+                    : 'bg-emerald-600/85 border-emerald-400/50'
+                }`}
+              >
+                <Smartphone className="w-3.5 h-3.5" />
+                <span>J{slot}: {ctrl.deviceName}</span>
+              </div>
+            );
+          })}
+
+          {telemetry.splitScreenActive && (
+            <div className="px-2.5 py-1 rounded-xl bg-rose-600/90 border border-rose-300/50 text-[11px] font-black text-white">
+              SPLIT 2P · J2: {telemetry.p2SpeedKmh || 0} KM/H · POS #{telemetry.p2Position || 2}
+            </div>
+          )}
+        </div>
+
+        {/* Top Right Toolbar */}
+        <div className="pointer-events-auto flex items-center gap-1 sm:gap-1.5 flex-wrap justify-end ml-auto">
         <button
           type="button"
           onClick={() => {
@@ -588,7 +585,12 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
         >
           <X className="w-4 h-4" />
         </button>
+        </div>
       </div>
+
+      {telemetry.splitScreenActive && (
+        <div className="pointer-events-none absolute inset-y-0 left-1/2 -translate-x-1/2 w-[3px] bg-gradient-to-b from-cyan-400 via-white/80 to-rose-500 shadow-[0_0_16px_rgba(34,211,238,0.8)] z-10" />
+      )}
 
       {/* Garage Car Selector Overlay (5 Modelos) */}
       {showGarage && (
@@ -785,17 +787,17 @@ export const Racing3DStage: React.FC<Racing3DStageProps> = ({
       )}
 
       {/* Bottom Right Digital Speedometer & Nitro */}
-      <div className="pointer-events-none absolute bottom-16 sm:bottom-3 right-3 px-3.5 py-2.5 rounded-2xl bg-[#090c16]/92 border border-white/15 flex items-center gap-4">
+      <div className="pointer-events-none absolute bottom-[74px] sm:bottom-3 right-3 px-3 py-1.5 sm:px-3.5 sm:py-2.5 rounded-2xl bg-[#090c16]/92 border border-white/15 flex items-center gap-3 sm:gap-4">
         <div className="text-right">
-          <div className="text-2xl sm:text-3xl font-mono font-black text-cyan-300 tabular-nums leading-none">
+          <div className="text-xl sm:text-3xl font-mono font-black text-cyan-300 tabular-nums leading-none">
             {telemetry.speedKmh}
           </div>
           <div className="text-[10px] font-bold text-zinc-400">KM/H</div>
         </div>
-        <div className="px-2.5 py-1 rounded-lg bg-[#7C3AED]/30 border border-[#7C3AED]/60 text-sm font-black">
+        <div className="px-2 sm:px-2.5 py-1 rounded-lg bg-[#7C3AED]/30 border border-[#7C3AED]/60 text-xs sm:text-sm font-black">
           M{telemetry.gear || 'R'}
         </div>
-        <div className="w-20">
+        <div className="w-16 sm:w-20">
           <div className="flex items-center justify-between text-[10px] font-bold text-cyan-200 mb-1">
             <span className="flex items-center gap-0.5">
               <Flame className="w-3 h-3" /> NITRO

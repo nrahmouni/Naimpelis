@@ -9,7 +9,16 @@ import { logger } from '../utils/logger.ts';
 
 export interface WorldIptvChannelEntry extends LiveIptvChannelEntry {
   countryCode?: string;
-  sourceHub: 'famelack' | 'freetv' | 'iptvorg' | 'elahmad';
+  sourceHub:
+    | 'famelack'
+    | 'freetv'
+    | 'iptvorg'
+    | 'elahmad'
+    | 'plutotv'
+    | 'samsungtv'
+    | 'plex'
+    | 'roku'
+    | 'tubi';
   langCode?: string;
 }
 
@@ -170,6 +179,117 @@ export function parseWorldM3uPlaylist(
   return out;
 }
 
+export function parseFastHdM3uPlaylist(
+  text: string,
+  opts: {
+    sourceHub: 'plutotv' | 'samsungtv' | 'plex' | 'roku' | 'tubi';
+    networkPrefix: string;
+    defaultLang: string;
+    countryCode?: string;
+    maxItems: number;
+  }
+): WorldIptvChannelEntry[] {
+  const out: WorldIptvChannelEntry[] = [];
+  const lines = String(text || '').split(/\r?\n/);
+  let current: { name: string; logo?: string; group?: string } | null = null;
+  const seen = new Set<string>();
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith('#EXTINF:')) {
+      const logo = line.match(/tvg-logo="([^"]*)"/i)?.[1] || undefined;
+      const group = line.match(/group-title="([^"]*)"/i)?.[1] || undefined;
+      const comma = line.lastIndexOf(',');
+      const name = (comma >= 0 ? line.slice(comma + 1) : '')
+        .replace(/\s*\(\d+p\)|\s*\[[^\]]+\]/gi, '')
+        .trim();
+      current = { name, logo, group };
+    } else if (!line.startsWith('#') && current) {
+      const isHttps = /^https:\/\//i.test(line);
+      const isBlockedEmbed = /youtube\.com|youtu\.be|twitch\.tv|dailymotion\.com|vimeo\.com/i.test(line);
+      if (current.name && isHttps && !isBlockedEmbed) {
+        const key = normKey(current.name);
+        if (key && !seen.has(key)) {
+          seen.add(key);
+          const textLower = `${current.group || ''} ${current.name}`.toLowerCase();
+          const isSports =
+            /deporte|sport|futbol|football|barca|barça|racing|motor|golf|fight|tennis|cricket|unbeaten|fifa|beinsport|ufc/i.test(
+              textLower
+            );
+          const isKids =
+            /infantil|ninos|niños|kid|cartoon|bob esponja|spongebob|barbie|baby|dora|teletubbies|pocket/i.test(
+              textLower
+            );
+          const isDocs =
+            /documental|curiosity|viajes|cocina|historia|ciencia|nature|wild|crime|forens|caza|pesca|motor/i.test(
+              textLower
+            );
+          const isNews =
+            /notic|actualidad|news|24h|cbs|cnn|euronews|aljazeera|al jazeera|bloomberg|rtve/i.test(
+              textLower
+            );
+          const isMovie =
+            /cine|movie|film|rakuten|accion|acción|comedia|terror|thriller|romance|western|drama|alma|hollywood/i.test(
+              textLower
+            );
+
+          const category = isSports
+            ? 'world_cricket'
+            : isKids
+            ? 'kids_world'
+            : isDocs
+            ? 'documentales'
+            : isNews
+            ? 'noticias_intl'
+            : isMovie
+            ? 'famelack_movies'
+            : 'entretenimiento';
+
+          const slug = key.replace(/\s+/g, '-').slice(0, 30) || 'fast';
+          out.push({
+            id: `${opts.sourceHub}-${slug}-${out.length}`,
+            name: current.name,
+            shortMark: current.name.replace(/[^A-Za-z0-9]/g, '').slice(0, 5).toUpperCase() || 'FAST',
+            brandTone: isSports
+              ? '#10B981'
+              : isKids
+              ? '#F59E0B'
+              : isDocs
+              ? '#0EA5E9'
+              : isMovie
+              ? '#7C3AED'
+              : '#EC4899',
+            network: `${opts.networkPrefix}${current.group ? ` · ${current.group}` : ''}`,
+            category,
+            countryCode: opts.countryCode,
+            sourceHub: opts.sourceHub,
+            langCode: opts.defaultLang,
+            quality: '1080p HD',
+            description: `${current.name} · ${opts.networkPrefix} 24/7`,
+            logoUrl: current.logo,
+            isLiveSynced: true,
+            updatedAt: Date.now(),
+            channels: [
+              {
+                id: `${opts.sourceHub}-${slug}-0`,
+                label: `Señal ${opts.networkPrefix} HD (${current.name})`,
+                lang: opts.defaultLang,
+                quality: '1080p',
+                sourceUrl: line,
+                resolverType: 'tdt_hls',
+              },
+            ],
+          });
+        }
+      }
+      current = null;
+      if (out.length >= opts.maxItems) break;
+    }
+  }
+  return out;
+}
+
 export function mapFamelackItemsToEntries(
   items: FamelackChannelJson[],
   opts: {
@@ -292,6 +412,11 @@ export async function refreshFamelackAndWorldCatalog(
       iptvOrgMoviesText,
       iptvOrgKidsText,
       iptvOrgDocsText,
+      plutoEsText,
+      samsungEsText,
+      plexEsText,
+      rokuAllText,
+      tubiAllText,
     ] = await Promise.all([
       fetchJsonSafe<FamelackChannelJson[]>(
         'https://raw.githubusercontent.com/famelack/famelack-data/main/tv/categories/sports.json'
@@ -316,6 +441,11 @@ export async function refreshFamelackAndWorldCatalog(
       fetchM3uText('https://iptv-org.github.io/iptv/categories/movies.m3u'),
       fetchM3uText('https://iptv-org.github.io/iptv/categories/kids.m3u'),
       fetchM3uText('https://iptv-org.github.io/iptv/categories/documentary.m3u'),
+      fetchM3uText('https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/plutotv_es.m3u'),
+      fetchM3uText('https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/samsungtvplus_es.m3u'),
+      fetchM3uText('https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/plex_es.m3u'),
+      fetchM3uText('https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/roku_all.m3u'),
+      fetchM3uText('https://raw.githubusercontent.com/BuddyChewChew/app-m3u-generator/main/playlists/tubi_all.m3u'),
     ]);
 
     if (Array.isArray(sportsJson)) {
@@ -429,6 +559,61 @@ export async function refreshFamelackAndWorldCatalog(
     }
     if (iptvOrgDocsText) {
       appendEntries(parseWorldM3uPlaylist(iptvOrgDocsText, 'iptvorg', 30));
+    }
+    if (plutoEsText) {
+      appendEntries(
+        parseFastHdM3uPlaylist(plutoEsText, {
+          sourceHub: 'plutotv',
+          networkPrefix: 'Pluto TV España HD',
+          defaultLang: 'ES',
+          countryCode: 'es',
+          maxItems: 140,
+        })
+      );
+    }
+    if (samsungEsText) {
+      appendEntries(
+        parseFastHdM3uPlaylist(samsungEsText, {
+          sourceHub: 'samsungtv',
+          networkPrefix: 'Samsung TV Plus / Rakuten HD',
+          defaultLang: 'ES',
+          countryCode: 'es',
+          maxItems: 160,
+        })
+      );
+    }
+    if (plexEsText) {
+      appendEntries(
+        parseFastHdM3uPlaylist(plexEsText, {
+          sourceHub: 'plex',
+          networkPrefix: 'Plex Live España HD',
+          defaultLang: 'ES',
+          countryCode: 'es',
+          maxItems: 150,
+        })
+      );
+    }
+    if (rokuAllText) {
+      appendEntries(
+        parseFastHdM3uPlaylist(rokuAllText, {
+          sourceHub: 'roku',
+          networkPrefix: 'Roku Live HD',
+          defaultLang: 'EN',
+          countryCode: 'us',
+          maxItems: 65,
+        })
+      );
+    }
+    if (tubiAllText) {
+      appendEntries(
+        parseFastHdM3uPlaylist(tubiAllText, {
+          sourceHub: 'tubi',
+          networkPrefix: 'Tubi Live HD',
+          defaultLang: 'EN',
+          countryCode: 'us',
+          maxItems: 65,
+        })
+      );
     }
 
     if (collected.length > 0) {

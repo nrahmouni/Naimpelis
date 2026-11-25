@@ -61,7 +61,7 @@ interface SettingsBottomSheetProps {
   onLeaveRoom?: () => void;
   onOpenDesignSystem?: () => void;
   onOpenLinkDevice?: () => void;
-  onPlayChannelById?: (channelId: 'tdt-antena3' | 'tdt-lasexta') => void | Promise<void>;
+  onPlayChannelById?: (channelId: 'tdt-antena3' | 'tdt-lasexta' | 'tdt-energy') => void | Promise<void>;
 }
 
 export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({

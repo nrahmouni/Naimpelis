@@ -57,6 +57,7 @@ export interface SpainGatewayOverview {
     host: string;
     antena3Ready: boolean;
     lasextaReady: boolean;
+    energyReady: boolean;
     note: string;
   };
   atresplayerApi: {
@@ -84,6 +85,13 @@ const SPANISH_GEO_ROUTING_PATTERNS: RegExp[] = [
   /(?:^|\.)atres\.com$/i,
   /(?:^|\.)a3player\.com$/i,
   /(?:^|\.)mediaset\.es$/i,
+  /(?:^|\.)mediaset\.net$/i,
+  /(?:^|\.)mediaset\.it$/i,
+  /(?:^|\.)mediasetplay\.mediaset\.it$/i,
+  /(?:^|\.)mediasetinfinity\.es$/i,
+  /(?:^|\.)energytv\.es$/i,
+  /(?:^|\.)bemad\.es$/i,
+  /(?:^|\.)divinity\.es$/i,
   /(?:^|\.)mitele\.es$/i,
   /(?:^|\.)telecinco\.es$/i,
   /(?:^|\.)cuatro\.com$/i,
@@ -477,6 +485,12 @@ export function shouldRouteThroughSpainProxy(targetUrl: string): boolean {
   if (state.scope === 'all_streaming') {
     return true;
   }
+  if (
+    /(?:^|\.)(akamaihd|akamaized)\.net$/i.test(host) &&
+    /\/(cuatro|telecinco|fdf|bemad|energy|divinity|atres|mediaset|mitele)\b/i.test(parsed.pathname)
+  ) {
+    return true;
+  }
   return SPANISH_GEO_ROUTING_PATTERNS.some((rx) => rx.test(host));
 }
 
@@ -705,6 +719,18 @@ export async function verifySpanishChannelsDirectAccess(): Promise<{
       kind: 'hls' as const,
     },
     {
+      id: 'tdt-energy',
+      name: 'Energy HD (Directa DVB España)',
+      url: 'http://90.163.85.113:8093/stream/18/index.m3u8',
+      kind: 'hls' as const,
+    },
+    {
+      id: 'mediaset-energy',
+      name: 'Mediaset Infinity Directo (Energy TV)',
+      url: 'https://directos.energytv.es/orilinear03/live/linear03/main/main.isml/main-audio_spa=128000-video=1500000.m3u8',
+      kind: 'hls' as const,
+    },
+    {
       id: 'atresplayer-guide',
       name: 'Atresplayer Guía Oficial (Antena 3 & laSexta)',
       url: 'https://api.atresplayer.com/client/v1/row/live',
@@ -788,11 +814,12 @@ export async function getSpainGatewayOverview(): Promise<SpainGatewayOverview> {
   const atresDispatcher = getSpainProxyDispatcherForTarget(
     'https://api.atresplayer.com/client/v1/row/live'
   );
-  const [directGeo, tunneledGeo, a3Check, sextaCheck, atresResp] = await Promise.all([
+  const [directGeo, tunneledGeo, a3Check, sextaCheck, energyCheck, atresResp] = await Promise.all([
     probeGeoExitInfo(undefined),
     config.enabled && state.proxyUrl ? probeGeoExitInfo(state.proxyUrl) : Promise.resolve(null),
     checkDvbHeadendHead('http://90.163.85.113:8093/stream/20/index.m3u8'),
     checkDvbHeadendHead('http://90.163.85.113:8093/stream/21/index.m3u8'),
+    checkDvbHeadendHead('http://90.163.85.113:8093/stream/18/index.m3u8'),
     (atresDispatcher
       ? undiciFetch('https://api.atresplayer.com/client/v1/row/live', {
           dispatcher: atresDispatcher,
@@ -819,10 +846,175 @@ export async function getSpainGatewayOverview(): Promise<SpainGatewayOverview> {
       host: '90.163.85.113:8093',
       antena3Ready: a3Check.ok,
       lasextaReady: sextaCheck.ok,
-      note: 'Cabecera DVB España 1080p HD directa (Antena 3 / laSexta)',
+      energyReady: energyCheck.ok,
+      note: 'Cabecera DVB España 1080p HD directa (Antena 3 / laSexta / Energy)',
     },
     atresplayerApi: atresResp,
     urbanVpnAudit: getUrbanVpnAuditSummary(),
     spainUrbanGateways: listUrbanVpnGateways({ spainOnly: true }),
   };
 }
+
+function testTcpConnect(host: string, port: number, timeoutMs = 1800): Promise<boolean> {
+  return new Promise((resolve) => {
+    const sock = net.createConnection({ host, port, timeout: timeoutMs });
+    let done = false;
+    const finish = (ok: boolean) => {
+      if (done) return;
+      done = true;
+      sock.destroy();
+      resolve(ok);
+    };
+    sock.once('connect', () => finish(true));
+    sock.once('timeout', () => finish(false));
+    sock.once('error', () => finish(false));
+  });
+}
+
+export interface AutoSpainProxyDiscoveryResult {
+  connected: boolean;
+  testedCount: number;
+  tcpReachableCount: number;
+  proxyUrl?: string;
+  geo?: GeoExitInfo | null;
+  energyDirectOk?: boolean;
+  config: SpainGatewayPublicConfig;
+  message: string;
+}
+
+export async function discoverAndConnectWorkingSpainProxy(): Promise<AutoSpainProxyDiscoveryResult> {
+  const candidates = new Set<string>();
+  const feedUrls = [
+    {
+      url: 'https://cdn.jsdelivr.net/gh/proxifly/free-proxy-list@main/proxies/countries/ES/data.txt',
+      kind: 'txt' as const,
+    },
+    {
+      url: 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&country=ES&timeout=3500',
+      kind: 'http-txt' as const,
+    },
+    {
+      url: 'https://api.proxyscrape.com/v2/?request=displayproxies&protocol=socks5&country=ES&timeout=3500',
+      kind: 'socks5-txt' as const,
+    },
+    {
+      url: 'https://proxylist.geonode.com/api/proxy-list?country=ES&limit=20&page=1&sort_by=lastChecked&sort_type=desc',
+      kind: 'geonode' as const,
+    },
+  ];
+
+  await Promise.allSettled(
+    feedUrls.map(async (feed) => {
+      try {
+        const res = await undiciFetch(feed.url, {
+          headers: { 'User-Agent': 'RiffanTV/3.4' },
+          signal: AbortSignal.timeout(4000),
+        });
+        if (!res.ok) return;
+        const raw = await res.text();
+        if (feed.kind === 'geonode') {
+          const parsed = JSON.parse(raw) as {
+            data?: Array<{ ip?: string; port?: string | number; protocols?: string[] }>;
+          };
+          for (const row of parsed?.data || []) {
+            if (!row?.ip || !row?.port) continue;
+            const proto = row.protocols?.includes('socks5') ? 'socks5' : 'http';
+            candidates.add(`${proto}://${row.ip}:${row.port}`);
+          }
+        } else {
+          for (const line of raw.split(/\r?\n/)) {
+            const clean = line.trim();
+            if (!clean) continue;
+            if (/^(https?|socks5h?):\/\//i.test(clean)) {
+              candidates.add(clean);
+            } else if (/^\d{1,3}(?:\.\d{1,3}){3}:\d{2,5}$/.test(clean)) {
+              const prefix = feed.kind === 'socks5-txt' ? 'socks5://' : 'http://';
+              candidates.add(`${prefix}${clean}`);
+            }
+          }
+        }
+      } catch {
+        // ignore feed errors
+      }
+    })
+  );
+
+  const list = Array.from(candidates).slice(0, 36);
+  const validated: Array<{ url: string; host: string; port: number }> = [];
+  for (const rawUrl of list) {
+    const check = await validateSpainProxyUrl(rawUrl);
+    if (!check.ok) continue;
+    try {
+      const u = new URL(check.normalizedUrl);
+      const port = Number(u.port || (u.protocol.startsWith('socks') ? 1080 : 80));
+      if (port > 0 && port <= 65535) {
+        validated.push({ url: check.normalizedUrl, host: u.hostname, port });
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // Probe TCP liveness first in batches of 12
+  const tcpOpen: string[] = [];
+  for (let i = 0; i < validated.length; i += 12) {
+    const batch = validated.slice(i, i + 12);
+    const hits = await Promise.all(
+      batch.map(async (item) => ((await testTcpConnect(item.host, item.port, 1600)) ? item.url : null))
+    );
+    for (const h of hits) {
+      if (h) tcpOpen.push(h);
+    }
+    if (tcpOpen.length >= 10) break;
+  }
+
+  for (const proxyUrl of tcpOpen.slice(0, 10)) {
+    const geo = await probeGeoExitInfo(proxyUrl);
+    if (!geo.ok || !geo.isSpain) continue;
+    try {
+      const dispatcher = createDispatcherForProxy(proxyUrl);
+      const probeEnergy = await undiciFetch(
+        'https://directos.energytv.es/orilinear03/live/linear03/main/main.isml/main-audio_spa=128000-video=1500000.m3u8',
+        {
+          dispatcher,
+          headers: { 'User-Agent': 'Mozilla/5.0', Referer: 'https://www.mediasetinfinity.es/' },
+          signal: AbortSignal.timeout(4500),
+        }
+      );
+      const txt = probeEnergy.ok ? await probeEnergy.text() : '';
+      const energyOk = probeEnergy.ok && txt.includes('#EXTM3U');
+      const applied = await setRuntimeSpainProxyConfig({
+        proxyUrl,
+        scope: 'auto_spanish',
+        enabled: true,
+        skipGeoProbe: true,
+      });
+      if (applied.ok) {
+        return {
+          connected: true,
+          testedCount: validated.length,
+          tcpReachableCount: tcpOpen.length,
+          proxyUrl: maskProxyUrl(proxyUrl),
+          geo,
+          energyDirectOk: energyOk,
+          config: applied.config,
+          message: energyOk
+            ? `Nodo España verificado (${geo.ip} · ${geo.city || 'ES'}) con Mediaset/Energy operativo`
+            : `Proxy España conectado (${geo.ip} · ${geo.city || 'ES'}) para todos los dispositivos`,
+        };
+      }
+    } catch {
+      // try next reachable ES node
+    }
+  }
+
+  return {
+    connected: false,
+    testedCount: validated.length,
+    tcpReachableCount: tcpOpen.length,
+    config: getSpainGatewayPublicConfig(),
+    message:
+      `Se probaron ${validated.length} nodos públicos ES (${tcpOpen.length} TCP abiertos), pero ninguno reenvió tráfico HTTPS español en vivo. Energy funciona directamente vía DVB España HD o conectando tu propio proxy HTTP/SOCKS5 ES o perfil .ovpn de Urban VPN.`,
+  };
+}
+

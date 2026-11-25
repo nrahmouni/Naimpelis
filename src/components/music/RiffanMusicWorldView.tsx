@@ -48,6 +48,7 @@ import type {
   MusicRadioStation,
   MusicSearchFilter,
   MusicTrack,
+  PodcastShow,
 } from '../../types/music';
 import { useMusicStore } from '../../store/useMusicStore';
 import { triggerHaptic } from '../../utils/haptics';
@@ -487,6 +488,12 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
   );
   const [zipExporting, setZipExporting] = useState(false);
   const [spotlightIndex, setSpotlightIndex] = useState(0);
+  const [podcastSections, setPodcastSections] = useState<{
+    featured: PodcastShow[];
+    techAndScience: PodcastShow[];
+  }>({ featured: [], techAndScience: [] });
+  const [podcastSearchResults, setPodcastSearchResults] = useState<PodcastShow[]>([]);
+  const [loadingPodcastTitle, setLoadingPodcastTitle] = useState<string | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const prevNavTabRef = useRef(navTab);
@@ -708,6 +715,23 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
 
   useEffect(() => loadHomeData(), [loadHomeData]);
 
+  useEffect(() => {
+    let cancelled = false;
+    fetch('/api/music/podcasts/home')
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled || !data?.success) return;
+        setPodcastSections({
+          featured: Array.isArray(data.featured) ? data.featured : [],
+          techAndScience: Array.isArray(data.techAndScience) ? data.techAndScience : [],
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Filtered radios
   useEffect(() => {
     if (radioFilterId === 'all') {
@@ -743,6 +767,7 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
     const clean = searchQuery.trim();
     if (!clean) {
       setSearchResults(null);
+      setPodcastSearchResults([]);
       setSearchLoading(false);
       return;
     }
@@ -768,6 +793,14 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
         .catch(() => {
           if (!cancelled && !controller.signal.aborted) setSearchLoading(false);
         });
+
+      fetch(`/api/music/podcasts/search?q=${encodeURIComponent(clean)}`, { signal: controller.signal })
+        .then((r) => r.json())
+        .then((pdata) => {
+          if (cancelled || !pdata?.success) return;
+          setPodcastSearchResults(Array.isArray(pdata.podcasts) ? pdata.podcasts : []);
+        })
+        .catch(() => {});
     }, 240);
     return () => {
       cancelled = true;
@@ -1387,6 +1420,80 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
     );
   };
 
+  const openPodcastShow = async (show: PodcastShow) => {
+    triggerHaptic('light');
+    setLoadingPodcastTitle(show.title);
+    pushMusicDetail({
+      kind: 'curated',
+      title: show.title,
+      subtitle: `${show.author} · ${show.genre}`,
+      cover: show.artworkXl || show.artwork,
+      tracks: [],
+    });
+    try {
+      const qs = new URLSearchParams({
+        feedUrl: show.feedUrl,
+        title: show.title,
+        author: show.author,
+        cover: show.artworkXl || show.artwork,
+      });
+      const res = await fetch(`/api/music/podcasts/episodes?${qs.toString()}`);
+      const json = (await res.json()) as { success?: boolean; episodes?: MusicTrack[] };
+      const episodes = Array.isArray(json?.episodes) ? json.episodes : [];
+      replaceTopMusicDetail((prev) =>
+        prev?.kind === 'curated' && prev.title === show.title
+          ? {
+              ...prev,
+              subtitle:
+                episodes.length > 0
+                  ? `${show.author} · ${episodes.length} episodios RSS`
+                  : `${show.author} · ${show.genre}`,
+              tracks: episodes,
+            }
+          : prev
+      );
+      if (episodes.length === 0) {
+        showToast('Este podcast no expuso episodios MP3 directos ahora mismo');
+      }
+    } catch {
+      showToast('No se pudieron extraer los episodios RSS del podcast');
+    } finally {
+      setLoadingPodcastTitle((prev) => (prev === show.title ? null : prev));
+    }
+  };
+
+  const renderPodcastsCarousel = (title: string, shows: PodcastShow[]) => {
+    if (!shows || shows.length === 0) return null;
+    return (
+      <HorizontalRail title={title}>
+        {shows.map((show) => (
+          <button
+            key={show.id}
+            type="button"
+            onClick={() => void openPodcastShow(show)}
+            className="group shrink-0 w-[144px] sm:w-[168px] text-left cursor-pointer snap-start focus-visible:outline-none"
+          >
+            <div className="relative aspect-square w-full rounded-xl overflow-hidden bg-[#131318] mb-2 border border-white/[0.06]">
+              <CoverArt
+                src={show.artworkXl || show.artwork}
+                alt={show.title}
+                fallbackLabel={show.author}
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+              />
+              <span className="absolute right-2 bottom-2 w-10 h-10 rounded-full bg-gradient-to-br from-[#2563EB] to-[#3B82F6] text-white flex items-center justify-center shadow-[0_8px_20px_rgba(37,99,235,0.45)] opacity-0 translate-y-2 group-hover:opacity-100 group-hover:translate-y-0 transition-all">
+                <Headphones className="w-4 h-4" />
+              </span>
+            </div>
+            <p className="text-sm font-bold truncate text-white leading-snug">{show.title}</p>
+            <p className="text-xs text-zinc-400 truncate mt-0.5">
+              {show.author} · {show.genre}
+            </p>
+          </button>
+        ))}
+      </HorizontalRail>
+    );
+  };
+
   const renderArtistsCarousel = (title: string, artists: MusicArtistRef[]) => {
     if (!artists || artists.length === 0) return null;
     return (
@@ -1943,7 +2050,14 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
             </div>
           </div>
 
-          {renderTrackList(detail.tracks)}
+          {loadingPodcastTitle === detail.title && detail.tracks.length === 0 ? (
+            <div className="py-12 flex items-center justify-center gap-2 text-xs text-zinc-400">
+              <Loader2 className="w-4 h-4 animate-spin text-[#60A5FA]" />
+              <span>Extrayendo episodios completos desde el feed RSS...</span>
+            </div>
+          ) : (
+            renderTrackList(detail.tracks)
+          )}
         </div>
       );
     }
@@ -2784,6 +2898,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   {homeData.workoutMix && homeData.workoutMix.length > 0 &&
                     renderTrackCardsCarousel('Energía & Entreno 🔥', homeData.workoutMix, 'Energía & Entreno')}
                   {renderAlbumsCarousel(m.secNewReleases, homeData.newReleases)}
+                  {renderPodcastsCarousel('Podcasts Online · RSS en Directo', podcastSections.featured)}
+                  {renderPodcastsCarousel('Podcasts Tech, Ciencia & Global', podcastSections.techAndScience)}
                   {renderPlaylistsCarousel(m.secEditorialPlaylists, homeData.editorialPlaylists)}
                   {renderArtistsCarousel(m.secTopArtists, homeData.topArtists)}
 
@@ -2930,7 +3046,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                   searchResults.artists.length === 0 &&
                   searchResults.albums.length === 0 &&
                   searchResults.playlists.length === 0 &&
-                  searchResults.radios.length === 0 ? (
+                  searchResults.radios.length === 0 &&
+                  podcastSearchResults.length === 0 ? (
                     <div className="py-14 text-center rounded-3xl bg-[#131318] border border-white/[0.06]">
                       <p className="text-base font-bold text-white">
                         {m.noResultsTitle} “{searchQuery}”
@@ -2991,6 +3108,8 @@ export const RiffanMusicWorldView: React.FC<RiffanMusicWorldViewProps> = ({
                         renderAlbumsCarousel(m.albumsSection, searchResults.albums)}
                       {(searchFilter === 'all' || searchFilter === 'playlists') &&
                         renderPlaylistsCarousel(m.playlistsSection, searchResults.playlists)}
+                      {searchFilter === 'all' &&
+                        renderPodcastsCarousel('Podcasts Online', podcastSearchResults)}
 
                       {(searchFilter === 'all' || searchFilter === 'radios') &&
                         searchResults.radios.length > 0 && (

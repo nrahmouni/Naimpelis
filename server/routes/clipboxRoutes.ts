@@ -9,6 +9,7 @@ import {
   resolveClipboxTitleStreams,
   searchClipboxCatalog,
 } from '../services/clipboxService.ts';
+import { fetchOnlineTopDiscovery } from '../services/onlineMediaDiscoveryService.ts';
 
 const VALID_CATEGORIES = new Set<ClipboxCategoryId>([
   'core',
@@ -101,6 +102,21 @@ export function registerClipboxRoutes(app: express.Express): void {
     }
   });
 
+  // Live Archive.org direct MP4 movies + Kitsu currently airing anime
+  app.get('/api/clipbox/online-top', async (_req, res) => {
+    try {
+      const payload = await fetchOnlineTopDiscovery();
+      res.setHeader('Cache-Control', 'public, max-age=300');
+      res.json({ success: true, ...payload });
+    } catch {
+      res.status(502).json({
+        success: false,
+        archiveMovies: [],
+        airingAnime: [],
+      });
+    }
+  });
+
   // Build ready-to-play ClipBox multi-provider streams + subtitles + AniSkip/TheIntroDB timestamps
   app.get('/api/clipbox/title-streams', async (req, res) => {
     const title = String(req.query.title || '').trim();
@@ -112,6 +128,7 @@ export function registerClipboxRoutes(app: express.Express): void {
       mediaTypeRaw === 'tv' || mediaTypeRaw === 'anime' ? mediaTypeRaw : 'movie';
     const tmdbIdNum = Number(String(req.query.tmdbId || '').replace(/\D/g, '')) || undefined;
     const kitsuId = String(req.query.kitsuId || '').trim() || undefined;
+    const directMp4Url = String(req.query.directMp4Url || '').trim() || undefined;
     const season = Math.max(1, Number(req.query.season || 1) || 1);
     const episode = Math.max(1, Number(req.query.episode || 1) || 1);
 
@@ -121,6 +138,7 @@ export function registerClipboxRoutes(app: express.Express): void {
         mediaType,
         tmdbId: tmdbIdNum,
         kitsuId,
+        directMp4Url,
         season,
         episode,
       });

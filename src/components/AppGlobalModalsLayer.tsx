@@ -39,12 +39,12 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
   const [vpnGatewayOpen, setVpnGatewayOpen] = React.useState(false);
 
   const playTdtChannelById = React.useCallback(
-    async (channelId: 'tdt-antena3' | 'tdt-lasexta') => {
+    async (channelId: 'tdt-antena3' | 'tdt-lasexta' | 'tdt-energy') => {
       const poolList = p.quickPool?.tdt || [];
       let target = poolList.find((c) => c.id === channelId) || null;
       if (!target) {
         try {
-          const res = await fetch('/api/tdt/channels');
+          const res = await fetch('/api/catalog/tdt');
           const data = (await res.json()) as { channels?: SpanishTdtChannel[] };
           if (Array.isArray(data?.channels)) {
             target = data.channels.find((c) => c.id === channelId) || null;
@@ -65,7 +65,7 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
     const onOpenVpn = () => setVpnGatewayOpen(true);
     const onPlayTdtId = (ev: Event) => {
       const chId = (ev as CustomEvent<{ channelId?: string }>)?.detail?.channelId;
-      if (chId === 'tdt-antena3' || chId === 'tdt-lasexta') {
+      if (chId === 'tdt-antena3' || chId === 'tdt-lasexta' || chId === 'tdt-energy') {
         void playTdtChannelById(chId);
       }
     };
