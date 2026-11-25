@@ -145,8 +145,8 @@ export function createLivePlaybackHealthMonitor() {
       stalledSinceMs = 0;
       lastStallActionTier = 0;
     },
-    check(video: HTMLVideoElement, nowMs = Date.now()): LiveHealthEvaluation {
-      if (!video || video.paused) {
+    check(video: HTMLVideoElement, nowMs = Date.now(), intendedPlaying = true): LiveHealthEvaluation {
+      if (!video || (video.paused && !intendedPlaying)) {
         stalledSinceMs = 0;
         lastStallActionTier = 0;
         return { action: 'healthy', isStalled: false, stallDurationMs: 0 };
@@ -154,15 +154,18 @@ export function createLivePlaybackHealthMonitor() {
 
       const curTime = Number(video.currentTime || 0);
       if (lastObservedTime < 0 || Math.abs(curTime - lastObservedTime) >= 0.04) {
-        lastObservedTime = curTime;
-        stalledSinceMs = nowMs;
-        lastStallActionTier = 0;
-      } else {
+        if (video.videoWidth > 0 || curTime > 0.5) {
+          lastObservedTime = curTime;
+          stalledSinceMs = nowMs;
+          lastStallActionTier = 0;
+        }
+      }
+      if (lastObservedTime >= 0 && (Math.abs(curTime - lastObservedTime) < 0.04 || video.videoWidth === 0)) {
         if (stalledSinceMs === 0) {
           stalledSinceMs = nowMs;
         }
         const stallDurationMs = Math.max(0, nowMs - stalledSinceMs);
-        if (stallDurationMs >= 6500 && lastStallActionTier < 3) {
+        if (stallDurationMs >= 6200 && lastStallActionTier < 3) {
           lastStallActionTier = 3;
           return {
             action: 'switch_backup',
@@ -171,7 +174,7 @@ export function createLivePlaybackHealthMonitor() {
             stallDurationMs,
           };
         }
-        if (stallDurationMs >= 4000 && lastStallActionTier < 2) {
+        if (stallDurationMs >= 3800 && lastStallActionTier < 2) {
           lastStallActionTier = 2;
           return {
             action: 'soft_reconnect',
@@ -180,7 +183,7 @@ export function createLivePlaybackHealthMonitor() {
             stallDurationMs,
           };
         }
-        if (stallDurationMs >= 2000 && lastStallActionTier < 1) {
+        if (stallDurationMs >= 1800 && lastStallActionTier < 1) {
           lastStallActionTier = 1;
           return {
             action: 'recover_signal',
@@ -189,7 +192,7 @@ export function createLivePlaybackHealthMonitor() {
             stallDurationMs,
           };
         }
-        if (stallDurationMs >= 1400) {
+        if (stallDurationMs >= 1100) {
           return {
             action: 'healthy',
             isStalled: true,

@@ -510,7 +510,7 @@ export async function getAtresmediaHome(belixSessionKey = 'default'): Promise<{
       name: tdtCh.name,
       shortMark: tdtCh.shortMark,
       brandTone: tdtCh.brandTone,
-      logoUrl: tdtCh.logoUrl || resolveOfficialChannelLogoUrl(tdtCh) || '',
+      logoUrl: resolveOfficialChannelLogoUrl(tdtCh) || '',
       nowTitle: String(apiLive?.title || activeEv?.title || `${tdtCh.name} en directo`),
       nextTitle: String(apiLive?.nextProgram || nextEv?.title || ''),
       description: String(apiLive?.description || activeEv?.description || tdtCh.description),
@@ -522,7 +522,7 @@ export async function getAtresmediaHome(belixSessionKey = 'default'): Promise<{
       formatId: apiLive?.formatId ? String(apiLive.formatId) : undefined,
       tdtChannel: {
         ...tdtCh,
-        logoUrl: tdtCh.logoUrl || resolveOfficialChannelLogoUrl(tdtCh) || undefined,
+        logoUrl: resolveOfficialChannelLogoUrl(tdtCh) || undefined,
       },
     };
   });

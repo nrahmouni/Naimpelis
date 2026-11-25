@@ -133,7 +133,12 @@ export async function defaultProbeSingleLiveTrack(
         new Promise<null>((resolve) => setTimeout(() => resolve(null), opts.timeoutMs)),
       ]);
       const lat = Math.max(1, Date.now() - startedAt);
-      if (manifest && manifest.includes('#EXTM3U')) {
+      const hasPlayableEntries =
+        Boolean(manifest) &&
+        manifest!.includes('#EXTM3U') &&
+        (manifest!.includes('#EXTINF') || manifest!.includes('#EXT-X-STREAM-INF')) &&
+        !/nosignal/i.test(manifest!);
+      if (hasPlayableEntries) {
         return {
           ok: true,
           streamUrl: sourceUrl,
@@ -200,7 +205,45 @@ export async function defaultProbeSingleLiveTrack(
     return { ok: false, streamUrl: '', mode: 'hls', latencyMs: lat, statusCode: 502 };
   }
 
-  // 5. Local already-proxied streams (/api/iptv/live, /api/dvb-live, etc.)
+  // 5. Local proxied streams: unwrap /api/hls-proxy?url=... to verify upstream health instead of blind-passing dead streams
+  if (sourceUrl.startsWith('/api/hls-proxy')) {
+    try {
+      const inner = new URL(sourceUrl, 'http://localhost').searchParams.get('url');
+      if (inner && /^https?:\/\//i.test(inner)) {
+        const cleanInner = await maybeSignEasyBroadcastUrl(inner);
+        const referer =
+          resolveKnownUpstreamReferer(cleanInner, track.referer) || `${new URL(cleanInner).origin}/`;
+        const res = await streamingFetch(cleanInner, {
+          method: 'GET',
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
+            Referer: referer,
+            Accept: '*/*',
+          },
+          timeoutMs: opts.timeoutMs,
+        });
+        const lat = Math.max(1, Date.now() - startedAt);
+        if (!res.ok) {
+          if (res.body) void res.body.cancel().catch(() => undefined);
+          return { ok: false, streamUrl: '', mode: 'hls', latencyMs: lat, statusCode: res.status };
+        }
+        const txt = await res.text();
+        if (txt.includes('#EXTM3U') && (txt.includes('#EXTINF') || txt.includes('#EXT-X-STREAM-INF')) && !/nosignal/i.test(txt)) {
+          return { ok: true, streamUrl: sourceUrl, mode: 'hls', latencyMs: lat, statusCode: 200 };
+        }
+        return { ok: false, streamUrl: '', mode: 'hls', latencyMs: lat, statusCode: 502 };
+      }
+    } catch {
+      return {
+        ok: false,
+        streamUrl: '',
+        mode: 'hls',
+        latencyMs: Math.max(1, Date.now() - startedAt),
+        statusCode: 502,
+      };
+    }
+  }
+
   if (sourceUrl.startsWith('/api/')) {
     return {
       ok: true,
@@ -351,7 +394,7 @@ export async function raceFastLiveTracks(
   const ordered = orderCandidatesForFastResolve(safeTracks, {
     preferLang,
     preferQualityFirst: qualityFirst,
-  }).slice(0, 6);
+  }).slice(0, 8);
 
   const probeImpl = opts.probeImpl || defaultProbeSingleLiveTrack;
   const timeoutMs = opts.timeoutMs ?? 2_600;

@@ -4,7 +4,7 @@
  * with OLED styling and sticky 50/50 footer action bar.
  */
 import React from 'react';
-import { Film, Trophy } from 'lucide-react';
+import { Film, Globe, Trophy } from 'lucide-react';
 import type { AppLanguage, TdtCategory } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
@@ -248,6 +248,19 @@ export const LiveTvFilterSheet: React.FC<LiveTvFilterSheetProps> = ({
           })}
         </div>
       </div>
+
+      <button
+        type="button"
+        onClick={() => {
+          triggerHaptic('light');
+          onClose();
+          window.dispatchEvent(new CustomEvent('riffan:open-vpn-gateway'));
+        }}
+        className="w-full min-h-11 px-4 rounded-2xl bg-[#0D0D12] hover:bg-white/[0.08] border border-emerald-400/25 text-xs font-bold text-emerald-300 inline-flex items-center justify-center gap-2 cursor-pointer active:scale-95 transition-all"
+      >
+        <Globe className="w-4 h-4 shrink-0" />
+        <span>{pickLang(lang, { es: 'Abrir VPN España (Geo-TDT)', ca: 'Obrir VPN Espanya (Geo-TDT)', en: 'Open Spain VPN (Geo-TDT)' })}</span>
+      </button>
     </div>
   </BottomSheet>
 );

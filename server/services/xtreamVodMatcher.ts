@@ -12,12 +12,18 @@ import {
   getSeriesInfo,
   isXtreamEnvConfigured,
   syncFullCatalog,
+  type XtreamCategoryItem,
   type XtreamFullCatalogPayload,
+  type XtreamLiveStreamItem,
   type XtreamSeriesEpisodeItem,
   type XtreamSeriesInfoPayload,
   type XtreamSeriesItem,
   type XtreamVodStreamItem,
 } from './xtreamService.ts';
+import {
+  getConnectedProvidersCatalogSnapshot,
+  getProviderSeriesDetail,
+} from './providers/xtreamProvidersService.ts';
 
 export type XtreamDetectedLang =
   | 'ES'
@@ -81,7 +87,7 @@ const LEADING_PREFIX_TAG_RE =
   /^(?:\[?\s*(?:ES|ESP|SPAIN|ESPA[ÑN]A|CAST|CASTELLANO|LAT|LATINO|MX|LA|VOSE|SUB|EN|ENG|ENGLISH|UK|US|USA|AR|ARB|ARABIC|FR|VF|VOSTFR|PT|IT|DE|GER|CAT|4K|UHD|FHD|HD|VIP|TOP|MULTI|DUAL)\s*\]?\s*[:|\-/·•]+\s*)+/i;
 
 const QUALITY_AND_EXT_TAG_RE =
-  /(?:\(|\[)?\b(?:4K|UHD|2160P?|1080P?|FHD|FULL\s*HD|720P?|HDR10?\+?|DOLBY\s*VISION|REMUX|BLURAY|BLU-RAY|BDRIP|BRRIP|WEB-?DL|WEBRIP|HDTV|HDRIP|DVDRIP|480P?|360P?|HEVC|H\.?265|H\.?264|X265|X264|MULTI|DUAL|VOSE|CASTELLANO|LATINO|SUBTITULAD[AO]|MKV|MP4|AVI)\b(?:\)|\])?/gi;
+  /(?:\(|\[)?\b(?:4K|UHD|2160P?|1080P?|FHD|FULL\s*HD|720P?|HDR10?\+?|DOLBY\s*VISION|REMUX|BLURAY|BLU-RAY|BDRIP|BRRIP|WEB-?DL|WEBRIP|HDTV|HDRIP|DVDRIP|480P?|360P?|HEVC|H\.?265|H\.?264|X265|X264|MULTI|DUAL|VOSE|CASTELLANO|ESPA[ÑN]OL|LATINO|SUBTITULAD[AO]S?|INGL[EÉ]S|ENGLISH|ESP|CAST|LAT|SUB|MKV|MP4|AVI)\b(?:\)|\])?/gi;
 
 export function detectXtreamQuality(
   rawName: string,
@@ -310,19 +316,157 @@ function buildHintVectors(titleHints: string[]) {
 }
 
 async function loadUnifiedXtreamCatalogFast(timeoutMs = 2600): Promise<XtreamFullCatalogPayload | null> {
-  if (!isXtreamEnvConfigured()) return null;
-  try {
-    const res = await Promise.race([
-      syncFullCatalog(false, 'all').catch(() => ({ ok: false as const })),
-      new Promise<{ ok: false }>((resolve) => setTimeout(() => resolve({ ok: false }), timeoutMs)),
-    ]);
-    if (res.ok && 'catalog' in res && res.catalog) {
-      return res.catalog;
+  const [runtimeSnap, envCatalogRes] = await Promise.all([
+    getConnectedProvidersCatalogSnapshot(900).catch(() => null),
+    isXtreamEnvConfigured()
+      ? Promise.race([
+          syncFullCatalog(false, 'all').catch(() => ({ ok: false as const })),
+          new Promise<{ ok: false }>((resolve) => setTimeout(() => resolve({ ok: false }), timeoutMs)),
+        ])
+      : Promise.resolve({ ok: false as const }),
+  ]);
+
+  const envCat = envCatalogRes.ok && 'catalog' in envCatalogRes ? envCatalogRes.catalog : null;
+  const hasRuntimeItems =
+    Boolean(runtimeSnap) &&
+    (runtimeSnap!.movieItems.length > 0 ||
+      runtimeSnap!.seriesItems.length > 0 ||
+      runtimeSnap!.liveItems.length > 0);
+
+  if (!hasRuntimeItems && !envCat) return null;
+  if (!hasRuntimeItems && envCat) return envCat;
+
+  const liveCategories: XtreamCategoryItem[] = [...(envCat?.liveCategories || [])];
+  const vodCategories: XtreamCategoryItem[] = [...(envCat?.vodCategories || [])];
+  const seriesCategories: XtreamCategoryItem[] = [...(envCat?.seriesCategories || [])];
+  const liveStreams: XtreamLiveStreamItem[] = [...(envCat?.liveStreams || [])];
+  const vodStreams: XtreamVodStreamItem[] = [...(envCat?.vodStreams || [])];
+  const series: XtreamSeriesItem[] = [...(envCat?.series || [])];
+
+  const seenLive = new Set(liveStreams.map((x) => `${x.providerId}:${x.streamId}`));
+  const seenVod = new Set(vodStreams.map((x) => `${x.providerId}:${x.streamId}`));
+  const seenSer = new Set(series.map((x) => `${x.providerId}:${x.seriesId}`));
+
+  if (runtimeSnap) {
+    const seenLiveCat = new Set<string>();
+    const seenVodCat = new Set<string>();
+    const seenSerCat = new Set<string>();
+    for (const c of runtimeSnap.liveCategories) {
+      liveCategories.push({ id: c.id, name: c.name, type: 'live' });
     }
-    return null;
-  } catch {
-    return null;
+    for (const c of runtimeSnap.movieCategories) {
+      vodCategories.push({ id: c.id, name: c.name, type: 'vod' });
+    }
+    for (const c of runtimeSnap.seriesCategories) {
+      seriesCategories.push({ id: c.id, name: c.name, type: 'series' });
+    }
+    for (const item of runtimeSnap.liveItems) {
+      const k = `${item.providerId}:${item.streamId}`;
+      if (seenLive.has(k)) continue;
+      seenLive.add(k);
+      const prefixedCat = `${item.providerId}:${item.categoryId}`;
+      liveStreams.push({
+        num: liveStreams.length + 1,
+        streamId: item.streamId,
+        name: item.name,
+        categoryId: prefixedCat,
+        streamIcon: item.poster,
+        playbackUrl: item.streamUrl,
+        providerId: item.providerId,
+        providerName: item.providerName,
+      });
+      if (!seenLiveCat.has(prefixedCat)) {
+        seenLiveCat.add(prefixedCat);
+        liveCategories.push({
+          id: prefixedCat,
+          providerId: item.providerId,
+          providerName: item.providerName,
+          name: item.categoryName,
+          type: 'live',
+        });
+      }
+    }
+    for (const item of runtimeSnap.movieItems) {
+      const k = `${item.providerId}:${item.streamId}`;
+      if (seenVod.has(k)) continue;
+      seenVod.add(k);
+      const prefixedCat = `${item.providerId}:${item.categoryId}`;
+      vodStreams.push({
+        num: vodStreams.length + 1,
+        streamId: item.streamId,
+        name: item.name,
+        categoryId: prefixedCat,
+        streamIcon: item.poster,
+        containerExtension: item.containerExtension || 'mp4',
+        rating: item.rating,
+        added: item.year,
+        playbackUrl: item.streamUrl,
+        providerId: item.providerId,
+        providerName: item.providerName,
+      });
+      if (!seenVodCat.has(prefixedCat)) {
+        seenVodCat.add(prefixedCat);
+        vodCategories.push({
+          id: prefixedCat,
+          providerId: item.providerId,
+          providerName: item.providerName,
+          name: item.categoryName,
+          type: 'vod',
+        });
+      }
+    }
+    for (const item of runtimeSnap.seriesItems) {
+      const k = `${item.providerId}:${item.streamId}`;
+      if (seenSer.has(k)) continue;
+      seenSer.add(k);
+      const prefixedCat = `${item.providerId}:${item.categoryId}`;
+      series.push({
+        num: series.length + 1,
+        seriesId: item.streamId,
+        name: item.name,
+        categoryId: prefixedCat,
+        cover: item.poster,
+        plot: item.plot,
+        releaseDate: item.year,
+        rating: item.rating,
+        providerId: item.providerId,
+        providerName: item.providerName,
+      });
+      if (!seenSerCat.has(prefixedCat)) {
+        seenSerCat.add(prefixedCat);
+        seriesCategories.push({
+          id: prefixedCat,
+          providerId: item.providerId,
+          providerName: item.providerName,
+          name: item.categoryName,
+          type: 'series',
+        });
+      }
+    }
   }
+
+  return {
+    providerId: 'all',
+    providerName: 'Catálogo Unificado',
+    liveCategories,
+    liveStreams,
+    vodCategories,
+    vodStreams,
+    seriesCategories,
+    series,
+    counts: {
+      liveCategories: liveCategories.length,
+      liveStreams: liveStreams.length,
+      vodCategories: vodCategories.length,
+      vodStreams: vodStreams.length,
+      seriesCategories: seriesCategories.length,
+      series: series.length,
+    },
+    accountNumber: 1,
+    syncedAt: envCat?.syncedAt ?? Date.now(),
+    expiresAt: envCat?.expiresAt ?? Date.now() + 5 * 60 * 1000,
+    fromCache: true,
+  };
 }
 
 function buildCategoryLookup(
@@ -524,6 +668,44 @@ async function fetchCachedXtreamSeriesInfo(
   const cached = seriesInfoCache.get(key);
   if (cached) return cached;
 
+  const provRes = await Promise.race([
+    getProviderSeriesDetail(providerId, seriesId).catch(() => null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 3200)),
+  ]);
+  if (provRes && Array.isArray(provRes.seasons) && provRes.seasons.length > 0) {
+    const mapped: XtreamSeriesInfoPayload = {
+      seriesId: provRes.seriesId,
+      providerId: provRes.providerId,
+      providerName: provRes.providerName,
+      title: provRes.title,
+      name: provRes.title,
+      cover: provRes.poster,
+      plot: provRes.plot,
+      genre: provRes.genre,
+      releaseDate: provRes.year,
+      rating: provRes.rating,
+      seasons: provRes.seasons.map((s) => ({
+        seasonNumber: s.seasonNumber,
+        name: s.name,
+        episodeCount: s.episodes.length,
+        episodes: s.episodes.map((e) => ({
+          id: e.id,
+          episodeNum: e.episodeNum,
+          seasonNum: e.season,
+          title: e.title,
+          containerExtension: e.containerExtension,
+          duration: e.duration,
+          plot: e.plot,
+          cover: e.still,
+          playbackUrl: e.streamUrl,
+          providerId: provRes.providerId,
+        })),
+      })),
+    };
+    seriesInfoCache.set(key, mapped);
+    return mapped;
+  }
+
   const res = await Promise.race([
     getSeriesInfo(seriesId, providerId).catch(() => ({ ok: false as const })),
     new Promise<{ ok: false }>((resolve) => setTimeout(() => resolve({ ok: false }), 3200)),
@@ -609,3 +791,162 @@ export function mergeXtreamOptionsIntoAvailableLanguages(
   const order: Array<'ES' | 'LAT' | 'VOSE' | 'EN'> = ['ES', 'LAT', 'VOSE', 'EN'];
   return order.filter((code) => merged.has(code));
 }
+
+const LIVE_BROADCASTER_ALIASES: Array<{ re: RegExp; patterns: string[] }> = [
+  { re: /\bd\s*sports\b|\bdirectv\s*sports?\b/i, patterns: ['dsports', 'directv sports', 'directv sport', 'd sports'] },
+  { re: /\btudn\b/i, patterns: ['tudn', 'tudn mx', 'tudn usa'] },
+  { re: /\bdazn\s*laliga\b/i, patterns: ['dazn laliga', 'dazn la liga'] },
+  { re: /\bm\+\s*laliga\b|\bmovistar\s*laliga\b/i, patterns: ['m+ laliga', 'movistar laliga', 'm laliga', 'laliga tv'] },
+  { re: /\bcampeones\b|\bucl\b/i, patterns: ['liga de campeones', 'm campeones', 'm+ campeones', 'movistar campeones'] },
+  { re: /\bmovistar\s*plus\b|\bm\+\s*plus\b/i, patterns: ['movistar plus', 'm+ plus', 'movistar+'] },
+  { re: /\btyc\s*sports?\b/i, patterns: ['tyc sports', 'tyc sport'] },
+  { re: /\btnt\s*sports?\b/i, patterns: ['tnt sports', 'tnt sport'] },
+  { re: /\bfox\s*sports?\b/i, patterns: ['fox sports', 'fox sport'] },
+  { re: /\bteledeporte\b|\btdp\b/i, patterns: ['teledeporte', 'tdp'] },
+];
+
+export function extractXtreamLiveHintsFromSportsRequest(
+  rawUrl: string,
+  channelLabel?: string,
+  titleHint?: string
+): string[] {
+  const hints: string[] = [];
+  const add = (val: string) => {
+    const c = String(val || '')
+      .replace(/\b(?:señal|signal|live|fhd|hd|uhd|4k|1080p|720p|sd|directo|español|espanol|english|ofic?ial|guía\s*tv)\b/gi, ' ')
+      .replace(/[|·•\-()[\]]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (c.length >= 3 && !/^\d+$/.test(c) && !hints.includes(c)) {
+      hints.push(c);
+    }
+  };
+  if (channelLabel) add(channelLabel);
+  try {
+    const u = new URL(rawUrl, 'http://localhost');
+    const qStream = u.searchParams.get('stream') || u.searchParams.get('ch') || u.searchParams.get('channel') || '';
+    if (qStream) add(qStream.replace(/[_-]+/g, ' '));
+    const pathSlug = u.pathname.split('/').pop()?.replace(/\.(php|html?|m3u8)$/i, '') || '';
+    if (pathSlug && !/^(live\d*|stream|index|play|embed|canal\d*)$/i.test(pathSlug)) {
+      add(pathSlug.replace(/[_-]+/g, ' '));
+    }
+  } catch {
+    // ignore URL parse error
+  }
+  if (titleHint && /dsports|tudn|dazn|movistar|espn|tyc|fox|tnt|sky|bein|gol/i.test(titleHint)) {
+    add(titleHint);
+  }
+  return hints;
+}
+
+export async function findXtreamLiveChannelMatches(params: {
+  channelHints: string[];
+  preferLang?: string;
+  limit?: number;
+}): Promise<TrackRecord[]> {
+  const rawHints = params.channelHints.map((h) => String(h || '').trim()).filter((h) => h.length >= 3);
+  if (rawHints.length === 0) return [];
+
+  const catalog = await loadUnifiedXtreamCatalogFast(1800);
+  if (!catalog || catalog.liveStreams.length === 0) return [];
+
+  const expandedPatterns: Array<{ norm: string; tokens: string[]; numberSuffix?: string }> = [];
+  const seenPat = new Set<string>();
+  const registerPat = (raw: string) => {
+    const norm = normalizeMatchText(raw, false);
+    if (!norm || norm.length < 3 || seenPat.has(norm)) return;
+    seenPat.add(norm);
+    const numMatch = norm.match(/\b(\d{1,2})\b$/);
+    expandedPatterns.push({
+      norm,
+      tokens: norm.split(' ').filter((t) => t.length >= 2),
+      numberSuffix: numMatch ? numMatch[1] : undefined,
+    });
+  };
+
+  for (const h of rawHints) {
+    registerPat(h);
+    for (const alias of LIVE_BROADCASTER_ALIASES) {
+      if (alias.re.test(h)) {
+        for (const p of alias.patterns) registerPat(p);
+      }
+    }
+  }
+
+  const catLookup = buildCategoryLookup(catalog.liveCategories);
+  const scored: Array<{ item: XtreamLiveStreamItem; meta: ParsedXtreamVodMeta; score: number }> = [];
+  const normPref = String(params.preferLang || 'ES').toUpperCase();
+
+  for (const item of catalog.liveStreams) {
+    const catName =
+      catLookup.get(item.categoryId) ||
+      catLookup.get(`${item.providerId}:${item.categoryId}`) ||
+      'Live';
+    const meta = parseXtreamVodTitleMeta(item.name, catName, 'm3u8');
+    const candNorm = normalizeMatchText(meta.cleanTitle, false);
+    if (!candNorm || /\b(?:backup|test|event|vod)\b/.test(candNorm)) continue;
+
+    let bestPatScore = 0;
+    for (const pat of expandedPatterns) {
+      if (candNorm === pat.norm) {
+        bestPatScore = Math.max(bestPatScore, 120);
+        continue;
+      }
+      if (pat.numberSuffix) {
+        const candNum = candNorm.match(/\b(\d{1,2})\b$/)?.[1];
+        if (candNum && candNum !== pat.numberSuffix) continue;
+      } else if (/\b[2-9]\b$/.test(candNorm) && !/\b[2-9]\b$/.test(pat.norm)) {
+        // Don't match "DSports 2" / "ESPN 2" with high score when plain "DSports" / "ESPN" was asked
+        if (candNorm.includes(pat.norm)) {
+          bestPatScore = Math.max(bestPatScore, 74);
+        }
+        continue;
+      }
+      if (candNorm.includes(pat.norm)) {
+        bestPatScore = Math.max(bestPatScore, 102);
+      } else if (pat.tokens.length >= 2 && pat.tokens.every((t) => candNorm.includes(t))) {
+        bestPatScore = Math.max(bestPatScore, 92);
+      }
+    }
+    if (bestPatScore < 74) continue;
+
+    const langBonus =
+      meta.lang === normPref
+        ? 30
+        : meta.lang === 'ES' || meta.lang === 'LAT'
+        ? 18
+        : meta.lang === 'EN'
+        ? 8
+        : 0;
+    const qualityBonus = Math.max(0, 12 - meta.qualityTier * 4);
+    scored.push({
+      item,
+      meta,
+      score: bestPatScore + langBonus + qualityBonus,
+    });
+  }
+
+  scored.sort((a, b) => b.score - a.score || a.meta.qualityTier - b.meta.qualityTier);
+
+  const out: TrackRecord[] = [];
+  const seenProviders = new Set<string>();
+  const maxItems = params.limit ?? 8;
+  for (const entry of scored) {
+    const dedupKey = `${entry.item.providerId}:${entry.item.streamId}`;
+    if (seenProviders.has(dedupKey)) continue;
+    seenProviders.add(dedupKey);
+    out.push({
+      id: `xtream-live-${entry.item.providerId}-${entry.item.streamId}`,
+      label: `${entry.item.name} (${entry.item.providerName})`,
+      lang: toExtractorLang(entry.meta.lang),
+      quality: entry.meta.quality,
+      sourceUrl: entry.item.playbackUrl,
+      resolvedStreamUrl: entry.item.playbackUrl,
+      resolverType: 'direct_hls',
+    });
+    if (out.length >= maxItems) break;
+  }
+
+  return out;
+}
+

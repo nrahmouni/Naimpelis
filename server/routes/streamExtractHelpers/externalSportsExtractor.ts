@@ -12,6 +12,11 @@ import {
   verifyM3u8HasCleanVideoFrame,
 } from '../../extractors/sportsExtractor.ts';
 import { channelHealthMonitor } from '../../services/channelHealthMonitor.ts';
+import {
+  extractXtreamLiveHintsFromSportsRequest,
+  findXtreamLiveChannelMatches,
+} from '../../services/xtreamVodMatcher.ts';
+import { raceFastLiveTracks } from '../../services/liveFastResolver.ts';
 
 export function formatExtractResponseForClient(
   req: express.Request,
@@ -64,6 +69,7 @@ export async function handleExternalSportsExtract(params: {
   resolverType: string;
   preferLang: string;
   titleHint: string;
+  channelLabel?: string;
   cacheKey: string;
   setCache: (key: string, val: ExtractedStreamResult) => void;
   sendOk: (payload: ExtractedStreamResult) => express.Response;
@@ -74,6 +80,7 @@ export async function handleExternalSportsExtract(params: {
     resolverType,
     preferLang,
     titleHint,
+    channelLabel,
     cacheKey,
     setCache,
     sendOk,
@@ -173,6 +180,63 @@ export async function handleExternalSportsExtract(params: {
     return sendOk(result);
   }
 
+  // Try matching connected Xtream live channels (84k+ channels) for failed sports_channel streams
+  if (resolverType === 'sports_channel') {
+    const liveHints = extractXtreamLiveHintsFromSportsRequest(
+      fullTargetUrl,
+      channelLabel,
+      titleHint
+    );
+    if (liveHints.length > 0) {
+      const xtreamLiveMatches = await findXtreamLiveChannelMatches({
+        channelHints: liveHints,
+        preferLang,
+        limit: 6,
+      }).catch(() => []);
+      if (xtreamLiveMatches.length > 0) {
+        const raced = await raceFastLiveTracks(
+          xtreamLiveMatches.map((tr) => ({
+            id: tr.id,
+            label: tr.label,
+            lang: tr.lang,
+            quality: tr.quality,
+            sourceUrl: tr.sourceUrl,
+            resolverType: tr.resolverType || 'direct_hls',
+          })),
+          {
+            channelId: `sports-xtream-${liveHints[0]}`,
+            titleHint: channelLabel || titleHint,
+            preferLang,
+            timeoutMs: 2800,
+          }
+        ).catch(() => null);
+        if (raced?.ok && raced.streamUrl && raced.mode === 'hls') {
+          const result: ExtractedStreamResult = {
+            success: true,
+            mode: 'hls',
+            streamUrl: raced.streamUrl,
+            rawStreamUrl: raced.streamUrl,
+            title: raced.winningTrack?.label || channelLabel || titleHint || 'Directo HD',
+            requestedLang: preferLang || 'ES',
+            resolvedLang: raced.winningTrack?.lang || preferLang || 'ES',
+            expiresAt: Date.now() + 2 * 60 * 1000,
+          };
+          setCache(cacheKey, result);
+          return sendOk(result);
+        }
+      }
+    }
+
+    // Never wrap dead third-party sports HTML pages into a broken embed-proxy iframe;
+    // return 404 so the player fails over immediately to Signal 2 / backup channel.
+    channelHealthMonitor.recordPlaybackFeedback(fullTargetUrl, { failed: true });
+    return sendJsonStatus(404, {
+      success: false,
+      canUseCloudBrowser: false,
+      error: 'Señal sin emisión directa activa; cambiando automáticamente a la siguiente señal.',
+    });
+  }
+
   let canFrame = false;
   let canProxyInline = false;
   try {
@@ -201,7 +265,7 @@ export async function handleExternalSportsExtract(params: {
 
   const useInlineProxy =
     canProxyInline ||
-    /(^|\.)(vidfast\.[a-z.]+|vidsrc\.[a-z.]+|videm\.buzz|2embed\.cc)/i.test(fullTargetUrl);
+    /(^|\.)(vidfast\.[a-z.]+|2embed\.cc)/i.test(fullTargetUrl);
   const inlineEmbedUrl = useInlineProxy
     ? `/api/embed-proxy?url=${encodeURIComponent(fullTargetUrl)}`
     : fullTargetUrl;

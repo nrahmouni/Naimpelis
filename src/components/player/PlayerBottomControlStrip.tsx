@@ -194,33 +194,69 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
             })()}
           </div>
         ) : videoState.isLive && videoState.tracks.length > 1 ? (
-          <div className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-2xl border border-white/[0.08] shrink-0">
-            {videoState.tracks.slice(0, 5).map((tr, idx) => {
+          <div className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-2xl border border-white/[0.08] max-w-full overflow-x-auto no-scrollbar">
+            {videoState.tracks.map((tr, idx) => {
               const active = idx === videoState.activeTrackIndex;
               const hasZh = String(tr.lang || '').toUpperCase() === 'ZH' || /中文/.test(tr.label || '');
               const rawLbl = String(tr.label || '');
+              const srcUrl = String(tr.sourceUrl || '');
               const provName = tr.providerName
-                ? tr.providerName.replace(/\s*Pro$/i, '')
+                ? tr.providerName.replace(/\s*Pro$/i, '').trim()
                 : tr.providerId === 'dana4k'
                   ? 'Dana 4K'
-                  : tr.providerId === 'octopus'
-                    ? 'Octopus'
-                    : /dana\s*4k/i.test(rawLbl)
-                      ? 'Dana 4K'
-                      : /octopus/i.test(rawLbl)
-                        ? 'Octopus'
-                        : /belix/i.test(rawLbl)
-                          ? 'Belix'
-                          : /edge\s*2/i.test(rawLbl)
-                            ? 'Edge 2'
-                            : '';
-              const qShort = /4k|2160|uhd/i.test(`${rawLbl} ${tr.quality || ''}`)
+                  : tr.providerId === 'vod4k'
+                    ? 'VOD 4K'
+                    : tr.providerId === 'octopus'
+                      ? 'Octopus'
+                      : tr.providerId === 'sharkpro'
+                        ? 'Shark'
+                        : /dana\s*4k/i.test(rawLbl)
+                          ? 'Dana 4K'
+                          : /vod\s*4k/i.test(rawLbl)
+                            ? 'VOD 4K'
+                            : /shark/i.test(rawLbl)
+                              ? 'Shark'
+                              : /24\s*tv/i.test(rawLbl)
+                                ? '24TV'
+                                : /2m2h/i.test(rawLbl)
+                                  ? '2M2H'
+                                  : /active/i.test(rawLbl)
+                                    ? 'Active'
+                                    : /adtupac/i.test(rawLbl)
+                                      ? 'Adtupac'
+                                      : /ultra\s*vip/i.test(rawLbl)
+                                        ? 'Ultra VIP'
+                                        : /sult/i.test(rawLbl)
+                                          ? 'Sult VO'
+                                          : /octopus/i.test(rawLbl)
+                                            ? 'Octopus'
+                                            : /belix|\/api\/belix/i.test(`${rawLbl} ${srcUrl}`)
+                                              ? 'Belix'
+                                              : /edge\s*2/i.test(rawLbl)
+                                                ? 'Edge 2'
+                                                : /rtve/i.test(`${rawLbl} ${srcUrl}`)
+                                                  ? 'RTVE'
+                                                  : /atresplayer/i.test(`${rawLbl} ${srcUrl}`)
+                                                    ? 'Atresplayer'
+                                                    : /mitele|mediaset/i.test(`${rawLbl} ${srcUrl}`)
+                                                      ? 'Mediaset'
+                                                      : /dvb|90\.163\.85\.113/i.test(`${rawLbl} ${srcUrl}`)
+                                                        ? 'DVB'
+                                                        : '';
+              const labelWithoutProvider = rawLbl
+                .replace(/\b(?:dana\s*4k|vod\s*4k|shark\s*4k|vip\s*4k|spain\s*4k)\b/gi, ' ')
+                .trim();
+              const qualityRaw = String(tr.quality || '')
+                .replace(/\b(?:dana\s*4k|vod\s*4k|shark\s*4k|vip\s*4k|spain\s*4k)\b/gi, ' ')
+                .trim();
+              const qHay = `${labelWithoutProvider} ${qualityRaw}`;
+              const qShort = /4k|2160|uhd/i.test(qHay)
                 ? '4K'
-                : /1080|fhd/i.test(`${rawLbl} ${tr.quality || ''}`)
+                : /1080|fhd/i.test(qHay)
                   ? 'FHD'
-                  : /720|estabilidad/i.test(`${rawLbl} ${tr.quality || ''}`)
+                  : /720|estabilidad/i.test(qHay)
                     ? '720p'
-                    : /hd/i.test(`${rawLbl} ${tr.quality || ''}`)
+                    : /hd/i.test(qHay)
                       ? 'HD'
                       : '';
               const langCode = String(tr.lang || '').toUpperCase();
@@ -240,7 +276,7 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
                     triggerHaptic('light');
                     onSelectTrack(idx, 0);
                   }}
-                  className={`min-h-[38px] px-2.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer active:scale-95 transition-all inline-flex items-center gap-1.5 tv-focus-ring ${
+                  className={`min-h-[38px] px-2.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all inline-flex items-center gap-1.5 tv-focus-ring ${
                     active
                       ? 'bg-[#7C3AED] text-white shadow-[0_4px_14px_rgba(124,58,237,0.4)]'
                       : 'text-zinc-300 hover:bg-white/10'

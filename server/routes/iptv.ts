@@ -66,7 +66,7 @@ export function getLiveVoiceChannels() {
   const merged = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS);
   return buildUnifiedPrioritizedChannels(merged).map((ch) => ({
     ...ch,
-    logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
+    logoUrl: resolveOfficialChannelLogoUrl(ch) || undefined,
   }));
 }
 
@@ -114,35 +114,48 @@ export function registerIptvAndTdtRoutes(
   const { getPublicOrigin } = deps;
 
   app.get('/api/catalog/tdt', async (req, res) => {
-    if (req.query.refresh === '1') {
-      await refreshLiveIptvRegistry(true).catch(() => undefined);
-      invalidateIptvChannelCache();
-    } else if (getIptvSyncMeta().lastSyncAt === 0) {
-      await Promise.race([
-        refreshLiveIptvRegistry(false).catch(() => undefined),
-        new Promise<void>((resolve) => setTimeout(resolve, 1800)),
-      ]);
-    } else {
-      void refreshLiveIptvRegistry(false).catch(() => undefined);
-    }
+    const forceRefresh = req.query.refresh === '1';
     const belixSidMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)belix_sid=([^;]+)/);
     const belixSessionKey =
       String(req.headers['x-belix-session'] || '').trim() ||
       (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
       'default';
     const belixActive = isAnyBelixConnected(belixSessionKey);
-    if (isXtreamEnvConfigured() && getCachedXtreamLiveTdtChannels().length === 0) {
-      await Promise.race([
-        syncXtreamEnvCatalog(false, 'all').catch(() => undefined),
-        new Promise<void>((resolve) => setTimeout(resolve, 1800)),
-      ]);
+
+    const warmupTasks: Promise<unknown>[] = [];
+    if (forceRefresh) {
+      warmupTasks.push(
+        refreshLiveIptvRegistry(true)
+          .then(() => invalidateIptvChannelCache())
+          .catch(() => undefined)
+      );
+    } else if (getIptvSyncMeta().lastSyncAt === 0) {
+      warmupTasks.push(refreshLiveIptvRegistry(false).catch(() => undefined));
+    } else {
+      void refreshLiveIptvRegistry(false).catch(() => undefined);
     }
+
+    if (isXtreamEnvConfigured() && (forceRefresh || getCachedXtreamLiveTdtChannels().length === 0)) {
+      warmupTasks.push(syncXtreamEnvCatalog(forceRefresh, 'all').catch(() => undefined));
+    }
+
+    const spainWarmupPromise = getVerifiedSpainXtreamChannels({
+      waitWarmupMs: forceRefresh ? 3500 : 1400,
+      forceReprobe: forceRefresh,
+    }).catch(() => []);
+    warmupTasks.push(spainWarmupPromise);
+
+    await Promise.race([
+      Promise.allSettled(warmupTasks),
+      new Promise<void>((resolve) => setTimeout(resolve, forceRefresh ? 4500 : 1800)),
+    ]);
+
     const belixChannels = getBelixLiveChannels({ sessionKey: belixSessionKey });
     const belixStreamIds = new Set(belixChannels.map((c) => c.streamId));
-    const verifiedSpainChannels = await getVerifiedSpainXtreamChannels({
-      waitWarmupMs: req.query.refresh === '1' ? 5000 : 2000,
-      forceReprobe: req.query.refresh === '1',
-    }).catch(() => []);
+    const verifiedSpainChannels = await Promise.race([
+      spainWarmupPromise,
+      new Promise<Awaited<typeof spainWarmupPromise>>((resolve) => setTimeout(() => resolve([]), 50)),
+    ]);
     const verifiedSpainStreamIds = new Set(verifiedSpainChannels.map((c) => c.streamId));
     const xtreamEnvChannels = getCachedXtreamLiveTdtChannels().filter(
       (c) => !belixStreamIds.has(c.streamId) && !verifiedSpainStreamIds.has(c.streamId)
@@ -159,7 +172,7 @@ export function registerIptvAndTdtRoutes(
       iptvMeta: getIptvSyncMeta(),
       channels: buildUnifiedPrioritizedChannels(merged).map((ch) => ({
         ...ch,
-        logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
+        logoUrl: resolveOfficialChannelLogoUrl(ch) || undefined,
       })),
     });
   });
@@ -223,7 +236,7 @@ export function registerIptvAndTdtRoutes(
         const groupTitle = IPTV_GROUP_TITLES[ch.category] || 'TDT y Directo';
         const epgId = getIptvEpgId(ch.id);
         const chno = ch.dial ? String(ch.dial) : String(idx + 1);
-        const officialLogo = ch.logoUrl || resolveOfficialChannelLogoUrl(ch);
+        const officialLogo = resolveOfficialChannelLogoUrl(ch) || ch.logoUrl;
         const logoUrl =
           officialLogo && /^https?:\/\//i.test(officialLogo)
             ? officialLogo
@@ -767,7 +780,7 @@ export function registerIptvAndTdtRoutes(
           const epgId = getIptvEpgId(ch.id);
           if (emittedChannelIds.has(epgId)) continue;
           emittedChannelIds.add(epgId);
-          const officialLogo = ch.logoUrl || resolveOfficialChannelLogoUrl(ch);
+          const officialLogo = resolveOfficialChannelLogoUrl(ch) || ch.logoUrl;
           const logoUrl =
             officialLogo && /^https?:\/\//i.test(officialLogo)
               ? officialLogo

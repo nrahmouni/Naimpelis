@@ -12,8 +12,6 @@ import {
   extract2EmbedEnglishTracks,
   extractBingetrixEnglishTracks,
   extractGhostflixVidboltTracks,
-  extractVidRockHlsTracks,
-  extractVidsrcBuzzHlsTracks,
   isMovidyVerUrl,
 } from '../../extractors/bingetrixMovidy.ts';
 import { isGnulaHdUrl } from '../../extractors/gnulaHdExtractor.ts';
@@ -105,11 +103,11 @@ export async function handleCatalogMediaExtract(
   const bingetrixTvMatch = rawInput.match(/bingetrix\.[a-z]+\/(?:watch\/)?tv\/(\d+)\/(\d+)\/(\d+)/i);
   const bingetrixMovieMatch = rawInput.match(/bingetrix\.[a-z]+\/(?:watch|movie)\/(\d+)/i);
   const externalEmbedTvMatch =
-    rawInput.match(/(?:vidfast|vidlink|vidsrc|videm|vidrock|vidnest|vsembed|ghostflix|vidbolt)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?tv\/(tt\d+|\d+)\/(\d+)[/-](\d+)/i) ||
+    rawInput.match(/(?:vidlink|vidsrc|videm|vsembed|ghostflix|vidbolt)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?tv\/(tt\d+|\d+)\/(\d+)[/-](\d+)/i) ||
     rawInput.match(/2embed\.[a-z]+\/(?:embedtv|tv)\/(tt\d+|\d+)(?:&s=|\/)(\d+)(?:&e=|\/)(\d+)/i) ||
     rawInput.match(/[?&]tmdb=(\d+).*?[?&]season=(\d+).*?[?&]episode=(\d+)/i);
   const externalEmbedMovieMatch = !externalEmbedTvMatch
-    ? rawInput.match(/(?:vidfast|vidlink|vidsrc|videm|vidrock|vidnest|vsembed|2embed|ghostflix|vidbolt)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?(?:(?:movies?|watch)\/)?(tt\d+|\d+)/i) ||
+    ? rawInput.match(/(?:vidlink|vidsrc|videm|vsembed|2embed|ghostflix|vidbolt)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?(?:(?:movies?|watch)\/)?(tt\d+|\d+)/i) ||
       rawInput.match(/[?&]tmdb=(\d+)/i)
     : null;
 
@@ -231,10 +229,8 @@ export async function handleCatalogMediaExtract(
   };
   let esTracks: TrackRecord[] = [];
   let xtreamTracks: TrackRecord[] = [];
-  let vidRockTracks: TrackRecord[] = [];
   let bingetrixEnTracks: TrackRecord[] = [];
   let twoEmbedEnTracks: TrackRecord[] = [];
-  let vidBuzzHlsTracks: TrackRecord[] = [];
   let clipboxDirectExtracted: { tracks: TrackRecord[]; subtitles: any[] } = {
     tracks: [],
     subtitles: [],
@@ -278,7 +274,7 @@ export async function handleCatalogMediaExtract(
       tmdbDirector,
       tmdbRuntimeMin,
     }),
-    5800,
+    7800,
     [] as TrackRecord[]
   ).then((res) => {
     movidyTracks = res;
@@ -424,21 +420,6 @@ export async function handleCatalogMediaExtract(
       })
     : Promise.resolve();
 
-  const vidRockP =
-    resolvedTmdbId && !isSpanishNativePreferred
-      ? withExtractTimeout(
-          extractVidRockHlsTracks({
-            tmdbId: resolvedTmdbId,
-            mediaType: effectiveMediaType,
-            season: effectiveSeason,
-            episode: effectiveEpisode,
-          }),
-          enTimeout,
-          [] as TrackRecord[]
-        ).then((res) => {
-          vidRockTracks = res;
-        })
-      : Promise.resolve();
   const bingetrixEnP =
     resolvedTmdbId && !isSpanishNativePreferred
       ? withExtractTimeout(
@@ -448,7 +429,7 @@ export async function handleCatalogMediaExtract(
             season: effectiveSeason,
             episode: effectiveEpisode,
           }),
-          3600,
+          3800,
           [] as TrackRecord[]
         ).then((res) => {
           bingetrixEnTracks = res;
@@ -468,22 +449,6 @@ export async function handleCatalogMediaExtract(
           [] as TrackRecord[]
         ).then((res) => {
           twoEmbedEnTracks = res;
-        })
-      : Promise.resolve();
-  const vidBuzzP =
-    (resolvedTmdbId || tmdbImdbId) && !isSpanishNativePreferred
-      ? withExtractTimeout(
-          extractVidsrcBuzzHlsTracks({
-            tmdbId: resolvedTmdbId || undefined,
-            imdbId: tmdbImdbId,
-            mediaType: effectiveMediaType,
-            season: effectiveSeason,
-            episode: effectiveEpisode,
-          }),
-          enTimeout,
-          [] as TrackRecord[]
-        ).then((res) => {
-          vidBuzzHlsTracks = res;
         })
       : Promise.resolve();
   const ghostflixP =
@@ -536,7 +501,7 @@ export async function handleCatalogMediaExtract(
                 preferLang: preferQualityFirst ? 'ES' : preferLang,
                 limit: 16,
               }).then((r) => r.tracks),
-          3200,
+          4200,
           [] as TrackRecord[]
         ).then((res) => {
           xtreamTracks = res;
@@ -557,24 +522,22 @@ export async function handleCatalogMediaExtract(
   ]);
   const secondaryAllPromise = Promise.all([
     clipboxDirectP,
-    vidRockP,
+    ghostflixP,
     bingetrixEnP,
     twoEmbedEnP,
-    vidBuzzP,
-    ghostflixP,
   ]);
 
   if (isSpanishNativePreferred) {
-    // Wait for native Spanish sources, or return within 1.4s after a verified direct ES track is ready
+    // Wait for Movidy + Xtream + native Spanish sources, or return within 1.8s after a verified direct ES track is ready
     await Promise.race([
       primaryAllPromise,
-      fastDirectEsReadyPromise.then(
-        () => new Promise<void>((resolve) => setTimeout(resolve, 1400))
+      Promise.all([movidyP, xtreamMultiServerP, fastDirectEsReadyPromise]).then(
+        () => new Promise<void>((resolve) => setTimeout(resolve, 1200))
       ),
     ]);
   } else {
     await primaryAllPromise;
-    const primaryHasPreferredSpanish =
+    const primaryHasDirectVerifiedSpanish =
       prefersSpanishTier &&
       [
         ...xtreamTracks,
@@ -588,14 +551,15 @@ export async function handleCatalogMediaExtract(
       ].some(
         (t) =>
           String(t.lang || '').toUpperCase() === preferLang &&
-          t.resolverType !== 'web_embed'
+          (t.resolverType === 'direct_hls' || t.resolverType === 'direct_mp4') &&
+          Boolean(t.resolvedStreamUrl)
       );
 
-    if (primaryHasPreferredSpanish) {
-      // Primary Spanish sources already succeeded; allow only a brief 350ms grace window for EN tracks
+    if (primaryHasDirectVerifiedSpanish) {
+      // Primary Spanish/Castellano sources already yielded a verified direct stream; brief grace window for multi-lang tracks
       await Promise.race([
         secondaryAllPromise,
-        new Promise<void>((resolve) => setTimeout(resolve, 350)),
+        new Promise<void>((resolve) => setTimeout(resolve, 500)),
       ]);
     } else {
       await secondaryAllPromise;
@@ -607,12 +571,10 @@ export async function handleCatalogMediaExtract(
   const clipboxTracks: TrackRecord[] = clipboxDirectExtracted?.tracks || [];
   const clipboxSubtitles = clipboxDirectExtracted?.subtitles || [];
   const enTracks: TrackRecord[] = [
-    ...vidRockTracks,
     ...ghostflixTracks,
     ...clipboxTracks,
     ...bingetrixEnTracks,
     ...twoEmbedEnTracks,
-    ...vidBuzzHlsTracks,
   ];
   const montepinarTracks: TrackRecord[] = montepinarExtracted?.tracks || [];
   const montepinarSubtitles = montepinarExtracted?.subtitles || [];

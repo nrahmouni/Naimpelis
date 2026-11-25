@@ -656,6 +656,75 @@ export function getProvidersStatusSummary(): ProvidersStatusSummaryPublic {
   };
 }
 
+export interface ConnectedProvidersRuntimeCatalog {
+  connectedCount: number;
+  liveItems: ProviderCatalogItemPublic[];
+  movieItems: ProviderCatalogItemPublic[];
+  seriesItems: ProviderCatalogItemPublic[];
+  liveCategories: ProviderCategoryPublic[];
+  movieCategories: ProviderCategoryPublic[];
+  seriesCategories: ProviderCategoryPublic[];
+}
+
+export function getConnectedProvidersRuntimeCatalog(): ConnectedProvidersRuntimeCatalog {
+  const configs = getUnifiedProviderConfigs();
+  const liveItems: ProviderCatalogItemPublic[] = [];
+  const movieItems: ProviderCatalogItemPublic[] = [];
+  const seriesItems: ProviderCatalogItemPublic[] = [];
+  const liveCategories: ProviderCategoryPublic[] = [];
+  const movieCategories: ProviderCategoryPublic[] = [];
+  const seriesCategories: ProviderCategoryPublic[] = [];
+  let connectedCount = 0;
+
+  for (const cfg of configs) {
+    const st = runtimeStates.get(cfg.id);
+    if (!st) continue;
+    if (st.connected || st.liveItems.length > 0 || st.movieItems.length > 0 || st.seriesItems.length > 0) {
+      connectedCount += 1;
+      liveItems.push(...st.liveItems);
+      movieItems.push(...st.movieItems);
+      seriesItems.push(...st.seriesItems);
+      liveCategories.push(...st.liveCategories);
+      movieCategories.push(...st.movieCategories);
+      seriesCategories.push(...st.seriesCategories);
+    }
+  }
+
+  return {
+    connectedCount,
+    liveItems,
+    movieItems,
+    seriesItems,
+    liveCategories,
+    movieCategories,
+    seriesCategories,
+  };
+}
+
+export async function getConnectedProvidersCatalogSnapshot(
+  waitIfColdMs = 900
+): Promise<ConnectedProvidersRuntimeCatalog> {
+  const immediate = getConnectedProvidersRuntimeCatalog();
+  if (immediate.connectedCount > 0 || waitIfColdMs <= 0) {
+    return immediate;
+  }
+
+  const pending: Promise<unknown>[] = [];
+  for (const st of runtimeStates.values()) {
+    if (st.connectPromise) {
+      pending.push(st.connectPromise.catch(() => null));
+    }
+  }
+  if (pending.length > 0) {
+    await Promise.race([
+      Promise.allSettled(pending),
+      new Promise<void>((resolve) => setTimeout(resolve, waitIfColdMs)),
+    ]);
+  }
+  return getConnectedProvidersRuntimeCatalog();
+}
+
+
 export function queryProvidersCatalog(params: {
   scope?: string;
   kind?: ProviderMediaKind | 'all';

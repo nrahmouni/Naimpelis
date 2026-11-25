@@ -44,6 +44,11 @@ import { TDT_NATIONAL_AND_PAY_CHANNELS } from '../data/tdtNationalAndPayChannels
 import { registerChiringuitoRoutes } from './chiringuitoRoutes.ts';
 import { extractLiveSportsHlsDirect } from '../extractors/sportsExtractor.ts';
 import { livePushHub } from '../services/livePushHub.ts';
+import { getConnectedProvidersRuntimeCatalog } from '../services/providers/xtreamProvidersService.ts';
+import {
+  extractXtreamLiveHintsFromSportsRequest,
+  findXtreamLiveChannelMatches,
+} from '../services/xtreamVodMatcher.ts';
 
 const championsHubCache = new Map<string, { payload: any; ts: number }>();
 
@@ -615,6 +620,37 @@ async function fetchAndCacheFootballBoard(opts: {
             verifiedSchedule: fastSchedule,
           });
         }
+      }
+
+      // Enrich fixtures with verified live channels from connected Xtream servers (zero-latency RAM search)
+      const runtimeLiveCatalog = getConnectedProvidersRuntimeCatalog();
+      if (runtimeLiveCatalog.liveItems.length > 0) {
+        await Promise.all(
+          items
+            .filter((it) => it.statusState !== 'finished' && Array.isArray(it.channels) && it.channels.length > 0)
+            .slice(0, 35)
+            .map(async (it) => {
+              const hintsSet = new Set<string>();
+              for (const ch of it.channels.slice(0, 4)) {
+                for (const h of extractXtreamLiveHintsFromSportsRequest(ch.sourceUrl || '', ch.label || '')) {
+                  hintsSet.add(h);
+                }
+              }
+              if (hintsSet.size === 0) return;
+              const xtMatches = await findXtreamLiveChannelMatches({
+                channelHints: Array.from(hintsSet).slice(0, 3),
+                preferLang: preferredLang,
+                limit: 2,
+              }).catch(() => []);
+              const existingUrls = new Set(it.channels.map((c: any) => c.sourceUrl));
+              for (const xch of xtMatches) {
+                if (xch.sourceUrl && !existingUrls.has(xch.sourceUrl)) {
+                  existingUrls.add(xch.sourceUrl);
+                  it.channels.push(xch);
+                }
+              }
+            })
+        );
       }
 
       const cleanItems = items.map((it) => {

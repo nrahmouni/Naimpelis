@@ -153,7 +153,6 @@ export function rankCandidateTracks({
       tr.id.startsWith('clipbox-') ||
       tr.id.startsWith('vidbolt-') ||
       tr.id.startsWith('bingetrix-') ||
-      tr.id.startsWith('vidrock-') ||
       tr.id.startsWith('2embed-') ||
       tr.id.startsWith('vidbuzz-') ||
       tr.resolverType === 'bingetrix_en'

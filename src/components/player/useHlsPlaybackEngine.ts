@@ -343,8 +343,8 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
           if (frameHealthInterval) clearInterval(frameHealthInterval);
           liveHealthMonitor.reset();
           frameHealthInterval = setInterval(() => {
-            if (cancelled || !video || video.paused || hlsRef.current !== hls) return;
-            const res = liveHealthMonitor.check(video, Date.now());
+            if (cancelled || !video || hlsRef.current !== hls) return;
+            const res = liveHealthMonitor.check(video, Date.now(), videoState.isPlaying);
             if (res.isStalled) {
               setIsBuffering(true);
             }
@@ -446,10 +446,12 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
       let lastNonFatalRecoverAt = 0;
 
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
-        networkRecoveries = 0;
-        parsingBurstErrors = 0;
-        liveNetworkStallBurst = 0;
-        setStreamError(null);
+        if (video.videoWidth > 0 && video.readyState >= 2) {
+          networkRecoveries = 0;
+          parsingBurstErrors = 0;
+          liveNetworkStallBurst = 0;
+          setStreamError(null);
+        }
       });
 
       hls.on(Hls.Events.ERROR, (_evt, data) => {

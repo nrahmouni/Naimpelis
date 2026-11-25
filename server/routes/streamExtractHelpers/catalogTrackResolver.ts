@@ -149,16 +149,17 @@ export async function resolveOrderedCandidateTracks(opts: {
     (a, b) => a - b
   );
 
-  for (const tierScore of tierScores) {
-    const tierWebEmbedCandidates: { idx: number; track: TrackRecord; url: string }[] = [];
+  const allWebEmbedCandidates: { idx: number; track: TrackRecord; url: string }[] = [];
 
+  // Pass 1: Exhaust ALL native HLS/MP4 tracks across every language tier BEFORE ever accepting a web_embed
+  for (const tierScore of tierScores) {
     for (let i = 0; i < orderedTracks.length; i++) {
       if (getLangScore(orderedTracks[i].lang) !== tierScore) continue;
       const candidate = orderedTracks[i];
 
       if (candidate.resolverType === 'web_embed') {
         if (!directOnly && candidate.sourceUrl) {
-          tierWebEmbedCandidates.push({ idx: i, track: candidate, url: candidate.sourceUrl });
+          allWebEmbedCandidates.push({ idx: i, track: candidate, url: candidate.sourceUrl });
         } else {
           deadTrackIndices.add(i);
         }
@@ -190,7 +191,7 @@ export async function resolveOrderedCandidateTracks(opts: {
             resolverType: 'web_embed',
             sourceUrl: resolvedMv.embedUrl,
           };
-          tierWebEmbedCandidates.push({
+          allWebEmbedCandidates.push({
             idx: i,
             track: orderedTracks[i],
             url: resolvedMv.embedUrl,
@@ -235,29 +236,29 @@ export async function resolveOrderedCandidateTracks(opts: {
     }
 
     if (primaryStreamUrl) break;
+  }
 
-    if (!directOnly && tierWebEmbedCandidates.length > 0) {
-      tierWebEmbedCandidates.sort(
-        (a, b) =>
-          sourcePriority(a.track) - sourcePriority(b.track) ||
-          getTrackHealthScore(a.track) - getTrackHealthScore(b.track)
-      );
-      for (const cand of tierWebEmbedCandidates) {
-        const alive = await verifyWebEmbedCandidateAlive(cand.track, cand.url);
-        if (!alive) {
-          deadTrackIndices.add(cand.idx);
-          continue;
-        }
-        const proxiedWeb = toProxiedEmbedUrl(cand.url, isSandboxedFrame);
-        orderedTracks[cand.idx] = { ...cand.track, resolvedStreamUrl: proxiedWeb };
-        primaryStreamUrl = proxiedWeb;
-        primaryMode = 'embed';
-        resolvedTrack = orderedTracks[cand.idx];
-        break;
+  // Pass 2: Only if zero native streams succeeded across all languages, fall back to verified web embeds
+  if (!primaryStreamUrl && !directOnly && allWebEmbedCandidates.length > 0) {
+    allWebEmbedCandidates.sort(
+      (a, b) =>
+        getLangScore(a.track.lang) - getLangScore(b.track.lang) ||
+        sourcePriority(a.track) - sourcePriority(b.track) ||
+        getTrackHealthScore(a.track) - getTrackHealthScore(b.track)
+    );
+    for (const cand of allWebEmbedCandidates) {
+      const alive = await verifyWebEmbedCandidateAlive(cand.track, cand.url);
+      if (!alive) {
+        deadTrackIndices.add(cand.idx);
+        continue;
       }
+      const proxiedWeb = toProxiedEmbedUrl(cand.url, isSandboxedFrame);
+      orderedTracks[cand.idx] = { ...cand.track, resolvedStreamUrl: proxiedWeb };
+      primaryStreamUrl = proxiedWeb;
+      primaryMode = 'embed';
+      resolvedTrack = orderedTracks[cand.idx];
+      break;
     }
-
-    if (primaryStreamUrl) break;
   }
 
   if (!primaryStreamUrl) return null;

@@ -42,7 +42,7 @@ export function registerWorldTvRoutes(app: Express): void {
 
     const prioritized = channelHealthMonitor.prioritizeChannels(filtered).map((ch) => ({
       ...ch,
-      logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
+      logoUrl: resolveOfficialChannelLogoUrl(ch) || ch.logoUrl || undefined,
     }));
 
     res.setHeader('Cache-Control', 'public, max-age=180');

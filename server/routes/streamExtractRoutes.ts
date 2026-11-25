@@ -141,12 +141,13 @@ export function registerStreamExtractRoute(
     const isSandboxedFrame = String(req.query.sandboxed || '').trim() === '1';
     const forceExtract = String(req.query.force || req.query.forceSpanish || '') === '1';
     const directOnly = String(req.query.directOnly || '').trim() === '1';
+    const channelLabelParam = String(req.query.channelLabel || '').trim();
 
     if (!rawInput && !movidyUrlParam && !gnulaUrlParam && !vestUrlParam && !titleHint && !tmdbIdParam) {
       return res.status(400).json({ success: false, error: 'Falta el enlace o título del contenido.' });
     }
 
-    const cacheKey = `v4|${mediaTypeParam}|${tmdbIdParam}|${yearParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${preferQualityFirst ? 'qf1' : 'qf0'}|${isSandboxedFrame ? 'sb1' : 'sb0'}|${directOnly ? 'do1' : 'do0'}|${rawInput}|${movidyUrlParam}|${gnulaUrlParam}|${vestUrlParam}|${titleHint}`;
+    const cacheKey = `v4|${mediaTypeParam}|${tmdbIdParam}|${yearParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${preferQualityFirst ? 'qf1' : 'qf0'}|${isSandboxedFrame ? 'sb1' : 'sb0'}|${directOnly ? 'do1' : 'do0'}|${rawInput}|${movidyUrlParam}|${gnulaUrlParam}|${vestUrlParam}|${titleHint}${channelLabelParam ? `|cl:${channelLabelParam}` : ''}`;
     const cached = !forceExtract ? extractionCache.get(cacheKey) : undefined;
     if (cached && cached.expiresAt > Date.now()) {
       return res.json(formatResp(req, cached));
@@ -230,6 +231,7 @@ export function registerStreamExtractRoute(
             resolverType,
             preferLang,
             titleHint,
+            channelLabel: channelLabelParam,
             cacheKey,
             setCache,
             sendOk,

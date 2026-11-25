@@ -16,15 +16,17 @@ import { applyProxyCorsHeaders, getOrCreateRequestId } from './proxyUtils.ts';
 export function registerEmbedProxyRoutes(app: express.Express): void {
   app.get('/api/img-proxy', async (req, res) => {
     const rawUrl = String(req.query.url || '');
+    const explicitReferer = String(req.query.referer || '').trim();
     const reqId = getOrCreateRequestId(req);
     if (!rawUrl) return res.status(400).end();
 
     try {
       const fullUrl = rawUrl.startsWith('//') ? `https:${rawUrl}` : rawUrl;
       await assertSafeProxyUrl(fullUrl);
+      const parsedImg = new URL(fullUrl);
       const upstream = await streamingFetch(fullUrl, {
         headers: {
-          Referer: 'https://movidy.work/',
+          Referer: explicitReferer || `${parsedImg.origin}/`,
           'User-Agent': CHROME_UA,
         },
         timeoutMs: 6000,

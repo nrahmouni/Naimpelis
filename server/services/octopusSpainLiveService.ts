@@ -9,6 +9,7 @@ import {
   resolveCanonicalChannelKey,
   stripChannelNoise,
 } from '../../src/utils/channelQualityRanker.ts';
+import { resolveOfficialChannelLogoUrl } from '../../src/shared/channelLogos.ts';
 import { SPANISH_TDT_CHANNELS } from '../data/tdtChannels.ts';
 import { logger } from '../utils/logger.ts';
 import { channelHealthMonitor } from './channelHealthMonitor.ts';
@@ -182,24 +183,27 @@ export function inferSpainStreamQualityMeta(
   streamName: string,
   categoryName = ''
 ): { quality: string; qualityTier: number; isHevc: boolean } {
-  const hay = normalizeSpainProviderText(`${streamName} ${categoryName}`).toLowerCase();
-  const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(hay);
+  const cleanStreamTitle = normalizeSpainProviderText(streamName)
+    .replace(/\b(?:dana\s*4k|vod\s*4k|shark\s*4k|vip\s*4k|spain\s*4k)\b/gi, ' ')
+    .toLowerCase();
+  const catLower = normalizeSpainProviderText(categoryName).toLowerCase();
+  const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(`${cleanStreamTitle} ${catLower}`);
 
-  if (/\b(?:4k|uhd|2160p?)\b/.test(hay)) {
+  if (/\b(?:4k|uhd|2160p?)\b/.test(cleanStreamTitle)) {
     return {
       quality: '4K UHD',
       qualityTier: isHevc ? 3 : 0,
       isHevc,
     };
   }
-  if (/\b(?:fhd|1080p?|full\s*hd)\b/.test(hay)) {
+  if (/\b(?:fhd|1080p?|full\s*hd)\b/.test(cleanStreamTitle)) {
     return {
       quality: '1080p FHD',
       qualityTier: isHevc ? 3 : 1,
       isHevc,
     };
   }
-  if (/\b(?:576p?|480p?|360p?|sd|lq)\b/.test(hay)) {
+  if (/\b(?:576p?|480p?|360p?|sd|lq)\b/.test(cleanStreamTitle)) {
     return {
       quality: 'SD',
       qualityTier: 4,
@@ -444,7 +448,11 @@ function extractRawSpanishGrouped(catalogs: XtreamFullCatalogPayload[]): Verifie
           category,
           quality: qMeta.quality,
           countryCode: 'ES',
-          logoUrl: tdtMeta?.logoUrl || stream.streamIcon,
+          logoUrl:
+            resolveOfficialChannelLogoUrl({
+              id: tdtMeta ? tdtMeta.id : canonicalKey,
+              logoUrl: tdtMeta?.logoUrl || stream.streamIcon,
+            }) || undefined,
           description: tdtMeta?.description || `${cleanName} · Señal España en Directo (${catPayload.providerName})`,
           epgChannelId: (tdtMeta as { epgChannelId?: string } | undefined)?.epgChannelId || stream.epgChannelId,
           channels: [trackRecord],
@@ -452,7 +460,11 @@ function extractRawSpanishGrouped(catalogs: XtreamFullCatalogPayload[]): Verifie
       } else {
         existing.channels.push(trackRecord);
         if (!existing.logoUrl && stream.streamIcon) {
-          existing.logoUrl = stream.streamIcon;
+          const safeLogo = resolveOfficialChannelLogoUrl({
+            id: existing.id,
+            logoUrl: stream.streamIcon,
+          });
+          if (safeLogo) existing.logoUrl = safeLogo;
         }
       }
     }

@@ -480,8 +480,19 @@ export function mergeAndDeduplicateChannels<T extends GenericRankableChannel>(
       existing.tracks.push(tr);
     }
 
-    if (!existing.channel.logoUrl && ch.logoUrl) {
-      existing.channel = { ...existing.channel, logoUrl: ch.logoUrl };
+    if (ch.logoUrl) {
+      const existingIsGeneric =
+        !existing.channel.logoUrl ||
+        /flagcdn\.com|\/flags\/|country-?flags?|spain[-_]?flag|bandera|\/es\.png(?:\?|$)|placeholder/i.test(
+          existing.channel.logoUrl
+        );
+      const nextIsGeneric =
+        /flagcdn\.com|\/flags\/|country-?flags?|spain[-_]?flag|bandera|\/es\.png(?:\?|$)|placeholder/i.test(
+          ch.logoUrl
+        );
+      if (existingIsGeneric && !nextIsGeneric) {
+        existing.channel = { ...existing.channel, logoUrl: ch.logoUrl };
+      }
     }
     if (!existing.channel.epgChannelId && ch.epgChannelId) {
       existing.channel = { ...existing.channel, epgChannelId: ch.epgChannelId };

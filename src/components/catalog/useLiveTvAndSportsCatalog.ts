@@ -15,6 +15,73 @@ import { ensureVaultSyncedWithBackend } from '../../services/xtreamVaultConfig';
 import { readCachedXtreamCatalog } from '../../services/xtreamClientService';
 import { buildLiveTdtChannel } from '../belix/XtreamMediaHelpers';
 import { rankClientChannels } from '../../utils/channelQualityRanker';
+import { STATIC_CHANNELS_CATALOG } from '../pwa/smartTvCatalogData';
+import { resolveOfficialChannelLogoUrl } from '../../shared/channelLogos';
+
+const TDT_CATALOG_CACHE_KEY = 'riffan_tdt_catalog_cache_v1';
+
+function buildStaticTdtFallback(): SpanishTdtChannel[] {
+  return STATIC_CHANNELS_CATALOG.map((item) => ({
+    id: item.id,
+    dial: item.dial,
+    name: item.name,
+    shortMark: item.shortMark,
+    brandTone: item.brandTone,
+    network: item.groupTitle || 'TDT España',
+    category: (item.category || 'generalistas') as TdtCategory,
+    quality: item.quality || '1080p FHD',
+    countryCode:
+      item.category === 'marruecos'
+        ? 'MA'
+        : item.category === 'uk_sports'
+          ? 'UK'
+          : item.category === 'espn' || item.category === 'dsports' || item.category === 'tnt_space' || item.category === 'beinsports'
+            ? 'LATAM'
+            : 'ES',
+    logoUrl: resolveOfficialChannelLogoUrl({ id: item.id, logoUrl: item.logoUrl }) || undefined,
+    description: item.groupTitle || `${item.name} · Emisión en directo`,
+    channels: [
+      {
+        id: `${item.id}-iptv-primary`,
+        label: `${item.name} · HD`,
+        lang: 'ES',
+        quality: item.quality || '1080p FHD',
+        sourceUrl: `/api/iptv/live/${encodeURIComponent(item.id)}.m3u8`,
+        resolverType: 'tdt_hls',
+      },
+    ],
+  }));
+}
+
+function readCachedTdtCatalog(): SpanishTdtChannel[] {
+  if (typeof window === 'undefined' || !window.localStorage) return [];
+  try {
+    const raw = window.localStorage.getItem(TDT_CATALOG_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as { ts?: number; channels?: SpanishTdtChannel[] };
+    if (!parsed || !Array.isArray(parsed.channels) || parsed.channels.length === 0) return [];
+    const hasSpainChannels = parsed.channels.some(
+      (c) => c.countryCode === 'ES' || c.category === 'generalistas'
+    );
+    return hasSpainChannels
+      ? parsed.channels
+      : rankClientChannels([...buildStaticTdtFallback(), ...parsed.channels]);
+  } catch {
+    return [];
+  }
+}
+
+function writeCachedTdtCatalog(channels: SpanishTdtChannel[]): void {
+  if (typeof window === 'undefined' || !window.localStorage || channels.length === 0) return;
+  try {
+    window.localStorage.setItem(
+      TDT_CATALOG_CACHE_KEY,
+      JSON.stringify({ ts: Date.now(), channels: channels.slice(0, 500) })
+    );
+  } catch {
+    // ignore storage quota errors
+  }
+}
 
 export type FootballBrandFilter =
   | 'all'
@@ -47,8 +114,12 @@ export function useLiveTvAndSportsCatalog({
   favoriteChannels,
   onResetWatchlistOnly,
 }: UseLiveTvAndSportsCatalogArgs) {
-  const [tdtChannels, setTdtChannels] = useState<SpanishTdtChannel[]>([]);
+  const [tdtChannels, setTdtChannels] = useState<SpanishTdtChannel[]>(() => {
+    const cached = readCachedTdtCatalog();
+    return cached.length > 0 ? cached : buildStaticTdtFallback();
+  });
   const [loadingTdt, setLoadingTdt] = useState(false);
+  const [tdtFetchError, setTdtFetchError] = useState(false);
   const tdtCategory = useAppStore((s) => s.tdtCategory) as 'all' | 'tdt_all' | TdtCategory;
   const setTdtCategory = useAppStore((s) => s.setTdtCategory) as (
     cat: 'all' | 'tdt_all' | TdtCategory
@@ -111,13 +182,25 @@ export function useLiveTvAndSportsCatalog({
 
   const fetchTdtCatalog = useCallback(async () => {
     setLoadingTdt(true);
+    setTdtFetchError(false);
+    const fetchWithTimeout = async (url: string, timeoutMs = 10_000) => {
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), timeoutMs);
+      try {
+        const res = await fetch(url, { signal: ctrl.signal });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } finally {
+        clearTimeout(tid);
+      }
+    };
     try {
       await ensureVaultSyncedWithBackend(false).catch(() => false);
       const [tdtSettled, worldSettled, rbtvSettled, belixSettled] = await Promise.allSettled([
-        fetch('/api/catalog/tdt').then((r) => r.json()),
-        fetch('/api/catalog/world-tv').then((r) => r.json()),
-        fetch('/api/rbtv/channels').then((r) => r.json()),
-        fetch('/api/belix/channels?includeAll=1').then((r) => r.json()),
+        fetchWithTimeout('/api/catalog/tdt', 14_000),
+        fetchWithTimeout('/api/catalog/world-tv', 9_000),
+        fetchWithTimeout('/api/rbtv/channels', 8_000),
+        fetchWithTimeout('/api/belix/channels?includeAll=1', 9_000),
       ]);
       const baseList: SpanishTdtChannel[] =
         tdtSettled.status === 'fulfilled' && Array.isArray(tdtSettled.value?.channels)
@@ -148,24 +231,24 @@ export function useLiveTvAndSportsCatalog({
           cachedXtreamChannels.push(buildLiveTdtChannel(stream, catName));
         }
       }
-      if (
-        baseList.length > 0 ||
-        worldList.length > 0 ||
-        rbtvList.length > 0 ||
-        belixList.length > 0 ||
-        cachedXtreamChannels.length > 0
-      ) {
-        const ranked = rankClientChannels([
-          ...baseList,
-          ...rbtvList,
-          ...belixList,
-          ...cachedXtreamChannels,
-          ...worldList,
-        ]);
-        setTdtChannels(ranked);
+      const effectiveBaseList = baseList.length > 0 ? baseList : buildStaticTdtFallback();
+      const ranked = rankClientChannels([
+        ...effectiveBaseList,
+        ...rbtvList,
+        ...belixList,
+        ...cachedXtreamChannels,
+        ...worldList,
+      ]);
+      setTdtChannels(ranked);
+      if (baseList.length > 0) {
+        writeCachedTdtCatalog(ranked);
+        setTdtFetchError(false);
+      } else {
+        setTdtFetchError(worldList.length === 0 && rbtvList.length === 0 && belixList.length === 0);
       }
     } catch {
-      // Keep cached channels
+      setTdtChannels((prev) => (prev.length > 0 ? prev : buildStaticTdtFallback()));
+      setTdtFetchError(true);
     } finally {
       setLoadingTdt(false);
     }
@@ -547,6 +630,7 @@ export function useLiveTvAndSportsCatalog({
   return {
     tdtChannels,
     loadingTdt,
+    tdtFetchError,
     fetchTdtCatalog,
     tdtCategory,
     setTdtCategory,

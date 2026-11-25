@@ -2,8 +2,10 @@ import type { AppLanguage, StreamTrack } from '../../types';
 import { unwrapEmbedUrl } from './embedWindowUtils';
 
 const KNOWN_HOST_LABELS: Array<[RegExp, string]> = [
-  [/vidfast/i, 'VidFast'],
-  [/vidrock/i, 'VidRock'],
+  [/movidy|nupload/i, 'Movidy'],
+  [/xtream|sharkpro|dana4k|vod4k|octopus/i, 'Xtream HD'],
+  [/gnula/i, 'GnulaHD'],
+  [/ghostflix|vidbolt/i, 'VidBolt'],
   [/vidsrc|vidsrccc/i, 'VidSrc'],
   [/vidlink/i, 'VidLink'],
   [/embed69/i, 'Embed69'],

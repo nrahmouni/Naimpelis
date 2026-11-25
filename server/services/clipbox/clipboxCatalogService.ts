@@ -6,7 +6,6 @@ import { streamingFetch } from '../../utils/tlsFetch.ts';
 import { buildTmdbImageUrl, fetchTmdbJson } from '../tmdbService.ts';
 import { CHROME_UA } from '../../extractors/httpHelpers.ts';
 import { extractClipboxDirectStreams } from '../../extractors/clipboxDirectExtractor.ts';
-import { extractVidRockHlsTracks } from '../../extractors/bingetrixMovidy.ts';
 import { buildSubtitleProxyUrl, searchAggregatedSubtitles } from '../subtitleAggregator.ts';
 import { LruTtlCache } from '../../utils/lruCache.ts';
 
@@ -370,35 +369,6 @@ export async function resolveClipboxTitleStreams(params: {
               label: sub.label,
               url: safeUrl,
               source: sub.source || 'vidlink.pro',
-            });
-          }
-        } catch {
-          // ignore cleanly
-        }
-      })()
-    );
-
-    enrichTasks.push(
-      (async () => {
-        try {
-          const vidRockTracks = await extractVidRockHlsTracks({
-            tmdbId: idStr,
-            mediaType: isSeriesLike ? 'tv' : 'movie',
-            season,
-            episode,
-          });
-          for (const tr of vidRockTracks) {
-            if (!tr.resolvedStreamUrl) continue;
-            tracks.push({
-              id: tr.id,
-              provider: 'VidRock Native HLS',
-              label: tr.label,
-              lang: tr.lang,
-              quality: tr.quality || '1080p',
-              mode: 'hls',
-              url: tr.resolvedStreamUrl,
-              rawUrl: tr.resolvedStreamUrl,
-              note: 'Flujo HLS nativo estable sin ventanas externas.',
             });
           }
         } catch {

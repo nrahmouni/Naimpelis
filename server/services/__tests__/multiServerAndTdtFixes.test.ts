@@ -12,6 +12,14 @@ import {
 import { ChannelHealthMonitor } from '../channelHealthMonitor';
 import { orderCandidatesForFastResolve, raceFastLiveTracks } from '../liveFastResolver';
 import { buildDvbLiveFfmpegArgs, type ProbedStreamCodecInfo } from '../../routes/proxies/dvbCodecProbe';
+import { resolveOfficialChannelLogoUrl } from '../../../src/shared/channelLogos';
+import { extractTrackHostKey } from '../../../src/utils/customTdtSources';
+import { inferSpainStreamQualityMeta } from '../octopusSpainLiveService';
+import { rankCandidateTracks } from '../trackRankingService';
+import { buildWebEmbedTracks } from '../streamExtractFallback';
+import { sanitizeEmbedHtml } from '../../extractors/httpHelperParts/embedSanitizer';
+import { resolveOrderedCandidateTracks } from '../../routes/streamExtractHelpers/catalogTrackResolver';
+import { extractXtreamLiveHintsFromSportsRequest } from '../xtreamVodMatcher';
 import type { ProviderCatalogItemPublic } from '../providers/xtreamProvidersTypes';
 
 describe('Unified 11-Server Architecture, Castellano/4K Ranking, Anti-Buffering TDT & Tizen UI', () => {
@@ -262,5 +270,170 @@ describe('Unified 11-Server Architecture, Castellano/4K Ranking, Anti-Buffering 
         expect(content.toLowerCase()).not.toContain('backdrop-filter');
       }
     }
+  });
+
+  it('prefers official station logos over Spanish flags, removes false 4K provider tags, and isolates local Xtream track keys', () => {
+    const laSextaLogo = resolveOfficialChannelLogoUrl({
+      id: 'tdt-lasexta',
+      logoUrl: 'https://flagcdn.com/w80/es.png',
+    });
+    expect(laSextaLogo).toBeTruthy();
+    expect(laSextaLogo).not.toContain('flagcdn');
+
+    expect(
+      resolveOfficialChannelLogoUrl({
+        id: 'unknown-es-channel',
+        logoUrl: 'https://example.com/flags/es.png',
+      })
+    ).toBeNull();
+
+    const antena3Dana4k = inferSpainStreamQualityMeta('Dana 4K | Antena 3 HD', 'ESPAÑA TDT 4K');
+    expect(antena3Dana4k.quality).toBe('HD');
+
+    const la1Fhd = inferSpainStreamQualityMeta('VOD 4K | La 1 FHD 1080p', 'España 4K');
+    expect(la1Fhd.quality).toBe('1080p FHD');
+
+    const real4k = inferSpainStreamQualityMeta('ES| Cine Estreno 4K UHD', 'Cine');
+    expect(real4k.quality).toBe('4K UHD');
+
+    const keyA = extractTrackHostKey('/api/stream?provider=dana4k&id=101');
+    const keyB = extractTrackHostKey('/api/stream?provider=primary&id=202');
+    expect(keyA).toBe('xtream://dana4k/101');
+    expect(keyB).toBe('xtream://primary/202');
+    expect(keyA).not.toBe(keyB);
+  });
+
+  it('prioritizes Movidy ES and Xtream ES over web embeds and never emits VidRock/VidFast/VidNest fallback tracks', async () => {
+    const ranked = rankCandidateTracks({
+      allDiscovered: [
+        {
+          id: 'embed-2embed-550',
+          label: 'Servidor Web 3 · 2Embed Limpio',
+          lang: 'EN',
+          quality: '1080p',
+          sourceUrl: 'https://www.2embed.cc/embed/550',
+          resolverType: 'web_embed',
+        },
+        {
+          id: 'xtream-vod4k-99',
+          label: 'VOD 4K · Castellano 1080p',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: '/api/providers/stream/vod4k/movie/99.mp4',
+          resolverType: 'direct_mp4',
+        },
+        {
+          id: 'movidy-es-1',
+          label: 'Movidy ES · Castellano HD',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://movidy.example/e/abc',
+          resolverType: 'direct_hls',
+        },
+      ],
+      preferLang: 'ES',
+      isVestLink: false,
+      hasExplicitMovidyUrl: false,
+      hasExplicitGnulaUrl: false,
+      healthMap: {},
+    });
+
+    expect(ranked.orderedTracks[0].lang).toBe('ES');
+    expect(ranked.orderedTracks[ranked.orderedTracks.length - 1].id).toBe('embed-2embed-550');
+
+    const embeds = await buildWebEmbedTracks({
+      resolvedTmdbId: null,
+      effectiveMediaType: 'movie',
+      effectiveSeason: 1,
+      effectiveEpisode: 1,
+      rawInput: '',
+      isSandboxedFrame: false,
+    });
+    expect(embeds).toEqual([]);
+
+    const fallbackSrc = fs.readFileSync(
+      path.join(process.cwd(), 'server/services/streamExtractFallback.ts'),
+      'utf8'
+    );
+    expect(fallbackSrc).not.toMatch(/vidrock|vidnest|vidsrc\.buzz|videm\.buzz/i);
+
+    const catalogExtractorSrc = fs.readFileSync(
+      path.join(process.cwd(), 'server/routes/streamExtractHelpers/catalogMediaExtractor.ts'),
+      'utf8'
+    );
+    expect(catalogExtractorSrc).not.toMatch(/extractVidsrcBuzzHlsTracks|vidBuzzP/i);
+
+    const clipboxSrc = fs.readFileSync(
+      path.join(process.cwd(), 'server/services/clipbox/clipboxCatalogService.ts'),
+      'utf8'
+    );
+    expect(clipboxSrc).not.toMatch(/extractVidRockHlsTracks/i);
+
+    const xtreamMatcherSrc = fs.readFileSync(
+      path.join(process.cwd(), 'server/services/xtreamVodMatcher.ts'),
+      'utf8'
+    );
+    expect(xtreamMatcherSrc).toContain('getConnectedProvidersCatalogSnapshot');
+    expect(xtreamMatcherSrc).toContain('getProviderSeriesDetail');
+    expect(xtreamMatcherSrc).toContain('findXtreamLiveChannelMatches');
+
+    const sportsHints = extractXtreamLiveHintsFromSportsRequest(
+      'https://footunder.online/stream/123',
+      'DSports · LIVE · FHD',
+      'Uruguay vs Francia'
+    );
+    expect(sportsHints.some((h) => /dsports/i.test(h))).toBe(true);
+
+    const externalSportsSrc = fs.readFileSync(
+      path.join(process.cwd(), 'server/routes/streamExtractHelpers/externalSportsExtractor.ts'),
+      'utf8'
+    );
+    expect(externalSportsSrc).toContain('findXtreamLiveChannelMatches');
+    expect(externalSportsSrc).toContain("if (resolverType === 'sports_channel')");
+
+    // Native HLS/MP4 across ANY language tier must outrank an earlier-tier web_embed
+    const nativeBeatsEmbed = await resolveOrderedCandidateTracks({
+      orderedTracks: [
+        {
+          id: 'embed-es-1',
+          label: 'Web ES',
+          lang: 'ES',
+          sourceUrl: 'https://embed.example/es',
+          resolverType: 'web_embed',
+        },
+        {
+          id: 'bingetrix-en-1',
+          label: 'English 1080p · S1',
+          lang: 'EN',
+          sourceUrl: 'https://bingetrix.sc/watch/550',
+          resolvedStreamUrl: '/api/hls-proxy/en/master.m3u8',
+          resolverType: 'bingetrix_en',
+        },
+      ],
+      getLangScore: (lang) => (lang === 'ES' ? 1 : 4),
+      sourcePriority: () => 1,
+      getTrackHealthScore: () => 100,
+      isSandboxedFrame: false,
+      directOnly: false,
+    });
+    expect(nativeBeatsEmbed?.primaryMode).toBe('hls');
+    expect(nativeBeatsEmbed?.resolvedTrack?.id).toBe('bingetrix-en-1');
+
+    const sanitized = sanitizeEmbedHtml(
+      '<html><body><img src="/play.png" alt="play icon"></body></html>',
+      'https://www.2embed.cc/embed/550'
+    );
+    expect(sanitized).not.toContain('alt="play icon"');
+    expect(sanitized).toContain('<svg');
+    expect(sanitized).toContain('__fixBrokenImg');
+    expect(sanitized).toContain('MutationObserver');
+
+    const liveTvViewSrc = fs.readFileSync(
+      path.join(process.cwd(), 'src/components/catalog/LiveTvWorldView.tsx'),
+      'utf8'
+    );
+    expect(liveTvViewSrc).toContain('TDT España');
+    expect(liveTvViewSrc).not.toContain('España · 4K');
+    expect(liveTvViewSrc).not.toContain('Por Temática');
   });
 });

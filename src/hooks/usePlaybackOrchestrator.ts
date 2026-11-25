@@ -86,9 +86,10 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
       ...popup,
       id: `ln-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     });
+    const dismissMs = popup.type === 'success' ? 2800 : 4800;
     langNoticeTimerRef.current = setTimeout(() => {
       setLanguageNotice(null);
-    }, 5200);
+    }, dismissMs);
   }, []);
 
   const clearExtractionSnapshot = useCallback(() => {

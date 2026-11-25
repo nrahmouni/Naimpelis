@@ -220,8 +220,22 @@ export const OFFICIAL_CHANNEL_LOGO_URLS: Record<string, string> = {
   'news-cnbc-eu': `${TV_LOGOS_BASE}countries/world-europe/cnbc-eu.png`,
 };
 
+const GENERIC_FLAG_OR_PLACEHOLDER_LOGO_RX =
+  /(?:flagcdn\.com|\/flags\/|country-?flags?|spain[-_]?flag|bandera[-_]?esp|\/es\.png(?:\?|$)|\/spain\.png(?:\?|$)|placeholder)/i;
+
+export function isGenericFlagOrBadLogoUrl(url?: string | null): boolean {
+  const clean = String(url || '').trim();
+  if (!clean) return true;
+  return GENERIC_FLAG_OR_PLACEHOLDER_LOGO_RX.test(clean);
+}
+
 export function resolveOfficialChannelLogoUrl(
   ch: { id: string; logoUrl?: string | null }
 ): string | null {
-  return ch.logoUrl || OFFICIAL_CHANNEL_LOGO_URLS[ch.id] || null;
+  const official = OFFICIAL_CHANNEL_LOGO_URLS[ch.id];
+  if (official) return official;
+  const fallback = String(ch.logoUrl || '').trim();
+  if (!fallback || isGenericFlagOrBadLogoUrl(fallback)) return null;
+  return fallback;
 }
+

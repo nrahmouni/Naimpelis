@@ -66,42 +66,8 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
     activeTrack?.sourceUrl || activeTrack?.resolvedStreamUrl || videoState.url
   );
 
-  const externalVidfastHref = (() => {
-    const candidates = [
-      activeTrackUrl,
-      unwrapEmbedUrl(videoState.rawSourceUrl || ''),
-      unwrapEmbedUrl(videoState.url),
-      ...videoState.tracks.map((tr) => unwrapEmbedUrl(tr.sourceUrl)),
-    ].filter(Boolean);
-
-    for (const c of candidates) {
-      if (/vidfast\.[a-z.]+/i.test(c)) {
-        return c.replace(/vidfast\.[a-z.]+/i, 'vidfast.vc');
-      }
-    }
-    if (videoState.seriesMeta?.tmdbId) {
-      return `https://vidfast.vc/tv/${videoState.seriesMeta.tmdbId}/${
-        videoState.seriesMeta.season || 1
-      }/${videoState.seriesMeta.episode || 1}?autoPlay=true&theme=9146FF`;
-    }
-    for (const c of candidates) {
-      const tvM =
-        c.match(
-          /(?:bingetrix|vidsrc|vidlink|autoembed)\.[a-z.]+\/(?:watch\/|embed\/|v2\/)?tv\/(?:tmdb\/)?(\d+)[/-](\d+)[/-](\d+)/i
-        ) ||
-        c.match(/2embed\.[a-z.]+\/(?:embedtv|tv)\/(\d+)(?:&s=|\/)(\d+)(?:&e=|\/)(\d+)/i);
-      if (tvM) {
-        return `https://vidfast.vc/tv/${tvM[1]}/${tvM[2]}/${tvM[3]}?autoPlay=true&theme=9146FF`;
-      }
-      const movM = c.match(
-        /(?:bingetrix|vidsrc|vidlink|autoembed|2embed)\.[a-z.]+\/(?:watch\/|embed\/|v2\/)?(?:movie\/)?(?:tmdb\/)?(\d+)/i
-      );
-      if (movM) {
-        return `https://vidfast.vc/movie/${movM[1]}?autoPlay=true&theme=9146FF`;
-      }
-    }
-    return activeTrackUrl;
-  })();
+  const externalOpenHref =
+    activeTrackUrl || unwrapEmbedUrl(videoState.rawSourceUrl || '') || unwrapEmbedUrl(videoState.url);
 
   const inlineIframeSrc = activeEmbedInlineUrl || videoState.url;
   const lastAttemptedUrl =
@@ -273,7 +239,7 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
 
   // 3) Popup Blocker Fallback State
   if (externalWinState === 'blocked') {
-    const fallbackHref = externalTargetUrl || activeTrackUrl || externalVidfastHref;
+    const fallbackHref = externalTargetUrl || activeTrackUrl || externalOpenHref;
     return (
       <div className="relative w-full h-full bg-[#120E18] flex flex-col items-center justify-center pt-14 sm:pt-12 pb-4 px-4 text-center gap-3 overflow-y-auto">
         <RiffanWarningIcon size={32} animate="always" className="text-amber-400" />
@@ -356,7 +322,7 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
             <span>Reintentar inline</span>
           </button>
           <a
-            href={externalVidfastHref}
+            href={externalOpenHref}
             target="_blank"
             rel="noopener noreferrer"
             className="min-h-10 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-zinc-100 text-xs font-semibold inline-flex items-center gap-1.5"
@@ -383,15 +349,15 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
       />
 
       {!isMinimized && embedRescueDismissedUrl !== videoState.url && (
-        <div className="absolute top-2.5 left-2.5 z-20 max-w-[calc(100%-9.5rem)] flex items-center pointer-events-none opacity-90 hover:opacity-100 transition-opacity">
-          <div className="pointer-events-auto flex items-center gap-1 px-1.5 py-1 rounded-xl bg-black/75 backdrop-blur-md border border-white/[0.12] shadow-lg text-[10px] text-zinc-200 overflow-x-auto no-scrollbar">
+        <div className="absolute top-2 left-2 z-20 max-w-[calc(100%-10.75rem)] sm:max-w-[calc(100%-12rem)] flex items-center pointer-events-none opacity-95 hover:opacity-100 transition-opacity">
+          <div className="pointer-events-auto flex items-center gap-1 px-1.5 py-1 rounded-xl bg-black/80 backdrop-blur-md border border-white/[0.12] shadow-lg text-[10px] text-zinc-200 overflow-x-auto no-scrollbar">
             <button
               type="button"
               onClick={() => {
                 triggerHaptic('medium');
                 onOpenControlledExternalWindow(activeTrackUrl);
               }}
-              className="min-h-7 px-2.5 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-white font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
+              className="min-h-7 px-2 sm:px-2.5 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-white font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
             >
               <RiffanPlayIcon size={12} tone="current" />
               <span>{pickLang(lang, { es: 'Ventana', ca: 'Finestra', en: 'Window' })}</span>
@@ -405,10 +371,10 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
                   onMarkInlineServerWorking();
                 }}
                 title="Confirmar que este servidor funciona integrado y detener cambio automático"
-                className="min-h-7 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/35 text-emerald-200 font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
+                className="min-h-7 px-1.5 sm:px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/35 text-emerald-200 font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
               >
                 <Check className="w-3 h-3" />
-                <span>{pickLang(lang, { es: 'Funciona', ca: 'Funciona', en: 'Works' })}</span>
+                <span className="hidden sm:inline">{pickLang(lang, { es: 'Funciona', ca: 'Funciona', en: 'Works' })}</span>
               </button>
             )}
 
@@ -419,20 +385,21 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
                   triggerHaptic('medium');
                   onOpenInCloudBrowser(activeTrackUrl);
                 }}
-                className="min-h-7 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 font-semibold whitespace-nowrap cursor-pointer shrink-0 transition-colors"
+                className="hidden sm:inline-flex min-h-7 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 font-semibold whitespace-nowrap cursor-pointer shrink-0 transition-colors items-center"
               >
                 Cloud HD
               </button>
             )}
 
             <a
-              href={externalVidfastHref}
+              href={externalOpenHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="min-h-7 px-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-zinc-100 font-semibold whitespace-nowrap inline-flex items-center gap-1 shrink-0 transition-colors"
+              aria-label={pickLang(lang, { es: 'Abrir en nueva pestaña', ca: 'Obrir en una pestanya nova', en: 'Open in new tab' })}
+              className="min-h-7 px-1.5 sm:px-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-zinc-100 font-semibold whitespace-nowrap inline-flex items-center gap-1 shrink-0 transition-colors"
             >
               <ExternalLink className="w-3 h-3" />
-              <span>{pickLang(lang, { es: 'Abrir', ca: 'Obrir', en: 'Open' })}</span>
+              <span className="hidden sm:inline">{pickLang(lang, { es: 'Abrir', ca: 'Obrir', en: 'Open' })}</span>
             </a>
 
             <button
