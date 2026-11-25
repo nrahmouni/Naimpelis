@@ -1,7 +1,7 @@
 /**
  * @module server/services/providers/xtreamProvidersHelpers
- * @description SSRF-safe HTTP/curl helpers, M3U fallback parser, and opaque-token HLS playlist rewriter
- * for multi-provider Xtream servers. Keeps upstream credentials strictly inside server RAM.
+ * @description SSRF-safe HTTP/curl helpers, M3U fallback parser, manifest/segment RAM prefetch cache,
+ * and opaque-token HLS playlist rewriter for multi-provider Xtream servers.
  */
 import crypto from 'crypto';
 import http from 'http';
@@ -10,16 +10,29 @@ import zlib from 'zlib';
 import { LruTtlCache } from '../../utils/lruCache.ts';
 import { assertSafeProxyUrl } from '../../utils/ssrfGuard.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
+import { parseStreamMetadata } from '../../utils/streamMetaParser.ts';
 import { CHROME_UA, curlGetBufferWithStatus, curlGetText } from '../../extractors/httpHelpers.ts';
-import type { ProviderCatalogItemPublic } from './xtreamProvidersTypes.ts';
+import type {
+  ProviderCatalogItemPublic,
+  ProviderPriorityMode,
+} from './xtreamProvidersTypes.ts';
 
 interface OpaqueProxyTarget {
   rawUrl: string;
   referer: string;
 }
 
-const subPlaylistCache = new LruTtlCache<string, OpaqueProxyTarget>(2000, 15 * 60 * 1000);
-const segmentCache = new LruTtlCache<string, OpaqueProxyTarget>(6000, 8 * 60 * 1000);
+const subPlaylistCache = new LruTtlCache<string, OpaqueProxyTarget>(2500, 15 * 60 * 1000);
+const segmentCache = new LruTtlCache<string, OpaqueProxyTarget>(8000, 8 * 60 * 1000);
+const subPlaylistBodyRamCache = new LruTtlCache<string, string>(600, 10_000);
+const segmentBodyRamCache = new LruTtlCache<
+  string,
+  { status: number; contentType: string; buffer: Buffer }
+>(180, 15_000);
+const inflightSegmentFetches = new Map<
+  string,
+  Promise<{ status: number; contentType: string; buffer: Buffer } | null>
+>();
 
 function makeOpaqueToken(rawUrl: string): string {
   return crypto.createHash('sha1').update(rawUrl).digest('hex').slice(0, 20);
@@ -157,7 +170,6 @@ export async function fetchProviderJsonWithFallback(
         try {
           return { ok: true, status: res.status, data: JSON.parse(text) };
         } catch {
-          // non-JSON response; try alternate header
           continue;
         }
       }
@@ -175,7 +187,6 @@ export async function fetchProviderJsonWithFallback(
     }
   }
 
-  // Fallback 1: Direct IPv4 Node HTTP/HTTPS (supports >30MB compressed VOD JSONs)
   try {
     const direct = await fetchDirectIpv4Text(url, primaryHeaders, timeoutMs);
     if (direct.status >= 200 && direct.status < 300 && direct.text) {
@@ -366,10 +377,37 @@ export function rewriteProviderPlaylistWithOpaqueTokens(
   return out.join('\n') + '\n';
 }
 
+/**
+ * Warms either the first sub-playlist (+ its segment #1) OR the first direct segment
+ * asynchronously in RAM right after a manifest resolves so hls.js hits local memory in <2ms.
+ */
+export function prefetchProviderHlsFirstSegment(rewrittenManifest: string, originPrefix = ''): void {
+  const lines = String(rewrittenManifest || '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#'));
+  if (lines.length === 0) return;
+
+  const first = lines[0];
+  const subMatch = first.match(/\/api\/providers\/hls-sub\/([^.?/]+)\.m3u8/i);
+  if (subMatch?.[1]) {
+    void resolveProviderSubPlaylist(subMatch[1], originPrefix, { prefetchFirstSegment: true }).catch(
+      () => undefined
+    );
+    return;
+  }
+
+  const segMatch = first.match(/\/api\/providers\/hls-seg\/([^.?/]+)(?:\.[a-z0-9]+)?/i);
+  if (segMatch?.[1]) {
+    void fetchProviderOpaqueSegment(segMatch[1]).catch(() => undefined);
+  }
+}
+
 export async function fetchProviderPlaylistText(
   targetUrl: string,
   referer: string,
-  timeoutMs = 4500
+  timeoutMs = 4500,
+  opts?: { skipCurlRetry?: boolean }
 ): Promise<{ text: string; baseUrl: string } | null> {
   await assertSafeProxyUrl(targetUrl);
   const headers: Record<string, string> = {
@@ -377,6 +415,7 @@ export async function fetchProviderPlaylistText(
     Accept: '*/*',
     Referer: referer,
   };
+  let timedOutOrRejected = false;
   try {
     const res = await streamingFetch(targetUrl, { headers, timeoutMs });
     if (res.ok) {
@@ -386,15 +425,27 @@ export async function fetchProviderPlaylistText(
         await assertSafeProxyUrl(finalUrl);
         return { text, baseUrl: finalUrl };
       }
+    } else {
+      if (res.body) void res.body.cancel().catch(() => undefined);
+      if (res.status === 401 || res.status === 404) {
+        return null;
+      }
     }
-  } catch {
-    // curl fallback
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    timedOutOrRejected = /timeout|aborted/i.test(msg);
   }
 
-  const fb = await curlGetText(targetUrl, headers, Math.max(4, Math.ceil(timeoutMs / 1000)), false, true).catch(() => ({
-    text: '',
-    effectiveUrl: targetUrl,
-  }));
+  if (opts?.skipCurlRetry || timedOutOrRejected) {
+    return null;
+  }
+
+  const fb = await curlGetText(targetUrl, headers, Math.max(3, Math.ceil(timeoutMs / 1000)), false, true).catch(
+    () => ({
+      text: '',
+      effectiveUrl: targetUrl,
+    })
+  );
   if (fb.text && fb.text.includes('#EXTM3U') && !/nosignal|<!doctype|<html/i.test(fb.text)) {
     const finalUrl = fb.effectiveUrl || targetUrl;
     await assertSafeProxyUrl(finalUrl);
@@ -405,14 +456,40 @@ export async function fetchProviderPlaylistText(
 
 export async function resolveProviderSubPlaylist(
   tokenWithExt: string,
-  originPrefix = ''
+  originPrefix = '',
+  opts?: { prefetchFirstSegment?: boolean }
 ): Promise<string | null> {
   const token = String(tokenWithExt || '').replace(/\.m3u8$/i, '').trim();
+  const cacheKey = `${token}:${originPrefix || 'rel'}`;
+  const cachedBody = subPlaylistBodyRamCache.get(cacheKey);
+  if (cachedBody) {
+    return cachedBody;
+  }
+
   const entry = subPlaylistCache.get(token);
   if (!entry) return null;
-  const loaded = await fetchProviderPlaylistText(entry.rawUrl, entry.referer).catch(() => null);
+  const loaded = await fetchProviderPlaylistText(entry.rawUrl, entry.referer, 4500, {
+    skipCurlRetry: true,
+  }).catch(() => null);
   if (!loaded) return null;
-  return rewriteProviderPlaylistWithOpaqueTokens(loaded.text, loaded.baseUrl, entry.referer, originPrefix);
+  const rewritten = rewriteProviderPlaylistWithOpaqueTokens(
+    loaded.text,
+    loaded.baseUrl,
+    entry.referer,
+    originPrefix
+  );
+  subPlaylistBodyRamCache.set(cacheKey, rewritten);
+  if (opts?.prefetchFirstSegment) {
+    const firstSeg = rewritten
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => l && !l.startsWith('#') && l.includes('/api/providers/hls-seg/'));
+    const segToken = firstSeg?.match(/\/api\/providers\/hls-seg\/([^.?/]+)/i)?.[1];
+    if (segToken) {
+      void fetchProviderOpaqueSegment(segToken).catch(() => undefined);
+    }
+  }
+  return rewritten;
 }
 
 export async function fetchProviderOpaqueSegment(
@@ -420,45 +497,78 @@ export async function fetchProviderOpaqueSegment(
   rangeHeader?: string
 ): Promise<{ status: number; contentType: string; buffer: Buffer } | null> {
   const token = String(tokenWithExt || '').replace(/\.[a-z0-9]+$/i, '').trim();
+  if (!rangeHeader) {
+    const cachedSeg = segmentBodyRamCache.get(token);
+    if (cachedSeg) {
+      return cachedSeg;
+    }
+    const inflight = inflightSegmentFetches.get(token);
+    if (inflight) {
+      return inflight;
+    }
+  }
+
   const entry = segmentCache.get(token);
   if (!entry) return null;
 
-  await assertSafeProxyUrl(entry.rawUrl);
-  const headers: Record<string, string> = {
-    'User-Agent': 'IPTVSmartersPlayer',
-    Accept: '*/*',
-    Referer: entry.referer,
-  };
-  if (rangeHeader) headers['Range'] = rangeHeader;
-
-  try {
-    const res = await streamingFetch(entry.rawUrl, { headers, timeoutMs: 8000 });
-    if (res.ok || res.status === 206) {
-      const buf = Buffer.from(await res.arrayBuffer());
-      if (buf.length > 0) {
-        return {
-          status: res.status,
-          contentType: res.headers.get('content-type') || 'video/mp2t',
-          buffer: buf,
-        };
-      }
-    }
-  } catch {
-    // fallback to curl
-  }
-
-  const curlRes = await curlGetBufferWithStatus(entry.rawUrl, headers, 8).catch(() => ({
-    buf: Buffer.alloc(0),
-    status: 502,
-  }));
-  if (curlRes.buf.length > 0 && curlRes.status >= 200 && curlRes.status < 400) {
-    return {
-      status: curlRes.status,
-      contentType: 'video/mp2t',
-      buffer: curlRes.buf,
+  const task = (async (): Promise<{ status: number; contentType: string; buffer: Buffer } | null> => {
+    await assertSafeProxyUrl(entry.rawUrl);
+    const headers: Record<string, string> = {
+      'User-Agent': 'IPTVSmartersPlayer',
+      Accept: '*/*',
+      Referer: entry.referer,
     };
+    if (rangeHeader) headers['Range'] = rangeHeader;
+
+    try {
+      const res = await streamingFetch(entry.rawUrl, { headers, timeoutMs: 8000 });
+      if (res.ok || res.status === 206) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length > 0) {
+          const out = {
+            status: res.status,
+            contentType: res.headers.get('content-type') || 'video/mp2t',
+            buffer: buf,
+          };
+          if (!rangeHeader && res.status === 200 && buf.length <= 6 * 1024 * 1024) {
+            segmentBodyRamCache.set(token, out);
+          }
+          return out;
+        }
+      }
+    } catch {
+      // fallback to curl
+    }
+
+    const curlRes = await curlGetBufferWithStatus(entry.rawUrl, headers, 8).catch(() => ({
+      buf: Buffer.alloc(0),
+      status: 502,
+    }));
+    if (curlRes.buf.length > 0 && curlRes.status >= 200 && curlRes.status < 400) {
+      const out = {
+        status: curlRes.status,
+        contentType: 'video/mp2t',
+        buffer: curlRes.buf,
+      };
+      if (!rangeHeader && curlRes.status === 200 && curlRes.buf.length <= 6 * 1024 * 1024) {
+        segmentBodyRamCache.set(token, out);
+      }
+      return out;
+    }
+    return null;
+  })();
+
+  if (!rangeHeader) {
+    const wrapped = task.finally(() => {
+      if (inflightSegmentFetches.get(token) === wrapped) {
+        inflightSegmentFetches.delete(token);
+      }
+    });
+    inflightSegmentFetches.set(token, wrapped);
+    return wrapped;
   }
-  return null;
+
+  return task;
 }
 
 export function detectProviderItemLangAndQuality(
@@ -466,93 +576,55 @@ export function detectProviderItemLangAndQuality(
   categoryName = '',
   kind: 'live' | 'movie' | 'series' = 'live',
   containerExt = ''
-): { lang: string; langLabel: string; quality: string; qualityTier: number } {
-  const name = String(rawName || '')
-    .replace(/⁴ᴷ|⁴ᵏ/g, ' 4K ')
-    .replace(/ᶠᴴᴰ/gi, ' FHD ')
-    .replace(/ᴴᴰ/gi, ' HD ')
-    .trim();
-  const cat = String(categoryName || '').trim();
-  const hay = `${name} ${cat} ${containerExt}`.toLowerCase();
-
-  let lang = 'INTL';
-  let langLabel = 'Internacional';
-  if (/[\u0600-\u06FF]/.test(`${name} ${cat}`) || /^(?:\[?\s*(?:AR|ARB)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:arabic|arabia|egypt|maroc|morocco|aflam|bein)\b/i.test(cat)) {
-    lang = 'AR';
-    langLabel = 'Árabe (AR)';
-  } else if (/^(?:\[?\s*(?:CAT)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:catal[aà]|3cat|tv3)\b/i.test(hay)) {
-    lang = 'CAT';
-    langLabel = 'Català';
-  } else if (/\b(?:vose|subtitulad[ao]s?|sub\s*es|sub\s*esp)\b/i.test(hay)) {
-    lang = 'VOSE';
-    langLabel = 'VOSE';
-  } else if (/^(?:\[?\s*(?:LAT|LA|MX)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:latino|latam|audio\s*latino|es-mx|m[eé]xico|argentina|colombia)\b/i.test(hay)) {
-    lang = 'LAT';
-    langLabel = 'Latino';
-  } else if (
-    /^(?:\[?\s*(?:VIP\s*)?(?:ES|ESP|SPAIN|ESPA[ÑN]A|CAST)\s*\]?\s*[|:/-])/i.test(name) ||
-    /^(?:\[?\s*(?:VIP\s*)?(?:ES|ESP|SPAIN|ESPA[ÑN]A)\s*\]?\s*[|:/-])/i.test(cat) ||
-    /\b(?:castellano|espa[ñn]a|spain|tdt|tivify|movistar|dazn\s*(?:la\s*liga|1|2|3|4|f1)|laliga\s*hypermotion|cine\s*es|pel[ií]culas|estrenos|atresmedia|mediaset|rtve)\b/i.test(
-      hay
-    )
-  ) {
-    lang = 'ES';
-    langLabel = 'Castellano';
-  } else if (/^(?:\[?\s*(?:FR|VF|VOSTFR)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:french|fran[çc]ais|france|vostfr)\b/i.test(hay)) {
-    lang = 'FR';
-    langLabel = 'Francés';
-  } else if (/^(?:\[?\s*(?:PT|BR)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:portugu[eê]s|portugal|brasil)\b/i.test(hay)) {
-    lang = 'PT';
-    langLabel = 'Portugués';
-  } else if (/^(?:\[?\s*(?:IT)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:italiano|italy|italia)\b/i.test(hay)) {
-    lang = 'IT';
-    langLabel = 'Italiano';
-  } else if (/^(?:\[?\s*(?:DE|GER)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:german|deutsch)\b/i.test(hay)) {
-    lang = 'DE';
-    langLabel = 'Alemán';
-  } else if (/^(?:\[?\s*(?:EN|ENG|UK|US|USA)\s*\]?\s*[|:/-])/i.test(name) || /\b(?:english|ingl[eé]s|uk|usa)\b/i.test(hay)) {
-    lang = 'EN';
-    langLabel = 'Inglés';
-  }
-
-  const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(hay);
-  let quality = kind === 'live' ? 'HD' : '1080p FHD';
-  let qualityTier = kind === 'live' ? 2 : 1;
-
-  if (/\b(?:4k|uhd|2160p?|dolby\s*vision|hdr10?\+?|remux)\b/.test(hay)) {
-    quality = isHevc ? '4K HEVC' : '4K UHD';
-    qualityTier = isHevc ? 2.5 : 0;
-  } else if (/\b(?:fhd|1080p?|full\s*hd|blu-?ray|bdrip)\b/.test(hay)) {
-    quality = isHevc ? '1080p HEVC' : '1080p FHD';
-    qualityTier = isHevc ? 2.8 : 1;
-  } else if (/\b(?:576p?|480p?|360p?|sd|lq|dvdrip)\b/.test(hay)) {
-    quality = 'SD';
-    qualityTier = 4;
-  } else if (/\b(?:720p?|hd|hdtv|web-?dl|webrip)\b/.test(hay)) {
-    quality = 'HD';
-    qualityTier = isHevc ? 3 : 2;
-  }
-
-  return { lang, langLabel, quality, qualityTier };
+): { lang: string; langLabel: string; quality: string; qualityTier: number; cleanTitle: string } {
+  const parsed = parseStreamMetadata(rawName, categoryName, kind, containerExt);
+  return {
+    lang: parsed.lang,
+    langLabel: parsed.langLabel,
+    quality: parsed.quality,
+    qualityTier: parsed.qualityTier,
+    cleanTitle: parsed.cleanTitle,
+  };
 }
 
-export function sortCatalogItemsForDisplay(items: ProviderCatalogItemPublic[]): ProviderCatalogItemPublic[] {
-  const langScore = (item: ProviderCatalogItemPublic): number => {
-    if (item.lang === 'ES') return 0;
-    if (item.lang === 'CAT') return 1;
-    if (item.lang === 'LAT') return 2;
-    if (item.lang === 'VOSE') return 3;
-    if (item.lang === 'EN') return 4;
-    return 5;
-  };
-  return items.sort((a, b) => {
-    const lDiff = langScore(a) - langScore(b);
-    if (lDiff !== 0) return lDiff;
-    const qa = typeof a.qualityTier === 'number' ? a.qualityTier : 2;
-    const qb = typeof b.qualityTier === 'number' ? b.qualityTier : 2;
-    if (qa !== qb) return qa - qb;
-    const aEsBoost = /\b(tdt|movistar|dazn|laliga|champions|estreno)\b/i.test(`${a.categoryName} ${a.name}`) ? 0 : 1;
-    const bEsBoost = /\b(tdt|movistar|dazn|laliga|champions|estreno)\b/i.test(`${b.categoryName} ${b.name}`) ? 0 : 1;
-    return aEsBoost - bEsBoost;
-  });
+export function computeProviderCatalogSortScore(
+  item: Pick<ProviderCatalogItemPublic, 'lang' | 'qualityTier' | 'categoryName' | 'name'>,
+  priority: ProviderPriorityMode = 'es_quality'
+): number {
+  const lang = String(item.lang || 'INTL').toUpperCase();
+  const langScore =
+    lang === 'ES'
+      ? 0
+      : lang === 'CAT'
+      ? 1
+      : lang === 'LAT'
+      ? 2
+      : lang === 'VOSE'
+      ? 3
+      : lang === 'EN'
+      ? 4
+      : 5;
+  const qa = typeof item.qualityTier === 'number' ? item.qualityTier : 2;
+  const esBoost = /\b(tdt|movistar|dazn|laliga|champions|estreno)\b/i.test(
+    `${item.categoryName} ${item.name}`
+  )
+    ? 0
+    : 1;
+
+  if (priority === 'best_quality') {
+    // 4K UHD > 1080p FHD > HD > SD first, with Castellano as top tie-breaker
+    return qa * 100 + langScore * 10 + esBoost;
+  }
+  // Castellano (ES) + Best Quality within Castellano
+  return langScore * 100 + qa * 10 + esBoost;
+}
+
+export function sortCatalogItemsForDisplay(
+  items: ProviderCatalogItemPublic[],
+  priority: ProviderPriorityMode = 'es_quality'
+): ProviderCatalogItemPublic[] {
+  return items.sort(
+    (a, b) =>
+      computeProviderCatalogSortScore(a, priority) - computeProviderCatalogSortScore(b, priority)
+  );
 }

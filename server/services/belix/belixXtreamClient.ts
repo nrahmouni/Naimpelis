@@ -9,6 +9,7 @@ import { assertSafeProxyUrl } from '../../utils/ssrfGuard.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
 import { CHROME_UA, curlGetText } from '../../extractors/httpHelpers.ts';
 import { getActiveDvbSessionPath } from '../../routes/proxies/dvbTranscoder.ts';
+import { detectStreamLanguage } from '../../utils/streamMetaParser.ts';
 import {
   clearBelixOpaqueCaches,
   fetchBelixOpaqueSegment,
@@ -175,14 +176,7 @@ function pickBrandTone(categoryName: string, streamName: string): string {
 }
 
 function inferStreamLang(categoryName: string, streamName: string): string {
-  const text = `${categoryName} ${streamName}`.toLowerCase();
-  if (/\b(es|esp|spain|espana|castellano|tdt)\b/i.test(text)) return 'ES';
-  if (/\b(lat|latam|mx|ar|co|cl)\b/i.test(text)) return 'LAT';
-  if (/\b(uk|us|usa|en|eng)\b/i.test(text)) return 'EN';
-  if (/\b(fr|fra|france)\b/i.test(text)) return 'FR';
-  if (/\b(ar|arab|bein|mbc|ssc)\b/i.test(text)) return 'AR';
-  if (/\b(cat|tv3|324|esport3)\b/i.test(text)) return 'CAT';
-  return 'ES';
+  return detectStreamLanguage(streamName, categoryName, 'live').lang;
 }
 
 function isDisallowedStreamName(categoryName: string, streamName: string): boolean {
@@ -1069,8 +1063,8 @@ export async function initBelixFromEnv(): Promise<void> {
 
 const DEFAULT_BUILTIN_BELIX_PORTAL = {
   server: 'http://1.sharkpro.ink:80',
-  user: '8996754342',
-  pass: '4228202130',
+  user: '2C6B3523',
+  pass: '2377241482',
 } as const;
 
 export function getFallbackBelixSessionCreds() {
@@ -1125,22 +1119,28 @@ export async function resolveBelixManifest(
   streamId: string,
   originPrefix = '',
   sessionKey = DEFAULT_BELIX_SESSION_KEY,
-  channelNameHint = ''
+  channelNameHint = '',
+  opts?: { allowTranscodeFallback?: boolean; probeTimeoutMs?: number }
 ): Promise<string | null> {
   const cleanId = String(streamId || '').replace(/\.m3u8$/i, '').trim();
-  const dedupeKey = `${sessionKey}|${originPrefix}|${cleanId}`;
+  const modeKey = opts?.allowTranscodeFallback === false ? 'fast' : 'full';
+  const dedupeKey = `${sessionKey}|${originPrefix}|${modeKey}|${cleanId}`;
   const existingInflight = inflightBelixManifestResolves.get(dedupeKey);
   if (existingInflight) {
     return existingInflight;
   }
 
-  const task = resolveBelixManifestInternal(cleanId, originPrefix, sessionKey, channelNameHint).finally(
-    () => {
-      if (inflightBelixManifestResolves.get(dedupeKey) === task) {
-        inflightBelixManifestResolves.delete(dedupeKey);
-      }
+  const task = resolveBelixManifestInternal(
+    cleanId,
+    originPrefix,
+    sessionKey,
+    channelNameHint,
+    opts
+  ).finally(() => {
+    if (inflightBelixManifestResolves.get(dedupeKey) === task) {
+      inflightBelixManifestResolves.delete(dedupeKey);
     }
-  );
+  });
   inflightBelixManifestResolves.set(dedupeKey, task);
   return task;
 }
@@ -1149,7 +1149,8 @@ async function resolveBelixManifestInternal(
   streamId: string,
   originPrefix: string,
   sessionKey: string,
-  channelNameHint: string
+  channelNameHint: string,
+  opts?: { allowTranscodeFallback?: boolean; probeTimeoutMs?: number }
 ): Promise<string | null> {
   const startedAt = Date.now();
   let primaryCreds = getActiveSession(sessionKey) || null;
@@ -1190,7 +1191,8 @@ async function resolveBelixManifestInternal(
       const primaryRes = await resolveBelixManifestForSession(
         primaryCreds,
         candidateId,
-        originPrefix
+        originPrefix,
+        opts
       ).catch(() => null);
       if (primaryRes) {
         if (candidateId !== cleanId) {
@@ -1239,7 +1241,8 @@ async function resolveBelixManifestInternal(
     const backupRes = await resolveBelixManifestForSession(
       { origin: backup.origin, username: backup.username, password: backup.password },
       targetStreamId,
-      originPrefix
+      originPrefix,
+      opts
     ).catch(() => null);
     if (backupRes) return backupRes;
   }

@@ -12,15 +12,19 @@ import {
 } from '../../src/utils/channelQualityRanker.ts';
 
 export function buildUnifiedPrioritizedChannels<T extends GenericRankableChannel>(
-  rawChannels: T[]
+  rawChannels: T[],
+  opts?: { preferQualityFirst?: boolean }
 ): T[] {
-  const merged = mergeAndDeduplicateChannels(rawChannels);
+  const preferQualityFirst = Boolean(opts?.preferQualityFirst);
+  const merged = mergeAndDeduplicateChannels(rawChannels, { preferQualityFirst });
   const healthRanked = channelHealthMonitor.prioritizeChannels(
     merged as unknown as HealthProbeChannel[]
   ) as unknown as T[];
 
   return [...healthRanked].sort((a, b) => {
-    const rankDiff = getTvBrowsePriorityRank(a) - getTvBrowsePriorityRank(b);
+    const rankDiff =
+      getTvBrowsePriorityRank(a, { preferQualityFirst }) -
+      getTvBrowsePriorityRank(b, { preferQualityFirst });
     if (rankDiff !== 0) return rankDiff;
 
     const aLat = a.healthSummary?.bestLatencyMs;

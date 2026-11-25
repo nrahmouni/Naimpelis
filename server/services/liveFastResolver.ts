@@ -22,7 +22,10 @@ import { extractLiveSportsHlsDirect } from '../extractors/sportsExtractor.ts';
 import { resolveMediasetLiveHlsUrl } from './mediasetLiveService.ts';
 import { isAnyBelixConnected, resolveBelixManifest } from './belix/belixXtreamClient.ts';
 import { fetchProxiedXtreamManifest } from './xtreamService.ts';
-import { resolveProviderLiveManifest } from './providers/xtreamProvidersService.ts';
+import {
+  getProvidersStatusSummary,
+  resolveProviderLiveManifest,
+} from './providers/xtreamProvidersService.ts';
 import { getActiveDvbSessionPath, isDvbUpstreamCoolingDown } from '../routes/proxies/dvbTranscoder.ts';
 import {
   extractXtreamLiveHintsFromSportsRequest,
@@ -122,6 +125,7 @@ export async function defaultProbeSingleLiveTrack(
     belixSessionKey: string;
     titleHint?: string;
     timeoutMs: number;
+    allowTranscodeFallback?: boolean;
   }
 ): Promise<FastLiveProbeOutcome> {
   const startedAt = Date.now();
@@ -144,10 +148,17 @@ export async function defaultProbeSingleLiveTrack(
   const xtreamRef = parseXtreamSource(sourceUrl);
   if (xtreamRef) {
     try {
+      const allowTranscode = opts.allowTranscodeFallback ?? false;
       const manifest = await Promise.race([
         xtreamRef.isProvidersRoute
-          ? resolveProviderLiveManifest(xtreamRef.providerId, xtreamRef.streamId, '')
-          : fetchProxiedXtreamManifest(xtreamRef.streamId, '', xtreamRef.providerId),
+          ? resolveProviderLiveManifest(xtreamRef.providerId, xtreamRef.streamId, '', {
+              allowTranscodeFallback: allowTranscode,
+              probeTimeoutMs: Math.min(opts.timeoutMs, allowTranscode ? 8_000 : 5_200),
+            })
+          : fetchProxiedXtreamManifest(xtreamRef.streamId, '', xtreamRef.providerId, undefined, {
+              allowTranscodeFallback: allowTranscode,
+              probeTimeoutMs: Math.min(opts.timeoutMs, allowTranscode ? 8_000 : 5_200),
+            }),
         new Promise<null>((resolve) => setTimeout(() => resolve(null), opts.timeoutMs)),
       ]);
       const lat = Math.max(1, Date.now() - startedAt);
@@ -184,7 +195,10 @@ export async function defaultProbeSingleLiveTrack(
     }
     const belixStreamId = sourceUrl.split('/').pop()?.replace(/\.m3u8.*$/i, '') || '';
     const manifest = await Promise.race([
-      resolveBelixManifest(belixStreamId, opts.publicOrigin, opts.belixSessionKey, opts.titleHint || ''),
+      resolveBelixManifest(belixStreamId, opts.publicOrigin, opts.belixSessionKey, opts.titleHint || '', {
+        allowTranscodeFallback: opts.allowTranscodeFallback ?? false,
+        probeTimeoutMs: Math.min(opts.timeoutMs, 4_500),
+      }),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), opts.timeoutMs)),
     ]).catch(() => null);
     const lat = Math.max(1, Date.now() - startedAt);
@@ -440,8 +454,29 @@ export async function raceFastLiveTracks(
     probeImpl?: typeof defaultProbeSingleLiveTrack;
   } = {}
 ): Promise<FastLiveResolveResult> {
-  const safeTracks = Array.isArray(tracks) ? tracks.filter((t) => Boolean(t?.sourceUrl)) : [];
-  if (safeTracks.length === 0) {
+  const rawTracks = Array.isArray(tracks) ? tracks.filter((t) => Boolean(t?.sourceUrl)) : [];
+  let connectedProviderIds: Set<string> | null = null;
+  let knownProviderIds: Set<string> | null = null;
+  try {
+    const summary = getProvidersStatusSummary();
+    if (summary.totals.connectedCount > 0) {
+      knownProviderIds = new Set(summary.providers.map((p) => p.id));
+      connectedProviderIds = new Set(summary.providers.filter((p) => p.connected).map((p) => p.id));
+    }
+  } catch {
+    // ignore in isolated unit tests
+  }
+  const safeTracks = rawTracks.filter((tr) => {
+    if (!connectedProviderIds || !knownProviderIds) return true;
+    const xRef = parseXtreamSource(String(tr.sourceUrl || ''));
+    const pid = tr.providerId || xRef?.providerId;
+    if (pid && knownProviderIds.has(pid) && !connectedProviderIds.has(pid)) {
+      return false;
+    }
+    return true;
+  });
+  const effectiveTracks = safeTracks.length > 0 ? safeTracks : rawTracks;
+  if (effectiveTracks.length === 0) {
     return {
       ok: false,
       winningIndex: -1,
@@ -455,7 +490,7 @@ export async function raceFastLiveTracks(
 
   const preferLang = String(opts.preferLang || 'ES').toUpperCase();
   const qualityFirst = Boolean(opts.preferQualityFirst);
-  const cacheKey = `${opts.channelId || safeTracks[0].sourceUrl}|${preferLang}|${qualityFirst ? 'q1' : 'q0'}`;
+  const cacheKey = `${opts.channelId || effectiveTracks[0].sourceUrl}|${preferLang}|${qualityFirst ? 'q1' : 'q0'}`;
   const cachedWinner = fastLiveWinnerCache.get(cacheKey);
   if (cachedWinner && cachedWinner.ok) {
     const ageMs = Date.now() - (cachedWinner.cachedAt || 0);
@@ -498,17 +533,26 @@ export async function raceFastLiveTracks(
   ): Array<{ originalIndex: number; track: FastLiveTrackCandidate }> => {
     const picked: Array<{ originalIndex: number; track: FastLiveTrackCandidate }> = [];
     const seenIdx = new Set<number>();
-    const seenProviders = new Set<string>();
-    // Pass 1: ensure at least 1 signal from every distinct provider/host
+    const seenCounts = new Map<string, number>();
     for (const item of ranked) {
       const bucket = getCandidateProviderBucket(item.track);
-      if (seenProviders.has(bucket)) continue;
-      seenProviders.add(bucket);
+      const count = seenCounts.get(bucket) || 0;
+      if (count >= 1) continue;
+      seenCounts.set(bucket, count + 1);
       seenIdx.add(item.originalIndex);
       picked.push(item);
       if (picked.length >= limit) return picked;
     }
-    // Pass 2: fill remaining race slots with next highest-priority backups
+    for (const item of ranked) {
+      if (seenIdx.has(item.originalIndex)) continue;
+      const bucket = getCandidateProviderBucket(item.track);
+      const count = seenCounts.get(bucket) || 0;
+      if (count >= 2) continue;
+      seenCounts.set(bucket, count + 1);
+      seenIdx.add(item.originalIndex);
+      picked.push(item);
+      if (picked.length >= limit) return picked;
+    }
     for (const item of ranked) {
       if (seenIdx.has(item.originalIndex)) continue;
       seenIdx.add(item.originalIndex);
@@ -521,7 +565,7 @@ export async function raceFastLiveTracks(
   const isVodOrSeries =
     String(opts.channelId || '').startsWith('xtream-vod-') ||
     String(opts.channelId || '').startsWith('xtream-ser-') ||
-    safeTracks.some(
+    effectiveTracks.some(
       (t) =>
         /[?&]type=(?:vod|series)(?:&|$)/i.test(String(t.sourceUrl || '')) ||
         /^\/api\/(?:providers\/stream\/[^/]+\/(?:movie|series)\/|xtream\/vod\/)/i.test(
@@ -530,16 +574,19 @@ export async function raceFastLiveTracks(
         /\.(mp4|mkv|webm|avi)(\?|$)/i.test(String(t.sourceUrl || ''))
     );
 
-  // Only do synchronous Xtream discovery if the caller supplied fewer than 4 distinct healthy providers
   const initialDistinctHealthyProviders = new Set<string>();
-  for (const tr of safeTracks) {
+  let has4kAlready = false;
+  for (const tr of effectiveTracks) {
     if (tr.health?.status === 'down' || isProviderCircuitOpen(tr.sourceUrl, tr.providerId)) continue;
     if (tr.resolverType === 'sports_channel' && /footunder\.online|streamxhd\.|tilinhd\./i.test(tr.sourceUrl)) continue;
     initialDistinctHealthyProviders.add(getCandidateProviderBucket(tr));
+    if (/\b(?:4k|uhd|2160p?)\b/i.test(`${tr.quality || ''} ${tr.label || ''}`)) {
+      has4kAlready = true;
+    }
   }
 
   let discoveredExtraTracks: FastLiveTrackCandidate[] = [];
-  if (!opts.probeImpl && !isVodOrSeries && initialDistinctHealthyProviders.size < 4) {
+  if (!opts.probeImpl && !isVodOrSeries && (initialDistinctHealthyProviders.size < 4 || (qualityFirst && !has4kAlready))) {
     const hintPool = new Set<string>();
     if (opts.channelId === 'mux-champions' || /liga\s*de\s*campeones/i.test(String(opts.titleHint || ''))) {
       hintPool.add('M+ Liga de Campeones');
@@ -595,7 +642,7 @@ export async function raceFastLiveTracks(
         hintPool.add(idSlug);
       }
     }
-    for (const tr of safeTracks) {
+    for (const tr of effectiveTracks) {
       for (const h of extractXtreamLiveHintsFromSportsRequest(tr.sourceUrl, tr.label, opts.titleHint)) {
         hintPool.add(h);
       }
@@ -606,11 +653,12 @@ export async function raceFastLiveTracks(
         findXtreamLiveChannelMatches({
           channelHints: hints,
           preferLang,
+          preferQualityFirst: qualityFirst,
           limit: 24,
         }).catch(() => []),
-        new Promise<TrackRecord[]>((resolve) => setTimeout(() => resolve([]), 380)),
+        new Promise<TrackRecord[]>((resolve) => setTimeout(() => resolve([]), 320)),
       ]);
-      const existingUrls = new Set(safeTracks.map((t) => String(t.sourceUrl || '').trim()));
+      const existingUrls = new Set(effectiveTracks.map((t) => String(t.sourceUrl || '').trim()));
       for (const m of xtreamMatches) {
         if (!m.sourceUrl || existingUrls.has(m.sourceUrl)) continue;
         existingUrls.add(m.sourceUrl);
@@ -629,7 +677,7 @@ export async function raceFastLiveTracks(
     }
   }
 
-  const combinedPool: FastLiveTrackCandidate[] = [...safeTracks, ...discoveredExtraTracks];
+  const combinedPool: FastLiveTrackCandidate[] = [...effectiveTracks, ...discoveredExtraTracks];
   const ordered = selectProviderDiversePool(
     orderCandidatesForFastResolve(combinedPool, {
       preferLang,
@@ -639,9 +687,9 @@ export async function raceFastLiveTracks(
   );
 
   const probeImpl = opts.probeImpl || defaultProbeSingleLiveTrack;
-  const timeoutMs = Math.min(15_000, opts.timeoutMs ?? 15_000);
-  const hedgeDelay1 = opts.hedgeDelayMs ?? 150;
-  const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 420;
+  const timeoutMs = Math.min(8_500, opts.timeoutMs ?? 8_500);
+  const hedgeDelay1 = opts.hedgeDelayMs ?? 90;
+  const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 240;
   const publicOrigin = opts.publicOrigin || '';
   const belixSessionKey = opts.belixSessionKey || 'default';
 
@@ -735,7 +783,8 @@ export async function raceFastLiveTracks(
           publicOrigin,
           belixSessionKey,
           titleHint: opts.titleHint,
-          timeoutMs: Math.max(400, Math.min(14_800, remainingMs)),
+          timeoutMs: Math.max(400, Math.min(7_800, remainingMs)),
+          allowTranscodeFallback: ordered.length <= 1,
         })
           .then((out) => {
             recordProviderOutcome(bucket, { ok: out.ok, latencyMs: out.latencyMs });

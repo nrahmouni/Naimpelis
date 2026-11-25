@@ -24,9 +24,10 @@ describe('channelQualityRanker & VOD browser remuxing', () => {
   });
 
   it('infers quality tier labels and merges multi-server backups without duplicate URLs', () => {
-    expect(inferStreamQualityTag('4K UHD HEVC')).toEqual({ label: '4K UHD', tier: 2 });
-    expect(inferStreamQualityTag('1080p FHD')).toEqual({ label: '1080p FHD', tier: 0 });
-    expect(inferStreamQualityTag('720p HD')).toEqual({ label: 'HD', tier: 1 });
+    expect(inferStreamQualityTag('4K UHD')).toEqual({ label: '4K UHD', tier: 0 });
+    expect(inferStreamQualityTag('4K UHD HEVC')).toEqual({ label: '4K UHD', tier: 2.5 });
+    expect(inferStreamQualityTag('1080p FHD')).toEqual({ label: '1080p FHD', tier: 1 });
+    expect(inferStreamQualityTag('720p HD')).toEqual({ label: 'HD', tier: 2 });
 
     const baseA3: SpanishTdtChannel = {
       id: 'tdt-antena3',

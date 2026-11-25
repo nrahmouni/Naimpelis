@@ -3,7 +3,18 @@ import { unwrapEmbedUrl } from './embedWindowUtils';
 
 const KNOWN_HOST_LABELS: Array<[RegExp, string]> = [
   [/movidy|nupload/i, 'Movidy'],
-  [/xtream|sharkpro|dana4k|vod4k|octopus/i, 'Xtream HD'],
+  [/vod4k|vod\s*4k/i, 'VOD 4K'],
+  [/24tv|24\s*tv/i, '24TV'],
+  [/2m2h[-_\s]*alt/i, '2M2H Alt'],
+  [/2m2h/i, '2M2H'],
+  [/dana4k|dana\s*4k/i, 'Dana 4K'],
+  [/adtupac/i, 'Adtupac'],
+  [/ultra[-_\s]*vip/i, 'Ultra VIP'],
+  [/sult[-_\s]*vo/i, 'Sult-Vo'],
+  [/activecdns|active\s*cdns/i, 'Active CDNS'],
+  [/sharkpro|shark\s*pro/i, 'Shark Pro'],
+  [/octopus/i, 'Octopus'],
+  [/xtream/i, 'Xtream HD'],
   [/gnula/i, 'GnulaHD'],
   [/ghostflix|vidbolt/i, 'VidBolt'],
   [/vidsrc|vidsrccc/i, 'VidSrc'],
@@ -153,12 +164,35 @@ export function resolveTrackLang(
   tr?: StreamTrack | null,
   contextMeta?: { subtitle?: string; title?: string; fallbackLang?: string }
 ): CanonicalTrackLang {
-  const raw = String(tr?.lang || contextMeta?.fallbackLang || '').toUpperCase();
-  if (!tr && !raw && !contextMeta?.subtitle && !contextMeta?.title) return 'ES';
+  const trackRaw = String(tr?.lang || '').trim().toUpperCase();
+  const explicitFallback = String(contextMeta?.fallbackLang || '').trim().toUpperCase();
+  const titleAndLabelRaw = `${tr?.label || ''} ${tr?.langLabel || ''} ${contextMeta?.title || ''} ${contextMeta?.subtitle || ''}`.trim();
+  const label = titleAndLabelRaw.toLowerCase();
+
+  if (!tr && !trackRaw && !explicitFallback && !titleAndLabelRaw) return 'ES';
+
+  // 1) Explicit leading/delimited language tags ALWAYS take priority over fallbackLang
+  const prefixMatch = titleAndLabelRaw.match(
+    /(?:^|\s)(?:[|┃\[\(]\s*([A-Za-zÀ-ÿ0-9+\- ]{2,10})\s*[|┃\]\)]|(FR|DE|GER|PT|BR|IT|AR|ENG|EN|UK|US|LAT|CAT|VOSE|ES|ESP)\s*[:\-]\s*(?=\S))/i
+  );
+  const tagToken = (prefixMatch?.[1] || prefixMatch?.[2] || '').trim().toUpperCase();
+  if (tagToken) {
+    if (/^(?:EN|ENG|UK|US|USA)$/.test(tagToken)) return 'EN';
+    if (/^(?:FR|FRA|FRENCH)$/.test(tagToken)) return 'FR';
+    if (/^(?:DE|GER|DEU|AL)$/.test(tagToken)) return 'DE';
+    if (/^(?:PT|POR|BR|BRA)$/.test(tagToken)) return 'PT';
+    if (/^(?:IT|ITA)$/.test(tagToken)) return 'IT';
+    if (/^(?:AR|ARB|ARAB)$/.test(tagToken)) return 'AR';
+    if (/^(?:LAT|LA|MX|ARG)$/.test(tagToken)) return 'LAT';
+    if (/^(?:CAT|CA|VAL)$/.test(tagToken)) return 'CAT';
+    if (/^(?:VOSE|SUB)$/.test(tagToken)) return 'VOSE';
+    if (/^(?:ES|ESP|SPA|CAST)$/.test(tagToken)) return 'ES';
+  }
+
+  const raw = trackRaw || '';
   if (raw === 'CAT' || raw === 'CA' || raw.includes('CATAL') || raw.includes('VALENCI')) {
     return 'CAT';
   }
-  const label = `${tr?.label || ''} ${tr?.langLabel || ''} ${contextMeta?.subtitle || ''} ${contextMeta?.title || ''}`.toLowerCase();
   if (
     label.includes('català') ||
     label.includes('catala') ||
@@ -180,6 +214,7 @@ export function resolveTrackLang(
   if (
     raw === 'EN' ||
     raw.includes('ENG') ||
+    /\|\s*eng\s*\||\[\s*eng\s*\]|\(\s*eng\s*\)/i.test(titleAndLabelRaw) ||
     label.includes('english') ||
     label.includes('inglés') ||
     label.includes('ingles')
@@ -200,6 +235,12 @@ export function resolveTrackLang(
   }
   if (raw === 'AR' || raw === 'ARB' || label.includes('árabe') || label.includes('arabic')) {
     return 'AR';
+  }
+  if (raw === 'ES' || raw === 'ESP' || raw === 'CAST') {
+    return 'ES';
+  }
+  if (explicitFallback === 'EN' || explicitFallback === 'LAT' || explicitFallback === 'VOSE' || explicitFallback === 'CAT' || explicitFallback === 'FR' || explicitFallback === 'DE' || explicitFallback === 'PT' || explicitFallback === 'IT' || explicitFallback === 'AR') {
+    return explicitFallback as CanonicalTrackLang;
   }
   return 'ES';
 }

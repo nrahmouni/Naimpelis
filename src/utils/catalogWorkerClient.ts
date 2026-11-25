@@ -135,26 +135,27 @@ export async function rankVodResultsOffThread(
 }
 
 export async function mergeAndRankChannelsOffThread(
-  channels: SpanishTdtChannel[]
+  channels: SpanishTdtChannel[],
+  options?: { preferQualityFirst?: boolean }
 ): Promise<SpanishTdtChannel[]> {
   if (channels.length < 120) {
-    return rankClientChannels(channels);
+    return rankClientChannels(channels, options);
   }
   const worker = getCatalogWorker();
   if (!worker) {
-    return rankClientChannels(channels);
+    return rankClientChannels(channels, options);
   }
   const id = nextRequestId++;
   return new Promise<SpanishTdtChannel[]>((resolve) => {
     pendingRequests.set(id, {
       resolve: (val) =>
-        resolve(Array.isArray(val) ? (val as SpanishTdtChannel[]) : rankClientChannels(channels)),
-      reject: () => resolve(rankClientChannels(channels)),
+        resolve(Array.isArray(val) ? (val as SpanishTdtChannel[]) : rankClientChannels(channels, options)),
+      reject: () => resolve(rankClientChannels(channels, options)),
     });
     const req: CatalogWorkerRequest = {
       id,
       type: 'MERGE_RANK_CHANNELS',
-      payload: { channels },
+      payload: { channels, options },
     };
     worker.postMessage(req);
   });

@@ -134,7 +134,8 @@ export function registerStreamExtractRoute(
     const resolverType = String(req.query.resolverType || '').trim();
     const preferLang = String(req.query.preferLang || req.query.lang || 'ES').toUpperCase();
     const preferQualityFirst =
-      String(req.query.qualityFirst || req.query.preferQuality || '').trim() === '1' ||
+      String(req.query.preferQualityFirst || req.query.qualityFirst || req.query.preferQuality || '').trim() === '1' ||
+      String(req.query.priority || '').trim() === 'best_quality' ||
       preferLang === 'QUALITY' ||
       preferLang === 'BEST';
     const titleHint = String(req.query.title || '').trim();

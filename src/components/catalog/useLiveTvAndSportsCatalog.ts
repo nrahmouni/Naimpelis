@@ -133,6 +133,7 @@ export function useLiveTvAndSportsCatalog({
   const setTdtCategory = useAppStore((s) => s.setTdtCategory) as (
     cat: 'all' | 'tdt_all' | TdtCategory
   ) => void;
+  const playbackPriorityMode = useAppStore((s) => s.playbackPriorityMode);
   const tvRegion = useAppStore((s) => s.tvRegion) as TvRegionId;
   const setTvRegion = useAppStore((s) => s.setTvRegion) as (reg: TvRegionId) => void;
   const adrarCountryFilter = useAppStore((s) => s.adrarCountryFilter);
@@ -219,6 +220,7 @@ export function useLiveTvAndSportsCatalog({
       let rbtvList: SpanishTdtChannel[] = [];
       let belixList: SpanishTdtChannel[] = [];
 
+      const preferQualityFirst = playbackPriorityMode === 'best_quality';
       const publishMerged = () => {
         const seq = ++mergeSeqRef.current;
         const effectiveBaseList = baseList.length > 0 ? baseList : buildStaticTdtFallback();
@@ -228,7 +230,7 @@ export function useLiveTvAndSportsCatalog({
           ...belixList,
           ...worldList,
         ];
-        void mergeAndRankChannelsOffThread(combined).then((ranked) => {
+        void mergeAndRankChannelsOffThread(combined, { preferQualityFirst }).then((ranked) => {
           if (!mountedRef.current || seq !== mergeSeqRef.current) return;
           setTdtChannels(ranked);
           if (baseList.length > 0) {
@@ -240,9 +242,9 @@ export function useLiveTvAndSportsCatalog({
 
       const tdtP = queryClient
         .fetchQuery({
-          queryKey: catalogQueryKeys.tdtBase(),
+          queryKey: catalogQueryKeys.tdtBase(playbackPriorityMode),
           staleTime: 3 * 60_000,
-          queryFn: fetchTdtBaseCatalogData,
+          queryFn: () => fetchTdtBaseCatalogData(playbackPriorityMode),
         })
         .then((channels) => {
           if (Array.isArray(channels) && channels.length > 0) {
@@ -296,7 +298,7 @@ export function useLiveTvAndSportsCatalog({
     } finally {
       if (mountedRef.current) setLoadingTdt(false);
     }
-  }, []);
+  }, [playbackPriorityMode]);
 
   const fetchLiveEpg = useCallback(async (forceRefresh = false) => {
     setLoadingEpg(true);

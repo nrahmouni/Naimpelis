@@ -25,18 +25,12 @@ import {
   getConnectedProvidersCatalogSnapshot,
   getProviderSeriesDetail,
 } from './providers/xtreamProvidersService.ts';
+import {
+  parseStreamMetadata,
+  type CanonicalStreamLang,
+} from '../utils/streamMetaParser.ts';
 
-export type XtreamDetectedLang =
-  | 'ES'
-  | 'LAT'
-  | 'VOSE'
-  | 'EN'
-  | 'AR'
-  | 'FR'
-  | 'PT'
-  | 'IT'
-  | 'DE'
-  | 'CAT';
+export type XtreamDetectedLang = CanonicalStreamLang;
 
 export interface XtreamMatchedMediaOption {
   id: string;
@@ -71,103 +65,21 @@ export interface ParsedXtreamVodMeta {
 
 const seriesInfoCache = new LruTtlCache<string, XtreamSeriesInfoPayload>(200, 25 * 60 * 1000);
 
-const LANG_LABEL_MAP: Record<XtreamDetectedLang, string> = {
-  ES: 'Castellano',
-  LAT: 'Latino',
-  VOSE: 'VOSE',
-  EN: 'Inglés (EN)',
-  AR: 'Árabe (AR)',
-  FR: 'Francés (FR)',
-  PT: 'Portugués',
-  IT: 'Italiano',
-  DE: 'Alemán',
-  CAT: 'Català',
-};
-
-const LEADING_PREFIX_TAG_RE =
-  /^(?:\[?\s*(?:ES|ESP|SPAIN|ESPA[ÑN]A|CAST|CASTELLANO|LAT|LATINO|MX|LA|VOSE|SUB|EN|ENG|ENGLISH|UK|US|USA|AR|ARB|ARABIC|FR|VF|VOSTFR|PT|IT|DE|GER|CAT|4K|UHD|FHD|HD|VIP|TOP|MULTI|DUAL)\s*\]?\s*[:|\-/·•]+\s*)+/i;
-
-const QUALITY_AND_EXT_TAG_RE =
-  /(?:\(|\[)?\b(?:4K|UHD|2160P?|1080P?|FHD|FULL\s*HD|720P?|HDR10?\+?|DOLBY\s*VISION|REMUX|BLURAY|BLU-RAY|BDRIP|BRRIP|WEB-?DL|WEBRIP|HDTV|HDRIP|DVDRIP|480P?|360P?|HEVC|H\.?265|H\.?264|X265|X264|MULTI|DUAL|VOSE|CASTELLANO|ESPA[ÑN]OL|LATINO|SUBTITULAD[AO]S?|INGL[EÉ]S|ENGLISH|ESP|CAST|LAT|SUB|MKV|MP4|AVI)\b(?:\)|\])?/gi;
-
 export function detectXtreamQuality(
   rawName: string,
   categoryName = '',
   containerExt = ''
 ): { quality: string; qualityTier: number } {
-  const hay = `${rawName} ${categoryName} ${containerExt}`.toLowerCase();
-  if (/\b(?:4k|uhd|2160p?|dolby\s*vision|hdr10?\+?|remux)\b/.test(hay)) {
-    return { quality: '4K UHD', qualityTier: 0 };
-  }
-  if (/\b(?:1080p?|fhd|full\s*hd|blu-?ray|bdrip)\b/.test(hay)) {
-    return { quality: '1080p FHD', qualityTier: 1 };
-  }
-  if (/\b(?:720p?|hdtv|web-?dl|webrip|hdrip|hd)\b/.test(hay)) {
-    return { quality: 'HD', qualityTier: 2 };
-  }
-  if (/\b(?:480p?|dvdrip)\b/.test(hay)) {
-    return { quality: '480p', qualityTier: 3 };
-  }
-  if (/\b(?:360p?|sd|cam|ts)\b/.test(hay)) {
-    return { quality: 'SD', qualityTier: 4 };
-  }
-  return { quality: '1080p FHD', qualityTier: 1 };
+  const parsed = parseStreamMetadata(rawName, categoryName, 'movie', containerExt);
+  return { quality: parsed.quality, qualityTier: parsed.qualityTier };
 }
 
 export function detectXtreamLanguage(
   rawName: string,
   categoryName = ''
 ): { lang: XtreamDetectedLang; langLabel: string } {
-  const name = String(rawName || '').trim();
-  const cat = String(categoryName || '').trim();
-  const combined = `${name} ${cat}`;
-
-  if (/[\u0600-\u06FF]/.test(combined) || /^(?:AR|ARB)\s*[:|\-/]/i.test(name) || /\b(?:arabic|arabia|egypt|maroc|morocco|aflam)\b/i.test(cat)) {
-    return { lang: 'AR', langLabel: LANG_LABEL_MAP.AR };
-  }
-  if (/^(?:CAT)\s*[:|\-/]/i.test(name) || /\b(?:catal[aà]|3cat|tv3)\b/i.test(combined)) {
-    return { lang: 'CAT', langLabel: LANG_LABEL_MAP.CAT };
-  }
-  if (/\b(?:vose|subtitulad[ao]s?|sub\s*es|sub\s*esp)\b/i.test(combined)) {
-    return { lang: 'VOSE', langLabel: LANG_LABEL_MAP.VOSE };
-  }
-  if (
-    /^(?:LAT|LA|MX)\s*[:|\-/]/i.test(name) ||
-    /\b(?:latino|latam|audio\s*latino|es-mx|m[eé]xico|argentina|colombia)\b/i.test(combined)
-  ) {
-    return { lang: 'LAT', langLabel: LANG_LABEL_MAP.LAT };
-  }
-  if (
-    /^(?:ES|ESP|SPAIN|ESPA[ÑN]A|CAST)\s*[:|\-/]/i.test(name) ||
-    /\b(?:castellano|espa[ñn]a|spain|esp|cine\s*es|pel[ií]culas\s*es|series\s*es|estrenos\s*es|multi\s*es)\b/i.test(combined)
-  ) {
-    return { lang: 'ES', langLabel: LANG_LABEL_MAP.ES };
-  }
-  if (
-    /^(?:FR|VF|VOSTFR)\s*[:|\-/]/i.test(name) ||
-    /\b(?:french|fran[çc]ais|france|vostfr)\b/i.test(combined)
-  ) {
-    return { lang: 'FR', langLabel: LANG_LABEL_MAP.FR };
-  }
-  if (/^(?:PT|BR)\s*[:|\-/]/i.test(name) || /\b(?:portugu[eê]s|portugal|brasil)\b/i.test(combined)) {
-    return { lang: 'PT', langLabel: LANG_LABEL_MAP.PT };
-  }
-  if (/^(?:IT)\s*[:|\-/]/i.test(name) || /\b(?:italiano|italy|italia)\b/i.test(combined)) {
-    return { lang: 'IT', langLabel: LANG_LABEL_MAP.IT };
-  }
-  if (/^(?:DE|GER)\s*[:|\-/]/i.test(name) || /\b(?:german|deutsch|allemand)\b/i.test(combined)) {
-    return { lang: 'DE', langLabel: LANG_LABEL_MAP.DE };
-  }
-  if (
-    /^(?:EN|ENG|UK|US|USA)\s*[:|\-/]/i.test(name) ||
-    /\b(?:english|ingl[eé]s|4k\s*movies|en\s*4k|netflix|apple\s*tv|prime\s*video|disney|marvel|animation|horror|action|drama|comedy|thriller|sci-?fi|top\s*imdb)\b/i.test(cat)
-  ) {
-    return { lang: 'EN', langLabel: LANG_LABEL_MAP.EN };
-  }
-  if (/\b(?:pel[ií]culas|cine|series|estrenos|infantil|animaci[oó]n|acci[oó]n|comedia|terror|suspense|ciencia\s*ficci[oó]n)\b/i.test(cat)) {
-    return { lang: 'ES', langLabel: LANG_LABEL_MAP.ES };
-  }
-  return { lang: 'EN', langLabel: LANG_LABEL_MAP.EN };
+  const parsed = parseStreamMetadata(rawName, categoryName, 'movie');
+  return { lang: parsed.lang, langLabel: parsed.langLabel };
 }
 
 export function parseXtreamVodTitleMeta(
@@ -175,33 +87,14 @@ export function parseXtreamVodTitleMeta(
   categoryName = '',
   containerExtension = ''
 ): ParsedXtreamVodMeta {
-  let work = String(rawName || '').replace(/\s+/g, ' ').trim();
-  const yearMatches = Array.from(work.matchAll(/(?:\(|\b)(19\d{2}|20[0-3]\d)(?:\)|\b)/g));
-  const year = yearMatches.length > 0 ? yearMatches[yearMatches.length - 1][1] : undefined;
-
-  work = work.replace(LEADING_PREFIX_TAG_RE, '').trim();
-  work = work.replace(/\((19\d{2}|20[0-3]\d)\)/g, ' ');
-  work = work.replace(/\[(19\d{2}|20[0-3]\d)\]/g, ' ');
-  work = work.replace(QUALITY_AND_EXT_TAG_RE, ' ');
-  if (year) {
-    work = work.replace(new RegExp(`\\b${year}\\b$`), ' ');
-  }
-  work = work
-    .replace(/\[\s*\]|\(\s*\)/g, ' ')
-    .replace(/^[\s\-–:|•·/]+|[\s\-–:|•·/]+$/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  const { lang, langLabel } = detectXtreamLanguage(rawName, categoryName);
-  const { quality, qualityTier } = detectXtreamQuality(rawName, categoryName, containerExtension);
-
+  const parsed = parseStreamMetadata(rawName, categoryName, 'movie', containerExtension);
   return {
-    cleanTitle: work || String(rawName || '').trim(),
-    year,
-    lang,
-    langLabel,
-    quality,
-    qualityTier,
+    cleanTitle: parsed.cleanTitle,
+    year: parsed.year,
+    lang: parsed.lang,
+    langLabel: parsed.langLabel,
+    quality: parsed.quality,
+    qualityTier: parsed.qualityTier,
   };
 }
 
@@ -507,7 +400,7 @@ async function loadUnifiedXtreamCatalogFast(timeoutMs = 2600): Promise<XtreamFul
     expiresAt: envCat?.expiresAt ?? Date.now() + 5 * 60 * 1000,
     fromCache: true,
   };
-  if (envCatalogRes.ok && mergedPayload.liveStreams.length >= 200) {
+  if (mergedPayload.liveStreams.length >= 200) {
     unifiedCatalogRamCache.set('unified', mergedPayload);
   }
   return mergedPayload;
@@ -528,10 +421,14 @@ function buildCategoryLookup(
 }
 
 function toExtractorLang(lang: XtreamDetectedLang): string {
-  return lang;
+  return lang === 'INTL' ? 'EN' : lang;
 }
 
-function computeOptionSortKey(opt: XtreamMatchedMediaOption, preferLang?: string): number {
+function computeOptionSortKey(
+  opt: XtreamMatchedMediaOption,
+  preferLang?: string,
+  preferQualityFirst?: boolean
+): number {
   const normPref = String(preferLang || 'ES').toUpperCase();
   let langRank = 5;
   if (opt.lang === normPref) langRank = 0;
@@ -545,7 +442,10 @@ function computeOptionSortKey(opt: XtreamMatchedMediaOption, preferLang?: string
     langRank = opt.lang === 'VOSE' ? 0 : opt.lang === 'EN' ? 1 : opt.lang === 'ES' ? 2 : 5;
   }
 
-  // Quality is weighed heavily so 4K UHD beats lower tiers cleanly within/near preferred tier
+  if (preferQualityFirst || normPref === 'QUALITY') {
+    return opt.qualityTier * 1000 + langRank * 100 - Math.min(99, opt.score);
+  }
+  // Castellano/preferred language first, then best resolution (4K > 1080p > HD > SD)
   return langRank * 1000 + opt.qualityTier * 100 - Math.min(99, opt.score);
 }
 
@@ -553,6 +453,7 @@ export async function findXtreamMovieMatches(params: {
   titleHints: string[];
   yearHint?: string;
   preferLang?: string;
+  preferQualityFirst?: boolean;
   limit?: number;
 }): Promise<{ options: XtreamMatchedMediaOption[]; tracks: TrackRecord[] }> {
   const hints = buildHintVectors(params.titleHints);
@@ -605,7 +506,9 @@ export async function findXtreamMovieMatches(params: {
   }
 
   matches.sort((a, b) => {
-    const keyDiff = computeOptionSortKey(a, params.preferLang) - computeOptionSortKey(b, params.preferLang);
+    const keyDiff =
+      computeOptionSortKey(a, params.preferLang, params.preferQualityFirst) -
+      computeOptionSortKey(b, params.preferLang, params.preferQualityFirst);
     if (keyDiff !== 0) return keyDiff;
     return (providerOrder.get(a.providerId) ?? 99) - (providerOrder.get(b.providerId) ?? 99);
   });
@@ -638,6 +541,7 @@ export async function findXtreamSeriesMatches(params: {
   titleHints: string[];
   yearHint?: string;
   preferLang?: string;
+  preferQualityFirst?: boolean;
   limit?: number;
 }): Promise<XtreamMatchedMediaOption[]> {
   const hints = buildHintVectors(params.titleHints);
@@ -686,7 +590,9 @@ export async function findXtreamSeriesMatches(params: {
   }
 
   matches.sort((a, b) => {
-    const keyDiff = computeOptionSortKey(a, params.preferLang) - computeOptionSortKey(b, params.preferLang);
+    const keyDiff =
+      computeOptionSortKey(a, params.preferLang, params.preferQualityFirst) -
+      computeOptionSortKey(b, params.preferLang, params.preferQualityFirst);
     if (keyDiff !== 0) return keyDiff;
     return (providerOrder.get(a.providerId) ?? 99) - (providerOrder.get(b.providerId) ?? 99);
   });
@@ -767,11 +673,13 @@ export async function extractXtreamSeriesEpisodeTracks(params: {
   season: number;
   episode: number;
   preferLang?: string;
+  preferQualityFirst?: boolean;
 }): Promise<TrackRecord[]> {
   const seriesOptions = await findXtreamSeriesMatches({
     titleHints: params.titleHints,
     yearHint: params.yearHint,
     preferLang: params.preferLang,
+    preferQualityFirst: params.preferQualityFirst,
     limit: 6,
   });
   if (seriesOptions.length === 0) return [];
@@ -956,6 +864,7 @@ function getIndexedLiveStreams(catalog: XtreamFullCatalogPayload): IndexedXtream
 export async function findXtreamLiveChannelMatches(params: {
   channelHints: string[];
   preferLang?: string;
+  preferQualityFirst?: boolean;
   limit?: number;
 }): Promise<TrackRecord[]> {
   const rawHints = params.channelHints.map((h) => String(h || '').trim()).filter((h) => h.length >= 3);
@@ -1067,18 +976,24 @@ export async function findXtreamLiveChannelMatches(params: {
     }
     if (bestPatScore < 85) continue;
 
-    const langBonus =
-      meta.lang === normPref
-        ? 30
-        : meta.lang === 'ES' || meta.lang === 'LAT'
-        ? 18
-        : meta.lang === 'EN'
+    const langBonus = params.preferQualityFirst
+      ? meta.lang === normPref
         ? 8
-        : 0;
+        : meta.lang === 'ES'
+        ? 5
+        : 0
+      : meta.lang === normPref
+      ? 30
+      : meta.lang === 'ES' || meta.lang === 'LAT'
+      ? 18
+      : meta.lang === 'EN'
+      ? 8
+      : 0;
+    const effectiveQualityBonus = params.preferQualityFirst ? qualityBonus * 3 : qualityBonus;
     scored.push({
       item,
       meta,
-      score: bestPatScore + langBonus + qualityBonus,
+      score: bestPatScore + langBonus + effectiveQualityBonus,
     });
   }
 

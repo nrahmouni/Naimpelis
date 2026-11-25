@@ -238,7 +238,32 @@ export function inferStreamQualityTag(
 
 export function normalizeLiveTrackLang(rawLang?: string, label?: string, countryCode?: string): string {
   const raw = String(rawLang || '').trim().toUpperCase();
-  const hay = `${label || ''}`.toLowerCase();
+  const hayRaw = String(label || '').trim();
+  const hay = hayRaw.toLowerCase();
+
+  // Check explicit leading/delimited stream prefix FIRST (e.g. "|ENG| The Odyssey", "FR:DAZN 1 4K", "DE: DAZN")
+  const explicitPrefixMatch = hayRaw.match(
+    /^\s*(?:[|┃\[\(]\s*([A-Za-zÀ-ÿ0-9+\- ]{2,10})\s*[|┃\]\)]|\b([A-Za-z]{2,5})\s*[:\-]\s*(?=\S))/i
+  );
+  const tagToken = (explicitPrefixMatch?.[1] || explicitPrefixMatch?.[2] || '').trim().toUpperCase();
+  if (tagToken) {
+    if (/^(?:EN|ENG|UK|US|USA)$/.test(tagToken)) return 'EN';
+    if (/^(?:FR|FRA|FRENCH)$/.test(tagToken)) return 'FR';
+    if (/^(?:DE|GER|DEU|AL)$/.test(tagToken)) return 'DE';
+    if (/^(?:PT|POR|BR|BRA)$/.test(tagToken)) return 'PT';
+    if (/^(?:IT|ITA)$/.test(tagToken)) return 'IT';
+    if (/^(?:AR|ARB|ARAB)$/.test(tagToken)) return 'AR';
+    if (/^(?:LAT|LA|MX|ARG)$/.test(tagToken)) return 'LAT';
+    if (/^(?:CAT|CA|VAL)$/.test(tagToken)) return 'CAT';
+    if (/^(?:VOSE|SUB)$/.test(tagToken)) return 'VOSE';
+    if (/^(?:ES|ESP|SPA|CAST)$/.test(tagToken)) return 'ES';
+  }
+
+  if (/\|\s*ENG\s*\||\[\s*ENG\s*\]|\(\s*ENG\s*\)/i.test(hayRaw)) return 'EN';
+  if (/\|\s*FR\s*\||\[\s*FR\s*\]|\(\s*FR\s*\)/i.test(hayRaw)) return 'FR';
+  if (/\|\s*DE\s*\||\[\s*DE\s*\]|\(\s*DE\s*\)/i.test(hayRaw)) return 'DE';
+  if (/\|\s*LAT\s*\||\[\s*LAT\s*\]|\(\s*LAT\s*\)/i.test(hayRaw)) return 'LAT';
+
   if (raw === 'ES' || raw === 'ESP' || raw === 'CAST') return 'ES';
   if (raw === 'LAT' || raw === 'LA' || raw === 'MX') return 'LAT';
   if (raw === 'EN' || raw === 'ENG' || raw === 'UK' || raw === 'US') return 'EN';
@@ -249,11 +274,15 @@ export function normalizeLiveTrackLang(rawLang?: string, label?: string, country
   if (raw === 'IT') return 'IT';
   if (raw === 'DE' || raw === 'GER') return 'DE';
   if (raw === 'VOSE') return 'VOSE';
+  if (raw === 'INTL' || raw === 'INT') return 'INTL';
+
   if (/\b(?:es|esp|spain|espana|castellano)\b/.test(hay)) return 'ES';
   if (/\b(?:lat|latino)\b/.test(hay)) return 'LAT';
   if (/\b(?:uk|us|usa|eng|english)\b/.test(hay)) return 'EN';
+  if (/\b(?:france|french|francais)\b/.test(hay)) return 'FR';
+  if (/\b(?:germany|deutsch|german)\b/.test(hay)) return 'DE';
   if (String(countryCode || '').toUpperCase() === 'ES') return 'ES';
-  return raw || 'ES';
+  return raw || 'INTL';
 }
 
 function getTrackProviderBucketForSort(tr: StreamTrack): string {
@@ -282,21 +311,26 @@ function getProviderBaselinePenalty(bucket: string): number {
       return -220;
     case 'ultra-vip':
       return -180;
-    case '24tv':
-      return -110;
     case 'vod4k':
-      return -95;
+      return -125;
+    case '24tv':
+      return -115;
     case 'octopus':
     case 'primary':
     case 'belix':
       return -70;
-    case 'dana4k':
-    case '2m2h':
-    case '2m2h-alt':
     case 'adtupac':
+      return -15;
+    case 'dana4k':
+      return 10;
+    case '2m2h-alt':
+      return 20;
+    case '2m2h':
+      return 35;
     case 'sult-vo':
+      return 45;
     case 'activecdns':
-      return 350;
+      return 120;
     case 'sports_scraper':
       return 45000;
     case 'dvb':
@@ -306,7 +340,11 @@ function getProviderBaselinePenalty(bucket: string): number {
   }
 }
 
-function liveTrackSortScore(tr: StreamTrack, preferSpanish: boolean): number {
+function liveTrackSortScore(
+  tr: StreamTrack,
+  preferSpanish: boolean,
+  preferQualityFirst = false
+): number {
   const status = tr.health?.status ?? 'unknown';
   const statusRank = status === 'up' ? 0 : status === 'unknown' ? 1 : status === 'degraded' ? 2 : 3;
   const upBonus = status === 'up' ? -900 : 0;
@@ -328,6 +366,18 @@ function liveTrackSortScore(tr: StreamTrack, preferSpanish: boolean): number {
   const providerPenalty = getProviderBaselinePenalty(bucket);
   const directApiBonus = /^\/api\/(?:stream\?|providers\/stream\/)/i.test(srcStr) ? -40 : 0;
   const latMs = typeof tr.health?.latencyMs === 'number' ? Math.min(9999, tr.health.latencyMs) : 1400;
+  if (preferQualityFirst) {
+    return (
+      statusRank * 100000 +
+      (providerPenalty > 1000 ? providerPenalty : 0) +
+      Math.round(q.tier * 10000) +
+      langRank * 600 +
+      upBonus +
+      (providerPenalty <= 1000 ? providerPenalty : 0) +
+      directApiBonus +
+      Math.round(latMs / 10)
+    );
+  }
   return (
     statusRank * 100000 +
     (providerPenalty > 1000 ? providerPenalty : 0) +
@@ -433,9 +483,17 @@ const FLAGSHIP_PRIORITY: Record<string, number> = {
   'tdt-3cat': 39,
 };
 
-export function getTvBrowsePriorityRank(ch: GenericRankableChannel): number {
+export function getTvBrowsePriorityRank(
+  ch: GenericRankableChannel,
+  opts?: { preferQualityFirst?: boolean }
+): number {
+  const preferQualityFirst = Boolean(opts?.preferQualityFirst);
+  const bestQ = inferStreamQualityTag(ch.quality, ch.channels?.[0]?.quality, ch.channels?.[0]?.sourceUrl);
   const id = String(ch.id || '').toLowerCase();
   if (FLAGSHIP_PRIORITY[id]) {
+    if (preferQualityFirst) {
+      return FLAGSHIP_PRIORITY[id] + Math.round(bestQ.tier * 4);
+    }
     return FLAGSHIP_PRIORITY[id];
   }
 
@@ -450,11 +508,22 @@ export function getTvBrowsePriorityRank(ch: GenericRankableChannel): number {
       : ch.healthSummary?.bestStatus === 'down'
       ? 220
       : 0;
-  const esBonus = isEs ? -14 : 0;
-  const bestQ = inferStreamQualityTag(ch.quality, ch.channels?.[0]?.quality, ch.channels?.[0]?.sourceUrl);
-  const qualityBonus = bestQ.tier === 0 ? -12 : bestQ.tier <= 1 ? -6 : bestQ.tier >= 4 ? 12 : 0;
+  const esBonus = isEs ? (preferQualityFirst ? -4 : -14) : 0;
+  const qualityBonus = preferQualityFirst
+    ? Math.round(bestQ.tier * 18) - 42
+    : bestQ.tier === 0
+    ? -12
+    : bestQ.tier <= 1
+    ? -6
+    : bestQ.tier >= 4
+    ? 12
+    : 0;
   const mirrorBonus = (ch.channels?.length || 0) >= 3 ? -4 : 0;
   const totalBonus = statusBonus + esBonus + qualityBonus + mirrorBonus;
+
+  if (preferQualityFirst && bestQ.tier <= 0.5) {
+    return 40 + totalBonus;
+  }
 
   if (cat === 'generalistas') return 45 + (ch.dial || 30) + totalBonus;
   if (cat === 'dazn') return 80 + (ch.dial || 30) + totalBonus;
@@ -489,8 +558,10 @@ export function getTvBrowsePriorityRank(ch: GenericRankableChannel): number {
 }
 
 export function mergeAndDeduplicateChannels<T extends GenericRankableChannel>(
-  channels: T[]
+  channels: T[],
+  opts?: { preferQualityFirst?: boolean }
 ): T[] {
+  const preferQualityFirst = Boolean(opts?.preferQualityFirst);
   const byKey = new Map<
     string,
     {
@@ -596,7 +667,7 @@ export function mergeAndDeduplicateChannels<T extends GenericRankableChannel>(
       entry.tracks.some((tr) => normalizeLiveTrackLang(tr.lang, tr.label) === 'ES');
     const sortedTracks = prioritizeDiverseTopAlternatives(
       [...entry.tracks].sort(
-        (a, b) => liveTrackSortScore(a, hasEs) - liveTrackSortScore(b, hasEs)
+        (a, b) => liveTrackSortScore(a, hasEs, preferQualityFirst) - liveTrackSortScore(b, hasEs, preferQualityFirst)
       ),
       4
     );
@@ -614,10 +685,16 @@ export function mergeAndDeduplicateChannels<T extends GenericRankableChannel>(
   return result;
 }
 
-export function rankClientChannels<T extends SpanishTdtChannel>(channels: T[]): T[] {
-  const merged = mergeAndDeduplicateChannels(channels);
+export function rankClientChannels<T extends SpanishTdtChannel>(
+  channels: T[],
+  opts?: { preferQualityFirst?: boolean }
+): T[] {
+  const preferQualityFirst = Boolean(opts?.preferQualityFirst);
+  const merged = mergeAndDeduplicateChannels(channels, { preferQualityFirst });
   return merged.sort((a, b) => {
-    const rankDiff = getTvBrowsePriorityRank(a) - getTvBrowsePriorityRank(b);
+    const rankDiff =
+      getTvBrowsePriorityRank(a, { preferQualityFirst }) -
+      getTvBrowsePriorityRank(b, { preferQualityFirst });
     if (rankDiff !== 0) return rankDiff;
     const sigDiff = (b.channels?.length || 0) - (a.channels?.length || 0);
     if (sigDiff !== 0) return sigDiff;

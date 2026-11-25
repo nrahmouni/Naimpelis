@@ -254,15 +254,15 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         stretchShortVideoTrack: !videoState.isLive,
         maxAudioFramesDrift: videoState.isLive ? 3 : 4,
         abrEwmaDefaultEstimate: 7_500_000,
-        manifestLoadingTimeOut: videoState.isLive ? 15_000 : isFastLocalLiveUrl ? 10_000 : 8_000,
+        manifestLoadingTimeOut: videoState.isLive ? 7_500 : isFastLocalLiveUrl ? 7_000 : 6_500,
         manifestLoadingMaxRetry: videoState.isLive ? 1 : 2,
-        manifestLoadingRetryDelay: 150,
-        levelLoadingTimeOut: videoState.isLive ? 15_000 : 8_000,
+        manifestLoadingRetryDelay: 120,
+        levelLoadingTimeOut: videoState.isLive ? 7_500 : 6_500,
         levelLoadingMaxRetry: videoState.isLive ? 1 : 2,
-        levelLoadingRetryDelay: 150,
-        fragLoadingTimeOut: videoState.isLive ? 15_000 : 10_000,
-        fragLoadingMaxRetry: videoState.isLive ? 1 : 3,
-        fragLoadingRetryDelay: 150,
+        levelLoadingRetryDelay: 120,
+        fragLoadingTimeOut: videoState.isLive ? 8_500 : 8_000,
+        fragLoadingMaxRetry: videoState.isLive ? 1 : 2,
+        fragLoadingRetryDelay: 120,
       });
       hlsRef.current = hls;
 
@@ -272,7 +272,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
           if (video.readyState < 2 || video.videoWidth === 0) {
             triggerBackupSwitch('live_startup_sla_exceeded');
           }
-        }, 15_000);
+        }, 6_500);
       }
 
       hls.loadSource(videoState.url);
@@ -537,7 +537,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
             if (liveNetworkStallBurst >= 3 && Date.now() - lastNonFatalRecoverAt > 3500) {
               lastNonFatalRecoverAt = Date.now();
               const stillInStartupWindow =
-                !firstFrameBuffered && Date.now() - streamLoadStartRef.current < 15_000;
+                !firstFrameBuffered && Date.now() - streamLoadStartRef.current < 5_500;
               if (stillInStartupWindow || !triggerBackupSwitch(`live_${data.details}`)) {
                 try {
                   hls.startLoad(-1);
@@ -746,7 +746,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
           if (!cancelled && video.readyState === 0) {
             tryTranscodeRetry();
           }
-        }, 16_000);
+        }, 4_500);
       }
 
       cleanupDirectListeners = () => {

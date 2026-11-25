@@ -14,7 +14,7 @@ import type { AppLanguage, CatalogMovie, MediaRichDetails } from '../types';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { PosterImage } from './ui/PosterImage';
-import { LanguageBadge } from './ui/LanguageBadge';
+import { LanguageBadge, type UnifiedLanguageCode } from './ui/LanguageBadge';
 import { studioFetch } from '../utils/studioApi';
 
 export interface ActiveMovieContext {
@@ -24,15 +24,15 @@ export interface ActiveMovieContext {
   poster?: string;
   backdrop?: string;
   overview?: string;
-  preferLang?: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT';
+  preferLang?: UnifiedLanguageCode;
 }
 
 interface MoviePlaybackDockProps {
   movie: ActiveMovieContext;
   lang: AppLanguage;
-  preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT';
+  preferLang: UnifiedLanguageCode;
   loadingItemId?: string | null;
-  onSelectMovie: (movie: CatalogMovie, preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT') => void;
+  onSelectMovie: (movie: CatalogMovie, preferLang: UnifiedLanguageCode) => void;
 }
 
 export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({

@@ -184,7 +184,20 @@ function parseVaultObjectToEnvMap(rawJson: string): {
     }
   }
 
-  for (const slotKey of ['primary', 'sharkpro', 'vod4k', '24tv', '2m2h', 'dana4k', 'activecdns', 'octopus']) {
+  for (const slotKey of [
+    'primary',
+    'sharkpro',
+    'vod4k',
+    '24tv',
+    '2m2h',
+    '2m2h-alt',
+    'dana4k',
+    'activecdns',
+    'octopus',
+    'adtupac',
+    'ultra-vip',
+    'sult-vo',
+  ]) {
     const candidate = root[slotKey];
     if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) {
       providerList.push([slotKey, candidate as Record<string, unknown>]);
@@ -364,11 +377,11 @@ export function getVod4kConfig(): XtreamProviderDefinition {
     seenUserPass.add(key);
     mergedDefaultAccounts.push({ username: u, password: p, label });
   };
-  for (const a of srvDef?.accounts || []) {
-    pushUnique(a.username, a.password, 'VOD 4K');
-  }
   for (const a of def?.accounts || []) {
     pushUnique(a.user, a.pass, a.label);
+  }
+  for (const a of srvDef?.accounts || []) {
+    pushUnique(a.username, a.password, 'VOD 4K');
   }
 
   const combinedAccounts: XtreamAccountCredential[] = [];

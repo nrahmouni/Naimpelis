@@ -14,7 +14,9 @@ const SUBTITLE_STYLE_KEY = 'naimcine_subtitle_style_v2';
 const SCHEDULED_ROOMS_KEY = 'naimcine_scheduled_rooms_v1';
 const LAST_WORLD_KEY = 'riffantv_last_world_v1';
 const SESSION_MODE_KEY = 'riffantv_session_mode_v1';
+const PRIORITY_MODE_KEY = 'riffantv_priority_mode_v1';
 
+export type PlaybackPriorityMode = 'es_quality' | 'best_quality';
 export type SessionMode = 'solo' | 'party';
 export type ShellNavSection = 'home' | 'search' | 'rooms' | 'my_list' | 'profile';
 export type PrimaryWorldId =
@@ -126,6 +128,16 @@ function loadSessionMode(): SessionMode {
   }
 }
 
+function loadPriorityMode(): PlaybackPriorityMode {
+  if (typeof localStorage === 'undefined') return 'es_quality';
+  try {
+    const raw = localStorage.getItem(PRIORITY_MODE_KEY);
+    return raw === 'best_quality' ? 'best_quality' : 'es_quality';
+  } catch {
+    return 'es_quality';
+  }
+}
+
 const TYPING_EXPIRY_MS = 4500;
 const typingExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
 
@@ -183,6 +195,7 @@ interface AppShellState {
   movistarDaznCategory: 'all' | 'futbol' | 'motor' | 'deportes' | 'entretenimiento' | 'series';
   providersScope: string;
   providersKind: 'all' | 'live' | 'movie' | 'series';
+  playbackPriorityMode: PlaybackPriorityMode;
   isFloatingRoomOpen: boolean;
   floatingBubbleSuppressCount: number;
   showDesignSystem: boolean;
@@ -253,6 +266,7 @@ interface AppShellState {
   ) => void;
   setProvidersScope: (scope: string) => void;
   setProvidersKind: (kind: 'all' | 'live' | 'movie' | 'series') => void;
+  setPlaybackPriorityMode: (mode: PlaybackPriorityMode) => void;
   setIsFloatingRoomOpen: (open: boolean) => void;
   pushBubbleSuppression: () => void;
   popBubbleSuppression: () => void;
@@ -363,6 +377,7 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   movistarDaznCategory: 'all',
   providersScope: 'total',
   providersKind: 'all',
+  playbackPriorityMode: loadPriorityMode(),
   isFloatingRoomOpen: false,
   floatingBubbleSuppressCount: 0,
   showDesignSystem:
@@ -633,6 +648,17 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   setProvidersKind: (providersKind) => {
     if (get().providersKind === providersKind) return;
     set({ providersKind });
+  },
+  setPlaybackPriorityMode: (playbackPriorityMode) => {
+    if (get().playbackPriorityMode === playbackPriorityMode) return;
+    set({ playbackPriorityMode });
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(PRIORITY_MODE_KEY, playbackPriorityMode);
+      } catch {
+        // ignore
+      }
+    }
   },
   setIsFloatingRoomOpen: (isFloatingRoomOpen) => {
     if (get().isFloatingRoomOpen === isFloatingRoomOpen) return;

@@ -5,7 +5,7 @@
  * multi-server signal merging, real-time EPG indicator bars, and responsive multi-column grid.
  */
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { Clock, Loader2, Search, SlidersHorizontal, Star, X } from 'lucide-react';
+import { Clock, Loader2, Play, Search, SlidersHorizontal, Sparkles, Star, X } from 'lucide-react';
 import type {
   AppLanguage,
   ChannelLiveEpg,
@@ -29,6 +29,8 @@ import { LiveTvFilterSheet } from './LiveTvFilterSheet';
 import { LiveTvChannelRow } from './LiveTvChannelRow';
 import { LiveTvSpotlightRail } from './LiveTvSpotlightRail';
 import { useBackInterceptor } from '../../lib/backInterceptor';
+import { useAppStore } from '../../store/useAppStore';
+import { inferStreamQualityTag } from '../../utils/channelQualityRanker';
 
 const RECENT_TV_STORAGE_KEY = 'riffan_recent_tv_v1';
 const CHANNELS_BATCH_SIZE = 40;
@@ -103,8 +105,11 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
   onAdrarCountryFilterChange,
   onRetryFetchTdt,
 }) => {
+  const priorityMode = useAppStore((s) => s.playbackPriorityMode);
+  const setPriorityMode = useAppStore((s) => s.setPlaybackPriorityMode);
   const [inlineQuery, setInlineQuery] = useState('');
   const [visibleLimit, setVisibleLimit] = useState(CHANNELS_BATCH_SIZE);
+  const [signalsChannel, setSignalsChannel] = useState<SpanishTdtChannel | null>(null);
   const [recentIds, setRecentIds] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(RECENT_TV_STORAGE_KEY);
@@ -114,6 +119,22 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
       return [];
     }
   });
+
+  useBackInterceptor(
+    Boolean(signalsChannel),
+    'livetv-signals-sheet',
+    () => setSignalsChannel(null),
+    { priority: 22 }
+  );
+
+  useEffect(() => {
+    if (!signalsChannel) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSignalsChannel(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [signalsChannel]);
 
   useEffect(() => {
     setVisibleLimit(CHANNELS_BATCH_SIZE);
@@ -269,6 +290,7 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
       onToggleChannelFavorite={onToggleChannelFavorite}
       onPlayChannel={handlePlayAndRecord}
       onOpenEpgModal={onOpenEpgModal}
+      onOpenSignalsModal={setSignalsChannel}
     />
   );
 
@@ -329,7 +351,7 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
           ]}
         />
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
           <div className="relative flex-1 min-w-0">
             <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
@@ -350,7 +372,7 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
                       en: 'Search channel, dial # or show...',
                     })
               }
-              className="w-full min-h-11 pl-10 pr-10 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-[#7C3AED] text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-colors tv-focus-ring"
+              className="w-full min-h-11 pl-10 pr-10 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-[#7C3AED] text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-colors tv-focus-ring"
             />
             {inlineQuery && (
               <button
@@ -365,31 +387,73 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
             )}
           </div>
 
-          <button
-            type="button"
-            data-tv-focusable="true"
-            onClick={() => {
-              triggerHaptic('light');
-              onTvFiltersOpenChange(true);
-            }}
-            className={`min-h-11 px-3.5 rounded-2xl border text-xs font-bold whitespace-nowrap inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all tv-focus-ring ${
-              tvFilterCount > 0 && mainScopeTab === 'all'
-                ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_6px_20px_rgba(124,58,237,0.38)]'
-                : 'bg-[#0D0D12] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
-            }`}
-          >
-            <SlidersHorizontal
-              className={`w-4 h-4 ${
-                tvFilterCount > 0 && mainScopeTab === 'all' ? 'text-white' : 'text-[#A78BFA]'
+          <div className="flex items-center gap-2 shrink-0">
+            <div
+              role="group"
+              aria-label={pickLang(lang, {
+                es: 'Prioridad de emisión',
+                ca: 'Prioritat d’emissió',
+                en: 'Stream priority',
+              })}
+              className="grid grid-cols-2 p-1 rounded-2xl bg-[#0D0D12] border border-white/[0.08] flex-1 sm:flex-initial"
+            >
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setPriorityMode('es_quality');
+                }}
+                className={`min-h-11 px-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                  priorityMode === 'es_quality'
+                    ? 'bg-[#7C3AED] text-white'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                {pickLang(lang, { es: 'Castellano HQ', ca: 'Castellà HQ', en: 'Spanish HQ' })}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setPriorityMode('best_quality');
+                }}
+                className={`min-h-11 px-2.5 rounded-xl text-xs font-semibold whitespace-nowrap inline-flex items-center justify-center gap-1 transition-all cursor-pointer ${
+                  priorityMode === 'best_quality'
+                    ? 'bg-emerald-500/90 text-black'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <span>{pickLang(lang, { es: 'Máxima 4K', ca: 'Màxima 4K', en: 'Max 4K' })}</span>
+              </button>
+            </div>
+
+            <button
+              type="button"
+              data-tv-focusable="true"
+              onClick={() => {
+                triggerHaptic('light');
+                onTvFiltersOpenChange(true);
+              }}
+              className={`min-h-11 px-3.5 rounded-2xl border text-xs font-bold whitespace-nowrap inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all tv-focus-ring ${
+                tvFilterCount > 0 && mainScopeTab === 'all'
+                  ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_6px_20px_rgba(124,58,237,0.38)]'
+                  : 'bg-[#0D0D12] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
               }`}
-            />
-            <span>{pickLang(lang, { es: 'Filtros', ca: 'Filtres', en: 'Filters' })}</span>
-            {tvFilterCount > 0 && mainScopeTab === 'all' && (
-              <span className="px-1.5 py-0.5 rounded-full bg-white/15 font-mono text-[11px] tabular-nums leading-none">
-                {tvFilterCount}
-              </span>
-            )}
-          </button>
+            >
+              <SlidersHorizontal
+                className={`w-4 h-4 ${
+                  tvFilterCount > 0 && mainScopeTab === 'all' ? 'text-white' : 'text-[#A78BFA]'
+                }`}
+              />
+              <span>{pickLang(lang, { es: 'Filtros', ca: 'Filtres', en: 'Filters' })}</span>
+              {tvFilterCount > 0 && mainScopeTab === 'all' && (
+                <span className="font-mono text-[11px] tabular-nums opacity-90">
+                  ({tvFilterCount})
+                </span>
+              )}
+            </button>
+          </div>
         </div>
 
         {/* SINGLE SLIM CONTEXTUAL CHIP ROW */}
@@ -736,6 +800,98 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
         onEpgFilterChange={onEpgFilterChange}
         onResetAdrarCountry={() => onAdrarCountryFilterChange?.('all')}
       />
+
+      {signalsChannel && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={signalsChannel.name}
+          className="fixed inset-0 z-[125] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSignalsChannel(null);
+          }}
+        >
+          <div className="w-full sm:max-w-xl max-h-[85dvh] rounded-t-3xl sm:rounded-3xl bg-[#0D0D12]/96 backdrop-blur-xl border-t sm:border border-white/10 shadow-2xl flex flex-col overflow-hidden">
+            <div className="pt-2.5 sm:hidden flex justify-center">
+              <div className="w-10 h-1.5 rounded-full bg-white/20" />
+            </div>
+
+            <div className="flex items-start justify-between gap-3 px-4 sm:px-5 pt-3 pb-3.5 border-b border-white/[0.08]">
+              <div className="min-w-0 space-y-1">
+                <h2 className="font-display font-bold text-base sm:text-lg text-white leading-tight truncate">
+                  {signalsChannel.name}
+                </h2>
+                <p className="text-xs text-zinc-400 tabular-nums">
+                  {pickLang(lang, {
+                    es: `${signalsChannel.channels.length} señales disponibles · Selecciona servidor o calidad`,
+                    ca: `${signalsChannel.channels.length} senyals disponibles · Tria servidor o qualitat`,
+                    en: `${signalsChannel.channels.length} signals available · Pick server or quality`,
+                  })}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSignalsChannel(null)}
+                aria-label={pickLang(lang, { es: 'Cerrar', ca: 'Tancar', en: 'Close' })}
+                className="min-w-11 min-h-11 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-2 custom-scrollbar">
+              {signalsChannel.channels.map((sig, idx) => {
+                const qTag = inferStreamQualityTag(sig.quality, sig.label, sig.sourceUrl).label;
+                const isActive = Boolean(activeVideoRawUrl && sig.sourceUrl === activeVideoRawUrl);
+                const serverTitle = sig.providerName || sig.label || `Señal ${idx + 1}`;
+                const liveNow = getChannelLiveEpg(signalsChannel.id)?.now?.title;
+                return (
+                  <button
+                    key={`${sig.id}-${idx}`}
+                    type="button"
+                    onClick={() => {
+                      const target = signalsChannel;
+                      setSignalsChannel(null);
+                      triggerHaptic('success');
+                      onPlayTdtChannel(target, idx, liveNow);
+                    }}
+                    className={`w-full min-h-12 p-3 rounded-2xl border flex items-center justify-between gap-3 text-left transition-all cursor-pointer ${
+                      isActive || idx === 0
+                        ? 'bg-[#7C3AED]/16 border-[#7C3AED]/70 hover:bg-[#7C3AED]/24'
+                        : 'bg-[#14141C] border-white/[0.07] hover:bg-[#1C1C26] hover:border-white/20'
+                    }`}
+                  >
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-xs font-bold text-white truncate">{serverTitle}</span>
+                        {idx === 0 && (
+                          <span className="text-[11px] font-semibold text-[#C4B5FD] shrink-0">
+                            · {pickLang(lang, { es: 'Prioritaria', ca: 'Prioritària', en: 'Primary' })}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-zinc-300 truncate">{sig.label}</p>
+                      <p className="text-[11px] text-zinc-400 truncate tabular-nums">
+                        {[
+                          qTag,
+                          sig.langLabel || sig.lang || 'ES',
+                          sig.health?.latencyMs ? `${sig.health.latencyMs} ms` : null,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </p>
+                    </div>
+
+                    <span className="min-w-10 min-h-10 rounded-xl bg-[#7C3AED] text-white flex items-center justify-center shrink-0">
+                      <Play className="w-4 h-4 fill-current ml-0.5" />
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -475,7 +475,7 @@ async function startOrReuseLiveDvbCleanHlsSession(
   });
 
   session.readyPromise = new Promise<boolean>((resolve) => {
-    const deadline = Date.now() + 14_000;
+    const deadline = Date.now() + 8_500;
     let inTick = false;
     const poll = setInterval(async () => {
       if (session.dead) {

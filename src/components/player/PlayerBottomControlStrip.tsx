@@ -134,7 +134,9 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
                         title: videoState.title,
                       })
                     )
-                    .filter((c) => ['ES', 'CAT', 'LAT', 'VOSE', 'EN'].includes(c))
+                    .filter((c) =>
+                      ['ES', 'CAT', 'LAT', 'VOSE', 'EN', 'FR', 'PT', 'IT', 'DE', 'AR'].includes(c)
+                    )
                 )
               );
               if (availableTrackLangs.length === 0) return null;
@@ -166,6 +168,19 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
                 <div className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-2xl border border-white/[0.08] shrink-0">
                   {sameLangTracks.map(({ tr, idx }, srvIdx) => {
                     const active = idx === videoState.activeTrackIndex;
+                    const qBadge = /4k|2160|uhd/i.test(`${tr.quality || ''} ${tr.label || ''}`)
+                      ? '4K'
+                      : /1080|fhd/i.test(`${tr.quality || ''} ${tr.label || ''}`)
+                      ? 'FHD'
+                      : /hd|720/i.test(`${tr.quality || ''} ${tr.label || ''}`)
+                      ? 'HD'
+                      : '';
+                    const shortServer =
+                      tr.providerName?.replace(/\s*Pro$/i, '').trim() ||
+                      `${pickLang(lang, { es: 'Servidor', ca: 'Servidor', en: 'Server' })} ${srvIdx + 1}`;
+                    const btnLabel = qBadge && !shortServer.toUpperCase().includes(qBadge)
+                      ? `${shortServer} · ${qBadge}`
+                      : shortServer;
                     return (
                       <button
                         key={tr.id || idx}
@@ -179,13 +194,13 @@ export const PlayerBottomControlStrip: React.FC<PlayerBottomControlStripProps> =
                           }
                         }}
                         title={tr.label}
-                        className={`min-h-[38px] px-3 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
+                        className={`min-h-[40px] px-3 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
                           active
                             ? 'bg-[#7C3AED] text-white shadow-[0_4px_14px_rgba(124,58,237,0.4)]'
                             : 'text-zinc-300 hover:bg-white/10'
                         }`}
                       >
-                        {pickLang(lang, { es: 'Servidor', ca: 'Servidor', en: 'Server' })} {srvIdx + 1}
+                        {btnLabel}
                       </button>
                     );
                   })}

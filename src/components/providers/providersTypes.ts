@@ -1,5 +1,7 @@
 export type ProviderMediaKind = 'live' | 'movie' | 'series';
 
+export type ProviderPriorityMode = 'es_quality' | 'best_quality';
+
 export interface ProviderCategoryPublic {
   id: string;
   name: string;
@@ -27,6 +29,21 @@ export interface ProviderStatusPublic {
   error?: string;
 }
 
+export interface ProviderCatalogAlternativePublic {
+  id: string;
+  providerId: string;
+  providerName: string;
+  streamId: string;
+  name: string;
+  categoryName: string;
+  lang: string;
+  langLabel: string;
+  quality: string;
+  qualityTier: number;
+  containerExtension?: string;
+  streamUrl: string;
+}
+
 export interface ProviderCatalogItemPublic {
   id: string;
   providerId: string;
@@ -34,6 +51,7 @@ export interface ProviderCatalogItemPublic {
   kind: ProviderMediaKind;
   streamId: string;
   name: string;
+  cleanTitle?: string;
   categoryId: string;
   categoryName: string;
   poster?: string;
@@ -46,6 +64,7 @@ export interface ProviderCatalogItemPublic {
   quality?: string;
   qualityTier?: number;
   streamUrl: string;
+  alternatives?: ProviderCatalogAlternativePublic[];
 }
 
 export interface ProviderSeriesEpisodePublic {

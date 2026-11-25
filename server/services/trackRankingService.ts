@@ -22,7 +22,7 @@ export type RankCandidateTracksFn = (input: RankCandidateTracksInput) => RankCan
 
 export function normalizeTrackLangCode(raw?: string): string {
   const s = String(raw || '').trim().toUpperCase();
-  if (!s) return 'ES';
+  if (!s) return 'INTL';
   if (s === 'CAST' || s === 'ESP' || s === 'SPA' || s === 'ES') return 'ES';
   if (s === 'LAT' || s === 'LA' || s === 'MX' || s.includes('LATIN')) return 'LAT';
   if (s === 'VOSE' || s.includes('SUB')) return 'VOSE';

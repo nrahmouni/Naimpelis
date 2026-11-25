@@ -3,7 +3,7 @@
  * @description Extracted channel row card for LiveTvWorldView with EPG bar, favorite toggle, and native play action.
  */
 import React from 'react';
-import { Info, Star } from 'lucide-react';
+import { Info, Layers, Star } from 'lucide-react';
 import type {
   AppLanguage,
   ChannelLiveEpg,
@@ -25,6 +25,28 @@ interface LiveTvChannelRowProps {
   onToggleChannelFavorite: (entry: Omit<FavoriteChannelItem, 'addedAt'>) => void;
   onPlayChannel: (ch: SpanishTdtChannel, liveTitle?: string) => void;
   onOpenEpgModal: (ch: SpanishTdtChannel) => void;
+  onOpenSignalsModal?: (ch: SpanishTdtChannel) => void;
+}
+
+function resolveChannelServerLabel(
+  providerName?: string,
+  providerId?: string,
+  sourceUrl?: string
+): string {
+  if (providerName) return providerName;
+  const hay = `${providerId || ''} ${sourceUrl || ''}`.toLowerCase();
+  if (hay.includes('vod4k')) return 'VOD 4K';
+  if (hay.includes('24tv')) return '24TV';
+  if (hay.includes('2m2h-alt')) return '2M2H Alt';
+  if (hay.includes('2m2h')) return '2M2H';
+  if (hay.includes('dana4k')) return 'Dana 4K Pro';
+  if (hay.includes('ultra-vip')) return 'Ultra VIP';
+  if (hay.includes('sult-vo')) return 'Sult-Vo';
+  if (hay.includes('adtupac')) return 'Adtupac';
+  if (hay.includes('activecdns')) return 'Active CDNS';
+  if (hay.includes('octopus')) return 'Octopus TV';
+  if (hay.includes('primary') || hay.includes('sharkpro')) return 'Shark Pro';
+  return '';
 }
 
 export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
@@ -36,6 +58,7 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
   onToggleChannelFavorite,
   onPlayChannel,
   onOpenEpgModal,
+  onOpenSignalsModal,
 }) => {
   const favId = buildChannelFavId(ch.channels[0]?.sourceUrl || ch.id, ch.name);
   const faved = isChannelFavorited(favId);
@@ -44,21 +67,11 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
     activeVideoRawUrl && ch.channels.some((s) => s.sourceUrl === activeVideoRawUrl)
   );
   const leadTrack = ch.channels[0];
-  const leadServerLabel =
-    leadTrack?.providerName ||
-    (leadTrack?.providerId === 'dana4k' || /provider=dana4k/i.test(leadTrack?.sourceUrl || '')
-      ? 'Dana 4K Pro'
-      : leadTrack?.providerId === 'octopus'
-      ? 'Octopus TV'
-      : leadTrack?.providerId === 'ultra-vip'
-      ? 'Ultra VIP'
-      : leadTrack?.providerId === 'sult-vo'
-      ? 'Sult-Vo'
-      : leadTrack?.providerId === 'adtupac'
-      ? 'Adtupac'
-      : leadTrack?.providerId === 'activecdns'
-      ? 'Active CDNS'
-      : '');
+  const leadServerLabel = resolveChannelServerLabel(
+    leadTrack?.providerName,
+    leadTrack?.providerId,
+    leadTrack?.sourceUrl
+  );
   const qualityTag = inferStreamQualityTag(
     leadTrack?.quality || ch.quality,
     leadTrack?.label,
@@ -157,6 +170,27 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
       </div>
 
       <div className="relative z-10 flex items-center gap-1 shrink-0">
+        {signalCount > 1 && onOpenSignalsModal && (
+          <button
+            type="button"
+            data-tv-focusable="true"
+            onClick={(e) => {
+              e.stopPropagation();
+              triggerHaptic('light');
+              onOpenSignalsModal(ch);
+            }}
+            aria-label={pickLang(lang, {
+              es: `Elegir servidor para ${ch.name} (${signalCount})`,
+              ca: `Triar servidor per a ${ch.name} (${signalCount})`,
+              en: `Choose server for ${ch.name} (${signalCount})`,
+            })}
+            className="min-w-11 min-h-11 px-2 rounded-xl text-[#C4B5FD] hover:text-white hover:bg-[#7C3AED]/20 inline-flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition-all tv-focus-ring tabular-nums text-xs font-bold"
+          >
+            <Layers className="w-3.5 h-3.5 shrink-0" />
+            <span>{signalCount}</span>
+          </button>
+        )}
+
         <button
           type="button"
           data-tv-focusable="true"

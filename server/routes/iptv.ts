@@ -49,6 +49,7 @@ import {
 } from '../services/octopusSpainLiveService.ts';
 import { isProviderCircuitOpen } from '../services/providerCircuitBreaker.ts';
 import { findXtreamLiveChannelMatches } from '../services/xtreamVodMatcher.ts';
+import { getConnectedProvidersRuntimeCatalog } from '../services/providers/xtreamProvidersService.ts';
 import {
   ensureLiveDvbCleanHlsSession,
   getActiveDvbSessionPath,
@@ -98,16 +99,26 @@ function curateHealthyAlternatives<T extends { channels?: Array<{ sourceUrl: str
 ): T[] {
   return channels.map((ch) => {
     const list = ch.channels || [];
-    if (list.length <= 4) return ch;
-    const healthy = list.filter(
-      (tr) =>
-        tr.health?.status !== 'down' &&
-        !isProviderCircuitOpen(tr.sourceUrl, tr.providerId)
-    );
-    if (healthy.length >= 4) {
+    if (list.length <= 6) return ch;
+    const healthy: typeof list = [];
+    const recovering: typeof list = [];
+    for (const tr of list) {
+      if (tr.health?.status !== 'down' && !isProviderCircuitOpen(tr.sourceUrl, tr.providerId)) {
+        healthy.push(tr);
+      } else {
+        recovering.push(tr);
+      }
+    }
+    if (healthy.length >= 10) {
       return {
         ...ch,
         channels: healthy,
+      };
+    }
+    if (healthy.length > 0 && recovering.length > 0) {
+      return {
+        ...ch,
+        channels: [...healthy, ...recovering],
       };
     }
     return ch;
@@ -130,7 +141,7 @@ const epgXmlResponseCache = new LruTtlCache<string, string>(6, 5 * 60 * 1000);
 const tdtCatalogJsonCache = new LruTtlCache<
   string,
   { success: true; iptvMeta: ReturnType<typeof getIptvSyncMeta>; channels: unknown[] }
->(4, 30_000);
+>(4, 90_000);
 
 async function resolveDvbIptvPlaylistText(
   cleanUrl: string,
@@ -169,8 +180,13 @@ export function registerIptvAndTdtRoutes(
       (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
       'default';
     const belixActive = isAnyBelixConnected(belixSessionKey);
+    const priorityMode =
+      String(req.query.priority || '').trim().toLowerCase() === 'best_quality'
+        ? 'best_quality'
+        : 'es_quality';
     const hasWarmXtream = getCachedXtreamLiveTdtChannels().length > 0;
-    const tdtCacheKey = `${belixActive ? 'b1' : 'b0'}:${hasWarmXtream ? 'xw1' : 'xw0'}`;
+    const runtimeSnap = getConnectedProvidersRuntimeCatalog();
+    const tdtCacheKey = `${belixActive ? 'b1' : 'b0'}:${hasWarmXtream ? 'xw1' : 'xw0'}:rt${runtimeSnap.connectedCount}:${priorityMode}`;
 
     if (!forceRefresh) {
       const cachedPayload = tdtCatalogJsonCache.get(tdtCacheKey);
@@ -240,15 +256,96 @@ export function registerIptvAndTdtRoutes(
       return knownCanonicalKeys.has(resolveCanonicalChannelKey(c));
     });
 
+    // Integrate ALL connected runtime servers (vod4k, 24tv, dana4k, ultra-vip, adtupac, 2m2h-alt, sult-vo, octopus, primary)
+    const seenRuntimePairs = new Set<string>(
+      [...verifiedSpainChannels, ...xtreamEnvChannels].map(
+        (c: any) => `${c.providerId || 'primary'}:${c.streamId}`
+      )
+    );
+    const runtimeProviderTdtChannels: any[] = [];
+    let runtimeDial = 700;
+    for (const item of runtimeSnap.liveItems) {
+      const pairKey = `${item.providerId}:${item.streamId}`;
+      if (seenRuntimePairs.has(pairKey)) continue;
+      const hay = `${item.name} ${item.categoryName}`.toLowerCase();
+      const itemLang = String(item.lang || 'INTL').toUpperCase();
+      const itemLangLabel = item.langLabel || itemLang;
+      const itemQuality = item.quality || 'HD';
+      const itemCleanTitle = item.cleanTitle || item.name;
+      const isSpainOrMajor =
+        itemLang === 'ES' ||
+        itemLang === 'CAT' ||
+        /\b(?:movistar|m\+|dazn|laliga|hypermotion|campeones|tdt|rtve|atresmedia|mediaset|la\s*1|la\s*2|antena\s*3|cuatro|telecinco|lasexta|teledeporte|eurosport|nba|f1|bein)\b/i.test(
+          hay
+        );
+      const canonCandidate = {
+        id: item.id,
+        name: itemCleanTitle,
+        category: 'entretenimiento',
+      };
+      const matchesKnownCanon = knownCanonicalKeys.has(resolveCanonicalChannelKey(canonCandidate));
+      if (!isSpainOrMajor && !matchesKnownCanon) continue;
+      seenRuntimePairs.add(pairKey);
+
+      const cat: string = /\bdazn\b/i.test(hay)
+        ? 'dazn'
+        : /\b(?:movistar|m\+|laliga|hypermotion|campeones|vamos)\b/i.test(hay)
+        ? 'movistar'
+        : /\b(?:cine|movie|hollywood|amc|tcm|warner|axn|series)\b/i.test(hay)
+        ? 'cine_series'
+        : /\b(?:doc|discovery|nat\s*geo|historia|odisea|dmax)\b/i.test(hay)
+        ? 'documentales'
+        : /\b(?:infantil|kids|clan|boing|disney|nick)\b/i.test(hay)
+        ? 'infantil_autonomicas'
+        : /\b(?:espn|bein|sky\s*sports|tnt\s*sports|eurosport|deporte|sport)\b/i.test(hay)
+        ? 'noticias_deportes'
+        : itemLang === 'ES' || itemLang === 'CAT'
+        ? 'generalistas'
+        : 'europa_tv';
+
+      runtimeProviderTdtChannels.push({
+        id: `xtream-${item.providerId}-${item.streamId}`,
+        streamId: item.streamId,
+        dial: runtimeDial++,
+        name: itemCleanTitle,
+        shortMark: itemCleanTitle.replace(/[^A-Za-z0-9]/g, '').slice(0, 4).toUpperCase() || 'TV',
+        brandTone: '#7C3AED',
+        network: item.providerName,
+        category: cat,
+        quality: itemQuality,
+        countryCode: itemLang === 'ES' || itemLang === 'CAT' ? 'ES' : itemLang !== 'INTL' ? itemLang : undefined,
+        logoUrl: item.poster,
+        description: `${item.providerName} · ${itemLangLabel} · ${itemQuality}`,
+        channels: [
+          {
+            id: item.id,
+            label: `${item.providerName} · ${itemLangLabel} · ${itemQuality}`,
+            lang: itemLang,
+            langLabel: itemLangLabel,
+            quality: itemQuality,
+            providerId: item.providerId,
+            providerName: item.providerName,
+            sourceUrl: item.streamUrl,
+            resolverType: 'direct_hls' as const,
+          },
+        ],
+      });
+      if (runtimeProviderTdtChannels.length >= 2400) break;
+    }
+
     const merged = [
       ...verifiedSpainChannels,
       ...baseTdtChannels,
       ...INTERNATIONAL_TV_CHANNELS,
       ...belixChannels,
       ...xtreamEnvChannels,
+      ...runtimeProviderTdtChannels,
       ...curatedRbtv,
     ];
-    const curated = curateHealthyAlternatives(buildUnifiedPrioritizedChannels(merged));
+    const unified = buildUnifiedPrioritizedChannels(merged, {
+      preferQualityFirst: priorityMode === 'best_quality',
+    });
+    const curated = curateHealthyAlternatives(unified);
     const responsePayload = {
       success: true as const,
       iptvMeta: getIptvSyncMeta(),
@@ -258,7 +355,10 @@ export function registerIptvAndTdtRoutes(
       })),
     };
     if (responsePayload.channels.length > 0) {
-      tdtCatalogJsonCache.set(`${belixActive ? 'b1' : 'b0'}:${hasWarmXtream || verifiedSpainChannels.length > 0 ? 'xw1' : 'xw0'}`, responsePayload);
+      tdtCatalogJsonCache.set(
+        `${belixActive ? 'b1' : 'b0'}:${hasWarmXtream || verifiedSpainChannels.length > 0 ? 'xw1' : 'xw0'}:rt${runtimeSnap.connectedCount}:${priorityMode}`,
+        responsePayload
+      );
     }
     res.json(responsePayload);
   });

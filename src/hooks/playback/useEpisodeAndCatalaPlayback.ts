@@ -128,12 +128,14 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
     }));
 
     try {
+      const priorityMode = useAppStore.getState().playbackPriorityMode;
       const params = new URLSearchParams({
         mediaType: 'tv',
         tmdbId: String(meta.tmdbId),
         season: String(targetSeason),
         episode: String(targetEp),
         preferLang,
+        ...(priorityMode === 'best_quality' ? { preferQualityFirst: '1', priority: 'best_quality' } : {}),
         title: meta.seriesTitle,
         ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
       });

@@ -10,6 +10,7 @@ import { logger } from '../utils/logger.ts';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { assertSafeProxyUrl } from '../utils/ssrfGuard.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
+import { parseStreamMetadata as parseStreamMetadataImpl } from '../utils/streamMetaParser.ts';
 import {
   ensureLiveDvbCleanHlsSession,
   getActiveDvbSessionPath,
@@ -298,7 +299,12 @@ const opaqueTokenCache = new LruTtlCache<string, OpaqueSegmentEntry>(4_000, 10 *
 const urlToOpaqueTokenCache = new LruTtlCache<string, string>(4_000, 10 * 60_000);
 const opaqueIconCache = new LruTtlCache<string, string>(12_000, 12 * 60 * 60_000);
 const urlToOpaqueIconTokenCache = new LruTtlCache<string, string>(12_000, 12 * 60 * 60_000);
-const liveManifestRamCache = new LruTtlCache<string, string>(350, 7_500);
+const liveManifestRamCache = new LruTtlCache<string, string>(400, 14_000);
+const subManifestBodyRamCache = new LruTtlCache<string, string>(500, 10_000);
+const segmentBodyRamCache = new LruTtlCache<
+  string,
+  { status: number; contentType: string; buffer: Buffer }
+>(160, 14_000);
 const streamAccountCooldowns = new Map<string, number>();
 const streamAccountFailureCounts = new Map<string, number>();
 const STREAM_ACCOUNT_COOLDOWN_MS = 12 * 60_000;
@@ -2062,25 +2068,39 @@ function rewriteManifestLines(
 const providerPreferredLiveVariant = new Map<string, 'live' | 'root' | 'ts' | 'root-ts'>();
 const inflightLiveManifestProbes = new Map<string, Promise<string | null>>();
 
+function prefetchXtreamFirstMedia(rewrittenManifest: string, originPrefix = ''): void {
+  const firstLine = String(rewrittenManifest || '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .find((l) => l && !l.startsWith('#'));
+  const token = firstLine?.match(/\/api\/xtream\/seg\/([^.?/]+)/i)?.[1];
+  if (token) {
+    void fetchXtreamOpaqueResource(token, originPrefix).catch(() => undefined);
+  }
+}
+
 export async function fetchProxiedXtreamManifest(
   streamId: string,
   originPrefix = '',
   providerId = 'primary',
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  opts?: { allowTranscodeFallback?: boolean; probeTimeoutMs?: number }
 ): Promise<string | null> {
   const cleanId = String(streamId || '').replace(/\.(?:m3u8|ts)$/i, '').trim();
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanId)) return null;
   if (signal?.aborted) return null;
 
+  const allowTranscode = opts?.allowTranscodeFallback !== false;
   const manifestCacheKey = `${providerId}:${cleanId}:${originPrefix || 'rel'}`;
   const cachedManifest = liveManifestRamCache.get(manifestCacheKey);
   if (cachedManifest) {
     return cachedManifest;
   }
 
-  let sharedPromise = inflightLiveManifestProbes.get(manifestCacheKey);
+  const inflightKey = `${manifestCacheKey}:${allowTranscode ? 'full' : 'fast'}`;
+  let sharedPromise = inflightLiveManifestProbes.get(inflightKey);
   if (!sharedPromise) {
-    const deadlineAt = Date.now() + 15_000;
+    const deadlineAt = Date.now() + (opts?.probeTimeoutMs ?? (allowTranscode ? 11_000 : 6_200));
     const knownPreferred = providerPreferredLiveVariant.get(providerId);
     const m3u8Variants: Array<'live' | 'root'> =
       knownPreferred === 'root' ? ['root', 'live'] : ['live', 'root'];
@@ -2193,6 +2213,7 @@ export async function fetchProxiedXtreamManifest(
                   })
                 );
                 liveManifestRamCache.set(manifestCacheKey, winner);
+                prefetchXtreamFirstMedia(winner, originPrefix);
                 return { ok: true, value: winner };
               } catch {
                 // fall through to MPEG-TS DVB relay
@@ -2202,13 +2223,14 @@ export async function fetchProxiedXtreamManifest(
                 const rewritten = await probeM3u8Variant(serverOrigin, account, variant);
                 if (rewritten) {
                   liveManifestRamCache.set(manifestCacheKey, rewritten);
+                  prefetchXtreamFirstMedia(rewritten, originPrefix);
                   return { ok: true, value: rewritten };
                 }
               }
             }
           }
 
-          if (Date.now() < deadlineAt) {
+          if (allowTranscode && Date.now() < deadlineAt) {
             const dvbPlaylist = await probeTsRelay(serverOrigin, account);
             if (dvbPlaylist) {
               return { ok: true, value: dvbPlaylist };
@@ -2226,12 +2248,12 @@ export async function fetchProxiedXtreamManifest(
       });
       return result.ok ? result.value : null;
     })().finally(() => {
-      if (inflightLiveManifestProbes.get(manifestCacheKey) === sharedPromise) {
-        inflightLiveManifestProbes.delete(manifestCacheKey);
+      if (inflightLiveManifestProbes.get(inflightKey) === sharedPromise) {
+        inflightLiveManifestProbes.delete(inflightKey);
       }
     });
 
-    inflightLiveManifestProbes.set(manifestCacheKey, sharedPromise);
+    inflightLiveManifestProbes.set(inflightKey, sharedPromise);
   }
 
   if (!signal) {
@@ -2581,6 +2603,27 @@ export async function openXtreamOpaqueSegmentStream(
   body?: ReadableStream<Uint8Array>;
   buffer?: Buffer;
 } | null> {
+  if (!rangeHeader) {
+    const cachedSub = subManifestBodyRamCache.get(`${token}:rel`);
+    if (cachedSub) {
+      return {
+        kind: 'playlist',
+        status: 200,
+        contentType: 'application/vnd.apple.mpegurl',
+        buffer: Buffer.from(cachedSub, 'utf8'),
+      };
+    }
+    const cachedSeg = segmentBodyRamCache.get(token);
+    if (cachedSeg) {
+      return {
+        kind: 'playlist',
+        status: cachedSeg.status,
+        contentType: cachedSeg.contentType,
+        buffer: cachedSeg.buffer,
+      };
+    }
+  }
+
   const entry = opaqueTokenCache.get(token);
   if (!entry) {
     return {
@@ -2623,6 +2666,7 @@ export async function openXtreamOpaqueSegmentStream(
       const text = await res.text();
       if (text.includes('#EXTM3U')) {
         const rewritten = rewriteManifestLines(text, res.url || entry.url, entry.serverOrigin, '');
+        subManifestBodyRamCache.set(`${token}:rel`, rewritten);
         return {
           kind: 'playlist',
           status: 200,
@@ -2661,6 +2705,25 @@ export async function fetchXtreamOpaqueResource(
   contentType: string;
   body: Buffer;
 } | null> {
+  if (!rangeHeader) {
+    const cachedSub = subManifestBodyRamCache.get(`${token}:${originPrefix || 'rel'}`);
+    if (cachedSub) {
+      return {
+        status: 200,
+        contentType: 'application/vnd.apple.mpegurl',
+        body: Buffer.from(cachedSub, 'utf8'),
+      };
+    }
+    const cachedSeg = segmentBodyRamCache.get(token);
+    if (cachedSeg) {
+      return {
+        status: cachedSeg.status,
+        contentType: cachedSeg.contentType,
+        body: cachedSeg.buffer,
+      };
+    }
+  }
+
   const entry = opaqueTokenCache.get(token);
   if (!entry) return null;
 
@@ -2684,6 +2747,15 @@ export async function fetchXtreamOpaqueResource(
       const text = await res.text();
       if (text.includes('#EXTM3U')) {
         const rewritten = rewriteManifestLines(text, res.url || entry.url, entry.serverOrigin, originPrefix);
+        subManifestBodyRamCache.set(`${token}:${originPrefix || 'rel'}`, rewritten);
+        const firstSegToken = rewritten
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .find((l) => l && !l.startsWith('#'))
+          ?.match(/\/api\/xtream\/seg\/([^.?/]+)/i)?.[1];
+        if (firstSegToken) {
+          void fetchXtreamOpaqueResource(firstSegToken, originPrefix).catch(() => undefined);
+        }
         return {
           status: 200,
           contentType: 'application/vnd.apple.mpegurl',
@@ -2693,6 +2765,13 @@ export async function fetchXtreamOpaqueResource(
     }
 
     const buf = Buffer.from(await res.arrayBuffer());
+    if (!rangeHeader && res.status === 200 && buf.length > 0 && buf.length <= 6 * 1024 * 1024) {
+      segmentBodyRamCache.set(token, {
+        status: res.status,
+        contentType: ct,
+        buffer: buf,
+      });
+    }
     return {
       status: res.status,
       contentType: ct,
@@ -2759,15 +2838,7 @@ export interface XtreamIntegratedTdtChannel {
 }
 
 function inferLiveQualityLabel(rawName: string, catName: string): string {
-  const hay = `${rawName} ${catName}`
-    .replace(/⁴ᴷ|⁴ᵏ/g, ' 4K ')
-    .replace(/ᶠᴴᴰ/gi, ' FHD ')
-    .replace(/ᴴᴰ/gi, ' HD ')
-    .toLowerCase();
-  if (/(?:\b4k\b|\buhd\b|\b2160p?\b)/i.test(hay)) return '4K UHD';
-  if (/\b(?:fhd|1080p?|full\s*hd)\b/i.test(hay)) return '1080p FHD';
-  if (/\b(?:576p?|480p?|360p?|sd)\b/i.test(hay)) return 'SD';
-  return 'HD';
+  return parseStreamMetadataImpl(rawName, catName, 'live').quality;
 }
 
 function inferLiveLangAndCountry(rawName: string, catName: string): {
@@ -2775,52 +2846,23 @@ function inferLiveLangAndCountry(rawName: string, catName: string): {
   langLabel: string;
   countryCode?: string;
 } {
-  const name = String(rawName || '').trim();
-  const cat = String(catName || '').trim();
-  const combined = `${cat} ${name}`;
-  if (
-    /^(?:\[?\s*(?:UK|US|USA|FR|DE|GER|IT|ITA|PT|POR|AR|ARB|LAT|LA|MX|ARG|NL|PL|RO|GR|BG|RS|MK|TR|IR|RU|FI|NO|SE|DK|BE|AT|CH|AL|IND)\s*\]?\s*[|:/-·•▎┃│◈])/i.test(
-      name
-    ) ||
-    /^[┃│▎◈•]/.test(name)
-  ) {
-    // Let explicit foreign prefix below classify its real language/country
-  } else if (
-    /\b(?:spain|espa[ñn]a|tdt|tivify|tivfiy|movistar|atresmedia|mediaset|rtve|laliga|hypermotion)\b|أسبانيا|^(?:tivif?y\s*es\s*[:|]|vip\s*es\s*[:|]|\[?\s*(?:es|esp)\s*\]?\s*[|:/-])/i.test(
-      combined
-    ) &&
-    !/^(?:\[?\s*(?:UK|US|USA|FR|DE|GER|IT|PT|AR|ARB|LAT|MX|NL|PL|RO|GR|TR|FI|NO|SE|DK|BE|AT|AL|IND)\s*\]?\s*[|:/-])/i.test(cat)
-  ) {
-    return { lang: 'ES', langLabel: 'Castellano', countryCode: 'ES' };
-  }
-  if (/[\u0600-\u06FF]|^(?:\[?\s*(?:AR|ARB)\s*\]?\s*[|:/-])|\b(?:arabic|arabia|egypt|maroc|morocco|mbc|rotana|al\s*jazeera|nile)\b/i.test(combined)) {
-    return { lang: 'AR', langLabel: 'Árabe', countryCode: 'AR' };
-  }
-  if (/^(?:\[?\s*CAT\s*\]?\s*[|:/-])|\b(?:catal[aà]|tv3|3cat|esport3|sx3)\b/i.test(combined)) {
-    return { lang: 'CAT', langLabel: 'Català', countryCode: 'ES' };
-  }
-  if (/^(?:\|?\s*(?:LAT|LA|MX|ARG|COL|CHL|PER|PE)\s*\]?\s*[|:/-])|\b(?:latino|latam|m[eé]xico|argentina|colombia|chile|dsports)\b/i.test(combined)) {
-    return { lang: 'LAT', langLabel: 'Latino', countryCode: 'LAT' };
-  }
-  if (/^(?:\[?\s*(?:FR|VF)\s*\]?\s*[|:/-])|\b(?:france|french|fran[çc]ais|canal\+|tf1|rmc\s*sport|m6)\b/i.test(combined)) {
-    return { lang: 'FR', langLabel: 'Francés', countryCode: 'FR' };
-  }
-  if (/^(?:\[?\s*(?:PT|BR)\s*\]?\s*[|:/-])|\b(?:portugal|sport\s*tv|tvi|sic|rtp|brasil|globo)\b/i.test(combined)) {
-    return { lang: 'PT', langLabel: 'Portugués', countryCode: 'PT' };
-  }
-  if (/^(?:\[?\s*IT\s*\]?\s*[|:/-])|\b(?:italy|italia|italiano|rai|mediaset\s*italia|sky\s*italia|serie\s*a)\b/i.test(combined)) {
-    return { lang: 'IT', langLabel: 'Italiano', countryCode: 'IT' };
-  }
-  if (/^(?:\[?\s*(?:DE|GER|AT|CH)\s*\]?\s*[|:/-])|\b(?:germany|deutsch|zdf|ard|rtl|sky\s*sport\s*de|bundesliga)\b/i.test(combined)) {
-    return { lang: 'DE', langLabel: 'Alemán', countryCode: 'DE' };
-  }
-  if (/^(?:\[?\s*(?:UK|US|USA|EN|ENG|CA|AU)\s*\]?\s*[|:/-])|\b(?:uk|usa|united\s*states|english|sky\s*sports|tnt\s*sports|bbc|itv|nbc|cbs|abc|fox|espn|premier\s*league)\b/i.test(combined)) {
+  const parsed = parseStreamMetadataImpl(rawName, catName, 'live');
+  if (parsed.lang !== 'INTL') {
+    const countryCode =
+      parsed.lang === 'ES' || parsed.lang === 'CAT'
+        ? 'ES'
+        : parsed.lang === 'EN'
+        ? /\b(?:us|usa|nba|nfl|mlb|espn|cbs|nbc|abc|fox)\b/i.test(`${rawName} ${catName}`)
+          ? 'US'
+          : 'GB'
+        : parsed.lang;
     return {
-      lang: 'EN',
-      langLabel: 'Inglés',
-      countryCode: /\b(?:us|usa|nba|nfl|mlb|espn|cbs|nbc|abc|fox)\b/i.test(combined) ? 'US' : 'GB',
+      lang: parsed.lang,
+      langLabel: parsed.langLabel.replace(/\s*\([A-Z]+\)$/, ''),
+      countryCode,
     };
   }
+  const combined = `${catName} ${rawName}`;
   const euroMatch = combined.match(/^(?:\[?\s*|┃)(NL|PL|RO|GR|BG|RS|MK|TR|IR|RU|FI|NO|SE|DK|BE|AL|IND)\b/i);
   if (euroMatch) {
     const cc = euroMatch[1].toUpperCase();

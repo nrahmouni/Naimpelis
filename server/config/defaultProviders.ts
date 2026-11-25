@@ -27,6 +27,10 @@ export const providersConfig: XtreamProviderConfig[] = [
     accentColor: '#7C3AED',
     accounts: [
       {
+        username: '3143047387607546',
+        password: '7791912648',
+      },
+      {
         username: '4413658251491390',
         password: '4413658251491390',
       },

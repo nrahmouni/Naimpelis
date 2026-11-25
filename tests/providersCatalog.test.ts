@@ -73,6 +73,7 @@ describe('Multi-Provider Xtream Registry, Rotation & Catálogo Total', () => {
     const vod4k = providersConfig.find((p) => p.id === 'vod4k');
     expect(vod4k?.serverUrl).toBe('http://vod4k.cc:80');
     expect(vod4k?.accounts).toEqual([
+      { username: '3143047387607546', password: '7791912648' },
       { username: '4413658251491390', password: '4413658251491390' },
       { username: '3178886199166690', password: '8242297241' },
     ]);
@@ -96,7 +97,6 @@ describe('Multi-Provider Xtream Registry, Rotation & Catálogo Total', () => {
     expect(sult?.accounts).toEqual([
       { username: '4426530274896970', password: '4426530274896970' },
       { username: '2225190801115579', password: '2225190801115579' },
-      { username: '4453758394245202', password: '4453758394245202' },
     ]);
   });
 
@@ -124,7 +124,7 @@ describe('Multi-Provider Xtream Registry, Rotation & Catálogo Total', () => {
 
       // VOD 4K: first account expired -> rotate to second account
       if (u.hostname === 'vod4k.cc') {
-        if (user === '4413658251491390') {
+        if (user === '3143047387607546') {
           return makeJsonResponse({ user_info: { auth: 1, status: 'Expired' } });
         }
         if (!action) {
@@ -146,13 +146,10 @@ describe('Multi-Provider Xtream Registry, Rotation & Catálogo Total', () => {
         }
       }
 
-      // Sult-Vo: account 1 saturated (active_cons >= max_connections), account 2 rejects auth -> rotate to account 3
+      // Sult-Vo: account 1 saturated (active_cons >= max_connections) -> rotate to account 2
       if (u.hostname === 'sult-vo.xyz') {
         if (user === '4426530274896970') {
           return makeJsonResponse({ user_info: { auth: 1, status: 'Active', active_cons: '1', max_connections: '1' } });
-        }
-        if (user === '2225190801115579') {
-          return makeJsonResponse({ user_info: { auth: 0 } }, 401);
         }
         if (!action) {
           return makeJsonResponse({ user_info: { auth: 1, status: 'Active', active_cons: '0', max_connections: '1' } });
@@ -162,7 +159,7 @@ describe('Multi-Provider Xtream Registry, Rotation & Catálogo Total', () => {
         return makeJsonResponse([]);
       }
 
-      // Remaining 3 servers succeed with sample catalog items
+      // Remaining servers succeed with sample catalog items
       if (!action) {
         return makeJsonResponse({ user_info: { auth: 1, status: 'Active', active_cons: '0', max_connections: '2' } });
       }
@@ -174,7 +171,7 @@ describe('Multi-Provider Xtream Registry, Rotation & Catálogo Total', () => {
     });
 
     const results = await initDefaultProviders({ force: true });
-    expect(results).toHaveLength(5);
+    expect(results).toHaveLength(11);
 
     const vod4kStatus = results.find((r) => r.id === 'vod4k')!;
     expect(vod4kStatus.connected).toBe(true);
@@ -185,20 +182,25 @@ describe('Multi-Provider Xtream Registry, Rotation & Catálogo Total', () => {
 
     const sultStatus = results.find((r) => r.id === 'sult-vo')!;
     expect(sultStatus.connected).toBe(true);
-    expect(sultStatus.activeAccountSlot).toBe(3);
+    expect(sultStatus.activeAccountSlot).toBe(2);
 
     const statusSummary = getProvidersStatusSummary();
-    expect(statusSummary.totals.connectedCount).toBe(5);
-    expect(statusSummary.totals.totalProviders).toBe(5);
+    expect(statusSummary.totals.connectedCount).toBe(11);
+    expect(statusSummary.totals.totalProviders).toBe(11);
 
     // Individual server query
     const vodCatalog = queryProvidersCatalog({ scope: 'vod4k', kind: 'all' });
     expect(vodCatalog.total).toBe(3);
     expect(vodCatalog.items.find((i) => i.kind === 'movie')?.streamUrl).toBe('/api/providers/stream/vod4k/movie/202.mp4');
 
-    // Catálogo Total aggregation query
-    const totalCatalog = queryProvidersCatalog({ scope: 'total', kind: 'all' });
-    expect(totalCatalog.total).toBeGreaterThanOrEqual(10);
+    // Catálogo Total aggregation query (ungrouped raw count & grouped cross-server alternatives)
+    const rawTotalCatalog = queryProvidersCatalog({ scope: 'total', kind: 'all', grouped: false });
+    expect(rawTotalCatalog.total).toBeGreaterThanOrEqual(20);
+
+    const totalCatalog = queryProvidersCatalog({ scope: 'total', kind: 'all', grouped: true });
+    expect(totalCatalog.total).toBeGreaterThanOrEqual(6);
+    const mergedLive = totalCatalog.items.find((i) => i.name.includes('Canal Estelar'));
+    expect(mergedLive?.alternatives?.length).toBeGreaterThanOrEqual(2);
 
     // Series detail resolution returns credential-free proxy URL
     const seriesDetail = await getProviderSeriesDetail('vod4k', '303');

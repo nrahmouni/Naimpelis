@@ -19,7 +19,7 @@ import {
   sanitizeExtension,
 } from '../services/providers/xtreamProvidersHelpers.ts';
 import { applyProxyCorsHeaders, getOrCreateRequestId } from './proxies/proxyUtils.ts';
-import type { ProviderMediaKind } from '../services/providers/xtreamProvidersTypes.ts';
+import type { ProviderMediaKind, ProviderPriorityMode } from '../services/providers/xtreamProvidersTypes.ts';
 
 interface ProviderRoutesDeps {
   getPublicOrigin: (req: express.Request) => string;
@@ -67,6 +67,16 @@ export function registerProviderRoutes(app: express.Express, deps: ProviderRoute
     const lang = String(req.query.lang || '').trim();
     const quality = String(req.query.quality || '').trim();
     const q = String(req.query.q || '').trim();
+    const rawPriority = String(req.query.priority || '').trim().toLowerCase();
+    const priority: ProviderPriorityMode =
+      rawPriority === 'best_quality' ? 'best_quality' : 'es_quality';
+    const groupedParam = req.query.grouped !== undefined ? String(req.query.grouped).trim() : undefined;
+    const grouped =
+      groupedParam === '0' || groupedParam === 'false'
+        ? false
+        : groupedParam === '1' || groupedParam === 'true'
+        ? true
+        : undefined;
     const offset = Number(req.query.offset || 0);
     const limit = Number(req.query.limit || 60);
 
@@ -79,6 +89,8 @@ export function registerProviderRoutes(app: express.Express, deps: ProviderRoute
       q,
       offset,
       limit,
+      priority,
+      grouped,
     });
     res.json({
       success: true,
@@ -117,9 +129,12 @@ export function registerProviderRoutes(app: express.Express, deps: ProviderRoute
     if (rawKind === 'live') {
       const originPrefix = req.query.abs === '1' ? getPublicOrigin(req) : '';
       if (req.method === 'HEAD') {
+        const providerConnected = getProvidersStatusSummary().providers.some(
+          (p) => p.id === providerId && p.connected
+        );
         applyProxyCorsHeaders(res, reqId);
         res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
-        res.status(200).end();
+        res.status(providerConnected ? 200 : 503).end();
         return;
       }
       const manifest = await resolveProviderLiveManifest(providerId, streamId, originPrefix);

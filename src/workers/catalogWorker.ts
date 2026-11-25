@@ -70,6 +70,7 @@ export type CatalogWorkerRequest =
       type: 'MERGE_RANK_CHANNELS';
       payload: {
         channels: SpanishTdtChannel[];
+        options?: { preferQualityFirst?: boolean };
       };
     }
   | {
@@ -301,7 +302,7 @@ if (typeof self !== 'undefined' && typeof (self as unknown as { postMessage?: un
       return;
     }
     if (req.type === 'MERGE_RANK_CHANNELS') {
-      const result = rankClientChannels(req.payload.channels || []);
+      const result = rankClientChannels(req.payload.channels || [], req.payload.options);
       self.postMessage({ id: req.id, ok: true, result });
       return;
     }

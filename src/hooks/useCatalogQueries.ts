@@ -11,6 +11,7 @@ import type {
   YouTubeSearchItem,
 } from '../types';
 import type { ProvidersStatusSummaryPublic } from '../components/providers/providersTypes';
+import type { PlaybackPriorityMode } from '../store/useAppStore';
 
 export const queryClient = new QueryClient({
   defaultOptions: {
@@ -53,7 +54,8 @@ export const catalogQueryKeys = {
   }) => ['catalog', 'series-page', params] as const,
   catala: (query: string) => ['catalog', 'catala', query] as const,
   youtube: (query: string) => ['catalog', 'youtube', query] as const,
-  tdtBase: () => ['catalog', 'tdt-base'] as const,
+  tdtBase: (priority: PlaybackPriorityMode = 'es_quality') =>
+    ['catalog', 'tdt-base', priority] as const,
   epgLive: () => ['catalog', 'epg-live'] as const,
   providersStatus: () => ['providers', 'status'] as const,
   providersCatalog: (params: Record<string, string | number>) =>
@@ -363,8 +365,16 @@ export async function fetchYouTubeCatalogData(query: string): Promise<YouTubeSea
   return Array.isArray(data?.videos) ? data.videos : [];
 }
 
-export async function fetchTdtBaseCatalogData(): Promise<SpanishTdtChannel[]> {
-  const res = await fetch('/api/catalog/tdt');
+export async function fetchTdtBaseCatalogData(
+  priorityOrCtx: PlaybackPriorityMode | { queryKey?: readonly unknown[] } = 'es_quality'
+): Promise<SpanishTdtChannel[]> {
+  const priority: PlaybackPriorityMode =
+    typeof priorityOrCtx === 'string'
+      ? priorityOrCtx
+      : priorityOrCtx?.queryKey?.[2] === 'best_quality'
+      ? 'best_quality'
+      : 'es_quality';
+  const res = await fetch(`/api/catalog/tdt?priority=${encodeURIComponent(priority)}`);
   if (!res.ok) throw new Error('Failed to load TDT catalog');
   const data = await res.json();
   return Array.isArray(data?.channels) ? data.channels : [];

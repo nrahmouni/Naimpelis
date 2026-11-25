@@ -262,15 +262,13 @@ export async function handleCatalogMediaExtract(
       t.resolverType === 'vidhide_hls' ||
       t.resolverType === 'vest_hls');
   const signalFastDirectEsIfReady = (tracks: TrackRecord[]) => {
-    if (
-      !fastDirectEsReadyFired &&
-      tracks.some(
-        (t) =>
-          String(t.lang || '').toUpperCase() === preferLang &&
-          (t.resolverType === 'direct_hls' || t.resolverType === 'direct_mp4') &&
-          Boolean(t.resolvedStreamUrl)
-      )
-    ) {
+    const hasVerifiedDirect = tracks.some(
+      (t) =>
+        (t.resolverType === 'direct_hls' || t.resolverType === 'direct_mp4') &&
+        Boolean(t.resolvedStreamUrl) &&
+        (preferQualityFirst || String(t.lang || '').toUpperCase() === preferLang)
+    );
+    if (!fastDirectEsReadyFired && hasVerifiedDirect) {
       fastDirectEsReadyFired = true;
       fastDirectEsReadyResolve?.();
     }
@@ -509,15 +507,17 @@ export async function handleCatalogMediaExtract(
                 yearHint: effectiveYearForExtract,
                 season: effectiveSeason || 1,
                 episode: effectiveEpisode || 1,
-                preferLang: preferQualityFirst ? 'ES' : preferLang,
+                preferLang,
+                preferQualityFirst,
               })
             : findXtreamMovieMatches({
                 titleHints: combinedTitleHints,
                 yearHint: effectiveYearForExtract,
-                preferLang: preferQualityFirst ? 'ES' : preferLang,
+                preferLang,
+                preferQualityFirst,
                 limit: 16,
               }).then((r) => r.tracks),
-          2800,
+          2200,
           [] as TrackRecord[]
         ).then((res) => {
           xtreamTracks = res;
@@ -547,31 +547,36 @@ export async function handleCatalogMediaExtract(
     await Promise.race([
       primaryAllPromise,
       Promise.all([movidyP, xtreamMultiServerP, fastDirectEsReadyPromise]).then(
-        () => new Promise<void>((resolve) => setTimeout(resolve, 200))
+        () => new Promise<void>((resolve) => setTimeout(resolve, 150))
       ),
       fastCandidateEsReadyPromise.then(
-        () => new Promise<void>((resolve) => setTimeout(resolve, 1400))
+        () => new Promise<void>((resolve) => setTimeout(resolve, 1100))
       ),
+      new Promise<void>((resolve) => setTimeout(resolve, 2600)),
     ]);
   } else {
-    if (prefersSpanishTier) {
+    if (prefersSpanishTier && !preferQualityFirst) {
+      await Promise.race([
+        primaryAllPromise,
+        Promise.all([xtreamMultiServerP, fastDirectEsReadyPromise]).then(
+          () => new Promise<void>((resolve) => setTimeout(resolve, 180))
+        ),
+        fastCandidateEsReadyPromise.then(
+          () => new Promise<void>((resolve) => setTimeout(resolve, 1200))
+        ),
+        new Promise<void>((resolve) => setTimeout(resolve, 2400)),
+      ]);
+    } else {
       await Promise.race([
         primaryAllPromise,
         Promise.all([xtreamMultiServerP, fastDirectEsReadyPromise]).then(
           () => new Promise<void>((resolve) => setTimeout(resolve, 200))
         ),
-        fastCandidateEsReadyPromise.then(
-          () => new Promise<void>((resolve) => setTimeout(resolve, 1600))
-        ),
-      ]);
-    } else {
-      await Promise.race([
-        primaryAllPromise,
-        new Promise<void>((resolve) => setTimeout(resolve, 3600)),
+        new Promise<void>((resolve) => setTimeout(resolve, 2400)),
       ]);
     }
 
-    const primaryNativeSpanishTracks = [
+    const primaryNativeTracks = [
       ...xtreamTracks,
       ...movidyTracks,
       ...gnulaTracks,
@@ -583,27 +588,26 @@ export async function handleCatalogMediaExtract(
       ...(vestExtractedHolder.value?.tracks || []),
     ];
 
-    const primaryHasDirectVerifiedSpanish =
-      prefersSpanishTier &&
-      primaryNativeSpanishTracks.some(
-        (t) =>
-          String(t.lang || '').toUpperCase() === preferLang &&
-          (t.resolverType === 'direct_hls' || t.resolverType === 'direct_mp4') &&
-          Boolean(t.resolvedStreamUrl)
-      );
+    const primaryHasDirectVerifiedStream = primaryNativeTracks.some(
+      (t) =>
+        (t.resolverType === 'direct_hls' || t.resolverType === 'direct_mp4') &&
+        Boolean(t.resolvedStreamUrl) &&
+        (preferQualityFirst || !prefersSpanishTier || String(t.lang || '').toUpperCase() === preferLang)
+    );
 
+    const primaryHasAnyXtreamDirect = xtreamTracks.some((t) => Boolean(t.resolvedStreamUrl));
     const primaryHasCandidateSpanish =
-      prefersSpanishTier && primaryNativeSpanishTracks.some(isNativeLangTrack);
+      prefersSpanishTier && primaryNativeTracks.some(isNativeLangTrack);
 
-    if (primaryHasDirectVerifiedSpanish || primaryHasCandidateSpanish) {
+    if (primaryHasDirectVerifiedStream || primaryHasCandidateSpanish || primaryHasAnyXtreamDirect) {
       await Promise.race([
         secondaryAllPromise,
-        new Promise<void>((resolve) => setTimeout(resolve, 120)),
+        new Promise<void>((resolve) => setTimeout(resolve, primaryHasDirectVerifiedStream ? 120 : 350)),
       ]);
     } else {
       await Promise.race([
         secondaryAllPromise,
-        new Promise<void>((resolve) => setTimeout(resolve, 3000)),
+        new Promise<void>((resolve) => setTimeout(resolve, 1800)),
       ]);
     }
   }
@@ -692,7 +696,7 @@ export async function handleCatalogMediaExtract(
   if (!resolvedSelection) {
     await Promise.race([
       Promise.all([primaryAllPromise, secondaryAllPromise]),
-      new Promise<void>((resolve) => setTimeout(resolve, 1200)),
+      new Promise<void>((resolve) => setTimeout(resolve, 550)),
     ]);
     const lateTracks: TrackRecord[] = [
       ...xtreamTracks,

@@ -14,6 +14,7 @@ import type {
 import type { PlaybackCoreContext } from './playbackTypes';
 import { createTrackAndQueuePlaybackHandlers } from './useTrackAndQueuePlayback';
 import { extractTrackHostKey, mergeCustomTdtTracks } from '../../utils/customTdtSources';
+import { useAppStore } from '../../store/useAppStore';
 
 interface LiveQueueExtras {
   handlePlayMovie: (
@@ -159,6 +160,7 @@ export function useLiveAndQueuePlayback(
             competition: params.competition,
             broadcasters: params.broadcasters,
             preferLang: 'ES',
+            preferQualityFirst: useAppStore.getState().playbackPriorityMode === 'best_quality',
             tracks: params.tracks.slice(0, 14).map((tr) => ({
               id: tr.id,
               label: tr.label,
@@ -303,7 +305,7 @@ export function useLiveAndQueuePlayback(
         } else {
           signal.addEventListener('abort', onFastAbort, { once: true });
         }
-        const fastTimeout = setTimeout(() => fastCtrl.abort(), 15_000);
+        const fastTimeout = setTimeout(() => fastCtrl.abort(), 8_500);
         try {
           const fastRes = await fetch('/api/live/fast-resolve', {
             method: 'POST',
@@ -316,6 +318,7 @@ export function useLiveAndQueuePlayback(
               competition: match.competition,
               broadcasters: matchBroadcasters,
               preferLang: 'ES',
+              preferQualityFirst: useAppStore.getState().playbackPriorityMode === 'best_quality',
               tracks: match.channels.slice(0, 14).map((ch) => ({
                 id: ch.id,
                 label: ch.label,
@@ -399,7 +402,7 @@ export function useLiveAndQueuePlayback(
             } else {
               signal.addEventListener('abort', onParentAbort, { once: true });
             }
-            const reqTimeout = setTimeout(() => reqCtrl.abort(), 15_000);
+            const reqTimeout = setTimeout(() => reqCtrl.abort(), 8_500);
             try {
               const res = await fetch(`/api/extract/stream?${params.toString()}`, {
                 signal: reqCtrl.signal,
@@ -701,7 +704,7 @@ export function useLiveAndQueuePlayback(
         } else {
           signal.addEventListener('abort', onFastAbort, { once: true });
         }
-        const fastTimeout = setTimeout(() => fastCtrl.abort(), 15_000);
+        const fastTimeout = setTimeout(() => fastCtrl.abort(), 8_500);
         try {
           const fastRes = await fetch('/api/live/fast-resolve', {
             method: 'POST',
@@ -712,6 +715,7 @@ export function useLiveAndQueuePlayback(
               title: effectiveTdtCh.name,
               titleHint: effectiveTdtCh.name,
               preferLang: 'ES',
+              preferQualityFirst: useAppStore.getState().playbackPriorityMode === 'best_quality',
               tracks: effectiveTdtCh.channels.map((sig) => ({
                 id: sig.id,
                 label: sig.label,
@@ -812,7 +816,7 @@ export function useLiveAndQueuePlayback(
         } else {
           signal.addEventListener('abort', onParentAbort, { once: true });
         }
-        const timeoutId = setTimeout(() => ctrl.abort(), 15_000);
+        const timeoutId = setTimeout(() => ctrl.abort(), 8_500);
         try {
           const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal: ctrl.signal });
           resOk = res.ok;
