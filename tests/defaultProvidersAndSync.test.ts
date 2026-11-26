@@ -354,6 +354,140 @@ describe('DEFAULT_PROVIDERS & Multi-Provider Xtream Sync', () => {
     resetProvidersCatalogStoreForTest();
   });
 
+  it('provides a unified search bar in Red de Servidores that finds live channels, movies, and series across synced servers', async () => {
+    resetProvidersCatalogStoreForTest();
+    await clearCachedProviderCatalogs();
+    const now = Date.now();
+
+    const mockFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.startsWith('/api/providers/search')) {
+        return new Response(
+          JSON.stringify({ success: true, live: [], movies: [], series: [], indexedProviders: 0 }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      const pid = String(body.providerId || 'unknown');
+      const summary = DEFAULT_PROVIDER_SUMMARIES.find((s) => s.id === pid)!;
+      const isPrimary = pid === 'shark-pro';
+      return new Response(
+        JSON.stringify({
+          success: true,
+          catalog: {
+            providerId: pid,
+            providerName: summary.name,
+            syncedAt: now,
+            status: 'ready',
+            counts: { live: isPrimary ? 1 : 0, movies: isPrimary ? 1 : 0, series: isPrimary ? 1 : 0 },
+            liveCategories: [{ id: '1', name: 'TDT' }],
+            vodCategories: [{ id: '2', name: 'Acción' }],
+            seriesCategories: [{ id: '3', name: 'Sci-Fi' }],
+            liveStreams: isPrimary
+              ? [
+                  {
+                    id: 'shark-pro-live-batman',
+                    streamId: '10',
+                    providerId: 'shark-pro',
+                    providerName: summary.name,
+                    name: 'Batman TV 24H',
+                    categoryId: '1',
+                    categoryName: 'TDT',
+                    logo: '',
+                    playbackUrl: '/api/providers/live/shark-pro/10.m3u8',
+                  },
+                ]
+              : [],
+            vodStreams: isPrimary
+              ? [
+                  {
+                    id: 'shark-pro-vod-batman',
+                    streamId: '20',
+                    providerId: 'shark-pro',
+                    providerName: summary.name,
+                    name: 'The Batman (2022)',
+                    categoryId: '2',
+                    categoryName: 'Acción',
+                    poster: '',
+                    ext: 'mp4',
+                    playbackUrl: '/api/providers/vod/shark-pro/20.mp4',
+                  },
+                ]
+              : [],
+            seriesList: isPrimary
+              ? [
+                  {
+                    id: 'shark-pro-series-batman',
+                    seriesId: '30',
+                    providerId: 'shark-pro',
+                    providerName: summary.name,
+                    name: 'Batman: La Serie Animada',
+                    categoryId: '3',
+                    categoryName: 'Sci-Fi',
+                    poster: '',
+                  },
+                ]
+              : [],
+          },
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      );
+    });
+    window.fetch = mockFetch as unknown as typeof fetch;
+    globalThis.fetch = mockFetch as unknown as typeof fetch;
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(
+        React.createElement(ProvidersCatalogSection, {
+          onPlayChannel: vi.fn(),
+          onPlayCustomUrl: vi.fn(),
+          autoLoadCatalog: true,
+        })
+      );
+    });
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('Batman TV 24H');
+    });
+
+    const input = container.querySelector(
+      'input[aria-label="Buscar canales, películas o series en Red de Servidores"]'
+    ) as HTMLInputElement;
+    expect(input).not.toBeNull();
+
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+      setter?.call(input, 'batman');
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain('3 coincidencias para "batman"');
+      expect(container.textContent).toContain('Batman TV 24H');
+      expect(container.textContent).toContain('The Batman (2022)');
+      expect(container.textContent).toContain('Batman: La Serie Animada');
+    });
+
+    const clearBtn = container.querySelector(
+      'button[aria-label="Limpiar búsqueda"]'
+    ) as HTMLButtonElement;
+    expect(clearBtn).not.toBeNull();
+    await act(async () => {
+      clearBtn.click();
+    });
+    expect(input.value).toBe('');
+
+    await act(async () => {
+      root.unmount();
+    });
+    container.remove();
+    resetProvidersCatalogStoreForTest();
+  });
+
   it('feeds fast signals, universal search, and Spanish TDT catalog from synced servers', async () => {
     serverMocks.streamingFetch.mockImplementation(async (url: string) => {
       if (url.includes('action=get_live_categories')) {

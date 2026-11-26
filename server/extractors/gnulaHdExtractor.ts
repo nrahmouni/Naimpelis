@@ -1,4 +1,4 @@
-import { type TrackRecord } from './httpHelpers.ts';
+import { CHROME_UA, buildTsProxyUrl, type TrackRecord } from './httpHelpers.ts';
 import { unpackVidhideToHls } from './vidhideHelpers/directHostUnpackers.ts';
 import { logger } from '../utils/logger.ts';
 import {
@@ -211,17 +211,51 @@ export async function extractGnulaHdTracks(
           };
         }
 
-        return {
-          hostPriority,
-          track: {
-            id: `gnula-embed-${meta!.pid}-${lang.toLowerCase()}-${sIdx + 1}`,
-            label: `${langDisplay(lang)} · GnulaHD (${srvTitle || 'Web'})`,
-            lang,
-            quality: 'HD',
-            sourceUrl: srcUrl,
-            resolverType: 'web_embed',
-          },
-        };
+        // Inspect unknown leftover servers: promote real (>5MB) MP4 streams to native direct_mp4, drop broken/binary web_embed junk
+        try {
+          const probeRes = await fetch(srcUrl, {
+            method: 'GET',
+            redirect: 'follow',
+            headers: {
+              Range: 'bytes=0-1023',
+              Referer: targetUrl,
+              'User-Agent': CHROME_UA,
+            },
+            signal: AbortSignal.timeout(1400),
+          });
+          const finalUrl = String(probeRes.url || srcUrl);
+          const ct = String(probeRes.headers.get('content-type') || '').toLowerCase();
+          const cr = String(probeRes.headers.get('content-range') || '');
+          const totalSizeMatch = cr.match(/\/(\d+)\s*$/);
+          const totalBytes = totalSizeMatch
+            ? parseInt(totalSizeMatch[1], 10)
+            : parseInt(String(probeRes.headers.get('content-length') || '0'), 10) || 0;
+          const buf = Buffer.from(await probeRes.arrayBuffer());
+          const hasMp4Magic = buf.length >= 8 && buf.subarray(4, 8).toString('ascii') === 'ftyp';
+          const isAviso = /aviso\.mp4/i.test(finalUrl);
+          if (
+            probeRes.ok &&
+            !isAviso &&
+            (ct.startsWith('video/mp4') || hasMp4Magic || /\.mp4(\?|$)/i.test(finalUrl)) &&
+            (totalBytes === 0 || totalBytes >= 5 * 1024 * 1024)
+          ) {
+            return {
+              hostPriority,
+              track: {
+                id: `gnula-mp4-${meta!.pid}-${lang.toLowerCase()}-${sIdx + 1}`,
+                label: `${langDisplay(lang)} HD · GnulaHD (${srvTitle || 'MP4'})`,
+                lang,
+                quality: '1080p MP4',
+                resolvedStreamUrl: buildTsProxyUrl(finalUrl, targetUrl),
+                sourceUrl: finalUrl,
+                resolverType: 'direct_mp4',
+              },
+            };
+          }
+        } catch {
+          // ignore probe error and drop unknown server
+        }
+        return null;
       })
     );
 

@@ -1162,7 +1162,7 @@ function getIndexedLiveStreams(catalog: XtreamFullCatalogPayload): IndexedXtream
   const now = Date.now();
   if (
     cachedLiveIndexSource === catalog.liveStreams &&
-    now - cachedLiveIndexBuiltAt < 45_000 &&
+    now - cachedLiveIndexBuiltAt < 300_000 &&
     cachedLiveIndex.length > 0
   ) {
     return cachedLiveIndex;
@@ -1294,7 +1294,8 @@ export async function findXtreamLiveChannelMatches(params: {
   const entriesToScan =
     candidateIdxSet.size > 0
       ? Array.from(candidateIdxSet, (i) => indexed[i])
-      : indexed;
+      : [];
+  if (entriesToScan.length === 0) return [];
 
   const scored: Array<{ item: XtreamLiveStreamItem; meta: ParsedXtreamVodMeta; score: number }> = [];
   const normPref = String(params.preferLang || 'ES').toUpperCase();

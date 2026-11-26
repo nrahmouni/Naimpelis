@@ -28,6 +28,7 @@ import {
   resolveChiringuitoLiveStream,
 } from '../../services/chiringuitoLiveService.ts';
 import { isAnyBelixConnected, resolveBelixManifest } from '../../services/belix/belixXtreamClient.ts';
+import { verifyWebEmbedCandidateAlive } from '../../services/streamExtractFallback.ts';
 
 export async function handleDirectExtractCases(params: {
   rawInput: string;
@@ -606,6 +607,19 @@ export async function handleDirectExtractCases(params: {
     );
   if ((resolverType === 'web_embed' || (!resolverType && isClipboxPlayerHost)) && rawInput) {
     const fullEmbedUrl = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
+    const alive = await verifyWebEmbedCandidateAlive(
+      {
+        id: 'direct-web-embed',
+        label: titleHint || 'Embed',
+        lang: preferLang,
+        sourceUrl: fullEmbedUrl,
+        resolverType: 'web_embed',
+      },
+      fullEmbedUrl
+    ).catch(() => false);
+    if (!alive) {
+      return sendErr(404, 'La fuente web seleccionada no es un reproductor válido.');
+    }
     const isCloudflareDirectEmbed =
       /(?:^|\.)(voe\.sx|voe\.bar|hglink\.to|streamwish\.[a-z]+|ok\.ru|byse\.[a-z]+|filelions\.[a-z]+)/i.test(
         fullEmbedUrl

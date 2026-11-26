@@ -1,7 +1,6 @@
 import React from 'react';
-import { Check, ExternalLink, SkipBack, SkipForward } from 'lucide-react';
+import { ExternalLink, SkipBack, SkipForward } from 'lucide-react';
 import type { AppLanguage, VideoState } from '../../types';
-import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { unwrapEmbedUrl } from './embedWindowUtils';
 import { formatUniqueTrackChipLabels } from './trackLabelUtils';
@@ -369,7 +368,12 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
     );
   }
 
-  // 5) Default Inline Iframe Mode
+  // 5) Default Inline Iframe Mode (clean video surface without Ventana/Funciona/Cloud HD overlay)
+  void isMinimized;
+  void embedRescueDismissedUrl;
+  void setEmbedRescueDismissedUrl;
+  void onMarkInlineServerWorking;
+  void onOpenInCloudBrowser;
   return (
     <div className="relative w-full h-full bg-black">
       <iframe
@@ -381,75 +385,6 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
         referrerPolicy="no-referrer"
         className="w-full h-full border-0 bg-black"
       />
-
-      {!isMinimized && embedRescueDismissedUrl !== videoState.url && (
-        <div className="absolute top-2.5 left-2.5 z-20 max-w-[calc(100%-9.5rem)] flex items-center pointer-events-none opacity-90 hover:opacity-100 transition-opacity">
-          <div className="pointer-events-auto flex items-center gap-1 px-1.5 py-1 rounded-xl bg-black/75 backdrop-blur-md border border-white/[0.12] shadow-lg text-[10px] text-zinc-200 overflow-x-auto no-scrollbar">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('medium');
-                onOpenControlledExternalWindow(activeTrackUrl);
-              }}
-              className="min-h-7 px-2.5 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-white font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
-            >
-              <RiffanPlayIcon size={12} tone="current" />
-              <span>{pickLang(lang, { es: 'Ventana', ca: 'Finestra', en: 'Window' })}</span>
-            </button>
-
-            {embedWatchdogPhase !== 'verified' && (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('success');
-                  onMarkInlineServerWorking();
-                }}
-                title="Confirmar que este servidor funciona integrado y detener cambio automático"
-                className="min-h-7 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/35 text-emerald-200 font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
-              >
-                <Check className="w-3 h-3" />
-                <span>{pickLang(lang, { es: 'Funciona', ca: 'Funciona', en: 'Works' })}</span>
-              </button>
-            )}
-
-            {onOpenInCloudBrowser && (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('medium');
-                  onOpenInCloudBrowser(activeTrackUrl);
-                }}
-                className="min-h-7 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 font-semibold whitespace-nowrap cursor-pointer shrink-0 transition-colors"
-              >
-                Cloud HD
-              </button>
-            )}
-
-            <a
-              href={externalBackupHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="min-h-7 px-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-zinc-100 font-semibold whitespace-nowrap inline-flex items-center gap-1 shrink-0 transition-colors"
-            >
-              <ExternalLink className="w-3 h-3" />
-              <span>{pickLang(lang, { es: 'Abrir', ca: 'Obrir', en: 'Open' })}</span>
-            </a>
-
-            <button
-              type="button"
-              onClick={() => setEmbedRescueDismissedUrl(videoState.url)}
-              aria-label={pickLang(lang, {
-                es: 'Ocultar aviso',
-                ca: 'Amagar avís',
-                en: 'Dismiss notice',
-              })}
-              className="w-7 h-7 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
-            >
-              <RiffanCloseIcon size={14} tone="current" />
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

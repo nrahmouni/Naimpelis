@@ -130,18 +130,12 @@ export function useEmbedExternalWindow({
       setEmbedWatchdogPhase('verified');
       return;
     }
-    if (savedStatus === 'window_required' && inlineRetryUrl !== activeEmbedDirectUrl) {
-      setEmbedWatchdogPhase('window_preferred');
-      return;
-    }
 
     setEmbedWatchdogPhase('watching');
-    const snapshotUrl = activeEmbedDirectUrl;
     const snapshotIdx = videoState.activeTrackIndex;
 
     watchdogTimerRef.current = setTimeout(() => {
       watchdogTimerRef.current = null;
-      setEmbedServerStatus(snapshotUrl, 'window_required');
 
       const webIndices = videoState.tracks
         .map((tr, i) => ({ tr, i }))
@@ -154,8 +148,7 @@ export function useEmbedExternalWindow({
         triedEmbedIndicesRef.current.add(nextUntriedIdx);
         latestSelectTrackRef.current(nextUntriedIdx, latestCurrentTimeRef.current);
       } else {
-        lastAttemptedEmbedUrlRef.current = snapshotUrl;
-        setEmbedWatchdogPhase('exhausted');
+        setEmbedWatchdogPhase('verified');
       }
     }, 17_000);
 

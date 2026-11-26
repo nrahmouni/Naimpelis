@@ -103,8 +103,13 @@ async function verifyCleanFrameCached(m3u: string, m3uUrl: string, referer: stri
 
 export async function fetchSportsHtmlHopWithUrl(
   url: string,
-  referer: string
+  referer: string,
+  signal?: AbortSignal
 ): Promise<{ text: string; finalUrl: string }> {
+  if (signal?.aborted) {
+    throw new DOMException('The operation was aborted.', 'AbortError');
+  }
+  const hopSig = signal ? AbortSignal.any([signal, AbortSignal.timeout(2600)]) : undefined;
   try {
     const res = await streamingFetch(url, {
       headers: {
@@ -113,19 +118,35 @@ export async function fetchSportsHtmlHopWithUrl(
         Accept: 'text/html,application/xhtml+xml,*/*;q=0.9',
       },
       timeoutMs: 2600,
+      signal: hopSig,
     });
     if (res.ok) return { text: await res.text(), finalUrl: res.url || url };
-  } catch {
+  } catch (err) {
+    if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') {
+      throw err;
+    }
     // fallback to HTTP/2 helper
   }
-  const fb = await curlGetText(url, { Referer: referer, 'User-Agent': CHROME_UA }, 3).catch(
-    () => ({ text: '', effectiveUrl: url })
-  );
+  const fb = await curlGetText(
+    url,
+    { Referer: referer, 'User-Agent': CHROME_UA },
+    3,
+    false,
+    true,
+    signal
+  ).catch((err) => {
+    if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
+    return { text: '', effectiveUrl: url };
+  });
   return { text: fb.text, finalUrl: fb.effectiveUrl || url };
 }
 
-export async function fetchSportsHtmlHop(url: string, referer: string): Promise<string> {
-  const { text } = await fetchSportsHtmlHopWithUrl(url, referer);
+export async function fetchSportsHtmlHop(
+  url: string,
+  referer: string,
+  signal?: AbortSignal
+): Promise<string> {
+  const { text } = await fetchSportsHtmlHopWithUrl(url, referer, signal);
   return text;
 }
 
@@ -356,14 +377,18 @@ async function extractLiveSportsHlsDirectUncached(
 }
 
 export async function unwrapNestedEmbedChain(
-  initialUrl: string
+  initialUrl: string,
+  signal?: AbortSignal
 ): Promise<{ targetUrl: string; referer: string }> {
   let currentUrl = healUpstreamSportsDomain(initialUrl);
   let currentReferer = new URL(currentUrl).origin + '/';
 
   for (let hop = 0; hop < 5; hop++) {
+    if (signal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
     try {
-      const html = await fetchSportsHtmlHop(currentUrl, currentReferer);
+      const html = await fetchSportsHtmlHop(currentUrl, currentReferer, signal);
       if (!html) break;
 
       if (html.includes('_econfig') || html.includes('Clappr') || html.includes('jwplayer')) {
@@ -392,7 +417,10 @@ export async function unwrapNestedEmbedChain(
       }
 
       break;
-    } catch {
+    } catch (err) {
+      if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') {
+        throw err;
+      }
       break;
     }
   }
@@ -401,12 +429,19 @@ export async function unwrapNestedEmbedChain(
 }
 
 export async function sniffStreamWithHeadless(
-  rawUrl: string
+  rawUrl: string,
+  signal?: AbortSignal
 ): Promise<{ streamUrl: string; referer: string; isDirectMp4: boolean } | null> {
   try {
-    const { targetUrl, referer } = await unwrapNestedEmbedChain(rawUrl);
-    return await sniffStreamViaHttp(targetUrl, referer);
-  } catch {
+    if (signal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
+    const { targetUrl, referer } = await unwrapNestedEmbedChain(rawUrl, signal);
+    return await sniffStreamViaHttp(targetUrl, referer, signal);
+  } catch (err) {
+    if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') {
+      throw err;
+    }
     return null;
   }
 }

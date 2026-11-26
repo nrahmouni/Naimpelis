@@ -27,46 +27,135 @@ export function toProxiedEmbedUrl(url: string, isSandboxedFrame: boolean): strin
   return shouldProxyHtml ? `/api/embed-proxy?url=${encodeURIComponent(url)}` : url;
 }
 
+const KNOWN_TRUSTED_WEB_EMBED_RE =
+  /(?:^|\.)(bingetrix\.sc|vidbolt\.st|2embed\.cc|vidsrc\.[a-z]+|vidlink\.pro|vidfast\.[a-z.]+|videm\.buzz|player\.videasy\.net|player\.vidzee\.wtf|vixsrc\.to|moviesapi\.club|megaplay\.buzz|primesrc\.me|ok\.ru|vk\.com|vkvideo\.ru|archive\.org|dailymotion\.com|youtube\.com|youtu\.be)$/i;
+
 export async function verifyWebEmbedCandidateAlive(
   track: TrackRecord,
-  url: string
+  url: string,
+  signal?: AbortSignal
 ): Promise<boolean> {
+  if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
   if (!url || !/^https?:\/\//i.test(url)) return false;
-  if (/player\.gnulahd\./i.test(url)) {
-    try {
-      const headRes = await fetch(url, {
-        method: 'HEAD',
-        redirect: 'manual',
-        headers: { Referer: 'https://ww3.gnulahd.nu/', 'User-Agent': CHROME_UA },
-        signal: AbortSignal.timeout(2200),
-      });
-      const loc = String(headRes.headers.get('location') || '').toLowerCase();
-      if (loc.includes('aviso.mp4')) return false;
-    } catch {
-      // allow if HEAD check itself timed out
-    }
+
+  let parsedHost = '';
+  try {
+    parsedHost = new URL(url).hostname.toLowerCase();
+  } catch {
+    return false;
   }
+  const isTrustedEmbedHost = KNOWN_TRUSTED_WEB_EMBED_RE.test(parsedHost);
+  const isGnulaUrl = /gnulahd\./i.test(url) || track.id.startsWith('gnula-');
+
   if (/voe\.[a-z]+/i.test(url) && !track.id.startsWith('movidy-')) {
     try {
       const check = await curlGetText(
         url,
         { Referer: 'https://embed69.org/', 'User-Agent': CHROME_UA },
         3,
-        true
+        true,
+        true,
+        signal
       );
       if (
-        check.text &&
+        !check.text ||
         /<title>\s*404|not found<\/title>|file was deleted|no longer available/i.test(
           check.text.slice(0, 1200)
         )
       ) {
         return false;
       }
-    } catch {
-      // allow on network timeout
+      return /<(?:html|head|body|div|iframe|script|video)\b/i.test(check.text);
+    } catch (err) {
+      if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
+      return false;
     }
   }
-  return true;
+
+  try {
+    const reqSig = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(1300)])
+      : AbortSignal.timeout(1300);
+    const res = await fetch(url, {
+      method: 'GET',
+      redirect: 'follow',
+      headers: {
+        Range: 'bytes=0-1535',
+        Referer: isGnulaUrl ? 'https://ww3.gnulahd.nu/' : `${new URL(url).origin}/`,
+        'User-Agent': CHROME_UA,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      },
+      signal: reqSig,
+    });
+
+    const finalUrl = String(res.url || url).toLowerCase();
+    if (finalUrl.includes('aviso.mp4') || /\.(mp4|m4v|mkv|webm|avi|ts|m3u8)(\?|$)/i.test(finalUrl)) {
+      try {
+        await res.body?.cancel?.();
+      } catch {
+        // ignore
+      }
+      return false;
+    }
+
+    if (res.status >= 400 && res.status !== 416) {
+      try {
+        await res.body?.cancel?.();
+      } catch {
+        // ignore
+      }
+      return false;
+    }
+
+    const ct = String(res.headers.get('content-type') || '').toLowerCase();
+    if (
+      ct &&
+      (ct.startsWith('video/') ||
+        ct.startsWith('audio/') ||
+        ct.startsWith('image/') ||
+        ct.includes('octet-stream') ||
+        ct.includes('mp4') ||
+        ct.includes('mpegurl') ||
+        ct.includes('application/json') ||
+        (!ct.includes('html') && !ct.includes('text/plain')))
+    ) {
+      try {
+        await res.body?.cancel?.();
+      } catch {
+        // ignore
+      }
+      return false;
+    }
+
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (
+      (buf.length >= 8 && buf.subarray(4, 8).toString('ascii') === 'ftyp') ||
+      (buf.length >= 4 && buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) ||
+      buf.subarray(0, Math.min(buf.length, 512)).includes(0)
+    ) {
+      return false;
+    }
+
+    const snippet = buf.toString('utf8', 0, Math.min(buf.length, 1536));
+    if (
+      /aviso\.mp4|<title>\s*404|not found<\/title>|file was deleted|no longer available|video has been removed/i.test(
+        snippet
+      )
+    ) {
+      return false;
+    }
+    if (snippet.trim().length > 0 && !snippet.includes('<')) {
+      return false;
+    }
+    if (!isTrustedEmbedHost && !/<(?:html|head|body|div|iframe|script|video|meta)\b/i.test(snippet)) {
+      return false;
+    }
+    return true;
+  } catch (err) {
+    if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
+    // Trusted SPA embed players behind Cloudflare/CORS can fail Node fetch; unverified hosts must pass HTML probe
+    return isTrustedEmbedHost && !isGnulaUrl;
+  }
 }
 
 export async function searchYouTubeFullFallback(opts: {

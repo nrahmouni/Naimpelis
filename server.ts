@@ -70,7 +70,10 @@ import {
   applySyncedStreamsToChannels,
   refreshLiveIptvRegistry,
 } from './server/services/iptvPlaylistService.ts';
-import { refreshFamelackAndWorldCatalog } from './server/services/famelackIptvService.ts';
+import {
+  getCachedFamelackWorldChannels,
+  refreshFamelackAndWorldCatalog,
+} from './server/services/famelackIptvService.ts';
 import { createRoomHub } from './server/ws/roomHub.ts';
 import { resolveActiveGnulaMirrors } from './server/extractors/gnulaHdExtractor.ts';
 import { fetchTmdbUrlJson } from './server/services/tmdbService.ts';
@@ -223,7 +226,7 @@ const aiRequestRateLimit = createSlidingWindowRateLimiter({
 });
 
 const extractStreamRateLimit = createSlidingWindowRateLimiter({
-  maxRequests: 60,
+  maxRequests: 360,
   windowMs: 60_000,
   keyPrefix: 'extract-stream',
 });
@@ -563,7 +566,21 @@ async function startServer() {
             void refreshLiveIptvRegistry(false).catch((err) => logger.warn({ err }, 'prewarm_iptv_failed'));
           }, 250).unref?.();
           setTimeout(() => {
-            void refreshFamelackAndWorldCatalog(false).catch((err) => logger.warn({ err }, 'prewarm_world_failed'));
+            void refreshFamelackAndWorldCatalog(false)
+              .then(async (worldList) => {
+                if (!Array.isArray(worldList) || worldList.length === 0) return;
+                const combined = [
+                  ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),
+                  ...CATALA_LIVE_CHANNELS,
+                  ...getPermanent247SportsMatches(),
+                  ...getCachedSportsMatches(),
+                  ...worldList,
+                ];
+                // If an earlier TDT sweep was in progress, await it then sweep newly loaded World TV channels
+                await channelHealthMonitor.runSweep(combined, { concurrency: 10, timeoutMs: 1_500 });
+                await channelHealthMonitor.runSweep(combined, { concurrency: 10, timeoutMs: 1_500 });
+              })
+              .catch((err) => logger.warn({ err }, 'prewarm_world_failed'));
           }, 600).unref?.();
           setTimeout(() => {
             void prewarmTodayFootballBoard().catch((err) => logger.warn({ err }, 'prewarm_football_failed'));
@@ -581,6 +598,7 @@ async function startServer() {
               ...CATALA_LIVE_CHANNELS,
               ...getPermanent247SportsMatches(),
               ...getCachedSportsMatches(),
+              ...getCachedFamelackWorldChannels(),
             ],
             3 * 60 * 1000,
             4_500

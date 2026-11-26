@@ -109,7 +109,7 @@ export const STATUS_RANK: Record<ChannelHealthStatus, number> = {
 };
 
 export const DEGRADED_LATENCY_MS = 1800;
-export const PROBE_TIMEOUT_MS = 3500;
+export const PROBE_TIMEOUT_MS = 1500;
 export const DEFAULT_STALE_MS = 150_000;
 
 export function normalizeTrackUrl(sourceUrl: string): string {
@@ -204,8 +204,17 @@ export async function probeChannelTrack(
     return { status: 'down', latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
   }
   const timeoutMs = options?.timeoutMs ?? (isDvbHeadend ? 4500 : PROBE_TIMEOUT_MS);
+  const startedAt = Date.now();
+  const deadlineAt = startedAt + timeoutMs;
+  const remainingProbeMs = () => Math.max(250, deadlineAt - Date.now());
   const fetchFn: FetchLike =
-    options?.fetchImpl ?? ((input, init) => streamingFetch(String(input), { ...init, timeoutMs }));
+    options?.fetchImpl ??
+    ((input, init) =>
+      streamingFetch(String(input), {
+        ...(init as Omit<RequestInit, 'headers'> & { headers?: Record<string, string> }),
+        keepAliveAgent: true,
+        timeoutMs: remainingProbeMs(),
+      }));
   const isCnStream =
     cleanUrl.includes('38.75.136.137') ||
     cleanUrl.includes('63.141.230.178') ||
@@ -228,12 +237,11 @@ export async function probeChannelTrack(
     }
   }
 
-  const startedAt = Date.now();
   try {
     const res = await fetchFn(cleanUrl, {
       method: 'GET',
       headers,
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(remainingProbeMs()),
     });
     const latencyMs = Math.max(1, Date.now() - startedAt);
 
@@ -275,6 +283,7 @@ export async function probeChannelTrack(
             let nextIsVar = false;
             let pickedVar = '';
             for (const sl of subLines) {
+              if (Date.now() >= deadlineAt) break;
               const st = sl.trim();
               if (!st) continue;
               if (st.startsWith('#EXT-X-STREAM-INF')) {
@@ -286,7 +295,7 @@ export async function probeChannelTrack(
                   const vRes = await fetchFn(candidate, {
                     method: 'GET',
                     headers,
-                    signal: AbortSignal.timeout(timeoutMs),
+                    signal: AbortSignal.timeout(remainingProbeMs()),
                   });
                   if (vRes.ok) {
                     const vTxt = await vRes.text();
@@ -307,7 +316,7 @@ export async function probeChannelTrack(
             if (!pickedVar) {
               return {
                 status: 'down',
-                latencyMs,
+                latencyMs: Math.max(1, Date.now() - startedAt),
                 statusCode: 404,
                 failCount: prevFails + 1,
                 checkedAt: Date.now(),
@@ -329,10 +338,18 @@ export async function probeChannelTrack(
               }
             }
             if (segUrl) {
+              if (Date.now() >= deadlineAt) {
+                return {
+                  status: 'down',
+                  latencyMs: Math.max(1, Date.now() - startedAt),
+                  failCount: prevFails + 1,
+                  checkedAt: Date.now(),
+                };
+              }
               const segRes = await fetchFn(segUrl, {
                 method: 'GET',
                 headers: { ...headers, Range: 'bytes=0-4095' },
-                signal: AbortSignal.timeout(timeoutMs),
+                signal: AbortSignal.timeout(remainingProbeMs()),
               });
               const segStatus = segRes.status;
               await segRes.body?.cancel?.().catch(() => {});

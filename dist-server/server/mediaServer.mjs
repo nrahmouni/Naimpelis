@@ -861,12 +861,19 @@ var tlsRelaxedAgent = new https.Agent({
   maxSockets: 64,
   lookup: cachedDnsLookup
 });
-var plainHttpAgent = new http.Agent({
+var liveKeepAliveHttpsAgent = new https.Agent({
   keepAlive: true,
   keepAliveMsecs: 15e3,
   maxSockets: 64,
   lookup: cachedDnsLookup
 });
+var liveKeepAliveHttpAgent = new http.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 15e3,
+  maxSockets: 64,
+  lookup: cachedDnsLookup
+});
+var plainHttpAgent = liveKeepAliveHttpAgent;
 var STREAMING_TLS_RELAX_PATTERNS = [
   /(\.|^)stmify\.com$/i,
   /(\.|^)footunder\.online$/i,
@@ -1098,7 +1105,7 @@ function relaxedHttpsRequest(targetUrl, options) {
         family: 4,
         lookup: cachedDnsLookup,
         timeout: timeoutMs,
-        agent: isHttps ? options.rejectUnauthorized === false ? tlsRelaxedAgent : void 0 : plainHttpAgent,
+        agent: isHttps ? options.rejectUnauthorized === false ? tlsRelaxedAgent : liveKeepAliveHttpsAgent : plainHttpAgent,
         ...isHttps && options.rejectUnauthorized === false ? { rejectUnauthorized: false } : {}
       },
       (res) => {
@@ -1195,18 +1202,36 @@ async function streamingFetch(rawUrl, init = {}) {
       clearHeaderTimer();
       return proxiedRes;
     }
-    if (shouldUseDirectIpv4Http(parsed.hostname)) {
-      const directRes = await relaxedHttpsRequest(parsed, {
-        method: init.method || "GET",
-        headers: normalizeHeaders(),
-        body: typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : void 0,
-        timeoutMs,
-        signal,
-        rejectUnauthorized: !shouldRelaxStreamingTls(parsed.hostname),
-        headersTimeoutOnly: init.headersTimeoutOnly
-      });
-      clearHeaderTimer();
-      return directRes;
+    if (init.keepAliveAgent || shouldUseDirectIpv4Http(parsed.hostname)) {
+      try {
+        const directRes = await relaxedHttpsRequest(parsed, {
+          method: init.method || "GET",
+          headers: normalizeHeaders(),
+          body: typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : void 0,
+          timeoutMs,
+          signal,
+          rejectUnauthorized: !shouldRelaxStreamingTls(parsed.hostname),
+          headersTimeoutOnly: init.headersTimeoutOnly
+        });
+        clearHeaderTimer();
+        return directRes;
+      } catch (directErr) {
+        if (init.keepAliveAgent && !signal.aborted && allowFallback && isTlsCertificateError(directErr)) {
+          DIRECT_IPV4_HTTPS_HOSTS.set(parsed.hostname.toLowerCase().replace(/\.$/, ""), true);
+          const relaxedRes = await relaxedHttpsRequest(parsed, {
+            method: init.method || "GET",
+            headers: normalizeHeaders(),
+            body: typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : void 0,
+            timeoutMs,
+            signal,
+            rejectUnauthorized: false,
+            headersTimeoutOnly: init.headersTimeoutOnly
+          });
+          clearHeaderTimer();
+          return relaxedRes;
+        }
+        throw directErr;
+      }
     }
     try {
       const fetchRes = await fetch(parsed.toString(), { ...init, signal });
@@ -1320,8 +1345,14 @@ function markHostNeedsCurlFallback(urlStr) {
   } catch {
   }
 }
-function h2GetRaw(targetUrl, headers = {}, maxTimeSec = 6, redirectsLeft = 4) {
+function createAbortError() {
+  return new DOMException("The operation was aborted.", "AbortError");
+}
+function h2GetRaw(targetUrl, headers = {}, maxTimeSec = 6, redirectsLeft = 4, signal) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      return reject(createAbortError());
+    }
     let u;
     try {
       u = new URL(targetUrl);
@@ -1331,7 +1362,8 @@ function h2GetRaw(targetUrl, headers = {}, maxTimeSec = 6, redirectsLeft = 4) {
     if (u.protocol !== "https:") {
       streamingFetch(targetUrl, {
         headers,
-        timeoutMs: maxTimeSec * 1e3
+        timeoutMs: maxTimeSec * 1e3,
+        signal
       }).then(async (r) => ({
         buf: Buffer.from(await r.arrayBuffer()),
         effectiveUrl: r.url || targetUrl,
@@ -1348,16 +1380,26 @@ function h2GetRaw(targetUrl, headers = {}, maxTimeSec = 6, redirectsLeft = 4) {
         overallTimer = null;
       }
     };
+    const cleanupAbortListener = () => {
+      if (signal) {
+        signal.removeEventListener("abort", onAbort);
+      }
+    };
     const finishErr = (err) => {
       if (settled) return;
       settled = true;
       clearOverallTimer();
+      cleanupAbortListener();
       try {
         client.destroy();
       } catch {
       }
       reject(err);
     };
+    const onAbort = () => finishErr(createAbortError());
+    if (signal) {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
     overallTimer = setTimeout(() => {
       finishErr(new Error(`HTTP/2 connect/request timeout after ${maxTimeSec}s`));
     }, maxTimeSec * 1e3);
@@ -1391,13 +1433,18 @@ function h2GetRaw(targetUrl, headers = {}, maxTimeSec = 6, redirectsLeft = 4) {
       if (settled) return;
       settled = true;
       clearOverallTimer();
+      cleanupAbortListener();
       try {
         client.close();
       } catch {
       }
+      if (signal?.aborted) {
+        reject(createAbortError());
+        return;
+      }
       if ([301, 302, 303, 307, 308].includes(status) && locationHeader && redirectsLeft > 0) {
         const nextUrl = new URL(locationHeader, targetUrl).href;
-        h2GetRaw(nextUrl, headers, maxTimeSec, redirectsLeft - 1).then(resolve).catch(reject);
+        h2GetRaw(nextUrl, headers, maxTimeSec, redirectsLeft - 1, signal).then(resolve).catch(reject);
         return;
       }
       let rawBuf = Buffer.concat(chunks);
@@ -1415,7 +1462,8 @@ function h2GetRaw(targetUrl, headers = {}, maxTimeSec = 6, redirectsLeft = 4) {
     };
     req.on("end", finalize);
     req.on("error", (err) => {
-      if (chunks.length > 0) finalize();
+      if (signal?.aborted) finishErr(createAbortError());
+      else if (chunks.length > 0) finalize();
       else finishErr(err);
     });
     req.setTimeout(maxTimeSec * 1e3, () => {
@@ -1429,16 +1477,25 @@ function h2GetRaw(targetUrl, headers = {}, maxTimeSec = 6, redirectsLeft = 4) {
     req.end();
   });
 }
-async function curlGetText(targetUrl, headers = {}, maxTimeSec = 6, preferCurlCli = false, forceIpv4 = true) {
+async function curlGetText(targetUrl, headers = {}, maxTimeSec = 6, preferCurlCli = false, forceIpv4 = true, signal) {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
   const spainProxy = getSpainProxyUrlForTarget(targetUrl);
   if (!preferCurlCli && !spainProxy) {
     try {
-      const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
+      const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec, 4, signal);
       if (h2.buf.length > 0 && h2.status < 400) {
         return { text: h2.buf.toString("utf8"), effectiveUrl: h2.effectiveUrl };
       }
-    } catch {
+    } catch (err) {
+      if (signal?.aborted || err?.name === "AbortError") {
+        throw createAbortError();
+      }
     }
+  }
+  if (signal?.aborted) {
+    throw createAbortError();
   }
   return new Promise((resolve, reject) => {
     const args = [
@@ -1459,7 +1516,14 @@ async function curlGetText(targetUrl, headers = {}, maxTimeSec = 6, preferCurlCl
       if (v) args.push("-H", `${k}: ${v}`);
     }
     args.push(targetUrl);
-    execFile("curl", args, { maxBuffer: 15 * 1024 * 1024 }, (err, stdout, stderr) => {
+    let settled = false;
+    const child = execFile("curl", args, { maxBuffer: 15 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+      if (settled) return;
+      settled = true;
+      if (signal?.aborted) {
+        return reject(createAbortError());
+      }
       if (err && !stdout) {
         return reject(new Error(stderr || err.message));
       }
@@ -1473,20 +1537,42 @@ async function curlGetText(targetUrl, headers = {}, maxTimeSec = 6, preferCurlCl
       }
       resolve({ text: raw, effectiveUrl: targetUrl });
     });
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      try {
+        child.kill("SIGKILL");
+      } catch {
+      }
+      reject(createAbortError());
+    };
+    if (signal) {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
   });
 }
-async function curlGetBufferWithStatus(targetUrl, headers = {}, maxTimeSec = 7) {
+async function curlGetBufferWithStatus(targetUrl, headers = {}, maxTimeSec = 7, signal) {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
   const spainProxy = getSpainProxyUrlForTarget(targetUrl);
   if (!spainProxy) {
     try {
-      const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
+      const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec, 4, signal);
       if (h2.buf.length > 0 && h2.status >= 200 && h2.status < 400) {
         return { buf: h2.buf, status: h2.status };
       }
-    } catch {
+    } catch (err) {
+      if (signal?.aborted || err?.name === "AbortError") {
+        throw createAbortError();
+      }
     }
   }
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
   const runCurl = (hdrs) => new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(createAbortError());
     const marker = Buffer.from("\n__HTTP_STATUS__:");
     const args = [
       "-4",
@@ -1505,11 +1591,16 @@ async function curlGetBufferWithStatus(targetUrl, headers = {}, maxTimeSec = 7) 
       if (v) args.push("-H", `${k}: ${v}`);
     }
     args.push(targetUrl);
-    execFile(
+    let settled = false;
+    const child = execFile(
       "curl",
       args,
       { encoding: "buffer", maxBuffer: 25 * 1024 * 1024 },
       (err, stdout, stderr) => {
+        if (signal) signal.removeEventListener("abort", onAbort);
+        if (settled) return;
+        settled = true;
+        if (signal?.aborted) return reject(createAbortError());
         const outBuf = Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout || "");
         const idx = outBuf.lastIndexOf(marker);
         if (idx !== -1) {
@@ -1527,47 +1618,67 @@ async function curlGetBufferWithStatus(targetUrl, headers = {}, maxTimeSec = 7) 
         resolve({ buf: outBuf, status: outBuf.length > 0 ? 200 : 502 });
       }
     );
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      try {
+        child.kill("SIGKILL");
+      } catch {
+      }
+      reject(createAbortError());
+    };
+    if (signal) {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
   });
   const first = await runCurl(headers);
   if (first.buf.length > 0 && first.status >= 200 && first.status < 400) {
     return first;
   }
+  if (signal?.aborted) throw createAbortError();
   if (first.status === 400 || first.status === 401 || first.status === 403 || first.status === 406) {
     const noOriginHeaders = {};
     for (const [k, v] of Object.entries(headers)) {
       if (k.toLowerCase() !== "origin") noOriginHeaders[k] = v;
     }
-    const second = await runCurl(noOriginHeaders).catch(() => ({
-      buf: Buffer.alloc(0),
-      status: 502
-    }));
+    const second = await runCurl(noOriginHeaders).catch((e) => {
+      if (signal?.aborted || e?.name === "AbortError") throw e;
+      return { buf: Buffer.alloc(0), status: 502 };
+    });
     if (second.buf.length > 0 && second.status >= 200 && second.status < 400) {
       return second;
     }
     const minimalHeaders = headers.Range ? { Range: headers.Range } : {};
-    const third = await runCurl(minimalHeaders).catch(() => ({
-      buf: Buffer.alloc(0),
-      status: 502
-    }));
+    const third = await runCurl(minimalHeaders).catch((e) => {
+      if (signal?.aborted || e?.name === "AbortError") throw e;
+      return { buf: Buffer.alloc(0), status: 502 };
+    });
     if (third.buf.length > 0 && third.status >= 200 && third.status < 400) {
       return third;
     }
   } else if (first.status >= 500 || first.status === 429 || first.status === 0) {
     await new Promise((r) => setTimeout(r, 200));
-    const retry = await runCurl(headers).catch(() => ({ buf: Buffer.alloc(0), status: 502 }));
+    if (signal?.aborted) throw createAbortError();
+    const retry = await runCurl(headers).catch((e) => {
+      if (signal?.aborted || e?.name === "AbortError") throw e;
+      return { buf: Buffer.alloc(0), status: 502 };
+    });
     if (retry.buf.length > 0 && retry.status >= 200 && retry.status < 400) {
       return retry;
     }
   }
   return first;
 }
-async function curlGetBuffer(targetUrl, headers = {}, maxTimeSec = 7) {
-  const res = await curlGetBufferWithStatus(targetUrl, headers, maxTimeSec);
+async function curlGetBuffer(targetUrl, headers = {}, maxTimeSec = 7, signal) {
+  const res = await curlGetBufferWithStatus(targetUrl, headers, maxTimeSec, signal);
   return res.buf;
 }
-async function curlPostJsonText(url, payload, headers, maxTimeSec = 5) {
+async function curlPostJsonText(url, payload, headers, maxTimeSec = 5, signal) {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
   const spainProxy = getSpainProxyUrlForTarget(url);
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const args = [
       "-4",
       "-sS",
@@ -1588,10 +1699,27 @@ async function curlPostJsonText(url, payload, headers, maxTimeSec = 5) {
       if (v && k.toLowerCase() !== "content-type") args.push("-H", `${k}: ${v}`);
     }
     args.push("-d", JSON.stringify(payload), url);
-    execFile("curl", args, { maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+    let settled = false;
+    const child = execFile("curl", args, { maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      if (signal) signal.removeEventListener("abort", onAbort);
+      if (settled) return;
+      settled = true;
+      if (signal?.aborted) return reject(createAbortError());
       if (err && !stdout) return resolve("");
       resolve(String(stdout || ""));
     });
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      try {
+        child.kill("SIGKILL");
+      } catch {
+      }
+      reject(createAbortError());
+    };
+    if (signal) {
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
   });
 }
 
@@ -3236,15 +3364,47 @@ function registerEmbedProxyRoutes(app2) {
         "Accept-Language": "es-ES,es;q=0.9,en;q=0.8",
         Referer: explicitReferer || defaultReferer
       };
+      const isBinaryBuffer = (buf) => {
+        if (!buf || buf.length === 0) return false;
+        if (buf.length >= 8 && buf.subarray(4, 8).toString("ascii") === "ftyp") return true;
+        if (buf.length >= 4 && buf[0] === 26 && buf[1] === 69 && buf[2] === 223 && buf[3] === 163) {
+          return true;
+        }
+        const probeLen = Math.min(buf.length, 512);
+        return buf.subarray(0, probeLen).includes(0);
+      };
+      const isNonHtmlContentType = (ct) => {
+        const low = ct.toLowerCase();
+        if (!low) return false;
+        return low.startsWith("video/") || low.startsWith("audio/") || low.startsWith("image/") || low.includes("application/octet-stream") || low.includes("application/mp4") || low.includes("mpegurl") || low.includes("application/pdf") || low.includes("application/zip");
+      };
       let html = "";
       let effectiveUrl = targetUrl;
+      let rejectedAsBinary = false;
       try {
         const up = await streamingFetch(targetUrl, { headers, timeoutMs: 7e3 });
         if (up.ok) {
           effectiveUrl = up.url || targetUrl;
-          html = await up.text();
+          const upCt = String(up.headers.get("content-type") || "");
+          if (isNonHtmlContentType(upCt) || /\.(mp4|m4v|mkv|webm|avi|ts|m3u8)(\?|$)/i.test(effectiveUrl)) {
+            rejectedAsBinary = true;
+            try {
+              await up.body?.cancel?.();
+            } catch {
+            }
+          } else {
+            const rawBuf = Buffer.from(await up.arrayBuffer());
+            if (isBinaryBuffer(rawBuf)) {
+              rejectedAsBinary = true;
+            } else {
+              html = rawBuf.toString("utf8");
+            }
+          }
         }
       } catch {
+      }
+      if (rejectedAsBinary) {
+        return res.status(415).send("Upstream returned binary media instead of HTML embed");
       }
       if (!html) {
         const fb = await curlGetText(targetUrl, headers, 8, true).catch(() => ({
@@ -3256,6 +3416,10 @@ function registerEmbedProxyRoutes(app2) {
       }
       if (!html) {
         return res.status(502).send("Upstream embed unavailable");
+      }
+      const headSample = html.slice(0, 512);
+      if (/ftyp(?:isom|iso2|mp4|avc1)|[\x00-\x08\x0E-\x1F]/i.test(headSample) || !html.includes("<") && html.length > 0) {
+        return res.status(415).send("Upstream returned non-HTML payload");
       }
       const cleanHtml = sanitizeEmbedHtml(html, effectiveUrl);
       applyProxyCorsHeaders(res, reqId);
@@ -4253,7 +4417,7 @@ async function handleTsProxy(req, res) {
   }
   runtimeMetrics.recordMediaRequest("ts");
   const isUrlSubtitle = /\.(vtt|webvtt|srt)(\?|$)/i.test(targetUrl);
-  const isUrlMp4 = /\.(m4s|mp4|cmfv|cmfa)(\?|$)/i.test(targetUrl) || /\/segs\/[^/]+\/init\./i.test(targetUrl) || /bcdn\.hakunaymatata\.com/i.test(targetUrl) || /[?&](?:mime|type)=video(?:%2F|\/)mp4/i.test(targetUrl);
+  const isUrlMp4 = /\.mp4$/i.test(req.path) || /\.(m4s|mp4|cmfv|cmfa)(\?|$)/i.test(targetUrl) || /\/segs\/[^/]+\/init\./i.test(targetUrl) || /bcdn\.hakunaymatata\.com/i.test(targetUrl) || /[?&](?:mime|type)=video(?:%2F|\/)mp4/i.test(targetUrl);
   const effectiveForceAac = !isUrlSubtitle && !isUrlMp4 && forceAac;
   if (req.method === "HEAD") {
     if (effectiveForceAac) {

@@ -11,6 +11,8 @@ export interface ProviderBucketStats {
   bucket: string;
   state: CircuitState;
   consecutiveFailures: number;
+  windowFailures?: number;
+  windowStartedAt?: number;
   successCount: number;
   failureCount: number;
   ewmaLatencyMs: number;
@@ -19,7 +21,8 @@ export interface ProviderBucketStats {
   halfOpenProbing: boolean;
 }
 
-const CIRCUIT_COOLDOWN_MS = 5 * 60 * 1000;
+export const CIRCUIT_COOLDOWN_MS = 180_000;
+export const FAILURE_WINDOW_MS = 60_000;
 const EWMA_ALPHA = 0.35;
 
 /**
@@ -45,6 +48,7 @@ const BASELINE_PROVIDER_PRIOR_MS: Record<string, number> = {
 };
 
 const buckets = new Map<string, ProviderBucketStats>();
+export const circuitBreakerStateMap = new Map<string, { failures: number; openUntil: number }>();
 
 export function extractProviderBucket(sourceOrProviderId: string, explicitProviderId?: string): string {
   const pid = String(explicitProviderId || '').trim().toLowerCase();
@@ -53,7 +57,7 @@ export function extractProviderBucket(sourceOrProviderId: string, explicitProvid
   const raw = String(sourceOrProviderId || '').trim();
   if (!raw) return 'unknown';
 
-  if (/^[a-z0-9_-]{2,24}$/i.test(raw) && !raw.includes('/') && !raw.includes('.')) {
+  if (/^[a-z0-9_.:-]{2,48}$/i.test(raw) && !raw.includes('/') && !raw.includes('.')) {
     return raw.toLowerCase();
   }
 
@@ -94,7 +98,7 @@ export function extractProviderBucket(sourceOrProviderId: string, explicitProvid
   } catch {
     // ignore
   }
-  return 'direct_hls';
+  return raw.includes('.') && !raw.includes(' ') ? raw.toLowerCase() : 'direct_hls';
 }
 
 function getOrCreateBucket(bucket: string): ProviderBucketStats {
@@ -104,6 +108,8 @@ function getOrCreateBucket(bucket: string): ProviderBucketStats {
       bucket,
       state: 'closed',
       consecutiveFailures: 0,
+      windowFailures: 0,
+      windowStartedAt: 0,
       successCount: 0,
       failureCount: 0,
       ewmaLatencyMs: BASELINE_PROVIDER_PRIOR_MS[bucket] ?? 1200,
@@ -128,6 +134,7 @@ export function getProviderCircuitState(
     if (Date.now() >= entry.openUntil) {
       entry.state = 'half_open';
       entry.halfOpenProbing = false;
+      circuitBreakerStateMap.set(bucket, { failures: entry.windowFailures ?? entry.consecutiveFailures, openUntil: entry.openUntil });
       return 'half_open';
     }
     return 'open';
@@ -141,8 +148,7 @@ export function isProviderCircuitOpen(
 ): boolean {
   const bucket = extractProviderBucket(sourceOrProviderId, explicitProviderId);
   const state = getProviderCircuitState(bucket);
-  if (state !== 'open') return false;
-  return true;
+  return state === 'open';
 }
 
 export function tryAcquireHalfOpenProbe(
@@ -178,8 +184,11 @@ export function recordProviderOutcome(
   if (outcome.ok) {
     entry.successCount += 1;
     entry.consecutiveFailures = 0;
+    entry.windowFailures = 0;
+    entry.windowStartedAt = 0;
     entry.state = 'closed';
     entry.openUntil = 0;
+    circuitBreakerStateMap.set(bucket, { failures: 0, openUntil: 0 });
     const sample = Math.max(30, Math.min(8000, outcome.latencyMs ?? entry.ewmaLatencyMs));
     entry.ewmaLatencyMs =
       entry.successCount === 1
@@ -191,19 +200,27 @@ export function recordProviderOutcome(
 
   entry.failureCount += 1;
   entry.consecutiveFailures += 1;
-  const total = entry.successCount + entry.failureCount;
-  const failRatio = total > 0 ? entry.failureCount / total : 1;
+  if (!entry.windowStartedAt || now - entry.windowStartedAt > FAILURE_WINDOW_MS) {
+    entry.windowStartedAt = now;
+    entry.windowFailures = 1;
+  } else {
+    entry.windowFailures = (entry.windowFailures ?? 0) + 1;
+  }
 
-  // Trip circuit OPEN on repeated consecutive failures or overwhelming failure rate (never trip 'dvb' permanently)
-  const tripThreshold = bucket === 'dvb' ? 6 : 3;
+  // Trip circuit OPEN for 3 minutes (180_000 ms) after 2 failures/timeouts within 60 seconds (6 for dvb)
+  const tripThreshold = bucket === 'dvb' ? 6 : 2;
   if (
     entry.state === 'half_open' ||
-    entry.consecutiveFailures >= tripThreshold ||
-    (total >= 5 && failRatio >= 0.85 && entry.consecutiveFailures >= 2)
+    entry.windowFailures >= tripThreshold ||
+    entry.consecutiveFailures >= tripThreshold
   ) {
     entry.state = 'open';
     entry.openUntil = now + CIRCUIT_COOLDOWN_MS;
   }
+  circuitBreakerStateMap.set(bucket, {
+    failures: entry.windowFailures,
+    openUntil: entry.openUntil,
+  });
   scheduleCircuitPersist();
 }
 
@@ -248,16 +265,23 @@ export function importProviderCircuitBuckets(items: ProviderBucketStats[]): void
         : item.state === 'open'
         ? 'half_open'
         : 'closed';
-    buckets.set(item.bucket, {
+    const hydrated: ProviderBucketStats = {
       bucket: item.bucket,
       state,
       consecutiveFailures: Number(item.consecutiveFailures || 0),
+      windowFailures: Number(item.windowFailures || 0),
+      windowStartedAt: Number(item.windowStartedAt || 0),
       successCount: Number(item.successCount || 0),
       failureCount: Number(item.failureCount || 0),
       ewmaLatencyMs: Number(item.ewmaLatencyMs || BASELINE_PROVIDER_PRIOR_MS[item.bucket] || 1200),
       lastOutcomeAt: Number(item.lastOutcomeAt || now),
       openUntil: Number(item.openUntil || 0),
       halfOpenProbing: false,
+    };
+    buckets.set(item.bucket, hydrated);
+    circuitBreakerStateMap.set(item.bucket, {
+      failures: hydrated.windowFailures ?? hydrated.consecutiveFailures,
+      openUntil: hydrated.openUntil,
     });
   }
 }

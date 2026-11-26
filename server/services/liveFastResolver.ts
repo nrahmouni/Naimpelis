@@ -128,6 +128,74 @@ const fastLiveWinnerCache = new LruTtlCache<string, FastLiveResolveResult & { ca
 );
 const inflightPrewarms = new Map<string, Promise<FastLiveResolveResult>>();
 
+export const MAX_LIVE_PROBE_CONCURRENCY = 10;
+let activeLiveProbes = 0;
+let peakActiveLiveProbes = 0;
+const liveProbeWaitQueue: Array<() => void> = [];
+
+export function getLiveProbeConcurrencyStats(): {
+  active: number;
+  queued: number;
+  peakActive: number;
+  maxConcurrency: number;
+} {
+  return {
+    active: activeLiveProbes,
+    queued: liveProbeWaitQueue.length,
+    peakActive: peakActiveLiveProbes,
+    maxConcurrency: MAX_LIVE_PROBE_CONCURRENCY,
+  };
+}
+
+export function resetLiveProbeConcurrencyStats(): void {
+  peakActiveLiveProbes = activeLiveProbes;
+}
+
+async function runWithBoundedLiveProbeSlot<T>(
+  deadlineAt: number,
+  fn: (remainingMs: number) => Promise<T>,
+  onTimeout: () => T
+): Promise<T> {
+  if (Date.now() >= deadlineAt) {
+    return onTimeout();
+  }
+  if (activeLiveProbes >= MAX_LIVE_PROBE_CONCURRENCY) {
+    const acquired = await new Promise<boolean>((resolve) => {
+      const waitMs = Math.max(10, deadlineAt - Date.now());
+      let done = false;
+      const grant = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(true);
+      };
+      const timer = setTimeout(() => {
+        if (done) return;
+        done = true;
+        const idx = liveProbeWaitQueue.indexOf(grant);
+        if (idx >= 0) liveProbeWaitQueue.splice(idx, 1);
+        resolve(false);
+      }, waitMs);
+      liveProbeWaitQueue.push(grant);
+    });
+    if (!acquired || Date.now() >= deadlineAt) {
+      return onTimeout();
+    }
+  }
+  activeLiveProbes += 1;
+  if (activeLiveProbes > peakActiveLiveProbes) {
+    peakActiveLiveProbes = activeLiveProbes;
+  }
+  try {
+    const remainingMs = Math.max(250, deadlineAt - Date.now());
+    return await fn(remainingMs);
+  } finally {
+    activeLiveProbes = Math.max(0, activeLiveProbes - 1);
+    const next = liveProbeWaitQueue.shift();
+    if (next) next();
+  }
+}
+
 function parseXtreamSource(
   sourceUrl: string
 ): {
@@ -187,6 +255,7 @@ export async function defaultProbeSingleLiveTrack(
   }
 ): Promise<FastLiveProbeOutcome> {
   const startedAt = Date.now();
+  const probeTimeoutMs = Math.max(350, Math.min(1_500, opts.timeoutMs));
   const sourceUrl = String(track.sourceUrl || '').trim();
   const rt = String(track.resolverType || 'tdt_hls');
   if (!sourceUrl) {
@@ -211,18 +280,18 @@ export async function defaultProbeSingleLiveTrack(
         xtreamRef.isMultiProviderLive
           ? resolveMultiProviderLiveManifest(xtreamRef.providerId, xtreamRef.streamId, '', {
               allowTranscodeFallback: allowTranscode,
-              probeTimeoutMs: Math.min(opts.timeoutMs, allowTranscode ? 8_000 : 5_200),
+              probeTimeoutMs,
             })
           : xtreamRef.isProvidersRoute
           ? resolveProviderLiveManifest(xtreamRef.providerId, xtreamRef.streamId, '', {
               allowTranscodeFallback: allowTranscode,
-              probeTimeoutMs: Math.min(opts.timeoutMs, allowTranscode ? 8_000 : 5_200),
+              probeTimeoutMs,
             })
           : fetchProxiedXtreamManifest(xtreamRef.streamId, '', xtreamRef.providerId, undefined, {
               allowTranscodeFallback: allowTranscode,
-              probeTimeoutMs: Math.min(opts.timeoutMs, allowTranscode ? 8_000 : 5_200),
+              probeTimeoutMs,
             }),
-        new Promise<null>((resolve) => setTimeout(() => resolve(null), opts.timeoutMs)),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), probeTimeoutMs)),
       ]);
       const lat = Math.max(1, Date.now() - startedAt);
       const hasPlayableEntries =
@@ -234,7 +303,7 @@ export async function defaultProbeSingleLiveTrack(
         if (xtreamRef.isMultiProviderLive && !process.env.VITEST) {
           const segMatch = manifest!.match(/\/api\/providers\/seg\/([a-f0-9]+)\.ts/i);
           if (segMatch?.[1]) {
-            const segTimeout = Math.max(450, Math.min(1100, opts.timeoutMs - lat));
+            const segTimeout = Math.max(350, Math.min(1_000, probeTimeoutMs - lat));
             const segOk = await probeProviderOpaqueSegment(segMatch[1], segTimeout).catch(() => false);
             if (!segOk) {
               return {
@@ -275,7 +344,7 @@ export async function defaultProbeSingleLiveTrack(
     const belixStreamId = sourceUrl.split('/').pop()?.replace(/\.m3u8.*$/i, '') || '';
     const manifest = await Promise.race([
       resolveBelixManifest(belixStreamId, opts.publicOrigin, opts.belixSessionKey, opts.titleHint || ''),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), opts.timeoutMs)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), probeTimeoutMs)),
     ]).catch(() => null);
     const lat = Math.max(1, Date.now() - startedAt);
     if (manifest) {
@@ -288,7 +357,7 @@ export async function defaultProbeSingleLiveTrack(
   if (rt === 'mediaset_live') {
     const resolved = await Promise.race([
       resolveMediasetLiveHlsUrl(sourceUrl),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), opts.timeoutMs)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), probeTimeoutMs)),
     ]).catch(() => null);
     const lat = Math.max(1, Date.now() - startedAt);
     if (resolved?.streamUrl) {
@@ -302,7 +371,7 @@ export async function defaultProbeSingleLiveTrack(
   if (rt === 'elahmad_live' || isElahmadUrl(sourceUrl)) {
     const resolved = await Promise.race([
       resolveElahmadChannelToHls(sourceUrl),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), opts.timeoutMs)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), probeTimeoutMs)),
     ]).catch(() => null);
     const lat = Math.max(1, Date.now() - startedAt);
     if (resolved?.streamUrl && !resolved.isYoutube) {
@@ -321,7 +390,7 @@ export async function defaultProbeSingleLiveTrack(
     const fullTarget = /^https?:\/\//i.test(sourceUrl) ? sourceUrl : `https://${sourceUrl}`;
     const directSports = await Promise.race([
       extractLiveSportsHlsDirect(fullTarget),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), Math.min(opts.timeoutMs, 3_800))),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), probeTimeoutMs)),
     ]).catch(() => null);
     const lat = Math.max(1, Date.now() - startedAt);
     if (directSports && directSports.streamUrl && !directSports.isBrokenGreenFeed) {
@@ -338,6 +407,9 @@ export async function defaultProbeSingleLiveTrack(
     try {
       const inner = new URL(sourceUrl, 'http://localhost').searchParams.get('url');
       if (inner && /^https?:\/\//i.test(inner)) {
+        if (isProviderCircuitOpen(inner, track.providerId)) {
+          return { ok: false, streamUrl: '', mode: 'hls', latencyMs: 1, statusCode: 503 };
+        }
         const cleanInner = await maybeSignEasyBroadcastUrl(inner);
         const referer =
           resolveKnownUpstreamReferer(cleanInner, track.referer) || `${new URL(cleanInner).origin}/`;
@@ -364,7 +436,8 @@ export async function defaultProbeSingleLiveTrack(
             Referer: referer,
             Accept: '*/*',
           },
-          timeoutMs: opts.timeoutMs,
+          keepAliveAgent: true,
+          timeoutMs: probeTimeoutMs,
         });
         const lat = Math.max(1, Date.now() - startedAt);
         if (!res.ok) {
@@ -445,6 +518,9 @@ export async function defaultProbeSingleLiveTrack(
         };
       }
     }
+    if (isProviderCircuitOpen(cleanUrl, track.providerId)) {
+      return { ok: false, streamUrl: '', mode: 'hls', latencyMs: 1, statusCode: 503 };
+    }
     try {
       const res = await streamingFetch(cleanUrl, {
         method: 'GET',
@@ -453,7 +529,8 @@ export async function defaultProbeSingleLiveTrack(
           Referer: referer,
           Accept: '*/*',
         },
-        timeoutMs: Math.min(opts.timeoutMs, isDvb ? 5_200 : opts.timeoutMs),
+        keepAliveAgent: true,
+        timeoutMs: probeTimeoutMs,
       });
       const lat = Math.max(1, Date.now() - startedAt);
       if (!res.ok) {
@@ -478,7 +555,8 @@ export async function defaultProbeSingleLiveTrack(
                   Referer: referer,
                   Accept: '*/*',
                 },
-                timeoutMs: Math.min(1000, Math.max(450, opts.timeoutMs - lat)),
+                keepAliveAgent: true,
+                timeoutMs: Math.min(1000, Math.max(350, probeTimeoutMs - lat)),
               });
               if (!subRes.ok) {
                 if (subRes.body) void subRes.body.cancel().catch(() => undefined);
@@ -499,7 +577,8 @@ export async function defaultProbeSingleLiveTrack(
                     Range: 'bytes=0-1023',
                     Accept: '*/*',
                   },
-                  timeoutMs: Math.min(1000, Math.max(450, opts.timeoutMs - (Date.now() - startedAt))),
+                  keepAliveAgent: true,
+                  timeoutMs: Math.min(1000, Math.max(350, probeTimeoutMs - (Date.now() - startedAt))),
                 });
                 const segStatus = segRes.status;
                 if (segRes.body) void segRes.body.cancel().catch(() => undefined);
@@ -653,16 +732,25 @@ export async function raceFastLiveTracks(
     // ignore in isolated unit tests
   }
   const hasProviderReadinessInfo = connectedProviderIds.size > 0 && knownProviderIds.size > 0;
-  const safeTracks = rawTracks.filter((tr) => {
-    if (!hasProviderReadinessInfo) return true;
-    const xRef = parseXtreamSource(String(tr.sourceUrl || ''));
-    const pid = tr.providerId || xRef?.providerId;
-    if (pid && knownProviderIds.has(pid) && !connectedProviderIds.has(pid)) {
+  const nonBlockedTracks = rawTracks.filter((tr) => {
+    if (hasProviderReadinessInfo) {
+      const xRef = parseXtreamSource(String(tr.sourceUrl || ''));
+      const pid = tr.providerId || xRef?.providerId;
+      if (pid && knownProviderIds.has(pid) && !connectedProviderIds.has(pid)) {
+        return false;
+      }
+    }
+    const monitored = channelHealthMonitor.getTrackHealth(String(tr.sourceUrl || '')) ?? tr.health;
+    if (monitored?.status === 'down') {
+      return false;
+    }
+    if (isProviderCircuitOpen(tr.sourceUrl, tr.providerId)) {
       return false;
     }
     return true;
   });
-  const effectiveTracks = safeTracks.length > 0 ? safeTracks : rawTracks;
+  const effectiveTracks = nonBlockedTracks.length > 0 ? nonBlockedTracks : rawTracks;
+  const safeTracks = effectiveTracks;
   if (effectiveTracks.length === 0) {
     return {
       ok: false,
@@ -677,6 +765,8 @@ export async function raceFastLiveTracks(
 
   const preferLang = String(opts.preferLang || 'ES').toUpperCase();
   const qualityFirst = Boolean(opts.preferQualityFirst);
+  const timeoutMs = Math.min(8_500, opts.timeoutMs ?? 3_800);
+  const overallDeadlineAt = Date.now() + timeoutMs;
   const cacheKey = `${opts.channelId || effectiveTracks[0].sourceUrl}|${preferLang}|${qualityFirst ? 'q1' : 'q0'}`;
   const cachedWinner = fastLiveWinnerCache.get(cacheKey);
   if (cachedWinner && cachedWinner.ok) {
@@ -772,8 +862,20 @@ export async function raceFastLiveTracks(
     }
   }
 
+  const hasHealthyUpTrack = effectiveTracks.some((tr) => {
+    const h = channelHealthMonitor.getTrackHealth(String(tr.sourceUrl || '')) ?? tr.health;
+    return h?.status === 'up';
+  });
+  const isWorldTvChannel = /^(?:fl-|freetv-|iptvorg-)/i.test(String(opts.channelId || ''));
+
   let discoveredExtraTracks: FastLiveTrackCandidate[] = [];
-  if (!opts.probeImpl && !isVodOrSeries && (initialDistinctHealthyProviders.size < 4 || (qualityFirst && !has4kAlready))) {
+  if (
+    !opts.probeImpl &&
+    !isVodOrSeries &&
+    !isWorldTvChannel &&
+    !hasHealthyUpTrack &&
+    (initialDistinctHealthyProviders.size < 4 || (qualityFirst && !has4kAlready))
+  ) {
     const hintPool = new Set<string>();
     if (opts.channelId === 'mux-champions' || /liga\s*de\s*campeones/i.test(String(opts.titleHint || ''))) {
       hintPool.add('M+ Liga de Campeones');
@@ -874,7 +976,6 @@ export async function raceFastLiveTracks(
   );
 
   const probeImpl = opts.probeImpl || defaultProbeSingleLiveTrack;
-  const timeoutMs = Math.min(8_500, opts.timeoutMs ?? 3_800);
   const hedgeDelay1 = opts.hedgeDelayMs ?? 60;
   const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 150;
   const publicOrigin = opts.publicOrigin || '';
@@ -887,7 +988,8 @@ export async function raceFastLiveTracks(
 
   const runRace = async (): Promise<FastLiveResolveResult> => {
     const startedAt = Date.now();
-    const deadlineAt = startedAt + timeoutMs + 120;
+    const deadlineAt = Math.max(startedAt + 400, overallDeadlineAt + 120);
+    const remainingBudgetMs = Math.max(400, deadlineAt - startedAt);
     let settled = false;
     let checkedCount = 0;
 
@@ -975,7 +1077,7 @@ export async function raceFastLiveTracks(
           latencyMs: Math.max(1, Date.now() - startedAt),
           checkedCount,
         });
-      }, timeoutMs + 200);
+      }, remainingBudgetMs + 80);
       timers.push(hardDeadlineTimer);
 
       const checkAllDone = () => {
@@ -1028,13 +1130,34 @@ export async function raceFastLiveTracks(
         }
         checkedCount += 1;
         const bucket = extractProviderBucket(cand.track.sourceUrl, cand.track.providerId);
-        probeImpl(cand.track, {
-          publicOrigin,
-          belixSessionKey,
-          titleHint: opts.titleHint,
-          timeoutMs: Math.max(400, Math.min(4_200, remainingMs)),
-          allowTranscodeFallback: ordered.length <= 1,
-        })
+        runWithBoundedLiveProbeSlot<FastLiveProbeOutcome>(
+          deadlineAt,
+          (slotRemainingMs) => {
+            if (settled) {
+              return Promise.resolve<FastLiveProbeOutcome>({
+                ok: false,
+                streamUrl: '',
+                mode: 'hls',
+                latencyMs: 1,
+                statusCode: 499,
+              });
+            }
+            return probeImpl(cand.track, {
+              publicOrigin,
+              belixSessionKey,
+              titleHint: opts.titleHint,
+              timeoutMs: Math.max(350, Math.min(1_500, slotRemainingMs)),
+              allowTranscodeFallback: ordered.length <= 1,
+            });
+          },
+          () => ({
+            ok: false,
+            streamUrl: '',
+            mode: 'hls',
+            latencyMs: Math.max(1, Date.now() - startedAt),
+            statusCode: 504,
+          })
+        )
           .then((out) => {
             if (topOrdered && cand.originalIndex === topOrdered.originalIndex) {
               topPriorityPending = false;

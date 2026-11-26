@@ -71,12 +71,19 @@ export interface SniffedStreamResult {
  */
 export async function sniffStreamViaHttp(
   rawUrl: string,
-  initialReferer?: string
+  initialReferer?: string,
+  signal?: AbortSignal
 ): Promise<SniffedStreamResult | null> {
+  if (signal?.aborted) {
+    throw new DOMException('The operation was aborted.', 'AbortError');
+  }
   let currentUrl = rawUrl.trim();
   let currentReferer = initialReferer || currentUrl;
 
   for (let hop = 0; hop < 3; hop += 1) {
+    if (signal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
     if (!currentUrl || !/^https?:\/\//i.test(currentUrl) || isBlockedAdUrl(currentUrl)) {
       return null;
     }
@@ -107,15 +114,21 @@ export async function sniffStreamViaHttp(
     if (!urlSafety.safe) {
       return null;
     }
+    if (signal?.aborted) {
+      throw new DOMException('The operation was aborted.', 'AbortError');
+    }
 
     try {
+      const hopSignal = signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(5200)])
+        : AbortSignal.timeout(5500);
       const { response: resp, finalUrl } = await safeFetchFollowingRedirects(currentUrl, {
         headers: {
           'User-Agent': CHROME_UA,
           Referer: currentReferer,
           Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         },
-        signal: AbortSignal.timeout(6500),
+        signal: hopSignal,
       });
 
       const contentType = String(resp.headers.get('content-type') || '').toLowerCase();
@@ -158,6 +171,9 @@ export async function sniffStreamViaHttp(
 
       break;
     } catch (err) {
+      if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') {
+        throw err;
+      }
       logger.debug({ err, url: currentUrl }, 'http_stream_sniff_hop_failed');
       break;
     }

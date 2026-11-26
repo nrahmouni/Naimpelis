@@ -17,9 +17,11 @@ import {
 const TMDB_API_KEY = ENV.tmdbApiKey;
 
 export async function unpackByseToHls(
-  embedUrl: string
+  embedUrl: string,
+  signal?: AbortSignal
 ): Promise<{ rawM3u8: string; proxyUrl: string } | null> {
   try {
+    if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
     const cleanEmbedUrl = embedUrl.split('#')[0].trim();
     const u = new URL(cleanEmbedUrl);
     const m = u.pathname.match(/\/e\/([a-zA-Z0-9_-]+)/);
@@ -34,9 +36,14 @@ export async function unpackByseToHls(
         Referer: cleanEmbedUrl,
         Accept: 'application/json',
       },
-      6,
-      true
-    ).catch(() => ({ text: '' }));
+      5,
+      true,
+      true,
+      signal
+    ).catch((err) => {
+      if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
+      return { text: '' };
+    });
 
     if (!apiRes.text) return null;
     let json: any = null;
@@ -85,7 +92,7 @@ export async function unpackByseToHls(
     const rawM3u8 = bestSource?.url || data?.playlist || data?.file || '';
     if (!rawM3u8 || !/^https?:\/\//i.test(rawM3u8)) return null;
 
-    const healthy = await probeHlsSegmentHealth(rawM3u8, u.origin);
+    const healthy = await probeHlsSegmentHealth(rawM3u8, u.origin, signal);
     if (!healthy) return null;
 
     return {
@@ -93,18 +100,21 @@ export async function unpackByseToHls(
       proxyUrl: buildHlsProxyUrl(rawM3u8, `${u.origin}/`),
     };
   } catch (err) {
+    if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
     logger.warn({ err }, 'unpackByseToHls error');
     return null;
   }
 }
 
 export async function unpackVidhideToHls(
-  embedUrl: string
+  embedUrl: string,
+  signal?: AbortSignal
 ): Promise<{ rawM3u8: string; proxyUrl: string } | null> {
   try {
+    if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
     // 0. Byse (bysevepoin / filemoon fast native HLS AES-256-GCM unpacker)
     if (/byse|bysevepoin/i.test(embedUrl)) {
-      const byseResult = await unpackByseToHls(embedUrl);
+      const byseResult = await unpackByseToHls(embedUrl, signal);
       if (byseResult) return byseResult;
     }
 
@@ -127,7 +137,8 @@ export async function unpackVidhideToHls(
           `${u.origin}/api/stream`,
           { filecode, device: 'web', codecs: [] },
           apiHeaders,
-          5
+          4,
+          signal
         );
         if (rawPost) {
           try {
@@ -138,22 +149,27 @@ export async function unpackVidhideToHls(
         }
         if (!apiJson) {
           try {
+            const reqSig = signal
+              ? AbortSignal.any([signal, AbortSignal.timeout(3800)])
+              : undefined;
             const apiRes = await streamingFetch(`${u.origin}/api/stream`, {
               method: 'POST',
               headers: apiHeaders,
               body: JSON.stringify({ filecode, device: 'web', codecs: [] }),
-              timeoutMs: 4200,
+              timeoutMs: 3800,
+              signal: reqSig,
             });
             if (apiRes.ok) {
               apiJson = await apiRes.json();
             }
-          } catch {
+          } catch (err) {
+            if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
             // fallback exhausted
           }
         }
         const rawM3u8 = String(apiJson?.streaming_url || apiJson?.file || '').trim();
         if (rawM3u8 && /^https?:\/\//i.test(rawM3u8)) {
-          const healthy = await probeHlsSegmentHealth(rawM3u8, u.origin);
+          const healthy = await probeHlsSegmentHealth(rawM3u8, u.origin, signal);
           if (healthy) {
             return {
               rawM3u8,
@@ -179,8 +195,13 @@ export async function unpackVidhideToHls(
         embedUrl,
         { 'User-Agent': CHROME_UA, Referer: refererOrigin },
         4,
-        true
-      ).catch(() => ({ text: '' }));
+        true,
+        true,
+        signal
+      ).catch((err) => {
+        if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
+        return { text: '' };
+      });
       html = curlRes.text || '';
     } else {
       html = await fetchTextWithCurlFallback(
@@ -189,7 +210,8 @@ export async function unpackVidhideToHls(
           'User-Agent': CHROME_UA,
           Referer: refererOrigin,
         },
-        4500
+        4000,
+        signal
       );
     }
     if (!html || /Countries are not allowed|not available in your country/i.test(html)) {
@@ -236,8 +258,9 @@ export async function unpackVidhideToHls(
     if (rawCandidates.length === 0) return null;
 
     for (const rawCandidate of rawCandidates) {
+      if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
       const rawM3u8 = rawCandidate.startsWith('/') ? `${origin}${rawCandidate}` : rawCandidate;
-      const healthy = await probeHlsSegmentHealth(rawM3u8, origin);
+      const healthy = await probeHlsSegmentHealth(rawM3u8, origin, signal);
       if (healthy) {
         return {
           rawM3u8,
@@ -248,31 +271,39 @@ export async function unpackVidhideToHls(
 
     return null;
   } catch (err) {
+    if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
     logger.warn({ err }, 'unpackVidhideToHls error');
     return null;
   }
 }
 
 export async function unpackMp4UploadToDirect(
-  embedUrl: string
+  embedUrl: string,
+  signal?: AbortSignal
 ): Promise<{ rawMp4: string; proxyUrl: string } | null> {
   try {
+    if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
     const cleanUrl = String(embedUrl || '').trim();
     if (!cleanUrl || !cleanUrl.includes('mp4upload.com/')) return null;
 
     let html = '';
     try {
+      const reqSig = signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(4200)])
+        : undefined;
       const res = await streamingFetch(cleanUrl, {
         headers: {
           'User-Agent': CHROME_UA,
           Referer: 'https://animeav1.com/',
         },
-        timeoutMs: 4500,
+        timeoutMs: 4200,
+        signal: reqSig,
       });
       if (res.ok) {
         html = await res.text();
       }
-    } catch {
+    } catch (err) {
+      if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
       // fallback to curl
     }
 
@@ -280,9 +311,14 @@ export async function unpackMp4UploadToDirect(
       const fb = await curlGetText(
         cleanUrl,
         { 'User-Agent': CHROME_UA, Referer: 'https://animeav1.com/' },
-        5,
-        true
-      ).catch(() => ({ text: '' }));
+        4,
+        true,
+        true,
+        signal
+      ).catch((err) => {
+        if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
+        return { text: '' };
+      });
       html = fb.text || '';
     }
     if (!html) return null;
@@ -299,8 +335,12 @@ export async function unpackMp4UploadToDirect(
         Referer: 'https://www.mp4upload.com/',
         Range: 'bytes=0-4095',
       },
-      4
-    ).catch(() => ({ buf: Buffer.alloc(0), status: 0 }));
+      4,
+      signal
+    ).catch((err) => {
+      if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
+      return { buf: Buffer.alloc(0), status: 0 };
+    });
 
     const headStr = probe.buf.subarray(0, 64).toString('utf8').trimStart().toLowerCase();
     if (
@@ -318,6 +358,7 @@ export async function unpackMp4UploadToDirect(
       proxyUrl: buildTsProxyUrl(rawMp4, 'https://www.mp4upload.com/'),
     };
   } catch (err) {
+    if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
     logger.warn({ err }, 'unpackMp4UploadToDirect error');
     return null;
   }

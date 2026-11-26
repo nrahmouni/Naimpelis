@@ -59,12 +59,21 @@ const tlsRelaxedAgent = new https.Agent({
   lookup: cachedDnsLookup as never,
 });
 
-const plainHttpAgent = new http.Agent({
+export const liveKeepAliveHttpsAgent = new https.Agent({
   keepAlive: true,
   keepAliveMsecs: 15_000,
   maxSockets: 64,
   lookup: cachedDnsLookup as never,
 });
+
+export const liveKeepAliveHttpAgent = new http.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 15_000,
+  maxSockets: 64,
+  lookup: cachedDnsLookup as never,
+});
+
+const plainHttpAgent = liveKeepAliveHttpAgent;
 
 const STREAMING_TLS_RELAX_PATTERNS = [
   /(\.|^)stmify\.com$/i,
@@ -354,7 +363,7 @@ function relaxedHttpsRequest(
         agent: isHttps
           ? options.rejectUnauthorized === false
             ? tlsRelaxedAgent
-            : undefined
+            : liveKeepAliveHttpsAgent
           : plainHttpAgent,
         ...(isHttps && options.rejectUnauthorized === false ? { rejectUnauthorized: false } : {}),
       },
@@ -437,6 +446,7 @@ export interface StreamingFetchOptions extends RequestInit {
   timeoutMs?: number;
   allowTlsFallback?: boolean;
   headersTimeoutOnly?: boolean;
+  keepAliveAgent?: boolean;
 }
 
 /**
@@ -491,19 +501,42 @@ export async function streamingFetch(
       return proxiedRes as unknown as Response;
     }
 
-    // Fast path: skip undici fetch() completely for hosts known to stall undici HTTP/2 or IPv6
-    if (shouldUseDirectIpv4Http(parsed.hostname)) {
-      const directRes = await relaxedHttpsRequest(parsed, {
-        method: init.method || 'GET',
-        headers: normalizeHeaders(),
-        body: typeof init.body === 'string' || Buffer.isBuffer(init.body) ? init.body : undefined,
-        timeoutMs,
-        signal,
-        rejectUnauthorized: !shouldRelaxStreamingTls(parsed.hostname),
-        headersTimeoutOnly: init.headersTimeoutOnly,
-      });
-      clearHeaderTimer();
-      return directRes;
+    // Fast path: use Node Keep-Alive HTTP/HTTPS agents directly for live probes or streaming hosts
+    if (init.keepAliveAgent || shouldUseDirectIpv4Http(parsed.hostname)) {
+      try {
+        const directRes = await relaxedHttpsRequest(parsed, {
+          method: init.method || 'GET',
+          headers: normalizeHeaders(),
+          body: typeof init.body === 'string' || Buffer.isBuffer(init.body) ? init.body : undefined,
+          timeoutMs,
+          signal,
+          rejectUnauthorized: !shouldRelaxStreamingTls(parsed.hostname),
+          headersTimeoutOnly: init.headersTimeoutOnly,
+        });
+        clearHeaderTimer();
+        return directRes;
+      } catch (directErr) {
+        if (
+          init.keepAliveAgent &&
+          !signal.aborted &&
+          allowFallback &&
+          isTlsCertificateError(directErr)
+        ) {
+          DIRECT_IPV4_HTTPS_HOSTS.set(parsed.hostname.toLowerCase().replace(/\.$/, ''), true);
+          const relaxedRes = await relaxedHttpsRequest(parsed, {
+            method: init.method || 'GET',
+            headers: normalizeHeaders(),
+            body: typeof init.body === 'string' || Buffer.isBuffer(init.body) ? init.body : undefined,
+            timeoutMs,
+            signal,
+            rejectUnauthorized: false,
+            headersTimeoutOnly: init.headersTimeoutOnly,
+          });
+          clearHeaderTimer();
+          return relaxedRes;
+        }
+        throw directErr;
+      }
     }
 
     try {

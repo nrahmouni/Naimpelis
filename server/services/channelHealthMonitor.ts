@@ -34,6 +34,31 @@ export {
 
 const CHANNEL_HEALTH_SNAPSHOT_PATH = '/tmp/naimcine-channel-health-v1.json';
 const HEALTH_HYDRATE_MAX_AGE_MS = 20 * 60 * 1000;
+export const MAX_CHANNEL_PROBE_CONCURRENCY = 10;
+
+export async function runWithBoundedConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const limit = Math.max(1, Math.min(MAX_CHANNEL_PROBE_CONCURRENCY, Math.floor(concurrency) || 1));
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+
+  const runner = async () => {
+    while (true) {
+      const idx = cursor++;
+      if (idx >= items.length) break;
+      results[idx] = await worker(items[idx], idx);
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => runner())
+  );
+  return results;
+}
 
 export class ChannelHealthMonitor {
   private readonly trackHealth = new Map<string, TrackHealthInfo>();
@@ -290,7 +315,11 @@ export class ChannelHealthMonitor {
     const execute = async () => {
       const startedAt = Date.now();
       const staleMs = options?.staleMs ?? DEFAULT_STALE_MS;
-      const concurrency = Math.max(1, Math.min(16, options?.concurrency ?? 8));
+      const concurrency = Math.max(
+        1,
+        Math.min(MAX_CHANNEL_PROBE_CONCURRENCY, options?.concurrency ?? MAX_CHANNEL_PROBE_CONCURRENCY)
+      );
+      const probeTimeoutMs = Math.min(2_500, options?.timeoutMs ?? 1_500);
 
       const uniqueTracks = new Map<string, HealthProbeTrack>();
       for (const ch of channels) {
@@ -319,20 +348,27 @@ export class ChannelHealthMonitor {
         }
       }
 
-      let cursor = 0;
-      const worker = async () => {
-        while (cursor < normalQueue.length) {
-          const currentIndex = cursor++;
-          const [key, track] = normalQueue[currentIndex];
-          const previous = this.trackHealth.get(key);
-          const result = await probeChannelTrack(track, {
-            timeoutMs: options?.timeoutMs,
-            fetchImpl: options?.fetchImpl,
-            previous,
-          });
-          this.trackHealth.set(key, result);
-        }
-      };
+      // Verify previously healthy ('up') tracks first, then unknown/degraded, and 'down' tracks last
+      normalQueue.sort(([keyA, trA], [keyB, trB]) => {
+        const stA = this.trackHealth.get(keyA)?.status ?? trA.health?.status ?? 'unknown';
+        const stB = this.trackHealth.get(keyB)?.status ?? trB.health?.status ?? 'unknown';
+        return STATUS_RANK[stA] - STATUS_RANK[stB];
+      });
+
+      const tasks: Promise<unknown>[] = [];
+      if (normalQueue.length > 0) {
+        tasks.push(
+          runWithBoundedConcurrency(normalQueue, concurrency, async ([key, track]) => {
+            const previous = this.trackHealth.get(key);
+            const result = await probeChannelTrack(track, {
+              timeoutMs: probeTimeoutMs,
+              fetchImpl: options?.fetchImpl,
+              previous,
+            });
+            this.trackHealth.set(key, result);
+          })
+        );
+      }
 
       const dvbWorker = async () => {
         for (const [key, track] of dvbQueue) {
@@ -346,11 +382,6 @@ export class ChannelHealthMonitor {
         }
       };
 
-      const tasks: Promise<void>[] = [];
-      const workerCount = Math.min(concurrency, normalQueue.length);
-      for (let i = 0; i < workerCount; i++) {
-        tasks.push(worker());
-      }
       if (dvbQueue.length > 0) {
         tasks.push(dvbWorker());
       }
@@ -417,7 +448,10 @@ export class ChannelHealthMonitor {
       try {
         const list = await getChannels();
         if (Array.isArray(list) && list.length > 0) {
-          await this.runSweep(list);
+          await this.runSweep(list, {
+            concurrency: MAX_CHANNEL_PROBE_CONCURRENCY,
+            timeoutMs: 1_500,
+          });
         }
       } catch (err) {
         logger.warn({ err }, 'channel_health_sweep_failed');

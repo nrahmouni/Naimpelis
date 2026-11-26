@@ -44,6 +44,7 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
 
   const isUrlSubtitle = /\.(vtt|webvtt|srt)(\?|$)/i.test(targetUrl);
   const isUrlMp4 =
+    /\.mp4$/i.test(req.path) ||
     /\.(m4s|mp4|cmfv|cmfa)(\?|$)/i.test(targetUrl) ||
     /\/segs\/[^/]+\/init\./i.test(targetUrl) ||
     /bcdn\.hakunaymatata\.com/i.test(targetUrl) ||

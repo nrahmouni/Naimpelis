@@ -226,13 +226,21 @@ export function markHostNeedsCurlFallback(urlStr: string): void {
   }
 }
 
+function createAbortError(): Error {
+  return new DOMException('The operation was aborted.', 'AbortError');
+}
+
 export function h2GetRaw(
   targetUrl: string,
   headers: Record<string, string> = {},
   maxTimeSec = 6,
-  redirectsLeft = 4
+  redirectsLeft = 4,
+  signal?: AbortSignal
 ): Promise<{ buf: Buffer; effectiveUrl: string; status: number }> {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      return reject(createAbortError());
+    }
     let u: URL;
     try {
       u = new URL(targetUrl);
@@ -244,6 +252,7 @@ export function h2GetRaw(
       streamingFetch(targetUrl, {
         headers,
         timeoutMs: maxTimeSec * 1000,
+        signal,
       })
         .then(async (r) => ({
           buf: Buffer.from(await r.arrayBuffer()),
@@ -264,10 +273,16 @@ export function h2GetRaw(
         overallTimer = null;
       }
     };
+    const cleanupAbortListener = () => {
+      if (signal) {
+        signal.removeEventListener('abort', onAbort);
+      }
+    };
     const finishErr = (err: Error) => {
       if (settled) return;
       settled = true;
       clearOverallTimer();
+      cleanupAbortListener();
       try {
         client.destroy();
       } catch {
@@ -275,6 +290,10 @@ export function h2GetRaw(
       }
       reject(err);
     };
+    const onAbort = () => finishErr(createAbortError());
+    if (signal) {
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
 
     overallTimer = setTimeout(() => {
       finishErr(new Error(`HTTP/2 connect/request timeout after ${maxTimeSec}s`));
@@ -315,15 +334,21 @@ export function h2GetRaw(
       if (settled) return;
       settled = true;
       clearOverallTimer();
+      cleanupAbortListener();
       try {
         client.close();
       } catch {
         // ignore
       }
 
+      if (signal?.aborted) {
+        reject(createAbortError());
+        return;
+      }
+
       if ([301, 302, 303, 307, 308].includes(status) && locationHeader && redirectsLeft > 0) {
         const nextUrl = new URL(locationHeader, targetUrl).href;
-        h2GetRaw(nextUrl, headers, maxTimeSec, redirectsLeft - 1).then(resolve).catch(reject);
+        h2GetRaw(nextUrl, headers, maxTimeSec, redirectsLeft - 1, signal).then(resolve).catch(reject);
         return;
       }
 
@@ -345,7 +370,8 @@ export function h2GetRaw(
 
     req.on('end', finalize);
     req.on('error', (err) => {
-      if (chunks.length > 0) finalize();
+      if (signal?.aborted) finishErr(createAbortError());
+      else if (chunks.length > 0) finalize();
       else finishErr(err);
     });
     req.setTimeout(maxTimeSec * 1000, () => {
@@ -366,18 +392,28 @@ export async function curlGetText(
   headers: Record<string, string> = {},
   maxTimeSec = 6,
   preferCurlCli = false,
-  forceIpv4 = true
+  forceIpv4 = true,
+  signal?: AbortSignal
 ): Promise<{ text: string; effectiveUrl: string }> {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
   const spainProxy = getSpainProxyUrlForTarget(targetUrl);
   if (!preferCurlCli && !spainProxy) {
     try {
-      const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
+      const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec, 4, signal);
       if (h2.buf.length > 0 && h2.status < 400) {
         return { text: h2.buf.toString('utf8'), effectiveUrl: h2.effectiveUrl };
       }
-    } catch {
+    } catch (err) {
+      if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') {
+        throw createAbortError();
+      }
       // fallback to curl if available
     }
+  }
+  if (signal?.aborted) {
+    throw createAbortError();
   }
 
   return new Promise((resolve, reject) => {
@@ -399,7 +435,14 @@ export async function curlGetText(
       if (v) args.push('-H', `${k}: ${v}`);
     }
     args.push(targetUrl);
-    execFile('curl', args, { maxBuffer: 15 * 1024 * 1024 }, (err, stdout, stderr) => {
+    let settled = false;
+    const child = execFile('curl', args, { maxBuffer: 15 * 1024 * 1024 }, (err, stdout, stderr) => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      if (settled) return;
+      settled = true;
+      if (signal?.aborted) {
+        return reject(createAbortError());
+      }
       if (err && !stdout) {
         return reject(new Error(stderr || err.message));
       }
@@ -413,28 +456,52 @@ export async function curlGetText(
       }
       resolve({ text: raw, effectiveUrl: targetUrl });
     });
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // ignore
+      }
+      reject(createAbortError());
+    };
+    if (signal) {
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
   });
 }
 
 export async function curlGetBufferWithStatus(
   targetUrl: string,
   headers: Record<string, string> = {},
-  maxTimeSec = 7
+  maxTimeSec = 7,
+  signal?: AbortSignal
 ): Promise<{ buf: Buffer; status: number }> {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
   const spainProxy = getSpainProxyUrlForTarget(targetUrl);
   if (!spainProxy) {
     try {
-      const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
+      const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec, 4, signal);
       if (h2.buf.length > 0 && h2.status >= 200 && h2.status < 400) {
         return { buf: h2.buf, status: h2.status };
       }
-    } catch {
+    } catch (err) {
+      if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') {
+        throw createAbortError();
+      }
       // fallback to curl if available
     }
+  }
+  if (signal?.aborted) {
+    throw createAbortError();
   }
 
   const runCurl = (hdrs: Record<string, string>): Promise<{ buf: Buffer; status: number }> =>
     new Promise((resolve, reject) => {
+      if (signal?.aborted) return reject(createAbortError());
       const marker = Buffer.from('\n__HTTP_STATUS__:');
       const args = [
         '-4',
@@ -453,11 +520,16 @@ export async function curlGetBufferWithStatus(
         if (v) args.push('-H', `${k}: ${v}`);
       }
       args.push(targetUrl);
-      execFile(
+      let settled = false;
+      const child = execFile(
         'curl',
         args,
         { encoding: 'buffer', maxBuffer: 25 * 1024 * 1024 },
         (err, stdout, stderr) => {
+          if (signal) signal.removeEventListener('abort', onAbort);
+          if (settled) return;
+          settled = true;
+          if (signal?.aborted) return reject(createAbortError());
           const outBuf = Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout || '');
           const idx = outBuf.lastIndexOf(marker);
           if (idx !== -1) {
@@ -478,36 +550,54 @@ export async function curlGetBufferWithStatus(
           resolve({ buf: outBuf, status: outBuf.length > 0 ? 200 : 502 });
         }
       );
+      const onAbort = () => {
+        if (settled) return;
+        settled = true;
+        try {
+          child.kill('SIGKILL');
+        } catch {
+          // ignore
+        }
+        reject(createAbortError());
+      };
+      if (signal) {
+        signal.addEventListener('abort', onAbort, { once: true });
+      }
     });
 
   const first = await runCurl(headers);
   if (first.buf.length > 0 && first.status >= 200 && first.status < 400) {
     return first;
   }
+  if (signal?.aborted) throw createAbortError();
 
   if (first.status === 400 || first.status === 401 || first.status === 403 || first.status === 406) {
     const noOriginHeaders: Record<string, string> = {};
     for (const [k, v] of Object.entries(headers)) {
       if (k.toLowerCase() !== 'origin') noOriginHeaders[k] = v;
     }
-    const second = await runCurl(noOriginHeaders).catch(() => ({
-      buf: Buffer.alloc(0),
-      status: 502,
-    }));
+    const second = await runCurl(noOriginHeaders).catch((e) => {
+      if (signal?.aborted || (e as { name?: string })?.name === 'AbortError') throw e;
+      return { buf: Buffer.alloc(0), status: 502 };
+    });
     if (second.buf.length > 0 && second.status >= 200 && second.status < 400) {
       return second;
     }
     const minimalHeaders: Record<string, string> = headers.Range ? { Range: headers.Range } : {};
-    const third = await runCurl(minimalHeaders).catch(() => ({
-      buf: Buffer.alloc(0),
-      status: 502,
-    }));
+    const third = await runCurl(minimalHeaders).catch((e) => {
+      if (signal?.aborted || (e as { name?: string })?.name === 'AbortError') throw e;
+      return { buf: Buffer.alloc(0), status: 502 };
+    });
     if (third.buf.length > 0 && third.status >= 200 && third.status < 400) {
       return third;
     }
   } else if (first.status >= 500 || first.status === 429 || first.status === 0) {
     await new Promise((r) => setTimeout(r, 200));
-    const retry = await runCurl(headers).catch(() => ({ buf: Buffer.alloc(0), status: 502 }));
+    if (signal?.aborted) throw createAbortError();
+    const retry = await runCurl(headers).catch((e) => {
+      if (signal?.aborted || (e as { name?: string })?.name === 'AbortError') throw e;
+      return { buf: Buffer.alloc(0), status: 502 };
+    });
     if (retry.buf.length > 0 && retry.status >= 200 && retry.status < 400) {
       return retry;
     }
@@ -519,9 +609,10 @@ export async function curlGetBufferWithStatus(
 export async function curlGetBuffer(
   targetUrl: string,
   headers: Record<string, string> = {},
-  maxTimeSec = 7
+  maxTimeSec = 7,
+  signal?: AbortSignal
 ): Promise<Buffer> {
-  const res = await curlGetBufferWithStatus(targetUrl, headers, maxTimeSec);
+  const res = await curlGetBufferWithStatus(targetUrl, headers, maxTimeSec, signal);
   return res.buf;
 }
 
@@ -529,10 +620,14 @@ export async function curlPostJsonText(
   url: string,
   payload: unknown,
   headers: Record<string, string>,
-  maxTimeSec = 5
+  maxTimeSec = 5,
+  signal?: AbortSignal
 ): Promise<string> {
+  if (signal?.aborted) {
+    throw createAbortError();
+  }
   const spainProxy = getSpainProxyUrlForTarget(url);
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const args = [
       '-4',
       '-sS',
@@ -553,23 +648,48 @@ export async function curlPostJsonText(
       if (v && k.toLowerCase() !== 'content-type') args.push('-H', `${k}: ${v}`);
     }
     args.push('-d', JSON.stringify(payload), url);
-    execFile('curl', args, { maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+    let settled = false;
+    const child = execFile('curl', args, { maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      if (signal) signal.removeEventListener('abort', onAbort);
+      if (settled) return;
+      settled = true;
+      if (signal?.aborted) return reject(createAbortError());
       if (err && !stdout) return resolve('');
       resolve(String(stdout || ''));
     });
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      try {
+        child.kill('SIGKILL');
+      } catch {
+        // ignore
+      }
+      reject(createAbortError());
+    };
+    if (signal) {
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
   });
 }
 
 export async function fetchTextWithCurlFallback(
   url: string,
   headers: Record<string, string>,
-  timeoutMs = 3500
+  timeoutMs = 3500,
+  signal?: AbortSignal
 ): Promise<string> {
+  if (signal?.aborted) throw createAbortError();
+  const effectiveSignal = signal
+    ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+    : AbortSignal.timeout(timeoutMs);
+
   if (!shouldBypassNodeFetch(url)) {
     try {
       const res = await streamingFetch(url, {
         headers,
         timeoutMs,
+        signal: effectiveSignal,
       });
       if (res.ok) {
         const txt = await res.text();
@@ -577,21 +697,34 @@ export async function fetchTextWithCurlFallback(
       } else if (res.status === 403 || res.status === 429 || res.status === 503) {
         markHostNeedsCurlFallback(url);
       }
-    } catch {
-      markHostNeedsCurlFallback(url);
+    } catch (err) {
+      if (signal?.aborted) throw createAbortError();
+      if ((err as { name?: string })?.name !== 'TimeoutError') {
+        markHostNeedsCurlFallback(url);
+      }
     }
   }
+  if (signal?.aborted) throw createAbortError();
   const fb = await curlGetText(
     url,
     headers,
-    Math.max(3, Math.ceil(timeoutMs / 1000)),
+    Math.max(2, Math.ceil(timeoutMs / 1000)),
     true,
-    true
-  ).catch(() => ({ text: '' }));
+    true,
+    signal
+  ).catch((err) => {
+    if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
+    return { text: '' };
+  });
   return fb.text || '';
 }
 
-export async function probeHlsSegmentHealth(rawM3u8Url: string, origin: string): Promise<boolean> {
+export async function probeHlsSegmentHealth(
+  rawM3u8Url: string,
+  origin: string,
+  signal?: AbortSignal
+): Promise<boolean> {
+  if (signal?.aborted) throw createAbortError();
   const cleanOrigin = origin.replace(/\/+$/, '');
   const reqHeaders: Record<string, string> = {
     'User-Agent': CHROME_UA,
@@ -600,7 +733,7 @@ export async function probeHlsSegmentHealth(rawM3u8Url: string, origin: string):
   };
 
   try {
-    const masterText = await fetchTextWithCurlFallback(rawM3u8Url, reqHeaders, 3000);
+    const masterText = await fetchTextWithCurlFallback(rawM3u8Url, reqHeaders, 2500, signal);
     if (!masterText.includes('#EXTM3U')) return false;
 
     let mediaPlaylistUrl = rawM3u8Url;
@@ -637,7 +770,7 @@ export async function probeHlsSegmentHealth(rawM3u8Url: string, origin: string):
       }
       if (!bestVariant) return false;
       mediaPlaylistUrl = bestVariant;
-      mediaText = await fetchTextWithCurlFallback(mediaPlaylistUrl, reqHeaders, 3000);
+      mediaText = await fetchTextWithCurlFallback(mediaPlaylistUrl, reqHeaders, 2500, signal);
       if (!mediaText.includes('#EXTM3U')) return false;
     }
 
@@ -661,9 +794,13 @@ export async function probeHlsSegmentHealth(rawM3u8Url: string, origin: string):
 
     if (!shouldBypassNodeFetch(firstSegUrl)) {
       try {
+        const segSig = signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(2500)])
+          : AbortSignal.timeout(2500);
         const segResp = await streamingFetch(firstSegUrl, {
           headers: segHeaders,
-          timeoutMs: 2800,
+          timeoutMs: 2500,
+          signal: segSig,
         });
         if (segResp.ok) {
           const ab = await segResp.arrayBuffer();
@@ -673,22 +810,26 @@ export async function probeHlsSegmentHealth(rawM3u8Url: string, origin: string):
           }
           if (buf.length === 0 || isLikelyHtml(buf)) return false;
         }
-      } catch {
+      } catch (err) {
+        if (signal?.aborted) throw createAbortError();
         markHostNeedsCurlFallback(firstSegUrl);
       }
     }
 
-    const curlSeg = await curlGetBufferWithStatus(firstSegUrl, segHeaders, 3).catch(() => ({
-      buf: Buffer.alloc(0),
-      status: 0,
-    }));
+    const curlSeg = await curlGetBufferWithStatus(firstSegUrl, segHeaders, 3, signal).catch((err) => {
+      if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
+      return { buf: Buffer.alloc(0), status: 0 };
+    });
     return (
       curlSeg.status >= 200 &&
       curlSeg.status < 400 &&
       curlSeg.buf.length >= 512 &&
       !isLikelyHtml(curlSeg.buf)
     );
-  } catch {
+  } catch (err) {
+    if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') {
+      throw createAbortError();
+    }
     return false;
   }
 }

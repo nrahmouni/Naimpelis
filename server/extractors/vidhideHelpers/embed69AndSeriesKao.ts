@@ -254,9 +254,6 @@ export function parseEmbed69OrMoeTracks(html: string, tagId: string): TrackRecor
                 decodedCandList.push({ url: dec, srv: 'streamwish', resolverType: 'web_embed', priority: 5 });
               } else if (/voe\./i.test(low) || srv === 'voe') {
                 decodedCandList.push({ url: dec, srv: 'voe', resolverType: 'embed_sniff', priority: 4 });
-                decodedCandList.push({ url: dec, srv: 'voe-web', resolverType: 'web_embed', priority: 6 });
-              } else {
-                decodedCandList.push({ url: dec, srv: srv || 'web', resolverType: 'web_embed', priority: 7 });
               }
             }
 

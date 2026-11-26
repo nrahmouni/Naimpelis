@@ -123,9 +123,11 @@ function extractNuploadPageIframe(html: string): string | null {
 }
 
 export async function decodeNuploadToHls(
-  embedUrlOrB64: string
+  embedUrlOrB64: string,
+  signal?: AbortSignal
 ): Promise<{ rawM3u8: string; proxyUrl: string } | null> {
   try {
+    if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
     let embedUrl = embedUrlOrB64.trim();
     if (!embedUrl.startsWith('http')) {
       embedUrl = Buffer.from(embedUrl, 'base64').toString('utf8').trim();
@@ -141,7 +143,8 @@ export async function decodeNuploadToHls(
         Referer: `${MOVIDY_ORIGIN}/`,
         'User-Agent': CHROME_UA,
       },
-      5500
+      4500,
+      signal
     );
     if (!html) return null;
 
@@ -181,31 +184,34 @@ export async function decodeNuploadToHls(
     // Fallback: nested vidhide / vidara / streamwish / smoothpre iframe inside nupload.my
     const nestedIframe = extractNuploadPageIframe(html);
     if (nestedIframe && /vidaraa?|vidhide|smoothpre|earnvids|streamwish|filelions|hglink|hlswish/i.test(nestedIframe)) {
-      const unpacked = await unpackVidhideToHls(nestedIframe);
+      const unpacked = await unpackVidhideToHls(nestedIframe, signal);
       if (unpacked) return unpacked;
     }
 
     return null;
-  } catch {
+  } catch (err) {
+    if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
     return null;
   }
 }
 
 export async function resolveMovidyEmbedTrack(
-  embedUrlOrB64: string
+  embedUrlOrB64: string,
+  signal?: AbortSignal
 ): Promise<
   | { mode: 'hls'; rawM3u8: string; proxyUrl: string }
   | { mode: 'embed'; embedUrl: string }
   | null
 > {
   try {
+    if (signal?.aborted) throw new DOMException('The operation was aborted.', 'AbortError');
     let embedUrl = embedUrlOrB64.trim();
     if (!embedUrl.startsWith('http')) {
       embedUrl = Buffer.from(embedUrl, 'base64').toString('utf8').trim();
     }
     if (!embedUrl.startsWith('http')) return null;
 
-    const hls = await decodeNuploadToHls(embedUrl);
+    const hls = await decodeNuploadToHls(embedUrl, signal);
     if (hls) {
       return { mode: 'hls', rawM3u8: hls.rawM3u8, proxyUrl: hls.proxyUrl };
     }
@@ -214,7 +220,8 @@ export async function resolveMovidyEmbedTrack(
     const html = await fetchTextWithCurlFallback(
       targetWithQuery,
       { Referer: `${MOVIDY_ORIGIN}/`, 'User-Agent': CHROME_UA },
-      4500
+      4000,
+      signal
     );
     if (!html) return null;
 
@@ -226,14 +233,20 @@ export async function resolveMovidyEmbedTrack(
       nestedIframe,
       { Referer: `${new URL(targetWithQuery).origin}/`, 'User-Agent': CHROME_UA },
       3,
-      true
-    ).catch(() => ({ text: '' }));
+      true,
+      true,
+      signal
+    ).catch((err) => {
+      if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
+      return { text: '' };
+    });
     if (iframeCheck.text && /<title>\s*404|not found<\/title>|file was deleted|no longer available/i.test(iframeCheck.text.slice(0, 1200))) {
       return null;
     }
 
     return { mode: 'embed', embedUrl: nestedIframe };
-  } catch {
+  } catch (err) {
+    if (signal?.aborted || (err as { name?: string })?.name === 'AbortError') throw err;
     return null;
   }
 }

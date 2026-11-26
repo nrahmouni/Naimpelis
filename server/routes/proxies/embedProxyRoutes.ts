@@ -71,16 +71,64 @@ export function registerEmbedProxyRoutes(app: express.Express): void {
         Referer: explicitReferer || defaultReferer,
       };
 
+      const isBinaryBuffer = (buf: Buffer): boolean => {
+        if (!buf || buf.length === 0) return false;
+        if (buf.length >= 8 && buf.subarray(4, 8).toString('ascii') === 'ftyp') return true;
+        if (buf.length >= 4 && buf[0] === 0x1a && buf[1] === 0x45 && buf[2] === 0xdf && buf[3] === 0xa3) {
+          return true;
+        }
+        const probeLen = Math.min(buf.length, 512);
+        return buf.subarray(0, probeLen).includes(0);
+      };
+
+      const isNonHtmlContentType = (ct: string): boolean => {
+        const low = ct.toLowerCase();
+        if (!low) return false;
+        return (
+          low.startsWith('video/') ||
+          low.startsWith('audio/') ||
+          low.startsWith('image/') ||
+          low.includes('application/octet-stream') ||
+          low.includes('application/mp4') ||
+          low.includes('mpegurl') ||
+          low.includes('application/pdf') ||
+          low.includes('application/zip')
+        );
+      };
+
       let html = '';
       let effectiveUrl = targetUrl;
+      let rejectedAsBinary = false;
       try {
         const up = await streamingFetch(targetUrl, { headers, timeoutMs: 7000 });
         if (up.ok) {
           effectiveUrl = up.url || targetUrl;
-          html = await up.text();
+          const upCt = String(up.headers.get('content-type') || '');
+          if (
+            isNonHtmlContentType(upCt) ||
+            /\.(mp4|m4v|mkv|webm|avi|ts|m3u8)(\?|$)/i.test(effectiveUrl)
+          ) {
+            rejectedAsBinary = true;
+            try {
+              await up.body?.cancel?.();
+            } catch {
+              // ignore
+            }
+          } else {
+            const rawBuf = Buffer.from(await up.arrayBuffer());
+            if (isBinaryBuffer(rawBuf)) {
+              rejectedAsBinary = true;
+            } else {
+              html = rawBuf.toString('utf8');
+            }
+          }
         }
       } catch {
         // fallback to curl
+      }
+
+      if (rejectedAsBinary) {
+        return res.status(415).send('Upstream returned binary media instead of HTML embed');
       }
 
       if (!html) {
@@ -94,6 +142,14 @@ export function registerEmbedProxyRoutes(app: express.Express): void {
 
       if (!html) {
         return res.status(502).send('Upstream embed unavailable');
+      }
+
+      const headSample = html.slice(0, 512);
+      if (
+        /ftyp(?:isom|iso2|mp4|avc1)|[\x00-\x08\x0E-\x1F]/i.test(headSample) ||
+        (!html.includes('<') && html.length > 0)
+      ) {
+        return res.status(415).send('Upstream returned non-HTML payload');
       }
 
       const cleanHtml = sanitizeEmbedHtml(html, effectiveUrl);

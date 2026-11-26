@@ -869,7 +869,8 @@ export function rewriteProviderPlaylist(
 async function fetchProviderPlaylistText(
   targetUrl: string,
   referer: string,
-  timeoutMs = 2400
+  timeoutMs = 1500,
+  opts?: { skipCurlRetry?: boolean; signal?: AbortSignal }
 ): Promise<{ text: string; baseUrl: string } | null> {
   await assertSafeProxyUrl(targetUrl);
   const headers: Record<string, string> = {
@@ -879,7 +880,12 @@ async function fetchProviderPlaylistText(
   };
 
   try {
-    const res = await streamingFetch(targetUrl, { headers, timeoutMs });
+    const res = await streamingFetch(targetUrl, {
+      headers,
+      timeoutMs,
+      keepAliveAgent: true,
+      signal: opts?.signal,
+    });
     if (res.ok) {
       const text = await res.text();
       if (text.includes('#EXTM3U') && !/nosignal|<!doctype|<html/i.test(text)) {
@@ -889,10 +895,16 @@ async function fetchProviderPlaylistText(
       }
     }
   } catch {
-    // fallback to curl
+    if (opts?.skipCurlRetry || opts?.signal?.aborted) {
+      return null;
+    }
   }
 
-  const fb = await curlGetText(targetUrl, headers, 3, false, true).catch(() => ({
+  if (opts?.skipCurlRetry || opts?.signal?.aborted) {
+    return null;
+  }
+
+  const fb = await curlGetText(targetUrl, headers, 1, false, true, opts?.signal).catch(() => ({
     text: '',
     effectiveUrl: targetUrl,
   }));
@@ -908,7 +920,7 @@ export async function resolveProviderLiveManifest(
   providerId: string,
   streamId: string,
   originPrefix = '',
-  _opts?: { allowTranscodeFallback?: boolean; probeTimeoutMs?: number }
+  opts?: { allowTranscodeFallback?: boolean; probeTimeoutMs?: number }
 ): Promise<string | null> {
   const provider = getDefaultProviderById(providerId);
   const cleanId = String(streamId || '').replace(/\.m3u8$/i, '').trim();
@@ -919,6 +931,8 @@ export async function resolveProviderLiveManifest(
   const idEnc = encodeURIComponent(cleanId);
   const sessionKey = `${provider.id}:${cleanId}`;
   const isTestEnv = process.env.NODE_ENV === 'test' || Boolean(process.env.VITEST);
+  const allowTranscode = opts?.allowTranscodeFallback !== false;
+  const probeTimeoutMs = Math.max(400, Math.min(2_500, opts?.probeTimeoutMs ?? 1_500));
 
   // Reuse sticky redirected edge session URL so consecutive polls stay on the same stream window
   const sticky = liveSessionUrlCache.get(sessionKey);
@@ -926,7 +940,8 @@ export async function resolveProviderLiveManifest(
     const stickyLoaded = await fetchProviderPlaylistText(
       sticky.finalUrl,
       sticky.referer,
-      isTestEnv ? 2200 : 3000
+      Math.min(probeTimeoutMs, 1_500),
+      { skipCurlRetry: !allowTranscode }
     ).catch(() => null);
     if (stickyLoaded) {
       liveSessionUrlCache.set(sessionKey, {
@@ -962,9 +977,9 @@ export async function resolveProviderLiveManifest(
     }
 
     const m3u8Url = `${cleanOrigin}/live/${u}/${p}/${idEnc}.m3u8`;
-    const loaded = await fetchProviderPlaylistText(m3u8Url, referer, isTestEnv ? 2200 : 1900).catch(
-      () => null
-    );
+    const loaded = await fetchProviderPlaylistText(m3u8Url, referer, probeTimeoutMs, {
+      skipCurlRetry: !allowTranscode,
+    }).catch(() => null);
     if (loaded) {
       activeAccountIndexMap.set(provider.id, index);
       liveSessionUrlCache.set(sessionKey, {
@@ -975,7 +990,7 @@ export async function resolveProviderLiveManifest(
       return rewriteProviderPlaylist(loaded.text, loaded.baseUrl, referer, originPrefix, sessionKey);
     }
 
-    if (!isTestEnv) {
+    if (!isTestEnv && allowTranscode) {
       const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, 'hd', referer).catch(() => null);
       if (dvbPath) {
         const tsManifest = readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
@@ -997,7 +1012,7 @@ export async function resolveProviderSubPlaylist(
   const token = String(tokenWithExt || '').replace(/\.m3u8$/i, '').trim();
   const entry = opaqueSubPlaylistCache.get(token);
   if (!entry) return null;
-  const loaded = await fetchProviderPlaylistText(entry.rawUrl, entry.referer, 3000).catch(() => null);
+  const loaded = await fetchProviderPlaylistText(entry.rawUrl, entry.referer, 2000).catch(() => null);
   if (!loaded) return null;
   return rewriteProviderPlaylist(
     loaded.text,
@@ -1025,7 +1040,8 @@ export async function probeProviderOpaqueSegment(
         Referer: entry.referer,
         Range: 'bytes=0-1023',
       },
-      timeoutMs,
+      keepAliveAgent: true,
+      timeoutMs: Math.min(1_500, timeoutMs),
     });
     if (res.body) void res.body.cancel().catch(() => undefined);
     return res.ok || res.status === 206 || res.status === 416;
