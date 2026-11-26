@@ -195,24 +195,27 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
   const deferredInlineQuery = useDeferredValue(inlineQuery);
   const normalizedQuery = deferredInlineQuery.trim().toLowerCase();
 
+  const preIndexedStaticHaystacks = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const ch of filteredChannels) {
+      map.set(
+        ch.id,
+        `${ch.name} ${ch.network} ${ch.shortMark} ${ch.countryCode || ''} ${ch.dial || ''} ${ch.description || ''}`.toLowerCase()
+      );
+    }
+    return map;
+  }, [filteredChannels]);
+
   const searchScopedChannels = useMemo(() => {
     if (!normalizedQuery) return filteredChannels;
     return filteredChannels.filter((ch) => {
+      const staticBlob = preIndexedStaticHaystacks.get(ch.id) || '';
+      if (staticBlob.includes(normalizedQuery)) return true;
       const chEpg = getChannelLiveEpg(ch.id);
-      const haystack = [
-        ch.name,
-        ch.network,
-        ch.shortMark,
-        ch.countryCode || '',
-        String(ch.dial || ''),
-        ch.description || '',
-        chEpg?.now?.title || '',
-      ]
-        .join(' ')
-        .toLowerCase();
-      return haystack.includes(normalizedQuery);
+      const epgTitle = chEpg?.now?.title;
+      return Boolean(epgTitle && epgTitle.toLowerCase().includes(normalizedQuery));
     });
-  }, [filteredChannels, normalizedQuery, getChannelLiveEpg]);
+  }, [filteredChannels, preIndexedStaticHaystacks, normalizedQuery, getChannelLiveEpg]);
 
   const recentChannels = useMemo(() => {
     if (recentIds.length === 0 || tvFavOnly || normalizedQuery) return [];

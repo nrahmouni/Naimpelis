@@ -1,12 +1,41 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import Hls from 'hls.js';
 import { pickLang } from '../../utils/i18n';
+import { socketService } from '../../services/socket';
 import type { AppLanguage, VideoState } from '../../types';
 import { formatTimecode, type StreamRefreshPhase } from './playerTypes';
 import {
   createLivePlaybackHealthMonitor,
   isAndroidChromeBrowser,
 } from './hlsHealthWatchdog';
+
+const ABR_BW_STORAGE_KEY = 'riffan_abr_bw_bps';
+const DEFAULT_ABR_BW_BPS = 8_500_000;
+
+function readSavedAbrBandwidthBps(): number {
+  if (typeof window === 'undefined' || !window.localStorage) return DEFAULT_ABR_BW_BPS;
+  try {
+    const raw = Number(window.localStorage.getItem(ABR_BW_STORAGE_KEY) || '');
+    if (Number.isFinite(raw) && raw >= 600_000 && raw <= 28_000_000) {
+      return Math.round(raw);
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return DEFAULT_ABR_BW_BPS;
+}
+
+function saveAbrBandwidthBps(bps: unknown): void {
+  if (typeof window === 'undefined' || !window.localStorage) return;
+  const num = Number(bps);
+  if (!Number.isFinite(num) || num < 600_000) return;
+  const clamped = Math.min(28_000_000, Math.max(600_000, Math.round(num)));
+  try {
+    window.localStorage.setItem(ABR_BW_STORAGE_KEY, String(clamped));
+  } catch {
+    // ignore storage errors
+  }
+}
 
 interface UseHlsPlaybackEngineOptions {
   lang: AppLanguage;
@@ -141,8 +170,10 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     let frameHealthInterval: ReturnType<typeof setInterval> | null = null;
     let liveAutoReconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let didTriggerBackupSwitch = false;
+    let triedInlineBackupUrl = false;
     let firstFrameBuffered = false;
     let lastBackupSwitchAt = 0;
+    let lastAbrSaveAt = 0;
     const isAndroidChrome = isAndroidChromeBrowser();
     const liveHealthMonitor = createLivePlaybackHealthMonitor();
     const targetResumeSec =
@@ -241,11 +272,11 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         startFragPrefetch: true,
         startPosition: targetResumeSec > 3 ? targetResumeSec : -1,
         liveSyncDurationCount: videoState.isLive ? 2 : 3,
-        liveMaxLatencyDurationCount: 8,
+        liveMaxLatencyDurationCount: 6,
         maxLiveSyncPlaybackRate: videoState.isLive ? 1.04 : 1,
         backBufferLength: 24,
-        maxBufferLength: videoState.isLive ? 30 : 38,
-        maxMaxBufferLength: videoState.isLive ? 65 : 80,
+        maxBufferLength: videoState.isLive ? 28 : 38,
+        maxMaxBufferLength: videoState.isLive ? 60 : 80,
         maxBufferHole: 0.6,
         maxFragLookUpTolerance: 0.35,
         highBufferWatchdogPeriod: 2,
@@ -253,26 +284,59 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         nudgeMaxRetry: 10,
         stretchShortVideoTrack: !videoState.isLive,
         maxAudioFramesDrift: videoState.isLive ? 3 : 4,
-        abrEwmaDefaultEstimate: 7_500_000,
-        manifestLoadingTimeOut: videoState.isLive ? 7_500 : isFastLocalLiveUrl ? 7_000 : 6_500,
+        abrEwmaFastLive: 2.0,
+        abrEwmaSlowLive: 6.0,
+        abrEwmaDefaultEstimate: readSavedAbrBandwidthBps(),
+        manifestLoadingTimeOut: videoState.isLive ? 4_500 : isFastLocalLiveUrl ? 5_000 : 5_500,
         manifestLoadingMaxRetry: videoState.isLive ? 1 : 2,
-        manifestLoadingRetryDelay: 120,
-        levelLoadingTimeOut: videoState.isLive ? 7_500 : 6_500,
+        manifestLoadingRetryDelay: 100,
+        levelLoadingTimeOut: videoState.isLive ? 4_500 : 5_500,
         levelLoadingMaxRetry: videoState.isLive ? 1 : 2,
-        levelLoadingRetryDelay: 120,
-        fragLoadingTimeOut: videoState.isLive ? 8_500 : 8_000,
+        levelLoadingRetryDelay: 100,
+        fragLoadingTimeOut: videoState.isLive ? 5_500 : 7_000,
         fragLoadingMaxRetry: videoState.isLive ? 1 : 2,
-        fragLoadingRetryDelay: 120,
+        fragLoadingRetryDelay: 100,
       });
       hlsRef.current = hls;
 
       if (videoState.isLive) {
+        const hasInlineBackup =
+          Boolean(videoState.backupStreamUrl) && videoState.backupStreamUrl !== videoState.url;
+        const slaMs = hasInlineBackup
+          ? 2_400
+          : (videoState.tracks?.length || 0) > 1
+            ? 3_800
+            : 5_800;
         liveStartupSlaTimer = setTimeout(() => {
           if (cancelled || firstFrameBuffered || hlsRef.current !== hls) return;
           if (video.readyState < 2 || video.videoWidth === 0) {
+            if (
+              hasInlineBackup &&
+              !triedInlineBackupUrl &&
+              videoState.backupStreamUrl
+            ) {
+              triedInlineBackupUrl = true;
+              setStreamRefreshPhase('switching');
+              setIsBuffering(true);
+              try {
+                hls.stopLoad();
+                hls.loadSource(videoState.backupStreamUrl);
+                hls.startLoad(-1);
+                liveStartupSlaTimer = setTimeout(() => {
+                  if (!cancelled && !firstFrameBuffered && hlsRef.current === hls) {
+                    if (video.readyState < 2 || video.videoWidth === 0) {
+                      triggerBackupSwitch('live_startup_sla_exceeded');
+                    }
+                  }
+                }, 3_200);
+                return;
+              } catch {
+                // fall through to track switch
+              }
+            }
             triggerBackupSwitch('live_startup_sla_exceeded');
           }
-        }, 6_500);
+        }, slaMs);
       }
 
       hls.loadSource(videoState.url);
@@ -500,6 +564,11 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
       };
 
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
+        const nowAbr = Date.now();
+        if (nowAbr - lastAbrSaveAt >= 6_000) {
+          lastAbrSaveAt = nowAbr;
+          saveAbrBandwidthBps((hls as unknown as { bandwidthEstimate?: number }).bandwidthEstimate);
+        }
         if (video.videoWidth > 0 && video.readyState >= 2) {
           firstFrameBuffered = true;
           if (liveStartupSlaTimer) {
@@ -717,6 +786,20 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
           clearTimeout(directStartupTimer);
           directStartupTimer = null;
         }
+        // Detect audio-only MKV/HEVC containers early and switch seamlessly to ?transcode=1
+        if (
+          video.readyState >= 1 &&
+          video.videoWidth === 0 &&
+          /^\/api\/(?:stream|xtream\/vod\/|providers\/stream\/)/i.test(videoState.url) &&
+          !triedTranscodeFallback
+        ) {
+          directStartupTimer = setTimeout(() => {
+            if (!cancelled && video.videoWidth === 0) {
+              tryTranscodeRetry();
+            }
+          }, 550);
+          return;
+        }
         setIsBuffering(false);
         startPlaybackSafely();
       };
@@ -743,10 +826,10 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
 
       if (/^\/api\/(?:stream|xtream\/vod\/|providers\/stream\/)/i.test(videoState.url) && !triedTranscodeFallback) {
         directStartupTimer = setTimeout(() => {
-          if (!cancelled && video.readyState === 0) {
+          if (!cancelled && (video.readyState === 0 || video.videoWidth === 0)) {
             tryTranscodeRetry();
           }
-        }, 4_500);
+        }, 2_600);
       }
 
       cleanupDirectListeners = () => {
@@ -914,6 +997,81 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     setIsMuted,
     setLocalPlaying,
     smoothDriftTimerRef,
+    videoRef,
+  ]);
+
+  // Continuous 3s Watch-Party clock-drift monitor (smooth 0.95x-1.06x catch-up using NTP-calibrated clock)
+  useEffect(() => {
+    if (
+      videoState.isLive ||
+      !videoState.isPlaying ||
+      !videoState.url ||
+      (videoState.mode !== 'hls' && videoState.mode !== 'direct')
+    ) {
+      return;
+    }
+
+    const intervalId = setInterval(() => {
+      const video = videoRef.current;
+      if (!video || video.paused || video.seeking || video.readyState < 2) return;
+      if (isApplyingRemoteRef.current) return;
+      if (!Number.isFinite(videoState.currentTime) || !Number.isFinite(videoState.lastUpdated) || videoState.lastUpdated <= 0) {
+        return;
+      }
+
+      const baseRate = playbackSpeedRef.current || 1;
+      // socketService.serverClockOffsetMs tracks NTP RTT/2 accuracy for logging/telemetry;
+      // videoState.lastUpdated is already normalized to local clock on receipt.
+      void socketService.serverClockOffsetMs;
+      const rawElapsedSec = Math.max(0, (Date.now() - videoState.lastUpdated) / 1000);
+      if (rawElapsedSec >= 12 * 3600) return;
+
+      const expectedTime =
+        videoState.currentTime + rawElapsedSec * baseRate + prevSyncOffsetMsRef.current / 1000;
+      const signedDrift = expectedTime - (video.currentTime || 0);
+      const absDrift = Math.abs(signedDrift);
+
+      if (absDrift > 4.0) {
+        isApplyingRemoteRef.current = true;
+        try {
+          video.playbackRate = baseRate;
+          video.currentTime = Math.max(0, expectedTime);
+        } catch {
+          // ignore
+        }
+        setTimeout(() => {
+          isApplyingRemoteRef.current = false;
+        }, 300);
+      } else if (absDrift >= 0.45) {
+        const targetRate =
+          signedDrift > 0
+            ? Math.min(1.06, baseRate * (absDrift > 1.5 ? 1.05 : 1.03))
+            : Math.max(0.95, baseRate * (absDrift > 1.5 ? 0.95 : 0.97));
+        if (Math.abs((video.playbackRate || 1) - targetRate) > 0.005) {
+          try {
+            video.playbackRate = targetRate;
+          } catch {
+            // ignore
+          }
+        }
+      } else if (Math.abs((video.playbackRate || 1) - baseRate) > 0.005) {
+        try {
+          video.playbackRate = baseRate;
+        } catch {
+          // ignore
+        }
+      }
+    }, 3_000);
+
+    return () => clearInterval(intervalId);
+  }, [
+    videoState.isLive,
+    videoState.isPlaying,
+    videoState.url,
+    videoState.mode,
+    videoState.currentTime,
+    videoState.lastUpdated,
+    isApplyingRemoteRef,
     videoRef,
   ]);
 }

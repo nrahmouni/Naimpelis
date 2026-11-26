@@ -28,9 +28,12 @@ export class SocketTransport {
   private hasConnectedOnce = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private burstTimers: Array<ReturnType<typeof setTimeout>> = [];
+  private pingSamples: Array<{ rtt: number; offsetMs: number }> = [];
   private pendingMessages: Array<{ type: string; payload: unknown }> = [];
   private intentionalClose = false;
   private pausedByOfflineMode = false;
+  private cachedIdToken: { uid: string; token: string; fetchedAt: number } | null = null;
   public latencyMs = 24;
   public serverClockOffsetMs = 0;
 
@@ -44,6 +47,25 @@ export class SocketTransport {
           this.resumeFromForceOffline();
         }
       });
+    }
+    try {
+      const maybeAuth = auth as { onAuthStateChanged?: (cb: (u: { uid: string; getIdToken: () => Promise<string> } | null) => void) => void } | null;
+      maybeAuth?.onAuthStateChanged?.((u) => {
+        if (!u) {
+          this.cachedIdToken = null;
+          return;
+        }
+        void u
+          .getIdToken()
+          .then((token) => {
+            if (token) {
+              this.cachedIdToken = { uid: u.uid, token, fetchedAt: Date.now() };
+            }
+          })
+          .catch(() => {});
+      });
+    } catch {
+      // ignore in environments without Firebase auth initialized
     }
   }
 
@@ -73,12 +95,40 @@ export class SocketTransport {
     }
   }
 
-  protected async resolveFirebaseIdToken(): Promise<string | undefined> {
+  protected async resolveFirebaseIdToken(maxWaitMs = 250): Promise<string | undefined> {
     try {
       const current = auth?.currentUser;
-      if (!current) return undefined;
-      const token = await current.getIdToken();
-      return token || undefined;
+      if (!current) {
+        this.cachedIdToken = null;
+        return undefined;
+      }
+      const now = Date.now();
+      if (
+        this.cachedIdToken &&
+        this.cachedIdToken.uid === current.uid &&
+        now - this.cachedIdToken.fetchedAt < 45 * 60 * 1000
+      ) {
+        return this.cachedIdToken.token;
+      }
+      const freshPromise = current.getIdToken().then((token) => {
+        if (token) {
+          this.cachedIdToken = { uid: current.uid, token, fetchedAt: Date.now() };
+          return token;
+        }
+        return undefined;
+      });
+      if (maxWaitMs <= 0) {
+        return await freshPromise;
+      }
+      const winner = await Promise.race([
+        freshPromise,
+        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), maxWaitMs)),
+      ]);
+      if (winner) return winner;
+      if (this.cachedIdToken && this.cachedIdToken.uid === current.uid) {
+        return this.cachedIdToken.token;
+      }
+      return undefined;
     } catch {
       return undefined;
     }
@@ -93,6 +143,26 @@ export class SocketTransport {
       } catch {
         // ignore dropped message
       }
+    }
+  }
+
+  private dispatchJoinOrPresence(firebaseIdToken?: string) {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (this.roomId && this.user) {
+      this.sendRaw('JOIN_ROOM', {
+        roomId: this.roomId,
+        roomName: this.roomName,
+        user: this.user,
+        pin: this.connectOptions.pin,
+        tvAuthToken: this.connectOptions.tvAuthToken,
+        firebaseIdToken,
+        restoredBlueprint: this.connectOptions.restoredBlueprint,
+      });
+    } else if (this.user) {
+      this.sendRaw('REGISTER_PRESENCE', {
+        user: this.user,
+        firebaseIdToken,
+      });
     }
   }
 
@@ -115,19 +185,52 @@ export class SocketTransport {
       this.reconnectTimer = null;
     }
 
+    if (isForceOfflineEnabled()) {
+      this.pausedByOfflineMode = true;
+      this.stopHeartbeat();
+      if (this.ws) {
+        this.ws.onclose = null;
+        this.ws.close();
+        this.ws = null;
+      }
+      this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: false } });
+      return;
+    }
+    this.pausedByOfflineMode = false;
+
+    // Fast path: reuse an already open WebSocket (e.g., transitioning from lobby presence to a room)
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      const targetSocket = this.ws;
+      const syncToken = this.cachedIdToken && auth?.currentUser?.uid === this.cachedIdToken.uid
+        ? this.cachedIdToken.token
+        : undefined;
+      if (syncToken || !auth?.currentUser) {
+        this.dispatchJoinOrPresence(syncToken);
+        this.flushPendingMessages();
+        this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: true } });
+        if (!this.pingTimer) this.startHeartbeat();
+      } else {
+        void this.resolveFirebaseIdToken(250).then((firebaseIdToken) => {
+          if (!this.ws || this.ws !== targetSocket || targetSocket.readyState !== WebSocket.OPEN) return;
+          this.dispatchJoinOrPresence(firebaseIdToken);
+          this.flushPendingMessages();
+          this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: true } });
+          if (!this.pingTimer) this.startHeartbeat();
+        });
+      }
+      return;
+    }
+
+    // Fast path: socket is already handshaking — let its onopen handler pick up updated roomId/user/options
+    if (this.ws && this.ws.readyState === WebSocket.CONNECTING) {
+      return;
+    }
+
     if (this.ws) {
       this.ws.onclose = null;
       this.ws.close();
       this.ws = null;
     }
-
-    if (isForceOfflineEnabled()) {
-      this.pausedByOfflineMode = true;
-      this.stopHeartbeat();
-      this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: false } });
-      return;
-    }
-    this.pausedByOfflineMode = false;
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
@@ -140,27 +243,12 @@ export class SocketTransport {
         const wasReconnect = this.hasConnectedOnce && this.reconnectAttempts > 0;
         this.hasConnectedOnce = true;
         this.reconnectAttempts = 0;
-        const firebaseIdToken = await this.resolveFirebaseIdToken();
+        const firebaseIdToken = await this.resolveFirebaseIdToken(250);
         if (!this.ws || this.ws !== socket || socket.readyState !== WebSocket.OPEN) return;
 
-        if (this.roomId) {
-          this.sendRaw('JOIN_ROOM', {
-            roomId: this.roomId,
-            roomName: this.roomName,
-            user: this.user,
-            pin: this.connectOptions.pin,
-            tvAuthToken: this.connectOptions.tvAuthToken,
-            firebaseIdToken,
-            restoredBlueprint: this.connectOptions.restoredBlueprint,
-          });
-          if (wasReconnect) {
-            this.requestSync();
-          }
-        } else if (this.user) {
-          this.sendRaw('REGISTER_PRESENCE', {
-            user: this.user,
-            firebaseIdToken,
-          });
+        this.dispatchJoinOrPresence(firebaseIdToken);
+        if (this.roomId && wasReconnect) {
+          this.requestSync();
         }
 
         this.flushPendingMessages();
@@ -174,9 +262,20 @@ export class SocketTransport {
           if (message.type === 'PONG' && message.payload?.clientTs) {
             const now = Date.now();
             const rtt = Math.max(4, now - Number(message.payload.clientTs));
-            this.latencyMs = Math.min(rtt, 9999);
             if (rtt < 5000 && typeof message.payload.serverTs === 'number') {
-              this.serverClockOffsetMs = message.payload.serverTs + Math.round(rtt / 2) - now;
+              const offsetMs = message.payload.serverTs + Math.round(rtt / 2) - now;
+              this.pingSamples.push({ rtt, offsetMs });
+              if (this.pingSamples.length > 8) {
+                this.pingSamples.shift();
+              }
+              let best = this.pingSamples[0];
+              for (const s of this.pingSamples) {
+                if (s.rtt < best.rtt) best = s;
+              }
+              this.latencyMs = Math.min(best.rtt, 9999);
+              this.serverClockOffsetMs = best.offsetMs;
+            } else {
+              this.latencyMs = Math.min(rtt, 9999);
             }
             this.notifyListeners({
               type: 'LATENCY_UPDATED',
@@ -195,8 +294,11 @@ export class SocketTransport {
         this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: false } });
         if (!this.intentionalClose) {
           this.reconnectAttempts += 1;
-          const jitter = Math.floor(Math.random() * 400);
-          const delay = Math.min(7000, 1000 * Math.min(this.reconnectAttempts, 7)) + jitter;
+          const stepDelays = [150, 400, 900, 1800, 3500, 6000];
+          const baseDelay =
+            stepDelays[Math.min(this.reconnectAttempts - 1, stepDelays.length - 1)] || 6000;
+          const jitter = Math.floor(Math.random() * 180);
+          const delay = baseDelay + jitter;
           this.reconnectTimer = setTimeout(() => {
             if (this.roomId && this.user) {
               this.connect(this.roomId, this.user, this.roomName, this.connectOptions);
@@ -218,7 +320,7 @@ export class SocketTransport {
   connectPresenceOnly(user: Participant) {
     this.user = user;
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      void this.resolveFirebaseIdToken().then((firebaseIdToken) => {
+      void this.resolveFirebaseIdToken(250).then((firebaseIdToken) => {
         this.sendRaw('REGISTER_PRESENCE', {
           user,
           roomId: this.roomId || undefined,
@@ -234,12 +336,18 @@ export class SocketTransport {
   private startHeartbeat() {
     this.stopHeartbeat();
     this.sendRaw('PING', { clientTs: Date.now() });
+    this.burstTimers.push(
+      setTimeout(() => this.sendRaw('PING', { clientTs: Date.now() }), 120),
+      setTimeout(() => this.sendRaw('PING', { clientTs: Date.now() }), 240)
+    );
     this.pingTimer = setInterval(() => {
       this.sendRaw('PING', { clientTs: Date.now() });
     }, 6000);
   }
 
   private stopHeartbeat() {
+    for (const t of this.burstTimers) clearTimeout(t);
+    this.burstTimers = [];
     if (this.pingTimer) {
       clearInterval(this.pingTimer);
       this.pingTimer = null;

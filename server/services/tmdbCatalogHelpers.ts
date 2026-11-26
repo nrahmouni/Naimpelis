@@ -578,18 +578,19 @@ export async function resolveTmdbIdByTitle(
       return exactTitleHit?.id ? Number(exactTitleHit.id) : null;
     };
 
-    for (const lang of ['es-ES', 'en-US'] as const) {
+    const queryLang = async (lang: 'es-ES' | 'en-US'): Promise<number | null> => {
       const res = await fetch(
         `https://api.themoviedb.org/3/search/${mediaType}?api_key=${TMDB_API_KEY}&language=${lang}&query=${encodeURIComponent(clean)}&page=1&include_adult=false`,
-        { signal: AbortSignal.timeout(3500) }
+        { signal: AbortSignal.timeout(2200) }
       ).catch(() => null);
-      if (!res?.ok) continue;
+      if (!res?.ok) return null;
       const json: any = await res.json().catch(() => null);
       const results: any[] = Array.isArray(json?.results) ? json.results : [];
-      const foundId = pickFromResults(results);
-      if (foundId) return foundId;
-    }
-    return null;
+      return pickFromResults(results);
+    };
+
+    const [esId, enId] = await Promise.all([queryLang('es-ES'), queryLang('en-US')]);
+    return esId || enId || null;
   } catch {
     return null;
   }

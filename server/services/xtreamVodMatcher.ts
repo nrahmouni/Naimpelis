@@ -130,65 +130,6 @@ function tokenizeMeaningful(raw: string): string[] {
     .filter((tok) => tok.length >= 2 && !STOP_WORDS.has(tok));
 }
 
-function scoreTitleMatchAgainstHints(
-  candidateCleanTitle: string,
-  candidateYear: string | undefined,
-  normalizedHints: Array<{ exact: string; noArt: string; tokens: string[]; idx: number }>,
-  yearHint?: string
-): number {
-  const candExact = normalizeMatchText(candidateCleanTitle, false);
-  const candNoArt = normalizeMatchText(candidateCleanTitle, true);
-  if (!candExact && !candNoArt) return 0;
-
-  let yearMismatch = false;
-  let yearExact = false;
-  if (yearHint && /^\d{4}$/.test(yearHint) && candidateYear && /^\d{4}$/.test(candidateYear)) {
-    const diff = Math.abs(Number(yearHint) - Number(candidateYear));
-    if (diff === 0) yearExact = true;
-    else if (diff > 1) yearMismatch = true;
-  }
-  if (yearMismatch) return 0;
-
-  let bestScore = 0;
-  const candTokens = tokenizeMeaningful(candidateCleanTitle);
-  const candTokenSet = new Set(candTokens);
-
-  for (const hint of normalizedHints) {
-    let baseScore = 0;
-    if (candExact === hint.exact || (candNoArt && candNoArt === hint.noArt)) {
-      baseScore = 100;
-    } else if (hint.tokens.length >= 2 && candTokens.length >= 2) {
-      let matches = 0;
-      for (const t of hint.tokens) {
-        if (candTokenSet.has(t)) matches++;
-      }
-      const unionSize = new Set([...hint.tokens, ...candTokens]).size;
-      const jaccard = unionSize > 0 ? matches / unionSize : 0;
-      const hintCoverage = matches / hint.tokens.length;
-      const candCoverage = matches / candTokens.length;
-
-      // Require bidirectional coverage so "The Hunger Games" does NOT match "Mockingjay Part 1"
-      if (jaccard >= 0.84 && hintCoverage >= 0.85 && candCoverage >= 0.85) {
-        baseScore = Math.round(78 + jaccard * 18);
-      } else if (
-        yearExact &&
-        hintCoverage === 1 &&
-        Math.abs(candTokens.length - hint.tokens.length) <= 1 &&
-        candTokens.length >= 3
-      ) {
-        baseScore = 82;
-      }
-    }
-
-    if (baseScore > 0) {
-      const bonus = (yearExact ? 12 : 0) + (hint.idx === 0 ? 4 : 0);
-      bestScore = Math.max(bestScore, baseScore + bonus);
-    }
-  }
-
-  return bestScore;
-}
-
 function buildHintVectors(titleHints: string[]) {
   const seen = new Set<string>();
   const out: Array<{ exact: string; noArt: string; tokens: string[]; idx: number }> = [];
@@ -210,6 +151,243 @@ function buildHintVectors(titleHints: string[]) {
 }
 
 const unifiedCatalogRamCache = new LruTtlCache<string, XtreamFullCatalogPayload>(2, 45_000);
+
+interface IndexedVodMovieEntry {
+  item: XtreamVodStreamItem;
+  pid: string;
+  catName: string;
+  parsed: ParsedXtreamVodMeta;
+  candExact: string;
+  candNoArt: string;
+  candTokenSet: Set<string>;
+}
+
+interface IndexedVodSeriesEntry {
+  item: XtreamSeriesItem;
+  pid: string;
+  catName: string;
+  serYear?: string;
+  parsed: ParsedXtreamVodMeta;
+  candExact: string;
+  candNoArt: string;
+  candTokenSet: Set<string>;
+}
+
+interface VodCatalogSearchIndex<T> {
+  entries: T[];
+  exactMap: Map<string, number[]>;
+  tokenMap: Map<string, number[]>;
+}
+
+let cachedVodMovieSource: XtreamVodStreamItem[] | null = null;
+let cachedVodMovieBuiltAt = 0;
+let cachedVodMovieIndex: VodCatalogSearchIndex<IndexedVodMovieEntry> | null = null;
+
+let cachedVodSeriesSource: XtreamSeriesItem[] | null = null;
+let cachedVodSeriesBuiltAt = 0;
+let cachedVodSeriesIndex: VodCatalogSearchIndex<IndexedVodSeriesEntry> | null = null;
+
+function appendIndexKey(map: Map<string, number[]>, key: string, idx: number): void {
+  if (!key) return;
+  let list = map.get(key);
+  if (!list) {
+    list = [idx];
+    map.set(key, list);
+  } else if (list[list.length - 1] !== idx) {
+    list.push(idx);
+  }
+}
+
+function querySearchIndexCandidates<T>(
+  index: VodCatalogSearchIndex<T>,
+  hints: Array<{ exact: string; noArt: string; tokens: string[] }>
+): number[] {
+  const candidateSet = new Set<number>();
+  for (const h of hints) {
+    const exactHits = index.exactMap.get(h.exact);
+    if (exactHits) {
+      for (const idx of exactHits) candidateSet.add(idx);
+    }
+    if (h.noArt && h.noArt !== h.exact) {
+      const noArtHits = index.exactMap.get(h.noArt);
+      if (noArtHits) {
+        for (const idx of noArtHits) candidateSet.add(idx);
+      }
+    }
+    // Gather candidates via shortest posting list among meaningful tokens (>=2 chars)
+    let shortestList: number[] | null = null;
+    for (const tok of h.tokens) {
+      const hits = index.tokenMap.get(tok);
+      if (!hits || hits.length === 0) continue;
+      if (!shortestList || hits.length < shortestList.length) {
+        shortestList = hits;
+      }
+    }
+    if (shortestList) {
+      for (const idx of shortestList) candidateSet.add(idx);
+    }
+    // Also union second-shortest posting list in case 1 word has slight spelling variance
+    if (h.tokens.length >= 2) {
+      for (const tok of h.tokens) {
+        const hits = index.tokenMap.get(tok);
+        if (hits && hits.length <= 250) {
+          for (const idx of hits) candidateSet.add(idx);
+        }
+      }
+    }
+  }
+  return Array.from(candidateSet);
+}
+
+function getIndexedVodMovies(catalog: XtreamFullCatalogPayload): VodCatalogSearchIndex<IndexedVodMovieEntry> {
+  const now = Date.now();
+  if (
+    cachedVodMovieSource === catalog.vodStreams &&
+    now - cachedVodMovieBuiltAt < 60_000 &&
+    cachedVodMovieIndex
+  ) {
+    return cachedVodMovieIndex;
+  }
+  const catLookup = buildCategoryLookup(catalog.vodCategories);
+  const entries: IndexedVodMovieEntry[] = [];
+  const exactMap = new Map<string, number[]>();
+  const tokenMap = new Map<string, number[]>();
+
+  for (const item of catalog.vodStreams as XtreamVodStreamItem[]) {
+    const pid = item.providerId || 'primary';
+    const catName =
+      catLookup.get(item.categoryId) ||
+      catLookup.get(`${pid}:${item.categoryId}`) ||
+      'VOD';
+    const parsed = parseXtreamVodTitleMeta(item.name, catName, item.containerExtension);
+    const candExact = normalizeMatchText(parsed.cleanTitle, false);
+    const candNoArt = normalizeMatchText(parsed.cleanTitle, true);
+    if (!candExact && !candNoArt) continue;
+    const candTokens = tokenizeMeaningful(parsed.cleanTitle);
+    const idx = entries.length;
+    entries.push({
+      item,
+      pid,
+      catName,
+      parsed,
+      candExact,
+      candNoArt,
+      candTokenSet: new Set(candTokens),
+    });
+    appendIndexKey(exactMap, candExact, idx);
+    if (candNoArt && candNoArt !== candExact) appendIndexKey(exactMap, candNoArt, idx);
+    for (const tok of candTokens) appendIndexKey(tokenMap, tok, idx);
+  }
+
+  cachedVodMovieSource = catalog.vodStreams;
+  cachedVodMovieBuiltAt = now;
+  cachedVodMovieIndex = { entries, exactMap, tokenMap };
+  return cachedVodMovieIndex;
+}
+
+function getIndexedVodSeries(catalog: XtreamFullCatalogPayload): VodCatalogSearchIndex<IndexedVodSeriesEntry> {
+  const now = Date.now();
+  if (
+    cachedVodSeriesSource === catalog.series &&
+    now - cachedVodSeriesBuiltAt < 60_000 &&
+    cachedVodSeriesIndex
+  ) {
+    return cachedVodSeriesIndex;
+  }
+  const catLookup = buildCategoryLookup(catalog.seriesCategories);
+  const entries: IndexedVodSeriesEntry[] = [];
+  const exactMap = new Map<string, number[]>();
+  const tokenMap = new Map<string, number[]>();
+
+  for (const ser of catalog.series as XtreamSeriesItem[]) {
+    const pid = ser.providerId || 'primary';
+    const catName =
+      catLookup.get(ser.categoryId) ||
+      catLookup.get(`${pid}:${ser.categoryId}`) ||
+      'Series';
+    const parsed = parseXtreamVodTitleMeta(ser.name, catName, '');
+    const candExact = normalizeMatchText(parsed.cleanTitle, false);
+    const candNoArt = normalizeMatchText(parsed.cleanTitle, true);
+    if (!candExact && !candNoArt) continue;
+    const serYear =
+      parsed.year ||
+      (ser.releaseDate ? String(ser.releaseDate).match(/(19\d{2}|20[0-3]\d)/)?.[1] : undefined);
+    const candTokens = tokenizeMeaningful(parsed.cleanTitle);
+    const idx = entries.length;
+    entries.push({
+      item: ser,
+      pid,
+      catName,
+      serYear,
+      parsed,
+      candExact,
+      candNoArt,
+      candTokenSet: new Set(candTokens),
+    });
+    appendIndexKey(exactMap, candExact, idx);
+    if (candNoArt && candNoArt !== candExact) appendIndexKey(exactMap, candNoArt, idx);
+    for (const tok of candTokens) appendIndexKey(tokenMap, tok, idx);
+  }
+
+  cachedVodSeriesSource = catalog.series;
+  cachedVodSeriesBuiltAt = now;
+  cachedVodSeriesIndex = { entries, exactMap, tokenMap };
+  return cachedVodSeriesIndex;
+}
+
+function scorePreindexedCandidate(
+  candExact: string,
+  candNoArt: string,
+  candTokenSet: Set<string>,
+  candidateYear: string | undefined,
+  normalizedHints: Array<{ exact: string; noArt: string; tokens: string[]; idx: number }>,
+  yearHint?: string
+): number {
+  if (!candExact && !candNoArt) return 0;
+  let yearMismatch = false;
+  let yearExact = false;
+  if (yearHint && /^\d{4}$/.test(yearHint) && candidateYear && /^\d{4}$/.test(candidateYear)) {
+    const diff = Math.abs(Number(yearHint) - Number(candidateYear));
+    if (diff === 0) yearExact = true;
+    else if (diff > 1) yearMismatch = true;
+  }
+  if (yearMismatch) return 0;
+
+  let bestScore = 0;
+  const candSize = candTokenSet.size;
+
+  for (const hint of normalizedHints) {
+    let baseScore = 0;
+    if (candExact === hint.exact || (candNoArt && candNoArt === hint.noArt)) {
+      baseScore = 100;
+    } else if (hint.tokens.length >= 2 && candSize >= 2) {
+      let matches = 0;
+      for (const t of hint.tokens) {
+        if (candTokenSet.has(t)) matches++;
+      }
+      const unionSize = hint.tokens.length + candSize - matches;
+      const jaccard = unionSize > 0 ? matches / unionSize : 0;
+      const hintCoverage = matches / hint.tokens.length;
+      const candCoverage = matches / candSize;
+      if (jaccard >= 0.84 && hintCoverage >= 0.85 && candCoverage >= 0.85) {
+        baseScore = Math.round(78 + jaccard * 18);
+      } else if (
+        yearExact &&
+        hintCoverage === 1 &&
+        Math.abs(candSize - hint.tokens.length) <= 1 &&
+        candSize >= 3
+      ) {
+        baseScore = 82;
+      }
+    }
+
+    if (baseScore > 0) {
+      const bonus = (yearExact ? 12 : 0) + (hint.idx === 0 ? 4 : 0);
+      bestScore = Math.max(bestScore, baseScore + bonus);
+    }
+  }
+  return bestScore;
+}
 
 async function loadUnifiedXtreamCatalogFast(timeoutMs = 2600): Promise<XtreamFullCatalogPayload | null> {
   const cachedMerged = unifiedCatalogRamCache.get('unified');
@@ -464,20 +642,25 @@ export async function findXtreamMovieMatches(params: {
     return { options: [], tracks: [] };
   }
 
-  const catLookup = buildCategoryLookup(catalog.vodCategories);
+  const movieIndex = getIndexedVodMovies(catalog);
+  const candidateIndices = querySearchIndexCandidates(movieIndex, hints);
   const providerOrder = new Map(getAllXtreamProviders().map((p, idx) => [p.id, idx]));
   const matches: XtreamMatchedMediaOption[] = [];
 
-  for (const item of catalog.vodStreams as XtreamVodStreamItem[]) {
-    const pid = item.providerId || 'primary';
-    const catName =
-      catLookup.get(item.categoryId) ||
-      catLookup.get(`${pid}:${item.categoryId}`) ||
-      'VOD';
-    const parsed = parseXtreamVodTitleMeta(item.name, catName, item.containerExtension);
-    const score = scoreTitleMatchAgainstHints(parsed.cleanTitle, parsed.year, hints, params.yearHint);
+  for (const idx of candidateIndices) {
+    const entry = movieIndex.entries[idx];
+    const score = scorePreindexedCandidate(
+      entry.candExact,
+      entry.candNoArt,
+      entry.candTokenSet,
+      entry.parsed.year,
+      hints,
+      params.yearHint
+    );
     if (score < 76) continue;
 
+    const item = entry.item;
+    const pid = entry.pid;
     const ext = (item.containerExtension || 'mp4').toLowerCase();
     const playbackUrl =
       item.playbackUrl ||
@@ -490,13 +673,13 @@ export async function findXtreamMovieMatches(params: {
       providerName: item.providerName || pid,
       streamId: item.streamId,
       title: item.name,
-      cleanTitle: parsed.cleanTitle,
-      year: parsed.year,
-      categoryName: catName,
-      lang: parsed.lang,
-      langLabel: parsed.langLabel,
-      quality: parsed.quality,
-      qualityTier: parsed.qualityTier,
+      cleanTitle: entry.parsed.cleanTitle,
+      year: entry.parsed.year,
+      categoryName: entry.catName,
+      lang: entry.parsed.lang,
+      langLabel: entry.parsed.langLabel,
+      quality: entry.parsed.quality,
+      qualityTier: entry.parsed.qualityTier,
       containerExtension: ext,
       rating: item.rating,
       poster: item.streamIcon,
@@ -550,23 +733,25 @@ export async function findXtreamSeriesMatches(params: {
   const catalog = await loadUnifiedXtreamCatalogFast(2800);
   if (!catalog || catalog.series.length === 0) return [];
 
-  const catLookup = buildCategoryLookup(catalog.seriesCategories);
+  const seriesIndex = getIndexedVodSeries(catalog);
+  const candidateIndices = querySearchIndexCandidates(seriesIndex, hints);
   const providerOrder = new Map(getAllXtreamProviders().map((p, idx) => [p.id, idx]));
   const matches: XtreamMatchedMediaOption[] = [];
 
-  for (const ser of catalog.series as XtreamSeriesItem[]) {
-    const pid = ser.providerId || 'primary';
-    const catName =
-      catLookup.get(ser.categoryId) ||
-      catLookup.get(`${pid}:${ser.categoryId}`) ||
-      'Series';
-    const parsed = parseXtreamVodTitleMeta(ser.name, catName, '');
-    const serYear =
-      parsed.year ||
-      (ser.releaseDate ? String(ser.releaseDate).match(/(19\d{2}|20[0-3]\d)/)?.[1] : undefined);
-    const score = scoreTitleMatchAgainstHints(parsed.cleanTitle, serYear, hints, params.yearHint);
+  for (const idx of candidateIndices) {
+    const entry = seriesIndex.entries[idx];
+    const score = scorePreindexedCandidate(
+      entry.candExact,
+      entry.candNoArt,
+      entry.candTokenSet,
+      entry.serYear,
+      hints,
+      params.yearHint
+    );
     if (score < 76) continue;
 
+    const ser = entry.item;
+    const pid = entry.pid;
     matches.push({
       id: `xtream-ser-${pid}-${ser.seriesId}`,
       mediaType: 'tv',
@@ -575,13 +760,13 @@ export async function findXtreamSeriesMatches(params: {
       streamId: ser.seriesId,
       seriesId: ser.seriesId,
       title: ser.name,
-      cleanTitle: parsed.cleanTitle,
-      year: serYear,
-      categoryName: catName,
-      lang: parsed.lang,
-      langLabel: parsed.langLabel,
-      quality: parsed.quality,
-      qualityTier: parsed.qualityTier,
+      cleanTitle: entry.parsed.cleanTitle,
+      year: entry.serYear,
+      categoryName: entry.catName,
+      lang: entry.parsed.lang,
+      langLabel: entry.parsed.langLabel,
+      quality: entry.parsed.quality,
+      qualityTier: entry.parsed.qualityTier,
       containerExtension: 'mp4',
       rating: ser.rating,
       poster: ser.cover,
@@ -826,6 +1011,7 @@ interface IndexedXtreamLiveChannel {
 let cachedLiveIndexSource: XtreamLiveStreamItem[] | null = null;
 let cachedLiveIndexBuiltAt = 0;
 let cachedLiveIndex: IndexedXtreamLiveChannel[] = [];
+let cachedLiveTokenMap = new Map<string, number[]>();
 
 function getIndexedLiveStreams(catalog: XtreamFullCatalogPayload): IndexedXtreamLiveChannel[] {
   const now = Date.now();
@@ -838,6 +1024,7 @@ function getIndexedLiveStreams(catalog: XtreamFullCatalogPayload): IndexedXtream
   }
   const catLookup = buildCategoryLookup(catalog.liveCategories);
   const built: IndexedXtreamLiveChannel[] = [];
+  const tokenMap = new Map<string, number[]>();
   for (const item of catalog.liveStreams) {
     const catName =
       catLookup.get(item.categoryId) ||
@@ -847,6 +1034,7 @@ function getIndexedLiveStreams(catalog: XtreamFullCatalogPayload): IndexedXtream
     const candNorm = normalizeMatchText(meta.cleanTitle, false);
     if (!candNorm || /\b(?:backup|test|event|vod)\b/.test(candNorm)) continue;
     const candNum = candNorm.match(/\b(\d{1,2})\b$/)?.[1];
+    const idx = built.length;
     built.push({
       item,
       meta,
@@ -854,10 +1042,14 @@ function getIndexedLiveStreams(catalog: XtreamFullCatalogPayload): IndexedXtream
       candNum,
       qualityBonus: Math.max(0, 12 - meta.qualityTier * 4),
     });
+    for (const tok of candNorm.split(' ')) {
+      if (tok.length >= 2) appendIndexKey(tokenMap, tok, idx);
+    }
   }
   cachedLiveIndexSource = catalog.liveStreams;
   cachedLiveIndexBuiltAt = now;
   cachedLiveIndex = built;
+  cachedLiveTokenMap = tokenMap;
   return built;
 }
 
@@ -933,10 +1125,35 @@ export async function findXtreamLiveChannelMatches(params: {
   };
 
   const indexed = getIndexedLiveStreams(catalog);
+  const candidateIdxSet = new Set<number>();
+  for (const pat of expandedPatterns) {
+    const patTokens = pat.norm.split(' ').filter((t) => t.length >= 2);
+    let pickedList: number[] | null = null;
+    for (const tok of patTokens) {
+      if (/^\d+$/.test(tok)) continue;
+      const list = cachedLiveTokenMap.get(tok);
+      if (list && (!pickedList || list.length < pickedList.length)) {
+        pickedList = list;
+      }
+    }
+    if (pickedList) {
+      for (const idx of pickedList) candidateIdxSet.add(idx);
+    } else {
+      for (const tok of patTokens) {
+        const list = cachedLiveTokenMap.get(tok);
+        if (list) for (const idx of list) candidateIdxSet.add(idx);
+      }
+    }
+  }
+  const entriesToScan =
+    candidateIdxSet.size > 0
+      ? Array.from(candidateIdxSet, (i) => indexed[i])
+      : indexed;
+
   const scored: Array<{ item: XtreamLiveStreamItem; meta: ParsedXtreamVodMeta; score: number }> = [];
   const normPref = String(params.preferLang || 'ES').toUpperCase();
 
-  for (const entry of indexed) {
+  for (const entry of entriesToScan) {
     const { item, meta, candNorm, candNum, qualityBonus } = entry;
     if (/\brsi\b/.test(candNorm) && !/\brsi\b/.test(hintJoined)) continue;
 

@@ -180,6 +180,7 @@ export function recordProviderOutcome(
       entry.successCount === 1
         ? sample
         : Math.round(entry.ewmaLatencyMs * (1 - EWMA_ALPHA) + sample * EWMA_ALPHA);
+    scheduleCircuitPersist();
     return;
   }
 
@@ -198,6 +199,7 @@ export function recordProviderOutcome(
     entry.state = 'open';
     entry.openUntil = now + CIRCUIT_COOLDOWN_MS;
   }
+  scheduleCircuitPersist();
 }
 
 export function getProviderSteeringPenaltyMs(
@@ -218,6 +220,77 @@ export function getProviderSteeringPenaltyMs(
   const prior = BASELINE_PROVIDER_PRIOR_MS[bucket] ?? 1100;
   return Math.round(baseEwma * 0.7 + prior * 0.3);
 }
+
+import fs from 'fs';
+import { loadDistributedKey, saveDistributedKey } from './distributedStore.ts';
+
+const CIRCUIT_SNAPSHOT_PATH = '/tmp/naimcine-circuit-v1.json';
+let circuitPersistTimer: ReturnType<typeof setTimeout> | null = null;
+
+export function exportProviderCircuitBuckets(): ProviderBucketStats[] {
+  return Array.from(buckets.values()).map((b) => ({ ...b }));
+}
+
+export function importProviderCircuitBuckets(items: ProviderBucketStats[]): void {
+  if (!Array.isArray(items)) return;
+  const now = Date.now();
+  for (const item of items) {
+    if (!item || typeof item.bucket !== 'string' || !item.bucket) continue;
+    if (item.lastOutcomeAt && now - item.lastOutcomeAt > 6 * 60 * 60 * 1000) continue;
+    const state: CircuitState =
+      item.state === 'open' && now < (item.openUntil || 0)
+        ? 'open'
+        : item.state === 'open'
+        ? 'half_open'
+        : 'closed';
+    buckets.set(item.bucket, {
+      bucket: item.bucket,
+      state,
+      consecutiveFailures: Number(item.consecutiveFailures || 0),
+      successCount: Number(item.successCount || 0),
+      failureCount: Number(item.failureCount || 0),
+      ewmaLatencyMs: Number(item.ewmaLatencyMs || BASELINE_PROVIDER_PRIOR_MS[item.bucket] || 1200),
+      lastOutcomeAt: Number(item.lastOutcomeAt || now),
+      openUntil: Number(item.openUntil || 0),
+      halfOpenProbing: false,
+    });
+  }
+}
+
+export function scheduleCircuitPersist(): void {
+  if (process.env.VITEST || circuitPersistTimer) return;
+  circuitPersistTimer = setTimeout(() => {
+    circuitPersistTimer = null;
+    const snapshot = exportProviderCircuitBuckets();
+    if (snapshot.length === 0) return;
+    void fs.promises
+      .writeFile(CIRCUIT_SNAPSHOT_PATH, JSON.stringify(snapshot), 'utf8')
+      .catch(() => {});
+    void saveDistributedKey('circuit:v1', snapshot, 6 * 3600).catch(() => {});
+  }, 15_000);
+  circuitPersistTimer.unref?.();
+}
+
+export function hydrateProviderCircuitFromDisk(): void {
+  if (process.env.VITEST) return;
+  try {
+    if (fs.existsSync(CIRCUIT_SNAPSHOT_PATH)) {
+      const parsed = JSON.parse(fs.readFileSync(CIRCUIT_SNAPSHOT_PATH, 'utf8'));
+      importProviderCircuitBuckets(parsed);
+    }
+  } catch {
+    // ignore corrupt snapshot
+  }
+  void loadDistributedKey<ProviderBucketStats[]>('circuit:v1')
+    .then((remote) => {
+      if (remote && remote.length > 0 && buckets.size === 0) {
+        importProviderCircuitBuckets(remote);
+      }
+    })
+    .catch(() => {});
+}
+
+hydrateProviderCircuitFromDisk();
 
 export function getProviderCircuitSnapshot(): Array<{
   bucket: string;

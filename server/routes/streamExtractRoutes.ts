@@ -1,7 +1,13 @@
+import crypto from 'crypto';
 import express from 'express';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { logger } from '../utils/logger.ts';
 import type { TrackHealthInfo } from '../services/channelHealthMonitor.ts';
+import {
+  isDistributedStoreEnabled,
+  loadDistributedKey,
+  saveDistributedKey,
+} from '../services/distributedStore.ts';
 import { type ExtractedStreamResult, type TrackRecord } from '../extractors/httpHelpers.ts';
 import { handleDirectExtractCases } from './streamExtractHelpers/directCasesHandler.ts';
 import { handleCatalogMediaExtract } from './streamExtractHelpers/catalogMediaExtractor.ts';
@@ -15,6 +21,10 @@ import {
 } from '../services/liveFastResolver.ts';
 
 const extractionCache = new LruTtlCache<string, ExtractedStreamResult>(400, 15 * 60 * 1000);
+
+function hashExtractKey(cacheKey: string): string {
+  return `ext_${crypto.createHash('sha1').update(cacheKey).digest('hex').slice(0, 20)}`;
+}
 
 type CoalescedExtractOutcome =
   | { ok: true; payload: ExtractedStreamResult }
@@ -164,6 +174,17 @@ export function registerStreamExtractRoute(
 
     const belixSessionKey = resolveBelixSessionKey(req);
 
+    if (!forceExtract && isDistributedStoreEnabled() && !rawInput.startsWith('/api/belix/')) {
+      const remoteCached = await Promise.race([
+        loadDistributedKey<ExtractedStreamResult>(hashExtractKey(cacheKey)),
+        new Promise<null>((r) => setTimeout(() => r(null), 180)),
+      ]);
+      if (remoteCached && remoteCached.expiresAt > Date.now()) {
+        extractionCache.set(cacheKey, remoteCached);
+        return res.json(formatResp(req, remoteCached));
+      }
+    }
+
     const coalesceKey = `${belixSessionKey}|${cacheKey}`;
     if (!forceExtract) {
       const existingInFlight = inFlightExtractMap.get(coalesceKey);
@@ -178,7 +199,18 @@ export function registerStreamExtractRoute(
 
     const runExtraction = async (): Promise<CoalescedExtractOutcome> => {
       let outcome: CoalescedExtractOutcome | null = null;
-      const setCache = (k: string, val: ExtractedStreamResult) => extractionCache.set(k, val);
+      const setCache = (k: string, val: ExtractedStreamResult) => {
+        extractionCache.set(k, val);
+        if (
+          isDistributedStoreEnabled() &&
+          val.success &&
+          val.mode !== 'embed' &&
+          !val.streamUrl.startsWith('/api/belix/')
+        ) {
+          const ttlSec = Math.max(60, Math.min(480, Math.round((val.expiresAt - Date.now()) / 1000)));
+          void saveDistributedKey(hashExtractKey(k), val, ttlSec).catch(() => {});
+        }
+      };
       const sendOk = (payload: ExtractedStreamResult): express.Response => {
         outcome = { ok: true, payload };
         return null as unknown as express.Response;

@@ -42,6 +42,8 @@ interface UsePlayerVideoCallbacksParams {
 }
 
 export function usePlayerVideoCallbacks(p: UsePlayerVideoCallbacksParams) {
+  const prefetchedNextEpForUrlRef = React.useRef<string>('');
+
   const onLoadedMetadata = (e: React.SyntheticEvent<HTMLVideoElement>) => {
     if (p.playbackSpeed !== 1) {
       e.currentTarget.playbackRate = p.playbackSpeed;
@@ -89,6 +91,45 @@ export function usePlayerVideoCallbacks(p: UsePlayerVideoCallbacksParams) {
       (p.showControlsRef.current || p.activeSubId !== 'off' || Math.abs(ct - p.currentTime) >= 1)
     ) {
       p.setCurrentTime(ct);
+    }
+    if (
+      !p.videoState.isLive &&
+      p.videoState.seriesMeta &&
+      p.videoState.url &&
+      dur > 60 &&
+      ct / dur >= 0.8 &&
+      prefetchedNextEpForUrlRef.current !== p.videoState.url
+    ) {
+      prefetchedNextEpForUrlRef.current = p.videoState.url;
+      const meta = p.videoState.seriesMeta;
+      let nextSeason = meta.season;
+      let nextEp = meta.episode + 1;
+      if (meta.totalEpisodesInSeason && nextEp > meta.totalEpisodesInSeason) {
+        if (!meta.totalSeasons || meta.season < meta.totalSeasons) {
+          nextSeason = meta.season + 1;
+          nextEp = 1;
+        } else {
+          nextEp = 0;
+        }
+      }
+      if (nextEp > 0 && meta.tmdbId) {
+        const activeTrack = p.videoState.tracks?.[p.videoState.activeTrackIndex];
+        const rawLang = String(activeTrack?.lang || 'ES').toUpperCase();
+        const preferLang =
+          rawLang === 'LAT' || rawLang === 'VOSE' || rawLang === 'EN' ? rawLang : 'ES';
+        const q = new URLSearchParams({
+          mediaType: 'tv',
+          tmdbId: String(meta.tmdbId),
+          season: String(nextSeason),
+          episode: String(nextEp),
+          preferLang,
+          title: meta.seriesTitle || '',
+          prefetch: '1',
+        });
+        fetch(`/api/extract/stream?${q.toString()}`, { priority: 'low' as RequestInit['priority'] }).catch(
+          () => {}
+        );
+      }
     }
     if (
       p.onProgressUpdate &&

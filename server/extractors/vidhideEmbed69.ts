@@ -43,18 +43,21 @@ export async function extractEmbed69SpanishTracks(opts: {
   yearHint?: string;
   directorHint?: string;
   runtimeMinHint?: number;
+  isLikelyAnimeHint?: boolean;
+  skipTmdbFetch?: boolean;
   force?: boolean;
   skipGnula?: boolean;
 }): Promise<TrackRecord[]> {
   try {
     let imdbId = opts.imdbId || null;
     const hints = [...(opts.titleHints || [])].filter(Boolean);
-    let isLikelyAnime = false;
+    let isLikelyAnime = Boolean(opts.isLikelyAnimeHint);
     let yearHint = opts.yearHint || '';
     let directorHint = opts.directorHint || '';
     let runtimeMinHint = opts.runtimeMinHint || 0;
 
-    if (opts.tmdbId) {
+    const shouldSkipTmdb = Boolean(opts.skipTmdbFetch && imdbId && hints.length > 0);
+    if (opts.tmdbId && !shouldSkipTmdb) {
       try {
         const cleanId = String(opts.tmdbId).replace(/\D/g, '');
         const tmUrl =

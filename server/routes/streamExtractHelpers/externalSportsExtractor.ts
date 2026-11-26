@@ -124,7 +124,7 @@ export async function handleExternalSportsExtract(params: {
         channelId: `sports-xtream-${liveHints[0]}`,
         titleHint: channelLabel || titleHint,
         preferLang,
-        timeoutMs: 12_000,
+        timeoutMs: 3_800,
       }
     ).catch(() => null);
     if (raced?.ok && raced.streamUrl && raced.mode === 'hls') {
@@ -149,28 +149,45 @@ export async function handleExternalSportsExtract(params: {
       const directPromise = extractLiveSportsHlsDirect(fullTargetUrl).catch(() => null);
       if (resolverType === 'sports_channel') {
         const xtreamPromise = tryXtreamSportsRace().catch(() => null);
-        // Give directSports 1400ms head-start; if it stalls/fails and Xtream is already ready, return Xtream immediately!
-        const directQuick = await Promise.race([
-          directPromise,
-          new Promise<null>((resolve) => setTimeout(() => resolve(null), 1400)),
+        // Race direct sports extractor against Xtream live race concurrently instead of stacking 8s+ waits
+        const directWin = directPromise.then((res) =>
+          res && (res.streamUrl || res.isBrokenGreenFeed)
+            ? { sniffed: res, xtreamWinner: null as ExtractedStreamResult | null }
+            : null
+        );
+        const xtreamWin = xtreamPromise.then((res) =>
+          res ? { sniffed: null as SniffedExtractResult | null, xtreamWinner: res } : null
+        );
+
+        const firstResolved = await Promise.race([
+          new Promise<InFlightExternalExtractOutcome | null>((resolve) => {
+            let pending = 2;
+            const onResult = (val: InFlightExternalExtractOutcome | null) => {
+              if (val) {
+                resolve(val);
+                return;
+              }
+              pending -= 1;
+              if (pending <= 0) resolve(null);
+            };
+            void directWin.then(onResult);
+            void xtreamWin.then(onResult);
+          }),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_000)),
         ]);
-        if (directQuick && (directQuick.streamUrl || directQuick.isBrokenGreenFeed)) {
-          return { sniffed: directQuick, xtreamWinner: null };
-        }
-        const xtreamEarly = await xtreamPromise;
-        if (xtreamEarly) {
-          return { sniffed: null, xtreamWinner: xtreamEarly };
-        }
-        const directFinal = await directPromise;
-        if (directFinal) return { sniffed: directFinal, xtreamWinner: null };
+        if (firstResolved) return firstResolved;
         if (isKnownDirectMirror) return { sniffed: null, xtreamWinner: null };
       } else {
-        const directSports = await directPromise;
+        const directSports = await Promise.race([
+          directPromise,
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 4_000)),
+        ]);
         if (directSports) return { sniffed: directSports, xtreamWinner: null };
       }
-      const sniffedHeadless = (await sniffStreamWithHeadless(
-        fullTargetUrl
-      )) as SniffedExtractResult | null;
+      const sniffedHeadless = await Promise.race([
+        sniffStreamWithHeadless(fullTargetUrl) as Promise<SniffedExtractResult | null>,
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 3_500)),
+      ]).catch(() => null);
       return { sniffed: sniffedHeadless, xtreamWinner: null };
     })().finally(() => {
       if (inFlightExternalExtracts.get(dedupKey) === inflight) {

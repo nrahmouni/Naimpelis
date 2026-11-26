@@ -1,4 +1,6 @@
+import fs from 'fs';
 import { logger } from '../utils/logger.ts';
+import { loadDistributedKey, saveDistributedKey } from './distributedStore.ts';
 import { isDvbUpstreamCoolingDown } from '../routes/proxies/dvbTranscoder.ts';
 import {
   type ChannelHealthStatus,
@@ -35,13 +37,64 @@ export {
   type TrackHealthInfo,
 };
 
+const CHANNEL_HEALTH_SNAPSHOT_PATH = '/tmp/naimcine-channel-health-v1.json';
+const HEALTH_HYDRATE_MAX_AGE_MS = 20 * 60 * 1000;
+
 export class ChannelHealthMonitor {
   private readonly trackHealth = new Map<string, TrackHealthInfo>();
   private sweepPromise: Promise<void> | null = null;
   private schedulerTimer: ReturnType<typeof setInterval> | null = null;
   private initialTimer: ReturnType<typeof setTimeout> | null = null;
+  private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private lastSweepAt: number | null = null;
   private lastSweepDurationMs = 0;
+
+  constructor() {
+    this.hydrateFromDisk();
+  }
+
+  private hydrateFromDisk(): void {
+    if (process.env.VITEST) return;
+    try {
+      if (fs.existsSync(CHANNEL_HEALTH_SNAPSHOT_PATH)) {
+        const parsed = JSON.parse(fs.readFileSync(CHANNEL_HEALTH_SNAPSHOT_PATH, 'utf8'));
+        this.importTrackStatuses(parsed);
+      }
+    } catch {
+      // ignore corrupt health snapshot
+    }
+    void loadDistributedKey<Record<string, TrackHealthInfo>>('channel-health:v1')
+      .then((remote) => {
+        if (remote && this.trackHealth.size === 0) {
+          this.importTrackStatuses(remote);
+        }
+      })
+      .catch(() => {});
+  }
+
+  importTrackStatuses(statuses: Record<string, TrackHealthInfo> | null | undefined): void {
+    if (!statuses || typeof statuses !== 'object') return;
+    const now = Date.now();
+    for (const [key, info] of Object.entries(statuses)) {
+      if (!key || !info || typeof info.status !== 'string') continue;
+      if (info.checkedAt && now - info.checkedAt > HEALTH_HYDRATE_MAX_AGE_MS) continue;
+      this.trackHealth.set(key, info);
+    }
+  }
+
+  private schedulePersist(): void {
+    if (process.env.VITEST || this.persistTimer) return;
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null;
+      const snapshot = this.getAllTrackStatuses();
+      if (Object.keys(snapshot).length === 0) return;
+      void fs.promises
+        .writeFile(CHANNEL_HEALTH_SNAPSHOT_PATH, JSON.stringify(snapshot), 'utf8')
+        .catch(() => {});
+      void saveDistributedKey('channel-health:v1', snapshot, 1800).catch(() => {});
+    }, 20_000);
+    this.persistTimer.unref?.();
+  }
 
   getTrackHealth(sourceUrl: string): TrackHealthInfo | undefined {
     const key = normalizeTrackUrl(sourceUrl);
@@ -93,6 +146,7 @@ export class ChannelHealthMonitor {
       qoeRebuffers,
       qoeFailures,
     });
+    this.schedulePersist();
   }
 
   prioritizeTracks<T extends HealthProbeTrack>(tracks: T[]): T[] {
@@ -354,6 +408,7 @@ export class ChannelHealthMonitor {
 
       this.lastSweepAt = Date.now();
       this.lastSweepDurationMs = this.lastSweepAt - startedAt;
+      this.schedulePersist();
 
       const summary = this.getSummary();
       logger.info(

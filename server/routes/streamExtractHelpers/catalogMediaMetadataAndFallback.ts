@@ -56,6 +56,7 @@ export interface ResolvedCatalogMetadata {
   tmdbImdbId: string | null;
   tmdbResolvedTitle: string;
   tmdbOriginalLanguage: string;
+  tmdbIsLikelyAnime: boolean;
   episodeAirDate: string;
   resolvedEpisodeTitle: string;
   isUnreleasedEpisode: boolean;
@@ -179,6 +180,7 @@ export async function resolveCatalogMediaMetadata(opts: {
   let tmdbRuntimeMin = 0;
   let tmdbImdbId: string | null = null;
   let tmdbOriginalLanguage = '';
+  let tmdbIsLikelyAnime = false;
   let episodeAirDate = '';
   let resolvedEpisodeTitle = '';
   let isUnreleasedEpisode = false;
@@ -207,33 +209,31 @@ export async function resolveCatalogMediaMetadata(opts: {
         extractedGnulaYear = extractedGnulaMeta.year;
       }
     })(),
+    (async () => {
+      if (!effectiveVestUrl) return;
+      extractedVestDetail = await fetchVestDetailPage(
+        effectiveVestUrl,
+        episodeParam && episodeParam > 0 ? episodeParam : undefined
+      );
+      if (extractedVestDetail) {
+        if (!mediaTypeParam) effectiveMediaType = extractedVestDetail.mediaType;
+        if (!episodeParam && extractedVestDetail.currentEpisodeNumber > 0) {
+          effectiveEpisode = extractedVestDetail.currentEpisodeNumber;
+        }
+        if (!extractedMovidyCleanTitle) extractedMovidyCleanTitle = extractedVestDetail.cleanTitle;
+        const vestSeed = findVestSeedForMedia({ titleHints: [extractedVestDetail.cleanTitle] });
+        if (!resolvedTmdbId && vestSeed?.tmdbId) resolvedTmdbId = vestSeed.tmdbId;
+      }
+    })(),
   ]);
 
-  if (effectiveVestUrl) {
-    extractedVestDetail = await fetchVestDetailPage(
-      effectiveVestUrl,
-      episodeParam && episodeParam > 0 ? episodeParam : undefined
-    );
-    if (extractedVestDetail) {
-      if (!mediaTypeParam) effectiveMediaType = extractedVestDetail.mediaType;
-      if (!episodeParam && extractedVestDetail.currentEpisodeNumber > 0) {
-        effectiveEpisode = extractedVestDetail.currentEpisodeNumber;
-      }
-      if (!extractedMovidyCleanTitle) extractedMovidyCleanTitle = extractedVestDetail.cleanTitle;
-      const vestSeed = findVestSeedForMedia({ titleHints: [extractedVestDetail.cleanTitle] });
-      if (!resolvedTmdbId && vestSeed?.tmdbId) resolvedTmdbId = vestSeed.tmdbId;
-    }
-  }
-
   if (!resolvedTmdbId && (titleHint || origTitleHint)) {
-    for (const qTitle of [titleHint, origTitleHint].filter(Boolean)) {
-      resolvedTmdbId = await resolveTmdbIdByTitle(
-        qTitle,
-        effectiveMediaType,
-        extractedMovidyYear || extractedGnulaYear || yearParam || undefined
-      );
-      if (resolvedTmdbId) break;
-    }
+    const queryYear = extractedMovidyYear || extractedGnulaYear || yearParam || undefined;
+    const queries = [titleHint, origTitleHint].filter(Boolean);
+    const idCandidates = await Promise.all(
+      queries.map((qTitle) => resolveTmdbIdByTitle(qTitle, effectiveMediaType, queryYear))
+    );
+    resolvedTmdbId = idCandidates.find(Boolean) || null;
   }
 
   if (!resolvedTmdbId && (extractedMovidyCleanTitle || extractedGnulaCleanTitle)) {
@@ -279,6 +279,13 @@ export async function resolveCatalogMediaMetadata(opts: {
         tmdbVerifiedYear =
           String(tmJson?.release_date || tmJson?.first_air_date || '').split('-')[0] || '';
         tmdbImdbId = tmJson?.imdb_id || tmJson?.external_ids?.imdb_id || null;
+        const genres: any[] = Array.isArray(tmJson?.genres) ? tmJson.genres : [];
+        const hasAnimGenre = genres.some((g) => Number(g?.id) === 16);
+        const origCountries: string[] = Array.isArray(tmJson?.origin_country)
+          ? tmJson.origin_country
+          : [];
+        tmdbIsLikelyAnime =
+          hasAnimGenre && (tmdbOriginalLanguage === 'ja' || origCountries.includes('JP'));
         if (effectiveMediaType === 'tv') {
           const seasonEps: any[] = Array.isArray(tmJson?.[`season/${effectiveSeason}`]?.episodes)
             ? tmJson[`season/${effectiveSeason}`].episodes
@@ -397,6 +404,7 @@ export async function resolveCatalogMediaMetadata(opts: {
     tmdbImdbId,
     tmdbResolvedTitle,
     tmdbOriginalLanguage,
+    tmdbIsLikelyAnime,
     episodeAirDate,
     resolvedEpisodeTitle,
     isUnreleasedEpisode,

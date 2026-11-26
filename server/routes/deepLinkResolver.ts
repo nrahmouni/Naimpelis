@@ -64,7 +64,7 @@ export interface ResolvedDeepLinkResult {
   match?: any;
   game?: { gameId: string; gameSlug: string; title: string };
   world?: {
-    world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music' | 'providers' | 'reels';
+    world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'champions' | 'music' | 'providers' | 'reels';
     cineTab?: 'movies' | 'series';
     cineCategory?: string;
     futbolTab?: 'matches' | 'channels';
@@ -616,6 +616,7 @@ export async function resolveDeepLinkTarget(
         belix: 'Belix TV — Motor Xtream Codes y Rutas com.ibopro.ultra',
         atresplayer: 'Atresmedia — Directos 1080p, Pasapalabra, Programas y Series',
         movistardazn: 'DAZN & Movistar+ — Fútbol, F1, MotoGP, Deportes HD y Series Originales',
+        champions: 'UEFA Champions League — MultiChampions y Multi-Partido en Directo',
         music: 'Riffan Music — Canciones, Letras Sincronizadas, Videoclips HD y Radios 24/7',
         providers: 'Catálogo Total — Proveedores HD, VOD 4K, 2M2H, Adtupac, Ultra VIP y Sult-Vo',
         reels: 'CineTok · Clips — Tráilers, Escenas Pro y Presentador IA por Gustos',

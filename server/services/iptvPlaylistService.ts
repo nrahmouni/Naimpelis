@@ -226,7 +226,14 @@ export async function refreshLiveIptvRegistry(force = false): Promise<{
       if (!key || !isPlayableHlsUrl(url)) return;
       const existing = nextMap.get(key) || { urls: [], logo, web };
       if (!existing.urls.includes(url)) {
-        existing.urls.push(url);
+        if (/_dvr\.m3u8(\?|$)/i.test(url)) {
+          existing.urls.push(url);
+        } else {
+          // Place standard live non-DVR manifests ahead of _dvr.m3u8 fallbacks
+          const firstDvrIdx = existing.urls.findIndex((u) => /_dvr\.m3u8(\?|$)/i.test(u));
+          if (firstDvrIdx === -1) existing.urls.push(url);
+          else existing.urls.splice(firstDvrIdx, 0, url);
+        }
       }
       if (!existing.logo && logo) existing.logo = logo;
       if (!existing.web && web) existing.web = web;
@@ -252,6 +259,9 @@ export async function refreshLiveIptvRegistry(force = false): Promise<{
                 return true;
               })
               .sort((a, b) => {
+                const aDvr = /_dvr\.m3u8(\?|$)/i.test(String(a?.url || '')) ? 1 : 0;
+                const bDvr = /_dvr\.m3u8(\?|$)/i.test(String(b?.url || '')) ? 1 : 0;
+                if (aDvr !== bDvr) return aDvr - bDvr;
                 const ra = Number(String(a?.res || '').replace(/[^\d]/g, '') || 0);
                 const rb = Number(String(b?.res || '').replace(/[^\d]/g, '') || 0);
                 return rb - ra;

@@ -157,11 +157,11 @@ export async function probeDvbStreamCodec(
   }
   probeArgs.push(
     '-rw_timeout',
-    '5000000',
+    '4500000',
     '-analyzeduration',
-    '300000',
+    '220000',
     '-probesize',
-    '300000',
+    '220000',
     '-show_streams',
     '-of',
     'json',
@@ -442,7 +442,7 @@ export async function openSingleSocketMpegTsStream(options: {
     const reader = resp.body.getReader();
     const chunks: Buffer[] = [];
     let totalBytes = 0;
-    const targetPreamble = cachedProbe ? 16_000 : 36_000;
+    const targetPreamble = cachedProbe ? 12_000 : 28_000;
     while (totalBytes < targetPreamble) {
       const { done, value } = await reader.read();
       if (done) break;

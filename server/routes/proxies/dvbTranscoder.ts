@@ -669,6 +669,7 @@ export const handleDvbLive = async (
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   } else {
     res.setHeader('Content-Type', 'video/mp2t');
+    res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Cache-Control', 'public, max-age=15');
   }
   if (req.method === 'HEAD') {

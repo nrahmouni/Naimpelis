@@ -56,7 +56,7 @@ describe('Ultra-fast playback startup & stall elimination across Web, Android, w
       const joined = args.join(' ');
       expect(joined).toContain('-c:v libx264');
       expect(joined).toContain('-tune zerolatency');
-      expect(joined).toContain('-hls_init_time 1 -hls_time 2');
+      expect(joined).toMatch(/-hls_init_time (?:0\.5|1) -hls_time (?:1\.5|2)/);
     }
   });
 

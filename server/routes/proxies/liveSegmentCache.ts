@@ -21,15 +21,16 @@ interface CachedLiveManifest {
   ts: number;
 }
 
-const MAX_SEGMENT_BYTES = 8 * 1024 * 1024;
-const MAX_CACHE_TOTAL_BYTES = 48 * 1024 * 1024;
-const MAX_CACHE_ENTRIES = 48;
-const SEGMENT_TTL_MS = 22_000;
-const MANIFEST_TTL_MS = 1_600;
+const MAX_SEGMENT_BYTES = 10 * 1024 * 1024;
+const MAX_CACHE_TOTAL_BYTES = 128 * 1024 * 1024;
+const MAX_CACHE_ENTRIES = 96;
+const SEGMENT_TTL_MS = 28_000;
+const MANIFEST_TTL_MS = 2_000;
 
 const liveTsSegmentCache = new Map<string, CachedTsSegment>();
 const inFlightSegmentFetches = new Map<string, Promise<CachedTsSegment | null>>();
 const liveManifestSnippetCache = new Map<string, CachedLiveManifest>();
+const inFlightManifestFetches = new Map<string, Promise<CachedLiveManifest | null>>();
 let currentCacheBytes = 0;
 
 function evictExpiredOrExcess(): void {
@@ -54,7 +55,7 @@ function evictExpiredOrExcess(): void {
 
 export function setCachedLiveManifest(url: string, text: string, baseUrl: string): void {
   if (!url || !text || !text.includes('#EXTM3U')) return;
-  if (liveManifestSnippetCache.size > 80) {
+  if (liveManifestSnippetCache.size > 140) {
     const oldest = liveManifestSnippetCache.keys().next().value;
     if (oldest) liveManifestSnippetCache.delete(oldest);
   }
@@ -69,6 +70,48 @@ export function getCachedLiveManifest(url: string): CachedLiveManifest | null {
     return null;
   }
   return hit;
+}
+
+export function coalesceLiveManifestFetch(
+  url: string,
+  fetcher: () => Promise<CachedLiveManifest | null>
+): Promise<CachedLiveManifest | null> {
+  const cached = getCachedLiveManifest(url);
+  if (cached) return Promise.resolve(cached);
+  const existing = inFlightManifestFetches.get(url);
+  if (existing) return existing;
+  const p = fetcher()
+    .then((result) => {
+      if (result && result.text.includes('#EXTM3U')) {
+        setCachedLiveManifest(url, result.text, result.baseUrl);
+      }
+      return result;
+    })
+    .finally(() => {
+      if (inFlightManifestFetches.get(url) === p) {
+        inFlightManifestFetches.delete(url);
+      }
+    });
+  inFlightManifestFetches.set(url, p);
+  return p;
+}
+
+export function deriveNextPredictedSegmentUrl(lastSegUrl: string): string | null {
+  if (!lastSegUrl) return null;
+  try {
+    const u = new URL(lastSegUrl);
+    const match = u.pathname.match(/^(.*?)(\d{2,10})(\.(?:ts|m4s|mp4|aac))$/i);
+    if (!match) return null;
+    const rawNum = match[2];
+    const nextNum = parseInt(rawNum, 10) + 1;
+    const padded = rawNum.startsWith('0')
+      ? String(nextNum).padStart(rawNum.length, '0')
+      : String(nextNum);
+    u.pathname = `${match[1]}${padded}${match[3]}`;
+    return u.toString();
+  } catch {
+    return null;
+  }
 }
 
 export function getCachedLiveTsSegment(rawUrl: string): CachedTsSegment | null {

@@ -155,6 +155,7 @@ export interface VideoState {
   mode: PlaybackEngineMode;
   /** Currently playing proxied HLS URL, direct MP4 URL, YouTube video ID, or remote URL */
   url: string;
+  backupStreamUrl?: string;
   rawSourceUrl: string;
   title: string;
   subtitle?: string;

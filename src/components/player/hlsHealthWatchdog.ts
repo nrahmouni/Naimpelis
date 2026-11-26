@@ -172,7 +172,7 @@ export function createLivePlaybackHealthMonitor() {
             pendingZeroStartMs = nowMs;
           } else {
             const zeroElapsedMs = Math.max(0, nowMs - pendingZeroStartMs);
-            if (zeroElapsedMs >= 15_000 && zeroStartActionTier < 2) {
+            if (zeroElapsedMs >= 8_000 && zeroStartActionTier < 2) {
               zeroStartActionTier = 2;
               return {
                 action: 'switch_backup',
@@ -181,7 +181,7 @@ export function createLivePlaybackHealthMonitor() {
                 stallDurationMs: zeroElapsedMs,
               };
             }
-            if (zeroElapsedMs >= 7_500 && zeroStartActionTier < 1) {
+            if (zeroElapsedMs >= 4_000 && zeroStartActionTier < 1) {
               zeroStartActionTier = 1;
               return {
                 action: 'recover_signal',
@@ -198,7 +198,7 @@ export function createLivePlaybackHealthMonitor() {
           stalledSinceMs = nowMs;
         }
         const stallDurationMs = Math.max(0, nowMs - stalledSinceMs);
-        if (stallDurationMs >= 15_000 && lastStallActionTier < 3) {
+        if (stallDurationMs >= 8_500 && lastStallActionTier < 3) {
           lastStallActionTier = 3;
           return {
             action: 'switch_backup',
@@ -207,7 +207,7 @@ export function createLivePlaybackHealthMonitor() {
             stallDurationMs,
           };
         }
-        if (stallDurationMs >= 7_500 && lastStallActionTier < 2) {
+        if (stallDurationMs >= 5_000 && lastStallActionTier < 2) {
           lastStallActionTier = 2;
           return {
             action: 'soft_reconnect',
@@ -216,7 +216,7 @@ export function createLivePlaybackHealthMonitor() {
             stallDurationMs,
           };
         }
-        if (stallDurationMs >= 3_000 && lastStallActionTier < 1) {
+        if (stallDurationMs >= 2_200 && lastStallActionTier < 1) {
           lastStallActionTier = 1;
           return {
             action: 'recover_signal',

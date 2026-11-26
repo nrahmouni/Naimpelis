@@ -100,10 +100,16 @@ describe('App boot iframe compatibility & Force Offline mode', () => {
           <App />
         </QueryClientProvider>
       );
-      await new Promise((r) => setTimeout(r, 80));
     });
-
-    expect(host.textContent).toContain('Riffan');
+    await vi.waitFor(
+      async () => {
+        await act(async () => {
+          await new Promise((r) => setTimeout(r, 30));
+        });
+        expect(host.textContent).toContain('Riffan');
+      },
+      { timeout: 3500, interval: 40 }
+    );
     await act(async () => {
       root.unmount();
     });

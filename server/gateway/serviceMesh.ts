@@ -222,14 +222,17 @@ export function serviceMeshGatewayMiddleware(
       fullPath.startsWith('/api/belix/seg') ||
       fullPath.startsWith('/api/belix/sub');
 
+    const hasRetryAfter =
+      typeof res.getHeader === 'function' && Boolean(res.getHeader('Retry-After'));
+
     const isExpectedUpstreamFailover =
       fullPath === '/api/extract/stream' &&
-      !res.getHeader('Retry-After') &&
+      !hasRetryAfter &&
       (res.statusCode === 502 || res.statusCode === 503 || res.statusCode === 504);
 
     if (
       (isExternalProxyPassThrough &&
-        !res.getHeader('Retry-After') &&
+        !hasRetryAfter &&
         (res.statusCode === 502 || res.statusCode === 503 || res.statusCode === 504)) ||
       isExpectedUpstreamFailover
     ) {

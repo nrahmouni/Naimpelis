@@ -127,7 +127,7 @@ export const handleSyncAndChatMessage: WsMessageHandler = async (
     };
 
     if (room.videoState.mode !== 'cloud') {
-      await stopCloudSession(roomId);
+      void stopCloudSession(roomId).catch(() => {});
     }
 
     let sysMsg: RoomChatMessageRecord | null = null;
@@ -157,6 +157,7 @@ export const handleSyncAndChatMessage: WsMessageHandler = async (
           videoState: room.videoState,
           action,
           message: sysMsg,
+          serverTime: Date.now(),
         },
       },
       action === 'play' || action === 'pause' || action === 'seek' ? ws : undefined

@@ -12,6 +12,7 @@ import {
   resolveKnownUpstreamReferer,
   shouldBypassNodeFetch,
 } from '../../extractors/httpHelpers.ts';
+import { getCachedLiveTsSegment } from '../proxies/liveSegmentCache.ts';
 
 export const IPTV_GROUP_TITLES: Record<string, string> = {
   generalistas: 'España · TDT Generalistas',
@@ -394,6 +395,9 @@ export function trimLiveDvrManifestForIptv(manifestText: string, maxSegments = 6
 }
 
 async function probeLiveEdgeSegmentOk(segUrl: string, referer: string): Promise<boolean> {
+  if (getCachedLiveTsSegment(segUrl)) {
+    return true;
+  }
   const headers: Record<string, string> = {
     'User-Agent': getPreferredUpstreamUa(segUrl),
     Accept: '*/*',
@@ -490,7 +494,8 @@ async function probeLiveEdgeSegmentOk(segUrl: string, referer: string): Promise<
 export async function verifyIptvMediaManifestSegments(
   manifestText: string,
   manifestUrl: string,
-  referer: string
+  referer: string,
+  opts?: { trustCachedHealth?: boolean }
 ): Promise<boolean> {
   if (/METHOD=(SAMPLE-AES|SAMPLE-AES-CTR|SAMPLE-AES-CENC)|com\.apple\.streamingkeydelivery/i.test(manifestText)) {
     return false;
@@ -530,30 +535,45 @@ export async function verifyIptvMediaManifestSegments(
     if (!firstVideoVariantUrl) return false;
     const vSub = await fetchUpstreamManifestText(firstVideoVariantUrl, effectiveReferer, false);
     if (!vSub) return false;
-    const vOk = await verifyIptvMediaManifestSegments(vSub.text, vSub.finalUrl, effectiveReferer);
+    const vOk = await verifyIptvMediaManifestSegments(vSub.text, vSub.finalUrl, effectiveReferer, opts);
     if (!vOk) return false;
     if (firstAudioUrl) {
       const aSub = await fetchUpstreamManifestText(firstAudioUrl, effectiveReferer, false);
       if (!aSub) return false;
-      const aOk = await verifyIptvMediaManifestSegments(aSub.text, aSub.finalUrl, effectiveReferer);
+      const aOk = await verifyIptvMediaManifestSegments(aSub.text, aSub.finalUrl, effectiveReferer, opts);
       if (!aOk) return false;
     }
     return true;
   }
 
-  let lastSegmentUrl = '';
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const tr = lines[i].trim();
+  const segmentUrls: string[] = [];
+  for (const rawLine of lines) {
+    const tr = rawLine.trim();
     if (!tr || tr.startsWith('#')) continue;
     try {
-      lastSegmentUrl = new URL(tr, manifestUrl).href;
-      break;
+      segmentUrls.push(new URL(tr, manifestUrl).href);
     } catch {
       // skip invalid URI
     }
   }
-  if (!lastSegmentUrl) return false;
-  return probeLiveEdgeSegmentOk(lastSegmentUrl, effectiveReferer);
+  if (segmentUrls.length === 0) return false;
+  const lastSegmentUrl = segmentUrls[segmentUrls.length - 1];
+  const leadingKeptUrl = segmentUrls[Math.max(0, segmentUrls.length - 6)];
+
+  if (opts?.trustCachedHealth) {
+    // Trust freshly resolved stream immediately and verify asynchronously in background
+    void probeLiveEdgeSegmentOk(lastSegmentUrl, effectiveReferer).catch(() => {});
+    return true;
+  }
+
+  if (!leadingKeptUrl || leadingKeptUrl === lastSegmentUrl) {
+    return probeLiveEdgeSegmentOk(lastSegmentUrl, effectiveReferer);
+  }
+  const [leadingOk, edgeOk] = await Promise.all([
+    probeLiveEdgeSegmentOk(leadingKeptUrl, effectiveReferer),
+    probeLiveEdgeSegmentOk(lastSegmentUrl, effectiveReferer),
+  ]);
+  return leadingOk && edgeOk;
 }
 
 export function rewriteManifestForSamsungIptv(

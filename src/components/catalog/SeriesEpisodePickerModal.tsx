@@ -37,6 +37,8 @@ import { PosterImage } from '../ui/PosterImage';
 import { formatShortTime } from './catalogConstants';
 import { SeriesPickerHeader } from './SeriesPickerHeader';
 
+const prewarmedSeriesEpKeys = new Set<string>();
+
 interface SeriesEpisodePickerModalProps {
   lang: AppLanguage;
   selectedSeries: TvSeriesDetails | null;
@@ -171,6 +173,58 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
     loadingSeriesDetails,
     highlightedEpisodeNumber,
     initialScrollTop,
+    watchHistory,
+  ]);
+
+  // Pre-warm primary/resume episode extraction once when series episode sheet opens
+  useEffect(() => {
+    if (!selectedSeries || loadingSeriesDetails) return;
+    const episodes = selectedSeries.episodes || [];
+    if (!selectedSeries.tmdbId || episodes.length === 0) return;
+
+    const savedInSeason = watchHistory.find(
+      (h) =>
+        h.mediaType === 'tv' &&
+        h.tmdbId === selectedSeries.tmdbId &&
+        h.season === selectedSeries.activeSeason &&
+        Boolean(h.episode)
+    );
+    const targetEp =
+      highlightedEpisodeNumber ||
+      savedInSeason?.episode ||
+      episodes[0]?.episodeNumber ||
+      1;
+    const preKey = `tv|${selectedSeries.tmdbId}|${selectedSeries.activeSeason}|${targetEp}|${seriesModalLang}`;
+    if (prewarmedSeriesEpKeys.has(preKey)) return;
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => {
+      prewarmedSeriesEpKeys.add(preKey);
+      if (prewarmedSeriesEpKeys.size > 80) prewarmedSeriesEpKeys.clear();
+      const q = new URLSearchParams({
+        mediaType: 'tv',
+        tmdbId: String(selectedSeries.tmdbId),
+        season: String(selectedSeries.activeSeason),
+        episode: String(targetEp),
+        preferLang: seriesModalLang || 'ES',
+        title: selectedSeries.title || '',
+        prefetch: '1',
+      });
+      fetch(`/api/extract/stream?${q.toString()}`, {
+        signal: ctrl.signal,
+        priority: 'low' as RequestInit['priority'],
+      }).catch(() => {});
+    }, 320);
+
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [
+    selectedSeries,
+    loadingSeriesDetails,
+    highlightedEpisodeNumber,
+    seriesModalLang,
     watchHistory,
   ]);
 

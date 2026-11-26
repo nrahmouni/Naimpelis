@@ -644,6 +644,7 @@ export const DEDICATED_WORLD_ROUTES = new Set([
   'atresplayer',
   'movistar-dazn',
   'dazn-movistar',
+  'champions',
   'musica',
   'music',
   'catalogo-total',
@@ -710,7 +711,7 @@ export type AppRouteTarget =
   | { kind: 'room'; roomId: string; gameType?: string; isTvMode?: boolean }
   | {
       kind: 'world';
-      world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music' | 'providers' | 'reels';
+      world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'champions' | 'music' | 'providers' | 'reels';
       cineTab?: 'movies' | 'series';
       cineCastellano?: boolean;
       cineCategory?: string;
@@ -999,6 +1000,10 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
     return { kind: 'world', world: 'movistardazn', roomId: queryRoomId };
   }
 
+  if (seg0 === 'champions') {
+    return { kind: 'world', world: 'champions', roomId: queryRoomId };
+  }
+
   if (seg0 === 'catalogo-total' || seg0 === 'proveedores' || seg0 === 'providers') {
     return { kind: 'world', world: 'providers', roomId: queryRoomId };
   }
@@ -1055,7 +1060,7 @@ export function parseAppRoute(pathname: string, search = ''): AppRouteTarget {
 
 export type CanonicalLinkInput =
   | { kind: 'home' }
-  | { kind: 'world'; world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music' | 'providers' | 'reels'; cineTab?: 'movies' | 'series'; cineCategory?: string; futbolTab?: 'matches' | 'channels' }
+  | { kind: 'world'; world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'champions' | 'music' | 'providers' | 'reels'; cineTab?: 'movies' | 'series'; cineCategory?: string; futbolTab?: 'matches' | 'channels' }
   | { kind: 'movie'; tmdbId?: number; id?: string; title?: string }
   | { kind: 'series'; tmdbId?: number; id?: string; title?: string; season?: number; episode?: number }
   | { kind: 'channel'; id: string; name?: string }
@@ -1097,6 +1102,8 @@ export function buildCanonicalRoute(
         basePath = '/atresplayer';
       } else if (input.world === 'movistardazn') {
         basePath = '/movistar-dazn';
+      } else if (input.world === 'champions') {
+        basePath = '/champions';
       } else if (input.world === 'music') {
         basePath = '/musica';
       } else if (input.world === 'providers') {

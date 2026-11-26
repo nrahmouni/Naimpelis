@@ -1,5 +1,7 @@
+import dns from 'dns';
 import http from 'http';
 import https from 'https';
+import type { LookupAddress, LookupOneOptions, LookupAllOptions } from 'dns';
 import type { Readable } from 'stream';
 import zlib from 'zlib';
 import { fetch as undiciFetch, type RequestInit as UndiciRequestInit } from 'undici';
@@ -8,17 +10,60 @@ import { LruTtlCache } from './lruCache.ts';
 import { assertSafeProxyUrl } from './ssrfGuard.ts';
 import { getSpainProxyDispatcherForTarget } from '../services/spainVpnGatewayService.ts';
 
+const DNS_TTL_MS = 60_000;
+const dnsLookupCache = new LruTtlCache<string, LookupAddress[]>(300, DNS_TTL_MS);
+
+export function cachedDnsLookup(
+  hostname: string,
+  options: number | LookupOneOptions | LookupAllOptions | ((err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void),
+  callback?: (err: NodeJS.ErrnoException | null, address: string | LookupAddress[], family?: number) => void
+): void {
+  const cb = typeof options === 'function' ? options : callback;
+  if (!cb) return;
+  const opts = typeof options === 'function' ? {} : typeof options === 'number' ? { family: options } : options || {};
+  const wantAll = Boolean((opts as LookupAllOptions).all);
+  const reqFamily = Number(opts.family || 4) === 6 ? 6 : 4;
+  const cacheKey = `${hostname.toLowerCase()}|${reqFamily}`;
+  const cached = dnsLookupCache.get(cacheKey);
+  if (cached && cached.length > 0) {
+    queueMicrotask(() => {
+      if (wantAll) {
+        cb(null, cached);
+      } else {
+        cb(null, cached[0].address, cached[0].family);
+      }
+    });
+    return;
+  }
+
+  dns.lookup(hostname, { ...opts, all: true, family: reqFamily }, (err, addresses) => {
+    if (!err && Array.isArray(addresses) && addresses.length > 0) {
+      dnsLookupCache.set(cacheKey, addresses);
+      if (wantAll) {
+        cb(null, addresses);
+      } else {
+        cb(null, addresses[0].address, addresses[0].family);
+      }
+      return;
+    }
+    // Fallback to OS default lookup if family-specific lookup failed
+    dns.lookup(hostname, opts as LookupOneOptions, cb as never);
+  });
+}
+
 const tlsRelaxedAgent = new https.Agent({
   rejectUnauthorized: false,
   keepAlive: true,
   keepAliveMsecs: 15_000,
-  maxSockets: 48,
+  maxSockets: 64,
+  lookup: cachedDnsLookup as never,
 });
 
 const plainHttpAgent = new http.Agent({
   keepAlive: true,
   keepAliveMsecs: 15_000,
-  maxSockets: 48,
+  maxSockets: 64,
+  lookup: cachedDnsLookup as never,
 });
 
 const STREAMING_TLS_RELAX_PATTERNS = [
@@ -303,6 +348,7 @@ function relaxedHttpsRequest(
         method: options.method || 'GET',
         headers: options.headers,
         family: 4,
+        lookup: cachedDnsLookup as never,
         timeout: timeoutMs,
         agent: isHttps
           ? options.rejectUnauthorized === false

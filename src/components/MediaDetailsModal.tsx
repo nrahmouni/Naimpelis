@@ -23,6 +23,8 @@ import {
 
 export type MovieAudioLangPreference = 'ES' | 'LAT' | 'VOSE' | 'EN';
 
+const prewarmedMovieKeys = new Set<string>();
+
 interface MediaDetailsModalProps {
   item: CatalogMovie | null;
   lang: AppLanguage;
@@ -161,6 +163,48 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
       cancelled = true;
     };
   }, [item?.id, item?.tmdbId, item?.mediaType, item?.title, item?.movidyUrl, item?.gnulaUrl, item?.vestUrl, lang]);
+
+  // Pre-warm movie extraction in background after opening detail modal (300ms debounce, deduped)
+  useEffect(() => {
+    if (!item || loading) return;
+    const isSeriesMedia = (details?.mediaType || item.mediaType) === 'tv';
+    if (isSeriesMedia) return;
+    const resolvedTmdbId = item.tmdbId || details?.tmdbId;
+    if (!resolvedTmdbId && !item.movidyUrl && !item.gnulaUrl && !item.vestUrl && !item.bingetrixUrl) {
+      return;
+    }
+    const preKey = `m|${resolvedTmdbId || item.id}|${selectedAudioLang}`;
+    if (prewarmedMovieKeys.has(preKey)) return;
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => {
+      prewarmedMovieKeys.add(preKey);
+      if (prewarmedMovieKeys.size > 80) prewarmedMovieKeys.clear();
+      const params = new URLSearchParams({
+        mediaType: 'movie',
+        tmdbId: resolvedTmdbId ? String(resolvedTmdbId) : '',
+        url: item.bingetrixUrl || item.movidyUrl || item.gnulaUrl || item.vestUrl || '',
+        movidyUrl: item.movidyUrl || '',
+        gnulaUrl: item.gnulaUrl || '',
+        vestUrl: item.vestUrl || '',
+        preferLang: selectedAudioLang,
+        title: item.title || details?.title || '',
+        ...(item.originalTitle || details?.originalTitle
+          ? { origTitle: item.originalTitle || details?.originalTitle || '' }
+          : {}),
+        prefetch: '1',
+      });
+      fetch(`/api/extract/stream?${params.toString()}`, {
+        signal: ctrl.signal,
+        priority: 'low' as RequestInit['priority'],
+      }).catch(() => {});
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      ctrl.abort();
+    };
+  }, [item, details, loading, selectedAudioLang]);
 
   const handleForceSpanishSearch = useCallback(async () => {
     if (!item || forcingSpanish) return;

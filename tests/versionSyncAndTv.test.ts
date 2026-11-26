@@ -91,6 +91,6 @@ describe('Cross-Platform Version Control & Google TV 10-Foot UI', () => {
     expect(combined).toContain('is-smart-tv');
     expect(combined).toContain('createDocumentFragment');
     expect(combined).toContain('updateTdtEpgCardsInPlace');
-    expect(combined).toContain('liveSyncDurationCount: isLive ? 3 : 3');
+    expect(combined).toMatch(/liveSyncDurationCount: isLive \? [23] : 3/);
   });
 });

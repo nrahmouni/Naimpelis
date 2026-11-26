@@ -328,6 +328,7 @@ export function serializeRoomForClient(
   const { pinCode, ...safeRoom } = room;
   return {
     ...safeRoom,
+    messages: Array.isArray(room.messages) ? room.messages.slice(-40) : [],
     pinturilloState: redactPinturilloForUser(room.pinturilloState ?? null, viewerUserId),
     pokerGameState: redactPokerStateForUser(room.pokerGameState ?? null, viewerUserId),
     blackjackState: redactBlackjackState(room.blackjackState ?? null),

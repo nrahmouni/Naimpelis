@@ -24,6 +24,10 @@ import {
   toProxiedEmbedUrl,
   verifyWebEmbedCandidateAlive,
 } from '../../services/streamExtractFallback.ts';
+import { normalizeTrackLangCode } from '../../services/trackRankingService.ts';
+import { LruTtlCache } from '../../utils/lruCache.ts';
+
+const deadTrackUrlCache = new LruTtlCache<string, true>(500, 3 * 60 * 1000);
 
 export interface SubtitleCandidateRecord {
   id?: string;
@@ -155,10 +159,14 @@ export async function resolveOrderedCandidateTracks(opts: {
     idx: number,
     candidate: TrackRecord
   ): Promise<{ streamUrl: string; mode: 'hls' | 'direct'; track: TrackRecord } | null> => {
+    if (candidate.sourceUrl && deadTrackUrlCache.get(candidate.sourceUrl)) {
+      deadTrackIndices.add(idx);
+      return null;
+    }
     if (candidate.resolverType === 'movidy_embed') {
       const resolvedMv = await withExtractTimeout(
         resolveMovidyEmbedTrack(candidate.sourceUrl),
-        2400,
+        2000,
         null
       );
       if (resolvedMv?.mode === 'hls') {
@@ -178,16 +186,18 @@ export async function resolveOrderedCandidateTracks(opts: {
         });
         return null;
       }
+      if (candidate.sourceUrl) deadTrackUrlCache.set(candidate.sourceUrl, true);
       deadTrackIndices.add(idx);
       return null;
     }
 
     if (candidate.resolverType === 'vidhide_hls') {
-      const unpacked = await withExtractTimeout(unpackVidhideToHls(candidate.sourceUrl), 2500, null);
+      const unpacked = await withExtractTimeout(unpackVidhideToHls(candidate.sourceUrl), 2100, null);
       if (unpacked) {
         orderedTracks[idx] = { ...candidate, resolvedStreamUrl: unpacked.proxyUrl };
         return { streamUrl: unpacked.proxyUrl, mode: 'hls', track: orderedTracks[idx] };
       }
+      if (candidate.sourceUrl) deadTrackUrlCache.set(candidate.sourceUrl, true);
       deadTrackIndices.add(idx);
       return null;
     }
@@ -195,7 +205,7 @@ export async function resolveOrderedCandidateTracks(opts: {
     if (candidate.resolverType === 'embed_sniff') {
       const sniffed = await withExtractTimeout(
         sniffStreamWithHeadless(candidate.sourceUrl),
-        3000,
+        2500,
         null
       );
       if (sniffed) {
@@ -209,6 +219,7 @@ export async function resolveOrderedCandidateTracks(opts: {
           track: orderedTracks[idx],
         };
       }
+      if (candidate.sourceUrl) deadTrackUrlCache.set(candidate.sourceUrl, true);
       deadTrackIndices.add(idx);
       return null;
     }
@@ -216,7 +227,7 @@ export async function resolveOrderedCandidateTracks(opts: {
     return null;
   };
 
-  const NATIVE_PROBE_WAVE_SIZE = 5;
+  const NATIVE_PROBE_WAVE_SIZE = 8;
 
   // Pass 1: Exhaust ALL native HLS/MP4 tracks across every language tier BEFORE ever accepting a web_embed
   for (const tierScore of tierScores) {
@@ -277,18 +288,35 @@ export async function resolveOrderedCandidateTracks(opts: {
         sourcePriority(a.track) - sourcePriority(b.track) ||
         getTrackHealthScore(a.track) - getTrackHealthScore(b.track)
     );
-    for (const cand of allWebEmbedCandidates) {
-      const alive = await verifyWebEmbedCandidateAlive(cand.track, cand.url);
-      if (!alive) {
-        deadTrackIndices.add(cand.idx);
-        continue;
+    const EMBED_BATCH_SIZE = 4;
+    for (let i = 0; i < allWebEmbedCandidates.length; i += EMBED_BATCH_SIZE) {
+      const batch = allWebEmbedCandidates.slice(i, i + EMBED_BATCH_SIZE);
+      const checks = await Promise.all(
+        batch.map(async (cand) => ({
+          cand,
+          alive: deadTrackUrlCache.get(cand.url)
+            ? false
+            : await verifyWebEmbedCandidateAlive(cand.track, cand.url).catch(() => false),
+        }))
+      );
+      const firstAlive = checks.find((c) => c.alive);
+      for (const c of checks) {
+        if (!c.alive) {
+          deadTrackUrlCache.set(c.cand.url, true);
+          deadTrackIndices.add(c.cand.idx);
+        }
       }
-      const proxiedWeb = toProxiedEmbedUrl(cand.url, isSandboxedFrame);
-      orderedTracks[cand.idx] = { ...cand.track, resolvedStreamUrl: proxiedWeb };
-      primaryStreamUrl = proxiedWeb;
-      primaryMode = 'embed';
-      resolvedTrack = orderedTracks[cand.idx];
-      break;
+      if (firstAlive) {
+        const proxiedWeb = toProxiedEmbedUrl(firstAlive.cand.url, isSandboxedFrame);
+        orderedTracks[firstAlive.cand.idx] = {
+          ...firstAlive.cand.track,
+          resolvedStreamUrl: proxiedWeb,
+        };
+        primaryStreamUrl = proxiedWeb;
+        primaryMode = 'embed';
+        resolvedTrack = orderedTracks[firstAlive.cand.idx];
+        break;
+      }
     }
   }
 
@@ -297,7 +325,7 @@ export async function resolveOrderedCandidateTracks(opts: {
   const langsWithNativeTracks = new Set(
     orderedTracks
       .filter((tr, idx) => !deadTrackIndices.has(idx) && tr.resolverType !== 'web_embed')
-      .map((tr) => String(tr.lang || '').toUpperCase())
+      .map((tr) => normalizeTrackLangCode(tr.lang))
   );
   const validTracks = orderedTracks.filter(
     (tr, idx) =>
@@ -305,7 +333,7 @@ export async function resolveOrderedCandidateTracks(opts: {
       (!directOnly || tr.resolverType !== 'web_embed') &&
       (primaryMode === 'embed' ||
         tr.resolverType !== 'web_embed' ||
-        !langsWithNativeTracks.has(String(tr.lang || '').toUpperCase()))
+        !langsWithNativeTracks.has(normalizeTrackLangCode(tr.lang)))
   );
 
   return {
@@ -339,16 +367,17 @@ export async function buildResolvedCatalogStreamResult(opts: {
   subtitlesPromise: Promise<SubtitleCandidateRecord[]>;
 }): Promise<ExtractedStreamResult> {
   const { primaryStreamUrl, primaryMode, resolvedTrack, validTracks } = opts.resolvedSelection;
-  const resolvedLang = String(resolvedTrack?.lang || opts.preferLang).toUpperCase();
+  const requestedNormLang = normalizeTrackLangCode(opts.preferLang);
+  const resolvedLang = normalizeTrackLangCode(resolvedTrack?.lang || opts.preferLang);
   const resolvedLabel = resolvedTrack?.label || opts.preferLang;
   const availableLanguages = Array.from(
-    new Set(validTracks.map((t) => String(t.lang || '').toUpperCase()).filter(Boolean))
+    new Set(validTracks.map((t) => normalizeTrackLangCode(t.lang)).filter(Boolean))
   );
   const languageFallbackUsed =
-    (opts.preferLang === 'ES' && resolvedLang !== 'ES') ||
-    (opts.preferLang === 'LAT' && resolvedLang !== 'LAT') ||
-    (opts.preferLang === 'VOSE' && resolvedLang !== 'VOSE') ||
-    (opts.preferLang === 'EN' && resolvedLang !== 'EN');
+    (requestedNormLang === 'ES' && resolvedLang !== 'ES') ||
+    (requestedNormLang === 'LAT' && resolvedLang !== 'LAT') ||
+    (requestedNormLang === 'VOSE' && resolvedLang !== 'VOSE') ||
+    (requestedNormLang === 'EN' && resolvedLang !== 'EN');
 
   const baseCleanTitle =
     opts.extractedMovidyCleanTitle || opts.extractedGnulaCleanTitle || opts.tmdbResolvedTitle;
@@ -372,11 +401,9 @@ export async function buildResolvedCatalogStreamResult(opts: {
     ...opts.clipboxSubtitles,
     ...opts.ghostflixSubtitles,
   ];
-  if (rawMergedSubs.length === 0 && (opts.resolvedTmdbId || baseCleanTitle || opts.titleHint)) {
-    const searchedSubs = await withExtractTimeout(opts.subtitlesPromise, 650, [] as SubtitleCandidateRecord[]);
-    rawMergedSubs.push(...searchedSubs);
-  } else if (opts.resolvedTmdbId) {
-    const searchedSubs = await withExtractTimeout(opts.subtitlesPromise, 250, [] as SubtitleCandidateRecord[]);
+  // Client player already fetches /api/subtitles/search asynchronously; only collect already-warm subtitles (<40ms)
+  if (opts.resolvedTmdbId || baseCleanTitle || opts.titleHint) {
+    const searchedSubs = await withExtractTimeout(opts.subtitlesPromise, 40, [] as SubtitleCandidateRecord[]);
     rawMergedSubs.push(...searchedSubs);
   }
   const seenSubUrls = new Set<string>();

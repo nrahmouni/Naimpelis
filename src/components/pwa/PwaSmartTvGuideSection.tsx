@@ -101,20 +101,24 @@ export const PwaSmartTvGuideSection: React.FC<PwaSmartTvGuideSectionProps> = ({
     return candidates.filter((item) => item.id === 'all' || (counts[item.id] || 0) > 0);
   }, [dynamicChannels]);
 
+  const indexedDynamicChannels = useMemo(() => {
+    return dynamicChannels.map((c) => ({
+      c,
+      searchBlob: `${c.name} ${c.groupTitle || ''} ${c.shortMark || ''} ${c.dial}`.toLowerCase(),
+    }));
+  }, [dynamicChannels]);
+
   const filteredChannels = useMemo(() => {
     const q = channelSearch.trim().toLowerCase();
-    return dynamicChannels.filter((c) => {
-      const matchCat = selectedCategory === 'all' || c.category === selectedCategory;
-      if (!matchCat) return false;
-      if (!q) return true;
-      return (
-        c.name.toLowerCase().includes(q) ||
-        (c.groupTitle && c.groupTitle.toLowerCase().includes(q)) ||
-        (c.shortMark && c.shortMark.toLowerCase().includes(q)) ||
-        String(c.dial).includes(q)
-      );
-    });
-  }, [dynamicChannels, selectedCategory, channelSearch]);
+    const out: typeof dynamicChannels = [];
+    for (const entry of indexedDynamicChannels) {
+      const { c, searchBlob } = entry;
+      if (selectedCategory !== 'all' && c.category !== selectedCategory) continue;
+      if (q && !searchBlob.includes(q)) continue;
+      out.push(c);
+    }
+    return out;
+  }, [indexedDynamicChannels, selectedCategory, channelSearch]);
 
   const displayedChannels = channelSearch.trim()
     ? filteredChannels

@@ -142,8 +142,8 @@ const httpServer = createServer(app);
 const wss = new WebSocketServer({
   noServer: true,
   perMessageDeflate: {
-    zlibDeflateOptions: { level: 6 },
-    threshold: 1024,
+    zlibDeflateOptions: { level: 1 },
+    threshold: 4096,
   },
 });
 

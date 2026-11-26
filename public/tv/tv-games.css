@@ -1,855 +1,747 @@
-/* =================================================================== */
-/* SMART TV GAMES HUB, KIDS HERO BANNER & FULL-SCREEN GAME ARENA       */
-/* ZERO GLASS BLUR FOR HARDWARE COMPOSITING ON TIZEN & GOOGLE TV      */
-/* =================================================================== */
-
 .tv-kids-hero-banner {
-  position: relative;
-  display: -webkit-flex;
-  display: flex;
-  -webkit-align-items: center;
-  align-items: center;
-  -webkit-justify-content: space-between;
-  justify-content: space-between;
-  padding: 24px 28px;
-  border-radius: 22px;
-  border: 2px solid rgba(56, 189, 248, 0.42);
-  background: linear-gradient(135deg, #0b2239 0%, #151435 55%, #1d1035 100%);
-  margin-bottom: 24px;
+position: relative;
+display: -webkit-flex;
+display: flex;
+-webkit-align-items: center;
+align-items: center;
+-webkit-justify-content: space-between;
+justify-content: space-between;
+padding: 24px 28px;
+border-radius: 22px;
+border: 2px solid rgba(56, 189, 248, 0.42);
+background: linear-gradient(135deg, #0b2239 0%, #151435 55%, #1d1035 100%);
+margin-bottom: 24px;
 }
-
 .tv-kids-hero-copy {
-  max-width: 72%;
+max-width: 72%;
 }
-
 .tv-kids-pill {
-  display: inline-block;
-  padding: 5px 12px;
-  border-radius: 999px;
-  background: #0284c7;
-  color: #ffffff;
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  margin-bottom: 10px;
+display: inline-block;
+padding: 5px 12px;
+border-radius: 999px;
+background: #0284c7;
+color: #ffffff;
+font-size: 12px;
+font-weight: 900;
+letter-spacing: 0.08em;
+text-transform: uppercase;
+margin-bottom: 10px;
 }
-
 .tv-kids-title {
-  font-size: 28px;
-  font-weight: 900;
-  color: #ffffff;
-  letter-spacing: -0.02em;
-  margin-bottom: 6px;
+font-size: 28px;
+font-weight: 900;
+color: #ffffff;
+letter-spacing: -0.02em;
+margin-bottom: 6px;
 }
-
 .tv-kids-sub {
-  font-size: 15px;
-  font-weight: 600;
-  color: #bae6fd;
-  line-height: 1.45;
+font-size: 15px;
+font-weight: 600;
+color: #bae6fd;
+line-height: 1.45;
 }
-
 .tv-kids-actions {
-  display: -webkit-flex;
-  display: flex;
-  -webkit-align-items: center;
-  align-items: center;
+display: -webkit-flex;
+display: flex;
+-webkit-align-items: center;
+align-items: center;
 }
-
 .tv-kids-actions > * {
-  margin-left: 10px;
+margin-left: 10px;
 }
-
-/* Games Catalog View */
 .tv-games-hero {
-  padding: 22px 26px;
-  border-radius: 20px;
-  border: 1.5px solid rgba(167, 139, 250, 0.35);
-  background: linear-gradient(135deg, #130f2b 0%, #0b1426 65%, #07191f 100%);
-  margin-bottom: 22px;
-  display: -webkit-flex;
-  display: flex;
-  -webkit-align-items: center;
-  align-items: center;
-  -webkit-justify-content: space-between;
-  justify-content: space-between;
+padding: 22px 26px;
+border-radius: 20px;
+border: 1.5px solid rgba(167, 139, 250, 0.35);
+background: linear-gradient(135deg, #130f2b 0%, #0b1426 65%, #07191f 100%);
+margin-bottom: 22px;
+display: -webkit-flex;
+display: flex;
+-webkit-align-items: center;
+align-items: center;
+-webkit-justify-content: space-between;
+justify-content: space-between;
 }
-
 .tv-games-hero-title {
-  font-size: 27px;
-  font-weight: 900;
-  color: #ffffff;
-  margin-bottom: 5px;
+font-size: 27px;
+font-weight: 900;
+color: #ffffff;
+margin-bottom: 5px;
 }
-
 .tv-games-hero-sub {
-  font-size: 15px;
-  font-weight: 600;
-  color: #cbd5e1;
+font-size: 15px;
+font-weight: 600;
+color: #cbd5e1;
 }
-
 .tv-games-grid {
-  display: -webkit-flex;
-  display: flex;
-  -webkit-flex-wrap: wrap;
-  flex-wrap: wrap;
-  padding: 6px 2px 28px 2px;
+display: -webkit-flex;
+display: flex;
+-webkit-flex-wrap: wrap;
+flex-wrap: wrap;
+padding: 6px 2px 28px 2px;
 }
-
 .tv-game-card {
-  width: 31.5%;
-  min-width: 280px;
-  margin: 0 1.7% 18px 0;
-  padding: 0;
-  border-radius: 20px;
-  border: 2px solid rgba(255, 255, 255, 0.14);
-  background: #0e121f;
-  color: #f8fafc;
-  text-align: left;
-  overflow: hidden;
-  cursor: pointer;
-  display: -webkit-flex;
-  display: flex;
-  -webkit-flex-direction: column;
-  flex-direction: column;
+width: 31.5%;
+min-width: 280px;
+margin: 0 1.7% 18px 0;
+padding: 0;
+border-radius: 20px;
+border: 2px solid rgba(255, 255, 255, 0.14);
+background: #0e121f;
+color: #f8fafc;
+text-align: left;
+overflow: hidden;
+cursor: pointer;
+display: -webkit-flex;
+display: flex;
+-webkit-flex-direction: column;
+flex-direction: column;
 }
-
 .tv-game-card:focus,
 .tv-game-card:hover {
-  border-color: #ffffff;
-  background: #171d32;
+border-color: #ffffff;
+background: #171d32;
 }
-
 .tv-game-card-stage {
-  height: 162px;
-  padding: 18px;
-  display: -webkit-flex;
-  display: flex;
-  -webkit-flex-direction: column;
-  flex-direction: column;
-  -webkit-justify-content: space-between;
-  justify-content: space-between;
+height: 162px;
+padding: 18px;
+display: -webkit-flex;
+display: flex;
+-webkit-flex-direction: column;
+flex-direction: column;
+-webkit-justify-content: space-between;
+justify-content: space-between;
 }
-
 .tv-game-card-stage.racing {
-  background: linear-gradient(135deg, #5b21b6 0%, #0f172a 65%, #083344 100%);
+background: linear-gradient(135deg, #5b21b6 0%, #0f172a 65%, #083344 100%);
 }
-
 .tv-game-card-stage.penalty {
-  background: linear-gradient(135deg, #065f46 0%, #064e3b 50%, #091526 100%);
+background: linear-gradient(135deg, #065f46 0%, #064e3b 50%, #091526 100%);
 }
-
 .tv-game-card-stage.soccer {
-  background: linear-gradient(135deg, #9a3412 0%, #431407 52%, #0f172a 100%);
+background: linear-gradient(135deg, #9a3412 0%, #431407 52%, #0f172a 100%);
 }
-
 .tv-game-card-stage.hockey {
-  background: linear-gradient(135deg, #0c4a6e 0%, #3b0764 55%, #050814 100%);
+background: linear-gradient(135deg, #0c4a6e 0%, #3b0764 55%, #050814 100%);
 }
-
 .tv-game-card-stage.pingpong {
-  background: linear-gradient(135deg, #083344 0%, #0e7490 52%, #050814 100%);
+background: linear-gradient(135deg, #083344 0%, #0e7490 52%, #050814 100%);
 }
-
 .tv-game-card-stage.soccerpong {
-  background: linear-gradient(135deg, #15803d 0%, #065f46 58%, #0f172a 100%);
+background: linear-gradient(135deg, #15803d 0%, #065f46 58%, #0f172a 100%);
 }
-
 .tv-game-card-stage.space {
-  background: linear-gradient(135deg, #312e81 0%, #701a75 52%, #050713 100%);
+background: linear-gradient(135deg, #312e81 0%, #701a75 52%, #050713 100%);
 }
-
 .tv-game-card-stage.tetris {
-  background: linear-gradient(135deg, #1e1b4b 0%, #0e7490 55%, #070b14 100%);
+background: linear-gradient(135deg, #1e1b4b 0%, #0e7490 55%, #070b14 100%);
 }
-
 .tv-game-card-stage.hextris {
-  background: linear-gradient(135deg, #3b0764 0%, #1d4ed8 55%, #060913 100%);
+background: linear-gradient(135deg, #3b0764 0%, #1d4ed8 55%, #060913 100%);
 }
-
 .tv-game-card-stage.game2048 {
-  background: linear-gradient(135deg, #78350f 0%, #b45309 50%, #0f172a 100%);
+background: linear-gradient(135deg, #78350f 0%, #b45309 50%, #0f172a 100%);
 }
-
 .tv-game-card-stage.pacman {
-  background: linear-gradient(135deg, #172554 0%, #1e3a8a 52%, #060913 100%);
+background: linear-gradient(135deg, #172554 0%, #1e3a8a 52%, #060913 100%);
 }
-
 .tv-game-card-stage.bomberman {
-  background: linear-gradient(135deg, #14532d 0%, #9a3412 56%, #070b14 100%);
+background: linear-gradient(135deg, #14532d 0%, #9a3412 56%, #070b14 100%);
 }
-
 .tv-game-card-stage.flappy {
-  background: linear-gradient(135deg, #0369a1 0%, #15803d 65%, #071320 100%);
+background: linear-gradient(135deg, #0369a1 0%, #15803d 65%, #071320 100%);
 }
-
 .tv-game-card-stage.arkanoid {
-  background: linear-gradient(135deg, #4c1d95 0%, #be123c 55%, #070a15 100%);
+background: linear-gradient(135deg, #4c1d95 0%, #be123c 55%, #070a15 100%);
 }
-
 .tv-game-card-stage.invaders {
-  background: linear-gradient(135deg, #0f172a 0%, #312e81 55%, #04060d 100%);
+background: linear-gradient(135deg, #0f172a 0%, #312e81 55%, #04060d 100%);
 }
-
 .tv-game-card-stage.hexgl {
-  background: linear-gradient(135deg, #43187a 0%, #0284c7 58%, #040212 100%);
+background: linear-gradient(135deg, #43187a 0%, #0284c7 58%, #040212 100%);
 }
-
 .tv-game-card-stage.tvtrivia {
-  background: linear-gradient(135deg, #6d28d9 0%, #1e3a8a 58%, #090e1c 100%);
+background: linear-gradient(135deg, #6d28d9 0%, #1e3a8a 58%, #090e1c 100%);
 }
-
 .tv-game-card-stage.bowling {
-  background: linear-gradient(135deg, #0c1938 0%, #1e1b4b 60%, #050814 100%);
+background: linear-gradient(135deg, #0c1938 0%, #1e1b4b 60%, #050814 100%);
 }
-
 .tv-game-card-stage.tennis {
-  background: linear-gradient(135deg, #064e3b 0%, #0f172a 60%, #042f2e 100%);
+background: linear-gradient(135deg, #064e3b 0%, #0f172a 60%, #042f2e 100%);
 }
-
 .tv-game-card-stage.labyrinth {
-  background: linear-gradient(135deg, #451a03 0%, #78350f 55%, #090d16 100%);
+background: linear-gradient(135deg, #451a03 0%, #78350f 55%, #090d16 100%);
 }
-
 .tv-game-badge-row {
-  display: -webkit-flex;
-  display: flex;
-  -webkit-align-items: center;
-  align-items: center;
-  -webkit-justify-content: space-between;
-  justify-content: space-between;
+display: -webkit-flex;
+display: flex;
+-webkit-align-items: center;
+align-items: center;
+-webkit-justify-content: space-between;
+justify-content: space-between;
 }
-
 .tv-game-badge {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: 8px;
-  background: rgba(6, 9, 18, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  color: #e2e8f0;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+display: inline-block;
+padding: 4px 10px;
+border-radius: 8px;
+background: rgba(6, 9, 18, 0.85);
+border: 1px solid rgba(255, 255, 255, 0.22);
+color: #e2e8f0;
+font-size: 11px;
+font-weight: 900;
+letter-spacing: 0.06em;
+text-transform: uppercase;
 }
-
 .tv-game-icon-big {
-  height: 92px;
-  width: 100%;
-  display: -webkit-flex;
-  display: flex;
-  -webkit-align-items: center;
-  align-items: center;
-  -webkit-justify-content: flex-end;
-  justify-content: flex-end;
+height: 92px;
+width: 100%;
+display: -webkit-flex;
+display: flex;
+-webkit-align-items: center;
+align-items: center;
+-webkit-justify-content: flex-end;
+justify-content: flex-end;
 }
-
 .tv-game-icon-big svg,
 .tv-game-icon-big img {
-  width: 100%;
-  height: 100%;
-  display: block;
+width: 100%;
+height: 100%;
+display: block;
 }
-
 .tv-game-icon-big img {
-  object-fit: cover;
-  border-radius: 10px;
+object-fit: cover;
+border-radius: 10px;
 }
-
 .tv-game-card-body {
-  padding: 16px 18px 18px 18px;
+padding: 16px 18px 18px 18px;
 }
-
 .tv-game-card-title {
-  font-size: 19px;
-  font-weight: 900;
-  color: #ffffff;
-  margin-bottom: 6px;
+font-size: 19px;
+font-weight: 900;
+color: #ffffff;
+margin-bottom: 6px;
 }
-
 .tv-game-card-desc {
-  font-size: 13px;
-  font-weight: 600;
-  color: #94a3b8;
-  line-height: 1.42;
-  margin-bottom: 12px;
+font-size: 13px;
+font-weight: 600;
+color: #94a3b8;
+line-height: 1.42;
+margin-bottom: 12px;
 }
-
 .tv-game-card-cta {
-  display: inline-block;
-  padding: 6px 14px;
-  border-radius: 10px;
-  background: #7c3aed;
-  color: #ffffff;
-  font-size: 13px;
-  font-weight: 800;
+display: inline-block;
+padding: 6px 14px;
+border-radius: 10px;
+background: #7c3aed;
+color: #ffffff;
+font-size: 13px;
+font-weight: 800;
 }
-
-/* Full-Screen Game Overlay */
 #tv-games-screen {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  width: 100%;
-  height: 100%;
-  background: #060912;
-  z-index: 95;
-  display: none;
-  -webkit-flex-direction: column;
-  flex-direction: column;
+position: fixed;
+top: 0;
+left: 0;
+right: 0;
+bottom: 0;
+width: 100%;
+height: 100%;
+background: #060912;
+z-index: 95;
+display: none;
+-webkit-flex-direction: column;
+flex-direction: column;
 }
-
 .tv-game-topbar {
-  min-height: 62px;
-  padding: 6px 28px;
-  background: #0b0f1c;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  display: -webkit-flex;
-  display: flex;
-  -webkit-align-items: center;
-  align-items: center;
-  -webkit-justify-content: space-between;
-  justify-content: space-between;
-  -webkit-flex-shrink: 0;
-  flex-shrink: 0;
-  width: 100%;
-  max-width: 100%;
-  overflow: hidden;
+min-height: 62px;
+padding: 6px 28px;
+background: #0b0f1c;
+border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+display: -webkit-flex;
+display: flex;
+-webkit-align-items: center;
+align-items: center;
+-webkit-justify-content: space-between;
+justify-content: space-between;
+-webkit-flex-shrink: 0;
+flex-shrink: 0;
+width: 100%;
+max-width: 100%;
+overflow: hidden;
 }
-
 .tv-game-top-left,
 .tv-game-top-right {
-  display: -webkit-flex;
-  display: flex;
-  -webkit-align-items: center;
-  align-items: center;
-  min-width: 0;
+display: -webkit-flex;
+display: flex;
+-webkit-align-items: center;
+align-items: center;
+min-width: 0;
 }
-
 .tv-game-top-left > *,
 .tv-game-top-right > * {
-  margin-right: 10px;
+margin-right: 10px;
 }
-
 .tv-game-top-left > *:last-child,
 .tv-game-top-right > *:last-child {
-  margin-right: 0;
+margin-right: 0;
 }
-
 .tv-game-top-title {
-  font-size: 19px;
-  font-weight: 900;
-  color: #ffffff;
-  white-space: nowrap;
+font-size: 19px;
+font-weight: 900;
+color: #ffffff;
+white-space: nowrap;
 }
-
 .tv-game-hud-pill {
-  padding: 6px 12px;
-  border-radius: 10px;
-  background: #141b2e;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: #f1f5f9;
-  font-size: 13px;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  max-width: 240px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+padding: 6px 12px;
+border-radius: 10px;
+background: #141b2e;
+border: 1px solid rgba(255, 255, 255, 0.16);
+color: #f1f5f9;
+font-size: 13px;
+font-weight: 800;
+font-variant-numeric: tabular-nums;
+white-space: nowrap;
+max-width: 240px;
+overflow: hidden;
+text-overflow: ellipsis;
 }
-
 .tv-game-hud-pill.accent-green {
-  background: #064e3b;
-  border-color: #34d399;
-  color: #ecfdf5;
+background: #064e3b;
+border-color: #34d399;
+color: #ecfdf5;
 }
-
 .tv-game-hud-pill.accent-purple {
-  background: #3b1d7a;
-  border-color: #a78bfa;
-  color: #ffffff;
+background: #3b1d7a;
+border-color: #a78bfa;
+color: #ffffff;
 }
-
 .tv-game-arena {
-  position: relative;
-  -webkit-flex: 1;
-  flex: 1;
-  min-height: 0;
-  width: 100%;
-  overflow: hidden;
-  display: -webkit-flex;
-  display: flex;
-  -webkit-align-items: center;
-  align-items: center;
-  -webkit-justify-content: center;
-  justify-content: center;
-  background: #050811;
+position: relative;
+-webkit-flex: 1;
+flex: 1;
+min-height: 0;
+width: 100%;
+overflow: hidden;
+display: -webkit-flex;
+display: flex;
+-webkit-align-items: center;
+align-items: center;
+-webkit-justify-content: center;
+justify-content: center;
+background: #050811;
 }
-
 .tv-game-canvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  max-width: none;
-  max-height: none;
-  object-fit: fill;
+display: block;
+width: 100%;
+height: 100%;
+max-width: none;
+max-height: none;
+object-fit: fill;
 }
-
 .tv-3d-stage,
 .tv-racing-stage {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: #050811;
-  z-index: 1;
+position: absolute;
+top: 0;
+right: 0;
+bottom: 0;
+left: 0;
+width: 100%;
+height: 100%;
+background: #050811;
+z-index: 1;
 }
-
 .tv-3d-stage canvas,
 .tv-racing-stage canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
+width: 100%;
+height: 100%;
+display: block;
 }
-
 .tv-race-garage-bar {
-  position: absolute;
-  top: 14px;
-  left: 20px;
-  right: 20px;
-  padding: 10px 14px;
-  border-radius: 16px;
-  background: #0b1020;
-  border: 2px solid #22d3ee;
-  z-index: 9;
-  display: none;
-  -webkit-flex-wrap: wrap;
-  flex-wrap: wrap;
-  -webkit-align-items: center;
-  align-items: center;
-  gap: 8px;
+position: absolute;
+top: 14px;
+left: 20px;
+right: 20px;
+padding: 10px 14px;
+border-radius: 16px;
+background: #0b1020;
+border: 2px solid #22d3ee;
+z-index: 9;
+display: none;
+-webkit-flex-wrap: wrap;
+flex-wrap: wrap;
+-webkit-align-items: center;
+align-items: center;
+gap: 8px;
 }
-
 .tv-race-garage-title {
-  font-size: 13px;
-  font-weight: 900;
-  color: #38bdf8;
-  margin-right: 6px;
-  white-space: nowrap;
+font-size: 13px;
+font-weight: 900;
+color: #38bdf8;
+margin-right: 6px;
+white-space: nowrap;
 }
-
 .tv-race-car-pill {
-  display: -webkit-inline-flex;
-  display: inline-flex;
-  -webkit-align-items: center;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 12px;
-  border-radius: 11px;
-  background: #141c33;
-  border: 2px solid rgba(148, 163, 184, 0.35);
-  color: #e2e8f0;
-  font-size: 13px;
-  font-weight: 800;
-  cursor: pointer;
+display: -webkit-inline-flex;
+display: inline-flex;
+-webkit-align-items: center;
+align-items: center;
+gap: 8px;
+padding: 7px 12px;
+border-radius: 11px;
+background: #141c33;
+border: 2px solid rgba(148, 163, 184, 0.35);
+color: #e2e8f0;
+font-size: 13px;
+font-weight: 800;
+cursor: pointer;
 }
-
 .tv-race-car-pill.active,
 .tv-race-car-pill:focus {
-  background: #23184d;
-  border-color: #22d3ee;
-  color: #ffffff;
+background: #23184d;
+border-color: #22d3ee;
+color: #ffffff;
 }
-
 .tv-race-car-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  display: inline-block;
-  border: 1px solid #ffffff;
+width: 12px;
+height: 12px;
+border-radius: 999px;
+display: inline-block;
+border: 1px solid #ffffff;
 }
-
 .tv-game-qr-card {
-  position: absolute;
-  top: 18px;
-  right: 18px;
-  width: 222px;
-  padding: 12px;
-  border-radius: 16px;
-  background: rgba(9, 13, 24, 0.94);
-  border: 2px solid rgba(167, 139, 250, 0.52);
-  color: #f8fafc;
-  z-index: 6;
-  text-align: center;
+position: absolute;
+top: 18px;
+right: 18px;
+width: 222px;
+padding: 12px;
+border-radius: 16px;
+background: rgba(9, 13, 24, 0.94);
+border: 2px solid rgba(167, 139, 250, 0.52);
+color: #f8fafc;
+z-index: 6;
+text-align: center;
 }
-
 .tv-game-qr-box {
-  width: 144px;
-  height: 144px;
-  margin: 8px auto;
-  padding: 6px;
-  border-radius: 10px;
-  background: #ffffff;
+width: 144px;
+height: 144px;
+margin: 8px auto;
+padding: 6px;
+border-radius: 10px;
+background: #ffffff;
 }
-
 .tv-game-qr-box svg {
-  display: block;
-  width: 100%;
-  height: 100%;
+display: block;
+width: 100%;
+height: 100%;
 }
-
 .tv-game-qr-title {
-  font-size: 13px;
-  font-weight: 900;
-  color: #ffffff;
+font-size: 13px;
+font-weight: 900;
+color: #ffffff;
 }
-
 .tv-game-qr-code {
-  font-size: 13px;
-  font-weight: 800;
-  color: #38bdf8;
-  margin-top: 4px;
+font-size: 13px;
+font-weight: 800;
+color: #38bdf8;
+margin-top: 4px;
 }
-
 .tv-racing-telemetry-bar {
-  position: absolute;
-  left: 26px;
-  bottom: 18px;
-  max-width: calc(100% - 52px);
-  padding: 10px 16px;
-  border-radius: 16px;
-  background: rgba(8, 12, 22, 0.9);
-  border: 1.5px solid rgba(255, 255, 255, 0.18);
-  display: -webkit-flex;
-  display: flex;
-  -webkit-align-items: center;
-  align-items: center;
-  z-index: 6;
+position: absolute;
+left: 26px;
+bottom: 18px;
+max-width: calc(100% - 52px);
+padding: 10px 16px;
+border-radius: 16px;
+background: rgba(8, 12, 22, 0.9);
+border: 1.5px solid rgba(255, 255, 255, 0.18);
+display: -webkit-flex;
+display: flex;
+-webkit-align-items: center;
+align-items: center;
+z-index: 6;
 }
-
 .tv-racing-stat {
-  margin-right: 18px;
+margin-right: 18px;
 }
-
 .tv-racing-stat-lbl {
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  color: #94a3b8;
-  text-transform: uppercase;
+font-size: 10px;
+font-weight: 800;
+letter-spacing: 0.08em;
+color: #94a3b8;
+text-transform: uppercase;
 }
-
 .tv-racing-stat-val {
-  font-size: 22px;
-  font-weight: 900;
-  color: #ffffff;
-  font-variant-numeric: tabular-nums;
+font-size: 22px;
+font-weight: 900;
+color: #ffffff;
+font-variant-numeric: tabular-nums;
 }
-
 .tv-game-controls-hint {
-  min-height: 40px;
-  padding: 6px 28px;
-  background: #0b0f1c;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  color: #cbd5e1;
-  font-size: 12px;
-  font-weight: 700;
-  display: -webkit-flex;
-  display: flex;
-  -webkit-flex-wrap: wrap;
-  flex-wrap: wrap;
-  -webkit-align-items: center;
-  align-items: center;
-  -webkit-justify-content: space-between;
-  justify-content: space-between;
-  gap: 4px 16px;
-  width: 100%;
-  max-width: 100%;
-  overflow: hidden;
+min-height: 40px;
+padding: 6px 28px;
+background: #0b0f1c;
+border-top: 1px solid rgba(255, 255, 255, 0.1);
+color: #cbd5e1;
+font-size: 12px;
+font-weight: 700;
+display: -webkit-flex;
+display: flex;
+-webkit-flex-wrap: wrap;
+flex-wrap: wrap;
+-webkit-align-items: center;
+align-items: center;
+-webkit-justify-content: space-between;
+justify-content: space-between;
+gap: 4px 16px;
+width: 100%;
+max-width: 100%;
+overflow: hidden;
 }
-
 .tv-game-finish-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(5, 8, 17, 0.88);
-  display: none;
-  -webkit-align-items: center;
-  align-items: center;
-  -webkit-justify-content: center;
-  justify-content: center;
-  z-index: 12;
+position: absolute;
+top: 0;
+left: 0;
+right: 0;
+bottom: 0;
+background: rgba(5, 8, 17, 0.88);
+display: none;
+-webkit-align-items: center;
+align-items: center;
+-webkit-justify-content: center;
+justify-content: center;
+z-index: 12;
 }
-
 .tv-game-finish-card {
-  width: 90%;
-  max-width: 480px;
-  padding: 28px;
-  border-radius: 22px;
-  background: #11172a;
-  border: 2px solid #a78bfa;
-  text-align: center;
-  color: #ffffff;
+width: 90%;
+max-width: 480px;
+padding: 28px;
+border-radius: 22px;
+background: #11172a;
+border: 2px solid #a78bfa;
+text-align: center;
+color: #ffffff;
 }
-
 .tv-game-finish-title {
-  font-size: 28px;
-  font-weight: 900;
-  margin-bottom: 8px;
+font-size: 28px;
+font-weight: 900;
+margin-bottom: 8px;
 }
-
 .tv-game-finish-sub {
-  font-size: 16px;
-  font-weight: 700;
-  color: #cbd5e1;
-  margin-bottom: 20px;
+font-size: 16px;
+font-weight: 700;
+color: #cbd5e1;
+margin-bottom: 20px;
 }
-
 .tv-game-finish-btns {
-  display: -webkit-flex;
-  display: flex;
-  -webkit-justify-content: center;
-  justify-content: center;
+display: -webkit-flex;
+display: flex;
+-webkit-justify-content: center;
+justify-content: center;
 }
-
 .tv-game-finish-btns > * {
-  margin: 0 8px;
+margin: 0 8px;
 }
-
 .tv-dual-qr-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(5, 8, 17, 0.56);
-  display: -webkit-flex;
-  display: flex;
-  -webkit-align-items: center;
-  align-items: center;
-  -webkit-justify-content: center;
-  justify-content: center;
-  z-index: 10;
+position: absolute;
+top: 0;
+left: 0;
+right: 0;
+bottom: 0;
+background: rgba(5, 8, 17, 0.56);
+display: -webkit-flex;
+display: flex;
+-webkit-align-items: center;
+align-items: center;
+-webkit-justify-content: center;
+justify-content: center;
+z-index: 10;
 }
-
 .tv-dual-qr-card {
-  width: 90%;
-  max-width: 660px;
-  padding: 16px 20px;
-  border-radius: 20px;
-  background: rgba(13, 19, 36, 0.94);
-  border: 2px solid #8b5cf6;
-  color: #f8fafc;
-  text-align: center;
+width: 90%;
+max-width: 660px;
+padding: 16px 20px;
+border-radius: 20px;
+background: rgba(13, 19, 36, 0.94);
+border: 2px solid #8b5cf6;
+color: #f8fafc;
+text-align: center;
 }
-
 .tv-dual-qr-head {
-  font-size: 22px;
-  font-weight: 900;
-  color: #ffffff;
-  margin-bottom: 4px;
+font-size: 22px;
+font-weight: 900;
+color: #ffffff;
+margin-bottom: 4px;
 }
-
 .tv-dual-qr-sub {
-  font-size: 13px;
-  font-weight: 700;
-  color: #cbd5e1;
-  margin-bottom: 12px;
+font-size: 13px;
+font-weight: 700;
+color: #cbd5e1;
+margin-bottom: 12px;
 }
-
 .tv-dual-qr-grid {
-  display: -webkit-flex;
-  display: flex;
-  -webkit-justify-content: center;
-  justify-content: center;
-  margin-bottom: 12px;
+display: -webkit-flex;
+display: flex;
+-webkit-justify-content: center;
+justify-content: center;
+margin-bottom: 12px;
 }
-
 .tv-dual-qr-slot {
-  width: 230px;
-  margin: 0 10px;
-  padding: 10px;
-  border-radius: 16px;
-  background: #141c33;
-  border: 2px solid rgba(56, 189, 248, 0.45);
-  text-align: center;
+width: 230px;
+margin: 0 10px;
+padding: 10px;
+border-radius: 16px;
+background: #141c33;
+border: 2px solid rgba(56, 189, 248, 0.45);
+text-align: center;
 }
-
 .tv-dual-qr-slot.j2 {
-  border-color: rgba(244, 63, 94, 0.45);
+border-color: rgba(244, 63, 94, 0.45);
 }
-
 .tv-dual-qr-slot.connected {
-  border-color: #22c55e;
-  background: #0f241f;
+border-color: #22c55e;
+background: #0f241f;
 }
-
 .tv-dual-qr-box {
-  width: 118px;
-  height: 118px;
-  margin: 8px auto;
-  padding: 6px;
-  border-radius: 10px;
-  background: #ffffff;
+width: 118px;
+height: 118px;
+margin: 8px auto;
+padding: 6px;
+border-radius: 10px;
+background: #ffffff;
 }
-
 .tv-dual-qr-box svg {
-  display: block;
-  width: 100%;
-  height: 100%;
+display: block;
+width: 100%;
+height: 100%;
 }
-
 .tv-dual-qr-pill {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: #1e293b;
-  color: #38bdf8;
-  font-size: 11px;
-  font-weight: 900;
-  text-transform: uppercase;
+display: inline-block;
+padding: 3px 10px;
+border-radius: 999px;
+background: #1e293b;
+color: #38bdf8;
+font-size: 11px;
+font-weight: 900;
+text-transform: uppercase;
 }
-
 .tv-dual-qr-slot.j2 .tv-dual-qr-pill {
-  color: #fb7185;
+color: #fb7185;
 }
-
 .tv-dual-qr-slot.connected .tv-dual-qr-pill {
-  background: #14532d;
-  color: #4ade80;
+background: #14532d;
+color: #4ade80;
 }
-
 .tv-dual-qr-actions {
-  display: -webkit-flex;
-  display: flex;
-  -webkit-justify-content: center;
-  justify-content: center;
+display: -webkit-flex;
+display: flex;
+-webkit-justify-content: center;
+justify-content: center;
 }
-
 .tv-dual-qr-actions > * {
-  margin: 0 8px;
+margin: 0 8px;
 }
-
 .tv-crt-scanlines {
-  position: absolute;
-  top: 0;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  pointer-events: none;
-  background: repeating-linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0) 0px,
-    rgba(255, 255, 255, 0) 2px,
-    rgba(0, 0, 0, 0.16) 3px,
-    rgba(0, 0, 0, 0.16) 4px
-  );
-  opacity: 0.55;
+position: absolute;
+top: 0;
+right: 0;
+bottom: 0;
+left: 0;
+pointer-events: none;
+background: repeating-linear-gradient(
+to bottom,
+rgba(255, 255, 255, 0) 0px,
+rgba(255, 255, 255, 0) 2px,
+rgba(0, 0, 0, 0.16) 3px,
+rgba(0, 0, 0, 0.16) 4px
+);
+opacity: 0.55;
 }
-
 @-webkit-keyframes tvFoilSheen {
-  0% { -webkit-transform: translateX(-140%) skewX(-18deg); transform: translateX(-140%) skewX(-18deg); }
-  55%, 100% { -webkit-transform: translateX(240%) skewX(-18deg); transform: translateX(240%) skewX(-18deg); }
+0% { -webkit-transform: translateX(-140%) skewX(-18deg); transform: translateX(-140%) skewX(-18deg); }
+55%, 100% { -webkit-transform: translateX(240%) skewX(-18deg); transform: translateX(240%) skewX(-18deg); }
 }
-
 @keyframes tvFoilSheen {
-  0% { -webkit-transform: translateX(-140%) skewX(-18deg); transform: translateX(-140%) skewX(-18deg); }
-  55%, 100% { -webkit-transform: translateX(240%) skewX(-18deg); transform: translateX(240%) skewX(-18deg); }
+0% { -webkit-transform: translateX(-140%) skewX(-18deg); transform: translateX(-140%) skewX(-18deg); }
+55%, 100% { -webkit-transform: translateX(240%) skewX(-18deg); transform: translateX(240%) skewX(-18deg); }
 }
-
 .tv-card-foil {
-  position: relative;
-  overflow: hidden;
+position: relative;
+overflow: hidden;
 }
-
 .tv-card-foil::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 48%;
-  pointer-events: none;
-  background: linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0) 0%,
-    rgba(255, 255, 255, 0.14) 50%,
-    rgba(255, 255, 255, 0) 100%
-  );
-  -webkit-animation: tvFoilSheen 4.4s ease-in-out infinite;
-  animation: tvFoilSheen 4.4s ease-in-out infinite;
+content: '';
+position: absolute;
+top: 0;
+bottom: 0;
+left: 0;
+width: 48%;
+pointer-events: none;
+background: linear-gradient(
+90deg,
+rgba(255, 255, 255, 0) 0%,
+rgba(255, 255, 255, 0.14) 50%,
+rgba(255, 255, 255, 0) 100%
+);
+-webkit-animation: tvFoilSheen 4.4s ease-in-out infinite;
+animation: tvFoilSheen 4.4s ease-in-out infinite;
 }
-
-/* Full 1080p Samsung Tizen / Smart TV Games & Kids Scale */
 @media (min-width: 1480px) {
-  .tv-kids-hero-banner {
-    padding: 30px 36px;
-  }
-  .tv-kids-pill {
-    font-size: 15px;
-    padding: 6px 16px;
-  }
-  .tv-kids-title {
-    font-size: 36px;
-  }
-  .tv-kids-sub {
-    font-size: 20px;
-  }
-  .tv-games-hero {
-    padding: 28px 34px;
-  }
-  .tv-games-hero-title {
-    font-size: 34px;
-  }
-  .tv-games-hero-sub {
-    font-size: 20px;
-  }
-  .tv-game-card-stage {
-    height: 196px;
-    padding: 22px;
-  }
-  .tv-game-badge {
-    font-size: 14px;
-    padding: 5px 12px;
-  }
-  .tv-game-card-body {
-    padding: 20px 22px 22px 22px;
-  }
-  .tv-game-card-title {
-    font-size: 24px;
-  }
-  .tv-game-card-desc {
-    font-size: 17px;
-  }
-  .tv-game-card-cta {
-    padding: 8px 18px;
-    font-size: 17px;
-  }
-  .tv-game-topbar {
-    min-height: 76px;
-    padding: 10px 36px;
-  }
-  .tv-game-top-title {
-    font-size: 24px;
-  }
-  .tv-game-hud-pill {
-    padding: 8px 16px;
-    font-size: 17px;
-  }
-  .tv-game-controls-hint {
-    min-height: 50px;
-    padding: 8px 36px;
-    font-size: 16px;
-  }
+.tv-kids-hero-banner {
+padding: 30px 36px;
 }
-
-
-
+.tv-kids-pill {
+font-size: 15px;
+padding: 6px 16px;
+}
+.tv-kids-title {
+font-size: 36px;
+}
+.tv-kids-sub {
+font-size: 20px;
+}
+.tv-games-hero {
+padding: 28px 34px;
+}
+.tv-games-hero-title {
+font-size: 34px;
+}
+.tv-games-hero-sub {
+font-size: 20px;
+}
+.tv-game-card-stage {
+height: 196px;
+padding: 22px;
+}
+.tv-game-badge {
+font-size: 14px;
+padding: 5px 12px;
+}
+.tv-game-card-body {
+padding: 20px 22px 22px 22px;
+}
+.tv-game-card-title {
+font-size: 24px;
+}
+.tv-game-card-desc {
+font-size: 17px;
+}
+.tv-game-card-cta {
+padding: 8px 18px;
+font-size: 17px;
+}
+.tv-game-topbar {
+min-height: 76px;
+padding: 10px 36px;
+}
+.tv-game-top-title {
+font-size: 24px;
+}
+.tv-game-hud-pill {
+padding: 8px 16px;
+font-size: 17px;
+}
+.tv-game-controls-hint {
+min-height: 50px;
+padding: 8px 36px;
+font-size: 16px;
+}
+}

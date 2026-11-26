@@ -28,6 +28,12 @@ import {
 } from './providers/xtreamProvidersService.ts';
 import { getActiveDvbSessionPath, isDvbUpstreamCoolingDown } from '../routes/proxies/dvbTranscoder.ts';
 import {
+  deriveNextPredictedSegmentUrl,
+  getCachedLiveManifest,
+  prefetchLiveTsSegment,
+  setCachedLiveManifest,
+} from '../routes/proxies/liveSegmentCache.ts';
+import {
   extractXtreamLiveHintsFromSportsRequest,
   findXtreamLiveChannelMatches,
 } from './xtreamVodMatcher.ts';
@@ -70,11 +76,45 @@ export interface FastLiveResolveResult {
   winningIndex: number;
   winningTrack: FastLiveTrackCandidate | null;
   streamUrl: string;
+  backupStreamUrl?: string;
   mode: 'hls' | 'embed';
   latencyMs: number;
   fromCache?: boolean;
   checkedCount: number;
   extraTracks?: FastLiveTrackCandidate[];
+}
+
+function prewarmMediaManifestIntoCache(
+  manifestText: string,
+  baseUrl: string,
+  referer: string,
+  isDvb: boolean
+): void {
+  if (!manifestText || !baseUrl || isDvb || /#EXT-X-STREAM-INF/i.test(manifestText)) return;
+  setCachedLiveManifest(baseUrl, manifestText, baseUrl);
+  const segUrls: string[] = [];
+  for (const raw of manifestText.split(/\r?\n/)) {
+    const tr = raw.trim();
+    if (!tr || tr.startsWith('#')) continue;
+    try {
+      const abs = new URL(tr, baseUrl).href;
+      if (!/\.m3u8(\?|$)/i.test(abs)) {
+        segUrls.push(abs);
+      }
+    } catch {
+      // ignore invalid URI
+    }
+  }
+  if (segUrls.length > 0) {
+    const ua = getPreferredUpstreamUa(baseUrl);
+    for (const segUrl of segUrls.slice(-2)) {
+      prefetchLiveTsSegment(segUrl, referer, ua).catch(() => {});
+    }
+    const predicted = deriveNextPredictedSegmentUrl(segUrls[segUrls.length - 1]);
+    if (predicted) {
+      prefetchLiveTsSegment(predicted, referer, ua).catch(() => {});
+    }
+  }
 }
 
 const fastLiveWinnerCache = new LruTtlCache<string, FastLiveResolveResult & { cachedAt?: number }>(
@@ -245,7 +285,7 @@ export async function defaultProbeSingleLiveTrack(
     const fullTarget = /^https?:\/\//i.test(sourceUrl) ? sourceUrl : `https://${sourceUrl}`;
     const directSports = await Promise.race([
       extractLiveSportsHlsDirect(fullTarget),
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), Math.min(opts.timeoutMs, 14_000))),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), Math.min(opts.timeoutMs, 3_800))),
     ]).catch(() => null);
     const lat = Math.max(1, Date.now() - startedAt);
     if (directSports && directSports.streamUrl && !directSports.isBrokenGreenFeed) {
@@ -265,6 +305,22 @@ export async function defaultProbeSingleLiveTrack(
         const cleanInner = await maybeSignEasyBroadcastUrl(inner);
         const referer =
           resolveKnownUpstreamReferer(cleanInner, track.referer) || `${new URL(cleanInner).origin}/`;
+        const cachedManifest = getCachedLiveManifest(cleanInner);
+        if (cachedManifest) {
+          prewarmMediaManifestIntoCache(
+            cachedManifest.text,
+            cachedManifest.baseUrl || cleanInner,
+            referer,
+            isDvbHeadendStream(cleanInner)
+          );
+          return {
+            ok: true,
+            streamUrl: sourceUrl,
+            mode: 'hls',
+            latencyMs: Math.max(1, Date.now() - startedAt),
+            statusCode: 200,
+          };
+        }
         const res = await streamingFetch(cleanInner, {
           method: 'GET',
           headers: {
@@ -281,6 +337,9 @@ export async function defaultProbeSingleLiveTrack(
         }
         const txt = await res.text();
         if (txt.includes('#EXTM3U') && (txt.includes('#EXTINF') || txt.includes('#EXT-X-STREAM-INF')) && !/nosignal/i.test(txt)) {
+          const finalInner = res.url || cleanInner;
+          setCachedLiveManifest(cleanInner, txt, finalInner);
+          prewarmMediaManifestIntoCache(txt, finalInner, referer, isDvbHeadendStream(finalInner));
           return { ok: true, streamUrl: sourceUrl, mode: 'hls', latencyMs: lat, statusCode: 200 };
         }
         return { ok: false, streamUrl: '', mode: 'hls', latencyMs: lat, statusCode: 502 };
@@ -336,6 +395,20 @@ export async function defaultProbeSingleLiveTrack(
       }
     }
     const referer = resolveKnownUpstreamReferer(cleanUrl, track.referer) || `${new URL(cleanUrl).origin}/`;
+    if (!isDvb) {
+      const cachedManifest = getCachedLiveManifest(cleanUrl);
+      if (cachedManifest) {
+        const finalUrl = cachedManifest.baseUrl || cleanUrl;
+        prewarmMediaManifestIntoCache(cachedManifest.text, finalUrl, referer, false);
+        return {
+          ok: true,
+          streamUrl: buildHlsProxyUrl(finalUrl, referer, false),
+          mode: 'hls',
+          latencyMs: Math.max(1, Date.now() - startedAt),
+          statusCode: 200,
+        };
+      }
+    }
     try {
       const res = await streamingFetch(cleanUrl, {
         method: 'GET',
@@ -344,7 +417,7 @@ export async function defaultProbeSingleLiveTrack(
           Referer: referer,
           Accept: '*/*',
         },
-        timeoutMs: Math.min(opts.timeoutMs, isDvb ? 12_000 : opts.timeoutMs),
+        timeoutMs: Math.min(opts.timeoutMs, isDvb ? 5_200 : opts.timeoutMs),
       });
       const lat = Math.max(1, Date.now() - startedAt);
       if (!res.ok) {
@@ -353,7 +426,12 @@ export async function defaultProbeSingleLiveTrack(
       }
       const txt = await res.text();
       if (txt.includes('#EXTM3U') && (txt.includes('#EXTINF') || txt.includes('#EXT-X-STREAM-INF')) && !/nosignal/i.test(txt)) {
-        const proxyUrl = buildHlsProxyUrl(res.url || cleanUrl, referer, isDvb);
+        const finalUrl = res.url || cleanUrl;
+        if (!isDvb) {
+          setCachedLiveManifest(cleanUrl, txt, finalUrl);
+          prewarmMediaManifestIntoCache(txt, finalUrl, referer, false);
+        }
+        const proxyUrl = buildHlsProxyUrl(finalUrl, referer, isDvb);
         return { ok: true, streamUrl: proxyUrl, mode: 'hls', latencyMs: lat, statusCode: 200 };
       }
       return { ok: false, streamUrl: '', mode: 'hls', latencyMs: lat, statusCode: 404 };
@@ -687,9 +765,9 @@ export async function raceFastLiveTracks(
   );
 
   const probeImpl = opts.probeImpl || defaultProbeSingleLiveTrack;
-  const timeoutMs = Math.min(8_500, opts.timeoutMs ?? 8_500);
-  const hedgeDelay1 = opts.hedgeDelayMs ?? 90;
-  const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 240;
+  const timeoutMs = Math.min(8_500, opts.timeoutMs ?? 3_800);
+  const hedgeDelay1 = opts.hedgeDelayMs ?? 60;
+  const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 150;
   const publicOrigin = opts.publicOrigin || '';
   const belixSessionKey = opts.belixSessionKey || 'default';
 
@@ -708,10 +786,28 @@ export async function raceFastLiveTracks(
         if (settled) return;
         settled = true;
         for (const t of timers) clearTimeout(t);
-        const finalRes: FastLiveResolveResult =
-          discoveredExtraTracks.length > 0
-            ? { ...res, extraTracks: discoveredExtraTracks }
-            : res;
+        const backupCand = ordered.find(
+          (o) =>
+            o.originalIndex !== res.winningIndex &&
+            o.track.resolverType !== 'web_embed' &&
+            Boolean(o.track.sourceUrl)
+        );
+        const backupStreamUrl = backupCand
+          ? backupCand.track.sourceUrl.startsWith('/api/')
+            ? backupCand.track.sourceUrl
+            : /\.m3u8(\?|$)/i.test(backupCand.track.sourceUrl)
+              ? buildHlsProxyUrl(
+                  backupCand.track.sourceUrl,
+                  backupCand.track.referer || '',
+                  isDvbHeadendStream(backupCand.track.sourceUrl)
+                )
+              : undefined
+          : undefined;
+        const finalRes: FastLiveResolveResult = {
+          ...res,
+          ...(backupStreamUrl ? { backupStreamUrl } : {}),
+          ...(discoveredExtraTracks.length > 0 ? { extraTracks: discoveredExtraTracks } : {}),
+        };
         if (finalRes.ok && (isVodOrSeries || finalRes.mode === 'hls' || discoveredExtraTracks.length > 0)) {
           fastLiveWinnerCache.set(cacheKey, { ...finalRes, cachedAt: Date.now() });
         }
@@ -783,7 +879,7 @@ export async function raceFastLiveTracks(
           publicOrigin,
           belixSessionKey,
           titleHint: opts.titleHint,
-          timeoutMs: Math.max(400, Math.min(7_800, remainingMs)),
+          timeoutMs: Math.max(400, Math.min(4_200, remainingMs)),
           allowTranscodeFallback: ordered.length <= 1,
         })
           .then((out) => {
@@ -835,16 +931,16 @@ export async function raceFastLiveTracks(
           });
       };
 
-      // Wave 1 (t=0): Launch top 3 distinct healthy provider candidates immediately
-      for (const c of ordered.slice(0, 3)) {
+      // Wave 1 (t=0): Launch top 4 distinct healthy provider candidates immediately
+      for (const c of ordered.slice(0, 4)) {
         launchCandidate(c);
       }
 
-      // Wave 2 (t=+hedgeDelay1): Hedge candidates 3..7
-      if (ordered.length > 3) {
+      // Wave 2 (t=+hedgeDelay1): Hedge candidates 4..8
+      if (ordered.length > 4) {
         const wave2 = setTimeout(() => {
           if (settled) return;
-          for (const c of ordered.slice(3, 7)) {
+          for (const c of ordered.slice(4, 8)) {
             launchCandidate(c);
           }
         }, hedgeDelay1);
@@ -852,10 +948,10 @@ export async function raceFastLiveTracks(
       }
 
       // Wave 3 (t=+hedgeDelay2): Hedge remaining provider candidates
-      if (ordered.length > 7) {
+      if (ordered.length > 8) {
         const wave3 = setTimeout(() => {
           if (settled) return;
-          for (const c of ordered.slice(7)) {
+          for (const c of ordered.slice(8)) {
             launchCandidate(c);
           }
         }, hedgeDelay2);

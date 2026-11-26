@@ -24,6 +24,8 @@ import {
 } from './dvbTranscoder.ts';
 import { vodHlsManifestCache } from './vodManifestManager.ts';
 import {
+  coalesceLiveManifestFetch,
+  deriveNextPredictedSegmentUrl,
   getCachedLiveManifest,
   prefetchLiveTsSegment,
   setCachedLiveManifest,
@@ -57,7 +59,7 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
     }
 
     runtimeMetrics.recordMediaRequest('hls');
-    evaluateDirectPlayEligibility(targetUrl, { referer, forceAac });
+    const directPlayDecision = evaluateDirectPlayEligibility(targetUrl, { referer, forceAac });
 
     const cachedVod = !forceAac ? vodHlsManifestCache.get(vodCacheKey) : undefined;
     if (cachedVod) {
@@ -90,66 +92,78 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
 
       let baseUrl = targetUrl;
       let manifestText = '';
-      const cachedLive =
-        !forceAac && !isDvbHeadendStream(targetUrl) ? getCachedLiveManifest(targetUrl) : null;
+      const canCoalesceLive = !forceAac && !isDvbHeadendStream(targetUrl);
+      const cachedLive = canCoalesceLive ? getCachedLiveManifest(targetUrl) : null;
 
       if (cachedLive) {
         baseUrl = cachedLive.baseUrl || targetUrl;
         manifestText = cachedLive.text;
-      } else if (shouldBypassNodeFetch(targetUrl)) {
-        let fallback = await curlGetText(targetUrl, headers, 12);
-        if (!fallback.text || !fallback.text.includes('#EXTM3U')) {
-          const plainTxt = await curlPlainGetText(targetUrl, 12).catch(() => '');
-          if (plainTxt && plainTxt.includes('#EXTM3U')) {
-            fallback = { text: plainTxt, effectiveUrl: targetUrl };
-          } else {
-            res.status(502).send('Upstream HLS error');
-            return;
-          }
-        }
-        baseUrl = fallback.effectiveUrl || targetUrl;
-        manifestText = fallback.text;
-        runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(manifestText));
       } else {
-        const hdrCtrl = new AbortController();
-        const hdrTimer = setTimeout(() => hdrCtrl.abort(), 12_000);
-        try {
-          const upstream = await streamingFetch(targetUrl, {
-            headers,
-            signal: hdrCtrl.signal,
-            timeoutMs: 12_000,
-          });
-          clearTimeout(hdrTimer);
-          if (!upstream.ok) {
-            throw new Error(`HTTP ${upstream.status}`);
-          }
-          baseUrl = upstream.url || targetUrl;
-          manifestText = await upstream.text();
-          if (!manifestText.includes('#EXTM3U') || /nosignal/i.test(manifestText)) {
-            throw new Error('Not M3U8 or offline placeholder');
-          }
-          runtimeMetrics.recordUpstreamTransport(false, Buffer.byteLength(manifestText));
-        } catch {
-          clearTimeout(hdrTimer);
-          markHostNeedsCurlFallback(targetUrl);
-          let fallback = await curlGetText(targetUrl, headers, 12);
-          if (
-            !fallback.text ||
-            !fallback.text.includes('#EXTM3U') ||
-            /nosignal/i.test(fallback.text)
-          ) {
-            const plainTxt = await curlPlainGetText(targetUrl, 12).catch(() => '');
-            if (plainTxt && plainTxt.includes('#EXTM3U') && !/nosignal/i.test(plainTxt)) {
-              fallback = { text: plainTxt, effectiveUrl: targetUrl };
-            } else {
-              res.status(502).send('Upstream HLS error');
-              return;
+        const fetchLiveManifest = async () => {
+          if (shouldBypassNodeFetch(targetUrl)) {
+            let fallback = await curlGetText(targetUrl, headers, 12);
+            if (!fallback.text || !fallback.text.includes('#EXTM3U')) {
+              const plainTxt = await curlPlainGetText(targetUrl, 12).catch(() => '');
+              if (plainTxt && plainTxt.includes('#EXTM3U')) {
+                fallback = { text: plainTxt, effectiveUrl: targetUrl };
+              } else {
+                return null;
+              }
             }
+            const effective = fallback.effectiveUrl || targetUrl;
+            runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(fallback.text));
+            return { text: fallback.text, baseUrl: effective, ts: Date.now() };
           }
-          baseUrl = fallback.effectiveUrl || targetUrl;
-          manifestText = fallback.text;
-          runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(manifestText));
+          const hdrCtrl = new AbortController();
+          const hdrTimer = setTimeout(() => hdrCtrl.abort(), 12_000);
+          try {
+            const upstream = await streamingFetch(targetUrl, {
+              headers,
+              signal: hdrCtrl.signal,
+              timeoutMs: 12_000,
+            });
+            clearTimeout(hdrTimer);
+            if (!upstream.ok) {
+              throw new Error(`HTTP ${upstream.status}`);
+            }
+            const upBase = upstream.url || targetUrl;
+            const upText = await upstream.text();
+            if (!upText.includes('#EXTM3U') || /nosignal/i.test(upText)) {
+              throw new Error('Not M3U8 or offline placeholder');
+            }
+            runtimeMetrics.recordUpstreamTransport(false, Buffer.byteLength(upText));
+            return { text: upText, baseUrl: upBase, ts: Date.now() };
+          } catch {
+            clearTimeout(hdrTimer);
+            markHostNeedsCurlFallback(targetUrl);
+            let fallback = await curlGetText(targetUrl, headers, 12);
+            if (
+              !fallback.text ||
+              !fallback.text.includes('#EXTM3U') ||
+              /nosignal/i.test(fallback.text)
+            ) {
+              const plainTxt = await curlPlainGetText(targetUrl, 12).catch(() => '');
+              if (plainTxt && plainTxt.includes('#EXTM3U') && !/nosignal/i.test(plainTxt)) {
+                fallback = { text: plainTxt, effectiveUrl: targetUrl };
+              } else {
+                return null;
+              }
+            }
+            const effective = fallback.effectiveUrl || targetUrl;
+            runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(fallback.text));
+            return { text: fallback.text, baseUrl: effective, ts: Date.now() };
+          }
+        };
+
+        const loadedManifest = canCoalesceLive
+          ? await coalesceLiveManifestFetch(targetUrl, fetchLiveManifest)
+          : await fetchLiveManifest();
+        if (!loadedManifest) {
+          res.status(502).send('Upstream HLS error');
+          return;
         }
+        baseUrl = loadedManifest.baseUrl || targetUrl;
+        manifestText = loadedManifest.text;
       }
       if (/nosignal/i.test(manifestText)) {
         res.status(502).send('Upstream signal offline');
@@ -330,10 +344,19 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
           for (const segUrl of livePrefetchTargets.slice(-2)) {
             prefetchLiveTsSegment(segUrl, effectiveReferer, upstreamUa).catch(() => {});
           }
+          const predictedNext = deriveNextPredictedSegmentUrl(
+            livePrefetchTargets[livePrefetchTargets.length - 1]
+          );
+          if (predictedNext) {
+            prefetchLiveTsSegment(predictedNext, effectiveReferer, upstreamUa).catch(() => {});
+          }
         }
       }
 
       applyProxyCorsHeaders(res, reqId);
+      if (directPlayDecision.directPlayEligible) {
+        res.setHeader('X-Direct-Play-Eligible', '1');
+      }
       res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Content-Length', String(Buffer.byteLength(finalManifest)));

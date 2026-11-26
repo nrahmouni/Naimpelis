@@ -181,40 +181,42 @@ export function dispatchRoomSocketEvent(event: SocketEvent, ctx: RoomSocketDispa
     );
     setRoomHasPin(Boolean(payload.hasPin));
     setPinPromptState({ open: false, roomName: '', invalidAttempt: false });
-    setActivePoll(payload.activePoll || null);
-    setRoomGameState(payload.gameState || null);
-    setPartyGameState(payload.partyGameState || null);
-    setPinturilloState(payload.pinturilloState || null);
-    setPoolGameState(payload.poolGameState || null);
-    setChapasGameState(payload.chapasState || null);
-    setHeadSoccerGameState(payload.headSoccerState || null);
-    setPokerGameState(payload.pokerGameState || null);
-    setBlackjackGameState(payload.blackjackState || null);
-    setMatchResponses(payload.matchResponses || null);
-    setGameMoveError(null);
     setParticipants(payload.participants || []);
-    setMessages(() => {
-      const raw: ChatMessage[] = payload.messages || [];
-      const out: ChatMessage[] = [];
-      const seenIds = new Set<string>();
-      const recentJoins = new Map<string, number>();
-      for (const m of raw) {
-        if (seenIds.has(m.id)) continue;
-        seenIds.add(m.id);
-        if (m.isSystem && m.systemType === 'join') {
-          const key = (m.systemUserId || m.text.trim()).toLowerCase();
-          const prevTs = recentJoins.get(key);
-          if (prevTs !== undefined && Math.abs(m.timestamp - prevTs) < 180_000) continue;
-          recentJoins.set(key, m.timestamp);
+    React.startTransition(() => {
+      setActivePoll(payload.activePoll || null);
+      setRoomGameState(payload.gameState || null);
+      setPartyGameState(payload.partyGameState || null);
+      setPinturilloState(payload.pinturilloState || null);
+      setPoolGameState(payload.poolGameState || null);
+      setChapasGameState(payload.chapasState || null);
+      setHeadSoccerGameState(payload.headSoccerState || null);
+      setPokerGameState(payload.pokerGameState || null);
+      setBlackjackGameState(payload.blackjackState || null);
+      setMatchResponses(payload.matchResponses || null);
+      setGameMoveError(null);
+      setMessages(() => {
+        const raw: ChatMessage[] = payload.messages || [];
+        const out: ChatMessage[] = [];
+        const seenIds = new Set<string>();
+        const recentJoins = new Map<string, number>();
+        for (const m of raw) {
+          if (seenIds.has(m.id)) continue;
+          seenIds.add(m.id);
+          if (m.isSystem && m.systemType === 'join') {
+            const key = (m.systemUserId || m.text.trim()).toLowerCase();
+            const prevTs = recentJoins.get(key);
+            if (prevTs !== undefined && Math.abs(m.timestamp - prevTs) < 180_000) continue;
+            recentJoins.set(key, m.timestamp);
+          }
+          out.push(m);
         }
-        out.push(m);
-      }
-      return out.slice(-150);
+        return out.slice(-150);
+      });
+      setPinnedMessage(payload.pinnedMessage || null);
+      setRoomQueue(payload.queue || []);
+      addRecentRoom({ id: roomId, name: nextRoomTitle });
+      setRecentRooms(getRecentRooms());
     });
-    setPinnedMessage(payload.pinnedMessage || null);
-    setRoomQueue(payload.queue || []);
-    addRecentRoom({ id: roomId, name: nextRoomTitle });
-    setRecentRooms(getRecentRooms());
     const pendingSoloVs = pendingSoloUpgradeVideoStateRef?.current || null;
     if (pendingSoloUpgradeVideoStateRef) {
       pendingSoloUpgradeVideoStateRef.current = null;

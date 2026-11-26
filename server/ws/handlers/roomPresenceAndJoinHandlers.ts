@@ -167,8 +167,15 @@ export const handlePresenceAndJoinMessage: WsMessageHandler = async (
 
     let userId = d.user.id;
     let verifiedUid: string | undefined;
+    const [verified] = await Promise.all([
+      d.firebaseIdToken ? verifyFirebaseIdToken(d.firebaseIdToken) : Promise.resolve(null),
+      Promise.race([
+        hydrateRoomFromDistributedIfMissing(roomId),
+        new Promise<void>((resolve) => setTimeout(resolve, 450)),
+      ]),
+    ]);
+
     if (d.firebaseIdToken) {
-      const verified = await verifyFirebaseIdToken(d.firebaseIdToken);
       if (!verified) {
         ws.send(
           JSON.stringify({
@@ -186,7 +193,6 @@ export const handlePresenceAndJoinMessage: WsMessageHandler = async (
     const userAvatar = d.user.avatar || '🍿';
     const userColor = d.user.color || '#e11d48';
 
-    await hydrateRoomFromDistributedIfMissing(roomId);
     const { room, isFresh } = getOrCreateRoom(roomId, d.roomName);
 
     const isTvClient =
