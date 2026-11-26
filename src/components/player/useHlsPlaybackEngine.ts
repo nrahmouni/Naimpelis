@@ -1,41 +1,12 @@
 import { useEffect, useRef, type MutableRefObject } from 'react';
 import Hls from 'hls.js';
 import { pickLang } from '../../utils/i18n';
-import { socketService } from '../../services/socket';
 import type { AppLanguage, VideoState } from '../../types';
 import { formatTimecode, type StreamRefreshPhase } from './playerTypes';
 import {
   createLivePlaybackHealthMonitor,
   isAndroidChromeBrowser,
 } from './hlsHealthWatchdog';
-
-const ABR_BW_STORAGE_KEY = 'riffan_abr_bw_bps';
-const DEFAULT_ABR_BW_BPS = 8_500_000;
-
-function readSavedAbrBandwidthBps(): number {
-  if (typeof window === 'undefined' || !window.localStorage) return DEFAULT_ABR_BW_BPS;
-  try {
-    const raw = Number(window.localStorage.getItem(ABR_BW_STORAGE_KEY) || '');
-    if (Number.isFinite(raw) && raw >= 600_000 && raw <= 28_000_000) {
-      return Math.round(raw);
-    }
-  } catch {
-    // ignore storage errors
-  }
-  return DEFAULT_ABR_BW_BPS;
-}
-
-function saveAbrBandwidthBps(bps: unknown): void {
-  if (typeof window === 'undefined' || !window.localStorage) return;
-  const num = Number(bps);
-  if (!Number.isFinite(num) || num < 600_000) return;
-  const clamped = Math.min(28_000_000, Math.max(600_000, Math.round(num)));
-  try {
-    window.localStorage.setItem(ABR_BW_STORAGE_KEY, String(clamped));
-  } catch {
-    // ignore storage errors
-  }
-}
 
 interface UseHlsPlaybackEngineOptions {
   lang: AppLanguage;
@@ -166,14 +137,10 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
 
     let cancelled = false;
     let videoWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
-    let liveStartupSlaTimer: ReturnType<typeof setTimeout> | null = null;
     let frameHealthInterval: ReturnType<typeof setInterval> | null = null;
     let liveAutoReconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let didTriggerBackupSwitch = false;
-    let triedInlineBackupUrl = false;
-    let firstFrameBuffered = false;
     let lastBackupSwitchAt = 0;
-    let lastAbrSaveAt = 0;
     const isAndroidChrome = isAndroidChromeBrowser();
     const liveHealthMonitor = createLivePlaybackHealthMonitor();
     const targetResumeSec =
@@ -257,10 +224,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
 
     const attachHlsJs = () => {
       if (!Hls.isSupported() || cancelled) return false;
-      const isFastLocalLiveUrl =
-        /\/api\/(?:dvb-live|belix\/stream|xtream\/stream|iptv\/live|providers\/stream|stream\b)/i.test(
-          videoState.url
-        );
+      const isDvbLiveUrl = /\/api\/(?:dvb-live|belix\/stream)\//i.test(videoState.url);
       const isSmartTvUa =
         typeof navigator !== 'undefined' &&
         /Tizen|SMART-TV|Web0S|webOS|BRAVIA|VIDAA|NetCast|AFT[A-Z]/i.test(
@@ -271,73 +235,31 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         lowLatencyMode: false,
         startFragPrefetch: true,
         startPosition: targetResumeSec > 3 ? targetResumeSec : -1,
-        liveSyncDurationCount: videoState.isLive ? 2 : 3,
-        liveMaxLatencyDurationCount: 6,
-        maxLiveSyncPlaybackRate: videoState.isLive ? 1.04 : 1,
-        backBufferLength: 24,
-        maxBufferLength: videoState.isLive ? 28 : 38,
-        maxMaxBufferLength: videoState.isLive ? 60 : 80,
-        maxBufferHole: 0.6,
-        maxFragLookUpTolerance: 0.35,
+        liveSyncDurationCount: videoState.isLive ? (isDvbLiveUrl ? 1 : 3) : 3,
+        liveMaxLatencyDurationCount: isDvbLiveUrl ? 7 : 10,
+        maxLiveSyncPlaybackRate: 1,
+        backBufferLength: 20,
+        maxBufferLength: 35,
+        maxMaxBufferLength: 75,
+        maxBufferHole: videoState.isLive ? (isDvbLiveUrl ? 0.35 : 0.65) : 0.65,
+        maxFragLookUpTolerance: 0.3,
         highBufferWatchdogPeriod: 2,
         nudgeOffset: videoState.isLive ? 0.08 : 0.1,
-        nudgeMaxRetry: 10,
+        nudgeMaxRetry: videoState.isLive ? 10 : 10,
         stretchShortVideoTrack: !videoState.isLive,
         maxAudioFramesDrift: videoState.isLive ? 3 : 4,
-        abrEwmaFastLive: 2.0,
-        abrEwmaSlowLive: 6.0,
-        abrEwmaDefaultEstimate: readSavedAbrBandwidthBps(),
-        manifestLoadingTimeOut: videoState.isLive ? 4_500 : isFastLocalLiveUrl ? 5_000 : 5_500,
-        manifestLoadingMaxRetry: videoState.isLive ? 1 : 2,
-        manifestLoadingRetryDelay: 100,
-        levelLoadingTimeOut: videoState.isLive ? 4_500 : 5_500,
-        levelLoadingMaxRetry: videoState.isLive ? 1 : 2,
-        levelLoadingRetryDelay: 100,
-        fragLoadingTimeOut: videoState.isLive ? 5_500 : 7_000,
-        fragLoadingMaxRetry: videoState.isLive ? 1 : 2,
-        fragLoadingRetryDelay: 100,
+        abrEwmaDefaultEstimate: 7_500_000,
+        manifestLoadingTimeOut: isDvbLiveUrl ? 9000 : 12000,
+        manifestLoadingMaxRetry: isDvbLiveUrl ? 4 : 6,
+        manifestLoadingRetryDelay: 300,
+        levelLoadingTimeOut: 11000,
+        levelLoadingMaxRetry: 5,
+        levelLoadingRetryDelay: 300,
+        fragLoadingTimeOut: 15000,
+        fragLoadingMaxRetry: 6,
+        fragLoadingRetryDelay: 350,
       });
       hlsRef.current = hls;
-
-      if (videoState.isLive) {
-        const hasInlineBackup =
-          Boolean(videoState.backupStreamUrl) && videoState.backupStreamUrl !== videoState.url;
-        const slaMs = hasInlineBackup
-          ? 2_400
-          : (videoState.tracks?.length || 0) > 1
-            ? 3_800
-            : 5_800;
-        liveStartupSlaTimer = setTimeout(() => {
-          if (cancelled || firstFrameBuffered || hlsRef.current !== hls) return;
-          if (video.readyState < 2 || video.videoWidth === 0) {
-            if (
-              hasInlineBackup &&
-              !triedInlineBackupUrl &&
-              videoState.backupStreamUrl
-            ) {
-              triedInlineBackupUrl = true;
-              setStreamRefreshPhase('switching');
-              setIsBuffering(true);
-              try {
-                hls.stopLoad();
-                hls.loadSource(videoState.backupStreamUrl);
-                hls.startLoad(-1);
-                liveStartupSlaTimer = setTimeout(() => {
-                  if (!cancelled && !firstFrameBuffered && hlsRef.current === hls) {
-                    if (video.readyState < 2 || video.videoWidth === 0) {
-                      triggerBackupSwitch('live_startup_sla_exceeded');
-                    }
-                  }
-                }, 3_200);
-                return;
-              } catch {
-                // fall through to track switch
-              }
-            }
-            triggerBackupSwitch('live_startup_sla_exceeded');
-          }
-        }, slaMs);
-      }
 
       hls.loadSource(videoState.url);
       hls.attachMedia(video);
@@ -415,33 +337,12 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
           }
         }, isAndroidChrome ? 2600 : 4000);
 
-        const getBufferedAheadSec = (): number => {
-          let ahead = 0;
-          try {
-            for (let i = 0; i < video.buffered.length; i++) {
-              const bStart = video.buffered.start(i);
-              const bEnd = video.buffered.end(i);
-              if (video.currentTime >= bStart - 0.15 && video.currentTime <= bEnd) {
-                ahead = Math.max(ahead, bEnd - video.currentTime);
-              }
-            }
-          } catch {
-            // ignore
-          }
-          return ahead;
-        };
-
         if (videoState.isLive) {
           if (frameHealthInterval) clearInterval(frameHealthInterval);
           liveHealthMonitor.reset();
-          let lastSoftReconnectAt = 0;
           frameHealthInterval = setInterval(() => {
-            if (cancelled || !video || hlsRef.current !== hls) return;
-            const res = liveHealthMonitor.check(video, Date.now(), videoState.isPlaying);
-            if (res.action === 'healthy' && !res.isStalled && video.readyState >= 3 && !video.paused) {
-              setStreamRefreshPhase('idle');
-              clearBufferingIndicator();
-            }
+            if (cancelled || !video || video.paused || hlsRef.current !== hls) return;
+            const res = liveHealthMonitor.check(video, Date.now());
             if (res.isStalled) {
               setIsBuffering(true);
             }
@@ -449,11 +350,15 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
               setStreamRefreshPhase('recovering');
               setIsBuffering(true);
               try {
+                // Jump real gap >= 80ms if buffered ahead, otherwise gently pull edge only if buffer ran dry
                 let nudged = false;
-                const bufferedAhead = getBufferedAheadSec();
+                let bufferedAhead = 0;
                 for (let i = 0; i < video.buffered.length; i++) {
                   const bStart = video.buffered.start(i);
                   const bEnd = video.buffered.end(i);
+                  if (video.currentTime >= bStart && video.currentTime <= bEnd) {
+                    bufferedAhead = Math.max(bufferedAhead, bEnd - video.currentTime);
+                  }
                   if (bStart > video.currentTime + 0.08 && bStart - video.currentTime <= 4 && bEnd - bStart >= 0.3) {
                     video.currentTime = bStart + 0.05;
                     video.play().catch(() => {});
@@ -476,16 +381,11 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
                 // ignore
               }
             } else if (res.action === 'soft_reconnect') {
-              const bufferedAhead = getBufferedAheadSec();
-              const nowMs = Date.now();
               setStreamRefreshPhase('reconnecting');
               setIsBuffering(true);
               try {
-                if (bufferedAhead < 0.4 && nowMs - lastSoftReconnectAt >= 12_000) {
-                  lastSoftReconnectAt = nowMs;
-                  hls.stopLoad();
-                  hls.loadSource(videoState.url);
-                }
+                hls.stopLoad();
+                hls.loadSource(videoState.url);
                 hls.startLoad(-1);
                 video.play().catch(() => {});
               } catch {
@@ -494,15 +394,12 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
             } else if (res.action === 'switch_backup') {
               const switched = triggerBackupSwitch(res.reason || 'live_corruption');
               if (!switched) {
-                const nowMs = Date.now();
+                // Single-track live stream: softly reconnect instead of dying
                 setStreamRefreshPhase('reconnecting');
                 setIsBuffering(true);
                 try {
-                  if (nowMs - lastSoftReconnectAt >= 8_000) {
-                    lastSoftReconnectAt = nowMs;
-                    hls.stopLoad();
-                    hls.loadSource(videoState.url);
-                  }
+                  hls.stopLoad();
+                  hls.loadSource(videoState.url);
                   hls.startLoad(-1);
                   video.play().catch(() => {});
                 } catch {
@@ -542,47 +439,15 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
 
       let mediaRecoveries = 0;
       let networkRecoveries = 0;
-      let singleTrackLiveRetries = 0;
       let parsingBurstErrors = 0;
       let liveNetworkStallBurst = 0;
       let lastNonFatalRecoverAt = 0;
 
-      const getNonFatalBufferedAhead = (): number => {
-        let ahead = 0;
-        try {
-          for (let i = 0; i < video.buffered.length; i++) {
-            const bStart = video.buffered.start(i);
-            const bEnd = video.buffered.end(i);
-            if (video.currentTime >= bStart - 0.15 && video.currentTime <= bEnd) {
-              ahead = Math.max(ahead, bEnd - video.currentTime);
-            }
-          }
-        } catch {
-          // ignore
-        }
-        return ahead;
-      };
-
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
-        const nowAbr = Date.now();
-        if (nowAbr - lastAbrSaveAt >= 6_000) {
-          lastAbrSaveAt = nowAbr;
-          saveAbrBandwidthBps((hls as unknown as { bandwidthEstimate?: number }).bandwidthEstimate);
-        }
-        if (video.videoWidth > 0 && video.readyState >= 2) {
-          firstFrameBuffered = true;
-          if (liveStartupSlaTimer) {
-            clearTimeout(liveStartupSlaTimer);
-            liveStartupSlaTimer = null;
-          }
-          networkRecoveries = 0;
-          singleTrackLiveRetries = 0;
-          parsingBurstErrors = 0;
-          liveNetworkStallBurst = 0;
-          setStreamError(null);
-          setStreamRefreshPhase('idle');
-          clearBufferingIndicator();
-        }
+        networkRecoveries = 0;
+        parsingBurstErrors = 0;
+        liveNetworkStallBurst = 0;
+        setStreamError(null);
       });
 
       hls.on(Hls.Events.ERROR, (_evt, data) => {
@@ -596,18 +461,34 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
               data.details === Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT ||
               data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR)
           ) {
+            let bufferedAhead = 0;
+            try {
+              for (let i = 0; i < video.buffered.length; i++) {
+                const bs = video.buffered.start(i);
+                const be = video.buffered.end(i);
+                if (video.currentTime >= bs - 0.1 && video.currentTime <= be) {
+                  bufferedAhead = Math.max(bufferedAhead, be - video.currentTime);
+                }
+              }
+            } catch {
+              // ignore
+            }
+            if (bufferedAhead >= 1.2 && data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
+              return;
+            }
+
             liveNetworkStallBurst += 1;
-            const bufferedAhead = getNonFatalBufferedAhead();
-            const genuinelyStarved = bufferedAhead < 0.8 || video.readyState < 3;
-            if (liveNetworkStallBurst >= 2 && genuinelyStarved) {
-              setStreamRefreshPhase(liveNetworkStallBurst >= 3 ? 'reconnecting' : 'recovering');
+            if (liveNetworkStallBurst >= 4) {
+              setStreamRefreshPhase('reconnecting');
+              setIsBuffering(true);
+            } else if (liveNetworkStallBurst >= 2) {
+              setStreamRefreshPhase('recovering');
               setIsBuffering(true);
             }
-            if (liveNetworkStallBurst >= 3 && Date.now() - lastNonFatalRecoverAt > 3500) {
+
+            if (liveNetworkStallBurst >= 4 && Date.now() - lastNonFatalRecoverAt > 8000) {
               lastNonFatalRecoverAt = Date.now();
-              const stillInStartupWindow =
-                !firstFrameBuffered && Date.now() - streamLoadStartRef.current < 5_500;
-              if (stillInStartupWindow || !triggerBackupSwitch(`live_${data.details}`)) {
+              if (!triggerBackupSwitch(`live_${data.details}`)) {
                 try {
                   hls.startLoad(-1);
                 } catch {
@@ -645,15 +526,15 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
           !/Chrome|CriOS|FxiOS|EdgiOS|Android/i.test(uaErr);
         const maxMediaRecoveries = isAndroidChrome ? 1 : 3;
 
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 2) {
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 6) {
           networkRecoveries += 1;
-          setStreamRefreshPhase(networkRecoveries >= 2 ? 'reconnecting' : 'recovering');
+          setStreamRefreshPhase(networkRecoveries >= 3 ? 'reconnecting' : 'recovering');
           setIsBuffering(true);
           setTimeout(() => {
             if (!cancelled && hlsRef.current === hls) {
               hls.startLoad(-1);
             }
-          }, 350);
+          }, 900);
         } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < maxMediaRecoveries) {
           mediaRecoveries += 1;
           setStreamRefreshPhase('recovering');
@@ -688,8 +569,8 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
             },
             { once: true }
           );
-        } else if (videoState.isLive && singleTrackLiveRetries < 2) {
-          singleTrackLiveRetries += 1;
+        } else if (videoState.isLive) {
+          // Keep live match alive even on single-track network drops: auto-reconnect softly instead of halting
           setStreamError(null);
           setStreamRefreshPhase('reconnecting');
           setIsBuffering(true);
@@ -706,11 +587,10 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
             } catch {
               // ignore
             }
-          }, 1200);
+          }, 2800);
         } else {
           if (!video.paused && video.readyState >= 3) return;
           clearBufferingIndicator();
-          setStreamRefreshPhase('idle');
           setStreamError(
             pickLang(lang, {
               es: 'Esta señal no responde ahora mismo. Pulsa Reintentar o elige tú otra señal debajo del reproductor.',
@@ -767,49 +647,12 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         }
       }
     } else if (videoState.mode === 'direct') {
-      let triedTranscodeFallback = /[?&](?:transcode=1|remux=mp4)\b/i.test(videoState.url);
-      let directStartupTimer: ReturnType<typeof setTimeout> | null = null;
-
-      const tryTranscodeRetry = (): boolean => {
-        if (cancelled || triedTranscodeFallback) return false;
-        if (!/^\/api\/(?:stream|xtream\/vod\/|providers\/stream\/)/i.test(videoState.url)) return false;
-        triedTranscodeFallback = true;
-        setIsBuffering(true);
-        const sep = videoState.url.includes('?') ? '&' : '?';
-        video.src = `${videoState.url}${sep}transcode=1`;
-        video.load();
-        return true;
-      };
-
       const onDirectLoaded = () => {
-        if (directStartupTimer) {
-          clearTimeout(directStartupTimer);
-          directStartupTimer = null;
-        }
-        // Detect audio-only MKV/HEVC containers early and switch seamlessly to ?transcode=1
-        if (
-          video.readyState >= 1 &&
-          video.videoWidth === 0 &&
-          /^\/api\/(?:stream|xtream\/vod\/|providers\/stream\/)/i.test(videoState.url) &&
-          !triedTranscodeFallback
-        ) {
-          directStartupTimer = setTimeout(() => {
-            if (!cancelled && video.videoWidth === 0) {
-              tryTranscodeRetry();
-            }
-          }, 550);
-          return;
-        }
         setIsBuffering(false);
         startPlaybackSafely();
       };
       const onDirectError = () => {
         if (cancelled) return;
-        if (tryTranscodeRetry()) return;
-        if (directStartupTimer) {
-          clearTimeout(directStartupTimer);
-          directStartupTimer = null;
-        }
         if (triggerBackupSwitch('direct_mp4_error')) {
           setIsBuffering(true);
           return;
@@ -817,33 +660,18 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         setIsBuffering(false);
         setStreamError(
           pickLang(lang, {
-            es: 'Esta señal directa no responde ahora mismo. Pulsa Reintentar o elige otro servidor.',
-            ca: 'Aquest senyal directe no respon ara mateix. Prem Reintentar o tria un altre servidor.',
-            en: 'This direct video stream failed to load. Press Retry or choose another server.',
+            es: 'Esta señal MP4 directa no responde ahora mismo. Pulsa Reintentar o elige otro servidor debajo.',
+            ca: 'Aquest senyal MP4 directe no respon ara mateix. Prem Reintentar o tria un altre servidor a sota.',
+            en: 'This direct MP4 stream failed to load. Press Retry or choose another server below.',
           })
         );
       };
-
-      if (/^\/api\/(?:stream|xtream\/vod\/|providers\/stream\/)/i.test(videoState.url) && !triedTranscodeFallback) {
-        directStartupTimer = setTimeout(() => {
-          if (!cancelled && (video.readyState === 0 || video.videoWidth === 0)) {
-            tryTranscodeRetry();
-          }
-        }, 2_600);
-      }
-
       cleanupDirectListeners = () => {
-        if (directStartupTimer) {
-          clearTimeout(directStartupTimer);
-          directStartupTimer = null;
-        }
         video.removeEventListener('loadedmetadata', onDirectLoaded);
-        video.removeEventListener('loadeddata', onDirectLoaded);
         video.removeEventListener('error', onDirectError);
       };
       video.addEventListener('loadedmetadata', onDirectLoaded, { once: true });
-      video.addEventListener('loadeddata', onDirectLoaded, { once: true });
-      video.addEventListener('error', onDirectError);
+      video.addEventListener('error', onDirectError, { once: true });
       video.src = videoState.url;
     }
 
@@ -851,7 +679,6 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
       cancelled = true;
       cleanupDirectListeners?.();
       if (videoWatchdogTimer) clearTimeout(videoWatchdogTimer);
-      if (liveStartupSlaTimer) clearTimeout(liveStartupSlaTimer);
       if (frameHealthInterval) clearInterval(frameHealthInterval);
       if (liveAutoReconnectTimer) clearTimeout(liveAutoReconnectTimer);
       setStreamRefreshPhase('idle');
@@ -997,81 +824,6 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     setIsMuted,
     setLocalPlaying,
     smoothDriftTimerRef,
-    videoRef,
-  ]);
-
-  // Continuous 3s Watch-Party clock-drift monitor (smooth 0.95x-1.06x catch-up using NTP-calibrated clock)
-  useEffect(() => {
-    if (
-      videoState.isLive ||
-      !videoState.isPlaying ||
-      !videoState.url ||
-      (videoState.mode !== 'hls' && videoState.mode !== 'direct')
-    ) {
-      return;
-    }
-
-    const intervalId = setInterval(() => {
-      const video = videoRef.current;
-      if (!video || video.paused || video.seeking || video.readyState < 2) return;
-      if (isApplyingRemoteRef.current) return;
-      if (!Number.isFinite(videoState.currentTime) || !Number.isFinite(videoState.lastUpdated) || videoState.lastUpdated <= 0) {
-        return;
-      }
-
-      const baseRate = playbackSpeedRef.current || 1;
-      // socketService.serverClockOffsetMs tracks NTP RTT/2 accuracy for logging/telemetry;
-      // videoState.lastUpdated is already normalized to local clock on receipt.
-      void socketService.serverClockOffsetMs;
-      const rawElapsedSec = Math.max(0, (Date.now() - videoState.lastUpdated) / 1000);
-      if (rawElapsedSec >= 12 * 3600) return;
-
-      const expectedTime =
-        videoState.currentTime + rawElapsedSec * baseRate + prevSyncOffsetMsRef.current / 1000;
-      const signedDrift = expectedTime - (video.currentTime || 0);
-      const absDrift = Math.abs(signedDrift);
-
-      if (absDrift > 4.0) {
-        isApplyingRemoteRef.current = true;
-        try {
-          video.playbackRate = baseRate;
-          video.currentTime = Math.max(0, expectedTime);
-        } catch {
-          // ignore
-        }
-        setTimeout(() => {
-          isApplyingRemoteRef.current = false;
-        }, 300);
-      } else if (absDrift >= 0.45) {
-        const targetRate =
-          signedDrift > 0
-            ? Math.min(1.06, baseRate * (absDrift > 1.5 ? 1.05 : 1.03))
-            : Math.max(0.95, baseRate * (absDrift > 1.5 ? 0.95 : 0.97));
-        if (Math.abs((video.playbackRate || 1) - targetRate) > 0.005) {
-          try {
-            video.playbackRate = targetRate;
-          } catch {
-            // ignore
-          }
-        }
-      } else if (Math.abs((video.playbackRate || 1) - baseRate) > 0.005) {
-        try {
-          video.playbackRate = baseRate;
-        } catch {
-          // ignore
-        }
-      }
-    }, 3_000);
-
-    return () => clearInterval(intervalId);
-  }, [
-    videoState.isLive,
-    videoState.isPlaying,
-    videoState.url,
-    videoState.mode,
-    videoState.currentTime,
-    videoState.lastUpdated,
-    isApplyingRemoteRef,
     videoRef,
   ]);
 }

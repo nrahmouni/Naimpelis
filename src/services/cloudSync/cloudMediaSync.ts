@@ -117,7 +117,6 @@ export async function upsertCloudWatchHistory(
         if (isNotFoundError(error)) {
           knownHistoryDocIds.delete(docId);
         } else {
-          if (isTransientFirestoreError(error)) return;
           handleFirestoreError(error, OperationType.UPDATE, path);
         }
       }
@@ -160,7 +159,6 @@ export async function upsertCloudWatchHistory(
         if (isNotFoundError(error)) {
           knownHistoryDocIds.delete(docId);
         } else {
-          if (isTransientFirestoreError(error)) return;
           handleFirestoreError(error, OperationType.UPDATE, path);
         }
       }
@@ -184,7 +182,6 @@ export async function upsertCloudWatchHistory(
       } catch {
         // Fall through and report original createError
       }
-      if (isTransientFirestoreError(createError)) return;
       handleFirestoreError(createError, OperationType.CREATE, path);
     }
   });
@@ -283,11 +280,6 @@ export async function deleteCloudWatchHistoryItem(rawItemId: string): Promise<vo
       await deleteDoc(doc(db, 'watchHistory', docId));
       knownHistoryDocIds.delete(docId);
     } catch (error) {
-      if (isNotFoundError(error)) {
-        knownHistoryDocIds.delete(docId);
-        return;
-      }
-      if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.DELETE, path);
     }
   });
@@ -363,7 +355,6 @@ export async function upsertCloudCatalogFavorite(
         if (isNotFoundError(error)) {
           knownFavoriteDocIds.delete(docId);
         } else {
-          if (isTransientFirestoreError(error)) return;
           handleFirestoreError(error, OperationType.UPDATE, path);
         }
       }
@@ -396,7 +387,6 @@ export async function upsertCloudCatalogFavorite(
         if (isNotFoundError(error)) {
           knownFavoriteDocIds.delete(docId);
         } else {
-          if (isTransientFirestoreError(error)) return;
           handleFirestoreError(error, OperationType.UPDATE, path);
         }
       }
@@ -420,7 +410,6 @@ export async function upsertCloudCatalogFavorite(
       } catch {
         // Fall through
       }
-      if (isTransientFirestoreError(createError)) return;
       handleFirestoreError(createError, OperationType.CREATE, path);
     }
   });
@@ -475,7 +464,6 @@ export async function upsertCloudChannelFavorite(
         if (isNotFoundError(error)) {
           knownFavoriteDocIds.delete(docId);
         } else {
-          if (isTransientFirestoreError(error)) return;
           handleFirestoreError(error, OperationType.UPDATE, path);
         }
       }
@@ -508,7 +496,6 @@ export async function upsertCloudChannelFavorite(
         if (isNotFoundError(error)) {
           knownFavoriteDocIds.delete(docId);
         } else {
-          if (isTransientFirestoreError(error)) return;
           handleFirestoreError(error, OperationType.UPDATE, path);
         }
       }
@@ -532,7 +519,6 @@ export async function upsertCloudChannelFavorite(
       } catch {
         // Fall through
       }
-      if (isTransientFirestoreError(createError)) return;
       handleFirestoreError(createError, OperationType.CREATE, path);
     }
   });
@@ -551,11 +537,6 @@ export async function deleteCloudFavoriteById(rawFavId: string): Promise<void> {
       await deleteDoc(doc(db, 'favorites', docId));
       knownFavoriteDocIds.delete(docId);
     } catch (error) {
-      if (isNotFoundError(error)) {
-        knownFavoriteDocIds.delete(docId);
-        return;
-      }
-      if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.DELETE, path);
     }
   });

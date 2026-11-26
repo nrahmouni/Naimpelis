@@ -88,7 +88,7 @@ export interface ClipboxProbeResult {
 
 export interface ClipboxSearchItem {
   id: string;
-  source: 'tmdb' | 'kitsu' | 'archive';
+  source: 'tmdb' | 'kitsu';
   mediaType: 'movie' | 'tv' | 'anime';
   title: string;
   originalTitle?: string;
@@ -100,7 +100,6 @@ export interface ClipboxSearchItem {
   tmdbId?: number;
   kitsuId?: string;
   episodeCount?: number;
-  directMp4Url?: string;
 }
 
 export interface ClipboxPlayerTrack {

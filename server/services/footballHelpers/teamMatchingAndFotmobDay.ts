@@ -261,44 +261,7 @@ export function normalizeFootballToken(raw: string): string {
     .trim();
 }
 
-export interface TeamCategorySignature {
-  youth: boolean;
-  women: boolean;
-  reserve: boolean;
-  ecuadorBarca: boolean;
-}
-
-const YOUTH_MARKER_RE = /\b(u\d{2}|sub-?\d{2}|youth|juvenil|academy|primavera)\b/i;
-const WOMEN_MARKER_RE =
-  /(?:\(\s*w\s*\)|\b(?:women|woman|w|femenino|femenina|femeni|fem|feminines|kvinder|damen|frauen|damer|ladies|wchampions|liga\s*f)\b)/i;
-const RESERVE_MARKER_RE =
-  /(?:\b(?:castilla|atletic|promesas|mestalla|fabril|vetusta|reserves?|ii)\b|\b(?:barcelona|real\s*madrid|madrid|sevilla|atletico|villarreal|valencia|betis|sociedad|osasuna|celta|getafe|espanyol|mallorca|bayern|dortmund|psg|inter|milan|ajax|benfica|porto|sporting)\s+(?:b|c|atletico|atletic)\b)/i;
-const ECUADOR_BARCA_RE = /\b(?:barcelona\s*sc|barcelona\s*guayaquil|barcelona\s*sc\s*guayaquil)\b/i;
-
-export function extractTeamCategorySignature(raw: string): TeamCategorySignature {
-  const norm = normalizeFootballToken(raw);
-  const rawLower = String(raw || '').toLowerCase();
-  return {
-    youth: YOUTH_MARKER_RE.test(norm) || YOUTH_MARKER_RE.test(rawLower),
-    women: WOMEN_MARKER_RE.test(norm) || WOMEN_MARKER_RE.test(rawLower),
-    reserve: RESERVE_MARKER_RE.test(norm) || RESERVE_MARKER_RE.test(rawLower),
-    ecuadorBarca: ECUADOR_BARCA_RE.test(norm) || ECUADOR_BARCA_RE.test(rawLower),
-  };
-}
-
-export function areTeamCategoriesCompatible(aRaw: string, bRaw: string): boolean {
-  const sigA = extractTeamCategorySignature(aRaw);
-  const sigB = extractTeamCategorySignature(bRaw);
-  if (sigA.youth !== sigB.youth) return false;
-  if (sigA.women !== sigB.women) return false;
-  if (sigA.reserve !== sigB.reserve) return false;
-  if (sigA.ecuadorBarca !== sigB.ecuadorBarca) return false;
-  return true;
-}
-
 export function doFootballTeamNamesMatch(aRaw: string, bRaw: string): boolean {
-  if (!areTeamCategoriesCompatible(aRaw, bRaw)) return false;
-
   const a = normalizeFootballToken(aRaw);
   const b = normalizeFootballToken(bRaw);
   if (!a || !b) return false;
@@ -336,41 +299,11 @@ export function doFootballTeamNamesMatch(aRaw: string, bRaw: string): boolean {
   return aTokens.some((tok) => bTokens.includes(tok));
 }
 
-export function areFixturesCompatibleForMerge(
-  a: { homeTeam: string; awayTeam: string; kickoffMs?: number; leagueContext?: string },
-  b: { homeTeam: string; awayTeam: string; kickoffMs?: number; leagueContext?: string }
-): boolean {
-  const sameOrder =
-    doFootballTeamNamesMatch(a.homeTeam, b.homeTeam) &&
-    doFootballTeamNamesMatch(a.awayTeam, b.awayTeam);
-  const swappedOrder =
-    doFootballTeamNamesMatch(a.homeTeam, b.awayTeam) &&
-    doFootballTeamNamesMatch(a.awayTeam, b.homeTeam);
-  if (!sameOrder && !swappedOrder) return false;
-
-  const ctxA = `${a.leagueContext || ''} ${a.homeTeam} ${a.awayTeam}`;
-  const ctxB = `${b.leagueContext || ''} ${b.homeTeam} ${b.awayTeam}`;
-  if (!areTeamCategoriesCompatible(ctxA, ctxB)) return false;
-
-  const aMs = Number(a.kickoffMs || 0);
-  const bMs = Number(b.kickoffMs || 0);
-  if (aMs > 0 && bMs > 0) {
-    // Reject merges across different kickoff windows (e.g. 12:00 Youth League vs 18:45 Champions League)
-    if (Math.abs(aMs - bMs) > 2.5 * 60 * 60 * 1000) {
-      return false;
-    }
-  }
-  return true;
-}
-
 export function getMadridDateKey(dayOffset = 0): string {
-  const todayIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' }).format(new Date());
-  const baseNoonUtc = Date.parse(`${todayIso}T12:00:00Z`);
-  const shifted = Number.isNaN(baseNoonUtc)
-    ? new Date(Date.now() + dayOffset * 86_400_000)
-    : new Date(baseNoonUtc + dayOffset * 86_400_000);
+  const d = new Date();
+  d.setDate(d.getDate() + dayOffset);
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' })
-    .format(shifted)
+    .format(d)
     .replace(/-/g, '');
 }
 
@@ -497,10 +430,8 @@ export async function findMatchingFotmobFixture(params: {
   homeTeam?: string;
   awayTeam?: string;
   dateKey?: string;
-  kickoffMs?: number;
-  leagueSlug?: string;
 }): Promise<FotmobMatchSummary | null> {
-  const { homeTeam, awayTeam, dateKey, kickoffMs, leagueSlug } = params;
+  const { homeTeam, awayTeam, dateKey } = params;
   if (!homeTeam || !awayTeam) return null;
 
   const candidateDates = Array.from(
@@ -513,18 +444,19 @@ export async function findMatchingFotmobFixture(params: {
 
   for (const dk of candidateDates) {
     const matches = await fetchFotmobDayIndex(dk);
-    const hit = matches.find((m) =>
-      areFixturesCompatibleForMerge(
-        { homeTeam, awayTeam, kickoffMs, leagueContext: leagueSlug },
-        {
-          homeTeam: m.homeName,
-          awayTeam: m.awayName,
-          kickoffMs: m.kickoffMs,
-          leagueContext: `${m.leagueId} ${m.leagueName}`,
-        }
-      )
+    const direct = matches.find(
+      (m) =>
+        doFootballTeamNamesMatch(homeTeam, m.homeName) &&
+        doFootballTeamNamesMatch(awayTeam, m.awayName)
     );
-    if (hit) return hit;
+    if (direct) return direct;
+
+    const swapped = matches.find(
+      (m) =>
+        doFootballTeamNamesMatch(homeTeam, m.awayName) &&
+        doFootballTeamNamesMatch(awayTeam, m.homeName)
+    );
+    if (swapped) return swapped;
   }
   return null;
 }

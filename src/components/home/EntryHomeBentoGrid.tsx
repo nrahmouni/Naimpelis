@@ -2,9 +2,7 @@ import React from 'react';
 import { motion } from 'motion/react';
 import {
   ChevronRight,
-  Clapperboard,
   Database,
-  Layers,
   Pause,
   Play,
   Radio,
@@ -80,22 +78,6 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       accentBorder: 'hover:border-[#7C3AED]/60',
     },
     {
-      id: 'reels',
-      title: pickLang(lang, { es: 'CineTok · Clips', ca: 'CineTok · Clips', en: 'CineTok · Reels' }),
-      subtitle: pickLang(lang, {
-        es: 'Tráilers, escenas pro y voz por gustos',
-        ca: 'Tràilers, escenes pro i veu per gustos',
-        en: 'Trailers, pro scenes & taste host',
-      }),
-      icon: (
-        <span className="w-11 h-11 rounded-xl bg-[#FF2E63]/15 border border-[#FF2E63]/35 flex items-center justify-center text-[#FF5C8D] shrink-0">
-          <Clapperboard className="w-5 h-5" />
-        </span>
-      ),
-      accentBorder: 'hover:border-[#FF2E63]/65 border-[#FF2E63]/25',
-      highlightBadge: 'IA',
-    },
-    {
       id: 'music',
       title: 'Riffan Music',
       subtitle:
@@ -162,6 +144,24 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
               rif: `${liveMatchesCount} direkt`,
             })
           : undefined,
+    },
+    {
+      id: 'champions',
+      title: 'Champions League',
+      subtitle: pickLang(lang, {
+        es: 'MultiChampions y Multi-Partido (1–4)',
+        ca: 'MultiChampions i Multi-Partit (1–4)',
+        en: 'MultiChampions & Multi-Match (1–4)',
+        rif: 'MultiChampions d 4 timdyazin',
+        zh: '欧冠多路 · 最多4屏同看',
+      }),
+      icon: (
+        <span className="w-11 h-11 rounded-xl bg-sky-500/18 border border-sky-400/35 flex items-center justify-center text-sky-300 shrink-0">
+          <Trophy className="w-5 h-5" />
+        </span>
+      ),
+      accentBorder: 'hover:border-sky-400/65 border-sky-500/25',
+      highlightBadge: 'MULTI 4x',
     },
     {
       id: 'sala',
@@ -283,21 +283,6 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
         </span>
       ),
       accentBorder: 'hover:border-rose-400/55',
-    },
-    {
-      id: 'providers',
-      title: pickLang(lang, {
-        es: 'Catálogo Total',
-        ca: 'Catàleg Total',
-        en: 'Full Catalog',
-      }),
-      subtitle: 'VOD 4K · 2M2H · Adtupac · Ultra VIP · Sult-Vo',
-      icon: (
-        <span className="w-10 h-10 rounded-xl bg-[#7C3AED]/15 border border-[#7C3AED]/30 flex items-center justify-center text-[#A78BFA] shrink-0">
-          <Layers className="w-4.5 h-4.5" />
-        </span>
-      ),
-      accentBorder: 'hover:border-[#7C3AED]/60',
     },
   ];
 
@@ -432,7 +417,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
           })}
         </h2>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
           {platformTiles.map((tile) => (
             <button
               key={tile.id}

@@ -501,7 +501,7 @@ describe('ClipBox Native Catalog & Subtitle Normalization', () => {
     expect(result.tracks[0].mode).toBe('extract');
     expect(result.tracks[0].url).toContain('directOnly=1');
     expect(result.tracks.some((t) => t.provider === 'ClipBox Direct (VidLink)' && t.mode === 'hls')).toBe(true);
-    expect(result.tracks.some((t) => /vidrock/i.test(`${t.provider} ${t.id}`))).toBe(false);
+    expect(result.tracks.some((t) => t.provider === 'VidRock Native HLS')).toBe(true);
 
     expect(result.subtitles.map((s) => s.lang)).toEqual(
       expect.arrayContaining(['ES', 'LAT', 'CAT', 'EN'])

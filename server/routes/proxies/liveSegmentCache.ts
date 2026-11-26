@@ -1,247 +1,89 @@
-import { streamingFetch } from '../../utils/tlsFetch.ts';
-import {
-  CHROME_UA,
-  curlGetBufferWithStatus,
-  isDvbHeadendStream,
-  markHostNeedsCurlFallback,
-  resolveKnownUpstreamReferer,
-  shouldBypassNodeFetch,
-} from '../../extractors/httpHelpers.ts';
-import { findDisguisedTsOffset } from './proxyUtils.ts';
+import { LruTtlCache } from '../../utils/lruCache.ts';
 
-export interface CachedTsSegment {
-  buf: Buffer;
-  contentType: string;
-  ts: number;
-}
-
-interface CachedLiveManifest {
+export interface CachedLiveManifestEntry {
   text: string;
   baseUrl: string;
   ts: number;
 }
 
-const MAX_SEGMENT_BYTES = 10 * 1024 * 1024;
-const MAX_CACHE_TOTAL_BYTES = 128 * 1024 * 1024;
-const MAX_CACHE_ENTRIES = 96;
-const SEGMENT_TTL_MS = 28_000;
-const MANIFEST_TTL_MS = 2_000;
-
-const liveTsSegmentCache = new Map<string, CachedTsSegment>();
-const inFlightSegmentFetches = new Map<string, Promise<CachedTsSegment | null>>();
-const liveManifestSnippetCache = new Map<string, CachedLiveManifest>();
-const inFlightManifestFetches = new Map<string, Promise<CachedLiveManifest | null>>();
-let currentCacheBytes = 0;
-
-function evictExpiredOrExcess(): void {
-  const now = Date.now();
-  for (const [k, v] of liveTsSegmentCache.entries()) {
-    if (now - v.ts > SEGMENT_TTL_MS) {
-      currentCacheBytes = Math.max(0, currentCacheBytes - v.buf.length);
-      liveTsSegmentCache.delete(k);
-    }
-  }
-  while (
-    (liveTsSegmentCache.size > MAX_CACHE_ENTRIES || currentCacheBytes > MAX_CACHE_TOTAL_BYTES) &&
-    liveTsSegmentCache.size > 0
-  ) {
-    const oldestKey = liveTsSegmentCache.keys().next().value;
-    if (!oldestKey) break;
-    const oldVal = liveTsSegmentCache.get(oldestKey);
-    if (oldVal) currentCacheBytes = Math.max(0, currentCacheBytes - oldVal.buf.length);
-    liveTsSegmentCache.delete(oldestKey);
-  }
+export interface CachedLiveSegmentEntry {
+  buf: Buffer;
+  contentType: string;
+  ts: number;
 }
 
-export function setCachedLiveManifest(url: string, text: string, baseUrl: string): void {
-  if (!url || !text || !text.includes('#EXTM3U')) return;
-  if (liveManifestSnippetCache.size > 140) {
-    const oldest = liveManifestSnippetCache.keys().next().value;
-    if (oldest) liveManifestSnippetCache.delete(oldest);
-  }
-  liveManifestSnippetCache.set(url, { text, baseUrl: baseUrl || url, ts: Date.now() });
+const liveManifestCache = new LruTtlCache<string, CachedLiveManifestEntry>(800, 10_000);
+const liveTsSegmentCache = new LruTtlCache<string, CachedLiveSegmentEntry>(400, 30_000);
+const inFlightManifestMap = new Map<string, Promise<CachedLiveManifestEntry | null>>();
+
+export function getCachedLiveManifest(url: string): CachedLiveManifestEntry | null {
+  return liveManifestCache.get(url) ?? null;
 }
 
-export function getCachedLiveManifest(url: string): CachedLiveManifest | null {
-  const hit = liveManifestSnippetCache.get(url);
-  if (!hit) return null;
-  if (Date.now() - hit.ts > MANIFEST_TTL_MS) {
-    liveManifestSnippetCache.delete(url);
-    return null;
-  }
-  return hit;
-}
-
-export function coalesceLiveManifestFetch(
+export function setCachedLiveManifest(
   url: string,
-  fetcher: () => Promise<CachedLiveManifest | null>
-): Promise<CachedLiveManifest | null> {
-  const cached = getCachedLiveManifest(url);
-  if (cached) return Promise.resolve(cached);
-  const existing = inFlightManifestFetches.get(url);
-  if (existing) return existing;
-  const p = fetcher()
-    .then((result) => {
-      if (result && result.text.includes('#EXTM3U')) {
-        setCachedLiveManifest(url, result.text, result.baseUrl);
-      }
-      return result;
-    })
-    .finally(() => {
-      if (inFlightManifestFetches.get(url) === p) {
-        inFlightManifestFetches.delete(url);
-      }
-    });
-  inFlightManifestFetches.set(url, p);
-  return p;
+  entry: { text: string; baseUrl: string; ts?: number }
+): void {
+  liveManifestCache.set(url, {
+    text: entry.text,
+    baseUrl: entry.baseUrl,
+    ts: entry.ts ?? Date.now(),
+  });
 }
 
-export function deriveNextPredictedSegmentUrl(lastSegUrl: string): string | null {
-  if (!lastSegUrl) return null;
+export async function coalesceLiveManifestFetch<
+  T extends { text: string; baseUrl: string; ts?: number },
+>(url: string, fetcher: () => Promise<T | null>): Promise<CachedLiveManifestEntry | null> {
+  const existing = inFlightManifestMap.get(url);
+  if (existing) return existing;
+
+  const flight = (async () => {
+    try {
+      const res = await fetcher();
+      if (!res || !res.text) return null;
+      const stored: CachedLiveManifestEntry = {
+        text: res.text,
+        baseUrl: res.baseUrl,
+        ts: res.ts ?? Date.now(),
+      };
+      liveManifestCache.set(url, stored);
+      return stored;
+    } finally {
+      inFlightManifestMap.delete(url);
+    }
+  })();
+
+  inFlightManifestMap.set(url, flight);
+  return flight;
+}
+
+export function getCachedLiveTsSegment(url: string): CachedLiveSegmentEntry | null {
+  return liveTsSegmentCache.get(url) ?? null;
+}
+
+export function setCachedLiveTsSegment(url: string, buf: Buffer, contentType = 'video/mp2t'): void {
+  if (!url || !buf || buf.length === 0) return;
+  liveTsSegmentCache.set(url, {
+    buf,
+    contentType,
+    ts: Date.now(),
+  });
+}
+
+export function deriveNextPredictedSegmentUrl(segmentUrl: string): string | null {
   try {
-    const u = new URL(lastSegUrl);
-    const match = u.pathname.match(/^(.*?)(\d{2,10})(\.(?:ts|m4s|mp4|aac))$/i);
+    const parsed = new URL(segmentUrl);
+    const match = parsed.pathname.match(/^(.*?)(\d+)(\.[a-z0-9]{1,5})$/i);
     if (!match) return null;
-    const rawNum = match[2];
-    const nextNum = parseInt(rawNum, 10) + 1;
-    const padded = rawNum.startsWith('0')
-      ? String(nextNum).padStart(rawNum.length, '0')
-      : String(nextNum);
-    u.pathname = `${match[1]}${padded}${match[3]}`;
-    return u.toString();
+    const [, prefix, digits, ext] = match;
+    const nextNum = Number(digits) + 1;
+    const padded =
+      digits.startsWith('0') && String(nextNum).length < digits.length
+        ? String(nextNum).padStart(digits.length, '0')
+        : String(nextNum);
+    parsed.pathname = `${prefix}${padded}${ext}`;
+    return parsed.href;
   } catch {
     return null;
   }
-}
-
-export function getCachedLiveTsSegment(rawUrl: string): CachedTsSegment | null {
-  const hit = liveTsSegmentCache.get(rawUrl);
-  if (!hit) return null;
-  if (Date.now() - hit.ts > SEGMENT_TTL_MS) {
-    currentCacheBytes = Math.max(0, currentCacheBytes - hit.buf.length);
-    liveTsSegmentCache.delete(rawUrl);
-    return null;
-  }
-  return hit;
-}
-
-export function setCachedLiveTsSegment(rawUrl: string, buf: Buffer, contentType: string): void {
-  if (!rawUrl || !buf || buf.length === 0 || buf.length > MAX_SEGMENT_BYTES) return;
-  const existing = liveTsSegmentCache.get(rawUrl);
-  if (existing) {
-    currentCacheBytes = Math.max(0, currentCacheBytes - existing.buf.length);
-    liveTsSegmentCache.delete(rawUrl);
-  }
-  liveTsSegmentCache.set(rawUrl, { buf, contentType, ts: Date.now() });
-  currentCacheBytes += buf.length;
-  evictExpiredOrExcess();
-}
-
-export function getInFlightLiveTsSegment(rawUrl: string): Promise<CachedTsSegment | null> | null {
-  return inFlightSegmentFetches.get(rawUrl) || null;
-}
-
-export function prefetchLiveTsSegment(
-  rawUrl: string,
-  explicitReferer = '',
-  userAgent = CHROME_UA
-): Promise<CachedTsSegment | null> {
-  if (!rawUrl || isDvbHeadendStream(rawUrl)) return Promise.resolve(null);
-  const existing = getCachedLiveTsSegment(rawUrl);
-  if (existing) return Promise.resolve(existing);
-
-  const inFlight = inFlightSegmentFetches.get(rawUrl);
-  if (inFlight) return inFlight;
-
-  const isUrlMp4 =
-    /\.(m4s|mp4|cmfv|cmfa)(\?|$)/i.test(rawUrl) ||
-    /\/segs\/[^/]+\/init\./i.test(rawUrl);
-  const referer = resolveKnownUpstreamReferer(rawUrl, explicitReferer);
-
-  const job = (async (): Promise<CachedTsSegment | null> => {
-    const headers: Record<string, string> = {
-      'User-Agent': userAgent || CHROME_UA,
-      Accept: '*/*',
-    };
-    if (referer) {
-      headers['Referer'] = referer;
-      try {
-        headers['Origin'] = new URL(referer).origin;
-      } catch {
-        // ignore
-      }
-    }
-
-    let rawBuf: Buffer | null = null;
-    let rawCt = '';
-
-    try {
-      if (!shouldBypassNodeFetch(rawUrl)) {
-        const res = await streamingFetch(rawUrl, { headers, timeoutMs: 12_000 });
-        if (res.ok && res.body) {
-          rawCt = (res.headers.get('content-type') || '').toLowerCase();
-          const cl = Number(res.headers.get('content-length') || '0');
-          if (!cl || cl <= MAX_SEGMENT_BYTES) {
-            const ab = await res.arrayBuffer();
-            const candidate = Buffer.from(ab);
-            if (candidate.length > 0 && candidate.length <= MAX_SEGMENT_BYTES) {
-              rawBuf = candidate;
-            }
-          }
-        }
-      }
-    } catch {
-      markHostNeedsCurlFallback(rawUrl);
-    }
-
-    if (!rawBuf) {
-      try {
-        const fb = await curlGetBufferWithStatus(rawUrl, headers, 12);
-        if (fb.status >= 200 && fb.status < 400 && fb.buf.length > 0 && fb.buf.length <= MAX_SEGMENT_BYTES) {
-          rawBuf = fb.buf;
-        }
-      } catch {
-        // ignore prefetch failure
-      }
-    }
-
-    if (!rawBuf || rawBuf.length < 188) return null;
-
-    const headProbe = rawBuf.subarray(0, Math.min(rawBuf.length, 64)).toString('utf8').trimStart();
-    if (/^(<!doctype|<html\b|<head\b|<body\b|\{)/i.test(headProbe)) {
-      return null;
-    }
-
-    const boxType = rawBuf.length >= 8 ? rawBuf.subarray(4, 8).toString('ascii') : '';
-    const isFmp4 =
-      isUrlMp4 ||
-      boxType === 'ftyp' ||
-      boxType === 'styp' ||
-      boxType === 'moof' ||
-      boxType === 'sidx';
-
-    let cleanBuf = rawBuf;
-    if (!isFmp4) {
-      const tsOff = findDisguisedTsOffset(rawBuf);
-      if (tsOff > 0) cleanBuf = rawBuf.subarray(tsOff);
-    }
-
-    const contentType = isFmp4
-      ? 'video/mp4'
-      : rawCt && !rawCt.startsWith('image/') && !rawCt.startsWith('text/') && !rawCt.startsWith('application/octet-stream')
-        ? rawCt
-        : 'video/mp2t';
-
-    setCachedLiveTsSegment(rawUrl, cleanBuf, contentType);
-    return { buf: cleanBuf, contentType, ts: Date.now() };
-  })()
-    .catch(() => null)
-    .finally(() => {
-      if (inFlightSegmentFetches.get(rawUrl) === job) {
-        inFlightSegmentFetches.delete(rawUrl);
-      }
-    });
-
-  inFlightSegmentFetches.set(rawUrl, job);
-  return job;
 }

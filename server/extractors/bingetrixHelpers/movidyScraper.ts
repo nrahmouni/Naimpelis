@@ -221,17 +221,6 @@ export async function resolveMovidyEmbedTrack(
     const nestedIframe = extractNuploadPageIframe(html);
     if (!nestedIframe) return null;
 
-    if (
-      /vidaraa?|vidhide|smoothpre|earnvids|streamwish|filelions|hglink|hlswish|voe\.[a-z]+|dhtpre|peymin/i.test(
-        nestedIframe
-      )
-    ) {
-      const unpacked = await unpackVidhideToHls(nestedIframe).catch(() => null);
-      if (unpacked?.proxyUrl) {
-        return { mode: 'hls', rawM3u8: unpacked.rawM3u8, proxyUrl: unpacked.proxyUrl };
-      }
-    }
-
     // Quickly check that the nested iframe does not serve a 404 dead page
     const iframeCheck = await curlGetText(
       nestedIframe,

@@ -168,35 +168,11 @@ export function sanitizeEmbedHtml(rawHtml: string, baseHref: string): string {
     return `<script${attrs}>${code}</script>`;
   });
 
-  // 4. Strip sandbox error overlay markup, tracking widgets & broken play-icon <img> overlays
+  // 4. Strip sandbox error overlay markup & adplox tracking widgets
   html = html
     .replace(/<div\b[^>]*id\s*=\s*["']sbxErr["'][^>]*>[\s\S]*?<\/div>\s*<\/div>/gi, '')
     .replace(/<a\b[^>]+href\s*=\s*["']https?:\/\/adplox\.com[^"']*["'][^>]*>/gi, '<a href="javascript:void(0)">')
-    .replace(/<img\b[^>]+src\s*=\s*["']https?:\/\/whos\.amung\.us[^"']*["'][^>]*>/gi, '')
-    .replace(
-      /<img\b[^>]*alt\s*=\s*["'][^"']*play\s*icon[^"']*["'][^>]*>/gi,
-      '<span aria-label="Reproducir" style="display:inline-flex;align-items:center;justify-content:center;width:68px;height:68px;border-radius:9999px;background:rgba(124,58,237,0.92);box-shadow:0 12px 32px rgba(0,0,0,0.55);color:#fff;cursor:pointer;"><svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></span>'
-    )
-    .replace(
-      /<img\b([^>]*)\bsrc\s*=\s*["']([^"']+)["']([^>]*)>/gi,
-      (full, pre, srcVal, post) => {
-        const rawSrc = String(srcVal || '').trim();
-        if (!rawSrc || rawSrc.startsWith('data:') || rawSrc.startsWith('/api/img-proxy')) {
-          return full;
-        }
-        try {
-          const absImg = new URL(rawSrc, resolvedBaseHref).href;
-          const imgHost = new URL(absImg).hostname;
-          if (isEmbedHostHostname(imgHost)) {
-            const proxiedImg = `/api/img-proxy?url=${encodeURIComponent(absImg)}&referer=${encodeURIComponent(resolvedBaseHref)}`;
-            return `<img${pre}src="${proxiedImg}" onerror="this.style.display='none'"${post}>`;
-          }
-        } catch {
-          // leave untouched
-        }
-        return full;
-      }
-    );
+    .replace(/<img\b[^>]+src\s*=\s*["']https?:\/\/whos\.amung\.us[^"']*["'][^>]*>/gi, '');
 
   // 5. Route nested embed frames (e.g. 2embed.cc -> vidsrc.buzz / videm.buzz / streamsrcs) through /api/embed-proxy
   const toProxiedNestedEmbed = (urlVal: string): string => {
@@ -359,42 +335,6 @@ export function sanitizeEmbedHtml(rawHtml: string, baseHref: string): string {
       el=el.parentElement;
     }
   },true);
-  function __fixBrokenImg(img){
-    try{
-      if(!img||img.__rtvFixed)return;
-      var alt=String(img.getAttribute('alt')||'').toLowerCase();
-      if(alt.indexOf('play')!==-1){
-        img.__rtvFixed=true;
-        var svgSpan=document.createElement('span');
-        svgSpan.setAttribute('aria-label','Reproducir');
-        svgSpan.style.cssText='display:inline-flex;align-items:center;justify-content:center;width:68px;height:68px;border-radius:9999px;background:rgba(124,58,237,0.92);box-shadow:0 12px 32px rgba(0,0,0,0.55);color:#fff;cursor:pointer;';
-        svgSpan.innerHTML='<svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
-        if(img.parentNode)img.parentNode.replaceChild(svgSpan,img);
-        return;
-      }
-      img.style.display='none';
-    }catch(e){}
-  }
-  document.addEventListener('error',function(ev){
-    var t=ev&&ev.target;
-    if(t&&t.tagName==='IMG')__fixBrokenImg(t);
-  },true);
-  function __scanImgs(){
-    try{
-      var imgs=document.querySelectorAll('img');
-      for(var i=0;i<imgs.length;i++){
-        var im=imgs[i];
-        var alt=String(im.getAttribute('alt')||'').toLowerCase();
-        if(alt.indexOf('play icon')!==-1||(im.complete&&im.naturalWidth===0)){
-          __fixBrokenImg(im);
-        }
-      }
-    }catch(e){}
-  }
-  if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',__scanImgs);}else{__scanImgs();}
-  try{
-    new MutationObserver(function(){__scanImgs();}).observe(document.documentElement||document,{childList:true,subtree:true});
-  }catch(e){}
 })();</script>`;
 
   if (/<head\b[^>]*>/i.test(html)) {

@@ -280,7 +280,7 @@ function playNaimcineIntroSound(): boolean {
 
 export const playRiffanIntroSound = playNaimcineIntroSound;
 
-export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music' | 'providers' | 'reels') {
+export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'champions' | 'tv' | 'juegos' | 'sala' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music') {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
@@ -461,6 +461,22 @@ export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'tv' | 'juegos'
         osc.start(at);
         osc.stop(at + 0.4);
       });
+    } else if (portal === 'champions') {
+      // European night harmonic anthem swell (D4 -> A4 -> D5 -> F#5)
+      [293.66, 440.0, 587.33, 739.99].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = idx % 2 === 0 ? 'triangle' : 'sine';
+        const at = now + idx * 0.045;
+        osc.frequency.setValueAtTime(freq, at);
+        g.gain.setValueAtTime(0.001, at);
+        g.gain.linearRampToValueAtTime(0.1, at + 0.025);
+        g.gain.exponentialRampToValueAtTime(0.0008, at + 0.44);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(at);
+        osc.stop(at + 0.46);
+      });
     } else if (portal === 'music') {
       [261.63, 329.63, 392.0, 523.25].forEach((freq, idx) => {
         const osc = ctx.createOscillator();
@@ -475,22 +491,6 @@ export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'tv' | 'juegos'
         g.connect(master);
         osc.start(at);
         osc.stop(at + 0.45);
-      });
-    } else if (portal === 'reels') {
-      // Crisp vertical reel snap chord (E4 -> B4 -> E5)
-      [329.63, 493.88, 659.25].forEach((freq, idx) => {
-        const osc = ctx.createOscillator();
-        const g = ctx.createGain();
-        osc.type = idx === 0 ? 'triangle' : 'sine';
-        const at = now + idx * 0.038;
-        osc.frequency.setValueAtTime(freq, at);
-        g.gain.setValueAtTime(0.001, at);
-        g.gain.linearRampToValueAtTime(0.095, at + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.0008, at + 0.34);
-        osc.connect(g);
-        g.connect(master);
-        osc.start(at);
-        osc.stop(at + 0.36);
       });
     } else {
       // Snappy arcade triad lock-in (C5 -> E5 -> G5)

@@ -11,86 +11,6 @@ import { useAppStore } from '../../store/useAppStore';
 import { buildChannelFavId, sanitizeItemKey } from '../../utils/storage';
 import { getChannelRegionMeta, type TvRegionId } from '../ui/ChannelLogoBadge';
 import type { CatalogSection } from './catalogConstants';
-import { ensureVaultSyncedWithBackend } from '../../services/xtreamVaultConfig';
-import { rankClientChannels } from '../../utils/channelQualityRanker';
-import {
-  filterTvChannelsOffThread,
-  mergeAndRankChannelsOffThread,
-} from '../../utils/catalogWorkerClient';
-import {
-  catalogQueryKeys,
-  fetchTdtBaseCatalogData,
-  queryClient,
-} from '../../hooks/useCatalogQueries';
-import { prefetchImageUrls } from '../../utils/imageUrl';
-import type { TvFilterWorkerEntry } from '../../workers/catalogWorker';
-import { STATIC_CHANNELS_CATALOG } from '../pwa/smartTvCatalogData';
-import { resolveOfficialChannelLogoUrl } from '../../shared/channelLogos';
-
-const TDT_CATALOG_CACHE_KEY = 'riffan_tdt_catalog_cache_v1';
-
-function buildStaticTdtFallback(): SpanishTdtChannel[] {
-  return STATIC_CHANNELS_CATALOG.map((item) => ({
-    id: item.id,
-    dial: item.dial,
-    name: item.name,
-    shortMark: item.shortMark,
-    brandTone: item.brandTone,
-    network: item.groupTitle || 'TDT España',
-    category: (item.category || 'generalistas') as TdtCategory,
-    quality: item.quality || '1080p FHD',
-    countryCode:
-      item.category === 'marruecos'
-        ? 'MA'
-        : item.category === 'uk_sports'
-          ? 'UK'
-          : item.category === 'espn' || item.category === 'dsports' || item.category === 'tnt_space' || item.category === 'beinsports'
-            ? 'LATAM'
-            : 'ES',
-    logoUrl: resolveOfficialChannelLogoUrl({ id: item.id, logoUrl: item.logoUrl }) || undefined,
-    description: item.groupTitle || `${item.name} · Emisión en directo`,
-    channels: [
-      {
-        id: `${item.id}-iptv-primary`,
-        label: `${item.name} · HD`,
-        lang: 'ES',
-        quality: item.quality || '1080p FHD',
-        sourceUrl: `/api/iptv/live/${encodeURIComponent(item.id)}.m3u8`,
-        resolverType: 'tdt_hls',
-      },
-    ],
-  }));
-}
-
-function readCachedTdtCatalog(): SpanishTdtChannel[] {
-  if (typeof window === 'undefined' || !window.localStorage) return [];
-  try {
-    const raw = window.localStorage.getItem(TDT_CATALOG_CACHE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as { ts?: number; channels?: SpanishTdtChannel[] };
-    if (!parsed || !Array.isArray(parsed.channels) || parsed.channels.length === 0) return [];
-    const hasSpainChannels = parsed.channels.some(
-      (c) => c.countryCode === 'ES' || c.category === 'generalistas'
-    );
-    return hasSpainChannels
-      ? parsed.channels
-      : rankClientChannels([...buildStaticTdtFallback(), ...parsed.channels]);
-  } catch {
-    return [];
-  }
-}
-
-function writeCachedTdtCatalog(channels: SpanishTdtChannel[]): void {
-  if (typeof window === 'undefined' || !window.localStorage || channels.length === 0) return;
-  try {
-    window.localStorage.setItem(
-      TDT_CATALOG_CACHE_KEY,
-      JSON.stringify({ ts: Date.now(), channels: channels.slice(0, 500) })
-    );
-  } catch {
-    // ignore storage quota errors
-  }
-}
 
 export type FootballBrandFilter =
   | 'all'
@@ -123,17 +43,12 @@ export function useLiveTvAndSportsCatalog({
   favoriteChannels,
   onResetWatchlistOnly,
 }: UseLiveTvAndSportsCatalogArgs) {
-  const [tdtChannels, setTdtChannels] = useState<SpanishTdtChannel[]>(() => {
-    const cached = readCachedTdtCatalog();
-    return cached.length > 0 ? cached : buildStaticTdtFallback();
-  });
+  const [tdtChannels, setTdtChannels] = useState<SpanishTdtChannel[]>([]);
   const [loadingTdt, setLoadingTdt] = useState(false);
-  const [tdtFetchError, setTdtFetchError] = useState(false);
   const tdtCategory = useAppStore((s) => s.tdtCategory) as 'all' | 'tdt_all' | TdtCategory;
   const setTdtCategory = useAppStore((s) => s.setTdtCategory) as (
     cat: 'all' | 'tdt_all' | TdtCategory
   ) => void;
-  const playbackPriorityMode = useAppStore((s) => s.playbackPriorityMode);
   const tvRegion = useAppStore((s) => s.tvRegion) as TvRegionId;
   const setTvRegion = useAppStore((s) => s.setTvRegion) as (reg: TvRegionId) => void;
   const adrarCountryFilter = useAppStore((s) => s.adrarCountryFilter);
@@ -170,15 +85,6 @@ export function useLiveTvAndSportsCatalog({
   const setFutbolLeagueFilter = useAppStore((s) => s.setFutbolLeagueFilter);
   const [tvFiltersOpen, setTvFiltersOpen] = useState(false);
   const prevExternalSearchRef = useRef<string | undefined>(undefined);
-  const mergeSeqRef = useRef(0);
-  const filterSeqRef = useRef(0);
-  const mountedRef = useRef(true);
-  useEffect(() => {
-    mountedRef.current = true;
-    return () => {
-      mountedRef.current = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (externalSearchQuery === undefined) return;
@@ -201,121 +107,51 @@ export function useLiveTvAndSportsCatalog({
 
   const fetchTdtCatalog = useCallback(async () => {
     setLoadingTdt(true);
-    setTdtFetchError(false);
-    const fetchWithTimeout = async (url: string, timeoutMs = 8_000) => {
-      const ctrl = new AbortController();
-      const tid = setTimeout(() => ctrl.abort(), timeoutMs);
-      try {
-        const res = await fetch(url, { signal: ctrl.signal });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return await res.json();
-      } finally {
-        clearTimeout(tid);
-      }
-    };
     try {
-      void ensureVaultSyncedWithBackend(false).catch(() => false);
-      let baseList: SpanishTdtChannel[] = [];
-      let worldList: SpanishTdtChannel[] = [];
-      let rbtvList: SpanishTdtChannel[] = [];
-      let belixList: SpanishTdtChannel[] = [];
-
-      const preferQualityFirst = playbackPriorityMode === 'best_quality';
-      const publishMerged = () => {
-        const seq = ++mergeSeqRef.current;
-        const effectiveBaseList = baseList.length > 0 ? baseList : buildStaticTdtFallback();
-        const combined = [
-          ...effectiveBaseList,
-          ...rbtvList,
-          ...belixList,
-          ...worldList,
-        ];
-        void mergeAndRankChannelsOffThread(combined, { preferQualityFirst }).then((ranked) => {
-          if (!mountedRef.current || seq !== mergeSeqRef.current) return;
-          setTdtChannels(ranked);
-          if (baseList.length > 0) {
-            writeCachedTdtCatalog(ranked);
-            setTdtFetchError(false);
-          }
-        });
-      };
-
-      const tdtP = queryClient
-        .fetchQuery({
-          queryKey: catalogQueryKeys.tdtBase(playbackPriorityMode),
-          staleTime: 3 * 60_000,
-          queryFn: () => fetchTdtBaseCatalogData(playbackPriorityMode),
-        })
-        .then((channels) => {
-          if (Array.isArray(channels) && channels.length > 0) {
-            baseList = channels;
-            publishMerged();
-            if (mountedRef.current) setLoadingTdt(false);
-          }
-          return channels;
-        })
-        .catch(() => null);
-
-      const worldP = fetchWithTimeout('/api/catalog/world-tv', 7_500)
-        .then((res) => {
-          if (Array.isArray(res?.channels)) {
-            worldList = res.channels;
-            publishMerged();
-          }
-          return res;
-        })
-        .catch(() => null);
-
-      const rbtvP = fetchWithTimeout('/api/rbtv/channels', 6_500)
-        .then((res) => {
-          if (Array.isArray(res?.channels)) {
-            rbtvList = res.channels;
-            publishMerged();
-          }
-          return res;
-        })
-        .catch(() => null);
-
-      const belixP = fetchWithTimeout('/api/belix/channels?includeAll=1', 7_500)
-        .then((res) => {
-          if (Array.isArray(res?.channels)) {
-            belixList = res.channels;
-            publishMerged();
-          }
-          return res;
-        })
-        .catch(() => null);
-
-      await Promise.allSettled([tdtP, worldP, rbtvP, belixP]);
-      if (baseList.length === 0 && worldList.length === 0 && rbtvList.length === 0 && belixList.length === 0) {
-        if (mountedRef.current) setTdtFetchError(true);
+      const [tdtSettled, worldSettled, rbtvSettled, belixSettled] = await Promise.allSettled([
+        fetch('/api/catalog/tdt').then((r) => r.json()),
+        fetch('/api/catalog/world-tv').then((r) => r.json()),
+        fetch('/api/rbtv/channels').then((r) => r.json()),
+        fetch('/api/belix/channels?includeAll=1').then((r) => r.json()),
+      ]);
+      const baseList: SpanishTdtChannel[] =
+        tdtSettled.status === 'fulfilled' && Array.isArray(tdtSettled.value?.channels)
+          ? tdtSettled.value.channels
+          : [];
+      const worldList: SpanishTdtChannel[] =
+        worldSettled.status === 'fulfilled' && Array.isArray(worldSettled.value?.channels)
+          ? worldSettled.value.channels
+          : [];
+      const rbtvList: SpanishTdtChannel[] =
+        rbtvSettled.status === 'fulfilled' && Array.isArray(rbtvSettled.value?.channels)
+          ? rbtvSettled.value.channels
+          : [];
+      const belixList: SpanishTdtChannel[] =
+        belixSettled.status === 'fulfilled' && Array.isArray(belixSettled.value?.channels)
+          ? belixSettled.value.channels
+          : [];
+      if (baseList.length > 0 || worldList.length > 0 || rbtvList.length > 0 || belixList.length > 0) {
+        const seenIds = new Set<string>();
+        const merged: SpanishTdtChannel[] = [];
+        for (const ch of [...baseList, ...rbtvList, ...belixList, ...worldList]) {
+          if (!ch?.id || seenIds.has(ch.id)) continue;
+          seenIds.add(ch.id);
+          merged.push(ch);
+        }
+        setTdtChannels(merged);
       }
     } catch {
-      if (mountedRef.current) {
-        setTdtChannels((prev) => (prev.length > 0 ? prev : buildStaticTdtFallback()));
-        setTdtFetchError(true);
-      }
+      // Keep cached channels
     } finally {
-      if (mountedRef.current) setLoadingTdt(false);
+      setLoadingTdt(false);
     }
-  }, [playbackPriorityMode]);
+  }, []);
 
   const fetchLiveEpg = useCallback(async (forceRefresh = false) => {
     setLoadingEpg(true);
     try {
-      const data = await queryClient.fetchQuery<{
-        epg?: Record<string, ChannelLiveEpg>;
-        madridTimeLabel?: string;
-      }>({
-        queryKey: catalogQueryKeys.epgLive(),
-        staleTime: forceRefresh ? 0 : 2 * 60_000,
-        queryFn: async () => {
-          const res = await fetch(forceRefresh ? '/api/epg/live?refresh=1' : '/api/epg/live');
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
-          return res.json();
-        },
-      });
-      if (!mountedRef.current) return;
+      const res = await fetch(forceRefresh ? '/api/epg/live?refresh=1' : '/api/epg/live');
+      const data = await res.json();
       if (data?.epg && typeof data.epg === 'object') {
         setEpgMap(data.epg);
       }
@@ -326,7 +162,7 @@ export function useLiveTvAndSportsCatalog({
     } catch {
       // Keep previous EPG snapshot
     } finally {
-      if (mountedRef.current) setLoadingEpg(false);
+      setLoadingEpg(false);
     }
   }, []);
 
@@ -367,22 +203,27 @@ export function useLiveTvAndSportsCatalog({
     const onBelixSynced = () => {
       void fetchTdtCatalog();
     };
+    const onProvidersWarmed = () => {
+      void fetchTdtCatalog();
+    };
     window.addEventListener('belix-channels-synced', onBelixSynced);
-    return () => window.removeEventListener('belix-channels-synced', onBelixSynced);
+    window.addEventListener('riffan:providers-status-ready', onProvidersWarmed);
+    return () => {
+      window.removeEventListener('belix-channels-synced', onBelixSynced);
+      window.removeEventListener('riffan:providers-status-ready', onProvidersWarmed);
+    };
   }, [fetchTdtCatalog]);
 
-  const hasSyncedBackendTdtRef = useRef(false);
   useEffect(() => {
-    const wantsLiveCatalog =
-      worldMode === 'tv' ||
-      worldMode === 'futbol' ||
-      activeSection === 'home' ||
-      activeSection === 'tdt' ||
-      activeSection === 'sports';
-    if (!wantsLiveCatalog) return;
-    if (tdtChannels.length === 0 || !hasSyncedBackendTdtRef.current) {
-      hasSyncedBackendTdtRef.current = true;
-      void fetchTdtCatalog();
+    if (
+      (worldMode === 'tv' ||
+        worldMode === 'futbol' ||
+        activeSection === 'home' ||
+        activeSection === 'tdt' ||
+        activeSection === 'sports') &&
+      tdtChannels.length === 0
+    ) {
+      fetchTdtCatalog();
     }
   }, [worldMode, activeSection, tdtChannels.length, fetchTdtCatalog]);
 
@@ -521,21 +362,8 @@ export function useLiveTvAndSportsCatalog({
 
   const trimmedTdtSearch = tdtSearch.trim();
   const needsEpgForFilter = epgFilter !== 'all' || trimmedTdtSearch.length > 0;
-  const hasActiveTvFilters =
-    tvFavOnly ||
-    tvRegion !== 'all' ||
-    tdtCategory !== 'all' ||
-    epgFilter !== 'all' ||
-    trimmedTdtSearch.length > 0;
-  const useWorkerTvFilter = hasActiveTvFilters && indexedTdtChannels.length >= 160;
-  const [workerFilteredChannels, setWorkerFilteredChannels] = useState<SpanishTdtChannel[] | null>(
-    null
-  );
 
-  const syncFilteredTdtChannels = useMemo(() => {
-    if (useWorkerTvFilter) return null;
-    if (!hasActiveTvFilters) return tdtChannels;
-
+  const filteredTdtChannels = useMemo(() => {
     const nonTdtCats = new Set([
       'movistar',
       'dazn',
@@ -647,9 +475,6 @@ export function useLiveTvAndSportsCatalog({
     }
     return out;
   }, [
-    useWorkerTvFilter,
-    hasActiveTvFilters,
-    tdtChannels,
     indexedTdtChannels,
     tvFavOnly,
     favoriteKeySet,
@@ -661,79 +486,6 @@ export function useLiveTvAndSportsCatalog({
     epgFilter,
     trimmedTdtSearch,
   ]);
-
-  useEffect(() => {
-    if (!useWorkerTvFilter) {
-      setWorkerFilteredChannels(null);
-      return;
-    }
-    const seq = ++filterSeqRef.current;
-    const entries: TvFilterWorkerEntry[] = indexedTdtChannels.map((item, idx) => {
-      let epgHaystack = '';
-      if (needsEpgForFilter) {
-        const chEpg = getChannelLiveEpg(item.ch.id);
-        if (chEpg) {
-          epgHaystack = `${chEpg.now?.title || ''} ${chEpg.now?.category || ''} ${
-            chEpg.now?.description || ''
-          } ${chEpg.next?.title || ''}`;
-        }
-      }
-      return {
-        idx,
-        id: item.ch.id,
-        category: item.ch.category,
-        countryCode: item.ch.countryCode,
-        favIdKey: item.favIdKey,
-        region: item.region,
-        searchText: item.normFullKey,
-        epgHaystack,
-      };
-    });
-
-    void filterTvChannelsOffThread(entries, {
-      query: trimmedTdtSearch,
-      tdtCategory,
-      tvRegion,
-      adrarCountryFilter,
-      tvFavOnly,
-      epgFilter,
-      favoriteFavKeys: tvFavOnly ? Array.from(favoriteKeySet) : [],
-    }).then((indices) => {
-      if (!mountedRef.current || seq !== filterSeqRef.current) return;
-      setWorkerFilteredChannels(
-        indices.map((i) => indexedTdtChannels[i]?.ch).filter(Boolean) as SpanishTdtChannel[]
-      );
-    });
-  }, [
-    useWorkerTvFilter,
-    indexedTdtChannels,
-    needsEpgForFilter,
-    getChannelLiveEpg,
-    trimmedTdtSearch,
-    tdtCategory,
-    tvRegion,
-    adrarCountryFilter,
-    tvFavOnly,
-    epgFilter,
-    favoriteKeySet,
-  ]);
-
-  const filteredTdtChannels = useMemo(
-    () =>
-      useWorkerTvFilter
-        ? workerFilteredChannels ?? tdtChannels
-        : syncFilteredTdtChannels ?? tdtChannels,
-    [useWorkerTvFilter, workerFilteredChannels, syncFilteredTdtChannels, tdtChannels]
-  );
-
-  useEffect(() => {
-    if (worldMode !== 'tv' && activeSection !== 'tdt') return;
-    if (filteredTdtChannels.length === 0) return;
-    prefetchImageUrls(
-      filteredTdtChannels.slice(0, 16).map((c) => c.logoUrl),
-      { limit: 16, kind: 'square' }
-    );
-  }, [worldMode, activeSection, filteredTdtChannels]);
 
   const tvCategoryCounts = useMemo(() => {
     const perCategory: Record<string, number> = {};
@@ -778,7 +530,6 @@ export function useLiveTvAndSportsCatalog({
   return {
     tdtChannels,
     loadingTdt,
-    tdtFetchError,
     fetchTdtCatalog,
     tdtCategory,
     setTdtCategory,

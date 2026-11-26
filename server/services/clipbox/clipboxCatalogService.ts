@@ -6,6 +6,7 @@ import { streamingFetch } from '../../utils/tlsFetch.ts';
 import { buildTmdbImageUrl, fetchTmdbJson } from '../tmdbService.ts';
 import { CHROME_UA } from '../../extractors/httpHelpers.ts';
 import { extractClipboxDirectStreams } from '../../extractors/clipboxDirectExtractor.ts';
+import { extractVidRockHlsTracks } from '../../extractors/bingetrixMovidy.ts';
 import { buildSubtitleProxyUrl, searchAggregatedSubtitles } from '../subtitleAggregator.ts';
 import { LruTtlCache } from '../../utils/lruCache.ts';
 
@@ -13,7 +14,7 @@ export type ClipboxSearchScope = 'all' | 'anime' | 'cinema' | 'movies' | 'series
 
 export interface ClipboxSearchItem {
   id: string;
-  source: 'tmdb' | 'kitsu' | 'archive';
+  source: 'tmdb' | 'kitsu';
   mediaType: 'movie' | 'tv' | 'anime';
   title: string;
   originalTitle?: string;
@@ -25,7 +26,6 @@ export interface ClipboxSearchItem {
   tmdbId?: number;
   kitsuId?: string;
   episodeCount?: number;
-  directMp4Url?: string;
 }
 
 export interface ClipboxPlayerTrack {
@@ -262,13 +262,12 @@ export async function resolveClipboxTitleStreams(params: {
   kitsuId?: string;
   season?: number;
   episode?: number;
-  directMp4Url?: string;
 }): Promise<ClipboxTitleStreamsResult> {
   const season = Math.max(1, params.season || 1);
   const episode = Math.max(1, params.episode || 1);
   let resolvedTmdbId = params.tmdbId;
 
-  if (!resolvedTmdbId && params.title && !params.directMp4Url) {
+  if (!resolvedTmdbId && params.title) {
     try {
       interface TmdbFindRes {
         results?: Array<{ id: number; media_type?: string }>;
@@ -287,23 +286,6 @@ export async function resolveClipboxTitleStreams(params: {
 
   const tracks: ClipboxPlayerTrack[] = [];
   const isSeriesLike = params.mediaType === 'tv' || params.mediaType === 'anime';
-
-  if (
-    params.directMp4Url &&
-    /^https:\/\/archive\.org\/download\/[A-Za-z0-9._-]+\/.+\.mp4$/i.test(params.directMp4Url)
-  ) {
-    tracks.push({
-      id: `cb-archive-mp4-${Buffer.from(params.directMp4Url).toString('hex').slice(0, 10)}`,
-      provider: 'Internet Archive MP4 Directo',
-      label: 'Película Directa MP4 · Dominio Público / Archivo HD',
-      lang: 'EN / VO',
-      quality: 'HD MP4',
-      mode: 'direct',
-      url: params.directMp4Url,
-      rawUrl: params.directMp4Url,
-      note: 'Archivo MP4 directo verificado desde Internet Archive sin bloqueos.',
-    });
-  }
 
   if (resolvedTmdbId || params.title) {
     const extractQs = new URLSearchParams({
@@ -369,6 +351,35 @@ export async function resolveClipboxTitleStreams(params: {
               label: sub.label,
               url: safeUrl,
               source: sub.source || 'vidlink.pro',
+            });
+          }
+        } catch {
+          // ignore cleanly
+        }
+      })()
+    );
+
+    enrichTasks.push(
+      (async () => {
+        try {
+          const vidRockTracks = await extractVidRockHlsTracks({
+            tmdbId: idStr,
+            mediaType: isSeriesLike ? 'tv' : 'movie',
+            season,
+            episode,
+          });
+          for (const tr of vidRockTracks) {
+            if (!tr.resolvedStreamUrl) continue;
+            tracks.push({
+              id: tr.id,
+              provider: 'VidRock Native HLS',
+              label: tr.label,
+              lang: tr.lang,
+              quality: tr.quality || '1080p',
+              mode: 'hls',
+              url: tr.resolvedStreamUrl,
+              rawUrl: tr.resolvedStreamUrl,
+              note: 'Flujo HLS nativo estable sin ventanas externas.',
             });
           }
         } catch {

@@ -7,7 +7,7 @@ import {
   resolveTeamBadgeUrl,
 } from './footballTeamMatcher.ts';
 import {
-  areFixturesCompatibleForMerge,
+  doFootballTeamNamesMatch,
   fetchFotmobDayIndex,
 } from '../../services/footballLiveService.ts';
 import {
@@ -49,10 +49,7 @@ export function formatMadridDateLabel(kickoffDate: Date, todayKey = getMadridDat
   if (Number.isNaN(kickoffDate.getTime())) return '';
   const matchKey = getMadridDateKey(kickoffDate);
   if (matchKey === todayKey) return 'Hoy';
-  const todayNoonUtc = Date.parse(`${todayKey.slice(0, 4)}-${todayKey.slice(4, 6)}-${todayKey.slice(6, 8)}T12:00:00Z`);
-  const tomorrowKey = Number.isNaN(todayNoonUtc)
-    ? getMadridDateKey(new Date(Date.now() + 86_400_000))
-    : getMadridDateKey(new Date(todayNoonUtc + 86_400_000));
+  const tomorrowKey = getMadridDateKey(new Date(Date.now() + 86_400_000));
   if (matchKey === tomorrowKey) return 'Mañana';
   const raw = MADRID_SHORT_DATE_FMT.format(kickoffDate).replace(/\./g, '');
   return raw.replace(/\s+/g, ' ').trim();
@@ -445,21 +442,12 @@ export async function fetchExtendedFootballCalendar(
     await runWithConcurrency(nearTermItems, 8, async (it) => {
       const dk = getMadridDateKey(new Date(it.kickoffMs || Date.now()));
       const dayMatches = fotmobByDate.get(dk) || [];
-      const fm = dayMatches.find((m) =>
-        areFixturesCompatibleForMerge(
-          {
-            homeTeam: it.homeTeam,
-            awayTeam: it.awayTeam,
-            kickoffMs: it.kickoffMs,
-            leagueContext: `${it.leagueSlug} ${it.leagueName}`,
-          },
-          {
-            homeTeam: m.homeName,
-            awayTeam: m.awayName,
-            kickoffMs: m.kickoffMs,
-            leagueContext: `${m.leagueId} ${m.leagueName}`,
-          }
-        )
+      const fm = dayMatches.find(
+        (m) =>
+          (doFootballTeamNamesMatch(it.homeTeam, m.homeName) &&
+            doFootballTeamNamesMatch(it.awayTeam, m.awayName)) ||
+          (doFootballTeamNamesMatch(it.homeTeam, m.awayName) &&
+            doFootballTeamNamesMatch(it.awayTeam, m.homeName))
       );
       if (fm?.fotmobId) {
         it.fotmobMatchId = fm.fotmobId;

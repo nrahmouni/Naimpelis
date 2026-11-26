@@ -2,21 +2,8 @@ import type { AppLanguage, StreamTrack } from '../../types';
 import { unwrapEmbedUrl } from './embedWindowUtils';
 
 const KNOWN_HOST_LABELS: Array<[RegExp, string]> = [
-  [/movidy|nupload/i, 'Movidy'],
-  [/vod4k|vod\s*4k/i, 'VOD 4K'],
-  [/24tv|24\s*tv/i, '24TV'],
-  [/2m2h[-_\s]*alt/i, '2M2H Alt'],
-  [/2m2h/i, '2M2H'],
-  [/dana4k|dana\s*4k/i, 'Dana 4K'],
-  [/adtupac/i, 'Adtupac'],
-  [/ultra[-_\s]*vip/i, 'Ultra VIP'],
-  [/sult[-_\s]*vo/i, 'Sult-Vo'],
-  [/activecdns|active\s*cdns/i, 'Active CDNS'],
-  [/sharkpro|shark\s*pro/i, 'Shark Pro'],
-  [/octopus/i, 'Octopus'],
-  [/xtream/i, 'Xtream HD'],
-  [/gnula/i, 'GnulaHD'],
-  [/ghostflix|vidbolt/i, 'VidBolt'],
+  [/vidfast/i, 'VidFast'],
+  [/vidrock/i, 'VidRock'],
   [/vidsrc|vidsrccc/i, 'VidSrc'],
   [/vidlink/i, 'VidLink'],
   [/embed69/i, 'Embed69'],
@@ -30,37 +17,14 @@ const KNOWN_HOST_LABELS: Array<[RegExp, string]> = [
   [/mega\.nz/i, 'Mega'],
 ];
 
-function compactQualityBadge(rawQuality?: string, rawLabel?: string): string {
-  const hay = `${rawQuality || ''} ${rawLabel || ''}`.toUpperCase();
-  if (/\b(?:4K|UHD|2160P?)\b/.test(hay)) return '4K';
-  if (/\b(?:1080P?|FHD)\b/.test(hay)) return '1080p';
-  if (/\b(?:720P?|HD)\b/.test(hay)) return 'HD';
-  if (/\b(?:480P?|SD)\b/.test(hay)) return 'SD';
-  return '';
-}
-
 export function extractDistinguishingTrackName(
-  track: {
-    label?: string;
-    sourceUrl?: string;
-    resolvedStreamUrl?: string;
-    resolverType?: string;
-    providerName?: string;
-    quality?: string;
-  },
+  track: { label?: string; sourceUrl?: string; resolvedStreamUrl?: string; resolverType?: string },
   idx: number,
   lang: AppLanguage
 ): string {
   if (track.resolverType === 'youtube') {
     const cleaned = (track.label || '').replace(/\s*\([^)]*\)/g, '').trim();
     if (cleaned) return cleaned;
-  }
-
-  const qTag = compactQualityBadge(track.quality, track.label);
-  const explicitProvider = String(track.providerName || '').trim();
-  if (explicitProvider) {
-    const cleanProv = explicitProvider.length > 14 ? explicitProvider.slice(0, 14) : explicitProvider;
-    return qTag ? `${cleanProv} · ${qTag}` : cleanProv;
   }
 
   const rawLabel = (track.label || '').trim();
@@ -70,7 +34,7 @@ export function extractDistinguishingTrackName(
     .filter(Boolean);
 
   const genericFirst =
-    /^(servidor\s*web|embed|web|stream|mirror|enlace|opci[oó]n|castellano|latino|english|vose|es|lat|en|fr|pt|it|de|ar|cat)$/i;
+    /^(servidor\s*web|embed|web|stream|mirror|enlace|opci[oó]n|castellano|latino|english|vose|es|lat|en)$/i;
   let candidate = '';
   if (parts.length >= 2) {
     candidate = genericFirst.test(parts[0]) ? parts.slice(1).join(' · ') : parts[0];
@@ -111,26 +75,14 @@ export function extractDistinguishingTrackName(
         : lang === 'en'
         ? 'Server'
         : 'Servidor';
-    candidate = qTag ? `${prefix} ${idx + 1} · ${qTag}` : `${prefix} ${idx + 1}`;
-  } else if (qTag && !candidate.toUpperCase().includes(qTag.toUpperCase())) {
-    const combined = `${candidate} · ${qTag}`;
-    if (combined.length <= 22) {
-      candidate = combined;
-    }
+    candidate = `${prefix} ${idx + 1}`;
   }
 
-  return candidate.length > 22 ? `${candidate.slice(0, 21)}…` : candidate;
+  return candidate.length > 18 ? `${candidate.slice(0, 17)}…` : candidate;
 }
 
 export function formatUniqueTrackChipLabels(
-  tracks: Array<{
-    label?: string;
-    sourceUrl?: string;
-    resolvedStreamUrl?: string;
-    resolverType?: string;
-    providerName?: string;
-    quality?: string;
-  }>,
+  tracks: Array<{ label?: string; sourceUrl?: string; resolvedStreamUrl?: string; resolverType?: string }>,
   lang: AppLanguage
 ): string[] {
   const raw = tracks.map((tr, idx) => extractDistinguishingTrackName(tr, idx, lang));
@@ -144,55 +96,22 @@ export function formatUniqueTrackChipLabels(
     if (count <= 1) return name;
     const nextIdx = (seen.get(name) || 0) + 1;
     seen.set(name, nextIdx);
-    return `${name} #${nextIdx}`;
+    return `${name} ${nextIdx}`;
   });
 }
 
-export type CanonicalTrackLang =
-  | 'ES'
-  | 'CAT'
-  | 'LAT'
-  | 'VOSE'
-  | 'EN'
-  | 'FR'
-  | 'PT'
-  | 'IT'
-  | 'DE'
-  | 'AR';
+export type CanonicalTrackLang = 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT';
 
 export function resolveTrackLang(
   tr?: StreamTrack | null,
   contextMeta?: { subtitle?: string; title?: string; fallbackLang?: string }
 ): CanonicalTrackLang {
-  const trackRaw = String(tr?.lang || '').trim().toUpperCase();
-  const explicitFallback = String(contextMeta?.fallbackLang || '').trim().toUpperCase();
-  const titleAndLabelRaw = `${tr?.label || ''} ${tr?.langLabel || ''} ${contextMeta?.title || ''} ${contextMeta?.subtitle || ''}`.trim();
-  const label = titleAndLabelRaw.toLowerCase();
-
-  if (!tr && !trackRaw && !explicitFallback && !titleAndLabelRaw) return 'ES';
-
-  // 1) Explicit leading/delimited language tags ALWAYS take priority over fallbackLang
-  const prefixMatch = titleAndLabelRaw.match(
-    /(?:^|\s)(?:[|┃\[\(]\s*([A-Za-zÀ-ÿ0-9+\- ]{2,10})\s*[|┃\]\)]|(FR|DE|GER|PT|BR|IT|AR|ENG|EN|UK|US|LAT|CAT|VOSE|ES|ESP)\s*[:\-]\s*(?=\S))/i
-  );
-  const tagToken = (prefixMatch?.[1] || prefixMatch?.[2] || '').trim().toUpperCase();
-  if (tagToken) {
-    if (/^(?:EN|ENG|UK|US|USA)$/.test(tagToken)) return 'EN';
-    if (/^(?:FR|FRA|FRENCH)$/.test(tagToken)) return 'FR';
-    if (/^(?:DE|GER|DEU|AL)$/.test(tagToken)) return 'DE';
-    if (/^(?:PT|POR|BR|BRA)$/.test(tagToken)) return 'PT';
-    if (/^(?:IT|ITA)$/.test(tagToken)) return 'IT';
-    if (/^(?:AR|ARB|ARAB)$/.test(tagToken)) return 'AR';
-    if (/^(?:LAT|LA|MX|ARG)$/.test(tagToken)) return 'LAT';
-    if (/^(?:CAT|CA|VAL)$/.test(tagToken)) return 'CAT';
-    if (/^(?:VOSE|SUB)$/.test(tagToken)) return 'VOSE';
-    if (/^(?:ES|ESP|SPA|CAST)$/.test(tagToken)) return 'ES';
-  }
-
-  const raw = trackRaw || '';
+  const raw = String(tr?.lang || contextMeta?.fallbackLang || '').toUpperCase();
+  if (!tr && !raw && !contextMeta?.subtitle && !contextMeta?.title) return 'ES';
   if (raw === 'CAT' || raw === 'CA' || raw.includes('CATAL') || raw.includes('VALENCI')) {
     return 'CAT';
   }
+  const label = `${tr?.label || ''} ${contextMeta?.subtitle || ''} ${contextMeta?.title || ''}`.toLowerCase();
   if (
     label.includes('català') ||
     label.includes('catala') ||
@@ -214,33 +133,11 @@ export function resolveTrackLang(
   if (
     raw === 'EN' ||
     raw.includes('ENG') ||
-    /\|\s*eng\s*\||\[\s*eng\s*\]|\(\s*eng\s*\)/i.test(titleAndLabelRaw) ||
     label.includes('english') ||
     label.includes('inglés') ||
     label.includes('ingles')
   ) {
     return 'EN';
-  }
-  if (raw === 'FR' || label.includes('français') || label.includes('francés') || label.includes('french')) {
-    return 'FR';
-  }
-  if (raw === 'PT' || raw === 'BR' || label.includes('portugu') || label.includes('brasil')) {
-    return 'PT';
-  }
-  if (raw === 'IT' || label.includes('italiano') || label.includes('italian')) {
-    return 'IT';
-  }
-  if (raw === 'DE' || raw === 'GER' || label.includes('deutsch') || label.includes('alemán')) {
-    return 'DE';
-  }
-  if (raw === 'AR' || raw === 'ARB' || label.includes('árabe') || label.includes('arabic')) {
-    return 'AR';
-  }
-  if (raw === 'ES' || raw === 'ESP' || raw === 'CAST') {
-    return 'ES';
-  }
-  if (explicitFallback === 'EN' || explicitFallback === 'LAT' || explicitFallback === 'VOSE' || explicitFallback === 'CAT' || explicitFallback === 'FR' || explicitFallback === 'DE' || explicitFallback === 'PT' || explicitFallback === 'IT' || explicitFallback === 'AR') {
-    return explicitFallback as CanonicalTrackLang;
   }
   return 'ES';
 }

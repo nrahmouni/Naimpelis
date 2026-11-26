@@ -599,26 +599,4 @@ export const INTERNATIONAL_EURO_AND_NEWS_CHANNELS: InternationalTdtChannelDef[] 
       },
     ],
   },
-  {
-    id: 'news-cgtn-es',
-    dial: 411,
-    name: 'CGTN Noticias (Español)',
-    shortMark: 'CGTN ES',
-    brandTone: '#DC2626',
-    network: 'CGTN Español',
-    category: 'noticias_intl',
-    quality: '1080p FHD',
-    description: 'Canal internacional de noticias de China en español con cobertura mundial 24/7',
-    channels: [
-      {
-        id: 'news-cgtn-es-1',
-        label: 'Señal Oficial CGTN Español 1080p',
-        lang: 'ES',
-        quality: '1080p FHD',
-        sourceUrl:
-          'https://espanol-liveali.cgtn.com/hls/LSveOGBaBw41Ea7ukkVAUdKQ220802LSTexu6xAuFH8VZNBLE1ZNEa220802cd/playlist.m3u8',
-        resolverType: 'tdt_hls',
-      },
-    ],
-  },
 ];

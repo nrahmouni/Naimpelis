@@ -18,11 +18,6 @@ import {
   type TrackHealthInfo,
   unwrapProxyTargetUrl,
 } from './channelHealthProbe.ts';
-import {
-  getProviderSteeringPenaltyMs,
-  isProviderCircuitOpen,
-  recordProviderOutcome,
-} from './providerCircuitBreaker.ts';
 
 export {
   type ChannelHealthStatus,
@@ -132,11 +127,6 @@ export class ChannelHealthMonitor {
           ? 'degraded'
           : prev?.status || 'up';
 
-    recordProviderOutcome(sourceUrl, {
-      ok: !feedback.failed,
-      latencyMs: feedback.startupMs,
-    });
-
     this.trackHealth.set(key, {
       status: nextStatus,
       latencyMs: feedback.startupMs ?? prev?.latencyMs,
@@ -159,8 +149,6 @@ export class ChannelHealthMonitor {
         track.health;
       const isCoolingDvb =
         unwrapped.includes('90.163.85.113:8093') && isDvbUpstreamCoolingDown(unwrapped);
-      const trackPid = String((track as { providerId?: string }).providerId || '');
-      const circuitOpen = isProviderCircuitOpen(track.sourceUrl, trackPid);
       const health: TrackHealthInfo | undefined = isCoolingDvb
         ? {
             status: 'down',
@@ -171,68 +159,42 @@ export class ChannelHealthMonitor {
           }
         : rawHealth;
       const src = String(track.sourceUrl || '');
-      const q = `${track.quality || ''} ${track.label || ''}`.toLowerCase();
+      const q = String(track.quality || '').toLowerCase();
       const isUhdHevc = /90\.163\.85\.113:8093\/stream\/6[4568]\//i.test(unwrapped);
       const isResidentialDvb = unwrapped.includes('90.163.85.113:8093');
-      const isSportsScraper = /footunder\.online|streamxhd\.|tilinhd\./i.test(unwrapped);
-      const isHttpsCdn = /^https:\/\//i.test(unwrapped) && !isResidentialDvb && !isSportsScraper;
+      const isHttpsCdn = /^https:\/\//i.test(unwrapped) && !isResidentialDvb;
       const isPreferredEdge2 = /\/api\/belix\/stream\/531071(?:\.m3u8|\b)/i.test(src);
       const isBelix = src.startsWith('/api/belix/stream/');
-      const isXtreamProxy = /^\/api\/(?:xtream\/stream|providers\/stream|stream)\b/i.test(src);
-      const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(q);
-      const isFhdOr1080 = !isHevc && /\b(?:fhd|1080p?|full\s*hd)\b/.test(q);
-      const is4kNonResidential = !isUhdHevc && !isHevc && /(?:4k|uhd|2160p?|⁴ᴷ)/i.test(q);
       const qualityTier = isUhdHevc
-        ? 5
-        : /\b(?:576p?|480p?|360p?|sd|lq)\b/.test(q) || /azotosolutions\.com/i.test(src)
         ? 4
-        : isHevc
+        : /576p|480p|360p/.test(q) || /azotosolutions\.com/i.test(src)
         ? 3
-        : is4kNonResidential
-        ? 0
-        : isFhdOr1080
-        ? 1
-        : isXtreamProxy || isHttpsCdn || /\bhd\b/.test(q)
+        : /720p/.test(q)
         ? 2
-        : 3;
+        : 0;
       const transportPenalty = /interactvty\.pro/i.test(src)
         ? 1500
-        : isSportsScraper
-        ? 2400
-        : isResidentialDvb
-        ? 1200
-        : isPreferredEdge2 || isXtreamProxy
+        : isPreferredEdge2
         ? 0
         : isBelix
-        ? 250
+        ? 350
         : 0;
-      const steeringMs = getProviderSteeringPenaltyMs(track.sourceUrl, trackPid);
-      const penaltyMs =
-        (health?.qoeFailures || 0) * 1800 +
-        (health?.qoeRebuffers || 0) * 600 +
-        transportPenalty +
-        (circuitOpen ? 50_000 : 0);
+      const penaltyMs = (health?.qoeFailures || 0) * 1500 + (health?.qoeRebuffers || 0) * 250 + transportPenalty;
       const effectiveLatency = Math.max(
         1,
-        (health?.latencyMs ?? steeringMs) + penaltyMs
+        (health?.latencyMs ?? (health?.status === 'unknown' ? 1200 : 800)) + penaltyMs
       );
-      const effectiveStatus: ChannelHealthStatus =
-        circuitOpen && health?.status !== 'up' ? 'down' : health?.status ?? 'unknown';
       return {
         track: health ? { ...track, health } : { ...track },
         originalIndex,
         isUhdHevc,
-        isHevc,
         isResidentialDvb,
-        isSportsScraper,
         isHttpsCdn,
         isPreferredEdge2,
         isBelix,
-        isXtreamProxy,
-        status: effectiveStatus,
+        status: health?.status ?? ('unknown' as ChannelHealthStatus),
         qualityTier,
         latencyBucket: Math.floor(effectiveLatency / 750),
-        rawLatency: effectiveLatency,
       };
     });
 
@@ -240,44 +202,26 @@ export class ChannelHealthMonitor {
       if (a.status !== 'down' && b.status !== 'down' && a.isUhdHevc !== b.isUhdHevc) {
         return a.isUhdHevc ? 1 : -1;
       }
-      const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
-      if (rankDiff !== 0) return rankDiff;
-
-      // Keep single-socket residential DVB strictly behind verified HTTPS CDNs & Xtream signals
-      if (a.status !== 'down' && b.status !== 'down' && a.isResidentialDvb !== b.isResidentialDvb) {
-        return a.isResidentialDvb ? 1 : -1;
-      }
-
-      // Verified fast Xtream 4K/FHD non-HEVC Spanish signals beat Belix edge2 when probed 'up'
-      const aFastXtream = a.isXtreamProxy && a.status === 'up' && a.qualityTier <= 2;
-      const bFastXtream = b.isXtreamProxy && b.status === 'up' && b.qualityTier <= 2;
-      if (aFastXtream !== bFastXtream) {
-        return aFastXtream ? -1 : 1;
-      }
-
       if (a.isPreferredEdge2 !== b.isPreferredEdge2) {
         if (a.isPreferredEdge2 && a.status !== 'down') return -1;
         if (b.isPreferredEdge2 && b.status !== 'down') return 1;
       }
-      if (a.status !== 'down' && b.status !== 'down') {
-        if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
-        if (a.status !== 'unknown' && a.rawLatency !== b.rawLatency) {
-          return a.rawLatency - b.rawLatency;
-        }
-        if (a.isXtreamProxy !== b.isXtreamProxy) {
-          return a.isXtreamProxy ? -1 : 1;
-        }
-      }
+      const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
+      if (rankDiff !== 0) return rankDiff;
       if (a.status === 'up' && b.status === 'up') {
         if (a.isHttpsCdn !== b.isHttpsCdn) {
           return a.isHttpsCdn ? -1 : 1;
         }
         if (a.isResidentialDvb !== b.isResidentialDvb) {
-          return a.isResidentialDvb ? 1 : -1;
+          return a.isResidentialDvb ? -1 : 1;
         }
       }
       if (a.isBelix && b.isBelix && a.status === b.status) {
         return a.originalIndex - b.originalIndex;
+      }
+      if (a.status !== 'unknown') {
+        if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
+        if (a.latencyBucket !== b.latencyBucket) return a.latencyBucket - b.latencyBucket;
       }
       return a.originalIndex - b.originalIndex;
     });

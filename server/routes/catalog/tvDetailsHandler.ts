@@ -2,11 +2,6 @@ import type express from 'express';
 import { logger } from '../../utils/logger.ts';
 import { LruTtlCache } from '../../utils/lruCache.ts';
 import { fetchTmdbJson } from '../../services/tmdbService.ts';
-import {
-  findXtreamSeriesMatches,
-  mergeXtreamOptionsIntoAvailableLanguages,
-  type XtreamMatchedMediaOption,
-} from '../../services/xtreamVodMatcher.ts';
 
 export const tvDetailsFastCache = new LruTtlCache<string, { details: any; ts: number }>(
   350,
@@ -277,40 +272,12 @@ export async function fetchTvSeriesDetailsPayload(opts: {
 
     const showTitle = showJson.name || showJson.original_name || 'Serie';
     const origTitle = showJson.original_name || showJson.name || '';
-    const showYear = showJson.first_air_date ? String(showJson.first_air_date).split('-')[0] : '';
-
-    const xtreamSeriesOptions = await Promise.race([
-      findXtreamSeriesMatches({
-        titleHints: Array.from(new Set([showTitle, origTitle].filter(Boolean))),
-        yearHint: /^\d{4}$/.test(showYear) ? showYear : undefined,
-        limit: 12,
-      }).catch(() => [] as XtreamMatchedMediaOption[]),
-      new Promise<XtreamMatchedMediaOption[]>((resolve) => setTimeout(() => resolve([]), 1400)),
-    ]);
-
-    const bestOption = xtreamSeriesOptions.reduce<XtreamMatchedMediaOption | null>(
-      (best, cur) => (!best || cur.qualityTier < best.qualityTier ? cur : best),
-      null
-    );
-    const coreLangs = new Set(['ES', 'LAT', 'VOSE', 'EN']);
-    const extendedLanguages = Array.from(
-      new Set(xtreamSeriesOptions.map((o) => o.lang).filter((l) => !coreLangs.has(l)))
-    );
-    const serverAlternatives = xtreamSeriesOptions.slice(0, 12).map((o) => ({
-      id: o.id,
-      providerId: o.providerId,
-      providerName: o.providerName,
-      lang: o.lang,
-      langLabel: o.langLabel,
-      quality: o.quality,
-      qualityTier: o.qualityTier,
-    }));
 
     const detailsPayload: any = {
       tmdbId: Number(cleanId),
       title: showTitle,
       originalTitle: origTitle,
-      year: showYear || 'TV',
+      year: showJson.first_air_date ? String(showJson.first_air_date).split('-')[0] : 'TV',
       rating: showJson.vote_average ? Number(showJson.vote_average).toFixed(1) : '',
       overview: showJson.overview || '',
       poster: showJson.poster_path ? `https://image.tmdb.org/t/p/w500${showJson.poster_path}` : '',
@@ -320,9 +287,6 @@ export async function fetchTvSeriesDetailsPayload(opts: {
       seasons: normalizedSeasons,
       activeSeason: effectiveSeason,
       episodes,
-      bestQuality: bestOption?.quality,
-      extendedLanguages,
-      serverAlternatives,
     };
 
   tvDetailsFastCache.set(cacheKey, { details: detailsPayload, ts: Date.now() });
@@ -330,14 +294,9 @@ export async function fetchTvSeriesDetailsPayload(opts: {
   const cachedLangs = !force
     ? tvLangProbeCache.get(`v2|${cleanId}:${effectiveSeason}:1`)
     : undefined;
-  const baseLangs = cachedLangs ? cachedLangs.availableLanguages : [];
-  const mergedLangs =
-    xtreamSeriesOptions.length > 0
-      ? mergeXtreamOptionsIntoAvailableLanguages(baseLangs, xtreamSeriesOptions)
-      : baseLangs;
   return {
     ...detailsPayload,
-    ...(mergedLangs.length > 0 ? { availableLanguages: mergedLangs } : {}),
+    ...(cachedLangs ? { availableLanguages: cachedLangs.availableLanguages } : {}),
   };
 }
 

@@ -38,11 +38,6 @@ import {
   safeFetchFollowingRedirects,
   validateSafeOutboundUrl,
 } from '../utils/ssrfGuard.ts';
-import {
-  fetchPodcastEpisodes,
-  getPodcastHomeSections,
-  searchPodcasts,
-} from '../services/podcastExtractorService.ts';
 
 let cachedFfmpegBin: string | null = null;
 function resolveFfmpegBin(): string {
@@ -244,56 +239,6 @@ export function registerMusicRoutes(app: express.Express): void {
       res.json({ success: true, radios });
     } catch {
       res.status(500).json({ success: false, error: 'Failed to load radios' });
-    }
-  });
-
-  app.get('/api/music/podcasts/home', async (_req, res) => {
-    try {
-      const sections = await getPodcastHomeSections();
-      res.setHeader('Cache-Control', 'public, max-age=600');
-      res.json({ success: true, ...sections });
-    } catch {
-      res.status(500).json({ success: false, featured: [], techAndScience: [] });
-    }
-  });
-
-  app.get('/api/music/podcasts/search', async (req, res) => {
-    const q = String(req.query.q || '').trim();
-    const country = String(req.query.country || 'ES').trim();
-    if (!q) {
-      res.json({ success: true, podcasts: [] });
-      return;
-    }
-    try {
-      const podcasts = await searchPodcasts(q, country);
-      res.setHeader('Cache-Control', 'public, max-age=300');
-      res.json({ success: true, podcasts });
-    } catch {
-      res.status(500).json({ success: false, podcasts: [] });
-    }
-  });
-
-  app.get('/api/music/podcasts/episodes', async (req, res) => {
-    const feedUrl = String(req.query.feedUrl || '').trim();
-    if (!feedUrl) {
-      res.status(400).json({ success: false, error: 'Missing feedUrl', episodes: [] });
-      return;
-    }
-    try {
-      const episodes = await fetchPodcastEpisodes({
-        feedUrl,
-        showTitle: String(req.query.title || '').trim() || undefined,
-        author: String(req.query.author || '').trim() || undefined,
-        cover: String(req.query.cover || '').trim() || undefined,
-      });
-      res.setHeader('Cache-Control', 'public, max-age=300');
-      res.json({ success: true, episodes });
-    } catch (err) {
-      res.status(400).json({
-        success: false,
-        error: err instanceof Error ? err.message : 'Failed to extract podcast episodes',
-        episodes: [],
-      });
     }
   });
 

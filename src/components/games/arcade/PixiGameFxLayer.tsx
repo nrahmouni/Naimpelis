@@ -348,8 +348,8 @@ export const PixiGameFxLayer = React.forwardRef<
           });
         }
 
-        if (particlesRef.current.length > 80) {
-          const drop = particlesRef.current.splice(0, particlesRef.current.length - 56);
+        if (particlesRef.current.length > 140) {
+          const drop = particlesRef.current.splice(0, 32);
           drop.forEach((d) => {
             d.sprite.parent?.removeChild(d.sprite);
             d.sprite.destroy();

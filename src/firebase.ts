@@ -2,83 +2,32 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import {
   doc,
-  type Firestore,
   getDocFromServer,
   getFirestore,
-  initializeFirestore,
-  memoryLocalCache,
-  persistentLocalCache,
-  persistentMultipleTabManager,
-  setLogLevel,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
-
-setLogLevel('silent');
 
 const app = initializeApp(firebaseConfig);
 
 const firestoreDbId = (firebaseConfig as { firestoreDatabaseId?: string }).firestoreDatabaseId;
-
-function createFirestoreDb(): Firestore {
-  const canUseIndexedDb =
-    typeof window !== 'undefined' && typeof indexedDB !== 'undefined';
-  try {
-    return initializeFirestore(
-      app,
-      {
-        experimentalAutoDetectLongPolling: true,
-        localCache: canUseIndexedDb
-          ? persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-          : memoryLocalCache(),
-      },
-      firestoreDbId
-    );
-  } catch {
-    return firestoreDbId ? getFirestore(app, firestoreDbId) : getFirestore(app);
-  }
-}
-
-export const db = createFirestoreDb();
+export const db = firestoreDbId ? getFirestore(app, firestoreDbId) : getFirestore(app);
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-let connectionTested = false;
-
 async function testConnection() {
-  if (connectionTested) return;
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    return;
-  }
-  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
-    return;
-  }
-  connectionTested = true;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
     if (error instanceof Error && error.message.includes('the client is offline')) {
-      connectionTested = false;
       console.error('Please check your Firebase configuration.');
     }
   }
 }
 
 if (typeof window !== 'undefined') {
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-    window.addEventListener(
-      'online',
-      () => {
-        void testConnection();
-      },
-      { once: true }
-    );
-  } else {
-    setTimeout(() => {
-      void testConnection();
-    }, 1200);
-  }
+  void testConnection();
 }
 
 export enum OperationType {

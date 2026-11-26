@@ -258,7 +258,6 @@ export async function updateCloudUserProfile(
       await ensureCloudUserProfile(user, profile);
       return;
     }
-    if (isTransientFirestoreError(error)) return;
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
 }

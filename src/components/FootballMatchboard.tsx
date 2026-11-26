@@ -148,10 +148,10 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
     calendarScope === 'espana';
 
   useEffect(() => {
-    if (leagueFilter || calendarScope || dayOffset !== 0) {
+    if (leagueFilter || calendarScope) {
       setStatusTab((prev) => (prev === 'live' ? 'all' : prev));
     }
-  }, [leagueFilter, calendarScope, dayOffset, setStatusTab]);
+  }, [leagueFilter, calendarScope, setStatusTab]);
 
   const fetchBoard = useCallback(
     async (silent = false) => {
@@ -348,12 +348,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
         } else if (lf === 'espana') {
           if (!isSpainNationalTeamMatch(m.homeTeam, m.awayTeam)) return false;
         } else if (lf === 'champions') {
-          if (
-            !/champions|uefa\.champions|liga de campeones/i.test(hayLeague) ||
-            /\b(afc|wchampions|femenin|femeni|women|youth)\b/i.test(hayLeague)
-          ) {
-            return false;
-          }
+          if (!/champions|uefa\.champions|liga de campeones/i.test(hayLeague)) return false;
         } else if (lf === 'laliga' || lf === 'esp.1') {
           if (!/laliga|esp\.1|primera|ea sports/i.test(hayLeague)) return false;
         } else if (lf === 'hypermotion') {

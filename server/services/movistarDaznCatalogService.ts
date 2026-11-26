@@ -747,8 +747,7 @@ export async function getMovistarDaznHome(): Promise<{
       );
     }
 
-    const resolvedLogo =
-      resolveOfficialChannelLogoUrl({ id: tdt.id, logoUrl: (tdt as { logoUrl?: string }).logoUrl }) || '';
+    const resolvedLogo = (tdt as { logoUrl?: string }).logoUrl || resolveOfficialChannelLogoUrl({ id: tdt.id }) || '';
 
     return {
       id: tdt.id,

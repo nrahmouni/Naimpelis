@@ -19,10 +19,7 @@ export interface StreamTrack {
   id: string;
   label: string;
   lang: string;
-  langLabel?: string;
   quality?: string;
-  providerId?: string;
-  providerName?: string;
   /** Raw upstream reference */
   sourceUrl: string;
   /** Kind of resolver needed when switching to this track */
@@ -34,7 +31,6 @@ export interface StreamTrack {
     | 'bingetrix_en'
     | 'sports_channel'
     | 'tdt_hls'
-    | 'mediaset_live'
     | 'elahmad_live'
     | 'direct_hls'
     | 'direct_mp4'
@@ -45,16 +41,6 @@ export interface StreamTrack {
   resolvedStreamUrl?: string;
   /** Live health status measured by server channel health monitor */
   health?: TrackHealthInfo;
-}
-
-export interface ServerAlternativeSummary {
-  id: string;
-  providerId: string;
-  providerName: string;
-  lang: string;
-  langLabel: string;
-  quality: string;
-  qualityTier: number;
 }
 
 export type StreamingProviderId =
@@ -125,10 +111,7 @@ export interface MediaRichDetails {
   directorOrCreator?: string;
   cast: CastMemberItem[];
   similar: CatalogMovie[];
-  availableLanguages?: ('ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT' | 'FR' | 'PT' | 'IT' | 'DE' | 'AR')[];
-  extendedLanguages?: string[];
-  bestQuality?: string;
-  serverAlternatives?: ServerAlternativeSummary[];
+  availableLanguages?: ('ES' | 'LAT' | 'VOSE' | 'EN')[];
   watchProviders?: string[];
 }
 
@@ -163,10 +146,7 @@ export interface TvSeriesDetails {
   seasons: TvSeasonSummary[];
   activeSeason: number;
   episodes: TvEpisodeItem[];
-  availableLanguages?: ('ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT' | 'FR' | 'PT' | 'IT' | 'DE' | 'AR')[];
-  extendedLanguages?: string[];
-  bestQuality?: string;
-  serverAlternatives?: ServerAlternativeSummary[];
+  availableLanguages?: ('ES' | 'LAT' | 'VOSE' | 'EN')[];
 }
 
 export interface CatalaCatalogItem {
@@ -250,7 +230,7 @@ export interface RoomQueueItem {
   url?: string;
   gnulaUrl?: string;
   vestUrl?: string;
-  preferLang?: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT' | 'FR' | 'PT' | 'IT' | 'DE' | 'AR' | 'QUALITY';
+  preferLang?: 'ES' | 'LAT' | 'VOSE' | 'EN';
   addedBy: string;
   voterIds?: string[];
 }
@@ -317,7 +297,6 @@ export interface SportsMatch {
     kickoffIso?: string;
     kickoffTime?: string;
     spanishBroadcaster?: FootballMatchboardItem['spanishBroadcaster'];
-    verifiedTvGuide?: FootballMatchboardItem['verifiedTvGuide'];
   };
 }
 

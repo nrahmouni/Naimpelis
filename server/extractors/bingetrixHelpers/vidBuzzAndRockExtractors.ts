@@ -294,18 +294,8 @@ export async function probeVidsrcBuzzHasContent(opts: {
       vidsrcBuzzEmptyCache.set(key, false);
       return false;
     }
-    const qObj = parseQConfigFromHtml(html);
-    const rawServers = qObj?.ssr?.servers;
-    const hasServers = Boolean(
-      qObj?.t &&
-        (Array.isArray(rawServers)
-          ? rawServers.length > 0
-          : rawServers && typeof rawServers === 'object'
-            ? Object.keys(rawServers).length > 0
-            : Boolean(qObj?.ssr?.ref))
-    );
-    vidsrcBuzzEmptyCache.set(key, hasServers);
-    return hasServers;
+    vidsrcBuzzEmptyCache.set(key, true);
+    return true;
   } catch {
     return false;
   }

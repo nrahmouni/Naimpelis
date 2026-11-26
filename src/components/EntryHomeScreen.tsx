@@ -16,6 +16,7 @@ import { useBackInterceptor } from '../lib/backInterceptor';
 import { PosterImage } from './ui/PosterImage';
 import { UniversalHomeSearch } from './home/UniversalHomeSearch';
 import { EntryHomeBentoGrid } from './home/EntryHomeBentoGrid';
+import { ProvidersCatalogSection } from './providers/ProvidersCatalogSection';
 import { BarcaMadridDirectBanner } from './home/BarcaMadridDirectBanner';
 import {
   getBarcaMadridHomeMatches,
@@ -53,6 +54,10 @@ interface EntryHomeScreenProps {
   onOpenMovieDetails?: (movie: CatalogMovie) => void;
   onOpenSeriesPage?: (series: CatalogMovie) => void;
   onPlayChannel?: (channel: SpanishTdtChannel) => void;
+  onPlayCustomUrl?: (
+    rawUrl: string,
+    meta?: { title?: string; subtitle?: string; poster?: string }
+  ) => void;
   onPlayMatch?: (match: SportsMatch, channelIndex?: number) => void;
   loadingItemId?: string | null;
   onSelectGame?: (gameId: string) => void;
@@ -84,6 +89,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   onOpenMovieDetails = () => {},
   onOpenSeriesPage = () => {},
   onPlayChannel = () => {},
+  onPlayCustomUrl,
   onPlayMatch = () => {},
   loadingItemId = null,
   onSelectGame = () => {},
@@ -313,6 +319,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             onOpenMovieDetails={onOpenMovieDetails}
             onOpenSeriesPage={onOpenSeriesPage}
             onPlayChannel={onPlayChannel}
+            onPlayCustomUrl={onPlayCustomUrl}
             onPlayMatch={onPlayMatch}
             onSelectGame={onSelectGame}
             onOpenMusicWorld={() => onSelectWorld('music')}
@@ -342,7 +349,13 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
           onCardClick={handleCardClick}
         />
 
-        {/* 4. CONDITIONAL CONTINUE WATCHING RAIL */}
+        {/* 4B. MATERIALIZED MULTI-PROVIDER CATALOG (AUTO-SYNCED AT STARTUP) */}
+        <ProvidersCatalogSection
+          onPlayChannel={onPlayChannel}
+          onPlayCustomUrl={onPlayCustomUrl}
+        />
+
+        {/* 5. CONDITIONAL CONTINUE WATCHING RAIL */}
         {watchHistory.length > 0 && (
           <section className="space-y-2.5 pt-1">
             <div className="flex items-center justify-between gap-2">

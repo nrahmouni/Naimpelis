@@ -21,8 +21,6 @@ import type { PlaybackCoreContext } from './playbackTypes';
 
 import { useEpisodeAndCatalaPlayback } from './useEpisodeAndCatalaPlayback';
 import { useClipboxPlayback } from './useClipboxPlayback';
-import { resolveTrackLang } from '../../components/player/trackLabelUtils';
-import { useAppStore } from '../../store/useAppStore';
 
 export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
   const {
@@ -96,18 +94,6 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
 
     const { reqSeq, signal } = beginMediaExtraction();
 
-    const initialResolvedLang = resolveTrackLang(null, {
-      title: movie.title,
-      fallbackLang: preferLang,
-    });
-    const optimisticDockLang: ActiveMovieContext['preferLang'] =
-      initialResolvedLang === 'EN' ||
-      initialResolvedLang === 'LAT' ||
-      initialResolvedLang === 'VOSE' ||
-      initialResolvedLang === 'CAT'
-        ? initialResolvedLang
-        : 'ES';
-
     setActiveSportsMatch(null);
     setActiveMatchDetails(null);
     setVideoState((prev) => (prev.seriesMeta ? { ...prev, seriesMeta: undefined } : prev));
@@ -118,7 +104,7 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
       poster: movie.poster,
       backdrop: movie.backdrop,
       overview: movie.overview,
-      preferLang: optimisticDockLang,
+      preferLang: preferLang as ActiveMovieContext['preferLang'],
     });
     scrollDesktopToPlayer();
     setIsExtracting(true);
@@ -134,7 +120,6 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
     );
 
     try {
-      const priorityMode = useAppStore.getState().playbackPriorityMode;
       const params = new URLSearchParams({
         mediaType: 'movie',
         tmdbId: movie.tmdbId ? String(movie.tmdbId) : '',
@@ -143,7 +128,6 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
         gnulaUrl: movie.gnulaUrl || '',
         vestUrl: movie.vestUrl || '',
         preferLang,
-        ...(priorityMode === 'best_quality' ? { preferQualityFirst: '1', priority: 'best_quality' } : {}),
         title: movie.title,
         ...(movie.originalTitle ? { origTitle: movie.originalTitle } : {}),
         ...(movie.year && /^\d{4}$/.test(movie.year) ? { year: movie.year } : {}),
@@ -182,21 +166,6 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
       );
       const activeTrack = tracks[activeIdx];
       const activeLabel = activeTrack?.label || data.resolvedLabel || requestedLangName;
-      const actualResolvedLang = resolveTrackLang(activeTrack, {
-        title: movie.title,
-        subtitle: activeLabel,
-        fallbackLang: data.resolvedLang || preferLang,
-      });
-      const syncedDockLang: ActiveMovieContext['preferLang'] =
-        actualResolvedLang === 'EN' ||
-        actualResolvedLang === 'LAT' ||
-        actualResolvedLang === 'VOSE' ||
-        actualResolvedLang === 'CAT'
-          ? actualResolvedLang
-          : 'ES';
-      setActiveMovieContext((prev) =>
-        prev ? { ...prev, preferLang: syncedDockLang } : prev
-      );
 
       if (data.languageFallbackUsed) {
         showLanguageNotice({
@@ -353,14 +322,12 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
     );
 
     try {
-      const priorityMode = useAppStore.getState().playbackPriorityMode;
       const params = new URLSearchParams({
         mediaType: 'tv',
         tmdbId: String(series.tmdbId),
         season: String(episode.seasonNumber),
         episode: String(episode.episodeNumber),
         preferLang,
-        ...(priorityMode === 'best_quality' ? { preferQualityFirst: '1', priority: 'best_quality' } : {}),
         title: series.title,
         ...(series.originalTitle ? { origTitle: series.originalTitle } : {}),
         ...(series.year && /^\d{4}$/.test(series.year) ? { year: series.year } : {}),

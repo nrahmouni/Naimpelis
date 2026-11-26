@@ -128,62 +128,6 @@ export default defineConfig(() => {
               },
             },
             {
-              urlPattern: /^\/api\/catalog\/(?:movies|series|bingetrix|vest|latest-releases|collections|discover|catala|castellano|youtube|fast-channels|details|tv)(?:\/.*)?(\?.*)?$/i,
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'vod-catalog-swr-cache',
-                expiration: {
-                  maxEntries: 90,
-                  maxAgeSeconds: 60 * 60 * 6,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            {
-              urlPattern: /^\/api\/(?:catalog\/(?:tdt|world-tv|elahmad|sports)|(?:belix|rbtv)\/channels|epg\/live|sports\/(?:scores|champions-hub|chiringuito-live))(\?.*)?$/i,
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'live-tv-epg-swr-cache',
-                expiration: {
-                  maxEntries: 50,
-                  maxAgeSeconds: 60 * 15,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            {
-              urlPattern: /^\/api\/(?:providers\/(?:status|catalog|series)|xtream\/(?:providers|catalog))(?:\/.*)?(\?.*)?$/i,
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'providers-catalog-swr-cache',
-                expiration: {
-                  maxEntries: 60,
-                  maxAgeSeconds: 60 * 30,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            {
-              urlPattern: /^\/api\/music\/(?:home|radios|podcasts|genre|album|artist|search)(?:\/.*)?(\?.*)?$/i,
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'music-catalog-swr-cache',
-                expiration: {
-                  maxEntries: 60,
-                  maxAgeSeconds: 60 * 60 * 6,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            {
               urlPattern: /^\/api\/catalog\/football-board(\?.*)?$/i,
               handler: 'StaleWhileRevalidate',
               options: {
@@ -191,34 +135,6 @@ export default defineConfig(() => {
                 expiration: {
                   maxEntries: 20,
                   maxAgeSeconds: 60 * 5,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            {
-              urlPattern: /^\/api\/img-proxy\?.*$/i,
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'img-proxy-swr-cache',
-                expiration: {
-                  maxEntries: 300,
-                  maxAgeSeconds: 60 * 60 * 24 * 14,
-                },
-                cacheableResponse: {
-                  statuses: [0, 200],
-                },
-              },
-            },
-            {
-              urlPattern: /^https:\/\/(?:upload\.wikimedia\.org|raw\.githubusercontent\.com|e-cdns-images\.dzcdn\.net|is\d+-ssl\.mzstatic\.com)\/.*/i,
-              handler: 'StaleWhileRevalidate',
-              options: {
-                cacheName: 'media-artwork-swr-cache',
-                expiration: {
-                  maxEntries: 350,
-                  maxAgeSeconds: 60 * 60 * 24 * 14,
                 },
                 cacheableResponse: {
                   statuses: [0, 200],

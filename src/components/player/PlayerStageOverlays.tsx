@@ -160,32 +160,32 @@ export const PlayerStageOverlays: React.FC<PlayerStageOverlaysProps> = ({
             onDismissLocalLangPopup();
             onDismissLanguageNotice?.();
           }}
-          className={`pointer-events-auto absolute top-11 sm:top-13 left-1/2 -translate-x-1/2 z-45 w-[92%] max-w-[400px] px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl backdrop-blur-xl border shadow-[0_14px_34px_rgba(0,0,0,0.85)] flex items-center justify-between gap-2 cursor-pointer transition-all ${
+          className={`pointer-events-auto absolute top-12 sm:top-14 left-1/2 -translate-x-1/2 z-45 w-[92%] max-w-[430px] px-3.5 py-2.5 rounded-2xl backdrop-blur-xl border shadow-[0_20px_50px_rgba(0,0,0,0.92)] flex items-start justify-between gap-2.5 cursor-pointer transition-all ${
             activeLanguagePopup.type === 'warning' || activeLanguagePopup.type === 'error'
               ? 'bg-[#19110B]/95 border-amber-400/55 text-amber-100'
               : 'bg-[#0B1412]/95 border-emerald-400/50 text-emerald-50'
           }`}
         >
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex items-start gap-2.5 min-w-0">
             <div
-              className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
+              className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
                 activeLanguagePopup.type === 'warning' || activeLanguagePopup.type === 'error'
                   ? 'bg-amber-500/25 text-amber-300'
                   : 'bg-emerald-500/25 text-emerald-300'
               }`}
             >
               {activeLanguagePopup.type === 'warning' || activeLanguagePopup.type === 'error' ? (
-                <RiffanWarningIcon size={14} animate="always" tone="current" />
+                <RiffanWarningIcon size={16} animate="always" tone="current" />
               ) : (
-                <Check className="w-3.5 h-3.5" />
+                <Check className="w-4 h-4" />
               )}
             </div>
             <div className="min-w-0 text-left">
-              <div className="font-display font-bold text-[11px] sm:text-xs text-white leading-tight truncate">
+              <div className="font-display font-bold text-xs sm:text-sm text-white leading-snug">
                 {activeLanguagePopup.title}
               </div>
               {activeLanguagePopup.subtitle && (
-                <div className="text-[10px] sm:text-[11px] text-zinc-200/90 leading-tight truncate">
+                <div className="text-[11px] text-zinc-200/90 leading-snug mt-0.5">
                   {activeLanguagePopup.subtitle}
                 </div>
               )}
@@ -201,7 +201,7 @@ export const PlayerStageOverlays: React.FC<PlayerStageOverlaysProps> = ({
             className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer"
             aria-label="Cerrar aviso de idioma"
           >
-            <RiffanCloseIcon size={13} tone="current" />
+            <RiffanCloseIcon size={14} tone="current" />
           </button>
         </div>
       )}
@@ -413,8 +413,7 @@ export const PlayerStageOverlays: React.FC<PlayerStageOverlaysProps> = ({
         !isTouchLocked &&
         (videoState.mode === 'hls' || videoState.mode === 'direct') &&
         !isExtracting &&
-        !streamError &&
-        !(videoState.isLive && (isBuffering || streamRefreshPhase !== 'idle')) && (
+        !streamError && (
           <div
             className={`pointer-events-none absolute inset-0 z-35 flex items-center justify-center gap-6 sm:gap-10 transition-opacity duration-150 ${
               showControls ? 'opacity-100' : 'opacity-0'
@@ -524,23 +523,24 @@ export const PlayerStageOverlays: React.FC<PlayerStageOverlaysProps> = ({
         (isBuffering || streamRefreshPhase !== 'idle') &&
         (videoState.mode === 'hls' || videoState.mode === 'direct') && (
           <>
+            {videoState.isLive && !isMinimized && (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute top-0 inset-x-0 z-25 h-[2.5px] overflow-hidden bg-white/[0.06]"
+              >
+                <div className="h-full w-[42%] bg-gradient-to-r from-transparent via-[#00F593] to-[#9146FF] rtv-signal-sweep" />
+              </div>
+            )}
+
             <div
               role="status"
               aria-live="polite"
-              className={`pointer-events-none absolute z-25 overflow-hidden flex items-center gap-2 bg-[#0B0E17]/88 backdrop-blur-md border border-white/15 shadow-[0_10px_28px_rgba(0,0,0,0.65)] ${
+              className={`pointer-events-none absolute z-25 flex items-center gap-2.5 bg-[#0B0E17]/82 backdrop-blur-md border border-white/15 shadow-[0_10px_28px_rgba(0,0,0,0.65)] ${
                 isMinimized
                   ? 'top-2 left-2 p-1.5 rounded-lg'
-                  : 'bottom-3 sm:bottom-4 left-3 sm:left-4 px-3 py-1.5 rounded-xl max-w-[calc(100%-24px)]'
+                  : 'bottom-14 sm:bottom-5 left-3 sm:left-4 px-3 py-2 rounded-xl max-w-[calc(100%-24px)]'
               }`}
             >
-              {streamRefreshPhase !== 'idle' && (
-                <span
-                  aria-hidden="true"
-                  className="pointer-events-none absolute inset-x-0 bottom-0 h-[1.5px] overflow-hidden"
-                >
-                  <span className="block h-full w-1/2 bg-gradient-to-r from-[#9146FF] via-[#00F593] to-[#9146FF] rtv-signal-sweep" />
-                </span>
-              )}
               <div className="relative w-5 h-5 shrink-0 flex items-center justify-center">
                 <svg
                   viewBox="0 0 24 24"

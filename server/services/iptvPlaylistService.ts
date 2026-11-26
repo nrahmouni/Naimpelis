@@ -330,20 +330,6 @@ export async function refreshLiveIptvRegistry(force = false): Promise<{
       logger.debug({ err }, 'iptv_org_sync_skip');
     }
 
-    try {
-      const freeTvText = await fetchSyncTextSafe(
-        'https://raw.githubusercontent.com/Free-TV/IPTV/master/playlists/playlist_spain.m3u8',
-        8000
-      );
-      if (freeTvText) {
-        for (const item of parseM3uText(freeTvText)) {
-          registerUrl(item.name, item.url, item.logo);
-        }
-      }
-    } catch (err) {
-      logger.debug({ err }, 'freetv_spain_sync_skip');
-    }
-
     if (nextMap.size > 0) {
       syncedUrlMap = nextMap;
     }

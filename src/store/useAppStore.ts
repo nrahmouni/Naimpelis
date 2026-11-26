@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import type { XtreamServerWorldId } from '../config/defaultProviders';
 import type { TypingUserPayload } from '../shared/protocol';
 import type {
   CatalaSeriesDetails,
@@ -14,14 +13,13 @@ const SUBTITLE_STYLE_KEY = 'naimcine_subtitle_style_v2';
 const SCHEDULED_ROOMS_KEY = 'naimcine_scheduled_rooms_v1';
 const LAST_WORLD_KEY = 'riffantv_last_world_v1';
 const SESSION_MODE_KEY = 'riffantv_session_mode_v1';
-const PRIORITY_MODE_KEY = 'riffantv_priority_mode_v1';
 
-export type PlaybackPriorityMode = 'es_quality' | 'best_quality';
 export type SessionMode = 'solo' | 'party';
 export type ShellNavSection = 'home' | 'search' | 'rooms' | 'my_list' | 'profile';
 export type PrimaryWorldId =
   | 'cine'
   | 'futbol'
+  | 'champions'
   | 'tv'
   | 'juegos'
   | 'sala'
@@ -30,16 +28,8 @@ export type PrimaryWorldId =
   | 'belix'
   | 'atresplayer'
   | 'movistardazn'
-  | 'music'
-  | 'providers'
-  | 'reels';
-export type WorldId =
-  | 'entry'
-  | PrimaryWorldId
-  | 'youtube'
-  | 'danaactive'
-  | 'champions'
-  | XtreamServerWorldId;
+  | 'music';
+export type WorldId = 'entry' | PrimaryWorldId | 'youtube';
 export type CineSubTab = 'movies' | 'series';
 export type FutbolSubTab = 'matches' | 'channels';
 export type HomeSearchCategoryFilter =
@@ -95,6 +85,7 @@ export interface PlaybackReturnContext {
 const PRIMARY_WORLDS: PrimaryWorldId[] = [
   'cine',
   'futbol',
+  'champions',
   'tv',
   'juegos',
   'sala',
@@ -104,8 +95,6 @@ const PRIMARY_WORLDS: PrimaryWorldId[] = [
   'atresplayer',
   'movistardazn',
   'music',
-  'providers',
-  'reels',
 ];
 
 function loadLastUsedWorld(): PrimaryWorldId | null {
@@ -119,22 +108,12 @@ function loadLastUsedWorld(): PrimaryWorldId | null {
 }
 
 function loadSessionMode(): SessionMode {
-  if (typeof localStorage === 'undefined') return 'party';
+  if (typeof localStorage === 'undefined') return 'solo';
   try {
     const raw = localStorage.getItem(SESSION_MODE_KEY);
-    return raw === 'solo' ? 'solo' : 'party';
+    return raw === 'party' ? 'party' : 'solo';
   } catch {
-    return 'party';
-  }
-}
-
-function loadPriorityMode(): PlaybackPriorityMode {
-  if (typeof localStorage === 'undefined') return 'es_quality';
-  try {
-    const raw = localStorage.getItem(PRIORITY_MODE_KEY);
-    return raw === 'best_quality' ? 'best_quality' : 'es_quality';
-  } catch {
-    return 'es_quality';
+    return 'solo';
   }
 }
 
@@ -193,9 +172,6 @@ interface AppShellState {
   atresplayerCategory: 'all' | 'concursos' | 'entretenimiento' | 'series' | 'actualidad';
   movistarDaznOperator: 'all' | 'movistar' | 'dazn';
   movistarDaznCategory: 'all' | 'futbol' | 'motor' | 'deportes' | 'entretenimiento' | 'series';
-  providersScope: string;
-  providersKind: 'all' | 'live' | 'movie' | 'series';
-  playbackPriorityMode: PlaybackPriorityMode;
   isFloatingRoomOpen: boolean;
   floatingBubbleSuppressCount: number;
   showDesignSystem: boolean;
@@ -264,9 +240,6 @@ interface AppShellState {
   setMovistarDaznCategory: (
     cat: 'all' | 'futbol' | 'motor' | 'deportes' | 'entretenimiento' | 'series'
   ) => void;
-  setProvidersScope: (scope: string) => void;
-  setProvidersKind: (kind: 'all' | 'live' | 'movie' | 'series') => void;
-  setPlaybackPriorityMode: (mode: PlaybackPriorityMode) => void;
   setIsFloatingRoomOpen: (open: boolean) => void;
   pushBubbleSuppression: () => void;
   popBubbleSuppression: () => void;
@@ -329,7 +302,7 @@ function loadScheduledRooms(): ScheduledRoomItem[] {
 
 export const useAppStore = create<AppShellState>((set, get) => ({
   sessionMode: loadSessionMode(),
-  hasEnteredApp: false,
+  hasEnteredApp: true,
   shareToast: null,
   tvRegion: 'all',
   tdtCategory: 'all',
@@ -375,9 +348,6 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   atresplayerCategory: 'all',
   movistarDaznOperator: 'all',
   movistarDaznCategory: 'all',
-  providersScope: 'total',
-  providersKind: 'all',
-  playbackPriorityMode: loadPriorityMode(),
   isFloatingRoomOpen: false,
   floatingBubbleSuppressCount: 0,
   showDesignSystem:
@@ -640,25 +610,6 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   setMovistarDaznCategory: (movistarDaznCategory) => {
     if (get().movistarDaznCategory === movistarDaznCategory) return;
     set({ movistarDaznCategory });
-  },
-  setProvidersScope: (providersScope) => {
-    if (get().providersScope === providersScope) return;
-    set({ providersScope });
-  },
-  setProvidersKind: (providersKind) => {
-    if (get().providersKind === providersKind) return;
-    set({ providersKind });
-  },
-  setPlaybackPriorityMode: (playbackPriorityMode) => {
-    if (get().playbackPriorityMode === playbackPriorityMode) return;
-    set({ playbackPriorityMode });
-    if (typeof localStorage !== 'undefined') {
-      try {
-        localStorage.setItem(PRIORITY_MODE_KEY, playbackPriorityMode);
-      } catch {
-        // ignore
-      }
-    }
   },
   setIsFloatingRoomOpen: (isFloatingRoomOpen) => {
     if (get().isFloatingRoomOpen === isFloatingRoomOpen) return;

@@ -311,10 +311,7 @@ export function getCachedEpgStore(): Map<string, RawEpgEvent[]> | null {
 }
 
 const EPG_NON_LIVE_REPLAY_RE =
-  /\b(resumen|resumenes|highlights|historias|classic|classics|retro|legends|magazine|el dia despues|el tercer tiempo|previa\b|postpartido|tertulia|analisis|reportaje|un dia de partit|la transmissio|tiempo de juego|carrusel|radioestadio|review|interview|xtra time|premier corner)\b/i;
-
-const EPG_NON_FIRST_TEAM_CATEGORY_RE =
-  /\b(u19|u21|u20|u17|sub-?\d{2}|juvenil|youth league|femen[ií]|femenin[oa]|women|liga f|baloncesto|basquet|básquet|acb|euroliga|euroleague|futsal|futbol sala|fútbol sala|balonmano|handbol|hockey)\b/i;
+  /\b(resumen|resumenes|highlights|historias|classic|classics|retro|legends|magazine|el dia despues|el tercer tiempo|previa\b|review|interview|xtra time|premier corner)\b/i;
 
 export function findEpgVerifiedBroadcastersForFixture(
   homeTeam: string,
@@ -328,7 +325,6 @@ export function findEpgVerifiedBroadcastersForFixture(
   const homeTokens = extractTokensForEpgMatch(homeTeam);
   const awayTokens = extractTokensForEpgMatch(awayTeam);
   if (homeTokens.length === 0 || awayTokens.length === 0) return [];
-  const fixtureHasSpecialCategory = EPG_NON_FIRST_TEAM_CATEGORY_RE.test(`${homeTeam} ${awayTeam}`);
 
   const targetTime = kickoffMs > 0 ? kickoffMs : Date.now();
   // Live match program must actually overlap kickoff (+30m..+95m) and start within 60m before kickoff
@@ -366,10 +362,8 @@ export function findEpgVerifiedBroadcastersForFixture(
       if (ev.startMs < earliestStart || ev.startMs > latestStart || ev.stopMs < minStopMs) {
         continue;
       }
-      const evFullText = `${ev.title} ${ev.subtitle || ''} ${ev.description || ''}`;
-      if (EPG_NON_LIVE_REPLAY_RE.test(evFullText)) continue;
-      if (!fixtureHasSpecialCategory && EPG_NON_FIRST_TEAM_CATEGORY_RE.test(evFullText)) continue;
-      const hay = evFullText
+      if (EPG_NON_LIVE_REPLAY_RE.test(ev.title)) continue;
+      const hay = `${ev.title} ${ev.subtitle || ''} ${ev.description || ''}`
         .toLowerCase()
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '');

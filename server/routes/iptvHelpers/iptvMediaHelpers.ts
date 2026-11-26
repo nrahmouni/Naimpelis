@@ -1,5 +1,6 @@
 export { renderIptvChannelPng } from './iptvPngBadge.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
+import { curlPlainGetText } from '../../services/vestMirrorService.ts';
 import {
   TDT_DVB_UA,
   buildHlsProxyUrl,
@@ -154,8 +155,7 @@ export async function fetchUpstreamManifestText(
     }
   }
 
-  const manifestTimeoutMs = isDvbHeadendStream(targetUrl) ? 2200 : 1800;
-  let shouldSkipCurlFallback = false;
+  const manifestTimeoutMs = isDvbHeadendStream(targetUrl) ? 7500 : 3800;
 
   if (!shouldBypassNodeFetch(targetUrl)) {
     try {
@@ -168,34 +168,24 @@ export async function fetchUpstreamManifestText(
         if (text.includes('#EXTM3U') && !/nosignal/i.test(text)) {
           return { text, finalUrl: resp.url || targetUrl };
         }
-        return null;
       }
-      if (resp.status === 404 || resp.status >= 500) {
-        return null;
-      }
-    } catch (err: any) {
-      const msg = String(err?.message || err?.code || '').toLowerCase();
-      if (
-        err?.name === 'AbortError' ||
-        /timeout|timed out|aborted|enotfound|econnrefused|ehostunreach|enetunreach/.test(msg)
-      ) {
-        shouldSkipCurlFallback = true;
-      } else {
-        markHostNeedsCurlFallback(targetUrl);
-      }
+    } catch {
+      markHostNeedsCurlFallback(targetUrl);
     }
   }
 
-  if (shouldSkipCurlFallback) {
-    return null;
-  }
-
-  const fb = await curlGetText(targetUrl, headers, 2, true, true).catch(() => ({
+  const fb = await curlGetText(targetUrl, headers, 5, true, true).catch(() => ({
     text: '',
     effectiveUrl: targetUrl,
   }));
   if (fb.text && fb.text.includes('#EXTM3U') && !/nosignal/i.test(fb.text)) {
     return { text: fb.text, finalUrl: fb.effectiveUrl || targetUrl };
+  }
+  if (referer || Object.keys(headers).length > 0) {
+    const plainText = await curlPlainGetText(targetUrl, 5).catch(() => '');
+    if (plainText && plainText.includes('#EXTM3U') && !/nosignal/i.test(plainText)) {
+      return { text: plainText, finalUrl: targetUrl };
+    }
   }
   return null;
 }
@@ -408,7 +398,7 @@ async function probeLiveEdgeSegmentOk(segUrl: string, referer: string): Promise<
   }
 
   const tryCurlSegmentFallback = async (): Promise<boolean> => {
-    const res = await curlGetBufferWithStatus(segUrl, headers, 2).catch(() => ({
+    const res = await curlGetBufferWithStatus(segUrl, headers, 4).catch(() => ({
       buf: Buffer.alloc(0),
       status: 0,
     }));
@@ -427,15 +417,16 @@ async function probeLiveEdgeSegmentOk(segUrl: string, referer: string): Promise<
     const resp = await streamingFetch(segUrl, {
       method: 'GET',
       headers,
-      timeoutMs: 1800,
+      timeoutMs: 4000,
     });
     if (resp.status === 416) {
+      // Some CDNs reject Range probes; re-check without Range and read only the first chunk
       const plainHeaders = { ...headers };
       delete plainHeaders['Range'];
       const fullResp = await streamingFetch(segUrl, {
         method: 'GET',
         headers: plainHeaders,
-        timeoutMs: 1800,
+        timeoutMs: 4000,
       });
       if (!fullResp.ok) return tryCurlSegmentFallback();
       try {
@@ -451,7 +442,6 @@ async function probeLiveEdgeSegmentOk(segUrl: string, referer: string): Promise<
       } catch {
         // ignore
       }
-      if (resp.status === 404 || resp.status >= 500) return false;
       return tryCurlSegmentFallback();
     }
     const ct = (resp.headers.get('content-type') || '').toLowerCase();
@@ -463,6 +453,7 @@ async function probeLiveEdgeSegmentOk(segUrl: string, referer: string): Promise<
       }
       return false;
     }
+    // Consume just the small chunk or cancel immediately to avoid buffering multi-MB TS files
     if (resp.body) {
       const reader = resp.body.getReader();
       try {
@@ -478,14 +469,7 @@ async function probeLiveEdgeSegmentOk(segUrl: string, referer: string): Promise<
       }
     }
     return true;
-  } catch (err: any) {
-    const msg = String(err?.message || err?.code || '').toLowerCase();
-    if (
-      err?.name === 'AbortError' ||
-      /timeout|timed out|aborted|enotfound|econnrefused|ehostunreach|enetunreach/.test(msg)
-    ) {
-      return false;
-    }
+  } catch {
     markHostNeedsCurlFallback(segUrl);
     return tryCurlSegmentFallback();
   }

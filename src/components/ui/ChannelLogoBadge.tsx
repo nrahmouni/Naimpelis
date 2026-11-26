@@ -518,8 +518,6 @@ export const ChannelLogoBadge: React.FC<ChannelLogoBadgeProps> = ({
           <img
             src={officialLogoUrl!}
             alt={channel.name}
-            width={48}
-            height={48}
             loading="lazy"
             decoding="async"
             referrerPolicy="no-referrer"

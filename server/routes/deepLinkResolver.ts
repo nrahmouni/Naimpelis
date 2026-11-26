@@ -64,7 +64,7 @@ export interface ResolvedDeepLinkResult {
   match?: any;
   game?: { gameId: string; gameSlug: string; title: string };
   world?: {
-    world: 'cine' | 'futbol' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'champions' | 'music' | 'providers' | 'reels';
+    world: 'cine' | 'futbol' | 'champions' | 'tv' | 'juegos' | 'youtube' | 'clipbox' | 'rbtv' | 'belix' | 'atresplayer' | 'movistardazn' | 'music';
     cineTab?: 'movies' | 'series';
     cineCategory?: string;
     futbolTab?: 'matches' | 'channels';
@@ -608,6 +608,7 @@ export async function resolveDeepLinkTarget(
       const worldLabels: Record<string, string> = {
         cine: target.cineTab === 'series' ? 'Catálogo de Series HD' : 'Catálogo de Cine y Estrenos 4K',
         futbol: 'Fútbol en Directo y Marcadores',
+        champions: 'UEFA Champions League · MultiChampions & Multi-Partido HD',
         tv: 'Canales de TV y TDT en Directo',
         juegos: 'Riffan Play — Salón de Juegos Multijugador',
         youtube: 'YouTube en Sala Sincronizada',
@@ -616,10 +617,7 @@ export async function resolveDeepLinkTarget(
         belix: 'Belix TV — Motor Xtream Codes y Rutas com.ibopro.ultra',
         atresplayer: 'Atresmedia — Directos 1080p, Pasapalabra, Programas y Series',
         movistardazn: 'DAZN & Movistar+ — Fútbol, F1, MotoGP, Deportes HD y Series Originales',
-        champions: 'UEFA Champions League — MultiChampions y Multi-Partido en Directo',
         music: 'Riffan Music — Canciones, Letras Sincronizadas, Videoclips HD y Radios 24/7',
-        providers: 'Catálogo Total — Proveedores HD, VOD 4K, 2M2H, Adtupac, Ultra VIP y Sult-Vo',
-        reels: 'CineTok · Clips — Tráilers, Escenas Pro y Presentador IA por Gustos',
       };
       const title = `${worldLabels[target.world] || 'RiffanTV'} — RiffanTV`;
       result = {

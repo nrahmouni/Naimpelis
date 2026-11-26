@@ -83,7 +83,7 @@ function markDvbUpstreamDown(rawUrl: string, reason: string, ttlMs = 45_000): vo
 async function probeDvbUpstreamReachable(
   cleanUpstream: string,
   referer: string,
-  timeoutMs = 8_000
+  timeoutMs = 2600
 ): Promise<boolean> {
   const streamKey = getDvbCooldownKey(cleanUpstream);
   if (isDvbUpstreamCoolingDown(cleanUpstream)) return false;
@@ -338,21 +338,19 @@ async function startOrReuseLiveDvbCleanHlsSession(
   // 2) Skip duplicate pre-probe GET so only 1 upstream socket is opened.
   if (isXtreamLive) {
     const targetHost = getDvbHostKey(cleanUpstream);
-    const sameHostSessions: Array<{ key: string; lastAccessAt: number }> = [];
+    let evicted = false;
     for (const [k, s] of liveDvbSessions.entries()) {
       if (k !== sessionKey && getDvbHostKey(s.upstreamUrl) === targetHost) {
-        sameHostSessions.push({ key: k, lastAccessAt: s.lastAccessAt });
+        destroyLiveDvbSession(k);
+        evicted = true;
       }
     }
-    if (sameHostSessions.length >= 2) {
-      sameHostSessions.sort((a, b) => a.lastAccessAt - b.lastAccessAt);
-      for (const old of sameHostSessions.slice(0, sameHostSessions.length - 1)) {
-        destroyLiveDvbSession(old.key);
-      }
-      await new Promise((r) => setTimeout(r, 120));
+    if (evicted) {
+      // Wait cleanly so Xtream edge releases previous max_connections socket before opening next channel
+      await new Promise((r) => setTimeout(r, 180));
     }
   } else if (isM3u8Input && !probe) {
-    const reachable = await probeDvbUpstreamReachable(cleanUpstream, referer, 8_000);
+    const reachable = await probeDvbUpstreamReachable(cleanUpstream, referer, 1600);
     if (!reachable) {
       return null;
     }
@@ -475,7 +473,7 @@ async function startOrReuseLiveDvbCleanHlsSession(
   });
 
   session.readyPromise = new Promise<boolean>((resolve) => {
-    const deadline = Date.now() + 8_500;
+    const deadline = Date.now() + (isXtreamLive ? 6_500 : 12_000);
     let inTick = false;
     const poll = setInterval(async () => {
       if (session.dead) {
@@ -497,7 +495,7 @@ async function startOrReuseLiveDvbCleanHlsSession(
         if (segMatches && segMatches.length >= 1) {
           const firstSegPath = path.join(sessionDir, segMatches[0]);
           const st = await fs.promises.stat(firstSegPath);
-          if (st.size > 4096) {
+          if (st.size > 1024) {
             clearInterval(poll);
             resolve(true);
             return;
@@ -524,7 +522,7 @@ async function startOrReuseLiveDvbCleanHlsSession(
     attempt === 0 &&
     !hadNetworkFailure &&
     !isDvbUpstreamCoolingDown(cleanUpstream) &&
-    elapsed < 6_000
+    elapsed < 7_000
   ) {
     return startOrReuseLiveDvbCleanHlsSession(
       rawUpstreamUrl,
@@ -554,67 +552,20 @@ export function readLiveDvbPlaylistForIptv(
     const raw = fs.readFileSync(playlistPath, 'utf8');
     if (!raw.includes('#EXTM3U')) return null;
     const prefix = publicOrigin ? publicOrigin.replace(/\/+$/, '') : '';
-    const lines = raw.split(/\r?\n/);
-    const headerLines: string[] = [];
-    const segEntries: Array<{ tags: string[]; filename: string }> = [];
-    let pendingTags: string[] = [];
-    let inSegs = false;
-
-    for (const rawLine of lines) {
-      const trimmed = rawLine.trim();
-      if (!trimmed) continue;
-      if (/^seg_\d+\.ts$/i.test(trimmed)) {
-        inSegs = true;
-        segEntries.push({ tags: pendingTags, filename: trimmed });
-        pendingTags = [];
-        continue;
-      }
-      if (trimmed.startsWith('#EXTINF:') || trimmed.startsWith('#EXT-X-DISCONTINUITY') || inSegs) {
-        if (!trimmed.startsWith('#EXT-X-ENDLIST')) {
-          inSegs = true;
-          pendingTags.push(trimmed);
-        }
-        continue;
-      }
-      headerLines.push(trimmed);
-    }
-
-    const existingSegs: Array<{ tags: string[]; filename: string }> = [];
-    let droppedLeadingCount = 0;
-    for (const entry of segEntries) {
-      const segPath = path.join(sess.dir, entry.filename);
-      try {
-        const st = fs.statSync(segPath);
-        if (st.size > 512) {
-          existingSegs.push(entry);
-          continue;
-        }
-      } catch {
-        // file deleted or not flushed yet
-      }
-      if (existingSegs.length === 0) {
-        droppedLeadingCount++;
-      }
-    }
-
-    if (existingSegs.length === 0) {
-      return null;
-    }
-
-    const finalHeader = headerLines.map((h) => {
-      const seqMatch = h.match(/^#EXT-X-MEDIA-SEQUENCE:(\d+)/i);
-      if (seqMatch && droppedLeadingCount > 0) {
-        return `#EXT-X-MEDIA-SEQUENCE:${parseInt(seqMatch[1], 10) + droppedLeadingCount}`;
-      }
-      return h;
-    });
-
-    const out: string[] = [...finalHeader];
-    for (const seg of existingSegs) {
-      out.push(...seg.tags);
-      out.push(`${prefix}/api/dvb-live/${sessionKey}/${seg.filename}`);
-    }
-    return out.join('\n') + '\n';
+    return (
+      raw
+        .split(/\r?\n/)
+        .map((line) => {
+          const trimmed = line.trim();
+          if (!trimmed) return '';
+          if (/^seg_\d+\.ts$/i.test(trimmed)) {
+            return `${prefix}/api/dvb-live/${sessionKey}/${trimmed}`;
+          }
+          return trimmed;
+        })
+        .filter((line) => line.length > 0)
+        .join('\n') + '\n'
+    );
   } catch {
     return null;
   }

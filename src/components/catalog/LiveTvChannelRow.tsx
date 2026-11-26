@@ -3,7 +3,7 @@
  * @description Extracted channel row card for LiveTvWorldView with EPG bar, favorite toggle, and native play action.
  */
 import React from 'react';
-import { Info, Layers, Star } from 'lucide-react';
+import { Info, Star } from 'lucide-react';
 import type {
   AppLanguage,
   ChannelLiveEpg,
@@ -14,7 +14,6 @@ import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { buildChannelFavId } from '../../utils/storage';
 import { ChannelLogoBadge, getChannelRegionMeta } from '../ui/ChannelLogoBadge';
-import { inferStreamQualityTag } from '../../utils/channelQualityRanker';
 
 interface LiveTvChannelRowProps {
   channel: SpanishTdtChannel;
@@ -25,28 +24,6 @@ interface LiveTvChannelRowProps {
   onToggleChannelFavorite: (entry: Omit<FavoriteChannelItem, 'addedAt'>) => void;
   onPlayChannel: (ch: SpanishTdtChannel, liveTitle?: string) => void;
   onOpenEpgModal: (ch: SpanishTdtChannel) => void;
-  onOpenSignalsModal?: (ch: SpanishTdtChannel) => void;
-}
-
-function resolveChannelServerLabel(
-  providerName?: string,
-  providerId?: string,
-  sourceUrl?: string
-): string {
-  if (providerName) return providerName;
-  const hay = `${providerId || ''} ${sourceUrl || ''}`.toLowerCase();
-  if (hay.includes('vod4k')) return 'VOD 4K';
-  if (hay.includes('24tv')) return '24TV';
-  if (hay.includes('2m2h-alt')) return '2M2H Alt';
-  if (hay.includes('2m2h')) return '2M2H';
-  if (hay.includes('dana4k')) return 'Dana 4K Pro';
-  if (hay.includes('ultra-vip')) return 'Ultra VIP';
-  if (hay.includes('sult-vo')) return 'Sult-Vo';
-  if (hay.includes('adtupac')) return 'Adtupac';
-  if (hay.includes('activecdns')) return 'Active CDNS';
-  if (hay.includes('octopus')) return 'Octopus TV';
-  if (hay.includes('primary') || hay.includes('sharkpro')) return 'Shark Pro';
-  return '';
 }
 
 export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
@@ -58,7 +35,6 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
   onToggleChannelFavorite,
   onPlayChannel,
   onOpenEpgModal,
-  onOpenSignalsModal,
 }) => {
   const favId = buildChannelFavId(ch.channels[0]?.sourceUrl || ch.id, ch.name);
   const faved = isChannelFavorited(favId);
@@ -66,28 +42,10 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
   const isPlaying = Boolean(
     activeVideoRawUrl && ch.channels.some((s) => s.sourceUrl === activeVideoRawUrl)
   );
-  const leadTrack = ch.channels[0];
-  const leadServerLabel = resolveChannelServerLabel(
-    leadTrack?.providerName,
-    leadTrack?.providerId,
-    leadTrack?.sourceUrl
-  );
-  const qualityTag = inferStreamQualityTag(
-    leadTrack?.quality || ch.quality,
-    leadTrack?.label,
-    leadTrack?.sourceUrl
-  ).label;
-  const signalCount = ch.channels.length;
-  const latencyMs =
-    ch.healthSummary?.bestStatus === 'up' &&
-    typeof ch.healthSummary.bestLatencyMs === 'number' &&
-    ch.healthSummary.bestLatencyMs > 0
-      ? ch.healthSummary.bestLatencyMs
-      : null;
 
   return (
     <div
-      className={`cv-row-auto relative group min-h-[86px] p-3.5 sm:p-4 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
+      className={`cv-row-auto relative group min-h-[82px] p-3.5 sm:p-4 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
         isPlaying
           ? 'border-[#7C3AED] bg-[#7C3AED]/[0.16] shadow-[0_8px_24px_rgba(124,58,237,0.25)]'
           : 'bg-[#0D0D12] border-white/[0.08] hover:border-white/20 hover:bg-[#13131B]'
@@ -95,49 +53,20 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
     >
       <button
         type="button"
-        data-tv-focusable="true"
         onClick={() => onPlayChannel(ch, chEpg?.now?.title)}
         aria-label={`${pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })} ${ch.name}`}
-        className="absolute inset-0 z-0 rounded-2xl cursor-pointer tv-focus-ring"
+        className="absolute inset-0 z-0 rounded-2xl cursor-pointer"
       />
 
       <div className="relative z-10 flex-1 min-w-0 flex items-center gap-3 pointer-events-none">
         <ChannelLogoBadge channel={ch} size="md" />
 
-        <div className="min-w-0 flex-1 space-y-1">
-          <div className="font-display font-bold text-[15px] text-white leading-snug break-words">
-            {ch.name}
-          </div>
-          <div className="text-[11px] font-mono font-semibold text-zinc-400 tabular-nums flex items-center flex-wrap gap-x-1.5">
-            <span>{regMeta.langTag}</span>
-            <span aria-hidden="true">·</span>
-            <span>Dial {ch.dial}</span>
-            {leadServerLabel && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="text-amber-300">{leadServerLabel}</span>
-              </>
-            )}
-            <span aria-hidden="true">·</span>
-            <span className="text-zinc-200">{qualityTag}</span>
-            {signalCount > 1 && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="text-[#C4B5FD]">
-                  {pickLang(lang, {
-                    es: `${signalCount} señales`,
-                    ca: `${signalCount} senyals`,
-                    en: `${signalCount} signals`,
-                  })}
-                </span>
-              </>
-            )}
-            {latencyMs !== null && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="text-emerald-300">{latencyMs} ms</span>
-              </>
-            )}
+        <div className="min-w-0 flex-1 space-y-1.5">
+          <div className="font-display font-bold text-[15px] text-white leading-snug break-words flex items-baseline flex-wrap gap-x-1.5 gap-y-0.5">
+            <span className="break-words">{ch.name}</span>
+            <span className="text-[11px] font-mono font-semibold text-zinc-400 shrink-0 tabular-nums">
+              · {regMeta.langTag} · Dial {ch.dial}
+            </span>
           </div>
           <div className="text-xs text-zinc-400 leading-snug break-words">
             {chEpg?.now ? (
@@ -170,30 +99,8 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
       </div>
 
       <div className="relative z-10 flex items-center gap-1 shrink-0">
-        {signalCount > 1 && onOpenSignalsModal && (
-          <button
-            type="button"
-            data-tv-focusable="true"
-            onClick={(e) => {
-              e.stopPropagation();
-              triggerHaptic('light');
-              onOpenSignalsModal(ch);
-            }}
-            aria-label={pickLang(lang, {
-              es: `Elegir servidor para ${ch.name} (${signalCount})`,
-              ca: `Triar servidor per a ${ch.name} (${signalCount})`,
-              en: `Choose server for ${ch.name} (${signalCount})`,
-            })}
-            className="min-w-11 min-h-11 px-2 rounded-xl text-[#C4B5FD] hover:text-white hover:bg-[#7C3AED]/20 inline-flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition-all tv-focus-ring tabular-nums text-xs font-bold"
-          >
-            <Layers className="w-3.5 h-3.5 shrink-0" />
-            <span>{signalCount}</span>
-          </button>
-        )}
-
         <button
           type="button"
-          data-tv-focusable="true"
           onClick={(e) => {
             e.stopPropagation();
             triggerHaptic('light');
@@ -204,14 +111,13 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
             ca: `Guia EPG de ${ch.name}`,
             en: `EPG guide for ${ch.name}`,
           })}
-          className="min-w-11 min-h-11 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08] flex items-center justify-center cursor-pointer active:scale-95 transition-all tv-focus-ring"
+          className="min-w-11 min-h-11 rounded-xl text-zinc-400 hover:text-white hover:bg-white/[0.08] flex items-center justify-center cursor-pointer active:scale-95 transition-all"
         >
           <Info className="w-4 h-4" />
         </button>
 
         <button
           type="button"
-          data-tv-focusable="true"
           onClick={(e) => {
             e.stopPropagation();
             triggerHaptic('light');
@@ -229,7 +135,7 @@ export const LiveTvChannelRow = React.memo<LiveTvChannelRowProps>(({
           }}
           aria-pressed={faved}
           aria-label={pickLang(lang, { es: 'Favorito', ca: 'Favorit', en: 'Favorite' })}
-          className={`min-w-11 min-h-11 rounded-xl flex items-center justify-center cursor-pointer active:scale-95 transition-all tv-focus-ring ${
+          className={`min-w-11 min-h-11 rounded-xl flex items-center justify-center cursor-pointer active:scale-95 transition-all ${
             faved
               ? 'text-[#A78BFA] bg-[#7C3AED]/20'
               : 'text-zinc-400 hover:text-white hover:bg-white/[0.08]'

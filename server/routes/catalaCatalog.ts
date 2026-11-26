@@ -371,7 +371,7 @@ export function registerCatalaCatalogRoutes(app: Express): void {
         items: [...hydratedItems, ...dynamicArchiveItems],
         liveChannels: channelHealthMonitor.prioritizeChannels(CATALA_LIVE_CHANNELS).map((ch) => ({
           ...ch,
-          logoUrl: resolveOfficialChannelLogoUrl(ch) || undefined,
+          logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
         })),
         communityLinks: [
           {

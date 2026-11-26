@@ -226,170 +226,48 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
       const goalRight = W / 2 + goalHalfW;
       const MR = 29;
       const PR = 17;
-      const cornerCut = 42;
       const sparks: Array<{ x: number; y: number; vx: number; vy: number; life: number; color: string }> = [];
       let puckTrail: Array<{ x: number; y: number }> = [];
       const st = {
         sMe: 0, sCpu: 0, over: false, pauseT: 0, banner: '', bannerCol: '#38BDF8',
         smashCharge: 100, impactFlash: 0, puckSquash: 0,
-        lastSparkAt: 0, lastPixiBurstAt: 0, lastMeHitAt: 0, lastCpuHitAt: 0, cornerStallT: 0,
         me: { x: W / 2, y: H - 78, vx: 0, vy: 0 },
         cpu: { x: W / 2, y: 78, vx: 0, vy: 0 },
         puck: { x: W / 2, y: H / 2, vx: (Math.random() - 0.5) * 260, vy: 260 },
       };
 
-      const spawnSparks = (x: number, y: number, color: string, count: number, nowMs: number, force = false) => {
-        if (!force && nowMs - st.lastSparkAt < 95) return;
-        st.lastSparkAt = nowMs;
+      const spawnSparks = (x: number, y: number, color: string, count: number) => {
         for (let i = 0; i < count; i += 1) {
           const a = Math.random() * Math.PI * 2;
           const v = 120 + Math.random() * 320;
-          sparks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.42, color });
+          sparks.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0.45, color });
         }
-        while (sparks.length > 48) sparks.shift();
       };
 
-      const clampPuckWallsAndCorners = (nowMs: number): 'none' | 'goal_me' | 'goal_cpu' => {
+      const hitMallet = (m: { x: number; y: number; vx: number; vy: number }, smashPower: number, slot: 1 | 2) => {
         const pk = st.puck;
-        const speedBefore = Math.hypot(pk.vx, pk.vy);
-        if (pk.x < pad + PR) {
-          pk.x = pad + PR;
-          pk.vx = Math.abs(pk.vx) * 0.92;
-          st.puckSquash = 0.85;
-          if (speedBefore > 70) spawnSparks(pad, pk.y, '#22D3EE', 5, nowMs);
-        }
-        if (pk.x > W - pad - PR) {
-          pk.x = W - pad - PR;
-          pk.vx = -Math.abs(pk.vx) * 0.92;
-          st.puckSquash = 0.85;
-          if (speedBefore > 70) spawnSparks(W - pad, pk.y, '#22D3EE', 5, nowMs);
-        }
-
-        const inMouth = pk.x > goalLeft + PR * 0.5 && pk.x < goalRight - PR * 0.5;
-        if (!inMouth) {
-          if (pk.y < pad + PR) {
-            pk.y = pad + PR;
-            pk.vy = Math.abs(pk.vy) * 0.92;
-            st.puckSquash = 0.85;
-            if (speedBefore > 70) spawnSparks(pk.x, pad, '#F43F5E', 5, nowMs);
-          }
-          if (pk.y > H - pad - PR) {
-            pk.y = H - pad - PR;
-            pk.vy = -Math.abs(pk.vy) * 0.92;
-            st.puckSquash = 0.85;
-            if (speedBefore > 70) spawnSparks(pk.x, H - pad, '#8B5CF6', 5, nowMs);
-          }
-        } else if (pk.y < pad - 6) {
-          return 'goal_me';
-        } else if (pk.y > H - pad + 6) {
-          return 'goal_cpu';
-        }
-
-        // 45-degree corner chamfer deflectors so puck glides cleanly out of corners
-        const corners = [
-          { px: pad + cornerCut, py: pad + cornerCut, nx: Math.SQRT1_2, ny: Math.SQRT1_2, inQuad: pk.x < pad + cornerCut && pk.y < pad + cornerCut },
-          { px: W - pad - cornerCut, py: pad + cornerCut, nx: -Math.SQRT1_2, ny: Math.SQRT1_2, inQuad: pk.x > W - pad - cornerCut && pk.y < pad + cornerCut },
-          { px: pad + cornerCut, py: H - pad - cornerCut, nx: Math.SQRT1_2, ny: -Math.SQRT1_2, inQuad: pk.x < pad + cornerCut && pk.y > H - pad - cornerCut },
-          { px: W - pad - cornerCut, py: H - pad - cornerCut, nx: -Math.SQRT1_2, ny: -Math.SQRT1_2, inQuad: pk.x > W - pad - cornerCut && pk.y > H - pad - cornerCut },
-        ];
-        const minCornerDist = PR + 4;
-        for (const c of corners) {
-          if (!c.inQuad) continue;
-          const dist = (pk.x - c.px) * c.nx + (pk.y - c.py) * c.ny;
-          if (dist < minCornerDist) {
-            const push = minCornerDist - dist;
-            pk.x += c.nx * push;
-            pk.y += c.ny * push;
-            const vn = pk.vx * c.nx + pk.vy * c.ny;
-            if (vn < 0) {
-              pk.vx -= 1.92 * vn * c.nx;
-              pk.vy -= 1.92 * vn * c.ny;
-              st.puckSquash = 0.85;
-              if (speedBefore > 70) spawnSparks(pk.x, pk.y, '#38BDF8', 5, nowMs);
-            }
-          }
-        }
-        return 'none';
-      };
-
-      const clampMallet = (m: { x: number; y: number }, isTopHalf: boolean) => {
-        m.x = Math.max(pad + MR, Math.min(W - pad - MR, m.x));
-        if (isTopHalf) {
-          m.y = Math.max(pad + MR, Math.min(H / 2 - MR - 6, m.y));
-        } else {
-          m.y = Math.max(H / 2 + MR + 6, Math.min(H - pad - MR, m.y));
-        }
-      };
-
-      const hitMallet = (
-        m: { x: number; y: number; vx: number; vy: number },
-        smashPower: number,
-        slot: 1 | 2,
-        nowMs: number
-      ) => {
-        const pk = st.puck;
-        let dx = pk.x - m.x;
-        let dy = pk.y - m.y;
+        const dx = pk.x - m.x;
+        const dy = pk.y - m.y;
         const minD = MR + PR;
-        let dSq = dx * dx + dy * dy;
-        if (dSq >= minD * minD) return;
-        let nx: number;
-        let ny: number;
-        if (dSq < 0.001) {
-          const toCenterX = W / 2 - m.x;
-          const toCenterY = H / 2 - m.y;
-          const cl = Math.hypot(toCenterX, toCenterY) || 1;
-          nx = toCenterX / cl;
-          ny = toCenterY / cl;
-        } else {
-          const d = Math.sqrt(dSq);
-          nx = dx / d;
-          ny = dy / d;
-        }
-        pk.x = m.x + nx * (minD + 2);
-        pk.y = m.y + ny * (minD + 2);
-        clampPuckWallsAndCorners(nowMs);
-
-        // Prevent mallet from pinching/crushing the puck against walls or corners
-        dx = pk.x - m.x;
-        dy = pk.y - m.y;
-        dSq = dx * dx + dy * dy;
-        if (dSq < minD * minD) {
-          const d2 = Math.sqrt(dSq) || 1;
-          const sx = dSq < 0.001 ? nx : dx / d2;
-          const sy = dSq < 0.001 ? ny : dy / d2;
-          m.x = pk.x - sx * (minD + 2.5);
-          m.y = pk.y - sy * (minD + 2.5);
-          clampMallet(m, slot === 2);
-        }
-
+        const dSq = dx * dx + dy * dy;
+        if (dSq >= minD * minD || dSq < 0.001) return;
+        const d = Math.sqrt(dSq);
+        const nx = dx / d;
+        const ny = dy / d;
+        pk.x = m.x + nx * (minD + 1.5);
+        pk.y = m.y + ny * (minD + 1.5);
         const spd = Math.min(1150, Math.max(460, Math.hypot(pk.vx, pk.vy) * 1.06 + smashPower));
         pk.vx = nx * spd + m.vx * 0.35;
         pk.vy = ny * spd + m.vy * 0.35;
-
-        // If puck is touching any outer edge, direct velocity away from the wall so it never pins
-        if (pk.x <= pad + PR + 3 && pk.vx < 160) pk.vx = Math.max(220, Math.abs(pk.vx));
-        if (pk.x >= W - pad - PR - 3 && pk.vx > -160) pk.vx = -Math.max(220, Math.abs(pk.vx));
-        if (pk.y <= pad + PR + 3 && pk.vy < 160) pk.vy = Math.max(220, Math.abs(pk.vy));
-        if (pk.y >= H - pad - PR - 3 && pk.vy > -160) pk.vy = -Math.max(220, Math.abs(pk.vy));
-
-        const lastHit = slot === 1 ? st.lastMeHitAt : st.lastCpuHitAt;
-        if (nowMs - lastHit < 120) return;
-        if (slot === 1) st.lastMeHitAt = nowMs;
-        else st.lastCpuHitAt = nowMs;
-
         st.impactFlash = 0.7;
         st.puckSquash = 1;
-        spawnSparks(pk.x - nx * PR, pk.y - ny * PR, smashPower > 120 ? '#FACC15' : '#38BDF8', 10, nowMs, true);
-        if (nowMs - st.lastPixiBurstAt >= 260) {
-          st.lastPixiBurstAt = nowMs;
-          pixiFxRef.current?.emitBurst(
-            Math.max(0.05, Math.min(0.95, pk.x / W)),
-            Math.max(0.05, Math.min(0.95, pk.y / H)),
-            smashPower > 120 ? 'smash' : 'hit',
-            smashPower > 120 ? 10 : 6
-          );
-        }
+        spawnSparks(pk.x - nx * PR, pk.y - ny * PR, smashPower > 120 ? '#FACC15' : '#38BDF8', 12);
+        pixiFxRef.current?.emitBurst(
+          Math.max(0.05, Math.min(0.95, pk.x / W)),
+          Math.max(0.05, Math.min(0.95, pk.y / H)),
+          smashPower > 120 ? 'smash' : 'hit',
+          smashPower > 120 ? 14 : 8
+        );
         playGameSfx('chapas_kick', mutedRef.current);
         pushTelemetry(spd * 0.32, st.sMe, st.sCpu, st.smashCharge, 0.85, st.over, slot, smashPower > 120 ? 70 : 35);
       };
@@ -398,7 +276,6 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
         st.me = { x: W / 2, y: H - 78, vx: 0, vy: 0 };
         st.cpu = { x: W / 2, y: 78, vx: 0, vy: 0 };
         st.puck = { x: W / 2, y: H / 2, vx: (Math.random() - 0.5) * 260, vy: dirY * 260 };
-        st.cornerStallT = 0;
         puckTrail = [];
       };
 
@@ -452,7 +329,8 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
                 st.me.x += dirX * 580 * sDt;
                 st.me.y += dirY * 460 * sDt;
               }
-              clampMallet(st.me, false);
+              st.me.x = Math.max(pad + MR, Math.min(W - pad - MR, st.me.x));
+              st.me.y = Math.max(H / 2 + MR + 6, Math.min(H - pad - MR, st.me.y));
               st.me.vx = (st.me.x - prevMx) / sDt;
               st.me.vy = (st.me.y - prevMy) / sDt;
 
@@ -464,26 +342,13 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
                 const dirY2 = gyroP2Ref.current.throttle > 0.3 ? 1 : gyroP2Ref.current.brake > 0.3 ? -1 : 0;
                 st.cpu.y += dirY2 * 460 * sDt;
               } else {
-                const puckInTopCorner =
-                  st.puck.y < pad + MR + PR + 54 &&
-                  (st.puck.x < pad + 150 || st.puck.x > W - pad - 150);
-                const puckBehindCpu = st.puck.y < st.cpu.y + 8;
-                const aiX =
-                  puckInTopCorner || puckBehindCpu
-                    ? W * 0.5
-                    : st.puck.y < H * 0.56
-                    ? Math.max(pad + MR + 36, Math.min(W - pad - MR - 36, st.puck.x))
-                    : W / 2;
-                const aiY =
-                  puckInTopCorner || puckBehindCpu
-                    ? 82
-                    : st.puck.y < H * 0.45 && st.puck.vy >= -40
-                    ? Math.min(H / 2 - MR - 14, st.puck.y - 18)
-                    : 84;
+                const aiX = st.puck.y < H * 0.56 ? Math.max(pad + MR + 30, Math.min(W - pad - MR - 30, st.puck.x)) : W / 2;
+                const aiY = st.puck.y < H * 0.45 && st.puck.vy >= -40 ? Math.min(H / 2 - MR - 12, st.puck.y - 16) : 82;
                 st.cpu.x += Math.max(-440 * sDt, Math.min(440 * sDt, aiX - st.cpu.x));
                 st.cpu.y += Math.max(-340 * sDt, Math.min(340 * sDt, aiY - st.cpu.y));
               }
-              clampMallet(st.cpu, true);
+              st.cpu.x = Math.max(pad + MR, Math.min(W - pad - MR, st.cpu.x));
+              st.cpu.y = Math.max(pad + MR, Math.min(H / 2 - MR - 6, st.cpu.y));
               st.cpu.vx = (st.cpu.x - prevCx) / sDt;
               st.cpu.vy = (st.cpu.y - prevCy) / sDt;
 
@@ -492,49 +357,28 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
               st.puck.vx *= Math.pow(0.996, sDt * 60);
               st.puck.vy *= Math.pow(0.996, sDt * 60);
 
-              const wallState = clampPuckWallsAndCorners(now);
-              if (wallState === 'goal_me') {
+              if (st.puck.x < pad + PR) { st.puck.x = pad + PR; st.puck.vx = Math.abs(st.puck.vx) * 0.92; st.puckSquash = 0.85; spawnSparks(pad, st.puck.y, '#22D3EE', 5); }
+              if (st.puck.x > W - pad - PR) { st.puck.x = W - pad - PR; st.puck.vx = -Math.abs(st.puck.vx) * 0.92; st.puckSquash = 0.85; spawnSparks(W - pad, st.puck.y, '#22D3EE', 5); }
+
+              const inMouth = st.puck.x > goalLeft + PR * 0.5 && st.puck.x < goalRight - PR * 0.5;
+              if (!inMouth) {
+                if (st.puck.y < pad + PR) { st.puck.y = pad + PR; st.puck.vy = Math.abs(st.puck.vy) * 0.92; st.puckSquash = 0.85; spawnSparks(st.puck.x, pad, '#F43F5E', 5); }
+                if (st.puck.y > H - pad - PR) { st.puck.y = H - pad - PR; st.puck.vy = -Math.abs(st.puck.vy) * 0.92; st.puckSquash = 0.85; spawnSparks(st.puck.x, H - pad, '#8B5CF6', 5); }
+              } else if (st.puck.y < pad - 6) {
                 st.sMe += 1; st.pauseT = 1.2; st.banner = '⚡ ¡GOLAZO J1!'; st.bannerCol = '#4ADE80';
-                spawnSparks(st.puck.x, pad, '#4ADE80', 24, now, true); playGameSfx('chapas_goal', mutedRef.current);
+                spawnSparks(st.puck.x, pad, '#4ADE80', 26); playGameSfx('chapas_goal', mutedRef.current);
                 pixiFxRef.current?.emitBurst(Math.max(0.1, Math.min(0.9, st.puck.x / W)), 0.08, 'goal', 22);
                 pushTelemetry(0, st.sMe, st.sCpu, st.smashCharge, 1, st.over, 1, 90);
                 break;
-              } else if (wallState === 'goal_cpu') {
+              } else if (st.puck.y > H - pad + 6) {
                 st.sCpu += 1; st.pauseT = 1.2; st.banner = useGyroP2 ? '💥 ¡GOLAZO J2!' : '💥 ¡PUNTO CPU!'; st.bannerCol = '#FB7185';
-                spawnSparks(st.puck.x, H - pad, '#FB7185', 22, now, true); playGameSfx('board_capture', mutedRef.current);
+                spawnSparks(st.puck.x, H - pad, '#FB7185', 22); playGameSfx('board_capture', mutedRef.current);
                 pixiFxRef.current?.emitBurst(Math.max(0.1, Math.min(0.9, st.puck.x / W)), 0.92, 'goal', 22);
                 if (useGyroP2) pushTelemetry(0, st.sMe, st.sCpu, st.smashCharge, 1, st.over, 2, 90);
                 break;
               }
-              hitMallet(st.me, smashOn ? 240 : 60, 1, now);
-              hitMallet(st.cpu, p2SmashOn ? 220 : 40, 2, now);
-              clampPuckWallsAndCorners(now);
-            }
-
-            // Anti-corner-stall watchdog + subtle minimum glide speed
-            const curSpd = Math.hypot(st.puck.vx, st.puck.vy);
-            const nearCorner =
-              (st.puck.x < pad + 76 || st.puck.x > W - pad - 76) &&
-              (st.puck.y < pad + 76 || st.puck.y > H - pad - 76);
-            if (nearCorner || curSpd < 85) {
-              st.cornerStallT += dt;
-              if (st.cornerStallT > 0.35) {
-                const cx = W / 2 - st.puck.x;
-                const cy = H * 0.45 - st.puck.y;
-                const cl = Math.hypot(cx, cy) || 1;
-                st.puck.x += (cx / cl) * 18;
-                st.puck.y += (cy / cl) * 18;
-                st.puck.vx = (cx / cl) * 460;
-                st.puck.vy = (cy / cl) * 460;
-                st.cornerStallT = 0;
-              }
-            } else {
-              st.cornerStallT = 0;
-            }
-            if (curSpd > 2 && curSpd < 120) {
-              const boost = 120 / curSpd;
-              st.puck.vx *= boost;
-              st.puck.vy *= boost;
+              hitMallet(st.me, smashOn ? 240 : 60, 1);
+              hitMallet(st.cpu, p2SmashOn ? 220 : 40, 2);
             }
 
             puckTrail.push({ x: st.puck.x, y: st.puck.y });
@@ -585,14 +429,6 @@ export const GyroArcadeStage: React.FC<GyroArcadeStageProps> = ({
         ctx.shadowColor = st.impactFlash > 0.1 ? '#38BDF8' : '#7C3AED';
         ctx.shadowBlur = 14 + st.impactFlash * 12;
         ctx.strokeStyle = '#7C3AED'; ctx.lineWidth = 6; ctx.strokeRect(pad, pad, W - pad * 2, H - pad * 2);
-        // Subtle 45° chamfer corner bumper rails
-        ctx.strokeStyle = '#38BDF8'; ctx.lineWidth = 3;
-        ctx.beginPath();
-        ctx.moveTo(pad, pad + cornerCut); ctx.lineTo(pad + cornerCut, pad);
-        ctx.moveTo(W - pad - cornerCut, pad); ctx.lineTo(W - pad, pad + cornerCut);
-        ctx.moveTo(pad, H - pad - cornerCut); ctx.lineTo(pad + cornerCut, H - pad);
-        ctx.moveTo(W - pad - cornerCut, H - pad); ctx.lineTo(W - pad, H - pad - cornerCut);
-        ctx.stroke();
         ctx.restore();
 
         ctx.fillStyle = '#04060e';

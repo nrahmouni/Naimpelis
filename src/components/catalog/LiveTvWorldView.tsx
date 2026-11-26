@@ -1,11 +1,10 @@
 /**
  * @module LiveTvWorldView
- * @description World 3 (TV en Directo) — Redesigned Apple TV / broadcast-grade TV hub with
- * Live Spotlight Rail (Spanish TDT + Football prioritized by fastest/highest quality),
- * multi-server signal merging, real-time EPG indicator bars, and responsive multi-column grid.
+ * @description World 3 (TV en Directo) — OLED channel cards, pinned favorites section,
+ * untruncated channel/EPG names, real-time EPG indicator bars, and region/EPG filter bottom sheet.
  */
 import React, { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { Clock, Loader2, Play, Search, SlidersHorizontal, Sparkles, Star, X } from 'lucide-react';
+import { Clock, Film, Globe, Loader2, Radio, Search, SlidersHorizontal, Star, Trophy, X } from 'lucide-react';
 import type {
   AppLanguage,
   ChannelLiveEpg,
@@ -27,13 +26,10 @@ import {
 } from './catalogConstants';
 import { LiveTvFilterSheet } from './LiveTvFilterSheet';
 import { LiveTvChannelRow } from './LiveTvChannelRow';
-import { LiveTvSpotlightRail } from './LiveTvSpotlightRail';
 import { useBackInterceptor } from '../../lib/backInterceptor';
-import { useAppStore } from '../../store/useAppStore';
-import { inferStreamQualityTag } from '../../utils/channelQualityRanker';
 
 const RECENT_TV_STORAGE_KEY = 'riffan_recent_tv_v1';
-const CHANNELS_BATCH_SIZE = 40;
+const CHANNELS_BATCH_SIZE = 60;
 
 interface PullRefreshHandlers {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -49,7 +45,6 @@ interface LiveTvWorldViewProps {
   tdtChannels: SpanishTdtChannel[];
   filteredChannels: SpanishTdtChannel[];
   loadingTdt: boolean;
-  tdtFetchError?: boolean;
   activeVideoRawUrl: string;
   tdtCategory: 'all' | 'tdt_all' | TdtCategory;
   tvRegion: TvRegionId;
@@ -73,7 +68,6 @@ interface LiveTvWorldViewProps {
   onTdtCategoryChange: (cat: 'all' | 'tdt_all' | TdtCategory) => void;
   onEpgFilterChange: (filter: 'all' | 'sports_now' | 'cinema_now') => void;
   onAdrarCountryFilterChange?: (country: string) => void;
-  onRetryFetchTdt?: () => void;
 }
 
 export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
@@ -82,7 +76,6 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
   tdtChannels,
   filteredChannels,
   loadingTdt,
-  tdtFetchError = false,
   activeVideoRawUrl,
   tdtCategory,
   tvRegion,
@@ -103,13 +96,9 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
   onTdtCategoryChange,
   onEpgFilterChange,
   onAdrarCountryFilterChange,
-  onRetryFetchTdt,
 }) => {
-  const priorityMode = useAppStore((s) => s.playbackPriorityMode);
-  const setPriorityMode = useAppStore((s) => s.setPlaybackPriorityMode);
   const [inlineQuery, setInlineQuery] = useState('');
   const [visibleLimit, setVisibleLimit] = useState(CHANNELS_BATCH_SIZE);
-  const [signalsChannel, setSignalsChannel] = useState<SpanishTdtChannel | null>(null);
   const [recentIds, setRecentIds] = useState<string[]>(() => {
     try {
       const raw = localStorage.getItem(RECENT_TV_STORAGE_KEY);
@@ -119,22 +108,6 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
       return [];
     }
   });
-
-  useBackInterceptor(
-    Boolean(signalsChannel),
-    'livetv-signals-sheet',
-    () => setSignalsChannel(null),
-    { priority: 22 }
-  );
-
-  useEffect(() => {
-    if (!signalsChannel) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setSignalsChannel(null);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [signalsChannel]);
 
   useEffect(() => {
     setVisibleLimit(CHANNELS_BATCH_SIZE);
@@ -174,21 +147,9 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
     (epgFilter !== 'all' ? 1 : 0) +
     (tvFavOnly ? 1 : 0);
 
-  const isSpainCategory =
-    tdtCategory === 'tdt_all' ||
-    tdtCategory === 'generalistas' ||
-    tdtCategory === 'movistar' ||
-    tdtCategory === 'dazn' ||
-    tdtCategory === 'cine_series' ||
-    tdtCategory === 'entretenimiento' ||
-    tdtCategory === 'noticias_deportes' ||
-    tdtCategory === 'infantil_autonomicas';
-
-  const mainScopeTab: 'es' | 'all' | 'football' | 'favs' = tvFavOnly
+  const mainScopeTab: 'all' | 'es' | 'favs' = tvFavOnly
     ? 'favs'
-    : epgFilter === 'sports_now' && tvRegion === 'all' && tdtCategory === 'all'
-    ? 'football'
-    : tvRegion === 'es' || (tvRegion === 'all' && isSpainCategory)
+    : tvRegion === 'es' && tdtCategory === 'all'
     ? 'es'
     : 'all';
 
@@ -293,14 +254,11 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
       onToggleChannelFavorite={onToggleChannelFavorite}
       onPlayChannel={handlePlayAndRecord}
       onOpenEpgModal={onOpenEpgModal}
-      onOpenSignalsModal={setSignalsChannel}
     />
   );
 
-  const showSpotlight = !tvFavOnly && !normalizedQuery && tvRegion === 'all' && tdtCategory === 'all' && epgFilter === 'all';
-
   return (
-    <div ref={pull.containerRef} {...pull.pullHandlers} className="space-y-5 max-w-7xl mx-auto">
+    <div ref={pull.containerRef} {...pull.pullHandlers} className="space-y-4">
       {pull.pullDistance > 10 && (
         <div className="text-center text-xs text-[#A78BFA] font-semibold py-1">
           {pull.isRefreshing
@@ -317,275 +275,210 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
         </div>
       )}
 
-      {/* COMPACT BROADCAST HEADER: [TDT España | Todo | Fútbol | Favoritos] + Search + Filtros */}
-      <div className="space-y-2.5">
-        <SegmentedControl
-          layoutId="tv-main-tabs"
-          value={mainScopeTab}
-          onChange={(next) => {
-            triggerHaptic('light');
-            if (next === 'favs') {
-              onTvFavOnlyChange(true);
-            } else if (next === 'es') {
-              onTvFavOnlyChange(false);
-              onTvRegionChange('es');
-              onTdtCategoryChange('all');
-              onEpgFilterChange('all');
-              onAdrarCountryFilterChange?.('all');
-            } else if (next === 'football') {
-              onTvFavOnlyChange(false);
-              onTvRegionChange('all');
-              onTdtCategoryChange('all');
-              onEpgFilterChange('sports_now');
-              onAdrarCountryFilterChange?.('all');
-            } else {
-              onTvFavOnlyChange(false);
-              onTvRegionChange('all');
-              onTdtCategoryChange('all');
-              onEpgFilterChange('all');
-              onAdrarCountryFilterChange?.('all');
-            }
-          }}
-          options={[
-            { id: 'es', label: pickLang(lang, { es: 'TDT España', ca: 'TDT Espanya', en: 'Spain TDT' }) },
-            { id: 'all', label: pickLang(lang, { es: 'Todo', ca: 'Tot', en: 'All' }) },
-            { id: 'football', label: pickLang(lang, { es: 'Fútbol', ca: 'Futbol', en: 'Football' }) },
-            { id: 'favs', label: pickLang(lang, { es: 'Favoritos', ca: 'Favorits', en: 'Favorites' }) },
-          ]}
-        />
-
-        <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-          <div className="relative flex-1 min-w-0">
-            <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input
-              type="text"
-              data-tv-focusable="true"
-              value={inlineQuery}
-              onChange={(e) => setInlineQuery(e.target.value)}
-              placeholder={
-                tdtChannels.length > 0
-                  ? pickLang(lang, {
-                      es: `Buscar canal (${tdtChannels.length}), dial o programa...`,
-                      ca: `Cercar canal (${tdtChannels.length}), dial o programa...`,
-                      en: `Search ${tdtChannels.length} channels, dial # or show...`,
-                    })
-                  : pickLang(lang, {
-                      es: 'Buscar canal, nº dial o programa...',
-                      ca: 'Cercar canal, núm. dial o programa...',
-                      en: 'Search channel, dial # or show...',
-                    })
-              }
-              className="w-full min-h-11 pl-10 pr-10 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-[#7C3AED] text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-colors tv-focus-ring"
-            />
-            {inlineQuery && (
-              <button
-                type="button"
-                data-tv-focusable="true"
-                onClick={() => setInlineQuery('')}
-                aria-label={pickLang(lang, { es: 'Limpiar búsqueda', ca: 'Netejar cerca', en: 'Clear search' })}
-                className="min-w-10 min-h-10 rounded-xl hover:bg-white/[0.08] text-zinc-400 hover:text-white flex items-center justify-center absolute right-0.5 top-1/2 -translate-y-1/2 cursor-pointer tv-focus-ring"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <div
-              role="group"
-              aria-label={pickLang(lang, {
-                es: 'Prioridad de emisión',
-                ca: 'Prioritat d’emissió',
-                en: 'Stream priority',
-              })}
-              className="grid grid-cols-2 p-1 rounded-2xl bg-[#0D0D12] border border-white/[0.08] flex-1 sm:flex-initial"
-            >
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setPriorityMode('es_quality');
-                }}
-                className={`min-h-11 px-2.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                  priorityMode === 'es_quality'
-                    ? 'bg-[#7C3AED] text-white'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                {pickLang(lang, { es: 'Castellano HQ', ca: 'Castellà HQ', en: 'Spanish HQ' })}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setPriorityMode('best_quality');
-                }}
-                className={`min-h-11 px-2.5 rounded-xl text-xs font-semibold whitespace-nowrap inline-flex items-center justify-center gap-1 transition-all cursor-pointer ${
-                  priorityMode === 'best_quality'
-                    ? 'bg-emerald-500/90 text-black'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                <span>{pickLang(lang, { es: 'Máxima 4K', ca: 'Màxima 4K', en: 'Max 4K' })}</span>
-              </button>
-            </div>
-
-            <button
-              type="button"
-              data-tv-focusable="true"
-              onClick={() => {
-                triggerHaptic('light');
-                onTvFiltersOpenChange(true);
-              }}
-              className={`min-h-11 px-3.5 rounded-2xl border text-xs font-bold whitespace-nowrap inline-flex items-center justify-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all tv-focus-ring ${
-                tvFilterCount > 0 && mainScopeTab === 'all'
-                  ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_6px_20px_rgba(124,58,237,0.38)]'
-                  : 'bg-[#0D0D12] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
-              }`}
-            >
-              <SlidersHorizontal
-                className={`w-4 h-4 ${
-                  tvFilterCount > 0 && mainScopeTab === 'all' ? 'text-white' : 'text-[#A78BFA]'
-                }`}
-              />
-              <span>{pickLang(lang, { es: 'Filtros', ca: 'Filtres', en: 'Filters' })}</span>
-              {tvFilterCount > 0 && mainScopeTab === 'all' && (
-                <span className="font-mono text-[11px] tabular-nums opacity-90">
-                  ({tvFilterCount})
-                </span>
-              )}
-            </button>
-          </div>
-        </div>
-
-        {/* SINGLE SLIM CONTEXTUAL CHIP ROW */}
-        {!tvFavOnly && mainScopeTab === 'es' && (
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
-            <button
-              type="button"
-              data-tv-focusable="true"
-              onClick={() => {
-                triggerHaptic('light');
+      {/* CLEAN SINGLE TOOLBAR: [Todos | España | Favoritos] + [Regiones y filtros] */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+        <div className="flex-1 min-w-0">
+          <SegmentedControl
+            layoutId="tv-main-tabs"
+            value={mainScopeTab}
+            onChange={(next) => {
+              triggerHaptic('light');
+              if (next === 'favs') {
+                onTvFavOnlyChange(true);
+              } else if (next === 'es') {
+                onTvFavOnlyChange(false);
                 onTvRegionChange('es');
                 onTdtCategoryChange('all');
-                onEpgFilterChange('all');
-              }}
-              className={`min-h-10 px-3 rounded-xl border text-xs font-bold whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all tv-focus-ring ${
-                tvRegion === 'es' && tdtCategory === 'all'
-                  ? 'bg-[#7C3AED] border-[#7C3AED] text-white'
-                  : 'bg-[#0D0D12] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
-              }`}
-            >
-              <FlagBadgeSvg code="es" className="w-4 h-2.5 shrink-0" />
-              <span>{pickLang(lang, { es: 'Toda España', ca: 'Tota Espanya', en: 'All Spain' })}</span>
-              <span className="font-mono text-[11px] opacity-80 tabular-nums">
-                {tvCategoryCounts.perRegion['es'] ?? 0}
-              </span>
-            </button>
+                onAdrarCountryFilterChange?.('all');
+              } else {
+                onTvFavOnlyChange(false);
+                onTvRegionChange('all');
+                onTdtCategoryChange('all');
+                onAdrarCountryFilterChange?.('all');
+              }
+            }}
+            options={[
+              { id: 'all', label: pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' }) },
+              { id: 'es', label: 'España' },
+              { id: 'favs', label: pickLang(lang, { es: 'Favoritos', ca: 'Favorits', en: 'Favorites' }) },
+            ]}
+          />
+        </div>
 
-            <button
-              type="button"
-              data-tv-focusable="true"
-              onClick={() => {
-                triggerHaptic('light');
-                onTvRegionChange('es');
-                onTdtCategoryChange(tdtCategory === 'tdt_all' ? 'all' : 'tdt_all');
-                onEpgFilterChange('all');
-              }}
-              className={`min-h-10 px-3 rounded-xl border text-xs font-bold whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all tv-focus-ring ${
-                tdtCategory === 'tdt_all'
-                  ? 'bg-[#7C3AED] border-[#7C3AED] text-white'
-                  : 'bg-[#0D0D12] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
-              }`}
-            >
-              <span>{pickLang(lang, { es: 'TDT Nacional', ca: 'TDT Nacional', en: 'National TDT' })}</span>
-            </button>
-
-            {(
-              [
-                ['generalistas', pickLang(lang, { es: 'Generalistas 1–6', ca: 'Generalistes 1–6', en: 'Main 1–6' })],
-                ['movistar', 'Movistar+'],
-                ['dazn', 'DAZN'],
-                ['cine_series', pickLang(lang, { es: 'Cine TV', ca: 'Cinema TV', en: 'Cinema TV' })],
-                ['infantil_autonomicas', pickLang(lang, { es: 'Autonómicas', ca: 'Autonòmiques', en: 'Regional' })],
-              ] as const
-            ).map(([catId, label]) => {
-              const count = tvCategoryCounts.perCategory[catId] ?? 0;
-              if (count === 0) return null;
-              const active = tdtCategory === catId;
-              return (
-                <button
-                  key={`es-chip-${catId}`}
-                  type="button"
-                  data-tv-focusable="true"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    onTvRegionChange('es');
-                    onTdtCategoryChange(active ? 'all' : catId);
-                    onEpgFilterChange('all');
-                  }}
-                  className={`min-h-10 px-3 rounded-xl border text-xs font-bold whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all tv-focus-ring ${
-                    active
-                      ? 'bg-[#7C3AED] border-[#7C3AED] text-white'
-                      : 'bg-[#0D0D12] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
-                  }`}
-                >
-                  <span>{label}</span>
-                  <span className="font-mono text-[11px] opacity-80 tabular-nums">{count}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {!tvFavOnly && mainScopeTab === 'all' && (
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
-            {TV_FILTER_GROUPS.filter((group) => group.region !== 'docs').map((group) => {
-              const count = tvCategoryCounts.perRegion[group.region] ?? 0;
-              if (count === 0) return null;
-              const active = tvRegion === group.region;
-              return (
-                <button
-                  key={group.region}
-                  type="button"
-                  data-tv-focusable="true"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    onTvRegionChange(active ? 'all' : group.region);
-                    onTdtCategoryChange('all');
-                    onAdrarCountryFilterChange?.('all');
-                  }}
-                  className={`min-h-10 px-3 rounded-xl border text-xs font-bold whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all tv-focus-ring ${
-                    active
-                      ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_4px_14px_rgba(124,58,237,0.35)]'
-                      : 'bg-[#0D0D12] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
-                  }`}
-                >
-                  <FlagBadgeSvg code={group.flagCode} className="w-4 h-2.5 shrink-0" />
-                  <span>
-                    {group.region === 'es'
-                      ? pickLang(lang, { es: 'TDT España', ca: 'TDT Espanya', en: 'Spain TDT' })
-                      : pickLang(lang, group.name)}
-                  </span>
-                  <span className="font-mono text-[11px] opacity-80 tabular-nums">{count}</span>
-                </button>
-              );
-            })}
-          </div>
-        )}
+        <button
+          type="button"
+          onClick={() => {
+            triggerHaptic('light');
+            onTvFiltersOpenChange(true);
+          }}
+          className={`min-h-12 px-4 rounded-2xl border text-xs font-bold inline-flex items-center justify-center gap-2 shrink-0 cursor-pointer active:scale-95 transition-all ${
+            tvFilterCount > 0 && mainScopeTab === 'all'
+              ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_6px_20px_rgba(124,58,237,0.38)]'
+              : 'bg-[#0D0D12] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
+          }`}
+        >
+          <SlidersHorizontal
+            className={`w-4 h-4 ${
+              tvFilterCount > 0 && mainScopeTab === 'all' ? 'text-white' : 'text-[#A78BFA]'
+            }`}
+          />
+          <span>{pickLang(lang, { es: 'Regiones y filtros', ca: 'Regions i filtres', en: 'Regions & filters' })}</span>
+          {tvFilterCount > 0 && (
+            <span className="px-1.5 py-0.5 rounded-full bg-white/15 font-mono text-[11px] tabular-nums leading-none">
+              {tvFilterCount}
+            </span>
+          )}
+        </button>
       </div>
 
-      {/* LIVE SPOTLIGHT: TOP SPANISH TDT & FOOTBALL */}
-      {showSpotlight && (
-        <LiveTvSpotlightRail
-          lang={lang}
-          channels={tdtChannels}
-          activeVideoRawUrl={activeVideoRawUrl}
-          getChannelLiveEpg={getChannelLiveEpg}
-          onPlayChannel={handlePlayAndRecord}
-        />
+      {/* INLINE CHANNEL / DIAL SEARCH + QUICK EPG FILTER */}
+      <div className="flex flex-col sm:flex-row gap-2.5">
+        <div className="relative flex-1 min-w-0">
+          <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            type="text"
+            value={inlineQuery}
+            onChange={(e) => setInlineQuery(e.target.value)}
+            placeholder={pickLang(lang, {
+              es: `Buscar entre ${tdtChannels.length || 900}+ canales, nº dial o programa...`,
+              ca: `Cercar entre ${tdtChannels.length || 900}+ canals, núm. dial o programa...`,
+              en: `Search ${tdtChannels.length || 900}+ channels, dial # or live show...`,
+            })}
+            className="w-full min-h-12 pl-10 pr-10 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-[#7C3AED] text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-colors"
+          />
+          {inlineQuery && (
+            <button
+              type="button"
+              onClick={() => setInlineQuery('')}
+              aria-label={pickLang(lang, { es: 'Limpiar búsqueda', ca: 'Netejar cerca', en: 'Clear search' })}
+              className="min-w-9 min-h-9 rounded-xl hover:bg-white/[0.08] text-zinc-400 hover:text-white flex items-center justify-center absolute right-1.5 top-1/2 -translate-y-1/2 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
+          {[
+            { id: 'all' as const, icon: null, label: pickLang(lang, { es: 'Todo', ca: 'Tot', en: 'All' }) },
+            { id: 'sports_now' as const, icon: Trophy, label: pickLang(lang, { es: 'Deporte', ca: 'Esport', en: 'Sports' }) },
+            { id: 'cinema_now' as const, icon: Film, label: pickLang(lang, { es: 'Cine', ca: 'Cinema', en: 'Movies' }) },
+          ].map((ef) => {
+            const Icon = ef.icon;
+            const active = epgFilter === ef.id;
+            return (
+              <button
+                key={ef.id}
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onEpgFilterChange(ef.id);
+                }}
+                className={`min-h-12 px-3.5 rounded-2xl border text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                  active
+                    ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_6px_18px_rgba(124,58,237,0.3)]'
+                    : 'bg-[#0D0D12] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
+                }`}
+              >
+                {Icon && <Icon className="w-3.5 h-3.5 shrink-0" />}
+                <span>{ef.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* SCROLLABLE MACRO-REGION CHIPS WITH LIVE CHANNEL COUNTS */}
+      {!tvFavOnly && (
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              onTvRegionChange('all');
+              onTdtCategoryChange('all');
+              onAdrarCountryFilterChange?.('all');
+            }}
+            className={`min-h-10 px-3.5 rounded-xl border text-xs font-bold whitespace-nowrap shrink-0 inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all ${
+              tvRegion === 'all' && tdtCategory === 'all'
+                ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_4px_14px_rgba(124,58,237,0.35)]'
+                : 'bg-[#0D0D12] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
+            }`}
+          >
+            <FlagBadgeSvg code="all" className="w-4 h-2.5 shrink-0" />
+            <span>{pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' })}</span>
+            <span className="font-mono text-[11px] opacity-80 tabular-nums">{tdtChannels.length}</span>
+          </button>
+
+          {TV_FILTER_GROUPS.map((group) => {
+            const count = tvCategoryCounts.perRegion[group.region] ?? 0;
+            if (count === 0) return null;
+            const active = tvRegion === group.region;
+            return (
+              <button
+                key={group.region}
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onTvRegionChange(group.region);
+                  onTdtCategoryChange('all');
+                  onAdrarCountryFilterChange?.('all');
+                }}
+                className={`min-h-10 px-3.5 rounded-xl border text-xs font-bold whitespace-nowrap shrink-0 inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all ${
+                  active
+                    ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-[0_4px_14px_rgba(124,58,237,0.35)]'
+                    : 'bg-[#0D0D12] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
+                }`}
+              >
+                <FlagBadgeSvg code={group.flagCode} className="w-4 h-2.5 shrink-0" />
+                <span>{pickLang(lang, group.name)}</span>
+                <span className="font-mono text-[11px] opacity-80 tabular-nums">{count}</span>
+              </button>
+            );
+          })}
+        </div>
       )}
+
+      {/* QUICK ATRESMEDIA + VPN SPAIN STRIP */}
+      {(() => {
+        const a3Ch = tdtChannels.find((c) => c.id === 'tdt-antena3');
+        const sextaCh = tdtChannels.find((c) => c.id === 'tdt-lasexta');
+        return (
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
+            {a3Ch && (
+              <button
+                type="button"
+                onClick={() => handlePlayAndRecord(a3Ch, getChannelLiveEpg(a3Ch.id)?.now?.title)}
+                className="min-h-10 px-3.5 rounded-xl bg-[#FF5E1A]/15 hover:bg-[#FF5E1A]/25 border border-[#FF5E1A]/35 text-xs font-bold text-white whitespace-nowrap shrink-0 inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+              >
+                <Radio className="w-3.5 h-3.5 text-[#FF8A4C] shrink-0" />
+                <span>Antena 3 Directo HD</span>
+              </button>
+            )}
+            {sextaCh && (
+              <button
+                type="button"
+                onClick={() => handlePlayAndRecord(sextaCh, getChannelLiveEpg(sextaCh.id)?.now?.title)}
+                className="min-h-10 px-3.5 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/35 text-xs font-bold text-white whitespace-nowrap shrink-0 inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+              >
+                <Radio className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                <span>laSexta Directo HD</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                window.dispatchEvent(new CustomEvent('riffan:open-vpn-gateway'));
+              }}
+              className="min-h-10 px-3.5 rounded-xl bg-[#0D0D12] hover:bg-white/[0.08] border border-white/[0.1] text-xs font-bold text-emerald-300 whitespace-nowrap shrink-0 inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+            >
+              <Globe className="w-3.5 h-3.5 shrink-0" />
+              <span>VPN España</span>
+            </button>
+          </div>
+        );
+      })()}
 
       {/* QUIET METADATA SUMMARY LINE */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-1 text-xs text-zinc-400">
@@ -598,7 +491,7 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
           <button
             type="button"
             onClick={resetAllFilters}
-            className="min-h-11 px-2 text-xs font-semibold text-[#C4B5FD] hover:text-white shrink-0 cursor-pointer"
+            className="text-xs font-semibold text-[#C4B5FD] hover:text-white shrink-0 cursor-pointer"
           >
             {pickLang(lang, { es: 'Ver todos', ca: 'Veure tots', en: 'Show all' })}
           </button>
@@ -617,7 +510,7 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
                   triggerHaptic('light');
                   onAdrarCountryFilterChange?.(ctry.id);
                 }}
-                className={`min-h-11 px-3.5 rounded-xl text-xs font-semibold border whitespace-nowrap shrink-0 flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                className={`min-h-10 px-3.5 rounded-xl text-xs font-semibold border whitespace-nowrap shrink-0 flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
                   active
                     ? 'bg-[#7C3AED] border-[#7C3AED] text-white'
                     : 'bg-[#0D0D12] border-white/[0.08] text-zinc-300 hover:bg-white/[0.08]'
@@ -650,9 +543,8 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
                 <button
                   key={`recent-${ch.id}`}
                   type="button"
-                  data-tv-focusable="true"
                   onClick={() => handlePlayAndRecord(ch, chEpg?.now?.title)}
-                  className={`min-h-12 px-3 py-2 rounded-2xl border shrink-0 flex items-center gap-2.5 cursor-pointer active:scale-95 transition-all tv-focus-ring ${
+                  className={`min-h-12 px-3 py-2 rounded-2xl border shrink-0 flex items-center gap-2.5 cursor-pointer active:scale-95 transition-all ${
                     isPlaying
                       ? 'bg-[#7C3AED]/20 border-[#7C3AED] text-white'
                       : 'bg-[#0D0D12] border-white/[0.08] hover:border-white/20 text-zinc-200'
@@ -681,13 +573,7 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
       ) : searchScopedChannels.length === 0 ? (
         <div className="py-10 px-4 rounded-2xl bg-[#0D0D12] border border-white/[0.08] text-center space-y-3">
           <p className="text-sm font-semibold text-zinc-200">
-            {tdtChannels.length === 0 || tdtFetchError
-              ? pickLang(lang, {
-                  es: 'No se pudo cargar la guía de canales en este momento.',
-                  ca: 'No s’ha pogut carregar la guia de canals ara mateix.',
-                  en: 'Could not load the channel guide right now.',
-                })
-              : tvFavOnly
+            {tvFavOnly
               ? pickLang(lang, {
                   es: 'Todavía no tienes canales favoritos guardados.',
                   ca: 'Encara no tens canals favorits desats.',
@@ -701,27 +587,14 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
           </p>
           <button
             type="button"
-            data-tv-focusable="true"
-            onClick={() => {
-              if ((tdtChannels.length === 0 || tdtFetchError) && onRetryFetchTdt) {
-                onRetryFetchTdt();
-              } else {
-                resetAllFilters();
-              }
-            }}
-            className="min-h-11 px-4 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-bold text-white cursor-pointer active:scale-95 transition-all tv-focus-ring"
+            onClick={resetAllFilters}
+            className="min-h-11 px-4 rounded-xl bg-[#7C3AED] hover:bg-[#8B5CF6] text-xs font-bold text-white cursor-pointer active:scale-95 transition-all"
           >
-            {tdtChannels.length === 0 || tdtFetchError
-              ? pickLang(lang, {
-                  es: 'Reintentar carga',
-                  ca: 'Tornar a carregar',
-                  en: 'Retry loading',
-                })
-              : pickLang(lang, {
-                  es: 'Ver todos los canales',
-                  ca: 'Veure tots els canals',
-                  en: 'Show all channels',
-                })}
+            {pickLang(lang, {
+              es: 'Ver todos los canales',
+              ca: 'Veure tots els canals',
+              en: 'Show all channels',
+            })}
           </button>
         </div>
       ) : (
@@ -742,21 +615,15 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
 
           {displayedRemaining.length > 0 && (
             <section className="space-y-3">
-              <div className="flex items-center justify-between gap-2 px-1">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                  {pinnedFavorites.length > 0
-                    ? pickLang(lang, {
-                        es: 'Todos los canales',
-                        ca: 'Tots els canals',
-                        en: 'All channels',
-                      })
-                    : pickLang(lang, {
-                        es: 'Canales ordenados por calidad y señal',
-                        ca: 'Canals ordenats per qualitat i senyal',
-                        en: 'Channels ranked by quality & signal',
-                      })}
+              {pinnedFavorites.length > 0 && (
+                <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1">
+                  {pickLang(lang, {
+                    es: 'Todos los canales',
+                    ca: 'Tots els canals',
+                    en: 'All channels',
+                  })}
                 </h3>
-              </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {displayedRemaining.map(renderChannelRow)}
               </div>
@@ -765,12 +632,11 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
                 <div className="pt-2 flex justify-center">
                   <button
                     type="button"
-                    data-tv-focusable="true"
                     onClick={() => {
                       triggerHaptic('light');
                       setVisibleLimit((prev) => prev + CHANNELS_BATCH_SIZE);
                     }}
-                    className="min-h-12 px-6 rounded-2xl bg-[#0D0D12] hover:bg-[#171722] border border-white/[0.12] hover:border-[#7C3AED]/60 text-xs sm:text-sm font-bold text-white inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all tv-focus-ring"
+                    className="min-h-12 px-6 rounded-2xl bg-[#0D0D12] hover:bg-[#171722] border border-white/[0.12] hover:border-[#7C3AED]/60 text-xs sm:text-sm font-bold text-white inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
                   >
                     <span>
                       {pickLang(lang, {
@@ -803,98 +669,7 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
         onEpgFilterChange={onEpgFilterChange}
         onResetAdrarCountry={() => onAdrarCountryFilterChange?.('all')}
       />
-
-      {signalsChannel && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={signalsChannel.name}
-          className="fixed inset-0 z-[125] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setSignalsChannel(null);
-          }}
-        >
-          <div className="w-full sm:max-w-xl max-h-[85dvh] rounded-t-3xl sm:rounded-3xl bg-[#0D0D12]/96 backdrop-blur-xl border-t sm:border border-white/10 shadow-2xl flex flex-col overflow-hidden">
-            <div className="pt-2.5 sm:hidden flex justify-center">
-              <div className="w-10 h-1.5 rounded-full bg-white/20" />
-            </div>
-
-            <div className="flex items-start justify-between gap-3 px-4 sm:px-5 pt-3 pb-3.5 border-b border-white/[0.08]">
-              <div className="min-w-0 space-y-1">
-                <h2 className="font-display font-bold text-base sm:text-lg text-white leading-tight truncate">
-                  {signalsChannel.name}
-                </h2>
-                <p className="text-xs text-zinc-400 tabular-nums">
-                  {pickLang(lang, {
-                    es: `${signalsChannel.channels.length} señales disponibles · Selecciona servidor o calidad`,
-                    ca: `${signalsChannel.channels.length} senyals disponibles · Tria servidor o qualitat`,
-                    en: `${signalsChannel.channels.length} signals available · Pick server or quality`,
-                  })}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSignalsChannel(null)}
-                aria-label={pickLang(lang, { es: 'Cerrar', ca: 'Tancar', en: 'Close' })}
-                className="min-w-11 min-h-11 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-4 space-y-2 custom-scrollbar">
-              {signalsChannel.channels.map((sig, idx) => {
-                const qTag = inferStreamQualityTag(sig.quality, sig.label, sig.sourceUrl).label;
-                const isActive = Boolean(activeVideoRawUrl && sig.sourceUrl === activeVideoRawUrl);
-                const serverTitle = sig.providerName || sig.label || `Señal ${idx + 1}`;
-                const liveNow = getChannelLiveEpg(signalsChannel.id)?.now?.title;
-                return (
-                  <button
-                    key={`${sig.id}-${idx}`}
-                    type="button"
-                    onClick={() => {
-                      const target = signalsChannel;
-                      setSignalsChannel(null);
-                      triggerHaptic('success');
-                      onPlayTdtChannel(target, idx, liveNow);
-                    }}
-                    className={`w-full min-h-12 p-3 rounded-2xl border flex items-center justify-between gap-3 text-left transition-all cursor-pointer ${
-                      isActive || idx === 0
-                        ? 'bg-[#7C3AED]/16 border-[#7C3AED]/70 hover:bg-[#7C3AED]/24'
-                        : 'bg-[#14141C] border-white/[0.07] hover:bg-[#1C1C26] hover:border-white/20'
-                    }`}
-                  >
-                    <div className="min-w-0 space-y-0.5">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-xs font-bold text-white truncate">{serverTitle}</span>
-                        {idx === 0 && (
-                          <span className="text-[11px] font-semibold text-[#C4B5FD] shrink-0">
-                            · {pickLang(lang, { es: 'Prioritaria', ca: 'Prioritària', en: 'Primary' })}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-xs text-zinc-300 truncate">{sig.label}</p>
-                      <p className="text-[11px] text-zinc-400 truncate tabular-nums">
-                        {[
-                          qTag,
-                          sig.langLabel || sig.lang || 'ES',
-                          sig.health?.latencyMs ? `${sig.health.latencyMs} ms` : null,
-                        ]
-                          .filter(Boolean)
-                          .join(' · ')}
-                      </p>
-                    </div>
-
-                    <span className="min-w-10 min-h-10 rounded-xl bg-[#7C3AED] text-white flex items-center justify-center shrink-0">
-                      <Play className="w-4 h-4 fill-current ml-0.5" />
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
+

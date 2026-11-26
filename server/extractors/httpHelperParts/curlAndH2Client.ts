@@ -28,7 +28,6 @@ export interface TrackRecord {
     | 'bingetrix_en'
     | 'sports_channel'
     | 'tdt_hls'
-    | 'mediaset_live'
     | 'elahmad_live'
     | 'direct_hls'
     | 'direct_mp4'

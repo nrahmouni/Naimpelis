@@ -4,18 +4,7 @@ import { RiffanSpinner } from './RiffanIcons';
 import { FlagBadgeSvg, type FlagCode } from './FlagSvgLibrary';
 
 export { FlagBadgeSvg, type FlagCode };
-export type UnifiedLanguageCode =
-  | 'ES'
-  | 'CAT'
-  | 'LAT'
-  | 'VOSE'
-  | 'EN'
-  | 'FR'
-  | 'PT'
-  | 'IT'
-  | 'DE'
-  | 'AR'
-  | 'QUALITY';
+export type UnifiedLanguageCode = 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT';
 
 interface LanguageBadgeProps {
   code: string;
@@ -29,16 +18,10 @@ interface LanguageBadgeProps {
 export function normalizeLangCode(raw?: string): UnifiedLanguageCode {
   if (!raw) return 'ES';
   const up = String(raw).trim().toUpperCase();
-  if (up === 'QUALITY' || up === 'BEST' || up === '4K') return 'QUALITY';
   if (up === 'CAT' || up === 'CA' || up.includes('CATAL') || up.includes('VALENCI')) return 'CAT';
   if (up === 'LAT' || up.includes('LATINO') || up.includes('LATIN')) return 'LAT';
   if (up === 'VOSE' || up.includes('SUB') || up.includes('ORIGINAL')) return 'VOSE';
   if (up === 'EN' || up.includes('ENG') || up.includes('INGLES') || up.includes('INGLÉS')) return 'EN';
-  if (up === 'FR' || up.includes('FRANC') || up.includes('FRENCH')) return 'FR';
-  if (up === 'PT' || up === 'BR' || up.includes('PORTUG')) return 'PT';
-  if (up === 'IT' || up.includes('ITAL')) return 'IT';
-  if (up === 'DE' || up === 'GER' || up.includes('ALEM') || up.includes('GERMAN')) return 'DE';
-  if (up === 'AR' || up === 'ARB' || up.includes('ARAB')) return 'AR';
   return 'ES';
 }
 
@@ -48,12 +31,6 @@ export const LANGUAGE_LABELS: Record<UnifiedLanguageCode, { short: string; title
   LAT: { short: 'LAT', title: 'Español Latino', flag: 'lat' },
   VOSE: { short: 'VOSE', title: 'Subtitulado (VOSE)', flag: 'vose' },
   EN: { short: 'EN', title: 'English', flag: 'en' },
-  FR: { short: 'FR', title: 'Français', flag: 'fr' },
-  PT: { short: 'PT', title: 'Português', flag: 'pt' },
-  IT: { short: 'IT', title: 'Italiano', flag: 'it' },
-  DE: { short: 'DE', title: 'Deutsch', flag: 'de' },
-  AR: { short: 'AR', title: 'العربية (Árabe)', flag: 'ar' },
-  QUALITY: { short: '4K/HD', title: 'Mejor calidad (4K / HD)', flag: 'all' },
 };
 
 export const LanguageBadge: React.FC<LanguageBadgeProps> = ({

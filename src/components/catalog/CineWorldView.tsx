@@ -4,14 +4,13 @@
  * SegmentedControl, ES/LAT/VOSE/EN/CAT language selector, 4K Ultra HD mode,
  * dual-scrim Cinema Hero Spotlight, unified search, and modular Filter sheet.
  */
-import React, { useCallback, useEffect, useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { motion } from 'motion/react';
 import { Link2, Play, X } from 'lucide-react';
-import type { AppLanguage, CatalaCatalogItem, CatalogMovie, SpanishTdtChannel } from '../../types';
+import type { AppLanguage, CatalaCatalogItem, CatalogMovie } from '../../types';
 import type { CatalogGenreItem } from '../ExpandedDiscoverySection';
 import { UI_COPY, pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
-import { prefetchImageUrls } from '../../utils/imageUrl';
 import { useBackInterceptor } from '../../lib/backInterceptor';
 import { SegmentedControl } from '../ui/DesignSystem';
 import {
@@ -36,7 +35,6 @@ import {
   SERIES_SORT_OPTIONS,
 } from './catalogConstants';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
-import { XtreamVodSeriesShelf } from './XtreamVodSeriesShelf';
 
 const ExpandedDiscoverySection = lazyWithRetry(() =>
   import('../ExpandedDiscoverySection').then((m) => ({ default: m.ExpandedDiscoverySection }))
@@ -106,7 +104,6 @@ export interface CineWorldViewProps {
   onOpenCloudBrowser: (url: string) => void;
   onSearchWithAi?: (query: string, mediaType?: 'all' | 'movie' | 'tv') => void;
   onOpenSurpriseMe?: () => void;
-  onPlayTdtChannel?: (channel: SpanishTdtChannel, signalIndex?: number) => void;
 }
 
 export const CineWorldView: React.FC<CineWorldViewProps> = ({
@@ -169,7 +166,6 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
   onOpenCloudBrowser,
   onSearchWithAi,
   onOpenSurpriseMe,
-  onPlayTdtChannel,
 }) => {
   const t = UI_COPY[lang];
 
@@ -194,16 +190,6 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
     ? homeShowcaseMovies
     : movies;
   const heroSlides = heroPool.filter((m) => m.backdrop || m.poster).slice(0, 6);
-
-  useEffect(() => {
-    if (showUnifiedSearch || cineSpecialPortal !== 'none') return;
-    const railItems = (isSeriesTab ? seriesList : movies).slice(0, 14);
-    const urls = [
-      ...heroSlides.map((h) => h.backdrop || h.poster),
-      ...railItems.map((m) => m.poster || m.backdrop),
-    ];
-    prefetchImageUrls(urls, { limit: 16, kind: 'poster' });
-  }, [showUnifiedSearch, cineSpecialPortal, isSeriesTab, heroSlides, seriesList, movies]);
 
   const currentSort = isSeriesTab ? seriesSort : movieSort;
   const currentGenre = isSeriesTab ? seriesGenre : movieGenre;
@@ -501,32 +487,22 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
 
       {/* Search / Catala / Filtered Grid / Editorial Home View */}
       {showUnifiedSearch ? (
-        <div className="space-y-6">
-          <CineUnifiedSearchResults
-            lang={lang}
-            trimmedSearch={trimmedSearch}
-            isSeriesTab={isSeriesTab}
-            loadingHomeSearch={loadingHomeSearch}
-            homeMovieResults={homeMovieResults}
-            homeSeriesResults={homeSeriesResults}
-            isBookmarked={isBookmarked}
-            onToggleBookmark={onToggleBookmark}
-            onOpenPosterItem={openPosterItem}
-            onSwitchTab={(tab) => {
-              onChangeCineSpecialPortal('none');
-              onChangeCineTab(tab);
-            }}
-            onSearchWithAi={onSearchWithAi}
-          />
-          {onPlayTdtChannel && (
-            <XtreamVodSeriesShelf
-              lang={lang}
-              mode={isSeriesTab ? 'series' : 'movies'}
-              trimmedSearch={trimmedSearch}
-              onPlayTdtChannel={onPlayTdtChannel}
-            />
-          )}
-        </div>
+        <CineUnifiedSearchResults
+          lang={lang}
+          trimmedSearch={trimmedSearch}
+          isSeriesTab={isSeriesTab}
+          loadingHomeSearch={loadingHomeSearch}
+          homeMovieResults={homeMovieResults}
+          homeSeriesResults={homeSeriesResults}
+          isBookmarked={isBookmarked}
+          onToggleBookmark={onToggleBookmark}
+          onOpenPosterItem={openPosterItem}
+          onSwitchTab={(tab) => {
+            onChangeCineSpecialPortal('none');
+            onChangeCineTab(tab);
+          }}
+          onSearchWithAi={onSearchWithAi}
+        />
       ) : cineSpecialPortal === 'catala' ? (
         <CineCatalaPortalView
           lang={lang}
@@ -537,36 +513,26 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
         />
       ) : (isMoviesTab && (movieGenre !== '' || movieSort !== 'trending')) ||
         (isSeriesTab && (seriesGenre !== '' || seriesSort !== 'trending')) ? (
-        <div className="space-y-7">
-          <CineFilteredGridView
-            lang={lang}
-            isSeriesTab={isSeriesTab}
-            currentSort={currentSort}
-            backLabel={filteredBackLabel}
-            items={isSeriesTab ? seriesList : movies}
-            loading={isSeriesTab ? loadingSeries : loadingMovies}
-            hasMore={isSeriesTab ? hasMoreSeries : hasMoreMovies}
-            loadingMore={isSeriesTab ? loadingMoreSeries : loadingMoreMovies}
-            isBookmarked={isBookmarked}
-            onToggleBookmark={onToggleBookmark}
-            onOpenPosterItem={openPosterItem}
-            onNextPage={() => (isSeriesTab ? onNextSeriesPage() : onNextMoviePage())}
-            onClearFilters={() => {
-              onChangeMovieSort('trending');
-              onChangeMovieGenre('');
-              onChangeSeriesSort('trending');
-              onChangeSeriesGenre('');
-            }}
-          />
-          {onPlayTdtChannel && (
-            <XtreamVodSeriesShelf
-              lang={lang}
-              mode={isSeriesTab ? 'series' : 'movies'}
-              force4kFilter={currentSort === '4k'}
-              onPlayTdtChannel={onPlayTdtChannel}
-            />
-          )}
-        </div>
+        <CineFilteredGridView
+          lang={lang}
+          isSeriesTab={isSeriesTab}
+          currentSort={currentSort}
+          backLabel={filteredBackLabel}
+          items={isSeriesTab ? seriesList : movies}
+          loading={isSeriesTab ? loadingSeries : loadingMovies}
+          hasMore={isSeriesTab ? hasMoreSeries : hasMoreMovies}
+          loadingMore={isSeriesTab ? loadingMoreSeries : loadingMoreMovies}
+          isBookmarked={isBookmarked}
+          onToggleBookmark={onToggleBookmark}
+          onOpenPosterItem={openPosterItem}
+          onNextPage={() => (isSeriesTab ? onNextSeriesPage() : onNextMoviePage())}
+          onClearFilters={() => {
+            onChangeMovieSort('trending');
+            onChangeMovieGenre('');
+            onChangeSeriesSort('trending');
+            onChangeSeriesGenre('');
+          }}
+        />
       ) : (
         <motion.div
           initial={{ opacity: 0 }}
@@ -590,14 +556,6 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
             onPlayMovie={onPlayMovie}
           />
 
-          {onPlayTdtChannel && (
-            <XtreamVodSeriesShelf
-              lang={lang}
-              mode={isSeriesTab ? 'series' : 'movies'}
-              onPlayTdtChannel={onPlayTdtChannel}
-            />
-          )}
-
           {/* TRENDING RAIL */}
           <motion.section
             initial={{ opacity: 0, y: 12 }}
@@ -619,12 +577,11 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
               </span>
             </div>
             <div className="scroll-snap-x flex items-stretch gap-3 sm:gap-4 overflow-x-auto no-scrollbar pb-1">
-              {(isSeriesTab ? seriesList : movies).slice(0, 14).map((item, idx) => (
+              {(isSeriesTab ? seriesList : movies).slice(0, 14).map((item) => (
                 <CinePosterCard
                   key={item.id}
                   item={item}
                   forcedKind={isSeriesTab ? 'tv' : 'movie'}
-                  priority={idx < 4}
                   isBookmarked={isBookmarked(item)}
                   onToggleBookmark={onToggleBookmark}
                   onSelect={openPosterItem}

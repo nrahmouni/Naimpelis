@@ -66,9 +66,6 @@ export function isBarcaOrMadridHomeReadyMatch(
   }
 
   const kickoffMs = Number(meta?.kickoffMs || 0);
-  if (kickoffMs > 0 && kickoffMs - nowMs > BARCA_MADRID_PRE_KICKOFF_WINDOW_MS) {
-    return false;
-  }
 
   if (statusState === 'live' || match.isLive) {
     if (kickoffMs > 0 && nowMs - kickoffMs > BARCA_MADRID_MAX_LIVE_AGE_MS) {
@@ -139,14 +136,12 @@ export function getBarcaMadridBannerDisplayMeta(
   awayScore: string;
 } {
   const meta = match.matchMeta;
-  const kickoffMs = Number(meta?.kickoffMs || 0);
-  const isLiveNow =
-    Boolean(match.isLive || meta?.statusState === 'live') &&
-    !(kickoffMs > 0 && kickoffMs - nowMs > BARCA_MADRID_PRE_KICKOFF_WINDOW_MS);
+  const isLiveNow = Boolean(match.isLive || meta?.statusState === 'live');
   const homeScore = String(meta?.homeScore ?? '').trim();
   const awayScore = String(meta?.awayScore ?? '').trim();
   const hasScore = /^\d+$/.test(homeScore) && /^\d+$/.test(awayScore);
 
+  const kickoffMs = Number(meta?.kickoffMs || 0);
   const diffMs = kickoffMs > 0 ? kickoffMs - nowMs : 0;
   const minsLeft = Math.max(0, Math.ceil(diffMs / 60_000));
   const kickoffTimeLabel = String(meta?.kickoffTime || match.time || '').trim();

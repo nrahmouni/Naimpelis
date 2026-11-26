@@ -129,23 +129,6 @@ export function extractTrackHostKey(sourceUrl: string): string {
       // ignore
     }
   }
-  const provMatch = target.match(/^\/api\/providers\/stream\/([^/]+)\//i);
-  if (provMatch) {
-    return `provider://${provMatch[1].toLowerCase()}`;
-  }
-  if (/^\/api\/(?:xtream\/stream\/|stream\b)/i.test(target)) {
-    try {
-      const parsed = new URL(target, 'http://localhost');
-      const prov = (parsed.searchParams.get('provider') || 'primary').toLowerCase();
-      const id =
-        parsed.searchParams.get('id') ||
-        target.split('/').pop()?.split('?')[0]?.replace(/\.m3u8.*$/i, '') ||
-        '';
-      return id ? `xtream://${prov}/${id.toLowerCase()}` : `xtream://${prov}`;
-    } catch {
-      // ignore
-    }
-  }
   const belixMatch = target.match(/^\/api\/belix\/stream\/([a-zA-Z0-9_-]+)/i);
   if (belixMatch) {
     return `belix://stream/${belixMatch[1].toLowerCase()}`;

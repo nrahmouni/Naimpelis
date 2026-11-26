@@ -8,6 +8,12 @@ import type {
   SportsMatch,
 } from '../../types';
 import type { MusicArtistRef, MusicRadioStation, MusicTrack } from '../../types/music';
+import type {
+  ProviderLiveItem,
+  ProviderMovieItem,
+  ProviderSeriesEpisodeItem,
+  ProviderSeriesItem,
+} from '../../types/providers';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { RiffanDiceIcon, RiffanFootballIcon } from '../ui/RiffanIcons';
@@ -16,6 +22,7 @@ import { mergeAndRankCatalogResults, normalizeSearchText } from '../../utils/cat
 import { useSuppressFloatingBubble } from '../../utils/useSuppressFloatingBubble';
 import { useBackInterceptor } from '../../lib/backInterceptor';
 import { useAppStore } from '../../store/useAppStore';
+import { ProviderSeriesModal } from '../providers/ProviderSeriesModal';
 import {
   HALLMARK_GAMES,
   type AiSearchJobState,
@@ -23,13 +30,6 @@ import {
 } from './homeSearchTypes';
 import { UniversalSearchAiCard } from './UniversalSearchAiCard';
 import { UniversalSearchResultsList } from './UniversalSearchResultsList';
-import {
-  fetchXtreamFullCatalog,
-  readCachedXtreamCatalog,
-  type XtreamFullCatalogPayload,
-  type XtreamSeriesItem,
-  type XtreamVodStreamItem,
-} from '../../services/xtreamClientService';
 
 export type { SearchCategoryFilter };
 
@@ -43,6 +43,10 @@ interface UniversalHomeSearchProps {
   onOpenMovieDetails: (movie: CatalogMovie) => void;
   onOpenSeriesPage: (series: CatalogMovie) => void;
   onPlayChannel: (channel: SpanishTdtChannel) => void;
+  onPlayCustomUrl?: (
+    rawUrl: string,
+    meta?: { title?: string; subtitle?: string; poster?: string }
+  ) => void;
   onPlayMatch: (match: SportsMatch) => void;
   onSelectGame: (gameId: string) => void;
   onOpenMusicWorld?: () => void;
@@ -72,6 +76,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   onOpenMovieDetails,
   onOpenSeriesPage,
   onPlayChannel,
+  onPlayCustomUrl,
   onPlayMatch,
   onSelectGame,
   onOpenMusicWorld,
@@ -90,21 +95,15 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     artists: MusicArtistRef[];
     radios: MusicRadioStation[];
   }>({ tracks: [], artists: [], radios: [] });
+  const [providerHits, setProviderHits] = useState<{
+    live: ProviderLiveItem[];
+    movies: ProviderMovieItem[];
+    series: ProviderSeriesItem[];
+  }>({ live: [], movies: [], series: [] });
+  const [activeProviderSeriesModal, setActiveProviderSeriesModal] =
+    useState<ProviderSeriesItem | null>(null);
   const [loadingRemote, setLoadingRemote] = useState(false);
   const [recentSearches, setRecentSearches] = useState<string[]>(readRecentSearches);
-  const [xtreamCatalog, setXtreamCatalog] = useState<XtreamFullCatalogPayload | null>(() =>
-    readCachedXtreamCatalog('all')
-  );
-  const xtreamBootstrapStartedRef = useRef(false);
-
-  useEffect(() => {
-    const onSynced = () => {
-      const latest = readCachedXtreamCatalog('all');
-      if (latest) setXtreamCatalog(latest);
-    };
-    window.addEventListener('belix-channels-synced', onSynced);
-    return () => window.removeEventListener('belix-channels-synced', onSynced);
-  }, []);
 
   const [aiJob, setAiJob] = useState<AiSearchJobState>({
     status: 'idle',
@@ -127,16 +126,6 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   const hasMinQuery = cleanQuery.length >= 2;
   const isSearchActive = cleanQuery.length > 0;
   const showOverlay = isSearchActive && !suppressOverlay && !overlayDismissed;
-
-  useEffect(() => {
-    if (cleanQuery.length < 2 || xtreamCatalog || xtreamBootstrapStartedRef.current) return;
-    xtreamBootstrapStartedRef.current = true;
-    void fetchXtreamFullCatalog(false, 'all')
-      .then((res) => {
-        if (res.ok && res.catalog) setXtreamCatalog(res.catalog);
-      })
-      .catch(() => {});
-  }, [cleanQuery.length, xtreamCatalog]);
 
   useSuppressFloatingBubble(showOverlay);
 
@@ -234,6 +223,11 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
           ? prev
           : { tracks: [], artists: [], radios: [] }
       );
+      setProviderHits((prev) =>
+        prev.live.length === 0 && prev.movies.length === 0 && prev.series.length === 0
+          ? prev
+          : { live: [], movies: [], series: [] }
+      );
       setLoadingRemote((prev) => (prev ? false : prev));
       return;
     }
@@ -243,7 +237,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     setLoadingRemote(true);
 
     const timer = window.setTimeout(() => {
-      let pending = 3;
+      let pending = 4;
       const doneOne = () => {
         pending -= 1;
         if (active && pending <= 0) setLoadingRemote(false);
@@ -305,6 +299,32 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
           }
         })
         .finally(doneOne);
+
+      const providerTimeoutId = window.setTimeout(() => {
+        doneOne();
+      }, 2800);
+
+      fetch(`/api/providers/search?q=${encodeURIComponent(cleanQuery)}&limit=12`, {
+        signal: controller.signal,
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!active) return;
+          setProviderHits({
+            live: Array.isArray(data?.live) ? data.live.slice(0, 12) : [],
+            movies: Array.isArray(data?.movies) ? data.movies.slice(0, 12) : [],
+            series: Array.isArray(data?.series) ? data.series.slice(0, 12) : [],
+          });
+        })
+        .catch(() => {
+          if (active && !controller.signal.aborted) {
+            setProviderHits({ live: [], movies: [], series: [] });
+          }
+        })
+        .finally(() => {
+          window.clearTimeout(providerTimeoutId);
+          doneOne();
+        });
     }, 200);
 
     return () => {
@@ -454,21 +474,82 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     return normalizedFields.some((f) => f.includes(rawNormQ));
   }, [norm]);
 
+  const providerMovieMap = useMemo(() => {
+    const map = new Map<string, ProviderMovieItem>();
+    for (const pm of providerHits.movies) {
+      map.set(`provider-vod-${pm.id}`, pm);
+    }
+    return map;
+  }, [providerHits.movies]);
+
+  const providerSeriesMap = useMemo(() => {
+    const map = new Map<string, ProviderSeriesItem>();
+    for (const ps of providerHits.series) {
+      map.set(`provider-series-${ps.id}`, ps);
+    }
+    return map;
+  }, [providerHits.series]);
+
   const matchedMovies = useMemo(() => {
     if (!deferredHasMinQuery || !deferredNormQuery) return [];
-    return mergeAndRankCatalogResults(remoteMovies, movies, deferredCleanQuery, {
+    const base = mergeAndRankCatalogResults(remoteMovies, movies, deferredCleanQuery, {
       limit: 12,
       minLocalScore: 60,
     });
-  }, [deferredHasMinQuery, deferredNormQuery, deferredCleanQuery, movies, remoteMovies]);
+    if (providerHits.movies.length === 0) return base;
+
+    const seenTitles = new Set(base.map((m) => norm(m.title)));
+    const extras: CatalogMovie[] = [];
+    for (const pm of providerHits.movies) {
+      const cleanName = norm(pm.name);
+      if (!cleanName || seenTitles.has(cleanName)) continue;
+      seenTitles.add(cleanName);
+      extras.push({
+        id: `provider-vod-${pm.id}`,
+        mediaType: 'movie',
+        title: pm.name,
+        year: pm.year || 'HD',
+        rating: '',
+        overview: pm.categoryName || pm.providerName,
+        poster: pm.poster,
+        backdrop: pm.poster,
+        bingetrixUrl: pm.playbackUrl,
+        languages: ['ES'],
+        platform: pm.providerName,
+      });
+    }
+    return [...base, ...extras].slice(0, 12);
+  }, [deferredHasMinQuery, deferredNormQuery, deferredCleanQuery, movies, remoteMovies, providerHits.movies, norm]);
 
   const matchedSeries = useMemo(() => {
     if (!deferredHasMinQuery || !deferredNormQuery) return [];
-    return mergeAndRankCatalogResults(remoteSeries, series, deferredCleanQuery, {
+    const base = mergeAndRankCatalogResults(remoteSeries, series, deferredCleanQuery, {
       limit: 12,
       minLocalScore: 60,
     });
-  }, [deferredHasMinQuery, deferredNormQuery, deferredCleanQuery, series, remoteSeries]);
+    if (providerHits.series.length === 0) return base;
+
+    const seenTitles = new Set(base.map((s) => norm(s.title)));
+    const extras: CatalogMovie[] = [];
+    for (const ps of providerHits.series) {
+      const cleanName = norm(ps.name);
+      if (!cleanName || seenTitles.has(cleanName)) continue;
+      seenTitles.add(cleanName);
+      extras.push({
+        id: `provider-series-${ps.id}`,
+        mediaType: 'tv',
+        title: ps.name,
+        year: ps.year || 'HD',
+        rating: '',
+        overview: ps.plot || ps.categoryName || ps.providerName,
+        poster: ps.poster,
+        backdrop: ps.poster,
+        languages: ['ES'],
+        platform: ps.providerName,
+      });
+    }
+    return [...base, ...extras].slice(0, 12);
+  }, [deferredHasMinQuery, deferredNormQuery, deferredCleanQuery, series, remoteSeries, providerHits.series, norm]);
 
   const matchedSports = useMemo(() => {
     if (!deferredHasMinQuery || !deferredNormQuery) return [];
@@ -492,13 +573,45 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   const matchedTdt = useMemo(() => {
     if (!deferredHasMinQuery || !deferredNormQuery) return [];
     const isGeneralTv = /^(tv|tdt|canal|canales|tele|television|televisión)$/i.test(deferredNormQuery);
-    return tdtChannels
+    const localMatched = tdtChannels
       .filter((ch) => {
         if (isGeneralTv) return true;
         return queryMatchesFields([ch.name, ch.network || '', ch.shortMark || ''], deferredNormQuery);
       })
       .slice(0, 8);
-  }, [deferredHasMinQuery, deferredNormQuery, tdtChannels, queryMatchesFields]);
+
+    if (providerHits.live.length === 0) return localMatched;
+
+    const seenNames = new Set(localMatched.map((ch) => norm(ch.name)));
+    const providerLiveAsTdt: SpanishTdtChannel[] = [];
+    for (const item of providerHits.live) {
+      const key = norm(item.name);
+      if (!key || seenNames.has(key)) continue;
+      seenNames.add(key);
+      providerLiveAsTdt.push({
+        id: item.id,
+        dial: 0,
+        name: item.name,
+        category: 'entretenimiento',
+        network: item.providerName,
+        quality: 'HD',
+        description: item.categoryName,
+        shortMark: item.name.slice(0, 3).toUpperCase(),
+        brandTone: '#8B5CF6',
+        logoUrl: item.logo || undefined,
+        channels: [
+          {
+            id: `${item.id}-hls`,
+            label: `Señal Rápida · ${item.providerName}`,
+            lang: 'ES',
+            sourceUrl: item.playbackUrl,
+            resolverType: 'tdt_hls',
+          },
+        ],
+      });
+    }
+    return [...localMatched, ...providerLiveAsTdt].slice(0, 12);
+  }, [deferredHasMinQuery, deferredNormQuery, tdtChannels, providerHits.live, queryMatchesFields, norm]);
 
   const matchedGames = useMemo(() => {
     if (!deferredHasMinQuery || !deferredNormQuery) return [];
@@ -509,54 +622,21 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     });
   }, [deferredHasMinQuery, deferredNormQuery, queryMatchesFields]);
 
-  const matchedXtreamVod = useMemo<XtreamVodStreamItem[]>(() => {
-    if (!deferredHasMinQuery || !deferredNormQuery || !xtreamCatalog) return [];
-    const tokens = deferredNormQuery.split(' ').filter((t) => t.length >= 2);
-    if (tokens.length === 0) return [];
-    const out: XtreamVodStreamItem[] = [];
-    for (const item of xtreamCatalog.vodStreams) {
-      const hay = norm(`${item.name} ${item.providerName || ''}`);
-      if (tokens.every((tk) => hay.includes(tk))) {
-        out.push(item);
-        if (out.length >= 18) break;
-      }
-    }
-    return out;
-  }, [deferredHasMinQuery, deferredNormQuery, xtreamCatalog, norm]);
-
-  const matchedXtreamSeries = useMemo<XtreamSeriesItem[]>(() => {
-    if (!deferredHasMinQuery || !deferredNormQuery || !xtreamCatalog) return [];
-    const tokens = deferredNormQuery.split(' ').filter((t) => t.length >= 2);
-    if (tokens.length === 0) return [];
-    const out: XtreamSeriesItem[] = [];
-    for (const item of xtreamCatalog.series) {
-      const hay = norm(`${item.name} ${item.providerName || ''} ${item.genre || ''}`);
-      if (tokens.every((tk) => hay.includes(tk))) {
-        out.push(item);
-        if (out.length >= 18) break;
-      }
-    }
-    return out;
-  }, [deferredHasMinQuery, deferredNormQuery, xtreamCatalog, norm]);
-
   const matchedMusicCount =
     remoteMusic.tracks.length + remoteMusic.artists.length + remoteMusic.radios.length;
 
-  const totalMoviesHits = matchedMovies.length + matchedXtreamVod.length;
-  const totalSeriesHits = matchedSeries.length + matchedXtreamSeries.length;
-
   const totalHits =
     matchedMusicCount +
-    totalMoviesHits +
-    totalSeriesHits +
+    matchedMovies.length +
+    matchedSeries.length +
     matchedSports.length +
     matchedTdt.length +
     matchedGames.length;
 
   const visibleCategoryHits = useMemo(() => {
     if (activeCategory === 'music') return matchedMusicCount;
-    if (activeCategory === 'movies') return totalMoviesHits;
-    if (activeCategory === 'series') return totalSeriesHits;
+    if (activeCategory === 'movies') return matchedMovies.length;
+    if (activeCategory === 'series') return matchedSeries.length;
     if (activeCategory === 'sports') return matchedSports.length;
     if (activeCategory === 'tv') return matchedTdt.length;
     if (activeCategory === 'games') return matchedGames.length;
@@ -564,8 +644,8 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   }, [
     activeCategory,
     matchedMusicCount,
-    totalMoviesHits,
-    totalSeriesHits,
+    matchedMovies.length,
+    matchedSeries.length,
     matchedSports.length,
     matchedTdt.length,
     matchedGames.length,
@@ -638,13 +718,13 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     {
       id: 'movies',
       label: pickLang(lang, { es: 'Películas', ca: 'Pel·lícules', en: 'Movies' }),
-      count: totalMoviesHits,
+      count: matchedMovies.length,
       icon: <Film className="w-3.5 h-3.5" />,
     },
     {
       id: 'series',
       label: pickLang(lang, { es: 'Series', ca: 'Sèries', en: 'Series' }),
-      count: totalSeriesHits,
+      count: matchedSeries.length,
       icon: <Tv className="w-3.5 h-3.5" />,
     },
     {
@@ -1013,8 +1093,6 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                     matchedGames={matchedGames}
                     matchedMovies={matchedMovies}
                     matchedSeries={matchedSeries}
-                    matchedXtreamVod={matchedXtreamVod}
-                    matchedXtreamSeries={matchedXtreamSeries}
                     onDismissSearch={dismissSearchOverlay}
                     onBeforeDirectPlay={snapshotSearchOriginBeforeDirectPlay}
                     onOpenMusicWorld={onOpenMusicWorld}
@@ -1023,10 +1101,25 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                     onSelectGame={onSelectGame}
                     onOpenMovieDetails={(m) => {
                       saveRecentSearch(cleanQuery);
+                      const pm = providerMovieMap.get(m.id);
+                      if (pm && onPlayCustomUrl) {
+                        snapshotSearchOriginBeforeDirectPlay();
+                        onPlayCustomUrl(pm.playbackUrl, {
+                          title: pm.name,
+                          subtitle: `${pm.providerName} · ${pm.categoryName}`,
+                          poster: pm.poster || undefined,
+                        });
+                        return;
+                      }
                       onOpenMovieDetails(m);
                     }}
                     onOpenSeriesPage={(s) => {
                       saveRecentSearch(cleanQuery);
+                      const ps = providerSeriesMap.get(s.id);
+                      if (ps) {
+                        setActiveProviderSeriesModal(ps);
+                        return;
+                      }
                       onOpenSeriesPage(s);
                     }}
                   />
@@ -1036,6 +1129,23 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
+
+      <ProviderSeriesModal
+        series={activeProviderSeriesModal}
+        onClose={() => setActiveProviderSeriesModal(null)}
+        onPlayEpisode={(ep: ProviderSeriesEpisodeItem, provSeries: ProviderSeriesItem) => {
+          triggerHaptic('medium');
+          setActiveProviderSeriesModal(null);
+          if (onPlayCustomUrl) {
+            snapshotSearchOriginBeforeDirectPlay();
+            onPlayCustomUrl(ep.playbackUrl, {
+              title: provSeries.name,
+              subtitle: `T${ep.season}·E${ep.episodeNum} · ${ep.title}`,
+              poster: ep.poster || provSeries.poster || undefined,
+            });
+          }
+        }}
+      />
     </div>
   );
 };

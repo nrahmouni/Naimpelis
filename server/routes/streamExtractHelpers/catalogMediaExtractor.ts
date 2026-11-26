@@ -12,6 +12,8 @@ import {
   extract2EmbedEnglishTracks,
   extractBingetrixEnglishTracks,
   extractGhostflixVidboltTracks,
+  extractVidRockHlsTracks,
+  extractVidsrcBuzzHlsTracks,
   isMovidyVerUrl,
 } from '../../extractors/bingetrixMovidy.ts';
 import { isGnulaHdUrl } from '../../extractors/gnulaHdExtractor.ts';
@@ -28,10 +30,6 @@ import {
 } from '../../services/vestMirrorService.ts';
 import { channelHealthMonitor } from '../../services/channelHealthMonitor.ts';
 import {
-  extractXtreamSeriesEpisodeTracks,
-  findXtreamMovieMatches,
-} from '../../services/xtreamVodMatcher.ts';
-import {
   buildFallbackCatalogResult,
   resolveCatalogMediaMetadata,
 } from './catalogMediaMetadataAndFallback.ts';
@@ -41,7 +39,7 @@ import {
   resolveMovidyTracksForCatalog,
   resolveOrderedCandidateTracks,
 } from './catalogTrackResolver.ts';
-import { normalizeTrackLangCode } from '../../services/trackRankingService.ts';
+import { findFastProviderVodOrSeriesSignals } from '../../services/providers/xtreamFastSignalService.ts';
 import type { RankCandidateTracksFn } from '../streamExtractRoutes.ts';
 
 const TMDB_API_KEY = ENV.tmdbApiKey;
@@ -53,7 +51,6 @@ export interface CatalogMediaExtractParams {
   vestUrlParam: string;
   resolverType: string;
   preferLang: string;
-  preferQualityFirst?: boolean;
   titleHint: string;
   origTitleHint: string;
   yearParam: string;
@@ -82,7 +79,6 @@ export async function handleCatalogMediaExtract(
     vestUrlParam,
     resolverType,
     preferLang,
-    preferQualityFirst = false,
     titleHint,
     origTitleHint,
     yearParam,
@@ -104,11 +100,11 @@ export async function handleCatalogMediaExtract(
   const bingetrixTvMatch = rawInput.match(/bingetrix\.[a-z]+\/(?:watch\/)?tv\/(\d+)\/(\d+)\/(\d+)/i);
   const bingetrixMovieMatch = rawInput.match(/bingetrix\.[a-z]+\/(?:watch|movie)\/(\d+)/i);
   const externalEmbedTvMatch =
-    rawInput.match(/(?:vidlink|vidsrc|videm|vsembed|ghostflix|vidbolt)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?tv\/(tt\d+|\d+)\/(\d+)[/-](\d+)/i) ||
+    rawInput.match(/(?:vidfast|vidlink|vidsrc|videm|vidrock|vidnest|vsembed|ghostflix|vidbolt)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?tv\/(tt\d+|\d+)\/(\d+)[/-](\d+)/i) ||
     rawInput.match(/2embed\.[a-z]+\/(?:embedtv|tv)\/(tt\d+|\d+)(?:&s=|\/)(\d+)(?:&e=|\/)(\d+)/i) ||
     rawInput.match(/[?&]tmdb=(\d+).*?[?&]season=(\d+).*?[?&]episode=(\d+)/i);
   const externalEmbedMovieMatch = !externalEmbedTvMatch
-    ? rawInput.match(/(?:vidlink|vidsrc|videm|vsembed|2embed|ghostflix|vidbolt)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?(?:(?:movies?|watch)\/)?(tt\d+|\d+)/i) ||
+    ? rawInput.match(/(?:vidfast|vidlink|vidsrc|videm|vidrock|vidnest|vsembed|2embed|ghostflix|vidbolt)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?(?:(?:movies?|watch)\/)?(tt\d+|\d+)/i) ||
       rawInput.match(/[?&]tmdb=(\d+)/i)
     : null;
 
@@ -134,49 +130,6 @@ export async function handleCatalogMediaExtract(
     return null;
   }
 
-  const earlyTmdbId = tmdbIdParam || bingetrixTvMatch?.[1] || bingetrixMovieMatch?.[1] || '';
-  const earlyMediaType: 'movie' | 'tv' =
-    mediaTypeParam === 'tv' || Boolean(bingetrixTvMatch) || Boolean(externalEmbedTvMatch) || Boolean(seasonParam || episodeParam)
-      ? 'tv'
-      : 'movie';
-  const earlyClipboxPromise =
-    earlyTmdbId
-      ? Promise.race([
-          extractClipboxDirectStreams({
-            tmdbId: earlyTmdbId,
-            mediaType: earlyMediaType,
-            season: seasonParam || 1,
-            episode: episodeParam || 1,
-          }).catch(() => ({ tracks: [] as TrackRecord[], subtitles: [] as any[] })),
-          new Promise<{ tracks: TrackRecord[]; subtitles: any[] }>((resolve) =>
-            setTimeout(() => resolve({ tracks: [], subtitles: [] }), 2800)
-          ),
-        ])
-      : null;
-  const earlyXtreamPromise =
-    titleHint && titleHint.length >= 2
-      ? Promise.race([
-          (earlyMediaType === 'tv'
-            ? extractXtreamSeriesEpisodeTracks({
-                titleHints: [titleHint, origTitleHint].filter(Boolean),
-                yearHint: yearParam || undefined,
-                season: seasonParam || 1,
-                episode: episodeParam || 1,
-                preferLang,
-                preferQualityFirst,
-              })
-            : findXtreamMovieMatches({
-                titleHints: [titleHint, origTitleHint].filter(Boolean),
-                yearHint: yearParam || undefined,
-                preferLang,
-                preferQualityFirst,
-                limit: 16,
-              }).then((r) => r.tracks)
-          ).catch(() => [] as TrackRecord[]),
-          new Promise<TrackRecord[]>((resolve) => setTimeout(() => resolve([]), 2200)),
-        ])
-      : null;
-
   const {
     effectiveMediaType,
     effectiveSeason,
@@ -195,7 +148,6 @@ export async function handleCatalogMediaExtract(
     tmdbImdbId,
     tmdbResolvedTitle,
     tmdbOriginalLanguage,
-    tmdbIsLikelyAnime,
     episodeAirDate,
     resolvedEpisodeTitle,
     isUnreleasedEpisode,
@@ -261,7 +213,7 @@ export async function handleCatalogMediaExtract(
 
   const isSpanishNativePreferred = tmdbOriginalLanguage === 'es' && preferLang === 'ES';
   const prefersSpanishTier = preferLang === 'ES' || preferLang === 'LAT';
-  const enTimeout = prefersSpanishTier ? 2800 : 4500;
+  const enTimeout = prefersSpanishTier ? 3800 : 6200;
 
   let movidyTracks: TrackRecord[] = [];
   let gnulaTracks: TrackRecord[] = [];
@@ -273,9 +225,10 @@ export async function handleCatalogMediaExtract(
     subtitles: [],
   };
   let esTracks: TrackRecord[] = [];
-  let xtreamTracks: TrackRecord[] = [];
+  let vidRockTracks: TrackRecord[] = [];
   let bingetrixEnTracks: TrackRecord[] = [];
   let twoEmbedEnTracks: TrackRecord[] = [];
+  let vidBuzzHlsTracks: TrackRecord[] = [];
   let clipboxDirectExtracted: { tracks: TrackRecord[]; subtitles: any[] } = {
     tracks: [],
     subtitles: [],
@@ -288,39 +241,25 @@ export async function handleCatalogMediaExtract(
     subtitles: [],
     detectedLangs: [],
   };
+  let providerFastTracks: TrackRecord[] = [];
 
   let fastDirectEsReadyResolve: (() => void) | null = null;
   let fastDirectEsReadyFired = false;
   const fastDirectEsReadyPromise = new Promise<void>((resolve) => {
     fastDirectEsReadyResolve = resolve;
   });
-  let fastCandidateEsReadyResolve: (() => void) | null = null;
-  let fastCandidateEsReadyFired = false;
-  const fastCandidateEsReadyPromise = new Promise<void>((resolve) => {
-    fastCandidateEsReadyResolve = resolve;
-  });
-  const normalizedPreferLang = normalizeTrackLangCode(preferLang);
-  const isNativeLangTrack = (t: TrackRecord) =>
-    normalizeTrackLangCode(t.lang) === normalizedPreferLang &&
-    (t.resolverType === 'direct_hls' ||
-      t.resolverType === 'direct_mp4' ||
-      t.resolverType === 'movidy_embed' ||
-      t.resolverType === 'vidhide_hls' ||
-      t.resolverType === 'vest_hls');
   const signalFastDirectEsIfReady = (tracks: TrackRecord[]) => {
-    const hasVerifiedDirect = tracks.some(
-      (t) =>
-        (t.resolverType === 'direct_hls' || t.resolverType === 'direct_mp4') &&
-        Boolean(t.resolvedStreamUrl) &&
-        (preferQualityFirst || normalizeTrackLangCode(t.lang) === normalizedPreferLang)
-    );
-    if (!fastDirectEsReadyFired && hasVerifiedDirect) {
+    if (
+      !fastDirectEsReadyFired &&
+      tracks.some(
+        (t) =>
+          String(t.lang || '').toUpperCase() === preferLang &&
+          (t.resolverType === 'direct_hls' || t.resolverType === 'direct_mp4') &&
+          Boolean(t.resolvedStreamUrl)
+      )
+    ) {
       fastDirectEsReadyFired = true;
       fastDirectEsReadyResolve?.();
-    }
-    if (!fastCandidateEsReadyFired && tracks.some(isNativeLangTrack)) {
-      fastCandidateEsReadyFired = true;
-      fastCandidateEsReadyResolve?.();
     }
   };
 
@@ -334,7 +273,7 @@ export async function handleCatalogMediaExtract(
       tmdbDirector,
       tmdbRuntimeMin,
     }),
-    3500,
+    5800,
     [] as TrackRecord[]
   ).then((res) => {
     movidyTracks = res;
@@ -352,7 +291,7 @@ export async function handleCatalogMediaExtract(
       effectiveSeason,
       effectiveEpisode,
     }),
-    3200,
+    6400,
     [] as TrackRecord[]
   ).then((res) => {
     gnulaTracks = res;
@@ -369,7 +308,7 @@ export async function handleCatalogMediaExtract(
             titleHints: combinedTitleHints,
             episodeTitleHint: effectiveEpisodeTitleHint,
           }),
-          3000,
+          6500,
           [] as TrackRecord[]
         ).then((res) => {
           dailymotionTracks = res;
@@ -389,7 +328,7 @@ export async function handleCatalogMediaExtract(
             titleHints: combinedTitleHints,
             originalLanguage: tmdbOriginalLanguage,
           }),
-          2800,
+          4500,
           [] as TrackRecord[]
         ).then((res) => {
           archiveOrgTracks = res;
@@ -408,7 +347,7 @@ export async function handleCatalogMediaExtract(
             episode: effectiveEpisode,
             titleHints: combinedTitleHints,
           }),
-          3000,
+          6000,
           [] as TrackRecord[]
         ).then((res) => {
           spanishSeriesTracks = res;
@@ -428,7 +367,7 @@ export async function handleCatalogMediaExtract(
             episode: effectiveEpisode,
             titleHints: combinedTitleHints,
           }),
-          3000,
+          5200,
           { tracks: [] as TrackRecord[], subtitles: [] as MontepinarSubtitleItem[] }
         ).then((res) => {
           montepinarExtracted = res;
@@ -448,12 +387,10 @@ export async function handleCatalogMediaExtract(
             yearHint: effectiveYearForExtract,
             directorHint: tmdbDirector || undefined,
             runtimeMinHint: tmdbRuntimeMin || undefined,
-            isLikelyAnimeHint: tmdbIsLikelyAnime,
-            skipTmdbFetch: Boolean(resolvedTmdbId && tmdbImdbId && combinedTitleHints.length > 0),
             force: forceExtract,
             skipGnula: true,
           }),
-          3200,
+          6000,
           [] as TrackRecord[]
         ).then((res) => {
           esTracks = res;
@@ -474,7 +411,7 @@ export async function handleCatalogMediaExtract(
           tmdbApiKey: TMDB_API_KEY,
           buildHlsProxyUrl: (m3u8Url, referer) => buildHlsProxyUrl(m3u8Url, referer),
         }),
-        3200,
+        5500,
         null
       ).then((res) => {
         vestExtractedHolder.value = res;
@@ -482,6 +419,21 @@ export async function handleCatalogMediaExtract(
       })
     : Promise.resolve();
 
+  const vidRockP =
+    resolvedTmdbId && !isSpanishNativePreferred
+      ? withExtractTimeout(
+          extractVidRockHlsTracks({
+            tmdbId: resolvedTmdbId,
+            mediaType: effectiveMediaType,
+            season: effectiveSeason,
+            episode: effectiveEpisode,
+          }),
+          enTimeout,
+          [] as TrackRecord[]
+        ).then((res) => {
+          vidRockTracks = res;
+        })
+      : Promise.resolve();
   const bingetrixEnP =
     resolvedTmdbId && !isSpanishNativePreferred
       ? withExtractTimeout(
@@ -491,7 +443,7 @@ export async function handleCatalogMediaExtract(
             season: effectiveSeason,
             episode: effectiveEpisode,
           }),
-          3000,
+          3600,
           [] as TrackRecord[]
         ).then((res) => {
           bingetrixEnTracks = res;
@@ -513,6 +465,22 @@ export async function handleCatalogMediaExtract(
           twoEmbedEnTracks = res;
         })
       : Promise.resolve();
+  const vidBuzzP =
+    (resolvedTmdbId || tmdbImdbId) && !isSpanishNativePreferred
+      ? withExtractTimeout(
+          extractVidsrcBuzzHlsTracks({
+            tmdbId: resolvedTmdbId || undefined,
+            imdbId: tmdbImdbId,
+            mediaType: effectiveMediaType,
+            season: effectiveSeason,
+            episode: effectiveEpisode,
+          }),
+          enTimeout,
+          [] as TrackRecord[]
+        ).then((res) => {
+          vidBuzzHlsTracks = res;
+        })
+      : Promise.resolve();
   const ghostflixP =
     resolvedTmdbId && !isSpanishNativePreferred
       ? withExtractTimeout(
@@ -523,7 +491,7 @@ export async function handleCatalogMediaExtract(
             episode: effectiveEpisode,
             force: forceExtract,
           }),
-          4500,
+          4800,
           { tracks: [] as TrackRecord[], subtitles: [], detectedLangs: [] }
         ).then((res) => {
           ghostflixExtracted = res;
@@ -531,78 +499,40 @@ export async function handleCatalogMediaExtract(
       : Promise.resolve();
 
   const clipboxDirectP = resolvedTmdbId
-    ? (earlyClipboxPromise && String(resolvedTmdbId) === String(earlyTmdbId)
-        ? earlyClipboxPromise
-        : withExtractTimeout(
-            extractClipboxDirectStreams({
-              tmdbId: resolvedTmdbId,
-              mediaType: effectiveMediaType,
-              season: effectiveSeason,
-              episode: effectiveEpisode,
-              originalLanguage: tmdbOriginalLanguage,
-            }),
-            2800,
-            { tracks: [] as TrackRecord[], subtitles: [] }
-          )
+    ? withExtractTimeout(
+        extractClipboxDirectStreams({
+          tmdbId: resolvedTmdbId,
+          mediaType: effectiveMediaType,
+          season: effectiveSeason,
+          episode: effectiveEpisode,
+          originalLanguage: tmdbOriginalLanguage,
+        }),
+        4800,
+        { tracks: [] as TrackRecord[], subtitles: [] }
       ).then((res) => {
         clipboxDirectExtracted = res;
       })
     : Promise.resolve();
 
-  const xtreamMultiServerP =
-    combinedTitleHints.length > 0
-      ? (earlyXtreamPromise
-          ? earlyXtreamPromise.then((earlyRes) => {
-              if (earlyRes.length > 0) return earlyRes;
-              return withExtractTimeout(
-                effectiveMediaType === 'tv'
-                  ? extractXtreamSeriesEpisodeTracks({
-                      titleHints: combinedTitleHints,
-                      yearHint: effectiveYearForExtract,
-                      season: effectiveSeason || 1,
-                      episode: effectiveEpisode || 1,
-                      preferLang,
-                      preferQualityFirst,
-                    })
-                  : findXtreamMovieMatches({
-                      titleHints: combinedTitleHints,
-                      yearHint: effectiveYearForExtract,
-                      preferLang,
-                      preferQualityFirst,
-                      limit: 16,
-                    }).then((r) => r.tracks),
-                1800,
-                [] as TrackRecord[]
-              );
-            })
-          : withExtractTimeout(
-              effectiveMediaType === 'tv'
-                ? extractXtreamSeriesEpisodeTracks({
-                    titleHints: combinedTitleHints,
-                    yearHint: effectiveYearForExtract,
-                    season: effectiveSeason || 1,
-                    episode: effectiveEpisode || 1,
-                    preferLang,
-                    preferQualityFirst,
-                  })
-                : findXtreamMovieMatches({
-                    titleHints: combinedTitleHints,
-                    yearHint: effectiveYearForExtract,
-                    preferLang,
-                    preferQualityFirst,
-                    limit: 16,
-                  }).then((r) => r.tracks),
-              2200,
-              [] as TrackRecord[]
-            )
-        ).then((res) => {
-          xtreamTracks = res;
-          signalFastDirectEsIfReady(res);
-        })
-      : Promise.resolve();
+  const providerFastP = withExtractTimeout(
+    findFastProviderVodOrSeriesSignals({
+      mediaType: effectiveMediaType,
+      title: tmdbResolvedTitle || titleHint || combinedTitleHints[0] || '',
+      origTitle: origTitleHint || combinedTitleHints[1],
+      year: effectiveYearForExtract,
+      season: effectiveSeason,
+      episode: effectiveEpisode,
+      preferLang,
+      limit: 4,
+    }),
+    3200,
+    [] as TrackRecord[]
+  ).then((res) => {
+    providerFastTracks = res;
+    signalFastDirectEsIfReady(res);
+  });
 
   const primaryAllPromise = Promise.all([
-    xtreamMultiServerP,
     movidyP,
     gnulaP,
     dmP,
@@ -611,133 +541,106 @@ export async function handleCatalogMediaExtract(
     montepinarP,
     embed69P,
     vestP,
+    providerFastP,
   ]);
   const secondaryAllPromise = Promise.all([
     clipboxDirectP,
-    ghostflixP,
+    vidRockP,
     bingetrixEnP,
     twoEmbedEnP,
+    vidBuzzP,
+    ghostflixP,
   ]);
 
   if (isSpanishNativePreferred) {
+    // Wait for native Spanish sources, or return within 1.4s after a verified direct ES track is ready
     await Promise.race([
       primaryAllPromise,
-      Promise.all([movidyP, xtreamMultiServerP, fastDirectEsReadyPromise]).then(
-        () => new Promise<void>((resolve) => setTimeout(resolve, 140))
+      fastDirectEsReadyPromise.then(
+        () => new Promise<void>((resolve) => setTimeout(resolve, 1400))
       ),
-      fastCandidateEsReadyPromise.then(
-        () => new Promise<void>((resolve) => setTimeout(resolve, 1000))
-      ),
-      new Promise<void>((resolve) => setTimeout(resolve, 3400)),
     ]);
   } else {
-    if (prefersSpanishTier && !preferQualityFirst) {
-      await Promise.race([
-        primaryAllPromise,
-        Promise.all([xtreamMultiServerP, fastDirectEsReadyPromise]).then(
-          () => new Promise<void>((resolve) => setTimeout(resolve, 160))
-        ),
-        fastCandidateEsReadyPromise.then(
-          () => new Promise<void>((resolve) => setTimeout(resolve, 1100))
-        ),
-        new Promise<void>((resolve) => setTimeout(resolve, 3300)),
-      ]);
-    } else {
-      await Promise.race([
-        primaryAllPromise,
-        Promise.all([xtreamMultiServerP, fastDirectEsReadyPromise]).then(
-          () => new Promise<void>((resolve) => setTimeout(resolve, 180))
-        ),
-        new Promise<void>((resolve) => setTimeout(resolve, 2200)),
-      ]);
-    }
+    await primaryAllPromise;
+    const primaryHasPreferredSpanish =
+      prefersSpanishTier &&
+      [
+        ...movidyTracks,
+        ...gnulaTracks,
+        ...dailymotionTracks,
+        ...archiveOrgTracks,
+        ...spanishSeriesTracks,
+        ...esTracks,
+        ...(vestExtractedHolder.value?.tracks || []),
+      ].some(
+        (t) =>
+          String(t.lang || '').toUpperCase() === preferLang &&
+          t.resolverType !== 'web_embed'
+      );
 
-    const primaryNativeTracks = [
-      ...xtreamTracks,
-      ...movidyTracks,
-      ...gnulaTracks,
-      ...montepinarExtracted.tracks,
-      ...dailymotionTracks,
-      ...archiveOrgTracks,
-      ...spanishSeriesTracks,
-      ...esTracks,
-      ...(vestExtractedHolder.value?.tracks || []),
-    ];
-
-    const primaryHasDirectVerifiedStream = primaryNativeTracks.some(
-      (t) =>
-        (t.resolverType === 'direct_hls' || t.resolverType === 'direct_mp4') &&
-        Boolean(t.resolvedStreamUrl) &&
-        (preferQualityFirst || !prefersSpanishTier || normalizeTrackLangCode(t.lang) === normalizedPreferLang)
-    );
-
-    const primaryHasAnyXtreamDirect = xtreamTracks.some((t) => Boolean(t.resolvedStreamUrl));
-    const primaryHasCandidateSpanish =
-      prefersSpanishTier && primaryNativeTracks.some(isNativeLangTrack);
-
-    if (
-      primaryHasDirectVerifiedStream ||
-      primaryHasCandidateSpanish ||
-      (!prefersSpanishTier && primaryHasAnyXtreamDirect)
-    ) {
+    if (primaryHasPreferredSpanish) {
+      // Primary Spanish sources already succeeded; allow only a brief 350ms grace window for EN tracks
       await Promise.race([
         secondaryAllPromise,
-        new Promise<void>((resolve) => setTimeout(resolve, primaryHasDirectVerifiedStream ? 120 : 300)),
+        new Promise<void>((resolve) => setTimeout(resolve, 350)),
       ]);
     } else {
-      await Promise.race([
-        secondaryAllPromise,
-        new Promise<void>((resolve) => setTimeout(resolve, 2000)),
-      ]);
+      await secondaryAllPromise;
     }
   }
 
   const ghostflixTracks: TrackRecord[] = ghostflixExtracted?.tracks || [];
+  const ghostflixSubtitles = ghostflixExtracted?.subtitles || [];
   const clipboxTracks: TrackRecord[] = clipboxDirectExtracted?.tracks || [];
+  const clipboxSubtitles = clipboxDirectExtracted?.subtitles || [];
   const enTracks: TrackRecord[] = [
+    ...vidRockTracks,
     ...ghostflixTracks,
     ...clipboxTracks,
     ...bingetrixEnTracks,
     ...twoEmbedEnTracks,
+    ...vidBuzzHlsTracks,
   ];
   const montepinarTracks: TrackRecord[] = montepinarExtracted?.tracks || [];
+  const montepinarSubtitles = montepinarExtracted?.subtitles || [];
   const vestTracks: TrackRecord[] = vestExtractedHolder.value?.tracks || [];
+  const vestSubtitles = vestExtractedHolder.value?.subtitles || [];
   const vestDetailMeta = vestExtractedHolder.value?.detail || extractedVestDetail;
 
   const rawDiscovered: TrackRecord[] = isVestLink
     ? [
         ...vestTracks,
-        ...xtreamTracks,
         ...movidyTracks,
         ...gnulaTracks,
         ...montepinarTracks,
         ...dailymotionTracks,
         ...archiveOrgTracks,
         ...spanishSeriesTracks,
+        ...providerFastTracks,
         ...enTracks,
         ...esTracks,
       ]
     : !hasExplicitMovidyUrl && hasExplicitGnulaUrl
     ? [
-        ...xtreamTracks,
         ...gnulaTracks,
         ...montepinarTracks,
         ...dailymotionTracks,
         ...archiveOrgTracks,
         ...spanishSeriesTracks,
+        ...providerFastTracks,
         ...movidyTracks,
         ...enTracks,
         ...esTracks,
         ...vestTracks,
       ]
     : [
-        ...xtreamTracks,
         ...movidyTracks,
         ...gnulaTracks,
         ...montepinarTracks,
         ...dailymotionTracks,
         ...archiveOrgTracks,
         ...spanishSeriesTracks,
+        ...providerFastTracks,
         ...enTracks,
         ...esTracks,
         ...vestTracks,
@@ -757,14 +660,13 @@ export async function handleCatalogMediaExtract(
   const { orderedTracks, getLangScore, sourcePriority, getTrackHealthScore } = rankCandidateTracks({
     allDiscovered,
     preferLang,
-    preferQualityFirst,
     isVestLink,
     hasExplicitMovidyUrl,
     hasExplicitGnulaUrl,
     healthMap: channelHealthMonitor.getAllTrackStatuses(),
   });
 
-  let resolvedSelection = await resolveOrderedCandidateTracks({
+  const resolvedSelection = await resolveOrderedCandidateTracks({
     orderedTracks,
     getLangScore,
     sourcePriority,
@@ -772,50 +674,6 @@ export async function handleCatalogMediaExtract(
     isSandboxedFrame,
     directOnly,
   });
-
-  if (!resolvedSelection) {
-    await Promise.race([
-      Promise.all([primaryAllPromise, secondaryAllPromise]),
-      new Promise<void>((resolve) => setTimeout(resolve, 550)),
-    ]);
-    const lateTracks: TrackRecord[] = [
-      ...xtreamTracks,
-      ...movidyTracks,
-      ...gnulaTracks,
-      ...montepinarExtracted.tracks,
-      ...dailymotionTracks,
-      ...archiveOrgTracks,
-      ...spanishSeriesTracks,
-      ...(ghostflixExtracted?.tracks || []),
-      ...(clipboxDirectExtracted?.tracks || []),
-      ...bingetrixEnTracks,
-      ...twoEmbedEnTracks,
-      ...esTracks,
-      ...(vestExtractedHolder.value?.tracks || []),
-    ].filter((tr) => {
-      const rawU = String(tr.resolvedStreamUrl || tr.sourceUrl || '').trim();
-      return !rawU || !seenTrackKeys.has(rawU);
-    });
-    if (lateTracks.length > 0) {
-      const lateRanked = rankCandidateTracks({
-        allDiscovered: lateTracks,
-        preferLang,
-        preferQualityFirst,
-        isVestLink,
-        hasExplicitMovidyUrl,
-        hasExplicitGnulaUrl,
-        healthMap: channelHealthMonitor.getAllTrackStatuses(),
-      });
-      resolvedSelection = await resolveOrderedCandidateTracks({
-        orderedTracks: lateRanked.orderedTracks,
-        getLangScore: lateRanked.getLangScore,
-        sourcePriority: lateRanked.sourcePriority,
-        getTrackHealthScore: lateRanked.getTrackHealthScore,
-        isSandboxedFrame,
-        directOnly,
-      });
-    }
-  }
 
   if (resolvedSelection) {
     const result = await buildResolvedCatalogStreamResult({
@@ -829,10 +687,10 @@ export async function handleCatalogMediaExtract(
       effectiveSeason,
       effectiveEpisode,
       vestDetailMeta,
-      vestSubtitles: vestExtractedHolder.value?.subtitles || [],
-      clipboxSubtitles: clipboxDirectExtracted?.subtitles || [],
-      ghostflixSubtitles: ghostflixExtracted?.subtitles || [],
-      extraSubtitles: montepinarExtracted?.subtitles || [],
+      vestSubtitles,
+      clipboxSubtitles,
+      ghostflixSubtitles,
+      extraSubtitles: montepinarSubtitles,
       resolvedTmdbId,
       subtitlesPromise,
     });

@@ -69,7 +69,6 @@ interface VpnOverviewResponse {
     host: string;
     antena3Ready: boolean;
     lasextaReady: boolean;
-    energyReady?: boolean;
     note: string;
   };
   atresplayerApi: {
@@ -123,7 +122,7 @@ interface SpainVpnGatewayModalProps {
   isOpen: boolean;
   onClose: () => void;
   lang: AppLanguage;
-  onPlayChannelById?: (channelId: 'tdt-antena3' | 'tdt-lasexta' | 'tdt-energy') => void | Promise<void>;
+  onPlayChannelById?: (channelId: 'tdt-antena3' | 'tdt-lasexta') => void | Promise<void>;
 }
 
 export const SpainVpnGatewayModal: React.FC<SpainVpnGatewayModalProps> = ({
@@ -138,7 +137,6 @@ export const SpainVpnGatewayModal: React.FC<SpainVpnGatewayModalProps> = ({
   const [scope, setScope] = useState<'auto_spanish' | 'all_streaming' | 'off'>('auto_spanish');
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [autoDiscovering, setAutoDiscovering] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [probes, setProbes] = useState<Record<string, ProbeOutcome>>({});
   const [probingHost, setProbingHost] = useState<string | null>(null);
@@ -146,7 +144,7 @@ export const SpainVpnGatewayModal: React.FC<SpainVpnGatewayModalProps> = ({
   const [syncingCatalog, setSyncingCatalog] = useState(false);
   const [verifyingChannels, setVerifyingChannels] = useState(false);
   const [verifiedChannels, setVerifiedChannels] = useState<VerifiedChannelCheck[]>([]);
-  const [launchingId, setLaunchingId] = useState<'tdt-antena3' | 'tdt-lasexta' | 'tdt-energy' | null>(null);
+  const [launchingId, setLaunchingId] = useState<'tdt-antena3' | 'tdt-lasexta' | null>(null);
   const [showAudit, setShowAudit] = useState(false);
 
   const loadOverview = useCallback(async () => {
@@ -188,7 +186,7 @@ export const SpainVpnGatewayModal: React.FC<SpainVpnGatewayModalProps> = ({
     }
   };
 
-  const handleLaunchDirectChannel = async (channelId: 'tdt-antena3' | 'tdt-lasexta' | 'tdt-energy') => {
+  const handleLaunchDirectChannel = async (channelId: 'tdt-antena3' | 'tdt-lasexta') => {
     triggerHaptic('medium');
     setLaunchingId(channelId);
     try {
@@ -203,34 +201,6 @@ export const SpainVpnGatewayModal: React.FC<SpainVpnGatewayModalProps> = ({
       }
     } finally {
       setLaunchingId(null);
-    }
-  };
-
-  const handleAutoDiscoverSpainProxy = async () => {
-    triggerHaptic('medium');
-    setAutoDiscovering(true);
-    setTestResult(null);
-    try {
-      const res = await fetch('/api/vpn/auto-spain', { method: 'POST' });
-      const data = (await res.json()) as {
-        connected?: boolean;
-        message?: string;
-        error?: string;
-      };
-      setTestResult({
-        ok: Boolean(data?.connected),
-        message: data?.message || data?.error || 'Búsqueda completada.',
-      });
-      if (data?.connected) {
-        await loadOverview();
-      }
-    } catch {
-      setTestResult({
-        ok: false,
-        message: 'Error consultando nodos proxy públicos en España.',
-      });
-    } finally {
-      setAutoDiscovering(false);
     }
   };
 
@@ -436,15 +406,11 @@ export const SpainVpnGatewayModal: React.FC<SpainVpnGatewayModalProps> = ({
               <div className="mt-0.5 font-semibold text-white flex items-center gap-1.5">
                 <Tv className="w-3.5 h-3.5 text-[#00F593] shrink-0" />
                 <span>
-                  {overview?.spanishDvbHeadend.antena3Ready &&
-                  overview?.spanishDvbHeadend.lasextaReady &&
-                  overview?.spanishDvbHeadend.energyReady
-                    ? 'A3, laSexta y Energy HD'
-                    : overview?.spanishDvbHeadend.energyReady
-                      ? 'Energy HD activa'
-                      : overview?.spanishDvbHeadend.antena3Ready
-                        ? 'Antena 3 HD activa'
-                        : 'Modo respaldo'}
+                  {overview?.spanishDvbHeadend.antena3Ready && overview?.spanishDvbHeadend.lasextaReady
+                    ? 'Antena 3 y laSexta HD activas'
+                    : overview?.spanishDvbHeadend.antena3Ready
+                      ? 'Antena 3 HD activa'
+                      : 'Modo respaldo'}
                 </span>
               </div>
             </div>
@@ -465,15 +431,15 @@ export const SpainVpnGatewayModal: React.FC<SpainVpnGatewayModalProps> = ({
             </div>
           </div>
 
-          {/* 1-Tap Antena 3, laSexta & Energy Direct Launch + Verify */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+          {/* 1-Tap Antena 3 & laSexta Direct Launch + Verify */}
+          <div className="grid grid-cols-2 gap-2 pt-1">
             <PrimaryButton
               type="button"
               onClick={() => void handleLaunchDirectChannel('tdt-antena3')}
               loading={launchingId === 'tdt-antena3'}
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              <span>Antena 3</span>
+              <span>Conectar Antena 3</span>
             </PrimaryButton>
             <PrimaryButton
               type="button"
@@ -481,15 +447,7 @@ export const SpainVpnGatewayModal: React.FC<SpainVpnGatewayModalProps> = ({
               loading={launchingId === 'tdt-lasexta'}
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              <span>laSexta</span>
-            </PrimaryButton>
-            <PrimaryButton
-              type="button"
-              onClick={() => void handleLaunchDirectChannel('tdt-energy')}
-              loading={launchingId === 'tdt-energy'}
-            >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              <span>Energy HD</span>
+              <span>Conectar laSexta</span>
             </PrimaryButton>
           </div>
 
@@ -608,13 +566,6 @@ export const SpainVpnGatewayModal: React.FC<SpainVpnGatewayModalProps> = ({
           )}
 
           <div className="flex flex-wrap gap-2">
-            <SecondaryButton
-              type="button"
-              onClick={() => void handleAutoDiscoverSpainProxy()}
-              loading={autoDiscovering}
-            >
-              Auto-buscar Proxy ES
-            </SecondaryButton>
             <SecondaryButton
               type="button"
               onClick={() => void handleTestProxy()}

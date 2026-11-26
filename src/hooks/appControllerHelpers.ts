@@ -224,14 +224,6 @@ export function deriveAppControllerLayoutFlags(params: {
     videoState.mode !== 'youtube' &&
     Boolean(activeMovieContext || videoState.title);
 
-  const isVodOrSeriesTrack = Boolean(
-    videoState.tracks?.some(
-      (tr) =>
-        tr.resolverType === 'direct_mp4' ||
-        /^\/api\/(?:xtream\/vod|stream\?.*type=(?:vod|series))/i.test(tr.sourceUrl || '')
-    )
-  );
-
   const isChannelGuideDockVisible =
     !isFloatingRoomOpen &&
     videoState.mode !== 'idle' &&
@@ -239,14 +231,9 @@ export function deriveAppControllerLayoutFlags(params: {
     !isPlayerMinimized &&
     !isAutoImmersiveLandscape &&
     !activeSportsMatch &&
-    !isVodOrSeriesTrack &&
     videoState.mode !== 'youtube' &&
     (Boolean(videoState.isLive) ||
-      Boolean(
-        videoState.tracks?.some(
-          (tr) => tr.resolverType === 'tdt_hls' || tr.resolverType === 'sports_channel'
-        )
-      ));
+      Boolean(videoState.tracks?.some((tr) => tr.resolverType === 'tdt_hls' || tr.resolverType === 'sports_channel')));
 
   const lockMainWorkspaceScroll =
     activeWorld === 'sala' || (activeWorld === 'juegos' && isInActiveGame);

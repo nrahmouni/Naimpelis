@@ -33,24 +33,12 @@ export interface MusicTrack {
   previewUrl?: string;
   isrc?: string;
   rank?: number;
-  source?: 'deezer' | 'audius' | 'soundcloud' | 'youtube_music' | 'spotify' | 'jamendo' | 'radio' | 'podcast';
+  source?: 'deezer' | 'audius' | 'soundcloud' | 'youtube_music' | 'spotify' | 'jamendo' | 'radio';
   audiusId?: string;
   soundcloudId?: string;
   youtubeVideoId?: string;
   spotifyId?: string;
   streamUrl?: string;
-}
-
-export interface PodcastShow {
-  id: string;
-  title: string;
-  author: string;
-  artwork: string;
-  artworkXl: string;
-  feedUrl: string;
-  genre: string;
-  trackCount: number;
-  country: string;
 }
 
 export interface MusicPlaylist {
@@ -336,8 +324,6 @@ export interface MusicHomePayload {
   flamencoAcousticMix: MusicTrack[];
   soundtrackMix: MusicTrack[];
   classicsMix: MusicTrack[];
-  workoutMix?: MusicTrack[];
-  jazzSoulMix?: MusicTrack[];
   audiusTrending: MusicTrack[];
   topAlbums: MusicAlbumRef[];
   newReleases: MusicAlbumRef[];

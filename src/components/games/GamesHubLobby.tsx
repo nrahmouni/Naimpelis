@@ -1,12 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bot, Check, ChevronRight, Code2, Play, Search, Share2, Users, X } from 'lucide-react';
+import { Bot, Check, ChevronRight, Play, Share2, Users } from 'lucide-react';
 import type { AppLanguage, Participant } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { RiffanGamesIcon } from '../ui/RiffanIcons';
 import { GameLogoArtwork, type UnifiedGameId } from './GameLogos';
 import { lazyWithRetry } from '../../utils/lazyWithRetry';
-import type { OpenRepoGameItem } from './arcade/OpenGamesRepoStage';
 
 const RobotMascot3DBadge = lazyWithRetry(() =>
   import('./arcade/RobotMascot3DBadge').then((m) => ({ default: m.RobotMascot3DBadge }))
@@ -15,11 +14,11 @@ const RiveInteractiveBadge = lazyWithRetry(() =>
   import('./arcade/RiveInteractiveBadge').then((m) => ({ default: m.RiveInteractiveBadge }))
 );
 
-export type GameCategoryFilter = 'all' | 'arcade' | 'party' | 'board' | 'openrepo';
+export type GameCategoryFilter = 'all' | 'arcade' | 'party' | 'board';
 
 export interface GameCatalogEntry {
   id: UnifiedGameId;
-  category: Exclude<GameCategoryFilter, 'all' | 'openrepo'>;
+  category: Exclude<GameCategoryFilter, 'all'>;
   title: string;
   meta: string;
   playersHint: string;
@@ -35,7 +34,6 @@ interface GamesHubLobbyProps {
   onChangeHubMode: (mode: 'online' | 'offline') => void;
   isLiveGame: (gameId: UnifiedGameId) => boolean;
   onOpenGame: (gameId: UnifiedGameId) => void;
-  onOpenRepoGame?: (game: OpenRepoGameItem) => void;
   onInviteGame: (gameId: UnifiedGameId) => Promise<void>;
   inviteCopied: boolean;
 }
@@ -48,38 +46,11 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
   onChangeHubMode,
   isLiveGame,
   onOpenGame,
-  onOpenRepoGame,
   onInviteGame,
   inviteCopied,
 }) => {
   const [activeCategory, setActiveCategory] = useState<GameCategoryFilter>('all');
-  const [openRepoGames, setOpenRepoGames] = useState<OpenRepoGameItem[]>([]);
-  const [openRepoCategories, setOpenRepoCategories] = useState<
-    Array<{ id: string; label: string; emoji: string; color: string }>
-  >([]);
-  const [openRepoSubCat, setOpenRepoSubCat] = useState<string>('all');
-  const [openRepoSearch, setOpenRepoSearch] = useState<string>('');
-  const [openRepoLoading, setOpenRepoLoading] = useState<boolean>(false);
   const gridRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setOpenRepoLoading(true);
-    fetch('/api/games/open-catalog')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (cancelled || !data) return;
-        if (Array.isArray(data.games)) setOpenRepoGames(data.games);
-        if (Array.isArray(data.categories)) setOpenRepoCategories(data.categories);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (!cancelled) setOpenRepoLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -89,7 +60,7 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeCategory, openRepoSubCat]);
+  }, [activeCategory]);
 
   const gameCatalog: GameCatalogEntry[] = [
     {
@@ -407,24 +378,10 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
     arcade: gameCatalog.filter((g) => g.category === 'arcade').length,
     party: gameCatalog.filter((g) => g.category === 'party').length,
     board: gameCatalog.filter((g) => g.category === 'board').length,
-    openrepo: openRepoGames.length || 142,
   };
   const filteredGames = gameCatalog.filter(
     (g) => activeCategory === 'all' || g.category === activeCategory
   );
-  const filteredOpenRepoGames = openRepoGames.filter((g) => {
-    const matchCat = openRepoSubCat === 'all' || g.category === openRepoSubCat;
-    const q = openRepoSearch.trim().toLowerCase();
-    const matchQ =
-      !q ||
-      g.name.toLowerCase().includes(q) ||
-      g.description.toLowerCase().includes(q) ||
-      g.tags.some((t) => t.toLowerCase().includes(q));
-    return matchCat && matchQ;
-  });
-  const featuredOpenRepoPicks = ['crossy-road', 'level-devil', 'stack-tower', 'road-fighter', 'alien-battle', 'fighter-jet']
-    .map((slug) => openRepoGames.find((g) => g.slug === slug))
-    .filter((g): g is OpenRepoGameItem => Boolean(g));
 
   return (
     <div className="w-full max-w-6xl mx-auto px-4 sm:px-6 pt-2 pb-28 sm:pb-12 space-y-5 touch-pan-y">
@@ -496,7 +453,6 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
             { id: 'arcade', label: pickLang(lang, { es: '1v1 Arcade', ca: '1v1 Arcade', en: '1v1 Arcade' }) },
             { id: 'party', label: pickLang(lang, { es: 'Cartas & Party', ca: 'Cartes & Party', en: 'Cards & Party' }) },
             { id: 'board', label: pickLang(lang, { es: 'Mesa Clásica', ca: 'Taula Clàssica', en: 'Classic Board' }) },
-            { id: 'openrepo', label: pickLang(lang, { es: 'Repo MIT', ca: 'Repo MIT', en: 'Open Source' }) },
           ] as const
         ).map((tab) => {
           const active = activeCategory === tab.id;
@@ -609,234 +565,47 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
         </div>
       )}
 
-      {activeCategory === 'openrepo' ? (
-        <div className="space-y-4">
-          <div className="rounded-3xl bg-gradient-to-br from-[#171133] via-[#0D0D12] to-[#0A1324] border border-[#7C3AED]/30 p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="space-y-1 min-w-0">
-              <div className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#A78BFA]">
-                <Code2 className="w-3.5 h-3.5" />
-                <span>sausi-7/games · MIT Open Source</span>
-              </div>
-              <h3 className="font-display font-black text-lg sm:text-xl text-white">
-                {pickLang(lang, {
-                  es: `${openRepoGames.length || 142} Juegos HTML5 & Phaser Listos para Jugar`,
-                  ca: `${openRepoGames.length || 142} Jocs HTML5 & Phaser Llestos per Jugar`,
-                  en: `${openRepoGames.length || 142} Ready-to-Play HTML5 & Phaser Games`,
-                })}
-              </h3>
-              <p className="text-xs text-zinc-300">
-                {pickLang(lang, {
-                  es: 'Catálogo open-source integrado al instante en pantalla completa, táctil y teclado, sin anuncios.',
-                  ca: 'Catàleg open-source integrat a l’instant en pantalla completa, tàctil i teclat, sense anuncis.',
-                  en: 'Instant open-source arcade collection in fullscreen with touch & keyboard, ad-free.',
-                })}
-              </p>
-            </div>
-
-            <div className="relative w-full sm:w-64 shrink-0">
-              <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={openRepoSearch}
-                onChange={(e) => setOpenRepoSearch(e.target.value)}
-                placeholder={pickLang(lang, { es: 'Buscar juego...', ca: 'Cercar joc...', en: 'Search game...' })}
-                className="w-full min-h-[44px] pl-10 pr-9 rounded-xl bg-black/50 border border-white/15 focus:border-[#8B5CF6] text-xs sm:text-sm text-white placeholder:text-zinc-500 outline-none"
-              />
-              {openRepoSearch && (
-                <button
-                  type="button"
-                  onClick={() => setOpenRepoSearch('')}
-                  aria-label="Clear"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
+      {/* 4. RESPONSIVE GAME CARDS GRID */}
+      <div ref={gridRef} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
+        {filteredGames.map((game) => {
+          const live = isLiveGame(game.id);
+          return (
             <button
+              key={game.id}
               type="button"
-              onClick={() => setOpenRepoSubCat('all')}
-              className={`min-h-[40px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer border ${
-                openRepoSubCat === 'all'
-                  ? 'bg-[#7C3AED] text-white border-[#8B5CF6]'
-                  : 'bg-[#0D0D12] text-zinc-300 border-white/[0.08] hover:bg-white/[0.06]'
-              }`}
+              onClick={() => onOpenGame(game.id)}
+              className={`nc-game-card group rounded-2xl sm:rounded-3xl bg-[#0D0D12] border border-white/[0.08] ${game.accentBorder} overflow-hidden text-left flex flex-col cursor-pointer active:scale-95 transition-all shadow-[0_12px_28px_rgba(0,0,0,0.42)] hover:shadow-[0_16px_34px_rgba(124,58,237,0.22)]`}
             >
-              {pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' })} ({openRepoGames.length})
-            </button>
-            {openRepoCategories.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => setOpenRepoSubCat(c.id)}
-                className={`min-h-[40px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer border inline-flex items-center gap-1.5 ${
-                  openRepoSubCat === c.id
-                    ? 'bg-[#7C3AED] text-white border-[#8B5CF6]'
-                    : 'bg-[#0D0D12] text-zinc-300 border-white/[0.08] hover:bg-white/[0.06]'
-                }`}
+              <div
+                className={`relative w-full aspect-[16/10] bg-gradient-to-br ${game.backdropClass} border-b border-white/[0.06] overflow-hidden`}
               >
-                <span>{c.emoji}</span>
-                <span>{c.label}</span>
-              </button>
-            ))}
-          </div>
+                <GameLogoArtwork
+                  gameId={game.id}
+                  className="w-full h-full group-hover:scale-[1.04] transition-transform duration-300"
+                />
+                {live && (
+                  <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-md bg-[#00F593] text-zinc-950 text-[10px] font-black uppercase tracking-wider shadow-md">
+                    {pickLang(lang, { es: 'En sala', ca: 'En sala', en: 'Live' })}
+                  </span>
+                )}
+              </div>
 
-          {openRepoLoading && openRepoGames.length === 0 ? (
-            <div className="py-12 text-center text-xs text-zinc-400">
-              {pickLang(lang, { es: 'Sincronizando repositorio MIT...', ca: 'Sincronitzant repositori MIT...', en: 'Loading MIT repository...' })}
-            </div>
-          ) : (
-            <div ref={gridRef} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-              {filteredOpenRepoGames.map((og) => {
-                const catMeta = openRepoCategories.find((c) => c.id === og.category);
-                return (
-                  <button
-                    key={og.slug}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('medium');
-                      onOpenRepoGame?.(og);
-                    }}
-                    className="nc-game-card group rounded-2xl sm:rounded-3xl bg-[#0D0D12] border border-white/[0.08] hover:border-[#8B5CF6]/70 overflow-hidden text-left flex flex-col cursor-pointer active:scale-95 transition-all p-4 gap-2.5"
-                  >
-                    <div className="flex items-center justify-between gap-2 w-full">
-                      <span
-                        className="w-10 h-10 rounded-2xl flex items-center justify-center text-xl shrink-0 border border-white/10"
-                        style={{ backgroundColor: `${catMeta?.color || '#7c3aed'}22` }}
-                      >
-                        {catMeta?.emoji || '🕹️'}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-md bg-white/[0.06] border border-white/10 text-[10px] font-bold uppercase text-zinc-300">
-                        {og.tech}
-                      </span>
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <h4 className="font-display font-bold text-sm sm:text-base text-white group-hover:text-[#A78BFA] truncate">
-                        {og.name}
-                      </h4>
-                      <p className="text-[11px] sm:text-xs text-zinc-400 line-clamp-2 mt-1 leading-snug">
-                        {og.description || `${catMeta?.label || og.category} · HTML5`}
-                      </p>
-                    </div>
-                    <div className="flex items-center justify-between text-[11px] font-bold text-[#A78BFA] pt-1 border-t border-white/[0.06] w-full">
-                      <span>{pickLang(lang, { es: 'Jugar ya', ca: 'Jugar ara', en: 'Play now' })}</span>
-                      <ChevronRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ) : (
-        <>
-          {/* 4. RESPONSIVE GAME CARDS GRID */}
-          <div ref={gridRef} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
-            {filteredGames.map((game) => {
-              const live = isLiveGame(game.id);
-              return (
-                <button
-                  key={game.id}
-                  type="button"
-                  onClick={() => onOpenGame(game.id)}
-                  className={`nc-game-card group rounded-2xl sm:rounded-3xl bg-[#0D0D12] border border-white/[0.08] ${game.accentBorder} overflow-hidden text-left flex flex-col cursor-pointer active:scale-95 transition-all shadow-[0_12px_28px_rgba(0,0,0,0.42)] hover:shadow-[0_16px_34px_rgba(124,58,237,0.22)]`}
-                >
-                  <div
-                    className={`relative w-full aspect-[16/10] bg-gradient-to-br ${game.backdropClass} border-b border-white/[0.06] overflow-hidden`}
-                  >
-                    <GameLogoArtwork
-                      gameId={game.id}
-                      className="w-full h-full group-hover:scale-[1.04] transition-transform duration-300"
-                    />
-                    {live && (
-                      <span className="absolute top-2.5 right-2.5 px-2 py-0.5 rounded-md bg-[#00F593] text-zinc-950 text-[10px] font-black uppercase tracking-wider shadow-md">
-                        {pickLang(lang, { es: 'En sala', ca: 'En sala', en: 'Live' })}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="p-4 flex-1 flex flex-col justify-between gap-1.5 w-full min-w-0">
-                    <div className="flex items-start justify-between gap-2 min-w-0">
-                      <h3 className="font-display font-bold text-sm sm:text-base text-white tracking-tight leading-snug break-words group-hover:text-[#A78BFA] transition-colors">
-                        {game.title}
-                      </h3>
-                      <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0 mt-0.5" />
-                    </div>
-
-                    <p className="text-[11px] sm:text-xs text-zinc-400 leading-snug break-words tabular-nums">
-                      {game.meta}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {activeCategory === 'all' && featuredOpenRepoPicks.length > 0 && (
-            <div className="pt-3 space-y-3">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="font-display font-extrabold text-base sm:text-lg text-white flex items-center gap-2">
-                    <Code2 className="w-4 h-4 text-[#A78BFA] shrink-0" />
-                    <span className="truncate">
-                      {pickLang(lang, {
-                        es: `Repositorios Open Source · ${openRepoGames.length || 142} Juegos Listos`,
-                        ca: `Repositoris Open Source · ${openRepoGames.length || 142} Jocs Llestos`,
-                        en: `Open Source Repositories · ${openRepoGames.length || 142} Ready Games`,
-                      })}
-                    </span>
+              <div className="p-4 flex-1 flex flex-col justify-between gap-1.5 w-full min-w-0">
+                <div className="flex items-start justify-between gap-2 min-w-0">
+                  <h3 className="font-display font-bold text-sm sm:text-base text-white tracking-tight leading-snug break-words group-hover:text-[#A78BFA] transition-colors">
+                    {game.title}
                   </h3>
-                  <p className="text-xs text-zinc-400">
-                    sausi-7/games · MIT License · Phaser / Three.js / HTML5
-                  </p>
+                  <ChevronRight className="w-4 h-4 text-zinc-400 group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0 mt-0.5" />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setActiveCategory('openrepo');
-                  }}
-                  className="min-h-[40px] px-3.5 rounded-xl bg-[#7C3AED]/20 hover:bg-[#7C3AED]/35 border border-[#8B5CF6]/40 text-xs font-bold text-[#DDD6FE] whitespace-nowrap shrink-0 cursor-pointer"
-                >
-                  {pickLang(lang, {
-                    es: `Ver todos (${openRepoGames.length || 142})`,
-                    ca: `Veure tots (${openRepoGames.length || 142})`,
-                    en: `See all (${openRepoGames.length || 142})`,
-                  })}
-                </button>
-              </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-                {featuredOpenRepoPicks.map((og) => {
-                  const catMeta = openRepoCategories.find((c) => c.id === og.category);
-                  return (
-                    <button
-                      key={og.slug}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        onOpenRepoGame?.(og);
-                      }}
-                      className="group rounded-2xl bg-[#0D0D12] border border-white/[0.08] hover:border-[#8B5CF6]/70 p-3 text-left flex flex-col justify-between gap-2 cursor-pointer active:scale-95 transition-all"
-                    >
-                      <div className="flex items-center justify-between gap-1.5">
-                        <span className="text-xl">{catMeta?.emoji || '🕹️'}</span>
-                        <span className="text-[10px] font-bold uppercase text-zinc-400">{og.tech}</span>
-                      </div>
-                      <p className="font-display font-bold text-xs text-white group-hover:text-[#A78BFA] truncate">
-                        {og.name}
-                      </p>
-                    </button>
-                  );
-                })}
+                <p className="text-[11px] sm:text-xs text-zinc-400 leading-snug break-words tabular-nums">
+                  {game.meta}
+                </p>
               </div>
-            </div>
-          )}
-        </>
-      )}
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 };

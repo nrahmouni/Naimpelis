@@ -73,10 +73,7 @@ export function useDirectCast(params: {
         }
         if (
           parsed.pathname.startsWith('/api/belix/stream/') ||
-          parsed.pathname.startsWith('/api/iptv/') ||
-          parsed.pathname.startsWith('/api/providers/stream/') ||
-          parsed.pathname.startsWith('/api/dvb-live/') ||
-          parsed.pathname.startsWith('/api/vod-manifest/')
+          parsed.pathname.startsWith('/api/iptv/')
         ) {
           const sp = new URLSearchParams(parsed.search);
           sp.set('abs', '1');

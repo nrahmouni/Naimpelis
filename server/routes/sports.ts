@@ -5,8 +5,8 @@
 import type { Express } from 'express';
 import { logger } from '../utils/logger.ts';
 import {
-  areFixturesCompatibleForMerge,
   getRegionLabelFromCcode as getFotmobRegionLabel,
+  doFootballTeamNamesMatch,
   fetchFotmobDayIndex,
   fetchRealFootballMatchDetails,
 } from '../services/footballLiveService.ts';
@@ -44,11 +44,6 @@ import { TDT_NATIONAL_AND_PAY_CHANNELS } from '../data/tdtNationalAndPayChannels
 import { registerChiringuitoRoutes } from './chiringuitoRoutes.ts';
 import { extractLiveSportsHlsDirect } from '../extractors/sportsExtractor.ts';
 import { livePushHub } from '../services/livePushHub.ts';
-import { getConnectedProvidersRuntimeCatalog } from '../services/providers/xtreamProvidersService.ts';
-import {
-  extractXtreamLiveHintsFromSportsRequest,
-  findXtreamLiveChannelMatches,
-} from '../services/xtreamVodMatcher.ts';
 
 const championsHubCache = new Map<string, { payload: any; ts: number }>();
 
@@ -243,22 +238,13 @@ async function fetchAndCacheFootballBoard(opts: {
       const seenEventIds = new Set<string>();
       const matchedFotmobIds = new Set<string>();
 
-      const findFotmobMatch = (
-        homeName: string,
-        awayName: string,
-        kickoffMs?: number,
-        leagueContext?: string
-      ) =>
-        fotmobMatches.find((fm) =>
-          areFixturesCompatibleForMerge(
-            { homeTeam: homeName, awayTeam: awayName, kickoffMs, leagueContext },
-            {
-              homeTeam: fm.homeName,
-              awayTeam: fm.awayName,
-              kickoffMs: fm.kickoffMs,
-              leagueContext: `${fm.leagueId} ${fm.leagueName}`,
-            }
-          )
+      const findFotmobMatch = (homeName: string, awayName: string) =>
+        fotmobMatches.find(
+          (fm) =>
+            (doFootballTeamNamesMatch(homeName, fm.homeName) &&
+              doFootballTeamNamesMatch(awayName, fm.awayName)) ||
+            (doFootballTeamNamesMatch(homeName, fm.awayName) &&
+              doFootballTeamNamesMatch(awayName, fm.homeName))
         );
 
       for (const { league, json } of responses) {
@@ -304,12 +290,7 @@ async function fetchAndCacheFootballBoard(opts: {
             away.team?.shortDisplayName || away.team?.displayName || 'Visitante'
           ).trim();
 
-          const fm = findFotmobMatch(
-            homeTeam,
-            awayTeam,
-            kickoffDate.getTime(),
-            `${league.slug} ${league.leagueName}`
-          );
+          const fm = findFotmobMatch(homeTeam, awayTeam);
           if (fm) {
             matchedFotmobIds.add(fm.fotmobId);
             if (fm.statusState === 'live') {
@@ -384,27 +365,15 @@ async function fetchAndCacheFootballBoard(opts: {
       }
 
       if (isToday && liveFeeds.streamXhdFootball.length > 0) {
-        const nowMs = Date.now();
         for (let idx = 0; idx < liveFeeds.streamXhdFootball.length; idx++) {
           const sx = liveFeeds.streamXhdFootball[idx];
           const existingItem = items.find((it) =>
-            areFixturesCompatibleForMerge(
-              {
-                homeTeam: it.homeTeam,
-                awayTeam: it.awayTeam,
-                kickoffMs: it.kickoffMs,
-                leagueContext: `${it.leagueSlug} ${it.leagueName}`,
-              },
-              {
-                homeTeam: sx.homeTeam,
-                awayTeam: sx.awayTeam,
-                kickoffMs: sx.kickoffMs || 0,
-                leagueContext: sx.leagueName,
-              }
-            ) &&
-            doesScrapedEventMatchFixture(it.homeTeam, it.awayTeam, sx)
+            doesScrapedEventMatchFixture(it.homeTeam, it.awayTeam, sx) ||
+            (doFootballTeamNamesMatch(it.homeTeam, sx.homeTeam) && doFootballTeamNamesMatch(it.awayTeam, sx.awayTeam)) ||
+            (doFootballTeamNamesMatch(it.homeTeam, sx.awayTeam) && doFootballTeamNamesMatch(it.awayTeam, sx.homeTeam))
           );
           if (existingItem) {
+            // Merge direct streams into existing item avoiding duplicate URLs
             if (Array.isArray(sx.channels)) {
               let fIdx = existingItem.channels.length + 1;
               for (const ch of sx.channels) {
@@ -419,18 +388,8 @@ async function fetchAndCacheFootballBoard(opts: {
             continue;
           }
 
-          const fm = findFotmobMatch(sx.homeTeam, sx.awayTeam, sx.kickoffMs || 0, sx.leagueName);
+          const fm = findFotmobMatch(sx.homeTeam, sx.awayTeam);
           if (fm) matchedFotmobIds.add(fm.fotmobId);
-
-          const realKickoffMs = fm?.kickoffMs || sx.kickoffMs || nowMs;
-          const computedStatusState: 'live' | 'upcoming' | 'finished' = fm
-            ? fm.statusState
-            : sx.kickoffMs && sx.kickoffMs > nowMs + 5 * 60_000
-              ? 'upcoming'
-              : sx.kickoffMs && nowMs - sx.kickoffMs > 3 * 60 * 60 * 1000
-                ? 'finished'
-                : 'live';
-          if (computedStatusState === 'finished') continue;
 
           const sxId = `sxhd-${idx + 1}-${normalizeTeamToken(sx.homeTeam).slice(0, 8)}`;
           const codeUpper = String(sx.code || '').toUpperCase();
@@ -444,13 +403,6 @@ async function fetchAndCacheFootballBoard(opts: {
             label: sanitizeScrapedChannelLabel(ch.label, cIdx + 1),
           }));
 
-          const computedKickoffTime =
-            fm?.kickoffTime ||
-            (sx.kickoffMs ? madridTimeFmt.format(new Date(sx.kickoffMs)) : sx.timeStr || 'EN VIVO');
-          const computedStatusLabel =
-            fm?.statusLabel ||
-            (computedStatusState === 'upcoming' ? 'Por empezar' : 'EN VIVO');
-
           items.push({
             id: `fb-${sxId}`,
             eventId: fm?.fotmobId || sxId,
@@ -461,20 +413,19 @@ async function fetchAndCacheFootballBoard(opts: {
             groupTitle: `${codeUpper || 'En Vivo'}: ${fm?.leagueName || sx.leagueName || 'Fútbol en Directo'}`,
             regionFlagUrl: fm?.regionFlagUrl || `https://flagcdn.com/w40/${flagIso}.png`,
             priority: 12,
-            kickoffIso: fm?.utcTime || new Date(realKickoffMs).toISOString(),
-            kickoffTime: computedKickoffTime,
-            kickoffMs: realKickoffMs,
-            kickoffDateLabel: formatMadridDateLabel(new Date(realKickoffMs), madridToday),
-            statusState: computedStatusState,
-            statusLabel: computedStatusLabel,
+            kickoffIso: fm?.utcTime || new Date().toISOString(),
+            kickoffTime: fm?.kickoffTime || sx.timeStr || 'EN VIVO',
+            kickoffMs: fm?.kickoffMs || Date.now(),
+            statusState: fm?.statusState || 'live',
+            statusLabel: fm?.statusLabel || 'EN VIVO',
             homeTeam: fm?.homeName || sx.homeTeam,
             awayTeam: fm?.awayName || sx.awayTeam,
             homeShort: (fm?.homeName || sx.homeTeam).slice(0, 3).toUpperCase(),
             awayShort: (fm?.awayName || sx.awayTeam).slice(0, 3).toUpperCase(),
             homeLogo: fm?.homeLogo || sx.homeLogo,
             awayLogo: fm?.awayLogo || sx.awayLogo,
-            homeScore: fm ? fm.homeScore : computedStatusState === 'upcoming' ? '-' : '•',
-            awayScore: fm ? fm.awayScore : computedStatusState === 'upcoming' ? '-' : '•',
+            homeScore: fm ? fm.homeScore : '•',
+            awayScore: fm ? fm.awayScore : '•',
             homeRedCards: fm?.homeRedCards || 0,
             awayRedCards: fm?.awayRedCards || 0,
             channels: sanitizedSxChannels,
@@ -484,23 +435,10 @@ async function fetchAndCacheFootballBoard(opts: {
 
       for (const fm of fotmobMatches) {
         if (matchedFotmobIds.has(fm.fotmobId)) continue;
-        const alreadyInBoard = items.find((it) => {
-          if (it.fotmobMatchId && it.fotmobMatchId !== fm.fotmobId) return false;
-          return areFixturesCompatibleForMerge(
-            {
-              homeTeam: it.homeTeam,
-              awayTeam: it.awayTeam,
-              kickoffMs: it.kickoffMs,
-              leagueContext: `${it.leagueSlug} ${it.leagueName}`,
-            },
-            {
-              homeTeam: fm.homeName,
-              awayTeam: fm.awayName,
-              kickoffMs: fm.kickoffMs,
-              leagueContext: `${fm.leagueId} ${fm.leagueName}`,
-            }
-          );
-        });
+        const alreadyInBoard = items.find((it) =>
+          (doFootballTeamNamesMatch(it.homeTeam, fm.homeName) && doFootballTeamNamesMatch(it.awayTeam, fm.awayName)) ||
+          (doFootballTeamNamesMatch(it.homeTeam, fm.awayName) && doFootballTeamNamesMatch(it.awayTeam, fm.homeName))
+        );
         if (alreadyInBoard) {
           matchedFotmobIds.add(fm.fotmobId);
           if (!alreadyInBoard.fotmobMatchId) alreadyInBoard.fotmobMatchId = fm.fotmobId;
@@ -534,10 +472,9 @@ async function fetchAndCacheFootballBoard(opts: {
           groupTitle: `${pseudoLeague.regionName}: ${fm.leagueName}`,
           regionFlagUrl: fm.regionFlagUrl,
           priority: pseudoLeague.priority,
-          kickoffIso: fm.utcTime || new Date(fm.kickoffMs).toISOString(),
+          kickoffIso: fm.utcTime || new Date().toISOString(),
           kickoffTime: fm.kickoffTime,
           kickoffMs: fm.kickoffMs,
-          kickoffDateLabel: formatMadridDateLabel(new Date(fm.kickoffMs), madridToday),
           statusState: fm.statusState,
           statusLabel: fm.statusLabel,
           matchdayLabel: fm.leagueName || 'Fútbol en Directo',
@@ -620,37 +557,6 @@ async function fetchAndCacheFootballBoard(opts: {
             verifiedSchedule: fastSchedule,
           });
         }
-      }
-
-      // Enrich fixtures with verified live channels from connected Xtream servers (zero-latency RAM search)
-      const runtimeLiveCatalog = getConnectedProvidersRuntimeCatalog();
-      if (runtimeLiveCatalog.liveItems.length > 0) {
-        await Promise.all(
-          items
-            .filter((it) => it.statusState !== 'finished' && Array.isArray(it.channels) && it.channels.length > 0)
-            .slice(0, 35)
-            .map(async (it) => {
-              const hintsSet = new Set<string>();
-              for (const ch of it.channels.slice(0, 4)) {
-                for (const h of extractXtreamLiveHintsFromSportsRequest(ch.sourceUrl || '', ch.label || '')) {
-                  hintsSet.add(h);
-                }
-              }
-              if (hintsSet.size === 0) return;
-              const xtMatches = await findXtreamLiveChannelMatches({
-                channelHints: Array.from(hintsSet).slice(0, 3),
-                preferLang: preferredLang,
-                limit: 2,
-              }).catch(() => []);
-              const existingUrls = new Set(it.channels.map((c: any) => c.sourceUrl));
-              for (const xch of xtMatches) {
-                if (xch.sourceUrl && !existingUrls.has(xch.sourceUrl)) {
-                  existingUrls.add(xch.sourceUrl);
-                  it.channels.push(xch);
-                }
-              }
-            })
-        );
       }
 
       const cleanItems = items.map((it) => {

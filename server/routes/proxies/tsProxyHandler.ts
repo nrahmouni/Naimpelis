@@ -17,24 +17,7 @@ import {
   getOrCreateRequestId,
 } from './proxyUtils.ts';
 import { remuxDvbTsToAac } from './dvbTranscoder.ts';
-import { LruTtlCache } from '../../utils/lruCache.ts';
-import {
-  getCachedLiveTsSegment,
-  getInFlightLiveTsSegment,
-  setCachedLiveTsSegment,
-} from './liveSegmentCache.ts';
 import { runtimeMetrics } from '../../services/runtimeMetricsCollector.ts';
-
-const MAX_VOD_HEAD_CACHE_BYTES = 512 * 1024;
-const vodMp4HeadCache = new LruTtlCache<
-  string,
-  { buf: Buffer; totalSize: number; contentType: string }
->(24, 5 * 60 * 1000);
-const detectedMkvContainerCache = new LruTtlCache<string, boolean>(200, 30 * 60 * 1000);
-
-export function isKnownMkvUpstream(rawUrl: string): boolean {
-  return detectedMkvContainerCache.get(rawUrl) === true;
-}
 
 export async function handleTsProxy(req: express.Request, res: express.Response): Promise<void> {
   const reqId = getOrCreateRequestId(req);
@@ -125,30 +108,10 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
         res.status(502).end();
         return;
       }
+      res.status(200);
       applyProxyCorsHeaders(res, reqId);
       res.setHeader('Content-Type', 'video/mp2t');
-      res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Cache-Control', 'public, max-age=20');
-      const rawAacRange = String(req.headers.range || '');
-      const aacRangeMatch = rawAacRange.match(/^bytes=(\d+)-(\d*)$/i);
-      if (aacRangeMatch) {
-        const start = parseInt(aacRangeMatch[1], 10);
-        const rawEnd = aacRangeMatch[2] ? parseInt(aacRangeMatch[2], 10) : remuxedBuf.length - 1;
-        if (start >= remuxedBuf.length) {
-          res.status(416);
-          res.setHeader('Content-Range', `bytes */${remuxedBuf.length}`);
-          res.end();
-          return;
-        }
-        const end = Math.min(remuxedBuf.length - 1, Math.max(start, rawEnd));
-        const slice = remuxedBuf.subarray(start, end + 1);
-        res.status(206);
-        res.setHeader('Content-Range', `bytes ${start}-${end}/${remuxedBuf.length}`);
-        res.setHeader('Content-Length', String(slice.length));
-        res.end(slice);
-        return;
-      }
-      res.status(200);
       res.setHeader('Content-Length', String(remuxedBuf.length));
       res.end(remuxedBuf);
       return;
@@ -183,63 +146,16 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     headers['Range'] = req.headers.range;
   }
 
+  const hdrCtrl = new AbortController();
+  const hdrTimer = setTimeout(() => hdrCtrl.abort(), 6500);
+  req.on('close', () => {
+    if (!res.writableEnded) hdrCtrl.abort();
+  });
+
   const isLiveSportsStreamHost =
     /footunder\.online|7odxv0l067ka\.net|futlivehd\.com|streamxhd\.(?:sbs|st)|tilinhd\.lol/i.test(
       targetUrl
     );
-
-  // Instant RAM hit for repeated VOD MP4/MKV moov/head range probes (eliminates upstream 429s & startup seek delay)
-  if (isUrlMp4 && rangeMatch && parseInt(rangeMatch[1], 10) === 0) {
-    const reqEnd = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : MAX_VOD_HEAD_CACHE_BYTES - 1;
-    const cachedHead = vodMp4HeadCache.get(targetUrl);
-    if (cachedHead && reqEnd < cachedHead.buf.length) {
-      const end = Math.min(cachedHead.buf.length - 1, Math.max(0, reqEnd));
-      const slice = cachedHead.buf.subarray(0, end + 1);
-      applyProxyCorsHeaders(res, reqId);
-      res.status(206);
-      res.setHeader('Content-Type', cachedHead.contentType || 'video/mp4');
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Content-Range', `bytes 0-${end}/${cachedHead.totalSize}`);
-      res.setHeader('Content-Length', String(slice.length));
-      res.end(slice);
-      return;
-    }
-  }
-
-  // Instant RAM / in-flight prefetch hit for live HLS segments (eliminates double upstream hop)
-  if (!isUrlSubtitle && (!rawRange || isInitialByteZeroRangeProbe)) {
-    const cachedSeg =
-      getCachedLiveTsSegment(targetUrl) || (await getInFlightLiveTsSegment(targetUrl));
-    if (req.destroyed || res.writableEnded) return;
-    if (cachedSeg && cachedSeg.buf.length > 0) {
-      applyProxyCorsHeaders(res, reqId);
-      if (isInitialByteZeroRangeProbe && rangeMatch) {
-        const reqEnd = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : cachedSeg.buf.length - 1;
-        const end = Math.min(Math.max(cachedSeg.buf.length - 1, 0), Math.max(0, reqEnd));
-        const slice = cachedSeg.buf.subarray(0, end + 1);
-        res.status(206);
-        res.setHeader('Content-Type', cachedSeg.contentType || 'video/mp2t');
-        res.setHeader('Accept-Ranges', 'bytes');
-        res.setHeader('Content-Range', `bytes 0-${end}/${cachedSeg.buf.length}`);
-        res.setHeader('Content-Length', String(slice.length));
-        res.end(slice);
-        return;
-      }
-      res.status(200);
-      res.setHeader('Content-Type', cachedSeg.contentType || 'video/mp2t');
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.setHeader('Content-Length', String(cachedSeg.buf.length));
-      res.end(cachedSeg.buf);
-      return;
-    }
-  }
-
-  const hdrCtrl = new AbortController();
-  const liveFetchTimeoutMs = isLiveSportsStreamHost ? 12_000 : 14_000;
-  const hdrTimer = setTimeout(() => hdrCtrl.abort(), liveFetchTimeoutMs);
-  req.on('close', () => {
-    if (!res.writableEnded) hdrCtrl.abort();
-  });
 
   try {
     if (!isLiveSportsStreamHost && shouldBypassNodeFetch(targetUrl)) {
@@ -248,7 +164,7 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     let upstream = await streamingFetch(targetUrl, {
       headers,
       signal: hdrCtrl.signal,
-      timeoutMs: liveFetchTimeoutMs,
+      timeoutMs: 6500,
     });
     if (
       (upstream.status === 400 ||
@@ -262,7 +178,7 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
       const retryResp = await streamingFetch(targetUrl, {
         headers: noOriginHeaders,
         signal: hdrCtrl.signal,
-        timeoutMs: 12_000,
+        timeoutMs: 9000,
       }).catch(() => null);
       if (retryResp && retryResp.ok && retryResp.body) {
         upstream = retryResp;
@@ -273,7 +189,7 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
         const retryResp = await streamingFetch(targetUrl, {
           headers,
           signal: hdrCtrl.signal,
-          timeoutMs: 12_000,
+          timeoutMs: 9000,
         }).catch(() => null);
         if (retryResp && retryResp.ok && retryResp.body) {
           upstream = retryResp;
@@ -411,7 +327,7 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
       if (ar) res.setHeader('Accept-Ranges', ar);
     };
 
-    const nodeStream = Readable.fromWeb(upstream.body as never, { highWaterMark: 256 * 1024 });
+    const nodeStream = Readable.fromWeb(upstream.body as never);
     runtimeMetrics.adjustActiveMediaStreams(1);
     let streamMetricClosed = false;
     const releaseStreamMetric = () => {
@@ -450,91 +366,10 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
       if (!res.writableEnded && !nodeStream.destroyed) nodeStream.destroy();
     });
 
-    const shouldBufferSportsSegment =
-      isLiveSportsStreamHost &&
-      !rawRange &&
-      !isSubtitleContent &&
-      !isUrlMp4 &&
-      (!cl || Number(cl) <= 6 * 1024 * 1024);
-    const cacheSegChunks: Buffer[] | null = shouldBufferSportsSegment ? [] : null;
-    let cacheSegBytes = 0;
-
-    const recordCacheChunk = (b: Buffer) => {
-      if (!cacheSegChunks) return;
-      if (cacheSegBytes + b.length <= 6 * 1024 * 1024) {
-        cacheSegChunks.push(b);
-        cacheSegBytes += b.length;
-      } else {
-        cacheSegChunks.length = 0;
-      }
-    };
-
-    const finalizeSportsCache = () => {
-      if (!cacheSegChunks || cacheSegChunks.length === 0 || cacheSegBytes < 188) return;
-      const rawFull = Buffer.concat(cacheSegChunks);
-      const off = findDisguisedTsOffset(rawFull);
-      const cleanSeg = off > 0 ? rawFull.subarray(off) : rawFull;
-      if (cleanSeg.length >= 188) {
-        setCachedLiveTsSegment(
-          targetUrl,
-          cleanSeg,
-          isDisguisedSegment ? 'video/mp2t' : rawCt || 'video/mp2t'
-        );
-      }
-    };
-
-    const isSmallVodHeadRange =
-      isUrlMp4 &&
-      Boolean(rangeMatch) &&
-      parseInt(rangeMatch![1], 10) === 0 &&
-      Boolean(rangeMatch![2]) &&
-      parseInt(rangeMatch![2], 10) < MAX_VOD_HEAD_CACHE_BYTES;
-    const vodHeadChunks: Buffer[] | null = isSmallVodHeadRange ? [] : null;
-    let vodHeadBytes = 0;
-
     runtimeMetrics.recordUpstreamTransport(false);
     if (!shouldSniffImageHeader) {
       writeCommonHeaders(0);
-      if (!shouldBufferSportsSegment && !isSmallVodHeadRange) {
-        nodeStream.pipe(res);
-        return;
-      }
-      nodeStream.on('data', (chunk: Buffer) => {
-        const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        if (vodHeadChunks && vodHeadBytes + b.length <= MAX_VOD_HEAD_CACHE_BYTES) {
-          vodHeadChunks.push(b);
-          vodHeadBytes += b.length;
-        }
-        recordCacheChunk(b);
-        if (!res.writableEnded && !res.write(b)) {
-          nodeStream.pause();
-          res.once('drain', () => nodeStream.resume());
-        }
-      });
-      nodeStream.once('end', () => {
-        if (vodHeadChunks && vodHeadChunks.length > 0) {
-          const headBuf = Buffer.concat(vodHeadChunks);
-          // Detect Matroska/MKV EBML magic header (0x1A 0x45 0xDF 0xA3) early for instant transcode hints
-          if (
-            headBuf.length >= 4 &&
-            headBuf[0] === 0x1a &&
-            headBuf[1] === 0x45 &&
-            headBuf[2] === 0xdf &&
-            headBuf[3] === 0xa3
-          ) {
-            detectedMkvContainerCache.set(targetUrl, true);
-          }
-          const crTotal = cr?.match(/\/(\d+)$/);
-          const totalSize = crTotal ? parseInt(crTotal[1], 10) : headBuf.length;
-          vodMp4HeadCache.set(targetUrl, {
-            buf: headBuf,
-            totalSize,
-            contentType: rawCt || 'video/mp4',
-          });
-        }
-        finalizeSportsCache();
-        if (!res.writableEnded) res.end();
-      });
+      nodeStream.pipe(res);
       return;
     }
 
@@ -547,30 +382,28 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
       headerChecked = true;
       const headBuf = Buffer.concat(probeChunks);
       const offset = findDisguisedTsOffset(headBuf);
-      const cleanHead = offset > 0 ? headBuf.subarray(offset) : headBuf;
-      recordCacheChunk(cleanHead);
       writeCommonHeaders(offset);
-      if (cleanHead.length > 0) {
-        res.write(cleanHead);
+      if (offset > 0) {
+        res.write(headBuf.subarray(offset));
+      } else if (headBuf.length > 0) {
+        res.write(headBuf);
       }
       probeChunks.length = 0;
       if (ended) {
-        finalizeSportsCache();
         res.end();
       }
     };
 
     nodeStream.on('data', (chunk: Buffer) => {
-      const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
       if (!headerChecked) {
+        const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
         probeChunks.push(b);
         probeLen += b.length;
         if (probeLen >= 512) {
           flushInitial(false);
         }
       } else if (!res.writableEnded) {
-        recordCacheChunk(b);
-        if (!res.write(b)) {
+        if (!res.write(chunk)) {
           nodeStream.pause();
           res.once('drain', () => nodeStream.resume());
         }
@@ -579,11 +412,8 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     nodeStream.once('end', () => {
       if (!headerChecked) {
         flushInitial(true);
-      } else {
-        finalizeSportsCache();
-        if (!res.writableEnded) {
-          res.end();
-        }
+      } else if (!res.writableEnded) {
+        res.end();
       }
     });
   } catch (err) {
@@ -599,8 +429,7 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     }
     if (!rangeMatch) {
       await new Promise<void>((resolve) => {
-        const curlMaxSec = isLiveSportsStreamHost ? '8' : '22';
-        const args = ['-4', '-sS', '-L', '-k', '--connect-timeout', '3', '--max-time', curlMaxSec];
+        const args = ['-4', '-sS', '-L', '-k', '--connect-timeout', '4', '--max-time', '22'];
         for (const [k, v] of Object.entries(headers)) {
           if (v) args.push('-H', `${k}: ${v}`);
         }

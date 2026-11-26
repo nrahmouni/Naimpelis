@@ -24,7 +24,6 @@ import type {
   BelixLiveOverviewResponse,
   BelixReverseEngineeringUpdate,
 } from './belixTypes';
-import { XtreamEnvClientPanel } from './XtreamEnvClientPanel';
 
 interface BelixLiveTabProps {
   lang: AppLanguage;
@@ -56,10 +55,9 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
   const [onlyVerified, setOnlyVerified] = useState(false);
   const [visibleLimit, setVisibleLimit] = useState(60);
 
-  // Default Shark Pro host & suggested credentials for quick 1-click / automatic Belix TV sync (RAM-only)
-  const [serverUrl, setServerUrl] = useState('http://1.sharkpro.ink:80');
-  const [username, setUsername] = useState('8996754342');
-  const [password, setPassword] = useState('4228202130');
+  const [serverUrl, setServerUrl] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [connecting, setConnecting] = useState(false);
   const [refreshingBelix, setRefreshingBelix] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
@@ -299,6 +297,9 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
     );
   }, [overview, q]);
 
+  const _unusedReverseEng = reverseEngineeringUpdate;
+  void _unusedReverseEng;
+
   return (
     <div className="space-y-6">
       {/* SEARCH + REFRESH BAR */}
@@ -342,9 +343,6 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
         </button>
       </div>
 
-      {/* ENV-BASED PROTECTED XTREAM FAILOVER PANEL */}
-      <XtreamEnvClientPanel lang={lang} onPlayTdtChannel={onPlayTdtChannel} />
-
       {/* SECTION A: XTREAM CODES SESSION (CREDENTIAL-FREE OPAQUE PROXY) */}
       <section className="rounded-[24px] bg-[#0D0D12] border border-white/[0.08] p-4 sm:p-5 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
@@ -353,51 +351,21 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
               <Server className="w-4 h-4 text-[#F43F5E]" />
               <span>
                 {pickLang(lang, {
-                  es: 'Sesión Belix TV Xtream (Shark Pro · Solo en RAM)',
-                  ca: 'Sessió Belix TV Xtream (Shark Pro · Només en RAM)',
-                  en: 'Belix TV Xtream Session (Shark Pro · RAM-Only)',
+                  es: 'Sesión Belix TV Xtream (Solo en RAM)',
+                  ca: 'Sessió Belix TV Xtream (Només en RAM)',
+                  en: 'Belix TV Xtream Session (RAM-Only)',
                 })}
               </span>
             </h2>
             <p className="text-xs text-zinc-400">
               {pickLang(lang, {
-                es: `Host identificado: ${reverseEngineeringUpdate?.injectedEndpoint || 'http://1.sharkpro.ink:80'}. Introduce tus credenciales Xtream para verificar canales en directo sin guardarlos en disco.`,
-                ca: `Host identificat: ${reverseEngineeringUpdate?.injectedEndpoint || 'http://1.sharkpro.ink:80'}. Introdueix les teves credencials Xtream per verificar canals en directe sense desar-les al disc.`,
-                en: `Identified host: ${reverseEngineeringUpdate?.injectedEndpoint || 'http://1.sharkpro.ink:80'}. Enter your Xtream credentials to probe stable channels in RAM only.`,
+                es: 'Conecta un portal Xtream adicional de forma temporal sin exponer credenciales en pantalla.',
+                ca: 'Connecta un portal Xtream addicional temporalment sense exposar credencials en pantalla.',
+                en: 'Connect an additional Xtream portal temporarily in RAM without exposing credentials.',
               })}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {!belixStatus?.connected && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('medium');
-                    setServerUrl('http://1.sharkpro.ink:80');
-                    setUsername('8996754342');
-                    setPassword('4228202130');
-                    void connectWithCredentials('http://1.sharkpro.ink:80', '8996754342', '4228202130');
-                  }}
-                  disabled={connecting}
-                  className="min-h-10 px-3 rounded-xl border bg-[#F43F5E]/20 border-[#F43F5E]/50 hover:bg-[#F43F5E]/30 text-white text-xs font-semibold cursor-pointer whitespace-nowrap transition-colors"
-                >
-                  Sugerido: Conectar 8996754342
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setServerUrl('');
-                    setUsername('');
-                    setPassword('');
-                  }}
-                  className="min-h-10 px-3 rounded-xl border bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.08] text-zinc-300 text-xs font-semibold cursor-pointer whitespace-nowrap transition-colors"
-                >
-                  {pickLang(lang, { es: 'Otro servidor', ca: 'Altre servidor', en: 'Other server' })}
-                </button>
-              </>
-            )}
             <span className="text-xs font-mono text-zinc-400 tabular-nums whitespace-nowrap">
               {dynamicRoutes.length} rutas · {apiEndpoints.length} APIs
             </span>
@@ -467,7 +435,7 @@ export const BelixLiveTab: React.FC<BelixLiveTabProps> = ({
                 type="url"
                 value={serverUrl}
                 onChange={(e) => setServerUrl(e.target.value)}
-                placeholder="http://1.sharkpro.ink:80"
+                placeholder="https://servidor-xtream"
                 autoComplete="off"
                 className="w-full min-h-11 px-3 rounded-xl bg-[#000000] border border-white/[0.08] focus:border-[#F43F5E]/60 text-xs font-mono text-white focus:outline-none"
               />

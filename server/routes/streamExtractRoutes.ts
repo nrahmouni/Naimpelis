@@ -15,10 +15,6 @@ import {
   formatExtractResponseForClient,
   handleExternalSportsExtract,
 } from './streamExtractHelpers/externalSportsExtractor.ts';
-import {
-  raceFastLiveTracks,
-  type FastLiveTrackCandidate,
-} from '../services/liveFastResolver.ts';
 
 const extractionCache = new LruTtlCache<string, ExtractedStreamResult>(400, 15 * 60 * 1000);
 
@@ -35,7 +31,6 @@ const inFlightExtractMap = new Map<string, Promise<CoalescedExtractOutcome>>();
 export interface RankCandidateTracksInput {
   allDiscovered: TrackRecord[];
   preferLang: string;
-  preferQualityFirst?: boolean;
   isVestLink: boolean;
   hasExplicitMovidyUrl: boolean;
   hasExplicitGnulaUrl: boolean;
@@ -61,81 +56,6 @@ export function registerStreamExtractRoute(
   const formatResp = (req: express.Request, payload: ExtractedStreamResult) =>
     formatExtractResponseForClient(req, payload, deps.getPublicOrigin);
 
-  const resolveBelixSessionKey = (req: express.Request): string => {
-    const belixSidMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)belix_sid=([^;]+)/);
-    return (
-      String(req.headers['x-belix-session'] || '').trim() ||
-      (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
-      'default'
-    );
-  };
-
-  app.post('/api/live/fast-resolve', async (req, res) => {
-    try {
-      const body = (req.body || {}) as {
-        channelId?: string;
-        title?: string;
-        titleHint?: string;
-        broadcasters?: string[];
-        competition?: string;
-        preferLang?: string;
-        preferQualityFirst?: boolean;
-        tracks?: FastLiveTrackCandidate[];
-      };
-      const tracks = Array.isArray(body.tracks) ? body.tracks : [];
-      if (tracks.length === 0) {
-        return res.status(400).json({ success: false, ok: false, error: 'Sin señales para resolver.' });
-      }
-      const resolvedTitleHint = String(body.title || body.titleHint || '').trim() || undefined;
-      const outcome = await raceFastLiveTracks(tracks, {
-        channelId: body.channelId ? String(body.channelId) : undefined,
-        titleHint: resolvedTitleHint,
-        broadcasters: Array.isArray(body.broadcasters) ? body.broadcasters : undefined,
-        competition: body.competition ? String(body.competition) : undefined,
-        preferLang: body.preferLang ? String(body.preferLang) : 'ES',
-        preferQualityFirst: Boolean(body.preferQualityFirst),
-        publicOrigin: deps.getPublicOrigin(req),
-        belixSessionKey: resolveBelixSessionKey(req),
-      });
-      return res.json({
-        success: outcome.ok,
-        ...outcome,
-      });
-    } catch (err) {
-      logger.warn({ err }, 'live_fast_resolve_error');
-      return res.status(502).json({ success: false, ok: false, error: 'Error resolviendo directo.' });
-    }
-  });
-
-  app.post('/api/live/prewarm', (req, res) => {
-    try {
-      const body = (req.body || {}) as {
-        channelId?: string;
-        title?: string;
-        titleHint?: string;
-        preferLang?: string;
-        preferQualityFirst?: boolean;
-        tracks?: FastLiveTrackCandidate[];
-      };
-      const tracks = Array.isArray(body.tracks) ? body.tracks.slice(0, 3) : [];
-      if (tracks.length > 0) {
-        const resolvedTitleHint = String(body.title || body.titleHint || '').trim() || undefined;
-        void raceFastLiveTracks(tracks, {
-          channelId: body.channelId ? String(body.channelId) : undefined,
-          titleHint: resolvedTitleHint,
-          preferLang: body.preferLang ? String(body.preferLang) : 'ES',
-          preferQualityFirst: Boolean(body.preferQualityFirst),
-          publicOrigin: deps.getPublicOrigin(req),
-          belixSessionKey: resolveBelixSessionKey(req),
-          timeoutMs: 2200,
-        }).catch(() => undefined);
-      }
-      return res.json({ ok: true });
-    } catch {
-      return res.json({ ok: false });
-    }
-  });
-
   app.get('/api/extract/stream', async (req, res) => {
     const rawInput = String(req.query.url || '').trim();
     const movidyUrlParam = String(req.query.movidyUrl || '').trim();
@@ -143,11 +63,6 @@ export function registerStreamExtractRoute(
     const vestUrlParam = String(req.query.vestUrl || '').trim();
     const resolverType = String(req.query.resolverType || '').trim();
     const preferLang = String(req.query.preferLang || req.query.lang || 'ES').toUpperCase();
-    const preferQualityFirst =
-      String(req.query.preferQualityFirst || req.query.qualityFirst || req.query.preferQuality || '').trim() === '1' ||
-      String(req.query.priority || '').trim() === 'best_quality' ||
-      preferLang === 'QUALITY' ||
-      preferLang === 'BEST';
     const titleHint = String(req.query.title || '').trim();
     const origTitleHint = String(req.query.origTitle || '').trim();
     const rawYearParam = String(req.query.year || '').trim();
@@ -160,19 +75,22 @@ export function registerStreamExtractRoute(
     const isSandboxedFrame = String(req.query.sandboxed || '').trim() === '1';
     const forceExtract = String(req.query.force || req.query.forceSpanish || '') === '1';
     const directOnly = String(req.query.directOnly || '').trim() === '1';
-    const channelLabelParam = String(req.query.channelLabel || '').trim();
 
     if (!rawInput && !movidyUrlParam && !gnulaUrlParam && !vestUrlParam && !titleHint && !tmdbIdParam) {
       return res.status(400).json({ success: false, error: 'Falta el enlace o título del contenido.' });
     }
 
-    const cacheKey = `v4|${mediaTypeParam}|${tmdbIdParam}|${yearParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${preferQualityFirst ? 'qf1' : 'qf0'}|${isSandboxedFrame ? 'sb1' : 'sb0'}|${directOnly ? 'do1' : 'do0'}|${rawInput}|${movidyUrlParam}|${gnulaUrlParam}|${vestUrlParam}|${titleHint}${channelLabelParam ? `|cl:${channelLabelParam}` : ''}`;
+    const cacheKey = `v3|${mediaTypeParam}|${tmdbIdParam}|${yearParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${isSandboxedFrame ? 'sb1' : 'sb0'}|${directOnly ? 'do1' : 'do0'}|${rawInput}|${movidyUrlParam}|${gnulaUrlParam}|${vestUrlParam}|${titleHint}`;
     const cached = !forceExtract ? extractionCache.get(cacheKey) : undefined;
     if (cached && cached.expiresAt > Date.now()) {
       return res.json(formatResp(req, cached));
     }
 
-    const belixSessionKey = resolveBelixSessionKey(req);
+    const belixSidMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)belix_sid=([^;]+)/);
+    const belixSessionKey =
+      String(req.headers['x-belix-session'] || '').trim() ||
+      (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
+      'default';
 
     if (!forceExtract && isDistributedStoreEnabled() && !rawInput.startsWith('/api/belix/')) {
       const remoteCached = await Promise.race([
@@ -246,7 +164,6 @@ export function registerStreamExtractRoute(
           vestUrlParam,
           resolverType,
           preferLang,
-          preferQualityFirst,
           titleHint,
           origTitleHint,
           yearParam,
@@ -272,7 +189,6 @@ export function registerStreamExtractRoute(
             resolverType,
             preferLang,
             titleHint,
-            channelLabel: channelLabelParam,
             cacheKey,
             setCache,
             sendOk,

@@ -1,9 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Tv } from 'lucide-react';
 import type { AppLanguage, CatalogMovie } from '../types';
 import { pickLang } from '../utils/i18n';
-import { prefetchImageUrls } from '../utils/imageUrl';
-import { useLatestReleasesQuery } from '../hooks/useCatalogQueries';
 import { CinePosterCard } from './catalog/CinePosterCard';
 
 interface LatestReleasesSectionProps {
@@ -23,22 +21,34 @@ export const LatestReleasesSection: React.FC<LatestReleasesSectionProps> = ({
   onSelectMovie,
   onSelectSeries,
 }) => {
-  const { data, isLoading } = useLatestReleasesQuery(lang, true);
-  const cinemaReleases = data?.cinemaReleases ?? [];
-  const newSeasons = data?.newSeasons ?? [];
-  const loading = isLoading && cinemaReleases.length === 0 && newSeasons.length === 0;
+  const [cinemaReleases, setCinemaReleases] = useState<CatalogMovie[]>([]);
+  const [newSeasons, setNewSeasons] = useState<CatalogMovie[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const primaryList = mediaTypeFilter === 'tv' ? newSeasons : cinemaReleases;
-    const secondaryList = mediaTypeFilter === 'tv' ? cinemaReleases : newSeasons;
-    if (primaryList.length === 0 && secondaryList.length === 0) return;
-    prefetchImageUrls(
-      [...primaryList.slice(0, 12), ...secondaryList.slice(0, 4)].map(
-        (m) => m.poster || m.backdrop
-      ),
-      { limit: 16, kind: 'poster' }
-    );
-  }, [mediaTypeFilter, cinemaReleases, newSeasons]);
+    let active = true;
+    setLoading(true);
+    fetch(`/api/catalog/latest-releases?lang=${encodeURIComponent(lang)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!active) return;
+        if (Array.isArray(data?.cinemaReleases)) {
+          setCinemaReleases(data.cinemaReleases);
+        }
+        if (Array.isArray(data?.newSeasons)) {
+          setNewSeasons(data.newSeasons);
+        }
+      })
+      .catch(() => {
+        // Keep empty gracefully if upstream TMDB fails temporarily
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [lang]);
 
   if (!loading && cinemaReleases.length === 0 && newSeasons.length === 0) {
     return null;
@@ -83,14 +93,13 @@ export const LatestReleasesSection: React.FC<LatestReleasesSectionProps> = ({
           </div>
 
           <div className="scroll-snap-x flex items-stretch gap-3 sm:gap-4 overflow-x-auto no-scrollbar pb-1 min-w-0">
-            {newSeasons.map((show, idx) => {
+            {newSeasons.map((show) => {
               const targetSeason = show.seasonNumber || 1;
               return (
                 <CinePosterCard
                   key={`newseason-${show.id}`}
                   item={show}
                   forcedKind="tv"
-                  priority={idx < 4}
                   subtitleOverride={show.seasonNumber ? `T${show.seasonNumber}` : show.year || '2026'}
                   fallbackIcon={<Tv className="w-5 h-5 text-zinc-400" />}
                   isBookmarked={isBookmarked?.(show)}
@@ -120,12 +129,11 @@ export const LatestReleasesSection: React.FC<LatestReleasesSectionProps> = ({
           </div>
 
           <div className="scroll-snap-x flex items-stretch gap-3 sm:gap-4 overflow-x-auto no-scrollbar pb-1 min-w-0">
-            {cinemaReleases.map((movie, idx) => (
+            {cinemaReleases.map((movie) => (
               <CinePosterCard
                 key={`cinema-${movie.id}`}
                 item={movie}
                 forcedKind="movie"
-                priority={idx < 4}
                 isBookmarked={isBookmarked?.(movie)}
                 onToggleBookmark={onToggleBookmark}
                 onSelect={(m) => onSelectMovie(m)}

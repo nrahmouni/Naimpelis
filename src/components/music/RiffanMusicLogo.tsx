@@ -74,24 +74,24 @@ export const RiffanMusicLogo: React.FC<RiffanMusicLogoProps> = ({
         {!isMonochrome && (
           <defs>
             <linearGradient id={tileId} x1="20" y1="20" x2="492" y2="492" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#071926" />
-              <stop offset="52%" stopColor="#050D17" />
-              <stop offset="100%" stopColor="#020408" />
+              <stop offset="0%" stopColor="#18181F" />
+              <stop offset="50%" stopColor="#0B0B0E" />
+              <stop offset="100%" stopColor="#030304" />
             </linearGradient>
             <linearGradient id={stemId} x1="155" y1="148" x2="155" y2="396" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#22D3EE" />
-              <stop offset="50%" stopColor="#3B82F6" />
+              <stop offset="0%" stopColor="#3B82F6" />
+              <stop offset="52%" stopColor="#2563EB" />
               <stop offset="100%" stopColor="#1D4ED8" />
             </linearGradient>
             <linearGradient id={ribbonId} x1="156" y1="96" x2="395" y2="264" gradientUnits="userSpaceOnUse">
               <stop offset="0%" stopColor="#FFFFFF" />
-              <stop offset="58%" stopColor="#E0F2FE" />
-              <stop offset="100%" stopColor="#7DD3FC" />
+              <stop offset="58%" stopColor="#E2E8F0" />
+              <stop offset="100%" stopColor="#94A3B8" />
             </linearGradient>
             <linearGradient id={eqId} x1="230" y1="274" x2="396" y2="396" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#34D399" />
-              <stop offset="52%" stopColor="#06B6D4" />
-              <stop offset="100%" stopColor="#3B82F6" />
+              <stop offset="0%" stopColor="#60A5FA" />
+              <stop offset="52%" stopColor="#3B82F6" />
+              <stop offset="100%" stopColor="#FF2D55" />
             </linearGradient>
             <filter id={shadowId} x="-15%" y="-15%" width="135%" height="135%">
               <feDropShadow dx="0" dy="8" stdDeviation="9" floodColor="#000000" floodOpacity="0.65" />
@@ -107,13 +107,13 @@ export const RiffanMusicLogo: React.FC<RiffanMusicLogoProps> = ({
             height="472"
             rx="116"
             fill={`url(#${tileId})`}
-            stroke="rgba(34,211,238,0.28)"
+            stroke="rgba(255,255,255,0.16)"
             strokeWidth="3"
           />
         )}
 
         <g id={`rm-acoustic-ribbon-${uid}`}>
-          {/* Sonic Cyan-Cobalt Stem */}
+          {/* Cobalt Stem */}
           <path
             fill={isMonochrome ? 'currentColor' : `url(#${stemId})`}
             opacity={isMonochrome ? 0.78 : 1}
@@ -136,6 +136,7 @@ export const RiffanMusicLogo: React.FC<RiffanMusicLogoProps> = ({
             rx="14"
             fill={isMonochrome ? 'currentColor' : `url(#${eqId})`}
             opacity={isMonochrome ? 0.9 : 1}
+            className={animated ? 'origin-bottom animate-pulse' : ''}
           />
           <rect
             x="274"
@@ -179,7 +180,7 @@ export const RiffanMusicLogo: React.FC<RiffanMusicLogoProps> = ({
       style={{ fontSize: fontSizeRem }}
     >
       <span className="text-[#F4F5F8]">Riffan</span>
-      <span className="ml-[3px] font-black bg-gradient-to-r from-[#67E8F9] via-[#38BDF8] to-[#34D399] bg-clip-text text-transparent">
+      <span className="ml-[3px] font-black bg-gradient-to-r from-[#93C5FD] via-[#60A5FA] to-[#3B82F6] bg-clip-text text-transparent">
         Music
       </span>
     </span>

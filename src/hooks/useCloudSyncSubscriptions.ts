@@ -109,13 +109,7 @@ export function useCloudSyncSubscriptions(params: {
       }
     });
 
-    let detachOnlineHandler: (() => void) | null = null;
-
-    const clearSessionResources = () => {
-      if (detachOnlineHandler) {
-        detachOnlineHandler();
-        detachOnlineHandler = null;
-      }
+    const handleEffectiveSessionChange = async () => {
       if (detachCloudListeners) {
         detachCloudListeners();
         detachCloudListeners = null;
@@ -132,10 +126,6 @@ export function useCloudSyncSubscriptions(params: {
         clearTimeout(migrationTimer);
         migrationTimer = null;
       }
-    };
-
-    const handleEffectiveSessionChange = async () => {
-      clearSessionResources();
       void import('../store/useMusicStore')
         .then(({ registerMusicCloudSyncHook }) => {
           registerMusicCloudSyncHook(null);
@@ -220,11 +210,8 @@ export function useCloudSyncSubscriptions(params: {
         setInRoom(true);
       }
 
-      const attachLiveCloudSync = () => {
-        if (!active || !verifiedFbUser || !verifiedFbUser.emailVerified) return;
-        if (auth.currentUser?.uid !== verifiedFbUser.uid) return;
-        if (detachCloudListeners) return;
-
+      // 2. Attach Firestore real-time listeners when Firebase SDK session is verified
+      if (verifiedFbUser && verifiedFbUser.emailVerified) {
         detachCloudListeners = subscribeUserCloudCollections(verifiedFbUser.uid, {
           onWatchHistory: (cloudItems) => {
             const cleanItems = cloudItems.filter((item) => {
@@ -305,30 +292,17 @@ export function useCloudSyncSubscriptions(params: {
             });
           })
           .catch(() => undefined);
-
-        // 3. Merge guest local history / favorites / channels / friends into Cloud (both SQL & Firestore)
-        migrationTimer = setTimeout(() => {
-          migrateLocalStateToCloud({
-            localHistory: localHistorySnapshot,
-            localWatchlist: localWatchlistSnapshot,
-            localChannels: localChannelsSnapshot,
-            localFriends: localFriendsSnapshot,
-          }).catch(() => {});
-        }, 900);
-      };
-
-      // 2. Attach Firestore real-time listeners when Firebase SDK session is verified & online
-      if (verifiedFbUser && verifiedFbUser.emailVerified) {
-        if (typeof navigator !== 'undefined' && navigator.onLine === false && typeof window !== 'undefined') {
-          const onOnline = () => {
-            attachLiveCloudSync();
-          };
-          window.addEventListener('online', onOnline, { once: true });
-          detachOnlineHandler = () => window.removeEventListener('online', onOnline);
-        } else {
-          attachLiveCloudSync();
-        }
       }
+
+      // 3. Merge guest local history / favorites / channels / friends into Cloud (both SQL & Firestore)
+      migrationTimer = setTimeout(() => {
+        migrateLocalStateToCloud({
+          localHistory: localHistorySnapshot,
+          localWatchlist: localWatchlistSnapshot,
+          localChannels: localChannelsSnapshot,
+          localFriends: localFriendsSnapshot,
+        }).catch(() => {});
+      }, 900);
     };
 
     const unsubAuth = subscribeAuthState((fbUser) => {
@@ -339,7 +313,10 @@ export function useCloudSyncSubscriptions(params: {
     return () => {
       active = false;
       unsubAuth();
-      clearSessionResources();
+      if (detachCloudListeners) detachCloudListeners();
+      if (detachMusicCloudListener) detachMusicCloudListener();
+      if (musicSyncTimer) clearTimeout(musicSyncTimer);
+      if (migrationTimer) clearTimeout(migrationTimer);
     };
   }, [rememberSessionPin]); // eslint-disable-line react-hooks/exhaustive-deps
 }

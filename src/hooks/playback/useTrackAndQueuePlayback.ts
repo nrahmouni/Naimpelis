@@ -16,7 +16,6 @@ import type {
 } from '../../types';
 import type { PlaybackCoreContext } from './playbackTypes';
 import { pickBestCleanSatelliteTrackIndex } from '../../components/player/hlsHealthWatchdog';
-import { resolveTrackLang } from '../../components/player/trackLabelUtils';
 import { extractTrackHostKey } from '../../utils/customTdtSources';
 import {
   extractLiveStreamWithFallbacks,
@@ -407,15 +406,7 @@ export function createTrackAndQueuePlaybackHandlers(
 
   const handlePlayCustomUrl = async (
     rawUrl: string,
-    meta?: {
-      title?: string;
-      subtitle?: string;
-      poster?: string;
-      tracks?: StreamTrack[];
-      lang?: string;
-      quality?: string;
-      year?: string;
-    }
+    meta?: { title?: string; subtitle?: string; poster?: string }
   ) => {
     if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
@@ -424,20 +415,7 @@ export function createTrackAndQueuePlaybackHandlers(
     const { reqSeq, signal } = beginMediaExtraction();
     setActiveSportsMatch(null);
     setActiveMatchDetails(null);
-    setActiveMovieContext(
-      meta?.title
-        ? {
-            title: meta.title,
-            year: meta.year,
-            poster: meta.poster,
-            preferLang: resolveTrackLang(meta.tracks?.[0], {
-              title: meta.title,
-              subtitle: meta.subtitle,
-              fallbackLang: meta.lang,
-            }),
-          }
-        : null
-    );
+    setActiveMovieContext(null);
     scrollDesktopToPlayer();
     setIsExtracting(true);
     isExtractingRef.current = true;
@@ -448,62 +426,6 @@ export function createTrackAndQueuePlaybackHandlers(
         ? `Cargando ${meta.title}...`
         : 'Analizando enlace y extrayendo flujo limpio...'
     );
-
-    const isDirectInternalProxy =
-      /^\/api\/(?:providers\/stream\/|stream\?|xtream\/(?:vod|stream)\/|hls-proxy\?|ts-proxy\?|belix\/stream\/)/i.test(
-        rawUrl
-      );
-
-    if (isDirectInternalProxy) {
-      const isHls = /\.m3u8(\?|$)/i.test(rawUrl);
-      const tracks =
-        Array.isArray(meta?.tracks) && meta.tracks.length > 0
-          ? meta.tracks.map((tr) => ({
-              ...tr,
-              resolvedStreamUrl: tr.resolvedStreamUrl || tr.sourceUrl,
-            }))
-          : [
-              {
-                id: `custom-direct-0`,
-                label: meta?.subtitle || meta?.title || 'Servidor Directo',
-                lang: (meta?.lang || 'ES').toUpperCase(),
-                quality: meta?.quality,
-                sourceUrl: rawUrl,
-                resolvedStreamUrl: rawUrl,
-                resolverType: (isHls ? 'direct_hls' : 'direct_mp4') as StreamTrack['resolverType'],
-              },
-            ];
-      const activeIdx = Math.max(
-        0,
-        tracks.findIndex((t) => t.sourceUrl === rawUrl || t.resolvedStreamUrl === rawUrl)
-      );
-      const nextState: VideoState = {
-        mode: isHls ? 'hls' : 'direct',
-        url: rawUrl,
-        rawSourceUrl: rawUrl,
-        title: meta?.title || 'Reproducción Directa HD',
-        subtitle: meta?.subtitle || tracks[activeIdx]?.label || 'Servidor Directo',
-        poster: meta?.poster || undefined,
-        backdrop: meta?.poster || undefined,
-        currentTime: 0,
-        isPlaying: true,
-        isLive: false,
-        tracks,
-        activeTrackIndex: activeIdx,
-        seriesMeta: undefined,
-        lastUpdated: Date.now(),
-        updatedBy: profileName,
-      };
-      clearExtractionSnapshot();
-      videoStateUrlRef.current = nextState.url;
-      setVideoState(nextState);
-      commitVideoStateSync('change_url', nextState);
-      playCinemaSound('play');
-      isExtractingRef.current = false;
-      setIsExtracting(false);
-      setLoadingItemId(null);
-      return;
-    }
 
     try {
       const params = new URLSearchParams({
@@ -525,8 +447,6 @@ export function createTrackAndQueuePlaybackHandlers(
           socketService.startCloudBrowser(data.streamUrl, profileName);
           return;
         }
-        const tracksList: StreamTrack[] =
-          Array.isArray(meta?.tracks) && meta.tracks.length > 0 ? meta.tracks : data.tracks || [];
         const nextState: VideoState = {
           mode: data.mode || 'hls',
           url: data.streamUrl,
@@ -544,10 +464,12 @@ export function createTrackAndQueuePlaybackHandlers(
           currentTime: 0,
           isPlaying: true,
           isLive: false,
-          tracks: tracksList,
+          tracks: data.tracks || [],
           activeTrackIndex: Math.max(
             0,
-            tracksList.findIndex((tr: StreamTrack) => tr.resolvedStreamUrl === data.streamUrl)
+            Array.isArray(data.tracks)
+              ? data.tracks.findIndex((tr: StreamTrack) => tr.resolvedStreamUrl === data.streamUrl)
+              : 0
           ),
           subtitles: Array.isArray(data.subtitles) ? data.subtitles : undefined,
           seriesMeta: undefined,

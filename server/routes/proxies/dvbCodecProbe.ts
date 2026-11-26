@@ -97,7 +97,7 @@ export async function probeDvbStreamFromBuffer(
       '-f',
       'mpegts',
       '-analyzeduration',
-      '180000',
+      '450000',
       '-probesize',
       String(preamble.length),
       '-show_streams',
@@ -120,7 +120,7 @@ export async function probeDvbStreamFromBuffer(
         // ignore
       }
       finish(null);
-    }, 520);
+    }, 1500);
 
     proc.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
     proc.on('error', () => finish(null));
@@ -157,11 +157,11 @@ export async function probeDvbStreamCodec(
   }
   probeArgs.push(
     '-rw_timeout',
-    '4500000',
+    '2600000',
     '-analyzeduration',
-    '220000',
+    '450000',
     '-probesize',
-    '220000',
+    '450000',
     '-show_streams',
     '-of',
     'json',
@@ -188,7 +188,7 @@ export async function probeDvbStreamCodec(
         // ignore
       }
       finish(null);
-    }, 5_000);
+    }, 2600);
 
     proc.stdout?.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
     proc.stderr?.on('data', (chunk: Buffer) => {
@@ -243,12 +243,11 @@ export function buildDvbLiveFfmpegArgs(options: {
   const isInterlaced = Boolean(probe && /^(tt|bb|tb|bt)$/i.test(probe.fieldOrder));
   const isHighFps = Boolean(probe && probe.fps > 31);
 
-  // Only remux progressive H.264 8-bit 4:2:0 when the upstream is already clean HLS (.m3u8).
-  // Raw MPEG-TS / pipe inputs often join mid-GOP without an IDR keyframe, producing green macroblocks on Smart TV decoders.
-  const isCleanHlsInput = !isPipeInput && /\.m3u8(\?|$)/i.test(cleanUpstream);
+  // Progressive H.264 8-bit 4:2:0 streams (e.g. Antena 3 720p50, laSexta 1080p50, La 1 1080p25)
+  // are already Smart TV / MSE compatible. Remuxing via -c:v copy prevents yadif double-ticker
+  // ghosting on 50fps progressive broadcasts and avoids CPU-starved H.264 macroblocking.
   const canCopyVideo = Boolean(
-    isCleanHlsInput &&
-      probe &&
+    probe &&
       probe.videoCodec === 'h264' &&
       (!probe.pixFmt || /^yuvj?420p$/i.test(probe.pixFmt)) &&
       !isInterlaced &&
@@ -305,8 +304,7 @@ export function buildDvbLiveFfmpegArgs(options: {
       'libx264',
       '-preset',
       isFastProfile ? 'ultrafast' : 'veryfast',
-      '-tune',
-      'zerolatency',
+      ...(isFastProfile ? ['-tune', 'zerolatency'] : []),
       '-profile:v',
       'high',
       '-level:v',
@@ -325,7 +323,7 @@ export function buildDvbLiveFfmpegArgs(options: {
       '-sc_threshold',
       '0',
       '-force_key_frames',
-      'expr:gte(t,n_forced*1)',
+      'expr:gte(t,n_forced*2)',
       '-threads',
       '0',
       '-c:a',
@@ -347,15 +345,17 @@ export function buildDvbLiveFfmpegArgs(options: {
             ? []
             : ['-reconnect', '1', '-reconnect_streamed', '1', '-reconnect_delay_max', '2']),
           '-rw_timeout',
-          '12000000',
+          isXtreamLive ? '7000000' : '5000000',
           ...(/\.m3u8(\?|$)/i.test(cleanUpstream) ? ['-live_start_index', '-3'] : []),
         ]),
     '-analyzeduration',
-    '140000',
+    '400000',
     '-probesize',
-    '160000',
+    '400000',
     '-fflags',
     '+genpts+discardcorrupt',
+    '-err_detect',
+    'ignore_err',
     '-avoid_negative_ts',
     'make_zero',
     '-i',
@@ -370,13 +370,11 @@ export function buildDvbLiveFfmpegArgs(options: {
     '-f',
     'hls',
     '-hls_init_time',
-    '0.5',
+    '1',
     '-hls_time',
-    '1.5',
+    '2',
     '-hls_list_size',
     '12',
-    '-hls_delete_threshold',
-    '8',
     '-hls_flags',
     'delete_segments+independent_segments+omit_endlist+temp_file',
     '-hls_segment_filename',
@@ -416,7 +414,7 @@ export async function openSingleSocketMpegTsStream(options: {
     } catch {
       // ignore
     }
-  }, 10_000);
+  }, 3_200);
 
   try {
     const dispatcher = getSpainProxyDispatcherForTarget(cleanUpstream);
@@ -442,7 +440,7 @@ export async function openSingleSocketMpegTsStream(options: {
     const reader = resp.body.getReader();
     const chunks: Buffer[] = [];
     let totalBytes = 0;
-    const targetPreamble = cachedProbe ? 12_000 : 28_000;
+    const targetPreamble = cachedProbe ? 48_000 : 220_000;
     while (totalBytes < targetPreamble) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -481,7 +479,7 @@ export function pumpMpegTsPipeToFfmpeg(options: {
   onStall?: () => void;
   readIdleTimeoutMs?: number;
 }): void {
-  const { pipe, stdin, isDead, onStall, readIdleTimeoutMs = 12_000 } = options;
+  const { pipe, stdin, isDead, onStall, readIdleTimeoutMs = 6_500 } = options;
   stdin.on('error', () => {});
   const waitStdinReady = () =>
     new Promise<boolean>((resDrain) => {

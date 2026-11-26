@@ -1,6 +1,5 @@
 import { type TrackRecord } from '../../extractors/httpHelpers.ts';
 import { findEpgVerifiedBroadcastersForFixture } from '../../services/epgService.ts';
-import { areTeamCategoriesCompatible } from '../../services/footballHelpers/teamMatchingAndFotmobDay.ts';
 import type { VerifiedMatchTvSchedule } from '../../services/tvScheduleVerifier.ts';
 import type { SoccerLeagueFeedDef } from './sportsChannels247.ts';
 
@@ -156,7 +155,7 @@ const BILINGUAL_TEAM_ALIASES: Record<string, string[]> = {
 const GENERIC_TEAM_STOPWORDS = new Set([
   'fc', 'cf', 'sc', 'ac', 'cd', 'ud', 'sd', 'ca', 'rc', 'rcd', 'club', 'real', 'united', 'city',
   'sporting', 'atletico', 'deportivo', 'nacional', 'union', 'america', 'racing', 'independiente',
-  'republica', 'san', 'santa', 'st', 'al', 'de', 'del', 'la', 'el', 'del', 'los', 'las', 'les', 'the',
+  'republica', 'san', 'santa', 'st', 'al', 'de', 'del', 'la', 'el', 'los', 'las', 'les', 'the',
   'women', 'w', 'femenino', 'femenina', 'fem', 'feminines', 'kvinder', 'damen', 'frauen', 'damer',
   'u21', 'u20', 'u19',
 ]);
@@ -165,14 +164,15 @@ export function doesSingleTeamMatchCandidate(
   boardTeamRaw: string,
   candidateSideRaw: string
 ): boolean {
-  if (!areTeamCategoriesCompatible(boardTeamRaw, candidateSideRaw)) return false;
-
   const boardSlug = normalizeTeamToken(boardTeamRaw);
   const candSlug = normalizeTeamToken(candidateSideRaw);
   const candSpace = candSlug.replace(/_/g, ' ');
   const boardSpace = boardSlug.replace(/_/g, ' ');
   if (!boardSpace || !candSpace) return false;
-  if (candSpace === boardSpace) {
+  if (candSpace === boardSpace || candSpace.includes(boardSpace) || boardSpace.includes(candSpace)) {
+    if (GENERIC_TEAM_STOPWORDS.has(candSpace) || GENERIC_TEAM_STOPWORDS.has(boardSpace)) {
+      return candSpace === boardSpace;
+    }
     return true;
   }
 
@@ -182,14 +182,6 @@ export function doesSingleTeamMatchCandidate(
   }
   const candAliases = BILINGUAL_TEAM_ALIASES[candSlug];
   if (candAliases && candAliases.some((al) => boardSpace === al || boardSpace.includes(al) || al.includes(boardSpace))) {
-    return true;
-  }
-
-  if (
-    (candSpace.includes(boardSpace) || boardSpace.includes(candSpace)) &&
-    !GENERIC_TEAM_STOPWORDS.has(candSpace) &&
-    !GENERIC_TEAM_STOPWORDS.has(boardSpace)
-  ) {
     return true;
   }
 
@@ -206,12 +198,8 @@ export function doesSingleTeamMatchCandidate(
 export function doesScrapedEventMatchFixture(
   homeTeam: string,
   awayTeam: string,
-  scrapedEvent: { title?: string; homeTeam?: string; awayTeam?: string; competition?: string; leagueName?: string }
+  scrapedEvent: { title?: string; homeTeam?: string; awayTeam?: string }
 ): boolean {
-  const scrapedCtx = `${scrapedEvent.competition || ''} ${scrapedEvent.leagueName || ''} ${scrapedEvent.title || ''} ${scrapedEvent.homeTeam || ''} ${scrapedEvent.awayTeam || ''}`;
-  if (!areTeamCategoriesCompatible(`${homeTeam} ${awayTeam}`, scrapedCtx)) {
-    return false;
-  }
   if (scrapedEvent.homeTeam && scrapedEvent.awayTeam) {
     return (
       (doesSingleTeamMatchCandidate(homeTeam, scrapedEvent.homeTeam) &&
@@ -259,9 +247,7 @@ export function isFeaturedSpanishClubMatch(homeTeam: string, awayTeam: string): 
   );
 }
 
-export function sortTracksWithDaznPriority<
-  T extends { label?: string; lang?: string; sourceUrl?: string }
->(
+export function sortTracksWithDaznPriority<T extends { label?: string; lang?: string }>(
   tracks: T[],
   leagueSlug?: string,
   preferredLang: PreferredSportsTrackLang = 'ES'
@@ -273,7 +259,6 @@ export function sortTracksWithDaznPriority<
   return tracks
     .map((tr, idx) => {
       const lbl = String(tr.label || '').toLowerCase();
-      const url = String(tr.sourceUrl || '').toLowerCase();
       const trLang = String(tr.lang || '').toUpperCase();
       const isZh = trLang === 'ZH' || /中文|cctv|风云|广东|btv/.test(lbl);
       const isEn =
@@ -319,18 +304,9 @@ export function sortTracksWithDaznPriority<
         }
       }
 
-      const speedRank =
-        /\.m3u8(\?|$)|rtvelivestream|3catdirectes|eitb\.eus|akamaized/.test(url)
-          ? 0
-          : /streamxhd\./.test(url)
-            ? 1
-            : /footunder\.online/.test(url)
-              ? 3
-              : 2;
-
-      return { tr, tier, speedRank, idx };
+      return { tr, tier, idx };
     })
-    .sort((a, b) => a.tier - b.tier || a.speedRank - b.speedRank || a.idx - b.idx)
+    .sort((a, b) => a.tier - b.tier || a.idx - b.idx)
     .map((x) => x.tr);
 }
 

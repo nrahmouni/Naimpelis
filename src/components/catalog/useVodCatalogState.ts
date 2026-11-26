@@ -7,18 +7,7 @@ import type {
   YouTubeSearchItem,
 } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import {
-  catalogQueryKeys,
-  fetchCatalaCatalogData,
-  fetchCatalogMoviesPageData,
-  fetchCatalogSeriesPageData,
-  fetchYouTubeCatalogData,
-  queryClient,
-  type CatalogMoviesPageResponse,
-  type CatalogSeriesPageResponse,
-} from '../../hooks/useCatalogQueries';
-import { rankVodResultsOffThread } from '../../utils/catalogWorkerClient';
-import { prefetchImageUrls } from '../../utils/imageUrl';
+import { mergeAndRankCatalogResults } from '../../utils/catalogSearchRank';
 import type { CatalogSection } from './catalogConstants';
 
 interface UseVodCatalogStateArgs {
@@ -58,30 +47,8 @@ export function useVodCatalogState({
   const [loadingHomeSeries, setLoadingHomeSeries] = useState(false);
   const loadingHomeSearch =
     effectiveCineTab === 'series' ? loadingHomeSeries : loadingHomeMovies;
-  const [homeShowcaseMovies, setHomeShowcaseMovies] = useState<CatalogMovie[]>(() => {
-    const cached = queryClient.getQueryData<CatalogMoviesPageResponse>(
-      catalogQueryKeys.moviesPage({
-        endpoint: 'movies',
-        category: 'trending',
-        sort: 'trending',
-        page: 1,
-        query: '',
-      })
-    );
-    return cached?.movies ?? [];
-  });
-  const [homeShowcaseSeries, setHomeShowcaseSeries] = useState<CatalogMovie[]>(() => {
-    const cached = queryClient.getQueryData<CatalogSeriesPageResponse>(
-      catalogQueryKeys.seriesPage({
-        category: 'trending',
-        sort: 'trending',
-        page: 1,
-        lang: 'es',
-        query: '',
-      })
-    );
-    return cached?.series ?? [];
-  });
+  const [homeShowcaseMovies, setHomeShowcaseMovies] = useState<CatalogMovie[]>([]);
+  const [homeShowcaseSeries, setHomeShowcaseSeries] = useState<CatalogMovie[]>([]);
   const [heroSlideIndex, setHeroSlideIndex] = useState(0);
   const [, setIsHeroHovered] = useState(false);
 
@@ -215,67 +182,32 @@ export function useVodCatalogState({
     return () => clearTimeout(timer);
   }, [catalaQuery]);
 
-  // Showcase movies & series (shared React Query cache)
+  // Showcase movies & series
   useEffect(() => {
     if (homeShowcaseMovies.length > 0 && homeShowcaseSeries.length > 0) return;
     let cancelled = false;
 
-    const moviesKey = catalogQueryKeys.moviesPage({
-      endpoint: 'movies',
-      category: 'trending',
-      sort: 'trending',
-      page: 1,
-      query: '',
-    });
-    const seriesKey = catalogQueryKeys.seriesPage({
-      category: 'trending',
-      sort: 'trending',
-      page: 1,
-      lang: 'es',
-      query: '',
-    });
-
     Promise.all([
-      queryClient
-        .fetchQuery({
-          queryKey: moviesKey,
-          staleTime: 10 * 60_000,
-          queryFn: () =>
-            fetchCatalogMoviesPageData({
-              endpoint: 'movies',
-              category: 'trending',
-              sort: 'trending',
-              page: 1,
-              query: '',
-            }),
-        })
-        .catch(() => ({ movies: [], hasMore: false })),
-      queryClient
-        .fetchQuery({
-          queryKey: seriesKey,
-          staleTime: 10 * 60_000,
-          queryFn: () =>
-            fetchCatalogSeriesPageData({
-              category: 'trending',
-              sort: 'trending',
-              page: 1,
-              lang: 'es',
-              query: '',
-            }),
-        })
-        .catch(() => ({ series: [], hasMore: false })),
+      fetch('/api/catalog/movies?provider=all&category=trending&page=1')
+        .then((r) => r.json())
+        .catch(() => ({ items: [] })),
+      fetch('/api/catalog/series?provider=all&category=trending&page=1&lang=es')
+        .then((r) => r.json())
+        .catch(() => ({ items: [] })),
     ]).then(([mData, sData]) => {
       if (cancelled) return;
-      if (mData.movies.length > 0) {
-        setHomeShowcaseMovies(mData.movies);
-        prefetchImageUrls(
-          mData.movies.slice(0, 12).map((m) => m.poster || m.backdrop),
-          { limit: 12, kind: 'poster' }
-        );
-      }
-      if (sData.series.length > 0) {
-        setHomeShowcaseSeries(sData.series);
-      }
+      const mItems: CatalogMovie[] = Array.isArray(mData?.items)
+        ? mData.items
+        : Array.isArray(mData?.movies)
+        ? mData.movies
+        : [];
+      const sItems: CatalogMovie[] = Array.isArray(sData?.items)
+        ? sData.items.map((it: CatalogMovie) => ({ ...it, mediaType: 'tv' as const }))
+        : Array.isArray(sData?.series)
+        ? sData.series.map((it: CatalogMovie) => ({ ...it, mediaType: 'tv' as const }))
+        : [];
+      if (mItems.length > 0) setHomeShowcaseMovies(mItems);
+      if (sItems.length > 0) setHomeShowcaseSeries(sItems);
     });
 
     return () => {
@@ -283,7 +215,7 @@ export function useVodCatalogState({
     };
   }, [homeShowcaseMovies.length, homeShowcaseSeries.length]);
 
-  // Unified Home/Cine Search (Web Worker off-thread ranking)
+  // Unified Home/Cine Search
   useEffect(() => {
     const activeForHomeSearch = worldMode === 'cine' || activeSection === 'home';
     if (!activeForHomeSearch || debouncedHomeQuery.length < 2) {
@@ -312,22 +244,18 @@ export function useVodCatalogState({
 
     fetch(movieEndpoint, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : { movies: [] }))
-      .then(async (mData) => {
+      .then((mData) => {
         if (!active) return;
         const raw: CatalogMovie[] = Array.isArray(mData?.movies)
           ? mData.movies
           : Array.isArray(mData?.items)
           ? mData.items
           : [];
-        const ranked = await rankVodResultsOffThread(raw, [], debouncedHomeQuery, {
-          limit: 15,
-          prefer4k: movieSort === '4k',
-        });
-        if (!active) return;
-        setHomeMovieResults(ranked);
-        prefetchImageUrls(
-          ranked.slice(0, 12).map((m) => m.poster || m.backdrop),
-          { limit: 12, kind: 'poster' }
+        setHomeMovieResults(
+          mergeAndRankCatalogResults(raw, [], debouncedHomeQuery, {
+            limit: 15,
+            prefer4k: movieSort === '4k',
+          })
         );
       })
       .catch(() => {
@@ -348,22 +276,18 @@ export function useVodCatalogState({
       { signal: controller.signal }
     )
       .then((r) => (r.ok ? r.json() : { series: [] }))
-      .then(async (sData) => {
+      .then((sData) => {
         if (!active) return;
         const raw: CatalogMovie[] = Array.isArray(sData?.series)
           ? sData.series
           : Array.isArray(sData?.items)
           ? sData.items
           : [];
-        const ranked = await rankVodResultsOffThread(raw, [], debouncedHomeQuery, {
-          limit: 15,
-          prefer4k: seriesSort === '4k',
-        });
-        if (!active) return;
-        setHomeSeriesResults(ranked);
-        prefetchImageUrls(
-          ranked.slice(0, 12).map((s) => s.poster || s.backdrop),
-          { limit: 12, kind: 'poster' }
+        setHomeSeriesResults(
+          mergeAndRankCatalogResults(raw, [], debouncedHomeQuery, {
+            limit: 15,
+            prefer4k: seriesSort === '4k',
+          })
         );
       })
       .catch(() => {
@@ -388,7 +312,7 @@ export function useVodCatalogState({
     seriesSort,
   ]);
 
-  // Fetch Movies (React Query cache + instant seed on page 1)
+  // Fetch Movies (skip while Cine unified search already handles the query)
   useEffect(() => {
     const inCineMovies =
       worldMode === 'cine' && effectiveCineTab === 'movies' && cineSpecialPortal === 'none';
@@ -398,57 +322,39 @@ export function useVodCatalogState({
     if (!shouldFetch || showWatchlistOnly) return;
 
     let cancelled = false;
+    if (moviePage === 1) setLoadingMovies(true);
+    else setLoadingMoreMovies(true);
+
     const activeCatParam = movieGenre || movieSort;
     const useVose =
       activeSection === 'vose' ||
       (worldMode === 'cine' && !effectiveCineCastellano && cineAudioOverride === 'EN');
-    const endpointKind: 'bingetrix' | 'movies' = useVose ? 'bingetrix' : 'movies';
-    const queryParams = {
-      endpoint: endpointKind,
-      category: activeCatParam,
-      sort: movieSort,
-      page: moviePage,
-      query: debouncedMovieQuery,
-    };
-    const qKey = catalogQueryKeys.moviesPage(queryParams);
-    const cachedPage =
-      moviePage === 1 ? queryClient.getQueryData<CatalogMoviesPageResponse>(qKey) : undefined;
+    const endpoint = useVose
+      ? `/api/catalog/bingetrix?provider=all&category=${encodeURIComponent(
+          activeCatParam
+        )}&sort=${encodeURIComponent(movieSort)}&page=${moviePage}&query=${encodeURIComponent(
+          debouncedMovieQuery
+        )}`
+      : `/api/catalog/movies?provider=all&category=${encodeURIComponent(
+          activeCatParam
+        )}&sort=${encodeURIComponent(movieSort)}&page=${moviePage}&query=${encodeURIComponent(
+          debouncedMovieQuery
+        )}`;
 
-    if (cachedPage?.movies?.length) {
-      setMovies(cachedPage.movies);
-      setHasMoreMovies(Boolean(cachedPage.hasMore));
-      setLoadingMovies(false);
-      setLoadingMoreMovies(false);
-    } else if (moviePage === 1) {
-      setLoadingMovies(true);
-    } else {
-      setLoadingMoreMovies(true);
-    }
-
-    queryClient
-      .fetchQuery({
-        queryKey: qKey,
-        staleTime: debouncedMovieQuery ? 3 * 60_000 : 10 * 60_000,
-        queryFn: () => fetchCatalogMoviesPageData(queryParams),
-      })
+    fetch(endpoint)
+      .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
-        const incoming = data.movies || [];
-        setHasMoreMovies(Boolean(data.hasMore));
+        const incoming: CatalogMovie[] = Array.isArray(data?.movies) ? data.movies : [];
+        setHasMoreMovies(Boolean(data?.hasMore));
         setMovies((prev) => {
           if (moviePage === 1) return incoming;
           const seen = new Set(prev.map((m) => m.id));
           return [...prev, ...incoming.filter((m) => !seen.has(m.id))];
         });
-        if (moviePage === 1 && incoming.length > 0) {
-          prefetchImageUrls(
-            incoming.slice(0, 16).map((m) => m.poster || m.backdrop),
-            { limit: 16, kind: 'poster' }
-          );
-        }
       })
       .catch(() => {
-        if (!cancelled && moviePage === 1 && !cachedPage?.movies?.length) setMovies([]);
+        if (!cancelled && moviePage === 1) setMovies([]);
       })
       .finally(() => {
         if (!cancelled) {
@@ -472,68 +378,43 @@ export function useVodCatalogState({
     moviePage,
     debouncedMovieQuery,
     showWatchlistOnly,
-    debouncedHomeQuery,
   ]);
 
-  // Fetch TV Series (React Query cache + instant seed on page 1)
+  // Fetch TV Series (skip while Cine unified search already handles the query)
   useEffect(() => {
     const inCineSeries =
       worldMode === 'cine' && effectiveCineTab === 'series' && cineSpecialPortal === 'none';
     const isCineSearching = worldMode === 'cine' && debouncedHomeQuery.length >= 2;
     if ((!inCineSeries || isCineSearching) && activeSection !== 'series') return;
     let cancelled = false;
+    if (seriesPage === 1) setLoadingSeries(true);
+    else setLoadingMoreSeries(true);
 
     const activeCatParam = seriesGenre || seriesSort;
     const apiLang =
       !effectiveCineCastellano && (seriesLangMode === 'EN' || seriesLangMode === 'VOSE')
         ? 'en'
         : 'es';
-    const queryParams = {
-      category: activeCatParam,
-      sort: seriesSort,
-      page: seriesPage,
-      lang: apiLang,
-      query: debouncedSeriesQuery,
-    };
-    const qKey = catalogQueryKeys.seriesPage(queryParams);
-    const cachedPage =
-      seriesPage === 1 ? queryClient.getQueryData<CatalogSeriesPageResponse>(qKey) : undefined;
-
-    if (cachedPage?.series?.length) {
-      setSeriesList(cachedPage.series);
-      setHasMoreSeries(Boolean(cachedPage.hasMore));
-      setLoadingSeries(false);
-      setLoadingMoreSeries(false);
-    } else if (seriesPage === 1) {
-      setLoadingSeries(true);
-    } else {
-      setLoadingMoreSeries(true);
-    }
-
-    queryClient
-      .fetchQuery({
-        queryKey: qKey,
-        staleTime: debouncedSeriesQuery ? 3 * 60_000 : 10 * 60_000,
-        queryFn: () => fetchCatalogSeriesPageData(queryParams),
-      })
+    fetch(
+      `/api/catalog/series?provider=all&category=${encodeURIComponent(
+        activeCatParam
+      )}&sort=${encodeURIComponent(seriesSort)}&page=${seriesPage}&lang=${apiLang}&query=${encodeURIComponent(
+        debouncedSeriesQuery
+      )}`
+    )
+      .then((r) => r.json())
       .then((data) => {
         if (cancelled) return;
-        const incoming = data.series || [];
-        setHasMoreSeries(Boolean(data.hasMore));
+        const incoming: CatalogMovie[] = Array.isArray(data?.series) ? data.series : [];
+        setHasMoreSeries(Boolean(data?.hasMore));
         setSeriesList((prev) => {
           if (seriesPage === 1) return incoming;
           const seen = new Set(prev.map((s) => s.id));
           return [...prev, ...incoming.filter((s) => !seen.has(s.id))];
         });
-        if (seriesPage === 1 && incoming.length > 0) {
-          prefetchImageUrls(
-            incoming.slice(0, 16).map((s) => s.poster || s.backdrop),
-            { limit: 16, kind: 'poster' }
-          );
-        }
       })
       .catch(() => {
-        if (!cancelled && seriesPage === 1 && !cachedPage?.series?.length) setSeriesList([]);
+        if (!cancelled && seriesPage === 1) setSeriesList([]);
       })
       .finally(() => {
         if (!cancelled) {
@@ -556,34 +437,24 @@ export function useVodCatalogState({
     seriesPage,
     seriesLangMode,
     debouncedSeriesQuery,
-    debouncedHomeQuery,
   ]);
 
-  // YouTube search (React Query cache)
+  // YouTube search
   useEffect(() => {
     if (worldMode !== 'youtube' && activeSection !== 'youtube') return;
     let cancelled = false;
-    const qKey = catalogQueryKeys.youtube(debouncedYtQuery);
-    const cached = queryClient.getQueryData<YouTubeSearchItem[]>(qKey);
-    if (cached?.length) {
-      setYtResults(cached);
-      setLoadingYt(false);
-    } else {
-      setLoadingYt(true);
-    }
+    setLoadingYt(true);
 
-    queryClient
-      .fetchQuery({
-        queryKey: qKey,
-        staleTime: 5 * 60_000,
-        queryFn: () => fetchYouTubeCatalogData(debouncedYtQuery),
-      })
-      .then((videos) => {
+    fetch(`/api/catalog/youtube?q=${encodeURIComponent(debouncedYtQuery)}`)
+      .then((r) => r.json())
+      .then((data) => {
         if (cancelled) return;
-        setYtResults(videos);
+        if (Array.isArray(data?.videos)) {
+          setYtResults(data.videos);
+        }
       })
       .catch(() => {
-        if (!cancelled && !cached?.length) setYtResults([]);
+        if (!cancelled) setYtResults([]);
       })
       .finally(() => {
         if (!cancelled) setLoadingYt(false);
@@ -594,38 +465,26 @@ export function useVodCatalogState({
     };
   }, [worldMode, activeSection, debouncedYtQuery]);
 
-  // Català Anime Catalog (React Query cache)
+  // Català Anime Catalog
   useEffect(() => {
     const inCineCatala = worldMode === 'cine' && cineSpecialPortal === 'catala';
     if (!inCineCatala && activeSection !== 'catala') return;
     let cancelled = false;
-    const qKey = catalogQueryKeys.catala(debouncedCatalaQuery);
-    const cached = queryClient.getQueryData<CatalaCatalogItem[]>(qKey);
-    if (cached?.length) {
-      setCatalaItems(cached);
-      setLoadingCatala(false);
-    } else {
-      setLoadingCatala(true);
-    }
+    setLoadingCatala(true);
 
-    queryClient
-      .fetchQuery({
-        queryKey: qKey,
-        staleTime: 10 * 60_000,
-        queryFn: () => fetchCatalaCatalogData(debouncedCatalaQuery),
-      })
-      .then((items) => {
+    const params = new URLSearchParams({
+      category: 'all',
+      query: debouncedCatalaQuery,
+    });
+
+    fetch(`/api/catalog/catala?${params.toString()}`)
+      .then((r) => r.json())
+      .then((data) => {
         if (cancelled) return;
-        setCatalaItems(items);
-        if (items.length > 0) {
-          prefetchImageUrls(
-            items.slice(0, 16).map((i) => i.poster || i.backdrop),
-            { limit: 16, kind: 'poster' }
-          );
-        }
+        if (Array.isArray(data?.items)) setCatalaItems(data.items);
       })
       .catch(() => {
-        if (!cancelled && !cached?.length) setCatalaItems([]);
+        if (!cancelled) setCatalaItems([]);
       })
       .finally(() => {
         if (!cancelled) setLoadingCatala(false);

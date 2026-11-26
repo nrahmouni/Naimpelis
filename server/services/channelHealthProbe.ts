@@ -1,6 +1,5 @@
 import { streamingFetch } from '../utils/tlsFetch.ts';
 import { isAnyBelixConnected } from './belix/belixXtreamClient.ts';
-import { isXtreamEnvConfigured, probeXtreamLiveStreamLatency } from './xtreamService.ts';
 import { isDvbUpstreamCoolingDown } from '../routes/proxies/dvbTranscoder.ts';
 
 export type ChannelHealthStatus = 'up' | 'degraded' | 'down' | 'unknown';
@@ -121,7 +120,7 @@ export function normalizeTrackUrl(sourceUrl: string): string {
 
 export function unwrapProxyTargetUrl(sourceUrl: string): string {
   const clean = normalizeTrackUrl(sourceUrl);
-  if (clean.startsWith('/api/hls-proxy') || clean.startsWith('/api/dvb-live')) {
+  if (clean.startsWith('/api/hls-proxy')) {
     try {
       const inner = new URL(clean, 'http://localhost').searchParams.get('url');
       if (inner) return normalizeTrackUrl(inner);
@@ -173,60 +172,6 @@ export async function probeChannelTrack(
     return belixReady
       ? { status: 'up', latencyMs: 650, checkedAt: now, failCount: 0 }
       : { status: 'down', statusCode: 503, latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
-  }
-
-  if (/^\/api\/(?:xtream\/stream\/|stream\b)/i.test(cleanUrl)) {
-    if (/[?&]type=(?:vod|series)(?:&|$)/i.test(cleanUrl)) {
-      return { status: 'unknown', checkedAt: now, failCount: prevFails };
-    }
-    if (!isXtreamEnvConfigured()) {
-      return { status: 'unknown', checkedAt: now, failCount: prevFails };
-    }
-    let streamId = '';
-    let providerId = 'primary';
-    if (cleanUrl.startsWith('/api/xtream/stream/')) {
-      streamId = cleanUrl.split('/').pop()?.split('?')[0]?.replace(/\.m3u8$/i, '').trim() || '';
-      try {
-        providerId = new URL(cleanUrl, 'http://localhost').searchParams.get('provider') || 'primary';
-      } catch {
-        // ignore
-      }
-    } else {
-      try {
-        const parsed = new URL(cleanUrl, 'http://localhost');
-        streamId = (parsed.searchParams.get('id') || '').replace(/\.m3u8$/i, '').trim();
-        providerId = parsed.searchParams.get('provider') || 'primary';
-      } catch {
-        // ignore
-      }
-    }
-    if (!streamId) {
-      return { status: 'unknown', checkedAt: now, failCount: prevFails };
-    }
-    const probe = await probeXtreamLiveStreamLatency(
-      streamId,
-      providerId,
-      options?.timeoutMs ?? 2_800
-    ).catch(() => null);
-    if (!probe) {
-      return { status: 'unknown', checkedAt: Date.now(), failCount: prevFails };
-    }
-    if (!probe.ok) {
-      return {
-        status: 'down',
-        latencyMs: probe.latencyMs,
-        statusCode: 503,
-        failCount: prevFails + 1,
-        checkedAt: Date.now(),
-      };
-    }
-    return {
-      status: probe.latencyMs <= DEGRADED_LATENCY_MS ? 'up' : 'degraded',
-      latencyMs: probe.latencyMs,
-      statusCode: 200,
-      failCount: 0,
-      checkedAt: Date.now(),
-    };
   }
 
   const effectiveTargetUrl = unwrapProxyTargetUrl(cleanUrl);

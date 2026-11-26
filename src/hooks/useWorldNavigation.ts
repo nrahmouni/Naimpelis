@@ -7,14 +7,8 @@ import type { MobileNavTab } from '../utils/appSessionHelpers';
 import { playWorldPortalSound } from '../utils/haptics';
 import { runWithViewTransition } from '../lib/viewTransition';
 import type { RoomGameInviteType } from '../shared/protocol';
-import type { AppLanguage } from '../types';
-import {
-  prefetchWorldExperience,
-  schedulePredictiveNextWorldPrefetch,
-} from '../utils/worldPrefetch';
 
 interface UseWorldNavigationParams {
-  lang: AppLanguage;
   sessionMode: SessionMode;
   roomId: string;
   reducedMotion: boolean;
@@ -34,7 +28,6 @@ interface UseWorldNavigationParams {
 }
 
 export function useWorldNavigation({
-  lang,
   sessionMode,
   roomId,
   reducedMotion,
@@ -52,9 +45,6 @@ export function useWorldNavigation({
   setShowWatchlistOnly,
   onUpgradeSoloToParty,
 }: UseWorldNavigationParams) {
-  const activeWorld = useAppStore((s) => s.activeWorld);
-  const lastUsedWorld = useAppStore((s) => s.lastUsedWorld);
-  const hasEnteredApp = useAppStore((s) => s.hasEnteredApp);
   const [activePortalTransition, setActivePortalTransition] =
     useState<WorldPortalKind | null>(null);
   const [portalOriginRect, setPortalOriginRect] =
@@ -140,17 +130,33 @@ export function useWorldNavigation({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    if (!hasEnteredApp && !inRoomRef.current) return;
-    return schedulePredictiveNextWorldPrefetch(activeWorld, lastUsedWorld, lang);
-  }, [hasEnteredApp, activeWorld, lastUsedWorld, lang, inRoomRef]);
-
-  const preloadWorld = useCallback(
-    (world: PrimaryWorldId) => {
-      prefetchWorldExperience(world, lang);
-    },
-    [lang]
-  );
+  const preloadWorld = useCallback((world: PrimaryWorldId) => {
+    const noop = () => {};
+    if (world === 'futbol') {
+      void import('../components/catalog/FootballWorldView').catch(noop);
+      void import('../components/FootballMatchboard').catch(noop);
+    } else if (world === 'tv') {
+      void import('../components/catalog/LiveTvWorldView').catch(noop);
+    } else if (world === 'juegos') {
+      void import('../components/GamesHubSection').catch(noop);
+    } else if (world === 'cine') {
+      void import('../components/ExpandedDiscoverySection').catch(noop);
+    } else if (world === 'clipbox') {
+      void import('../components/clipbox/ClipBoxWorldView').catch(noop);
+    } else if (world === 'rbtv') {
+      void import('../components/rbtv/RbtvWorldView').catch(noop);
+    } else if (world === 'belix') {
+      void import('../components/belix/BelixWorldView').catch(noop);
+    } else if (world === 'atresplayer') {
+      void import('../components/atresplayer/AtresplayerWorldView').catch(noop);
+    } else if (world === 'movistardazn') {
+      void import('../components/movistardazn/DaznMovistarWorldView').catch(noop);
+    } else if (world === 'champions') {
+      void import('../components/champions/ChampionsWorldView').catch(noop);
+    } else if (world === 'music') {
+      void import('../components/music/RiffanMusicWorldView').catch(noop);
+    }
+  }, []);
 
   const enterWorld = useCallback(
     (
@@ -215,9 +221,8 @@ export function useWorldNavigation({
           nextWorld === 'belix' ||
           nextWorld === 'atresplayer' ||
           nextWorld === 'movistardazn' ||
-          nextWorld === 'music' ||
-          nextWorld === 'providers' ||
-          nextWorld === 'reels')
+          nextWorld === 'champions' ||
+          nextWorld === 'music')
       ) {
         if (nextWorld !== 'sala') preloadWorld(nextWorld);
         playWorldPortalSound(nextWorld);

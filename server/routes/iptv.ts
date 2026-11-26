@@ -15,17 +15,13 @@ import {
 import { extractLiveSportsHlsDirect, sniffStreamWithHeadless, verifyM3u8HasCleanVideoFrame } from '../extractors/sportsExtractor.ts';
 import { isElahmadUrl, resolveElahmadChannelToHls } from '../extractors/elahmadExtractor.ts';
 import { SPANISH_TDT_CHANNELS } from '../data/tdtChannels.ts';
-import { INTERNATIONAL_TV_CHANNELS } from '../data/internationalChannels.ts';
-import { resolveCanonicalChannelKey } from '../../src/utils/channelQualityRanker.ts';
 import {
   applySyncedStreamsToChannels,
   getIptvSyncMeta,
   refreshLiveIptvRegistry,
 } from '../services/iptvPlaylistService.ts';
 import { channelHealthMonitor } from '../services/channelHealthMonitor.ts';
-import { buildUnifiedPrioritizedChannels } from '../services/channelQualityMatcher.ts';
 import { loadSpanishEpgSchedule } from '../services/epgService.ts';
-import { resolveMediasetLiveHlsUrl } from '../services/mediasetLiveService.ts';
 import { getAllIptvChannels, getIptvChannelById, invalidateIptvChannelCache } from './iptvHelpers/iptvChannelRegistry.ts';
 import {
   getCachedFamelackWorldChannels,
@@ -36,20 +32,13 @@ import {
   isAnyBelixConnected,
   resolveBelixManifest,
 } from '../services/belix/belixXtreamClient.ts';
-import {
-  fetchProxiedXtreamManifest,
-  getCachedXtreamLiveTdtChannels,
-  isXtreamEnvConfigured,
-  syncFullCatalog as syncXtreamEnvCatalog,
-} from '../services/xtreamService.ts';
 import { getCuratedRbtvChannels } from '../services/rbtv/rbtvLiveCurator.ts';
+import { enrichTdtCatalogWithProviderChannels } from '../services/providers/xtreamFastSignalService.ts';
 import {
-  getCachedSpainXtreamChannelsSync,
-  getVerifiedSpainXtreamChannels,
-} from '../services/octopusSpainLiveService.ts';
-import { isProviderCircuitOpen } from '../services/providerCircuitBreaker.ts';
-import { findXtreamLiveChannelMatches } from '../services/xtreamVodMatcher.ts';
-import { getConnectedProvidersRuntimeCatalog } from '../services/providers/xtreamProvidersService.ts';
+  getAllCachedProviderCatalogs,
+  syncProviderCatalog,
+  warmDefaultProvidersBackground,
+} from '../services/providers/xtreamMultiProviderService.ts';
 import {
   ensureLiveDvbCleanHlsSession,
   getActiveDvbSessionPath,
@@ -72,57 +61,10 @@ import {
 
 export function getLiveVoiceChannels() {
   const merged = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS);
-  return buildUnifiedPrioritizedChannels(merged).map((ch) => ({
+  return channelHealthMonitor.prioritizeChannels(merged).map((ch) => ({
     ...ch,
-    logoUrl: resolveOfficialChannelLogoUrl(ch) || undefined,
+    logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
   }));
-}
-
-export function getUnifiedLiveTdtChannelsForBackground() {
-  const baseTdtChannels = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, isAnyBelixConnected('default'));
-  const verifiedSpainChannels = getCachedSpainXtreamChannelsSync();
-  const verifiedSpainIds = new Set(verifiedSpainChannels.map((c) => c.streamId));
-  const xtreamEnvChannels = getCachedXtreamLiveTdtChannels().filter(
-    (c) =>
-      !verifiedSpainIds.has(c.streamId) &&
-      (c.countryCode === 'ES' || c.category === 'movistar' || c.category === 'dazn')
-  );
-  return buildUnifiedPrioritizedChannels([
-    ...verifiedSpainChannels,
-    ...baseTdtChannels,
-    ...xtreamEnvChannels,
-  ]);
-}
-
-function curateHealthyAlternatives<T extends { channels?: Array<{ sourceUrl: string; providerId?: string; health?: { status?: string } }> }>(
-  channels: T[]
-): T[] {
-  return channels.map((ch) => {
-    const list = ch.channels || [];
-    if (list.length <= 6) return ch;
-    const healthy: typeof list = [];
-    const recovering: typeof list = [];
-    for (const tr of list) {
-      if (tr.health?.status !== 'down' && !isProviderCircuitOpen(tr.sourceUrl, tr.providerId)) {
-        healthy.push(tr);
-      } else {
-        recovering.push(tr);
-      }
-    }
-    if (healthy.length >= 10) {
-      return {
-        ...ch,
-        channels: healthy,
-      };
-    }
-    if (healthy.length > 0 && recovering.length > 0) {
-      return {
-        ...ch,
-        channels: [...healthy, ...recovering],
-      };
-    }
-    return ch;
-  });
 }
 
 const iptvChannelResolveCache = new LruTtlCache<
@@ -138,10 +80,6 @@ const iptvChannelResolveCache = new LruTtlCache<
 >(150, 20 * 60 * 1000);
 
 const epgXmlResponseCache = new LruTtlCache<string, string>(6, 5 * 60 * 1000);
-const tdtCatalogJsonCache = new LruTtlCache<
-  string,
-  { success: true; iptvMeta: ReturnType<typeof getIptvSyncMeta>; channels: unknown[] }
->(4, 90_000);
 
 async function resolveDvbIptvPlaylistText(
   cleanUrl: string,
@@ -173,194 +111,51 @@ export function registerIptvAndTdtRoutes(
   const { getPublicOrigin } = deps;
 
   app.get('/api/catalog/tdt', async (req, res) => {
-    const forceRefresh = req.query.refresh === '1';
+    if (req.query.refresh === '1') {
+      await refreshLiveIptvRegistry(true).catch(() => undefined);
+      invalidateIptvChannelCache();
+    } else if (getIptvSyncMeta().lastSyncAt === 0) {
+      await Promise.race([
+        refreshLiveIptvRegistry(false).catch(() => undefined),
+        new Promise<void>((resolve) => setTimeout(resolve, 1800)),
+      ]);
+    } else {
+      void refreshLiveIptvRegistry(false).catch(() => undefined);
+    }
     const belixSidMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)belix_sid=([^;]+)/);
     const belixSessionKey =
       String(req.headers['x-belix-session'] || '').trim() ||
       (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
       'default';
     const belixActive = isAnyBelixConnected(belixSessionKey);
-    const priorityMode =
-      String(req.query.priority || '').trim().toLowerCase() === 'best_quality'
-        ? 'best_quality'
-        : 'es_quality';
-    const hasWarmXtream = getCachedXtreamLiveTdtChannels().length > 0;
-    const runtimeSnap = getConnectedProvidersRuntimeCatalog();
-    const tdtCacheKey = `${belixActive ? 'b1' : 'b0'}:${hasWarmXtream ? 'xw1' : 'xw0'}:rt${runtimeSnap.connectedCount}:${priorityMode}`;
-
-    if (!forceRefresh) {
-      const cachedPayload = tdtCatalogJsonCache.get(tdtCacheKey);
-      if (cachedPayload) {
-        return res.json(cachedPayload);
-      }
-    }
-
-    const warmupTasks: Promise<unknown>[] = [];
-    if (forceRefresh) {
-      warmupTasks.push(
-        refreshLiveIptvRegistry(true)
-          .then(() => invalidateIptvChannelCache())
-          .catch(() => undefined)
-      );
-    } else if (getIptvSyncMeta().lastSyncAt === 0) {
-      warmupTasks.push(refreshLiveIptvRegistry(false).catch(() => undefined));
-    } else {
-      void refreshLiveIptvRegistry(false).catch(() => undefined);
-    }
-
-    if (isXtreamEnvConfigured() && (forceRefresh || !hasWarmXtream)) {
-      const xtreamTask = syncXtreamEnvCatalog(forceRefresh, 'all').catch(() => undefined);
-      if (forceRefresh) warmupTasks.push(xtreamTask);
-      else void xtreamTask;
-    }
-
-    const warmupBudgetMs = forceRefresh ? 2200 : hasWarmXtream ? 0 : 400;
-    const spainWarmupPromise = getVerifiedSpainXtreamChannels({
-      waitWarmupMs: warmupBudgetMs,
-      forceReprobe: forceRefresh,
-    }).catch(() => []);
-    if (warmupBudgetMs > 0) {
-      warmupTasks.push(spainWarmupPromise);
+    if (
+      process.env.NODE_ENV !== 'test' &&
+      !process.env.VITEST &&
+      getAllCachedProviderCatalogs().length === 0
+    ) {
+      warmDefaultProvidersBackground();
       await Promise.race([
-        Promise.allSettled(warmupTasks),
-        new Promise<void>((resolve) => setTimeout(resolve, warmupBudgetMs)),
-      ]);
-    } else if (warmupTasks.length > 0) {
-      await Promise.race([
-        Promise.allSettled(warmupTasks),
-        new Promise<void>((resolve) => setTimeout(resolve, 250)),
+        Promise.allSettled([
+          syncProviderCatalog('24tv', false),
+          syncProviderCatalog('shark-pro', false),
+        ]),
+        new Promise<void>((r) => setTimeout(r, 1800)),
       ]);
     }
-
-    const belixChannels = getBelixLiveChannels({ sessionKey: belixSessionKey });
-    const belixStreamIds = new Set(belixChannels.map((c) => c.streamId));
-    const verifiedSpainChannels = await Promise.race([
-      spainWarmupPromise,
-      new Promise<Awaited<typeof spainWarmupPromise>>((resolve) =>
-        setTimeout(() => resolve(getCachedSpainXtreamChannelsSync()), 90)
-      ),
-    ]);
-    const verifiedSpainStreamIds = new Set(verifiedSpainChannels.map((c) => c.streamId));
-    const curatedRbtv = getCuratedRbtvChannels();
-    const baseTdtChannels = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, belixActive);
-
-    const knownCanonicalKeys = new Set<string>();
-    for (const ch of [...baseTdtChannels, ...INTERNATIONAL_TV_CHANNELS, ...verifiedSpainChannels]) {
-      knownCanonicalKeys.add(resolveCanonicalChannelKey(ch));
-    }
-
-    // Enrich Spanish, Movistar, DAZN, and known curated/international channels with cross-provider signals without bloating JSON with 75k unrelated foreign feeds
-    const xtreamEnvChannels = getCachedXtreamLiveTdtChannels().filter((c) => {
-      if (belixStreamIds.has(c.streamId) || verifiedSpainStreamIds.has(c.streamId)) return false;
-      if (c.countryCode === 'ES' || c.category === 'movistar' || c.category === 'dazn') return true;
-      return knownCanonicalKeys.has(resolveCanonicalChannelKey(c));
-    });
-
-    // Integrate ALL connected runtime servers (vod4k, 24tv, dana4k, ultra-vip, adtupac, 2m2h-alt, sult-vo, octopus, primary)
-    const seenRuntimePairs = new Set<string>(
-      [...verifiedSpainChannels, ...xtreamEnvChannels].map(
-        (c: any) => `${c.providerId || 'primary'}:${c.streamId}`
-      )
-    );
-    const runtimeProviderTdtChannels: any[] = [];
-    let runtimeDial = 700;
-    for (const item of runtimeSnap.liveItems) {
-      const pairKey = `${item.providerId}:${item.streamId}`;
-      if (seenRuntimePairs.has(pairKey)) continue;
-      const hay = `${item.name} ${item.categoryName}`.toLowerCase();
-      const itemLang = String(item.lang || 'INTL').toUpperCase();
-      const itemLangLabel = item.langLabel || itemLang;
-      const itemQuality = item.quality || 'HD';
-      const itemCleanTitle = item.cleanTitle || item.name;
-      const isSpainOrMajor =
-        itemLang === 'ES' ||
-        itemLang === 'CAT' ||
-        /\b(?:movistar|m\+|dazn|laliga|hypermotion|campeones|tdt|rtve|atresmedia|mediaset|la\s*1|la\s*2|antena\s*3|cuatro|telecinco|lasexta|teledeporte|eurosport|nba|f1|bein)\b/i.test(
-          hay
-        );
-      const canonCandidate = {
-        id: item.id,
-        name: itemCleanTitle,
-        category: 'entretenimiento',
-      };
-      const matchesKnownCanon = knownCanonicalKeys.has(resolveCanonicalChannelKey(canonCandidate));
-      if (!isSpainOrMajor && !matchesKnownCanon) continue;
-      seenRuntimePairs.add(pairKey);
-
-      const cat: string = /\bdazn\b/i.test(hay)
-        ? 'dazn'
-        : /\b(?:movistar|m\+|laliga|hypermotion|campeones|vamos)\b/i.test(hay)
-        ? 'movistar'
-        : /\b(?:cine|movie|hollywood|amc|tcm|warner|axn|series)\b/i.test(hay)
-        ? 'cine_series'
-        : /\b(?:doc|discovery|nat\s*geo|historia|odisea|dmax)\b/i.test(hay)
-        ? 'documentales'
-        : /\b(?:infantil|kids|clan|boing|disney|nick)\b/i.test(hay)
-        ? 'infantil_autonomicas'
-        : /\b(?:espn|bein|sky\s*sports|tnt\s*sports|eurosport|deporte|sport)\b/i.test(hay)
-        ? 'noticias_deportes'
-        : itemLang === 'ES' || itemLang === 'CAT'
-        ? 'generalistas'
-        : 'europa_tv';
-
-      runtimeProviderTdtChannels.push({
-        id: `xtream-${item.providerId}-${item.streamId}`,
-        streamId: item.streamId,
-        dial: runtimeDial++,
-        name: itemCleanTitle,
-        shortMark: itemCleanTitle.replace(/[^A-Za-z0-9]/g, '').slice(0, 4).toUpperCase() || 'TV',
-        brandTone: '#7C3AED',
-        network: item.providerName,
-        category: cat,
-        quality: itemQuality,
-        countryCode: itemLang === 'ES' || itemLang === 'CAT' ? 'ES' : itemLang !== 'INTL' ? itemLang : undefined,
-        logoUrl: item.poster,
-        description: `${item.providerName} · ${itemLangLabel} · ${itemQuality}`,
-        channels: [
-          {
-            id: item.id,
-            label: `${item.providerName} · ${itemLangLabel} · ${itemQuality}`,
-            lang: itemLang,
-            langLabel: itemLangLabel,
-            quality: itemQuality,
-            providerId: item.providerId,
-            providerName: item.providerName,
-            sourceUrl: item.streamUrl,
-            resolverType: 'direct_hls' as const,
-          },
-        ],
-      });
-      if (runtimeProviderTdtChannels.length >= 2400) break;
-    }
-
-    const merged = [
-      ...verifiedSpainChannels,
-      ...baseTdtChannels,
-      ...INTERNATIONAL_TV_CHANNELS,
-      ...belixChannels,
-      ...xtreamEnvChannels,
-      ...runtimeProviderTdtChannels,
-      ...curatedRbtv,
+    const baseAndExternal = [
+      ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, belixActive),
+      ...getBelixLiveChannels({ sessionKey: belixSessionKey }),
+      ...getCuratedRbtvChannels(),
     ];
-    const unified = buildUnifiedPrioritizedChannels(merged, {
-      preferQualityFirst: priorityMode === 'best_quality',
-    });
-    const curated = curateHealthyAlternatives(unified);
-    const responsePayload = {
-      success: true as const,
+    const merged = enrichTdtCatalogWithProviderChannels(baseAndExternal);
+    res.json({
+      success: true,
       iptvMeta: getIptvSyncMeta(),
-      channels: curated.map((ch) => ({
+      channels: channelHealthMonitor.prioritizeChannels(merged).map((ch) => ({
         ...ch,
-        logoUrl: resolveOfficialChannelLogoUrl(ch) || undefined,
+        logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
       })),
-    };
-    if (responsePayload.channels.length > 0) {
-      tdtCatalogJsonCache.set(
-        `${belixActive ? 'b1' : 'b0'}:${hasWarmXtream || verifiedSpainChannels.length > 0 ? 'xw1' : 'xw0'}:rt${runtimeSnap.connectedCount}:${priorityMode}`,
-        responsePayload
-      );
-    }
-    res.json(responsePayload);
+    });
   });
 
   app.get(
@@ -422,7 +217,7 @@ export function registerIptvAndTdtRoutes(
         const groupTitle = IPTV_GROUP_TITLES[ch.category] || 'TDT y Directo';
         const epgId = getIptvEpgId(ch.id);
         const chno = ch.dial ? String(ch.dial) : String(idx + 1);
-        const officialLogo = resolveOfficialChannelLogoUrl(ch) || ch.logoUrl;
+        const officialLogo = ch.logoUrl || resolveOfficialChannelLogoUrl(ch);
         const logoUrl =
           officialLogo && /^https?:\/\//i.test(officialLogo)
             ? officialLogo
@@ -570,10 +365,7 @@ export function registerIptvAndTdtRoutes(
 
   app.get('/api/iptv/live/:channelId', async (req, res) => {
     const rawId = String(req.params.channelId || '').replace(/\.m3u8$/i, '');
-    const channel =
-      getIptvChannelById(rawId) ||
-      getIptvChannelById(`live-sports-${rawId}`) ||
-      (rawId === 'mux-champions' ? getIptvChannelById('mplus-champions') : undefined);
+    const channel = getIptvChannelById(rawId);
     if (!channel) {
       return res.status(404).send('Channel not found');
     }
@@ -609,25 +401,16 @@ export function registerIptvAndTdtRoutes(
             forceAacOverride || cached.forceAac
           );
           if (unwrapped) {
-            const cacheAgeMs = Date.now() - cached.ts;
-            const segOk = await verifyIptvMediaManifestSegments(
-              unwrapped.text,
+            const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
+            const rewritten = rewriteManifestForSamsungIptv(
+              trimmedText,
               unwrapped.finalUrl,
               cached.referer,
-              { trustCachedHealth: cacheAgeMs < 22_000 }
+              forceAacOverride || cached.forceAac,
+              false,
+              publicOrigin
             );
-            if (segOk) {
-              const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
-              const rewritten = rewriteManifestForSamsungIptv(
-                trimmedText,
-                unwrapped.finalUrl,
-                cached.referer,
-                forceAacOverride || cached.forceAac,
-                false,
-                publicOrigin
-              );
-              return sendIptvM3u8Response(res, rewritten);
-            }
+            return sendIptvM3u8Response(res, rewritten);
           }
         }
         iptvChannelResolveCache.delete(channel.id);
@@ -647,32 +430,26 @@ export function registerIptvAndTdtRoutes(
     const rawTracks: TrackRecord[] = Array.isArray(channel.channels) ? channel.channels : [];
     const tracks = channelHealthMonitor.prioritizeTracks(rawTracks);
     const triedDvbUrls = new Set<string>();
-    const belixSidMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)belix_sid=([^;]+)/);
-    const belixSessionKey =
-      String(req.headers['x-belix-session'] || '').trim() ||
-      (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
-      'default';
-
-    const resolveSingleIptvTrack = async (track: TrackRecord): Promise<string | null> => {
+    for (const track of tracks) {
       try {
         const sourceUrl = String(track?.sourceUrl || '').trim();
-        if (!sourceUrl) return null;
+        if (!sourceUrl) continue;
 
         const isElahmad = track.resolverType === 'elahmad_live' || isElahmadUrl(sourceUrl);
         if (isElahmad) {
           const elResolved = await resolveElahmadChannelToHls(sourceUrl);
-          if (!elResolved || elResolved.isYoutube) return null;
+          if (!elResolved || elResolved.isYoutube) continue;
           const signedElUrl = await maybeSignEasyBroadcastUrl(elResolved.streamUrl);
           const manifestObj = await fetchUpstreamManifestText(signedElUrl, elResolved.referer, forceAacOverride);
-          if (!manifestObj) return null;
+          if (!manifestObj) continue;
           const unwrapped = await unwrapMasterPlaylistForIptv(manifestObj, elResolved.referer, forceAacOverride);
-          if (!unwrapped) return null;
+          if (!unwrapped) continue;
           const segOk = await verifyIptvMediaManifestSegments(
             unwrapped.text,
             unwrapped.finalUrl,
             elResolved.referer
           );
-          if (!segOk) return null;
+          if (!segOk) continue;
           const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
           iptvChannelResolveCache.set(channel.id, {
             rawM3u8Url: unwrapped.finalUrl,
@@ -682,7 +459,7 @@ export function registerIptvAndTdtRoutes(
             isDvb: false,
             ts: Date.now(),
           });
-          return rewriteManifestForSamsungIptv(
+          const rewritten = rewriteManifestForSamsungIptv(
             trimmedText,
             unwrapped.finalUrl,
             elResolved.referer,
@@ -690,58 +467,7 @@ export function registerIptvAndTdtRoutes(
             false,
             publicOrigin
           );
-        }
-
-        if (track.resolverType === 'mediaset_live') {
-          const msResolved = await resolveMediasetLiveHlsUrl(sourceUrl);
-          if (!msResolved?.streamUrl) {
-            markTrackDown(sourceUrl, 403);
-            return null;
-          }
-          const manifestObj = await fetchUpstreamManifestText(
-            msResolved.streamUrl,
-            msResolved.referer,
-            forceAacOverride
-          );
-          if (!manifestObj) {
-            markTrackDown(sourceUrl, 502);
-            return null;
-          }
-          const unwrapped = await unwrapMasterPlaylistForIptv(
-            manifestObj,
-            msResolved.referer,
-            forceAacOverride
-          );
-          if (!unwrapped) {
-            markTrackDown(sourceUrl, 404);
-            return null;
-          }
-          const segOk = await verifyIptvMediaManifestSegments(
-            unwrapped.text,
-            unwrapped.finalUrl,
-            msResolved.referer
-          );
-          if (!segOk) {
-            markTrackDown(sourceUrl, 403);
-            return null;
-          }
-          const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
-          iptvChannelResolveCache.set(channel.id, {
-            rawM3u8Url: unwrapped.finalUrl,
-            referer: msResolved.referer,
-            forceAac: forceAacOverride,
-            isPublicCorsCdn: false,
-            isDvb: false,
-            ts: Date.now(),
-          });
-          return rewriteManifestForSamsungIptv(
-            trimmedText,
-            unwrapped.finalUrl,
-            msResolved.referer,
-            forceAacOverride,
-            false,
-            publicOrigin
-          );
+          return sendIptvM3u8Response(res, rewritten);
         }
 
         const isDirectHls =
@@ -750,9 +476,14 @@ export function registerIptvAndTdtRoutes(
           /\.m3u8(\?|$)/i.test(sourceUrl);
 
         if (sourceUrl.startsWith('/api/belix/stream/')) {
+          const belixSidMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)belix_sid=([^;]+)/);
+          const belixSessionKey =
+            String(req.headers['x-belix-session'] || '').trim() ||
+            (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
+            'default';
           if (!isAnyBelixConnected(belixSessionKey)) {
             markTrackDown(sourceUrl, 503);
-            return null;
+            continue;
           }
           const belixStreamId = sourceUrl.split('/').pop()?.replace(/\.m3u8.*$/i, '') || '';
           const belixManifest = await resolveBelixManifest(
@@ -763,37 +494,9 @@ export function registerIptvAndTdtRoutes(
           );
           if (!belixManifest) {
             markTrackDown(sourceUrl, 503);
-            return null;
+            continue;
           }
-          return belixManifest;
-        }
-
-        if (/^\/api\/(?:xtream\/stream\/|stream\b)/i.test(sourceUrl)) {
-          let xtreamStreamId = '';
-          let xtreamProvider = 'primary';
-          if (sourceUrl.startsWith('/api/xtream/stream/')) {
-            xtreamStreamId = sourceUrl.split('/').pop()?.replace(/\.m3u8.*$/i, '') || '';
-          } else {
-            try {
-              const parsed = new URL(sourceUrl, 'http://localhost');
-              xtreamStreamId = (parsed.searchParams.get('id') || '').replace(/\.m3u8$/i, '').trim();
-              xtreamProvider = parsed.searchParams.get('provider') || 'primary';
-            } catch {
-              xtreamStreamId = '';
-            }
-          }
-          if (xtreamStreamId) {
-            const xtreamManifest = await fetchProxiedXtreamManifest(
-              xtreamStreamId,
-              publicOrigin,
-              xtreamProvider
-            );
-            if (xtreamManifest) {
-              return xtreamManifest;
-            }
-          }
-          markTrackDown(sourceUrl, 503);
-          return null;
+          return sendIptvM3u8Response(res, belixManifest);
         }
 
         if (isDirectHls) {
@@ -806,25 +509,13 @@ export function registerIptvAndTdtRoutes(
 
           if (isDvbHeadendStream(cleanUrl)) {
             if (triedDvbUrls.has(cleanUrl)) {
-              return null;
+              continue;
             }
             triedDvbUrls.add(cleanUrl);
             const activeDvbPath = getActiveDvbSessionPath(cleanUrl);
-            if (activeDvbPath) {
-              const warmPl = readLiveDvbPlaylistForIptv(activeDvbPath, publicOrigin);
-              if (warmPl) {
-                iptvChannelResolveCache.set(channel.id, {
-                  rawM3u8Url: cleanUrl,
-                  referer,
-                  forceAac: false,
-                  isPublicCorsCdn: false,
-                  isDvb: true,
-                  ts: Date.now(),
-                });
-                return warmPl;
-              }
-            }
-            const dvbPlaylist = await resolveDvbIptvPlaylistText(cleanUrl, referer, publicOrigin);
+            const dvbPlaylist =
+              (activeDvbPath && readLiveDvbPlaylistForIptv(activeDvbPath, publicOrigin)) ||
+              (await resolveDvbIptvPlaylistText(cleanUrl, referer, publicOrigin));
             if (dvbPlaylist) {
               iptvChannelResolveCache.set(channel.id, {
                 rawM3u8Url: cleanUrl,
@@ -834,22 +525,35 @@ export function registerIptvAndTdtRoutes(
                 isDvb: true,
                 ts: Date.now(),
               });
-              return dvbPlaylist;
+              return sendIptvM3u8Response(res, dvbPlaylist);
             }
-            markTrackDown(sourceUrl, 502);
-            return null;
+            const probeManifest = await fetchUpstreamManifestText(cleanUrl, referer, true);
+            if (!probeManifest) {
+              markTrackDown(sourceUrl, 502);
+              continue;
+            }
+            const trimmedFallback = trimLiveDvrManifestForIptv(probeManifest.text, 6);
+            const rewrittenFallback = rewriteManifestForSamsungIptv(
+              trimmedFallback,
+              probeManifest.finalUrl,
+              referer,
+              true,
+              false,
+              publicOrigin
+            );
+            return sendIptvM3u8Response(res, rewrittenFallback);
           }
 
           const manifestObj = await fetchUpstreamManifestText(cleanUrl, referer, forceAac);
           if (!manifestObj) {
             markTrackDown(sourceUrl, 502);
-            return null;
+            continue;
           }
 
           const unwrapped = await unwrapMasterPlaylistForIptv(manifestObj, referer, forceAac);
           if (!unwrapped) {
             markTrackDown(sourceUrl, 404);
-            return null;
+            continue;
           }
 
           const segOk = await verifyIptvMediaManifestSegments(
@@ -859,7 +563,7 @@ export function registerIptvAndTdtRoutes(
           );
           if (!segOk) {
             markTrackDown(sourceUrl, 403);
-            return null;
+            continue;
           }
 
           const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
@@ -873,7 +577,7 @@ export function registerIptvAndTdtRoutes(
             ts: Date.now(),
           });
 
-          return rewriteManifestForSamsungIptv(
+          const rewritten = rewriteManifestForSamsungIptv(
             trimmedText,
             unwrapped.finalUrl,
             referer,
@@ -881,34 +585,35 @@ export function registerIptvAndTdtRoutes(
             false,
             publicOrigin
           );
+          return sendIptvM3u8Response(res, rewritten);
         }
 
         const fullTarget = /^https?:\/\//i.test(sourceUrl) ? sourceUrl : `https://${sourceUrl}`;
         let directSports = await extractLiveSportsHlsDirect(fullTarget);
-        if (directSports?.isBrokenGreenFeed) return null;
+        if (directSports?.isBrokenGreenFeed) continue;
 
         const isKnownDirectMirror = /footunder\.online|tilinhd\.|streamxhd\./i.test(fullTarget);
         if (!directSports && !isKnownDirectMirror) {
           directSports = await sniffStreamWithHeadless(fullTarget);
         }
-        if (!directSports || !directSports.streamUrl || directSports.isDirectMp4) return null;
+        if (!directSports || !directSports.streamUrl || directSports.isDirectMp4) continue;
 
         const manifestObj = await fetchUpstreamManifestText(
           directSports.streamUrl,
           directSports.referer,
           false
         );
-        if (!manifestObj) return null;
+        if (!manifestObj) continue;
 
         const unwrapped = await unwrapMasterPlaylistForIptv(manifestObj, directSports.referer, false);
-        if (!unwrapped) return null;
+        if (!unwrapped) continue;
 
         const clean = await verifyM3u8HasCleanVideoFrame(
           unwrapped.text,
           unwrapped.finalUrl,
           directSports.referer
         );
-        if (!clean) return null;
+        if (!clean) continue;
 
         const trimmedText = trimLiveDvrManifestForIptv(unwrapped.text, 6);
 
@@ -921,7 +626,7 @@ export function registerIptvAndTdtRoutes(
           ts: Date.now(),
         });
 
-        return rewriteManifestForSamsungIptv(
+        const rewritten = rewriteManifestForSamsungIptv(
           trimmedText,
           unwrapped.finalUrl,
           directSports.referer,
@@ -929,58 +634,9 @@ export function registerIptvAndTdtRoutes(
           false,
           publicOrigin
         );
+        return sendIptvM3u8Response(res, rewritten);
       } catch {
-        return null;
-      }
-    };
-
-    const topFastBatch = tracks.slice(0, 4);
-    if (topFastBatch.length > 0) {
-      const fastWinner = await Promise.any(
-        topFastBatch.map(async (track) => {
-          const playlist = await resolveSingleIptvTrack(track);
-          if (!playlist) throw new Error('track_failed');
-          return playlist;
-        })
-      ).catch(() => null);
-      if (fastWinner) {
-        return sendIptvM3u8Response(res, fastWinner);
-      }
-    }
-
-    const remainingTracks = tracks.slice(4);
-    for (let offset = 0; offset < remainingTracks.length; offset += 4) {
-      const wave = remainingTracks.slice(offset, offset + 4);
-      const waveWinner = await Promise.any(
-        wave.map(async (track) => {
-          const playlist = await resolveSingleIptvTrack(track);
-          if (!playlist) throw new Error('track_failed');
-          return playlist;
-        })
-      ).catch(() => null);
-      if (waveWinner) {
-        return sendIptvM3u8Response(res, waveWinner);
-      }
-    }
-
-    // Xtream live catalog fallback for sports/TDT channels when listed tracks fail
-    if (channel.name) {
-      const xtreamMatches = await findXtreamLiveChannelMatches({
-        channelHints: [channel.name, rawId.replace(/[-_]+/g, ' ')],
-        preferLang: 'ES',
-        limit: 4,
-      }).catch(() => []);
-      if (xtreamMatches.length > 0) {
-        const xtreamWinner = await Promise.any(
-          xtreamMatches.map(async (xm) => {
-            const playlist = await resolveSingleIptvTrack(xm);
-            if (!playlist) throw new Error('xtream_failed');
-            return playlist;
-          })
-        ).catch(() => null);
-        if (xtreamWinner) {
-          return sendIptvM3u8Response(res, xtreamWinner);
-        }
+        // try next backup track
       }
     }
 
@@ -1007,7 +663,7 @@ export function registerIptvAndTdtRoutes(
           const epgId = getIptvEpgId(ch.id);
           if (emittedChannelIds.has(epgId)) continue;
           emittedChannelIds.add(epgId);
-          const officialLogo = resolveOfficialChannelLogoUrl(ch) || ch.logoUrl;
+          const officialLogo = ch.logoUrl || resolveOfficialChannelLogoUrl(ch);
           const logoUrl =
             officialLogo && /^https?:\/\//i.test(officialLogo)
               ? officialLogo

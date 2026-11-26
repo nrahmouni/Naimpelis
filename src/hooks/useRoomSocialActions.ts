@@ -43,15 +43,6 @@ import { socketService } from '../services/socket';
 import { useAppStore } from '../store/useAppStore';
 import { playCinemaSound } from '../utils/haptics';
 import { SAVED_ROOMS_CACHE_KEY } from '../utils/appSessionHelpers';
-import {
-  catalogQueryKeys,
-  fetchCatalogMoviesPageData,
-  fetchCatalogSeriesPageData,
-  fetchLatestReleasesData,
-  fetchTdtBaseCatalogData,
-  queryClient,
-} from './useCatalogQueries';
-import { prefetchImageUrls } from '../utils/imageUrl';
 
 interface UseRoomSocialActionsParams {
   lang: AppLanguage;
@@ -137,69 +128,29 @@ export function useRoomSocialActions({
     try {
       const apiLang = lang === 'en' ? 'en' : 'es';
       const [mRes, sRes, tRes, lrRes] = await Promise.all([
-        queryClient
-          .fetchQuery({
-            queryKey: catalogQueryKeys.moviesPage({
-              endpoint: 'movies',
-              category: 'trending',
-              sort: 'trending',
-              page: 1,
-              query: '',
-            }),
-            staleTime: 10 * 60_000,
-            queryFn: () =>
-              fetchCatalogMoviesPageData({
-                endpoint: 'movies',
-                category: 'trending',
-                sort: 'trending',
-                page: 1,
-                query: '',
-              }),
-          })
-          .catch(() => null),
-        queryClient
-          .fetchQuery({
-            queryKey: catalogQueryKeys.seriesPage({
-              category: 'trending',
-              sort: 'trending',
-              page: 1,
-              lang: apiLang,
-              query: '',
-            }),
-            staleTime: 10 * 60_000,
-            queryFn: () =>
-              fetchCatalogSeriesPageData({
-                category: 'trending',
-                sort: 'trending',
-                page: 1,
-                lang: apiLang,
-                query: '',
-              }),
-          })
-          .catch(() => null),
-        queryClient
-          .fetchQuery({
-            queryKey: catalogQueryKeys.tdtBase(),
-            staleTime: 3 * 60_000,
-            queryFn: fetchTdtBaseCatalogData,
-          })
-          .catch(() => null),
-        queryClient
-          .fetchQuery({
-            queryKey: catalogQueryKeys.latestReleases(lang),
-            staleTime: 10 * 60_000,
-            queryFn: () => fetchLatestReleasesData(lang),
-          })
-          .catch(() => null),
+        fetch('/api/catalog/movies?category=trending&page=1').then((r) =>
+          r.ok ? r.json() : null
+        ),
+        fetch(`/api/catalog/series?category=trending&page=1&lang=${apiLang}`).then((r) =>
+          r.ok ? r.json() : null
+        ),
+        fetch('/api/catalog/tdt').then((r) => (r.ok ? r.json() : null)),
+        fetch(`/api/catalog/latest-releases?lang=${apiLang}`).then((r) =>
+          r.ok ? r.json() : null
+        ),
       ]);
 
       const rawMovies: CatalogMovie[] = [
-        ...(Array.isArray(mRes?.movies) ? mRes.movies : []),
-        ...(Array.isArray(lrRes?.cinemaReleases) ? lrRes.cinemaReleases : []),
+        ...(Array.isArray(mRes?.movies) ? (mRes.movies as CatalogMovie[]) : []),
+        ...(Array.isArray(lrRes?.cinemaReleases)
+          ? (lrRes.cinemaReleases as CatalogMovie[])
+          : []),
+        ...(Array.isArray(mRes?.results) ? (mRes.results as CatalogMovie[]) : []),
       ];
       const rawSeries: CatalogMovie[] = [
-        ...(Array.isArray(sRes?.series) ? sRes.series : []),
-        ...(Array.isArray(lrRes?.newSeasons) ? lrRes.newSeasons : []),
+        ...(Array.isArray(sRes?.series) ? (sRes.series as CatalogMovie[]) : []),
+        ...(Array.isArray(lrRes?.newSeasons) ? (lrRes.newSeasons as CatalogMovie[]) : []),
+        ...(Array.isArray(sRes?.results) ? (sRes.results as CatalogMovie[]) : []),
       ];
 
       const dedupeById = (items: CatalogMovie[]) => {
@@ -215,27 +166,11 @@ export function useRoomSocialActions({
         return out;
       };
 
-      const dedupedMovies = dedupeById(rawMovies);
-      const dedupedSeries = dedupeById(rawSeries);
-      const tdtChannels = Array.isArray(tRes) ? tRes : [];
-
       setQuickPool({
-        movies: dedupedMovies,
-        series: dedupedSeries,
-        tdt: tdtChannels,
+        movies: dedupeById(rawMovies),
+        series: dedupeById(rawSeries),
+        tdt: Array.isArray(tRes?.channels) ? (tRes.channels as SpanishTdtChannel[]) : [],
       });
-
-      prefetchImageUrls(
-        [
-          ...dedupedMovies.slice(0, 8).map((m) => m.poster || m.backdrop),
-          ...dedupedSeries.slice(0, 8).map((s) => s.poster || s.backdrop),
-        ],
-        { limit: 16, kind: 'poster' }
-      );
-      prefetchImageUrls(
-        tdtChannels.slice(0, 12).map((c) => c.logoUrl),
-        { limit: 12, kind: 'square' }
-      );
     } catch {
       // keep existing pool
     } finally {
@@ -272,31 +207,6 @@ export function useRoomSocialActions({
       clearTimeout(timer);
     };
   }, [isAppEntered, quickPoolMoviesLen, quickPoolSeriesLen, loadQuickPool]);
-
-  useEffect(() => {
-    const onSynced = () => {
-      void queryClient
-        .invalidateQueries({ queryKey: catalogQueryKeys.tdtBase() })
-        .then(() =>
-          queryClient.fetchQuery({
-            queryKey: catalogQueryKeys.tdtBase(),
-            staleTime: 0,
-            queryFn: fetchTdtBaseCatalogData,
-          })
-        )
-        .then((channels) => {
-          if (Array.isArray(channels)) {
-            setQuickPool((prev) => ({
-              ...prev,
-              tdt: channels,
-            }));
-          }
-        })
-        .catch(() => {});
-    };
-    window.addEventListener('belix-channels-synced', onSynced);
-    return () => window.removeEventListener('belix-channels-synced', onSynced);
-  }, [setQuickPool]);
 
   const handleGoogleSignIn = async () => {
     manualLobbyStayRef.current = false;

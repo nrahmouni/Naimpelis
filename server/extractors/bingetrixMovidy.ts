@@ -1,9 +1,11 @@
 import { LruTtlCache } from '../utils/lruCache.ts';
+import { streamingFetch } from '../utils/tlsFetch.ts';
 import {
   findVestSeedForMedia,
   isVestMirrorUrl,
 } from '../services/vestMirrorService.ts';
 import {
+  CHROME_UA,
   type TrackRecord,
   generateSpanishTitleHints,
 } from './httpHelpers.ts';
@@ -17,6 +19,7 @@ import {
 import {
   has2EmbedEnglishStreamFast,
   hasBingetrixEnglishStreamFast,
+  probeVidsrcBuzzHasContent,
 } from './bingetrixHelpers/englishStreamExtractors.ts';
 import {
   extractMovidyPageTracks,
@@ -29,12 +32,6 @@ import {
 import {
   hasGhostflixVidboltStreamFast,
 } from './bingetrixHelpers/ghostflixVidboltExtractor.ts';
-import {
-  findXtreamMovieMatches,
-  findXtreamSeriesMatches,
-  mergeXtreamOptionsIntoAvailableLanguages,
-  type XtreamMatchedMediaOption,
-} from '../services/xtreamVodMatcher.ts';
 
 export * from './bingetrixHelpers/englishStreamExtractors.ts';
 export * from './bingetrixHelpers/movidyScraper.ts';
@@ -165,7 +162,28 @@ export async function probeAvailableLanguages(opts: {
         })
       : Promise.resolve([] as TrackRecord[]);
 
-  // 3. Bingetrix & clean English HLS sources (VidRock removed)
+  // 3. Bingetrix & English HLS sources
+  const hasVidRockFast = async (): Promise<boolean> => {
+    if (!cleanId) return false;
+    const apiUrl =
+      opts.mediaType === 'tv'
+        ? `https://vidrock.net/api/tv/${cleanId}/${Math.max(1, season)}/${Math.max(1, episode)}`
+        : `https://vidrock.net/api/movie/${cleanId}`;
+    try {
+      const resp = await streamingFetch(apiUrl, {
+        headers: { 'User-Agent': CHROME_UA, Referer: 'https://vidrock.net/', Accept: 'application/json' },
+        timeoutMs: 2400,
+      }).catch(() => null);
+      if (resp?.ok) {
+        const txt = await resp.text();
+        return /"url"\s*:\s*"/i.test(txt);
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  };
+
   const checkAnyEnglishStream = async (): Promise<boolean> => {
     if (!cleanId && !opts.imdbId) return false;
     const probes: Promise<boolean>[] = [
@@ -176,9 +194,17 @@ export async function probeAvailableLanguages(opts: {
         season: season || undefined,
         episode: episode || undefined,
       }),
+      probeVidsrcBuzzHasContent({
+        tmdbId: cleanId || undefined,
+        imdbId: opts.imdbId,
+        mediaType: opts.mediaType,
+        season: season || undefined,
+        episode: episode || undefined,
+      }),
     ];
     if (cleanId) {
       probes.push(
+        hasVidRockFast(),
         hasBingetrixEnglishStreamFast({
           tmdbId: cleanId,
           mediaType: opts.mediaType,
@@ -211,22 +237,7 @@ export async function probeAvailableLanguages(opts: {
       new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
     ]);
 
-  const xtreamProbePromise: Promise<XtreamMatchedMediaOption[]> =
-    hints.length > 0
-      ? opts.mediaType === 'tv'
-        ? findXtreamSeriesMatches({
-            titleHints: hints,
-            yearHint: opts.yearHint,
-            limit: 12,
-          })
-        : findXtreamMovieMatches({
-            titleHints: hints,
-            yearHint: opts.yearHint,
-            limit: 12,
-          }).then((r) => r.options)
-      : Promise.resolve([]);
-
-  const [mvTracks, gnTracks, esTracks, hasEn, vidboltProbe, xtreamOptions] = await Promise.all([
+  const [mvTracks, gnTracks, esTracks, hasEn, vidboltProbe] = await Promise.all([
     withProbeTimeout(movidyPromise, 5500, [] as TrackRecord[]),
     withProbeTimeout(gnulaPromise, 5500, [] as TrackRecord[]),
     withProbeTimeout(embedPromise, opts.force ? 8500 : 6500, [] as TrackRecord[]),
@@ -243,7 +254,6 @@ export async function probeAvailableLanguages(opts: {
           { ok: false, langs: [] as ('ES' | 'LAT' | 'VOSE' | 'EN')[] }
         )
       : Promise.resolve({ ok: false, langs: [] as ('ES' | 'LAT' | 'VOSE' | 'EN')[] }),
-    withProbeTimeout(xtreamProbePromise, 2200, [] as XtreamMatchedMediaOption[]),
   ]);
   const foundSet = new Set<'ES' | 'LAT' | 'VOSE' | 'EN'>();
 
@@ -279,10 +289,9 @@ export async function probeAvailableLanguages(opts: {
     foundSet.add('VOSE');
   }
 
-  const baseOrdered = (['ES', 'LAT', 'VOSE', 'EN'] as const).filter((code) =>
+  const ordered = (['ES', 'LAT', 'VOSE', 'EN'] as const).filter((code) =>
     foundSet.has(code)
   );
-  const ordered = mergeXtreamOptionsIntoAvailableLanguages(baseOrdered, xtreamOptions);
 
   // Only cache positive multi-language results or confirmed probes (never poison cache with lone EN timeout fallback)
   if (ordered.length > 0 && !(ordered.length === 1 && ordered[0] === 'EN')) {

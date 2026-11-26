@@ -93,10 +93,12 @@ export async function handleDirectExtractCases(params: {
     return sendOk(megaResult);
   }
 
-  // CASE -1: Internal proxy / Belix / Provider live & VOD stream URLs must never pass through external host resolvers
+  // CASE -1: Internal proxy / Belix / Providers stream URLs must never pass through external host resolvers
   if (
-    /^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play|providers\/stream|xtream\/stream|xtream\/vod)\//i.test(rawInput) ||
-    /^\/api\/(?:hls-proxy|stream)\?/i.test(rawInput)
+    /^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play|providers\/(?:live|vod|series-stream))\//i.test(
+      rawInput
+    ) ||
+    rawInput.startsWith('/api/hls-proxy?')
   ) {
     const belixStreamMatch = rawInput.match(/^\/api\/belix\/stream\/([a-zA-Z0-9_-]+)(?:\.m3u8)?/i);
     if (/^\/api\/belix\/(?:stream|xtream\/play)\//i.test(rawInput) && !isAnyBelixConnected(belixSessionKey)) {
@@ -129,16 +131,13 @@ export async function handleDirectExtractCases(params: {
         // ignore parse error
       }
     }
-    const isDirectFile =
-      /\.(mp4|mkv|webm|avi|mov|m4v)(\?|$)/i.test(rawInput) ||
-      /^\/api\/(?:providers\/stream\/[^/]+\/(?:movie|series)\/|xtream\/vod\/)/i.test(rawInput) ||
-      /[?&]type=(?:vod|series)(?:&|$)/i.test(rawInput);
+    const isDirectFile = /\.(mp4|mkv|webm)(\?|$)/i.test(rawInput);
     const result: ExtractedStreamResult = {
       success: true,
       mode: isDirectFile ? 'direct' : 'hls',
       streamUrl: rawInput,
       rawStreamUrl: rawInput,
-      title: titleHint || (isDirectFile ? 'Reproducción VOD' : 'Stream en Directo'),
+      title: titleHint || 'Stream en Directo',
       requestedLang: preferLang || 'ES',
       resolvedLang: preferLang || 'ES',
       expiresAt: Date.now() + (belixStreamMatch ? 8_000 : 15 * 60 * 1000),
@@ -203,12 +202,14 @@ export async function handleDirectExtractCases(params: {
     const mapped = ATRES_DIRECTO_MAP[slug] || ATRES_DIRECTO_MAP.antena3;
     const dvbReferer = 'http://90.163.85.113:8093/';
     if (process.env.NODE_ENV !== 'test' && !isDvbUpstreamCoolingDown(mapped.dvbUrl)) {
-      const existingAtresDvb = getActiveDvbSessionPath(mapped.dvbUrl, 'hd');
-      if (existingAtresDvb) {
+      const activeDvb =
+        getActiveDvbSessionPath(mapped.dvbUrl, 'hd') ||
+        (await ensureLiveDvbCleanHlsSession(mapped.dvbUrl, 'hd', dvbReferer).catch(() => null));
+      if (activeDvb) {
         const dvbResult: ExtractedStreamResult = {
           success: true,
           mode: 'hls',
-          streamUrl: existingAtresDvb,
+          streamUrl: activeDvb,
           rawStreamUrl: mapped.dvbUrl,
           referer: dvbReferer,
           title: titleHint || mapped.title,
@@ -218,32 +219,6 @@ export async function handleDirectExtractCases(params: {
         };
         setCache(cacheKey, dvbResult);
         return sendOk(dvbResult);
-      }
-      try {
-        const chkAtres = await fetch(mapped.dvbUrl, {
-          headers: { 'User-Agent': getPreferredUpstreamUa(mapped.dvbUrl), Referer: dvbReferer, Accept: '*/*' },
-          signal: AbortSignal.timeout(1800),
-        });
-        if (chkAtres.ok) {
-          const txtAtres = await chkAtres.text();
-          if (txtAtres.includes('#EXTM3U') && !/nosignal/i.test(txtAtres)) {
-            const fastAtresResult: ExtractedStreamResult = {
-              success: true,
-              mode: 'hls',
-              streamUrl: buildHlsProxyUrl(mapped.dvbUrl, dvbReferer, true),
-              rawStreamUrl: mapped.dvbUrl,
-              referer: dvbReferer,
-              title: titleHint || mapped.title,
-              requestedLang: 'ES',
-              resolvedLang: 'ES',
-              expiresAt: Date.now() + 60_000,
-            };
-            setCache(cacheKey, fastAtresResult);
-            return sendOk(fastAtresResult);
-          }
-        }
-      } catch {
-        // fallback below
       }
     }
     const mappedBelixId = mapped.streamUrl.match(/\/api\/belix\/stream\/([a-zA-Z0-9_-]+)/i)?.[1];
@@ -302,6 +277,27 @@ export async function handleDirectExtractCases(params: {
         setCache(cacheKey, fastResult);
         return sendOk(fastResult);
       }
+
+      const dvbLiveUrl = await ensureLiveDvbCleanHlsSession(
+        cleanCheckUrl,
+        dvbProfile,
+        originRef
+      ).catch(() => null);
+      if (dvbLiveUrl) {
+        const dvbResult: ExtractedStreamResult = {
+          success: true,
+          mode: 'hls',
+          streamUrl: dvbLiveUrl,
+          rawStreamUrl: cleanCheckUrl,
+          referer: originRef,
+          title: titleHint || 'TV España en Directo',
+          requestedLang: 'ES',
+          resolvedLang: 'ES',
+          expiresAt: Date.now() + 30 * 1000,
+        };
+        setCache(cacheKey, dvbResult);
+        return sendOk(dvbResult);
+      }
       if (isDvbUpstreamCoolingDown(cleanCheckUrl)) {
         return sendErr(404, 'Señal TDT directa temporalmente no accesible desde servidor.');
       }
@@ -334,7 +330,7 @@ export async function handleDirectExtractCases(params: {
     try {
       const chk = await fetch(cleanCheckUrl, {
         headers: checkHeaders,
-        signal: AbortSignal.timeout(isDvb ? 2400 : 2200),
+        signal: AbortSignal.timeout(isDvb ? 6000 : 2500),
       });
       if (chk.ok) {
         const txt = await chk.text();
@@ -346,35 +342,13 @@ export async function handleDirectExtractCases(params: {
     } catch {
       // fallback to curl below
     }
-    if (!isAlive && !isDvb) {
-      const fb = await curlGetText(cleanCheckUrl, checkHeaders, isCnStream ? 4 : 3, isCnStream).catch(() => ({
+    if (!isAlive) {
+      const fb = await curlGetText(cleanCheckUrl, checkHeaders, isCnStream || isDvb ? 5 : 3, isCnStream).catch(() => ({
         text: '',
       }));
       if (fb.text && fb.text.includes('#EXTM3U') && !/nosignal/i.test(fb.text)) {
         isAlive = true;
         manifestText = fb.text;
-      }
-    }
-    if (!isAlive && isDvb && !/\.m3u8(\?|$)/i.test(cleanCheckUrl)) {
-      const dvbLiveUrl = await ensureLiveDvbCleanHlsSession(
-        cleanCheckUrl,
-        dvbProfile,
-        originRef
-      ).catch(() => null);
-      if (dvbLiveUrl) {
-        const dvbResult: ExtractedStreamResult = {
-          success: true,
-          mode: 'hls',
-          streamUrl: dvbLiveUrl,
-          rawStreamUrl: cleanCheckUrl,
-          referer: originRef,
-          title: titleHint || 'TV España en Directo',
-          requestedLang: 'ES',
-          resolvedLang: 'ES',
-          expiresAt: Date.now() + 30 * 1000,
-        };
-        setCache(cacheKey, dvbResult);
-        return sendOk(dvbResult);
       }
     }
     if (!isAlive && isCnStream) {
@@ -627,7 +601,7 @@ export async function handleDirectExtractCases(params: {
 
   // CASE 1C: Verified Web Embed Player track switch (`web_embed`) & ClipBox embed players
   const isClipboxPlayerHost =
-    /(?:^|\.)(vidlink\.pro|player\.videasy\.net|player\.vidzee\.wtf|vixsrc\.to|moviesapi\.club|2embed\.cc|megaplay\.buzz|vidfast\.[a-z.]+|primesrc\.me)/i.test(
+    /(?:^|\.)(vidlink\.pro|player\.videasy\.net|player\.vidzee\.wtf|vixsrc\.to|vidrock\.net|vidnest\.io|moviesapi\.club|2embed\.cc|megaplay\.buzz|vidfast\.[a-z.]+|vidsrc\.[a-z]+|videm\.buzz|primesrc\.me)/i.test(
       rawInput
     );
   if ((resolverType === 'web_embed' || (!resolverType && isClipboxPlayerHost)) && rawInput) {
@@ -637,7 +611,7 @@ export async function handleDirectExtractCases(params: {
         fullEmbedUrl
       );
     const isHtmlProxyTarget =
-      /(^|\.)(2embed\.cc|www\.2embed\.cc|vidfast\.[a-z.]+)/i.test(
+      /(^|\.)(vidsrc\.buzz|videm\.buzz|vidrock\.net|2embed\.cc|www\.2embed\.cc|vidfast\.[a-z.]+)/i.test(
         fullEmbedUrl
       ) ||
       (isSandboxedFrame && !isCloudflareDirectEmbed);
@@ -673,14 +647,8 @@ export async function handleDirectExtractCases(params: {
   }
 
   // CASE 3: Direct .m3u8, .mp4, or internal proxy URL
-  if (
-    /^\/api\/(?:vod-manifest|hls-proxy|belix\/xtream\/play|providers\/stream|xtream\/stream|xtream\/vod)\//i.test(rawInput) ||
-    /^\/api\/stream\?/i.test(rawInput)
-  ) {
-    const isDirectFile =
-      /\.(mp4|mkv|webm|avi|mov|m4v)(\?|$)/i.test(rawInput) ||
-      /^\/api\/(?:providers\/stream\/[^/]+\/(?:movie|series)\/|xtream\/vod\/)/i.test(rawInput) ||
-      /[?&]type=(?:vod|series)(?:&|$)/i.test(rawInput);
+  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/xtream\/play)\//i.test(rawInput)) {
+    const isDirectFile = /\.(mp4|mkv|webm)(\?|$)/i.test(rawInput);
     const result: ExtractedStreamResult = {
       success: true,
       mode: isDirectFile ? 'direct' : 'hls',

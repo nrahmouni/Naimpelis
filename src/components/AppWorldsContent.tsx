@@ -15,14 +15,11 @@ import { useAppStore } from '../store/useAppStore';
 import { EntryHomeScreen } from './EntryHomeScreen';
 import { WorldShell } from './worlds/WorldShell';
 import { MusicLanguageDropdown } from './music/MusicLanguageDropdown';
-import { RiffanLoaderR } from './ui/RiffanIcons';
+import { MediaCatalogHub } from './MediaCatalogHub';
 import type { useAppController } from '../hooks/useAppController';
 import { lazyWithRetry } from '../utils/lazyWithRetry';
 import { useBackInterceptor } from '../lib/backInterceptor';
 
-const MediaCatalogHub = lazyWithRetry(() =>
-  import('./MediaCatalogHub').then((m) => ({ default: m.MediaCatalogHub }))
-);
 const GamesHubSection = lazyWithRetry(() =>
   import('./GamesHubSection').then((m) => ({ default: m.GamesHubSection }))
 );
@@ -48,14 +45,9 @@ const RiffanMusicWorldView = lazyWithRetry(() =>
     default: m.RiffanMusicWorldView,
   }))
 );
-const ProvidersWorldView = lazyWithRetry(() =>
-  import('./providers/ProvidersWorldView').then((m) => ({
-    default: m.ProvidersWorldView,
-  }))
-);
-const CineReelsWorldView = lazyWithRetry(() =>
-  import('./reels/CineReelsWorldView').then((m) => ({
-    default: m.CineReelsWorldView,
+const ChampionsWorldView = lazyWithRetry(() =>
+  import('./champions/ChampionsWorldView').then((m) => ({
+    default: m.ChampionsWorldView,
   }))
 );
 
@@ -63,12 +55,6 @@ interface AppWorldsContentProps {
   controller: ReturnType<typeof useAppController>;
   renderPartySidebar: () => React.ReactNode;
 }
-
-const WorldSuspenseFallback = () => (
-  <div className="py-16 flex items-center justify-center">
-    <RiffanLoaderR size={38} />
-  </div>
-);
 
 export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
   controller: c,
@@ -166,6 +152,29 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
 
   const shareRoomId = sessionMode !== 'solo' && roomId ? roomId : undefined;
 
+  const favoriteChannelIdSet = React.useMemo(
+    () => new Set(favoriteChannels.map((c) => c.favId)),
+    [favoriteChannels]
+  );
+  const isChannelFavorited = React.useCallback(
+    (favId: string) => favoriteChannelIdSet.has(favId),
+    [favoriteChannelIdSet]
+  );
+
+  const activeMultiUrls = React.useMemo(() => {
+    const urls: string[] = [];
+    if (roomState.videoState.mode !== 'idle' && roomState.videoState.rawSourceUrl) {
+      urls.push(roomState.videoState.rawSourceUrl);
+    }
+    for (const s of roomState.secondaryStreams || []) {
+      if (s.rawSourceUrl) urls.push(s.rawSourceUrl);
+    }
+    return urls;
+  }, [roomState.videoState.mode, roomState.videoState.rawSourceUrl, roomState.secondaryStreams]);
+
+  const activeMultiCount =
+    roomState.videoState.mode !== 'idle' ? 1 + (roomState.secondaryStreams?.length || 0) : 0;
+
   const handleShareActiveWorld = () => {
     const store = useAppStore.getState();
     let target: CanonicalLinkInput = { kind: 'home' };
@@ -235,12 +244,9 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     } else if (activeWorld === 'music') {
       target = { kind: 'world', world: 'music' };
       title = 'Riffan Music · Toda la música y radios 24/7';
-    } else if (activeWorld === 'providers') {
-      target = { kind: 'world', world: 'providers' };
-      title = 'RiffanTV · Catálogo Total';
-    } else if (activeWorld === 'reels') {
-      target = { kind: 'world', world: 'reels' };
-      title = 'RiffanTV · CineTok Clips';
+    } else if (activeWorld === 'champions') {
+      target = { kind: 'world', world: 'champions' };
+      title = 'RiffanTV · Champions League & Multi-Partido';
     }
 
     void shareDedicatedLink({ target, roomId: shareRoomId, title });
@@ -288,8 +294,7 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
                 world === 'atresplayer' ||
                 world === 'movistardazn' ||
                 world === 'music' ||
-                world === 'providers' ||
-                world === 'reels',
+                world === 'champions',
               originRect,
             })
           }
@@ -328,6 +333,7 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           onPlayChannel={(ch) => {
             void playback.handlePlayTdtChannel(ch, 0);
           }}
+          onPlayCustomUrl={playback.handlePlayCustomUrl}
           onPlayMatch={(matchItem, channelIndex = 0) => {
             void playback.handlePlaySportsMatch(matchItem, channelIndex);
           }}
@@ -401,31 +407,29 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
               : 'w-full flex flex-col'
           }
         >
-          <React.Suspense fallback={<WorldSuspenseFallback />}>
-            <GamesHubSection
-              lang={lang}
-              roomId={roomId}
-              currentUser={currentUser}
-              participants={roomState.participants}
-              roomBoardGame={roomState.roomGameState}
-              roomPartyGame={roomState.partyGameState}
-              roomPinturilloGame={roomState.pinturilloState}
-              roomPoolGame={roomState.poolGameState}
-              roomChapasGame={roomState.chapasGameState}
-              roomHeadSoccerGame={roomState.headSoccerGameState}
-              headSoccerSyncSnapshot={roomState.headSoccerSyncSnapshot}
-              headSoccerPeerInput={roomState.headSoccerPeerInput}
-              roomPokerGame={roomState.pokerGameState}
-              roomBlackjackGame={roomState.blackjackGameState}
-              matchResponses={roomState.matchResponses}
-              gameMoveError={roomState.gameMoveError}
-              isHost={isHostUser}
-              voiceChat={voiceChat}
-              requestedGameOpen={roomState.forcedOpenGame}
-              onSelectedGameChange={handleSelectedGameChange}
-              {...roomGameActions}
-            />
-          </React.Suspense>
+          <GamesHubSection
+            lang={lang}
+            roomId={roomId}
+            currentUser={currentUser}
+            participants={roomState.participants}
+            roomBoardGame={roomState.roomGameState}
+            roomPartyGame={roomState.partyGameState}
+            roomPinturilloGame={roomState.pinturilloState}
+            roomPoolGame={roomState.poolGameState}
+            roomChapasGame={roomState.chapasGameState}
+            roomHeadSoccerGame={roomState.headSoccerGameState}
+            headSoccerSyncSnapshot={roomState.headSoccerSyncSnapshot}
+            headSoccerPeerInput={roomState.headSoccerPeerInput}
+            roomPokerGame={roomState.pokerGameState}
+            roomBlackjackGame={roomState.blackjackGameState}
+            matchResponses={roomState.matchResponses}
+            gameMoveError={roomState.gameMoveError}
+            isHost={isHostUser}
+            voiceChat={voiceChat}
+            requestedGameOpen={roomState.forcedOpenGame}
+            onSelectedGameChange={handleSelectedGameChange}
+            {...roomGameActions}
+          />
         </div>
       </WorldShell>
     );
@@ -454,15 +458,13 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
         })}
         className={portalLandingActive ? 'rtv-world-touchdown' : ''}
       >
-        <React.Suspense fallback={<WorldSuspenseFallback />}>
-          <ClipBoxWorldView
-            lang={lang}
-            externalSearchQuery={worldSearchQuery}
-            onPlayCustomUrl={playback.handlePlayCustomUrl}
-            onPlayMovie={playback.handlePlayMovie}
-            onPlayClipboxMedia={playback.handlePlayClipboxMedia}
-          />
-        </React.Suspense>
+        <ClipBoxWorldView
+          lang={lang}
+          externalSearchQuery={worldSearchQuery}
+          onPlayCustomUrl={playback.handlePlayCustomUrl}
+          onPlayMovie={playback.handlePlayMovie}
+          onPlayClipboxMedia={playback.handlePlayClipboxMedia}
+        />
       </WorldShell>
     );
   }
@@ -490,18 +492,16 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
         })}
         className={portalLandingActive ? 'rtv-world-touchdown' : ''}
       >
-        <React.Suspense fallback={<WorldSuspenseFallback />}>
-          <RbtvWorldView
-            lang={lang}
-            externalSearchQuery={worldSearchQuery}
-            onPlaySportsMatch={(match, idx) => {
-              void playback.handlePlaySportsMatch(match, idx);
-            }}
-            onPlayTdtChannel={(ch, idx) => {
-              void playback.handlePlayTdtChannel(ch, idx);
-            }}
-          />
-        </React.Suspense>
+        <RbtvWorldView
+          lang={lang}
+          externalSearchQuery={worldSearchQuery}
+          onPlaySportsMatch={(match, idx) => {
+            void playback.handlePlaySportsMatch(match, idx);
+          }}
+          onPlayTdtChannel={(ch, idx) => {
+            void playback.handlePlayTdtChannel(ch, idx);
+          }}
+        />
       </WorldShell>
     );
   }
@@ -529,19 +529,17 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
         })}
         className={portalLandingActive ? 'rtv-world-touchdown' : ''}
       >
-        <React.Suspense fallback={<WorldSuspenseFallback />}>
-          <BelixWorldView
-            lang={lang}
-            externalSearchQuery={worldSearchQuery}
-            onPlaySportsMatch={(match, idx) => {
-              void playback.handlePlaySportsMatch(match, idx);
-            }}
-            onPlayTdtChannel={(ch, idx) => {
-              void playback.handlePlayTdtChannel(ch, idx);
-            }}
-            onPlayCustomUrl={playback.handlePlayCustomUrl}
-          />
-        </React.Suspense>
+        <BelixWorldView
+          lang={lang}
+          externalSearchQuery={worldSearchQuery}
+          onPlaySportsMatch={(match, idx) => {
+            void playback.handlePlaySportsMatch(match, idx);
+          }}
+          onPlayTdtChannel={(ch, idx) => {
+            void playback.handlePlayTdtChannel(ch, idx);
+          }}
+          onPlayCustomUrl={playback.handlePlayCustomUrl}
+        />
       </WorldShell>
     );
   }
@@ -569,33 +567,31 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
         })}
         className={portalLandingActive ? 'rtv-world-touchdown' : ''}
       >
-        <React.Suspense fallback={<WorldSuspenseFallback />}>
-          <AtresplayerWorldView
-            lang={lang}
-            externalSearchQuery={worldSearchQuery}
-            onPlayTdtChannel={(ch, idx, liveHint) => {
-              void playback.handlePlayTdtChannel(ch, idx, liveHint);
-            }}
-            onPlayYouTubeVideo={playback.handlePlayYouTubeVideo}
-            onPlayCustomUrl={playback.handlePlayCustomUrl}
-            onOpenSeriesPage={(seriesItem) => {
-              const store = useAppStore.getState();
-              const resolvedTmdbId = Number(
-                seriesItem.tmdbId || String(seriesItem.id || '').replace(/[^\d]/g, '') || 0
-              );
-              if (resolvedTmdbId > 0) {
-                store.setRequestedMovieModal(null);
-                store.setRequestedSeriesModal({
-                  series: { ...seriesItem, tmdbId: resolvedTmdbId, mediaType: 'tv' },
-                  season: seriesItem.seasonNumber || 1,
-                });
-                return;
-              }
-              store.setRequestedSeriesModal(null);
-              store.setRequestedMovieModal(seriesItem);
-            }}
-          />
-        </React.Suspense>
+        <AtresplayerWorldView
+          lang={lang}
+          externalSearchQuery={worldSearchQuery}
+          onPlayTdtChannel={(ch, idx, liveHint) => {
+            void playback.handlePlayTdtChannel(ch, idx, liveHint);
+          }}
+          onPlayYouTubeVideo={playback.handlePlayYouTubeVideo}
+          onPlayCustomUrl={playback.handlePlayCustomUrl}
+          onOpenSeriesPage={(seriesItem) => {
+            const store = useAppStore.getState();
+            const resolvedTmdbId = Number(
+              seriesItem.tmdbId || String(seriesItem.id || '').replace(/[^\d]/g, '') || 0
+            );
+            if (resolvedTmdbId > 0) {
+              store.setRequestedMovieModal(null);
+              store.setRequestedSeriesModal({
+                series: { ...seriesItem, tmdbId: resolvedTmdbId, mediaType: 'tv' },
+                season: seriesItem.seasonNumber || 1,
+              });
+              return;
+            }
+            store.setRequestedSeriesModal(null);
+            store.setRequestedMovieModal(seriesItem);
+          }}
+        />
       </WorldShell>
     );
   }
@@ -623,36 +619,34 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
         })}
         className={portalLandingActive ? 'rtv-world-touchdown' : ''}
       >
-        <React.Suspense fallback={<WorldSuspenseFallback />}>
-          <DaznMovistarWorldView
-            lang={lang}
-            externalSearchQuery={worldSearchQuery}
-            onPlayTdtChannel={(ch, idx, liveHint) => {
-              void playback.handlePlayTdtChannel(ch, idx, liveHint);
-            }}
-            onPlaySportsMatch={(match, idx) => {
-              void playback.handlePlaySportsMatch(match, idx);
-            }}
-            onPlayYouTubeVideo={playback.handlePlayYouTubeVideo}
-            onPlayCustomUrl={playback.handlePlayCustomUrl}
-            onOpenSeriesPage={(seriesItem) => {
-              const store = useAppStore.getState();
-              const resolvedTmdbId = Number(
-                seriesItem.tmdbId || String(seriesItem.id || '').replace(/[^\d]/g, '') || 0
-              );
-              if (resolvedTmdbId > 0) {
-                store.setRequestedMovieModal(null);
-                store.setRequestedSeriesModal({
-                  series: { ...seriesItem, tmdbId: resolvedTmdbId, mediaType: 'tv' },
-                  season: seriesItem.seasonNumber || 1,
-                });
-                return;
-              }
-              store.setRequestedSeriesModal(null);
-              store.setRequestedMovieModal(seriesItem);
-            }}
-          />
-        </React.Suspense>
+        <DaznMovistarWorldView
+          lang={lang}
+          externalSearchQuery={worldSearchQuery}
+          onPlayTdtChannel={(ch, idx, liveHint) => {
+            void playback.handlePlayTdtChannel(ch, idx, liveHint);
+          }}
+          onPlaySportsMatch={(match, idx) => {
+            void playback.handlePlaySportsMatch(match, idx);
+          }}
+          onPlayYouTubeVideo={playback.handlePlayYouTubeVideo}
+          onPlayCustomUrl={playback.handlePlayCustomUrl}
+          onOpenSeriesPage={(seriesItem) => {
+            const store = useAppStore.getState();
+            const resolvedTmdbId = Number(
+              seriesItem.tmdbId || String(seriesItem.id || '').replace(/[^\d]/g, '') || 0
+            );
+            if (resolvedTmdbId > 0) {
+              store.setRequestedMovieModal(null);
+              store.setRequestedSeriesModal({
+                series: { ...seriesItem, tmdbId: resolvedTmdbId, mediaType: 'tv' },
+                season: seriesItem.seasonNumber || 1,
+              });
+              return;
+            }
+            store.setRequestedSeriesModal(null);
+            store.setRequestedMovieModal(seriesItem);
+          }}
+        />
       </WorldShell>
     );
   }
@@ -674,25 +668,19 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
         quickActions={<MusicLanguageDropdown />}
         className={portalLandingActive ? 'rtv-world-touchdown' : ''}
       >
-        <React.Suspense fallback={<WorldSuspenseFallback />}>
-          <RiffanMusicWorldView
-            lang={lang}
-            externalSearchQuery={worldSearchQuery}
-          />
-        </React.Suspense>
+        <RiffanMusicWorldView
+          lang={lang}
+          externalSearchQuery={worldSearchQuery}
+        />
       </WorldShell>
     );
   }
 
-  if (activeWorld === 'providers') {
+  if (activeWorld === 'champions') {
     return (
       <WorldShell
-        world="providers"
-        title={pickLang(lang, {
-          es: 'Catálogo Total',
-          ca: 'Catàleg Total',
-          en: 'Full Catalog',
-        })}
+        world="champions"
+        title="Champions League"
         lang={lang}
         sessionMode={sessionMode}
         onUpgradeSoloToParty={() =>
@@ -705,80 +693,33 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
         searchValue={worldSearchQuery}
         onSearchChange={setWorldSearchQuery}
         searchPlaceholder={pickLang(lang, {
-          es: 'Buscar canal, película o serie en todos los servidores...',
-          ca: 'Cercar canal, pel·lícula o sèrie a tots els servidors...',
-          en: 'Search channel, movie or series across all servers...',
+          es: 'Buscar equipo, partido o canal Champions...',
+          ca: 'Cercar equip, partit o canal Champions...',
+          en: 'Search Champions team, match or channel...',
         })}
         className={portalLandingActive ? 'rtv-world-touchdown' : ''}
       >
-        <React.Suspense fallback={<WorldSuspenseFallback />}>
-          <ProvidersWorldView
-            lang={lang}
-            externalSearchQuery={worldSearchQuery}
-            onPlayTdtChannel={(ch, idx) => {
-              void playback.handlePlayTdtChannel(ch, idx);
-            }}
-            onPlayCustomUrl={playback.handlePlayCustomUrl}
-          />
-        </React.Suspense>
-      </WorldShell>
-    );
-  }
-
-  if (activeWorld === 'reels') {
-    return (
-      <WorldShell
-        world="reels"
-        fullHeight
-        title={pickLang(lang, {
-          es: 'CineTok · Clips',
-          ca: 'CineTok · Clips',
-          en: 'CineTok · Reels',
-        })}
-        lang={lang}
-        sessionMode={sessionMode}
-        onUpgradeSoloToParty={() =>
-          void lifecycle.upgradeSoloToPartyRoom({ keepDedicatedUrl: true })
-        }
-        onShareWorld={handleShareActiveWorld}
-        onBack={goBackWorld}
-        onGoHome={goHome}
-        onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
-        className={portalLandingActive ? 'rtv-world-touchdown' : ''}
-      >
-        <React.Suspense fallback={<WorldSuspenseFallback />}>
-          <CineReelsWorldView
-            lang={lang}
-            watchlist={watchlist}
-            watchHistory={watchHistory}
-            onPlayMovie={(movie) => {
-              void playback.handlePlayMovie(movie);
-            }}
-            onOpenMovieModal={(movie) => {
-              const store = useAppStore.getState();
-              store.setRequestedSeriesModal(null);
-              store.setRequestedMovieModal(movie);
-            }}
-            onOpenSeriesPage={(seriesItem) => {
-              const store = useAppStore.getState();
-              store.setRequestedMovieModal(null);
-              store.setRequestedSeriesModal({
-                series: { ...seriesItem, mediaType: 'tv' },
-                season: 1,
-              });
-            }}
-            onToggleCatalogFavorite={socialActions.handleToggleCatalogFavorite}
-            onAddToQueue={(movie) =>
-              lifecycle.handleAddToQueue({
-                kind: movie.mediaType === 'tv' ? 'tv' : 'movie',
-                title: movie.title,
-                subtitle: `${movie.year} · ${(movie.genres || []).slice(0, 2).join(' · ') || 'HD'}`,
-                poster: movie.poster,
-                tmdbId: movie.tmdbId,
-              })
-            }
-          />
-        </React.Suspense>
+        <ChampionsWorldView
+          lang={lang}
+          shareRoomId={shareRoomId}
+          externalSearchQuery={worldSearchQuery}
+          activeVideoRawUrl={roomState.videoState.rawSourceUrl}
+          activeMultiUrls={activeMultiUrls}
+          activeMultiCount={activeMultiCount}
+          loadingItemId={playback.loadingItemId}
+          isChannelFavorited={isChannelFavorited}
+          onToggleChannelFavorite={socialActions.handleToggleChannelFavorite}
+          onPlaySportsMatch={(match, idx) => {
+            void playback.handlePlaySportsMatch(match, idx);
+          }}
+          onPlaySecondaryChannel={(src) => {
+            void playback.handlePlaySecondaryChannel(src);
+          }}
+          onLaunchMultiMatchPreset={(sources) => {
+            void playback.handleLaunchMultiMatchPreset(sources);
+          }}
+          onCloseAllMultiScreens={playback.handleCloseAllSecondaryStreams}
+        />
       </WorldShell>
     );
   }
@@ -892,92 +833,84 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
             })
       }
     >
-      <React.Suspense fallback={<WorldSuspenseFallback />}>
-        <MediaCatalogHub
-          worldMode={
-            activeWorld === 'cine' ||
-            activeWorld === 'futbol' ||
-            activeWorld === 'tv' ||
-            activeWorld === 'youtube'
-              ? activeWorld
-              : 'cine'
-          }
-          sessionMode={sessionMode}
-          roomId={roomId}
-          externalSearchQuery={worldSearchQuery}
-          onExternalSearchChange={setWorldSearchQuery}
-          cineTab={cineTab}
-          onCineTabChange={setCineTab}
-          cineCastellano={cineCastellano}
-          onCineCastellanoChange={setCineCastellano}
-          futbolTab={futbolTab}
-          onFutbolTabChange={setFutbolTab}
-          activeSection={roomState.catalogSection}
-          onChangeSection={(sec) => {
-            if (sec === 'tdt') enterWorld('tv');
-            else if (sec === 'sports') enterWorld('futbol');
-            else if (sec === 'youtube') enterWorld('youtube');
-            else if (sec === 'games') enterWorld('juegos');
-            else if (sec === 'direct') enterWorld('sala');
-            else roomState.setCatalogSection(sec);
-          }}
-          lang={lang}
-          userName={currentUser.name}
-          activeVideoRawUrl={roomState.videoState.rawSourceUrl}
-          activeMediaTitle={
-            roomState.videoState.mode !== 'idle' ? roomState.videoState.title : ''
-          }
-          loadingItemId={playback.loadingItemId}
-          roomQueue={roomState.roomQueue}
-          watchHistory={watchHistory}
-          watchlist={watchlist}
-          favoriteChannels={favoriteChannels}
-          onToggleCatalogFavorite={socialActions.handleToggleCatalogFavorite}
-          onToggleChannelFavorite={socialActions.handleToggleChannelFavorite}
-          onPlayFavoriteChannel={playback.handlePlayFavoriteChannel}
-          onPlayMovie={playback.handlePlayMovie}
-          onPlaySeriesEpisode={playback.handlePlaySeriesEpisode}
-          onPlayCatalaEpisode={playback.handlePlayCatalaEpisode}
-          onReplayHistoryItem={playback.handleReplayHistoryItem}
-          onRemoveHistoryItem={socialActions.handleRemoveHistoryItem}
-          onClearHistory={socialActions.handleClearAllHistory}
-          onPlaySportsMatch={playback.handlePlaySportsMatch}
-          onPlayTdtChannel={playback.handlePlayTdtChannel}
-          onPlayYouTubeVideo={playback.handlePlayYouTubeVideo}
-          onPlayCustomUrl={playback.handlePlayCustomUrl}
-          onOpenCloudBrowser={lifecycle.handleOpenCloudBrowser}
-          onAddToQueue={lifecycle.handleAddToQueue}
-          onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
-          onPlayQueueItem={playback.handlePlayQueueItem}
-          onStartPollFromQueue={lifecycle.handleStartPollFromQueue}
-          onPlaySecondaryChannel={playback.handlePlaySecondaryChannel}
-          hasConnectedSmartTv={hasConnectedSmartTv}
-          onCreateNewRoom={lifecycle.handleCreateFreshRoom}
-          showWatchlistOnly={showWatchlistOnly}
-          onWatchlistOnlyChange={setShowWatchlistOnly}
-          currentUser={currentUser}
-          participants={roomState.participants}
-          onSearchWithAi={(query, mediaType = 'all') => {
-            setShowCommandSearch(false);
-            setAiSearchLaunch((prev) => ({
-              query,
-              mediaType,
-              mode: 'request',
-              seq: (prev?.seq || 0) + 1,
-            }));
-            setShowSurpriseModal(true);
-          }}
-          onOpenSurpriseMe={() => {
-            setAiSearchLaunch((prev) => ({
-              query: '',
-              mediaType: 'all',
-              mode: 'surprise',
-              seq: (prev?.seq || 0) + 1,
-            }));
-            setShowSurpriseModal(true);
-          }}
-        />
-      </React.Suspense>
+      <MediaCatalogHub
+        worldMode={activeWorld}
+        sessionMode={sessionMode}
+        roomId={roomId}
+        externalSearchQuery={worldSearchQuery}
+        onExternalSearchChange={setWorldSearchQuery}
+        cineTab={cineTab}
+        onCineTabChange={setCineTab}
+        cineCastellano={cineCastellano}
+        onCineCastellanoChange={setCineCastellano}
+        futbolTab={futbolTab}
+        onFutbolTabChange={setFutbolTab}
+        activeSection={roomState.catalogSection}
+        onChangeSection={(sec) => {
+          if (sec === 'tdt') enterWorld('tv');
+          else if (sec === 'sports') enterWorld('futbol');
+          else if (sec === 'youtube') enterWorld('youtube');
+          else if (sec === 'games') enterWorld('juegos');
+          else if (sec === 'direct') enterWorld('sala');
+          else roomState.setCatalogSection(sec);
+        }}
+        lang={lang}
+        userName={currentUser.name}
+        activeVideoRawUrl={roomState.videoState.rawSourceUrl}
+        activeMultiUrls={activeMultiUrls}
+        activeMediaTitle={
+          roomState.videoState.mode !== 'idle' ? roomState.videoState.title : ''
+        }
+        loadingItemId={playback.loadingItemId}
+        roomQueue={roomState.roomQueue}
+        watchHistory={watchHistory}
+        watchlist={watchlist}
+        favoriteChannels={favoriteChannels}
+        onToggleCatalogFavorite={socialActions.handleToggleCatalogFavorite}
+        onToggleChannelFavorite={socialActions.handleToggleChannelFavorite}
+        onPlayFavoriteChannel={playback.handlePlayFavoriteChannel}
+        onPlayMovie={playback.handlePlayMovie}
+        onPlaySeriesEpisode={playback.handlePlaySeriesEpisode}
+        onPlayCatalaEpisode={playback.handlePlayCatalaEpisode}
+        onReplayHistoryItem={playback.handleReplayHistoryItem}
+        onRemoveHistoryItem={socialActions.handleRemoveHistoryItem}
+        onClearHistory={socialActions.handleClearAllHistory}
+        onPlaySportsMatch={playback.handlePlaySportsMatch}
+        onPlayTdtChannel={playback.handlePlayTdtChannel}
+        onPlayYouTubeVideo={playback.handlePlayYouTubeVideo}
+        onPlayCustomUrl={playback.handlePlayCustomUrl}
+        onOpenCloudBrowser={lifecycle.handleOpenCloudBrowser}
+        onAddToQueue={lifecycle.handleAddToQueue}
+        onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
+        onPlayQueueItem={playback.handlePlayQueueItem}
+        onStartPollFromQueue={lifecycle.handleStartPollFromQueue}
+        onPlaySecondaryChannel={playback.handlePlaySecondaryChannel}
+        hasConnectedSmartTv={hasConnectedSmartTv}
+        onCreateNewRoom={lifecycle.handleCreateFreshRoom}
+        showWatchlistOnly={showWatchlistOnly}
+        onWatchlistOnlyChange={setShowWatchlistOnly}
+        currentUser={currentUser}
+        participants={roomState.participants}
+        onSearchWithAi={(query, mediaType = 'all') => {
+          setShowCommandSearch(false);
+          setAiSearchLaunch((prev) => ({
+            query,
+            mediaType,
+            mode: 'request',
+            seq: (prev?.seq || 0) + 1,
+          }));
+          setShowSurpriseModal(true);
+        }}
+        onOpenSurpriseMe={() => {
+          setAiSearchLaunch((prev) => ({
+            query: '',
+            mediaType: 'all',
+            mode: 'surprise',
+            seq: (prev?.seq || 0) + 1,
+          }));
+          setShowSurpriseModal(true);
+        }}
+      />
     </WorldShell>
   );
 };

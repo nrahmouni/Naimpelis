@@ -1163,28 +1163,6 @@ export const MusicAudioEngine: React.FC = () => {
         return;
       }
 
-      if (
-        (currentTrack.source === 'podcast' || currentTrack.id.startsWith('pod-ep-')) &&
-        currentTrack.streamUrl
-      ) {
-        const directUrl = currentTrack.streamUrl;
-        const isHls = directUrl.toLowerCase().includes('.m3u8');
-        useMusicStore.getState().setResolvedPlayback(
-          {
-            trackId: expectedTrackId,
-            sourceType: isHls ? 'audio-hls' : 'audio-mp3',
-            sourceLabel: 'Podcast RSS HD',
-            streamUrl: directUrl,
-            proxiedUrl: `/api/music/stream-proxy?url=${encodeURIComponent(directUrl)}`,
-            bitrateKbps: 192,
-            provider: 'RSS Podcast',
-            fullLength: true,
-          },
-          expectedTrackId
-        );
-        return;
-      }
-
       const qs = new URLSearchParams({
         trackId: currentTrack.id,
         title: currentTrack.title,

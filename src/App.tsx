@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect } from 'react';
+import React, { useCallback } from 'react';
 import { Check } from 'lucide-react';
 import { MotionConfig } from 'motion/react';
 import { RiffanBackIcon, RiffanLoaderR } from './components/ui/RiffanIcons';
@@ -10,30 +10,18 @@ import { NaimBrandLogo } from './components/NaimBrandLogo';
 import { getMonogramInitials } from './components/MobileViewportGuard';
 import { OfflineIndicator } from './components/PWAInstallPrompt';
 import { PreviewAutoEscapeBanner } from './components/player/PreviewAutoEscapeBanner';
+import { FloatingRoomBubble } from './components/FloatingRoomBubble';
+import { AppGlobalModalsLayer } from './components/AppGlobalModalsLayer';
+import { AppEarlyRouteView } from './components/AppEarlyRouteView';
+import { AppWorldsContent } from './components/AppWorldsContent';
+import { PlayerStageContainer } from './components/PlayerStageContainer';
 import { useAppController } from './hooks/useAppController';
 import { lazyWithRetry } from './utils/lazyWithRetry';
+import { GlobalMusicLayer } from './components/music/GlobalMusicLayer';
 import { useMusicStore } from './store/useMusicStore';
 
 const PartySidebar = lazyWithRetry(() =>
   import('./components/PartySidebar').then((m) => ({ default: m.PartySidebar }))
-);
-const FloatingRoomBubble = lazyWithRetry(() =>
-  import('./components/FloatingRoomBubble').then((m) => ({ default: m.FloatingRoomBubble }))
-);
-const AppGlobalModalsLayer = lazyWithRetry(() =>
-  import('./components/AppGlobalModalsLayer').then((m) => ({ default: m.AppGlobalModalsLayer }))
-);
-const AppEarlyRouteView = lazyWithRetry(() =>
-  import('./components/AppEarlyRouteView').then((m) => ({ default: m.AppEarlyRouteView }))
-);
-const AppWorldsContent = lazyWithRetry(() =>
-  import('./components/AppWorldsContent').then((m) => ({ default: m.AppWorldsContent }))
-);
-const PlayerStageContainer = lazyWithRetry(() =>
-  import('./components/PlayerStageContainer').then((m) => ({ default: m.PlayerStageContainer }))
-);
-const GlobalMusicLayer = lazyWithRetry(() =>
-  import('./components/music/GlobalMusicLayer').then((m) => ({ default: m.GlobalMusicLayer }))
 );
 
 export function App() {
@@ -83,46 +71,6 @@ export function App() {
 
   const hasActiveMusicBar = useMusicStore((s) => Boolean(s.currentTrack || s.activeRadio));
 
-  const isEarlyRoute =
-    isControllerPage ||
-    isSamsungPage ||
-    isWebOsPage ||
-    isAdminPage ||
-    showDesignSystem ||
-    isAdsPageOpen ||
-    isTvPairLobby ||
-    (!inRoom && !hasEnteredApp) ||
-    isTvMode;
-
-  useEffect(() => {
-    if (isEarlyRoute) return;
-    let cancelled = false;
-    const runPrewarm = () => {
-      if (cancelled) return;
-      void import('./services/xtreamClientService')
-        .then(({ prewarmXtreamClientCatalogOnStartup }) => {
-          if (!cancelled) prewarmXtreamClientCatalogOnStartup();
-        })
-        .catch(() => {});
-    };
-    const w = window as Window & {
-      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
-      cancelIdleCallback?: (id: number) => void;
-    };
-    if (typeof w.requestIdleCallback === 'function') {
-      const idleId = w.requestIdleCallback(runPrewarm, { timeout: 2000 });
-      return () => {
-        cancelled = true;
-        w.cancelIdleCallback?.(idleId);
-      };
-    }
-    const timer = window.setTimeout(runPrewarm, 1200);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [isEarlyRoute]);
-
   const handleDismissLanguageNotice = useCallback(() => {
     playback.setLanguageNotice(null);
   }, [playback.setLanguageNotice]);
@@ -171,6 +119,9 @@ export function App() {
     setFriendAddedNotice(null);
   }, [friendNoticeTimerRef, setFriendAddedNotice]);
 
+  const isEarlyRoute =
+    isControllerPage || isSamsungPage || isWebOsPage || isAdminPage || showDesignSystem || isAdsPageOpen || isTvPairLobby || (!inRoom && !hasEnteredApp) || isTvMode;
+
   const handleOpenMusicWorldFromBar = useCallback(() => {
     if (!inRoom && !hasEnteredApp) {
       lifecycle.handleEnterSolo(profile);
@@ -179,14 +130,7 @@ export function App() {
   }, [inRoom, hasEnteredApp, lifecycle, profile, enterWorld]);
 
   const renderEarlyRoute = () => (
-    <React.Suspense
-      fallback={
-        <div className="h-dvh w-full bg-black flex items-center justify-center">
-          <RiffanLoaderR size={44} />
-        </div>
-      }
-    >
-      <AppEarlyRouteView
+    <AppEarlyRouteView
       showDesignSystem={showDesignSystem}
       isAdsPageOpen={isAdsPageOpen}
       isAdminPage={isAdminPage}
@@ -263,10 +207,9 @@ export function App() {
         void playback.handleSelectTrack(idx, sec || 0);
       }}
       onPromoteCloudStreamToNative={playback.handlePromoteCloudStreamToNative}
-        onPrevEpisode={playback.handlePrevEpisode}
-        onNextEpisode={playback.handleNextEpisode}
-      />
-    </React.Suspense>
+      onPrevEpisode={playback.handlePrevEpisode}
+      onNextEpisode={playback.handleNextEpisode}
+    />
   );
 
   const renderPartySidebar = () => (
@@ -491,8 +434,7 @@ export function App() {
                   : 'flex-1 min-h-0 min-w-0 overflow-y-auto overflow-x-clip touch-pan-y smooth-scroll-area'
               }
             >
-              <React.Suspense fallback={null}>
-                <PlayerStageContainer
+              <PlayerStageContainer
                 lang={lang}
                 userName={currentUser.name}
                 currentUserId={currentUser.id}
@@ -651,60 +593,50 @@ export function App() {
                 onStopRoomPlayback={playback.handleStopRoomPlaybackForEveryone}
                 onClearExtractionError={handleClearExtractionError}
               />
-              </React.Suspense>
 
               {hideBrowseBelowPlayer ? null : (
                 <div className={hasActiveMusicBar && activeWorld !== 'music' ? 'pb-24 sm:pb-28' : ''}>
-                  <React.Suspense
-                    fallback={
-                      <div className="py-24 flex items-center justify-center">
-                        <RiffanLoaderR size={40} />
-                      </div>
-                    }
-                  >
-                    <AppWorldsContent controller={c} renderPartySidebar={renderPartySidebar} />
-                  </React.Suspense>
+                  <AppWorldsContent controller={c} renderPartySidebar={renderPartySidebar} />
                 </div>
               )}
             </div>
           </div>
 
-          {inRoom && sessionMode !== 'solo' && activeWorld !== 'sala' && !isTvMode && (
-            <React.Suspense fallback={null}>
-              <FloatingRoomBubble
-                lang={lang}
-                visible={
-                  !showCommandSearch &&
-                  !showSurpriseModal &&
-                  !showVoiceAssistant &&
-                  !showLegalModal &&
-                  !showNotificationCenter &&
-                  !showDesignSystem &&
-                  !isAdminPage &&
-                  !profileHubOpen &&
-                  !settingsSheetOpen &&
-                  !smartTvModalOpen &&
-                  !aiSearchLaunch
-                }
-                participantsCount={roomState.participants.length}
-                voiceActive={voiceChat.isJoined}
-                unreadCount={roomState.unreadChatCount}
-                isSheetOpen={isFloatingRoomOpen}
-                dockedBelowPlayer={isPlayerActive && !isDockedMini && !isPlayerClosedLocally}
-                onOpenSheet={() => {
-                  setIsFloatingRoomOpen(true);
-                  roomState.setUnreadChatCount(0);
-                }}
-                onCloseSheet={() => setIsFloatingRoomOpen(false)}
-                onOpenFullSala={() => enterWorld('sala')}
-              >
-                {renderPartySidebar()}
-              </FloatingRoomBubble>
-            </React.Suspense>
-          )}
+          <FloatingRoomBubble
+            lang={lang}
+            visible={
+              inRoom &&
+              sessionMode !== 'solo' &&
+              activeWorld !== 'sala' &&
+              !isTvMode &&
+              !showCommandSearch &&
+              !showSurpriseModal &&
+              !showVoiceAssistant &&
+              !showLegalModal &&
+              !showNotificationCenter &&
+              !showDesignSystem &&
+              !isAdminPage &&
+              !profileHubOpen &&
+              !settingsSheetOpen &&
+              !smartTvModalOpen &&
+              !aiSearchLaunch
+            }
+            participantsCount={roomState.participants.length}
+            voiceActive={voiceChat.isJoined}
+            unreadCount={roomState.unreadChatCount}
+            isSheetOpen={isFloatingRoomOpen}
+            dockedBelowPlayer={isPlayerActive && !isDockedMini && !isPlayerClosedLocally}
+            onOpenSheet={() => {
+              setIsFloatingRoomOpen(true);
+              roomState.setUnreadChatCount(0);
+            }}
+            onCloseSheet={() => setIsFloatingRoomOpen(false)}
+            onOpenFullSala={() => enterWorld('sala')}
+          >
+            {renderPartySidebar()}
+          </FloatingRoomBubble>
 
-          <React.Suspense fallback={null}>
-            <AppGlobalModalsLayer
+          <AppGlobalModalsLayer
             lang={lang}
             onChangeLang={setLang}
             inRoom={inRoom}
@@ -829,8 +761,7 @@ export function App() {
             onNextEpisode={playback.handleNextEpisode}
             setCatalogSection={roomState.setCatalogSection}
             enterWorld={enterWorld}
-            />
-          </React.Suspense>
+          />
 
           {deepLinkResolving && (
             <div
@@ -878,15 +809,13 @@ export function App() {
         </div>
       </div>
       )}
-      {!isTvMode && (hasEnteredApp || inRoom || hasActiveMusicBar || activeWorld === 'music') && (
-        <React.Suspense fallback={null}>
-          <GlobalMusicLayer
-            isFullscreenVideoActive={
-              !isEarlyRoute && isPlayerActive && !isDockedMini && !isPlayerClosedLocally
-            }
-            onOpenMusicWorld={handleOpenMusicWorldFromBar}
-          />
-        </React.Suspense>
+      {!isTvMode && (
+        <GlobalMusicLayer
+          isFullscreenVideoActive={
+            !isEarlyRoute && isPlayerActive && !isDockedMini && !isPlayerClosedLocally
+          }
+          onOpenMusicWorld={handleOpenMusicWorldFromBar}
+        />
       )}
     </MotionConfig>
   );

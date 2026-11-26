@@ -39,7 +39,6 @@ export async function fetchRealFootballMatchDetails(params: {
       homeTeam: params.homeTeam,
       awayTeam: params.awayTeam,
       dateKey: params.dateKey,
-      leagueSlug: cleanLeagueSlug,
     });
     if (matched) fotmobId = matched.fotmobId;
   }

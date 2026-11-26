@@ -147,7 +147,29 @@ export function usePlayerVideoCallbacks(p: UsePlayerVideoCallbacksParams) {
     const waitAtTime = vNow ? vNow.currentTime : 0;
     const hasStartedPlayback = Boolean(vNow && ((vNow.currentTime || 0) > 0.25 || vNow.readyState >= 2));
 
-    if (immediate && hasStartedPlayback && p.videoState.isLive && vNow && !vNow.paused) {
+    let bufferedAheadNow = 0;
+    if (vNow) {
+      try {
+        for (let i = 0; i < vNow.buffered.length; i++) {
+          const bStart = vNow.buffered.start(i);
+          const bEnd = vNow.buffered.end(i);
+          if (vNow.currentTime >= bStart - 0.1 && vNow.currentTime <= bEnd) {
+            bufferedAheadNow = Math.max(bufferedAheadNow, bEnd - vNow.currentTime);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (
+      immediate &&
+      hasStartedPlayback &&
+      p.videoState.isLive &&
+      vNow &&
+      !vNow.paused &&
+      bufferedAheadNow < 0.75
+    ) {
       p.setStreamRefreshPhase?.('recovering');
       p.setIsBuffering(true);
     }
@@ -155,7 +177,7 @@ export function usePlayerVideoCallbacks(p: UsePlayerVideoCallbacksParams) {
     if (p.bufferingDelayTimerRef.current) {
       clearTimeout(p.bufferingDelayTimerRef.current);
     }
-    const delayMs = p.videoState.isLive ? (immediate ? 250 : 550) : 1500;
+    const delayMs = p.videoState.isLive ? (immediate ? 850 : 1000) : 1500;
     p.bufferingDelayTimerRef.current = setTimeout(() => {
       const v = p.videoRef.current;
       if (!v || v.paused) return;
