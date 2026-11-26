@@ -424,6 +424,46 @@ input:focus,
 .stage-status-right > * {
   margin-left: 14px;
 }
+.stage-search-btn {
+  height: 44px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(167, 139, 250, 0.5);
+  background: #1B1533;
+  color: #FFFFFF;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  display: -webkit-inline-flex;
+  display: inline-flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  -webkit-transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, -webkit-transform 0.12s ease;
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease, transform 0.12s ease;
+}
+.stage-search-btn svg {
+  width: 18px;
+  height: 18px;
+  margin-right: 8px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+.stage-search-btn.active {
+  background: #7C3AED;
+  border-color: #C4B5FD;
+  color: #FFFFFF;
+}
+.stage-search-btn:hover,
+.stage-search-btn:focus {
+  background: #FFFFFF;
+  color: #06070B;
+  border-color: #FFFFFF;
+  -webkit-transform: scale(1.04);
+  transform: scale(1.04);
+}
 .stage-pair-readout {
   height: 40px;
   padding: 0 15px;

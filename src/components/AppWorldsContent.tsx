@@ -1,6 +1,5 @@
 import React from 'react';
 import { Star } from 'lucide-react';
-import type { RoomGameInviteType } from '../shared/protocol';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { socketService } from '../services/socket';
@@ -78,17 +77,13 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     setFutbolTab,
     setShowDesignSystem,
     setProfileHubOpen,
-    profileHubOpen,
     setProfileHubTab,
     setShowCommandSearch,
-    showCommandSearch,
     setShowSurpriseModal,
-    showSurpriseModal,
     setAiSearchLaunch,
     setShowWatchlistOnly,
     showWatchlistOnly,
     setShowVoiceAssistant,
-    showVoiceAssistant,
     roomId,
     worldSearchQuery,
     setWorldSearchQuery,
@@ -109,24 +104,11 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     playback,
     lifecycle,
     hasConnectedSmartTv,
-    isPlayerActive,
-    isDockedMini,
     sessionMode,
   } = c;
 
-  const requestedMovieModal = useAppStore((s) => s.requestedMovieModal);
-  const requestedSeriesModal = useAppStore((s) => s.requestedSeriesModal);
   const futbolFavOnly = useAppStore((s) => s.futbolFavOnly);
   const setFutbolFavOnly = useAppStore((s) => s.setFutbolFavOnly);
-  const suppressHomeSearchOverlay = Boolean(
-    requestedMovieModal ||
-      requestedSeriesModal ||
-      (isPlayerActive && !isDockedMini) ||
-      showSurpriseModal ||
-      showCommandSearch ||
-      showVoiceAssistant ||
-      profileHubOpen
-  );
 
   useBackInterceptor(
     activeWorld === 'cine' && showWatchlistOnly,
@@ -303,31 +285,8 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           liveMatchesCount={liveMatchesCount}
           roomParticipantsCount={roomState.participants.length}
           movies={quickPool.movies}
-          series={quickPool.series}
           tdtChannels={quickPool.tdt}
           liveMatches={homeFootballMatches}
-          suppressSearchOverlay={suppressHomeSearchOverlay}
-          onOpenMovieDetails={(movieItem) => {
-            const store = useAppStore.getState();
-            store.setRequestedSeriesModal(null);
-            store.setRequestedMovieModal(movieItem);
-          }}
-          onOpenSeriesPage={(seriesItem) => {
-            const store = useAppStore.getState();
-            const resolvedTmdbId = Number(
-              seriesItem.tmdbId || String(seriesItem.id || '').replace(/[^\d]/g, '') || 0
-            );
-            if (resolvedTmdbId > 0) {
-              store.setRequestedMovieModal(null);
-              store.setRequestedSeriesModal({
-                series: { ...seriesItem, tmdbId: resolvedTmdbId, mediaType: 'tv' },
-                season: seriesItem.seasonNumber || 1,
-              });
-              return;
-            }
-            store.setRequestedSeriesModal(null);
-            store.setRequestedMovieModal(seriesItem);
-          }}
           onOpenDesignSystem={() => setShowDesignSystem(true)}
           onChangeLang={setLang}
           onPlayChannel={(ch) => {
@@ -338,12 +297,6 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
             void playback.handlePlaySportsMatch(matchItem, channelIndex);
           }}
           loadingItemId={playback.loadingItemId}
-          onSelectGame={(gid) => {
-            const mappedGame = (gid === 'billar' ? 'pool' : gid) as RoomGameInviteType;
-            roomState.setForcedOpenGame({ gameType: mappedGame, seq: Date.now() });
-            roomState.setIsInActiveGame(true);
-            enterWorld('juegos', { withPortal: true });
-          }}
           onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
         />
       </div>

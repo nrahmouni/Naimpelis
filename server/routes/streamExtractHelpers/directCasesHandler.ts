@@ -601,7 +601,7 @@ export async function handleDirectExtractCases(params: {
 
   // CASE 1C: Verified Web Embed Player track switch (`web_embed`) & ClipBox embed players
   const isClipboxPlayerHost =
-    /(?:^|\.)(vidlink\.pro|player\.videasy\.net|player\.vidzee\.wtf|vixsrc\.to|vidrock\.net|vidnest\.io|moviesapi\.club|2embed\.cc|megaplay\.buzz|vidfast\.[a-z.]+|vidsrc\.[a-z]+|videm\.buzz|primesrc\.me)/i.test(
+    /(?:^|\.)(bingetrix\.sc|vidlink\.pro|player\.videasy\.net|player\.vidzee\.wtf|vixsrc\.to|moviesapi\.club|2embed\.cc|megaplay\.buzz|primesrc\.me)/i.test(
       rawInput
     );
   if ((resolverType === 'web_embed' || (!resolverType && isClipboxPlayerHost)) && rawInput) {
@@ -611,7 +611,7 @@ export async function handleDirectExtractCases(params: {
         fullEmbedUrl
       );
     const isHtmlProxyTarget =
-      /(^|\.)(vidsrc\.buzz|videm\.buzz|vidrock\.net|2embed\.cc|www\.2embed\.cc|vidfast\.[a-z.]+)/i.test(
+      /(^|\.)(bingetrix\.sc|2embed\.cc|www\.2embed\.cc)/i.test(
         fullEmbedUrl
       ) ||
       (isSandboxedFrame && !isCloudflareDirectEmbed);

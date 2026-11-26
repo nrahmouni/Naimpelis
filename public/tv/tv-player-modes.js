@@ -415,9 +415,14 @@ function switchToLocalTrack(trackIdx, resumeSec) {
     btnDockAudio.textContent = nextTr.label || 'Señal ' + (localTrackIdx + 1);
   }
   if (nextTr.resolvedStreamUrl && (nextTr.resolvedStreamUrl.indexOf('/api/') === 0 || nextTr.resolvedStreamUrl.indexOf('http') === 0 || nextTr.resolverType === 'youtube')) {
+    var isDirectMp4Track =
+      nextTr.resolverType === 'direct_mp4' ||
+      nextTr.resolverType === 'mp4' ||
+      /\.(mp4|mkv|webm)(\?|$)/i.test(nextTr.resolvedStreamUrl) ||
+      nextTr.resolvedStreamUrl.indexOf('/api/iptv/vod/') === 0;
     var directMode = nextTr.resolverType === 'youtube'
       ? 'youtube'
-      : (nextTr.resolverType === 'web_embed' ? 'embed' : 'hls');
+      : (nextTr.resolverType === 'web_embed' ? 'embed' : (isDirectMp4Track ? 'direct' : 'hls'));
     applyVideoState(
       {
         mode: directMode,
@@ -631,6 +636,11 @@ function playTdtChannelOnTv(ch, trackIndex, isFailoverAttempt) {
                 if (typeof fData.winningIndex === 'number' && fData.winningIndex >= 0 && fData.winningIndex < localTracks.length) {
                   activeLiveTrackIdx = fData.winningIndex;
                   localTrackIdx = fData.winningIndex;
+                }
+                if (btnDockAudio && localTracks.length > 1) {
+                  btnDockAudio.style.display = 'inline-flex';
+                  var winTr = localTracks[localTrackIdx];
+                  btnDockAudio.textContent = (winTr && winTr.label) || ('Señal ' + (localTrackIdx + 1));
                 }
                 applyVideoState(
                   {

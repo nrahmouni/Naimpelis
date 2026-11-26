@@ -8,9 +8,7 @@ import {
   Loader2,
   Play,
   RefreshCw,
-  Search,
   Tv,
-  X,
 } from 'lucide-react';
 import type { SpanishTdtChannel } from '../../types';
 import type {
@@ -27,7 +25,6 @@ import { PosterImage } from '../ui/PosterImage';
 import { ProviderSeriesModal } from './ProviderSeriesModal';
 
 const BATCH_SIZE = 48;
-const SEARCH_DEBOUNCE_MS = 250;
 
 interface ProvidersCatalogSectionProps {
   onPlayChannel: (channel: SpanishTdtChannel) => void;
@@ -57,68 +54,18 @@ export const ProvidersCatalogSection: React.FC<ProvidersCatalogSectionProps> = (
   const [selectedScope, setSelectedScope] = useState<'all' | string>('all');
   const [mediaTab, setMediaTab] = useState<ProviderMediaTab>('live');
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('all');
-  const [searchInput, setSearchInput] = useState<string>('');
-  const [debouncedQuery, setDebouncedQuery] = useState<string>('');
   const [visibleLimit, setVisibleLimit] = useState<number>(BATCH_SIZE);
   const [activeSeriesModal, setActiveSeriesModal] = useState<ProviderSeriesItem | null>(null);
-
-  const [remoteSearchLoading, setRemoteSearchLoading] = useState<boolean>(false);
-  const [remoteSearchResults, setRemoteSearchResults] = useState<{
-    live: ProviderLiveItem[];
-    movies: ProviderMovieItem[];
-    series: ProviderSeriesItem[];
-  }>({ live: [], movies: [], series: [] });
 
   const sentinelRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      setDebouncedQuery(searchInput.trim().toLowerCase());
-    }, SEARCH_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
-  }, [searchInput]);
-
-  useEffect(() => {
     setVisibleLimit(BATCH_SIZE);
-  }, [selectedScope, mediaTab, selectedCategoryId, debouncedQuery]);
+  }, [selectedScope, mediaTab, selectedCategoryId]);
 
   useEffect(() => {
     setSelectedCategoryId('all');
   }, [selectedScope, mediaTab]);
-
-  // When searching without full client catalog downloaded, query lightweight backend search index
-  useEffect(() => {
-    if (hasLoadedFullCatalogs || debouncedQuery.length < 2) {
-      setRemoteSearchResults({ live: [], movies: [], series: [] });
-      setRemoteSearchLoading(false);
-      return;
-    }
-
-    const ctrl = new AbortController();
-    setRemoteSearchLoading(true);
-    fetch(`/api/providers/search?q=${encodeURIComponent(debouncedQuery)}&limit=48`, {
-      signal: ctrl.signal,
-    })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((json) => {
-        if (ctrl.signal.aborted) return;
-        setRemoteSearchResults({
-          live: Array.isArray(json?.live) ? json.live : [],
-          movies: Array.isArray(json?.movies) ? json.movies : [],
-          series: Array.isArray(json?.series) ? json.series : [],
-        });
-      })
-      .catch(() => {
-        if (!ctrl.signal.aborted) {
-          setRemoteSearchResults({ live: [], movies: [], series: [] });
-        }
-      })
-      .finally(() => {
-        if (!ctrl.signal.aborted) setRemoteSearchLoading(false);
-      });
-
-    return () => ctrl.abort();
-  }, [debouncedQuery, hasLoadedFullCatalogs]);
 
   const activeSlots = useMemo(() => {
     if (selectedScope === 'all') return orderedSlots;
@@ -126,16 +73,6 @@ export const ProvidersCatalogSection: React.FC<ProvidersCatalogSectionProps> = (
   }, [orderedSlots, selectedScope]);
 
   const scopedCounts = useMemo(() => {
-    if (!hasLoadedFullCatalogs && debouncedQuery.length >= 2) {
-      const scopeFilter = <T extends { providerId: string }>(arr: T[]) =>
-        selectedScope === 'all' ? arr.length : arr.filter((x) => x.providerId === selectedScope).length;
-      return {
-        live: scopeFilter(remoteSearchResults.live),
-        movies: scopeFilter(remoteSearchResults.movies),
-        series: scopeFilter(remoteSearchResults.series),
-      };
-    }
-
     let live = 0;
     let movies = 0;
     let series = 0;
@@ -145,7 +82,7 @@ export const ProvidersCatalogSection: React.FC<ProvidersCatalogSectionProps> = (
       series += slot.counts.series;
     }
     return { live, movies, series };
-  }, [activeSlots, hasLoadedFullCatalogs, debouncedQuery, remoteSearchResults, selectedScope]);
+  }, [activeSlots]);
 
   const availableCategories = useMemo<ProviderCategoryItem[]>(() => {
     const map = new Map<string, string>();
@@ -168,15 +105,10 @@ export const ProvidersCatalogSection: React.FC<ProvidersCatalogSectionProps> = (
       .slice(0, 80);
   }, [activeSlots, mediaTab]);
 
-  const isUnfiltered = selectedCategoryId === 'all' && !debouncedQuery;
+  const isUnfiltered = selectedCategoryId === 'all';
 
   const filteredLive = useMemo<ProviderLiveItem[]>(() => {
     if (mediaTab !== 'live') return [];
-    if (!hasLoadedFullCatalogs && debouncedQuery.length >= 2) {
-      return selectedScope === 'all'
-        ? remoteSearchResults.live
-        : remoteSearchResults.live.filter((item) => item.providerId === selectedScope);
-    }
     const out: ProviderLiveItem[] = [];
     for (const slot of activeSlots) {
       const list = slot.data?.liveStreams;
@@ -190,43 +122,17 @@ export const ProvidersCatalogSection: React.FC<ProvidersCatalogSectionProps> = (
       }
       for (let i = 0; i < list.length; i++) {
         const item = list[i];
-        if (
-          selectedCategoryId !== 'all' &&
-          item.categoryName.trim().toLowerCase() !== selectedCategoryId
-        ) {
-          continue;
-        }
-        if (
-          debouncedQuery &&
-          !item.name.toLowerCase().includes(debouncedQuery) &&
-          !item.categoryName.toLowerCase().includes(debouncedQuery) &&
-          !item.providerName.toLowerCase().includes(debouncedQuery)
-        ) {
+        if (item.categoryName.trim().toLowerCase() !== selectedCategoryId) {
           continue;
         }
         out.push(item);
       }
     }
     return out;
-  }, [
-    activeSlots,
-    mediaTab,
-    selectedCategoryId,
-    debouncedQuery,
-    isUnfiltered,
-    visibleLimit,
-    hasLoadedFullCatalogs,
-    remoteSearchResults.live,
-    selectedScope,
-  ]);
+  }, [activeSlots, mediaTab, selectedCategoryId, isUnfiltered, visibleLimit]);
 
   const filteredMovies = useMemo<ProviderMovieItem[]>(() => {
     if (mediaTab !== 'movies') return [];
-    if (!hasLoadedFullCatalogs && debouncedQuery.length >= 2) {
-      return selectedScope === 'all'
-        ? remoteSearchResults.movies
-        : remoteSearchResults.movies.filter((item) => item.providerId === selectedScope);
-    }
     const out: ProviderMovieItem[] = [];
     for (const slot of activeSlots) {
       const list = slot.data?.vodStreams;
@@ -240,43 +146,17 @@ export const ProvidersCatalogSection: React.FC<ProvidersCatalogSectionProps> = (
       }
       for (let i = 0; i < list.length; i++) {
         const item = list[i];
-        if (
-          selectedCategoryId !== 'all' &&
-          item.categoryName.trim().toLowerCase() !== selectedCategoryId
-        ) {
-          continue;
-        }
-        if (
-          debouncedQuery &&
-          !item.name.toLowerCase().includes(debouncedQuery) &&
-          !item.categoryName.toLowerCase().includes(debouncedQuery) &&
-          !item.providerName.toLowerCase().includes(debouncedQuery)
-        ) {
+        if (item.categoryName.trim().toLowerCase() !== selectedCategoryId) {
           continue;
         }
         out.push(item);
       }
     }
     return out;
-  }, [
-    activeSlots,
-    mediaTab,
-    selectedCategoryId,
-    debouncedQuery,
-    isUnfiltered,
-    visibleLimit,
-    hasLoadedFullCatalogs,
-    remoteSearchResults.movies,
-    selectedScope,
-  ]);
+  }, [activeSlots, mediaTab, selectedCategoryId, isUnfiltered, visibleLimit]);
 
   const filteredSeries = useMemo<ProviderSeriesItem[]>(() => {
     if (mediaTab !== 'series') return [];
-    if (!hasLoadedFullCatalogs && debouncedQuery.length >= 2) {
-      return selectedScope === 'all'
-        ? remoteSearchResults.series
-        : remoteSearchResults.series.filter((item) => item.providerId === selectedScope);
-    }
     const out: ProviderSeriesItem[] = [];
     for (const slot of activeSlots) {
       const list = slot.data?.seriesList;
@@ -290,35 +170,14 @@ export const ProvidersCatalogSection: React.FC<ProvidersCatalogSectionProps> = (
       }
       for (let i = 0; i < list.length; i++) {
         const item = list[i];
-        if (
-          selectedCategoryId !== 'all' &&
-          item.categoryName.trim().toLowerCase() !== selectedCategoryId
-        ) {
-          continue;
-        }
-        if (
-          debouncedQuery &&
-          !item.name.toLowerCase().includes(debouncedQuery) &&
-          !item.categoryName.toLowerCase().includes(debouncedQuery) &&
-          !item.providerName.toLowerCase().includes(debouncedQuery)
-        ) {
+        if (item.categoryName.trim().toLowerCase() !== selectedCategoryId) {
           continue;
         }
         out.push(item);
       }
     }
     return out;
-  }, [
-    activeSlots,
-    mediaTab,
-    selectedCategoryId,
-    debouncedQuery,
-    isUnfiltered,
-    visibleLimit,
-    hasLoadedFullCatalogs,
-    remoteSearchResults.series,
-    selectedScope,
-  ]);
+  }, [activeSlots, mediaTab, selectedCategoryId, isUnfiltered, visibleLimit]);
 
   const loadedUnfilteredTotal = useMemo(() => {
     let n = 0;
@@ -430,7 +289,7 @@ export const ProvidersCatalogSection: React.FC<ProvidersCatalogSectionProps> = (
     }
   };
 
-  const showCatalogBody = isExpanded || debouncedQuery.length >= 2;
+  const showCatalogBody = isExpanded;
   const activeScopeName =
     selectedScope === 'all'
       ? 'Red de Servidores'
@@ -518,29 +377,6 @@ export const ProvidersCatalogSection: React.FC<ProvidersCatalogSectionProps> = (
             <span className="hidden sm:inline">Actualizar</span>
           </button>
         </div>
-      </div>
-
-      {/* COMPACT SEARCH INPUT ALWAYS READY (FEEDS DIRECTLY FROM WARMED INDEX) */}
-      <div className="relative min-w-0">
-        <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-        <input
-          type="search"
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Buscar señal rápida, película o serie en tus servidores..."
-          aria-label="Buscar en catálogo de servidores"
-          className="w-full min-h-11 pl-10 pr-9 rounded-2xl bg-black border border-white/[0.08] focus:border-[#7C3AED] text-xs sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none"
-        />
-        {searchInput && (
-          <button
-            type="button"
-            onClick={() => setSearchInput('')}
-            aria-label="Limpiar búsqueda"
-            className="w-7 h-7 rounded-lg text-zinc-400 hover:text-white flex items-center justify-center absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
       </div>
 
       {showCatalogBody && (
@@ -778,7 +614,7 @@ export const ProvidersCatalogSection: React.FC<ProvidersCatalogSectionProps> = (
             </div>
           ) : (
             <div className="py-8 text-center text-xs text-zinc-400 flex flex-col items-center gap-2">
-              {isSyncingAny || remoteSearchLoading ? (
+              {isSyncingAny ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin text-[#A78BFA]" />
                   <span>Conectando servidores y preparando resultados...</span>

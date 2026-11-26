@@ -771,6 +771,9 @@ function applyTvLanguage(nextLang) {
   if (typeof activeHubTab === 'string' && tabMap[activeHubTab]) {
     setElText('tv-stage-title', tvT(tabMap[activeHubTab]));
   }
+  setElText('lbl-stage-search', tvT('tabSearch'));
+  var stageSearchEl = document.getElementById('btn-stage-search');
+  if (stageSearchEl) stageSearchEl.setAttribute('aria-label', tvT('tabSearch'));
 
   setElText('btn-close-series-modal', tvT('smBack'));
   var langBtnEls = document.querySelectorAll('#sm-lang-row .series-pill-btn');

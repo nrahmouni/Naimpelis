@@ -1102,6 +1102,9 @@ function relaxedHttpsRequest(targetUrl, options) {
         ...isHttps && options.rejectUnauthorized === false ? { rejectUnauthorized: false } : {}
       },
       (res) => {
+        if (options.headersTimeoutOnly) {
+          req?.setTimeout(0);
+        }
         const status = res.statusCode || 502;
         if ([301, 302, 303, 307, 308].includes(status) && res.headers.location && redirectCount < 5) {
           res.resume();
@@ -1160,7 +1163,12 @@ function relaxedHttpsRequest(targetUrl, options) {
 async function streamingFetch(rawUrl, init = {}) {
   const parsed = new URL(rawUrl);
   const timeoutMs = init.timeoutMs ?? 12e3;
-  const signal = init.signal ?? AbortSignal.timeout(timeoutMs);
+  const headerAbort = !init.signal && init.headersTimeoutOnly ? new AbortController() : null;
+  const headerTimer = headerAbort ? setTimeout(() => headerAbort.abort(new DOMException("The operation timed out waiting for headers.", "TimeoutError")), timeoutMs) : null;
+  const clearHeaderTimer = () => {
+    if (headerTimer) clearTimeout(headerTimer);
+  };
+  const signal = init.signal ?? (headerAbort ? headerAbort.signal : AbortSignal.timeout(timeoutMs));
   const normalizeHeaders = () => {
     const out = {};
     if (!init.headers) return out;
@@ -1176,43 +1184,59 @@ async function streamingFetch(rawUrl, init = {}) {
     return out;
   };
   const allowFallback = init.allowTlsFallback !== false && parsed.protocol === "https:" && !STRICT_TLS_ONLY_HOSTS.some((rx) => rx.test(parsed.hostname));
-  const spainDispatcher = getSpainProxyDispatcherForTarget(parsed.toString());
-  if (spainDispatcher) {
-    const proxiedRes = await undiciFetch2(parsed.toString(), {
-      ...init,
-      dispatcher: spainDispatcher,
-      signal
-    });
-    return proxiedRes;
-  }
-  if (shouldUseDirectIpv4Http(parsed.hostname)) {
-    return relaxedHttpsRequest(parsed, {
-      method: init.method || "GET",
-      headers: normalizeHeaders(),
-      body: typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : void 0,
-      timeoutMs,
-      signal,
-      rejectUnauthorized: !shouldRelaxStreamingTls(parsed.hostname)
-    });
-  }
   try {
-    return await fetch(parsed.toString(), { ...init, signal });
-  } catch (err) {
-    if (init.signal?.aborted) {
-      throw err;
+    const spainDispatcher = getSpainProxyDispatcherForTarget(parsed.toString());
+    if (spainDispatcher) {
+      const proxiedRes = await undiciFetch2(parsed.toString(), {
+        ...init,
+        dispatcher: spainDispatcher,
+        signal
+      });
+      clearHeaderTimer();
+      return proxiedRes;
     }
-    if (allowFallback && (shouldRelaxStreamingTls(parsed.hostname) || isTlsCertificateError(err) || isUndiciTimeoutOrConnectError(err))) {
-      DIRECT_IPV4_HTTPS_HOSTS.set(parsed.hostname.toLowerCase().replace(/\.$/, ""), true);
-      logger.debug({ host: parsed.hostname }, "streaming_tls_relaxed_fallback");
-      return relaxedHttpsRequest(parsed, {
+    if (shouldUseDirectIpv4Http(parsed.hostname)) {
+      const directRes = await relaxedHttpsRequest(parsed, {
         method: init.method || "GET",
         headers: normalizeHeaders(),
         body: typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : void 0,
         timeoutMs,
         signal,
-        rejectUnauthorized: false
+        rejectUnauthorized: !shouldRelaxStreamingTls(parsed.hostname),
+        headersTimeoutOnly: init.headersTimeoutOnly
       });
+      clearHeaderTimer();
+      return directRes;
     }
+    try {
+      const fetchRes = await fetch(parsed.toString(), { ...init, signal });
+      clearHeaderTimer();
+      return fetchRes;
+    } catch (err) {
+      if (init.signal?.aborted) {
+        clearHeaderTimer();
+        throw err;
+      }
+      if (allowFallback && (shouldRelaxStreamingTls(parsed.hostname) || isTlsCertificateError(err) || isUndiciTimeoutOrConnectError(err))) {
+        DIRECT_IPV4_HTTPS_HOSTS.set(parsed.hostname.toLowerCase().replace(/\.$/, ""), true);
+        logger.debug({ host: parsed.hostname }, "streaming_tls_relaxed_fallback");
+        const fallbackRes = await relaxedHttpsRequest(parsed, {
+          method: init.method || "GET",
+          headers: normalizeHeaders(),
+          body: typeof init.body === "string" || Buffer.isBuffer(init.body) ? init.body : void 0,
+          timeoutMs,
+          signal,
+          rejectUnauthorized: false,
+          headersTimeoutOnly: init.headersTimeoutOnly
+        });
+        clearHeaderTimer();
+        return fallbackRes;
+      }
+      clearHeaderTimer();
+      throw err;
+    }
+  } catch (err) {
+    clearHeaderTimer();
     throw err;
   }
 }
@@ -2094,8 +2118,9 @@ function buildDvbLiveFfmpegArgs(options) {
   const isUhd4kStream = /\/stream\/6[4568]\//i.test(cleanUpstream) || (probe ? probe.width >= 3e3 || probe.height >= 1800 : false);
   const isInterlaced = Boolean(probe && /^(tt|bb|tb|bt)$/i.test(probe.fieldOrder));
   const isHighFps = Boolean(probe && probe.fps > 31);
+  const isRawTsOrPipeInput = isPipeInput || !/\.m3u8(\?|$)/i.test(cleanUpstream);
   const canCopyVideo = Boolean(
-    probe && probe.videoCodec === "h264" && (!probe.pixFmt || /^yuvj?420p$/i.test(probe.pixFmt)) && !isInterlaced && !isUhd4kStream && !isFastProfile
+    !isRawTsOrPipeInput && probe && probe.videoCodec === "h264" && (!probe.pixFmt || /^yuvj?420p$/i.test(probe.pixFmt)) && !isInterlaced && !isUhd4kStream && !isFastProfile
   );
   const canCopyAudio = Boolean(
     canCopyVideo && probe?.hasAudio && probe.audioCodec === "aac" && (!probe.audioProfile || /^(lc|main)$/i.test(probe.audioProfile))
@@ -2139,8 +2164,9 @@ function buildDvbLiveFfmpegArgs(options) {
       "-c:v",
       "libx264",
       "-preset",
-      isFastProfile ? "ultrafast" : "veryfast",
-      ...isFastProfile ? ["-tune", "zerolatency"] : [],
+      isFastProfile ? "ultrafast" : isRawTsOrPipeInput ? "superfast" : "veryfast",
+      "-tune",
+      "zerolatency",
       "-profile:v",
       "high",
       "-level:v",
@@ -2148,7 +2174,7 @@ function buildDvbLiveFfmpegArgs(options) {
       "-pix_fmt",
       "yuv420p",
       "-crf",
-      isFastProfile ? "21" : "19",
+      isFastProfile ? "21" : isRawTsOrPipeInput ? "20" : "19",
       "-maxrate",
       isFastProfile ? "2600k" : "4800k",
       "-bufsize",
@@ -2183,8 +2209,6 @@ function buildDvbLiveFfmpegArgs(options) {
     "400000",
     "-fflags",
     "+genpts+discardcorrupt",
-    "-err_detect",
-    "ignore_err",
     "-avoid_negative_ts",
     "make_zero",
     "-i",
@@ -3691,6 +3715,156 @@ for (const seed of INITIAL_VEST_SEEDS) {
   vestCatalogRegistry.set(seed.key, seed);
 }
 
+// server/routes/proxies/liveSegmentCache.ts
+var MAX_TS_SEGMENT_CACHE_BYTES = 128 * 1024 * 1024;
+var MAX_TS_SEGMENT_BYTES = 8 * 1024 * 1024;
+var liveManifestCache = new LruTtlCache(800, 1e4);
+var liveTsSegmentCache = new LruTtlCache(96, 3e4);
+var inFlightManifestMap = /* @__PURE__ */ new Map();
+var inFlightTsSegmentMap = /* @__PURE__ */ new Map();
+var cachedSegmentTotalBytes = 0;
+function getCachedLiveManifest(url) {
+  return liveManifestCache.get(url) ?? null;
+}
+function setCachedLiveManifest(url, entryOrText, baseUrlArg) {
+  if (!url) return;
+  if (typeof entryOrText === "string") {
+    if (!entryOrText) return;
+    liveManifestCache.set(url, {
+      text: entryOrText,
+      baseUrl: baseUrlArg || url,
+      ts: Date.now()
+    });
+    return;
+  }
+  if (!entryOrText || !entryOrText.text) return;
+  liveManifestCache.set(url, {
+    text: entryOrText.text,
+    baseUrl: entryOrText.baseUrl || url,
+    ts: entryOrText.ts ?? Date.now()
+  });
+}
+async function coalesceLiveManifestFetch(url, fetcher) {
+  const existing = inFlightManifestMap.get(url);
+  if (existing) return existing;
+  const flight = (async () => {
+    try {
+      const res = await fetcher();
+      if (!res || !res.text) return null;
+      const stored = {
+        text: res.text,
+        baseUrl: res.baseUrl,
+        ts: res.ts ?? Date.now()
+      };
+      liveManifestCache.set(url, stored);
+      return stored;
+    } finally {
+      inFlightManifestMap.delete(url);
+    }
+  })();
+  inFlightManifestMap.set(url, flight);
+  return flight;
+}
+function getCachedLiveTsSegment(url) {
+  return liveTsSegmentCache.get(url) ?? null;
+}
+function getInFlightLiveTsSegment(url) {
+  return inFlightTsSegmentMap.get(url) ?? null;
+}
+function setCachedLiveTsSegment(url, buf, contentType = "video/mp2t") {
+  if (!url || !buf || buf.length === 0 || buf.length > MAX_TS_SEGMENT_BYTES) return;
+  const prev = liveTsSegmentCache.get(url);
+  if (prev) {
+    cachedSegmentTotalBytes = Math.max(0, cachedSegmentTotalBytes - prev.buf.length);
+  }
+  if (cachedSegmentTotalBytes + buf.length > MAX_TS_SEGMENT_CACHE_BYTES) {
+    liveTsSegmentCache.clear();
+    cachedSegmentTotalBytes = 0;
+  }
+  cachedSegmentTotalBytes += buf.length;
+  liveTsSegmentCache.set(url, {
+    buf,
+    contentType,
+    ts: Date.now()
+  });
+}
+async function prefetchLiveTsSegment(url, referer = "", ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36") {
+  if (!url || !/^https?:\/\//i.test(url)) return null;
+  const cached = getCachedLiveTsSegment(url);
+  if (cached) return cached;
+  const existing = inFlightTsSegmentMap.get(url);
+  if (existing) return existing;
+  const flight = (async () => {
+    try {
+      await assertSafeProxyUrl(url);
+      const headers = {
+        "User-Agent": ua,
+        Accept: "*/*"
+      };
+      if (referer) {
+        headers["Referer"] = referer;
+      }
+      let buf = null;
+      let contentType = /\.(m4s|mp4)(\?|$)/i.test(url) ? "video/mp4" : "video/mp2t";
+      try {
+        const res = await streamingFetch(url, {
+          headers,
+          timeoutMs: 3200
+        });
+        if (res.ok) {
+          const ct = (res.headers.get("content-type") || "").toLowerCase();
+          if (ct.startsWith("text/html") || ct.includes("application/json")) {
+            await res.body?.cancel?.().catch(() => {
+            });
+            return null;
+          }
+          const arr = Buffer.from(await res.arrayBuffer());
+          if (arr.length > 0 && arr.length <= MAX_TS_SEGMENT_BYTES) {
+            buf = arr;
+            if (ct.includes("mp4")) contentType = "video/mp4";
+          }
+        } else {
+          await res.body?.cancel?.().catch(() => {
+          });
+        }
+      } catch {
+      }
+      if (!buf) {
+        const fb = await curlGetBuffer(url, headers, 4).catch(() => null);
+        if (fb && fb.length > 0 && fb.length <= MAX_TS_SEGMENT_BYTES) {
+          const headStr = fb.subarray(0, Math.min(fb.length, 64)).toString("utf8").trimStart();
+          if (!/^(<!doctype|<html\b|<head\b|<body\b)/i.test(headStr)) {
+            buf = fb;
+          }
+        }
+      }
+      if (!buf || buf.length === 0) return null;
+      setCachedLiveTsSegment(url, buf, contentType);
+      return getCachedLiveTsSegment(url);
+    } catch {
+      return null;
+    } finally {
+      inFlightTsSegmentMap.delete(url);
+    }
+  })();
+  inFlightTsSegmentMap.set(url, flight);
+  return flight;
+}
+function deriveNextPredictedSegmentUrl(segmentUrl) {
+  try {
+    const parsed = new URL(segmentUrl);
+    const match = parsed.pathname.match(/^(.*?)(\d+)(\.[a-z0-9]{1,5})$/i);
+    if (!match) return null;
+    const [, prefix, digits, ext] = match;
+    const nextNum = Number(digits) + 1;
+    const padded = digits.startsWith("0") && String(nextNum).length < digits.length ? String(nextNum).padStart(digits.length, "0") : String(nextNum);
+    parsed.pathname = `${prefix}${padded}${ext}`;
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
 // server/services/mediaPlaneRouter.ts
 var KNOWN_DIRECT_PLAY_CORS_HOSTS = [
   /(\.|^)rtve\.es$/i,
@@ -3823,21 +3997,20 @@ function createHlsProxyHandler(getPublicOrigin2) {
       }
       let baseUrl = targetUrl;
       let manifestText = "";
-      if (shouldBypassNodeFetch(targetUrl)) {
-        let fallback = await curlGetText(targetUrl, headers, 7);
-        if (!fallback.text || !fallback.text.includes("#EXTM3U")) {
-          const plainTxt = await curlPlainGetText(targetUrl, 7).catch(() => "");
-          if (plainTxt && plainTxt.includes("#EXTM3U")) {
-            fallback = { text: plainTxt, effectiveUrl: targetUrl };
-          } else {
-            res.status(502).send("Upstream HLS error");
-            return;
+      const fetchManifestFromUpstream = async () => {
+        if (shouldBypassNodeFetch(targetUrl)) {
+          let fallback = await curlGetText(targetUrl, headers, 7);
+          if (!fallback.text || !fallback.text.includes("#EXTM3U")) {
+            const plainTxt = await curlPlainGetText(targetUrl, 7).catch(() => "");
+            if (plainTxt && plainTxt.includes("#EXTM3U")) {
+              fallback = { text: plainTxt, effectiveUrl: targetUrl };
+            } else {
+              return null;
+            }
           }
+          runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(fallback.text));
+          return { text: fallback.text, baseUrl: fallback.effectiveUrl || targetUrl };
         }
-        baseUrl = fallback.effectiveUrl || targetUrl;
-        manifestText = fallback.text;
-        runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(manifestText));
-      } else {
         const hdrCtrl = new AbortController();
         const hdrTimer = setTimeout(() => hdrCtrl.abort(), 4800);
         try {
@@ -3850,12 +4023,13 @@ function createHlsProxyHandler(getPublicOrigin2) {
           if (!upstream.ok) {
             throw new Error(`HTTP ${upstream.status}`);
           }
-          baseUrl = upstream.url || targetUrl;
-          manifestText = await upstream.text();
-          if (!manifestText.includes("#EXTM3U") || /nosignal/i.test(manifestText)) {
+          const fetchedBaseUrl = upstream.url || targetUrl;
+          const fetchedText = await upstream.text();
+          if (!fetchedText.includes("#EXTM3U") || /nosignal/i.test(fetchedText)) {
             throw new Error("Not M3U8 or offline placeholder");
           }
-          runtimeMetrics.recordUpstreamTransport(false, Buffer.byteLength(manifestText));
+          runtimeMetrics.recordUpstreamTransport(false, Buffer.byteLength(fetchedText));
+          return { text: fetchedText, baseUrl: fetchedBaseUrl };
         } catch {
           clearTimeout(hdrTimer);
           markHostNeedsCurlFallback(targetUrl);
@@ -3865,14 +4039,34 @@ function createHlsProxyHandler(getPublicOrigin2) {
             if (plainTxt && plainTxt.includes("#EXTM3U") && !/nosignal/i.test(plainTxt)) {
               fallback = { text: plainTxt, effectiveUrl: targetUrl };
             } else {
-              res.status(502).send("Upstream HLS error");
-              return;
+              return null;
             }
           }
-          baseUrl = fallback.effectiveUrl || targetUrl;
-          manifestText = fallback.text;
-          runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(manifestText));
+          runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(fallback.text));
+          return { text: fallback.text, baseUrl: fallback.effectiveUrl || targetUrl };
         }
+      };
+      const freshCachedManifest = !forceAac ? getCachedLiveManifest(targetUrl) : null;
+      if (freshCachedManifest && Date.now() - freshCachedManifest.ts < 2200) {
+        baseUrl = freshCachedManifest.baseUrl || targetUrl;
+        manifestText = freshCachedManifest.text;
+      } else if (!forceAac) {
+        const coalesced = await coalesceLiveManifestFetch(targetUrl, fetchManifestFromUpstream);
+        if (!coalesced) {
+          res.status(502).send("Upstream HLS error");
+          return;
+        }
+        baseUrl = coalesced.baseUrl || targetUrl;
+        manifestText = coalesced.text;
+      } else {
+        const fetched = await fetchManifestFromUpstream();
+        if (!fetched) {
+          res.status(502).send("Upstream HLS error");
+          return;
+        }
+        baseUrl = fetched.baseUrl;
+        manifestText = fetched.text;
+        setCachedLiveManifest(targetUrl, manifestText, baseUrl);
       }
       if (/nosignal/i.test(manifestText)) {
         res.status(502).send("Upstream signal offline");
@@ -3924,7 +4118,7 @@ function createHlsProxyHandler(getPublicOrigin2) {
           const resolvedUrl = appendEasyBroadcastToken(unwrapped.url);
           const isPlaylist = nextLineIsVariantPlaylist || /\.m3u8(\?|$)/i.test(resolvedUrl) && !/relay\.videm\.buzz\/seg/i.test(absUrl) || resolvedUrl.includes("stream_tv=");
           nextLineIsVariantPlaylist = false;
-          if (!isPlaylist && forceAac) {
+          if (!isPlaylist) {
             discoveredTsUrls.push(resolvedUrl);
           }
           return isPlaylist ? buildHlsProxyUrl(resolvedUrl, unwrapped.referer, forceAac, originPrefix) : buildTsProxyUrl(resolvedUrl, unwrapped.referer, forceAac, originPrefix);
@@ -3934,6 +4128,18 @@ function createHlsProxyHandler(getPublicOrigin2) {
         }
       });
       let finalManifest = rewritten.join("\n");
+      if (!forceAac && discoveredTsUrls.length > 0 && req.method !== "HEAD") {
+        const ua = headers["User-Agent"];
+        for (const segUrl of discoveredTsUrls.slice(-2)) {
+          prefetchLiveTsSegment(segUrl, effectiveReferer, ua).catch(() => {
+          });
+        }
+        const predicted = deriveNextPredictedSegmentUrl(discoveredTsUrls[discoveredTsUrls.length - 1]);
+        if (predicted) {
+          prefetchLiveTsSegment(predicted, effectiveReferer, ua).catch(() => {
+          });
+        }
+      }
       if (forceAac && discoveredTsUrls.length > 0 && req.method !== "HEAD") {
         for (const segUrl of discoveredTsUrls.slice(-2)) {
           remuxDvbTsToAac(segUrl, effectiveReferer, false).catch(() => {
@@ -4120,6 +4326,25 @@ async function handleTsProxy(req, res) {
       return;
     }
   }
+  if (!req.headers.range && !isUrlSubtitle) {
+    let cachedSeg = getCachedLiveTsSegment(targetUrl);
+    if (!cachedSeg) {
+      const inFlight = getInFlightLiveTsSegment(targetUrl);
+      if (inFlight) {
+        cachedSeg = await inFlight.catch(() => null);
+      }
+    }
+    if (req.destroyed || res.writableEnded) return;
+    if (cachedSeg && cachedSeg.buf.length > 0) {
+      res.status(200);
+      applyProxyCorsHeaders(res, reqId);
+      res.setHeader("Content-Type", cachedSeg.contentType || (isUrlMp4 ? "video/mp4" : "video/mp2t"));
+      res.setHeader("Cache-Control", "public, max-age=20");
+      res.setHeader("Content-Length", String(cachedSeg.buf.length));
+      res.end(cachedSeg.buf);
+      return;
+    }
+  }
   const headers = {
     "User-Agent": getPreferredUpstreamUa(targetUrl),
     Accept: "*/*"
@@ -4301,27 +4526,72 @@ async function handleTsProxy(req, res) {
       if (!res.writableEnded && !nodeStream.destroyed) nodeStream.destroy();
     });
     runtimeMetrics.recordUpstreamTransport(false);
+    const outContentType = isSubtitleContent ? "text/vtt; charset=utf-8" : isDisguisedSegment ? isUrlMp4 ? "video/mp4" : "video/mp2t" : rawCt;
+    const clNum = cl ? Number(cl) : 0;
+    const shouldTeeSegmentCache = !req.headers.range && !isUrlSubtitle && upstream.status === 200 && (!Number.isFinite(clNum) || clNum <= 6 * 1024 * 1024);
     if (!shouldSniffImageHeader) {
       writeCommonHeaders(0);
-      nodeStream.pipe(res);
+      if (!shouldTeeSegmentCache) {
+        nodeStream.pipe(res);
+        return;
+      }
+      const cacheChunks = [];
+      let cacheBytes = 0;
+      let cacheAborted = false;
+      nodeStream.on("data", (chunk) => {
+        const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        if (!cacheAborted) {
+          cacheBytes += b.length;
+          if (cacheBytes <= 6 * 1024 * 1024) {
+            cacheChunks.push(b);
+          } else {
+            cacheChunks.length = 0;
+            cacheAborted = true;
+          }
+        }
+        if (!res.writableEnded && !res.write(b)) {
+          nodeStream.pause();
+          res.once("drain", () => nodeStream.resume());
+        }
+      });
+      nodeStream.once("end", () => {
+        if (!cacheAborted && cacheChunks.length > 0) {
+          setCachedLiveTsSegment(targetUrl, Buffer.concat(cacheChunks), outContentType);
+        }
+        if (!res.writableEnded) res.end();
+      });
       return;
     }
     let headerChecked = false;
     const probeChunks = [];
     let probeLen = 0;
+    const cleanCacheChunks = [];
+    let cleanCacheBytes = 0;
+    let cleanCacheAborted = !shouldTeeSegmentCache;
     const flushInitial = (ended) => {
       if (headerChecked) return;
       headerChecked = true;
       const headBuf = Buffer.concat(probeChunks);
       const offset = findDisguisedTsOffset(headBuf);
+      const firstClean = offset > 0 ? headBuf.subarray(offset) : headBuf;
       writeCommonHeaders(offset);
-      if (offset > 0) {
-        res.write(headBuf.subarray(offset));
-      } else if (headBuf.length > 0) {
-        res.write(headBuf);
+      if (firstClean.length > 0) {
+        if (!cleanCacheAborted) {
+          cleanCacheBytes += firstClean.length;
+          if (cleanCacheBytes <= 6 * 1024 * 1024) {
+            cleanCacheChunks.push(firstClean);
+          } else {
+            cleanCacheChunks.length = 0;
+            cleanCacheAborted = true;
+          }
+        }
+        res.write(firstClean);
       }
       probeChunks.length = 0;
       if (ended) {
+        if (!cleanCacheAborted && cleanCacheChunks.length > 0) {
+          setCachedLiveTsSegment(targetUrl, Buffer.concat(cleanCacheChunks), outContentType);
+        }
         res.end();
       }
     };
@@ -4334,7 +4604,17 @@ async function handleTsProxy(req, res) {
           flushInitial(false);
         }
       } else if (!res.writableEnded) {
-        if (!res.write(chunk)) {
+        const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        if (!cleanCacheAborted) {
+          cleanCacheBytes += b.length;
+          if (cleanCacheBytes <= 6 * 1024 * 1024) {
+            cleanCacheChunks.push(b);
+          } else {
+            cleanCacheChunks.length = 0;
+            cleanCacheAborted = true;
+          }
+        }
+        if (!res.write(b)) {
           nodeStream.pause();
           res.once("drain", () => nodeStream.resume());
         }
@@ -4343,8 +4623,13 @@ async function handleTsProxy(req, res) {
     nodeStream.once("end", () => {
       if (!headerChecked) {
         flushInitial(true);
-      } else if (!res.writableEnded) {
-        res.end();
+      } else {
+        if (!cleanCacheAborted && cleanCacheChunks.length > 0) {
+          setCachedLiveTsSegment(targetUrl, Buffer.concat(cleanCacheChunks), outContentType);
+        }
+        if (!res.writableEnded) {
+          res.end();
+        }
       }
     });
   } catch (err) {

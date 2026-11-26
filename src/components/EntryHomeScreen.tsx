@@ -14,7 +14,6 @@ import { triggerHaptic } from '../utils/haptics';
 import { generateRandomGuestName } from '../utils/storage';
 import { useBackInterceptor } from '../lib/backInterceptor';
 import { PosterImage } from './ui/PosterImage';
-import { UniversalHomeSearch } from './home/UniversalHomeSearch';
 import { EntryHomeBentoGrid } from './home/EntryHomeBentoGrid';
 import { ProvidersCatalogSection } from './providers/ProvidersCatalogSection';
 import { BarcaMadridDirectBanner } from './home/BarcaMadridDirectBanner';
@@ -47,12 +46,8 @@ interface EntryHomeScreenProps {
   liveMatchesCount: number;
   roomParticipantsCount: number;
   movies?: CatalogMovie[];
-  series?: CatalogMovie[];
   tdtChannels?: SpanishTdtChannel[];
   liveMatches?: SportsMatch[];
-  suppressSearchOverlay?: boolean;
-  onOpenMovieDetails?: (movie: CatalogMovie) => void;
-  onOpenSeriesPage?: (series: CatalogMovie) => void;
   onPlayChannel?: (channel: SpanishTdtChannel) => void;
   onPlayCustomUrl?: (
     rawUrl: string,
@@ -60,7 +55,6 @@ interface EntryHomeScreenProps {
   ) => void;
   onPlayMatch?: (match: SportsMatch, channelIndex?: number) => void;
   loadingItemId?: string | null;
-  onSelectGame?: (gameId: string) => void;
   onOpenVoiceAssistant?: () => void;
   onOpenDesignSystem?: () => void;
   onChangeLang?: (lang: AppLanguage) => void;
@@ -82,17 +76,12 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   liveMatchesCount,
   roomParticipantsCount,
   movies = [],
-  series = [],
   tdtChannels = [],
   liveMatches = [],
-  suppressSearchOverlay = false,
-  onOpenMovieDetails = () => {},
-  onOpenSeriesPage = () => {},
   onPlayChannel = () => {},
   onPlayCustomUrl,
   onPlayMatch = () => {},
   loadingItemId = null,
-  onSelectGame = () => {},
   onOpenVoiceAssistant,
   sessionMode = 'party',
 }) => {
@@ -301,32 +290,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
           )}
         </section>
 
-        {/* 2. UNIVERSAL SMART SEARCH (INCLUDING RIFFAN MUSIC) */}
-        <section
-          aria-label={pickLang(lang, {
-            es: 'Buscador universal',
-            ca: 'Cercador universal',
-            en: 'Universal search',
-          })}
-        >
-          <UniversalHomeSearch
-            lang={lang}
-            movies={movies}
-            series={series}
-            tdtChannels={tdtChannels}
-            liveMatches={liveMatches}
-            suppressOverlay={suppressSearchOverlay}
-            onOpenMovieDetails={onOpenMovieDetails}
-            onOpenSeriesPage={onOpenSeriesPage}
-            onPlayChannel={onPlayChannel}
-            onPlayCustomUrl={onPlayCustomUrl}
-            onPlayMatch={onPlayMatch}
-            onSelectGame={onSelectGame}
-            onOpenMusicWorld={() => onSelectWorld('music')}
-          />
-        </section>
-
-        {/* 3. DIRECT BARÇA / REAL MADRID PLAY CARD (ONLY 30 MIN BEFORE KICKOFF OR LIVE; REMOVED WHEN FINISHED) */}
+        {/* 2. DIRECT BARÇA / REAL MADRID PLAY CARD (ONLY 30 MIN BEFORE KICKOFF OR LIVE; REMOVED WHEN FINISHED) */}
         <BarcaMadridDirectBanner
           lang={lang}
           matches={directBarcaMadridMatches}

@@ -1,7 +1,7 @@
 import React, { useCallback } from 'react';
 import { Check } from 'lucide-react';
 import { MotionConfig } from 'motion/react';
-import { RiffanBackIcon, RiffanLoaderR } from './components/ui/RiffanIcons';
+import { RiffanBackIcon, RiffanLoaderR, RiffanSearchIcon } from './components/ui/RiffanIcons';
 import { pickLang } from './utils/i18n';
 import { socketService } from './services/socket';
 import { triggerHaptic } from './utils/haptics';
@@ -388,39 +388,63 @@ export function App() {
                 </button>
               </div>
 
-              <button
-                type="button"
-                data-tv-focusable="true"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setAvatarMenuOpen(true);
-                }}
-                aria-label={pickLang(lang, {
-                  es: 'Menú de perfil',
-                  ca: 'Menú de perfil',
-                  en: 'Profile menu',
-                  rif: 'Umuɣ n uprufil',
-                  zh: '个人菜单',
-                })}
-                className="relative w-11 h-11 rounded-full border border-white/15 flex items-center justify-center text-sm font-bold text-white cursor-pointer active:scale-95 transition-transform shrink-0 overflow-visible shadow-[0_0_0_2px_rgba(124,58,237,0.22)] tv-focus-ring"
-                style={{ backgroundColor: profile.color || '#7C3AED' }}
-              >
-                {authUser?.photoURL ? (
-                  <img
-                    src={authUser.photoURL}
-                    alt={profile.name}
-                    className="w-full h-full object-cover rounded-full"
-                  />
-                ) : (
-                  <span>{getMonogramInitials(profile.name)}</span>
-                )}
-                {unreadNotificationsCount > 0 && (
-                  <span
-                    aria-hidden="true"
-                    className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-[#EB0400] ring-2 ring-[#000000]"
-                  />
-                )}
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  data-tv-focusable="true"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setShowCommandSearch(true);
+                  }}
+                  aria-label={pickLang(lang, {
+                    es: 'Buscar',
+                    ca: 'Cercar',
+                    en: 'Search',
+                  })}
+                  title={pickLang(lang, {
+                    es: 'Buscar',
+                    ca: 'Cercar',
+                    en: 'Search',
+                  })}
+                  className="min-w-11 min-h-11 rounded-2xl bg-[#0D0D12]/90 hover:bg-white/[0.08] border border-white/[0.08] flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer active:scale-95 transition-all tv-focus-ring shrink-0"
+                >
+                  <RiffanSearchIcon size={17} animate="hover" />
+                </button>
+
+                <button
+                  type="button"
+                  data-tv-focusable="true"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setAvatarMenuOpen(true);
+                  }}
+                  aria-label={pickLang(lang, {
+                    es: 'Menú de perfil',
+                    ca: 'Menú de perfil',
+                    en: 'Profile menu',
+                    rif: 'Umuɣ n uprufil',
+                    zh: '个人菜单',
+                  })}
+                  className="relative w-11 h-11 rounded-full border border-white/15 flex items-center justify-center text-sm font-bold text-white cursor-pointer active:scale-95 transition-transform shrink-0 overflow-visible shadow-[0_0_0_2px_rgba(124,58,237,0.22)] tv-focus-ring"
+                  style={{ backgroundColor: profile.color || '#7C3AED' }}
+                >
+                  {authUser?.photoURL ? (
+                    <img
+                      src={authUser.photoURL}
+                      alt={profile.name}
+                      className="w-full h-full object-cover rounded-full"
+                    />
+                  ) : (
+                    <span>{getMonogramInitials(profile.name)}</span>
+                  )}
+                  {unreadNotificationsCount > 0 && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-[#EB0400] ring-2 ring-[#000000]"
+                    />
+                  )}
+                </button>
+              </div>
             </header>
           )}
 

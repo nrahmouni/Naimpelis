@@ -315,9 +315,13 @@ function selectHubTabProgrammatic(tabKey, filterKey) {
   var tabBtns = document.querySelectorAll('#hub-nav-tabs .hub-tab-btn');
   for (var k = 0; k < tabBtns.length; k++) {
     var dk = tabBtns[k].getAttribute('data-tab');
-    var cls = dk === 'search' ? 'hub-tab-btn rail-item search-left-btn' : 'hub-tab-btn rail-item';
+    var cls = 'hub-tab-btn rail-item';
     if (dk === tabKey) cls += ' active';
     tabBtns[k].className = cls;
+  }
+  var stageSearchBtn = document.getElementById('btn-stage-search');
+  if (stageSearchBtn) {
+    stageSearchBtn.className = tabKey === 'search' ? 'stage-search-btn active' : 'stage-search-btn';
   }
   activeHubTab = tabKey;
   if (filterKey) {
@@ -342,7 +346,6 @@ function buildQuickActionDock() {
     '<button type="button" class="tv-quick-btn featured" id="btn-quick-sports" tabindex="0">' + SVG_ICON_SPORTS + '<span>' + escapeHtml(tvT('quickSportsBtn')) + '</span></button>' +
     '<button type="button" class="tv-quick-btn featured" id="btn-quick-kids" tabindex="0">' + SVG_ICON_KIDS + '<span>' + escapeHtml(tvT('quickKidsBtn')) + '</span></button>' +
     '<button type="button" class="tv-quick-btn featured" id="btn-quick-games" tabindex="0">' + SVG_ICON_GAMES + '<span>' + escapeHtml(tvT('quickGamesBtn')) + '</span></button>' +
-    '<button type="button" class="tv-quick-btn" id="btn-quick-search" tabindex="0">' + SVG_ICON_SEARCH + '<span>' + escapeHtml(tvT('quickSearchBtn')) + '</span></button>' +
     '<button type="button" class="tv-quick-btn" id="btn-quick-pair" tabindex="0">' + SVG_ICON_PHONE + '<span>' + escapeHtml(tvT('quickPairBtn')) + '</span></button>';
   dock.innerHTML = html;
 
@@ -353,7 +356,6 @@ function buildQuickActionDock() {
     var bSpr = document.getElementById('btn-quick-sports');
     var bKid = document.getElementById('btn-quick-kids');
     var bGam = document.getElementById('btn-quick-games');
-    var bSrc = document.getElementById('btn-quick-search');
     var bPr = document.getElementById('btn-quick-pair');
     if (bRes && resumeCh) {
       bRes.onclick = function () {
@@ -367,7 +369,6 @@ function buildQuickActionDock() {
     if (bSpr) bSpr.onclick = function () { selectHubTabProgrammatic('tdt', 'es_sports'); };
     if (bKid) bKid.onclick = function () { selectHubTabProgrammatic('kids'); };
     if (bGam) bGam.onclick = function () { selectHubTabProgrammatic('games'); };
-    if (bSrc) bSrc.onclick = function () { selectHubTabProgrammatic('search'); };
     if (bPr) bPr.onclick = function () { switchTvScreen('pairing'); };
   }, 0);
   return dock;
@@ -628,15 +629,7 @@ function renderHubContent(focusFirstResult) {
     }
     appendSection(hubDynamicContent, tvT('secAnimeTitle'), tvT('secAnimeSub'), catalogData.anime, 'media', false);
   } else if (activeHubTab === 'tdt') {
-    var searchPanel = document.createElement('div');
-    searchPanel.className = 'tv-search-panel';
-    searchPanel.innerHTML =
-      '<form id="tv-live-search-form" class="tv-search-row" style="margin-bottom:0;">' +
-      '<input type="text" id="tv-live-search-input" class="tv-search-input" placeholder="' + escapeHtml(tvT('liveSearchPh')) + '" value="' + escapeHtml(activeLiveSearch) + '" tabindex="0" />' +
-      '<button type="submit" class="tv-btn-primary" style="margin-right:10px;" tabindex="0">' + escapeHtml(tvT('searchSubmit')) + '</button>' +
-      (activeLiveSearch ? '<button type="button" id="btn-live-search-clear" class="tv-btn" tabindex="0">' + escapeHtml(tvT('liveSearchClear')) + '</button>' : '') +
-      '</form>';
-    hubDynamicContent.appendChild(searchPanel);
+    activeLiveSearch = '';
 
     var filters = [
       { key: 'es_priority', label: tvT('filterEsPriority') },
@@ -726,36 +719,6 @@ function renderHubContent(focusFirstResult) {
     resultsWrap.id = 'tv-live-results-wrap';
     hubDynamicContent.appendChild(resultsWrap);
     renderLiveChannelGridInto(resultsWrap);
-
-    setTimeout(function () {
-      var lForm = document.getElementById('tv-live-search-form');
-      var lInput = document.getElementById('tv-live-search-input');
-      var lClear = document.getElementById('btn-live-search-clear');
-      if (lForm && lInput) {
-        lInput.oninput = function () {
-          activeLiveSearch = lInput.value || '';
-          activeLiveVisibleLimit = 36;
-          if (tvLiveFilterDebounce) clearTimeout(tvLiveFilterDebounce);
-          tvLiveFilterDebounce = setTimeout(function () {
-            renderLiveChannelGridInto(document.getElementById('tv-live-results-wrap'));
-          }, 150);
-        };
-        lForm.onsubmit = function (ev) {
-          if (ev && ev.preventDefault) ev.preventDefault();
-          activeLiveSearch = lInput.value || '';
-          activeLiveVisibleLimit = 36;
-          renderLiveChannelGridInto(document.getElementById('tv-live-results-wrap'));
-          return false;
-        };
-      }
-      if (lClear) {
-        lClear.onclick = function () {
-          activeLiveSearch = '';
-          activeLiveVisibleLimit = 36;
-          renderHubContent();
-        };
-      }
-    }, 0);
   } else if (activeHubTab === 'champions') {
     if (typeof window.renderTvChampionsInto === 'function') {
       window.renderTvChampionsInto(hubDynamicContent);

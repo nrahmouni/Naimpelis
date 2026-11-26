@@ -157,20 +157,36 @@ if (tvSideRail && tvSideRail.addEventListener) {
 // UI WIRE-UP & SMART TV VOICE ASSISTANT (ES5)
 // ===================================================================
 var tabBtns = document.querySelectorAll('#hub-nav-tabs .hub-tab-btn');
+var btnStageSearch = document.getElementById('btn-stage-search');
 for (var t = 0; t < tabBtns.length; t++) {
   (function (tb) {
     tb.onclick = function () {
       for (var k = 0; k < tabBtns.length; k++) {
-        var dk = tabBtns[k].getAttribute('data-tab');
-        tabBtns[k].className = dk === 'search' ? 'hub-tab-btn rail-item search-left-btn' : 'hub-tab-btn rail-item';
+        tabBtns[k].className = 'hub-tab-btn rail-item';
       }
       var curTab = tb.getAttribute('data-tab') || 'home';
-      tb.className = (curTab === 'search' ? 'hub-tab-btn rail-item search-left-btn active' : 'hub-tab-btn rail-item active');
+      tb.className = 'hub-tab-btn rail-item active';
+      if (btnStageSearch) btnStageSearch.className = 'stage-search-btn';
       activeHubTab = curTab;
       if (hubScrollBody) hubScrollBody.scrollTop = 0;
       renderHubContent();
     };
   })(tabBtns[t]);
+}
+if (btnStageSearch) {
+  btnStageSearch.onclick = function () {
+    if (typeof selectHubTabProgrammatic === 'function') {
+      selectHubTabProgrammatic('search');
+    } else {
+      activeHubTab = 'search';
+      if (hubScrollBody) hubScrollBody.scrollTop = 0;
+      renderHubContent();
+    }
+    setTimeout(function () {
+      var sInput = document.getElementById('tv-search-input');
+      if (sInput && sInput.focus) sInput.focus();
+    }, 30);
+  };
 }
 
 var mgFilterBtns = document.querySelectorAll('#mg-filter-row .mg-filter-btn');

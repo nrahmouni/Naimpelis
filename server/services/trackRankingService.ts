@@ -105,20 +105,18 @@ export function rankCandidateTracks({
     if (isVestLink && tr.resolverType === 'vest_hls') return 0;
     if (!hasExplicitMovidyUrl && hasExplicitGnulaUrl && tr.id.startsWith('gnula-')) return 0;
     if (tr.id.startsWith('cm-lqsa-') && tr.resolverType === 'direct_mp4') return 0;
+    if (tr.id.startsWith('xtream-') || tr.id.startsWith('fast-')) return 0;
     if (tr.id.startsWith('movidy-') || tr.resolverType === 'movidy_embed') return 1;
     if (tr.id.startsWith('gnula-')) return 2;
     if (tr.id.startsWith('ia-')) return 2;
     if (tr.id.startsWith('dm-') || tr.id.startsWith('seriesmetro-')) return 2;
+    if (tr.id.startsWith('bingetrix-') || tr.resolverType === 'bingetrix_en') return 2;
     if (tr.id.startsWith('archive-')) return 3;
     if (tr.id.startsWith('cm-lqsa-')) return 3;
     if (
       tr.id.startsWith('clipbox-') ||
       tr.id.startsWith('vidbolt-') ||
-      tr.id.startsWith('bingetrix-') ||
-      tr.id.startsWith('vidrock-') ||
-      tr.id.startsWith('2embed-') ||
-      tr.id.startsWith('vidbuzz-') ||
-      tr.resolverType === 'bingetrix_en'
+      tr.id.startsWith('2embed-')
     ) {
       return 3;
     }

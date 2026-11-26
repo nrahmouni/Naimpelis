@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { CornerDownLeft, Film, Loader2, Search, Sparkles, Trophy, Tv, Wand2, X } from 'lucide-react';
 import type { AppLanguage, CatalogMovie, SpanishTdtChannel } from '../types';
+import type { ProviderLiveItem, ProviderMovieItem, ProviderSeriesItem } from '../types/providers';
 import { pickLang } from '../utils/i18n';
 import { useGlobalEscape } from '../utils/useGlobalEscape';
 import { mergeAndRankCatalogResults, compactSearchText, normalizeSearchText } from '../utils/catalogSearchRank';
@@ -73,6 +74,11 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
 
   const [remoteMovies, setRemoteMovies] = useState<CatalogMovie[]>([]);
   const [remoteSeries, setRemoteSeries] = useState<CatalogMovie[]>([]);
+  const [providerHits, setProviderHits] = useState<{
+    live: ProviderLiveItem[];
+    movies: ProviderMovieItem[];
+    series: ProviderSeriesItem[];
+  }>({ live: [], movies: [], series: [] });
   const [loadingRemote, setLoadingRemote] = useState(false);
 
   useEffect(() => {
@@ -80,6 +86,11 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
     if (!isOpen || clean.length < 2 || /^https?:\/\//i.test(clean)) {
       setRemoteMovies((prev) => (prev.length === 0 ? prev : []));
       setRemoteSeries((prev) => (prev.length === 0 ? prev : []));
+      setProviderHits((prev) =>
+        prev.live.length === 0 && prev.movies.length === 0 && prev.series.length === 0
+          ? prev
+          : { live: [], movies: [], series: [] }
+      );
       setLoadingRemote((prev) => (prev ? false : prev));
       return;
     }
@@ -89,7 +100,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
     setLoadingRemote(true);
 
     const timer = window.setTimeout(() => {
-      let pending = 2;
+      let pending = 3;
       const doneOne = () => {
         pending -= 1;
         if (active && pending <= 0) {
@@ -134,6 +145,25 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
           if (active && !controller.signal.aborted) setRemoteSeries([]);
         })
         .finally(doneOne);
+
+      fetch(`/api/providers/search?q=${encodeURIComponent(clean)}&limit=10`, {
+        signal: controller.signal,
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((data) => {
+          if (!active) return;
+          setProviderHits({
+            live: Array.isArray(data?.live) ? data.live.slice(0, 8) : [],
+            movies: Array.isArray(data?.movies) ? data.movies.slice(0, 8) : [],
+            series: Array.isArray(data?.series) ? data.series.slice(0, 8) : [],
+          });
+        })
+        .catch(() => {
+          if (active && !controller.signal.aborted) {
+            setProviderHits({ live: [], movies: [], series: [] });
+          }
+        })
+        .finally(doneOne);
     }, 180);
 
     return () => {
@@ -151,23 +181,66 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
 
   const matchedMovies = useMemo(() => {
     if (!normQuery) return movies.slice(0, 6);
-    return mergeAndRankCatalogResults(remoteMovies, movies, query, {
+    const base = mergeAndRankCatalogResults(remoteMovies, movies, query, {
       limit: 10,
       minLocalScore: 40,
     });
-  }, [movies, remoteMovies, normQuery, query]);
+    if (providerHits.movies.length === 0) return base;
+    const seen = new Set(base.map((m) => normText(m.title)));
+    const extras: CatalogMovie[] = [];
+    for (const pm of providerHits.movies) {
+      const k = normText(pm.name);
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      extras.push({
+        id: `provider-vod-${pm.id}`,
+        mediaType: 'movie',
+        title: pm.name,
+        year: pm.year || 'HD',
+        rating: '',
+        overview: pm.categoryName || pm.providerName,
+        poster: pm.poster,
+        backdrop: pm.poster,
+        bingetrixUrl: pm.playbackUrl,
+        languages: ['ES'],
+        platform: pm.providerName,
+      });
+    }
+    return [...base, ...extras].slice(0, 12);
+  }, [movies, remoteMovies, providerHits.movies, normQuery, query]);
 
   const matchedSeries = useMemo(() => {
     if (!normQuery) return series.slice(0, 6);
-    return mergeAndRankCatalogResults(remoteSeries, series, query, {
+    const base = mergeAndRankCatalogResults(remoteSeries, series, query, {
       limit: 10,
       minLocalScore: 40,
     });
-  }, [series, remoteSeries, normQuery, query]);
+    if (providerHits.series.length === 0) return base;
+    const seen = new Set(base.map((s) => normText(s.title)));
+    const extras: CatalogMovie[] = [];
+    for (const ps of providerHits.series) {
+      const k = normText(ps.name);
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      extras.push({
+        id: `provider-series-${ps.id}`,
+        mediaType: 'tv',
+        title: ps.name,
+        year: ps.year || 'HD',
+        rating: '',
+        overview: ps.plot || ps.categoryName || ps.providerName,
+        poster: ps.poster,
+        backdrop: ps.poster,
+        languages: ['ES'],
+        platform: ps.providerName,
+      });
+    }
+    return [...base, ...extras].slice(0, 12);
+  }, [series, remoteSeries, providerHits.series, normQuery, query]);
 
   const matchedChannels = useMemo(() => {
     if (!normQuery) return tdtChannels.slice(0, 4);
-    return tdtChannels
+    const base = tdtChannels
       .filter((c) => {
         const hay = `${c.name} ${c.network} ${c.shortMark}`;
         return (
@@ -176,7 +249,37 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
         );
       })
       .slice(0, 6);
-  }, [tdtChannels, normQuery, compactQuery]);
+    if (providerHits.live.length === 0) return base;
+    const seen = new Set(base.map((c) => normText(c.name)));
+    const extras: SpanishTdtChannel[] = [];
+    for (const item of providerHits.live) {
+      const k = normText(item.name);
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      extras.push({
+        id: item.id,
+        dial: 0,
+        name: item.name,
+        category: 'entretenimiento',
+        network: item.providerName,
+        quality: 'HD',
+        description: item.categoryName,
+        shortMark: item.name.slice(0, 3).toUpperCase(),
+        brandTone: '#8B5CF6',
+        logoUrl: item.logo || undefined,
+        channels: [
+          {
+            id: `${item.id}-hls`,
+            label: `${item.providerName} · ${item.categoryName}`,
+            lang: 'ES',
+            sourceUrl: item.playbackUrl,
+            resolverType: 'tdt_hls',
+          },
+        ],
+      });
+    }
+    return [...base, ...extras].slice(0, 10);
+  }, [tdtChannels, providerHits.live, normQuery, compactQuery]);
 
   const flatActions = useMemo<FlatSearchAction[]>(() => {
     const list: FlatSearchAction[] = [];

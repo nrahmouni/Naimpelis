@@ -47,6 +47,7 @@ interface PlayerTopHudBarProps {
   onClosePlayer?: () => void;
   isTouchLocked?: boolean;
   onToggleTouchLock?: () => void;
+  isMultiGrid?: boolean;
 }
 
 export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
@@ -80,6 +81,7 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
   onClosePlayer,
   isTouchLocked = false,
   onToggleTouchLock,
+  isMultiGrid = false,
 }) => {
   return (
     <>
@@ -87,30 +89,34 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
         (!isCompressed || isStageFullscreen) &&
         (videoState.mode === 'hls' || videoState.mode === 'direct') && (
           <div
-            className={`pointer-events-none absolute top-0 inset-x-0 z-30 px-3 sm:px-5 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[max(0.75rem,env(safe-area-inset-top))] pb-10 bg-gradient-to-b from-black/90 via-black/45 to-transparent flex items-start justify-between gap-3 transition-opacity duration-300 ${
-              showControls ? 'opacity-100' : 'opacity-0'
-            }`}
+            className={`pointer-events-none absolute z-30 flex items-start gap-3 transition-opacity duration-300 ${
+              isMultiGrid
+                ? 'top-8 right-2 sm:right-3 justify-end'
+                : 'top-0 inset-x-0 px-3 sm:px-5 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[max(0.75rem,env(safe-area-inset-top))] pb-10 bg-gradient-to-b from-black/90 via-black/45 to-transparent justify-between'
+            } ${showControls ? 'opacity-100' : 'opacity-0'}`}
           >
-            <div className={`min-w-0 pt-1 transition-opacity ${isTouchLocked ? 'opacity-0' : 'opacity-100'}`}>
-              <h2 className="font-display font-bold text-sm sm:text-base text-white leading-tight break-words line-clamp-2 drop-shadow">
-                {videoState.title}
-              </h2>
-              <div className="flex items-center gap-2 flex-wrap mt-0.5">
-                {videoState.subtitle && (
-                  <p className="text-[11px] sm:text-xs text-zinc-300 leading-snug break-words line-clamp-2">
-                    {videoState.subtitle}
-                  </p>
-                )}
-                {!localPlaying && !videoState.isLive && duration > 60 && duration > currentTime && (
-                  <span className="px-2 py-0.5 rounded-full bg-white/12 backdrop-blur-md text-[10px] font-mono font-semibold text-zinc-200">
-                    Termina a las{' '}
-                    {new Date(
-                      Date.now() + ((duration - currentTime) / (playbackSpeed || 1)) * 1000
-                    ).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                )}
+            {!isMultiGrid && (
+              <div className={`min-w-0 pt-1 transition-opacity ${isTouchLocked ? 'opacity-0' : 'opacity-100'}`}>
+                <h2 className="font-display font-bold text-sm sm:text-base text-white leading-tight break-words line-clamp-2 drop-shadow">
+                  {videoState.title}
+                </h2>
+                <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                  {videoState.subtitle && (
+                    <p className="text-[11px] sm:text-xs text-zinc-300 leading-snug break-words line-clamp-2">
+                      {videoState.subtitle}
+                    </p>
+                  )}
+                  {!localPlaying && !videoState.isLive && duration > 60 && duration > currentTime && (
+                    <span className="px-2 py-0.5 rounded-full bg-white/12 backdrop-blur-md text-[10px] font-mono font-semibold text-zinc-200">
+                      Termina a las{' '}
+                      {new Date(
+                        Date.now() + ((duration - currentTime) / (playbackSpeed || 1)) * 1000
+                      ).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 shrink-0">
               {!isTvMode && (isFullscreen || isHorizontalFullscreen) && onToggleTouchLock && (

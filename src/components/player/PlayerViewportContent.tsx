@@ -254,6 +254,7 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
         onClosePlayer={p.onClosePlayer}
         isTouchLocked={p.isTouchLocked}
         onToggleTouchLock={p.onToggleTouchLock}
+        isMultiGrid={isMultiGrid}
       />
 
       {p.videoState.mode === 'idle' && !p.isExtracting && !p.isMinimized && (
@@ -284,7 +285,7 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
         <div
           className={
             isMultiGrid
-              ? `relative w-full h-full min-h-0 bg-black overflow-hidden ${
+              ? `relative w-full h-full min-h-0 flex flex-col bg-black overflow-hidden ${
                   totalScreens === 3 ? 'md:row-span-2' : ''
                 } ${
                   audioSlot === 0
@@ -294,47 +295,10 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
               : 'w-full h-full'
           }
         >
-          <video
-            ref={p.videoRef}
-            playsInline
-            x-webkit-airplay="allow"
-            onClick={(e) => {
-              if (isMultiGrid && p.onSetMultiAudioSlot && audioSlot !== 0) {
-                e.stopPropagation();
-                triggerHaptic('light');
-                p.onSetMultiAudioSlot(0);
-                return;
-              }
-              if (p.isTouchLocked) {
-                p.revealControls();
-              } else {
-                p.handleVideoSurfaceTap(e);
-              }
-            }}
-            onLoadedMetadata={p.videoCallbacks.onLoadedMetadata}
-            onEnded={p.videoCallbacks.onEnded}
-            onTimeUpdate={p.videoCallbacks.onTimeUpdate}
-            onDurationChange={(e) => p.setDuration(e.currentTarget.duration || 0)}
-            onCanPlay={p.clearBufferingIndicator}
-            onCanPlayThrough={p.clearBufferingIndicator}
-            onWaiting={p.videoCallbacks.onWaiting}
-            onStalled={p.videoCallbacks.onStalled}
-            onPlaying={p.videoCallbacks.onPlaying}
-            onPause={p.videoCallbacks.onPause}
-            onVolumeChange={p.videoCallbacks.onVolumeChange}
-            className={`w-full h-full ${
-              p.tvAspectMode === 'cover'
-                ? 'object-cover'
-                : p.tvAspectMode === 'fill'
-                ? 'object-fill'
-                : 'object-contain'
-            } bg-black cursor-pointer [transform:translateZ(0)]`}
-          />
-
           {isMultiGrid && (
             <div
               onClick={(e) => e.stopPropagation()}
-              className="absolute top-0 inset-x-0 px-2 sm:px-2.5 py-1.5 bg-gradient-to-b from-black/92 via-black/60 to-transparent flex items-center justify-between gap-1.5 pointer-events-auto z-20"
+              className="shrink-0 h-7 px-2 sm:px-2.5 bg-[#0B0C12] border-b border-white/[0.08] flex items-center justify-between gap-1.5 z-20"
             >
               <div className="min-w-0 flex items-center gap-1.5 text-[11px] font-semibold text-zinc-100 truncate">
                 <span
@@ -353,10 +317,10 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
                     triggerHaptic('light');
                     p.onSetMultiAudioSlot?.(0);
                   }}
-                  className={`h-7 px-2 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors shrink-0 ${
+                  className={`h-5 px-2 rounded-md text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors shrink-0 ${
                     audioSlot === 0
                       ? 'bg-emerald-500 text-black'
-                      : 'bg-black/75 hover:bg-white/20 text-zinc-200 border border-white/15'
+                      : 'bg-white/10 hover:bg-white/20 text-zinc-200 border border-white/10'
                   }`}
                 >
                   {audioSlot === 0 ? (
@@ -373,6 +337,45 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
               )}
             </div>
           )}
+
+          <div className={isMultiGrid ? 'relative flex-1 min-h-0 w-full bg-black overflow-hidden' : 'w-full h-full'}>
+            <video
+              ref={p.videoRef}
+              playsInline
+              x-webkit-airplay="allow"
+              onClick={(e) => {
+                if (isMultiGrid && p.onSetMultiAudioSlot && audioSlot !== 0) {
+                  e.stopPropagation();
+                  triggerHaptic('light');
+                  p.onSetMultiAudioSlot(0);
+                  return;
+                }
+                if (p.isTouchLocked) {
+                  p.revealControls();
+                } else {
+                  p.handleVideoSurfaceTap(e);
+                }
+              }}
+              onLoadedMetadata={p.videoCallbacks.onLoadedMetadata}
+              onEnded={p.videoCallbacks.onEnded}
+              onTimeUpdate={p.videoCallbacks.onTimeUpdate}
+              onDurationChange={(e) => p.setDuration(e.currentTarget.duration || 0)}
+              onCanPlay={p.clearBufferingIndicator}
+              onCanPlayThrough={p.clearBufferingIndicator}
+              onWaiting={p.videoCallbacks.onWaiting}
+              onStalled={p.videoCallbacks.onStalled}
+              onPlaying={p.videoCallbacks.onPlaying}
+              onPause={p.videoCallbacks.onPause}
+              onVolumeChange={p.videoCallbacks.onVolumeChange}
+              className={`w-full h-full ${
+                p.tvAspectMode === 'cover'
+                  ? 'object-cover'
+                  : p.tvAspectMode === 'fill'
+                  ? 'object-fill'
+                  : 'object-contain'
+              } bg-black cursor-pointer [transform:translateZ(0)]`}
+            />
+          </div>
         </div>
 
         <video

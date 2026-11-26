@@ -1329,6 +1329,10 @@
 }
 .tv-mv-tile {
   position: absolute;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
   background: #000000;
   border: 2px solid rgba(255, 255, 255, 0.14);
   border-radius: 12px;
@@ -1350,6 +1354,15 @@
 #tv-multi-grid.mv-count-4 .tv-mv-slot-2 { left: 0; top: 51%; width: 49.5%; height: 49%; }
 #tv-multi-grid.mv-count-4 .tv-mv-slot-3 { left: 50.5%; top: 51%; width: 49.5%; height: 49%; }
 
+.tv-mv-video-wrap {
+  position: relative;
+  -webkit-flex: 1;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  background: #000000;
+  overflow: hidden;
+}
 .tv-mv-video {
   width: 100%;
   height: 100%;
@@ -1358,12 +1371,11 @@
   background: #000000;
 }
 .tv-mv-hud {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  padding: 8px 12px;
-  background: linear-gradient(to bottom, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0) 100%);
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+  padding: 6px 12px;
+  background: #0B0D14;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   display: -webkit-flex;
   display: flex;
   -webkit-align-items: center;

@@ -148,7 +148,9 @@ export function createTrackAndQueuePlaybackHandlers(
             ? `Sincronizado en el segundo exacto (${Math.floor(resumeAt / 60)}:${String(
                 Math.floor(resumeAt % 60)
               ).padStart(2, '0')})`
-            : 'Reproduciendo señal HD sincronizada',
+            : nextMode === 'embed'
+            ? 'Reproductor alternativo conectado'
+            : 'Reproduciendo señal HD directa',
       });
       return;
     }

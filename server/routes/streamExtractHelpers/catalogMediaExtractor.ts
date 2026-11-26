@@ -12,8 +12,6 @@ import {
   extract2EmbedEnglishTracks,
   extractBingetrixEnglishTracks,
   extractGhostflixVidboltTracks,
-  extractVidRockHlsTracks,
-  extractVidsrcBuzzHlsTracks,
   isMovidyVerUrl,
 } from '../../extractors/bingetrixMovidy.ts';
 import { isGnulaHdUrl } from '../../extractors/gnulaHdExtractor.ts';
@@ -40,6 +38,10 @@ import {
   resolveOrderedCandidateTracks,
 } from './catalogTrackResolver.ts';
 import { findFastProviderVodOrSeriesSignals } from '../../services/providers/xtreamFastSignalService.ts';
+import {
+  extractXtreamSeriesEpisodeTracks,
+  findXtreamMovieMatches,
+} from '../../services/xtreamVodMatcher.ts';
 import type { RankCandidateTracksFn } from '../streamExtractRoutes.ts';
 
 const TMDB_API_KEY = ENV.tmdbApiKey;
@@ -225,10 +227,8 @@ export async function handleCatalogMediaExtract(
     subtitles: [],
   };
   let esTracks: TrackRecord[] = [];
-  let vidRockTracks: TrackRecord[] = [];
   let bingetrixEnTracks: TrackRecord[] = [];
   let twoEmbedEnTracks: TrackRecord[] = [];
-  let vidBuzzHlsTracks: TrackRecord[] = [];
   let clipboxDirectExtracted: { tracks: TrackRecord[]; subtitles: any[] } = {
     tracks: [],
     subtitles: [],
@@ -242,24 +242,33 @@ export async function handleCatalogMediaExtract(
     detectedLangs: [],
   };
   let providerFastTracks: TrackRecord[] = [];
+  let xtreamVodTracks: TrackRecord[] = [];
 
-  let fastDirectEsReadyResolve: (() => void) | null = null;
-  let fastDirectEsReadyFired = false;
-  const fastDirectEsReadyPromise = new Promise<void>((resolve) => {
-    fastDirectEsReadyResolve = resolve;
+  let fastDirectReadyResolve: (() => void) | null = null;
+  let fastDirectReadyFired = false;
+  const fastDirectReadyPromise = new Promise<void>((resolve) => {
+    fastDirectReadyResolve = resolve;
   });
-  const signalFastDirectEsIfReady = (tracks: TrackRecord[]) => {
+  const matchesPreferLang = (trackLang: string): boolean => {
+    const tl = String(trackLang || '').toUpperCase();
+    const pref = String(preferLang || 'ES').toUpperCase();
+    if (tl === pref) return true;
+    if (pref === 'VOSE' && tl === 'EN') return true;
+    if (pref === 'LAT' && tl === 'ES') return false;
+    return false;
+  };
+  const signalFastDirectIfReady = (tracks: TrackRecord[]) => {
     if (
-      !fastDirectEsReadyFired &&
+      !fastDirectReadyFired &&
       tracks.some(
         (t) =>
-          String(t.lang || '').toUpperCase() === preferLang &&
-          (t.resolverType === 'direct_hls' || t.resolverType === 'direct_mp4') &&
+          matchesPreferLang(t.lang) &&
+          t.resolverType !== 'web_embed' &&
           Boolean(t.resolvedStreamUrl)
       )
     ) {
-      fastDirectEsReadyFired = true;
-      fastDirectEsReadyResolve?.();
+      fastDirectReadyFired = true;
+      fastDirectReadyResolve?.();
     }
   };
 
@@ -277,7 +286,7 @@ export async function handleCatalogMediaExtract(
     [] as TrackRecord[]
   ).then((res) => {
     movidyTracks = res;
-    signalFastDirectEsIfReady(res);
+    signalFastDirectIfReady(res);
   });
   const gnulaP = withExtractTimeout(
     resolveGnulaTracksForCatalog({
@@ -295,7 +304,7 @@ export async function handleCatalogMediaExtract(
     [] as TrackRecord[]
   ).then((res) => {
     gnulaTracks = res;
-    signalFastDirectEsIfReady(res);
+    signalFastDirectIfReady(res);
   });
   const dmP =
     effectiveMediaType === 'tv' && combinedTitleHints.length > 0
@@ -312,7 +321,7 @@ export async function handleCatalogMediaExtract(
           [] as TrackRecord[]
         ).then((res) => {
           dailymotionTracks = res;
-          signalFastDirectEsIfReady(res);
+          signalFastDirectIfReady(res);
         })
       : Promise.resolve();
   const archiveP =
@@ -332,7 +341,7 @@ export async function handleCatalogMediaExtract(
           [] as TrackRecord[]
         ).then((res) => {
           archiveOrgTracks = res;
-          signalFastDirectEsIfReady(res);
+          signalFastDirectIfReady(res);
         })
       : Promise.resolve();
   const spanishSeriesP =
@@ -351,7 +360,7 @@ export async function handleCatalogMediaExtract(
           [] as TrackRecord[]
         ).then((res) => {
           spanishSeriesTracks = res;
-          signalFastDirectEsIfReady(res);
+          signalFastDirectIfReady(res);
         })
       : Promise.resolve();
   const montepinarP =
@@ -371,7 +380,7 @@ export async function handleCatalogMediaExtract(
           { tracks: [] as TrackRecord[], subtitles: [] as MontepinarSubtitleItem[] }
         ).then((res) => {
           montepinarExtracted = res;
-          signalFastDirectEsIfReady(res.tracks);
+          signalFastDirectIfReady(res.tracks);
         })
       : Promise.resolve();
   const embed69P =
@@ -394,7 +403,7 @@ export async function handleCatalogMediaExtract(
           [] as TrackRecord[]
         ).then((res) => {
           esTracks = res;
-          signalFastDirectEsIfReady(res);
+          signalFastDirectIfReady(res);
         })
       : Promise.resolve();
   const vestP = shouldQueryVest
@@ -415,25 +424,10 @@ export async function handleCatalogMediaExtract(
         null
       ).then((res) => {
         vestExtractedHolder.value = res;
-        if (res?.tracks) signalFastDirectEsIfReady(res.tracks);
+        if (res?.tracks) signalFastDirectIfReady(res.tracks);
       })
     : Promise.resolve();
 
-  const vidRockP =
-    resolvedTmdbId && !isSpanishNativePreferred
-      ? withExtractTimeout(
-          extractVidRockHlsTracks({
-            tmdbId: resolvedTmdbId,
-            mediaType: effectiveMediaType,
-            season: effectiveSeason,
-            episode: effectiveEpisode,
-          }),
-          enTimeout,
-          [] as TrackRecord[]
-        ).then((res) => {
-          vidRockTracks = res;
-        })
-      : Promise.resolve();
   const bingetrixEnP =
     resolvedTmdbId && !isSpanishNativePreferred
       ? withExtractTimeout(
@@ -443,10 +437,11 @@ export async function handleCatalogMediaExtract(
             season: effectiveSeason,
             episode: effectiveEpisode,
           }),
-          3600,
+          5200,
           [] as TrackRecord[]
         ).then((res) => {
           bingetrixEnTracks = res;
+          signalFastDirectIfReady(res);
         })
       : Promise.resolve();
   const twoEmbedEnP =
@@ -463,22 +458,7 @@ export async function handleCatalogMediaExtract(
           [] as TrackRecord[]
         ).then((res) => {
           twoEmbedEnTracks = res;
-        })
-      : Promise.resolve();
-  const vidBuzzP =
-    (resolvedTmdbId || tmdbImdbId) && !isSpanishNativePreferred
-      ? withExtractTimeout(
-          extractVidsrcBuzzHlsTracks({
-            tmdbId: resolvedTmdbId || undefined,
-            imdbId: tmdbImdbId,
-            mediaType: effectiveMediaType,
-            season: effectiveSeason,
-            episode: effectiveEpisode,
-          }),
-          enTimeout,
-          [] as TrackRecord[]
-        ).then((res) => {
-          vidBuzzHlsTracks = res;
+          signalFastDirectIfReady(res);
         })
       : Promise.resolve();
   const ghostflixP =
@@ -495,6 +475,7 @@ export async function handleCatalogMediaExtract(
           { tracks: [] as TrackRecord[], subtitles: [], detectedLangs: [] }
         ).then((res) => {
           ghostflixExtracted = res;
+          signalFastDirectIfReady(res.tracks);
         })
       : Promise.resolve();
 
@@ -511,6 +492,7 @@ export async function handleCatalogMediaExtract(
         { tracks: [] as TrackRecord[], subtitles: [] }
       ).then((res) => {
         clipboxDirectExtracted = res;
+        signalFastDirectIfReady(res.tracks);
       })
     : Promise.resolve();
 
@@ -523,15 +505,41 @@ export async function handleCatalogMediaExtract(
       season: effectiveSeason,
       episode: effectiveEpisode,
       preferLang,
-      limit: 4,
+      limit: 8,
     }),
     3200,
     [] as TrackRecord[]
   ).then((res) => {
     providerFastTracks = res;
-    signalFastDirectEsIfReady(res);
+    signalFastDirectIfReady(res);
   });
 
+  const xtreamVodP =
+    combinedTitleHints.length > 0
+      ? withExtractTimeout(
+          effectiveMediaType === 'tv'
+            ? extractXtreamSeriesEpisodeTracks({
+                titleHints: combinedTitleHints,
+                yearHint: effectiveYearForExtract,
+                season: effectiveSeason,
+                episode: effectiveEpisode,
+                preferLang,
+              })
+            : findXtreamMovieMatches({
+                titleHints: combinedTitleHints,
+                yearHint: effectiveYearForExtract,
+                preferLang,
+                limit: 10,
+              }).then((r) => r.tracks),
+          3600,
+          [] as TrackRecord[]
+        ).then((res) => {
+          xtreamVodTracks = res;
+          signalFastDirectIfReady(res);
+        })
+      : Promise.resolve();
+
+  const xtreamFastSettledPromise = Promise.all([providerFastP, xtreamVodP]);
   const primaryAllPromise = Promise.all([
     movidyP,
     gnulaP,
@@ -542,123 +550,158 @@ export async function handleCatalogMediaExtract(
     embed69P,
     vestP,
     providerFastP,
+    xtreamVodP,
   ]);
   const secondaryAllPromise = Promise.all([
     clipboxDirectP,
-    vidRockP,
     bingetrixEnP,
     twoEmbedEnP,
-    vidBuzzP,
     ghostflixP,
   ]);
+  const allSourcesSettledPromise = Promise.all([primaryAllPromise, secondaryAllPromise]);
 
+  let settledAllAtResponse = false;
   if (isSpanishNativePreferred) {
-    // Wait for native Spanish sources, or return within 1.4s after a verified direct ES track is ready
     await Promise.race([
-      primaryAllPromise,
-      fastDirectEsReadyPromise.then(
-        () => new Promise<void>((resolve) => setTimeout(resolve, 1400))
+      primaryAllPromise.then(() => {
+        settledAllAtResponse = true;
+      }),
+      fastDirectReadyPromise.then(
+        () => new Promise<void>((resolve) => setTimeout(resolve, 1200))
       ),
     ]);
   } else {
-    await primaryAllPromise;
-    const primaryHasPreferredSpanish =
-      prefersSpanishTier &&
-      [
-        ...movidyTracks,
-        ...gnulaTracks,
-        ...dailymotionTracks,
-        ...archiveOrgTracks,
-        ...spanishSeriesTracks,
-        ...esTracks,
-        ...(vestExtractedHolder.value?.tracks || []),
-      ].some(
-        (t) =>
-          String(t.lang || '').toUpperCase() === preferLang &&
-          t.resolverType !== 'web_embed'
-      );
-
-    if (primaryHasPreferredSpanish) {
-      // Primary Spanish sources already succeeded; allow only a brief 350ms grace window for EN tracks
-      await Promise.race([
-        secondaryAllPromise,
-        new Promise<void>((resolve) => setTimeout(resolve, 350)),
-      ]);
-    } else {
-      await secondaryAllPromise;
-    }
+    // Wait briefly for instant RAM Xtream lookups + race all sources against a 950ms collector window once a preferred direct stream is verified
+    await Promise.race([
+      allSourcesSettledPromise.then(() => {
+        settledAllAtResponse = true;
+      }),
+      Promise.all([
+        xtreamFastSettledPromise,
+        fastDirectReadyPromise,
+      ]).then(() => new Promise<void>((resolve) => setTimeout(resolve, 950))),
+      primaryAllPromise.then(async () => {
+        const primaryHasPreferredSpanish =
+          prefersSpanishTier &&
+          [
+            ...providerFastTracks,
+            ...xtreamVodTracks,
+            ...movidyTracks,
+            ...gnulaTracks,
+            ...dailymotionTracks,
+            ...archiveOrgTracks,
+            ...spanishSeriesTracks,
+            ...esTracks,
+            ...(vestExtractedHolder.value?.tracks || []),
+          ].some(
+            (t) =>
+              String(t.lang || '').toUpperCase() === preferLang &&
+              t.resolverType !== 'web_embed'
+          );
+        if (primaryHasPreferredSpanish) {
+          await Promise.race([
+            secondaryAllPromise.then(() => {
+              settledAllAtResponse = true;
+            }),
+            new Promise<void>((resolve) => setTimeout(resolve, 350)),
+          ]);
+        } else {
+          await secondaryAllPromise;
+          settledAllAtResponse = true;
+        }
+      }),
+    ]);
   }
 
-  const ghostflixTracks: TrackRecord[] = ghostflixExtracted?.tracks || [];
-  const ghostflixSubtitles = ghostflixExtracted?.subtitles || [];
-  const clipboxTracks: TrackRecord[] = clipboxDirectExtracted?.tracks || [];
-  const clipboxSubtitles = clipboxDirectExtracted?.subtitles || [];
-  const enTracks: TrackRecord[] = [
-    ...vidRockTracks,
-    ...ghostflixTracks,
-    ...clipboxTracks,
-    ...bingetrixEnTracks,
-    ...twoEmbedEnTracks,
-    ...vidBuzzHlsTracks,
-  ];
-  const montepinarTracks: TrackRecord[] = montepinarExtracted?.tracks || [];
-  const montepinarSubtitles = montepinarExtracted?.subtitles || [];
-  const vestTracks: TrackRecord[] = vestExtractedHolder.value?.tracks || [];
-  const vestSubtitles = vestExtractedHolder.value?.subtitles || [];
-  const vestDetailMeta = vestExtractedHolder.value?.detail || extractedVestDetail;
+  const collectDiscoveredTracks = (): {
+    allDiscovered: TrackRecord[];
+    clipboxSubs: any[];
+    ghostflixSubs: any[];
+    montepinarSubs: MontepinarSubtitleItem[];
+    vestSubs: any[];
+    vestMeta: typeof extractedVestDetail;
+  } => {
+    const ghostflixTracks: TrackRecord[] = ghostflixExtracted?.tracks || [];
+    const ghostflixSubs = ghostflixExtracted?.subtitles || [];
+    const clipboxTracks: TrackRecord[] = clipboxDirectExtracted?.tracks || [];
+    const clipboxSubs = clipboxDirectExtracted?.subtitles || [];
+    const enTracks: TrackRecord[] = [
+      ...bingetrixEnTracks,
+      ...ghostflixTracks,
+      ...clipboxTracks,
+      ...twoEmbedEnTracks,
+    ];
+    const montepinarTracks: TrackRecord[] = montepinarExtracted?.tracks || [];
+    const montepinarSubs = montepinarExtracted?.subtitles || [];
+    const vestTracks: TrackRecord[] = vestExtractedHolder.value?.tracks || [];
+    const vestSubs = vestExtractedHolder.value?.subtitles || [];
+    const vestMeta = vestExtractedHolder.value?.detail || extractedVestDetail;
 
-  const rawDiscovered: TrackRecord[] = isVestLink
-    ? [
-        ...vestTracks,
-        ...movidyTracks,
-        ...gnulaTracks,
-        ...montepinarTracks,
-        ...dailymotionTracks,
-        ...archiveOrgTracks,
-        ...spanishSeriesTracks,
-        ...providerFastTracks,
-        ...enTracks,
-        ...esTracks,
-      ]
-    : !hasExplicitMovidyUrl && hasExplicitGnulaUrl
-    ? [
-        ...gnulaTracks,
-        ...montepinarTracks,
-        ...dailymotionTracks,
-        ...archiveOrgTracks,
-        ...spanishSeriesTracks,
-        ...providerFastTracks,
-        ...movidyTracks,
-        ...enTracks,
-        ...esTracks,
-        ...vestTracks,
-      ]
-    : [
-        ...movidyTracks,
-        ...gnulaTracks,
-        ...montepinarTracks,
-        ...dailymotionTracks,
-        ...archiveOrgTracks,
-        ...spanishSeriesTracks,
-        ...providerFastTracks,
-        ...enTracks,
-        ...esTracks,
-        ...vestTracks,
-      ];
+    const rawDiscovered: TrackRecord[] = isVestLink
+      ? [
+          ...vestTracks,
+          ...providerFastTracks,
+          ...xtreamVodTracks,
+          ...movidyTracks,
+          ...gnulaTracks,
+          ...montepinarTracks,
+          ...dailymotionTracks,
+          ...archiveOrgTracks,
+          ...spanishSeriesTracks,
+          ...enTracks,
+          ...esTracks,
+        ]
+      : !hasExplicitMovidyUrl && hasExplicitGnulaUrl
+      ? [
+          ...gnulaTracks,
+          ...providerFastTracks,
+          ...xtreamVodTracks,
+          ...montepinarTracks,
+          ...dailymotionTracks,
+          ...archiveOrgTracks,
+          ...spanishSeriesTracks,
+          ...movidyTracks,
+          ...enTracks,
+          ...esTracks,
+          ...vestTracks,
+        ]
+      : [
+          ...providerFastTracks,
+          ...xtreamVodTracks,
+          ...movidyTracks,
+          ...gnulaTracks,
+          ...montepinarTracks,
+          ...dailymotionTracks,
+          ...archiveOrgTracks,
+          ...spanishSeriesTracks,
+          ...enTracks,
+          ...esTracks,
+          ...vestTracks,
+        ];
 
-  const seenTrackKeys = new Set<string>();
-  const allDiscovered: TrackRecord[] = rawDiscovered.filter((tr) => {
-    const rawU = String(tr.resolvedStreamUrl || tr.sourceUrl || '').trim();
-    const archiveNorm = rawU.match(/archive\.org\/(?:\d+\/items|download)\/([^?#]+)/i)?.[1];
-    const dedupeKey = archiveNorm ? `ia:${decodeURIComponent(archiveNorm).toLowerCase()}` : rawU;
-    if (!dedupeKey) return true;
-    if (seenTrackKeys.has(dedupeKey)) return false;
-    seenTrackKeys.add(dedupeKey);
-    return true;
-  });
+    const seenTrackKeys = new Set<string>();
+    const deduped = rawDiscovered.filter((tr) => {
+      const rawU = String(tr.resolvedStreamUrl || tr.sourceUrl || '').trim();
+      const archiveNorm = rawU.match(/archive\.org\/(?:\d+\/items|download)\/([^?#]+)/i)?.[1];
+      const dedupeKey = archiveNorm ? `ia:${decodeURIComponent(archiveNorm).toLowerCase()}` : rawU;
+      if (!dedupeKey) return true;
+      if (seenTrackKeys.has(dedupeKey)) return false;
+      seenTrackKeys.add(dedupeKey);
+      return true;
+    });
+    return {
+      allDiscovered: deduped,
+      clipboxSubs,
+      ghostflixSubs,
+      montepinarSubs,
+      vestSubs,
+      vestMeta,
+    };
+  };
 
+  const initialCollected = collectDiscoveredTracks();
   const { orderedTracks, getLangScore, sourcePriority, getTrackHealthScore } = rankCandidateTracks({
-    allDiscovered,
+    allDiscovered: initialCollected.allDiscovered,
     preferLang,
     isVestLink,
     hasExplicitMovidyUrl,
@@ -686,15 +729,62 @@ export async function handleCatalogMediaExtract(
       effectiveMediaType,
       effectiveSeason,
       effectiveEpisode,
-      vestDetailMeta,
-      vestSubtitles,
-      clipboxSubtitles,
-      ghostflixSubtitles,
-      extraSubtitles: montepinarSubtitles,
+      vestDetailMeta: initialCollected.vestMeta,
+      vestSubtitles: initialCollected.vestSubs,
+      clipboxSubtitles: initialCollected.clipboxSubs,
+      ghostflixSubtitles: initialCollected.ghostflixSubs,
+      extraSubtitles: initialCollected.montepinarSubs,
       resolvedTmdbId,
       subtitlesPromise,
     });
     setCache(cacheKey, result);
+
+    // Background cache enrichment: let slower servers finish after early return and update cache with all alternatives
+    if (!settledAllAtResponse) {
+      allSourcesSettledPromise
+        .then(async () => {
+          const fullCollected = collectDiscoveredTracks();
+          if (fullCollected.allDiscovered.length <= initialCollected.allDiscovered.length) return;
+          const fullRanked = rankCandidateTracks({
+            allDiscovered: fullCollected.allDiscovered,
+            preferLang,
+            isVestLink,
+            hasExplicitMovidyUrl,
+            hasExplicitGnulaUrl,
+            healthMap: channelHealthMonitor.getAllTrackStatuses(),
+          });
+          const fullSel = await resolveOrderedCandidateTracks({
+            orderedTracks: fullRanked.orderedTracks,
+            getLangScore: fullRanked.getLangScore,
+            sourcePriority: fullRanked.sourcePriority,
+            getTrackHealthScore: fullRanked.getTrackHealthScore,
+            isSandboxedFrame,
+            directOnly,
+          });
+          if (!fullSel || fullSel.validTracks.length <= (result.tracks?.length ?? 0)) return;
+          const enrichedResult = await buildResolvedCatalogStreamResult({
+            resolvedSelection: fullSel,
+            preferLang,
+            titleHint,
+            extractedMovidyCleanTitle,
+            extractedGnulaCleanTitle,
+            tmdbResolvedTitle,
+            effectiveMediaType,
+            effectiveSeason,
+            effectiveEpisode,
+            vestDetailMeta: fullCollected.vestMeta,
+            vestSubtitles: fullCollected.vestSubs,
+            clipboxSubtitles: fullCollected.clipboxSubs,
+            ghostflixSubtitles: fullCollected.ghostflixSubs,
+            extraSubtitles: fullCollected.montepinarSubs,
+            resolvedTmdbId,
+            subtitlesPromise,
+          });
+          setCache(cacheKey, enrichedResult);
+        })
+        .catch(() => {});
+    }
+
     return sendOk(result);
   }
 

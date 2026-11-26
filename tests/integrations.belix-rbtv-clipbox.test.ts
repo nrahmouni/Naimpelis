@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   curlGetBufferWithStatus: vi.fn(),
   fetchTmdbJson: vi.fn(),
   extractClipboxDirectStreams: vi.fn(),
-  extractVidRockHlsTracks: vi.fn(),
+  extractBingetrixEnglishTracks: vi.fn(),
   searchAggregatedSubtitles: vi.fn(),
   resolveMovidyEmbedTrack: vi.fn(),
   unpackVidhideToHls: vi.fn(),
@@ -43,7 +43,7 @@ vi.mock('../server/extractors/bingetrixMovidy.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../server/extractors/bingetrixMovidy.ts')>();
   return {
     ...actual,
-    extractVidRockHlsTracks: mocks.extractVidRockHlsTracks,
+    extractBingetrixEnglishTracks: mocks.extractBingetrixEnglishTracks,
     resolveMovidyEmbedTrack: mocks.resolveMovidyEmbedTrack,
   };
 });
@@ -452,15 +452,15 @@ describe('ClipBox Native Catalog & Subtitle Normalization', () => {
       ],
     });
 
-    mocks.extractVidRockHlsTracks.mockResolvedValue([
+    mocks.extractBingetrixEnglishTracks.mockResolvedValue([
       {
-        id: 'vidrock-1',
-        label: 'VidRock 1080p',
+        id: 'bingetrix-en-1',
+        label: 'English 1080p · S1',
         lang: 'EN',
         quality: '1080p',
-        sourceUrl: 'https://vidrock.net/m/550',
-        resolvedStreamUrl: '/api/hls-proxy/vr/index.m3u8',
-        resolverType: 'direct_hls',
+        sourceUrl: 'https://bingetrix.sc/watch/550',
+        resolvedStreamUrl: '/api/hls-proxy/bx/index.m3u8',
+        resolverType: 'bingetrix_en',
       },
     ]);
 
@@ -501,7 +501,7 @@ describe('ClipBox Native Catalog & Subtitle Normalization', () => {
     expect(result.tracks[0].mode).toBe('extract');
     expect(result.tracks[0].url).toContain('directOnly=1');
     expect(result.tracks.some((t) => t.provider === 'ClipBox Direct (VidLink)' && t.mode === 'hls')).toBe(true);
-    expect(result.tracks.some((t) => t.provider === 'VidRock Native HLS')).toBe(true);
+    expect(result.tracks.some((t) => t.provider === 'Bingetrix Native HLS')).toBe(true);
 
     expect(result.subtitles.map((s) => s.lang)).toEqual(
       expect.arrayContaining(['ES', 'LAT', 'CAT', 'EN'])

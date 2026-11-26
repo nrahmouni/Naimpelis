@@ -157,12 +157,14 @@ export async function ensureFastWarmCatalogsAvailable(): Promise<void> {
   const existing = getAllCachedProviderCatalogs();
   if (existing.length >= 2) return;
   warmDefaultProvidersBackground();
-  // Wait briefly for the fastest servers ('24tv', 'adtupac', 'shark-pro') only when cold
+  // Wait briefly for the fastest servers ('vod-4k', 'shark-pro', '24tv', 'adtupac', 'sult-vo') only when cold
   await Promise.race([
     Promise.allSettled([
+      syncProviderCatalog('vod-4k', false),
+      syncProviderCatalog('shark-pro', false),
       syncProviderCatalog('24tv', false),
       syncProviderCatalog('adtupac', false),
-      syncProviderCatalog('shark-pro', false),
+      syncProviderCatalog('sult-vo', false),
     ]),
     new Promise<void>((r) => setTimeout(r, 2500)),
   ]);
@@ -239,7 +241,7 @@ export async function searchFastProviderIndex(
 
 export async function findFastProviderLiveSignals(
   channelTitle: string,
-  limit = 4
+  limit = 6
 ): Promise<TrackRecord[]> {
   const cleanTitle = normalizeProviderMatchTitle(channelTitle);
   const rawTitle = normalizeRawSearchable(channelTitle);
@@ -417,7 +419,7 @@ export async function findFastProviderVodOrSeriesSignals(params: {
     if (usedProvs.has(cand.item.providerId)) continue;
     usedProvs.add(cand.item.providerId);
     topSeries.push({ item: cand.item, lang: cand.lang });
-    if (topSeries.length >= 3) break;
+    if (topSeries.length >= 6) break;
   }
   if (topSeries.length === 0) return [];
 

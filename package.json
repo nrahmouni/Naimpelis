@@ -15,7 +15,8 @@
     "clean": "rm -rf dist dist-server server.js",
     "lint": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
     "test": "vitest run",
-    "test:perf": "vitest run tests/perf"
+    "test:perf": "vitest run tests/perf",
+    "bench:speed": "tsx scripts/speedBenchmark300.ts"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",

@@ -6,7 +6,6 @@ import {
   normalizeTitleForMatch,
   type TrackRecord,
 } from '../extractors/httpHelpers.ts';
-import { probeVidsrcBuzzHasContent } from '../extractors/bingetrixMovidy.ts';
 
 function parseYtDurationSeconds(durText: string): number {
   const clean = String(durText || '').trim();
@@ -23,7 +22,7 @@ export function toProxiedEmbedUrl(url: string, isSandboxedFrame: boolean): strin
     url
   );
   const shouldProxyHtml =
-    /(^|\.)(vidsrc\.buzz|videm\.buzz|2embed\.cc|vidfast\.[a-z.]+)/i.test(url) ||
+    /(^|\.)(2embed\.cc|bingetrix\.sc|vidbolt\.st)/i.test(url) ||
     (isSandboxedFrame && !isCloudflareDirectEmbed);
   return shouldProxyHtml ? `/api/embed-proxy?url=${encodeURIComponent(url)}` : url;
 }
@@ -265,107 +264,43 @@ export async function buildWebEmbedTracks(opts: {
     effectiveMediaType,
     effectiveSeason,
     effectiveEpisode,
-    rawInput,
     isSandboxedFrame,
   } = opts;
   if (!resolvedTmdbId) return [];
   const idStr = String(resolvedTmdbId);
   const s = Math.max(1, effectiveSeason || 1);
   const e = Math.max(1, effectiveEpisode || 1);
-  const isExplicitVidfastInput = /(^|\/|https?:\/\/)(?:www\.)?vidfast\.[a-z.]+/i.test(rawInput);
 
-  const hasBuzzContent = await probeVidsrcBuzzHasContent({
-    tmdbId: idStr,
-    mediaType: effectiveMediaType,
-    season: s,
-    episode: e,
-  });
-
-  const vidfastEntry =
+  const bingetrixEntry =
     effectiveMediaType === 'tv'
       ? {
-          id: `embed-vidfast-${idStr}-${s}-${e}`,
-          label: 'Servidor Web · VidFast HD',
-          url: isExplicitVidfastInput && /vidfast\.[a-z.]+\/tv\//i.test(rawInput)
-            ? rawInput
-            : `https://vidfast.vc/tv/${idStr}/${s}/${e}?autoPlay=true&theme=9146FF`,
+          id: `embed-bingetrix-${idStr}-${s}-${e}`,
+          label: 'Bingetrix · Web HD',
+          url: `https://bingetrix.sc/watch/tv/${idStr}/${s}/${e}`,
           proxyHtml: true,
           sandboxSafe: true,
         }
       : {
-          id: `embed-vidfast-${idStr}`,
-          label: 'Servidor Web · VidFast HD',
-          url: isExplicitVidfastInput && /vidfast\.[a-z.]+\/movie\//i.test(rawInput)
-            ? rawInput
-            : `https://vidfast.vc/movie/${idStr}?autoPlay=true&theme=9146FF`,
+          id: `embed-bingetrix-${idStr}`,
+          label: 'Bingetrix · Web HD',
+          url: `https://bingetrix.sc/watch/${idStr}`,
           proxyHtml: true,
           sandboxSafe: true,
         };
 
-  const vidrockEntry =
+  const vidboltEntry =
     effectiveMediaType === 'tv'
       ? {
-          id: `embed-vidrock-${idStr}-${s}-${e}`,
-          label: 'Servidor Web · VidRock HD',
-          url: `https://vidrock.net/embed/tv/${idStr}/${s}/${e}`,
+          id: `embed-vidbolt-${idStr}-${s}-${e}`,
+          label: 'Ghostflix · Multi-Audio HD',
+          url: `https://vidbolt.st/embed/tv/${idStr}/${s}/${e}`,
           proxyHtml: true,
           sandboxSafe: true,
         }
       : {
-          id: `embed-vidrock-${idStr}`,
-          label: 'Servidor Web · VidRock HD',
-          url: `https://vidrock.net/embed/movie/${idStr}`,
-          proxyHtml: true,
-          sandboxSafe: true,
-        };
-
-  const vidnestEntry =
-    effectiveMediaType === 'tv'
-      ? {
-          id: `embed-vidnest-${idStr}-${s}-${e}`,
-          label: 'Servidor Web · VidNest HD',
-          url: `https://vidnest.fun/tv/${idStr}/${s}/${e}`,
-          proxyHtml: true,
-          sandboxSafe: true,
-        }
-      : {
-          id: `embed-vidnest-${idStr}`,
-          label: 'Servidor Web · VidNest HD',
-          url: `https://vidnest.fun/movie/${idStr}`,
-          proxyHtml: true,
-          sandboxSafe: true,
-        };
-
-  const vidsrcBuzzEntry =
-    effectiveMediaType === 'tv'
-      ? {
-          id: `embed-vidsrcbuzz-${idStr}-${s}-${e}`,
-          label: 'Servidor Web 1 · Cloud Limpio',
-          url: `https://vidsrc.buzz/embed/tv/${idStr}/${s}/${e}`,
-          proxyHtml: true,
-          sandboxSafe: true,
-        }
-      : {
-          id: `embed-vidsrcbuzz-${idStr}`,
-          label: 'Servidor Web 1 · Cloud Limpio',
-          url: `https://vidsrc.buzz/embed/movie/${idStr}`,
-          proxyHtml: true,
-          sandboxSafe: true,
-        };
-
-  const videmBuzzEntry =
-    effectiveMediaType === 'tv'
-      ? {
-          id: `embed-vidembuzz-${idStr}-${s}-${e}`,
-          label: 'Servidor Web 2 · VidEm Limpio',
-          url: `https://videm.buzz/embed/tv/${idStr}/${s}/${e}`,
-          proxyHtml: true,
-          sandboxSafe: true,
-        }
-      : {
-          id: `embed-vidembuzz-${idStr}`,
-          label: 'Servidor Web 2 · VidEm Limpio',
-          url: `https://videm.buzz/embed/movie/${idStr}`,
+          id: `embed-vidbolt-${idStr}`,
+          label: 'Ghostflix · Multi-Audio HD',
+          url: `https://vidbolt.st/embed/movie/${idStr}`,
           proxyHtml: true,
           sandboxSafe: true,
         };
@@ -374,39 +309,20 @@ export async function buildWebEmbedTracks(opts: {
     effectiveMediaType === 'tv'
       ? {
           id: `embed-2embed-${idStr}-${s}-${e}`,
-          label: 'Servidor Web 3 · 2Embed Limpio',
+          label: '2Embed · Cloud HD',
           url: `https://www.2embed.cc/embedtv/${idStr}&s=${s}&e=${e}`,
           proxyHtml: true,
           sandboxSafe: true,
         }
       : {
           id: `embed-2embed-${idStr}`,
-          label: 'Servidor Web 3 · 2Embed Limpio',
+          label: '2Embed · Cloud HD',
           url: `https://www.2embed.cc/embed/${idStr}`,
           proxyHtml: true,
           sandboxSafe: true,
         };
 
-  let baseEntries: any[];
-  if (isExplicitVidfastInput) {
-    baseEntries = [vidfastEntry, vidrockEntry, vidnestEntry, twoEmbedEntry];
-  } else if (hasBuzzContent) {
-    baseEntries = [
-      vidsrcBuzzEntry,
-      videmBuzzEntry,
-      vidfastEntry,
-      vidrockEntry,
-      twoEmbedEntry,
-    ];
-  } else {
-    baseEntries = [
-      vidfastEntry,
-      vidrockEntry,
-      vidnestEntry,
-      twoEmbedEntry,
-    ];
-  }
-
+  const baseEntries = [bingetrixEntry, vidboltEntry, twoEmbedEntry];
   const orderedEntries = (isSandboxedFrame
     ? baseEntries.filter((entry) => entry.sandboxSafe)
     : baseEntries

@@ -1015,9 +1015,13 @@
           overlay.appendChild(stTxt);
           overlay.appendChild(stBtns);
 
-          tile.appendChild(vid);
+          var vidWrap = document.createElement('div');
+          vidWrap.className = 'tv-mv-video-wrap';
+          vidWrap.appendChild(vid);
+          vidWrap.appendChild(overlay);
+
           tile.appendChild(hud);
-          tile.appendChild(overlay);
+          tile.appendChild(vidWrap);
           grid.appendChild(tile);
         })(i);
       }

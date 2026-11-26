@@ -6,7 +6,20 @@ import { streamingFetch } from '../../utils/tlsFetch.ts';
 import { buildTmdbImageUrl, fetchTmdbJson } from '../tmdbService.ts';
 import { CHROME_UA } from '../../extractors/httpHelpers.ts';
 import { extractClipboxDirectStreams } from '../../extractors/clipboxDirectExtractor.ts';
-import { extractVidRockHlsTracks } from '../../extractors/bingetrixMovidy.ts';
+import {
+  extract2EmbedEnglishTracks,
+  extractBingetrixEnglishTracks,
+  extractGhostflixVidboltTracks,
+} from '../../extractors/bingetrixMovidy.ts';
+import {
+  resolveGnulaTracksForCatalog,
+  resolveMovidyTracksForCatalog,
+} from '../../routes/streamExtractHelpers/catalogTrackResolver.ts';
+import { findFastProviderVodOrSeriesSignals } from '../providers/xtreamFastSignalService.ts';
+import {
+  extractXtreamSeriesEpisodeTracks,
+  findXtreamMovieMatches,
+} from '../xtreamVodMatcher.ts';
 import { buildSubtitleProxyUrl, searchAggregatedSubtitles } from '../subtitleAggregator.ts';
 import { LruTtlCache } from '../../utils/lruCache.ts';
 
@@ -53,6 +66,14 @@ export interface ClipboxTitleStreamsResult {
 }
 
 const searchCache = new LruTtlCache<string, ClipboxSearchItem[]>(240, 5 * 60 * 1000);
+const titleStreamsCache = new LruTtlCache<string, ClipboxTitleStreamsResult>(200, 3 * 60 * 1000);
+
+function withClipboxTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    p.catch(() => fallback),
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
 
 function normalizeSubLangCode(raw: string): string {
   const s = String(raw || '').trim().toLowerCase();
@@ -266,6 +287,12 @@ export async function resolveClipboxTitleStreams(params: {
 }): Promise<ClipboxTitleStreamsResult> {
   const season = Math.max(1, params.season || 1);
   const episode = Math.max(1, params.episode || 1);
+  const streamCacheKey = `${params.mediaType}|${params.tmdbId || ''}|${params.kitsuId || ''}|${params.title.toLowerCase()}|${season}|${episode}`;
+  if (process.env.NODE_ENV !== 'test') {
+    const cachedStreams = titleStreamsCache.get(streamCacheKey);
+    if (cachedStreams) return cachedStreams;
+  }
+
   let resolvedTmdbId = params.tmdbId;
 
   if (!resolvedTmdbId && params.title) {
@@ -285,19 +312,26 @@ export async function resolveClipboxTitleStreams(params: {
     }
   }
 
-  const tracks: ClipboxPlayerTrack[] = [];
+  const primaryExtractTracks: ClipboxPlayerTrack[] = [];
+  const xtreamTracks: ClipboxPlayerTrack[] = [];
+  const movidyGnulaTracks: ClipboxPlayerTrack[] = [];
+  const ghostflixTracks: ClipboxPlayerTrack[] = [];
+  const vidlinkTracks: ClipboxPlayerTrack[] = [];
+  const bingetrixTracksOut: ClipboxPlayerTrack[] = [];
+  const twoEmbedTracksOut: ClipboxPlayerTrack[] = [];
   const isSeriesLike = params.mediaType === 'tv' || params.mediaType === 'anime';
+  const preferLang = params.mediaType === 'anime' ? 'VOSE' : 'ES';
 
   if (resolvedTmdbId || params.title) {
     const extractQs = new URLSearchParams({
       title: params.title,
       ...(resolvedTmdbId ? { tmdbId: String(resolvedTmdbId) } : {}),
       mediaType: isSeriesLike ? 'tv' : 'movie',
-      preferLang: params.mediaType === 'anime' ? 'VOSE' : 'ES',
+      preferLang,
       directOnly: '1',
       ...(isSeriesLike ? { season: String(season), episode: String(episode) } : {}),
     });
-    tracks.push({
+    primaryExtractTracks.push({
       id: `cb-riffan-es-${resolvedTmdbId || 'title'}-${season}-${episode}`,
       provider: 'RiffanTV + ClipBox',
       label:
@@ -317,76 +351,279 @@ export async function resolveClipboxTitleStreams(params: {
   const subtitles: Array<{ lang: string; label: string; url: string; source: string }> = [];
   const enrichTasks: Promise<void>[] = [];
 
+  // 1. Connected Xtream servers (in-memory instant lookups across all configured portals)
+  if (params.title) {
+    enrichTasks.push(
+      withClipboxTimeout(
+        (async () => {
+          const [fastRes, matcherRes] = await Promise.all([
+            findFastProviderVodOrSeriesSignals({
+              mediaType: isSeriesLike ? 'tv' : 'movie',
+              title: params.title,
+              season,
+              episode,
+              preferLang,
+              limit: 6,
+            }).catch(() => []),
+            (isSeriesLike
+              ? extractXtreamSeriesEpisodeTracks({
+                  titleHints: [params.title],
+                  season,
+                  episode,
+                  preferLang,
+                })
+              : findXtreamMovieMatches({
+                  titleHints: [params.title],
+                  preferLang,
+                  limit: 6,
+                }).then((r) => r.tracks)
+            ).catch(() => []),
+          ]);
+          for (const tr of [...fastRes, ...matcherRes]) {
+            const playUrl = tr.resolvedStreamUrl || tr.sourceUrl;
+            if (!playUrl) continue;
+            xtreamTracks.push({
+              id: tr.id,
+              provider: 'Servidores Conectados',
+              label: tr.label,
+              lang: tr.lang || preferLang,
+              quality: tr.quality || '1080p',
+              mode: tr.resolverType === 'direct_hls' ? 'hls' : 'direct',
+              url: playUrl,
+              rawUrl: playUrl,
+              note: 'Stream directo instantáneo desde tus servidores conectados.',
+            });
+          }
+        })(),
+        2200,
+        undefined
+      )
+    );
+  }
+
+  // 2. Movidy & GnulaHD Spanish / LAT alternatives
+  if (params.title) {
+    enrichTasks.push(
+      withClipboxTimeout(
+        (async () => {
+          const [mvList, gnList] = await Promise.all([
+            resolveMovidyTracksForCatalog({
+              effectiveMovidyUrl: '',
+              combinedTitleHints: [params.title],
+              effectiveMediaType: isSeriesLike ? 'tv' : 'movie',
+              resolvedTmdbId: resolvedTmdbId || null,
+            }).catch(() => []),
+            resolveGnulaTracksForCatalog({
+              effectiveGnulaUrl: '',
+              combinedTitleHints: [params.title],
+              effectiveMediaType: isSeriesLike ? 'tv' : 'movie',
+              resolvedTmdbId: resolvedTmdbId || null,
+              effectiveSeason: season,
+              effectiveEpisode: episode,
+            }).catch(() => []),
+          ]);
+          for (const tr of [...mvList, ...gnList]) {
+            const sourceLabel = tr.id.startsWith('gnula-') ? 'GnulaHD' : 'Movidy';
+            if (tr.resolvedStreamUrl && tr.resolverType !== 'web_embed') {
+              movidyGnulaTracks.push({
+                id: tr.id,
+                provider: sourceLabel,
+                label: tr.label,
+                lang: tr.lang || 'ES',
+                quality: tr.quality || '1080p',
+                mode: tr.resolverType === 'direct_mp4' ? 'direct' : 'hls',
+                url: tr.resolvedStreamUrl,
+                rawUrl: tr.sourceUrl,
+                note: `Señal nativa ${sourceLabel} en reproductor interno.`,
+              });
+            } else if (
+              tr.sourceUrl &&
+              (tr.resolverType === 'movidy_embed' || tr.resolverType === 'vidhide_hls')
+            ) {
+              const qs = new URLSearchParams({
+                url: tr.sourceUrl,
+                title: params.title,
+                preferLang: tr.lang || preferLang,
+                directOnly: '1',
+              });
+              movidyGnulaTracks.push({
+                id: tr.id,
+                provider: sourceLabel,
+                label: tr.label,
+                lang: tr.lang || 'ES',
+                quality: tr.quality || '1080p',
+                mode: 'extract',
+                url: `/api/extract/stream?${qs.toString()}`,
+                rawUrl: tr.sourceUrl,
+                note: `Alternativa ${sourceLabel} con resolución directa.`,
+              });
+            }
+          }
+        })(),
+        3200,
+        undefined
+      )
+    );
+  }
+
   if (resolvedTmdbId) {
     const idStr = String(resolvedTmdbId);
 
+    // 3. ClipBox Direct (VidLink)
     enrichTasks.push(
-      (async () => {
-        try {
-          const directRes = await extractClipboxDirectStreams({
-            tmdbId: idStr,
-            mediaType: isSeriesLike ? 'tv' : 'movie',
-            season,
-            episode,
-            originalLanguage: params.mediaType === 'anime' ? 'ja' : undefined,
-          });
-          for (const tr of directRes.tracks) {
-            if (!tr.resolvedStreamUrl) continue;
-            tracks.push({
-              id: tr.id,
-              provider: 'ClipBox Direct (VidLink)',
-              label: tr.label,
-              lang: tr.lang,
-              quality: tr.quality || '1080p',
-              mode: tr.resolverType === 'direct_mp4' ? 'direct' : 'hls',
-              url: tr.resolvedStreamUrl,
-              rawUrl: tr.resolvedStreamUrl,
-              note: 'Stream directo MP4/HLS reproducido en reproductor nativo sin popups.',
+      withClipboxTimeout(
+        (async () => {
+          try {
+            const directRes = await extractClipboxDirectStreams({
+              tmdbId: idStr,
+              mediaType: isSeriesLike ? 'tv' : 'movie',
+              season,
+              episode,
+              originalLanguage: params.mediaType === 'anime' ? 'ja' : undefined,
             });
+            for (const tr of directRes.tracks) {
+              if (!tr.resolvedStreamUrl) continue;
+              vidlinkTracks.push({
+                id: tr.id,
+                provider: 'ClipBox Direct (VidLink)',
+                label: tr.label,
+                lang: tr.lang,
+                quality: tr.quality || '1080p',
+                mode: tr.resolverType === 'direct_mp4' ? 'direct' : 'hls',
+                url: tr.resolvedStreamUrl,
+                rawUrl: tr.resolvedStreamUrl,
+                note: 'Stream directo MP4/HLS reproducido en reproductor nativo sin popups.',
+              });
+            }
+            for (const sub of directRes.subtitles) {
+              const safeUrl = toSafeSubtitleUrl(sub.url);
+              if (!safeUrl) continue;
+              subtitles.push({
+                lang: normalizeSubLangCode(sub.lang || sub.label),
+                label: sub.label,
+                url: safeUrl,
+                source: sub.source || 'vidlink.pro',
+              });
+            }
+          } catch {
+            // ignore cleanly
           }
-          for (const sub of directRes.subtitles) {
-            const safeUrl = toSafeSubtitleUrl(sub.url);
-            if (!safeUrl) continue;
-            subtitles.push({
-              lang: normalizeSubLangCode(sub.lang || sub.label),
-              label: sub.label,
-              url: safeUrl,
-              source: sub.source || 'vidlink.pro',
-            });
-          }
-        } catch {
-          // ignore cleanly
-        }
-      })()
+        })(),
+        3500,
+        undefined
+      )
     );
 
+    // 4. Ghostflix / VidBolt Multi-Audio HLS + Subtitles
     enrichTasks.push(
-      (async () => {
-        try {
-          const vidRockTracks = await extractVidRockHlsTracks({
-            tmdbId: idStr,
-            mediaType: isSeriesLike ? 'tv' : 'movie',
-            season,
-            episode,
-          });
-          for (const tr of vidRockTracks) {
-            if (!tr.resolvedStreamUrl) continue;
-            tracks.push({
-              id: tr.id,
-              provider: 'VidRock Native HLS',
-              label: tr.label,
-              lang: tr.lang,
-              quality: tr.quality || '1080p',
-              mode: 'hls',
-              url: tr.resolvedStreamUrl,
-              rawUrl: tr.resolvedStreamUrl,
-              note: 'Flujo HLS nativo estable sin ventanas externas.',
+      withClipboxTimeout(
+        (async () => {
+          try {
+            const gfRes = await extractGhostflixVidboltTracks({
+              tmdbId: idStr,
+              mediaType: isSeriesLike ? 'tv' : 'movie',
+              season,
+              episode,
             });
+            for (const tr of gfRes.tracks) {
+              if (!tr.resolvedStreamUrl) continue;
+              ghostflixTracks.push({
+                id: tr.id,
+                provider: 'Ghostflix Multi-Audio HLS',
+                label: tr.label,
+                lang: tr.lang,
+                quality: tr.quality || '1080p',
+                mode: 'hls',
+                url: tr.resolvedStreamUrl,
+                rawUrl: tr.sourceUrl,
+                note: 'Flujo HLS multi-audio con subtítulos sincronizados.',
+              });
+            }
+            for (const sub of gfRes.subtitles) {
+              const safeUrl = toSafeSubtitleUrl(sub.url);
+              if (!safeUrl) continue;
+              subtitles.push({
+                lang: normalizeSubLangCode(sub.lang || sub.label),
+                label: sub.label,
+                url: safeUrl,
+                source: 'vidbolt.st',
+              });
+            }
+          } catch {
+            // ignore cleanly
           }
-        } catch {
-          // ignore cleanly
-        }
-      })()
+        })(),
+        3200,
+        undefined
+      )
+    );
+
+    // 5. Bingetrix Native HLS
+    enrichTasks.push(
+      withClipboxTimeout(
+        (async () => {
+          try {
+            const bingetrixTracks = await extractBingetrixEnglishTracks({
+              tmdbId: idStr,
+              mediaType: isSeriesLike ? 'tv' : 'movie',
+              season,
+              episode,
+            });
+            for (const tr of bingetrixTracks) {
+              if (!tr.resolvedStreamUrl) continue;
+              bingetrixTracksOut.push({
+                id: tr.id,
+                provider: 'Bingetrix Native HLS',
+                label: tr.label,
+                lang: tr.lang,
+                quality: tr.quality || '1080p',
+                mode: 'hls',
+                url: tr.resolvedStreamUrl,
+                rawUrl: tr.resolvedStreamUrl,
+                note: 'Flujo HLS nativo estable sin ventanas externas.',
+              });
+            }
+          } catch {
+            // ignore cleanly
+          }
+        })(),
+        3400,
+        undefined
+      )
+    );
+
+    // 6. 2Embed Native HLS backup
+    enrichTasks.push(
+      withClipboxTimeout(
+        (async () => {
+          try {
+            const teTracks = await extract2EmbedEnglishTracks({
+              tmdbId: idStr,
+              mediaType: isSeriesLike ? 'tv' : 'movie',
+              season,
+              episode,
+            });
+            for (const tr of teTracks) {
+              if (!tr.resolvedStreamUrl) continue;
+              twoEmbedTracksOut.push({
+                id: tr.id,
+                provider: '2Embed Native HLS',
+                label: tr.label,
+                lang: tr.lang,
+                quality: tr.quality || '1080p',
+                mode: 'hls',
+                url: tr.resolvedStreamUrl,
+                rawUrl: tr.sourceUrl,
+                note: 'Servidor alternativo HLS directo.',
+              });
+            }
+          } catch {
+            // ignore cleanly
+          }
+        })(),
+        3000,
+        undefined
+      )
     );
 
     enrichTasks.push(
@@ -398,7 +635,7 @@ export async function resolveClipboxTitleStreams(params: {
             mediaType: isSeriesLike ? 'tv' : 'movie',
             season,
             episode,
-            timeoutMs: 4200,
+            timeoutMs: 3200,
           });
           for (const s of aggSubs) {
             const safeUrl = toSafeSubtitleUrl(s.url);
@@ -517,6 +754,22 @@ export async function resolveClipboxTitleStreams(params: {
 
   await Promise.all(enrichTasks);
 
+  const seenTrackUrls = new Set<string>();
+  const tracks = [
+    ...primaryExtractTracks,
+    ...xtreamTracks,
+    ...movidyGnulaTracks,
+    ...ghostflixTracks,
+    ...vidlinkTracks,
+    ...bingetrixTracksOut,
+    ...twoEmbedTracksOut,
+  ].filter((tr) => {
+    const key = String(tr.url || '').trim();
+    if (!key || seenTrackUrls.has(key)) return false;
+    seenTrackUrls.add(key);
+    return true;
+  });
+
   const seenSubs = new Set<string>();
   const dedupedSubtitles = subtitles.filter((s) => {
     if (!s.url || seenSubs.has(s.url)) return false;
@@ -524,7 +777,7 @@ export async function resolveClipboxTitleStreams(params: {
     return true;
   });
 
-  return {
+  const result: ClipboxTitleStreamsResult = {
     title: params.title,
     mediaType: params.mediaType,
     season,
@@ -534,4 +787,8 @@ export async function resolveClipboxTitleStreams(params: {
     introTimestamps,
     portalLinks: [],
   };
+  if (process.env.NODE_ENV !== 'test' && tracks.length > 0) {
+    titleStreamsCache.set(streamCacheKey, result);
+  }
+  return result;
 }

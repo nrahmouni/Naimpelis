@@ -243,11 +243,14 @@ export function buildDvbLiveFfmpegArgs(options: {
   const isInterlaced = Boolean(probe && /^(tt|bb|tb|bt)$/i.test(probe.fieldOrder));
   const isHighFps = Boolean(probe && probe.fps > 31);
 
-  // Progressive H.264 8-bit 4:2:0 streams (e.g. Antena 3 720p50, laSexta 1080p50, La 1 1080p25)
-  // are already Smart TV / MSE compatible. Remuxing via -c:v copy prevents yadif double-ticker
-  // ghosting on 50fps progressive broadcasts and avoids CPU-starved H.264 macroblocking.
+  const isRawTsOrPipeInput = isPipeInput || !/\.m3u8(\?|$)/i.test(cleanUpstream);
+
+  // Progressive H.264 8-bit 4:2:0 HLS (.m3u8) streams that already carry clean IDR segment boundaries
+  // can be remuxed with -c:v copy. Raw MPEG-TS / pipe inputs often start mid-GOP or drop TS packets,
+  // so they MUST be transcoded with clean 2s forced IDR keyframes to prevent macroblock smearing.
   const canCopyVideo = Boolean(
-    probe &&
+    !isRawTsOrPipeInput &&
+      probe &&
       probe.videoCodec === 'h264' &&
       (!probe.pixFmt || /^yuvj?420p$/i.test(probe.pixFmt)) &&
       !isInterlaced &&
@@ -303,7 +306,7 @@ export function buildDvbLiveFfmpegArgs(options: {
       '-c:v',
       'libx264',
       '-preset',
-      isFastProfile ? 'ultrafast' : 'veryfast',
+      isFastProfile ? 'ultrafast' : isRawTsOrPipeInput ? 'superfast' : 'veryfast',
       '-tune',
       'zerolatency',
       '-profile:v',
@@ -313,7 +316,7 @@ export function buildDvbLiveFfmpegArgs(options: {
       '-pix_fmt',
       'yuv420p',
       '-crf',
-      isFastProfile ? '21' : '19',
+      isFastProfile ? '21' : isRawTsOrPipeInput ? '20' : '19',
       '-maxrate',
       isFastProfile ? '2600k' : '4800k',
       '-bufsize',
@@ -355,8 +358,6 @@ export function buildDvbLiveFfmpegArgs(options: {
     '400000',
     '-fflags',
     '+genpts+discardcorrupt',
-    '-err_detect',
-    'ignore_err',
     '-avoid_negative_ts',
     'make_zero',
     '-i',

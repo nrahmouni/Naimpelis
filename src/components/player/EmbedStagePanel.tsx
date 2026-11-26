@@ -66,7 +66,7 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
     activeTrack?.sourceUrl || activeTrack?.resolvedStreamUrl || videoState.url
   );
 
-  const externalVidfastHref = (() => {
+  const externalBackupHref = (() => {
     const candidates = [
       activeTrackUrl,
       unwrapEmbedUrl(videoState.rawSourceUrl || ''),
@@ -75,29 +75,29 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
     ].filter(Boolean);
 
     for (const c of candidates) {
-      if (/vidfast\.[a-z.]+/i.test(c)) {
-        return c.replace(/vidfast\.[a-z.]+/i, 'vidfast.vc');
+      if (/bingetrix\.[a-z.]+/i.test(c)) {
+        return c;
       }
     }
     if (videoState.seriesMeta?.tmdbId) {
-      return `https://vidfast.vc/tv/${videoState.seriesMeta.tmdbId}/${
+      return `https://bingetrix.sc/watch/tv/${videoState.seriesMeta.tmdbId}/${
         videoState.seriesMeta.season || 1
-      }/${videoState.seriesMeta.episode || 1}?autoPlay=true&theme=9146FF`;
+      }/${videoState.seriesMeta.episode || 1}`;
     }
     for (const c of candidates) {
       const tvM =
         c.match(
-          /(?:bingetrix|vidsrc|vidlink|autoembed)\.[a-z.]+\/(?:watch\/|embed\/|v2\/)?tv\/(?:tmdb\/)?(\d+)[/-](\d+)[/-](\d+)/i
+          /(?:bingetrix|vidlink|autoembed)\.[a-z.]+\/(?:watch\/|embed\/|v2\/)?tv\/(?:tmdb\/)?(\d+)[/-](\d+)[/-](\d+)/i
         ) ||
         c.match(/2embed\.[a-z.]+\/(?:embedtv|tv)\/(\d+)(?:&s=|\/)(\d+)(?:&e=|\/)(\d+)/i);
       if (tvM) {
-        return `https://vidfast.vc/tv/${tvM[1]}/${tvM[2]}/${tvM[3]}?autoPlay=true&theme=9146FF`;
+        return `https://bingetrix.sc/watch/tv/${tvM[1]}/${tvM[2]}/${tvM[3]}`;
       }
       const movM = c.match(
-        /(?:bingetrix|vidsrc|vidlink|autoembed|2embed)\.[a-z.]+\/(?:watch\/|embed\/|v2\/)?(?:movie\/)?(?:tmdb\/)?(\d+)/i
+        /(?:bingetrix|vidlink|autoembed|2embed)\.[a-z.]+\/(?:watch\/|embed\/|v2\/)?(?:movie\/)?(?:tmdb\/)?(\d+)/i
       );
       if (movM) {
-        return `https://vidfast.vc/movie/${movM[1]}?autoPlay=true&theme=9146FF`;
+        return `https://bingetrix.sc/watch/${movM[1]}`;
       }
     }
     return activeTrackUrl;
@@ -273,7 +273,7 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
 
   // 3) Popup Blocker Fallback State
   if (externalWinState === 'blocked') {
-    const fallbackHref = externalTargetUrl || activeTrackUrl || externalVidfastHref;
+    const fallbackHref = externalTargetUrl || activeTrackUrl || externalBackupHref;
     return (
       <div className="relative w-full h-full bg-[#120E18] flex flex-col items-center justify-center pt-14 sm:pt-12 pb-4 px-4 text-center gap-3 overflow-y-auto">
         <RiffanWarningIcon size={32} animate="always" className="text-amber-400" />
@@ -356,7 +356,7 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
             <span>Reintentar inline</span>
           </button>
           <a
-            href={externalVidfastHref}
+            href={externalBackupHref}
             target="_blank"
             rel="noopener noreferrer"
             className="min-h-10 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-zinc-100 text-xs font-semibold inline-flex items-center gap-1.5"
@@ -426,7 +426,7 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
             )}
 
             <a
-              href={externalVidfastHref}
+              href={externalBackupHref}
               target="_blank"
               rel="noopener noreferrer"
               className="min-h-7 px-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-zinc-100 font-semibold whitespace-nowrap inline-flex items-center gap-1 shrink-0 transition-colors"

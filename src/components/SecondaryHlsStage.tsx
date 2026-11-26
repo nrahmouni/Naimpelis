@@ -62,10 +62,10 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
   }, [secondaryStream.id]);
 
   const cornerClasses = [
+    'bottom-12 right-2.5 sm:bottom-14 sm:right-4',
     'top-12 right-2.5 sm:top-14 sm:right-4',
+    'bottom-12 left-2.5 sm:bottom-14 sm:left-4',
     'top-12 left-2.5 sm:top-14 sm:left-4',
-    'bottom-14 left-2.5 sm:bottom-16 sm:left-4',
-    'bottom-14 right-2.5 sm:bottom-16 sm:right-4',
   ][cornerIndex];
 
   useEffect(() => {
@@ -199,93 +199,22 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
       onClick={(e) => e.stopPropagation()}
       className={
         !isCorner
-          ? `relative w-full h-full min-h-0 bg-black overflow-hidden select-none ${
+          ? `relative w-full h-full min-h-0 flex flex-col bg-black overflow-hidden select-none ${
               isAudioActive
                 ? 'ring-2 ring-inset ring-emerald-400/80'
                 : 'border border-white/[0.08]'
             }`
-          : `absolute ${cornerClasses} z-35 w-[42%] max-w-[280px] aspect-video rounded-2xl overflow-hidden bg-[#0E0E10] border ${
+          : `absolute ${cornerClasses} z-35 w-[42%] max-w-[280px] flex flex-col rounded-2xl overflow-hidden bg-[#0E0E10] border ${
               isAudioActive ? 'border-emerald-400/80' : 'border-white/20'
             } shadow-[0_14px_40px_rgba(0,0,0,0.95)] select-none transition-all duration-200`
       }
     >
-      <video
-        ref={secVideoRef}
-        muted={!isAudioActive}
-        playsInline
-        onWaiting={() => {
-          if (!showErrorState) setBuffering(true);
-        }}
-        onPlaying={() => {
-          setBuffering(false);
-          setStreamFailed(false);
-        }}
-        onClick={() => {
-          if (onFocusAudio) {
-            triggerHaptic('light');
-            onFocusAudio();
-          } else {
-            triggerHaptic('medium');
-            onSwapWithPrimary();
-          }
-        }}
-        title={pickLang(lang, {
-          es: 'Toca para escuchar esta pantalla',
-          ca: 'Toca per escoltar aquesta pantalla',
-          en: 'Tap to focus audio on this screen',
-        })}
-        className="w-full h-full object-contain bg-black cursor-pointer"
-      />
-
-      {buffering && !showErrorState && (
-        <div className="pointer-events-none absolute inset-0 bg-black/55 flex flex-col items-center justify-center gap-1.5">
-          <Loader2 className="w-5 h-5 animate-spin text-[#A78BFA]" />
-          <span className="text-[11px] font-semibold text-zinc-300">
-            {pickLang(lang, { es: 'Conectando señal...', ca: 'Connectant senyal...', en: 'Connecting feed...' })}
-          </span>
-        </div>
-      )}
-
-      {showErrorState && (
-        <div className="absolute inset-0 bg-[#08090E]/92 backdrop-blur-sm flex flex-col items-center justify-center gap-2.5 p-3 text-center">
-          <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
-          <p className="text-xs font-semibold text-zinc-200 line-clamp-2 max-w-[240px]">
-            {pickLang(lang, {
-              es: `Señal interrumpida en Pantalla ${humanSlot}`,
-              ca: `Senyal interromput a Pantalla ${humanSlot}`,
-              en: `Feed interrupted on Screen ${humanSlot}`,
-            })}
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('medium');
-                setStreamFailed(false);
-                if (onRetryStream) onRetryStream();
-                else setRetryNonce((n) => n + 1);
-              }}
-              className="min-h-8 px-3 rounded-lg bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>{pickLang(lang, { es: 'Reintentar', ca: 'Reintentar', en: 'Retry' })}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                onCloseSecondary();
-              }}
-              className="min-h-8 px-3 rounded-lg bg-white/10 hover:bg-rose-600/80 text-white text-[11px] font-semibold cursor-pointer active:scale-95 transition-all"
-            >
-              {pickLang(lang, { es: 'Quitar', ca: 'Treure', en: 'Remove' })}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Top Mini Overlay */}
-      <div className="absolute top-0 inset-x-0 px-2 sm:px-2.5 py-1.5 bg-gradient-to-b from-black/92 via-black/65 to-transparent flex items-center justify-between gap-1.5">
+      {/* Slim Header Bar Outside Video Frame (keeps top-left match scoreboard completely clear) */}
+      <div
+        className={`shrink-0 ${
+          isCorner ? 'h-6 px-1.5' : 'h-7 px-2 sm:px-2.5'
+        } bg-[#0B0C12] border-b border-white/[0.08] flex items-center justify-between gap-1.5`}
+      >
         <div className="min-w-0 flex items-center gap-1.5 text-[11px] font-semibold text-zinc-100 truncate">
           <span
             className={`px-1.5 py-0.5 rounded text-[10px] font-extrabold tabular-nums shrink-0 ${
@@ -315,10 +244,12 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
                 ca: isAudioActive ? 'Àudio actiu aquí' : 'Activar àudio aquí',
                 en: isAudioActive ? 'Audio active here' : 'Switch audio here',
               })}
-              className={`h-7 px-2 rounded-lg text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors ${
+              className={`${
+                isCorner ? 'h-5 px-1.5' : 'h-5 px-2'
+              } rounded-md text-[10px] font-bold inline-flex items-center gap-1 cursor-pointer transition-colors ${
                 isAudioActive
                   ? 'bg-emerald-500 text-black'
-                  : 'bg-black/75 hover:bg-white/20 text-zinc-200 border border-white/15'
+                  : 'bg-white/10 hover:bg-white/20 text-zinc-200 border border-white/10'
               }`}
             >
               {isAudioActive ? (
@@ -345,7 +276,7 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
               ca: 'Intercanviar amb Pantalla 1',
               en: 'Swap with Screen 1',
             })}
-            className="h-7 px-2 rounded-lg bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+            className="h-5 px-1.5 rounded-md bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
           >
             <ArrowLeftRight className="w-3 h-3 shrink-0" />
             <span className="hidden md:inline">P1</span>
@@ -363,7 +294,7 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
                 ca: 'Canviar de cantonada',
                 en: 'Move corner',
               })}
-              className="w-7 h-7 rounded-lg bg-black/75 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition-colors"
+              className="w-5 h-5 rounded-md bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition-colors"
             >
               <Move className="w-3 h-3" />
             </button>
@@ -394,7 +325,7 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
                       en: 'Split screen',
                     })
               }
-              className="w-7 h-7 rounded-lg bg-black/75 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition-colors"
+              className="w-5 h-5 rounded-md bg-white/10 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition-colors"
             >
               {!isCorner ? (
                 <PictureInPicture2 className="w-3 h-3" />
@@ -415,11 +346,88 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
               ca: `Tancar Pantalla ${humanSlot}`,
               en: `Close Screen ${humanSlot}`,
             })}
-            className="w-7 h-7 rounded-lg bg-black/75 hover:bg-rose-600 text-white flex items-center justify-center cursor-pointer transition-colors"
+            className="w-5 h-5 rounded-md bg-white/10 hover:bg-rose-600 text-white flex items-center justify-center cursor-pointer transition-colors"
           >
             <X className="w-3 h-3" />
           </button>
         </div>
+      </div>
+
+      <div className={!isCorner ? 'relative flex-1 min-h-0 w-full bg-black overflow-hidden' : 'relative w-full aspect-video bg-black overflow-hidden'}>
+        <video
+          ref={secVideoRef}
+          muted={!isAudioActive}
+          playsInline
+          onWaiting={() => {
+            if (!showErrorState) setBuffering(true);
+          }}
+          onPlaying={() => {
+            setBuffering(false);
+            setStreamFailed(false);
+          }}
+          onClick={() => {
+            if (onFocusAudio) {
+              triggerHaptic('light');
+              onFocusAudio();
+            } else {
+              triggerHaptic('medium');
+              onSwapWithPrimary();
+            }
+          }}
+          title={pickLang(lang, {
+            es: 'Toca para escuchar esta pantalla',
+            ca: 'Toca per escoltar aquesta pantalla',
+            en: 'Tap to focus audio on this screen',
+          })}
+          className="w-full h-full object-contain bg-black cursor-pointer"
+        />
+
+        {buffering && !showErrorState && (
+          <div className="pointer-events-none absolute inset-0 bg-black/55 flex flex-col items-center justify-center gap-1.5">
+            <Loader2 className="w-5 h-5 animate-spin text-[#A78BFA]" />
+            <span className="text-[11px] font-semibold text-zinc-300">
+              {pickLang(lang, { es: 'Conectando señal...', ca: 'Connectant senyal...', en: 'Connecting feed...' })}
+            </span>
+          </div>
+        )}
+
+        {showErrorState && (
+          <div className="absolute inset-0 bg-[#08090E]/92 backdrop-blur-sm flex flex-col items-center justify-center gap-2.5 p-3 text-center">
+            <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />
+            <p className="text-xs font-semibold text-zinc-200 line-clamp-2 max-w-[240px]">
+              {pickLang(lang, {
+                es: `Señal interrumpida en Pantalla ${humanSlot}`,
+                ca: `Senyal interromput a Pantalla ${humanSlot}`,
+                en: `Feed interrupted on Screen ${humanSlot}`,
+              })}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  setStreamFailed(false);
+                  if (onRetryStream) onRetryStream();
+                  else setRetryNonce((n) => n + 1);
+                }}
+                className="min-h-8 px-3 rounded-lg bg-[#7C3AED] hover:bg-[#8B5CF6] text-white text-[11px] font-bold inline-flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+              >
+                <RotateCcw className="w-3 h-3" />
+                <span>{pickLang(lang, { es: 'Reintentar', ca: 'Reintentar', en: 'Retry' })}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onCloseSecondary();
+                }}
+                className="min-h-8 px-3 rounded-lg bg-white/10 hover:bg-rose-600/80 text-white text-[11px] font-semibold cursor-pointer active:scale-95 transition-all"
+              >
+                {pickLang(lang, { es: 'Quitar', ca: 'Treure', en: 'Remove' })}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
