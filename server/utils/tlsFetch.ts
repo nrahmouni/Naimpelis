@@ -310,6 +310,7 @@ function relaxedHttpsRequest(
     redirectCount?: number;
     signal?: AbortSignal;
     rejectUnauthorized?: boolean;
+    headersTimeoutOnly?: boolean;
   }
 ): Promise<Response> {
   const timeoutMs = options.timeoutMs ?? 12_000;
@@ -358,6 +359,9 @@ function relaxedHttpsRequest(
         ...(isHttps && options.rejectUnauthorized === false ? { rejectUnauthorized: false } : {}),
       },
       (res) => {
+        if (options.headersTimeoutOnly) {
+          req?.setTimeout(0);
+        }
         const status = res.statusCode || 502;
         if (
           [301, 302, 303, 307, 308].includes(status) &&
@@ -432,6 +436,7 @@ function relaxedHttpsRequest(
 export interface StreamingFetchOptions extends RequestInit {
   timeoutMs?: number;
   allowTlsFallback?: boolean;
+  headersTimeoutOnly?: boolean;
 }
 
 /**
@@ -445,7 +450,14 @@ export async function streamingFetch(
 ): Promise<Response> {
   const parsed = new URL(rawUrl);
   const timeoutMs = init.timeoutMs ?? 12_000;
-  const signal = init.signal ?? AbortSignal.timeout(timeoutMs);
+  const headerAbort = !init.signal && init.headersTimeoutOnly ? new AbortController() : null;
+  const headerTimer = headerAbort
+    ? setTimeout(() => headerAbort.abort(new DOMException('The operation timed out waiting for headers.', 'TimeoutError')), timeoutMs)
+    : null;
+  const clearHeaderTimer = () => {
+    if (headerTimer) clearTimeout(headerTimer);
+  };
+  const signal = init.signal ?? (headerAbort ? headerAbort.signal : AbortSignal.timeout(timeoutMs));
 
   const normalizeHeaders = (): Record<string, string> => {
     const out: Record<string, string> = {};
@@ -467,51 +479,67 @@ export async function streamingFetch(
     parsed.protocol === 'https:' &&
     !STRICT_TLS_ONLY_HOSTS.some((rx) => rx.test(parsed.hostname));
 
-  const spainDispatcher = getSpainProxyDispatcherForTarget(parsed.toString());
-  if (spainDispatcher) {
-    const proxiedRes = await undiciFetch(parsed.toString(), {
-      ...(init as unknown as UndiciRequestInit),
-      dispatcher: spainDispatcher,
-      signal,
-    });
-    return proxiedRes as unknown as Response;
-  }
-
-  // Fast path: skip undici fetch() completely for hosts known to stall undici HTTP/2 or IPv6
-  if (shouldUseDirectIpv4Http(parsed.hostname)) {
-    return relaxedHttpsRequest(parsed, {
-      method: init.method || 'GET',
-      headers: normalizeHeaders(),
-      body: typeof init.body === 'string' || Buffer.isBuffer(init.body) ? init.body : undefined,
-      timeoutMs,
-      signal,
-      rejectUnauthorized: !shouldRelaxStreamingTls(parsed.hostname),
-    });
-  }
-
   try {
-    return await fetch(parsed.toString(), { ...init, signal });
-  } catch (err) {
-    if (init.signal?.aborted) {
-      throw err;
+    const spainDispatcher = getSpainProxyDispatcherForTarget(parsed.toString());
+    if (spainDispatcher) {
+      const proxiedRes = await undiciFetch(parsed.toString(), {
+        ...(init as unknown as UndiciRequestInit),
+        dispatcher: spainDispatcher,
+        signal,
+      });
+      clearHeaderTimer();
+      return proxiedRes as unknown as Response;
     }
-    if (
-      allowFallback &&
-      (shouldRelaxStreamingTls(parsed.hostname) ||
-        isTlsCertificateError(err) ||
-        isUndiciTimeoutOrConnectError(err))
-    ) {
-      DIRECT_IPV4_HTTPS_HOSTS.set(parsed.hostname.toLowerCase().replace(/\.$/, ''), true);
-      logger.debug({ host: parsed.hostname }, 'streaming_tls_relaxed_fallback');
-      return relaxedHttpsRequest(parsed, {
+
+    // Fast path: skip undici fetch() completely for hosts known to stall undici HTTP/2 or IPv6
+    if (shouldUseDirectIpv4Http(parsed.hostname)) {
+      const directRes = await relaxedHttpsRequest(parsed, {
         method: init.method || 'GET',
         headers: normalizeHeaders(),
         body: typeof init.body === 'string' || Buffer.isBuffer(init.body) ? init.body : undefined,
         timeoutMs,
         signal,
-        rejectUnauthorized: false,
+        rejectUnauthorized: !shouldRelaxStreamingTls(parsed.hostname),
+        headersTimeoutOnly: init.headersTimeoutOnly,
       });
+      clearHeaderTimer();
+      return directRes;
     }
+
+    try {
+      const fetchRes = await fetch(parsed.toString(), { ...init, signal });
+      clearHeaderTimer();
+      return fetchRes;
+    } catch (err) {
+      if (init.signal?.aborted) {
+        clearHeaderTimer();
+        throw err;
+      }
+      if (
+        allowFallback &&
+        (shouldRelaxStreamingTls(parsed.hostname) ||
+          isTlsCertificateError(err) ||
+          isUndiciTimeoutOrConnectError(err))
+      ) {
+        DIRECT_IPV4_HTTPS_HOSTS.set(parsed.hostname.toLowerCase().replace(/\.$/, ''), true);
+        logger.debug({ host: parsed.hostname }, 'streaming_tls_relaxed_fallback');
+        const fallbackRes = await relaxedHttpsRequest(parsed, {
+          method: init.method || 'GET',
+          headers: normalizeHeaders(),
+          body: typeof init.body === 'string' || Buffer.isBuffer(init.body) ? init.body : undefined,
+          timeoutMs,
+          signal,
+          rejectUnauthorized: false,
+          headersTimeoutOnly: init.headersTimeoutOnly,
+        });
+        clearHeaderTimer();
+        return fallbackRes;
+      }
+      clearHeaderTimer();
+      throw err;
+    }
+  } catch (err) {
+    clearHeaderTimer();
     throw err;
   }
 }

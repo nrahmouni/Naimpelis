@@ -23,6 +23,13 @@ import {
   type RollingDvbSeg,
 } from './dvbTranscoder.ts';
 import { vodHlsManifestCache } from './vodManifestManager.ts';
+import {
+  coalesceLiveManifestFetch,
+  deriveNextPredictedSegmentUrl,
+  getCachedLiveManifest,
+  prefetchLiveTsSegment,
+  setCachedLiveManifest,
+} from './liveSegmentCache.ts';
 import { runtimeMetrics } from '../../services/runtimeMetricsCollector.ts';
 import { evaluateDirectPlayEligibility } from '../../services/mediaPlaneRouter.ts';
 
@@ -86,21 +93,21 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
       let baseUrl = targetUrl;
       let manifestText = '';
 
-      if (shouldBypassNodeFetch(targetUrl)) {
-        let fallback = await curlGetText(targetUrl, headers, 7);
-        if (!fallback.text || !fallback.text.includes('#EXTM3U')) {
-          const plainTxt = await curlPlainGetText(targetUrl, 7).catch(() => '');
-          if (plainTxt && plainTxt.includes('#EXTM3U')) {
-            fallback = { text: plainTxt, effectiveUrl: targetUrl };
-          } else {
-            res.status(502).send('Upstream HLS error');
-            return;
+      const fetchManifestFromUpstream = async (): Promise<{ text: string; baseUrl: string } | null> => {
+        if (shouldBypassNodeFetch(targetUrl)) {
+          let fallback = await curlGetText(targetUrl, headers, 7);
+          if (!fallback.text || !fallback.text.includes('#EXTM3U')) {
+            const plainTxt = await curlPlainGetText(targetUrl, 7).catch(() => '');
+            if (plainTxt && plainTxt.includes('#EXTM3U')) {
+              fallback = { text: plainTxt, effectiveUrl: targetUrl };
+            } else {
+              return null;
+            }
           }
+          runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(fallback.text));
+          return { text: fallback.text, baseUrl: fallback.effectiveUrl || targetUrl };
         }
-        baseUrl = fallback.effectiveUrl || targetUrl;
-        manifestText = fallback.text;
-        runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(manifestText));
-      } else {
+
         const hdrCtrl = new AbortController();
         const hdrTimer = setTimeout(() => hdrCtrl.abort(), 4800);
         try {
@@ -113,12 +120,13 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
           if (!upstream.ok) {
             throw new Error(`HTTP ${upstream.status}`);
           }
-          baseUrl = upstream.url || targetUrl;
-          manifestText = await upstream.text();
-          if (!manifestText.includes('#EXTM3U') || /nosignal/i.test(manifestText)) {
+          const fetchedBaseUrl = upstream.url || targetUrl;
+          const fetchedText = await upstream.text();
+          if (!fetchedText.includes('#EXTM3U') || /nosignal/i.test(fetchedText)) {
             throw new Error('Not M3U8 or offline placeholder');
           }
-          runtimeMetrics.recordUpstreamTransport(false, Buffer.byteLength(manifestText));
+          runtimeMetrics.recordUpstreamTransport(false, Buffer.byteLength(fetchedText));
+          return { text: fetchedText, baseUrl: fetchedBaseUrl };
         } catch {
           clearTimeout(hdrTimer);
           markHostNeedsCurlFallback(targetUrl);
@@ -132,15 +140,37 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
             if (plainTxt && plainTxt.includes('#EXTM3U') && !/nosignal/i.test(plainTxt)) {
               fallback = { text: plainTxt, effectiveUrl: targetUrl };
             } else {
-              res.status(502).send('Upstream HLS error');
-              return;
+              return null;
             }
           }
-          baseUrl = fallback.effectiveUrl || targetUrl;
-          manifestText = fallback.text;
-          runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(manifestText));
+          runtimeMetrics.recordUpstreamTransport(true, Buffer.byteLength(fallback.text));
+          return { text: fallback.text, baseUrl: fallback.effectiveUrl || targetUrl };
         }
+      };
+
+      const freshCachedManifest = !forceAac ? getCachedLiveManifest(targetUrl) : null;
+      if (freshCachedManifest && Date.now() - freshCachedManifest.ts < 2_200) {
+        baseUrl = freshCachedManifest.baseUrl || targetUrl;
+        manifestText = freshCachedManifest.text;
+      } else if (!forceAac) {
+        const coalesced = await coalesceLiveManifestFetch(targetUrl, fetchManifestFromUpstream);
+        if (!coalesced) {
+          res.status(502).send('Upstream HLS error');
+          return;
+        }
+        baseUrl = coalesced.baseUrl || targetUrl;
+        manifestText = coalesced.text;
+      } else {
+        const fetched = await fetchManifestFromUpstream();
+        if (!fetched) {
+          res.status(502).send('Upstream HLS error');
+          return;
+        }
+        baseUrl = fetched.baseUrl;
+        manifestText = fetched.text;
+        setCachedLiveManifest(targetUrl, manifestText, baseUrl);
       }
+
       if (/nosignal/i.test(manifestText)) {
         res.status(502).send('Upstream signal offline');
         return;
@@ -204,7 +234,7 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
             resolvedUrl.includes('stream_tv=');
           nextLineIsVariantPlaylist = false;
 
-          if (!isPlaylist && forceAac) {
+          if (!isPlaylist) {
             discoveredTsUrls.push(resolvedUrl);
           }
 
@@ -218,6 +248,16 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
       });
 
       let finalManifest = rewritten.join('\n');
+      if (!forceAac && discoveredTsUrls.length > 0 && req.method !== 'HEAD') {
+        const ua = headers['User-Agent'];
+        for (const segUrl of discoveredTsUrls.slice(-2)) {
+          prefetchLiveTsSegment(segUrl, effectiveReferer, ua).catch(() => {});
+        }
+        const predicted = deriveNextPredictedSegmentUrl(discoveredTsUrls[discoveredTsUrls.length - 1]);
+        if (predicted) {
+          prefetchLiveTsSegment(predicted, effectiveReferer, ua).catch(() => {});
+        }
+      }
       if (forceAac && discoveredTsUrls.length > 0 && req.method !== 'HEAD') {
         for (const segUrl of discoveredTsUrls.slice(-2)) {
           remuxDvbTsToAac(segUrl, effectiveReferer, false).catch(() => {});

@@ -172,6 +172,9 @@ interface AppShellState {
   atresplayerCategory: 'all' | 'concursos' | 'entretenimiento' | 'series' | 'actualidad';
   movistarDaznOperator: 'all' | 'movistar' | 'dazn';
   movistarDaznCategory: 'all' | 'futbol' | 'motor' | 'deportes' | 'entretenimiento' | 'series';
+  providersScope: string;
+  providersKind: 'all' | 'live' | 'movie' | 'series';
+  playbackPriorityMode: 'es_quality' | 'best_quality';
   isFloatingRoomOpen: boolean;
   floatingBubbleSuppressCount: number;
   showDesignSystem: boolean;
@@ -240,6 +243,9 @@ interface AppShellState {
   setMovistarDaznCategory: (
     cat: 'all' | 'futbol' | 'motor' | 'deportes' | 'entretenimiento' | 'series'
   ) => void;
+  setProvidersScope: (scope: string) => void;
+  setProvidersKind: (kind: 'all' | 'live' | 'movie' | 'series') => void;
+  setPlaybackPriorityMode: (mode: 'es_quality' | 'best_quality') => void;
   setIsFloatingRoomOpen: (open: boolean) => void;
   pushBubbleSuppression: () => void;
   popBubbleSuppression: () => void;
@@ -348,6 +354,9 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   atresplayerCategory: 'all',
   movistarDaznOperator: 'all',
   movistarDaznCategory: 'all',
+  providersScope: 'total',
+  providersKind: 'all',
+  playbackPriorityMode: 'es_quality',
   isFloatingRoomOpen: false,
   floatingBubbleSuppressCount: 0,
   showDesignSystem:
@@ -610,6 +619,18 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   setMovistarDaznCategory: (movistarDaznCategory) => {
     if (get().movistarDaznCategory === movistarDaznCategory) return;
     set({ movistarDaznCategory });
+  },
+  setProvidersScope: (providersScope) => {
+    if (get().providersScope === providersScope) return;
+    set({ providersScope });
+  },
+  setProvidersKind: (providersKind) => {
+    if (get().providersKind === providersKind) return;
+    set({ providersKind });
+  },
+  setPlaybackPriorityMode: (playbackPriorityMode) => {
+    if (get().playbackPriorityMode === playbackPriorityMode) return;
+    set({ playbackPriorityMode });
   },
   setIsFloatingRoomOpen: (isFloatingRoomOpen) => {
     if (get().isFloatingRoomOpen === isFloatingRoomOpen) return;

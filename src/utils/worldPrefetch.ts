@@ -30,7 +30,9 @@ function isNetworkConstrained(): boolean {
   return Boolean(nav.connection?.saveData || nav.connection?.effectiveType === '2g');
 }
 
-export function preloadWorldChunks(world: WorldId): void {
+export type PrefetchableWorldId = WorldId | 'providers' | 'reels';
+
+export function preloadWorldChunks(world: PrefetchableWorldId): void {
   const noop = () => {};
   if (world === 'cine') {
     void import('../components/MediaCatalogHub').catch(noop);
@@ -70,7 +72,7 @@ export function preloadWorldChunks(world: WorldId): void {
 /**
  * Preloads JS chunks, React Query catalog data, and top 16 visible images for a target world.
  */
-export function prefetchWorldExperience(world: WorldId, lang: AppLanguage = 'es'): void {
+export function prefetchWorldExperience(world: PrefetchableWorldId, lang: AppLanguage = 'es'): void {
   if (typeof window === 'undefined') return;
   preloadWorldChunks(world);
   if (isNetworkConstrained()) return;

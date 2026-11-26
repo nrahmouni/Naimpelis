@@ -128,18 +128,23 @@ export function registerIptvAndTdtRoutes(
       (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
       'default';
     const belixActive = isAnyBelixConnected(belixSessionKey);
+    const priority = String(req.query.priority || '').trim();
+    const preferQualityFirst = priority === 'best_quality';
     if (
       process.env.NODE_ENV !== 'test' &&
       !process.env.VITEST &&
-      getAllCachedProviderCatalogs().length === 0
+      getAllCachedProviderCatalogs().length < 4
     ) {
       warmDefaultProvidersBackground();
       await Promise.race([
         Promise.allSettled([
           syncProviderCatalog('24tv', false),
           syncProviderCatalog('shark-pro', false),
+          syncProviderCatalog('vod-4k', false),
+          syncProviderCatalog('dana-4k-pro', false),
+          syncProviderCatalog('adtupac', false),
         ]),
-        new Promise<void>((r) => setTimeout(r, 1800)),
+        new Promise<void>((r) => setTimeout(r, 2200)),
       ]);
     }
     const baseAndExternal = [
@@ -147,7 +152,7 @@ export function registerIptvAndTdtRoutes(
       ...getBelixLiveChannels({ sessionKey: belixSessionKey }),
       ...getCuratedRbtvChannels(),
     ];
-    const merged = enrichTdtCatalogWithProviderChannels(baseAndExternal);
+    const merged = enrichTdtCatalogWithProviderChannels(baseAndExternal, { preferQualityFirst });
     res.json({
       success: true,
       iptvMeta: getIptvSyncMeta(),

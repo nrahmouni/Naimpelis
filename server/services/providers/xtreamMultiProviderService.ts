@@ -27,6 +27,7 @@ import {
   readLiveDvbPlaylistForIptv,
 } from '../../routes/proxies/dvbTranscoder.ts';
 import { applyProxyCorsHeaders, getOrCreateRequestId } from '../../routes/proxies/proxyUtils.ts';
+import { needsBrowserVodRemux, streamVodRemuxedAsMp4 } from '../xtreamVodRemuxer.ts';
 
 const SERVER_SYNC_TTL_MS = 6 * 60 * 60 * 1000;
 const XTREAM_ACTION_TIMEOUT_MS = 12_000;
@@ -906,7 +907,8 @@ async function fetchProviderPlaylistText(
 export async function resolveProviderLiveManifest(
   providerId: string,
   streamId: string,
-  originPrefix = ''
+  originPrefix = '',
+  _opts?: { allowTranscodeFallback?: boolean; probeTimeoutMs?: number }
 ): Promise<string | null> {
   const provider = getDefaultProviderById(providerId);
   const cleanId = String(streamId || '').replace(/\.m3u8$/i, '').trim();
@@ -960,7 +962,7 @@ export async function resolveProviderLiveManifest(
     }
 
     const m3u8Url = `${cleanOrigin}/live/${u}/${p}/${idEnc}.m3u8`;
-    const loaded = await fetchProviderPlaylistText(m3u8Url, referer, isTestEnv ? 2200 : 2800).catch(
+    const loaded = await fetchProviderPlaylistText(m3u8Url, referer, isTestEnv ? 2200 : 1900).catch(
       () => null
     );
     if (loaded) {
@@ -1004,6 +1006,32 @@ export async function resolveProviderSubPlaylist(
     originPrefix,
     entry.liveSessionKey
   );
+}
+
+export async function probeProviderOpaqueSegment(
+  tokenWithExt: string,
+  timeoutMs = 1100
+): Promise<boolean> {
+  const token = String(tokenWithExt || '').replace(/\.[a-z0-9]+$/i, '').trim();
+  const entry = opaqueSegmentCache.get(token);
+  if (!entry) return true;
+  try {
+    await assertSafeProxyUrl(entry.rawUrl);
+    const res = await streamingFetch(entry.rawUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'IPTVSmartersPlayer',
+        Accept: '*/*',
+        Referer: entry.referer,
+        Range: 'bytes=0-1023',
+      },
+      timeoutMs,
+    });
+    if (res.body) void res.body.cancel().catch(() => undefined);
+    return res.ok || res.status === 206 || res.status === 416;
+  } catch {
+    return false;
+  }
 }
 
 export async function fetchProviderOpaqueSegment(
@@ -1095,6 +1123,9 @@ export async function streamProviderVodOrSeries(
   }
 
   const rangeHeader = typeof req.headers.range === 'string' ? req.headers.range : '';
+  const forceTranscode = req.query.transcode === '1' || req.query.remux === 'mp4';
+  const rawStart = Number(req.query.start);
+  const startSec = Number.isFinite(rawStart) && rawStart > 0 ? rawStart : undefined;
   const contentTypeFallback =
     ext === 'mkv'
       ? 'video/x-matroska'
@@ -1104,14 +1135,41 @@ export async function streamProviderVodOrSeries(
       ? 'video/mp2t'
       : 'video/mp4';
 
+  if (needsBrowserVodRemux(ext, forceTranscode)) {
+    for (const { account, index } of getRotatedAccountOrder(provider)) {
+      const u = encodeURIComponent(account.username);
+      const p = encodeURIComponent(account.password);
+      const targetUrl = `${cleanOrigin}/${kind}/${u}/${p}/${encodeURIComponent(streamId)}.${ext}`;
+      try {
+        await assertSafeProxyUrl(targetUrl);
+        applyProxyCorsHeaders(res, reqId);
+        const started = await streamVodRemuxedAsMp4(req, res, {
+          upstreamUrl: targetUrl,
+          cacheKey: `multi:${providerId}:${kind}:${streamId}`,
+          startSec,
+          forceFullTranscode: forceTranscode,
+        });
+        if (started) {
+          activeAccountIndexMap.set(provider.id, index);
+          return;
+        }
+      } catch {
+        // rotate to next account
+      }
+      if (res.headersSent) return;
+    }
+  }
+
   for (const { account, index } of getRotatedAccountOrder(provider)) {
     const u = encodeURIComponent(account.username);
     const p = encodeURIComponent(account.password);
     const targetUrl = `${cleanOrigin}/${kind}/${u}/${p}/${encodeURIComponent(streamId)}.${ext}`;
+    const controller = new AbortController();
+    const onClose = () => controller.abort();
+    req.once('close', onClose);
+    let piped = false;
     try {
       await assertSafeProxyUrl(targetUrl);
-      const controller = new AbortController();
-      req.once('close', () => controller.abort());
       const headers: Record<string, string> = {
         'User-Agent': 'IPTVSmartersPlayer',
         Accept: '*/*',
@@ -1122,9 +1180,14 @@ export async function streamProviderVodOrSeries(
       const upstream = await streamingFetch(targetUrl, {
         method: req.method === 'HEAD' ? 'HEAD' : 'GET',
         headers,
+        headersTimeoutOnly: true,
         signal: controller.signal,
-        timeoutMs: 12_000,
+        timeoutMs: 9_500,
       });
+
+      if (upstream.url) {
+        await assertSafeProxyUrl(upstream.url);
+      }
 
       if (!upstream.ok && upstream.status !== 206) {
         void upstream.body?.cancel().catch(() => {});
@@ -1145,6 +1208,7 @@ export async function streamProviderVodOrSeries(
       if (cr) res.setHeader('Content-Range', cr);
 
       if (req.method === 'HEAD' || !upstream.body) {
+        req.off('close', onClose);
         res.end();
         return;
       }
@@ -1153,11 +1217,21 @@ export async function streamProviderVodOrSeries(
       nodeStream.on('error', () => {
         if (!res.writableEnded) res.end();
       });
+      res.on('close', () => {
+        req.off('close', onClose);
+        nodeStream.destroy();
+        controller.abort();
+      });
+      piped = true;
       nodeStream.pipe(res);
       return;
     } catch {
       if (req.destroyed || res.writableEnded) return;
       // try next rotated account
+    } finally {
+      if (!piped) {
+        req.off('close', onClose);
+      }
     }
   }
 

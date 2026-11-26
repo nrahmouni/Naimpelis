@@ -15,6 +15,15 @@ import {
   formatExtractResponseForClient,
   handleExternalSportsExtract,
 } from './streamExtractHelpers/externalSportsExtractor.ts';
+import { SPANISH_TDT_CHANNELS } from '../data/tdtChannels.ts';
+import {
+  enrichTdtCatalogWithProviderChannels,
+  ensureFastWarmCatalogsAvailable,
+} from '../services/providers/xtreamFastSignalService.ts';
+import {
+  raceFastLiveTracks,
+  type FastLiveTrackCandidate,
+} from '../services/liveFastResolver.ts';
 
 const extractionCache = new LruTtlCache<string, ExtractedStreamResult>(400, 15 * 60 * 1000);
 
@@ -235,5 +244,86 @@ export function registerStreamExtractRoute(
         inFlightExtractMap.delete(coalesceKey);
       }
     }
+  });
+
+  const getBelixSessionKey = (req: express.Request): string => {
+    const belixSidMatch = String(req.headers.cookie || '').match(/(?:^|;\s*)belix_sid=([^;]+)/);
+    return (
+      String(req.headers['x-belix-session'] || '').trim() ||
+      (belixSidMatch ? decodeURIComponent(belixSidMatch[1].trim()) : '') ||
+      'default'
+    );
+  };
+
+  const resolveCandidatePoolForLiveRoute = async (
+    body: Record<string, any>
+  ): Promise<FastLiveTrackCandidate[]> => {
+    const incoming = Array.isArray(body?.tracks)
+      ? (body.tracks as FastLiveTrackCandidate[]).filter((t) => Boolean(t?.sourceUrl))
+      : [];
+    const preferQualityFirst = Boolean(body?.preferQualityFirst);
+    if (incoming.length > 0) return incoming;
+
+    await ensureFastWarmCatalogsAvailable();
+    const channelId = String(body?.channelId || '').trim();
+    const title = String(body?.title || '').trim().toLowerCase();
+    const matchedTdt = SPANISH_TDT_CHANNELS.find(
+      (c) =>
+        (channelId && c.id === channelId) ||
+        (title && c.name.toLowerCase() === title)
+    );
+    if (!matchedTdt) return [];
+    const [enriched] = enrichTdtCatalogWithProviderChannels([matchedTdt], { preferQualityFirst });
+    return (enriched?.channels || []).map((sig) => ({
+      id: sig.id,
+      label: sig.label,
+      lang: sig.lang,
+      quality: sig.quality,
+      providerId: (sig as { providerId?: string }).providerId,
+      providerName: (sig as { providerName?: string }).providerName,
+      sourceUrl: sig.sourceUrl,
+      referer: sig.referer,
+      resolverType: sig.resolverType,
+    }));
+  };
+
+  app.post('/api/live/prewarm', async (req, res) => {
+    const body = (req.body || {}) as Record<string, any>;
+    const tracks = await resolveCandidatePoolForLiveRoute(body);
+    if (tracks.length === 0) {
+      return res.json({ ok: false, started: false });
+    }
+    const belixSessionKey = getBelixSessionKey(req);
+    void raceFastLiveTracks(tracks, {
+      channelId: body.channelId ? String(body.channelId) : undefined,
+      titleHint: body.title ? String(body.title) : undefined,
+      preferLang: String(body.preferLang || 'ES').toUpperCase(),
+      preferQualityFirst: Boolean(body.preferQualityFirst),
+      publicOrigin: deps.getPublicOrigin(req),
+      belixSessionKey,
+      timeoutMs: 3_800,
+    }).catch(() => undefined);
+    return res.json({ ok: true, started: true });
+  });
+
+  app.post('/api/live/fast-resolve', async (req, res) => {
+    const body = (req.body || {}) as Record<string, any>;
+    const tracks = await resolveCandidatePoolForLiveRoute(body);
+    const belixSessionKey = getBelixSessionKey(req);
+    const result = await raceFastLiveTracks(tracks, {
+      channelId: body.channelId ? String(body.channelId) : undefined,
+      titleHint: body.title ? String(body.title) : undefined,
+      broadcasters: Array.isArray(body.broadcasters) ? body.broadcasters : undefined,
+      competition: body.competition ? String(body.competition) : undefined,
+      preferLang: String(body.preferLang || 'ES').toUpperCase(),
+      preferQualityFirst: Boolean(body.preferQualityFirst),
+      publicOrigin: deps.getPublicOrigin(req),
+      belixSessionKey,
+      timeoutMs: 3_800,
+    });
+    return res.json({
+      success: result.ok,
+      ...result,
+    });
   });
 }

@@ -26,6 +26,11 @@ import {
   getProvidersStatusSummary,
   resolveProviderLiveManifest,
 } from './providers/xtreamProvidersService.ts';
+import {
+  getProviderStatusSummaries,
+  probeProviderOpaqueSegment,
+  resolveProviderLiveManifest as resolveMultiProviderLiveManifest,
+} from './providers/xtreamMultiProviderService.ts';
 import { getActiveDvbSessionPath, isDvbUpstreamCoolingDown } from '../routes/proxies/dvbTranscoder.ts';
 import {
   deriveNextPredictedSegmentUrl,
@@ -125,8 +130,21 @@ const inflightPrewarms = new Map<string, Promise<FastLiveResolveResult>>();
 
 function parseXtreamSource(
   sourceUrl: string
-): { streamId: string; providerId: string; isProvidersRoute?: boolean } | null {
-  if (!/^\/api\/(?:xtream\/stream\/|providers\/stream\/|stream\b)/i.test(sourceUrl)) return null;
+): {
+  streamId: string;
+  providerId: string;
+  isProvidersRoute?: boolean;
+  isMultiProviderLive?: boolean;
+} | null {
+  if (!/^\/api\/(?:xtream\/stream\/|providers\/(?:stream|live)\/|stream\b)/i.test(sourceUrl)) return null;
+  const multiLiveMatch = sourceUrl.match(/^\/api\/providers\/live\/([^/]+)\/([^.?/]+)(?:\.[^?]*)?(?:\?.*)?$/i);
+  if (multiLiveMatch) {
+    return {
+      providerId: decodeURIComponent(multiLiveMatch[1]),
+      streamId: decodeURIComponent(multiLiveMatch[2]),
+      isMultiProviderLive: true,
+    };
+  }
   const provRouteMatch = sourceUrl.match(/^\/api\/providers\/stream\/([^/]+)\/live\/([^.?/]+)(?:\.[^?]*)?(?:\?.*)?$/i);
   if (provRouteMatch) {
     return {
@@ -190,7 +208,12 @@ export async function defaultProbeSingleLiveTrack(
     try {
       const allowTranscode = opts.allowTranscodeFallback ?? false;
       const manifest = await Promise.race([
-        xtreamRef.isProvidersRoute
+        xtreamRef.isMultiProviderLive
+          ? resolveMultiProviderLiveManifest(xtreamRef.providerId, xtreamRef.streamId, '', {
+              allowTranscodeFallback: allowTranscode,
+              probeTimeoutMs: Math.min(opts.timeoutMs, allowTranscode ? 8_000 : 5_200),
+            })
+          : xtreamRef.isProvidersRoute
           ? resolveProviderLiveManifest(xtreamRef.providerId, xtreamRef.streamId, '', {
               allowTranscodeFallback: allowTranscode,
               probeTimeoutMs: Math.min(opts.timeoutMs, allowTranscode ? 8_000 : 5_200),
@@ -208,11 +231,27 @@ export async function defaultProbeSingleLiveTrack(
         (manifest!.includes('#EXTINF') || manifest!.includes('#EXT-X-STREAM-INF')) &&
         !/nosignal/i.test(manifest!);
       if (hasPlayableEntries) {
+        if (xtreamRef.isMultiProviderLive && !process.env.VITEST) {
+          const segMatch = manifest!.match(/\/api\/providers\/seg\/([a-f0-9]+)\.ts/i);
+          if (segMatch?.[1]) {
+            const segTimeout = Math.max(450, Math.min(1100, opts.timeoutMs - lat));
+            const segOk = await probeProviderOpaqueSegment(segMatch[1], segTimeout).catch(() => false);
+            if (!segOk) {
+              return {
+                ok: false,
+                streamUrl: '',
+                mode: 'hls',
+                latencyMs: Math.max(1, Date.now() - startedAt),
+                statusCode: 502,
+              };
+            }
+          }
+        }
         return {
           ok: true,
           streamUrl: sourceUrl,
           mode: 'hls',
-          latencyMs: lat,
+          latencyMs: Math.max(1, Date.now() - startedAt),
           statusCode: 200,
         };
       }
@@ -235,10 +274,7 @@ export async function defaultProbeSingleLiveTrack(
     }
     const belixStreamId = sourceUrl.split('/').pop()?.replace(/\.m3u8.*$/i, '') || '';
     const manifest = await Promise.race([
-      resolveBelixManifest(belixStreamId, opts.publicOrigin, opts.belixSessionKey, opts.titleHint || '', {
-        allowTranscodeFallback: opts.allowTranscodeFallback ?? false,
-        probeTimeoutMs: Math.min(opts.timeoutMs, 4_500),
-      }),
+      resolveBelixManifest(belixStreamId, opts.publicOrigin, opts.belixSessionKey, opts.titleHint || ''),
       new Promise<null>((resolve) => setTimeout(() => resolve(null), opts.timeoutMs)),
     ]).catch(() => null);
     const lat = Math.max(1, Date.now() - startedAt);
@@ -427,12 +463,62 @@ export async function defaultProbeSingleLiveTrack(
       const txt = await res.text();
       if (txt.includes('#EXTM3U') && (txt.includes('#EXTINF') || txt.includes('#EXT-X-STREAM-INF')) && !/nosignal/i.test(txt)) {
         const finalUrl = res.url || cleanUrl;
+        if (!isDvb && txt.includes('#EXT-X-STREAM-INF') && !process.env.VITEST) {
+          const subPath = txt
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .find((l) => l && !l.startsWith('#'));
+          if (subPath) {
+            try {
+              const subUrl = new URL(subPath, finalUrl).href;
+              const subRes = await streamingFetch(subUrl, {
+                method: 'GET',
+                headers: {
+                  'User-Agent': getPreferredUpstreamUa(subUrl),
+                  Referer: referer,
+                  Accept: '*/*',
+                },
+                timeoutMs: Math.min(1000, Math.max(450, opts.timeoutMs - lat)),
+              });
+              if (!subRes.ok) {
+                if (subRes.body) void subRes.body.cancel().catch(() => undefined);
+                return { ok: false, streamUrl: '', mode: 'hls', latencyMs: Date.now() - startedAt, statusCode: subRes.status };
+              }
+              const subTxt = await subRes.text();
+              const segPath = subTxt
+                .split(/\r?\n/)
+                .map((l) => l.trim())
+                .find((l) => l && !l.startsWith('#') && !/\.m3u8(\?|$)/i.test(l));
+              if (segPath) {
+                const segUrl = new URL(segPath, subRes.url || subUrl).href;
+                const segRes = await streamingFetch(segUrl, {
+                  method: 'GET',
+                  headers: {
+                    'User-Agent': getPreferredUpstreamUa(segUrl),
+                    Referer: referer,
+                    Range: 'bytes=0-1023',
+                    Accept: '*/*',
+                  },
+                  timeoutMs: Math.min(1000, Math.max(450, opts.timeoutMs - (Date.now() - startedAt))),
+                });
+                const segStatus = segRes.status;
+                if (segRes.body) void segRes.body.cancel().catch(() => undefined);
+                if (!segRes.ok && segStatus !== 416) {
+                  return { ok: false, streamUrl: '', mode: 'hls', latencyMs: Date.now() - startedAt, statusCode: segStatus };
+                }
+              }
+            } catch {
+              // If segment validation fails or times out on a multi-variant CDN, let healthy mirrors win
+              return { ok: false, streamUrl: '', mode: 'hls', latencyMs: Date.now() - startedAt, statusCode: 502 };
+            }
+          }
+        }
         if (!isDvb) {
           setCachedLiveManifest(cleanUrl, txt, finalUrl);
           prewarmMediaManifestIntoCache(txt, finalUrl, referer, false);
         }
         const proxyUrl = buildHlsProxyUrl(finalUrl, referer, isDvb);
-        return { ok: true, streamUrl: proxyUrl, mode: 'hls', latencyMs: lat, statusCode: 200 };
+        return { ok: true, streamUrl: proxyUrl, mode: 'hls', latencyMs: Math.max(1, Date.now() - startedAt), statusCode: 200 };
       }
       return { ok: false, streamUrl: '', mode: 'hls', latencyMs: lat, statusCode: 404 };
     } catch {
@@ -500,7 +586,12 @@ export function orderCandidatesForFastResolve(
       typeof liveHealth?.latencyMs === 'number'
         ? Math.min(9999, Math.round(liveHealth.latencyMs * 0.7 + steeringPenalty * 0.3))
         : steeringPenalty;
+    const isPriorityFeed =
+      /(?:^|-)priority-/i.test(String(track.id || '')) ||
+      /prioritaria|spain\s*[-_]\s*(?:ljli|أسبانيا|اسبانيا)/i.test(String(track.label || ''));
+    const priorityDiscount = isPriorityFeed && status !== 'down' && !circuitOpen ? -1_500_000 : 0;
     const score =
+      priorityDiscount +
       statusRank * 1000000 +
       (isEmbed ? 500000 : 0) +
       (isSportsScraper ? 220000 : 0) +
@@ -533,19 +624,37 @@ export async function raceFastLiveTracks(
   } = {}
 ): Promise<FastLiveResolveResult> {
   const rawTracks = Array.isArray(tracks) ? tracks.filter((t) => Boolean(t?.sourceUrl)) : [];
-  let connectedProviderIds: Set<string> | null = null;
-  let knownProviderIds: Set<string> | null = null;
+  const connectedProviderIds = new Set<string>();
+  const knownProviderIds = new Set<string>();
   try {
     const summary = getProvidersStatusSummary();
     if (summary.totals.connectedCount > 0) {
-      knownProviderIds = new Set(summary.providers.map((p) => p.id));
-      connectedProviderIds = new Set(summary.providers.filter((p) => p.connected).map((p) => p.id));
+      for (const p of summary.providers) {
+        knownProviderIds.add(p.id);
+        if (p.connected) connectedProviderIds.add(p.id);
+      }
     }
   } catch {
     // ignore in isolated unit tests
   }
+  try {
+    const multiSummaries = getProviderStatusSummaries();
+    if (multiSummaries.some((p) => p.status === 'ready')) {
+      for (const p of multiSummaries) {
+        if (p.status === 'ready') {
+          knownProviderIds.add(p.providerId);
+          connectedProviderIds.add(p.providerId);
+        } else if (p.status === 'error') {
+          knownProviderIds.add(p.providerId);
+        }
+      }
+    }
+  } catch {
+    // ignore in isolated unit tests
+  }
+  const hasProviderReadinessInfo = connectedProviderIds.size > 0 && knownProviderIds.size > 0;
   const safeTracks = rawTracks.filter((tr) => {
-    if (!connectedProviderIds || !knownProviderIds) return true;
+    if (!hasProviderReadinessInfo) return true;
     const xRef = parseXtreamSource(String(tr.sourceUrl || ''));
     const pid = tr.providerId || xRef?.providerId;
     if (pid && knownProviderIds.has(pid) && !connectedProviderIds.has(pid)) {
@@ -771,6 +880,11 @@ export async function raceFastLiveTracks(
   const publicOrigin = opts.publicOrigin || '';
   const belixSessionKey = opts.belixSessionKey || 'default';
 
+  const bestQualityTierInRace = ordered.reduce((best, o) => {
+    const t = inferStreamQualityTag(o.track.quality, o.track.label, o.track.sourceUrl).tier;
+    return Math.min(best, t);
+  }, 99);
+
   const runRace = async (): Promise<FastLiveResolveResult> => {
     const startedAt = Date.now();
     const deadlineAt = startedAt + timeoutMs + 120;
@@ -781,6 +895,18 @@ export async function raceFastLiveTracks(
       const timers: ReturnType<typeof setTimeout>[] = [];
       let pendingCount = ordered.length;
       let embedFallback: { originalIndex: number; track: FastLiveTrackCandidate; out: FastLiveProbeOutcome } | null = null;
+      let pendingLowerQualityFallback: {
+        originalIndex: number;
+        track: FastLiveTrackCandidate;
+        out: FastLiveProbeOutcome;
+        tier: number;
+      } | null = null;
+      let qualityGraceTimer: ReturnType<typeof setTimeout> | null = null;
+      const topOrdered = ordered[0];
+      let topPriorityPending =
+        Boolean(topOrdered) &&
+        (/(?:^|-)priority-/i.test(String(topOrdered.track.id || '')) ||
+          /prioritaria|spain\s*[-_]\s*(?:ljli|أسبانيا|اسبانيا)/i.test(String(topOrdered.track.label || '')));
 
       const finish = (res: FastLiveResolveResult) => {
         if (settled) return;
@@ -816,6 +942,18 @@ export async function raceFastLiveTracks(
 
       const hardDeadlineTimer = setTimeout(() => {
         if (settled) return;
+        if (pendingLowerQualityFallback) {
+          finish({
+            ok: true,
+            winningIndex: pendingLowerQualityFallback.originalIndex,
+            winningTrack: pendingLowerQualityFallback.track,
+            streamUrl: pendingLowerQualityFallback.out.streamUrl,
+            mode: 'hls',
+            latencyMs: pendingLowerQualityFallback.out.latencyMs,
+            checkedCount,
+          });
+          return;
+        }
         if (embedFallback) {
           finish({
             ok: true,
@@ -842,6 +980,18 @@ export async function raceFastLiveTracks(
 
       const checkAllDone = () => {
         if (!settled && pendingCount <= 0) {
+          if (pendingLowerQualityFallback) {
+            finish({
+              ok: true,
+              winningIndex: pendingLowerQualityFallback.originalIndex,
+              winningTrack: pendingLowerQualityFallback.track,
+              streamUrl: pendingLowerQualityFallback.out.streamUrl,
+              mode: 'hls',
+              latencyMs: pendingLowerQualityFallback.out.latencyMs,
+              checkedCount,
+            });
+            return;
+          }
           if (embedFallback) {
             finish({
               ok: true,
@@ -869,6 +1019,9 @@ export async function raceFastLiveTracks(
       const launchCandidate = (cand: { originalIndex: number; track: FastLiveTrackCandidate }) => {
         const remainingMs = deadlineAt - Date.now();
         if (settled || remainingMs < 200) {
+          if (topOrdered && cand.originalIndex === topOrdered.originalIndex) {
+            topPriorityPending = false;
+          }
           pendingCount -= 1;
           checkAllDone();
           return;
@@ -883,6 +1036,9 @@ export async function raceFastLiveTracks(
           allowTranscodeFallback: ordered.length <= 1,
         })
           .then((out) => {
+            if (topOrdered && cand.originalIndex === topOrdered.originalIndex) {
+              topPriorityPending = false;
+            }
             recordProviderOutcome(bucket, { ok: out.ok, latencyMs: out.latencyMs });
             if (out.ok && out.streamUrl) {
               if (out.mode === 'hls') {
@@ -893,31 +1049,89 @@ export async function raceFastLiveTracks(
                   checkedAt: Date.now(),
                   statusCode: out.statusCode ?? 200,
                 });
-                finish({
-                  ok: true,
-                  winningIndex: cand.originalIndex,
-                  winningTrack: cand.track,
-                  streamUrl: out.streamUrl,
-                  mode: 'hls',
-                  latencyMs: out.latencyMs,
-                  checkedCount,
-                });
+                const candTier = inferStreamQualityTag(
+                  cand.track.quality,
+                  cand.track.label,
+                  cand.track.sourceUrl
+                ).tier;
+                const candIsPriority =
+                  /(?:^|-)priority-/i.test(String(cand.track.id || '')) ||
+                  /prioritaria|spain\s*[-_]\s*(?:ljli|أسبانيا|اسبانيا)/i.test(String(cand.track.label || ''));
+                if (
+                  candIsPriority ||
+                  (!topPriorityPending && (!qualityFirst || candTier <= bestQualityTierInRace)) ||
+                  pendingCount <= 1
+                ) {
+                  finish({
+                    ok: true,
+                    winningIndex: cand.originalIndex,
+                    winningTrack: cand.track,
+                    streamUrl: out.streamUrl,
+                    mode: 'hls',
+                    latencyMs: out.latencyMs,
+                    checkedCount,
+                  });
+                  return;
+                }
+                if (
+                  !pendingLowerQualityFallback ||
+                  candTier < pendingLowerQualityFallback.tier ||
+                  (candTier === pendingLowerQualityFallback.tier &&
+                    out.latencyMs < pendingLowerQualityFallback.out.latencyMs)
+                ) {
+                  pendingLowerQualityFallback = { ...cand, out, tier: candTier };
+                }
+                if (!qualityGraceTimer) {
+                  qualityGraceTimer = setTimeout(() => {
+                    topPriorityPending = false;
+                    if (!settled && pendingLowerQualityFallback) {
+                      finish({
+                        ok: true,
+                        winningIndex: pendingLowerQualityFallback.originalIndex,
+                        winningTrack: pendingLowerQualityFallback.track,
+                        streamUrl: pendingLowerQualityFallback.out.streamUrl,
+                        mode: 'hls',
+                        latencyMs: pendingLowerQualityFallback.out.latencyMs,
+                        checkedCount,
+                      });
+                    }
+                  }, topPriorityPending ? 2400 : 220);
+                  timers.push(qualityGraceTimer);
+                }
                 return;
               }
               if (!embedFallback) {
                 embedFallback = { ...cand, out };
               }
             } else {
+              if (topPriorityPending === false && pendingLowerQualityFallback) {
+                finish({
+                  ok: true,
+                  winningIndex: pendingLowerQualityFallback.originalIndex,
+                  winningTrack: pendingLowerQualityFallback.track,
+                  streamUrl: pendingLowerQualityFallback.out.streamUrl,
+                  mode: 'hls',
+                  latencyMs: pendingLowerQualityFallback.out.latencyMs,
+                  checkedCount,
+                });
+              }
+              const candIsPriorityFail =
+                /(?:^|-)priority-/i.test(String(cand.track.id || '')) ||
+                /prioritaria|spain\s*[-_]\s*(?:ljli|أسبانيا|اسبانيا)/i.test(String(cand.track.label || ''));
+              const prevFailCount = channelHealthMonitor.getTrackHealth(cand.track.sourceUrl)?.failCount || 0;
               channelHealthMonitor.setTrackHealth(cand.track.sourceUrl, {
-                status: 'down',
+                status: candIsPriorityFail && prevFailCount < 1 ? 'degraded' : 'down',
                 latencyMs: out.latencyMs,
-                failCount: 1,
+                failCount: prevFailCount + 1,
                 checkedAt: Date.now(),
                 statusCode: out.statusCode ?? 502,
               });
             }
           })
           .catch(() => {
+            if (topOrdered && cand.originalIndex === topOrdered.originalIndex) {
+              topPriorityPending = false;
+            }
             recordProviderOutcome(bucket, { ok: false });
             channelHealthMonitor.setTrackHealth(cand.track.sourceUrl, {
               status: 'down',

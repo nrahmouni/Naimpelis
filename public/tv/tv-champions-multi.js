@@ -80,7 +80,7 @@
   function isInstantMultiUrl(urlStr, resolverType) {
     var s = String(urlStr || '');
     if (!s) return false;
-    if (/^\/api\/(?:hls-proxy|iptv\/live|dvb-live|vod-manifest)/i.test(s)) {
+    if (/^\/api\/(?:hls-proxy|iptv\/live|dvb-live|vod-manifest|providers\/stream|belix\/stream)/i.test(s)) {
       return true;
     }
     if (
@@ -573,6 +573,9 @@
     hls.on(window.Hls.Events.MANIFEST_PARSED, function () {
       playTileSafe();
     });
+    hls.on(window.Hls.Events.FRAG_BUFFERED, function () {
+      playTileSafe();
+    });
     hls.on(window.Hls.Events.ERROR, function (_ev, data) {
       if (!data || !data.fatal) return;
       if (!tvChampState.multiActive || myGen !== tvChampState.generation) return;
@@ -634,10 +637,60 @@
       }
     }
 
+    if (tryIdx === 0 && candidates.length > 0 && !slotObj.fastRaceTried) {
+      slotObj.fastRaceTried = true;
+      try {
+        var fastTracks = [];
+        var fi;
+        for (fi = 0; fi < candidates.length; fi++) {
+          fastTracks.push({
+            id: 'tv-multi-' + slotIdx + '-' + fi,
+            label: (slotObj.source && slotObj.source.title) || ('P' + (slotIdx + 1)),
+            lang: champLang(),
+            sourceUrl: candidates[fi],
+            resolverType: inferMultiResolver(candidates[fi])
+          });
+        }
+        var fastXhr = new XMLHttpRequest();
+        fastXhr.open('POST', '/api/live/fast-resolve', true);
+        fastXhr.timeout = 4200;
+        fastXhr.setRequestHeader('Content-Type', 'application/json');
+        fastXhr.onreadystatechange = function () {
+          if (fastXhr.readyState !== 4) return;
+          if (!tvChampState.multiActive || myGen !== tvChampState.generation) return;
+          if (fastXhr.status >= 200 && fastXhr.status < 300) {
+            try {
+              var fData = JSON.parse(fastXhr.responseText || '{}');
+              if (fData && fData.ok && fData.streamUrl) {
+                attachMultiSlotStream(
+                  slotIdx,
+                  fData.streamUrl,
+                  fData.mode || 'hls',
+                  candidates,
+                  tryIdx,
+                  myGen
+                );
+                return;
+              }
+            } catch (_eParse) {}
+          }
+          resolveMultiSlotAtIndex(slotIdx, tryIdx, myGen);
+        };
+        fastXhr.send(JSON.stringify({
+          channelId: (slotObj.source && slotObj.source.matchId) || ('multi-slot-' + slotIdx),
+          title: (slotObj.source && slotObj.source.title) || ('P' + (slotIdx + 1)),
+          preferLang: champLang(),
+          tracks: fastTracks
+        }));
+        return;
+      } catch (_eFast) {}
+    }
+
     var q =
       'resolverType=' + encodeURIComponent(rType) +
       '&url=' + encodeURIComponent(rawUrl) +
-      '&title=' + encodeURIComponent(slotObj.source.title || ('P' + (slotIdx + 1)));
+      '&title=' + encodeURIComponent(slotObj.source.title || ('P' + (slotIdx + 1))) +
+      '&channelLabel=' + encodeURIComponent(slotObj.source.subtitle || slotObj.source.title || '');
 
     xhrJson('GET', '/api/extract/stream?' + q, null, function (err, data) {
       if (!tvChampState.multiActive || myGen !== tvChampState.generation) return;

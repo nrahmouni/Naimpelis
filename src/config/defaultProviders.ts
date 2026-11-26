@@ -163,3 +163,113 @@ export function buildXtreamPlayerApiUrl(
   }
   return `${cleanOrigin}/player_api.php?${parts.join('&')}`;
 }
+
+export type XtreamServerWorldId =
+  | 'xtream-primary'
+  | 'xtream-vod4k'
+  | 'xtream-24tv'
+  | 'xtream-2m2h'
+  | 'xtream-2m2h-alt'
+  | 'xtream-dana4k'
+  | 'xtream-activecdns'
+  | 'xtream-octopus'
+  | 'xtream-adtupac'
+  | 'xtream-ultra-vip'
+  | 'xtream-sult-vo';
+
+export interface DefaultProviderEntry {
+  id: string;
+  name: string;
+  serverUrl: string;
+  defaultMediaFocus: 'live' | 'vod' | 'series';
+  accounts: { user: string; pass: string; label?: string }[];
+}
+
+export interface XtreamProviderUiSpec {
+  providerId: string;
+  canonicalId: string;
+  worldId: XtreamServerWorldId;
+  name: string;
+  accent: string;
+  defaultMediaFocus: 'live' | 'vod' | 'series';
+  badge: string;
+  tagline: string;
+}
+
+const CANONICAL_TO_LEGACY_PROVIDER_ID: Record<string, string> = {
+  'shark-pro': 'primary',
+  'vod-4k': 'vod4k',
+  '24tv': '24tv',
+  '2m2h': '2m2h',
+  '2m2h-alt': '2m2h-alt',
+  'dana-4k-pro': 'dana4k',
+  'active-cdns': 'activecdns',
+  'octopus-tv': 'octopus',
+  adtupac: 'adtupac',
+  'ultra-vip': 'ultra-vip',
+  'sult-vo': 'sult-vo',
+};
+
+const CANONICAL_MEDIA_FOCUS: Record<string, 'live' | 'vod' | 'series'> = {
+  'shark-pro': 'live',
+  'vod-4k': 'vod',
+  '24tv': 'live',
+  '2m2h': 'live',
+  '2m2h-alt': 'live',
+  'dana-4k-pro': 'live',
+  'active-cdns': 'live',
+  'octopus-tv': 'live',
+  adtupac: 'live',
+  'ultra-vip': 'live',
+  'sult-vo': 'live',
+};
+
+// Credential-free UI metadata for all 11 servers (never includes host URLs or passwords).
+export const XTREAM_PROVIDER_UI_SPECS: XtreamProviderUiSpec[] = DEFAULT_PROVIDERS.map((p) => {
+  const legacyId = CANONICAL_TO_LEGACY_PROVIDER_ID[p.id] || p.id;
+  return {
+    providerId: legacyId,
+    canonicalId: p.id,
+    worldId: `xtream-${legacyId}` as XtreamServerWorldId,
+    name: p.name,
+    accent: p.accentColor,
+    defaultMediaFocus: CANONICAL_MEDIA_FOCUS[p.id] || 'live',
+    badge: p.accounts.length > 1 ? `${p.accounts.length} líneas` : 'Directo',
+    tagline: `Servidor ${p.name} · TV en directo, cine y series con cambio instantáneo`,
+  };
+});
+
+export const PROVIDER_ID_TO_XTREAM_WORLD: Record<string, XtreamServerWorldId> = Object.fromEntries(
+  XTREAM_PROVIDER_UI_SPECS.flatMap((spec) => [
+    [spec.providerId, spec.worldId],
+    [spec.canonicalId, spec.worldId],
+  ])
+) as Record<string, XtreamServerWorldId>;
+
+export function getXtreamProviderUiSpecByProviderId(
+  providerId: string
+): XtreamProviderUiSpec | undefined {
+  const norm = String(providerId || '').trim().toLowerCase();
+  if (!norm) return undefined;
+  return XTREAM_PROVIDER_UI_SPECS.find(
+    (s) => s.providerId === norm || s.canonicalId === norm || s.worldId === norm
+  );
+}
+
+export function getDefaultProvidersForServer(): DefaultProviderEntry[] {
+  if (typeof process !== 'undefined' && process.env?.XTREAM_DISABLE_DEFAULTS === '1') {
+    return [];
+  }
+  return DEFAULT_PROVIDERS.map((p) => ({
+    id: CANONICAL_TO_LEGACY_PROVIDER_ID[p.id] || p.id,
+    name: p.name,
+    serverUrl: p.baseUrl,
+    defaultMediaFocus: CANONICAL_MEDIA_FOCUS[p.id] || 'live',
+    accounts: p.accounts.map((acc, idx) => ({
+      user: acc.username,
+      pass: acc.password,
+      label: `Línea ${idx + 1}`,
+    })),
+  }));
+}
+

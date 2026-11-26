@@ -153,6 +153,7 @@ export function createLivePlaybackHealthMonitor() {
       }
 
       const curTime = Number(video.currentTime || 0);
+      const isZeroStartupBlack = curTime === 0 && Number(video.videoWidth || 0) === 0;
       if (lastObservedTime < 0 || Math.abs(curTime - lastObservedTime) >= 0.04) {
         lastObservedTime = curTime;
         stalledSinceMs = nowMs;
@@ -162,39 +163,67 @@ export function createLivePlaybackHealthMonitor() {
           stalledSinceMs = nowMs;
         }
         const stallDurationMs = Math.max(0, nowMs - stalledSinceMs);
-        if (stallDurationMs >= 6500 && lastStallActionTier < 3) {
-          lastStallActionTier = 3;
-          return {
-            action: 'switch_backup',
-            reason: 'live_stream_stalled_timeout',
-            isStalled: true,
-            stallDurationMs,
-          };
-        }
-        if (stallDurationMs >= 4000 && lastStallActionTier < 2) {
-          lastStallActionTier = 2;
-          return {
-            action: 'soft_reconnect',
-            reason: 'live_stream_frozen_reconnect',
-            isStalled: true,
-            stallDurationMs,
-          };
-        }
-        if (stallDurationMs >= 2000 && lastStallActionTier < 1) {
-          lastStallActionTier = 1;
-          return {
-            action: 'recover_signal',
-            reason: 'live_stream_frozen_nudge',
-            isStalled: true,
-            stallDurationMs,
-          };
-        }
-        if (stallDurationMs >= 1400) {
-          return {
-            action: 'healthy',
-            isStalled: true,
-            stallDurationMs,
-          };
+        if (isZeroStartupBlack) {
+          if (stallDurationMs >= 8000 && lastStallActionTier < 2) {
+            lastStallActionTier = 2;
+            return {
+              action: 'switch_backup',
+              reason: 'live_zero_startup_timeout',
+              isStalled: true,
+              stallDurationMs,
+            };
+          }
+          if (stallDurationMs >= 4500 && lastStallActionTier < 1) {
+            lastStallActionTier = 1;
+            return {
+              action: 'recover_signal',
+              reason: 'live_zero_startup_nudge',
+              isStalled: true,
+              stallDurationMs,
+            };
+          }
+          if (stallDurationMs >= 2000) {
+            return {
+              action: 'healthy',
+              isStalled: true,
+              stallDurationMs,
+            };
+          }
+        } else {
+          if (stallDurationMs >= 6500 && lastStallActionTier < 3) {
+            lastStallActionTier = 3;
+            return {
+              action: 'switch_backup',
+              reason: 'live_stream_stalled_timeout',
+              isStalled: true,
+              stallDurationMs,
+            };
+          }
+          if (stallDurationMs >= 4000 && lastStallActionTier < 2) {
+            lastStallActionTier = 2;
+            return {
+              action: 'soft_reconnect',
+              reason: 'live_stream_frozen_reconnect',
+              isStalled: true,
+              stallDurationMs,
+            };
+          }
+          if (stallDurationMs >= 2000 && lastStallActionTier < 1) {
+            lastStallActionTier = 1;
+            return {
+              action: 'recover_signal',
+              reason: 'live_stream_frozen_nudge',
+              isStalled: true,
+              stallDurationMs,
+            };
+          }
+          if (stallDurationMs >= 1400) {
+            return {
+              action: 'healthy',
+              isStalled: true,
+              stallDurationMs,
+            };
+          }
         }
       }
 

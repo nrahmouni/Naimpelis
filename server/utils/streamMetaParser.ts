@@ -171,7 +171,7 @@ export function detectStreamLanguage(
     lang = 'AR';
   }
 
-  // Secondary explicit tokens inside brackets anywhere in name or category (e.g. "DAZN 1 [FR]" or "Movie (ENG)")
+  // Secondary explicit tokens inside brackets anywhere in name or category (e.g. "DAZN 1 [FR]" or "Movie (ENG)" or "4K-AR")
   if (!lang) {
     if (/(?:\[|\()\s*(?:ENG|EN|ENGLISH|UK|US|USA)\s*(?:\]|\))/i.test(combined)) lang = 'EN';
     else if (/(?:\[|\()\s*(?:FR|FRA|VF|VOSTFR|FRENCH)\s*(?:\]|\))/i.test(combined)) lang = 'FR';
@@ -181,12 +181,22 @@ export function detectStreamLanguage(
     else if (/(?:\[|\()\s*(?:CAT|CATAL[AÀ])\s*(?:\]|\))/i.test(combined)) lang = 'CAT';
     else if (/(?:\[|\()\s*(?:LAT|LATINO|LATAM|MX)\s*(?:\]|\))/i.test(combined)) lang = 'LAT';
     else if (/(?:\[|\()\s*(?:VOSE|SUB)\s*(?:\]|\))/i.test(combined)) lang = 'VOSE';
+    else if (/(?:\[|\()\s*(?:AR|ARB|ARABIC|ARA|ARABE)\s*(?:\]|\))/i.test(combined)) lang = 'AR';
     else if (/(?:\[|\()\s*(?:ES|ESP|CAST|CASTELLANO|ESPA[ÑN]A)\s*(?:\]|\))/i.test(combined)) lang = 'ES';
+  }
+
+  // Case-sensitive uppercase delimited tags like "4K-AR", "... - AR", "_AR", "|AR|" (never matches Spanish "-ar" verbs)
+  if (!lang) {
+    if (/(?:^|[\s[\]()|\-_\/])(?:4K-AR|UHD-AR|FHD-AR|HD-AR|ARB|ARABIC)(?:$|[\s[\]()|\-_\/])/i.test(combined)) {
+      lang = 'AR';
+    } else if (/(?:^|[\s[\]()|\-_\/])AR(?:$|[\s[\]()|\-_\/])/.test(combined) && !/\bAR-LAT\b/i.test(combined)) {
+      lang = 'AR';
+    }
   }
 
   // Keyword heuristics ONLY when no explicit country/language prefix existed
   if (!lang) {
-    if (/\b(?:arabic|arabia|egypt|maroc|morocco|aflam|mbc|rotana)\b/i.test(cat)) {
+    if (/\b(?:arabic|arabia|egypt|maroc|morocco|aflam|mbc|rotana)\b/i.test(combined)) {
       lang = 'AR';
     } else if (/\b(?:catal[aà]|3cat|tv3|esport\s*3|sx3|8tv|betev[eé])\b/i.test(combined)) {
       lang = 'CAT';

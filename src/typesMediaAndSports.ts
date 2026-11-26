@@ -39,6 +39,11 @@ export interface StreamTrack {
     | 'cloud_browser';
   /** Cached proxied HLS or direct URL ready for <video> */
   resolvedStreamUrl?: string;
+  /** Optional multi-server provider metadata & referer hint */
+  providerId?: string;
+  providerName?: string;
+  langLabel?: string;
+  referer?: string;
   /** Live health status measured by server channel health monitor */
   health?: TrackHealthInfo;
 }

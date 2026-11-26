@@ -25,6 +25,7 @@ import {
   getConnectedProvidersCatalogSnapshot,
   getProviderSeriesDetail,
 } from './providers/xtreamProvidersService.ts';
+import { getAllCachedProviderCatalogs } from './providers/xtreamMultiProviderService.ts';
 import {
   parseStreamMetadata,
   type CanonicalStreamLang,
@@ -151,6 +152,7 @@ function buildHintVectors(titleHints: string[]) {
 }
 
 const unifiedCatalogRamCache = new LruTtlCache<string, XtreamFullCatalogPayload>(2, 45_000);
+let lastUnifiedMultiProviderCount = 0;
 
 interface IndexedVodMovieEntry {
   item: XtreamVodStreamItem;
@@ -390,8 +392,13 @@ function scorePreindexedCandidate(
 }
 
 async function loadUnifiedXtreamCatalogFast(timeoutMs = 2600): Promise<XtreamFullCatalogPayload | null> {
+  const multiCatalogs = getAllCachedProviderCatalogs();
   const cachedMerged = unifiedCatalogRamCache.get('unified');
-  if (cachedMerged && cachedMerged.liveStreams.length > 0) {
+  if (
+    cachedMerged &&
+    cachedMerged.liveStreams.length > 0 &&
+    multiCatalogs.length <= lastUnifiedMultiProviderCount
+  ) {
     return cachedMerged;
   }
 
@@ -438,10 +445,14 @@ async function loadUnifiedXtreamCatalogFast(timeoutMs = 2600): Promise<XtreamFul
     (runtimeSnap!.movieItems.length > 0 ||
       runtimeSnap!.seriesItems.length > 0 ||
       runtimeSnap!.liveItems.length > 0);
+  const hasMultiItems = multiCatalogs.some(
+    (c) => c.liveStreams.length > 0 || c.vodStreams.length > 0 || c.seriesList.length > 0
+  );
 
-  if (!hasRuntimeItems && !envCat) return null;
-  if (!hasRuntimeItems && envCat) {
+  if (!hasRuntimeItems && !envCat && !hasMultiItems) return null;
+  if (!hasRuntimeItems && !hasMultiItems && envCat) {
     if (envCatalogRes.ok && envCat.liveStreams.length >= 200) {
+      lastUnifiedMultiProviderCount = multiCatalogs.length;
       unifiedCatalogRamCache.set('unified', envCat);
     }
     return envCat;
@@ -457,6 +468,90 @@ async function loadUnifiedXtreamCatalogFast(timeoutMs = 2600): Promise<XtreamFul
   const seenLive = new Set(liveStreams.map((x) => `${x.providerId}:${x.streamId}`));
   const seenVod = new Set(vodStreams.map((x) => `${x.providerId}:${x.streamId}`));
   const seenSer = new Set(series.map((x) => `${x.providerId}:${x.seriesId}`));
+
+  if (multiCatalogs.length > 0) {
+    for (const cat of multiCatalogs) {
+      const pid = cat.providerId;
+      const pname = cat.providerName;
+      for (const c of cat.liveCategories) {
+        liveCategories.push({
+          id: `${pid}:${c.id}`,
+          providerId: pid,
+          providerName: pname,
+          name: c.name,
+          type: 'live',
+        });
+      }
+      for (const c of cat.vodCategories) {
+        vodCategories.push({
+          id: `${pid}:${c.id}`,
+          providerId: pid,
+          providerName: pname,
+          name: c.name,
+          type: 'vod',
+        });
+      }
+      for (const c of cat.seriesCategories) {
+        seriesCategories.push({
+          id: `${pid}:${c.id}`,
+          providerId: pid,
+          providerName: pname,
+          name: c.name,
+          type: 'series',
+        });
+      }
+      for (const item of cat.liveStreams) {
+        const k = `${pid}:${item.streamId}`;
+        if (seenLive.has(k)) continue;
+        seenLive.add(k);
+        liveStreams.push({
+          num: liveStreams.length + 1,
+          streamId: item.streamId,
+          name: item.name,
+          categoryId: `${pid}:${item.categoryId}`,
+          streamIcon: item.logo,
+          playbackUrl: item.playbackUrl,
+          providerId: pid,
+          providerName: pname,
+        });
+      }
+      for (const item of cat.vodStreams) {
+        const k = `${pid}:${item.streamId}`;
+        if (seenVod.has(k)) continue;
+        seenVod.add(k);
+        vodStreams.push({
+          num: vodStreams.length + 1,
+          streamId: item.streamId,
+          name: item.name,
+          categoryId: `${pid}:${item.categoryId}`,
+          streamIcon: item.poster,
+          containerExtension: item.ext || 'mp4',
+          rating: item.rating,
+          added: item.year,
+          playbackUrl: item.playbackUrl,
+          providerId: pid,
+          providerName: pname,
+        });
+      }
+      for (const item of cat.seriesList) {
+        const k = `${pid}:${item.seriesId}`;
+        if (seenSer.has(k)) continue;
+        seenSer.add(k);
+        series.push({
+          num: series.length + 1,
+          seriesId: item.seriesId,
+          name: item.name,
+          categoryId: `${pid}:${item.categoryId}`,
+          cover: item.poster,
+          plot: item.plot,
+          releaseDate: item.year,
+          rating: item.rating,
+          providerId: pid,
+          providerName: pname,
+        });
+      }
+    }
+  }
 
   if (runtimeSnap) {
     const seenLiveCat = new Set<string>();
@@ -579,6 +674,7 @@ async function loadUnifiedXtreamCatalogFast(timeoutMs = 2600): Promise<XtreamFul
     fromCache: true,
   };
   if (mergedPayload.liveStreams.length >= 200) {
+    lastUnifiedMultiProviderCount = multiCatalogs.length;
     unifiedCatalogRamCache.set('unified', mergedPayload);
   }
   return mergedPayload;
@@ -611,17 +707,39 @@ function computeOptionSortKey(
   let langRank = 5;
   if (opt.lang === normPref) langRank = 0;
   else if (normPref === 'ES') {
-    langRank = opt.lang === 'ES' ? 0 : opt.lang === 'LAT' ? 1 : opt.lang === 'VOSE' ? 2 : opt.lang === 'EN' ? 3 : 5;
+    langRank =
+      opt.lang === 'ES'
+        ? 0
+        : opt.lang === 'LAT'
+        ? 1
+        : opt.lang === 'VOSE'
+        ? 2
+        : opt.lang === 'EN'
+        ? 3
+        : opt.lang === 'AR'
+        ? 7
+        : 5;
   } else if (normPref === 'LAT') {
-    langRank = opt.lang === 'LAT' ? 0 : opt.lang === 'ES' ? 1 : opt.lang === 'VOSE' ? 2 : opt.lang === 'EN' ? 3 : 5;
+    langRank =
+      opt.lang === 'LAT'
+        ? 0
+        : opt.lang === 'ES'
+        ? 1
+        : opt.lang === 'VOSE'
+        ? 2
+        : opt.lang === 'EN'
+        ? 3
+        : opt.lang === 'AR'
+        ? 7
+        : 5;
   } else if (normPref === 'EN') {
-    langRank = opt.lang === 'EN' ? 0 : opt.lang === 'VOSE' ? 1 : opt.lang === 'ES' ? 2 : 5;
+    langRank = opt.lang === 'EN' ? 0 : opt.lang === 'VOSE' ? 1 : opt.lang === 'ES' ? 2 : opt.lang === 'AR' ? 7 : 5;
   } else if (normPref === 'VOSE') {
-    langRank = opt.lang === 'VOSE' ? 0 : opt.lang === 'EN' ? 1 : opt.lang === 'ES' ? 2 : 5;
+    langRank = opt.lang === 'VOSE' ? 0 : opt.lang === 'EN' ? 1 : opt.lang === 'ES' ? 2 : opt.lang === 'AR' ? 7 : 5;
   }
 
   if (preferQualityFirst || normPref === 'QUALITY') {
-    return opt.qualityTier * 1000 + langRank * 100 - Math.min(99, opt.score);
+    return (opt.lang === 'AR' && normPref !== 'AR' ? 8000 : 0) + opt.qualityTier * 1000 + langRank * 100 - Math.min(99, opt.score);
   }
   // Castellano/preferred language first, then best resolution (4K > 1080p > HD > SD)
   return langRank * 1000 + opt.qualityTier * 100 - Math.min(99, opt.score);
@@ -890,6 +1008,8 @@ export async function extractXtreamSeriesEpisodeTracks(params: {
       opt.categoryName,
       ep.containerExtension
     );
+    const effectiveLang = epParsed.lang !== 'INTL' ? epParsed.lang : opt.lang;
+    const effectiveLangLabel = epParsed.lang !== 'INTL' ? epParsed.langLabel : opt.langLabel;
     const bestQualityTier = Math.min(opt.qualityTier, epParsed.qualityTier);
     const bestQualityLabel =
       bestQualityTier === 0
@@ -902,8 +1022,8 @@ export async function extractXtreamSeriesEpisodeTracks(params: {
 
     tracks.push({
       id: `xtream-ser-${opt.providerId}-${ep.id}`,
-      label: `${opt.providerName} · ${opt.langLabel} · ${bestQualityLabel}`,
-      lang: toExtractorLang(opt.lang),
+      label: `${opt.providerName} · ${effectiveLangLabel} · ${bestQualityLabel}`,
+      lang: toExtractorLang(effectiveLang),
       quality: bestQualityLabel,
       sourceUrl: ep.playbackUrl,
       resolvedStreamUrl: ep.playbackUrl,
@@ -930,6 +1050,27 @@ export function mergeXtreamOptionsIntoAvailableLanguages(
 }
 
 const LIVE_BROADCASTER_ALIASES: Array<{ re: RegExp; patterns: string[] }> = [
+  { re: /\bla\s*1\b|\btve\s*1\b/i, patterns: ['la 1', 'tve 1', 'tve1', 'la1'] },
+  { re: /\bla\s*2\b|\btve\s*2\b/i, patterns: ['la 2', 'tve 2', 'tve2', 'la2'] },
+  { re: /\bantena\s*3\b/i, patterns: ['antena 3', 'antena3', 'a3'] },
+  { re: /\bcuatro\b/i, patterns: ['cuatro'] },
+  { re: /\btelecinco\b|\btele\s*5\b/i, patterns: ['telecinco', 'tele 5', 't5'] },
+  { re: /\bla\s*sexta\b|\blasexta\b/i, patterns: ['lasexta', 'la sexta'] },
+  { re: /\bneox\b/i, patterns: ['neox'] },
+  { re: /\bnova\b/i, patterns: ['nova'] },
+  { re: /\bmega\b/i, patterns: ['mega'] },
+  { re: /\batreseries\b|\ba3s\b/i, patterns: ['atreseries', 'a3s', 'atres series'] },
+  { re: /\bfdf\b|factor[ií]a\s*de\s*ficci[oó]n/i, patterns: ['fdf', 'factoria de ficcion'] },
+  { re: /\benergy\b/i, patterns: ['energy'] },
+  { re: /\bdivinity\b/i, patterns: ['divinity'] },
+  { re: /\bbe\s*mad\b|\bbemad\b/i, patterns: ['be mad', 'bemad'] },
+  { re: /\bboing\b/i, patterns: ['boing'] },
+  { re: /\bclan\b/i, patterns: ['clan', 'clan tve', 'clan rtve'] },
+  { re: /\bdmax\b/i, patterns: ['dmax', 'discovery max'] },
+  { re: /\bdkiss\b/i, patterns: ['dkiss', 'd kiss'] },
+  { re: /\bten\b/i, patterns: ['ten', 'ten tv'] },
+  { re: /\btrece\b|\b13\s*tv\b/i, patterns: ['trece', 'trece tv', '13 tv', '13tv'] },
+  { re: /\b24\s*h\b|\b24\s*horas\b/i, patterns: ['24h', '24 horas', 'canal 24 horas', 'tve 24h'] },
   { re: /\bd\s*sports\b|\bdirectv\s*sports?\b/i, patterns: ['dsports', 'directv sports', 'directv sport', 'd sports'] },
   { re: /\btudn\b/i, patterns: ['tudn', 'tudn mx', 'tudn usa'] },
   { re: /\bdazn\s*laliga\b/i, patterns: ['dazn laliga', 'dazn la liga'] },
@@ -944,8 +1085,11 @@ const LIVE_BROADCASTER_ALIASES: Array<{ re: RegExp; patterns: string[] }> = [
   { re: /\bcgtn\b/i, patterns: ['cgtn', 'cgtn espanol', 'cgtn noticias', 'cgtn esp'] },
 ];
 
+const AMBIGUOUS_TDT_HOMONYM_RE =
+  /^(?:ten|mega|nova|energy|fdf|clan|boing|cuatro|trece|24h|24\s*h|la\s*1|la\s*2|neox|divinity|dmax|dkiss)$/i;
+
 const KNOWN_SPORTS_BROADCASTER_HINT_RE =
-  /\b(?:dsports|directv|tudn|dazn|movistar|m\+\s*(?:liga|laliga|campeones|deportes|vamos|plus)|mliga(?:campeones)?|liga\s*de\s*campeones|campeones|laliga|hypermotion|espn|tyc\s*sports?|fox\s*sports?|tnt\s*sports?|sky\s*sports?|bein|gol\s*(?:play|tv|mundial)|teledeporte|eurosport|vamos|sport\s*tv|cgtn|la\s*1|la\s*2|antena\s*3|cuatro|telecinco|lasexta|la\s*sexta)\b/i;
+  /\b(?:dsports|directv|tudn|dazn|movistar|m\+\s*(?:liga|laliga|campeones|deportes|vamos|plus)|mliga(?:campeones)?|liga\s*de\s*campeones|campeones|laliga|hypermotion|espn|tyc\s*sports?|fox\s*sports?|tnt\s*sports?|sky\s*sports?|bein|gol\s*(?:play|tv|mundial)|teledeporte|eurosport|vamos|sport\s*tv|cgtn|la\s*1|la\s*2|antena\s*3|cuatro|telecinco|lasexta|la\s*sexta|neox|nova|mega|atreseries|fdf|energy|divinity|be\s*mad|bemad|boing|clan|24h|dmax|dkiss|ten|trece)\b/i;
 
 export function extractXtreamLiveHintsFromSportsRequest(
   rawUrl: string,
@@ -1002,6 +1146,7 @@ export function extractXtreamLiveHintsFromSportsRequest(
 
 interface IndexedXtreamLiveChannel {
   item: XtreamLiveStreamItem;
+  catName: string;
   meta: ParsedXtreamVodMeta;
   candNorm: string;
   candNum?: string;
@@ -1037,6 +1182,7 @@ function getIndexedLiveStreams(catalog: XtreamFullCatalogPayload): IndexedXtream
     const idx = built.length;
     built.push({
       item,
+      catName,
       meta,
       candNorm,
       candNum,
@@ -1153,9 +1299,22 @@ export async function findXtreamLiveChannelMatches(params: {
   const scored: Array<{ item: XtreamLiveStreamItem; meta: ParsedXtreamVodMeta; score: number }> = [];
   const normPref = String(params.preferLang || 'ES').toUpperCase();
 
+  const isAmbiguousTdtQuery = expandedPatterns.some((p) => AMBIGUOUS_TDT_HOMONYM_RE.test(p.norm));
+
   for (const entry of entriesToScan) {
-    const { item, meta, candNorm, candNum, qualityBonus } = entry;
+    const { item, catName, meta, candNorm, candNum, qualityBonus } = entry;
     if (/\brsi\b/.test(candNorm) && !/\brsi\b/.test(hintJoined)) continue;
+
+    if (isAmbiguousTdtQuery) {
+      const hasSpanishTag =
+        meta.lang === 'ES' ||
+        /\b(?:es|esp|spain|espa[nñ]a|tdt|castellano)\b/i.test(`${catName} ${item.name}`);
+      const hasNonSpanishNoise =
+        /\b(?:sports?|india|greece|greek|turkey|turk|arab|latino|mexico|argentina|colombia|usa|uk|france|italia|germany|portugal|brazil|brasil|czech|nrj|poland|romania)\b/i.test(
+          `${catName} ${item.name}`
+        );
+      if (!hasSpanishTag || hasNonSpanishNoise) continue;
+    }
 
     // Reject conflicting sports broadcasters unless explicitly present in request hints
     let hasBroadcasterConflict = false;
@@ -1207,10 +1366,20 @@ export async function findXtreamLiveChannelMatches(params: {
       ? 8
       : 0;
     const effectiveQualityBonus = params.preferQualityFirst ? qualityBonus * 3 : qualityBonus;
+    const isSharkLjli =
+      String(item.providerId || '').toLowerCase() === 'shark-pro' &&
+      /spain\s*[-_]\s*(?:ljli|أسبانيا|اسبانيا)/i.test(catName);
+    const curatedLjliBonus = isSharkLjli
+      ? /\b(FHD|1080P?|4K|UHD)\b/i.test(item.name)
+        ? 45
+        : 30
+      : /spain\s*[-_]\s*(?:ljli|أسبانيا|اسبانيا)/i.test(catName)
+      ? 12
+      : 0;
     scored.push({
       item,
       meta,
-      score: bestPatScore + langBonus + effectiveQualityBonus,
+      score: bestPatScore + langBonus + effectiveQualityBonus + curatedLjliBonus,
     });
   }
 

@@ -17,6 +17,11 @@ import {
   getOrCreateRequestId,
 } from './proxyUtils.ts';
 import { remuxDvbTsToAac } from './dvbTranscoder.ts';
+import {
+  getCachedLiveTsSegment,
+  getInFlightLiveTsSegment,
+  setCachedLiveTsSegment,
+} from './liveSegmentCache.ts';
 import { runtimeMetrics } from '../../services/runtimeMetricsCollector.ts';
 
 export async function handleTsProxy(req: express.Request, res: express.Response): Promise<void> {
@@ -118,6 +123,26 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     } catch {
       if (req.destroyed || res.writableEnded) return;
       res.status(502).end();
+      return;
+    }
+  }
+
+  if (!req.headers.range && !isUrlSubtitle) {
+    let cachedSeg = getCachedLiveTsSegment(targetUrl);
+    if (!cachedSeg) {
+      const inFlight = getInFlightLiveTsSegment(targetUrl);
+      if (inFlight) {
+        cachedSeg = await inFlight.catch(() => null);
+      }
+    }
+    if (req.destroyed || res.writableEnded) return;
+    if (cachedSeg && cachedSeg.buf.length > 0) {
+      res.status(200);
+      applyProxyCorsHeaders(res, reqId);
+      res.setHeader('Content-Type', cachedSeg.contentType || (isUrlMp4 ? 'video/mp4' : 'video/mp2t'));
+      res.setHeader('Cache-Control', 'public, max-age=20');
+      res.setHeader('Content-Length', String(cachedSeg.buf.length));
+      res.end(cachedSeg.buf);
       return;
     }
   }
@@ -367,29 +392,85 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     });
 
     runtimeMetrics.recordUpstreamTransport(false);
+    const outContentType = isSubtitleContent
+      ? 'text/vtt; charset=utf-8'
+      : isDisguisedSegment
+      ? isUrlMp4
+        ? 'video/mp4'
+        : 'video/mp2t'
+      : rawCt;
+    const clNum = cl ? Number(cl) : 0;
+    const shouldTeeSegmentCache =
+      !req.headers.range &&
+      !isUrlSubtitle &&
+      upstream.status === 200 &&
+      (!Number.isFinite(clNum) || clNum <= 6 * 1024 * 1024);
+
     if (!shouldSniffImageHeader) {
       writeCommonHeaders(0);
-      nodeStream.pipe(res);
+      if (!shouldTeeSegmentCache) {
+        nodeStream.pipe(res);
+        return;
+      }
+      const cacheChunks: Buffer[] = [];
+      let cacheBytes = 0;
+      let cacheAborted = false;
+      nodeStream.on('data', (chunk: Buffer) => {
+        const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        if (!cacheAborted) {
+          cacheBytes += b.length;
+          if (cacheBytes <= 6 * 1024 * 1024) {
+            cacheChunks.push(b);
+          } else {
+            cacheChunks.length = 0;
+            cacheAborted = true;
+          }
+        }
+        if (!res.writableEnded && !res.write(b)) {
+          nodeStream.pause();
+          res.once('drain', () => nodeStream.resume());
+        }
+      });
+      nodeStream.once('end', () => {
+        if (!cacheAborted && cacheChunks.length > 0) {
+          setCachedLiveTsSegment(targetUrl, Buffer.concat(cacheChunks), outContentType);
+        }
+        if (!res.writableEnded) res.end();
+      });
       return;
     }
 
     let headerChecked = false;
     const probeChunks: Buffer[] = [];
     let probeLen = 0;
+    const cleanCacheChunks: Buffer[] = [];
+    let cleanCacheBytes = 0;
+    let cleanCacheAborted = !shouldTeeSegmentCache;
 
     const flushInitial = (ended: boolean) => {
       if (headerChecked) return;
       headerChecked = true;
       const headBuf = Buffer.concat(probeChunks);
       const offset = findDisguisedTsOffset(headBuf);
+      const firstClean = offset > 0 ? headBuf.subarray(offset) : headBuf;
       writeCommonHeaders(offset);
-      if (offset > 0) {
-        res.write(headBuf.subarray(offset));
-      } else if (headBuf.length > 0) {
-        res.write(headBuf);
+      if (firstClean.length > 0) {
+        if (!cleanCacheAborted) {
+          cleanCacheBytes += firstClean.length;
+          if (cleanCacheBytes <= 6 * 1024 * 1024) {
+            cleanCacheChunks.push(firstClean);
+          } else {
+            cleanCacheChunks.length = 0;
+            cleanCacheAborted = true;
+          }
+        }
+        res.write(firstClean);
       }
       probeChunks.length = 0;
       if (ended) {
+        if (!cleanCacheAborted && cleanCacheChunks.length > 0) {
+          setCachedLiveTsSegment(targetUrl, Buffer.concat(cleanCacheChunks), outContentType);
+        }
         res.end();
       }
     };
@@ -403,7 +484,17 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
           flushInitial(false);
         }
       } else if (!res.writableEnded) {
-        if (!res.write(chunk)) {
+        const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        if (!cleanCacheAborted) {
+          cleanCacheBytes += b.length;
+          if (cleanCacheBytes <= 6 * 1024 * 1024) {
+            cleanCacheChunks.push(b);
+          } else {
+            cleanCacheChunks.length = 0;
+            cleanCacheAborted = true;
+          }
+        }
+        if (!res.write(b)) {
           nodeStream.pause();
           res.once('drain', () => nodeStream.resume());
         }
@@ -412,8 +503,13 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     nodeStream.once('end', () => {
       if (!headerChecked) {
         flushInitial(true);
-      } else if (!res.writableEnded) {
-        res.end();
+      } else {
+        if (!cleanCacheAborted && cleanCacheChunks.length > 0) {
+          setCachedLiveTsSegment(targetUrl, Buffer.concat(cleanCacheChunks), outContentType);
+        }
+        if (!res.writableEnded) {
+          res.end();
+        }
       }
     });
   } catch (err) {

@@ -14,6 +14,7 @@ import type {
 import type { PlaybackCoreContext } from './playbackTypes';
 import { createTrackAndQueuePlaybackHandlers } from './useTrackAndQueuePlayback';
 import { extractTrackHostKey, mergeCustomTdtTracks } from '../../utils/customTdtSources';
+import { useAppStore } from '../../store/useAppStore';
 
 interface LiveQueueExtras {
   handlePlayMovie: (
@@ -110,6 +111,59 @@ async function fetchFastProviderLiveSignals(
     );
   } catch {
     return [];
+  } finally {
+    globalThis.clearTimeout(timer);
+    if (parentSignal) parentSignal.removeEventListener('abort', onAbort);
+  }
+}
+
+interface FastLiveResolveClientResult {
+  ok: boolean;
+  winningIndex: number;
+  streamUrl: string;
+  backupStreamUrl?: string;
+  mode: VideoState['mode'];
+  extraTracks?: StreamTrack[];
+}
+
+async function resolveLiveChannelFast(
+  params: {
+    channelId?: string;
+    title?: string;
+    broadcasters?: string[];
+    competition?: string;
+    preferLang?: string;
+    tracks: StreamTrack[];
+  },
+  parentSignal?: AbortSignal
+): Promise<FastLiveResolveClientResult | null> {
+  if (!Array.isArray(params.tracks) || params.tracks.length === 0) return null;
+  const ctrl = new AbortController();
+  const onAbort = () => ctrl.abort();
+  if (parentSignal) {
+    if (parentSignal.aborted) return null;
+    parentSignal.addEventListener('abort', onAbort, { once: true });
+  }
+  const timer = globalThis.setTimeout(() => ctrl.abort(), 4600);
+  try {
+    const preferQualityFirst = useAppStore.getState().playbackPriorityMode === 'best_quality';
+    const res = await fetch('/api/live/fast-resolve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...params,
+        preferQualityFirst,
+      }),
+      signal: ctrl.signal,
+    });
+    if (!res.ok) return null;
+    const json = (await res.json().catch(() => null)) as FastLiveResolveClientResult | null;
+    if (json && json.ok && json.streamUrl) {
+      return json;
+    }
+    return null;
+  } catch {
+    return null;
   } finally {
     globalThis.clearTimeout(timer);
     if (parentSignal) parentSignal.removeEventListener('abort', onAbort);
@@ -217,6 +271,8 @@ export function useLiveAndQueuePlayback(
       let data: {
         success?: boolean;
         streamUrl?: string;
+        backupStreamUrl?: string;
+        extraTracks?: StreamTrack[];
         mode?: VideoState['mode'] | 'cloud';
         canUseCloudBrowser?: boolean;
         error?: string;
@@ -232,16 +288,40 @@ export function useLiveAndQueuePlayback(
           data = { success: true, streamUrl: cachedSports.streamUrl, mode: cachedSports.mode || 'hls' };
           resOk = true;
         } else {
-          const params = new URLSearchParams({
-            url: channel.sourceUrl,
-            resolverType: sportsResolver,
-            title: match.title,
-          });
-          const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
-          resOk = res.ok;
-          data = await res.json().catch(() => null);
-          if (resOk && data?.success && data.streamUrl && data.mode !== 'cloud') {
-            setCachedClientExtract(sportsResolver, channel.sourceUrl, data.streamUrl, data.mode);
+          if (failedIndices.size === 0 && match.channels.length > 0) {
+            const fastWin = await resolveLiveChannelFast(
+              {
+                channelId: match.id,
+                title: match.title,
+                competition: match.competition,
+                preferLang: channel.lang || 'ES',
+                tracks: match.channels,
+              },
+              signal
+            );
+            if (fastWin) {
+              data = {
+                success: true,
+                streamUrl: fastWin.streamUrl,
+                backupStreamUrl: fastWin.backupStreamUrl,
+                extraTracks: fastWin.extraTracks,
+                mode: fastWin.mode || 'hls',
+              };
+              resOk = true;
+            }
+          }
+          if (!resOk) {
+            const params = new URLSearchParams({
+              url: channel.sourceUrl,
+              resolverType: sportsResolver,
+              title: match.title,
+            });
+            const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
+            resOk = res.ok;
+            data = await res.json().catch(() => null);
+            if (resOk && data?.success && data.streamUrl && data.mode !== 'cloud') {
+              setCachedClientExtract(sportsResolver, channel.sourceUrl, data.streamUrl, data.mode);
+            }
           }
         }
       }
@@ -333,6 +413,7 @@ export function useLiveAndQueuePlayback(
         ...match.channels
           .map((c, idx) => (idx === channelIndex ? { ...c, resolvedStreamUrl: data.streamUrl } : c))
           .filter((_, idx) => !failedIndices.has(idx)),
+        ...(data.extraTracks || []),
         ...fastExtras,
       ];
       const activeIdxInHealthy = Math.max(
@@ -343,6 +424,7 @@ export function useLiveAndQueuePlayback(
       const nextState: VideoState = {
         mode: data.mode || 'hls',
         url: data.streamUrl,
+        ...(data.backupStreamUrl ? { backupStreamUrl: data.backupStreamUrl } : {}),
         rawSourceUrl: channel.sourceUrl,
         title: match.title,
         subtitle: `${match.competition} · ${channel.label}`,
@@ -453,18 +535,52 @@ export function useLiveAndQueuePlayback(
       let data: {
         success?: boolean;
         streamUrl?: string;
+        backupStreamUrl?: string;
+        extraTracks?: StreamTrack[];
+        winningIndex?: number;
         mode?: VideoState['mode'];
         error?: string;
       } | null = null;
 
-      if (isInstantDirectTdtStream(chosenSignal.sourceUrl, signalResolver)) {
+      if (failedSignals.size === 0 && signalIndex === 0 && effectiveTdtCh.channels.length > 0) {
+        const fastTdtWin = await resolveLiveChannelFast(
+          {
+            channelId: effectiveTdtCh.id,
+            title: effectiveTdtCh.name,
+            preferLang: 'ES',
+            tracks: effectiveTdtCh.channels.map((sig) => ({
+              id: sig.id,
+              label: `${effectiveTdtCh.name} · ${sig.label}`,
+              lang: 'ES',
+              quality: sig.quality,
+              sourceUrl: sig.sourceUrl,
+              referer: sig.referer,
+              resolverType: sig.resolverType || 'tdt_hls',
+            })),
+          },
+          signal
+        );
+        if (fastTdtWin) {
+          resOk = true;
+          data = {
+            success: true,
+            streamUrl: fastTdtWin.streamUrl,
+            backupStreamUrl: fastTdtWin.backupStreamUrl,
+            extraTracks: fastTdtWin.extraTracks,
+            winningIndex: fastTdtWin.winningIndex,
+            mode: fastTdtWin.mode || 'hls',
+          };
+        }
+      }
+
+      if (!data && isInstantDirectTdtStream(chosenSignal.sourceUrl, signalResolver)) {
         resOk = true;
         data = {
           success: true,
           streamUrl: chosenSignal.sourceUrl,
           mode: /\.(mp4|mkv|webm)(\?|$)/i.test(chosenSignal.sourceUrl) ? 'direct' : 'hls',
         };
-      } else {
+      } else if (!data) {
         const cachedTdt = getCachedClientExtract(signalResolver, chosenSignal.sourceUrl);
         if (cachedTdt) {
           resOk = true;
@@ -557,6 +673,13 @@ export function useLiveAndQueuePlayback(
         fastTdtPromise,
         new Promise<StreamTrack[]>((r) => globalThis.setTimeout(() => r([]), 120)),
       ]);
+      const winningTrackIdx =
+        typeof data.winningIndex === 'number' &&
+        data.winningIndex >= 0 &&
+        data.winningIndex < effectiveTdtCh.channels.length
+          ? data.winningIndex
+          : signalIndex;
+      const winningSignal = effectiveTdtCh.channels[winningTrackIdx] || chosenSignal;
       const mappedTracks: StreamTrack[] = [
         ...effectiveTdtCh.channels.map((sig, idx) => ({
           id: sig.id,
@@ -565,24 +688,26 @@ export function useLiveAndQueuePlayback(
           quality: sig.quality,
           sourceUrl: sig.sourceUrl,
           resolverType: sig.resolverType || 'tdt_hls',
-          resolvedStreamUrl: idx === signalIndex ? data.streamUrl : undefined,
+          resolvedStreamUrl: idx === winningTrackIdx ? data.streamUrl : undefined,
         })),
+        ...(data.extraTracks || []),
         ...fastTdtExtras,
       ];
 
       const nextState: VideoState = {
         mode: data.mode || 'hls',
         url: data.streamUrl,
-        rawSourceUrl: chosenSignal.sourceUrl,
+        ...(data.backupStreamUrl ? { backupStreamUrl: data.backupStreamUrl } : {}),
+        rawSourceUrl: winningSignal.sourceUrl,
         title: effectiveTdtCh.name,
         subtitle: liveProgramHint
           ? `En emisión: ${liveProgramHint} · ${effectiveTdtCh.network}`
-          : `TV en Directo · ${effectiveTdtCh.network} · ${chosenSignal.label}`,
+          : `TV en Directo · ${effectiveTdtCh.network} · ${winningSignal.label}`,
         currentTime: 0,
         isPlaying: true,
         isLive: true,
         tracks: mappedTracks,
-        activeTrackIndex: signalIndex,
+        activeTrackIndex: winningTrackIdx,
         seriesMeta: undefined,
         lastUpdated: Date.now(),
         updatedBy: profileName,

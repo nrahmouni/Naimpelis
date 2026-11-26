@@ -164,6 +164,9 @@ export class ChannelHealthMonitor {
       const isResidentialDvb = unwrapped.includes('90.163.85.113:8093');
       const isHttpsCdn = /^https:\/\//i.test(unwrapped) && !isResidentialDvb;
       const isPreferredEdge2 = /\/api\/belix\/stream\/531071(?:\.m3u8|\b)/i.test(src);
+      const isPriorityFeed =
+        /^tdt-[a-z0-9-]+-priority-/i.test(String(track.id || '')) ||
+        /prioritaria|spain\s*[-_]\s*(?:ljli|أسبانيا|اسبانيا)/i.test(String(track.label || ''));
       const isBelix = src.startsWith('/api/belix/stream/');
       const qualityTier = isUhdHevc
         ? 4
@@ -174,7 +177,7 @@ export class ChannelHealthMonitor {
         : 0;
       const transportPenalty = /interactvty\.pro/i.test(src)
         ? 1500
-        : isPreferredEdge2
+        : isPreferredEdge2 || isPriorityFeed
         ? 0
         : isBelix
         ? 350
@@ -191,6 +194,7 @@ export class ChannelHealthMonitor {
         isResidentialDvb,
         isHttpsCdn,
         isPreferredEdge2,
+        isPriorityFeed,
         isBelix,
         status: health?.status ?? ('unknown' as ChannelHealthStatus),
         qualityTier,
@@ -199,6 +203,10 @@ export class ChannelHealthMonitor {
     });
 
     indexed.sort((a, b) => {
+      if (a.isPriorityFeed !== b.isPriorityFeed) {
+        if (a.isPriorityFeed && a.status !== 'down') return -1;
+        if (b.isPriorityFeed && b.status !== 'down') return 1;
+      }
       if (a.status !== 'down' && b.status !== 'down' && a.isUhdHevc !== b.isUhdHevc) {
         return a.isUhdHevc ? 1 : -1;
       }

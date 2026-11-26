@@ -161,8 +161,13 @@ export function tryAcquireHalfOpenProbe(
 
 export function recordProviderOutcome(
   sourceOrProviderId: string,
-  outcome: { ok: boolean; latencyMs?: number; explicitProviderId?: string }
+  outcomeOrOk: boolean | { ok: boolean; latencyMs?: number; explicitProviderId?: string },
+  latencyMsArg?: number
 ): void {
+  const outcome =
+    typeof outcomeOrOk === 'boolean'
+      ? { ok: outcomeOrOk, latencyMs: latencyMsArg }
+      : outcomeOrOk;
   const bucket = extractProviderBucket(sourceOrProviderId, outcome.explicitProviderId);
   if (!bucket || bucket === 'unknown') return;
   const entry = getOrCreateBucket(bucket);

@@ -10,7 +10,7 @@ import { Clapperboard, Film, Loader2, Play, RefreshCw, Search, Star, X } from 'l
 import type { AppLanguage, SpanishTdtChannel } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
-import { useAppStore } from '../../store/useAppStore';
+import { useAppStore, type WorldId } from '../../store/useAppStore';
 import {
   XTREAM_PROVIDER_UI_SPECS,
   getXtreamProviderUiSpecByProviderId,
@@ -430,7 +430,7 @@ export const XtreamVodSeriesShelf: React.FC<XtreamVodSeriesShelfProps> = ({
               type="button"
               onClick={() => {
                 triggerHaptic('light');
-                useAppStore.getState().setActiveWorld(activeSpec.worldId);
+                useAppStore.getState().setActiveWorld(activeSpec.worldId as unknown as WorldId);
               }}
               className="min-h-11 px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-xs font-bold text-white cursor-pointer transition-colors"
             >

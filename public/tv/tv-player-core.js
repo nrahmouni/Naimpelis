@@ -177,6 +177,9 @@ if (videoEl) {
   });
   videoEl.addEventListener('error', function () {
     if (currentMode === 'idle' || currentMode === 'embed' || currentMode === 'youtube') return;
+    if (currentMode === 'direct' && tryTvDirectTranscodeRetry()) {
+      return;
+    }
     if (!isLocalPlayback) {
       if (currentMode === 'hls' && currentUrl && currentUrl.indexOf('/api/hls-proxy') !== -1 && currentUrl.indexOf('abs=1') === -1) {
         var absUrl = currentUrl + (currentUrl.indexOf('?') === -1 ? '?' : '&') + 'abs=1';
@@ -196,6 +199,24 @@ if (videoEl) {
     }
     triggerPlaybackFailover('Video decode error');
   });
+}
+
+function tryTvDirectTranscodeRetry() {
+  if (currentMode !== 'direct' || !currentUrl) return false;
+  if (currentUrl.indexOf('transcode=1') !== -1) return false;
+  if (!/^\/api\/(?:stream|xtream\/vod\/|providers\/(?:stream|vod|series-stream)\/)/i.test(currentUrl)) {
+    return false;
+  }
+  var transcodeUrl = currentUrl + (currentUrl.indexOf('?') === -1 ? '?' : '&') + 'transcode=1';
+  currentUrl = transcodeUrl;
+  try {
+    videoEl.src = transcodeUrl;
+    videoEl.load();
+    playVideoSafely(!currentIsLive ? (videoEl.currentTime || 0) : 0, true);
+    return true;
+  } catch (e) {
+    return false;
+  }
 }
 
 function playVideoSafely(targetResumeSec, shouldPlay) {
@@ -506,7 +527,7 @@ function applyVideoState(vs, forceReload) {
     return;
   }
 
-  // Mode 3 & 4: Native MP4 (`direct`) or HLS (`hls`)
+  // Mode 3 & 4: Native MP4 (direct) or HLS (hls)
   if (ytPlayer && ytPlayer.stopVideo) {
     try { ytPlayer.stopVideo(); } catch (e) {}
   }
@@ -518,9 +539,13 @@ function applyVideoState(vs, forceReload) {
   standbyOverlay.style.display = 'flex';
   destroyHls();
 
+  var videoZeroStartupAt = Date.now();
   videoWatchdogTimer = setTimeout(function () {
     if (currentMode !== nextMode || currentUrl !== nextUrl) return;
     if (!videoEl.videoWidth || videoEl.videoWidth === 0 || videoEl.readyState < 2) {
+      if (nextMode === 'direct' && Date.now() - videoZeroStartupAt >= 5000 && tryTvDirectTranscodeRetry()) {
+        return;
+      }
       triggerPlaybackFailover('Tiempo de carga agotado');
     }
   }, isLive ? 6500 : 16000);

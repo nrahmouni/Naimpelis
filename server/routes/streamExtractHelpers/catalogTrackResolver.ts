@@ -24,6 +24,9 @@ import {
   toProxiedEmbedUrl,
   verifyWebEmbedCandidateAlive,
 } from '../../services/streamExtractFallback.ts';
+import { LruTtlCache } from '../../utils/lruCache.ts';
+
+const deadTrackUrlCache = new LruTtlCache<string, boolean>(400, 40 * 1000);
 
 export interface SubtitleCandidateRecord {
   id?: string;
@@ -154,7 +157,27 @@ export async function resolveOrderedCandidateTracks(opts: {
 
     for (let i = 0; i < orderedTracks.length; i++) {
       if (getLangScore(orderedTracks[i].lang) !== tierScore) continue;
+      const instant = orderedTracks[i];
+      if (
+        instant.resolvedStreamUrl &&
+        instant.resolverType !== 'web_embed' &&
+        (!instant.sourceUrl || !deadTrackUrlCache.get(instant.sourceUrl))
+      ) {
+        primaryStreamUrl = instant.resolvedStreamUrl;
+        primaryMode = instant.resolverType === 'direct_mp4' ? 'direct' : 'hls';
+        resolvedTrack = instant;
+        break;
+      }
+    }
+    if (primaryStreamUrl) break;
+
+    for (let i = 0; i < orderedTracks.length; i++) {
+      if (getLangScore(orderedTracks[i].lang) !== tierScore) continue;
       const candidate = orderedTracks[i];
+      if (candidate.sourceUrl && deadTrackUrlCache.get(candidate.sourceUrl)) {
+        deadTrackIndices.add(i);
+        continue;
+      }
 
       if (candidate.resolverType === 'web_embed') {
         if (!directOnly && candidate.sourceUrl) {
@@ -196,6 +219,7 @@ export async function resolveOrderedCandidateTracks(opts: {
             url: resolvedMv.embedUrl,
           });
         } else {
+          if (candidate.sourceUrl) deadTrackUrlCache.set(candidate.sourceUrl, true);
           deadTrackIndices.add(i);
         }
       } else if (candidate.resolverType === 'vidhide_hls') {
@@ -211,6 +235,7 @@ export async function resolveOrderedCandidateTracks(opts: {
           resolvedTrack = orderedTracks[i];
           break;
         } else {
+          if (candidate.sourceUrl) deadTrackUrlCache.set(candidate.sourceUrl, true);
           deadTrackIndices.add(i);
         }
       } else if (candidate.resolverType === 'embed_sniff') {
@@ -229,6 +254,7 @@ export async function resolveOrderedCandidateTracks(opts: {
           resolvedTrack = orderedTracks[i];
           break;
         } else {
+          if (candidate.sourceUrl) deadTrackUrlCache.set(candidate.sourceUrl, true);
           deadTrackIndices.add(i);
         }
       }
@@ -243,8 +269,13 @@ export async function resolveOrderedCandidateTracks(opts: {
           getTrackHealthScore(a.track) - getTrackHealthScore(b.track)
       );
       for (const cand of tierWebEmbedCandidates) {
+        if (deadTrackUrlCache.get(cand.url)) {
+          deadTrackIndices.add(cand.idx);
+          continue;
+        }
         const alive = await verifyWebEmbedCandidateAlive(cand.track, cand.url);
         if (!alive) {
+          deadTrackUrlCache.set(cand.url, true);
           deadTrackIndices.add(cand.idx);
           continue;
         }

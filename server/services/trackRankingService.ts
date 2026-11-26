@@ -34,26 +34,33 @@ export function rankCandidateTracks({
       if (tl === 'VOSE') return 2;
       if (tl === 'ES') return 3;
       if (tl === 'LAT') return 4;
-      return 5;
+      return tl === 'AR' ? 6 : 5;
     }
     if (preferLang === 'LAT') {
       if (tl === 'LAT') return 1;
       if (tl === 'ES') return 2;
       if (tl === 'VOSE') return 3;
       if (tl === 'EN') return 4;
-      return 5;
+      return tl === 'AR' ? 6 : 5;
     }
     if (preferLang === 'VOSE') {
       if (tl === 'VOSE') return 1;
       if (tl === 'EN') return 2;
       if (tl === 'ES') return 3;
       if (tl === 'LAT') return 4;
+      return tl === 'AR' ? 6 : 5;
+    }
+    if (preferLang === 'AR') {
+      if (tl === 'AR') return 1;
+      if (tl === 'ES') return 2;
+      if (tl === 'EN') return 3;
       return 5;
     }
     if (tl === 'ES') return 1;
     if (tl === 'LAT') return 2;
     if (tl === 'VOSE') return 3;
     if (tl === 'EN') return 4;
+    if (tl === 'AR') return 6;
     return 5;
   };
 

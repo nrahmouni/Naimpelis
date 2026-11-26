@@ -4,7 +4,7 @@ export const MAX_SECONDARY_STREAMS = MAX_MULTI_SCREENS - 1; // 3 secondary + 1 p
 
 export function isInstantDirectMultiStream(sourceUrl: string, resolverType: string): boolean {
   if (!sourceUrl) return false;
-  if (/^\/api\/(?:hls-proxy|iptv\/live|dvb-live|vod-manifest)/i.test(sourceUrl)) {
+  if (/^\/api\/(?:hls-proxy|iptv\/live|dvb-live|vod-manifest|providers\/stream|belix\/stream)/i.test(sourceUrl)) {
     return true;
   }
   if (

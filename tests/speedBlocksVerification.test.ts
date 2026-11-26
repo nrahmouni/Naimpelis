@@ -15,7 +15,14 @@ import {
   importProviderCircuitBuckets,
   recordProviderOutcome,
 } from '../server/services/providerCircuitBreaker.ts';
-import { raceFastLiveTracks } from '../server/services/liveFastResolver.ts';
+import {
+  orderCandidatesForFastResolve,
+  raceFastLiveTracks,
+} from '../server/services/liveFastResolver.ts';
+import { detectStreamLanguage } from '../server/utils/streamMetaParser.ts';
+import { rankCandidateTracks } from '../server/services/trackRankingService.ts';
+import { ChannelHealthMonitor } from '../server/services/channelHealthMonitor.ts';
+import { isPreferredSharkProSpainLjli } from '../server/services/providers/xtreamFastSignalService.ts';
 import { serializeRoomForClient } from '../server/ws/roomHubHelpers.ts';
 import { SocketTransport } from '../src/services/socketTransport.ts';
 
@@ -276,5 +283,100 @@ describe('30 Speed Optimizations — Blocks A, B, C & D Verification', () => {
       'utf8'
     );
     expect(liveTvViewSrc).toContain('preIndexedStaticHaystacks');
+  });
+
+  it('Language & AR Demotion: detects 4K-AR - Game of Thrones (US)_S08E06 - AR as AR and ranks ES/LAT/EN ahead of AR', () => {
+    const parsedAr = detectStreamLanguage(
+      '4K-AR - Game of Thrones (US)_S08E06 - AR',
+      'SERIES | 4K-AR',
+      'series'
+    );
+    expect(parsedAr.lang).toBe('AR');
+
+    const { orderedTracks } = rankCandidateTracks({
+      allDiscovered: [
+        {
+          id: 'ar-track',
+          label: '4K-AR - Game of Thrones (US)_S08E06 - AR',
+          lang: parsedAr.lang,
+          quality: '4K',
+          sourceUrl: '/api/providers/series-stream/24tv/1.mp4',
+          resolverType: 'direct_mp4',
+        },
+        {
+          id: 'es-track',
+          label: 'Juego de Tronos Castellano 1080p',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: '/api/providers/series-stream/shark-pro/2.mp4',
+          resolverType: 'direct_mp4',
+        },
+        {
+          id: 'en-track',
+          label: 'Game of Thrones EN',
+          lang: 'EN',
+          quality: '1080p',
+          sourceUrl: '/api/providers/series-stream/vod-4k/3.mp4',
+          resolverType: 'direct_mp4',
+        },
+      ],
+      preferLang: 'ES',
+      isVestLink: false,
+      hasExplicitMovidyUrl: false,
+      hasExplicitGnulaUrl: false,
+      healthMap: {},
+    });
+
+    expect(orderedTracks.map((t) => t.id)).toEqual(['es-track', 'en-track', 'ar-track']);
+  });
+
+  it('TDT Generalista Priority: keeps Prioritaria ES| LA SEXTA FHD Shark Pro (SPAIN - Ljli / SPAIN - أسبانيا) at #1 in health monitor & fast-resolve race', async () => {
+    expect(isPreferredSharkProSpainLjli({ providerId: 'shark-pro', categoryName: 'SPAIN - أسبانيا' })).toBe(true);
+    expect(isPreferredSharkProSpainLjli({ providerId: 'shark-pro', categoryName: 'SPAIN - Ljli' })).toBe(true);
+    expect(isPreferredSharkProSpainLjli({ providerId: 'vod-4k', categoryName: 'SPAIN - أسبانيا' })).toBe(false);
+
+    const monitor = new ChannelHealthMonitor();
+    const priorityUrl = '/api/providers/live/shark-pro/999001.m3u8';
+    const dvbUrl = 'http://90.163.85.113:8093/stream/21/index.m3u8';
+    monitor.setTrackHealth(dvbUrl, { status: 'up', latencyMs: 180, checkedAt: Date.now() });
+
+    const prioritized = monitor.prioritizeTracks([
+      {
+        id: 'lasexta-dvb-hd',
+        label: 'Señal Directa España 1080p HD (laSexta)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: dvbUrl,
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'tdt-lasexta-priority-shark-pro',
+        label: 'Prioritaria · ES| LA SEXTA FHD · Shark Pro (SPAIN - Ljli)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: priorityUrl,
+        resolverType: 'tdt_hls',
+      },
+    ]);
+    expect(prioritized[0].id).toBe('tdt-lasexta-priority-shark-pro');
+
+    const ordered = orderCandidatesForFastResolve(prioritized, { preferLang: 'ES' });
+    expect(ordered[0].track.id).toBe('tdt-lasexta-priority-shark-pro');
+
+    const res = await raceFastLiveTracks(prioritized, {
+      channelId: 'tdt-lasexta',
+      titleHint: 'laSexta',
+      preferLang: 'ES',
+      timeoutMs: 1200,
+      probeImpl: async (track) => {
+        if (track.id === 'tdt-lasexta-priority-shark-pro') {
+          await new Promise((r) => setTimeout(r, 45));
+          return { ok: true, streamUrl: priorityUrl, mode: 'hls', latencyMs: 45, statusCode: 200 };
+        }
+        return { ok: true, streamUrl: '/api/hls-proxy?url=other', mode: 'hls', latencyMs: 10, statusCode: 200 };
+      },
+    });
+    expect(res.ok).toBe(true);
+    expect(res.winningTrack?.id).toBe('tdt-lasexta-priority-shark-pro');
   });
 });

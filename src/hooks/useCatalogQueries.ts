@@ -6,6 +6,8 @@ import type {
   SportsMatch,
 } from '../types';
 
+import type { ProvidersStatusSummaryPublic } from '../components/providers/providersTypes';
+
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -16,6 +18,97 @@ export const queryClient = new QueryClient({
     },
   },
 });
+
+export const catalogQueryKeys = {
+  moviesPage: (params: Record<string, unknown>) => ['catalog', 'movies', params] as const,
+  seriesPage: (params: Record<string, unknown>) => ['catalog', 'series', params] as const,
+  latestReleases: (lang: string) => ['catalog', 'latest-releases', lang] as const,
+  collections: (lang: string) => ['catalog', 'collections', lang] as const,
+  tdtBase: () => ['catalog', 'tdt'] as const,
+  footballBoard: (lang: string) => ['sports', 'football-board-home', lang] as const,
+  liveScores: () => ['sports', 'live-scores'] as const,
+  providersStatus: () => ['providers', 'status'] as const,
+  providersCatalog: (params: Record<string, unknown>) => ['providers', 'catalog', params] as const,
+  musicHome: () => ['music', 'home'] as const,
+};
+
+export async function fetchCatalogMoviesPageData(params: {
+  endpoint: string;
+  category: string;
+  sort: string;
+  page: number;
+  query: string;
+}) {
+  const qs = new URLSearchParams({
+    category: params.category,
+    sort: params.sort,
+    page: String(params.page),
+    q: params.query,
+  });
+  const res = await fetch(`/api/catalog/${params.endpoint}?${qs.toString()}`);
+  return res.ok ? res.json() : { movies: [] };
+}
+
+export async function fetchCatalogSeriesPageData(params: {
+  category: string;
+  sort: string;
+  page: number;
+  lang: string;
+  query: string;
+}) {
+  const qs = new URLSearchParams({
+    category: params.category,
+    sort: params.sort,
+    page: String(params.page),
+    lang: params.lang,
+    q: params.query,
+  });
+  const res = await fetch(`/api/catalog/series?${qs.toString()}`);
+  return res.ok ? res.json() : { series: [] };
+}
+
+export async function fetchLatestReleasesData(lang: string) {
+  const res = await fetch(`/api/catalog/latest-releases?lang=${encodeURIComponent(lang)}`);
+  return res.ok ? res.json() : { cinemaReleases: [], newSeasons: [] };
+}
+
+export async function fetchEditorialCollectionsData(lang: string) {
+  const res = await fetch(`/api/catalog/collections?lang=${encodeURIComponent(lang)}`);
+  return res.ok ? res.json() : { collections: [] };
+}
+
+export async function fetchTdtBaseCatalogData() {
+  const res = await fetch('/api/catalog/tdt');
+  const json = res.ok ? await res.json() : null;
+  return Array.isArray(json?.channels) ? json.channels : [];
+}
+
+export async function fetchFootballBoardData(lang: string) {
+  const res = await fetch(`/api/sports/football-board?lang=${encodeURIComponent(lang)}`);
+  const json = res.ok ? await res.json() : null;
+  return Array.isArray(json?.matches) ? json.matches : [];
+}
+
+export async function fetchLiveScoresData() {
+  const res = await fetch('/api/sports/scores');
+  const json = res.ok ? await res.json() : null;
+  return Array.isArray(json?.scores) ? json.scores : [];
+}
+
+export async function fetchProvidersStatusData(): Promise<ProvidersStatusSummaryPublic> {
+  const res = await fetch('/api/providers/status');
+  if (!res.ok) throw new Error('Failed to load providers status');
+  return (await res.json()) as ProvidersStatusSummaryPublic;
+}
+
+export function useProvidersStatusQuery(enabled = true) {
+  return useQuery<ProvidersStatusSummaryPublic>({
+    queryKey: catalogQueryKeys.providersStatus(),
+    enabled,
+    staleTime: 60_000,
+    queryFn: fetchProvidersStatusData,
+  });
+}
 
 let sharedPushSource: EventSource | null = null;
 let sharedPushSubscribers = 0;

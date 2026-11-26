@@ -14,7 +14,7 @@ export type ClipboxSearchScope = 'all' | 'anime' | 'cinema' | 'movies' | 'series
 
 export interface ClipboxSearchItem {
   id: string;
-  source: 'tmdb' | 'kitsu';
+  source: 'tmdb' | 'kitsu' | 'archive';
   mediaType: 'movie' | 'tv' | 'anime';
   title: string;
   originalTitle?: string;
@@ -26,6 +26,7 @@ export interface ClipboxSearchItem {
   tmdbId?: number;
   kitsuId?: string;
   episodeCount?: number;
+  directMp4Url?: string;
 }
 
 export interface ClipboxPlayerTrack {

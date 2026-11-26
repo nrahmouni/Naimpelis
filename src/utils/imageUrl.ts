@@ -37,3 +37,27 @@ export function extractSafeAmbientColor(seedText: string): string {
   }
   return palette[hash % palette.length] || palette[0];
 }
+
+const prefetchedImageSet = new Set<string>();
+
+export function prefetchImageUrls(
+  urls: Array<string | undefined | null>,
+  opts?: { limit?: number; kind?: 'poster' | 'backdrop' | 'square' }
+): void {
+  if (typeof window === 'undefined' || typeof Image === 'undefined') return;
+  const limit = opts?.limit ?? 12;
+  const size = opts?.kind === 'backdrop' ? 'w780' : opts?.kind === 'square' ? 'w300' : 'w342';
+  let queued = 0;
+  for (const raw of urls) {
+    if (queued >= limit) break;
+    if (!raw || raw.startsWith('data:')) continue;
+    const sized = toTmdbSizedUrl(raw, size);
+    if (!sized || sized === '/icon.svg' || prefetchedImageSet.has(sized)) continue;
+    if (prefetchedImageSet.size > 500) prefetchedImageSet.clear();
+    prefetchedImageSet.add(sized);
+    queued += 1;
+    const img = new Image();
+    img.decoding = 'async';
+    img.src = sized;
+  }
+}

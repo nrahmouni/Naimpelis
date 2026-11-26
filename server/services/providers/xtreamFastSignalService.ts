@@ -10,30 +10,53 @@ import {
   syncProviderCatalog,
   warmDefaultProvidersBackground,
 } from './xtreamMultiProviderService.ts';
+import { detectStreamLanguage } from '../../utils/streamMetaParser.ts';
 
 const QUALITY_AND_TAG_NOISE_RE =
   /\b(?:4k|uhd|fhd|hd|sd|hevc|h\.?265|h\.?264|x264|x265|1080p|720p|vip|raw|backup|multi|es|esp|spa|eng|en|lat|fr|ar|pt|it|de|nl|tr)\b/gi;
 
 const LIVE_CHANNEL_ALIASES: Array<[RegExp, string[]]> = [
-  [/\bla\s*1\b|\btve\s*1\b/i, ['la 1', 'tve 1', 'tve1']],
-  [/\bla\s*2\b|\btve\s*2\b/i, ['la 2', 'tve 2', 'tve2']],
+  [/\bla\s*1\b|\btve\s*1\b/i, ['la 1', 'tve 1', 'tve1', 'la1']],
+  [/\bla\s*2\b|\btve\s*2\b/i, ['la 2', 'tve 2', 'tve2', 'la2']],
   [/\bantena\s*3\b/i, ['antena 3', 'antena3', 'a3']],
+  [/\bcuatro\b/i, ['cuatro', '4']],
   [/\btelecinco\b|\btele\s*5\b/i, ['telecinco', 'tele 5', 't5']],
   [/\bla\s*sexta\b|\blasexta\b/i, ['lasexta', 'la sexta']],
-  [/\bcuatro\b/i, ['cuatro']],
-  [/\b24\s*h\b|\b24\s*horas\b/i, ['24h', '24 horas', 'tve 24h']],
+  [/\b24\s*h\b|\b24\s*horas\b/i, ['24h', '24 horas', 'canal 24 horas', 'tve 24h', '24h tve']],
   [/\bgol\s*play\b|\bgol\s*tv\b/i, ['gol play', 'gol mundial', 'gol']],
   [/\bteledeporte\b|\btdp\b/i, ['teledeporte', 'tdp']],
   [/\besport\s*3\b/i, ['esport 3', 'esport3']],
   [/\btv\s*3\b|\btv3\b/i, ['tv3', 'tv 3']],
+  [/\bneox\b/i, ['neox']],
+  [/\bnova\b/i, ['nova']],
+  [/\bmega\b|\bchiringuito\b/i, ['mega', 'mega spain', 'mega es']],
+  [/\batreseries\b|\ba3s\b/i, ['atreseries', 'a3s', 'atres series']],
+  [/\bfdf\b|factor[ií]a\s*de\s*ficci[oó]n/i, ['fdf', 'factoria de ficcion']],
+  [/\benergy\b/i, ['energy']],
+  [/\bdivinity\b/i, ['divinity']],
+  [/\bbe\s*mad\b|\bbemad\b/i, ['be mad', 'bemad']],
+  [/\bboing\b/i, ['boing']],
+  [/\bclan\b/i, ['clan', 'clan tve', 'clan rtve']],
+  [/\bdmax\b/i, ['dmax', 'discovery max']],
+  [/\bdkiss\b/i, ['dkiss', 'd kiss']],
+  [/\bten\b/i, ['ten', 'ten tv', 'ten spain']],
+  [/\btrece\b|\b13\s*tv\b/i, ['trece', 'trece tv', '13 tv', '13tv']],
   [/\bmovistar\s*laliga\b|\blaliga\s*tv\b/i, ['movistar laliga', 'm laliga', 'laliga tv', 'm+ laliga']],
   [/\bmovistar\s*liga\s*de\s*campeones\b|\bliga\s*de\s*campeones\b|\bchampions\b/i, ['liga de campeones', 'm liga de campeones', 'champions']],
   [/\bdazn\s*laliga\b/i, ['dazn laliga', 'dazn es']],
   [/\bdazn\s*f1\b/i, ['dazn f1', 'm formula 1']],
-  [/\bmega\b|\bchiringuito\b/i, ['mega']],
   [/\brealmadrid\s*tv\b|\breal\s*madrid\s*tv\b/i, ['real madrid tv', 'realmadrid tv']],
   [/\bbein\s*sports\b/i, ['bein sports', 'bein']],
 ];
+
+const AMBIGUOUS_TDT_CHANNEL_RE =
+  /^(?:ten|mega|nova|energy|fdf|clan|boing|cuatro|trece|24\s*h|la\s*1|la\s*2|neox|divinity|dmax|dkiss)$/i;
+
+const SPANISH_TDT_POSITIVE_RE =
+  /\b(?:ES|ESP|SPAIN|ESPAÑA|ESPANA|TDT|CASTELLANO)\b|^\s*(?:ES|ESP)\s*[:|\-]/i;
+
+const NON_SPANISH_HOMONYM_RE =
+  /\b(?:SPORTS?|GREECE|GREEK|INDIA|INDIAN|TURK|ARAB|LATINO|MEXICO|ARGENTINA|COLOMBIA|CHILE|PERU|USA|UK|FRANCE|FRENCH|ITALIA|ITALY|GERMANY|PORTUGAL|BRAZIL|BRASIL|POLAND|CZECH|NRJ|ROMANIA|BULGARIA)\b/i;
 
 export function normalizeProviderMatchTitle(raw: string): string {
   return String(raw || '')
@@ -58,24 +81,23 @@ function normalizeRawSearchable(raw: string): string {
     .trim();
 }
 
-function detectProviderTagLang(rawName: string, rawCategory: string): string {
-  const hay = ` ${rawName} ${rawCategory} `.toUpperCase();
-  if (/\b(?:CASTELLANO|ESPA[ÑN]A|ESPA[ÑN]OL|SPAIN|ES|ESP|SPA)\b/.test(hay)) return 'ES';
-  if (/\b(?:LATINO|LAT|MX|AR)\b/.test(hay)) return 'LAT';
-  if (/\b(?:VOSE|SUB)\b/.test(hay)) return 'VOSE';
-  if (/\b(?:CATALA|CATALÀ|CAT)\b/.test(hay)) return 'CAT';
-  if (/\b(?:ENGLISH|ENG|US|UK|EN)\b/.test(hay)) return 'EN';
-  if (/\b(?:FRENCH|FRANCAIS|FR)\b/.test(hay)) return 'FR';
-  if (/\b(?:ARABIC|ARABE|AR)\b/.test(hay)) return 'AR';
-  return 'ES';
+function detectProviderTagLang(
+  rawName: string,
+  rawCategory: string,
+  kind: 'live' | 'movie' | 'series' = 'movie'
+): string {
+  return detectStreamLanguage(rawName, rawCategory, kind).lang;
 }
 
 function scoreLanguageAffinity(detectedLang: string, preferLang: string): number {
   const pref = String(preferLang || 'ES').toUpperCase();
-  if (detectedLang === pref) return 40;
-  if (pref === 'ES' && detectedLang === 'LAT') return 20;
-  if (pref === 'LAT' && detectedLang === 'ES') return 18;
-  if (pref === 'ES' && detectedLang === 'VOSE') return 10;
+  const det = String(detectedLang || 'INTL').toUpperCase();
+  if (det === pref) return 45;
+  if (pref !== 'AR' && det === 'AR') return -60;
+  if (pref === 'ES' && det === 'LAT') return 20;
+  if (pref === 'LAT' && det === 'ES') return 18;
+  if (pref === 'ES' && det === 'VOSE') return 12;
+  if (det === 'EN') return 4;
   return 0;
 }
 
@@ -123,7 +145,15 @@ function scoreTextMatch(
   return best;
 }
 
-async function ensureFastWarmCatalogsAvailable(): Promise<void> {
+export function isPreferredSharkProSpainLjli(item: Pick<ProviderLiveItem, 'providerId' | 'categoryName'>): boolean {
+  return (
+    String(item.providerId || '').toLowerCase() === 'shark-pro' &&
+    /spain\s*[-_]\s*(?:ljli|أسبانيا|اسبانيا)/i.test(String(item.categoryName || ''))
+  );
+}
+
+export async function ensureFastWarmCatalogsAvailable(): Promise<void> {
+  if (process.env.NODE_ENV === 'test' || process.env.VITEST) return;
   const existing = getAllCachedProviderCatalogs();
   if (existing.length >= 2) return;
   warmDefaultProvidersBackground();
@@ -176,14 +206,22 @@ export async function searchFastProviderIndex(
     for (let i = 0; i < cat.vodStreams.length; i++) {
       const item = cat.vodStreams[i];
       const normName = normalizeProviderMatchTitle(item.name);
-      const s = scoreTextMatch(normName, normalizeRawSearchable(item.name), variants, item.year);
-      if (s >= 58) scoredMovies.push({ item, score: s });
+      const base = scoreTextMatch(normName, normalizeRawSearchable(item.name), variants, item.year);
+      if (base >= 58) {
+        const lang = detectProviderTagLang(item.name, item.categoryName, 'movie');
+        const langBoost = lang === 'ES' ? 25 : lang === 'LAT' ? 14 : lang === 'VOSE' ? 8 : lang === 'AR' ? -30 : 0;
+        scoredMovies.push({ item, score: base + langBoost });
+      }
     }
     for (let i = 0; i < cat.seriesList.length; i++) {
       const item = cat.seriesList[i];
       const normName = normalizeProviderMatchTitle(item.name);
-      const s = scoreTextMatch(normName, normalizeRawSearchable(item.name), variants, item.year);
-      if (s >= 58) scoredSeries.push({ item, score: s });
+      const base = scoreTextMatch(normName, normalizeRawSearchable(item.name), variants, item.year);
+      if (base >= 58) {
+        const lang = detectProviderTagLang(item.name, item.categoryName, 'series');
+        const langBoost = lang === 'ES' ? 25 : lang === 'LAT' ? 14 : lang === 'VOSE' ? 8 : lang === 'AR' ? -30 : 0;
+        scoredSeries.push({ item, score: base + langBoost });
+      }
     }
   }
 
@@ -221,19 +259,35 @@ export async function findFastProviderLiveSignals(
   }
   const variants = Array.from(variantSet);
 
+  const requiresSpanishIndicator =
+    AMBIGUOUS_TDT_CHANNEL_RE.test(cleanTitle) || AMBIGUOUS_TDT_CHANNEL_RE.test(rawTitle);
+
   const candidates: Array<{ item: ProviderLiveItem; score: number }> = [];
   for (const cat of catalogs) {
     for (let i = 0; i < cat.liveStreams.length; i++) {
       const item = cat.liveStreams[i];
+      const hay = ` ${item.name} ${item.categoryName} `;
+      if (requiresSpanishIndicator) {
+        if (!SPANISH_TDT_POSITIVE_RE.test(hay) || NON_SPANISH_HOMONYM_RE.test(hay)) {
+          continue;
+        }
+      }
       const normName = normalizeProviderMatchTitle(item.name);
       const rawName = normalizeRawSearchable(item.name);
       let score = scoreTextMatch(normName, rawName, variants);
       if (score <= 0) continue;
 
-      const hay = ` ${item.name} ${item.categoryName} `.toUpperCase();
-      if (/\b(ES|ESPAÑA|SPAIN|TDT)\b/.test(hay)) score += 16;
-      if (/\b(FHD|HD|4K|UHD)\b/.test(hay)) score += 6;
-      if (/\b(SD|LOW)\b/.test(hay)) score -= 4;
+      const hayUpper = hay.toUpperCase();
+      if (/\b(ES|ESP|ESPAÑA|SPAIN|TDT)\b/.test(hayUpper)) score += 16;
+      if (/\b(4K|UHD)\b/.test(hayUpper)) score += 14;
+      else if (/\b(FHD|1080P?|HEVC)\b/.test(hayUpper)) score += 10;
+      else if (/\bHD\b/.test(hayUpper)) score += 6;
+      if (/\b(SD|LOW)\b/.test(hayUpper)) score -= 6;
+      if (isPreferredSharkProSpainLjli(item)) {
+        score += /\b(FHD|1080P?|4K|UHD)\b/.test(hayUpper) ? 45 : 28;
+      } else if (/spain\s*[-_]\s*(?:ljli|أسبانيا|اسبانيا)/i.test(item.categoryName)) {
+        score += 14;
+      }
       candidates.push({ item, score });
     }
   }
@@ -246,14 +300,19 @@ export async function findFastProviderLiveSignals(
     if (score < 62) break;
     if (usedProviders.has(item.providerId) && picked.length >= 2) continue;
     usedProviders.add(item.providerId);
+    const isPriorityShark = isPreferredSharkProSpainLjli(item);
     picked.push({
-      id: `fast-${item.id}`,
-      label: `Señal Rápida · ${item.providerName}`,
-      lang: detectProviderTagLang(item.name, item.categoryName),
+      id: isPriorityShark ? `fast-priority-${item.id}` : `fast-${item.id}`,
+      label: isPriorityShark
+        ? `Prioritaria · ${item.name} · ${item.providerName} (${item.categoryName})`
+        : `Señal Rápida · ${item.providerName}`,
+      lang: detectProviderTagLang(item.name, item.categoryName, 'live'),
+      providerId: item.providerId,
+      providerName: item.providerName,
       sourceUrl: item.playbackUrl,
       resolvedStreamUrl: item.playbackUrl,
       resolverType: 'direct_hls',
-    });
+    } as TrackRecord);
     if (picked.length >= limit) break;
   }
 
@@ -306,7 +365,7 @@ export async function findFastProviderVodOrSeriesSignals(params: {
         const rawName = normalizeRawSearchable(item.name);
         const baseScore = scoreTextMatch(normName, rawName, variants, year);
         if (baseScore < 65) continue;
-        const lang = detectProviderTagLang(item.name, item.categoryName);
+        const lang = detectProviderTagLang(item.name, item.categoryName, 'movie');
         const score = baseScore + scoreLanguageAffinity(lang, preferLang);
         candidates.push({ item, score, lang });
       }
@@ -342,7 +401,7 @@ export async function findFastProviderVodOrSeriesSignals(params: {
       const rawName = normalizeRawSearchable(item.name);
       const baseScore = scoreTextMatch(normName, rawName, variants, year);
       if (baseScore < 65) continue;
-      const lang = detectProviderTagLang(item.name, item.categoryName);
+      const lang = detectProviderTagLang(item.name, item.categoryName, 'series');
       seriesMatches.push({
         item,
         score: baseScore + scoreLanguageAffinity(lang, preferLang),
@@ -372,10 +431,11 @@ export async function findFastProviderVodOrSeriesSignals(params: {
       const eps = info.episodesBySeason[String(season)] || [];
       const ep = eps.find((e) => e.episodeNum === episode);
       if (!ep) return null;
+      const epLang = detectProviderTagLang(`${item.name} ${ep.title}`, item.categoryName, 'series');
       return {
         id: `fast-${ep.id}`,
         label: `Fuente Directa · ${item.providerName}`,
-        lang,
+        lang: epLang !== 'INTL' ? epLang : lang,
         sourceUrl: ep.playbackUrl,
         resolvedStreamUrl: ep.playbackUrl,
         resolverType: ep.ext === 'm3u8' ? ('direct_hls' as const) : ('direct_mp4' as const),
@@ -455,21 +515,32 @@ export interface EnrichableTdtChannel {
   }>;
 }
 
-/**
- * Enriches existing Spanish TDT channels with fast verified provider streams at the front
- * of their track list, and appends clean extra Spanish TDT channels discovered across warmed servers.
- */
 export function enrichTdtCatalogWithProviderChannels<T extends EnrichableTdtChannel>(
-  baseChannels: T[]
+  baseChannels: T[],
+  opts?: { preferQualityFirst?: boolean }
 ): T[] {
   const spanishItems = collectSpanishProviderLiveItems();
   if (spanishItems.length === 0) return baseChannels;
+
+  const inferItemQuality = (name: string): { label: string; boost: number } => {
+    const up = ` ${name} `.toUpperCase();
+    if (/\b(4K|UHD|2160P?)\b/.test(up) && !/DANA\s*4K|VOD\s*4K/i.test(name)) {
+      return { label: '4K', boost: opts?.preferQualityFirst ? 28 : 16 };
+    }
+    if (/\b(FHD|1080P?|FULL\s*HD|HEVC)\b/.test(up)) {
+      return { label: '1080p', boost: opts?.preferQualityFirst ? 18 : 10 };
+    }
+    if (/\b(HD|720P?)\b/.test(up)) {
+      return { label: '720p', boost: opts?.preferQualityFirst ? 8 : 4 };
+    }
+    return { label: 'HD', boost: 0 };
+  };
 
   const indexedSpanish = spanishItems.map((item) => ({
     item,
     cleanName: normalizeProviderMatchTitle(item.name),
     rawNorm: normalizeRawSearchable(item.name),
-    isFhdOrHevc: /\b(FHD|4K|UHD|HEVC|1080)\b/i.test(item.name),
+    qualityMeta: inferItemQuality(item.name),
   }));
 
   const matchedProviderNormNames = new Set<string>();
@@ -488,9 +559,10 @@ export function enrichTdtCatalogWithProviderChannels<T extends EnrichableTdtChan
     const variantList = Array.from(variants);
     if (variantList.length === 0) return ch;
 
-    const hits: Array<{ item: ProviderLiveItem; score: number }> = [];
+    const hits: Array<{ item: ProviderLiveItem; score: number; qualityLabel: string }> = [];
     for (const entry of indexedSpanish) {
       if (!entry.cleanName) continue;
+      if (NON_SPANISH_HOMONYM_RE.test(`${entry.item.name} ${entry.item.categoryName}`)) continue;
       let score = 0;
       for (const v of variantList) {
         if (entry.cleanName === v) {
@@ -505,8 +577,13 @@ export function enrichTdtCatalogWithProviderChannels<T extends EnrichableTdtChan
         }
       }
       if (score >= 85) {
-        if (entry.isFhdOrHevc) score += 6;
-        hits.push({ item: entry.item, score });
+        score += entry.qualityMeta.boost;
+        if (isPreferredSharkProSpainLjli(entry.item)) {
+          score += /\b(FHD|1080P?|4K|UHD)\b/i.test(entry.item.name) ? 60 : 40;
+        } else if (/spain\s*[-_]\s*(?:ljli|أسبانيا|اسبانيا)/i.test(entry.item.categoryName)) {
+          score += 15;
+        }
+        hits.push({ item: entry.item, score, qualityLabel: entry.qualityMeta.label });
       }
     }
 
@@ -517,19 +594,24 @@ export function enrichTdtCatalogWithProviderChannels<T extends EnrichableTdtChan
     const providerSignals: EnrichableTdtChannel['channels'] = [];
     const seenProviders = new Set<string>();
 
-    for (const { item } of hits) {
+    for (const { item, qualityLabel } of hits) {
       matchedProviderNormNames.add(normalizeProviderMatchTitle(item.name));
       if (seenProviders.has(item.providerId) || existingUrls.has(item.playbackUrl)) continue;
       seenProviders.add(item.providerId);
+      const isPriorityShark = isPreferredSharkProSpainLjli(item);
       providerSignals.push({
-        id: `${ch.id}-fast-${item.providerId}`,
-        label: `TDT Rápida · ${item.providerName}`,
+        id: isPriorityShark ? `${ch.id}-priority-${item.providerId}` : `${ch.id}-fast-${item.providerId}`,
+        label: isPriorityShark
+          ? `Prioritaria · ${item.name} · ${item.providerName} (${item.categoryName})`
+          : `TDT Rápida · ${item.providerName}`,
         lang: 'ES',
-        quality: /\b(4k|uhd)\b/i.test(item.name) ? '4K' : 'HD',
+        quality: qualityLabel,
+        providerId: item.providerId,
+        providerName: item.providerName,
         sourceUrl: item.playbackUrl,
         resolverType: 'tdt_hls',
-      });
-      if (providerSignals.length >= 2) break;
+      } as EnrichableTdtChannel['channels'][number]);
+      if (providerSignals.length >= 4) break;
     }
 
     if (providerSignals.length === 0) return ch;

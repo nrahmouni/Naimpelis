@@ -148,16 +148,39 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         ? Math.floor(videoState.currentTime)
         : 0;
 
+    let didSwitchBackupUrl = false;
     const triggerBackupSwitch = (reason: string) => {
       const now = Date.now();
+      const hasMultiTracks = (videoState.tracks?.length || 0) > 1;
+      const hasBackupUrl = Boolean(videoState.backupStreamUrl) && !didSwitchBackupUrl;
       if (
         cancelled ||
-        !onAutoSwitchBackupTrack ||
-        (videoState.tracks?.length || 0) <= 1 ||
+        (!hasMultiTracks && !hasBackupUrl) ||
         (didTriggerBackupSwitch && now - lastBackupSwitchAt < 10_000)
       ) {
         return false;
       }
+      if (!hasMultiTracks && hasBackupUrl && videoState.backupStreamUrl) {
+        didSwitchBackupUrl = true;
+        didTriggerBackupSwitch = true;
+        lastBackupSwitchAt = now;
+        setStreamRefreshPhase('switching');
+        setIsBuffering(true);
+        if (hlsRef.current && videoState.mode === 'hls') {
+          try {
+            hlsRef.current.stopLoad();
+            hlsRef.current.loadSource(videoState.backupStreamUrl);
+            hlsRef.current.startLoad(-1);
+            return true;
+          } catch {
+            // fall through to direct src switch
+          }
+        }
+        video.src = videoState.backupStreamUrl;
+        video.load();
+        return true;
+      }
+      if (!onAutoSwitchBackupTrack) return false;
       didTriggerBackupSwitch = true;
       lastBackupSwitchAt = now;
       setStreamRefreshPhase('switching');
@@ -218,6 +241,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
           scheduleHideControls();
         } catch {
           setLocalPlaying(false);
+          clearBufferingIndicator();
         }
       }
     };
@@ -230,6 +254,14 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         /Tizen|SMART-TV|Web0S|webOS|BRAVIA|VIDAA|NetCast|AFT[A-Z]/i.test(
           navigator.userAgent || ''
         );
+      const savedAbrEstimate = (() => {
+        try {
+          const raw = Number(localStorage.getItem('riffan_abr_bw_bps') || 0);
+          return Number.isFinite(raw) && raw >= 800_000 && raw <= 35_000_000 ? raw : 7_500_000;
+        } catch {
+          return 7_500_000;
+        }
+      })();
       const hls = new Hls({
         enableWorker: !isSmartTvUa,
         lowLatencyMode: false,
@@ -248,7 +280,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         nudgeMaxRetry: videoState.isLive ? 10 : 10,
         stretchShortVideoTrack: !videoState.isLive,
         maxAudioFramesDrift: videoState.isLive ? 3 : 4,
-        abrEwmaDefaultEstimate: 7_500_000,
+        abrEwmaDefaultEstimate: savedAbrEstimate,
         manifestLoadingTimeOut: isDvbLiveUrl ? 9000 : 12000,
         manifestLoadingMaxRetry: isDvbLiveUrl ? 4 : 6,
         manifestLoadingRetryDelay: 300,
@@ -408,6 +440,49 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
               }
             }
           }, 1000);
+        } else {
+          if (frameHealthInterval) clearInterval(frameHealthInterval);
+          let vodStuckTicks = 0;
+          let vodLastTime = Number(video.currentTime || 0);
+          frameHealthInterval = setInterval(() => {
+            if (cancelled || !video || video.paused || hlsRef.current !== hls) return;
+            const cur = Number(video.currentTime || 0);
+            const advanced = Math.abs(cur - vodLastTime) >= 0.15;
+            if (advanced && video.readyState >= 3) {
+              vodLastTime = cur;
+              vodStuckTicks = 0;
+              return;
+            }
+            vodLastTime = cur;
+            vodStuckTicks += 1;
+            if (vodStuckTicks === 3) {
+              setStreamRefreshPhase('recovering');
+              setIsBuffering(true);
+              try {
+                hls.startLoad();
+              } catch {
+                // ignore
+              }
+            } else if (vodStuckTicks === 5) {
+              try {
+                hls.recoverMediaError();
+              } catch {
+                // ignore
+              }
+            } else if (vodStuckTicks >= 7) {
+              vodStuckTicks = 0;
+              if (!triggerBackupSwitch('vod_startup_stall')) {
+                clearBufferingIndicator();
+                setStreamError(
+                  pickLang(lang, {
+                    es: 'Esta señal no responde ahora mismo. Pulsa Reintentar o elige otro servidor.',
+                    ca: 'Aquest senyal no respon ara mateix. Prem Reintentar o tria un altre servidor.',
+                    en: 'This stream is not responding right now. Press Retry or choose another server.',
+                  })
+                );
+              }
+            }
+          }, 1500);
         }
       });
 
@@ -441,17 +516,60 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
       let networkRecoveries = 0;
       let parsingBurstErrors = 0;
       let liveNetworkStallBurst = 0;
+      let vodNetworkStallBurst = 0;
       let lastNonFatalRecoverAt = 0;
 
+      let lastAbrSavedAt = 0;
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
         networkRecoveries = 0;
         parsingBurstErrors = 0;
         liveNetworkStallBurst = 0;
+        vodNetworkStallBurst = 0;
         setStreamError(null);
+        if (video.readyState >= 2 && (!video.paused || !videoState.isPlaying)) {
+          clearBufferingIndicator();
+        }
+        const nowAbr = Date.now();
+        if (nowAbr - lastAbrSavedAt > 15_000) {
+          lastAbrSavedAt = nowAbr;
+          const bw = Number((hls as unknown as { bandwidthEstimate?: number }).bandwidthEstimate || 0);
+          if (Number.isFinite(bw) && bw >= 800_000 && bw <= 35_000_000) {
+            try {
+              localStorage.setItem('riffan_abr_bw_bps', String(Math.round(bw)));
+            } catch {
+              // ignore storage errors
+            }
+          }
+        }
       });
 
       hls.on(Hls.Events.ERROR, (_evt, data) => {
         if (!data.fatal) {
+          if (
+            !videoState.isLive &&
+            (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
+              data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR ||
+              data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT ||
+              data.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR ||
+              data.details === Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT)
+          ) {
+            vodNetworkStallBurst += 1;
+            if (vodNetworkStallBurst === 2) {
+              setStreamRefreshPhase('recovering');
+              setIsBuffering(true);
+              try {
+                hls.startLoad();
+              } catch {
+                // ignore
+              }
+            } else if (vodNetworkStallBurst >= 4 && Date.now() - lastNonFatalRecoverAt > 6000) {
+              lastNonFatalRecoverAt = Date.now();
+              if (!triggerBackupSwitch(`vod_${data.details}`)) {
+                clearBufferingIndicator();
+              }
+            }
+            return;
+          }
           if (
             videoState.isLive &&
             (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
@@ -647,12 +765,47 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         }
       }
     } else if (videoState.mode === 'direct') {
+      let retriedWithTranscode = /[?&]transcode=1\b/i.test(videoState.url);
+      let directStallTimer: ReturnType<typeof setTimeout> | null = null;
+      const isTranscodableProxy = (url: string) =>
+        /^\/api\/(?:stream|xtream\/vod\/|providers\/stream\/)/i.test(url) ||
+        /^\/api\/providers\/(?:vod|series-stream)\//i.test(url);
+
+      const clearDirectStallTimer = () => {
+        if (directStallTimer) {
+          clearTimeout(directStallTimer);
+          directStallTimer = null;
+        }
+      };
+
+      const attemptDirectTranscodeRetry = () => {
+        if (cancelled || retriedWithTranscode || !isTranscodableProxy(videoState.url)) {
+          return false;
+        }
+        retriedWithTranscode = true;
+        const sep = videoState.url.includes('?') ? '&' : '?';
+        const transcodeUrl = `${videoState.url}${sep}transcode=1`;
+        setStreamRefreshPhase('recovering');
+        setIsBuffering(true);
+        setStreamError(null);
+        video.src = transcodeUrl;
+        video.load();
+        return true;
+      };
+
       const onDirectLoaded = () => {
+        clearDirectStallTimer();
         setIsBuffering(false);
+        setStreamError(null);
         startPlaybackSafely();
       };
+
       const onDirectError = () => {
+        clearDirectStallTimer();
         if (cancelled) return;
+        if (attemptDirectTranscodeRetry()) {
+          return;
+        }
         if (triggerBackupSwitch('direct_mp4_error')) {
           setIsBuffering(true);
           return;
@@ -666,12 +819,26 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
           })
         );
       };
+
+      const initialDirectTime = Number(video.currentTime || 0);
+      directStallTimer = setTimeout(() => {
+        if (cancelled) return;
+        const genuinelyStarved =
+          !video.paused && video.readyState <= 2 && Math.abs((video.currentTime || 0) - initialDirectTime) < 0.05;
+        if (genuinelyStarved) {
+          if (!attemptDirectTranscodeRetry()) {
+            triggerBackupSwitch('direct_mp4_stall');
+          }
+        }
+      }, 5_500);
+
       cleanupDirectListeners = () => {
+        clearDirectStallTimer();
         video.removeEventListener('loadedmetadata', onDirectLoaded);
         video.removeEventListener('error', onDirectError);
       };
-      video.addEventListener('loadedmetadata', onDirectLoaded, { once: true });
-      video.addEventListener('error', onDirectError, { once: true });
+      video.addEventListener('loadedmetadata', onDirectLoaded);
+      video.addEventListener('error', onDirectError);
       video.src = videoState.url;
     }
 
@@ -777,7 +944,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
             if (videoRef.current) {
               videoRef.current.playbackRate = playbackSpeedRef.current || 1;
             }
-          }, 2600);
+          }, 3_000);
         } catch {
           // ignore
         }
