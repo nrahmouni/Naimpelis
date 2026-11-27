@@ -69,6 +69,14 @@ export interface ParsedXtreamVodMeta {
 }
 
 const seriesInfoCache = new LruTtlCache<string, XtreamSeriesInfoPayload>(200, 25 * 60 * 1000);
+const vodProbeResultCache = new LruTtlCache<
+  string,
+  { ok: boolean; target: ParsedInternalXtreamVodTarget | null }
+>(400, 90 * 1000);
+const inFlightVodProbeMap = new Map<
+  string,
+  Promise<{ ok: boolean; target: ParsedInternalXtreamVodTarget | null }>
+>();
 
 const LANG_LABEL_MAP: Record<XtreamDetectedLang, string> = {
   ES: 'Castellano',
@@ -427,6 +435,140 @@ function computeOptionSortKey(opt: XtreamMatchedMediaOption, preferLang?: string
   return langRank * 1000 + opt.qualityTier * 100 - Math.min(99, opt.score);
 }
 
+interface IndexedVodMovieEntry {
+  item: XtreamVodStreamItem;
+  catName: string;
+  parsed: ParsedXtreamVodMeta;
+}
+
+interface IndexedSeriesEntry {
+  item: XtreamSeriesItem;
+  catName: string;
+  parsed: ParsedXtreamVodMeta;
+  serYear?: string;
+}
+
+interface InvertedSearchIndex<T> {
+  versionKey: string;
+  entries: T[];
+  tokenPostings: Map<string, number[]>;
+}
+
+let cachedVodMovieIndex: InvertedSearchIndex<IndexedVodMovieEntry> | null = null;
+let cachedSeriesIndex: InvertedSearchIndex<IndexedSeriesEntry> | null = null;
+export const cachedLiveTokenMap = new Map<string, number[]>();
+
+function addEntryTokensToMap(
+  tokenMap: Map<string, number[]>,
+  tokens: string[],
+  entryIdx: number
+): void {
+  const seen = new Set<string>();
+  for (const tok of tokens) {
+    if (tok.length < 2 || seen.has(tok)) continue;
+    seen.add(tok);
+    let bucket = tokenMap.get(tok);
+    if (!bucket) {
+      bucket = [];
+      tokenMap.set(tok, bucket);
+    }
+    bucket.push(entryIdx);
+  }
+}
+
+export function getIndexedVodMovies(
+  vodStreams: XtreamVodStreamItem[],
+  vodCategories: Array<{ id: string; providerId?: string; name: string }>,
+  versionKey?: string
+): InvertedSearchIndex<IndexedVodMovieEntry> {
+  const key = versionKey || `vod:${vodStreams.length}:${vodCategories.length}`;
+  if (cachedVodMovieIndex && cachedVodMovieIndex.versionKey === key) {
+    return cachedVodMovieIndex;
+  }
+  const catLookup = buildCategoryLookup(vodCategories);
+  const tokenPostings = new Map<string, number[]>();
+  const entries: IndexedVodMovieEntry[] = vodStreams.map((item, idx) => {
+    const pid = item.providerId || 'primary';
+    const catName =
+      catLookup.get(item.categoryId) ||
+      catLookup.get(`${pid}:${item.categoryId}`) ||
+      'VOD';
+    const parsed = parseXtreamVodTitleMeta(item.name, catName, item.containerExtension);
+    addEntryTokensToMap(tokenPostings, tokenizeMeaningful(parsed.cleanTitle), idx);
+    return { item, catName, parsed };
+  });
+  cachedVodMovieIndex = { versionKey: key, entries, tokenPostings };
+  return cachedVodMovieIndex;
+}
+
+export function getIndexedSeries(
+  seriesList: XtreamSeriesItem[],
+  seriesCategories: Array<{ id: string; providerId?: string; name: string }>,
+  versionKey?: string
+): InvertedSearchIndex<IndexedSeriesEntry> {
+  const key = versionKey || `ser:${seriesList.length}:${seriesCategories.length}`;
+  if (cachedSeriesIndex && cachedSeriesIndex.versionKey === key) {
+    return cachedSeriesIndex;
+  }
+  const catLookup = buildCategoryLookup(seriesCategories);
+  const tokenPostings = new Map<string, number[]>();
+  const entries: IndexedSeriesEntry[] = seriesList.map((item, idx) => {
+    const pid = item.providerId || 'primary';
+    const catName =
+      catLookup.get(item.categoryId) ||
+      catLookup.get(`${pid}:${item.categoryId}`) ||
+      'Series';
+    const parsed = parseXtreamVodTitleMeta(item.name, catName, '');
+    const serYear =
+      parsed.year ||
+      (item.releaseDate ? String(item.releaseDate).match(/(19\d{2}|20[0-3]\d)/)?.[1] : undefined);
+    addEntryTokensToMap(tokenPostings, tokenizeMeaningful(parsed.cleanTitle), idx);
+    return { item, catName, parsed, serYear };
+  });
+  cachedSeriesIndex = { versionKey: key, entries, tokenPostings };
+  return cachedSeriesIndex;
+}
+
+export function querySearchIndexCandidates<T>(
+  index: InvertedSearchIndex<T>,
+  hints: Array<{ tokens: string[] }>
+): T[] {
+  const candidateIdxSet = new Set<number>();
+  let usedTokenQuery = false;
+
+  for (const h of hints) {
+    const toks = h.tokens.filter((t) => t.length >= 2);
+    if (toks.length === 0) continue;
+    const postings = toks
+      .map((t) => index.tokenPostings.get(t) || [])
+      .sort((a, b) => a.length - b.length);
+    if (postings[0].length === 0) continue;
+    usedTokenQuery = true;
+
+    if (postings.length === 1) {
+      for (const idx of postings[0]) candidateIdxSet.add(idx);
+    } else {
+      const smallest = postings[0];
+      const anchor = new Set(smallest);
+      const secondSet = new Set(postings[1]);
+      for (const idx of anchor) {
+        if (secondSet.has(idx)) candidateIdxSet.add(idx);
+      }
+      if (candidateIdxSet.size === 0) {
+        for (const idx of smallest.slice(0, 250)) candidateIdxSet.add(idx);
+      }
+    }
+  }
+
+  if (!usedTokenQuery) return index.entries;
+  const result: T[] = [];
+  for (const idx of candidateIdxSet) {
+    const entry = index.entries[idx];
+    if (entry) result.push(entry);
+  }
+  return result;
+}
+
 export async function findXtreamMovieMatches(params: {
   titleHints: string[];
   yearHint?: string;
@@ -441,17 +583,17 @@ export async function findXtreamMovieMatches(params: {
     return { options: [], tracks: [] };
   }
 
-  const catLookup = buildCategoryLookup(catalog.vodCategories);
   const providerOrder = new Map(getAllXtreamProviders().map((p, idx) => [p.id, idx]));
   const matches: XtreamMatchedMediaOption[] = [];
+  const indexed = getIndexedVodMovies(
+    catalog.vodStreams as XtreamVodStreamItem[],
+    catalog.vodCategories,
+    `vod:${catalog.syncedAt}:${catalog.vodStreams.length}`
+  );
+  const candidateEntries = querySearchIndexCandidates(indexed, hints);
 
-  for (const item of catalog.vodStreams as XtreamVodStreamItem[]) {
+  for (const { item, catName, parsed } of candidateEntries) {
     const pid = item.providerId || 'primary';
-    const catName =
-      catLookup.get(item.categoryId) ||
-      catLookup.get(`${pid}:${item.categoryId}`) ||
-      'VOD';
-    const parsed = parseXtreamVodTitleMeta(item.name, catName, item.containerExtension);
     const score = scoreTitleMatchAgainstHints(parsed.cleanTitle, parsed.year, hints, params.yearHint);
     if (score < 76) continue;
 
@@ -524,20 +666,17 @@ export async function findXtreamSeriesMatches(params: {
   const catalog = await loadUnifiedXtreamCatalogFast(2800);
   if (!catalog || catalog.series.length === 0) return [];
 
-  const catLookup = buildCategoryLookup(catalog.seriesCategories);
   const providerOrder = new Map(getAllXtreamProviders().map((p, idx) => [p.id, idx]));
   const matches: XtreamMatchedMediaOption[] = [];
+  const indexed = getIndexedSeries(
+    catalog.series as XtreamSeriesItem[],
+    catalog.seriesCategories,
+    `ser:${catalog.syncedAt}:${catalog.series.length}`
+  );
+  const candidateEntries = querySearchIndexCandidates(indexed, hints);
 
-  for (const ser of catalog.series as XtreamSeriesItem[]) {
+  for (const { item: ser, catName, parsed, serYear } of candidateEntries) {
     const pid = ser.providerId || 'primary';
-    const catName =
-      catLookup.get(ser.categoryId) ||
-      catLookup.get(`${pid}:${ser.categoryId}`) ||
-      'Series';
-    const parsed = parseXtreamVodTitleMeta(ser.name, catName, '');
-    const serYear =
-      parsed.year ||
-      (ser.releaseDate ? String(ser.releaseDate).match(/(19\d{2}|20[0-3]\d)/)?.[1] : undefined);
     const score = scoreTitleMatchAgainstHints(parsed.cleanTitle, serYear, hints, params.yearHint);
     if (score < 76) continue;
 
@@ -734,42 +873,65 @@ export async function probeInternalXtreamVodUrl(
     return { ok: false, target: null };
   }
 
-  if (target.source === 'providers') {
-    const provProbe = await resolveProviderVodOrSeriesUrl(
+  const cacheKey = `${target.source}:${target.providerId}:${target.kind}:${target.streamId}:${target.ext}`;
+  const cached = vodProbeResultCache.get(cacheKey);
+  if (cached) return cached;
+
+  const existingInFlight = inFlightVodProbeMap.get(cacheKey);
+  if (existingInFlight) return existingInFlight;
+
+  const runProbe = async (): Promise<{ ok: boolean; target: ParsedInternalXtreamVodTarget | null }> => {
+    if (target.source === 'providers') {
+      const provProbe = await resolveProviderVodOrSeriesUrl(
+        target.providerId,
+        target.kind,
+        target.streamId,
+        target.ext,
+        timeoutMs
+      ).catch(() => ({ ok: false }));
+      if (provProbe.ok) {
+        const res = { ok: true, target };
+        vodProbeResultCache.set(cacheKey, res);
+        return res;
+      }
+      const fallbackProbe = await resolveUpstreamVodOrSeriesUrl(
+        target.streamId,
+        target.ext,
+        target.providerId,
+        target.kind === 'series' ? 'series' : 'vod'
+      ).catch(() => ({ ok: false }));
+      const res = { ok: Boolean(fallbackProbe.ok), target };
+      if (res.ok) vodProbeResultCache.set(cacheKey, res);
+      return res;
+    }
+
+    const xtProbe = await resolveUpstreamVodOrSeriesUrl(
+      target.streamId,
+      target.ext,
+      target.providerId,
+      target.kind === 'series' ? 'series' : 'vod'
+    ).catch(() => ({ ok: false }));
+    if (xtProbe.ok) {
+      const res = { ok: true, target };
+      vodProbeResultCache.set(cacheKey, res);
+      return res;
+    }
+    const provFallback = await resolveProviderVodOrSeriesUrl(
       target.providerId,
       target.kind,
       target.streamId,
       target.ext,
       timeoutMs
     ).catch(() => ({ ok: false }));
-    if (provProbe.ok) {
-      return { ok: true, target };
-    }
-    const fallbackProbe = await resolveUpstreamVodOrSeriesUrl(
-      target.streamId,
-      target.ext,
-      target.providerId,
-      target.kind === 'series' ? 'series' : 'vod'
-    ).catch(() => ({ ok: false }));
-    return { ok: Boolean(fallbackProbe.ok), target };
-  }
+    const res = { ok: Boolean(provFallback.ok), target };
+    if (res.ok) vodProbeResultCache.set(cacheKey, res);
+    return res;
+  };
 
-  const xtProbe = await resolveUpstreamVodOrSeriesUrl(
-    target.streamId,
-    target.ext,
-    target.providerId,
-    target.kind === 'series' ? 'series' : 'vod'
-  ).catch(() => ({ ok: false }));
-  if (xtProbe.ok) {
-    return { ok: true, target };
-  }
-  const provFallback = await resolveProviderVodOrSeriesUrl(
-    target.providerId,
-    target.kind,
-    target.streamId,
-    target.ext,
-    timeoutMs
-  ).catch(() => ({ ok: false }));
-  return { ok: Boolean(provFallback.ok), target };
+  const probePromise = runProbe().finally(() => {
+    inFlightVodProbeMap.delete(cacheKey);
+  });
+  inFlightVodProbeMap.set(cacheKey, probePromise);
+  return probePromise;
 }
 

@@ -212,14 +212,18 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
               left: '50%',
               width: `${p.viewportDims.h}px`,
               height: `${p.viewportDims.w}px`,
-              maxWidth: `${p.viewportDims.h}px`,
-              maxHeight: `${p.viewportDims.w}px`,
+              maxWidth: 'none',
+              maxHeight: 'none',
               transform: 'translate(-50%, -50%) rotate(90deg)',
               transformOrigin: 'center center',
             }
           : undefined
       }
-      className="relative w-full h-full overflow-hidden select-none"
+      className={
+        p.shouldRotate90
+          ? 'overflow-hidden select-none bg-black'
+          : 'relative w-full h-full overflow-hidden select-none'
+      }
     >
       <PlayerTopHudBar
         videoState={p.videoState}
@@ -229,6 +233,7 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
         isStageFullscreen={p.isStageFullscreen}
         isFullscreen={p.isFullscreen}
         isHorizontalFullscreen={p.isHorizontalFullscreen}
+        shouldRotate90={p.shouldRotate90}
         showControls={p.showControls}
         localPlaying={p.localPlaying}
         duration={p.duration}

@@ -160,9 +160,14 @@ export function getStageWrapperStyle(isStageFullscreen: boolean): React.CSSPrope
   if (!isStageFullscreen) return undefined;
   return {
     position: 'fixed',
-    inset: 0,
-    width: '100vw',
-    height: '100vh',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100dvh',
+    maxWidth: '100vw',
+    maxHeight: '100dvh',
     zIndex: 250,
     borderRadius: 0,
   };
@@ -203,7 +208,8 @@ export function getStageWrapperClass(opts: {
       ? 'z-50 lg:rounded-2xl ring-1 ring-white/15 shadow-[0_24px_90px_rgba(0,0,0,0.96)]'
       : '';
 
-  return `relative w-full bg-black overflow-hidden select-none transition-[height] duration-200 ${heightCls} ${cinemaRingCls}`;
+  const transitionCls = opts.isStageFullscreen ? '' : 'transition-[height] duration-200';
+  return `relative w-full bg-black overflow-hidden select-none ${transitionCls} ${heightCls} ${cinemaRingCls}`;
 }
 
 export function createStagePointerHandlers(opts: {

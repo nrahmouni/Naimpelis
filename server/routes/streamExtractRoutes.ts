@@ -84,6 +84,7 @@ export function registerStreamExtractRoute(
     const isSandboxedFrame = String(req.query.sandboxed || '').trim() === '1';
     const forceExtract = String(req.query.force || req.query.forceSpanish || '') === '1';
     const directOnly = String(req.query.directOnly || '').trim() === '1';
+    const skipSubtitlesWait = String(req.query.prefetch || '').trim() === '1';
 
     if (!rawInput && !movidyUrlParam && !gnulaUrlParam && !vestUrlParam && !titleHint && !tmdbIdParam) {
       return res.status(400).json({ success: false, error: 'Falta el enlace o título del contenido.' });
@@ -184,6 +185,7 @@ export function registerStreamExtractRoute(
           isSandboxedFrame,
           forceExtract,
           directOnly,
+          skipSubtitlesWait,
           cacheKey,
           rankCandidateTracks: deps.rankCandidateTracks,
           setCache,

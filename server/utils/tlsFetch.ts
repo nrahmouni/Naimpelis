@@ -10,8 +10,8 @@ import { LruTtlCache } from './lruCache.ts';
 import { assertSafeProxyUrl } from './ssrfGuard.ts';
 import { getSpainProxyDispatcherForTarget } from '../services/spainVpnGatewayService.ts';
 
-const DNS_TTL_MS = 60_000;
-const dnsLookupCache = new LruTtlCache<string, LookupAddress[]>(300, DNS_TTL_MS);
+const DNS_TTL_MS = 300_000;
+const dnsLookupCache = new LruTtlCache<string, LookupAddress[]>(1000, DNS_TTL_MS);
 
 export function cachedDnsLookup(
   hostname: string,

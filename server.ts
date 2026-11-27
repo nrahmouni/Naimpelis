@@ -55,6 +55,7 @@ import { registerMovistarDaznRoutes } from './server/routes/movistarDaznRoutes.t
 import { registerMusicRoutes } from './server/routes/musicRoutes.ts';
 import { registerVpnGatewayRoutes } from './server/routes/vpnGatewayRoutes.ts';
 import { registerProviderRoutes } from './server/routes/providerRoutes.ts';
+import { registerXtreamStreamRoutes } from './server/routes/xtreamStreamRoutes.ts';
 import { registerMovieReelsRoutes } from './server/routes/movieReelsRoutes.ts';
 import { prewarmMovieReels } from './server/services/movieReelsService.ts';
 import { getMovistarDaznHome } from './server/services/movistarDaznCatalogService.ts';
@@ -181,6 +182,8 @@ app.use(
         p.startsWith('/api/belix/seg') ||
         p.startsWith('/api/providers/stream') ||
         p.startsWith('/api/providers/hls-') ||
+        p.startsWith('/api/stream') ||
+        p.startsWith('/api/xtream/') ||
         p.startsWith('/api/music/stream-proxy')
       ) {
         return false;
@@ -223,6 +226,12 @@ const extractStreamRateLimit = createSlidingWindowRateLimiter({
   maxRequests: 60,
   windowMs: 60_000,
   keyPrefix: 'extract-stream',
+  skip: (req) => {
+    const hasXff = typeof req.headers['x-forwarded-for'] === 'string' && req.headers['x-forwarded-for'].length > 0;
+    const ip = req.ip || req.socket?.remoteAddress || '';
+    const isLoopback = !hasXff && (ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1');
+    return isLoopback || String(req.query.prefetch || '') === '1';
+  },
 });
 
 const hlsProxyRateLimit = createSlidingWindowRateLimiter({
@@ -289,6 +298,7 @@ registerClipboxRoutes(app);
 registerRbtvRoutes(app);
 registerBelixRoutes(app, { getPublicOrigin });
 registerProviderRoutes(app, { getPublicOrigin });
+registerXtreamStreamRoutes(app, { getPublicOrigin });
 registerAtresplayerRoutes(app);
 registerMovistarDaznRoutes(app);
 registerMusicRoutes(app);

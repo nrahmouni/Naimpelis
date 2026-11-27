@@ -353,4 +353,5 @@ export function getProviderCircuitSnapshot(): Array<{
 
 export function resetProviderCircuitBreakers(): void {
   buckets.clear();
+  circuitBreakerStateMap.clear();
 }

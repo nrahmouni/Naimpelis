@@ -251,6 +251,7 @@ export function h2GetRaw(
     if (u.protocol !== 'https:') {
       streamingFetch(targetUrl, {
         headers,
+        keepAliveAgent: true,
         timeoutMs: maxTimeSec * 1000,
         signal,
       })
@@ -688,6 +689,7 @@ export async function fetchTextWithCurlFallback(
     try {
       const res = await streamingFetch(url, {
         headers,
+        keepAliveAgent: true,
         timeoutMs,
         signal: effectiveSignal,
       });

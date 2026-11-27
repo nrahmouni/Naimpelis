@@ -6,7 +6,17 @@ import type {
   SportsMatch,
 } from '../types';
 
-import type { ProvidersStatusSummaryPublic } from '../components/providers/providersTypes';
+export interface ProvidersStatusSummaryPublic {
+  success?: boolean;
+  providers: Array<{
+    id: string;
+    name: string;
+    accentColor?: string;
+    accountCount?: number;
+    status?: string;
+    counts?: { live: number; movies: number; series: number };
+  }>;
+}
 
 export const queryClient = new QueryClient({
   defaultOptions: {

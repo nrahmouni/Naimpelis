@@ -50,6 +50,10 @@ export function mountSpaFrontend(app: express.Express, deps: SpaFrontendMountDep
     });
 
     app.use(async (req, res, next) => {
+      if (req.path.startsWith('/api/')) {
+        res.status(404).json({ success: false, error: 'API endpoint not found' });
+        return;
+      }
       if (!viteMiddleware && !viteInitError) {
         await viteReady;
       }
@@ -141,6 +145,9 @@ export function mountSpaFrontend(app: express.Express, deps: SpaFrontendMountDep
   }
 
   app.get('*', async (req, res) => {
+    if (req.path.startsWith('/api/')) {
+      return res.status(404).json({ success: false, error: 'API endpoint not found' });
+    }
     if (req.path === '/tv' || req.path === '/tv/') {
       return sendSmartTvReceiverHtml(res);
     }

@@ -129,14 +129,12 @@ export async function resolveCatalogMediaMetadata(opts: {
 
   if (resolvedTmdbId && /^tt\d+$/i.test(String(resolvedTmdbId))) {
     try {
-      const findRes = await fetch(
-        `https://api.themoviedb.org/3/find/${encodeURIComponent(
-          String(resolvedTmdbId)
-        )}?api_key=${tmdbApiKey}&external_source=imdb_id`,
-        { signal: AbortSignal.timeout(3500) }
-      );
-      if (findRes.ok) {
-        const findJson: any = await findRes.json();
+      const findJson = await fetchTmdbJson<any>(
+        `/find/${encodeURIComponent(String(resolvedTmdbId))}`,
+        { external_source: 'imdb_id' },
+        15 * 60 * 1000
+      ).catch(() => null);
+      if (findJson) {
         const hit =
           effectiveMediaType === 'tv'
             ? findJson?.tv_results?.[0] || findJson?.movie_results?.[0]

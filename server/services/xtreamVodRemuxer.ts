@@ -1,310 +1,231 @@
-/**
- * @module server/services/xtreamVodRemuxer
- * @description Browser-compatible progressive fMP4 remuxer/transcoder for Xtream VOD and Series
- * files whose container (.mkv, .avi, .ts, etc.) or codecs (HEVC/H.265, AC3/EAC3/DTS) cannot play
- * natively inside Chromium/Android/Safari <video> tags. Runs FFmpeg directly over server-side
- * upstream URLs without ever exposing origin credentials to clients.
- */
-import { spawn } from 'node:child_process';
-import type { Request, Response } from 'express';
-import { FFMPEG_BIN, FFPROBE_BIN } from '../routes/proxies/proxyUtils.ts';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
+import type { Readable } from 'node:stream';
+import type express from 'express';
+import { FFMPEG_BIN } from '../routes/proxies/proxyUtils.ts';
+import { assertSafeProxyUrl } from '../utils/ssrfGuard.ts';
 import { logger } from '../utils/logger.ts';
 
-const NON_NATIVE_BROWSER_EXTENSIONS = new Set([
-  'mkv',
-  'avi',
-  'ts',
-  'mts',
-  'm2ts',
-  'flv',
-  'wmv',
-  'mov',
-  'm4v',
-  'mpeg',
-  'mpg',
-  'vob',
-  'divx',
-  'asf',
-  'rmvb',
-]);
+const BROWSER_NATIVE_VOD_EXTS = new Set(['mp4', 'm4v', 'webm', 'm3u8', 'ogg', 'ogv']);
 
-interface ProbeCacheEntry {
-  videoCodec: string;
-  audioCodec: string;
-  expiresAt: number;
+export interface VodRemuxOptions {
+  upstreamUrl: string;
+  cacheKey?: string;
+  startSec?: number;
+  forceFullTranscode?: boolean;
+  referer?: string;
 }
 
-const codecProbeCache = new Map<string, ProbeCacheEntry>();
-const PROBE_TTL_MS = 10 * 60 * 1000;
-
+/**
+ * Determines whether a VOD container requires server-side FFmpeg fragmented-MP4 remuxing
+ * for reliable HTML5 `<video>` playback in Chromium/mobile browsers.
+ */
 export function needsBrowserVodRemux(ext: string, forceTranscode = false): boolean {
   if (forceTranscode) return true;
-  const clean = String(ext || '').trim().toLowerCase();
-  return NON_NATIVE_BROWSER_EXTENSIONS.has(clean);
+  const clean = String(ext || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^\.+/, '');
+  if (!clean) return false;
+  return !BROWSER_NATIVE_VOD_EXTS.has(clean);
 }
 
-export async function probeUpstreamVodCodecs(
-  upstreamUrl: string,
-  cacheKey: string
-): Promise<{ videoCodec: string; audioCodec: string }> {
-  const cached = codecProbeCache.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now()) {
-    return { videoCodec: cached.videoCodec, audioCodec: cached.audioCodec };
-  }
-
-  return new Promise((resolve) => {
-    let stdout = '';
-    let settled = false;
-    const finish = (videoCodec: string, audioCodec: string) => {
-      if (settled) return;
-      settled = true;
-      codecProbeCache.set(cacheKey, {
-        videoCodec,
-        audioCodec,
-        expiresAt: Date.now() + PROBE_TTL_MS,
-      });
-      if (codecProbeCache.size > 400) {
-        const oldest = codecProbeCache.keys().next().value;
-        if (oldest) codecProbeCache.delete(oldest);
-      }
-      resolve({ videoCodec, audioCodec });
-    };
-
-    const proc = spawn(
-      FFPROBE_BIN,
-      [
-        '-v',
-        'quiet',
-        '-print_format',
-        'json',
-        '-show_streams',
-        '-headers',
-        'User-Agent: IPTVSmartersPlayer\r\n',
-        '-analyzeduration',
-        '300000',
-        '-probesize',
-        '500000',
-        '-rw_timeout',
-        '1800000',
-        '-i',
-        upstreamUrl,
-      ],
-      { stdio: ['ignore', 'pipe', 'ignore'] }
-    );
-
-    const timer = setTimeout(() => {
-      try {
-        proc.kill('SIGKILL');
-      } catch {
-        // ignore
-      }
-      finish('unknown', 'unknown');
-    }, 1300);
-
-    proc.stdout?.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8');
-      if (stdout.length > 64_000) {
-        stdout = stdout.slice(0, 64_000);
-      }
-    });
-
-    proc.on('error', () => {
-      clearTimeout(timer);
-      finish('unknown', 'unknown');
-    });
-
-    proc.on('exit', () => {
-      clearTimeout(timer);
-      try {
-        const parsed = JSON.parse(stdout) as {
-          streams?: Array<{ codec_type?: string; codec_name?: string }>;
-        };
-        const streams = Array.isArray(parsed?.streams) ? parsed.streams : [];
-        const v = streams.find((s) => s.codec_type === 'video')?.codec_name?.toLowerCase() || 'unknown';
-        const a = streams.find((s) => s.codec_type === 'audio')?.codec_name?.toLowerCase() || 'unknown';
-        finish(v, a);
-      } catch {
-        finish('unknown', 'unknown');
-      }
-    });
-  });
-}
-
-export async function streamVodRemuxedAsMp4(
-  req: Request,
-  res: Response,
-  opts: {
-    upstreamUrl: string;
-    cacheKey: string;
-    startSec?: number;
-    forceFullTranscode?: boolean;
-  }
-): Promise<boolean> {
-  if (req.method === 'HEAD') {
-    res.status(200);
-    res.setHeader('Content-Type', 'video/mp4');
-    res.setHeader('Cache-Control', 'no-store');
-    res.end();
-    return true;
-  }
-
-  const probe = await probeUpstreamVodCodecs(opts.upstreamUrl, opts.cacheKey);
-
-  const audioNeedsTranscodeOnly =
-    probe.audioCodec !== 'aac' && probe.audioCodec !== 'mp3' && probe.audioCodec !== 'unknown';
-  const canCopyVideo =
-    (probe.videoCodec === 'h264' || probe.videoCodec === 'unknown') &&
-    (!opts.forceFullTranscode || audioNeedsTranscodeOnly);
-  const canCopyAudio = !opts.forceFullTranscode && probe.audioCodec === 'aac';
-
+function buildFfmpegVodArgs(opts: VodRemuxOptions): string[] {
   const args: string[] = [
     '-hide_banner',
     '-loglevel',
     'error',
-    '-headers',
-    'User-Agent: IPTVSmartersPlayer\r\n',
-    '-analyzeduration',
-    '300000',
-    '-probesize',
-    '500000',
+    '-nostdin',
     '-reconnect',
     '1',
     '-reconnect_streamed',
     '1',
     '-reconnect_delay_max',
-    '3',
-    '-rw_timeout',
-    '12000000',
+    '2',
+    '-fflags',
+    '+genpts+discardcorrupt',
+    '-probesize',
+    '2500000',
+    '-analyzeduration',
+    '1800000',
+    '-user_agent',
+    'IPTVSmartersPlayer',
   ];
+
+  if (opts.referer && /^https?:\/\//i.test(opts.referer)) {
+    args.push('-headers', `Referer: ${opts.referer}\r\n`);
+  }
 
   if (typeof opts.startSec === 'number' && Number.isFinite(opts.startSec) && opts.startSec > 0) {
     args.push('-ss', String(Math.floor(opts.startSec)));
   }
 
-  args.push('-i', opts.upstreamUrl, '-map', '0:v:0', '-map', '0:a:0?');
+  args.push('-i', opts.upstreamUrl, '-map', '0:v:0?', '-map', '0:a:0?');
 
-  if (canCopyVideo) {
-    args.push('-c:v', 'copy');
-  } else {
+  if (opts.forceFullTranscode) {
     args.push(
       '-c:v',
       'libx264',
       '-preset',
-      'ultrafast',
-      '-tune',
-      'zerolatency',
+      'veryfast',
       '-crf',
-      '22',
+      '23',
       '-pix_fmt',
       'yuv420p',
-      '-vf',
-      "scale='min(1920,iw)':-2"
+      '-g',
+      '48'
     );
-  }
-
-  if (canCopyAudio) {
-    args.push('-c:a', 'copy');
   } else {
-    args.push('-c:a', 'aac', '-b:a', '192k', '-ac', '2');
+    args.push('-c:v', 'copy');
   }
 
   args.push(
-    '-fflags',
-    '+genpts',
-    '-f',
-    'mp4',
+    '-c:a',
+    'aac',
+    '-ac',
+    '2',
+    '-b:a',
+    '192k',
     '-movflags',
     'frag_keyframe+empty_moov+default_base_moof',
-    '-reset_timestamps',
-    '1',
-    '-avoid_negative_ts',
-    'make_zero',
+    '-f',
+    'mp4',
     'pipe:1'
   );
 
-  return new Promise<boolean>((resolve) => {
-    const proc = spawn(FFMPEG_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    let headersSentToClient = false;
-    let settled = false;
-    let stderrTail = '';
+  return args;
+}
 
-    const startupTimer = setTimeout(() => {
-      if (!headersSentToClient) {
-        try {
-          proc.kill('SIGKILL');
-        } catch {
-          // ignore
-        }
-        if (!settled) {
-          settled = true;
-          resolve(false);
-        }
-      }
-    }, 12_000);
+/**
+ * Remuxes/transcodes an upstream VOD file (MKV/AVI/TS/etc.) into a fragmented MP4 stream.
+ * Resolves `true` once first media bytes start streaming to `res`, or `false` if startup failed
+ * before headers were sent (so the caller can fall back to direct proxy/next rotated account).
+ */
+export async function streamVodRemuxedAsMp4(
+  req: express.Request,
+  res: express.Response,
+  opts: VodRemuxOptions
+): Promise<boolean> {
+  try {
+    await assertSafeProxyUrl(opts.upstreamUrl);
+  } catch {
+    return false;
+  }
 
-    proc.stderr?.on('data', (chunk: Buffer) => {
-      stderrTail = (stderrTail + chunk.toString('utf8')).slice(-400);
-    });
-
-    proc.stdout?.once('data', (firstChunk: Buffer) => {
-      clearTimeout(startupTimer);
-      if (res.writableEnded || res.destroyed) {
-        try {
-          proc.kill('SIGKILL');
-        } catch {
-          // ignore
-        }
-        if (!settled) {
-          settled = true;
-          resolve(true);
-        }
-        return;
-      }
-
-      headersSentToClient = true;
+  if (req.method === 'HEAD') {
+    if (!res.headersSent) {
       res.status(200);
       res.setHeader('Content-Type', 'video/mp4');
       res.setHeader('Cache-Control', 'no-store');
-      res.setHeader('X-Content-Type-Options', 'nosniff');
-      res.write(firstChunk);
-      proc.stdout?.pipe(res);
+      res.end();
+    }
+    return true;
+  }
 
-      if (!settled) {
-        settled = true;
-        resolve(true);
-      }
-    });
+  const args = buildFfmpegVodArgs(opts);
+
+  return await new Promise<boolean>((resolve) => {
+    let settled = false;
+    let headersSentToClient = false;
+    let child: ChildProcessByStdio<null, Readable, Readable> | null = null;
+    let stderrTail = '';
+
+    const finish = (ok: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(ok);
+    };
 
     const killProc = () => {
-      clearTimeout(startupTimer);
+      if (!child || child.killed) return;
       try {
-        if (!proc.killed) proc.kill('SIGKILL');
+        child.kill('SIGKILL');
       } catch {
         // ignore
       }
     };
 
-    res.on('close', killProc);
+    try {
+      child = spawn(FFMPEG_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (err) {
+      logger.warn(`[vod-remux] Failed to spawn ffmpeg (${opts.cacheKey || 'vod'}): ${String(err)}`);
+      finish(false);
+      return;
+    }
 
-    proc.on('error', () => {
+    const ff = child;
+    const startupTimer = setTimeout(() => {
+      if (!headersSentToClient) {
+        killProc();
+        finish(false);
+      }
+    }, 10_000);
+
+    const onClientClose = () => {
       clearTimeout(startupTimer);
-      if (!settled) {
-        settled = true;
-        resolve(false);
+      killProc();
+      finish(headersSentToClient);
+    };
+
+    req.once('close', onClientClose);
+    res.once('close', onClientClose);
+
+    ff.stderr.on('data', (chunk: Buffer) => {
+      const txt = chunk.toString('utf8');
+      stderrTail = (stderrTail + txt).slice(-600);
+    });
+
+    ff.stdout.on('data', (chunk: Buffer) => {
+      if (!chunk || chunk.length === 0) return;
+      if (!headersSentToClient) {
+        headersSentToClient = true;
+        clearTimeout(startupTimer);
+        if (!res.headersSent) {
+          res.status(200);
+          res.setHeader('Content-Type', 'video/mp4');
+          res.setHeader('Cache-Control', 'no-store');
+          res.setHeader('Accept-Ranges', 'none');
+        }
+        finish(true);
+      }
+      if (!res.writableEnded && !res.destroyed) {
+        const canContinue = res.write(chunk);
+        if (!canContinue) {
+          ff.stdout.pause();
+          res.once('drain', () => {
+            try {
+              ff.stdout.resume();
+            } catch {
+              // ignore
+            }
+          });
+        }
       }
     });
 
-    proc.on('exit', (code) => {
+    ff.on('error', (err) => {
       clearTimeout(startupTimer);
+      req.off('close', onClientClose);
+      res.off('close', onClientClose);
+      logger.warn(`[vod-remux] ffmpeg error (${opts.cacheKey || 'vod'}): ${err.message}`);
       if (!headersSentToClient) {
-        if (code && code !== 0) {
-          logger.debug({ code, stderrTail }, 'xtream_vod_remux_startup_failed');
-        }
-        if (!settled) {
-          settled = true;
-          resolve(false);
-        }
+        finish(false);
       } else if (!res.writableEnded) {
+        res.end();
+      }
+    });
+
+    ff.on('close', (code) => {
+      clearTimeout(startupTimer);
+      req.off('close', onClientClose);
+      res.off('close', onClientClose);
+      if (!headersSentToClient) {
+        if (code && code !== 0 && stderrTail) {
+          logger.warn(`[vod-remux] startup failed (${opts.cacheKey || 'vod'}): ${stderrTail.trim()}`);
+        }
+        finish(false);
+        return;
+      }
+      if (!res.writableEnded) {
         res.end();
       }
     });

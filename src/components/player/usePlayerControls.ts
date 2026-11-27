@@ -288,7 +288,25 @@ export function usePlayerControls(opts: UsePlayerControlsOptions) {
     onSyncAction('seek', { currentTime: nextSec, isPlaying: !video.paused });
   };
 
-  const handleToggleFullscreen = async (e?: React.MouseEvent) => {
+  const readVisibleViewportDims = () => {
+    const stageEl = stageWrapperRef.current;
+    if (stageEl) {
+      const rect = stageEl.getBoundingClientRect();
+      if (rect.width > 100 && rect.height > 100 && (Boolean(document.fullscreenElement) || isHorizontalFullscreen)) {
+        return { w: Math.round(rect.width), h: Math.round(rect.height) };
+      }
+    }
+    const vv = window.visualViewport;
+    return {
+      w: Math.round(vv?.width || window.innerWidth || 390),
+      h: Math.round(vv?.height || window.innerHeight || 844),
+    };
+  };
+
+  const handleToggleFullscreen = async (
+    e?: React.MouseEvent,
+    options?: { skipNativeVideoFullscreen?: boolean }
+  ) => {
     e?.stopPropagation();
     triggerHaptic('light');
     revealControls();
@@ -312,7 +330,7 @@ export function usePlayerControls(opts: UsePlayerControlsOptions) {
         }
       }
       setTimeout(() => {
-        setViewportDims({ w: window.innerWidth, h: window.innerHeight });
+        setViewportDims(readVisibleViewportDims());
       }, 120);
       return;
     }
@@ -320,12 +338,12 @@ export function usePlayerControls(opts: UsePlayerControlsOptions) {
     setForceLandscapeRotation(true);
     setIsHorizontalFullscreen(true);
     setIsFullscreen(true);
-    setViewportDims({ w: window.innerWidth, h: window.innerHeight });
+    setViewportDims(readVisibleViewportDims());
 
     try {
       if (container?.requestFullscreen) {
         await container.requestFullscreen();
-      } else if (video?.webkitEnterFullscreen) {
+      } else if (!options?.skipNativeVideoFullscreen && video?.webkitEnterFullscreen) {
         video.webkitEnterFullscreen();
       }
     } catch {
@@ -341,11 +359,14 @@ export function usePlayerControls(opts: UsePlayerControlsOptions) {
       // ignore
     }
 
+    requestAnimationFrame(() => {
+      setViewportDims(readVisibleViewportDims());
+    });
     setTimeout(() => {
-      setViewportDims({ w: window.innerWidth, h: window.innerHeight });
+      setViewportDims(readVisibleViewportDims());
     }, 120);
     setTimeout(() => {
-      setViewportDims({ w: window.innerWidth, h: window.innerHeight });
+      setViewportDims(readVisibleViewportDims());
     }, 350);
 
     showTransientToast(
@@ -363,12 +384,15 @@ export function usePlayerControls(opts: UsePlayerControlsOptions) {
     revealControls();
 
     if (!isHorizontalFullscreen && !isFullscreen) {
-      await handleToggleFullscreen(e);
+      await handleToggleFullscreen(e, { skipNativeVideoFullscreen: true });
       return;
     }
 
     const nextForce = !forceLandscapeRotation;
     setForceLandscapeRotation(nextForce);
+    requestAnimationFrame(() => {
+      setViewportDims(readVisibleViewportDims());
+    });
     try {
       const ori = window.screen?.orientation as unknown as ScreenOrientationWithLock | undefined;
       if (nextForce && ori?.lock) {

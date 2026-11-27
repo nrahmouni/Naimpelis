@@ -132,6 +132,7 @@ export async function prefetchLiveTsSegment(
       try {
         const res = await streamingFetch(url, {
           headers,
+          keepAliveAgent: true,
           timeoutMs: 3200,
         });
         if (res.ok) {

@@ -104,7 +104,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [isHorizontalFullscreen, setIsHorizontalFullscreen] = useState(false);
   const [forceLandscapeRotation, setForceLandscapeRotation] = useState(true);
   const [viewportDims, setViewportDims] = useState<{ w: number; h: number }>(() =>
-    typeof window !== 'undefined' ? { w: window.innerWidth, h: window.innerHeight } : { w: 390, h: 844 }
+    typeof window !== 'undefined'
+      ? {
+          w: Math.round(window.visualViewport?.width || window.innerWidth || 390),
+          h: Math.round(window.visualViewport?.height || window.innerHeight || 844),
+        }
+      : { w: 390, h: 844 }
   );
   const [showControls, setShowControls] = useState(true);
   const [qualityLevels, setQualityLevels] = useState<{ index: number; height: number; bitrate?: number }[]>([]);
@@ -232,6 +237,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     duration,
     autoNextCancelledForUrl,
     onNextEpisode,
+    stageWrapperRef,
     videoRef,
     controlsTimeoutRef,
     showControlsRef,

@@ -249,7 +249,7 @@ export function buildDvbLiveFfmpegArgs(options: {
   // can be remuxed with -c:v copy. Raw MPEG-TS / pipe inputs often start mid-GOP or drop TS packets,
   // so they MUST be transcoded with clean 2s forced IDR keyframes to prevent macroblock smearing.
   const canCopyVideo = Boolean(
-    !isRawTsOrPipeInput &&
+    !isPipeInput &&
       probe &&
       probe.videoCodec === 'h264' &&
       (!probe.pixFmt || /^yuvj?420p$/i.test(probe.pixFmt)) &&

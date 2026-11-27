@@ -71,6 +71,7 @@ export interface CatalogMediaExtractParams {
   isSandboxedFrame: boolean;
   forceExtract: boolean;
   directOnly?: boolean;
+  skipSubtitlesWait?: boolean;
   cacheKey: string;
   rankCandidateTracks: RankCandidateTracksFn;
   setCache: (key: string, val: ExtractedStreamResult) => void;
@@ -1278,6 +1279,7 @@ export async function handleCatalogMediaExtract(
       extraSubtitles: initialCollected.montepinarSubs,
       resolvedTmdbId,
       subtitlesPromise,
+      skipSubtitlesWait: params.skipSubtitlesWait,
     });
     setCache(cacheKey, result);
 
@@ -1321,6 +1323,7 @@ export async function handleCatalogMediaExtract(
             extraSubtitles: fullCollected.montepinarSubs,
             resolvedTmdbId: bgMeta?.resolvedTmdbId ?? resolvedTmdbId,
             subtitlesPromise,
+            skipSubtitlesWait: params.skipSubtitlesWait,
           });
           setCache(cacheKey, enrichedResult);
         })

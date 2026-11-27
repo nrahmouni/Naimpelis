@@ -17,6 +17,25 @@ import {
   unwrapProxyTargetUrl,
 } from './channelHealthProbe.ts';
 
+export const MAX_CHANNEL_PROBE_CONCURRENCY = 10;
+
+export async function runWithBoundedConcurrency<T>(
+  items: T[],
+  maxConcurrency: number,
+  worker: (item: T, index: number) => Promise<void>
+): Promise<void> {
+  if (!Array.isArray(items) || items.length === 0) return;
+  const limit = Math.max(1, Math.min(MAX_CHANNEL_PROBE_CONCURRENCY, Math.floor(maxConcurrency || 1)));
+  let cursor = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const idx = cursor++;
+      await worker(items[idx], idx);
+    }
+  });
+  await Promise.all(runners);
+}
+
 export {
   type ChannelHealthStatus,
   type ChannelHealthSummary,
@@ -128,10 +147,12 @@ export class ChannelHealthMonitor {
         : isXtreamProxy || isHttpsCdn || /\bhd\b/.test(q)
         ? 2
         : 3;
+      const isPriorityTrack =
+        /priority/i.test(String(track.id || '')) || /prioritaria/i.test(String(track.label || ''));
       const transportPenalty = /interactvty\.pro/i.test(src)
         ? 1500
         : isResidentialDvb
-        ? 900
+        ? 120
         : isPreferredEdge2 || isXtreamProxy
         ? 0
         : isBelix
@@ -146,6 +167,7 @@ export class ChannelHealthMonitor {
       return {
         track: health ? { ...track, health } : { ...track },
         originalIndex,
+        isPriorityTrack,
         isUhdHevc,
         isHevc,
         isResidentialDvb,
@@ -164,16 +186,21 @@ export class ChannelHealthMonitor {
       if (a.status !== 'down' && b.status !== 'down' && a.isUhdHevc !== b.isUhdHevc) {
         return a.isUhdHevc ? 1 : -1;
       }
+      if (a.status !== 'down' && b.status !== 'down' && a.isPriorityTrack !== b.isPriorityTrack) {
+        return a.isPriorityTrack ? -1 : 1;
+      }
       const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
       if (rankDiff !== 0) return rankDiff;
 
-      // Keep single-socket residential DVB strictly behind verified HTTPS CDNs & Xtream signals
+      // Prefer verified Edge-2 / HTTPS CDNs / Xtream over single-socket residential DVB;
+      // when Edge-2 is down, fast healthy DVB competes on latency against generic Belix backups.
+      const aStrongEdge = a.isPreferredEdge2 || a.isHttpsCdn || a.isXtreamProxy;
+      const bStrongEdge = b.isPreferredEdge2 || b.isHttpsCdn || b.isXtreamProxy;
       if (a.status !== 'down' && b.status !== 'down' && a.isResidentialDvb !== b.isResidentialDvb) {
-        return a.isResidentialDvb ? 1 : -1;
+        if (a.isResidentialDvb && bStrongEdge) return 1;
+        if (b.isResidentialDvb && aStrongEdge) return -1;
       }
 
-      // Verified fast Xtream 4K/FHD non-HEVC Spanish signals beat Belix/DVB when probed 'up',
-      // while competing fairly with fast verified HTTPS CDNs (Otteravision / RTVE) on speed + quality
       const aFastXtream = a.isXtreamProxy && a.status === 'up' && a.qualityTier <= 2;
       const bFastXtream = b.isXtreamProxy && b.status === 'up' && b.qualityTier <= 2;
       if (aFastXtream !== bFastXtream) {
@@ -185,7 +212,7 @@ export class ChannelHealthMonitor {
 
       if (a.isPreferredEdge2 !== b.isPreferredEdge2) {
         if (a.isPreferredEdge2 && a.status !== 'down') return -1;
-        if (b.isPreferredEdge2 && b.status !== 'down') return 1;
+        if (b.isPreferredEdge2 && a.status !== 'down') return 1;
       }
       if (a.status !== 'down' && b.status !== 'down') {
         if (a.status === 'up' && b.status === 'up') {
@@ -210,9 +237,6 @@ export class ChannelHealthMonitor {
         if (a.isResidentialDvb !== b.isResidentialDvb) {
           return a.isResidentialDvb ? 1 : -1;
         }
-      }
-      if (a.isBelix && b.isBelix && a.status === b.status) {
-        return a.originalIndex - b.originalIndex;
       }
       return a.originalIndex - b.originalIndex;
     });
@@ -273,7 +297,7 @@ export class ChannelHealthMonitor {
     const execute = async () => {
       const startedAt = Date.now();
       const staleMs = options?.staleMs ?? DEFAULT_STALE_MS;
-      const concurrency = Math.max(1, Math.min(16, options?.concurrency ?? 8));
+      const concurrency = Math.max(1, Math.min(MAX_CHANNEL_PROBE_CONCURRENCY, options?.concurrency ?? 8));
 
       const uniqueTracks = new Map<string, HealthProbeTrack>();
       for (const ch of channels) {

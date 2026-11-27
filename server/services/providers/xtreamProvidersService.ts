@@ -103,6 +103,7 @@ function getUnifiedProviderConfigs(): XtreamProviderConfig[] {
 
 const runtimeStates = new Map<string, ProviderRuntimeState>();
 const deadAccountCooldownUntil = new Map<string, number>();
+const inFlightLiveManifestMap = new Map<string, Promise<string | null>>();
 const DEAD_ACCOUNT_COOLDOWN_MS = 30 * 60 * 1000;
 
 function ensureRuntimeState(config: XtreamProviderConfig): ProviderRuntimeState {
@@ -833,45 +834,66 @@ export async function resolveProviderLiveManifest(
   const st = runtimeStates.get(providerId);
   if (!st || !streamId) return null;
 
-  const provider = st.config;
-  const origin = normalizeXtreamOrigin(provider.serverUrl);
-  const referer = `${origin}/`;
-  const candidates = getOrderedAccountCandidates(provider.accounts, st.activeAccountIndex);
+  const coalesceKey = `${providerId}:${streamId}:${originPrefix}`;
+  const existing = inFlightLiveManifestMap.get(coalesceKey);
+  if (existing) return existing;
 
-  for (const candidate of candidates) {
-    const m3u8Url = buildXtreamMediaUrl(provider.serverUrl, candidate.account, 'live', streamId, 'm3u8');
-    const loaded = await fetchProviderPlaylistText(m3u8Url, referer, 3500).catch(() => null);
-    if (loaded) {
-      st.activeAccountIndex = candidate.index;
-      return rewriteProviderPlaylistWithOpaqueTokens(
-        loaded.text,
-        loaded.baseUrl,
-        referer,
-        originPrefix
-      );
-    }
+  const runResolve = async (): Promise<string | null> => {
+    const provider = st.config;
+    const origin = normalizeXtreamOrigin(provider.serverUrl);
+    const referer = `${origin}/`;
+    const nowMs = Date.now();
+    const rawCandidates = getOrderedAccountCandidates(provider.accounts, st.activeAccountIndex);
+    const activeCandidates = rawCandidates.filter(
+      (c) => (deadAccountCooldownUntil.get(`${provider.id}:${c.account.username}`) || 0) <= nowMs
+    );
+    const candidates = activeCandidates.length > 0 ? activeCandidates : rawCandidates;
 
-    const tsUrl = buildXtreamMediaUrl(provider.serverUrl, candidate.account, 'live', streamId, 'ts');
-    try {
-      await assertSafeProxyUrl(tsUrl);
-      const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, 'hd', referer).catch(() => null);
-      if (dvbPath) {
-        const playlist = readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
-        if (playlist) {
-          st.activeAccountIndex = candidate.index;
-          return playlist;
-        }
+    for (const candidate of candidates) {
+      const slotKey = `${provider.id}:${candidate.account.username}`;
+      const m3u8Url = buildXtreamMediaUrl(provider.serverUrl, candidate.account, 'live', streamId, 'm3u8');
+      const loaded = await fetchProviderPlaylistText(m3u8Url, referer, 3500).catch(() => null);
+      if (loaded) {
+        st.activeAccountIndex = candidate.index;
+        deadAccountCooldownUntil.delete(slotKey);
+        return rewriteProviderPlaylistWithOpaqueTokens(
+          loaded.text,
+          loaded.baseUrl,
+          referer,
+          originPrefix
+        );
       }
-    } catch {
-      // rotate to next account
+
+      const tsUrl = buildXtreamMediaUrl(provider.serverUrl, candidate.account, 'live', streamId, 'ts');
+      try {
+        await assertSafeProxyUrl(tsUrl);
+        const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, 'hd', referer).catch(() => null);
+        if (dvbPath) {
+          const playlist = readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
+          if (playlist) {
+            st.activeAccountIndex = candidate.index;
+            deadAccountCooldownUntil.delete(slotKey);
+            return playlist;
+          }
+        }
+      } catch {
+        // rotate to next account
+      }
+
+      deadAccountCooldownUntil.set(slotKey, Date.now() + Math.min(DEAD_ACCOUNT_COOLDOWN_MS, 5 * 60 * 1000));
+      if (provider.accounts.length > 1) {
+        rotateProviderAccount(providerId, candidate.index);
+      }
     }
 
-    if (provider.accounts.length > 1) {
-      rotateProviderAccount(providerId, candidate.index);
-    }
-  }
+    return null;
+  };
 
-  return null;
+  const p = runResolve().finally(() => {
+    inFlightLiveManifestMap.delete(coalesceKey);
+  });
+  inFlightLiveManifestMap.set(coalesceKey, p);
+  return p;
 }
 
 export function getConnectedProvidersLiveCatalogs(): XtreamFullCatalogPayload[] {
@@ -1009,10 +1031,16 @@ export async function resolveProviderVodOrSeriesUrl(
 
   const provider = st.config;
   const origin = normalizeXtreamOrigin(provider.serverUrl);
-  const candidates = getOrderedAccountCandidates(provider.accounts, st.activeAccountIndex);
+  const nowMs = Date.now();
+  const rawCandidates = getOrderedAccountCandidates(provider.accounts, st.activeAccountIndex);
+  const activeCandidates = rawCandidates.filter(
+    (c) => (deadAccountCooldownUntil.get(`${provider.id}:${c.account.username}`) || 0) <= nowMs
+  );
+  const candidates = activeCandidates.length > 0 ? activeCandidates : rawCandidates;
   const cleanExt = sanitizeExtension(ext, 'mp4');
 
   for (const candidate of candidates) {
+    const slotKey = `${provider.id}:${candidate.account.username}`;
     const upstreamUrl = buildXtreamMediaUrl(
       provider.serverUrl,
       candidate.account,
@@ -1023,7 +1051,7 @@ export async function resolveProviderVodOrSeriesUrl(
     try {
       await assertSafeProxyUrl(upstreamUrl);
       const t0 = Date.now();
-      const upstream = await fetch(upstreamUrl, {
+      const upstream = await streamingFetch(upstreamUrl, {
         method: 'GET',
         headers: {
           'User-Agent': 'IPTVSmartersPlayer',
@@ -1031,18 +1059,19 @@ export async function resolveProviderVodOrSeriesUrl(
           Referer: `${origin}/`,
           Range: 'bytes=0-63',
         },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(timeoutMs),
+        timeoutMs,
+        keepAliveAgent: true,
       });
       if (upstream.url) {
         await assertSafeProxyUrl(upstream.url);
       }
-      const ct = String(upstream.headers.get('content-type') || '').toLowerCase();
+      const ct = String(upstream.headers['content-type'] || '').toLowerCase();
       const isBadText = ct.startsWith('text/html') || ct.startsWith('text/plain') || ct.includes('application/json');
-      await upstream.body?.cancel?.().catch(() => {});
+      upstream.destroy?.();
 
-      if ((upstream.ok || upstream.status === 206) && !isBadText) {
+      if ((upstream.status >= 200 && upstream.status < 300) && !isBadText) {
         st.activeAccountIndex = candidate.index;
+        deadAccountCooldownUntil.delete(slotKey);
         return {
           ok: true,
           url: upstream.url || upstreamUrl,
@@ -1050,6 +1079,9 @@ export async function resolveProviderVodOrSeriesUrl(
           status: upstream.status,
           latencyMs: Math.max(1, Date.now() - t0),
         };
+      }
+      if (upstream.status === 401 || upstream.status === 403) {
+        deadAccountCooldownUntil.set(slotKey, Date.now() + DEAD_ACCOUNT_COOLDOWN_MS);
       }
     } catch {
       // rotate to next account on connection/auth failure

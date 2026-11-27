@@ -60,11 +60,12 @@ export interface SlidingRateLimiterOptions {
   maxRequests: number;
   windowMs: number;
   keyPrefix?: string;
+  skip?: (req: express.Request) => boolean;
 }
 
 export function createSlidingWindowRateLimiter(options: SlidingRateLimiterOptions) {
   const buckets = new Map<string, RateBucket>();
-  const { maxRequests, windowMs, keyPrefix = 'api' } = options;
+  const { maxRequests, windowMs, keyPrefix = 'api', skip } = options;
   const maxRequestsHeader = String(maxRequests);
   let lastPrunedAt = 0;
 
@@ -81,6 +82,10 @@ export function createSlidingWindowRateLimiter(options: SlidingRateLimiterOption
     res: express.Response,
     next: express.NextFunction
   ): void {
+    if (skip && skip(req)) {
+      next();
+      return;
+    }
     const now = Date.now();
     pruneExpired(now);
 

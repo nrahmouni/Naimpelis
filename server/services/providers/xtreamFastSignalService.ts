@@ -10,7 +10,10 @@ import {
   syncProviderCatalog,
   warmDefaultProvidersBackground,
 } from './xtreamMultiProviderService.ts';
-import { detectStreamLanguage } from '../../utils/streamMetaParser.ts';
+import {
+  fastProviderSearchCache,
+  getOrBuildProviderSignalIndex,
+} from './xtreamFastSignalIndex.ts';
 
 const QUALITY_AND_TAG_NOISE_RE =
   /\b(?:4k|uhd|fhd|hd|sd|hevc|h\.?265|h\.?264|x264|x265|1080p|720p|vip|raw|backup|multi|es|esp|spa|eng|en|lat|fr|ar|pt|it|de|nl|tr)\b/gi;
@@ -81,14 +84,6 @@ function normalizeRawSearchable(raw: string): string {
     .trim();
 }
 
-function detectProviderTagLang(
-  rawName: string,
-  rawCategory: string,
-  kind: 'live' | 'movie' | 'series' = 'movie'
-): string {
-  return detectStreamLanguage(rawName, rawCategory, kind).lang;
-}
-
 function scoreLanguageAffinity(detectedLang: string, preferLang: string): number {
   const pref = String(preferLang || 'ES').toUpperCase();
   const det = String(detectedLang || 'INTL').toUpperCase();
@@ -157,17 +152,27 @@ export async function ensureFastWarmCatalogsAvailable(): Promise<void> {
   const existing = getAllCachedProviderCatalogs();
   if (existing.length >= 2) return;
   warmDefaultProvidersBackground();
-  // Wait briefly for the fastest servers ('vod-4k', 'shark-pro', '24tv', 'adtupac', 'sult-vo') only when cold
+  // Wait briefly for the fastest verified Spanish TDT servers ('dana-4k-pro', 'octopus-tv', '24tv', 'shark-pro', 'ultra-vip') only when cold
   await Promise.race([
     Promise.allSettled([
-      syncProviderCatalog('vod-4k', false),
-      syncProviderCatalog('shark-pro', false),
+      syncProviderCatalog('dana-4k-pro', false),
+      syncProviderCatalog('octopus-tv', false),
       syncProviderCatalog('24tv', false),
-      syncProviderCatalog('adtupac', false),
-      syncProviderCatalog('sult-vo', false),
+      syncProviderCatalog('shark-pro', false),
+      syncProviderCatalog('ultra-vip', false),
     ]),
     new Promise<void>((r) => setTimeout(r, 2500)),
   ]);
+}
+
+function getSpanishServerSpeedBoost(providerId: string): number {
+  const id = String(providerId || '').toLowerCase();
+  if (id === 'dana-4k-pro') return 48; // ~423-440ms direct HLS + full segment delivery
+  if (id === 'octopus-tv') return 26; // ~945-1015ms direct HLS, single active account
+  if (id === '24tv') return 22; // ~739-789ms direct HLS on working channels
+  if (id === 'shark-pro') return 16; // Same CDN as Octopus TV once rotated
+  if (id === 'ultra-vip') return 4;
+  return 0;
 }
 
 export interface ProviderUnifiedSearchResult {
@@ -193,36 +198,38 @@ export async function searchFastProviderIndex(
     return { live: [], movies: [], series: [], indexedProviders: 0 };
   }
 
+  const cacheKey = `${rawNormQ || cleanQ}|${limitPerType}|${catalogs.length}`;
+  const cachedSearch = fastProviderSearchCache.get(cacheKey);
+  if (cachedSearch) return cachedSearch;
+
   const variants = Array.from(new Set([cleanQ, rawNormQ].filter((v) => v.length >= 2)));
   const scoredLive: Array<{ item: ProviderLiveItem; score: number }> = [];
   const scoredMovies: Array<{ item: ProviderMovieItem; score: number }> = [];
   const scoredSeries: Array<{ item: ProviderSeriesItem; score: number }> = [];
 
   for (const cat of catalogs) {
-    for (let i = 0; i < cat.liveStreams.length; i++) {
-      const item = cat.liveStreams[i];
-      const normName = normalizeProviderMatchTitle(item.name);
-      const s = scoreTextMatch(normName, normalizeRawSearchable(item.name), variants);
-      if (s >= 55) scoredLive.push({ item, score: s });
+    const idx = getOrBuildProviderSignalIndex(cat, normalizeProviderMatchTitle, normalizeRawSearchable);
+    for (let i = 0; i < idx.liveEntries.length; i++) {
+      const entry = idx.liveEntries[i];
+      const s = scoreTextMatch(entry.normName, entry.rawName, variants);
+      if (s >= 55) scoredLive.push({ item: entry.item, score: s });
     }
-    for (let i = 0; i < cat.vodStreams.length; i++) {
-      const item = cat.vodStreams[i];
-      const normName = normalizeProviderMatchTitle(item.name);
-      const base = scoreTextMatch(normName, normalizeRawSearchable(item.name), variants, item.year);
+    for (let i = 0; i < idx.movieEntries.length; i++) {
+      const entry = idx.movieEntries[i];
+      const base = scoreTextMatch(entry.normName, entry.rawName, variants, entry.item.year);
       if (base >= 58) {
-        const lang = detectProviderTagLang(item.name, item.categoryName, 'movie');
-        const langBoost = lang === 'ES' ? 25 : lang === 'LAT' ? 14 : lang === 'VOSE' ? 8 : lang === 'AR' ? -30 : 0;
-        scoredMovies.push({ item, score: base + langBoost });
+        const langBoost =
+          entry.lang === 'ES' ? 25 : entry.lang === 'LAT' ? 14 : entry.lang === 'VOSE' ? 8 : entry.lang === 'AR' ? -30 : 0;
+        scoredMovies.push({ item: entry.item, score: base + langBoost });
       }
     }
-    for (let i = 0; i < cat.seriesList.length; i++) {
-      const item = cat.seriesList[i];
-      const normName = normalizeProviderMatchTitle(item.name);
-      const base = scoreTextMatch(normName, normalizeRawSearchable(item.name), variants, item.year);
+    for (let i = 0; i < idx.seriesEntries.length; i++) {
+      const entry = idx.seriesEntries[i];
+      const base = scoreTextMatch(entry.normName, entry.rawName, variants, entry.item.year);
       if (base >= 58) {
-        const lang = detectProviderTagLang(item.name, item.categoryName, 'series');
-        const langBoost = lang === 'ES' ? 25 : lang === 'LAT' ? 14 : lang === 'VOSE' ? 8 : lang === 'AR' ? -30 : 0;
-        scoredSeries.push({ item, score: base + langBoost });
+        const langBoost =
+          entry.lang === 'ES' ? 25 : entry.lang === 'LAT' ? 14 : entry.lang === 'VOSE' ? 8 : entry.lang === 'AR' ? -30 : 0;
+        scoredSeries.push({ item: entry.item, score: base + langBoost });
       }
     }
   }
@@ -231,12 +238,14 @@ export async function searchFastProviderIndex(
   scoredMovies.sort((a, b) => b.score - a.score);
   scoredSeries.sort((a, b) => b.score - a.score);
 
-  return {
+  const searchResult: ProviderUnifiedSearchResult = {
     live: scoredLive.slice(0, limitPerType).map((x) => x.item),
     movies: scoredMovies.slice(0, limitPerType).map((x) => x.item),
     series: scoredSeries.slice(0, limitPerType).map((x) => x.item),
     indexedProviders: catalogs.length,
   };
+  fastProviderSearchCache.set(cacheKey, searchResult);
+  return searchResult;
 }
 
 export async function findFastProviderLiveSignals(
@@ -264,33 +273,34 @@ export async function findFastProviderLiveSignals(
   const requiresSpanishIndicator =
     AMBIGUOUS_TDT_CHANNEL_RE.test(cleanTitle) || AMBIGUOUS_TDT_CHANNEL_RE.test(rawTitle);
 
-  const candidates: Array<{ item: ProviderLiveItem; score: number }> = [];
+  const candidates: Array<{ item: ProviderLiveItem; lang: string; score: number }> = [];
   for (const cat of catalogs) {
-    for (let i = 0; i < cat.liveStreams.length; i++) {
-      const item = cat.liveStreams[i];
+    const idx = getOrBuildProviderSignalIndex(cat, normalizeProviderMatchTitle, normalizeRawSearchable);
+    for (let i = 0; i < idx.liveEntries.length; i++) {
+      const entry = idx.liveEntries[i];
+      const item = entry.item;
       const hay = ` ${item.name} ${item.categoryName} `;
       if (requiresSpanishIndicator) {
         if (!SPANISH_TDT_POSITIVE_RE.test(hay) || NON_SPANISH_HOMONYM_RE.test(hay)) {
           continue;
         }
       }
-      const normName = normalizeProviderMatchTitle(item.name);
-      const rawName = normalizeRawSearchable(item.name);
-      let score = scoreTextMatch(normName, rawName, variants);
+      let score = scoreTextMatch(entry.normName, entry.rawName, variants);
       if (score <= 0) continue;
 
-      const hayUpper = hay.toUpperCase();
+      const hayUpper = entry.hayUpper;
       if (/\b(ES|ESP|ESPAÑA|SPAIN|TDT)\b/.test(hayUpper)) score += 16;
       if (/\b(4K|UHD)\b/.test(hayUpper)) score += 14;
       else if (/\b(FHD|1080P?|HEVC)\b/.test(hayUpper)) score += 10;
       else if (/\bHD\b/.test(hayUpper)) score += 6;
       if (/\b(SD|LOW)\b/.test(hayUpper)) score -= 6;
+      score += getSpanishServerSpeedBoost(item.providerId);
       if (isPreferredSharkProSpainLjli(item)) {
-        score += /\b(FHD|1080P?|4K|UHD)\b/.test(hayUpper) ? 45 : 28;
+        score += /\b(FHD|1080P?|4K|UHD)\b/.test(hayUpper) ? 35 : 22;
       } else if (/spain\s*[-_]\s*(?:ljli|أسبانيا|اسبانيا)/i.test(item.categoryName)) {
         score += 14;
       }
-      candidates.push({ item, score });
+      candidates.push({ item, lang: entry.lang, score });
     }
   }
 
@@ -298,7 +308,7 @@ export async function findFastProviderLiveSignals(
 
   const picked: TrackRecord[] = [];
   const usedProviders = new Set<string>();
-  for (const { item, score } of candidates) {
+  for (const { item, lang, score } of candidates) {
     if (score < 62) break;
     if (usedProviders.has(item.providerId) && picked.length >= 2) continue;
     usedProviders.add(item.providerId);
@@ -308,7 +318,7 @@ export async function findFastProviderLiveSignals(
       label: isPriorityShark
         ? `Prioritaria · ${item.name} · ${item.providerName} (${item.categoryName})`
         : `Señal Rápida · ${item.providerName}`,
-      lang: detectProviderTagLang(item.name, item.categoryName, 'live'),
+      lang,
       providerId: item.providerId,
       providerName: item.providerName,
       sourceUrl: item.playbackUrl,
@@ -361,15 +371,13 @@ export async function findFastProviderVodOrSeriesSignals(params: {
   if (mediaType === 'movie') {
     const candidates: Array<{ item: ProviderMovieItem; score: number; lang: string }> = [];
     for (const cat of catalogs) {
-      for (let i = 0; i < cat.vodStreams.length; i++) {
-        const item = cat.vodStreams[i];
-        const normName = normalizeProviderMatchTitle(item.name);
-        const rawName = normalizeRawSearchable(item.name);
-        const baseScore = scoreTextMatch(normName, rawName, variants, year);
+      const idx = getOrBuildProviderSignalIndex(cat, normalizeProviderMatchTitle, normalizeRawSearchable);
+      for (let i = 0; i < idx.movieEntries.length; i++) {
+        const entry = idx.movieEntries[i];
+        const baseScore = scoreTextMatch(entry.normName, entry.rawName, variants, year);
         if (baseScore < 65) continue;
-        const lang = detectProviderTagLang(item.name, item.categoryName, 'movie');
-        const score = baseScore + scoreLanguageAffinity(lang, preferLang);
-        candidates.push({ item, score, lang });
+        const score = baseScore + scoreLanguageAffinity(entry.lang, preferLang);
+        candidates.push({ item: entry.item, score, lang: entry.lang });
       }
     }
 
@@ -397,17 +405,15 @@ export async function findFastProviderVodOrSeriesSignals(params: {
   if (!season || !episode) return [];
   const seriesMatches: Array<{ item: ProviderSeriesItem; score: number; lang: string }> = [];
   for (const cat of catalogs) {
-    for (let i = 0; i < cat.seriesList.length; i++) {
-      const item = cat.seriesList[i];
-      const normName = normalizeProviderMatchTitle(item.name);
-      const rawName = normalizeRawSearchable(item.name);
-      const baseScore = scoreTextMatch(normName, rawName, variants, year);
+    const idx = getOrBuildProviderSignalIndex(cat, normalizeProviderMatchTitle, normalizeRawSearchable);
+    for (let i = 0; i < idx.seriesEntries.length; i++) {
+      const entry = idx.seriesEntries[i];
+      const baseScore = scoreTextMatch(entry.normName, entry.rawName, variants, year);
       if (baseScore < 65) continue;
-      const lang = detectProviderTagLang(item.name, item.categoryName, 'series');
       seriesMatches.push({
-        item,
-        score: baseScore + scoreLanguageAffinity(lang, preferLang),
-        lang,
+        item: entry.item,
+        score: baseScore + scoreLanguageAffinity(entry.lang, preferLang),
+        lang: entry.lang,
       });
     }
   }
@@ -433,11 +439,10 @@ export async function findFastProviderVodOrSeriesSignals(params: {
       const eps = info.episodesBySeason[String(season)] || [];
       const ep = eps.find((e) => e.episodeNum === episode);
       if (!ep) return null;
-      const epLang = detectProviderTagLang(`${item.name} ${ep.title}`, item.categoryName, 'series');
       return {
         id: `fast-${ep.id}`,
         label: `Fuente Directa · ${item.providerName}`,
-        lang: epLang !== 'INTL' ? epLang : lang,
+        lang: lang !== 'INTL' ? lang : 'ES',
         sourceUrl: ep.playbackUrl,
         resolvedStreamUrl: ep.playbackUrl,
         resolverType: ep.ext === 'm3u8' ? ('direct_hls' as const) : ('direct_mp4' as const),
@@ -479,20 +484,12 @@ function inferSpanishTdtCategory(rawName: string, rawCategory: string): string {
   return 'entretenimiento';
 }
 
-function collectSpanishProviderLiveItems(): ProviderLiveItem[] {
+function collectCachedSpanishIndexedEntries() {
   const catalogs = getAllCachedProviderCatalogs();
   if (catalogs.length === 0) return [];
-  const spanishItems: ProviderLiveItem[] = [];
-  for (const cat of catalogs) {
-    for (let i = 0; i < cat.liveStreams.length; i++) {
-      const item = cat.liveStreams[i];
-      if (EXCLUDE_NON_TDT_NOISE_RE.test(`${item.name} ${item.categoryName}`)) continue;
-      if (SPANISH_CATEGORY_OR_NAME_RE.test(`${item.categoryName} ${item.name}`)) {
-        spanishItems.push(item);
-      }
-    }
-  }
-  return spanishItems;
+  return catalogs.flatMap(
+    (cat) => getOrBuildProviderSignalIndex(cat, normalizeProviderMatchTitle, normalizeRawSearchable).spanishLiveEntries
+  );
 }
 
 export interface EnrichableTdtChannel {
@@ -521,28 +518,18 @@ export function enrichTdtCatalogWithProviderChannels<T extends EnrichableTdtChan
   baseChannels: T[],
   opts?: { preferQualityFirst?: boolean }
 ): T[] {
-  const spanishItems = collectSpanishProviderLiveItems();
-  if (spanishItems.length === 0) return baseChannels;
+  const preIndexed = collectCachedSpanishIndexedEntries();
+  if (preIndexed.length === 0) return baseChannels;
 
-  const inferItemQuality = (name: string): { label: string; boost: number } => {
-    const up = ` ${name} `.toUpperCase();
-    if (/\b(4K|UHD|2160P?)\b/.test(up) && !/DANA\s*4K|VOD\s*4K/i.test(name)) {
-      return { label: '4K', boost: opts?.preferQualityFirst ? 28 : 16 };
-    }
-    if (/\b(FHD|1080P?|FULL\s*HD|HEVC)\b/.test(up)) {
-      return { label: '1080p', boost: opts?.preferQualityFirst ? 18 : 10 };
-    }
-    if (/\b(HD|720P?)\b/.test(up)) {
-      return { label: '720p', boost: opts?.preferQualityFirst ? 8 : 4 };
-    }
-    return { label: 'HD', boost: 0 };
-  };
-
-  const indexedSpanish = spanishItems.map((item) => ({
-    item,
-    cleanName: normalizeProviderMatchTitle(item.name),
-    rawNorm: normalizeRawSearchable(item.name),
-    qualityMeta: inferItemQuality(item.name),
+  const boostDelta = opts?.preferQualityFirst ? 1.7 : 1;
+  const indexedSpanish = preIndexed.map((entry) => ({
+    item: entry.item,
+    cleanName: entry.cleanName,
+    rawNorm: entry.rawNorm,
+    qualityMeta: {
+      label: entry.qualityLabel,
+      boost: Math.round(entry.qualityBoost * boostDelta),
+    },
   }));
 
   const matchedProviderNormNames = new Set<string>();
@@ -579,9 +566,9 @@ export function enrichTdtCatalogWithProviderChannels<T extends EnrichableTdtChan
         }
       }
       if (score >= 85) {
-        score += entry.qualityMeta.boost;
+        score += entry.qualityMeta.boost + getSpanishServerSpeedBoost(entry.item.providerId);
         if (isPreferredSharkProSpainLjli(entry.item)) {
-          score += /\b(FHD|1080P?|4K|UHD)\b/i.test(entry.item.name) ? 60 : 40;
+          score += /\b(FHD|1080P?|4K|UHD)\b/i.test(entry.item.name) ? 35 : 22;
         } else if (/spain\s*[-_]\s*(?:ljli|أسبانيا|اسبانيا)/i.test(entry.item.categoryName)) {
           score += 15;
         }

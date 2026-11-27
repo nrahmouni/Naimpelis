@@ -63,9 +63,7 @@ export function preloadWorldChunks(world: PrefetchableWorldId): void {
   } else if (world === 'music') {
     void import('../components/music/RiffanMusicWorldView').catch(noop);
   } else if (world === 'providers') {
-    void import('../components/providers/ProvidersWorldView').catch(noop);
-  } else if (world === 'reels') {
-    void import('../components/reels/CineReelsWorldView').catch(noop);
+    void import('../components/providers/ProvidersCatalogSection').catch(noop);
   }
 }
 

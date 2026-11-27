@@ -113,6 +113,7 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
         try {
           const upstream = await streamingFetch(targetUrl, {
             headers,
+            keepAliveAgent: true,
             signal: hdrCtrl.signal,
             timeoutMs: 4800,
           });
@@ -248,14 +249,18 @@ export function createHlsProxyHandler(getPublicOrigin: (req: express.Request) =>
       });
 
       let finalManifest = rewritten.join('\n');
+      const isEndlistVod = manifestText.includes('#EXT-X-ENDLIST');
       if (!forceAac && discoveredTsUrls.length > 0 && req.method !== 'HEAD') {
         const ua = headers['User-Agent'];
-        for (const segUrl of discoveredTsUrls.slice(-2)) {
+        const toPrefetch = isEndlistVod ? discoveredTsUrls.slice(0, 2) : discoveredTsUrls.slice(-2);
+        for (const segUrl of toPrefetch) {
           prefetchLiveTsSegment(segUrl, effectiveReferer, ua).catch(() => {});
         }
-        const predicted = deriveNextPredictedSegmentUrl(discoveredTsUrls[discoveredTsUrls.length - 1]);
-        if (predicted) {
-          prefetchLiveTsSegment(predicted, effectiveReferer, ua).catch(() => {});
+        if (!isEndlistVod) {
+          const predicted = deriveNextPredictedSegmentUrl(discoveredTsUrls[discoveredTsUrls.length - 1]);
+          if (predicted) {
+            prefetchLiveTsSegment(predicted, effectiveReferer, ua).catch(() => {});
+          }
         }
       }
       if (forceAac && discoveredTsUrls.length > 0 && req.method !== 'HEAD') {

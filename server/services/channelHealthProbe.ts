@@ -111,7 +111,7 @@ export const STATUS_RANK: Record<ChannelHealthStatus, number> = {
 };
 
 export const DEGRADED_LATENCY_MS = 1800;
-export const PROBE_TIMEOUT_MS = 3500;
+export const PROBE_TIMEOUT_MS = 1500;
 export const DEFAULT_STALE_MS = 150_000;
 
 export function normalizeTrackUrl(sourceUrl: string): string {
@@ -279,7 +279,7 @@ export async function probeChannelTrack(
   }
   const timeoutMs = options?.timeoutMs ?? (isDvbHeadend ? 4500 : PROBE_TIMEOUT_MS);
   const fetchFn: FetchLike =
-    options?.fetchImpl ?? ((input, init) => streamingFetch(String(input), { ...init, timeoutMs }));
+    options?.fetchImpl ?? ((input, init) => streamingFetch(String(input), { ...init, keepAliveAgent: true, timeoutMs }));
   const isCnStream =
     cleanUrl.includes('38.75.136.137') ||
     cleanUrl.includes('63.141.230.178') ||

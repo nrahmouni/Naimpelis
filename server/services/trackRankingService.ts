@@ -19,6 +19,42 @@ export interface RankCandidateTracksOutput {
 
 export type RankCandidateTracksFn = (input: RankCandidateTracksInput) => RankCandidateTracksOutput;
 
+export function normalizeTrackLangCode(rawLang?: string): string {
+  const clean = String(rawLang || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z]/g, '');
+  if (!clean) return '';
+  if (
+    clean === 'ES' ||
+    clean === 'CAST' ||
+    clean === 'CASTELLANO' ||
+    clean === 'ESP' ||
+    clean === 'SPA' ||
+    clean === 'SPAIN' ||
+    clean === 'ESPANA' ||
+    clean === 'ESES'
+  ) {
+    return 'ES';
+  }
+  if (clean === 'LAT' || clean === 'LATINO' || clean === 'LATAM' || clean === 'LA' || clean === 'MX' || clean === 'ESMX') {
+    return 'LAT';
+  }
+  if (clean === 'VOSE' || clean === 'SUB' || clean === 'VO' || clean === 'SUBTITULADO') {
+    return 'VOSE';
+  }
+  if (clean === 'EN' || clean === 'ENG' || clean === 'ENGLISH' || clean === 'US' || clean === 'UK') {
+    return 'EN';
+  }
+  if (clean === 'CAT' || clean === 'CATALA' || clean === 'CA') return 'CAT';
+  if (clean === 'AR' || clean === 'ARB' || clean === 'ARABIC') return 'AR';
+  if (clean === 'FR' || clean === 'FRA' || clean === 'FRENCH') return 'FR';
+  if (clean === 'PT' || clean === 'POR' || clean === 'BR') return 'PT';
+  if (clean === 'IT' || clean === 'ITA') return 'IT';
+  if (clean === 'DE' || clean === 'GER' || clean === 'DEU') return 'DE';
+  return clean;
+}
+
 export function rankCandidateTracks({
   allDiscovered,
   preferLang,
@@ -27,30 +63,31 @@ export function rankCandidateTracks({
   hasExplicitGnulaUrl,
   healthMap,
 }: RankCandidateTracksInput): RankCandidateTracksOutput {
+  const normPrefer = normalizeTrackLangCode(preferLang) || String(preferLang || 'ES').toUpperCase();
   const getLangScore = (trackLang: string): number => {
-    const tl = String(trackLang || '').toUpperCase();
-    if (preferLang === 'EN') {
+    const tl = normalizeTrackLangCode(trackLang);
+    if (normPrefer === 'EN') {
       if (tl === 'EN') return 1;
       if (tl === 'VOSE') return 2;
       if (tl === 'ES') return 3;
       if (tl === 'LAT') return 4;
       return tl === 'AR' ? 6 : 5;
     }
-    if (preferLang === 'LAT') {
+    if (normPrefer === 'LAT') {
       if (tl === 'LAT') return 1;
       if (tl === 'ES') return 2;
       if (tl === 'VOSE') return 3;
       if (tl === 'EN') return 4;
       return tl === 'AR' ? 6 : 5;
     }
-    if (preferLang === 'VOSE') {
+    if (normPrefer === 'VOSE') {
       if (tl === 'VOSE') return 1;
       if (tl === 'EN') return 2;
       if (tl === 'ES') return 3;
       if (tl === 'LAT') return 4;
       return tl === 'AR' ? 6 : 5;
     }
-    if (preferLang === 'AR') {
+    if (normPrefer === 'AR') {
       if (tl === 'AR') return 1;
       if (tl === 'ES') return 2;
       if (tl === 'EN') return 3;

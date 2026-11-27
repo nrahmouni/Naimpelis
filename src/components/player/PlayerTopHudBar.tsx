@@ -24,6 +24,7 @@ interface PlayerTopHudBarProps {
   isStageFullscreen: boolean;
   isFullscreen: boolean;
   isHorizontalFullscreen: boolean;
+  shouldRotate90?: boolean;
   showControls: boolean;
   localPlaying: boolean;
   duration: number;
@@ -58,6 +59,7 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
   isStageFullscreen,
   isFullscreen,
   isHorizontalFullscreen,
+  shouldRotate90 = false,
   showControls,
   localPlaying,
   duration,
@@ -89,20 +91,22 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
         (!isCompressed || isStageFullscreen) &&
         (videoState.mode === 'hls' || videoState.mode === 'direct') && (
           <div
-            className={`pointer-events-none absolute z-30 flex items-start gap-3 transition-opacity duration-300 ${
+            className={`pointer-events-none absolute z-30 flex items-start gap-2 sm:gap-3 transition-opacity duration-300 ${
               isMultiGrid
                 ? 'top-8 right-2 sm:right-3 justify-end'
+                : shouldRotate90
+                ? 'top-0 inset-x-0 px-3 pt-2.5 pb-8 bg-gradient-to-b from-black/90 via-black/45 to-transparent justify-between'
                 : 'top-0 inset-x-0 px-3 sm:px-5 pl-[max(0.75rem,env(safe-area-inset-left))] pr-[max(0.75rem,env(safe-area-inset-right))] pt-[max(0.75rem,env(safe-area-inset-top))] pb-10 bg-gradient-to-b from-black/90 via-black/45 to-transparent justify-between'
             } ${showControls ? 'opacity-100' : 'opacity-0'}`}
           >
             {!isMultiGrid && (
-              <div className={`min-w-0 pt-1 transition-opacity ${isTouchLocked ? 'opacity-0' : 'opacity-100'}`}>
-                <h2 className="font-display font-bold text-sm sm:text-base text-white leading-tight break-words line-clamp-2 drop-shadow">
+              <div className={`min-w-0 flex-1 pt-0.5 transition-opacity ${isTouchLocked ? 'opacity-0' : 'opacity-100'}`}>
+                <h2 className="font-display font-bold text-sm sm:text-base text-white leading-tight break-words line-clamp-1 sm:line-clamp-2 drop-shadow">
                   {videoState.title}
                 </h2>
                 <div className="flex items-center gap-2 flex-wrap mt-0.5">
                   {videoState.subtitle && (
-                    <p className="text-[11px] sm:text-xs text-zinc-300 leading-snug break-words line-clamp-2">
+                    <p className="text-[11px] sm:text-xs text-zinc-300 leading-snug break-words line-clamp-1 sm:line-clamp-2">
                       {videoState.subtitle}
                     </p>
                   )}
@@ -118,7 +122,7 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
               </div>
             )}
 
-            <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <div className="pointer-events-auto flex items-center gap-1 sm:gap-2 shrink-0">
               {!isTvMode && (isFullscreen || isHorizontalFullscreen) && onToggleTouchLock && (
                 <button
                   type="button"

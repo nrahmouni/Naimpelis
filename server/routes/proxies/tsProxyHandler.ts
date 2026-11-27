@@ -86,6 +86,7 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
       const upstream = await streamingFetch(targetUrl, {
         method: 'HEAD',
         headers,
+        keepAliveAgent: true,
         timeoutMs: 5000,
       });
       applyProxyCorsHeaders(res, reqId);
@@ -114,10 +115,25 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
         res.status(502).end();
         return;
       }
-      res.status(200);
       applyProxyCorsHeaders(res, reqId);
       res.setHeader('Content-Type', 'video/mp2t');
+      res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Cache-Control', 'public, max-age=20');
+      const aacRange = String(req.headers.range || '').match(/^bytes=(\d+)-(\d*)$/i);
+      if (aacRange) {
+        const start = parseInt(aacRange[1], 10);
+        const rawEnd = aacRange[2] ? parseInt(aacRange[2], 10) : remuxedBuf.length - 1;
+        if (start >= 0 && start < remuxedBuf.length) {
+          const end = Math.min(remuxedBuf.length - 1, Math.max(start, rawEnd));
+          const slice = remuxedBuf.subarray(start, end + 1);
+          res.status(206);
+          res.setHeader('Content-Range', `bytes ${start}-${end}/${remuxedBuf.length}`);
+          res.setHeader('Content-Length', String(slice.length));
+          res.end(slice);
+          return;
+        }
+      }
+      res.status(200);
       res.setHeader('Content-Length', String(remuxedBuf.length));
       res.end(remuxedBuf);
       return;
@@ -189,6 +205,7 @@ export async function handleTsProxy(req: express.Request, res: express.Response)
     }
     let upstream = await streamingFetch(targetUrl, {
       headers,
+      keepAliveAgent: true,
       signal: hdrCtrl.signal,
       timeoutMs: 6500,
     });

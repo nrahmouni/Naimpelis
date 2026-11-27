@@ -65,6 +65,8 @@ const opaqueSubPlaylistCache = new LruTtlCache<string, OpaqueProxyEntry>(2500, 1
 const opaqueSegmentCache = new LruTtlCache<string, OpaqueProxyEntry>(8000, 8 * 60 * 1000);
 const liveSessionUrlCache = new LruTtlCache<string, LiveSessionEntry>(400, 90_000);
 const liveRollingSeqCache = new LruTtlCache<string, RollingProviderStreamState>(400, 120_000);
+const providerSeriesInfoCache = new LruTtlCache<string, ProviderSeriesInfoResult>(300, 25 * 60 * 1000);
+const inFlightSeriesInfoMap = new Map<string, Promise<ProviderSeriesInfoResult | null>>();
 
 const KNOWN_PROVIDER_HOSTNAMES = new Set(
   DEFAULT_PROVIDERS.map((p) => {
@@ -564,75 +566,91 @@ export async function fetchProviderSeriesInfo(
   const cleanSeriesId = String(seriesId || '').trim();
   if (!provider || !/^[a-zA-Z0-9_-]{1,32}$/.test(cleanSeriesId)) return null;
 
-  const orderedAccounts = getRotatedAccountOrder(provider);
-  for (const { account, index } of orderedAccounts) {
-    try {
-      const res = await fetchXtreamJsonAction(provider.baseUrl, account, 'get_series_info', {
-        series_id: cleanSeriesId,
-      });
-      if (!res.ok || !res.data || typeof res.data !== 'object') continue;
-      const raw = res.data as {
-        info?: Record<string, unknown>;
-        episodes?: Record<string, unknown[]>;
-      };
-      if (!raw.episodes || typeof raw.episodes !== 'object') continue;
+  const cacheKey = `${provider.id}:${cleanSeriesId}`;
+  const cached = providerSeriesInfoCache.get(cacheKey);
+  if (cached) return cached;
 
-      activeAccountIndexMap.set(provider.id, index);
-      const episodesBySeason: Record<string, ProviderSeriesEpisodeItem[]> = {};
-      const seasonNums: number[] = [];
+  const existingInFlight = inFlightSeriesInfoMap.get(cacheKey);
+  if (existingInFlight) return existingInFlight;
 
-      for (const [seasonKey, epList] of Object.entries(raw.episodes)) {
-        if (!Array.isArray(epList)) continue;
-        const seasonNum = Number(seasonKey) || 1;
-        const normalizedEps: ProviderSeriesEpisodeItem[] = [];
-        for (const epRaw of epList) {
-          if (!epRaw || typeof epRaw !== 'object') continue;
-          const ep = epRaw as Record<string, unknown>;
-          const episodeId = String(ep.id ?? '').trim();
-          if (!episodeId) continue;
-          const epInfo = (ep.info && typeof ep.info === 'object' ? ep.info : {}) as Record<
-            string,
-            unknown
-          >;
-          const ext = sanitizeExt(ep.container_extension, 'mp4');
-          const episodeNum = Number(ep.episode_num ?? 0) || normalizedEps.length + 1;
-          normalizedEps.push({
-            id: `${provider.id}-ep-${episodeId}`,
-            episodeId,
-            season: seasonNum,
-            episodeNum,
-            title: String(ep.title ?? `Episodio ${episodeNum}`).trim(),
-            duration: String(epInfo.duration ?? '').trim(),
-            poster: sanitizeProviderArtworkUrl(epInfo.movie_image ?? raw.info?.cover),
-            ext,
-            playbackUrl: `/api/providers/series-stream/${encodeURIComponent(
-              provider.id
-            )}/${encodeURIComponent(episodeId)}.${ext}`,
-          });
+  const runner = (async (): Promise<ProviderSeriesInfoResult | null> => {
+    const orderedAccounts = getRotatedAccountOrder(provider);
+    for (const { account, index } of orderedAccounts) {
+      try {
+        const res = await fetchXtreamJsonAction(provider.baseUrl, account, 'get_series_info', {
+          series_id: cleanSeriesId,
+        });
+        if (!res.ok || !res.data || typeof res.data !== 'object') continue;
+        const raw = res.data as {
+          info?: Record<string, unknown>;
+          episodes?: Record<string, unknown[]>;
+        };
+        if (!raw.episodes || typeof raw.episodes !== 'object') continue;
+
+        activeAccountIndexMap.set(provider.id, index);
+        const episodesBySeason: Record<string, ProviderSeriesEpisodeItem[]> = {};
+        const seasonNums: number[] = [];
+
+        for (const [seasonKey, epList] of Object.entries(raw.episodes)) {
+          if (!Array.isArray(epList)) continue;
+          const seasonNum = Number(seasonKey) || 1;
+          const normalizedEps: ProviderSeriesEpisodeItem[] = [];
+          for (const epRaw of epList) {
+            if (!epRaw || typeof epRaw !== 'object') continue;
+            const ep = epRaw as Record<string, unknown>;
+            const episodeId = String(ep.id ?? '').trim();
+            if (!episodeId) continue;
+            const epInfo = (ep.info && typeof ep.info === 'object' ? ep.info : {}) as Record<
+              string,
+              unknown
+            >;
+            const ext = sanitizeExt(ep.container_extension, 'mp4');
+            const episodeNum = Number(ep.episode_num ?? 0) || normalizedEps.length + 1;
+            normalizedEps.push({
+              id: `${provider.id}-ep-${episodeId}`,
+              episodeId,
+              season: seasonNum,
+              episodeNum,
+              title: String(ep.title ?? `Episodio ${episodeNum}`).trim(),
+              duration: String(epInfo.duration ?? '').trim(),
+              poster: sanitizeProviderArtworkUrl(epInfo.movie_image ?? raw.info?.cover),
+              ext,
+              playbackUrl: `/api/providers/series-stream/${encodeURIComponent(
+                provider.id
+              )}/${encodeURIComponent(episodeId)}.${ext}`,
+            });
+          }
+          if (normalizedEps.length > 0) {
+            normalizedEps.sort((a, b) => a.episodeNum - b.episodeNum);
+            episodesBySeason[String(seasonNum)] = normalizedEps;
+            seasonNums.push(seasonNum);
+          }
         }
-        if (normalizedEps.length > 0) {
-          normalizedEps.sort((a, b) => a.episodeNum - b.episodeNum);
-          episodesBySeason[String(seasonNum)] = normalizedEps;
-          seasonNums.push(seasonNum);
-        }
+
+        seasonNums.sort((a, b) => a - b);
+        const payload: ProviderSeriesInfoResult = {
+          providerId: provider.id,
+          providerName: provider.name,
+          seriesId: cleanSeriesId,
+          title: String(raw.info?.name ?? 'Serie').trim(),
+          poster: sanitizeProviderArtworkUrl(raw.info?.cover),
+          plot: String(raw.info?.plot ?? '').trim(),
+          seasons: seasonNums,
+          episodesBySeason,
+        };
+        providerSeriesInfoCache.set(cacheKey, payload);
+        return payload;
+      } catch {
+        // rotate
       }
-
-      seasonNums.sort((a, b) => a - b);
-      return {
-        providerId: provider.id,
-        providerName: provider.name,
-        seriesId: cleanSeriesId,
-        title: String(raw.info?.name ?? 'Serie').trim(),
-        poster: sanitizeProviderArtworkUrl(raw.info?.cover),
-        plot: String(raw.info?.plot ?? '').trim(),
-        seasons: seasonNums,
-        episodesBySeason,
-      };
-    } catch {
-      // rotate
     }
-  }
-  return null;
+    return null;
+  })().finally(() => {
+    inFlightSeriesInfoMap.delete(cacheKey);
+  });
+
+  inFlightSeriesInfoMap.set(cacheKey, runner);
+  return runner;
 }
 
 function rewriteProviderUriAttributes(

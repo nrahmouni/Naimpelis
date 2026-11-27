@@ -16,6 +16,7 @@ interface UseNativePlayerStageStateArgs {
   duration: number;
   autoNextCancelledForUrl: string;
   onNextEpisode?: () => void;
+  stageWrapperRef: React.MutableRefObject<HTMLDivElement | null>;
   videoRef: React.MutableRefObject<HTMLVideoElement | null>;
   controlsTimeoutRef: React.MutableRefObject<ReturnType<typeof setTimeout> | null>;
   showControlsRef: React.MutableRefObject<boolean>;
@@ -47,6 +48,7 @@ export function useNativePlayerStageState({
   duration,
   autoNextCancelledForUrl,
   onNextEpisode,
+  stageWrapperRef,
   videoRef,
   controlsTimeoutRef,
   showControlsRef,
@@ -156,12 +158,34 @@ export function useNativePlayerStageState({
     }
   }, [videoState.url, videoState.mode]);
 
+  const isStageFullscreen = !isMinimized && (isFullscreen || isHorizontalFullscreen);
+  const isStageFullscreenRef = useRef(isStageFullscreen);
+  isStageFullscreenRef.current = isStageFullscreen;
+
   useEffect(() => {
     const updateViewportOrientation = () => {
-      const nextW = window.innerWidth;
-      const nextH = window.innerHeight;
+      const stageEl = stageWrapperRef.current;
+      if (isStageFullscreenRef.current && stageEl) {
+        const rect = stageEl.getBoundingClientRect();
+        if (rect.width > 100 && rect.height > 100) {
+          const rectW = Math.round(rect.width);
+          const rectH = Math.round(rect.height);
+          setViewportDims((prev) =>
+            prev.w === rectW && prev.h === rectH ? prev : { w: rectW, h: rectH }
+          );
+          return;
+        }
+      }
+      const vv = window.visualViewport;
+      const nextW = Math.round(
+        vv?.width || window.innerWidth || document.documentElement.clientWidth || 390
+      );
+      const nextH = Math.round(
+        vv?.height || window.innerHeight || document.documentElement.clientHeight || 844
+      );
       setViewportDims((prev) => (prev.w === nextW && prev.h === nextH ? prev : { w: nextW, h: nextH }));
     };
+
     const onFsChange = () => {
       const activeFs = Boolean(document.fullscreenElement);
       setIsFullscreen((prev) => (prev === activeFs ? prev : activeFs));
@@ -176,18 +200,48 @@ export function useNativePlayerStageState({
         }
       }
       updateViewportOrientation();
+      requestAnimationFrame(updateViewportOrientation);
       setTimeout(updateViewportOrientation, 120);
       setTimeout(updateViewportOrientation, 350);
     };
+
+    const onWebkitEndFs = () => {
+      setIsFullscreen(false);
+      setIsHorizontalFullscreen(false);
+      updateViewportOrientation();
+    };
+
+    const vv = window.visualViewport;
+    const vidEl = videoRef.current;
+    const stageEl = stageWrapperRef.current;
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && stageEl && isStageFullscreen) {
+      ro = new ResizeObserver(() => {
+        updateViewportOrientation();
+      });
+      ro.observe(stageEl);
+    }
+
+    updateViewportOrientation();
+    const rafId = requestAnimationFrame(updateViewportOrientation);
     window.addEventListener('resize', updateViewportOrientation);
     window.addEventListener('orientationchange', updateViewportOrientation);
+    vv?.addEventListener('resize', updateViewportOrientation);
+    vv?.addEventListener('scroll', updateViewportOrientation);
     document.addEventListener('fullscreenchange', onFsChange);
+    vidEl?.addEventListener('webkitendfullscreen', onWebkitEndFs);
+
     return () => {
+      cancelAnimationFrame(rafId);
+      ro?.disconnect();
       window.removeEventListener('resize', updateViewportOrientation);
       window.removeEventListener('orientationchange', updateViewportOrientation);
+      vv?.removeEventListener('resize', updateViewportOrientation);
+      vv?.removeEventListener('scroll', updateViewportOrientation);
       document.removeEventListener('fullscreenchange', onFsChange);
+      vidEl?.removeEventListener('webkitendfullscreen', onWebkitEndFs);
     };
-  }, [setIsFullscreen, setIsHorizontalFullscreen, setViewportDims]);
+  }, [isStageFullscreen, setIsFullscreen, setIsHorizontalFullscreen, setViewportDims, stageWrapperRef, videoRef]);
 
   useEffect(() => {
     const vid = videoRef.current;
@@ -246,7 +300,6 @@ export function useNativePlayerStageState({
     }
   }, [cloudState?.url, setCloudUrlInput, videoState.mode, videoState.url]);
 
-  const isStageFullscreen = !isMinimized && (isFullscreen || isHorizontalFullscreen);
   const shouldRotate90 =
     isStageFullscreen && forceLandscapeRotation && viewportDims.h > viewportDims.w;
 

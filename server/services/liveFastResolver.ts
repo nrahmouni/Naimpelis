@@ -25,6 +25,65 @@ import { unwrapProxyTargetUrl } from './channelHealthProbe.ts';
 import { getActiveDvbSessionPath, isDvbUpstreamCoolingDown } from '../routes/proxies/dvbTranscoder.ts';
 import { inferStreamQualityTag, normalizeLiveTrackLang } from '../../src/utils/channelQualityRanker.ts';
 
+import {
+  extractProviderBucket,
+  getProviderSteeringPenaltyMs,
+  isProviderCircuitOpen,
+  recordProviderOutcome,
+} from './providerCircuitBreaker.ts';
+
+export const MAX_LIVE_PROBE_CONCURRENCY = 10;
+
+let activeLiveProbeCount = 0;
+let peakLiveProbeCount = 0;
+const liveProbeWaiters: Array<() => void> = [];
+
+async function acquireLiveProbeSlot(): Promise<void> {
+  if (activeLiveProbeCount < MAX_LIVE_PROBE_CONCURRENCY) {
+    activeLiveProbeCount += 1;
+    if (activeLiveProbeCount > peakLiveProbeCount) {
+      peakLiveProbeCount = activeLiveProbeCount;
+    }
+    return;
+  }
+  await new Promise<void>((resolve) => {
+    liveProbeWaiters.push(() => {
+      activeLiveProbeCount += 1;
+      if (activeLiveProbeCount > peakLiveProbeCount) {
+        peakLiveProbeCount = activeLiveProbeCount;
+      }
+      resolve();
+    });
+  });
+}
+
+function releaseLiveProbeSlot(): void {
+  activeLiveProbeCount = Math.max(0, activeLiveProbeCount - 1);
+  const next = liveProbeWaiters.shift();
+  if (next) next();
+}
+
+export function getLiveProbeConcurrencyStats(): {
+  active: number;
+  peak: number;
+  max: number;
+} {
+  return {
+    active: activeLiveProbeCount,
+    peak: peakLiveProbeCount,
+    max: MAX_LIVE_PROBE_CONCURRENCY,
+  };
+}
+
+export function resetLiveProbeConcurrencyStats(): void {
+  activeLiveProbeCount = 0;
+  peakLiveProbeCount = 0;
+  while (liveProbeWaiters.length > 0) {
+    const fn = liveProbeWaiters.shift();
+    if (fn) fn();
+  }
+}
+
 export interface FastLiveTrackCandidate {
   id?: string;
   label?: string;
@@ -55,6 +114,7 @@ export interface FastLiveResolveResult {
   winningIndex: number;
   winningTrack: FastLiveTrackCandidate | null;
   streamUrl: string;
+  backupStreamUrl?: string;
   mode: 'hls' | 'embed';
   latencyMs: number;
   fromCache?: boolean;
@@ -106,6 +166,7 @@ export async function defaultProbeSingleLiveTrack(
     belixSessionKey: string;
     titleHint?: string;
     timeoutMs: number;
+    signal?: AbortSignal;
   }
 ): Promise<FastLiveProbeOutcome> {
   const startedAt = Date.now();
@@ -301,11 +362,13 @@ export async function defaultProbeSingleLiveTrack(
     try {
       const res = await streamingFetch(cleanUrl, {
         method: 'GET',
+        keepAliveAgent: true,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126.0.0.0 Safari/537.36',
           Referer: referer,
           Accept: '*/*',
         },
+        signal: opts.signal,
         timeoutMs: opts.timeoutMs,
       });
       const lat = Math.max(1, Date.now() - startedAt);
@@ -350,6 +413,8 @@ export function orderCandidatesForFastResolve(
   const indexed = tracks.map((track, originalIndex) => {
     const liveHealth = healthMap[String(track.sourceUrl || '').trim()] || track.health;
     const status = liveHealth?.status ?? 'unknown';
+    const isPriority =
+      /priority/i.test(String(track.id || '')) || /prioritaria/i.test(String(track.label || ''));
     const statusRank = status === 'up' ? 0 : status === 'unknown' ? 1 : status === 'degraded' ? 2 : 3;
     const normLang = normalizeLiveTrackLang(track.lang, track.label);
     const langRank = qualityFirst
@@ -368,13 +433,18 @@ export function orderCandidatesForFastResolve(
     const isResidentialDvb = /90\.163\.85\.113(?::|%3A)8093/i.test(unwrapped);
     const q = inferStreamQualityTag(track.quality, track.label, track.sourceUrl);
     const lat = typeof liveHealth?.latencyMs === 'number' ? Math.min(9999, liveHealth.latencyMs) : 1200;
+    const circuitOpen = isProviderCircuitOpen(track.sourceUrl, track.providerId);
+    const steeringPenalty = status === 'up' ? 0 : Math.min(4000, getProviderSteeringPenaltyMs(track.sourceUrl, track.providerId));
     const score =
-      statusRank * 1000000 +
-      (isEmbed ? 500000 : 0) +
-      (isResidentialDvb ? 150000 : 0) +
-      langRank * 10000 +
+      (isPriority && status !== 'down' ? -2_000_000 : 0) +
+      (circuitOpen ? 1_500_000 : 0) +
+      statusRank * 1_000_000 +
+      (isEmbed ? 500_000 : 0) +
+      (isResidentialDvb ? 150_000 : 0) +
+      langRank * 10_000 +
       Math.round(q.tier * 90) +
-      lat;
+      lat +
+      Math.round(steeringPenalty * 0.15);
     return { originalIndex, track, score };
   });
 
@@ -387,6 +457,8 @@ export async function raceFastLiveTracks(
   opts: {
     channelId?: string;
     titleHint?: string;
+    broadcasters?: string[];
+    competition?: string;
     preferLang?: string;
     preferQualityFirst?: boolean;
     publicOrigin?: string;
@@ -423,13 +495,21 @@ export async function raceFastLiveTracks(
     return existingInflight;
   }
 
-  const ordered = orderCandidatesForFastResolve(safeTracks, {
+  const healthSnapshot = channelHealthMonitor.getAllTrackStatuses();
+  const nonDownTracks = safeTracks.filter((t) => {
+    const st = healthSnapshot[String(t.sourceUrl || '').trim()]?.status || t.health?.status;
+    return st !== 'down';
+  });
+  const eligibleTracks = nonDownTracks.length > 0 ? nonDownTracks : safeTracks;
+
+  const ordered = orderCandidatesForFastResolve(eligibleTracks, {
     preferLang,
     preferQualityFirst: qualityFirst,
   }).slice(0, 6);
 
   const probeImpl = opts.probeImpl || defaultProbeSingleLiveTrack;
   const timeoutMs = opts.timeoutMs ?? 2_600;
+  const clampedProbeTimeoutMs = Math.max(250, Math.min(1_500, timeoutMs));
   const hedgeDelay1 = opts.hedgeDelayMs ?? 120;
   const hedgeDelay2 = opts.hedgeSecondaryDelayMs ?? 300;
   const publicOrigin = opts.publicOrigin || '';
@@ -439,36 +519,74 @@ export async function raceFastLiveTracks(
     const startedAt = Date.now();
     let settled = false;
     let checkedCount = 0;
+    const raceAbort = new AbortController();
 
     return new Promise<FastLiveResolveResult>((resolve) => {
       const timers: ReturnType<typeof setTimeout>[] = [];
+      let backupGraceTimer: ReturnType<typeof setTimeout> | null = null;
       let pendingCount = ordered.length;
+      let wave1InFlight = 0;
+      let primaryHlsWinner: {
+        cand: { originalIndex: number; track: FastLiveTrackCandidate };
+        out: FastLiveProbeOutcome;
+      } | null = null;
+      let backupHlsUrl: string | undefined;
       let embedFallback: { originalIndex: number; track: FastLiveTrackCandidate; out: FastLiveProbeOutcome } | null = null;
 
       const finish = (res: FastLiveResolveResult) => {
         if (settled) return;
         settled = true;
+        if (backupGraceTimer) clearTimeout(backupGraceTimer);
         for (const t of timers) clearTimeout(t);
+        raceAbort.abort();
         if (res.ok) {
           fastLiveWinnerCache.set(cacheKey, res);
         }
         resolve(res);
       };
 
-      const launchCandidate = (cand: { originalIndex: number; track: FastLiveTrackCandidate }) => {
+      const flushPrimaryWinner = () => {
+        if (!primaryHlsWinner || settled) return;
+        finish({
+          ok: true,
+          winningIndex: primaryHlsWinner.cand.originalIndex,
+          winningTrack: primaryHlsWinner.cand.track,
+          streamUrl: primaryHlsWinner.out.streamUrl,
+          ...(backupHlsUrl ? { backupStreamUrl: backupHlsUrl } : {}),
+          mode: 'hls',
+          latencyMs: primaryHlsWinner.out.latencyMs,
+          checkedCount,
+        });
+      };
+
+      const launchCandidate = (
+        cand: { originalIndex: number; track: FastLiveTrackCandidate },
+        isWave1 = false
+      ) => {
         if (settled) {
           pendingCount -= 1;
           return;
         }
         checkedCount += 1;
-        probeImpl(cand.track, {
-          publicOrigin,
-          belixSessionKey,
-          titleHint: opts.titleHint,
-          timeoutMs,
-        })
-          .then((out) => {
+        if (isWave1) wave1InFlight += 1;
+
+        void (async () => {
+          await acquireLiveProbeSlot();
+          try {
+            if (settled) return;
+            const out = await probeImpl(cand.track, {
+              publicOrigin,
+              belixSessionKey,
+              titleHint: opts.titleHint,
+              timeoutMs: clampedProbeTimeoutMs,
+              signal: raceAbort.signal,
+            });
             if (out.ok && out.streamUrl) {
+              recordProviderOutcome(cand.track.sourceUrl, {
+                ok: true,
+                latencyMs: out.latencyMs,
+                explicitProviderId: cand.track.providerId,
+              });
               if (out.mode === 'hls') {
                 channelHealthMonitor.setTrackHealth(cand.track.sourceUrl, {
                   status: out.latencyMs <= 1800 ? 'up' : 'degraded',
@@ -477,21 +595,31 @@ export async function raceFastLiveTracks(
                   checkedAt: Date.now(),
                   statusCode: out.statusCode ?? 200,
                 });
-                finish({
-                  ok: true,
-                  winningIndex: cand.originalIndex,
-                  winningTrack: cand.track,
-                  streamUrl: out.streamUrl,
-                  mode: 'hls',
-                  latencyMs: out.latencyMs,
-                  checkedCount,
-                });
+                if (!primaryHlsWinner) {
+                  primaryHlsWinner = { cand, out };
+                  const isPriorityWinner =
+                    /priority/i.test(String(cand.track.id || '')) ||
+                    /prioritaria/i.test(String(cand.track.label || ''));
+                  const othersStillInWave1 = wave1InFlight - 1 > 0;
+                  if (isPriorityWinner || !othersStillInWave1 || settled) {
+                    flushPrimaryWinner();
+                  } else {
+                    backupGraceTimer = setTimeout(flushPrimaryWinner, Math.min(80, clampedProbeTimeoutMs));
+                  }
+                } else if (!backupHlsUrl && out.streamUrl !== primaryHlsWinner.out.streamUrl) {
+                  backupHlsUrl = out.streamUrl;
+                  flushPrimaryWinner();
+                }
                 return;
               }
               if (!embedFallback) {
                 embedFallback = { ...cand, out };
               }
             } else {
+              recordProviderOutcome(cand.track.sourceUrl, {
+                ok: false,
+                explicitProviderId: cand.track.providerId,
+              });
               channelHealthMonitor.setTrackHealth(cand.track.sourceUrl, {
                 status: 'down',
                 latencyMs: out.latencyMs,
@@ -500,17 +628,29 @@ export async function raceFastLiveTracks(
                 statusCode: out.statusCode ?? 502,
               });
             }
-          })
-          .catch(() => {
-            channelHealthMonitor.setTrackHealth(cand.track.sourceUrl, {
-              status: 'down',
-              failCount: 1,
-              checkedAt: Date.now(),
-            });
-          })
-          .finally(() => {
+          } catch {
+            if (!settled) {
+              recordProviderOutcome(cand.track.sourceUrl, {
+                ok: false,
+                explicitProviderId: cand.track.providerId,
+              });
+              channelHealthMonitor.setTrackHealth(cand.track.sourceUrl, {
+                status: 'down',
+                failCount: 1,
+                checkedAt: Date.now(),
+              });
+            }
+          } finally {
+            releaseLiveProbeSlot();
+            if (isWave1) wave1InFlight = Math.max(0, wave1InFlight - 1);
             pendingCount -= 1;
-            if (!settled && pendingCount <= 0) {
+            if (!settled && primaryHlsWinner && isWave1 && wave1InFlight === 0) {
+              flushPrimaryWinner();
+            } else if (!settled && pendingCount <= 0) {
+              if (primaryHlsWinner) {
+                flushPrimaryWinner();
+                return;
+              }
               if (embedFallback) {
                 finish({
                   ok: true,
@@ -533,38 +673,48 @@ export async function raceFastLiveTracks(
                 checkedCount,
               });
             }
-          });
+          }
+        })();
       };
 
-      // Wave 1 (t=0): Top candidate immediately; if unprobed or slow (>350ms), also launch fastest non-DVB backup
-      const healthMap = channelHealthMonitor.getAllTrackStatuses();
-      const firstHealth = healthMap[String(ordered[0]?.track.sourceUrl || '').trim()] || ordered[0]?.track.health;
+      // Wave 1 (t=0): Top candidate immediately; if unprobed and non-priority, hedge up to 4 distinct-provider non-DVB mirrors
+      const firstHealth =
+        healthSnapshot[String(ordered[0]?.track.sourceUrl || '').trim()] || ordered[0]?.track.health;
       const firstFastUp =
         firstHealth?.status === 'up' && typeof firstHealth.latencyMs === 'number' && firstHealth.latencyMs <= 350;
+      const firstIsPriority =
+        /priority/i.test(String(ordered[0]?.track.id || '')) ||
+        /prioritaria/i.test(String(ordered[0]?.track.label || ''));
       const isNonDvb = (cand?: { track: FastLiveTrackCandidate }) =>
         Boolean(cand) &&
         !/90\.163\.85\.113/i.test(unwrapProxyTargetUrl(String(cand!.track.sourceUrl || '')));
 
-      const wave1ExtraIdx =
-        !firstFastUp &&
-        ordered.length > 1 &&
-        isNonDvb(ordered[0]) &&
-        isNonDvb(ordered[1])
-          ? 1
-          : -1;
+      const wave1Indexes = new Set<number>([0]);
+      if (!firstFastUp && !firstIsPriority && isNonDvb(ordered[0])) {
+        const seenBuckets = new Set<string>([
+          extractProviderBucket(ordered[0].track.sourceUrl, ordered[0].track.providerId),
+        ]);
+        for (let i = 1; i < ordered.length && wave1Indexes.size < 4; i++) {
+          if (!isNonDvb(ordered[i])) continue;
+          const bucket = extractProviderBucket(ordered[i].track.sourceUrl, ordered[i].track.providerId);
+          if (!seenBuckets.has(bucket) || ordered.length <= 4) {
+            seenBuckets.add(bucket);
+            wave1Indexes.add(i);
+          }
+        }
+      }
 
-      launchCandidate(ordered[0]);
-      if (wave1ExtraIdx !== -1) {
-        launchCandidate(ordered[wave1ExtraIdx]);
+      for (const idx of wave1Indexes) {
+        launchCandidate(ordered[idx], true);
       }
 
       // Wave 2 (t=+hedgeDelay1): Hedge next candidates not yet launched
-      const remaining = ordered.filter((_, idx) => idx !== 0 && idx !== wave1ExtraIdx);
+      const remaining = ordered.filter((_, idx) => !wave1Indexes.has(idx));
       if (remaining.length > 0) {
         const wave2 = setTimeout(() => {
           if (settled) return;
           for (const c of remaining.slice(0, 2)) {
-            launchCandidate(c);
+            launchCandidate(c, false);
           }
         }, hedgeDelay1);
         timers.push(wave2);
@@ -575,7 +725,7 @@ export async function raceFastLiveTracks(
         const wave3 = setTimeout(() => {
           if (settled) return;
           for (const c of remaining.slice(2)) {
-            launchCandidate(c);
+            launchCandidate(c, false);
           }
         }, hedgeDelay2);
         timers.push(wave3);

@@ -92,7 +92,11 @@ export const PlayerTransportBar: React.FC<PlayerTransportBarProps> = ({
 
   return (
     <div
-      className={`pointer-events-none absolute bottom-0 inset-x-0 z-30 px-2.5 sm:px-5 pl-[max(0.625rem,env(safe-area-inset-left))] pr-[max(0.625rem,env(safe-area-inset-right))] pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-3 pt-4 bg-gradient-to-t from-black/95 via-black/75 to-transparent transition-opacity duration-300 ${
+      className={`pointer-events-none absolute bottom-0 inset-x-0 z-30 ${
+        shouldRotate90
+          ? 'px-3 pb-2.5 pt-4'
+          : 'px-2.5 sm:px-5 pl-[max(0.625rem,env(safe-area-inset-left))] pr-[max(0.625rem,env(safe-area-inset-right))] pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:pb-3 pt-4'
+      } bg-gradient-to-t from-black/95 via-black/75 to-transparent transition-opacity duration-300 ${
         controlsActive ? 'opacity-100' : 'opacity-0'
       }`}
     >

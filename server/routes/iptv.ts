@@ -46,6 +46,8 @@ import {
   getVerifiedSpainXtreamChannels,
 } from '../services/octopusSpainLiveService.ts';
 import { resolveProviderLiveManifest } from '../services/providers/xtreamProvidersService.ts';
+import { enrichTdtCatalogWithProviderChannels } from '../services/providers/xtreamFastSignalService.ts';
+import { warmDefaultProvidersBackground } from '../services/providers/xtreamMultiProviderService.ts';
 import {
   ensureLiveDvbCleanHlsSession,
   getActiveDvbSessionPath,
@@ -155,6 +157,7 @@ export function registerIptvAndTdtRoutes(
     const xtreamEnvChannels = getCachedXtreamLiveTdtChannels().filter(
       (c) => !belixStreamIds.has(c.streamId) && !verifiedSpainStreamIds.has(c.streamId)
     );
+    warmDefaultProvidersBackground();
     const merged = [
       ...verifiedSpainChannels,
       ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS, belixActive),
@@ -162,10 +165,14 @@ export function registerIptvAndTdtRoutes(
       ...xtreamEnvChannels,
       ...getCuratedRbtvChannels(),
     ];
+    const prioritized = buildUnifiedPrioritizedChannels(merged);
+    const enrichedWithFastProviders = enrichTdtCatalogWithProviderChannels(prioritized as any, {
+      preferQualityFirst: true,
+    });
     res.json({
       success: true,
       iptvMeta: getIptvSyncMeta(),
-      channels: buildUnifiedPrioritizedChannels(merged).map((ch) => ({
+      channels: enrichedWithFastProviders.map((ch: any) => ({
         ...ch,
         logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
       })),
@@ -489,7 +496,7 @@ export function registerIptvAndTdtRoutes(
           );
         }
 
-        if (track.resolverType === 'mediaset_live') {
+        if (String(track.resolverType) === 'mediaset_live') {
           const msResolved = await resolveMediasetLiveHlsUrl(sourceUrl);
           if (!msResolved?.streamUrl) {
             markTrackDown(sourceUrl, 403);
