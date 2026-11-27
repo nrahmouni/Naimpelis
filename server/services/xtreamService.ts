@@ -10,13 +10,6 @@ import { logger } from '../utils/logger.ts';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { assertSafeProxyUrl } from '../utils/ssrfGuard.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
-import { parseStreamMetadata as parseStreamMetadataImpl } from '../utils/streamMetaParser.ts';
-import {
-  ensureLiveDvbCleanHlsSession,
-  getActiveDvbSessionPath,
-  isDvbUpstreamCoolingDown,
-  readLiveDvbPlaylistForIptv,
-} from '../routes/proxies/dvbTranscoder.ts';
 import {
   getAllXtreamProviders,
   getXtreamProviderById,
@@ -25,7 +18,6 @@ import {
   type XtreamAccountCredential,
   type XtreamProviderDefinition,
 } from './providersConfig.ts';
-import { recordProviderOutcome } from './providerCircuitBreaker.ts';
 
 export type { XtreamAccountCredential, XtreamProviderDefinition };
 
@@ -285,6 +277,7 @@ const REQUEST_TIMEOUT_MS = 4_500;
 const providerSessionCaches = new Map<string, ActiveSessionCache>();
 const backgroundSessionRefreshes = new Set<string>();
 const providerCatalogCaches = new Map<string, CatalogRamCache>();
+const liveOnlyCatalogCaches = new Map<string, CatalogRamCache>();
 const inflightCatalogSyncs = new Map<
   string,
   Promise<{
@@ -294,52 +287,19 @@ const inflightCatalogSyncs = new Map<
     error?: string;
   }>
 >();
+const inflightLiveSyncs = new Map<
+  string,
+  Promise<{
+    ok: boolean;
+    catalog?: XtreamFullCatalogPayload;
+  }>
+>();
 
 const opaqueTokenCache = new LruTtlCache<string, OpaqueSegmentEntry>(4_000, 10 * 60_000);
 const urlToOpaqueTokenCache = new LruTtlCache<string, string>(4_000, 10 * 60_000);
 const opaqueIconCache = new LruTtlCache<string, string>(12_000, 12 * 60 * 60_000);
 const urlToOpaqueIconTokenCache = new LruTtlCache<string, string>(12_000, 12 * 60 * 60_000);
-const liveManifestRamCache = new LruTtlCache<string, string>(400, 14_000);
-const subManifestBodyRamCache = new LruTtlCache<string, string>(500, 10_000);
-const segmentBodyRamCache = new LruTtlCache<
-  string,
-  { status: number; contentType: string; buffer: Buffer }
->(160, 14_000);
-const streamAccountCooldowns = new Map<string, number>();
-const streamAccountFailureCounts = new Map<string, number>();
-const STREAM_ACCOUNT_COOLDOWN_MS = 12 * 60_000;
-
-function streamAccountKey(providerId: string, accountIndex: number): string {
-  return `${providerId}:${accountIndex}`;
-}
-
-function isStreamAccountCoolingDown(providerId: string, accountIndex: number): boolean {
-  const key = streamAccountKey(providerId, accountIndex);
-  const until = streamAccountCooldowns.get(key);
-  if (!until) return false;
-  if (Date.now() < until) return true;
-  streamAccountCooldowns.delete(key);
-  return false;
-}
-
-function noteStreamAccountSuccess(providerId: string, accountIndex: number): void {
-  const key = streamAccountKey(providerId, accountIndex);
-  streamAccountFailureCounts.delete(key);
-  streamAccountCooldowns.delete(key);
-}
-
-function noteStreamAccountFailure(providerId: string, accountIndex: number, forceCooldown = false): void {
-  const key = streamAccountKey(providerId, accountIndex);
-  const nextCount = (streamAccountFailureCounts.get(key) || 0) + 1;
-  streamAccountFailureCounts.set(key, nextCount);
-  if (forceCooldown || nextCount >= 2) {
-    streamAccountCooldowns.set(key, Date.now() + STREAM_ACCOUNT_COOLDOWN_MS);
-    const cached = providerSessionCaches.get(providerId);
-    if (cached && cached.accountIndex === accountIndex) {
-      providerSessionCaches.delete(providerId);
-    }
-  }
-}
+const liveManifestRamCache = new LruTtlCache<string, string>(350, 7_500);
 
 function maskSensitive(_value: string): string {
   return '********';
@@ -403,8 +363,6 @@ export function clearXtreamSessionCache(): void {
   opaqueIconCache.clear();
   urlToOpaqueIconTokenCache.clear();
   liveManifestRamCache.clear();
-  streamAccountCooldowns.clear();
-  streamAccountFailureCounts.clear();
 }
 
 export function listXtreamProviderSummaries(): XtreamProviderPublicSummary[] {
@@ -452,9 +410,9 @@ export function buildUpstreamStreamUrl(
   serverOrigin: string,
   account: XtreamAccountCredential,
   streamId: string,
-  variant: 'root' | 'live' | 'ts' | 'root-ts' = 'root'
+  variant: 'root' | 'live' = 'root'
 ): string {
-  const cleanId = String(streamId || '').replace(/\.(?:m3u8|ts)$/i, '').trim();
+  const cleanId = String(streamId || '').replace(/\.m3u8$/i, '').trim();
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanId)) {
     throw new Error('Identificador de canal inválido.');
   }
@@ -462,8 +420,6 @@ export function buildUpstreamStreamUrl(
   const u = encodeURIComponent(account.username);
   const p = encodeURIComponent(account.password);
   const id = encodeURIComponent(cleanId);
-  if (variant === 'ts') return `${origin}/live/${u}/${p}/${id}.ts`;
-  if (variant === 'root-ts') return `${origin}/${u}/${p}/${id}.ts`;
   return variant === 'live'
     ? `${origin}/live/${u}/${p}/${id}.m3u8`
     : `${origin}/${u}/${p}/${id}.m3u8`;
@@ -811,8 +767,7 @@ export async function resolveActiveXtreamSession(opts?: {
     opts?.startFromIndex === undefined &&
     cached &&
     cached.envFingerprint === fingerprint &&
-    Date.now() - cached.validatedAt < SESSION_CACHE_TTL_MS &&
-    !isStreamAccountCoolingDown(provider.id, cached.accountIndex)
+    Date.now() - cached.validatedAt < SESSION_CACHE_TTL_MS
   ) {
     const cachedAccount = provider.accounts[cached.accountIndex];
     if (cachedAccount) {
@@ -975,8 +930,7 @@ export async function resolveActiveXtreamSession(opts?: {
         const maxCons = Number(check.maxConnections);
         const isCongested =
           Number.isFinite(maxCons) && maxCons > 0 && Number.isFinite(activeCons) && activeCons >= maxCons;
-        const isStreamCooled = isStreamAccountCoolingDown(provider.id, idx);
-        if ((isCongested || isStreamCooled) && total > 1 && idx !== order[order.length - 1]) {
+        if (isCongested && total > 1 && idx !== order[order.length - 1]) {
           if (!fallbackActive) fallbackActive = { idx, check };
           continue;
         }
@@ -1088,16 +1042,10 @@ async function runWithAccountFailover<T>(
     account: XtreamAccountCredential;
     accountIndex: number;
     accountNumber: number;
-  }) => Promise<{ ok: boolean; value?: T; shouldRotate?: boolean }>,
-  opts?: { signal?: AbortSignal; deadlineAt?: number }
+  }) => Promise<{ ok: boolean; value?: T; shouldRotate?: boolean }>
 ): Promise<{ ok: true; value: T; accountNumber: number } | { ok: false; status: XtreamMaskedStatus }> {
-  const signal = opts?.signal;
-  const deadlineAt = opts?.deadlineAt;
-  const isBudgetExhausted = () =>
-    Boolean(signal?.aborted || (deadlineAt !== undefined && Date.now() >= deadlineAt));
-
   const initial = await resolveActiveXtreamSession({ providerId });
-  if (!initial.ok || !initial.account || isBudgetExhausted()) {
+  if (!initial.ok || !initial.account) {
     return { ok: false, status: initial.status };
   }
 
@@ -1110,11 +1058,10 @@ async function runWithAccountFailover<T>(
     accountNumber: initial.accountIndex + 1,
   });
   if (firstAttempt.ok && firstAttempt.value !== undefined) {
-    noteStreamAccountSuccess(initial.providerId, initial.accountIndex);
     return { ok: true, value: firstAttempt.value, accountNumber: initial.accountIndex + 1 };
   }
 
-  if (!firstAttempt.shouldRotate || isBudgetExhausted()) {
+  if (!firstAttempt.shouldRotate) {
     return {
       ok: false,
       status: {
@@ -1125,8 +1072,6 @@ async function runWithAccountFailover<T>(
     };
   }
 
-  noteStreamAccountFailure(initial.providerId, initial.accountIndex, true);
-
   const resolvedCfg = getProviderOrFailoverNull(initial.providerId);
   if ('missingProvider' in resolvedCfg || 'unconfigured' in resolvedCfg) {
     return { ok: false, status: initial.status };
@@ -1135,11 +1080,10 @@ async function runWithAccountFailover<T>(
   const { provider, fingerprint } = resolvedCfg;
   const total = provider.accounts.length;
   for (let offset = 1; offset < total; offset++) {
-    if (isBudgetExhausted()) break;
     const nextIndex = (initial.accountIndex + offset) % total;
     const candidate = provider.accounts[nextIndex];
     const check = await validateAccountStatus(initial.serverOrigin, candidate);
-    if (!check.active || isBudgetExhausted()) continue;
+    if (!check.active) continue;
 
     const retry = await worker({
       providerId: provider.id,
@@ -1150,7 +1094,6 @@ async function runWithAccountFailover<T>(
       accountNumber: nextIndex + 1,
     });
     if (retry.ok && retry.value !== undefined) {
-      noteStreamAccountSuccess(provider.id, nextIndex);
       providerSessionCaches.set(provider.id, {
         envFingerprint: fingerprint,
         serverOrigin: initial.serverOrigin,
@@ -1165,9 +1108,9 @@ async function runWithAccountFailover<T>(
       });
       return { ok: true, value: retry.value, accountNumber: nextIndex + 1 };
     }
-    noteStreamAccountFailure(provider.id, nextIndex, true);
   }
 
+  providerSessionCaches.delete(provider.id);
   return {
     ok: false,
     status: {
@@ -1417,17 +1360,7 @@ export async function syncFullCatalog(
       return { ok: false, status, error: status.error };
     }
     const settled = await Promise.all(
-      providers.map((p) =>
-        Promise.race([
-          syncFullCatalog(forceRefresh, p.id),
-          new Promise<{ ok: false; error: string }>((resolve) =>
-            setTimeout(
-              () => resolve({ ok: false, error: `Tiempo agotado sincronizando ${p.name}` }),
-              20_000
-            )
-          ),
-        ])
-      )
+      providers.map((p) => syncFullCatalog(forceRefresh, p.id))
     );
     const okCatalogs = settled
       .filter((r): r is { ok: true; catalog: XtreamFullCatalogPayload } => Boolean(r.ok && r.catalog))
@@ -1624,6 +1557,89 @@ export async function syncFullCatalog(
   });
   inflightCatalogSyncs.set(provider.id, task);
 
+  return task;
+}
+
+export async function syncLiveCatalogOnly(providerId: string): Promise<{
+  ok: boolean;
+  catalog?: XtreamFullCatalogPayload;
+}> {
+  const targetId = String(providerId || 'primary').trim().toLowerCase() || 'primary';
+  const resolvedCfg = getProviderOrFailoverNull(targetId);
+  if ('missingProvider' in resolvedCfg || 'unconfigured' in resolvedCfg) {
+    return { ok: false };
+  }
+  const { provider, fingerprint } = resolvedCfg;
+
+  const fullCached = providerCatalogCaches.get(provider.id);
+  if (fullCached && fullCached.envFingerprint === fingerprint && Date.now() < fullCached.payload.expiresAt) {
+    return { ok: true, catalog: fullCached.payload };
+  }
+
+  const liveCached = liveOnlyCatalogCaches.get(provider.id);
+  if (liveCached && liveCached.envFingerprint === fingerprint && Date.now() < liveCached.payload.expiresAt) {
+    return { ok: true, catalog: liveCached.payload };
+  }
+
+  const existingInflight = inflightLiveSyncs.get(provider.id);
+  if (existingInflight) return existingInflight;
+
+  const runLiveSync = async (): Promise<{ ok: boolean; catalog?: XtreamFullCatalogPayload }> => {
+    const result = await runWithAccountFailover(
+      provider.id,
+      async ({ serverOrigin, account, accountNumber, providerId: pid, providerName }) => {
+        const [liveCatRes, liveStreamsRes] = await Promise.all([
+          fetchXtreamJson(buildPlayerApiUrl(serverOrigin, account, 'get_live_categories'), 10_000),
+          fetchXtreamJson(buildPlayerApiUrl(serverOrigin, account, 'get_live_streams'), 15_000),
+        ]);
+        if (!liveStreamsRes.ok || !Array.isArray(liveStreamsRes.data)) {
+          return { ok: false, shouldRotate: true };
+        }
+        const liveCategories = normalizeCategoryList(liveCatRes.data, 'live', pid, providerName);
+        const liveStreams = normalizeLiveStreamsList(liveStreamsRes.data, pid, providerName);
+        const syncedAt = Date.now();
+        const payload: XtreamFullCatalogPayload = {
+          providerId: pid,
+          providerName,
+          liveCategories,
+          liveStreams,
+          vodCategories: [],
+          vodStreams: [],
+          seriesCategories: [],
+          series: [],
+          counts: {
+            liveCategories: liveCategories.length,
+            liveStreams: liveStreams.length,
+            vodCategories: 0,
+            vodStreams: 0,
+            seriesCategories: 0,
+            series: 0,
+          },
+          accountNumber,
+          syncedAt,
+          expiresAt: syncedAt + 10 * 60 * 1000,
+          fromCache: false,
+        };
+        return { ok: true, value: payload };
+      }
+    );
+
+    if (!result.ok || !result.value) {
+      return { ok: false };
+    }
+    liveOnlyCatalogCaches.set(provider.id, {
+      envFingerprint: fingerprint,
+      payload: result.value,
+    });
+    return { ok: true, catalog: result.value };
+  };
+
+  const task = runLiveSync().finally(() => {
+    if (inflightLiveSyncs.get(provider.id) === task) {
+      inflightLiveSyncs.delete(provider.id);
+    }
+  });
+  inflightLiveSyncs.set(provider.id, task);
   return task;
 }
 
@@ -2065,219 +2081,90 @@ function rewriteManifestLines(
   return out.join('\n');
 }
 
-const providerPreferredLiveVariant = new Map<string, 'live' | 'root' | 'ts' | 'root-ts'>();
-const inflightLiveManifestProbes = new Map<string, Promise<string | null>>();
-
-function prefetchXtreamFirstMedia(rewrittenManifest: string, originPrefix = ''): void {
-  const firstLine = String(rewrittenManifest || '')
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .find((l) => l && !l.startsWith('#'));
-  const token = firstLine?.match(/\/api\/xtream\/seg\/([^.?/]+)/i)?.[1];
-  if (token) {
-    void fetchXtreamOpaqueResource(token, originPrefix).catch(() => undefined);
-  }
-}
+const providerPreferredLiveVariant = new Map<string, 'live' | 'root'>();
 
 export async function fetchProxiedXtreamManifest(
   streamId: string,
   originPrefix = '',
-  providerId = 'primary',
-  signal?: AbortSignal,
-  opts?: { allowTranscodeFallback?: boolean; probeTimeoutMs?: number }
+  providerId = 'primary'
 ): Promise<string | null> {
-  const cleanId = String(streamId || '').replace(/\.(?:m3u8|ts)$/i, '').trim();
+  const cleanId = String(streamId || '').replace(/\.m3u8$/i, '').trim();
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanId)) return null;
-  if (signal?.aborted) return null;
 
-  const allowTranscode = opts?.allowTranscodeFallback !== false;
-  const manifestCacheKey = `${providerId}:${cleanId}:${originPrefix || 'rel'}`;
+  const manifestCacheKey = `${providerId}:${cleanId}:${originPrefix}`;
   const cachedManifest = liveManifestRamCache.get(manifestCacheKey);
   if (cachedManifest) {
     return cachedManifest;
   }
 
-  const inflightKey = `${manifestCacheKey}:${allowTranscode ? 'full' : 'fast'}`;
-  let sharedPromise = inflightLiveManifestProbes.get(inflightKey);
-  if (!sharedPromise) {
-    const deadlineAt = Date.now() + (opts?.probeTimeoutMs ?? (allowTranscode ? 11_000 : 6_200));
-    const knownPreferred = providerPreferredLiveVariant.get(providerId);
-    const m3u8Variants: Array<'live' | 'root'> =
-      knownPreferred === 'root' ? ['root', 'live'] : ['live', 'root'];
-    const tsVariants: Array<'ts' | 'root-ts'> =
-      knownPreferred === 'root-ts' ? ['root-ts', 'ts'] : ['ts', 'root-ts'];
+  const knownPreferred = providerPreferredLiveVariant.get(providerId);
+  const variants: Array<'live' | 'root'> =
+    knownPreferred === 'root' ? ['root', 'live'] : ['live', 'root'];
 
-    const probeM3u8Variant = async (
-      serverOrigin: string,
-      account: XtreamAccountCredential,
-      variant: 'live' | 'root'
-    ): Promise<string | null> => {
-      if (Date.now() >= deadlineAt) return null;
-      const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, variant);
-      const uaList = ['IPTVSmartersPlayer', 'VLC/3.0.20 LibVLC/3.0.20'];
-      for (let uIdx = 0; uIdx < uaList.length; uIdx++) {
-        if (Date.now() >= deadlineAt) return null;
-        try {
-          const res = await streamingFetch(targetUrl, {
-            method: 'GET',
-            headers: {
-              'User-Agent': uaList[uIdx],
-              Accept: '*/*',
-            },
-            timeoutMs: Math.min(4_500, Math.max(400, deadlineAt - Date.now())),
-          });
-          if (!res.ok) {
-            if (res.body) void res.body.cancel().catch(() => undefined);
-            if ((res.status === 406 || res.status === 403) && uIdx === 0) continue;
-            return null;
-          }
-          const ct = String(res.headers.get('content-type') || '').toLowerCase();
-          if (ct.startsWith('text/html') || ct.includes('video/mp2t') || ct.includes('octet-stream')) {
-            if (res.body) void res.body.cancel().catch(() => undefined);
-            return null;
-          }
-          const text = await res.text();
-          if (text.includes('#EXTM3U')) {
-            providerPreferredLiveVariant.set(providerId, variant);
-            return rewriteManifestLines(text, res.url || targetUrl, serverOrigin, originPrefix);
-          }
-          return null;
-        } catch {
-          return null;
-        }
-      }
-      return null;
-    };
-
-    const probeTsRelay = async (
-      serverOrigin: string,
-      account: XtreamAccountCredential
-    ): Promise<string | null> => {
-      for (const tsVariant of tsVariants) {
-        if (Date.now() >= deadlineAt) break;
-        const tsUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, tsVariant);
-        const warmPath = getActiveDvbSessionPath(tsUrl, 'hd');
-        if (warmPath) {
-          const warmPl = readLiveDvbPlaylistForIptv(warmPath, originPrefix);
-          if (warmPl) {
-            providerPreferredLiveVariant.set(providerId, tsVariant);
-            return warmPl;
-          }
-        }
-        if (isDvbUpstreamCoolingDown(tsUrl)) continue;
-        try {
-          await assertSafeProxyUrl(tsUrl);
-          const dvbPath = await ensureLiveDvbCleanHlsSession(
-            tsUrl,
-            'hd',
-            `${serverOrigin.replace(/\/+$/, '')}/`
-          ).catch(() => null);
-          if (dvbPath) {
-            const playlist = readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
-            if (playlist) {
-              providerPreferredLiveVariant.set(providerId, tsVariant);
-              return playlist;
-            }
-          }
-        } catch {
-          // try next variant
-        }
-      }
-      return null;
-    };
-
-    sharedPromise = (async () => {
-      const fetchStartedAt = Date.now();
-      const result = await runWithAccountFailover(
-        providerId,
-        async ({ serverOrigin, account }) => {
-          for (const tsVariant of tsVariants) {
-            const tsUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, tsVariant);
-            const warmPath = getActiveDvbSessionPath(tsUrl, 'hd');
-            if (warmPath) {
-              const warmPl = readLiveDvbPlaylistForIptv(warmPath, originPrefix);
-              if (warmPl) {
-                return { ok: true, value: warmPl };
-              }
-            }
-          }
-
-          if (knownPreferred !== 'ts' && knownPreferred !== 'root-ts') {
-            if (!knownPreferred) {
-              try {
-                const winner = await Promise.any(
-                  m3u8Variants.map(async (v) => {
-                    const rewritten = await probeM3u8Variant(serverOrigin, account, v);
-                    if (!rewritten) throw new Error('variant_miss');
-                    return rewritten;
-                  })
-                );
-                liveManifestRamCache.set(manifestCacheKey, winner);
-                prefetchXtreamFirstMedia(winner, originPrefix);
-                return { ok: true, value: winner };
-              } catch {
-                // fall through to MPEG-TS DVB relay
-              }
-            } else {
-              for (const variant of m3u8Variants) {
-                const rewritten = await probeM3u8Variant(serverOrigin, account, variant);
-                if (rewritten) {
-                  liveManifestRamCache.set(manifestCacheKey, rewritten);
-                  prefetchXtreamFirstMedia(rewritten, originPrefix);
-                  return { ok: true, value: rewritten };
-                }
-              }
-            }
-          }
-
-          if (allowTranscode && Date.now() < deadlineAt) {
-            const dvbPlaylist = await probeTsRelay(serverOrigin, account);
-            if (dvbPlaylist) {
-              return { ok: true, value: dvbPlaylist };
-            }
-          }
-
-          return { ok: false, shouldRotate: Date.now() < deadlineAt };
+  const probeVariant = async (
+    serverOrigin: string,
+    account: XtreamAccountCredential,
+    variant: 'live' | 'root'
+  ): Promise<string | null> => {
+    const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, variant);
+    try {
+      const res = await streamingFetch(targetUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'IPTVSmartersPlayer',
+          Accept: '*/*',
         },
-        { deadlineAt }
-      );
-
-      recordProviderOutcome(providerId, {
-        ok: result.ok,
-        latencyMs: Math.max(1, Date.now() - fetchStartedAt),
+        timeoutMs: 2_600,
       });
-      return result.ok ? result.value : null;
-    })().finally(() => {
-      if (inflightLiveManifestProbes.get(inflightKey) === sharedPromise) {
-        inflightLiveManifestProbes.delete(inflightKey);
+      if (!res.ok) {
+        if (res.body) void res.body.cancel().catch(() => undefined);
+        return null;
       }
-    });
-
-    inflightLiveManifestProbes.set(inflightKey, sharedPromise);
-  }
-
-  if (!signal) {
-    return sharedPromise;
-  }
-
-  return new Promise<string | null>((resolve) => {
-    if (signal.aborted) {
-      resolve(null);
-      return;
+      const ct = String(res.headers.get('content-type') || '').toLowerCase();
+      if (ct.startsWith('text/html') || ct.includes('video/mp2t') || ct.includes('octet-stream')) {
+        if (res.body) void res.body.cancel().catch(() => undefined);
+        return null;
+      }
+      const text = await res.text();
+      if (text.includes('#EXTM3U')) {
+        providerPreferredLiveVariant.set(providerId, variant);
+        return rewriteManifestLines(text, res.url || targetUrl, serverOrigin, originPrefix);
+      }
+    } catch {
+      // ignore variant error
     }
-    const onAbort = () => resolve(null);
-    signal.addEventListener('abort', onAbort, { once: true });
-    sharedPromise.then(
-      (val) => {
-        signal.removeEventListener('abort', onAbort);
-        resolve(val);
-      },
-      () => {
-        signal.removeEventListener('abort', onAbort);
-        resolve(null);
+    return null;
+  };
+
+  const result = await runWithAccountFailover(providerId, async ({ serverOrigin, account }) => {
+    if (!knownPreferred) {
+      // Uncached provider variant: probe both 'live' and 'root' concurrently to cut startup latency in half
+      try {
+        const winner = await Promise.any(
+          variants.map(async (v) => {
+            const rewritten = await probeVariant(serverOrigin, account, v);
+            if (!rewritten) throw new Error('variant_miss');
+            return rewritten;
+          })
+        );
+        liveManifestRamCache.set(manifestCacheKey, winner);
+        return { ok: true, value: winner };
+      } catch {
+        return { ok: false, shouldRotate: true };
       }
-    );
+    }
+
+    for (const variant of variants) {
+      const rewritten = await probeVariant(serverOrigin, account, variant);
+      if (rewritten) {
+        liveManifestRamCache.set(manifestCacheKey, rewritten);
+        return { ok: true, value: rewritten };
+      }
+    }
+    return { ok: false, shouldRotate: true };
   });
+
+  return result.ok ? result.value : null;
 }
 
 export async function probeXtreamLiveStreamLatency(
@@ -2287,116 +2174,53 @@ export async function probeXtreamLiveStreamLatency(
 ): Promise<{
   ok: boolean;
   latencyMs: number;
-  variant?: 'live' | 'root' | 'ts' | 'root-ts';
+  variant?: 'live' | 'root';
   lineCount: number;
 }> {
-  const cleanId = String(streamId || '').replace(/\.(?:m3u8|ts)$/i, '').trim();
+  const cleanId = String(streamId || '').replace(/\.m3u8$/i, '').trim();
   if (!/^[a-zA-Z0-9_-]{1,64}$/.test(cleanId)) {
     return { ok: false, latencyMs: timeoutMs, lineCount: 0 };
   }
   const preferred = providerPreferredLiveVariant.get(providerId) || 'live';
-  const m3u8Variants: Array<'live' | 'root'> =
-    preferred === 'root' ? ['root', 'live'] : ['live', 'root'];
-  const tsVariants: Array<'ts' | 'root-ts'> =
-    preferred === 'root-ts' ? ['root-ts', 'ts'] : ['ts', 'root-ts'];
+  const variants: Array<'live' | 'root'> =
+    preferred === 'live' ? ['live', 'root'] : ['root', 'live'];
 
   const startedAt = Date.now();
-  const result = await runWithAccountFailover<{
-    ok: boolean;
-    latencyMs: number;
-    variant?: 'live' | 'root' | 'root-ts' | 'ts';
-    lineCount: number;
-  }>(providerId, async ({ serverOrigin, account }) => {
-    if (preferred !== 'ts' && preferred !== 'root-ts') {
-      for (const variant of m3u8Variants) {
-        const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, variant);
-        try {
-          const t0 = Date.now();
-          const res = await streamingFetch(targetUrl, {
-            method: 'GET',
-            headers: {
-              'User-Agent': 'IPTVSmartersPlayer',
-              Accept: '*/*',
-            },
-            timeoutMs: Math.min(timeoutMs, 2_200),
-          });
-          if (!res.ok) {
-            if (res.body) void res.body.cancel().catch(() => undefined);
-            continue;
-          }
-          const ct = String(res.headers.get('content-type') || '').toLowerCase();
-          if (ct.startsWith('text/html') || ct.includes('video/mp2t') || ct.includes('octet-stream')) {
-            if (res.body) void res.body.cancel().catch(() => undefined);
-            continue;
-          }
-          const text = await res.text();
-          if (text.includes('#EXTM3U')) {
-            providerPreferredLiveVariant.set(providerId, variant);
-            const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-            const hasSeg = lines.some((l) => !l.startsWith('#'));
-            if (!hasSeg && !text.includes('#EXT-X-STREAM-INF')) continue;
-            return {
-              ok: true,
-              value: {
-                ok: true,
-                latencyMs: Math.max(1, Date.now() - t0),
-                variant,
-                lineCount: lines.length,
-              },
-            };
-          }
-        } catch {
-          // try next variant
-        }
-      }
-    }
-
-    // Lightweight single-socket MPEG-TS byte probe (no FFmpeg spawn during probes)
-    for (const tsVariant of tsVariants) {
-      const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, tsVariant);
-      const t0 = Date.now();
+  const result = await runWithAccountFailover(providerId, async ({ serverOrigin, account }) => {
+    for (const variant of variants) {
+      const targetUrl = buildUpstreamStreamUrl(serverOrigin, account, cleanId, variant);
       try {
+        const t0 = Date.now();
         const res = await streamingFetch(targetUrl, {
           method: 'GET',
           headers: {
             'User-Agent': 'IPTVSmartersPlayer',
             Accept: '*/*',
           },
-          headersTimeoutOnly: true,
-          timeoutMs: Math.min(timeoutMs, 2_600),
+          timeoutMs,
         });
-        const ct = String(res.headers.get('content-type') || '').toLowerCase();
-        if ((!res.ok && res.status !== 206) || ct.startsWith('text/html')) {
+        if (!res.ok) {
           if (res.body) void res.body.cancel().catch(() => undefined);
           continue;
         }
-        const body = res.body as ReadableStream<Uint8Array> | null;
-        if (!body) continue;
-        const reader = body.getReader();
-        let bytesRead = 0;
-        try {
-          const chunkPromise = Promise.race([
-            reader.read(),
-            new Promise<{ done: true; value: undefined }>((resolve) =>
-              setTimeout(() => resolve({ done: true, value: undefined }), 1_600)
-            ),
-          ]);
-          const first = await chunkPromise;
-          if (!first.done && first.value) {
-            bytesRead = first.value.byteLength;
-          }
-        } finally {
-          void reader.cancel().catch(() => undefined);
+        const ct = String(res.headers.get('content-type') || '').toLowerCase();
+        if (ct.startsWith('text/html') || ct.includes('video/mp2t') || ct.includes('octet-stream')) {
+          if (res.body) void res.body.cancel().catch(() => undefined);
+          continue;
         }
-        if (bytesRead >= 188) {
-          providerPreferredLiveVariant.set(providerId, tsVariant);
+        const text = await res.text();
+        if (text.includes('#EXTM3U')) {
+          providerPreferredLiveVariant.set(providerId, variant);
+          const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+          const hasSeg = lines.some((l) => !l.startsWith('#'));
+          if (!hasSeg && !text.includes('#EXT-X-STREAM-INF')) continue;
           return {
             ok: true,
             value: {
               ok: true,
               latencyMs: Math.max(1, Date.now() - t0),
-              variant: tsVariant,
-              lineCount: 1,
+              variant,
+              lineCount: lines.length,
             },
           };
         }
@@ -2404,17 +2228,13 @@ export async function probeXtreamLiveStreamLatency(
         // try next variant
       }
     }
-
-    return { ok: false, shouldRotate: true };
+    return { ok: false, shouldRotate: false };
   });
 
-  const elapsed = Math.max(1, Date.now() - startedAt);
   if (result.ok && result.value) {
-    recordProviderOutcome(providerId, { ok: true, latencyMs: result.value.latencyMs });
     return result.value;
   }
-  recordProviderOutcome(providerId, { ok: false, latencyMs: elapsed });
-  return { ok: false, latencyMs: elapsed, lineCount: 0 };
+  return { ok: false, latencyMs: Math.max(1, Date.now() - startedAt), lineCount: 0 };
 }
 
 export async function fetchProxiedXtreamVodStream(
@@ -2443,13 +2263,14 @@ export async function fetchProxiedXtreamVodStream(
         signal,
       });
       const ct = String(res.headers.get('content-type') || '').toLowerCase();
-      if ((res.ok || res.status === 206) && !ct.startsWith('text/html')) {
+      const isBadTextBody = ct.startsWith('text/html') || ct.startsWith('text/plain') || ct.includes('application/json');
+      if ((res.ok || res.status === 206) && !isBadTextBody) {
         return { ok: true, value: res };
       }
       if (res.body) {
         void res.body.cancel().catch(() => undefined);
       }
-      if (res.status === 401 || res.status === 403 || ct.startsWith('text/html')) {
+      if (res.status === 401 || res.status === 403 || res.status === 429 || isBadTextBody) {
         return { ok: false, shouldRotate: true };
       }
       return { ok: false, shouldRotate: false };
@@ -2488,13 +2309,14 @@ export async function fetchProxiedXtreamSeriesStream(
         signal,
       });
       const ct = String(res.headers.get('content-type') || '').toLowerCase();
-      if ((res.ok || res.status === 206) && !ct.startsWith('text/html')) {
+      const isBadTextBody = ct.startsWith('text/html') || ct.startsWith('text/plain') || ct.includes('application/json');
+      if ((res.ok || res.status === 206) && !isBadTextBody) {
         return { ok: true, value: res };
       }
       if (res.body) {
         void res.body.cancel().catch(() => undefined);
       }
-      if (res.status === 401 || res.status === 403 || ct.startsWith('text/html')) {
+      if (res.status === 401 || res.status === 403 || res.status === 429 || isBadTextBody) {
         return { ok: false, shouldRotate: true };
       }
       return { ok: false, shouldRotate: false };
@@ -2531,17 +2353,21 @@ export async function resolveUpstreamVodOrSeriesUrl(
           Range: 'bytes=0-63',
         },
         headersTimeoutOnly: true,
-        timeoutMs: 8_000,
+        timeoutMs: 5_000,
       });
       const ct = String(res.headers.get('content-type') || '').toLowerCase();
+      const isBadTextBody = ct.startsWith('text/html') || ct.startsWith('text/plain') || ct.includes('application/json');
       const finalUrl = res.url || targetUrl;
       if (res.body) {
         void res.body.cancel().catch(() => undefined);
       }
-      if ((res.ok || res.status === 206) && !ct.startsWith('text/html')) {
+      if ((res.ok || res.status === 206) && !isBadTextBody) {
         return { ok: true, value: finalUrl };
       }
-      return { ok: false, shouldRotate: res.status === 401 || res.status === 403 || ct.startsWith('text/html') };
+      return {
+        ok: false,
+        shouldRotate: res.status === 401 || res.status === 403 || res.status === 429 || isBadTextBody,
+      };
     } catch {
       return { ok: false, shouldRotate: true };
     }
@@ -2595,7 +2421,7 @@ export async function openXtreamOpaqueSegmentStream(
   rangeHeader?: string,
   signal?: AbortSignal
 ): Promise<{
-  kind: 'stream' | 'playlist' | 'error';
+  kind: 'stream' | 'playlist';
   status: number;
   contentType: string;
   contentLength?: string | null;
@@ -2603,35 +2429,8 @@ export async function openXtreamOpaqueSegmentStream(
   body?: ReadableStream<Uint8Array>;
   buffer?: Buffer;
 } | null> {
-  if (!rangeHeader) {
-    const cachedSub = subManifestBodyRamCache.get(`${token}:rel`);
-    if (cachedSub) {
-      return {
-        kind: 'playlist',
-        status: 200,
-        contentType: 'application/vnd.apple.mpegurl',
-        buffer: Buffer.from(cachedSub, 'utf8'),
-      };
-    }
-    const cachedSeg = segmentBodyRamCache.get(token);
-    if (cachedSeg) {
-      return {
-        kind: 'playlist',
-        status: cachedSeg.status,
-        contentType: cachedSeg.contentType,
-        buffer: cachedSeg.buffer,
-      };
-    }
-  }
-
   const entry = opaqueTokenCache.get(token);
-  if (!entry) {
-    return {
-      kind: 'error',
-      status: 410,
-      contentType: 'text/plain; charset=utf-8',
-    };
-  }
+  if (!entry) return null;
 
   try {
     const safeUrl = await assertSafeProxyUrl(entry.url);
@@ -2651,13 +2450,6 @@ export async function openXtreamOpaqueSegmentStream(
     });
     if (!res.ok && res.status !== 206) {
       if (res.body) void res.body.cancel().catch(() => undefined);
-      if (res.status === 404 || res.status === 410) {
-        return {
-          kind: 'error',
-          status: res.status,
-          contentType: 'text/plain; charset=utf-8',
-        };
-      }
       return null;
     }
 
@@ -2666,7 +2458,6 @@ export async function openXtreamOpaqueSegmentStream(
       const text = await res.text();
       if (text.includes('#EXTM3U')) {
         const rewritten = rewriteManifestLines(text, res.url || entry.url, entry.serverOrigin, '');
-        subManifestBodyRamCache.set(`${token}:rel`, rewritten);
         return {
           kind: 'playlist',
           status: 200,
@@ -2705,25 +2496,6 @@ export async function fetchXtreamOpaqueResource(
   contentType: string;
   body: Buffer;
 } | null> {
-  if (!rangeHeader) {
-    const cachedSub = subManifestBodyRamCache.get(`${token}:${originPrefix || 'rel'}`);
-    if (cachedSub) {
-      return {
-        status: 200,
-        contentType: 'application/vnd.apple.mpegurl',
-        body: Buffer.from(cachedSub, 'utf8'),
-      };
-    }
-    const cachedSeg = segmentBodyRamCache.get(token);
-    if (cachedSeg) {
-      return {
-        status: cachedSeg.status,
-        contentType: cachedSeg.contentType,
-        body: cachedSeg.buffer,
-      };
-    }
-  }
-
   const entry = opaqueTokenCache.get(token);
   if (!entry) return null;
 
@@ -2747,15 +2519,6 @@ export async function fetchXtreamOpaqueResource(
       const text = await res.text();
       if (text.includes('#EXTM3U')) {
         const rewritten = rewriteManifestLines(text, res.url || entry.url, entry.serverOrigin, originPrefix);
-        subManifestBodyRamCache.set(`${token}:${originPrefix || 'rel'}`, rewritten);
-        const firstSegToken = rewritten
-          .split(/\r?\n/)
-          .map((l) => l.trim())
-          .find((l) => l && !l.startsWith('#'))
-          ?.match(/\/api\/xtream\/seg\/([^.?/]+)/i)?.[1];
-        if (firstSegToken) {
-          void fetchXtreamOpaqueResource(firstSegToken, originPrefix).catch(() => undefined);
-        }
         return {
           status: 200,
           contentType: 'application/vnd.apple.mpegurl',
@@ -2765,13 +2528,6 @@ export async function fetchXtreamOpaqueResource(
     }
 
     const buf = Buffer.from(await res.arrayBuffer());
-    if (!rangeHeader && res.status === 200 && buf.length > 0 && buf.length <= 6 * 1024 * 1024) {
-      segmentBodyRamCache.set(token, {
-        status: res.status,
-        contentType: ct,
-        buffer: buf,
-      });
-    }
     return {
       status: res.status,
       contentType: ct,
@@ -2838,7 +2594,15 @@ export interface XtreamIntegratedTdtChannel {
 }
 
 function inferLiveQualityLabel(rawName: string, catName: string): string {
-  return parseStreamMetadataImpl(rawName, catName, 'live').quality;
+  const hay = `${rawName} ${catName}`
+    .replace(/⁴ᴷ|⁴ᵏ/g, ' 4K ')
+    .replace(/ᶠᴴᴰ/gi, ' FHD ')
+    .replace(/ᴴᴰ/gi, ' HD ')
+    .toLowerCase();
+  if (/(?:\b4k\b|\buhd\b|\b2160p?\b)/i.test(hay)) return '4K UHD';
+  if (/\b(?:fhd|1080p?|full\s*hd)\b/i.test(hay)) return '1080p FHD';
+  if (/\b(?:576p?|480p?|360p?|sd)\b/i.test(hay)) return 'SD';
+  return 'HD';
 }
 
 function inferLiveLangAndCountry(rawName: string, catName: string): {
@@ -2846,23 +2610,52 @@ function inferLiveLangAndCountry(rawName: string, catName: string): {
   langLabel: string;
   countryCode?: string;
 } {
-  const parsed = parseStreamMetadataImpl(rawName, catName, 'live');
-  if (parsed.lang !== 'INTL') {
-    const countryCode =
-      parsed.lang === 'ES' || parsed.lang === 'CAT'
-        ? 'ES'
-        : parsed.lang === 'EN'
-        ? /\b(?:us|usa|nba|nfl|mlb|espn|cbs|nbc|abc|fox)\b/i.test(`${rawName} ${catName}`)
-          ? 'US'
-          : 'GB'
-        : parsed.lang;
+  const name = String(rawName || '').trim();
+  const cat = String(catName || '').trim();
+  const combined = `${cat} ${name}`;
+  if (
+    /^(?:\[?\s*(?:UK|US|USA|FR|DE|GER|IT|ITA|PT|POR|AR|ARB|LAT|LA|MX|ARG|NL|PL|RO|GR|BG|RS|MK|TR|IR|RU|FI|NO|SE|DK|BE|AT|CH|AL|IND)\s*\]?\s*[|:/·•▎┃│◈-])/i.test(
+      name
+    ) ||
+    /^[┃│▎◈•]/.test(name)
+  ) {
+    // Let explicit foreign prefix below classify its real language/country
+  } else if (
+    /\b(?:spain|espa[ñn]a|tdt|tivify|tivfiy|movistar|atresmedia|mediaset|rtve|laliga|hypermotion)\b|أسبانيا|^(?:tivif?y\s*es\s*[:|]|vip\s*es\s*[:|]|\[?\s*(?:es|esp)\s*\]?\s*[|:/-])/i.test(
+      combined
+    ) &&
+    !/^(?:\[?\s*(?:UK|US|USA|FR|DE|GER|IT|PT|AR|ARB|LAT|MX|NL|PL|RO|GR|TR|FI|NO|SE|DK|BE|AT|AL|IND)\s*\]?\s*[|:/-])/i.test(cat)
+  ) {
+    return { lang: 'ES', langLabel: 'Castellano', countryCode: 'ES' };
+  }
+  if (/[\u0600-\u06FF]|^(?:\[?\s*(?:AR|ARB)\s*\]?\s*[|:/-])|\b(?:arabic|arabia|egypt|maroc|morocco|mbc|rotana|al\s*jazeera|nile)\b/i.test(combined)) {
+    return { lang: 'AR', langLabel: 'Árabe', countryCode: 'AR' };
+  }
+  if (/^(?:\[?\s*CAT\s*\]?\s*[|:/-])|\b(?:catal[aà]|tv3|3cat|esport3|sx3)\b/i.test(combined)) {
+    return { lang: 'CAT', langLabel: 'Català', countryCode: 'ES' };
+  }
+  if (/^(?:\|?\s*(?:LAT|LA|MX|ARG|COL|CHL|PER|PE)\s*\]?\s*[|:/-])|\b(?:latino|latam|m[eé]xico|argentina|colombia|chile|dsports)\b/i.test(combined)) {
+    return { lang: 'LAT', langLabel: 'Latino', countryCode: 'LAT' };
+  }
+  if (/^(?:\[?\s*(?:FR|VF)\s*\]?\s*[|:/-])|\b(?:france|french|fran[çc]ais|canal\+|tf1|rmc\s*sport|m6)\b/i.test(combined)) {
+    return { lang: 'FR', langLabel: 'Francés', countryCode: 'FR' };
+  }
+  if (/^(?:\[?\s*(?:PT|BR)\s*\]?\s*[|:/-])|\b(?:portugal|sport\s*tv|tvi|sic|rtp|brasil|globo)\b/i.test(combined)) {
+    return { lang: 'PT', langLabel: 'Portugués', countryCode: 'PT' };
+  }
+  if (/^(?:\[?\s*IT\s*\]?\s*[|:/-])|\b(?:italy|italia|italiano|rai|mediaset\s*italia|sky\s*italia|serie\s*a)\b/i.test(combined)) {
+    return { lang: 'IT', langLabel: 'Italiano', countryCode: 'IT' };
+  }
+  if (/^(?:\[?\s*(?:DE|GER|AT|CH)\s*\]?\s*[|:/-])|\b(?:germany|deutsch|zdf|ard|rtl|sky\s*sport\s*de|bundesliga)\b/i.test(combined)) {
+    return { lang: 'DE', langLabel: 'Alemán', countryCode: 'DE' };
+  }
+  if (/^(?:\[?\s*(?:UK|US|USA|EN|ENG|CA|AU)\s*\]?\s*[|:/-])|\b(?:uk|usa|united\s*states|english|sky\s*sports|tnt\s*sports|bbc|itv|nbc|cbs|abc|fox|espn|premier\s*league)\b/i.test(combined)) {
     return {
-      lang: parsed.lang,
-      langLabel: parsed.langLabel.replace(/\s*\([A-Z]+\)$/, ''),
-      countryCode,
+      lang: 'EN',
+      langLabel: 'Inglés',
+      countryCode: /\b(?:us|usa|nba|nfl|mlb|espn|cbs|nbc|abc|fox)\b/i.test(combined) ? 'US' : 'GB',
     };
   }
-  const combined = `${catName} ${rawName}`;
   const euroMatch = combined.match(/^(?:\[?\s*|┃)(NL|PL|RO|GR|BG|RS|MK|TR|IR|RU|FI|NO|SE|DK|BE|AL|IND)\b/i);
   if (euroMatch) {
     const cc = euroMatch[1].toUpperCase();
@@ -2899,9 +2692,16 @@ export function getCachedXtreamProviderCatalogs(): XtreamFullCatalogPayload[] {
   const providers = getAllXtreamProviders();
   const out: XtreamFullCatalogPayload[] = [];
   for (const p of providers) {
-    const cache = providerCatalogCaches.get(p.id);
-    if (!cache || cache.envFingerprint !== getProviderFingerprint(p)) continue;
-    out.push(cache.payload);
+    const fp = getProviderFingerprint(p);
+    const full = providerCatalogCaches.get(p.id);
+    if (full && full.envFingerprint === fp) {
+      out.push(full.payload);
+      continue;
+    }
+    const liveOnly = liveOnlyCatalogCaches.get(p.id);
+    if (liveOnly && liveOnly.envFingerprint === fp) {
+      out.push(liveOnly.payload);
+    }
   }
   return out;
 }
@@ -2912,8 +2712,11 @@ export function getCachedXtreamLiveTdtChannels(): XtreamIntegratedTdtChannel[] {
   const seen = new Set<string>();
 
   for (const p of providers) {
-    const cache = providerCatalogCaches.get(p.id);
-    if (!cache || cache.envFingerprint !== getProviderFingerprint(p)) continue;
+    const fp = getProviderFingerprint(p);
+    const cache =
+      (providerCatalogCaches.get(p.id)?.envFingerprint === fp ? providerCatalogCaches.get(p.id) : undefined) ||
+      (liveOnlyCatalogCaches.get(p.id)?.envFingerprint === fp ? liveOnlyCatalogCaches.get(p.id) : undefined);
+    if (!cache) continue;
 
     const catNameById = new Map(cache.payload.liveCategories.map((c) => [c.id, c.name]));
     for (let idx = 0; idx < cache.payload.liveStreams.length; idx++) {

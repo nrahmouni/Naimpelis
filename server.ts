@@ -50,14 +50,22 @@ import { registerStreamExtractRoute } from './server/routes/streamExtractRoutes.
 import { registerClipboxRoutes } from './server/routes/clipboxRoutes.ts';
 import { registerRbtvRoutes } from './server/routes/rbtvRoutes.ts';
 import { registerBelixRoutes } from './server/routes/belixRoutes.ts';
-import { registerProvidersRoutes } from './server/routes/providersRoutes.ts';
-import { warmDefaultProvidersBackground } from './server/services/providers/xtreamMultiProviderService.ts';
 import { registerAtresplayerRoutes } from './server/routes/atresplayerRoutes.ts';
 import { registerMovistarDaznRoutes } from './server/routes/movistarDaznRoutes.ts';
 import { registerMusicRoutes } from './server/routes/musicRoutes.ts';
 import { registerVpnGatewayRoutes } from './server/routes/vpnGatewayRoutes.ts';
+import { registerProviderRoutes } from './server/routes/providerRoutes.ts';
+import { registerMovieReelsRoutes } from './server/routes/movieReelsRoutes.ts';
+import { prewarmMovieReels } from './server/services/movieReelsService.ts';
 import { getMovistarDaznHome } from './server/services/movistarDaznCatalogService.ts';
 import { initBelixFromEnv } from './server/services/belix/belixXtreamClient.ts';
+import { initDefaultProviders } from './server/services/providers/xtreamProvidersService.ts';
+import {
+  benchmarkSpainLiveChannels,
+  getCachedSpainXtreamChannelsSync,
+} from './server/services/octopusSpainLiveService.ts';
+import { buildUnifiedPrioritizedChannels } from './server/services/channelQualityMatcher.ts';
+import { raceFastLiveTracks } from './server/services/liveFastResolver.ts';
 import { SPANISH_TDT_CHANNELS } from './server/data/tdtChannels.ts';
 import { CATALA_LIVE_CHANNELS } from './server/data/catalaRegistry.ts';
 import {
@@ -70,10 +78,7 @@ import {
   applySyncedStreamsToChannels,
   refreshLiveIptvRegistry,
 } from './server/services/iptvPlaylistService.ts';
-import {
-  getCachedFamelackWorldChannels,
-  refreshFamelackAndWorldCatalog,
-} from './server/services/famelackIptvService.ts';
+import { refreshFamelackAndWorldCatalog } from './server/services/famelackIptvService.ts';
 import { createRoomHub } from './server/ws/roomHub.ts';
 import { resolveActiveGnulaMirrors } from './server/extractors/gnulaHdExtractor.ts';
 import { fetchTmdbUrlJson } from './server/services/tmdbService.ts';
@@ -135,17 +140,11 @@ function getPublicOrigin(req: express.Request): string {
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
-app.set('etag', 'strong');
 const httpServer = createServer(app);
-httpServer.keepAliveTimeout = 65_000;
-httpServer.headersTimeout = 66_000;
-httpServer.requestTimeout = 30_000;
-httpServer.maxRequestsPerSocket = 0;
-
 const wss = new WebSocketServer({
   noServer: true,
   perMessageDeflate: {
-    zlibDeflateOptions: { level: 4 },
+    zlibDeflateOptions: { level: 6 },
     threshold: 1024,
   },
 });
@@ -167,8 +166,6 @@ httpServer.on('upgrade', (req, socket, head) => {
 
 app.use(
   compression({
-    threshold: 1024,
-    level: 4,
     filter: (req, res) => {
       const p = (req.path || '').toLowerCase();
       if (
@@ -182,11 +179,8 @@ app.use(
         p.startsWith('/api/belix/stream') ||
         p.startsWith('/api/belix/sub') ||
         p.startsWith('/api/belix/seg') ||
-        p.startsWith('/api/providers/live') ||
-        p.startsWith('/api/providers/sub') ||
-        p.startsWith('/api/providers/seg') ||
-        p.startsWith('/api/providers/vod') ||
-        p.startsWith('/api/providers/series-stream') ||
+        p.startsWith('/api/providers/stream') ||
+        p.startsWith('/api/providers/hls-') ||
         p.startsWith('/api/music/stream-proxy')
       ) {
         return false;
@@ -226,7 +220,7 @@ const aiRequestRateLimit = createSlidingWindowRateLimiter({
 });
 
 const extractStreamRateLimit = createSlidingWindowRateLimiter({
-  maxRequests: 360,
+  maxRequests: 60,
   windowMs: 60_000,
   keyPrefix: 'extract-stream',
 });
@@ -294,7 +288,7 @@ registerYouTubeCatalogRoutes(app);
 registerClipboxRoutes(app);
 registerRbtvRoutes(app);
 registerBelixRoutes(app, { getPublicOrigin });
-registerProvidersRoutes(app, { getPublicOrigin });
+registerProviderRoutes(app, { getPublicOrigin });
 registerAtresplayerRoutes(app);
 registerMovistarDaznRoutes(app);
 registerMusicRoutes(app);
@@ -305,6 +299,7 @@ registerVoiceAssistantRoutes(app, {
   getSportsMatches: getLiveVoiceMatches,
 });
 registerAiMediaRoutes(app);
+registerMovieReelsRoutes(app);
 geminiLiveBridge = setupGeminiLiveWebSocket(httpServer, {
   getChannels: getLiveVoiceChannels,
   getSportsMatches: getLiveVoiceMatches,
@@ -367,9 +362,6 @@ app.get('/music-manifest.webmanifest', (_req, res) => {
   return res.status(404).json({ error: 'Music manifest not found' });
 });
 
-let cachedTvHtmlSig = '';
-let cachedTvHtmlBody = '';
-
 function sendSmartTvReceiverHtml(res: express.Response) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
@@ -384,16 +376,13 @@ function sendSmartTvReceiverHtml(res: express.Response) {
   }
   try {
     const sig = getTvBuildSignature(__dirname);
-    if (!cachedTvHtmlBody || cachedTvHtmlSig !== sig) {
-      const raw = fs.readFileSync(target, 'utf8');
-      const buildMetaTag = `<script>window.__RIFFAN_TV_BUILD__=${JSON.stringify(sig)};window.__RIFFAN_TV_AUTO_UPDATE__=true;</script>`;
-      cachedTvHtmlBody = raw
-        .replace('<head>', `<head>\n    ${buildMetaTag}`)
-        .replace(/((?:href|src)=["'])(\/tv\/[^"'?]+\.(?:css|js))(["'])/gi, `$1$2?v=${sig}$3`)
-        .replace(/((?:href|src)=["'])(\/vendor\/[^"'?]+\.js)(["'])/gi, `$1$2?v=${sig}$3`);
-      cachedTvHtmlSig = sig;
-    }
-    res.status(200).type('html').send(cachedTvHtmlBody);
+    let html = fs.readFileSync(target, 'utf8');
+    const buildMetaTag = `<script>window.__RIFFAN_TV_BUILD__=${JSON.stringify(sig)};window.__RIFFAN_TV_AUTO_UPDATE__=true;</script>`;
+    html = html
+      .replace('<head>', `<head>\n    ${buildMetaTag}`)
+      .replace(/((?:href|src)=["'])(\/tv\/[^"'?]+\.(?:css|js))(["'])/gi, `$1$2?v=${sig}$3`)
+      .replace(/((?:href|src)=["'])(\/vendor\/[^"'?]+\.js)(["'])/gi, `$1$2?v=${sig}$3`);
+    res.status(200).type('html').send(html);
   } catch {
     res.sendFile(target);
   }
@@ -566,42 +555,65 @@ async function startServer() {
             void refreshLiveIptvRegistry(false).catch((err) => logger.warn({ err }, 'prewarm_iptv_failed'));
           }, 250).unref?.();
           setTimeout(() => {
-            void refreshFamelackAndWorldCatalog(false)
-              .then(async (worldList) => {
-                if (!Array.isArray(worldList) || worldList.length === 0) return;
-                const combined = [
-                  ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),
-                  ...CATALA_LIVE_CHANNELS,
-                  ...getPermanent247SportsMatches(),
-                  ...getCachedSportsMatches(),
-                  ...worldList,
-                ];
-                // If an earlier TDT sweep was in progress, await it then sweep newly loaded World TV channels
-                await channelHealthMonitor.runSweep(combined, { concurrency: 10, timeoutMs: 1_500 });
-                await channelHealthMonitor.runSweep(combined, { concurrency: 10, timeoutMs: 1_500 });
-              })
-              .catch((err) => logger.warn({ err }, 'prewarm_world_failed'));
+            void refreshFamelackAndWorldCatalog(false).catch((err) => logger.warn({ err }, 'prewarm_world_failed'));
           }, 600).unref?.();
           setTimeout(() => {
             void prewarmTodayFootballBoard().catch((err) => logger.warn({ err }, 'prewarm_football_failed'));
           }, 950).unref?.();
           setTimeout(() => {
+            void prewarmMovieReels().catch((err) => logger.warn({ err }, 'prewarm_reels_failed'));
             void getMovistarDaznHome().catch((err) => logger.warn({ err }, 'prewarm_dazn_failed'));
             void initBelixFromEnv().catch((err) => logger.warn({ err }, 'prewarm_belix_failed'));
           }, 1350).unref?.();
           setTimeout(() => {
-            warmDefaultProvidersBackground();
-          }, 1800).unref?.();
+            void initDefaultProviders()
+              .catch((err) => logger.warn({ err }, 'prewarm_providers_failed'))
+              .then(() =>
+                benchmarkSpainLiveChannels({
+                  includeAllChannels: false,
+                  maxTracksPerProvider: 55,
+                  timeoutMs: 2200,
+                }).catch((err) => logger.warn({ err }, 'prewarm_spain_live_benchmark_failed'))
+              )
+              .finally(() => {
+                const flagshipIds = new Set([
+                  'tdt-la1',
+                  'tdt-la2',
+                  'tdt-antena3',
+                  'tdt-cuatro',
+                  'tdt-telecinco',
+                  'tdt-lasexta',
+                  'tdt-24h',
+                  'tdt-trece',
+                  'dazn-laliga',
+                  'mplus-laliga',
+                ]);
+                const unifiedTargets = buildUnifiedPrioritizedChannels([
+                  ...getCachedSpainXtreamChannelsSync(),
+                  ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),
+                ]).filter((ch) => flagshipIds.has(ch.id));
+                void Promise.allSettled(
+                  unifiedTargets.map((ch) =>
+                    raceFastLiveTracks(ch.channels, {
+                      channelId: ch.id,
+                      titleHint: ch.name,
+                      preferLang: 'ES',
+                      timeoutMs: 2400,
+                    }).catch(() => undefined)
+                  )
+                );
+              });
+          }, 2200).unref?.();
           channelHealthMonitor.startScheduler(
             () => [
+              ...getCachedSpainXtreamChannelsSync(),
               ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),
               ...CATALA_LIVE_CHANNELS,
               ...getPermanent247SportsMatches(),
               ...getCachedSportsMatches(),
-              ...getCachedFamelackWorldChannels(),
             ],
             3 * 60 * 1000,
-            4_500
+            10_000
           );
           startCatalogRefreshScheduler(15 * 60 * 1000);
         } catch (err) {

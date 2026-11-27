@@ -16,38 +16,33 @@ import {
 } from '../../config/defaultProviders.ts';
 import { getAllXtreamProviders } from '../providersConfig.ts';
 import { assertSafeProxyUrl } from '../../utils/ssrfGuard.ts';
-import { LruTtlCache } from '../../utils/lruCache.ts';
 import { streamingFetch } from '../../utils/tlsFetch.ts';
 import { logger } from '../../utils/logger.ts';
 import {
   ensureLiveDvbCleanHlsSession,
-  getActiveDvbSessionPath,
   readLiveDvbPlaylistForIptv,
 } from '../../routes/proxies/dvbTranscoder.ts';
-import { needsBrowserVodRemux, streamVodRemuxedAsMp4 } from '../xtreamVodRemuxer.ts';
 import { applyProxyCorsHeaders, getOrCreateRequestId } from '../../routes/proxies/proxyUtils.ts';
+import { needsBrowserVodRemux, streamVodRemuxedAsMp4 } from '../xtreamVodRemuxer.ts';
+import type { XtreamFullCatalogPayload } from '../xtreamService.ts';
 import {
   buildProviderStreamUrl,
-  computeProviderCatalogSortScore,
   detectProviderItemLangAndQuality,
   extractYearHint,
   fetchProviderJsonWithFallback,
   fetchProviderPlaylistText,
   isDisallowedAdultItem,
   parseM3uPlusIntoCatalog,
-  prefetchProviderHlsFirstSegment,
   rewriteProviderPlaylistWithOpaqueTokens,
   sanitizeExtension,
   sanitizePublicImageUrl,
   sortCatalogItemsForDisplay,
 } from './xtreamProvidersHelpers.ts';
 import type {
-  ProviderCatalogAlternativePublic,
   ProviderCatalogItemPublic,
   ProviderCatalogQueryResult,
   ProviderCategoryPublic,
   ProviderMediaKind,
-  ProviderPriorityMode,
   ProviderSeriesDetailPublic,
   ProviderSeriesEpisodePublic,
   ProvidersStatusSummaryPublic,
@@ -109,8 +104,6 @@ function getUnifiedProviderConfigs(): XtreamProviderConfig[] {
 const runtimeStates = new Map<string, ProviderRuntimeState>();
 const deadAccountCooldownUntil = new Map<string, number>();
 const DEAD_ACCOUNT_COOLDOWN_MS = 30 * 60 * 1000;
-const providerLiveManifestCache = new LruTtlCache<string, string>(400, 14_000);
-const inflightProviderLiveManifests = new Map<string, Promise<string | null>>();
 
 function ensureRuntimeState(config: XtreamProviderConfig): ProviderRuntimeState {
   let st = runtimeStates.get(config.id);
@@ -322,7 +315,6 @@ async function fetchFullCatalogForAccount(
         kind: 'live',
         streamId,
         name,
-        cleanTitle: meta.cleanTitle,
         categoryId,
         categoryName,
         lang: meta.lang,
@@ -353,7 +345,6 @@ async function fetchFullCatalogForAccount(
         kind: 'movie',
         streamId,
         name,
-        cleanTitle: meta.cleanTitle,
         categoryId,
         categoryName,
         lang: meta.lang,
@@ -385,7 +376,6 @@ async function fetchFullCatalogForAccount(
         kind: 'series',
         streamId: seriesId,
         name,
-        cleanTitle: meta.cleanTitle,
         categoryId,
         categoryName,
         lang: meta.lang,
@@ -423,7 +413,6 @@ async function fetchFullCatalogForAccount(
               kind: 'live',
               streamId: item.streamId,
               name: item.name,
-              cleanTitle: meta.cleanTitle,
               categoryId: item.categoryId,
               categoryName: item.categoryName,
               lang: meta.lang,
@@ -444,7 +433,6 @@ async function fetchFullCatalogForAccount(
               kind: 'movie',
               streamId: item.streamId,
               name: item.name,
-              cleanTitle: meta.cleanTitle,
               categoryId: item.categoryId,
               categoryName: item.categoryName,
               lang: meta.lang,
@@ -670,106 +658,6 @@ export function getProvidersStatusSummary(): ProvidersStatusSummaryPublic {
   };
 }
 
-export interface ConnectedProvidersRuntimeCatalog {
-  connectedCount: number;
-  liveItems: ProviderCatalogItemPublic[];
-  movieItems: ProviderCatalogItemPublic[];
-  seriesItems: ProviderCatalogItemPublic[];
-  liveCategories: ProviderCategoryPublic[];
-  movieCategories: ProviderCategoryPublic[];
-  seriesCategories: ProviderCategoryPublic[];
-}
-
-export function getConnectedProvidersRuntimeCatalog(): ConnectedProvidersRuntimeCatalog {
-  const configs = getUnifiedProviderConfigs();
-  const liveItems: ProviderCatalogItemPublic[] = [];
-  const movieItems: ProviderCatalogItemPublic[] = [];
-  const seriesItems: ProviderCatalogItemPublic[] = [];
-  const liveCategories: ProviderCategoryPublic[] = [];
-  const movieCategories: ProviderCategoryPublic[] = [];
-  const seriesCategories: ProviderCategoryPublic[] = [];
-  let connectedCount = 0;
-
-  for (const cfg of configs) {
-    const st = runtimeStates.get(cfg.id);
-    if (!st) continue;
-    if (st.connected || st.liveItems.length > 0 || st.movieItems.length > 0 || st.seriesItems.length > 0) {
-      connectedCount += 1;
-      liveItems.push(...st.liveItems);
-      movieItems.push(...st.movieItems);
-      seriesItems.push(...st.seriesItems);
-      liveCategories.push(...st.liveCategories);
-      movieCategories.push(...st.movieCategories);
-      seriesCategories.push(...st.seriesCategories);
-    }
-  }
-
-  return {
-    connectedCount,
-    liveItems,
-    movieItems,
-    seriesItems,
-    liveCategories,
-    movieCategories,
-    seriesCategories,
-  };
-}
-
-export async function getConnectedProvidersCatalogSnapshot(
-  waitIfColdMs = 900
-): Promise<ConnectedProvidersRuntimeCatalog> {
-  const immediate = getConnectedProvidersRuntimeCatalog();
-  if (immediate.connectedCount > 0 || waitIfColdMs <= 0) {
-    return immediate;
-  }
-
-  const pending: Promise<unknown>[] = [];
-  for (const st of runtimeStates.values()) {
-    if (st.connectPromise) {
-      pending.push(st.connectPromise.catch(() => null));
-    }
-  }
-  if (pending.length > 0) {
-    await Promise.race([
-      Promise.allSettled(pending),
-      new Promise<void>((resolve) => setTimeout(resolve, waitIfColdMs)),
-    ]);
-  }
-  return getConnectedProvidersRuntimeCatalog();
-}
-
-
-function normalizeGroupTitleKey(item: ProviderCatalogItemPublic): string {
-  const base = String(item.cleanTitle || item.name || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/\bm\s*\+\s*/g, 'movistar ')
-    .replace(/\bmovistar\s+plus\b/g, 'movistar plus')
-    .replace(/[^a-z0-9\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-  const yearPart = item.kind !== 'live' && item.year ? `:${item.year}` : '';
-  return `${item.kind}:${base || item.id}${yearPart}`;
-}
-
-function toAlternativeDto(item: ProviderCatalogItemPublic): ProviderCatalogAlternativePublic {
-  return {
-    id: item.id,
-    providerId: item.providerId,
-    providerName: item.providerName,
-    streamId: item.streamId,
-    name: item.name,
-    categoryName: item.categoryName,
-    lang: item.lang || 'INTL',
-    langLabel: item.langLabel || 'Internacional',
-    quality: item.quality || 'HD',
-    qualityTier: typeof item.qualityTier === 'number' ? item.qualityTier : 2,
-    containerExtension: item.containerExtension,
-    streamUrl: item.streamUrl,
-  };
-}
-
 export function queryProvidersCatalog(params: {
   scope?: string;
   kind?: ProviderMediaKind | 'all';
@@ -779,26 +667,18 @@ export function queryProvidersCatalog(params: {
   q?: string;
   offset?: number;
   limit?: number;
-  priority?: ProviderPriorityMode;
-  grouped?: boolean;
 }): ProviderCatalogQueryResult {
   const scope = String(params.scope || 'total').trim() || 'total';
   const kind: ProviderMediaKind | 'all' =
     params.kind === 'live' || params.kind === 'movie' || params.kind === 'series'
       ? params.kind
       : 'all';
-  const priority: ProviderPriorityMode =
-    params.priority === 'best_quality' ? 'best_quality' : 'es_quality';
   const categoryId = String(params.categoryId || '').trim();
   const langFilter = String(params.lang || 'all').trim().toUpperCase();
   const qualityFilter = String(params.quality || 'all').trim().toUpperCase();
   const q = String(params.q || '').trim().toLowerCase();
   const offset = Math.max(0, Number(params.offset) || 0);
   const limit = Math.min(200, Math.max(1, Number(params.limit) || 60));
-  const shouldGroup =
-    typeof params.grouped === 'boolean'
-      ? params.grouped
-      : scope === 'total' && (!categoryId || categoryId === 'all');
 
   const configs = getUnifiedProviderConfigs();
   const states =
@@ -808,141 +688,52 @@ export function queryProvidersCatalog(params: {
       ? [runtimeStates.get(scope)!]
       : [];
 
-  // Filter FIRST before any sorting or cross-server grouping (~100x faster on 558k+ items!)
-  const matchesFilter = (item: ProviderCatalogItemPublic): boolean => {
-    if (categoryId && categoryId !== 'all' && item.categoryId !== categoryId) {
-      return false;
-    }
-    if (langFilter && langFilter !== 'ALL' && (item.lang || 'INTL').toUpperCase() !== langFilter) {
-      return false;
-    }
-    if (qualityFilter && qualityFilter !== 'ALL') {
-      const qLabel = String(item.quality || '').toUpperCase();
-      if (qualityFilter === '4K' && !qLabel.includes('4K') && !qLabel.includes('UHD')) return false;
-      if ((qualityFilter === '1080P' || qualityFilter === 'FHD') && !qLabel.includes('1080') && !qLabel.includes('FHD')) return false;
-      if (qualityFilter === 'HD' && qLabel !== 'HD' && !qLabel.includes('720') && !qLabel.includes('HD HEVC')) return false;
-      if (qualityFilter === 'SD' && qLabel !== 'SD') return false;
-    }
-    if (q) {
-      const hit =
-        item.name.toLowerCase().includes(q) ||
-        (item.cleanTitle && item.cleanTitle.toLowerCase().includes(q)) ||
-        item.categoryName.toLowerCase().includes(q) ||
-        item.providerName.toLowerCase().includes(q) ||
-        (item.langLabel && item.langLabel.toLowerCase().includes(q));
-      if (!hit) return false;
-    }
-    return true;
-  };
-
-  const hasNarrowFilter =
-    Boolean(q) ||
-    (Boolean(categoryId) && categoryId !== 'all') ||
-    (Boolean(langFilter) && langFilter !== 'ALL') ||
-    (Boolean(qualityFilter) && qualityFilter !== 'ALL');
-
-  const filtered: ProviderCatalogItemPublic[] = [];
-  // When browsing unfiltered Catálogo Total (558k items), cap candidate scan deterministically per sorted provider slice
-  // to guarantee <35ms response time while keeping top ES + 4K items from all servers.
-  const perProviderCap = hasNarrowFilter ? Number.MAX_SAFE_INTEGER : shouldGroup ? 1600 : 800;
-
+  let items: ProviderCatalogItemPublic[] = [];
   for (const st of states) {
-    const pushSlice = (arr: ProviderCatalogItemPublic[]) => {
-      if (arr.length === 0) return;
-      if (!hasNarrowFilter && arr.length > perProviderCap) {
-        // Items are already pre-sorted per provider at sync time (ES + 4K first); also sample top 4K items if priority === best_quality
-        let added = 0;
-        for (let i = 0; i < arr.length && added < perProviderCap; i++) {
-          const it = arr[i];
-          if (priority === 'best_quality' && (it.qualityTier ?? 2) > 1 && added < 600) {
-            continue;
-          }
-          if (matchesFilter(it)) {
-            filtered.push(it);
-            added++;
-          }
-        }
-        if (added < perProviderCap) {
-          for (let i = 0; i < arr.length && added < perProviderCap; i++) {
-            const it = arr[i];
-            if (priority === 'best_quality' && (it.qualityTier ?? 2) <= 1) continue;
-            if (matchesFilter(it)) {
-              filtered.push(it);
-              added++;
-            }
-          }
-        }
-        return;
-      }
-      for (let i = 0; i < arr.length; i++) {
-        const it = arr[i];
-        if (matchesFilter(it)) {
-          filtered.push(it);
-        }
-      }
-    };
-    if (kind === 'all' || kind === 'live') pushSlice(st.liveItems);
-    if (kind === 'all' || kind === 'movie') pushSlice(st.movieItems);
-    if (kind === 'all' || kind === 'series') pushSlice(st.seriesItems);
+    if (kind === 'all' || kind === 'live') items.push(...st.liveItems);
+    if (kind === 'all' || kind === 'movie') items.push(...st.movieItems);
+    if (kind === 'all' || kind === 'series') items.push(...st.seriesItems);
   }
 
-  let outputItems: ProviderCatalogItemPublic[];
-  if (shouldGroup && filtered.length > 0) {
-    const groupMap = new Map<string, ProviderCatalogItemPublic[]>();
-    for (const item of filtered) {
-      const key = normalizeGroupTitleKey(item);
-      let list = groupMap.get(key);
-      if (!list) {
-        list = [item];
-        groupMap.set(key, list);
-      } else {
-        list.push(item);
-      }
-    }
+  if (scope === 'total') {
+    sortCatalogItemsForDisplay(items);
+  }
 
-    const groupedList: ProviderCatalogItemPublic[] = [];
-    for (const bucket of groupMap.values()) {
-      bucket.sort(
-        (a, b) =>
-          computeProviderCatalogSortScore(a, priority) - computeProviderCatalogSortScore(b, priority)
-      );
-      const best = bucket[0];
-      // Keep up to 14 distinct provider/lang/quality alternatives per unified entry
-      const altSeen = new Set<string>();
-      const alts: ProviderCatalogAlternativePublic[] = [];
-      for (const cand of bucket) {
-        const altKey = `${cand.providerId}:${cand.lang}:${cand.quality}:${cand.streamId}`;
-        if (altSeen.has(altKey)) continue;
-        altSeen.add(altKey);
-        alts.push(toAlternativeDto(cand));
-        if (alts.length >= 14) break;
-      }
-      const posterFallback = best.poster || bucket.find((x) => x.poster)?.poster;
-      groupedList.push({
-        ...best,
-        poster: posterFallback,
-        alternatives: alts,
-      });
-    }
-
-    sortCatalogItemsForDisplay(groupedList, priority);
-    outputItems = groupedList;
-  } else {
-    sortCatalogItemsForDisplay(filtered, priority);
-    outputItems = filtered;
+  if (categoryId && categoryId !== 'all') {
+    items = items.filter((item) => item.categoryId === categoryId);
+  }
+  if (langFilter && langFilter !== 'ALL') {
+    items = items.filter((item) => (item.lang || 'INTL').toUpperCase() === langFilter);
+  }
+  if (qualityFilter && qualityFilter !== 'ALL') {
+    items = items.filter((item) => {
+      const qLabel = String(item.quality || '').toUpperCase();
+      if (qualityFilter === '4K') return qLabel.includes('4K') || qLabel.includes('UHD');
+      if (qualityFilter === '1080P' || qualityFilter === 'FHD') return qLabel.includes('1080') || qLabel.includes('FHD');
+      if (qualityFilter === 'HD') return qLabel === 'HD' || qLabel.includes('720');
+      if (qualityFilter === 'SD') return qLabel === 'SD';
+      return true;
+    });
+  }
+  if (q) {
+    items = items.filter(
+      (item) =>
+        item.name.toLowerCase().includes(q) ||
+        item.categoryName.toLowerCase().includes(q) ||
+        item.providerName.toLowerCase().includes(q) ||
+        (item.langLabel || '').toLowerCase().includes(q)
+    );
   }
 
   return {
     scope,
     kind,
-    priority,
-    grouped: shouldGroup,
     lang: langFilter !== 'ALL' ? langFilter : undefined,
     quality: qualityFilter !== 'ALL' ? qualityFilter : undefined,
-    total: outputItems.length,
+    total: items.length,
     offset,
     limit,
-    items: outputItems.slice(offset, offset + limit),
+    items: items.slice(offset, offset + limit),
   };
 }
 
@@ -1037,101 +828,238 @@ export async function getProviderSeriesDetail(
 export async function resolveProviderLiveManifest(
   providerId: string,
   streamId: string,
-  originPrefix = '',
-  opts?: { allowTranscodeFallback?: boolean; probeTimeoutMs?: number }
+  originPrefix = ''
 ): Promise<string | null> {
   const st = runtimeStates.get(providerId);
   if (!st || !streamId) return null;
 
-  const allowTranscode = opts?.allowTranscodeFallback !== false;
-  const cacheKey = `${providerId}:${streamId}:${originPrefix || 'rel'}`;
-  const cachedManifest = providerLiveManifestCache.get(cacheKey);
-  if (cachedManifest) {
-    return cachedManifest;
-  }
+  const provider = st.config;
+  const origin = normalizeXtreamOrigin(provider.serverUrl);
+  const referer = `${origin}/`;
+  const candidates = getOrderedAccountCandidates(provider.accounts, st.activeAccountIndex);
 
-  const inflightKey = `${cacheKey}:${allowTranscode ? 'full' : 'fast'}`;
-  const existing = inflightProviderLiveManifests.get(inflightKey);
-  if (existing) {
-    return existing;
-  }
+  for (const candidate of candidates) {
+    const m3u8Url = buildXtreamMediaUrl(provider.serverUrl, candidate.account, 'live', streamId, 'm3u8');
+    const loaded = await fetchProviderPlaylistText(m3u8Url, referer, 3500).catch(() => null);
+    if (loaded) {
+      st.activeAccountIndex = candidate.index;
+      return rewriteProviderPlaylistWithOpaqueTokens(
+        loaded.text,
+        loaded.baseUrl,
+        referer,
+        originPrefix
+      );
+    }
 
-  const run = (async (): Promise<string | null> => {
-    const provider = st.config;
-    const origin = normalizeXtreamOrigin(provider.serverUrl);
-    const referer = `${origin}/`;
-    const candidates = getOrderedAccountCandidates(provider.accounts, st.activeAccountIndex);
-    const maxAccountTries = Math.min(candidates.length, 2);
-    const totalBudgetMs = opts?.probeTimeoutMs ?? (allowTranscode ? 11_000 : 6_200);
-    const deadlineAt = Date.now() + totalBudgetMs;
-
-    for (let i = 0; i < maxAccountTries; i++) {
-      const candidate = candidates[i];
-      if (Date.now() >= deadlineAt) break;
-      const tsUrl = buildXtreamMediaUrl(provider.serverUrl, candidate.account, 'live', streamId, 'ts');
-      const warmPath = getActiveDvbSessionPath(tsUrl, 'hd');
-      if (warmPath) {
-        const warmPl = readLiveDvbPlaylistForIptv(warmPath, originPrefix);
-        if (warmPl) {
+    const tsUrl = buildXtreamMediaUrl(provider.serverUrl, candidate.account, 'live', streamId, 'ts');
+    try {
+      await assertSafeProxyUrl(tsUrl);
+      const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, 'hd', referer).catch(() => null);
+      if (dvbPath) {
+        const playlist = readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
+        if (playlist) {
           st.activeAccountIndex = candidate.index;
-          providerLiveManifestCache.set(cacheKey, warmPl);
-          return warmPl;
+          return playlist;
         }
       }
+    } catch {
+      // rotate to next account
+    }
 
-      const m3u8Url = buildXtreamMediaUrl(provider.serverUrl, candidate.account, 'live', streamId, 'm3u8');
-      const probeBudget = Math.min(allowTranscode ? 3_800 : 4_800, Math.max(400, deadlineAt - Date.now()));
-      const loaded = await fetchProviderPlaylistText(m3u8Url, referer, probeBudget, {
-        skipCurlRetry: true,
-      }).catch(() => null);
-      if (loaded && (loaded.text.includes('#EXTINF') || loaded.text.includes('#EXT-X-STREAM-INF'))) {
+    if (provider.accounts.length > 1) {
+      rotateProviderAccount(providerId, candidate.index);
+    }
+  }
+
+  return null;
+}
+
+export function getConnectedProvidersLiveCatalogs(): XtreamFullCatalogPayload[] {
+  const out: XtreamFullCatalogPayload[] = [];
+  for (const st of runtimeStates.values()) {
+    if (!st.connected || st.liveItems.length === 0) continue;
+    const pid = st.config.id;
+    const pName = st.config.name;
+    out.push({
+      providerId: pid,
+      providerName: pName,
+      liveCategories: st.liveCategories.map((c) => ({
+        id: c.id,
+        name: c.name,
+        type: 'live' as const,
+        providerId: pid,
+        providerName: pName,
+      })),
+      liveStreams: st.liveItems.map((item, idx) => ({
+        num: idx + 1,
+        streamId: item.streamId,
+        name: item.name,
+        categoryId: item.categoryId,
+        streamIcon: item.poster,
+        playbackUrl: `/api/stream?provider=${encodeURIComponent(pid)}&id=${encodeURIComponent(item.streamId)}`,
+        providerId: pid,
+        providerName: pName,
+      })),
+      vodCategories: [],
+      vodStreams: [],
+      seriesCategories: [],
+      series: [],
+      counts: {
+        liveCategories: st.liveCategories.length,
+        liveStreams: st.liveItems.length,
+        vodCategories: 0,
+        vodStreams: 0,
+        seriesCategories: 0,
+        series: 0,
+      },
+      accountNumber: st.activeAccountIndex + 1,
+      syncedAt: st.lastSyncedAt || Date.now(),
+      expiresAt: Date.now() + 6 * 60 * 60 * 1000,
+      fromCache: true,
+    });
+  }
+  return out;
+}
+
+export function getConnectedProvidersMovieAndSeriesCatalogs(): XtreamFullCatalogPayload[] {
+  const out: XtreamFullCatalogPayload[] = [];
+  for (const st of runtimeStates.values()) {
+    if (!st.connected || (st.movieItems.length === 0 && st.seriesItems.length === 0)) continue;
+    const pid = st.config.id;
+    const pName = st.config.name;
+    out.push({
+      providerId: pid,
+      providerName: pName,
+      liveCategories: [],
+      liveStreams: [],
+      vodCategories: st.movieCategories.map((c) => ({
+        id: c.id,
+        name: c.name,
+        type: 'vod' as const,
+        providerId: pid,
+        providerName: pName,
+      })),
+      vodStreams: st.movieItems.map((item, idx) => ({
+        num: idx + 1,
+        streamId: item.streamId,
+        name: item.name,
+        categoryId: item.categoryId,
+        streamIcon: item.poster,
+        containerExtension: item.containerExtension || 'mp4',
+        rating: item.rating,
+        added: item.year,
+        playbackUrl: item.streamUrl,
+        providerId: pid,
+        providerName: pName,
+      })),
+      seriesCategories: st.seriesCategories.map((c) => ({
+        id: c.id,
+        name: c.name,
+        type: 'series' as const,
+        providerId: pid,
+        providerName: pName,
+      })),
+      series: st.seriesItems.map((item, idx) => ({
+        num: idx + 1,
+        seriesId: item.streamId,
+        name: item.name,
+        categoryId: item.categoryId,
+        cover: item.poster,
+        plot: item.plot,
+        releaseDate: item.year,
+        rating: item.rating,
+        providerId: pid,
+        providerName: pName,
+      })),
+      counts: {
+        liveCategories: 0,
+        liveStreams: 0,
+        vodCategories: st.movieCategories.length,
+        vodStreams: st.movieItems.length,
+        seriesCategories: st.seriesCategories.length,
+        series: st.seriesItems.length,
+      },
+      accountNumber: st.activeAccountIndex + 1,
+      syncedAt: st.lastSyncedAt || Date.now(),
+      expiresAt: Date.now() + 6 * 60 * 60 * 1000,
+      fromCache: true,
+    });
+  }
+  return out;
+}
+
+export async function resolveProviderVodOrSeriesUrl(
+  providerId: string,
+  kind: 'movie' | 'series',
+  streamId: string,
+  ext = 'mp4',
+  timeoutMs = 4_500
+): Promise<{
+  ok: boolean;
+  url?: string;
+  contentType?: string;
+  status?: number;
+  latencyMs: number;
+}> {
+  const startedAt = Date.now();
+  const st = runtimeStates.get(providerId);
+  if (!st || !streamId || st.config.accounts.length === 0) {
+    return { ok: false, latencyMs: Math.max(1, Date.now() - startedAt) };
+  }
+
+  const provider = st.config;
+  const origin = normalizeXtreamOrigin(provider.serverUrl);
+  const candidates = getOrderedAccountCandidates(provider.accounts, st.activeAccountIndex);
+  const cleanExt = sanitizeExtension(ext, 'mp4');
+
+  for (const candidate of candidates) {
+    const upstreamUrl = buildXtreamMediaUrl(
+      provider.serverUrl,
+      candidate.account,
+      kind,
+      streamId,
+      cleanExt
+    );
+    try {
+      await assertSafeProxyUrl(upstreamUrl);
+      const t0 = Date.now();
+      const upstream = await fetch(upstreamUrl, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'IPTVSmartersPlayer',
+          Accept: '*/*',
+          Referer: `${origin}/`,
+          Range: 'bytes=0-63',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (upstream.url) {
+        await assertSafeProxyUrl(upstream.url);
+      }
+      const ct = String(upstream.headers.get('content-type') || '').toLowerCase();
+      const isBadText = ct.startsWith('text/html') || ct.startsWith('text/plain') || ct.includes('application/json');
+      await upstream.body?.cancel?.().catch(() => {});
+
+      if ((upstream.ok || upstream.status === 206) && !isBadText) {
         st.activeAccountIndex = candidate.index;
-        const rewritten = rewriteProviderPlaylistWithOpaqueTokens(
-          loaded.text,
-          loaded.baseUrl,
-          referer,
-          originPrefix
-        );
-        providerLiveManifestCache.set(cacheKey, rewritten);
-        prefetchProviderHlsFirstSegment(rewritten, originPrefix);
-        return rewritten;
+        return {
+          ok: true,
+          url: upstream.url || upstreamUrl,
+          contentType: ct,
+          status: upstream.status,
+          latencyMs: Math.max(1, Date.now() - t0),
+        };
       }
-
-      if (!allowTranscode || Date.now() >= deadlineAt) {
-        if (provider.accounts.length > 1) {
-          rotateProviderAccount(providerId, candidate.index);
-        }
-        continue;
-      }
-      try {
-        await assertSafeProxyUrl(tsUrl);
-        const dvbPath = await ensureLiveDvbCleanHlsSession(tsUrl, 'hd', referer).catch(() => null);
-        if (dvbPath) {
-          const playlist = readLiveDvbPlaylistForIptv(dvbPath, originPrefix);
-          if (playlist) {
-            st.activeAccountIndex = candidate.index;
-            providerLiveManifestCache.set(cacheKey, playlist);
-            return playlist;
-          }
-        }
-      } catch {
-        // rotate to next account
-      }
-
-      if (provider.accounts.length > 1) {
-        rotateProviderAccount(providerId, candidate.index);
-      }
+    } catch {
+      // rotate to next account on connection/auth failure
     }
-
-    return null;
-  })().finally(() => {
-    if (inflightProviderLiveManifests.get(inflightKey) === run) {
-      inflightProviderLiveManifests.delete(inflightKey);
+    if (provider.accounts.length > 1) {
+      rotateProviderAccount(providerId, candidate.index);
     }
-  });
+  }
 
-  inflightProviderLiveManifests.set(inflightKey, run);
-  return run;
+  return { ok: false, latencyMs: Math.max(1, Date.now() - startedAt) };
 }
 
 export async function streamProviderVodOrSeries(
@@ -1155,39 +1083,24 @@ export async function streamProviderVodOrSeries(
   const rangeHeader = typeof req.headers.range === 'string' ? req.headers.range : '';
   const cleanExt = sanitizeExtension(ext, 'mp4');
   const forceTranscode = req.query.transcode === '1' || req.query.remux === 'mp4';
-  const rawStart = Number(req.query.start);
-  const startSec = Number.isFinite(rawStart) && rawStart > 0 ? rawStart : undefined;
+  const startSec = Number(req.query.start || 0);
 
   if (needsBrowserVodRemux(cleanExt, forceTranscode)) {
-    for (const candidate of candidates) {
-      const upstreamUrl = buildXtreamMediaUrl(
-        provider.serverUrl,
-        candidate.account,
-        kind,
-        streamId,
-        cleanExt
-      );
-      try {
-        await assertSafeProxyUrl(upstreamUrl);
-        applyProxyCorsHeaders(res, reqId);
-        const started = await streamVodRemuxedAsMp4(req, res, {
-          upstreamUrl,
-          cacheKey: `provider:${providerId}:${kind}:${streamId}`,
-          startSec,
-          forceFullTranscode: forceTranscode,
-        });
-        if (started) {
-          st.activeAccountIndex = candidate.index;
-          return;
-        }
-      } catch {
-        // rotate to next account
+    const resolved = await resolveProviderVodOrSeriesUrl(providerId, kind, streamId, cleanExt, 6_000);
+    if (!resolved.ok || !resolved.url) {
+      if (!res.writableEnded) {
+        res.status(502).json({ success: false, error: 'Stream temporalmente no disponible.' });
       }
-      if (provider.accounts.length > 1) {
-        rotateProviderAccount(providerId, candidate.index);
-      }
-      if (res.headersSent) return;
+      return;
     }
+    applyProxyCorsHeaders(res, reqId);
+    const remuxed = await streamVodRemuxedAsMp4(req, res, {
+      upstreamUrl: resolved.url,
+      cacheKey: `${providerId}:${kind}:${streamId}:${cleanExt}`,
+      startSec: Number.isFinite(startSec) && startSec > 0 ? startSec : undefined,
+      forceFullTranscode: req.query.transcode === '1',
+    });
+    if (remuxed || res.headersSent) return;
   }
 
   for (const candidate of candidates) {
@@ -1198,10 +1111,6 @@ export async function streamProviderVodOrSeries(
       streamId,
       cleanExt
     );
-    const controller = new AbortController();
-    const onClose = () => controller.abort();
-    req.once('close', onClose);
-    let piped = false;
     try {
       await assertSafeProxyUrl(upstreamUrl);
       const headers: Record<string, string> = {
@@ -1211,25 +1120,46 @@ export async function streamProviderVodOrSeries(
       };
       if (rangeHeader) headers['Range'] = rangeHeader;
 
-      const upstream = await streamingFetch(upstreamUrl, {
-        method: req.method === 'HEAD' ? 'HEAD' : 'GET',
-        headers,
-        headersTimeoutOnly: true,
-        timeoutMs: 8_500,
-        signal: controller.signal,
-      });
+      const controller = new AbortController();
+      const headerTimeout = setTimeout(() => controller.abort(), 12_000);
+      const onClose = () => {
+        clearTimeout(headerTimeout);
+        controller.abort();
+      };
+      req.once('close', onClose);
+
+      let upstream: Response;
+      try {
+        upstream = await fetch(upstreamUrl, {
+          method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+          headers,
+          redirect: 'follow',
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(headerTimeout);
+      }
 
       if (upstream.url) {
         await assertSafeProxyUrl(upstream.url);
       }
 
-      if (upstream.ok || upstream.status === 206) {
+      const rawCt = String(upstream.headers.get('content-type') || '').toLowerCase();
+      const isBadTextBody =
+        rawCt.startsWith('text/html') || rawCt.startsWith('text/plain') || rawCt.includes('application/json');
+
+      if ((upstream.ok || upstream.status === 206) && !isBadTextBody) {
         st.activeAccountIndex = candidate.index;
         applyProxyCorsHeaders(res, reqId);
         res.status(upstream.status);
         const contentType =
-          upstream.headers.get('content-type') ||
-          (cleanExt === 'mkv' ? 'video/x-matroska' : 'video/mp4');
+          !rawCt || rawCt.includes('octet-stream')
+            ? cleanExt === 'webm'
+              ? 'video/webm'
+              : cleanExt === 'mkv'
+              ? 'video/x-matroska'
+              : 'video/mp4'
+            : upstream.headers.get('content-type') || 'video/mp4';
         res.setHeader('Content-Type', contentType);
         res.setHeader('Accept-Ranges', upstream.headers.get('accept-ranges') || 'bytes');
         const contentLength = upstream.headers.get('content-length');
@@ -1252,18 +1182,14 @@ export async function streamProviderVodOrSeries(
           nodeStream.destroy();
           controller.abort();
         });
-        piped = true;
         nodeStream.pipe(res);
         return;
       }
 
       await upstream.body?.cancel?.().catch(() => {});
+      req.off('close', onClose);
     } catch {
       // rotate to next account on connection/auth failure
-    } finally {
-      if (!piped) {
-        req.off('close', onClose);
-      }
     }
 
     if (provider.accounts.length > 1) {

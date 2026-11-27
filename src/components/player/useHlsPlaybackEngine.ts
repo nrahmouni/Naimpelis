@@ -148,39 +148,16 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         ? Math.floor(videoState.currentTime)
         : 0;
 
-    let didSwitchBackupUrl = false;
     const triggerBackupSwitch = (reason: string) => {
       const now = Date.now();
-      const hasMultiTracks = (videoState.tracks?.length || 0) > 1;
-      const hasBackupUrl = Boolean(videoState.backupStreamUrl) && !didSwitchBackupUrl;
       if (
         cancelled ||
-        (!hasMultiTracks && !hasBackupUrl) ||
+        !onAutoSwitchBackupTrack ||
+        (videoState.tracks?.length || 0) <= 1 ||
         (didTriggerBackupSwitch && now - lastBackupSwitchAt < 10_000)
       ) {
         return false;
       }
-      if (!hasMultiTracks && hasBackupUrl && videoState.backupStreamUrl) {
-        didSwitchBackupUrl = true;
-        didTriggerBackupSwitch = true;
-        lastBackupSwitchAt = now;
-        setStreamRefreshPhase('switching');
-        setIsBuffering(true);
-        if (hlsRef.current && videoState.mode === 'hls') {
-          try {
-            hlsRef.current.stopLoad();
-            hlsRef.current.loadSource(videoState.backupStreamUrl);
-            hlsRef.current.startLoad(-1);
-            return true;
-          } catch {
-            // fall through to direct src switch
-          }
-        }
-        video.src = videoState.backupStreamUrl;
-        video.load();
-        return true;
-      }
-      if (!onAutoSwitchBackupTrack) return false;
       didTriggerBackupSwitch = true;
       lastBackupSwitchAt = now;
       setStreamRefreshPhase('switching');
@@ -241,55 +218,48 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
           scheduleHideControls();
         } catch {
           setLocalPlaying(false);
-          clearBufferingIndicator();
         }
       }
     };
 
     const attachHlsJs = () => {
       if (!Hls.isSupported() || cancelled) return false;
-      const isDvbLiveUrl = /\/api\/(?:dvb-live|belix\/stream)\//i.test(videoState.url);
+      const isFastLocalLiveUrl = /\/api\/(?:dvb-live|belix\/stream|xtream\/stream|iptv\/live|stream\b)/i.test(
+        videoState.url
+      );
       const isSmartTvUa =
         typeof navigator !== 'undefined' &&
         /Tizen|SMART-TV|Web0S|webOS|BRAVIA|VIDAA|NetCast|AFT[A-Z]/i.test(
           navigator.userAgent || ''
         );
-      const savedAbrEstimate = (() => {
-        try {
-          const raw = Number(localStorage.getItem('riffan_abr_bw_bps') || 0);
-          return Number.isFinite(raw) && raw >= 800_000 && raw <= 35_000_000 ? raw : 7_500_000;
-        } catch {
-          return 7_500_000;
-        }
-      })();
       const hls = new Hls({
         enableWorker: !isSmartTvUa,
         lowLatencyMode: false,
         startFragPrefetch: true,
         startPosition: targetResumeSec > 3 ? targetResumeSec : -1,
-        liveSyncDurationCount: videoState.isLive ? (isDvbLiveUrl ? 2 : 3) : 3,
-        liveMaxLatencyDurationCount: isDvbLiveUrl ? 8 : 10,
+        liveSyncDurationCount: videoState.isLive ? 3 : 3,
+        liveMaxLatencyDurationCount: 10,
         maxLiveSyncPlaybackRate: 1,
-        backBufferLength: 20,
-        maxBufferLength: 35,
-        maxMaxBufferLength: 75,
-        maxBufferHole: 0.65,
+        backBufferLength: 24,
+        maxBufferLength: videoState.isLive ? 30 : 38,
+        maxMaxBufferLength: videoState.isLive ? 65 : 80,
+        maxBufferHole: 0.6,
         maxFragLookUpTolerance: 0.35,
         highBufferWatchdogPeriod: 2,
-        nudgeOffset: 0.1,
+        nudgeOffset: videoState.isLive ? 0.08 : 0.1,
         nudgeMaxRetry: 10,
         stretchShortVideoTrack: !videoState.isLive,
         maxAudioFramesDrift: videoState.isLive ? 3 : 4,
-        abrEwmaDefaultEstimate: savedAbrEstimate,
-        manifestLoadingTimeOut: isDvbLiveUrl ? 9000 : 12000,
-        manifestLoadingMaxRetry: isDvbLiveUrl ? 4 : 6,
-        manifestLoadingRetryDelay: 300,
-        levelLoadingTimeOut: 11000,
-        levelLoadingMaxRetry: 5,
-        levelLoadingRetryDelay: 300,
-        fragLoadingTimeOut: 15000,
-        fragLoadingMaxRetry: 6,
-        fragLoadingRetryDelay: 350,
+        abrEwmaDefaultEstimate: 7_500_000,
+        manifestLoadingTimeOut: isFastLocalLiveUrl ? 8500 : 12000,
+        manifestLoadingMaxRetry: isFastLocalLiveUrl ? 5 : 7,
+        manifestLoadingRetryDelay: 150,
+        levelLoadingTimeOut: 10000,
+        levelLoadingMaxRetry: 6,
+        levelLoadingRetryDelay: 150,
+        fragLoadingTimeOut: 16000,
+        fragLoadingMaxRetry: 8,
+        fragLoadingRetryDelay: 200,
       });
       hlsRef.current = hls;
 
@@ -440,49 +410,6 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
               }
             }
           }, 1000);
-        } else {
-          if (frameHealthInterval) clearInterval(frameHealthInterval);
-          let vodStuckTicks = 0;
-          let vodLastTime = Number(video.currentTime || 0);
-          frameHealthInterval = setInterval(() => {
-            if (cancelled || !video || video.paused || hlsRef.current !== hls) return;
-            const cur = Number(video.currentTime || 0);
-            const advanced = Math.abs(cur - vodLastTime) >= 0.15;
-            if (advanced && video.readyState >= 3) {
-              vodLastTime = cur;
-              vodStuckTicks = 0;
-              return;
-            }
-            vodLastTime = cur;
-            vodStuckTicks += 1;
-            if (vodStuckTicks === 3) {
-              setStreamRefreshPhase('recovering');
-              setIsBuffering(true);
-              try {
-                hls.startLoad();
-              } catch {
-                // ignore
-              }
-            } else if (vodStuckTicks === 5) {
-              try {
-                hls.recoverMediaError();
-              } catch {
-                // ignore
-              }
-            } else if (vodStuckTicks >= 7) {
-              vodStuckTicks = 0;
-              if (!triggerBackupSwitch('vod_startup_stall')) {
-                clearBufferingIndicator();
-                setStreamError(
-                  pickLang(lang, {
-                    es: 'Esta señal no responde ahora mismo. Pulsa Reintentar o elige otro servidor.',
-                    ca: 'Aquest senyal no respon ara mateix. Prem Reintentar o tria un altre servidor.',
-                    en: 'This stream is not responding right now. Press Retry or choose another server.',
-                  })
-                );
-              }
-            }
-          }, 1500);
         }
       });
 
@@ -516,60 +443,17 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
       let networkRecoveries = 0;
       let parsingBurstErrors = 0;
       let liveNetworkStallBurst = 0;
-      let vodNetworkStallBurst = 0;
       let lastNonFatalRecoverAt = 0;
 
-      let lastAbrSavedAt = 0;
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
         networkRecoveries = 0;
         parsingBurstErrors = 0;
         liveNetworkStallBurst = 0;
-        vodNetworkStallBurst = 0;
         setStreamError(null);
-        if (video.readyState >= 2 && (!video.paused || !videoState.isPlaying)) {
-          clearBufferingIndicator();
-        }
-        const nowAbr = Date.now();
-        if (nowAbr - lastAbrSavedAt > 15_000) {
-          lastAbrSavedAt = nowAbr;
-          const bw = Number((hls as unknown as { bandwidthEstimate?: number }).bandwidthEstimate || 0);
-          if (Number.isFinite(bw) && bw >= 800_000 && bw <= 35_000_000) {
-            try {
-              localStorage.setItem('riffan_abr_bw_bps', String(Math.round(bw)));
-            } catch {
-              // ignore storage errors
-            }
-          }
-        }
       });
 
       hls.on(Hls.Events.ERROR, (_evt, data) => {
         if (!data.fatal) {
-          if (
-            !videoState.isLive &&
-            (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
-              data.details === Hls.ErrorDetails.FRAG_LOAD_ERROR ||
-              data.details === Hls.ErrorDetails.FRAG_LOAD_TIMEOUT ||
-              data.details === Hls.ErrorDetails.LEVEL_LOAD_ERROR ||
-              data.details === Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT)
-          ) {
-            vodNetworkStallBurst += 1;
-            if (vodNetworkStallBurst === 2) {
-              setStreamRefreshPhase('recovering');
-              setIsBuffering(true);
-              try {
-                hls.startLoad();
-              } catch {
-                // ignore
-              }
-            } else if (vodNetworkStallBurst >= 4 && Date.now() - lastNonFatalRecoverAt > 6000) {
-              lastNonFatalRecoverAt = Date.now();
-              if (!triggerBackupSwitch(`vod_${data.details}`)) {
-                clearBufferingIndicator();
-              }
-            }
-            return;
-          }
           if (
             videoState.isLive &&
             (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR ||
@@ -579,32 +463,10 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
               data.details === Hls.ErrorDetails.LEVEL_LOAD_TIMEOUT ||
               data.details === Hls.ErrorDetails.MANIFEST_LOAD_ERROR)
           ) {
-            let bufferedAhead = 0;
-            try {
-              for (let i = 0; i < video.buffered.length; i++) {
-                const bs = video.buffered.start(i);
-                const be = video.buffered.end(i);
-                if (video.currentTime >= bs - 0.1 && video.currentTime <= be) {
-                  bufferedAhead = Math.max(bufferedAhead, be - video.currentTime);
-                }
-              }
-            } catch {
-              // ignore
-            }
-            if (bufferedAhead >= 1.2 && data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
-              return;
-            }
-
             liveNetworkStallBurst += 1;
-            if (liveNetworkStallBurst >= 4) {
-              setStreamRefreshPhase('reconnecting');
-              setIsBuffering(true);
-            } else if (liveNetworkStallBurst >= 2) {
-              setStreamRefreshPhase('recovering');
-              setIsBuffering(true);
-            }
-
-            if (liveNetworkStallBurst >= 4 && Date.now() - lastNonFatalRecoverAt > 8000) {
+            setStreamRefreshPhase(liveNetworkStallBurst >= 2 ? 'reconnecting' : 'recovering');
+            setIsBuffering(true);
+            if (liveNetworkStallBurst >= 3 && Date.now() - lastNonFatalRecoverAt > 5000) {
               lastNonFatalRecoverAt = Date.now();
               if (!triggerBackupSwitch(`live_${data.details}`)) {
                 try {
@@ -765,46 +627,34 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         }
       }
     } else if (videoState.mode === 'direct') {
-      let retriedWithTranscode = /[?&]transcode=1\b/i.test(videoState.url);
-      let directStallTimer: ReturnType<typeof setTimeout> | null = null;
-      const isTranscodableProxy = (url: string) =>
-        /^\/api\/(?:stream|xtream\/vod\/|providers\/stream\/)/i.test(url) ||
-        /^\/api\/providers\/(?:vod|series-stream)\//i.test(url);
+      let triedTranscodeFallback = /[?&](?:transcode=1|remux=mp4)\b/i.test(videoState.url);
+      let directStartupTimer: ReturnType<typeof setTimeout> | null = null;
 
-      const clearDirectStallTimer = () => {
-        if (directStallTimer) {
-          clearTimeout(directStallTimer);
-          directStallTimer = null;
-        }
-      };
-
-      const attemptDirectTranscodeRetry = () => {
-        if (cancelled || retriedWithTranscode || !isTranscodableProxy(videoState.url)) {
-          return false;
-        }
-        retriedWithTranscode = true;
-        const sep = videoState.url.includes('?') ? '&' : '?';
-        const transcodeUrl = `${videoState.url}${sep}transcode=1`;
-        setStreamRefreshPhase('recovering');
+      const tryTranscodeRetry = (): boolean => {
+        if (cancelled || triedTranscodeFallback) return false;
+        if (!/^\/api\/(?:stream|xtream\/vod\/|providers\/stream\/)/i.test(videoState.url)) return false;
+        triedTranscodeFallback = true;
         setIsBuffering(true);
-        setStreamError(null);
-        video.src = transcodeUrl;
+        const sep = videoState.url.includes('?') ? '&' : '?';
+        video.src = `${videoState.url}${sep}transcode=1`;
         video.load();
         return true;
       };
 
       const onDirectLoaded = () => {
-        clearDirectStallTimer();
+        if (directStartupTimer) {
+          clearTimeout(directStartupTimer);
+          directStartupTimer = null;
+        }
         setIsBuffering(false);
-        setStreamError(null);
         startPlaybackSafely();
       };
-
       const onDirectError = () => {
-        clearDirectStallTimer();
         if (cancelled) return;
-        if (attemptDirectTranscodeRetry()) {
-          return;
+        if (tryTranscodeRetry()) return;
+        if (directStartupTimer) {
+          clearTimeout(directStartupTimer);
+          directStartupTimer = null;
         }
         if (triggerBackupSwitch('direct_mp4_error')) {
           setIsBuffering(true);
@@ -813,31 +663,32 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
         setIsBuffering(false);
         setStreamError(
           pickLang(lang, {
-            es: 'Esta señal MP4 directa no responde ahora mismo. Pulsa Reintentar o elige otro servidor debajo.',
-            ca: 'Aquest senyal MP4 directe no respon ara mateix. Prem Reintentar o tria un altre servidor a sota.',
-            en: 'This direct MP4 stream failed to load. Press Retry or choose another server below.',
+            es: 'Esta señal directa no responde ahora mismo. Pulsa Reintentar o elige otro servidor.',
+            ca: 'Aquest senyal directe no respon ara mateix. Prem Reintentar o tria un altre servidor.',
+            en: 'This direct video stream failed to load. Press Retry or choose another server.',
           })
         );
       };
 
-      const initialDirectTime = Number(video.currentTime || 0);
-      directStallTimer = setTimeout(() => {
-        if (cancelled) return;
-        const genuinelyStarved =
-          !video.paused && video.readyState <= 2 && Math.abs((video.currentTime || 0) - initialDirectTime) < 0.05;
-        if (genuinelyStarved) {
-          if (!attemptDirectTranscodeRetry()) {
-            triggerBackupSwitch('direct_mp4_stall');
+      if (/^\/api\/(?:stream|xtream\/vod\/|providers\/stream\/)/i.test(videoState.url) && !triedTranscodeFallback) {
+        directStartupTimer = setTimeout(() => {
+          if (!cancelled && video.readyState === 0) {
+            tryTranscodeRetry();
           }
-        }
-      }, 5_500);
+        }, 12_000);
+      }
 
       cleanupDirectListeners = () => {
-        clearDirectStallTimer();
+        if (directStartupTimer) {
+          clearTimeout(directStartupTimer);
+          directStartupTimer = null;
+        }
         video.removeEventListener('loadedmetadata', onDirectLoaded);
+        video.removeEventListener('loadeddata', onDirectLoaded);
         video.removeEventListener('error', onDirectError);
       };
-      video.addEventListener('loadedmetadata', onDirectLoaded);
+      video.addEventListener('loadedmetadata', onDirectLoaded, { once: true });
+      video.addEventListener('loadeddata', onDirectLoaded, { once: true });
       video.addEventListener('error', onDirectError);
       video.src = videoState.url;
     }
@@ -944,7 +795,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
             if (videoRef.current) {
               videoRef.current.playbackRate = playbackSpeedRef.current || 1;
             }
-          }, 3_000);
+          }, 2600);
         } catch {
           // ignore
         }

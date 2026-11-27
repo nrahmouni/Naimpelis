@@ -1,5 +1,7 @@
 import { streamingFetch } from '../utils/tlsFetch.ts';
 import { isAnyBelixConnected } from './belix/belixXtreamClient.ts';
+import { isXtreamEnvConfigured, probeXtreamLiveStreamLatency } from './xtreamService.ts';
+import { resolveProviderLiveManifest } from './providers/xtreamProvidersService.ts';
 import { isDvbUpstreamCoolingDown } from '../routes/proxies/dvbTranscoder.ts';
 
 export type ChannelHealthStatus = 'up' | 'degraded' | 'down' | 'unknown';
@@ -109,7 +111,7 @@ export const STATUS_RANK: Record<ChannelHealthStatus, number> = {
 };
 
 export const DEGRADED_LATENCY_MS = 1800;
-export const PROBE_TIMEOUT_MS = 1500;
+export const PROBE_TIMEOUT_MS = 3500;
 export const DEFAULT_STALE_MS = 150_000;
 
 export function normalizeTrackUrl(sourceUrl: string): string {
@@ -120,7 +122,7 @@ export function normalizeTrackUrl(sourceUrl: string): string {
 
 export function unwrapProxyTargetUrl(sourceUrl: string): string {
   const clean = normalizeTrackUrl(sourceUrl);
-  if (clean.startsWith('/api/hls-proxy')) {
+  if (clean.startsWith('/api/hls-proxy') || clean.startsWith('/api/dvb-live')) {
     try {
       const inner = new URL(clean, 'http://localhost').searchParams.get('url');
       if (inner) return normalizeTrackUrl(inner);
@@ -174,6 +176,78 @@ export async function probeChannelTrack(
       : { status: 'down', statusCode: 503, latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
   }
 
+  if (/^\/api\/(?:xtream\/stream\/|providers\/stream\/[^/]+\/live\/|stream\b)/i.test(cleanUrl)) {
+    if (!isXtreamEnvConfigured()) {
+      return { status: 'unknown', checkedAt: now, failCount: prevFails };
+    }
+    if (options?.previous?.checkedAt && now - options.previous.checkedAt < 5 * 60 * 1000 && typeof options.previous.latencyMs === 'number') {
+      return { ...options.previous, checkedAt: now };
+    }
+    const provMatch = cleanUrl.match(/^\/api\/providers\/stream\/([^/]+)\/live\/([^.?/]+)/i);
+    if (provMatch) {
+      const t0 = Date.now();
+      const manifest = await Promise.race([
+        resolveProviderLiveManifest(decodeURIComponent(provMatch[1]), decodeURIComponent(provMatch[2]), ''),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), options?.timeoutMs ?? 2600)),
+      ]).catch(() => null);
+      const latencyMs = Math.max(1, Date.now() - t0);
+      if (manifest && manifest.includes('#EXTM3U')) {
+        return {
+          status: latencyMs <= DEGRADED_LATENCY_MS ? 'up' : 'degraded',
+          latencyMs,
+          statusCode: 200,
+          failCount: 0,
+          checkedAt: Date.now(),
+        };
+      }
+      return {
+        status: 'down',
+        latencyMs,
+        statusCode: 503,
+        failCount: prevFails + 1,
+        checkedAt: Date.now(),
+      };
+    }
+
+    let streamId = '';
+    let providerId = 'primary';
+    try {
+      const parsed = new URL(cleanUrl, 'http://localhost');
+      const mediaType = (parsed.searchParams.get('type') || 'live').toLowerCase();
+      if (mediaType !== 'live') {
+        return { status: 'unknown', checkedAt: now, failCount: prevFails };
+      }
+      if (cleanUrl.startsWith('/api/xtream/stream/')) {
+        streamId = parsed.pathname.split('/').pop()?.replace(/\.m3u8$/i, '') || '';
+      } else {
+        streamId = (parsed.searchParams.get('id') || '').replace(/\.m3u8$/i, '').trim();
+      }
+      providerId = parsed.searchParams.get('provider') || 'primary';
+    } catch {
+      streamId = '';
+    }
+    if (!streamId) {
+      return { status: 'unknown', checkedAt: now, failCount: prevFails };
+    }
+    const probed = await probeXtreamLiveStreamLatency(streamId, providerId, options?.timeoutMs ?? 2500);
+    if (probed.ok) {
+      return {
+        status: probed.latencyMs <= DEGRADED_LATENCY_MS ? 'up' : 'degraded',
+        latencyMs: probed.latencyMs,
+        statusCode: 200,
+        failCount: 0,
+        checkedAt: Date.now(),
+      };
+    }
+    return {
+      status: 'down',
+      latencyMs: probed.latencyMs,
+      statusCode: 503,
+      failCount: prevFails + 1,
+      checkedAt: Date.now(),
+    };
+  }
+
   const effectiveTargetUrl = unwrapProxyTargetUrl(cleanUrl);
   if (effectiveTargetUrl.includes('90.163.85.113:8093') && isDvbUpstreamCoolingDown(effectiveTargetUrl)) {
     return { status: 'down', statusCode: 502, latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
@@ -204,17 +278,8 @@ export async function probeChannelTrack(
     return { status: 'down', latencyMs: 0, checkedAt: now, failCount: prevFails + 1 };
   }
   const timeoutMs = options?.timeoutMs ?? (isDvbHeadend ? 4500 : PROBE_TIMEOUT_MS);
-  const startedAt = Date.now();
-  const deadlineAt = startedAt + timeoutMs;
-  const remainingProbeMs = () => Math.max(250, deadlineAt - Date.now());
   const fetchFn: FetchLike =
-    options?.fetchImpl ??
-    ((input, init) =>
-      streamingFetch(String(input), {
-        ...(init as Omit<RequestInit, 'headers'> & { headers?: Record<string, string> }),
-        keepAliveAgent: true,
-        timeoutMs: remainingProbeMs(),
-      }));
+    options?.fetchImpl ?? ((input, init) => streamingFetch(String(input), { ...init, timeoutMs }));
   const isCnStream =
     cleanUrl.includes('38.75.136.137') ||
     cleanUrl.includes('63.141.230.178') ||
@@ -237,11 +302,12 @@ export async function probeChannelTrack(
     }
   }
 
+  const startedAt = Date.now();
   try {
     const res = await fetchFn(cleanUrl, {
       method: 'GET',
       headers,
-      signal: AbortSignal.timeout(remainingProbeMs()),
+      signal: AbortSignal.timeout(timeoutMs),
     });
     const latencyMs = Math.max(1, Date.now() - startedAt);
 
@@ -283,7 +349,6 @@ export async function probeChannelTrack(
             let nextIsVar = false;
             let pickedVar = '';
             for (const sl of subLines) {
-              if (Date.now() >= deadlineAt) break;
               const st = sl.trim();
               if (!st) continue;
               if (st.startsWith('#EXT-X-STREAM-INF')) {
@@ -295,7 +360,7 @@ export async function probeChannelTrack(
                   const vRes = await fetchFn(candidate, {
                     method: 'GET',
                     headers,
-                    signal: AbortSignal.timeout(remainingProbeMs()),
+                    signal: AbortSignal.timeout(timeoutMs),
                   });
                   if (vRes.ok) {
                     const vTxt = await vRes.text();
@@ -316,7 +381,7 @@ export async function probeChannelTrack(
             if (!pickedVar) {
               return {
                 status: 'down',
-                latencyMs: Math.max(1, Date.now() - startedAt),
+                latencyMs,
                 statusCode: 404,
                 failCount: prevFails + 1,
                 checkedAt: Date.now(),
@@ -338,18 +403,10 @@ export async function probeChannelTrack(
               }
             }
             if (segUrl) {
-              if (Date.now() >= deadlineAt) {
-                return {
-                  status: 'down',
-                  latencyMs: Math.max(1, Date.now() - startedAt),
-                  failCount: prevFails + 1,
-                  checkedAt: Date.now(),
-                };
-              }
               const segRes = await fetchFn(segUrl, {
                 method: 'GET',
                 headers: { ...headers, Range: 'bytes=0-4095' },
-                signal: AbortSignal.timeout(remainingProbeMs()),
+                signal: AbortSignal.timeout(timeoutMs),
               });
               const segStatus = segRes.status;
               await segRes.body?.cancel?.().catch(() => {});

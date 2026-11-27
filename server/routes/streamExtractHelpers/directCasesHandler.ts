@@ -10,6 +10,7 @@ import {
   maybeSignEasyBroadcastUrl,
   resolveKnownUpstreamReferer,
   type ExtractedStreamResult,
+  type TrackRecord,
 } from '../../extractors/httpHelpers.ts';
 import { unpackVidhideToHls } from '../../extractors/vidhideEmbed69.ts';
 import { isMovidyVerUrl, resolveMovidyEmbedTrack } from '../../extractors/bingetrixMovidy.ts';
@@ -28,7 +29,13 @@ import {
   resolveChiringuitoLiveStream,
 } from '../../services/chiringuitoLiveService.ts';
 import { isAnyBelixConnected, resolveBelixManifest } from '../../services/belix/belixXtreamClient.ts';
-import { verifyWebEmbedCandidateAlive } from '../../services/streamExtractFallback.ts';
+import { getAllXtreamProviders } from '../../services/providersConfig.ts';
+import {
+  findXtreamMovieMatches,
+  parseInternalXtreamVodUrl,
+  parseXtreamVodTitleMeta,
+  probeInternalXtreamVodUrl,
+} from '../../services/xtreamVodMatcher.ts';
 
 export async function handleDirectExtractCases(params: {
   rawInput: string;
@@ -94,12 +101,12 @@ export async function handleDirectExtractCases(params: {
     return sendOk(megaResult);
   }
 
-  // CASE -1: Internal proxy / Belix / Providers stream URLs must never pass through external host resolvers
+  // CASE -1: Internal proxy / Belix / Provider live & VOD stream URLs must never pass through external host resolvers
+  const parsedVodTarget = parseInternalXtreamVodUrl(rawInput);
   if (
-    /^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play|providers\/(?:live|vod|series-stream))\//i.test(
-      rawInput
-    ) ||
-    rawInput.startsWith('/api/hls-proxy?')
+    /^\/api\/(?:vod-manifest|hls-proxy|belix\/stream|belix\/xtream\/play|providers\/stream)\//i.test(rawInput) ||
+    rawInput.startsWith('/api/hls-proxy?') ||
+    parsedVodTarget !== null
   ) {
     const belixStreamMatch = rawInput.match(/^\/api\/belix\/stream\/([a-zA-Z0-9_-]+)(?:\.m3u8)?/i);
     if (/^\/api\/belix\/(?:stream|xtream\/play)\//i.test(rawInput) && !isAnyBelixConnected(belixSessionKey)) {
@@ -132,7 +139,133 @@ export async function handleDirectExtractCases(params: {
         // ignore parse error
       }
     }
-    const isDirectFile = /\.(mp4|mkv|webm)(\?|$)/i.test(rawInput);
+
+    if (parsedVodTarget && process.env.NODE_ENV !== 'test') {
+      const parsedMeta = parseXtreamVodTitleMeta(titleHint, '', parsedVodTarget.ext);
+      const cleanHints = Array.from(
+        new Set([parsedMeta.cleanTitle, titleHint].map((s) => s.trim()).filter((s) => s.length >= 2))
+      );
+      const [primaryProbe, movieMatches] = await Promise.all([
+        probeInternalXtreamVodUrl(rawInput, 4500),
+        parsedVodTarget.kind === 'movie' && parsedMeta.cleanTitle.length >= 2
+          ? findXtreamMovieMatches({
+              titleHints: cleanHints,
+              yearHint: parsedMeta.year,
+              preferLang: parsedMeta.lang || preferLang || 'ES',
+              limit: 20,
+            }).catch(() => ({ options: [], tracks: [] as TrackRecord[] }))
+          : Promise.resolve({ options: [], tracks: [] as TrackRecord[] }),
+      ]);
+
+      const providerDisplay =
+        getAllXtreamProviders().find((p) => p.id === parsedVodTarget.providerId)?.name ||
+        parsedVodTarget.providerId;
+      const requestedTrack: TrackRecord = {
+        id: `xtream-vod-${parsedVodTarget.providerId}-${parsedVodTarget.streamId}`,
+        label: `${providerDisplay} · ${parsedMeta.langLabel} · ${parsedMeta.quality}`,
+        lang: parsedMeta.lang || preferLang || 'ES',
+        quality: parsedMeta.quality,
+        sourceUrl: rawInput,
+        resolvedStreamUrl: rawInput,
+        resolverType: parsedVodTarget.ext === 'm3u8' ? 'direct_hls' : 'direct_mp4',
+      };
+
+      const dedupedTracks: TrackRecord[] = [];
+      const seenKeys = new Set<string>();
+      const pushUniqueTrack = (tr: TrackRecord) => {
+        const parsedTr = parseInternalXtreamVodUrl(tr.resolvedStreamUrl || tr.sourceUrl);
+        const key = parsedTr
+          ? `${parsedTr.providerId}|${parsedTr.streamId}`
+          : tr.resolvedStreamUrl || tr.sourceUrl;
+        if (!key || seenKeys.has(key)) return;
+        seenKeys.add(key);
+        dedupedTracks.push(tr);
+      };
+
+      if (primaryProbe.ok) {
+        pushUniqueTrack(requestedTrack);
+        for (const tr of movieMatches.tracks) pushUniqueTrack(tr);
+
+        const isHls = parsedVodTarget.ext === 'm3u8';
+        const result: ExtractedStreamResult = {
+          success: true,
+          mode: isHls ? 'hls' : 'direct',
+          streamUrl: rawInput,
+          rawStreamUrl: rawInput,
+          title: parsedMeta.cleanTitle || titleHint || 'Película HD',
+          tracks: dedupedTracks,
+          requestedLang: preferLang || parsedMeta.lang || 'ES',
+          resolvedLang: parsedMeta.lang || preferLang || 'ES',
+          resolvedLabel: requestedTrack.label,
+          expiresAt: Date.now() + 8 * 60 * 1000,
+        };
+        setCache(cacheKey, result);
+        return sendOk(result);
+      }
+
+      // Requested Xtream server failed upstream: try up to top 6 distinct cross-server mirrors
+      const failedKey = `${parsedVodTarget.providerId}|${parsedVodTarget.streamId}`;
+      const backupCandidates = movieMatches.tracks.filter((tr) => {
+        const parsedTr = parseInternalXtreamVodUrl(tr.resolvedStreamUrl || tr.sourceUrl);
+        return !parsedTr || `${parsedTr.providerId}|${parsedTr.streamId}` !== failedKey;
+      });
+
+      let winningMirror: TrackRecord | null = null;
+      const deadMirrorKeys = new Set<string>([failedKey]);
+      for (let i = 0; i < Math.min(6, backupCandidates.length); i += 3) {
+        const batch = backupCandidates.slice(i, i + 3);
+        const probes = await Promise.all(
+          batch.map(async (tr) => {
+            const url = tr.resolvedStreamUrl || tr.sourceUrl;
+            const probe = await probeInternalXtreamVodUrl(url, 3800);
+            return { tr, ok: probe.ok, parsedTr: probe.target };
+          })
+        );
+        for (const item of probes) {
+          if (item.ok && !winningMirror) {
+            winningMirror = item.tr;
+          } else if (!item.ok && item.parsedTr) {
+            deadMirrorKeys.add(`${item.parsedTr.providerId}|${item.parsedTr.streamId}`);
+          }
+        }
+        if (winningMirror) break;
+      }
+
+      if (winningMirror) {
+        pushUniqueTrack(winningMirror);
+        for (const tr of backupCandidates) {
+          const parsedTr = parseInternalXtreamVodUrl(tr.resolvedStreamUrl || tr.sourceUrl);
+          if (parsedTr && deadMirrorKeys.has(`${parsedTr.providerId}|${parsedTr.streamId}`)) continue;
+          pushUniqueTrack(tr);
+        }
+        const winningUrl = winningMirror.resolvedStreamUrl || winningMirror.sourceUrl;
+        const result: ExtractedStreamResult = {
+          success: true,
+          mode: winningMirror.resolverType === 'direct_hls' ? 'hls' : 'direct',
+          streamUrl: winningUrl,
+          rawStreamUrl: rawInput,
+          title: parsedMeta.cleanTitle || titleHint || 'Película HD',
+          tracks: dedupedTracks,
+          requestedLang: preferLang || parsedMeta.lang || 'ES',
+          resolvedLang: String(winningMirror.lang || parsedMeta.lang || preferLang || 'ES'),
+          resolvedLabel: winningMirror.label,
+          expiresAt: Date.now() + 8 * 60 * 1000,
+        };
+        setCache(cacheKey, result);
+        return sendOk(result);
+      }
+
+      if (parsedVodTarget.kind === 'movie' && parsedMeta.cleanTitle.length >= 2) {
+        return null;
+      }
+
+      return sendErr(
+        404,
+        'Esta señal directa no responde ahora mismo. Pulsa Reintentar o elige otro servidor.'
+      );
+    }
+
+    const isDirectFile = /\.(mp4|mkv|webm|avi|mov|m4v)(\?|$)/i.test(rawInput) || /^\/api\/providers\/stream\/[^/]+\/(?:movie|series)\//i.test(rawInput);
     const result: ExtractedStreamResult = {
       success: true,
       mode: isDirectFile ? 'direct' : 'hls',
@@ -602,30 +735,17 @@ export async function handleDirectExtractCases(params: {
 
   // CASE 1C: Verified Web Embed Player track switch (`web_embed`) & ClipBox embed players
   const isClipboxPlayerHost =
-    /(?:^|\.)(bingetrix\.sc|vidlink\.pro|player\.videasy\.net|player\.vidzee\.wtf|vixsrc\.to|moviesapi\.club|2embed\.cc|megaplay\.buzz|primesrc\.me)/i.test(
+    /(?:^|\.)(vidlink\.pro|player\.videasy\.net|player\.vidzee\.wtf|vixsrc\.to|vidrock\.net|vidnest\.io|moviesapi\.club|2embed\.cc|megaplay\.buzz|vidfast\.[a-z.]+|vidsrc\.[a-z]+|videm\.buzz|primesrc\.me)/i.test(
       rawInput
     );
   if ((resolverType === 'web_embed' || (!resolverType && isClipboxPlayerHost)) && rawInput) {
     const fullEmbedUrl = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
-    const alive = await verifyWebEmbedCandidateAlive(
-      {
-        id: 'direct-web-embed',
-        label: titleHint || 'Embed',
-        lang: preferLang,
-        sourceUrl: fullEmbedUrl,
-        resolverType: 'web_embed',
-      },
-      fullEmbedUrl
-    ).catch(() => false);
-    if (!alive) {
-      return sendErr(404, 'La fuente web seleccionada no es un reproductor válido.');
-    }
     const isCloudflareDirectEmbed =
       /(?:^|\.)(voe\.sx|voe\.bar|hglink\.to|streamwish\.[a-z]+|ok\.ru|byse\.[a-z]+|filelions\.[a-z]+)/i.test(
         fullEmbedUrl
       );
     const isHtmlProxyTarget =
-      /(^|\.)(bingetrix\.sc|2embed\.cc|www\.2embed\.cc)/i.test(
+      /(^|\.)(vidsrc\.buzz|videm\.buzz|vidrock\.net|2embed\.cc|www\.2embed\.cc|vidfast\.[a-z.]+)/i.test(
         fullEmbedUrl
       ) ||
       (isSandboxedFrame && !isCloudflareDirectEmbed);
@@ -661,8 +781,8 @@ export async function handleDirectExtractCases(params: {
   }
 
   // CASE 3: Direct .m3u8, .mp4, or internal proxy URL
-  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/xtream\/play)\//i.test(rawInput)) {
-    const isDirectFile = /\.(mp4|mkv|webm)(\?|$)/i.test(rawInput);
+  if (/^\/api\/(?:vod-manifest|hls-proxy|belix\/xtream\/play|providers\/stream)\//i.test(rawInput)) {
+    const isDirectFile = /\.(mp4|mkv|webm|avi|mov|m4v)(\?|$)/i.test(rawInput) || /^\/api\/providers\/stream\/[^/]+\/(?:movie|series)\//i.test(rawInput);
     const result: ExtractedStreamResult = {
       success: true,
       mode: isDirectFile ? 'direct' : 'hls',

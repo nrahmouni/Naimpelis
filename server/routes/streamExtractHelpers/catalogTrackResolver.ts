@@ -25,14 +25,9 @@ import {
   verifyWebEmbedCandidateAlive,
 } from '../../services/streamExtractFallback.ts';
 import {
-  recordProviderOutcome,
-  tryAcquireHalfOpenProbe,
-} from '../../services/providerCircuitBreaker.ts';
-import { LruTtlCache } from '../../utils/lruCache.ts';
-
-const deadTrackUrlCache = new LruTtlCache<string, boolean>(400, 40 * 1000);
-const MIRROR_BATCH_SIZE = 3;
-const INITIAL_SUBTITLES_TIMEOUT_MS = 40;
+  parseInternalXtreamVodUrl,
+  probeInternalXtreamVodUrl,
+} from '../../services/xtreamVodMatcher.ts';
 
 export interface SubtitleCandidateRecord {
   id?: string;
@@ -42,103 +37,11 @@ export interface SubtitleCandidateRecord {
   source?: string;
 }
 
-function extractMirrorCircuitKey(rawSource: string, resolverType: string): string {
-  const s = String(rawSource || '').trim();
-  if (!s) return `mirror:${resolverType}`;
-  let decoded = s;
-  if (!/^https?:\/\//i.test(decoded)) {
-    try {
-      const b = Buffer.from(decoded, 'base64').toString('utf8').trim();
-      if (/^https?:\/\//i.test(b)) decoded = b;
-    } catch {
-      // keep raw
-    }
-  }
-  try {
-    if (/^https?:\/\//i.test(decoded)) {
-      return `mirror:${new URL(decoded).hostname.toLowerCase()}`;
-    }
-  } catch {
-    // ignore
-  }
-  return `mirror:${resolverType}`;
-}
-
-function withAbortableExtractTimeout<T>(
-  run: (signal: AbortSignal) => Promise<T>,
-  ms: number,
-  outerSignal?: AbortSignal
-): Promise<T> {
-  if (outerSignal?.aborted) {
-    return Promise.reject(new DOMException('The operation was aborted.', 'AbortError'));
-  }
-  const innerController = new AbortController();
-  const combinedSignal = outerSignal
-    ? AbortSignal.any([outerSignal, innerController.signal])
-    : innerController.signal;
-
-  return new Promise<T>((resolve, reject) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      innerController.abort(new DOMException(`Mirror timeout after ${ms}ms`, 'TimeoutError'));
-      reject(new DOMException(`Mirror timeout after ${ms}ms`, 'TimeoutError'));
-    }, ms);
-    timer.unref?.();
-
-    const onOuterAbort = () => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      innerController.abort(new DOMException('The operation was aborted.', 'AbortError'));
-      reject(new DOMException('The operation was aborted.', 'AbortError'));
-    };
-    outerSignal?.addEventListener('abort', onOuterAbort, { once: true });
-
-    Promise.resolve()
-      .then(() => run(combinedSignal))
-      .then((val) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        outerSignal?.removeEventListener('abort', onOuterAbort);
-        resolve(val);
-      })
-      .catch((err) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timer);
-        outerSignal?.removeEventListener('abort', onOuterAbort);
-        reject(err);
-      });
-  });
-}
-
 function withExtractTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
-  return new Promise<T>((resolve) => {
-    let done = false;
-    const timer = setTimeout(() => {
-      if (done) return;
-      done = true;
-      resolve(fallback);
-    }, ms);
-    timer.unref?.();
-    p.then(
-      (val) => {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        resolve(val);
-      },
-      () => {
-        if (done) return;
-        done = true;
-        clearTimeout(timer);
-        resolve(fallback);
-      }
-    );
-  });
+  return Promise.race([
+    p.catch(() => fallback),
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
 }
 
 export async function resolveMovidyTracksForCatalog(opts: {
@@ -224,30 +127,6 @@ export interface ResolvedCandidateTracksResult {
   validTracks: TrackRecord[];
 }
 
-export interface ResolveTrackHooks {
-  resolveMovidyEmbedTrack?: (
-    embedUrlOrB64: string,
-    signal?: AbortSignal
-  ) => Promise<
-    | { mode: 'hls'; rawM3u8: string; proxyUrl: string }
-    | { mode: 'embed'; embedUrl: string }
-    | null
-  >;
-  unpackVidhideToHls?: (
-    embedUrl: string,
-    signal?: AbortSignal
-  ) => Promise<{ rawM3u8: string; proxyUrl: string } | null>;
-  sniffStreamWithHeadless?: (
-    rawUrl: string,
-    signal?: AbortSignal
-  ) => Promise<{ streamUrl: string; referer: string; isDirectMp4: boolean } | null>;
-  verifyWebEmbedCandidateAlive?: (
-    track: TrackRecord,
-    url: string,
-    signal?: AbortSignal
-  ) => Promise<boolean>;
-}
-
 export async function resolveOrderedCandidateTracks(opts: {
   orderedTracks: TrackRecord[];
   getLangScore: (lang: string) => number;
@@ -255,7 +134,6 @@ export async function resolveOrderedCandidateTracks(opts: {
   getTrackHealthScore: (tr: TrackRecord) => number;
   isSandboxedFrame: boolean;
   directOnly?: boolean;
-  resolveTrackHooks?: ResolveTrackHooks;
 }): Promise<ResolvedCandidateTracksResult | null> {
   const {
     orderedTracks,
@@ -264,14 +142,7 @@ export async function resolveOrderedCandidateTracks(opts: {
     getTrackHealthScore,
     isSandboxedFrame,
     directOnly = false,
-    resolveTrackHooks,
   } = opts;
-
-  const resolveMovidyFn = resolveTrackHooks?.resolveMovidyEmbedTrack ?? resolveMovidyEmbedTrack;
-  const unpackVidhideFn = resolveTrackHooks?.unpackVidhideToHls ?? unpackVidhideToHls;
-  const sniffHeadlessFn = resolveTrackHooks?.sniffStreamWithHeadless ?? sniffStreamWithHeadless;
-  const verifyWebEmbedFn =
-    resolveTrackHooks?.verifyWebEmbedCandidateAlive ?? verifyWebEmbedCandidateAlive;
 
   let primaryStreamUrl = '';
   let primaryMode: 'hls' | 'direct' | 'embed' = 'hls';
@@ -285,38 +156,9 @@ export async function resolveOrderedCandidateTracks(opts: {
   for (const tierScore of tierScores) {
     const tierWebEmbedCandidates: { idx: number; track: TrackRecord; url: string }[] = [];
 
-    // 1. Instant 0ms fast path if an already-resolved native stream exists in this language tier
-    for (let i = 0; i < orderedTracks.length; i++) {
-      if (getLangScore(orderedTracks[i].lang) !== tierScore) continue;
-      const instant = orderedTracks[i];
-      if (
-        instant.resolvedStreamUrl &&
-        instant.resolverType !== 'web_embed' &&
-        (!instant.sourceUrl || !deadTrackUrlCache.get(instant.sourceUrl))
-      ) {
-        primaryStreamUrl = instant.resolvedStreamUrl;
-        primaryMode = instant.resolverType === 'direct_mp4' ? 'direct' : 'hls';
-        resolvedTrack = instant;
-        break;
-      }
-    }
-    if (primaryStreamUrl) break;
-
-    // 2. Partition tier into resolvable mirrors and web_embed candidates
-    interface MirrorBatchItem {
-      idx: number;
-      candidate: TrackRecord;
-      circuitKey: string;
-    }
-    const resolvableMirrors: MirrorBatchItem[] = [];
-
     for (let i = 0; i < orderedTracks.length; i++) {
       if (getLangScore(orderedTracks[i].lang) !== tierScore) continue;
       const candidate = orderedTracks[i];
-      if (candidate.sourceUrl && deadTrackUrlCache.get(candidate.sourceUrl)) {
-        deadTrackIndices.add(i);
-        continue;
-      }
 
       if (candidate.resolverType === 'web_embed') {
         if (!directOnly && candidate.sourceUrl) {
@@ -328,208 +170,104 @@ export async function resolveOrderedCandidateTracks(opts: {
       }
 
       if (candidate.resolvedStreamUrl) {
+        if (
+          process.env.NODE_ENV !== 'test' &&
+          parseInternalXtreamVodUrl(candidate.resolvedStreamUrl) !== null
+        ) {
+          const probe = await probeInternalXtreamVodUrl(candidate.resolvedStreamUrl, 3800);
+          if (!probe.ok) {
+            deadTrackIndices.add(i);
+            continue;
+          }
+        }
         primaryStreamUrl = candidate.resolvedStreamUrl;
         primaryMode = candidate.resolverType === 'direct_mp4' ? 'direct' : 'hls';
         resolvedTrack = candidate;
         break;
       }
 
-      const circuitKey = extractMirrorCircuitKey(candidate.sourceUrl, candidate.resolverType);
-      if (!tryAcquireHalfOpenProbe(circuitKey)) {
-        // Circuit breaker open: skip mirror in 0ms
-        deadTrackIndices.add(i);
-        continue;
-      }
-
-      resolvableMirrors.push({ idx: i, candidate, circuitKey });
-    }
-    if (primaryStreamUrl) break;
-
-    // 3. Race lightweight HTTP mirrors ahead of headless embed_sniff in concurrent batches of 3
-    resolvableMirrors.sort((a, b) => {
-      const aHeadless = a.candidate.resolverType === 'embed_sniff' ? 1 : 0;
-      const bHeadless = b.candidate.resolverType === 'embed_sniff' ? 1 : 0;
-      return aHeadless - bHeadless;
-    });
-
-    for (let b = 0; b < resolvableMirrors.length && !primaryStreamUrl; b += MIRROR_BATCH_SIZE) {
-      const batch = resolvableMirrors.slice(b, b + MIRROR_BATCH_SIZE);
-      const batchController = new AbortController();
-      const deferredEmbedIndices = new Set<number>();
-
-      interface BatchWinResult {
-        idx: number;
-        circuitKey: string;
-        streamUrl: string;
-        mode: 'hls' | 'direct';
-        updatedTrack: TrackRecord;
-      }
-
-      const racePromises = batch.map(async (item): Promise<BatchWinResult> => {
-        const { idx, candidate, circuitKey } = item;
-        const t0 = Date.now();
-        if (candidate.resolverType === 'movidy_embed') {
-          const resolvedMv = await withAbortableExtractTimeout(
-            (sig) => resolveMovidyFn(candidate.sourceUrl, sig),
-            2000,
-            batchController.signal
-          );
-          if (resolvedMv?.mode === 'hls') {
-            return {
-              idx,
-              circuitKey,
-              streamUrl: resolvedMv.proxyUrl,
-              mode: 'hls',
-              updatedTrack: { ...candidate, resolvedStreamUrl: resolvedMv.proxyUrl },
-            };
-          }
-          if (!directOnly && resolvedMv?.mode === 'embed') {
-            deferredEmbedIndices.add(idx);
-            const embedTrack: TrackRecord = {
-              ...candidate,
-              resolverType: 'web_embed',
-              sourceUrl: resolvedMv.embedUrl,
-            };
-            orderedTracks[idx] = embedTrack;
-            tierWebEmbedCandidates.push({
-              idx,
-              track: embedTrack,
-              url: resolvedMv.embedUrl,
-            });
-            recordProviderOutcome(circuitKey, { ok: true, latencyMs: Date.now() - t0 });
-            throw new Error('MOVIDY_EMBED_DEFERRED');
-          }
-          throw new Error('MOVIDY_EMPTY');
+      if (candidate.resolverType === 'movidy_embed') {
+        const resolvedMv = await withExtractTimeout(
+          resolveMovidyEmbedTrack(candidate.sourceUrl),
+          3800,
+          null
+        );
+        if (resolvedMv?.mode === 'hls') {
+          orderedTracks[i] = { ...candidate, resolvedStreamUrl: resolvedMv.proxyUrl };
+          primaryStreamUrl = resolvedMv.proxyUrl;
+          primaryMode = 'hls';
+          resolvedTrack = orderedTracks[i];
+          break;
+        } else if (!directOnly && resolvedMv?.mode === 'embed') {
+          orderedTracks[i] = {
+            ...candidate,
+            resolverType: 'web_embed',
+            sourceUrl: resolvedMv.embedUrl,
+          };
+          tierWebEmbedCandidates.push({
+            idx: i,
+            track: orderedTracks[i],
+            url: resolvedMv.embedUrl,
+          });
+        } else {
+          deadTrackIndices.add(i);
         }
-
-        if (candidate.resolverType === 'vidhide_hls') {
-          const unpacked = await withAbortableExtractTimeout(
-            (sig) => unpackVidhideFn(candidate.sourceUrl, sig),
-            2100,
-            batchController.signal
-          );
-          if (unpacked?.proxyUrl) {
-            return {
-              idx,
-              circuitKey,
-              streamUrl: unpacked.proxyUrl,
-              mode: 'hls',
-              updatedTrack: { ...candidate, resolvedStreamUrl: unpacked.proxyUrl },
-            };
-          }
-          throw new Error('VIDHIDE_EMPTY');
+      } else if (candidate.resolverType === 'vidhide_hls') {
+        const unpacked = await withExtractTimeout(
+          unpackVidhideToHls(candidate.sourceUrl),
+          4200,
+          null
+        );
+        if (unpacked) {
+          orderedTracks[i] = { ...candidate, resolvedStreamUrl: unpacked.proxyUrl };
+          primaryStreamUrl = unpacked.proxyUrl;
+          primaryMode = 'hls';
+          resolvedTrack = orderedTracks[i];
+          break;
+        } else {
+          deadTrackIndices.add(i);
         }
-
-        if (candidate.resolverType === 'embed_sniff') {
-          const sniffed = await withAbortableExtractTimeout(
-            (sig) => sniffHeadlessFn(candidate.sourceUrl, sig),
-            2200,
-            batchController.signal
-          );
-          if (sniffed?.streamUrl) {
-            const proxiedUrl = sniffed.isDirectMp4
-              ? buildTsProxyUrl(sniffed.streamUrl, sniffed.referer)
-              : buildHlsProxyUrl(sniffed.streamUrl, sniffed.referer);
-            return {
-              idx,
-              circuitKey,
-              streamUrl: proxiedUrl,
-              mode: sniffed.isDirectMp4 ? 'direct' : 'hls',
-              updatedTrack: { ...candidate, resolvedStreamUrl: proxiedUrl },
-            };
-          }
-          throw new Error('EMBED_SNIFF_EMPTY');
-        }
-
-        throw new Error(`UNHANDLED_RESOLVER:${candidate.resolverType}`);
-      });
-
-      // Attach defensive catchers to prevent unhandled rejections when losers settle after abort
-      for (const p of racePromises) {
-        p.catch(() => {});
-      }
-
-      try {
-        const winner = await Promise.any(racePromises);
-        batchController.abort(new DOMException('Batch race won by faster mirror', 'AbortError'));
-        orderedTracks[winner.idx] = winner.updatedTrack;
-        primaryStreamUrl = winner.streamUrl;
-        primaryMode = winner.mode;
-        resolvedTrack = winner.updatedTrack;
-        recordProviderOutcome(winner.circuitKey, { ok: true });
-        await Promise.allSettled(racePromises);
-        break;
-      } catch {
-        // Every mirror in the batch failed/timed out (or deferred to web_embed)
-        batchController.abort(new DOMException('Batch finished', 'AbortError'));
-        await Promise.allSettled(racePromises);
-        for (const item of batch) {
-          if (deferredEmbedIndices.has(item.idx)) continue;
-          if (item.candidate.sourceUrl) deadTrackUrlCache.set(item.candidate.sourceUrl, true);
-          deadTrackIndices.add(item.idx);
-          recordProviderOutcome(item.circuitKey, { ok: false });
+      } else if (candidate.resolverType === 'embed_sniff') {
+        const sniffed = await withExtractTimeout(
+          sniffStreamWithHeadless(candidate.sourceUrl),
+          5500,
+          null
+        );
+        if (sniffed) {
+          const proxiedUrl = sniffed.isDirectMp4
+            ? buildTsProxyUrl(sniffed.streamUrl, sniffed.referer)
+            : buildHlsProxyUrl(sniffed.streamUrl, sniffed.referer);
+          orderedTracks[i] = { ...candidate, resolvedStreamUrl: proxiedUrl };
+          primaryStreamUrl = proxiedUrl;
+          primaryMode = sniffed.isDirectMp4 ? 'direct' : 'hls';
+          resolvedTrack = orderedTracks[i];
+          break;
+        } else {
+          deadTrackIndices.add(i);
         }
       }
     }
 
     if (primaryStreamUrl) break;
 
-    // 4. Web embed fallback liveness verification in concurrent batches of 3 via Promise.any + AbortController
     if (!directOnly && tierWebEmbedCandidates.length > 0) {
       tierWebEmbedCandidates.sort(
         (a, b) =>
           sourcePriority(a.track) - sourcePriority(b.track) ||
           getTrackHealthScore(a.track) - getTrackHealthScore(b.track)
       );
-
-      const liveEmbedCandidates = tierWebEmbedCandidates.filter((cand) => {
-        if (deadTrackUrlCache.get(cand.url)) {
+      for (const cand of tierWebEmbedCandidates) {
+        const alive = await verifyWebEmbedCandidateAlive(cand.track, cand.url);
+        if (!alive) {
           deadTrackIndices.add(cand.idx);
-          return false;
+          continue;
         }
-        const key = extractMirrorCircuitKey(cand.url, 'web_embed');
-        if (!tryAcquireHalfOpenProbe(key)) {
-          deadTrackIndices.add(cand.idx);
-          return false;
-        }
-        return true;
-      });
-
-      for (let b = 0; b < liveEmbedCandidates.length && !primaryStreamUrl; b += MIRROR_BATCH_SIZE) {
-        const batch = liveEmbedCandidates.slice(b, b + MIRROR_BATCH_SIZE);
-        const batchController = new AbortController();
-        const racePromises = batch.map(async (cand) => {
-          const circuitKey = extractMirrorCircuitKey(cand.url, 'web_embed');
-          const alive = await withAbortableExtractTimeout(
-            (sig) => verifyWebEmbedFn(cand.track, cand.url, sig),
-            1500,
-            batchController.signal
-          );
-          if (!alive) throw new Error('WEB_EMBED_DEAD');
-          return { cand, circuitKey };
-        });
-        for (const p of racePromises) p.catch(() => {});
-
-        try {
-          const winner = await Promise.any(racePromises);
-          batchController.abort(new DOMException('Embed batch won', 'AbortError'));
-          await Promise.allSettled(racePromises);
-          const proxiedWeb = toProxiedEmbedUrl(winner.cand.url, isSandboxedFrame);
-          orderedTracks[winner.cand.idx] = { ...winner.cand.track, resolvedStreamUrl: proxiedWeb };
-          primaryStreamUrl = proxiedWeb;
-          primaryMode = 'embed';
-          resolvedTrack = orderedTracks[winner.cand.idx];
-          recordProviderOutcome(winner.circuitKey, { ok: true });
-          break;
-        } catch {
-          batchController.abort(new DOMException('Embed batch finished', 'AbortError'));
-          await Promise.allSettled(racePromises);
-          for (const cand of batch) {
-            deadTrackUrlCache.set(cand.url, true);
-            deadTrackIndices.add(cand.idx);
-            recordProviderOutcome(extractMirrorCircuitKey(cand.url, 'web_embed'), { ok: false });
-          }
-        }
+        const proxiedWeb = toProxiedEmbedUrl(cand.url, isSandboxedFrame);
+        orderedTracks[cand.idx] = { ...cand.track, resolvedStreamUrl: proxiedWeb };
+        primaryStreamUrl = proxiedWeb;
+        primaryMode = 'embed';
+        resolvedTrack = orderedTracks[cand.idx];
+        break;
       }
     }
 
@@ -617,18 +355,10 @@ export async function buildResolvedCatalogStreamResult(opts: {
     ...opts.ghostflixSubtitles,
   ];
   if (rawMergedSubs.length === 0 && (opts.resolvedTmdbId || baseCleanTitle || opts.titleHint)) {
-    const searchedSubs = await withExtractTimeout(
-      opts.subtitlesPromise,
-      INITIAL_SUBTITLES_TIMEOUT_MS,
-      [] as SubtitleCandidateRecord[]
-    );
+    const searchedSubs = await withExtractTimeout(opts.subtitlesPromise, 650, [] as SubtitleCandidateRecord[]);
     rawMergedSubs.push(...searchedSubs);
   } else if (opts.resolvedTmdbId) {
-    const searchedSubs = await withExtractTimeout(
-      opts.subtitlesPromise,
-      30,
-      [] as SubtitleCandidateRecord[]
-    );
+    const searchedSubs = await withExtractTimeout(opts.subtitlesPromise, 250, [] as SubtitleCandidateRecord[]);
     rawMergedSubs.push(...searchedSubs);
   }
   const seenSubUrls = new Set<string>();
@@ -665,7 +395,7 @@ export async function buildResolvedCatalogStreamResult(opts: {
       ? `/api/img-proxy?url=${encodeURIComponent(opts.vestDetailMeta.coverHorizontalUrl)}`
       : undefined,
     tracks: validTracks,
-    subtitles: combinedSubtitles,
+    subtitles: combinedSubtitles.length > 0 ? combinedSubtitles : undefined,
     requestedLang: opts.preferLang,
     resolvedLang,
     resolvedLabel,

@@ -9,7 +9,6 @@ import {
   resolveCanonicalChannelKey,
   stripChannelNoise,
 } from '../../src/utils/channelQualityRanker.ts';
-import { resolveOfficialChannelLogoUrl } from '../../src/shared/channelLogos.ts';
 import { SPANISH_TDT_CHANNELS } from '../data/tdtChannels.ts';
 import { logger } from '../utils/logger.ts';
 import { channelHealthMonitor } from './channelHealthMonitor.ts';
@@ -18,14 +17,10 @@ import {
   getCachedXtreamProviderCatalogs,
   isXtreamEnvConfigured,
   probeXtreamLiveStreamLatency,
-  syncFullCatalog,
+  syncLiveCatalogOnly,
   type XtreamFullCatalogPayload,
 } from './xtreamService.ts';
-import {
-  getProviderSteeringPenaltyMs,
-  isProviderCircuitOpen,
-  tryAcquireHalfOpenProbe,
-} from './providerCircuitBreaker.ts';
+import { getConnectedProvidersLiveCatalogs } from './providers/xtreamProvidersService.ts';
 
 export type SpainChannelCategory =
   | 'generalistas'
@@ -78,23 +73,34 @@ interface CachedProbeResult {
   checkedAt: number;
 }
 
-const PROBE_CACHE_TTL_MS = 8 * 60 * 1000;
+const PROBE_CACHE_TTL_MS = 10 * 60 * 1000;
 const probeResultCache = new Map<string, CachedProbeResult>();
 const PROVIDER_PRIORITY_ORDER = [
   'ultra-vip',
-  '24tv',
-  'vod4k',
   'octopus',
   'primary',
+  'dana4k',
+  'vod4k',
   'sult-vo',
   'adtupac',
+  '24tv',
   '2m2h-alt',
-  'dana4k',
   '2m2h',
   'activecdns',
 ];
 
 const SPANISH_TDT_BY_ID = new Map(SPANISH_TDT_CHANNELS.map((c) => [c.id, c]));
+
+const GENERALIST_KEY_SET = new Set([
+  'tdt-la1',
+  'tdt-la2',
+  'tdt-antena3',
+  'tdt-cuatro',
+  'tdt-telecinco',
+  'tdt-lasexta',
+  'tdt-24h',
+  'tdt-trece',
+]);
 
 const FLAGSHIP_KEY_SET = new Set([
   'tdt-la1',
@@ -113,9 +119,6 @@ const FLAGSHIP_KEY_SET = new Set([
   'tdt-divinity',
   'tdt-energy',
   'tdt-bemad',
-  'tdt-bomcine',
-  'tdt-squirrel',
-  'tdt-veo7',
   'tdt-dmax',
   'tdt-dkiss',
   'tdt-ten',
@@ -125,11 +128,6 @@ const FLAGSHIP_KEY_SET = new Set([
   'tdt-rmtv',
   'tdt-canalsur',
   'tdt-3cat',
-  'tdt-telemadrid',
-  'tdt-etb1',
-  'tdt-etb2',
-  'tdt-tvcanaria',
-  'tdt-tvg',
   'mplus-laliga',
   'dazn-laliga',
   'mplus-champions',
@@ -137,10 +135,6 @@ const FLAGSHIP_KEY_SET = new Set([
   'mplus-vamos',
   'mplus-hypermotion',
   'mplus-deportes',
-  'mplus-deportes2',
-  'mplus-golf',
-  'mplus-eurosport1',
-  'mplus-eurosport2',
   'dazn-1',
   'dazn-2',
   'dazn-3',
@@ -171,10 +165,11 @@ export function isSpanishLiveChannelEntry(streamName: string, categoryName: stri
 
   // Reject explicit foreign channel prefixes inside mixed categories
   if (
-    /^(?:\[?\s*(?:UK|US|USA|FR|DE|GER|IT|ITA|PT|POR|AR|ARB|BR|BRA|NL|PL|TR|RO|RU|IN|LAT|LA|MX|ARG|COL|CHL|PER|PE|GR|BG|RS|MK|IR|AL|BE|AT|CH|FI|NO|SE|DK)\s*\]?\s*[|:/-·•▎┃│◈])/i.test(
+    /^(?:\[?\s*(?:UK|US|USA|FR|DE(?:-[A-Z0-9]+)?|GER|IT|ITA|PT|POR|AR|ARB|BR|BRA|NL|PL|TR|RO|RU|IN|LAT|LA|MX|ARG|COL|CHL|PER|PE|GR|BG|RS|MK|IR|AL|BE|AT|CH|SW|FI|NO|SE|DK)\s*\]?\s*[|:/·•▎┃│◈-])/i.test(
       name
     ) ||
-    /^[┃│▎◈•]/.test(name)
+    /^[┃│▎◈•]/.test(name) ||
+    /\b(?:1[eè]re|rsi\s+la\s*2)\b/i.test(name)
   ) {
     return false;
   }
@@ -185,14 +180,14 @@ export function isSpanishLiveChannelEntry(streamName: string, categoryName: stri
     );
 
   const hasForeignCatPrefix =
-    /^(?:\[?\s*(?:UK|US|USA|FR|DE|IT|PT|AR|BR|NL|PL|TR|RO|LA|LAT|MX|GR|BG|RS|FI|NO|SE|DK|BE|AT|AL|IND|ARABIC|PHILIPPINES)\s*\]?\s*[|:/-l])/i.test(
+    /^(?:\[?\s*(?:UK|US|USA|FR|DE|IT|PT|AR|BR|NL|PL|TR|RO|LA|LAT|MX|GR|BG|RS|FI|NO|SE|DK|BE|AT|CH|SW|AL|IND|ARABIC|PHILIPPINES)\s*\]?\s*[|:/-])/i.test(
       cat
     );
 
   if (hasForeignCatPrefix && !hasSpainCat) return false;
 
   const hasSpainStreamPrefix =
-    /^(?:tivif?y\s*es\s*[:|]|vip\s*es\s*[:|]|\[?\s*(?:es|esp|cast|spain)\s*\]?\s*[|:/-])/i.test(name);
+    /^(?:tivif?y\s*es\s*[:|]|vip\s*es\s*[:|]|\[?\s*(?:es(?:-[a-z0-9]+)?|p-es|esp|cast|spain)\s*\]?\s*[|:/-])/i.test(name);
   return hasSpainCat || hasSpainStreamPrefix;
 }
 
@@ -200,27 +195,24 @@ export function inferSpainStreamQualityMeta(
   streamName: string,
   categoryName = ''
 ): { quality: string; qualityTier: number; isHevc: boolean } {
-  const cleanStreamTitle = normalizeSpainProviderText(streamName)
-    .replace(/\b(?:dana\s*4k|vod\s*4k|shark\s*4k|vip\s*4k|spain\s*4k)\b/gi, ' ')
-    .toLowerCase();
-  const catLower = normalizeSpainProviderText(categoryName).toLowerCase();
-  const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(`${cleanStreamTitle} ${catLower}`);
+  const hay = normalizeSpainProviderText(`${streamName} ${categoryName}`).toLowerCase();
+  const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(hay);
 
-  if (/\b(?:4k|uhd|2160p?)\b/.test(cleanStreamTitle)) {
+  if (/\b(?:4k|uhd|2160p?)\b/.test(hay)) {
     return {
       quality: '4K UHD',
       qualityTier: isHevc ? 3 : 0,
       isHevc,
     };
   }
-  if (/\b(?:fhd|1080p?|full\s*hd)\b/.test(cleanStreamTitle)) {
+  if (/\b(?:fhd|1080p?|full\s*hd)\b/.test(hay)) {
     return {
       quality: '1080p FHD',
       qualityTier: isHevc ? 3 : 1,
       isHevc,
     };
   }
-  if (/\b(?:576p?|480p?|360p?|sd|lq)\b/.test(cleanStreamTitle)) {
+  if (/\b(?:576p?|480p?|360p?|sd|lq)\b/.test(hay)) {
     return {
       quality: 'SD',
       qualityTier: 4,
@@ -318,29 +310,35 @@ function getProviderBrandTone(category: SpainChannelCategory): string {
   }
 }
 
+function collectAllAvailableLiveCatalogs(): XtreamFullCatalogPayload[] {
+  const byProv = new Map<string, XtreamFullCatalogPayload>();
+  for (const c of getConnectedProvidersLiveCatalogs()) {
+    if (c.liveStreams.length > 0) byProv.set(c.providerId, c);
+  }
+  for (const c of getCachedXtreamProviderCatalogs()) {
+    if (c.liveStreams.length > 0) byProv.set(c.providerId, c);
+  }
+  return Array.from(byProv.values());
+}
+
 async function ensureProviderCatalogsHydrated(maxWaitMs = 2000): Promise<XtreamFullCatalogPayload[]> {
-  let catalogs = getCachedXtreamProviderCatalogs();
+  let catalogs = collectAllAvailableLiveCatalogs();
   const configuredProviders = getAllXtreamProviders().filter((p) =>
     Boolean(normalizeXtreamServerInput(p.serverUrl) && p.accounts.length > 0)
   );
   const loadedIds = new Set(catalogs.map((c) => c.providerId));
   const missingImportant = configuredProviders.filter((p) => !loadedIds.has(p.id));
 
-  if (missingImportant.length > 0 && Date.now() - lastSyncAttemptAt > 20_000) {
+  if (missingImportant.length > 0 && Date.now() - lastSyncAttemptAt > 15_000) {
     lastSyncAttemptAt = Date.now();
     const syncTasks = Promise.allSettled(
-      missingImportant.map((p) => syncFullCatalog(false, p.id).catch(() => null))
+      missingImportant.map((p) => syncLiveCatalogOnly(p.id).catch(() => null))
     );
-    // If working catalogs are already hydrated or caller wants instant return, refresh in background
-    if (maxWaitMs > 0 && catalogs.length < 3) {
-      await Promise.race([
-        syncTasks,
-        new Promise<void>((resolve) => setTimeout(resolve, maxWaitMs)),
-      ]);
-      catalogs = getCachedXtreamProviderCatalogs();
-    } else {
-      void syncTasks;
-    }
+    await Promise.race([
+      syncTasks,
+      new Promise<void>((resolve) => setTimeout(resolve, maxWaitMs)),
+    ]);
+    catalogs = collectAllAvailableLiveCatalogs();
   }
 
   return catalogs;
@@ -352,54 +350,33 @@ function sortTracksByQualityAndSpeed(tracks: VerifiedSpainTrackRecord[]): Verifi
     return idx === -1 ? 99 : idx;
   };
 
-  const sorted = [...tracks].sort((a, b) => {
-    // 1. Verified 'up' first, unknown & circuit-closed second, circuit-open third, known 'down' strictly last
-    const aOpen = isProviderCircuitOpen(a.providerId);
-    const bOpen = isProviderCircuitOpen(b.providerId);
-    const aStatus = a.probedOk === true ? 0 : a.probedOk === false ? 3 : aOpen ? 2 : 1;
-    const bStatus = b.probedOk === true ? 0 : b.probedOk === false ? 3 : bOpen ? 2 : 1;
+  return [...tracks].sort((a, b) => {
+    // 1. Verified 'up' first, unprobed second, known 'down' strictly last
+    const aStatus = a.probedOk === true ? 0 : a.probedOk === false ? 2 : 1;
+    const bStatus = b.probedOk === true ? 0 : b.probedOk === false ? 2 : 1;
     if (aStatus !== bStatus) return aStatus - bStatus;
 
-    // 2. Non-HEVC high quality (4K=0, FHD=1, HD=2) beats HEVC (3) & SD (4)
-    if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
+    // 2. Non-HEVC non-SD (tier <= 2) beats HEVC (3) & SD (4)
+    const aLowClass = a.qualityTier >= 3 ? 1 : 0;
+    const bLowClass = b.qualityTier >= 3 ? 1 : 0;
+    if (aLowClass !== bLowClass) return aLowClass - bLowClass;
 
-    // 3. Twitch/Netflix EWMA latency & steering score per provider
-    const aSteer =
-      typeof a.latencyMs === 'number'
-        ? Math.round(a.latencyMs * 0.7 + getProviderSteeringPenaltyMs(a.providerId) * 0.3)
-        : getProviderSteeringPenaltyMs(a.providerId);
-    const bSteer =
-      typeof b.latencyMs === 'number'
-        ? Math.round(b.latencyMs * 0.7 + getProviderSteeringPenaltyMs(b.providerId) * 0.3)
-        : getProviderSteeringPenaltyMs(b.providerId);
-    if (Math.abs(aSteer - bSteer) >= 180) {
-      return aSteer - bSteer;
+    // 3. When probed 'up', rank strictly by real response speed + light quality preference
+    if (a.probedOk === true && b.probedOk === true) {
+      const aScore = (a.latencyMs ?? 2500) + a.qualityTier * 85;
+      const bScore = (b.latencyMs ?? 2500) + b.qualityTier * 85;
+      if (Math.abs(aScore - bScore) >= 25) return aScore - bScore;
     }
+
+    if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
 
     const pDiff = providerRank(a.providerId) - providerRank(b.providerId);
     if (pDiff !== 0) return pDiff;
 
-    return aSteer - bSteer;
+    const aLat = typeof a.latencyMs === 'number' ? a.latencyMs : 2500;
+    const bLat = typeof b.latencyMs === 'number' ? b.latencyMs : 2500;
+    return aLat - bLat;
   });
-
-  // Promote up to 4 distinct healthy providers to top positions so switching alternatives tries independent servers
-  const topDiverse: VerifiedSpainTrackRecord[] = [];
-  const remainder: VerifiedSpainTrackRecord[] = [];
-  const seenProviders = new Set<string>();
-  for (const tr of sorted) {
-    if (
-      topDiverse.length < 4 &&
-      tr.probedOk !== false &&
-      !isProviderCircuitOpen(tr.providerId) &&
-      !seenProviders.has(tr.providerId)
-    ) {
-      seenProviders.add(tr.providerId);
-      topDiverse.push(tr);
-      continue;
-    }
-    remainder.push(tr);
-  }
-  return [...topDiverse, ...remainder];
 }
 
 function extractRawSpanishGrouped(catalogs: XtreamFullCatalogPayload[]): VerifiedSpainChannelEntry[] {
@@ -493,11 +470,7 @@ function extractRawSpanishGrouped(catalogs: XtreamFullCatalogPayload[]): Verifie
           category,
           quality: qMeta.quality,
           countryCode: 'ES',
-          logoUrl:
-            resolveOfficialChannelLogoUrl({
-              id: tdtMeta ? tdtMeta.id : canonicalKey,
-              logoUrl: tdtMeta?.logoUrl || stream.streamIcon,
-            }) || undefined,
+          logoUrl: tdtMeta?.logoUrl || stream.streamIcon,
           description: tdtMeta?.description || `${cleanName} · Señal España en Directo (${catPayload.providerName})`,
           epgChannelId: (tdtMeta as { epgChannelId?: string } | undefined)?.epgChannelId || stream.epgChannelId,
           channels: [trackRecord],
@@ -505,11 +478,7 @@ function extractRawSpanishGrouped(catalogs: XtreamFullCatalogPayload[]): Verifie
       } else {
         existing.channels.push(trackRecord);
         if (!existing.logoUrl && stream.streamIcon) {
-          const safeLogo = resolveOfficialChannelLogoUrl({
-            id: existing.id,
-            logoUrl: stream.streamIcon,
-          });
-          if (safeLogo) existing.logoUrl = safeLogo;
+          existing.logoUrl = stream.streamIcon;
         }
       }
     }
@@ -541,9 +510,7 @@ async function runBenchmarkBatch(
     byProvider.set(tr.providerId, arr);
   }
 
-  const providerJobs = Array.from(byProvider.entries()).map(async ([providerId, list]) => {
-    const isStrictSingleConn = providerId === 'dana4k' || providerId === '2m2h-alt';
-    const concurrency = isStrictSingleConn ? 1 : Math.min(2, perProviderConcurrency);
+  const providerJobs = Array.from(byProvider.entries()).map(async ([, list]) => {
     let idx = 0;
     const worker = async () => {
       while (idx < list.length) {
@@ -551,9 +518,6 @@ async function runBenchmarkBatch(
         const key = `${cur.providerId}:${cur.streamId}`;
         const cached = probeResultCache.get(key);
         if (cached && Date.now() - cached.checkedAt < PROBE_CACHE_TTL_MS) continue;
-        if (isProviderCircuitOpen(cur.providerId) && !tryAcquireHalfOpenProbe(cur.providerId)) {
-          continue;
-        }
 
         const res = await probeXtreamLiveStreamLatency(cur.streamId, cur.providerId, timeoutMs);
         const now = Date.now();
@@ -569,13 +533,10 @@ async function runBenchmarkBatch(
           failCount: res.ok ? 0 : 1,
           checkedAt: now,
         });
-        if (isStrictSingleConn && idx < list.length) {
-          await new Promise((r) => setTimeout(r, 90));
-        }
       }
     };
     const workers = Array.from(
-      { length: Math.min(concurrency, list.length) },
+      { length: Math.min(perProviderConcurrency, list.length) },
       () => worker()
     );
     await Promise.allSettled(workers);
@@ -597,13 +558,14 @@ export async function benchmarkSpainLiveChannels(opts?: {
   const generalQueue: VerifiedSpainTrackRecord[] = [];
 
   for (const ch of grouped) {
+    const isGeneralist = GENERALIST_KEY_SET.has(ch.canonicalKey);
     const isFlagship = FLAGSHIP_KEY_SET.has(ch.canonicalKey);
-    // Pick up to top 2 non-HEVC high-quality candidates per provider for this channel
+    const maxPerProvPerChan = isGeneralist ? 6 : 2;
     const perProvSeen = new Map<string, number>();
     for (const tr of ch.channels) {
       if (tr.qualityTier >= 4) continue; // skip SD during fast probing unless needed
       const cnt = perProvSeen.get(tr.providerId) || 0;
-      if (cnt >= 2) continue;
+      if (cnt >= maxPerProvPerChan) continue;
       perProvSeen.set(tr.providerId, cnt + 1);
       if (isFlagship) {
         flagshipQueue.push(tr);
@@ -613,7 +575,7 @@ export async function benchmarkSpainLiveChannels(opts?: {
     }
   }
 
-  const maxPerProv = opts?.maxTracksPerProvider ?? 90;
+  const maxPerProv = opts?.maxTracksPerProvider ?? 55;
   const cappedFlagship: VerifiedSpainTrackRecord[] = [];
   const countByProv = new Map<string, number>();
   for (const tr of flagshipQueue) {
@@ -623,7 +585,7 @@ export async function benchmarkSpainLiveChannels(opts?: {
     cappedFlagship.push(tr);
   }
 
-  await runBenchmarkBatch(cappedFlagship, 3, opts?.timeoutMs ?? 2100);
+  await runBenchmarkBatch(cappedFlagship, 4, opts?.timeoutMs ?? 2200);
 
   if (opts?.includeAllChannels && generalQueue.length > 0) {
     const cappedGeneral: VerifiedSpainTrackRecord[] = [];
@@ -634,7 +596,7 @@ export async function benchmarkSpainLiveChannels(opts?: {
       genByProv.set(tr.providerId, n + 1);
       cappedGeneral.push(tr);
     }
-    await runBenchmarkBatch(cappedGeneral, 2, opts?.timeoutMs ?? 2100);
+    await runBenchmarkBatch(cappedGeneral, 2, opts?.timeoutMs ?? 2200);
   }
 
   logger.info(
@@ -653,9 +615,7 @@ export async function getVerifiedSpainXtreamChannels(opts?: {
 }): Promise<VerifiedSpainChannelEntry[]> {
   if (!isXtreamEnvConfigured()) return [];
 
-  const hadCachedCatalogs = getCachedXtreamProviderCatalogs().length > 0;
-  const effectiveWait = opts?.waitWarmupMs ?? (hadCachedCatalogs ? 0 : 1200);
-  const catalogs = await ensureProviderCatalogsHydrated(effectiveWait);
+  const catalogs = await ensureProviderCatalogsHydrated(opts?.waitWarmupMs ?? 1800);
   if (catalogs.length === 0) return [];
 
   if (opts?.forceReprobe) {
@@ -666,8 +626,8 @@ export async function getVerifiedSpainXtreamChannels(opts?: {
     if (!warmupPromise) {
       warmupPromise = benchmarkSpainLiveChannels({
         includeAllChannels: false,
-        maxTracksPerProvider: 90,
-        timeoutMs: 2000,
+        maxTracksPerProvider: 40,
+        timeoutMs: 2400,
       })
         .catch(() => undefined)
         .finally(() => {
@@ -675,12 +635,12 @@ export async function getVerifiedSpainXtreamChannels(opts?: {
           // Continue probing broader Spanish channels quietly in background
           void benchmarkSpainLiveChannels({
             includeAllChannels: true,
-            maxTracksPerProvider: 120,
-            timeoutMs: 2100,
+            maxTracksPerProvider: 60,
+            timeoutMs: 2400,
           }).catch(() => undefined);
         });
     }
-    const waitMs = Math.max(0, opts?.waitWarmupMs ?? 1500);
+    const waitMs = Math.max(0, opts?.waitWarmupMs ?? 2000);
     if (waitMs > 0) {
       await Promise.race([
         warmupPromise,
@@ -694,7 +654,7 @@ export async function getVerifiedSpainXtreamChannels(opts?: {
 
 export function getCachedSpainXtreamChannelsSync(): VerifiedSpainChannelEntry[] {
   if (!isXtreamEnvConfigured()) return [];
-  const catalogs = getCachedXtreamProviderCatalogs();
+  const catalogs = collectAllAvailableLiveCatalogs();
   if (catalogs.length === 0) return [];
   return extractRawSpanishGrouped(catalogs);
 }
@@ -713,7 +673,7 @@ export function getSpainLiveDiagnosticSummary(): {
     trackCount: number;
   }>;
 } {
-  const catalogs = getCachedXtreamProviderCatalogs();
+  const catalogs = collectAllAvailableLiveCatalogs();
   const grouped = extractRawSpanishGrouped(catalogs);
   let probedUp = 0;
   let probedDown = 0;

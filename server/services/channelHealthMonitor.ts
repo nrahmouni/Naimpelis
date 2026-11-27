@@ -1,6 +1,4 @@
-import fs from 'fs';
 import { logger } from '../utils/logger.ts';
-import { loadDistributedKey, saveDistributedKey } from './distributedStore.ts';
 import { isDvbUpstreamCoolingDown } from '../routes/proxies/dvbTranscoder.ts';
 import {
   type ChannelHealthStatus,
@@ -32,89 +30,13 @@ export {
   type TrackHealthInfo,
 };
 
-const CHANNEL_HEALTH_SNAPSHOT_PATH = '/tmp/naimcine-channel-health-v1.json';
-const HEALTH_HYDRATE_MAX_AGE_MS = 20 * 60 * 1000;
-export const MAX_CHANNEL_PROBE_CONCURRENCY = 10;
-
-export async function runWithBoundedConcurrency<T, R>(
-  items: readonly T[],
-  concurrency: number,
-  worker: (item: T, index: number) => Promise<R>
-): Promise<R[]> {
-  if (items.length === 0) return [];
-  const limit = Math.max(1, Math.min(MAX_CHANNEL_PROBE_CONCURRENCY, Math.floor(concurrency) || 1));
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-
-  const runner = async () => {
-    while (true) {
-      const idx = cursor++;
-      if (idx >= items.length) break;
-      results[idx] = await worker(items[idx], idx);
-    }
-  };
-
-  await Promise.all(
-    Array.from({ length: Math.min(limit, items.length) }, () => runner())
-  );
-  return results;
-}
-
 export class ChannelHealthMonitor {
   private readonly trackHealth = new Map<string, TrackHealthInfo>();
   private sweepPromise: Promise<void> | null = null;
   private schedulerTimer: ReturnType<typeof setInterval> | null = null;
   private initialTimer: ReturnType<typeof setTimeout> | null = null;
-  private persistTimer: ReturnType<typeof setTimeout> | null = null;
   private lastSweepAt: number | null = null;
   private lastSweepDurationMs = 0;
-
-  constructor() {
-    this.hydrateFromDisk();
-  }
-
-  private hydrateFromDisk(): void {
-    if (process.env.VITEST) return;
-    try {
-      if (fs.existsSync(CHANNEL_HEALTH_SNAPSHOT_PATH)) {
-        const parsed = JSON.parse(fs.readFileSync(CHANNEL_HEALTH_SNAPSHOT_PATH, 'utf8'));
-        this.importTrackStatuses(parsed);
-      }
-    } catch {
-      // ignore corrupt health snapshot
-    }
-    void loadDistributedKey<Record<string, TrackHealthInfo>>('channel-health:v1')
-      .then((remote) => {
-        if (remote && this.trackHealth.size === 0) {
-          this.importTrackStatuses(remote);
-        }
-      })
-      .catch(() => {});
-  }
-
-  importTrackStatuses(statuses: Record<string, TrackHealthInfo> | null | undefined): void {
-    if (!statuses || typeof statuses !== 'object') return;
-    const now = Date.now();
-    for (const [key, info] of Object.entries(statuses)) {
-      if (!key || !info || typeof info.status !== 'string') continue;
-      if (info.checkedAt && now - info.checkedAt > HEALTH_HYDRATE_MAX_AGE_MS) continue;
-      this.trackHealth.set(key, info);
-    }
-  }
-
-  private schedulePersist(): void {
-    if (process.env.VITEST || this.persistTimer) return;
-    this.persistTimer = setTimeout(() => {
-      this.persistTimer = null;
-      const snapshot = this.getAllTrackStatuses();
-      if (Object.keys(snapshot).length === 0) return;
-      void fs.promises
-        .writeFile(CHANNEL_HEALTH_SNAPSHOT_PATH, JSON.stringify(snapshot), 'utf8')
-        .catch(() => {});
-      void saveDistributedKey('channel-health:v1', snapshot, 1800).catch(() => {});
-    }, 20_000);
-    this.persistTimer.unref?.();
-  }
 
   getTrackHealth(sourceUrl: string): TrackHealthInfo | undefined {
     const key = normalizeTrackUrl(sourceUrl);
@@ -161,7 +83,6 @@ export class ChannelHealthMonitor {
       qoeRebuffers,
       qoeFailures,
     });
-    this.schedulePersist();
   }
 
   prioritizeTracks<T extends HealthProbeTrack>(tracks: T[]): T[] {
@@ -184,30 +105,40 @@ export class ChannelHealthMonitor {
           }
         : rawHealth;
       const src = String(track.sourceUrl || '');
-      const q = String(track.quality || '').toLowerCase();
+      const q = `${track.quality || ''} ${track.label || ''}`.toLowerCase();
       const isUhdHevc = /90\.163\.85\.113:8093\/stream\/6[4568]\//i.test(unwrapped);
       const isResidentialDvb = unwrapped.includes('90.163.85.113:8093');
       const isHttpsCdn = /^https:\/\//i.test(unwrapped) && !isResidentialDvb;
       const isPreferredEdge2 = /\/api\/belix\/stream\/531071(?:\.m3u8|\b)/i.test(src);
-      const isPriorityFeed =
-        /^tdt-[a-z0-9-]+-priority-/i.test(String(track.id || '')) ||
-        /prioritaria|spain\s*[-_]\s*(?:ljli|أسبانيا|اسبانيا)/i.test(String(track.label || ''));
       const isBelix = src.startsWith('/api/belix/stream/');
+      const isXtreamProxy = /^\/api\/(?:xtream\/stream|providers\/stream|stream)\b/i.test(src);
+      const isHevc = /\b(?:hevc|h\.?265|x265)\b/.test(q);
+      const isFhdOr1080 = !isHevc && /\b(?:fhd|1080p?|full\s*hd)\b/.test(q);
+      const is4kNonResidential = !isUhdHevc && !isHevc && /(?:4k|uhd|2160p?|⁴ᴷ)/i.test(q);
       const qualityTier = isUhdHevc
+        ? 5
+        : /\b(?:576p?|480p?|360p?|sd|lq)\b/.test(q) || /azotosolutions\.com/i.test(src)
         ? 4
-        : /576p|480p|360p/.test(q) || /azotosolutions\.com/i.test(src)
+        : isHevc
         ? 3
-        : /720p/.test(q)
+        : is4kNonResidential
+        ? 0
+        : isFhdOr1080
+        ? 1
+        : isXtreamProxy || isHttpsCdn || /\bhd\b/.test(q)
         ? 2
-        : 0;
+        : 3;
       const transportPenalty = /interactvty\.pro/i.test(src)
         ? 1500
-        : isPreferredEdge2 || isPriorityFeed
+        : isResidentialDvb
+        ? 900
+        : isPreferredEdge2 || isXtreamProxy
         ? 0
         : isBelix
-        ? 350
+        ? 250
         : 0;
-      const penaltyMs = (health?.qoeFailures || 0) * 1500 + (health?.qoeRebuffers || 0) * 250 + transportPenalty;
+      const penaltyMs =
+        (health?.qoeFailures || 0) * 1800 + (health?.qoeRebuffers || 0) * 600 + transportPenalty;
       const effectiveLatency = Math.max(
         1,
         (health?.latencyMs ?? (health?.status === 'unknown' ? 1200 : 800)) + penaltyMs
@@ -216,45 +147,72 @@ export class ChannelHealthMonitor {
         track: health ? { ...track, health } : { ...track },
         originalIndex,
         isUhdHevc,
+        isHevc,
         isResidentialDvb,
         isHttpsCdn,
         isPreferredEdge2,
-        isPriorityFeed,
         isBelix,
+        isXtreamProxy,
         status: health?.status ?? ('unknown' as ChannelHealthStatus),
         qualityTier,
         latencyBucket: Math.floor(effectiveLatency / 750),
+        rawLatency: effectiveLatency,
       };
     });
 
     indexed.sort((a, b) => {
-      if (a.isPriorityFeed !== b.isPriorityFeed) {
-        if (a.isPriorityFeed && a.status !== 'down') return -1;
-        if (b.isPriorityFeed && b.status !== 'down') return 1;
-      }
       if (a.status !== 'down' && b.status !== 'down' && a.isUhdHevc !== b.isUhdHevc) {
         return a.isUhdHevc ? 1 : -1;
       }
+      const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
+      if (rankDiff !== 0) return rankDiff;
+
+      // Keep single-socket residential DVB strictly behind verified HTTPS CDNs & Xtream signals
+      if (a.status !== 'down' && b.status !== 'down' && a.isResidentialDvb !== b.isResidentialDvb) {
+        return a.isResidentialDvb ? 1 : -1;
+      }
+
+      // Verified fast Xtream 4K/FHD non-HEVC Spanish signals beat Belix/DVB when probed 'up',
+      // while competing fairly with fast verified HTTPS CDNs (Otteravision / RTVE) on speed + quality
+      const aFastXtream = a.isXtreamProxy && a.status === 'up' && a.qualityTier <= 2;
+      const bFastXtream = b.isXtreamProxy && b.status === 'up' && b.qualityTier <= 2;
+      if (aFastXtream !== bFastXtream) {
+        const other = aFastXtream ? b : a;
+        if (!other.isHttpsCdn || other.status !== 'up') {
+          return aFastXtream ? -1 : 1;
+        }
+      }
+
       if (a.isPreferredEdge2 !== b.isPreferredEdge2) {
         if (a.isPreferredEdge2 && a.status !== 'down') return -1;
         if (b.isPreferredEdge2 && b.status !== 'down') return 1;
       }
-      const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
-      if (rankDiff !== 0) return rankDiff;
+      if (a.status !== 'down' && b.status !== 'down') {
+        if (a.status === 'up' && b.status === 'up') {
+          const aScore = a.rawLatency + a.qualityTier * 85;
+          const bScore = b.rawLatency + b.qualityTier * 85;
+          if (Math.abs(aScore - bScore) >= 25) {
+            return aScore - bScore;
+          }
+        }
+        if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
+        if (a.status !== 'unknown' && a.rawLatency !== b.rawLatency) {
+          return a.rawLatency - b.rawLatency;
+        }
+        if (a.isXtreamProxy !== b.isXtreamProxy) {
+          return a.isXtreamProxy ? -1 : 1;
+        }
+      }
       if (a.status === 'up' && b.status === 'up') {
         if (a.isHttpsCdn !== b.isHttpsCdn) {
           return a.isHttpsCdn ? -1 : 1;
         }
         if (a.isResidentialDvb !== b.isResidentialDvb) {
-          return a.isResidentialDvb ? -1 : 1;
+          return a.isResidentialDvb ? 1 : -1;
         }
       }
       if (a.isBelix && b.isBelix && a.status === b.status) {
         return a.originalIndex - b.originalIndex;
-      }
-      if (a.status !== 'unknown') {
-        if (a.qualityTier !== b.qualityTier) return a.qualityTier - b.qualityTier;
-        if (a.latencyBucket !== b.latencyBucket) return a.latencyBucket - b.latencyBucket;
       }
       return a.originalIndex - b.originalIndex;
     });
@@ -315,11 +273,7 @@ export class ChannelHealthMonitor {
     const execute = async () => {
       const startedAt = Date.now();
       const staleMs = options?.staleMs ?? DEFAULT_STALE_MS;
-      const concurrency = Math.max(
-        1,
-        Math.min(MAX_CHANNEL_PROBE_CONCURRENCY, options?.concurrency ?? MAX_CHANNEL_PROBE_CONCURRENCY)
-      );
-      const probeTimeoutMs = Math.min(2_500, options?.timeoutMs ?? 1_500);
+      const concurrency = Math.max(1, Math.min(16, options?.concurrency ?? 8));
 
       const uniqueTracks = new Map<string, HealthProbeTrack>();
       for (const ch of channels) {
@@ -348,27 +302,20 @@ export class ChannelHealthMonitor {
         }
       }
 
-      // Verify previously healthy ('up') tracks first, then unknown/degraded, and 'down' tracks last
-      normalQueue.sort(([keyA, trA], [keyB, trB]) => {
-        const stA = this.trackHealth.get(keyA)?.status ?? trA.health?.status ?? 'unknown';
-        const stB = this.trackHealth.get(keyB)?.status ?? trB.health?.status ?? 'unknown';
-        return STATUS_RANK[stA] - STATUS_RANK[stB];
-      });
-
-      const tasks: Promise<unknown>[] = [];
-      if (normalQueue.length > 0) {
-        tasks.push(
-          runWithBoundedConcurrency(normalQueue, concurrency, async ([key, track]) => {
-            const previous = this.trackHealth.get(key);
-            const result = await probeChannelTrack(track, {
-              timeoutMs: probeTimeoutMs,
-              fetchImpl: options?.fetchImpl,
-              previous,
-            });
-            this.trackHealth.set(key, result);
-          })
-        );
-      }
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < normalQueue.length) {
+          const currentIndex = cursor++;
+          const [key, track] = normalQueue[currentIndex];
+          const previous = this.trackHealth.get(key);
+          const result = await probeChannelTrack(track, {
+            timeoutMs: options?.timeoutMs,
+            fetchImpl: options?.fetchImpl,
+            previous,
+          });
+          this.trackHealth.set(key, result);
+        }
+      };
 
       const dvbWorker = async () => {
         for (const [key, track] of dvbQueue) {
@@ -382,6 +329,11 @@ export class ChannelHealthMonitor {
         }
       };
 
+      const tasks: Promise<void>[] = [];
+      const workerCount = Math.min(concurrency, normalQueue.length);
+      for (let i = 0; i < workerCount; i++) {
+        tasks.push(worker());
+      }
       if (dvbQueue.length > 0) {
         tasks.push(dvbWorker());
       }
@@ -391,7 +343,6 @@ export class ChannelHealthMonitor {
 
       this.lastSweepAt = Date.now();
       this.lastSweepDurationMs = this.lastSweepAt - startedAt;
-      this.schedulePersist();
 
       const summary = this.getSummary();
       logger.info(
@@ -448,10 +399,7 @@ export class ChannelHealthMonitor {
       try {
         const list = await getChannels();
         if (Array.isArray(list) && list.length > 0) {
-          await this.runSweep(list, {
-            concurrency: MAX_CHANNEL_PROBE_CONCURRENCY,
-            timeoutMs: 1_500,
-          });
+          await this.runSweep(list);
         }
       } catch (err) {
         logger.warn({ err }, 'channel_health_sweep_failed');

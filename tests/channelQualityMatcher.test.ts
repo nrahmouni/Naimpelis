@@ -8,6 +8,10 @@ import {
   stripChannelNoise,
 } from '../src/utils/channelQualityRanker.ts';
 import { needsBrowserVodRemux } from '../server/services/xtreamVodRemuxer.ts';
+import {
+  parseInternalXtreamVodUrl,
+  parseXtreamVodTitleMeta,
+} from '../server/services/xtreamVodMatcher.ts';
 import type { SpanishTdtChannel } from '../src/types.ts';
 
 describe('channelQualityRanker & VOD browser remuxing', () => {
@@ -109,5 +113,34 @@ describe('channelQualityRanker & VOD browser remuxing', () => {
     expect(needsBrowserVodRemux('ts')).toBe(true);
     expect(needsBrowserVodRemux('mp4')).toBe(false);
     expect(needsBrowserVodRemux('mp4', true)).toBe(true);
+  });
+
+  it('parses compound Xtream VOD prefix tags and internal provider/stream URLs', () => {
+    const predator = parseXtreamVodTitleMeta('ES - 4K-ES - Predator: Badlands - 2025', 'Estrenos 4K', 'mkv');
+    expect(predator.cleanTitle).toBe('Predator: Badlands');
+    expect(predator.year).toBe('2025');
+    expect(predator.lang).toBe('ES');
+    expect(predator.quality).toBe('4K UHD');
+
+    const hipster = parseXtreamVodTitleMeta('|VO-4K| Un hipster en la España vacía (2024)', 'Cine VO-4K', 'mkv');
+    expect(hipster.cleanTitle).toBe('Un hipster en la España vacía');
+    expect(hipster.year).toBe('2024');
+    expect(hipster.quality).toBe('4K UHD');
+
+    expect(parseInternalXtreamVodUrl('/api/providers/stream/vod4k/movie/932311.mkv')).toEqual({
+      source: 'providers',
+      providerId: 'vod4k',
+      kind: 'movie',
+      streamId: '932311',
+      ext: 'mkv',
+    });
+    expect(parseInternalXtreamVodUrl('/api/stream?provider=dana4k&id=421756&type=vod&ext=mkv')).toEqual({
+      source: 'xtream',
+      providerId: 'dana4k',
+      kind: 'movie',
+      streamId: '421756',
+      ext: 'mkv',
+    });
+    expect(parseInternalXtreamVodUrl('/api/providers/stream/primary/live/1001.m3u8')).toBeNull();
   });
 });
